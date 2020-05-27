@@ -1,17 +1,33 @@
 import React from "react";
 import ReactDOM from "react-dom";
 import "./index.css";
-import App from "./App";
+
 import * as serviceWorker from "./serviceWorker";
 
 import { Provider } from "react-redux";
+import { ReactReduxFirebaseProvider } from "react-redux-firebase";
+
+import { ThemeProvider } from "@material-ui/styles";
+import {
+  AppBar,
+  CssBaseline,
+  Typography,
+  createMuiTheme,
+} from "@material-ui/core";
+
 import firebase from "firebase";
 import { firebaseConfig } from "./firebase";
-import { ReactReduxFirebaseProvider } from "react-redux-firebase";
+
 import { createFirestoreInstance } from "redux-firestore";
 import { Route, Switch } from "react-router"; // react-router v4/v5
 import { ConnectedRouter } from "connected-react-router";
 import configureStore, { history } from "./state/configureStore";
+
+import NavBar from "./screens/Layout/Navbar";
+
+import App from "./App";
+import HomeScreen from "./screens/Home";
+import { red } from "@material-ui/core/colors";
 
 const store = configureStore();
 
@@ -22,14 +38,23 @@ const rrfProps = {
   createFirestoreInstance,
 };
 
+const theme = createMuiTheme({
+  palette: {
+    type: "dark",
+    primary: red,
+    secondary: {
+      main: "#1565c0",
+    },
+  },
+});
+
 ReactDOM.render(
   <Provider store={store}>
     <ReactReduxFirebaseProvider {...rrfProps}>
-      <ConnectedRouter history={history}>
-        <Switch>
-          <Route exact path="/" render={() => <App />} />
-        </Switch>
-      </ConnectedRouter>
+      <ThemeProvider theme={theme}>
+        <CssBaseline />
+        <App history={history} />
+      </ThemeProvider>
     </ReactReduxFirebaseProvider>
   </Provider>,
   document.getElementById("root")

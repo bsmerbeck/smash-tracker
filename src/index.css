@@ -8,9 +8,6 @@ body {
 }
 
 code {
-  font-family: Roboto, Menlo, Monaco, Consolas, "Courier New", monospace;
-}
-
-html {
-  background-color: black;
+  font-family: "Droid Sans Mono", Menlo, Monaco, Consolas, "Courier New",
+    monospace;
 }
