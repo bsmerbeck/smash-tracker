@@ -18,8 +18,7 @@ import {
 import firebase from "firebase";
 import { firebaseConfig } from "./firebase";
 
-import { Route, Switch } from "react-router"; // react-router v4/v5
-import { ConnectedRouter } from "connected-react-router";
+import { Router } from "react-router-dom"; // react-router v4/v5
 import configureStore, { history } from "./state/configureStore";
 
 import NavBar from "./screens/Layout/Navbar";
@@ -48,14 +47,14 @@ const theme = createMuiTheme({
 
 ReactDOM.render(
   <Provider store={store}>
-    <ConnectedRouter history={history}>
+    <Router history={history}>
       <ReactReduxFirebaseProvider {...rrfProps}>
         <ThemeProvider theme={theme}>
           <CssBaseline />
           <App history={history} />
         </ThemeProvider>
       </ReactReduxFirebaseProvider>
-    </ConnectedRouter>
+    </Router>
   </Provider>,
   document.getElementById("root")
 );

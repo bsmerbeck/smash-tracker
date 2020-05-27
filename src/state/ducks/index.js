@@ -1,10 +1,8 @@
 import { combineReducers } from "redux";
-import { connectRouter } from "connected-react-router";
 import { firebaseReducer, firestoreReducer } from "react-redux-firebase";
 
-const rootReducer = (history) =>
+const rootReducer = () =>
   combineReducers({
-    router: connectRouter(history),
     firebase: firebaseReducer,
     firestore: firestoreReducer,
   });

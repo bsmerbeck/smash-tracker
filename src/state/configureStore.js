@@ -1,6 +1,5 @@
 import { createBrowserHistory } from "history";
 import { createStore, applyMiddleware, compose } from "redux";
-import { routerMiddleware } from "connected-react-router";
 import createRootReducer from "./ducks";
 
 export const history = createBrowserHistory();
@@ -11,8 +10,7 @@ export default function configureStore(initialState) {
     initialState,
     compose(
       window.__REDUX_DEVTOOLS_EXTENSION__ &&
-        window.__REDUX_DEVTOOLS_EXTENSION__(),
-      applyMiddleware(routerMiddleware(history))
+        window.__REDUX_DEVTOOLS_EXTENSION__()
     )
   );
 
