@@ -1,4 +1,7 @@
 import React from "react";
+import { useDispatch } from "react-redux";
+import { withRouter } from "react-router-dom";
+import { push, replace, routerActions } from "connected-react-router";
 import { useSelector } from "react-redux";
 import {
   useFirebase,
@@ -6,6 +9,7 @@ import {
   isEmpty,
   useFirebaseConnect,
 } from "react-redux-firebase";
+import { StyledFirebaseAuth } from "react-firebaseui";
 import { Button } from "@material-ui/core";
 import {
   StyledClassicBanner,
@@ -18,7 +22,7 @@ function HomePage() {
   const firebase = useFirebase();
 
   const auth = useSelector((state) => state.firebase.auth);
-
+  const dispatch = useDispatch();
   function loginWithGoogle() {
     return firebase.login({ provider: "google", type: "popup" });
   }
@@ -29,6 +33,10 @@ function HomePage() {
   useFirebaseConnect([{ path: "sprites" }]);
 
   const sprites = useSelector((state) => state.firebase.ordered.sprites);
+
+  function goToCharacter() {
+    return dispatch(push("/signedIn"));
+  }
 
   return (
     <div>
@@ -49,6 +57,22 @@ function HomePage() {
           and more. Smash Tracker is ALWAYS open to feature suggestions.
         </p>
       </StyledMainInfo>
+      <StyledFirebaseAuth
+        uiConfig={{
+          signInFlow: "popup",
+          signInSuccessUrl: "/signedIn",
+          signInOptions: [firebase.auth.GoogleAuthProvider.PROVIDER_ID],
+          callbacks: {
+            signInSuccessWithAuthResult: (authResult, redirectUrl) => {
+              firebase.handleRedirectResult(authResult).then(() => {
+                dispatch(push(redirectUrl));
+              });
+              return true;
+            },
+          },
+        }}
+        firebaseAuth={firebase.auth()}
+      />
       <StyledMainLogin>
         {!isLoaded(auth) ? (
           <span>Loading...</span>
@@ -62,7 +86,9 @@ function HomePage() {
           </div>
         ) : (
           <div>
-            <Button variant="contained">Start</Button>
+            <Button variant="contained" onClick={() => goToCharacter()}>
+              Start
+            </Button>
             <Button variant="contained" onClick={logout}>
               Logout
             </Button>
@@ -72,7 +98,7 @@ function HomePage() {
       <div>
         {isLoaded(sprites) ? (
           sprites.map((sprite) => {
-            return <img src={sprite.value.url} alt="" />;
+            return <img src={sprite.value.url} alt="" key={sprite.key} />;
           })
         ) : (
           <p>Loading</p>
@@ -82,4 +108,4 @@ function HomePage() {
   );
 }
 
-export default HomePage;
+export default withRouter(HomePage);

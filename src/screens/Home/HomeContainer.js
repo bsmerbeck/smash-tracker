@@ -1,5 +1,7 @@
 import Home from "./Home";
 import { connect } from "react-redux";
+import { push } from "connected-react-router";
+import { withRouter } from "react-router-dom";
 import {
   firebaseConnect,
   isLoaded,
@@ -7,8 +9,4 @@ import {
   getFirebase,
 } from "react-redux-firebase";
 
-const mapStateToProps = (state) => ({
-  auth: state.firebase.auth,
-});
-
-export default connect(mapStateToProps, null)(Home);
+export default withRouter(Home);

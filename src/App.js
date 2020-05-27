@@ -1,18 +1,19 @@
 import React from "react";
 import "./App.css";
-import { Route, Switch } from "react-router";
+import { Route, Switch } from "react-router-dom";
 import HomeScreen from "./screens/Home";
-import { ConnectedRouter } from "connected-react-router";
+import Character from "./screens/CharacterSelect";
 import Navbar from "./screens/Layout/Navbar";
 
-const App = ({ history }) => {
+const App = () => {
   return (
-    <ConnectedRouter history={history}>
+    <div>
       <Navbar />
       <Switch>
-        <Route exact path="/" render={() => <HomeScreen />} />
+        <Route exact path="/" component={HomeScreen} />
+        <Route path="/signedIn" component={Character} />
       </Switch>
-    </ConnectedRouter>
+    </div>
   );
 };
 
