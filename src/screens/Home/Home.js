@@ -1,7 +1,6 @@
 import React from "react";
 import { useDispatch } from "react-redux";
-import { withRouter } from "react-router-dom";
-import { push, replace, routerActions } from "connected-react-router";
+import { withRouter, useHistory } from "react-router-dom";
 import { useSelector } from "react-redux";
 import {
   useFirebase,
@@ -20,7 +19,7 @@ import {
 
 function HomePage() {
   const firebase = useFirebase();
-
+  const history = useHistory();
   const auth = useSelector((state) => state.firebase.auth);
   const dispatch = useDispatch();
   function loginWithGoogle() {
@@ -35,7 +34,7 @@ function HomePage() {
   const sprites = useSelector((state) => state.firebase.ordered.sprites);
 
   function goToCharacter() {
-    return dispatch(push("/signedIn"));
+    return history.push("/signedIn");
   }
 
   return (
@@ -65,7 +64,7 @@ function HomePage() {
           callbacks: {
             signInSuccessWithAuthResult: (authResult, redirectUrl) => {
               firebase.handleRedirectResult(authResult).then(() => {
-                dispatch(push(redirectUrl));
+                history.push(redirectUrl);
               });
               return true;
             },
