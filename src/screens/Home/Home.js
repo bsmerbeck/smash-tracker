@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useState } from "react";
 import { useDispatch } from "react-redux";
 import { withRouter, useHistory } from "react-router-dom";
 import { useSelector } from "react-redux";
@@ -20,8 +20,13 @@ import {
 function HomePage() {
   const firebase = useFirebase();
   const history = useHistory();
+
+  const [spriteList, setSpriteList] = useState([]);
+  const [input, setInput] = useState("");
+
+  const handleInputChange = (e) => setInput(e.currentTarget.value);
+
   const auth = useSelector((state) => state.firebase.auth);
-  const dispatch = useDispatch();
   function loginWithGoogle() {
     return firebase.login({ provider: "google", type: "popup" });
   }
@@ -95,10 +100,22 @@ function HomePage() {
         )}
       </StyledMainLogin>
       <div>
+        <input type="text" value={input} onChange={handleInputChange} />
         {isLoaded(sprites) ? (
-          sprites.map((sprite) => {
-            return <img src={sprite.value.url} alt="" key={sprite.key} />;
-          })
+          sprites
+            .filter(
+              (d) =>
+                input === "" ||
+                d.value.name.toLowerCase().startsWith(input.toLowerCase())
+            )
+            .map((sprite) => {
+              return (
+                <div>
+                  <img src={sprite.value.url} alt="" key={sprite.key} />
+                  <p>{sprite.value.name}</p>
+                </div>
+              );
+            })
         ) : (
           <p>Loading</p>
         )}
