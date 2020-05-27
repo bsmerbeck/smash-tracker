@@ -18,7 +18,6 @@ import {
 import firebase from "firebase";
 import { firebaseConfig } from "./firebase";
 
-import { createFirestoreInstance } from "redux-firestore";
 import { Route, Switch } from "react-router"; // react-router v4/v5
 import { ConnectedRouter } from "connected-react-router";
 import configureStore, { history } from "./state/configureStore";
@@ -35,7 +34,6 @@ const rrfProps = {
   firebase,
   config: firebaseConfig,
   dispatch: store.dispatch,
-  createFirestoreInstance,
 };
 
 const theme = createMuiTheme({
@@ -50,12 +48,14 @@ const theme = createMuiTheme({
 
 ReactDOM.render(
   <Provider store={store}>
-    <ReactReduxFirebaseProvider {...rrfProps}>
-      <ThemeProvider theme={theme}>
-        <CssBaseline />
-        <App history={history} />
-      </ThemeProvider>
-    </ReactReduxFirebaseProvider>
+    <ConnectedRouter history={history}>
+      <ReactReduxFirebaseProvider {...rrfProps}>
+        <ThemeProvider theme={theme}>
+          <CssBaseline />
+          <App history={history} />
+        </ThemeProvider>
+      </ReactReduxFirebaseProvider>
+    </ConnectedRouter>
   </Provider>,
   document.getElementById("root")
 );

@@ -1,9 +1,7 @@
-import React from 'react';
-import HomeContainer from './HomeContainer';
+import React from "react";
+import HomeContainer from "./HomeContainer";
+import { withRouter } from "react-router";
 
+const HomeScreen = ({ className }) => <HomeContainer className={className} />;
 
-const HomeScreen = ({className }) => (
-    <HomeContainer className={className}/>
-);
-
-export default HomeScreen;
+export default withRouter(HomeScreen);
