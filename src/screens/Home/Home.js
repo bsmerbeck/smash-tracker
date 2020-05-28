@@ -10,6 +10,9 @@ import {
 } from "react-redux-firebase";
 import { StyledFirebaseAuth } from "react-firebaseui";
 import { Button } from "@material-ui/core";
+
+import SignUp from "../User/UserSignUp";
+
 import {
   StyledClassicBanner,
   StyledMainTitle,
@@ -22,6 +25,7 @@ function HomePage() {
   const history = useHistory();
 
   const auth = useSelector((state) => state.firebase.auth);
+
   function loginWithGoogle() {
     return firebase.login({ provider: "google", type: "popup" });
   }
@@ -78,7 +82,7 @@ function HomePage() {
             <Button variant="contained" onClick={loginWithGoogle}>
               Login
             </Button>
-            <Button variant="contained">Sign Up</Button>
+            <SignUp />
           </div>
         ) : (
           <div>
