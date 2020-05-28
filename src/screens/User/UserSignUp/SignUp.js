@@ -16,14 +16,6 @@ const SignUp = ({ handleClose }) => {
   const [password, setPassword] = useState("");
   const [error, setError] = useState(null);
   const history = useHistory();
-  const auth = useSelector((state) => state.firebase.auth);
-
-  const createUserDatabaseNode = () => {
-    const db = firebase.database();
-    db().ref("/users").child(auth.uid).child("userData").set({
-      email: auth.email,
-    });
-  };
 
   const createUserWithEmailAndPasswordHandler = (event, email, password) => {
     event.preventDefault();
@@ -34,7 +26,6 @@ const SignUp = ({ handleClose }) => {
       .createUserWithEmailAndPassword(email, password)
       .then(() => {
         handleClose();
-        createUserDatabaseNode();
       })
       .catch(function (error) {
         // Handle Errors here.

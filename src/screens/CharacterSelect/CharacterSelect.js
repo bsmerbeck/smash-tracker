@@ -13,6 +13,7 @@ import { StyledPrimaryCharacterDiv, StyledPrimarySpriteListDiv } from "./style";
 
 function CharacterSelect() {
   useFirebaseConnect([{ path: "sprites" }]);
+  const firebase = useFirebase();
 
   const sprites = useSelector((state) => state.firebase.ordered.sprites);
   const auth = useSelector((state) => state.firebase.auth);
@@ -35,6 +36,11 @@ function CharacterSelect() {
 
   const saveButtonClick = () => {
     const _spriteIds = spriteList.map((s) => s.value.id);
+    firebase
+      .database()
+      .ref(`/users/${auth.uid}/primary-fighters`)
+      .set(_spriteIds);
+    setSpriteList([]);
   };
 
   const handleLoading = () => {
@@ -78,6 +84,7 @@ function CharacterSelect() {
               disabled={
                 isLoaded(auth) && !isEmpty(auth) && spriteList.length <= 0
               }
+              onClick={saveButtonClick}
             >
               Save
             </Button>
