@@ -15,6 +15,7 @@ function CharacterSelect() {
   useFirebaseConnect([{ path: "sprites" }]);
 
   const sprites = useSelector((state) => state.firebase.ordered.sprites);
+  const auth = useSelector((state) => state.firebase.auth);
 
   const [spriteList, setSpriteList] = useState([]);
   const [input, setInput] = useState("");
@@ -31,6 +32,10 @@ function CharacterSelect() {
   const handleInputChange = (e) => setInput(e.currentTarget.value);
 
   const [loading, setLoading] = useState(true);
+
+  const saveButtonClick = () => {
+    const _spriteIds = spriteList.map((s) => s.value.id);
+  };
 
   const handleLoading = () => {
     setLoading(false);
@@ -52,10 +57,7 @@ function CharacterSelect() {
           you're finished, press Save.
         </Typography>
         <StyledPrimaryCharacterDiv>
-          <div
-            className="primary-sprite-list"
-            style={{ display: loading ? "none" : "inherit" }}
-          >
+          <div className="primary-sprite-list">
             {spriteList.map((sprite) => {
               return (
                 <SpriteButton
@@ -70,15 +72,19 @@ function CharacterSelect() {
           </div>
           <div className="primary-sprite-input" style={{ display: "flex" }}>
             <input type="text" value={input} onChange={handleInputChange} />
-            <Button variant="contained" color="primary">
+            <Button
+              variant="contained"
+              color="primary"
+              disabled={
+                isLoaded(auth) && !isEmpty(auth) && spriteList.length <= 0
+              }
+            >
               Save
             </Button>
           </div>
         </StyledPrimaryCharacterDiv>
       </div>
-      <StyledPrimarySpriteListDiv
-        style={{ display: loading ? "none" : "inherit" }}
-      >
+      <StyledPrimarySpriteListDiv>
         {isLoaded(sprites) ? (
           sprites
             .filter(
@@ -94,7 +100,6 @@ function CharacterSelect() {
                   key={sprite.key}
                   sprite={sprite}
                   onClick={(e) => handleSpriteClick(e, sprite)}
-                  handleLoad={handleLoading}
                 />
               );
             })
