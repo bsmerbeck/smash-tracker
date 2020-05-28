@@ -2,7 +2,7 @@ import React from "react";
 import "./App.css";
 import { Route, Switch } from "react-router-dom";
 import HomeScreen from "./screens/Home";
-import Character from "./screens/CharacterSelect";
+import CharacterScreen from "./screens/CharacterSelect";
 import Navbar from "./screens/Layout/Navbar";
 
 const App = () => {
@@ -11,7 +11,7 @@ const App = () => {
       <Navbar />
       <Switch>
         <Route exact path="/" component={HomeScreen} />
-        <Route path="/signedIn" component={Character} />
+        <Route path="/choose-character" component={CharacterScreen} />
       </Switch>
     </div>
   );

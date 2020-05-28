@@ -43,6 +43,22 @@ const theme = createMuiTheme({
       main: "#1565c0",
     },
   },
+  typography: {
+    fontFamily: [
+      "-apple-system",
+      "Roboto Thin",
+      "BlinkMacSystemFont",
+      "Segoe UI",
+      "Roboto",
+      "Oxygen",
+      "Ubuntu",
+      "Cantarell",
+      "Fira Sans",
+      "Droid Sans",
+      "Helvetica Neue",
+      "sans-serif",
+    ],
+  },
 });
 
 ReactDOM.render(

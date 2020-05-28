@@ -1,11 +1,9 @@
 import React from "react";
+import CharacterSelectContainer from "./CharacterSelectContainer";
+import { withRouter } from "react-router";
 
-function Select() {
-  return (
-    <div>
-      <h1>Choose your character</h1>
-    </div>
-  );
-}
+const CharacterSelectScreen = ({ className }) => (
+  <CharacterSelectContainer className={className} />
+);
 
-export default Select;
+export default withRouter(CharacterSelectScreen);
