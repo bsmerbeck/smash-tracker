@@ -21,11 +21,6 @@ function HomePage() {
   const firebase = useFirebase();
   const history = useHistory();
 
-  const [spriteList, setSpriteList] = useState([]);
-  const [input, setInput] = useState("");
-
-  const handleInputChange = (e) => setInput(e.currentTarget.value);
-
   const auth = useSelector((state) => state.firebase.auth);
   function loginWithGoogle() {
     return firebase.login({ provider: "google", type: "popup" });
@@ -34,12 +29,9 @@ function HomePage() {
   function logout() {
     return firebase.logout();
   }
-  useFirebaseConnect([{ path: "sprites" }]);
-
-  const sprites = useSelector((state) => state.firebase.ordered.sprites);
 
   function goToCharacter() {
-    return history.push("/signedIn");
+    return history.push("/choose-character");
   }
 
   return (
@@ -64,14 +56,14 @@ function HomePage() {
       <StyledFirebaseAuth
         uiConfig={{
           signInFlow: "popup",
-          signInSuccessUrl: "/signedIn",
+          signInSuccessUrl: "/choose-character",
           signInOptions: [firebase.auth.GoogleAuthProvider.PROVIDER_ID],
           callbacks: {
             signInSuccessWithAuthResult: (authResult, redirectUrl) => {
               firebase.handleRedirectResult(authResult).then(() => {
                 history.push(redirectUrl);
               });
-              return true;
+              return false;
             },
           },
         }}
@@ -99,27 +91,6 @@ function HomePage() {
           </div>
         )}
       </StyledMainLogin>
-      <div>
-        <input type="text" value={input} onChange={handleInputChange} />
-        {isLoaded(sprites) ? (
-          sprites
-            .filter(
-              (d) =>
-                input === "" ||
-                d.value.name.toLowerCase().startsWith(input.toLowerCase())
-            )
-            .map((sprite) => {
-              return (
-                <div>
-                  <img src={sprite.value.url} alt="" key={sprite.key} />
-                  <p>{sprite.value.name}</p>
-                </div>
-              );
-            })
-        ) : (
-          <p>Loading</p>
-        )}
-      </div>
     </div>
   );
 }
