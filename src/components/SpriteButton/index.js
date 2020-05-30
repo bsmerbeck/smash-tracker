@@ -2,6 +2,7 @@ import React from "react";
 import { StyledSpriteButton } from "./style";
 
 const SpriteButton = (props) => {
+  console.log(`spritebutton: ${JSON.stringify(props.sprite)}`);
   return (
     <StyledSpriteButton
       variant="outlined"
@@ -12,10 +13,10 @@ const SpriteButton = (props) => {
       <div>
         <img
           onLoad={props.handleLoad}
-          src={props.sprite.value.url}
-          alt={`${props.sprite.value.name.toLowerCase()}-sprite`}
+          src={props.sprite.url}
+          alt={`${props.sprite.name.toLowerCase()}-sprite`}
         />
-        <p>{props.sprite.value.name}</p>
+        <p>{props.sprite.name}</p>
       </div>
     </StyledSpriteButton>
   );
