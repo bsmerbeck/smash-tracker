@@ -11,16 +11,15 @@ export const StyledPrimaryCharacterDiv = styled.div`
     justify-content: center;
   }
   div.primary-sprite-input {
+    flex-direction: column;
     align-content: center;
     width: 50%;
     input {
       margin: 5px auto;
-      flex: 2;
       font-size: 2em;
     }
     button {
       margin: 5px auto;
-      flex: 1;
     }
   }
 `;

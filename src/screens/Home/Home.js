@@ -35,14 +35,16 @@ function HomePage() {
   }
 
   function goToCharacter() {
-    return history.push("/choose-character");
+    return history.push("/choose-primary");
   }
 
   return (
     <div>
       <div>
         <StyledClassicBanner
-          src="https://github.com/bsmerbeck/smash-tracker-images/blob/master/assets/banners/classic-mode-banner.png?raw=true"
+          src={
+            process.env.PUBLIC_URL + "/assets/banners/classic-mode-banner.png"
+          }
           alt=""
         />
       </div>
