@@ -15,6 +15,6 @@ The tracker uses Google Firebase for hosting, database/backend functions, and us
 
 This project is currently under development. As such, it should be noted that many elements are nonfunctional.
 
-####Disclaimer
+###Disclaimer
 
 I do not claim any rights to the content of the application. All rights belong to Nintendo, and are not used for any commercial purpose.
