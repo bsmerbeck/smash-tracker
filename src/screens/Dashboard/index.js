@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, createContext } from "react";
 import SpriteBar from "../Layout/SpriteBar";
 
 const Dashboard = () => {
@@ -6,12 +6,11 @@ const Dashboard = () => {
 
   function onSpriteClick(e, sprite) {
     setFighter(sprite);
-    console.log(JSON.stringify(sprite));
   }
 
   return (
     <div>
-      <SpriteBar onSpriteClick={(e, sprite) => onSpriteClick(e, sprite)} />
+      <SpriteBar onSpriteClick={onSpriteClick} />
       <h1>Dashboard</h1>
     </div>
   );

@@ -2,7 +2,6 @@ import React from "react";
 import { StyledSpriteButton } from "./style";
 
 const SpriteButton = (props) => {
-  console.log(`spritebutton: ${JSON.stringify(props.sprite)}`);
   return (
     <StyledSpriteButton
       variant="outlined"
