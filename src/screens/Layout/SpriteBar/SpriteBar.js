@@ -9,6 +9,7 @@ import {
 import SpriteButton from "../../../components/SpriteButton";
 import { NavigateNext, NavigateBefore } from "@material-ui/icons";
 import { SpriteList } from "../../../components/Sprites/SpriteList";
+import { StyledSpriteBarMainDiv } from "./style";
 
 const SpriteBar = (props) => {
   const auth = props.auth;
@@ -28,8 +29,8 @@ const SpriteBar = (props) => {
     ...secondaryFighters[auth.uid],
   ];
   return (
-    <div>
-      <h3>Character</h3>
+    <StyledSpriteBarMainDiv>
+      <h3>Fighter Select</h3>
       <div>
         {spriteList.map((s) => {
           const sprite = SpriteList.filter((sp) => sp.id === s)[0];
@@ -37,12 +38,12 @@ const SpriteBar = (props) => {
             <SpriteButton
               key={sprite.id}
               sprite={sprite}
-              handleSpriteClick={(e) => props.onSpriteClick(e, sprite)}
+              onClick={(e) => props.onSpriteClick(e, sprite)}
             />
           );
         })}
       </div>
-    </div>
+    </StyledSpriteBarMainDiv>
   );
 };
 
