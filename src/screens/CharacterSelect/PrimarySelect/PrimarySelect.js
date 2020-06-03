@@ -68,6 +68,7 @@ function PrimarySelect() {
               return (
                 <SpriteButton
                   style={{ width: "fit-content" }}
+                  value={sprite.id}
                   key={sprite.id}
                   sprite={sprite}
                   onClick={(e) => handleSpriteRemoveClick(e, sprite)}
@@ -103,6 +104,7 @@ function PrimarySelect() {
             .map((sprite) => {
               return (
                 <SpriteButton
+                  value={sprite.id}
                   style={{ width: "fit-content" }}
                   key={sprite.id}
                   sprite={sprite}

@@ -13,6 +13,7 @@ import { StyledSpriteBarMainDiv } from "./style";
 
 const SpriteBar = (props) => {
   const auth = props.auth;
+  const fighter = props.fighter;
 
   const primaryFighters = useSelector(
     (state) => state.firebase.data.primaryFighters
@@ -31,11 +32,13 @@ const SpriteBar = (props) => {
   return (
     <StyledSpriteBarMainDiv>
       <h3>Fighter Select</h3>
-      <div>
+      <div className="SpriteBarDiv">
         {spriteList.map((s) => {
           const sprite = SpriteList.filter((sp) => sp.id === s)[0];
           return (
             <SpriteButton
+              value={props.fighter && props.fighter.id === sprite.id}
+              selected={props.fighter && props.fighter.id === sprite.id}
               key={sprite.id}
               sprite={sprite}
               onClick={(e) => props.onSpriteClick(e, sprite)}

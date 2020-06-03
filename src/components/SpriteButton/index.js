@@ -5,6 +5,8 @@ const SpriteButton = (props) => {
   return (
     <StyledSpriteButton
       variant="outlined"
+      value={props.value}
+      selected={props.selected}
       color="default"
       className="sprite-button"
       onClick={props.onClick}
@@ -15,7 +17,7 @@ const SpriteButton = (props) => {
           src={props.sprite.url}
           alt={`${props.sprite.name.toLowerCase()}-sprite`}
         />
-        <p>{props.sprite.name}</p>
+        <p className="SpriteButtonLabel">{props.sprite.name}</p>
       </div>
     </StyledSpriteButton>
   );

@@ -1,5 +1,6 @@
 import React, { useState, createContext } from "react";
 import SpriteBar from "../Layout/SpriteBar";
+import { StyledDashFighterBarDiv } from "./style";
 
 const Dashboard = () => {
   const [fighter, setFighter] = useState({});
@@ -10,8 +11,16 @@ const Dashboard = () => {
 
   return (
     <div>
-      <SpriteBar onSpriteClick={onSpriteClick} />
+      <StyledDashFighterBarDiv>
+        <SpriteBar
+          className="DashSpriteBar"
+          onSpriteClick={onSpriteClick}
+          fighter={fighter}
+        />
+      </StyledDashFighterBarDiv>
+
       <h1>Dashboard</h1>
+      <p>{`You've selected ${fighter.name}`}</p>
     </div>
   );
 };
