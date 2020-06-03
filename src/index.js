@@ -14,6 +14,7 @@ import {
   Typography,
   createMuiTheme,
 } from "@material-ui/core";
+import theme from "./theme";
 
 import firebase from "firebase";
 import { firebaseConfig } from "./firebase";
@@ -35,7 +36,7 @@ const rrfProps = {
   dispatch: store.dispatch,
 };
 
-const theme = createMuiTheme({
+const theme2 = createMuiTheme({
   palette: {
     type: "dark",
     primary: red,
