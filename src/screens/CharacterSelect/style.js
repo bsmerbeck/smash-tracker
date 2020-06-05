@@ -29,4 +29,7 @@ export const StyledPrimarySpriteListDiv = styled.div`
   display: flex;
   flex-wrap: wrap;
   justify-content: center;
+  .sprite-button {
+    max-width: 10%;
+  }
 `;

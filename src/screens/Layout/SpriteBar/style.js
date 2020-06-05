@@ -6,4 +6,8 @@ export const StyledSpriteBarMainDiv = styled.div`
   flex-direction: column;
   justify-content: center;
   align-items: center;
+
+  .SpriteBarDiv {
+    display: flex;
+  }
 `;

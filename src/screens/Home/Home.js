@@ -10,6 +10,7 @@ import {
 } from "react-redux-firebase";
 import { StyledFirebaseAuth } from "react-firebaseui";
 import { Button } from "@material-ui/core";
+import { makeStyles } from "@material-ui/styles";
 
 import SignUp from "../User/UserSignUp";
 
@@ -19,6 +20,15 @@ import {
   StyledMainInfo,
   StyledMainLogin,
 } from "./style";
+
+const useStyles = makeStyles((theme) => ({
+  root: {
+    padding: theme.spacing(0),
+  },
+  content: {
+    marginTop: theme.spacing(2),
+  },
+}));
 
 function HomePage() {
   const firebase = useFirebase();
@@ -38,17 +48,15 @@ function HomePage() {
     return history.push("/choose-primary");
   }
 
+  const classes = useStyles();
+
   return (
-    <div>
-      <div>
-        <StyledClassicBanner
-          src={
-            process.env.PUBLIC_URL + "/assets/banners/classic-mode-banner.png"
-          }
-          alt=""
-        />
-      </div>
-      <StyledMainTitle>
+    <div className={classes.root}>
+      <StyledClassicBanner
+        src={process.env.PUBLIC_URL + "/assets/banners/classic-mode-banner.png"}
+        alt=""
+      />
+      <StyledMainTitle className={classes.content}>
         <h1>Smash Tracker</h1>
       </StyledMainTitle>
       <StyledMainInfo>
