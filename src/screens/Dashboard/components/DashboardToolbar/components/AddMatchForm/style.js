@@ -12,3 +12,9 @@ export const StyledIconSelect = styled(Select)`
 export const StyledDialog = styled(Dialog)`
   max-width: 100%;
 `;
+
+export const StyledMatchRow = styled.div`
+  display: flex;
+  justify-content: space-evenly;
+  padding: 10px;
+`;
