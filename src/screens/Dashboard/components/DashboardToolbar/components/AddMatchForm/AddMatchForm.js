@@ -29,6 +29,8 @@ const updateFighterList = (primary, secondary, setFighter) => {
 const AddMatchForm = (props) => {
   let fighterLoad = false;
 
+  const firebase = useFirebase();
+
   const { open, handleClose, auth } = props;
 
   const [result, setResult] = React.useState("");
@@ -78,6 +80,17 @@ const AddMatchForm = (props) => {
 
   const handleResultClick = (event, newResult) => {
     setResult(newResult);
+  };
+
+  const onSaveMatchClick = () => {
+    const matchRef = firebase.database().ref(`/matches/${auth.uid}`).push();
+    matchRef.set({
+      fighter_id: playerOne.id,
+      opponent_id: playerTwo.id,
+      time: firebase.database.ServerValue.TIMESTAMP,
+      win: result === "win",
+    });
+    handleClose();
   };
 
   return (
@@ -141,7 +154,7 @@ const AddMatchForm = (props) => {
         <Button onClick={handleClose} color="primary">
           Cancel
         </Button>
-        <Button onClick={handleClose} color="primary">
+        <Button onClick={onSaveMatchClick} color="primary">
           Save
         </Button>
       </DialogActions>
