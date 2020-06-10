@@ -101,7 +101,11 @@ const AddMatchForm = (props) => {
                 return (
                   <MenuItem value={s} key={s.id}>
                     <ListItemIcon>
-                      <img style={{ maxWidth: "50px" }} src={s.url} alt="" />
+                      <img
+                        style={{ maxWidth: "50px", maxHeight: "50px" }}
+                        src={s.url}
+                        alt=""
+                      />
                     </ListItemIcon>
                     <ListItemText>{s.name}</ListItemText>
                   </MenuItem>
@@ -116,7 +120,11 @@ const AddMatchForm = (props) => {
                 return (
                   <MenuItem value={s} key={s.id}>
                     <ListItemIcon>
-                      <img style={{ maxWidth: "50px" }} src={s.url} alt="" />
+                      <img
+                        style={{ maxWidth: "50px", maxHeight: "50px" }}
+                        src={s.url}
+                        alt=""
+                      />
                     </ListItemIcon>
                     <ListItemText>{s.name}</ListItemText>
                   </MenuItem>
