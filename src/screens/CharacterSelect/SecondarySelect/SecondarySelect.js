@@ -95,7 +95,7 @@ function SecondarySelect() {
           <div className="primary-sprite-input" style={{ display: "flex" }}>
             <input type="text" value={input} onChange={handleInputChange} />
             <Button
-              style={{ width: "50%" }}
+              style={{ width: "fit-content" }}
               variant="contained"
               color="primary"
               disabled={isLoaded(auth) && isEmpty(auth)}
@@ -104,7 +104,7 @@ function SecondarySelect() {
               Save and go to Dashboard
             </Button>
             <Button
-              style={{ width: "50%" }}
+              style={{ width: "fit-content" }}
               variant="contained"
               color="primary"
               disabled={isLoaded(auth) && isEmpty(auth)}

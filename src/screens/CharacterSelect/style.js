@@ -8,12 +8,24 @@ export const StyledPrimaryCharacterDiv = styled.div`
     flex-direction: column;
     align-content: center;
     width: 50%;
+    @media (max-device-width: 1100px) {
+      width: 80%;
+    }
+    @media (max-device-width: 600px) {
+      width: 100%%;
+    }
     input {
       margin: 5px auto;
       font-size: 2em;
     }
     button {
       margin: 5px auto;
+      @media (max-device-width: 1100px) {
+        width: 80%;
+      }
+      @media (max-device-width: 600px) {
+        width: 100%;
+      }
     }
   }
 `;
@@ -27,5 +39,8 @@ export const StyledPrimarySpriteListDiv = styled.div`
   justify-content: center;
   .sprite-button {
     max-width: 200px;
+    @media (max-device-width: 400px) {
+      max-width: 40%;
+    }
   }
 `;

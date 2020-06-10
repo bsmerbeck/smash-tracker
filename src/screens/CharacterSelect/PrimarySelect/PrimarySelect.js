@@ -102,7 +102,7 @@ function PrimarySelect() {
           <div className="primary-sprite-input" style={{ display: "flex" }}>
             <input type="text" value={input} onChange={handleInputChange} />
             <Button
-              style={{ width: "50%" }}
+              style={{ width: "fit-content" }}
               variant="contained"
               color="primary"
               disabled={
@@ -113,7 +113,7 @@ function PrimarySelect() {
               Save and Choose Secondaries
             </Button>
             <Button
-              style={{ width: "50%" }}
+              style={{ width: "fit-content" }}
               variant="contained"
               color="primary"
               disabled={
