@@ -6,13 +6,11 @@ import { makeStyles } from "@material-ui/styles";
 import {
   AppBar,
   Toolbar,
-  Badge,
   Hidden,
   IconButton,
   Typography,
 } from "@material-ui/core";
 import MenuIcon from "@material-ui/icons/Menu";
-import NotificationsIcon from "@material-ui/icons/NotificationsOutlined";
 import InputIcon from "@material-ui/icons/Input";
 import Link from "@material-ui/core/Link";
 import { useFirebase } from "react-redux-firebase";
@@ -38,8 +36,6 @@ const Topbar = (props) => {
 
   const history = useHistory();
   const classes = useStyles();
-
-  const [notifications] = useState([]);
 
   const handleTitleClick = () => {
     history.push("/");

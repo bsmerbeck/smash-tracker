@@ -11,7 +11,7 @@ import { ThemeProvider } from "@material-ui/styles";
 import { CssBaseline } from "@material-ui/core";
 import theme from "./theme";
 
-import firebase from "firebase";
+import firebase from "firebase/app";
 import { firebaseConfig } from "./firebase";
 
 import { Router } from "react-router-dom"; // react-router v4/v5
