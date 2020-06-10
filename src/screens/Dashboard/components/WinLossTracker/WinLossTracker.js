@@ -4,7 +4,6 @@ import { useSelector } from "react-redux";
 import { isLoaded } from "react-redux-firebase";
 import { makeStyles } from "@material-ui/core";
 import Card from "@material-ui/core/Card";
-import CardHeader from "@material-ui/core/CardHeader";
 import CardContent from "@material-ui/core/CardContent";
 import Typography from "@material-ui/core/Typography";
 
@@ -20,14 +19,17 @@ const useStyles = makeStyles({
     transform: "scale(0.8)",
   },
   title: {
-    fontSize: 14,
+    fontSize: 20,
+  },
+  body: {
+    fontSize: 20,
   },
   pos: {
     marginBottom: 12,
   },
 });
 
-const WinLossTracker = (props) => {
+const WinLossTracker = () => {
   const classes = useStyles();
   const context = React.useContext(DashboardContext);
   const matches = useSelector((state) => state.firebase.data.matches);
@@ -51,27 +53,34 @@ const WinLossTracker = (props) => {
             display: "flex",
             flexDirection: "column",
             alignItems: "center",
-            textAlign: "center;",
+            textAlign: "center",
           }}
         >
           <Typography
-            className={classes.title}
+            className={classes.body}
             color="textSecondary"
             gutterBottom
           >
             Wins
           </Typography>
-          <Typography>{wins.length}</Typography>
+          <Typography className={classes.body}>{wins.length}</Typography>
         </div>
-        <div>
+        <div
+          style={{
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "center",
+            textAlign: "center",
+          }}
+        >
           <Typography
-            className={classes.title}
+            className={classes.body}
             color="textSecondary"
             gutterBottom
           >
             Losses
           </Typography>
-          <Typography>{losses.length}</Typography>
+          <Typography className={classes.body}>{losses.length}</Typography>
         </div>
       </CardContent>
     </Card>

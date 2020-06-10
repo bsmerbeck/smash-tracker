@@ -21,6 +21,7 @@ import { SpriteList } from "../../../../../../components/Sprites/SpriteList";
 import { StyledIconSelect, StyledDialog, StyledMatchRow } from "./style";
 import ToggleButton from "@material-ui/lab/ToggleButton";
 import ToggleButtonGroup from "@material-ui/lab/ToggleButtonGroup";
+import { DashboardContext } from "../../../../Dashboard";
 
 const updateFighterList = (primary, secondary, setFighter) => {
   setFighter([...primary, ...secondary]);
@@ -30,6 +31,8 @@ const AddMatchForm = (props) => {
   let fighterLoad = false;
 
   const firebase = useFirebase();
+
+  const context = React.useContext(DashboardContext);
 
   const { open, handleClose, auth } = props;
 
@@ -44,7 +47,7 @@ const AddMatchForm = (props) => {
     (state) => state.firebase.data.secondaryFighters
   );
 
-  const [playerOne, setPlayerOne] = React.useState(SpriteList[0]);
+  const [playerOne, setPlayerOne] = React.useState(context.fighter);
   const [playerTwo, setPlayerTwo] = React.useState(SpriteList[0]);
 
   if (!isLoaded(primaryFighters) || !isLoaded(secondaryFighters)) {
