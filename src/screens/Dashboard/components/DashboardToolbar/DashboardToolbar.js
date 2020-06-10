@@ -2,7 +2,6 @@ import React from "react";
 import clsx from "clsx";
 import { makeStyles } from "@material-ui/styles";
 import { Button } from "@material-ui/core";
-import { DashboardContext } from "../../Dashboard";
 import { AddMatchForm } from "./components";
 import { SelectFighter } from "../../components";
 

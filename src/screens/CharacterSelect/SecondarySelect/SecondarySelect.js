@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState } from "react";
 import { useSelector } from "react-redux";
 import { useHistory } from "react-router-dom";
 import { useFirebase, isLoaded, isEmpty } from "react-redux-firebase";
@@ -14,6 +14,10 @@ import { SpriteList } from "../../../components/Sprites/SpriteList";
 function SecondarySelect() {
   const firebase = useFirebase();
   const history = useHistory();
+
+  const secondaryFighters = useSelector(
+    (state) => state.firebase.data.secondaryFighters
+  );
 
   const sprites = SpriteList;
   const auth = useSelector((state) => state.firebase.auth);
@@ -32,7 +36,22 @@ function SecondarySelect() {
 
   const handleInputChange = (e) => setInput(e.currentTarget.value);
 
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
+
+  if (!isLoaded(secondaryFighters)) {
+    return <div />;
+  }
+  if (
+    !loading &&
+    isLoaded(secondaryFighters) &&
+    !isEmpty(secondaryFighters[auth.uid])
+  ) {
+    const _sprites = secondaryFighters[auth.uid].map(
+      (p) => SpriteList.filter((s) => s.id === p)[0]
+    );
+    setSpriteList(_sprites);
+    setLoading(true);
+  }
 
   const saveButtonClick = () => {
     const _spriteIds = spriteList.map((s) => s.id);
@@ -40,10 +59,6 @@ function SecondarySelect() {
     setSpriteList([]);
     setInput("");
     history.push("/dashboard");
-  };
-
-  const handleLoading = () => {
-    setLoading(false);
   };
 
   return (
@@ -64,30 +79,38 @@ function SecondarySelect() {
           begin using Smash Tracker!
         </Typography>
         <StyledPrimaryCharacterDiv>
-          <div className="primary-sprite-list">
+          <StyledPrimarySpriteListDiv>
             {spriteList.map((sprite) => {
               return (
                 <SpriteButton
+                  value={sprite.id}
                   style={{ width: "fit-content" }}
                   key={sprite.id}
                   sprite={sprite}
                   onClick={(e) => handleSpriteRemoveClick(e, sprite)}
-                  handleLoading={handleLoading}
                 />
               );
             })}
-          </div>
+          </StyledPrimarySpriteListDiv>
           <div className="primary-sprite-input" style={{ display: "flex" }}>
             <input type="text" value={input} onChange={handleInputChange} />
             <Button
+              style={{ width: "50%" }}
               variant="contained"
               color="primary"
-              disabled={
-                isLoaded(auth) && !isEmpty(auth) && spriteList.length <= 0
-              }
+              disabled={isLoaded(auth) && isEmpty(auth)}
               onClick={saveButtonClick}
             >
-              Save
+              Save and go to Dashboard
+            </Button>
+            <Button
+              style={{ width: "50%" }}
+              variant="contained"
+              color="primary"
+              disabled={isLoaded(auth) && isEmpty(auth)}
+              onClick={() => history.push("/choose-primary")}
+            >
+              Return to Primary Fighters
             </Button>
           </div>
         </StyledPrimaryCharacterDiv>
@@ -104,6 +127,7 @@ function SecondarySelect() {
             .map((sprite) => {
               return (
                 <SpriteButton
+                  value={sprite.id}
                   style={{ width: "fit-content" }}
                   key={sprite.id}
                   sprite={sprite}

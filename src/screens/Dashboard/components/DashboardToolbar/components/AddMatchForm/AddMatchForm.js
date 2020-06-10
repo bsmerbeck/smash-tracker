@@ -1,19 +1,12 @@
 import React from "react";
-import ButtonGroup from "@material-ui/core/ButtonGroup";
 import Button from "@material-ui/core/Button";
 import { useSelector } from "react-redux";
-import TextField from "@material-ui/core/TextField";
-import Dialog from "@material-ui/core/Dialog";
-import {
-  useFirebase,
-  useFirebaseConnect,
-  isLoaded,
-} from "react-redux-firebase";
+
+import { useFirebase, isLoaded, isEmpty } from "react-redux-firebase";
 import DialogActions from "@material-ui/core/DialogActions";
 import DialogContent from "@material-ui/core/DialogContent";
 import DialogContentText from "@material-ui/core/DialogContentText";
 import DialogTitle from "@material-ui/core/DialogTitle";
-import Select from "@material-ui/core/Select";
 import MenuItem from "@material-ui/core/MenuItem";
 import ListItemIcon from "@material-ui/core/ListItemIcon";
 import ListItemText from "@material-ui/core/ListItemText";
@@ -23,13 +16,7 @@ import ToggleButton from "@material-ui/lab/ToggleButton";
 import ToggleButtonGroup from "@material-ui/lab/ToggleButtonGroup";
 import { DashboardContext } from "../../../../Dashboard";
 
-const updateFighterList = (primary, secondary, setFighter) => {
-  setFighter([...primary, ...secondary]);
-};
-
 const AddMatchForm = (props) => {
-  let fighterLoad = false;
-
   const firebase = useFirebase();
 
   const context = React.useContext(DashboardContext);
@@ -54,10 +41,10 @@ const AddMatchForm = (props) => {
     return <div />;
   }
 
-  const fighterIds = [
-    ...primaryFighters[auth.uid],
-    ...secondaryFighters[auth.uid],
-  ];
+  let fighterIds = [...primaryFighters[props.auth.uid]];
+  if (!isEmpty(secondaryFighters[props.auth.uid])) {
+    fighterIds = [...fighterIds, ...secondaryFighters[props.auth.uid]];
+  }
 
   if (
     firstLoad === false &&

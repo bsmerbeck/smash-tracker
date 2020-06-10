@@ -1,6 +1,6 @@
 import { compose } from "redux";
 import { connect } from "react-redux";
-import { firebaseConnect, get } from "react-redux-firebase";
+import { firebaseConnect } from "react-redux-firebase";
 import SpriteBar from "./SpriteBar";
 
 const populates = [{ child: "id", root: "sprites" }];

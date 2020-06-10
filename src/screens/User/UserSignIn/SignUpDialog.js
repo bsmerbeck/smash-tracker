@@ -1,9 +1,11 @@
 import React from "react";
 import { Button } from "@material-ui/core";
+import Dialog from "@material-ui/core/Dialog";
 import SignUp from "./SignUp";
 import { StyledDialog } from "./style";
 
 function SignUpDialog() {
+  // const classes = useStyles();
   const [open, setOpen] = React.useState(false);
 
   const handleOpen = () => {
@@ -15,12 +17,8 @@ function SignUpDialog() {
   };
 
   return (
-    <div style={{ width: "100%", display: "flex" }}>
-      <Button
-        style={{ maxWidth: "220px", padding: "8px 16px", margin: "0 auto" }}
-        variant="contained"
-        onClick={handleOpen}
-      >
+    <div>
+      <Button variant="contained" onClick={handleOpen}>
         Sign Up
       </Button>
       <StyledDialog open={open} onClose={handleClose}>

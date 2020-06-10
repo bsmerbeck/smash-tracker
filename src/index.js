@@ -8,12 +8,7 @@ import { Provider } from "react-redux";
 import { ReactReduxFirebaseProvider } from "react-redux-firebase";
 
 import { ThemeProvider } from "@material-ui/styles";
-import {
-  AppBar,
-  CssBaseline,
-  Typography,
-  createMuiTheme,
-} from "@material-ui/core";
+import { CssBaseline } from "@material-ui/core";
 import theme from "./theme";
 
 import firebase from "firebase";
@@ -21,13 +16,7 @@ import { firebaseConfig } from "./firebase";
 
 import { Router } from "react-router-dom"; // react-router v4/v5
 import configureStore, { history } from "./state/configureStore";
-
-import NavBar from "./screens/Layout/Navbar";
-
 import App from "./App";
-import HomeScreen from "./screens/Home";
-import { red } from "@material-ui/core/colors";
-
 const store = configureStore();
 
 const rrfProps = {
@@ -35,32 +24,6 @@ const rrfProps = {
   config: firebaseConfig,
   dispatch: store.dispatch,
 };
-
-const theme2 = createMuiTheme({
-  palette: {
-    type: "dark",
-    primary: red,
-    secondary: {
-      main: "#1565c0",
-    },
-  },
-  typography: {
-    fontFamily: [
-      "-apple-system",
-      "Roboto Thin",
-      "BlinkMacSystemFont",
-      "Segoe UI",
-      "Roboto",
-      "Oxygen",
-      "Ubuntu",
-      "Cantarell",
-      "Fira Sans",
-      "Droid Sans",
-      "Helvetica Neue",
-      "sans-serif",
-    ],
-  },
-});
 
 ReactDOM.render(
   <Provider store={store}>

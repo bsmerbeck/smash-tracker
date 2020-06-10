@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState } from "react";
 import { useHistory } from "react-router-dom";
 import { useSelector } from "react-redux";
 import { useFirebase, isLoaded, isEmpty } from "react-redux-firebase";
@@ -14,6 +14,10 @@ import { SpriteList } from "../../../components/Sprites/SpriteList";
 function PrimarySelect() {
   const firebase = useFirebase();
   const history = useHistory();
+
+  const primaryFighters = useSelector(
+    (state) => state.firebase.data.primaryFighters
+  );
 
   const sprites = SpriteList;
   const auth = useSelector((state) => state.firebase.auth);
@@ -32,7 +36,22 @@ function PrimarySelect() {
 
   const handleInputChange = (e) => setInput(e.currentTarget.value);
 
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
+
+  if (!isLoaded(primaryFighters)) {
+    return <div />;
+  }
+  if (
+    !loading &&
+    isLoaded(primaryFighters) &&
+    !isEmpty(primaryFighters[auth.uid])
+  ) {
+    const _sprites = primaryFighters[auth.uid].map(
+      (p) => SpriteList.filter((s) => s.id === p)[0]
+    );
+    setSpriteList(_sprites);
+    setLoading(true);
+  }
 
   const saveButtonClick = () => {
     const _spriteIds = spriteList.map((s) => s.id);
@@ -42,8 +61,12 @@ function PrimarySelect() {
     history.push("/choose-secondary");
   };
 
-  const handleLoading = () => {
-    setLoading(false);
+  const saveDashButtonClick = () => {
+    const _spriteIds = spriteList.map((s) => s.id);
+    firebase.database().ref(`/primaryFighters/${auth.uid}`).set(_spriteIds);
+    setSpriteList([]);
+    setInput("");
+    history.push("/dashboard");
   };
 
   return (
@@ -63,23 +86,23 @@ function PrimarySelect() {
           click/tap on it again. When you're finished, press Save.
         </Typography>
         <StyledPrimaryCharacterDiv>
-          <div className="primary-sprite-list">
+          <StyledPrimarySpriteListDiv>
             {spriteList.map((sprite) => {
               return (
                 <SpriteButton
-                  style={{ width: "fit-content" }}
                   value={sprite.id}
                   key={sprite.id}
+                  style={{ width: "fit-content" }}
                   sprite={sprite}
                   onClick={(e) => handleSpriteRemoveClick(e, sprite)}
-                  handleLoading={handleLoading}
                 />
               );
             })}
-          </div>
+          </StyledPrimarySpriteListDiv>
           <div className="primary-sprite-input" style={{ display: "flex" }}>
             <input type="text" value={input} onChange={handleInputChange} />
             <Button
+              style={{ width: "50%" }}
               variant="contained"
               color="primary"
               disabled={
@@ -87,7 +110,18 @@ function PrimarySelect() {
               }
               onClick={saveButtonClick}
             >
-              Save
+              Save and Choose Secondaries
+            </Button>
+            <Button
+              style={{ width: "50%" }}
+              variant="contained"
+              color="primary"
+              disabled={
+                isLoaded(auth) && !isEmpty(auth) && spriteList.length <= 0
+              }
+              onClick={saveDashButtonClick}
+            >
+              Save and go to Dashboard.
             </Button>
           </div>
         </StyledPrimaryCharacterDiv>

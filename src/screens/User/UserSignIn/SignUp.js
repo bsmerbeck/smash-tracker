@@ -2,10 +2,12 @@ import React, { useState } from "react";
 import Link from "@material-ui/core/Link";
 import TextField from "@material-ui/core/TextField";
 import Button from "@material-ui/core/Button";
+import FormControlLabel from "@material-ui/core/FormControlLabel";
 import FormGroup from "@material-ui/core/FormGroup";
 import { useHistory } from "react-router";
 
-import { StyledSignUpInputDiv } from "./style";
+import { StyledSignInInputDiv } from "./style";
+import { connect, useSelector } from "react-redux";
 import { useFirebase } from "react-redux-firebase";
 
 const SignUp = ({ handleClose }) => {
@@ -48,7 +50,7 @@ const SignUp = ({ handleClose }) => {
       <div>
         {error !== null && <div>{error}</div>}
         <FormGroup>
-          <StyledSignUpInputDiv>
+          <StyledSignInInputDiv>
             <p>Email:</p>
             <TextField
               type="email"
@@ -58,8 +60,8 @@ const SignUp = ({ handleClose }) => {
               id="userEmail"
               onChange={(event) => onChangeHandler(event)}
             />
-          </StyledSignUpInputDiv>
-          <StyledSignUpInputDiv>
+          </StyledSignInInputDiv>
+          <StyledSignInInputDiv>
             <p>Password:</p>
             <TextField
               type="password"
@@ -69,7 +71,7 @@ const SignUp = ({ handleClose }) => {
               id="userPassword"
               onChange={(event) => onChangeHandler(event)}
             />
-          </StyledSignUpInputDiv>
+          </StyledSignInInputDiv>
           <Button
             style={{ margin: "5px 0" }}
             variant="contained"

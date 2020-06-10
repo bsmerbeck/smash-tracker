@@ -1,10 +1,8 @@
 import React, { useState } from "react";
 import { makeStyles } from "@material-ui/styles";
-import { StyledDashFighterBarDiv } from "./style";
-import SpriteBar from "../Layout/SpriteBar";
 import { DashboardToolbar, LastMatches, WinLossTracker } from "./components";
 import { useSelector } from "react-redux";
-import { isLoaded } from "react-redux-firebase";
+import { isLoaded, isEmpty } from "react-redux-firebase";
 import { SpriteList } from "../../components/Sprites/SpriteList";
 
 const useStyles = makeStyles((theme) => ({
@@ -35,10 +33,10 @@ function Dashboard(props) {
     return <div />;
   }
 
-  const fighterIds = [
-    ...primaryFighters[props.auth.uid],
-    ...secondaryFighters[props.auth.uid],
-  ];
+  let fighterIds = [...primaryFighters[props.auth.uid]];
+  if (!isEmpty(secondaryFighters[props.auth.uid])) {
+    fighterIds = [...fighterIds, ...secondaryFighters[props.auth.uid]];
+  }
 
   const sprites = fighterIds.map(
     (fid) => SpriteList.filter((s) => s.id === fid)[0]

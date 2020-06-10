@@ -1,5 +1,5 @@
 import { createBrowserHistory } from "history";
-import { createStore, applyMiddleware, compose } from "redux";
+import { createStore, compose } from "redux";
 import createRootReducer from "./ducks";
 
 export const history = createBrowserHistory();

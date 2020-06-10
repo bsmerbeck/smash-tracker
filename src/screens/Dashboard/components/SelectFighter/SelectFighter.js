@@ -1,11 +1,9 @@
 import React from "react";
 import { DashboardContext } from "../../Dashboard";
-import { SpriteList } from "../../../../components/Sprites/SpriteList";
 import MenuItem from "@material-ui/core/MenuItem";
 import ListItemIcon from "@material-ui/core/ListItemIcon";
 import ListItemText from "@material-ui/core/ListItemText";
 import { StyledIconSelect } from "./style";
-import { isLoaded } from "react-redux-firebase";
 
 const SelectFighter = (props) => {
   const context = React.useContext(DashboardContext);

@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { Link as RouterLink, useHistory } from "react-router-dom";
+import { useHistory } from "react-router-dom";
 import clsx from "clsx";
 import PropTypes from "prop-types";
 import { makeStyles } from "@material-ui/styles";
@@ -15,6 +15,7 @@ import MenuIcon from "@material-ui/icons/Menu";
 import NotificationsIcon from "@material-ui/icons/NotificationsOutlined";
 import InputIcon from "@material-ui/icons/Input";
 import Link from "@material-ui/core/Link";
+import { useFirebase } from "react-redux-firebase";
 
 const useStyles = makeStyles((theme) => ({
   root: {
@@ -32,6 +33,7 @@ const useStyles = makeStyles((theme) => ({
 }));
 
 const Topbar = (props) => {
+  const firebase = useFirebase();
   const { className, onSidebarOpen, ...rest } = props;
 
   const history = useHistory();
@@ -56,16 +58,15 @@ const Topbar = (props) => {
         </Link>
         <div className={classes.flexGrow} />
         <Hidden mdDown>
-          <IconButton color="inherit">
-            <Badge
-              badgeContent={notifications.length}
-              color="primary"
-              variant="dot"
-            >
-              <NotificationsIcon />
-            </Badge>
-          </IconButton>
-          <IconButton className={classes.signOutButton} color="inherit">
+          <IconButton
+            className={classes.signOutButton}
+            color="inherit"
+            onClick={() => {
+              firebase.logout().then(() => {
+                history.push("/");
+              });
+            }}
+          >
             <InputIcon />
           </IconButton>
         </Hidden>

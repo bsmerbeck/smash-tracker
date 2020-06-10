@@ -1,4 +1,4 @@
-import React, { useContext, useState } from "react";
+import React from "react";
 import { DashboardContext } from "../../Dashboard";
 import { useSelector } from "react-redux";
 import { isLoaded } from "react-redux-firebase";
@@ -33,8 +33,56 @@ const WinLossTracker = () => {
   const classes = useStyles();
   const context = React.useContext(DashboardContext);
   const matches = useSelector((state) => state.firebase.data.matches);
-  if (!isLoaded(matches)) {
-    return <div />;
+  if (
+    !isLoaded(matches) ||
+    matches[context.auth.uid] === undefined ||
+    matches[context.auth.uid] === null
+  ) {
+    return (
+      <Card className={classes.root}>
+        <div style={{ margin: "5px auto", textAlign: "center" }}>
+          <Typography>No Match Data to Report.</Typography>
+        </div>
+        <CardContent
+          style={{ display: "flex", justifyContent: "space-evenly" }}
+        >
+          <div
+            style={{
+              display: "flex",
+              flexDirection: "column",
+              alignItems: "center",
+              textAlign: "center",
+            }}
+          >
+            <Typography
+              className={classes.body}
+              color="textSecondary"
+              gutterBottom
+            >
+              Wins
+            </Typography>
+            <Typography className={classes.body}>n/a</Typography>
+          </div>
+          <div
+            style={{
+              display: "flex",
+              flexDirection: "column",
+              alignItems: "center",
+              textAlign: "center",
+            }}
+          >
+            <Typography
+              className={classes.body}
+              color="textSecondary"
+              gutterBottom
+            >
+              Losses
+            </Typography>
+            <Typography className={classes.body}>n/a</Typography>
+          </div>
+        </CardContent>
+      </Card>
+    );
   }
 
   const entries = Object.keys(matches[context.auth.uid]);

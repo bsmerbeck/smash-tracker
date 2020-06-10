@@ -9,8 +9,12 @@ const MatchChart = () => {
   const context = useContext(DashboardContext);
   const matches = useSelector((state) => state.firebase.data.matches);
 
-  if (!isLoaded(matches)) {
-    return <div />;
+  if (
+    !isLoaded(matches) ||
+    matches[context.auth.uid] === undefined ||
+    matches[context.auth.uid] === null
+  ) {
+    return <div>Submit a Match to see Match Chart</div>;
   }
 
   const entries = Object.keys(matches[context.auth.uid]);

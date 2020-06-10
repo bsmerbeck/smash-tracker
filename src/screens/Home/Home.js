@@ -1,13 +1,7 @@
-import React, { useState } from "react";
-import { useDispatch } from "react-redux";
+import React from "react";
 import { withRouter, useHistory } from "react-router-dom";
 import { useSelector } from "react-redux";
-import {
-  useFirebase,
-  isLoaded,
-  isEmpty,
-  useFirebaseConnect,
-} from "react-redux-firebase";
+import { useFirebase, isLoaded, isEmpty } from "react-redux-firebase";
 import { StyledFirebaseAuth } from "react-firebaseui";
 import { Button } from "@material-ui/core";
 import { makeStyles } from "@material-ui/styles";
@@ -36,10 +30,6 @@ function HomePage() {
 
   const auth = useSelector((state) => state.firebase.auth);
 
-  function loginWithGoogle() {
-    return firebase.login({ provider: "google", type: "popup" });
-  }
-
   function logout() {
     return firebase.logout();
   }
@@ -67,31 +57,31 @@ function HomePage() {
           and more. Smash Tracker is ALWAYS open to feature suggestions.
         </p>
       </StyledMainInfo>
-      <StyledFirebaseAuth
-        uiConfig={{
-          signInFlow: "popup",
-          signInSuccessUrl: "/choose-character",
-          signInOptions: [firebase.auth.GoogleAuthProvider.PROVIDER_ID],
-          callbacks: {
-            signInSuccessWithAuthResult: (authResult, redirectUrl) => {
-              firebase.handleRedirectResult(authResult).then(() => {
-                history.push(redirectUrl);
-              });
-              return false;
-            },
-          },
-        }}
-        firebaseAuth={firebase.auth()}
-      />
       <StyledMainLogin>
         {!isLoaded(auth) ? (
           <span>Loading...</span>
         ) : isEmpty(auth) ? (
           // <GoogleButton/> button can be used instead
           <div>
-            <Button variant="contained" onClick={loginWithGoogle}>
-              Login
-            </Button>
+            <StyledFirebaseAuth
+              uiConfig={{
+                signInFlow: "redirect",
+                signInSuccessUrl: "/choose-character",
+                signInOptions: [
+                  firebase.auth.GoogleAuthProvider.PROVIDER_ID,
+                  firebase.auth.EmailAuthProvider.PROVIDER_ID,
+                ],
+                callbacks: {
+                  signInSuccessWithAuthResult: (authResult, redirectUrl) => {
+                    firebase.handleRedirectResult(authResult).then(() => {
+                      history.push(redirectUrl);
+                    });
+                    return false;
+                  },
+                },
+              }}
+              firebaseAuth={firebase.auth()}
+            />
             <SignUp />
           </div>
         ) : (
