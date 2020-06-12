@@ -53,21 +53,27 @@ const Styles = styled.div`
 `;
 
 const MatchupTable = () => {
-  const { matchups, fighter, opponent, auth } = useContext(MatchupsContext);
-  const firebase = useFirebase();
+  const { fighter, opponent, matches, auth, removeMatchup } = useContext(
+    MatchupsContext
+  );
 
-  const [theMatches, setTheMatches] = useState(matchups);
+  const matchData = Object.keys(matches[auth.uid])
+    .map((entry) => {
+      return {
+        ...matches[auth.uid][entry],
+        key: entry,
+      };
+    })
+    .filter((match) => match.fighter_id === fighter.id)
+    .filter((match2) => match2.opponent_id === opponent.id);
 
   const handleDeleteClick = (e) => {
     const row = e.row;
     const rowKey = row.original.key;
-    firebase.remove(`/matches/${auth.uid}/${rowKey}`).then(() => {
-      const _matches = theMatches.filter((tm) => tm.key !== rowKey);
-      setTheMatches(_matches);
-    });
+    removeMatchup(rowKey);
   };
 
-  const newData = theMatches
+  const newData = matchData
     .map((m) => {
       return {
         ...m,
@@ -78,8 +84,6 @@ const MatchupTable = () => {
       };
     })
     .reverse();
-
-  const data = useMemo(() => newData, []);
 
   const columns = React.useMemo(
     () => [

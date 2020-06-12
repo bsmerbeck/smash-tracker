@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { useSelector } from "react-redux";
-import { isEmpty, isLoaded } from "react-redux-firebase";
+import { isEmpty, isLoaded, useFirebase } from "react-redux-firebase";
 import { SpriteList } from "../../components/Sprites/SpriteList";
 import {
   SelectFighter,
@@ -30,7 +30,7 @@ const useStyles = makeStyles((theme) => ({
 const Matchups = (props) => {
   const classes = useStyles();
   const [firstLoad, setFirstLoad] = React.useState(false);
-
+  const firebase = useFirebase();
   const list = SpriteList;
 
   const primaryFighters = useSelector(
@@ -100,6 +100,12 @@ const Matchups = (props) => {
     setMatchups(the_matchups);
   }
 
+  function removeMatchup(key) {
+    firebase.remove(`/matches/${props.auth.uid}/${key}`).then(() => {
+      updateMatchups(fighter, opponent);
+    });
+  }
+
   return (
     <MatchupsContext.Provider
       value={{
@@ -111,6 +117,7 @@ const Matchups = (props) => {
         opponent: opponent,
         updateOpponent: updateOpponent,
         matchups: matchups,
+        removeMatchup: removeMatchup,
       }}
     >
       <StyledMatchupCard>

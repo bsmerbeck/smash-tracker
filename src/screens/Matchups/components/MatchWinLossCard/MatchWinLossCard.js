@@ -6,10 +6,12 @@ import CardContent from "@material-ui/core/CardContent";
 import Typography from "@material-ui/core/Typography";
 
 const MatchWinLossCard = () => {
-  const context = useContext(MatchupsContext);
+  const { matches, matchups, fighter, opponent, auth } = useContext(
+    MatchupsContext
+  );
 
-  if (isLoaded(context.matches)) {
-    if (context.matchups.length <= 0) {
+  if (isLoaded(matches)) {
+    if (matchups.length <= 0) {
       return (
         <Card>
           <CardContent>
@@ -22,8 +24,18 @@ const MatchWinLossCard = () => {
     }
   }
 
-  const matchupWins = context.matchups.filter((m) => m.win);
-  const matchupLosses = context.matchups.filter((m) => !m.win);
+  const matchData = Object.keys(matches[auth.uid])
+    .map((entry) => {
+      return {
+        ...matches[auth.uid][entry],
+        key: entry,
+      };
+    })
+    .filter((match) => match.fighter_id === fighter.id)
+    .filter((match2) => match2.opponent_id === opponent.id);
+
+  const matchupWins = matchData.filter((m) => m.win);
+  const matchupLosses = matchData.filter((m) => !m.win);
 
   return (
     <Card>
