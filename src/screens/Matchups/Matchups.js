@@ -10,7 +10,11 @@ import {
 } from "./components";
 import { makeStyles } from "@material-ui/styles";
 import CardContent from "@material-ui/core/CardContent";
+import Button from "@material-ui/core/Button";
 import { StyledMatchupCard, StyledMatchupSelectDiv } from "./style";
+import { DashboardContext } from "../Dashboard/Dashboard";
+import { DashboardToolbar } from "../Dashboard/components";
+import { AddMatchForm } from "../Dashboard/components/DashboardToolbar/components";
 
 export const MatchupsContext = React.createContext({});
 
@@ -40,6 +44,15 @@ const Matchups = (props) => {
     (state) => state.firebase.data.secondaryFighters
   );
   const matches = useSelector((state) => state.firebase.data.matches);
+
+  const [open, setOpen] = React.useState(false);
+  const handleClickOpen = () => {
+    setOpen(true);
+  };
+
+  const handleClose = () => {
+    setOpen(false);
+  };
 
   const [fighter, setFighter] = useState({});
 
@@ -107,7 +120,7 @@ const Matchups = (props) => {
   }
 
   return (
-    <MatchupsContext.Provider
+    <DashboardContext.Provider
       value={{
         fighter: fighter,
         updateFighter: updateFighter,
@@ -120,26 +133,50 @@ const Matchups = (props) => {
         removeMatchup: removeMatchup,
       }}
     >
-      <StyledMatchupCard>
-        <CardContent>
-          <div className={classes.root}>
-            <StyledMatchupSelectDiv>
-              <h3>You</h3>
-              <SelectFighter />
-            </StyledMatchupSelectDiv>
-            <h1>vs</h1>
-            <StyledMatchupSelectDiv className="matchup-opponent-select">
-              <h3>Opponent</h3>
-              <SelectOpponent />
-            </StyledMatchupSelectDiv>
-          </div>
-        </CardContent>
-      </StyledMatchupCard>
-      <div className={classes.content}>
-        <MatchWinLossCard />
-        <MatchupTable />
-      </div>
-    </MatchupsContext.Provider>
+      <MatchupsContext.Provider
+        value={{
+          fighter: fighter,
+          updateFighter: updateFighter,
+          fighterSprites: sprites,
+          auth: props.auth,
+          matches: matches,
+          opponent: opponent,
+          updateOpponent: updateOpponent,
+          matchups: matchups,
+          removeMatchup: removeMatchup,
+        }}
+      >
+        <StyledMatchupCard>
+          <CardContent>
+            <AddMatchForm open={open} handleClose={handleClose} />
+            <div className={classes.root}>
+              <div className={classes.root} style={{ flex: 1 }}>
+                <StyledMatchupSelectDiv>
+                  <h3>You</h3>
+                  <SelectFighter />
+                </StyledMatchupSelectDiv>
+                <h1>vs</h1>
+                <StyledMatchupSelectDiv className="matchup-opponent-select">
+                  <h3>Opponent</h3>
+                  <SelectOpponent />
+                </StyledMatchupSelectDiv>
+              </div>
+              <Button
+                color="primary"
+                variant="contained"
+                onClick={() => handleClickOpen()}
+              >
+                Add Match
+              </Button>
+            </div>
+          </CardContent>
+        </StyledMatchupCard>
+        <div className={classes.content}>
+          <MatchWinLossCard />
+          <MatchupTable />
+        </div>
+      </MatchupsContext.Provider>
+    </DashboardContext.Provider>
   );
 };
 
