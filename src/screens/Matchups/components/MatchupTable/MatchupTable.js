@@ -1,4 +1,4 @@
-import React, { useContext, useMemo } from "react";
+import React, { useContext, useMemo, useState } from "react";
 import { MatchupsContext } from "../../Matchups";
 import { useTable, usePagination } from "react-table";
 import MaUTable from "@material-ui/core/Table";
@@ -6,8 +6,12 @@ import TableBody from "@material-ui/core/TableBody";
 import TableCell from "@material-ui/core/TableCell";
 import TableHead from "@material-ui/core/TableHead";
 import TableRow from "@material-ui/core/TableRow";
+import Button from "@material-ui/core/Button";
+import Select from "@material-ui/core/Select";
+import Input from "@material-ui/core/Input";
 import styled from "styled-components";
 import theme from "../../../../theme";
+import { useFirebase } from "react-redux-firebase";
 
 const Styles = styled.div`
   padding: 1rem;
@@ -27,10 +31,12 @@ const Styles = styled.div`
     }
     th {
       color: ${theme.palette.primary.contrastText};
+      text-align: center;
     }
     ,
     td {
       margin: 0;
+      text-align: center;
       padding: 0.5rem;
       border-bottom: 1px solid black;
       border-right: 1px solid black;
@@ -41,13 +47,27 @@ const Styles = styled.div`
   }
   .pagination {
     padding: 0.5rem;
+    display: flex;
+    justify-content: space-between;
   }
 `;
 
 const MatchupTable = () => {
-  const { matchups, fighter, opponent } = useContext(MatchupsContext);
+  const { matchups, fighter, opponent, auth } = useContext(MatchupsContext);
+  const firebase = useFirebase();
 
-  const newData = matchups
+  const [theMatches, setTheMatches] = useState(matchups);
+
+  const handleDeleteClick = (e) => {
+    const row = e.row;
+    const rowKey = row.original.key;
+    firebase.remove(`/matches/${auth.uid}/${rowKey}`).then(() => {
+      const _matches = theMatches.filter((tm) => tm.key !== rowKey);
+      setTheMatches(_matches);
+    });
+  };
+
+  const newData = theMatches
     .map((m) => {
       return {
         ...m,
@@ -78,6 +98,15 @@ const MatchupTable = () => {
       {
         Header: "Result",
         accessor: "win",
+      },
+      {
+        Header: "Manage",
+        accessor: "key",
+        Cell: (row) => (
+          <Button variant="contained" onClick={() => handleDeleteClick(row)}>
+            Delete
+          </Button>
+        ),
       },
     ],
     []
@@ -121,21 +150,6 @@ function Table({ columns, data }) {
   // Render the UI for your table
   return (
     <>
-      <pre>
-        <code>
-          {JSON.stringify(
-            {
-              pageIndex,
-              pageSize,
-              pageCount,
-              canNextPage,
-              canPreviousPage,
-            },
-            null,
-            2
-          )}
-        </code>
-      </pre>
       <MaUTable {...getTableProps()}>
         <TableHead>
           {headerGroups.map((headerGroup) => (
@@ -170,48 +184,68 @@ function Table({ columns, data }) {
         This is just a very basic UI implementation:
       */}
       <div className="pagination">
-        <button onClick={() => gotoPage(0)} disabled={!canPreviousPage}>
-          {"<<"}
-        </button>{" "}
-        <button onClick={() => previousPage()} disabled={!canPreviousPage}>
-          {"<"}
-        </button>{" "}
-        <button onClick={() => nextPage()} disabled={!canNextPage}>
-          {">"}
-        </button>{" "}
-        <button onClick={() => gotoPage(pageCount - 1)} disabled={!canNextPage}>
-          {">>"}
-        </button>{" "}
-        <span>
+        <div>
+          <Button
+            variant="outlined"
+            onClick={() => gotoPage(0)}
+            disabled={!canPreviousPage}
+          >
+            {"<<"}
+          </Button>{" "}
+          <Button
+            variant="outlined"
+            onClick={() => previousPage()}
+            disabled={!canPreviousPage}
+          >
+            {"<"}
+          </Button>{" "}
+          <Button
+            variant="outlined"
+            onClick={() => nextPage()}
+            disabled={!canNextPage}
+          >
+            {">"}
+          </Button>{" "}
+          <Button
+            variant="outlined"
+            onClick={() => gotoPage(pageCount - 1)}
+            disabled={!canNextPage}
+          >
+            {">>"}
+          </Button>{" "}
+        </div>
+        <div>
           Page{" "}
           <strong>
             {pageIndex + 1} of {pageOptions.length}
           </strong>{" "}
-        </span>
-        <span>
-          | Go to page:{" "}
-          <input
-            type="number"
-            defaultValue={pageIndex + 1}
+        </div>
+        <div>
+          <span>
+            | Go to page:{" "}
+            <Input
+              type="number"
+              defaultValue={pageIndex + 1}
+              onChange={(e) => {
+                const page = e.target.value ? Number(e.target.value) - 1 : 0;
+                gotoPage(page);
+              }}
+              style={{ width: "100px" }}
+            />
+          </span>{" "}
+          <Select
+            value={pageSize}
             onChange={(e) => {
-              const page = e.target.value ? Number(e.target.value) - 1 : 0;
-              gotoPage(page);
+              setPageSize(Number(e.target.value));
             }}
-            style={{ width: "100px" }}
-          />
-        </span>{" "}
-        <select
-          value={pageSize}
-          onChange={(e) => {
-            setPageSize(Number(e.target.value));
-          }}
-        >
-          {[10, 20, 30, 40, 50].map((pageSize) => (
-            <option key={pageSize} value={pageSize}>
-              Show {pageSize}
-            </option>
-          ))}
-        </select>
+          >
+            {[10, 20, 30, 40, 50].map((pageSize) => (
+              <option key={pageSize} value={pageSize}>
+                Show {pageSize}
+              </option>
+            ))}
+          </Select>
+        </div>
       </div>
     </>
   );

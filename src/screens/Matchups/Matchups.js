@@ -9,9 +9,7 @@ import {
   MatchupTable,
 } from "./components";
 import { makeStyles } from "@material-ui/styles";
-import Card from "@material-ui/core/Card";
 import CardContent from "@material-ui/core/CardContent";
-import theme from "../../theme";
 import { StyledMatchupCard, StyledMatchupSelectDiv } from "./style";
 
 export const MatchupsContext = React.createContext({});
@@ -90,10 +88,15 @@ const Matchups = (props) => {
   function updateMatchups(the_fighter, the_opponent) {
     let f = the_fighter;
     const entries = Object.keys(matches[props.auth.uid]);
-    const real_matches = entries.map((e) => matches[props.auth.uid][e]);
+    const real_matches = entries.map((e) => {
+      return {
+        key: e,
+        ...matches[props.auth.uid][e],
+      };
+    });
     const the_matchups = real_matches
-      .filter((rm) => rm.opponent_id === the_opponent.id)
-      .filter((rm2) => rm2.fighter_id === the_fighter.id);
+      .filter((rm2) => rm2.fighter_id === the_fighter.id)
+      .filter((rm) => rm.opponent_id === the_opponent.id);
     setMatchups(the_matchups);
   }
 
