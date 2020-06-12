@@ -5,7 +5,7 @@ import { SelectFighter } from "./components";
 
 export const StyledMatchupCard = styled(Card)`
   width: 100%;
-  max-height: 80px;
+  max-height: 90px;
 `;
 
 export const StyledMatchupSelectDiv = styled.div`
@@ -17,7 +17,7 @@ export const StyledMatchupSelectDiv = styled.div`
     margin: 2px auto;
     color: ${theme.palette.primary.main};
   }
-  ${SelectFighter} {
+  .SelectFighter {
     padding: 3px;
   }
 `;

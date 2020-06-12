@@ -2,7 +2,12 @@ import React, { useState } from "react";
 import { useSelector } from "react-redux";
 import { isEmpty, isLoaded } from "react-redux-firebase";
 import { SpriteList } from "../../components/Sprites/SpriteList";
-import { SelectFighter, SelectOpponent } from "./components";
+import {
+  SelectFighter,
+  SelectOpponent,
+  MatchWinLossCard,
+  MatchupTable,
+} from "./components";
 import { makeStyles } from "@material-ui/styles";
 import Card from "@material-ui/core/Card";
 import CardContent from "@material-ui/core/CardContent";
@@ -28,6 +33,8 @@ const Matchups = (props) => {
   const classes = useStyles();
   const [firstLoad, setFirstLoad] = React.useState(false);
 
+  const list = SpriteList;
+
   const primaryFighters = useSelector(
     (state) => state.firebase.data.primaryFighters
   );
@@ -40,7 +47,13 @@ const Matchups = (props) => {
 
   const [opponent, setOpponent] = useState(SpriteList[0]);
 
-  if (!isLoaded(primaryFighters) || !isLoaded(secondaryFighters)) {
+  const [matchups, setMatchups] = useState([]);
+
+  if (
+    !isLoaded(primaryFighters) ||
+    !isLoaded(secondaryFighters) ||
+    !isLoaded(matches)
+  ) {
     return <div />;
   }
 
@@ -53,17 +66,35 @@ const Matchups = (props) => {
     (fid) => SpriteList.filter((s) => s.id === fid)[0]
   );
 
-  if (firstLoad === false) {
+  if (
+    firstLoad === false &&
+    sprites.length > 0 &&
+    sprites[0].id !== undefined
+  ) {
     setFighter(sprites[0]);
+    setOpponent(SpriteList[0]);
     setFirstLoad(true);
+    updateMatchups(sprites[0], SpriteList[0]);
   }
 
   function updateFighter(sprite) {
     setFighter(sprite);
+    updateMatchups(sprite, opponent);
   }
 
   function updateOpponent(sprite) {
     setOpponent(sprite);
+    updateMatchups(fighter, sprite);
+  }
+
+  function updateMatchups(the_fighter, the_opponent) {
+    let f = the_fighter;
+    const entries = Object.keys(matches[props.auth.uid]);
+    const real_matches = entries.map((e) => matches[props.auth.uid][e]);
+    const the_matchups = real_matches
+      .filter((rm) => rm.opponent_id === the_opponent.id)
+      .filter((rm2) => rm2.fighter_id === the_fighter.id);
+    setMatchups(the_matchups);
   }
 
   return (
@@ -76,6 +107,7 @@ const Matchups = (props) => {
         matches: matches,
         opponent: opponent,
         updateOpponent: updateOpponent,
+        matchups: matchups,
       }}
     >
       <StyledMatchupCard>
@@ -93,6 +125,10 @@ const Matchups = (props) => {
           </div>
         </CardContent>
       </StyledMatchupCard>
+      <div className={classes.content}>
+        <MatchWinLossCard />
+        <MatchupTable />
+      </div>
     </MatchupsContext.Provider>
   );
 };
