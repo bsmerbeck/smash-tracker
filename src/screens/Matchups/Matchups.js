@@ -124,13 +124,13 @@ const Matchups = (props) => {
         <CardContent>
           <div className={classes.root}>
             <StyledMatchupSelectDiv>
-              <h3>You:</h3>
+              <h3>You</h3>
               <SelectFighter />
             </StyledMatchupSelectDiv>
             <h1>vs</h1>
-            <StyledMatchupSelectDiv>
-              <SelectOpponent />
+            <StyledMatchupSelectDiv className="matchup-opponent-select">
               <h3>Opponent</h3>
+              <SelectOpponent />
             </StyledMatchupSelectDiv>
           </div>
         </CardContent>

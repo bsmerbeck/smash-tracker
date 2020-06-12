@@ -5,14 +5,18 @@ import { SelectFighter } from "./components";
 
 export const StyledMatchupCard = styled(Card)`
   width: 100%;
-  max-height: 90px;
+  max-height: 120px;
 `;
 
 export const StyledMatchupSelectDiv = styled.div`
   padding: 3px;
   display: flex;
-  flex-direction: row;
+  flex-direction: column;
   align-items: center;
+  
+
+  
+    }
   h3 {
     margin: 2px auto;
     color: ${theme.palette.primary.main};
