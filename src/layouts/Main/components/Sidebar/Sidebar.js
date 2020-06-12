@@ -6,6 +6,7 @@ import { Drawer } from "@material-ui/core";
 import DashboardIcon from "@material-ui/icons/Dashboard";
 import PersonIcon from "@material-ui/icons/Person";
 import PeopleIcon from "@material-ui/icons/People";
+import SportsKabaddiIcon from "@material-ui/icons/SportsKabaddi";
 
 import { SidebarNav } from "./components";
 
@@ -52,6 +53,11 @@ const Sidebar = (props) => {
       title: "Secondary Fighters",
       href: "/choose-secondary",
       icon: <PeopleIcon />,
+    },
+    {
+      title: "Matchups",
+      href: "/matchups",
+      icon: <SportsKabaddiIcon />,
     },
   ];
 

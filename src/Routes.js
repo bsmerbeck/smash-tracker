@@ -9,6 +9,7 @@ import {
   Home as HomeView,
   PrimaryCharacterSelect as PrimarySelect,
   SecondaryCharacterSelect as SecondarySelect,
+  Matchups as MatchupView,
   NotFound as NotFoundView,
 } from "./screens";
 
@@ -37,6 +38,12 @@ const Routes = () => {
         exact
         layout={MainLayout}
         path="/choose-secondary"
+      />
+      <RouteWithLayout
+        component={MatchupView}
+        exact
+        layout={MainLayout}
+        path="/matchups"
       />
       <RouteWithLayout
         component={NotFoundView}

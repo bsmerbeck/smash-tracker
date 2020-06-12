@@ -3,6 +3,13 @@ import styled from "styled-components/macro";
 export const StyledClassicBanner = styled.img`
   width: 100%;
   height: auto;
+  background-size: cover !important;
+  @media (max-device-width: 756px) {
+    min-height: 80px;
+    background-repeat: no-repeat;
+    background-size: 2800px 400px;
+    background-position: center top;
+  }
 `;
 
 export const StyledMainTitle = styled.div`
