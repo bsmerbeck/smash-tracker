@@ -62,8 +62,9 @@ function HomePage() {
           <span>Loading...</span>
         ) : isEmpty(auth) ? (
           // <GoogleButton/> button can be used instead
-          <div>
+          <div style={{ width: "100% " }}>
             <StyledFirebaseAuth
+              style={{ width: "100%" }}
               uiConfig={{
                 signInFlow: "redirect",
                 signInSuccessUrl: "/choose-character",
