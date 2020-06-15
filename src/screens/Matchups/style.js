@@ -1,7 +1,6 @@
 import styled from "styled-components/macro";
 import { Card } from "@material-ui/core";
 import theme from "../../theme";
-import { SelectFighter } from "./components";
 
 export const StyledMatchupCard = styled(Card)`
   width: 100%;

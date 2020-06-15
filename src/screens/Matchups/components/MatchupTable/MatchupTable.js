@@ -1,7 +1,6 @@
-import React, { useContext, useMemo, useState } from "react";
+import React, { useContext } from "react";
 import { MatchupsContext } from "../../Matchups";
 import { useTable, usePagination } from "react-table";
-import Grid from "@material-ui/core/Grid";
 import MaUTable from "@material-ui/core/Table";
 import TableBody from "@material-ui/core/TableBody";
 import TableCell from "@material-ui/core/TableCell";
@@ -9,11 +8,9 @@ import TableHead from "@material-ui/core/TableHead";
 import TableRow from "@material-ui/core/TableRow";
 import Button from "@material-ui/core/Button";
 import Select from "@material-ui/core/Select";
-import Input from "@material-ui/core/Input";
 import Typography from "@material-ui/core/Typography";
 import styled from "styled-components";
 import theme from "../../../../theme";
-import { useFirebase } from "react-redux-firebase";
 
 const Styles = styled.div`
   padding: 1rem;

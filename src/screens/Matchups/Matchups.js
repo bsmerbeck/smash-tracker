@@ -19,7 +19,6 @@ import {
   StyledMatchupChartDiv,
 } from "./style";
 import { DashboardContext } from "../Dashboard/Dashboard";
-import { DashboardToolbar } from "../Dashboard/components";
 import { AddMatchForm } from "../Dashboard/components/DashboardToolbar/components";
 
 export const MatchupsContext = React.createContext({});
@@ -41,7 +40,6 @@ const Matchups = (props) => {
   const classes = useStyles();
   const [firstLoad, setFirstLoad] = React.useState(false);
   const firebase = useFirebase();
-  const list = SpriteList;
 
   const primaryFighters = useSelector(
     (state) => state.firebase.data.primaryFighters
@@ -105,7 +103,6 @@ const Matchups = (props) => {
   }
 
   function updateMatchups(the_fighter, the_opponent) {
-    let f = the_fighter;
     const entries = Object.keys(matches[props.auth.uid]);
     const real_matches = entries.map((e) => {
       return {

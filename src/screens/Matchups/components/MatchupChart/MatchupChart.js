@@ -1,14 +1,11 @@
 import React, { useContext } from "react";
 import { isLoaded } from "react-redux-firebase";
 import { Line } from "react-chartjs-2";
-import { useSelector } from "react-redux";
 import { MatchupsContext } from "../../Matchups";
 import { SpriteList } from "../../../../components/Sprites/SpriteList";
 
 const MatchChart = () => {
-  const { fighter, opponent, matches, auth, removeMatchup } = useContext(
-    MatchupsContext
-  );
+  const { fighter, opponent, matches, auth } = useContext(MatchupsContext);
 
   if (
     !isLoaded(matches) ||
