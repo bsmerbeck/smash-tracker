@@ -83,6 +83,7 @@ const BestWorstMatchup = () => {
     wins.push({
       id: Number.parseInt(id),
       wins: winCount,
+      losses: 0,
     });
   });
   matches_by_loss.forEach((id) => {
@@ -90,11 +91,21 @@ const BestWorstMatchup = () => {
     lossCount = real_matches.filter(
       (m) => m.opponent_id.toString() === id && !m.win
     ).length;
-    if (wins[id]) {
-      wins[id] = {
-        ...wins[id],
+    if (lossCount === null || lossCount === undefined) {
+      lossCount = 0;
+    }
+    let matchIndex = wins.findIndex((w) => w.id.toString() === id);
+    if (matchIndex >= 0) {
+      wins[matchIndex] = {
+        ...wins[matchIndex],
         losses: lossCount,
       };
+    } else {
+      wins.push({
+        id: Number.parseInt(id),
+        wins: 0,
+        losses: lossCount,
+      });
     }
   });
 
@@ -107,7 +118,13 @@ const BestWorstMatchup = () => {
         ratio: m.losses ? (m.wins / (m.wins + m.losses)) * 100 : 100,
       };
     })
-    .sort((a, b) => b.ratio - a.ratio);
+    .sort((a, b) => {
+      if (b.ratio === a.ratio) {
+        return b.wins + b.losses - (a.wins - a.losses);
+      } else {
+        return b.ratio - a.ratio;
+      }
+    });
 
   const tb = win_ratio_list[0];
   const tw = win_ratio_list[win_ratio_list.length - 1];
@@ -115,9 +132,6 @@ const BestWorstMatchup = () => {
   const worst = SpriteList.filter(
     (s) => s.id === win_ratio_list[win_ratio_list.length - 1].id
   )[0];
-
-  console.log(`${JSON.stringify(wins)}`);
-  console.log(`${JSON.stringify(win_ratio_list)}`);
 
   return (
     <div
