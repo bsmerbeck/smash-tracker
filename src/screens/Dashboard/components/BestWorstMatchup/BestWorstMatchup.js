@@ -1,8 +1,11 @@
 import React, { useContext } from "react";
 import { DashboardContext } from "../../Dashboard";
 import { isLoaded } from "react-redux-firebase";
+import Typography from "@material-ui/core/Typography";
 import Card from "@material-ui/core/Card";
 import CardContent from "@material-ui/core/CardContent";
+import CardActionArea from "@material-ui/core/CardActionArea";
+import CardMedia from "@material-ui/core/CardMedia";
 import { SpriteList } from "../../../../components/Sprites/SpriteList";
 
 Array.prototype.byWin = function () {
@@ -49,8 +52,7 @@ Array.prototype.byLoss = function () {
   });
 };
 
-const BestWorstMatchup = (props) => {
-  const { isBest, matchup } = props;
+const BestWorstMatchup = () => {
   const { matches, auth } = useContext(DashboardContext);
 
   if (
@@ -93,12 +95,6 @@ const BestWorstMatchup = (props) => {
         ...wins[id],
         losses: lossCount,
       };
-    } else {
-      wins[id] = {
-        id: Number.parseInt(id),
-        wins: 0,
-        losses: lossCount,
-      };
     }
   });
 
@@ -106,11 +102,15 @@ const BestWorstMatchup = (props) => {
     .map((m) => {
       return {
         id: m.id,
+        wins: m.wins,
+        losses: m.losses,
         ratio: m.losses ? (m.wins / (m.wins + m.losses)) * 100 : 100,
       };
     })
     .sort((a, b) => b.ratio - a.ratio);
 
+  const tb = win_ratio_list[0];
+  const tw = win_ratio_list[win_ratio_list.length - 1];
   const best = SpriteList.filter((s) => s.id === win_ratio_list[0].id)[0];
   const worst = SpriteList.filter(
     (s) => s.id === win_ratio_list[win_ratio_list.length - 1].id
@@ -120,16 +120,61 @@ const BestWorstMatchup = (props) => {
   console.log(`${JSON.stringify(win_ratio_list)}`);
 
   return (
-    <div>
-      <h2>Best/Worst</h2>
-      <div>
-        <h3>Best</h3>
-        <p>{best.name}</p>
-      </div>
-      <div>
-        <h3>Worst</h3>
-        <p>{worst.name}</p>
-      </div>
+    <div
+      style={{ display: "flex", justifyContent: "center", margin: "0 auto" }}
+    >
+      <Card style={{ margin: "10px", minWidth: "250px" }}>
+        <CardContent style={{ paddingBottom: "5px" }}>
+          <Typography color="textSecondary" gutterBottom>
+            Best Matchup
+          </Typography>
+          <div style={{ display: "flex" }}>
+            <img style={{ maxHeight: "10vh", flex: 0 }} src={best.url} alt="" />
+            <div style={{ flex: 1, justifyContent: "space-between" }}>
+              <h1>{best.name}</h1>
+              <h2>{tw.ratio} %</h2>
+            </div>
+          </div>
+          <div style={{ display: "flex" }}>
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                width: "100%",
+              }}
+            >
+              <h4>Wins: {tb.wins}</h4>
+              <h4>Losses: {tb.losses ? tb.losses : 0}</h4>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+      <Card style={{ margin: "10px", minWidth: "250px" }}>
+        <CardContent style={{ paddingBottom: "5px" }}>
+          <Typography color="textSecondary" gutterBottom>
+            Worst Matchup
+          </Typography>
+          <div style={{ display: "flex", justifyContent: "space-between" }}>
+            <img style={{ maxHeight: "10vh" }} src={worst.url} alt="" />
+            <div style={{ textAlign: "end" }}>
+              <h1>{worst.name}</h1>
+              <h2>{tw.ratio} %</h2>
+            </div>
+          </div>
+          <div style={{ display: "flex" }}>
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                width: "100%",
+              }}
+            >
+              <h4>Wins: {tw.wins}</h4>
+              <h4>Losses: {tw.losses ? tw.losses : 0}</h4>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
     </div>
   );
 };

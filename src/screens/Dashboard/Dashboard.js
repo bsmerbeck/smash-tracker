@@ -71,8 +71,8 @@ function Dashboard(props) {
         <DashboardToolbar />
         <div className={classes.content} style={{ width: "100%" }}>
           <WinLossTracker style={{ margin: "0 auto" }} />
-          <LastMatches />
           <BestWorstMatchup />
+          <LastMatches />
         </div>
       </div>
     </DashboardContext.Provider>
