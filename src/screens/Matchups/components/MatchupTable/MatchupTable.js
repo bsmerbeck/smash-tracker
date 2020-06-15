@@ -209,11 +209,9 @@ const MatchupTable = () => {
     []
   );
   return (
-    <Grid item xs={12}>
-      <Styles>
-        <Table columns={columns} data={newData} />
-      </Styles>
-    </Grid>
+    <Styles>
+      <Table columns={columns} data={newData} />
+    </Styles>
   );
 };
 
