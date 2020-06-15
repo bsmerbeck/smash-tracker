@@ -7,6 +7,7 @@ import CardContent from "@material-ui/core/CardContent";
 import Select from "@material-ui/core/Select";
 import MenuItem from "@material-ui/core/MenuItem";
 import { SpriteList } from "../../../../components/Sprites/SpriteList";
+import { BestWorstCardDiv } from "./style";
 
 Array.prototype.byWin = function () {
   let itm,
@@ -171,7 +172,7 @@ const BestWorstMatchup = () => {
             </MenuItem>
           </Select>
         </div>
-        <div
+        <BestWorstCardDiv
           style={{
             display: "flex",
             justifyContent: "center",
@@ -194,7 +195,7 @@ const BestWorstMatchup = () => {
               <p>Not enough reported matches to calculate</p>
             </CardContent>
           </Card>
-        </div>
+        </BestWorstCardDiv>
       </Card>
     );
   }
@@ -240,7 +241,7 @@ const BestWorstMatchup = () => {
           </MenuItem>
         </Select>
       </div>
-      <div
+      <BestWorstCardDiv
         style={{ display: "flex", justifyContent: "center", margin: "0 auto" }}
       >
         <Card style={{ margin: "10px", minWidth: "250px" }}>
@@ -299,7 +300,7 @@ const BestWorstMatchup = () => {
             </div>
           </CardContent>
         </Card>
-      </div>
+      </BestWorstCardDiv>
     </Card>
   );
 };
