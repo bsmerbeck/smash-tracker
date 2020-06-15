@@ -95,6 +95,7 @@ const WinLossTracker = () => {
   );
   return (
     <Card className={classes.root}>
+      <h2 style={{ margin: "10px", textAlign: "center" }}>Overall Record</h2>
       <CardContent style={{ display: "flex", justifyContent: "space-evenly" }}>
         <div
           style={{
