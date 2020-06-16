@@ -9,5 +9,8 @@ const mapStateToProps = ({ firebase: { auth } }) => ({
 
 export default compose(
   connect(mapStateToProps, null), // Before firestoreConnect
-  firebaseConnect((props) => [{ path: `primaryFighters/${props.auth.uid}` }])
+  firebaseConnect((props) => [
+    { path: `primaryFighters/${props.auth.uid}` },
+    { path: `secondaryFighters/${props.auth.uid}` },
+  ])
 )(PrimarySelect);
