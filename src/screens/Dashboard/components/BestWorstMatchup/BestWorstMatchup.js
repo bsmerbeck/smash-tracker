@@ -2,12 +2,15 @@ import React, { useContext, useState } from "react";
 import { DashboardContext } from "../../Dashboard";
 import { isLoaded } from "react-redux-firebase";
 import Typography from "@material-ui/core/Typography";
-import Card from "@material-ui/core/Card";
-import CardContent from "@material-ui/core/CardContent";
 import Select from "@material-ui/core/Select";
 import MenuItem from "@material-ui/core/MenuItem";
 import { SpriteList } from "../../../../components/Sprites/SpriteList";
-import { BestWorstCardDiv } from "./style";
+import {
+  BestWorstCardDiv,
+  StyledBWCard,
+  StyledBWCardContent,
+  StyledBWSelectDiv,
+} from "./style";
 
 Array.prototype.byWin = function () {
   let itm,
@@ -64,11 +67,11 @@ const BestWorstMatchup = () => {
     matches[auth.uid] === null
   ) {
     return (
-      <Card>
-        <CardContent>
+      <StyledBWCard>
+        <StyledBWCardContent>
           <h2>No matches reported</h2>
-        </CardContent>
-      </Card>
+        </StyledBWCardContent>
+      </StyledBWCard>
     );
   }
 
@@ -138,65 +141,49 @@ const BestWorstMatchup = () => {
 
   if (win_ratio_list.length === 0) {
     return (
-      <Card
-        style={{
-          maxWidth: "700px",
-          margin: "10px auto",
-          padding: "10px",
-          display: "flex",
-          justifyContent: "center",
-          flexDirection: "column",
-        }}
-      >
+      <StyledBWCard>
         <h2 style={{ margin: "10px auto", textAlign: "center" }}>
           Matchup Statistics
         </h2>
-        <div style={{ padding: "5px 25px" }}>
+        <StyledBWSelectDiv>
           <p>Minimum Match Threshold</p>
           <Select
-            style={{ cursor: "pointer" }}
             value={threshold}
             onChange={(e) => setThreshold(e.target.value)}
           >
-            <MenuItem style={{ cursor: "pointer" }} value={10}>
+            <MenuItem className="bwMenuItem" value={10}>
               10
             </MenuItem>
-            <MenuItem style={{ cursor: "pointer" }} value={25}>
+            <MenuItem className="bwMenuItem" value={25}>
               25
             </MenuItem>
-            <MenuItem style={{ cursor: "pointer" }} value={50}>
+            <MenuItem className="bwMenuItem" value={50}>
               50
             </MenuItem>
-            <MenuItem style={{ cursor: "pointer" }} value={100}>
+            <MenuItem className="bwMenuItem" value={100}>
               100
             </MenuItem>
           </Select>
-        </div>
-        <BestWorstCardDiv
-          style={{
-            display: "flex",
-            justifyContent: "center",
-            margin: "0 auto",
-          }}
-        >
-          <Card style={{ margin: "10px", minWidth: "250px" }}>
-            <CardContent>
+        </StyledBWSelectDiv>
+        <BestWorstCardDiv>
+          <StyledBWCard>
+            <StyledBWCardContent>
               <Typography color="textSecondary" gutterBottom>
                 Best Matchup
               </Typography>
               <p>Not enough reported matches to calculate</p>
-            </CardContent>
-          </Card>
-          <Card style={{ margin: "10px", minWidth: "250px" }}>
-            <CardContent>
+            </StyledBWCardContent>
+          </StyledBWCard>
+          <StyledBWCard>
+            <StyledBWCardContent>
               <Typography color="textSecondary" gutterBottom>
                 Worst Matchup
               </Typography>
               <p>Not enough reported matches to calculate</p>
-            </CardContent>
-          </Card>
+            </StyledBWCardContent>
+          </StyledBWCard>
         </BestWorstCardDiv>
-      </Card>
+      </StyledBWCard>
     );
   }
 
@@ -208,100 +195,71 @@ const BestWorstMatchup = () => {
   )[0];
 
   return (
-    <Card
-      style={{
-        maxWidth: "700px",
-        margin: "10px auto",
-        padding: "10px",
-        display: "flex",
-        justifyContent: "center",
-        flexDirection: "column",
-      }}
-    >
-      <h2 style={{ margin: "10px auto", textAlign: "center" }}>
-        Matchup Statistics
-      </h2>
-      <div style={{ padding: "5px 25px" }}>
+    <StyledBWCard>
+      <h2>Matchup Statistics</h2>
+      <div>
         <p>Minimum Match Threshold</p>
         <Select
           value={threshold}
           onChange={(e) => setThreshold(e.target.value)}
         >
-          <MenuItem style={{ cursor: "pointer" }} value={10}>
+          <MenuItem className="bwMenuItem" value={10}>
             10
           </MenuItem>
-          <MenuItem style={{ cursor: "pointer" }} value={25}>
+          <MenuItem className="bwMenuItem" value={25}>
             25
           </MenuItem>
-          <MenuItem style={{ cursor: "pointer" }} value={50}>
+          <MenuItem className="bwMenuItem" value={50}>
             50
           </MenuItem>
-          <MenuItem style={{ cursor: "pointer" }} value={100}>
+          <MenuItem className="bwMenuItem" value={100}>
             100
           </MenuItem>
         </Select>
       </div>
-      <BestWorstCardDiv
-        style={{ display: "flex", justifyContent: "center", margin: "0 auto" }}
-      >
-        <Card style={{ margin: "10px", minWidth: "250px" }}>
-          <CardContent style={{ paddingBottom: "5px" }}>
+      <BestWorstCardDiv>
+        <StyledBWCard>
+          <StyledBWCardContent>
             <Typography color="textSecondary" gutterBottom>
               Best Matchup
             </Typography>
-            <div style={{ display: "flex" }}>
-              <img
-                style={{ maxHeight: "10vh", flex: 0 }}
-                src={best.url}
-                alt=""
-              />
-              <div style={{ flex: 1, justifyContent: "space-between" }}>
+            <div className="spriteContainer">
+              <img src={best.url} alt="" />
+              <div>
                 <h1>{best.name}</h1>
                 <h2>{tw.ratio} %</h2>
               </div>
             </div>
-            <div style={{ display: "flex" }}>
-              <div
-                style={{
-                  display: "flex",
-                  justifyContent: "space-between",
-                  width: "100%",
-                }}
-              >
+            <div className="bwResult">
+              <div>
                 <h4>Wins: {tb.wins}</h4>
                 <h4>Losses: {tb.losses ? tb.losses : 0}</h4>
               </div>
             </div>
-          </CardContent>
-        </Card>
-        <Card style={{ margin: "10px", minWidth: "250px" }}>
-          <CardContent style={{ paddingBottom: "5px" }}>
+          </StyledBWCardContent>
+        </StyledBWCard>
+        <StyledBWCard>
+          <StyledBWCardContent>
             <Typography color="textSecondary" gutterBottom>
               Worst Matchup
             </Typography>
-            <div style={{ display: "flex", justifyContent: "space-between" }}>
-              <img style={{ maxHeight: "10vh" }} src={worst.url} alt="" />
-              <div style={{ textAlign: "end" }}>
+            <div className="spriteContainer">
+              <img src={worst.url} alt="" />
+              <div>
                 <h1>{worst.name}</h1>
                 <h2>{tw.ratio} %</h2>
               </div>
             </div>
-            <div style={{ display: "flex" }}>
-              <div
-                style={{
-                  display: "flex",
-                  justifyContent: "space-between",
-                  width: "100%",
-                }}
-              >
+            <div className="bwResult">
+              <div>
                 <h4>Wins: {tw.wins}</h4>
                 <h4>Losses: {tw.losses ? tw.losses : 0}</h4>
               </div>
             </div>
-          </CardContent>
-        </Card>
+          </StyledBWCardContent>
+        </StyledBWCard>
       </BestWorstCardDiv>
-    </Card>
+    </StyledBWCard>
   );
 };
 
