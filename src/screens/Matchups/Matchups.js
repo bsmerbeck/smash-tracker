@@ -7,13 +7,18 @@ import {
   SelectOpponent,
   MatchWinLossCard,
   MatchupTable,
+  MatchupChart,
 } from "./components";
 import { makeStyles } from "@material-ui/styles";
 import CardContent from "@material-ui/core/CardContent";
 import Button from "@material-ui/core/Button";
-import { StyledMatchupCard, StyledMatchupSelectDiv } from "./style";
+import {
+  StyledMatchupCard,
+  StyledMatchupSelectDiv,
+  StyledMatchupDiv,
+  StyledMatchupChartDiv,
+} from "./style";
 import { DashboardContext } from "../Dashboard/Dashboard";
-import { DashboardToolbar } from "../Dashboard/components";
 import { AddMatchForm } from "../Dashboard/components/DashboardToolbar/components";
 
 export const MatchupsContext = React.createContext({});
@@ -35,7 +40,6 @@ const Matchups = (props) => {
   const classes = useStyles();
   const [firstLoad, setFirstLoad] = React.useState(false);
   const firebase = useFirebase();
-  const list = SpriteList;
 
   const primaryFighters = useSelector(
     (state) => state.firebase.data.primaryFighters
@@ -99,7 +103,6 @@ const Matchups = (props) => {
   }
 
   function updateMatchups(the_fighter, the_opponent) {
-    let f = the_fighter;
     const entries = Object.keys(matches[props.auth.uid]);
     const real_matches = entries.map((e) => {
       return {
@@ -173,7 +176,16 @@ const Matchups = (props) => {
         </StyledMatchupCard>
         <div className={classes.content}>
           <MatchWinLossCard />
-          <MatchupTable />
+          <StyledMatchupDiv style={{ display: "flex" }}>
+            <div style={{ flex: 1, margin: "20px" }}>
+              <h2>Matchup Results</h2>
+              <MatchupTable />
+            </div>
+            <StyledMatchupChartDiv className="canvas-container">
+              <h2>Win Rate</h2>
+              <MatchupChart style={{ flex: 1 }} />
+            </StyledMatchupChartDiv>
+          </StyledMatchupDiv>
         </div>
       </MatchupsContext.Provider>
     </DashboardContext.Provider>

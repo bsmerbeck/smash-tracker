@@ -1,6 +1,11 @@
 import React, { useState } from "react";
 import { makeStyles } from "@material-ui/styles";
-import { DashboardToolbar, LastMatches, WinLossTracker } from "./components";
+import {
+  DashboardToolbar,
+  LastMatches,
+  WinLossTracker,
+  BestWorstMatchup,
+} from "./components";
 import { useSelector } from "react-redux";
 import { isLoaded, isEmpty } from "react-redux-firebase";
 import { SpriteList } from "../../components/Sprites/SpriteList";
@@ -26,6 +31,7 @@ function Dashboard(props) {
   const secondaryFighters = useSelector(
     (state) => state.firebase.data.secondaryFighters
   );
+  const matches = useSelector((state) => state.firebase.data.matches);
 
   const [fighter, setFighter] = useState({});
 
@@ -58,12 +64,14 @@ function Dashboard(props) {
         updateSprite: updateSprite,
         fighterSprites: sprites,
         auth: props.auth,
+        matches: matches,
       }}
     >
       <div className={classes.root}>
         <DashboardToolbar />
         <div className={classes.content} style={{ width: "100%" }}>
           <WinLossTracker style={{ margin: "0 auto" }} />
+          <BestWorstMatchup />
           <LastMatches />
         </div>
       </div>

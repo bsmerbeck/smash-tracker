@@ -19,8 +19,13 @@ function PrimarySelect() {
     (state) => state.firebase.data.primaryFighters
   );
 
-  const sprites = SpriteList;
+  const secondaryFighters = useSelector(
+    (state) => state.firebase.data.secondaryFighters
+  );
+
   const auth = useSelector((state) => state.firebase.auth);
+
+  const [secondaries, setSecondaries] = useState(SpriteList);
 
   const [spriteList, setSpriteList] = useState([]);
   const [input, setInput] = useState("");
@@ -38,7 +43,7 @@ function PrimarySelect() {
 
   const [loading, setLoading] = useState(false);
 
-  if (!isLoaded(primaryFighters)) {
+  if (!isLoaded(primaryFighters) || !isLoaded(secondaryFighters)) {
     return <div />;
   }
   if (
@@ -50,6 +55,16 @@ function PrimarySelect() {
       (p) => SpriteList.filter((s) => s.id === p)[0]
     );
     setSpriteList(_sprites);
+
+    let availableSprites = SpriteList;
+    if (secondaryFighters[auth.uid] && secondaryFighters[auth.uid].length > 0) {
+      const sprite_ids = secondaryFighters[auth.uid];
+      availableSprites = SpriteList.filter((s) => {
+        return !sprite_ids.includes(s.id);
+      });
+      setSecondaries(availableSprites);
+    }
+
     setLoading(true);
   }
 
@@ -127,8 +142,8 @@ function PrimarySelect() {
         </StyledPrimaryCharacterDiv>
       </div>
       <StyledPrimarySpriteListDiv>
-        {isLoaded(sprites) ? (
-          sprites
+        {isLoaded(secondaries) ? (
+          secondaries
             .filter(
               (d) =>
                 input === "" ||

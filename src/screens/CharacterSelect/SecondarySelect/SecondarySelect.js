@@ -18,10 +18,13 @@ function SecondarySelect() {
   const secondaryFighters = useSelector(
     (state) => state.firebase.data.secondaryFighters
   );
+  const primaryFighters = useSelector(
+    (state) => state.firebase.data.primaryFighters
+  );
 
-  const sprites = SpriteList;
   const auth = useSelector((state) => state.firebase.auth);
 
+  const [primaries, setPrimaries] = useState(SpriteList);
   const [spriteList, setSpriteList] = useState([]);
   const [input, setInput] = useState("");
 
@@ -44,21 +47,31 @@ function SecondarySelect() {
   if (
     !loading &&
     isLoaded(secondaryFighters) &&
+    isLoaded(primaryFighters) &&
     !isEmpty(secondaryFighters[auth.uid])
   ) {
     const _sprites = secondaryFighters[auth.uid].map(
       (p) => SpriteList.filter((s) => s.id === p)[0]
     );
     setSpriteList(_sprites);
+    let availableSprites = SpriteList;
+    if (primaryFighters[auth.uid] && primaryFighters[auth.uid].length > 0) {
+      const sprite_ids = primaryFighters[auth.uid];
+      availableSprites = SpriteList.filter((s) => {
+        return !sprite_ids.includes(s.id);
+      });
+      setPrimaries(availableSprites);
+    }
+
     setLoading(true);
   }
 
-  const saveButtonClick = () => {
+  const saveButtonClick = (ref) => {
     const _spriteIds = spriteList.map((s) => s.id);
     firebase.database().ref(`/secondaryFighters/${auth.uid}`).set(_spriteIds);
     setSpriteList([]);
     setInput("");
-    history.push("/dashboard");
+    history.push(ref);
   };
 
   return (
@@ -99,7 +112,7 @@ function SecondarySelect() {
               variant="contained"
               color="primary"
               disabled={isLoaded(auth) && isEmpty(auth)}
-              onClick={saveButtonClick}
+              onClick={() => saveButtonClick("/dashboard")}
             >
               Save and go to Dashboard
             </Button>
@@ -108,16 +121,16 @@ function SecondarySelect() {
               variant="contained"
               color="primary"
               disabled={isLoaded(auth) && isEmpty(auth)}
-              onClick={() => history.push("/choose-primary")}
+              onClick={() => saveButtonClick("/choose-primary")}
             >
-              Return to Primary Fighters
+              Save and choose Primary Fighters
             </Button>
           </div>
         </StyledPrimaryCharacterDiv>
       </div>
       <StyledPrimarySpriteListDiv>
-        {isLoaded(sprites) ? (
-          sprites
+        {isLoaded(primaries) ? (
+          primaries
             .filter(
               (d) =>
                 input === "" ||
