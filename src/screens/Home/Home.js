@@ -43,7 +43,7 @@ function HomePage() {
   return (
     <div className={classes.root}>
       <StyledClassicBanner
-        src={process.env.PUBLIC_URL + "/assets/banners/classic-mode-banner.png"}
+        src={process.env.PUBLIC_URL + "/assets/banners/classic-mode-banner.jpg"}
         alt=""
       />
       <StyledMainTitle className={classes.content}>
