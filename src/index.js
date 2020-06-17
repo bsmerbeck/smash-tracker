@@ -15,6 +15,7 @@ import firebase from "firebase/app";
 import { firebaseConfig } from "./firebase";
 
 import { Router } from "react-router-dom"; // react-router v4/v5
+import RouterAnalytics from "./components/RouterAnalytics";
 import configureStore, { history } from "./state/configureStore";
 import App from "./App";
 const store = configureStore();
@@ -28,6 +29,7 @@ const rrfProps = {
 ReactDOM.render(
   <Provider store={store}>
     <Router history={history}>
+      <RouterAnalytics />
       <ReactReduxFirebaseProvider {...rrfProps}>
         <ThemeProvider theme={theme}>
           <CssBaseline />
