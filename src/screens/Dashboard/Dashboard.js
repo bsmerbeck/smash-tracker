@@ -2,13 +2,17 @@ import React, { useState } from "react";
 import { makeStyles } from "@material-ui/styles";
 import {
   DashboardToolbar,
-  LastMatches,
+  LastMatchesChart,
   WinLossTracker,
-  BestWorstMatchup,
 } from "./components";
 import { useSelector } from "react-redux";
 import { isLoaded, isEmpty } from "react-redux-firebase";
 import { SpriteList } from "../../components/Sprites/SpriteList";
+import {
+  StyledBestWorst,
+  StyledPreviousMatches,
+  StyledTwoCardDiv,
+} from "./style";
 
 const useStyles = makeStyles((theme) => ({
   root: {
@@ -71,8 +75,12 @@ function Dashboard(props) {
         <DashboardToolbar />
         <div className={classes.content} style={{ width: "100%" }}>
           <WinLossTracker style={{ margin: "0 auto" }} />
-          <BestWorstMatchup />
-          <LastMatches />
+          <StyledTwoCardDiv>
+            <StyledBestWorst />
+            <StyledPreviousMatches />
+          </StyledTwoCardDiv>
+
+          <LastMatchesChart />
         </div>
       </div>
     </DashboardContext.Provider>
