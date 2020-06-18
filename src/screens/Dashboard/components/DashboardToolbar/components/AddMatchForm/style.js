@@ -1,7 +1,6 @@
 import styled from "styled-components/macro";
 import Select from "@material-ui/core/Select";
 import Dialog from "@material-ui/core/Dialog";
-import { MenuItem } from "@material-ui/core";
 
 export const StyledIconSelect = styled(Select)`
   .MuiInputBase-input {
@@ -33,7 +32,7 @@ export const StyledSpriteSelectDiv = styled.div`
   }
 `;
 
-export const StyledAddMatchMenuItem = styled(MenuItem)`
+export const StyledAddMatchMenuItem = styled.div`
   @media (max-device-width: 500px) {
     display: flex;
     flex-direction: column !important;
