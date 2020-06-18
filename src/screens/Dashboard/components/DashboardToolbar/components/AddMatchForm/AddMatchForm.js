@@ -34,8 +34,14 @@ const AddMatchForm = (props) => {
     (state) => state.firebase.data.secondaryFighters
   );
 
+  const alphaSpriteList = SpriteList.sort((a, b) => {
+    const textA = a.name.toUpperCase();
+    const textB = b.name.toUpperCase();
+    return textA < textB ? -1 : textA > textB ? 1 : 0;
+  });
+
   const [playerOne, setPlayerOne] = React.useState(context.fighter);
-  const [playerTwo, setPlayerTwo] = React.useState(SpriteList[0]);
+  const [playerTwo, setPlayerTwo] = React.useState(alphaSpriteList[0]);
 
   if (!isLoaded(primaryFighters) || !isLoaded(secondaryFighters)) {
     return <div />;
