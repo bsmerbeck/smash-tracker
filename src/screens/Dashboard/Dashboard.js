@@ -6,7 +6,10 @@ import {
   WinLossTracker,
 } from "./components";
 import { useSelector } from "react-redux";
+import { useHistory } from "react-router-dom";
+
 import { isLoaded, isEmpty } from "react-redux-firebase";
+import Button from "@material-ui/core/Button";
 import { SpriteList } from "../../components/Sprites/SpriteList";
 import {
   StyledBestWorst,
@@ -26,6 +29,7 @@ const useStyles = makeStyles((theme) => ({
 export const DashboardContext = React.createContext({});
 
 function Dashboard(props) {
+  const history = useHistory();
   const classes = useStyles();
   const [firstLoad, setFirstLoad] = React.useState(false);
 
@@ -41,6 +45,39 @@ function Dashboard(props) {
 
   if (!isLoaded(primaryFighters) || !isLoaded(secondaryFighters)) {
     return <div />;
+  }
+
+  if (isEmpty(primaryFighters) || primaryFighters[props.auth.uid] === null) {
+    return (
+      <div
+        style={{
+          display: "flex",
+          flexDirection: "column",
+          width: "100%",
+          padding: "40px",
+        }}
+      >
+        <h1 style={{ textAlign: "center" }}>
+          You haven't picked any fighters yet!
+        </h1>
+        <Button
+          style={{ margin: "10px" }}
+          color="primary"
+          variant="contained"
+          onClick={() => history.push("/choose-primary")}
+        >
+          Choose Primary Fighters
+        </Button>
+        <Button
+          style={{ margin: "10px" }}
+          color="primary"
+          variant="contained"
+          onClick={() => history.push("/choose-secondary")}
+        >
+          Choose Secondary Fighters
+        </Button>
+      </div>
+    );
   }
 
   let fighterIds = [...primaryFighters[props.auth.uid]];

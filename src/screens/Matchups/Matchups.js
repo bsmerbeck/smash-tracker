@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import { useSelector } from "react-redux";
+import { useHistory } from "react-router-dom";
 import { isEmpty, isLoaded, useFirebase } from "react-redux-firebase";
 import { SpriteList } from "../../components/Sprites/SpriteList";
 import {
@@ -38,6 +39,7 @@ const useStyles = makeStyles((theme) => ({
 
 const Matchups = (props) => {
   const classes = useStyles();
+  const history = useHistory();
   const [firstLoad, setFirstLoad] = React.useState(false);
   const firebase = useFirebase();
 
@@ -70,6 +72,39 @@ const Matchups = (props) => {
     !isLoaded(matches)
   ) {
     return <div />;
+  }
+
+  if (isEmpty(primaryFighters) || primaryFighters[props.auth.uid] === null) {
+    return (
+      <div
+        style={{
+          display: "flex",
+          flexDirection: "column",
+          width: "100%",
+          padding: "40px",
+        }}
+      >
+        <h1 style={{ textAlign: "center" }}>
+          You haven't picked any fighters yet!
+        </h1>
+        <Button
+          style={{ margin: "10px" }}
+          color="primary"
+          variant="contained"
+          onClick={() => history.push("/choose-primary")}
+        >
+          Choose Primary Fighters
+        </Button>
+        <Button
+          style={{ margin: "10px" }}
+          color="primary"
+          variant="contained"
+          onClick={() => history.push("/choose-secondary")}
+        >
+          Choose Secondary Fighters
+        </Button>
+      </div>
+    );
   }
 
   let fighterIds = [...primaryFighters[props.auth.uid]];
