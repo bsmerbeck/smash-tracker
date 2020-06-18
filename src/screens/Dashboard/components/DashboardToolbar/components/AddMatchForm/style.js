@@ -18,3 +18,24 @@ export const StyledMatchRow = styled.div`
   justify-content: space-evenly;
   padding: 10px;
 `;
+
+export const StyledSpriteSelectDiv = styled.div`
+  @media (max-device-width: 500px) {
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    .MuiInput-input {
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+    }
+  }
+`;
+
+export const StyledAddMatchMenuItem = styled.div`
+  @media (max-device-width: 500px) {
+    display: flex;
+    flex-direction: column !important;
+    align-items: center;
+  }
+`;
