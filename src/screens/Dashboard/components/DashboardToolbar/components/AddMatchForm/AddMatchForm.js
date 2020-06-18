@@ -11,7 +11,13 @@ import MenuItem from "@material-ui/core/MenuItem";
 import ListItemIcon from "@material-ui/core/ListItemIcon";
 import ListItemText from "@material-ui/core/ListItemText";
 import { SpriteList } from "../../../../../../components/Sprites/SpriteList";
-import { StyledIconSelect, StyledDialog, StyledMatchRow } from "./style";
+import {
+  StyledIconSelect,
+  StyledDialog,
+  StyledMatchRow,
+  StyledAddMatchMenuItem,
+  StyledSpriteSelectDiv,
+} from "./style";
 import ToggleButton from "@material-ui/lab/ToggleButton";
 import ToggleButtonGroup from "@material-ui/lab/ToggleButtonGroup";
 import { DashboardContext } from "../../../../Dashboard";
@@ -34,8 +40,14 @@ const AddMatchForm = (props) => {
     (state) => state.firebase.data.secondaryFighters
   );
 
+  const alphaSpriteList = SpriteList.sort((a, b) => {
+    const textA = a.name.toUpperCase();
+    const textB = b.name.toUpperCase();
+    return textA < textB ? -1 : textA > textB ? 1 : 0;
+  });
+
   const [playerOne, setPlayerOne] = React.useState(context.fighter);
-  const [playerTwo, setPlayerTwo] = React.useState(SpriteList[0]);
+  const [playerTwo, setPlayerTwo] = React.useState(alphaSpriteList[0]);
 
   if (!isLoaded(primaryFighters) || !isLoaded(secondaryFighters)) {
     return <div />;
@@ -94,26 +106,26 @@ const AddMatchForm = (props) => {
       <DialogTitle id="form-dialog-title">Add Match</DialogTitle>
       <DialogContent>
         <StyledMatchRow>
-          <div>
+          <StyledSpriteSelectDiv>
             <DialogContentText>Your Fighter</DialogContentText>
             <StyledIconSelect value={playerOne} onChange={handlePlayerOne}>
               {fighterSprites.map((s) => {
                 return (
                   <MenuItem value={s} key={s.id}>
-                    <ListItemIcon>
+                    <StyledAddMatchMenuItem>
                       <img
                         style={{ maxWidth: "50px", maxHeight: "50px" }}
                         src={s.url}
                         alt=""
                       />
-                    </ListItemIcon>
+                    </StyledAddMatchMenuItem>
                     <ListItemText>{s.name}</ListItemText>
                   </MenuItem>
                 );
               })}
             </StyledIconSelect>
-          </div>
-          <div>
+          </StyledSpriteSelectDiv>
+          <StyledSpriteSelectDiv>
             <DialogContentText>Player Two Fighter</DialogContentText>
             <StyledIconSelect value={playerTwo} onChange={handlePlayerTwo}>
               {SpriteList.map((s) => {
@@ -131,7 +143,7 @@ const AddMatchForm = (props) => {
                 );
               })}
             </StyledIconSelect>
-          </div>
+          </StyledSpriteSelectDiv>
         </StyledMatchRow>
         <StyledMatchRow>
           <ToggleButtonGroup

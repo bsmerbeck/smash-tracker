@@ -11,17 +11,10 @@ export const BestWorstCardDiv = styled.div`
 `;
 
 export const StyledBWCard = styled(Card)`
-  max-width: 700px;
-  min-width: 250px;
-  margin: 10px auto;
+  min-width: 200px;
   padding: 10px;
   display: flex;
-  justify-content: center;
   flex-direction: column;
-  h2 {
-    margin: 10px auto;
-    text-align: center;
-  }
 `;
 
 export const StyledBWSelectDiv = styled.div`

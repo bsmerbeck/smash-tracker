@@ -107,6 +107,7 @@ const MatchChart = () => {
           {
             position: "right",
             ticks: {
+              suggestedMax: 100,
               fontColor: "white",
               fontSize: 16,
             },

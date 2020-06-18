@@ -56,7 +56,7 @@ Array.prototype.byLoss = function () {
   });
 };
 
-const BestWorstMatchup = () => {
+const BestWorstMatchup = ({ className }) => {
   const { matches, auth, fighter } = useContext(DashboardContext);
 
   const [threshold, setThreshold] = useState(10);
@@ -67,7 +67,7 @@ const BestWorstMatchup = () => {
     matches[auth.uid] === null
   ) {
     return (
-      <StyledBWCard>
+      <StyledBWCard className={className}>
         <StyledBWCardContent>
           <h2>No matches reported</h2>
         </StyledBWCardContent>
@@ -141,10 +141,8 @@ const BestWorstMatchup = () => {
 
   if (win_ratio_list.length === 0) {
     return (
-      <StyledBWCard>
-        <h2 style={{ margin: "10px auto", textAlign: "center" }}>
-          Matchup Statistics
-        </h2>
+      <StyledBWCard className={className}>
+        <h2>Matchup Statistics</h2>
         <StyledBWSelectDiv>
           <p>Minimum Match Threshold</p>
           <Select
@@ -195,7 +193,7 @@ const BestWorstMatchup = () => {
   )[0];
 
   return (
-    <StyledBWCard>
+    <StyledBWCard className={className}>
       <h2>Matchup Statistics</h2>
       <div>
         <p>Minimum Match Threshold</p>
