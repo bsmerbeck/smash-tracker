@@ -7,6 +7,10 @@ import { DashboardContext } from "../../Dashboard";
 import { useSelector } from "react-redux";
 import { isLoaded } from "react-redux-firebase";
 import { SpriteList } from "../../../../components/Sprites/SpriteList";
+import {
+  StyledPreviousContainerDiv,
+  StyledPreviousFighterIconDiv,
+} from "./style";
 
 const PreviousMatches = ({ className }) => {
   const { auth } = useContext(DashboardContext);
@@ -69,30 +73,19 @@ const PreviousMatches = ({ className }) => {
         <div>
           {matchData.map((l) => {
             return (
-              <div
-                key={l.time}
-                style={{ display: "flex", justifyContent: "space-between" }}
-              >
-                <div style={{ display: "flex" }}>
-                  <div style={{ display: "flex", minWidth: "130px" }}>
-                    <img
-                      style={{ maxHeight: "5vh" }}
-                      src={l.fighter.url}
-                      alt=""
-                    />
+              <StyledPreviousContainerDiv key={l.time}>
+                <div className="fighterDiv">
+                  <StyledPreviousFighterIconDiv className="fighterOne">
+                    <img src={l.fighter.url} alt="" />
                     <p>{l.fighter.name}</p>
-                  </div>
-                  <div style={{ display: "flex", minWidth: "130px" }}>
-                    <img
-                      style={{ maxHeight: "5vh" }}
-                      src={l.opponent.url}
-                      alt=""
-                    />
+                  </StyledPreviousFighterIconDiv>
+                  <StyledPreviousFighterIconDiv className="fighterTwo ">
+                    <img src={l.opponent.url} alt="" />
                     <p>{l.opponent.name}</p>
-                  </div>
+                  </StyledPreviousFighterIconDiv>
                 </div>
                 <h3>{l.win ? "Win" : "Loss"}</h3>
-              </div>
+              </StyledPreviousContainerDiv>
             );
           })}
         </div>

@@ -11,7 +11,7 @@ export const BestWorstCardDiv = styled.div`
 `;
 
 export const StyledBWCard = styled(Card)`
-  min-width: 250px;
+  min-width: 200px;
   padding: 10px;
   display: flex;
   flex-direction: column;
