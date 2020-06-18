@@ -8,7 +8,9 @@ import { makeStyles } from "@material-ui/styles";
 import { List, ListItem, Button } from "@material-ui/core";
 
 const useStyles = makeStyles((theme) => ({
-  root: {},
+  root: {
+    height: "100%",
+  },
   item: {
     display: "flex",
     paddingTop: 0,
@@ -66,6 +68,40 @@ const SidebarNav = (props) => {
           </Button>
         </ListItem>
       ))}
+      <ListItem style={{ position: "absolute", bottom: 0 }}>
+        <a
+          className="dbox-popup"
+          style={{
+            background: "#41a2d8",
+            color: "#fff",
+            textDecoration: "none",
+            display: "inline-block",
+            padding: "1px",
+            width: "100%",
+            WebkitBorderRadius: "2px",
+            MozBorderRadius: "2px",
+            borderRadius: "2px",
+            boxShadow: "0 1px 0 0 #1f5a89",
+            textShadow: "0 1px rgba(0, 0, 0, 0.3)",
+          }}
+          href="https://donorbox.org/support-smash-tracker"
+        >
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "space-evenly",
+              alignItems: "center",
+            }}
+          >
+            <img
+              style={{ width: "24px", height: "24px" }}
+              src="https://d1iczxrky3cnb2.cloudfront.net/red_logo.png"
+              alt=""
+            />
+            <p>Donate</p>
+          </div>
+        </a>
+      </ListItem>
     </List>
   );
 };
