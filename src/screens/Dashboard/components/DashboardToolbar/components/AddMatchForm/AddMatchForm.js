@@ -21,6 +21,7 @@ import {
 import ToggleButton from "@material-ui/lab/ToggleButton";
 import ToggleButtonGroup from "@material-ui/lab/ToggleButtonGroup";
 import { DashboardContext } from "../../../../Dashboard";
+import { StageSelect } from "./components";
 
 const AddMatchForm = (props) => {
   const firebase = useFirebase();
@@ -32,6 +33,8 @@ const AddMatchForm = (props) => {
   const [result, setResult] = React.useState("");
 
   const [firstLoad, setFirstLoad] = React.useState(false);
+
+  const [stage, setStage] = React.useState({ id: 0, name: "no selection" });
 
   const primaryFighters = useSelector(
     (state) => state.firebase.data.primaryFighters
@@ -82,6 +85,10 @@ const AddMatchForm = (props) => {
 
   const handleResultClick = (event, newResult) => {
     setResult(newResult);
+  };
+
+  const updateStage = (event, newStage) => {
+    setStage(newStage);
   };
 
   const onSaveMatchClick = () => {
@@ -159,6 +166,7 @@ const AddMatchForm = (props) => {
             </ToggleButton>
           </ToggleButtonGroup>
         </StyledMatchRow>
+        <StageSelect stage={stage} updateStage={updateStage} />
       </DialogContent>
       <DialogActions>
         <Button onClick={handleClose} color="primary">
