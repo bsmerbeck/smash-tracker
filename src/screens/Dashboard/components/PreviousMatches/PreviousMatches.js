@@ -3,17 +3,21 @@ import Card from "@material-ui/core/Card";
 import CardContent from "@material-ui/core/CardContent";
 import Select from "@material-ui/core/Select";
 import MenuItem from "@material-ui/core/MenuItem";
+import DeleteOutline from "@material-ui/icons/DeleteOutline";
 import { DashboardContext } from "../../Dashboard";
 import { useSelector } from "react-redux";
-import { isLoaded } from "react-redux-firebase";
+import { isLoaded, useFirebase } from "react-redux-firebase";
 import { SpriteList } from "../../../../components/Sprites/SpriteList";
+import { toast } from "react-toastify";
 import {
   StyledPreviousContainerDiv,
   StyledPreviousFighterIconDiv,
+  StyledPreviousDeleteButton,
 } from "./style";
 
 const PreviousMatches = ({ className }) => {
   const { auth } = useContext(DashboardContext);
+  const firebase = useFirebase();
   const matches = useSelector((state) => state.firebase.data.matches);
   const [limit, setLimit] = useState(5);
 
@@ -43,7 +47,12 @@ const PreviousMatches = ({ className }) => {
 
   const entries = Object.keys(matches[auth.uid]);
   const real_matches = entries
-    .map((e) => matches[auth.uid][e])
+    .map((e) => {
+      return {
+        key: e,
+        ...matches[auth.uid][e],
+      };
+    })
     .slice(-1 * limit)
     .reverse();
 
@@ -54,6 +63,20 @@ const PreviousMatches = ({ className }) => {
       opponent: SpriteList.filter((s) => s.id === r.opponent_id)[0],
     };
   });
+
+  function onDeleteMatchClick(e, match) {
+    firebase.remove(`matches/${auth.uid}/${match.key}`).then((res) => {
+      toast.dark("🗑  Match deleted!", {
+        position: "top-right",
+        autoClose: 1000,
+        hideProgressBar: false,
+        closeOnClick: true,
+        pauseOnHover: true,
+        draggable: true,
+        progress: undefined,
+      });
+    });
+  }
 
   return (
     <Card className={className}>
@@ -83,8 +106,15 @@ const PreviousMatches = ({ className }) => {
                     <img src={l.opponent.url} alt="" />
                     <p>{l.opponent.name}</p>
                   </StyledPreviousFighterIconDiv>
+                  <h3>{l.win ? "Win" : "Loss"}</h3>
                 </div>
-                <h3>{l.win ? "Win" : "Loss"}</h3>
+                <StyledPreviousDeleteButton
+                  variant="outlined"
+                  color="primary"
+                  onClick={(e) => onDeleteMatchClick(e, l)}
+                >
+                  <DeleteOutline />
+                </StyledPreviousDeleteButton>
               </StyledPreviousContainerDiv>
             );
           })}
