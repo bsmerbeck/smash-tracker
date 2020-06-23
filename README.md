@@ -4,6 +4,26 @@ Smash tracker is an application that allows users to track their match statistic
 
 The tracker uses Google Firebase for hosting, database/backend functions, and user authentication.
 
+---
+### 06/23/20 Update
+**New Features**
+
+ - 🗺 Stage Selection: add the stage you fought on. Old matches simply state "unknown". This will be improved upon in the coming updates
+
+ - 🅰️ Opponent List Sorting: The opponent list is now sorted a-z to make things easier
+
+ - 🗑 Remove Match from Dashboard: Simple addition, now you don't have to go to matchups to remove a match
+
+ - 🎉 Notifications: These are just small visual indicators, nothing to bother your screen. I'll be adding them as I go along
+
+**Bug Fixes**
+
+ - Mobile Logout: Somehow thelogout button wasn't accessible on mobile
+
+ - Styling: Some general improvements on styling so the app works better on your mobile devices
+
+---
+
 ### Features
 
 - Login using email/password or Google
