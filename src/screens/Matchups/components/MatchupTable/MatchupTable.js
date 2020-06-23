@@ -171,6 +171,7 @@ const MatchupTable = () => {
         opponent_id: opponent.name,
         time: new Date(m.time).toLocaleString(),
         win: m.win ? "Win" : "Loss",
+        stage: m.map ? m.map.name : "unknown",
       };
     })
     .reverse();
@@ -188,6 +189,10 @@ const MatchupTable = () => {
       {
         Header: "Opponent",
         accessor: "opponent_id",
+      },
+      {
+        Header: "Stage",
+        accessor: "stage",
       },
       {
         Header: "Result",
