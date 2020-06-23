@@ -21,6 +21,8 @@ import {
 import ToggleButton from "@material-ui/lab/ToggleButton";
 import ToggleButtonGroup from "@material-ui/lab/ToggleButtonGroup";
 import { DashboardContext } from "../../../../Dashboard";
+import { StageSelect } from "./components";
+import { toast } from "react-toastify";
 
 const AddMatchForm = (props) => {
   const firebase = useFirebase();
@@ -32,6 +34,8 @@ const AddMatchForm = (props) => {
   const [result, setResult] = React.useState("");
 
   const [firstLoad, setFirstLoad] = React.useState(false);
+
+  const [stage, setStage] = React.useState({ id: 0, name: "no selection" });
 
   const primaryFighters = useSelector(
     (state) => state.firebase.data.primaryFighters
@@ -84,13 +88,30 @@ const AddMatchForm = (props) => {
     setResult(newResult);
   };
 
+  const updateStage = (event, newStage) => {
+    setStage(newStage);
+  };
+
   const onSaveMatchClick = () => {
+    const mapDetails =
+      stage.id === 0 ? null : { id: stage.id, name: stage.name };
+
     const matchRef = firebase.database().ref(`/matches/${auth.uid}`).push();
     matchRef.set({
       fighter_id: playerOne.id,
       opponent_id: playerTwo.id,
       time: firebase.database.ServerValue.TIMESTAMP,
       win: result === "win",
+      map: mapDetails,
+    });
+    toast.dark("✅️ Match added!", {
+      position: "top-right",
+      autoClose: 1000,
+      hideProgressBar: false,
+      closeOnClick: true,
+      pauseOnHover: true,
+      draggable: true,
+      progress: undefined,
     });
     handleClose();
   };
@@ -159,6 +180,7 @@ const AddMatchForm = (props) => {
             </ToggleButton>
           </ToggleButtonGroup>
         </StyledMatchRow>
+        <StageSelect stage={stage} updateStage={updateStage} />
       </DialogContent>
       <DialogActions>
         <Button onClick={handleClose} color="primary">

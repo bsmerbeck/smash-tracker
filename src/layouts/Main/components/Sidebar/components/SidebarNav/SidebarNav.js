@@ -1,11 +1,14 @@
 /* eslint-disable react/no-multi-comp */
 /* eslint-disable react/display-name */
 import React, { forwardRef } from "react";
-import { NavLink as RouterLink } from "react-router-dom";
+import { NavLink as RouterLink, useHistory } from "react-router-dom";
 import clsx from "clsx";
 import PropTypes from "prop-types";
 import { makeStyles } from "@material-ui/styles";
-import { List, ListItem, Button } from "@material-ui/core";
+import { List, ListItem, Button, useMediaQuery } from "@material-ui/core";
+import ExitToAppIcon from "@material-ui/icons/ExitToApp";
+import theme from "../../../../../../theme";
+import { useFirebase } from "react-redux-firebase";
 
 const useStyles = makeStyles((theme) => ({
   root: {
@@ -49,9 +52,15 @@ const CustomRouterLink = forwardRef((props, ref) => (
 ));
 
 const SidebarNav = (props) => {
+  const firebase = useFirebase();
+  const history = useHistory();
   const { pages, className, ...rest } = props;
 
   const classes = useStyles();
+
+  const isDesktop = useMediaQuery(theme.breakpoints.up("lg"), {
+    defaultMatches: true,
+  });
 
   return (
     <List {...rest} className={clsx(classes.root, className)}>
@@ -68,6 +77,23 @@ const SidebarNav = (props) => {
           </Button>
         </ListItem>
       ))}
+      {!isDesktop && (
+        <ListItem style={{ padding: 0 }}>
+          <Button
+            className={classes.button}
+            onClick={() => {
+              firebase.logout().then(() => {
+                history.push("/");
+              });
+            }}
+          >
+            <div className={classes.icon}>
+              <ExitToAppIcon />
+            </div>
+            Logout
+          </Button>
+        </ListItem>
+      )}
       <ListItem style={{ position: "absolute", bottom: 0 }}>
         <a
           className="dbox-popup"
