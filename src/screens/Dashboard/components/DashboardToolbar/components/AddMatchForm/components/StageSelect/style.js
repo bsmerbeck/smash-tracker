@@ -1,15 +1,31 @@
 import styled from "styled-components";
 import ToggleButton from "@material-ui/lab/ToggleButton";
+import Autocomplete from "@material-ui/lab/Autocomplete";
 
 export const StyledStageButton = styled(ToggleButton)`
   margin: 5px;
+  min-width: 200px;
+  max-width: 250px;
+  @media (max-device-width: 700px) {
+    max-width: 200px;
+  }
+  @media (max-device-width: 550px) {
+    max-width: 350px;
+  }
   .MuiToggleButton-label {
     img {
-      max-height: 10vh;
-      max-width: 10vw;
+      width: 100%;
     }
     display: flex;
     flex-direction: column;
+  }
+`;
+
+export const StyledAutocomplete = styled(Autocomplete)`
+  width: 300px;
+  margin: 0 auto;
+  @media (max-device-width: 700px) {
+    width: 90%;
   }
 `;
 
