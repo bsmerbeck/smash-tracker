@@ -29,6 +29,7 @@
     "react-router-dom": "^5.2.0",
     "react-scripts": "3.4.1",
     "react-table": "^7.2.0",
+    "react-toastify": "^6.0.6",
     "redux": "^4.0.5",
     "redux-firestore": "^0.13.0",
     "styled-components": "^5.1.0"
