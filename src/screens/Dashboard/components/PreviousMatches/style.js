@@ -1,4 +1,5 @@
 import styled from "styled-components";
+import Button from "@material-ui/core/Button";
 
 export const StyledPreviousContainerDiv = styled.div`
   display: flex;
@@ -7,7 +8,14 @@ export const StyledPreviousContainerDiv = styled.div`
   .fighterDiv {
     display: flex;
     width: 100%;
+    align-items: center;
+    justify-content: space-around;
   }
+`;
+
+export const StyledPreviousDeleteButton = styled(Button)`
+  min-width: 40px;
+  margin: 5px;
 `;
 
 export const StyledPreviousFighterIconDiv = styled.div`

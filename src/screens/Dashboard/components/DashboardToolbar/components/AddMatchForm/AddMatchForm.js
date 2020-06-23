@@ -21,6 +21,7 @@ import {
 import ToggleButton from "@material-ui/lab/ToggleButton";
 import ToggleButtonGroup from "@material-ui/lab/ToggleButtonGroup";
 import { DashboardContext } from "../../../../Dashboard";
+import { toast } from "react-toastify";
 
 const AddMatchForm = (props) => {
   const firebase = useFirebase();
@@ -91,6 +92,15 @@ const AddMatchForm = (props) => {
       opponent_id: playerTwo.id,
       time: firebase.database.ServerValue.TIMESTAMP,
       win: result === "win",
+    });
+    toast.dark("✅️ Match added!", {
+      position: "top-right",
+      autoClose: 1000,
+      hideProgressBar: false,
+      closeOnClick: true,
+      pauseOnHover: true,
+      draggable: true,
+      progress: undefined,
     });
     handleClose();
   };
