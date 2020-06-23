@@ -18,6 +18,8 @@ import { Router } from "react-router-dom"; // react-router v4/v5
 import RouterAnalytics from "./components/RouterAnalytics";
 import configureStore, { history } from "./state/configureStore";
 import App from "./App";
+import { ToastContainer } from "react-toastify";
+import "react-toastify/dist/ReactToastify.css";
 const store = configureStore();
 
 const rrfProps = {
@@ -33,6 +35,7 @@ ReactDOM.render(
       <ReactReduxFirebaseProvider {...rrfProps}>
         <ThemeProvider theme={theme}>
           <CssBaseline />
+          <ToastContainer />
           <App history={history} />
         </ThemeProvider>
       </ReactReduxFirebaseProvider>
