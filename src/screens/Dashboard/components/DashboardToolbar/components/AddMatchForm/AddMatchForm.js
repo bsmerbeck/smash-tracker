@@ -92,12 +92,16 @@ const AddMatchForm = (props) => {
   };
 
   const onSaveMatchClick = () => {
+    const mapDetails =
+      stage.id === 0 ? null : { id: stage.id, name: stage.name };
+
     const matchRef = firebase.database().ref(`/matches/${auth.uid}`).push();
     matchRef.set({
       fighter_id: playerOne.id,
       opponent_id: playerTwo.id,
       time: firebase.database.ServerValue.TIMESTAMP,
       win: result === "win",
+      map: mapDetails,
     });
     handleClose();
   };

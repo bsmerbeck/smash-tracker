@@ -2,7 +2,7 @@ import React from "react";
 import StageList from "../../../../../../../../components/Stages/StageList";
 import Autocomplete from "@material-ui/lab/Autocomplete";
 import TextField from "@material-ui/core/TextField";
-import { StyledStageButton, StageButtonDiv } from "./style";
+import { StyledStageButton, StageButtonDiv, StyledAutocomplete } from "./style";
 
 const StageCard = (props) => {
   const { stage, updateStage, selectedStage } = props;
@@ -51,7 +51,7 @@ const StageSelect = (props) => {
   return (
     <div>
       <h2 style={{ textAlign: "left" }}>Map</h2>
-      <Autocomplete
+      <StyledAutocomplete
         id="full-stage-list"
         options={autocompleteOptions}
         getOptionSelected={(opt, value) => {
@@ -61,7 +61,6 @@ const StageSelect = (props) => {
           return value.id === opt.id;
         }}
         getOptionLabel={(option) => option.name}
-        style={{ width: 300, margin: "0 auto" }}
         value={stage}
         onChange={localUpdate}
         renderInput={(params) => (
