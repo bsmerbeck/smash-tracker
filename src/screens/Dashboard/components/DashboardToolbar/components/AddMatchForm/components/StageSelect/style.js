@@ -5,13 +5,18 @@ import TextField from "@material-ui/core/TextField";
 
 export const StyledStageButton = styled(ToggleButton)`
   margin: 5px;
-  min-width: 200px;
+  min-width: 100px;
   max-width: 250px;
   @media (max-device-width: 700px) {
-    max-width: 200px;
+    max-width: 150px;
   }
   @media (max-device-width: 550px) {
-    max-width: 350px;
+    max-width: 35vw;
+    padding: 2px;
+    margin: 5px;
+    p {
+      font-size: 10px;
+    }
   }
   .MuiToggleButton-label {
     img {
@@ -39,4 +44,6 @@ export const StageButtonDiv = styled.div`
   display: flex;
   flex-wrap: wrap;
   justify-content: center;
+  width: 100%;
+  padding: 0;
 `;

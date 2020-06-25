@@ -6,6 +6,9 @@ import { useFirebase, isLoaded, isEmpty } from "react-redux-firebase";
 import DialogActions from "@material-ui/core/DialogActions";
 import DialogContent from "@material-ui/core/DialogContent";
 import DialogContentText from "@material-ui/core/DialogContentText";
+import RadioGroup from "@material-ui/core/RadioGroup";
+import Radio from "@material-ui/core/Radio";
+import FormControlLabel from "@material-ui/core/FormControlLabel";
 import DialogTitle from "@material-ui/core/DialogTitle";
 import MenuItem from "@material-ui/core/MenuItem";
 import ListItemIcon from "@material-ui/core/ListItemIcon";
@@ -36,6 +39,8 @@ const AddMatchForm = (props) => {
   const [firstLoad, setFirstLoad] = React.useState(false);
 
   const [stage, setStage] = React.useState({ id: 0, name: "no selection" });
+
+  const [selectedType, setSelectedType] = React.useState("quickplay");
 
   const primaryFighters = useSelector(
     (state) => state.firebase.data.primaryFighters
@@ -92,6 +97,10 @@ const AddMatchForm = (props) => {
     setStage(newStage);
   };
 
+  const updateSelectedType = (event) => {
+    setSelectedType(event.target.value);
+  };
+
   const onSaveMatchClick = () => {
     const mapDetails =
       stage.id === 0 ? null : { id: stage.id, name: stage.name };
@@ -125,7 +134,7 @@ const AddMatchForm = (props) => {
       fullWidth={true}
     >
       <DialogTitle id="form-dialog-title">Add Match</DialogTitle>
-      <DialogContent>
+      <DialogContent style={{ padding: "8px 2px" }}>
         <StyledMatchRow>
           <StyledSpriteSelectDiv>
             <DialogContentText>Your Fighter</DialogContentText>
@@ -181,6 +190,57 @@ const AddMatchForm = (props) => {
           </ToggleButtonGroup>
         </StyledMatchRow>
         <StageSelect stage={stage} updateStage={updateStage} />
+        <div>
+          <h2 style={{ textAlign: "center" }}>Match Type</h2>
+          <RadioGroup
+            style={{ margin: "20px", justifyContent: "space-around" }}
+            row
+            aria-label="position"
+            name="position"
+            defaultValue="end"
+          >
+            <FormControlLabel
+              value="quickplay"
+              checked={selectedType === "quickplay"}
+              onChange={updateSelectedType}
+              control={<Radio color="primary" />}
+              label="QuickPlay"
+              labelPlacement="end"
+            />
+            <FormControlLabel
+              value="online-friendly"
+              checked={selectedType === "online-friendly"}
+              onChange={updateSelectedType}
+              control={<Radio color="primary" />}
+              label="Online Friendly"
+              labelPlacement="end"
+            />
+            <FormControlLabel
+              checked={selectedType === "online-tourney"}
+              onChange={updateSelectedType}
+              value="online-tourney"
+              control={<Radio color="primary" />}
+              label="Online Tourney"
+              labelPlacement="end"
+            />
+            <FormControlLabel
+              checked={selectedType === "offline-friendly"}
+              onChange={updateSelectedType}
+              value="offline-friendly"
+              control={<Radio color="primary" />}
+              label="Offline Friendly"
+              labelPlacement="end"
+            />
+            <FormControlLabel
+              checked={selectedType === "offline-tourney"}
+              onChange={updateSelectedType}
+              value="offline-tourney"
+              control={<Radio color="primary" />}
+              label="Offline Tourney"
+              labelPlacement="end"
+            />
+          </RadioGroup>
+        </div>
       </DialogContent>
       <DialogActions>
         <Button onClick={handleClose} color="primary">
