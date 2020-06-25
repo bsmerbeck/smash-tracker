@@ -8,7 +8,7 @@ import {
 import { useSelector } from "react-redux";
 import { useHistory } from "react-router-dom";
 
-import { isLoaded, isEmpty } from "react-redux-firebase";
+import { isLoaded, isEmpty, useFirebase } from "react-redux-firebase";
 import Button from "@material-ui/core/Button";
 import { SpriteList } from "../../components/Sprites/SpriteList";
 import {
@@ -29,6 +29,7 @@ const useStyles = makeStyles((theme) => ({
 export const DashboardContext = React.createContext({});
 
 function Dashboard(props) {
+  const firebase = useFirebase();
   const history = useHistory();
   const classes = useStyles();
   const [firstLoad, setFirstLoad] = React.useState(false);
@@ -39,6 +40,8 @@ function Dashboard(props) {
   const secondaryFighters = useSelector(
     (state) => state.firebase.data.secondaryFighters
   );
+  const opponents = useSelector((state) => state.firebase.data.opponents);
+
   const matches = useSelector((state) => state.firebase.data.matches);
 
   const [fighter, setFighter] = useState({});
@@ -106,6 +109,7 @@ function Dashboard(props) {
         fighterSprites: sprites,
         auth: props.auth,
         matches: matches,
+        opponents: opponents,
       }}
     >
       <div className={classes.root}>
