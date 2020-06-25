@@ -46,11 +46,13 @@ const AddMatchForm = (props) => {
 
   const [stage, setStage] = React.useState({ id: 0, name: "no selection" });
 
-  const [selectedType, setSelectedType] = React.useState("quickplay");
+  const [selectedType, setSelectedType] = React.useState("none");
 
   const [notes, setNotes] = React.useState("");
 
   const [error, setError] = React.useState(false);
+
+  const [opponent, setOpponent] = React.useState("");
 
   const primaryFighters = useSelector(
     (state) => state.firebase.data.primaryFighters
@@ -58,6 +60,8 @@ const AddMatchForm = (props) => {
   const secondaryFighters = useSelector(
     (state) => state.firebase.data.secondaryFighters
   );
+
+  const opponents = useSelector((state) => state.firebase.data.opponents);
 
   const alphaSpriteList = SpriteList.sort((a, b) => {
     const textA = a.name.toUpperCase();
@@ -119,6 +123,14 @@ const AddMatchForm = (props) => {
     setError(newValue);
   };
 
+  const updateOpponent = (newValue) => {
+    if (newValue !== null) {
+      setOpponent(newValue.toString().toLowerCase());
+    } else {
+      setOpponent(newValue);
+    }
+  };
+
   const onSaveMatchClick = () => {
     const mapDetails =
       stage.id === 0 ? null : { id: stage.id, name: stage.name };
@@ -128,9 +140,15 @@ const AddMatchForm = (props) => {
       fighter_id: playerOne.id,
       opponent_id: playerTwo.id,
       time: firebase.database.ServerValue.TIMESTAMP,
-      win: result === "win",
       map: mapDetails,
+      opponent: opponent,
+      notes: notes,
+      matchType: selectedType,
+      win: result === "win",
     });
+
+    firebase.set(`/opponents/${auth.uid}/${opponent.toString()}`, true);
+
     toast.dark("✅️ Match added!", {
       position: "top-right",
       autoClose: 1000,
@@ -219,7 +237,12 @@ const AddMatchForm = (props) => {
             justifyContent: "space-around",
           }}
         >
-          <OpponentNameSelect />
+          <OpponentNameSelect
+            opponents={opponents}
+            opponent={opponent}
+            updateOpponent={updateOpponent}
+            auth={props.auth}
+          />
           <NotesEntry
             notes={notes}
             updateNotes={updateNotes}

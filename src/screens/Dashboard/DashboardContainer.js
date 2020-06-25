@@ -13,5 +13,6 @@ export default compose(
     { path: `primaryFighters/${props.auth.uid}` },
     { path: `secondaryFighters/${props.auth.uid}` },
     { path: `matches/${props.auth.uid}`, queryParams: ["orderByKey"] },
+    { path: `opponents/${props.auth.uid}` },
   ])
 )(Dashboard);

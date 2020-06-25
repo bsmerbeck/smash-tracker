@@ -20,6 +20,14 @@ const MatchTypeSelect = (props) => {
         defaultValue="end"
       >
         <FormControlLabel
+          value="none"
+          checked={selectedType === "none"}
+          onChange={localUpdate}
+          control={<Radio color="primary" />}
+          label="none"
+          labelPlacement="end"
+        />
+        <FormControlLabel
           value="quickplay"
           checked={selectedType === "quickplay"}
           onChange={localUpdate}
