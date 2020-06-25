@@ -54,8 +54,8 @@ const StageSelect = (props) => {
   }
 
   return (
-    <div>
-      <h2 style={{ textAlign: "left" }}>Map</h2>
+    <div style={{ padding: "2px" }}>
+      <h2 style={{ textAlign: "center" }}>Map</h2>
       <StyledAutocomplete
         id="full-stage-list"
         options={autocompleteOptions}
