@@ -13,6 +13,7 @@ import DialogTitle from "@material-ui/core/DialogTitle";
 import MenuItem from "@material-ui/core/MenuItem";
 import ListItemIcon from "@material-ui/core/ListItemIcon";
 import ListItemText from "@material-ui/core/ListItemText";
+import TextField from "@material-ui/core/TextField";
 import { SpriteList } from "../../../../../../components/Sprites/SpriteList";
 import {
   StyledIconSelect,
@@ -24,7 +25,12 @@ import {
 import ToggleButton from "@material-ui/lab/ToggleButton";
 import ToggleButtonGroup from "@material-ui/lab/ToggleButtonGroup";
 import { DashboardContext } from "../../../../Dashboard";
-import { StageSelect } from "./components";
+import {
+  StageSelect,
+  MatchTypeSelect,
+  OpponentNameSelect,
+  NotesEntry,
+} from "./components";
 import { toast } from "react-toastify";
 
 const AddMatchForm = (props) => {
@@ -41,6 +47,10 @@ const AddMatchForm = (props) => {
   const [stage, setStage] = React.useState({ id: 0, name: "no selection" });
 
   const [selectedType, setSelectedType] = React.useState("quickplay");
+
+  const [notes, setNotes] = React.useState("");
+
+  const [error, setError] = React.useState(false);
 
   const primaryFighters = useSelector(
     (state) => state.firebase.data.primaryFighters
@@ -99,6 +109,14 @@ const AddMatchForm = (props) => {
 
   const updateSelectedType = (event) => {
     setSelectedType(event.target.value);
+  };
+
+  const updateNotes = (newValue) => {
+    setNotes(newValue);
+  };
+
+  const updateError = (newValue) => {
+    setError(newValue);
   };
 
   const onSaveMatchClick = () => {
@@ -190,63 +208,31 @@ const AddMatchForm = (props) => {
           </ToggleButtonGroup>
         </StyledMatchRow>
         <StageSelect stage={stage} updateStage={updateStage} />
-        <div>
-          <h2 style={{ textAlign: "center" }}>Match Type</h2>
-          <RadioGroup
-            style={{ margin: "20px", justifyContent: "space-around" }}
-            row
-            aria-label="position"
-            name="position"
-            defaultValue="end"
-          >
-            <FormControlLabel
-              value="quickplay"
-              checked={selectedType === "quickplay"}
-              onChange={updateSelectedType}
-              control={<Radio color="primary" />}
-              label="QuickPlay"
-              labelPlacement="end"
-            />
-            <FormControlLabel
-              value="online-friendly"
-              checked={selectedType === "online-friendly"}
-              onChange={updateSelectedType}
-              control={<Radio color="primary" />}
-              label="Online Friendly"
-              labelPlacement="end"
-            />
-            <FormControlLabel
-              checked={selectedType === "online-tourney"}
-              onChange={updateSelectedType}
-              value="online-tourney"
-              control={<Radio color="primary" />}
-              label="Online Tourney"
-              labelPlacement="end"
-            />
-            <FormControlLabel
-              checked={selectedType === "offline-friendly"}
-              onChange={updateSelectedType}
-              value="offline-friendly"
-              control={<Radio color="primary" />}
-              label="Offline Friendly"
-              labelPlacement="end"
-            />
-            <FormControlLabel
-              checked={selectedType === "offline-tourney"}
-              onChange={updateSelectedType}
-              value="offline-tourney"
-              control={<Radio color="primary" />}
-              label="Offline Tourney"
-              labelPlacement="end"
-            />
-          </RadioGroup>
+        <MatchTypeSelect
+          selectedType={selectedType}
+          updateSelectedType={updateSelectedType}
+        />
+        <div
+          style={{
+            width: "100%",
+            display: "flex",
+            justifyContent: "space-around",
+          }}
+        >
+          <OpponentNameSelect />
+          <NotesEntry
+            notes={notes}
+            updateNotes={updateNotes}
+            error={error}
+            updateError={updateError}
+          />
         </div>
       </DialogContent>
       <DialogActions>
         <Button onClick={handleClose} color="primary">
           Cancel
         </Button>
-        <Button onClick={onSaveMatchClick} color="primary">
+        <Button onClick={onSaveMatchClick} color="primary" disabled={error}>
           Save
         </Button>
       </DialogActions>
