@@ -2,7 +2,12 @@ import React from "react";
 import StageList from "../../../../../../../../components/Stages/StageList";
 import Autocomplete from "@material-ui/lab/Autocomplete";
 import TextField from "@material-ui/core/TextField";
-import { StyledStageButton, StageButtonDiv, StyledAutocomplete } from "./style";
+import {
+  StyledStageButton,
+  StageButtonDiv,
+  StyledAutocomplete,
+  StyledAutoTextField,
+} from "./style";
 
 const StageCard = (props) => {
   const { stage, updateStage, selectedStage } = props;
@@ -64,7 +69,11 @@ const StageSelect = (props) => {
         value={stage}
         onChange={localUpdate}
         renderInput={(params) => (
-          <TextField {...params} label="Type to filter" variant="outlined" />
+          <StyledAutoTextField
+            {...params}
+            label="Type to filter"
+            variant="outlined"
+          />
         )}
       />
       <StageButtonDiv>
