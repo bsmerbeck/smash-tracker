@@ -8,6 +8,10 @@ const filter = createFilterOptions();
 const OpponentNameSelect = (props) => {
   const { opponents, opponent, updateOpponent, auth } = props;
 
+  if (opponents === null || opponents === undefined) {
+    return <div />;
+  }
+
   const _opponents =
     opponents[auth.uid] !== null ? Object.keys(opponents[auth.uid]) : [];
 
