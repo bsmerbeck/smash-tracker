@@ -1,6 +1,9 @@
-import React from "react";
+import React, { useState } from "react";
 import { makeStyles } from "@material-ui/styles";
 import { MatchTable } from "./components";
+import { useSelector } from "react-redux";
+import { SpriteList } from "../../components/Sprites/SpriteList";
+import { isEmpty, useFirebase } from "react-redux-firebase";
 
 const useStyles = makeStyles((theme) => ({
   root: {
@@ -11,16 +14,42 @@ const useStyles = makeStyles((theme) => ({
   },
 }));
 
-const MatchData = () => {
+export const MatchDataContext = React.createContext({});
+
+const MatchData = (props) => {
+  const firebase = useFirebase();
   const classes = useStyles();
 
+  const matches = useSelector((state) => state.firebase.data.matches);
+
+  if (matches === null) {
+    return <div />;
+  }
+
+  function removeMatchup(key) {
+    firebase.remove(`/matches/${props.auth.uid}/${key}`).then(() => {});
+  }
+
+  function updateMatch(key, newData) {
+    firebase.set(`/matches/${props.auth.uid}/${key}`, newData).then(() => {});
+  }
+
   return (
-    <div className={classes.root}>
-      <h1>MatchData</h1>
-      <div className={classes.content}>
-        <MatchTable />
+    <MatchDataContext.Provider
+      value={{
+        auth: props.auth,
+        matches: matches,
+        removeMatchup: removeMatchup,
+        updateMatch: updateMatch,
+      }}
+    >
+      <div className={classes.root}>
+        <h1>MatchData</h1>
+        <div className={classes.content}>
+          <MatchTable />
+        </div>
       </div>
-    </div>
+    </MatchDataContext.Provider>
   );
 };
 
