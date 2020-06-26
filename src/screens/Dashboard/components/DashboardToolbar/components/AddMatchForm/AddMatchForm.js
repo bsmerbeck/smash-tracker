@@ -255,7 +255,11 @@ const AddMatchForm = (props) => {
         <Button onClick={handleClose} color="primary">
           Cancel
         </Button>
-        <Button onClick={onSaveMatchClick} color="primary" disabled={error}>
+        <Button
+          onClick={onSaveMatchClick}
+          color="primary"
+          disabled={error || !(result === "win" || result === "loss")}
+        >
           Save
         </Button>
       </DialogActions>
