@@ -107,6 +107,15 @@ const Matchups = (props) => {
     );
   }
 
+  if (matches[props.auth.uid] === null) {
+    return (
+      <div style={{ textAlign: "center" }}>
+        <h2>You haven't reported any matches!</h2>
+        <h3>Report a Match on Dashboard and report back here!</h3>
+      </div>
+    );
+  }
+
   let fighterIds = [...primaryFighters[props.auth.uid]];
   if (!isEmpty(secondaryFighters[props.auth.uid])) {
     fighterIds = [...fighterIds, ...secondaryFighters[props.auth.uid]];
@@ -138,17 +147,19 @@ const Matchups = (props) => {
   }
 
   function updateMatchups(the_fighter, the_opponent) {
-    const entries = Object.keys(matches[props.auth.uid]);
-    const real_matches = entries.map((e) => {
-      return {
-        key: e,
-        ...matches[props.auth.uid][e],
-      };
-    });
-    const the_matchups = real_matches
-      .filter((rm2) => rm2.fighter_id === the_fighter.id)
-      .filter((rm) => rm.opponent_id === the_opponent.id);
-    setMatchups(the_matchups);
+    if (matches[props.auth.uid] !== null) {
+      const entries = Object.keys(matches[props.auth.uid]);
+      const real_matches = entries.map((e) => {
+        return {
+          key: e,
+          ...matches[props.auth.uid][e],
+        };
+      });
+      const the_matchups = real_matches
+        .filter((rm2) => rm2.fighter_id === the_fighter.id)
+        .filter((rm) => rm.opponent_id === the_opponent.id);
+      setMatchups(the_matchups);
+    }
   }
 
   function removeMatchup(key) {

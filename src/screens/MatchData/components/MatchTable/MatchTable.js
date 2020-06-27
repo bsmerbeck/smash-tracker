@@ -18,12 +18,13 @@ import Button from "@material-ui/core/Button";
 import Select from "@material-ui/core/Select";
 import Typography from "@material-ui/core/Typography";
 import { StyledMatchTableDiv } from "./style";
-import CustomInput from "./CustomInput";
+import { EditMatchForm } from "./components";
+import { useSelector } from "react-redux";
 
 const MatchTable = () => {
-  const { matches, auth, removeMatchup, updateMatch } = React.useContext(
-    MatchDataContext
-  );
+  const { auth, removeMatchup } = React.useContext(MatchDataContext);
+
+  const matches = useSelector((state) => state.firebase.data.matches);
 
   const [rowData, setRowData] = React.useState({});
 
@@ -34,8 +35,6 @@ const MatchTable = () => {
     const rowKey = row.original.key;
     removeMatchup(rowKey);
   };
-
-  const handleUpdateSave = () => {};
 
   const toggleEditDialog = () => {
     setDialogState(!dialogState);
@@ -67,7 +66,7 @@ const MatchTable = () => {
     },
     {
       Header: "Stage",
-      accessor: "stage",
+      accessor: "map.name",
     },
     {
       Header: "Result",
@@ -102,8 +101,15 @@ const MatchTable = () => {
     },
   ];
 
-  if (matches === undefined) {
-    return <div />;
+  if (matches === undefined || matches[auth.uid] === null) {
+    return (
+      <div style={{ textAlign: "center" }}>
+        <h3>
+          You have no matches, report a match and check back here to view match
+          data!
+        </h3>
+      </div>
+    );
   }
 
   const matchData = Object.keys(matches[auth.uid]).map((entry) => {
@@ -125,7 +131,7 @@ const MatchTable = () => {
         opponent_id: getFighterName(m.opponent_id),
         time: new Date(m.time).toLocaleString(),
         win: m.win ? "Win" : "Loss",
-        stage: m.map ? m.map.name : "unknown",
+        map: m.map ? m.map : { id: 0, name: "unknown" },
         matchType: m.matchType ? m.matchType : "",
         opponent: m.opponent ? m.opponent : "",
         notes: m.notes ? m.notes : "",
@@ -135,6 +141,14 @@ const MatchTable = () => {
 
   return (
     <StyledMatchTableDiv>
+      {dialogState && (
+        <EditMatchForm
+          open={dialogState}
+          handleClose={toggleEditDialog}
+          auth={auth}
+          match={rowData}
+        />
+      )}
       <Table columns={headers} data={newData} />
     </StyledMatchTableDiv>
   );
@@ -169,36 +183,6 @@ function Table({ columns, data }) {
     },
   };
 
-  function GlobalFilter({
-    preGlobalFilteredRows,
-    globalFilter,
-    setGlobalFilter,
-  }) {
-    const count = preGlobalFilteredRows.length;
-    const [value, setValue] = React.useState(globalFilter);
-    const onChange = useAsyncDebounce((value) => {
-      setGlobalFilter(value || undefined);
-    }, 200);
-
-    return (
-      <span>
-        Search:{" "}
-        <input
-          value={value || ""}
-          onChange={(e) => {
-            setValue(e.target.value);
-            onChange(e.target.value);
-          }}
-          placeholder={`${count} records...`}
-          style={{
-            fontSize: "1.1rem",
-            border: "0",
-          }}
-        />
-      </span>
-    );
-  }
-
   // Define a default UI for filtering
   function DefaultColumnFilter({
     column: { filterValue, preFilteredRows, setFilter },
@@ -213,39 +197,6 @@ function Table({ columns, data }) {
         }}
         placeholder={`Search ${count} records...`}
       />
-    );
-  }
-
-  // This is a custom filter UI for selecting
-  // a unique option from a list
-  function SelectColumnFilter({
-    column: { filterValue, setFilter, preFilteredRows, id },
-  }) {
-    // Calculate the options for filtering
-    // using the preFilteredRows
-    const options = React.useMemo(() => {
-      const options = new Set();
-      preFilteredRows.forEach((row) => {
-        options.add(row.values[id]);
-      });
-      return [...options.values()];
-    }, [id, preFilteredRows]);
-
-    // Render a multi-select box
-    return (
-      <select
-        value={filterValue}
-        onChange={(e) => {
-          setFilter(e.target.value || undefined);
-        }}
-      >
-        <option value="">All</option>
-        {options.map((option, i) => (
-          <option key={i} value={option}>
-            {option}
-          </option>
-        ))}
-      </select>
     );
   }
 
@@ -268,13 +219,9 @@ function Table({ columns, data }) {
     pageOptions,
     pageCount,
     gotoPage,
-    state,
     nextPage,
     previousPage,
-    visibleColumns,
     setPageSize,
-    preGlobalFilteredRows,
-    setGlobalFilter,
     state: { pageIndex, pageSize },
   } = useTable(
     {
@@ -314,7 +261,7 @@ function Table({ columns, data }) {
           ))}
         </TableHead>
         <TableBody {...getTableBodyProps()}>
-          {page.map((row, i) => {
+          {page.map((row) => {
             prepareRow(row);
             return (
               <TableRow {...row.getRowProps()}>
