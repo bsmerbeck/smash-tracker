@@ -30,17 +30,12 @@ const MatchData = (props) => {
     firebase.remove(`/matches/${props.auth.uid}/${key}`).then(() => {});
   }
 
-  function updateMatch(key, newData) {
-    firebase.set(`/matches/${props.auth.uid}/${key}`, newData).then(() => {});
-  }
-
   return (
     <MatchDataContext.Provider
       value={{
         auth: props.auth,
         matches: matches,
         removeMatchup: removeMatchup,
-        updateMatch: updateMatch,
       }}
     >
       <div className={classes.root}>

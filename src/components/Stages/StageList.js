@@ -1,4 +1,4 @@
-const StageList = [
+export const StageList = [
   {
     id: 1,
     name: "Battlefield",
