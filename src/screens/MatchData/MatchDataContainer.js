@@ -1,4 +1,4 @@
-import Dashboard from "./Dashboard";
+import MatchData from "./MatchData";
 import { connect } from "react-redux";
 import { compose } from "redux";
 import { firebaseConnect } from "react-redux-firebase";
@@ -15,4 +15,4 @@ export default compose(
     { path: `matches/${props.auth.uid}`, queryParams: ["orderByKey"] },
     { path: `opponents/${props.auth.uid}` },
   ])
-)(Dashboard);
+)(MatchData);

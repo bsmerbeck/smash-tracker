@@ -39,6 +39,8 @@ function Dashboard(props) {
   const secondaryFighters = useSelector(
     (state) => state.firebase.data.secondaryFighters
   );
+  const opponents = useSelector((state) => state.firebase.data.opponents);
+
   const matches = useSelector((state) => state.firebase.data.matches);
 
   const [fighter, setFighter] = useState({});
@@ -106,6 +108,7 @@ function Dashboard(props) {
         fighterSprites: sprites,
         auth: props.auth,
         matches: matches,
+        opponents: opponents,
       }}
     >
       <div className={classes.root}>
