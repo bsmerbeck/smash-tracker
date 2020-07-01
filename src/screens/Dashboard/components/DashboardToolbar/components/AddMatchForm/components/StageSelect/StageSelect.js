@@ -1,7 +1,5 @@
 import React from "react";
 import StageList from "../../../../../../../../components/Stages/StageList";
-import Autocomplete from "@material-ui/lab/Autocomplete";
-import TextField from "@material-ui/core/TextField";
 import {
   StyledStageButton,
   StageButtonDiv,

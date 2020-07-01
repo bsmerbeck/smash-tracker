@@ -6,14 +6,10 @@ import { useFirebase, isLoaded, isEmpty } from "react-redux-firebase";
 import DialogActions from "@material-ui/core/DialogActions";
 import DialogContent from "@material-ui/core/DialogContent";
 import DialogContentText from "@material-ui/core/DialogContentText";
-import RadioGroup from "@material-ui/core/RadioGroup";
-import Radio from "@material-ui/core/Radio";
-import FormControlLabel from "@material-ui/core/FormControlLabel";
 import DialogTitle from "@material-ui/core/DialogTitle";
 import MenuItem from "@material-ui/core/MenuItem";
 import ListItemIcon from "@material-ui/core/ListItemIcon";
 import ListItemText from "@material-ui/core/ListItemText";
-import TextField from "@material-ui/core/TextField";
 import { SpriteList } from "../../../../../../components/Sprites/SpriteList";
 import {
   StyledIconSelect,

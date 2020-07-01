@@ -6,7 +6,6 @@ import {
   usePagination,
   useSortBy,
   useFilters,
-  useAsyncDebounce,
   useGlobalFilter,
 } from "react-table";
 import MaUTable from "@material-ui/core/Table";
