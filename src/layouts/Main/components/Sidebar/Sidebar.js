@@ -7,6 +7,7 @@ import DashboardIcon from "@material-ui/icons/Dashboard";
 import PersonIcon from "@material-ui/icons/Person";
 import PeopleIcon from "@material-ui/icons/People";
 import SportsKabaddiIcon from "@material-ui/icons/SportsKabaddi";
+import ShowChartIcon from "@material-ui/icons/ShowChart";
 
 import { SidebarNav } from "./components";
 
@@ -58,6 +59,11 @@ const Sidebar = (props) => {
       title: "Matchups",
       href: "/matchups",
       icon: <SportsKabaddiIcon />,
+    },
+    {
+      title: "Match Data",
+      href: "/match-data",
+      icon: <ShowChartIcon />,
     },
   ];
 
