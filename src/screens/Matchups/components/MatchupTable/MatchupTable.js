@@ -147,35 +147,6 @@ const MatchupTable = () => {
     MatchupsContext
   );
 
-  const matchData = Object.keys(matches[auth.uid])
-    .map((entry) => {
-      return {
-        ...matches[auth.uid][entry],
-        key: entry,
-      };
-    })
-    .filter((match) => match.fighter_id === fighter.id)
-    .filter((match2) => match2.opponent_id === opponent.id);
-
-  const handleDeleteClick = (e) => {
-    const row = e.row;
-    const rowKey = row.original.key;
-    removeMatchup(rowKey);
-  };
-
-  const newData = matchData
-    .map((m) => {
-      return {
-        ...m,
-        fighter_id: fighter.name,
-        opponent_id: opponent.name,
-        time: new Date(m.time).toLocaleString(),
-        win: m.win ? "Win" : "Loss",
-        stage: m.map ? m.map.name : "unknown",
-      };
-    })
-    .reverse();
-
   const columns = React.useMemo(
     () => [
       {
@@ -210,6 +181,44 @@ const MatchupTable = () => {
     ],
     []
   );
+
+  if (matches[auth.uid] === null) {
+    return (
+      <div>
+        <h3>No matches reported yet!</h3>
+      </div>
+    );
+  }
+
+  const matchData = Object.keys(matches[auth.uid])
+    .map((entry) => {
+      return {
+        ...matches[auth.uid][entry],
+        key: entry,
+      };
+    })
+    .filter((match) => match.fighter_id === fighter.id)
+    .filter((match2) => match2.opponent_id === opponent.id);
+
+  const handleDeleteClick = (e) => {
+    const row = e.row;
+    const rowKey = row.original.key;
+    removeMatchup(rowKey);
+  };
+
+  const newData = matchData
+    .map((m) => {
+      return {
+        ...m,
+        fighter_id: fighter.name,
+        opponent_id: opponent.name,
+        time: new Date(m.time).toLocaleString(),
+        win: m.win ? "Win" : "Loss",
+        stage: m.map ? m.map.name : "unknown",
+      };
+    })
+    .reverse();
+
   return (
     <Styles>
       <Table columns={columns} data={newData} />
