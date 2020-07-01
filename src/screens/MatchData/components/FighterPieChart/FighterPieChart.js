@@ -72,7 +72,6 @@ const FighterPieChart = (props) => {
   };
 
   const options = {
-    responsive: true,
     cutoutPercentage: 70,
     rotation: 180,
     legend: {
