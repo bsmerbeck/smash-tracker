@@ -1,7 +1,6 @@
 import React from "react";
 import Button from "@material-ui/core/Button";
 import { useSelector } from "react-redux";
-
 import { useFirebase, isLoaded, isEmpty } from "react-redux-firebase";
 import DialogActions from "@material-ui/core/DialogActions";
 import DialogContent from "@material-ui/core/DialogContent";
@@ -20,7 +19,6 @@ import {
 } from "./style";
 import ToggleButton from "@material-ui/lab/ToggleButton";
 import ToggleButtonGroup from "@material-ui/lab/ToggleButtonGroup";
-import { DashboardContext } from "../../../../Dashboard";
 import {
   StageSelect,
   MatchTypeSelect,
@@ -28,45 +26,45 @@ import {
   NotesEntry,
 } from "./components";
 import { toast } from "react-toastify";
+import { StageList } from "../../../../../../components/Stages/StageList";
 
-const AddMatchForm = (props) => {
+const EditMatchForm = (props) => {
   const firebase = useFirebase();
 
-  const context = React.useContext(DashboardContext);
+  const { open, handleClose, auth, match } = props;
 
-  const { open, handleClose, auth } = props;
-
-  const [result, setResult] = React.useState("");
+  const [result, setResult] = React.useState(match.win);
 
   const [firstLoad, setFirstLoad] = React.useState(false);
 
-  const [stage, setStage] = React.useState({ id: 0, name: "no selection" });
+  const [map, setMap] = React.useState(match.map);
 
-  const [selectedType, setSelectedType] = React.useState("none");
+  const [selectedType, setSelectedType] = React.useState(match.matchType);
 
-  const [notes, setNotes] = React.useState("");
+  const [notes, setNotes] = React.useState(match.notes);
 
   const [error, setError] = React.useState(false);
 
-  const [opponent, setOpponent] = React.useState("");
+  const [opponent, setOpponent] = React.useState(match.opponent);
 
   const primaryFighters = useSelector(
     (state) => state.firebase.data.primaryFighters
   );
+
   const secondaryFighters = useSelector(
     (state) => state.firebase.data.secondaryFighters
   );
 
   const opponents = useSelector((state) => state.firebase.data.opponents);
 
-  const alphaSpriteList = SpriteList.sort((a, b) => {
-    const textA = a.name.toUpperCase();
-    const textB = b.name.toUpperCase();
-    return textA < textB ? -1 : textA > textB ? 1 : 0;
-  });
-
-  const [playerOne, setPlayerOne] = React.useState(context.fighter);
-  const [playerTwo, setPlayerTwo] = React.useState(alphaSpriteList[0]);
+  const [playerOne, setPlayerOne] = React.useState(
+    SpriteList.filter((sl) => {
+      return sl.name === match.fighter_id;
+    })[0]
+  );
+  const [playerTwo, setPlayerTwo] = React.useState(
+    SpriteList.filter((sl) => sl.name === match.opponent_id)[0]
+  );
 
   if (!isLoaded(primaryFighters) || !isLoaded(secondaryFighters)) {
     return <div />;
@@ -77,13 +75,22 @@ const AddMatchForm = (props) => {
     fighterIds = [...fighterIds, ...secondaryFighters[props.auth.uid]];
   }
 
-  if (
-    firstLoad === false &&
-    isLoaded(primaryFighters) &&
-    isLoaded(secondaryFighters)
-  ) {
-    const firstSprite = SpriteList.filter((s) => s.id === fighterIds[0])[0];
-    setPlayerOne(firstSprite);
+  if (!firstLoad) {
+    setPlayerOne(
+      SpriteList.filter((sl) => {
+        return sl.name === match.fighter_id;
+      })[0]
+    );
+    setPlayerTwo(SpriteList.filter((sl) => sl.name === match.opponent_id)[0]);
+    setMap(
+      match.map === undefined
+        ? { id: 0, name: "unknown" }
+        : StageList.filter((sl) => sl.name === match.map.name)[0]
+    );
+    setResult(match.win.toLowerCase());
+    setSelectedType(match.matchType);
+    setOpponent(match.opponent);
+    setNotes(match.notes);
     setFirstLoad(true);
   }
 
@@ -104,7 +111,7 @@ const AddMatchForm = (props) => {
   };
 
   const updateStage = (event, newStage) => {
-    setStage(newStage);
+    setMap(newStage);
   };
 
   const updateSelectedType = (event) => {
@@ -129,38 +136,49 @@ const AddMatchForm = (props) => {
 
   const onSaveMatchClick = () => {
     const mapDetails =
-      stage.id === 0 ? null : { id: stage.id, name: stage.name };
+      map.id === 0
+        ? { id: 0, name: "unknown" }
+        : { id: map.id, name: map.name };
 
-    const matchRef = firebase.database().ref(`/matches/${auth.uid}`).push();
-    matchRef.set({
-      fighter_id: playerOne.id,
-      opponent_id: playerTwo.id,
-      time: firebase.database.ServerValue.TIMESTAMP,
-      map: mapDetails,
-      opponent: opponent,
-      notes: notes,
-      matchType: selectedType,
-      win: result === "win",
-    });
+    firebase
+      .database()
+      .ref(`/matches/${auth.uid}/${match.key}`)
+      .set({
+        fighter_id: playerOne.id,
+        opponent_id: playerTwo.id,
+        time: firebase.database.ServerValue.TIMESTAMP,
+        map: mapDetails,
+        opponent: opponent,
+        notes: notes,
+        matchType: selectedType,
+        win: result === "win",
+      });
 
-    firebase.set(`/opponents/${auth.uid}/${opponent.toString()}`, true);
+    firebase
+      .set(`/opponents/${auth.uid}/${opponent.toString()}`, true)
+      .then(() => {
+        toast.dark("✅️ Match edited!", {
+          position: "top-right",
+          autoClose: 1000,
+          hideProgressBar: false,
+          closeOnClick: true,
+          pauseOnHover: true,
+          draggable: true,
+          progress: undefined,
+        });
 
-    toast.dark("✅️ Match added!", {
-      position: "top-right",
-      autoClose: 1000,
-      hideProgressBar: false,
-      closeOnClick: true,
-      pauseOnHover: true,
-      draggable: true,
-      progress: undefined,
-    });
-    handleClose();
+        handleClose();
+        setFirstLoad(false);
+      });
   };
 
   return (
     <StyledDialog
       open={open}
-      onClose={handleClose}
+      onClose={() => {
+        setFirstLoad(false);
+        handleClose();
+      }}
       aria-labelledby="form-dialog-title"
       maxWidth="lg"
       fullWidth={true}
@@ -221,7 +239,7 @@ const AddMatchForm = (props) => {
             </ToggleButton>
           </ToggleButtonGroup>
         </StyledMatchRow>
-        <StageSelect stage={stage} updateStage={updateStage} />
+        <StageSelect stage={map} updateStage={updateStage} />
         <MatchTypeSelect
           selectedType={selectedType}
           updateSelectedType={updateSelectedType}
@@ -248,7 +266,13 @@ const AddMatchForm = (props) => {
         </div>
       </DialogContent>
       <DialogActions>
-        <Button onClick={handleClose} color="primary">
+        <Button
+          onClick={() => {
+            setFirstLoad(false);
+            handleClose();
+          }}
+          color="primary"
+        >
           Cancel
         </Button>
         <Button
@@ -263,4 +287,4 @@ const AddMatchForm = (props) => {
   );
 };
 
-export default AddMatchForm;
+export default EditMatchForm;

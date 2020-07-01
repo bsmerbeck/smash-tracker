@@ -6,10 +6,6 @@ const admin = require("firebase-admin");
 
 admin.initializeApp();
 
-exports.helloWorld = functions.https.onRequest((request, response) => {
-  response.send("Hello from Firebase!");
-});
-
 exports.createProfile = functions.auth
   .user()
   .onCreate((userRecord, context) => {

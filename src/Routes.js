@@ -11,6 +11,7 @@ import {
   SecondaryCharacterSelect as SecondarySelect,
   Matchups as MatchupView,
   NotFound as NotFoundView,
+  MatchData as MatchDataView,
 } from "./screens";
 
 const Routes = () => {
@@ -44,6 +45,12 @@ const Routes = () => {
         exact
         layout={MainLayout}
         path="/matchups"
+      />
+      <RouteWithLayout
+        component={MatchDataView}
+        exact
+        layout={MainLayout}
+        path="/match-data"
       />
       <RouteWithLayout
         component={NotFoundView}

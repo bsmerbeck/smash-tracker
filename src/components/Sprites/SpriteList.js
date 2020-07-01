@@ -399,4 +399,9 @@ export const SpriteList = [
     name: "Byleth",
     url: "/assets/sprites/75-byleth-sprite.png",
   },
+  {
+    id: 81,
+    name: "Min Min",
+    url: "/assets/sprites/76-minmin-sprite.png",
+  },
 ];
