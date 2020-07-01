@@ -1,9 +1,8 @@
-import React, { useState } from "react";
+import React from "react";
 import { makeStyles } from "@material-ui/styles";
-import { MatchTable } from "./components";
+import { MatchTable, FighterPieChart } from "./components";
 import { useSelector } from "react-redux";
-import { SpriteList } from "../../components/Sprites/SpriteList";
-import { isEmpty, useFirebase } from "react-redux-firebase";
+import { useFirebase } from "react-redux-firebase";
 
 const useStyles = makeStyles((theme) => ({
   root: {
@@ -42,6 +41,10 @@ const MatchData = (props) => {
         <h1>MatchData</h1>
         <div className={classes.content}>
           <MatchTable />
+          <div>
+            <h3>Fighter Breakdown</h3>
+            <FighterPieChart />
+          </div>
         </div>
       </div>
     </MatchDataContext.Provider>

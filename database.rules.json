@@ -20,12 +20,12 @@
       "$uid": {
         ".read": "$uid === auth.uid",
         ".write": "$uid === auth.uid"
-      },
-      "opponents": {
-        "$uid": {
-          ".read": "$uid === auth.uid",
-          ".write": "$uid === auth.uid"
-        }
+      }
+    },
+    "opponents": {
+      "$uid": {
+        ".read": "$uid === auth.uid",
+        ".write": "$uid === auth.uid"
       }
     }
   }

@@ -1,5 +1,4 @@
 import React from "react";
-import TextField from "@material-ui/core/TextField";
 import { StyledAutocomplete, StyledAutoTextField } from "../StageSelect/style";
 import { createFilterOptions } from "@material-ui/lab/Autocomplete";
 
