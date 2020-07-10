@@ -37,8 +37,10 @@ export const StyledMainLogin = styled.div`
   flex-direction: column;
   div {
     width: 100%;
-    Button {
+    .homeButton {
       width: 100%;
+    }
+    Button {
       margin: 5px 0;
     }
   }

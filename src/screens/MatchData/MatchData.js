@@ -2,7 +2,7 @@ import React from "react";
 import { makeStyles } from "@material-ui/styles";
 import { MatchTable, FighterPieChart, StageBreakdown } from "./components";
 import { useSelector } from "react-redux";
-import { useFirebase } from "react-redux-firebase";
+import { useFirebase, isLoaded, isEmpty } from "react-redux-firebase";
 import { StyledFighterPieChartDiv } from "./style";
 
 const useStyles = makeStyles((theme) => ({
@@ -22,7 +22,12 @@ const MatchData = (props) => {
 
   const matches = useSelector((state) => state.firebase.data.matches);
 
-  if (matches === null) {
+  if (
+    matches === undefined ||
+    !isLoaded(matches) ||
+    isEmpty(matches) ||
+    matches === null
+  ) {
     return <div />;
   }
 
@@ -44,7 +49,6 @@ const MatchData = (props) => {
           <MatchTable />
           <StyledFighterPieChartDiv>
             <div>
-              <h2 style={{ textAlign: "center" }}>Fighter Breakdown</h2>
               <FighterPieChart />
             </div>
           </StyledFighterPieChartDiv>
