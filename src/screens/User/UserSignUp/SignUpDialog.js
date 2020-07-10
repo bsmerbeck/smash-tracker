@@ -17,7 +17,12 @@ function SignUpDialog() {
   return (
     <div style={{ width: "100%", display: "flex" }}>
       <Button
-        style={{ maxWidth: "220px", padding: "8px 16px", margin: "0 auto" }}
+        style={{
+          width: "100%",
+          maxWidth: "220px",
+          padding: "8px 16px",
+          margin: "0 auto",
+        }}
         variant="contained"
         onClick={handleOpen}
       >
