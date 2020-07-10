@@ -30,12 +30,22 @@ function HomePage() {
 
   const auth = useSelector((state) => state.firebase.auth);
 
+  const primaryFighters = useSelector(
+    (state) => state.firebase.data.primaryFighters
+  );
+
   function logout() {
     return firebase.logout();
   }
 
   function goToCharacter() {
-    return history.push("/choose-primary");
+    if (
+      isEmpty(primaryFighters) ||
+      primaryFighters[firebase.auth.uid] === null
+    ) {
+      return history.push("/choose-primary");
+    }
+    return history.push("/dashboard");
   }
 
   const classes = useStyles();
@@ -64,7 +74,6 @@ function HomePage() {
           // <GoogleButton/> button can be used instead
           <div style={{ width: "100% " }}>
             <StyledFirebaseAuth
-              style={{ width: "100%" }}
               uiConfig={{
                 signInFlow: "redirect",
                 signInSuccessUrl: "/choose-character",
@@ -87,10 +96,14 @@ function HomePage() {
           </div>
         ) : (
           <div>
-            <Button variant="contained" onClick={() => goToCharacter()}>
+            <Button
+              className="homeButton"
+              variant="contained"
+              onClick={() => goToCharacter()}
+            >
               Start
             </Button>
-            <Button variant="contained" onClick={logout}>
+            <Button className="homeButton" variant="contained" onClick={logout}>
               Logout
             </Button>
           </div>
