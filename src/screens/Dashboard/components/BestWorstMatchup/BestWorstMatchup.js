@@ -59,7 +59,7 @@ Array.prototype.byLoss = function () {
 const BestWorstMatchup = ({ className }) => {
   const { matches, auth, fighter } = useContext(DashboardContext);
 
-  const [threshold, setThreshold] = useState(10);
+  const [threshold, setThreshold] = useState(5);
 
   if (
     !isLoaded(matches) ||
@@ -149,6 +149,9 @@ const BestWorstMatchup = ({ className }) => {
             value={threshold}
             onChange={(e) => setThreshold(e.target.value)}
           >
+            <MenuItem className="bwMenuItem" value={5}>
+              5
+            </MenuItem>
             <MenuItem className="bwMenuItem" value={10}>
               10
             </MenuItem>
@@ -201,6 +204,9 @@ const BestWorstMatchup = ({ className }) => {
           value={threshold}
           onChange={(e) => setThreshold(e.target.value)}
         >
+          <MenuItem className="bwMenuItem" value={5}>
+            5
+          </MenuItem>
           <MenuItem className="bwMenuItem" value={10}>
             10
           </MenuItem>
@@ -225,7 +231,7 @@ const BestWorstMatchup = ({ className }) => {
               <img src={best.url} alt="" />
               <div>
                 <h1>{best.name}</h1>
-                <h2>{tw.ratio} %</h2>
+                <h2>{tb.ratio} %</h2>
               </div>
             </div>
             <div className="bwResult">

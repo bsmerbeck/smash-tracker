@@ -17,7 +17,8 @@ const FighterPieChart = (props) => {
   if (
     !isLoaded(primaryFighters) ||
     !isLoaded(secondaryFighters) ||
-    !isLoaded(matches)
+    !isLoaded(matches) ||
+    matches[props.auth.uid] === null
   ) {
     return <div />;
   }
@@ -105,6 +106,7 @@ const FighterPieChart = (props) => {
 
   return (
     <div>
+      <h2 style={{ textAlign: "center" }}>Fighter Breakdown</h2>
       <Doughnut data={data} options={options} />
     </div>
   );
