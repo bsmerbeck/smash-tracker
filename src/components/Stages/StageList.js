@@ -530,6 +530,36 @@ export const StageList = [
     url: "",
   },
   {
+    id: 107,
+    name: "Momentos",
+    url: "",
+  },
+  {
+    id: 108,
+    name: "Yggdrasil's Altar",
+    url: "",
+  },
+  {
+    id: 109,
+    name: "Spiral Mountain",
+    url: "",
+  },
+  {
+    id: 110,
+    name: "King of Fighters Stadium",
+    url: "",
+  },
+  {
+    id: 111,
+    name: "Garreg Mach Monastery",
+    url: "",
+  },
+  {
+    id: 112,
+    name: "Spring Stadium",
+    url: "",
+  },
+  {
     id: 1000,
     name: "(Gen. Battlefield)",
     url: "",
