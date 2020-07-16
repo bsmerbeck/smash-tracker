@@ -1,9 +1,10 @@
 import React from "react";
-import { StageSelect } from "./components";
+import { StageSelect, BreakdownResults } from "./components";
 import { useSelector } from "react-redux";
 import { isLoaded } from "react-redux-firebase";
 import { SpriteList } from "../../../../components/Sprites/SpriteList";
 
+/*eslint no-extend-native: ["error", { "exceptions": ["Array"] }]*/
 Array.prototype.byWin = function () {
   let itm,
     a = [],
@@ -52,16 +53,9 @@ const StageBreakdown = (props) => {
   const { auth } = props;
 
   const [stage, setStage] = React.useState({ id: 0, name: "no selection" });
-  const [stageMatches, setStageMatches] = React.useState([]);
 
   // check for matches, if none return cancel
   const matches = useSelector((state) => state.firebase.data.matches);
-  const primaryFighters = useSelector(
-    (state) => state.firebase.data.primaryFighters
-  );
-  const secondaryFighters = useSelector(
-    (state) => state.firebase.data.secondaryFighters
-  );
 
   if (!isLoaded(matches) || matches[auth.uid] === null) {
     return <div />;
@@ -119,29 +113,13 @@ const StageBreakdown = (props) => {
     <div>
       <h2>Stage Breakdown</h2>
       <StageSelect stage={stage} updateStage={updateStage} />
-      <p>Stage Win Count: {matches_by_win.length}</p>
-      <p>Stage Loss Count: {matches_by_loss.length}</p>
-      <p>Overall Win Rate: {overallWinRate}%</p>
-      {fighterStats.map((fs) => {
-        return (
-          <div style={{ display: "flex" }}>
-            <img src={fs.fighter.url} alt="" />
-            <p>{fs.fighter.name}</p>
-            <div>
-              <p>Wins</p>
-              <p>{fs.wins}</p>
-            </div>
-            <div>
-              <p>Losses</p>
-              <p>{fs.losses}</p>
-            </div>
-            <div>
-              <p>{fs.winRate}%</p>
-            </div>
-          </div>
-        );
-      })}
-      <p>{JSON.stringify(fighterStats)}</p>
+      <BreakdownResults
+        stage={stage}
+        wins={matches_by_win.length}
+        losses={matches_by_loss.length}
+        winRate={overallWinRate}
+        fighterStats={fighterStats}
+      />
     </div>
   );
 };
