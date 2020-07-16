@@ -52,6 +52,7 @@ const MatchData = (props) => {
               <FighterPieChart />
             </div>
           </StyledFighterPieChartDiv>
+          <StageBreakdown auth={props.auth} />
         </div>
       </div>
     </MatchDataContext.Provider>
