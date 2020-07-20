@@ -37,7 +37,13 @@ const EditMatchForm = (props) => {
 
   const [firstLoad, setFirstLoad] = React.useState(false);
 
-  const [map, setMap] = React.useState(match.map);
+  const [map, setMap] = React.useState(() => {
+    if (match.map) {
+      if (match.map.id) {
+        return match.map;
+      } else return { id: 0, name: "no selection" };
+    } else return { id: 0, name: "no selection" };
+  });
 
   const [selectedType, setSelectedType] = React.useState(match.matchType);
 
@@ -84,7 +90,9 @@ const EditMatchForm = (props) => {
     setPlayerTwo(SpriteList.filter((sl) => sl.name === match.opponent_id)[0]);
     setMap(
       match.map === undefined
-        ? { id: 0, name: "unknown" }
+        ? { id: 0, name: "no selection" }
+        : match.map.id === 0
+        ? { id: 0, name: "no selection" }
         : StageList.filter((sl) => sl.name === match.map.name)[0]
     );
     setResult(match.win.toLowerCase());
