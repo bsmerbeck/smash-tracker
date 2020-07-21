@@ -119,7 +119,6 @@ function Dashboard(props) {
             <StyledBestWorst />
             <StyledPreviousMatches />
           </StyledTwoCardDiv>
-
           <LastMatchesChart />
         </div>
       </div>

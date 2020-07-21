@@ -18,6 +18,7 @@ import {
   StyledMatchupSelectDiv,
   StyledMatchupDiv,
   StyledMatchupChartDiv,
+  StyledMatchupToolbarDiv,
 } from "./style";
 import { DashboardContext } from "../Dashboard/Dashboard";
 import { AddMatchForm } from "../Dashboard/components/DashboardToolbar/components";
@@ -198,8 +199,14 @@ const Matchups = (props) => {
         <StyledMatchupCard>
           <CardContent>
             <AddMatchForm open={open} handleClose={handleClose} />
-            <div className={classes.root}>
-              <div className={classes.root} style={{ flex: 1 }}>
+            <StyledMatchupToolbarDiv
+              className={classes.root}
+              style={{ maxHeight: "unset !important" }}
+            >
+              <div
+                className={classes.root}
+                style={{ flex: 1, maxHeight: "unset !important" }}
+              >
                 <StyledMatchupSelectDiv>
                   <h3>You</h3>
                   <SelectFighter />
@@ -217,7 +224,7 @@ const Matchups = (props) => {
               >
                 Add Match
               </Button>
-            </div>
+            </StyledMatchupToolbarDiv>
           </CardContent>
         </StyledMatchupCard>
         <div className={classes.content}>
