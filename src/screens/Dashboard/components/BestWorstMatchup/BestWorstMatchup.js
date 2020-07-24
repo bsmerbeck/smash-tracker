@@ -149,6 +149,9 @@ const BestWorstMatchup = ({ className }) => {
             value={threshold}
             onChange={(e) => setThreshold(e.target.value)}
           >
+            <MenuItem className="bwMenuItem" value={3}>
+              3
+            </MenuItem>
             <MenuItem className="bwMenuItem" value={5}>
               5
             </MenuItem>
@@ -204,6 +207,9 @@ const BestWorstMatchup = ({ className }) => {
           value={threshold}
           onChange={(e) => setThreshold(e.target.value)}
         >
+          <MenuItem className="bwMenuItem" value={3}>
+            3
+          </MenuItem>
           <MenuItem className="bwMenuItem" value={5}>
             5
           </MenuItem>
