@@ -5,7 +5,7 @@ import CardContent from "@material-ui/core/CardContent";
 export const BestWorstCardDiv = styled.div`
   display: flex;
   justify-content: space-between;
-  @media (max-device-width: 600px) {
+  @media (max-width: 900px) {
     flex-direction: column;
   }
 `;
@@ -16,9 +16,15 @@ export const StyledBWCard = styled(Card)`
   padding: 16px;
   display: flex;
   flex-direction: column;
+  div.MuiCardContent-root:last-child {
+    padding: 0;
+  }
 `;
 
 export const StyledBWSelectDiv = styled.div`
+  div {
+    padding: 5px;
+  }
   padding: 5px 25px;
   .bwMenuItem {
     cursor: pointer;
@@ -46,5 +52,9 @@ export const StyledBWCardContent = styled(CardContent)`
       justify-content: space-between;
       width: 100%;
     }
+  }
+
+  div.MuiCardContent-root:last-child {
+    padding: 5px;
   }
 `;
