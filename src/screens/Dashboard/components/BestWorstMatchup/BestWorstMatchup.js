@@ -141,7 +141,7 @@ const BestWorstMatchup = ({ className }) => {
 
   if (win_ratio_list.length === 0) {
     return (
-      <StyledBWCard className={className}>
+      <StyledBWCard>
         <h2>Matchup Statistics</h2>
         <StyledBWSelectDiv>
           <p>Minimum Match Threshold</p>
