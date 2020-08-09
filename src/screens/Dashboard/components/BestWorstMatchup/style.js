@@ -5,8 +5,9 @@ import CardContent from "@material-ui/core/CardContent";
 export const BestWorstCardDiv = styled.div`
   display: flex;
   justify-content: space-between;
-  @media (max-width: 900px) {
+  @media (max-width: 500px) {
     flex-direction: column;
+    margin: 0 auto;
   }
 `;
 
@@ -35,8 +36,9 @@ export const StyledBWCardContent = styled(CardContent)`
   padding-bottom: 10px;
   div.spriteContainer {
     display: flex;
+    align-items: center;
     img {
-      max-height: 10vh;
+      max-height: 5vh;
       flex: 0;
     }
     div {
