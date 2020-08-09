@@ -8,7 +8,9 @@ import { makeStyles } from "@material-ui/styles";
 import { List, ListItem, Button, useMediaQuery } from "@material-ui/core";
 import ExitToAppIcon from "@material-ui/icons/ExitToApp";
 import theme from "../../../../../../theme";
+import FavoriteBorderOutlinedIcon from "@material-ui/icons/FavoriteBorderOutlined";
 import { useFirebase } from "react-redux-firebase";
+import SSBUDiscordIcon from "./SSBU_TG-03.png";
 
 const useStyles = makeStyles((theme) => ({
   root: {
@@ -94,7 +96,37 @@ const SidebarNav = (props) => {
           </Button>
         </ListItem>
       )}
-      <ListItem style={{ position: "absolute", bottom: 0 }}>
+      <ListItem
+        style={{
+          position: "absolute",
+          bottom: 0,
+          display: "flex",
+          flexDirection: "column",
+        }}
+      >
+        <Button
+          variant="contained"
+          color="primary"
+          style={{
+            display: "flex",
+            justifyContent: "space-evenly",
+            alignItems: "center",
+            textTransform: "unset",
+            width: "100%",
+            marginBottom: "10px",
+            padding: "0",
+          }}
+          onClick={() => {
+            window.open("https://discord.gg/9TN8RFZ");
+          }}
+        >
+          <img
+            style={{ width: "40px", height: "40px", borderRadius: "20px" }}
+            src={SSBUDiscordIcon}
+            alt="SSBU Training Grounds"
+          />
+          <p>Training Grounds</p>
+        </Button>
         <a
           className="dbox-popup"
           style={{
@@ -117,14 +149,11 @@ const SidebarNav = (props) => {
               display: "flex",
               justifyContent: "space-evenly",
               alignItems: "center",
+              margin: "3px",
             }}
           >
-            <img
-              style={{ width: "24px", height: "24px" }}
-              src="https://d1iczxrky3cnb2.cloudfront.net/red_logo.png"
-              alt=""
-            />
-            <p>Donate</p>
+            <FavoriteBorderOutlinedIcon />
+            <p style={{ fontSize: "14px" }}>Donate</p>
           </div>
         </a>
       </ListItem>
