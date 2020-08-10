@@ -560,6 +560,11 @@ export const StageList = [
     url: "",
   },
   {
+    id: 113,
+    name: "Small Battlefield",
+    url: "",
+  },
+  {
     id: 1000,
     name: "(Gen. Battlefield)",
     url: "",

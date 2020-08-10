@@ -129,7 +129,12 @@ const AddMatchForm = (props) => {
 
   const onSaveMatchClick = () => {
     const mapDetails =
-      stage.id === 0 ? null : { id: stage.id, name: stage.name };
+      stage.id === 0
+        ? {
+            id: 0,
+            name: "no selection",
+          }
+        : { id: stage.id, name: stage.name };
 
     const matchRef = firebase.database().ref(`/matches/${auth.uid}`).push();
     matchRef.set({

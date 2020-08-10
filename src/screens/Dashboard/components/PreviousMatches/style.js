@@ -24,16 +24,18 @@ export const StyledPreviousFighterIconDiv = styled.div`
   img {
     flex: 1;
     max-width: 5vh;
-    @media (max-device-width: 500px) {
+    max-height: 5vh;
+    @media (max-width: 900px) {
       max-width: 10vw;
     }
   }
   p {
     flex: 1;
   }
-  @media (max-device-width: 500px) {
+  @media (max-width: 900px) {
     min-width: unset;
     align-items: center;
     text-align: center;
+    flex-direction: column;
   }
 `;
