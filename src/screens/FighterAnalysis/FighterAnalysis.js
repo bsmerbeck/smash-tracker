@@ -78,7 +78,7 @@ const FighterAnalysis = (props) => {
       value={{
         fighter: fighter,
         fighterSprites: sprites,
-        updateFighter: updateFighter,
+        updateSprite: updateFighter,
       }}
     >
       <div className={classes.root}>
