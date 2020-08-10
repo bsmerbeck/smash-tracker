@@ -1,12 +1,12 @@
 import React from "react";
-import { DashboardContext } from "../../Dashboard";
+import { FighterAnalysisContext } from "../../FighterAnalysis";
 import MenuItem from "@material-ui/core/MenuItem";
 import ListItemIcon from "@material-ui/core/ListItemIcon";
 import ListItemText from "@material-ui/core/ListItemText";
 import { StyledIconSelect } from "./style";
 
-const SelectFighter = (props) => {
-  const context = React.useContext(DashboardContext);
+const SelectFighter = () => {
+  const context = React.useContext(FighterAnalysisContext);
 
   const handleSelect = (e) => {
     context.updateSprite(e.target.value);
