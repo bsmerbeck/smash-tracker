@@ -149,6 +149,9 @@ const BestWorstMatchup = ({ className }) => {
             value={threshold}
             onChange={(e) => setThreshold(e.target.value)}
           >
+            <MenuItem className="bwMenuItem" value={3}>
+              3
+            </MenuItem>
             <MenuItem className="bwMenuItem" value={5}>
               5
             </MenuItem>
@@ -188,12 +191,32 @@ const BestWorstMatchup = ({ className }) => {
     );
   }
 
-  const tb = win_ratio_list[0];
-  const tw = win_ratio_list[win_ratio_list.length - 1];
-  const best = SpriteList.filter((s) => s.id === win_ratio_list[0].id)[0];
-  const worst = SpriteList.filter(
-    (s) => s.id === win_ratio_list[win_ratio_list.length - 1].id
-  )[0];
+  let bwCount = win_ratio_list.length / 2;
+  bwCount = bwCount >= 1 ? (bwCount >= 3 ? 3 : Math.floor(bwCount)) : 1.0;
+
+  let tbList = [];
+  let twList = [];
+
+  for (let x = 0; x < bwCount; x++) {
+    const best = win_ratio_list[x];
+    const worst = win_ratio_list[win_ratio_list.length - 1 - x];
+    const bestSprite = SpriteList.find((s) => s.id === best.id);
+    const worstSprite = SpriteList.find((s) => s.id === worst.id);
+    console.log(`${JSON.stringify(best)}`);
+    console.log(`${JSON.stringify(worst)}`);
+    tbList.push({ stats: best, sprite: bestSprite });
+    twList.push({ stats: worst, sprite: worstSprite });
+  }
+
+  //twList = twList.reverse();
+  //tbList = tbList.reverse();
+
+  // const tb = win_ratio_list[0];
+  // const tw = win_ratio_list[win_ratio_list.length - 1];
+  // const best = SpriteList.filter((s) => s.id === win_ratio_list[0].id)[0];
+  // const worst = SpriteList.filter(
+  //   (s) => s.id === win_ratio_list[win_ratio_list.length - 1].id
+  // )[0];
 
   return (
     <StyledBWCard className={className}>
@@ -204,6 +227,9 @@ const BestWorstMatchup = ({ className }) => {
           value={threshold}
           onChange={(e) => setThreshold(e.target.value)}
         >
+          <MenuItem className="bwMenuItem" value={3}>
+            3
+          </MenuItem>
           <MenuItem className="bwMenuItem" value={5}>
             5
           </MenuItem>
@@ -227,19 +253,26 @@ const BestWorstMatchup = ({ className }) => {
             <Typography color="textSecondary" gutterBottom>
               Best Matchup
             </Typography>
-            <div className="spriteContainer">
-              <img src={best.url} alt="" />
-              <div>
-                <h1>{best.name}</h1>
-                <h2>{tb.ratio} %</h2>
-              </div>
-            </div>
-            <div className="bwResult">
-              <div>
-                <h4>Wins: {tb.wins}</h4>
-                <h4>Losses: {tb.losses ? tb.losses : 0}</h4>
-              </div>
-            </div>
+            {tbList.map((tb) => {
+              return (
+                <div key={tb.stats.id}>
+                  <div className="spriteContainer">
+                    <img src={tb.sprite.url} alt="" />
+                    <div style={{ display: "flex", flexDirection: "column" }}>
+                      <div style={{ display: "flex", flexDirection: "row" }}>
+                        <h3 style={{ margin: "0 3px" }}>{tb.sprite.name}</h3>
+                      </div>
+                      <div style={{ display: "flex", flexDirection: "row" }}>
+                        <h3 style={{ margin: "0 3px" }}>
+                          {tb.stats.ratio}% ( {tb.stats.wins}:
+                          {tb.stats.losses ?? 0} )
+                        </h3>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
           </StyledBWCardContent>
         </StyledBWCard>
         <StyledBWCard>
@@ -247,19 +280,26 @@ const BestWorstMatchup = ({ className }) => {
             <Typography color="textSecondary" gutterBottom>
               Worst Matchup
             </Typography>
-            <div className="spriteContainer">
-              <img src={worst.url} alt="" />
-              <div>
-                <h1>{worst.name}</h1>
-                <h2>{tw.ratio} %</h2>
-              </div>
-            </div>
-            <div className="bwResult">
-              <div>
-                <h4>Wins: {tw.wins}</h4>
-                <h4>Losses: {tw.losses ? tw.losses : 0}</h4>
-              </div>
-            </div>
+            {twList.map((tw) => {
+              return (
+                <div key={tw.stats.id}>
+                  <div className="spriteContainer">
+                    <img src={tw.sprite.url} alt="" />
+                    <div style={{ display: "flex", flexDirection: "column" }}>
+                      <div style={{ display: "flex", flexDirection: "row" }}>
+                        <h3 style={{ margin: "0 3px" }}>{tw.sprite.name}</h3>
+                      </div>
+                      <div style={{ display: "flex", flexDirection: "row" }}>
+                        <h3 style={{ margin: "0 3px" }}>
+                          {tw.stats.ratio}% ( {tw.stats.wins}:
+                          {tw.stats.losses ?? 0} )
+                        </h3>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
           </StyledBWCardContent>
         </StyledBWCard>
       </BestWorstCardDiv>

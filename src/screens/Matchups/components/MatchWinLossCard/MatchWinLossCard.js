@@ -53,6 +53,12 @@ const MatchWinLossCard = () => {
           </Typography>
           <Typography>{matchupWins.length}</Typography>
         </div>
+        <div style={{ textAlign: "center" }}>
+          <Typography color="textSecondary" gutterBottom>
+            Total Matches
+          </Typography>
+          <Typography>{matchupWins.length + matchupLosses.length}</Typography>
+        </div>
         <div
           style={{
             display: "flex",

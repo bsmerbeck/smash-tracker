@@ -4,7 +4,20 @@ import theme from "../../theme";
 
 export const StyledMatchupCard = styled(Card)`
   width: 100%;
-  max-height: 120px;
+  max-height: unset;
+`;
+
+export const StyledMatchupToolbarDiv = styled.div`
+  display: flex;
+  @media (max-device-width: 500px) {
+    flex-direction: column;
+    max-height: unset;
+    button {
+      width: 100%;
+      margin: 10px auto;
+      padding: 8px;
+    }
+  }
 `;
 
 export const StyledMatchupSelectDiv = styled.div`

@@ -93,6 +93,11 @@ const WinLossTracker = () => {
   const losses = real_matches.filter(
     (w) => !w.win && w.fighter_id === context.fighter.id
   );
+
+  const rate =
+    losses && losses.length > 0
+      ? ((wins.length / (wins.length + losses.length)) * 100).toFixed(0)
+      : 100;
   return (
     <Card className={classes.root}>
       <h2 style={{ margin: "10px", textAlign: "center" }}>Overall Record</h2>
@@ -113,6 +118,12 @@ const WinLossTracker = () => {
             Wins
           </Typography>
           <Typography className={classes.body}>{wins.length}</Typography>
+        </div>
+        <div style={{ textAlign: "center" }}>
+          <Typography color="textSecondary" gutterBottom>
+            Rate
+          </Typography>
+          <Typography>{rate}%</Typography>
         </div>
         <div
           style={{

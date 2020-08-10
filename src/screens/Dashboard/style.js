@@ -24,7 +24,7 @@ export const StyledDashFighterBarDiv = styled.div`
 
 export const StyledBestWorst = styled(BestWorstMatchup)`
   flex: 1;
-  margin: 20px;
+  margin: 16px;
   @media (max-device-width: 1024px) {
     margin: 20px auto;
   }
@@ -40,5 +40,9 @@ export const StyledTwoCardDiv = styled.div`
 
 export const StyledPreviousMatches = styled(PreviousMatches)`
   flex: 1;
-  margin: 20px;
+  width: 100%;
+  margin: 16px;
+  @media (max-device-width: 1025px) {
+    margin: 16px 0;
+  }
 `;
