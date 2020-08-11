@@ -4,6 +4,8 @@ import CardHeader from "@material-ui/core/CardHeader";
 import CardContent from "@material-ui/core/CardContent";
 import { FighterAnalysisContext } from "../../FighterAnalysis";
 
+import { StyledStreakCardContentDiv } from "./style";
+
 function winStreak(arr) {
   let i,
     temp,
@@ -95,23 +97,23 @@ const StreakCard = () => {
     <Card>
       <CardHeader title="Streaks" />
       <CardContent>
-        <div style={{ display: "flex" }}>
-          <div style={{ flex: 1, textAlign: "center" }}>
+        <StyledStreakCardContentDiv lastValue={lastValue}>
+          <div>
             <p>Current</p>
-            <h2 style={{ color: currentColor }}>{streak}</h2>
+            <h2 className="currentStreak">{streak}</h2>
             <p>{lastValue ? "Wins" : "Losses"}</p>
           </div>
-          <div style={{ flex: 1, textAlign: "center" }}>
+          <div>
             <p>Best</p>
-            <h2 style={{ color: "limegreen" }}>{win_streak}</h2>
+            <h2 className="winCount">{win_streak}</h2>
             <p>Wins</p>
           </div>
-          <div style={{ flex: 1, textAlign: "center" }}>
+          <div>
             <p>Worst</p>
-            <h2 style={{ color: "red" }}>{lose_streak}</h2>
+            <h2 className="lossCount">{lose_streak}</h2>
             <p>Losses</p>
           </div>
-        </div>
+        </StyledStreakCardContentDiv>
       </CardContent>
     </Card>
   );
