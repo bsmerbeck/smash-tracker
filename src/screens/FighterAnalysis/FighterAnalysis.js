@@ -5,7 +5,7 @@ import { useSelector } from "react-redux";
 
 import { SpriteList } from "../../components/Sprites/SpriteList";
 
-import { SelectFighter, StreakCard } from "./components";
+import { SelectFighter, StreakCard, RosterBreakdown } from "./components";
 
 const useStyles = makeStyles((theme) => ({
   root: {
@@ -89,6 +89,7 @@ const FighterAnalysis = (props) => {
           <SelectFighter />
           <h2>content</h2>
           <StreakCard />
+          <RosterBreakdown />
         </div>
       </div>
     </FighterAnalysisContext.Provider>

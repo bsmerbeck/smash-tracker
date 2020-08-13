@@ -91,8 +91,6 @@ const StreakCard = () => {
   const lose_streak = loseStreak(real_matches);
   const { streak, lastValue } = lastStreak(real_matches);
 
-  const currentColor = lastValue ? "limegreen" : "red";
-
   return (
     <Card>
       <CardHeader title="Streaks" />
