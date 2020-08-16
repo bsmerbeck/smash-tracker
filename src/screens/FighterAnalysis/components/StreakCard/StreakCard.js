@@ -87,14 +87,18 @@ const StreakCard = () => {
   const entries = Object.keys(matches[context.auth.uid]);
   const real_matches = entries.map((e) => matches[context.auth.uid][e]);
 
-  const win_streak = winStreak(real_matches);
-  const lose_streak = loseStreak(real_matches);
-  const { streak, lastValue } = lastStreak(real_matches);
+  const real_fighter_matches = real_matches.filter(
+    (m) => m.fighter_id === fighter.id
+  );
+
+  const win_streak = winStreak(real_fighter_matches);
+  const lose_streak = loseStreak(real_fighter_matches);
+  const { streak, lastValue } = lastStreak(real_fighter_matches);
 
   return (
-    <Card>
-      <CardHeader title="Streaks" />
-      <CardContent>
+    <Card style={{ marginTop: "5px" }}>
+      <CardHeader style={{ paddingBottom: 0 }} title="Streaks" />
+      <CardContent style={{ paddingBottom: 0, paddingTop: 0 }}>
         <StyledStreakCardContentDiv lastValue={lastValue}>
           <div>
             <p>Current</p>

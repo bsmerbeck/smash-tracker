@@ -1,39 +1,72 @@
-import React from "react";
-import { StageList } from "../../../../components/Stages/StageList";
-import { SpriteList } from "../../../../components/Sprites/SpriteList";
+import React, { useContext } from "react";
 import { FighterAnalysisContext } from "../../FighterAnalysis";
-import {
-  useTable,
-  usePagination,
-  useSortBy,
-  useFilters,
-  useGlobalFilter,
-} from "react-table";
+import { useFilters, usePagination, useSortBy, useTable } from "react-table";
 import MaUTable from "@material-ui/core/Table";
-import TableContainer from "@material-ui/core/TableContainer";
-import TableBody from "@material-ui/core/TableBody";
-import TableCell from "@material-ui/core/TableCell";
 import TableHead from "@material-ui/core/TableHead";
 import TableRow from "@material-ui/core/TableRow";
+import TableCell from "@material-ui/core/TableCell";
+import TableBody from "@material-ui/core/TableBody";
 import Button from "@material-ui/core/Button";
 import Typography from "@material-ui/core/Typography";
 import Select from "@material-ui/core/Select";
-import { TableStyleDiv } from "./style";
+import TableContainer from "@material-ui/core/TableContainer";
+import { TableStyleDiv } from "../RosterBreakdown/style";
+
+const OpponentTable = (props) => {
+  const context = useContext(FighterAnalysisContext);
+  const { matches, fighter, opponents } = context;
+
+  const entries = Object.keys(matches[context.auth.uid]);
+  const real_matches = entries.map((e) => matches[context.auth.uid][e]);
+  const fighter_matches = real_matches.filter(
+    (m) => m.fighter_id === fighter.id
+  );
+
+  const fighter_opponent_matches = fighter_matches.filter(
+    (m) => m.opponent && m.opponent.length > 0
+  );
+
+  const flags = new Set();
+  fighter_opponent_matches.filter((entry) => {
+    if (!flags.has(entry.opponent)) {
+      flags.add(entry.opponent);
+      return true;
+    }
+    return false;
+  });
+
+  let tableData = [];
+  flags.forEach((f) => {
+    const opp_match = fighter_opponent_matches.filter((m) => m.opponent === f);
+    const opp_length = opp_match.length;
+    const opp_wins = opp_match.filter((m) => m.win).length;
+    const opp_win_rate = ((opp_wins / opp_length) * 100).toFixed(0);
+    tableData.push({
+      opponent: f,
+      match_count: opp_length,
+      win_count: opp_wins,
+      loss_count: opp_length - opp_wins,
+      win_rate: opp_win_rate,
+    });
+  });
+
+  console.log(tableData);
+
+  return (
+    <TableStyleDiv style={{ flex: 1 }}>
+      <TableContainer style={{ maxHeight: "400px" }}>
+        <Table columns={headers} data={tableData} />
+      </TableContainer>
+    </TableStyleDiv>
+  );
+};
+
+export default OpponentTable;
 
 const headers = [
   {
-    Header: "Fighter",
-    accessor: "id",
-    Cell: ({ cell }) => (
-      <div style={{ display: "flex", alignItems: "center" }}>
-        <img
-          style={{ maxWidth: "4vw", maxHeight: "4vh" }}
-          src={cell.row.original.url}
-          alt=""
-        />
-        <p style={{ flex: 1 }}>{cell.row.original.name}</p>
-      </div>
-    ),
+    Header: "Opponent",
+    accessor: "opponent",
   },
   {
     Header: "Win Rate",
@@ -43,77 +76,17 @@ const headers = [
     Header: "Matches",
     Filter: NumberRangeColumnFilter,
     filter: "between",
-    accessor: "matches_count",
+    accessor: "match_count",
   },
   {
     Header: "Wins",
-    accessor: "wins_count",
+    accessor: "win_count",
   },
   {
     Header: "Losses",
-    accessor: "losses_count",
-  },
-  {
-    Header: "Best Stage",
-    accessor: "best_stage",
-  },
-  {
-    Header: "Worst Stage",
-    accessor: "worst_stage",
+    accessor: "loss_count",
   },
 ];
-
-const RosterBreakdown = () => {
-  const context = React.useContext(FighterAnalysisContext);
-
-  const { matches, fighter } = context;
-
-  const entries = Object.keys(matches[context.auth.uid]);
-  const real_matches = entries.map((e) => matches[context.auth.uid][e]);
-  const fighter_matches = real_matches.filter(
-    (m) => m.fighter_id === fighter.id
-  );
-
-  let tableData = SpriteList.map((s) => {
-    const wins_count = fighter_matches.filter(
-      (m) => m.opponent_id === s.id && m.win
-    );
-    const losses_count = fighter_matches.filter(
-      (m) => m.opponent_id === s.id && !m.win
-    );
-    const matches_count = wins_count.length + losses_count.length;
-    const win_rate =
-      wins_count && wins_count.length > 0
-        ? ((wins_count.length / matches_count) * 100).toFixed(0)
-        : 0;
-
-    const best_stage = bestMap(real_matches, s.id);
-    const worst_stage = worstMap(real_matches, s.id);
-    // const best_string = best_stage.ratio ? `${best_stage.name} (${best_stage.ratio} %)` : `${best_stage.name}`;
-    // const worst_string = worst_stage.ratio ? `${worst_stage.name} (${worst_stage.ratio} %)` : `${worst_stage.name}`;
-    return {
-      id: s.id,
-      name: s.name,
-      url: s.url,
-      matches_count: matches_count,
-      win_rate: win_rate,
-      wins_count: wins_count.length,
-      losses_count: losses_count.length,
-      best_stage: best_stage.name,
-      worst_stage: worst_stage.name,
-    };
-  });
-
-  return (
-    <TableStyleDiv style={{ flex: 1 }}>
-      <TableContainer style={{ maxHeight: "800px" }}>
-        <Table columns={headers} data={tableData} />
-      </TableContainer>
-    </TableStyleDiv>
-  );
-};
-
-export default RosterBreakdown;
 
 // Define a default UI for filtering
 function DefaultColumnFilter({
@@ -340,7 +313,7 @@ function Table({ columns, data }) {
               setPageSize(Number(e.target.value));
             }}
           >
-            {[8, 10, 20, 40, 100].map((pageSize) => (
+            {[10, 20, 30, 40, 50].map((pageSize) => (
               <option key={pageSize} value={pageSize}>
                 Show {pageSize}
               </option>
@@ -350,52 +323,4 @@ function Table({ columns, data }) {
       </div>
     </>
   );
-}
-
-function bestMap(arr, fighter) {
-  const stageRatios = StageList.map((s) => {
-    const stageMatches = arr.filter(
-      (match) => match.map && match.map.id === s.id
-    );
-    const stageWins = stageMatches.filter(
-      (m) => m.fighter_id === fighter && m.win
-    );
-
-    const stageRatio =
-      stageWins.length && stageWins.length > 0
-        ? ((stageWins.length / stageMatches.length) * 100).toFixed(0)
-        : 0;
-    return {
-      id: s.id,
-      name: s.name,
-      ratio: stageRatio,
-    };
-  });
-  const bestMap = stageRatios.sort((a, b) => b.ratio - a.ratio);
-  const returnMap = bestMap[0].ratio === 0 ? { id: -1, name: "" } : bestMap[0];
-  return returnMap;
-}
-
-function worstMap(arr, fighter) {
-  const stageRatios = StageList.map((s) => {
-    const stageMatches = arr.filter(
-      (match) => match.map && match.map.id === s.id
-    );
-    const stageLosses = stageMatches.filter(
-      (m) => m.fighter_id === fighter && !m.win
-    );
-
-    const stageRatio =
-      stageLosses.length && stageLosses.length > 0
-        ? ((stageLosses.length / stageMatches.length) * 100).toFixed(0)
-        : 0;
-    return {
-      id: s.id,
-      name: s.name,
-      ratio: stageRatio,
-    };
-  });
-  const bestMap = stageRatios.sort((a, b) => b.ratio - a.ratio);
-  const returnMap = bestMap[0].ratio === 0 ? { id: -1, name: "" } : bestMap[0];
-  return returnMap;
 }

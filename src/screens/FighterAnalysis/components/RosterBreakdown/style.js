@@ -95,13 +95,13 @@ export const TableStyleDiv = styled.div`
     td:nth-of-type(6):before {
       content: "Best Stage";
       font-weight: bold;
-      position: absolute;
+      position: relative;
     }
     ,
     td:nth-of-type(7):before {
       content: "Worst Stage";
       font-weight: bold;
-      position: absolute;
+      position: relative;
     }
   }
   table {
