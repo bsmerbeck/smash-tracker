@@ -96,7 +96,7 @@ const StreakCard = () => {
   const { streak, lastValue } = lastStreak(real_fighter_matches);
 
   return (
-    <Card style={{ marginTop: "5px" }}>
+    <Card style={{ flex: 1, margin: "5px" }}>
       <CardHeader style={{ paddingBottom: 0 }} title="Streaks" />
       <CardContent style={{ paddingBottom: 0, paddingTop: 0 }}>
         <StyledStreakCardContentDiv lastValue={lastValue}>

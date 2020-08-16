@@ -10,6 +10,7 @@ import {
   StreakCard,
   RosterBreakdown,
   OpponentTable,
+  BestWorstMap,
 } from "./components";
 
 const useStyles = makeStyles((theme) => ({
@@ -94,10 +95,15 @@ const FighterAnalysis = (props) => {
         <h1>Fighter Analysis</h1>
         <div className={classes.content}>
           <SelectFighter />
-          <StreakCard />
-          <div style={{ display: "flex" }}>
-            <RosterBreakdown style={{ flex: 1 }} />
-            <OpponentTable style={{ flex: 1 }} />
+          <div>
+            <div style={{ display: "flex", flex: 1 }}>
+              <BestWorstMap />
+              <StreakCard />
+            </div>
+            <div style={{ display: "flex", flex: 1 }}>
+              <RosterBreakdown style={{ flex: 1 }} />
+              <OpponentTable style={{ flex: 1 }} />
+            </div>
           </div>
         </div>
       </div>
