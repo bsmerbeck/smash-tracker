@@ -5,7 +5,12 @@ import { useSelector } from "react-redux";
 
 import { SpriteList } from "../../components/Sprites/SpriteList";
 
-import { SelectFighter, StreakCard, RosterBreakdown } from "./components";
+import {
+  SelectFighter,
+  StreakCard,
+  RosterBreakdown,
+  OpponentTable,
+} from "./components";
 
 const useStyles = makeStyles((theme) => ({
   root: {
@@ -31,6 +36,7 @@ const FighterAnalysis = (props) => {
     (state) => state.firebase.data.secondaryFighters
   );
   const matches = useSelector((state) => state.firebase.data.matches);
+  const opponents = useSelector((state) => state.firebase.data.opponents);
 
   if (
     primaryFighters === undefined ||
@@ -81,15 +87,18 @@ const FighterAnalysis = (props) => {
         fighterSprites: sprites,
         updateSprite: updateFighter,
         matches: matches,
+        opponents: opponents,
       }}
     >
       <div className={classes.root}>
         <h1>Fighter Analysis</h1>
         <div className={classes.content}>
           <SelectFighter />
-          <h2>content</h2>
           <StreakCard />
-          <RosterBreakdown />
+          <div style={{ display: "flex" }}>
+            <RosterBreakdown style={{ flex: 1 }} />
+            <OpponentTable style={{ flex: 1 }} />
+          </div>
         </div>
       </div>
     </FighterAnalysisContext.Provider>
