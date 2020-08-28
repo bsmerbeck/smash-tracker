@@ -75,20 +75,23 @@ const RosterBreakdown = () => {
   );
 
   let tableData = SpriteList.map((s) => {
-    const wins_count = fighter_matches.filter(
-      (m) => m.opponent_id === s.id && m.win
+    const opponent_matches = fighter_matches.filter(
+      (m) => m.opponent_id === s.id
     );
-    const losses_count = fighter_matches.filter(
+    const wins_count = opponent_matches.filter((m) => m.win);
+    const losses_count = opponent_matches.filter(
       (m) => m.opponent_id === s.id && !m.win
     );
     const matches_count = wins_count.length + losses_count.length;
     const win_rate =
-      wins_count && wins_count.length > 0
-        ? ((wins_count.length / matches_count) * 100).toFixed(0)
+      wins_count && matches_count > 0
+        ? Number.parseInt(
+            ((wins_count.length / matches_count) * 100).toFixed(0)
+          )
         : 0;
 
-    const best_stage = bestMap(real_matches, s.id);
-    const worst_stage = worstMap(real_matches, s.id);
+    const best_stage = bestMap(opponent_matches);
+    const worst_stage = worstMap(opponent_matches);
     // const best_string = best_stage.ratio ? `${best_stage.name} (${best_stage.ratio} %)` : `${best_stage.name}`;
     // const worst_string = worst_stage.ratio ? `${worst_stage.name} (${worst_stage.ratio} %)` : `${worst_stage.name}`;
     return {
@@ -352,18 +355,18 @@ function Table({ columns, data }) {
   );
 }
 
-function bestMap(arr, fighter) {
+function bestMap(arr) {
   const stageRatios = StageList.map((s) => {
-    const stageMatches = arr.filter(
-      (match) => match.map && match.map.id === s.id
-    );
-    const stageWins = stageMatches.filter(
-      (m) => m.fighter_id === fighter && m.win
-    );
+    const stageMatches = arr.filter((match) => {
+      if (match.map) {
+        return match.map.id === s.id;
+      }
+    });
+    const stageWins = stageMatches.filter((m) => m.win);
 
     const stageRatio =
-      stageWins.length && stageWins.length > 0
-        ? ((stageWins.length / stageMatches.length) * 100).toFixed(0)
+      stageWins.length && stageMatches.length > 3
+        ? parseInt(((stageWins.length / stageMatches.length) * 100).toFixed(0))
         : 0;
     return {
       id: s.id,
@@ -376,26 +379,39 @@ function bestMap(arr, fighter) {
   return returnMap;
 }
 
-function worstMap(arr, fighter) {
+function worstMap(arr) {
   const stageRatios = StageList.map((s) => {
-    const stageMatches = arr.filter(
-      (match) => match.map && match.map.id === s.id
-    );
-    const stageLosses = stageMatches.filter(
-      (m) => m.fighter_id === fighter && !m.win
-    );
+    const stageMatches = arr.filter((match) => {
+      if (match.map) {
+        return match.map.id === s.id;
+      }
+    });
+    const stageLosses = stageMatches.filter((m) => m.win === false);
 
     const stageRatio =
-      stageLosses.length && stageLosses.length > 0
-        ? ((stageLosses.length / stageMatches.length) * 100).toFixed(0)
-        : 0;
+      stageLosses.length && stageLosses.length > 3
+        ? parseInt(
+            ((stageLosses.length / stageMatches.length) * 100).toFixed(0)
+          )
+        : -1;
+
     return {
       id: s.id,
       name: s.name,
       ratio: stageRatio,
     };
   });
-  const bestMap = stageRatios.sort((a, b) => b.ratio - a.ratio);
-  const returnMap = bestMap[0].ratio === 0 ? { id: -1, name: "" } : bestMap[0];
+  const theMaps = stageRatios.filter((sr) => sr.ratio !== -1);
+  const bestMap = theMaps.sort((a, b) => b.ratio - a.ratio);
+  if (bestMap.length === 0) {
+    return {
+      id: -1,
+      name: "",
+    };
+  }
+  const returnMap =
+    bestMap[bestMap.length - 1].ratio === 0
+      ? { id: -1, name: "" }
+      : bestMap[bestMap.length - 1];
   return returnMap;
 }
