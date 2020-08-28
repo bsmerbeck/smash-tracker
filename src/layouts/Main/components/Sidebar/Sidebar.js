@@ -8,6 +8,7 @@ import PersonIcon from "@material-ui/icons/Person";
 import PeopleIcon from "@material-ui/icons/People";
 import SportsKabaddiIcon from "@material-ui/icons/SportsKabaddi";
 import ShowChartIcon from "@material-ui/icons/ShowChart";
+import PersonPinIcon from "@material-ui/icons/PersonPin";
 
 import { SidebarNav } from "./components";
 
@@ -54,6 +55,11 @@ const Sidebar = (props) => {
       title: "Secondary Fighters",
       href: "/choose-secondary",
       icon: <PeopleIcon />,
+    },
+    {
+      title: "Fighter Analysis",
+      href: "/fighter-analysis",
+      icon: <PersonPinIcon />,
     },
     {
       title: "Matchups",
