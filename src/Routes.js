@@ -12,6 +12,7 @@ import {
   Matchups as MatchupView,
   NotFound as NotFoundView,
   MatchData as MatchDataView,
+  FighterAnalysis as FighterAnalysisView,
 } from "./screens";
 
 const Routes = () => {
@@ -39,6 +40,12 @@ const Routes = () => {
         exact
         layout={MainLayout}
         path="/choose-secondary"
+      />
+      <RouteWithLayout
+        component={FighterAnalysisView}
+        exact
+        layout={MainLayout}
+        path="/fighter-analysis"
       />
       <RouteWithLayout
         component={MatchupView}
