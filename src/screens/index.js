@@ -5,3 +5,4 @@ export { default as SecondaryCharacterSelect } from "./CharacterSelect/Secondary
 export { default as Matchups } from "./Matchups";
 export { default as NotFound } from "./NotFound";
 export { default as MatchData } from "./MatchData";
+export { default as FighterAnalysis } from "./FighterAnalysis";
