@@ -10,7 +10,7 @@ import MenuItem from "@material-ui/core/MenuItem";
 
 const BestWorstMap = () => {
   const context = React.useContext(FighterAnalysisContext);
-  const [threshold, setThreshold] = React.useState(3);
+  const [threshold, setThreshold] = React.useState(5);
   const { matches, fighter } = context;
 
   const entries = Object.keys(matches[context.auth.uid]);
@@ -66,7 +66,12 @@ const BestWorstMap = () => {
             }}
           >
             <h2>{best.name}</h2>
-            <p>{best.ratio ? `${best.ratio}%` : "not enough matches"}</p>
+            <div>
+              <p>{best.ratio ? `${best.ratio}%` : "not enough matches"}</p>
+              <p>
+                {best.wins} wins | {best.losses} losses
+              </p>
+            </div>
           </div>
           <div
             style={{
@@ -78,6 +83,9 @@ const BestWorstMap = () => {
           >
             <h2>{worst.name}</h2>
             <p>{worst.ratio ? `${worst.ratio}%` : "not enough matches"}</p>
+            <p>
+              {worst.ratio ? `${worst.wins} wins | ${worst.losses} losses` : ""}
+            </p>
           </div>
         </div>
       </StyledBestWorstStageCardContent>
@@ -103,6 +111,8 @@ function bestMap(arr, fighter, threshold) {
     return {
       id: s.id,
       name: s.name,
+      wins: stageWins.length,
+      losses: stageMatches.length - stageWins.length,
       ratio: stageRatio,
     };
   });
@@ -116,21 +126,28 @@ function worstMap(arr, fighter, threshold) {
     const stageMatches = arr.filter(
       (match) => match.map && match.map.id === s.id
     );
-    const stageLosses = stageMatches.filter(
-      (m) => m.fighter_id === fighter && !m.win
-    );
+
+    const stageWins = stageMatches.filter((m) => m.win);
 
     const stageRatio =
-      stageLosses.length && stageLosses.length >= threshold
-        ? ((stageLosses.length / stageMatches.length) * 100).toFixed(0)
-        : 0;
+      stageWins.length && stageMatches.length >= threshold
+        ? ((stageWins.length / stageMatches.length) * 100).toFixed(0).toString()
+        : "0";
     return {
       id: s.id,
       name: s.name,
-      ratio: stageRatio,
+      wins: stageWins.length,
+      losses: stageMatches.length - stageWins.length,
+      ratio: Number.parseInt(stageRatio),
     };
   });
   const bestMap = stageRatios.sort((a, b) => b.ratio - a.ratio);
-  const returnMap = bestMap[0].ratio === 0 ? { id: -1, name: "" } : bestMap[0];
+  const bestFilter = bestMap.filter(
+    (m) => m.wins + m.losses !== 0 && m.wins + m.losses >= threshold
+  );
+  const returnMap =
+    bestFilter[bestFilter.length - 1].ratio === 0
+      ? { id: -1, name: "" }
+      : bestFilter[bestFilter.length - 1];
   return returnMap;
 }

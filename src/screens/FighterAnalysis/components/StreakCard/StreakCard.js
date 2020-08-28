@@ -4,7 +4,7 @@ import CardHeader from "@material-ui/core/CardHeader";
 import CardContent from "@material-ui/core/CardContent";
 import { FighterAnalysisContext } from "../../FighterAnalysis";
 
-import { StyledStreakCardContentDiv } from "./style";
+import { StyledStreakCardContentDiv, StyledStreakCard } from "./style";
 
 function winStreak(arr) {
   let i,
@@ -96,7 +96,7 @@ const StreakCard = () => {
   const { streak, lastValue } = lastStreak(real_fighter_matches);
 
   return (
-    <Card style={{ flex: 1, margin: "5px" }}>
+    <StyledStreakCard style={{ flex: 1, margin: "5px" }}>
       <CardHeader style={{ paddingBottom: 0 }} title="Streaks" />
       <CardContent style={{ paddingBottom: 0, paddingTop: 0 }}>
         <StyledStreakCardContentDiv lastValue={lastValue}>
@@ -117,7 +117,7 @@ const StreakCard = () => {
           </div>
         </StyledStreakCardContentDiv>
       </CardContent>
-    </Card>
+    </StyledStreakCard>
   );
 };
 

@@ -1,7 +1,17 @@
 import styled from "styled-components";
+import Card from "@material-ui/core/Card";
 
+export const StyledStreakCard = styled(Card)`
+  div.MuiCardContent-root {
+    width: 100%;
+    height: 100%;
+  }
+`;
 export const StyledStreakCardContentDiv = styled.div`
   display: flex;
+  width: 100%;
+  height: 100%;
+  align-items: center;
   div {
     flex: 1;
     text-align: center;

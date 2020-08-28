@@ -71,8 +71,8 @@ const StageBreakdown = (props) => {
     return matchData;
   });
   const stage_matches = real_matches.filter((rm) => rm.map.id === stage.id);
-  const matches_by_win = stage_matches.byWin();
-  const matches_by_loss = stage_matches.byLoss();
+  const matches_by_win = stage_matches.filter((m) => m.win === true);
+  const matches_by_loss = stage_matches.filter((m) => m.win === false);
 
   const numWins = matches_by_win.length;
   const numLosses = matches_by_loss.length;
@@ -88,12 +88,11 @@ const StageBreakdown = (props) => {
   );
   let fighterStats = [];
   stageFighters.forEach((fighter) => {
-    const wins = stage_matches
-      .filter((m) => m.fighter_id === fighter.id)
-      .byWin().length;
-    const losses = stage_matches
-      .filter((m) => m.fighter_id === fighter.id)
-      .byLoss().length;
+    const fighterMatches = stage_matches.filter(
+      (m) => m.fighter_id === fighter.id
+    );
+    const wins = fighterMatches.filter((m) => m.win === true).length;
+    const losses = fighterMatches.filter((m) => m.win === false).length;
     const winRate = losses ? ((wins / (wins + losses)) * 100).toFixed(0) : 100;
     fighterStats.push({
       fighter: fighter,
