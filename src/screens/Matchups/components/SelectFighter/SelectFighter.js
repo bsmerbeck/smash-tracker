@@ -14,9 +14,9 @@ const SelectFighter = () => {
   };
   return (
     <MatchupsContext.Consumer>
-      {({ fighter, fighterSprites }) => (
+      {({ fighter, updateFighter, fighterSprites }) => (
         <FormControl>
-          <StyledIconSelect value={fighter} onChange={handleSelect}>
+          <StyledIconSelect value={fighter} onChange={updateFighter}>
             {fighterSprites.map((s) => {
               return (
                 <MenuItem value={s} key={s.id}>
