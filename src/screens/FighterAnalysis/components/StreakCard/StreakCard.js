@@ -65,6 +65,9 @@ function loseStreak(arr) {
 }
 
 function lastStreak(arr) {
+  if (arr.length === 0) {
+    return { streak: 0, lastValue: false };
+  }
   const reverse = arr.reverse();
   const lastValue = reverse[0].win;
   let streak = 1;
