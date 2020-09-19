@@ -2,13 +2,7 @@ import React from "react";
 import { StageList } from "../../../../components/Stages/StageList";
 import { SpriteList } from "../../../../components/Sprites/SpriteList";
 import { FighterAnalysisContext } from "../../FighterAnalysis";
-import {
-  useTable,
-  usePagination,
-  useSortBy,
-  useFilters,
-  useGlobalFilter,
-} from "react-table";
+import { useTable, usePagination, useSortBy, useFilters } from "react-table";
 import MaUTable from "@material-ui/core/Table";
 import TableContainer from "@material-ui/core/TableContainer";
 import TableBody from "@material-ui/core/TableBody";
@@ -119,11 +113,7 @@ const RosterBreakdown = () => {
 export default RosterBreakdown;
 
 // Define a default UI for filtering
-function DefaultColumnFilter({
-  column: { filterValue, preFilteredRows, setFilter },
-}) {
-  const count = preFilteredRows.length;
-
+function DefaultColumnFilter({ column: {} }) {
   return <div />;
 }
 
@@ -262,7 +252,7 @@ function Table({ columns, data }) {
           {headerGroups.map((headerGroup) => (
             <TableRow {...headerGroup.getHeaderGroupProps()}>
               {headerGroup.headers.map((column) => (
-                <TableCell>
+                <TableCell key={Math.random() * 100}>
                   <div
                     {...column.getHeaderProps(column.getSortByToggleProps())}
                   >

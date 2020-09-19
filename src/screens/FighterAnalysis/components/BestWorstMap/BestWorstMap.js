@@ -22,8 +22,6 @@ const BestWorstMap = () => {
   const best = bestMap(fighter_matches, fighter.id, threshold);
   const worst = worstMap(fighter_matches, fighter.id, threshold);
 
-  console.log("hi");
-
   const handleThresholdChange = (event) => {
     setThreshold(event.target.value);
   };
@@ -67,9 +65,11 @@ const BestWorstMap = () => {
           >
             <h2>{best.name}</h2>
             <div>
-              <p>{best.ratio ? `${best.ratio}%` : "not enough matches"}</p>
+              <p>{best.ratio >= 0 ? `${best.ratio}%` : "not enough matches"}</p>
               <p>
-                {best.wins} wins | {best.losses} losses
+                {best.ratio >= 0
+                  ? `${best.wins} wins | ${best.losses} losses`
+                  : ""}
               </p>
             </div>
           </div>
@@ -82,9 +82,11 @@ const BestWorstMap = () => {
             }}
           >
             <h2>{worst.name}</h2>
-            <p>{worst.ratio ? `${worst.ratio}%` : "not enough matches"}</p>
+            <p>{worst.ratio >= 0 ? `${worst.ratio}%` : "not enough matches"}</p>
             <p>
-              {worst.ratio ? `${worst.wins} wins | ${worst.losses} losses` : ""}
+              {worst.ratio >= 0
+                ? `${worst.wins} wins | ${worst.losses} losses`
+                : ""}
             </p>
           </div>
         </div>
@@ -117,7 +119,10 @@ function bestMap(arr, fighter, threshold) {
     };
   });
   const bestMap = stageRatios.sort((a, b) => b.ratio - a.ratio);
-  const returnMap = bestMap[0].ratio === 0 ? { id: -1, name: "" } : bestMap[0];
+  const bestFilter = bestMap.filter(
+    (m) => m.wins + m.losses !== 0 && m.wins >= threshold
+  );
+  const returnMap = bestFilter.length > 0 ? bestFilter[0] : { name: "unknown" };
   return returnMap;
 }
 
@@ -143,11 +148,11 @@ function worstMap(arr, fighter, threshold) {
   });
   const bestMap = stageRatios.sort((a, b) => b.ratio - a.ratio);
   const bestFilter = bestMap.filter(
-    (m) => m.wins + m.losses !== 0 && m.wins + m.losses >= threshold
+    (m) => m.wins + m.losses !== 0 && m.losses >= threshold
   );
   const returnMap =
-    bestFilter[bestFilter.length - 1].ratio === 0
-      ? { id: -1, name: "" }
-      : bestFilter[bestFilter.length - 1];
+    bestFilter.length > 0
+      ? bestFilter[bestFilter.length - 1]
+      : { name: "unknown" };
   return returnMap;
 }
