@@ -12,9 +12,9 @@ import Select from "@material-ui/core/Select";
 import TableContainer from "@material-ui/core/TableContainer";
 import { TableStyleDiv } from "../RosterBreakdown/style";
 
-const OpponentTable = (props) => {
+const OpponentTable = () => {
   const context = useContext(FighterAnalysisContext);
-  const { matches, fighter, opponents } = context;
+  const { matches, fighter } = context;
 
   const entries = Object.keys(matches[context.auth.uid]);
   const real_matches = entries.map((e) => matches[context.auth.uid][e]);
@@ -49,8 +49,6 @@ const OpponentTable = (props) => {
       win_rate: opp_win_rate,
     });
   });
-
-  console.log(tableData);
 
   return (
     <TableStyleDiv style={{ flex: 1 }}>
@@ -92,8 +90,6 @@ const headers = [
 function DefaultColumnFilter({
   column: { filterValue, preFilteredRows, setFilter },
 }) {
-  const count = preFilteredRows.length;
-
   return <div />;
 }
 
@@ -232,7 +228,7 @@ function Table({ columns, data }) {
           {headerGroups.map((headerGroup) => (
             <TableRow {...headerGroup.getHeaderGroupProps()}>
               {headerGroup.headers.map((column) => (
-                <TableCell>
+                <TableCell key={Math.random() * 100}>
                   <div
                     {...column.getHeaderProps(column.getSortByToggleProps())}
                   >
