@@ -61,6 +61,12 @@ function HomePage() {
       </StyledMainTitle>
       <StyledMainInfo>
         <p>
+          December Update!{" "}
+          <span style={{ color: "darkred" }}>Sephiroth Added.</span> Development
+          back in progress!
+        </p>
+        <p></p>
+        <p style={{ marginLeft: "5px", marginRight: "5px" }}>
           Smash Tracker is a fan-made dashboard to track your Smash Ultimate
           matches. By reporting your matches, the tracker will display your
           progress. View your best and worst matchups, progress by character,
