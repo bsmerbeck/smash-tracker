@@ -61,7 +61,7 @@ import "firebase/database";
 
 export const firebaseConfig = {
   apiKey: "your-key-here",
-  authDomain: "your-app.firebase.app",
+  authDomain: "your-app.firebase.js.app",
   databaseURL: "https://your-app.firebaseio.com",
   projectId: "your-project-id",
   storageBucket: "your-storage-bucket",

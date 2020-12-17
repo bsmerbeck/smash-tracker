@@ -409,4 +409,9 @@ export const SpriteList = [
     name: "Steve",
     url: "/assets/sprites/77-steve-sprite.png",
   },
+  {
+    id: 83,
+    name: "Sephiroth",
+    url: "/assets/sprites/78-sephiroth-sprite.png",
+  },
 ];
