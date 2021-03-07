@@ -61,8 +61,8 @@ function HomePage() {
       </StyledMainTitle>
       <StyledMainInfo>
         <p>
-          December Update!{" "}
-          <span style={{ color: "darkred" }}>Sephiroth Added.</span> Development
+          March Update!{" "}
+          <span style={{ color: "coral" }}>Pyra/Mythra Added.</span> Development
           back in progress!
         </p>
         <p></p>
