@@ -6,7 +6,7 @@ import TextField from "@material-ui/core/TextField";
 export const StyledStageButton = styled(ToggleButton)`
   margin: 5px;
   min-width: 100px;
-  max-width: 250px;
+  max-width: 240px;
   @media (max-device-width: 700px) {
     max-width: 150px;
   }

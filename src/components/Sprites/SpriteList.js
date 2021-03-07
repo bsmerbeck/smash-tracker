@@ -414,4 +414,9 @@ export const SpriteList = [
     name: "Sephiroth",
     url: "/assets/sprites/78-sephiroth-sprite.png",
   },
+  {
+    id: 84,
+    name: "Pyra/Mythra",
+    url: "/assets/sprites/79-pyra-mythra-sprite.png",
+  },
 ];
