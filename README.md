@@ -1,5 +1,7 @@
 ## Smash Tracker
 
+Home Page: https://smash-tracker-f97b7.web.app/
+
 Smash tracker is an application that allows users to track their match statistics in Super Smash Bros. Ultimate.
 
 The tracker uses Google Firebase for hosting, database/backend functions, and user authentication.
@@ -61,7 +63,7 @@ import "firebase/database";
 
 export const firebaseConfig = {
   apiKey: "your-key-here",
-  authDomain: "your-app.firebase.app",
+  authDomain: "your-app.firebase.js.app",
   databaseURL: "https://your-app.firebaseio.com",
   projectId: "your-project-id",
   storageBucket: "your-storage-bucket",

@@ -562,6 +562,41 @@ export const StageList = [
   {
     id: 113,
     name: "Small Battlefield",
+    url: "/assets/stages/113-small-battlefield.jpg",
+  },
+  {
+    id: 114,
+    name: "Minecraft World",
+    url: "",
+  },
+  {
+    id: 115,
+    name: "Northern Cave",
+    url: "",
+  },
+  {
+    id: 116,
+    name: "Cloud Sea of Alrest",
+    url: "",
+  },
+  {
+    id: 114,
+    name: "Minecraft World",
+    url: "",
+  },
+  {
+    id: 115,
+    name: "Northern Cave",
+    url: "",
+  },
+  {
+    id: 116,
+    name: "Cloud Sea of Alrest",
+    url: "",
+  },
+  {
+    id: 117,
+    name: "Mishima Dojo",
     url: "",
   },
   {
