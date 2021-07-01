@@ -1,5 +1,7 @@
 ## Smash Tracker
 
+Home Page: https://smash-tracker-f97b7.web.app/
+
 Smash tracker is an application that allows users to track their match statistics in Super Smash Bros. Ultimate.
 
 The tracker uses Google Firebase for hosting, database/backend functions, and user authentication.
