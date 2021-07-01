@@ -580,6 +580,26 @@ export const StageList = [
     url: "",
   },
   {
+    id: 114,
+    name: "Minecraft World",
+    url: "",
+  },
+  {
+    id: 115,
+    name: "Northern Cave",
+    url: "",
+  },
+  {
+    id: 116,
+    name: "Cloud Sea of Alrest",
+    url: "",
+  },
+  {
+    id: 117,
+    name: "Mishima Dojo",
+    url: "",
+  },
+  {
     id: 1000,
     name: "(Gen. Battlefield)",
     url: "",
