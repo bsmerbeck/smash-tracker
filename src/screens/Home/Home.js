@@ -61,7 +61,7 @@ function HomePage() {
       </StyledMainTitle>
       <StyledMainInfo>
         <p>
-          July Update! <span style={{ color: "#81d4fa" }}>Kazuya Added.</span>{" "}
+          October Update! <span style={{ color: "#efb706" }}>Sora Added.</span>{" "}
           Development back in progress!
         </p>
         <p></p>

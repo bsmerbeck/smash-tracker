@@ -3,7 +3,7 @@ import { connect } from "react-redux";
 import { compose } from "redux";
 import { firebaseConnect } from "react-redux-firebase";
 
-const mapStateToProps = ({ firebase: { auth } }) => ({
+const mapStateToProps = ({ firebase: { auth, analytics } }) => ({
   auth,
 });
 

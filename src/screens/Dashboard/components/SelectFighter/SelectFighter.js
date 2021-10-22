@@ -20,7 +20,7 @@ const SelectFighter = (props) => {
             <ListItemIcon>
               <img
                 style={{ maxWidth: "50px", maxHeight: "50px" }}
-                src={s.url}
+                src={s.url !== undefined ? s.url : ""}
                 alt=""
               />
             </ListItemIcon>

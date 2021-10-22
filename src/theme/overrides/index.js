@@ -3,9 +3,11 @@ import MuiTableCell from "./MuiTableCell";
 import MuiTableHead from "./MuiTableHead";
 import MuiTypography from "./MuiTypography";
 
-export default {
+const componentOverrides = {
   MuiPaper,
   MuiTableCell,
   MuiTableHead,
   MuiTypography,
 };
+
+export default componentOverrides;

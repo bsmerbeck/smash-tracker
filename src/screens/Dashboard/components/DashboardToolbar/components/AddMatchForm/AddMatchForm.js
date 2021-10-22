@@ -182,7 +182,7 @@ const AddMatchForm = (props) => {
                     <StyledAddMatchMenuItem>
                       <img
                         style={{ maxWidth: "50px", maxHeight: "50px" }}
-                        src={s.url}
+                        src={s.url !== undefined ? s.url : ""}
                         alt=""
                       />
                     </StyledAddMatchMenuItem>

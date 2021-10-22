@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { makeStyles } from "@material-ui/styles";
-import { isEmpty, useFirebase } from "react-redux-firebase";
+import { isEmpty } from "react-redux-firebase";
 import { useSelector } from "react-redux";
 
 import { SpriteList } from "../../components/Sprites/SpriteList";

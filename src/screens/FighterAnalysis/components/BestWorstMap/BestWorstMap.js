@@ -2,7 +2,7 @@ import React from "react";
 import { FighterAnalysisContext } from "../../FighterAnalysis";
 import Card from "@material-ui/core/Card";
 import CardHeader from "@material-ui/core/CardHeader";
-import CardContent from "@material-ui/core/CardContent";
+//import CardContent from "@material-ui/core/CardContent";
 import { StageList } from "../../../../components/Stages/StageList";
 import { StyledBestWorstStageCardContent } from "./style";
 import Select from "@material-ui/core/Select";

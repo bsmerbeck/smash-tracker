@@ -3,7 +3,7 @@ import { colors } from "@material-ui/core";
 const white = "#FFFFFF";
 const black = "#000000";
 
-export default {
+const paletteOptions = {
   type: "dark",
   black,
   white,
@@ -55,3 +55,5 @@ export default {
   icon: colors.red[600],
   divider: colors.grey[200],
 };
+
+export default paletteOptions;

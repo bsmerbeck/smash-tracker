@@ -143,9 +143,8 @@ const Styles = styled.div`
 `;
 
 const MatchupTable = () => {
-  const { fighter, opponent, matches, auth, removeMatchup } = useContext(
-    MatchupsContext
-  );
+  const { fighter, opponent, matches, auth, removeMatchup } =
+    useContext(MatchupsContext);
 
   const columns = React.useMemo(
     () => [

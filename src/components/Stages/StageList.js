@@ -600,6 +600,11 @@ export const StageList = [
     url: "",
   },
   {
+    id: 118,
+    name: "Hollow Bastion",
+    url: "",
+  },
+  {
     id: 1000,
     name: "(Gen. Battlefield)",
     url: "",

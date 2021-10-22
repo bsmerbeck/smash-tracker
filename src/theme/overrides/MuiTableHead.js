@@ -1,7 +1,9 @@
 import { colors } from "@material-ui/core";
 
-export default {
+const muiTableHeadOverride = {
   root: {
     backgroundColor: colors.grey[50],
   },
 };
+
+export default muiTableHeadOverride;

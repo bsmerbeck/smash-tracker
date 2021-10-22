@@ -113,7 +113,7 @@ const RosterBreakdown = () => {
 export default RosterBreakdown;
 
 // Define a default UI for filtering
-function DefaultColumnFilter({ column: {} }) {
+function DefaultColumnFilter() {
   return <div />;
 }
 
