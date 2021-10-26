@@ -14,6 +14,7 @@ import {
   MatchData as MatchDataView,
   FighterAnalysis as FighterAnalysisView,
 } from "./screens";
+import PreviousMatchesContainer from "./screens/Dashboard/components/PreviousMatches";
 
 const Routes = () => {
   return (
@@ -60,11 +61,18 @@ const Routes = () => {
         path="/match-data"
       />
       <RouteWithLayout
+        component={PreviousMatchesContainer}
+        exact
+        layout={MainLayout}
+        path="/previous-matches"
+      />
+      <RouteWithLayout
         component={NotFoundView}
         exact
         layout={MainLayout}
         path="/not-found"
       />
+
       <Redirect to="/not-found" />
     </Switch>
   );

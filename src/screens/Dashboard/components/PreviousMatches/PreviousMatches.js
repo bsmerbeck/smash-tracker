@@ -9,15 +9,19 @@ import { useSelector } from "react-redux";
 import { isLoaded, useFirebase } from "react-redux-firebase";
 import { SpriteList } from "../../../../components/Sprites/SpriteList";
 import { toast } from "react-toastify";
+import IconButton from "@material-ui/core/IconButton";
+import OpenInNewIcon from "@material-ui/icons/OpenInNew";
 import {
   StyledPreviousContainerDiv,
   StyledPreviousFighterIconDiv,
   StyledPreviousDeleteButton,
 } from "./style";
 
-const PreviousMatches = ({ className }) => {
-  const { auth } = useContext(DashboardContext);
+const PreviousMatches = (props) => {
+  const { auth } = props;
+  const { className } = props;
   const firebase = useFirebase();
+  const { fighter } = useContext(DashboardContext);
   const matches = useSelector((state) => state.firebase.data.matches);
   const [limit, setLimit] = useState(5);
 
@@ -25,6 +29,9 @@ const PreviousMatches = ({ className }) => {
     setLimit(e.target.value);
   };
 
+  if (auth === undefined) {
+    return <div>Loading</div>;
+  }
   if (!isLoaded(matches)) {
     return (
       <Card className={className}>
@@ -82,7 +89,14 @@ const PreviousMatches = ({ className }) => {
     <Card className={className}>
       <CardContent>
         <div style={{ display: "flex", justifyContent: "space-between" }}>
-          <h2>Previous Matches</h2>
+          <div style={{ display: "flex" }}>
+            <h2>Previous Matches</h2>
+            {fighter !== undefined && (
+              <IconButton onClick={() => window.open("/previous-matches")}>
+                <OpenInNewIcon />
+              </IconButton>
+            )}
+          </div>
           <div style={{ display: "flex", alignItems: "center" }}>
             <h3 style={{ margin: "5px" }}>Limit</h3>
             <Select value={limit} onChange={handleLimitClick}>

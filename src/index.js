@@ -22,6 +22,10 @@ import { ToastContainer } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
 const store = configureStore();
 
+firebase.initializeApp(firebaseConfig);
+firebase.analytics();
+firebase.analytics().logEvent("placeholderEvent");
+
 const rrfProps = {
   firebase,
   config: firebaseConfig,
