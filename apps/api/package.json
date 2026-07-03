@@ -15,6 +15,7 @@
     "@fastify/cors": "^11.2.0",
     "@smash-tracker/shared": "workspace:*",
     "fastify": "^5.9.0",
+    "fastify-plugin": "^6.0.0",
     "fastify-type-provider-zod": "^7.0.0",
     "firebase-admin": "^14.1.0",
     "zod": "^4.4.3"
