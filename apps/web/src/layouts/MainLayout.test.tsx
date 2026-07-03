@@ -1,0 +1,62 @@
+import { describe, expect, it, vi, beforeEach } from 'vitest';
+import { render, screen } from '@testing-library/react';
+import { MemoryRouter } from 'react-router';
+import { AuthProvider } from '@/context/AuthContext';
+import { MainLayout } from './MainLayout';
+import { navItems } from './nav';
+import { resetAuthMock, setMockUser, makeMockUser } from '@/test/mockAuth';
+
+vi.mock('firebase/auth', async () => {
+  const mock = await import('@/test/mockAuth');
+  return {
+    onAuthStateChanged: mock.onAuthStateChanged,
+    signInWithEmailAndPassword: mock.signInWithEmailAndPassword,
+    createUserWithEmailAndPassword: mock.createUserWithEmailAndPassword,
+    signInWithPopup: mock.signInWithPopup,
+    signOut: mock.signOut,
+    getAuth: mock.getAuth,
+    GoogleAuthProvider: mock.GoogleAuthProvider,
+  };
+});
+
+vi.mock('@/lib/firebase', async () => {
+  const mock = await import('@/test/mockAuth');
+  return mock.firebaseLibMock();
+});
+
+vi.mock('@/lib/api', () => ({
+  api: {
+    users: {
+      upsertMe: vi.fn().mockResolvedValue({ uid: 'test-uid', email: 'test@example.com' }),
+    },
+  },
+}));
+
+describe('MainLayout', () => {
+  beforeEach(() => {
+    resetAuthMock();
+    vi.clearAllMocks();
+    setMockUser(makeMockUser({ email: 'pilot@example.com' }));
+  });
+
+  it('renders the layout with all nav links and the signed-in user email', async () => {
+    render(
+      <MemoryRouter initialEntries={['/dashboard']}>
+        <AuthProvider>
+          <MainLayout>
+            <div>Page content</div>
+          </MainLayout>
+        </AuthProvider>
+      </MemoryRouter>,
+    );
+
+    expect(await screen.findByText('Page content')).toBeInTheDocument();
+
+    for (const item of navItems) {
+      expect(screen.getAllByRole('link', { name: item.title }).length).toBeGreaterThan(0);
+    }
+
+    expect(screen.getAllByText('pilot@example.com').length).toBeGreaterThan(0);
+    expect(screen.getByRole('button', { name: /sign out/i })).toBeInTheDocument();
+  });
+});
