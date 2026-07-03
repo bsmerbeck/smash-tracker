@@ -1,6 +1,6 @@
 ## Smash Tracker
 
-Live demo: https://smash-tracker-f97b7.web.app/ _(placeholder — repoint after Phase 6 deploy)_
+Live demo: https://smash-tracker-f97b7.web.app/
 
 Smash Tracker is a match-tracking app for **Super Smash Bros. Ultimate**. Sign in, pick a
 primary/secondary fighter, log wins and losses (opponent, stage, match type, notes) after each
@@ -192,14 +192,61 @@ pnpm test
 
 ### Deployment
 
-- **Web**: static build output (`apps/web/dist`) deploys to Firebase Hosting —
-  `firebase deploy --only hosting` after `pnpm --filter @smash-tracker/web build`. `firebase.json`
-  already points `hosting.public` at `apps/web/dist`.
-- **API**: `apps/api` needs a persistent Node host (it's a long-running Fastify server, not a
-  Cloud Function) — e.g. Cloud Run, Fly.io, or Render. This is **documented but intentionally not
-  implemented in this phase**; `apps/api` builds to `dist/` (`pnpm --filter @smash-tracker/api build`)
-  and runs with `pnpm --filter @smash-tracker/api start`, so containerizing it is the remaining
-  step.
+Production serves the web app from Firebase Hosting and the API from Cloud Run, same-origin —
+Hosting rewrites `/api/**` to the Cloud Run service, so the SPA never makes cross-origin requests
+and the API's CORS config is just a belt-and-braces fallback.
+
+**1. Deploy the API to Cloud Run**
+
+The root `Dockerfile` builds `apps/api` (and its `packages/shared` dependency) into a slim
+production image and runs `node dist/index.js`, listening on `process.env.PORT` (Cloud Run injects
+this) with `HOST=0.0.0.0`. It authenticates via Application Default Credentials — no
+`GOOGLE_APPLICATION_CREDENTIALS` needed in production; Cloud Run's runtime service account
+provides ADC automatically, and that service account needs Realtime Database access.
+
+```sh
+gcloud run deploy smash-tracker-api \
+  --source . \
+  --region us-central1 \
+  --set-env-vars FIREBASE_DATABASE_URL=https://smash-tracker-f97b7-default-rtdb.firebaseio.com
+```
+
+The service name (`smash-tracker-api`) and region (`us-central1`) must match `firebase.json`'s
+`hosting.rewrites` entry for `/api/**`.
+
+**2. Configure `apps/web/.env.production`**
+
+```sh
+# From `firebase apps:sdkconfig web`
+VITE_FIREBASE_API_KEY=...
+VITE_FIREBASE_AUTH_DOMAIN=...
+VITE_FIREBASE_PROJECT_ID=...
+VITE_FIREBASE_APP_ID=...
+
+# Empty — same-origin in production, requests go to /api/** on this origin
+VITE_API_BASE_URL=
+```
+
+**3. Build and deploy the web app to Firebase Hosting**
+
+```sh
+pnpm --filter @smash-tracker/web build
+firebase deploy --only hosting
+```
+
+`firebase.json` points `hosting.public` at `apps/web/dist` and rewrites `/api/**` to the
+`smash-tracker-api` Cloud Run service before falling back to `/index.html` for client-side routing.
+
+**4. Lock down the Realtime Database rules**
+
+`database.rules.json` denies all direct client read/write access (`{"rules": {".read": false,
+".write": false}}`) — only `apps/api`'s firebase-admin SDK talks to the database, and the Admin SDK
+bypasses these rules entirely. Deploy this **after** the hosting cutover above is live and verified,
+so the legacy client-only app (if still pointed at the same database) isn't cut off mid-migration:
+
+```sh
+firebase deploy --only database
+```
 
 ### Data model
 
