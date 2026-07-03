@@ -1,5 +1,80 @@
-import { StubPage } from '../StubPage';
+import { useMemo, useState } from 'react';
+import { Link } from 'react-router';
+import type { Fighter } from '@smash-tracker/shared';
+import { Button } from '@/components/ui/button';
+import { useFighters } from '@/hooks/useFighters';
+import { useMatches } from '@/hooks/useMatches';
+import { getFighterById } from '@/data/sprites';
+import { DashboardContext, type DashboardContextValue } from './DashboardContext';
+import { DashboardToolbar } from './components/DashboardToolbar';
+import { WinLossTracker } from './components/WinLossTracker';
+import { BestWorstMatchup } from './components/BestWorstMatchup';
+import { PreviousMatches } from './components/PreviousMatches';
+import { LastMatchesChart } from './components/LastMatchesChart';
 
+/** Ports legacy/src/screens/Dashboard. */
 export function DashboardPage() {
-  return <StubPage title="Dashboard" />;
+  const { data: fighterSelection, isLoading: fightersLoading } = useFighters();
+  const { data: matches = [], isLoading: matchesLoading } = useMatches();
+
+  const fighterSprites = useMemo<Fighter[]>(() => {
+    const ids = [...(fighterSelection?.primary ?? []), ...(fighterSelection?.secondary ?? [])];
+    return ids
+      .map((id) => getFighterById(id))
+      .filter((sprite): sprite is Fighter => sprite != null);
+  }, [fighterSelection]);
+
+  // Tracks an explicit user selection only; when unset, the first available
+  // fighter is used (derived below during render, mirroring legacy's
+  // one-time "firstLoad" hydration of `fighter` from the first sprite,
+  // without needing an effect to seed state from data that just loaded).
+  const [selectedFighterId, setSelectedFighterId] = useState<number | undefined>(undefined);
+
+  const fighter =
+    fighterSprites.find((s) => s.id === selectedFighterId) ?? fighterSprites[0] ?? undefined;
+
+  const contextValue: DashboardContextValue = {
+    fighterSprites,
+    fighter,
+    setFighter: (next) => setSelectedFighterId(next.id),
+  };
+
+  if (fightersLoading || matchesLoading) {
+    return <div className="text-muted-foreground">Loading your dashboard...</div>;
+  }
+
+  if (fighterSprites.length === 0) {
+    return (
+      <div className="flex flex-col items-center gap-4 py-16 text-center">
+        <h1 className="text-2xl font-semibold tracking-tight">
+          You haven&apos;t picked any fighters yet!
+        </h1>
+        <p className="max-w-md text-muted-foreground">
+          Choose your primary and secondary fighters to start tracking matches.
+        </p>
+        <div className="flex flex-wrap justify-center gap-2">
+          <Button asChild>
+            <Link to="/choose-primary">Choose Primary Fighters</Link>
+          </Button>
+          <Button asChild variant="outline">
+            <Link to="/choose-secondary">Choose Secondary Fighters</Link>
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <DashboardContext.Provider value={contextValue}>
+      <div className="flex flex-col gap-6">
+        <DashboardToolbar />
+        <WinLossTracker matches={matches} />
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+          <BestWorstMatchup matches={matches} />
+          <PreviousMatches matches={matches} />
+        </div>
+        <LastMatchesChart matches={matches} />
+      </div>
+    </DashboardContext.Provider>
+  );
 }
