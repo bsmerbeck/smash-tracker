@@ -3,7 +3,10 @@ import type { Match } from '@smash-tracker/shared';
 import {
   filterByFighter,
   getBestWorstMatchup,
+  getBestWorstStages,
   getLastNMatches,
+  getMatchTypeRecords,
+  getMatchupStageGuide,
   getMatchupStats,
   getOpponentRecords,
   getRecordsByFighter,
@@ -336,5 +339,117 @@ describe('getOpponentRecords', () => {
   it('returns an empty array when no matches have an opponent name', () => {
     const matches = [makeMatch({ id: '1', time: 1, win: true, opponent: '' })];
     expect(getOpponentRecords(matches)).toEqual([]);
+  });
+});
+
+describe('getBestWorstStages', () => {
+  const stage = (id: number, name: string) => ({ id, name });
+
+  it('picks highest win rate as best and lowest as worst among qualifying stages', () => {
+    const matches = [
+      // Battlefield (id 1): 3 wins, 0 losses -> 100%
+      makeMatch({ id: 'b1', time: 1, win: true, map: stage(1, 'Battlefield') }),
+      makeMatch({ id: 'b2', time: 2, win: true, map: stage(1, 'Battlefield') }),
+      makeMatch({ id: 'b3', time: 3, win: true, map: stage(1, 'Battlefield') }),
+      // Final Destination (id 2): 1 win, 2 losses -> 33%
+      makeMatch({ id: 'f1', time: 4, win: true, map: stage(2, 'Final Destination') }),
+      makeMatch({ id: 'f2', time: 5, win: false, map: stage(2, 'Final Destination') }),
+      makeMatch({ id: 'f3', time: 6, win: false, map: stage(2, 'Final Destination') }),
+    ];
+    const { best, worst } = getBestWorstStages(matches, 3);
+    expect(best?.stageId).toBe(1);
+    expect(worst?.stageId).toBe(2);
+  });
+
+  it('excludes stages below the threshold and the unknown-stage sentinel (id 0)', () => {
+    const matches = [
+      // Unknown stage: plenty of matches but never qualifies
+      makeMatch({ id: 'u1', time: 1, win: true, map: stage(0, 'no selection') }),
+      makeMatch({ id: 'u2', time: 2, win: true, map: stage(0, 'no selection') }),
+      makeMatch({ id: 'u3', time: 3, win: true, map: stage(0, 'no selection') }),
+      // Smashville: below threshold
+      makeMatch({ id: 's1', time: 4, win: true, map: stage(3, 'Smashville') }),
+    ];
+    expect(getBestWorstStages(matches, 3)).toEqual({ best: null, worst: null });
+  });
+
+  it('reports a single qualifying stage as best only, never both best and worst', () => {
+    const matches = [
+      makeMatch({ id: '1', time: 1, win: true, map: stage(1, 'Battlefield') }),
+      makeMatch({ id: '2', time: 2, win: false, map: stage(1, 'Battlefield') }),
+      makeMatch({ id: '3', time: 3, win: true, map: stage(1, 'Battlefield') }),
+    ];
+    const { best, worst } = getBestWorstStages(matches, 3);
+    expect(best?.stageId).toBe(1);
+    expect(worst).toBeNull();
+  });
+
+  it('breaks win-rate ties by larger sample size', () => {
+    const matches = [
+      // Stage 1: 1-0 (100%, n=1... below default) — use threshold 1
+      makeMatch({ id: 'a1', time: 1, win: true, map: stage(1, 'A') }),
+      // Stage 2: 2-0 (100%, n=2)
+      makeMatch({ id: 'b1', time: 2, win: true, map: stage(2, 'B') }),
+      makeMatch({ id: 'b2', time: 3, win: true, map: stage(2, 'B') }),
+    ];
+    const { best } = getBestWorstStages(matches, 1);
+    expect(best?.stageId).toBe(2);
+  });
+
+  it('treats a missing map as the unknown stage and excludes it', () => {
+    const bare = makeMatch({ id: '1', time: 1, win: true });
+    // makeMatch defaults map to id 0; also test explicitly-undefined map
+    const noMap = { ...bare, id: '2' } as Match;
+    delete (noMap as Partial<Match>).map;
+    expect(getBestWorstStages([bare, noMap], 1)).toEqual({ best: null, worst: null });
+  });
+});
+
+describe('getMatchupStageGuide', () => {
+  const stage = (id: number, name: string) => ({ id, name });
+
+  it('groups by opponent fighter with records and per-matchup best/worst stages', () => {
+    const matches = [
+      // vs opponent 10 on Battlefield: 2-1
+      makeMatch({ id: '1', time: 1, win: true, opponent_id: 10, map: stage(1, 'Battlefield') }),
+      makeMatch({ id: '2', time: 2, win: true, opponent_id: 10, map: stage(1, 'Battlefield') }),
+      makeMatch({ id: '3', time: 3, win: false, opponent_id: 10, map: stage(1, 'Battlefield') }),
+      // vs opponent 20: single match
+      makeMatch({ id: '4', time: 4, win: false, opponent_id: 20, map: stage(1, 'Battlefield') }),
+    ];
+    const guide = getMatchupStageGuide(matches, 3);
+    expect(guide).toHaveLength(2);
+    // Sorted by sample size: opponent 10 first
+    expect(guide[0]?.opponentFighterId).toBe(10);
+    expect(guide[0]?.record).toMatchObject({ wins: 2, losses: 1, total: 3 });
+    expect(guide[0]?.bestStage?.stageId).toBe(1);
+    expect(guide[1]?.opponentFighterId).toBe(20);
+    expect(guide[1]?.bestStage).toBeNull(); // below stage threshold
+  });
+
+  it('sorts equal sample sizes by win rate descending', () => {
+    const matches = [
+      makeMatch({ id: '1', time: 1, win: false, opponent_id: 10 }),
+      makeMatch({ id: '2', time: 2, win: true, opponent_id: 20 }),
+    ];
+    const guide = getMatchupStageGuide(matches, 3);
+    expect(guide.map((row) => row.opponentFighterId)).toEqual([20, 10]);
+  });
+});
+
+describe('getMatchTypeRecords', () => {
+  it('groups by matchType with empty/none/missing under unspecified, sorted by sample size', () => {
+    const matches = [
+      makeMatch({ id: '1', time: 1, win: true, matchType: 'quickplay' }),
+      makeMatch({ id: '2', time: 2, win: false, matchType: 'quickplay' }),
+      makeMatch({ id: '3', time: 3, win: true, matchType: 'online-tourney' }),
+      makeMatch({ id: '4', time: 4, win: true, matchType: 'none' }),
+      makeMatch({ id: '5', time: 5, win: false, matchType: '' }),
+    ];
+    const records = getMatchTypeRecords(matches);
+    expect(records[0]).toMatchObject({ matchType: 'quickplay', wins: 1, losses: 1, total: 2 });
+    const unspecified = records.find((r) => r.matchType === 'unspecified');
+    expect(unspecified).toMatchObject({ wins: 1, losses: 1, total: 2 });
+    expect(records.find((r) => r.matchType === 'online-tourney')?.wins).toBe(1);
   });
 });

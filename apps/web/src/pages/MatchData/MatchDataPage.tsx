@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { Link } from 'react-router';
 import type { Fighter } from '@smash-tracker/shared';
 import { Button } from '@/components/ui/button';
@@ -6,14 +6,24 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { useFighters } from '@/hooks/useFighters';
 import { useMatches } from '@/hooks/useMatches';
 import { getFighterById } from '@/data/sprites';
+import {
+  SourceFilterTabs,
+  filterBySource,
+  type MatchSourceFilter,
+} from '@/components/SourceFilterTabs';
 import { MatchTable } from './components/MatchTable';
 import { FighterPieChart } from './components/FighterPieChart';
 import { StageBreakdown } from './components/StageBreakdown';
 
-/** Ports legacy/src/screens/MatchData. */
+/** Ports legacy/src/screens/MatchData, plus the v2 source filter (manual vs start.gg imports). */
 export function MatchDataPage() {
   const { data: fighterSelection, isLoading: fightersLoading } = useFighters();
-  const { data: matches = [], isLoading: matchesLoading } = useMatches();
+  const { data: allMatches = [], isLoading: matchesLoading } = useMatches();
+  const [sourceFilter, setSourceFilter] = useState<MatchSourceFilter>('all');
+  const matches = useMemo(
+    () => filterBySource(allMatches, sourceFilter),
+    [allMatches, sourceFilter],
+  );
 
   const fighterSprites = useMemo<Fighter[]>(() => {
     const ids = [...(fighterSelection?.primary ?? []), ...(fighterSelection?.secondary ?? [])];
@@ -47,7 +57,7 @@ export function MatchDataPage() {
     );
   }
 
-  if (matches.length === 0) {
+  if (allMatches.length === 0) {
     return (
       <div className="flex flex-col items-center gap-2 py-16 text-center">
         <h2 className="text-xl font-semibold tracking-tight">
@@ -63,8 +73,9 @@ export function MatchDataPage() {
   return (
     <div className="flex flex-col gap-6">
       <Card>
-        <CardHeader>
+        <CardHeader className="flex flex-row items-center justify-between">
           <CardTitle>Match History</CardTitle>
+          <SourceFilterTabs value={sourceFilter} onChange={setSourceFilter} />
         </CardHeader>
         <CardContent>
           <MatchTable matches={matches} fighterSprites={fighterSprites} />
