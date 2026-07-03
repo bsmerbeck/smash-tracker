@@ -3,6 +3,7 @@ import { render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { AuthProvider } from '@/context/AuthContext';
+import { AnalyticsFilterProvider } from '@/context/AnalyticsFilterContext';
 import { DashboardPage } from './DashboardPage';
 import { resetAuthMock, setMockUser, makeMockUser } from '@/test/mockAuth';
 
@@ -46,11 +47,13 @@ function renderDashboard() {
     <QueryClientProvider client={queryClient}>
       <MemoryRouter initialEntries={['/dashboard']}>
         <AuthProvider>
-          <Routes>
-            <Route path="/dashboard" element={<DashboardPage />} />
-            <Route path="/choose-primary" element={<div>Choose primary page</div>} />
-            <Route path="/choose-secondary" element={<div>Choose secondary page</div>} />
-          </Routes>
+          <AnalyticsFilterProvider>
+            <Routes>
+              <Route path="/dashboard" element={<DashboardPage />} />
+              <Route path="/choose-primary" element={<div>Choose primary page</div>} />
+              <Route path="/choose-secondary" element={<div>Choose secondary page</div>} />
+            </Routes>
+          </AnalyticsFilterProvider>
         </AuthProvider>
       </MemoryRouter>
     </QueryClientProvider>,
@@ -61,6 +64,7 @@ describe('DashboardPage', () => {
   beforeEach(() => {
     resetAuthMock();
     vi.clearAllMocks();
+    window.localStorage.clear();
     upsertMe.mockResolvedValue({ uid: 'test-uid', email: 'test@example.com' });
     setMockUser(makeMockUser());
   });

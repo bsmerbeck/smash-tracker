@@ -3,8 +3,9 @@ import { Link } from 'react-router';
 import type { Fighter } from '@smash-tracker/shared';
 import { Button } from '@/components/ui/button';
 import { useFighters } from '@/hooks/useFighters';
-import { useMatches } from '@/hooks/useMatches';
+import { useFilteredMatches } from '@/hooks/useFilteredMatches';
 import { getFighterById } from '@/data/sprites';
+import { FilteredEmptyNotice } from '@/components/FilteredEmptyNotice';
 import { DashboardContext, type DashboardContextValue } from './DashboardContext';
 import { DashboardToolbar } from './components/DashboardToolbar';
 import { WinLossTracker } from './components/WinLossTracker';
@@ -15,7 +16,7 @@ import { LastMatchesChart } from './components/LastMatchesChart';
 /** Ports legacy/src/screens/Dashboard. */
 export function DashboardPage() {
   const { data: fighterSelection, isLoading: fightersLoading } = useFighters();
-  const { data: matches = [], isLoading: matchesLoading } = useMatches();
+  const { matches, allMatches, isLoading: matchesLoading, filterActive } = useFilteredMatches();
 
   const fighterSprites = useMemo<Fighter[]>(() => {
     const ids = [...(fighterSelection?.primary ?? []), ...(fighterSelection?.secondary ?? [])];
@@ -68,6 +69,7 @@ export function DashboardPage() {
     <DashboardContext.Provider value={contextValue}>
       <div className="flex flex-col gap-6">
         <DashboardToolbar />
+        {filterActive && allMatches.length > 0 && matches.length === 0 && <FilteredEmptyNotice />}
         <WinLossTracker matches={matches} />
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
           <BestWorstMatchup matches={matches} />

@@ -1,29 +1,20 @@
-import { useMemo, useState } from 'react';
+import { useMemo } from 'react';
 import { Link } from 'react-router';
 import type { Fighter } from '@smash-tracker/shared';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { useFighters } from '@/hooks/useFighters';
-import { useMatches } from '@/hooks/useMatches';
+import { useFilteredMatches } from '@/hooks/useFilteredMatches';
 import { getFighterById } from '@/data/sprites';
-import {
-  SourceFilterTabs,
-  filterBySource,
-  type MatchSourceFilter,
-} from '@/components/SourceFilterTabs';
+import { FilteredEmptyNotice } from '@/components/FilteredEmptyNotice';
 import { MatchTable } from './components/MatchTable';
 import { FighterPieChart } from './components/FighterPieChart';
 import { StageBreakdown } from './components/StageBreakdown';
 
-/** Ports legacy/src/screens/MatchData, plus the v2 source filter (manual vs start.gg imports). */
+/** Ports legacy/src/screens/MatchData; the source/time filter is now global (see the topbar's AnalyticsFilterControls), not a per-page control. */
 export function MatchDataPage() {
   const { data: fighterSelection, isLoading: fightersLoading } = useFighters();
-  const { data: allMatches = [], isLoading: matchesLoading } = useMatches();
-  const [sourceFilter, setSourceFilter] = useState<MatchSourceFilter>('all');
-  const matches = useMemo(
-    () => filterBySource(allMatches, sourceFilter),
-    [allMatches, sourceFilter],
-  );
+  const { matches, allMatches, isLoading: matchesLoading, filterActive } = useFilteredMatches();
 
   const fighterSprites = useMemo<Fighter[]>(() => {
     const ids = [...(fighterSelection?.primary ?? []), ...(fighterSelection?.secondary ?? [])];
@@ -72,10 +63,11 @@ export function MatchDataPage() {
 
   return (
     <div className="flex flex-col gap-6">
+      {filterActive && matches.length === 0 && <FilteredEmptyNotice />}
+
       <Card>
-        <CardHeader className="flex flex-row items-center justify-between">
+        <CardHeader>
           <CardTitle>Match History</CardTitle>
-          <SourceFilterTabs value={sourceFilter} onChange={setSourceFilter} />
         </CardHeader>
         <CardContent>
           <MatchTable matches={matches} fighterSprites={fighterSprites} />
@@ -83,7 +75,7 @@ export function MatchDataPage() {
       </Card>
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-        <StageBreakdown matches={matches} />
+        <StageBreakdown matches={matches} usageMatches={allMatches} />
         <FighterPieChart matches={matches} fighterSprites={fighterSprites} />
       </div>
     </div>
