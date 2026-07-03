@@ -92,9 +92,13 @@ describe('DashboardPage', () => {
 
     renderDashboard();
 
-    expect(await screen.findByText('Overall Record')).toBeInTheDocument();
+    expect(await screen.findAllByText('Overall Record')).not.toHaveLength(0);
+    expect(screen.getByText('Form')).toBeInTheDocument();
+    expect(screen.getByText('Casual vs Competitive')).toBeInTheDocument();
+    expect(screen.getByText('Online vs Offline')).toBeInTheDocument();
     expect(screen.getByText('Previous Matches')).toBeInTheDocument();
-    expect(screen.getByText('Match History')).toBeInTheDocument();
+    expect(screen.getByText('Form Curve')).toBeInTheDocument();
+    expect(screen.getByText('Most-Played Stages')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Add Match' })).toBeEnabled();
   });
 
@@ -104,8 +108,10 @@ describe('DashboardPage', () => {
 
     renderDashboard();
 
-    await waitFor(() => expect(screen.getByText('Overall Record')).toBeInTheDocument());
-    expect(screen.getByText('No match data to report yet.')).toBeInTheDocument();
+    await waitFor(() => expect(screen.getAllByText('Overall Record')).not.toHaveLength(0));
+    expect(screen.getAllByText('No match data to report yet.').length).toBeGreaterThan(0);
     expect(screen.getByText('No matches recorded yet.')).toBeInTheDocument();
+    expect(screen.getByText('No stage data to report yet.')).toBeInTheDocument();
+    expect(screen.getByText('No matches reported')).toBeInTheDocument();
   });
 });
