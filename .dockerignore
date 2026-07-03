@@ -1,0 +1,31 @@
+# Version control / CI
+.git
+.github
+
+# Dependencies and build output (rebuilt inside the image)
+node_modules
+**/node_modules
+**/dist
+
+# Env files - never bake secrets into the image
+.env
+.env.*
+!.env.example
+!**/.env.example
+
+# apps/web is not needed to build or run the API image; workspace installs
+# only need its package.json (copied explicitly in the Dockerfile), not its
+# sources.
+apps/web/src
+apps/web/public
+apps/web/index.html
+apps/web/dist
+
+# Editor/OS cruft
+.DS_Store
+*.log
+.vscode
+.idea
+
+# Docs (not needed at build/runtime)
+README.md

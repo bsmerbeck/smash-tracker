@@ -1,5 +1,5 @@
 import { buildApp } from './app.js';
-import { loadEnv } from './config/env.js';
+import { loadEnv, parseCorsOrigins } from './config/env.js';
 import { initFirebase } from './firebase/admin.js';
 
 let env;
@@ -14,7 +14,7 @@ const firebase = initFirebase(env);
 
 const app = buildApp({
   firebase,
-  corsOrigin: env.CORS_ORIGIN,
+  corsOrigin: parseCorsOrigins(env.CORS_ORIGIN),
 });
 
 app
