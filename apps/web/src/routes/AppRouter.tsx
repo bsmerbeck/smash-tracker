@@ -4,6 +4,7 @@ import { DashboardPage } from '@/pages/Dashboard/DashboardPage';
 import { ChoosePrimaryPage } from '@/pages/CharacterSelect/ChoosePrimaryPage';
 import { ChooseSecondaryPage } from '@/pages/CharacterSelect/ChooseSecondaryPage';
 import { MatchupsPage } from '@/pages/Matchups/MatchupsPage';
+import { OpponentsPage } from '@/pages/Opponents/OpponentsPage';
 import { MatchDataPage } from '@/pages/MatchData/MatchDataPage';
 import { FighterAnalysisPage } from '@/pages/FighterAnalysis/FighterAnalysisPage';
 import { IntegrationsPage } from '@/pages/Integrations/IntegrationsPage';
@@ -59,6 +60,14 @@ export function AppRouter() {
           element={
             <ProtectedRoute>
               <MatchupsPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/opponents"
+          element={
+            <ProtectedRoute>
+              <OpponentsPage />
             </ProtectedRoute>
           }
         />
