@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import {
   CategoryScale,
   Chart as ChartJS,
@@ -10,24 +11,73 @@ import {
 } from 'chart.js';
 import { Line } from 'react-chartjs-2';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import type { Match } from '@smash-tracker/shared';
-import { getRunningWinRateSeries } from '@/lib/stats';
+import {
+  getRollingWinRate,
+  getRunningWinRateSeries,
+  type RollingWinRatePoint,
+  type RunningWinRatePoint,
+} from '@/lib/stats';
 import { darkChartOptions, redLineDataset } from '@/lib/chartTheme';
 import { getFighterById } from '@/data/sprites';
 import { useDashboardContext } from '../DashboardContext';
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Tooltip, Legend);
 
-/** Ports legacy/src/screens/Dashboard/components/LastMatchesChart. */
+const WINDOW_OPTIONS = [5, 10, 20] as const;
+type WindowOption = (typeof WINDOW_OPTIONS)[number];
+type WindowValue = WindowOption | 'cumulative';
+
+type SeriesPoint = RollingWinRatePoint | RunningWinRatePoint;
+
+/**
+ * Builds the chart series for the selected window. `'cumulative'` falls back
+ * to `getRunningWinRateSeries` (the original all-time running rate);
+ * numeric windows use `getRollingWinRate` (the v3 form curve). Exported as a
+ * pure builder so window-switching behavior can be unit-tested without
+ * rendering chart.js.
+ */
+export function buildSeries(matches: Match[], window: WindowValue): SeriesPoint[] {
+  if (window === 'cumulative') {
+    return getRunningWinRateSeries(matches);
+  }
+  return getRollingWinRate(matches, window);
+}
+
+/** Ports legacy/src/screens/Dashboard/components/LastMatchesChart; upgraded to a rolling win-rate form curve with a window selector (V3 Phase C). */
 export function LastMatchesChart({ matches }: { matches: Match[] }) {
   const { fighter } = useDashboardContext();
+  const [window, setWindow] = useState<WindowValue>(10);
   const fighterMatches = fighter ? matches.filter((m) => m.fighter_id === fighter.id) : [];
-  const series = getRunningWinRateSeries(fighterMatches);
+  const series = buildSeries(fighterMatches, window);
 
   return (
     <Card>
-      <CardHeader>
-        <CardTitle>Match History</CardTitle>
+      <CardHeader className="flex flex-row items-center justify-between">
+        <CardTitle>Form Curve</CardTitle>
+        <div className="flex items-center gap-2">
+          <span className="text-sm text-muted-foreground">Window</span>
+          <Select value={String(window)} onValueChange={(v) => setWindow(parseWindow(v))}>
+            <SelectTrigger className="w-[130px]" aria-label="Rolling window">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {WINDOW_OPTIONS.map((option) => (
+                <SelectItem key={option} value={String(option)}>
+                  Last {option}
+                </SelectItem>
+              ))}
+              <SelectItem value="cumulative">Cumulative</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
       </CardHeader>
       <CardContent>
         {series.length === 0 ? (
@@ -40,7 +90,15 @@ export function LastMatchesChart({ matches }: { matches: Match[] }) {
   );
 }
 
-function buildData(series: ReturnType<typeof getRunningWinRateSeries>) {
+function parseWindow(value: string): WindowValue {
+  if (value === 'cumulative') {
+    return value;
+  }
+  const parsed = Number(value);
+  return (WINDOW_OPTIONS as readonly number[]).includes(parsed) ? (parsed as WindowOption) : 10;
+}
+
+function buildData(series: SeriesPoint[]) {
   return {
     labels: series.map((point) => point.index.toString()),
     datasets: [
@@ -54,7 +112,7 @@ function buildData(series: ReturnType<typeof getRunningWinRateSeries>) {
 }
 
 /** Builds chart options with tooltip callbacks closed over `series` so they can look up the underlying Match for the hovered point (date + opponent), mirroring legacy MatchChart's tooltip title/footer. */
-function buildOptions(series: ReturnType<typeof getRunningWinRateSeries>): ChartOptions<'line'> {
+function buildOptions(series: SeriesPoint[]): ChartOptions<'line'> {
   const theme = darkChartOptions();
   return {
     scales: {
