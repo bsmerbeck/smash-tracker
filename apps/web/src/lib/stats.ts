@@ -485,3 +485,306 @@ export function getStageUsage(matches: Match[]): Map<number, number> {
   }
   return usage;
 }
+
+// ---------------------------------------------------------------------------
+// V3 stats engine: evidence-aware rankings (docs/analytics-vision.md)
+// ---------------------------------------------------------------------------
+
+/**
+ * Lower bound of the Wilson score interval (default z = 1.96 ≈ 95%): a
+ * pessimistic-but-fair estimate of the true win rate given the sample size.
+ * Ranking by this instead of the raw rate keeps a lucky 1-0 from outranking
+ * a proven 12-3. Returns 0 for an empty sample.
+ */
+export function wilsonLowerBound(wins: number, total: number, z = 1.96): number {
+  if (total === 0) {
+    return 0;
+  }
+  const p = wins / total;
+  const z2 = z * z;
+  const denominator = 1 + z2 / total;
+  const centre = p + z2 / (2 * total);
+  const spread = z * Math.sqrt((p * (1 - p) + z2 / (4 * total)) / total);
+  return Math.max(0, (centre - spread) / denominator);
+}
+
+export interface RankedMatchup extends MatchupStats {
+  /** Wilson lower bound (0-1) for this matchup's win rate. */
+  wilson: number;
+}
+
+/**
+ * Per-opponent-fighter records ranked by Wilson lower bound (best first),
+ * ties broken by sample size. Unlike the legacy-faithful `getMatchupStats`,
+ * this is the v3 evidence-aware ranking; `minMatches` merely hides noise
+ * rows and defaults to 1 because the ranking itself is sample-aware.
+ */
+export function rankMatchupsByEvidence(matches: Match[], minMatches = 1): RankedMatchup[] {
+  const byOpponent = new Map<number, Match[]>();
+  for (const match of matches) {
+    const group = byOpponent.get(match.opponent_id);
+    if (group) {
+      group.push(match);
+    } else {
+      byOpponent.set(match.opponent_id, [match]);
+    }
+  }
+  return [...byOpponent.entries()]
+    .map(([opponentFighterId, ms]) => {
+      const wins = ms.filter((m) => m.win).length;
+      const losses = ms.length - wins;
+      const totalMatches = ms.length;
+      const ratio = losses ? Math.round((wins / totalMatches) * 100) : 100;
+      return {
+        opponentFighterId,
+        wins,
+        losses,
+        totalMatches,
+        ratio,
+        wilson: wilsonLowerBound(wins, totalMatches),
+      };
+    })
+    .filter((entry) => entry.totalMatches >= minMatches)
+    .sort((a, b) =>
+      b.wilson === a.wilson ? b.totalMatches - a.totalMatches : b.wilson - a.wilson,
+    );
+}
+
+export interface RankedStage extends StageRecord {
+  /** Wilson lower bound (0-1) for this stage's win rate. */
+  wilson: number;
+}
+
+/**
+ * Stage records ranked by Wilson lower bound (best first). The unknown-stage
+ * sentinel (id 0) never appears — it isn't an actionable pick.
+ */
+export function rankStagesByEvidence(matches: Match[], minMatches = 1): RankedStage[] {
+  return getStageRecords(matches)
+    .filter((record) => record.stageId !== 0 && record.total >= minMatches)
+    .map((record) => ({ ...record, wilson: wilsonLowerBound(record.wins, record.total) }))
+    .sort((a, b) => (b.wilson === a.wilson ? b.total - a.total : b.wilson - a.wilson));
+}
+
+// ---------------------------------------------------------------------------
+// V3 stats engine: form and time
+// ---------------------------------------------------------------------------
+
+export interface RollingWinRatePoint {
+  /** 1-based match index within the series. */
+  index: number;
+  /** Win rate (0-100) over the trailing `window` matches ending here. */
+  winRate: number;
+  match: Match;
+}
+
+/**
+ * Trailing-window win rate per match, chronologically — the "form curve".
+ * Early points use however many matches exist so the curve starts at match 1.
+ */
+export function getRollingWinRate(matches: Match[], window = 10): RollingWinRatePoint[] {
+  const sorted = [...matches].sort((a, b) => a.time - b.time);
+  return sorted.map((match, i) => {
+    const slice = sorted.slice(Math.max(0, i - window + 1), i + 1);
+    const wins = slice.filter((m) => m.win).length;
+    return { index: i + 1, winRate: (wins / slice.length) * 100, match };
+  });
+}
+
+export interface MonthlyRecord extends WinLossRecord {
+  /** Calendar month key, e.g. '2021-01' (UTC). */
+  month: string;
+}
+
+/** Win/loss record per calendar month (UTC), chronologically ascending. */
+export function getMonthlyRecords(matches: Match[]): MonthlyRecord[] {
+  const byMonth = new Map<string, Match[]>();
+  for (const match of matches) {
+    const d = new Date(match.time);
+    const key = `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
+    const group = byMonth.get(key);
+    if (group) {
+      group.push(match);
+    } else {
+      byMonth.set(key, [match]);
+    }
+  }
+  return [...byMonth.entries()]
+    .map(([month, ms]) => ({ month, ...getWinLossRecord(ms) }))
+    .sort((a, b) => a.month.localeCompare(b.month));
+}
+
+export interface OnlineOfflineSplit {
+  online: WinLossRecord;
+  offline: WinLossRecord;
+  /** Matches whose type doesn't identify a setting ('none', '', missing). */
+  unspecified: WinLossRecord;
+}
+
+/**
+ * Record split by setting. 'quickplay', 'online-friendly', 'online-tourney'
+ * count as online; 'offline-friendly'/'offline-tourney' as offline.
+ */
+export function getOnlineOfflineSplit(matches: Match[]): OnlineOfflineSplit {
+  const online: Match[] = [];
+  const offline: Match[] = [];
+  const unspecified: Match[] = [];
+  for (const match of matches) {
+    const type = match.matchType ?? '';
+    if (type === 'quickplay' || type.startsWith('online')) {
+      online.push(match);
+    } else if (type.startsWith('offline')) {
+      offline.push(match);
+    } else {
+      unspecified.push(match);
+    }
+  }
+  return {
+    online: getWinLossRecord(online),
+    offline: getWinLossRecord(offline),
+    unspecified: getWinLossRecord(unspecified),
+  };
+}
+
+// ---------------------------------------------------------------------------
+// V3 stats engine: sessions
+// ---------------------------------------------------------------------------
+
+export interface SessionStats extends WinLossRecord {
+  /** Epoch ms of the session's first and last match. */
+  start: number;
+  end: number;
+  /** Longest consecutive loss run inside this session (tilt indicator). */
+  longestLossRun: number;
+}
+
+const DEFAULT_SESSION_GAP_MS = 3 * 60 * 60 * 1000;
+
+/**
+ * Groups matches into play sessions: a gap of more than `gapMs` (default 3h)
+ * between consecutive matches starts a new session. Chronological order.
+ */
+export function getSessions(matches: Match[], gapMs = DEFAULT_SESSION_GAP_MS): SessionStats[] {
+  const sorted = [...matches].sort((a, b) => a.time - b.time);
+  const groups: Match[][] = [];
+  for (const match of sorted) {
+    const current = groups[groups.length - 1];
+    const previous = current?.[current.length - 1];
+    if (current && previous && match.time - previous.time <= gapMs) {
+      current.push(match);
+    } else {
+      groups.push([match]);
+    }
+  }
+  return groups.map((group) => {
+    let run = 0;
+    let longestLossRun = 0;
+    for (const match of group) {
+      run = match.win ? 0 : run + 1;
+      longestLossRun = Math.max(longestLossRun, run);
+    }
+    return {
+      start: group[0]!.time,
+      end: group[group.length - 1]!.time,
+      longestLossRun,
+      ...getWinLossRecord(group),
+    };
+  });
+}
+
+// ---------------------------------------------------------------------------
+// V3 stats engine: opponent scouting
+// ---------------------------------------------------------------------------
+
+export interface OpponentProfile {
+  /** The lowercased opponent tag. */
+  opponent: string;
+  record: WinLossRecord;
+  firstPlayedAt: number;
+  lastPlayedAt: number;
+  /** Their characters against you, evidence-ranked from YOUR perspective. */
+  byTheirFighter: RankedMatchup[];
+  byStage: StageRecord[];
+  /** Most recent matches first. */
+  recent: Match[];
+}
+
+/** Head-to-head profile vs one human opponent, or null when never played. */
+export function getOpponentProfile(
+  matches: Match[],
+  opponentTag: string,
+  recentLimit = 10,
+): OpponentProfile | null {
+  const versus = matches.filter((m) => m.opponent === opponentTag);
+  if (versus.length === 0) {
+    return null;
+  }
+  const sorted = [...versus].sort((a, b) => a.time - b.time);
+  return {
+    opponent: opponentTag,
+    record: getWinLossRecord(versus),
+    firstPlayedAt: sorted[0]!.time,
+    lastPlayedAt: sorted[sorted.length - 1]!.time,
+    byTheirFighter: rankMatchupsByEvidence(versus),
+    byStage: getStageRecords(versus).sort((a, b) => b.total - a.total),
+    recent: sorted.slice(-recentLimit).reverse(),
+  };
+}
+
+// ---------------------------------------------------------------------------
+// V3 stats engine: matchup matrix
+// ---------------------------------------------------------------------------
+
+export interface MatchupMatrixCell extends WinLossRecord {
+  fighterId: number;
+  opponentFighterId: number;
+  /** Wilson lower bound (0-1). */
+  wilson: number;
+}
+
+export interface MatchupMatrix {
+  /** Your fighters, ordered by games played descending. */
+  fighterIds: number[];
+  /** Opponent fighters faced, ordered by games played descending. */
+  opponentFighterIds: number[];
+  /** One cell per (fighter, opponent) pairing that has at least one match. */
+  cells: MatchupMatrixCell[];
+}
+
+/** Your-fighters × opponent-fighters grid for the Matchup Lab heatmap. */
+export function getMatchupMatrix(matches: Match[]): MatchupMatrix {
+  const usage = (keyFn: (m: Match) => number) => {
+    const counts = new Map<number, number>();
+    for (const match of matches) {
+      const key = keyFn(match);
+      counts.set(key, (counts.get(key) ?? 0) + 1);
+    }
+    return [...counts.entries()].sort((a, b) => b[1] - a[1]).map(([id]) => id);
+  };
+
+  const byPair = new Map<string, Match[]>();
+  for (const match of matches) {
+    const key = `${match.fighter_id}:${match.opponent_id}`;
+    const group = byPair.get(key);
+    if (group) {
+      group.push(match);
+    } else {
+      byPair.set(key, [match]);
+    }
+  }
+
+  return {
+    fighterIds: usage((m) => m.fighter_id),
+    opponentFighterIds: usage((m) => m.opponent_id),
+    cells: [...byPair.entries()].map(([key, ms]) => {
+      const [fighterId, opponentFighterId] = key.split(':').map(Number) as [number, number];
+      const record = getWinLossRecord(ms);
+      return {
+        fighterId,
+        opponentFighterId,
+        ...record,
+        wilson: wilsonLowerBound(record.wins, record.total),
+      };
+    }),
+  };
+}

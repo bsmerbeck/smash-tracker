@@ -23,7 +23,12 @@ function makeSet(overrides: Partial<StartggSet> = {}): StartggSet {
   return {
     id: 111,
     completedAt: 1_700_000_000,
-    event: { isOnline: true, videogame: { id: 1386 } },
+    event: {
+      name: 'Ultimate Singles',
+      isOnline: true,
+      videogame: { id: 1386 },
+      tournament: { name: 'Test Weekly 42' },
+    },
     slots: [
       { entrant: { id: 1, name: 'Team | Me', participants: [{ player: { id: PLAYER_ID } }] } },
       { entrant: { id: 2, name: 'PowPow', participants: [{ player: { id: 999 } }] } },
@@ -86,6 +91,8 @@ describe('gamesFromSet', () => {
       win: true,
       source: 'startgg',
       externalId: 'sgg:111:g1',
+      eventName: 'Ultimate Singles',
+      tournamentName: 'Test Weekly 42',
     });
     expect(g1?.record.fighter_id).toBeGreaterThan(0);
     expect(g1?.record.map?.name).toBe('Battlefield');
@@ -151,6 +158,16 @@ describe('gamesFromSet', () => {
     const set = makeSet({ event: { isOnline: false, videogame: { id: 1386 } } });
     const games = gamesFromSet(set, PLAYER_ID, summary);
     expect(games[0]?.record.matchType).toBe('offline-tourney');
+  });
+
+  it('omits event/tournament keys entirely when the API provides none', () => {
+    const summary = emptySummary();
+    const set = makeSet({ event: { isOnline: true, videogame: { id: 1386 } } });
+    const games = gamesFromSet(set, PLAYER_ID, summary);
+    expect(games[0]).toBeDefined();
+    // RTDB rejects undefined values — the keys must be absent, not undefined.
+    expect('eventName' in games[0]!.record).toBe(false);
+    expect('tournamentName' in games[0]!.record).toBe(false);
   });
 });
 
