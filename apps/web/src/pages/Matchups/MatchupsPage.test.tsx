@@ -204,8 +204,12 @@ describe('MatchupsPage', () => {
     expect(screen.getByLabelText('Last 3 results, newest first')).toBeInTheDocument();
     // Battlefield qualifies at the default per-stage threshold (3 matches, 67%)
     expect(screen.getByText('Stage Breakdown')).toBeInTheDocument();
-    expect(screen.getByText('2-1')).toBeInTheDocument();
     expect(screen.getAllByText(/Battlefield/).length).toBeGreaterThan(0);
+    // The pairing record (2-1) shows up in multiple places now (matrix cell,
+    // insights, stage table) — assert on the win-loss card specifically.
+    const winsStat = screen.getByText('Wins').closest('div');
+    expect(winsStat).not.toBeNull();
+    expect(within(winsStat!).getByText('2')).toBeInTheDocument();
   });
 
   it('shows a no-matches message for the matchup table when the pairing has no matches', async () => {
@@ -219,5 +223,68 @@ describe('MatchupsPage', () => {
     // Default opponent is alphabetically-first, not Luigi, so no matches for the default pairing.
     expect(await screen.findByText('No matches reported yet!')).toBeInTheDocument();
     expect(screen.getByText('No reported matches against this fighter')).toBeInTheDocument();
+  });
+
+  it('renders the matchup matrix heatmap above the pairing detail section', async () => {
+    getFighters.mockResolvedValue({ primary: [mario.id], secondary: [] });
+    listMatches.mockResolvedValue([
+      makeMatch({
+        id: 'm1',
+        fighter_id: mario.id,
+        opponent_id: alphabeticallyFirstSprite.id,
+        win: true,
+      }),
+      makeMatch({ id: 'm2', fighter_id: mario.id, opponent_id: luigi.id, win: false }),
+    ]);
+
+    renderMatchups();
+
+    expect(await screen.findByText('Matchup Matrix')).toBeInTheDocument();
+    // A cell exists for the Mario vs Luigi pairing recorded above.
+    expect(
+      screen.getByRole('button', { name: `${mario.name} vs ${luigi.name}: 0-1` }),
+    ).toBeInTheDocument();
+  });
+
+  it('clicking a matrix cell updates the pairing selection shown in the detail header', async () => {
+    const user = userEvent.setup();
+    getFighters.mockResolvedValue({ primary: [mario.id], secondary: [] });
+    listMatches.mockResolvedValue([
+      makeMatch({ id: 'm1', fighter_id: mario.id, opponent_id: luigi.id, win: true }),
+      makeMatch({ id: 'm2', fighter_id: mario.id, opponent_id: luigi.id, win: true }),
+    ]);
+
+    renderMatchups();
+
+    const cell = await screen.findByRole('button', {
+      name: `${mario.name} vs ${luigi.name}: 2-0`,
+    });
+    HTMLElement.prototype.scrollIntoView = vi.fn();
+    await user.click(cell);
+
+    await waitFor(() => {
+      const winsStat = screen.getByText('Wins').closest('div');
+      expect(winsStat).not.toBeNull();
+      expect(within(winsStat!).getByText('2')).toBeInTheDocument();
+    });
+  });
+
+  it('shows the Counterpick Advisor and per-opponent split cards in the pairing detail area', async () => {
+    getFighters.mockResolvedValue({ primary: [mario.id], secondary: [] });
+    listMatches.mockResolvedValue([
+      makeMatch({
+        id: 'm1',
+        fighter_id: mario.id,
+        opponent_id: alphabeticallyFirstSprite.id,
+        win: true,
+        opponent: 'alice',
+      }),
+    ]);
+
+    renderMatchups();
+
+    expect(await screen.findByText('Counterpick Advisor')).toBeInTheDocument();
+    expect(screen.getByText('By Opponent')).toBeInTheDocument();
+    expect(screen.getByText('alice')).toBeInTheDocument();
   });
 });
