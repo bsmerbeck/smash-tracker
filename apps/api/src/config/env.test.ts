@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { loadEnv } from './env.js';
+import { loadEnv, parseCorsOrigins } from './env.js';
 
 const base = {
   FIREBASE_DATABASE_URL: 'https://example-default-rtdb.firebaseio.com',
@@ -30,5 +30,31 @@ describe('loadEnv', () => {
       FIREBASE_DATABASE_EMULATOR_HOST: '127.0.0.1:9000',
     });
     expect(env.FIREBASE_DATABASE_EMULATOR_HOST).toBe('127.0.0.1:9000');
+  });
+
+  it('does not require GOOGLE_APPLICATION_CREDENTIALS (Cloud Run uses ADC)', () => {
+    const env = loadEnv(base);
+    expect(env.GOOGLE_APPLICATION_CREDENTIALS).toBeUndefined();
+  });
+});
+
+describe('parseCorsOrigins', () => {
+  it('splits a comma-separated list into trimmed origins', () => {
+    expect(
+      parseCorsOrigins(
+        'https://smash-tracker-f97b7.web.app, https://smash-tracker-f97b7.firebaseapp.com',
+      ),
+    ).toEqual([
+      'https://smash-tracker-f97b7.web.app',
+      'https://smash-tracker-f97b7.firebaseapp.com',
+    ]);
+  });
+
+  it('returns a single-element array for a single origin', () => {
+    expect(parseCorsOrigins('http://localhost:5173')).toEqual(['http://localhost:5173']);
+  });
+
+  it('drops empty entries', () => {
+    expect(parseCorsOrigins('http://localhost:5173,,')).toEqual(['http://localhost:5173']);
   });
 });
