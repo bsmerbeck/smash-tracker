@@ -1,0 +1,8 @@
+legacy/
+dist/
+coverage/
+node_modules/
+pnpm-lock.yaml
+
+# pre-existing doc, rewritten wholesale in Phase 5
+README.md
