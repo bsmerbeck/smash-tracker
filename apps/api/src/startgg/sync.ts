@@ -108,7 +108,6 @@ export function gamesFromSet(
         externalId,
       },
     });
-    summary.imported += 1;
   });
 
   return results;
@@ -147,6 +146,13 @@ export async function importPlayerMatches(
     totalPages = result.totalPages;
     for (const set of result.sets) {
       for (const game of gamesFromSet(set, playerId, summary)) {
+        // `imported` counts unique keys: pagination can return overlapping
+        // sets across pages (e.g. a set moving in the bracket between
+        // requests), so only count a game the first time its stable key is
+        // seen, not once per page it happens to appear on.
+        if (!(game.key in matchUpdates)) {
+          summary.imported += 1;
+        }
         matchUpdates[game.key] = game.record;
         opponentUpdates[game.opponentTag] = true;
       }
