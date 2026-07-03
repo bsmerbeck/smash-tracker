@@ -1,7 +1,9 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { render, screen } from '@testing-library/react';
-import App from './App';
-import { resetAuthMock, setMockUser } from '@/test/mockAuth';
+import userEvent from '@testing-library/user-event';
+import { AuthProvider } from '@/context/AuthContext';
+import { SignInCard } from './SignInCard';
+import { resetAuthMock } from '@/test/mockAuth';
 
 vi.mock('firebase/auth', async () => {
   const mock = await import('@/test/mockAuth');
@@ -29,17 +31,24 @@ vi.mock('@/lib/api', () => ({
   },
 }));
 
-describe('App', () => {
+describe('SignInCard', () => {
   beforeEach(() => {
     resetAuthMock();
     vi.clearAllMocks();
-    setMockUser(null);
   });
 
-  it('renders the landing page with sign-in when signed out', async () => {
-    render(<App />);
+  it('surfaces a validation error when submitting an invalid email', async () => {
+    const user = userEvent.setup();
+    render(
+      <AuthProvider>
+        <SignInCard />
+      </AuthProvider>,
+    );
 
-    expect(await screen.findByRole('heading', { name: /smash tracker/i })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /^sign in$/i })).toBeInTheDocument();
+    await user.type(screen.getByLabelText(/email/i), 'not-an-email');
+    await user.type(screen.getByLabelText(/password/i), 'password123');
+    await user.click(screen.getByRole('button', { name: /^sign in$/i }));
+
+    expect(await screen.findByText(/enter a valid email address/i)).toBeInTheDocument();
   });
 });
