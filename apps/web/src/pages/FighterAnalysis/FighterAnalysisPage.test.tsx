@@ -3,6 +3,7 @@ import { render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { AuthProvider } from '@/context/AuthContext';
+import { AnalyticsFilterProvider } from '@/context/AnalyticsFilterContext';
 import { FighterAnalysisPage } from './FighterAnalysisPage';
 import { resetAuthMock, setMockUser, makeMockUser } from '@/test/mockAuth';
 import { SpriteList } from '@/data/sprites';
@@ -65,12 +66,14 @@ function renderFighterAnalysis() {
     <QueryClientProvider client={queryClient}>
       <MemoryRouter initialEntries={['/fighter-analysis']}>
         <AuthProvider>
-          <Routes>
-            <Route path="/fighter-analysis" element={<FighterAnalysisPage />} />
-            <Route path="/choose-primary" element={<div>Choose primary page</div>} />
-            <Route path="/choose-secondary" element={<div>Choose secondary page</div>} />
-            <Route path="/dashboard" element={<div>Dashboard page</div>} />
-          </Routes>
+          <AnalyticsFilterProvider>
+            <Routes>
+              <Route path="/fighter-analysis" element={<FighterAnalysisPage />} />
+              <Route path="/choose-primary" element={<div>Choose primary page</div>} />
+              <Route path="/choose-secondary" element={<div>Choose secondary page</div>} />
+              <Route path="/dashboard" element={<div>Dashboard page</div>} />
+            </Routes>
+          </AnalyticsFilterProvider>
         </AuthProvider>
       </MemoryRouter>
     </QueryClientProvider>,
@@ -81,6 +84,7 @@ describe('FighterAnalysisPage', () => {
   beforeEach(() => {
     resetAuthMock();
     vi.clearAllMocks();
+    window.localStorage.clear();
     upsertMe.mockResolvedValue({ uid: 'test-uid', email: 'test@example.com' });
     setMockUser(makeMockUser());
   });

@@ -12,6 +12,7 @@ import {
   getRecordsByFighter,
   getRunningWinRateSeries,
   getStageRecords,
+  getStageUsage,
   getStreakSummary,
   getWinLossRecord,
 } from './stats';
@@ -451,5 +452,32 @@ describe('getMatchTypeRecords', () => {
     const unspecified = records.find((r) => r.matchType === 'unspecified');
     expect(unspecified).toMatchObject({ wins: 1, losses: 1, total: 2 });
     expect(records.find((r) => r.matchType === 'online-tourney')?.wins).toBe(1);
+  });
+});
+
+describe('getStageUsage', () => {
+  const stage = (id: number, name: string) => ({ id, name });
+
+  it('counts occurrences of each stage id', () => {
+    const matches = [
+      makeMatch({ id: '1', time: 1, win: true, map: stage(1, 'Battlefield') }),
+      makeMatch({ id: '2', time: 2, win: false, map: stage(1, 'Battlefield') }),
+      makeMatch({ id: '3', time: 3, win: true, map: stage(2, 'Final Destination') }),
+    ];
+    const usage = getStageUsage(matches);
+    expect(usage.get(1)).toBe(2);
+    expect(usage.get(2)).toBe(1);
+  });
+
+  it('groups a missing map under stage id 0, matching getStageRecords', () => {
+    const matches = [
+      makeMatch({ id: '1', time: 1, win: true, map: undefined }),
+      makeMatch({ id: '2', time: 2, win: true, map: stage(0, 'no selection') }),
+    ];
+    expect(getStageUsage(matches).get(0)).toBe(2);
+  });
+
+  it('returns an empty map for no matches', () => {
+    expect(getStageUsage([]).size).toBe(0);
   });
 });

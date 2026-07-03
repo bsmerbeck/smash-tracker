@@ -3,8 +3,9 @@ import { Link } from 'react-router';
 import type { Fighter } from '@smash-tracker/shared';
 import { Button } from '@/components/ui/button';
 import { useFighters } from '@/hooks/useFighters';
-import { useMatches } from '@/hooks/useMatches';
+import { useFilteredMatches } from '@/hooks/useFilteredMatches';
 import { getFighterById } from '@/data/sprites';
+import { FilteredEmptyNotice } from '@/components/FilteredEmptyNotice';
 import { SelectFighter } from './components/SelectFighter';
 import { StreakCard } from './components/StreakCard';
 import { BestWorstMap } from './components/BestWorstMap';
@@ -16,7 +17,7 @@ import { OpponentTable } from './components/OpponentTable';
 /** Ports legacy/src/screens/FighterAnalysis. */
 export function FighterAnalysisPage() {
   const { data: fighterSelection, isLoading: fightersLoading } = useFighters();
-  const { data: matches = [], isLoading: matchesLoading } = useMatches();
+  const { matches, allMatches, isLoading: matchesLoading, filterActive } = useFilteredMatches();
 
   const fighterSprites = useMemo<Fighter[]>(() => {
     const ids = [...(fighterSelection?.primary ?? []), ...(fighterSelection?.secondary ?? [])];
@@ -54,7 +55,7 @@ export function FighterAnalysisPage() {
     );
   }
 
-  if (matches.length === 0) {
+  if (allMatches.length === 0) {
     return (
       <div className="flex flex-col items-center gap-2 py-16 text-center">
         <h2 className="text-xl font-semibold tracking-tight">
@@ -82,6 +83,8 @@ export function FighterAnalysisPage() {
           onChange={(next) => setSelectedFighterId(next.id)}
         />
       </div>
+
+      {filterActive && matches.length === 0 && <FilteredEmptyNotice />}
 
       <BestWorstMatchupCards fighterMatches={fighterMatches} />
 

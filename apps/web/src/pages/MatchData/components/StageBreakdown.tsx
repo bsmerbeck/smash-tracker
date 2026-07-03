@@ -1,27 +1,39 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import type { Match } from '@smash-tracker/shared';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import {
   Select,
   SelectContent,
+  SelectGroup,
   SelectItem,
+  SelectLabel,
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { NO_SELECTION_STAGE, stagesById } from '@/data/stages';
+import { NO_SELECTION_STAGE } from '@/data/stages';
 import { getFighterById } from '@/data/sprites';
 import { getStageRecords, getWinLossRecord } from '@/lib/stats';
-
-const alphaStageList = [...stagesById.values()].sort((a, b) => a.name.localeCompare(b.name));
-const stageOptions = [NO_SELECTION_STAGE, ...alphaStageList];
+import { getGroupedStageOptions, stageOptions } from '@/lib/stageOptions';
+import { StageOption } from '@/components/StageOption';
 
 /**
  * Ports legacy/src/screens/MatchData/components/StageBreakdown — pick a
  * stage, see the overall record for it (via `getStageRecords`) plus a
  * per-fighter breakdown for matches played on that stage.
  */
-export function StageBreakdown({ matches }: { matches: Match[] }) {
+export function StageBreakdown({
+  matches,
+  usageMatches,
+}: {
+  matches: Match[];
+  /** Unfiltered matches used to compute "Most played" ordering; defaults to `matches` when omitted. */
+  usageMatches?: Match[];
+}) {
   const [stageId, setStageId] = useState<number>(NO_SELECTION_STAGE.id);
+  const { mostPlayed, all: allStages } = useMemo(
+    () => getGroupedStageOptions(usageMatches ?? matches),
+    [usageMatches, matches],
+  );
 
   if (matches.length === 0) {
     return (
@@ -62,11 +74,25 @@ export function StageBreakdown({ matches }: { matches: Match[] }) {
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            {stageOptions.map((s) => (
-              <SelectItem key={s.id} value={String(s.id)}>
-                {s.name}
-              </SelectItem>
-            ))}
+            <SelectItem value={String(NO_SELECTION_STAGE.id)}>{NO_SELECTION_STAGE.name}</SelectItem>
+            {mostPlayed.length > 0 && (
+              <SelectGroup>
+                <SelectLabel>Most played</SelectLabel>
+                {mostPlayed.map((s) => (
+                  <SelectItem key={`most-played-${s.id}`} value={String(s.id)}>
+                    <StageOption stage={s} />
+                  </SelectItem>
+                ))}
+              </SelectGroup>
+            )}
+            <SelectGroup>
+              <SelectLabel>All stages</SelectLabel>
+              {allStages.map((s) => (
+                <SelectItem key={`all-${s.id}`} value={String(s.id)}>
+                  <StageOption stage={s} />
+                </SelectItem>
+              ))}
+            </SelectGroup>
           </SelectContent>
         </Select>
 

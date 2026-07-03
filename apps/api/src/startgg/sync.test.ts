@@ -73,7 +73,9 @@ describe('gamesFromSet', () => {
     const games = gamesFromSet(makeSet(), PLAYER_ID, summary);
 
     expect(games).toHaveLength(2);
-    expect(summary).toMatchObject({ sets: 1, imported: 2 });
+    // `imported` is counted by importPlayerMatches (unique-key dedup across
+    // pages), not by gamesFromSet — see the importPlayerMatches tests below.
+    expect(summary).toMatchObject({ sets: 1, imported: 0 });
 
     const [g1, g2] = games;
     expect(g1?.key).toBe('sgg-111-g1');
@@ -203,6 +205,36 @@ describe('importPlayerMatches', () => {
     );
     const matchesAfter = tree['matches']?.['uid-1'] as Record<string, unknown>;
     expect(Object.keys(matchesAfter)).toHaveLength(2);
+  });
+
+  it('counts imported games by unique key, not once per page (pagination overlap)', async () => {
+    // Simulates the live bug: a set shifting position in the bracket between
+    // paginated requests causes the same set (and thus the same game keys)
+    // to be delivered on two separate pages. `imported` must reflect the
+    // number of distinct games actually written, not one increment per
+    // occurrence across pages.
+    const database = new FakeDatabase();
+    const set = makeSet();
+    let call = 0;
+    const fetchMock = async () => {
+      call += 1;
+      // Same set delivered on both pages of a 2-page result.
+      return pageResponse([set], 2);
+    };
+
+    const summary = await importPlayerMatches(
+      database as never,
+      'uid-1',
+      PLAYER_ID,
+      'server-token',
+      fetchMock as typeof fetch,
+    );
+
+    expect(call).toBe(2);
+    expect(summary.imported).toBe(2); // the set has 2 games, not 4
+    const tree = database.dump() as Record<string, Record<string, unknown>>;
+    const matches = tree['matches']?.['uid-1'] as Record<string, unknown>;
+    expect(Object.keys(matches).sort()).toEqual(['sgg-111-g1', 'sgg-111-g2']);
   });
 
   it('never touches manually-entered push-keyed matches', async () => {
