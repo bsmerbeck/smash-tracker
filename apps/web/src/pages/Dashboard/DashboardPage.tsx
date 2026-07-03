@@ -9,14 +9,22 @@ import { FilteredEmptyNotice } from '@/components/FilteredEmptyNotice';
 import { DashboardContext, type DashboardContextValue } from './DashboardContext';
 import { DashboardToolbar } from './components/DashboardToolbar';
 import { WinLossTracker } from './components/WinLossTracker';
-import { BestWorstMatchup } from './components/BestWorstMatchup';
+import { MatchupSnapshot } from './components/MatchupSnapshot';
 import { PreviousMatches } from './components/PreviousMatches';
 import { LastMatchesChart } from './components/LastMatchesChart';
+import { HeroStats } from './components/HeroStats';
+import { StageTiles } from './components/StageTiles';
 
 /** Ports legacy/src/screens/Dashboard. */
 export function DashboardPage() {
   const { data: fighterSelection, isLoading: fightersLoading } = useFighters();
-  const { matches, allMatches, isLoading: matchesLoading, filterActive } = useFilteredMatches();
+  const {
+    matches,
+    allMatches,
+    timeFilteredMatches,
+    isLoading: matchesLoading,
+    filterActive,
+  } = useFilteredMatches();
 
   const fighterSprites = useMemo<Fighter[]>(() => {
     const ids = [...(fighterSelection?.primary ?? []), ...(fighterSelection?.secondary ?? [])];
@@ -68,14 +76,18 @@ export function DashboardPage() {
   return (
     <DashboardContext.Provider value={contextValue}>
       <div className="flex flex-col gap-6">
+        <HeroStats matches={matches} timeFilteredMatches={timeFilteredMatches} />
+
         <DashboardToolbar />
         {filterActive && allMatches.length > 0 && matches.length === 0 && <FilteredEmptyNotice />}
         <WinLossTracker matches={matches} />
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-          <BestWorstMatchup matches={matches} />
+          <LastMatchesChart matches={matches} />
           <PreviousMatches matches={matches} />
         </div>
-        <LastMatchesChart matches={matches} />
+
+        <StageTiles matches={matches} />
+        <MatchupSnapshot matches={matches} />
       </div>
     </DashboardContext.Provider>
   );
