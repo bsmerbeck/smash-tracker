@@ -60,6 +60,19 @@ export const matchRecordSchema = z.object({
   matchType: matchTypeSchema.or(z.literal('')).optional(),
   /** true = win, false = loss. */
   win: z.boolean(),
+  /**
+   * Where this match came from. Absent on manually-entered matches (all
+   * legacy data); 'startgg' on records imported from start.gg tournament
+   * sets. Set server-side by the sync service only — never accepted from
+   * client input (see createMatchInputSchema).
+   */
+  source: z.literal('startgg').optional(),
+  /**
+   * Stable idempotency key for imported records, e.g. 'sgg:<setId>:g<n>'.
+   * Doubles as the RTDB child key (prefixed) so re-syncs overwrite instead
+   * of duplicating.
+   */
+  externalId: z.string().optional(),
 });
 export type MatchRecord = z.infer<typeof matchRecordSchema>;
 
