@@ -11,6 +11,7 @@ import {
 import { Line } from 'react-chartjs-2';
 import type { Match } from '@smash-tracker/shared';
 import { getRunningWinRateSeries } from '@/lib/stats';
+import { darkChartOptions, redLineDataset } from '@/lib/chartTheme';
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Tooltip, Legend);
 
@@ -31,19 +32,7 @@ function buildData(series: ReturnType<typeof getRunningWinRateSeries>) {
     datasets: [
       {
         label: 'Win Rate',
-        fill: false,
-        tension: 0.1,
-        backgroundColor: 'rgba(75,192,192,0.4)',
-        borderColor: 'rgb(75,192,192)',
-        pointBorderColor: 'rgba(75,192,192,1)',
-        pointBackgroundColor: '#fff',
-        pointBorderWidth: 1,
-        pointHoverRadius: 5,
-        pointHoverBackgroundColor: 'rgb(75,192,192)',
-        pointHoverBorderColor: 'rgba(220,220,220,1)',
-        pointHoverBorderWidth: 2,
-        pointRadius: 5,
-        pointHitRadius: 10,
+        ...redLineDataset(),
         data: series.map((point) => point.winRate),
       },
     ],
@@ -52,9 +41,12 @@ function buildData(series: ReturnType<typeof getRunningWinRateSeries>) {
 
 /** Builds chart options with tooltip callbacks closed over `series`, mirroring legacy MatchChart's tooltip title/footer (date + opponent's fighter name). */
 function buildOptions(series: ReturnType<typeof getRunningWinRateSeries>): ChartOptions<'line'> {
+  const theme = darkChartOptions();
   return {
     scales: {
+      x: theme.scales?.x,
       y: {
+        ...theme.scales?.y,
         position: 'right',
         suggestedMax: 100,
       },
@@ -62,8 +54,10 @@ function buildOptions(series: ReturnType<typeof getRunningWinRateSeries>): Chart
     plugins: {
       legend: {
         display: true,
+        labels: theme.plugins?.legend?.labels,
       },
       tooltip: {
+        ...theme.plugins?.tooltip,
         mode: 'nearest',
         intersect: true,
         callbacks: {
