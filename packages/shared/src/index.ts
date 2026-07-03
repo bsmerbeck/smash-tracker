@@ -26,3 +26,6 @@ export * from './user.js';
 export * from './match.js';
 export * from './opponent.js';
 export * from './error.js';
+export * from './startgg.js';
+export * from './fighterData.js';
+export * from './stageData.js';

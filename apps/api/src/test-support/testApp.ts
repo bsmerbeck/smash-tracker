@@ -8,7 +8,9 @@ export const TEST_UID = 'test-uid-123';
 export const TEST_EMAIL = 'test@example.com';
 export const TEST_TOKEN = 'valid-test-token';
 
-export function buildTestApp() {
+export function buildTestApp(
+  options: Pick<Parameters<typeof buildApp>[0], 'startgg' | 'startggFetch'> = {},
+) {
   const database = new FakeDatabase();
   const auth = new FakeAuth();
   auth.registerToken(TEST_TOKEN, { uid: TEST_UID, email: TEST_EMAIL });
@@ -22,6 +24,7 @@ export function buildTestApp() {
       database: database as unknown as Database,
     },
     logger: false,
+    ...options,
   });
 
   return { app, database, auth };

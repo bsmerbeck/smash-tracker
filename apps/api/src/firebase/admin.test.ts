@@ -26,6 +26,7 @@ describe('initFirebase', () => {
       HOST: '0.0.0.0',
       FIREBASE_DATABASE_URL: 'https://example-default-rtdb.firebaseio.com',
       CORS_ORIGIN: 'http://localhost:5173',
+      WEB_BASE_URL: 'http://localhost:5173',
     });
 
     expect(applicationDefaultMock).toHaveBeenCalledOnce();

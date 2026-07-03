@@ -32,6 +32,20 @@ const envSchema = z.object({
   // Production traffic is same-origin via the Firebase Hosting rewrite, so
   // this mainly matters for local dev and as a belt-and-braces fallback.
   CORS_ORIGIN: z.string().default('http://localhost:5173'),
+
+  // ---- start.gg integration (all optional — when incomplete, the
+  // /api/integrations/startgg and /api/auth/startgg routes answer 503) -----
+  /** OAuth app client id from https://start.gg/admin/profile/developer/applications */
+  STARTGG_CLIENT_ID: z.string().optional(),
+  STARTGG_CLIENT_SECRET: z.string().optional(),
+  /** Must exactly match a redirect URI registered on the start.gg OAuth app. */
+  STARTGG_REDIRECT_URI: z.string().optional(),
+  /** Server-side API token used to fetch public set data during syncs. */
+  STARTGG_API_TOKEN: z.string().optional(),
+  /** Secret for HMAC-signing OAuth state; any long random string. */
+  STARTGG_STATE_SECRET: z.string().optional(),
+  /** SPA origin that OAuth callbacks redirect users back to. */
+  WEB_BASE_URL: z.string().default('http://localhost:5173'),
 });
 
 export type Env = z.infer<typeof envSchema>;
@@ -55,4 +69,38 @@ export function parseCorsOrigins(corsOrigin: string): string[] {
     .split(',')
     .map((origin) => origin.trim())
     .filter((origin) => origin.length > 0);
+}
+
+export interface StartggConfig {
+  clientId: string;
+  clientSecret: string;
+  redirectUri: string;
+  /** Server data token for public set queries during syncs. */
+  apiToken: string;
+  stateSecret: string;
+  webBaseUrl: string;
+}
+
+/**
+ * Assembles the start.gg config when fully present, else null (the routes
+ * then respond 503, so a deployment without the integration keeps working).
+ */
+export function getStartggConfig(env: Env): StartggConfig | null {
+  if (
+    !env.STARTGG_CLIENT_ID ||
+    !env.STARTGG_CLIENT_SECRET ||
+    !env.STARTGG_REDIRECT_URI ||
+    !env.STARTGG_API_TOKEN ||
+    !env.STARTGG_STATE_SECRET
+  ) {
+    return null;
+  }
+  return {
+    clientId: env.STARTGG_CLIENT_ID,
+    clientSecret: env.STARTGG_CLIENT_SECRET,
+    redirectUri: env.STARTGG_REDIRECT_URI,
+    apiToken: env.STARTGG_API_TOKEN,
+    stateSecret: env.STARTGG_STATE_SECRET,
+    webBaseUrl: env.WEB_BASE_URL,
+  };
 }
