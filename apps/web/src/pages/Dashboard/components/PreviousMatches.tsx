@@ -98,7 +98,11 @@ export function PreviousMatches({ matches }: { matches: Match[] }) {
                       )}
                       <span className="text-xs">{opponentSprite?.name}</span>
                     </div>
-                    <span className="font-medium">{match.win ? 'Win' : 'Loss'}</span>
+                    <span
+                      className={`font-medium ${match.win ? 'text-emerald-500' : 'text-destructive'}`}
+                    >
+                      {match.win ? 'Win' : 'Loss'}
+                    </span>
                   </div>
                   <Button
                     variant="outline"

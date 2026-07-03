@@ -50,7 +50,7 @@ export function FighterPieChart({
     })
     .sort((a, b) => b.matchCount - a.matchCount);
 
-  const colors = generateGradient('#ff0000', '#070707', fighterSprites.length);
+  const colors = generateGradient('#e60012', '#070707', fighterSprites.length);
 
   const data = {
     labels: chartData.map((slice) => slice.fighter.name),
