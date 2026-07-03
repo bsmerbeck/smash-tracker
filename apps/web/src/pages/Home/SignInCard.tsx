@@ -22,6 +22,7 @@ import {
 } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
 import { useAuth } from '@/hooks/useAuth';
+import { getStartggLoginUrl } from '@/lib/api';
 import { getAuthErrorMessage } from '@/lib/firebaseErrors';
 
 const credentialsSchema = z.object({
@@ -136,6 +137,15 @@ export function SignInCard() {
               onClick={handleGoogleSignIn}
             >
               Continue with Google
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              className="w-full"
+              disabled={submitting}
+              onClick={() => window.location.assign(getStartggLoginUrl())}
+            >
+              Continue with start.gg
             </Button>
             <button
               type="button"
