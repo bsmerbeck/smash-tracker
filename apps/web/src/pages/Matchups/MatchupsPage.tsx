@@ -12,6 +12,8 @@ import { SelectFighter } from './components/SelectFighter';
 import { SelectOpponent } from './components/SelectOpponent';
 import { MatchWinLossCard } from './components/MatchWinLossCard';
 import { MatchupChart } from './components/MatchupChart';
+import { MatchupInsights } from './components/MatchupInsights';
+import { MatchupStageTable } from './components/MatchupStageTable';
 import { MatchupTable } from './components/MatchupTable';
 
 /**
@@ -112,6 +114,11 @@ export function MatchupsPage() {
         </Card>
 
         <MatchWinLossCard matchupMatches={matchupMatches} />
+
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+          <MatchupInsights matchupMatches={matchupMatches} />
+          <MatchupStageTable matchupMatches={matchupMatches} />
+        </div>
 
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
           <Card>

@@ -42,6 +42,7 @@ export const onAuthStateChanged = vi.fn(
 export const signInWithEmailAndPassword = vi.fn();
 export const createUserWithEmailAndPassword = vi.fn();
 export const signInWithPopup = vi.fn();
+export const signInWithCustomToken = vi.fn();
 export const signOut = vi.fn();
 export const getAuth = vi.fn(() => mockAuthInstance);
 
@@ -60,6 +61,7 @@ export function resetAuthMock() {
   signInWithEmailAndPassword.mockReset();
   createUserWithEmailAndPassword.mockReset();
   signInWithPopup.mockReset();
+  signInWithCustomToken.mockReset();
   signOut.mockReset();
 }
 
