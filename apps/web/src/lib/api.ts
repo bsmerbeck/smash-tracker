@@ -4,6 +4,9 @@ import {
   fighterSelectionSchema,
   matchSchema,
   opponentListSchema,
+  startggAuthorizeResponseSchema,
+  startggStatusSchema,
+  startggSyncSummarySchema,
   userProfileSchema,
   type CreateMatchInput,
   type FighterSelectionInput,
@@ -168,6 +171,25 @@ export const api = {
     /** GET /api/opponents */
     list: () => apiRequestParsed('/api/opponents', opponentListSchema),
   },
+  startgg: {
+    /** GET /api/integrations/startgg/status */
+    status: () => apiRequestParsed('/api/integrations/startgg/status', startggStatusSchema),
+    /** GET /api/integrations/startgg/authorize — returns the URL to send the user to. */
+    authorize: () =>
+      apiRequestParsed('/api/integrations/startgg/authorize', startggAuthorizeResponseSchema),
+    /** POST /api/integrations/startgg/sync */
+    sync: () =>
+      apiRequestParsed('/api/integrations/startgg/sync', startggSyncSummarySchema, {
+        method: 'POST',
+      }),
+    /** DELETE /api/integrations/startgg/link */
+    unlink: () => apiRequest<void>('/api/integrations/startgg/link', { method: 'DELETE' }),
+  },
 };
+
+/** Public "login with start.gg" entrypoint — a full-page navigation, not an XHR. */
+export function getStartggLoginUrl(): string {
+  return `${getApiBaseUrl()}/api/auth/startgg/login`;
+}
 
 export type { Match };
