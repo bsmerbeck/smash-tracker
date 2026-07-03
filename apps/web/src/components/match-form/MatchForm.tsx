@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useForm, type UseFormReturn } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -17,7 +17,9 @@ import {
 import {
   Select,
   SelectContent,
+  SelectGroup,
   SelectItem,
+  SelectLabel,
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
@@ -34,20 +36,15 @@ import {
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { cn } from '@/lib/utils';
 import { SpriteList } from '@/data/sprites';
-import { stagesById, NO_SELECTION_STAGE } from '@/data/stages';
+import { NO_SELECTION_STAGE } from '@/data/stages';
+import { StageOption } from '@/components/StageOption';
 import { useOpponents } from '@/hooks/useOpponents';
+import { useMatches } from '@/hooks/useMatches';
+import { getGroupedStageOptions, stageOptions } from '@/lib/stageOptions';
 
 export const alphaSpriteList = [...SpriteList].sort((a, b) => a.name.localeCompare(b.name));
 
-/**
- * `StageList` intentionally keeps legacy's duplicate entries for ids
- * 114-116 (see apps/web/src/data/stages.ts) since production match data may
- * reference either occurrence. A `<select>`-style picker UI has no use for
- * showing the same stage twice, though, so this dropdown's option list is
- * deduplicated by id (first occurrence wins, same as `stagesById`).
- */
-const alphaStageList = [...stagesById.values()].sort((a, b) => a.name.localeCompare(b.name));
-export const stageOptions = [NO_SELECTION_STAGE, ...alphaStageList];
+export { stageOptions };
 
 const MATCH_TYPE_LABELS: Record<(typeof matchTypeValues)[number], string> = {
   none: 'None',
@@ -115,7 +112,13 @@ export function MatchFormFields({
   fighterSprites: Fighter[];
 }) {
   const { data: opponents = [] } = useOpponents();
+  const { data: allMatches = [] } = useMatches();
   const [opponentPopoverOpen, setOpponentPopoverOpen] = useState(false);
+
+  const { mostPlayed, all: allStages } = useMemo(
+    () => getGroupedStageOptions(allMatches),
+    [allMatches],
+  );
 
   return (
     <Form {...form}>
@@ -220,11 +223,27 @@ export function MatchFormFields({
                   </SelectTrigger>
                 </FormControl>
                 <SelectContent>
-                  {stageOptions.map((s) => (
-                    <SelectItem key={s.id} value={String(s.id)}>
-                      {s.name}
-                    </SelectItem>
-                  ))}
+                  <SelectItem value={String(NO_SELECTION_STAGE.id)}>
+                    {NO_SELECTION_STAGE.name}
+                  </SelectItem>
+                  {mostPlayed.length > 0 && (
+                    <SelectGroup>
+                      <SelectLabel>Most played</SelectLabel>
+                      {mostPlayed.map((s) => (
+                        <SelectItem key={`most-played-${s.id}`} value={String(s.id)}>
+                          <StageOption stage={s} />
+                        </SelectItem>
+                      ))}
+                    </SelectGroup>
+                  )}
+                  <SelectGroup>
+                    <SelectLabel>All stages</SelectLabel>
+                    {allStages.map((s) => (
+                      <SelectItem key={`all-${s.id}`} value={String(s.id)}>
+                        <StageOption stage={s} />
+                      </SelectItem>
+                    ))}
+                  </SelectGroup>
                 </SelectContent>
               </Select>
               <FormMessage />
