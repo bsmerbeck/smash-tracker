@@ -6,6 +6,8 @@ import { ChooseSecondaryPage } from '@/pages/CharacterSelect/ChooseSecondaryPage
 import { MatchupsPage } from '@/pages/Matchups/MatchupsPage';
 import { MatchDataPage } from '@/pages/MatchData/MatchDataPage';
 import { FighterAnalysisPage } from '@/pages/FighterAnalysis/FighterAnalysisPage';
+import { IntegrationsPage } from '@/pages/Integrations/IntegrationsPage';
+import { StartggAuthPage } from '@/pages/StartggAuth/StartggAuthPage';
 import { NotFoundPage } from '@/pages/NotFound/NotFoundPage';
 import { ProtectedRoute } from './ProtectedRoute';
 
@@ -68,6 +70,16 @@ export function AppRouter() {
             </ProtectedRoute>
           }
         />
+        <Route
+          path="/settings/integrations"
+          element={
+            <ProtectedRoute>
+              <IntegrationsPage />
+            </ProtectedRoute>
+          }
+        />
+        {/* Public: receives the custom token from the "login with start.gg" flow. */}
+        <Route path="/auth/startgg" element={<StartggAuthPage />} />
         <Route path="/not-found" element={<NotFoundPage />} />
         <Route path="*" element={<Navigate to="/not-found" replace />} />
       </Routes>

@@ -1,6 +1,7 @@
 import {
   createUserWithEmailAndPassword,
   onAuthStateChanged,
+  signInWithCustomToken,
   signInWithEmailAndPassword,
   signInWithPopup,
   signOut as firebaseSignOut,
@@ -16,6 +17,8 @@ export interface AuthContextValue {
   signInWithEmail: (email: string, password: string) => Promise<void>;
   signUpWithEmail: (email: string, password: string) => Promise<void>;
   signInWithGoogle: () => Promise<void>;
+  /** Completes "login with start.gg": the API mints a Firebase custom token and the SPA signs in with it. */
+  signInWithToken: (customToken: string) => Promise<void>;
   signOut: () => Promise<void>;
   getIdToken: () => Promise<string | null>;
 }
@@ -64,6 +67,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       },
       signInWithGoogle: async () => {
         await signInWithPopup(getFirebaseAuth(), createGoogleAuthProvider());
+        await provisionUser();
+      },
+      signInWithToken: async (customToken) => {
+        await signInWithCustomToken(getFirebaseAuth(), customToken);
         await provisionUser();
       },
       signOut: async () => {
