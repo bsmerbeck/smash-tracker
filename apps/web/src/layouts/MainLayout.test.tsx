@@ -2,6 +2,7 @@ import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router';
 import { AuthProvider } from '@/context/AuthContext';
+import { AnalyticsFilterProvider } from '@/context/AnalyticsFilterContext';
 import { MainLayout } from './MainLayout';
 import { navItems } from './nav';
 import { resetAuthMock, setMockUser, makeMockUser } from '@/test/mockAuth';
@@ -43,9 +44,11 @@ describe('MainLayout', () => {
     render(
       <MemoryRouter initialEntries={['/dashboard']}>
         <AuthProvider>
-          <MainLayout>
-            <div>Page content</div>
-          </MainLayout>
+          <AnalyticsFilterProvider>
+            <MainLayout>
+              <div>Page content</div>
+            </MainLayout>
+          </AnalyticsFilterProvider>
         </AuthProvider>
       </MemoryRouter>,
     );

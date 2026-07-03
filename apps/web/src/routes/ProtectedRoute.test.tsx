@@ -3,6 +3,7 @@ import { render, screen } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router';
 import * as firebaseAuth from 'firebase/auth';
 import { AuthProvider } from '@/context/AuthContext';
+import { AnalyticsFilterProvider } from '@/context/AnalyticsFilterContext';
 import { ProtectedRoute } from './ProtectedRoute';
 import { resetAuthMock, setMockUser, makeMockUser } from '@/test/mockAuth';
 
@@ -36,17 +37,19 @@ function renderProtected() {
   return render(
     <MemoryRouter initialEntries={['/dashboard']}>
       <AuthProvider>
-        <Routes>
-          <Route path="/" element={<div>Home page</div>} />
-          <Route
-            path="/dashboard"
-            element={
-              <ProtectedRoute>
-                <div>Secret dashboard content</div>
-              </ProtectedRoute>
-            }
-          />
-        </Routes>
+        <AnalyticsFilterProvider>
+          <Routes>
+            <Route path="/" element={<div>Home page</div>} />
+            <Route
+              path="/dashboard"
+              element={
+                <ProtectedRoute>
+                  <div>Secret dashboard content</div>
+                </ProtectedRoute>
+              }
+            />
+          </Routes>
+        </AnalyticsFilterProvider>
       </AuthProvider>
     </MemoryRouter>,
   );
