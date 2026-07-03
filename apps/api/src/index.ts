@@ -1,14 +1,26 @@
 import { buildApp } from './app.js';
+import { loadEnv } from './config/env.js';
+import { initFirebase } from './firebase/admin.js';
 
-const app = buildApp();
+let env;
+try {
+  env = loadEnv();
+} catch (err) {
+  console.error(err instanceof Error ? err.message : err);
+  process.exit(1);
+}
 
-const port = Number(process.env.PORT ?? 3001);
-const host = process.env.HOST ?? '0.0.0.0';
+const firebase = initFirebase(env);
+
+const app = buildApp({
+  firebase,
+  corsOrigin: env.CORS_ORIGIN,
+});
 
 app
-  .listen({ port, host })
+  .listen({ port: env.PORT, host: env.HOST })
   .then(() => {
-    app.log.info(`API listening on http://${host}:${port}`);
+    app.log.info(`API listening on http://${env.HOST}:${env.PORT}`);
   })
   .catch((err) => {
     app.log.error(err);
