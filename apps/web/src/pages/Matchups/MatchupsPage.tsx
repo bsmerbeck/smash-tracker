@@ -16,6 +16,9 @@ import { MatchupChart } from './components/MatchupChart';
 import { MatchupInsights } from './components/MatchupInsights';
 import { MatchupStageTable } from './components/MatchupStageTable';
 import { MatchupTable } from './components/MatchupTable';
+import { MatchupMatrix, MATCHUP_DETAIL_ANCHOR_ID } from './components/MatchupMatrix';
+import { CounterpickAdvisor } from './components/CounterpickAdvisor';
+import { PairingOpponentSplit } from './components/PairingOpponentSplit';
 
 /**
  * Ports legacy/src/screens/Matchups. Selecting "your fighter" (from the
@@ -116,28 +119,47 @@ export function MatchupsPage() {
           </CardContent>
         </Card>
 
-        <MatchWinLossCard matchupMatches={matchupMatches} />
+        <MatchupMatrix matches={matches} />
 
-        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-          <MatchupInsights matchupMatches={matchupMatches} />
-          <MatchupStageTable matchupMatches={matchupMatches} />
-        </div>
+        <div id={MATCHUP_DETAIL_ANCHOR_ID} className="flex flex-col gap-6 scroll-mt-16">
+          {fighter && opponent && (
+            <div className="flex items-center justify-center gap-4">
+              {fighter.url && <img src={fighter.url} alt="" className="size-12 object-contain" />}
+              <span className="text-lg font-semibold">{fighter.name}</span>
+              <span className="text-muted-foreground">vs</span>
+              <span className="text-lg font-semibold">{opponent.name}</span>
+              {opponent.url && <img src={opponent.url} alt="" className="size-12 object-contain" />}
+            </div>
+          )}
 
-        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+            <MatchWinLossCard matchupMatches={matchupMatches} />
+            <MatchupInsights matchupMatches={matchupMatches} />
+          </div>
+
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+            <CounterpickAdvisor matchupMatches={matchupMatches} />
+            <MatchupStageTable matchupMatches={matchupMatches} />
+          </div>
+
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+            <Card>
+              <CardHeader>
+                <CardTitle>Win Rate Trend</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <MatchupChart matchupMatches={matchupMatches} />
+              </CardContent>
+            </Card>
+            <PairingOpponentSplit matchupMatches={matchupMatches} />
+          </div>
+
           <Card>
             <CardHeader>
               <CardTitle>Matchup Results</CardTitle>
             </CardHeader>
             <CardContent>
               <MatchupTable matchupMatches={matchupMatches} />
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader>
-              <CardTitle>Win Rate</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <MatchupChart matchupMatches={matchupMatches} />
             </CardContent>
           </Card>
         </div>
