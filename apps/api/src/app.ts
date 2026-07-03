@@ -13,13 +13,19 @@ import authPlugin from './plugins/auth.js';
 import usersRoutes from './routes/users.js';
 import matchesRoutes from './routes/matches.js';
 import opponentsRoutes from './routes/opponents.js';
+import startggRoutes from './routes/startgg.js';
 import { NotFoundError } from './services/rtdb.js';
 import type { FirebaseServices } from './firebase/admin.js';
+import type { StartggConfig } from './config/env.js';
 
 export interface BuildAppOptions {
   firebase: FirebaseServices;
   /** One origin, or multiple (e.g. parsed from a comma-separated env var). */
   corsOrigin?: string | string[];
+  /** start.gg integration config; null/omitted disables those routes (503). */
+  startgg?: StartggConfig | null;
+  /** Overridable fetch for the start.gg OAuth/GraphQL calls (tests). */
+  startggFetch?: typeof fetch;
   logger?: boolean | FastifyBaseLogger;
 }
 
@@ -105,6 +111,10 @@ export function buildApp(options: BuildAppOptions) {
       await api.register(usersRoutes);
       await api.register(matchesRoutes);
       await api.register(opponentsRoutes);
+      await api.register(startggRoutes, {
+        config: options.startgg ?? null,
+        fetchImpl: options.startggFetch,
+      });
     },
     { prefix: '/api' },
   );
