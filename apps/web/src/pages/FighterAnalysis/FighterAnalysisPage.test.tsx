@@ -160,18 +160,74 @@ describe('FighterAnalysisPage', () => {
     expect(screen.getByRole('heading', { name: 'Battlefield', level: 4 })).toBeInTheDocument();
   });
 
-  it('lists per-opponent-fighter records in the Roster Breakdown', async () => {
+  it('lists only faced opponents in the Matchup Stage Guide with records and stage calls', async () => {
     getFighters.mockResolvedValue({ primary: [mario.id], secondary: [] });
     listMatches.mockResolvedValue([
-      makeMatch({ id: 'm1', time: 1, win: true, opponent_id: luigi.id }),
-      makeMatch({ id: 'm2', time: 2, win: false, opponent_id: fox.id }),
+      // 3 wins vs Luigi on Battlefield (id 1) — qualifies at the default threshold of 3
+      makeMatch({
+        id: 'm1',
+        time: 1,
+        win: true,
+        opponent_id: luigi.id,
+        map: { id: 1, name: 'Battlefield' },
+      }),
+      makeMatch({
+        id: 'm2',
+        time: 2,
+        win: true,
+        opponent_id: luigi.id,
+        map: { id: 1, name: 'Battlefield' },
+      }),
+      makeMatch({
+        id: 'm3',
+        time: 3,
+        win: true,
+        opponent_id: luigi.id,
+        map: { id: 1, name: 'Battlefield' },
+      }),
+      makeMatch({ id: 'm4', time: 4, win: false, opponent_id: fox.id }),
     ]);
 
     renderFighterAnalysis();
 
-    await waitFor(() => expect(screen.getByText('Roster Breakdown')).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText('Matchup Stage Guide')).toBeInTheDocument());
+    // Both faced opponents appear with their records
     expect(screen.getAllByText(luigi.name).length).toBeGreaterThan(0);
     expect(screen.getAllByText(fox.name).length).toBeGreaterThan(0);
+    expect(screen.getByText('3-0')).toBeInTheDocument();
+    // Luigi's best stage qualifies (3 matches on Battlefield at 100%)
+    expect(screen.getAllByText(/Battlefield/).length).toBeGreaterThan(0);
+    expect(screen.getByText('(100% over 3)')).toBeInTheDocument();
+  });
+
+  it('shows overall best and worst matchup sections with a threshold control', async () => {
+    getFighters.mockResolvedValue({ primary: [mario.id], secondary: [] });
+    listMatches.mockResolvedValue([
+      makeMatch({ id: 'm1', time: 1, win: true, opponent_id: luigi.id }),
+    ]);
+
+    renderFighterAnalysis();
+
+    await waitFor(() => expect(screen.getByText('Best & Worst Matchups')).toBeInTheDocument());
+    expect(screen.getByText('Best Matchups')).toBeInTheDocument();
+    expect(screen.getByText('Worst Matchups')).toBeInTheDocument();
+    // Default threshold of 5 not met by a single match
+    expect(screen.getAllByText('No matchups meet the threshold yet.').length).toBe(2);
+  });
+
+  it('shows the performance snapshot with recent form and match-type splits', async () => {
+    getFighters.mockResolvedValue({ primary: [mario.id], secondary: [] });
+    listMatches.mockResolvedValue([
+      makeMatch({ id: 'm1', time: 1, win: true, matchType: 'quickplay' }),
+      makeMatch({ id: 'm2', time: 2, win: false, matchType: '' }),
+    ]);
+
+    renderFighterAnalysis();
+
+    await waitFor(() => expect(screen.getByText('Performance Snapshot')).toBeInTheDocument());
+    expect(screen.getByLabelText('Last 2 results, newest first')).toBeInTheDocument();
+    expect(screen.getByText('quickplay')).toBeInTheDocument();
+    expect(screen.getByText('unspecified')).toBeInTheDocument();
   });
 
   it('lists named-opponent records in the Opponent table, ignoring blank names', async () => {
