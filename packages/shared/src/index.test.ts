@@ -173,6 +173,45 @@ describe('createMatchInputSchema', () => {
       }),
     ).toThrow();
   });
+
+  it('normalizes opponent name casing and whitespace to match legacy client behavior', () => {
+    const input = {
+      fighter_id: 1,
+      opponent_id: 8,
+      map: { id: 0, name: 'no selection' },
+      opponent: '  SomePlayer  ',
+      matchType: 'none',
+      win: true,
+    };
+    expect(createMatchInputSchema.parse(input).opponent).toBe('someplayer');
+  });
+
+  it('rejects an opponent name containing RTDB-reserved key characters', () => {
+    for (const badName of ['a.b', 'a#b', 'a$b', 'a[b', 'a]b', 'a/b']) {
+      expect(() =>
+        createMatchInputSchema.parse({
+          fighter_id: 1,
+          opponent_id: 8,
+          map: { id: 0, name: 'no selection' },
+          opponent: badName,
+          matchType: 'none',
+          win: true,
+        }),
+      ).toThrow();
+    }
+  });
+
+  it('allows spaces in opponent names (legacy free-text names may contain them)', () => {
+    const input = {
+      fighter_id: 1,
+      opponent_id: 8,
+      map: { id: 0, name: 'no selection' },
+      opponent: 'team mate',
+      matchType: 'none',
+      win: true,
+    };
+    expect(createMatchInputSchema.parse(input).opponent).toBe('team mate');
+  });
 });
 
 describe('opponent schemas', () => {

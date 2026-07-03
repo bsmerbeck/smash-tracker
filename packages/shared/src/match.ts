@@ -73,6 +73,36 @@ export const matchSchema = matchRecordSchema.extend({
 export type Match = z.infer<typeof matchSchema>;
 
 /**
+ * `opponents/{uid}/{opponentName}` uses the name as the literal RTDB key
+ * (see opponent.ts), so it can't contain the characters RTDB reserves for
+ * paths (`.`, `#`, `$`, `[`, `]`, `/`) or ASCII control characters. Legacy's
+ * `AddMatchForm.js`/`EditMatchForm.js` always lowercase the name client-side
+ * before writing (`updateOpponent`); the API is the sole write path now, so
+ * this schema normalizes (trim + lowercase) and validates server-side too —
+ * it must not rely on every caller replicating that client-side behavior.
+ */
+const RTDB_RESERVED_KEY_CHARS = ['.', '#', '$', '[', ']', '/'];
+
+function containsRtdbIllegalChar(value: string): boolean {
+  for (let i = 0; i < value.length; i += 1) {
+    const codePoint = value.codePointAt(i);
+    if (codePoint !== undefined && codePoint <= 0x1f) {
+      return true;
+    }
+  }
+  return RTDB_RESERVED_KEY_CHARS.some((char) => value.includes(char));
+}
+
+const opponentNameInputSchema = z
+  .string()
+  .trim()
+  .min(1, 'Opponent name is required')
+  .transform((value) => value.toLowerCase())
+  .refine((value) => !containsRtdbIllegalChar(value), {
+    message: 'Opponent name cannot contain . # $ [ ] / or control characters',
+  });
+
+/**
  * POST /api/matches body. `time` is set server-side (mirrors legacy's use of
  * ServerValue.TIMESTAMP) so it is not accepted from the client. `map` is
  * required on create to match legacy's always-present mapDetails object
@@ -83,7 +113,7 @@ export const createMatchInputSchema = z.object({
   fighter_id: z.number().int().positive(),
   opponent_id: z.number().int().positive(),
   map: matchStageSchema,
-  opponent: z.string().min(1),
+  opponent: opponentNameInputSchema,
   notes: z.string().default(''),
   matchType: matchTypeSchema,
   win: z.boolean(),
