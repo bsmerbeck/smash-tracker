@@ -312,6 +312,127 @@ export function getStageRecords(matches: Match[]): StageRecord[] {
 }
 
 // ---------------------------------------------------------------------------
+// Threshold-based best/worst stages (v2 analytics — correct math, not the
+// preserved legacy RosterBreakdown quirks)
+// ---------------------------------------------------------------------------
+
+export interface BestWorstStages {
+  best: StageRecord | null;
+  worst: StageRecord | null;
+}
+
+/**
+ * Best and worst stage among the given matches, considering only stages with
+ * at least `minMatches` recorded matches. The unknown-stage sentinel
+ * (`map.id` 0) never qualifies — it isn't an actionable recommendation.
+ * Best = highest win rate, worst = lowest; ties broken by larger sample
+ * size. When exactly one stage qualifies it is reported as `best` only —
+ * a single stage can't be both the recommendation and the warning.
+ */
+export function getBestWorstStages(matches: Match[], minMatches = 3): BestWorstStages {
+  const qualifying = getStageRecords(matches).filter(
+    (record) => record.stageId !== 0 && record.total >= minMatches,
+  );
+  if (qualifying.length === 0) {
+    return { best: null, worst: null };
+  }
+
+  const sorted = [...qualifying].sort((a, b) =>
+    b.winRate === a.winRate ? b.total - a.total : b.winRate - a.winRate,
+  );
+  const best = sorted[0] ?? null;
+  const worst = sorted.length > 1 ? (sorted[sorted.length - 1] ?? null) : null;
+  return { best, worst };
+}
+
+// ---------------------------------------------------------------------------
+// Matchup stage guide (v2 analytics)
+// ---------------------------------------------------------------------------
+
+export interface MatchupStageGuideRow {
+  /** The opponent's fighter id (`opponent_id`). */
+  opponentFighterId: number;
+  record: WinLossRecord;
+  bestStage: StageRecord | null;
+  worstStage: StageRecord | null;
+}
+
+/**
+ * For each opponent fighter actually faced in the given matches: the
+ * win/loss record for that matchup plus the best and worst stage to fight
+ * that opponent on, using `getBestWorstStages` with `minStageMatches` as the
+ * per-stage qualification threshold. Rows are sorted by sample size (total
+ * matches) descending, then win rate descending, so the most-informed
+ * matchups lead.
+ */
+export function getMatchupStageGuide(
+  matches: Match[],
+  minStageMatches = 3,
+): MatchupStageGuideRow[] {
+  const byOpponent = new Map<number, Match[]>();
+  for (const match of matches) {
+    const group = byOpponent.get(match.opponent_id);
+    if (group) {
+      group.push(match);
+    } else {
+      byOpponent.set(match.opponent_id, [match]);
+    }
+  }
+
+  return [...byOpponent.entries()]
+    .map(([opponentFighterId, opponentMatches]) => ({
+      opponentFighterId,
+      record: getWinLossRecord(opponentMatches),
+      ...getBestWorstStages(opponentMatches, minStageMatches),
+    }))
+    .map(({ opponentFighterId, record, best, worst }) => ({
+      opponentFighterId,
+      record,
+      bestStage: best,
+      worstStage: worst,
+    }))
+    .sort((a, b) =>
+      b.record.total === a.record.total
+        ? b.record.winRate - a.record.winRate
+        : b.record.total - a.record.total,
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Match-type splits (v2 analytics)
+// ---------------------------------------------------------------------------
+
+export interface MatchTypeRecord extends WinLossRecord {
+  /** The stored `matchType` literal; missing/empty values group under 'unspecified'. */
+  matchType: string;
+}
+
+/**
+ * Win/loss record per match type ('quickplay', 'online-tourney', ...).
+ * Matches with no `matchType` (older records, or the '' / 'none' literals)
+ * group under 'unspecified'. Sorted by sample size descending.
+ */
+export function getMatchTypeRecords(matches: Match[]): MatchTypeRecord[] {
+  const byType = new Map<string, Match[]>();
+  for (const match of matches) {
+    const raw = match.matchType ?? '';
+    const key = raw === '' || raw === 'none' ? 'unspecified' : raw;
+    const group = byType.get(key);
+    if (group) {
+      group.push(match);
+    } else {
+      byType.set(key, [match]);
+    }
+  }
+  return [...byType.entries()]
+    .map(([matchType, typeMatches]) => ({
+      matchType,
+      ...getWinLossRecord(typeMatches),
+    }))
+    .sort((a, b) => b.total - a.total);
+}
+
+// ---------------------------------------------------------------------------
 // Per-opponent (human) records (legacy OpponentTable.js)
 // ---------------------------------------------------------------------------
 
