@@ -42,8 +42,21 @@ export class ApiSchemaError extends Error {
   }
 }
 
-function getApiBaseUrl(): string {
-  return import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001';
+/**
+ * Base URL prepended to `/api/**` request paths.
+ *
+ * `VITE_API_BASE_URL` is `undefined` when unset (falls back to the local
+ * dev API) but an explicit empty string in production, where the SPA is
+ * served from the same origin as the API (Firebase Hosting rewrites
+ * `/api/**` to Cloud Run) — in that case requests should stay relative
+ * (`""` + `/api/...` = `/api/...`) rather than falling back to localhost.
+ * A trailing slash is stripped so `path` (which always starts with `/`)
+ * doesn't produce a double slash when joined.
+ */
+export function getApiBaseUrl(): string {
+  const configured = import.meta.env.VITE_API_BASE_URL;
+  const base = configured ?? 'http://localhost:3001';
+  return base.replace(/\/+$/, '');
 }
 
 async function getAuthHeader(): Promise<Record<string, string>> {

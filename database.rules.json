@@ -1,32 +1,6 @@
 {
   "rules": {
-    "primaryFighters": {
-      "$uid": {
-        ".read": "$uid === auth.uid",
-        ".write": "$uid === auth.uid"
-      }
-    },
-    "secondaryFighters": {
-      "$uid": {
-        ".read": "$uid === auth.uid",
-        ".write": "$uid === auth.uid"
-      }
-    },
-    "sprites": {
-      ".read": true,
-      ".write": false
-    },
-    "matches": {
-      "$uid": {
-        ".read": "$uid === auth.uid",
-        ".write": "$uid === auth.uid"
-      }
-    },
-    "opponents": {
-      "$uid": {
-        ".read": "$uid === auth.uid",
-        ".write": "$uid === auth.uid"
-      }
-    }
+    ".read": false,
+    ".write": false
   }
 }
