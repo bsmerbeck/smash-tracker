@@ -151,7 +151,7 @@ export function MatchTable({
         header: 'Result',
         accessorFn: (row) => (row.match.win ? 'Win' : 'Loss'),
         cell: ({ row }) => (
-          <Badge variant={row.original.match.win ? 'default' : 'destructive'}>
+          <Badge variant={row.original.match.win ? 'success' : 'destructive'}>
             {row.original.match.win ? 'Win' : 'Loss'}
           </Badge>
         ),
