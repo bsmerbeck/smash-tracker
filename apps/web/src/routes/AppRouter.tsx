@@ -5,6 +5,7 @@ import { ChoosePrimaryPage } from '@/pages/CharacterSelect/ChoosePrimaryPage';
 import { ChooseSecondaryPage } from '@/pages/CharacterSelect/ChooseSecondaryPage';
 import { MatchupsPage } from '@/pages/Matchups/MatchupsPage';
 import { MatchDataPage } from '@/pages/MatchData/MatchDataPage';
+import { TrendsPage } from '@/pages/Trends/TrendsPage';
 import { FighterAnalysisPage } from '@/pages/FighterAnalysis/FighterAnalysisPage';
 import { IntegrationsPage } from '@/pages/Integrations/IntegrationsPage';
 import { StartggAuthPage } from '@/pages/StartggAuth/StartggAuthPage';
@@ -67,6 +68,14 @@ export function AppRouter() {
           element={
             <ProtectedRoute>
               <MatchDataPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/trends"
+          element={
+            <ProtectedRoute>
+              <TrendsPage />
             </ProtectedRoute>
           }
         />
