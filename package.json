@@ -2,68 +2,37 @@
   "name": "smash-tracker",
   "version": "0.1.0",
   "private": true,
-  "dependencies": {
-    "@material-ui/core": "^4.11.4",
-    "@material-ui/icons": "4.11.2",
-    "@material-ui/lab": "4.0.0-alpha.58",
-    "@material-ui/styles": "4.11.4",
-    "@testing-library/jest-dom": "5.14.1",
-    "@testing-library/react": "^12.0.0",
-    "@testing-library/user-event": "^13.1.9",
-    "chart.js": "^3.4.0",
-    "clsx": "^1.1.1",
-    "firebase": "^8.6.8",
-    "history": "4.10.1",
-    "husky": "4.2.5",
-    "lint-staged": "^11.0.0",
-    "prettier": "^2.0.5",
-    "pretty-quick": "^3.1.1",
-    "prop-types": "^15.7.2",
-    "react": "^17.0.2",
-    "react-chartjs-2": "^3.0.3",
-    "react-dom": "^17.0.2",
-    "react-firebaseui": "^5.0.2",
-    "react-redux": "^7.2.0",
-    "react-redux-firebase": "^3.4.0",
-    "react-router": "5.2.0",
-    "react-router-dom": "^5.2.0",
-    "react-scripts": "4.0.3",
-    "react-table": "^7.2.0",
-    "react-toastify": "^7.0.4",
-    "redux": "^4.0.5",
-    "redux-firestore": "^0.15.0",
-    "styled-components": "^5.1.0"
+  "type": "module",
+  "engines": {
+    "node": ">=24"
   },
-  "husky": {
-    "hooks": {
-      "pre-commit": "pretty-quick --staged"
-    }
+  "packageManager": "pnpm@11.9.0",
+  "scripts": {
+    "dev": "pnpm -r --parallel dev",
+    "build": "pnpm -r build",
+    "test": "pnpm --filter @smash-tracker/shared build && pnpm -r test",
+    "lint": "pnpm -r lint",
+    "typecheck": "pnpm --filter @smash-tracker/shared build && pnpm -r typecheck",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "prepare": "husky"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "eslint": "^10.6.0",
+    "eslint-config-prettier": "^10.1.8",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "eslint-plugin-react-refresh": "^0.5.3",
+    "globals": "^17.7.0",
+    "husky": "^9.1.7",
+    "lint-staged": "^16.2.4",
+    "prettier": "^3.6.2",
+    "typescript": "^6.0.3",
+    "typescript-eslint": "^8.62.1"
   },
   "lint-staged": {
-    "src/**/*.{js,jsx,ts,tsx,json,css,scss,md}": [
-      "prettier --single-quote --write",
-      "git add"
-    ]
-  },
-  "scripts": {
-    "start": "react-scripts start",
-    "build": "react-scripts build",
-    "test": "react-scripts test",
-    "eject": "react-scripts eject"
-  },
-  "eslintConfig": {
-    "extends": "react-app"
-  },
-  "browserslist": {
-    "production": [
-      ">0.2%",
-      "not dead",
-      "not op_mini all"
-    ],
-    "development": [
-      "last 1 chrome version",
-      "last 1 firefox version",
-      "last 1 safari version"
+    "*.{js,jsx,ts,tsx,json,css,md}": [
+      "prettier --write"
     ]
   }
 }
