@@ -88,8 +88,10 @@ const setsPageSchema = z.object({
               completedAt: z.number().int().nullish(),
               event: z
                 .object({
+                  name: z.string().nullish(),
                   isOnline: z.boolean().nullish(),
                   videogame: z.object({ id: z.number() }).nullish(),
+                  tournament: z.object({ name: z.string().nullish() }).nullish(),
                 })
                 .nullish(),
               slots: z
@@ -150,7 +152,7 @@ const SETS_QUERY = `query PlayerSets($playerId: ID!, $page: Int!, $perPage: Int!
       nodes {
         id
         completedAt
-        event { isOnline videogame { id } }
+        event { name isOnline videogame { id } tournament { name } }
         slots { entrant { id name participants { player { id } } } }
         games {
           winnerId
