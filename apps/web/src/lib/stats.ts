@@ -465,3 +465,23 @@ export function getOpponentRecords(matches: Match[]): OpponentRecord[] {
     ...getWinLossRecord(opponentMatches),
   }));
 }
+
+// ---------------------------------------------------------------------------
+// Stage usage (for "most played" ordering in stage pickers)
+// ---------------------------------------------------------------------------
+
+/**
+ * Counts how many times each stage (`map.id`) appears across the given
+ * matches. The unknown-stage sentinel (`map.id` 0 / missing `map`) is
+ * included like `getStageRecords` — callers that build "most played"
+ * pickers should exclude id 0 themselves, since it isn't a real stage
+ * option to promote.
+ */
+export function getStageUsage(matches: Match[]): Map<number, number> {
+  const usage = new Map<number, number>();
+  for (const match of matches) {
+    const stageId = match.map?.id ?? 0;
+    usage.set(stageId, (usage.get(stageId) ?? 0) + 1);
+  }
+  return usage;
+}
