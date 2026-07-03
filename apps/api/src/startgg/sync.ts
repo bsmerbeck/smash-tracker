@@ -61,6 +61,9 @@ export function gamesFromSet(
 
   const opponentTag = normalizeOpponentTag(opponentEntrant.name);
   const matchType = set.event?.isOnline ? 'online-tourney' : 'offline-tourney';
+  // RTDB rejects undefined values — these keys must be OMITTED when absent.
+  const eventName = set.event?.name?.trim();
+  const tournamentName = set.event?.tournament?.name?.trim();
   const results: ImportableGame[] = [];
 
   games.forEach((game, index) => {
@@ -106,6 +109,8 @@ export function gamesFromSet(
         win: game.winnerId === userEntrant.id,
         source: 'startgg',
         externalId,
+        ...(eventName ? { eventName } : {}),
+        ...(tournamentName ? { tournamentName } : {}),
       },
     });
   });

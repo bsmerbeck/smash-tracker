@@ -73,6 +73,10 @@ export const matchRecordSchema = z.object({
    * of duplicating.
    */
   externalId: z.string().optional(),
+  /** Bracket/event name for imported matches (e.g. "Ultimate Singles"). Server-set. */
+  eventName: z.string().optional(),
+  /** Tournament name for imported matches (e.g. "The Big House 9"). Server-set. */
+  tournamentName: z.string().optional(),
 });
 export type MatchRecord = z.infer<typeof matchRecordSchema>;
 
