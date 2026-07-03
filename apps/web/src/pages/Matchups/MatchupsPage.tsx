@@ -4,8 +4,9 @@ import type { Fighter } from '@smash-tracker/shared';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { useFighters } from '@/hooks/useFighters';
-import { useMatches } from '@/hooks/useMatches';
+import { useFilteredMatches } from '@/hooks/useFilteredMatches';
 import { getFighterById } from '@/data/sprites';
+import { FilteredEmptyNotice } from '@/components/FilteredEmptyNotice';
 import { alphaSpriteList } from '@/components/match-form/MatchForm';
 import { MatchupsContext, type MatchupsContextValue } from './MatchupsContext';
 import { SelectFighter } from './components/SelectFighter';
@@ -25,7 +26,7 @@ import { MatchupTable } from './components/MatchupTable';
  */
 export function MatchupsPage() {
   const { data: fighterSelection, isLoading: fightersLoading } = useFighters();
-  const { data: matches = [], isLoading: matchesLoading } = useMatches();
+  const { matches, allMatches, isLoading: matchesLoading, filterActive } = useFilteredMatches();
 
   const fighterSprites = useMemo<Fighter[]>(() => {
     const ids = [...(fighterSelection?.primary ?? []), ...(fighterSelection?.secondary ?? [])];
@@ -75,7 +76,7 @@ export function MatchupsPage() {
     );
   }
 
-  if (matches.length === 0) {
+  if (allMatches.length === 0) {
     return (
       <div className="flex flex-col items-center gap-2 py-16 text-center">
         <h2 className="text-xl font-semibold tracking-tight">
@@ -99,6 +100,8 @@ export function MatchupsPage() {
   return (
     <MatchupsContext.Provider value={contextValue}>
       <div className="flex flex-col gap-6">
+        {filterActive && matches.length === 0 && <FilteredEmptyNotice />}
+
         <Card>
           <CardContent className="flex flex-wrap items-center justify-center gap-6 pt-6">
             <div className="flex flex-col items-center gap-2">

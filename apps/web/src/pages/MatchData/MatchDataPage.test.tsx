@@ -4,6 +4,10 @@ import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes } from 'react-router';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { AuthProvider } from '@/context/AuthContext';
+import {
+  AnalyticsFilterProvider,
+  ANALYTICS_FILTER_STORAGE_KEY,
+} from '@/context/AnalyticsFilterContext';
 import { MatchDataPage } from './MatchDataPage';
 import { resetAuthMock, setMockUser, makeMockUser } from '@/test/mockAuth';
 import { SpriteList } from '@/data/sprites';
@@ -74,12 +78,14 @@ function renderMatchData() {
     <QueryClientProvider client={queryClient}>
       <MemoryRouter initialEntries={['/match-data']}>
         <AuthProvider>
-          <Routes>
-            <Route path="/match-data" element={<MatchDataPage />} />
-            <Route path="/choose-primary" element={<div>Choose primary page</div>} />
-            <Route path="/choose-secondary" element={<div>Choose secondary page</div>} />
-            <Route path="/dashboard" element={<div>Dashboard page</div>} />
-          </Routes>
+          <AnalyticsFilterProvider>
+            <Routes>
+              <Route path="/match-data" element={<MatchDataPage />} />
+              <Route path="/choose-primary" element={<div>Choose primary page</div>} />
+              <Route path="/choose-secondary" element={<div>Choose secondary page</div>} />
+              <Route path="/dashboard" element={<div>Dashboard page</div>} />
+            </Routes>
+          </AnalyticsFilterProvider>
         </AuthProvider>
       </MemoryRouter>
     </QueryClientProvider>,
@@ -90,6 +96,7 @@ describe('MatchDataPage', () => {
   beforeEach(() => {
     resetAuthMock();
     vi.clearAllMocks();
+    window.localStorage.clear();
     upsertMe.mockResolvedValue({ uid: 'test-uid', email: 'test@example.com' });
     setMockUser(makeMockUser());
     listOpponents.mockResolvedValue(['rival', 'other']);
@@ -196,6 +203,33 @@ describe('MatchDataPage', () => {
       matchType: 'quickplay',
       win: false,
     });
+  });
+
+  it('shows a clear-filters notice (not the no-matches hero) when the global filter empties an existing match set', async () => {
+    const user = userEvent.setup();
+    window.localStorage.setItem(
+      ANALYTICS_FILTER_STORAGE_KEY,
+      JSON.stringify({ source: 'startgg', range: 'all' }),
+    );
+    getFighters.mockResolvedValue({ primary: [mario.id], secondary: [] });
+    // All matches are manual (no `source`), so the persisted "startgg" filter excludes everything.
+    listMatches.mockResolvedValue([makeMatch({ id: 'm1' }), makeMatch({ id: 'm2' })]);
+
+    renderMatchData();
+
+    expect(await screen.findByText('No matches match the current filters.')).toBeInTheDocument();
+    // The page itself still renders (not the page-level "no matches at all"
+    // hero, which links out to /dashboard) — MatchTable's own per-widget
+    // empty state is expected here since the filtered `matches` is empty.
+    expect(screen.getByText('Match History')).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Go to Dashboard' })).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Clear filters' }));
+
+    await waitFor(() =>
+      expect(screen.queryByText('No matches match the current filters.')).not.toBeInTheDocument(),
+    );
+    expect(screen.getAllByText('rival').length).toBeGreaterThan(0);
   });
 
   it('deletes a match after confirmation', async () => {

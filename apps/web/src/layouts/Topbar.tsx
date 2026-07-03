@@ -3,11 +3,17 @@ import { useNavigate } from 'react-router';
 import { LogOut, Menu } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
+import { Separator } from '@/components/ui/separator';
 import { Sheet, SheetContent, SheetTitle, SheetHeader } from '@/components/ui/sheet';
 import { useAuth } from '@/hooks/useAuth';
+import { AnalyticsFilterControls } from '@/components/AnalyticsFilterControls';
 import { SidebarContent } from './SidebarContent';
 
-/** Top app bar: title (links home), sign-out, and a mobile menu toggle that opens the nav in a Sheet drawer. */
+/**
+ * Top app bar: title (links home), the global analytics filter (source +
+ * time range — hidden below `lg` for space, where it instead appears at the
+ * top of the mobile nav Sheet), sign-out, and a mobile menu toggle.
+ */
 export function Topbar() {
   const { signOut } = useAuth();
   const navigate = useNavigate();
@@ -44,6 +50,8 @@ export function Topbar() {
 
       <div className="flex-1" />
 
+      <AnalyticsFilterControls className="hidden lg:flex" />
+
       <Button variant="ghost" size="icon" aria-label="Sign out" onClick={handleSignOut}>
         <LogOut className="size-5" />
       </Button>
@@ -53,6 +61,11 @@ export function Topbar() {
           <SheetHeader className="sr-only">
             <SheetTitle>Navigation</SheetTitle>
           </SheetHeader>
+          <div className="flex flex-col gap-3 p-4 pb-0">
+            <p className="text-xs font-medium text-muted-foreground">Analytics filters</p>
+            <AnalyticsFilterControls />
+          </div>
+          <Separator className="mt-4" />
           <SidebarContent onNavigate={() => setMobileNavOpen(false)} />
         </SheetContent>
       </Sheet>

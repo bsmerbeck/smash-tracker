@@ -4,6 +4,7 @@ import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes } from 'react-router';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { AuthProvider } from '@/context/AuthContext';
+import { AnalyticsFilterProvider } from '@/context/AnalyticsFilterContext';
 import { MatchupsPage } from './MatchupsPage';
 import { resetAuthMock, setMockUser, makeMockUser } from '@/test/mockAuth';
 import { SpriteList } from '@/data/sprites';
@@ -69,12 +70,14 @@ function renderMatchups() {
     <QueryClientProvider client={queryClient}>
       <MemoryRouter initialEntries={['/matchups']}>
         <AuthProvider>
-          <Routes>
-            <Route path="/matchups" element={<MatchupsPage />} />
-            <Route path="/choose-primary" element={<div>Choose primary page</div>} />
-            <Route path="/choose-secondary" element={<div>Choose secondary page</div>} />
-            <Route path="/dashboard" element={<div>Dashboard page</div>} />
-          </Routes>
+          <AnalyticsFilterProvider>
+            <Routes>
+              <Route path="/matchups" element={<MatchupsPage />} />
+              <Route path="/choose-primary" element={<div>Choose primary page</div>} />
+              <Route path="/choose-secondary" element={<div>Choose secondary page</div>} />
+              <Route path="/dashboard" element={<div>Dashboard page</div>} />
+            </Routes>
+          </AnalyticsFilterProvider>
         </AuthProvider>
       </MemoryRouter>
     </QueryClientProvider>,
@@ -85,6 +88,7 @@ describe('MatchupsPage', () => {
   beforeEach(() => {
     resetAuthMock();
     vi.clearAllMocks();
+    window.localStorage.clear();
     upsertMe.mockResolvedValue({ uid: 'test-uid', email: 'test@example.com' });
     setMockUser(makeMockUser());
   });

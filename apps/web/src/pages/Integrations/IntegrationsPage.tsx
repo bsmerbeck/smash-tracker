@@ -91,7 +91,7 @@ export function IntegrationsPage() {
         <CardHeader>
           <div className="flex items-center justify-between">
             <CardTitle>start.gg</CardTitle>
-            {status?.linked && <Badge variant="secondary">Connected</Badge>}
+            {status?.linked && <Badge variant="success">Connected</Badge>}
           </div>
           <CardDescription>
             Link your start.gg account to automatically import your Smash Ultimate tournament

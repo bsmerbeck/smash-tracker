@@ -27,6 +27,7 @@ vi.mock('@/lib/firebase', async () => {
 });
 
 const createMatch = vi.fn();
+const listMatches = vi.fn();
 const listOpponents = vi.fn();
 const upsertMe = vi.fn().mockResolvedValue({ uid: 'test-uid', email: 'test@example.com' });
 
@@ -37,6 +38,7 @@ vi.mock('@/lib/api', () => ({
     },
     matches: {
       create: (...args: unknown[]) => createMatch(...args),
+      list: (...args: unknown[]) => listMatches(...args),
     },
     opponents: {
       list: (...args: unknown[]) => listOpponents(...args),
@@ -91,6 +93,7 @@ describe('AddMatchForm', () => {
     upsertMe.mockResolvedValue({ uid: 'test-uid', email: 'test@example.com' });
     setMockUser(makeMockUser());
     listOpponents.mockResolvedValue(['rival']);
+    listMatches.mockResolvedValue([]);
     createMatch.mockResolvedValue({
       id: 'new-match',
       fighter_id: mario.id,
