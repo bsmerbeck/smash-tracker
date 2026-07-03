@@ -18,7 +18,8 @@ import type { FirebaseServices } from './firebase/admin.js';
 
 export interface BuildAppOptions {
   firebase: FirebaseServices;
-  corsOrigin?: string;
+  /** One origin, or multiple (e.g. parsed from a comma-separated env var). */
+  corsOrigin?: string | string[];
   logger?: boolean | FastifyBaseLogger;
 }
 
