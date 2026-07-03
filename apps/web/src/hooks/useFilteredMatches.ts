@@ -46,6 +46,13 @@ export interface UseFilteredMatchesResult {
   matches: Match[];
   /** All of the user's matches, unfiltered — for empty-state checks and "most used" style aggregates. */
   allMatches: Match[];
+  /**
+   * Matches with only the time-range filter applied (source filter
+   * intentionally ignored) — for widgets that compare across sources
+   * themselves (e.g. a casual-vs-competitive split) and need both buckets
+   * available regardless of the global source filter's current value.
+   */
+  timeFilteredMatches: Match[];
   isLoading: boolean;
   /** True when the active filters exclude at least one record the user actually has. */
   filterActive: boolean;
@@ -56,13 +63,18 @@ export function useFilteredMatches(): UseFilteredMatchesResult {
   const { data: allMatches = [], isLoading } = useMatches();
   const { source, range } = useAnalyticsFilter();
 
+  const timeFilteredMatches = useMemo(() => {
+    return filterByRange(allMatches, range);
+  }, [allMatches, range]);
+
   const matches = useMemo(() => {
-    return filterByRange(filterBySource(allMatches, source), range);
-  }, [allMatches, source, range]);
+    return filterBySource(timeFilteredMatches, source);
+  }, [timeFilteredMatches, source]);
 
   return {
     matches,
     allMatches,
+    timeFilteredMatches,
     isLoading,
     filterActive: matches.length !== allMatches.length,
   };
