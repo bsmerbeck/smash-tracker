@@ -8,7 +8,9 @@ import { getFighterById } from '@/data/sprites';
 import { SelectFighter } from './components/SelectFighter';
 import { StreakCard } from './components/StreakCard';
 import { BestWorstMap } from './components/BestWorstMap';
-import { RosterBreakdown } from './components/RosterBreakdown';
+import { BestWorstMatchupCards } from './components/BestWorstMatchupCards';
+import { MatchupStageGuide } from './components/MatchupStageGuide';
+import { PerformanceSnapshot } from './components/PerformanceSnapshot';
 import { OpponentTable } from './components/OpponentTable';
 
 /** Ports legacy/src/screens/FighterAnalysis. */
@@ -81,15 +83,17 @@ export function FighterAnalysisPage() {
         />
       </div>
 
+      <BestWorstMatchupCards fighterMatches={fighterMatches} />
+
       <div className="flex flex-col gap-4 lg:flex-row">
         <BestWorstMap fighterMatches={fighterMatches} />
         <StreakCard fighterMatches={fighterMatches} />
+        <PerformanceSnapshot fighterMatches={fighterMatches} />
       </div>
 
-      <div className="flex flex-col gap-4 lg:flex-row">
-        <RosterBreakdown fighterMatches={fighterMatches} />
-        <OpponentTable fighterMatches={fighterMatches} />
-      </div>
+      <MatchupStageGuide fighterMatches={fighterMatches} />
+
+      <OpponentTable fighterMatches={fighterMatches} />
     </div>
   );
 }

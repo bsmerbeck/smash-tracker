@@ -162,6 +162,48 @@ describe('MatchupsPage', () => {
     });
   });
 
+  it('shows matchup insights with streaks, form, and stage breakdown for the pairing', async () => {
+    getFighters.mockResolvedValue({ primary: [mario.id], secondary: [] });
+    listMatches.mockResolvedValue([
+      makeMatch({
+        id: 'm1',
+        time: 1,
+        fighter_id: mario.id,
+        opponent_id: alphabeticallyFirstSprite.id,
+        win: true,
+        map: { id: 1, name: 'Battlefield' },
+      }),
+      makeMatch({
+        id: 'm2',
+        time: 2,
+        fighter_id: mario.id,
+        opponent_id: alphabeticallyFirstSprite.id,
+        win: true,
+        map: { id: 1, name: 'Battlefield' },
+      }),
+      makeMatch({
+        id: 'm3',
+        time: 3,
+        fighter_id: mario.id,
+        opponent_id: alphabeticallyFirstSprite.id,
+        win: false,
+        map: { id: 1, name: 'Battlefield' },
+      }),
+    ]);
+
+    renderMatchups();
+
+    await waitFor(() => expect(screen.getByText('Matchup Insights')).toBeInTheDocument());
+    // Current streak: 1 loss (most recent match lost)
+    expect(screen.getByText('1 losses')).toBeInTheDocument();
+    // Recent form pips for all three matches
+    expect(screen.getByLabelText('Last 3 results, newest first')).toBeInTheDocument();
+    // Battlefield qualifies at the default per-stage threshold (3 matches, 67%)
+    expect(screen.getByText('Stage Breakdown')).toBeInTheDocument();
+    expect(screen.getByText('2-1')).toBeInTheDocument();
+    expect(screen.getAllByText(/Battlefield/).length).toBeGreaterThan(0);
+  });
+
   it('shows a no-matches message for the matchup table when the pairing has no matches', async () => {
     getFighters.mockResolvedValue({ primary: [mario.id], secondary: [] });
     listMatches.mockResolvedValue([
