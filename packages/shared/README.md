@@ -10,6 +10,7 @@ Firebase Realtime Database. **Do not rename fields** — existing data depends
 on these exact keys.
 
 Provenance (legacy source files read to derive this):
+
 - `legacy/src/screens/Dashboard/components/DashboardToolbar/components/AddMatchForm/AddMatchForm.js` — match create, opponent write
 - `legacy/src/screens/MatchData/components/MatchTable/MatchTable.js` and `components/EditMatchForm/EditMatchForm.js` — match read/update/delete
 - `legacy/src/screens/CharacterSelect/PrimarySelect/PrimarySelect.js` and `SecondarySelect/SecondarySelect.js` — fighter selection writes
@@ -20,7 +21,9 @@ Provenance (legacy source files read to derive this):
 ### `users/{uid}`
 
 ```ts
-{ email: string }
+{
+  email: string;
+}
 ```
 
 Previously written by a Cloud Function's `functions.auth.user().onCreate`
@@ -70,7 +73,7 @@ The API surfaces the RTDB push key as `id` on every match it returns.
 
 A set-membership map, not a list of ids: legacy does
 `firebase.set('/opponents/${uid}/${opponent}', true)` on every match
-create/edit. The opponent's identity *is* the lowercased name string; there's
+create/edit. The opponent's identity _is_ the lowercased name string; there's
 no numeric id and no dedup logic beyond "same string is the same key" (an
 idempotent set write). `GET /api/opponents` returns `Object.keys(...)` of
 this map as a flat string array.
