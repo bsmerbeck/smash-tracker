@@ -1,4 +1,5 @@
 import { Link } from 'react-router';
+import { ExternalLink } from 'lucide-react';
 import type { Match, TournamentEntry } from '@smash-tracker/shared';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import {
@@ -12,6 +13,7 @@ import {
 import { getWinLossRecord, type WinLossRecord } from '@/lib/stats';
 import { useTournamentEntries } from '@/hooks/useTournamentEntries';
 import { matchesForEntry } from '@/pages/Tournaments/lib/matchesForEntry';
+import { buildStartggUrl } from '@/pages/Tournaments/lib/startggLinks';
 
 export interface TournamentEntryRow {
   entry: TournamentEntry;
@@ -61,6 +63,10 @@ function formatDateRange(entry: TournamentEntry): string {
  * only start showing up after a sync that populates the registry, so the
  * resync-hint empty state is preserved for accounts with matches but no
  * entries yet.
+ *
+ * V5 Phase B: rows also carry a small outbound start.gg icon-link when the
+ * entry's `slug` has synced (`stopPropagation` on click so it doesn't also
+ * trigger the internal row link); hidden entirely when the slug is absent.
  */
 export function Tournaments({ matches }: { matches: Match[] }) {
   const { data: entries, isLoading } = useTournamentEntries();
@@ -96,25 +102,42 @@ export function Tournaments({ matches }: { matches: Match[] }) {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {rows.map(({ entry, record }) => (
-                <TableRow key={entry.eventId}>
-                  <TableCell className="font-medium">
-                    <Link
-                      to={`/tournaments/${entry.eventId}`}
-                      className="underline-offset-2 hover:underline"
-                    >
-                      {entry.tournamentName ?? entry.eventName}
-                    </Link>
-                  </TableCell>
-                  <TableCell className="whitespace-normal">{entry.eventName}</TableCell>
-                  <TableCell>{formatDateRange(entry)}</TableCell>
-                  <TableCell>
-                    {record.wins}-{record.losses}
-                  </TableCell>
-                  <TableCell>{record.winRate}%</TableCell>
-                  <TableCell>{record.total}</TableCell>
-                </TableRow>
-              ))}
+              {rows.map(({ entry, record }) => {
+                const startggUrl = buildStartggUrl(entry.slug);
+                return (
+                  <TableRow key={entry.eventId}>
+                    <TableCell className="font-medium">
+                      <span className="inline-flex items-center gap-1.5">
+                        <Link
+                          to={`/tournaments/${entry.eventId}`}
+                          className="underline-offset-2 hover:underline"
+                        >
+                          {entry.tournamentName ?? entry.eventName}
+                        </Link>
+                        {startggUrl && (
+                          <a
+                            href={startggUrl}
+                            target="_blank"
+                            rel="noreferrer"
+                            onClick={(e) => e.stopPropagation()}
+                            aria-label="View on start.gg"
+                            className="inline-flex text-muted-foreground hover:text-foreground"
+                          >
+                            <ExternalLink className="size-3.5" />
+                          </a>
+                        )}
+                      </span>
+                    </TableCell>
+                    <TableCell className="whitespace-normal">{entry.eventName}</TableCell>
+                    <TableCell>{formatDateRange(entry)}</TableCell>
+                    <TableCell>
+                      {record.wins}-{record.losses}
+                    </TableCell>
+                    <TableCell>{record.winRate}%</TableCell>
+                    <TableCell>{record.total}</TableCell>
+                  </TableRow>
+                );
+              })}
             </TableBody>
           </Table>
         )}
