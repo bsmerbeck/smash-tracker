@@ -8,10 +8,13 @@ import {
   matchRecordSchema,
   matchSchema,
   matchTypeSchema,
+  opponentAliasMapSchema,
   opponentListSchema,
   opponentMapSchema,
+  opponentNameInputSchema,
   stageSchema,
   updateMatchInputSchema,
+  upsertOpponentAliasInputSchema,
   userProfileSchema,
   userSchema,
 } from './index.js';
@@ -357,5 +360,48 @@ describe('opponent schemas', () => {
 
   it('parses an opponent list', () => {
     expect(opponentListSchema.parse(['someplayer', 'other'])).toEqual(['someplayer', 'other']);
+  });
+});
+
+describe('opponentNameInputSchema', () => {
+  it('trims and lowercases', () => {
+    expect(opponentNameInputSchema.parse('  SomePlayer  ')).toBe('someplayer');
+  });
+
+  it('rejects a blank name', () => {
+    expect(() => opponentNameInputSchema.parse('   ')).toThrow();
+  });
+
+  it('rejects RTDB-reserved characters', () => {
+    for (const badName of ['a.b', 'a#b', 'a$b', 'a[b', 'a]b', 'a/b']) {
+      expect(() => opponentNameInputSchema.parse(badName)).toThrow();
+    }
+  });
+
+  it('allows spaces', () => {
+    expect(opponentNameInputSchema.parse('team mate')).toBe('team mate');
+  });
+});
+
+describe('opponentAliasMapSchema', () => {
+  it('parses a flat alias -> canonical map', () => {
+    const map = { rivl: 'rival', riv: 'rival' };
+    expect(opponentAliasMapSchema.parse(map)).toEqual(map);
+  });
+
+  it('parses an empty map', () => {
+    expect(opponentAliasMapSchema.parse({})).toEqual({});
+  });
+});
+
+describe('upsertOpponentAliasInputSchema', () => {
+  it('normalizes the canonical name', () => {
+    expect(upsertOpponentAliasInputSchema.parse({ canonical: '  Rival  ' })).toEqual({
+      canonical: 'rival',
+    });
+  });
+
+  it('rejects a blank canonical name', () => {
+    expect(() => upsertOpponentAliasInputSchema.parse({ canonical: '' })).toThrow();
   });
 });

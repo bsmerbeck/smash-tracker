@@ -1,7 +1,9 @@
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { WinLossPips } from '@/components/WinLossPips';
 import type { OpponentProfile } from '@/lib/stats';
+import type { OpponentSource } from '@/hooks/useFilteredMatches';
 import type { EncounterContext } from '../tournamentHistory';
+import { OpponentSourceBadge } from './OpponentSourceBadge';
 
 function formatEncounterContext(context: EncounterContext): string | null {
   if (context.tournamentCount === 0 || !context.span) {
@@ -30,9 +32,11 @@ function formatEncounterContext(context: EncounterContext): string | null {
 export function ScoutingHeader({
   profile,
   encounterContext,
+  source,
 }: {
   profile: OpponentProfile;
   encounterContext: EncounterContext;
+  source: OpponentSource;
 }) {
   const { record } = profile;
   const encounterLine = formatEncounterContext(encounterContext);
@@ -41,7 +45,10 @@ export function ScoutingHeader({
     <Card>
       <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-4">
         <div>
-          <CardTitle className="text-2xl">{profile.opponent}</CardTitle>
+          <div className="flex flex-wrap items-center gap-2">
+            <CardTitle className="text-2xl">{profile.opponent}</CardTitle>
+            <OpponentSourceBadge source={source} />
+          </div>
           <p className="mt-1 text-sm text-muted-foreground">
             First played {new Date(profile.firstPlayedAt).toLocaleDateString()} · Last played{' '}
             {new Date(profile.lastPlayedAt).toLocaleDateString()}
