@@ -247,4 +247,123 @@ describe('MatchDataPage', () => {
 
     await waitFor(() => expect(deleteMatch).toHaveBeenCalledWith('m1'));
   });
+
+  it('renders the Tournament column, falling back to eventName then "—"', async () => {
+    getFighters.mockResolvedValue({ primary: [mario.id], secondary: [] });
+    listMatches.mockResolvedValue([
+      makeMatch({ id: 'm1', tournamentName: 'The Big House 9', eventName: 'Ultimate Singles' }),
+      makeMatch({ id: 'm2', opponent: 'someone-else', eventName: 'Ultimate Singles' }),
+      makeMatch({ id: 'm3', opponent: 'third-party' }),
+    ]);
+
+    renderMatchData();
+
+    await waitFor(() => expect(screen.getByText('Match History')).toBeInTheDocument());
+    expect(screen.getByText('The Big House 9')).toBeInTheDocument();
+    expect(screen.getByText('Ultimate Singles')).toBeInTheDocument();
+    expect(screen.getByText('—')).toBeInTheDocument();
+  });
+
+  it('composes a per-column fighter filter with the global text filter', async () => {
+    const user = userEvent.setup();
+    getFighters.mockResolvedValue({ primary: [mario.id], secondary: [] });
+    listMatches.mockResolvedValue([
+      makeMatch({ id: 'm1', fighter_id: mario.id, opponent: 'rival' }),
+      makeMatch({ id: 'm2', fighter_id: luigi.id, opponent: 'rival' }),
+    ]);
+
+    renderMatchData();
+
+    await waitFor(() => expect(screen.getAllByText('rival')).toHaveLength(2));
+
+    await user.click(screen.getByLabelText('Your Fighter'));
+    await user.click(await screen.findByRole('option', { name: luigi.name }));
+
+    await waitFor(() => expect(screen.getAllByText('rival')).toHaveLength(1));
+  });
+
+  it('shows a "no matches found" row when column filters exclude every row', async () => {
+    const user = userEvent.setup();
+    getFighters.mockResolvedValue({ primary: [mario.id], secondary: [] });
+    listMatches.mockResolvedValue([
+      makeMatch({
+        id: 'm1',
+        fighter_id: mario.id,
+        opponent_id: luigi.id,
+        matchType: 'quickplay',
+      }),
+      makeMatch({
+        id: 'm2',
+        fighter_id: mario.id,
+        opponent_id: luigi.id,
+        matchType: 'offline-tourney',
+      }),
+    ]);
+
+    renderMatchData();
+
+    await waitFor(() => expect(screen.getByText('Match History')).toBeInTheDocument());
+
+    // Fighter filter (mario) narrows nothing away; combined with a match
+    // type that doesn't exist among mario's rows the set becomes empty.
+    await user.click(screen.getByLabelText('Type'));
+    await user.click(await screen.findByRole('option', { name: 'quickplay' }));
+    await user.click(screen.getByLabelText('Filter matches'));
+    await user.type(screen.getByLabelText('Filter matches'), 'nonexistent-search-term');
+
+    expect(await screen.findByText('No matches found.')).toBeInTheDocument();
+  });
+
+  it('persists column visibility toggles to localStorage and hides the column', async () => {
+    const user = userEvent.setup();
+    getFighters.mockResolvedValue({ primary: [mario.id], secondary: [] });
+    listMatches.mockResolvedValue([makeMatch({ id: 'm1', notes: 'a note' })]);
+
+    renderMatchData();
+
+    await waitFor(() => expect(screen.getByText('a note')).toBeInTheDocument());
+
+    await user.click(screen.getByRole('button', { name: 'Columns' }));
+    await user.click(await screen.findByRole('menuitemcheckbox', { name: 'Notes' }));
+
+    await waitFor(() => expect(screen.queryByText('a note')).not.toBeInTheDocument());
+
+    const stored = JSON.parse(
+      window.localStorage.getItem('smash-tracker.matchTableColumns') ?? '{}',
+    );
+    expect(stored.notes).toBe(false);
+  });
+
+  it('exports the currently-filtered rows as a CSV blob download', async () => {
+    const user = userEvent.setup();
+    getFighters.mockResolvedValue({ primary: [mario.id], secondary: [] });
+    listMatches.mockResolvedValue([
+      makeMatch({ id: 'm1', fighter_id: mario.id, opponent: 'rival' }),
+      makeMatch({ id: 'm2', fighter_id: luigi.id, opponent: 'someone-else' }),
+    ]);
+
+    const createObjectURL = vi.fn().mockReturnValue('blob:mock-url');
+    const revokeObjectURL = vi.fn();
+    Object.assign(URL, { createObjectURL, revokeObjectURL });
+    const clickSpy = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
+
+    renderMatchData();
+
+    await waitFor(() => expect(screen.getAllByText('rival')).toHaveLength(1));
+
+    await user.click(screen.getByLabelText('Your Fighter'));
+    await user.click(await screen.findByRole('option', { name: mario.name }));
+    await waitFor(() => expect(screen.queryByText('someone-else')).not.toBeInTheDocument());
+
+    await user.click(screen.getByRole('button', { name: 'Export CSV' }));
+
+    expect(createObjectURL).toHaveBeenCalledTimes(1);
+    const [blob] = createObjectURL.mock.calls[0] as [Blob];
+    const text = await blob.text();
+    expect(text).toContain('rival');
+    expect(text).not.toContain('someone-else');
+    expect(clickSpy).toHaveBeenCalledTimes(1);
+
+    clickSpy.mockRestore();
+  });
 });
