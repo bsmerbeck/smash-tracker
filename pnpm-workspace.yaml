@@ -1,6 +1,8 @@
 packages:
   - 'apps/*'
   - 'packages/*'
+overrides:
+  uuid: ^11.1.1
 allowBuilds:
   '@firebase/util': true
   esbuild: true
