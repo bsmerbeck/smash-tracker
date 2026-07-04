@@ -106,7 +106,7 @@ describe('TrendsPage', () => {
     );
   });
 
-  it('renders all five trend sections once matches exist', async () => {
+  it('renders all six trend sections once matches exist', async () => {
     listMatches.mockResolvedValue([
       makeMatch({ id: 'm1', win: true, time: Date.UTC(2021, 0, 1), matchType: 'quickplay' }),
       makeMatch({ id: 'm2', win: false, time: Date.UTC(2021, 1, 1), matchType: 'offline-tourney' }),
@@ -115,6 +115,7 @@ describe('TrendsPage', () => {
     renderTrends();
 
     expect(await screen.findByText('Monthly Performance')).toBeInTheDocument();
+    expect(screen.getByText('Rating Curve')).toBeInTheDocument();
     expect(screen.getByText('Sessions & Tilt')).toBeInTheDocument();
     expect(screen.getByText('Setting Comparison')).toBeInTheDocument();
     expect(screen.getByText('Tournaments')).toBeInTheDocument();
