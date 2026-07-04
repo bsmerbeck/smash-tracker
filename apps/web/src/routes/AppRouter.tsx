@@ -5,6 +5,7 @@ import { ChoosePrimaryPage } from '@/pages/CharacterSelect/ChoosePrimaryPage';
 import { ChooseSecondaryPage } from '@/pages/CharacterSelect/ChooseSecondaryPage';
 import { MatchupsPage } from '@/pages/Matchups/MatchupsPage';
 import { OpponentsPage } from '@/pages/Opponents/OpponentsPage';
+import { ScoutPage } from '@/pages/Scout/ScoutPage';
 import { MatchDataPage } from '@/pages/MatchData/MatchDataPage';
 import { TrendsPage } from '@/pages/Trends/TrendsPage';
 import { TournamentDetailPage } from '@/pages/Tournaments/TournamentDetailPage';
@@ -70,6 +71,14 @@ export function AppRouter() {
           element={
             <ProtectedRoute>
               <OpponentsPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/scout"
+          element={
+            <ProtectedRoute>
+              <ScoutPage />
             </ProtectedRoute>
           }
         />
