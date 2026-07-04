@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import type { StartggSyncSummary } from '@smash-tracker/shared';
 import { FakeDatabase } from '../test-support/fakeDatabase.js';
 import {
@@ -51,7 +51,17 @@ function makeSet(overrides: Partial<StartggSet> = {}): StartggSet {
           standing: { placement: 257 },
         },
       },
-      { entrant: { id: 2, name: 'PowPow', participants: [{ player: { id: 999 } }] } },
+      {
+        entrant: {
+          id: 2,
+          name: 'PowPow',
+          participants: [
+            { player: { id: 999, gamerTag: 'PowPow' }, user: { slug: 'user/9fb774ae' } },
+          ],
+          seeds: [{ seedNum: 12 }],
+          standing: { placement: 33 },
+        },
+      },
     ],
     games: [
       {
@@ -115,12 +125,36 @@ describe('gamesFromSet', () => {
       tournamentName: 'Test Weekly 42',
       roundText: 'Losers Round 2',
       bracketRound: -2,
+      opponentSeed: 12,
+      opponentPlacement: 33,
+      opponentUserSlug: 'user/9fb774ae',
     });
     expect(g1?.record.fighter_id).toBeGreaterThan(0);
     expect(g1?.record.map?.name).toBe('Battlefield');
     // Game 2: lost, accent-insensitive stage resolution
     expect(g2?.record.win).toBe(false);
     expect(g2?.record.map?.name).toContain('Stadium 2');
+  });
+
+  it('omits opponentSeed/opponentPlacement/opponentUserSlug when start.gg provides none', () => {
+    const summary = emptySummary();
+    const set = makeSet({
+      slots: [
+        {
+          entrant: {
+            id: 1,
+            name: 'Team | Me',
+            participants: [{ player: { id: PLAYER_ID } }],
+          },
+        },
+        { entrant: { id: 2, name: 'PowPow', participants: [{ player: { id: 999 } }] } },
+      ],
+    });
+    const games = gamesFromSet(set, PLAYER_ID, summary);
+    expect(games[0]).toBeDefined();
+    expect('opponentSeed' in games[0]!.record).toBe(false);
+    expect('opponentPlacement' in games[0]!.record).toBe(false);
+    expect('opponentUserSlug' in games[0]!.record).toBe(false);
   });
 
   it('skips non-SSBU sets without counting them', () => {
@@ -367,11 +401,16 @@ describe('importPlayerMatches', () => {
     // occurrence across pages.
     const database = new FakeDatabase();
     const set = makeSet();
-    let call = 0;
-    const fetchMock = async () => {
-      call += 1;
-      // Same set delivered on both pages of a 2-page result.
-      return pageResponse([set], 2);
+    let setsPageCalls = 0;
+    const fetchMock = async (url: Parameters<typeof fetch>[0], init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body)) as { query: string };
+      if (body.query.includes('PlayerSets')) {
+        setsPageCalls += 1;
+        // Same set delivered on both pages of a 2-page result.
+        return pageResponse([set], 2);
+      }
+      // Event detail enrichment call — not under test here.
+      return new Response(JSON.stringify({ data: { event: null } }));
     };
 
     const summary = await importPlayerMatches(
@@ -382,7 +421,7 @@ describe('importPlayerMatches', () => {
       fetchMock as typeof fetch,
     );
 
-    expect(call).toBe(2);
+    expect(setsPageCalls).toBe(2);
     expect(summary.imported).toBe(2); // the set has 2 games, not 4
     const tree = database.dump() as Record<string, Record<string, unknown>>;
     const matches = tree['matches']?.['uid-1'] as Record<string, unknown>;
@@ -458,5 +497,147 @@ describe('importPlayerMatches', () => {
 
     const tree = database.dump() as Record<string, Record<string, unknown>>;
     expect(tree['tournamentEntries']).toBeUndefined();
+  });
+
+  function eventDetailsResponse(overrides: Record<string, unknown> = {}) {
+    return new Response(
+      JSON.stringify({
+        data: {
+          event: {
+            slug: 'tournament/the-box-juice-box-26/event/ultimate-singles',
+            tournament: { slug: 'tournament/the-box-juice-box-26' },
+            standings: {
+              nodes: [
+                {
+                  placement: 1,
+                  entrant: {
+                    name: 'Champ',
+                    participants: [
+                      { player: { id: 1, gamerTag: 'Champ' }, user: { slug: 'user/abc123' } },
+                    ],
+                  },
+                },
+              ],
+            },
+            ...overrides,
+          },
+        },
+      }),
+    );
+  }
+
+  /** Splits a combined fetch mock into sets-page vs event-detail calls by query text. */
+  function routedFetchMock(
+    onSetsPage: () => Promise<Response>,
+    onEventDetails: (eventId: number) => Promise<Response>,
+  ) {
+    return async (_url: Parameters<typeof fetch>[0], init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body)) as {
+        query: string;
+        variables: Record<string, unknown>;
+      };
+      if (body.query.includes('PlayerSets')) {
+        return onSetsPage();
+      }
+      return onEventDetails(body.variables['eventId'] as number);
+    };
+  }
+
+  it('enriches the registry with slug/eventSlug/topStandings after pagination', async () => {
+    const database = new FakeDatabase();
+    let eventDetailCalls = 0;
+    const fetchMock = routedFetchMock(
+      async () => pageResponse([makeSet()]),
+      async () => {
+        eventDetailCalls += 1;
+        return eventDetailsResponse();
+      },
+    );
+
+    await importPlayerMatches(
+      database as never,
+      'uid-1',
+      PLAYER_ID,
+      'server-token',
+      fetchMock as typeof fetch,
+    );
+
+    expect(eventDetailCalls).toBe(1);
+    const tree = database.dump() as Record<string, Record<string, unknown>>;
+    const registry = tree['tournamentEntries']?.['uid-1'] as Record<string, unknown>;
+    expect(registry['987']).toMatchObject({
+      slug: 'tournament/the-box-juice-box-26',
+      eventSlug: 'tournament/the-box-juice-box-26/event/ultimate-singles',
+      topStandings: [{ placement: 1, name: 'Champ', gamerTag: 'Champ', userSlug: 'user/abc123' }],
+    });
+  });
+
+  it('logs and skips enrichment for an event whose detail fetch fails, without failing the sync', async () => {
+    const database = new FakeDatabase();
+    const fetchMock = routedFetchMock(
+      async () => pageResponse([makeSet()]),
+      async () => new Response('boom', { status: 500 }),
+    );
+    const logger = { warn: vi.fn() };
+
+    const summary = await importPlayerMatches(
+      database as never,
+      'uid-1',
+      PLAYER_ID,
+      'server-token',
+      fetchMock as typeof fetch,
+      logger,
+    );
+
+    expect(summary.sets).toBe(1); // sync itself succeeded
+    expect(logger.warn).toHaveBeenCalledTimes(1);
+    expect(logger.warn.mock.calls[0]?.[0]).toMatchObject({ eventId: 987 });
+
+    const tree = database.dump() as Record<string, Record<string, unknown>>;
+    const registry = tree['tournamentEntries']?.['uid-1'] as Record<string, unknown>;
+    // Base registry fields are still present; enrichment fields are simply absent.
+    expect(registry['987']).toMatchObject({ eventId: 987, eventName: 'Ultimate Singles' });
+    expect('slug' in (registry['987'] as object)).toBe(false);
+    expect('eventSlug' in (registry['987'] as object)).toBe(false);
+    expect('topStandings' in (registry['987'] as object)).toBe(false);
+  });
+
+  it('caps event detail enrichment at 20 events, preferring the most recently active', async () => {
+    const database = new FakeDatabase();
+    // 25 distinct events, each with one set, with increasing completedAt so
+    // recency order is deterministic (event N+1 is more recent than N).
+    const sets = Array.from({ length: 25 }, (_, i) =>
+      makeSet({
+        id: i + 1,
+        completedAt: 1_700_000_000 + i,
+        event: {
+          id: 1000 + i,
+          name: `Event ${i}`,
+          isOnline: true,
+          videogame: { id: 1386 },
+        },
+      }),
+    );
+    const requestedEventIds: number[] = [];
+    const fetchMock = routedFetchMock(
+      async () => pageResponse(sets),
+      async (eventId) => {
+        requestedEventIds.push(eventId);
+        return eventDetailsResponse();
+      },
+    );
+
+    await importPlayerMatches(
+      database as never,
+      'uid-1',
+      PLAYER_ID,
+      'server-token',
+      fetchMock as typeof fetch,
+    );
+
+    expect(requestedEventIds).toHaveLength(20);
+    // Most-recent-first: events 1005..1024 (the last 20 by completedAt), not 1000..1004.
+    const expectedIds = Array.from({ length: 20 }, (_, i) => 1024 - i);
+    expect(requestedEventIds).toEqual(expectedIds);
   });
 });

@@ -65,4 +65,64 @@ describe('GET /api/tournaments', () => {
       setsPlayed: 5,
     });
   });
+
+  it('passes through slug, eventSlug, and topStandings when present', async () => {
+    const { app, database } = buildTestApp();
+    database.seed(`tournamentEntries/${TEST_UID}`, {
+      '987': {
+        eventId: 987,
+        eventName: 'Ultimate Singles',
+        firstSetAt: 1_700_000_000_000,
+        lastSetAt: 1_700_000_500_000,
+        setsPlayed: 5,
+        slug: 'tournament/the-box-juice-box-26',
+        eventSlug: 'tournament/the-box-juice-box-26/event/ultimate-singles',
+        topStandings: [
+          { placement: 1, name: 'Champ', gamerTag: 'Champ', userSlug: 'user/abc123' },
+          { placement: 2, name: 'RunnerUp' },
+        ],
+      },
+    });
+
+    const response = await app.inject({
+      method: 'GET',
+      url: '/api/tournaments',
+      headers: authHeader(),
+    });
+
+    expect(response.statusCode).toBe(200);
+    const [entry] = response.json() as Record<string, unknown>[];
+    expect(entry).toMatchObject({
+      slug: 'tournament/the-box-juice-box-26',
+      eventSlug: 'tournament/the-box-juice-box-26/event/ultimate-singles',
+      topStandings: [
+        { placement: 1, name: 'Champ', gamerTag: 'Champ', userSlug: 'user/abc123' },
+        { placement: 2, name: 'RunnerUp' },
+      ],
+    });
+  });
+
+  it('omits slug/eventSlug/topStandings when absent from the stored entry', async () => {
+    const { app, database } = buildTestApp();
+    database.seed(`tournamentEntries/${TEST_UID}`, {
+      '555': {
+        eventId: 555,
+        eventName: 'Ultimate Doubles',
+        firstSetAt: 1_701_000_000_000,
+        lastSetAt: 1_701_000_900_000,
+        setsPlayed: 2,
+      },
+    });
+
+    const response = await app.inject({
+      method: 'GET',
+      url: '/api/tournaments',
+      headers: authHeader(),
+    });
+
+    const [entry] = response.json() as Record<string, unknown>[];
+    expect('slug' in entry!).toBe(false);
+    expect('eventSlug' in entry!).toBe(false);
+    expect('topStandings' in entry!).toBe(false);
+  });
 });

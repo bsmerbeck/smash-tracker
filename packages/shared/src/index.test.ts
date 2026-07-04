@@ -11,6 +11,7 @@ import {
   opponentListSchema,
   opponentMapSchema,
   stageSchema,
+  tournamentEntrySchema,
   updateMatchInputSchema,
   userProfileSchema,
   userSchema,
@@ -170,6 +171,53 @@ describe('matchRecordSchema', () => {
         time: 1700000000000,
         win: true,
         stocksLeft: 1.5,
+      }),
+    ).toThrow();
+  });
+
+  it('parses opponentSeed/opponentPlacement/opponentUserSlug when start.gg provides them', () => {
+    const record = {
+      fighter_id: 1,
+      opponent_id: 8,
+      time: 1700000000000,
+      win: true,
+      opponentSeed: 12,
+      opponentPlacement: 33,
+      opponentUserSlug: 'user/9fb774ae',
+    };
+    expect(matchRecordSchema.parse(record)).toEqual(record);
+  });
+
+  it('omits opponentSeed/opponentPlacement/opponentUserSlug when absent', () => {
+    const record = {
+      fighter_id: 1,
+      opponent_id: 8,
+      time: 1700000000000,
+      win: true,
+    };
+    const parsed = matchRecordSchema.parse(record);
+    expect('opponentSeed' in parsed).toBe(false);
+    expect('opponentPlacement' in parsed).toBe(false);
+    expect('opponentUserSlug' in parsed).toBe(false);
+  });
+
+  it('rejects a non-positive opponentSeed or opponentPlacement', () => {
+    expect(() =>
+      matchRecordSchema.parse({
+        fighter_id: 1,
+        opponent_id: 8,
+        time: 1700000000000,
+        win: true,
+        opponentSeed: 0,
+      }),
+    ).toThrow();
+    expect(() =>
+      matchRecordSchema.parse({
+        fighter_id: 1,
+        opponent_id: 8,
+        time: 1700000000000,
+        win: true,
+        opponentPlacement: -1,
       }),
     ).toThrow();
   });
@@ -357,5 +405,49 @@ describe('opponent schemas', () => {
 
   it('parses an opponent list', () => {
     expect(opponentListSchema.parse(['someplayer', 'other'])).toEqual(['someplayer', 'other']);
+  });
+});
+
+describe('tournamentEntrySchema', () => {
+  const base = {
+    eventId: 987,
+    eventName: 'Ultimate Singles',
+    firstSetAt: 1_700_000_000_000,
+    lastSetAt: 1_700_000_500_000,
+    setsPlayed: 5,
+  };
+
+  it('parses the base shape without slug/eventSlug/topStandings', () => {
+    expect(tournamentEntrySchema.parse(base)).toEqual(base);
+  });
+
+  it('parses slug, eventSlug, and topStandings when present', () => {
+    const entry = {
+      ...base,
+      slug: 'tournament/the-box-juice-box-26',
+      eventSlug: 'tournament/the-box-juice-box-26/event/ultimate-singles',
+      topStandings: [
+        { placement: 1, name: 'Champ', gamerTag: 'Champ', userSlug: 'user/abc123' },
+        { placement: 2, name: 'RunnerUp' },
+      ],
+    };
+    expect(tournamentEntrySchema.parse(entry)).toEqual(entry);
+  });
+
+  it('rejects a topStandings array longer than 8', () => {
+    const topStandings = Array.from({ length: 9 }, (_, i) => ({
+      placement: i + 1,
+      name: `Player ${i + 1}`,
+    }));
+    expect(() => tournamentEntrySchema.parse({ ...base, topStandings })).toThrow();
+  });
+
+  it('rejects a topStandings entry missing a placement or name', () => {
+    expect(() =>
+      tournamentEntrySchema.parse({ ...base, topStandings: [{ name: 'NoPlacement' }] }),
+    ).toThrow();
+    expect(() =>
+      tournamentEntrySchema.parse({ ...base, topStandings: [{ placement: 1 }] }),
+    ).toThrow();
   });
 });
