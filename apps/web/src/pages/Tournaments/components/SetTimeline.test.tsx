@@ -107,4 +107,62 @@ describe('SetTimeline', () => {
     const otherList = screen.getByRole('list', { name: 'Other matches during this event' });
     expect(within(otherList).getAllByRole('listitem')).toHaveLength(1);
   });
+
+  it('shows the opponent tag for a set', () => {
+    const matches = [
+      makeMatch({ id: 'g1', time: 100, win: true, externalId: 'sgg:1:g1', opponent: 'rival' }),
+    ];
+    renderTimeline(matches);
+    expect(screen.getByText(/vs rival/)).toBeInTheDocument();
+  });
+
+  it('links the opponent tag to their start.gg profile when opponentUserSlug is present', () => {
+    const matches = [
+      makeMatch({
+        id: 'g1',
+        time: 100,
+        win: true,
+        externalId: 'sgg:1:g1',
+        opponent: 'rival',
+        opponentUserSlug: 'user/9fb774ae',
+      }),
+    ];
+    renderTimeline(matches);
+    const link = screen.getByRole('link', { name: 'View rival on start.gg' });
+    expect(link).toHaveAttribute('href', 'https://start.gg/user/9fb774ae');
+    expect(link).toHaveAttribute('target', '_blank');
+    expect(link).toHaveAttribute('rel', 'noreferrer');
+  });
+
+  it('omits the opponent profile link when opponentUserSlug is absent', () => {
+    const matches = [
+      makeMatch({ id: 'g1', time: 100, win: true, externalId: 'sgg:1:g1', opponent: 'rival' }),
+    ];
+    renderTimeline(matches);
+    expect(screen.queryByRole('link')).not.toBeInTheDocument();
+  });
+
+  it('shows a compact seed/placement context next to the opponent when present', () => {
+    const matches = [
+      makeMatch({
+        id: 'g1',
+        time: 100,
+        win: true,
+        externalId: 'sgg:1:g1',
+        opponent: 'rival',
+        opponentSeed: 56,
+        opponentPlacement: 129,
+      }),
+    ];
+    renderTimeline(matches);
+    expect(screen.getByText('(seed 56 · placed 129th)')).toBeInTheDocument();
+  });
+
+  it('omits the seed/placement context when neither is present', () => {
+    const matches = [
+      makeMatch({ id: 'g1', time: 100, win: true, externalId: 'sgg:1:g1', opponent: 'rival' }),
+    ];
+    renderTimeline(matches);
+    expect(screen.queryByText(/seed|placed/)).not.toBeInTheDocument();
+  });
 });

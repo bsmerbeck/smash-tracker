@@ -154,4 +154,24 @@ describe('Tournaments component', () => {
       );
     });
   });
+
+  it('shows an outbound start.gg icon-link when the entry has a slug', async () => {
+    listTournaments.mockResolvedValue([
+      makeEntry({ eventId: 42, slug: 'tournament/the-box-juice-box-26' }),
+    ]);
+    renderTournaments([]);
+
+    const link = await screen.findByRole('link', { name: 'View on start.gg' });
+    expect(link).toHaveAttribute('href', 'https://start.gg/tournament/the-box-juice-box-26');
+    expect(link).toHaveAttribute('target', '_blank');
+    expect(link).toHaveAttribute('rel', 'noreferrer');
+  });
+
+  it('omits the start.gg icon-link when the entry has no slug', async () => {
+    listTournaments.mockResolvedValue([makeEntry({ eventId: 42, slug: undefined })]);
+    renderTournaments([]);
+
+    await screen.findByRole('link', { name: 'Ultimate Singles' });
+    expect(screen.queryByRole('link', { name: 'View on start.gg' })).not.toBeInTheDocument();
+  });
 });

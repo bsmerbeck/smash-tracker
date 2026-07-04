@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button';
 import { useTournamentEntries } from '@/hooks/useTournamentEntries';
 import { useMatches } from '@/hooks/useMatches';
 import { TournamentHeader } from './components/TournamentHeader';
+import { EventResults } from './components/EventResults';
 import { SetTimeline } from './components/SetTimeline';
 import { CharactersAndStages } from './components/CharactersAndStages';
 import { AdvisorRetrospective } from './components/AdvisorRetrospective';
@@ -27,11 +28,13 @@ function NotFoundState() {
 }
 
 /**
- * V4 Phase B: tournament detail page — header (with seed->placement badge),
- * set-by-set timeline, characters/stages summary, and the Advisor
- * Retrospective. Reached by clicking a tournament row in Trends, or by
- * direct URL (`/tournaments/:eventId`); an unknown/foreign eventId renders a
- * friendly not-found state rather than crashing on a missing entry.
+ * V4 Phase B / V5 Phase B: tournament detail page — header (with
+ * seed->placement badge + start.gg deep link), Event Results (top-8
+ * standings), set-by-set timeline, characters/stages summary, and the
+ * Advisor Retrospective. Reached by clicking a tournament row in Trends, or
+ * by direct URL (`/tournaments/:eventId`); an unknown/foreign eventId
+ * renders a friendly not-found state rather than crashing on a missing
+ * entry.
  */
 export function TournamentDetailPage() {
   const { eventId } = useParams<{ eventId: string }>();
@@ -73,6 +76,7 @@ export function TournamentDetailPage() {
   return (
     <div className="flex flex-col gap-6">
       <TournamentHeader entry={entry} />
+      <EventResults entry={entry} entryMatches={entryMatches} />
       <SetTimeline sets={timeline.sets} otherMatches={timeline.otherMatches} />
       <CharactersAndStages matches={entryMatches} />
       {retrospective && <AdvisorRetrospective retrospective={retrospective} />}

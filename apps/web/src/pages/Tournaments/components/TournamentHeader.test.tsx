@@ -81,4 +81,33 @@ describe('TournamentHeader', () => {
     render(<TournamentHeader entry={makeEntry({ setsPlayed: 7 })} />);
     expect(screen.getByText('7 sets played')).toBeInTheDocument();
   });
+
+  it('shows a "View on start.gg" button linking to the event slug when present', () => {
+    render(
+      <TournamentHeader
+        entry={makeEntry({
+          slug: 'tournament/the-box-juice-box-26',
+          eventSlug: 'tournament/the-box-juice-box-26/event/ultimate-singles',
+        })}
+      />,
+    );
+    const link = screen.getByRole('link', { name: /View on start\.gg/ });
+    expect(link).toHaveAttribute(
+      'href',
+      'https://start.gg/tournament/the-box-juice-box-26/event/ultimate-singles',
+    );
+    expect(link).toHaveAttribute('target', '_blank');
+    expect(link).toHaveAttribute('rel', 'noreferrer');
+  });
+
+  it('falls back to the tournament slug when eventSlug is absent', () => {
+    render(<TournamentHeader entry={makeEntry({ slug: 'tournament/the-box-juice-box-26' })} />);
+    const link = screen.getByRole('link', { name: /View on start\.gg/ });
+    expect(link).toHaveAttribute('href', 'https://start.gg/tournament/the-box-juice-box-26');
+  });
+
+  it('omits the "View on start.gg" button when neither slug is present', () => {
+    render(<TournamentHeader entry={makeEntry({ slug: undefined, eventSlug: undefined })} />);
+    expect(screen.queryByRole('link', { name: /View on start\.gg/ })).not.toBeInTheDocument();
+  });
 });
