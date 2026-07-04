@@ -7,6 +7,7 @@ import { MatchupsPage } from '@/pages/Matchups/MatchupsPage';
 import { OpponentsPage } from '@/pages/Opponents/OpponentsPage';
 import { MatchDataPage } from '@/pages/MatchData/MatchDataPage';
 import { TrendsPage } from '@/pages/Trends/TrendsPage';
+import { TournamentDetailPage } from '@/pages/Tournaments/TournamentDetailPage';
 import { FighterAnalysisPage } from '@/pages/FighterAnalysis/FighterAnalysisPage';
 import { IntegrationsPage } from '@/pages/Integrations/IntegrationsPage';
 import { StartggAuthPage } from '@/pages/StartggAuth/StartggAuthPage';
@@ -85,6 +86,14 @@ export function AppRouter() {
           element={
             <ProtectedRoute>
               <TrendsPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/tournaments/:eventId"
+          element={
+            <ProtectedRoute>
+              <TournamentDetailPage />
             </ProtectedRoute>
           }
         />
