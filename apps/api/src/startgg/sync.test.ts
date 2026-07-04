@@ -7,7 +7,7 @@ import {
   importPlayerMatches,
   normalizeOpponentTag,
 } from './sync.js';
-import { resolveStageByName } from './stageMap.js';
+import { resolveStage, resolveStageByName } from './stageMap.js';
 import type { StartggSet } from './client.js';
 
 const PLAYER_ID = 1802316;
@@ -66,19 +66,26 @@ function makeSet(overrides: Partial<StartggSet> = {}): StartggSet {
     games: [
       {
         winnerId: 1,
-        stage: { name: 'Battlefield' },
+        // 311 is start.gg's real, verified-stable numeric id for Battlefield
+        // (see stageMap.ts) — exercises the id-based resolution path by
+        // default; a mismatched `name` here would still resolve correctly.
+        stage: { id: 311, name: 'Battlefield' },
         selections: [
           { character: { id: 1271 }, entrant: { id: 1 } },
           { character: { id: 1332 }, entrant: { id: 2 } },
         ],
+        entrant1Score: 3,
+        entrant2Score: 0,
       },
       {
         winnerId: 2,
-        stage: { name: 'Pokémon Stadium 2' },
+        stage: { id: 378, name: 'Pokémon Stadium 2' },
         selections: [
           { character: { id: 1271 }, entrant: { id: 1 } },
           { character: { id: 1332 }, entrant: { id: 2 } },
         ],
+        entrant1Score: 0,
+        entrant2Score: 2,
       },
     ],
     ...overrides,
@@ -128,12 +135,17 @@ describe('gamesFromSet', () => {
       opponentSeed: 12,
       opponentPlacement: 33,
       opponentUserSlug: 'user/9fb774ae',
+      // Game 1: user (slot 0) won with entrant1Score=3 remaining stocks.
+      stocksLeft: 3,
     });
     expect(g1?.record.fighter_id).toBeGreaterThan(0);
     expect(g1?.record.map?.name).toBe('Battlefield');
-    // Game 2: lost, accent-insensitive stage resolution
+    expect(g1?.record.map?.id).toBe(1); // resolved via start.gg stage id 311, not name
+    // Game 2: lost, accent-insensitive stage resolution, opponent (slot 1)
+    // won with entrant2Score=2 remaining stocks.
     expect(g2?.record.win).toBe(false);
     expect(g2?.record.map?.name).toContain('Stadium 2');
+    expect(g2?.record.stocksLeft).toBe(2);
   });
 
   it('omits opponentSeed/opponentPlacement/opponentUserSlug when start.gg provides none', () => {
@@ -207,6 +219,113 @@ describe('gamesFromSet', () => {
     expect(games).toHaveLength(1);
     expect(games[0]?.record.map).toEqual({ id: 0, name: 'unknown' });
     expect(summary.gamesUnknownStage).toBe(1);
+  });
+
+  it('resolves stage by start.gg numeric id even when name would not match (id takes priority)', () => {
+    const summary = emptySummary();
+    const set = makeSet({
+      games: [
+        {
+          winnerId: 1,
+          // 484 is start.gg's real id for Small Battlefield (verified during
+          // the V6-W1b probe); a garbled/renamed `name` should not matter
+          // when the id resolves.
+          stage: { id: 484, name: 'Some Renamed Stage Label' },
+          selections: [
+            { character: { id: 1271 }, entrant: { id: 1 } },
+            { character: { id: 1332 }, entrant: { id: 2 } },
+          ],
+        },
+      ],
+    });
+    const games = gamesFromSet(set, PLAYER_ID, summary);
+    expect(games[0]?.record.map?.name).toBe('Small Battlefield');
+    expect(summary.gamesUnknownStage).toBe(0);
+  });
+
+  it('falls back to name resolution when the start.gg stage id is not in the curated table', () => {
+    const summary = emptySummary();
+    const set = makeSet({
+      games: [
+        {
+          winnerId: 1,
+          // An id start.gg could plausibly use for some other stage, not in
+          // our curated STARTGG_STAGE_ID_TO_NAME table — name resolution
+          // should still succeed.
+          stage: { id: 999999, name: 'Yoshi’s Story' },
+          selections: [
+            { character: { id: 1271 }, entrant: { id: 1 } },
+            { character: { id: 1332 }, entrant: { id: 2 } },
+          ],
+        },
+      ],
+    });
+    const games = gamesFromSet(set, PLAYER_ID, summary);
+    expect(games[0]?.record.map?.name).toBe("Yoshi's Story");
+    expect(summary.gamesUnknownStage).toBe(0);
+  });
+
+  it('harvests vodUrl onto every game of the set when start.gg provides one', () => {
+    const summary = emptySummary();
+    const set = makeSet({ vodUrl: 'https://youtube.com/watch?v=abc123' });
+    const games = gamesFromSet(set, PLAYER_ID, summary);
+    expect(games).toHaveLength(2);
+    expect(games[0]?.record.vodUrl).toBe('https://youtube.com/watch?v=abc123');
+    expect(games[1]?.record.vodUrl).toBe('https://youtube.com/watch?v=abc123');
+  });
+
+  it('omits vodUrl entirely when start.gg provides none (the common case)', () => {
+    const summary = emptySummary();
+    const set = makeSet({ vodUrl: null });
+    const games = gamesFromSet(set, PLAYER_ID, summary);
+    expect('vodUrl' in games[0]!.record).toBe(false);
+  });
+
+  it('omits stocksLeft when start.gg tracks neither entrant score', () => {
+    const summary = emptySummary();
+    const set = makeSet({
+      games: [
+        {
+          winnerId: 1,
+          stage: { id: 311, name: 'Battlefield' },
+          selections: [
+            { character: { id: 1271 }, entrant: { id: 1 } },
+            { character: { id: 1332 }, entrant: { id: 2 } },
+          ],
+          entrant1Score: null,
+          entrant2Score: null,
+        },
+      ],
+    });
+    const games = gamesFromSet(set, PLAYER_ID, summary);
+    expect('stocksLeft' in games[0]!.record).toBe(false);
+  });
+
+  it("omits stocksLeft when the winner's own score is null even though the loser's reads 0", () => {
+    // Regression guard: start.gg can report `{ entrant1Score: null,
+    // entrant2Score: 0 }` where entrant1 (slot 0) is the WINNER — the
+    // winner's stock count simply isn't tracked here, so max()-style logic
+    // would wrongly report `stocksLeft: 0` ("won with zero stocks left").
+    // Verified live during the V6-W1b probe (Genesis 9 set 56194830, game
+    // 15505434).
+    const summary = emptySummary();
+    const set = makeSet({
+      games: [
+        {
+          winnerId: 1, // entrant 1 = userEntrant, slot index 0
+          stage: { id: 311, name: 'Battlefield' },
+          selections: [
+            { character: { id: 1271 }, entrant: { id: 1 } },
+            { character: { id: 1332 }, entrant: { id: 2 } },
+          ],
+          entrant1Score: null,
+          entrant2Score: 0,
+        },
+      ],
+    });
+    const games = gamesFromSet(set, PLAYER_ID, summary);
+    expect(games[0]?.record.win).toBe(true);
+    expect('stocksLeft' in games[0]!.record).toBe(false);
   });
 
   it('marks offline events as offline-tourney', () => {
@@ -351,6 +470,49 @@ describe('resolveStageByName', () => {
   });
 });
 
+describe('resolveStage', () => {
+  it("resolves every start.gg stage id observed during the V6-W1b probe that exists in this app's stage list", () => {
+    // id -> expected app stage name, taken verbatim from live start.gg data
+    // (player 1802316's set history + Genesis 9 Ultimate Singles). Hollow
+    // Bastion (id 513) was also observed but is intentionally excluded here
+    // — this app's stage list has no Kingdom Hearts stage, so that curated
+    // entry is a harmless no-op (see the next test).
+    const observed: [number, string][] = [
+      [311, 'Battlefield'],
+      [328, 'Final Destination'],
+      [348, 'Kalos Pokémon League'],
+      [353, 'Lylat Cruise'],
+      [378, 'Pokémon Stadium 2'],
+      [385, 'Skyloft'],
+      [387, 'Smashville'],
+      [397, 'Town and City'],
+      [484, 'Small Battlefield'],
+    ];
+    for (const [id, name] of observed) {
+      expect(resolveStage(id, 'irrelevant-mismatched-name')?.name).toBe(name);
+    }
+  });
+
+  it("harmlessly no-ops for a curated id whose stage is not in this app's stage list (Hollow Bastion)", () => {
+    expect(resolveStage(513, 'Hollow Bastion')).toBeNull();
+  });
+
+  it('prefers the numeric id over the name when both are present', () => {
+    expect(resolveStage(311, 'Not Battlefield At All')?.name).toBe('Battlefield');
+  });
+
+  it('falls back to name resolution when the id is unmapped or absent', () => {
+    expect(resolveStage(123456789, 'Pokemon Stadium 2')?.name).toBe('Pokémon Stadium 2');
+    expect(resolveStage(null, 'Pokemon Stadium 2')?.name).toBe('Pokémon Stadium 2');
+    expect(resolveStage(undefined, 'Pokemon Stadium 2')?.name).toBe('Pokémon Stadium 2');
+  });
+
+  it('returns null when neither the id nor the name resolve', () => {
+    expect(resolveStage(123456789, 'Not A Real Stage')).toBeNull();
+    expect(resolveStage(null, null)).toBeNull();
+  });
+});
+
 describe('importPlayerMatches', () => {
   function pageResponse(sets: StartggSet[], totalPages = 1) {
     return new Response(
@@ -391,6 +553,30 @@ describe('importPlayerMatches', () => {
     );
     const matchesAfter = tree['matches']?.['uid-1'] as Record<string, unknown>;
     expect(Object.keys(matchesAfter)).toHaveLength(2);
+  });
+
+  it('writes vodUrl and stocksLeft through to RTDB end-to-end', async () => {
+    const database = new FakeDatabase();
+    const fetchMock = async () =>
+      pageResponse([makeSet({ vodUrl: 'https://youtube.com/watch?v=abc123' })]);
+
+    await importPlayerMatches(
+      database as never,
+      'uid-1',
+      PLAYER_ID,
+      'server-token',
+      fetchMock as typeof fetch,
+    );
+
+    const tree = database.dump() as Record<string, Record<string, unknown>>;
+    const matches = tree['matches']?.['uid-1'] as Record<
+      string,
+      { vodUrl?: string; stocksLeft?: number }
+    >;
+    expect(matches['sgg-111-g1']?.vodUrl).toBe('https://youtube.com/watch?v=abc123');
+    expect(matches['sgg-111-g1']?.stocksLeft).toBe(3);
+    expect(matches['sgg-111-g2']?.vodUrl).toBe('https://youtube.com/watch?v=abc123');
+    expect(matches['sgg-111-g2']?.stocksLeft).toBe(2);
   });
 
   it('counts imported games by unique key, not once per page (pagination overlap)', async () => {
