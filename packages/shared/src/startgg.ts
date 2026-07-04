@@ -44,6 +44,8 @@ export const startggSyncSummarySchema = z.object({
   gamesMissingSelections: z.number().int().nonnegative(),
   /** Games whose stage didn't match the stage list (imported with the unknown sentinel). */
   gamesUnknownStage: z.number().int().nonnegative(),
+  /** Sets skipped outright because start.gg reported them as a DQ (`displayScore === 'DQ'`). */
+  dqSets: z.number().int().nonnegative(),
 });
 export type StartggSyncSummary = z.infer<typeof startggSyncSummarySchema>;
 
@@ -51,3 +53,36 @@ export type StartggSyncSummary = z.infer<typeof startggSyncSummarySchema>;
 export const startggAuthorizeResponseSchema = z.object({
   url: z.string().min(1),
 });
+
+/**
+ * `tournamentEntries/{uid}/{eventId}` — one entry per start.gg event the
+ * user has processed sets for, accumulated during sync. Server-only write;
+ * exposed read-only via GET /api/tournaments. Optional fields are omitted
+ * (not `undefined`) when start.gg doesn't provide them, per the RTDB
+ * undefined-rejection rule matches already follow.
+ */
+export const tournamentEntrySchema = z.object({
+  /** start.gg event id — the key this record is stored under (as a string). */
+  eventId: z.number().int().positive(),
+  /** Event name, e.g. "Ultimate Singles". */
+  eventName: z.string().min(1),
+  /** Tournament name, e.g. "The Big House 9", when start.gg provides one. */
+  tournamentName: z.string().optional(),
+  /** Total entrants in the event, when start.gg provides it. */
+  numEntrants: z.number().int().positive().optional(),
+  /** The user's seed in this event, when start.gg provides it. */
+  seed: z.number().int().positive().optional(),
+  /** The user's final placement in this event, when start.gg provides it. */
+  placement: z.number().int().positive().optional(),
+  /** Epoch ms of the earliest processed set for this event. */
+  firstSetAt: z.number().int().nonnegative(),
+  /** Epoch ms of the latest processed set for this event. */
+  lastSetAt: z.number().int().nonnegative(),
+  /** Count of non-DQ sets processed for this event. */
+  setsPlayed: z.number().int().nonnegative(),
+});
+export type TournamentEntry = z.infer<typeof tournamentEntrySchema>;
+
+/** GET /api/tournaments response — the user's tournament registry, newest first. */
+export const tournamentEntryListSchema = z.array(tournamentEntrySchema);
+export type TournamentEntryList = z.infer<typeof tournamentEntryListSchema>;

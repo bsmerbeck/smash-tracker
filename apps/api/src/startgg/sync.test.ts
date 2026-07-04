@@ -1,7 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import type { StartggSyncSummary } from '@smash-tracker/shared';
 import { FakeDatabase } from '../test-support/fakeDatabase.js';
-import { gamesFromSet, importPlayerMatches, normalizeOpponentTag } from './sync.js';
+import {
+  accumulateRegistry,
+  gamesFromSet,
+  importPlayerMatches,
+  normalizeOpponentTag,
+} from './sync.js';
 import { resolveStageByName } from './stageMap.js';
 import type { StartggSet } from './client.js';
 
@@ -15,6 +20,7 @@ function emptySummary(): StartggSyncSummary {
     gamesUnmappedCharacter: 0,
     gamesMissingSelections: 0,
     gamesUnknownStage: 0,
+    dqSets: 0,
   };
 }
 
@@ -23,14 +29,28 @@ function makeSet(overrides: Partial<StartggSet> = {}): StartggSet {
   return {
     id: 111,
     completedAt: 1_700_000_000,
+    fullRoundText: 'Losers Round 2',
+    round: -2,
+    displayScore: '2-1',
+    totalGames: 3,
     event: {
+      id: 987,
       name: 'Ultimate Singles',
       isOnline: true,
+      numEntrants: 512,
       videogame: { id: 1386 },
       tournament: { name: 'Test Weekly 42' },
     },
     slots: [
-      { entrant: { id: 1, name: 'Team | Me', participants: [{ player: { id: PLAYER_ID } }] } },
+      {
+        entrant: {
+          id: 1,
+          name: 'Team | Me',
+          participants: [{ player: { id: PLAYER_ID } }],
+          seeds: [{ seedNum: 408 }],
+          standing: { placement: 257 },
+        },
+      },
       { entrant: { id: 2, name: 'PowPow', participants: [{ player: { id: 999 } }] } },
     ],
     games: [
@@ -93,6 +113,8 @@ describe('gamesFromSet', () => {
       externalId: 'sgg:111:g1',
       eventName: 'Ultimate Singles',
       tournamentName: 'Test Weekly 42',
+      roundText: 'Losers Round 2',
+      bracketRound: -2,
     });
     expect(g1?.record.fighter_id).toBeGreaterThan(0);
     expect(g1?.record.map?.name).toBe('Battlefield');
@@ -160,14 +182,127 @@ describe('gamesFromSet', () => {
     expect(games[0]?.record.matchType).toBe('offline-tourney');
   });
 
-  it('omits event/tournament keys entirely when the API provides none', () => {
+  it('omits event/tournament/round keys entirely when the API provides none', () => {
     const summary = emptySummary();
-    const set = makeSet({ event: { isOnline: true, videogame: { id: 1386 } } });
+    const set = makeSet({
+      event: { isOnline: true, videogame: { id: 1386 } },
+      fullRoundText: null,
+      round: null,
+    });
     const games = gamesFromSet(set, PLAYER_ID, summary);
     expect(games[0]).toBeDefined();
     // RTDB rejects undefined values — the keys must be absent, not undefined.
     expect('eventName' in games[0]!.record).toBe(false);
     expect('tournamentName' in games[0]!.record).toBe(false);
+    expect('roundText' in games[0]!.record).toBe(false);
+    expect('bracketRound' in games[0]!.record).toBe(false);
+  });
+
+  it('skips DQ sets entirely and counts them separately from setsWithoutGames', () => {
+    const summary = emptySummary();
+    const set = makeSet({ displayScore: 'DQ' });
+    expect(gamesFromSet(set, PLAYER_ID, summary)).toHaveLength(0);
+    expect(summary.dqSets).toBe(1);
+    expect(summary.setsWithoutGames).toBe(0);
+    // DQ sets still count toward `sets` (examined), just not toward imports.
+    expect(summary.sets).toBe(1);
+  });
+});
+
+describe('accumulateRegistry', () => {
+  it('extracts eventName, tournamentName, numEntrants, seed, and placement', () => {
+    const registry = new Map();
+    accumulateRegistry(registry, makeSet(), PLAYER_ID);
+
+    expect(registry.size).toBe(1);
+    expect(registry.get(987)).toMatchObject({
+      eventId: 987,
+      eventName: 'Ultimate Singles',
+      tournamentName: 'Test Weekly 42',
+      numEntrants: 512,
+      seed: 408,
+      placement: 257,
+      setsPlayed: 1,
+      firstSetAt: 1_700_000_000_000,
+      lastSetAt: 1_700_000_000_000,
+    });
+  });
+
+  it('accumulates min/max completedAt and setsPlayed across multiple sets in the same event', () => {
+    const registry = new Map();
+    accumulateRegistry(registry, makeSet({ id: 1, completedAt: 1_700_000_000 }), PLAYER_ID);
+    accumulateRegistry(registry, makeSet({ id: 2, completedAt: 1_700_100_000 }), PLAYER_ID);
+    accumulateRegistry(registry, makeSet({ id: 3, completedAt: 1_699_900_000 }), PLAYER_ID);
+
+    const entry = registry.get(987);
+    expect(entry?.setsPlayed).toBe(3);
+    expect(entry?.firstSetAt).toBe(1_699_900_000_000);
+    expect(entry?.lastSetAt).toBe(1_700_100_000_000);
+  });
+
+  it('groups sets by event.id across multiple events', () => {
+    const registry = new Map();
+    accumulateRegistry(registry, makeSet({ id: 1 }), PLAYER_ID);
+    accumulateRegistry(
+      registry,
+      makeSet({
+        id: 2,
+        event: {
+          id: 555,
+          name: 'Ultimate Doubles',
+          isOnline: true,
+          videogame: { id: 1386 },
+        },
+      }),
+      PLAYER_ID,
+    );
+
+    expect(registry.size).toBe(2);
+    expect(registry.get(987)?.eventName).toBe('Ultimate Singles');
+    expect(registry.get(555)?.eventName).toBe('Ultimate Doubles');
+  });
+
+  it('does not accumulate DQ sets or non-SSBU sets', () => {
+    const registry = new Map();
+    accumulateRegistry(registry, makeSet({ displayScore: 'DQ' }), PLAYER_ID);
+    accumulateRegistry(
+      registry,
+      makeSet({ event: { id: 1, name: 'Other Game', videogame: { id: 1 } } }),
+      PLAYER_ID,
+    );
+    expect(registry.size).toBe(0);
+  });
+
+  it('skips sets with no event id (cannot be grouped into a registry entry)', () => {
+    const registry = new Map();
+    accumulateRegistry(
+      registry,
+      makeSet({ event: { name: 'Ultimate Singles', videogame: { id: 1386 } } }),
+      PLAYER_ID,
+    );
+    expect(registry.size).toBe(0);
+  });
+
+  it('omits optional fields when start.gg does not provide them', () => {
+    const registry = new Map();
+    accumulateRegistry(
+      registry,
+      makeSet({
+        event: { id: 987, name: 'Ultimate Singles', videogame: { id: 1386 } },
+        slots: [
+          { entrant: { id: 1, participants: [{ player: { id: PLAYER_ID } }] } },
+          { entrant: { id: 2, participants: [{ player: { id: 999 } }] } },
+        ],
+      }),
+      PLAYER_ID,
+    );
+
+    const entry = registry.get(987);
+    expect(entry).toBeDefined();
+    expect('tournamentName' in entry!).toBe(false);
+    expect('numEntrants' in entry!).toBe(false);
+    expect('seed' in entry!).toBe(false);
+    expect('placement' in entry!).toBe(false);
   });
 });
 
@@ -270,5 +405,58 @@ describe('importPlayerMatches', () => {
     const tree = database.dump() as Record<string, Record<string, unknown>>;
     const matches = tree['matches']?.['uid-1'] as Record<string, unknown>;
     expect(Object.keys(matches).sort()).toEqual(['-manualKey1', 'sgg-111-g1', 'sgg-111-g2']);
+  });
+
+  it('writes a tournament registry entry keyed by event id, and re-syncs idempotently', async () => {
+    const database = new FakeDatabase();
+    const fetchMock = async () => pageResponse([makeSet()]);
+
+    await importPlayerMatches(
+      database as never,
+      'uid-1',
+      PLAYER_ID,
+      'server-token',
+      fetchMock as typeof fetch,
+    );
+
+    const tree = database.dump() as Record<string, Record<string, unknown>>;
+    const registry = tree['tournamentEntries']?.['uid-1'] as Record<string, unknown>;
+    expect(Object.keys(registry)).toEqual(['987']);
+    expect(registry['987']).toMatchObject({
+      eventId: 987,
+      eventName: 'Ultimate Singles',
+      tournamentName: 'Test Weekly 42',
+      numEntrants: 512,
+      seed: 408,
+      placement: 257,
+      setsPlayed: 1,
+    });
+
+    // Re-sync: same single entry, no duplication.
+    await importPlayerMatches(
+      database as never,
+      'uid-1',
+      PLAYER_ID,
+      'server-token',
+      fetchMock as typeof fetch,
+    );
+    const registryAfter = tree['tournamentEntries']?.['uid-1'] as Record<string, unknown>;
+    expect(Object.keys(registryAfter)).toEqual(['987']);
+  });
+
+  it('does not write a registry entry when no sets were processed', async () => {
+    const database = new FakeDatabase();
+    const fetchMock = async () => pageResponse([makeSet({ displayScore: 'DQ' })]);
+
+    await importPlayerMatches(
+      database as never,
+      'uid-1',
+      PLAYER_ID,
+      'server-token',
+      fetchMock as typeof fetch,
+    );
+
+    const tree = database.dump() as Record<string, Record<string, unknown>>;
+    expect(tree['tournamentEntries']).toBeUndefined();
   });
 });

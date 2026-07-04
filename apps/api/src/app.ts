@@ -14,6 +14,7 @@ import usersRoutes from './routes/users.js';
 import matchesRoutes from './routes/matches.js';
 import opponentsRoutes from './routes/opponents.js';
 import startggRoutes from './routes/startgg.js';
+import tournamentsRoutes from './routes/tournaments.js';
 import { NotFoundError } from './services/rtdb.js';
 import type { FirebaseServices } from './firebase/admin.js';
 import type { StartggConfig } from './config/env.js';
@@ -111,6 +112,7 @@ export function buildApp(options: BuildAppOptions) {
       await api.register(usersRoutes);
       await api.register(matchesRoutes);
       await api.register(opponentsRoutes);
+      await api.register(tournamentsRoutes);
       await api.register(startggRoutes, {
         config: options.startgg ?? null,
         fetchImpl: options.startggFetch,
