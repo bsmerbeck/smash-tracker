@@ -107,9 +107,9 @@ describe('FighterAnalysisPage', () => {
     expect(await screen.findByText("You haven't reported any matches!")).toBeInTheDocument();
   });
 
-  it('renders correct streak values for a win/loss sequence', async () => {
+  it('renders the fighter hero with sprite, name, record, share of games, and streak chip', async () => {
     getFighters.mockResolvedValue({ primary: [mario.id], secondary: [] });
-    // Chronological: W, W, L, L, L, W (best win streak 2, worst loss streak 3, current streak 1 win)
+    // Chronological: W, W, L, L, L, W (current streak 1 win)
     listMatches.mockResolvedValue([
       makeMatch({ id: 'm1', time: 1, win: true }),
       makeMatch({ id: 'm2', time: 2, win: true }),
@@ -121,34 +121,16 @@ describe('FighterAnalysisPage', () => {
 
     renderFighterAnalysis();
 
-    await waitFor(() => expect(screen.getByText('Streaks')).toBeInTheDocument());
-
-    // Current streak: 1 (last match was a win)
-    const currentBlock = screen.getByText('Current').closest('div')!;
-    expect(within(currentBlock).getByText('1')).toBeInTheDocument();
-    // Best win streak: 2
-    const bestBlock = screen.getByText('Best').closest('div')!;
-    expect(within(bestBlock).getByText('2')).toBeInTheDocument();
-    // Worst loss streak: 3
-    const worstBlock = screen.getByText('Worst').closest('div')!;
-    expect(within(worstBlock).getByText('3')).toBeInTheDocument();
+    const heroHeading = await screen.findByRole('heading', { name: mario.name, level: 2 });
+    expect(heroHeading).toBeInTheDocument();
+    const heroCard = heroHeading.closest('[data-slot="card"]') as HTMLElement;
+    expect(within(heroCard).getByTestId('hero-record')).toHaveTextContent('3-3');
+    expect(within(heroCard).getByText('1W streak')).toBeInTheDocument();
+    // All 6 matches are Mario's -> 100% share.
+    expect(within(heroCard).getByText('100% of your games')).toBeInTheDocument();
   });
 
-  it('applies the minimum match threshold to Best/Worst Stage', async () => {
-    getFighters.mockResolvedValue({ primary: [mario.id], secondary: [] });
-    // Only 2 wins on Battlefield (id 1) — below the default threshold of 5, so "not enough matches".
-    listMatches.mockResolvedValue([
-      makeMatch({ id: 'm1', time: 1, win: true, map: { id: 1, name: 'Battlefield' } }),
-      makeMatch({ id: 'm2', time: 2, win: true, map: { id: 1, name: 'Battlefield' } }),
-    ]);
-
-    renderFighterAnalysis();
-
-    await waitFor(() => expect(screen.getByText('Best/Worst Stage')).toBeInTheDocument());
-    expect(screen.getAllByText('not enough matches')).toHaveLength(2);
-  });
-
-  it('shows Best Stage once wins on a stage meet the threshold', async () => {
+  it('shows Stage Mastery tiles with a Best pick caption once a stage qualifies', async () => {
     getFighters.mockResolvedValue({ primary: [mario.id], secondary: [] });
     const battlefieldWins = Array.from({ length: 5 }, (_, i) =>
       makeMatch({ id: `bf-${i}`, time: i, win: true, map: { id: 1, name: 'Battlefield' } }),
@@ -157,11 +139,66 @@ describe('FighterAnalysisPage', () => {
 
     renderFighterAnalysis();
 
-    await waitFor(() => expect(screen.getByText('Best/Worst Stage')).toBeInTheDocument());
-    // "Battlefield" appears both as the Best Stage heading and in the Roster
-    // Breakdown table row for Luigi (the default opponent), so assert via
-    // the specific heading element rather than a single unique text match.
-    expect(screen.getByRole('heading', { name: 'Battlefield', level: 4 })).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByText('Stage Mastery')).toBeInTheDocument());
+    expect(screen.getByText(/Best pick:/)).toBeInTheDocument();
+    expect(screen.getAllByText(/Battlefield/).length).toBeGreaterThan(0);
+  });
+
+  it('shows a "not enough data" style empty state in Stage Mastery captions below the threshold', async () => {
+    getFighters.mockResolvedValue({ primary: [mario.id], secondary: [] });
+    listMatches.mockResolvedValue([
+      makeMatch({ id: 'm1', time: 1, win: true, map: { id: 1, name: 'Battlefield' } }),
+    ]);
+
+    renderFighterAnalysis();
+
+    await waitFor(() => expect(screen.getByText('Stage Mastery')).toBeInTheDocument());
+    expect(screen.queryByText(/Best pick:/)).not.toBeInTheDocument();
+  });
+
+  it('shows Matchup Coverage for the top faced opponents with per-fighter records', async () => {
+    getFighters.mockResolvedValue({ primary: [mario.id], secondary: [] });
+    listMatches.mockResolvedValue([
+      makeMatch({ id: 'm1', time: 1, win: true, opponent_id: luigi.id }),
+      makeMatch({ id: 'm2', time: 2, win: true, opponent_id: luigi.id }),
+      makeMatch({ id: 'm3', time: 3, win: false, opponent_id: luigi.id }),
+      makeMatch({ id: 'm4', time: 4, win: false, opponent_id: fox.id }),
+    ]);
+
+    renderFighterAnalysis();
+
+    await waitFor(() => expect(screen.getByText('Matchup Coverage')).toBeInTheDocument());
+    expect(screen.getAllByText(luigi.name).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(fox.name).length).toBeGreaterThan(0);
+    // Luigi: 2-1 covered (3 games); Fox: 0-1 thin (1 game).
+    expect(screen.getByText('2-1 · 67%')).toBeInTheDocument();
+    expect(screen.getByText('thin data')).toBeInTheDocument();
+  });
+
+  it('shows Practice Recommendations with an honest empty state when nothing qualifies', async () => {
+    getFighters.mockResolvedValue({ primary: [mario.id], secondary: [] });
+    listMatches.mockResolvedValue([
+      makeMatch({ id: 'm1', time: 1, win: true, opponent_id: luigi.id }),
+    ]);
+
+    renderFighterAnalysis();
+
+    await waitFor(() => expect(screen.getByText('Practice Recommendations')).toBeInTheDocument());
+    expect(screen.getByText(/Not enough data yet/)).toBeInTheDocument();
+  });
+
+  it('surfaces a practice recommendation once a matchup has enough losses', async () => {
+    getFighters.mockResolvedValue({ primary: [mario.id], secondary: [] });
+    listMatches.mockResolvedValue([
+      makeMatch({ id: 'm1', time: 1, win: false, opponent_id: luigi.id }),
+      makeMatch({ id: 'm2', time: 2, win: false, opponent_id: luigi.id }),
+      makeMatch({ id: 'm3', time: 3, win: false, opponent_id: luigi.id }),
+    ]);
+
+    renderFighterAnalysis();
+
+    await waitFor(() => expect(screen.getByText('Practice Recommendations')).toBeInTheDocument());
+    expect(screen.getByText(`Struggling vs ${luigi.name}: 0-3`)).toBeInTheDocument();
   });
 
   it('lists only faced opponents in the Matchup Stage Guide with records and stage calls', async () => {
@@ -204,36 +241,6 @@ describe('FighterAnalysisPage', () => {
     expect(screen.getByText('(100% over 3)')).toBeInTheDocument();
   });
 
-  it('shows overall best and worst matchup sections with a threshold control', async () => {
-    getFighters.mockResolvedValue({ primary: [mario.id], secondary: [] });
-    listMatches.mockResolvedValue([
-      makeMatch({ id: 'm1', time: 1, win: true, opponent_id: luigi.id }),
-    ]);
-
-    renderFighterAnalysis();
-
-    await waitFor(() => expect(screen.getByText('Best & Worst Matchups')).toBeInTheDocument());
-    expect(screen.getByText('Best Matchups')).toBeInTheDocument();
-    expect(screen.getByText('Worst Matchups')).toBeInTheDocument();
-    // Default threshold of 5 not met by a single match
-    expect(screen.getAllByText('No matchups meet the threshold yet.').length).toBe(2);
-  });
-
-  it('shows the performance snapshot with recent form and match-type splits', async () => {
-    getFighters.mockResolvedValue({ primary: [mario.id], secondary: [] });
-    listMatches.mockResolvedValue([
-      makeMatch({ id: 'm1', time: 1, win: true, matchType: 'quickplay' }),
-      makeMatch({ id: 'm2', time: 2, win: false, matchType: '' }),
-    ]);
-
-    renderFighterAnalysis();
-
-    await waitFor(() => expect(screen.getByText('Performance Snapshot')).toBeInTheDocument());
-    expect(screen.getByLabelText('Last 2 results, newest first')).toBeInTheDocument();
-    expect(screen.getByText('quickplay')).toBeInTheDocument();
-    expect(screen.getByText('unspecified')).toBeInTheDocument();
-  });
-
   it('lists named-opponent records in the Opponent table, ignoring blank names', async () => {
     getFighters.mockResolvedValue({ primary: [mario.id], secondary: [] });
     listMatches.mockResolvedValue([
@@ -245,5 +252,21 @@ describe('FighterAnalysisPage', () => {
 
     await waitFor(() => expect(screen.getByText('Opponents')).toBeInTheDocument());
     expect(screen.getByText('rival')).toBeInTheDocument();
+  });
+
+  it('shows the by-match-type table folded into the hero', async () => {
+    getFighters.mockResolvedValue({ primary: [mario.id], secondary: [] });
+    listMatches.mockResolvedValue([
+      makeMatch({ id: 'm1', time: 1, win: true, matchType: 'quickplay' }),
+      makeMatch({ id: 'm2', time: 2, win: false, matchType: '' }),
+    ]);
+
+    renderFighterAnalysis();
+
+    await waitFor(() => expect(screen.getByText('By Match Type')).toBeInTheDocument());
+    expect(screen.getByText('quickplay')).toBeInTheDocument();
+    expect(screen.getByText('unspecified')).toBeInTheDocument();
+    const pipsRegion = within(screen.getByLabelText('Last 2 results, newest first'));
+    expect(pipsRegion).toBeTruthy();
   });
 });
