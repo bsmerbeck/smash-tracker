@@ -33,6 +33,9 @@ function describeSummary(summary: StartggSyncSummary): string {
   if (summary.gamesUnknownStage > 0) {
     parts.push(`${summary.gamesUnknownStage} with unrecognized stages`);
   }
+  if (summary.dqSets > 0) {
+    parts.push(`${summary.dqSets} DQs skipped`);
+  }
   return parts.join(' · ');
 }
 

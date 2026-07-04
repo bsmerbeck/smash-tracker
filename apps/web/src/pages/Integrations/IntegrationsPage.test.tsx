@@ -105,6 +105,7 @@ describe('IntegrationsPage', () => {
       gamesUnmappedCharacter: 0,
       gamesMissingSelections: 0,
       gamesUnknownStage: 0,
+      dqSets: 0,
     });
 
     renderPage();
@@ -115,6 +116,32 @@ describe('IntegrationsPage', () => {
     await user.click(screen.getByRole('button', { name: /Sync now/ }));
     await waitFor(() => expect(sync).toHaveBeenCalled());
     expect(await screen.findByText(/Imported 112 games from 74 sets/)).toBeInTheDocument();
+  });
+
+  it('surfaces DQ sets skipped in the sync summary', async () => {
+    const user = userEvent.setup();
+    status.mockResolvedValue({
+      linked: true,
+      gamerTag: 'Pandem1c',
+      playerId: 1802316,
+      slug: 'user/07dc2239',
+      lastSyncAt: 1_700_000_000_000,
+    });
+    sync.mockResolvedValue({
+      sets: 74,
+      imported: 108,
+      setsWithoutGames: 20,
+      gamesUnmappedCharacter: 0,
+      gamesMissingSelections: 0,
+      gamesUnknownStage: 0,
+      dqSets: 3,
+    });
+
+    renderPage();
+
+    await user.click(await screen.findByRole('button', { name: /Sync now/ }));
+    await waitFor(() => expect(sync).toHaveBeenCalled());
+    expect(await screen.findByText(/3 DQs skipped/)).toBeInTheDocument();
   });
 
   it('unlinks after confirmation', async () => {
