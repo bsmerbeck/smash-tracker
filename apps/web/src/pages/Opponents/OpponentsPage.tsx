@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import { Link } from 'react-router';
 import { Button } from '@/components/ui/button';
 import { useFilteredMatches } from '@/hooks/useFilteredMatches';
+import { useTournamentEntries } from '@/hooks/useTournamentEntries';
 import { FilteredEmptyNotice } from '@/components/FilteredEmptyNotice';
 import { getOpponentProfile, getOpponentRecords } from '@/lib/stats';
 import { OpponentList } from './components/OpponentList';
@@ -10,6 +11,8 @@ import { WhatTheyPlayTable } from './components/WhatTheyPlayTable';
 import { ScoutingStagesCard } from './components/ScoutingStagesCard';
 import { ScoutingTrendChart } from './components/ScoutingTrendChart';
 import { RecentEncounters } from './components/RecentEncounters';
+import { TournamentHistory } from './components/TournamentHistory';
+import { groupTournamentBlocks, getEncounterContext } from './tournamentHistory';
 
 /**
  * Phase E (docs/analytics-vision.md): scouting reports per human opponent —
@@ -18,6 +21,7 @@ import { RecentEncounters } from './components/RecentEncounters';
  */
 export function OpponentsPage() {
   const { matches, allMatches, isLoading, filterActive } = useFilteredMatches();
+  const { data: tournamentEntries } = useTournamentEntries();
 
   const opponentRecords = useMemo(() => getOpponentRecords(matches), [matches]);
 
@@ -43,6 +47,15 @@ export function OpponentsPage() {
     }
     return getOpponentProfile(matches, selected);
   }, [matches, selected]);
+
+  const opponentMatches = useMemo(
+    () => (profile ? matches.filter((m) => m.opponent === profile.opponent) : []),
+    [matches, profile],
+  );
+
+  const tournamentBlocks = useMemo(() => groupTournamentBlocks(opponentMatches), [opponentMatches]);
+
+  const encounterContext = useMemo(() => getEncounterContext(tournamentBlocks), [tournamentBlocks]);
 
   if (isLoading) {
     return <div className="text-muted-foreground">Loading scouting reports...</div>;
@@ -94,13 +107,17 @@ export function OpponentsPage() {
 
         {profile ? (
           <div key={profile.opponent} className="flex flex-col gap-4">
-            <ScoutingHeader profile={profile} />
+            <ScoutingHeader profile={profile} encounterContext={encounterContext} />
             <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
               <WhatTheyPlayTable byTheirFighter={profile.byTheirFighter} />
               <ScoutingStagesCard byStage={profile.byStage} />
             </div>
-            <ScoutingTrendChart matches={matches.filter((m) => m.opponent === profile.opponent)} />
+            <ScoutingTrendChart matches={opponentMatches} />
             <RecentEncounters matches={profile.recent} />
+            <TournamentHistory
+              blocks={tournamentBlocks}
+              tournamentEntries={tournamentEntries ?? []}
+            />
           </div>
         ) : (
           <div className="flex items-center justify-center rounded-lg border border-dashed p-16 text-center text-sm text-muted-foreground">

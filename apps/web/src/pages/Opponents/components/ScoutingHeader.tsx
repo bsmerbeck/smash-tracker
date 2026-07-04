@@ -1,13 +1,41 @@
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { WinLossPips } from '@/components/WinLossPips';
 import type { OpponentProfile } from '@/lib/stats';
+import type { EncounterContext } from '../tournamentHistory';
+
+function formatEncounterContext(context: EncounterContext): string | null {
+  if (context.tournamentCount === 0 || !context.span) {
+    return null;
+  }
+  const count = context.tournamentCount;
+  const start = new Date(context.span.start).toLocaleDateString('en-US', {
+    month: 'short',
+    year: 'numeric',
+  });
+  const end = new Date(context.span.end).toLocaleDateString('en-US', {
+    month: 'short',
+    year: 'numeric',
+  });
+  const tournamentWord = count === 1 ? 'tournament' : 'tournaments';
+  const span = start === end ? start : `${start} and ${end}`;
+  return `Met at ${count} ${tournamentWord} between ${span}`;
+}
 
 /**
  * Scouting report header: opponent tag, overall H2H record + rate + sample
- * size, first/last played dates, and last-10 form pips vs this opponent.
+ * size, first/last played dates, last-10 form pips vs this opponent, and (when
+ * tournament-tagged encounters exist) an encounter context line summarizing
+ * how many tournaments and over what date span you've met them.
  */
-export function ScoutingHeader({ profile }: { profile: OpponentProfile }) {
+export function ScoutingHeader({
+  profile,
+  encounterContext,
+}: {
+  profile: OpponentProfile;
+  encounterContext: EncounterContext;
+}) {
   const { record } = profile;
+  const encounterLine = formatEncounterContext(encounterContext);
 
   return (
     <Card>
@@ -18,6 +46,7 @@ export function ScoutingHeader({ profile }: { profile: OpponentProfile }) {
             First played {new Date(profile.firstPlayedAt).toLocaleDateString()} · Last played{' '}
             {new Date(profile.lastPlayedAt).toLocaleDateString()}
           </p>
+          {encounterLine && <p className="mt-1 text-sm text-muted-foreground">{encounterLine}</p>}
         </div>
         <div className="text-right">
           <p className="text-2xl font-semibold">
