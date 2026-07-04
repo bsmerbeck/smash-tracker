@@ -3,13 +3,18 @@ import {
   matchRecordSchema,
   opponentAliasMapSchema,
   opponentMapSchema,
+  opponentNoteMapSchema,
+  opponentNoteSchema,
   userSchema,
   type CreateMatchInput,
   type FighterSelectionInput,
   type Match,
   type MatchRecord,
   type OpponentAliasMap,
+  type OpponentNote,
+  type OpponentNoteMap,
   type UpdateMatchInput,
+  type UpsertOpponentNoteInput,
   type User,
 } from '@smash-tracker/shared';
 
@@ -225,5 +230,47 @@ export class RtdbService {
       current = map[current]!;
     }
     return current;
+  }
+
+  // ---- opponentNotes/{uid}/{canonicalName} -------------------------------
+
+  async listOpponentNotes(uid: string): Promise<OpponentNoteMap> {
+    const snapshot = await this.database.ref(`opponentNotes/${uid}`).get();
+    if (!snapshot.exists()) {
+      return {};
+    }
+    return opponentNoteMapSchema.parse(snapshot.val());
+  }
+
+  /**
+   * Writes (fully replaces) the note for `name`, stamping `updatedAt` with
+   * the current server time — the client never dictates "now" (same
+   * convention as `createMatch`/`updateMatch`'s `time` field).
+   */
+  async setOpponentNote(
+    uid: string,
+    name: string,
+    input: UpsertOpponentNoteInput,
+  ): Promise<OpponentNote> {
+    const note: OpponentNote = {
+      updatedAt: Date.now(),
+      // RTDB rejects `undefined` values outright, so optional fields must
+      // only be present when actually provided (same pattern as
+      // createMatch's optional fields).
+      ...(input.habits !== undefined ? { habits: input.habits } : {}),
+      ...(input.banThese !== undefined ? { banThese: input.banThese } : {}),
+      ...(input.watchFor !== undefined ? { watchFor: input.watchFor } : {}),
+    };
+    await this.database.ref(`opponentNotes/${uid}/${name}`).set(opponentNoteSchema.parse(note));
+    return note;
+  }
+
+  async deleteOpponentNote(uid: string, name: string): Promise<void> {
+    const ref = this.database.ref(`opponentNotes/${uid}/${name}`);
+    const existing = await ref.get();
+    if (!existing.exists()) {
+      throw new NotFoundError(`Note for ${name} not found`);
+    }
+    await ref.remove();
   }
 }
