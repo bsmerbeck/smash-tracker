@@ -4,6 +4,8 @@ import { Button } from '@/components/ui/button';
 import { getOpponentSources, useFilteredMatches } from '@/hooks/useFilteredMatches';
 import { useTournamentEntries } from '@/hooks/useTournamentEntries';
 import { useOpponentAliases } from '@/hooks/useOpponentAliases';
+import { useOpponentNotes } from '@/hooks/useOpponentNotes';
+import { useAuth } from '@/hooks/useAuth';
 import { FilteredEmptyNotice } from '@/components/FilteredEmptyNotice';
 import { getOpponentProfile, getOpponentRecords } from '@/lib/stats';
 import { OpponentList } from './components/OpponentList';
@@ -15,7 +17,11 @@ import { RecentEncounters } from './components/RecentEncounters';
 import { TournamentHistory } from './components/TournamentHistory';
 import { MergeOpponentDialog } from './components/MergeOpponentDialog';
 import { MergedNamesCard } from './components/MergedNamesCard';
+import { TendenciesCard } from './components/TendenciesCard';
+import { ExportH2HButton } from './components/ExportH2HButton';
+import { PrintableEvidencePacket } from './components/PrintableEvidencePacket';
 import { groupTournamentBlocks, getEncounterContext } from './tournamentHistory';
+import { buildEvidencePacket } from './evidencePacket';
 
 /**
  * Phase E (docs/analytics-vision.md): scouting reports per human opponent —
@@ -26,6 +32,8 @@ export function OpponentsPage() {
   const { matches, allMatches, isLoading, filterActive } = useFilteredMatches();
   const { data: tournamentEntries } = useTournamentEntries();
   const { data: aliasMap } = useOpponentAliases();
+  const { data: noteMap } = useOpponentNotes();
+  const { user } = useAuth();
 
   const opponentRecords = useMemo(() => getOpponentRecords(matches), [matches]);
   const sources = useMemo(() => getOpponentSources(matches), [matches]);
@@ -76,6 +84,16 @@ export function OpponentsPage() {
       .filter(([, canonical]) => canonical === selected)
       .map(([alias]) => alias);
   }, [aliasMap, selected]);
+
+  // V6-W1c: "Export H2H" evidence packet — built from the same profile +
+  // tournament blocks already computed for the report, so print/copy can
+  // never disagree with what's on screen.
+  const evidencePacket = useMemo(() => {
+    if (!profile) {
+      return null;
+    }
+    return buildEvidencePacket(profile, tournamentBlocks, user?.email ?? 'you');
+  }, [profile, tournamentBlocks, user]);
 
   if (isLoading) {
     return <div className="text-muted-foreground">Loading scouting reports...</div>;
@@ -132,6 +150,9 @@ export function OpponentsPage() {
 
         {profile ? (
           <div key={profile.opponent} className="flex flex-col gap-4">
+            <div className="flex flex-wrap items-center justify-end gap-2 print:hidden">
+              {evidencePacket && <ExportH2HButton packet={evidencePacket} />}
+            </div>
             <ScoutingHeader
               profile={profile}
               encounterContext={encounterContext}
@@ -147,7 +168,9 @@ export function OpponentsPage() {
               blocks={tournamentBlocks}
               tournamentEntries={tournamentEntries ?? []}
             />
+            <TendenciesCard opponent={profile.opponent} note={noteMap?.[profile.opponent]} />
             <MergedNamesCard canonical={profile.opponent} aliases={mergedAliasesForSelected} />
+            {evidencePacket && <PrintableEvidencePacket packet={evidencePacket} />}
           </div>
         ) : (
           <div className="flex items-center justify-center rounded-lg border border-dashed p-16 text-center text-sm text-muted-foreground">

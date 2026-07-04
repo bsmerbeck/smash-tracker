@@ -36,6 +36,9 @@ const upsertMe = vi.fn().mockResolvedValue({ uid: 'test-uid', email: 'test@examp
 const listAliases = vi.fn();
 const upsertAlias = vi.fn();
 const removeAlias = vi.fn();
+const listNotes = vi.fn();
+const upsertNote = vi.fn();
+const removeNote = vi.fn();
 
 vi.mock('@/lib/api', () => ({
   api: {
@@ -53,6 +56,11 @@ vi.mock('@/lib/api', () => ({
         list: (...args: unknown[]) => listAliases(...args),
         upsert: (...args: unknown[]) => upsertAlias(...args),
         remove: (...args: unknown[]) => removeAlias(...args),
+      },
+      notes: {
+        list: (...args: unknown[]) => listNotes(...args),
+        upsert: (...args: unknown[]) => upsertNote(...args),
+        remove: (...args: unknown[]) => removeNote(...args),
       },
     },
   },
@@ -107,6 +115,9 @@ describe('OpponentsPage', () => {
     listAliases.mockResolvedValue({});
     upsertAlias.mockResolvedValue({});
     removeAlias.mockResolvedValue(undefined);
+    listNotes.mockResolvedValue({});
+    upsertNote.mockResolvedValue({ updatedAt: 123 });
+    removeNote.mockResolvedValue(undefined);
     setMockUser(makeMockUser());
   });
 
@@ -277,9 +288,13 @@ describe('OpponentsPage', () => {
 
       // "What They Play": both Luigi and Fox appear, with Fox's better record
       // (1-1, Wilson-ranked among matchups with 2 games) surfacing correctly.
-      expect(screen.getByText('What They Play')).toBeInTheDocument();
-      expect(screen.getByText(luigi.name)).toBeInTheDocument();
-      expect(screen.getAllByText(fox.name).length).toBeGreaterThan(0);
+      // Scoped to the card itself — the (visually hidden, print-only) H2H
+      // evidence packet also renders both fighter names elsewhere in the DOM.
+      const whatTheyPlayCard = screen
+        .getByText('What They Play')
+        .closest('[data-slot="card"]') as HTMLElement;
+      expect(within(whatTheyPlayCard).getByText(luigi.name)).toBeInTheDocument();
+      expect(within(whatTheyPlayCard).getAllByText(fox.name).length).toBeGreaterThan(0);
 
       // Recent encounters, newest first: m3 (with event/tournament name) before m1.
       const encountersList = screen.getByRole('list', { name: 'Recent encounters' });
@@ -291,10 +306,15 @@ describe('OpponentsPage', () => {
       // Oldest match (m1, time 1) is last.
       expect(within(encounterItems[2]!).getByText('Win')).toBeInTheDocument();
 
-      // Stages card shows both stages played against this opponent.
-      expect(screen.getByText('Stages')).toBeInTheDocument();
-      expect(screen.getAllByText('Final Destination').length).toBeGreaterThan(0);
-      expect(screen.getAllByText('Battlefield').length).toBeGreaterThan(0);
+      // Stages card shows both stages played against this opponent. Scoped
+      // for the same reason as "What They Play" above — the hidden print
+      // packet also has a "Stages" heading and stage names.
+      const stagesCard = screen
+        .getAllByText('Stages')
+        .map((el) => el.closest('[data-slot="card"]'))
+        .find((card): card is HTMLElement => card !== null)!;
+      expect(within(stagesCard).getByText('Final Destination')).toBeInTheDocument();
+      expect(within(stagesCard).getByText('Battlefield')).toBeInTheDocument();
     });
   });
 
@@ -604,6 +624,169 @@ describe('OpponentsPage', () => {
 
       await waitFor(() => expect(screen.getByText('Last 10 (newest first)')).toBeInTheDocument());
       expect(screen.queryByText('Merged names')).not.toBeInTheDocument();
+    });
+  });
+
+  describe('V6-W1c: opponent tendency notes', () => {
+    beforeEach(() => {
+      listMatches.mockResolvedValue([
+        makeMatch({ id: 'm1', time: 1, opponent: 'rival', win: true }),
+      ]);
+    });
+
+    function tendenciesCard() {
+      return screen.getByText('Tendencies').closest('[data-slot="card"]') as HTMLElement;
+    }
+
+    it('shows the empty state prompting a first note when none is saved', async () => {
+      renderOpponents();
+
+      await waitFor(() => expect(screen.getByText('Last 10 (newest first)')).toBeInTheDocument());
+      const card = tendenciesCard();
+      expect(within(card).getByText(/No scouting notes yet/)).toBeInTheDocument();
+      expect(within(card).getByRole('button', { name: 'Add a note' })).toBeInTheDocument();
+    });
+
+    it('renders a saved note read-only with a saved-state timestamp and an Edit action', async () => {
+      listNotes.mockResolvedValue({
+        rival: {
+          habits: 'Rolls a lot',
+          watchFor: 'Ledge mixups',
+          banThese: [3],
+          updatedAt: 1700000000000,
+        },
+      });
+
+      renderOpponents();
+
+      await waitFor(() => expect(screen.getByText('Last 10 (newest first)')).toBeInTheDocument());
+      const card = tendenciesCard();
+      expect(within(card).getByText('Rolls a lot')).toBeInTheDocument();
+      expect(within(card).getByText('Ledge mixups')).toBeInTheDocument();
+      expect(within(card).getByText(/Saved/)).toBeInTheDocument();
+      expect(within(card).getByRole('button', { name: 'Edit' })).toBeInTheDocument();
+    });
+
+    it('creates a new note: edit-in-place, save, and calls the notes API with the canonical name', async () => {
+      const user = userEvent.setup();
+      renderOpponents();
+
+      await waitFor(() => expect(screen.getByText('Last 10 (newest first)')).toBeInTheDocument());
+      const card = tendenciesCard();
+
+      await user.click(within(card).getByRole('button', { name: 'Add a note' }));
+      await user.type(within(card).getByLabelText('Habits'), 'Likes to roll');
+      await user.type(within(card).getByLabelText('Watch for'), 'Watch the ledge');
+      await user.click(within(card).getByRole('button', { name: 'Save' }));
+
+      await waitFor(() =>
+        expect(upsertNote).toHaveBeenCalledWith('rival', {
+          habits: 'Likes to roll',
+          watchFor: 'Watch the ledge',
+          banThese: undefined,
+        }),
+      );
+    });
+
+    it('lets the user toggle stages under "ban these" via the multi-select', async () => {
+      const user = userEvent.setup();
+      renderOpponents();
+
+      await waitFor(() => expect(screen.getByText('Last 10 (newest first)')).toBeInTheDocument());
+      const card = tendenciesCard();
+
+      await user.click(within(card).getByRole('button', { name: 'Add a note' }));
+      await user.click(within(card).getByRole('button', { name: 'Battlefield' }));
+      await user.click(within(card).getByRole('button', { name: 'Save' }));
+
+      await waitFor(() =>
+        expect(upsertNote).toHaveBeenCalledWith(
+          'rival',
+          expect.objectContaining({ banThese: [1] }),
+        ),
+      );
+    });
+
+    it('cancels an edit without saving, reverting to the previous read-only state', async () => {
+      listNotes.mockResolvedValue({ rival: { habits: 'Original habit', updatedAt: 1 } });
+      const user = userEvent.setup();
+      renderOpponents();
+
+      await waitFor(() => expect(screen.getByText('Last 10 (newest first)')).toBeInTheDocument());
+      const card = tendenciesCard();
+
+      await user.click(within(card).getByRole('button', { name: 'Edit' }));
+      await user.clear(within(card).getByLabelText('Habits'));
+      await user.type(within(card).getByLabelText('Habits'), 'Changed my mind');
+      await user.click(within(card).getByRole('button', { name: 'Cancel' }));
+
+      expect(upsertNote).not.toHaveBeenCalled();
+      expect(within(card).getByText('Original habit')).toBeInTheDocument();
+    });
+
+    it('deletes a note via the delete action while editing', async () => {
+      listNotes.mockResolvedValue({ rival: { habits: 'Original habit', updatedAt: 1 } });
+      const user = userEvent.setup();
+      renderOpponents();
+
+      await waitFor(() => expect(screen.getByText('Last 10 (newest first)')).toBeInTheDocument());
+      const card = tendenciesCard();
+
+      await user.click(within(card).getByRole('button', { name: 'Edit' }));
+      await user.click(within(card).getByRole('button', { name: 'Delete note' }));
+
+      await waitFor(() => expect(removeNote).toHaveBeenCalledWith('rival'));
+    });
+  });
+
+  describe('V6-W1c: Export H2H evidence packet', () => {
+    beforeEach(() => {
+      listMatches.mockResolvedValue([
+        makeMatch({ id: 'm1', time: 1, opponent: 'rival', win: true }),
+      ]);
+    });
+
+    it('shows an Export H2H button and a Copy as text fallback', async () => {
+      renderOpponents();
+
+      await waitFor(() => expect(screen.getByText('Last 10 (newest first)')).toBeInTheDocument());
+      expect(screen.getByRole('button', { name: /Export H2H/ })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /Copy as text/ })).toBeInTheDocument();
+    });
+
+    it('triggers window.print() when the Export H2H button is clicked', async () => {
+      const printSpy = vi.spyOn(window, 'print').mockImplementation(() => {});
+      const user = userEvent.setup();
+      renderOpponents();
+
+      await waitFor(() => expect(screen.getByText('Last 10 (newest first)')).toBeInTheDocument());
+      await user.click(screen.getByRole('button', { name: /Export H2H/ }));
+
+      expect(printSpy).toHaveBeenCalledTimes(1);
+      printSpy.mockRestore();
+    });
+
+    it('copies the packet as text to the clipboard and shows confirmation feedback', async () => {
+      const writeText = vi.fn().mockResolvedValue(undefined);
+      const user = userEvent.setup();
+      renderOpponents();
+
+      await waitFor(() => expect(screen.getByText('Last 10 (newest first)')).toBeInTheDocument());
+      // Stubbed AFTER the initial render settles: jsdom installs its own
+      // real Clipboard implementation as part of mounting (observed via
+      // debugging — a stub defined before render gets clobbered), so this
+      // must run once the report has already rendered.
+      Object.defineProperty(navigator, 'clipboard', {
+        value: { writeText },
+        configurable: true,
+      });
+      await user.click(screen.getByRole('button', { name: /Copy as text/ }));
+
+      await waitFor(() => expect(writeText).toHaveBeenCalledTimes(1));
+      const copiedText = writeText.mock.calls[0]![0] as string;
+      expect(copiedText).toContain('H2H Evidence Packet');
+      expect(copiedText).toContain('rival');
+      expect(await screen.findByRole('button', { name: /Copied!/ })).toBeInTheDocument();
     });
   });
 });
