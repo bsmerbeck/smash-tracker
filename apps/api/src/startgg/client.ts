@@ -74,6 +74,87 @@ export async function fetchCurrentUser(
   return data.currentUser;
 }
 
+// ---- player identity resolution (public data, server token) ---------------
+// Verified via read-only probe queries against api.start.gg (V7-A scouting
+// work): both shapes below returned real data for player id 1802316 / user
+// slug "user/07dc2239" (gamerTag "Pandem1c").
+
+const resolveBySlugSchema = z.object({
+  user: z
+    .object({
+      id: z.number().int().positive(),
+      slug: z.string().min(1),
+      player: z.object({ id: z.number().int().positive(), gamerTag: z.string().min(1) }).nullish(),
+    })
+    .nullish(),
+});
+
+/**
+ * Resolves a start.gg profile slug (e.g. "user/07dc2239") to a player
+ * identity. Returns null when the slug doesn't resolve to a user, or the
+ * user has no linked player profile (e.g. a spectator-only account).
+ */
+export async function resolvePlayerBySlug(
+  serverToken: string,
+  slug: string,
+  fetchImpl: typeof fetch = fetch,
+): Promise<{ id: number; gamerTag: string; userSlug: string } | null> {
+  const data = await gql(
+    serverToken,
+    `query ResolveBySlug($slug: String) {
+      user(slug: $slug) { id slug player { id gamerTag } }
+    }`,
+    { slug },
+    resolveBySlugSchema,
+    fetchImpl,
+  );
+  const player = data.user?.player;
+  if (!data.user || !player) {
+    return null;
+  }
+  return { id: player.id, gamerTag: player.gamerTag, userSlug: data.user.slug };
+}
+
+const resolveByIdSchema = z.object({
+  player: z
+    .object({
+      id: z.number().int().positive(),
+      gamerTag: z.string().min(1),
+      user: z.object({ id: z.number().int().positive(), slug: z.string().min(1) }).nullish(),
+    })
+    .nullish(),
+});
+
+/**
+ * Resolves a numeric start.gg player id directly. Returns null when the id
+ * doesn't resolve to a player. `userSlug` is absent when start.gg has no
+ * linked user profile for the player (rare, but the field is nullish).
+ */
+export async function resolvePlayerById(
+  serverToken: string,
+  playerId: number,
+  fetchImpl: typeof fetch = fetch,
+): Promise<{ id: number; gamerTag: string; userSlug?: string } | null> {
+  const data = await gql(
+    serverToken,
+    `query ResolveById($id: ID!) {
+      player(id: $id) { id gamerTag user { id slug } }
+    }`,
+    { id: playerId },
+    resolveByIdSchema,
+    fetchImpl,
+  );
+  const player = data.player;
+  if (!player) {
+    return null;
+  }
+  return {
+    id: player.id,
+    gamerTag: player.gamerTag,
+    ...(player.user?.slug ? { userSlug: player.user.slug } : {}),
+  };
+}
+
 // ---- player sets (public data, server token) --------------------------------
 
 const setsPageSchema = z.object({

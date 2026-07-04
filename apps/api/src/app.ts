@@ -16,6 +16,7 @@ import opponentsRoutes from './routes/opponents.js';
 import opponentAliasesRoutes from './routes/opponentAliases.js';
 import opponentNotesRoutes from './routes/opponentNotes.js';
 import startggRoutes from './routes/startgg.js';
+import scoutRoutes from './routes/scout.js';
 import tournamentsRoutes from './routes/tournaments.js';
 import { NotFoundError } from './services/rtdb.js';
 import type { FirebaseServices } from './firebase/admin.js';
@@ -118,6 +119,10 @@ export function buildApp(options: BuildAppOptions) {
       await api.register(opponentNotesRoutes);
       await api.register(tournamentsRoutes);
       await api.register(startggRoutes, {
+        config: options.startgg ?? null,
+        fetchImpl: options.startggFetch,
+      });
+      await api.register(scoutRoutes, {
         config: options.startgg ?? null,
         fetchImpl: options.startggFetch,
       });
