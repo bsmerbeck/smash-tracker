@@ -181,4 +181,149 @@ describe('AddMatchForm', () => {
     renderForm({ fighterSprites: [], fighter: undefined });
     expect(screen.getByRole('button', { name: 'Add Match' })).toBeDisabled();
   });
+
+  it('omits stocksLeft/eventName/tournamentName by default (single game mode)', async () => {
+    const user = userEvent.setup();
+    renderForm();
+
+    await user.click(screen.getByRole('button', { name: 'Add Match' }));
+    const dialog = await screen.findByRole('dialog');
+
+    await user.click(within(dialog).getByRole('radio', { name: 'Win' }));
+    await fillOpponentName(user, dialog, 'rival');
+    await user.click(within(dialog).getByRole('button', { name: 'Save' }));
+
+    await waitFor(() => expect(createMatch).toHaveBeenCalledTimes(1));
+    const payload = createMatch.mock.calls[0]![0];
+    expect(payload).not.toHaveProperty('stocksLeft');
+    expect(payload).not.toHaveProperty('eventName');
+    expect(payload).not.toHaveProperty('tournamentName');
+  });
+
+  it('includes stocksLeft and tournament fields when filled in (single game mode)', async () => {
+    const user = userEvent.setup();
+    renderForm();
+
+    await user.click(screen.getByRole('button', { name: 'Add Match' }));
+    const dialog = await screen.findByRole('dialog');
+
+    await user.click(within(dialog).getByRole('radio', { name: 'Win' }));
+    await fillOpponentName(user, dialog, 'rival');
+
+    await user.click(within(dialog).getByRole('combobox', { name: 'Stocks Left (winner)' }));
+    await user.click(await screen.findByRole('option', { name: '2' }));
+
+    await user.click(within(dialog).getByRole('button', { name: 'Tournament (optional)' }));
+    await user.type(within(dialog).getByPlaceholderText('e.g. The Big House 9'), 'The Big House 9');
+    await user.type(
+      within(dialog).getByPlaceholderText('e.g. Ultimate Singles'),
+      'Ultimate Singles',
+    );
+
+    await user.click(within(dialog).getByRole('button', { name: 'Save' }));
+
+    await waitFor(() => expect(createMatch).toHaveBeenCalledTimes(1));
+    expect(createMatch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        stocksLeft: 2,
+        tournamentName: 'The Big House 9',
+        eventName: 'Ultimate Singles',
+      }),
+    );
+  });
+
+  describe('set mode', () => {
+    it('shows only game 1 until it has a result, then reveals game 2 for a Bo3', async () => {
+      const user = userEvent.setup();
+      renderForm();
+
+      await user.click(screen.getByRole('button', { name: 'Add Match' }));
+      const dialog = await screen.findByRole('dialog');
+      await user.click(within(dialog).getByRole('radio', { name: 'Set (Bo3/Bo5)' }));
+
+      expect(within(dialog).getByRole('radio', { name: 'Game 1 Win' })).toBeInTheDocument();
+      expect(within(dialog).queryByRole('radio', { name: 'Game 2 Win' })).not.toBeInTheDocument();
+
+      await user.click(within(dialog).getByRole('radio', { name: 'Game 1 Win' }));
+
+      expect(await within(dialog).findByRole('radio', { name: 'Game 2 Win' })).toBeInTheDocument();
+    });
+
+    it('stops revealing games once the set is decided (2-0 in a Bo3)', async () => {
+      const user = userEvent.setup();
+      renderForm();
+
+      await user.click(screen.getByRole('button', { name: 'Add Match' }));
+      const dialog = await screen.findByRole('dialog');
+      await user.click(within(dialog).getByRole('radio', { name: 'Set (Bo3/Bo5)' }));
+
+      await user.click(within(dialog).getByRole('radio', { name: 'Game 1 Win' }));
+      await user.click(within(dialog).getByRole('radio', { name: 'Game 2 Win' }));
+
+      expect(within(dialog).queryByRole('radio', { name: 'Game 3 Win' })).not.toBeInTheDocument();
+      expect(within(dialog).getByTestId('set-score-chip')).toHaveTextContent('2-0');
+    });
+
+    it('submits one match per game and shows a single "Set recorded" toast', async () => {
+      const user = userEvent.setup();
+      renderForm();
+
+      await user.click(screen.getByRole('button', { name: 'Add Match' }));
+      const dialog = await screen.findByRole('dialog');
+      await user.click(within(dialog).getByRole('radio', { name: 'Set (Bo3/Bo5)' }));
+
+      await user.click(within(dialog).getByRole('combobox', { name: 'Opponent' }));
+      const opponentInput = await screen.findByPlaceholderText('Type a name...');
+      await user.type(opponentInput, 'powpow');
+
+      await user.click(within(dialog).getByRole('radio', { name: 'Game 1 Win' }));
+      await user.click(await within(dialog).findByRole('radio', { name: 'Game 2 Loss' }));
+      await user.click(await within(dialog).findByRole('radio', { name: 'Game 3 Win' }));
+
+      await user.click(within(dialog).getByRole('button', { name: 'Save Set' }));
+
+      await waitFor(() => expect(createMatch).toHaveBeenCalledTimes(3));
+      expect(createMatch.mock.calls.map((call) => call[0].win)).toEqual([true, false, true]);
+      for (const call of createMatch.mock.calls) {
+        expect(call[0].opponent).toBe('powpow');
+      }
+
+      await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+    });
+
+    it('reports a partial failure honestly when a later game fails to save', async () => {
+      const user = userEvent.setup();
+      renderForm();
+      createMatch
+        .mockResolvedValueOnce({
+          id: 'g1',
+          fighter_id: mario.id,
+          opponent_id: luigi.id,
+          time: 1,
+          map: { id: 0, name: 'no selection' },
+          opponent: 'powpow',
+          notes: '',
+          matchType: 'none',
+          win: true,
+        })
+        .mockRejectedValueOnce(new Error('network error'));
+
+      await user.click(screen.getByRole('button', { name: 'Add Match' }));
+      const dialog = await screen.findByRole('dialog');
+      await user.click(within(dialog).getByRole('radio', { name: 'Set (Bo3/Bo5)' }));
+
+      await user.click(within(dialog).getByRole('combobox', { name: 'Opponent' }));
+      const opponentInput = await screen.findByPlaceholderText('Type a name...');
+      await user.type(opponentInput, 'powpow');
+
+      await user.click(within(dialog).getByRole('radio', { name: 'Game 1 Win' }));
+      await user.click(await within(dialog).findByRole('radio', { name: 'Game 2 Loss' }));
+
+      await user.click(within(dialog).getByRole('button', { name: 'Save Set' }));
+
+      await waitFor(() => expect(createMatch).toHaveBeenCalledTimes(2));
+      // Dialog stays open on failure — nothing gets silently discarded.
+      expect(screen.getByRole('dialog')).toBeInTheDocument();
+    });
+  });
 });

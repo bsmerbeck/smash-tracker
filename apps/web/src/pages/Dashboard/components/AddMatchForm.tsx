@@ -11,6 +11,7 @@ import {
   DialogTrigger,
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
+import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { NO_SELECTION_STAGE } from '@/data/stages';
 import { useCreateMatch } from '@/hooks/useCreateMatch';
 import {
@@ -20,7 +21,19 @@ import {
   useMatchForm,
   type MatchFormValues,
 } from '@/components/match-form/MatchForm';
+import {
+  SetWizard,
+  useSetSharedForm,
+  defaultSetSharedValues,
+} from '@/components/match-form/SetWizard';
+import {
+  formatSetScore,
+  getSetScore,
+  type SetGameValues,
+} from '@/components/match-form/setWizardLogic';
 import { useDashboardContext } from '../DashboardContext';
+
+type EntryMode = 'single' | 'set';
 
 function buildDefaultValues(fighterId: number): MatchFormValues {
   return {
@@ -31,6 +44,9 @@ function buildDefaultValues(fighterId: number): MatchFormValues {
     matchType: 'none',
     opponentName: '',
     notes: '',
+    stocksLeft: undefined,
+    eventName: '',
+    tournamentName: '',
   };
 }
 
@@ -41,18 +57,37 @@ function buildDefaultValues(fighterId: number): MatchFormValues {
  * opponent name shows up next time). Field UI lives in the shared
  * `MatchForm` component so EditMatchForm (MatchData screen) doesn't
  * duplicate it.
+ *
+ * V4 Phase F adds a mode toggle: "Single game" is the original form
+ * (+ stocks/tournament fields); "Set (Bo3/Bo5)" opens the `SetWizard`,
+ * which collects shared fields once and per-game rows progressively, then
+ * submits one match per game sequentially via the same create-match
+ * mutation (no cross-game transaction/rollback — see `handleSetSubmit`).
  */
 export function AddMatchForm() {
   const { fighter, fighterSprites } = useDashboardContext();
   const createMatch = useCreateMatch();
   const [open, setOpen] = useState(false);
+  const [mode, setMode] = useState<EntryMode>('single');
+  const [games, setGames] = useState<SetGameValues[]>([]);
 
   const form = useMatchForm(buildDefaultValues(fighter?.id ?? fighterSprites[0]?.id ?? 0));
+  const setForm = useSetSharedForm(
+    defaultSetSharedValues(fighter?.id ?? fighterSprites[0]?.id ?? 0),
+  );
+
+  function resetAll() {
+    const fighterId = fighter?.id ?? fighterSprites[0]?.id ?? 0;
+    form.reset(buildDefaultValues(fighterId));
+    setForm.reset(defaultSetSharedValues(fighterId));
+    setGames([]);
+    setMode('single');
+  }
 
   function handleOpenChange(next: boolean) {
     setOpen(next);
     if (next) {
-      form.reset(buildDefaultValues(fighter?.id ?? fighterSprites[0]?.id ?? 0));
+      resetAll();
     }
   }
 
@@ -67,6 +102,42 @@ export function AddMatchForm() {
     }
   }
 
+  /**
+   * Creates one match per game, sequentially, via the same `useCreateMatch`
+   * mutation the single-game form uses. There is no rollback if a later
+   * game fails — earlier games in the set are already persisted, so a
+   * partial failure is reported honestly (how many games saved vs. how
+   * many were requested) rather than silently discarded.
+   */
+  async function handleSetSubmit(payloads: CreateMatchInput[]) {
+    if (payloads.length === 0) {
+      toast.error('Enter at least one game result before saving.');
+      return;
+    }
+
+    let savedCount = 0;
+    try {
+      for (const payload of payloads) {
+        await createMatch.mutateAsync(payload);
+        savedCount += 1;
+      }
+      const score = getSetScore(
+        payloads.map((p) => ({ result: p.win ? 'win' : 'loss', stageId: 0 })),
+      );
+      const opponentName = payloads[0]?.opponent ?? 'opponent';
+      toast.success(`Set recorded: ${formatSetScore(score)} vs ${opponentName}`);
+      setOpen(false);
+    } catch {
+      if (savedCount > 0) {
+        toast.error(
+          `Only ${savedCount} of ${payloads.length} games saved before an error occurred. Check Match Data and re-enter any missing games.`,
+        );
+      } else {
+        toast.error('Failed to save the set. Please try again.');
+      }
+    }
+  }
+
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogTrigger asChild>
@@ -77,17 +148,55 @@ export function AddMatchForm() {
           <DialogTitle>Add Match</DialogTitle>
           <DialogDescription>Record the outcome of a match you just played.</DialogDescription>
         </DialogHeader>
-        <form onSubmit={form.handleSubmit(onSubmit)} noValidate>
-          <MatchFormFields form={form} fighterSprites={fighterSprites} />
-          <DialogFooter className="mt-4">
-            <Button type="button" variant="outline" onClick={() => setOpen(false)}>
-              Cancel
-            </Button>
-            <Button type="submit" disabled={createMatch.isPending}>
-              Save
-            </Button>
-          </DialogFooter>
-        </form>
+
+        <ToggleGroup
+          type="single"
+          variant="outline"
+          value={mode}
+          onValueChange={(value) => {
+            if (value) setMode(value as EntryMode);
+          }}
+          className="mb-2"
+        >
+          <ToggleGroupItem value="single" aria-label="Single game">
+            Single game
+          </ToggleGroupItem>
+          <ToggleGroupItem value="set" aria-label="Set (Bo3/Bo5)">
+            Set (Bo3/Bo5)
+          </ToggleGroupItem>
+        </ToggleGroup>
+
+        {mode === 'single' ? (
+          <form onSubmit={form.handleSubmit(onSubmit)} noValidate>
+            <MatchFormFields form={form} fighterSprites={fighterSprites} />
+            <DialogFooter className="mt-4">
+              <Button type="button" variant="outline" onClick={() => setOpen(false)}>
+                Cancel
+              </Button>
+              <Button type="submit" disabled={createMatch.isPending}>
+                Save
+              </Button>
+            </DialogFooter>
+          </form>
+        ) : (
+          <SetWizard
+            fighterSprites={fighterSprites}
+            form={setForm}
+            games={games}
+            onGamesChange={setGames}
+            onSubmit={handleSetSubmit}
+            footer={
+              <DialogFooter className="mt-4">
+                <Button type="button" variant="outline" onClick={() => setOpen(false)}>
+                  Cancel
+                </Button>
+                <Button type="submit" disabled={createMatch.isPending}>
+                  Save Set
+                </Button>
+              </DialogFooter>
+            }
+          />
+        )}
       </DialogContent>
     </Dialog>
   );

@@ -27,15 +27,21 @@ function matchToFormValues(match: Match): MatchFormValues {
     matchType: match.matchType ? match.matchType : 'none',
     opponentName: match.opponent ?? '',
     notes: match.notes ?? '',
+    stocksLeft: match.stocksLeft,
+    eventName: match.eventName ?? '',
+    tournamentName: match.tournamentName ?? '',
   };
 }
 
 /**
  * Ports legacy/src/screens/MatchData/components/MatchTable/components/EditMatchForm.
- * Same fields as AddMatchForm (shared via `MatchFormFields`), prefilled from
- * the row being edited, and submits the FULL payload via `useUpdateMatch`
- * (PATCH `/api/matches/:id`, which legacy's edit form also treated as a full
- * overwrite — see `updateMatchInputSchema` in packages/shared).
+ * Same fields as AddMatchForm (shared via `MatchFormFields`, which includes
+ * the V4 Phase F stocks-left select and collapsible tournament section),
+ * prefilled from the row being edited, and submits the FULL payload via
+ * `useUpdateMatch` (PATCH `/api/matches/:id`, which legacy's edit form also
+ * treated as a full overwrite — see `updateMatchInputSchema` in
+ * packages/shared). Editing is always single-game; the set wizard only
+ * appears in AddMatchForm.
  */
 export function EditMatchForm({
   match,
