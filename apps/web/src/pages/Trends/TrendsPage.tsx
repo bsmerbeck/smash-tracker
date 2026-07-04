@@ -7,12 +7,14 @@ import { SessionsAndTilt } from './components/SessionsAndTilt';
 import { SettingComparison } from './components/SettingComparison';
 import { Tournaments } from './components/Tournaments';
 import { MatchTypeMix } from './components/MatchTypeMix';
+import { RatingCurve } from './components/RatingCurve';
 
 /**
  * V3 Phase F (docs/analytics-vision.md): monthly performance, sessions/tilt,
  * online-vs-offline comparison, per-tournament results, and match-type mix
- * over time. Account-wide (not per-fighter), honoring the global
- * source/time-range filter like the other analytics pages.
+ * over time. V6-W2 adds the session-based Glicko-2 rating curve. Account-wide
+ * (not per-fighter), honoring the global source/time-range filter like the
+ * other analytics pages.
  */
 export function TrendsPage() {
   const { matches, allMatches, isLoading, filterActive } = useFilteredMatches();
@@ -39,6 +41,7 @@ export function TrendsPage() {
       {filterActive && matches.length === 0 && <FilteredEmptyNotice />}
 
       <MonthlyPerformance matches={matches} />
+      <RatingCurve matches={matches} />
       <SessionsAndTilt matches={matches} />
       <SettingComparison matches={matches} />
       <Tournaments matches={matches} />

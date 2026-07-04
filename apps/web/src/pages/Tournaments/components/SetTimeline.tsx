@@ -55,6 +55,33 @@ function OpponentTags({ opponentFighterIds }: { opponentFighterIds: number[] }) 
   );
 }
 
+/**
+ * Outbound "Watch VOD" link for a set, shown when any game in the set
+ * carries a `vodUrl` (start.gg's TO-curated `Set.vodUrl`, duplicated across
+ * every game of the set during sync — see `MatchRecord.vodUrl`). Currently
+ * null on essentially all production data (no TO has attached one to a
+ * sampled set yet, per the V6-W1b probe), so this simply doesn't render
+ * until a TO does.
+ */
+function VodLink({ set }: { set: TournamentSet }) {
+  const vodUrl = set.games.map((g) => g.match.vodUrl).find((url) => url != null);
+  if (!vodUrl) {
+    return null;
+  }
+  return (
+    <a
+      href={vodUrl}
+      target="_blank"
+      rel="noreferrer"
+      aria-label={`Watch VOD for ${set.roundText ?? `Set ${set.setId}`}`}
+      className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
+    >
+      Watch VOD
+      <ExternalLink className="size-3.5" />
+    </a>
+  );
+}
+
 function OpponentLabel({ set }: { set: TournamentSet }) {
   if (!set.opponentName) {
     return null;
@@ -106,7 +133,8 @@ function SetRow({ set }: { set: TournamentSet }) {
           ))}
         </div>
       </div>
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-3">
+        <VodLink set={set} />
         <span className="text-sm text-muted-foreground">
           {set.gamesWon}-{set.gamesLost}
         </span>
@@ -123,9 +151,10 @@ function SetRow({ set }: { set: TournamentSet }) {
  * character tag(s), the opponent's human tag with an outbound start.gg
  * profile link (when `opponentUserSlug` synced) and a compact
  * "seed N · placed Nth" context label (when either is known), per-game stage
- * chips (color = win/loss, tooltip = stage name + result), and the derived
- * set score/result. Matches without a parseable set id render in a separate
- * list below.
+ * chips (color = win/loss, tooltip = stage name + result), an outbound
+ * "Watch VOD" link (when any game in the set carries a `vodUrl`), and the
+ * derived set score/result. Matches without a parseable set id render in a
+ * separate list below.
  */
 export function SetTimeline({
   sets,
