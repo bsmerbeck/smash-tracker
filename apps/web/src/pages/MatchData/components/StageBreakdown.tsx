@@ -14,7 +14,7 @@ import { NO_SELECTION_STAGE } from '@/data/stages';
 import { getFighterById } from '@/data/sprites';
 import { getStageRecords, getWinLossRecord } from '@/lib/stats';
 import { getGroupedStageOptions, stageOptions } from '@/lib/stageOptions';
-import { StageOption } from '@/components/StageOption';
+import { StageOption, stageAbbreviation } from '@/components/StageOption';
 
 /**
  * Ports legacy/src/screens/MatchData/components/StageBreakdown — pick a
@@ -96,7 +96,23 @@ export function StageBreakdown({
           </SelectContent>
         </Select>
 
-        <div className="text-center">
+        <div className="flex flex-col items-center gap-2 text-center">
+          {selectedStage.id !== NO_SELECTION_STAGE.id &&
+            ('url' in selectedStage && selectedStage.url ? (
+              <img
+                src={selectedStage.url}
+                alt=""
+                className="h-20 w-36 rounded-md object-cover"
+                loading="lazy"
+              />
+            ) : (
+              <span
+                className="flex h-20 w-36 items-center justify-center rounded-md bg-muted text-sm font-semibold text-muted-foreground"
+                aria-hidden="true"
+              >
+                {stageAbbreviation(selectedStage.name)}
+              </span>
+            ))}
           <h3 className="text-lg font-medium">{selectedStage.name}</h3>
           {!record || record.total === 0 ? (
             <p className="text-sm text-muted-foreground">No reported matches on this stage.</p>

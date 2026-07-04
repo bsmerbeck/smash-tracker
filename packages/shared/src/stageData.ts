@@ -78,7 +78,7 @@ export const StageList: Stage[] = [
   { id: 58, name: 'Pokémon Stadium', url: '' },
   { id: 59, name: 'Pokémon Stadium 2', url: '/assets/stages/40-pokemon-stadium-2.jpg' },
   { id: 60, name: 'Spear Pillar', url: '' },
-  { id: 61, name: 'Unova Pokémon League', url: '' },
+  { id: 61, name: 'Unova Pokémon League', url: '/assets/stages/62-unova-pokemon-league.jpg' },
   { id: 62, name: 'Prism Tower', url: '' },
   { id: 63, name: 'Kalos Pokémon League', url: '/assets/stages/79-kalos-pokemon-league.jpg' },
   { id: 64, name: 'Big Blue', url: '' },
