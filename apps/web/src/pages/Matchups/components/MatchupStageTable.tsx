@@ -9,7 +9,8 @@ import {
 } from '@/components/ui/table';
 import type { Match } from '@smash-tracker/shared';
 import { getStageRecords } from '@/lib/stats';
-import { stagesById } from '@/data/stages';
+import { stagesById, UNKNOWN_STAGE } from '@/data/stages';
+import { StageOption } from '@/components/StageOption';
 
 /**
  * Per-stage records for the selected matchup, sorted by sample size. The
@@ -44,9 +45,17 @@ export function MatchupStageTable({ matchupMatches }: { matchupMatches: Match[] 
               {records.map((record) => (
                 <TableRow key={record.stageId}>
                   <TableCell>
-                    {record.stageId === 0
-                      ? 'unknown'
-                      : (stagesById.get(record.stageId)?.name ?? 'Unknown')}
+                    <StageOption
+                      stage={
+                        record.stageId === 0
+                          ? { ...UNKNOWN_STAGE, url: '' }
+                          : (stagesById.get(record.stageId) ?? {
+                              id: record.stageId,
+                              name: 'Unknown',
+                              url: '',
+                            })
+                      }
+                    />
                   </TableCell>
                   <TableCell>
                     {record.wins}-{record.losses}

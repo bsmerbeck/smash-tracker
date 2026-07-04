@@ -1,6 +1,6 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { toast } from 'sonner';
-import { Pencil, Trash2 } from 'lucide-react';
+import { Download, Pencil, SlidersHorizontal, Trash2 } from 'lucide-react';
 import {
   flexRender,
   getCoreRowModel,
@@ -10,6 +10,7 @@ import {
   useReactTable,
   type ColumnDef,
   type SortingState,
+  type VisibilityState,
 } from '@tanstack/react-table';
 import type { Fighter, Match } from '@smash-tracker/shared';
 import { Button } from '@/components/ui/button';
@@ -31,6 +32,14 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import {
+  DropdownMenu,
+  DropdownMenuCheckboxItem,
+  DropdownMenuContent,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import {
   AlertDialog,
   AlertDialogAction,
   AlertDialogCancel,
@@ -42,6 +51,16 @@ import {
 } from '@/components/ui/alert-dialog';
 import { getFighterById } from '@/data/sprites';
 import { useDeleteMatch } from '@/hooks/useDeleteMatch';
+import { buildMatchCsv, matchCsvFilename } from '../lib/matchCsv';
+import {
+  applyMatchTableFilters,
+  ALL_FILTER_VALUE,
+  DEFAULT_MATCH_TABLE_FILTERS,
+  getMatchTableFilterOptions,
+  tournamentLabel,
+  type MatchTableFilterState,
+} from '../lib/matchTableFilters';
+import { persistColumnVisibility, readStoredColumnVisibility } from '../lib/columnVisibility';
 import { EditMatchForm } from './EditMatchForm';
 
 const PAGE_SIZE_OPTIONS = [10, 20, 30, 40, 50];
@@ -55,6 +74,7 @@ interface MatchRow {
   stage: string;
   matchType: string;
   notes: string;
+  tournament: string;
 }
 
 function toRow(match: Match): MatchRow {
@@ -67,15 +87,48 @@ function toRow(match: Match): MatchRow {
     stage: match.map?.name ?? 'unknown',
     matchType: match.matchType ?? '',
     notes: match.notes ?? '',
+    tournament: tournamentLabel(match),
   };
+}
+
+/** Column id -> friendly label, used by both the header cell and the visibility dropdown. */
+const COLUMN_LABELS: Record<string, string> = {
+  date: 'Date',
+  fighter: 'Fighter',
+  opponentFighter: 'Opponent',
+  opponentName: 'Opponent Name',
+  stage: 'Stage',
+  matchType: 'Type',
+  win: 'Result',
+  tournament: 'Tournament',
+  notes: 'Notes',
+};
+
+/** Columns that are always shown and excluded from the visibility dropdown (row actions aren't real data). */
+const NON_TOGGLEABLE_COLUMNS = new Set(['actions']);
+
+function downloadCsv(matches: Match[]) {
+  const csv = buildMatchCsv(matches);
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = matchCsvFilename();
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(url);
 }
 
 /**
  * Ports legacy/src/screens/MatchData/components/MatchTable using
  * @tanstack/react-table v8 in place of legacy's react-table v7: sorting,
  * global text filter (legacy's CustomInput.js), and pagination (legacy's
- * custom Pages.js). Row actions open EditMatchForm (prefilled, full PATCH)
- * or a delete confirmation.
+ * custom Pages.js). V4 Phase C adds: a Tournament column, per-column filters
+ * (Fighter/Opponent/Stage/Type/Tournament, each composing via AND with the
+ * global text filter), a column-visibility dropdown persisted to
+ * localStorage, and a CSV export of the currently-filtered rows. Row actions
+ * open EditMatchForm (prefilled, full PATCH) or a delete confirmation.
  */
 export function MatchTable({
   matches,
@@ -87,11 +140,27 @@ export function MatchTable({
 }) {
   const [sorting, setSorting] = useState<SortingState>([{ id: 'date', desc: true }]);
   const [globalFilter, setGlobalFilter] = useState('');
+  const [columnFilters, setColumnFilters] = useState<MatchTableFilterState>(
+    DEFAULT_MATCH_TABLE_FILTERS,
+  );
+  const [columnVisibility, setColumnVisibility] = useState<VisibilityState>(() =>
+    readStoredColumnVisibility(),
+  );
   const [editingMatch, setEditingMatch] = useState<Match | null>(null);
   const [pendingDelete, setPendingDelete] = useState<Match | null>(null);
   const deleteMatch = useDeleteMatch();
 
-  const data = useMemo(() => matches.map(toRow), [matches]);
+  useEffect(() => {
+    persistColumnVisibility(columnVisibility);
+  }, [columnVisibility]);
+
+  const filterOptions = useMemo(() => getMatchTableFilterOptions(matches), [matches]);
+  const columnFilteredMatches = useMemo(
+    () => applyMatchTableFilters(matches, columnFilters),
+    [matches, columnFilters],
+  );
+
+  const data = useMemo(() => columnFilteredMatches.map(toRow), [columnFilteredMatches]);
 
   const columns = useMemo<ColumnDef<MatchRow>[]>(
     () => [
@@ -157,6 +226,11 @@ export function MatchTable({
         ),
       },
       {
+        id: 'tournament',
+        header: 'Tournament',
+        accessorFn: (row) => row.tournament,
+      },
+      {
         id: 'notes',
         header: 'Notes',
         accessorFn: (row) => row.notes,
@@ -170,6 +244,7 @@ export function MatchTable({
         id: 'actions',
         header: 'Manage',
         enableSorting: false,
+        enableHiding: false,
         cell: ({ row }) => (
           <div className="flex justify-end gap-2">
             <Button
@@ -198,9 +273,10 @@ export function MatchTable({
   const table = useReactTable({
     data,
     columns,
-    state: { sorting, globalFilter },
+    state: { sorting, globalFilter, columnVisibility },
     onSortingChange: setSorting,
     onGlobalFilterChange: setGlobalFilter,
+    onColumnVisibilityChange: setColumnVisibility,
     getCoreRowModel: getCoreRowModel(),
     getSortedRowModel: getSortedRowModel(),
     getFilteredRowModel: getFilteredRowModel(),
@@ -220,6 +296,14 @@ export function MatchTable({
     }
   }
 
+  function handleExportCsv() {
+    // Export the currently-filtered rows: column filters + global text
+    // filter both applied, matching exactly what's rendered on screen.
+    const visibleIds = new Set(table.getFilteredRowModel().rows.map((r) => r.original.match.id));
+    const exportMatches = columnFilteredMatches.filter((m) => visibleIds.has(m.id));
+    downloadCsv(exportMatches);
+  }
+
   if (matches.length === 0) {
     return (
       <p className="text-center text-sm text-muted-foreground">
@@ -230,13 +314,79 @@ export function MatchTable({
 
   return (
     <div className="flex flex-col gap-3">
-      <Input
-        value={globalFilter}
-        onChange={(e) => setGlobalFilter(e.target.value)}
-        placeholder={`Search ${data.length} records...`}
-        className="max-w-xs"
-        aria-label="Filter matches"
-      />
+      <div className="flex flex-wrap items-center gap-2">
+        <Input
+          value={globalFilter}
+          onChange={(e) => setGlobalFilter(e.target.value)}
+          placeholder={`Search ${data.length} records...`}
+          className="max-w-xs"
+          aria-label="Filter matches"
+        />
+
+        <ColumnFilterSelect
+          label="Your Fighter"
+          value={columnFilters.fighter}
+          options={filterOptions.fighters}
+          onChange={(value) => setColumnFilters((prev) => ({ ...prev, fighter: value }))}
+        />
+        <ColumnFilterSelect
+          label="Opponent Fighter"
+          value={columnFilters.opponentFighter}
+          options={filterOptions.opponentFighters}
+          onChange={(value) => setColumnFilters((prev) => ({ ...prev, opponentFighter: value }))}
+        />
+        <ColumnFilterSelect
+          label="Stage"
+          value={columnFilters.stage}
+          options={filterOptions.stages}
+          onChange={(value) => setColumnFilters((prev) => ({ ...prev, stage: value }))}
+        />
+        <ColumnFilterSelect
+          label="Type"
+          value={columnFilters.matchType}
+          options={filterOptions.matchTypes}
+          onChange={(value) => setColumnFilters((prev) => ({ ...prev, matchType: value }))}
+        />
+        <ColumnFilterSelect
+          label="Tournament"
+          value={columnFilters.tournament}
+          options={filterOptions.tournaments}
+          onChange={(value) => setColumnFilters((prev) => ({ ...prev, tournament: value }))}
+        />
+
+        <div className="ml-auto flex items-center gap-2">
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline" size="sm">
+                <SlidersHorizontal />
+                Columns
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuLabel>Toggle columns</DropdownMenuLabel>
+              <DropdownMenuSeparator />
+              {table
+                .getAllColumns()
+                .filter((column) => !NON_TOGGLEABLE_COLUMNS.has(column.id))
+                .map((column) => (
+                  <DropdownMenuCheckboxItem
+                    key={column.id}
+                    checked={column.getIsVisible()}
+                    onCheckedChange={(value) => column.toggleVisibility(!!value)}
+                    onSelect={(e) => e.preventDefault()}
+                  >
+                    {COLUMN_LABELS[column.id] ?? column.id}
+                  </DropdownMenuCheckboxItem>
+                ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
+
+          <Button variant="outline" size="sm" onClick={handleExportCsv}>
+            <Download />
+            Export CSV
+          </Button>
+        </div>
+      </div>
 
       <div className="overflow-x-auto rounded-md border">
         <Table>
@@ -262,7 +412,10 @@ export function MatchTable({
           <TableBody>
             {table.getRowModel().rows.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={columns.length} className="text-center text-muted-foreground">
+                <TableCell
+                  colSpan={table.getVisibleFlatColumns().length}
+                  className="text-center text-muted-foreground"
+                >
                   No matches found.
                 </TableCell>
               </TableRow>
@@ -361,5 +514,34 @@ export function MatchTable({
         </AlertDialogContent>
       </AlertDialog>
     </div>
+  );
+}
+
+/** One column-filter Select, with an "All" reset option prepended — options are derived from the current dataset by the caller. */
+function ColumnFilterSelect({
+  label,
+  value,
+  options,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  options: string[];
+  onChange: (value: string) => void;
+}) {
+  return (
+    <Select value={value} onValueChange={onChange}>
+      <SelectTrigger className="w-[150px]" aria-label={label}>
+        <SelectValue placeholder={label} />
+      </SelectTrigger>
+      <SelectContent>
+        <SelectItem value={ALL_FILTER_VALUE}>All {label}</SelectItem>
+        {options.map((option) => (
+          <SelectItem key={option} value={option}>
+            {option}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
   );
 }

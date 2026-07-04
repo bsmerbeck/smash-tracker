@@ -31,6 +31,7 @@ vi.mock('@/lib/firebase', async () => {
 });
 
 const listMatches = vi.fn();
+const listTournaments = vi.fn();
 const upsertMe = vi.fn().mockResolvedValue({ uid: 'test-uid', email: 'test@example.com' });
 
 vi.mock('@/lib/api', () => ({
@@ -40,6 +41,9 @@ vi.mock('@/lib/api', () => ({
     },
     matches: {
       list: (...args: unknown[]) => listMatches(...args),
+    },
+    tournaments: {
+      list: (...args: unknown[]) => listTournaments(...args),
     },
   },
 }));
@@ -74,6 +78,7 @@ function renderOpponents() {
               <Route path="/opponents" element={<OpponentsPage />} />
               <Route path="/dashboard" element={<div>Dashboard page</div>} />
               <Route path="/settings/integrations" element={<div>Integrations page</div>} />
+              <Route path="/tournaments/:eventId" element={<div>Tournament detail page</div>} />
             </Routes>
           </AnalyticsFilterProvider>
         </AuthProvider>
@@ -88,6 +93,7 @@ describe('OpponentsPage', () => {
     vi.clearAllMocks();
     window.localStorage.clear();
     upsertMe.mockResolvedValue({ uid: 'test-uid', email: 'test@example.com' });
+    listTournaments.mockResolvedValue([]);
     setMockUser(makeMockUser());
   });
 
@@ -274,6 +280,171 @@ describe('OpponentsPage', () => {
       expect(screen.getByText('Stages')).toBeInTheDocument();
       expect(screen.getAllByText('Final Destination').length).toBeGreaterThan(0);
       expect(screen.getAllByText('Battlefield').length).toBeGreaterThan(0);
+    });
+  });
+
+  describe('tournament history', () => {
+    it('shows the empty state when no matches have an eventName', async () => {
+      listMatches.mockResolvedValue([
+        makeMatch({ id: 'm1', time: 1, opponent: 'rival', win: true }),
+      ]);
+
+      renderOpponents();
+
+      expect(
+        await screen.findByText(
+          "No tournament sets vs this player yet — resync start.gg if you've played recently.",
+        ),
+      ).toBeInTheDocument();
+    });
+
+    it('groups sets into a tournament block with derived score, round labels, and a plain-text title when no registry entry matches', async () => {
+      listTournaments.mockResolvedValue([]);
+      listMatches.mockResolvedValue([
+        makeMatch({
+          id: 'm1',
+          time: 1,
+          opponent: 'rival',
+          win: true,
+          map: { id: 1, name: 'Battlefield' },
+          eventName: 'Ultimate Singles',
+          tournamentName: 'The Big House 9',
+          source: 'startgg',
+          externalId: 'sgg:100:g1',
+        }),
+        makeMatch({
+          id: 'm2',
+          time: 2,
+          opponent: 'rival',
+          win: false,
+          map: { id: 3, name: 'Final Destination' },
+          eventName: 'Ultimate Singles',
+          tournamentName: 'The Big House 9',
+          source: 'startgg',
+          externalId: 'sgg:100:g2',
+          roundText: 'Winners Semi-Final',
+          bracketRound: 3,
+        }),
+        makeMatch({
+          id: 'm3',
+          time: 3,
+          opponent: 'rival',
+          win: true,
+          map: { id: 1, name: 'Battlefield' },
+          eventName: 'Ultimate Singles',
+          tournamentName: 'The Big House 9',
+          source: 'startgg',
+          externalId: 'sgg:100:g3',
+          roundText: 'Winners Semi-Final',
+          bracketRound: 3,
+        }),
+      ]);
+
+      renderOpponents();
+
+      const historyCard = (await screen.findByText('Tournament History')).closest(
+        '[data-slot="card"]',
+      ) as HTMLElement;
+
+      const title = within(historyCard).getByText('The Big House 9');
+      expect(title.closest('a')).toBeNull();
+      expect(within(historyCard).getByText('2-1 vs them here')).toBeInTheDocument();
+      expect(within(historyCard).getByText('Winners Semi-Final')).toBeInTheDocument();
+    });
+
+    it('falls back to "Set N" round labels when no game in the set carries roundText', async () => {
+      listMatches.mockResolvedValue([
+        makeMatch({
+          id: 'm1',
+          time: 1,
+          opponent: 'rival',
+          win: true,
+          eventName: 'Ultimate Singles',
+          source: 'startgg',
+          externalId: 'sgg:100:g1',
+        }),
+        makeMatch({
+          id: 'm2',
+          time: 2,
+          opponent: 'rival',
+          win: true,
+          eventName: 'Ultimate Singles',
+          source: 'startgg',
+          externalId: 'sgg:200:g1',
+        }),
+      ]);
+
+      renderOpponents();
+
+      const historyCard = (await screen.findByText('Tournament History')).closest(
+        '[data-slot="card"]',
+      ) as HTMLElement;
+
+      expect(within(historyCard).getByText('Ultimate Singles')).toBeInTheDocument();
+      expect(within(historyCard).getByText('Set 1')).toBeInTheDocument();
+      expect(within(historyCard).getByText('Set 2')).toBeInTheDocument();
+    });
+
+    it('tints losers-side sets and links the block title to the tournament page when a registry entry matches', async () => {
+      listTournaments.mockResolvedValue([
+        {
+          eventId: 987,
+          eventName: 'Ultimate Singles',
+          tournamentName: 'The Big House 9',
+          firstSetAt: 0,
+          lastSetAt: 10,
+          setsPlayed: 2,
+        },
+      ]);
+      listMatches.mockResolvedValue([
+        makeMatch({
+          id: 'm1',
+          time: 5,
+          opponent: 'rival',
+          win: false,
+          eventName: 'Ultimate Singles',
+          tournamentName: 'The Big House 9',
+          source: 'startgg',
+          externalId: 'sgg:100:g1',
+          roundText: 'Losers Round 2',
+          bracketRound: -2,
+        }),
+      ]);
+
+      renderOpponents();
+
+      const link = await screen.findByRole('link', { name: 'The Big House 9' });
+      expect(link).toHaveAttribute('href', '/tournaments/987');
+      expect(screen.getByText('Losers')).toBeInTheDocument();
+    });
+
+    it('shows the encounter context line summarizing tournament count and date span', async () => {
+      listMatches.mockResolvedValue([
+        makeMatch({
+          id: 'm1',
+          time: Date.parse('2021-01-15T00:00:00Z'),
+          opponent: 'rival',
+          win: true,
+          eventName: 'Ultimate Singles',
+          source: 'startgg',
+          externalId: 'sgg:100:g1',
+        }),
+        makeMatch({
+          id: 'm2',
+          time: Date.parse('2021-03-20T00:00:00Z'),
+          opponent: 'rival',
+          win: false,
+          eventName: 'Ultimate Doubles',
+          source: 'startgg',
+          externalId: 'sgg:200:g1',
+        }),
+      ]);
+
+      renderOpponents();
+
+      expect(
+        await screen.findByText('Met at 2 tournaments between Jan 2021 and Mar 2021'),
+      ).toBeInTheDocument();
     });
   });
 });

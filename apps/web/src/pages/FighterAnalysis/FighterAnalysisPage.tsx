@@ -7,14 +7,19 @@ import { useFilteredMatches } from '@/hooks/useFilteredMatches';
 import { getFighterById } from '@/data/sprites';
 import { FilteredEmptyNotice } from '@/components/FilteredEmptyNotice';
 import { SelectFighter } from './components/SelectFighter';
-import { StreakCard } from './components/StreakCard';
-import { BestWorstMap } from './components/BestWorstMap';
-import { BestWorstMatchupCards } from './components/BestWorstMatchupCards';
+import { FighterHero } from './components/FighterHero';
+import { StageMastery } from './components/StageMastery';
+import { MatchupCoverage } from './components/MatchupCoverage';
+import { PracticeRecommendations } from './components/PracticeRecommendations';
 import { MatchupStageGuide } from './components/MatchupStageGuide';
-import { PerformanceSnapshot } from './components/PerformanceSnapshot';
 import { OpponentTable } from './components/OpponentTable';
 
-/** Ports legacy/src/screens/FighterAnalysis. */
+/**
+ * Fighter Analysis command center: per-fighter hero, Stage Mastery grid,
+ * matchup coverage of the meta + practice recommendations, the Matchup Stage
+ * Guide, and the human-opponent table (docs/analytics-vision.md V4 Phase E).
+ * Ports legacy/src/screens/FighterAnalysis.
+ */
 export function FighterAnalysisPage() {
   const { data: fighterSelection, isLoading: fightersLoading } = useFighters();
   const { matches, allMatches, isLoading: matchesLoading, filterActive } = useFilteredMatches();
@@ -86,17 +91,24 @@ export function FighterAnalysisPage() {
 
       {filterActive && matches.length === 0 && <FilteredEmptyNotice />}
 
-      <BestWorstMatchupCards fighterMatches={fighterMatches} />
+      {fighter && (
+        <>
+          <FighterHero fighter={fighter} fighterMatches={fighterMatches} allMatches={allMatches} />
 
-      <div className="flex flex-col gap-4 lg:flex-row">
-        <BestWorstMap fighterMatches={fighterMatches} />
-        <StreakCard fighterMatches={fighterMatches} />
-        <PerformanceSnapshot fighterMatches={fighterMatches} />
-      </div>
+          <StageMastery fighterMatches={fighterMatches} />
 
-      <MatchupStageGuide fighterMatches={fighterMatches} />
+          <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
+            <div className="xl:col-span-2">
+              <MatchupCoverage allFilteredMatches={matches} fighterMatches={fighterMatches} />
+            </div>
+            <PracticeRecommendations allFilteredMatches={matches} fighterMatches={fighterMatches} />
+          </div>
 
-      <OpponentTable fighterMatches={fighterMatches} />
+          <MatchupStageGuide fighterMatches={fighterMatches} />
+
+          <OpponentTable fighterMatches={fighterMatches} />
+        </>
+      )}
     </div>
   );
 }

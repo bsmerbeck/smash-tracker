@@ -1,8 +1,50 @@
-import { describe, expect, it } from 'vitest';
-import { render, screen } from '@testing-library/react';
-import { MemoryRouter } from 'react-router';
-import type { Match } from '@smash-tracker/shared';
-import { Tournaments, buildTournamentSummaries } from './Tournaments';
+import { describe, expect, it, vi, beforeEach } from 'vitest';
+import { render, screen, waitFor } from '@testing-library/react';
+import { MemoryRouter, Route, Routes } from 'react-router';
+import { QueryClientProvider, QueryClient } from '@tanstack/react-query';
+import type { Match, TournamentEntry } from '@smash-tracker/shared';
+import { AuthProvider } from '@/context/AuthContext';
+import { resetAuthMock, setMockUser, makeMockUser } from '@/test/mockAuth';
+import { Tournaments, buildTournamentEntryRows } from './Tournaments';
+
+vi.mock('firebase/auth', async () => {
+  const mock = await import('@/test/mockAuth');
+  return {
+    onAuthStateChanged: mock.onAuthStateChanged,
+    signInWithEmailAndPassword: mock.signInWithEmailAndPassword,
+    createUserWithEmailAndPassword: mock.createUserWithEmailAndPassword,
+    signInWithPopup: mock.signInWithPopup,
+    signOut: mock.signOut,
+    getAuth: mock.getAuth,
+    GoogleAuthProvider: mock.GoogleAuthProvider,
+  };
+});
+
+vi.mock('@/lib/firebase', async () => {
+  const mock = await import('@/test/mockAuth');
+  return mock.firebaseLibMock();
+});
+
+const listTournaments = vi.fn();
+
+vi.mock('@/lib/api', () => ({
+  api: {
+    tournaments: {
+      list: (...args: unknown[]) => listTournaments(...args),
+    },
+  },
+}));
+
+function makeEntry(overrides: Partial<TournamentEntry> = {}): TournamentEntry {
+  return {
+    eventId: 1,
+    eventName: 'Ultimate Singles',
+    firstSetAt: Date.UTC(2021, 0, 1),
+    lastSetAt: Date.UTC(2021, 0, 3),
+    setsPlayed: 2,
+    ...overrides,
+  };
+}
 
 function makeMatch(overrides: Partial<Match> & Pick<Match, 'id' | 'time' | 'win'>): Match {
   return {
@@ -16,122 +58,100 @@ function makeMatch(overrides: Partial<Match> & Pick<Match, 'id' | 'time' | 'win'
   };
 }
 
-describe('buildTournamentSummaries', () => {
-  it('excludes matches without a tournamentName', () => {
+describe('buildTournamentEntryRows', () => {
+  it('computes a per-entry record scoped by matchesForEntry', () => {
+    const entry = makeEntry({ eventId: 1, eventName: 'Ultimate Singles' });
     const matches = [
-      makeMatch({ id: '1', time: 1, win: true }),
-      makeMatch({ id: '2', time: 2, win: false, tournamentName: '' }),
-    ];
-    expect(buildTournamentSummaries(matches)).toEqual([]);
-  });
-
-  it('groups matches by tournamentName, computing date range and record', () => {
-    const matches = [
+      makeMatch({ id: 'm1', time: Date.UTC(2021, 0, 2), win: true, eventName: 'Ultimate Singles' }),
       makeMatch({
-        id: '1',
-        time: Date.UTC(2021, 0, 1),
-        win: true,
-        tournamentName: 'The Big House 9',
-        eventName: 'Ultimate Singles',
-        source: 'startgg',
-      }),
-      makeMatch({
-        id: '2',
-        time: Date.UTC(2021, 0, 3),
+        id: 'm2',
+        time: Date.UTC(2021, 0, 2),
         win: false,
-        tournamentName: 'The Big House 9',
         eventName: 'Ultimate Singles',
-        source: 'startgg',
       }),
+      makeMatch({ id: 'm3', time: Date.UTC(2021, 0, 2), win: true, eventName: 'Doubles' }),
     ];
-    const summaries = buildTournamentSummaries(matches);
+    const rows = buildTournamentEntryRows([entry], matches);
 
-    expect(summaries).toHaveLength(1);
-    expect(summaries[0]).toMatchObject({
-      tournamentName: 'The Big House 9',
-      eventNames: ['Ultimate Singles'],
-      wins: 1,
-      losses: 1,
-      total: 2,
-    });
-    expect(summaries[0]?.startTime).toBe(Date.UTC(2021, 0, 1));
-    expect(summaries[0]?.endTime).toBe(Date.UTC(2021, 0, 3));
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.record).toMatchObject({ wins: 1, losses: 1, total: 2 });
   });
 
-  it('collects distinct event names in first-seen order', () => {
-    const matches = [
-      makeMatch({
-        id: '1',
-        time: 1,
-        win: true,
-        tournamentName: 'Genesis 9',
-        eventName: 'Singles',
-      }),
-      makeMatch({
-        id: '2',
-        time: 2,
-        win: true,
-        tournamentName: 'Genesis 9',
-        eventName: 'Doubles',
-      }),
-      makeMatch({
-        id: '3',
-        time: 3,
-        win: true,
-        tournamentName: 'Genesis 9',
-        eventName: 'Singles',
-      }),
-    ];
-    const summaries = buildTournamentSummaries(matches);
-    expect(summaries[0]?.eventNames).toEqual(['Singles', 'Doubles']);
-  });
-
-  it('sorts tournaments by most recent (endTime descending)', () => {
-    const matches = [
-      makeMatch({ id: '1', time: Date.UTC(2020, 0, 1), win: true, tournamentName: 'Older Event' }),
-      makeMatch({ id: '2', time: Date.UTC(2022, 0, 1), win: true, tournamentName: 'Newer Event' }),
-    ];
-    const summaries = buildTournamentSummaries(matches);
-    expect(summaries.map((s) => s.tournamentName)).toEqual(['Newer Event', 'Older Event']);
+  it('sorts entries by lastSetAt descending', () => {
+    const older = makeEntry({ eventId: 1, lastSetAt: Date.UTC(2020, 0, 1) });
+    const newer = makeEntry({ eventId: 2, lastSetAt: Date.UTC(2022, 0, 1) });
+    const rows = buildTournamentEntryRows([older, newer], []);
+    expect(rows.map((r) => r.entry.eventId)).toEqual([2, 1]);
   });
 });
 
 function renderTournaments(matches: Match[]) {
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
-    <MemoryRouter>
-      <Tournaments matches={matches} />
-    </MemoryRouter>,
+    <QueryClientProvider client={queryClient}>
+      <MemoryRouter initialEntries={['/trends']}>
+        <AuthProvider>
+          <Routes>
+            <Route path="/trends" element={<Tournaments matches={matches} />} />
+            <Route path="/tournaments/:eventId" element={<div>Tournament detail page</div>} />
+            <Route path="/settings/integrations" element={<div>Integrations page</div>} />
+          </Routes>
+        </AuthProvider>
+      </MemoryRouter>
+    </QueryClientProvider>,
   );
 }
 
 describe('Tournaments component', () => {
-  it('shows the resync hint when no match has a tournamentName', () => {
-    const matches = [makeMatch({ id: '1', time: 1, win: true })];
-    renderTournaments(matches);
+  beforeEach(() => {
+    resetAuthMock();
+    vi.clearAllMocks();
+    setMockUser(makeMockUser());
+  });
+
+  it('shows the resync hint when there are no tournament entries', async () => {
+    listTournaments.mockResolvedValue([]);
+    renderTournaments([]);
 
     expect(
-      screen.getByText(/Tournament names attach on your next start\.gg sync/),
+      await screen.findByText(/Tournament entries attach on your next start\.gg sync/),
     ).toBeInTheDocument();
     const link = screen.getByRole('link', { name: 'Integrations' });
     expect(link).toHaveAttribute('href', '/settings/integrations');
   });
 
-  it('renders a table row per tournament when tournamentName data exists', () => {
+  it('renders a table row per tournament entry, linking to the detail page', async () => {
+    listTournaments.mockResolvedValue([
+      makeEntry({ eventId: 42, eventName: 'Ultimate Singles', tournamentName: 'The Big House 9' }),
+    ]);
     const matches = [
       makeMatch({
-        id: '1',
-        time: 1,
+        id: 'm1',
+        time: Date.UTC(2021, 0, 2),
         win: true,
-        tournamentName: 'The Big House 9',
         eventName: 'Ultimate Singles',
+        tournamentName: 'The Big House 9',
       }),
     ];
     renderTournaments(matches);
 
-    expect(screen.getByText('The Big House 9')).toBeInTheDocument();
+    const link = await screen.findByRole('link', { name: 'The Big House 9' });
+    expect(link).toHaveAttribute('href', '/tournaments/42');
     expect(screen.getByText('Ultimate Singles')).toBeInTheDocument();
     expect(
-      screen.queryByText(/Tournament names attach on your next start\.gg sync/),
+      screen.queryByText(/Tournament entries attach on your next start\.gg sync/),
     ).not.toBeInTheDocument();
+  });
+
+  it('falls back to eventName as the link label when tournamentName is absent', async () => {
+    listTournaments.mockResolvedValue([makeEntry({ eventId: 7, eventName: 'Ultimate Singles' })]);
+    renderTournaments([]);
+
+    await waitFor(() => {
+      expect(screen.getByRole('link', { name: 'Ultimate Singles' })).toHaveAttribute(
+        'href',
+        '/tournaments/7',
+      );
+    });
   });
 });

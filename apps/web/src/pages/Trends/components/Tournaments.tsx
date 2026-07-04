@@ -1,5 +1,5 @@
 import { Link } from 'react-router';
-import type { Match } from '@smash-tracker/shared';
+import type { Match, TournamentEntry } from '@smash-tracker/shared';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import {
   Table,
@@ -9,63 +9,34 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import { getWinLossRecord } from '@/lib/stats';
+import { getWinLossRecord, type WinLossRecord } from '@/lib/stats';
+import { useTournamentEntries } from '@/hooks/useTournamentEntries';
+import { matchesForEntry } from '@/pages/Tournaments/lib/matchesForEntry';
 
-export interface TournamentSummary {
-  tournamentName: string;
-  /** Distinct event names within this tournament, in first-seen order. */
-  eventNames: string[];
-  /** Epoch ms of the earliest and latest match in this tournament. */
-  startTime: number;
-  endTime: number;
-  wins: number;
-  losses: number;
-  total: number;
-  winRate: number;
+export interface TournamentEntryRow {
+  entry: TournamentEntry;
+  record: WinLossRecord;
 }
 
 /**
- * Groups matches that have a `tournamentName` set, one summary row per
- * tournament, sorted by most recent (`endTime` descending). Matches missing
- * `tournamentName` are excluded entirely — callers use that to detect the
- * "no tournament names yet" resync-hint state. Exported as a pure builder so
- * the grouping/date-range/sort math is unit-testable without rendering.
+ * Builds one row per tournament entry (the user's start.gg registry, Phase A
+ * sync), each carrying the win/loss record computed by scoping matches to
+ * that entry via `matchesForEntry` — the same name+window linkage the detail
+ * page uses. Sorted recent-first, matching `useTournamentEntries`'s
+ * newest-first API ordering (re-sorted here defensively by `lastSetAt`
+ * descending in case callers pass an unsorted list). Exported as a pure
+ * builder so the linkage/sort math is unit-testable without rendering.
  */
-export function buildTournamentSummaries(matches: Match[]): TournamentSummary[] {
-  const withTournament = matches.filter(
-    (m): m is Match & { tournamentName: string } =>
-      m.tournamentName != null && m.tournamentName !== '',
-  );
-
-  const byTournament = new Map<string, Match[]>();
-  for (const match of withTournament) {
-    const group = byTournament.get(match.tournamentName);
-    if (group) {
-      group.push(match);
-    } else {
-      byTournament.set(match.tournamentName, [match]);
-    }
-  }
-
-  const summaries: TournamentSummary[] = [...byTournament.entries()].map(([tournamentName, ms]) => {
-    const sorted = [...ms].sort((a, b) => a.time - b.time);
-    const eventNames: string[] = [];
-    for (const m of sorted) {
-      if (m.eventName && !eventNames.includes(m.eventName)) {
-        eventNames.push(m.eventName);
-      }
-    }
-    const record = getWinLossRecord(ms);
-    return {
-      tournamentName,
-      eventNames,
-      startTime: sorted[0]!.time,
-      endTime: sorted[sorted.length - 1]!.time,
-      ...record,
-    };
-  });
-
-  return summaries.sort((a, b) => b.endTime - a.endTime);
+export function buildTournamentEntryRows(
+  entries: TournamentEntry[],
+  matches: Match[],
+): TournamentEntryRow[] {
+  return [...entries]
+    .sort((a, b) => b.lastSetAt - a.lastSetAt)
+    .map((entry) => ({
+      entry,
+      record: getWinLossRecord(matchesForEntry(matches, entry)),
+    }));
 }
 
 function formatDate(time: number): string {
@@ -76,21 +47,25 @@ function formatDate(time: number): string {
   });
 }
 
-function formatDateRange(summary: TournamentSummary): string {
-  const start = formatDate(summary.startTime);
-  const end = formatDate(summary.endTime);
+function formatDateRange(entry: TournamentEntry): string {
+  const start = formatDate(entry.firstSetAt);
+  const end = formatDate(entry.lastSetAt);
   return start === end ? start : `${start} – ${end}`;
 }
 
 /**
- * V3 Phase F: per-tournament results, grouped from matches carrying the
- * optional `tournamentName`/`eventName` fields (Phase B sync enrichment).
- * Imported matches synced before that enrichment shipped lack these fields
- * entirely, so when no match has a `tournamentName` this renders a friendly
- * resync hint instead of an empty table.
+ * V4 Phase B: per-tournament results, rebuilt from `useTournamentEntries`
+ * (the start.gg tournament registry, Phase A sync) instead of grouping
+ * matches by name — a more reliable source now that it exists, and it gives
+ * every row a stable `eventId` to link to `/tournaments/:eventId`. Entries
+ * only start showing up after a sync that populates the registry, so the
+ * resync-hint empty state is preserved for accounts with matches but no
+ * entries yet.
  */
 export function Tournaments({ matches }: { matches: Match[] }) {
-  const summaries = buildTournamentSummaries(matches);
+  const { data: entries, isLoading } = useTournamentEntries();
+
+  const rows = buildTournamentEntryRows(entries ?? [], matches);
 
   return (
     <Card>
@@ -98,9 +73,11 @@ export function Tournaments({ matches }: { matches: Match[] }) {
         <CardTitle>Tournaments</CardTitle>
       </CardHeader>
       <CardContent>
-        {summaries.length === 0 ? (
+        {isLoading ? (
+          <p className="text-sm text-muted-foreground">Loading tournaments...</p>
+        ) : rows.length === 0 ? (
           <p className="text-sm text-muted-foreground">
-            Tournament names attach on your next start.gg sync — head to{' '}
+            Tournament entries attach on your next start.gg sync — head to{' '}
             <Link to="/settings/integrations" className="font-medium text-primary underline">
               Integrations
             </Link>{' '}
@@ -111,7 +88,7 @@ export function Tournaments({ matches }: { matches: Match[] }) {
             <TableHeader>
               <TableRow>
                 <TableHead>Tournament</TableHead>
-                <TableHead>Event(s)</TableHead>
+                <TableHead>Event</TableHead>
                 <TableHead>Dates</TableHead>
                 <TableHead>W-L</TableHead>
                 <TableHead>Rate</TableHead>
@@ -119,18 +96,23 @@ export function Tournaments({ matches }: { matches: Match[] }) {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {summaries.map((summary) => (
-                <TableRow key={summary.tournamentName}>
-                  <TableCell className="font-medium">{summary.tournamentName}</TableCell>
-                  <TableCell className="whitespace-normal">
-                    {summary.eventNames.length > 0 ? summary.eventNames.join(', ') : '—'}
+              {rows.map(({ entry, record }) => (
+                <TableRow key={entry.eventId}>
+                  <TableCell className="font-medium">
+                    <Link
+                      to={`/tournaments/${entry.eventId}`}
+                      className="underline-offset-2 hover:underline"
+                    >
+                      {entry.tournamentName ?? entry.eventName}
+                    </Link>
                   </TableCell>
-                  <TableCell>{formatDateRange(summary)}</TableCell>
+                  <TableCell className="whitespace-normal">{entry.eventName}</TableCell>
+                  <TableCell>{formatDateRange(entry)}</TableCell>
                   <TableCell>
-                    {summary.wins}-{summary.losses}
+                    {record.wins}-{record.losses}
                   </TableCell>
-                  <TableCell>{summary.winRate}%</TableCell>
-                  <TableCell>{summary.total}</TableCell>
+                  <TableCell>{record.winRate}%</TableCell>
+                  <TableCell>{record.total}</TableCell>
                 </TableRow>
               ))}
             </TableBody>
