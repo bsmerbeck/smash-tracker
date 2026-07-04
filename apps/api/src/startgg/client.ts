@@ -86,10 +86,19 @@ const setsPageSchema = z.object({
             z.object({
               id: z.union([z.number(), z.string()]),
               completedAt: z.number().int().nullish(),
+              /** Human-readable round label, e.g. "Losers Round 2". */
+              fullRoundText: z.string().nullish(),
+              /** Signed bracket round; negative = losers side. */
+              round: z.number().int().nullish(),
+              /** Literally the string "DQ" for sets decided by disqualification. */
+              displayScore: z.string().nullish(),
+              totalGames: z.number().int().nullish(),
               event: z
                 .object({
+                  id: z.number().nullish(),
                   name: z.string().nullish(),
                   isOnline: z.boolean().nullish(),
+                  numEntrants: z.number().int().nullish(),
                   videogame: z.object({ id: z.number() }).nullish(),
                   tournament: z.object({ name: z.string().nullish() }).nullish(),
                 })
@@ -111,6 +120,10 @@ const setsPageSchema = z.object({
                                 .nullish(),
                             )
                             .nullish(),
+                          seeds: z
+                            .array(z.object({ seedNum: z.number().int().nullish() }).nullish())
+                            .nullish(),
+                          standing: z.object({ placement: z.number().int().nullish() }).nullish(),
                         })
                         .nullish(),
                     })
@@ -145,6 +158,9 @@ export type StartggSet = NonNullable<
   NonNullable<StartggSetsPage['player']>['sets']
 >['nodes'][number];
 
+// Complexity budget per page (perPage 10): ~10 sets x (2 slots x ~4 fields +
+// ~5 games x 3 fields + ~8 set/event fields) stays well under the 1000
+// object limit — nowhere near the ~180 objects/page this shape produces.
 const SETS_QUERY = `query PlayerSets($playerId: ID!, $page: Int!, $perPage: Int!) {
   player(id: $playerId) {
     sets(perPage: $perPage, page: $page) {
@@ -152,8 +168,20 @@ const SETS_QUERY = `query PlayerSets($playerId: ID!, $page: Int!, $perPage: Int!
       nodes {
         id
         completedAt
-        event { name isOnline videogame { id } tournament { name } }
-        slots { entrant { id name participants { player { id } } } }
+        fullRoundText
+        round
+        displayScore
+        totalGames
+        event { id name isOnline numEntrants videogame { id } tournament { name } }
+        slots {
+          entrant {
+            id
+            name
+            participants { player { id } }
+            seeds { seedNum }
+            standing { placement }
+          }
+        }
         games {
           winnerId
           stage { name }

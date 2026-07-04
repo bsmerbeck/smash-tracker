@@ -1,5 +1,5 @@
 import type { Database } from 'firebase-admin/database';
-import type { MatchRecord, StartggSyncSummary } from '@smash-tracker/shared';
+import type { MatchRecord, StartggSyncSummary, TournamentEntry } from '@smash-tracker/shared';
 import { fetchPlayerSetsPage, SSBU_VIDEOGAME_ID, type StartggSet } from './client.js';
 import { startggCharacterToFighterId } from './characterMap.js';
 import { resolveStageByName } from './stageMap.js';
@@ -46,6 +46,13 @@ export function gamesFromSet(
   }
   summary.sets += 1;
 
+  // DQ sets carry no meaningful game data — skip entirely, before the
+  // games/completedAt checks below, and don't count them as setsWithoutGames.
+  if (set.displayScore === 'DQ') {
+    summary.dqSets += 1;
+    return [];
+  }
+
   const games = set.games ?? [];
   const completedAt = set.completedAt;
   const slots = (set.slots ?? []).flatMap((slot) => (slot?.entrant ? [slot.entrant] : []));
@@ -64,6 +71,8 @@ export function gamesFromSet(
   // RTDB rejects undefined values — these keys must be OMITTED when absent.
   const eventName = set.event?.name?.trim();
   const tournamentName = set.event?.tournament?.name?.trim();
+  const roundText = set.fullRoundText?.trim();
+  const bracketRound = typeof set.round === 'number' ? set.round : undefined;
   const results: ImportableGame[] = [];
 
   games.forEach((game, index) => {
@@ -111,6 +120,8 @@ export function gamesFromSet(
         externalId,
         ...(eventName ? { eventName } : {}),
         ...(tournamentName ? { tournamentName } : {}),
+        ...(roundText ? { roundText } : {}),
+        ...(bracketRound !== undefined ? { bracketRound } : {}),
       },
     });
   });
@@ -119,11 +130,96 @@ export function gamesFromSet(
 }
 
 /**
+ * Mutable accumulator for one event's tournament registry entry while
+ * paginating; converted to a `TournamentEntry` (with optional fields
+ * omitted, per the RTDB undefined rule) once accumulation is complete.
+ */
+interface RegistryAccumulator {
+  eventId: number;
+  eventName: string;
+  tournamentName?: string;
+  numEntrants?: number;
+  seed?: number;
+  placement?: number;
+  firstSetAt: number;
+  lastSetAt: number;
+  setsPlayed: number;
+}
+
+/**
+ * Folds one non-DQ SSBU set into the per-event registry accumulator map.
+ * Exported for tests. A set only contributes when it belongs to a
+ * recognizable event (`event.id` present) — sets without an event id can't
+ * be grouped into a tournament entry.
+ */
+export function accumulateRegistry(
+  accumulators: Map<number, RegistryAccumulator>,
+  set: StartggSet,
+  playerId: number,
+): void {
+  if (set.event?.videogame?.id !== SSBU_VIDEOGAME_ID || set.displayScore === 'DQ') {
+    return;
+  }
+  const eventId = set.event?.id;
+  const eventName = set.event?.name?.trim();
+  if (eventId == null || !eventName) {
+    return;
+  }
+
+  const slots = (set.slots ?? []).flatMap((slot) => (slot?.entrant ? [slot.entrant] : []));
+  const userEntrant = slots.find((entrant) =>
+    (entrant.participants ?? []).some((p) => p?.player?.id === playerId),
+  );
+  const seed = userEntrant?.seeds?.find((s) => typeof s?.seedNum === 'number')?.seedNum;
+  const placement = userEntrant?.standing?.placement;
+  const tournamentName = set.event?.tournament?.name?.trim();
+  const numEntrants = set.event?.numEntrants;
+  const completedAt = set.completedAt != null ? set.completedAt * 1000 : undefined;
+
+  const existing = accumulators.get(eventId);
+  if (!existing) {
+    accumulators.set(eventId, {
+      eventId,
+      eventName,
+      ...(tournamentName ? { tournamentName } : {}),
+      ...(numEntrants != null ? { numEntrants } : {}),
+      ...(seed != null ? { seed } : {}),
+      ...(placement != null ? { placement } : {}),
+      firstSetAt: completedAt ?? 0,
+      lastSetAt: completedAt ?? 0,
+      setsPlayed: 1,
+    });
+    return;
+  }
+
+  existing.setsPlayed += 1;
+  if (tournamentName) {
+    existing.tournamentName = tournamentName;
+  }
+  if (numEntrants != null) {
+    existing.numEntrants = numEntrants;
+  }
+  if (seed != null) {
+    existing.seed = seed;
+  }
+  if (placement != null) {
+    existing.placement = placement;
+  }
+  if (completedAt != null) {
+    existing.firstSetAt =
+      existing.firstSetAt === 0 ? completedAt : Math.min(existing.firstSetAt, completedAt);
+    existing.lastSetAt = Math.max(existing.lastSetAt, completedAt);
+  }
+}
+
+/**
  * Imports all of a player's SSBU tournament games as matches under
  * matches/{uid}. Idempotent: records use stable child keys derived from the
  * set id + game number, so re-syncs overwrite in place. Manual matches
  * (push-keyed) are never touched. Opponent tags are added to
- * opponents/{uid} exactly like manual entry does.
+ * opponents/{uid} exactly like manual entry does. Also accumulates a
+ * per-event tournament registry under tournamentEntries/{uid}, keyed by
+ * event id, idempotent the same way (re-syncs overwrite in place).
  */
 export async function importPlayerMatches(
   database: Database,
@@ -139,10 +235,12 @@ export async function importPlayerMatches(
     gamesUnmappedCharacter: 0,
     gamesMissingSelections: 0,
     gamesUnknownStage: 0,
+    dqSets: 0,
   };
 
   const matchUpdates: Record<string, MatchRecord> = {};
   const opponentUpdates: Record<string, true> = {};
+  const registry = new Map<number, RegistryAccumulator>();
 
   let page = 1;
   let totalPages = 1;
@@ -161,6 +259,7 @@ export async function importPlayerMatches(
         matchUpdates[game.key] = game.record;
         opponentUpdates[game.opponentTag] = true;
       }
+      accumulateRegistry(registry, set, playerId);
     }
     page += 1;
   }
@@ -168,6 +267,23 @@ export async function importPlayerMatches(
   if (Object.keys(matchUpdates).length > 0) {
     await database.ref(`matches/${uid}`).update(matchUpdates);
     await database.ref(`opponents/${uid}`).update(opponentUpdates);
+  }
+  if (registry.size > 0) {
+    const registryUpdates: Record<string, TournamentEntry> = {};
+    for (const [eventId, acc] of registry) {
+      registryUpdates[String(eventId)] = {
+        eventId: acc.eventId,
+        eventName: acc.eventName,
+        ...(acc.tournamentName ? { tournamentName: acc.tournamentName } : {}),
+        ...(acc.numEntrants != null ? { numEntrants: acc.numEntrants } : {}),
+        ...(acc.seed != null ? { seed: acc.seed } : {}),
+        ...(acc.placement != null ? { placement: acc.placement } : {}),
+        firstSetAt: acc.firstSetAt,
+        lastSetAt: acc.lastSetAt,
+        setsPlayed: acc.setsPlayed,
+      };
+    }
+    await database.ref(`tournamentEntries/${uid}`).update(registryUpdates);
   }
   await database.ref(`startggLinks/${uid}/lastSyncAt`).set(Date.now());
 
