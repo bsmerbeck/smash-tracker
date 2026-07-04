@@ -5,6 +5,8 @@ import {
   matchSchema,
   opponentAliasMapSchema,
   opponentListSchema,
+  opponentNoteMapSchema,
+  opponentNoteSchema,
   startggAuthorizeResponseSchema,
   startggStatusSchema,
   startggSyncSummarySchema,
@@ -15,6 +17,7 @@ import {
   type Match,
   type UpdateMatchInput,
   type UpsertOpponentAliasInput,
+  type UpsertOpponentNoteInput,
 } from '@smash-tracker/shared';
 import { getFirebaseAuth } from './firebase';
 
@@ -186,6 +189,21 @@ export const api = {
       /** DELETE /api/opponents/aliases/:alias */
       remove: (alias: string) =>
         apiRequest<void>(`/api/opponents/aliases/${encodeURIComponent(alias)}`, {
+          method: 'DELETE',
+        }),
+    },
+    notes: {
+      /** GET /api/opponent-notes */
+      list: () => apiRequestParsed('/api/opponent-notes', opponentNoteMapSchema),
+      /** PUT /api/opponent-notes/:name */
+      upsert: (name: string, input: UpsertOpponentNoteInput) =>
+        apiRequestParsed(`/api/opponent-notes/${encodeURIComponent(name)}`, opponentNoteSchema, {
+          method: 'PUT',
+          body: input,
+        }),
+      /** DELETE /api/opponent-notes/:name */
+      remove: (name: string) =>
+        apiRequest<void>(`/api/opponent-notes/${encodeURIComponent(name)}`, {
           method: 'DELETE',
         }),
     },
