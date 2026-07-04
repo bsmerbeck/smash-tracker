@@ -39,6 +39,14 @@ export interface TournamentSet {
   bracketRound: number | undefined;
   /** The opponent's fighter id(s) faced across this set's games, in first-seen order. */
   opponentFighterIds: number[];
+  /** The human opponent's free-text tag for this set, when any game carries one. */
+  opponentName: string | undefined;
+  /** The human opponent's seed in this event, when start.gg provided it (Phase B sync). */
+  opponentSeed: number | undefined;
+  /** The human opponent's final placement in this event, when start.gg provided it (Phase B sync). */
+  opponentPlacement: number | undefined;
+  /** The human opponent's start.gg profile slug, when start.gg provided it (Phase B sync). */
+  opponentUserSlug: string | undefined;
   /** Games in the set, ordered by game number. */
   games: SetGame[];
   /** Games won by the tracked user within this set. */
@@ -53,8 +61,9 @@ export interface TournamentSet {
  * Groups an entry's matches into sets (parsed from `externalId`), ordered
  * chronologically, plus a separate list of matches that don't belong to any
  * parseable set (manual entries, or imports predating the externalId
- * convention). `roundText`/`bracketRound` are read off the first game that
- * carries them (imports before the Phase A resync lack these fields
+ * convention). `roundText`/`bracketRound`/`opponentName`/`opponentSeed`/
+ * `opponentPlacement`/`opponentUserSlug` are read off the first game that
+ * carries them (imports before the relevant resync lack these fields
  * entirely — every consumer must tolerate `undefined`).
  */
 export interface SetTimeline {
@@ -100,6 +109,10 @@ export function buildSetTimeline(entryMatches: Match[]): SetTimeline {
       roundText: ordered.map((g) => g.match.roundText).find((r) => r != null),
       bracketRound: ordered.map((g) => g.match.bracketRound).find((r) => r != null),
       opponentFighterIds,
+      opponentName: ordered.map((g) => g.match.opponent).find((r) => r != null),
+      opponentSeed: ordered.map((g) => g.match.opponentSeed).find((r) => r != null),
+      opponentPlacement: ordered.map((g) => g.match.opponentPlacement).find((r) => r != null),
+      opponentUserSlug: ordered.map((g) => g.match.opponentUserSlug).find((r) => r != null),
       games: ordered,
       gamesWon,
       gamesLost,

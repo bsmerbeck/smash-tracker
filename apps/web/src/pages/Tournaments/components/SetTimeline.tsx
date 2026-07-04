@@ -1,3 +1,4 @@
+import { ExternalLink } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
@@ -6,6 +7,8 @@ import { stagesById } from '@/data/stages';
 import { stageAbbreviation } from '@/components/StageOption';
 import type { Match } from '@smash-tracker/shared';
 import type { TournamentSet } from '../lib/setTimeline';
+import { buildStartggUrl } from '../lib/startggLinks';
+import { formatOpponentEventContext } from '../lib/ordinal';
 import { cn } from '@/lib/utils';
 
 function GameChip({ match }: { match: Match }) {
@@ -52,6 +55,37 @@ function OpponentTags({ opponentFighterIds }: { opponentFighterIds: number[] }) 
   );
 }
 
+function OpponentLabel({ set }: { set: TournamentSet }) {
+  if (!set.opponentName) {
+    return null;
+  }
+  const profileUrl = buildStartggUrl(set.opponentUserSlug);
+  const context = formatOpponentEventContext({
+    seed: set.opponentSeed,
+    placement: set.opponentPlacement,
+  });
+
+  return (
+    <span className="flex items-center gap-1 text-sm text-muted-foreground">
+      <span className="inline-flex items-center gap-1">
+        vs {set.opponentName}
+        {profileUrl && (
+          <a
+            href={profileUrl}
+            target="_blank"
+            rel="noreferrer"
+            aria-label={`View ${set.opponentName} on start.gg`}
+            className="inline-flex text-muted-foreground hover:text-foreground"
+          >
+            <ExternalLink className="size-3.5" />
+          </a>
+        )}
+      </span>
+      {context && <span className="text-xs">({context})</span>}
+    </span>
+  );
+}
+
 function SetRow({ set }: { set: TournamentSet }) {
   const isLosersSide = set.bracketRound != null && set.bracketRound < 0;
 
@@ -65,6 +99,7 @@ function SetRow({ set }: { set: TournamentSet }) {
       <div className="flex flex-wrap items-center gap-3">
         <span className="min-w-32 text-sm font-medium">{set.roundText ?? `Set ${set.setId}`}</span>
         <OpponentTags opponentFighterIds={set.opponentFighterIds} />
+        <OpponentLabel set={set} />
         <div className="flex items-center gap-1">
           {set.games.map((g) => (
             <GameChip key={g.match.id} match={g.match} />
@@ -85,9 +120,12 @@ function SetRow({ set }: { set: TournamentSet }) {
  * Chronological set-by-set breakdown of an entry's matches: round label
  * (falling back to "Set {id}" when start.gg's `roundText` hasn't synced
  * yet), a losers-side tint when `bracketRound` is negative, opponent
- * character tag(s), per-game stage chips (color = win/loss, tooltip = stage
- * name + result), and the derived set score/result. Matches without a
- * parseable set id render in a separate list below.
+ * character tag(s), the opponent's human tag with an outbound start.gg
+ * profile link (when `opponentUserSlug` synced) and a compact
+ * "seed N · placed Nth" context label (when either is known), per-game stage
+ * chips (color = win/loss, tooltip = stage name + result), and the derived
+ * set score/result. Matches without a parseable set id render in a separate
+ * list below.
  */
 export function SetTimeline({
   sets,

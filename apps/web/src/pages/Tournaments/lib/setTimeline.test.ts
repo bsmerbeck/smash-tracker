@@ -118,4 +118,32 @@ describe('buildSetTimeline', () => {
     expect(sets).toEqual([]);
     expect(otherMatches).toEqual([]);
   });
+
+  it('reads opponentName/opponentSeed/opponentPlacement/opponentUserSlug off whichever game carries them', () => {
+    const withMeta = makeMatch({
+      id: 'a',
+      time: 100,
+      externalId: 'sgg:1:g1',
+      opponent: 'rival',
+      opponentSeed: 56,
+      opponentPlacement: 129,
+      opponentUserSlug: 'user/9fb774ae',
+    });
+    const withoutMeta = makeMatch({ id: 'b', time: 200, externalId: 'sgg:1:g2' });
+    const { sets } = buildSetTimeline([withoutMeta, withMeta]);
+
+    expect(sets[0]?.opponentName).toBe('rival');
+    expect(sets[0]?.opponentSeed).toBe(56);
+    expect(sets[0]?.opponentPlacement).toBe(129);
+    expect(sets[0]?.opponentUserSlug).toBe('user/9fb774ae');
+  });
+
+  it('leaves opponent seed/placement/userSlug undefined when no game in the set carries them', () => {
+    const games = [makeMatch({ id: 'a', time: 100, externalId: 'sgg:1:g1', opponent: undefined })];
+    const { sets } = buildSetTimeline(games);
+    expect(sets[0]?.opponentName).toBeUndefined();
+    expect(sets[0]?.opponentSeed).toBeUndefined();
+    expect(sets[0]?.opponentPlacement).toBeUndefined();
+    expect(sets[0]?.opponentUserSlug).toBeUndefined();
+  });
 });
