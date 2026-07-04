@@ -1,6 +1,9 @@
+import { ExternalLink } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import type { TournamentEntry } from '@smash-tracker/shared';
+import { buildEventStartggUrl } from '../lib/startggLinks';
 
 function formatDate(time: number): string {
   return new Date(time).toLocaleDateString('en-US', {
@@ -45,12 +48,16 @@ export function buildSeedPlacementBadge(entry: TournamentEntry): SeedPlacementBa
 /**
  * Tournament detail header: tournament name (falling back to the event name
  * when start.gg didn't provide one), the event name sub-line, date range,
- * entrant count, and the seed->placement badge when both are known.
+ * entrant count, the seed->placement badge when both are known, and an
+ * outbound "View on start.gg" button when `eventSlug`/`slug` has synced
+ * (falls back to the tournament slug when the event slug isn't available
+ * yet; hidden entirely when neither is present).
  */
 export function TournamentHeader({ entry }: { entry: TournamentEntry }) {
   const title = entry.tournamentName ?? entry.eventName;
   const showEventSubline = entry.tournamentName != null && entry.tournamentName !== entry.eventName;
   const badge = buildSeedPlacementBadge(entry);
+  const startggUrl = buildEventStartggUrl(entry);
 
   return (
     <Card>
@@ -70,6 +77,14 @@ export function TournamentHeader({ entry }: { entry: TournamentEntry }) {
             <Badge variant={badge.tone === 'secondary' ? 'secondary' : badge.tone}>
               {badge.label}
             </Badge>
+          )}
+          {startggUrl && (
+            <Button variant="outline" size="sm" asChild>
+              <a href={startggUrl} target="_blank" rel="noreferrer">
+                View on start.gg
+                <ExternalLink className="size-3.5" />
+              </a>
+            </Button>
           )}
         </div>
       </CardHeader>

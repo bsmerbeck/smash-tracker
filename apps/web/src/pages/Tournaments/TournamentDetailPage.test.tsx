@@ -141,6 +141,10 @@ describe('TournamentDetailPage', () => {
     expect(screen.getByText('Outperformed seed: 408 → 257')).toBeInTheDocument();
     expect(screen.getByText('512 entrants')).toBeInTheDocument();
 
+    // Event Results: resync hint when topStandings hasn't synced.
+    expect(screen.getByText('Event Results')).toBeInTheDocument();
+    expect(screen.getByText('Full results attach on your next start.gg sync.')).toBeInTheDocument();
+
     // Set timeline: the single set's round label and result.
     expect(screen.getByText('Set Timeline')).toBeInTheDocument();
     expect(screen.getAllByText('Winners Round 1').length).toBeGreaterThan(0);
@@ -169,5 +173,32 @@ describe('TournamentDetailPage', () => {
     expect(screen.queryByText(/Outperformed seed/)).not.toBeInTheDocument();
     expect(screen.queryByText(/Underperformed seed/)).not.toBeInTheDocument();
     expect(screen.queryByText(/Matched seed/)).not.toBeInTheDocument();
+  });
+
+  it('renders Event Results with a winner callout and start.gg deep link when synced', async () => {
+    listTournaments.mockResolvedValue([
+      makeEntry({
+        eventId: 42,
+        slug: 'tournament/the-box-juice-box-26',
+        eventSlug: 'tournament/the-box-juice-box-26/event/ultimate-singles',
+        topStandings: [
+          { placement: 1, name: 'Champ', gamerTag: 'Champ' },
+          { placement: 2, name: 'RunnerUp', gamerTag: 'RunnerUp' },
+        ],
+      }),
+    ]);
+    listMatches.mockResolvedValue([]);
+
+    renderPage('42');
+
+    await screen.findByText('Event Results');
+    expect(screen.getByText('Champ won this event')).toBeInTheDocument();
+    expect(screen.getByText('RunnerUp')).toBeInTheDocument();
+
+    const startggLink = screen.getByRole('link', { name: /View on start\.gg/ });
+    expect(startggLink).toHaveAttribute(
+      'href',
+      'https://start.gg/tournament/the-box-juice-box-26/event/ultimate-singles',
+    );
   });
 });
