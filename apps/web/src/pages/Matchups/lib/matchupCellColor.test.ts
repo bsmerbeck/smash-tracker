@@ -3,24 +3,24 @@ import {
   FULL_SAMPLE_SIZE,
   matchupCellBackground,
   sampleSizeToOpacity,
-  wilsonToRgb,
+  rateToRgb,
 } from './matchupCellColor';
 
-describe('wilsonToRgb', () => {
+describe('rateToRgb', () => {
   it('returns the destructive red endpoint at wilson=0', () => {
-    expect(wilsonToRgb(0)).toEqual([217, 62, 52]);
+    expect(rateToRgb(0)).toEqual([217, 62, 52]);
   });
 
   it('returns the emerald endpoint at wilson=1', () => {
-    expect(wilsonToRgb(1)).toEqual([16, 185, 129]);
+    expect(rateToRgb(1)).toEqual([16, 185, 129]);
   });
 
   it('returns the neutral grey midpoint at wilson=0.5', () => {
-    expect(wilsonToRgb(0.5)).toEqual([113, 113, 122]);
+    expect(rateToRgb(0.5)).toEqual([113, 113, 122]);
   });
 
   it('interpolates monotonically from red to grey in the lower half', () => {
-    const quarter = wilsonToRgb(0.25);
+    const quarter = rateToRgb(0.25);
     // Halfway between red and grey on each channel.
     expect(quarter[0]).toBeCloseTo((217 + 113) / 2, 0);
     expect(quarter[1]).toBeCloseTo((62 + 113) / 2, 0);
@@ -28,15 +28,15 @@ describe('wilsonToRgb', () => {
   });
 
   it('interpolates monotonically from grey to emerald in the upper half', () => {
-    const threeQuarter = wilsonToRgb(0.75);
+    const threeQuarter = rateToRgb(0.75);
     expect(threeQuarter[0]).toBeCloseTo((113 + 16) / 2, 0);
     expect(threeQuarter[1]).toBeCloseTo((113 + 185) / 2, 0);
     expect(threeQuarter[2]).toBeCloseTo((122 + 129) / 2, 0);
   });
 
   it('clamps out-of-range inputs to the valid endpoints', () => {
-    expect(wilsonToRgb(-1)).toEqual(wilsonToRgb(0));
-    expect(wilsonToRgb(2)).toEqual(wilsonToRgb(1));
+    expect(rateToRgb(-1)).toEqual(rateToRgb(0));
+    expect(rateToRgb(2)).toEqual(rateToRgb(1));
   });
 });
 
