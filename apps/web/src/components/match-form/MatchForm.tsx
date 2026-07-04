@@ -46,6 +46,27 @@ export const alphaSpriteList = [...SpriteList].sort((a, b) => a.name.localeCompa
 
 export { stageOptions };
 
+/**
+ * Legacy-style banner preview of the currently selected stage's artwork,
+ * shown under the stage select. Renders nothing for the no-selection
+ * sentinel or stages without art.
+ */
+function StageArtPreview({ stageId }: { stageId: number }) {
+  const stage = stageOptions.find((s) => s.id === stageId);
+  // The no-selection sentinel has no `url` property at all; art-less stages
+  // have an empty one — render nothing for either.
+  if (!stage || !('url' in stage) || !stage.url) {
+    return null;
+  }
+  return (
+    <img
+      src={stage.url}
+      alt={stage.name}
+      className="mt-2 aspect-video max-h-32 w-full rounded-md border object-cover"
+    />
+  );
+}
+
 const MATCH_TYPE_LABELS: Record<(typeof matchTypeValues)[number], string> = {
   none: 'None',
   quickplay: 'QuickPlay',
@@ -246,6 +267,7 @@ export function MatchFormFields({
                   </SelectGroup>
                 </SelectContent>
               </Select>
+              <StageArtPreview stageId={field.value} />
               <FormMessage />
             </FormItem>
           )}

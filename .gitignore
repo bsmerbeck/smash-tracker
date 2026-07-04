@@ -20,3 +20,4 @@ coverage
 # firebase
 .firebase/
 .firebaserc
+.claude/worktrees/
