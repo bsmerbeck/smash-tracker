@@ -61,6 +61,12 @@ export const matchRecordSchema = z.object({
   /** true = win, false = loss. */
   win: z.boolean(),
   /**
+   * The winner's remaining stock count when the match ended (0-3 for a
+   * standard 4-stock game). Optional — legacy data and matches where the
+   * player didn't track it omit this entirely.
+   */
+  stocksLeft: z.number().int().min(0).max(3).optional(),
+  /**
    * Where this match came from. Absent on manually-entered matches (all
    * legacy data); 'startgg' on records imported from start.gg tournament
    * sets. Set server-side by the sync service only — never accepted from
@@ -132,11 +138,32 @@ const opponentNameInputSchema = z
   });
 
 /**
+ * A trimmed, 1-80 char optional free-text name field (`eventName` /
+ * `tournamentName` on manual entry). An empty/whitespace-only string — the
+ * shape a blank, untouched form field submits as — transforms to
+ * `undefined` so the key is omitted from the parsed result entirely, rather
+ * than sending `''` through to RTDB (which rejects `undefined` values on
+ * write, but would happily persist a meaningless empty string).
+ */
+const optionalNameInputSchema = z
+  .string()
+  .trim()
+  .max(80, 'Limit 80 characters')
+  .optional()
+  .transform((value) => (value ? value : undefined))
+  .optional();
+
+/**
  * POST /api/matches body. `time` is set server-side (mirrors legacy's use of
  * ServerValue.TIMESTAMP) so it is not accepted from the client. `map` is
  * required on create to match legacy's always-present mapDetails object
  * (defaulting to `{ id: 0, name: "no selection" }` client-side); callers
  * that don't have a stage should send that same sentinel.
+ *
+ * `stocksLeft`/`eventName`/`tournamentName` are optional manual-entry
+ * additions (set wizard + tournament hint fields) — `source`/`externalId`
+ * remain server-set only (see `matchRecordSchema`) and are intentionally
+ * NOT accepted here.
  */
 export const createMatchInputSchema = z.object({
   fighter_id: z.number().int().positive(),
@@ -146,6 +173,9 @@ export const createMatchInputSchema = z.object({
   notes: z.string().default(''),
   matchType: matchTypeSchema,
   win: z.boolean(),
+  stocksLeft: z.number().int().min(0).max(3).optional(),
+  eventName: optionalNameInputSchema,
+  tournamentName: optionalNameInputSchema,
 });
 export type CreateMatchInput = z.infer<typeof createMatchInputSchema>;
 

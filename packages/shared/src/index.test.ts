@@ -11,6 +11,7 @@ import {
   opponentListSchema,
   opponentMapSchema,
   stageSchema,
+  updateMatchInputSchema,
   userProfileSchema,
   userSchema,
 } from './index.js';
@@ -133,6 +134,45 @@ describe('matchRecordSchema', () => {
       matchRecordSchema.parse({ fighter_id: 1, opponent_id: 8, time: 1700000000000 }),
     ).toThrow();
   });
+
+  it('accepts stocksLeft within 0-3', () => {
+    for (const stocksLeft of [0, 1, 2, 3]) {
+      const record = {
+        fighter_id: 1,
+        opponent_id: 8,
+        time: 1700000000000,
+        win: true,
+        stocksLeft,
+      };
+      expect(matchRecordSchema.parse(record)).toEqual(record);
+    }
+  });
+
+  it('rejects stocksLeft outside 0-3', () => {
+    for (const stocksLeft of [-1, 4]) {
+      expect(() =>
+        matchRecordSchema.parse({
+          fighter_id: 1,
+          opponent_id: 8,
+          time: 1700000000000,
+          win: true,
+          stocksLeft,
+        }),
+      ).toThrow();
+    }
+  });
+
+  it('rejects a non-integer stocksLeft', () => {
+    expect(() =>
+      matchRecordSchema.parse({
+        fighter_id: 1,
+        opponent_id: 8,
+        time: 1700000000000,
+        win: true,
+        stocksLeft: 1.5,
+      }),
+    ).toThrow();
+  });
 });
 
 describe('matchSchema', () => {
@@ -211,6 +251,99 @@ describe('createMatchInputSchema', () => {
       win: true,
     };
     expect(createMatchInputSchema.parse(input).opponent).toBe('team mate');
+  });
+
+  const baseInput = {
+    fighter_id: 1,
+    opponent_id: 8,
+    map: { id: 0, name: 'no selection' },
+    opponent: 'someplayer',
+    matchType: 'none',
+    win: true,
+  } as const;
+
+  it('accepts stocksLeft within 0-3', () => {
+    for (const stocksLeft of [0, 1, 2, 3]) {
+      expect(createMatchInputSchema.parse({ ...baseInput, stocksLeft }).stocksLeft).toBe(
+        stocksLeft,
+      );
+    }
+  });
+
+  it('rejects stocksLeft outside 0-3', () => {
+    for (const stocksLeft of [-1, 4]) {
+      expect(() => createMatchInputSchema.parse({ ...baseInput, stocksLeft })).toThrow();
+    }
+  });
+
+  it('omits stocksLeft when not provided', () => {
+    const parsed = createMatchInputSchema.parse(baseInput);
+    expect(parsed.stocksLeft).toBeUndefined();
+  });
+
+  it('trims eventName and tournamentName', () => {
+    const parsed = createMatchInputSchema.parse({
+      ...baseInput,
+      eventName: '  Ultimate Singles  ',
+      tournamentName: '  The Big House 9  ',
+    });
+    expect(parsed.eventName).toBe('Ultimate Singles');
+    expect(parsed.tournamentName).toBe('The Big House 9');
+  });
+
+  it('transforms empty/whitespace-only eventName/tournamentName to undefined, never an empty string', () => {
+    const parsed = createMatchInputSchema.parse({
+      ...baseInput,
+      eventName: '',
+      tournamentName: '   ',
+    });
+    // Zod keeps parsed object keys present with an `undefined` value rather
+    // than deleting them; `JSON.stringify` (what actually goes over the
+    // wire / into RTDB's .set()) drops `undefined`-valued keys, so this is
+    // equivalent to omission for every real caller.
+    expect(parsed.eventName).toBeUndefined();
+    expect(parsed.tournamentName).toBeUndefined();
+    expect(JSON.parse(JSON.stringify(parsed))).not.toHaveProperty('eventName');
+    expect(JSON.parse(JSON.stringify(parsed))).not.toHaveProperty('tournamentName');
+  });
+
+  it('omits eventName/tournamentName when not provided at all', () => {
+    const parsed = createMatchInputSchema.parse(baseInput);
+    expect(parsed.eventName).toBeUndefined();
+    expect(parsed.tournamentName).toBeUndefined();
+  });
+
+  it('rejects eventName/tournamentName over 80 characters', () => {
+    const tooLong = 'a'.repeat(81);
+    expect(() => createMatchInputSchema.parse({ ...baseInput, eventName: tooLong })).toThrow();
+    expect(() => createMatchInputSchema.parse({ ...baseInput, tournamentName: tooLong })).toThrow();
+  });
+
+  it('accepts eventName/tournamentName at exactly 80 characters', () => {
+    const max = 'a'.repeat(80);
+    const parsed = createMatchInputSchema.parse({
+      ...baseInput,
+      eventName: max,
+      tournamentName: max,
+    });
+    expect(parsed.eventName).toBe(max);
+    expect(parsed.tournamentName).toBe(max);
+  });
+
+  it('does not accept source/externalId from client input', () => {
+    const parsed = createMatchInputSchema.parse({
+      ...baseInput,
+      source: 'startgg',
+      externalId: 'sgg:123:g1',
+    });
+    expect((parsed as Record<string, unknown>).source).toBeUndefined();
+    expect((parsed as Record<string, unknown>).externalId).toBeUndefined();
+  });
+});
+
+describe('updateMatchInputSchema', () => {
+  it('is the same shape as createMatchInputSchema (full-overwrite semantics)', () => {
+    expect(updateMatchInputSchema).toBe(createMatchInputSchema);
   });
 });
 
