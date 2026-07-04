@@ -77,6 +77,18 @@ export const matchRecordSchema = z.object({
   eventName: z.string().optional(),
   /** Tournament name for imported matches (e.g. "The Big House 9"). Server-set. */
   tournamentName: z.string().optional(),
+  /**
+   * start.gg's human-readable round label for the set this game belonged to
+   * (e.g. "Losers Round 2", "Winners Semi-Final"). Server-set, imported
+   * matches only.
+   */
+  roundText: z.string().optional(),
+  /**
+   * start.gg's `set.round` — a signed integer where negative values mean the
+   * losers side of a double-elimination bracket (e.g. -2 = Losers Round 2).
+   * Server-set, imported matches only.
+   */
+  bracketRound: z.number().int().optional(),
 });
 export type MatchRecord = z.infer<typeof matchRecordSchema>;
 

@@ -7,6 +7,7 @@ import {
   startggAuthorizeResponseSchema,
   startggStatusSchema,
   startggSyncSummarySchema,
+  tournamentEntryListSchema,
   userProfileSchema,
   type CreateMatchInput,
   type FighterSelectionInput,
@@ -184,6 +185,10 @@ export const api = {
       }),
     /** DELETE /api/integrations/startgg/link */
     unlink: () => apiRequest<void>('/api/integrations/startgg/link', { method: 'DELETE' }),
+  },
+  tournaments: {
+    /** GET /api/tournaments */
+    list: () => apiRequestParsed('/api/tournaments', tournamentEntryListSchema),
   },
 };
 
