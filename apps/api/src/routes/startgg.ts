@@ -122,6 +122,7 @@ const startggRoutes: FastifyPluginAsyncZod<StartggRoutesOptions> = async (app, o
         link.playerId,
         config.apiToken,
         fetchImpl,
+        request.log,
       );
     },
   );

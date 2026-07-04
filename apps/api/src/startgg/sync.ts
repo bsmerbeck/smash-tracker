@@ -1,11 +1,23 @@
 import type { Database } from 'firebase-admin/database';
 import type { MatchRecord, StartggSyncSummary, TournamentEntry } from '@smash-tracker/shared';
-import { fetchPlayerSetsPage, SSBU_VIDEOGAME_ID, type StartggSet } from './client.js';
+import {
+  fetchEventDetails,
+  fetchPlayerSetsPage,
+  SSBU_VIDEOGAME_ID,
+  type StartggSet,
+} from './client.js';
 import { startggCharacterToFighterId } from './characterMap.js';
 import { resolveStageByName } from './stageMap.js';
 
 /** Hard cap on pages per sync — 40 pages x 10 sets stays well inside the 80 req/60s rate limit. */
 const MAX_PAGES = 40;
+
+/**
+ * Hard cap on per-event detail fetches (slug + standings) per sync. Combined
+ * with `MAX_PAGES` sets pages, worst case is 40 + 20 = 60 requests — still
+ * comfortably under the 80 req/60s start.gg rate limit.
+ */
+const MAX_EVENT_DETAIL_FETCHES = 20;
 
 // eslint-disable-next-line no-control-regex -- control chars are exactly what RTDB keys forbid
 const RTDB_ILLEGAL = /[.#$[\]/\u0000-\u001f]/g;
@@ -73,6 +85,12 @@ export function gamesFromSet(
   const tournamentName = set.event?.tournament?.name?.trim();
   const roundText = set.fullRoundText?.trim();
   const bracketRound = typeof set.round === 'number' ? set.round : undefined;
+  // Per-event facts about the human opponent, duplicated per game by design
+  // (RTDB read simplicity beats normalization here).
+  const opponentSeed = opponentEntrant.seeds?.find((s) => typeof s?.seedNum === 'number')?.seedNum;
+  const opponentPlacement = opponentEntrant.standing?.placement ?? undefined;
+  const opponentUserSlug = (opponentEntrant.participants ?? []).find((p) => p?.user?.slug != null)
+    ?.user?.slug;
   const results: ImportableGame[] = [];
 
   games.forEach((game, index) => {
@@ -122,6 +140,9 @@ export function gamesFromSet(
         ...(tournamentName ? { tournamentName } : {}),
         ...(roundText ? { roundText } : {}),
         ...(bracketRound !== undefined ? { bracketRound } : {}),
+        ...(opponentSeed != null ? { opponentSeed } : {}),
+        ...(opponentPlacement != null ? { opponentPlacement } : {}),
+        ...(opponentUserSlug ? { opponentUserSlug } : {}),
       },
     });
   });
@@ -220,6 +241,12 @@ export function accumulateRegistry(
  * opponents/{uid} exactly like manual entry does. Also accumulates a
  * per-event tournament registry under tournamentEntries/{uid}, keyed by
  * event id, idempotent the same way (re-syncs overwrite in place).
+ *
+ * After pagination, the most-recently-active events (capped at
+ * `MAX_EVENT_DETAIL_FETCHES`) are enriched with their start.gg slug and top
+ * standings via one `fetchEventDetails` call each. Enrichment failures are
+ * logged (via the optional `logger`) and skipped per-event — they never
+ * fail the sync as a whole.
  */
 export async function importPlayerMatches(
   database: Database,
@@ -227,6 +254,7 @@ export async function importPlayerMatches(
   playerId: number,
   serverToken: string,
   fetchImpl: typeof fetch = fetch,
+  logger?: { warn: (obj: unknown, msg?: string) => void },
 ): Promise<StartggSyncSummary> {
   const summary: StartggSyncSummary = {
     sets: 0,
@@ -283,6 +311,37 @@ export async function importPlayerMatches(
         setsPlayed: acc.setsPlayed,
       };
     }
+
+    // Enrich with slug/standings, most-recently-active events first, capped
+    // at MAX_EVENT_DETAIL_FETCHES to respect the rate limit. A per-event
+    // fetch/parse failure is logged and skipped — it must never fail the
+    // whole sync, since the registry write above already succeeded.
+    const eventIdsByRecency = [...registry.values()]
+      .sort((a, b) => b.lastSetAt - a.lastSetAt)
+      .slice(0, MAX_EVENT_DETAIL_FETCHES)
+      .map((acc) => acc.eventId);
+
+    for (const eventId of eventIdsByRecency) {
+      try {
+        const details = await fetchEventDetails(serverToken, eventId, fetchImpl);
+        const entry = registryUpdates[String(eventId)];
+        if (!entry) {
+          continue;
+        }
+        registryUpdates[String(eventId)] = {
+          ...entry,
+          ...(details.slug ? { eventSlug: details.slug } : {}),
+          ...(details.tournamentSlug ? { slug: details.tournamentSlug } : {}),
+          ...(details.topStandings.length > 0 ? { topStandings: details.topStandings } : {}),
+        };
+      } catch (err) {
+        logger?.warn(
+          { err, eventId },
+          'start.gg event detail enrichment failed; skipping for this event',
+        );
+      }
+    }
+
     await database.ref(`tournamentEntries/${uid}`).update(registryUpdates);
   }
   await database.ref(`startggLinks/${uid}/lastSyncAt`).set(Date.now());
