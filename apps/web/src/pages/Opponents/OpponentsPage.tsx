@@ -1,8 +1,9 @@
 import { useMemo, useState } from 'react';
 import { Link } from 'react-router';
 import { Button } from '@/components/ui/button';
-import { useFilteredMatches } from '@/hooks/useFilteredMatches';
+import { getOpponentSources, useFilteredMatches } from '@/hooks/useFilteredMatches';
 import { useTournamentEntries } from '@/hooks/useTournamentEntries';
+import { useOpponentAliases } from '@/hooks/useOpponentAliases';
 import { FilteredEmptyNotice } from '@/components/FilteredEmptyNotice';
 import { getOpponentProfile, getOpponentRecords } from '@/lib/stats';
 import { OpponentList } from './components/OpponentList';
@@ -12,6 +13,8 @@ import { ScoutingStagesCard } from './components/ScoutingStagesCard';
 import { ScoutingTrendChart } from './components/ScoutingTrendChart';
 import { RecentEncounters } from './components/RecentEncounters';
 import { TournamentHistory } from './components/TournamentHistory';
+import { MergeOpponentDialog } from './components/MergeOpponentDialog';
+import { MergedNamesCard } from './components/MergedNamesCard';
 import { groupTournamentBlocks, getEncounterContext } from './tournamentHistory';
 
 /**
@@ -22,8 +25,10 @@ import { groupTournamentBlocks, getEncounterContext } from './tournamentHistory'
 export function OpponentsPage() {
   const { matches, allMatches, isLoading, filterActive } = useFilteredMatches();
   const { data: tournamentEntries } = useTournamentEntries();
+  const { data: aliasMap } = useOpponentAliases();
 
   const opponentRecords = useMemo(() => getOpponentRecords(matches), [matches]);
+  const sources = useMemo(() => getOpponentSources(matches), [matches]);
 
   const mostPlayed = useMemo(() => {
     return [...opponentRecords].sort((a, b) => b.total - a.total)[0]?.opponent ?? null;
@@ -35,6 +40,10 @@ export function OpponentsPage() {
   // derived during render like Dashboard's fighter selection, no effect
   // needed to seed state from data that just loaded.
   const [selectedOpponent, setSelectedOpponent] = useState<string | null>(null);
+
+  // The opponent name currently open in the "Merge into..." dialog, or null
+  // when the dialog is closed.
+  const [mergeCandidate, setMergeCandidate] = useState<string | null>(null);
 
   const selected =
     selectedOpponent && opponentRecords.some((o) => o.opponent === selectedOpponent)
@@ -56,6 +65,17 @@ export function OpponentsPage() {
   const tournamentBlocks = useMemo(() => groupTournamentBlocks(opponentMatches), [opponentMatches]);
 
   const encounterContext = useMemo(() => getEncounterContext(tournamentBlocks), [tournamentBlocks]);
+
+  // Alias names that currently resolve to the selected opponent (for the
+  // "Merged names" management card).
+  const mergedAliasesForSelected = useMemo(() => {
+    if (!selected || !aliasMap) {
+      return [];
+    }
+    return Object.entries(aliasMap)
+      .filter(([, canonical]) => canonical === selected)
+      .map(([alias]) => alias);
+  }, [aliasMap, selected]);
 
   if (isLoading) {
     return <div className="text-muted-foreground">Loading scouting reports...</div>;
@@ -103,11 +123,20 @@ export function OpponentsPage() {
       {filterActive && matches.length === 0 && <FilteredEmptyNotice />}
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-[320px_1fr]">
-        <OpponentList matches={matches} selected={selected} onSelect={setSelectedOpponent} />
+        <OpponentList
+          matches={matches}
+          selected={selected}
+          onSelect={setSelectedOpponent}
+          onRequestMerge={setMergeCandidate}
+        />
 
         {profile ? (
           <div key={profile.opponent} className="flex flex-col gap-4">
-            <ScoutingHeader profile={profile} encounterContext={encounterContext} />
+            <ScoutingHeader
+              profile={profile}
+              encounterContext={encounterContext}
+              source={sources.get(profile.opponent) ?? 'manual'}
+            />
             <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
               <WhatTheyPlayTable byTheirFighter={profile.byTheirFighter} />
               <ScoutingStagesCard byStage={profile.byStage} />
@@ -118,6 +147,7 @@ export function OpponentsPage() {
               blocks={tournamentBlocks}
               tournamentEntries={tournamentEntries ?? []}
             />
+            <MergedNamesCard canonical={profile.opponent} aliases={mergedAliasesForSelected} />
           </div>
         ) : (
           <div className="flex items-center justify-center rounded-lg border border-dashed p-16 text-center text-sm text-muted-foreground">
@@ -125,6 +155,23 @@ export function OpponentsPage() {
           </div>
         )}
       </div>
+
+      {mergeCandidate && (
+        <MergeOpponentDialog
+          open={mergeCandidate != null}
+          onOpenChange={(open) => {
+            if (!open) {
+              setMergeCandidate(null);
+            }
+          }}
+          opponent={mergeCandidate}
+          candidates={opponentRecords
+            .map((o) => o.opponent)
+            .filter((name) => name !== mergeCandidate)}
+          sources={sources}
+          onMerged={() => setMergeCandidate(null)}
+        />
+      )}
     </div>
   );
 }

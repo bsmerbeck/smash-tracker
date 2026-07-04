@@ -1,27 +1,42 @@
 import { useMemo, useState } from 'react';
-import { Search } from 'lucide-react';
+import { MoreVertical, Search } from 'lucide-react';
 import type { Match } from '@smash-tracker/shared';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
+import { Button } from '@/components/ui/button';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { getOpponentRecords, type OpponentRecord } from '@/lib/stats';
+import { getOpponentSources, type OpponentSource } from '@/hooks/useFilteredMatches';
+import { OpponentSourceBadge } from './OpponentSourceBadge';
 
 export interface OpponentListProps {
   matches: Match[];
   selected: string | null;
   onSelect: (opponent: string) => void;
+  /** Opens the "Merge into..." dialog for the given opponent name. */
+  onRequestMerge: (opponent: string) => void;
 }
 
 /**
  * Left-column opponent list for the Scouting page: every human opponent
  * faced (`getOpponentRecords`), ranked by games played descending, with a
- * substring search filter. Selecting a row calls `onSelect`.
+ * substring search filter. Selecting a row calls `onSelect`. Each row shows
+ * a source badge (start.gg-verified / manual / mixed) and a kebab menu with
+ * a "Merge into..." action.
  */
-export function OpponentList({ matches, selected, onSelect }: OpponentListProps) {
+export function OpponentList({ matches, selected, onSelect, onRequestMerge }: OpponentListProps) {
   const [query, setQuery] = useState('');
 
   const opponents = useMemo(() => {
     return [...getOpponentRecords(matches)].sort((a, b) => b.total - a.total);
   }, [matches]);
+
+  const sources = useMemo(() => getOpponentSources(matches), [matches]);
 
   const filtered = useMemo(() => {
     const needle = query.trim().toLowerCase();
@@ -63,7 +78,9 @@ export function OpponentList({ matches, selected, onSelect }: OpponentListProps)
                 key={opponent.opponent}
                 opponent={opponent}
                 selected={opponent.opponent === selected}
+                source={sources.get(opponent.opponent) ?? 'manual'}
                 onSelect={onSelect}
+                onRequestMerge={onRequestMerge}
               />
             ))}
           </ul>
@@ -76,25 +93,30 @@ export function OpponentList({ matches, selected, onSelect }: OpponentListProps)
 function OpponentRow({
   opponent,
   selected,
+  source,
   onSelect,
+  onRequestMerge,
 }: {
   opponent: OpponentRecord;
   selected: boolean;
+  source: OpponentSource;
   onSelect: (opponent: string) => void;
+  onRequestMerge: (opponent: string) => void;
 }) {
   return (
-    <li>
+    <li
+      className={`flex items-center gap-1 rounded-md border px-1 transition-colors ${
+        selected ? 'border-primary bg-primary/10' : 'border-transparent hover:bg-accent'
+      }`}
+    >
       <button
         type="button"
         onClick={() => onSelect(opponent.opponent)}
         aria-pressed={selected}
-        className={`flex w-full items-center justify-between gap-2 rounded-md border px-3 py-2 text-left text-sm transition-colors ${
-          selected
-            ? 'border-primary bg-primary/10'
-            : 'border-transparent hover:bg-accent hover:text-accent-foreground'
-        }`}
+        className="flex min-w-0 flex-1 items-center gap-2 py-2 text-left text-sm"
       >
         <span className="min-w-0 flex-1 truncate font-medium">{opponent.opponent}</span>
+        <OpponentSourceBadge source={source} />
         <span className="text-muted-foreground">
           {opponent.wins}-{opponent.losses}
         </span>
@@ -103,6 +125,23 @@ function OpponentRow({
           {opponent.total} game{opponent.total === 1 ? '' : 's'}
         </span>
       </button>
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon-sm"
+            aria-label={`Actions for ${opponent.opponent}`}
+          >
+            <MoreVertical className="size-4" />
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end">
+          <DropdownMenuItem onSelect={() => onRequestMerge(opponent.opponent)}>
+            Merge into...
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
     </li>
   );
 }

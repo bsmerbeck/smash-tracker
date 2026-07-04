@@ -33,6 +33,9 @@ vi.mock('@/lib/firebase', async () => {
 const listMatches = vi.fn();
 const listTournaments = vi.fn();
 const upsertMe = vi.fn().mockResolvedValue({ uid: 'test-uid', email: 'test@example.com' });
+const listAliases = vi.fn();
+const upsertAlias = vi.fn();
+const removeAlias = vi.fn();
 
 vi.mock('@/lib/api', () => ({
   api: {
@@ -44,6 +47,13 @@ vi.mock('@/lib/api', () => ({
     },
     tournaments: {
       list: (...args: unknown[]) => listTournaments(...args),
+    },
+    opponents: {
+      aliases: {
+        list: (...args: unknown[]) => listAliases(...args),
+        upsert: (...args: unknown[]) => upsertAlias(...args),
+        remove: (...args: unknown[]) => removeAlias(...args),
+      },
     },
   },
 }));
@@ -94,6 +104,9 @@ describe('OpponentsPage', () => {
     window.localStorage.clear();
     upsertMe.mockResolvedValue({ uid: 'test-uid', email: 'test@example.com' });
     listTournaments.mockResolvedValue([]);
+    listAliases.mockResolvedValue({});
+    upsertAlias.mockResolvedValue({});
+    removeAlias.mockResolvedValue(undefined);
     setMockUser(makeMockUser());
   });
 
@@ -199,7 +212,9 @@ describe('OpponentsPage', () => {
       renderOpponents();
 
       await screen.findByText('2 opponents faced');
-      await user.click(screen.getByRole('button', { name: /zeta/ }));
+      // Scoped to the row's selection button (has aria-pressed) — the row's
+      // kebab menu button ("Actions for zeta") also matches /zeta/ by name.
+      await user.click(screen.getByRole('button', { name: /zeta/, pressed: false }));
 
       // The scouting report card title switches to "zeta".
       await waitFor(() => {
@@ -445,6 +460,150 @@ describe('OpponentsPage', () => {
       expect(
         await screen.findByText('Met at 2 tournaments between Jan 2021 and Mar 2021'),
       ).toBeInTheDocument();
+    });
+  });
+
+  describe('source badges', () => {
+    it('shows a start.gg-verified badge for an opponent whose matches are all imported', async () => {
+      listMatches.mockResolvedValue([
+        makeMatch({ id: 'm1', time: 1, opponent: 'rival', win: true, source: 'startgg' }),
+      ]);
+
+      renderOpponents();
+
+      await waitFor(() => expect(screen.getByText('Last 10 (newest first)')).toBeInTheDocument());
+      expect(screen.getAllByLabelText('start.gg-verified').length).toBeGreaterThan(0);
+    });
+
+    it('shows a manual badge for an opponent whose matches are all manual', async () => {
+      listMatches.mockResolvedValue([
+        makeMatch({ id: 'm1', time: 1, opponent: 'rival', win: true }),
+      ]);
+
+      renderOpponents();
+
+      await waitFor(() => expect(screen.getByText('Last 10 (newest first)')).toBeInTheDocument());
+      expect(screen.getAllByLabelText('manually entered').length).toBeGreaterThan(0);
+    });
+
+    it('shows a mixed badge for an opponent with both manual and imported matches', async () => {
+      listMatches.mockResolvedValue([
+        makeMatch({ id: 'm1', time: 1, opponent: 'rival', win: true, source: 'startgg' }),
+        makeMatch({ id: 'm2', time: 2, opponent: 'rival', win: false }),
+      ]);
+
+      renderOpponents();
+
+      await waitFor(() => expect(screen.getByText('Last 10 (newest first)')).toBeInTheDocument());
+      expect(screen.getAllByLabelText('mixed sources').length).toBeGreaterThan(0);
+    });
+  });
+
+  describe('merge flow', () => {
+    beforeEach(() => {
+      listMatches.mockResolvedValue([
+        makeMatch({ id: 'm1', time: 1, opponent: 'rival', win: true }),
+        makeMatch({ id: 'm2', time: 2, opponent: 'rival', win: true }),
+        makeMatch({ id: 'm3', time: 3, opponent: 'zeta', win: true }),
+      ]);
+    });
+
+    it('opens the merge dialog, selects a target, and calls PUT with the resolved alias', async () => {
+      const user = userEvent.setup();
+      renderOpponents();
+
+      await screen.findByText('2 opponents faced');
+
+      await user.click(screen.getByRole('button', { name: 'Actions for zeta' }));
+      await user.click(screen.getByRole('menuitem', { name: 'Merge into...' }));
+
+      expect(await screen.findByText('Merge "zeta" into...')).toBeInTheDocument();
+
+      await user.click(screen.getByRole('option', { name: 'rival' }));
+      await user.click(screen.getByRole('button', { name: 'Merge' }));
+
+      await waitFor(() => expect(upsertAlias).toHaveBeenCalledWith('zeta', { canonical: 'rival' }));
+    });
+
+    it('warns and defaults to the reversed direction when merging a start.gg-verified name into a manual one', async () => {
+      listMatches.mockResolvedValue([
+        makeMatch({ id: 'm1', time: 1, opponent: 'rival', win: true, source: 'startgg' }),
+        makeMatch({ id: 'm2', time: 2, opponent: 'zeta', win: true }),
+      ]);
+      const user = userEvent.setup();
+      renderOpponents();
+
+      await screen.findByText('2 opponents faced');
+
+      await user.click(screen.getByRole('button', { name: 'Actions for rival' }));
+      await user.click(screen.getByRole('menuitem', { name: 'Merge into...' }));
+
+      await user.click(screen.getByRole('option', { name: 'zeta' }));
+
+      expect(
+        await screen.findByText(/start\.gg-verified and "zeta" is manual-only/),
+      ).toBeInTheDocument();
+
+      await user.click(screen.getByRole('button', { name: 'Merge' }));
+
+      // Default direction reverses so the start.gg tag stays canonical:
+      // "zeta" becomes the alias, "rival" stays canonical.
+      await waitFor(() => expect(upsertAlias).toHaveBeenCalledWith('zeta', { canonical: 'rival' }));
+    });
+
+    it('allows overriding the recommended direction via the warning link', async () => {
+      listMatches.mockResolvedValue([
+        makeMatch({ id: 'm1', time: 1, opponent: 'rival', win: true, source: 'startgg' }),
+        makeMatch({ id: 'm2', time: 2, opponent: 'zeta', win: true }),
+      ]);
+      const user = userEvent.setup();
+      renderOpponents();
+
+      await screen.findByText('2 opponents faced');
+
+      await user.click(screen.getByRole('button', { name: 'Actions for rival' }));
+      await user.click(screen.getByRole('menuitem', { name: 'Merge into...' }));
+      await user.click(screen.getByRole('option', { name: 'zeta' }));
+
+      await screen.findByText(/start\.gg-verified and "zeta" is manual-only/);
+      await user.click(screen.getByRole('button', { name: 'Merge "rival" into "zeta" anyway' }));
+      await user.click(screen.getByRole('button', { name: 'Merge' }));
+
+      await waitFor(() => expect(upsertAlias).toHaveBeenCalledWith('rival', { canonical: 'zeta' }));
+    });
+  });
+
+  describe('merged names card + un-merge', () => {
+    it('shows merged aliases pointing at the selected opponent and un-merges on click', async () => {
+      listAliases.mockResolvedValue({ rivl: 'rival' });
+      listMatches.mockResolvedValue([
+        makeMatch({ id: 'm1', time: 1, opponent: 'rival', win: true }),
+      ]);
+      const user = userEvent.setup();
+      renderOpponents();
+
+      await waitFor(() => expect(screen.getByText('Last 10 (newest first)')).toBeInTheDocument());
+
+      const mergedCard = (await screen.findByText('Merged names')).closest(
+        '[data-slot="card"]',
+      ) as HTMLElement;
+      expect(within(mergedCard).getByText('rivl')).toBeInTheDocument();
+
+      await user.click(within(mergedCard).getByRole('button', { name: 'Un-merge' }));
+
+      await waitFor(() => expect(removeAlias).toHaveBeenCalledWith('rivl'));
+    });
+
+    it('does not show the merged names card when no aliases point at the selected opponent', async () => {
+      listAliases.mockResolvedValue({});
+      listMatches.mockResolvedValue([
+        makeMatch({ id: 'm1', time: 1, opponent: 'rival', win: true }),
+      ]);
+
+      renderOpponents();
+
+      await waitFor(() => expect(screen.getByText('Last 10 (newest first)')).toBeInTheDocument());
+      expect(screen.queryByText('Merged names')).not.toBeInTheDocument();
     });
   });
 });

@@ -1,12 +1,14 @@
 import type { Database } from 'firebase-admin/database';
 import {
   matchRecordSchema,
+  opponentAliasMapSchema,
   opponentMapSchema,
   userSchema,
   type CreateMatchInput,
   type FighterSelectionInput,
   type Match,
   type MatchRecord,
+  type OpponentAliasMap,
   type UpdateMatchInput,
   type User,
 } from '@smash-tracker/shared';
@@ -15,6 +17,14 @@ export class NotFoundError extends Error {
   constructor(message: string) {
     super(message);
     this.name = 'NotFoundError';
+  }
+}
+
+/** Thrown for a 400-worthy alias write: self-merge (alias === canonical after resolution). */
+export class ValidationError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'ValidationError';
   }
 }
 
@@ -157,5 +167,63 @@ export class RtdbService {
 
   private async addOpponent(uid: string, name: string): Promise<void> {
     await this.database.ref(`opponents/${uid}/${name}`).set(true);
+  }
+
+  // ---- opponentAliases/{uid}/{alias} -------------------------------------
+
+  async listOpponentAliases(uid: string): Promise<OpponentAliasMap> {
+    const snapshot = await this.database.ref(`opponentAliases/${uid}`).get();
+    if (!snapshot.exists()) {
+      return {};
+    }
+    return opponentAliasMapSchema.parse(snapshot.val());
+  }
+
+  /**
+   * Writes `alias -> canonical`. To keep the map flat (no chains, so every
+   * value is always itself a terminal/non-aliased name), the requested
+   * `canonical` is first resolved through the existing map — if `canonical`
+   * is itself currently an alias for some other name, the alias is pointed
+   * at that final name instead. After resolution, `alias === canonical`
+   * (a self-merge) is rejected with `ValidationError` (maps to 400).
+   *
+   * Note this does NOT re-point other aliases that already targeted `alias`
+   * itself (i.e. if `alias` was previously used as someone's canonical
+   * value) — per the locked design, resolution happens at write time on the
+   * new edge only; a name being merged away while other aliases still point
+   * at it is expected to be rare and is surfaced via the "Merged names" UI
+   * card so the user can review before merging further.
+   */
+  async setOpponentAlias(uid: string, alias: string, canonical: string): Promise<OpponentAliasMap> {
+    const map = await this.listOpponentAliases(uid);
+    const resolved = this.resolveCanonical(map, canonical);
+
+    if (alias === resolved) {
+      throw new ValidationError('An opponent cannot be merged into itself');
+    }
+
+    const next = { ...map, [alias]: resolved };
+    await this.database.ref(`opponentAliases/${uid}/${alias}`).set(resolved);
+    return next;
+  }
+
+  async deleteOpponentAlias(uid: string, alias: string): Promise<void> {
+    const ref = this.database.ref(`opponentAliases/${uid}/${alias}`);
+    const existing = await ref.get();
+    if (!existing.exists()) {
+      throw new NotFoundError(`Alias ${alias} not found`);
+    }
+    await ref.remove();
+  }
+
+  /** Follows `map` from `name` until reaching a name that isn't itself an alias key. */
+  private resolveCanonical(map: OpponentAliasMap, name: string): string {
+    const seen = new Set<string>();
+    let current = name;
+    while (Object.prototype.hasOwnProperty.call(map, current) && !seen.has(current)) {
+      seen.add(current);
+      current = map[current]!;
+    }
+    return current;
   }
 }

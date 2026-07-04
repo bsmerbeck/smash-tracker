@@ -13,6 +13,7 @@ import authPlugin from './plugins/auth.js';
 import usersRoutes from './routes/users.js';
 import matchesRoutes from './routes/matches.js';
 import opponentsRoutes from './routes/opponents.js';
+import opponentAliasesRoutes from './routes/opponentAliases.js';
 import startggRoutes from './routes/startgg.js';
 import tournamentsRoutes from './routes/tournaments.js';
 import { NotFoundError } from './services/rtdb.js';
@@ -112,6 +113,7 @@ export function buildApp(options: BuildAppOptions) {
       await api.register(usersRoutes);
       await api.register(matchesRoutes);
       await api.register(opponentsRoutes);
+      await api.register(opponentAliasesRoutes);
       await api.register(tournamentsRoutes);
       await api.register(startggRoutes, {
         config: options.startgg ?? null,
