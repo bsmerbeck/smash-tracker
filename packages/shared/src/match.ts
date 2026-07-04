@@ -95,6 +95,25 @@ export const matchRecordSchema = z.object({
    * Server-set, imported matches only.
    */
   bracketRound: z.number().int().optional(),
+  /**
+   * The human opponent's seed in the event this match belonged to, when
+   * start.gg provides it. Per-event fact about the opponent, intentionally
+   * duplicated across every game/match row from that event (RTDB read
+   * simplicity beats normalization here). Server-set, imported matches only.
+   */
+  opponentSeed: z.number().int().positive().optional(),
+  /**
+   * The human opponent's final placement in the event this match belonged
+   * to, when start.gg provides it. Same per-event duplication rationale as
+   * `opponentSeed`. Server-set, imported matches only.
+   */
+  opponentPlacement: z.number().int().positive().optional(),
+  /**
+   * The human opponent's start.gg profile slug (e.g. "user/9fb774ae"), when
+   * start.gg provides it. Same per-event duplication rationale as
+   * `opponentSeed`. Server-set, imported matches only.
+   */
+  opponentUserSlug: z.string().optional(),
 });
 export type MatchRecord = z.infer<typeof matchRecordSchema>;
 

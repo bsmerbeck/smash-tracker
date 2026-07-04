@@ -55,6 +55,24 @@ export const startggAuthorizeResponseSchema = z.object({
 });
 
 /**
+ * One entrant's placement in `topStandings` (see `tournamentEntrySchema`).
+ * Mirrors the shape of `event.standings.nodes` from start.gg's API — not
+ * necessarily the tracked user; this is the public leaderboard context for
+ * the event, capped to a handful of top finishers.
+ */
+export const eventStandingSchema = z.object({
+  /** The entrant's placement in the event (1 = winner). */
+  placement: z.number().int().positive(),
+  /** Entrant display name as start.gg renders it (may include a sponsor prefix). */
+  name: z.string().min(1),
+  /** The player's gamer tag, when start.gg provides it. */
+  gamerTag: z.string().optional(),
+  /** The player's start.gg profile slug (e.g. "user/9fb774ae"), when start.gg provides it. */
+  userSlug: z.string().optional(),
+});
+export type EventStanding = z.infer<typeof eventStandingSchema>;
+
+/**
  * `tournamentEntries/{uid}/{eventId}` — one entry per start.gg event the
  * user has processed sets for, accumulated during sync. Server-only write;
  * exposed read-only via GET /api/tournaments. Optional fields are omitted
@@ -80,6 +98,12 @@ export const tournamentEntrySchema = z.object({
   lastSetAt: z.number().int().nonnegative(),
   /** Count of non-DQ sets processed for this event. */
   setsPlayed: z.number().int().nonnegative(),
+  /** Tournament slug (e.g. "tournament/the-box-juice-box-26"), fetched post-sync. */
+  slug: z.string().optional(),
+  /** Event slug (e.g. "tournament/the-box-juice-box-26/event/ultimate-singles"), fetched post-sync. */
+  eventSlug: z.string().optional(),
+  /** Top finishers of the event (capped, ~8), fetched post-sync. */
+  topStandings: z.array(eventStandingSchema).max(8).optional(),
 });
 export type TournamentEntry = z.infer<typeof tournamentEntrySchema>;
 
