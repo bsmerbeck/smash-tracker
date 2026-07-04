@@ -205,6 +205,57 @@ describe('MatchDataPage', () => {
     });
   });
 
+  it('prefills stocksLeft/eventName/tournamentName in the edit dialog and round-trips them on save', async () => {
+    const user = userEvent.setup();
+    getFighters.mockResolvedValue({ primary: [mario.id], secondary: [] });
+    listMatches.mockResolvedValue([
+      makeMatch({
+        id: 'm1',
+        fighter_id: mario.id,
+        opponent_id: luigi.id,
+        opponent: 'rival',
+        notes: 'gg',
+        matchType: 'quickplay',
+        win: true,
+        map: { id: 0, name: 'no selection' },
+        stocksLeft: 2,
+        eventName: 'Ultimate Singles',
+        tournamentName: 'The Big House 9',
+      }),
+    ]);
+
+    renderMatchData();
+
+    await waitFor(() => expect(screen.getByLabelText('Edit match')).toBeInTheDocument());
+    await user.click(screen.getByLabelText('Edit match'));
+
+    const dialog = await screen.findByRole('dialog');
+    expect(
+      within(dialog).getByRole('combobox', { name: 'Stocks Left (winner)' }),
+    ).toHaveTextContent('2');
+
+    // Tournament section is collapsed by default but prefilled underneath.
+    await user.click(within(dialog).getByRole('button', { name: 'Tournament (optional)' }));
+    expect(within(dialog).getByPlaceholderText('e.g. The Big House 9')).toHaveValue(
+      'The Big House 9',
+    );
+    expect(within(dialog).getByPlaceholderText('e.g. Ultimate Singles')).toHaveValue(
+      'Ultimate Singles',
+    );
+
+    await user.click(within(dialog).getByRole('button', { name: 'Save' }));
+
+    await waitFor(() => expect(updateMatch).toHaveBeenCalledTimes(1));
+    expect(updateMatch).toHaveBeenCalledWith(
+      'm1',
+      expect.objectContaining({
+        stocksLeft: 2,
+        eventName: 'Ultimate Singles',
+        tournamentName: 'The Big House 9',
+      }),
+    );
+  });
+
   it('shows a clear-filters notice (not the no-matches hero) when the global filter empties an existing match set', async () => {
     const user = userEvent.setup();
     window.localStorage.setItem(

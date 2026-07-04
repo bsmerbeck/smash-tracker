@@ -101,6 +101,133 @@ describe('POST /api/matches', () => {
     expect(response.statusCode).toBe(400);
     expect(response.json()).toMatchObject({ statusCode: 400 });
   });
+
+  it('accepts and stores stocksLeft, eventName, and tournamentName', async () => {
+    const { app, database } = buildTestApp();
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/matches',
+      headers: authHeader(),
+      payload: {
+        ...validCreateInput,
+        stocksLeft: 2,
+        eventName: 'Ultimate Singles',
+        tournamentName: 'The Big House 9',
+      },
+    });
+
+    expect(response.statusCode).toBe(201);
+    expect(response.json()).toMatchObject({
+      stocksLeft: 2,
+      eventName: 'Ultimate Singles',
+      tournamentName: 'The Big House 9',
+    });
+
+    const dump = database.dump() as Record<string, unknown>;
+    const matches = dump.matches as Record<string, Record<string, unknown>>;
+    const stored = Object.values(matches[TEST_UID]!)[0]!;
+    expect(stored).toMatchObject({
+      stocksLeft: 2,
+      eventName: 'Ultimate Singles',
+      tournamentName: 'The Big House 9',
+    });
+  });
+
+  it('omits stocksLeft/eventName/tournamentName from the stored record when not provided', async () => {
+    const { app, database } = buildTestApp();
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/matches',
+      headers: authHeader(),
+      payload: validCreateInput,
+    });
+
+    expect(response.statusCode).toBe(201);
+    const body = response.json();
+    expect(body).not.toHaveProperty('stocksLeft');
+    expect(body).not.toHaveProperty('eventName');
+    expect(body).not.toHaveProperty('tournamentName');
+
+    const dump = database.dump() as Record<string, unknown>;
+    const matches = dump.matches as Record<string, Record<string, unknown>>;
+    const stored = Object.values(matches[TEST_UID]!)[0]!;
+    expect(stored).not.toHaveProperty('stocksLeft');
+    expect(stored).not.toHaveProperty('eventName');
+    expect(stored).not.toHaveProperty('tournamentName');
+  });
+
+  it('omits stocksLeft/eventName/tournamentName when submitted as empty/whitespace strings', async () => {
+    const { app } = buildTestApp();
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/matches',
+      headers: authHeader(),
+      payload: { ...validCreateInput, eventName: '', tournamentName: '   ' },
+    });
+
+    expect(response.statusCode).toBe(201);
+    const body = response.json();
+    expect(body).not.toHaveProperty('eventName');
+    expect(body).not.toHaveProperty('tournamentName');
+  });
+
+  it('returns 400 when stocksLeft is out of range', async () => {
+    const { app } = buildTestApp();
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/matches',
+      headers: authHeader(),
+      payload: { ...validCreateInput, stocksLeft: 4 },
+    });
+
+    expect(response.statusCode).toBe(400);
+  });
+
+  it('returns 400 when stocksLeft is negative', async () => {
+    const { app } = buildTestApp();
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/matches',
+      headers: authHeader(),
+      payload: { ...validCreateInput, stocksLeft: -1 },
+    });
+
+    expect(response.statusCode).toBe(400);
+  });
+
+  it('returns 400 when eventName exceeds 80 characters', async () => {
+    const { app } = buildTestApp();
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/matches',
+      headers: authHeader(),
+      payload: { ...validCreateInput, eventName: 'a'.repeat(81) },
+    });
+
+    expect(response.statusCode).toBe(400);
+  });
+
+  it('rejects source/externalId from client input (server-only fields)', async () => {
+    const { app } = buildTestApp();
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/matches',
+      headers: authHeader(),
+      payload: { ...validCreateInput, source: 'startgg', externalId: 'sgg:123:g1' },
+    });
+
+    expect(response.statusCode).toBe(201);
+    const body = response.json();
+    expect(body).not.toHaveProperty('source');
+    expect(body).not.toHaveProperty('externalId');
+  });
 });
 
 describe('PATCH /api/matches/:id', () => {
@@ -152,6 +279,87 @@ describe('PATCH /api/matches/:id', () => {
       url: '/api/matches/existingKey',
       headers: authHeader(),
       payload: { ...validCreateInput, win: 'not-a-boolean' },
+    });
+
+    expect(response.statusCode).toBe(400);
+  });
+
+  it('accepts and stores stocksLeft, eventName, and tournamentName', async () => {
+    const { app, database } = buildTestApp();
+    database.seed(`matches/${TEST_UID}/existingKey`, {
+      fighter_id: 1,
+      opponent_id: 8,
+      time: 1700000000000,
+      win: false,
+    });
+
+    const response = await app.inject({
+      method: 'PATCH',
+      url: '/api/matches/existingKey',
+      headers: authHeader(),
+      payload: {
+        ...validCreateInput,
+        stocksLeft: 3,
+        eventName: 'Ultimate Singles',
+        tournamentName: 'The Big House 9',
+      },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({
+      stocksLeft: 3,
+      eventName: 'Ultimate Singles',
+      tournamentName: 'The Big House 9',
+    });
+  });
+
+  it('omits stocksLeft/eventName/tournamentName from the stored record when not provided', async () => {
+    const { app, database } = buildTestApp();
+    database.seed(`matches/${TEST_UID}/existingKey`, {
+      fighter_id: 1,
+      opponent_id: 8,
+      time: 1700000000000,
+      win: false,
+      stocksLeft: 2,
+      eventName: 'Stale Event',
+      tournamentName: 'Stale Tournament',
+    });
+
+    const response = await app.inject({
+      method: 'PATCH',
+      url: '/api/matches/existingKey',
+      headers: authHeader(),
+      payload: validCreateInput,
+    });
+
+    expect(response.statusCode).toBe(200);
+    const body = response.json();
+    expect(body).not.toHaveProperty('stocksLeft');
+    expect(body).not.toHaveProperty('eventName');
+    expect(body).not.toHaveProperty('tournamentName');
+
+    const dump = database.dump() as Record<string, unknown>;
+    const matches = dump.matches as Record<string, Record<string, unknown>>;
+    const stored = matches[TEST_UID]!.existingKey!;
+    expect(stored).not.toHaveProperty('stocksLeft');
+    expect(stored).not.toHaveProperty('eventName');
+    expect(stored).not.toHaveProperty('tournamentName');
+  });
+
+  it('returns 400 when stocksLeft is out of range', async () => {
+    const { app, database } = buildTestApp();
+    database.seed(`matches/${TEST_UID}/existingKey`, {
+      fighter_id: 1,
+      opponent_id: 8,
+      time: 1700000000000,
+      win: false,
+    });
+
+    const response = await app.inject({
+      method: 'PATCH',
+      url: '/api/matches/existingKey',
+      headers: authHeader(),
+      payload: { ...validCreateInput, stocksLeft: 4 },
     });
 
     expect(response.statusCode).toBe(400);

@@ -86,6 +86,12 @@ export class RtdbService {
       notes: input.notes,
       matchType: input.matchType,
       win: input.win,
+      // RTDB rejects `undefined` values outright, so optional fields must
+      // only be present on the record when the input actually provided
+      // them (conditional spread) rather than being set to `undefined`.
+      ...(input.stocksLeft !== undefined ? { stocksLeft: input.stocksLeft } : {}),
+      ...(input.eventName !== undefined ? { eventName: input.eventName } : {}),
+      ...(input.tournamentName !== undefined ? { tournamentName: input.tournamentName } : {}),
     };
 
     const ref = this.database.ref(`matches/${uid}`).push();
@@ -116,6 +122,11 @@ export class RtdbService {
       notes: input.notes,
       matchType: input.matchType,
       win: input.win,
+      // See createMatch — RTDB rejects `undefined` values, so these are
+      // only included when the input actually set them.
+      ...(input.stocksLeft !== undefined ? { stocksLeft: input.stocksLeft } : {}),
+      ...(input.eventName !== undefined ? { eventName: input.eventName } : {}),
+      ...(input.tournamentName !== undefined ? { tournamentName: input.tournamentName } : {}),
     };
 
     await ref.set(record);
