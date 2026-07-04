@@ -7,13 +7,15 @@ import {
   getWinLossRecord,
   type WinLossRecord,
 } from '@/lib/stats';
+import { computeRatingHistory } from '@/lib/glicko';
 import { filterBySource } from '@/hooks/useFilteredMatches';
 
 /**
  * Account-wide hero row: overall record, recent form, casual-vs-competitive
- * delta, and online/offline split. Unlike the fighter-scoped widgets below
- * it on the dashboard, every card here is computed across ALL of the user's
- * fighters (docs/analytics-vision.md Phase C).
+ * delta, online/offline split, and (session-based) Glicko-2 rating. Unlike
+ * the fighter-scoped widgets below it on the dashboard, every card here is
+ * computed across ALL of the user's fighters (docs/analytics-vision.md Phase
+ * C).
  */
 export function HeroStats({
   matches,
@@ -30,6 +32,7 @@ export function HeroStats({
       <FormCard matches={matches} />
       <CasualVsCompetitiveCard matches={timeFilteredMatches} />
       <OnlineOfflineCard matches={matches} />
+      <RatingCard matches={matches} />
     </div>
   );
 }
@@ -172,5 +175,85 @@ function OnlineOfflineCard({ matches }: { matches: Match[] }) {
         )}
       </CardContent>
     </Card>
+  );
+}
+
+/** Minimum total games (across the filtered set) before the rating card shows a number instead of the locked state. */
+const RATING_UNLOCK_THRESHOLD = 5;
+
+/**
+ * Session-based Glicko-2 rating card. Computed over the same filtered
+ * `matches` the rest of the hero row uses, so it stays consistent with the
+ * active source/time-range filters — cheap to recompute client-side per
+ * render given typical match volumes.
+ */
+function RatingCard({ matches }: { matches: Match[] }) {
+  const hasEnoughGames = matches.length >= RATING_UNLOCK_THRESHOLD;
+  const { periods, current } = computeRatingHistory(matches);
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Rating</CardTitle>
+      </CardHeader>
+      <CardContent className="flex flex-col gap-1">
+        {hasEnoughGames && current ? (
+          <>
+            <div className="flex items-end gap-2">
+              <span className="text-3xl font-bold">
+                {current.rating} <span className="text-lg font-normal">&plusmn;{current.rd}</span>
+              </span>
+              <RatingTrendArrow periods={periods} />
+            </div>
+            <p className="text-sm text-muted-foreground">
+              {matches.length} game{matches.length === 1 ? '' : 's'} sampled
+            </p>
+            <p className="text-xs text-muted-foreground">Glicko-2, session-based · unofficial</p>
+          </>
+        ) : (
+          <>
+            <p className="text-sm text-muted-foreground">
+              Rating unlocks at {RATING_UNLOCK_THRESHOLD} games
+            </p>
+            <p className="text-xs text-muted-foreground">
+              {matches.length}/{RATING_UNLOCK_THRESHOLD} games so far
+            </p>
+          </>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+/**
+ * Small trend indicator comparing the two most recent rating periods
+ * (sessions). Hidden when there's no prior period to compare against (a
+ * single session played so far).
+ */
+function RatingTrendArrow({ periods }: { periods: { rating: number }[] }) {
+  if (periods.length < 2) {
+    return null;
+  }
+  const latest = periods[periods.length - 1];
+  const previous = periods[periods.length - 2];
+  if (!latest || !previous) {
+    return null;
+  }
+  const delta = latest.rating - previous.rating;
+  if (delta === 0) {
+    return (
+      <span aria-label="Rating unchanged from last session" className="text-muted-foreground">
+        &rarr;
+      </span>
+    );
+  }
+  const isUp = delta > 0;
+  return (
+    <span
+      aria-label={isUp ? 'Rating up from last session' : 'Rating down from last session'}
+      className={isUp ? 'text-emerald-500' : 'text-destructive'}
+    >
+      {isUp ? '▲' : '▼'} {Math.abs(delta)}
+    </span>
   );
 }
