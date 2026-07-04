@@ -101,3 +101,28 @@
     @apply bg-background text-foreground;
   }
 }
+
+/*
+ * V6-W1c: "Export H2H" evidence packet print view. `.print-packet-root` is
+ * rendered by <PrintableEvidencePacket> (hidden on-screen) alongside the
+ * normal scouting report; triggering window.print() should show ONLY the
+ * packet, not the app chrome (topbar/sidebar/report cards) behind it. Kept
+ * to a single small `@media print` block scoped by a unique class rather
+ * than threading print-visibility through the shared layout, so this stays
+ * additive and low-conflict with concurrent page work.
+ */
+@media print {
+  body * {
+    visibility: hidden;
+  }
+  .print-packet-root,
+  .print-packet-root * {
+    visibility: visible;
+  }
+  .print-packet-root {
+    position: absolute;
+    inset: 0;
+    background: white;
+    color: black;
+  }
+}
