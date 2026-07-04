@@ -2,12 +2,15 @@ import type { z } from 'zod';
 import {
   errorResponseSchema,
   fighterSelectionSchema,
+  generateReportRequestSchema,
   matchSchema,
   opponentAliasMapSchema,
   opponentListSchema,
   opponentNoteMapSchema,
   opponentNoteSchema,
+  reportsConfigSchema,
   scoutReportDataSchema,
+  scoutReportRecordSchema,
   startggAuthorizeResponseSchema,
   startggStatusSchema,
   startggSyncSummarySchema,
@@ -232,6 +235,21 @@ export const api = {
     /** POST /api/scout — scout ANY start.gg player by URL, slug, or numeric id. */
     lookup: (input: ScoutQuery) =>
       apiRequestParsed('/api/scout', scoutReportDataSchema, { method: 'POST', body: input }),
+  },
+  reports: {
+    /** GET /api/reports/config — whether the signed-in user can generate AI reports. */
+    config: () => apiRequestParsed('/api/reports/config', reportsConfigSchema),
+    /** POST /api/reports — generate (and store) an AI scouting report. */
+    generate: (query: string) =>
+      apiRequestParsed('/api/reports', scoutReportRecordSchema, {
+        method: 'POST',
+        body: generateReportRequestSchema.parse({ query }),
+      }),
+    /** GET /api/reports — the signed-in user's past AI reports, newest first. */
+    list: () => apiRequestParsed('/api/reports', scoutReportRecordSchema.array()),
+    /** GET /api/reports/:id — a single stored AI report. */
+    get: (id: string) =>
+      apiRequestParsed(`/api/reports/${encodeURIComponent(id)}`, scoutReportRecordSchema),
   },
 };
 

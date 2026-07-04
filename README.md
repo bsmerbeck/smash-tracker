@@ -214,6 +214,25 @@ gcloud run deploy smash-tracker-api \
 The service name (`smash-tracker-api`) and region (`us-central1`) must match `firebase.json`'s
 `hosting.rewrites` entry for `/api/**`.
 
+**AI scouting reports (optional)**
+
+V7-B's AI-generated pre-bracket scouting reports (`/api/reports`) are powered by the Claude API and
+gated behind two env vars, both required together:
+
+- `ANTHROPIC_API_KEY` — a Claude API key.
+- `REPORTS_ALLOWED_UIDS` — a comma-separated list of Firebase uids allowed to generate reports (this
+  is a paid, per-token feature, so it's opt-in per uid even once a key is configured).
+
+```sh
+gcloud run deploy smash-tracker-api \
+  --source . \
+  --region us-central1 \
+  --set-env-vars FIREBASE_DATABASE_URL=https://smash-tracker-f97b7-default-rtdb.firebaseio.com,ANTHROPIC_API_KEY=sk-ant-...,REPORTS_ALLOWED_UIDS=uid1,uid2
+```
+
+Until both vars are set, every `/api/reports*` route answers `503` and the web app's "Generate AI
+report" button never renders — the rest of the app (including `/api/scout`) is unaffected.
+
 **2. Configure `apps/web/.env.production`**
 
 ```sh
