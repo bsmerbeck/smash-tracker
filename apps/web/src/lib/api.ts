@@ -7,6 +7,7 @@ import {
   opponentListSchema,
   opponentNoteMapSchema,
   opponentNoteSchema,
+  scoutReportDataSchema,
   startggAuthorizeResponseSchema,
   startggStatusSchema,
   startggSyncSummarySchema,
@@ -15,6 +16,7 @@ import {
   type CreateMatchInput,
   type FighterSelectionInput,
   type Match,
+  type ScoutQuery,
   type UpdateMatchInput,
   type UpsertOpponentAliasInput,
   type UpsertOpponentNoteInput,
@@ -225,6 +227,11 @@ export const api = {
   tournaments: {
     /** GET /api/tournaments */
     list: () => apiRequestParsed('/api/tournaments', tournamentEntryListSchema),
+  },
+  scout: {
+    /** POST /api/scout — scout ANY start.gg player by URL, slug, or numeric id. */
+    lookup: (input: ScoutQuery) =>
+      apiRequestParsed('/api/scout', scoutReportDataSchema, { method: 'POST', body: input }),
   },
 };
 

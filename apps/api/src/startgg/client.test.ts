@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { fetchEventDetails, StartggApiError } from './client.js';
+import {
+  fetchEventDetails,
+  resolvePlayerById,
+  resolvePlayerBySlug,
+  StartggApiError,
+} from './client.js';
 
 function gqlResponse(data: unknown) {
   return new Response(JSON.stringify({ data }));
@@ -81,5 +86,89 @@ describe('fetchEventDetails', () => {
     await expect(
       fetchEventDetails('server-token', 1, fetchMock as typeof fetch),
     ).rejects.toBeInstanceOf(StartggApiError);
+  });
+});
+
+describe('resolvePlayerBySlug', () => {
+  it('resolves a user slug to a player identity (verified via probe against api.start.gg)', async () => {
+    const fetchMock = async (_url: unknown, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body)) as { variables: Record<string, unknown> };
+      expect(body.variables).toEqual({ slug: 'user/07dc2239' });
+      return new Response(
+        JSON.stringify({
+          data: {
+            user: {
+              id: 1111624,
+              slug: 'user/07dc2239',
+              player: { id: 1802316, gamerTag: 'Pandem1c' },
+            },
+          },
+        }),
+      );
+    };
+
+    const player = await resolvePlayerBySlug(
+      'server-token',
+      'user/07dc2239',
+      fetchMock as typeof fetch,
+    );
+
+    expect(player).toEqual({ id: 1802316, gamerTag: 'Pandem1c', userSlug: 'user/07dc2239' });
+  });
+
+  it('returns null when the slug does not resolve', async () => {
+    const fetchMock = async () => new Response(JSON.stringify({ data: { user: null } }));
+    const player = await resolvePlayerBySlug(
+      'server-token',
+      'user/ghost',
+      fetchMock as typeof fetch,
+    );
+    expect(player).toBeNull();
+  });
+
+  it('returns null when the user has no linked player', async () => {
+    const fetchMock = async () =>
+      new Response(JSON.stringify({ data: { user: { id: 1, slug: 'user/x', player: null } } }));
+    const player = await resolvePlayerBySlug('server-token', 'user/x', fetchMock as typeof fetch);
+    expect(player).toBeNull();
+  });
+});
+
+describe('resolvePlayerById', () => {
+  it('resolves a numeric player id to an identity (verified via probe against api.start.gg)', async () => {
+    const fetchMock = async (_url: unknown, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body)) as { variables: Record<string, unknown> };
+      expect(body.variables).toEqual({ id: 1802316 });
+      return new Response(
+        JSON.stringify({
+          data: {
+            player: {
+              id: 1802316,
+              gamerTag: 'Pandem1c',
+              user: { id: 1111624, slug: 'user/07dc2239' },
+            },
+          },
+        }),
+      );
+    };
+
+    const player = await resolvePlayerById('server-token', 1802316, fetchMock as typeof fetch);
+
+    expect(player).toEqual({ id: 1802316, gamerTag: 'Pandem1c', userSlug: 'user/07dc2239' });
+  });
+
+  it('omits userSlug when the player has no linked user', async () => {
+    const fetchMock = async () =>
+      new Response(
+        JSON.stringify({ data: { player: { id: 1802316, gamerTag: 'Pandem1c', user: null } } }),
+      );
+    const player = await resolvePlayerById('server-token', 1802316, fetchMock as typeof fetch);
+    expect(player).toEqual({ id: 1802316, gamerTag: 'Pandem1c' });
+  });
+
+  it('returns null when the id does not resolve', async () => {
+    const fetchMock = async () => new Response(JSON.stringify({ data: { player: null } }));
+    const player = await resolvePlayerById('server-token', 999999999, fetchMock as typeof fetch);
+    expect(player).toBeNull();
   });
 });
