@@ -113,16 +113,21 @@ function OpponentRow({
         type="button"
         onClick={() => onSelect(opponent.opponent)}
         aria-pressed={selected}
-        className="flex min-w-0 flex-1 items-center gap-2 py-2 text-left text-sm"
+        className="flex min-w-0 flex-1 flex-col gap-0.5 py-2 text-left text-sm"
       >
-        <span className="min-w-0 flex-1 truncate font-medium">{opponent.opponent}</span>
-        <OpponentSourceBadge source={source} />
-        <span className="text-muted-foreground">
-          {opponent.wins}-{opponent.losses}
+        {/* Name owns the full first line so badges/stats can never squeeze it out. */}
+        <span className="min-w-0 truncate font-medium" title={opponent.opponent}>
+          {opponent.opponent}
         </span>
-        <span className="w-10 text-right font-medium">{opponent.winRate}%</span>
-        <span className="w-14 text-right text-xs text-muted-foreground">
-          {opponent.total} game{opponent.total === 1 ? '' : 's'}
+        <span className="flex items-center gap-2">
+          <OpponentSourceBadge source={source} />
+          <span className="text-muted-foreground">
+            {opponent.wins}-{opponent.losses}
+          </span>
+          <span className="font-medium">{opponent.winRate}%</span>
+          <span className="text-xs text-muted-foreground">
+            {opponent.total} game{opponent.total === 1 ? '' : 's'}
+          </span>
         </span>
       </button>
       <DropdownMenu>
