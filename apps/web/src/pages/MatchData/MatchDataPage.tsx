@@ -8,7 +8,7 @@ import { useFilteredMatches } from '@/hooks/useFilteredMatches';
 import { getFighterById } from '@/data/sprites';
 import { FilteredEmptyNotice } from '@/components/FilteredEmptyNotice';
 import { MatchTable } from './components/MatchTable';
-import { FighterPieChart } from './components/FighterPieChart';
+import { RosterUsage } from './components/RosterUsage';
 import { StageBreakdown } from './components/StageBreakdown';
 
 /** Ports legacy/src/screens/MatchData; the source/time filter is now global (see the topbar's AnalyticsFilterControls), not a per-page control. */
@@ -75,8 +75,8 @@ export function MatchDataPage() {
       </Card>
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+        <RosterUsage matches={matches} fighterSprites={fighterSprites} />
         <StageBreakdown matches={matches} usageMatches={allMatches} />
-        <FighterPieChart matches={matches} fighterSprites={fighterSprites} />
       </div>
     </div>
   );
