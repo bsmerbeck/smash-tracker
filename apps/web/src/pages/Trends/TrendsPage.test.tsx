@@ -30,6 +30,7 @@ vi.mock('@/lib/firebase', async () => {
 });
 
 const listMatches = vi.fn();
+const listTournaments = vi.fn();
 const upsertMe = vi.fn().mockResolvedValue({ uid: 'test-uid', email: 'test@example.com' });
 
 vi.mock('@/lib/api', () => ({
@@ -39,6 +40,9 @@ vi.mock('@/lib/api', () => ({
     },
     matches: {
       list: (...args: unknown[]) => listMatches(...args),
+    },
+    tournaments: {
+      list: (...args: unknown[]) => listTournaments(...args),
     },
   },
 }));
@@ -82,6 +86,7 @@ describe('TrendsPage', () => {
     vi.clearAllMocks();
     window.localStorage.clear();
     upsertMe.mockResolvedValue({ uid: 'test-uid', email: 'test@example.com' });
+    listTournaments.mockResolvedValue([]);
     setMockUser(makeMockUser());
   });
 
@@ -116,13 +121,14 @@ describe('TrendsPage', () => {
     expect(screen.getByText('Match-Type Mix Over Time')).toBeInTheDocument();
   });
 
-  it('shows the resync hint in the tournaments section when no match has a tournamentName', async () => {
+  it('shows the resync hint in the tournaments section when there are no tournament entries yet', async () => {
     listMatches.mockResolvedValue([makeMatch({ id: 'm1', win: true })]);
+    listTournaments.mockResolvedValue([]);
 
     renderTrends();
 
     expect(
-      await screen.findByText(/Tournament names attach on your next start\.gg sync/),
+      await screen.findByText(/Tournament entries attach on your next start\.gg sync/),
     ).toBeInTheDocument();
   });
 
