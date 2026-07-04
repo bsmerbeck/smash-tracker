@@ -46,6 +46,13 @@ const envSchema = z.object({
   STARTGG_STATE_SECRET: z.string().optional(),
   /** SPA origin that OAuth callbacks redirect users back to. */
   WEB_BASE_URL: z.string().default('http://localhost:5173'),
+
+  // ---- V7-B: AI scouting reports (all optional — when incomplete, the
+  // /api/reports routes answer 503) ----------------------------------------
+  /** Claude API key used to generate scouting reports. */
+  ANTHROPIC_API_KEY: z.string().optional(),
+  /** Comma-separated list of Firebase uids allowed to generate AI reports. */
+  REPORTS_ALLOWED_UIDS: z.string().optional(),
 });
 
 export type Env = z.infer<typeof envSchema>;
@@ -102,5 +109,36 @@ export function getStartggConfig(env: Env): StartggConfig | null {
     apiToken: env.STARTGG_API_TOKEN,
     stateSecret: env.STARTGG_STATE_SECRET,
     webBaseUrl: env.WEB_BASE_URL,
+  };
+}
+
+export interface ReportsConfig {
+  anthropicApiKey: string;
+  /** Firebase uids allowed to generate AI scouting reports. */
+  allowedUids: Set<string>;
+}
+
+/**
+ * Assembles the AI-reports config when fully present (a key AND a non-empty
+ * allowlist), else null (the /api/reports routes then respond 503, same
+ * all-or-nothing pattern as `getStartggConfig`) — this is a paid, per-token
+ * feature, so it stays opt-in per deployment even once `ANTHROPIC_API_KEY` is
+ * set.
+ */
+export function getReportsConfig(env: Env): ReportsConfig | null {
+  if (!env.ANTHROPIC_API_KEY || !env.REPORTS_ALLOWED_UIDS) {
+    return null;
+  }
+  const allowedUids = new Set(
+    env.REPORTS_ALLOWED_UIDS.split(',')
+      .map((uid) => uid.trim())
+      .filter((uid) => uid.length > 0),
+  );
+  if (allowedUids.size === 0) {
+    return null;
+  }
+  return {
+    anthropicApiKey: env.ANTHROPIC_API_KEY,
+    allowedUids,
   };
 }

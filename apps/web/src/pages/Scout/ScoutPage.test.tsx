@@ -29,6 +29,9 @@ vi.mock('@/lib/firebase', async () => {
 const scoutLookup = vi.fn();
 const matchesList = vi.fn().mockResolvedValue([]);
 const upsertMe = vi.fn().mockResolvedValue({ uid: 'test-uid', email: 'test@example.com' });
+const reportsConfig = vi.fn().mockResolvedValue({ enabled: false });
+const reportsGenerate = vi.fn();
+const reportsList = vi.fn().mockResolvedValue([]);
 
 vi.mock('@/lib/api', () => {
   class MockApiError extends Error {
@@ -44,6 +47,11 @@ vi.mock('@/lib/api', () => {
       scout: { lookup: (...args: unknown[]) => scoutLookup(...args) },
       matches: { list: (...args: unknown[]) => matchesList(...args) },
       users: { upsertMe: (...args: unknown[]) => upsertMe(...args) },
+      reports: {
+        config: (...args: unknown[]) => reportsConfig(...args),
+        generate: (...args: unknown[]) => reportsGenerate(...args),
+        list: (...args: unknown[]) => reportsList(...args),
+      },
     },
     ApiError: MockApiError,
   };
@@ -87,6 +95,8 @@ describe('ScoutPage', () => {
     resetAuthMock();
     vi.clearAllMocks();
     matchesList.mockResolvedValue([]);
+    reportsConfig.mockResolvedValue({ enabled: false });
+    reportsList.mockResolvedValue([]);
     setMockUser(makeMockUser());
   });
 
@@ -187,5 +197,175 @@ describe('ScoutPage', () => {
 
     await screen.findByText('Pandem1c');
     expect(screen.queryByText('Your History vs Them')).not.toBeInTheDocument();
+  });
+});
+
+const GENERATED_RECORD = {
+  id: 'report-1',
+  createdAt: 1_700_000_000_000,
+  model: 'claude-opus-4-8',
+  player: { id: 1802316, gamerTag: 'Pandem1c', userSlug: 'user/07dc2239' },
+  report: {
+    overview: 'A fast-falling Fox/Falco player.',
+    gameplan: ['Punish landing lag.'],
+    stageStrategy: {
+      bans: ['Final Destination'],
+      picks: ['Battlefield'],
+      reasoning: 'Flat stages favor us.',
+    },
+    headToHead: null,
+    watchFor: ['Shine spikes off stage.'],
+    confidenceNotes: 'Only 6 games sampled.',
+  },
+};
+
+describe('ScoutPage — AI reports feature disabled', () => {
+  beforeEach(() => {
+    resetAuthMock();
+    vi.clearAllMocks();
+    matchesList.mockResolvedValue([]);
+    reportsConfig.mockResolvedValue({ enabled: false });
+    reportsList.mockResolvedValue([]);
+    setMockUser(makeMockUser());
+  });
+
+  it('never shows the "Generate AI report" button when disabled', async () => {
+    const user = userEvent.setup();
+    scoutLookup.mockResolvedValue(REPORT);
+
+    renderPage();
+    await user.type(screen.getByLabelText(/start\.gg profile URL/), 'user/07dc2239');
+    await user.click(screen.getByRole('button', { name: 'Scout' }));
+
+    await screen.findByText('Pandem1c');
+    expect(screen.queryByRole('button', { name: /Generate AI report/ })).not.toBeInTheDocument();
+  });
+
+  it('never shows the past reports card when disabled, even if reports exist', async () => {
+    const user = userEvent.setup();
+    scoutLookup.mockResolvedValue(REPORT);
+    reportsList.mockResolvedValue([GENERATED_RECORD]);
+
+    renderPage();
+    await user.type(screen.getByLabelText(/start\.gg profile URL/), 'user/07dc2239');
+    await user.click(screen.getByRole('button', { name: 'Scout' }));
+
+    await screen.findByText('Pandem1c');
+    expect(screen.queryByText('Past AI Reports')).not.toBeInTheDocument();
+  });
+});
+
+describe('ScoutPage — AI reports feature enabled', () => {
+  beforeEach(() => {
+    resetAuthMock();
+    vi.clearAllMocks();
+    matchesList.mockResolvedValue([]);
+    reportsConfig.mockResolvedValue({ enabled: true });
+    reportsList.mockResolvedValue([]);
+    setMockUser(makeMockUser());
+  });
+
+  it('shows the "Generate AI report" button once a scout result is on screen', async () => {
+    const user = userEvent.setup();
+    scoutLookup.mockResolvedValue(REPORT);
+
+    renderPage();
+    await user.type(screen.getByLabelText(/start\.gg profile URL/), 'user/07dc2239');
+    await user.click(screen.getByRole('button', { name: 'Scout' }));
+
+    expect(await screen.findByRole('button', { name: /Generate AI report/ })).toBeInTheDocument();
+  });
+
+  it('generates and renders the AI report on click', async () => {
+    const user = userEvent.setup();
+    scoutLookup.mockResolvedValue(REPORT);
+    reportsGenerate.mockResolvedValue(GENERATED_RECORD);
+
+    renderPage();
+    await user.type(screen.getByLabelText(/start\.gg profile URL/), 'user/07dc2239');
+    await user.click(screen.getByRole('button', { name: 'Scout' }));
+    await screen.findByText('Pandem1c');
+
+    await user.click(screen.getByRole('button', { name: /Generate AI report/ }));
+
+    await waitFor(() => expect(reportsGenerate).toHaveBeenCalledWith('user/07dc2239'));
+    expect(await screen.findByText('AI Scouting Report')).toBeInTheDocument();
+    expect(screen.getByText(GENERATED_RECORD.report.overview)).toBeInTheDocument();
+  });
+
+  it('shows a pending state with spinner text while generating', async () => {
+    const user = userEvent.setup();
+    scoutLookup.mockResolvedValue(REPORT);
+    let resolveGenerate: (value: typeof GENERATED_RECORD) => void = () => {};
+    reportsGenerate.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveGenerate = resolve;
+        }),
+    );
+
+    renderPage();
+    await user.type(screen.getByLabelText(/start\.gg profile URL/), 'user/07dc2239');
+    await user.click(screen.getByRole('button', { name: 'Scout' }));
+    await screen.findByText('Pandem1c');
+
+    await user.click(screen.getByRole('button', { name: /Generate AI report/ }));
+
+    expect(
+      await screen.findByText(/Generating report — this usually takes a minute or two\./),
+    ).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Generating report/ })).toBeDisabled();
+
+    resolveGenerate(GENERATED_RECORD);
+    await waitFor(() => expect(screen.getByText('AI Scouting Report')).toBeInTheDocument());
+  });
+
+  it('shows an inline destructive alert with the API message on error', async () => {
+    const user = userEvent.setup();
+    scoutLookup.mockResolvedValue(REPORT);
+    reportsGenerate.mockRejectedValue(
+      new ApiError(502, 'The model declined to generate a report for this request'),
+    );
+
+    renderPage();
+    await user.type(screen.getByLabelText(/start\.gg profile URL/), 'user/07dc2239');
+    await user.click(screen.getByRole('button', { name: 'Scout' }));
+    await screen.findByText('Pandem1c');
+
+    await user.click(screen.getByRole('button', { name: /Generate AI report/ }));
+
+    expect(
+      await screen.findByText('The model declined to generate a report for this request'),
+    ).toBeInTheDocument();
+  });
+
+  it('shows the past reports card when the list is non-empty, and selecting one renders it', async () => {
+    const user = userEvent.setup();
+    scoutLookup.mockResolvedValue(REPORT);
+    reportsList.mockResolvedValue([GENERATED_RECORD]);
+
+    renderPage();
+    await user.type(screen.getByLabelText(/start\.gg profile URL/), 'user/07dc2239');
+    await user.click(screen.getByRole('button', { name: 'Scout' }));
+    await screen.findByRole('heading', { name: 'Pandem1c' });
+
+    expect(await screen.findByText('Past AI Reports')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: /Pandem1c/ }));
+
+    expect(await screen.findByText('AI Scouting Report')).toBeInTheDocument();
+    expect(screen.getByText(GENERATED_RECORD.report.overview)).toBeInTheDocument();
+  });
+
+  it('does not show the past reports card when the list is empty', async () => {
+    const user = userEvent.setup();
+    scoutLookup.mockResolvedValue(REPORT);
+    reportsList.mockResolvedValue([]);
+
+    renderPage();
+    await user.type(screen.getByLabelText(/start\.gg profile URL/), 'user/07dc2239');
+    await user.click(screen.getByRole('button', { name: 'Scout' }));
+    await screen.findByText('Pandem1c');
+
+    expect(screen.queryByText('Past AI Reports')).not.toBeInTheDocument();
   });
 });
