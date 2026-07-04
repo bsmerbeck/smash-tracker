@@ -165,4 +165,49 @@ describe('SetTimeline', () => {
     renderTimeline(matches);
     expect(screen.queryByText(/seed|placed/)).not.toBeInTheDocument();
   });
+
+  it('shows a "Watch VOD" link when a game in the set carries a vodUrl', () => {
+    const matches = [
+      makeMatch({
+        id: 'g1',
+        time: 100,
+        win: true,
+        externalId: 'sgg:1:g1',
+        roundText: 'Grand Final',
+        vodUrl: 'https://youtube.com/watch?v=abc123',
+      }),
+    ];
+    renderTimeline(matches);
+
+    const link = screen.getByRole('link', { name: 'Watch VOD for Grand Final' });
+    expect(link).toHaveAttribute('href', 'https://youtube.com/watch?v=abc123');
+    expect(link).toHaveAttribute('target', '_blank');
+    expect(link).toHaveAttribute('rel', 'noreferrer');
+  });
+
+  it('shows the VOD link when only one game in a multi-game set carries the vodUrl', () => {
+    const matches = [
+      makeMatch({ id: 'g1', time: 100, win: true, externalId: 'sgg:1:g1' }),
+      makeMatch({
+        id: 'g2',
+        time: 200,
+        win: false,
+        externalId: 'sgg:1:g2',
+        vodUrl: 'https://youtube.com/watch?v=abc123',
+      }),
+      makeMatch({ id: 'g3', time: 300, win: true, externalId: 'sgg:1:g3' }),
+    ];
+    renderTimeline(matches);
+
+    expect(screen.getByRole('link', { name: /Watch VOD/ })).toHaveAttribute(
+      'href',
+      'https://youtube.com/watch?v=abc123',
+    );
+  });
+
+  it('omits the "Watch VOD" link when no game in the set carries a vodUrl (current production data)', () => {
+    const matches = [makeMatch({ id: 'g1', time: 100, win: true, externalId: 'sgg:1:g1' })];
+    renderTimeline(matches);
+    expect(screen.queryByText('Watch VOD')).not.toBeInTheDocument();
+  });
 });
