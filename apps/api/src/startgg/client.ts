@@ -93,6 +93,15 @@ const setsPageSchema = z.object({
               /** Literally the string "DQ" for sets decided by disqualification. */
               displayScore: z.string().nullish(),
               totalGames: z.number().int().nullish(),
+              /**
+               * URL of a VOD for this set, when a TO has attached one.
+               * Confirmed via schema introspection during the V6-W1b probe
+               * ("Url of a VOD for this set") but observed null on every
+               * sampled set, including majors' streamed Grand Finals — TOs
+               * rarely populate it in practice. Harvested anyway since it's
+               * free and additive; applies to every game of the set.
+               */
+              vodUrl: z.string().nullish(),
               event: z
                 .object({
                   id: z.number().nullish(),
@@ -137,7 +146,16 @@ const setsPageSchema = z.object({
                 .array(
                   z.object({
                     winnerId: z.number().nullish(),
-                    stage: z.object({ name: z.string() }).nullish(),
+                    /**
+                     * `id` is start.gg's stable, global numeric stage id
+                     * (verified via the V6-W1b probe: the same stage
+                     * consistently returns the same id across unrelated
+                     * sets/events/years). `name` remains for the
+                     * name-resolution fallback in `resolveStage`.
+                     */
+                    stage: z
+                      .object({ id: z.union([z.number(), z.string()]).nullish(), name: z.string() })
+                      .nullish(),
                     selections: z
                       .array(
                         z.object({
@@ -146,6 +164,18 @@ const setsPageSchema = z.object({
                         }),
                       )
                       .nullish(),
+                    /**
+                     * Score of entrant1/entrant2 in this game — per
+                     * start.gg's own field description, "For smash, this is
+                     * equivalent to stocks remaining." Verified during the
+                     * V6-W1b probe: positionally corresponds to
+                     * `slots[0]`/`slots[1]`, ranges 0-3, and the winner's
+                     * value is always strictly greater than the loser's
+                     * when both are present (frequently both are null —
+                     * stock counts aren't tracked for every set).
+                     */
+                    entrant1Score: z.number().int().nullish(),
+                    entrant2Score: z.number().int().nullish(),
                   }),
                 )
                 .nullish(),
@@ -162,8 +192,8 @@ export type StartggSet = NonNullable<
 >['nodes'][number];
 
 // Complexity budget per page (perPage 10): ~10 sets x (2 slots x ~4 fields +
-// ~5 games x 3 fields + ~8 set/event fields) stays well under the 1000
-// object limit — nowhere near the ~180 objects/page this shape produces.
+// ~5 games x 5 fields + ~9 set/event fields) stays well under the 1000
+// object limit — nowhere near the ~200 objects/page this shape produces.
 const SETS_QUERY = `query PlayerSets($playerId: ID!, $page: Int!, $perPage: Int!) {
   player(id: $playerId) {
     sets(perPage: $perPage, page: $page) {
@@ -175,6 +205,7 @@ const SETS_QUERY = `query PlayerSets($playerId: ID!, $page: Int!, $perPage: Int!
         round
         displayScore
         totalGames
+        vodUrl
         event { id name isOnline numEntrants videogame { id } tournament { name } }
         slots {
           entrant {
@@ -187,8 +218,10 @@ const SETS_QUERY = `query PlayerSets($playerId: ID!, $page: Int!, $perPage: Int!
         }
         games {
           winnerId
-          stage { name }
+          stage { id name }
           selections { character { id } entrant { id } }
+          entrant1Score
+          entrant2Score
         }
       }
     }
