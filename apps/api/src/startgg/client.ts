@@ -115,7 +115,10 @@ const setsPageSchema = z.object({
                             .array(
                               z
                                 .object({
-                                  player: z.object({ id: z.number() }).nullish(),
+                                  player: z
+                                    .object({ id: z.number(), gamerTag: z.string().nullish() })
+                                    .nullish(),
+                                  user: z.object({ slug: z.string().nullish() }).nullish(),
                                 })
                                 .nullish(),
                             )
@@ -177,7 +180,7 @@ const SETS_QUERY = `query PlayerSets($playerId: ID!, $page: Int!, $perPage: Int!
           entrant {
             id
             name
-            participants { player { id } }
+            participants { player { id gamerTag } user { slug } }
             seeds { seedNum }
             standing { placement }
           }
@@ -209,4 +212,124 @@ export async function fetchPlayerSetsPage(
   );
   const sets = data.player?.sets;
   return { totalPages: sets?.pageInfo.totalPages ?? 0, sets: sets?.nodes ?? [] };
+}
+
+// ---- event details (slugs + standings, public data, server token) ----------
+
+const EVENT_STANDINGS_PER_PAGE = 8;
+
+const eventDetailsSchema = z.object({
+  event: z
+    .object({
+      slug: z.string().nullish(),
+      tournament: z.object({ name: z.string().nullish(), slug: z.string().nullish() }).nullish(),
+      standings: z
+        .object({
+          nodes: z
+            .array(
+              z
+                .object({
+                  placement: z.number().int().nullish(),
+                  entrant: z
+                    .object({
+                      name: z.string().nullish(),
+                      participants: z
+                        .array(
+                          z
+                            .object({
+                              player: z
+                                .object({
+                                  id: z.number().nullish(),
+                                  gamerTag: z.string().nullish(),
+                                })
+                                .nullish(),
+                              user: z.object({ slug: z.string().nullish() }).nullish(),
+                            })
+                            .nullish(),
+                        )
+                        .nullish(),
+                    })
+                    .nullish(),
+                })
+                .nullish(),
+            )
+            .nullish(),
+        })
+        .nullish(),
+    })
+    .nullish(),
+});
+
+const EVENT_DETAILS_QUERY = `query EventDetails($eventId: ID!, $perPage: Int!) {
+  event(id: $eventId) {
+    slug
+    tournament { name slug }
+    standings(query: { perPage: $perPage, page: 1 }) {
+      nodes {
+        placement
+        entrant {
+          name
+          participants { player { id gamerTag } user { slug } }
+        }
+      }
+    }
+  }
+}`;
+
+export interface StartggEventDetails {
+  /** Tournament slug, e.g. "tournament/the-box-juice-box-26". */
+  tournamentSlug?: string;
+  /** Event slug, e.g. "tournament/the-box-juice-box-26/event/ultimate-singles". */
+  slug?: string;
+  /** Top finishers of the event, per start.gg's default standings ordering. */
+  topStandings: {
+    placement: number;
+    name: string;
+    gamerTag?: string;
+    userSlug?: string;
+  }[];
+}
+
+/**
+ * Fetches an event's slug, parent tournament slug, and top standings
+ * (capped to `EVENT_STANDINGS_PER_PAGE`). Public data — usable with the
+ * server token. Nullish-tolerant throughout: start.gg omits fields freely,
+ * and callers (sync.ts) treat a fetch/parse failure for one event as
+ * non-fatal.
+ */
+export async function fetchEventDetails(
+  serverToken: string,
+  eventId: number,
+  fetchImpl: typeof fetch = fetch,
+): Promise<StartggEventDetails> {
+  const data = await gql(
+    serverToken,
+    EVENT_DETAILS_QUERY,
+    { eventId, perPage: EVENT_STANDINGS_PER_PAGE },
+    eventDetailsSchema,
+    fetchImpl,
+  );
+  const event = data.event;
+  const topStandings = (event?.standings?.nodes ?? []).flatMap((node) => {
+    if (!node || node.placement == null || !node.entrant?.name) {
+      return [];
+    }
+    const participant = node.entrant.participants?.find((p) => p != null);
+    const gamerTag = participant?.player?.gamerTag ?? undefined;
+    const userSlug = participant?.user?.slug ?? undefined;
+    return [
+      {
+        placement: node.placement,
+        name: node.entrant.name,
+        ...(gamerTag ? { gamerTag } : {}),
+        ...(userSlug ? { userSlug } : {}),
+      },
+    ];
+  });
+
+  return {
+    ...(event?.slug ? { slug: event.slug } : {}),
+    ...(event?.tournament?.slug ? { tournamentSlug: event.tournament.slug } : {}),
+    topStandings,
+  };
 }
