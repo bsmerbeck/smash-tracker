@@ -38,13 +38,14 @@ function lerpRgb(
 }
 
 /**
- * Interpolates red (wilson=0) -> grey (wilson=0.5) -> emerald (wilson=1).
- * Wilson lower bound is already evidence-adjusted (see `wilsonLowerBound` in
- * lib/stats.ts), so this is the "how good is this matchup, given what we
- * actually know" color, not the raw win rate.
+ * Interpolates red (rate=0) -> grey (rate=0.5) -> emerald (rate=1) from the
+ * RAW win rate. Confidence lives in the opacity channel instead
+ * (`sampleSizeToOpacity`): at real-world sample sizes the Wilson lower bound
+ * sits below 0.5 for almost every pairing, which painted winning records
+ * red — hue answers "am I winning this?", opacity answers "how sure are we?".
  */
-export function wilsonToRgb(wilson: number): [number, number, number] {
-  const clamped = Math.max(0, Math.min(1, wilson));
+export function rateToRgb(rate: number): [number, number, number] {
+  const clamped = Math.max(0, Math.min(1, rate));
   if (clamped <= 0.5) {
     return lerpRgb(LOW_RGB, MID_RGB, clamped / 0.5);
   }
@@ -67,9 +68,9 @@ export function sampleSizeToOpacity(total: number): number {
   return lerp(MIN_OPACITY, MAX_OPACITY, t);
 }
 
-/** CSS `rgba(...)` background-color string for a matrix cell with this Wilson score and sample size. */
-export function matchupCellBackground(wilson: number, total: number): string {
-  const [r, g, b] = wilsonToRgb(wilson);
+/** CSS `rgba(...)` background-color string for a matrix cell with this raw win rate (0-1) and sample size. */
+export function matchupCellBackground(winRate: number, total: number): string {
+  const [r, g, b] = rateToRgb(winRate);
   const alpha = sampleSizeToOpacity(total);
   return `rgba(${Math.round(r)}, ${Math.round(g)}, ${Math.round(b)}, ${alpha.toFixed(3)})`;
 }

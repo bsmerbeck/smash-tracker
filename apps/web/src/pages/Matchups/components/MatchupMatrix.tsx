@@ -72,10 +72,10 @@ export function MatchupMatrix({ matches }: { matches: Match[] }) {
           </p>
         ) : (
           <div className="overflow-x-auto">
-            <table className="border-separate border-spacing-0 text-sm">
+            <table className="mx-auto w-max border-separate border-spacing-0 text-sm">
               <thead>
                 <tr>
-                  <th className="sticky left-0 z-10 bg-card p-2 text-left align-bottom">
+                  <th className="sticky left-0 z-10 w-40 min-w-40 max-w-40 border-r border-border bg-card p-2 text-left align-bottom">
                     <span className="sr-only">Your fighter</span>
                   </th>
                   {columnIds.map((opponentId) => {
@@ -107,7 +107,7 @@ export function MatchupMatrix({ matches }: { matches: Match[] }) {
                     <tr key={fighterId}>
                       <th
                         scope="row"
-                        className="sticky left-0 z-10 whitespace-nowrap bg-card p-2 text-left font-normal"
+                        className="sticky left-0 z-10 w-40 min-w-40 max-w-40 border-r border-border bg-card p-2 text-left font-normal"
                       >
                         <div className="flex items-center gap-2">
                           {fighter?.url && (
@@ -118,7 +118,9 @@ export function MatchupMatrix({ matches }: { matches: Match[] }) {
                               loading="lazy"
                             />
                           )}
-                          <span>{fighter?.name ?? 'Unknown'}</span>
+                          <span className="truncate" title={fighter?.name ?? 'Unknown'}>
+                            {fighter?.name ?? 'Unknown'}
+                          </span>
                         </div>
                       </th>
                       {columnIds.map((opponentId) => {
@@ -135,7 +137,10 @@ export function MatchupMatrix({ matches }: { matches: Match[] }) {
                                 title={`${cell.wins}-${cell.losses} (${cell.winRate}% over ${cell.total})`}
                                 className="flex size-14 items-center justify-center rounded font-medium text-white transition-transform hover:scale-105 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
                                 style={{
-                                  backgroundColor: matchupCellBackground(cell.wilson, cell.total),
+                                  backgroundColor: matchupCellBackground(
+                                    cell.total > 0 ? cell.wins / cell.total : 0,
+                                    cell.total,
+                                  ),
                                 }}
                               >
                                 {cell.wins}-{cell.losses}
