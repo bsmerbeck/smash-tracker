@@ -114,6 +114,16 @@ export const matchRecordSchema = z.object({
    * `opponentSeed`. Server-set, imported matches only.
    */
   opponentUserSlug: z.string().optional(),
+  /**
+   * URL of a VOD for the set this game belonged to, when start.gg's
+   * `Set.vodUrl` is populated (a TO-curated field — verified via the
+   * V6-W1b probe to exist but be null on essentially every real set
+   * sampled, including majors' streamed Grand Finals; harvested anyway in
+   * case a TO does populate it). Duplicated across every game of the set,
+   * same rationale as `opponentSeed`/`opponentPlacement`. Server-set,
+   * imported matches only.
+   */
+  vodUrl: z.string().url().optional(),
 });
 export type MatchRecord = z.infer<typeof matchRecordSchema>;
 

@@ -7,7 +7,7 @@ import {
   type StartggSet,
 } from './client.js';
 import { startggCharacterToFighterId } from './characterMap.js';
-import { resolveStageByName } from './stageMap.js';
+import { resolveStage } from './stageMap.js';
 
 /** Hard cap on pages per sync — 40 pages x 10 sets stays well inside the 80 req/60s rate limit. */
 const MAX_PAGES = 40;
@@ -85,12 +85,23 @@ export function gamesFromSet(
   const tournamentName = set.event?.tournament?.name?.trim();
   const roundText = set.fullRoundText?.trim();
   const bracketRound = typeof set.round === 'number' ? set.round : undefined;
+  // `Set.vodUrl` is TO-curated and near-always null in practice (see the
+  // V6-W1b probe notes on client.ts's `vodUrl` schema field), but when
+  // present it applies to every game of the set.
+  const vodUrl = set.vodUrl ?? undefined;
   // Per-event facts about the human opponent, duplicated per game by design
   // (RTDB read simplicity beats normalization here).
   const opponentSeed = opponentEntrant.seeds?.find((s) => typeof s?.seedNum === 'number')?.seedNum;
   const opponentPlacement = opponentEntrant.standing?.placement ?? undefined;
   const opponentUserSlug = (opponentEntrant.participants ?? []).find((p) => p?.user?.slug != null)
     ?.user?.slug;
+  // `game.entrant1Score`/`entrant2Score` correspond positionally to
+  // `slots[0]`/`slots[1]` (verified during the V6-W1b probe against live
+  // start.gg data — never by entrant id, which the API doesn't expose per
+  // score). `slots` here is the same entrant-only, order-preserving array
+  // used to find userEntrant/opponentEntrant above.
+  const userSlotIndex = slots.findIndex((entrant) => entrant.id === userEntrant.id);
+  const opponentSlotIndex = slots.findIndex((entrant) => entrant.id === opponentEntrant.id);
   const results: ImportableGame[] = [];
 
   games.forEach((game, index) => {
@@ -114,10 +125,46 @@ export function gamesFromSet(
       return;
     }
 
-    const resolvedStage = game.stage?.name ? resolveStageByName(game.stage.name) : null;
+    // Numeric start.gg stage id first (stable/global — see stageMap.ts),
+    // falling back to name resolution when the id isn't in the curated
+    // table (or is absent) — same "unknown sentinel" outcome either way.
+    const rawStageId = game.stage?.id;
+    const stageId =
+      typeof rawStageId === 'number'
+        ? rawStageId
+        : typeof rawStageId === 'string'
+          ? Number(rawStageId)
+          : null;
+    const resolvedStage = resolveStage(
+      stageId != null && Number.isFinite(stageId) ? stageId : null,
+      game.stage?.name,
+    );
     if (!resolvedStage) {
       summary.gamesUnknownStage += 1;
     }
+
+    // Winner's remaining-stock count for this individual game (start.gg:
+    // "Score of entrant 1/2 ... equivalent to stocks remaining" — see
+    // client.ts). Read from whichever slot the winner occupies, never via
+    // max(), since one side can be null while the other is a meaningless 0
+    // (see sync.test.ts for the exact case this guards against). Clamped to
+    // matchRecordSchema's 0-3 range (standard 4-stock games only — every
+    // sampled value during the V6-W1b probe fell in this range, but a
+    // non-standard stock count ruleset could in principle report higher).
+    const winnerScore =
+      game.winnerId === userEntrant.id
+        ? userSlotIndex === 0
+          ? game.entrant1Score
+          : game.entrant2Score
+        : game.winnerId === opponentEntrant.id
+          ? opponentSlotIndex === 0
+            ? game.entrant1Score
+            : game.entrant2Score
+          : null;
+    const stocksLeft =
+      typeof winnerScore === 'number' && winnerScore >= 0 && winnerScore <= 3
+        ? winnerScore
+        : undefined;
 
     const externalId = `sgg:${set.id}:g${index + 1}`;
     results.push({
@@ -143,6 +190,8 @@ export function gamesFromSet(
         ...(opponentSeed != null ? { opponentSeed } : {}),
         ...(opponentPlacement != null ? { opponentPlacement } : {}),
         ...(opponentUserSlug ? { opponentUserSlug } : {}),
+        ...(stocksLeft !== undefined ? { stocksLeft } : {}),
+        ...(vodUrl ? { vodUrl } : {}),
       },
     });
   });
