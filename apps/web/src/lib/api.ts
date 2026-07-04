@@ -3,6 +3,7 @@ import {
   errorResponseSchema,
   fighterSelectionSchema,
   matchSchema,
+  opponentAliasMapSchema,
   opponentListSchema,
   startggAuthorizeResponseSchema,
   startggStatusSchema,
@@ -13,6 +14,7 @@ import {
   type FighterSelectionInput,
   type Match,
   type UpdateMatchInput,
+  type UpsertOpponentAliasInput,
 } from '@smash-tracker/shared';
 import { getFirebaseAuth } from './firebase';
 
@@ -171,6 +173,22 @@ export const api = {
   opponents: {
     /** GET /api/opponents */
     list: () => apiRequestParsed('/api/opponents', opponentListSchema),
+    aliases: {
+      /** GET /api/opponents/aliases */
+      list: () => apiRequestParsed('/api/opponents/aliases', opponentAliasMapSchema),
+      /** PUT /api/opponents/aliases/:alias */
+      upsert: (alias: string, input: UpsertOpponentAliasInput) =>
+        apiRequestParsed(
+          `/api/opponents/aliases/${encodeURIComponent(alias)}`,
+          opponentAliasMapSchema,
+          { method: 'PUT', body: input },
+        ),
+      /** DELETE /api/opponents/aliases/:alias */
+      remove: (alias: string) =>
+        apiRequest<void>(`/api/opponents/aliases/${encodeURIComponent(alias)}`, {
+          method: 'DELETE',
+        }),
+    },
   },
   startgg: {
     /** GET /api/integrations/startgg/status */
