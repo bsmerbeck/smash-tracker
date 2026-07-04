@@ -5,13 +5,8 @@
  * correctness is covered by each chart's exported pure builder functions;
  * component tests only need a stable placeholder to assert presence.
  */
-interface ChartStubProps {
-  data?: unknown;
-  options?: unknown;
-}
-
 function makeStub(type: string) {
-  return function ChartStub(_props: ChartStubProps) {
+  return function ChartStub() {
     return <div data-testid="chartjs-stub" data-chart-type={type} role="img" />;
   };
 }
