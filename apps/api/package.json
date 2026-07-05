@@ -12,6 +12,7 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.110.0",
     "@fastify/cors": "^11.2.0",
     "@smash-tracker/shared": "workspace:*",
     "fastify": "^5.9.0",

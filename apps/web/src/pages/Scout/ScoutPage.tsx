@@ -1,9 +1,12 @@
-import { useMemo } from 'react';
-import type { ScoutReportData } from '@smash-tracker/shared';
+import { useMemo, useState } from 'react';
+import { Sparkles } from 'lucide-react';
+import type { ScoutReportData, ScoutReportRecord } from '@smash-tracker/shared';
 import { ApiError } from '@/lib/api';
 import { useScoutPlayer } from '@/hooks/useScoutPlayer';
 import { useMatches } from '@/hooks/useMatches';
+import { useGenerateReport, useReportsConfig, useScoutReportsList } from '@/hooks/useScoutReports';
 import { getOpponentProfile } from '@/lib/stats';
+import { Button } from '@/components/ui/button';
 import { ScoutSearchForm } from './components/ScoutSearchForm';
 import { ScoutReportHeader } from './components/ScoutReportHeader';
 import { ScoutCharactersCard } from './components/ScoutCharactersCard';
@@ -11,8 +14,10 @@ import { ScoutStagesCard } from './components/ScoutStagesCard';
 import { ScoutRecentEventsCard } from './components/ScoutRecentEventsCard';
 import { ScoutCommonOpponentsCard } from './components/ScoutCommonOpponentsCard';
 import { YourHistoryStrip } from './components/YourHistoryStrip';
+import { ScoutAiReportCard } from './components/ScoutAiReportCard';
+import { ScoutPastReportsCard } from './components/ScoutPastReportsCard';
 
-function describeError(error: unknown): string {
+function describeError(error: unknown, fallback: string): string {
   if (error instanceof ApiError) {
     if (error.status === 404) {
       return "We couldn't find a start.gg player for that query. Double-check the URL, slug, or player id.";
@@ -23,9 +28,9 @@ function describeError(error: unknown): string {
     if (error.status === 429) {
       return 'start.gg is rate-limiting requests right now. Try again in a minute.';
     }
-    return error.message || 'Something went wrong while scouting that player.';
+    return error.message || fallback;
   }
-  return 'Something went wrong while scouting that player.';
+  return fallback;
 }
 
 /**
@@ -39,12 +44,24 @@ function describeError(error: unknown): string {
  * match history, a "Your History vs Them" strip surfaces the existing
  * head-to-head record (same data the Scouting page shows) above the public
  * report.
+ *
+ * V7-B: when AI reports are enabled for the signed-in user
+ * (`useReportsConfig`), a "Generate AI report" button appears once a scout
+ * result is on screen. The feature is completely invisible when disabled —
+ * no button, no past-reports card, nothing rendered at all.
  */
 export function ScoutPage() {
   const scout = useScoutPlayer();
   const { data: matches = [] } = useMatches();
+  const reportsConfig = useReportsConfig();
+  const generateReport = useGenerateReport();
+  const pastReports = useScoutReportsList();
+
+  const [lastQuery, setLastQuery] = useState<string | null>(null);
+  const [selectedRecord, setSelectedRecord] = useState<ScoutReportRecord | null>(null);
 
   const report: ScoutReportData | undefined = scout.data;
+  const aiReportsEnabled = reportsConfig.data?.enabled ?? false;
 
   const yourHistory = useMemo(() => {
     if (!report) {
@@ -57,15 +74,34 @@ export function ScoutPage() {
     return getOpponentProfile(matches, needle);
   }, [matches, report]);
 
+  const handleSubmit = (query: string) => {
+    setSelectedRecord(null);
+    setLastQuery(query);
+    scout.mutate(query);
+  };
+
+  const handleGenerateReport = () => {
+    if (!lastQuery) {
+      return;
+    }
+    setSelectedRecord(null);
+    generateReport.mutate(lastQuery);
+  };
+
+  // The report to actually render: a freshly generated report takes priority
+  // over a previously-selected past report (a new generation replaces what's
+  // on screen), which in turn takes priority over nothing.
+  const displayedReport = selectedRecord?.report ?? generateReport.data?.report ?? null;
+
   return (
     <div className="mx-auto flex max-w-3xl flex-col gap-6">
       <h1 className="text-2xl font-semibold tracking-tight">Scout a Player</h1>
 
-      <ScoutSearchForm onSubmit={(query) => scout.mutate(query)} isPending={scout.isPending} />
+      <ScoutSearchForm onSubmit={handleSubmit} isPending={scout.isPending} />
 
       {scout.isError && (
         <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-4 text-sm text-destructive">
-          {describeError(scout.error)}
+          {describeError(scout.error, 'Something went wrong while scouting that player.')}
         </div>
       )}
 
@@ -73,6 +109,35 @@ export function ScoutPage() {
         <div className="flex flex-col gap-4">
           <ScoutReportHeader report={report} />
           {yourHistory && <YourHistoryStrip profile={yourHistory} />}
+
+          {aiReportsEnabled && (
+            <div className="flex flex-col gap-2">
+              <Button
+                onClick={handleGenerateReport}
+                disabled={generateReport.isPending}
+                className="w-fit"
+              >
+                <Sparkles className={generateReport.isPending ? 'animate-spin' : ''} />
+                {generateReport.isPending ? 'Generating report…' : 'Generate AI report'}
+              </Button>
+              {generateReport.isPending && (
+                <p className="text-sm text-muted-foreground">
+                  Generating report — this usually takes a minute or two.
+                </p>
+              )}
+              {generateReport.isError && (
+                <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-4 text-sm text-destructive">
+                  {describeError(
+                    generateReport.error,
+                    'Something went wrong while generating the report.',
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+
+          {displayedReport && <ScoutAiReportCard report={displayedReport} />}
+
           <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
             <ScoutCharactersCard characters={report.characters} />
             <ScoutStagesCard stages={report.stages} />
@@ -82,6 +147,13 @@ export function ScoutPage() {
             <ScoutCommonOpponentsCard opponents={report.commonOpponents} />
           </div>
         </div>
+      )}
+
+      {aiReportsEnabled && (pastReports.data?.length ?? 0) > 0 && (
+        <ScoutPastReportsCard
+          reports={pastReports.data ?? []}
+          onSelect={(record) => setSelectedRecord(record)}
+        />
       )}
 
       {!report && !scout.isError && !scout.isPending && (

@@ -1,5 +1,5 @@
 import { buildApp } from './app.js';
-import { getStartggConfig, loadEnv, parseCorsOrigins } from './config/env.js';
+import { getReportsConfig, getStartggConfig, loadEnv, parseCorsOrigins } from './config/env.js';
 import { initFirebase } from './firebase/admin.js';
 
 let env;
@@ -16,6 +16,7 @@ const app = buildApp({
   firebase,
   corsOrigin: parseCorsOrigins(env.CORS_ORIGIN),
   startgg: getStartggConfig(env),
+  reports: getReportsConfig(env),
 });
 
 app
