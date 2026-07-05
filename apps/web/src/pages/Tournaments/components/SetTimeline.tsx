@@ -1,6 +1,8 @@
-import { ExternalLink } from 'lucide-react';
+import { useState } from 'react';
+import { ExternalLink, Pencil } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { getFighterById } from '@/data/sprites';
 import { stagesById } from '@/data/stages';
@@ -10,6 +12,8 @@ import type { TournamentSet } from '../lib/setTimeline';
 import { buildStartggUrl } from '../lib/startggLinks';
 import { formatOpponentEventContext } from '../lib/ordinal';
 import { cn } from '@/lib/utils';
+import { formatTimestamp, vodDeepLink } from '@/lib/vod';
+import { VodNotesDialog } from '@/components/vod/VodNotesDialog';
 
 function GameChip({ match }: { match: Match }) {
   const stageId = match.map?.id ?? 0;
@@ -56,29 +60,86 @@ function OpponentTags({ opponentFighterIds }: { opponentFighterIds: number[] }) 
 }
 
 /**
- * Outbound "Watch VOD" link for a set, shown when any game in the set
- * carries a `vodUrl` (start.gg's TO-curated `Set.vodUrl`, duplicated across
- * every game of the set during sync — see `MatchRecord.vodUrl`). Currently
- * null on essentially all production data (no TO has attached one to a
- * sampled set yet, per the V6-W1b probe), so this simply doesn't render
- * until a TO does.
+ * Clickable timestamp chips for a set's VOD notes (V7-E): each chip opens
+ * the VOD at that moment via `vodDeepLink`. Renders nothing when the match
+ * carrying the `vodUrl` has no `vodTimestamps`.
  */
-function VodLink({ set }: { set: TournamentSet }) {
-  const vodUrl = set.games.map((g) => g.match.vodUrl).find((url) => url != null);
-  if (!vodUrl) {
+function VodTimestampChips({ vodUrl, match }: { vodUrl: string; match: Match }) {
+  const timestamps = match.vodTimestamps;
+  if (!timestamps || timestamps.length === 0) {
     return null;
   }
+  const sorted = [...timestamps].sort((a, b) => a.seconds - b.seconds);
   return (
-    <a
-      href={vodUrl}
-      target="_blank"
-      rel="noreferrer"
-      aria-label={`Watch VOD for ${set.roundText ?? `Set ${set.setId}`}`}
-      className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
-    >
-      Watch VOD
-      <ExternalLink className="size-3.5" />
-    </a>
+    <div className="flex flex-wrap items-center gap-1">
+      {sorted.map((stamp, index) => (
+        <Tooltip key={`${stamp.seconds}-${index}`}>
+          <TooltipTrigger asChild>
+            <a
+              href={vodDeepLink(vodUrl, stamp.seconds)}
+              target="_blank"
+              rel="noreferrer"
+              className="rounded bg-muted px-1.5 py-0.5 font-mono text-xs text-muted-foreground hover:bg-muted/70 hover:text-foreground"
+            >
+              {formatTimestamp(stamp.seconds)}
+            </a>
+          </TooltipTrigger>
+          <TooltipContent>{stamp.note}</TooltipContent>
+        </Tooltip>
+      ))}
+    </div>
+  );
+}
+
+/**
+ * Outbound "Watch VOD" link plus timestamp-note chips for a set, shown when
+ * any game in the set carries a `vodUrl` (start.gg's TO-curated
+ * `Set.vodUrl`, duplicated across every game of the set during sync — see
+ * `MatchRecord.vodUrl`), or when the player has manually attached one via
+ * the edit affordance (V7-E). A pencil button always renders (using the
+ * set's first game as the record to edit when no `vodUrl` exists yet) so a
+ * VOD can be attached even for sets that never got one from start.gg.
+ */
+function VodLink({ set }: { set: TournamentSet }) {
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const vodMatch =
+    set.games.map((g) => g.match).find((m) => m.vodUrl != null) ?? set.games[0]?.match;
+  const vodUrl = vodMatch?.vodUrl;
+
+  if (!vodMatch) {
+    return null;
+  }
+
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      {vodUrl && (
+        <>
+          <a
+            href={vodUrl}
+            target="_blank"
+            rel="noreferrer"
+            aria-label={`Watch VOD for ${set.roundText ?? `Set ${set.setId}`}`}
+            className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
+          >
+            Watch VOD
+            <ExternalLink className="size-3.5" />
+          </a>
+          <VodTimestampChips vodUrl={vodUrl} match={vodMatch} />
+        </>
+      )}
+      <Button
+        type="button"
+        variant="ghost"
+        size="icon-sm"
+        aria-label={`Edit VOD notes for ${set.roundText ?? `Set ${set.setId}`}`}
+        onClick={() => setDialogOpen(true)}
+      >
+        <Pencil className="size-3.5" />
+      </Button>
+      {dialogOpen && (
+        <VodNotesDialog match={vodMatch} open={dialogOpen} onOpenChange={setDialogOpen} />
+      )}
+    </div>
   );
 }
 
