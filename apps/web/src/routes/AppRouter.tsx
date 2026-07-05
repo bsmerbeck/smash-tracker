@@ -8,6 +8,7 @@ import { OpponentsPage } from '@/pages/Opponents/OpponentsPage';
 import { ScoutPage } from '@/pages/Scout/ScoutPage';
 import { MatchDataPage } from '@/pages/MatchData/MatchDataPage';
 import { TrendsPage } from '@/pages/Trends/TrendsPage';
+import { GroupsPage } from '@/pages/Groups/GroupsPage';
 import { TournamentDetailPage } from '@/pages/Tournaments/TournamentDetailPage';
 import { FighterAnalysisPage } from '@/pages/FighterAnalysis/FighterAnalysisPage';
 import { IntegrationsPage } from '@/pages/Integrations/IntegrationsPage';
@@ -103,6 +104,14 @@ export function AppRouter() {
           element={
             <ProtectedRoute>
               <TournamentDetailPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/groups"
+          element={
+            <ProtectedRoute>
+              <GroupsPage />
             </ProtectedRoute>
           }
         />

@@ -1,4 +1,4 @@
-import type { Match } from '@smash-tracker/shared';
+import { splitIntoSessions, type Match } from '@smash-tracker/shared';
 
 /**
  * Client-side match aggregation, extracted from the inline math legacy
@@ -663,19 +663,14 @@ const DEFAULT_SESSION_GAP_MS = 3 * 60 * 60 * 1000;
 /**
  * Groups matches into play sessions: a gap of more than `gapMs` (default 3h)
  * between consecutive matches starts a new session. Chronological order.
+ * Delegates the actual grouping to `@smash-tracker/shared`'s
+ * `splitIntoSessions` (also used by the shared Glicko rating-history model)
+ * so there's exactly one session-splitting implementation; this function
+ * only adds the richer `SessionStats` aggregates (win/loss, longest loss
+ * run) on top of each group.
  */
 export function getSessions(matches: Match[], gapMs = DEFAULT_SESSION_GAP_MS): SessionStats[] {
-  const sorted = [...matches].sort((a, b) => a.time - b.time);
-  const groups: Match[][] = [];
-  for (const match of sorted) {
-    const current = groups[groups.length - 1];
-    const previous = current?.[current.length - 1];
-    if (current && previous && match.time - previous.time <= gapMs) {
-      current.push(match);
-    } else {
-      groups.push([match]);
-    }
-  }
+  const groups = splitIntoSessions(matches, gapMs);
   return groups.map((group) => {
     let run = 0;
     let longestLossRun = 0;
