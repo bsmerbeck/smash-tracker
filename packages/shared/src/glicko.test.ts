@@ -1,12 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import type { Match } from '@smash-tracker/shared';
+import type { Match } from './match.js';
 import {
   DEFAULT_RATING,
   DEFAULT_RD,
   DEFAULT_VOLATILITY,
   computeRatingHistory,
   updateRating,
-} from './glicko';
+} from './glicko.js';
 
 function makeMatch(overrides: Partial<Match> & Pick<Match, 'id' | 'time' | 'win'>): Match {
   return {
@@ -156,7 +156,7 @@ describe('computeRatingHistory', () => {
     expect(history.periods[1]?.games).toBe(1);
   });
 
-  it('respects a custom gapMs the same way getSessions does', () => {
+  it('respects a custom gapMs the same way session splitting does', () => {
     const matches: Match[] = [
       makeMatch({ id: '1', time: 0, win: true }),
       makeMatch({ id: '2', time: 30 * 60 * 1000, win: true }), // 30 min later
