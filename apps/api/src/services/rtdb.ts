@@ -107,6 +107,8 @@ export class RtdbService {
       ...(input.stocksLeft !== undefined ? { stocksLeft: input.stocksLeft } : {}),
       ...(input.eventName !== undefined ? { eventName: input.eventName } : {}),
       ...(input.tournamentName !== undefined ? { tournamentName: input.tournamentName } : {}),
+      ...(input.vodUrl !== undefined ? { vodUrl: input.vodUrl } : {}),
+      ...(input.vodTimestamps !== undefined ? { vodTimestamps: input.vodTimestamps } : {}),
     };
 
     const ref = this.database.ref(`matches/${uid}`).push();
@@ -138,10 +140,14 @@ export class RtdbService {
       matchType: input.matchType,
       win: input.win,
       // See createMatch — RTDB rejects `undefined` values, so these are
-      // only included when the input actually set them.
+      // only included when the input actually set them. Omitting
+      // vodUrl/vodTimestamps from the input is how a caller clears them,
+      // since this is a full overwrite (`.set()`, not a partial patch).
       ...(input.stocksLeft !== undefined ? { stocksLeft: input.stocksLeft } : {}),
       ...(input.eventName !== undefined ? { eventName: input.eventName } : {}),
       ...(input.tournamentName !== undefined ? { tournamentName: input.tournamentName } : {}),
+      ...(input.vodUrl !== undefined ? { vodUrl: input.vodUrl } : {}),
+      ...(input.vodTimestamps !== undefined ? { vodTimestamps: input.vodTimestamps } : {}),
     };
 
     await ref.set(record);

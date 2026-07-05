@@ -283,6 +283,63 @@ describe('MatchDataPage', () => {
     expect(screen.getAllByText('rival').length).toBeGreaterThan(0);
   });
 
+  it('shows "Add VOD notes" for a match without a vodUrl and "Edit VOD notes" for one with', async () => {
+    getFighters.mockResolvedValue({ primary: [mario.id], secondary: [] });
+    listMatches.mockResolvedValue([
+      makeMatch({ id: 'm1', opponent: 'rival' }),
+      makeMatch({
+        id: 'm2',
+        opponent: 'someone-else',
+        vodUrl: 'https://youtube.com/watch?v=abc123',
+      }),
+    ]);
+
+    renderMatchData();
+
+    await waitFor(() => expect(screen.getAllByLabelText('Add VOD notes')).toHaveLength(1));
+    expect(screen.getAllByLabelText('Edit VOD notes')).toHaveLength(1);
+  });
+
+  it('opens the VOD notes dialog and saves a new VOD URL and timestamp', async () => {
+    const user = userEvent.setup();
+    getFighters.mockResolvedValue({ primary: [mario.id], secondary: [] });
+    listMatches.mockResolvedValue([
+      makeMatch({
+        id: 'm1',
+        fighter_id: mario.id,
+        opponent_id: luigi.id,
+        opponent: 'rival',
+        notes: 'gg',
+        matchType: 'quickplay',
+        win: true,
+        map: { id: 0, name: 'no selection' },
+      }),
+    ]);
+
+    renderMatchData();
+
+    await waitFor(() => expect(screen.getByLabelText('Add VOD notes')).toBeInTheDocument());
+    await user.click(screen.getByLabelText('Add VOD notes'));
+
+    const dialog = await screen.findByRole('dialog');
+    expect(within(dialog).getByText('VOD Notes')).toBeInTheDocument();
+
+    await user.type(within(dialog).getByLabelText('VOD URL'), 'https://youtube.com/watch?v=abc123');
+    await user.type(within(dialog).getByLabelText('Timestamp time'), '2:41');
+    await user.type(within(dialog).getByLabelText('Timestamp note'), 'missed punish on shield');
+    await user.click(within(dialog).getByRole('button', { name: 'Add timestamp' }));
+    await user.click(within(dialog).getByRole('button', { name: 'Save' }));
+
+    await waitFor(() => expect(updateMatch).toHaveBeenCalledTimes(1));
+    expect(updateMatch).toHaveBeenCalledWith(
+      'm1',
+      expect.objectContaining({
+        vodUrl: 'https://youtube.com/watch?v=abc123',
+        vodTimestamps: [{ seconds: 161, note: 'missed punish on shield' }],
+      }),
+    );
+  });
+
   it('deletes a match after confirmation', async () => {
     const user = userEvent.setup();
     getFighters.mockResolvedValue({ primary: [mario.id], secondary: [] });

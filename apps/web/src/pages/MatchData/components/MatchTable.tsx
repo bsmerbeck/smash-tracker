@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { toast } from 'sonner';
-import { Download, Pencil, SlidersHorizontal, Trash2 } from 'lucide-react';
+import { Download, Pencil, SlidersHorizontal, Trash2, Video } from 'lucide-react';
 import {
   flexRender,
   getCoreRowModel,
@@ -62,6 +62,8 @@ import {
 } from '../lib/matchTableFilters';
 import { persistColumnVisibility, readStoredColumnVisibility } from '../lib/columnVisibility';
 import { EditMatchForm } from './EditMatchForm';
+import { VodNotesDialog } from '@/components/vod/VodNotesDialog';
+import { cn } from '@/lib/utils';
 
 const PAGE_SIZE_OPTIONS = [10, 20, 30, 40, 50];
 
@@ -148,6 +150,7 @@ export function MatchTable({
   );
   const [editingMatch, setEditingMatch] = useState<Match | null>(null);
   const [pendingDelete, setPendingDelete] = useState<Match | null>(null);
+  const [vodMatch, setVodMatch] = useState<Match | null>(null);
   const deleteMatch = useDeleteMatch();
 
   useEffect(() => {
@@ -245,26 +248,38 @@ export function MatchTable({
         header: 'Manage',
         enableSorting: false,
         enableHiding: false,
-        cell: ({ row }) => (
-          <div className="flex justify-end gap-2">
-            <Button
-              variant="outline"
-              size="icon-sm"
-              aria-label="Edit match"
-              onClick={() => setEditingMatch(row.original.match)}
-            >
-              <Pencil />
-            </Button>
-            <Button
-              variant="outline"
-              size="icon-sm"
-              aria-label="Delete match"
-              onClick={() => setPendingDelete(row.original.match)}
-            >
-              <Trash2 />
-            </Button>
-          </div>
-        ),
+        cell: ({ row }) => {
+          const hasVod = row.original.match.vodUrl != null;
+          return (
+            <div className="flex justify-end gap-2">
+              <Button
+                variant="outline"
+                size="icon-sm"
+                aria-label={hasVod ? 'Edit VOD notes' : 'Add VOD notes'}
+                className={cn(hasVod && 'border-primary text-primary')}
+                onClick={() => setVodMatch(row.original.match)}
+              >
+                <Video />
+              </Button>
+              <Button
+                variant="outline"
+                size="icon-sm"
+                aria-label="Edit match"
+                onClick={() => setEditingMatch(row.original.match)}
+              >
+                <Pencil />
+              </Button>
+              <Button
+                variant="outline"
+                size="icon-sm"
+                aria-label="Delete match"
+                onClick={() => setPendingDelete(row.original.match)}
+              >
+                <Trash2 />
+              </Button>
+            </div>
+          );
+        },
       },
     ],
     [],
@@ -495,6 +510,14 @@ export function MatchTable({
           fighterSprites={fighterSprites}
           open={editingMatch != null}
           onOpenChange={(open) => !open && setEditingMatch(null)}
+        />
+      )}
+
+      {vodMatch && (
+        <VodNotesDialog
+          match={vodMatch}
+          open={vodMatch != null}
+          onOpenChange={(open) => !open && setVodMatch(null)}
         />
       )}
 
