@@ -17,10 +17,12 @@ import opponentAliasesRoutes from './routes/opponentAliases.js';
 import opponentNotesRoutes from './routes/opponentNotes.js';
 import startggRoutes from './routes/startgg.js';
 import scoutRoutes from './routes/scout.js';
+import reportsRoutes from './routes/reports.js';
 import tournamentsRoutes from './routes/tournaments.js';
 import { NotFoundError } from './services/rtdb.js';
 import type { FirebaseServices } from './firebase/admin.js';
-import type { StartggConfig } from './config/env.js';
+import type { ReportsConfig, StartggConfig } from './config/env.js';
+import type { AnthropicLikeClient } from './reports/generate.js';
 
 export interface BuildAppOptions {
   firebase: FirebaseServices;
@@ -30,6 +32,10 @@ export interface BuildAppOptions {
   startgg?: StartggConfig | null;
   /** Overridable fetch for the start.gg OAuth/GraphQL calls (tests). */
   startggFetch?: typeof fetch;
+  /** AI reports config; null/omitted disables /api/reports (503). */
+  reports?: ReportsConfig | null;
+  /** Overridable Anthropic client for /api/reports (tests). */
+  reportsClient?: AnthropicLikeClient;
   logger?: boolean | FastifyBaseLogger;
 }
 
@@ -124,6 +130,12 @@ export function buildApp(options: BuildAppOptions) {
       });
       await api.register(scoutRoutes, {
         config: options.startgg ?? null,
+        fetchImpl: options.startggFetch,
+      });
+      await api.register(reportsRoutes, {
+        config: options.reports ?? null,
+        startggConfig: options.startgg ?? null,
+        client: options.reportsClient,
         fetchImpl: options.startggFetch,
       });
     },

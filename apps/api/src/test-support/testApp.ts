@@ -9,7 +9,10 @@ export const TEST_EMAIL = 'test@example.com';
 export const TEST_TOKEN = 'valid-test-token';
 
 export function buildTestApp(
-  options: Pick<Parameters<typeof buildApp>[0], 'startgg' | 'startggFetch'> = {},
+  options: Pick<
+    Parameters<typeof buildApp>[0],
+    'startgg' | 'startggFetch' | 'reports' | 'reportsClient'
+  > = {},
 ) {
   const database = new FakeDatabase();
   const auth = new FakeAuth();
