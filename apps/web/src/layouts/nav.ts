@@ -9,6 +9,7 @@ import {
   Search,
   LineChart,
   TrendingUp,
+  Trophy,
   type LucideIcon,
 } from 'lucide-react';
 
@@ -29,5 +30,6 @@ export const navItems: NavItem[] = [
   { title: 'Scout a Player', href: '/scout', icon: Search },
   { title: 'Match Data', href: '/match-data', icon: LineChart },
   { title: 'Trends', href: '/trends', icon: TrendingUp },
+  { title: 'Groups', href: '/groups', icon: Trophy },
   { title: 'Integrations', href: '/settings/integrations', icon: Plug },
 ];

@@ -1,8 +1,13 @@
 import type { z } from 'zod';
 import {
+  createGroupRequestSchema,
   errorResponseSchema,
   fighterSelectionSchema,
   generateReportRequestSchema,
+  groupLeaderboardSchema,
+  groupListSchema,
+  groupRecordSchema,
+  joinGroupRequestSchema,
   matchSchema,
   opponentAliasMapSchema,
   opponentListSchema,
@@ -250,6 +255,31 @@ export const api = {
     /** GET /api/reports/:id — a single stored AI report. */
     get: (id: string) =>
       apiRequestParsed(`/api/reports/${encodeURIComponent(id)}`, scoutReportRecordSchema),
+  },
+  groups: {
+    /** GET /api/groups — the signed-in user's groups. */
+    list: () => apiRequestParsed('/api/groups', groupListSchema),
+    /** POST /api/groups — create a group (caller becomes owner + first member). */
+    create: (name: string) =>
+      apiRequestParsed('/api/groups', groupRecordSchema, {
+        method: 'POST',
+        body: createGroupRequestSchema.parse({ name }),
+      }),
+    /** POST /api/groups/join — join a group by invite code (idempotent if already a member). */
+    join: (code: string) =>
+      apiRequestParsed('/api/groups/join', groupRecordSchema, {
+        method: 'POST',
+        body: joinGroupRequestSchema.parse({ code }),
+      }),
+    /** GET /api/groups/:id/leaderboard */
+    leaderboard: (id: string) =>
+      apiRequestParsed(`/api/groups/${encodeURIComponent(id)}/leaderboard`, groupLeaderboardSchema),
+    /** POST /api/groups/:id/leave */
+    leave: (id: string) =>
+      apiRequest<void>(`/api/groups/${encodeURIComponent(id)}/leave`, { method: 'POST' }),
+    /** DELETE /api/groups/:id — owner only. */
+    remove: (id: string) =>
+      apiRequest<void>(`/api/groups/${encodeURIComponent(id)}`, { method: 'DELETE' }),
   },
 };
 
