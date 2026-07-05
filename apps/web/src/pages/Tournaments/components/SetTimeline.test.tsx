@@ -1,10 +1,22 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { render, screen, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { Match } from '@smash-tracker/shared';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { SetTimeline } from './SetTimeline';
 import { buildSetTimeline } from '../lib/setTimeline';
 import { SpriteList } from '@/data/sprites';
+
+const updateMatch = vi.fn();
+
+vi.mock('@/lib/api', () => ({
+  api: {
+    matches: {
+      update: (...args: unknown[]) => updateMatch(...args),
+    },
+  },
+}));
 
 const mario = SpriteList.find((s) => s.id === 1)!; // Mario
 const luigi = SpriteList.find((s) => s.id === 10)!; // Luigi
@@ -23,14 +35,21 @@ function makeMatch(overrides: Partial<Match> & Pick<Match, 'id' | 'time' | 'win'
 
 function renderTimeline(matches: Match[]) {
   const { sets, otherMatches } = buildSetTimeline(matches);
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
-    <TooltipProvider>
-      <SetTimeline sets={sets} otherMatches={otherMatches} />
-    </TooltipProvider>,
+    <QueryClientProvider client={queryClient}>
+      <TooltipProvider>
+        <SetTimeline sets={sets} otherMatches={otherMatches} />
+      </TooltipProvider>
+    </QueryClientProvider>,
   );
 }
 
 describe('SetTimeline', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
   it('shows an empty state when there are no matches', () => {
     renderTimeline([]);
     expect(screen.getByText('No matches recorded for this event yet.')).toBeInTheDocument();
@@ -209,5 +228,55 @@ describe('SetTimeline', () => {
     const matches = [makeMatch({ id: 'g1', time: 100, win: true, externalId: 'sgg:1:g1' })];
     renderTimeline(matches);
     expect(screen.queryByText('Watch VOD')).not.toBeInTheDocument();
+  });
+
+  it('shows clickable timestamp chips with deep links when the set has vodTimestamps', () => {
+    const matches = [
+      makeMatch({
+        id: 'g1',
+        time: 100,
+        win: true,
+        externalId: 'sgg:1:g1',
+        roundText: 'Grand Final',
+        vodUrl: 'https://youtube.com/watch?v=abc123',
+        vodTimestamps: [
+          { seconds: 490, note: 'lost ledge trump war' },
+          { seconds: 161, note: 'missed punish on shield' },
+        ],
+      }),
+    ];
+    renderTimeline(matches);
+
+    const firstChip = screen.getByRole('link', { name: '2:41' });
+    expect(firstChip).toHaveAttribute('href', 'https://youtube.com/watch?v=abc123&t=161s');
+    expect(screen.getByRole('link', { name: '8:10' })).toBeInTheDocument();
+  });
+
+  it('always shows a VOD edit affordance, even when the set has no vodUrl yet', () => {
+    const matches = [
+      makeMatch({ id: 'g1', time: 100, win: true, externalId: 'sgg:1:g1', roundText: 'Pools' }),
+    ];
+    renderTimeline(matches);
+    expect(screen.getByRole('button', { name: 'Edit VOD notes for Pools' })).toBeInTheDocument();
+  });
+
+  it('opens the VOD notes dialog from the edit affordance', async () => {
+    const user = userEvent.setup();
+    const matches = [
+      makeMatch({
+        id: 'g1',
+        time: 100,
+        win: true,
+        externalId: 'sgg:1:g1',
+        roundText: 'Grand Final',
+        vodUrl: 'https://youtube.com/watch?v=abc123',
+      }),
+    ];
+    renderTimeline(matches);
+
+    await user.click(screen.getByRole('button', { name: 'Edit VOD notes for Grand Final' }));
+
+    expect(await screen.findByRole('dialog')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'VOD Notes' })).toBeInTheDocument();
   });
 });
