@@ -21,6 +21,22 @@ export const matchTypeSchema = z.enum(matchTypeValues);
 export type MatchType = z.infer<typeof matchTypeSchema>;
 
 /**
+ * A single VOD timestamp note (V7-E): `seconds` is the offset into the VOD
+ * to deep-link to, `note` is the free-text callout (e.g. "missed punish on
+ * shield"). Lives alongside `vodUrl` on `matchRecordSchema` — user-editable
+ * via the same update path (see `createMatchInputSchema`/
+ * `updateMatchInputSchema`), unlike the server-only start.gg-sync fields
+ * below.
+ */
+export const vodTimestampSchema = z.object({
+  /** Offset in whole seconds into the VOD this note refers to. */
+  seconds: z.number().int().min(0),
+  /** Free-text callout for this moment, e.g. "missed punish on shield". */
+  note: z.string().trim().min(1).max(200),
+});
+export type VodTimestamp = z.infer<typeof vodTimestampSchema>;
+
+/**
  * `matches/{uid}/{pushKey}` — the stored shape, derived verbatim from
  * legacy AddMatchForm.js `onSaveMatchClick` / EditMatchForm.js
  * `onSaveMatchClick` (both `.set()` the full record — legacy never used
@@ -115,15 +131,23 @@ export const matchRecordSchema = z.object({
    */
   opponentUserSlug: z.string().optional(),
   /**
-   * URL of a VOD for the set this game belonged to, when start.gg's
-   * `Set.vodUrl` is populated (a TO-curated field — verified via the
-   * V6-W1b probe to exist but be null on essentially every real set
-   * sampled, including majors' streamed Grand Finals; harvested anyway in
-   * case a TO does populate it). Duplicated across every game of the set,
-   * same rationale as `opponentSeed`/`opponentPlacement`. Server-set,
-   * imported matches only.
+   * URL of a VOD for the set this game belonged to. Originally populated
+   * only by start.gg's TO-curated `Set.vodUrl` (verified via the V6-W1b
+   * probe to exist but be null on essentially every real set sampled,
+   * including majors' streamed Grand Finals; duplicated across every game of
+   * the set, same rationale as `opponentSeed`/`opponentPlacement`) — as of
+   * V7-E, also user-editable directly (see `createMatchInputSchema` /
+   * `updateMatchInputSchema`), so players can attach a VOD link themselves
+   * when the TO never does.
    */
   vodUrl: z.string().url().optional(),
+  /**
+   * User-authored VOD timestamp notes (V7-E), e.g. "2:41 — missed punish on
+   * shield". Unlike the start.gg-only fields above, this is set entirely by
+   * the player via the update path — capped at 20 entries per match so a
+   * single game's notes stay skimmable.
+   */
+  vodTimestamps: z.array(vodTimestampSchema).max(20).optional(),
 });
 export type MatchRecord = z.infer<typeof matchRecordSchema>;
 
@@ -193,6 +217,11 @@ const optionalNameInputSchema = z
  * additions (set wizard + tournament hint fields) — `source`/`externalId`
  * remain server-set only (see `matchRecordSchema`) and are intentionally
  * NOT accepted here.
+ *
+ * `vodUrl`/`vodTimestamps` (V7-E) are user-editable here too — omitting
+ * either field (rather than sending it) is how a caller clears it, following
+ * the same full-overwrite + conditional-spread convention as
+ * `stocksLeft`/`eventName`/`tournamentName` (see `RtdbService.updateMatch`).
  */
 export const createMatchInputSchema = z.object({
   fighter_id: z.number().int().positive(),
@@ -205,6 +234,8 @@ export const createMatchInputSchema = z.object({
   stocksLeft: z.number().int().min(0).max(3).optional(),
   eventName: optionalNameInputSchema,
   tournamentName: optionalNameInputSchema,
+  vodUrl: z.string().url().optional(),
+  vodTimestamps: z.array(vodTimestampSchema).max(20).optional(),
 });
 export type CreateMatchInput = z.infer<typeof createMatchInputSchema>;
 
