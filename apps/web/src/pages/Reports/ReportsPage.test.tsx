@@ -176,4 +176,25 @@ describe('ReportsPage', () => {
     expect(await screen.findByText('AI Scouting Report')).toBeInTheDocument();
     expect(screen.getAllByText('The overview text').length).toBeGreaterThan(0);
   });
+
+  it('clicking an open report again collapses it (accordion)', async () => {
+    const user = userEvent.setup();
+    reportsConfig.mockResolvedValue({ enabled: true });
+    reportsList.mockResolvedValue([
+      {
+        id: 'r1',
+        createdAt: 1_700_000_000_000,
+        model: 'claude-opus-4-8',
+        player: { id: 1802316, gamerTag: 'Pandem1c' },
+        report: { ...REPORT_SHAPE, overview: 'The overview text' },
+      },
+    ]);
+
+    renderPage();
+    await user.click(await screen.findByText('Pandem1c'));
+    expect(await screen.findByText('AI Scouting Report')).toBeInTheDocument();
+
+    await user.click(screen.getByText('Pandem1c'));
+    expect(screen.queryByText('AI Scouting Report')).not.toBeInTheDocument();
+  });
 });

@@ -179,7 +179,11 @@ export function ReportsPage() {
                     key={group.key}
                     group={group}
                     selectedId={selectedId}
-                    onSelect={(record) => setSelectedId(record.id)}
+                    // Accordion semantics: clicking an already-open report
+                    // collapses it instead of being a no-op.
+                    onSelect={(record) =>
+                      setSelectedId((prev) => (prev === record.id ? null : record.id))
+                    }
                   />
                 ))}
               </CardContent>
