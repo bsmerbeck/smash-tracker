@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
+import type { ScoutGame } from '@smash-tracker/shared';
 import type { StartggSet } from './client.js';
 import {
   accumulateScoutSet,
@@ -238,6 +239,7 @@ describe('accumulateScoutSet', () => {
         }
       >(),
       opponents: new Map<string, number>(),
+      games: [] as ScoutGame[],
     };
   }
 
@@ -260,6 +262,52 @@ describe('accumulateScoutSet', () => {
       numEntrants: 512,
       slug: 'tournament/test-weekly-42/event/ultimate-singles',
     });
+  });
+
+  it('emits a V9-D per-game record for each sampled game, from the scouted player perspective', () => {
+    const acc = emptyAcc();
+    accumulateScoutSet(acc, makeSet(), PLAYER_ID);
+
+    expect(acc.games).toHaveLength(2);
+    expect(acc.games[0]).toEqual({
+      time: 1_700_000_000_000,
+      win: true,
+      fighterId: 67, // Bayonetta
+      opponentFighterId: 41, // Sonic
+      stageId: expect.any(Number),
+      stageName: 'Battlefield',
+      opponentTag: 'PowPow',
+      eventName: 'Ultimate Singles',
+    });
+    expect(acc.games[1]).toMatchObject({
+      win: false,
+      fighterId: 67,
+      opponentFighterId: 41,
+      stageName: 'Pokémon Stadium 2',
+      opponentTag: 'PowPow',
+    });
+  });
+
+  it('skips emitting a game record when the scouted player’s own character is unmapped', () => {
+    const acc = emptyAcc();
+    const set = makeSet({
+      games: [
+        {
+          winnerId: 1,
+          stage: { name: 'Battlefield' },
+          selections: [
+            { character: { id: 1746 }, entrant: { id: 1 } }, // Random Character (unmapped)
+            { character: { id: 1332 }, entrant: { id: 2 } },
+          ],
+        },
+      ],
+    });
+    accumulateScoutSet(acc, set, PLAYER_ID);
+    // The aggregate still counts it under fighterId 0...
+    expect(acc.characters.get(0)).toEqual({ games: 1, wins: 1 });
+    // ...but no per-game record is emitted for it (V9-D: would pollute
+    // per-character client stats with an unattributable game).
+    expect(acc.games).toHaveLength(0);
   });
 
   it('tolerates a set whose event has no slug (back-compat: older start.gg responses / any nullish slug)', () => {
@@ -407,6 +455,36 @@ describe('buildScoutReport', () => {
       slug: 'tournament/test-weekly-42/event/ultimate-singles',
       source: 'startgg',
     });
+    // V9-D: per-game records fold across every paginated set.
+    expect(report.games).toHaveLength(4);
+  });
+
+  it('omits `games` entirely (not an empty array) when no game record could be attributed (V9-D back-compat shape)', async () => {
+    const fetchMock = (async () =>
+      gqlResponse({
+        player: {
+          sets: {
+            pageInfo: { totalPages: 1 },
+            nodes: [
+              makeSet({
+                games: [
+                  {
+                    winnerId: 1,
+                    stage: { name: 'Battlefield' },
+                    selections: [
+                      { character: { id: 1746 }, entrant: { id: 1 } }, // unmapped
+                      { character: { id: 1332 }, entrant: { id: 2 } },
+                    ],
+                  },
+                ],
+              }),
+            ],
+          },
+        },
+      })) as typeof fetch;
+
+    const report = await buildScoutReport('server-token', player, fetchMock);
+    expect(report.games).toBeUndefined();
   });
 
   it('caps pagination at 15 pages even when start.gg reports more', async () => {

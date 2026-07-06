@@ -255,6 +255,45 @@ export const scoutCommonOpponentSchema = z.object({
 export type ScoutCommonOpponent = z.infer<typeof scoutCommonOpponentSchema>;
 
 /**
+ * V9-D: one individual game from the sampled sets, entirely from the
+ * scouted player's own perspective — enough to adapt into a client-side
+ * `Match[]` (see apps/web's `FullAnalysisSection`) and run the SAME stats
+ * engine (`apps/web/src/lib/stats.ts`) Fighter Analysis uses, for the
+ * scouted player instead of the tracked user.
+ *
+ * OPTIONAL and additive on `scoutReportDataSchema`: every report generated
+ * before V9-D (and every stored AI report, which never embedded the full
+ * scout payload's `games` in the first place) has no such field at all, so
+ * every consumer must render a "no per-game data" empty state rather than
+ * assume presence.
+ *
+ * Games whose character couldn't be mapped to this app's roster are
+ * SKIPPED here (never emitted with a fighterId of 0) — unlike
+ * `scoutCharacterUsageSchema`'s aggregate rows, an unmapped-character game
+ * would pollute the client stats engine's per-character breakdowns (e.g.
+ * "their best stage on their top character") with games that aren't
+ * actually attributable to a real character.
+ */
+export const scoutGameSchema = z.object({
+  /** Epoch ms this game was played (set-level `completedAt`/`endedAt`, duplicated per game — same convention as match records' server-set event fields). */
+  time: z.number().int().nonnegative(),
+  win: z.boolean(),
+  /** The scouted player's own character (mapped sprite id) for this game. */
+  fighterId: z.number().int().nonnegative(),
+  /** The opponent's character (mapped sprite id) for this game; `0` when unmapped (unlike `fighterId`, the opponent's character isn't the scouted player's own stats subject, so this follows the usual "unknown sentinel" convention instead of being skipped). */
+  opponentFighterId: z.number().int().nonnegative(),
+  /** This app's stage id, when the played stage resolved to one. */
+  stageId: z.number().int().nonnegative().optional(),
+  /** The stage's display name, when known. */
+  stageName: z.string().optional(),
+  /** The human opponent's gamer tag for this set. */
+  opponentTag: z.string().min(1),
+  /** The event name this set belonged to, when known. */
+  eventName: z.string().optional(),
+});
+export type ScoutGame = z.infer<typeof scoutGameSchema>;
+
+/**
  * POST /api/scout response — a server-aggregated scouting summary for ANY
  * start.gg player (not just linked accounts), built entirely from public
  * data reachable via the server's own API token. Every field below is from
@@ -276,6 +315,12 @@ export const scoutReportDataSchema = z.object({
   recentEvents: z.array(scoutRecentEventSchema).max(10),
   /** Opponents they've faced most often in the sample, most sets first (capped to 10). */
   commonOpponents: z.array(scoutCommonOpponentSchema).max(10),
+  /**
+   * V9-D: per-game records from the sampled sets, for the web "Full
+   * analysis" section. OPTIONAL — see `scoutGameSchema`'s doc for the
+   * back-compat rule every consumer must follow.
+   */
+  games: z.array(scoutGameSchema).optional(),
 });
 export type ScoutReportData = z.infer<typeof scoutReportDataSchema>;
 

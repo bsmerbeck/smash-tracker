@@ -1,4 +1,4 @@
-import type { ScoutReportData } from '@smash-tracker/shared';
+import type { ScoutGame, ScoutReportData } from '@smash-tracker/shared';
 import {
   fetchPlayerSetsPage,
   resolvePlayerById,
@@ -126,6 +126,8 @@ interface Accumulators {
     }
   >;
   opponents: Map<string, number>;
+  /** V9-D: per-game records for the web "Full analysis" section — see `scoutGameSchema`. */
+  games: ScoutGame[];
 }
 
 function emptyAccumulators(): Accumulators {
@@ -136,6 +138,7 @@ function emptyAccumulators(): Accumulators {
     stages: new Map(),
     events: new Map(),
     opponents: new Map(),
+    games: [],
   };
 }
 
@@ -180,16 +183,14 @@ export function accumulateScoutSet(acc: Accumulators, set: StartggSet, playerId:
   // Common opponents: one tally per set (not per game), keyed the same way
   // sync.ts derives opponent tags, so scouting stays consistent with how the
   // rest of the app names people.
-  if (opponentEntrant) {
-    const opponentName = opponentEntrant.name?.trim();
-    if (opponentName) {
-      const tag = opponentName.includes('|')
-        ? (opponentName.split('|').pop() ?? opponentName).trim()
-        : opponentName;
-      if (tag) {
-        acc.opponents.set(tag, (acc.opponents.get(tag) ?? 0) + 1);
-      }
-    }
+  const opponentName = opponentEntrant?.name?.trim();
+  const opponentTag = opponentName
+    ? opponentName.includes('|')
+      ? (opponentName.split('|').pop() ?? opponentName).trim()
+      : opponentName
+    : undefined;
+  if (opponentTag) {
+    acc.opponents.set(opponentTag, (acc.opponents.get(opponentTag) ?? 0) + 1);
   }
 
   // Recent events: keep the freshest facts per event id (numEntrants/placement
@@ -235,6 +236,9 @@ export function accumulateScoutSet(acc: Accumulators, set: StartggSet, playerId:
   games.forEach((game) => {
     const selections = game.selections ?? [];
     const playerSelection = selections.find((s) => s.entrant?.id === playerEntrant.id);
+    const opponentSelection = opponentEntrant
+      ? selections.find((s) => s.entrant?.id === opponentEntrant.id)
+      : undefined;
     const won = game.winnerId === playerEntrant.id;
 
     acc.sampledGames += 1;
@@ -258,6 +262,31 @@ export function accumulateScoutSet(acc: Accumulators, set: StartggSet, playerId:
       game.stage?.name,
     );
     bump(acc.stages, resolvedStage?.id ?? UNKNOWN_STAGE_ID, won);
+
+    // V9-D: per-game record for the web "Full analysis" section. Games whose
+    // OWN character can't be mapped are skipped entirely (mirroring the
+    // per-character usage-aggregation rule above, but as an omission rather
+    // than a fighterId-0 row — see scoutGameSchema's doc) — an unmapped-
+    // character game has nothing meaningful to attribute a per-character
+    // stat to on the client. The opponent's character, by contrast, still
+    // uses the fighterId-0 sentinel (matching `characters` above) since it
+    // isn't the subject of the scouted player's own stats.
+    if (opponentTag && fighterId !== UNMAPPED_FIGHTER_ID) {
+      const opponentCharacterId = opponentSelection?.character?.id;
+      const opponentFighterId =
+        opponentCharacterId != null
+          ? (startggCharacterToFighterId.get(opponentCharacterId) ?? UNMAPPED_FIGHTER_ID)
+          : UNMAPPED_FIGHTER_ID;
+      acc.games.push({
+        time: completedAt * 1000,
+        win: won,
+        fighterId,
+        opponentFighterId,
+        ...(resolvedStage ? { stageId: resolvedStage.id, stageName: resolvedStage.name } : {}),
+        opponentTag,
+        ...(eventName ? { eventName } : {}),
+      });
+    }
   });
 }
 
@@ -299,6 +328,7 @@ function toReport(acc: Accumulators, player: ResolvedScoutPlayer): ScoutReportDa
     stages,
     recentEvents,
     commonOpponents,
+    ...(acc.games.length > 0 ? { games: acc.games } : {}),
   };
 }
 
