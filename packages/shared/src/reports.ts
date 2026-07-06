@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { scoutPlayerIdentitySchema } from './startgg.js';
+import { scoutPlayerIdentitySchema, scoutSourceSchema } from './startgg.js';
 
 /**
  * V7-B: AI-generated pre-bracket scouting reports, powered by the Claude API,
@@ -87,9 +87,14 @@ export const scoutReportRecordSchema = z.object({
 });
 export type ScoutReportRecord = z.infer<typeof scoutReportRecordSchema>;
 
-/** POST /api/reports request body — same input semantics as POST /api/scout. */
+/**
+ * POST /api/reports request body — same input semantics as POST /api/scout,
+ * including the same optional `source` (V9-B Feature 4) for bare-query
+ * disambiguation between start.gg and parry.gg.
+ */
 export const generateReportRequestSchema = z.object({
   query: z.string().min(1),
+  source: scoutSourceSchema.optional(),
 });
 export type GenerateReportRequest = z.infer<typeof generateReportRequestSchema>;
 

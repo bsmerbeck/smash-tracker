@@ -155,6 +155,8 @@ export function buildApp(options: BuildAppOptions) {
       await api.register(scoutRoutes, {
         config: options.startgg ?? null,
         fetchImpl: options.startggFetch,
+        parryggConfig: options.parrygg ?? null,
+        parryggClients: options.parryggClients,
       });
       await api.register(reportsRoutes, {
         config: options.reports ?? null,
@@ -162,6 +164,8 @@ export function buildApp(options: BuildAppOptions) {
         stripeConfig: options.stripe ?? null,
         client: options.reportsClient,
         fetchImpl: options.startggFetch,
+        parryggConfig: options.parrygg ?? null,
+        parryggClients: options.parryggClients,
       });
       await api.register(billingRoutes, {
         stripeConfig: options.stripe ?? null,

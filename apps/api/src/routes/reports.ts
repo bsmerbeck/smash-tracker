@@ -7,9 +7,11 @@ import {
   reportsConfigSchema,
   scoutReportRecordSchema,
 } from '@smash-tracker/shared';
-import type { ReportsConfig, StartggConfig, StripeConfig } from '../config/env.js';
+import type { ParryggConfig, ReportsConfig, StartggConfig, StripeConfig } from '../config/env.js';
 import { StartggApiError } from '../startgg/client.js';
 import { parseScoutInput, ScoutCache, ScoutInputError, scoutPlayer } from '../startgg/scout.js';
+import { parseParryProfileUrl, ParryScoutCache, scoutParryPlayer } from '../parrygg/scout.js';
+import type { ParryggClients } from '../parrygg/client.js';
 import {
   assembleReportPayload,
   Anthropic,
@@ -28,6 +30,10 @@ export interface ReportsRoutesOptions {
   client?: AnthropicLikeClient;
   /** Overridable fetch for the start.gg GraphQL calls (tests). */
   fetchImpl?: typeof fetch;
+  /** parry.gg integration config (V9-B Feature 4); null/omitted means a query resolved to parry.gg answers 503 (start.gg queries are unaffected). */
+  parryggConfig?: ParryggConfig | null;
+  /** Overridable parry.gg gRPC-Web service clients (tests). */
+  parryggClients?: ParryggClients;
 }
 
 const reportIdParamsSchema = z.object({
@@ -62,9 +68,14 @@ const reportIdParamsSchema = z.object({
  * credits" dialog.
  */
 const reportsRoutes: FastifyPluginAsyncZod<ReportsRoutesOptions> = async (app, options) => {
-  const { config, startggConfig, stripeConfig } = options;
+  const { config, startggConfig, stripeConfig, parryggConfig } = options;
 
-  if (!config || !startggConfig) {
+  // AI reports need Claude configured, AND at least one of the two scouting
+  // engines (start.gg or parry.gg) to actually source data from — same
+  // per-source 503 gating as POST /api/scout below (a query resolved to a
+  // source with no config answers 503 for THAT request, not a blanket
+  // route-level 503, unless NEITHER source is configured at all).
+  if (!config || (!startggConfig && !parryggConfig)) {
     app.all('/reports*', async (_request, reply) => {
       return reply.code(503).send({
         error: 'Service Unavailable',
@@ -77,6 +88,7 @@ const reportsRoutes: FastifyPluginAsyncZod<ReportsRoutesOptions> = async (app, o
 
   const fetchImpl = options.fetchImpl ?? fetch;
   const scoutCache = new ScoutCache();
+  const parryScoutCache = new ParryScoutCache();
   const client: AnthropicLikeClient =
     options.client ?? new Anthropic({ apiKey: config.anthropicApiKey });
 
@@ -120,6 +132,7 @@ const reportsRoutes: FastifyPluginAsyncZod<ReportsRoutesOptions> = async (app, o
           404: errorResponseSchema,
           429: errorResponseSchema,
           502: errorResponseSchema,
+          503: errorResponseSchema,
         },
       },
     },
@@ -134,18 +147,42 @@ const reportsRoutes: FastifyPluginAsyncZod<ReportsRoutesOptions> = async (app, o
         });
       }
 
+      const rawQuery = request.body.query;
+      // Same source-resolution rule as POST /api/scout: a pasted parry.gg
+      // profile URL always overrides `source` (or its default).
+      const effectiveSource = parseParryProfileUrl(rawQuery)
+        ? 'parrygg'
+        : (request.body.source ?? 'startgg');
+
+      if (effectiveSource === 'parrygg' && !parryggConfig) {
+        return reply.code(503).send({
+          error: 'Service Unavailable',
+          message: 'parry.gg integration is not configured on this server',
+          statusCode: 503,
+        });
+      }
+      if (effectiveSource === 'startgg' && !startggConfig) {
+        return reply.code(503).send({
+          error: 'Service Unavailable',
+          message: 'start.gg integration is not configured on this server',
+          statusCode: 503,
+        });
+      }
+
       let input;
-      try {
-        input = parseScoutInput(request.body.query);
-      } catch (err) {
-        if (err instanceof ScoutInputError) {
-          return reply.code(400).send({
-            error: 'Bad Request',
-            message: err.message,
-            statusCode: 400,
-          });
+      if (effectiveSource === 'startgg') {
+        try {
+          input = parseScoutInput(rawQuery);
+        } catch (err) {
+          if (err instanceof ScoutInputError) {
+            return reply.code(400).send({
+              error: 'Bad Request',
+              message: err.message,
+              statusCode: 400,
+            });
+          }
+          throw err;
         }
-        throw err;
       }
 
       // V7-C: non-allowlisted uids spend one credit per generation attempt.
@@ -174,29 +211,46 @@ const reportsRoutes: FastifyPluginAsyncZod<ReportsRoutesOptions> = async (app, o
       }
 
       let scout;
-      try {
-        scout = await scoutPlayer(startggConfig.apiToken, input, fetchImpl, scoutCache);
-      } catch (err) {
-        if (err instanceof StartggApiError && err.status === 429) {
+      if (effectiveSource === 'parrygg') {
+        scout = await scoutParryPlayer(
+          parryggConfig!.apiKey,
+          rawQuery,
+          parryScoutCache,
+          options.parryggClients,
+        );
+        if (!scout) {
           await refundIfSpent();
-          return reply.code(429).send({
-            error: 'Too Many Requests',
-            message: 'start.gg is rate-limiting requests right now — try again shortly',
-            statusCode: 429,
+          return reply.code(404).send({
+            error: 'Not Found',
+            message: 'No parry.gg player found for that query',
+            statusCode: 404,
           });
         }
-        await refundIfSpent();
-        request.log.error({ err }, 'start.gg scout lookup failed during report generation');
-        throw err;
-      }
+      } else {
+        try {
+          scout = await scoutPlayer(startggConfig!.apiToken, input!, fetchImpl, scoutCache);
+        } catch (err) {
+          if (err instanceof StartggApiError && err.status === 429) {
+            await refundIfSpent();
+            return reply.code(429).send({
+              error: 'Too Many Requests',
+              message: 'start.gg is rate-limiting requests right now — try again shortly',
+              statusCode: 429,
+            });
+          }
+          await refundIfSpent();
+          request.log.error({ err }, 'start.gg scout lookup failed during report generation');
+          throw err;
+        }
 
-      if (!scout) {
-        await refundIfSpent();
-        return reply.code(404).send({
-          error: 'Not Found',
-          message: 'No start.gg player found for that query',
-          statusCode: 404,
-        });
+        if (!scout) {
+          await refundIfSpent();
+          return reply.code(404).send({
+            error: 'Not Found',
+            message: 'No start.gg player found for that query',
+            statusCode: 404,
+          });
+        }
       }
 
       const payload = await assembleReportPayload(request.uid, scout, app.firebase.database);

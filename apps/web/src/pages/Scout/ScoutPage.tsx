@@ -2,12 +2,18 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router';
 import { Sparkles } from 'lucide-react';
 import { toast } from 'sonner';
-import type { ScoutReportData, ScoutReportRecord } from '@smash-tracker/shared';
+import {
+  scoutIdentityKey,
+  type ScoutReportData,
+  type ScoutReportRecord,
+  type ScoutSource,
+} from '@smash-tracker/shared';
 import { ApiError } from '@/lib/api';
 import { useScoutPlayer } from '@/hooks/useScoutPlayer';
 import { useMatches } from '@/hooks/useMatches';
 import { useGenerateReport, useReportsConfig, useScoutReportsList } from '@/hooks/useScoutReports';
 import { useCredits } from '@/hooks/useBilling';
+import { useParryggStatus } from '@/hooks/useParrygg';
 import { getOpponentProfile } from '@/lib/stats';
 import { Button } from '@/components/ui/button';
 import { ScoutSearchForm } from './components/ScoutSearchForm';
@@ -16,8 +22,10 @@ import { ScoutCharactersCard } from './components/ScoutCharactersCard';
 import { ScoutStagesCard } from './components/ScoutStagesCard';
 import { ScoutRecentEventsCard } from './components/ScoutRecentEventsCard';
 import { ScoutCommonOpponentsCard } from './components/ScoutCommonOpponentsCard';
+import { ScoutMatchupAdvisorCard } from './components/ScoutMatchupAdvisorCard';
 import { YourHistoryStrip } from './components/YourHistoryStrip';
 import { ScoutAiReportCard } from './components/ScoutAiReportCard';
+import { ScoutReportHistorySelector } from './components/ScoutReportHistorySelector';
 import { ScoutPastReportsCard } from './components/ScoutPastReportsCard';
 import { BuyCreditsDialog } from '@/components/billing/BuyCreditsDialog';
 
@@ -89,10 +97,22 @@ export function ScoutPage() {
   const generateReport = useGenerateReport();
   const pastReports = useScoutReportsList();
   const credits = useCredits();
+  const parryggStatus = useParryggStatus();
+  // parry.gg toggle is hidden entirely when the integration isn't configured
+  // on this deployment (V9-B Feature 4) — an unconfigured server answers 503
+  // for every /api/integrations/parrygg/* route, which surfaces here as a
+  // query error rather than a normal { linked: false } response. Fails
+  // CLOSED (hides the toggle) for anything other than a confirmed successful
+  // status fetch, rather than assuming enabled on an ambiguous error.
+  const parryggEnabled = parryggStatus.isSuccess;
 
-  const [lastQuery, setLastQuery] = useState<string | null>(null);
+  const [lastQuery, setLastQuery] = useState<{ query: string; source: ScoutSource } | null>(null);
   const [selectedRecord, setSelectedRecord] = useState<ScoutReportRecord | null>(null);
   const [buyCreditsOpen, setBuyCreditsOpen] = useState(false);
+  // V9-B Feature 1: which of the CURRENT player's stored reports the history
+  // selector has picked (index into the reverse-chronological list from
+  // GET /api/reports); null means "use the newest" (the default).
+  const [historyIndex, setHistoryIndex] = useState<number | null>(null);
 
   const report: ScoutReportData | undefined = scout.data;
   const aiReportsEnabled = reportsConfig.data?.enabled ?? false;
@@ -147,21 +167,31 @@ export function ScoutPage() {
     return getOpponentProfile(matches, needle);
   }, [matches, report]);
 
-  // The most recent stored report for the CURRENTLY scouted player, if any —
-  // matched by start.gg player id (stable across re-scouts, unlike gamerTag
-  // which can change). Newest-first is already guaranteed by GET /api/reports.
-  const storedRecordForCurrentPlayer = useMemo(() => {
+  // Every stored report for the CURRENTLY scouted player, newest first —
+  // matched via `scoutIdentityKey` (source-aware: a start.gg player id and a
+  // parry.gg parryUserId never collide, and pre-V9-B records with no
+  // `source` at all still match correctly since the key defaults to
+  // 'startgg'). Newest-first is already guaranteed by GET /api/reports.
+  const reportsForCurrentPlayer = useMemo(() => {
     if (!report) {
-      return null;
+      return [];
     }
-    return pastReports.data?.find((record) => record.player.id === report.player.id) ?? null;
+    const needle = scoutIdentityKey(report.player);
+    return (pastReports.data ?? []).filter((record) => scoutIdentityKey(record.player) === needle);
   }, [pastReports.data, report]);
 
-  const handleSubmit = (query: string) => {
+  // V9-B Feature 1: the history selector picks an index into
+  // `reportsForCurrentPlayer`; out-of-range (e.g. the list shrank) falls back
+  // to the newest (index 0).
+  const storedRecordForCurrentPlayer =
+    reportsForCurrentPlayer[historyIndex ?? 0] ?? reportsForCurrentPlayer[0] ?? null;
+
+  const handleSubmit = (query: string, source: ScoutSource) => {
     setSelectedRecord(null);
+    setHistoryIndex(null);
     generateReport.reset();
-    setLastQuery(query);
-    scout.mutate(query);
+    setLastQuery({ query, source });
+    scout.mutate({ query, source });
   };
 
   const handleGenerateReport = () => {
@@ -169,6 +199,7 @@ export function ScoutPage() {
       return;
     }
     setSelectedRecord(null);
+    setHistoryIndex(null);
     generateReport.mutate(lastQuery, {
       onError: (error) => {
         if (error instanceof ApiError && error.status === 402) {
@@ -191,15 +222,21 @@ export function ScoutPage() {
 
   // Other players' past reports — this player's own reports are already
   // shown automatically above, so they're excluded here to avoid duplication.
+  // Same source-aware key as `reportsForCurrentPlayer` above.
+  const currentPlayerKey = report ? scoutIdentityKey(report.player) : null;
   const otherPastReports = (pastReports.data ?? []).filter(
-    (record) => record.player.id !== report?.player.id,
+    (record) => scoutIdentityKey(record.player) !== currentPlayerKey,
   );
 
   return (
     <div className="mx-auto flex max-w-3xl flex-col gap-6">
       <h1 className="text-2xl font-semibold tracking-tight">Scout a Player</h1>
 
-      <ScoutSearchForm onSubmit={handleSubmit} isPending={scout.isPending} />
+      <ScoutSearchForm
+        onSubmit={handleSubmit}
+        isPending={scout.isPending}
+        parryggEnabled={parryggEnabled}
+      />
 
       {scout.isError && (
         <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-4 text-sm text-destructive">
@@ -290,7 +327,20 @@ export function ScoutPage() {
             </div>
           )}
 
+          {/* V9-B Feature 1: only rendered when this player has MORE THAN ONE
+              stored report — a single report needs no navigation, it's just
+              shown directly via storedRecordForCurrentPlayer below. */}
+          {!generateReport.data && !selectedRecord && reportsForCurrentPlayer.length > 1 && (
+            <ScoutReportHistorySelector
+              reports={reportsForCurrentPlayer}
+              index={historyIndex ?? 0}
+              onChange={setHistoryIndex}
+            />
+          )}
+
           {displayedRecord && <ScoutAiReportCard record={displayedRecord} />}
+
+          <ScoutMatchupAdvisorCard scoutedCharacters={report.characters} matches={matches} />
 
           <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
             <ScoutCharactersCard characters={report.characters} />
@@ -312,8 +362,9 @@ export function ScoutPage() {
 
       {!report && !scout.isError && !scout.isPending && (
         <div className="flex items-center justify-center rounded-lg border border-dashed p-16 text-center text-sm text-muted-foreground">
-          Paste a start.gg profile URL, slug, or player id above to pull up their public tournament
-          history.
+          {parryggEnabled
+            ? 'Paste a start.gg or parry.gg profile URL, slug/tag, or player id above to pull up their public tournament history.'
+            : 'Paste a start.gg profile URL, slug, or player id above to pull up their public tournament history.'}
         </div>
       )}
 

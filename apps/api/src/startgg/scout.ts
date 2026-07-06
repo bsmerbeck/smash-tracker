@@ -121,6 +121,8 @@ interface Accumulators {
       placement?: number;
       numEntrants?: number;
       lastSetAt: number;
+      /** start.gg event slug, e.g. "tournament/the-big-house-9/event/ultimate-singles" — used to deep-link (V9-B Feature 2). */
+      slug?: string;
     }
   >;
   opponents: Map<string, number>;
@@ -200,6 +202,7 @@ export function accumulateScoutSet(acc: Accumulators, set: StartggSet, playerId:
     const tournamentName = set.event?.tournament?.name?.trim();
     const placement = playerEntrant.standing?.placement ?? undefined;
     const numEntrants = set.event?.numEntrants ?? undefined;
+    const slug = set.event?.slug?.trim() || undefined;
     const lastSetAtMs = completedAt * 1000;
     const existing = acc.events.get(eventId);
     if (!existing || lastSetAtMs > existing.lastSetAt) {
@@ -208,6 +211,7 @@ export function accumulateScoutSet(acc: Accumulators, set: StartggSet, playerId:
         ...(tournamentName ? { tournamentName } : {}),
         ...(placement != null ? { placement } : {}),
         ...(numEntrants != null ? { numEntrants } : {}),
+        ...(slug ? { slug } : {}),
         lastSetAt: lastSetAtMs,
       });
     } else {
@@ -221,6 +225,9 @@ export function accumulateScoutSet(acc: Accumulators, set: StartggSet, playerId:
       }
       if (tournamentName) {
         existing.tournamentName = tournamentName;
+      }
+      if (slug) {
+        existing.slug = slug;
       }
     }
   }
@@ -271,6 +278,7 @@ function toReport(acc: Accumulators, player: ResolvedScoutPlayer): ScoutReportDa
       ...(event.tournamentName ? { tournamentName: event.tournamentName } : {}),
       ...(event.placement != null ? { placement: event.placement } : {}),
       ...(event.numEntrants != null ? { numEntrants: event.numEntrants } : {}),
+      ...(event.slug ? { slug: event.slug, source: 'startgg' as const } : {}),
       lastSetAt: event.lastSetAt,
     }));
 
