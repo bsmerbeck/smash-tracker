@@ -1,5 +1,6 @@
 import { buildApp } from './app.js';
 import {
+  getParryggConfig,
   getReportsConfig,
   getStartggConfig,
   getStripeConfig,
@@ -24,6 +25,7 @@ const app = buildApp({
   startgg: getStartggConfig(env),
   reports: getReportsConfig(env),
   stripe: getStripeConfig(env),
+  parrygg: getParryggConfig(env),
   webBaseUrl: env.WEB_BASE_URL,
 });
 
