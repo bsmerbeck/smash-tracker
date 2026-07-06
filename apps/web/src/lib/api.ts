@@ -78,6 +78,24 @@ export function getApiBaseUrl(): string {
   return base.replace(/\/+$/, '');
 }
 
+/**
+ * Base URL for requests that must NOT go through the Firebase Hosting
+ * `/api/**` rewrite. The Hosting proxy hard-caps every rewritten request at
+ * 60 seconds (not configurable), which AI report generation can exceed —
+ * the model call alone can run past a minute. `VITE_API_DIRECT_URL` holds
+ * the Cloud Run service URL so those calls hit the API origin directly
+ * (CORS-allowed via the API's CORS_ORIGIN env var) and get Cloud Run's own
+ * 300-second window instead. Falls back to the regular base when unset
+ * (local dev and tests, where there is no proxy in the middle).
+ */
+export function getDirectApiBaseUrl(): string {
+  const configured = import.meta.env.VITE_API_DIRECT_URL;
+  if (typeof configured === 'string' && configured.trim() !== '') {
+    return configured.replace(/\/+$/, '');
+  }
+  return getApiBaseUrl();
+}
+
 async function getAuthHeader(): Promise<Record<string, string>> {
   const user = getFirebaseAuth().currentUser;
   if (!user) {
@@ -90,6 +108,8 @@ async function getAuthHeader(): Promise<Record<string, string>> {
 interface RequestOptions<TBody> {
   method?: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
   body?: TBody;
+  /** Overrides the request origin (see `getDirectApiBaseUrl`). */
+  baseUrl?: string;
 }
 
 /**
@@ -105,7 +125,7 @@ async function apiRequest<TResponse, TBody = unknown>(
   const authHeader = await getAuthHeader();
   const hasBody = options.body !== undefined;
 
-  const response = await fetch(`${getApiBaseUrl()}${path}`, {
+  const response = await fetch(`${options.baseUrl ?? getApiBaseUrl()}${path}`, {
     method: options.method ?? 'GET',
     headers: {
       ...authHeader,
@@ -244,11 +264,16 @@ export const api = {
   reports: {
     /** GET /api/reports/config — whether the signed-in user can generate AI reports. */
     config: () => apiRequestParsed('/api/reports/config', reportsConfigSchema),
-    /** POST /api/reports — generate (and store) an AI scouting report. */
+    /**
+     * POST /api/reports — generate (and store) an AI scouting report.
+     * Goes directly to the API origin: generation regularly outlives the
+     * Hosting proxy's 60s rewrite timeout.
+     */
     generate: (query: string) =>
       apiRequestParsed('/api/reports', scoutReportRecordSchema, {
         method: 'POST',
         body: generateReportRequestSchema.parse({ query }),
+        baseUrl: getDirectApiBaseUrl(),
       }),
     /** GET /api/reports — the signed-in user's past AI reports, newest first. */
     list: () => apiRequestParsed('/api/reports', scoutReportRecordSchema.array()),
