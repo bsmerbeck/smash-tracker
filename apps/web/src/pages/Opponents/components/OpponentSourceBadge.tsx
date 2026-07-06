@@ -4,10 +4,13 @@ import type { OpponentSource } from '@/hooks/useFilteredMatches';
 
 /**
  * Tasteful, non-shouty source indicator for an opponent identity: a
- * start.gg-verified check badge when every recorded match against them was
- * imported, an outline "manual" badge when none were, or both badges
- * together (labeled via aria) when the identity is a merge of manual +
- * imported matches.
+ * verified check badge (start.gg or parry.gg) when every recorded match
+ * against them came from that one tournament site, an outline "manual"
+ * badge when none were, or the "mixed" combination (labeled via aria) when
+ * the identity spans more than one source — manual plus a verified site, OR
+ * (V8-A) both start.gg and parry.gg with no manual matches at all; either
+ * way it's "more than one source", so both render the same multi-badge
+ * state rather than adding a fourth dedicated combination.
  */
 export function OpponentSourceBadge({ source }: { source: OpponentSource }) {
   if (source === 'mixed') {
@@ -15,7 +18,7 @@ export function OpponentSourceBadge({ source }: { source: OpponentSource }) {
       <span className="inline-flex items-center gap-1" aria-label="mixed sources">
         <Badge variant="success" className="gap-0.5">
           <Check className="size-3" />
-          start.gg
+          verified
         </Badge>
         <Badge variant="outline">manual</Badge>
       </span>
@@ -27,6 +30,15 @@ export function OpponentSourceBadge({ source }: { source: OpponentSource }) {
       <Badge variant="success" className="gap-0.5" aria-label="start.gg-verified">
         <Check className="size-3" />
         start.gg
+      </Badge>
+    );
+  }
+
+  if (source === 'parrygg') {
+    return (
+      <Badge variant="success" className="gap-0.5" aria-label="parry.gg-verified">
+        <Check className="size-3" />
+        parry.gg
       </Badge>
     );
   }

@@ -54,8 +54,16 @@ export function MergeOpponentDialog({
 
   const ranked = useMemo(() => rankMergeSuggestions(opponent, candidates), [opponent, candidates]);
 
-  const wouldLoseStartggTag =
-    target != null && sources.get(opponent) === 'startgg' && sources.get(target) === 'manual';
+  // "Verified" here covers every non-manual source classification —
+  // start.gg-only, parry.gg-only, or mixed (V8-A: seen on both tournament
+  // sites, or a verified site plus manual matches) — any of them would lose
+  // their verified badge if merged into a manual-only name as the alias.
+  const opponentSource = sources.get(opponent);
+  const wouldLoseVerifiedTag =
+    target != null &&
+    opponentSource != null &&
+    opponentSource !== 'manual' &&
+    sources.get(target) === 'manual';
 
   function reset() {
     setTarget(null);
@@ -86,13 +94,24 @@ export function MergeOpponentDialog({
     if (!target) {
       return;
     }
-    if (wouldLoseStartggTag && !confirmedDespiteWarning) {
-      // Recommended direction: keep the start.gg-verified name canonical by
+    if (wouldLoseVerifiedTag && !confirmedDespiteWarning) {
+      // Recommended direction: keep the verified name canonical by
       // reversing the merge (target becomes the alias instead).
       commitMerge(target, opponent);
       return;
     }
     commitMerge(opponent, target);
+  }
+
+  /** "start.gg-verified" / "parry.gg-verified" / "verified" (mixed), matching the OpponentSourceBadge labels. */
+  function verifiedLabel(source: OpponentSource | undefined): string {
+    if (source === 'startgg') {
+      return 'start.gg-verified';
+    }
+    if (source === 'parrygg') {
+      return 'parry.gg-verified';
+    }
+    return 'verified';
   }
 
   return (
@@ -129,12 +148,12 @@ export function MergeOpponentDialog({
           </CommandList>
         </Command>
 
-        {target && wouldLoseStartggTag && !confirmedDespiteWarning && (
+        {target && wouldLoseVerifiedTag && !confirmedDespiteWarning && (
           <div className="rounded-md border border-amber-500/50 bg-amber-500/10 p-3 text-sm text-amber-700 dark:text-amber-400">
             <p>
-              &quot;{opponent}&quot; is start.gg-verified and &quot;{target}&quot; is manual-only.
-              To keep the start.gg tag as canonical, we&apos;ll merge &quot;{target}&quot; into
-              &quot;{opponent}&quot; instead.
+              &quot;{opponent}&quot; is {verifiedLabel(opponentSource)} and &quot;{target}&quot; is
+              manual-only. To keep the verified tag as canonical, we&apos;ll merge &quot;{target}
+              &quot; into &quot;{opponent}&quot; instead.
             </p>
             <Button
               type="button"
