@@ -43,6 +43,24 @@ function scoutFetchMock(): typeof fetch {
 const VALID_REPORT = {
   overview: 'A fast-falling Fox/Falco player.',
   gameplan: ['Punish landing lag.'],
+  characterStrategy: {
+    picks: ['Mario'],
+    reasoning: 'Game 1: Mario; if they swap to Falco, keep Mario.',
+  },
+  stageStrategy: {
+    bans: ['Final Destination'],
+    picks: ['Battlefield'],
+    reasoning: 'Flat stages favor us.',
+  },
+  headToHead: null,
+  watchFor: ['Shine spikes off stage.'],
+  confidenceNotes: 'No sampled sets — treat this as a cold read.',
+};
+
+/** Pre-V7-B.1 stored report shape: lacks `characterStrategy` entirely. */
+const PRE_B1_REPORT = {
+  overview: 'A fast-falling Fox/Falco player.',
+  gameplan: ['Punish landing lag.'],
   stageStrategy: {
     bans: ['Final Destination'],
     picks: ['Battlefield'],
@@ -477,6 +495,38 @@ describe('GET /api/reports (configured, allowlisted)', () => {
     expect(body).toHaveLength(2);
     expect(body[0]).toMatchObject({ id: 'newer', createdAt: 2000 });
     expect(body[1]).toMatchObject({ id: 'older', createdAt: 1000 });
+  });
+
+  it('V7-B.1 back-compat: a pre-B.1 stored record (no characterStrategy) still parses and round-trips', async () => {
+    const { app, database } = buildTestApp({
+      startgg: STARTGG_CONFIG,
+      startggFetch: scoutFetchMock(),
+      reports: REPORTS_CONFIG,
+      reportsClient: stubClient(async () => ({
+        stop_reason: 'end_turn',
+        parsed_output: VALID_REPORT,
+      })),
+    });
+
+    database.seed(`scoutReports/${TEST_UID}`, {
+      legacy: {
+        createdAt: 500,
+        model: 'claude-opus-4-8',
+        player: { id: 3, gamerTag: 'Legacy' },
+        report: PRE_B1_REPORT,
+      },
+    });
+
+    const response = await app.inject({
+      method: 'GET',
+      url: '/api/reports',
+      headers: authHeader(),
+    });
+    expect(response.statusCode).toBe(200);
+    const body = response.json();
+    expect(body).toHaveLength(1);
+    expect(body[0]).toMatchObject({ id: 'legacy', report: PRE_B1_REPORT });
+    expect(body[0].report.characterStrategy).toBeUndefined();
   });
 });
 

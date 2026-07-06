@@ -40,6 +40,85 @@ describe('assembleReportPayload', () => {
     ]);
     expect(payload.userContext.recentForm).toEqual({ wins: 0, losses: 0, sampleSize: 0 });
     expect(payload.notes).toBeNull();
+    expect(payload.userContext.myFighters).toEqual({ primary: [], secondary: [] });
+    expect(payload.userContext.myCharacterRecords).toEqual([]);
+  });
+
+  it('maps myFighters sprite ids to character names', async () => {
+    const database = new FakeDatabase();
+    database.seed(`primaryFighters/${UID}`, [8]); // Fox
+    database.seed(`secondaryFighters/${UID}`, [22]); // Falco
+
+    const payload = await assembleReportPayload(
+      UID,
+      SCOUT,
+      database as unknown as Parameters<typeof assembleReportPayload>[2],
+    );
+
+    expect(payload.userContext.myFighters).toEqual({ primary: ['Fox'], secondary: ['Falco'] });
+  });
+
+  it('builds myCharacterRecords for the union of selections and top-played characters, vs. the opponent’s top characters', async () => {
+    const database = new FakeDatabase();
+    database.seed(`primaryFighters/${UID}`, [1]); // Mario (the user's main)
+    database.seed(`secondaryFighters/${UID}`, []);
+    database.seed(`matches/${UID}`, {
+      m1: {
+        fighter_id: 1, // Mario
+        opponent_id: 8, // Fox
+        time: 3,
+        win: true,
+        opponent: 'a',
+      },
+      m2: {
+        fighter_id: 1, // Mario
+        opponent_id: 8, // Fox
+        time: 2,
+        win: false,
+        opponent: 'b',
+      },
+      m3: {
+        fighter_id: 1, // Mario
+        opponent_id: 22, // Falco
+        time: 1,
+        win: true,
+        opponent: 'c',
+      },
+    });
+
+    const payload = await assembleReportPayload(
+      UID,
+      SCOUT,
+      database as unknown as Parameters<typeof assembleReportPayload>[2],
+    );
+
+    expect(payload.userContext.myCharacterRecords).toEqual([
+      {
+        userCharacter: 'Mario',
+        wins: 2,
+        losses: 1,
+        vsOpponentCharacter: [
+          { opponentCharacter: 'Fox', wins: 1, losses: 1 },
+          { opponentCharacter: 'Falco', wins: 1, losses: 0 },
+        ],
+      },
+    ]);
+  });
+
+  it('includes the user’s top-5 most-played characters even without a primary/secondary selection', async () => {
+    const database = new FakeDatabase();
+    database.seed(`matches/${UID}`, {
+      m1: { fighter_id: 9, opponent_id: 8, time: 1, win: true, opponent: 'a' }, // Pikachu
+    });
+
+    const payload = await assembleReportPayload(
+      UID,
+      SCOUT,
+      database as unknown as Parameters<typeof assembleReportPayload>[2],
+    );
+
+    expect(payload.userContext.myCharacterRecords).toHaveLength(1);
+    expect(payload.userContext.myCharacterRecords[0]).toMatchObject({ userCharacter: 'Pikachu' });
   });
 
   it('matches head-to-head by opponentUserSlug (strongest signal)', async () => {
@@ -247,6 +326,10 @@ describe('assembleReportPayload', () => {
 const VALID_REPORT = {
   overview: 'A fast-falling Fox/Falco player who plays aggressively.',
   gameplan: ['Punish landing lag hard.'],
+  characterStrategy: {
+    picks: ['Mario'],
+    reasoning: 'Game 1: Mario; if they swap to Falco, keep Mario — favorable matchup either way.',
+  },
   stageStrategy: {
     bans: ['Final Destination'],
     picks: ['Battlefield'],
@@ -272,6 +355,8 @@ const PAYLOAD = {
   scout: SCOUT,
   headToHead: [],
   userContext: {
+    myFighters: { primary: [], secondary: [] },
+    myCharacterRecords: [],
     vsTopCharacters: [],
     recentForm: { wins: 0, losses: 0, sampleSize: 0 },
   },
