@@ -42,7 +42,7 @@ export function SettingComparison({ matches }: { matches: Match[] }) {
   const hasAny = split.online.total > 0 || split.offline.total > 0 || split.unspecified.total > 0;
 
   return (
-    <Card>
+    <Card className="h-full">
       <CardHeader>
         <CardTitle>Setting Comparison</CardTitle>
       </CardHeader>

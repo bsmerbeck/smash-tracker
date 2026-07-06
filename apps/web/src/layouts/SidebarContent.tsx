@@ -41,7 +41,10 @@ export function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
 
       <Separator />
 
-      <nav className="flex flex-1 flex-col gap-1" aria-label="Main navigation">
+      <nav
+        className="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto py-0.5"
+        aria-label="Main navigation"
+      >
         {navItems.map((item) => (
           <NavLink
             key={item.href}
