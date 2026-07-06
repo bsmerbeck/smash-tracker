@@ -12,6 +12,7 @@ import { GroupsPage } from '@/pages/Groups/GroupsPage';
 import { TournamentDetailPage } from '@/pages/Tournaments/TournamentDetailPage';
 import { FighterAnalysisPage } from '@/pages/FighterAnalysis/FighterAnalysisPage';
 import { IntegrationsPage } from '@/pages/Integrations/IntegrationsPage';
+import { ProfilePage } from '@/pages/Profile/ProfilePage';
 import { StartggAuthPage } from '@/pages/StartggAuth/StartggAuthPage';
 import { NotFoundPage } from '@/pages/NotFound/NotFoundPage';
 import { ProtectedRoute } from './ProtectedRoute';
@@ -120,6 +121,14 @@ export function AppRouter() {
           element={
             <ProtectedRoute>
               <IntegrationsPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/profile"
+          element={
+            <ProtectedRoute>
+              <ProfilePage />
             </ProtectedRoute>
           }
         />

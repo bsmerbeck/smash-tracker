@@ -19,7 +19,7 @@ import { ScoutCommonOpponentsCard } from './components/ScoutCommonOpponentsCard'
 import { YourHistoryStrip } from './components/YourHistoryStrip';
 import { ScoutAiReportCard } from './components/ScoutAiReportCard';
 import { ScoutPastReportsCard } from './components/ScoutPastReportsCard';
-import { BuyCreditsDialog } from './components/BuyCreditsDialog';
+import { BuyCreditsDialog } from '@/components/billing/BuyCreditsDialog';
 
 function describeError(error: unknown, fallback: string): string {
   if (error instanceof ApiError) {
