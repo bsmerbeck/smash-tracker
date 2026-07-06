@@ -216,6 +216,46 @@ describe('ScoutPage', () => {
     await screen.findByText('Pandem1c');
     expect(screen.queryByText('Your History vs Them')).not.toBeInTheDocument();
   });
+
+  it('shows the "re-scout" full-analysis empty state for a report with no `games` (pre-V9-D)', async () => {
+    const user = userEvent.setup();
+    scoutLookup.mockResolvedValue(REPORT);
+
+    renderPage();
+    await user.type(screen.getByLabelText(/start\.gg profile URL/), 'user/07dc2239');
+    await user.click(screen.getByRole('button', { name: 'Scout' }));
+
+    await screen.findByText('Pandem1c');
+    await user.click(screen.getByRole('button', { name: /full analysis/i }));
+    expect(screen.getByText('Re-scout to enable full analysis.')).toBeInTheDocument();
+  });
+
+  it('renders the Full analysis section once expanded, for a report carrying V9-D `games`', async () => {
+    const user = userEvent.setup();
+    scoutLookup.mockResolvedValue({
+      ...REPORT,
+      games: [
+        {
+          time: 1_700_000_000_000,
+          win: true,
+          fighterId: 67,
+          opponentFighterId: 41,
+          stageId: 1,
+          stageName: 'Battlefield',
+          opponentTag: 'PowPow',
+          eventName: 'Ultimate Singles',
+        },
+      ],
+    });
+
+    renderPage();
+    await user.type(screen.getByLabelText(/start\.gg profile URL/), 'user/07dc2239');
+    await user.click(screen.getByRole('button', { name: 'Scout' }));
+
+    await screen.findByText('Pandem1c');
+    await user.click(screen.getByRole('button', { name: /full analysis/i }));
+    expect(screen.getByText('Stage Mastery — Overall')).toBeInTheDocument();
+  });
 });
 
 const GENERATED_RECORD = {
@@ -420,6 +460,59 @@ describe('ScoutPage — AI reports feature enabled', () => {
     await screen.findByText('Pandem1c');
 
     expect(screen.queryByText('Past AI Reports')).not.toBeInTheDocument();
+  });
+
+  it('clicking a past report with NO active scout result on screen renders that report', async () => {
+    const user = userEvent.setup();
+    reportsList.mockResolvedValue([OTHER_PLAYER_RECORD]);
+
+    renderPage();
+
+    expect(await screen.findByText('Past AI Reports')).toBeInTheDocument();
+    // No scout has ever been submitted this session — `report` is undefined.
+    expect(screen.queryByRole('heading', { name: 'Pandem1c' })).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: /PowPow/ }));
+
+    expect(await screen.findByText('AI Scouting Report')).toBeInTheDocument();
+    expect(screen.getAllByText(OTHER_PLAYER_RECORD.report.overview).length).toBeGreaterThan(0);
+  });
+
+  it('clicking the same past report again toggles it back off', async () => {
+    const user = userEvent.setup();
+    reportsList.mockResolvedValue([OTHER_PLAYER_RECORD]);
+
+    renderPage();
+    await screen.findByText('Past AI Reports');
+
+    await user.click(screen.getByRole('button', { name: /PowPow/ }));
+    expect(await screen.findByText('AI Scouting Report')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: /PowPow/ }));
+    expect(screen.queryByText('AI Scouting Report')).not.toBeInTheDocument();
+    // The empty-prompt placeholder returns once nothing is selected/scouted.
+    expect(
+      screen.getByText(/Paste a start\.gg profile URL, slug, or player id above/),
+    ).toBeInTheDocument();
+  });
+
+  it('submitting a fresh scout clears a previously selected past report', async () => {
+    const user = userEvent.setup();
+    reportsList.mockResolvedValue([OTHER_PLAYER_RECORD]);
+    scoutLookup.mockResolvedValue(REPORT);
+
+    renderPage();
+    await screen.findByText('Past AI Reports');
+    await user.click(screen.getByRole('button', { name: /PowPow/ }));
+    expect(await screen.findByText('AI Scouting Report')).toBeInTheDocument();
+
+    await user.type(screen.getByLabelText(/start\.gg profile URL/), 'user/07dc2239');
+    await user.click(screen.getByRole('button', { name: 'Scout' }));
+
+    await screen.findByRole('heading', { name: 'Pandem1c' });
+    // The stale selection from before scouting must not leak into the
+    // freshly scouted player's screen (Pandem1c has no stored report here).
+    expect(screen.queryByText('AI Scouting Report')).not.toBeInTheDocument();
   });
 });
 

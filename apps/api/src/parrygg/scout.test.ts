@@ -19,6 +19,7 @@ import {
   User,
 } from '@parry-gg/client';
 import { Timestamp } from 'google-protobuf/google/protobuf/timestamp_pb.js';
+import type { ScoutGame } from '@smash-tracker/shared';
 import { PARRYGG_SSBU_SLUG } from './sync.js';
 import type { ParryggClients, ParryggMatchContext, ParryggUserSummary } from './client.js';
 import {
@@ -310,6 +311,7 @@ describe('accumulateParryMatchContext', () => {
         }
       >(),
       opponents: new Map<string, number>(),
+      games: [] as ScoutGame[],
     };
   }
 
@@ -334,6 +336,29 @@ describe('accumulateParryMatchContext', () => {
       eventName: 'Ultimate Singles',
       tournamentName: 'Test Weekly 42',
     });
+    // V9-D: per-game record, from the scouted player's own perspective.
+    expect(acc.games).toHaveLength(1);
+    expect(acc.games[0]).toMatchObject({
+      win: true,
+      fighterId: 1, // Mario
+      opponentFighterId: 41, // Sonic
+      stageName: 'Battlefield',
+      opponentTag: 'PowPow',
+      eventName: 'Ultimate Singles',
+    });
+  });
+
+  it('skips emitting a game record when the scouted player’s own character is unmapped', () => {
+    const acc = emptyAcc();
+    const game = new MatchGame();
+    game.setStagesList([makeStage('battlefield')]);
+    game.setSlotsList([
+      makeGameSlot(0, MY_USER_ID, 'totally-unknown-character', 1),
+      makeGameSlot(1, OPPONENT_USER_ID, 'sonic', 2),
+    ]);
+    accumulateParryMatchContext(acc, makeMatchContext({ matchGames: [game] }), MY_USER_ID);
+    expect(acc.characters.get(0)).toEqual({ games: 1, wins: 1 });
+    expect(acc.games).toHaveLength(0);
   });
 
   it('skips matches that are not completed', () => {
@@ -376,6 +401,10 @@ describe('accumulateParryMatchContext', () => {
     expect(acc.stages.size).toBe(0);
     // Event/opponent are still recorded even with no game detail.
     expect(acc.opponents.get('PowPow')).toBe(1);
+    // V9-D: a set synthesized from scores alone (no matchGamesList) carries
+    // no character/stage attribution, so it contributes no `games` rows
+    // either — emitting one would pollute the client stats engine.
+    expect(acc.games).toHaveLength(0);
   });
 
   it('groups unmapped characters under fighterId 0', () => {
@@ -488,6 +517,14 @@ describe('buildParryScoutReport / scoutParryPlayer', () => {
     });
     expect(report.sampledSets).toBe(1);
     expect(report.characters[0]).toMatchObject({ fighterId: 1, games: 1, wins: 1 });
+    // V9-D: per-game record present when matchGames carries character detail.
+    expect(report.games).toHaveLength(1);
+    expect(report.games?.[0]).toMatchObject({
+      win: true,
+      fighterId: 1,
+      opponentFighterId: 41,
+      stageName: 'Battlefield',
+    });
   });
 
   it('tolerates empty matchGames everywhere (no character/stage rows, still events + opponents)', async () => {
@@ -497,6 +534,9 @@ describe('buildParryScoutReport / scoutParryPlayer', () => {
     expect(report.stages).toEqual([]);
     expect(report.recentEvents.length).toBeGreaterThan(0);
     expect(report.commonOpponents.length).toBeGreaterThan(0);
+    // V9-D: no game detail means `games` is omitted entirely (back-compat
+    // shape), not an empty array.
+    expect(report.games).toBeUndefined();
   });
 
   it('scoutParryPlayer resolves + builds + caches by parryUserId', async () => {

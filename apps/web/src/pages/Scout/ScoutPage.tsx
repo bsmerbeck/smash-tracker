@@ -23,6 +23,7 @@ import { ScoutStagesCard } from './components/ScoutStagesCard';
 import { ScoutRecentEventsCard } from './components/ScoutRecentEventsCard';
 import { ScoutCommonOpponentsCard } from './components/ScoutCommonOpponentsCard';
 import { ScoutMatchupAdvisorCard } from './components/ScoutMatchupAdvisorCard';
+import { FullAnalysisSection } from './components/FullAnalysisSection';
 import { YourHistoryStrip } from './components/YourHistoryStrip';
 import { ScoutAiReportCard } from './components/ScoutAiReportCard';
 import { ScoutReportHistorySelector } from './components/ScoutReportHistorySelector';
@@ -194,6 +195,12 @@ export function ScoutPage() {
     scout.mutate({ query, source });
   };
 
+  // Clicking a past-reports row toggles it: selecting the same record again
+  // deselects (hides it), rather than being a no-op re-select.
+  const handleSelectPastReport = (record: ScoutReportRecord) => {
+    setSelectedRecord((current) => (current?.id === record.id ? null : record));
+  };
+
   const handleGenerateReport = () => {
     if (!lastQuery) {
       return;
@@ -342,6 +349,8 @@ export function ScoutPage() {
 
           <ScoutMatchupAdvisorCard scoutedCharacters={report.characters} matches={matches} />
 
+          <FullAnalysisSection games={report.games} gamerTag={report.player.gamerTag} />
+
           <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
             <ScoutCharactersCard characters={report.characters} />
             <ScoutStagesCard stages={report.stages} />
@@ -353,14 +362,21 @@ export function ScoutPage() {
         </div>
       )}
 
+      {/* Selecting a past report with NO active scout result on screen (e.g.
+          straight off a page load, before ever scouting anyone this
+          session) has nowhere to render inside the `{report && (...)}`
+          block above, since that block doesn't exist yet — this slot covers
+          exactly that case. Once a scout result IS on screen, the report
+          renders inside that block instead (via `displayedRecord`), so this
+          slot intentionally stays silent then to avoid rendering the same
+          report twice. */}
+      {selectedRecord && !report && <ScoutAiReportCard record={selectedRecord} />}
+
       {aiReportsEnabled && otherPastReports.length > 0 && (
-        <ScoutPastReportsCard
-          reports={otherPastReports}
-          onSelect={(record) => setSelectedRecord(record)}
-        />
+        <ScoutPastReportsCard reports={otherPastReports} onSelect={handleSelectPastReport} />
       )}
 
-      {!report && !scout.isError && !scout.isPending && (
+      {!report && !selectedRecord && !scout.isError && !scout.isPending && (
         <div className="flex items-center justify-center rounded-lg border border-dashed p-16 text-center text-sm text-muted-foreground">
           {parryggEnabled
             ? 'Paste a start.gg or parry.gg profile URL, slug/tag, or player id above to pull up their public tournament history.'
