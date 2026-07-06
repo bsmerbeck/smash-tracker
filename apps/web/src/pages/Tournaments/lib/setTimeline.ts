@@ -37,6 +37,8 @@ export interface TournamentSet {
   roundText: string | undefined;
   /** start.gg's signed round integer; negative = losers side. */
   bracketRound: number | undefined;
+  /** The tracked user's fighter id(s) played across this set's games, in first-seen order. */
+  userFighterIds: number[];
   /** The opponent's fighter id(s) faced across this set's games, in first-seen order. */
   opponentFighterIds: number[];
   /** The human opponent's free-text tag for this set, when any game carries one. */
@@ -96,8 +98,12 @@ export function buildSetTimeline(entryMatches: Match[]): SetTimeline {
     const gamesWon = ordered.filter((g) => g.match.win).length;
     const gamesLost = ordered.length - gamesWon;
 
+    const userFighterIds: number[] = [];
     const opponentFighterIds: number[] = [];
     for (const g of ordered) {
+      if (!userFighterIds.includes(g.match.fighter_id)) {
+        userFighterIds.push(g.match.fighter_id);
+      }
       if (!opponentFighterIds.includes(g.match.opponent_id)) {
         opponentFighterIds.push(g.match.opponent_id);
       }
@@ -108,6 +114,7 @@ export function buildSetTimeline(entryMatches: Match[]): SetTimeline {
       time: Math.min(...ordered.map((g) => g.match.time)),
       roundText: ordered.map((g) => g.match.roundText).find((r) => r != null),
       bracketRound: ordered.map((g) => g.match.bracketRound).find((r) => r != null),
+      userFighterIds,
       opponentFighterIds,
       opponentName: ordered.map((g) => g.match.opponent).find((r) => r != null),
       opponentSeed: ordered.map((g) => g.match.opponentSeed).find((r) => r != null),
