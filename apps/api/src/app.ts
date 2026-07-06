@@ -18,11 +18,12 @@ import opponentNotesRoutes from './routes/opponentNotes.js';
 import startggRoutes from './routes/startgg.js';
 import scoutRoutes from './routes/scout.js';
 import reportsRoutes from './routes/reports.js';
+import billingRoutes, { type StripeLikeClient } from './routes/billing.js';
 import tournamentsRoutes from './routes/tournaments.js';
 import groupsRoutes from './routes/groups.js';
 import { NotFoundError } from './services/rtdb.js';
 import type { FirebaseServices } from './firebase/admin.js';
-import type { ReportsConfig, StartggConfig } from './config/env.js';
+import type { ReportsConfig, StartggConfig, StripeConfig } from './config/env.js';
 import type { AnthropicLikeClient } from './reports/generate.js';
 
 export interface BuildAppOptions {
@@ -37,6 +38,12 @@ export interface BuildAppOptions {
   reports?: ReportsConfig | null;
   /** Overridable Anthropic client for /api/reports (tests). */
   reportsClient?: AnthropicLikeClient;
+  /** Stripe billing config; null/omitted disables /api/billing (503) and gates /api/reports to allowlist-only (pre-V7-C behavior). */
+  stripe?: StripeConfig | null;
+  /** SPA origin Stripe Checkout redirects back to (`env.WEB_BASE_URL`). */
+  webBaseUrl?: string;
+  /** Overridable Stripe client for /api/billing (tests). */
+  stripeClient?: StripeLikeClient;
   logger?: boolean | FastifyBaseLogger;
 }
 
@@ -137,8 +144,15 @@ export function buildApp(options: BuildAppOptions) {
       await api.register(reportsRoutes, {
         config: options.reports ?? null,
         startggConfig: options.startgg ?? null,
+        stripeConfig: options.stripe ?? null,
         client: options.reportsClient,
         fetchImpl: options.startggFetch,
+      });
+      await api.register(billingRoutes, {
+        stripeConfig: options.stripe ?? null,
+        reportsConfig: options.reports ?? null,
+        webBaseUrl: options.webBaseUrl ?? 'http://localhost:5173',
+        stripeClient: options.stripeClient,
       });
     },
     { prefix: '/api' },
