@@ -606,6 +606,40 @@ describe('ScoutPage — V7-C billing (paid, non-allowlisted)', () => {
       screen.queryByText('You need report credits — buy a pack to continue'),
     ).not.toBeInTheDocument();
   });
+
+  it('explains the packs next to the button', async () => {
+    const user = userEvent.setup();
+    scoutLookup.mockResolvedValue(REPORT);
+
+    renderPage();
+    await user.type(screen.getByLabelText(/start\.gg profile URL/), 'user/07dc2239');
+    await user.click(screen.getByRole('button', { name: 'Scout' }));
+    await screen.findByText('Pandem1c');
+
+    expect(
+      await screen.findByText(
+        /Each report costs 1 credit\. 5 reports for \$8\.00 · 15 reports for \$20\.00\./,
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it('shows the buy affordance from the live credits query even when reportsConfig.billingEnabled is stale-false', async () => {
+    // Regression: the buy UI used to gate on reportsConfig.billingEnabled,
+    // which caches long and lagged Stripe being enabled server-side — leaving
+    // a charged user (402) with no way to buy. It now keys off the credits
+    // query, so a stale/absent billingEnabled must NOT hide the buy path.
+    const user = userEvent.setup();
+    scoutLookup.mockResolvedValue(REPORT);
+    reportsConfig.mockResolvedValue({ enabled: true, freeAccess: false, billingEnabled: false });
+
+    renderPage();
+    await user.type(screen.getByLabelText(/start\.gg profile URL/), 'user/07dc2239');
+    await user.click(screen.getByRole('button', { name: 'Scout' }));
+    await screen.findByText('Pandem1c');
+
+    expect(await screen.findByText('3 credits')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Buy credits' })).toBeInTheDocument();
+  });
 });
 
 describe('ScoutPage — V7-C Stripe Checkout return trip', () => {
