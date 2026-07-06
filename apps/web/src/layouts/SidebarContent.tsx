@@ -19,14 +19,25 @@ export function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
 
   return (
     <div className="flex h-full flex-col gap-4 p-4">
-      <div className="flex flex-col items-center gap-2 py-2">
+      <NavLink
+        to="/profile"
+        onClick={onNavigate}
+        aria-label="Your profile"
+        className={({ isActive }) =>
+          cn(
+            'flex flex-col items-center gap-2 rounded-md py-2 transition-colors',
+            'hover:bg-accent hover:text-accent-foreground',
+            isActive && 'bg-accent text-accent-foreground',
+          )
+        }
+      >
         <Avatar className="size-14">
           <AvatarFallback className="text-lg">{initialFromEmail(user?.email)}</AvatarFallback>
         </Avatar>
         <p className="max-w-full truncate text-sm font-medium" title={user?.email ?? ''}>
           {user?.email ?? 'Signed out'}
         </p>
-      </div>
+      </NavLink>
 
       <Separator />
 

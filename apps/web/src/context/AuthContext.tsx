@@ -1,10 +1,14 @@
 import {
   createUserWithEmailAndPassword,
+  EmailAuthProvider,
   onAuthStateChanged,
+  reauthenticateWithCredential,
+  sendPasswordResetEmail,
   signInWithCustomToken,
   signInWithEmailAndPassword,
   signInWithPopup,
   signOut as firebaseSignOut,
+  updatePassword,
   type User as FirebaseUser,
 } from 'firebase/auth';
 import { createContext, useEffect, useMemo, useState, type ReactNode } from 'react';
@@ -21,6 +25,19 @@ export interface AuthContextValue {
   signInWithToken: (customToken: string) => Promise<void>;
   signOut: () => Promise<void>;
   getIdToken: () => Promise<string | null>;
+  /**
+   * Profile > Security "change password" flow for accounts that already
+   * have the `password` provider: re-authenticates with the current
+   * password (Firebase requires a recent sign-in for this operation, see
+   * `auth/requires-recent-login`) before setting the new one.
+   */
+  changePassword: (currentPassword: string, nextPassword: string) => Promise<void>;
+  /**
+   * Profile > Security "send password reset email" for accounts with an
+   * email but no `password` provider (Google, start.gg): completing the
+   * reset flow adds password sign-in alongside their existing method.
+   */
+  sendPasswordReset: (email: string) => Promise<void>;
 }
 
 export const AuthContext = createContext<AuthContextValue | undefined>(undefined);
@@ -79,6 +96,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       getIdToken: async () => {
         const current = getFirebaseAuth().currentUser;
         return current ? current.getIdToken() : null;
+      },
+      changePassword: async (currentPassword, nextPassword) => {
+        const current = getFirebaseAuth().currentUser;
+        if (!current?.email) {
+          throw new Error('No signed-in email/password account.');
+        }
+        await reauthenticateWithCredential(
+          current,
+          EmailAuthProvider.credential(current.email, currentPassword),
+        );
+        await updatePassword(current, nextPassword);
+      },
+      sendPasswordReset: async (email) => {
+        await sendPasswordResetEmail(getFirebaseAuth(), email);
       },
     }),
     [user, loading],

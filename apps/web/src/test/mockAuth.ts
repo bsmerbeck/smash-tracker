@@ -45,8 +45,23 @@ export const signInWithPopup = vi.fn();
 export const signInWithCustomToken = vi.fn();
 export const signOut = vi.fn();
 export const getAuth = vi.fn(() => mockAuthInstance);
+export const reauthenticateWithCredential = vi.fn();
+export const updatePassword = vi.fn();
+export const sendPasswordResetEmail = vi.fn();
 
 export class GoogleAuthProvider {}
+
+/**
+ * Real `EmailAuthProvider.credential` just builds a plain credential object;
+ * the mock mirrors that shape (rather than being a bare `vi.fn()`) so the
+ * profile page's `reauthenticateWithCredential(user, EmailAuthProvider.credential(...))`
+ * call can be asserted against a real-looking argument.
+ */
+export class EmailAuthProvider {
+  static credential(email: string, password: string) {
+    return { providerId: 'password', email, password };
+  }
+}
 
 /** Sets the mocked signed-in user and notifies any subscribed `onAuthStateChanged` listener. */
 export function setMockUser(user: FirebaseUser | null) {
@@ -63,12 +78,25 @@ export function resetAuthMock() {
   signInWithPopup.mockReset();
   signInWithCustomToken.mockReset();
   signOut.mockReset();
+  reauthenticateWithCredential.mockReset();
+  updatePassword.mockReset();
+  sendPasswordResetEmail.mockReset();
 }
 
+/**
+ * `providerData` defaults to a single `password` entry (the common case in
+ * tests); pass `providerData: []` explicitly to model Google/start.gg
+ * accounts (V9's ProfilePage treats an empty `providerData` as "infer from
+ * links") or a parry.gg account (no email, no providers). `metadata.creationTime`
+ * defaults to a fixed, `Date`-parseable string matching what real Firebase
+ * users carry, so "Member since" assertions have a stable value to check.
+ */
 export function makeMockUser(overrides: Partial<FirebaseUser> = {}): FirebaseUser {
   return {
     uid: 'test-uid',
     email: 'test@example.com',
+    providerData: [{ providerId: 'password' }],
+    metadata: { creationTime: 'Mon, 05 Jan 2026 00:00:00 GMT' },
     getIdToken: vi.fn().mockResolvedValue('mock-id-token'),
     ...overrides,
   } as unknown as FirebaseUser;
