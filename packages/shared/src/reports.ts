@@ -26,6 +26,18 @@ export const generatedScoutReportSchema = z.object({
   overview: z.string(),
   /** Actionable bullets for how to approach the set. */
   gameplan: z.array(z.string()),
+  /**
+   * Character-pick strategy (V7-B.1), co-equal in importance with stage
+   * strategy: which of the USER'S OWN characters to reach for against this
+   * opponent, and when to switch. Never recommends a character the user
+   * doesn't demonstrably play — see the SYSTEM_PROMPT grounding rules.
+   */
+  characterStrategy: z.object({
+    /** Which of the user's own characters to reach for, e.g. game-1 pick(s). */
+    picks: z.array(z.string()),
+    /** Why — grounded in myCharacterRecords vs. the opponent's top characters, plus in-set adjustments (e.g. "Game 1: X; if they swap to Y, counter with Z"). */
+    reasoning: z.string(),
+  }),
   /** Stage strike/pick strategy, grounded in the opponent's sampled stage results. */
   stageStrategy: z.object({
     /** Stages to strike/ban against this opponent. */
@@ -45,10 +57,24 @@ export const generatedScoutReportSchema = z.object({
 export type GeneratedScoutReport = z.infer<typeof generatedScoutReportSchema>;
 
 /**
+ * Stored-record variant of the generated report: identical to
+ * `generatedScoutReportSchema` except `characterStrategy` is OPTIONAL, so
+ * reports written before V7-B.1 (which lack the field entirely) still parse.
+ * New reports always have it (the model is required to produce it — see
+ * SYSTEM_PROMPT); this schema exists purely for reading old rows back.
+ */
+export const storedScoutReportSchema = generatedScoutReportSchema.partial({
+  characterStrategy: true,
+});
+export type StoredScoutReport = z.infer<typeof storedScoutReportSchema>;
+
+/**
  * `scoutReports/{uid}/{pushKey}` — a stored AI-generated report. `player` is
  * the identity `ScoutReportData` resolved for this scout (so past reports
  * remain readable/attributable even if the user later re-scouts and gets a
- * fresher `ScoutReportData`).
+ * fresher `ScoutReportData`). Uses `storedScoutReportSchema` (not
+ * `generatedScoutReportSchema` directly) so pre-V7-B.1 records missing
+ * `characterStrategy` still round-trip through GET /api/reports.
  */
 export const scoutReportRecordSchema = z.object({
   id: z.string().min(1),
@@ -57,7 +83,7 @@ export const scoutReportRecordSchema = z.object({
   /** The Claude model id that generated this report, e.g. "claude-opus-4-8". */
   model: z.string().min(1),
   player: scoutPlayerIdentitySchema,
-  report: generatedScoutReportSchema,
+  report: storedScoutReportSchema,
 });
 export type ScoutReportRecord = z.infer<typeof scoutReportRecordSchema>;
 

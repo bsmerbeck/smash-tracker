@@ -204,10 +204,16 @@ const GENERATED_RECORD = {
   id: 'report-1',
   createdAt: 1_700_000_000_000,
   model: 'claude-opus-4-8',
+  // Same start.gg player id as REPORT.player.id — this is "the currently
+  // scouted player's" own stored report.
   player: { id: 1802316, gamerTag: 'Pandem1c', userSlug: 'user/07dc2239' },
   report: {
     overview: 'A fast-falling Fox/Falco player.',
     gameplan: ['Punish landing lag.'],
+    characterStrategy: {
+      picks: ['Mario'],
+      reasoning: 'Game 1: Mario; if they swap to Falco, keep Mario.',
+    },
     stageStrategy: {
       bans: ['Final Destination'],
       picks: ['Battlefield'],
@@ -216,6 +222,31 @@ const GENERATED_RECORD = {
     headToHead: null,
     watchFor: ['Shine spikes off stage.'],
     confidenceNotes: 'Only 6 games sampled.',
+  },
+};
+
+const OTHER_PLAYER_RECORD = {
+  id: 'report-2',
+  createdAt: 1_700_100_000_000,
+  model: 'claude-opus-4-8',
+  // A different start.gg player id — a report for someone OTHER than the
+  // currently scouted player.
+  player: { id: 999, gamerTag: 'PowPow', userSlug: 'user/other' },
+  report: {
+    overview: 'An aggressive rushdown player.',
+    gameplan: ['Play patient neutral.'],
+    characterStrategy: {
+      picks: ['Fox'],
+      reasoning: 'Game 1: Fox.',
+    },
+    stageStrategy: {
+      bans: ['Pokemon Stadium 2'],
+      picks: ['Smashville'],
+      reasoning: 'They struggle with moving platforms.',
+    },
+    headToHead: null,
+    watchFor: ['Aggressive edgeguards.'],
+    confidenceNotes: 'Only 4 games sampled.',
   },
 };
 
@@ -290,7 +321,7 @@ describe('ScoutPage — AI reports feature enabled', () => {
 
     await waitFor(() => expect(reportsGenerate).toHaveBeenCalledWith('user/07dc2239'));
     expect(await screen.findByText('AI Scouting Report')).toBeInTheDocument();
-    expect(screen.getByText(GENERATED_RECORD.report.overview)).toBeInTheDocument();
+    expect(screen.getAllByText(GENERATED_RECORD.report.overview).length).toBeGreaterThan(0);
   });
 
   it('shows a pending state with spinner text while generating', async () => {
@@ -339,10 +370,10 @@ describe('ScoutPage — AI reports feature enabled', () => {
     ).toBeInTheDocument();
   });
 
-  it('shows the past reports card when the list is non-empty, and selecting one renders it', async () => {
+  it('shows the past reports card for OTHER players, and selecting one renders it', async () => {
     const user = userEvent.setup();
     scoutLookup.mockResolvedValue(REPORT);
-    reportsList.mockResolvedValue([GENERATED_RECORD]);
+    reportsList.mockResolvedValue([OTHER_PLAYER_RECORD]);
 
     renderPage();
     await user.type(screen.getByLabelText(/start\.gg profile URL/), 'user/07dc2239');
@@ -350,10 +381,10 @@ describe('ScoutPage — AI reports feature enabled', () => {
     await screen.findByRole('heading', { name: 'Pandem1c' });
 
     expect(await screen.findByText('Past AI Reports')).toBeInTheDocument();
-    await user.click(screen.getByRole('button', { name: /Pandem1c/ }));
+    await user.click(screen.getByRole('button', { name: /PowPow/ }));
 
     expect(await screen.findByText('AI Scouting Report')).toBeInTheDocument();
-    expect(screen.getByText(GENERATED_RECORD.report.overview)).toBeInTheDocument();
+    expect(screen.getAllByText(OTHER_PLAYER_RECORD.report.overview).length).toBeGreaterThan(0);
   });
 
   it('does not show the past reports card when the list is empty', async () => {
@@ -367,5 +398,101 @@ describe('ScoutPage — AI reports feature enabled', () => {
     await screen.findByText('Pandem1c');
 
     expect(screen.queryByText('Past AI Reports')).not.toBeInTheDocument();
+  });
+});
+
+describe('ScoutPage — V7-B.1 persistence across refresh / re-scout', () => {
+  beforeEach(() => {
+    resetAuthMock();
+    vi.clearAllMocks();
+    matchesList.mockResolvedValue([]);
+    reportsConfig.mockResolvedValue({ enabled: true });
+    reportsList.mockResolvedValue([]);
+    setMockUser(makeMockUser());
+  });
+
+  it('automatically renders the stored report for a player with an existing report, no click needed', async () => {
+    const user = userEvent.setup();
+    scoutLookup.mockResolvedValue(REPORT);
+    reportsList.mockResolvedValue([GENERATED_RECORD]);
+
+    renderPage();
+    await user.type(screen.getByLabelText(/start\.gg profile URL/), 'user/07dc2239');
+    await user.click(screen.getByRole('button', { name: 'Scout' }));
+    await screen.findByRole('heading', { name: 'Pandem1c' });
+
+    expect(await screen.findByText('AI Scouting Report')).toBeInTheDocument();
+    expect(screen.getAllByText(GENERATED_RECORD.report.overview).length).toBeGreaterThan(0);
+    expect(reportsGenerate).not.toHaveBeenCalled();
+  });
+
+  it('shows a plain "Generate AI report" button for a player without a stored report', async () => {
+    const user = userEvent.setup();
+    scoutLookup.mockResolvedValue(REPORT);
+    reportsList.mockResolvedValue([]);
+
+    renderPage();
+    await user.type(screen.getByLabelText(/start\.gg profile URL/), 'user/07dc2239');
+    await user.click(screen.getByRole('button', { name: 'Scout' }));
+    await screen.findByRole('heading', { name: 'Pandem1c' });
+
+    expect(screen.queryByText('AI Scouting Report')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Generate AI report' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Regenerate report' })).not.toBeInTheDocument();
+  });
+
+  it('shows "Regenerate report" (not "Generate AI report") once a stored report is displayed', async () => {
+    const user = userEvent.setup();
+    scoutLookup.mockResolvedValue(REPORT);
+    reportsList.mockResolvedValue([GENERATED_RECORD]);
+
+    renderPage();
+    await user.type(screen.getByLabelText(/start\.gg profile URL/), 'user/07dc2239');
+    await user.click(screen.getByRole('button', { name: 'Scout' }));
+    await screen.findByText('AI Scouting Report');
+
+    expect(screen.getByRole('button', { name: 'Regenerate report' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Generate AI report' })).not.toBeInTheDocument();
+  });
+
+  it('a fresh generation replaces the auto-displayed stored report', async () => {
+    const user = userEvent.setup();
+    scoutLookup.mockResolvedValue(REPORT);
+    reportsList.mockResolvedValue([GENERATED_RECORD]);
+    const freshRecord = {
+      ...GENERATED_RECORD,
+      id: 'report-fresh',
+      report: { ...GENERATED_RECORD.report, overview: 'A freshly regenerated read.' },
+    };
+    reportsGenerate.mockResolvedValue(freshRecord);
+
+    renderPage();
+    await user.type(screen.getByLabelText(/start\.gg profile URL/), 'user/07dc2239');
+    await user.click(screen.getByRole('button', { name: 'Scout' }));
+    await waitFor(() =>
+      expect(screen.getAllByText(GENERATED_RECORD.report.overview).length).toBeGreaterThan(0),
+    );
+
+    await user.click(screen.getByRole('button', { name: 'Regenerate report' }));
+
+    await waitFor(() =>
+      expect(screen.getAllByText('A freshly regenerated read.').length).toBeGreaterThan(0),
+    );
+    expect(screen.queryByText(GENERATED_RECORD.report.overview)).not.toBeInTheDocument();
+  });
+
+  it('excludes the currently scouted player from the past-reports card (already shown above)', async () => {
+    const user = userEvent.setup();
+    scoutLookup.mockResolvedValue(REPORT);
+    reportsList.mockResolvedValue([GENERATED_RECORD, OTHER_PLAYER_RECORD]);
+
+    renderPage();
+    await user.type(screen.getByLabelText(/start\.gg profile URL/), 'user/07dc2239');
+    await user.click(screen.getByRole('button', { name: 'Scout' }));
+    await screen.findByText('AI Scouting Report');
+
+    expect(await screen.findByText('Past AI Reports')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /PowPow/ })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /^Pandem1c/ })).not.toBeInTheDocument();
   });
 });
