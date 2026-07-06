@@ -2,6 +2,7 @@ import { Link } from 'react-router';
 import { Button } from '@/components/ui/button';
 import { useFilteredMatches } from '@/hooks/useFilteredMatches';
 import { FilteredEmptyNotice } from '@/components/FilteredEmptyNotice';
+import { TrendsHero } from './components/TrendsHero';
 import { MonthlyPerformance } from './components/MonthlyPerformance';
 import { SessionsAndTilt } from './components/SessionsAndTilt';
 import { SettingComparison } from './components/SettingComparison';
@@ -40,12 +41,21 @@ export function TrendsPage() {
     <div className="flex flex-col gap-6">
       {filterActive && matches.length === 0 && <FilteredEmptyNotice />}
 
+      <TrendsHero matches={matches} />
+
       <MonthlyPerformance matches={matches} />
+
       <RatingCurve matches={matches} />
-      <SessionsAndTilt matches={matches} />
-      <SettingComparison matches={matches} />
-      <Tournaments matches={matches} />
-      <MatchTypeMix matches={matches} />
+
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+        <SessionsAndTilt matches={matches} />
+        <SettingComparison matches={matches} />
+      </div>
+
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+        <Tournaments matches={matches} />
+        <MatchTypeMix matches={matches} />
+      </div>
     </div>
   );
 }

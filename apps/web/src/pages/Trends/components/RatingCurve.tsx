@@ -11,6 +11,7 @@ import {
 import { Line } from 'react-chartjs-2';
 import type { Match } from '@smash-tracker/shared';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { GlickoExplainer } from '@/components/GlickoExplainer';
 import { computeRatingHistory, type RatingPeriodResult } from '@/lib/glicko';
 import { chartColors, darkChartOptions, redLineDataset } from '@/lib/chartTheme';
 
@@ -73,6 +74,8 @@ export function buildRatingCurveData(periods: RatingPeriodResult[]) {
 function buildRatingCurveOptions(periods: RatingPeriodResult[]): ChartOptions<'line'> {
   const theme = darkChartOptions();
   return {
+    responsive: theme.responsive,
+    maintainAspectRatio: theme.maintainAspectRatio,
     scales: {
       x: theme.scales?.x,
       y: {
@@ -122,7 +125,10 @@ export function RatingCurve({ matches }: { matches: Match[] }) {
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Rating Curve</CardTitle>
+        <CardTitle className="flex items-center gap-1.5">
+          Rating Curve
+          <GlickoExplainer />
+        </CardTitle>
       </CardHeader>
       <CardContent className="flex flex-col gap-4">
         {hasEnoughGames && current && periods.length > 0 ? (
