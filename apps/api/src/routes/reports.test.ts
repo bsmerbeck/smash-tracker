@@ -151,7 +151,7 @@ describe('GET /api/reports/config (configured)', () => {
       headers: authHeader(),
     });
     expect(response.statusCode).toBe(200);
-    expect(response.json()).toEqual({ enabled: true });
+    expect(response.json()).toMatchObject({ enabled: true, freeAccess: true });
   });
 
   it('returns enabled: false for a non-allowlisted uid (never 403s)', async () => {
@@ -174,7 +174,7 @@ describe('GET /api/reports/config (configured)', () => {
       headers: authHeader(),
     });
     expect(response.statusCode).toBe(200);
-    expect(response.json()).toEqual({ enabled: false });
+    expect(response.json()).toMatchObject({ enabled: false, freeAccess: false });
   });
 });
 
@@ -414,6 +414,260 @@ describe('POST /api/reports (configured, allowlisted)', () => {
       payload: { query: 'user/07dc2239' },
     });
     expect(response.statusCode).toBe(502);
+  });
+});
+
+describe('POST /api/reports (V7-C: non-allowlisted, Stripe-gated)', () => {
+  const NON_ALLOWLIST_CONFIG: ReportsConfig = {
+    anthropicApiKey: 'sk-test-key',
+    allowedUids: new Set(['someone-else']),
+  };
+  const STRIPE_CONFIG = {
+    secretKey: 'sk-test-123',
+    webhookSecret: 'whsec-test-456',
+  };
+
+  it('still returns 403 for a non-allowlisted uid when Stripe is not configured (pre-V7-C behavior, unchanged)', async () => {
+    const { app } = buildTestApp({
+      startgg: STARTGG_CONFIG,
+      startggFetch: scoutFetchMock(),
+      reports: NON_ALLOWLIST_CONFIG,
+      reportsClient: stubClient(async () => ({
+        stop_reason: 'end_turn',
+        parsed_output: VALID_REPORT,
+      })),
+    });
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/reports',
+      headers: authHeader(),
+      payload: { query: 'user/07dc2239' },
+    });
+    expect(response.statusCode).toBe(403);
+  });
+
+  it('returns 402 when Stripe is configured but the caller has a zero credit balance', async () => {
+    const { app } = buildTestApp({
+      startgg: STARTGG_CONFIG,
+      startggFetch: scoutFetchMock(),
+      reports: NON_ALLOWLIST_CONFIG,
+      stripe: STRIPE_CONFIG,
+      reportsClient: stubClient(async () => ({
+        stop_reason: 'end_turn',
+        parsed_output: VALID_REPORT,
+      })),
+    });
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/reports',
+      headers: authHeader(),
+      payload: { query: 'user/07dc2239' },
+    });
+    expect(response.statusCode).toBe(402);
+    expect(response.json().message).toMatch(/credits/i);
+  });
+
+  it('spends exactly one credit on a successful generation', async () => {
+    const { app, database } = buildTestApp({
+      startgg: STARTGG_CONFIG,
+      startggFetch: scoutFetchMock(),
+      reports: NON_ALLOWLIST_CONFIG,
+      stripe: STRIPE_CONFIG,
+      reportsClient: stubClient(async () => ({
+        stop_reason: 'end_turn',
+        parsed_output: VALID_REPORT,
+      })),
+    });
+    database.seed(`credits/${TEST_UID}/balance`, 3);
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/reports',
+      headers: authHeader(),
+      payload: { query: 'user/07dc2239' },
+    });
+
+    expect(response.statusCode).toBe(200);
+    const balance = await database.ref(`credits/${TEST_UID}/balance`).get();
+    expect(balance.val()).toBe(2);
+
+    const dump = database.dump() as Record<string, unknown>;
+    const ledger = dump.creditLedger as Record<string, Record<string, unknown>>;
+    const entries = Object.values(ledger[TEST_UID]!);
+    expect(entries).toHaveLength(1);
+    expect(entries[0]).toMatchObject({ type: 'spend', amount: -1 });
+  });
+
+  it('refunds the credit when the scout lookup 404s', async () => {
+    const fetchMock = (async () => gqlResponse({ user: null })) as typeof fetch;
+    const { app, database } = buildTestApp({
+      startgg: STARTGG_CONFIG,
+      startggFetch: fetchMock,
+      reports: NON_ALLOWLIST_CONFIG,
+      stripe: STRIPE_CONFIG,
+      reportsClient: stubClient(async () => ({
+        stop_reason: 'end_turn',
+        parsed_output: VALID_REPORT,
+      })),
+    });
+    database.seed(`credits/${TEST_UID}/balance`, 1);
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/reports',
+      headers: authHeader(),
+      payload: { query: 'user/doesnotexist' },
+    });
+
+    expect(response.statusCode).toBe(404);
+    const balance = await database.ref(`credits/${TEST_UID}/balance`).get();
+    expect(balance.val()).toBe(1);
+
+    const dump = database.dump() as Record<string, unknown>;
+    const ledger = dump.creditLedger as Record<string, Record<string, unknown>>;
+    const entries = Object.values(ledger[TEST_UID]!);
+    expect(entries.map((e) => (e as { type: string }).type)).toEqual(['spend', 'refund']);
+  });
+
+  it('refunds the credit when generation fails (ReportGenerationError)', async () => {
+    const { app, database } = buildTestApp({
+      startgg: STARTGG_CONFIG,
+      startggFetch: scoutFetchMock(),
+      reports: NON_ALLOWLIST_CONFIG,
+      stripe: STRIPE_CONFIG,
+      reportsClient: stubClient(async () => ({ stop_reason: 'refusal', parsed_output: null })),
+    });
+    database.seed(`credits/${TEST_UID}/balance`, 1);
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/reports',
+      headers: authHeader(),
+      payload: { query: 'user/07dc2239' },
+    });
+
+    expect(response.statusCode).toBe(502);
+    const balance = await database.ref(`credits/${TEST_UID}/balance`).get();
+    expect(balance.val()).toBe(1);
+  });
+
+  it('refunds the credit on a start.gg 429', async () => {
+    const fetchMock = (async (_url: unknown, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body)) as { query: string };
+      if (body.query.includes('ResolveBySlug')) {
+        return gqlResponse(RESOLVE_RESPONSE);
+      }
+      return new Response('rate limited', { status: 429 });
+    }) as typeof fetch;
+
+    const { app, database } = buildTestApp({
+      startgg: STARTGG_CONFIG,
+      startggFetch: fetchMock,
+      reports: NON_ALLOWLIST_CONFIG,
+      stripe: STRIPE_CONFIG,
+      reportsClient: stubClient(async () => ({
+        stop_reason: 'end_turn',
+        parsed_output: VALID_REPORT,
+      })),
+    });
+    database.seed(`credits/${TEST_UID}/balance`, 1);
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/reports',
+      headers: authHeader(),
+      payload: { query: 'user/07dc2239' },
+    });
+
+    expect(response.statusCode).toBe(429);
+    const balance = await database.ref(`credits/${TEST_UID}/balance`).get();
+    expect(balance.val()).toBe(1);
+  });
+
+  it('does not spend a credit for a 400 (malformed input) — nothing was attempted', async () => {
+    const { app, database } = buildTestApp({
+      startgg: STARTGG_CONFIG,
+      startggFetch: scoutFetchMock(),
+      reports: NON_ALLOWLIST_CONFIG,
+      stripe: STRIPE_CONFIG,
+      reportsClient: stubClient(async () => ({
+        stop_reason: 'end_turn',
+        parsed_output: VALID_REPORT,
+      })),
+    });
+    database.seed(`credits/${TEST_UID}/balance`, 1);
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/reports',
+      headers: authHeader(),
+      payload: { query: 'not a valid start.gg reference' },
+    });
+
+    expect(response.statusCode).toBe(400);
+    const balance = await database.ref(`credits/${TEST_UID}/balance`).get();
+    expect(balance.val()).toBe(1);
+  });
+
+  it('allowlisted uids stay free/unlimited even when Stripe is configured and their credit balance is 0', async () => {
+    const { app, database } = buildTestApp({
+      startgg: STARTGG_CONFIG,
+      startggFetch: scoutFetchMock(),
+      reports: REPORTS_CONFIG,
+      stripe: STRIPE_CONFIG,
+      reportsClient: stubClient(async () => ({
+        stop_reason: 'end_turn',
+        parsed_output: VALID_REPORT,
+      })),
+    });
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/reports',
+      headers: authHeader(),
+      payload: { query: 'user/07dc2239' },
+    });
+
+    expect(response.statusCode).toBe(200);
+    const balance = await database.ref(`credits/${TEST_UID}/balance`).get();
+    expect(balance.exists()).toBe(false);
+  });
+
+  it('concurrent requests cannot both spend the last credit (RTDB transaction on the balance node)', async () => {
+    const { app, database } = buildTestApp({
+      startgg: STARTGG_CONFIG,
+      startggFetch: scoutFetchMock(),
+      reports: NON_ALLOWLIST_CONFIG,
+      stripe: STRIPE_CONFIG,
+      reportsClient: stubClient(async () => ({
+        stop_reason: 'end_turn',
+        parsed_output: VALID_REPORT,
+      })),
+    });
+    database.seed(`credits/${TEST_UID}/balance`, 1);
+
+    const [first, second] = await Promise.all([
+      app.inject({
+        method: 'POST',
+        url: '/api/reports',
+        headers: authHeader(),
+        payload: { query: 'user/07dc2239' },
+      }),
+      app.inject({
+        method: 'POST',
+        url: '/api/reports',
+        headers: authHeader(),
+        payload: { query: 'user/07dc2239' },
+      }),
+    ]);
+
+    const statusCodes = [first.statusCode, second.statusCode].sort();
+    // Exactly one request should succeed (spends the single credit); the
+    // other must see a zero balance and get 402 — never both succeeding.
+    expect(statusCodes).toEqual([200, 402]);
+
+    const balance = await database.ref(`credits/${TEST_UID}/balance`).get();
+    expect(balance.val()).toBe(0);
   });
 });
 

@@ -1,10 +1,13 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { useSearchParams } from 'react-router';
 import { Sparkles } from 'lucide-react';
+import { toast } from 'sonner';
 import type { ScoutReportData, ScoutReportRecord } from '@smash-tracker/shared';
 import { ApiError } from '@/lib/api';
 import { useScoutPlayer } from '@/hooks/useScoutPlayer';
 import { useMatches } from '@/hooks/useMatches';
 import { useGenerateReport, useReportsConfig, useScoutReportsList } from '@/hooks/useScoutReports';
+import { useCredits } from '@/hooks/useBilling';
 import { getOpponentProfile } from '@/lib/stats';
 import { Button } from '@/components/ui/button';
 import { ScoutSearchForm } from './components/ScoutSearchForm';
@@ -16,6 +19,7 @@ import { ScoutCommonOpponentsCard } from './components/ScoutCommonOpponentsCard'
 import { YourHistoryStrip } from './components/YourHistoryStrip';
 import { ScoutAiReportCard } from './components/ScoutAiReportCard';
 import { ScoutPastReportsCard } from './components/ScoutPastReportsCard';
+import { BuyCreditsDialog } from './components/BuyCreditsDialog';
 
 function describeError(error: unknown, fallback: string): string {
   if (error instanceof ApiError) {
@@ -32,6 +36,10 @@ function describeError(error: unknown, fallback: string): string {
   }
   return fallback;
 }
+
+/** How many times to re-poll `useCredits` after a successful checkout return (webhook delivery can lag the redirect). */
+const CREDITS_POLL_ATTEMPTS = 5;
+const CREDITS_POLL_INTERVAL_MS = 2000;
 
 /**
  * `/scout` — "opponent research before bracket": scout ANY start.gg player
@@ -58,6 +66,15 @@ function describeError(error: unknown, fallback: string): string {
  * automatically with no click needed, and the generate button becomes
  * "Regenerate report". The past-reports card excludes this player's own
  * reports (they're already shown above) and only lists OTHER players'.
+ *
+ * V7-C: report generation costs one credit for everyone except allowlisted
+ * uids (`reportsConfig.freeAccess`). A small indicator next to the
+ * generate/regenerate button shows "Free access" or "N credits"; a "Buy
+ * credits" affordance opens `BuyCreditsDialog` for non-free users, which also
+ * opens automatically when generation answers 402. On return from Stripe
+ * Checkout (`?billing=success`/`?billing=cancelled`), a banner surfaces the
+ * outcome and — on success — the credits query is re-polled for a few
+ * seconds since webhook delivery can lag the redirect.
  */
 export function ScoutPage() {
   const scout = useScoutPlayer();
@@ -65,12 +82,43 @@ export function ScoutPage() {
   const reportsConfig = useReportsConfig();
   const generateReport = useGenerateReport();
   const pastReports = useScoutReportsList();
+  const credits = useCredits();
 
   const [lastQuery, setLastQuery] = useState<string | null>(null);
   const [selectedRecord, setSelectedRecord] = useState<ScoutReportRecord | null>(null);
+  const [buyCreditsOpen, setBuyCreditsOpen] = useState(false);
 
   const report: ScoutReportData | undefined = scout.data;
   const aiReportsEnabled = reportsConfig.data?.enabled ?? false;
+  const freeAccess = reportsConfig.data?.freeAccess ?? false;
+  const billingEnabled = reportsConfig.data?.billingEnabled ?? false;
+
+  // Surface the Stripe Checkout return trip (the API redirects back with a
+  // `billing` query param) and strip it from the URL once handled.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const announcedBilling = useRef(false);
+  useEffect(() => {
+    const outcome = searchParams.get('billing');
+    if (!outcome || announcedBilling.current) {
+      return;
+    }
+    announcedBilling.current = true;
+    if (outcome === 'success') {
+      toast.success("Payment received — your credits will land shortly if they haven't already.");
+      let attempts = 0;
+      const poll = setInterval(() => {
+        attempts += 1;
+        void credits.refetch();
+        if (attempts >= CREDITS_POLL_ATTEMPTS) {
+          clearInterval(poll);
+        }
+      }, CREDITS_POLL_INTERVAL_MS);
+    } else if (outcome === 'cancelled') {
+      toast('Checkout cancelled — no charge was made.');
+    }
+    setSearchParams({}, { replace: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- credits.refetch is stable per render but not a dep we want to re-trigger this effect on
+  }, [searchParams, setSearchParams]);
 
   const yourHistory = useMemo(() => {
     if (!report) {
@@ -105,7 +153,16 @@ export function ScoutPage() {
       return;
     }
     setSelectedRecord(null);
-    generateReport.mutate(lastQuery);
+    generateReport.mutate(lastQuery, {
+      onError: (error) => {
+        if (error instanceof ApiError && error.status === 402) {
+          setBuyCreditsOpen(true);
+        }
+      },
+      onSuccess: () => {
+        void credits.refetch();
+      },
+    });
   };
 
   // The record to actually render: a freshly generated report takes priority
@@ -141,31 +198,52 @@ export function ScoutPage() {
 
           {aiReportsEnabled && (
             <div className="flex flex-col gap-2">
-              <Button
-                onClick={handleGenerateReport}
-                disabled={generateReport.isPending}
-                className="w-fit"
-              >
-                <Sparkles className={generateReport.isPending ? 'animate-spin' : ''} />
-                {generateReport.isPending
-                  ? 'Generating report…'
-                  : displayedRecord
-                    ? 'Regenerate report'
-                    : 'Generate AI report'}
-              </Button>
+              <div className="flex flex-wrap items-center gap-3">
+                <Button
+                  onClick={handleGenerateReport}
+                  disabled={generateReport.isPending}
+                  className="w-fit"
+                >
+                  <Sparkles className={generateReport.isPending ? 'animate-spin' : ''} />
+                  {generateReport.isPending
+                    ? 'Generating report…'
+                    : displayedRecord
+                      ? 'Regenerate report'
+                      : 'Generate AI report'}
+                </Button>
+
+                {(freeAccess || billingEnabled) && (
+                  <span className="text-sm text-muted-foreground">
+                    {freeAccess ? 'Free access' : `${credits.data?.balance ?? 0} credits`}
+                  </span>
+                )}
+                {!freeAccess && billingEnabled && (
+                  <Button
+                    type="button"
+                    variant="link"
+                    className="h-auto p-0 text-sm"
+                    onClick={() => setBuyCreditsOpen(true)}
+                  >
+                    Buy credits
+                  </Button>
+                )}
+              </div>
               {generateReport.isPending && (
                 <p className="text-sm text-muted-foreground">
                   Generating report — this usually takes a minute or two.
                 </p>
               )}
-              {generateReport.isError && (
-                <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-4 text-sm text-destructive">
-                  {describeError(
-                    generateReport.error,
-                    'Something went wrong while generating the report.',
-                  )}
-                </div>
-              )}
+              {generateReport.isError &&
+                !(
+                  generateReport.error instanceof ApiError && generateReport.error.status === 402
+                ) && (
+                  <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-4 text-sm text-destructive">
+                    {describeError(
+                      generateReport.error,
+                      'Something went wrong while generating the report.',
+                    )}
+                  </div>
+                )}
             </div>
           )}
 
@@ -194,6 +272,14 @@ export function ScoutPage() {
           Paste a start.gg profile URL, slug, or player id above to pull up their public tournament
           history.
         </div>
+      )}
+
+      {billingEnabled && !freeAccess && (
+        <BuyCreditsDialog
+          open={buyCreditsOpen}
+          onOpenChange={setBuyCreditsOpen}
+          packs={credits.data?.packs ?? []}
+        />
       )}
     </div>
   );
