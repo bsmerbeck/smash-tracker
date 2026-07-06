@@ -1,7 +1,8 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import Anthropic from '@anthropic-ai/sdk';
 import type { StartggConfig, ReportsConfig } from '../config/env.js';
 import type { AnthropicLikeClient } from '../reports/generate.js';
+import type { ParryggClients } from '../parrygg/client.js';
 import { authHeader, buildTestApp, TEST_UID } from '../test-support/testApp.js';
 
 const STARTGG_CONFIG: StartggConfig = {
@@ -855,5 +856,104 @@ describe('GET /api/reports/:id (configured, allowlisted)', () => {
       player: { gamerTag: 'Pandem1c' },
       report: VALID_REPORT,
     });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// V9-B Feature 4: parry.gg-sourced report generation.
+// ---------------------------------------------------------------------------
+
+const PARRY_USER_ID = '019ce9ba-debd-7e11-84a2-77258f52644e';
+
+function parryClients(overrides: {
+  getUser?: () => { id: string; gamerTag: string } | null;
+}): ParryggClients {
+  return {
+    users: {
+      getUser: vi.fn(async () => {
+        const found = overrides.getUser?.() ?? null;
+        return {
+          getUser: () => (found ? { toObject: () => ({ ...found, bioMd: '' }) } : undefined),
+        };
+      }),
+      getUsers: vi.fn(async () => ({ getUsersList: () => [] })),
+    } as unknown as ParryggClients['users'],
+    matches: {
+      getMatches: vi.fn(async () => ({ getMatchesList: () => [] })),
+    } as unknown as ParryggClients['matches'],
+  };
+}
+
+describe('POST /api/reports (parry.gg, V9-B, allowlisted)', () => {
+  it('answers 503 for a parry.gg query when only start.gg is configured', async () => {
+    const { app } = buildTestApp({
+      startgg: STARTGG_CONFIG,
+      startggFetch: scoutFetchMock(),
+      reports: REPORTS_CONFIG,
+      reportsClient: stubClient(async () => ({
+        stop_reason: 'end_turn',
+        parsed_output: VALID_REPORT,
+      })),
+    });
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/reports',
+      headers: authHeader(),
+      payload: { query: `https://parry.gg/profile/${PARRY_USER_ID}` },
+    });
+    expect(response.statusCode).toBe(503);
+  });
+
+  it('generates and stores a report for a parry.gg-scouted player', async () => {
+    const { app, database } = buildTestApp({
+      reports: REPORTS_CONFIG,
+      reportsClient: stubClient(async () => ({
+        stop_reason: 'end_turn',
+        parsed_output: VALID_REPORT,
+      })),
+      parrygg: { apiKey: 'parry-key' },
+      parryggClients: parryClients({
+        getUser: () => ({ id: PARRY_USER_ID, gamerTag: 'Pandem1c' }),
+      }),
+    });
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/reports',
+      headers: authHeader(),
+      payload: { query: `https://parry.gg/profile/${PARRY_USER_ID}` },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({
+      player: { source: 'parrygg', parryUserId: PARRY_USER_ID, gamerTag: 'Pandem1c' },
+      report: VALID_REPORT,
+    });
+
+    const dump = database.dump() as Record<string, unknown>;
+    const scoutReports = dump.scoutReports as Record<string, Record<string, unknown>>;
+    const stored = Object.values(scoutReports[TEST_UID]!)[0]!;
+    expect(stored).toMatchObject({
+      player: { source: 'parrygg', parryUserId: PARRY_USER_ID },
+    });
+  });
+
+  it('returns 404 when no parry.gg player resolves', async () => {
+    const { app } = buildTestApp({
+      reports: REPORTS_CONFIG,
+      reportsClient: stubClient(async () => ({
+        stop_reason: 'end_turn',
+        parsed_output: VALID_REPORT,
+      })),
+      parrygg: { apiKey: 'parry-key' },
+      parryggClients: parryClients({ getUser: () => null }),
+    });
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/reports',
+      headers: authHeader(),
+      payload: { query: `https://parry.gg/profile/${PARRY_USER_ID}` },
+    });
+    expect(response.statusCode).toBe(404);
   });
 });

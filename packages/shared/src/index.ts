@@ -34,3 +34,5 @@ export * from './reports.js';
 export * from './glicko.js';
 export * from './groups.js';
 export * from './billing.js';
+export * from './meta.js';
+export * from './matchupAdvisor.js';

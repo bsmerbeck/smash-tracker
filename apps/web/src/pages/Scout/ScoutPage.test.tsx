@@ -135,7 +135,10 @@ describe('ScoutPage', () => {
     await user.click(screen.getByRole('button', { name: 'Scout' }));
 
     await waitFor(() =>
-      expect(scoutLookup).toHaveBeenCalledWith({ query: 'https://start.gg/user/07dc2239' }),
+      expect(scoutLookup).toHaveBeenCalledWith({
+        query: 'https://start.gg/user/07dc2239',
+        source: 'startgg',
+      }),
     );
     expect(await screen.findByText('Pandem1c')).toBeInTheDocument();
     expect(screen.getByText(/Public start\.gg data · sampled last 3 sets/)).toBeInTheDocument();
@@ -336,7 +339,9 @@ describe('ScoutPage — AI reports feature enabled', () => {
 
     await user.click(screen.getByRole('button', { name: /Generate AI report/ }));
 
-    await waitFor(() => expect(reportsGenerate).toHaveBeenCalledWith('user/07dc2239'));
+    await waitFor(() =>
+      expect(reportsGenerate).toHaveBeenCalledWith({ query: 'user/07dc2239', source: 'startgg' }),
+    );
     expect(await screen.findByText('AI Scouting Report')).toBeInTheDocument();
     expect(screen.getAllByText(GENERATED_RECORD.report.overview).length).toBeGreaterThan(0);
   });

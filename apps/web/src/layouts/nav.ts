@@ -10,6 +10,7 @@ import {
   LineChart,
   TrendingUp,
   Trophy,
+  Sparkles,
   type LucideIcon,
 } from 'lucide-react';
 
@@ -28,6 +29,7 @@ export const navItems: NavItem[] = [
   { title: 'Matchups', href: '/matchups', icon: Swords },
   { title: 'Scouting', href: '/opponents', icon: Target },
   { title: 'Scout a Player', href: '/scout', icon: Search },
+  { title: 'AI Reports', href: '/reports', icon: Sparkles },
   { title: 'Match Data', href: '/match-data', icon: LineChart },
   { title: 'Trends', href: '/trends', icon: TrendingUp },
   { title: 'Groups', href: '/groups', icon: Trophy },

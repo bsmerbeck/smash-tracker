@@ -25,6 +25,7 @@ function makeSet(overrides: Partial<StartggSet> = {}): StartggSet {
     event: {
       id: 987,
       name: 'Ultimate Singles',
+      slug: 'tournament/test-weekly-42/event/ultimate-singles',
       isOnline: true,
       numEntrants: 512,
       videogame: { id: 1386 },
@@ -233,6 +234,7 @@ describe('accumulateScoutSet', () => {
           placement?: number;
           numEntrants?: number;
           lastSetAt: number;
+          slug?: string;
         }
       >(),
       opponents: new Map<string, number>(),
@@ -256,7 +258,16 @@ describe('accumulateScoutSet', () => {
       tournamentName: 'Test Weekly 42',
       placement: 33,
       numEntrants: 512,
+      slug: 'tournament/test-weekly-42/event/ultimate-singles',
     });
+  });
+
+  it('tolerates a set whose event has no slug (back-compat: older start.gg responses / any nullish slug)', () => {
+    const acc = emptyAcc();
+    const set = makeSet({ event: { ...makeSet().event, slug: undefined } });
+    accumulateScoutSet(acc, set, PLAYER_ID);
+    const event = acc.events.get(987);
+    expect(event?.slug).toBeUndefined();
   });
 
   it('strips a sponsor prefix from the common-opponent tag', () => {
@@ -390,7 +401,12 @@ describe('buildScoutReport', () => {
     expect(report.characters[0]).toMatchObject({ fighterId: 67, games: 4, wins: 2 });
     expect(report.commonOpponents[0]).toEqual({ gamerTag: 'PowPow', sets: 2 });
     expect(report.recentEvents).toHaveLength(1);
-    expect(report.recentEvents[0]).toMatchObject({ eventName: 'Ultimate Singles', placement: 33 });
+    expect(report.recentEvents[0]).toMatchObject({
+      eventName: 'Ultimate Singles',
+      placement: 33,
+      slug: 'tournament/test-weekly-42/event/ultimate-singles',
+      source: 'startgg',
+    });
   });
 
   it('caps pagination at 15 pages even when start.gg reports more', async () => {

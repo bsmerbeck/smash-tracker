@@ -1,6 +1,7 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import type { StartggConfig } from '../config/env.js';
 import { authHeader, buildTestApp } from '../test-support/testApp.js';
+import type { ParryggClients } from '../parrygg/client.js';
 
 const CONFIG: StartggConfig = {
   clientId: 'client-123',
@@ -199,5 +200,135 @@ describe('POST /api/scout (configured)', () => {
     expect(second.statusCode).toBe(200);
     // Same underlying player id -> cache hit -> no additional sets fetch.
     expect(setsFetches).toBe(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// V9-B Feature 4: parry.gg scouting — source resolution + independent 503s.
+// ---------------------------------------------------------------------------
+
+const PARRY_USER_ID = '019ce9ba-debd-7e11-84a2-77258f52644e';
+
+function parryClients(overrides: {
+  getUser?: () => { id: string; gamerTag: string } | null;
+}): ParryggClients {
+  return {
+    users: {
+      getUser: vi.fn(async () => {
+        const found = overrides.getUser?.() ?? null;
+        return {
+          getUser: () => (found ? { toObject: () => ({ ...found, bioMd: '' }) } : undefined),
+        };
+      }),
+      getUsers: vi.fn(async () => ({ getUsersList: () => [] })),
+    } as unknown as ParryggClients['users'],
+    matches: {
+      getMatches: vi.fn(async () => ({ getMatchesList: () => [] })),
+    } as unknown as ParryggClients['matches'],
+  };
+}
+
+describe('POST /api/scout (parry.gg, V9-B)', () => {
+  it('answers 503 when neither integration is configured', async () => {
+    const { app } = buildTestApp();
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/scout',
+      headers: authHeader(),
+      payload: { query: `https://parry.gg/profile/${PARRY_USER_ID}` },
+    });
+    expect(response.statusCode).toBe(503);
+  });
+
+  it('answers 503 for a parry.gg query when only start.gg is configured', async () => {
+    const { app } = buildTestApp({ startgg: CONFIG, startggFetch: scoutFetchMock() });
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/scout',
+      headers: authHeader(),
+      payload: { query: `https://parry.gg/profile/${PARRY_USER_ID}` },
+    });
+    expect(response.statusCode).toBe(503);
+  });
+
+  it('answers 503 for a start.gg query when only parry.gg is configured', async () => {
+    const { app } = buildTestApp({
+      parrygg: { apiKey: 'parry-key' },
+      parryggClients: parryClients({}),
+    });
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/scout',
+      headers: authHeader(),
+      payload: { query: 'user/07dc2239' },
+    });
+    expect(response.statusCode).toBe(503);
+  });
+
+  it('a pasted parry.gg profile URL resolves via parry.gg regardless of the source field', async () => {
+    const { app } = buildTestApp({
+      parrygg: { apiKey: 'parry-key' },
+      parryggClients: parryClients({
+        getUser: () => ({ id: PARRY_USER_ID, gamerTag: 'Pandem1c' }),
+      }),
+    });
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/scout',
+      headers: authHeader(),
+      payload: { query: `https://parry.gg/profile/${PARRY_USER_ID}`, source: 'startgg' },
+    });
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({
+      player: { source: 'parrygg', parryUserId: PARRY_USER_ID, gamerTag: 'Pandem1c' },
+    });
+  });
+
+  it('respects an explicit source: parrygg for a bare tag', async () => {
+    const { app } = buildTestApp({
+      parrygg: { apiKey: 'parry-key' },
+      parryggClients: parryClients({
+        getUser: () => ({ id: PARRY_USER_ID, gamerTag: 'Pandem1c' }),
+      }),
+    });
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/scout',
+      headers: authHeader(),
+      payload: { query: PARRY_USER_ID, source: 'parrygg' },
+    });
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({ player: { source: 'parrygg' } });
+  });
+
+  it('returns 404 when no parry.gg player resolves', async () => {
+    const { app } = buildTestApp({
+      parrygg: { apiKey: 'parry-key' },
+      parryggClients: parryClients({ getUser: () => null }),
+    });
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/scout',
+      headers: authHeader(),
+      payload: { query: `https://parry.gg/profile/${PARRY_USER_ID}` },
+    });
+    expect(response.statusCode).toBe(404);
+  });
+
+  it('defaults to start.gg when source is omitted and the query is not a parry.gg URL', async () => {
+    const { app } = buildTestApp({
+      startgg: CONFIG,
+      startggFetch: scoutFetchMock(),
+      parrygg: { apiKey: 'parry-key' },
+      parryggClients: parryClients({}),
+    });
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/scout',
+      headers: authHeader(),
+      payload: { query: 'user/07dc2239' },
+    });
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({ player: { id: 1802316 } });
   });
 });

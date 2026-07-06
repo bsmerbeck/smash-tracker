@@ -187,6 +187,8 @@ const setsPageSchema = z.object({
                 .object({
                   id: z.number().nullish(),
                   name: z.string().nullish(),
+                  /** Event slug, e.g. "tournament/the-big-house-9/event/ultimate-singles" — used to deep-link scouted recent events (V9-B). */
+                  slug: z.string().nullish(),
                   isOnline: z.boolean().nullish(),
                   numEntrants: z.number().int().nullish(),
                   videogame: z.object({ id: z.number() }).nullish(),
@@ -287,7 +289,7 @@ const SETS_QUERY = `query PlayerSets($playerId: ID!, $page: Int!, $perPage: Int!
         displayScore
         totalGames
         vodUrl
-        event { id name isOnline numEntrants videogame { id } tournament { name } }
+        event { id name slug isOnline numEntrants videogame { id } tournament { name } }
         slots {
           entrant {
             id

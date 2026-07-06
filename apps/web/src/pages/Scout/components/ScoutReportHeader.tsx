@@ -3,13 +3,28 @@ import { Card, CardContent } from '@/components/ui/card';
 import type { ScoutReportData } from '@smash-tracker/shared';
 
 /**
- * Report header: the scouted player's gamer tag, a start.gg profile link
- * (when a slug is available), and the sample-size caption every scouting
- * report carries — "this is public data, and it's a sample, not their whole
- * history."
+ * Report header: the scouted player's gamer tag, a profile link (when
+ * available), and the sample-size caption every scouting report carries —
+ * "this is public data, and it's a sample, not their whole history."
+ *
+ * V9-B Feature 4: source-aware — `report.player.source` is absent for every
+ * pre-V9-B report (start.gg was the only source), so `?? 'startgg'` keeps
+ * old reports labeled/linked exactly as before. parry.gg identities have no
+ * `userSlug` (that field is start.gg-only), so their profile link is built
+ * from `parryUserId` instead — the verified `https://parry.gg/profile/{id}`
+ * shape (see apps/api/src/parrygg/scout.ts).
  */
 export function ScoutReportHeader({ report }: { report: ScoutReportData }) {
-  const profileUrl = report.player.userSlug ? `https://start.gg/${report.player.userSlug}` : null;
+  const source = report.player.source ?? 'startgg';
+  const profileUrl =
+    source === 'parrygg'
+      ? report.player.parryUserId
+        ? `https://parry.gg/profile/${report.player.parryUserId}`
+        : null
+      : report.player.userSlug
+        ? `https://start.gg/${report.player.userSlug}`
+        : null;
+  const sourceLabel = source === 'parrygg' ? 'parry.gg' : 'start.gg';
 
   return (
     <Card>
@@ -21,16 +36,16 @@ export function ScoutReportHeader({ report }: { report: ScoutReportData }) {
               href={profileUrl}
               target="_blank"
               rel="noreferrer"
-              aria-label={`View ${report.player.gamerTag} on start.gg`}
+              aria-label={`View ${report.player.gamerTag} on ${sourceLabel}`}
               className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
             >
               <ExternalLink className="size-3.5" />
-              start.gg profile
+              {sourceLabel} profile
             </a>
           )}
         </div>
         <p className="text-sm text-muted-foreground">
-          Public start.gg data · sampled last {report.sampledSets} set
+          Public {sourceLabel} data · sampled last {report.sampledSets} set
           {report.sampledSets === 1 ? '' : 's'} ({report.sampledGames} game
           {report.sampledGames === 1 ? '' : 's'})
         </p>
