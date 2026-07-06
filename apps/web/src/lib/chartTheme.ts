@@ -36,9 +36,23 @@ export function redLineDataset() {
   };
 }
 
-/** Scale/legend/tooltip styling legible on the dark background. */
-export function darkChartOptions(): Pick<ChartOptions<'line'>, 'scales' | 'plugins'> {
+/**
+ * Scale/legend/tooltip styling legible on the dark background, plus the
+ * `responsive`/`maintainAspectRatio` pair every chart on this dashboard
+ * needs (V9-C): chart.js defaults `maintainAspectRatio` to `true`, which
+ * locks the canvas to its intrinsic aspect ratio instead of filling a wide
+ * flex/grid card — the cause of the "tiny chart in a huge card" bug on
+ * Trends. Callers still need a fixed-height wrapper div (see
+ * FighterAnalysis/RatingCurve/MonthlyPerformance) since `maintainAspectRatio:
+ * false` alone doesn't give the canvas a height to fill.
+ */
+export function darkChartOptions(): Pick<
+  ChartOptions<'line'>,
+  'responsive' | 'maintainAspectRatio' | 'scales' | 'plugins'
+> {
   return {
+    responsive: true,
+    maintainAspectRatio: false,
     scales: {
       x: {
         grid: { color: chartColors.grid },

@@ -83,7 +83,9 @@ export function LastMatchesChart({ matches }: { matches: Match[] }) {
         {series.length === 0 ? (
           <p className="text-sm text-muted-foreground">Submit a match to see the match chart.</p>
         ) : (
-          <Line data={buildData(series)} options={buildOptions(series)} />
+          <div className="h-64">
+            <Line data={buildData(series)} options={buildOptions(series)} />
+          </div>
         )}
       </CardContent>
     </Card>
@@ -115,6 +117,8 @@ function buildData(series: SeriesPoint[]) {
 function buildOptions(series: SeriesPoint[]): ChartOptions<'line'> {
   const theme = darkChartOptions();
   return {
+    responsive: theme.responsive,
+    maintainAspectRatio: theme.maintainAspectRatio,
     scales: {
       x: theme.scales?.x,
       y: {

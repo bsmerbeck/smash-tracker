@@ -85,7 +85,7 @@ export function SessionsAndTilt({ matches }: { matches: Match[] }) {
   const recentSessions = [...sessions].reverse().slice(0, RECENT_SESSION_LIMIT);
 
   return (
-    <Card>
+    <Card className="h-full">
       <CardHeader>
         <CardTitle>Sessions &amp; Tilt</CardTitle>
       </CardHeader>
