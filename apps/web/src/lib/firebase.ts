@@ -18,6 +18,12 @@ const firebaseConfigSchema = z.object({
   authDomain: z.string().min(1, 'VITE_FIREBASE_AUTH_DOMAIN is required'),
   projectId: z.string().min(1, 'VITE_FIREBASE_PROJECT_ID is required'),
   appId: z.string().min(1, 'VITE_FIREBASE_APP_ID is required'),
+  /**
+   * GA4 measurement id (G-XXXX). Optional: analytics is skipped entirely
+   * when unset (local dev, tests), so unit tests never load
+   * firebase/analytics and dev sessions don't pollute production stats.
+   */
+  measurementId: z.string().optional(),
 });
 
 export type FirebaseConfig = z.infer<typeof firebaseConfigSchema>;
@@ -28,6 +34,7 @@ function readFirebaseConfig(): FirebaseConfig {
     authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
     projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
     appId: import.meta.env.VITE_FIREBASE_APP_ID,
+    measurementId: import.meta.env.VITE_FIREBASE_MEASUREMENT_ID || undefined,
   });
 
   if (!result.success) {
@@ -56,4 +63,51 @@ export function getFirebaseAuth(): Auth {
 
 export function createGoogleAuthProvider(): GoogleAuthProvider {
   return new GoogleAuthProvider();
+}
+
+// ---------------------------------------------------------------------------
+// Analytics (GA4 via Firebase). The legacy CRA app reported analytics; the
+// rewrite shipped without them, so the Firebase console showed 0 active
+// users despite real traffic. Everything here is lazy + optional:
+// firebase/analytics is dynamically imported only when a measurementId is
+// configured AND the browser supports it (isSupported() is false in jsdom,
+// some privacy modes, and non-browser contexts), so tests and dev builds
+// never touch it.
+
+type AnalyticsContext = {
+  analytics: import('firebase/analytics').Analytics;
+  mod: typeof import('firebase/analytics');
+};
+
+let analyticsInit: Promise<AnalyticsContext | null> | null = null;
+
+function initAnalytics(): Promise<AnalyticsContext | null> {
+  analyticsInit ??= (async () => {
+    const config = readFirebaseConfig();
+    if (!config.measurementId) {
+      return null;
+    }
+    const mod = await import('firebase/analytics');
+    if (!(await mod.isSupported().catch(() => false))) {
+      return null;
+    }
+    return { analytics: mod.getAnalytics(getFirebaseApp()), mod };
+  })().catch(() => null);
+  return analyticsInit;
+}
+
+/**
+ * Records an SPA page view (GA4 auto-collects only the initial load; router
+ * navigations must be logged manually). Fire-and-forget and never throws —
+ * analytics must never break the app. No-op without a measurementId.
+ */
+export function logAnalyticsPageView(pagePath: string): void {
+  void initAnalytics().then((ctx) => {
+    if (ctx) {
+      ctx.mod.logEvent(ctx.analytics, 'page_view', {
+        page_path: pagePath,
+        page_location: window.location.href,
+      });
+    }
+  });
 }
