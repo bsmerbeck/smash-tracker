@@ -244,6 +244,12 @@ VITE_FIREBASE_APP_ID=...
 
 # Empty — same-origin in production, requests go to /api/** on this origin
 VITE_API_BASE_URL=
+
+# Cloud Run service URL — used only by requests that can outlive Firebase
+# Hosting's hard 60-second rewrite timeout (AI report generation goes direct
+# to this origin). Requires the API's CORS_ORIGIN env var to allow the
+# Hosting origin, e.g. CORS_ORIGIN=https://your-project.web.app
+VITE_API_DIRECT_URL=https://smash-tracker-api-XXXX.us-central1.run.app
 ```
 
 **3. Build and deploy the web app to Firebase Hosting**
