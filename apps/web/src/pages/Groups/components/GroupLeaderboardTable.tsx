@@ -8,7 +8,7 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { cn } from '@/lib/utils';
-import { formatRelativeDate } from '../relativeDate';
+import { formatRelativeDate } from '@/lib/relativeDate';
 
 /**
  * Rank, display name, rating ± RD, games, and last-active for each member.

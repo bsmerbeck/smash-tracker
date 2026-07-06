@@ -103,12 +103,16 @@
 }
 
 /*
- * V6-W1c: "Export H2H" evidence packet print view. `.print-packet-root` is
- * rendered by <PrintableEvidencePacket> (hidden on-screen) alongside the
- * normal scouting report; triggering window.print() should show ONLY the
- * packet, not the app chrome (topbar/sidebar/report cards) behind it. Kept
- * to a single small `@media print` block scoped by a unique class rather
- * than threading print-visibility through the shared layout, so this stays
+ * V6-W1c: "Export H2H" evidence packet print view, reused as-is by V7-B.1's
+ * AI scout report download/print card. `.print-packet-root` is rendered
+ * (hidden on-screen) alongside the normal page content by whichever
+ * component needs a print view — <PrintableEvidencePacket> on the Opponents
+ * page, <ScoutAiReportCard>'s print-only block on the Scout page — and
+ * triggering window.print() shows ONLY that content, not the app chrome
+ * (topbar/sidebar/other cards) behind it. Since only one page's print view is
+ * ever mounted at a time, reusing one class name across pages is safe. Kept
+ * to a single small `@media print` block scoped by a unique class rather than
+ * threading print-visibility through the shared layout, so this stays
  * additive and low-conflict with concurrent page work.
  */
 @media print {
