@@ -270,6 +270,31 @@ single constant, `CREDIT_PACKS` in `packages/shared/src/billing.ts` — edit tha
 pricing or add a pack; both the checkout endpoint and the credits-status endpoint read from it, so
 nothing else needs to change.
 
+**V8-A: parry.gg integration (optional)**
+
+A second tournament-site integration alongside start.gg, gated behind one env var:
+
+- `PARRYGG_API_KEY` — a parry.gg API key, sent as the `X-API-KEY` gRPC-Web call metadata header on
+  every request to `https://grpcweb.parry.gg`. Unlike start.gg, parry.gg has no OAuth app to
+  register, so there's no redirect URI/client secret to configure.
+
+```sh
+gcloud run deploy smash-tracker-api \
+  --source . \
+  --region us-central1 \
+  --set-env-vars FIREBASE_DATABASE_URL=https://smash-tracker-f97b7-default-rtdb.firebaseio.com,PARRYGG_API_KEY=...
+```
+
+Until `PARRYGG_API_KEY` is set, every `/api/integrations/parrygg/*` route answers `503` and the rest
+of the app (including start.gg) is unaffected. Because parry.gg has no OAuth grant to prove account
+ownership, linking is a two-step flow: `POST /link` claims a parry.gg account by id (rejecting a
+409 if another smash-tracker account already claimed it), and an optional bio-text challenge code
+(`POST /verify/start` + `/verify/complete`) upgrades the link to "verified" once the user pastes the
+code into their public parry.gg bio. Verification is NOT required to sync — syncing a linked
+account only reads the same public match data start.gg's sync reads with its own server token, so
+the trust bar for syncing is "you found the right profile" (enforced by the reverse-index
+uniqueness check), not "you cryptographically proved you own it".
+
 **2. Configure `apps/web/.env.production`**
 
 ```sh

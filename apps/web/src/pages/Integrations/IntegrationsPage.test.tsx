@@ -32,6 +32,8 @@ const sync = vi.fn();
 const unlink = vi.fn();
 const upsertMe = vi.fn().mockResolvedValue({ uid: 'test-uid', email: 'test@example.com' });
 
+const parryggStatus = vi.fn().mockResolvedValue({ linked: false });
+
 vi.mock('@/lib/api', () => ({
   api: {
     users: { upsertMe: (...args: unknown[]) => upsertMe(...args) },
@@ -40,6 +42,15 @@ vi.mock('@/lib/api', () => ({
       authorize: (...args: unknown[]) => authorize(...args),
       sync: (...args: unknown[]) => sync(...args),
       unlink: (...args: unknown[]) => unlink(...args),
+    },
+    parrygg: {
+      status: (...args: unknown[]) => parryggStatus(...args),
+      search: vi.fn().mockResolvedValue([]),
+      link: vi.fn(),
+      unlink: vi.fn(),
+      verifyStart: vi.fn(),
+      verifyComplete: vi.fn(),
+      sync: vi.fn(),
     },
   },
 }));
@@ -64,6 +75,7 @@ describe('IntegrationsPage', () => {
     resetAuthMock();
     vi.clearAllMocks();
     upsertMe.mockResolvedValue({ uid: 'test-uid', email: 'test@example.com' });
+    parryggStatus.mockResolvedValue({ linked: false });
     setMockUser(makeMockUser());
   });
 

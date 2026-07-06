@@ -85,14 +85,15 @@ export const matchRecordSchema = z.object({
   /**
    * Where this match came from. Absent on manually-entered matches (all
    * legacy data); 'startgg' on records imported from start.gg tournament
-   * sets. Set server-side by the sync service only — never accepted from
-   * client input (see createMatchInputSchema).
+   * sets, 'parrygg' on records imported from parry.gg (V8-A). Set
+   * server-side by the sync service only — never accepted from client input
+   * (see createMatchInputSchema).
    */
-  source: z.literal('startgg').optional(),
+  source: z.enum(['startgg', 'parrygg']).optional(),
   /**
-   * Stable idempotency key for imported records, e.g. 'sgg:<setId>:g<n>'.
-   * Doubles as the RTDB child key (prefixed) so re-syncs overwrite instead
-   * of duplicating.
+   * Stable idempotency key for imported records, e.g. 'sgg:<setId>:g<n>' or
+   * 'pgg-<matchId>-g<n>'. Doubles as the RTDB child key (prefixed) so
+   * re-syncs overwrite instead of duplicating.
    */
   externalId: z.string().optional(),
   /** Bracket/event name for imported matches (e.g. "Ultimate Singles"). Server-set. */

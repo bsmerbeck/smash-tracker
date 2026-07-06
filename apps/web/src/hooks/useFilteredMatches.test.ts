@@ -17,6 +17,15 @@ const imported = {
   source: 'startgg',
   externalId: 'sgg:1:g1',
 } as Match;
+const importedParrygg = {
+  id: 'pgg-1-g1',
+  fighter_id: 1,
+  opponent_id: 2,
+  time: 3,
+  win: true,
+  source: 'parrygg',
+  externalId: 'pgg-1-g1',
+} as Match;
 
 describe('filterBySource', () => {
   it('passes everything through for all', () => {
@@ -29,6 +38,13 @@ describe('filterBySource', () => {
 
   it('keeps only startgg-tagged records for startgg', () => {
     expect(filterBySource([manual, imported], 'startgg')).toEqual([imported]);
+  });
+
+  it('the "Competitive" (startgg) filter also matches parrygg-tagged records (V8-A)', () => {
+    expect(filterBySource([manual, imported, importedParrygg], 'startgg')).toEqual([
+      imported,
+      importedParrygg,
+    ]);
   });
 });
 
@@ -72,7 +88,11 @@ describe('filterByRange', () => {
   });
 });
 
-function withOpponent(id: string, opponent: string | undefined, source?: 'startgg'): Match {
+function withOpponent(
+  id: string,
+  opponent: string | undefined,
+  source?: 'startgg' | 'parrygg',
+): Match {
   return {
     id,
     fighter_id: 1,
@@ -144,5 +164,26 @@ describe('getOpponentSources', () => {
     const sources = getOpponentSources(matches);
     expect(sources.get('rival')).toBe('startgg');
     expect(sources.get('zeta')).toBe('manual');
+  });
+
+  it('classifies an opponent with only parrygg matches as parrygg (V8-A)', () => {
+    const matches = [
+      withOpponent('m1', 'rival', 'parrygg'),
+      withOpponent('m2', 'rival', 'parrygg'),
+    ];
+    expect(getOpponentSources(matches).get('rival')).toBe('parrygg');
+  });
+
+  it('classifies an opponent with parrygg + manual matches as mixed', () => {
+    const matches = [withOpponent('m1', 'rival', 'parrygg'), withOpponent('m2', 'rival')];
+    expect(getOpponentSources(matches).get('rival')).toBe('mixed');
+  });
+
+  it('classifies an opponent seen on BOTH tournament sites (no manual) as mixed', () => {
+    const matches = [
+      withOpponent('m1', 'rival', 'startgg'),
+      withOpponent('m2', 'rival', 'parrygg'),
+    ];
+    expect(getOpponentSources(matches).get('rival')).toBe('mixed');
   });
 });

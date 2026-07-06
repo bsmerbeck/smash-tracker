@@ -9,3 +9,5 @@ allowBuilds:
   protobufjs: true
 minimumReleaseAgeExclude:
   - tsx@4.23.0
+patchedDependencies:
+  '@parry-gg/client@1.0.12': patches/@parry-gg__client@1.0.12.patch

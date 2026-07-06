@@ -7,6 +7,9 @@ settings:
 overrides:
   uuid: ^11.1.1
 
+patchedDependencies:
+  '@parry-gg/client@1.0.12': adbb25f4718b505898b5ee7b38d73d7c54979474e9b930ca42005718fbb3d739
+
 importers:
 
   .:
@@ -53,6 +56,9 @@ importers:
       '@fastify/cors':
         specifier: ^11.2.0
         version: 11.2.0
+      '@parry-gg/client':
+        specifier: ^1.0.12
+        version: 1.0.12(patch_hash=adbb25f4718b505898b5ee7b38d73d7c54979474e9b930ca42005718fbb3d739)(google-protobuf@4.0.2)(grpc-web@2.0.2)(xhr2@0.2.1)
       '@smash-tracker/shared':
         specifier: workspace:*
         version: link:../../packages/shared
@@ -68,13 +74,25 @@ importers:
       firebase-admin:
         specifier: ^14.1.0
         version: 14.1.0
+      google-protobuf:
+        specifier: ^4.0.2
+        version: 4.0.2
+      grpc-web:
+        specifier: ^2.0.2
+        version: 2.0.2
       stripe:
         specifier: ^22.3.0
         version: 22.3.0(@types/node@24.13.2)
+      xhr2:
+        specifier: ^0.2.1
+        version: 0.2.1
       zod:
         specifier: ^4.4.3
         version: 4.4.3
     devDependencies:
+      '@types/google-protobuf':
+        specifier: ^3.15.12
+        version: 3.15.12
       '@types/node':
         specifier: ^24.13.2
         version: 24.13.2
@@ -910,6 +928,16 @@ packages:
 
   '@oxc-project/types@0.138.0':
     resolution: {integrity: sha512-1a7ZKmrRTCoN1XMZ4L0PyyqrMnrNlLyPuOkdSX2MZg7IiIGRUyurNhAm73ptDOraoBcIordsIGKNPKUzy3ZmfA==}
+
+  '@parry-gg/client@1.0.12':
+    resolution: {integrity: sha512-PgtoFewbVFykzaYvqtS8FsEqqLg1lwkhxT3XiRu9I9YaQ/mN1Ox6Fmoyn2KoT9UKXPqV47KELm47BrzwoTun3Q==}
+    peerDependencies:
+      google-protobuf: ^3.21.2
+      grpc-web: ^1.5.0
+      xhr2: ^0.2.1
+    peerDependenciesMeta:
+      xhr2:
+        optional: true
 
   '@pinojs/redact@0.4.0':
     resolution: {integrity: sha512-k2ENnmBugE/rzQfEcdWHcCY+/FM3VLzH9cYEsbdsoqrvzAKRhUZeRNhAZvB8OitQJ1TBed3yqWtdjzS6wJKBwg==}
@@ -1909,6 +1937,9 @@ packages:
   '@types/estree@1.0.9':
     resolution: {integrity: sha512-GhdPgy1el4/ImP05X05Uw4cw2/M93BCUmnEvWZNStlCzEKME4Fkk+YpoA5OiHNQmoS7Cafb8Xa3Pya8m1Qrzeg==}
 
+  '@types/google-protobuf@3.15.12':
+    resolution: {integrity: sha512-40um9QqwHjRS92qnOaDpL7RmDK15NuZYo9HihiJRbYkMQZlWnuH8AdvbMy8/o6lgLmKbDUKa+OALCltHdbOTpQ==}
+
   '@types/json-schema@7.0.15':
     resolution: {integrity: sha512-5+fP8P8MFNC+AyZCDxrB2pkZFPGzqQWUzpSeuuVLvm8VMcorNYavBqoFcxK8bQz4Qsbn4oUEEem4wDLfcysGHA==}
 
@@ -2650,12 +2681,18 @@ packages:
     resolution: {integrity: sha512-eAmLkjDjAFCVXg7A1unxHsLf961m6y17QFqXqAXGj/gVkKFrEICfStRfwUlGNfeCEjNRa32JEWOUTlYXPyyKvA==}
     engines: {node: '>=14'}
 
+  google-protobuf@4.0.2:
+    resolution: {integrity: sha512-yD2fqbNgvJPuQwdKJiPdbUcXveNRxgqy070gzsBsCyFJA8Qdj9oxa9xtkddb/JEhcDk0RD5SfGUWg+nhINfMxA==}
+
   gopd@1.2.0:
     resolution: {integrity: sha512-ZUKRh6/kUFoAiTAtTYPZJ3hw9wNxx+BIBOijnlG9PnrJsCcSjs1wyyD6vJpaYtgnzDrKYRSqf3OO6Rfa93xsRg==}
     engines: {node: '>= 0.4'}
 
   graceful-fs@4.2.11:
     resolution: {integrity: sha512-RbJ5/jmFcNNCcDV5o9eTnBLJ/HszWV0P73bc+Ff4nS/rJj+YaS6IGyiOL0VoBYX+l1Wrl3k63h/KrH+nhJ0XvQ==}
+
+  grpc-web@2.0.2:
+    resolution: {integrity: sha512-bvBP0/d5jyVM3eGxxffJhRLAPpH6eXhJeUzBT+bSIEgUKkG4a/BotEimVeW3phP0WLnsJnkRl8uQdRf2yDLaVA==}
 
   gtoken@7.1.0:
     resolution: {integrity: sha512-pCcEwRi+TKpMlxAQObHDQ56KawURgyAf6jtIY046fJ5tIv3zDe/LEIubckAO8fj6JnAxLdmWkUfNyulQ2iKdEw==}
@@ -3755,6 +3792,10 @@ packages:
   wrappy@1.0.2:
     resolution: {integrity: sha512-l4Sp/DRseor9wL6EvV2+TuQn63dMkPjZ/sp9XkghTEbV9KlPS1xUsZ3u7/IQO4wxtcFB4bgpQPRcR3QCvezPcQ==}
 
+  xhr2@0.2.1:
+    resolution: {integrity: sha512-sID0rrVCqkVNUn8t6xuv9+6FViXjUVXq8H5rWOH2rz9fDNQEd4g0EA2XlcEdJXRz5BMEn4O1pJFdT+z4YHhoWw==}
+    engines: {node: '>= 6'}
+
   xml-name-validator@5.0.0:
     resolution: {integrity: sha512-EvGK8EJ3DhaHfbRlETOWAS5pO9MZITeauHKJyb8wyajUfQUenkIg2MvLDTZ4T/TgIcm3HU0TFBgWWboAZ30UHg==}
     engines: {node: '>=18'}
@@ -4607,6 +4648,13 @@ snapshots:
     optional: true
 
   '@oxc-project/types@0.138.0': {}
+
+  '@parry-gg/client@1.0.12(patch_hash=adbb25f4718b505898b5ee7b38d73d7c54979474e9b930ca42005718fbb3d739)(google-protobuf@4.0.2)(grpc-web@2.0.2)(xhr2@0.2.1)':
+    dependencies:
+      google-protobuf: 4.0.2
+      grpc-web: 2.0.2
+    optionalDependencies:
+      xhr2: 0.2.1
 
   '@pinojs/redact@0.4.0': {}
 
@@ -5575,6 +5623,8 @@ snapshots:
 
   '@types/estree@1.0.9': {}
 
+  '@types/google-protobuf@3.15.12': {}
+
   '@types/json-schema@7.0.15': {}
 
   '@types/jsonwebtoken@9.0.10':
@@ -6528,10 +6578,14 @@ snapshots:
 
   google-logging-utils@1.1.3: {}
 
+  google-protobuf@4.0.2: {}
+
   gopd@1.2.0:
     optional: true
 
   graceful-fs@4.2.11: {}
+
+  grpc-web@2.0.2: {}
 
   gtoken@7.1.0:
     dependencies:
@@ -7642,6 +7696,8 @@ snapshots:
 
   wrappy@1.0.2:
     optional: true
+
+  xhr2@0.2.1: {}
 
   xml-name-validator@5.0.0: {}
 
