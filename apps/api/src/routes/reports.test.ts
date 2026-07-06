@@ -1,7 +1,8 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import Anthropic from '@anthropic-ai/sdk';
 import type { StartggConfig, ReportsConfig } from '../config/env.js';
 import type { AnthropicLikeClient } from '../reports/generate.js';
+import type { ParryggClients } from '../parrygg/client.js';
 import { authHeader, buildTestApp, TEST_UID } from '../test-support/testApp.js';
 
 const STARTGG_CONFIG: StartggConfig = {
@@ -40,7 +41,15 @@ function scoutFetchMock(): typeof fetch {
   }) as typeof fetch;
 }
 
-const VALID_REPORT = {
+/**
+ * What VALID_REPORT looks like once persisted (V9-B fix): the write path
+ * strips null-valued fields before the RTDB write (RTDB would delete them
+ * anyway — deleting on OUR side keeps the stored shape and the read-back
+ * shape identical), so `headToHead: null` is simply absent. Defined as the
+ * BASE shape; `VALID_REPORT` (the model's generation output, where the field
+ * is required) composes it with the explicit null.
+ */
+const STORED_VALID_REPORT = {
   overview: 'A fast-falling Fox/Falco player.',
   gameplan: ['Punish landing lag.'],
   characterStrategy: {
@@ -52,10 +61,11 @@ const VALID_REPORT = {
     picks: ['Battlefield'],
     reasoning: 'Flat stages favor us.',
   },
-  headToHead: null,
   watchFor: ['Shine spikes off stage.'],
   confidenceNotes: 'No sampled sets — treat this as a cold read.',
 };
+
+const VALID_REPORT = { ...STORED_VALID_REPORT, headToHead: null };
 
 /** Pre-V7-B.1 stored report shape: lacks `characterStrategy` entirely. */
 const PRE_B1_REPORT = {
@@ -310,7 +320,7 @@ describe('POST /api/reports (configured, allowlisted)', () => {
     expect(body).toMatchObject({
       model: 'claude-opus-4-8',
       player: { id: 1802316, gamerTag: 'Pandem1c', userSlug: 'user/07dc2239' },
-      report: VALID_REPORT,
+      report: STORED_VALID_REPORT,
     });
     expect(typeof body.id).toBe('string');
     expect(typeof body.createdAt).toBe('number');
@@ -324,15 +334,20 @@ describe('POST /api/reports (configured, allowlisted)', () => {
     expect(capturedParams).not.toHaveProperty('temperature');
     expect(capturedParams).not.toHaveProperty('top_p');
 
-    // Assert the RTDB write.
+    // Assert the RTDB write, including the V9-B null-strip: `headToHead:
+    // null` must NOT be persisted (RTDB deletes null keys on write anyway —
+    // storing the already-stripped shape keeps write and read-back
+    // identical, see routes/reports.ts).
     const dump = database.dump() as Record<string, unknown>;
     const scoutReports = dump.scoutReports as Record<string, Record<string, unknown>>;
-    const stored = Object.values(scoutReports[TEST_UID]!)[0]!;
+    const stored = Object.values(scoutReports[TEST_UID]!)[0]! as Record<string, unknown>;
     expect(stored).toMatchObject({
       model: 'claude-opus-4-8',
       player: { id: 1802316, gamerTag: 'Pandem1c' },
-      report: VALID_REPORT,
+      report: STORED_VALID_REPORT,
     });
+    expect(stored.report).not.toHaveProperty('headToHead');
+    expect(body.report).not.toHaveProperty('headToHead');
   });
 
   it('maps a refusal to 502 with a human-readable message', async () => {
@@ -855,5 +870,275 @@ describe('GET /api/reports/:id (configured, allowlisted)', () => {
       player: { gamerTag: 'Pandem1c' },
       report: VALID_REPORT,
     });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// V9-B Feature 4: parry.gg-sourced report generation.
+// ---------------------------------------------------------------------------
+
+const PARRY_USER_ID = '019ce9ba-debd-7e11-84a2-77258f52644e';
+
+function parryClients(overrides: {
+  getUser?: () => { id: string; gamerTag: string } | null;
+}): ParryggClients {
+  return {
+    users: {
+      getUser: vi.fn(async () => {
+        const found = overrides.getUser?.() ?? null;
+        return {
+          getUser: () => (found ? { toObject: () => ({ ...found, bioMd: '' }) } : undefined),
+        };
+      }),
+      getUsers: vi.fn(async () => ({ getUsersList: () => [] })),
+    } as unknown as ParryggClients['users'],
+    matches: {
+      getMatches: vi.fn(async () => ({ getMatchesList: () => [] })),
+    } as unknown as ParryggClients['matches'],
+  };
+}
+
+describe('POST /api/reports (parry.gg, V9-B, allowlisted)', () => {
+  it('answers 503 for a parry.gg query when only start.gg is configured', async () => {
+    const { app } = buildTestApp({
+      startgg: STARTGG_CONFIG,
+      startggFetch: scoutFetchMock(),
+      reports: REPORTS_CONFIG,
+      reportsClient: stubClient(async () => ({
+        stop_reason: 'end_turn',
+        parsed_output: VALID_REPORT,
+      })),
+    });
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/reports',
+      headers: authHeader(),
+      payload: { query: `https://parry.gg/profile/${PARRY_USER_ID}` },
+    });
+    expect(response.statusCode).toBe(503);
+  });
+
+  it('generates and stores a report for a parry.gg-scouted player', async () => {
+    const { app, database } = buildTestApp({
+      reports: REPORTS_CONFIG,
+      reportsClient: stubClient(async () => ({
+        stop_reason: 'end_turn',
+        parsed_output: VALID_REPORT,
+      })),
+      parrygg: { apiKey: 'parry-key' },
+      parryggClients: parryClients({
+        getUser: () => ({ id: PARRY_USER_ID, gamerTag: 'Pandem1c' }),
+      }),
+    });
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/reports',
+      headers: authHeader(),
+      payload: { query: `https://parry.gg/profile/${PARRY_USER_ID}` },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({
+      player: { source: 'parrygg', parryUserId: PARRY_USER_ID, gamerTag: 'Pandem1c' },
+      report: STORED_VALID_REPORT,
+    });
+
+    const dump = database.dump() as Record<string, unknown>;
+    const scoutReports = dump.scoutReports as Record<string, Record<string, unknown>>;
+    const stored = Object.values(scoutReports[TEST_UID]!)[0]!;
+    expect(stored).toMatchObject({
+      player: { source: 'parrygg', parryUserId: PARRY_USER_ID },
+    });
+  });
+
+  it('returns 404 when no parry.gg player resolves', async () => {
+    const { app } = buildTestApp({
+      reports: REPORTS_CONFIG,
+      reportsClient: stubClient(async () => ({
+        stop_reason: 'end_turn',
+        parsed_output: VALID_REPORT,
+      })),
+      parrygg: { apiKey: 'parry-key' },
+      parryggClients: parryClients({ getUser: () => null }),
+    });
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/reports',
+      headers: authHeader(),
+      payload: { query: `https://parry.gg/profile/${PARRY_USER_ID}` },
+    });
+    expect(response.statusCode).toBe(404);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// V9-B production fixes: RTDB null-stripping resilience + billing-enabled
+// read access.
+// ---------------------------------------------------------------------------
+
+describe('GET /api/reports* — RTDB-stripped and corrupt stored records (V9-B fix)', () => {
+  /**
+   * The exact shape production RTDB hands back for a record persisted with
+   * `headToHead: null` before the write-path fix: RTDB deletes null-valued
+   * keys on write, so the field is ABSENT (not null).
+   */
+  const RTDB_STRIPPED_RECORD = {
+    createdAt: 1000,
+    model: 'claude-opus-4-8',
+    player: { id: 1802316, gamerTag: 'Pandem1c', userSlug: 'user/07dc2239' },
+    report: STORED_VALID_REPORT, // no headToHead key at all
+  };
+
+  function appWithSeed(seed: Record<string, unknown>) {
+    const built = buildTestApp({
+      startgg: STARTGG_CONFIG,
+      startggFetch: scoutFetchMock(),
+      reports: REPORTS_CONFIG,
+      reportsClient: stubClient(async () => ({
+        stop_reason: 'end_turn',
+        parsed_output: VALID_REPORT,
+      })),
+    });
+    built.database.seed(`scoutReports/${TEST_UID}`, seed);
+    return built;
+  }
+
+  it('GET /reports round-trips a stored record whose headToHead was RTDB-stripped (absent)', async () => {
+    const { app } = appWithSeed({ stripped: RTDB_STRIPPED_RECORD });
+
+    const response = await app.inject({
+      method: 'GET',
+      url: '/api/reports',
+      headers: authHeader(),
+    });
+
+    expect(response.statusCode).toBe(200);
+    const body = response.json();
+    expect(body).toHaveLength(1);
+    expect(body[0]).toMatchObject({ id: 'stripped', report: STORED_VALID_REPORT });
+    expect(body[0].report).not.toHaveProperty('headToHead');
+  });
+
+  it('GET /reports/:id round-trips the RTDB-stripped shape', async () => {
+    const { app } = appWithSeed({ stripped: RTDB_STRIPPED_RECORD });
+
+    const response = await app.inject({
+      method: 'GET',
+      url: '/api/reports/stripped',
+      headers: authHeader(),
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({ id: 'stripped', report: STORED_VALID_REPORT });
+  });
+
+  it('GET /reports skips a corrupt record (missing report entirely) and still returns the valid ones', async () => {
+    const { app } = appWithSeed({
+      good: RTDB_STRIPPED_RECORD,
+      corrupt: {
+        createdAt: 2000,
+        model: 'claude-opus-4-8',
+        player: { id: 999, gamerTag: 'Broken' },
+        // no `report` at all — one bad row must never 500 the whole library
+      },
+    });
+
+    const response = await app.inject({
+      method: 'GET',
+      url: '/api/reports',
+      headers: authHeader(),
+    });
+
+    expect(response.statusCode).toBe(200);
+    const body = response.json();
+    expect(body).toHaveLength(1);
+    expect(body[0]).toMatchObject({ id: 'good' });
+  });
+});
+
+describe('GET /api/reports* — billing-enabled read access (V9-B fix)', () => {
+  const NON_ALLOWLIST_CONFIG: ReportsConfig = {
+    anthropicApiKey: 'sk-test-key',
+    allowedUids: new Set(['someone-else']),
+  };
+  const STRIPE_CONFIG = {
+    secretKey: 'sk-test-123',
+    webhookSecret: 'whsec-test-456',
+  };
+
+  const SEEDED_RECORD = {
+    createdAt: 1000,
+    model: 'claude-opus-4-8',
+    player: { id: 1802316, gamerTag: 'Pandem1c' },
+    report: STORED_VALID_REPORT,
+  };
+
+  it('a billing-enabled non-allowlisted uid can list its reports (it can PAY to generate them via POST)', async () => {
+    const { app, database } = buildTestApp({
+      startgg: STARTGG_CONFIG,
+      startggFetch: scoutFetchMock(),
+      reports: NON_ALLOWLIST_CONFIG,
+      stripe: STRIPE_CONFIG,
+      reportsClient: stubClient(async () => ({
+        stop_reason: 'end_turn',
+        parsed_output: VALID_REPORT,
+      })),
+    });
+    database.seed(`scoutReports/${TEST_UID}`, { r1: SEEDED_RECORD });
+
+    const response = await app.inject({
+      method: 'GET',
+      url: '/api/reports',
+      headers: authHeader(),
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toHaveLength(1);
+  });
+
+  it('a billing-enabled non-allowlisted uid can reopen a single report', async () => {
+    const { app, database } = buildTestApp({
+      startgg: STARTGG_CONFIG,
+      startggFetch: scoutFetchMock(),
+      reports: NON_ALLOWLIST_CONFIG,
+      stripe: STRIPE_CONFIG,
+      reportsClient: stubClient(async () => ({
+        stop_reason: 'end_turn',
+        parsed_output: VALID_REPORT,
+      })),
+    });
+    database.seed(`scoutReports/${TEST_UID}`, { r1: SEEDED_RECORD });
+
+    const response = await app.inject({
+      method: 'GET',
+      url: '/api/reports/r1',
+      headers: authHeader(),
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({ id: 'r1', player: { gamerTag: 'Pandem1c' } });
+  });
+
+  it('still 403s a non-allowlisted uid on both read routes when Stripe is NOT configured (pre-V7-C behavior, unchanged)', async () => {
+    const { app } = buildTestApp({
+      startgg: STARTGG_CONFIG,
+      startggFetch: scoutFetchMock(),
+      reports: NON_ALLOWLIST_CONFIG,
+      reportsClient: stubClient(async () => ({
+        stop_reason: 'end_turn',
+        parsed_output: VALID_REPORT,
+      })),
+    });
+
+    const list = await app.inject({ method: 'GET', url: '/api/reports', headers: authHeader() });
+    expect(list.statusCode).toBe(403);
+
+    const single = await app.inject({
+      method: 'GET',
+      url: '/api/reports/r1',
+      headers: authHeader(),
+    });
+    expect(single.statusCode).toBe(403);
   });
 });

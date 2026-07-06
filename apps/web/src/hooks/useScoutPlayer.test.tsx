@@ -48,7 +48,7 @@ function ScoutProbe() {
   const scout = useScoutPlayer();
   return (
     <div>
-      <button onClick={() => scout.mutate('user/07dc2239')}>go</button>
+      <button onClick={() => scout.mutate({ query: 'user/07dc2239' })}>go</button>
       {scout.isPending && <div>pending</div>}
       {scout.isSuccess && <div>gamerTag: {scout.data.player.gamerTag}</div>}
       {scout.isError && <div>errored</div>}

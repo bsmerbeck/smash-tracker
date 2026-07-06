@@ -39,6 +39,7 @@ import {
   type CreateMatchInput,
   type CreditPackId,
   type FighterSelectionInput,
+  type GenerateReportRequest,
   type Match,
   type ParryggLinkRequest,
   type ParryggLoginCompleteRequest,
@@ -339,7 +340,7 @@ export const api = {
     list: () => apiRequestParsed('/api/tournaments', tournamentEntryListSchema),
   },
   scout: {
-    /** POST /api/scout — scout ANY start.gg player by URL, slug, or numeric id. */
+    /** POST /api/scout — scout ANY start.gg OR parry.gg player (V9-B) by URL, slug/tag, or numeric id. */
     lookup: (input: ScoutQuery) =>
       apiRequestParsed('/api/scout', scoutReportDataSchema, { method: 'POST', body: input }),
   },
@@ -349,12 +350,14 @@ export const api = {
     /**
      * POST /api/reports — generate (and store) an AI scouting report.
      * Goes directly to the API origin: generation regularly outlives the
-     * Hosting proxy's 60s rewrite timeout.
+     * Hosting proxy's 60s rewrite timeout. `source` (V9-B Feature 4) picks
+     * start.gg vs. parry.gg for a bare query — same semantics as POST
+     * /api/scout.
      */
-    generate: (query: string) =>
+    generate: (input: GenerateReportRequest) =>
       apiRequestParsed('/api/reports', scoutReportRecordSchema, {
         method: 'POST',
-        body: generateReportRequestSchema.parse({ query }),
+        body: generateReportRequestSchema.parse(input),
         baseUrl: getDirectApiBaseUrl(),
       }),
     /** GET /api/reports — the signed-in user's past AI reports, newest first. */

@@ -2,11 +2,15 @@ import type { Database } from 'firebase-admin/database';
 import Anthropic from '@anthropic-ai/sdk';
 import { zodOutputFormat } from '@anthropic-ai/sdk/helpers/zod';
 import {
+  buildMatchupAdvisor,
   generatedScoutReportSchema,
   matchRecordSchema,
   opponentNoteMapSchema,
+  selectMyCandidateFighterIds,
   SpriteList,
   type GeneratedScoutReport,
+  type MatchupEvidence,
+  type MyCharacterRecordVsOpponent,
   type OpponentNote,
   type ScoutReportData,
 } from '@smash-tracker/shared';
@@ -72,6 +76,17 @@ export interface ReportPayload {
     vsTopCharacters: MatchupAggregate[];
     /** W/L over the user's most recent 50 matches (any opponent). */
     recentForm: { wins: number; losses: number; sampleSize: number };
+    /**
+     * V9-B Feature 3: the SAME deterministic matchup-advisor ranking the web
+     * ScoutMatchupAdvisorCard shows, one entry per opponent top-5 character
+     * — kept lean (opponent's top-5 only, not the full roster) per the
+     * feature's payload-size guidance. `characterStrategy` must ground its
+     * picks in this, not contradict it without stating why (see SYSTEM_PROMPT).
+     */
+    matchupAdvisor: Array<{
+      opponentCharacter: string;
+      ranked: Array<{ character: string; score: number; evidence: MatchupEvidence }>;
+    }>;
   };
   notes: OpponentNote | null;
 }
@@ -127,6 +142,13 @@ export async function assembleReportPayload(
 
   const scoutedCanonicalName = normalizeOpponentTag(scout.player.gamerTag);
 
+  // H2H matching: the `opponentUserSlug` shortcut only ever applies to
+  // start.gg-scouted players (`scout.player.userSlug` is a start.gg-only
+  // field — see scoutPlayerIdentitySchema). For a parry.gg-scouted player
+  // (V9-B Feature 4), `scout.player.userSlug` is simply absent, so this
+  // condition naturally short-circuits false and every match falls through
+  // to the canonicalized-gamerTag path below unchanged — no source-specific
+  // branch needed here.
   const matchesVsScoutedPlayer = rawMatches.filter((match) => {
     if (
       match.opponentUserSlug &&
@@ -216,26 +238,18 @@ export async function assembleReportPayload(
   // (the user's own top-5 characters by games played in their own match
   // history), each broken down overall AND vs. the opponent's top-5
   // characters. This is what grounds characterStrategy — the model must only
-  // recommend characters the user demonstrably plays.
-  const gamesPlayedByFighterId = new Map<number, number>();
-  for (const match of rawMatches) {
-    gamesPlayedByFighterId.set(
-      match.fighter_id,
-      (gamesPlayedByFighterId.get(match.fighter_id) ?? 0) + 1,
-    );
-  }
-  const myTopFighterIds = [...gamesPlayedByFighterId.entries()]
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, MY_TOP_CHARACTERS_COUNT)
-    .map(([fighterId]) => fighterId);
+  // recommend characters the user demonstrably plays. `selectMyCandidateFighterIds`
+  // is the SAME shared helper `ScoutMatchupAdvisorCard` uses client-side, so
+  // both the AI report's grounding and the web card's advisor rank the exact
+  // same candidate set.
+  const myFighterIds = selectMyCandidateFighterIds(
+    rawMatches.map((match) => match.fighter_id),
+    primaryFighterIds,
+    secondaryFighterIds,
+    MY_TOP_CHARACTERS_COUNT,
+  );
 
-  const myFighterIds = new Set<number>([
-    ...primaryFighterIds,
-    ...secondaryFighterIds,
-    ...myTopFighterIds,
-  ]);
-
-  const myCharacterRecords: CharacterRecord[] = [...myFighterIds].map((fighterId) => {
+  const myCharacterRecords: CharacterRecord[] = myFighterIds.map((fighterId) => {
     const matchesAsThisCharacter = rawMatches.filter((match) => match.fighter_id === fighterId);
     const wins = matchesAsThisCharacter.filter((match) => match.win).length;
     const losses = matchesAsThisCharacter.length - wins;
@@ -260,6 +274,38 @@ export async function assembleReportPayload(
     };
   });
 
+  // matchupAdvisor (V9-B Feature 3): the SAME deterministic ranking the web
+  // ScoutMatchupAdvisorCard shows, computed server-side from the shared
+  // `matchupAdvisor.ts` module — zero added Claude cost, and guarantees the
+  // model's characterStrategy can never contradict what the UI already told
+  // the user without a stated reason (see the updated SYSTEM_PROMPT below).
+  // Raw per-my-character W/L vs. each opponent top character, built from the
+  // SAME `rawMatches` used for `myCharacterRecords` above (not re-fetched).
+  const recordsByOpponentFighterId = new Map<number, MyCharacterRecordVsOpponent[]>(
+    topCharacterIds.map((opponentFighterId) => [
+      opponentFighterId,
+      myFighterIds.map((fighterId) => {
+        const matchesAsThisVsOpponent = rawMatches.filter(
+          (match) => match.fighter_id === fighterId && match.opponent_id === opponentFighterId,
+        );
+        const wins = matchesAsThisVsOpponent.filter((match) => match.win).length;
+        return { fighterId, wins, losses: matchesAsThisVsOpponent.length - wins };
+      }),
+    ]),
+  );
+  const matchupAdvisor = buildMatchupAdvisor(
+    topCharacterIds,
+    myFighterIds,
+    recordsByOpponentFighterId,
+  ).map((ranking) => ({
+    opponentCharacter: fighterName(ranking.opponentFighterId),
+    ranked: ranking.ranked.map((pick) => ({
+      character: fighterName(pick.fighterId),
+      score: pick.score,
+      evidence: pick.evidence,
+    })),
+  }));
+
   return {
     scout,
     headToHead,
@@ -272,6 +318,7 @@ export async function assembleReportPayload(
         losses: recentMatches.length - recentWins,
         sampleSize: recentMatches.length,
       },
+      matchupAdvisor,
     },
     notes,
   };
@@ -314,14 +361,15 @@ Hard rules — follow these exactly:
 - If a conclusion is drawn from fewer than 5 games of evidence (a character matchup, a stage record, a head-to-head record, etc.), you MUST flag that sample-size caveat explicitly in confidenceNotes.
 - Stage names and character names in your output must come VERBATIM from the data provided — do not paraphrase, translate, or invent alternate spellings.
 - Be concise and actionable. No filler, no generic advice that isn't grounded in this specific opponent's data.
-- The payload contains: "scout" (the opponent's public start.gg history — their characters, stages, recent events, common opponents), "headToHead" (the user's own past matches against this exact player, if any), "userContext" (the user's own character selections and character-matchup records, the user's raw W/L record against players of the opponent's most-used characters broken down by stage, and the user's recent overall form), and "notes" (a saved tendency note about this opponent, if the user has one).
+- The payload contains: "scout" (the opponent's public tournament-site history — their characters, stages, recent events, common opponents), "headToHead" (the user's own past matches against this exact player, if any), "userContext" (the user's own character selections and character-matchup records, the user's raw W/L record against players of the opponent's most-used characters broken down by stage, the user's recent overall form, and a deterministic matchup advisor ranking — see below), and "notes" (a saved tendency note about this opponent, if the user has one).
 - When headToHead is empty, set the headToHead field in your response to null — do not fabricate a head-to-head summary.
 - Output must conform to the provided JSON schema exactly.
 
 Character strategy is CO-EQUAL in importance with stage strategy — treat characterStrategy with the same rigor and specificity you give stageStrategy, not as an afterthought:
 - "userContext.myFighters" lists the user's own primary/secondary character selections. "userContext.myCharacterRecords" gives, for each character the user demonstrably plays (their selections plus their most-used characters by games played), that character's overall W/L and W/L against each of the opponent's top characters.
+- "userContext.matchupAdvisor" is a DETERMINISTIC, pre-computed ranking (not generated by you) of the user's own characters against each of the opponent's top-5 characters, blending the user's real record with tier-list/archetype priors — each entry's "evidence" explains why (a record, a tier score, an archetype edge). Treat this ranking as the GROUND TRUTH starting point for characterStrategy: your picks should normally match its top-ranked character for the opponent's most-used character. You MAY explain nuance or adjust for something the ranking can't see (e.g. stage-specific patterns, a saved note), but if your recommendation diverges from the advisor's top pick you MUST say so explicitly and state why in characterStrategy.reasoning — never silently contradict it.
 - You MUST recommend picks ONLY from characters that appear in "userContext.myFighters" or "userContext.myCharacterRecords" — NEVER recommend a character the user does not play, even if it would theoretically counter the opponent well.
-- characterStrategy.picks must include a game-1 recommendation, and characterStrategy.reasoning must state what to switch to if the opponent changes character (e.g. "Game 1: X; if they swap to Y, counter with Z"), grounded in the user's actual W/L from myCharacterRecords against the opponent's specific top characters — not generic tier-list reasoning.
+- characterStrategy.picks must include a game-1 recommendation, and characterStrategy.reasoning must state what to switch to if the opponent changes character (e.g. "Game 1: X; if they swap to Y, counter with Z"), grounded in the user's actual W/L from myCharacterRecords against the opponent's specific top characters and the matchupAdvisor ranking — not generic tier-list reasoning invented from scratch.
 - If the user's own character data is too sparse to ground a confident recommendation, say so explicitly in characterStrategy.reasoning and confidenceNotes rather than guessing.`;
 
 /** Thrown for a Claude response that didn't produce a usable report. */

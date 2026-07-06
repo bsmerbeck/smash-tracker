@@ -115,15 +115,86 @@ export type TournamentEntryList = z.infer<typeof tournamentEntryListSchema>;
 // V7-A: scout any start.gg player (server-aggregated public history)
 // ---------------------------------------------------------------------------
 
-/** The identity start.gg resolved from the caller's query string. */
-export const scoutPlayerIdentitySchema = z.object({
-  /** start.gg player id — the key used for the sets query. */
-  id: z.number().int().positive(),
-  gamerTag: z.string().min(1),
-  /** start.gg profile slug, e.g. "user/07dc2239", when start.gg provides one. */
-  userSlug: z.string().optional(),
-});
+/** Which tournament site a scouting query/identity/event resolves against (V9-B Feature 4). Reused everywhere this app needs the same two-value enum. */
+export const scoutSourceSchema = z.enum(['startgg', 'parrygg']);
+export type ScoutSource = z.infer<typeof scoutSourceSchema>;
+
+/**
+ * The identity resolved from the caller's scouting query — start.gg OR (V9-B
+ * Feature 4) parry.gg. Designed additively so every pre-V9-B stored report
+ * (numeric `id`, no `source`, no `parryUserId`) keeps parsing unchanged:
+ *
+ * - `source` is OPTIONAL; its absence means start.gg (the only source that
+ *   ever existed before V9-B) — every consumer must treat `source ?? 'startgg'`
+ *   as the effective source, never assume the field is present.
+ * - `id` (the start.gg numeric player id) is now OPTIONAL rather than
+ *   required, because a parry.gg identity has no such id at all — but is
+ *   ALWAYS present for `source: 'startgg'` (enforced below via `.refine`,
+ *   not by the field's own optionality, since old records may have `source`
+ *   absent while still trivially satisfying "id present").
+ * - `parryUserId` (parry.gg's UUID v7 user id) is optional and is the
+ *   parry.gg equivalent key: present exactly when `source === 'parrygg'`.
+ *
+ * The `.refine` below is the single place that enforces "exactly one of
+ * (id, parryUserId) is present, matching `source`" — every other consumer
+ * can just read `source ?? 'startgg'` and the matching id field without
+ * re-deriving this invariant.
+ */
+export const scoutPlayerIdentitySchema = z
+  .object({
+    /** start.gg player id — the key used for the sets query. Present iff source is start.gg (or absent, pre-V9-B). */
+    id: z.number().int().positive().optional(),
+    gamerTag: z.string().min(1),
+    /** start.gg profile slug, e.g. "user/07dc2239", when start.gg provides one. */
+    userSlug: z.string().optional(),
+    /** Which site resolved this identity. Absent means start.gg (every identity stored before V9-B). */
+    source: scoutSourceSchema.optional(),
+    /** parry.gg user id (UUID v7) — the key used for the matches query. Present iff source is 'parrygg'. */
+    parryUserId: z.string().min(1).optional(),
+  })
+  .refine((identity) => (identity.source === 'parrygg' ? Boolean(identity.parryUserId) : true), {
+    message: 'parrygg identities must carry parryUserId',
+    path: ['parryUserId'],
+  })
+  .refine((identity) => (identity.source !== 'parrygg' ? identity.id !== undefined : true), {
+    message: 'startgg identities must carry a numeric id',
+    path: ['id'],
+  });
 export type ScoutPlayerIdentity = z.infer<typeof scoutPlayerIdentitySchema>;
+
+/** True when `identity` resolves to a start.gg player (the default when `source` is absent — pre-V9-B convention). */
+export function isStartggIdentity(
+  identity: Pick<ScoutPlayerIdentity, 'source'>,
+): identity is ScoutPlayerIdentity & { source?: 'startgg'; id: number } {
+  return (identity.source ?? 'startgg') === 'startgg';
+}
+
+/** True when `identity` resolves to a parry.gg player. */
+export function isParryggIdentity(
+  identity: Pick<ScoutPlayerIdentity, 'source'>,
+): identity is ScoutPlayerIdentity & { source: 'parrygg'; parryUserId: string } {
+  return identity.source === 'parrygg';
+}
+
+/**
+ * Stable string key for a scouted identity — `"(source ?? 'startgg')" +
+ * ":" + the matching id field`. The single place every consumer (the Scout
+ * page's "is there already a stored report for this player" check, the AI
+ * Reports library's per-player grouping) should use to compare identities,
+ * rather than re-deriving `source ?? 'startgg'` and picking `id` vs.
+ * `parryUserId` themselves. Falls back to a gamerTag-based key in the
+ * (should-be-impossible, schema-enforced-against) case neither id is present,
+ * so this never throws on a malformed record.
+ */
+export function scoutIdentityKey(identity: ScoutPlayerIdentity): string {
+  if (isParryggIdentity(identity)) {
+    return `parrygg:${identity.parryUserId}`;
+  }
+  if (identity.id !== undefined) {
+    return `startgg:${identity.id}`;
+  }
+  return `unknown:${identity.gamerTag}`;
+}
 
 /**
  * One character the scouted player has used, from THEIR perspective (their
@@ -147,7 +218,15 @@ export const scoutStageUsageSchema = z.object({
 });
 export type ScoutStageUsage = z.infer<typeof scoutStageUsageSchema>;
 
-/** One recent event the scouted player competed in (most recent activity first). */
+/**
+ * One recent event the scouted player competed in (most recent activity
+ * first). `slug`/`source` (V9-B Feature 2) are OPTIONAL and additive: reports
+ * stored before this field existed have neither, and every consumer must
+ * tolerate that (no deep link rendered — see `ScoutRecentEventsCard`).
+ * `source` currently only appears when `slug` does (start.gg events only, so
+ * far); parry.gg events are deliberately left plain-text for now — see the
+ * code comment on `ScoutRecentEventsCard`'s render branch for why.
+ */
 export const scoutRecentEventSchema = z.object({
   eventName: z.string().min(1),
   tournamentName: z.string().optional(),
@@ -155,6 +234,16 @@ export const scoutRecentEventSchema = z.object({
   numEntrants: z.number().int().positive().optional(),
   /** Epoch ms of the most recent completed set sampled for this event. */
   lastSetAt: z.number().int().nonnegative(),
+  /**
+   * Site-specific event identifier used to build a deep link, e.g. a
+   * start.gg event slug ("tournament/the-big-house-9/event/ultimate-singles")
+   * or (in principle) a parry.gg tournament/event slug pair joined the same
+   * way. Absent for events sampled before V9-B, or when the source site
+   * doesn't provide one.
+   */
+  slug: z.string().optional(),
+  /** Which site `slug` resolves against; absent means start.gg (pre-V9-B convention — every event with a slug was start.gg-sourced). */
+  source: scoutSourceSchema.optional(),
 });
 export type ScoutRecentEvent = z.infer<typeof scoutRecentEventSchema>;
 
@@ -190,8 +279,15 @@ export const scoutReportDataSchema = z.object({
 });
 export type ScoutReportData = z.infer<typeof scoutReportDataSchema>;
 
-/** POST /api/scout request body — a start.gg profile URL, bare slug, or numeric player id. */
+/**
+ * POST /api/scout request body — a profile URL, bare slug/tag, or numeric
+ * player id. `source` (V9-B Feature 4) picks which site resolves a BARE
+ * (non-URL) query; it defaults to `'startgg'` for back-compat with pre-V9-B
+ * clients that never sent it. A pasted URL always auto-detects its own site
+ * (start.gg vs. parry.gg) and overrides `source` — see `parseScoutInput`.
+ */
 export const scoutQuerySchema = z.object({
   query: z.string().min(1),
+  source: scoutSourceSchema.optional(),
 });
 export type ScoutQuery = z.infer<typeof scoutQuerySchema>;

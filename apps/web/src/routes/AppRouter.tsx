@@ -6,6 +6,7 @@ import { ChooseSecondaryPage } from '@/pages/CharacterSelect/ChooseSecondaryPage
 import { MatchupsPage } from '@/pages/Matchups/MatchupsPage';
 import { OpponentsPage } from '@/pages/Opponents/OpponentsPage';
 import { ScoutPage } from '@/pages/Scout/ScoutPage';
+import { ReportsPage } from '@/pages/Reports/ReportsPage';
 import { MatchDataPage } from '@/pages/MatchData/MatchDataPage';
 import { TrendsPage } from '@/pages/Trends/TrendsPage';
 import { GroupsPage } from '@/pages/Groups/GroupsPage';
@@ -81,6 +82,14 @@ export function AppRouter() {
           element={
             <ProtectedRoute>
               <ScoutPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/reports"
+          element={
+            <ProtectedRoute>
+              <ReportsPage />
             </ProtectedRoute>
           }
         />
