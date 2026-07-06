@@ -113,5 +113,6 @@ export function firebaseLibMock() {
     getFirebaseAuth: vi.fn(() => mockAuthInstance),
     getFirebaseApp: vi.fn(() => ({})),
     createGoogleAuthProvider: vi.fn(() => new GoogleAuthProvider()),
+    logAnalyticsPageView: vi.fn(),
   };
 }
