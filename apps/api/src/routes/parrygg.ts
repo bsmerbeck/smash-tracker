@@ -1,9 +1,7 @@
-import { randomInt } from 'node:crypto';
 import { z } from 'zod';
 import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import {
   errorResponseSchema,
-  INVITE_CODE_ALPHABET,
   parryggLinkRecordSchema,
   parryggLinkRequestSchema,
   parryggSearchResultListSchema,
@@ -16,28 +14,16 @@ import {
 import type { ParryggConfig } from '../config/env.js';
 import { getUser, searchUsers, type ParryggClients } from '../parrygg/client.js';
 import { importParryggMatches } from '../parrygg/sync.js';
+import {
+  generateVerificationCode,
+  VERIFICATION_TTL_MS,
+  type VerificationRecord,
+} from '../parrygg/verificationCode.js';
 
 export interface ParryggRoutesOptions {
   config: ParryggConfig | null;
   /** Overridable service clients (tests) — see parrygg/client.ts. */
   clients?: ParryggClients;
-}
-
-const VERIFICATION_CODE_LENGTH = 6;
-const VERIFICATION_TTL_MS = 10 * 60 * 1000;
-
-interface VerificationRecord {
-  code: string;
-  expiresAt: number;
-}
-
-/** Generates an `ST-XXXXXX` verification code from the unambiguous invite-code alphabet (CSPRNG). */
-function generateVerificationCode(): string {
-  let suffix = '';
-  for (let i = 0; i < VERIFICATION_CODE_LENGTH; i += 1) {
-    suffix += INVITE_CODE_ALPHABET[randomInt(INVITE_CODE_ALPHABET.length)];
-  }
-  return `ST-${suffix}`;
 }
 
 /**

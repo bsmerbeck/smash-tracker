@@ -24,6 +24,7 @@ import { Input } from '@/components/ui/input';
 import { useAuth } from '@/hooks/useAuth';
 import { getStartggLoginUrl } from '@/lib/api';
 import { getAuthErrorMessage } from '@/lib/firebaseErrors';
+import { ParryggLoginDialog } from './ParryggLoginDialog';
 
 const credentialsSchema = z.object({
   email: z.string().min(1, 'Email is required').email('Enter a valid email address'),
@@ -42,6 +43,7 @@ type Mode = 'sign-in' | 'sign-up';
 export function SignInCard() {
   const [mode, setMode] = useState<Mode>('sign-in');
   const [submitting, setSubmitting] = useState(false);
+  const [parryggOpen, setParryggOpen] = useState(false);
   const { signInWithEmail, signUpWithEmail, signInWithGoogle } = useAuth();
 
   const form = useForm<CredentialsValues>({
@@ -147,6 +149,15 @@ export function SignInCard() {
             >
               Continue with start.gg
             </Button>
+            <Button
+              type="button"
+              variant="outline"
+              className="w-full"
+              disabled={submitting}
+              onClick={() => setParryggOpen(true)}
+            >
+              Continue with parry.gg
+            </Button>
             <button
               type="button"
               className="text-sm text-muted-foreground underline-offset-4 hover:underline"
@@ -159,6 +170,7 @@ export function SignInCard() {
           </CardFooter>
         </form>
       </Form>
+      <ParryggLoginDialog open={parryggOpen} onOpenChange={setParryggOpen} />
     </Card>
   );
 }
