@@ -17,6 +17,7 @@ import opponentAliasesRoutes from './routes/opponentAliases.js';
 import opponentNotesRoutes from './routes/opponentNotes.js';
 import startggRoutes from './routes/startgg.js';
 import parryggRoutes from './routes/parrygg.js';
+import parryggAuthRoutes from './routes/parryggAuth.js';
 import scoutRoutes from './routes/scout.js';
 import reportsRoutes from './routes/reports.js';
 import billingRoutes, { type StripeLikeClient } from './routes/billing.js';
@@ -144,6 +145,10 @@ export function buildApp(options: BuildAppOptions) {
         fetchImpl: options.startggFetch,
       });
       await api.register(parryggRoutes, {
+        config: options.parrygg ?? null,
+        clients: options.parryggClients,
+      });
+      await api.register(parryggAuthRoutes, {
         config: options.parrygg ?? null,
         clients: options.parryggClients,
       });

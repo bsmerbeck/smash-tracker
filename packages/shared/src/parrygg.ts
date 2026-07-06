@@ -108,3 +108,58 @@ export const parryggSyncSummarySchema = z.object({
   setsWithoutGameData: z.number().int().nonnegative(),
 });
 export type ParryggSyncSummary = z.infer<typeof parryggSyncSummarySchema>;
+
+/**
+ * "Log in with parry.gg" (V8-B) — bio-code claim login. parry.gg has no
+ * OAuth, so there's no authenticated callback to trust the way start.gg's
+ * login does; instead, the SAME bio-text challenge code used for linked
+ * account verification (see `parryggLinkRecordSchema` above) doubles as
+ * proof of ownership during login. All three routes below are PUBLIC (no
+ * Bearer auth — there's no session yet):
+ *
+ * - `POST /api/auth/parrygg/login/search`   -> candidate list (gamer tag)
+ * - `POST /api/auth/parrygg/login/start`    -> issues/resumes a login code
+ * - `POST /api/auth/parrygg/login/complete` -> checks the bio, mints a token
+ *
+ * RTDB: `parryggLoginVerifications/{parryUserId}` -> { code, expiresAt }
+ * (10-min TTL, one active code per parry.gg account — separate from
+ * `parryggVerifications/{uid}`, which is for already-linked accounts).
+ */
+
+/** POST /api/auth/parrygg/login/search request body. */
+export const parryggLoginSearchRequestSchema = z.object({
+  query: z.string().min(1),
+});
+export type ParryggLoginSearchRequest = z.infer<typeof parryggLoginSearchRequestSchema>;
+
+/** POST /api/auth/parrygg/login/search response — up to 5 candidates. */
+export const parryggLoginSearchResultListSchema = z.array(parryggSearchResultSchema).max(5);
+export type ParryggLoginSearchResultList = z.infer<typeof parryggLoginSearchResultListSchema>;
+
+/** POST /api/auth/parrygg/login/start request body — the candidate the user picked. */
+export const parryggLoginStartRequestSchema = z.object({
+  parryUserId: z.string().min(1),
+});
+export type ParryggLoginStartRequest = z.infer<typeof parryggLoginStartRequestSchema>;
+
+/** POST /api/auth/parrygg/login/start response — also returned on repeat calls while unexpired. */
+export const parryggLoginStartResponseSchema = z.object({
+  parryUserId: z.string().min(1),
+  gamerTag: z.string().min(1),
+  code: z.string().min(1),
+  expiresAt: z.number().int().nonnegative(),
+});
+export type ParryggLoginStartResponse = z.infer<typeof parryggLoginStartResponseSchema>;
+
+/** POST /api/auth/parrygg/login/complete request body. */
+export const parryggLoginCompleteRequestSchema = z.object({
+  parryUserId: z.string().min(1),
+});
+export type ParryggLoginCompleteRequest = z.infer<typeof parryggLoginCompleteRequestSchema>;
+
+/** POST /api/auth/parrygg/login/complete response — the SPA signs in with `signInWithCustomToken(token)`. */
+export const parryggLoginCompleteResponseSchema = z.object({
+  token: z.string().min(1),
+  gamerTag: z.string().min(1),
+});
+export type ParryggLoginCompleteResponse = z.infer<typeof parryggLoginCompleteResponseSchema>;
