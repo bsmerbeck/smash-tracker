@@ -16,6 +16,7 @@ import opponentsRoutes from './routes/opponents.js';
 import opponentAliasesRoutes from './routes/opponentAliases.js';
 import opponentNotesRoutes from './routes/opponentNotes.js';
 import startggRoutes from './routes/startgg.js';
+import parryggRoutes from './routes/parrygg.js';
 import scoutRoutes from './routes/scout.js';
 import reportsRoutes from './routes/reports.js';
 import billingRoutes, { type StripeLikeClient } from './routes/billing.js';
@@ -23,8 +24,9 @@ import tournamentsRoutes from './routes/tournaments.js';
 import groupsRoutes from './routes/groups.js';
 import { NotFoundError } from './services/rtdb.js';
 import type { FirebaseServices } from './firebase/admin.js';
-import type { ReportsConfig, StartggConfig, StripeConfig } from './config/env.js';
+import type { ParryggConfig, ReportsConfig, StartggConfig, StripeConfig } from './config/env.js';
 import type { AnthropicLikeClient } from './reports/generate.js';
+import type { ParryggClients } from './parrygg/client.js';
 
 export interface BuildAppOptions {
   firebase: FirebaseServices;
@@ -34,6 +36,10 @@ export interface BuildAppOptions {
   startgg?: StartggConfig | null;
   /** Overridable fetch for the start.gg OAuth/GraphQL calls (tests). */
   startggFetch?: typeof fetch;
+  /** parry.gg integration config; null/omitted disables those routes (503). */
+  parrygg?: ParryggConfig | null;
+  /** Overridable parry.gg gRPC-Web service clients (tests) — see parrygg/client.ts. */
+  parryggClients?: ParryggClients;
   /** AI reports config; null/omitted disables /api/reports (503). */
   reports?: ReportsConfig | null;
   /** Overridable Anthropic client for /api/reports (tests). */
@@ -136,6 +142,10 @@ export function buildApp(options: BuildAppOptions) {
       await api.register(startggRoutes, {
         config: options.startgg ?? null,
         fetchImpl: options.startggFetch,
+      });
+      await api.register(parryggRoutes, {
+        config: options.parrygg ?? null,
+        clients: options.parryggClients,
       });
       await api.register(scoutRoutes, {
         config: options.startgg ?? null,

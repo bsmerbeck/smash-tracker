@@ -54,7 +54,8 @@ function generateKey(): string {
 export class FakeDatabase {
   private root: Record<string, JsonValue> = {};
 
-  ref(path: string): FakeReference {
+  /** `path` defaults to the root, matching firebase-admin's `Database.ref()` (used for multi-path root updates). */
+  ref(path = ''): FakeReference {
     const segments = path.split('/').filter(Boolean);
     return this.refForSegments(segments);
   }

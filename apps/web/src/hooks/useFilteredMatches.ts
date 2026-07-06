@@ -14,13 +14,24 @@ const RANGE_DAYS: Record<Exclude<AnalyticsRangeFilter, 'all'>, number> = {
   '12m': 30 * 12,
 };
 
-/** Filters matches by origin: manually-entered vs imported from start.gg. Moved from the removed SourceFilterTabs. */
+/**
+ * Filters matches by origin: manually-entered vs imported from a
+ * tournament site. Moved from the removed SourceFilterTabs.
+ *
+ * The filter's `'startgg'` value predates parry.gg (V8-A) and means
+ * "Competitive" in the UI (see AnalyticsFilterControls) — rather than add a
+ * third persisted filter value (and migrate every existing localStorage
+ * value + every call site that passes the literal `'startgg'` string), the
+ * existing "Competitive" bucket is broadened to match EITHER tournament-site
+ * source. This is the intentional minimal extension for V8-A: one bucket
+ * for "any verified competitive import", not a per-site bucket.
+ */
 export function filterBySource(matches: Match[], filter: AnalyticsSourceFilter): Match[] {
   if (filter === 'all') {
     return matches;
   }
   if (filter === 'startgg') {
-    return matches.filter((m) => m.source === 'startgg');
+    return matches.filter((m) => m.source === 'startgg' || m.source === 'parrygg');
   }
   return matches.filter((m) => m.source == null);
 }
@@ -64,24 +75,35 @@ export function applyOpponentAliases(matches: Match[], aliasMap: OpponentAliasMa
   });
 }
 
-export type OpponentSource = 'startgg' | 'manual' | 'mixed';
+export type OpponentSource = 'startgg' | 'parrygg' | 'manual' | 'mixed';
 
 /**
  * Per canonical opponent name (post-alias-merge — call after
  * `applyOpponentAliases`), classifies where their matches came from:
- * 'startgg' when every match for that name was imported, 'manual' when none
- * were, 'mixed' otherwise. Powers the source badges on the scouting list +
- * report header. Matches without an opponent name are ignored.
+ * 'startgg' or 'parrygg' when every match for that name came from exactly
+ * one of those tournament sites, 'manual' when none did, 'mixed' otherwise
+ * — including an opponent seen on BOTH start.gg and parry.gg with no manual
+ * matches at all (V8-A: two verified sources is still "more than one
+ * source", so it gets the same multi-source badge as
+ * verified-plus-manual, rather than a dedicated third combination). Powers
+ * the source badges on the scouting list + report header. Matches without
+ * an opponent name are ignored.
  */
 export function getOpponentSources(matches: Match[]): Map<string, OpponentSource> {
-  const flags = new Map<string, { hasStartgg: boolean; hasManual: boolean }>();
+  const flags = new Map<string, { hasStartgg: boolean; hasParrygg: boolean; hasManual: boolean }>();
   for (const match of matches) {
     if (!match.opponent) {
       continue;
     }
-    const entry = flags.get(match.opponent) ?? { hasStartgg: false, hasManual: false };
+    const entry = flags.get(match.opponent) ?? {
+      hasStartgg: false,
+      hasParrygg: false,
+      hasManual: false,
+    };
     if (match.source === 'startgg') {
       entry.hasStartgg = true;
+    } else if (match.source === 'parrygg') {
+      entry.hasParrygg = true;
     } else {
       entry.hasManual = true;
     }
@@ -89,11 +111,14 @@ export function getOpponentSources(matches: Match[]): Map<string, OpponentSource
   }
 
   const sources = new Map<string, OpponentSource>();
-  for (const [opponent, { hasStartgg, hasManual }] of flags) {
-    if (hasStartgg && hasManual) {
+  for (const [opponent, { hasStartgg, hasParrygg, hasManual }] of flags) {
+    const siteCount = (hasStartgg ? 1 : 0) + (hasParrygg ? 1 : 0);
+    if (siteCount === 2 || (siteCount === 1 && hasManual)) {
       sources.set(opponent, 'mixed');
     } else if (hasStartgg) {
       sources.set(opponent, 'startgg');
+    } else if (hasParrygg) {
+      sources.set(opponent, 'parrygg');
     } else {
       sources.set(opponent, 'manual');
     }
