@@ -1,6 +1,8 @@
 /**
- * Minimal relative-date formatter for the leaderboard's "last active" column
- * — the codebase has no date library dependency (elsewhere it uses
+ * Minimal relative-date formatter, originally built for the group
+ * leaderboard's "last active" column and reused (V7-B.1) for the Scout
+ * page's "Generated <relative date>" line on a persisted AI report — the
+ * codebase has no date library dependency (elsewhere it uses
  * `toLocaleDateString()` for absolute dates), so this is a small,
  * dependency-free helper rather than pulling one in for a single column.
  */

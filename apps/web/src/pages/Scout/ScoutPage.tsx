@@ -49,6 +49,15 @@ function describeError(error: unknown, fallback: string): string {
  * (`useReportsConfig`), a "Generate AI report" button appears once a scout
  * result is on screen. The feature is completely invisible when disabled —
  * no button, no past-reports card, nothing rendered at all.
+ *
+ * V7-B.1: reports are stored server-side, so a refresh or a fresh scout no
+ * longer loses them. Once a scout result is on screen, the stored reports
+ * list (`useScoutReportsList`) is checked for a report matching this exact
+ * scouted player (by start.gg player id — the stable identity field on
+ * `scoutPlayerIdentitySchema`); if one exists, its most recent report renders
+ * automatically with no click needed, and the generate button becomes
+ * "Regenerate report". The past-reports card excludes this player's own
+ * reports (they're already shown above) and only lists OTHER players'.
  */
 export function ScoutPage() {
   const scout = useScoutPlayer();
@@ -74,8 +83,19 @@ export function ScoutPage() {
     return getOpponentProfile(matches, needle);
   }, [matches, report]);
 
+  // The most recent stored report for the CURRENTLY scouted player, if any —
+  // matched by start.gg player id (stable across re-scouts, unlike gamerTag
+  // which can change). Newest-first is already guaranteed by GET /api/reports.
+  const storedRecordForCurrentPlayer = useMemo(() => {
+    if (!report) {
+      return null;
+    }
+    return pastReports.data?.find((record) => record.player.id === report.player.id) ?? null;
+  }, [pastReports.data, report]);
+
   const handleSubmit = (query: string) => {
     setSelectedRecord(null);
+    generateReport.reset();
     setLastQuery(query);
     scout.mutate(query);
   };
@@ -88,10 +108,19 @@ export function ScoutPage() {
     generateReport.mutate(lastQuery);
   };
 
-  // The report to actually render: a freshly generated report takes priority
+  // The record to actually render: a freshly generated report takes priority
   // over a previously-selected past report (a new generation replaces what's
-  // on screen), which in turn takes priority over nothing.
-  const displayedReport = selectedRecord?.report ?? generateReport.data?.report ?? null;
+  // on screen), which in turn takes priority over the stored report already
+  // on file for this exact player (V7-B.1 persistence), which in turn takes
+  // priority over nothing.
+  const displayedRecord =
+    generateReport.data ?? selectedRecord ?? storedRecordForCurrentPlayer ?? null;
+
+  // Other players' past reports — this player's own reports are already
+  // shown automatically above, so they're excluded here to avoid duplication.
+  const otherPastReports = (pastReports.data ?? []).filter(
+    (record) => record.player.id !== report?.player.id,
+  );
 
   return (
     <div className="mx-auto flex max-w-3xl flex-col gap-6">
@@ -118,7 +147,11 @@ export function ScoutPage() {
                 className="w-fit"
               >
                 <Sparkles className={generateReport.isPending ? 'animate-spin' : ''} />
-                {generateReport.isPending ? 'Generating report…' : 'Generate AI report'}
+                {generateReport.isPending
+                  ? 'Generating report…'
+                  : displayedRecord
+                    ? 'Regenerate report'
+                    : 'Generate AI report'}
               </Button>
               {generateReport.isPending && (
                 <p className="text-sm text-muted-foreground">
@@ -136,7 +169,7 @@ export function ScoutPage() {
             </div>
           )}
 
-          {displayedReport && <ScoutAiReportCard report={displayedReport} />}
+          {displayedRecord && <ScoutAiReportCard record={displayedRecord} />}
 
           <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
             <ScoutCharactersCard characters={report.characters} />
@@ -149,9 +182,9 @@ export function ScoutPage() {
         </div>
       )}
 
-      {aiReportsEnabled && (pastReports.data?.length ?? 0) > 0 && (
+      {aiReportsEnabled && otherPastReports.length > 0 && (
         <ScoutPastReportsCard
-          reports={pastReports.data ?? []}
+          reports={otherPastReports}
           onSelect={(record) => setSelectedRecord(record)}
         />
       )}
