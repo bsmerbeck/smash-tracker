@@ -62,4 +62,27 @@ describe('MainLayout', () => {
     expect(screen.getAllByText('pilot@example.com').length).toBeGreaterThan(0);
     expect(screen.getByRole('button', { name: /sign out/i })).toBeInTheDocument();
   });
+
+  it('renders the Donorbox donate link below Training Grounds in the sidebar', async () => {
+    render(
+      <MemoryRouter initialEntries={['/dashboard']}>
+        <AuthProvider>
+          <AnalyticsFilterProvider>
+            <MainLayout>
+              <div>Page content</div>
+            </MainLayout>
+          </AnalyticsFilterProvider>
+        </AuthProvider>
+      </MemoryRouter>,
+    );
+
+    await screen.findByText('Page content');
+
+    const donateLinks = screen.getAllByRole('link', { name: /donate/i });
+    expect(donateLinks.length).toBeGreaterThan(0);
+    for (const link of donateLinks) {
+      expect(link).toHaveAttribute('href', 'https://donorbox.org/support-smash-tracker');
+      expect(link).toHaveAttribute('target', '_blank');
+    }
+  });
 });
