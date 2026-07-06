@@ -63,6 +63,8 @@ export function buildMonthlyChartData(records: MonthlyRecord[]) {
 function buildMonthlyChartOptions(records: MonthlyRecord[]): ChartOptions<'bar'> {
   const theme = darkChartOptions();
   return {
+    responsive: theme.responsive,
+    maintainAspectRatio: theme.maintainAspectRatio,
     scales: {
       x: theme.scales?.x,
       y: {
@@ -106,46 +108,52 @@ export function MonthlyPerformance({ matches }: { matches: Match[] }) {
         {records.length === 0 ? (
           <p className="text-sm text-muted-foreground">No match data to report yet.</p>
         ) : (
-          <>
-            <div className="h-64">
-              <Bar
-                data={buildMonthlyChartData(records)}
-                options={buildMonthlyChartOptions(records)}
-              />
+          <div className="flex flex-col gap-4 lg:flex-row">
+            <div className="flex flex-col gap-2 lg:w-3/5">
+              <div className="h-64">
+                <Bar
+                  data={buildMonthlyChartData(records)}
+                  options={buildMonthlyChartOptions(records)}
+                />
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Faded bars mark months with fewer than {SMALL_SAMPLE_THRESHOLD} games — small
+                sample, read with caution.
+              </p>
             </div>
-            <p className="text-xs text-muted-foreground">
-              Faded bars mark months with fewer than {SMALL_SAMPLE_THRESHOLD} games — small sample,
-              read with caution.
-            </p>
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Month</TableHead>
-                  <TableHead>W-L</TableHead>
-                  <TableHead>Rate</TableHead>
-                  <TableHead>Games</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {[...records].reverse().map((record) => (
-                  <TableRow key={record.month}>
-                    <TableCell>{formatMonthLabel(record.month)}</TableCell>
-                    <TableCell>
-                      {record.wins}-{record.losses}
-                    </TableCell>
-                    <TableCell>{record.winRate}%</TableCell>
-                    <TableCell
-                      className={
-                        record.total < SMALL_SAMPLE_THRESHOLD ? 'text-muted-foreground' : undefined
-                      }
-                    >
-                      {record.total}
-                    </TableCell>
+            <div className="max-h-72 overflow-y-auto lg:w-2/5">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Month</TableHead>
+                    <TableHead>W-L</TableHead>
+                    <TableHead>Rate</TableHead>
+                    <TableHead>Games</TableHead>
                   </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </>
+                </TableHeader>
+                <TableBody>
+                  {[...records].reverse().map((record) => (
+                    <TableRow key={record.month}>
+                      <TableCell>{formatMonthLabel(record.month)}</TableCell>
+                      <TableCell>
+                        {record.wins}-{record.losses}
+                      </TableCell>
+                      <TableCell>{record.winRate}%</TableCell>
+                      <TableCell
+                        className={
+                          record.total < SMALL_SAMPLE_THRESHOLD
+                            ? 'text-muted-foreground'
+                            : undefined
+                        }
+                      >
+                        {record.total}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          </div>
         )}
       </CardContent>
     </Card>

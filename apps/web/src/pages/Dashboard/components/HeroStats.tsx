@@ -1,6 +1,7 @@
 import type { Match } from '@smash-tracker/shared';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { WinLossPips } from '@/components/WinLossPips';
+import { GlickoExplainer } from '@/components/GlickoExplainer';
 import {
   getOnlineOfflineSplit,
   getStreakSummary,
@@ -194,7 +195,10 @@ function RatingCard({ matches }: { matches: Match[] }) {
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Rating</CardTitle>
+        <CardTitle className="flex items-center gap-1.5">
+          Rating
+          <GlickoExplainer />
+        </CardTitle>
       </CardHeader>
       <CardContent className="flex flex-col gap-1">
         {hasEnoughGames && current ? (

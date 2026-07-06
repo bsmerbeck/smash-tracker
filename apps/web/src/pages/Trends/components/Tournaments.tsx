@@ -74,7 +74,7 @@ export function Tournaments({ matches }: { matches: Match[] }) {
   const rows = buildTournamentEntryRows(entries ?? [], matches);
 
   return (
-    <Card>
+    <Card className="h-full">
       <CardHeader>
         <CardTitle>Tournaments</CardTitle>
       </CardHeader>

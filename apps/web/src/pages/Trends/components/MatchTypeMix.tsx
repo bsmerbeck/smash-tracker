@@ -88,6 +88,8 @@ function buildChartData(mix: MonthlyMatchTypeMix[]) {
 function buildChartOptions(): ChartOptions<'bar'> {
   const theme = darkChartOptions();
   return {
+    responsive: theme.responsive,
+    maintainAspectRatio: theme.maintainAspectRatio,
     scales: {
       x: { ...theme.scales?.x, stacked: true },
       y: { ...theme.scales?.y, stacked: true, beginAtZero: true },
@@ -112,7 +114,7 @@ export function MatchTypeMix({ matches }: { matches: Match[] }) {
   const mix = buildMonthlyMatchTypeMix(matches);
 
   return (
-    <Card>
+    <Card className="h-full">
       <CardHeader>
         <CardTitle>Match-Type Mix Over Time</CardTitle>
       </CardHeader>
