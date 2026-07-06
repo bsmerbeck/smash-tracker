@@ -59,8 +59,16 @@ export interface CharacterRecord {
   vsOpponentCharacter: Array<{ opponentCharacter: string; wins: number; losses: number }>;
 }
 
+/**
+ * `scout` MUST NOT carry `games` (V9-D's per-game records, added for the
+ * web "Full analysis" section) — the payload's own `headToHead`,
+ * `vsTopCharacters`, and `matchupAdvisor` already summarize everything a
+ * per-game list would add for Claude, so including it here would only
+ * inflate token cost for zero grounding benefit. `assembleReportPayload`
+ * strips it unconditionally, even when the incoming `scout` has it.
+ */
 export interface ReportPayload {
-  scout: ScoutReportData;
+  scout: Omit<ScoutReportData, 'games'>;
   headToHead: HeadToHeadMatch[];
   userContext: {
     /** The signed-in user's own primary/secondary character selections (fighter names, not ids). */
@@ -306,8 +314,20 @@ export async function assembleReportPayload(
     })),
   }));
 
+  // Strip `games` (V9-D) before handing the scout data to Claude — see the
+  // doc comment on `ReportPayload.scout`.
+  const scoutForPayload: Omit<ScoutReportData, 'games'> = {
+    player: scout.player,
+    sampledSets: scout.sampledSets,
+    sampledGames: scout.sampledGames,
+    characters: scout.characters,
+    stages: scout.stages,
+    recentEvents: scout.recentEvents,
+    commonOpponents: scout.commonOpponents,
+  };
+
   return {
-    scout,
+    scout: scoutForPayload,
     headToHead,
     userContext: {
       myFighters,

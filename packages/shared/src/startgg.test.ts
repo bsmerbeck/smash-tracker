@@ -2,9 +2,11 @@ import { describe, expect, it } from 'vitest';
 import {
   isParryggIdentity,
   isStartggIdentity,
+  scoutGameSchema,
   scoutIdentityKey,
   scoutPlayerIdentitySchema,
   scoutRecentEventSchema,
+  scoutReportDataSchema,
   type ScoutPlayerIdentity,
 } from './startgg.js';
 
@@ -86,5 +88,50 @@ describe('scoutRecentEventSchema — V9-B slug/source back-compat', () => {
       source: 'startgg' as const,
     };
     expect(scoutRecentEventSchema.parse(event)).toEqual(event);
+  });
+});
+
+describe('scoutReportDataSchema — V9-D `games` back-compat', () => {
+  const baseReport = {
+    player: { id: 1802316, gamerTag: 'Pandem1c' },
+    sampledSets: 3,
+    sampledGames: 6,
+    characters: [{ fighterId: 67, games: 6, wins: 4 }],
+    stages: [{ stageId: 1, games: 6, wins: 4 }],
+    recentEvents: [],
+    commonOpponents: [],
+  };
+
+  it('parses a pre-V9-D stored report with no `games` field at all', () => {
+    const parsed = scoutReportDataSchema.parse(baseReport);
+    expect(parsed.games).toBeUndefined();
+  });
+
+  it('parses a V9-D report carrying `games`', () => {
+    const game = {
+      time: 1_700_000_000_000,
+      win: true,
+      fighterId: 67,
+      opponentFighterId: 41,
+      stageId: 1,
+      stageName: 'Battlefield',
+      opponentTag: 'PowPow',
+      eventName: 'Ultimate Singles',
+    };
+    const parsed = scoutReportDataSchema.parse({ ...baseReport, games: [game] });
+    expect(parsed.games).toEqual([game]);
+  });
+
+  it('scoutGameSchema tolerates a game with no resolved stage (stageId/stageName both absent)', () => {
+    const parsed = scoutGameSchema.parse({
+      time: 1_700_000_000_000,
+      win: false,
+      fighterId: 67,
+      opponentFighterId: 0,
+      opponentTag: 'PowPow',
+    });
+    expect(parsed.stageId).toBeUndefined();
+    expect(parsed.stageName).toBeUndefined();
+    expect(parsed.eventName).toBeUndefined();
   });
 });

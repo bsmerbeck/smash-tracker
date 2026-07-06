@@ -1,5 +1,5 @@
 import { MatchState } from '@parry-gg/client';
-import type { ScoutReportData } from '@smash-tracker/shared';
+import type { ScoutGame, ScoutReportData } from '@smash-tracker/shared';
 import {
   getUser,
   getUserMatches,
@@ -139,6 +139,8 @@ interface Accumulators {
     }
   >;
   opponents: Map<string, number>;
+  /** V9-D: per-game records for the web "Full analysis" section — see `scoutGameSchema`. Only ever populated from real `matchGamesList` detail — see the doc on the `games.length === 0` branch below for why synthesized-from-score sets never contribute here. */
+  games: ScoutGame[];
 }
 
 function emptyAccumulators(): Accumulators {
@@ -149,6 +151,7 @@ function emptyAccumulators(): Accumulators {
     stages: new Map(),
     events: new Map(),
     opponents: new Map(),
+    games: [],
   };
 }
 
@@ -255,10 +258,14 @@ export function accumulateParryMatchContext(
   }
 
   const games = match.matchGamesList;
-  // Only "mine" is needed here — unlike sync.ts, the scout accumulator only
-  // ever tracks the scouted player's OWN character/stage picks (their own
-  // perspective), never the opponent's, so there's no opponent slot lookup.
+  // "mine" drives character/stage aggregation (the scout accumulator only
+  // ever tracks the scouted player's OWN picks, their own perspective).
+  // "opponent" is ALSO looked up (V9-D), same shared-slot-number matching
+  // `sync.ts`'s `gamesFromMatchContext` uses, purely to populate each
+  // per-game record's `opponentFighterId` for the client stats engine — it
+  // does not otherwise change what this function aggregates.
   const mySlotEntry = slots.find((s) => s.seedId === mine.id);
+  const opponentSlotEntry = slots.find((s) => s.seedId === opponent.id);
 
   if (games.length === 0) {
     // No per-game detail — same "sparse young data" tolerance as sync.ts:
@@ -286,6 +293,40 @@ export function accumulateParryMatchContext(
     const stageSlug = game.stagesList[0]?.slug;
     const resolvedStage = resolveParryggStage(stageSlug);
     bump(acc.stages, resolvedStage?.id ?? UNKNOWN_STAGE_ID, won);
+
+    // V9-D: per-game record for the web "Full analysis" section. Skipped
+    // entirely when MY character can't be mapped (mirrors start.gg scout's
+    // rule — see scoutGameSchema's doc); the opponent's character falls back
+    // to the fighterId-0 sentinel like `characters` above, since it isn't
+    // the subject of the scouted player's own stats.
+    if (opponentTag && fighterId !== UNMAPPED_FIGHTER_ID) {
+      const opponentGameSlot =
+        opponentSlotEntry != null
+          ? game.slotsList.find((s) => s.slot === opponentSlotEntry.slot)
+          : undefined;
+      const opponentParticipant =
+        opponentGameSlot?.participantsList.find((p) => p.userId === opponentUser?.id) ??
+        opponentGameSlot?.participantsList[0];
+      const opponentCharacterSlug = opponentParticipant?.charactersList[0]?.slug;
+      const opponentFighterId =
+        parryggCharacterSlugToFighterId(opponentCharacterSlug) ?? UNMAPPED_FIGHTER_ID;
+
+      const endedAtSeconds = match.endedAt?.seconds ?? match.stateUpdatedAt?.seconds;
+      const time =
+        typeof endedAtSeconds === 'number'
+          ? endedAtSeconds * 1000
+          : (context.eventStartDate?.seconds ?? 0) * 1000;
+
+      acc.games.push({
+        time,
+        win: won,
+        fighterId,
+        opponentFighterId,
+        ...(resolvedStage ? { stageId: resolvedStage.id, stageName: resolvedStage.name } : {}),
+        opponentTag,
+        ...(eventName ? { eventName } : {}),
+      });
+    }
   });
 }
 
@@ -338,6 +379,7 @@ function toReport(acc: Accumulators, player: ResolvedParryScoutPlayer): ScoutRep
     stages,
     recentEvents,
     commonOpponents,
+    ...(acc.games.length > 0 ? { games: acc.games } : {}),
   };
 }
 

@@ -32,7 +32,10 @@ describe('assembleReportPayload', () => {
       database as unknown as Parameters<typeof assembleReportPayload>[2],
     );
 
-    expect(payload.scout).toBe(SCOUT);
+    // Not `.toBe` (reference equality): `assembleReportPayload` rebuilds
+    // `scout` into a new object that strips `games` (V9-D) before it reaches
+    // Claude — see the doc comment on `ReportPayload.scout`.
+    expect(payload.scout).toEqual(SCOUT);
     expect(payload.headToHead).toEqual([]);
     expect(payload.userContext.vsTopCharacters).toEqual([
       { opponentCharacter: 'Fox', wins: 0, losses: 0, topStages: [] },
@@ -42,6 +45,33 @@ describe('assembleReportPayload', () => {
     expect(payload.notes).toBeNull();
     expect(payload.userContext.myFighters).toEqual({ primary: [], secondary: [] });
     expect(payload.userContext.myCharacterRecords).toEqual([]);
+  });
+
+  it('strips `games` (V9-D) from the scout payload sent to Claude, keeping every other field', async () => {
+    const scoutWithGames: ScoutReportData = {
+      ...SCOUT,
+      games: [
+        {
+          time: 1_700_000_000_000,
+          win: true,
+          fighterId: 8,
+          opponentFighterId: 22,
+          stageId: 1,
+          stageName: 'Battlefield',
+          opponentTag: 'PowPow',
+          eventName: 'Ultimate Singles',
+        },
+      ],
+    };
+    const database = new FakeDatabase();
+    const payload = await assembleReportPayload(
+      UID,
+      scoutWithGames,
+      database as unknown as Parameters<typeof assembleReportPayload>[2],
+    );
+
+    expect(payload.scout).not.toHaveProperty('games');
+    expect(payload.scout).toEqual(SCOUT);
   });
 
   it('maps myFighters sprite ids to character names', async () => {

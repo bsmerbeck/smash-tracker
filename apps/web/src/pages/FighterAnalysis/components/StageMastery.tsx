@@ -18,15 +18,26 @@ const TINT_CLASSES: Record<MasteryTintBucket, string> = {
  * Wilson bucket. A "Best pick / Ban-worthy" caption row up top calls out the
  * standout stages (folds in the retired BestWorstMap card per
  * docs/analytics-vision.md V4 Phase E).
+ *
+ * `title` defaults to "Stage Mastery" (its original framing here); pass a
+ * more specific title to reuse this same tile grid for a different subject,
+ * e.g. the Scout page's "Full analysis" section rendering it once for a
+ * scouted player's whole sample and again for just their top character.
  */
-export function StageMastery({ fighterMatches }: { fighterMatches: Match[] }) {
+export function StageMastery({
+  fighterMatches,
+  title = 'Stage Mastery',
+}: {
+  fighterMatches: Match[];
+  title?: string;
+}) {
   const tiles = buildStageMasteryTiles(fighterMatches);
   const { bestPick, banWorthy } = buildStageMasteryCaption(fighterMatches);
 
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Stage Mastery</CardTitle>
+        <CardTitle>{title}</CardTitle>
       </CardHeader>
       <CardContent className="flex flex-col gap-4">
         {(bestPick || banWorthy) && (
