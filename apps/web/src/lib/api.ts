@@ -17,6 +17,12 @@ import {
   opponentNoteMapSchema,
   opponentNoteSchema,
   parryggLinkRequestSchema,
+  parryggLoginCompleteRequestSchema,
+  parryggLoginCompleteResponseSchema,
+  parryggLoginSearchRequestSchema,
+  parryggLoginSearchResultListSchema,
+  parryggLoginStartRequestSchema,
+  parryggLoginStartResponseSchema,
   parryggSearchResultListSchema,
   parryggStatusSchema,
   parryggSyncSummarySchema,
@@ -35,6 +41,9 @@ import {
   type FighterSelectionInput,
   type Match,
   type ParryggLinkRequest,
+  type ParryggLoginCompleteRequest,
+  type ParryggLoginSearchRequest,
+  type ParryggLoginStartRequest,
   type ScoutQuery,
   type UpdateMatchInput,
   type UpsertOpponentAliasInput,
@@ -299,6 +308,31 @@ export const api = {
       apiRequestParsed('/api/integrations/parrygg/sync', parryggSyncSummarySchema, {
         method: 'POST',
       }),
+    /**
+     * "Log in with parry.gg" (V8-B) — public routes, no Bearer auth (the
+     * shared fetch wrapper simply sends no Authorization header while
+     * signed out). Bio-code claim flow: search -> start -> complete.
+     */
+    login: {
+      /** POST /api/auth/parrygg/login/search — up to 5 candidates. */
+      search: (input: ParryggLoginSearchRequest) =>
+        apiRequestParsed('/api/auth/parrygg/login/search', parryggLoginSearchResultListSchema, {
+          method: 'POST',
+          body: parryggLoginSearchRequestSchema.parse(input),
+        }),
+      /** POST /api/auth/parrygg/login/start — issues (or resumes) an ST-XXXXXX code. */
+      start: (input: ParryggLoginStartRequest) =>
+        apiRequestParsed('/api/auth/parrygg/login/start', parryggLoginStartResponseSchema, {
+          method: 'POST',
+          body: parryggLoginStartRequestSchema.parse(input),
+        }),
+      /** POST /api/auth/parrygg/login/complete — checks the bio, returns a Firebase custom token. */
+      complete: (input: ParryggLoginCompleteRequest) =>
+        apiRequestParsed('/api/auth/parrygg/login/complete', parryggLoginCompleteResponseSchema, {
+          method: 'POST',
+          body: parryggLoginCompleteRequestSchema.parse(input),
+        }),
+    },
   },
   tournaments: {
     /** GET /api/tournaments */
