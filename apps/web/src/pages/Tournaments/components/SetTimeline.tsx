@@ -20,6 +20,10 @@ function GameChip({ match }: { match: Match }) {
   const stage = stageId !== 0 ? stagesById.get(stageId) : undefined;
   const stageName = stage?.name ?? match.map?.name ?? 'unknown';
   const abbreviation = stage ? stageAbbreviation(stage.name) : '??';
+  const userFighter = getFighterById(match.fighter_id);
+  const opponentFighter = getFighterById(match.opponent_id);
+  const matchup =
+    userFighter && opponentFighter ? ` · ${userFighter.name} vs ${opponentFighter.name}` : '';
 
   return (
     <Tooltip>
@@ -35,15 +39,16 @@ function GameChip({ match }: { match: Match }) {
       </TooltipTrigger>
       <TooltipContent>
         {stageName} — {match.win ? 'Win' : 'Loss'}
+        {matchup}
       </TooltipContent>
     </Tooltip>
   );
 }
 
-function OpponentTags({ opponentFighterIds }: { opponentFighterIds: number[] }) {
+function FighterTags({ fighterIds, label }: { fighterIds: number[]; label: string }) {
   return (
-    <div className="flex items-center -space-x-1">
-      {opponentFighterIds.map((id) => {
+    <div className="flex items-center -space-x-1" aria-label={label}>
+      {fighterIds.map((id) => {
         const sprite = getFighterById(id);
         return sprite ? (
           <img
@@ -156,7 +161,7 @@ function OpponentLabel({ set }: { set: TournamentSet }) {
   return (
     <span className="flex items-center gap-1 text-sm text-muted-foreground">
       <span className="inline-flex items-center gap-1">
-        vs {set.opponentName}
+        {set.opponentName}
         {profileUrl && (
           <a
             href={profileUrl}
@@ -186,7 +191,11 @@ function SetRow({ set }: { set: TournamentSet }) {
     >
       <div className="flex flex-wrap items-center gap-3">
         <span className="min-w-32 text-sm font-medium">{set.roundText ?? `Set ${set.setId}`}</span>
-        <OpponentTags opponentFighterIds={set.opponentFighterIds} />
+        <div className="flex items-center gap-1.5">
+          <FighterTags fighterIds={set.userFighterIds} label="Your fighters" />
+          <span className="text-xs text-muted-foreground">vs</span>
+          <FighterTags fighterIds={set.opponentFighterIds} label="Opponent fighters" />
+        </div>
         <OpponentLabel set={set} />
         <div className="flex items-center gap-1">
           {set.games.map((g) => (
@@ -248,6 +257,7 @@ export function SetTimeline({
                 </h3>
                 <ul className="flex flex-col gap-2" aria-label="Other matches during this event">
                   {otherMatches.map((match) => {
+                    const userSprite = getFighterById(match.fighter_id);
                     const opponentSprite = getFighterById(match.opponent_id);
                     return (
                       <li
@@ -258,13 +268,27 @@ export function SetTimeline({
                           <span className="text-sm text-muted-foreground">
                             {new Date(match.time).toLocaleDateString()}
                           </span>
-                          {opponentSprite && (
-                            <img
-                              src={opponentSprite.url}
-                              alt={opponentSprite.name}
-                              className="size-6 object-contain"
-                            />
-                          )}
+                          <span className="flex items-center gap-1.5">
+                            {userSprite && (
+                              <img
+                                src={userSprite.url}
+                                alt={userSprite.name}
+                                title={userSprite.name}
+                                className="size-6 object-contain"
+                              />
+                            )}
+                            {(userSprite || opponentSprite) && (
+                              <span className="text-xs text-muted-foreground">vs</span>
+                            )}
+                            {opponentSprite && (
+                              <img
+                                src={opponentSprite.url}
+                                alt={opponentSprite.name}
+                                title={opponentSprite.name}
+                                className="size-6 object-contain"
+                              />
+                            )}
+                          </span>
                           <GameChip match={match} />
                         </div>
                         <Badge variant={match.win ? 'success' : 'destructive'}>

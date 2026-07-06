@@ -132,7 +132,19 @@ describe('SetTimeline', () => {
       makeMatch({ id: 'g1', time: 100, win: true, externalId: 'sgg:1:g1', opponent: 'rival' }),
     ];
     renderTimeline(matches);
-    expect(screen.getByText(/vs rival/)).toBeInTheDocument();
+    expect(screen.getByText(/rival/)).toBeInTheDocument();
+  });
+
+  it("shows the user's fighter(s) alongside the opponent's for a set", () => {
+    const matches = [
+      makeMatch({ id: 'g1', time: 100, win: true, externalId: 'sgg:1:g1', opponent: 'rival' }),
+    ];
+    renderTimeline(matches);
+    const userTags = screen.getByLabelText('Your fighters');
+    expect(within(userTags).getByAltText(mario.name)).toBeInTheDocument();
+    const opponentTags = screen.getByLabelText('Opponent fighters');
+    expect(within(opponentTags).getByAltText(luigi.name)).toBeInTheDocument();
+    expect(screen.getByText('vs')).toBeInTheDocument();
   });
 
   it('links the opponent tag to their start.gg profile when opponentUserSlug is present', () => {
