@@ -92,6 +92,19 @@ const reportsRoutes: FastifyPluginAsyncZod<ReportsRoutesOptions> = async (app, o
   const client: AnthropicLikeClient =
     options.client ?? new Anthropic({ apiKey: config.anthropicApiKey });
 
+  /**
+   * Access rule for the READ routes (GET /reports, GET /reports/:id) — must
+   * match POST's: allowlisted uids OR anyone when Stripe billing is
+   * configured (V7-C). Since V7-C, a billing-enabled non-allowlisted uid can
+   * PAY to generate a report via POST; gating the read routes to the
+   * allowlist alone (the pre-V9-B behavior) meant they could buy credits,
+   * generate a report, and then be 403'd from ever listing or reopening it.
+   * When Stripe is NOT configured, the pre-V7-C allowlist-only 403 behavior
+   * is unchanged.
+   */
+  const canReadReports = (uid: string): boolean =>
+    config.allowedUids.has(uid) || stripeConfig !== null;
+
   app.addHook('preHandler', app.authenticate);
 
   // GET /api/reports/config — never 403s; tells the web app whether to show
@@ -294,12 +307,24 @@ const reportsRoutes: FastifyPluginAsyncZod<ReportsRoutesOptions> = async (app, o
         throw err;
       }
 
+      // RTDB deletes null-valued keys on write, so persisting the model's
+      // `headToHead: null` (a legitimate "no head-to-head history" output)
+      // would come back with the key ABSENT and previously corrupted the
+      // stored record (see storedScoutReportSchema's doc). Strip null fields
+      // before writing — house conditional-spread convention — so records
+      // are stored in exactly the shape they'll be read back in.
+      const { headToHead, ...reportRest } = report;
+      const storedReport = {
+        ...reportRest,
+        ...(headToHead !== null ? { headToHead } : {}),
+      };
+
       const ref = app.firebase.database.ref(`scoutReports/${request.uid}`).push();
       const record = {
         createdAt: Date.now(),
         model: 'claude-opus-4-8',
         player: scout.player,
-        report,
+        report: storedReport,
       };
       try {
         await ref.set(record);
@@ -332,7 +357,7 @@ const reportsRoutes: FastifyPluginAsyncZod<ReportsRoutesOptions> = async (app, o
       },
     },
     async (request, reply) => {
-      if (!config.allowedUids.has(request.uid)) {
+      if (!canReadReports(request.uid)) {
         return reply.code(403).send({
           error: 'Forbidden',
           message: 'AI reports are not enabled for this account',
@@ -345,9 +370,24 @@ const reportsRoutes: FastifyPluginAsyncZod<ReportsRoutesOptions> = async (app, o
         return [];
       }
 
+      // safeParse + skip, not parse: one corrupt stored record (e.g. a
+      // pre-fix row RTDB null-stripped — see storedScoutReportSchema — or
+      // any future shape drift) must never 500 the caller's ENTIRE library.
+      // Skipped records are logged with their id so they're findable, not
+      // silently swallowed.
       const raw = snapshot.val() as Record<string, unknown>;
       return Object.entries(raw)
-        .map(([id, value]) => scoutReportRecordSchema.parse({ id, ...(value as object) }))
+        .flatMap(([id, value]) => {
+          const parsed = scoutReportRecordSchema.safeParse({ id, ...(value as object) });
+          if (!parsed.success) {
+            request.log.warn(
+              { reportId: id, issues: parsed.error.issues },
+              'skipping stored scout report that failed schema validation',
+            );
+            return [];
+          }
+          return [parsed.data];
+        })
         .sort((a, b) => b.createdAt - a.createdAt);
     },
   );
@@ -366,7 +406,7 @@ const reportsRoutes: FastifyPluginAsyncZod<ReportsRoutesOptions> = async (app, o
       },
     },
     async (request, reply) => {
-      if (!config.allowedUids.has(request.uid)) {
+      if (!canReadReports(request.uid)) {
         return reply.code(403).send({
           error: 'Forbidden',
           message: 'AI reports are not enabled for this account',
