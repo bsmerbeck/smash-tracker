@@ -65,6 +65,23 @@ export function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
         />
         Training Grounds
       </a>
+
+      {/* Donorbox blue (#41a2d8) kept from the legacy button so it reads as
+          the familiar Donate control rather than another nav item. */}
+      <a
+        href="https://donorbox.org/support-smash-tracker"
+        target="_blank"
+        rel="noreferrer"
+        className="flex items-center justify-center gap-3 rounded-md bg-[#41a2d8] px-3 py-2 text-sm font-medium text-white transition-opacity hover:opacity-90"
+      >
+        <img
+          src="https://donorbox.org/images/white_logo.svg"
+          alt=""
+          role="presentation"
+          className="h-4 shrink-0"
+        />
+        Donate
+      </a>
     </div>
   );
 }
