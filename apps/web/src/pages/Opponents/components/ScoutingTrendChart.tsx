@@ -18,14 +18,26 @@ ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Tooltip,
 
 const ROLLING_WINDOW = 5;
 
-/** Rolling (trailing-5) win-rate trend across all matches vs this opponent. */
-export function ScoutingTrendChart({ matches }: { matches: Match[] }) {
+/**
+ * Rolling (trailing-5) win-rate trend across the given matches. Defaults to
+ * "H2H Trend" (its original head-to-head-vs-one-opponent framing on the
+ * Opponent Detail page); pass `title` to reuse it for a different framing,
+ * e.g. the Scout page's "Full analysis" section, where `matches` is a
+ * scouted player's OWN game history rather than a head-to-head slice.
+ */
+export function ScoutingTrendChart({
+  matches,
+  title = 'H2H Trend',
+}: {
+  matches: Match[];
+  title?: string;
+}) {
   const series = getRollingWinRate(matches, ROLLING_WINDOW);
 
   return (
     <Card>
       <CardHeader>
-        <CardTitle>H2H Trend</CardTitle>
+        <CardTitle>{title}</CardTitle>
       </CardHeader>
       <CardContent>
         {series.length === 0 ? (
