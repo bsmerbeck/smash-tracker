@@ -233,6 +233,43 @@ gcloud run deploy smash-tracker-api \
 Until both vars are set, every `/api/reports*` route answers `503` and the web app's "Generate AI
 report" button never renders — the rest of the app (including `/api/scout`) is unaffected.
 
+**V7-C: Stripe-powered credit packs (optional)**
+
+By default, `REPORTS_ALLOWED_UIDS` above is the only way to generate reports — everyone else gets a
+`403`. Configuring Stripe additionally lets non-allowlisted users buy credit packs and generate
+reports themselves (uids in `REPORTS_ALLOWED_UIDS` always stay free/unlimited; the paywall exists
+purely to cover the cost of everyone else's Claude API usage). Two more env vars, both required
+together:
+
+- `STRIPE_SECRET_KEY` — a Stripe secret key (`sk_test_...` in test mode, `sk_live_...` in
+  production), from <https://dashboard.stripe.com/apikeys>.
+- `STRIPE_WEBHOOK_SECRET` — the signing secret for the `/api/billing/webhook` endpoint below, from
+  the webhook's settings in the Stripe dashboard.
+
+```sh
+gcloud run deploy smash-tracker-api \
+  --source . \
+  --region us-central1 \
+  --set-env-vars FIREBASE_DATABASE_URL=https://smash-tracker-f97b7-default-rtdb.firebaseio.com,ANTHROPIC_API_KEY=sk-ant-...,REPORTS_ALLOWED_UIDS=uid1,uid2,STRIPE_SECRET_KEY=sk_live_...,STRIPE_WEBHOOK_SECRET=whsec_...
+```
+
+Register a webhook endpoint in the Stripe dashboard (<https://dashboard.stripe.com/webhooks>)
+pointing at:
+
+```
+https://<your-cloud-run-service>/api/billing/webhook
+```
+
+subscribed to at least the `checkout.session.completed` event — this is what credits a purchased
+pack onto the buyer's balance. Until both `STRIPE_*` vars are set, every `/api/billing*` route
+answers `503` and non-allowlisted uids get exactly the pre-V7-C `403` on report generation (no
+behavior change; this is an allowlist-only deployment by default).
+
+Credit pack contents and prices (`pack5` = 5 credits / $8.00, `pack15` = 15 credits / $20.00) are a
+single constant, `CREDIT_PACKS` in `packages/shared/src/billing.ts` — edit that one array to change
+pricing or add a pack; both the checkout endpoint and the credits-status endpoint read from it, so
+nothing else needs to change.
+
 **2. Configure `apps/web/.env.production`**
 
 ```sh

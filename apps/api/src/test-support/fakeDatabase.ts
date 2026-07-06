@@ -9,6 +9,11 @@
  * - `.push()` generates a unique string key and returns a ref-like object
  *   whose `.key` is available synchronously (as real RTDB's push() does).
  * - `DataSnapshot.exists()`/`val()` reflect the current in-memory tree.
+ * - `.transaction(updateFn)` runs synchronously against the in-memory tree
+ *   (there's no concurrent access in tests, so every attempt "wins" on the
+ *   first try) and mirrors the real SDK's `{ committed, snapshot }` result —
+ *   `updateFn` returning `undefined` aborts the transaction without writing,
+ *   matching real RTDB semantics.
  */
 
 type JsonValue = null | boolean | number | string | JsonValue[] | { [key: string]: JsonValue };
@@ -18,6 +23,11 @@ export interface FakeSnapshot {
   val(): unknown;
 }
 
+export interface FakeTransactionResult {
+  committed: boolean;
+  snapshot: FakeSnapshot;
+}
+
 export interface FakeReference {
   key: string | null;
   get(): Promise<FakeSnapshot>;
@@ -25,6 +35,7 @@ export interface FakeReference {
   update(value: Record<string, unknown>): Promise<void>;
   remove(): Promise<void>;
   push(value?: unknown): FakeReference & { key: string };
+  transaction(updateFn: (current: unknown) => unknown): Promise<FakeTransactionResult>;
 }
 
 function makeSnapshot(value: unknown): FakeSnapshot {
@@ -143,6 +154,15 @@ export class FakeDatabase {
           void childRef.set(value);
         }
         return childRef;
+      },
+      transaction: async (updateFn: (current: unknown) => unknown) => {
+        const current = this.getAtPath(segments);
+        const next = updateFn(current);
+        if (next === undefined) {
+          return { committed: false, snapshot: makeSnapshot(current) };
+        }
+        this.setAtPath(segments, next);
+        return { committed: true, snapshot: makeSnapshot(this.getAtPath(segments)) };
       },
     };
 

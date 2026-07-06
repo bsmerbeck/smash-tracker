@@ -93,8 +93,20 @@ export const generateReportRequestSchema = z.object({
 });
 export type GenerateReportRequest = z.infer<typeof generateReportRequestSchema>;
 
-/** GET /api/reports/config response — whether the signed-in caller can generate AI reports. */
+/**
+ * GET /api/reports/config response — whether the signed-in caller can
+ * generate AI reports. `enabled` is true when the caller is allowlisted
+ * (`REPORTS_ALLOWED_UIDS`, free/unlimited) OR when Stripe billing (V7-C) is
+ * configured on this deployment (meaning anyone can buy credits and
+ * generate) — kept for back-compat with pre-V7-C clients that only look at
+ * `enabled`. `freeAccess`/`billingEnabled` are additive and OPTIONAL so old
+ * clients (and old cached responses) parsing this shape don't break.
+ */
 export const reportsConfigSchema = z.object({
   enabled: z.boolean(),
+  /** True when the caller is on `REPORTS_ALLOWED_UIDS` — free/unlimited generation. */
+  freeAccess: z.boolean().optional(),
+  /** True when this deployment has Stripe configured, i.e. non-allowlisted callers can buy credits. */
+  billingEnabled: z.boolean().optional(),
 });
 export type ReportsConfig = z.infer<typeof reportsConfigSchema>;

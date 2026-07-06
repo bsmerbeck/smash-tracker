@@ -11,7 +11,13 @@ export const TEST_TOKEN = 'valid-test-token';
 export function buildTestApp(
   options: Pick<
     Parameters<typeof buildApp>[0],
-    'startgg' | 'startggFetch' | 'reports' | 'reportsClient'
+    | 'startgg'
+    | 'startggFetch'
+    | 'reports'
+    | 'reportsClient'
+    | 'stripe'
+    | 'webBaseUrl'
+    | 'stripeClient'
   > = {},
 ) {
   const database = new FakeDatabase();
