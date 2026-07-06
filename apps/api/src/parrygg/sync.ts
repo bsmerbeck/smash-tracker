@@ -38,24 +38,33 @@ interface ImportableGame {
   opponentTag: string;
 }
 
-type Seed = ParryggMatchContext['seedsList'][number];
-type PathEntry = NonNullable<ParryggMatchContext['hierarchy']>['pathsList'][number];
+export type Seed = ParryggMatchContext['seedsList'][number];
+export type PathEntry = NonNullable<ParryggMatchContext['hierarchy']>['pathsList'][number];
 
-/** `hierarchy.pathsList` path types (see @parry-gg/client's `PathType` enum): 0=tournament, 1=event, 2=phase, 3=bracket. */
-const PATH_TYPE_TOURNAMENT = 0;
-const PATH_TYPE_EVENT = 1;
+/** `hierarchy.pathsList` path types (see @parry-gg/client's `PathType` enum): 0=tournament, 1=event, 2=phase, 3=bracket. Exported for reuse by ../parrygg/scout.ts (V9-B). */
+export const PATH_TYPE_TOURNAMENT = 0;
+export const PATH_TYPE_EVENT = 1;
 
-function pathNameByType(paths: PathEntry[], type: number): string | undefined {
+/** Exported for reuse by ../parrygg/scout.ts (V9-B) — same slug/name path lookup, one implementation. */
+export function pathNameByType(paths: PathEntry[], type: number): string | undefined {
   return paths.find((p) => p.type === type)?.name?.trim() || undefined;
+}
+
+/** Same lookup as `pathNameByType`, but for the path's `slug` instead of its `name` (V9-B — event deep links). */
+export function pathSlugByType(paths: PathEntry[], type: number): string | undefined {
+  return paths.find((p) => p.type === type)?.slug?.trim() || undefined;
 }
 
 /**
  * Finds the seed whose entrant is the linked parry.gg user, and the
  * opposing seed. Returns null when either side is a team entrant
  * (`usersList.length > 1` — singles only for v1, see `teamEntrants`
- * counter) or when the match doesn't have exactly two seeds.
+ * counter) or when the match doesn't have exactly two seeds. Exported for
+ * reuse by ../parrygg/scout.ts (V9-B) — same "who am I in this match" logic
+ * that sync uses for a linked account applies unchanged to any parry.gg
+ * user id being scouted.
  */
-function findSeeds(
+export function findSeeds(
   seeds: Seed[],
   parryUserId: string,
 ): { mine: Seed; opponent: Seed } | 'team' | null {

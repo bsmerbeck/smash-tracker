@@ -359,6 +359,7 @@ const PAYLOAD = {
     myCharacterRecords: [],
     vsTopCharacters: [],
     recentForm: { wins: 0, losses: 0, sampleSize: 0 },
+    matchupAdvisor: [],
   },
   notes: null,
 };

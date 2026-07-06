@@ -1,4 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import type { GenerateReportRequest } from '@smash-tracker/shared';
 import { api } from '@/lib/api';
 import { useAuth } from './useAuth';
 
@@ -25,7 +26,7 @@ export function useReportsConfig() {
 export function useGenerateReport() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (query: string) => api.reports.generate(query),
+    mutationFn: (input: GenerateReportRequest) => api.reports.generate(input),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: scoutReportsListQueryKey });
     },

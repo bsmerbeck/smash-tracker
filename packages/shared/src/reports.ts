@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { scoutPlayerIdentitySchema } from './startgg.js';
+import { scoutPlayerIdentitySchema, scoutSourceSchema } from './startgg.js';
 
 /**
  * V7-B: AI-generated pre-bracket scouting reports, powered by the Claude API,
@@ -57,15 +57,32 @@ export const generatedScoutReportSchema = z.object({
 export type GeneratedScoutReport = z.infer<typeof generatedScoutReportSchema>;
 
 /**
- * Stored-record variant of the generated report: identical to
- * `generatedScoutReportSchema` except `characterStrategy` is OPTIONAL, so
- * reports written before V7-B.1 (which lack the field entirely) still parse.
- * New reports always have it (the model is required to produce it — see
- * SYSTEM_PROMPT); this schema exists purely for reading old rows back.
+ * Stored-record variant of the generated report — differs from
+ * `generatedScoutReportSchema` in two absence-tolerances, both required for
+ * reading real RTDB rows back:
+ *
+ * - `characterStrategy` is OPTIONAL: reports written before V7-B.1 lack the
+ *   field entirely. New reports always have it (the model is required to
+ *   produce it — see SYSTEM_PROMPT).
+ * - `headToHead` is NULLISH (nullable AND optional), not just nullable:
+ *   Firebase RTDB deletes null-valued keys on write, so a record persisted
+ *   with `headToHead: null` (no head-to-head history — a common, legitimate
+ *   model output) comes back with the key ABSENT, and a merely-`.nullable()`
+ *   schema rejects it ("expected string, received undefined"), corrupting
+ *   the whole stored record. Confirmed against production data (V9-B).
+ *   The GENERATION schema deliberately stays `.nullable()` — the model must
+ *   still emit the field explicitly; only the stored/read shape tolerates
+ *   RTDB having stripped it. This is the general rule for this schema: any
+ *   `.nullable()` field in a STORED record must be `.nullish()` here
+ *   (`headToHead` is currently the only nullable field in the record shape).
  */
-export const storedScoutReportSchema = generatedScoutReportSchema.partial({
-  characterStrategy: true,
-});
+export const storedScoutReportSchema = generatedScoutReportSchema
+  .partial({
+    characterStrategy: true,
+  })
+  .extend({
+    headToHead: z.string().nullish(),
+  });
 export type StoredScoutReport = z.infer<typeof storedScoutReportSchema>;
 
 /**
@@ -87,9 +104,14 @@ export const scoutReportRecordSchema = z.object({
 });
 export type ScoutReportRecord = z.infer<typeof scoutReportRecordSchema>;
 
-/** POST /api/reports request body — same input semantics as POST /api/scout. */
+/**
+ * POST /api/reports request body — same input semantics as POST /api/scout,
+ * including the same optional `source` (V9-B Feature 4) for bare-query
+ * disambiguation between start.gg and parry.gg.
+ */
 export const generateReportRequestSchema = z.object({
   query: z.string().min(1),
+  source: scoutSourceSchema.optional(),
 });
 export type GenerateReportRequest = z.infer<typeof generateReportRequestSchema>;
 

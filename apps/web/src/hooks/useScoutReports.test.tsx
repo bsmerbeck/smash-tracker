@@ -75,7 +75,7 @@ function GenerateProbe() {
   const generate = useGenerateReport();
   return (
     <div>
-      <button onClick={() => generate.mutate('user/07dc2239')}>generate</button>
+      <button onClick={() => generate.mutate({ query: 'user/07dc2239' })}>generate</button>
       {generate.isPending && <div>pending</div>}
       {generate.isSuccess && <div>gamerTag: {generate.data.player.gamerTag}</div>}
     </div>
@@ -125,7 +125,7 @@ describe('useScoutReports', () => {
     fireEvent.click(screen.getByText('generate'));
 
     await waitFor(() => expect(screen.getByText('gamerTag: Pandem1c')).toBeInTheDocument());
-    expect(reportsGenerate).toHaveBeenCalledWith('user/07dc2239');
+    expect(reportsGenerate).toHaveBeenCalledWith({ query: 'user/07dc2239' });
   });
 
   it('useScoutReportsList resolves the list response', async () => {
