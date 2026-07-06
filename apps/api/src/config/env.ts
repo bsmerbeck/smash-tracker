@@ -53,6 +53,14 @@ const envSchema = z.object({
   ANTHROPIC_API_KEY: z.string().optional(),
   /** Comma-separated list of Firebase uids allowed to generate AI reports. */
   REPORTS_ALLOWED_UIDS: z.string().optional(),
+
+  // ---- V7-C: Stripe-powered credit packs (all optional — when incomplete,
+  // /api/billing routes answer 503 and non-allowlisted uids get the exact
+  // pre-V7-C 403 on report generation, i.e. no behavior change) -------------
+  /** Stripe secret key used to create Checkout Sessions. */
+  STRIPE_SECRET_KEY: z.string().optional(),
+  /** Signing secret for the `POST /api/billing/webhook` endpoint. */
+  STRIPE_WEBHOOK_SECRET: z.string().optional(),
 });
 
 export type Env = z.infer<typeof envSchema>;
@@ -140,5 +148,28 @@ export function getReportsConfig(env: Env): ReportsConfig | null {
   return {
     anthropicApiKey: env.ANTHROPIC_API_KEY,
     allowedUids,
+  };
+}
+
+export interface StripeConfig {
+  secretKey: string;
+  webhookSecret: string;
+}
+
+/**
+ * Assembles the Stripe config when fully present (a secret key AND a webhook
+ * signing secret), else null — same all-or-nothing pattern as
+ * `getStartggConfig`/`getReportsConfig`. When null, `/api/billing/*` routes
+ * answer 503 and non-allowlisted uids get the same 403 on report generation
+ * that existed before V7-C (no behavior change for deployments that don't
+ * opt in to billing).
+ */
+export function getStripeConfig(env: Env): StripeConfig | null {
+  if (!env.STRIPE_SECRET_KEY || !env.STRIPE_WEBHOOK_SECRET) {
+    return null;
+  }
+  return {
+    secretKey: env.STRIPE_SECRET_KEY,
+    webhookSecret: env.STRIPE_WEBHOOK_SECRET,
   };
 }

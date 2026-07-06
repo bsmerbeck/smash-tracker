@@ -1,4 +1,4 @@
-import { describe, expect, it, vi, beforeEach } from 'vitest';
+import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes } from 'react-router';
@@ -7,6 +7,14 @@ import { AuthProvider } from '@/context/AuthContext';
 import { ScoutPage } from './ScoutPage';
 import { ApiError } from '@/lib/api';
 import { resetAuthMock, setMockUser, makeMockUser } from '@/test/mockAuth';
+
+const toastSuccess = vi.fn();
+const toastPlain = vi.fn();
+vi.mock('sonner', () => ({
+  toast: Object.assign((...args: unknown[]) => toastPlain(...args), {
+    success: (...args: unknown[]) => toastSuccess(...args),
+  }),
+}));
 
 vi.mock('firebase/auth', async () => {
   const mock = await import('@/test/mockAuth');
@@ -32,6 +40,8 @@ const upsertMe = vi.fn().mockResolvedValue({ uid: 'test-uid', email: 'test@examp
 const reportsConfig = vi.fn().mockResolvedValue({ enabled: false });
 const reportsGenerate = vi.fn();
 const reportsList = vi.fn().mockResolvedValue([]);
+const billingCredits = vi.fn().mockResolvedValue({ freeAccess: false, balance: 0, packs: [] });
+const billingCheckout = vi.fn();
 
 vi.mock('@/lib/api', () => {
   class MockApiError extends Error {
@@ -52,16 +62,20 @@ vi.mock('@/lib/api', () => {
         generate: (...args: unknown[]) => reportsGenerate(...args),
         list: (...args: unknown[]) => reportsList(...args),
       },
+      billing: {
+        credits: (...args: unknown[]) => billingCredits(...args),
+        checkout: (...args: unknown[]) => billingCheckout(...args),
+      },
     },
     ApiError: MockApiError,
   };
 });
 
-function renderPage() {
+function renderPage(initialEntry = '/scout') {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
     <QueryClientProvider client={queryClient}>
-      <MemoryRouter initialEntries={['/scout']}>
+      <MemoryRouter initialEntries={[initialEntry]}>
         <AuthProvider>
           <Routes>
             <Route path="/scout" element={<ScoutPage />} />
@@ -97,6 +111,7 @@ describe('ScoutPage', () => {
     matchesList.mockResolvedValue([]);
     reportsConfig.mockResolvedValue({ enabled: false });
     reportsList.mockResolvedValue([]);
+    billingCredits.mockResolvedValue({ freeAccess: false, balance: 0, packs: [] });
     setMockUser(makeMockUser());
   });
 
@@ -257,6 +272,7 @@ describe('ScoutPage — AI reports feature disabled', () => {
     matchesList.mockResolvedValue([]);
     reportsConfig.mockResolvedValue({ enabled: false });
     reportsList.mockResolvedValue([]);
+    billingCredits.mockResolvedValue({ freeAccess: false, balance: 0, packs: [] });
     setMockUser(makeMockUser());
   });
 
@@ -293,6 +309,7 @@ describe('ScoutPage — AI reports feature enabled', () => {
     matchesList.mockResolvedValue([]);
     reportsConfig.mockResolvedValue({ enabled: true });
     reportsList.mockResolvedValue([]);
+    billingCredits.mockResolvedValue({ freeAccess: false, balance: 0, packs: [] });
     setMockUser(makeMockUser());
   });
 
@@ -408,6 +425,7 @@ describe('ScoutPage — V7-B.1 persistence across refresh / re-scout', () => {
     matchesList.mockResolvedValue([]);
     reportsConfig.mockResolvedValue({ enabled: true });
     reportsList.mockResolvedValue([]);
+    billingCredits.mockResolvedValue({ freeAccess: false, balance: 0, packs: [] });
     setMockUser(makeMockUser());
   });
 
@@ -494,5 +512,142 @@ describe('ScoutPage — V7-B.1 persistence across refresh / re-scout', () => {
     expect(await screen.findByText('Past AI Reports')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /PowPow/ })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /^Pandem1c/ })).not.toBeInTheDocument();
+  });
+});
+
+describe('ScoutPage — V7-C billing (free access)', () => {
+  beforeEach(() => {
+    resetAuthMock();
+    vi.clearAllMocks();
+    matchesList.mockResolvedValue([]);
+    reportsConfig.mockResolvedValue({ enabled: true, freeAccess: true, billingEnabled: true });
+    reportsList.mockResolvedValue([]);
+    billingCredits.mockResolvedValue({ freeAccess: true, balance: 0, packs: [] });
+    setMockUser(makeMockUser());
+  });
+
+  it('shows "Free access" and no "Buy credits" affordance for an allowlisted uid', async () => {
+    const user = userEvent.setup();
+    scoutLookup.mockResolvedValue(REPORT);
+
+    renderPage();
+    await user.type(screen.getByLabelText(/start\.gg profile URL/), 'user/07dc2239');
+    await user.click(screen.getByRole('button', { name: 'Scout' }));
+    await screen.findByText('Pandem1c');
+
+    expect(screen.getByText('Free access')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Buy credits' })).not.toBeInTheDocument();
+  });
+});
+
+describe('ScoutPage — V7-C billing (paid, non-allowlisted)', () => {
+  beforeEach(() => {
+    resetAuthMock();
+    vi.clearAllMocks();
+    matchesList.mockResolvedValue([]);
+    reportsConfig.mockResolvedValue({ enabled: true, freeAccess: false, billingEnabled: true });
+    reportsList.mockResolvedValue([]);
+    billingCredits.mockResolvedValue({
+      freeAccess: false,
+      balance: 3,
+      packs: [
+        { id: 'pack5', credits: 5, amountCents: 800, label: '5 reports' },
+        { id: 'pack15', credits: 15, amountCents: 2000, label: '15 reports' },
+      ],
+    });
+    setMockUser(makeMockUser());
+  });
+
+  it('shows the credit balance and a "Buy credits" affordance', async () => {
+    const user = userEvent.setup();
+    scoutLookup.mockResolvedValue(REPORT);
+
+    renderPage();
+    await user.type(screen.getByLabelText(/start\.gg profile URL/), 'user/07dc2239');
+    await user.click(screen.getByRole('button', { name: 'Scout' }));
+    await screen.findByText('Pandem1c');
+
+    expect(await screen.findByText('3 credits')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Buy credits' })).toBeInTheDocument();
+  });
+
+  it('clicking "Buy credits" opens the BuyCreditsDialog', async () => {
+    const user = userEvent.setup();
+    scoutLookup.mockResolvedValue(REPORT);
+
+    renderPage();
+    await user.type(screen.getByLabelText(/start\.gg profile URL/), 'user/07dc2239');
+    await user.click(screen.getByRole('button', { name: 'Scout' }));
+    await screen.findByText('Pandem1c');
+
+    await user.click(screen.getByRole('button', { name: 'Buy credits' }));
+
+    expect(await screen.findByText('Buy report credits')).toBeInTheDocument();
+  });
+
+  it('a 402 from generation opens the BuyCreditsDialog automatically', async () => {
+    const user = userEvent.setup();
+    scoutLookup.mockResolvedValue(REPORT);
+    reportsGenerate.mockRejectedValue(
+      new ApiError(402, 'You need report credits — buy a pack to continue'),
+    );
+
+    renderPage();
+    await user.type(screen.getByLabelText(/start\.gg profile URL/), 'user/07dc2239');
+    await user.click(screen.getByRole('button', { name: 'Scout' }));
+    await screen.findByText('Pandem1c');
+
+    await user.click(screen.getByRole('button', { name: 'Generate AI report' }));
+
+    expect(await screen.findByText('Buy report credits')).toBeInTheDocument();
+    // The generic destructive error alert is suppressed for a 402 — the
+    // dialog itself is the feedback.
+    expect(
+      screen.queryByText('You need report credits — buy a pack to continue'),
+    ).not.toBeInTheDocument();
+  });
+});
+
+describe('ScoutPage — V7-C Stripe Checkout return trip', () => {
+  beforeEach(() => {
+    resetAuthMock();
+    vi.clearAllMocks();
+    matchesList.mockResolvedValue([]);
+    reportsConfig.mockResolvedValue({ enabled: true, freeAccess: false, billingEnabled: true });
+    reportsList.mockResolvedValue([]);
+    billingCredits.mockResolvedValue({
+      freeAccess: false,
+      balance: 5,
+      packs: [{ id: 'pack5', credits: 5, amountCents: 800, label: '5 reports' }],
+    });
+    setMockUser(makeMockUser());
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('shows a success toast and re-polls credits on ?billing=success, then strips the param', async () => {
+    renderPage('/scout?billing=success');
+
+    await waitFor(() =>
+      expect(toastSuccess).toHaveBeenCalledWith(expect.stringMatching(/credits/i)),
+    );
+    await waitFor(() => expect(billingCredits).toHaveBeenCalled());
+  });
+
+  it('shows a neutral toast on ?billing=cancelled', async () => {
+    renderPage('/scout?billing=cancelled');
+
+    await waitFor(() =>
+      expect(toastPlain).toHaveBeenCalledWith(expect.stringMatching(/cancelled/i)),
+    );
+  });
+
+  it('does not show any billing toast without a billing query param', () => {
+    renderPage('/scout');
+
+    expect(toastSuccess).not.toHaveBeenCalled();
+    expect(toastPlain).not.toHaveBeenCalled();
   });
 });

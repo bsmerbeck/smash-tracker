@@ -1,6 +1,9 @@
 import type { z } from 'zod';
 import {
+  checkoutRequestSchema,
+  checkoutResponseSchema,
   createGroupRequestSchema,
+  creditsStatusSchema,
   errorResponseSchema,
   fighterSelectionSchema,
   generateReportRequestSchema,
@@ -22,6 +25,7 @@ import {
   tournamentEntryListSchema,
   userProfileSchema,
   type CreateMatchInput,
+  type CreditPackId,
   type FighterSelectionInput,
   type Match,
   type ScoutQuery,
@@ -305,6 +309,16 @@ export const api = {
     /** DELETE /api/groups/:id — owner only. */
     remove: (id: string) =>
       apiRequest<void>(`/api/groups/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+  },
+  billing: {
+    /** GET /api/billing/credits — the signed-in user's free-access flag, credit balance, and the available packs. */
+    credits: () => apiRequestParsed('/api/billing/credits', creditsStatusSchema),
+    /** POST /api/billing/checkout — creates a Stripe Checkout Session for a credit pack; returns the URL to redirect to. */
+    checkout: (packId: CreditPackId) =>
+      apiRequestParsed('/api/billing/checkout', checkoutResponseSchema, {
+        method: 'POST',
+        body: checkoutRequestSchema.parse({ packId }),
+      }),
   },
 };
 
