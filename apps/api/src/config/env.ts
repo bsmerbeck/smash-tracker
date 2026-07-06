@@ -61,6 +61,16 @@ const envSchema = z.object({
   STRIPE_SECRET_KEY: z.string().optional(),
   /** Signing secret for the `POST /api/billing/webhook` endpoint. */
   STRIPE_WEBHOOK_SECRET: z.string().optional(),
+
+  // ---- V8-A: parry.gg integration (optional — when absent, the
+  // /api/integrations/parrygg routes answer 503) ---------------------------
+  /**
+   * parry.gg API key, passed as the `X-API-KEY` call metadata on every
+   * gRPC-Web request. There is no OAuth flow for parry.gg — a single
+   * server-held key authenticates all reads (linking is proven separately,
+   * via a bio-text verification code; see routes/parrygg.ts).
+   */
+  PARRYGG_API_KEY: z.string().optional(),
 });
 
 export type Env = z.infer<typeof envSchema>;
@@ -172,4 +182,21 @@ export function getStripeConfig(env: Env): StripeConfig | null {
     secretKey: env.STRIPE_SECRET_KEY,
     webhookSecret: env.STRIPE_WEBHOOK_SECRET,
   };
+}
+
+export interface ParryggConfig {
+  apiKey: string;
+}
+
+/**
+ * Assembles the parry.gg config when present, else null — the routes then
+ * respond 503, same pattern as `getStartggConfig`. A single env var (no
+ * "all-or-nothing" tuple needed, since parry.gg has no OAuth app
+ * credentials to configure).
+ */
+export function getParryggConfig(env: Env): ParryggConfig | null {
+  if (!env.PARRYGG_API_KEY) {
+    return null;
+  }
+  return { apiKey: env.PARRYGG_API_KEY };
 }

@@ -22,6 +22,7 @@ import {
   useStartggSync,
   useStartggUnlink,
 } from '@/hooks/useStartgg';
+import { ParryggCard } from './components/ParryggCard';
 
 function describeSummary(summary: StartggSyncSummary): string {
   const skipped =
@@ -157,6 +158,8 @@ export function IntegrationsPage() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      <ParryggCard />
     </div>
   );
 }

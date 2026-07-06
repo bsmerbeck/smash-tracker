@@ -16,6 +16,12 @@ import {
   opponentListSchema,
   opponentNoteMapSchema,
   opponentNoteSchema,
+  parryggLinkRequestSchema,
+  parryggSearchResultListSchema,
+  parryggStatusSchema,
+  parryggSyncSummarySchema,
+  parryggVerificationCompleteResponseSchema,
+  parryggVerificationStartResponseSchema,
   reportsConfigSchema,
   scoutReportDataSchema,
   scoutReportRecordSchema,
@@ -28,6 +34,7 @@ import {
   type CreditPackId,
   type FighterSelectionInput,
   type Match,
+  type ParryggLinkRequest,
   type ScoutQuery,
   type UpdateMatchInput,
   type UpsertOpponentAliasInput,
@@ -255,6 +262,43 @@ export const api = {
       }),
     /** DELETE /api/integrations/startgg/link */
     unlink: () => apiRequest<void>('/api/integrations/startgg/link', { method: 'DELETE' }),
+  },
+  parrygg: {
+    /** GET /api/integrations/parrygg/status */
+    status: () => apiRequestParsed('/api/integrations/parrygg/status', parryggStatusSchema),
+    /** GET /api/integrations/parrygg/search?tag=... — up to 10 candidates. */
+    search: (tag: string) =>
+      apiRequestParsed(
+        `/api/integrations/parrygg/search?tag=${encodeURIComponent(tag)}`,
+        parryggSearchResultListSchema,
+      ),
+    /** POST /api/integrations/parrygg/link */
+    link: (input: ParryggLinkRequest) =>
+      apiRequestParsed('/api/integrations/parrygg/link', parryggStatusSchema, {
+        method: 'POST',
+        body: parryggLinkRequestSchema.parse(input),
+      }),
+    /** POST /api/integrations/parrygg/unlink */
+    unlink: () => apiRequest<void>('/api/integrations/parrygg/unlink', { method: 'POST' }),
+    /** POST /api/integrations/parrygg/verify/start */
+    verifyStart: () =>
+      apiRequestParsed(
+        '/api/integrations/parrygg/verify/start',
+        parryggVerificationStartResponseSchema,
+        { method: 'POST' },
+      ),
+    /** POST /api/integrations/parrygg/verify/complete */
+    verifyComplete: () =>
+      apiRequestParsed(
+        '/api/integrations/parrygg/verify/complete',
+        parryggVerificationCompleteResponseSchema,
+        { method: 'POST' },
+      ),
+    /** POST /api/integrations/parrygg/sync */
+    sync: () =>
+      apiRequestParsed('/api/integrations/parrygg/sync', parryggSyncSummarySchema, {
+        method: 'POST',
+      }),
   },
   tournaments: {
     /** GET /api/tournaments */
