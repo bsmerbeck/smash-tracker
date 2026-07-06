@@ -41,6 +41,10 @@ function describeError(error: unknown, fallback: string): string {
 const CREDITS_POLL_ATTEMPTS = 5;
 const CREDITS_POLL_INTERVAL_MS = 2000;
 
+function formatUsd(amountCents: number): string {
+  return (amountCents / 100).toLocaleString('en-US', { style: 'currency', currency: 'USD' });
+}
+
 /**
  * `/scout` — "opponent research before bracket": scout ANY start.gg player
  * (not just linked accounts) by pasting their profile URL, slug, or numeric
@@ -68,13 +72,15 @@ const CREDITS_POLL_INTERVAL_MS = 2000;
  * reports (they're already shown above) and only lists OTHER players'.
  *
  * V7-C: report generation costs one credit for everyone except allowlisted
- * uids (`reportsConfig.freeAccess`). A small indicator next to the
- * generate/regenerate button shows "Free access" or "N credits"; a "Buy
- * credits" affordance opens `BuyCreditsDialog` for non-free users, which also
- * opens automatically when generation answers 402. On return from Stripe
- * Checkout (`?billing=success`/`?billing=cancelled`), a banner surfaces the
- * outcome and — on success — the credits query is re-polled for a few
- * seconds since webhook delivery can lag the redirect.
+ * uids. The billing UI keys off the `GET /api/billing/credits` query (live,
+ * short-TTL) rather than `reportsConfig.billingEnabled` (cached long): a
+ * small indicator shows "Free access" or "N credits", and when the user
+ * isn't free and packs are purchasable a "Buy credits" affordance plus a
+ * pack-pricing line appear next to the button. `BuyCreditsDialog` opens from
+ * that affordance and automatically when generation answers 402. On return
+ * from Stripe Checkout (`?billing=success`/`?billing=cancelled`), a banner
+ * surfaces the outcome and — on success — the credits query is re-polled for
+ * a few seconds since webhook delivery can lag the redirect.
  */
 export function ScoutPage() {
   const scout = useScoutPlayer();
@@ -90,8 +96,18 @@ export function ScoutPage() {
 
   const report: ScoutReportData | undefined = scout.data;
   const aiReportsEnabled = reportsConfig.data?.enabled ?? false;
-  const freeAccess = reportsConfig.data?.freeAccess ?? false;
-  const billingEnabled = reportsConfig.data?.billingEnabled ?? false;
+  // Billing UI keys off the credits query, NOT reportsConfig.billingEnabled:
+  // the credits query (`GET /api/billing/credits`) has a short staleTime and
+  // reflects live Stripe state, whereas reportsConfig is cached long and can
+  // lag behind Stripe being turned on server-side — which would leave a
+  // charged user (402) with no way to buy. `freeAccess` still falls back to
+  // reportsConfig so the owner's indicator renders before credits loads.
+  const creditsData = credits.data;
+  const freeAccess = creditsData?.freeAccess ?? reportsConfig.data?.freeAccess ?? false;
+  const availablePacks = creditsData?.packs ?? [];
+  const canBuyCredits = !freeAccess && availablePacks.length > 0;
+  const lastGenerateWas402 =
+    generateReport.error instanceof ApiError && generateReport.error.status === 402;
 
   // Surface the Stripe Checkout return trip (the API redirects back with a
   // `billing` query param) and strip it from the URL once handled.
@@ -212,12 +228,12 @@ export function ScoutPage() {
                       : 'Generate AI report'}
                 </Button>
 
-                {(freeAccess || billingEnabled) && (
+                {(freeAccess || creditsData) && (
                   <span className="text-sm text-muted-foreground">
-                    {freeAccess ? 'Free access' : `${credits.data?.balance ?? 0} credits`}
+                    {freeAccess ? 'Free access' : `${creditsData?.balance ?? 0} credits`}
                   </span>
                 )}
-                {!freeAccess && billingEnabled && (
+                {canBuyCredits && (
                   <Button
                     type="button"
                     variant="link"
@@ -228,9 +244,36 @@ export function ScoutPage() {
                   </Button>
                 )}
               </div>
+              {/* Explain what a report costs and the available packs, right by
+                  the button, so the pricing is visible before checkout. */}
+              {canBuyCredits && (
+                <p className="text-sm text-muted-foreground">
+                  Each report costs 1 credit.{' '}
+                  {availablePacks
+                    .map((pack) => `${pack.label} for ${formatUsd(pack.amountCents)}`)
+                    .join(' · ')}
+                  .
+                </p>
+              )}
               {generateReport.isPending && (
                 <p className="text-sm text-muted-foreground">
                   Generating report — this usually takes a minute or two.
+                </p>
+              )}
+              {/* A 402 auto-opens the buy dialog; this leaves a persistent cue
+                  after it's dismissed rather than a scary red error. */}
+              {lastGenerateWas402 && canBuyCredits && !generateReport.isPending && (
+                <p className="text-sm text-muted-foreground">
+                  You're out of credits.{' '}
+                  <Button
+                    type="button"
+                    variant="link"
+                    className="h-auto p-0 text-sm"
+                    onClick={() => setBuyCreditsOpen(true)}
+                  >
+                    Buy a pack
+                  </Button>{' '}
+                  to generate this report.
                 </p>
               )}
               {generateReport.isError &&
@@ -274,11 +317,11 @@ export function ScoutPage() {
         </div>
       )}
 
-      {billingEnabled && !freeAccess && (
+      {canBuyCredits && (
         <BuyCreditsDialog
           open={buyCreditsOpen}
           onOpenChange={setBuyCreditsOpen}
-          packs={credits.data?.packs ?? []}
+          packs={availablePacks}
         />
       )}
     </div>
