@@ -1,4 +1,4 @@
 User-agent: *
 Allow: /
 
-Sitemap: https://smash-tracker-f97b7.web.app/sitemap.xml
+Sitemap: https://grandfinals.gg/sitemap.xml
