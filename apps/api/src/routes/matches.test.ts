@@ -259,6 +259,70 @@ describe('POST /api/matches', () => {
     expect(body).not.toHaveProperty('source');
     expect(body).not.toHaveProperty('externalId');
   });
+
+  it('accepts and stores a gsp reading', async () => {
+    const { app, database } = buildTestApp();
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/matches',
+      headers: authHeader(),
+      payload: { ...validCreateInput, matchType: 'quickplay', gsp: 9_420_000 },
+    });
+
+    expect(response.statusCode).toBe(201);
+    expect(response.json()).toMatchObject({ gsp: 9_420_000 });
+
+    const dump = database.dump() as Record<string, unknown>;
+    const matches = dump.matches as Record<string, Record<string, unknown>>;
+    const stored = Object.values(matches[TEST_UID]!)[0]!;
+    expect(stored).toMatchObject({ gsp: 9_420_000 });
+  });
+
+  it('omits gsp from the stored record when not provided', async () => {
+    const { app, database } = buildTestApp();
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/matches',
+      headers: authHeader(),
+      payload: validCreateInput,
+    });
+
+    expect(response.statusCode).toBe(201);
+    expect(response.json()).not.toHaveProperty('gsp');
+
+    const dump = database.dump() as Record<string, unknown>;
+    const matches = dump.matches as Record<string, Record<string, unknown>>;
+    const stored = Object.values(matches[TEST_UID]!)[0]!;
+    expect(stored).not.toHaveProperty('gsp');
+  });
+
+  it('returns 400 when gsp is negative', async () => {
+    const { app } = buildTestApp();
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/matches',
+      headers: authHeader(),
+      payload: { ...validCreateInput, gsp: -1 },
+    });
+
+    expect(response.statusCode).toBe(400);
+  });
+
+  it('returns 400 when gsp is not an integer', async () => {
+    const { app } = buildTestApp();
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/matches',
+      headers: authHeader(),
+      payload: { ...validCreateInput, gsp: 123.45 },
+    });
+
+    expect(response.statusCode).toBe(400);
+  });
 });
 
 describe('PATCH /api/matches/:id', () => {
@@ -559,6 +623,93 @@ describe('PATCH /api/matches/:id', () => {
         vodUrl: 'https://youtube.com/watch?v=abc123',
         vodTimestamps: [{ seconds: -5, note: 'negative seconds' }],
       },
+    });
+
+    expect(response.statusCode).toBe(400);
+  });
+
+  it('sets a gsp reading', async () => {
+    const { app, database } = buildTestApp();
+    database.seed(`matches/${TEST_UID}/existingKey`, {
+      fighter_id: 1,
+      opponent_id: 8,
+      time: 1700000000000,
+      win: false,
+    });
+
+    const response = await app.inject({
+      method: 'PATCH',
+      url: '/api/matches/existingKey',
+      headers: authHeader(),
+      payload: { ...validCreateInput, matchType: 'quickplay', gsp: 8_500_000 },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({ gsp: 8_500_000 });
+  });
+
+  it('updates an existing gsp reading', async () => {
+    const { app, database } = buildTestApp();
+    database.seed(`matches/${TEST_UID}/existingKey`, {
+      fighter_id: 1,
+      opponent_id: 8,
+      time: 1700000000000,
+      win: false,
+      gsp: 8_000_000,
+    });
+
+    const response = await app.inject({
+      method: 'PATCH',
+      url: '/api/matches/existingKey',
+      headers: authHeader(),
+      payload: { ...validCreateInput, matchType: 'quickplay', gsp: 8_100_000 },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({ gsp: 8_100_000 });
+  });
+
+  it('clears gsp when omitted from the update payload', async () => {
+    const { app, database } = buildTestApp();
+    database.seed(`matches/${TEST_UID}/existingKey`, {
+      fighter_id: 1,
+      opponent_id: 8,
+      time: 1700000000000,
+      win: false,
+      gsp: 8_000_000,
+    });
+
+    const response = await app.inject({
+      method: 'PATCH',
+      url: '/api/matches/existingKey',
+      headers: authHeader(),
+      payload: validCreateInput,
+    });
+
+    expect(response.statusCode).toBe(200);
+    const body = response.json();
+    expect(body).not.toHaveProperty('gsp');
+
+    const dump = database.dump() as Record<string, unknown>;
+    const matches = dump.matches as Record<string, Record<string, unknown>>;
+    const stored = matches[TEST_UID]!.existingKey!;
+    expect(stored).not.toHaveProperty('gsp');
+  });
+
+  it('returns 400 when gsp is negative', async () => {
+    const { app, database } = buildTestApp();
+    database.seed(`matches/${TEST_UID}/existingKey`, {
+      fighter_id: 1,
+      opponent_id: 8,
+      time: 1700000000000,
+      win: false,
+    });
+
+    const response = await app.inject({
+      method: 'PATCH',
+      url: '/api/matches/existingKey',
+      headers: authHeader(),
+      payload: { ...validCreateInput, gsp: -1 },
     });
 
     expect(response.statusCode).toBe(400);

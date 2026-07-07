@@ -10,6 +10,7 @@ import {
   groupLeaderboardSchema,
   groupListSchema,
   groupRecordSchema,
+  gspSettingsSchema,
   joinGroupRequestSchema,
   matchSchema,
   opponentAliasMapSchema,
@@ -47,6 +48,7 @@ import {
   type ParryggLoginStartRequest,
   type ScoutQuery,
   type UpdateMatchInput,
+  type UpsertGspSettingsInput,
   type UpsertOpponentAliasInput,
   type UpsertOpponentNoteInput,
 } from '@smash-tracker/shared';
@@ -400,6 +402,13 @@ export const api = {
         method: 'POST',
         body: checkoutRequestSchema.parse({ packId }),
       }),
+  },
+  gspSettings: {
+    /** GET /api/gsp-settings — the signed-in user's Elite Smash threshold setting (defaults are synthesized server-side, never 404s). */
+    get: () => apiRequestParsed('/api/gsp-settings', gspSettingsSchema),
+    /** PUT /api/gsp-settings */
+    update: (input: UpsertGspSettingsInput) =>
+      apiRequestParsed('/api/gsp-settings', gspSettingsSchema, { method: 'PUT', body: input }),
   },
 };
 
