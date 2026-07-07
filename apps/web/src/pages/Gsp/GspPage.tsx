@@ -74,7 +74,7 @@ export function GspPage() {
 
   const series = getGspSeries(matches, fighter.id);
   const gainStats = getGspGainStats(series);
-  const lastGsp = series.length > 0 ? series[series.length - 1]!.gsp : null;
+  const lastPoint = series.length > 0 ? series[series.length - 1]! : null;
 
   return (
     <div className="flex flex-col gap-6">
@@ -82,7 +82,8 @@ export function GspPage() {
         <h1 className="text-2xl font-semibold tracking-tight">GSP Tracker</h1>
         <p className="max-w-lg text-sm text-muted-foreground">
           Global Smash Power is per-character and its exact formula is never published by Nintendo —
-          everything below is an estimate built from your own logged matches.
+          everything below is an estimate built from your own logged matches and a
+          community-reverse-engineered model of the hidden MMR behind GSP.
         </p>
         <GspFighterSelect
           fighter={fighter}
@@ -93,16 +94,16 @@ export function GspPage() {
 
       <GspHero series={series} settings={gspSettings} />
 
-      <GspCurve series={series} eliteThreshold={gspSettings.eliteThreshold} />
+      <GspCurve series={series} settings={gspSettings} />
 
-      <QuickLogger fighter={fighter} lastGsp={lastGsp} />
+      <QuickLogger fighter={fighter} lastPoint={lastPoint} settings={gspSettings} />
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         <GainsAnalysis stats={gainStats} />
-        <RoadToElite series={series} eliteThreshold={gspSettings.eliteThreshold} />
+        <RoadToElite series={series} settings={gspSettings} />
       </div>
 
-      <GspVsGlicko gspSeries={series} allMatches={matches} />
+      <GspVsGlicko gspSeries={series} allMatches={matches} settings={gspSettings} />
     </div>
   );
 }

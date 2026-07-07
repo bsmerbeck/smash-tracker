@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import {
   CategoryScale,
   Chart as ChartJS,
@@ -9,14 +10,21 @@ import {
   type ChartOptions,
 } from 'chart.js';
 import { Line } from 'react-chartjs-2';
-import type { GspPoint } from '@smash-tracker/shared';
+import type { GspPoint, GspSettings } from '@smash-tracker/shared';
+import { GSP_MODEL } from '@smash-tracker/shared';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { chartColors, darkChartOptions, redLineDataset } from '@/lib/chartTheme';
+import { calibrationFromSettings, computedEliteThreshold, toMmrSeries } from '../lib/gspMmrModel';
+import { useNowMs } from '../lib/useNowMs';
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Tooltip, Legend);
 
 /** Minimum GSP readings before the curve renders instead of the locked/empty state. */
 export const GSP_CURVE_UNLOCK_THRESHOLD = 2;
+
+/** The two y-axis scales the curve can plot (V10.1 adds the converted-MMR view). */
+export type GspCurveView = 'gsp' | 'mmr';
 
 function formatPointLabel(time: number): string {
   return new Date(time).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
@@ -41,6 +49,39 @@ export function buildGspCurveData(series: GspPoint[], eliteThreshold: number) {
       {
         label: 'Elite threshold',
         data: series.map(() => eliteThreshold),
+        borderColor: chartColors.grid,
+        backgroundColor: chartColors.grid,
+        borderDash: [6, 4],
+        pointRadius: 0,
+        pointHoverRadius: 0,
+        borderWidth: 1.5,
+        fill: false,
+        tension: 0,
+      },
+    ],
+  };
+}
+
+/**
+ * V10.1: the MMR view — every GSP reading converted through the community
+ * reverse-engineered model at its own log-time t (see
+ * ../lib/gspMmrModel.ts), with a flat Elite line at the fixed Elite entry
+ * MMR (1142). Same pure-builder convention as `buildGspCurveData`.
+ */
+export function buildMmrCurveData(series: GspPoint[], settings: GspSettings) {
+  const calibration = calibrationFromSettings(settings);
+  const mmrSeries = toMmrSeries(series, calibration);
+  return {
+    labels: mmrSeries.map((p) => formatPointLabel(p.time)),
+    datasets: [
+      {
+        label: 'Est. MMR',
+        ...redLineDataset(),
+        data: mmrSeries.map((p) => Math.round(p.mmr)),
+      },
+      {
+        label: `Elite (MMR ${GSP_MODEL.ELITE_MMR})`,
+        data: mmrSeries.map(() => GSP_MODEL.ELITE_MMR),
         borderColor: chartColors.grid,
         backgroundColor: chartColors.grid,
         borderDash: [6, 4],
@@ -88,38 +129,70 @@ function buildGspCurveOptions(series: GspPoint[]): ChartOptions<'line'> {
 }
 
 /**
- * GSP-over-time line chart for the selected fighter, with a dashed horizontal
- * line at the user's Elite Smash threshold setting (V10). Responsive per
+ * GSP-over-time line chart for the selected fighter (V10.1: with a GSP | MMR
+ * view toggle). The GSP view keeps V10's dashed line at the (now computed)
+ * Elite threshold; the MMR view plots the same readings converted to the
+ * hidden-MMR scale, where flat skill shows as a flat line instead of the
+ * steady inflation GSP's rising ceiling bakes in. Responsive per
  * `chartTheme`'s `maintainAspectRatio: false` convention (V9-C) — needs a
  * fixed-height wrapper div to actually fill.
  */
-export function GspCurve({
-  series,
-  eliteThreshold,
-}: {
-  series: GspPoint[];
-  eliteThreshold: number;
-}) {
+export function GspCurve({ series, settings }: { series: GspPoint[]; settings: GspSettings }) {
+  const nowMs = useNowMs();
+  const [view, setView] = useState<GspCurveView>('gsp');
   const hasEnoughReadings = series.length >= GSP_CURVE_UNLOCK_THRESHOLD;
+
+  const eliteThreshold = computedEliteThreshold(nowMs, calibrationFromSettings(settings));
 
   return (
     <Card>
       <CardHeader>
-        <CardTitle>GSP Curve</CardTitle>
+        <CardTitle className="flex items-center justify-between gap-2">
+          GSP Curve
+          <ToggleGroup
+            type="single"
+            variant="outline"
+            size="sm"
+            value={view}
+            onValueChange={(value) => {
+              if (value === 'gsp' || value === 'mmr') setView(value);
+            }}
+          >
+            <ToggleGroupItem value="gsp" aria-label="GSP view">
+              GSP
+            </ToggleGroupItem>
+            <ToggleGroupItem value="mmr" aria-label="MMR view">
+              MMR
+            </ToggleGroupItem>
+          </ToggleGroup>
+        </CardTitle>
       </CardHeader>
       <CardContent className="flex flex-col gap-4">
         {hasEnoughReadings ? (
           <>
             <div className="h-64">
               <Line
-                data={buildGspCurveData(series, eliteThreshold)}
+                data={
+                  view === 'mmr'
+                    ? buildMmrCurveData(series, settings)
+                    : buildGspCurveData(series, eliteThreshold)
+                }
                 options={buildGspCurveOptions(series)}
               />
             </div>
-            <p className="text-xs text-muted-foreground">
-              Every point is a logged post-match GSP reading for this fighter. The dashed line is
-              your Elite Smash threshold setting — an estimate, not a Nintendo-published value.
-            </p>
+            {view === 'mmr' ? (
+              <p className="text-xs text-muted-foreground">
+                Estimated hidden MMR behind each reading (community-reverse-engineered model) —
+                unlike GSP, it doesn&apos;t inflate over time, so a flat line means flat skill.
+                Dashed line: Elite entry at MMR {GSP_MODEL.ELITE_MMR}.
+              </p>
+            ) : (
+              <p className="text-xs text-muted-foreground">
+                Every point is a logged post-match GSP reading for this fighter. The dashed line is
+                the computed Elite Smash threshold — a community-model estimate, not a
+                Nintendo-published value.
+              </p>
+            )}
           </>
         ) : (
           <p className="text-sm text-muted-foreground">
