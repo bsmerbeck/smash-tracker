@@ -279,6 +279,34 @@ describe('POST /api/matches', () => {
     expect(stored).toMatchObject({ gsp: 9_420_000 });
   });
 
+  it('accepts an anonymous (blank) opponent for online/GSP matches and omits it + the registry entry', async () => {
+    const { app, database } = buildTestApp();
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/matches',
+      headers: authHeader(),
+      payload: {
+        ...validCreateInput,
+        opponent: '',
+        matchType: 'quickplay',
+        gsp: 12_345_678,
+      },
+    });
+
+    expect(response.statusCode).toBe(201);
+    expect(response.json()).not.toHaveProperty('opponent');
+
+    const dump = database.dump() as Record<string, unknown>;
+    const matches = dump.matches as Record<string, Record<string, unknown>>;
+    const stored = Object.values(matches[TEST_UID]!)[0]!;
+    expect(stored).not.toHaveProperty('opponent');
+    expect(stored).toMatchObject({ gsp: 12_345_678 });
+    // No blank key written into the opponents registry.
+    const opponents = (dump.opponents ?? {}) as Record<string, unknown>;
+    expect(opponents[TEST_UID] ?? {}).toEqual({});
+  });
+
   it('omits gsp from the stored record when not provided', async () => {
     const { app, database } = buildTestApp();
 

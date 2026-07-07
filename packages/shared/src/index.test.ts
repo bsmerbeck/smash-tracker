@@ -252,13 +252,25 @@ describe('createMatchInputSchema', () => {
     expect(createMatchInputSchema.parse(input)).toEqual({ ...input, notes: '' });
   });
 
-  it('rejects a blank opponent name', () => {
+  it('treats a blank opponent name as absent (anonymous online/GSP matches)', () => {
+    const parsed = createMatchInputSchema.parse({
+      fighter_id: 1,
+      opponent_id: 8,
+      map: { id: 0, name: 'no selection' },
+      opponent: '   ',
+      matchType: 'quickplay',
+      win: true,
+    });
+    expect(parsed.opponent).toBeUndefined();
+  });
+
+  it('still rejects an opponent name with RTDB-illegal characters', () => {
     expect(() =>
       createMatchInputSchema.parse({
         fighter_id: 1,
         opponent_id: 8,
         map: { id: 0, name: 'no selection' },
-        opponent: '',
+        opponent: 'bad/name',
         matchType: 'none',
         win: true,
       }),

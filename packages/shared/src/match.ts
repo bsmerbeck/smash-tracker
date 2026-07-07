@@ -191,14 +191,23 @@ function containsRtdbIllegalChar(value: string): boolean {
   return RTDB_RESERVED_KEY_CHARS.some((char) => value.includes(char));
 }
 
-const opponentNameInputSchema = z
+/**
+ * Opponent name for match entry where the opponent may legitimately be
+ * anonymous — online quickplay (the GSP logger, V10) matches you against
+ * random players whose tag you never see. Trims + lowercases + rejects
+ * RTDB-illegal characters when a name IS given, but a blank/whitespace
+ * string transforms to `undefined` (→ omitted from the stored record, whose
+ * `opponent` is already optional) instead of failing validation. Manual
+ * entry keeps its own client-side name requirement (MatchForm/SetWizard).
+ */
+const optionalOpponentNameInputSchema = z
   .string()
   .trim()
-  .min(1, 'Opponent name is required')
   .transform((value) => value.toLowerCase())
   .refine((value) => !containsRtdbIllegalChar(value), {
     message: 'Opponent name cannot contain . # $ [ ] / or control characters',
-  });
+  })
+  .transform((value) => (value ? value : undefined));
 
 /**
  * A trimmed, 1-80 char optional free-text name field (`eventName` /
@@ -239,7 +248,7 @@ export const createMatchInputSchema = z.object({
   fighter_id: z.number().int().positive(),
   opponent_id: z.number().int().positive(),
   map: matchStageSchema,
-  opponent: opponentNameInputSchema,
+  opponent: optionalOpponentNameInputSchema,
   notes: z.string().default(''),
   matchType: matchTypeSchema,
   win: z.boolean(),
