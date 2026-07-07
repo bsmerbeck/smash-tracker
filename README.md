@@ -4,8 +4,9 @@ Live demo: https://smash-tracker-f97b7.web.app/
 
 Smash Tracker is a match-tracking app for **Super Smash Bros. Ultimate**. Sign in, pick a
 primary/secondary fighter, log wins and losses (opponent, stage, match type, notes) after each
-set, and review your results: win/loss trends, best/worst matchups, per-stage performance, and
-per-opponent history.
+set, and review your results: win/loss trends, best/worst matchups, per-stage performance,
+per-opponent history, and a per-fighter GSP (Global Smash Power) tracker with an Elite Smash
+projection.
 
 This repo is a full rewrite of an older Create React App + Redux + Firebase client-only app into
 a typed monorepo with a real API layer in front of Firebase, kept as a portfolio piece.
@@ -342,6 +343,12 @@ writes (`users/{uid}`, `primaryFighters/{uid}`, `secondaryFighters/{uid}`, `matc
 `opponents/{uid}`), reverse-engineered field-for-field from the legacy app so existing production
 data keeps working. See [`packages/shared/README.md`](./packages/shared/README.md) for the full
 shape reference and provenance notes.
+
+GSP (Global Smash Power) tracking works the same way: matches optionally carry a `gsp` reading,
+and the per-fighter Elite Smash entry threshold (`gspSettings/{uid}`) is **user-maintained** —
+there is no public Elite Smash API, so the GSP page links out to
+[elitegsp.com](https://elitegsp.com)'s crowd-sourced estimate for reference and lets you type in
+(and update) the number yourself.
 
 ### Disclaimer
 
