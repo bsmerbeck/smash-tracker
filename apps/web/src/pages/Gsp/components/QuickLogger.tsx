@@ -19,6 +19,7 @@ import { NO_SELECTION_STAGE } from '@/data/stages';
 import { alphaStageList, stageOptions } from '@/lib/stageOptions';
 import { StageOption } from '@/components/StageOption';
 import { useCreateMatch } from '@/hooks/useCreateMatch';
+import { parseGspNumber } from '../lib/parseGspNumber';
 
 /**
  * Quick-log the core online-quickplay session loop: pick the opponent's
@@ -56,9 +57,9 @@ export function QuickLogger({ fighter, lastGsp }: { fighter: Fighter; lastGsp: n
       toast.error('Mark this match as a win or loss.');
       return;
     }
-    const gsp = Number(gspInput);
-    if (!Number.isInteger(gsp) || gsp < 0) {
-      toast.error('Enter the GSP shown after the match (whole number, 0 or more).');
+    const gsp = parseGspNumber(gspInput);
+    if (gsp === null) {
+      toast.error('Enter the GSP shown after the match — commas are fine, e.g. 10,300,000.');
       return;
     }
 
@@ -148,14 +149,16 @@ export function QuickLogger({ fighter, lastGsp }: { fighter: Fighter; lastGsp: n
             <label className="text-sm font-medium" htmlFor="gsp-logger-gsp">
               GSP After Match
             </label>
+            {/* type="text": browsers reject comma pastes into type="number"
+                outright, and elitegsp.com / the game's UI both format GSP
+                with thousands separators. */}
             <Input
               id="gsp-logger-gsp"
-              type="number"
-              min={0}
-              step={1}
+              type="text"
+              inputMode="numeric"
               value={gspInput}
               onChange={(e) => setGspInput(e.target.value)}
-              placeholder="e.g. 9420000"
+              placeholder="e.g. 9,420,000"
             />
           </div>
 
