@@ -1,5 +1,7 @@
 import type { Database } from 'firebase-admin/database';
 import {
+  DEFAULT_ELITE_THRESHOLD,
+  gspSettingsSchema,
   matchRecordSchema,
   opponentAliasMapSchema,
   opponentMapSchema,
@@ -8,12 +10,14 @@ import {
   userSchema,
   type CreateMatchInput,
   type FighterSelectionInput,
+  type GspSettings,
   type Match,
   type MatchRecord,
   type OpponentAliasMap,
   type OpponentNote,
   type OpponentNoteMap,
   type UpdateMatchInput,
+  type UpsertGspSettingsInput,
   type UpsertOpponentNoteInput,
   type User,
 } from '@smash-tracker/shared';
@@ -109,6 +113,7 @@ export class RtdbService {
       ...(input.tournamentName !== undefined ? { tournamentName: input.tournamentName } : {}),
       ...(input.vodUrl !== undefined ? { vodUrl: input.vodUrl } : {}),
       ...(input.vodTimestamps !== undefined ? { vodTimestamps: input.vodTimestamps } : {}),
+      ...(input.gsp !== undefined ? { gsp: input.gsp } : {}),
     };
 
     const ref = this.database.ref(`matches/${uid}`).push();
@@ -141,13 +146,14 @@ export class RtdbService {
       win: input.win,
       // See createMatch — RTDB rejects `undefined` values, so these are
       // only included when the input actually set them. Omitting
-      // vodUrl/vodTimestamps from the input is how a caller clears them,
+      // vodUrl/vodTimestamps/gsp from the input is how a caller clears them,
       // since this is a full overwrite (`.set()`, not a partial patch).
       ...(input.stocksLeft !== undefined ? { stocksLeft: input.stocksLeft } : {}),
       ...(input.eventName !== undefined ? { eventName: input.eventName } : {}),
       ...(input.tournamentName !== undefined ? { tournamentName: input.tournamentName } : {}),
       ...(input.vodUrl !== undefined ? { vodUrl: input.vodUrl } : {}),
       ...(input.vodTimestamps !== undefined ? { vodTimestamps: input.vodTimestamps } : {}),
+      ...(input.gsp !== undefined ? { gsp: input.gsp } : {}),
     };
 
     await ref.set(record);
@@ -278,5 +284,34 @@ export class RtdbService {
       throw new NotFoundError(`Note for ${name} not found`);
     }
     await ref.remove();
+  }
+
+  // ---- gspSettings/{uid} --------------------------------------------------
+
+  /**
+   * Returns the user's saved GSP settings, or a synthesized default
+   * (`DEFAULT_ELITE_THRESHOLD`, `updatedAt: 0`) when they haven't saved any
+   * yet — chosen over a 404 so every caller (web hook included) can treat
+   * "no settings saved" and "settings saved" uniformly instead of branching
+   * on response status; `updatedAt: 0` lets the UI still detect "never
+   * actually saved" if it needs to (a real save always produces `Date.now()`,
+   * which is enormously larger).
+   */
+  async getGspSettings(uid: string): Promise<GspSettings> {
+    const snapshot = await this.database.ref(`gspSettings/${uid}`).get();
+    if (!snapshot.exists()) {
+      return { eliteThreshold: DEFAULT_ELITE_THRESHOLD, updatedAt: 0 };
+    }
+    return gspSettingsSchema.parse(snapshot.val());
+  }
+
+  /** Writes (fully replaces) the user's GSP settings, stamping `updatedAt` server-side (same convention as `setOpponentNote`). */
+  async setGspSettings(uid: string, input: UpsertGspSettingsInput): Promise<GspSettings> {
+    const settings: GspSettings = {
+      eliteThreshold: input.eliteThreshold,
+      updatedAt: Date.now(),
+    };
+    await this.database.ref(`gspSettings/${uid}`).set(gspSettingsSchema.parse(settings));
+    return settings;
   }
 }
