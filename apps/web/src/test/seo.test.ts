@@ -38,13 +38,13 @@ describe('SEO static files (apps/web/public/)', () => {
     const contents = readPublicFile('/public/robots.txt');
     expect(contents).toMatch(/User-agent:\s*\*/);
     expect(contents).toMatch(/Allow:\s*\//);
-    expect(contents).toContain('Sitemap: https://smash-tracker-f97b7.web.app/sitemap.xml');
+    expect(contents).toContain('Sitemap: https://grandfinals.gg/sitemap.xml');
   });
 
   it('sitemap.xml lists only the crawlable root route', () => {
     const contents = readPublicFile('/public/sitemap.xml');
     expect(contents).toContain('<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">');
-    expect(contents).toContain('<loc>https://smash-tracker-f97b7.web.app/</loc>');
+    expect(contents).toContain('<loc>https://grandfinals.gg/</loc>');
     // Every other route requires auth and can't be indexed, so exactly one
     // <url> entry is expected.
     expect(contents.match(/<url>/g)).toHaveLength(1);
