@@ -2,12 +2,20 @@ import { useState } from 'react';
 import type { ReactNode } from 'react';
 import { Pencil, Check, X } from 'lucide-react';
 import type { GspPoint, GspSettings } from '@smash-tracker/shared';
+import { GSP_MODEL } from '@smash-tracker/shared';
 import { toast } from 'sonner';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useUpdateGspSettings } from '@/hooks/useGspSettings';
 import { parseGspNumber } from '../lib/parseGspNumber';
+import {
+  GSP_MMR_DOC_URL,
+  calibrationFromSettings,
+  computedEliteThreshold,
+  estimateMmrAt,
+} from '../lib/gspMmrModel';
+import { useNowMs } from '../lib/useNowMs';
 
 const ELITEGSP_URL = 'https://elitegsp.com';
 
@@ -31,23 +39,57 @@ export function getRecentGspWinRate(series: GspPoint[], windowSize = 20): number
 }
 
 /**
- * GSP page hero row: current GSP reading, the user-editable Elite Smash
- * threshold (V10 — no public API for this, so the user maintains it, linking
- * out to elitegsp.com's crowd-sourced estimate for reference), distance to
- * Elite (or a celebration badge once at/above it), and recent GSP win rate.
+ * GSP page hero row (V10.1): current GSP reading, the estimated hidden MMR
+ * behind it (community reverse-engineered model — see
+ * packages/shared/src/gspMmr.ts), the COMPUTED Elite Smash threshold (still
+ * editable — an edit now recalibrates the model's time-drift parameter
+ * rather than pinning the displayed value), distance to Elite reframed on
+ * the MMR scale (Elite entry is a fixed MMR, 1142, unlike the ever-drifting
+ * GSP threshold), and recent GSP win rate.
  */
 export function GspHero({ series, settings }: { series: GspPoint[]; settings: GspSettings }) {
-  const currentGsp = series.length > 0 ? series[series.length - 1]!.gsp : null;
+  const lastPoint = series.length > 0 ? series[series.length - 1]! : null;
   const winRate = getRecentGspWinRate(series);
-  const isElite = currentGsp !== null && currentGsp >= settings.eliteThreshold;
+
+  const calibration = calibrationFromSettings(settings);
+  const estimate =
+    lastPoint !== null ? estimateMmrAt(lastPoint.gsp, lastPoint.time, calibration) : null;
+  const roundedMmr = estimate !== null ? Math.round(estimate.mmr) : null;
+  const isElite = roundedMmr !== null && roundedMmr >= GSP_MODEL.ELITE_MMR;
 
   return (
-    <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+    <div className="grid grid-cols-2 gap-4 lg:grid-cols-5">
       <HeroCard label="Current GSP">
-        {currentGsp !== null ? (
+        {lastPoint !== null ? (
           <>
-            <span className="text-3xl font-bold">{currentGsp.toLocaleString()}</span>
+            <span className="text-3xl font-bold">{lastPoint.gsp.toLocaleString()}</span>
             <p className="text-sm text-muted-foreground">latest reading</p>
+          </>
+        ) : (
+          <p className="text-sm text-muted-foreground">No GSP logged yet</p>
+        )}
+      </HeroCard>
+
+      <HeroCard label="Est. MMR">
+        {estimate !== null && roundedMmr !== null ? (
+          <>
+            <span className="text-3xl font-bold">{roundedMmr.toLocaleString()}</span>
+            {estimate.zone !== 'main' && (
+              <p className="text-xs font-medium text-amber-500">
+                {estimate.zone}-tail reading &mdash; approximate
+              </p>
+            )}
+            <p className="text-xs text-muted-foreground">
+              <a
+                href={GSP_MMR_DOC_URL}
+                target="_blank"
+                rel="noreferrer"
+                className="underline underline-offset-2 hover:text-foreground"
+              >
+                community-reverse-engineered model
+              </a>{' '}
+              (&plusmn;1 GSP in the main curve; tails approximate)
+            </p>
           </>
         ) : (
           <p className="text-sm text-muted-foreground">No GSP logged yet</p>
@@ -57,7 +99,7 @@ export function GspHero({ series, settings }: { series: GspPoint[]; settings: Gs
       <EliteThresholdCard settings={settings} />
 
       <HeroCard label="Distance to Elite">
-        {currentGsp === null ? (
+        {roundedMmr === null ? (
           <p className="text-sm text-muted-foreground">No GSP logged yet</p>
         ) : isElite ? (
           <span className="w-fit rounded-full bg-emerald-500/15 px-2 py-0.5 text-sm font-semibold text-emerald-500">
@@ -66,9 +108,11 @@ export function GspHero({ series, settings }: { series: GspPoint[]; settings: Gs
         ) : (
           <>
             <span className="text-3xl font-bold">
-              {(settings.eliteThreshold - currentGsp).toLocaleString()}
+              {(GSP_MODEL.ELITE_MMR - roundedMmr).toLocaleString()}
             </span>
-            <p className="text-sm text-muted-foreground">GSP to go (estimate)</p>
+            <p className="text-sm text-muted-foreground">
+              MMR {roundedMmr.toLocaleString()} &middot; below Elite ({GSP_MODEL.ELITE_MMR})
+            </p>
           </>
         )}
       </HeroCard>
@@ -89,13 +133,28 @@ export function GspHero({ series, settings }: { series: GspPoint[]; settings: Gs
   );
 }
 
+/**
+ * V10.1: shows the COMPUTED current Elite entry GSP — Elite is a fixed MMR
+ * (1142), so the GSP threshold is derived from the model's time-drift
+ * parameter t, recalibrated by the user's most recent edit (stored via the
+ * same settings API as V10; `eliteThreshold` + `updatedAt` double as the
+ * calibration point, no schema change). Editing no longer pins the displayed
+ * number — it feeds the model a fresh (value, timestamp) observation and the
+ * display keeps drifting forward from there, same as the real threshold does.
+ */
 function EliteThresholdCard({ settings }: { settings: GspSettings }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(String(settings.eliteThreshold));
   const updateSettings = useUpdateGspSettings();
 
-  const lastUpdatedLabel =
-    settings.updatedAt > 0 ? new Date(settings.updatedAt).toLocaleDateString() : 'never set';
+  const nowMs = useNowMs();
+  const calibration = calibrationFromSettings(settings);
+  const computed = computedEliteThreshold(nowMs, calibration);
+
+  const calibrationLabel =
+    settings.updatedAt > 0
+      ? `recalibrated ${new Date(settings.updatedAt).toLocaleDateString()}`
+      : 'from the model anchor';
 
   async function save() {
     const parsed = parseGspNumber(draft);
@@ -105,7 +164,7 @@ function EliteThresholdCard({ settings }: { settings: GspSettings }) {
     }
     try {
       await updateSettings.mutateAsync({ eliteThreshold: parsed });
-      toast.success('Elite threshold updated!');
+      toast.success('Model recalibrated from your threshold reading!');
       setEditing(false);
     } catch {
       toast.error('Failed to save the Elite threshold. Please try again.');
@@ -156,7 +215,7 @@ function EliteThresholdCard({ settings }: { settings: GspSettings }) {
           </div>
         ) : (
           <div className="flex items-center gap-1.5">
-            <span className="text-3xl font-bold">{settings.eliteThreshold.toLocaleString()}</span>
+            <span className="text-3xl font-bold">{computed.toLocaleString()}</span>
             <Button
               type="button"
               size="icon-xs"
@@ -169,14 +228,15 @@ function EliteThresholdCard({ settings }: { settings: GspSettings }) {
           </div>
         )}
         <p className="text-xs text-muted-foreground">
-          As of {lastUpdatedLabel} &middot;{' '}
+          computed &middot; {calibrationLabel} &middot; editing recalibrates the model &mdash; grab
+          the current number from{' '}
           <a
             href={ELITEGSP_URL}
             target="_blank"
             rel="noreferrer"
             className="underline underline-offset-2 hover:text-foreground"
           >
-            check elitegsp.com
+            elitegsp.com
           </a>
         </p>
       </CardContent>

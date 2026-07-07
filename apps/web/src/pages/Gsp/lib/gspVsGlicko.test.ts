@@ -41,7 +41,9 @@ describe('buildGspVsGlickoData', () => {
 
     const data = buildGspVsGlickoData(gspSeries, ratingPeriods);
 
-    expect(data.gsp).toEqual([
+    // GSP -> MMR conversion is monotonic, so the lower GSP reading is still
+    // the series min (0) and the higher the max (100) after normalization.
+    expect(data.mmr).toEqual([
       { time: 10, value: 0 },
       { time: 20, value: 100 },
     ]);
@@ -51,9 +53,31 @@ describe('buildGspVsGlickoData', () => {
     ]);
   });
 
+  it('converts the GSP series to MMR before normalizing (not a raw-GSP overlay)', () => {
+    // Three GSP readings spaced EQUALLY in GSP, up in the curve's compressed
+    // upper half. On the MMR scale the spacing is NOT equal (the normal-CDF
+    // curve is nonlinear), so the middle point's normalized value must differ
+    // from the raw-GSP midpoint of 50.
+    const gspSeries: GspPoint[] = [
+      { time: 10, gsp: 9_000_000, win: true },
+      { time: 20, gsp: 12_000_000, win: true },
+      { time: 30, gsp: 15_000_000, win: true },
+    ];
+    const ratingPeriods: RatingPeriodResult[] = [
+      ratingPeriod({ end: 15, rating: 1400 }),
+      ratingPeriod({ end: 25, rating: 1500 }),
+      ratingPeriod({ end: 35, rating: 1600 }),
+    ];
+
+    const data = buildGspVsGlickoData(gspSeries, ratingPeriods);
+    expect(data.mmr[0]!.value).toBeCloseTo(0);
+    expect(data.mmr[2]!.value).toBeCloseTo(100);
+    expect(data.mmr[1]!.value).not.toBeCloseTo(50, 0);
+  });
+
   it('returns empty arrays for empty input series', () => {
     const data = buildGspVsGlickoData([], []);
-    expect(data.gsp).toEqual([]);
+    expect(data.mmr).toEqual([]);
     expect(data.glicko).toEqual([]);
   });
 });
