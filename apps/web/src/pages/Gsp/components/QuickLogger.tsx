@@ -42,7 +42,11 @@ export function QuickLogger({ fighter, lastGsp }: { fighter: Fighter; lastGsp: n
   const [submitting, setSubmitting] = useState(false);
 
   function resetForNextMatch(nextGsp: number) {
-    setOpponentFighterId(undefined);
+    // The opponent's character is deliberately PERSISTED: quickplay rematches
+    // against the same player are common, so the next log usually needs only
+    // Win/Loss + the new GSP. Result resets (must be chosen every match),
+    // GSP prefills with the reading just entered, stage resets (it changes
+    // game to game and is optional anyway).
     setResult(undefined);
     setGspInput(String(nextGsp));
     setStageId(NO_SELECTION_STAGE.id);
