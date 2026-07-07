@@ -101,13 +101,15 @@ export class RtdbService {
       opponent_id: input.opponent_id,
       time: Date.now(),
       map: input.map,
-      opponent: input.opponent,
       notes: input.notes,
       matchType: input.matchType,
       win: input.win,
       // RTDB rejects `undefined` values outright, so optional fields must
       // only be present on the record when the input actually provided
       // them (conditional spread) rather than being set to `undefined`.
+      // `opponent` is optional too: online quickplay (GSP) matches have no
+      // named opponent.
+      ...(input.opponent !== undefined ? { opponent: input.opponent } : {}),
       ...(input.stocksLeft !== undefined ? { stocksLeft: input.stocksLeft } : {}),
       ...(input.eventName !== undefined ? { eventName: input.eventName } : {}),
       ...(input.tournamentName !== undefined ? { tournamentName: input.tournamentName } : {}),
@@ -118,7 +120,9 @@ export class RtdbService {
 
     const ref = this.database.ref(`matches/${uid}`).push();
     await ref.set(record);
-    await this.addOpponent(uid, input.opponent);
+    if (input.opponent !== undefined) {
+      await this.addOpponent(uid, input.opponent);
+    }
 
     const id = ref.key;
     if (!id) {
@@ -140,14 +144,15 @@ export class RtdbService {
       opponent_id: input.opponent_id,
       time: Date.now(),
       map: input.map,
-      opponent: input.opponent,
       notes: input.notes,
       matchType: input.matchType,
       win: input.win,
       // See createMatch — RTDB rejects `undefined` values, so these are
       // only included when the input actually set them. Omitting
-      // vodUrl/vodTimestamps/gsp from the input is how a caller clears them,
-      // since this is a full overwrite (`.set()`, not a partial patch).
+      // opponent/vodUrl/vodTimestamps/gsp from the input is how a caller
+      // clears them, since this is a full overwrite (`.set()`, not a partial
+      // patch).
+      ...(input.opponent !== undefined ? { opponent: input.opponent } : {}),
       ...(input.stocksLeft !== undefined ? { stocksLeft: input.stocksLeft } : {}),
       ...(input.eventName !== undefined ? { eventName: input.eventName } : {}),
       ...(input.tournamentName !== undefined ? { tournamentName: input.tournamentName } : {}),
@@ -157,7 +162,9 @@ export class RtdbService {
     };
 
     await ref.set(record);
-    await this.addOpponent(uid, input.opponent);
+    if (input.opponent !== undefined) {
+      await this.addOpponent(uid, input.opponent);
+    }
 
     return { id, ...record };
   }
