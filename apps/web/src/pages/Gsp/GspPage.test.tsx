@@ -196,4 +196,39 @@ describe('GspPage', () => {
 
     expect(createMatch).not.toHaveBeenCalled();
   });
+
+  it('persists the opponent character after logging so rematches only need result + GSP', async () => {
+    getFighters.mockResolvedValue({ primary: [mario.id], secondary: [] });
+    listMatches.mockResolvedValue([makeMatch({ id: 'm1', time: 1, win: true, gsp: 9_000_000 })]);
+    const user = userEvent.setup();
+
+    renderGspPage();
+    await screen.findByText('Quick Logger');
+
+    // First match: full entry.
+    await user.click(screen.getByRole('combobox', { name: 'Opponent Character' }));
+    await user.click(await screen.findByRole('option', { name: luigi.name }));
+    await user.click(screen.getByRole('radio', { name: 'Win' }));
+    const gspInput = screen.getByLabelText('GSP After Match');
+    await user.clear(gspInput);
+    await user.type(gspInput, '9500000');
+    await user.click(screen.getByRole('button', { name: 'Log Match' }));
+    await waitFor(() => expect(createMatch).toHaveBeenCalledTimes(1));
+
+    // Rematch: same opponent stays selected — only result + GSP needed.
+    await user.click(screen.getByRole('radio', { name: 'Loss' }));
+    const gspInput2 = screen.getByLabelText('GSP After Match');
+    await user.clear(gspInput2);
+    await user.type(gspInput2, '9300000');
+    await user.click(screen.getByRole('button', { name: 'Log Match' }));
+
+    await waitFor(() => expect(createMatch).toHaveBeenCalledTimes(2));
+    expect(createMatch).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        opponent_id: luigi.id,
+        win: false,
+        gsp: 9_300_000,
+      }),
+    );
+  });
 });
