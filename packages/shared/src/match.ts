@@ -149,6 +149,15 @@ export const matchRecordSchema = z.object({
    * single game's notes stay skimmable.
    */
   vodTimestamps: z.array(vodTimestampSchema).max(20).optional(),
+  /**
+   * Post-match GSP (Global Smash Power) reading, as shown on the in-game
+   * results screen (V10). Only meaningful for online matches — GSP is
+   * per-fighter, so a series of these across matches sharing `fighter_id`
+   * traces that fighter's GSP over time (see `gsp.ts`'s `getGspSeries`).
+   * User-editable, same optional/conditional-spread convention as
+   * `stocksLeft`.
+   */
+  gsp: z.number().int().min(0).optional(),
 });
 export type MatchRecord = z.infer<typeof matchRecordSchema>;
 
@@ -223,6 +232,8 @@ const optionalNameInputSchema = z
  * either field (rather than sending it) is how a caller clears it, following
  * the same full-overwrite + conditional-spread convention as
  * `stocksLeft`/`eventName`/`tournamentName` (see `RtdbService.updateMatch`).
+ *
+ * `gsp` (V10) follows the same convention — omit to leave/clear it.
  */
 export const createMatchInputSchema = z.object({
   fighter_id: z.number().int().positive(),
@@ -237,6 +248,7 @@ export const createMatchInputSchema = z.object({
   tournamentName: optionalNameInputSchema,
   vodUrl: z.string().url().optional(),
   vodTimestamps: z.array(vodTimestampSchema).max(20).optional(),
+  gsp: z.number().int().min(0).optional(),
 });
 export type CreateMatchInput = z.infer<typeof createMatchInputSchema>;
 

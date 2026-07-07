@@ -9,6 +9,7 @@ import { ScoutPage } from '@/pages/Scout/ScoutPage';
 import { ReportsPage } from '@/pages/Reports/ReportsPage';
 import { MatchDataPage } from '@/pages/MatchData/MatchDataPage';
 import { TrendsPage } from '@/pages/Trends/TrendsPage';
+import { GspPage } from '@/pages/Gsp/GspPage';
 import { GroupsPage } from '@/pages/Groups/GroupsPage';
 import { TournamentDetailPage } from '@/pages/Tournaments/TournamentDetailPage';
 import { FighterAnalysisPage } from '@/pages/FighterAnalysis/FighterAnalysisPage';
@@ -106,6 +107,14 @@ export function AppRouter() {
           element={
             <ProtectedRoute>
               <TrendsPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/gsp"
+          element={
+            <ProtectedRoute>
+              <GspPage />
             </ProtectedRoute>
           }
         />
