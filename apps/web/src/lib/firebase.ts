@@ -91,7 +91,20 @@ function initAnalytics(): Promise<AnalyticsContext | null> {
     if (!(await mod.isSupported().catch(() => false))) {
       return null;
     }
-    return { analytics: mod.getAnalytics(getFirebaseApp()), mod };
+    // cookie_domain must be pinned to the exact host: the app lives on
+    // *.web.app, and `web.app` is on the Public Suffix List, so gtag's
+    // default 'auto' domain walk tries to set _ga cookies at the web.app
+    // level — browsers reject those ("invalid domain" console errors on
+    // every page in Firefox) before falling back. send_page_view is off
+    // because MainLayout logs page_view itself on mount + every route
+    // change (the signed-out landing page is deliberately uncounted).
+    const analytics = mod.initializeAnalytics(getFirebaseApp(), {
+      config: {
+        cookie_domain: window.location.hostname,
+        send_page_view: false,
+      },
+    });
+    return { analytics, mod };
   })().catch(() => null);
   return analyticsInit;
 }
