@@ -7,6 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useUpdateGspSettings } from '@/hooks/useGspSettings';
+import { parseGspNumber } from '../lib/parseGspNumber';
 
 const ELITEGSP_URL = 'https://elitegsp.com';
 
@@ -97,9 +98,9 @@ function EliteThresholdCard({ settings }: { settings: GspSettings }) {
     settings.updatedAt > 0 ? new Date(settings.updatedAt).toLocaleDateString() : 'never set';
 
   async function save() {
-    const parsed = Number(draft);
-    if (!Number.isInteger(parsed) || parsed <= 0) {
-      toast.error('Enter a positive whole number for the Elite threshold.');
+    const parsed = parseGspNumber(draft);
+    if (parsed === null || parsed <= 0) {
+      toast.error('Enter a positive whole number — commas are fine, e.g. 10,300,000.');
       return;
     }
     try {
@@ -119,10 +120,11 @@ function EliteThresholdCard({ settings }: { settings: GspSettings }) {
       <CardContent className="flex flex-col gap-1">
         {editing ? (
           <div className="flex items-center gap-1">
+            {/* type="text": browsers reject comma pastes into type="number",
+                and the whole point is pasting straight from elitegsp.com. */}
             <Input
-              type="number"
-              min={1}
-              step={1}
+              type="text"
+              inputMode="numeric"
               value={draft}
               onChange={(e) => setDraft(e.target.value)}
               aria-label="Elite Smash threshold"
