@@ -9,36 +9,37 @@ import {
   type ChartOptions,
 } from 'chart.js';
 import { Line } from 'react-chartjs-2';
-import type { GspPoint, Match } from '@smash-tracker/shared';
+import type { GspPoint, GspSettings, Match } from '@smash-tracker/shared';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { chartColors, darkChartOptions, redLineDataset } from '@/lib/chartTheme';
 import { computeRatingHistory } from '@/lib/glicko';
 import { GSP_VS_GLICKO_MIN_POINTS, buildGspVsGlickoData } from '../lib/gspVsGlicko';
+import { calibrationFromSettings } from '../lib/gspMmrModel';
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Tooltip, Legend);
 
 function buildChartData(
-  gsp: { time: number; value: number }[],
+  mmr: { time: number; value: number }[],
   glicko: { time: number; value: number }[],
 ) {
-  const allTimes = [...new Set([...gsp.map((p) => p.time), ...glicko.map((p) => p.time)])].sort(
+  const allTimes = [...new Set([...mmr.map((p) => p.time), ...glicko.map((p) => p.time)])].sort(
     (a, b) => a - b,
   );
   const labels = allTimes.map((t) =>
     new Date(t).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
   );
 
-  const gspByTime = new Map(gsp.map((p) => [p.time, p.value]));
+  const mmrByTime = new Map(mmr.map((p) => [p.time, p.value]));
   const glickoByTime = new Map(glicko.map((p) => [p.time, p.value]));
 
   return {
     labels,
     datasets: [
       {
-        label: 'GSP (normalized)',
+        label: 'Est. MMR (normalized)',
         ...redLineDataset(),
         spanGaps: true,
-        data: allTimes.map((t) => gspByTime.get(t) ?? null),
+        data: allTimes.map((t) => mmrByTime.get(t) ?? null),
       },
       {
         label: 'Glicko-2 (normalized)',
@@ -74,20 +75,25 @@ function buildChartOptions(): ChartOptions<'line'> {
 }
 
 /**
- * Dual-line overlay of the selected fighter's GSP curve against the player's
- * OVERALL Glicko-2 rating history (all fighters — `computeRatingHistory`),
- * both independently min-max normalized to 0-100 (see `buildGspVsGlickoData`)
- * so they're visually comparable despite being on completely different
- * scales. Skipped entirely when either series has fewer than
- * `GSP_VS_GLICKO_MIN_POINTS` points — there's nothing meaningful to compare
- * yet.
+ * Dual-line overlay of the selected fighter's ESTIMATED MMR curve (V10.1 —
+ * GSP readings converted through the community reverse-engineered model,
+ * rating vs. rating) against the player's OVERALL Glicko-2 rating history
+ * (all fighters — `computeRatingHistory`). Both series remain independently
+ * min-max normalized to 0-100 — their raw scales are still unrelated — but
+ * comparing two drift-free ratings makes the SHAPES honestly comparable,
+ * where V10's raw GSP baked ceiling-inflation into its line (see
+ * `buildGspVsGlickoData` for the full rationale). Skipped entirely when
+ * either series has fewer than `GSP_VS_GLICKO_MIN_POINTS` points — there's
+ * nothing meaningful to compare yet.
  */
 export function GspVsGlicko({
   gspSeries,
   allMatches,
+  settings,
 }: {
   gspSeries: GspPoint[];
   allMatches: Match[];
+  settings: GspSettings;
 }) {
   const { periods } = computeRatingHistory(allMatches);
 
@@ -95,21 +101,27 @@ export function GspVsGlicko({
     return null;
   }
 
-  const { gsp, glicko } = buildGspVsGlickoData(gspSeries, periods);
+  const { mmr, glicko } = buildGspVsGlickoData(
+    gspSeries,
+    periods,
+    calibrationFromSettings(settings),
+  );
 
   return (
     <Card>
       <CardHeader>
-        <CardTitle>GSP vs Glicko-2</CardTitle>
+        <CardTitle>Est. MMR vs Glicko-2</CardTitle>
       </CardHeader>
       <CardContent className="flex flex-col gap-4">
         <div className="h-64">
-          <Line data={buildChartData(gsp, glicko)} options={buildChartOptions()} />
+          <Line data={buildChartData(mmr, glicko)} options={buildChartOptions()} />
         </div>
         <p className="text-xs text-muted-foreground">
-          Both lines are normalized to 0-100 over this window so their shapes are comparable despite
-          very different scales. Divergence usually means your quickplay form (GSP, this fighter
-          only) differs from your overall form (Glicko-2, across every fighter/session).
+          Your quickplay rating (estimated MMR for this fighter, community-reverse-engineered model)
+          vs. your overall Glicko-2 rating (every fighter/session) — both normalized to 0-100 over
+          this window since their raw scales are unrelated. Rating-vs-rating makes the shapes
+          honestly comparable; divergence usually means your quickplay form differs from your
+          overall form.
         </p>
       </CardContent>
     </Card>

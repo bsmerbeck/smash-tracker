@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { toast } from 'sonner';
-import type { Fighter } from '@smash-tracker/shared';
+import type { Fighter, GspPoint, GspSettings } from '@smash-tracker/shared';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -20,6 +20,7 @@ import { alphaStageList, stageOptions } from '@/lib/stageOptions';
 import { StageOption } from '@/components/StageOption';
 import { useCreateMatch } from '@/hooks/useCreateMatch';
 import { parseGspNumber } from '../lib/parseGspNumber';
+import { calibrationFromSettings, estimateMmrAt } from '../lib/gspMmrModel';
 
 /**
  * Quick-log the core online-quickplay session loop: pick the opponent's
@@ -31,9 +32,21 @@ import { parseGspNumber } from '../lib/parseGspNumber';
  * 'quickplay' is the existing online match-type value for it (see
  * `matchTypeValues` in packages/shared/src/match.ts) — there is no separate
  * "GSP entry" record type. After a successful save, the form resets for the
- * next match (keeping "your fighter" sticky) and shows the GSP delta.
+ * next match (keeping "your fighter" sticky) and shows the GSP delta, plus
+ * the estimated hidden-MMR delta when both readings convert cleanly through
+ * the reverse-engineered model (V10.1 — see ../lib/gspMmrModel.ts).
  */
-export function QuickLogger({ fighter, lastGsp }: { fighter: Fighter; lastGsp: number | null }) {
+export function QuickLogger({
+  fighter,
+  lastPoint,
+  settings,
+}: {
+  fighter: Fighter;
+  /** The most recent GSP reading for this fighter (with its log time), or null with no history. */
+  lastPoint: GspPoint | null;
+  settings: GspSettings;
+}) {
+  const lastGsp = lastPoint?.gsp ?? null;
   const createMatch = useCreateMatch();
   const [opponentFighterId, setOpponentFighterId] = useState<number | undefined>(undefined);
   const [result, setResult] = useState<'win' | 'loss' | undefined>(undefined);
@@ -70,6 +83,22 @@ export function QuickLogger({ fighter, lastGsp }: { fighter: Fighter; lastGsp: n
     const stage = stageOptions.find((s) => s.id === stageId) ?? NO_SELECTION_STAGE;
     const delta = lastGsp !== null ? gsp - lastGsp : null;
 
+    // V10.1: alongside the raw GSP delta, estimate the hidden-MMR delta by
+    // converting both readings through the reverse-engineered model — each at
+    // its own log time (t drifts). Only shown when BOTH convert "cleanly"
+    // (land on the ±1-GSP-accurate main curve); tail readings are too
+    // approximate for a single-match delta to mean anything.
+    const calibration = calibrationFromSettings(settings);
+    let mmrDeltaLabel = '';
+    if (lastPoint !== null) {
+      const prev = estimateMmrAt(lastPoint.gsp, lastPoint.time, calibration);
+      const next = estimateMmrAt(gsp, Date.now(), calibration);
+      if (prev.zone === 'main' && next.zone === 'main') {
+        const mmrDelta = Math.round(next.mmr) - Math.round(prev.mmr);
+        mmrDeltaLabel = ` · ≈ ${mmrDelta >= 0 ? '+' : ''}${mmrDelta} MMR`;
+      }
+    }
+
     setSubmitting(true);
     try {
       await createMatch.mutateAsync({
@@ -83,8 +112,8 @@ export function QuickLogger({ fighter, lastGsp }: { fighter: Fighter; lastGsp: n
         gsp,
       });
       const deltaLabel =
-        delta === null ? '' : ` (${delta >= 0 ? '+' : ''}${delta.toLocaleString()})`;
-      toast.success(`Match logged! GSP ${gsp.toLocaleString()}${deltaLabel}`);
+        delta === null ? '' : ` (${delta >= 0 ? '+' : ''}${delta.toLocaleString()} GSP)`;
+      toast.success(`Match logged! GSP ${gsp.toLocaleString()}${deltaLabel}${mmrDeltaLabel}`);
       resetForNextMatch(gsp);
     } catch {
       toast.error('Failed to log the match. Please try again.');

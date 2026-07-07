@@ -37,3 +37,4 @@ export * from './billing.js';
 export * from './meta.js';
 export * from './matchupAdvisor.js';
 export * from './gsp.js';
+export * from './gspMmr.js';
