@@ -1,6 +1,6 @@
 ## Smash Tracker
 
-Live demo: https://smash-tracker-f97b7.web.app/
+**Use it live → https://smash-tracker-f97b7.web.app**
 
 Smash Tracker is a match-tracking app for **Super Smash Bros. Ultimate**. Sign in, pick a
 primary/secondary fighter, log wins and losses (opponent, stage, match type, notes) after each

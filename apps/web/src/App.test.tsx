@@ -39,7 +39,9 @@ describe('App', () => {
   it('renders the landing page with sign-in when signed out', async () => {
     render(<App />);
 
-    expect(await screen.findByRole('heading', { name: /smash tracker/i })).toBeInTheDocument();
+    expect(
+      await screen.findByRole('heading', { level: 1, name: /smash tracker/i }),
+    ).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /^sign in$/i })).toBeInTheDocument();
   });
 });
