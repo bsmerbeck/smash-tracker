@@ -44,7 +44,11 @@
     "casual": "Casual",
     "competitive": "Competitivo",
     "unknown": "Desconocido",
-    "notAvailable": "n/d"
+    "notAvailable": "n/d",
+    "noMatchData": "Aún no hay datos de partidas.",
+    "rate": "Ratio",
+    "games_one": "{{count}} partida",
+    "games_other": "{{count}} partidas"
   },
   "filters": {
     "sourceAria": "Filtrar partidas por origen",
@@ -56,6 +60,37 @@
     "months12": "12 m"
   },
   "shared": {
+    "noFighters": {
+      "title": "¡Aún no has elegido ningún luchador!",
+      "subtitle": "Elige tus luchadores principal y secundarios para empezar a registrar partidas.",
+      "choosePrimary": "Elegir luchadores principales",
+      "chooseSecondary": "Elegir luchadores secundarios"
+    },
+    "matchDelete": {
+      "aria": "Eliminar partida",
+      "confirmTitle": "¿Eliminar esta partida?",
+      "deleted": "¡Partida eliminada!",
+      "deleteFailed": "No se pudo eliminar la partida. Inténtalo de nuevo."
+    },
+    "vod": {
+      "title": "Notas de VOD",
+      "description": "Adjunta un enlace al VOD y notas con marca de tiempo, p. ej. «2:41 — castigo fallado al escudo».",
+      "url": "URL del VOD",
+      "timestamps": "Marcas de tiempo",
+      "noTimestamps": "Aún no hay notas con marca de tiempo.",
+      "timestampsAria": "Notas con marca de tiempo",
+      "deleteTimestamp": "Eliminar marca de tiempo {{time}}",
+      "timePlaceholder": "m:ss",
+      "timeAria": "Tiempo de la marca",
+      "notePlaceholder": "Nota",
+      "noteAria": "Nota de la marca",
+      "addTimestamp": "Añadir marca de tiempo",
+      "timeFormatError": "Introduce un tiempo como m:ss o h:mm:ss",
+      "noteRequired": "Introduce una nota para esta marca de tiempo",
+      "timestampLimit": "Máximo {{max}} marcas de tiempo por partida",
+      "saved": "¡Notas de VOD guardadas!",
+      "saveFailed": "No se pudieron guardar las notas de VOD. Inténtalo de nuevo."
+    },
     "filteredNotice": {
       "message": "Ninguna partida coincide con los filtros actuales.",
       "clear": "Borrar filtros"
@@ -73,18 +108,9 @@
   },
   "dashboard": {
     "loading": "Cargando tu panel...",
-    "empty": {
-      "title": "¡Aún no has elegido ningún luchador!",
-      "subtitle": "Elige tus luchadores principal y secundarios para empezar a registrar partidas.",
-      "choosePrimary": "Elegir luchadores principales",
-      "chooseSecondary": "Elegir luchadores secundarios"
-    },
     "hero": {
       "overallRecord": "Historial general",
       "winRate": "{{rate}}% de victorias",
-      "games_one": "{{count}} partida",
-      "games_other": "{{count}} partidas",
-      "noMatchData": "Aún no hay datos de partidas.",
       "form": "Forma",
       "streakWin": "{{count}}V",
       "streakLoss": "{{count}}D",
@@ -107,9 +133,6 @@
       "ratingDown": "Puntuación a la baja desde la última sesión",
       "ratingUnchanged": "Puntuación sin cambios desde la última sesión"
     },
-    "tracker": {
-      "rate": "Ratio"
-    },
     "formCurve": {
       "title": "Curva de forma",
       "window": "Ventana",
@@ -124,11 +147,7 @@
       "title": "Partidas anteriores",
       "limit": "Límite",
       "limitAria": "Límite de partidas",
-      "empty": "Aún no hay partidas registradas.",
-      "deleteAria": "Eliminar partida",
-      "confirmTitle": "¿Eliminar esta partida?",
-      "deleted": "¡Partida eliminada!",
-      "deleteFailed": "No se pudo eliminar la partida. Inténtalo de nuevo."
+      "empty": "Aún no hay partidas registradas."
     },
     "stages": {
       "title": "Escenarios más jugados",
@@ -341,6 +360,53 @@
       "mmrLabel": "MMR est. (normalizado)",
       "glickoLabel": "Glicko-2 (normalizado)",
       "caption": "Tu nivel en quickplay (MMR estimado de este luchador, modelo de ingeniería inversa de la comunidad) frente a tu Glicko-2 global (todos los luchadores/sesiones) — ambos normalizados a 0-100 en esta ventana porque sus escalas no están relacionadas. Comparar nivel contra nivel hace las formas honestamente comparables; una divergencia suele significar que tu forma en quickplay difiere de tu forma general."
+    }
+  },
+  "matchData": {
+    "loading": "Cargando datos de partidas...",
+    "title": "Historial de partidas",
+    "noMatches": "No tienes partidas; registra una y vuelve aquí para ver los datos.",
+    "goToDashboard": "Ir al Panel",
+    "table": {
+      "columns": {
+        "date": "Fecha",
+        "fighter": "Luchador",
+        "opponentFighter": "Rival",
+        "opponentName": "Nombre del rival",
+        "stage": "Escenario",
+        "matchType": "Tipo",
+        "win": "Resultado",
+        "tournament": "Torneo",
+        "notes": "Notas",
+        "manage": "Gestionar"
+      },
+      "editVod": "Editar notas de VOD",
+      "addVod": "Añadir notas de VOD",
+      "synced": "Sincronizada",
+      "syncedTitle": "Sincronizada desde {{source}} — los datos los gestiona la sincronización",
+      "editMatch": "Editar partida",
+      "searchPlaceholder": "Buscar en {{count}} registros...",
+      "searchAria": "Filtrar partidas",
+      "allOption": "Todos: {{label}}",
+      "columnsButton": "Columnas",
+      "toggleColumns": "Mostrar u ocultar columnas",
+      "exportCsv": "Exportar CSV",
+      "noneFound": "No se encontraron partidas.",
+      "pageOf": "Página {{page}} de {{total}}",
+      "rowsPerPage": "Filas por página",
+      "showN": "Mostrar {{count}}"
+    },
+    "roster": {
+      "title": "Uso del plantel",
+      "showAll": "Mostrar todos ({{count}} más)",
+      "showLess": "Mostrar menos"
+    },
+    "stages": {
+      "title": "Desglose por escenario",
+      "selectAria": "Seleccionar escenario",
+      "noneOnStage": "No hay partidas registradas en este escenario.",
+      "winsShort": "{{count}}V",
+      "lossesShort": "{{count}}D"
     }
   }
 }

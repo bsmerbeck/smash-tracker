@@ -44,7 +44,11 @@
     "casual": "カジュアル",
     "competitive": "大会",
     "unknown": "不明",
-    "notAvailable": "—"
+    "notAvailable": "—",
+    "noMatchData": "まだ対戦データがありません。",
+    "rate": "勝率",
+    "games_one": "{{count}}戦",
+    "games_other": "{{count}}戦"
   },
   "filters": {
     "sourceAria": "対戦を種別で絞り込む",
@@ -56,6 +60,37 @@
     "months12": "12ヶ月"
   },
   "shared": {
+    "noFighters": {
+      "title": "まだファイターを選んでいません！",
+      "subtitle": "メインとサブのファイターを選んで、対戦の記録を始めましょう。",
+      "choosePrimary": "メインファイターを選ぶ",
+      "chooseSecondary": "サブファイターを選ぶ"
+    },
+    "matchDelete": {
+      "aria": "対戦を削除",
+      "confirmTitle": "この対戦を削除しますか？",
+      "deleted": "対戦を削除しました！",
+      "deleteFailed": "対戦を削除できませんでした。もう一度お試しください。"
+    },
+    "vod": {
+      "title": "VODメモ",
+      "description": "VODのリンクとタイムスタンプ付きメモを追加できます（例:「2:41 — ガードへの反撃ミス」）。",
+      "url": "VODのURL",
+      "timestamps": "タイムスタンプ",
+      "noTimestamps": "まだタイムスタンプ付きメモがありません。",
+      "timestampsAria": "タイムスタンプ付きメモ",
+      "deleteTimestamp": "タイムスタンプ{{time}}を削除",
+      "timePlaceholder": "m:ss",
+      "timeAria": "タイムスタンプの時間",
+      "notePlaceholder": "メモ",
+      "noteAria": "タイムスタンプのメモ",
+      "addTimestamp": "タイムスタンプを追加",
+      "timeFormatError": "時間は m:ss または h:mm:ss の形式で入力してください",
+      "noteRequired": "このタイムスタンプのメモを入力してください",
+      "timestampLimit": "タイムスタンプは1対戦につき{{max}}件までです",
+      "saved": "VODメモを保存しました！",
+      "saveFailed": "VODメモを保存できませんでした。もう一度お試しください。"
+    },
     "filteredNotice": {
       "message": "現在のフィルターに一致する対戦がありません。",
       "clear": "フィルターを解除"
@@ -73,18 +108,9 @@
   },
   "dashboard": {
     "loading": "ダッシュボードを読み込み中...",
-    "empty": {
-      "title": "まだファイターを選んでいません！",
-      "subtitle": "メインとサブのファイターを選んで、対戦の記録を始めましょう。",
-      "choosePrimary": "メインファイターを選ぶ",
-      "chooseSecondary": "サブファイターを選ぶ"
-    },
     "hero": {
       "overallRecord": "通算戦績",
       "winRate": "勝率{{rate}}%",
-      "games_one": "{{count}}戦",
-      "games_other": "{{count}}戦",
-      "noMatchData": "まだ対戦データがありません。",
       "form": "調子",
       "streakWin": "{{count}}連勝",
       "streakLoss": "{{count}}連敗",
@@ -107,9 +133,6 @@
       "ratingDown": "前回セッションからレーティング下降",
       "ratingUnchanged": "前回セッションからレーティング変化なし"
     },
-    "tracker": {
-      "rate": "勝率"
-    },
     "formCurve": {
       "title": "調子の推移",
       "window": "集計範囲",
@@ -124,11 +147,7 @@
       "title": "最近の対戦",
       "limit": "表示数",
       "limitAria": "表示する対戦数",
-      "empty": "まだ対戦が記録されていません。",
-      "deleteAria": "対戦を削除",
-      "confirmTitle": "この対戦を削除しますか？",
-      "deleted": "対戦を削除しました！",
-      "deleteFailed": "対戦を削除できませんでした。もう一度お試しください。"
+      "empty": "まだ対戦が記録されていません。"
     },
     "stages": {
       "title": "よく遊ぶステージ",
@@ -341,6 +360,53 @@
       "mmrLabel": "推定MMR（正規化）",
       "glickoLabel": "Glicko-2（正規化）",
       "caption": "クイックプレイでのレート（このファイターの推定MMR、コミュニティ解析モデル）と、全体のGlicko-2レート（全ファイター・全セッション）の比較です。生のスケールに関連がないため、どちらもこの期間で0〜100に正規化しています。レート同士の比較なので形を公平に見比べられます。乖離がある場合は、クイックプレイでの調子が全体の調子と違うことを意味します。"
+    }
+  },
+  "matchData": {
+    "loading": "対戦データを読み込み中...",
+    "title": "対戦履歴",
+    "noMatches": "まだ対戦がありません。対戦を記録してから、ここでデータを確認しましょう！",
+    "goToDashboard": "ダッシュボードへ",
+    "table": {
+      "columns": {
+        "date": "日時",
+        "fighter": "ファイター",
+        "opponentFighter": "相手",
+        "opponentName": "相手の名前",
+        "stage": "ステージ",
+        "matchType": "種類",
+        "win": "結果",
+        "tournament": "大会",
+        "notes": "メモ",
+        "manage": "管理"
+      },
+      "editVod": "VODメモを編集",
+      "addVod": "VODメモを追加",
+      "synced": "同期済み",
+      "syncedTitle": "{{source}}から同期 — 対戦データは同期側が管理します",
+      "editMatch": "対戦を編集",
+      "searchPlaceholder": "{{count}}件から検索...",
+      "searchAria": "対戦を絞り込む",
+      "allOption": "すべての{{label}}",
+      "columnsButton": "列",
+      "toggleColumns": "列の表示切り替え",
+      "exportCsv": "CSVをエクスポート",
+      "noneFound": "対戦が見つかりません。",
+      "pageOf": "{{total}}ページ中{{page}}ページ",
+      "rowsPerPage": "1ページの行数",
+      "showN": "{{count}}件表示"
+    },
+    "roster": {
+      "title": "使用ファイター",
+      "showAll": "すべて表示（あと{{count}}体）",
+      "showLess": "少なく表示"
+    },
+    "stages": {
+      "title": "ステージ別集計",
+      "selectAria": "ステージを選択",
+      "noneOnStage": "このステージでの対戦記録はありません。",
+      "winsShort": "{{count}}勝",
+      "lossesShort": "{{count}}敗"
     }
   }
 }

@@ -20,13 +20,11 @@ export function WinLossTracker({ matches }: { matches: Match[] }) {
       </CardHeader>
       <CardContent className="flex justify-evenly">
         <Stat label={t('common.wins')} value={hasMatches ? wins : t('common.notAvailable')} />
-        {hasMatches && <Stat label={t('dashboard.tracker.rate')} value={`${winRate}%`} />}
+        {hasMatches && <Stat label={t('common.rate')} value={`${winRate}%`} />}
         <Stat label={t('common.losses')} value={hasMatches ? losses : t('common.notAvailable')} />
       </CardContent>
       {!hasMatches && (
-        <p className="pb-4 text-center text-sm text-muted-foreground">
-          {t('dashboard.hero.noMatchData')}
-        </p>
+        <p className="pb-4 text-center text-sm text-muted-foreground">{t('common.noMatchData')}</p>
       )}
     </Card>
   );

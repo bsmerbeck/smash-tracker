@@ -44,7 +44,11 @@
     "casual": "Casual",
     "competitive": "Kompetitiv",
     "unknown": "Unbekannt",
-    "notAvailable": "k. A."
+    "notAvailable": "k. A.",
+    "noMatchData": "Noch keine Match-Daten vorhanden.",
+    "rate": "Quote",
+    "games_one": "{{count}} Match",
+    "games_other": "{{count}} Matches"
   },
   "filters": {
     "sourceAria": "Matches nach Quelle filtern",
@@ -56,6 +60,37 @@
     "months12": "12 M"
   },
   "shared": {
+    "noFighters": {
+      "title": "Du hast noch keine Kämpfer ausgewählt!",
+      "subtitle": "Wähle deine Main- und Secondary-Kämpfer, um Matches zu erfassen.",
+      "choosePrimary": "Main-Kämpfer wählen",
+      "chooseSecondary": "Secondary-Kämpfer wählen"
+    },
+    "matchDelete": {
+      "aria": "Match löschen",
+      "confirmTitle": "Dieses Match löschen?",
+      "deleted": "Match gelöscht!",
+      "deleteFailed": "Match konnte nicht gelöscht werden. Bitte erneut versuchen."
+    },
+    "vod": {
+      "title": "VOD-Notizen",
+      "description": "Hänge einen VOD-Link und Notizen mit Zeitstempel an, z. B. „2:41 — Punish auf Schild verpasst“.",
+      "url": "VOD-URL",
+      "timestamps": "Zeitstempel",
+      "noTimestamps": "Noch keine Zeitstempel-Notizen.",
+      "timestampsAria": "Zeitstempel-Notizen",
+      "deleteTimestamp": "Zeitstempel {{time}} löschen",
+      "timePlaceholder": "m:ss",
+      "timeAria": "Zeitstempel-Zeit",
+      "notePlaceholder": "Notiz",
+      "noteAria": "Zeitstempel-Notiz",
+      "addTimestamp": "Zeitstempel hinzufügen",
+      "timeFormatError": "Gib eine Zeit als m:ss oder h:mm:ss ein",
+      "noteRequired": "Gib eine Notiz für diesen Zeitstempel ein",
+      "timestampLimit": "Maximal {{max}} Zeitstempel pro Match",
+      "saved": "VOD-Notizen gespeichert!",
+      "saveFailed": "VOD-Notizen konnten nicht gespeichert werden. Bitte erneut versuchen."
+    },
     "filteredNotice": {
       "message": "Keine Matches entsprechen den aktuellen Filtern.",
       "clear": "Filter zurücksetzen"
@@ -73,18 +108,9 @@
   },
   "dashboard": {
     "loading": "Dein Dashboard wird geladen...",
-    "empty": {
-      "title": "Du hast noch keine Kämpfer ausgewählt!",
-      "subtitle": "Wähle deine Main- und Secondary-Kämpfer, um Matches zu erfassen.",
-      "choosePrimary": "Main-Kämpfer wählen",
-      "chooseSecondary": "Secondary-Kämpfer wählen"
-    },
     "hero": {
       "overallRecord": "Gesamtbilanz",
       "winRate": "{{rate}} % Winrate",
-      "games_one": "{{count}} Match",
-      "games_other": "{{count}} Matches",
-      "noMatchData": "Noch keine Match-Daten vorhanden.",
       "form": "Form",
       "streakWin": "{{count}}S",
       "streakLoss": "{{count}}N",
@@ -107,9 +133,6 @@
       "ratingDown": "Wertung niedriger als in der letzten Sitzung",
       "ratingUnchanged": "Wertung unverändert zur letzten Sitzung"
     },
-    "tracker": {
-      "rate": "Quote"
-    },
     "formCurve": {
       "title": "Formkurve",
       "window": "Fenster",
@@ -124,11 +147,7 @@
       "title": "Letzte Matches",
       "limit": "Limit",
       "limitAria": "Match-Limit",
-      "empty": "Noch keine Matches erfasst.",
-      "deleteAria": "Match löschen",
-      "confirmTitle": "Dieses Match löschen?",
-      "deleted": "Match gelöscht!",
-      "deleteFailed": "Match konnte nicht gelöscht werden. Bitte erneut versuchen."
+      "empty": "Noch keine Matches erfasst."
     },
     "stages": {
       "title": "Meistgespielte Stages",
@@ -341,6 +360,53 @@
       "mmrLabel": "Gesch. MMR (normalisiert)",
       "glickoLabel": "Glicko-2 (normalisiert)",
       "caption": "Dein Quickplay-Rating (geschätzte MMR für diesen Kämpfer, Community-Modell per Reverse Engineering) gegen dein gesamtes Glicko-2-Rating (alle Kämpfer/Sitzungen) — beide über dieses Fenster auf 0-100 normalisiert, da ihre Rohskalen nichts miteinander zu tun haben. Rating gegen Rating macht die Formen ehrlich vergleichbar; Abweichungen bedeuten meist, dass deine Quickplay-Form von deiner Gesamtform abweicht."
+    }
+  },
+  "matchData": {
+    "loading": "Match-Daten werden geladen...",
+    "title": "Match-Verlauf",
+    "noMatches": "Du hast noch keine Matches — erfasse eins und schau hier wieder vorbei, um deine Daten zu sehen!",
+    "goToDashboard": "Zum Dashboard",
+    "table": {
+      "columns": {
+        "date": "Datum",
+        "fighter": "Kämpfer",
+        "opponentFighter": "Gegner",
+        "opponentName": "Gegnername",
+        "stage": "Stage",
+        "matchType": "Typ",
+        "win": "Ergebnis",
+        "tournament": "Turnier",
+        "notes": "Notizen",
+        "manage": "Verwalten"
+      },
+      "editVod": "VOD-Notizen bearbeiten",
+      "addVod": "VOD-Notizen hinzufügen",
+      "synced": "Synchronisiert",
+      "syncedTitle": "Synchronisiert von {{source}} — die Spieldaten verwaltet der Sync",
+      "editMatch": "Match bearbeiten",
+      "searchPlaceholder": "{{count}} Einträge durchsuchen...",
+      "searchAria": "Matches filtern",
+      "allOption": "Alle: {{label}}",
+      "columnsButton": "Spalten",
+      "toggleColumns": "Spalten ein-/ausblenden",
+      "exportCsv": "CSV exportieren",
+      "noneFound": "Keine Matches gefunden.",
+      "pageOf": "Seite {{page}} von {{total}}",
+      "rowsPerPage": "Zeilen pro Seite",
+      "showN": "{{count}} anzeigen"
+    },
+    "roster": {
+      "title": "Roster-Nutzung",
+      "showAll": "Alle anzeigen ({{count}} weitere)",
+      "showLess": "Weniger anzeigen"
+    },
+    "stages": {
+      "title": "Stage-Auswertung",
+      "selectAria": "Stage auswählen",
+      "noneOnStage": "Keine erfassten Matches auf dieser Stage.",
+      "winsShort": "{{count}}S",
+      "lossesShort": "{{count}}N"
     }
   }
 }
