@@ -1,4 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
+import { useTranslation } from 'react-i18next';
+import type { TFunction } from 'i18next';
 import { toast } from 'sonner';
 import { Download, Pencil, SlidersHorizontal, Trash2, Video } from 'lucide-react';
 import {
@@ -93,18 +95,23 @@ function toRow(match: Match): MatchRow {
   };
 }
 
-/** Column id -> friendly label, used by both the header cell and the visibility dropdown. */
-const COLUMN_LABELS: Record<string, string> = {
-  date: 'Date',
-  fighter: 'Fighter',
-  opponentFighter: 'Opponent',
-  opponentName: 'Opponent Name',
-  stage: 'Stage',
-  matchType: 'Type',
-  win: 'Result',
-  tournament: 'Tournament',
-  notes: 'Notes',
+/** Column id -> label key, used by both the header cell and the visibility dropdown. */
+const COLUMN_LABEL_KEYS: Record<string, string> = {
+  date: 'matchData.table.columns.date',
+  fighter: 'matchData.table.columns.fighter',
+  opponentFighter: 'matchData.table.columns.opponentFighter',
+  opponentName: 'matchData.table.columns.opponentName',
+  stage: 'matchData.table.columns.stage',
+  matchType: 'matchData.table.columns.matchType',
+  win: 'matchData.table.columns.win',
+  tournament: 'matchData.table.columns.tournament',
+  notes: 'matchData.table.columns.notes',
 };
+
+function columnLabel(t: TFunction, columnId: string): string {
+  const key = COLUMN_LABEL_KEYS[columnId];
+  return key ? t(key) : columnId;
+}
 
 /** Columns that are always shown and excluded from the visibility dropdown (row actions aren't real data). */
 const NON_TOGGLEABLE_COLUMNS = new Set(['actions']);
@@ -140,6 +147,7 @@ export function MatchTable({
   /** The signed-in user's primary+secondary fighter selections, passed through to EditMatchForm's "Your Fighter" picker. */
   fighterSprites: Fighter[];
 }) {
+  const { t } = useTranslation();
   const [sorting, setSorting] = useState<SortingState>([{ id: 'date', desc: true }]);
   const [globalFilter, setGlobalFilter] = useState('');
   const [columnFilters, setColumnFilters] = useState<MatchTableFilterState>(
@@ -169,27 +177,27 @@ export function MatchTable({
     () => [
       {
         id: 'date',
-        header: 'Date',
+        header: columnLabel(t, 'date'),
         accessorFn: (row) => row.match.time,
         cell: ({ row }) => row.original.date,
       },
       {
         id: 'fighter',
-        header: 'Fighter',
-        accessorFn: (row) => row.fighter?.name ?? 'Unknown',
+        header: columnLabel(t, 'fighter'),
+        accessorFn: (row) => row.fighter?.name ?? t('common.unknown'),
         cell: ({ row }) => (
           <div className="flex items-center gap-2">
             {row.original.fighter && (
               <img src={row.original.fighter.url} alt="" className="size-6 object-contain" />
             )}
-            <span>{row.original.fighter?.name ?? 'Unknown'}</span>
+            <span>{row.original.fighter?.name ?? t('common.unknown')}</span>
           </div>
         ),
       },
       {
         id: 'opponentFighter',
-        header: 'Opponent',
-        accessorFn: (row) => row.opponentFighter?.name ?? 'Unknown',
+        header: columnLabel(t, 'opponentFighter'),
+        accessorFn: (row) => row.opponentFighter?.name ?? t('common.unknown'),
         cell: ({ row }) => (
           <div className="flex items-center gap-2">
             {row.original.opponentFighter && (
@@ -199,43 +207,43 @@ export function MatchTable({
                 className="size-6 object-contain"
               />
             )}
-            <span>{row.original.opponentFighter?.name ?? 'Unknown'}</span>
+            <span>{row.original.opponentFighter?.name ?? t('common.unknown')}</span>
           </div>
         ),
       },
       {
         id: 'opponentName',
-        header: 'Opponent Name',
+        header: columnLabel(t, 'opponentName'),
         accessorFn: (row) => row.opponentName,
       },
       {
         id: 'stage',
-        header: 'Stage',
+        header: columnLabel(t, 'stage'),
         accessorFn: (row) => row.stage,
       },
       {
         id: 'matchType',
-        header: 'Type',
+        header: columnLabel(t, 'matchType'),
         accessorFn: (row) => row.matchType,
       },
       {
         id: 'win',
-        header: 'Result',
-        accessorFn: (row) => (row.match.win ? 'Win' : 'Loss'),
+        header: columnLabel(t, 'win'),
+        accessorFn: (row) => (row.match.win ? t('common.win') : t('common.loss')),
         cell: ({ row }) => (
           <Badge variant={row.original.match.win ? 'success' : 'destructive'}>
-            {row.original.match.win ? 'Win' : 'Loss'}
+            {row.original.match.win ? t('common.win') : t('common.loss')}
           </Badge>
         ),
       },
       {
         id: 'tournament',
-        header: 'Tournament',
+        header: columnLabel(t, 'tournament'),
         accessorFn: (row) => row.tournament,
       },
       {
         id: 'notes',
-        header: 'Notes',
+        header: columnLabel(t, 'notes'),
         accessorFn: (row) => row.notes,
         cell: ({ row }) => (
           <span className="line-clamp-1 max-w-[16ch]" title={row.original.notes}>
@@ -245,7 +253,7 @@ export function MatchTable({
       },
       {
         id: 'actions',
-        header: 'Manage',
+        header: t('matchData.table.columns.manage'),
         enableSorting: false,
         enableHiding: false,
         cell: ({ row }) => {
@@ -256,7 +264,7 @@ export function MatchTable({
               <Button
                 variant="outline"
                 size="icon-sm"
-                aria-label={hasVod ? 'Edit VOD notes' : 'Add VOD notes'}
+                aria-label={hasVod ? t('matchData.table.editVod') : t('matchData.table.addVod')}
                 className={cn(hasVod && 'border-primary text-primary')}
                 onClick={() => setVodMatch(row.original.match)}
               >
@@ -268,16 +276,18 @@ export function MatchTable({
                 // stay editable.
                 <Badge
                   variant="outline"
-                  title={`Synced from ${source === 'startgg' ? 'start.gg' : 'parry.gg'} — game data is managed by sync`}
+                  title={t('matchData.table.syncedTitle', {
+                    source: source === 'startgg' ? 'start.gg' : 'parry.gg',
+                  })}
                 >
-                  Synced
+                  {t('matchData.table.synced')}
                 </Badge>
               ) : (
                 <>
                   <Button
                     variant="outline"
                     size="icon-sm"
-                    aria-label="Edit match"
+                    aria-label={t('matchData.table.editMatch')}
                     onClick={() => setEditingMatch(row.original.match)}
                   >
                     <Pencil />
@@ -285,7 +295,7 @@ export function MatchTable({
                   <Button
                     variant="outline"
                     size="icon-sm"
-                    aria-label="Delete match"
+                    aria-label={t('shared.matchDelete.aria')}
                     onClick={() => setPendingDelete(row.original.match)}
                   >
                     <Trash2 />
@@ -297,7 +307,7 @@ export function MatchTable({
         },
       },
     ],
-    [],
+    [t],
   );
 
   const table = useReactTable({
@@ -318,9 +328,9 @@ export function MatchTable({
     if (!pendingDelete) return;
     try {
       await deleteMatch.mutateAsync(pendingDelete.id);
-      toast.success('Match deleted!');
+      toast.success(t('shared.matchDelete.deleted'));
     } catch {
-      toast.error('Failed to delete match. Please try again.');
+      toast.error(t('shared.matchDelete.deleteFailed'));
     } finally {
       setPendingDelete(null);
     }
@@ -335,11 +345,7 @@ export function MatchTable({
   }
 
   if (matches.length === 0) {
-    return (
-      <p className="text-center text-sm text-muted-foreground">
-        You have no matches, report a match and check back here to view match data!
-      </p>
-    );
+    return <p className="text-center text-sm text-muted-foreground">{t('matchData.noMatches')}</p>;
   }
 
   return (
@@ -348,37 +354,37 @@ export function MatchTable({
         <Input
           value={globalFilter}
           onChange={(e) => setGlobalFilter(e.target.value)}
-          placeholder={`Search ${data.length} records...`}
+          placeholder={t('matchData.table.searchPlaceholder', { count: data.length })}
           className="max-w-xs"
-          aria-label="Filter matches"
+          aria-label={t('matchData.table.searchAria')}
         />
 
         <ColumnFilterSelect
-          label="Your Fighter"
+          label={t('matchForm.yourFighter')}
           value={columnFilters.fighter}
           options={filterOptions.fighters}
           onChange={(value) => setColumnFilters((prev) => ({ ...prev, fighter: value }))}
         />
         <ColumnFilterSelect
-          label="Opponent Fighter"
+          label={t('matchForm.opponentFighter')}
           value={columnFilters.opponentFighter}
           options={filterOptions.opponentFighters}
           onChange={(value) => setColumnFilters((prev) => ({ ...prev, opponentFighter: value }))}
         />
         <ColumnFilterSelect
-          label="Stage"
+          label={t('matchData.table.columns.stage')}
           value={columnFilters.stage}
           options={filterOptions.stages}
           onChange={(value) => setColumnFilters((prev) => ({ ...prev, stage: value }))}
         />
         <ColumnFilterSelect
-          label="Type"
+          label={t('matchData.table.columns.matchType')}
           value={columnFilters.matchType}
           options={filterOptions.matchTypes}
           onChange={(value) => setColumnFilters((prev) => ({ ...prev, matchType: value }))}
         />
         <ColumnFilterSelect
-          label="Tournament"
+          label={t('matchData.table.columns.tournament')}
           value={columnFilters.tournament}
           options={filterOptions.tournaments}
           onChange={(value) => setColumnFilters((prev) => ({ ...prev, tournament: value }))}
@@ -389,11 +395,11 @@ export function MatchTable({
             <DropdownMenuTrigger asChild>
               <Button variant="outline" size="sm">
                 <SlidersHorizontal />
-                Columns
+                {t('matchData.table.columnsButton')}
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
-              <DropdownMenuLabel>Toggle columns</DropdownMenuLabel>
+              <DropdownMenuLabel>{t('matchData.table.toggleColumns')}</DropdownMenuLabel>
               <DropdownMenuSeparator />
               {table
                 .getAllColumns()
@@ -405,7 +411,7 @@ export function MatchTable({
                     onCheckedChange={(value) => column.toggleVisibility(!!value)}
                     onSelect={(e) => e.preventDefault()}
                   >
-                    {COLUMN_LABELS[column.id] ?? column.id}
+                    {columnLabel(t, column.id)}
                   </DropdownMenuCheckboxItem>
                 ))}
             </DropdownMenuContent>
@@ -413,7 +419,7 @@ export function MatchTable({
 
           <Button variant="outline" size="sm" onClick={handleExportCsv}>
             <Download />
-            Export CSV
+            {t('matchData.table.exportCsv')}
           </Button>
         </div>
       </div>
@@ -446,7 +452,7 @@ export function MatchTable({
                   colSpan={table.getVisibleFlatColumns().length}
                   className="text-center text-muted-foreground"
                 >
-                  No matches found.
+                  {t('matchData.table.noneFound')}
                 </TableCell>
               </TableRow>
             ) : (
@@ -500,19 +506,22 @@ export function MatchTable({
           </Button>
         </div>
         <span className="text-sm text-muted-foreground">
-          Page {table.getState().pagination.pageIndex + 1} of {Math.max(1, table.getPageCount())}
+          {t('matchData.table.pageOf', {
+            page: table.getState().pagination.pageIndex + 1,
+            total: Math.max(1, table.getPageCount()),
+          })}
         </span>
         <Select
           value={String(table.getState().pagination.pageSize)}
           onValueChange={(value) => table.setPageSize(Number(value))}
         >
-          <SelectTrigger className="w-[110px]" aria-label="Rows per page">
+          <SelectTrigger className="w-[110px]" aria-label={t('matchData.table.rowsPerPage')}>
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
             {PAGE_SIZE_OPTIONS.map((size) => (
               <SelectItem key={size} value={String(size)}>
-                Show {size}
+                {t('matchData.table.showN', { count: size })}
               </SelectItem>
             ))}
           </SelectContent>
@@ -546,12 +555,12 @@ export function MatchTable({
       >
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Delete this match?</AlertDialogTitle>
-            <AlertDialogDescription>This action cannot be undone.</AlertDialogDescription>
+            <AlertDialogTitle>{t('shared.matchDelete.confirmTitle')}</AlertDialogTitle>
+            <AlertDialogDescription>{t('common.cannotBeUndone')}</AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={confirmDelete}>Delete</AlertDialogAction>
+            <AlertDialogCancel>{t('common.cancel')}</AlertDialogCancel>
+            <AlertDialogAction onClick={confirmDelete}>{t('common.delete')}</AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
@@ -571,13 +580,16 @@ function ColumnFilterSelect({
   options: string[];
   onChange: (value: string) => void;
 }) {
+  const { t } = useTranslation();
   return (
     <Select value={value} onValueChange={onChange}>
       <SelectTrigger className="w-[150px]" aria-label={label}>
         <SelectValue placeholder={label} />
       </SelectTrigger>
       <SelectContent>
-        <SelectItem value={ALL_FILTER_VALUE}>All {label}</SelectItem>
+        <SelectItem value={ALL_FILTER_VALUE}>
+          {t('matchData.table.allOption', { label })}
+        </SelectItem>
         {options.map((option) => (
           <SelectItem key={option} value={option}>
             {option}

@@ -44,7 +44,11 @@
     "casual": "Casual",
     "competitive": "Compétitif",
     "unknown": "Inconnu",
-    "notAvailable": "n/d"
+    "notAvailable": "n/d",
+    "noMatchData": "Pas encore de données de match.",
+    "rate": "Taux",
+    "games_one": "{{count}} match",
+    "games_other": "{{count}} matchs"
   },
   "filters": {
     "sourceAria": "Filtrer les matchs par source",
@@ -56,6 +60,37 @@
     "months12": "12 m"
   },
   "shared": {
+    "noFighters": {
+      "title": "Vous n'avez pas encore choisi de combattant !",
+      "subtitle": "Choisissez vos combattants principaux et secondaires pour commencer à suivre vos matchs.",
+      "choosePrimary": "Choisir les combattants principaux",
+      "chooseSecondary": "Choisir les combattants secondaires"
+    },
+    "matchDelete": {
+      "aria": "Supprimer le match",
+      "confirmTitle": "Supprimer ce match ?",
+      "deleted": "Match supprimé !",
+      "deleteFailed": "Échec de la suppression du match. Veuillez réessayer."
+    },
+    "vod": {
+      "title": "Notes VOD",
+      "description": "Ajoutez un lien VOD et des notes horodatées, p. ex. « 2:41 — punition ratée sur le bouclier ».",
+      "url": "URL de la VOD",
+      "timestamps": "Horodatages",
+      "noTimestamps": "Pas encore de notes horodatées.",
+      "timestampsAria": "Notes horodatées",
+      "deleteTimestamp": "Supprimer l'horodatage {{time}}",
+      "timePlaceholder": "m:ss",
+      "timeAria": "Temps de l'horodatage",
+      "notePlaceholder": "Note",
+      "noteAria": "Note de l'horodatage",
+      "addTimestamp": "Ajouter un horodatage",
+      "timeFormatError": "Saisissez un temps au format m:ss ou h:mm:ss",
+      "noteRequired": "Saisissez une note pour cet horodatage",
+      "timestampLimit": "Limite de {{max}} horodatages par match",
+      "saved": "Notes VOD enregistrées !",
+      "saveFailed": "Échec de l'enregistrement des notes VOD. Veuillez réessayer."
+    },
     "filteredNotice": {
       "message": "Aucun match ne correspond aux filtres actuels.",
       "clear": "Effacer les filtres"
@@ -73,18 +108,9 @@
   },
   "dashboard": {
     "loading": "Chargement de votre tableau de bord...",
-    "empty": {
-      "title": "Vous n'avez pas encore choisi de combattant !",
-      "subtitle": "Choisissez vos combattants principaux et secondaires pour commencer à suivre vos matchs.",
-      "choosePrimary": "Choisir les combattants principaux",
-      "chooseSecondary": "Choisir les combattants secondaires"
-    },
     "hero": {
       "overallRecord": "Bilan global",
       "winRate": "{{rate}}% de victoires",
-      "games_one": "{{count}} match",
-      "games_other": "{{count}} matchs",
-      "noMatchData": "Pas encore de données de match.",
       "form": "Forme",
       "streakWin": "{{count}}V",
       "streakLoss": "{{count}}D",
@@ -107,9 +133,6 @@
       "ratingDown": "Classement en baisse depuis la dernière session",
       "ratingUnchanged": "Classement inchangé depuis la dernière session"
     },
-    "tracker": {
-      "rate": "Taux"
-    },
     "formCurve": {
       "title": "Courbe de forme",
       "window": "Fenêtre",
@@ -124,11 +147,7 @@
       "title": "Matchs précédents",
       "limit": "Limite",
       "limitAria": "Nombre de matchs",
-      "empty": "Aucun match enregistré pour l'instant.",
-      "deleteAria": "Supprimer le match",
-      "confirmTitle": "Supprimer ce match ?",
-      "deleted": "Match supprimé !",
-      "deleteFailed": "Échec de la suppression du match. Veuillez réessayer."
+      "empty": "Aucun match enregistré pour l'instant."
     },
     "stages": {
       "title": "Stages les plus joués",
@@ -341,6 +360,53 @@
       "mmrLabel": "MMR est. (normalisé)",
       "glickoLabel": "Glicko-2 (normalisé)",
       "caption": "Votre niveau en quickplay (MMR estimé pour ce combattant, modèle communautaire par rétro-ingénierie) face à votre classement Glicko-2 global (tous combattants/sessions) — les deux normalisés de 0 à 100 sur cette fenêtre, leurs échelles brutes n'étant pas liées. Comparer classement contre classement rend les formes honnêtement comparables ; une divergence signifie généralement que votre forme en quickplay diffère de votre forme générale."
+    }
+  },
+  "matchData": {
+    "loading": "Chargement des données de matchs...",
+    "title": "Historique des matchs",
+    "noMatches": "Vous n'avez aucun match : enregistrez-en un puis revenez ici pour voir vos données.",
+    "goToDashboard": "Aller au tableau de bord",
+    "table": {
+      "columns": {
+        "date": "Date",
+        "fighter": "Combattant",
+        "opponentFighter": "Adversaire",
+        "opponentName": "Nom de l'adversaire",
+        "stage": "Stage",
+        "matchType": "Type",
+        "win": "Résultat",
+        "tournament": "Tournoi",
+        "notes": "Notes",
+        "manage": "Gérer"
+      },
+      "editVod": "Modifier les notes VOD",
+      "addVod": "Ajouter des notes VOD",
+      "synced": "Synchronisé",
+      "syncedTitle": "Synchronisé depuis {{source}} — les données sont gérées par la synchronisation",
+      "editMatch": "Modifier le match",
+      "searchPlaceholder": "Rechercher parmi {{count}} entrées...",
+      "searchAria": "Filtrer les matchs",
+      "allOption": "Tous : {{label}}",
+      "columnsButton": "Colonnes",
+      "toggleColumns": "Afficher/masquer les colonnes",
+      "exportCsv": "Exporter en CSV",
+      "noneFound": "Aucun match trouvé.",
+      "pageOf": "Page {{page}} sur {{total}}",
+      "rowsPerPage": "Lignes par page",
+      "showN": "Afficher {{count}}"
+    },
+    "roster": {
+      "title": "Utilisation du roster",
+      "showAll": "Tout afficher ({{count}} de plus)",
+      "showLess": "Afficher moins"
+    },
+    "stages": {
+      "title": "Détail par stage",
+      "selectAria": "Sélectionner un stage",
+      "noneOnStage": "Aucun match enregistré sur ce stage.",
+      "winsShort": "{{count}}V",
+      "lossesShort": "{{count}}D"
     }
   }
 }
