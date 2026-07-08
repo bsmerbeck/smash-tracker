@@ -7,6 +7,7 @@ import {
   MIN_OBSERVATIONS_FOR_LINEAR_FALLBACK,
   fitGainDecay,
   getGspGainStats,
+  getGspMatches,
   getGspSeries,
   gspSettingsSchema,
   projectMatchesToElite,
@@ -46,6 +47,26 @@ describe('gspSettingsSchema / upsertGspSettingsInputSchema', () => {
   it('DEFAULT_ELITE_THRESHOLD is a plausible positive placeholder', () => {
     expect(DEFAULT_ELITE_THRESHOLD).toBeGreaterThan(0);
     expect(Number.isInteger(DEFAULT_ELITE_THRESHOLD)).toBe(true);
+  });
+});
+
+describe('getGspMatches', () => {
+  it('keeps index-parity with getGspSeries (same filter, same order, full records)', () => {
+    const matches = [
+      makeMatch({ time: 300, win: false, fighter_id: 1, gsp: 900 }),
+      makeMatch({ time: 100, win: true, fighter_id: 1, gsp: 1000 }),
+      makeMatch({ time: 200, win: true, fighter_id: 2, gsp: 5000 }),
+      makeMatch({ time: 150, win: true, fighter_id: 1 }),
+    ];
+
+    const gspMatches = getGspMatches(matches, 1);
+    const series = getGspSeries(matches, 1);
+
+    expect(gspMatches.map((m) => m.time)).toEqual([100, 300]);
+    expect(gspMatches.map((m) => m.time)).toEqual(series.map((p) => p.time));
+    expect(gspMatches.map((m) => m.gsp)).toEqual(series.map((p) => p.gsp));
+    // Full Match records, not projections — callers need ids to edit/delete.
+    expect(gspMatches[0]).toHaveProperty('id');
   });
 });
 

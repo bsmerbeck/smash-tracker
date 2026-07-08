@@ -95,11 +95,33 @@ export function buildMmrCurveData(series: GspPoint[], settings: GspSettings) {
   };
 }
 
-function buildGspCurveOptions(series: GspPoint[]): ChartOptions<'line'> {
+export function buildGspCurveOptions(
+  series: GspPoint[],
+  onPointClick?: (index: number) => void,
+): ChartOptions<'line'> {
   const theme = darkChartOptions();
   return {
     responsive: theme.responsive,
     maintainAspectRatio: theme.maintainAspectRatio,
+    // Same column-wise resolution the tooltip uses, so a click anywhere near
+    // a reading's x-position selects that reading (points are small; exact
+    // intersection would make click-to-edit feel broken).
+    interaction: { mode: 'index', intersect: false },
+    ...(onPointClick
+      ? {
+          onClick: (_event, elements) => {
+            const gspPoint = elements.find((el) => el.datasetIndex === 0);
+            if (gspPoint) {
+              onPointClick(gspPoint.index);
+            }
+          },
+          onHover: (_event, elements, chart) => {
+            chart.canvas.style.cursor = elements.some((el) => el.datasetIndex === 0)
+              ? 'pointer'
+              : 'default';
+          },
+        }
+      : {}),
     scales: {
       x: theme.scales?.x,
       y: {
@@ -137,7 +159,16 @@ function buildGspCurveOptions(series: GspPoint[]): ChartOptions<'line'> {
  * `chartTheme`'s `maintainAspectRatio: false` convention (V9-C) — needs a
  * fixed-height wrapper div to actually fill.
  */
-export function GspCurve({ series, settings }: { series: GspPoint[]; settings: GspSettings }) {
+export function GspCurve({
+  series,
+  settings,
+  onPointClick,
+}: {
+  series: GspPoint[];
+  settings: GspSettings;
+  /** V14: click a reading on the curve to act on it (the page opens the edit dialog for that match). Index-aligned with `series`/`getGspMatches`. */
+  onPointClick?: (index: number) => void;
+}) {
   const nowMs = useNowMs();
   const [view, setView] = useState<GspCurveView>('gsp');
   const hasEnoughReadings = series.length >= GSP_CURVE_UNLOCK_THRESHOLD;
@@ -177,7 +208,7 @@ export function GspCurve({ series, settings }: { series: GspPoint[]; settings: G
                     ? buildMmrCurveData(series, settings)
                     : buildGspCurveData(series, eliteThreshold)
                 }
-                options={buildGspCurveOptions(series)}
+                options={buildGspCurveOptions(series, onPointClick)}
               />
             </div>
             {view === 'mmr' ? (
@@ -191,6 +222,7 @@ export function GspCurve({ series, settings }: { series: GspPoint[]; settings: G
                 Every point is a logged post-match GSP reading for this fighter. The dashed line is
                 the computed Elite Smash threshold — a community-model estimate, not a
                 Nintendo-published value.
+                {onPointClick && ' Click a point to edit that reading.'}
               </p>
             )}
           </>
