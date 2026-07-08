@@ -482,6 +482,10 @@ export function MatchFormFields({
                         placeholder="Type a name..."
                         value={field.value}
                         onValueChange={(value) => field.onChange(value)}
+                        // Select-all on focus: the field arrives pre-filled
+                        // ('unknown' on add, the saved name on edit), so
+                        // typing should replace it, not append to it.
+                        onFocus={(e) => e.currentTarget.select()}
                       />
                       <CommandList>
                         <CommandEmpty>Press enter to add a new opponent.</CommandEmpty>

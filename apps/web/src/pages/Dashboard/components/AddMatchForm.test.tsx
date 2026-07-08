@@ -64,6 +64,10 @@ async function fillOpponentName(
 ) {
   await user.click(within(dialog).getByRole('combobox', { name: 'Opponent' }));
   const input = await screen.findByPlaceholderText('Type a name...');
+  // The field arrives pre-filled ('unknown' by default) — clear it first,
+  // like a user replacing the value (the real input also selects-all on
+  // focus so typing replaces).
+  await user.clear(input);
   await user.type(input, name);
 }
 
@@ -123,7 +127,7 @@ describe('AddMatchForm', () => {
     expect(createMatch).not.toHaveBeenCalled();
   });
 
-  it('requires an opponent name before submitting', async () => {
+  it("defaults the opponent to 'unknown' when the field is left untouched", async () => {
     const user = userEvent.setup();
     renderForm();
 
@@ -133,8 +137,8 @@ describe('AddMatchForm', () => {
     await user.click(within(dialog).getByRole('radio', { name: 'Win' }));
     await user.click(within(dialog).getByRole('button', { name: 'Save' }));
 
-    expect(await within(dialog).findByText('Opponent name is required')).toBeInTheDocument();
-    expect(createMatch).not.toHaveBeenCalled();
+    await waitFor(() => expect(createMatch).toHaveBeenCalledTimes(1));
+    expect(createMatch).toHaveBeenCalledWith(expect.objectContaining({ opponent: 'unknown' }));
   });
 
   it('submits a correctly shaped CreateMatchInput with a lowercased opponent name and the map sentinel', async () => {
@@ -274,6 +278,7 @@ describe('AddMatchForm', () => {
 
       await user.click(within(dialog).getByRole('combobox', { name: 'Opponent' }));
       const opponentInput = await screen.findByPlaceholderText('Type a name...');
+      await user.clear(opponentInput); // pre-filled with 'unknown'
       await user.type(opponentInput, 'powpow');
 
       await user.click(within(dialog).getByRole('radio', { name: 'Game 1 Win' }));
@@ -314,6 +319,7 @@ describe('AddMatchForm', () => {
 
       await user.click(within(dialog).getByRole('combobox', { name: 'Opponent' }));
       const opponentInput = await screen.findByPlaceholderText('Type a name...');
+      await user.clear(opponentInput); // pre-filled with 'unknown'
       await user.type(opponentInput, 'powpow');
 
       await user.click(within(dialog).getByRole('radio', { name: 'Game 1 Win' }));
