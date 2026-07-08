@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next';
 import type { Fighter } from '@smash-tracker/shared';
 import { cn } from '@/lib/utils';
 
@@ -17,11 +18,12 @@ export function GspFighterSelect({
   fighterOptions: Fighter[];
   onChange: (fighter: Fighter) => void;
 }) {
+  const { t } = useTranslation();
   return (
     <div
       className="flex flex-wrap items-center justify-center gap-2"
       role="group"
-      aria-label="Select fighter"
+      aria-label={t('gsp.selectFighterAria')}
     >
       {fighterOptions.map((option) => {
         const selected = option.id === fighter?.id;

@@ -223,5 +223,124 @@
       "edited": "Match edited!",
       "saveFailed": "Failed to save match. Please try again."
     }
+  },
+  "gsp": {
+    "loading": "Loading GSP tracker...",
+    "selectFighterAria": "Select fighter",
+    "empty": {
+      "title": "Track your GSP climb",
+      "body": "GSP (Global Smash Power) is Smash Ultimate's online quickplay ranking, tracked per-character. Log a quickplay match with the GSP shown on the results screen and this page will chart your climb, break down your win/loss gains, and estimate how far you are from Elite Smash.",
+      "cta": "Log a match on the Dashboard"
+    },
+    "header": {
+      "title": "GSP Tracker",
+      "subtitle": "Global Smash Power is per-character and its exact formula is never published by Nintendo — everything below is an estimate built from your own logged matches and a community-reverse-engineered model of the hidden MMR behind GSP."
+    },
+    "deleteConfirm": {
+      "title": "Delete this GSP entry?",
+      "body": "The match and its GSP reading are removed together — this action cannot be undone.",
+      "deleted": "GSP entry deleted!",
+      "deleteFailed": "Failed to delete the entry. Please try again."
+    },
+    "hero": {
+      "currentGsp": "Current GSP",
+      "latestReading": "latest reading",
+      "noGsp": "No GSP logged yet",
+      "estMmr": "Est. MMR",
+      "tailReading": "{{zone}}-tail reading — approximate",
+      "modelLink": "community-reverse-engineered model",
+      "modelAccuracy": "(±1 GSP in the main curve; tails approximate)",
+      "eliteThreshold": "Elite Threshold",
+      "thresholdAria": "Elite Smash threshold",
+      "saveThreshold": "Save threshold",
+      "cancelThreshold": "Cancel editing threshold",
+      "editThreshold": "Edit Elite threshold",
+      "recalibrated": "recalibrated {{date}}",
+      "fromAnchor": "from the model anchor",
+      "computedCaption": "computed · {{calibration}} · editing recalibrates the model — grab the current number from",
+      "invalidThreshold": "Enter a positive whole number — commas are fine, e.g. 10,300,000.",
+      "recalibratedToast": "Model recalibrated from your threshold reading!",
+      "thresholdSaveFailed": "Failed to save the Elite threshold. Please try again.",
+      "distanceToElite": "Distance to Elite",
+      "elite": "ELITE",
+      "belowElite": "MMR {{mmr}} · below Elite ({{elite}})",
+      "recentWinRate": "Recent Win Rate",
+      "lastNGames_one": "last {{count}} game",
+      "lastNGames_other": "last {{count}} games"
+    },
+    "curve": {
+      "title": "GSP Curve",
+      "gspViewAria": "GSP view",
+      "mmrViewAria": "MMR view",
+      "gspLabel": "GSP",
+      "eliteLine": "Elite threshold",
+      "estMmrLabel": "Est. MMR",
+      "eliteMmrLine": "Elite (MMR {{mmr}})",
+      "mmrCaption": "Estimated hidden MMR behind each reading (community-reverse-engineered model) — unlike GSP, it doesn't inflate over time, so a flat line means flat skill. Dashed line: Elite entry at MMR {{mmr}}.",
+      "gspCaption": "Every point is a logged post-match GSP reading for this fighter. The dashed line is the computed Elite Smash threshold — a community-model estimate, not a Nintendo-published value.",
+      "clickHint": "Click a point to edit that reading.",
+      "locked": "Log at least {{count}} matches with a GSP reading for this fighter to see the curve."
+    },
+    "logger": {
+      "title": "Quick Logger",
+      "opponentCharacter": "Opponent Character",
+      "selectCharacter": "Select a character",
+      "gspAfterMatch": "GSP After Match",
+      "gspPlaceholder": "e.g. 9,420,000",
+      "stageOptional": "Stage (optional)",
+      "logMatch": "Log Match",
+      "logging": "Logging...",
+      "chooseOpponent": "Choose the opponent's character.",
+      "chooseResult": "Mark this match as a win or loss.",
+      "invalidGsp": "Enter the GSP shown after the match — commas are fine, e.g. 10,300,000.",
+      "logged": "Match logged! GSP {{gsp}}",
+      "logFailed": "Failed to log the match. Please try again."
+    },
+    "log": {
+      "title": "GSP Log",
+      "editEntry": "Edit GSP entry from {{date}}",
+      "deleteEntry": "Delete GSP entry from {{date}}",
+      "showRecent": "Show recent only",
+      "showAll": "Show all {{count}} entries"
+    },
+    "gains": {
+      "title": "Gains Analysis",
+      "avgGainLifetime": "Avg gain/win (lifetime)",
+      "avgDropLifetime": "Avg drop/loss (lifetime)",
+      "biggestGain": "Biggest single gain",
+      "avgGainLast20": "Avg gain/win (last 20)",
+      "avgDropLast20": "Avg drop/loss (last 20)",
+      "biggestDrop": "Biggest single drop",
+      "perWinTitle": "Per-win gains over time",
+      "shrinking": "— shrinking as your GSP climbs",
+      "growing": "— trending up",
+      "winNumber": "Win #{{number}}",
+      "gainedGsp": "GSP gained",
+      "empty": "Log a few wins and losses with GSP readings to see your gain/loss trends."
+    },
+    "road": {
+      "title": "Road to Elite",
+      "empty": "Log a match with a GSP reading for this fighter to see a projection.",
+      "alreadyElite": "You're already in Elite Smash!",
+      "equilibriumTitle": "Holding steady at your level",
+      "equilibriumBody": "At your current {{rate}}% win rate, matchmaking thinks this is your level right now — every match trades ~{{points}} MMR both ways, so a >50% win rate is what moves you up, not more matches. Keep working the matchups on this page and the number will follow.",
+      "cappedTitle": "more than {{max}} net wins",
+      "cappedBody": "Your win rate is barely above 50%, so expected progress per match is tiny — a small bump in win rate shortens this dramatically.",
+      "projected_one": "~{{count}} more match",
+      "projected_other": "~{{count}} more matches",
+      "projectedCaption": "to Elite (MMR {{elite}}) at your ~{{points}} MMR/match and {{rate}}% win rate (community model estimate)",
+      "historyOne": "From your own GSP history instead: ~{{label}} more match ({{model}}).",
+      "historyMany": "From your own GSP history instead: ~{{label}} more matches ({{model}}).",
+      "decayFit": "V10's shrinking-gains fit",
+      "flatFallback": "V10's flat-average fallback",
+      "assumption1": "Assumes matchmaking keeps pairing you against similar-MMR opponents (each match trades ~{{points}} MMR, the community table's value for an even match) and that your recent win rate holds.",
+      "assumption2": "Built on the community-reverse-engineered MMR model, not Nintendo's algorithm — a simulation, not a guarantee."
+    },
+    "vsGlicko": {
+      "title": "Est. MMR vs Glicko-2",
+      "mmrLabel": "Est. MMR (normalized)",
+      "glickoLabel": "Glicko-2 (normalized)",
+      "caption": "Your quickplay rating (estimated MMR for this fighter, community-reverse-engineered model) vs. your overall Glicko-2 rating (every fighter/session) — both normalized to 0-100 over this window since their raw scales are unrelated. Rating-vs-rating makes the shapes honestly comparable; divergence usually means your quickplay form differs from your overall form."
+    }
   }
 }

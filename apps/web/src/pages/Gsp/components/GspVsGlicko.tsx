@@ -1,3 +1,5 @@
+import { useTranslation } from 'react-i18next';
+import type { TFunction } from 'i18next';
 import {
   CategoryScale,
   Chart as ChartJS,
@@ -21,12 +23,14 @@ ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Tooltip,
 function buildChartData(
   mmr: { time: number; value: number }[],
   glicko: { time: number; value: number }[],
+  t: TFunction,
+  locale: string,
 ) {
   const allTimes = [...new Set([...mmr.map((p) => p.time), ...glicko.map((p) => p.time)])].sort(
     (a, b) => a - b,
   );
-  const labels = allTimes.map((t) =>
-    new Date(t).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+  const labels = allTimes.map((time) =>
+    new Date(time).toLocaleDateString(locale, { month: 'short', day: 'numeric' }),
   );
 
   const mmrByTime = new Map(mmr.map((p) => [p.time, p.value]));
@@ -36,13 +40,13 @@ function buildChartData(
     labels,
     datasets: [
       {
-        label: 'Est. MMR (normalized)',
+        label: t('gsp.vsGlicko.mmrLabel'),
         ...redLineDataset(),
         spanGaps: true,
         data: allTimes.map((t) => mmrByTime.get(t) ?? null),
       },
       {
-        label: 'Glicko-2 (normalized)',
+        label: t('gsp.vsGlicko.glickoLabel'),
         borderColor: chartColors.tick,
         backgroundColor: chartColors.tick,
         pointBackgroundColor: chartColors.tick,
@@ -95,6 +99,7 @@ export function GspVsGlicko({
   allMatches: Match[];
   settings: GspSettings;
 }) {
+  const { t, i18n } = useTranslation();
   const { periods } = computeRatingHistory(allMatches);
 
   if (gspSeries.length < GSP_VS_GLICKO_MIN_POINTS || periods.length < GSP_VS_GLICKO_MIN_POINTS) {
@@ -110,19 +115,16 @@ export function GspVsGlicko({
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Est. MMR vs Glicko-2</CardTitle>
+        <CardTitle>{t('gsp.vsGlicko.title')}</CardTitle>
       </CardHeader>
       <CardContent className="flex flex-col gap-4">
         <div className="h-64">
-          <Line data={buildChartData(mmr, glicko)} options={buildChartOptions()} />
+          <Line
+            data={buildChartData(mmr, glicko, t, i18n.language)}
+            options={buildChartOptions()}
+          />
         </div>
-        <p className="text-xs text-muted-foreground">
-          Your quickplay rating (estimated MMR for this fighter, community-reverse-engineered model)
-          vs. your overall Glicko-2 rating (every fighter/session) — both normalized to 0-100 over
-          this window since their raw scales are unrelated. Rating-vs-rating makes the shapes
-          honestly comparable; divergence usually means your quickplay form differs from your
-          overall form.
-        </p>
+        <p className="text-xs text-muted-foreground">{t('gsp.vsGlicko.caption')}</p>
       </CardContent>
     </Card>
   );
