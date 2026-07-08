@@ -1,8 +1,33 @@
-import { type ReactNode } from 'react';
+import { useEffect, type ReactNode } from 'react';
+import { useTranslation } from 'react-i18next';
+import { toast } from 'sonner';
 import { TooltipProvider } from '@/components/ui/tooltip';
+import { SUPPORTED_LANGUAGES } from '@/i18n';
 import { Sidebar } from './Sidebar';
 import { Topbar } from './Topbar';
 import { Footer } from './Footer';
+
+/** localStorage flag so the auto-detection notice fires once per browser, not once per visit. */
+const LANGUAGE_TOAST_KEY = 'st-language-toast-shown';
+
+/**
+ * V15: one-time notice that the app auto-applied the browser's language
+ * (i18next's navigator detection). Detection is silent by design — this
+ * toast is the "suggestion" surface: it tells the user what happened and
+ * where to change it (the topbar language bar). English needs no notice.
+ */
+function useLanguageDetectionNotice() {
+  const { i18n, t } = useTranslation();
+  useEffect(() => {
+    const language = i18n.resolvedLanguage;
+    if (!language || language === 'en' || localStorage.getItem(LANGUAGE_TOAST_KEY)) {
+      return;
+    }
+    localStorage.setItem(LANGUAGE_TOAST_KEY, '1');
+    const label = SUPPORTED_LANGUAGES.find((l) => l.code === language)?.label ?? language;
+    toast.info(t('chrome.languageChanged', { language: label }));
+  }, [i18n.resolvedLanguage, i18n, t]);
+}
 
 /**
  * Authenticated app shell: Topbar + persistent desktop Sidebar (mobile nav
@@ -15,6 +40,7 @@ import { Footer } from './Footer';
 export function MainLayout({ children }: { children: ReactNode }) {
   // page_view reporting lives in routes/RouteAnalytics.tsx (app-wide, public
   // pages included), not here.
+  useLanguageDetectionNotice();
   return (
     <TooltipProvider>
       <div className="flex min-h-svh flex-col">
