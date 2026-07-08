@@ -81,7 +81,10 @@ export function defaultSetSharedValues(fighterId: number): SetSharedFormValues {
   return {
     fighterId,
     opponentFighterId: alphaSpriteList[0]?.id ?? 0,
-    opponentName: '',
+    // Same default as the single-game form (see AddMatchForm's
+    // buildDefaultValues): untouched entries land on the shared "unknown"
+    // opponent instead of demanding a name for random quickplay sets.
+    opponentName: 'unknown',
     matchType: 'none',
     format: 'bo3',
     eventName: '',
@@ -314,6 +317,10 @@ export function SetWizard({
                         placeholder="Type a name..."
                         value={field.value}
                         onValueChange={(value) => field.onChange(value)}
+                        // Select-all on focus — same rationale as the
+                        // single-game form: 'unknown' arrives pre-filled and
+                        // typing should replace it.
+                        onFocus={(e) => e.currentTarget.select()}
                       />
                       <CommandList>
                         <CommandEmpty>Press enter to add a new opponent.</CommandEmpty>
