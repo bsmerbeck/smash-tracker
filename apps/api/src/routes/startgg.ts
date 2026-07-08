@@ -200,27 +200,37 @@ const startggRoutes: FastifyPluginAsyncZod<StartggRoutesOptions> = async (app, o
       if (!email) {
         return failure('email_unavailable');
       }
-      let firebaseUser;
+      // Everything past the code exchange must degrade to the same
+      // redirect-with-reason as the other failure paths: a raw 500 here makes
+      // Firebase Hosting's proxy retry the callback, and the retry burns the
+      // single-use OAuth code on an attempt the user never sees (observed
+      // live when createCustomToken lacked iam.serviceAccounts.signBlob).
       try {
-        firebaseUser = await app.firebase.auth.getUserByEmail(email);
-      } catch {
-        firebaseUser = await app.firebase.auth.createUser({ email });
+        let firebaseUser;
+        try {
+          firebaseUser = await app.firebase.auth.getUserByEmail(email);
+        } catch {
+          firebaseUser = await app.firebase.auth.createUser({ email });
+        }
+        const customToken = await app.firebase.auth.createCustomToken(firebaseUser.uid);
+        // Also persist the link for the newly signed-in account so sync works
+        // immediately after a "login with start.gg".
+        const record: StartggLinkRecord = {
+          userId: identity.id,
+          playerId: identity.player.id,
+          gamerTag: identity.player.gamerTag,
+          slug: identity.slug,
+          linkedAt: Date.now(),
+        };
+        await linksRef(firebaseUser.uid).update(record);
+        // Token travels in the URL fragment: fragments never reach servers/logs.
+        return reply.redirect(
+          `${config.webBaseUrl}/auth/startgg#token=${encodeURIComponent(customToken)}`,
+        );
+      } catch (err) {
+        request.log.error({ err }, 'start.gg login completion failed');
+        return failure('login_failed');
       }
-      const customToken = await app.firebase.auth.createCustomToken(firebaseUser.uid);
-      // Also persist the link for the newly signed-in account so sync works
-      // immediately after a "login with start.gg".
-      const record: StartggLinkRecord = {
-        userId: identity.id,
-        playerId: identity.player.id,
-        gamerTag: identity.player.gamerTag,
-        slug: identity.slug,
-        linkedAt: Date.now(),
-      };
-      await linksRef(firebaseUser.uid).update(record);
-      // Token travels in the URL fragment: fragments never reach servers/logs.
-      return reply.redirect(
-        `${config.webBaseUrl}/auth/startgg#token=${encodeURIComponent(customToken)}`,
-      );
     },
   );
 };

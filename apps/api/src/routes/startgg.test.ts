@@ -205,4 +205,25 @@ describe('start.gg routes (configured)', () => {
 
     expect(response.headers.location).toContain('custom-token-for-existing-uid');
   });
+
+  it('login callback degrades to an error redirect when completion throws', async () => {
+    const { app, auth } = buildTestApp({ startgg: CONFIG, startggFetch: oauthFetchMock() });
+    // Mirrors the live incident: createCustomToken throwing (the runtime
+    // service account lacked iam.serviceAccounts.signBlob) must not surface
+    // as a 500 — Hosting's proxy retries 5xx and burns the single-use code.
+    auth.createCustomToken = async () => {
+      throw new Error('Permission iam.serviceAccounts.signBlob denied');
+    };
+    const state = signState(CONFIG.stateSecret, 'login');
+
+    const response = await app.inject({
+      method: 'GET',
+      url: `/api/integrations/startgg/callback?code=auth-code&state=${encodeURIComponent(state)}`,
+    });
+
+    expect(response.statusCode).toBe(302);
+    const location = response.headers.location as string;
+    expect(location).toContain('startgg=error');
+    expect(location).toContain('reason=login_failed');
+  });
 });
