@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import i18n, { SUPPORTED_LANGUAGES } from '@/i18n';
 import { LanguageSelect } from './LanguageSelect';
@@ -27,7 +27,10 @@ describe('LanguageSelect', () => {
     await user.click(screen.getByRole('combobox', { name: 'Language' }));
     await user.click(screen.getByRole('option', { name: 'Español' }));
 
-    expect(i18n.resolvedLanguage).toBe('es');
+    // The switch loads the es locale as an async chunk (see i18n/index.ts),
+    // so the language settles a tick after the click — poll instead of
+    // asserting synchronously.
+    await waitFor(() => expect(i18n.resolvedLanguage).toBe('es'));
     expect(i18n.t('nav.dashboard')).toBe('Panel');
     // i18next's detector cache — this is what makes the choice stick and
     // outrank browser-language detection on the next visit.
