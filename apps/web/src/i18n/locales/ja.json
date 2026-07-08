@@ -160,5 +160,68 @@
       "partialSave": "エラーが発生し、{{total}}戦中{{saved}}戦のみ保存されました。対戦データを確認し、足りない分を再入力してください。",
       "setFailed": "セットを保存できませんでした。もう一度お試しください。"
     }
+  },
+  "matchForm": {
+    "yourFighter": "自分のファイター",
+    "opponentFighter": "相手のファイター",
+    "result": "結果",
+    "map": "ステージ",
+    "mostPlayed": "よく遊ぶステージ",
+    "allStages": "すべてのステージ",
+    "stocksLeft": "残ストック（勝者）",
+    "notTracked": "記録なし",
+    "gspAfterMatch": "対戦後のGSP（任意）",
+    "gspPlaceholder": "例: 12,400,000",
+    "matchType": "対戦の種類",
+    "matchTypes": {
+      "none": "未指定",
+      "quickplay": "クイックプレイ",
+      "online-friendly": "オンラインフリー",
+      "online-tourney": "オンライン大会",
+      "offline-friendly": "オフラインフリー",
+      "offline-tourney": "オフライン大会"
+    },
+    "opponent": "相手",
+    "opponentCombobox": "入力して絞り込み・追加...",
+    "opponentSearch": "名前を入力...",
+    "opponentAddHint": "Enterキーで新しい相手を追加します。",
+    "notes": "メモ",
+    "notesPlaceholder": "メモ（任意）...",
+    "tournament": {
+      "sectionTitle": "大会（任意）",
+      "tournamentName": "大会名",
+      "tournamentPlaceholder": "例: The Big House 9",
+      "eventName": "種目名",
+      "eventPlaceholder": "例: Ultimate Singles",
+      "hint": "ここで入力した大会名・種目名はstart.ggのインポートと同じ形式で保存されるため、手動で記録した大会も同期された大会と並んで大会ページに表示されます。"
+    },
+    "validation": {
+      "chooseFighter": "自分のファイターを選んでください",
+      "chooseOpponentFighter": "相手のファイターを選んでください",
+      "chooseResult": "結果を選んでください",
+      "opponentRequired": "相手の名前を入力してください",
+      "charLimit": "{{max}}文字以内で入力してください",
+      "gspFormat": "12,400,000 のような数値を入力してください（空欄でも可）"
+    },
+    "set": {
+      "format": "セット形式",
+      "bestOf3": "3本勝負（Bo3）",
+      "bestOf5": "5本勝負（Bo5）",
+      "opponentFighterGame1": "相手のファイター（1戦目）",
+      "score": "セットスコア",
+      "decided": "— セット確定",
+      "firstTo": "（先取{{count}}）",
+      "game": "{{number}}戦目",
+      "gameWinAria": "{{number}}戦目 勝ち",
+      "gameLossAria": "{{number}}戦目 負け",
+      "stage": "ステージ"
+    },
+    "edit": {
+      "title": "対戦を編集",
+      "description": "記録済みの対戦内容を更新します。",
+      "deleteMatch": "対戦を削除",
+      "edited": "対戦を編集しました！",
+      "saveFailed": "対戦を保存できませんでした。もう一度お試しください。"
+    }
   }
 }
