@@ -61,7 +61,7 @@ import {
   type MatchTableFilterState,
 } from '../lib/matchTableFilters';
 import { persistColumnVisibility, readStoredColumnVisibility } from '../lib/columnVisibility';
-import { EditMatchForm } from './EditMatchForm';
+import { EditMatchForm } from '@/components/match-form/EditMatchForm';
 import { VodNotesDialog } from '@/components/vod/VodNotesDialog';
 import { cn } from '@/lib/utils';
 

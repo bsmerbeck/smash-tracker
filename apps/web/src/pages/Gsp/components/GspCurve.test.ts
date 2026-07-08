@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { GspPoint, GspSettings } from '@smash-tracker/shared';
 import { GSP_MODEL, estimateT, mmrToGsp } from '@smash-tracker/shared';
-import { buildGspCurveData, buildMmrCurveData } from './GspCurve';
+import { buildGspCurveData, buildGspCurveOptions, buildMmrCurveData } from './GspCurve';
 
 describe('buildGspCurveData', () => {
   it('builds a GSP dataset and a flat threshold line of the same length', () => {
@@ -66,5 +66,51 @@ describe('buildMmrCurveData', () => {
     expect(data.labels).toEqual([]);
     expect(data.datasets[0]!.data).toEqual([]);
     expect(data.datasets[1]!.data).toEqual([]);
+  });
+});
+
+describe('buildGspCurveOptions', () => {
+  const series: GspPoint[] = [
+    { time: 1, gsp: 9_000_000, win: true },
+    { time: 2, gsp: 9_100_000, win: true },
+  ];
+
+  it('omits click/hover handlers when no onPointClick is given', () => {
+    const options = buildGspCurveOptions(series);
+    expect(options.onClick).toBeUndefined();
+    expect(options.onHover).toBeUndefined();
+  });
+
+  it('resolves a click on the GSP dataset to the point index', () => {
+    const clicks: number[] = [];
+    const options = buildGspCurveOptions(series, (index) => clicks.push(index));
+
+    type OnClick = NonNullable<typeof options.onClick>;
+    const onClick = options.onClick as OnClick;
+    // Interaction mode 'index' reports elements from every dataset at that
+    // column — only the GSP dataset (index 0) must resolve, never the flat
+    // Elite reference line (index 1).
+    onClick.call(
+      undefined as never,
+      undefined as never,
+      [
+        { datasetIndex: 1, index: 1 },
+        { datasetIndex: 0, index: 1 },
+      ] as never,
+      undefined as never,
+    );
+    expect(clicks).toEqual([1]);
+  });
+
+  it('ignores clicks that only hit the Elite reference line', () => {
+    const clicks: number[] = [];
+    const options = buildGspCurveOptions(series, (index) => clicks.push(index));
+    (options.onClick as NonNullable<typeof options.onClick>).call(
+      undefined as never,
+      undefined as never,
+      [{ datasetIndex: 1, index: 0 }] as never,
+      undefined as never,
+    );
+    expect(clicks).toEqual([]);
   });
 });
