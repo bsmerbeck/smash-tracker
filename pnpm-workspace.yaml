@@ -3,10 +3,17 @@ packages:
   - 'packages/*'
 overrides:
   uuid: ^11.1.1
+  # One zod for the whole tree: puppeteer→chromium-bidi pins zod@3, and a
+  # second zod in the store can win the hidden-hoist slot that
+  # @hookform/resolvers' type imports fall back to, breaking web typecheck on
+  # fresh installs. chromium-bidi only runs for BiDi sessions (we use CDP);
+  # scripts/prerender.mjs exercises this at deploy time.
+  zod: ^4.4.3
 allowBuilds:
   '@firebase/util': true
   esbuild: true
   protobufjs: true
+  puppeteer: true
 minimumReleaseAgeExclude:
   - tsx@4.23.0
 patchedDependencies:

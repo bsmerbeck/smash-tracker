@@ -1,5 +1,6 @@
 import { Navigate } from 'react-router';
 import { useAuth } from '@/hooks/useAuth';
+import { useSeo } from '@/hooks/useSeo';
 import { SignInCard } from './SignInCard';
 import { LandingContent } from './LandingContent';
 
@@ -10,8 +11,19 @@ import { LandingContent } from './LandingContent';
  * V11 SEO: this is the only route Google can index — everything past
  * sign-in is auth-gated — so the signed-out view carries real marketing
  * copy (LandingContent) below the fold instead of just the sign-in card.
+ *
+ * V12 SEO: title/description here match index.html's static tags verbatim —
+ * `useSeo` is a no-op against the prerendered snapshot of `/` but keeps this
+ * page's head in sync with the other public routes going forward.
  */
 export function HomePage() {
+  useSeo({
+    title: 'Smash Tracker — Free Super Smash Bros. Ultimate Analytics & GSP Tracker',
+    description:
+      'Free Super Smash Bros. Ultimate analytics: GSP & Elite Smash tracking, start.gg/parry.gg sync, matchup stats, stage mastery, and AI scouting reports.',
+    canonicalPath: '/',
+  });
+
   const { user, loading } = useAuth();
 
   if (loading) {
