@@ -525,6 +525,10 @@ export function MatchTable({
           fighterSprites={fighterSprites}
           open={editingMatch != null}
           onOpenChange={(open) => !open && setEditingMatch(null)}
+          onDelete={(match) => {
+            setEditingMatch(null);
+            setPendingDelete(match);
+          }}
         />
       )}
 
