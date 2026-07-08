@@ -1,7 +1,5 @@
-import { useEffect, type ReactNode } from 'react';
-import { useLocation } from 'react-router';
+import { type ReactNode } from 'react';
 import { TooltipProvider } from '@/components/ui/tooltip';
-import { logAnalyticsPageView } from '@/lib/firebase';
 import { Sidebar } from './Sidebar';
 import { Topbar } from './Topbar';
 import { Footer } from './Footer';
@@ -15,13 +13,8 @@ import { Footer } from './Footer';
  * page's stage-chip and Advisor Retrospective tooltips).
  */
 export function MainLayout({ children }: { children: ReactNode }) {
-  // GA4 only auto-collects the initial page load; SPA navigations are
-  // reported here. No-ops entirely when analytics isn't configured.
-  const location = useLocation();
-  useEffect(() => {
-    logAnalyticsPageView(location.pathname);
-  }, [location.pathname]);
-
+  // page_view reporting lives in routes/RouteAnalytics.tsx (app-wide, public
+  // pages included), not here.
   return (
     <TooltipProvider>
       <div className="flex min-h-svh flex-col">
