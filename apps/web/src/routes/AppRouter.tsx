@@ -3,6 +3,7 @@ import { BrowserRouter, Navigate, Route, Routes } from 'react-router';
 import { HomePage } from '@/pages/Home/HomePage';
 import { ProtectedRoute } from './ProtectedRoute';
 import { RouteAnalytics } from './RouteAnalytics';
+import { RouteTitles } from './RouteTitles';
 
 /**
  * V12 SEO: every page except HomePage is lazy-loaded so the entry chunk stays
@@ -95,6 +96,10 @@ function RouteFallback() {
 export function AppRouter() {
   return (
     <BrowserRouter>
+      {/* Order matters: RouteTitles' effect runs before RouteAnalytics reads
+          document.title (the async analytics init resolves after the whole
+          effect flush), and page-level useSeo effects run before both. */}
+      <RouteTitles />
       <RouteAnalytics />
       <Suspense fallback={<RouteFallback />}>
         <Routes>
