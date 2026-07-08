@@ -2,6 +2,7 @@ import { lazy, Suspense } from 'react';
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router';
 import { HomePage } from '@/pages/Home/HomePage';
 import { ProtectedRoute } from './ProtectedRoute';
+import { RouteAnalytics } from './RouteAnalytics';
 
 /**
  * V12 SEO: every page except HomePage is lazy-loaded so the entry chunk stays
@@ -94,6 +95,7 @@ function RouteFallback() {
 export function AppRouter() {
   return (
     <BrowserRouter>
+      <RouteAnalytics />
       <Suspense fallback={<RouteFallback />}>
         <Routes>
           <Route path="/" element={<HomePage />} />
