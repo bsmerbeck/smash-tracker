@@ -123,9 +123,14 @@ function initAnalytics(): Promise<AnalyticsContext | null> {
 export function logAnalyticsPageView(pagePath: string): void {
   void initAnalytics().then((ctx) => {
     if (ctx) {
+      // document.title is read here — after initAnalytics' promise resolves,
+      // i.e. after the commit's effect flush — so RouteTitles/useSeo have
+      // already set the per-route title and GA's "Views by Page title"
+      // gets real page names instead of one collapsed row.
       ctx.mod.logEvent(ctx.analytics, 'page_view', {
         page_path: pagePath,
         page_location: window.location.href,
+        page_title: document.title,
       });
     }
   });
