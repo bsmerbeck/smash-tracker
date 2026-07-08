@@ -250,8 +250,9 @@ export function MatchTable({
         enableHiding: false,
         cell: ({ row }) => {
           const hasVod = row.original.match.vodUrl != null;
+          const source = row.original.match.source;
           return (
-            <div className="flex justify-end gap-2">
+            <div className="flex items-center justify-end gap-2">
               <Button
                 variant="outline"
                 size="icon-sm"
@@ -261,22 +262,36 @@ export function MatchTable({
               >
                 <Video />
               </Button>
-              <Button
-                variant="outline"
-                size="icon-sm"
-                aria-label="Edit match"
-                onClick={() => setEditingMatch(row.original.match)}
-              >
-                <Pencil />
-              </Button>
-              <Button
-                variant="outline"
-                size="icon-sm"
-                aria-label="Delete match"
-                onClick={() => setPendingDelete(row.original.match)}
-              >
-                <Trash2 />
-              </Button>
+              {source ? (
+                // Synced matches: game data is managed by start.gg/parry.gg
+                // sync (the API 409s edits/deletes too) — VOD notes above
+                // stay editable.
+                <Badge
+                  variant="outline"
+                  title={`Synced from ${source === 'startgg' ? 'start.gg' : 'parry.gg'} — game data is managed by sync`}
+                >
+                  Synced
+                </Badge>
+              ) : (
+                <>
+                  <Button
+                    variant="outline"
+                    size="icon-sm"
+                    aria-label="Edit match"
+                    onClick={() => setEditingMatch(row.original.match)}
+                  >
+                    <Pencil />
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="icon-sm"
+                    aria-label="Delete match"
+                    onClick={() => setPendingDelete(row.original.match)}
+                  >
+                    <Trash2 />
+                  </Button>
+                </>
+              )}
             </div>
           );
         },
