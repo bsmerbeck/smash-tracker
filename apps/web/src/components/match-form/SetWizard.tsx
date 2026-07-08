@@ -2,6 +2,8 @@ import { useMemo, useState, type ReactNode } from 'react';
 import { useForm, type UseFormReturn } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
+import { useTranslation } from 'react-i18next';
+import type { TFunction } from 'i18next';
 import { Check, ChevronsUpDown } from 'lucide-react';
 import type { Fighter } from '@smash-tracker/shared';
 import { matchTypeValues } from '@smash-tracker/shared';
@@ -40,7 +42,7 @@ import { StageOption } from '@/components/StageOption';
 import { useOpponents } from '@/hooks/useOpponents';
 import { useMatches } from '@/hooks/useMatches';
 import { getGroupedStageOptions } from '@/lib/stageOptions';
-import { alphaSpriteList, TournamentFields, MATCH_TYPE_LABELS } from './MatchForm';
+import { alphaSpriteList, TournamentFields, matchTypeLabel } from './MatchForm';
 import {
   setFormatValues,
   winsNeededFor,
@@ -56,23 +58,42 @@ import {
   type SetSharedValues,
 } from './setWizardLogic';
 
-/** Validation for the fields entered once per set (fighter, opponent, match type, tournament). */
-export const setSharedFormSchema = z.object({
-  fighterId: z.number().int().positive({ message: 'Choose your fighter' }),
-  opponentFighterId: z.number().int().positive({ message: "Choose your opponent's fighter" }),
-  opponentName: z.string().min(1, 'Opponent name is required'),
-  matchType: z.enum(matchTypeValues),
-  format: z.enum(setFormatValues),
-  eventName: z.string().max(80, 'Limit 80 characters').optional(),
-  tournamentName: z.string().max(80, 'Limit 80 characters').optional(),
-});
-export type SetSharedFormValues = z.infer<typeof setSharedFormSchema>;
+/**
+ * Validation for the fields entered once per set (fighter, opponent, match
+ * type, tournament). A factory for the same reason as
+ * `buildMatchFormSchema`: messages come out of the active locale.
+ */
+export function buildSetSharedFormSchema(t: TFunction) {
+  return z.object({
+    fighterId: z
+      .number()
+      .int()
+      .positive({ message: t('matchForm.validation.chooseFighter') }),
+    opponentFighterId: z
+      .number()
+      .int()
+      .positive({ message: t('matchForm.validation.chooseOpponentFighter') }),
+    opponentName: z.string().min(1, t('matchForm.validation.opponentRequired')),
+    matchType: z.enum(matchTypeValues),
+    format: z.enum(setFormatValues),
+    eventName: z
+      .string()
+      .max(80, t('matchForm.validation.charLimit', { max: 80 }))
+      .optional(),
+    tournamentName: z
+      .string()
+      .max(80, t('matchForm.validation.charLimit', { max: 80 }))
+      .optional(),
+  });
+}
+export type SetSharedFormValues = z.infer<ReturnType<typeof buildSetSharedFormSchema>>;
 
 export function useSetSharedForm(
   defaultValues: SetSharedFormValues,
 ): UseFormReturn<SetSharedFormValues> {
+  const { t } = useTranslation();
   return useForm<SetSharedFormValues>({
-    resolver: zodResolver(setSharedFormSchema),
+    resolver: zodResolver(buildSetSharedFormSchema(t)),
     defaultValues,
   });
 }
@@ -90,6 +111,23 @@ export function defaultSetSharedValues(fighterId: number): SetSharedFormValues {
     eventName: '',
     tournamentName: '',
   };
+}
+
+/** Game numbers to render: 1..maxGames while each game is still reachable under `format` given the results entered so far. Cheap enough (≤5 iterations) to recompute per render. */
+function getVisibleGameNumbers(
+  format: SetFormat,
+  games: SetGameValues[],
+  maxGames: number,
+): number[] {
+  const numbers: number[] = [];
+  for (let n = 1; n <= maxGames; n += 1) {
+    if (shouldShowGame(format, n, games)) {
+      numbers.push(n);
+    } else {
+      break;
+    }
+  }
+  return numbers;
 }
 
 function sharedFormToSetShared(values: SetSharedFormValues): SetSharedValues {
@@ -131,6 +169,7 @@ export function SetWizard({
   /** Rendered inside the wizard's own `<form>` (e.g. Cancel/Save buttons) so a submit button here triggers `onSubmit` via normal form submission. */
   footer?: ReactNode;
 }) {
+  const { t } = useTranslation();
   const { data: opponents = [] } = useOpponents();
   const { data: allMatches = [] } = useMatches();
   const [opponentPopoverOpen, setOpponentPopoverOpen] = useState(false);
@@ -141,17 +180,7 @@ export function SetWizard({
   const needed = winsNeededFor(format);
   const maxGames = maxGamesFor(format);
 
-  const visibleGameNumbers = useMemo(() => {
-    const numbers: number[] = [];
-    for (let n = 1; n <= maxGames; n += 1) {
-      if (shouldShowGame(format, n, games)) {
-        numbers.push(n);
-      } else {
-        break;
-      }
-    }
-    return numbers;
-  }, [format, games, maxGames]);
+  const visibleGameNumbers = getVisibleGameNumbers(format, games, maxGames);
 
   function updateGame(index: number, patch: Partial<SetGameValues>) {
     const next = [...games];
@@ -183,7 +212,7 @@ export function SetWizard({
       <form onSubmit={form.handleSubmit(handleSubmit)} noValidate>
         <div className="flex flex-col gap-4">
           <FormItem>
-            <FormLabel>Set Format</FormLabel>
+            <FormLabel>{t('matchForm.set.format')}</FormLabel>
             <FormControl>
               <ToggleGroup
                 type="single"
@@ -193,10 +222,10 @@ export function SetWizard({
                   if (value) handleFormatChange(value as SetFormat);
                 }}
               >
-                <ToggleGroupItem value="bo3" aria-label="Best of 3">
+                <ToggleGroupItem value="bo3" aria-label={t('matchForm.set.bestOf3')}>
                   Bo3
                 </ToggleGroupItem>
-                <ToggleGroupItem value="bo5" aria-label="Best of 5">
+                <ToggleGroupItem value="bo5" aria-label={t('matchForm.set.bestOf5')}>
                   Bo5
                 </ToggleGroupItem>
               </ToggleGroup>
@@ -209,7 +238,7 @@ export function SetWizard({
               name="fighterId"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Your Fighter</FormLabel>
+                  <FormLabel>{t('matchForm.yourFighter')}</FormLabel>
                   <Select
                     value={String(field.value)}
                     onValueChange={(v) => field.onChange(Number(v))}
@@ -237,7 +266,7 @@ export function SetWizard({
               name="opponentFighterId"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Opponent Fighter (game 1)</FormLabel>
+                  <FormLabel>{t('matchForm.set.opponentFighterGame1')}</FormLabel>
                   <Select
                     value={String(field.value)}
                     onValueChange={(v) => field.onChange(Number(v))}
@@ -267,7 +296,7 @@ export function SetWizard({
             name="matchType"
             render={({ field }) => (
               <FormItem>
-                <FormLabel>Match Type</FormLabel>
+                <FormLabel>{t('matchForm.matchType')}</FormLabel>
                 <FormControl>
                   <ToggleGroup
                     type="single"
@@ -280,7 +309,7 @@ export function SetWizard({
                   >
                     {matchTypeValues.map((value) => (
                       <ToggleGroupItem key={value} value={value}>
-                        {MATCH_TYPE_LABELS[value]}
+                        {matchTypeLabel(t, value)}
                       </ToggleGroupItem>
                     ))}
                   </ToggleGroup>
@@ -295,7 +324,7 @@ export function SetWizard({
             name="opponentName"
             render={({ field }) => (
               <FormItem>
-                <FormLabel>Opponent</FormLabel>
+                <FormLabel>{t('matchForm.opponent')}</FormLabel>
                 <Popover open={opponentPopoverOpen} onOpenChange={setOpponentPopoverOpen}>
                   <PopoverTrigger asChild>
                     <FormControl>
@@ -306,7 +335,7 @@ export function SetWizard({
                         aria-expanded={opponentPopoverOpen}
                         className="w-full justify-between font-normal"
                       >
-                        {field.value || 'Type to filter or add...'}
+                        {field.value || t('matchForm.opponentCombobox')}
                         <ChevronsUpDown className="opacity-50" />
                       </Button>
                     </FormControl>
@@ -314,7 +343,7 @@ export function SetWizard({
                   <PopoverContent className="w-[--radix-popover-trigger-width] p-0">
                     <Command>
                       <CommandInput
-                        placeholder="Type a name..."
+                        placeholder={t('matchForm.opponentSearch')}
                         value={field.value}
                         onValueChange={(value) => field.onChange(value)}
                         // Select-all on focus — same rationale as the
@@ -323,7 +352,7 @@ export function SetWizard({
                         onFocus={(e) => e.currentTarget.select()}
                       />
                       <CommandList>
-                        <CommandEmpty>Press enter to add a new opponent.</CommandEmpty>
+                        <CommandEmpty>{t('matchForm.opponentAddHint')}</CommandEmpty>
                         <CommandGroup>
                           {opponents.map((name) => (
                             <CommandItem
@@ -353,10 +382,10 @@ export function SetWizard({
           <TournamentFields control={form.control} />
 
           <div className="flex items-center justify-between rounded-md border px-3 py-2">
-            <span className="text-sm font-medium">Set score</span>
+            <span className="text-sm font-medium">{t('matchForm.set.score')}</span>
             <Badge variant={decided ? 'success' : 'secondary'} data-testid="set-score-chip">
-              {formatSetScore(score)}
-              {decided ? ' — set decided' : ` (first to ${needed})`}
+              {formatSetScore(score)}{' '}
+              {decided ? t('matchForm.set.decided') : t('matchForm.set.firstTo', { count: needed })}
             </Badge>
           </div>
 
@@ -366,9 +395,11 @@ export function SetWizard({
               const game = games[index] ?? buildDefaultGameValues();
               return (
                 <div key={gameNumber} className="flex flex-col gap-3 rounded-md border p-3">
-                  <span className="text-sm font-semibold">Game {gameNumber}</span>
+                  <span className="text-sm font-semibold">
+                    {t('matchForm.set.game', { number: gameNumber })}
+                  </span>
                   <FormItem>
-                    <FormLabel>Result</FormLabel>
+                    <FormLabel>{t('matchForm.result')}</FormLabel>
                     <ToggleGroup
                       type="single"
                       variant="outline"
@@ -377,17 +408,23 @@ export function SetWizard({
                         if (value) updateGame(index, { result: value as 'win' | 'loss' });
                       }}
                     >
-                      <ToggleGroupItem value="win" aria-label={`Game ${gameNumber} Win`}>
-                        Win
+                      <ToggleGroupItem
+                        value="win"
+                        aria-label={t('matchForm.set.gameWinAria', { number: gameNumber })}
+                      >
+                        {t('common.win')}
                       </ToggleGroupItem>
-                      <ToggleGroupItem value="loss" aria-label={`Game ${gameNumber} Loss`}>
-                        Loss
+                      <ToggleGroupItem
+                        value="loss"
+                        aria-label={t('matchForm.set.gameLossAria', { number: gameNumber })}
+                      >
+                        {t('common.loss')}
                       </ToggleGroupItem>
                     </ToggleGroup>
                   </FormItem>
 
                   <FormItem>
-                    <FormLabel>Stage</FormLabel>
+                    <FormLabel>{t('matchForm.set.stage')}</FormLabel>
                     <Select
                       value={String(game.stageId)}
                       onValueChange={(v) => updateGame(index, { stageId: Number(v) })}
@@ -403,7 +440,7 @@ export function SetWizard({
                         </SelectItem>
                         {mostPlayed.length > 0 && (
                           <SelectGroup>
-                            <SelectLabel>Most played</SelectLabel>
+                            <SelectLabel>{t('matchForm.mostPlayed')}</SelectLabel>
                             {mostPlayed.map((s) => (
                               <SelectItem key={`most-played-${s.id}`} value={String(s.id)}>
                                 <StageOption stage={s} />
@@ -412,7 +449,7 @@ export function SetWizard({
                           </SelectGroup>
                         )}
                         <SelectGroup>
-                          <SelectLabel>All stages</SelectLabel>
+                          <SelectLabel>{t('matchForm.allStages')}</SelectLabel>
                           {allStages.map((s) => (
                             <SelectItem key={`all-${s.id}`} value={String(s.id)}>
                               <StageOption stage={s} />
@@ -424,7 +461,7 @@ export function SetWizard({
                   </FormItem>
 
                   <FormItem>
-                    <FormLabel>Stocks Left (winner)</FormLabel>
+                    <FormLabel>{t('matchForm.stocksLeft')}</FormLabel>
                     <Select
                       value={game.stocksLeft === undefined ? 'unset' : String(game.stocksLeft)}
                       onValueChange={(v) =>
@@ -433,11 +470,11 @@ export function SetWizard({
                     >
                       <FormControl>
                         <SelectTrigger className="w-full">
-                          <SelectValue placeholder="Not tracked" />
+                          <SelectValue placeholder={t('matchForm.notTracked')} />
                         </SelectTrigger>
                       </FormControl>
                       <SelectContent>
-                        <SelectItem value="unset">Not tracked</SelectItem>
+                        <SelectItem value="unset">{t('matchForm.notTracked')}</SelectItem>
                         {[0, 1, 2, 3].map((n) => (
                           <SelectItem key={n} value={String(n)}>
                             {n}

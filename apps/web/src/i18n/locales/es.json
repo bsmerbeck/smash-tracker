@@ -160,5 +160,68 @@
       "partialSave": "Solo se guardaron {{saved}} de {{total}} partidas antes de producirse un error. Revisa Datos de partidas y vuelve a introducir las que falten.",
       "setFailed": "No se pudo guardar el set. Inténtalo de nuevo."
     }
+  },
+  "matchForm": {
+    "yourFighter": "Tu luchador",
+    "opponentFighter": "Luchador del rival",
+    "result": "Resultado",
+    "map": "Escenario",
+    "mostPlayed": "Más jugados",
+    "allStages": "Todos los escenarios",
+    "stocksLeft": "Vidas restantes (ganador)",
+    "notTracked": "Sin registrar",
+    "gspAfterMatch": "GSP tras la partida (opcional)",
+    "gspPlaceholder": "p. ej. 12 400 000",
+    "matchType": "Tipo de partida",
+    "matchTypes": {
+      "none": "Ninguno",
+      "quickplay": "QuickPlay",
+      "online-friendly": "Amistoso online",
+      "online-tourney": "Torneo online",
+      "offline-friendly": "Amistoso offline",
+      "offline-tourney": "Torneo offline"
+    },
+    "opponent": "Rival",
+    "opponentCombobox": "Escribe para filtrar o añadir...",
+    "opponentSearch": "Escribe un nombre...",
+    "opponentAddHint": "Pulsa Intro para añadir un nuevo rival.",
+    "notes": "Notas",
+    "notesPlaceholder": "Notas opcionales...",
+    "tournament": {
+      "sectionTitle": "Torneo (opcional)",
+      "tournamentName": "Nombre del torneo",
+      "tournamentPlaceholder": "p. ej. The Big House 9",
+      "eventName": "Nombre del evento",
+      "eventPlaceholder": "p. ej. Ultimate Singles",
+      "hint": "Los nombres de torneo y evento introducidos aquí se guardan igual que las importaciones de start.gg, así que los torneos registrados a mano aparecen junto a los sincronizados en las vistas de Torneo."
+    },
+    "validation": {
+      "chooseFighter": "Elige tu luchador",
+      "chooseOpponentFighter": "Elige el luchador del rival",
+      "chooseResult": "Elige un resultado",
+      "opponentRequired": "El nombre del rival es obligatorio",
+      "charLimit": "Máximo {{max}} caracteres",
+      "gspFormat": "Introduce un número como 12 400 000 (o déjalo en blanco)"
+    },
+    "set": {
+      "format": "Formato del set",
+      "bestOf3": "Al mejor de 3",
+      "bestOf5": "Al mejor de 5",
+      "opponentFighterGame1": "Luchador del rival (partida 1)",
+      "score": "Marcador del set",
+      "decided": "— set decidido",
+      "firstTo": "(primero a {{count}})",
+      "game": "Partida {{number}}",
+      "gameWinAria": "Victoria en la partida {{number}}",
+      "gameLossAria": "Derrota en la partida {{number}}",
+      "stage": "Escenario"
+    },
+    "edit": {
+      "title": "Editar partida",
+      "description": "Actualiza los datos de esta partida registrada.",
+      "deleteMatch": "Eliminar partida",
+      "edited": "¡Partida editada!",
+      "saveFailed": "No se pudo guardar la partida. Inténtalo de nuevo."
+    }
   }
 }

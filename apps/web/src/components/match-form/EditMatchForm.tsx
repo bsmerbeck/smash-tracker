@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 import type { Fighter, Match, UpdateMatchInput } from '@smash-tracker/shared';
 import {
@@ -66,6 +67,7 @@ export function EditMatchForm({
    */
   onDelete?: (match: Match) => void;
 }) {
+  const { t } = useTranslation();
   const updateMatch = useUpdateMatch();
   const form = useMatchForm(matchToFormValues(match));
 
@@ -87,10 +89,10 @@ export function EditMatchForm({
     };
     try {
       await updateMatch.mutateAsync({ id: match.id, input });
-      toast.success('Match edited!');
+      toast.success(t('matchForm.edit.edited'));
       onOpenChange(false);
     } catch {
-      toast.error('Failed to save match. Please try again.');
+      toast.error(t('matchForm.edit.saveFailed'));
     }
   }
 
@@ -98,8 +100,8 @@ export function EditMatchForm({
     <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent className="max-h-[90vh] max-w-2xl overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>Edit Match</DialogTitle>
-          <DialogDescription>Update the details of this recorded match.</DialogDescription>
+          <DialogTitle>{t('matchForm.edit.title')}</DialogTitle>
+          <DialogDescription>{t('matchForm.edit.description')}</DialogDescription>
         </DialogHeader>
         <form onSubmit={form.handleSubmit(onSubmit)} noValidate>
           <MatchFormFields form={form} fighterSprites={fighterSprites} />
@@ -111,14 +113,14 @@ export function EditMatchForm({
                 className="sm:mr-auto"
                 onClick={() => onDelete(match)}
               >
-                Delete Match
+                {t('matchForm.edit.deleteMatch')}
               </Button>
             )}
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
-              Cancel
+              {t('common.cancel')}
             </Button>
             <Button type="submit" disabled={updateMatch.isPending}>
-              Save
+              {t('common.save')}
             </Button>
           </DialogFooter>
         </form>
