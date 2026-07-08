@@ -160,8 +160,10 @@ describe('GspPage', () => {
 
     renderGspPage();
 
-    expect(await screen.findByText('9,050,000')).toBeInTheDocument(); // current GSP
+    // Current GSP appears in the hero AND as the newest GSP Log row (V14).
+    expect(await screen.findAllByText('9,050,000')).not.toHaveLength(0);
     expect(screen.getByText('GSP Curve')).toBeInTheDocument();
+    expect(screen.getByText('GSP Log')).toBeInTheDocument();
     // Elite threshold is now COMPUTED from the model (settings updatedAt 0 =
     // never saved, so no calibration) rather than showing the stored value.
     expect(
