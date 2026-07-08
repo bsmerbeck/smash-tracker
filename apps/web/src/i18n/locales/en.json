@@ -38,6 +38,127 @@
     "delete": "Delete",
     "win": "Win",
     "loss": "Loss",
-    "cannotBeUndone": "This action cannot be undone."
+    "cannotBeUndone": "This action cannot be undone.",
+    "wins": "Wins",
+    "losses": "Losses",
+    "casual": "Casual",
+    "competitive": "Competitive",
+    "unknown": "Unknown",
+    "notAvailable": "n/a"
+  },
+  "filters": {
+    "sourceAria": "Filter matches by source",
+    "rangeAria": "Filter matches by time range",
+    "all": "All",
+    "allTime": "All time",
+    "months3": "3m",
+    "months6": "6m",
+    "months12": "12m"
+  },
+  "shared": {
+    "filteredNotice": {
+      "message": "No matches match the current filters.",
+      "clear": "Clear filters"
+    },
+    "pips": {
+      "empty": "No matches yet.",
+      "recentResults": "Last {{count}} results, newest first"
+    },
+    "glicko": {
+      "whatIs": "What is Glicko-2?",
+      "p1": "<strong>Glicko-2</strong> is the rating system used in chess and by many competitive ladders. Unlike a raw win rate, it weighs <em>who</em> you beat and how surprising the result was.",
+      "p2": "The <strong>±number (RD)</strong> is uncertainty: it shrinks as you play more and grows when you're inactive — so a 1500 ±50 player is proven, a 1500 ±300 player is unknown.",
+      "p3": "We use it because bracket play is bursty: Glicko-2 handles long gaps between tournaments and small samples far better than Elo or win-rate alone. Ratings here are unofficial and computed only from your synced/logged games."
+    }
+  },
+  "dashboard": {
+    "loading": "Loading your dashboard...",
+    "empty": {
+      "title": "You haven't picked any fighters yet!",
+      "subtitle": "Choose your primary and secondary fighters to start tracking matches.",
+      "choosePrimary": "Choose Primary Fighters",
+      "chooseSecondary": "Choose Secondary Fighters"
+    },
+    "hero": {
+      "overallRecord": "Overall Record",
+      "winRate": "{{rate}}% win rate",
+      "games_one": "{{count}} game",
+      "games_other": "{{count}} games",
+      "noMatchData": "No match data to report yet.",
+      "form": "Form",
+      "streakWin": "{{count}}W",
+      "streakLoss": "{{count}}L",
+      "casualVsCompetitive": "Casual vs Competitive",
+      "ignoresSourceFilter": "Ignores the source filter above (time range still applies).",
+      "deltaLabel": "Delta:",
+      "deltaValue": "{{value}}pts",
+      "deltaCaption": "(competitive vs casual)",
+      "noData": "no data",
+      "onlineVsOffline": "Online vs Offline",
+      "online": "Online",
+      "offline": "Offline",
+      "rating": "Rating",
+      "gamesSampled_one": "{{count}} game sampled",
+      "gamesSampled_other": "{{count}} games sampled",
+      "ratingCaption": "Glicko-2, session-based · unofficial",
+      "ratingLocked": "Rating unlocks at {{threshold}} games",
+      "ratingProgress": "{{played}}/{{threshold}} games so far",
+      "ratingUp": "Rating up from last session",
+      "ratingDown": "Rating down from last session",
+      "ratingUnchanged": "Rating unchanged from last session"
+    },
+    "tracker": {
+      "rate": "Rate"
+    },
+    "formCurve": {
+      "title": "Form Curve",
+      "window": "Window",
+      "windowAria": "Rolling window",
+      "lastN": "Last {{count}}",
+      "cumulative": "Cumulative",
+      "empty": "Submit a match to see the match chart.",
+      "winRate": "Win Rate",
+      "opponent": "Opponent: {{name}}"
+    },
+    "previous": {
+      "title": "Previous Matches",
+      "limit": "Limit",
+      "limitAria": "Match limit",
+      "empty": "No matches recorded yet.",
+      "deleteAria": "Delete match",
+      "confirmTitle": "Delete this match?",
+      "deleted": "Match deleted!",
+      "deleteFailed": "Failed to delete match. Please try again."
+    },
+    "stages": {
+      "title": "Most-Played Stages",
+      "empty": "No stage data to report yet."
+    },
+    "snapshot": {
+      "title": "Matchup Snapshot",
+      "noMatches": "No matches reported",
+      "openLab": "Open Matchup Lab",
+      "strongest": "Strongest Matchups",
+      "toughest": "Toughest Matchups",
+      "needMoreGames": "Play a few more games ({{count}}+ per opponent) to surface a toughest matchup.",
+      "notEnough": "Not enough reported matches to calculate."
+    },
+    "selectFighter": {
+      "aria": "Select fighter",
+      "placeholder": "Select a fighter"
+    },
+    "addMatch": {
+      "title": "Add Match",
+      "description": "Record the outcome of a match you just played.",
+      "singleGame": "Single game",
+      "setMode": "Set (Bo3/Bo5)",
+      "saveSet": "Save Set",
+      "added": "Match added!",
+      "addFailed": "Failed to add match. Please try again.",
+      "noGames": "Enter at least one game result before saving.",
+      "setRecorded": "Set recorded: {{score}} vs {{opponent}}",
+      "partialSave": "Only {{saved}} of {{total}} games saved before an error occurred. Check Match Data and re-enter any missing games.",
+      "setFailed": "Failed to save the set. Please try again."
+    }
   }
 }

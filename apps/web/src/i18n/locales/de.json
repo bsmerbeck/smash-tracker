@@ -38,6 +38,127 @@
     "delete": "Löschen",
     "win": "Sieg",
     "loss": "Niederlage",
-    "cannotBeUndone": "Diese Aktion kann nicht rückgängig gemacht werden."
+    "cannotBeUndone": "Diese Aktion kann nicht rückgängig gemacht werden.",
+    "wins": "Siege",
+    "losses": "Niederlagen",
+    "casual": "Casual",
+    "competitive": "Kompetitiv",
+    "unknown": "Unbekannt",
+    "notAvailable": "k. A."
+  },
+  "filters": {
+    "sourceAria": "Matches nach Quelle filtern",
+    "rangeAria": "Matches nach Zeitraum filtern",
+    "all": "Alle",
+    "allTime": "Gesamter Zeitraum",
+    "months3": "3 M",
+    "months6": "6 M",
+    "months12": "12 M"
+  },
+  "shared": {
+    "filteredNotice": {
+      "message": "Keine Matches entsprechen den aktuellen Filtern.",
+      "clear": "Filter zurücksetzen"
+    },
+    "pips": {
+      "empty": "Noch keine Matches.",
+      "recentResults": "Letzte {{count}} Ergebnisse, neueste zuerst"
+    },
+    "glicko": {
+      "whatIs": "Was ist Glicko-2?",
+      "p1": "<strong>Glicko-2</strong> ist das Wertungssystem aus dem Schach, das auch viele kompetitive Ladder nutzen. Anders als eine reine Winrate gewichtet es, <em>wen</em> du schlägst und wie überraschend das Ergebnis war.",
+      "p2": "Die <strong>±-Zahl (RD)</strong> ist die Unsicherheit: Sie schrumpft, je mehr du spielst, und wächst bei Inaktivität — ein Spieler mit 1500 ±50 ist etabliert, einer mit 1500 ±300 eine Unbekannte.",
+      "p3": "Wir nutzen es, weil Bracket-Play stoßweise passiert: Glicko-2 kommt mit langen Pausen zwischen Turnieren und kleinen Stichproben deutlich besser zurecht als Elo oder Winrate allein. Die Wertungen hier sind inoffiziell und werden nur aus deinen synchronisierten bzw. erfassten Matches berechnet."
+    }
+  },
+  "dashboard": {
+    "loading": "Dein Dashboard wird geladen...",
+    "empty": {
+      "title": "Du hast noch keine Kämpfer ausgewählt!",
+      "subtitle": "Wähle deine Main- und Secondary-Kämpfer, um Matches zu erfassen.",
+      "choosePrimary": "Main-Kämpfer wählen",
+      "chooseSecondary": "Secondary-Kämpfer wählen"
+    },
+    "hero": {
+      "overallRecord": "Gesamtbilanz",
+      "winRate": "{{rate}} % Winrate",
+      "games_one": "{{count}} Match",
+      "games_other": "{{count}} Matches",
+      "noMatchData": "Noch keine Match-Daten vorhanden.",
+      "form": "Form",
+      "streakWin": "{{count}}S",
+      "streakLoss": "{{count}}N",
+      "casualVsCompetitive": "Casual vs. Kompetitiv",
+      "ignoresSourceFilter": "Ignoriert den Quellen-Filter oben (der Zeitraum gilt weiterhin).",
+      "deltaLabel": "Differenz:",
+      "deltaValue": "{{value}} Pkt.",
+      "deltaCaption": "(kompetitiv vs. casual)",
+      "noData": "keine Daten",
+      "onlineVsOffline": "Online vs. Offline",
+      "online": "Online",
+      "offline": "Offline",
+      "rating": "Wertung",
+      "gamesSampled_one": "{{count}} Match ausgewertet",
+      "gamesSampled_other": "{{count}} Matches ausgewertet",
+      "ratingCaption": "Glicko-2, sitzungsbasiert · inoffiziell",
+      "ratingLocked": "Wertung wird ab {{threshold}} Matches freigeschaltet",
+      "ratingProgress": "Bisher {{played}}/{{threshold}} Matches",
+      "ratingUp": "Wertung höher als in der letzten Sitzung",
+      "ratingDown": "Wertung niedriger als in der letzten Sitzung",
+      "ratingUnchanged": "Wertung unverändert zur letzten Sitzung"
+    },
+    "tracker": {
+      "rate": "Quote"
+    },
+    "formCurve": {
+      "title": "Formkurve",
+      "window": "Fenster",
+      "windowAria": "Gleitendes Fenster",
+      "lastN": "Letzte {{count}}",
+      "cumulative": "Kumuliert",
+      "empty": "Erfasse ein Match, um das Diagramm zu sehen.",
+      "winRate": "Winrate",
+      "opponent": "Gegner: {{name}}"
+    },
+    "previous": {
+      "title": "Letzte Matches",
+      "limit": "Limit",
+      "limitAria": "Match-Limit",
+      "empty": "Noch keine Matches erfasst.",
+      "deleteAria": "Match löschen",
+      "confirmTitle": "Dieses Match löschen?",
+      "deleted": "Match gelöscht!",
+      "deleteFailed": "Match konnte nicht gelöscht werden. Bitte erneut versuchen."
+    },
+    "stages": {
+      "title": "Meistgespielte Stages",
+      "empty": "Noch keine Stage-Daten vorhanden."
+    },
+    "snapshot": {
+      "title": "Matchup-Überblick",
+      "noMatches": "Keine Matches erfasst",
+      "openLab": "Matchup Lab öffnen",
+      "strongest": "Stärkste Matchups",
+      "toughest": "Schwierigste Matchups",
+      "needMoreGames": "Spiele noch ein paar Matches ({{count}}+ pro Gegner), um dein schwierigstes Matchup zu ermitteln.",
+      "notEnough": "Nicht genug erfasste Matches für eine Auswertung."
+    },
+    "selectFighter": {
+      "aria": "Kämpfer auswählen",
+      "placeholder": "Kämpfer wählen"
+    },
+    "addMatch": {
+      "title": "Match hinzufügen",
+      "description": "Erfasse das Ergebnis eines gerade gespielten Matches.",
+      "singleGame": "Einzelnes Match",
+      "setMode": "Set (Bo3/Bo5)",
+      "saveSet": "Set speichern",
+      "added": "Match hinzugefügt!",
+      "addFailed": "Match konnte nicht hinzugefügt werden. Bitte erneut versuchen.",
+      "noGames": "Gib mindestens ein Spielergebnis ein, bevor du speicherst.",
+      "setRecorded": "Set erfasst: {{score}} vs. {{opponent}}",
+      "partialSave": "Nur {{saved}} von {{total}} Spielen wurden vor einem Fehler gespeichert. Prüfe die Match-Daten und trage fehlende Spiele erneut ein.",
+      "setFailed": "Set konnte nicht gespeichert werden. Bitte erneut versuchen."
+    }
   }
 }

@@ -1,4 +1,6 @@
 import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
+import type { TFunction } from 'i18next';
 import {
   CategoryScale,
   Chart as ChartJS,
@@ -53,6 +55,7 @@ export function buildSeries(matches: Match[], window: WindowValue): SeriesPoint[
 
 /** Ports legacy/src/screens/Dashboard/components/LastMatchesChart; upgraded to a rolling win-rate form curve with a window selector (V3 Phase C). */
 export function LastMatchesChart({ matches }: { matches: Match[] }) {
+  const { t, i18n } = useTranslation();
   const { fighter } = useDashboardContext();
   const [window, setWindow] = useState<WindowValue>(10);
   const fighterMatches = fighter ? matches.filter((m) => m.fighter_id === fighter.id) : [];
@@ -61,30 +64,30 @@ export function LastMatchesChart({ matches }: { matches: Match[] }) {
   return (
     <Card>
       <CardHeader className="flex flex-row items-center justify-between">
-        <CardTitle>Form Curve</CardTitle>
+        <CardTitle>{t('dashboard.formCurve.title')}</CardTitle>
         <div className="flex items-center gap-2">
-          <span className="text-sm text-muted-foreground">Window</span>
+          <span className="text-sm text-muted-foreground">{t('dashboard.formCurve.window')}</span>
           <Select value={String(window)} onValueChange={(v) => setWindow(parseWindow(v))}>
-            <SelectTrigger className="w-[130px]" aria-label="Rolling window">
+            <SelectTrigger className="w-[130px]" aria-label={t('dashboard.formCurve.windowAria')}>
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
               {WINDOW_OPTIONS.map((option) => (
                 <SelectItem key={option} value={String(option)}>
-                  Last {option}
+                  {t('dashboard.formCurve.lastN', { count: option })}
                 </SelectItem>
               ))}
-              <SelectItem value="cumulative">Cumulative</SelectItem>
+              <SelectItem value="cumulative">{t('dashboard.formCurve.cumulative')}</SelectItem>
             </SelectContent>
           </Select>
         </div>
       </CardHeader>
       <CardContent>
         {series.length === 0 ? (
-          <p className="text-sm text-muted-foreground">Submit a match to see the match chart.</p>
+          <p className="text-sm text-muted-foreground">{t('dashboard.formCurve.empty')}</p>
         ) : (
           <div className="h-64">
-            <Line data={buildData(series)} options={buildOptions(series)} />
+            <Line data={buildData(series, t)} options={buildOptions(series, t, i18n.language)} />
           </div>
         )}
       </CardContent>
@@ -100,12 +103,12 @@ function parseWindow(value: string): WindowValue {
   return (WINDOW_OPTIONS as readonly number[]).includes(parsed) ? (parsed as WindowOption) : 10;
 }
 
-function buildData(series: SeriesPoint[]) {
+function buildData(series: SeriesPoint[], t: TFunction) {
   return {
     labels: series.map((point) => point.index.toString()),
     datasets: [
       {
-        label: 'Win Rate',
+        label: t('dashboard.formCurve.winRate'),
         ...redLineDataset(),
         data: series.map((point) => point.winRate),
       },
@@ -114,7 +117,7 @@ function buildData(series: SeriesPoint[]) {
 }
 
 /** Builds chart options with tooltip callbacks closed over `series` so they can look up the underlying Match for the hovered point (date + opponent), mirroring legacy MatchChart's tooltip title/footer. */
-function buildOptions(series: SeriesPoint[]): ChartOptions<'line'> {
+function buildOptions(series: SeriesPoint[], t: TFunction, locale: string): ChartOptions<'line'> {
   const theme = darkChartOptions();
   return {
     responsive: theme.responsive,
@@ -140,14 +143,16 @@ function buildOptions(series: SeriesPoint[]): ChartOptions<'line'> {
           title: (items) => {
             const point = series[items[0]?.dataIndex ?? -1];
             if (!point) return '';
-            return new Date(point.match.time).toLocaleDateString('en-US');
+            return new Date(point.match.time).toLocaleDateString(locale);
           },
           label: (item) => `: ${Math.round(Number(item.formattedValue) * 100) / 100}%`,
           footer: (items) => {
             const point = series[items[0]?.dataIndex ?? -1];
             if (!point) return '';
             const opponent = getFighterById(point.match.opponent_id);
-            return `Opponent: ${opponent?.name ?? 'Unknown'}`;
+            return t('dashboard.formCurve.opponent', {
+              name: opponent?.name ?? t('common.unknown'),
+            });
           },
         },
       },
