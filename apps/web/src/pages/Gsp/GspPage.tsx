@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
 import { Link } from 'react-router';
+import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 import type { Fighter, Match } from '@smash-tracker/shared';
 import { getGspGainStats, getGspMatches, getGspSeries } from '@smash-tracker/shared';
@@ -47,6 +48,7 @@ import { GspVsGlicko } from './components/GspVsGlicko';
  * through Match Data.
  */
 export function GspPage() {
+  const { t } = useTranslation();
   const { data: matches = [], isLoading: matchesLoading } = useMatches();
   const { data: fighterSelection, isLoading: fightersLoading } = useFighters();
   const { data: gspSettings, isLoading: settingsLoading } = useGspSettings();
@@ -81,28 +83,23 @@ export function GspPage() {
   const isLoading = matchesLoading || fightersLoading || settingsLoading;
 
   if (isLoading) {
-    return <div className="text-muted-foreground">Loading GSP tracker...</div>;
+    return <div className="text-muted-foreground">{t('gsp.loading')}</div>;
   }
 
   if (fighterOptions.length === 0) {
     return (
       <div className="flex flex-col items-center gap-4 py-16 text-center">
-        <h1 className="text-2xl font-semibold tracking-tight">Track your GSP climb</h1>
-        <p className="max-w-md text-muted-foreground">
-          GSP (Global Smash Power) is Smash Ultimate&apos;s online quickplay ranking, tracked
-          per-character. Log a quickplay match with the GSP shown on the results screen and this
-          page will chart your climb, break down your win/loss gains, and estimate how far you are
-          from Elite Smash.
-        </p>
+        <h1 className="text-2xl font-semibold tracking-tight">{t('gsp.empty.title')}</h1>
+        <p className="max-w-md text-muted-foreground">{t('gsp.empty.body')}</p>
         <Button asChild className="mt-2">
-          <Link to="/dashboard">Log a match on the Dashboard</Link>
+          <Link to="/dashboard">{t('gsp.empty.cta')}</Link>
         </Button>
       </div>
     );
   }
 
   if (!fighter || !gspSettings) {
-    return <div className="text-muted-foreground">Loading GSP tracker...</div>;
+    return <div className="text-muted-foreground">{t('gsp.loading')}</div>;
   }
 
   // Index-parity: gspMatches[i] is the match behind series[i] (the series is
@@ -117,9 +114,9 @@ export function GspPage() {
     if (!pendingDelete) return;
     try {
       await deleteMatch.mutateAsync(pendingDelete.id);
-      toast.success('GSP entry deleted!');
+      toast.success(t('gsp.deleteConfirm.deleted'));
     } catch {
-      toast.error('Failed to delete the entry. Please try again.');
+      toast.error(t('gsp.deleteConfirm.deleteFailed'));
     } finally {
       setPendingDelete(null);
     }
@@ -128,12 +125,8 @@ export function GspPage() {
   return (
     <div className="flex flex-col gap-6">
       <div className="flex flex-col items-center gap-2 text-center">
-        <h1 className="text-2xl font-semibold tracking-tight">GSP Tracker</h1>
-        <p className="max-w-lg text-sm text-muted-foreground">
-          Global Smash Power is per-character and its exact formula is never published by Nintendo —
-          everything below is an estimate built from your own logged matches and a
-          community-reverse-engineered model of the hidden MMR behind GSP.
-        </p>
+        <h1 className="text-2xl font-semibold tracking-tight">{t('gsp.header.title')}</h1>
+        <p className="max-w-lg text-sm text-muted-foreground">{t('gsp.header.subtitle')}</p>
         <GspFighterSelect
           fighter={fighter}
           fighterOptions={fighterOptions}
@@ -181,14 +174,12 @@ export function GspPage() {
       >
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Delete this GSP entry?</AlertDialogTitle>
-            <AlertDialogDescription>
-              The match and its GSP reading are removed together — this action cannot be undone.
-            </AlertDialogDescription>
+            <AlertDialogTitle>{t('gsp.deleteConfirm.title')}</AlertDialogTitle>
+            <AlertDialogDescription>{t('gsp.deleteConfirm.body')}</AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={confirmDelete}>Delete</AlertDialogAction>
+            <AlertDialogCancel>{t('common.cancel')}</AlertDialogCancel>
+            <AlertDialogAction onClick={confirmDelete}>{t('common.delete')}</AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>

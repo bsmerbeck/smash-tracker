@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Pencil, Trash2 } from 'lucide-react';
 import type { Match } from '@smash-tracker/shared';
 import { Badge } from '@/components/ui/badge';
@@ -8,8 +9,8 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 /** Rows shown before the "Show all" toggle — enough to catch a recent typo without burying the page. */
 const DEFAULT_VISIBLE_ROWS = 8;
 
-function formatDate(time: number): string {
-  return new Date(time).toLocaleDateString('en-US', {
+function formatDate(time: number, locale: string): string {
+  return new Date(time).toLocaleDateString(locale, {
     month: 'short',
     day: 'numeric',
     year: 'numeric',
@@ -34,6 +35,7 @@ export function GspMatchLog({
   onEdit: (match: Match) => void;
   onDelete: (match: Match) => void;
 }) {
+  const { t, i18n } = useTranslation();
   const [showAll, setShowAll] = useState(false);
 
   if (gspMatches.length === 0) {
@@ -53,7 +55,7 @@ export function GspMatchLog({
   return (
     <Card>
       <CardHeader>
-        <CardTitle>GSP Log</CardTitle>
+        <CardTitle>{t('gsp.log.title')}</CardTitle>
       </CardHeader>
       <CardContent className="flex flex-col gap-2">
         <ul className="flex flex-col gap-2">
@@ -63,9 +65,11 @@ export function GspMatchLog({
               className="flex items-center justify-between gap-2 rounded-md border p-2"
             >
               <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-                <span className="w-24 text-xs text-muted-foreground">{formatDate(match.time)}</span>
+                <span className="w-24 text-xs text-muted-foreground">
+                  {formatDate(match.time, i18n.language)}
+                </span>
                 <Badge variant={match.win ? 'success' : 'destructive'}>
-                  {match.win ? 'Win' : 'Loss'}
+                  {match.win ? t('common.win') : t('common.loss')}
                 </Badge>
                 <span className="font-medium tabular-nums">{match.gsp!.toLocaleString()}</span>
                 {delta !== null && (
@@ -81,7 +85,9 @@ export function GspMatchLog({
                 <Button
                   variant="outline"
                   size="icon-sm"
-                  aria-label={`Edit GSP entry from ${formatDate(match.time)}`}
+                  aria-label={t('gsp.log.editEntry', {
+                    date: formatDate(match.time, i18n.language),
+                  })}
                   onClick={() => onEdit(match)}
                 >
                   <Pencil />
@@ -89,7 +95,9 @@ export function GspMatchLog({
                 <Button
                   variant="outline"
                   size="icon-sm"
-                  aria-label={`Delete GSP entry from ${formatDate(match.time)}`}
+                  aria-label={t('gsp.log.deleteEntry', {
+                    date: formatDate(match.time, i18n.language),
+                  })}
                   onClick={() => onDelete(match)}
                 >
                   <Trash2 />
@@ -105,7 +113,7 @@ export function GspMatchLog({
             className="self-center"
             onClick={() => setShowAll((prev) => !prev)}
           >
-            {showAll ? 'Show recent only' : `Show all ${rows.length} entries`}
+            {showAll ? t('gsp.log.showRecent') : t('gsp.log.showAll', { count: rows.length })}
           </Button>
         )}
       </CardContent>
