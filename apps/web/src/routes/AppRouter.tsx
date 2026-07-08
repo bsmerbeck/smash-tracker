@@ -1,5 +1,6 @@
 import { lazy, Suspense } from 'react';
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router';
+import { useTranslation } from 'react-i18next';
 import { HomePage } from '@/pages/Home/HomePage';
 import { ProtectedRoute } from './ProtectedRoute';
 import { RouteAnalytics } from './RouteAnalytics';
@@ -79,9 +80,10 @@ const GspCalculatorPage = lazy(() =>
 
 /** Minimal route-transition fallback — matches HomePage's `loading → null` behavior in spirit without layout shift once content lands. */
 function RouteFallback() {
+  const { t } = useTranslation();
   return (
     <div className="flex min-h-svh items-center justify-center text-sm text-muted-foreground">
-      Loading…
+      {t('chrome.loading')}
     </div>
   );
 }

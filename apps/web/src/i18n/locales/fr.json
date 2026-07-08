@@ -1,0 +1,43 @@
+{
+  "nav": {
+    "dashboard": "Tableau de bord",
+    "choosePrimary": "Choisir principal",
+    "chooseSecondary": "Choisir secondaire",
+    "fighterAnalysis": "Analyse du combattant",
+    "matchups": "Matchups",
+    "scouting": "Scouting",
+    "scoutAPlayer": "Chercher un joueur",
+    "aiReports": "Rapports IA",
+    "matchData": "Données de matchs",
+    "trends": "Tendances",
+    "gsp": "GSP",
+    "groups": "Groupes",
+    "integrations": "Intégrations",
+    "profile": "Profil",
+    "tournament": "Tournoi",
+    "signingInWithStartgg": "Connexion avec start.gg"
+  },
+  "chrome": {
+    "openMenu": "Ouvrir le menu",
+    "signOut": "Se déconnecter",
+    "signOutFailed": "Échec de la déconnexion. Veuillez réessayer.",
+    "navigation": "Navigation",
+    "analyticsFilters": "Filtres d'analyse",
+    "mainNavigation": "Navigation principale",
+    "yourProfile": "Votre profil",
+    "signedOut": "Déconnecté",
+    "trainingGrounds": "Training Grounds",
+    "donate": "Faire un don",
+    "loading": "Chargement…",
+    "language": "Langue",
+    "languageChanged": "Langue définie sur {{language}} — modifiable à tout moment dans la barre supérieure."
+  },
+  "common": {
+    "cancel": "Annuler",
+    "save": "Enregistrer",
+    "delete": "Supprimer",
+    "win": "Victoire",
+    "loss": "Défaite",
+    "cannotBeUndone": "Cette action est irréversible."
+  }
+}

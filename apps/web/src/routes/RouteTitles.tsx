@@ -1,5 +1,6 @@
 import { useEffect } from 'react';
 import { useLocation } from 'react-router';
+import { useTranslation } from 'react-i18next';
 import { navItems } from '@/layouts/nav';
 
 /**
@@ -11,6 +12,9 @@ import { navItems } from '@/layouts/nav';
  * nav. RouteAnalytics reads `document.title` after effects flush, so the
  * page_view hit carries the per-route title.
  *
+ * V15: titles are i18n keys, translated at set-time (and re-set on language
+ * change — `t` is in the effect deps).
+ *
  * Public/SEO routes (`/`, `/faq`, `/gsp-calculator`, `/not-found`) are
  * deliberately NOT mapped here: they own richer titles via `useSeo`, and
  * this component leaves any path it doesn't recognize untouched. Plain
@@ -18,30 +22,32 @@ import { navItems } from '@/layouts/nav';
  * which only matter for the crawlable public pages — aren't rewritten with
  * app-chrome titles.
  */
-const ROUTE_TITLES: ReadonlyArray<{ prefix: string; title: string }> = [
-  ...navItems.map(({ href, title }) => ({ prefix: href, title })),
-  { prefix: '/profile', title: 'Profile' },
-  { prefix: '/tournaments/', title: 'Tournament' },
-  { prefix: '/auth/startgg', title: 'Signing in with start.gg' },
+const ROUTE_TITLE_KEYS: ReadonlyArray<{ prefix: string; titleKey: string }> = [
+  ...navItems.map(({ href, titleKey }) => ({ prefix: href, titleKey })),
+  { prefix: '/profile', titleKey: 'nav.profile' },
+  { prefix: '/tournaments/', titleKey: 'nav.tournament' },
+  { prefix: '/auth/startgg', titleKey: 'nav.signingInWithStartgg' },
 ];
 
-export function titleForPath(pathname: string): string | null {
-  const match = ROUTE_TITLES.find(
+/** The `nav.*` i18n key for a pathname, or null for unmapped (public/SEO) routes. */
+export function titleKeyForPath(pathname: string): string | null {
+  const match = ROUTE_TITLE_KEYS.find(
     ({ prefix }) =>
       pathname === prefix ||
       pathname.startsWith(`${prefix}/`) ||
       (prefix.endsWith('/') && pathname.startsWith(prefix)),
   );
-  return match ? `${match.title} | Smash Tracker` : null;
+  return match?.titleKey ?? null;
 }
 
 export function RouteTitles() {
   const { pathname } = useLocation();
+  const { t } = useTranslation();
   useEffect(() => {
-    const title = titleForPath(pathname);
-    if (title !== null) {
-      document.title = title;
+    const titleKey = titleKeyForPath(pathname);
+    if (titleKey !== null) {
+      document.title = `${t(titleKey)} | Smash Tracker`;
     }
-  }, [pathname]);
+  }, [pathname, t]);
   return null;
 }
