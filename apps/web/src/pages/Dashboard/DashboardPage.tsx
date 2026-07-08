@@ -57,14 +57,14 @@ export function DashboardPage() {
   if (fighterSprites.length === 0) {
     return (
       <div className="flex flex-col items-center gap-4 py-16 text-center">
-        <h1 className="text-2xl font-semibold tracking-tight">{t('dashboard.empty.title')}</h1>
-        <p className="max-w-md text-muted-foreground">{t('dashboard.empty.subtitle')}</p>
+        <h1 className="text-2xl font-semibold tracking-tight">{t('shared.noFighters.title')}</h1>
+        <p className="max-w-md text-muted-foreground">{t('shared.noFighters.subtitle')}</p>
         <div className="flex flex-wrap justify-center gap-2">
           <Button asChild>
-            <Link to="/choose-primary">{t('dashboard.empty.choosePrimary')}</Link>
+            <Link to="/choose-primary">{t('shared.noFighters.choosePrimary')}</Link>
           </Button>
           <Button asChild variant="outline">
-            <Link to="/choose-secondary">{t('dashboard.empty.chooseSecondary')}</Link>
+            <Link to="/choose-secondary">{t('shared.noFighters.chooseSecondary')}</Link>
           </Button>
         </div>
       </div>

@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import type { Fighter, Match } from '@smash-tracker/shared';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -37,6 +38,7 @@ export function RosterUsage({
   matches: Match[];
   fighterSprites: Fighter[];
 }) {
+  const { t } = useTranslation();
   const [expanded, setExpanded] = useState(false);
 
   const rows = useMemo(() => buildRosterUsage(matches, fighterSprites), [matches, fighterSprites]);
@@ -45,10 +47,10 @@ export function RosterUsage({
     return (
       <Card>
         <CardHeader>
-          <CardTitle>Roster Usage</CardTitle>
+          <CardTitle>{t('matchData.roster.title')}</CardTitle>
         </CardHeader>
         <CardContent>
-          <p className="text-sm text-muted-foreground">No match data to report yet.</p>
+          <p className="text-sm text-muted-foreground">{t('common.noMatchData')}</p>
         </CardContent>
       </Card>
     );
@@ -60,7 +62,7 @@ export function RosterUsage({
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Roster Usage</CardTitle>
+        <CardTitle>{t('matchData.roster.title')}</CardTitle>
       </CardHeader>
       <CardContent className="flex flex-col gap-3">
         <ul className="flex flex-col gap-2">
@@ -76,7 +78,7 @@ export function RosterUsage({
             className="self-start"
             onClick={() => setExpanded(true)}
           >
-            Show all ({hiddenCount} more)
+            {t('matchData.roster.showAll', { count: hiddenCount })}
           </Button>
         )}
         {expanded && rows.length > VISIBLE_CAP && (
@@ -86,7 +88,7 @@ export function RosterUsage({
             className="self-start"
             onClick={() => setExpanded(false)}
           >
-            Show less
+            {t('matchData.roster.showLess')}
           </Button>
         )}
       </CardContent>
@@ -95,6 +97,7 @@ export function RosterUsage({
 }
 
 function RosterUsageItem({ row, colorIndex }: { row: RosterUsageRow; colorIndex: number }) {
+  const { t } = useTranslation();
   const { fighter, games, usagePercent, wins, losses, winRate } = row;
   const tone = winRateTone(winRate);
   const barColor = BAR_COLOR_CLASSES[colorIndex % BAR_COLOR_CLASSES.length];
@@ -105,7 +108,9 @@ function RosterUsageItem({ row, colorIndex }: { row: RosterUsageRow; colorIndex:
       <div className="flex min-w-0 flex-1 flex-col gap-1">
         <div className="flex items-center justify-between gap-2">
           <span className="truncate text-sm font-medium">{fighter.name}</span>
-          <span className="shrink-0 text-xs text-muted-foreground">{games} games</span>
+          <span className="shrink-0 text-xs text-muted-foreground">
+            {t('common.games', { count: games })}
+          </span>
         </div>
         <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
           <div

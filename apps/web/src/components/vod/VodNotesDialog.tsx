@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 import { Plus, Trash2 } from 'lucide-react';
 import type { Match, UpdateMatchInput, VodTimestamp } from '@smash-tracker/shared';
@@ -64,6 +65,7 @@ export function VodNotesDialog({
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }) {
+  const { t } = useTranslation();
   const updateMatch = useUpdateMatch();
   const [url, setUrl] = useState(match.vodUrl ?? '');
   const [timestamps, setTimestamps] = useState<VodTimestamp[]>(match.vodTimestamps ?? []);
@@ -85,16 +87,16 @@ export function VodNotesDialog({
   function handleAddTimestamp() {
     const seconds = parseTimestamp(timeInput);
     if (seconds == null) {
-      setTimeError('Enter a time as m:ss or h:mm:ss');
+      setTimeError(t('shared.vod.timeFormatError'));
       return;
     }
     const note = noteInput.trim();
     if (!note) {
-      setTimeError('Enter a note for this timestamp');
+      setTimeError(t('shared.vod.noteRequired'));
       return;
     }
     if (timestamps.length >= MAX_TIMESTAMPS) {
-      setTimeError(`Limit ${MAX_TIMESTAMPS} timestamps per match`);
+      setTimeError(t('shared.vod.timestampLimit', { max: MAX_TIMESTAMPS }));
       return;
     }
     setTimestamps((prev) => [...prev, { seconds, note }].sort((a, b) => a.seconds - b.seconds));
@@ -115,10 +117,10 @@ export function VodNotesDialog({
     });
     try {
       await updateMatch.mutateAsync({ id: match.id, input });
-      toast.success('VOD notes saved!');
+      toast.success(t('shared.vod.saved'));
       onOpenChange(false);
     } catch {
-      toast.error('Failed to save VOD notes. Please try again.');
+      toast.error(t('shared.vod.saveFailed'));
     }
   }
 
@@ -126,16 +128,13 @@ export function VodNotesDialog({
     <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent className="max-h-[90vh] max-w-lg overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>VOD Notes</DialogTitle>
-          <DialogDescription>
-            Attach a VOD link and timestamped notes, e.g. &quot;2:41 — missed punish on
-            shield&quot;.
-          </DialogDescription>
+          <DialogTitle>{t('shared.vod.title')}</DialogTitle>
+          <DialogDescription>{t('shared.vod.description')}</DialogDescription>
         </DialogHeader>
 
         <div className="flex flex-col gap-4">
           <div className="flex flex-col gap-1.5">
-            <Label htmlFor="vod-url">VOD URL</Label>
+            <Label htmlFor="vod-url">{t('shared.vod.url')}</Label>
             <Input
               id="vod-url"
               type="url"
@@ -146,11 +145,11 @@ export function VodNotesDialog({
           </div>
 
           <div className="flex flex-col gap-1.5">
-            <Label>Timestamps</Label>
+            <Label>{t('shared.vod.timestamps')}</Label>
             {timestamps.length === 0 ? (
-              <p className="text-sm text-muted-foreground">No timestamp notes yet.</p>
+              <p className="text-sm text-muted-foreground">{t('shared.vod.noTimestamps')}</p>
             ) : (
-              <ul className="flex flex-col gap-2" aria-label="Timestamp notes">
+              <ul className="flex flex-col gap-2" aria-label={t('shared.vod.timestampsAria')}>
                 {timestamps.map((stamp, index) => (
                   <li
                     key={`${stamp.seconds}-${index}`}
@@ -175,7 +174,9 @@ export function VodNotesDialog({
                       type="button"
                       variant="outline"
                       size="icon-sm"
-                      aria-label={`Delete timestamp ${formatTimestamp(stamp.seconds)}`}
+                      aria-label={t('shared.vod.deleteTimestamp', {
+                        time: formatTimestamp(stamp.seconds),
+                      })}
                       onClick={() => handleRemoveTimestamp(index)}
                     >
                       <Trash2 />
@@ -192,8 +193,8 @@ export function VodNotesDialog({
                   setTimeInput(e.target.value);
                   setTimeError(null);
                 }}
-                placeholder="m:ss"
-                aria-label="Timestamp time"
+                placeholder={t('shared.vod.timePlaceholder')}
+                aria-label={t('shared.vod.timeAria')}
                 className="w-24"
               />
               <Input
@@ -202,14 +203,14 @@ export function VodNotesDialog({
                   setNoteInput(e.target.value);
                   setTimeError(null);
                 }}
-                placeholder="Note"
-                aria-label="Timestamp note"
+                placeholder={t('shared.vod.notePlaceholder')}
+                aria-label={t('shared.vod.noteAria')}
                 maxLength={200}
                 className="min-w-[10rem] flex-1"
               />
               <Button type="button" variant="outline" size="icon-sm" onClick={handleAddTimestamp}>
                 <Plus />
-                <span className="sr-only">Add timestamp</span>
+                <span className="sr-only">{t('shared.vod.addTimestamp')}</span>
               </Button>
             </div>
             {timeError && <p className="text-sm text-destructive">{timeError}</p>}
@@ -218,10 +219,10 @@ export function VodNotesDialog({
 
         <DialogFooter className="mt-4">
           <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
-            Cancel
+            {t('common.cancel')}
           </Button>
           <Button type="button" onClick={handleSave} disabled={updateMatch.isPending}>
-            Save
+            {t('common.save')}
           </Button>
         </DialogFooter>
       </DialogContent>

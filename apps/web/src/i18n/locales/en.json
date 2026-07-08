@@ -44,7 +44,11 @@
     "casual": "Casual",
     "competitive": "Competitive",
     "unknown": "Unknown",
-    "notAvailable": "n/a"
+    "notAvailable": "n/a",
+    "noMatchData": "No match data to report yet.",
+    "rate": "Rate",
+    "games_one": "{{count}} game",
+    "games_other": "{{count}} games"
   },
   "filters": {
     "sourceAria": "Filter matches by source",
@@ -56,6 +60,37 @@
     "months12": "12m"
   },
   "shared": {
+    "noFighters": {
+      "title": "You haven't picked any fighters yet!",
+      "subtitle": "Choose your primary and secondary fighters to start tracking matches.",
+      "choosePrimary": "Choose Primary Fighters",
+      "chooseSecondary": "Choose Secondary Fighters"
+    },
+    "matchDelete": {
+      "aria": "Delete match",
+      "confirmTitle": "Delete this match?",
+      "deleted": "Match deleted!",
+      "deleteFailed": "Failed to delete match. Please try again."
+    },
+    "vod": {
+      "title": "VOD Notes",
+      "description": "Attach a VOD link and timestamped notes, e.g. \"2:41 — missed punish on shield\".",
+      "url": "VOD URL",
+      "timestamps": "Timestamps",
+      "noTimestamps": "No timestamp notes yet.",
+      "timestampsAria": "Timestamp notes",
+      "deleteTimestamp": "Delete timestamp {{time}}",
+      "timePlaceholder": "m:ss",
+      "timeAria": "Timestamp time",
+      "notePlaceholder": "Note",
+      "noteAria": "Timestamp note",
+      "addTimestamp": "Add timestamp",
+      "timeFormatError": "Enter a time as m:ss or h:mm:ss",
+      "noteRequired": "Enter a note for this timestamp",
+      "timestampLimit": "Limit {{max}} timestamps per match",
+      "saved": "VOD notes saved!",
+      "saveFailed": "Failed to save VOD notes. Please try again."
+    },
     "filteredNotice": {
       "message": "No matches match the current filters.",
       "clear": "Clear filters"
@@ -73,18 +108,9 @@
   },
   "dashboard": {
     "loading": "Loading your dashboard...",
-    "empty": {
-      "title": "You haven't picked any fighters yet!",
-      "subtitle": "Choose your primary and secondary fighters to start tracking matches.",
-      "choosePrimary": "Choose Primary Fighters",
-      "chooseSecondary": "Choose Secondary Fighters"
-    },
     "hero": {
       "overallRecord": "Overall Record",
       "winRate": "{{rate}}% win rate",
-      "games_one": "{{count}} game",
-      "games_other": "{{count}} games",
-      "noMatchData": "No match data to report yet.",
       "form": "Form",
       "streakWin": "{{count}}W",
       "streakLoss": "{{count}}L",
@@ -107,9 +133,6 @@
       "ratingDown": "Rating down from last session",
       "ratingUnchanged": "Rating unchanged from last session"
     },
-    "tracker": {
-      "rate": "Rate"
-    },
     "formCurve": {
       "title": "Form Curve",
       "window": "Window",
@@ -124,11 +147,7 @@
       "title": "Previous Matches",
       "limit": "Limit",
       "limitAria": "Match limit",
-      "empty": "No matches recorded yet.",
-      "deleteAria": "Delete match",
-      "confirmTitle": "Delete this match?",
-      "deleted": "Match deleted!",
-      "deleteFailed": "Failed to delete match. Please try again."
+      "empty": "No matches recorded yet."
     },
     "stages": {
       "title": "Most-Played Stages",
@@ -341,6 +360,53 @@
       "mmrLabel": "Est. MMR (normalized)",
       "glickoLabel": "Glicko-2 (normalized)",
       "caption": "Your quickplay rating (estimated MMR for this fighter, community-reverse-engineered model) vs. your overall Glicko-2 rating (every fighter/session) — both normalized to 0-100 over this window since their raw scales are unrelated. Rating-vs-rating makes the shapes honestly comparable; divergence usually means your quickplay form differs from your overall form."
+    }
+  },
+  "matchData": {
+    "loading": "Loading match data...",
+    "title": "Match History",
+    "noMatches": "You have no matches, report a match and check back here to view match data!",
+    "goToDashboard": "Go to Dashboard",
+    "table": {
+      "columns": {
+        "date": "Date",
+        "fighter": "Fighter",
+        "opponentFighter": "Opponent",
+        "opponentName": "Opponent Name",
+        "stage": "Stage",
+        "matchType": "Type",
+        "win": "Result",
+        "tournament": "Tournament",
+        "notes": "Notes",
+        "manage": "Manage"
+      },
+      "editVod": "Edit VOD notes",
+      "addVod": "Add VOD notes",
+      "synced": "Synced",
+      "syncedTitle": "Synced from {{source}} — game data is managed by sync",
+      "editMatch": "Edit match",
+      "searchPlaceholder": "Search {{count}} records...",
+      "searchAria": "Filter matches",
+      "allOption": "All {{label}}",
+      "columnsButton": "Columns",
+      "toggleColumns": "Toggle columns",
+      "exportCsv": "Export CSV",
+      "noneFound": "No matches found.",
+      "pageOf": "Page {{page}} of {{total}}",
+      "rowsPerPage": "Rows per page",
+      "showN": "Show {{count}}"
+    },
+    "roster": {
+      "title": "Roster Usage",
+      "showAll": "Show all ({{count}} more)",
+      "showLess": "Show less"
+    },
+    "stages": {
+      "title": "Stage Breakdown",
+      "selectAria": "Select stage",
+      "noneOnStage": "No reported matches on this stage.",
+      "winsShort": "{{count}}W",
+      "lossesShort": "{{count}}L"
     }
   }
 }
