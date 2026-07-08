@@ -160,5 +160,68 @@
       "partialSave": "Seules {{saved}} manches sur {{total}} ont été enregistrées avant une erreur. Vérifiez les Données de matchs et ressaisissez les manches manquantes.",
       "setFailed": "Échec de l'enregistrement du set. Veuillez réessayer."
     }
+  },
+  "matchForm": {
+    "yourFighter": "Votre combattant",
+    "opponentFighter": "Combattant adverse",
+    "result": "Résultat",
+    "map": "Stage",
+    "mostPlayed": "Les plus joués",
+    "allStages": "Tous les stages",
+    "stocksLeft": "Stocks restants (vainqueur)",
+    "notTracked": "Non suivi",
+    "gspAfterMatch": "GSP après le match (facultatif)",
+    "gspPlaceholder": "p. ex. 12 400 000",
+    "matchType": "Type de match",
+    "matchTypes": {
+      "none": "Aucun",
+      "quickplay": "QuickPlay",
+      "online-friendly": "Amical en ligne",
+      "online-tourney": "Tournoi en ligne",
+      "offline-friendly": "Amical hors ligne",
+      "offline-tourney": "Tournoi hors ligne"
+    },
+    "opponent": "Adversaire",
+    "opponentCombobox": "Tapez pour filtrer ou ajouter...",
+    "opponentSearch": "Tapez un nom...",
+    "opponentAddHint": "Appuyez sur Entrée pour ajouter un nouvel adversaire.",
+    "notes": "Notes",
+    "notesPlaceholder": "Notes facultatives...",
+    "tournament": {
+      "sectionTitle": "Tournoi (facultatif)",
+      "tournamentName": "Nom du tournoi",
+      "tournamentPlaceholder": "p. ex. The Big House 9",
+      "eventName": "Nom de l'évènement",
+      "eventPlaceholder": "p. ex. Ultimate Singles",
+      "hint": "Les noms de tournoi et d'évènement saisis ici sont stockés comme les imports start.gg : les tournois suivis manuellement apparaissent donc aux côtés des tournois synchronisés dans les vues Tournoi."
+    },
+    "validation": {
+      "chooseFighter": "Choisissez votre combattant",
+      "chooseOpponentFighter": "Choisissez le combattant adverse",
+      "chooseResult": "Choisissez un résultat",
+      "opponentRequired": "Le nom de l'adversaire est requis",
+      "charLimit": "Limite de {{max}} caractères",
+      "gspFormat": "Saisissez un nombre comme 12 400 000 (ou laissez vide)"
+    },
+    "set": {
+      "format": "Format du set",
+      "bestOf3": "Meilleur des 3",
+      "bestOf5": "Meilleur des 5",
+      "opponentFighterGame1": "Combattant adverse (manche 1)",
+      "score": "Score du set",
+      "decided": "— set décidé",
+      "firstTo": "(premier à {{count}})",
+      "game": "Manche {{number}}",
+      "gameWinAria": "Victoire manche {{number}}",
+      "gameLossAria": "Défaite manche {{number}}",
+      "stage": "Stage"
+    },
+    "edit": {
+      "title": "Modifier le match",
+      "description": "Mettez à jour les détails de ce match enregistré.",
+      "deleteMatch": "Supprimer le match",
+      "edited": "Match modifié !",
+      "saveFailed": "Échec de l'enregistrement du match. Veuillez réessayer."
+    }
   }
 }
