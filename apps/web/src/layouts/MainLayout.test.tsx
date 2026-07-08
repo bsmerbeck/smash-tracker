@@ -3,6 +3,7 @@ import { render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router';
 import { AuthProvider } from '@/context/AuthContext';
 import { AnalyticsFilterProvider } from '@/context/AnalyticsFilterContext';
+import i18n from '@/i18n';
 import { MainLayout } from './MainLayout';
 import { navItems } from './nav';
 import { resetAuthMock, setMockUser, makeMockUser } from '@/test/mockAuth';
@@ -56,7 +57,9 @@ describe('MainLayout', () => {
     expect(await screen.findByText('Page content')).toBeInTheDocument();
 
     for (const item of navItems) {
-      expect(screen.getAllByRole('link', { name: item.title }).length).toBeGreaterThan(0);
+      expect(screen.getAllByRole('link', { name: i18n.t(item.titleKey) }).length).toBeGreaterThan(
+        0,
+      );
     }
 
     expect(screen.getAllByText('pilot@example.com').length).toBeGreaterThan(0);
