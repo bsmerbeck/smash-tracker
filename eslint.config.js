@@ -39,5 +39,13 @@ export default tseslint.config(
       globals: globals.node,
     },
   },
+  {
+    // Build-time puppeteer scripts (prerender, OG card): node for the script
+    // itself plus browser for code evaluated inside the page context.
+    files: ['apps/web/scripts/**/*.mjs'],
+    languageOptions: {
+      globals: { ...globals.node, ...globals.browser },
+    },
+  },
   eslintConfigPrettier,
 );

@@ -3,10 +3,13 @@ import { render, screen } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router';
 import { QueryClientProvider, QueryClient } from '@tanstack/react-query';
 import { AuthProvider } from '@/context/AuthContext';
+import { faqEntries } from '@/data/faqData';
 import { HomePage } from './HomePage';
 import { featureEntries } from './featureData';
-import { faqEntries } from './faqData';
 import { resetAuthMock, setMockUser, makeMockUser } from '@/test/mockAuth';
+
+/** Matches `LANDING_FAQ_PREVIEW_COUNT` in LandingContent.tsx (V12 SEO: only a preview shows on the landing page). */
+const LANDING_FAQ_PREVIEW_COUNT = 5;
 
 vi.mock('firebase/auth', async () => {
   const mock = await import('@/test/mockAuth');
@@ -85,11 +88,15 @@ describe('HomePage', () => {
       expect(screen.getByText(feature.description)).toBeInTheDocument();
     }
 
-    // FAQ renders each question/answer pair.
-    for (const entry of faqEntries) {
+    // FAQ renders only the preview slice (V12 SEO: full list lives at /faq).
+    for (const entry of faqEntries.slice(0, LANDING_FAQ_PREVIEW_COUNT)) {
       expect(screen.getByRole('heading', { name: entry.question })).toBeInTheDocument();
       expect(screen.getByText(entry.answer)).toBeInTheDocument();
     }
+    for (const entry of faqEntries.slice(LANDING_FAQ_PREVIEW_COUNT)) {
+      expect(screen.queryByRole('heading', { name: entry.question })).not.toBeInTheDocument();
+    }
+    expect(screen.getByRole('link', { name: 'See all FAQs →' })).toHaveAttribute('href', '/faq');
 
     // Reciprocal links to GitHub and the Discord community.
     expect(screen.getByRole('link', { name: /view the source on github/i })).toHaveAttribute(
