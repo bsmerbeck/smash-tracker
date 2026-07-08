@@ -12,8 +12,10 @@ const usersRoutes: FastifyPluginAsyncZod = async (app) => {
 
   app.addHook('preHandler', app.authenticate);
 
-  // PUT /api/users/me — idempotent upsert, replaces the deleted Cloud
-  // Function's onCreate auth trigger (`users/{uid} = { email }`).
+  // PUT /api/users/me — idempotent upsert. Replaces the legacy `createProfile`
+  // Cloud Function (auth onCreate trigger writing `users/{uid} = { email }`),
+  // deleted from the smash-tracker-f97b7 project on 2026-07-08. The user node
+  // is now created only when the client calls this endpoint.
   app.put(
     '/users/me',
     {
