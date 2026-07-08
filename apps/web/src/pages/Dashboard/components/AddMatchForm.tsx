@@ -42,7 +42,11 @@ function buildDefaultValues(fighterId: number): MatchFormValues {
     result: undefined as unknown as MatchFormValues['result'],
     stageId: NO_SELECTION_STAGE.id,
     matchType: 'none',
-    opponentName: '',
+    // 'unknown' by default: most quickplay opponents are randoms, and forcing
+    // a typed name for every match was the top friction in the add flow. All
+    // untouched entries aggregate under one "unknown" opponent (names are
+    // the RTDB key), and the combobox still lets you replace it.
+    opponentName: 'unknown',
     notes: '',
     stocksLeft: undefined,
     eventName: '',
