@@ -160,5 +160,68 @@
       "partialSave": "Only {{saved}} of {{total}} games saved before an error occurred. Check Match Data and re-enter any missing games.",
       "setFailed": "Failed to save the set. Please try again."
     }
+  },
+  "matchForm": {
+    "yourFighter": "Your Fighter",
+    "opponentFighter": "Opponent Fighter",
+    "result": "Result",
+    "map": "Map",
+    "mostPlayed": "Most played",
+    "allStages": "All stages",
+    "stocksLeft": "Stocks Left (winner)",
+    "notTracked": "Not tracked",
+    "gspAfterMatch": "GSP after match (optional)",
+    "gspPlaceholder": "e.g. 12,400,000",
+    "matchType": "Match Type",
+    "matchTypes": {
+      "none": "None",
+      "quickplay": "QuickPlay",
+      "online-friendly": "Online Friendly",
+      "online-tourney": "Online Tourney",
+      "offline-friendly": "Offline Friendly",
+      "offline-tourney": "Offline Tourney"
+    },
+    "opponent": "Opponent",
+    "opponentCombobox": "Type to filter or add...",
+    "opponentSearch": "Type a name...",
+    "opponentAddHint": "Press enter to add a new opponent.",
+    "notes": "Notes",
+    "notesPlaceholder": "Optional notes...",
+    "tournament": {
+      "sectionTitle": "Tournament (optional)",
+      "tournamentName": "Tournament Name",
+      "tournamentPlaceholder": "e.g. The Big House 9",
+      "eventName": "Event Name",
+      "eventPlaceholder": "e.g. Ultimate Singles",
+      "hint": "Tournament and event names entered here are stored the same way as start.gg imports, so manually-tracked tournaments show up alongside synced ones in Tournament views."
+    },
+    "validation": {
+      "chooseFighter": "Choose your fighter",
+      "chooseOpponentFighter": "Choose your opponent's fighter",
+      "chooseResult": "Choose a result",
+      "opponentRequired": "Opponent name is required",
+      "charLimit": "Limit {{max}} characters",
+      "gspFormat": "Enter a number like 12,400,000 (or leave blank)"
+    },
+    "set": {
+      "format": "Set Format",
+      "bestOf3": "Best of 3",
+      "bestOf5": "Best of 5",
+      "opponentFighterGame1": "Opponent Fighter (game 1)",
+      "score": "Set score",
+      "decided": "— set decided",
+      "firstTo": "(first to {{count}})",
+      "game": "Game {{number}}",
+      "gameWinAria": "Game {{number}} Win",
+      "gameLossAria": "Game {{number}} Loss",
+      "stage": "Stage"
+    },
+    "edit": {
+      "title": "Edit Match",
+      "description": "Update the details of this recorded match.",
+      "deleteMatch": "Delete Match",
+      "edited": "Match edited!",
+      "saveFailed": "Failed to save match. Please try again."
+    }
   }
 }

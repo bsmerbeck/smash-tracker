@@ -2,6 +2,8 @@ import { useMemo, useState } from 'react';
 import { useForm, type UseFormReturn } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
+import { useTranslation } from 'react-i18next';
+import type { TFunction } from 'i18next';
 import { Check, ChevronDown, ChevronsUpDown } from 'lucide-react';
 import type { Fighter } from '@smash-tracker/shared';
 import { matchTypeValues, type CreateMatchInput } from '@smash-tracker/shared';
@@ -70,14 +72,10 @@ export function StageArtPreview({ stageId }: { stageId: number }) {
   );
 }
 
-export const MATCH_TYPE_LABELS: Record<(typeof matchTypeValues)[number], string> = {
-  none: 'None',
-  quickplay: 'QuickPlay',
-  'online-friendly': 'Online Friendly',
-  'online-tourney': 'Online Tourney',
-  'offline-friendly': 'Offline Friendly',
-  'offline-tourney': 'Offline Tourney',
-};
+/** Translated label for a shared match-type enum value (locale keys mirror the enum literals, hyphens included). */
+export function matchTypeLabel(t: TFunction, value: (typeof matchTypeValues)[number]): string {
+  return t(`matchForm.matchTypes.${value}`);
+}
 
 /**
  * Form-level validation schema, shared by AddMatchForm and EditMatchForm.
@@ -85,26 +83,43 @@ export const MATCH_TYPE_LABELS: Record<(typeof matchTypeValues)[number], string>
  * a boolean, stage/fighter ids are numbers) and get mapped to
  * `CreateMatchInput`/`UpdateMatchInput` by callers — including lowercasing
  * the opponent name, exactly as legacy did in `updateOpponent`.
+ *
+ * A factory (not a module constant) so validation messages come out of the
+ * active locale; `useMatchForm` rebuilds it per render with the current `t`.
  */
-export const matchFormSchema = z.object({
-  fighterId: z.number().int().positive({ message: 'Choose your fighter' }),
-  opponentFighterId: z.number().int().positive({ message: "Choose your opponent's fighter" }),
-  result: z.enum(['win', 'loss'], { message: 'Choose a result' }),
-  stageId: z.number().int().nonnegative(),
-  matchType: z.enum(matchTypeValues),
-  opponentName: z.string().min(1, 'Opponent name is required'),
-  notes: z.string().max(100, 'Limit 100 characters'),
-  /** Winner's remaining stocks, 0-3. `undefined`/`''` (the "not tracked" state) is allowed — see `STOCKS_NOT_TRACKED`. */
-  stocksLeft: z.number().int().min(0).max(3).optional(),
-  eventName: z.string().max(80, 'Limit 80 characters').optional(),
-  tournamentName: z.string().max(80, 'Limit 80 characters').optional(),
-  /** GSP shown on the results screen, held as the user's raw text (commas/spaces tolerated — see parseGspNumber); '' = not tracked. */
-  gsp: z.string().refine((value) => value.trim() === '' || parseGspNumber(value) !== null, {
-    message: 'Enter a number like 12,400,000 (or leave blank)',
-  }),
-});
+export function buildMatchFormSchema(t: TFunction) {
+  return z.object({
+    fighterId: z
+      .number()
+      .int()
+      .positive({ message: t('matchForm.validation.chooseFighter') }),
+    opponentFighterId: z
+      .number()
+      .int()
+      .positive({ message: t('matchForm.validation.chooseOpponentFighter') }),
+    result: z.enum(['win', 'loss'], { message: t('matchForm.validation.chooseResult') }),
+    stageId: z.number().int().nonnegative(),
+    matchType: z.enum(matchTypeValues),
+    opponentName: z.string().min(1, t('matchForm.validation.opponentRequired')),
+    notes: z.string().max(100, t('matchForm.validation.charLimit', { max: 100 })),
+    /** Winner's remaining stocks, 0-3. `undefined`/`''` (the "not tracked" state) is allowed — see `STOCKS_NOT_TRACKED`. */
+    stocksLeft: z.number().int().min(0).max(3).optional(),
+    eventName: z
+      .string()
+      .max(80, t('matchForm.validation.charLimit', { max: 80 }))
+      .optional(),
+    tournamentName: z
+      .string()
+      .max(80, t('matchForm.validation.charLimit', { max: 80 }))
+      .optional(),
+    /** GSP shown on the results screen, held as the user's raw text (commas/spaces tolerated — see parseGspNumber); '' = not tracked. */
+    gsp: z.string().refine((value) => value.trim() === '' || parseGspNumber(value) !== null, {
+      message: t('matchForm.validation.gspFormat'),
+    }),
+  });
+}
 
-export type MatchFormValues = z.infer<typeof matchFormSchema>;
+export type MatchFormValues = z.infer<ReturnType<typeof buildMatchFormSchema>>;
 
 /** Sentinel select value meaning "stocks not tracked for this game" — HTML selects need a string, and `''` reads naturally as unset. */
 export const STOCKS_NOT_TRACKED = 'unset';
@@ -131,8 +146,9 @@ export function matchFormValuesToInput(values: MatchFormValues): CreateMatchInpu
 }
 
 export function useMatchForm(defaultValues: MatchFormValues): UseFormReturn<MatchFormValues> {
+  const { t } = useTranslation();
   return useForm<MatchFormValues>({
-    resolver: zodResolver(matchFormSchema),
+    resolver: zodResolver(buildMatchFormSchema(t)),
     defaultValues,
   });
 }
@@ -147,12 +163,13 @@ export function useMatchForm(defaultValues: MatchFormValues): UseFormReturn<Matc
 export function StocksSelectField<TFieldValues extends Record<string, unknown>>({
   control,
   name = 'stocksLeft' as never,
-  label = 'Stocks Left (winner)',
+  label,
 }: {
   control: UseFormReturn<TFieldValues>['control'];
   name?: Parameters<typeof FormField<TFieldValues>>[0]['name'];
   label?: string;
 }) {
+  const { t } = useTranslation();
   return (
     <FormField
       control={control}
@@ -161,7 +178,7 @@ export function StocksSelectField<TFieldValues extends Record<string, unknown>>(
         const value = field.value as number | undefined;
         return (
           <FormItem>
-            <FormLabel>{label}</FormLabel>
+            <FormLabel>{label ?? t('matchForm.stocksLeft')}</FormLabel>
             <Select
               value={value === undefined ? STOCKS_NOT_TRACKED : String(value)}
               onValueChange={(v) =>
@@ -170,11 +187,11 @@ export function StocksSelectField<TFieldValues extends Record<string, unknown>>(
             >
               <FormControl>
                 <SelectTrigger className="w-full">
-                  <SelectValue placeholder="Not tracked" />
+                  <SelectValue placeholder={t('matchForm.notTracked')} />
                 </SelectTrigger>
               </FormControl>
               <SelectContent>
-                <SelectItem value={STOCKS_NOT_TRACKED}>Not tracked</SelectItem>
+                <SelectItem value={STOCKS_NOT_TRACKED}>{t('matchForm.notTracked')}</SelectItem>
                 {[0, 1, 2, 3].map((n) => (
                   <SelectItem key={n} value={String(n)}>
                     {n}
@@ -208,6 +225,7 @@ export function TournamentFields<TFieldValues extends Record<string, unknown>>({
   tournamentNameField?: Parameters<typeof FormField<TFieldValues>>[0]['name'];
   defaultOpen?: boolean;
 }) {
+  const { t } = useTranslation();
   const [open, setOpen] = useState(defaultOpen);
 
   return (
@@ -217,7 +235,7 @@ export function TournamentFields<TFieldValues extends Record<string, unknown>>({
           type="button"
           className="flex w-full items-center justify-between px-3 py-2 text-sm font-medium"
         >
-          Tournament (optional)
+          {t('matchForm.tournament.sectionTitle')}
           <ChevronDown
             className={cn('size-4 transition-transform', open && 'rotate-180')}
             aria-hidden="true"
@@ -231,13 +249,13 @@ export function TournamentFields<TFieldValues extends Record<string, unknown>>({
             name={tournamentNameField}
             render={({ field }) => (
               <FormItem>
-                <FormLabel>Tournament Name</FormLabel>
+                <FormLabel>{t('matchForm.tournament.tournamentName')}</FormLabel>
                 <FormControl>
                   <Input
                     {...field}
                     value={(field.value as string | undefined) ?? ''}
                     maxLength={80}
-                    placeholder="e.g. The Big House 9"
+                    placeholder={t('matchForm.tournament.tournamentPlaceholder')}
                   />
                 </FormControl>
                 <FormMessage />
@@ -249,13 +267,13 @@ export function TournamentFields<TFieldValues extends Record<string, unknown>>({
             name={eventNameField}
             render={({ field }) => (
               <FormItem>
-                <FormLabel>Event Name</FormLabel>
+                <FormLabel>{t('matchForm.tournament.eventName')}</FormLabel>
                 <FormControl>
                   <Input
                     {...field}
                     value={(field.value as string | undefined) ?? ''}
                     maxLength={80}
-                    placeholder="e.g. Ultimate Singles"
+                    placeholder={t('matchForm.tournament.eventPlaceholder')}
                   />
                 </FormControl>
                 <FormMessage />
@@ -263,10 +281,7 @@ export function TournamentFields<TFieldValues extends Record<string, unknown>>({
             )}
           />
         </div>
-        <p className="text-xs text-muted-foreground">
-          Tournament and event names entered here are stored the same way as start.gg imports, so
-          manually-tracked tournaments show up alongside synced ones in Tournament views.
-        </p>
+        <p className="text-xs text-muted-foreground">{t('matchForm.tournament.hint')}</p>
       </CollapsibleContent>
     </Collapsible>
   );
@@ -288,6 +303,7 @@ export function MatchFormFields({
   /** The fighters offered for "Your Fighter" — the signed-in user's primary+secondary selections. */
   fighterSprites: Fighter[];
 }) {
+  const { t } = useTranslation();
   const { data: opponents = [] } = useOpponents();
   const { data: allMatches = [] } = useMatches();
   const [opponentPopoverOpen, setOpponentPopoverOpen] = useState(false);
@@ -306,7 +322,7 @@ export function MatchFormFields({
             name="fighterId"
             render={({ field }) => (
               <FormItem>
-                <FormLabel>Your Fighter</FormLabel>
+                <FormLabel>{t('matchForm.yourFighter')}</FormLabel>
                 <Select
                   value={String(field.value)}
                   onValueChange={(v) => field.onChange(Number(v))}
@@ -334,7 +350,7 @@ export function MatchFormFields({
             name="opponentFighterId"
             render={({ field }) => (
               <FormItem>
-                <FormLabel>Opponent Fighter</FormLabel>
+                <FormLabel>{t('matchForm.opponentFighter')}</FormLabel>
                 <Select
                   value={String(field.value)}
                   onValueChange={(v) => field.onChange(Number(v))}
@@ -364,7 +380,7 @@ export function MatchFormFields({
           name="result"
           render={({ field }) => (
             <FormItem>
-              <FormLabel>Result</FormLabel>
+              <FormLabel>{t('matchForm.result')}</FormLabel>
               <FormControl>
                 <ToggleGroup
                   type="single"
@@ -374,11 +390,11 @@ export function MatchFormFields({
                     if (value) field.onChange(value);
                   }}
                 >
-                  <ToggleGroupItem value="win" aria-label="Win">
-                    Win
+                  <ToggleGroupItem value="win" aria-label={t('common.win')}>
+                    {t('common.win')}
                   </ToggleGroupItem>
-                  <ToggleGroupItem value="loss" aria-label="Loss">
-                    Loss
+                  <ToggleGroupItem value="loss" aria-label={t('common.loss')}>
+                    {t('common.loss')}
                   </ToggleGroupItem>
                 </ToggleGroup>
               </FormControl>
@@ -392,7 +408,7 @@ export function MatchFormFields({
           name="stageId"
           render={({ field }) => (
             <FormItem>
-              <FormLabel>Map</FormLabel>
+              <FormLabel>{t('matchForm.map')}</FormLabel>
               <Select value={String(field.value)} onValueChange={(v) => field.onChange(Number(v))}>
                 <FormControl>
                   <SelectTrigger className="w-full">
@@ -405,7 +421,7 @@ export function MatchFormFields({
                   </SelectItem>
                   {mostPlayed.length > 0 && (
                     <SelectGroup>
-                      <SelectLabel>Most played</SelectLabel>
+                      <SelectLabel>{t('matchForm.mostPlayed')}</SelectLabel>
                       {mostPlayed.map((s) => (
                         <SelectItem key={`most-played-${s.id}`} value={String(s.id)}>
                           <StageOption stage={s} />
@@ -414,7 +430,7 @@ export function MatchFormFields({
                     </SelectGroup>
                   )}
                   <SelectGroup>
-                    <SelectLabel>All stages</SelectLabel>
+                    <SelectLabel>{t('matchForm.allStages')}</SelectLabel>
                     {allStages.map((s) => (
                       <SelectItem key={`all-${s.id}`} value={String(s.id)}>
                         <StageOption stage={s} />
@@ -436,13 +452,13 @@ export function MatchFormFields({
           name="gsp"
           render={({ field }) => (
             <FormItem>
-              <FormLabel>GSP after match (optional)</FormLabel>
+              <FormLabel>{t('matchForm.gspAfterMatch')}</FormLabel>
               <FormControl>
                 <Input
                   {...field}
                   type="text"
                   inputMode="numeric"
-                  placeholder="e.g. 12,400,000"
+                  placeholder={t('matchForm.gspPlaceholder')}
                   className="max-w-xs"
                 />
               </FormControl>
@@ -456,7 +472,7 @@ export function MatchFormFields({
           name="matchType"
           render={({ field }) => (
             <FormItem>
-              <FormLabel>Match Type</FormLabel>
+              <FormLabel>{t('matchForm.matchType')}</FormLabel>
               <FormControl>
                 <ToggleGroup
                   type="single"
@@ -469,7 +485,7 @@ export function MatchFormFields({
                 >
                   {matchTypeValues.map((value) => (
                     <ToggleGroupItem key={value} value={value}>
-                      {MATCH_TYPE_LABELS[value]}
+                      {matchTypeLabel(t, value)}
                     </ToggleGroupItem>
                   ))}
                 </ToggleGroup>
@@ -487,7 +503,7 @@ export function MatchFormFields({
             name="opponentName"
             render={({ field }) => (
               <FormItem>
-                <FormLabel>Opponent</FormLabel>
+                <FormLabel>{t('matchForm.opponent')}</FormLabel>
                 <Popover open={opponentPopoverOpen} onOpenChange={setOpponentPopoverOpen}>
                   <PopoverTrigger asChild>
                     <FormControl>
@@ -498,7 +514,7 @@ export function MatchFormFields({
                         aria-expanded={opponentPopoverOpen}
                         className="w-full justify-between font-normal"
                       >
-                        {field.value || 'Type to filter or add...'}
+                        {field.value || t('matchForm.opponentCombobox')}
                         <ChevronsUpDown className="opacity-50" />
                       </Button>
                     </FormControl>
@@ -506,7 +522,7 @@ export function MatchFormFields({
                   <PopoverContent className="w-[--radix-popover-trigger-width] p-0">
                     <Command>
                       <CommandInput
-                        placeholder="Type a name..."
+                        placeholder={t('matchForm.opponentSearch')}
                         value={field.value}
                         onValueChange={(value) => field.onChange(value)}
                         // Select-all on focus: the field arrives pre-filled
@@ -515,7 +531,7 @@ export function MatchFormFields({
                         onFocus={(e) => e.currentTarget.select()}
                       />
                       <CommandList>
-                        <CommandEmpty>Press enter to add a new opponent.</CommandEmpty>
+                        <CommandEmpty>{t('matchForm.opponentAddHint')}</CommandEmpty>
                         <CommandGroup>
                           {opponents.map((name) => (
                             <CommandItem
@@ -547,9 +563,13 @@ export function MatchFormFields({
             name="notes"
             render={({ field }) => (
               <FormItem>
-                <FormLabel>Notes</FormLabel>
+                <FormLabel>{t('matchForm.notes')}</FormLabel>
                 <FormControl>
-                  <Textarea {...field} maxLength={100} placeholder="Optional notes..." />
+                  <Textarea
+                    {...field}
+                    maxLength={100}
+                    placeholder={t('matchForm.notesPlaceholder')}
+                  />
                 </FormControl>
                 <FormMessage />
               </FormItem>

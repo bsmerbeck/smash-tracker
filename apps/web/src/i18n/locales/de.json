@@ -160,5 +160,68 @@
       "partialSave": "Nur {{saved}} von {{total}} Spielen wurden vor einem Fehler gespeichert. Prüfe die Match-Daten und trage fehlende Spiele erneut ein.",
       "setFailed": "Set konnte nicht gespeichert werden. Bitte erneut versuchen."
     }
+  },
+  "matchForm": {
+    "yourFighter": "Dein Kämpfer",
+    "opponentFighter": "Gegnerischer Kämpfer",
+    "result": "Ergebnis",
+    "map": "Stage",
+    "mostPlayed": "Meistgespielt",
+    "allStages": "Alle Stages",
+    "stocksLeft": "Verbleibende Stocks (Sieger)",
+    "notTracked": "Nicht erfasst",
+    "gspAfterMatch": "GSP nach dem Match (optional)",
+    "gspPlaceholder": "z. B. 12 400 000",
+    "matchType": "Match-Typ",
+    "matchTypes": {
+      "none": "Keiner",
+      "quickplay": "QuickPlay",
+      "online-friendly": "Online-Friendly",
+      "online-tourney": "Online-Turnier",
+      "offline-friendly": "Offline-Friendly",
+      "offline-tourney": "Offline-Turnier"
+    },
+    "opponent": "Gegner",
+    "opponentCombobox": "Tippen zum Filtern oder Hinzufügen...",
+    "opponentSearch": "Namen eingeben...",
+    "opponentAddHint": "Enter drücken, um einen neuen Gegner hinzuzufügen.",
+    "notes": "Notizen",
+    "notesPlaceholder": "Optionale Notizen...",
+    "tournament": {
+      "sectionTitle": "Turnier (optional)",
+      "tournamentName": "Turniername",
+      "tournamentPlaceholder": "z. B. The Big House 9",
+      "eventName": "Eventname",
+      "eventPlaceholder": "z. B. Ultimate Singles",
+      "hint": "Hier eingetragene Turnier- und Eventnamen werden genauso gespeichert wie start.gg-Importe — manuell erfasste Turniere erscheinen in den Turnier-Ansichten neben den synchronisierten."
+    },
+    "validation": {
+      "chooseFighter": "Wähle deinen Kämpfer",
+      "chooseOpponentFighter": "Wähle den Kämpfer des Gegners",
+      "chooseResult": "Wähle ein Ergebnis",
+      "opponentRequired": "Gegnername ist erforderlich",
+      "charLimit": "Maximal {{max}} Zeichen",
+      "gspFormat": "Gib eine Zahl wie 12 400 000 ein (oder lass das Feld leer)"
+    },
+    "set": {
+      "format": "Set-Format",
+      "bestOf3": "Best of 3",
+      "bestOf5": "Best of 5",
+      "opponentFighterGame1": "Gegnerischer Kämpfer (Spiel 1)",
+      "score": "Set-Stand",
+      "decided": "— Set entschieden",
+      "firstTo": "(zuerst auf {{count}})",
+      "game": "Spiel {{number}}",
+      "gameWinAria": "Spiel {{number}} Sieg",
+      "gameLossAria": "Spiel {{number}} Niederlage",
+      "stage": "Stage"
+    },
+    "edit": {
+      "title": "Match bearbeiten",
+      "description": "Aktualisiere die Details dieses erfassten Matches.",
+      "deleteMatch": "Match löschen",
+      "edited": "Match bearbeitet!",
+      "saveFailed": "Match konnte nicht gespeichert werden. Bitte erneut versuchen."
+    }
   }
 }
