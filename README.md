@@ -319,11 +319,15 @@ VITE_API_DIRECT_URL=https://smash-tracker-api-XXXX.us-central1.run.app
 
 ```sh
 pnpm --filter @smash-tracker/web build
+pnpm --filter @smash-tracker/web prerender
 firebase deploy --only hosting
 ```
 
-`firebase.json` points `hosting.public` at `apps/web/dist` and rewrites `/api/**` to the
-`smash-tracker-api` Cloud Run service before falling back to `/index.html` for client-side routing.
+`prerender` snapshots the public routes (`/`, `/faq`, `/gsp-calculator`) to static HTML in `dist/`
+with puppeteer so crawlers get full content without executing JS — run it after every build,
+before deploying. `firebase.json` points `hosting.public` at `apps/web/dist` and rewrites
+`/api/**` to the `smash-tracker-api` Cloud Run service before falling back to `/spa.html` (the
+un-prerendered SPA shell, emitted by the build) for client-side routing on auth-gated paths.
 
 **4. Lock down the Realtime Database rules**
 
