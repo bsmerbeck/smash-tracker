@@ -14,6 +14,10 @@
 FROM node:24-slim AS base
 ENV PNPM_HOME="/pnpm"
 ENV PATH="$PNPM_HOME:$PATH"
+# puppeteer is a web-only devDependency (build-time prerender/OG scripts);
+# the API image never launches a browser, and its Chrome-download postinstall
+# fails on node:24-slim anyway (no `unzip`), which kills `pnpm install`.
+ENV PUPPETEER_SKIP_DOWNLOAD=true
 RUN corepack enable && corepack prepare pnpm@11.9.0 --activate
 WORKDIR /repo
 
