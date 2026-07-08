@@ -87,6 +87,12 @@ function initAnalytics(): Promise<AnalyticsContext | null> {
     if (!config.measurementId) {
       return null;
     }
+    // Automated browsers are excluded: scripts/prerender.mjs loads the public
+    // routes in headless Chrome on every deploy, and counting those (or other
+    // headless bots) would pollute acquisition data with phantom visits.
+    if (typeof navigator !== 'undefined' && navigator.webdriver) {
+      return null;
+    }
     const mod = await import('firebase/analytics');
     if (!(await mod.isSupported().catch(() => false))) {
       return null;
@@ -96,8 +102,8 @@ function initAnalytics(): Promise<AnalyticsContext | null> {
     // default 'auto' domain walk tries to set _ga cookies at the web.app
     // level — browsers reject those ("invalid domain" console errors on
     // every page in Firefox) before falling back. send_page_view is off
-    // because MainLayout logs page_view itself on mount + every route
-    // change (the signed-out landing page is deliberately uncounted).
+    // because routes/RouteAnalytics.tsx logs page_view on mount + every
+    // route change, for every route (public SEO pages included).
     const analytics = mod.initializeAnalytics(getFirebaseApp(), {
       config: {
         cookie_domain: window.location.hostname,
