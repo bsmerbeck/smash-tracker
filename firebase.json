@@ -5,6 +5,7 @@
   "hosting": {
     "public": "apps/web/dist",
     "ignore": ["firebase.json", "**/.*", "**/node_modules/**"],
+    "trailingSlash": false,
     "rewrites": [
       {
         "source": "/api/**",
@@ -15,7 +16,7 @@
       },
       {
         "source": "**",
-        "destination": "/index.html"
+        "destination": "/spa.html"
       }
     ],
     "headers": [

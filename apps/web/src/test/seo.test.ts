@@ -41,13 +41,17 @@ describe('SEO static files (apps/web/public/)', () => {
     expect(contents).toContain('Sitemap: https://grandfinals.gg/sitemap.xml');
   });
 
-  it('sitemap.xml lists only the crawlable root route', () => {
+  it('sitemap.xml lists exactly the public, crawlable routes', () => {
     const contents = readPublicFile('/public/sitemap.xml');
     expect(contents).toContain('<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">');
     expect(contents).toContain('<loc>https://grandfinals.gg/</loc>');
-    // Every other route requires auth and can't be indexed, so exactly one
-    // <url> entry is expected.
-    expect(contents.match(/<url>/g)).toHaveLength(1);
+    expect(contents).toContain('<loc>https://grandfinals.gg/gsp-calculator</loc>');
+    expect(contents).toContain('<loc>https://grandfinals.gg/faq</loc>');
+    // V12 SEO: `/`, `/gsp-calculator`, and `/faq` are public (and
+    // prerendered — scripts/prerender.mjs must cover every URL here); every
+    // other route requires auth and can't be indexed.
+    expect(contents.match(/<url>/g)).toHaveLength(3);
+    expect(contents.match(/<lastmod>/g)).toHaveLength(3);
   });
 
   it('og-image.png exists for OpenGraph/Twitter card previews', () => {
