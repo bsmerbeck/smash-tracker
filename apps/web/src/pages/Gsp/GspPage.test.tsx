@@ -359,6 +359,28 @@ describe('GspPage', () => {
     expect(screen.getByText(/logged post-match GSP reading/)).toBeInTheDocument();
   });
 
+  it('opens the edit dialog from the GSP Log and offers deletion from inside it', async () => {
+    getFighters.mockResolvedValue({ primary: [mario.id], secondary: [] });
+    listMatches.mockResolvedValue([
+      makeMatch({ id: 'm1', time: 1, win: true, gsp: 9_000_000 }),
+      makeMatch({ id: 'm2', time: 2, win: true, gsp: 9_100_000 }),
+    ]);
+    const user = userEvent.setup();
+
+    renderGspPage();
+    await screen.findByText('GSP Log');
+
+    // Newest entry's edit button opens the shared EditMatchForm dialog.
+    await user.click(screen.getAllByRole('button', { name: /^Edit GSP entry/ })[0]!);
+    const dialog = await screen.findByRole('dialog');
+    expect(dialog).toHaveTextContent('Edit Match');
+
+    // V14.1: chart clicks land in this dialog directly, so it must offer the
+    // delete path too — it hands off to the page's confirmation dialog.
+    await user.click(screen.getByRole('button', { name: 'Delete Match' }));
+    expect(await screen.findByText('Delete this GSP entry?')).toBeInTheDocument();
+  });
+
   describe('Road to Elite states', () => {
     it('projects net wins on the MMR scale at a >50% win rate', async () => {
       getFighters.mockResolvedValue({ primary: [mario.id], secondary: [] });
