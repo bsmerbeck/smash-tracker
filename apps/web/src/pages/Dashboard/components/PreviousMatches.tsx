@@ -104,14 +104,19 @@ export function PreviousMatches({ matches }: { matches: Match[] }) {
                       {match.win ? 'Win' : 'Loss'}
                     </span>
                   </div>
-                  <Button
-                    variant="outline"
-                    size="icon-sm"
-                    aria-label="Delete match"
-                    onClick={() => setPendingDelete(match)}
-                  >
-                    <Trash2 />
-                  </Button>
+                  {/* Synced matches can't be deleted (the next sync would
+                      just re-create them; the API 409s it) — manage them on
+                      the Match Data page instead. */}
+                  {!match.source && (
+                    <Button
+                      variant="outline"
+                      size="icon-sm"
+                      aria-label="Delete match"
+                      onClick={() => setPendingDelete(match)}
+                    >
+                      <Trash2 />
+                    </Button>
+                  )}
                 </li>
               );
             })}

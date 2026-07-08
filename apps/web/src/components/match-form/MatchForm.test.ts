@@ -10,6 +10,7 @@ function baseValues(overrides: Partial<MatchFormValues> = {}): MatchFormValues {
     matchType: 'offline-tourney',
     opponentName: 'Rival',
     notes: '',
+    gsp: '',
     ...overrides,
   };
 }
@@ -66,5 +67,15 @@ describe('matchFormValuesToInput', () => {
     const input = matchFormValuesToInput(baseValues({ eventName: '', tournamentName: '   ' }));
     expect('eventName' in input).toBe(false);
     expect('tournamentName' in input).toBe(false);
+  });
+
+  it('parses gsp text (commas/spaces tolerated) into the numeric gsp field', () => {
+    expect(matchFormValuesToInput(baseValues({ gsp: '12,400,000' })).gsp).toBe(12_400_000);
+    expect(matchFormValuesToInput(baseValues({ gsp: '12 400 000' })).gsp).toBe(12_400_000);
+  });
+
+  it('omits gsp when blank', () => {
+    const input = matchFormValuesToInput(baseValues({ gsp: '  ' }));
+    expect('gsp' in input).toBe(false);
   });
 });

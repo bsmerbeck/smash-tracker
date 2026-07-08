@@ -43,6 +43,7 @@ import { StageOption } from '@/components/StageOption';
 import { useOpponents } from '@/hooks/useOpponents';
 import { useMatches } from '@/hooks/useMatches';
 import { getGroupedStageOptions, stageOptions } from '@/lib/stageOptions';
+import { parseGspNumber } from '@/pages/Gsp/lib/parseGspNumber';
 
 export const alphaSpriteList = [...SpriteList].sort((a, b) => a.name.localeCompare(b.name));
 
@@ -97,6 +98,10 @@ export const matchFormSchema = z.object({
   stocksLeft: z.number().int().min(0).max(3).optional(),
   eventName: z.string().max(80, 'Limit 80 characters').optional(),
   tournamentName: z.string().max(80, 'Limit 80 characters').optional(),
+  /** GSP shown on the results screen, held as the user's raw text (commas/spaces tolerated — see parseGspNumber); '' = not tracked. */
+  gsp: z.string().refine((value) => value.trim() === '' || parseGspNumber(value) !== null, {
+    message: 'Enter a number like 12,400,000 (or leave blank)',
+  }),
 });
 
 export type MatchFormValues = z.infer<typeof matchFormSchema>;
@@ -109,6 +114,7 @@ export function matchFormValuesToInput(values: MatchFormValues): CreateMatchInpu
   const stage = stageOptions.find((s) => s.id === values.stageId) ?? NO_SELECTION_STAGE;
   const eventName = values.eventName?.trim();
   const tournamentName = values.tournamentName?.trim();
+  const gsp = values.gsp.trim() === '' ? null : parseGspNumber(values.gsp);
   return {
     fighter_id: values.fighterId,
     opponent_id: values.opponentFighterId,
@@ -120,6 +126,7 @@ export function matchFormValuesToInput(values: MatchFormValues): CreateMatchInpu
     ...(values.stocksLeft !== undefined ? { stocksLeft: values.stocksLeft } : {}),
     ...(eventName ? { eventName } : {}),
     ...(tournamentName ? { tournamentName } : {}),
+    ...(gsp !== null ? { gsp } : {}),
   };
 }
 
@@ -423,6 +430,26 @@ export function MatchFormFields({
         />
 
         <StocksSelectField control={form.control} />
+
+        <FormField
+          control={form.control}
+          name="gsp"
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel>GSP after match (optional)</FormLabel>
+              <FormControl>
+                <Input
+                  {...field}
+                  type="text"
+                  inputMode="numeric"
+                  placeholder="e.g. 12,400,000"
+                  className="max-w-xs"
+                />
+              </FormControl>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
 
         <FormField
           control={form.control}

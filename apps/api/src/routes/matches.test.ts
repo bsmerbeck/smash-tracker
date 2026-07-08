@@ -11,6 +11,34 @@ const validCreateInput = {
   win: true,
 };
 
+/** A stored start.gg-synced match (id `sgg-123-g1` in the tests). */
+const syncedRecord = {
+  fighter_id: 1,
+  opponent_id: 8,
+  time: 1700000000000,
+  map: { id: 1, name: 'Battlefield' },
+  opponent: 'someplayer',
+  notes: '',
+  matchType: 'online-tourney',
+  win: true,
+  source: 'startgg',
+  externalId: 'sgg:123:g1',
+} as const;
+
+/**
+ * The PATCH payload a well-behaved annotation editor (VodNotesDialog) sends
+ * for `syncedRecord`: every sync-owned game fact carried through unchanged.
+ */
+const syncedCarryThroughPayload = {
+  fighter_id: syncedRecord.fighter_id,
+  opponent_id: syncedRecord.opponent_id,
+  map: syncedRecord.map,
+  opponent: syncedRecord.opponent,
+  notes: syncedRecord.notes,
+  matchType: syncedRecord.matchType,
+  win: syncedRecord.win,
+};
+
 describe('GET /api/matches', () => {
   it('returns an empty array when the user has no matches', async () => {
     const { app } = buildTestApp();
@@ -742,6 +770,75 @@ describe('PATCH /api/matches/:id', () => {
 
     expect(response.statusCode).toBe(400);
   });
+
+  it('preserves the original time — editing corrects a match, it does not re-date it', async () => {
+    const { app, database } = buildTestApp();
+    database.seed(`matches/${TEST_UID}/existingKey`, {
+      fighter_id: 1,
+      opponent_id: 8,
+      time: 1700000000000,
+      win: false,
+    });
+
+    const response = await app.inject({
+      method: 'PATCH',
+      url: '/api/matches/existingKey',
+      headers: authHeader(),
+      payload: { ...validCreateInput, win: true },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({ time: 1700000000000, win: true });
+  });
+
+  it('returns 409 when changing game data on a synced match', async () => {
+    const { app, database } = buildTestApp();
+    database.seed(`matches/${TEST_UID}/sgg-123-g1`, {
+      ...syncedRecord,
+    });
+
+    const response = await app.inject({
+      method: 'PATCH',
+      url: '/api/matches/sgg-123-g1',
+      headers: authHeader(),
+      // Flipping the result is exactly the edit sync would undo.
+      payload: { ...syncedCarryThroughPayload, win: !syncedRecord.win },
+    });
+
+    expect(response.statusCode).toBe(409);
+    const dump = database.dump() as Record<string, unknown>;
+    const matches = dump.matches as Record<string, Record<string, unknown>>;
+    expect(matches[TEST_UID]!['sgg-123-g1']).toMatchObject({ win: syncedRecord.win });
+  });
+
+  it('allows annotation-only updates (notes/vod/gsp) on a synced match, preserving provenance', async () => {
+    const { app, database } = buildTestApp();
+    database.seed(`matches/${TEST_UID}/sgg-123-g1`, {
+      ...syncedRecord,
+    });
+
+    const response = await app.inject({
+      method: 'PATCH',
+      url: '/api/matches/sgg-123-g1',
+      headers: authHeader(),
+      payload: {
+        ...syncedCarryThroughPayload,
+        notes: 'their ledge habits are exploitable',
+        vodUrl: 'https://youtube.com/watch?v=abc123',
+        vodTimestamps: [{ seconds: 161, note: 'missed punish on shield' }],
+      },
+    });
+
+    expect(response.statusCode).toBe(200);
+    // source/externalId/time survive the full-overwrite rebuild.
+    expect(response.json()).toMatchObject({
+      notes: 'their ledge habits are exploitable',
+      vodUrl: 'https://youtube.com/watch?v=abc123',
+      source: 'startgg',
+      externalId: 'sgg:123:g1',
+      time: syncedRecord.time,
+    });
+  });
 });
 
 describe('DELETE /api/matches/:id', () => {
@@ -780,5 +877,21 @@ describe('DELETE /api/matches/:id', () => {
     });
 
     expect(response.statusCode).toBe(404);
+  });
+
+  it('returns 409 for a synced match and leaves it in place', async () => {
+    const { app, database } = buildTestApp();
+    database.seed(`matches/${TEST_UID}/sgg-123-g1`, { ...syncedRecord });
+
+    const response = await app.inject({
+      method: 'DELETE',
+      url: '/api/matches/sgg-123-g1',
+      headers: authHeader(),
+    });
+
+    expect(response.statusCode).toBe(409);
+    const dump = database.dump() as Record<string, unknown>;
+    const matches = dump.matches as Record<string, Record<string, unknown>>;
+    expect(matches[TEST_UID]!['sgg-123-g1']).toMatchObject({ source: 'startgg' });
   });
 });

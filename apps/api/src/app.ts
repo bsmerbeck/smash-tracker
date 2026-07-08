@@ -24,7 +24,7 @@ import reportsRoutes from './routes/reports.js';
 import billingRoutes, { type StripeLikeClient } from './routes/billing.js';
 import tournamentsRoutes from './routes/tournaments.js';
 import groupsRoutes from './routes/groups.js';
-import { NotFoundError } from './services/rtdb.js';
+import { ConflictError, NotFoundError } from './services/rtdb.js';
 import type { FirebaseServices } from './firebase/admin.js';
 import type { ParryggConfig, ReportsConfig, StartggConfig, StripeConfig } from './config/env.js';
 import type { AnthropicLikeClient } from './reports/generate.js';
@@ -96,6 +96,15 @@ export function buildApp(options: BuildAppOptions) {
         error: 'Not Found',
         message: error.message,
         statusCode: 404,
+      });
+      return;
+    }
+
+    if (error instanceof ConflictError) {
+      reply.code(409).send({
+        error: 'Conflict',
+        message: error.message,
+        statusCode: 409,
       });
       return;
     }

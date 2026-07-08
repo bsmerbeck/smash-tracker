@@ -51,6 +51,7 @@ function buildDefaultValues(fighterId: number): MatchFormValues {
     stocksLeft: undefined,
     eventName: '',
     tournamentName: '',
+    gsp: '',
   };
 }
 

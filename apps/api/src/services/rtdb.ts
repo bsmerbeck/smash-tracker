@@ -37,6 +37,40 @@ export class ValidationError extends Error {
   }
 }
 
+/** Thrown for a 409-worthy write: the record exists but its state forbids this operation (e.g. editing/deleting a synced match). */
+export class ConflictError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'ConflictError';
+  }
+}
+
+/**
+ * True when `input` would change a field that start.gg/parry.gg sync owns on
+ * a synced match record. Sync re-writes game facts idempotently (keyed
+ * `sgg-...`/`pgg-...`), so user edits to them would either drift from the
+ * source of truth or be silently overwritten by the next sync. User-owned
+ * annotations — `notes`, `vodUrl`, `vodTimestamps`, `gsp` — are NOT compared
+ * here: those never come from sync and stay editable on any match.
+ * Comparisons normalize the same way the web's payload builders do
+ * (`?? ''` strings, `?? 'none'` matchType, map sentinel) so a carry-through
+ * payload built from the record itself never reads as a change.
+ */
+function changesSyncOwnedFields(existing: MatchRecord, input: UpdateMatchInput): boolean {
+  return (
+    existing.fighter_id !== input.fighter_id ||
+    existing.opponent_id !== input.opponent_id ||
+    (existing.map?.id ?? 0) !== input.map.id ||
+    (existing.map?.name ?? 'no selection') !== input.map.name ||
+    (existing.opponent ?? '') !== (input.opponent ?? '') ||
+    (existing.matchType ?? 'none') !== input.matchType ||
+    existing.win !== input.win ||
+    existing.stocksLeft !== input.stocksLeft ||
+    (existing.eventName ?? '') !== (input.eventName ?? '') ||
+    (existing.tournamentName ?? '') !== (input.tournamentName ?? '')
+  );
+}
+
 /**
  * Thin data-access layer over the RTDB paths derived from legacy (see
  * packages/shared/README.md for provenance). Keeps route handlers free of
@@ -138,11 +172,26 @@ export class RtdbService {
     if (!existing.exists()) {
       throw new NotFoundError(`Match ${id} not found`);
     }
+    const current = matchRecordSchema.parse(existing.val());
+
+    // Synced matches: sync owns the game facts (idempotent re-writes would
+    // clobber user edits anyway) — only the user-annotation fields may
+    // change. 409 mirrors the UI, which hides Edit for synced rows but keeps
+    // VOD notes (which PATCH here with every game fact carried through).
+    if (current.source && changesSyncOwnedFields(current, input)) {
+      throw new ConflictError(
+        `Match ${id} is synced from ${current.source}; its game data is managed by sync`,
+      );
+    }
 
     const record: MatchRecord = {
       fighter_id: input.fighter_id,
       opponent_id: input.opponent_id,
-      time: Date.now(),
+      // Editing corrects a record, it doesn't re-date it: `time` keeps the
+      // original value (stamping Date.now() here re-ordered edited matches
+      // to "now", corrupting the GSP series / form curve / trends, all of
+      // which key on time).
+      time: current.time,
       map: input.map,
       notes: input.notes,
       matchType: input.matchType,
@@ -159,6 +208,10 @@ export class RtdbService {
       ...(input.vodUrl !== undefined ? { vodUrl: input.vodUrl } : {}),
       ...(input.vodTimestamps !== undefined ? { vodTimestamps: input.vodTimestamps } : {}),
       ...(input.gsp !== undefined ? { gsp: input.gsp } : {}),
+      // Server-set provenance survives the overwrite — the full-overwrite
+      // rebuild used to strip these, breaking source badges after a VOD edit.
+      ...(current.source !== undefined ? { source: current.source } : {}),
+      ...(current.externalId !== undefined ? { externalId: current.externalId } : {}),
     };
 
     await ref.set(record);
@@ -174,6 +227,14 @@ export class RtdbService {
     const existing = await ref.get();
     if (!existing.exists()) {
       throw new NotFoundError(`Match ${id} not found`);
+    }
+    const current = matchRecordSchema.parse(existing.val());
+    // Deleting a synced match is futile (the next sync re-creates it under
+    // the same idempotent key) — refuse instead of pretending it worked.
+    if (current.source) {
+      throw new ConflictError(
+        `Match ${id} is synced from ${current.source}; unlink or re-sync to manage it`,
+      );
     }
     await ref.remove();
   }
