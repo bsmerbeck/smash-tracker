@@ -166,6 +166,12 @@ export function GspPage() {
           fighterSprites={editFighterSprites}
           open={editingMatch != null}
           onOpenChange={(open) => !open && setEditingMatch(null)}
+          // Curve clicks land here directly, so the dialog must offer the
+          // delete path too — hand off to the shared confirmation below.
+          onDelete={(match) => {
+            setEditingMatch(null);
+            setPendingDelete(match);
+          }}
         />
       )}
 

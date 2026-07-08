@@ -51,12 +51,20 @@ export function EditMatchForm({
   fighterSprites,
   open,
   onOpenChange,
+  onDelete,
 }: {
   match: Match;
   /** The fighters offered for "Your Fighter" — the signed-in user's primary+secondary selections. */
   fighterSprites: Fighter[];
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  /**
+   * V14.1: renders a destructive Delete button in the footer when provided.
+   * The caller owns the confirmation + mutation (every page already has a
+   * delete AlertDialog) — this matters for entry points like the GSP curve's
+   * click-to-edit, where the dialog is the only affordance for that match.
+   */
+  onDelete?: (match: Match) => void;
 }) {
   const updateMatch = useUpdateMatch();
   const form = useMatchForm(matchToFormValues(match));
@@ -96,6 +104,16 @@ export function EditMatchForm({
         <form onSubmit={form.handleSubmit(onSubmit)} noValidate>
           <MatchFormFields form={form} fighterSprites={fighterSprites} />
           <DialogFooter className="mt-4">
+            {onDelete && (
+              <Button
+                type="button"
+                variant="destructive"
+                className="sm:mr-auto"
+                onClick={() => onDelete(match)}
+              >
+                Delete Match
+              </Button>
+            )}
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
               Cancel
             </Button>
