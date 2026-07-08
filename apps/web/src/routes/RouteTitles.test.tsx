@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { render } from '@testing-library/react';
 import { MemoryRouter } from 'react-router';
 import { navItems } from '@/layouts/nav';
-import { RouteTitles, titleForPath } from './RouteTitles';
+import { RouteTitles, titleKeyForPath } from './RouteTitles';
 
 function renderAt(path: string) {
   return render(
@@ -13,26 +13,26 @@ function renderAt(path: string) {
 }
 
 describe('RouteTitles', () => {
-  it('sets a per-route title for every nav destination', () => {
+  it('maps every nav destination to its nav.* title key', () => {
     for (const item of navItems) {
-      expect(titleForPath(item.href)).toBe(`${item.title} | Smash Tracker`);
+      expect(titleKeyForPath(item.href)).toBe(item.titleKey);
     }
   });
 
-  it('applies the title to the document', () => {
+  it('applies the translated title to the document (English under the test fallback)', () => {
     renderAt('/matchups');
     expect(document.title).toBe('Matchups | Smash Tracker');
   });
 
   it('titles tournament detail pages', () => {
-    expect(titleForPath('/tournaments/tournament-123')).toBe('Tournament | Smash Tracker');
+    expect(titleKeyForPath('/tournaments/tournament-123')).toBe('nav.tournament');
   });
 
   it('leaves unmapped (public/SEO) routes alone so useSeo owns them', () => {
     document.title = 'set by useSeo';
     renderAt('/gsp-calculator');
     expect(document.title).toBe('set by useSeo');
-    expect(titleForPath('/')).toBeNull();
-    expect(titleForPath('/faq')).toBeNull();
+    expect(titleKeyForPath('/')).toBeNull();
+    expect(titleKeyForPath('/faq')).toBeNull();
   });
 });

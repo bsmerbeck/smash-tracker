@@ -1,4 +1,5 @@
 import { NavLink } from 'react-router';
+import { useTranslation } from 'react-i18next';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Separator } from '@/components/ui/separator';
 import { cn } from '@/lib/utils';
@@ -16,13 +17,14 @@ function initialFromEmail(email: string | null | undefined): string {
  */
 export function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
   const { user } = useAuth();
+  const { t } = useTranslation();
 
   return (
     <div className="flex h-full flex-col gap-4 p-4">
       <NavLink
         to="/profile"
         onClick={onNavigate}
-        aria-label="Your profile"
+        aria-label={t('chrome.yourProfile')}
         className={({ isActive }) =>
           cn(
             'flex flex-col items-center gap-2 rounded-md py-2 transition-colors',
@@ -35,7 +37,7 @@ export function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
           <AvatarFallback className="text-lg">{initialFromEmail(user?.email)}</AvatarFallback>
         </Avatar>
         <p className="max-w-full truncate text-sm font-medium" title={user?.email ?? ''}>
-          {user?.email ?? 'Signed out'}
+          {user?.email ?? t('chrome.signedOut')}
         </p>
       </NavLink>
 
@@ -43,7 +45,7 @@ export function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
 
       <nav
         className="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto py-0.5"
-        aria-label="Main navigation"
+        aria-label={t('chrome.mainNavigation')}
       >
         {navItems.map((item) => (
           <NavLink
@@ -59,7 +61,7 @@ export function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
             }
           >
             <item.icon className="size-4 shrink-0" />
-            {item.title}
+            {t(item.titleKey)}
           </NavLink>
         ))}
       </nav>
@@ -77,7 +79,7 @@ export function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
           alt="SSBU Training Grounds"
           className="size-8 shrink-0 rounded-full"
         />
-        Training Grounds
+        {t('chrome.trainingGrounds')}
       </a>
 
       {/* Donorbox blue (#41a2d8) kept from the legacy button so it reads as
@@ -94,7 +96,7 @@ export function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
           role="presentation"
           className="h-4 shrink-0"
         />
-        Donate
+        {t('chrome.donate')}
       </a>
     </div>
   );

@@ -1,0 +1,43 @@
+{
+  "nav": {
+    "dashboard": "Dashboard",
+    "choosePrimary": "Main wählen",
+    "chooseSecondary": "Secondary wählen",
+    "fighterAnalysis": "Kämpfer-Analyse",
+    "matchups": "Matchups",
+    "scouting": "Scouting",
+    "scoutAPlayer": "Spieler suchen",
+    "aiReports": "KI-Berichte",
+    "matchData": "Match-Daten",
+    "trends": "Trends",
+    "gsp": "GSP",
+    "groups": "Gruppen",
+    "integrations": "Integrationen",
+    "profile": "Profil",
+    "tournament": "Turnier",
+    "signingInWithStartgg": "Anmeldung mit start.gg"
+  },
+  "chrome": {
+    "openMenu": "Menü öffnen",
+    "signOut": "Abmelden",
+    "signOutFailed": "Abmelden fehlgeschlagen. Bitte erneut versuchen.",
+    "navigation": "Navigation",
+    "analyticsFilters": "Analyse-Filter",
+    "mainNavigation": "Hauptnavigation",
+    "yourProfile": "Dein Profil",
+    "signedOut": "Abgemeldet",
+    "trainingGrounds": "Training Grounds",
+    "donate": "Spenden",
+    "loading": "Lädt…",
+    "language": "Sprache",
+    "languageChanged": "Sprache auf {{language}} gesetzt — jederzeit in der oberen Leiste änderbar."
+  },
+  "common": {
+    "cancel": "Abbrechen",
+    "save": "Speichern",
+    "delete": "Löschen",
+    "win": "Sieg",
+    "loss": "Niederlage",
+    "cannotBeUndone": "Diese Aktion kann nicht rückgängig gemacht werden."
+  }
+}

@@ -1,0 +1,43 @@
+{
+  "nav": {
+    "dashboard": "Panel",
+    "choosePrimary": "Elegir principal",
+    "chooseSecondary": "Elegir secundario",
+    "fighterAnalysis": "Análisis de luchador",
+    "matchups": "Enfrentamientos",
+    "scouting": "Scouting",
+    "scoutAPlayer": "Buscar jugador",
+    "aiReports": "Informes IA",
+    "matchData": "Datos de partidas",
+    "trends": "Tendencias",
+    "gsp": "GSP",
+    "groups": "Grupos",
+    "integrations": "Integraciones",
+    "profile": "Perfil",
+    "tournament": "Torneo",
+    "signingInWithStartgg": "Iniciando sesión con start.gg"
+  },
+  "chrome": {
+    "openMenu": "Abrir menú",
+    "signOut": "Cerrar sesión",
+    "signOutFailed": "No se pudo cerrar sesión. Inténtalo de nuevo.",
+    "navigation": "Navegación",
+    "analyticsFilters": "Filtros de análisis",
+    "mainNavigation": "Navegación principal",
+    "yourProfile": "Tu perfil",
+    "signedOut": "Sesión cerrada",
+    "trainingGrounds": "Training Grounds",
+    "donate": "Donar",
+    "loading": "Cargando…",
+    "language": "Idioma",
+    "languageChanged": "Idioma cambiado a {{language}} — puedes cambiarlo cuando quieras en la barra superior."
+  },
+  "common": {
+    "cancel": "Cancelar",
+    "save": "Guardar",
+    "delete": "Eliminar",
+    "win": "Victoria",
+    "loss": "Derrota",
+    "cannotBeUndone": "Esta acción no se puede deshacer."
+  }
+}
