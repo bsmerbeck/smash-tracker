@@ -223,5 +223,124 @@
       "edited": "Partida editada!",
       "saveFailed": "Falha ao salvar a partida. Tente novamente."
     }
+  },
+  "gsp": {
+    "loading": "Carregando o rastreador de GSP...",
+    "selectFighterAria": "Selecionar lutador",
+    "empty": {
+      "title": "Acompanhe sua subida de GSP",
+      "body": "O GSP (Poder de Smash Global) é o ranking online de quickplay do Smash Ultimate, registrado por personagem. Registre uma partida de quickplay com o GSP mostrado na tela de resultados e esta página vai traçar sua subida, detalhar seus ganhos por vitória/derrota e estimar o quanto falta para o Elite Smash.",
+      "cta": "Registrar uma partida no Painel"
+    },
+    "header": {
+      "title": "Rastreador de GSP",
+      "subtitle": "O Poder de Smash Global é por personagem e sua fórmula exata nunca foi publicada pela Nintendo — tudo abaixo é uma estimativa construída com suas próprias partidas registradas e um modelo da comunidade, obtido por engenharia reversa, do MMR oculto por trás do GSP."
+    },
+    "deleteConfirm": {
+      "title": "Excluir esta entrada de GSP?",
+      "body": "A partida e sua leitura de GSP são removidas juntas — esta ação não pode ser desfeita.",
+      "deleted": "Entrada de GSP excluída!",
+      "deleteFailed": "Falha ao excluir a entrada. Tente novamente."
+    },
+    "hero": {
+      "currentGsp": "GSP atual",
+      "latestReading": "última leitura",
+      "noGsp": "Nenhum GSP registrado ainda",
+      "estMmr": "MMR est.",
+      "tailReading": "leitura na cauda ({{zone}}) — aproximada",
+      "modelLink": "modelo de engenharia reversa da comunidade",
+      "modelAccuracy": "(±1 GSP na curva principal; caudas aproximadas)",
+      "eliteThreshold": "Limite do Elite",
+      "thresholdAria": "Limite do Elite Smash",
+      "saveThreshold": "Salvar limite",
+      "cancelThreshold": "Cancelar edição do limite",
+      "editThreshold": "Editar limite do Elite",
+      "recalibrated": "recalibrado em {{date}}",
+      "fromAnchor": "da âncora do modelo",
+      "computedCaption": "calculado · {{calibration}} · editar recalibra o modelo — pegue o número atual em",
+      "invalidThreshold": "Insira um número inteiro positivo — vírgulas são aceitas, ex.: 10,300,000.",
+      "recalibratedToast": "Modelo recalibrado com a sua leitura do limite!",
+      "thresholdSaveFailed": "Falha ao salvar o limite do Elite. Tente novamente.",
+      "distanceToElite": "Distância até o Elite",
+      "elite": "ELITE",
+      "belowElite": "MMR {{mmr}} · abaixo do Elite ({{elite}})",
+      "recentWinRate": "Taxa de vitórias recente",
+      "lastNGames_one": "última partida",
+      "lastNGames_other": "últimas {{count}} partidas"
+    },
+    "curve": {
+      "title": "Curva de GSP",
+      "gspViewAria": "Visão GSP",
+      "mmrViewAria": "Visão MMR",
+      "gspLabel": "GSP",
+      "eliteLine": "Limite do Elite",
+      "estMmrLabel": "MMR est.",
+      "eliteMmrLine": "Elite (MMR {{mmr}})",
+      "mmrCaption": "MMR oculto estimado por trás de cada leitura (modelo de engenharia reversa da comunidade) — diferente do GSP, ele não infla com o tempo, então uma linha plana significa nível estável. Linha tracejada: entrada no Elite em MMR {{mmr}}.",
+      "gspCaption": "Cada ponto é uma leitura de GSP registrada após uma partida com este lutador. A linha tracejada é o limite calculado do Elite Smash — uma estimativa do modelo da comunidade, não um valor publicado pela Nintendo.",
+      "clickHint": "Clique em um ponto para editar essa leitura.",
+      "locked": "Registre pelo menos {{count}} partidas com leitura de GSP para este lutador para ver a curva."
+    },
+    "logger": {
+      "title": "Registro rápido",
+      "opponentCharacter": "Personagem do oponente",
+      "selectCharacter": "Selecione um personagem",
+      "gspAfterMatch": "GSP após a partida",
+      "gspPlaceholder": "ex.: 9 420 000",
+      "stageOptional": "Stage (opcional)",
+      "logMatch": "Registrar partida",
+      "logging": "Registrando...",
+      "chooseOpponent": "Escolha o personagem do oponente.",
+      "chooseResult": "Marque esta partida como vitória ou derrota.",
+      "invalidGsp": "Insira o GSP mostrado após a partida — vírgulas são aceitas, ex.: 10,300,000.",
+      "logged": "Partida registrada! GSP {{gsp}}",
+      "logFailed": "Falha ao registrar a partida. Tente novamente."
+    },
+    "log": {
+      "title": "Registro de GSP",
+      "editEntry": "Editar entrada de GSP de {{date}}",
+      "deleteEntry": "Excluir entrada de GSP de {{date}}",
+      "showRecent": "Mostrar só as recentes",
+      "showAll": "Mostrar todas as {{count}} entradas"
+    },
+    "gains": {
+      "title": "Análise de ganhos",
+      "avgGainLifetime": "Ganho médio/vitória (geral)",
+      "avgDropLifetime": "Perda média/derrota (geral)",
+      "biggestGain": "Maior ganho individual",
+      "avgGainLast20": "Ganho médio/vitória (últimas 20)",
+      "avgDropLast20": "Perda média/derrota (últimas 20)",
+      "biggestDrop": "Maior perda individual",
+      "perWinTitle": "Ganhos por vitória ao longo do tempo",
+      "shrinking": "— encolhendo conforme seu GSP sobe",
+      "growing": "— em alta",
+      "winNumber": "Vitória nº {{number}}",
+      "gainedGsp": "GSP ganho",
+      "empty": "Registre algumas vitórias e derrotas com leituras de GSP para ver suas tendências."
+    },
+    "road": {
+      "title": "Caminho para o Elite",
+      "empty": "Registre uma partida com leitura de GSP para este lutador para ver uma projeção.",
+      "alreadyElite": "Você já está no Elite Smash!",
+      "equilibriumTitle": "Estável no seu nível",
+      "equilibriumBody": "Com sua taxa de vitórias atual de {{rate}}%, o matchmaking considera que este é o seu nível agora — cada partida troca ~{{points}} MMR nos dois sentidos, então é uma taxa de vitórias acima de 50% que faz você subir, não mais partidas. Continue trabalhando os confrontos desta página e o número acompanha.",
+      "cappedTitle": "mais de {{max}} vitórias líquidas",
+      "cappedBody": "Sua taxa de vitórias mal passa de 50%, então o progresso esperado por partida é mínimo — um pequeno aumento na taxa encurta isso drasticamente.",
+      "projected_one": "~{{count}} partida a mais",
+      "projected_other": "~{{count}} partidas a mais",
+      "projectedCaption": "até o Elite (MMR {{elite}}) com seus ~{{points}} MMR/partida e {{rate}}% de vitórias (estimativa do modelo da comunidade)",
+      "historyOne": "Pelo seu próprio histórico de GSP: ~{{label}} partida a mais ({{model}}).",
+      "historyMany": "Pelo seu próprio histórico de GSP: ~{{label}} partidas a mais ({{model}}).",
+      "decayFit": "ajuste de ganhos decrescentes do V10",
+      "flatFallback": "média plana do V10",
+      "assumption1": "Assume que o matchmaking continua pareando você com oponentes de MMR parecido (cada partida troca ~{{points}} MMR, o valor da tabela da comunidade para uma partida equilibrada) e que sua taxa de vitórias recente se mantém.",
+      "assumption2": "Construído sobre o modelo de MMR de engenharia reversa da comunidade, não sobre o algoritmo da Nintendo — uma simulação, não uma garantia."
+    },
+    "vsGlicko": {
+      "title": "MMR est. vs Glicko-2",
+      "mmrLabel": "MMR est. (normalizado)",
+      "glickoLabel": "Glicko-2 (normalizado)",
+      "caption": "Seu nível no quickplay (MMR estimado deste lutador, modelo de engenharia reversa da comunidade) contra seu Glicko-2 geral (todos os lutadores/sessões) — ambos normalizados de 0 a 100 nesta janela, já que as escalas brutas não têm relação. Comparar rating com rating torna as formas honestamente comparáveis; divergência normalmente significa que sua forma no quickplay difere da sua forma geral."
+    }
   }
 }

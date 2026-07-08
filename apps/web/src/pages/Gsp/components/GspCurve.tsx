@@ -1,4 +1,6 @@
 import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
+import type { TFunction } from 'i18next';
 import {
   CategoryScale,
   Chart as ChartJS,
@@ -26,8 +28,8 @@ export const GSP_CURVE_UNLOCK_THRESHOLD = 2;
 /** The two y-axis scales the curve can plot (V10.1 adds the converted-MMR view). */
 export type GspCurveView = 'gsp' | 'mmr';
 
-function formatPointLabel(time: number): string {
-  return new Date(time).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+function formatPointLabel(time: number, locale: string): string {
+  return new Date(time).toLocaleDateString(locale, { month: 'short', day: 'numeric' });
 }
 
 /**
@@ -36,18 +38,23 @@ function formatPointLabel(time: number): string {
  * horizontal line regardless of x-axis spacing. Exported as a pure builder so
  * it's unit-testable without rendering chart.js.
  */
-export function buildGspCurveData(series: GspPoint[], eliteThreshold: number) {
-  const labels = series.map((p) => formatPointLabel(p.time));
+export function buildGspCurveData(
+  series: GspPoint[],
+  eliteThreshold: number,
+  t: TFunction,
+  locale: string,
+) {
+  const labels = series.map((p) => formatPointLabel(p.time, locale));
   return {
     labels,
     datasets: [
       {
-        label: 'GSP',
+        label: t('gsp.curve.gspLabel'),
         ...redLineDataset(),
         data: series.map((p) => p.gsp),
       },
       {
-        label: 'Elite threshold',
+        label: t('gsp.curve.eliteLine'),
         data: series.map(() => eliteThreshold),
         borderColor: chartColors.grid,
         backgroundColor: chartColors.grid,
@@ -68,19 +75,24 @@ export function buildGspCurveData(series: GspPoint[], eliteThreshold: number) {
  * ../lib/gspMmrModel.ts), with a flat Elite line at the fixed Elite entry
  * MMR (1142). Same pure-builder convention as `buildGspCurveData`.
  */
-export function buildMmrCurveData(series: GspPoint[], settings: GspSettings) {
+export function buildMmrCurveData(
+  series: GspPoint[],
+  settings: GspSettings,
+  t: TFunction,
+  locale: string,
+) {
   const calibration = calibrationFromSettings(settings);
   const mmrSeries = toMmrSeries(series, calibration);
   return {
-    labels: mmrSeries.map((p) => formatPointLabel(p.time)),
+    labels: mmrSeries.map((p) => formatPointLabel(p.time, locale)),
     datasets: [
       {
-        label: 'Est. MMR',
+        label: t('gsp.curve.estMmrLabel'),
         ...redLineDataset(),
         data: mmrSeries.map((p) => Math.round(p.mmr)),
       },
       {
-        label: `Elite (MMR ${GSP_MODEL.ELITE_MMR})`,
+        label: t('gsp.curve.eliteMmrLine', { mmr: GSP_MODEL.ELITE_MMR }),
         data: mmrSeries.map(() => GSP_MODEL.ELITE_MMR),
         borderColor: chartColors.grid,
         backgroundColor: chartColors.grid,
@@ -97,6 +109,7 @@ export function buildMmrCurveData(series: GspPoint[], settings: GspSettings) {
 
 export function buildGspCurveOptions(
   series: GspPoint[],
+  locale: string,
   onPointClick?: (index: number) => void,
 ): ChartOptions<'line'> {
   const theme = darkChartOptions();
@@ -141,7 +154,7 @@ export function buildGspCurveOptions(
         callbacks: {
           title: (items) => {
             const point = series[items[0]?.dataIndex ?? -1];
-            return point ? new Date(point.time).toLocaleDateString('en-US') : '';
+            return point ? new Date(point.time).toLocaleDateString(locale) : '';
           },
           label: (item) => `${item.dataset.label}: ${Number(item.parsed.y).toLocaleString()}`,
         },
@@ -169,6 +182,7 @@ export function GspCurve({
   /** V14: click a reading on the curve to act on it (the page opens the edit dialog for that match). Index-aligned with `series`/`getGspMatches`. */
   onPointClick?: (index: number) => void;
 }) {
+  const { t, i18n } = useTranslation();
   const nowMs = useNowMs();
   const [view, setView] = useState<GspCurveView>('gsp');
   const hasEnoughReadings = series.length >= GSP_CURVE_UNLOCK_THRESHOLD;
@@ -179,7 +193,7 @@ export function GspCurve({
     <Card>
       <CardHeader>
         <CardTitle className="flex items-center justify-between gap-2">
-          GSP Curve
+          {t('gsp.curve.title')}
           <ToggleGroup
             type="single"
             variant="outline"
@@ -189,10 +203,10 @@ export function GspCurve({
               if (value === 'gsp' || value === 'mmr') setView(value);
             }}
           >
-            <ToggleGroupItem value="gsp" aria-label="GSP view">
+            <ToggleGroupItem value="gsp" aria-label={t('gsp.curve.gspViewAria')}>
               GSP
             </ToggleGroupItem>
-            <ToggleGroupItem value="mmr" aria-label="MMR view">
+            <ToggleGroupItem value="mmr" aria-label={t('gsp.curve.mmrViewAria')}>
               MMR
             </ToggleGroupItem>
           </ToggleGroup>
@@ -205,31 +219,26 @@ export function GspCurve({
               <Line
                 data={
                   view === 'mmr'
-                    ? buildMmrCurveData(series, settings)
-                    : buildGspCurveData(series, eliteThreshold)
+                    ? buildMmrCurveData(series, settings, t, i18n.language)
+                    : buildGspCurveData(series, eliteThreshold, t, i18n.language)
                 }
-                options={buildGspCurveOptions(series, onPointClick)}
+                options={buildGspCurveOptions(series, i18n.language, onPointClick)}
               />
             </div>
             {view === 'mmr' ? (
               <p className="text-xs text-muted-foreground">
-                Estimated hidden MMR behind each reading (community-reverse-engineered model) —
-                unlike GSP, it doesn&apos;t inflate over time, so a flat line means flat skill.
-                Dashed line: Elite entry at MMR {GSP_MODEL.ELITE_MMR}.
+                {t('gsp.curve.mmrCaption', { mmr: GSP_MODEL.ELITE_MMR })}
               </p>
             ) : (
               <p className="text-xs text-muted-foreground">
-                Every point is a logged post-match GSP reading for this fighter. The dashed line is
-                the computed Elite Smash threshold — a community-model estimate, not a
-                Nintendo-published value.
-                {onPointClick && ' Click a point to edit that reading.'}
+                {t('gsp.curve.gspCaption')}
+                {onPointClick && ` ${t('gsp.curve.clickHint')}`}
               </p>
             )}
           </>
         ) : (
           <p className="text-sm text-muted-foreground">
-            Log at least {GSP_CURVE_UNLOCK_THRESHOLD} matches with a GSP reading for this fighter to
-            see the curve.
+            {t('gsp.curve.locked', { count: GSP_CURVE_UNLOCK_THRESHOLD })}
           </p>
         )}
       </CardContent>

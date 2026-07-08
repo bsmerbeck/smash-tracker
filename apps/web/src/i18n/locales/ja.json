@@ -223,5 +223,124 @@
       "edited": "対戦を編集しました！",
       "saveFailed": "対戦を保存できませんでした。もう一度お試しください。"
     }
+  },
+  "gsp": {
+    "loading": "GSPトラッカーを読み込み中...",
+    "selectFighterAria": "ファイターを選択",
+    "empty": {
+      "title": "世界戦闘力（GSP）の推移を記録しよう",
+      "body": "GSP（世界戦闘力）はスマブラSPのオンライン・クイックプレイのランキングで、ファイターごとに記録されます。リザルト画面に表示されるGSPと一緒に対戦を記録すると、このページが推移をグラフ化し、勝敗ごとの増減を分析して、VIPマッチまでの距離を推定します。",
+      "cta": "ダッシュボードで対戦を記録"
+    },
+    "header": {
+      "title": "GSPトラッカー",
+      "subtitle": "世界戦闘力（GSP）はファイターごとの数値で、正確な計算式は任天堂から公開されていません — 以下はすべて、あなたが記録した対戦と、GSPの背後にある隠しレートをコミュニティが解析したモデルに基づく推定値です。"
+    },
+    "deleteConfirm": {
+      "title": "このGSP記録を削除しますか？",
+      "body": "対戦とそのGSP値は一緒に削除されます — この操作は取り消せません。",
+      "deleted": "GSP記録を削除しました！",
+      "deleteFailed": "記録を削除できませんでした。もう一度お試しください。"
+    },
+    "hero": {
+      "currentGsp": "現在のGSP",
+      "latestReading": "最新の記録",
+      "noGsp": "まだGSPの記録がありません",
+      "estMmr": "推定MMR",
+      "tailReading": "分布の端（{{zone}}）の値 — 概算",
+      "modelLink": "コミュニティ解析モデル",
+      "modelAccuracy": "（主要区間では±1 GSP、端は概算）",
+      "eliteThreshold": "VIPボーダー",
+      "thresholdAria": "VIPマッチのボーダー",
+      "saveThreshold": "ボーダーを保存",
+      "cancelThreshold": "ボーダーの編集をキャンセル",
+      "editThreshold": "VIPボーダーを編集",
+      "recalibrated": "{{date}}に再調整",
+      "fromAnchor": "モデルの基準点から",
+      "computedCaption": "計算値 · {{calibration}} · 編集するとモデルが再調整されます — 最新の数値の入手先:",
+      "invalidThreshold": "正の整数を入力してください — カンマ入りでも大丈夫です（例: 10,300,000）。",
+      "recalibratedToast": "入力されたボーダー値でモデルを再調整しました！",
+      "thresholdSaveFailed": "VIPボーダーを保存できませんでした。もう一度お試しください。",
+      "distanceToElite": "VIPまでの距離",
+      "elite": "VIP",
+      "belowElite": "MMR {{mmr}} · VIP基準（{{elite}}）未満",
+      "recentWinRate": "直近の勝率",
+      "lastNGames_one": "直近{{count}}戦",
+      "lastNGames_other": "直近{{count}}戦"
+    },
+    "curve": {
+      "title": "GSP推移",
+      "gspViewAria": "GSP表示",
+      "mmrViewAria": "MMR表示",
+      "gspLabel": "GSP",
+      "eliteLine": "VIPボーダー",
+      "estMmrLabel": "推定MMR",
+      "eliteMmrLine": "VIP（MMR {{mmr}}）",
+      "mmrCaption": "各記録の背後にある推定隠しレート（コミュニティ解析モデル）です。GSPと違って時間でインフレしないため、横ばいの線は実力が安定していることを意味します。点線: MMR {{mmr}}のVIPボーダー。",
+      "gspCaption": "各ポイントはこのファイターで対戦後に記録したGSPです。点線は計算されたVIPマッチのボーダー — コミュニティモデルの推定値であり、任天堂公表の値ではありません。",
+      "clickHint": "ポイントをクリックするとその記録を編集できます。",
+      "locked": "このファイターでGSP付きの対戦を{{count}}戦以上記録すると推移が表示されます。"
+    },
+    "logger": {
+      "title": "クイック記録",
+      "opponentCharacter": "相手のファイター",
+      "selectCharacter": "ファイターを選択",
+      "gspAfterMatch": "対戦後のGSP",
+      "gspPlaceholder": "例: 9,420,000",
+      "stageOptional": "ステージ（任意）",
+      "logMatch": "対戦を記録",
+      "logging": "記録中...",
+      "chooseOpponent": "相手のファイターを選んでください。",
+      "chooseResult": "この対戦の勝敗を選んでください。",
+      "invalidGsp": "対戦後に表示されたGSPを入力してください — カンマ入りでも大丈夫です（例: 10,300,000）。",
+      "logged": "対戦を記録しました！ GSP {{gsp}}",
+      "logFailed": "対戦を記録できませんでした。もう一度お試しください。"
+    },
+    "log": {
+      "title": "GSP記録",
+      "editEntry": "{{date}}のGSP記録を編集",
+      "deleteEntry": "{{date}}のGSP記録を削除",
+      "showRecent": "最近の分のみ表示",
+      "showAll": "全{{count}}件を表示"
+    },
+    "gains": {
+      "title": "増減分析",
+      "avgGainLifetime": "勝利あたり平均増加（通算）",
+      "avgDropLifetime": "敗北あたり平均減少（通算）",
+      "biggestGain": "1戦での最大増加",
+      "avgGainLast20": "勝利あたり平均増加（直近20戦）",
+      "avgDropLast20": "敗北あたり平均減少（直近20戦）",
+      "biggestDrop": "1戦での最大減少",
+      "perWinTitle": "勝利ごとの増加量の推移",
+      "shrinking": "— GSPが上がるにつれて縮小中",
+      "growing": "— 増加傾向",
+      "winNumber": "{{number}}勝目",
+      "gainedGsp": "獲得GSP",
+      "empty": "GSP付きの勝敗をいくつか記録すると増減の傾向が表示されます。"
+    },
+    "road": {
+      "title": "VIPへの道",
+      "empty": "このファイターでGSP付きの対戦を記録すると予測が表示されます。",
+      "alreadyElite": "すでにVIPマッチ入りしています！",
+      "equilibriumTitle": "今の実力で安定しています",
+      "equilibriumBody": "現在の勝率{{rate}}%では、マッチメイキングはここがあなたの実力だと判断しています — 各対戦で約{{points}}MMRを取り合うため、上に行くのに必要なのは50%超の勝率であって、対戦数ではありません。このページで相性を磨けば数字は付いてきます。",
+      "cappedTitle": "あと{{max}}勝（純勝利数）以上",
+      "cappedBody": "勝率が50%をわずかに上回る程度なので、1戦あたりの期待進捗はごくわずかです — 勝率が少し上がるだけで大きく短縮されます。",
+      "projected_one": "あと約{{count}}戦",
+      "projected_other": "あと約{{count}}戦",
+      "projectedCaption": "VIP（MMR {{elite}}）まで、約{{points}}MMR/戦・勝率{{rate}}%での見積もり（コミュニティモデルによる推定）",
+      "historyOne": "あなた自身のGSP履歴からの推定: あと約{{label}}戦（{{model}}）。",
+      "historyMany": "あなた自身のGSP履歴からの推定: あと約{{label}}戦（{{model}}）。",
+      "decayFit": "V10の逓減ゲインフィット",
+      "flatFallback": "V10の平均値フォールバック",
+      "assumption1": "マッチメイキングが今後も同程度のMMRの相手を当て続けること（各対戦で約{{points}}MMR — 互角の対戦に対するコミュニティ表の値 — を取り合う）と、直近の勝率が維持されることを前提とします。",
+      "assumption2": "コミュニティが解析したMMRモデルに基づくもので、任天堂のアルゴリズムそのものではありません — シミュレーションであり、保証ではありません。"
+    },
+    "vsGlicko": {
+      "title": "推定MMR vs Glicko-2",
+      "mmrLabel": "推定MMR（正規化）",
+      "glickoLabel": "Glicko-2（正規化）",
+      "caption": "クイックプレイでのレート（このファイターの推定MMR、コミュニティ解析モデル）と、全体のGlicko-2レート（全ファイター・全セッション）の比較です。生のスケールに関連がないため、どちらもこの期間で0〜100に正規化しています。レート同士の比較なので形を公平に見比べられます。乖離がある場合は、クイックプレイでの調子が全体の調子と違うことを意味します。"
+    }
   }
 }

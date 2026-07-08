@@ -223,5 +223,124 @@
       "edited": "Match bearbeitet!",
       "saveFailed": "Match konnte nicht gespeichert werden. Bitte erneut versuchen."
     }
+  },
+  "gsp": {
+    "loading": "GSP-Tracker wird geladen...",
+    "selectFighterAria": "Kämpfer auswählen",
+    "empty": {
+      "title": "Verfolge deinen GSP-Aufstieg",
+      "body": "GSP (Global Smash Power) ist das Online-Quickplay-Ranking von Smash Ultimate und wird pro Charakter geführt. Erfasse ein Quickplay-Match mit der GSP vom Ergebnisbildschirm — diese Seite zeichnet deinen Aufstieg auf, schlüsselt deine Gewinne und Verluste auf und schätzt, wie weit du von Elite Smash entfernt bist.",
+      "cta": "Match im Dashboard erfassen"
+    },
+    "header": {
+      "title": "GSP-Tracker",
+      "subtitle": "Global Smash Power gilt pro Charakter und die genaue Formel wird von Nintendo nie veröffentlicht — alles hier ist eine Schätzung aus deinen eigenen erfassten Matches und einem von der Community per Reverse Engineering rekonstruierten Modell der versteckten MMR hinter der GSP."
+    },
+    "deleteConfirm": {
+      "title": "Diesen GSP-Eintrag löschen?",
+      "body": "Das Match und seine GSP-Ablesung werden gemeinsam entfernt — diese Aktion kann nicht rückgängig gemacht werden.",
+      "deleted": "GSP-Eintrag gelöscht!",
+      "deleteFailed": "Eintrag konnte nicht gelöscht werden. Bitte erneut versuchen."
+    },
+    "hero": {
+      "currentGsp": "Aktuelle GSP",
+      "latestReading": "letzte Ablesung",
+      "noGsp": "Noch keine GSP erfasst",
+      "estMmr": "Gesch. MMR",
+      "tailReading": "Randbereich-Ablesung ({{zone}}) — ungefähr",
+      "modelLink": "Community-Modell (Reverse Engineering)",
+      "modelAccuracy": "(±1 GSP auf der Hauptkurve; Ränder ungefähr)",
+      "eliteThreshold": "Elite-Schwelle",
+      "thresholdAria": "Elite-Smash-Schwelle",
+      "saveThreshold": "Schwelle speichern",
+      "cancelThreshold": "Bearbeitung der Schwelle abbrechen",
+      "editThreshold": "Elite-Schwelle bearbeiten",
+      "recalibrated": "rekalibriert am {{date}}",
+      "fromAnchor": "vom Modellanker",
+      "computedCaption": "berechnet · {{calibration}} · Bearbeiten rekalibriert das Modell — hol dir die aktuelle Zahl von",
+      "invalidThreshold": "Gib eine positive ganze Zahl ein — Kommas sind okay, z. B. 10,300,000.",
+      "recalibratedToast": "Modell anhand deiner Schwellen-Ablesung rekalibriert!",
+      "thresholdSaveFailed": "Elite-Schwelle konnte nicht gespeichert werden. Bitte erneut versuchen.",
+      "distanceToElite": "Abstand zu Elite",
+      "elite": "ELITE",
+      "belowElite": "MMR {{mmr}} · unter Elite ({{elite}})",
+      "recentWinRate": "Aktuelle Winrate",
+      "lastNGames_one": "letztes Match",
+      "lastNGames_other": "letzte {{count}} Matches"
+    },
+    "curve": {
+      "title": "GSP-Kurve",
+      "gspViewAria": "GSP-Ansicht",
+      "mmrViewAria": "MMR-Ansicht",
+      "gspLabel": "GSP",
+      "eliteLine": "Elite-Schwelle",
+      "estMmrLabel": "Gesch. MMR",
+      "eliteMmrLine": "Elite (MMR {{mmr}})",
+      "mmrCaption": "Geschätzte versteckte MMR hinter jeder Ablesung (Community-Modell per Reverse Engineering) — anders als die GSP inflationiert sie nicht mit der Zeit: Eine flache Linie bedeutet konstantes Niveau. Gestrichelte Linie: Elite-Einstieg bei MMR {{mmr}}.",
+      "gspCaption": "Jeder Punkt ist eine nach dem Match erfasste GSP-Ablesung für diesen Kämpfer. Die gestrichelte Linie ist die berechnete Elite-Smash-Schwelle — eine Schätzung des Community-Modells, kein von Nintendo veröffentlichter Wert.",
+      "clickHint": "Klicke einen Punkt an, um die Ablesung zu bearbeiten.",
+      "locked": "Erfasse mindestens {{count}} Matches mit GSP-Ablesung für diesen Kämpfer, um die Kurve zu sehen."
+    },
+    "logger": {
+      "title": "Schnell-Logger",
+      "opponentCharacter": "Gegnerischer Charakter",
+      "selectCharacter": "Charakter wählen",
+      "gspAfterMatch": "GSP nach dem Match",
+      "gspPlaceholder": "z. B. 9 420 000",
+      "stageOptional": "Stage (optional)",
+      "logMatch": "Match erfassen",
+      "logging": "Wird erfasst...",
+      "chooseOpponent": "Wähle den Charakter des Gegners.",
+      "chooseResult": "Markiere dieses Match als Sieg oder Niederlage.",
+      "invalidGsp": "Gib die nach dem Match angezeigte GSP ein — Kommas sind okay, z. B. 10,300,000.",
+      "logged": "Match erfasst! GSP {{gsp}}",
+      "logFailed": "Match konnte nicht erfasst werden. Bitte erneut versuchen."
+    },
+    "log": {
+      "title": "GSP-Log",
+      "editEntry": "GSP-Eintrag vom {{date}} bearbeiten",
+      "deleteEntry": "GSP-Eintrag vom {{date}} löschen",
+      "showRecent": "Nur aktuelle anzeigen",
+      "showAll": "Alle {{count}} Einträge anzeigen"
+    },
+    "gains": {
+      "title": "Gewinn-Analyse",
+      "avgGainLifetime": "Ø Gewinn/Sieg (gesamt)",
+      "avgDropLifetime": "Ø Verlust/Niederlage (gesamt)",
+      "biggestGain": "Größter Einzelgewinn",
+      "avgGainLast20": "Ø Gewinn/Sieg (letzte 20)",
+      "avgDropLast20": "Ø Verlust/Niederlage (letzte 20)",
+      "biggestDrop": "Größter Einzelverlust",
+      "perWinTitle": "Gewinne pro Sieg im Zeitverlauf",
+      "shrinking": "— schrumpfen, während deine GSP steigt",
+      "growing": "— steigend",
+      "winNumber": "Sieg Nr. {{number}}",
+      "gainedGsp": "GSP gewonnen",
+      "empty": "Erfasse ein paar Siege und Niederlagen mit GSP-Ablesungen, um deine Trends zu sehen."
+    },
+    "road": {
+      "title": "Weg nach Elite",
+      "empty": "Erfasse ein Match mit GSP-Ablesung für diesen Kämpfer, um eine Prognose zu sehen.",
+      "alreadyElite": "Du bist schon in Elite Smash!",
+      "equilibriumTitle": "Stabil auf deinem Niveau",
+      "equilibriumBody": "Bei deiner aktuellen Winrate von {{rate}} % hält das Matchmaking dies gerade für dein Niveau — jedes Match tauscht ~{{points}} MMR in beide Richtungen, also bringt dich eine Winrate über 50 % nach oben, nicht mehr Matches. Arbeite weiter an den Matchups auf dieser Seite, dann folgt die Zahl.",
+      "cappedTitle": "mehr als {{max}} Netto-Siege",
+      "cappedBody": "Deine Winrate liegt nur knapp über 50 %, der erwartete Fortschritt pro Match ist also winzig — schon eine kleine Steigerung der Winrate verkürzt das drastisch.",
+      "projected_one": "~{{count}} weiteres Match",
+      "projected_other": "~{{count}} weitere Matches",
+      "projectedCaption": "bis Elite (MMR {{elite}}) bei deinen ~{{points}} MMR/Match und {{rate}} % Winrate (Schätzung des Community-Modells)",
+      "historyOne": "Aus deiner eigenen GSP-Historie: ~{{label}} weiteres Match ({{model}}).",
+      "historyMany": "Aus deiner eigenen GSP-Historie: ~{{label}} weitere Matches ({{model}}).",
+      "decayFit": "V10-Fit mit schrumpfenden Gewinnen",
+      "flatFallback": "flacher V10-Durchschnitt",
+      "assumption1": "Nimmt an, dass das Matchmaking dich weiter gegen Gegner mit ähnlicher MMR paart (jedes Match tauscht ~{{points}} MMR, der Wert der Community-Tabelle für ein ausgeglichenes Match) und dass deine aktuelle Winrate hält.",
+      "assumption2": "Basiert auf dem per Reverse Engineering rekonstruierten Community-MMR-Modell, nicht auf Nintendos Algorithmus — eine Simulation, keine Garantie."
+    },
+    "vsGlicko": {
+      "title": "Gesch. MMR vs. Glicko-2",
+      "mmrLabel": "Gesch. MMR (normalisiert)",
+      "glickoLabel": "Glicko-2 (normalisiert)",
+      "caption": "Dein Quickplay-Rating (geschätzte MMR für diesen Kämpfer, Community-Modell per Reverse Engineering) gegen dein gesamtes Glicko-2-Rating (alle Kämpfer/Sitzungen) — beide über dieses Fenster auf 0-100 normalisiert, da ihre Rohskalen nichts miteinander zu tun haben. Rating gegen Rating macht die Formen ehrlich vergleichbar; Abweichungen bedeuten meist, dass deine Quickplay-Form von deiner Gesamtform abweicht."
+    }
   }
 }
