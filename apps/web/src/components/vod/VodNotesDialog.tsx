@@ -38,6 +38,9 @@ function buildUpdateInput(
     ...(match.stocksLeft !== undefined ? { stocksLeft: match.stocksLeft } : {}),
     ...(match.eventName !== undefined ? { eventName: match.eventName } : {}),
     ...(match.tournamentName !== undefined ? { tournamentName: match.tournamentName } : {}),
+    // gsp is carried through too — omitting it here used to wipe a
+    // QuickLogger match's GSP the moment VOD notes were added.
+    ...(match.gsp !== undefined ? { gsp: match.gsp } : {}),
     ...(overrides.vodUrl !== undefined ? { vodUrl: overrides.vodUrl } : {}),
     ...(overrides.vodTimestamps !== undefined ? { vodTimestamps: overrides.vodTimestamps } : {}),
   };

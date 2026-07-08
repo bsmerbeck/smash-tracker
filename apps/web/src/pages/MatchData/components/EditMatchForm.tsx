@@ -30,6 +30,9 @@ function matchToFormValues(match: Match): MatchFormValues {
     stocksLeft: match.stocksLeft,
     eventName: match.eventName ?? '',
     tournamentName: match.tournamentName ?? '',
+    // Prefilled with locale separators, matching what parseGspNumber accepts
+    // back — a flubbed digit gets fixed in place instead of retyped.
+    gsp: match.gsp !== undefined ? match.gsp.toLocaleString('en-US') : '',
   };
 }
 
@@ -66,7 +69,14 @@ export function EditMatchForm({
   }
 
   async function onSubmit(values: MatchFormValues) {
-    const input: UpdateMatchInput = matchFormValuesToInput(values);
+    // PATCH is a full overwrite (omitted = cleared), so fields this form
+    // doesn't own must be carried through from the record or editing a match
+    // silently wipes its VOD link/notes (it used to).
+    const input: UpdateMatchInput = {
+      ...matchFormValuesToInput(values),
+      ...(match.vodUrl !== undefined ? { vodUrl: match.vodUrl } : {}),
+      ...(match.vodTimestamps !== undefined ? { vodTimestamps: match.vodTimestamps } : {}),
+    };
     try {
       await updateMatch.mutateAsync({ id: match.id, input });
       toast.success('Match edited!');
