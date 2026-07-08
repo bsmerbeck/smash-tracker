@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 import type { CreateMatchInput } from '@smash-tracker/shared';
 import {
@@ -70,6 +71,7 @@ function buildDefaultValues(fighterId: number): MatchFormValues {
  * mutation (no cross-game transaction/rollback — see `handleSetSubmit`).
  */
 export function AddMatchForm() {
+  const { t } = useTranslation();
   const { fighter, fighterSprites } = useDashboardContext();
   const createMatch = useCreateMatch();
   const [open, setOpen] = useState(false);
@@ -100,10 +102,10 @@ export function AddMatchForm() {
     const input: CreateMatchInput = matchFormValuesToInput(values);
     try {
       await createMatch.mutateAsync(input);
-      toast.success('Match added!');
+      toast.success(t('dashboard.addMatch.added'));
       setOpen(false);
     } catch {
-      toast.error('Failed to add match. Please try again.');
+      toast.error(t('dashboard.addMatch.addFailed'));
     }
   }
 
@@ -116,7 +118,7 @@ export function AddMatchForm() {
    */
   async function handleSetSubmit(payloads: CreateMatchInput[]) {
     if (payloads.length === 0) {
-      toast.error('Enter at least one game result before saving.');
+      toast.error(t('dashboard.addMatch.noGames'));
       return;
     }
 
@@ -130,15 +132,20 @@ export function AddMatchForm() {
         payloads.map((p) => ({ result: p.win ? 'win' : 'loss', stageId: 0 })),
       );
       const opponentName = payloads[0]?.opponent ?? 'opponent';
-      toast.success(`Set recorded: ${formatSetScore(score)} vs ${opponentName}`);
+      toast.success(
+        t('dashboard.addMatch.setRecorded', {
+          score: formatSetScore(score),
+          opponent: opponentName,
+        }),
+      );
       setOpen(false);
     } catch {
       if (savedCount > 0) {
         toast.error(
-          `Only ${savedCount} of ${payloads.length} games saved before an error occurred. Check Match Data and re-enter any missing games.`,
+          t('dashboard.addMatch.partialSave', { saved: savedCount, total: payloads.length }),
         );
       } else {
-        toast.error('Failed to save the set. Please try again.');
+        toast.error(t('dashboard.addMatch.setFailed'));
       }
     }
   }
@@ -146,12 +153,12 @@ export function AddMatchForm() {
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogTrigger asChild>
-        <Button disabled={fighterSprites.length === 0}>Add Match</Button>
+        <Button disabled={fighterSprites.length === 0}>{t('dashboard.addMatch.title')}</Button>
       </DialogTrigger>
       <DialogContent className="max-h-[90vh] max-w-2xl overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>Add Match</DialogTitle>
-          <DialogDescription>Record the outcome of a match you just played.</DialogDescription>
+          <DialogTitle>{t('dashboard.addMatch.title')}</DialogTitle>
+          <DialogDescription>{t('dashboard.addMatch.description')}</DialogDescription>
         </DialogHeader>
 
         <ToggleGroup
@@ -163,11 +170,11 @@ export function AddMatchForm() {
           }}
           className="mb-2"
         >
-          <ToggleGroupItem value="single" aria-label="Single game">
-            Single game
+          <ToggleGroupItem value="single" aria-label={t('dashboard.addMatch.singleGame')}>
+            {t('dashboard.addMatch.singleGame')}
           </ToggleGroupItem>
-          <ToggleGroupItem value="set" aria-label="Set (Bo3/Bo5)">
-            Set (Bo3/Bo5)
+          <ToggleGroupItem value="set" aria-label={t('dashboard.addMatch.setMode')}>
+            {t('dashboard.addMatch.setMode')}
           </ToggleGroupItem>
         </ToggleGroup>
 
@@ -176,10 +183,10 @@ export function AddMatchForm() {
             <MatchFormFields form={form} fighterSprites={fighterSprites} />
             <DialogFooter className="mt-4">
               <Button type="button" variant="outline" onClick={() => setOpen(false)}>
-                Cancel
+                {t('common.cancel')}
               </Button>
               <Button type="submit" disabled={createMatch.isPending}>
-                Save
+                {t('common.save')}
               </Button>
             </DialogFooter>
           </form>
@@ -193,10 +200,10 @@ export function AddMatchForm() {
             footer={
               <DialogFooter className="mt-4">
                 <Button type="button" variant="outline" onClick={() => setOpen(false)}>
-                  Cancel
+                  {t('common.cancel')}
                 </Button>
                 <Button type="submit" disabled={createMatch.isPending}>
-                  Save Set
+                  {t('dashboard.addMatch.saveSet')}
                 </Button>
               </DialogFooter>
             }

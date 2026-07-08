@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next';
 import {
   Select,
   SelectContent,
@@ -9,6 +10,7 @@ import { useDashboardContext } from '../DashboardContext';
 
 /** Ports legacy/src/screens/Dashboard/components/DashboardToolbar/components/SelectFighter. */
 export function SelectFighter() {
+  const { t } = useTranslation();
   const { fighter, fighterSprites, setFighter } = useDashboardContext();
 
   return (
@@ -21,8 +23,8 @@ export function SelectFighter() {
         }
       }}
     >
-      <SelectTrigger aria-label="Select fighter" className="w-[220px]">
-        <SelectValue placeholder="Select a fighter" />
+      <SelectTrigger aria-label={t('dashboard.selectFighter.aria')} className="w-[220px]">
+        <SelectValue placeholder={t('dashboard.selectFighter.placeholder')} />
       </SelectTrigger>
       <SelectContent>
         {fighterSprites.map((sprite) => (

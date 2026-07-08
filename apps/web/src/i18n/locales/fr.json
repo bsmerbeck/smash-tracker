@@ -38,6 +38,127 @@
     "delete": "Supprimer",
     "win": "Victoire",
     "loss": "Défaite",
-    "cannotBeUndone": "Cette action est irréversible."
+    "cannotBeUndone": "Cette action est irréversible.",
+    "wins": "Victoires",
+    "losses": "Défaites",
+    "casual": "Casual",
+    "competitive": "Compétitif",
+    "unknown": "Inconnu",
+    "notAvailable": "n/d"
+  },
+  "filters": {
+    "sourceAria": "Filtrer les matchs par source",
+    "rangeAria": "Filtrer les matchs par période",
+    "all": "Tous",
+    "allTime": "Depuis le début",
+    "months3": "3 m",
+    "months6": "6 m",
+    "months12": "12 m"
+  },
+  "shared": {
+    "filteredNotice": {
+      "message": "Aucun match ne correspond aux filtres actuels.",
+      "clear": "Effacer les filtres"
+    },
+    "pips": {
+      "empty": "Pas encore de matchs.",
+      "recentResults": "{{count}} derniers résultats, du plus récent au plus ancien"
+    },
+    "glicko": {
+      "whatIs": "Qu'est-ce que Glicko-2 ?",
+      "p1": "<strong>Glicko-2</strong> est le système de classement utilisé aux échecs et sur de nombreux ladders compétitifs. Contrairement à un simple taux de victoire, il tient compte de <em>qui</em> vous battez et du caractère surprenant du résultat.",
+      "p2": "Le <strong>nombre ± (RD)</strong> mesure l'incertitude : il diminue à mesure que vous jouez et augmente en cas d'inactivité — un joueur à 1500 ±50 a fait ses preuves, un joueur à 1500 ±300 reste une inconnue.",
+      "p3": "Nous l'utilisons parce que le jeu en bracket est irrégulier : Glicko-2 gère bien mieux les longues pauses entre tournois et les petits échantillons que l'Elo ou le taux de victoire seuls. Les classements affichés ici ne sont pas officiels et sont calculés uniquement à partir de vos matchs synchronisés ou enregistrés."
+    }
+  },
+  "dashboard": {
+    "loading": "Chargement de votre tableau de bord...",
+    "empty": {
+      "title": "Vous n'avez pas encore choisi de combattant !",
+      "subtitle": "Choisissez vos combattants principaux et secondaires pour commencer à suivre vos matchs.",
+      "choosePrimary": "Choisir les combattants principaux",
+      "chooseSecondary": "Choisir les combattants secondaires"
+    },
+    "hero": {
+      "overallRecord": "Bilan global",
+      "winRate": "{{rate}}% de victoires",
+      "games_one": "{{count}} match",
+      "games_other": "{{count}} matchs",
+      "noMatchData": "Pas encore de données de match.",
+      "form": "Forme",
+      "streakWin": "{{count}}V",
+      "streakLoss": "{{count}}D",
+      "casualVsCompetitive": "Casual vs Compétitif",
+      "ignoresSourceFilter": "Ignore le filtre de source ci-dessus (la période s'applique toujours).",
+      "deltaLabel": "Écart :",
+      "deltaValue": "{{value}} pts",
+      "deltaCaption": "(compétitif vs casual)",
+      "noData": "aucune donnée",
+      "onlineVsOffline": "En ligne vs Hors ligne",
+      "online": "En ligne",
+      "offline": "Hors ligne",
+      "rating": "Classement",
+      "gamesSampled_one": "{{count}} match pris en compte",
+      "gamesSampled_other": "{{count}} matchs pris en compte",
+      "ratingCaption": "Glicko-2, par session · non officiel",
+      "ratingLocked": "Le classement se débloque à {{threshold}} matchs",
+      "ratingProgress": "{{played}}/{{threshold}} matchs pour l'instant",
+      "ratingUp": "Classement en hausse depuis la dernière session",
+      "ratingDown": "Classement en baisse depuis la dernière session",
+      "ratingUnchanged": "Classement inchangé depuis la dernière session"
+    },
+    "tracker": {
+      "rate": "Taux"
+    },
+    "formCurve": {
+      "title": "Courbe de forme",
+      "window": "Fenêtre",
+      "windowAria": "Fenêtre glissante",
+      "lastN": "{{count}} derniers",
+      "cumulative": "Cumulé",
+      "empty": "Enregistrez un match pour voir le graphique.",
+      "winRate": "Taux de victoire",
+      "opponent": "Adversaire : {{name}}"
+    },
+    "previous": {
+      "title": "Matchs précédents",
+      "limit": "Limite",
+      "limitAria": "Nombre de matchs",
+      "empty": "Aucun match enregistré pour l'instant.",
+      "deleteAria": "Supprimer le match",
+      "confirmTitle": "Supprimer ce match ?",
+      "deleted": "Match supprimé !",
+      "deleteFailed": "Échec de la suppression du match. Veuillez réessayer."
+    },
+    "stages": {
+      "title": "Stages les plus joués",
+      "empty": "Pas encore de données de stage."
+    },
+    "snapshot": {
+      "title": "Aperçu des matchups",
+      "noMatches": "Aucun match enregistré",
+      "openLab": "Ouvrir le Matchup Lab",
+      "strongest": "Matchups les plus favorables",
+      "toughest": "Matchups les plus difficiles",
+      "needMoreGames": "Jouez encore quelques matchs ({{count}}+ par adversaire) pour révéler votre matchup le plus difficile.",
+      "notEnough": "Pas assez de matchs enregistrés pour calculer."
+    },
+    "selectFighter": {
+      "aria": "Sélectionner un combattant",
+      "placeholder": "Sélectionnez un combattant"
+    },
+    "addMatch": {
+      "title": "Ajouter un match",
+      "description": "Enregistrez le résultat d'un match que vous venez de jouer.",
+      "singleGame": "Match simple",
+      "setMode": "Set (Bo3/Bo5)",
+      "saveSet": "Enregistrer le set",
+      "added": "Match ajouté !",
+      "addFailed": "Échec de l'ajout du match. Veuillez réessayer.",
+      "noGames": "Saisissez au moins le résultat d'une manche avant d'enregistrer.",
+      "setRecorded": "Set enregistré : {{score}} vs {{opponent}}",
+      "partialSave": "Seules {{saved}} manches sur {{total}} ont été enregistrées avant une erreur. Vérifiez les Données de matchs et ressaisissez les manches manquantes.",
+      "setFailed": "Échec de l'enregistrement du set. Veuillez réessayer."
+    }
   }
 }

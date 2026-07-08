@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import {
   Select,
@@ -10,11 +11,11 @@ import { useAnalyticsFilter } from '@/hooks/useAnalyticsFilter';
 import type { AnalyticsRangeFilter, AnalyticsSourceFilter } from '@/context/AnalyticsFilterContext';
 import { cn } from '@/lib/utils';
 
-const RANGE_LABELS: Record<AnalyticsRangeFilter, string> = {
-  all: 'All time',
-  '3m': '3m',
-  '6m': '6m',
-  '12m': '12m',
+const RANGE_LABEL_KEYS: Record<AnalyticsRangeFilter, string> = {
+  all: 'filters.allTime',
+  '3m': 'filters.months3',
+  '6m': 'filters.months6',
+  '12m': 'filters.months12',
 };
 
 /**
@@ -23,6 +24,7 @@ const RANGE_LABELS: Record<AnalyticsRangeFilter, string> = {
  * in the desktop topbar and again (full-width) inside the mobile nav Sheet.
  */
 export function AnalyticsFilterControls({ className }: { className?: string }) {
+  const { t } = useTranslation();
   const { source, range, setSource, setRange } = useAnalyticsFilter();
 
   return (
@@ -37,21 +39,21 @@ export function AnalyticsFilterControls({ className }: { className?: string }) {
             setSource(next as AnalyticsSourceFilter);
           }
         }}
-        aria-label="Filter matches by source"
+        aria-label={t('filters.sourceAria')}
       >
-        <ToggleGroupItem value="all">All</ToggleGroupItem>
-        <ToggleGroupItem value="manual">Casual</ToggleGroupItem>
-        <ToggleGroupItem value="startgg">Competitive</ToggleGroupItem>
+        <ToggleGroupItem value="all">{t('filters.all')}</ToggleGroupItem>
+        <ToggleGroupItem value="manual">{t('common.casual')}</ToggleGroupItem>
+        <ToggleGroupItem value="startgg">{t('common.competitive')}</ToggleGroupItem>
       </ToggleGroup>
 
       <Select value={range} onValueChange={(next) => setRange(next as AnalyticsRangeFilter)}>
-        <SelectTrigger size="sm" aria-label="Filter matches by time range" className="w-[110px]">
+        <SelectTrigger size="sm" aria-label={t('filters.rangeAria')} className="w-[110px]">
           <SelectValue />
         </SelectTrigger>
         <SelectContent>
-          {(Object.keys(RANGE_LABELS) as AnalyticsRangeFilter[]).map((value) => (
+          {(Object.keys(RANGE_LABEL_KEYS) as AnalyticsRangeFilter[]).map((value) => (
             <SelectItem key={value} value={value}>
-              {RANGE_LABELS[value]}
+              {t(RANGE_LABEL_KEYS[value])}
             </SelectItem>
           ))}
         </SelectContent>

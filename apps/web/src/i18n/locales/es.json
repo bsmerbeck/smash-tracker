@@ -38,6 +38,127 @@
     "delete": "Eliminar",
     "win": "Victoria",
     "loss": "Derrota",
-    "cannotBeUndone": "Esta acción no se puede deshacer."
+    "cannotBeUndone": "Esta acción no se puede deshacer.",
+    "wins": "Victorias",
+    "losses": "Derrotas",
+    "casual": "Casual",
+    "competitive": "Competitivo",
+    "unknown": "Desconocido",
+    "notAvailable": "n/d"
+  },
+  "filters": {
+    "sourceAria": "Filtrar partidas por origen",
+    "rangeAria": "Filtrar partidas por periodo",
+    "all": "Todas",
+    "allTime": "Todo el tiempo",
+    "months3": "3 m",
+    "months6": "6 m",
+    "months12": "12 m"
+  },
+  "shared": {
+    "filteredNotice": {
+      "message": "Ninguna partida coincide con los filtros actuales.",
+      "clear": "Borrar filtros"
+    },
+    "pips": {
+      "empty": "Aún no hay partidas.",
+      "recentResults": "Últimos {{count}} resultados, primero el más reciente"
+    },
+    "glicko": {
+      "whatIs": "¿Qué es Glicko-2?",
+      "p1": "<strong>Glicko-2</strong> es el sistema de puntuación que se usa en ajedrez y en muchas ligas competitivas. A diferencia de un simple porcentaje de victorias, pondera a <em>quién</em> vences y cuán sorprendente fue el resultado.",
+      "p2": "El <strong>número ± (RD)</strong> es la incertidumbre: se reduce cuanto más juegas y crece cuando estás inactivo — un jugador con 1500 ±50 está consolidado, uno con 1500 ±300 es una incógnita.",
+      "p3": "Lo usamos porque el juego de bracket va a rachas: Glicko-2 maneja los parones largos entre torneos y las muestras pequeñas mucho mejor que el Elo o el porcentaje de victorias por sí solos. Las puntuaciones de aquí no son oficiales y se calculan solo con tus partidas sincronizadas o registradas."
+    }
+  },
+  "dashboard": {
+    "loading": "Cargando tu panel...",
+    "empty": {
+      "title": "¡Aún no has elegido ningún luchador!",
+      "subtitle": "Elige tus luchadores principal y secundarios para empezar a registrar partidas.",
+      "choosePrimary": "Elegir luchadores principales",
+      "chooseSecondary": "Elegir luchadores secundarios"
+    },
+    "hero": {
+      "overallRecord": "Historial general",
+      "winRate": "{{rate}}% de victorias",
+      "games_one": "{{count}} partida",
+      "games_other": "{{count}} partidas",
+      "noMatchData": "Aún no hay datos de partidas.",
+      "form": "Forma",
+      "streakWin": "{{count}}V",
+      "streakLoss": "{{count}}D",
+      "casualVsCompetitive": "Casual vs Competitivo",
+      "ignoresSourceFilter": "Ignora el filtro de origen de arriba (el periodo sí se aplica).",
+      "deltaLabel": "Diferencia:",
+      "deltaValue": "{{value}} pts",
+      "deltaCaption": "(competitivo vs casual)",
+      "noData": "sin datos",
+      "onlineVsOffline": "Online vs Offline",
+      "online": "Online",
+      "offline": "Offline",
+      "rating": "Puntuación",
+      "gamesSampled_one": "{{count}} partida analizada",
+      "gamesSampled_other": "{{count}} partidas analizadas",
+      "ratingCaption": "Glicko-2, por sesiones · no oficial",
+      "ratingLocked": "La puntuación se desbloquea a las {{threshold}} partidas",
+      "ratingProgress": "{{played}}/{{threshold}} partidas hasta ahora",
+      "ratingUp": "Puntuación al alza desde la última sesión",
+      "ratingDown": "Puntuación a la baja desde la última sesión",
+      "ratingUnchanged": "Puntuación sin cambios desde la última sesión"
+    },
+    "tracker": {
+      "rate": "Ratio"
+    },
+    "formCurve": {
+      "title": "Curva de forma",
+      "window": "Ventana",
+      "windowAria": "Ventana móvil",
+      "lastN": "Últimas {{count}}",
+      "cumulative": "Acumulado",
+      "empty": "Registra una partida para ver la gráfica.",
+      "winRate": "% de victorias",
+      "opponent": "Rival: {{name}}"
+    },
+    "previous": {
+      "title": "Partidas anteriores",
+      "limit": "Límite",
+      "limitAria": "Límite de partidas",
+      "empty": "Aún no hay partidas registradas.",
+      "deleteAria": "Eliminar partida",
+      "confirmTitle": "¿Eliminar esta partida?",
+      "deleted": "¡Partida eliminada!",
+      "deleteFailed": "No se pudo eliminar la partida. Inténtalo de nuevo."
+    },
+    "stages": {
+      "title": "Escenarios más jugados",
+      "empty": "Aún no hay datos de escenarios."
+    },
+    "snapshot": {
+      "title": "Resumen de enfrentamientos",
+      "noMatches": "No hay partidas registradas",
+      "openLab": "Abrir Matchup Lab",
+      "strongest": "Enfrentamientos más favorables",
+      "toughest": "Enfrentamientos más difíciles",
+      "needMoreGames": "Juega algunas partidas más ({{count}}+ por rival) para revelar tu enfrentamiento más difícil.",
+      "notEnough": "No hay suficientes partidas registradas para calcularlo."
+    },
+    "selectFighter": {
+      "aria": "Seleccionar luchador",
+      "placeholder": "Selecciona un luchador"
+    },
+    "addMatch": {
+      "title": "Añadir partida",
+      "description": "Registra el resultado de una partida que acabas de jugar.",
+      "singleGame": "Partida suelta",
+      "setMode": "Set (Bo3/Bo5)",
+      "saveSet": "Guardar set",
+      "added": "¡Partida añadida!",
+      "addFailed": "No se pudo añadir la partida. Inténtalo de nuevo.",
+      "noGames": "Introduce al menos el resultado de una partida antes de guardar.",
+      "setRecorded": "Set registrado: {{score}} vs {{opponent}}",
+      "partialSave": "Solo se guardaron {{saved}} de {{total}} partidas antes de producirse un error. Revisa Datos de partidas y vuelve a introducir las que falten.",
+      "setFailed": "No se pudo guardar el set. Inténtalo de nuevo."
+    }
   }
 }
