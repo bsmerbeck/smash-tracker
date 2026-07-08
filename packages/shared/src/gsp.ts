@@ -70,6 +70,19 @@ export interface GspPoint {
 }
 
 /**
+ * The chronological matches behind a fighter's GSP series — same filter and
+ * ordering as `getGspSeries`, but returning the full `Match` records.
+ * Index-parity with the series is guaranteed (the series is derived from
+ * this), which is what lets a chart click on point `i` resolve to the match
+ * to edit/delete.
+ */
+export function getGspMatches(matches: Match[], fighterId: number): Match[] {
+  return matches
+    .filter((m) => m.fighter_id === fighterId && m.gsp !== undefined)
+    .sort((a, b) => a.time - b.time);
+}
+
+/**
  * Chronological GSP readings for `fighterId`, built from every match that
  * carries a `gsp` value for that fighter. Matches without a `gsp` reading
  * (offline sets, or online sets the player didn't log GSP for) are skipped
@@ -77,10 +90,11 @@ export interface GspPoint {
  * readings.
  */
 export function getGspSeries(matches: Match[], fighterId: number): GspPoint[] {
-  return matches
-    .filter((m) => m.fighter_id === fighterId && m.gsp !== undefined)
-    .map((m) => ({ time: m.time, gsp: m.gsp!, win: m.win }))
-    .sort((a, b) => a.time - b.time);
+  return getGspMatches(matches, fighterId).map((m) => ({
+    time: m.time,
+    gsp: m.gsp!,
+    win: m.win,
+  }));
 }
 
 /** One step between two consecutive GSP readings. */
