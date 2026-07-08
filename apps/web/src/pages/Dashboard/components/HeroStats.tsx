@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next';
 import type { Match } from '@smash-tracker/shared';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { WinLossPips } from '@/components/WinLossPips';
@@ -39,13 +40,14 @@ export function HeroStats({
 }
 
 function OverallRecordCard({ matches }: { matches: Match[] }) {
+  const { t } = useTranslation();
   const { wins, losses, total, winRate } = getWinLossRecord(matches);
   const hasMatches = total > 0;
 
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Overall Record</CardTitle>
+        <CardTitle>{t('dashboard.hero.overallRecord')}</CardTitle>
       </CardHeader>
       <CardContent>
         {hasMatches ? (
@@ -54,12 +56,16 @@ function OverallRecordCard({ matches }: { matches: Match[] }) {
               <span className="text-3xl font-bold">
                 {wins}-{losses}
               </span>
-              <p className="text-sm text-muted-foreground">{winRate}% win rate</p>
+              <p className="text-sm text-muted-foreground">
+                {t('dashboard.hero.winRate', { rate: winRate })}
+              </p>
             </div>
-            <span className="text-sm text-muted-foreground">{total} games</span>
+            <span className="text-sm text-muted-foreground">
+              {t('dashboard.hero.games', { count: total })}
+            </span>
           </div>
         ) : (
-          <p className="text-sm text-muted-foreground">No match data to report yet.</p>
+          <p className="text-sm text-muted-foreground">{t('dashboard.hero.noMatchData')}</p>
         )}
       </CardContent>
     </Card>
@@ -67,13 +73,14 @@ function OverallRecordCard({ matches }: { matches: Match[] }) {
 }
 
 function FormCard({ matches }: { matches: Match[] }) {
+  const { t } = useTranslation();
   const { currentStreak, currentStreakIsWin } = getStreakSummary(matches);
   const hasMatches = matches.length > 0;
 
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Form</CardTitle>
+        <CardTitle>{t('dashboard.hero.form')}</CardTitle>
       </CardHeader>
       <CardContent className="flex flex-col gap-3">
         <WinLossPips matches={matches} limit={10} />
@@ -85,8 +92,9 @@ function FormCard({ matches }: { matches: Match[] }) {
                 : 'bg-destructive/15 text-destructive'
             }`}
           >
-            {currentStreak}
-            {currentStreakIsWin ? 'W' : 'L'}
+            {currentStreakIsWin
+              ? t('dashboard.hero.streakWin', { count: currentStreak })
+              : t('dashboard.hero.streakLoss', { count: currentStreak })}
           </span>
         )}
       </CardContent>
@@ -101,6 +109,7 @@ function FormCard({ matches }: { matches: Match[] }) {
  * split isn't collapsed by it.
  */
 function CasualVsCompetitiveCard({ matches }: { matches: Match[] }) {
+  const { t } = useTranslation();
   const casual = getWinLossRecord(filterBySource(matches, 'manual'));
   const competitive = getWinLossRecord(filterBySource(matches, 'startgg'));
   const bothHaveData = casual.total > 0 && competitive.total > 0;
@@ -109,26 +118,23 @@ function CasualVsCompetitiveCard({ matches }: { matches: Match[] }) {
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Casual vs Competitive</CardTitle>
+        <CardTitle>{t('dashboard.hero.casualVsCompetitive')}</CardTitle>
       </CardHeader>
       <CardContent className="flex flex-col gap-2">
-        <p className="text-xs text-muted-foreground">
-          Ignores the source filter above (time range still applies).
-        </p>
+        <p className="text-xs text-muted-foreground">{t('dashboard.hero.ignoresSourceFilter')}</p>
         <div className="grid grid-cols-2 gap-2">
-          <SplitStat label="Casual" record={casual} />
-          <SplitStat label="Competitive" record={competitive} />
+          <SplitStat label={t('common.casual')} record={casual} />
+          <SplitStat label={t('common.competitive')} record={competitive} />
         </div>
         {bothHaveData && delta != null && (
           <p className="text-sm">
-            <span className="text-muted-foreground">Delta: </span>
+            <span className="text-muted-foreground">{t('dashboard.hero.deltaLabel')} </span>
             <span
               className={`font-semibold ${delta >= 0 ? 'text-emerald-500' : 'text-destructive'}`}
             >
-              {delta >= 0 ? '+' : ''}
-              {delta}pts
+              {t('dashboard.hero.deltaValue', { value: `${delta >= 0 ? '+' : ''}${delta}` })}
             </span>
-            <span className="text-muted-foreground"> (competitive vs casual)</span>
+            <span className="text-muted-foreground"> {t('dashboard.hero.deltaCaption')}</span>
           </p>
         )}
       </CardContent>
@@ -137,11 +143,12 @@ function CasualVsCompetitiveCard({ matches }: { matches: Match[] }) {
 }
 
 function SplitStat({ label, record }: { label: string; record: WinLossRecord }) {
+  const { t } = useTranslation();
   if (record.total === 0) {
     return (
       <div>
         <h3 className="text-sm text-muted-foreground">{label}</h3>
-        <p className="text-sm text-muted-foreground">no data</p>
+        <p className="text-sm text-muted-foreground">{t('dashboard.hero.noData')}</p>
       </div>
     );
   }
@@ -157,22 +164,23 @@ function SplitStat({ label, record }: { label: string; record: WinLossRecord }) 
 }
 
 function OnlineOfflineCard({ matches }: { matches: Match[] }) {
+  const { t } = useTranslation();
   const { online, offline } = getOnlineOfflineSplit(matches);
   const hasAny = online.total > 0 || offline.total > 0;
 
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Online vs Offline</CardTitle>
+        <CardTitle>{t('dashboard.hero.onlineVsOffline')}</CardTitle>
       </CardHeader>
       <CardContent>
         {hasAny ? (
           <div className="grid grid-cols-2 gap-2">
-            <SplitStat label="Online" record={online} />
-            <SplitStat label="Offline" record={offline} />
+            <SplitStat label={t('dashboard.hero.online')} record={online} />
+            <SplitStat label={t('dashboard.hero.offline')} record={offline} />
           </div>
         ) : (
-          <p className="text-sm text-muted-foreground">No match data to report yet.</p>
+          <p className="text-sm text-muted-foreground">{t('dashboard.hero.noMatchData')}</p>
         )}
       </CardContent>
     </Card>
@@ -189,6 +197,7 @@ const RATING_UNLOCK_THRESHOLD = 5;
  * render given typical match volumes.
  */
 function RatingCard({ matches }: { matches: Match[] }) {
+  const { t } = useTranslation();
   const hasEnoughGames = matches.length >= RATING_UNLOCK_THRESHOLD;
   const { periods, current } = computeRatingHistory(matches);
 
@@ -196,7 +205,7 @@ function RatingCard({ matches }: { matches: Match[] }) {
     <Card>
       <CardHeader>
         <CardTitle className="flex items-center gap-1.5">
-          Rating
+          {t('dashboard.hero.rating')}
           <GlickoExplainer />
         </CardTitle>
       </CardHeader>
@@ -210,17 +219,20 @@ function RatingCard({ matches }: { matches: Match[] }) {
               <RatingTrendArrow periods={periods} />
             </div>
             <p className="text-sm text-muted-foreground">
-              {matches.length} game{matches.length === 1 ? '' : 's'} sampled
+              {t('dashboard.hero.gamesSampled', { count: matches.length })}
             </p>
-            <p className="text-xs text-muted-foreground">Glicko-2, session-based · unofficial</p>
+            <p className="text-xs text-muted-foreground">{t('dashboard.hero.ratingCaption')}</p>
           </>
         ) : (
           <>
             <p className="text-sm text-muted-foreground">
-              Rating unlocks at {RATING_UNLOCK_THRESHOLD} games
+              {t('dashboard.hero.ratingLocked', { threshold: RATING_UNLOCK_THRESHOLD })}
             </p>
             <p className="text-xs text-muted-foreground">
-              {matches.length}/{RATING_UNLOCK_THRESHOLD} games so far
+              {t('dashboard.hero.ratingProgress', {
+                played: matches.length,
+                threshold: RATING_UNLOCK_THRESHOLD,
+              })}
             </p>
           </>
         )}
@@ -235,6 +247,7 @@ function RatingCard({ matches }: { matches: Match[] }) {
  * single session played so far).
  */
 function RatingTrendArrow({ periods }: { periods: { rating: number }[] }) {
+  const { t } = useTranslation();
   if (periods.length < 2) {
     return null;
   }
@@ -246,7 +259,7 @@ function RatingTrendArrow({ periods }: { periods: { rating: number }[] }) {
   const delta = latest.rating - previous.rating;
   if (delta === 0) {
     return (
-      <span aria-label="Rating unchanged from last session" className="text-muted-foreground">
+      <span aria-label={t('dashboard.hero.ratingUnchanged')} className="text-muted-foreground">
         &rarr;
       </span>
     );
@@ -254,7 +267,7 @@ function RatingTrendArrow({ periods }: { periods: { rating: number }[] }) {
   const isUp = delta > 0;
   return (
     <span
-      aria-label={isUp ? 'Rating up from last session' : 'Rating down from last session'}
+      aria-label={isUp ? t('dashboard.hero.ratingUp') : t('dashboard.hero.ratingDown')}
       className={isUp ? 'text-emerald-500' : 'text-destructive'}
     >
       {isUp ? '▲' : '▼'} {Math.abs(delta)}

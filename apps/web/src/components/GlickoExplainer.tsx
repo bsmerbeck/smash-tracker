@@ -1,3 +1,4 @@
+import { Trans, useTranslation } from 'react-i18next';
 import { Info } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
@@ -16,6 +17,8 @@ import {
  * precedent — this much copy reads poorly in a hover-only tooltip).
  */
 export function GlickoExplainer() {
+  const { t } = useTranslation();
+
   return (
     <Popover>
       <PopoverTrigger asChild>
@@ -23,7 +26,7 @@ export function GlickoExplainer() {
           type="button"
           variant="ghost"
           size="icon-xs"
-          aria-label="What is Glicko-2?"
+          aria-label={t('shared.glicko.whatIs')}
           className="shrink-0 text-muted-foreground hover:text-foreground"
         >
           <Info className="size-4" />
@@ -31,21 +34,15 @@ export function GlickoExplainer() {
       </PopoverTrigger>
       <PopoverContent className="w-80 text-sm">
         <PopoverHeader>
-          <PopoverTitle>What is Glicko-2?</PopoverTitle>
+          <PopoverTitle>{t('shared.glicko.whatIs')}</PopoverTitle>
           <p>
-            <strong>Glicko-2</strong> is the rating system used in chess and by many competitive
-            ladders. Unlike a raw win rate, it weighs <em>who</em> you beat and how surprising the
-            result was.
+            <Trans i18nKey="shared.glicko.p1" components={{ strong: <strong />, em: <em /> }} />
           </p>
           <p>
-            The <strong>±number (RD)</strong> is uncertainty: it shrinks as you play more and grows
-            when you&apos;re inactive — so a 1500 ±50 player is proven, a 1500 ±300 player is
-            unknown.
+            <Trans i18nKey="shared.glicko.p2" components={{ strong: <strong />, em: <em /> }} />
           </p>
           <p>
-            We use it because bracket play is bursty: Glicko-2 handles long gaps between tournaments
-            and small samples far better than Elo or win-rate alone. Ratings here are unofficial and
-            computed only from your synced/logged games.
+            <Trans i18nKey="shared.glicko.p3" components={{ strong: <strong />, em: <em /> }} />
           </p>
         </PopoverHeader>
       </PopoverContent>

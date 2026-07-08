@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
 import { Link } from 'react-router';
+import { useTranslation } from 'react-i18next';
 import type { Fighter } from '@smash-tracker/shared';
 import { Button } from '@/components/ui/button';
 import { useFighters } from '@/hooks/useFighters';
@@ -17,6 +18,7 @@ import { StageTiles } from './components/StageTiles';
 
 /** Ports legacy/src/screens/Dashboard. */
 export function DashboardPage() {
+  const { t } = useTranslation();
   const { data: fighterSelection, isLoading: fightersLoading } = useFighters();
   const {
     matches,
@@ -49,24 +51,20 @@ export function DashboardPage() {
   };
 
   if (fightersLoading || matchesLoading) {
-    return <div className="text-muted-foreground">Loading your dashboard...</div>;
+    return <div className="text-muted-foreground">{t('dashboard.loading')}</div>;
   }
 
   if (fighterSprites.length === 0) {
     return (
       <div className="flex flex-col items-center gap-4 py-16 text-center">
-        <h1 className="text-2xl font-semibold tracking-tight">
-          You haven&apos;t picked any fighters yet!
-        </h1>
-        <p className="max-w-md text-muted-foreground">
-          Choose your primary and secondary fighters to start tracking matches.
-        </p>
+        <h1 className="text-2xl font-semibold tracking-tight">{t('dashboard.empty.title')}</h1>
+        <p className="max-w-md text-muted-foreground">{t('dashboard.empty.subtitle')}</p>
         <div className="flex flex-wrap justify-center gap-2">
           <Button asChild>
-            <Link to="/choose-primary">Choose Primary Fighters</Link>
+            <Link to="/choose-primary">{t('dashboard.empty.choosePrimary')}</Link>
           </Button>
           <Button asChild variant="outline">
-            <Link to="/choose-secondary">Choose Secondary Fighters</Link>
+            <Link to="/choose-secondary">{t('dashboard.empty.chooseSecondary')}</Link>
           </Button>
         </div>
       </div>

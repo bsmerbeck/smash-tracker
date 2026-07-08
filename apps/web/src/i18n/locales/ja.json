@@ -38,6 +38,127 @@
     "delete": "削除",
     "win": "勝ち",
     "loss": "負け",
-    "cannotBeUndone": "この操作は取り消せません。"
+    "cannotBeUndone": "この操作は取り消せません。",
+    "wins": "勝利数",
+    "losses": "敗北数",
+    "casual": "カジュアル",
+    "competitive": "大会",
+    "unknown": "不明",
+    "notAvailable": "—"
+  },
+  "filters": {
+    "sourceAria": "対戦を種別で絞り込む",
+    "rangeAria": "対戦を期間で絞り込む",
+    "all": "すべて",
+    "allTime": "全期間",
+    "months3": "3ヶ月",
+    "months6": "6ヶ月",
+    "months12": "12ヶ月"
+  },
+  "shared": {
+    "filteredNotice": {
+      "message": "現在のフィルターに一致する対戦がありません。",
+      "clear": "フィルターを解除"
+    },
+    "pips": {
+      "empty": "まだ対戦がありません。",
+      "recentResults": "直近{{count}}戦の結果（新しい順）"
+    },
+    "glicko": {
+      "whatIs": "Glicko-2とは？",
+      "p1": "<strong>Glicko-2</strong>はチェスや多くの対戦ラダーで使われているレーティングシステムです。単純な勝率と違い、<em>誰に</em>勝ったか、その結果がどれだけ番狂わせだったかを重み付けします。",
+      "p2": "<strong>±の数値（RD）</strong>は不確実性です。対戦を重ねるほど小さくなり、ブランクが空くと大きくなります — 1500 ±50のプレイヤーは実力が確かで、1500 ±300のプレイヤーは未知数です。",
+      "p3": "ブラケット戦は間隔が空きがちなため、大会間の長いブランクや少ない対戦数の扱いに優れたGlicko-2を採用しています（Eloや勝率だけよりも適しています）。ここでのレーティングは非公式で、同期・記録された対戦のみから計算されます。"
+    }
+  },
+  "dashboard": {
+    "loading": "ダッシュボードを読み込み中...",
+    "empty": {
+      "title": "まだファイターを選んでいません！",
+      "subtitle": "メインとサブのファイターを選んで、対戦の記録を始めましょう。",
+      "choosePrimary": "メインファイターを選ぶ",
+      "chooseSecondary": "サブファイターを選ぶ"
+    },
+    "hero": {
+      "overallRecord": "通算戦績",
+      "winRate": "勝率{{rate}}%",
+      "games_one": "{{count}}戦",
+      "games_other": "{{count}}戦",
+      "noMatchData": "まだ対戦データがありません。",
+      "form": "調子",
+      "streakWin": "{{count}}連勝",
+      "streakLoss": "{{count}}連敗",
+      "casualVsCompetitive": "カジュアル vs 大会",
+      "ignoresSourceFilter": "上の種別フィルターは無視されます（期間は適用されます）。",
+      "deltaLabel": "差:",
+      "deltaValue": "{{value}}pt",
+      "deltaCaption": "（大会 vs カジュアル）",
+      "noData": "データなし",
+      "onlineVsOffline": "オンライン vs オフライン",
+      "online": "オンライン",
+      "offline": "オフライン",
+      "rating": "レーティング",
+      "gamesSampled_one": "{{count}}戦を集計",
+      "gamesSampled_other": "{{count}}戦を集計",
+      "ratingCaption": "Glicko-2・セッション制・非公式",
+      "ratingLocked": "レーティングは{{threshold}}戦で解放されます",
+      "ratingProgress": "現在{{played}}/{{threshold}}戦",
+      "ratingUp": "前回セッションからレーティング上昇",
+      "ratingDown": "前回セッションからレーティング下降",
+      "ratingUnchanged": "前回セッションからレーティング変化なし"
+    },
+    "tracker": {
+      "rate": "勝率"
+    },
+    "formCurve": {
+      "title": "調子の推移",
+      "window": "集計範囲",
+      "windowAria": "移動ウィンドウ",
+      "lastN": "直近{{count}}戦",
+      "cumulative": "累計",
+      "empty": "対戦を登録するとグラフが表示されます。",
+      "winRate": "勝率",
+      "opponent": "相手: {{name}}"
+    },
+    "previous": {
+      "title": "最近の対戦",
+      "limit": "表示数",
+      "limitAria": "表示する対戦数",
+      "empty": "まだ対戦が記録されていません。",
+      "deleteAria": "対戦を削除",
+      "confirmTitle": "この対戦を削除しますか？",
+      "deleted": "対戦を削除しました！",
+      "deleteFailed": "対戦を削除できませんでした。もう一度お試しください。"
+    },
+    "stages": {
+      "title": "よく遊ぶステージ",
+      "empty": "まだステージのデータがありません。"
+    },
+    "snapshot": {
+      "title": "相性スナップショット",
+      "noMatches": "対戦の記録がありません",
+      "openLab": "相性表を開く",
+      "strongest": "得意な相手",
+      "toughest": "苦手な相手",
+      "needMoreGames": "あと数戦（相手ごとに{{count}}戦以上）プレイすると、最も苦手な相性が表示されます。",
+      "notEnough": "計算に必要な対戦数が足りません。"
+    },
+    "selectFighter": {
+      "aria": "ファイターを選択",
+      "placeholder": "ファイターを選択"
+    },
+    "addMatch": {
+      "title": "対戦を追加",
+      "description": "プレイした対戦の結果を記録します。",
+      "singleGame": "1戦のみ",
+      "setMode": "セット（Bo3/Bo5）",
+      "saveSet": "セットを保存",
+      "added": "対戦を追加しました！",
+      "addFailed": "対戦を追加できませんでした。もう一度お試しください。",
+      "noGames": "保存する前に少なくとも1戦の結果を入力してください。",
+      "setRecorded": "セットを記録: {{score}} vs {{opponent}}",
+      "partialSave": "エラーが発生し、{{total}}戦中{{saved}}戦のみ保存されました。対戦データを確認し、足りない分を再入力してください。",
+      "setFailed": "セットを保存できませんでした。もう一度お試しください。"
+    }
   }
 }

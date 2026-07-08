@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -30,6 +31,7 @@ const LIMIT_OPTIONS = [5, 10, 20, 30];
 
 /** Ports legacy/src/screens/Dashboard/components/PreviousMatches. */
 export function PreviousMatches({ matches }: { matches: Match[] }) {
+  const { t } = useTranslation();
   const { fighter } = useDashboardContext();
   const [limit, setLimit] = useState(5);
   const [pendingDelete, setPendingDelete] = useState<Match | null>(null);
@@ -42,9 +44,9 @@ export function PreviousMatches({ matches }: { matches: Match[] }) {
     if (!pendingDelete) return;
     try {
       await deleteMatch.mutateAsync(pendingDelete.id);
-      toast.success('Match deleted!');
+      toast.success(t('dashboard.previous.deleted'));
     } catch {
-      toast.error('Failed to delete match. Please try again.');
+      toast.error(t('dashboard.previous.deleteFailed'));
     } finally {
       setPendingDelete(null);
     }
@@ -53,12 +55,12 @@ export function PreviousMatches({ matches }: { matches: Match[] }) {
   return (
     <Card>
       <CardHeader className="flex flex-row items-center justify-between">
-        <CardTitle>Previous Matches</CardTitle>
+        <CardTitle>{t('dashboard.previous.title')}</CardTitle>
         {recent.length > 0 && (
           <div className="flex items-center gap-2">
-            <span className="text-sm text-muted-foreground">Limit</span>
+            <span className="text-sm text-muted-foreground">{t('dashboard.previous.limit')}</span>
             <Select value={String(limit)} onValueChange={(v) => setLimit(Number(v))}>
-              <SelectTrigger className="w-[80px]" aria-label="Match limit">
+              <SelectTrigger className="w-[80px]" aria-label={t('dashboard.previous.limitAria')}>
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -74,7 +76,7 @@ export function PreviousMatches({ matches }: { matches: Match[] }) {
       </CardHeader>
       <CardContent>
         {recent.length === 0 ? (
-          <p className="text-sm text-muted-foreground">No matches recorded yet.</p>
+          <p className="text-sm text-muted-foreground">{t('dashboard.previous.empty')}</p>
         ) : (
           <ul className="flex flex-col gap-2">
             {recent.map((match) => {
@@ -101,7 +103,7 @@ export function PreviousMatches({ matches }: { matches: Match[] }) {
                     <span
                       className={`font-medium ${match.win ? 'text-emerald-500' : 'text-destructive'}`}
                     >
-                      {match.win ? 'Win' : 'Loss'}
+                      {match.win ? t('common.win') : t('common.loss')}
                     </span>
                   </div>
                   {/* Synced matches can't be deleted (the next sync would
@@ -111,7 +113,7 @@ export function PreviousMatches({ matches }: { matches: Match[] }) {
                     <Button
                       variant="outline"
                       size="icon-sm"
-                      aria-label="Delete match"
+                      aria-label={t('dashboard.previous.deleteAria')}
                       onClick={() => setPendingDelete(match)}
                     >
                       <Trash2 />
@@ -130,12 +132,12 @@ export function PreviousMatches({ matches }: { matches: Match[] }) {
       >
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Delete this match?</AlertDialogTitle>
-            <AlertDialogDescription>This action cannot be undone.</AlertDialogDescription>
+            <AlertDialogTitle>{t('dashboard.previous.confirmTitle')}</AlertDialogTitle>
+            <AlertDialogDescription>{t('common.cannotBeUndone')}</AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={confirmDelete}>Delete</AlertDialogAction>
+            <AlertDialogCancel>{t('common.cancel')}</AlertDialogCancel>
+            <AlertDialogAction onClick={confirmDelete}>{t('common.delete')}</AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
