@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next';
 import type { Match, Stage } from '@smash-tracker/shared';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { stageAbbreviation } from '@/components/StageOption';
@@ -35,16 +36,17 @@ export function buildTopStageTiles(matches: Match[]): StageTile[] {
 
 /** Most-played stages as art tiles (account-wide, respects the global filter), per docs/analytics-vision.md Phase C. */
 export function StageTiles({ matches }: { matches: Match[] }) {
+  const { t } = useTranslation();
   const tiles = buildTopStageTiles(matches);
 
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Most-Played Stages</CardTitle>
+        <CardTitle>{t('dashboard.stages.title')}</CardTitle>
       </CardHeader>
       <CardContent>
         {tiles.length === 0 ? (
-          <p className="text-sm text-muted-foreground">No stage data to report yet.</p>
+          <p className="text-sm text-muted-foreground">{t('dashboard.stages.empty')}</p>
         ) : (
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
             {tiles.map(({ stage, record }) => (

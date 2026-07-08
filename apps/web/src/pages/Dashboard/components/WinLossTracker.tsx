@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { filterByFighter, getWinLossRecord } from '@/lib/stats';
 import type { Match } from '@smash-tracker/shared';
@@ -5,6 +6,7 @@ import { useDashboardContext } from '../DashboardContext';
 
 /** Ports legacy/src/screens/Dashboard/components/WinLossTracker. */
 export function WinLossTracker({ matches }: { matches: Match[] }) {
+  const { t } = useTranslation();
   const { fighter } = useDashboardContext();
 
   const fighterMatches = fighter ? filterByFighter(matches, fighter.id) : [];
@@ -14,16 +16,16 @@ export function WinLossTracker({ matches }: { matches: Match[] }) {
   return (
     <Card className="mx-auto w-full max-w-sm">
       <CardHeader>
-        <CardTitle className="text-center">Overall Record</CardTitle>
+        <CardTitle className="text-center">{t('dashboard.hero.overallRecord')}</CardTitle>
       </CardHeader>
       <CardContent className="flex justify-evenly">
-        <Stat label="Wins" value={hasMatches ? wins : 'n/a'} />
-        {hasMatches && <Stat label="Rate" value={`${winRate}%`} />}
-        <Stat label="Losses" value={hasMatches ? losses : 'n/a'} />
+        <Stat label={t('common.wins')} value={hasMatches ? wins : t('common.notAvailable')} />
+        {hasMatches && <Stat label={t('dashboard.tracker.rate')} value={`${winRate}%`} />}
+        <Stat label={t('common.losses')} value={hasMatches ? losses : t('common.notAvailable')} />
       </CardContent>
       {!hasMatches && (
         <p className="pb-4 text-center text-sm text-muted-foreground">
-          No match data to report yet.
+          {t('dashboard.hero.noMatchData')}
         </p>
       )}
     </Card>

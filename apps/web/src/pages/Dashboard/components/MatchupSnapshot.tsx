@@ -1,4 +1,5 @@
 import { Link } from 'react-router';
+import { useTranslation } from 'react-i18next';
 import type { Match } from '@smash-tracker/shared';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -44,13 +45,14 @@ export function buildMatchupSnapshot(fighterMatches: Match[]): MatchupSnapshotDa
  * Phase C). Replaces the legacy-ratio-sorted `BestWorstMatchup`.
  */
 export function MatchupSnapshot({ matches }: { matches: Match[] }) {
+  const { t } = useTranslation();
   const { fighter } = useDashboardContext();
 
   if (!fighter || matches.length === 0) {
     return (
       <Card>
         <CardContent className="pt-6">
-          <h2 className="text-lg font-medium">No matches reported</h2>
+          <h2 className="text-lg font-medium">{t('dashboard.snapshot.noMatches')}</h2>
         </CardContent>
       </Card>
     );
@@ -62,20 +64,24 @@ export function MatchupSnapshot({ matches }: { matches: Match[] }) {
   return (
     <Card>
       <CardHeader className="flex flex-row items-center justify-between">
-        <CardTitle>Matchup Snapshot</CardTitle>
+        <CardTitle>{t('dashboard.snapshot.title')}</CardTitle>
         <Button asChild variant="outline" size="sm">
-          <Link to="/matchups">Open Matchup Lab</Link>
+          <Link to="/matchups">{t('dashboard.snapshot.openLab')}</Link>
         </Button>
       </CardHeader>
       <CardContent className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-        <MatchupList title="Strongest Matchups" entries={strongest} />
         <MatchupList
-          title="Toughest Matchups"
+          title={t('dashboard.snapshot.strongest')}
+          entries={strongest}
+          emptyHint={t('dashboard.snapshot.notEnough')}
+        />
+        <MatchupList
+          title={t('dashboard.snapshot.toughest')}
           entries={toughest}
           emptyHint={
             needsMoreData
-              ? `Play a few more games (${TOUGHEST_MIN_GAMES}+ per opponent) to surface a toughest matchup.`
-              : 'Not enough reported matches to calculate.'
+              ? t('dashboard.snapshot.needMoreGames', { count: TOUGHEST_MIN_GAMES })
+              : t('dashboard.snapshot.notEnough')
           }
         />
       </CardContent>
@@ -86,12 +92,13 @@ export function MatchupSnapshot({ matches }: { matches: Match[] }) {
 function MatchupList({
   title,
   entries,
-  emptyHint = 'Not enough reported matches to calculate.',
+  emptyHint,
 }: {
   title: string;
   entries: RankedMatchup[];
-  emptyHint?: string;
+  emptyHint: string;
 }) {
+  const { t } = useTranslation();
   return (
     <div>
       <h3 className="mb-2 text-sm text-muted-foreground">{title}</h3>
@@ -105,7 +112,7 @@ function MatchupList({
               <li key={entry.opponentFighterId} className="flex items-center gap-2">
                 {sprite && <img src={sprite.url} alt="" className="size-10 object-contain" />}
                 <div>
-                  <div className="font-medium">{sprite?.name ?? 'Unknown'}</div>
+                  <div className="font-medium">{sprite?.name ?? t('common.unknown')}</div>
                   <div className="text-sm text-muted-foreground">
                     {entry.wins}-{entry.losses} &middot; {entry.ratio}% ({entry.totalMatches})
                   </div>
