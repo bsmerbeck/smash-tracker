@@ -1051,5 +1051,110 @@
       "verifiedToast": "parry.gg account verified!",
       "codeNotFound": "Verification code not found yet. Please try again."
     }
+  },
+  "profile": {
+    "title": "Profile",
+    "account": {
+      "title": "Account",
+      "description": "Your smash-tracker identity.",
+      "parryggNoEmailLinked": "parry.gg account (no email) — linked to {{tag}}",
+      "parryggNoEmail": "parry.gg account (no email)",
+      "memberSince": "Member since {{date}}",
+      "signInMethods": "Sign-in methods",
+      "methodEmailPassword": "Email & password",
+      "methodParrygg": "parry.gg verification",
+      "methodCustom": "Custom sign-in"
+    },
+    "security": {
+      "title": "Security",
+      "descPassword": "Change the password you use to sign in.",
+      "descResetOnly": "Add password sign-in to your account.",
+      "descNoEmail": "How your account signs in.",
+      "resetExplainer": "You currently sign in without a password. Sending a password reset email lets you set one up, so you can also sign in with your email and a password going forward.",
+      "sendReset": "Send password reset email",
+      "sending": "Sending…",
+      "resetSent": "Reset email sent to {{email}}. Follow the link to add password sign-in.",
+      "noEmailBody": "Your account has no password or email — sign-in works through parry.gg profile verification. Manage that link from <integrationsLink>Integrations</integrationsLink>."
+    },
+    "password": {
+      "currentLabel": "Current password",
+      "newLabel": "New password",
+      "confirmLabel": "Confirm new password",
+      "submit": "Change password",
+      "updating": "Updating…",
+      "updated": "Password updated!",
+      "currentRequired": "Current password is required",
+      "minLength": "Password should be at least 6 characters",
+      "confirmRequired": "Please confirm your new password",
+      "mismatch": "Passwords don't match",
+      "wrongCurrent": "Current password is incorrect.",
+      "weak": "Password should be at least 6 characters.",
+      "requiresRecentLogin": "For your security, please sign out and sign back in, then try again.",
+      "genericError": "Something went wrong. Please try again."
+    },
+    "connected": {
+      "title": "Connected accounts",
+      "description": "start.gg and parry.gg links for automatic match import.",
+      "linked": "Linked",
+      "notLinked": "Not linked",
+      "manage": "Manage on Integrations"
+    },
+    "fighters": {
+      "title": "Fighters",
+      "description": "Your primary and secondary Smash Ultimate fighters.",
+      "loading": "Loading your fighters...",
+      "primary": "Primary",
+      "secondary": "Secondary",
+      "none": "None selected",
+      "edit": "Edit fighters"
+    },
+    "favoriteStages": {
+      "title": "Favorite Stages",
+      "description": "Pinned to the top of stage pickers when logging matches — handy for the usual quickplay/Elite Smash rotation.",
+      "loading": "Loading your favorite stages...",
+      "empty": "No favorite stages yet.",
+      "removeAria": "Remove {{name}} from favorites",
+      "add": "Add a favorite stage...",
+      "addAria": "Add a favorite stage",
+      "searchPlaceholder": "Search stages...",
+      "noStage": "No stage found.",
+      "saveError": "Could not save your favorite stages. Please try again."
+    },
+    "billing": {
+      "title": "Billing",
+      "description": "AI scouting report credits.",
+      "freeAccess": "Free access",
+      "credits_one": "{{count}} credit",
+      "credits_other": "{{count}} credits",
+      "packsStartAt_one": "Packs start at {{price}} for {{count}} report.",
+      "packsStartAt_other": "Packs start at {{price}} for {{count}} reports.",
+      "buyCredits": "Buy credits"
+    },
+    "data": {
+      "title": "Your data",
+      "description": "What smash-tracker has on file for you.",
+      "totalMatches": "Total matches",
+      "fromStartgg": "From start.gg",
+      "fromParrygg": "From parry.gg",
+      "manual": "Manually entered",
+      "groupsJoined": "Groups joined",
+      "aiReports": "AI reports generated"
+    }
+  },
+  "characterSelect": {
+    "primaryHeading": "Choose Your Primaries",
+    "primaryDescription": "Begin by selecting your primary fighters. You can search using the input below. To remove a character, simply click it again. When you're finished, press Save.",
+    "secondaryHeading": "Choose Your Secondaries",
+    "secondaryDescription": "Begin by selecting your secondary fighters. You can search using the input below. To remove a character, simply click it again. When you're finished, press Save to begin using Smash Tracker!",
+    "saveAndSecondaries": "Save and Choose Secondaries",
+    "saveAndDashboard": "Save and go to Dashboard",
+    "saveAndPrimaries": "Save and choose Primary Fighters",
+    "loading": "Loading your fighters...",
+    "selected_one": "Selected ({{count}})",
+    "selected_other": "Selected ({{count}})",
+    "emptySelected": "No fighters selected yet. Click a fighter below to add them.",
+    "filterPlaceholder": "Filter by name...",
+    "saved": "Fighters saved!",
+    "saveFailed": "Failed to save fighters. Please try again."
   }
 }

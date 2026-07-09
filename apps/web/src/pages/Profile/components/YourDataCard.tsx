@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { useMatches } from '@/hooks/useMatches';
 import { useGroups } from '@/hooks/useGroups';
@@ -21,6 +22,7 @@ function StatBox({ label, value }: { label: string; value: number }) {
  * feature entirely when it's off.
  */
 export function YourDataCard() {
+  const { t } = useTranslation();
   const { data: matches = [] } = useMatches();
   const { data: groups = [] } = useGroups();
   const reportsConfig = useReportsConfig();
@@ -34,17 +36,17 @@ export function YourDataCard() {
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Your data</CardTitle>
-        <CardDescription>What smash-tracker has on file for you.</CardDescription>
+        <CardTitle>{t('profile.data.title')}</CardTitle>
+        <CardDescription>{t('profile.data.description')}</CardDescription>
       </CardHeader>
       <CardContent className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-        <StatBox label="Total matches" value={matches.length} />
-        <StatBox label="From start.gg" value={startggMatches} />
-        <StatBox label="From parry.gg" value={parryggMatches} />
-        <StatBox label="Manually entered" value={manualMatches} />
-        <StatBox label="Groups joined" value={groups.length} />
+        <StatBox label={t('profile.data.totalMatches')} value={matches.length} />
+        <StatBox label={t('profile.data.fromStartgg')} value={startggMatches} />
+        <StatBox label={t('profile.data.fromParrygg')} value={parryggMatches} />
+        <StatBox label={t('profile.data.manual')} value={manualMatches} />
+        <StatBox label={t('profile.data.groupsJoined')} value={groups.length} />
         {reportsEnabled && (
-          <StatBox label="AI reports generated" value={pastReports.data?.length ?? 0} />
+          <StatBox label={t('profile.data.aiReports')} value={pastReports.data?.length ?? 0} />
         )}
       </CardContent>
     </Card>

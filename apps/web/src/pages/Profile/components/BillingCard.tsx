@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -6,8 +7,8 @@ import { BuyCreditsDialog } from '@/components/billing/BuyCreditsDialog';
 import { useCredits } from '@/hooks/useBilling';
 import { useReportsConfig } from '@/hooks/useScoutReports';
 
-function formatUsd(amountCents: number): string {
-  return (amountCents / 100).toLocaleString('en-US', { style: 'currency', currency: 'USD' });
+function formatUsd(amountCents: number, locale: string): string {
+  return (amountCents / 100).toLocaleString(locale, { style: 'currency', currency: 'USD' });
 }
 
 /**
@@ -17,6 +18,7 @@ function formatUsd(amountCents: number): string {
  * ScoutPage uses to hide its own report-generation UI.
  */
 export function BillingCard() {
+  const { t, i18n } = useTranslation();
   const reportsConfig = useReportsConfig();
   const credits = useCredits();
   const [buyCreditsOpen, setBuyCreditsOpen] = useState(false);
@@ -34,23 +36,27 @@ export function BillingCard() {
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Billing</CardTitle>
-        <CardDescription>AI scouting report credits.</CardDescription>
+        <CardTitle>{t('profile.billing.title')}</CardTitle>
+        <CardDescription>{t('profile.billing.description')}</CardDescription>
       </CardHeader>
       <CardContent className="flex flex-col gap-3">
         {freeAccess ? (
           <Badge variant="success" className="self-start">
-            Free access
+            {t('profile.billing.freeAccess')}
           </Badge>
         ) : (
           <>
             <div className="flex items-center gap-2">
-              <span className="text-lg font-semibold">{creditsData?.balance ?? 0} credits</span>
+              <span className="text-lg font-semibold">
+                {t('profile.billing.credits', { count: creditsData?.balance ?? 0 })}
+              </span>
             </div>
             {cheapestPack && (
               <p className="text-sm text-muted-foreground">
-                Packs start at {formatUsd(cheapestPack.amountCents)} for {cheapestPack.credits}{' '}
-                reports.
+                {t('profile.billing.packsStartAt', {
+                  price: formatUsd(cheapestPack.amountCents, i18n.language),
+                  count: cheapestPack.credits,
+                })}
               </p>
             )}
             {canBuyCredits && (
@@ -60,7 +66,7 @@ export function BillingCard() {
                 className="self-start"
                 onClick={() => setBuyCreditsOpen(true)}
               >
-                Buy credits
+                {t('profile.billing.buyCredits')}
               </Button>
             )}
           </>

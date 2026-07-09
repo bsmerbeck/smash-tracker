@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import type { User as FirebaseUser } from 'firebase/auth';
 import { Link } from 'react-router';
+import { Trans, useTranslation } from 'react-i18next';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { useAuth } from '@/hooks/useAuth';
@@ -19,16 +20,17 @@ import { ChangePasswordForm } from './ChangePasswordForm';
  *    email and no providers at all; no password flow is possible.
  */
 export function SecurityCard({ user }: { user: FirebaseUser }) {
+  const { t } = useTranslation();
   const state = getSecurityState(user);
 
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Security</CardTitle>
+        <CardTitle>{t('profile.security.title')}</CardTitle>
         <CardDescription>
-          {state === 'password' && 'Change the password you use to sign in.'}
-          {state === 'reset-only' && 'Add password sign-in to your account.'}
-          {state === 'no-email' && 'How your account signs in.'}
+          {state === 'password' && t('profile.security.descPassword')}
+          {state === 'reset-only' && t('profile.security.descResetOnly')}
+          {state === 'no-email' && t('profile.security.descNoEmail')}
         </CardDescription>
       </CardHeader>
       <CardContent>
@@ -42,6 +44,7 @@ export function SecurityCard({ user }: { user: FirebaseUser }) {
 
 /** Google / start.gg-provisioned accounts: no `password` provider, so offer a reset email instead of a change form. */
 function ResetOnlySecurity({ email }: { email: string }) {
+  const { t } = useTranslation();
   const { sendPasswordReset } = useAuth();
   const [submitting, setSubmitting] = useState(false);
   const [result, setResult] = useState<{ kind: 'success' | 'error'; message: string } | null>(null);
@@ -53,7 +56,7 @@ function ResetOnlySecurity({ email }: { email: string }) {
       await sendPasswordReset(email);
       setResult({
         kind: 'success',
-        message: `Reset email sent to ${email}. Follow the link to add password sign-in.`,
+        message: t('profile.security.resetSent', { email }),
       });
     } catch (error) {
       setResult({ kind: 'error', message: getAuthErrorMessage(error) });
@@ -64,12 +67,9 @@ function ResetOnlySecurity({ email }: { email: string }) {
 
   return (
     <div className="flex flex-col gap-3">
-      <p className="text-sm text-muted-foreground">
-        You currently sign in without a password. Sending a password reset email lets you set one
-        up, so you can also sign in with your email and a password going forward.
-      </p>
+      <p className="text-sm text-muted-foreground">{t('profile.security.resetExplainer')}</p>
       <Button type="button" onClick={handleSend} disabled={submitting} className="self-start">
-        {submitting ? 'Sending…' : 'Send password reset email'}
+        {submitting ? t('profile.security.sending') : t('profile.security.sendReset')}
       </Button>
       {result && (
         <p className={`text-sm ${result.kind === 'error' ? 'text-destructive' : ''}`}>
@@ -84,12 +84,14 @@ function ResetOnlySecurity({ email }: { email: string }) {
 function NoEmailSecurity() {
   return (
     <p className="text-sm text-muted-foreground">
-      Your account has no password or email — sign-in works through parry.gg profile verification.
-      Manage that link from{' '}
-      <Link to="/settings/integrations" className="underline underline-offset-4">
-        Integrations
-      </Link>
-      .
+      <Trans
+        i18nKey="profile.security.noEmailBody"
+        components={{
+          integrationsLink: (
+            <Link to="/settings/integrations" className="underline underline-offset-4" />
+          ),
+        }}
+      />
     </p>
   );
 }

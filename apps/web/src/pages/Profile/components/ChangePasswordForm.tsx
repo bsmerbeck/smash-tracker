@@ -2,6 +2,8 @@ import { useState } from 'react';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
+import { useTranslation } from 'react-i18next';
+import type { TFunction } from 'i18next';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import {
@@ -15,34 +17,37 @@ import {
 import { Input } from '@/components/ui/input';
 import { useAuth } from '@/hooks/useAuth';
 
-const changePasswordSchema = z
-  .object({
-    currentPassword: z.string().min(1, 'Current password is required'),
-    newPassword: z.string().min(6, 'Password should be at least 6 characters'),
-    confirmPassword: z.string().min(1, 'Please confirm your new password'),
-  })
-  .refine((values) => values.newPassword === values.confirmPassword, {
-    message: "Passwords don't match",
-    path: ['confirmPassword'],
-  });
+/** A factory (not a module constant) so validation messages come out of the active locale — same pattern as `buildMatchFormSchema`. */
+function buildChangePasswordSchema(t: TFunction) {
+  return z
+    .object({
+      currentPassword: z.string().min(1, t('profile.password.currentRequired')),
+      newPassword: z.string().min(6, t('profile.password.minLength')),
+      confirmPassword: z.string().min(1, t('profile.password.confirmRequired')),
+    })
+    .refine((values) => values.newPassword === values.confirmPassword, {
+      message: t('profile.password.mismatch'),
+      path: ['confirmPassword'],
+    });
+}
 
-type ChangePasswordValues = z.infer<typeof changePasswordSchema>;
+type ChangePasswordValues = z.infer<ReturnType<typeof buildChangePasswordSchema>>;
 
 /** Maps the Firebase Auth error codes this flow can hit to a friendly inline message. */
-function describePasswordChangeError(error: unknown): string {
+function describePasswordChangeError(error: unknown, t: TFunction): string {
   const code = hasCode(error) ? error.code : undefined;
   switch (code) {
     case 'auth/wrong-password':
     case 'auth/invalid-credential':
-      return 'Current password is incorrect.';
+      return t('profile.password.wrongCurrent');
     case 'auth/weak-password':
-      return 'Password should be at least 6 characters.';
+      return t('profile.password.weak');
     case 'auth/requires-recent-login':
-      return 'For your security, please sign out and sign back in, then try again.';
+      return t('profile.password.requiresRecentLogin');
     default:
       return error instanceof Error && error.message
         ? error.message
-        : 'Something went wrong. Please try again.';
+        : t('profile.password.genericError');
   }
 }
 
@@ -62,12 +67,13 @@ function hasCode(error: unknown): error is { code: string } {
  * `updatePassword`), then reset the form on success.
  */
 export function ChangePasswordForm() {
+  const { t } = useTranslation();
   const { changePassword } = useAuth();
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
 
   const form = useForm<ChangePasswordValues>({
-    resolver: zodResolver(changePasswordSchema),
+    resolver: zodResolver(buildChangePasswordSchema(t)),
     defaultValues: { currentPassword: '', newPassword: '', confirmPassword: '' },
   });
 
@@ -76,10 +82,10 @@ export function ChangePasswordForm() {
     setSubmitting(true);
     try {
       await changePassword(values.currentPassword, values.newPassword);
-      toast.success('Password updated!');
+      toast.success(t('profile.password.updated'));
       form.reset();
     } catch (error) {
-      setFormError(describePasswordChangeError(error));
+      setFormError(describePasswordChangeError(error, t));
     } finally {
       setSubmitting(false);
     }
@@ -93,7 +99,7 @@ export function ChangePasswordForm() {
           name="currentPassword"
           render={({ field }) => (
             <FormItem>
-              <FormLabel>Current password</FormLabel>
+              <FormLabel>{t('profile.password.currentLabel')}</FormLabel>
               <FormControl>
                 <Input type="password" autoComplete="current-password" {...field} />
               </FormControl>
@@ -106,7 +112,7 @@ export function ChangePasswordForm() {
           name="newPassword"
           render={({ field }) => (
             <FormItem>
-              <FormLabel>New password</FormLabel>
+              <FormLabel>{t('profile.password.newLabel')}</FormLabel>
               <FormControl>
                 <Input type="password" autoComplete="new-password" {...field} />
               </FormControl>
@@ -119,7 +125,7 @@ export function ChangePasswordForm() {
           name="confirmPassword"
           render={({ field }) => (
             <FormItem>
-              <FormLabel>Confirm new password</FormLabel>
+              <FormLabel>{t('profile.password.confirmLabel')}</FormLabel>
               <FormControl>
                 <Input type="password" autoComplete="new-password" {...field} />
               </FormControl>
@@ -129,7 +135,7 @@ export function ChangePasswordForm() {
         />
         {formError && <p className="text-sm text-destructive">{formError}</p>}
         <Button type="submit" disabled={submitting} className="self-start">
-          {submitting ? 'Updating…' : 'Change password'}
+          {submitting ? t('profile.password.updating') : t('profile.password.submit')}
         </Button>
       </form>
     </Form>
