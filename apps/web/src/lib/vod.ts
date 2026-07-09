@@ -10,6 +10,16 @@ const YOUTUBE_HOSTS = new Set(['youtube.com', 'www.youtube.com', 'm.youtube.com'
 const YOUTUBE_SHORT_HOSTS = new Set(['youtu.be', 'www.youtu.be']);
 const TWITCH_HOSTS = new Set(['twitch.tv', 'www.twitch.tv']);
 
+/**
+ * Discriminated union identifying which embeddable provider (if any) a VOD
+ * URL belongs to, plus the provider-specific video id needed to construct
+ * an embedded player (`YT.Player` / `Twitch.Player`).
+ */
+export type VodProvider =
+  | { provider: 'youtube'; videoId: string }
+  | { provider: 'twitch'; videoId: string }
+  | { provider: null };
+
 /** Formats a whole-seconds offset as a Twitch-style `1h2m3s` duration string. */
 function toTwitchDuration(totalSeconds: number): string {
   const hours = Math.floor(totalSeconds / 3600);
@@ -56,6 +66,43 @@ export function vodDeepLink(url: string, seconds: number): string {
   }
 
   return url;
+}
+
+/**
+ * Extracts the embeddable provider + video id from a stored `vodUrl`, e.g.
+ * `{ provider: 'youtube', videoId: 'abc123' }`. This feeds the player
+ * constructors (`YT.Player` / `Twitch.Player`), which need a raw video id —
+ * not a seek URL — so it's a separate concern from `vodDeepLink` above.
+ * Reuses the same host allowlists as `vodDeepLink` (never a looser check);
+ * any non-allowlisted host, malformed URL, or missing id yields
+ * `{ provider: null }`.
+ */
+export function detectVodProvider(url: string): VodProvider {
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return { provider: null };
+  }
+
+  const host = parsed.hostname.toLowerCase();
+
+  if (YOUTUBE_HOSTS.has(host) && parsed.pathname === '/watch') {
+    const videoId = parsed.searchParams.get('v');
+    return videoId ? { provider: 'youtube', videoId } : { provider: null };
+  }
+
+  if (YOUTUBE_SHORT_HOSTS.has(host)) {
+    const videoId = parsed.pathname.slice(1);
+    return videoId ? { provider: 'youtube', videoId } : { provider: null };
+  }
+
+  if (TWITCH_HOSTS.has(host) && parsed.pathname.startsWith('/videos/')) {
+    const videoId = parsed.pathname.slice('/videos/'.length);
+    return videoId ? { provider: 'twitch', videoId } : { provider: null };
+  }
+
+  return { provider: null };
 }
 
 /**
