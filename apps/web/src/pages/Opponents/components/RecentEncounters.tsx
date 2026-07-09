@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import type { Match } from '@smash-tracker/shared';
@@ -11,16 +12,17 @@ import { stagesById } from '@/data/stages';
  * start.gg matches).
  */
 export function RecentEncounters({ matches }: { matches: Match[] }) {
+  const { t, i18n } = useTranslation();
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Recent Encounters</CardTitle>
+        <CardTitle>{t('opponents.encounters.title')}</CardTitle>
       </CardHeader>
       <CardContent>
         {matches.length === 0 ? (
-          <p className="text-sm text-muted-foreground">No encounters recorded yet.</p>
+          <p className="text-sm text-muted-foreground">{t('opponents.encounters.empty')}</p>
         ) : (
-          <ul className="flex flex-col gap-2" aria-label="Recent encounters">
+          <ul className="flex flex-col gap-2" aria-label={t('opponents.encounters.aria')}>
             {matches.map((match) => {
               const fighterSprite = getFighterById(match.fighter_id);
               const opponentSprite = getFighterById(match.opponent_id);
@@ -37,7 +39,7 @@ export function RecentEncounters({ matches }: { matches: Match[] }) {
                 >
                   <div className="flex items-center gap-3">
                     <span className="text-sm text-muted-foreground">
-                      {new Date(match.time).toLocaleDateString()}
+                      {new Date(match.time).toLocaleDateString(i18n.language)}
                     </span>
                     <div className="flex items-center gap-1">
                       {fighterSprite && (
@@ -47,7 +49,7 @@ export function RecentEncounters({ matches }: { matches: Match[] }) {
                           className="size-6 object-contain"
                         />
                       )}
-                      <span className="text-xs text-muted-foreground">vs</span>
+                      <span className="text-xs text-muted-foreground">{t('matchups.vs')}</span>
                       {opponentSprite && (
                         <img
                           src={opponentSprite.url}
@@ -62,7 +64,7 @@ export function RecentEncounters({ matches }: { matches: Match[] }) {
                     )}
                   </div>
                   <Badge variant={match.win ? 'success' : 'destructive'}>
-                    {match.win ? 'Win' : 'Loss'}
+                    {match.win ? t('common.win') : t('common.loss')}
                   </Badge>
                 </li>
               );

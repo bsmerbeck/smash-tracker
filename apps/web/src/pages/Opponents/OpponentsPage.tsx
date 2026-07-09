@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
 import { Link } from 'react-router';
+import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/ui/button';
 import { getOpponentSources, useFilteredMatches } from '@/hooks/useFilteredMatches';
 import { useTournamentEntries } from '@/hooks/useTournamentEntries';
@@ -29,6 +30,7 @@ import { buildEvidencePacket } from './evidencePacket';
  * to, and recent encounters. Searchable list ranked by games played.
  */
 export function OpponentsPage() {
+  const { t } = useTranslation();
   const { matches, allMatches, isLoading, filterActive } = useFilteredMatches();
   const { data: tournamentEntries } = useTournamentEntries();
   const { data: aliasMap } = useOpponentAliases();
@@ -96,23 +98,20 @@ export function OpponentsPage() {
   }, [profile, tournamentBlocks, user]);
 
   if (isLoading) {
-    return <div className="text-muted-foreground">Loading scouting reports...</div>;
+    return <div className="text-muted-foreground">{t('opponents.loading')}</div>;
   }
 
   if (allMatches.length === 0) {
     return (
       <div className="flex flex-col items-center gap-4 py-16 text-center">
-        <h1 className="text-2xl font-semibold tracking-tight">No matches to scout yet!</h1>
-        <p className="max-w-md text-muted-foreground">
-          Report a match on the Dashboard, or connect start.gg to sync your tournament sets, and
-          opponent scouting reports will show up here.
-        </p>
+        <h1 className="text-2xl font-semibold tracking-tight">{t('opponents.empty.title')}</h1>
+        <p className="max-w-md text-muted-foreground">{t('opponents.empty.body')}</p>
         <div className="flex flex-wrap justify-center gap-2">
           <Button asChild>
-            <Link to="/dashboard">Go to Dashboard</Link>
+            <Link to="/dashboard">{t('common.goToDashboard')}</Link>
           </Button>
           <Button asChild variant="outline">
-            <Link to="/settings/integrations">Connect start.gg</Link>
+            <Link to="/settings/integrations">{t('opponents.empty.connectStartgg')}</Link>
           </Button>
         </div>
       </div>
@@ -123,14 +122,10 @@ export function OpponentsPage() {
   if (allOpponentsNamed.length === 0) {
     return (
       <div className="flex flex-col items-center gap-2 py-16 text-center">
-        <h2 className="text-xl font-semibold tracking-tight">
-          None of your matches have an opponent tag recorded.
-        </h2>
-        <p className="max-w-md text-muted-foreground">
-          Add an opponent name when reporting a match to unlock scouting reports for them.
-        </p>
+        <h2 className="text-xl font-semibold tracking-tight">{t('opponents.noTags.title')}</h2>
+        <p className="max-w-md text-muted-foreground">{t('opponents.noTags.body')}</p>
         <Button asChild className="mt-2">
-          <Link to="/dashboard">Go to Dashboard</Link>
+          <Link to="/dashboard">{t('common.goToDashboard')}</Link>
         </Button>
       </div>
     );
@@ -174,7 +169,7 @@ export function OpponentsPage() {
           </div>
         ) : (
           <div className="flex items-center justify-center rounded-lg border border-dashed p-16 text-center text-sm text-muted-foreground">
-            Select an opponent from the list to see their scouting report.
+            {t('opponents.selectPrompt')}
           </div>
         )}
       </div>

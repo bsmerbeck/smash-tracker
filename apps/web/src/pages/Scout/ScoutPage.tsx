@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router';
+import { useTranslation } from 'react-i18next';
+import type { TFunction } from 'i18next';
 import { Sparkles } from 'lucide-react';
 import { toast } from 'sonner';
 import {
@@ -30,16 +32,16 @@ import { ScoutReportHistorySelector } from './components/ScoutReportHistorySelec
 import { ScoutPastReportsCard } from './components/ScoutPastReportsCard';
 import { BuyCreditsDialog } from '@/components/billing/BuyCreditsDialog';
 
-function describeError(error: unknown, fallback: string): string {
+function describeError(error: unknown, fallback: string, t: TFunction): string {
   if (error instanceof ApiError) {
     if (error.status === 404) {
-      return "We couldn't find a start.gg player for that query. Double-check the URL, slug, or player id.";
+      return t('scout.errors.notFound');
     }
     if (error.status === 400) {
-      return error.message || "That doesn't look like a start.gg profile URL, slug, or player id.";
+      return error.message || t('scout.errors.badQuery');
     }
     if (error.status === 429) {
-      return 'start.gg is rate-limiting requests right now. Try again in a minute.';
+      return t('scout.errors.rateLimited');
     }
     return error.message || fallback;
   }
@@ -92,6 +94,7 @@ function formatUsd(amountCents: number): string {
  * a few seconds since webhook delivery can lag the redirect.
  */
 export function ScoutPage() {
+  const { t } = useTranslation();
   const scout = useScoutPlayer();
   const { data: matches = [] } = useMatches();
   const reportsConfig = useReportsConfig();
@@ -141,7 +144,7 @@ export function ScoutPage() {
     }
     announcedBilling.current = true;
     if (outcome === 'success') {
-      toast.success("Payment received — your credits will land shortly if they haven't already.");
+      toast.success(t('scout.billing.paymentReceived'));
       let attempts = 0;
       const poll = setInterval(() => {
         attempts += 1;
@@ -151,7 +154,7 @@ export function ScoutPage() {
         }
       }, CREDITS_POLL_INTERVAL_MS);
     } else if (outcome === 'cancelled') {
-      toast('Checkout cancelled — no charge was made.');
+      toast(t('scout.billing.checkoutCancelled'));
     }
     setSearchParams({}, { replace: true });
     // eslint-disable-next-line react-hooks/exhaustive-deps -- credits.refetch is stable per render but not a dep we want to re-trigger this effect on
@@ -237,7 +240,7 @@ export function ScoutPage() {
 
   return (
     <div className="mx-auto flex max-w-3xl flex-col gap-6">
-      <h1 className="text-2xl font-semibold tracking-tight">Scout a Player</h1>
+      <h1 className="text-2xl font-semibold tracking-tight">{t('scout.title')}</h1>
 
       <ScoutSearchForm
         onSubmit={handleSubmit}
@@ -247,7 +250,7 @@ export function ScoutPage() {
 
       {scout.isError && (
         <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-4 text-sm text-destructive">
-          {describeError(scout.error, 'Something went wrong while scouting that player.')}
+          {describeError(scout.error, t('scout.errors.scoutFallback'), t)}
         </div>
       )}
 
@@ -266,15 +269,17 @@ export function ScoutPage() {
                 >
                   <Sparkles className={generateReport.isPending ? 'animate-spin' : ''} />
                   {generateReport.isPending
-                    ? 'Generating report…'
+                    ? t('scout.report.generating')
                     : displayedRecord
-                      ? 'Regenerate report'
-                      : 'Generate AI report'}
+                      ? t('scout.report.regenerate')
+                      : t('scout.report.generate')}
                 </Button>
 
                 {(freeAccess || creditsData) && (
                   <span className="text-sm text-muted-foreground">
-                    {freeAccess ? 'Free access' : `${creditsData?.balance ?? 0} credits`}
+                    {freeAccess
+                      ? t('scout.billing.freeAccess')
+                      : t('scout.billing.credits', { count: creditsData?.balance ?? 0 })}
                   </span>
                 )}
                 {canBuyCredits && (
@@ -284,7 +289,7 @@ export function ScoutPage() {
                     className="h-auto p-0 text-sm"
                     onClick={() => setBuyCreditsOpen(true)}
                   >
-                    Buy credits
+                    {t('scout.billing.buyCredits')}
                   </Button>
                 )}
               </div>
@@ -292,32 +297,35 @@ export function ScoutPage() {
                   the button, so the pricing is visible before checkout. */}
               {canBuyCredits && (
                 <p className="text-sm text-muted-foreground">
-                  Each report costs 1 credit.{' '}
+                  {t('scout.billing.costLine')}{' '}
                   {availablePacks
-                    .map((pack) => `${pack.label} for ${formatUsd(pack.amountCents)}`)
+                    .map((pack) =>
+                      t('scout.billing.packFor', {
+                        label: pack.label,
+                        price: formatUsd(pack.amountCents),
+                      }),
+                    )
                     .join(' · ')}
                   .
                 </p>
               )}
               {generateReport.isPending && (
-                <p className="text-sm text-muted-foreground">
-                  Generating report — this usually takes a minute or two.
-                </p>
+                <p className="text-sm text-muted-foreground">{t('scout.report.generatingHint')}</p>
               )}
               {/* A 402 auto-opens the buy dialog; this leaves a persistent cue
                   after it's dismissed rather than a scary red error. */}
               {lastGenerateWas402 && canBuyCredits && !generateReport.isPending && (
                 <p className="text-sm text-muted-foreground">
-                  You're out of credits.{' '}
+                  {t('scout.billing.outOfCredits')}{' '}
                   <Button
                     type="button"
                     variant="link"
                     className="h-auto p-0 text-sm"
                     onClick={() => setBuyCreditsOpen(true)}
                   >
-                    Buy a pack
+                    {t('scout.billing.buyPack')}
                   </Button>{' '}
-                  to generate this report.
+                  {t('scout.billing.toGenerate')}
                 </p>
               )}
               {generateReport.isError &&
@@ -325,10 +333,7 @@ export function ScoutPage() {
                   generateReport.error instanceof ApiError && generateReport.error.status === 402
                 ) && (
                   <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-4 text-sm text-destructive">
-                    {describeError(
-                      generateReport.error,
-                      'Something went wrong while generating the report.',
-                    )}
+                    {describeError(generateReport.error, t('scout.errors.generateFallback'), t)}
                   </div>
                 )}
             </div>
@@ -378,9 +383,7 @@ export function ScoutPage() {
 
       {!report && !selectedRecord && !scout.isError && !scout.isPending && (
         <div className="flex items-center justify-center rounded-lg border border-dashed p-16 text-center text-sm text-muted-foreground">
-          {parryggEnabled
-            ? 'Paste a start.gg or parry.gg profile URL, slug/tag, or player id above to pull up their public tournament history.'
-            : 'Paste a start.gg profile URL, slug, or player id above to pull up their public tournament history.'}
+          {parryggEnabled ? t('scout.promptWithParry') : t('scout.prompt')}
         </div>
       )}
 

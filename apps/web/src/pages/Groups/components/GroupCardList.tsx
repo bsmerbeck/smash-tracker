@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next';
 import { Users } from 'lucide-react';
 import type { GroupRecord } from '@smash-tracker/shared';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -13,6 +14,7 @@ export function GroupCardList({
   selectedGroupId: string | null;
   onSelect: (groupId: string) => void;
 }) {
+  const { t } = useTranslation();
   return (
     <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
       {groups.map((group) => (
@@ -36,7 +38,7 @@ export function GroupCardList({
             </CardHeader>
             <CardContent className="flex items-center gap-1.5 text-sm text-muted-foreground">
               <Users className="size-4" />
-              {group.memberCount} {group.memberCount === 1 ? 'member' : 'members'}
+              {t('groups.members', { count: group.memberCount })}
             </CardContent>
           </Card>
         </button>

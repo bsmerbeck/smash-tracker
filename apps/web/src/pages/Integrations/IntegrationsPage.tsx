@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router';
+import { useTranslation } from 'react-i18next';
+import type { TFunction } from 'i18next';
 import { toast } from 'sonner';
 import { RefreshCw, Unlink } from 'lucide-react';
 import type { StartggSyncSummary } from '@smash-tracker/shared';
@@ -24,24 +26,27 @@ import {
 } from '@/hooks/useStartgg';
 import { ParryggCard } from './components/ParryggCard';
 
-function describeSummary(summary: StartggSyncSummary): string {
+function describeSummary(summary: StartggSyncSummary, t: TFunction): string {
   const skipped =
     summary.setsWithoutGames + summary.gamesUnmappedCharacter + summary.gamesMissingSelections;
-  const parts = [`Imported ${summary.imported} games from ${summary.sets} sets`];
+  const parts = [
+    t('integrations.summary.importedFromSets', { imported: summary.imported, sets: summary.sets }),
+  ];
   if (skipped > 0) {
-    parts.push(`${skipped} without importable detail`);
+    parts.push(t('integrations.summary.skippedDetail', { count: skipped }));
   }
   if (summary.gamesUnknownStage > 0) {
-    parts.push(`${summary.gamesUnknownStage} with unrecognized stages`);
+    parts.push(t('integrations.summary.unknownStages', { count: summary.gamesUnknownStage }));
   }
   if (summary.dqSets > 0) {
-    parts.push(`${summary.dqSets} DQs skipped`);
+    parts.push(t('integrations.summary.dqSkipped', { count: summary.dqSets }));
   }
   return parts.join(' · ');
 }
 
 /** Settings > Integrations: link a start.gg account and sync tournament matches. */
 export function IntegrationsPage() {
+  const { t, i18n } = useTranslation();
   const { data: status, isLoading } = useStartggStatus();
   const connect = useStartggConnect();
   const sync = useStartggSync();
@@ -59,20 +64,24 @@ export function IntegrationsPage() {
     }
     announcedCallback.current = true;
     if (outcome === 'linked') {
-      toast.success('start.gg account linked!');
+      toast.success(t('integrations.startgg.linked'));
     } else {
-      toast.error(`start.gg linking failed (${searchParams.get('reason') ?? 'unknown error'})`);
+      toast.error(
+        t('integrations.startgg.linkFailed', {
+          reason: searchParams.get('reason') ?? t('integrations.startgg.unknownError'),
+        }),
+      );
     }
     setSearchParams({}, { replace: true });
-  }, [searchParams, setSearchParams]);
+  }, [searchParams, setSearchParams, t]);
 
   const handleSync = async () => {
     try {
       const summary = await sync.mutateAsync();
       setLastSummary(summary);
-      toast.success(describeSummary(summary));
+      toast.success(describeSummary(summary, t));
     } catch {
-      toast.error('Sync failed. Please try again.');
+      toast.error(t('integrations.syncFailed'));
     }
   };
 
@@ -81,47 +90,48 @@ export function IntegrationsPage() {
     try {
       await unlink.mutateAsync();
       setLastSummary(null);
-      toast.success('start.gg account unlinked.');
+      toast.success(t('integrations.unlinkedToast', { provider: 'start.gg' }));
     } catch {
-      toast.error('Failed to unlink. Please try again.');
+      toast.error(t('integrations.unlinkFailed'));
     }
   };
 
   return (
     <div className="mx-auto flex max-w-2xl flex-col gap-6">
-      <h1 className="text-2xl font-semibold tracking-tight">Integrations</h1>
+      <h1 className="text-2xl font-semibold tracking-tight">{t('integrations.title')}</h1>
 
       <Card>
         <CardHeader>
           <div className="flex items-center justify-between">
             <CardTitle>start.gg</CardTitle>
-            {status?.linked && <Badge variant="success">Connected</Badge>}
+            {status?.linked && <Badge variant="success">{t('integrations.connected')}</Badge>}
           </div>
           <CardDescription>
-            Link your start.gg account to automatically import your Smash Ultimate tournament
-            matches. Imported games join your match pool with a competitive tag.
+            {t('integrations.linkDescription', { provider: 'start.gg' })}
           </CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col gap-4">
           {isLoading ? (
-            <p className="text-sm text-muted-foreground">Checking link status…</p>
+            <p className="text-sm text-muted-foreground">{t('integrations.checkingStatus')}</p>
           ) : status?.linked ? (
             <>
               <dl className="grid grid-cols-2 gap-2 text-sm">
-                <dt className="text-muted-foreground">Gamer tag</dt>
+                <dt className="text-muted-foreground">{t('integrations.gamerTag')}</dt>
                 <dd className="font-medium">{status.gamerTag}</dd>
-                <dt className="text-muted-foreground">Last synced</dt>
+                <dt className="text-muted-foreground">{t('integrations.lastSynced')}</dt>
                 <dd>
-                  {status.lastSyncAt ? new Date(status.lastSyncAt).toLocaleString() : 'Never'}
+                  {status.lastSyncAt
+                    ? new Date(status.lastSyncAt).toLocaleString(i18n.language)
+                    : t('integrations.never')}
                 </dd>
               </dl>
               {lastSummary && (
-                <p className="text-sm text-muted-foreground">{describeSummary(lastSummary)}</p>
+                <p className="text-sm text-muted-foreground">{describeSummary(lastSummary, t)}</p>
               )}
               <div className="flex flex-wrap gap-2">
                 <Button onClick={handleSync} disabled={sync.isPending}>
                   <RefreshCw className={sync.isPending ? 'animate-spin' : ''} />
-                  {sync.isPending ? 'Syncing…' : 'Sync now'}
+                  {sync.isPending ? t('integrations.syncing') : t('integrations.syncNow')}
                 </Button>
                 <Button
                   variant="outline"
@@ -129,14 +139,14 @@ export function IntegrationsPage() {
                   disabled={unlink.isPending}
                 >
                   <Unlink />
-                  Unlink
+                  {t('integrations.unlink')}
                 </Button>
               </div>
             </>
           ) : (
             <div>
               <Button onClick={() => connect.mutate()} disabled={connect.isPending}>
-                Connect start.gg account
+                {t('integrations.startgg.connect')}
               </Button>
             </div>
           )}
@@ -146,15 +156,14 @@ export function IntegrationsPage() {
       <AlertDialog open={confirmUnlink} onOpenChange={(open) => !open && setConfirmUnlink(false)}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Unlink start.gg?</AlertDialogTitle>
-            <AlertDialogDescription>
-              Already-imported matches stay in your history; new tournament results just stop
-              syncing until you reconnect.
-            </AlertDialogDescription>
+            <AlertDialogTitle>
+              {t('integrations.unlinkTitle', { provider: 'start.gg' })}
+            </AlertDialogTitle>
+            <AlertDialogDescription>{t('integrations.unlinkDescription')}</AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={handleUnlink}>Unlink</AlertDialogAction>
+            <AlertDialogCancel>{t('common.cancel')}</AlertDialogCancel>
+            <AlertDialogAction onClick={handleUnlink}>{t('integrations.unlink')}</AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>

@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next';
 import { History } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -17,14 +18,15 @@ export function ScoutPastReportsCard({
   reports: ScoutReportRecord[];
   onSelect: (report: ScoutReportRecord) => void;
 }) {
+  const { t, i18n } = useTranslation();
   return (
     <Card>
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
           <History className="size-4" />
-          Past AI Reports
+          {t('scout.pastReports.title')}
         </CardTitle>
-        <CardDescription>Reports you've generated before, most recent first.</CardDescription>
+        <CardDescription>{t('scout.pastReports.description')}</CardDescription>
       </CardHeader>
       <CardContent className="flex flex-col gap-1">
         {reports.map((record) => (
@@ -37,7 +39,7 @@ export function ScoutPastReportsCard({
           >
             <span className="font-medium">{record.player.gamerTag}</span>
             <span className="text-xs text-muted-foreground">
-              {new Date(record.createdAt).toLocaleDateString()}
+              {new Date(record.createdAt).toLocaleDateString(i18n.language)}
             </span>
           </Button>
         ))}
