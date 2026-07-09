@@ -1,5 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import type { UpsertStageFavoritesInput } from '@smash-tracker/shared';
+import { useTranslation } from 'react-i18next';
+import { toast } from 'sonner';
+import type { StageFavorites, UpsertStageFavoritesInput } from '@smash-tracker/shared';
 import { api } from '@/lib/api';
 import { useAuth } from './useAuth';
 
@@ -20,13 +22,56 @@ export function useStageFavorites() {
   });
 }
 
-/** PUT /api/stage-favorites — replaces the whole list. Invalidates the favorites query on success. */
+/**
+ * PUT /api/stage-favorites — replaces the whole list, applied optimistically.
+ * The optimism matters for the in-picker heart toggles: the heart (and the
+ * pinned Favorites group) must move on tap, not after the PUT round-trip,
+ * and each rapid successive toggle must read the already-updated cache
+ * instead of a stale list — with a whole-list PUT, a stale read would drop
+ * the previous toggle. Rolls back on error; refetches server truth either way.
+ */
 export function useUpdateStageFavorites() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (input: UpsertStageFavoritesInput) => api.stageFavorites.update(input),
-    onSuccess: async () => {
+    onMutate: async (input) => {
+      await queryClient.cancelQueries({ queryKey: stageFavoritesQueryKey });
+      const previous = queryClient.getQueryData<StageFavorites>(stageFavoritesQueryKey);
+      queryClient.setQueryData<StageFavorites>(stageFavoritesQueryKey, {
+        stageIds: input.stageIds,
+        // Placeholder until the settle-time refetch brings the server stamp.
+        updatedAt: Date.now(),
+      });
+      return { previous };
+    },
+    onError: (_error, _input, context) => {
+      if (context?.previous !== undefined) {
+        queryClient.setQueryData(stageFavoritesQueryKey, context.previous);
+      }
+    },
+    onSettled: async () => {
       await queryClient.invalidateQueries({ queryKey: stageFavoritesQueryKey });
     },
   });
+}
+
+/**
+ * Favorite/unfavorite a single stage — what the heart buttons inside stage
+ * pickers call. No-ops until the favorites query has loaded: toggling against
+ * an unloaded list would PUT a near-empty replacement over the saved one.
+ */
+export function useToggleStageFavorite() {
+  const { t } = useTranslation();
+  const { data: favorites } = useStageFavorites();
+  const update = useUpdateStageFavorites();
+  return (stageId: number) => {
+    if (!favorites) return;
+    const next = favorites.stageIds.includes(stageId)
+      ? favorites.stageIds.filter((id) => id !== stageId)
+      : [...favorites.stageIds, stageId];
+    update.mutate(
+      { stageIds: next },
+      { onError: () => toast.error(t('matchForm.favoriteSaveFailed')) },
+    );
+  };
 }

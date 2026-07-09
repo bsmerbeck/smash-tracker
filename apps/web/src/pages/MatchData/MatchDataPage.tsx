@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { useFighters } from '@/hooks/useFighters';
 import { useFilteredMatches } from '@/hooks/useFilteredMatches';
-import { useStageFavorites } from '@/hooks/useStageFavorites';
+import { useStageFavorites, useToggleStageFavorite } from '@/hooks/useStageFavorites';
 import { getFighterById } from '@/data/sprites';
 import { FilteredEmptyNotice } from '@/components/FilteredEmptyNotice';
 import { MatchTable } from './components/MatchTable';
@@ -19,6 +19,7 @@ export function MatchDataPage() {
   const { data: fighterSelection, isLoading: fightersLoading } = useFighters();
   const { matches, allMatches, isLoading: matchesLoading, filterActive } = useFilteredMatches();
   const { data: stageFavorites } = useStageFavorites();
+  const toggleStageFavorite = useToggleStageFavorite();
 
   const fighterSprites = useMemo<Fighter[]>(() => {
     const ids = [...(fighterSelection?.primary ?? []), ...(fighterSelection?.secondary ?? [])];
@@ -78,6 +79,7 @@ export function MatchDataPage() {
           matches={matches}
           usageMatches={allMatches}
           favoriteStageIds={stageFavorites?.stageIds}
+          onToggleFavorite={toggleStageFavorite}
         />
       </div>
     </div>
