@@ -323,7 +323,7 @@ describe('MatchDataPage', () => {
     expect(screen.getAllByText('rival').length).toBeGreaterThan(0);
   });
 
-  it('shows "Add VOD notes" for a match without a vodUrl and "Edit VOD notes" for one with', async () => {
+  it('shows "Add VOD notes" for a match without a vodUrl and "Watch VOD" for one with', async () => {
     getFighters.mockResolvedValue({ primary: [mario.id], secondary: [] });
     listMatches.mockResolvedValue([
       makeMatch({ id: 'm1', opponent: 'rival' }),
@@ -337,7 +337,7 @@ describe('MatchDataPage', () => {
     renderMatchData();
 
     await waitFor(() => expect(screen.getAllByLabelText('Add VOD notes')).toHaveLength(1));
-    expect(screen.getAllByLabelText('Edit VOD notes')).toHaveLength(1);
+    expect(screen.getAllByLabelText('Watch VOD')).toHaveLength(1);
   });
 
   it('opens the VOD notes dialog and saves a new VOD URL and timestamp', async () => {
