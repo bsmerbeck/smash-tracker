@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router';
 import { useTranslation } from 'react-i18next';
+import type { Match } from '@smash-tracker/shared';
 import { getFighterById } from '@/data/sprites';
 import { useFilteredMatches } from '@/hooks/useFilteredMatches';
 import { tournamentLabel } from '@/pages/MatchData/lib/matchTableFilters';
@@ -95,11 +96,7 @@ export function VodManagerPage() {
   );
 }
 
-function SelectedMatchMeta({
-  match,
-}: {
-  match: ReturnType<typeof useFilteredMatches>['matches'][number];
-}) {
+function SelectedMatchMeta({ match }: { match: Match }) {
   const { t } = useTranslation();
   const fighter = getFighterById(match.fighter_id);
   const opponentFighter = getFighterById(match.opponent_id);
