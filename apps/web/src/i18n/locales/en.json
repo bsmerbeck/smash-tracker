@@ -319,7 +319,8 @@
       "mmrCaption": "Estimated hidden MMR behind each reading (community-reverse-engineered model) — unlike GSP, it doesn't inflate over time, so a flat line means flat skill. Dashed line: Elite entry at MMR {{mmr}}.",
       "gspCaption": "Every point is a logged post-match GSP reading for this fighter. The dashed line is the computed Elite Smash threshold — a community-model estimate, not a Nintendo-published value.",
       "clickHint": "Click a point to edit that reading.",
-      "locked": "Log at least {{count}} matches with a GSP reading for this fighter to see the curve."
+      "locked": "Log at least {{count}} matches with a GSP reading for this fighter to see the curve.",
+      "setManually": "set manually"
     },
     "logger": {
       "title": "Quick Logger",
@@ -334,14 +335,16 @@
       "chooseResult": "Mark this match as a win or loss.",
       "invalidGsp": "Enter the GSP shown after the match — commas are fine, e.g. 10,300,000.",
       "logged": "Match logged! GSP {{gsp}}",
-      "logFailed": "Failed to log the match. Please try again."
+      "logFailed": "Failed to log the match. Please try again.",
+      "setGspButton": "Set GSP without logging a match"
     },
     "log": {
       "title": "GSP Log",
       "editEntry": "Edit GSP entry from {{date}}",
       "deleteEntry": "Delete GSP entry from {{date}}",
       "showRecent": "Show recent only",
-      "showAll": "Show all {{count}} entries"
+      "showAll": "Show all {{count}} entries",
+      "setBadge": "Set"
     },
     "gains": {
       "title": "Gains Analysis",
@@ -397,6 +400,20 @@
       "mmrLabel": "Est. MMR (normalized)",
       "glickoLabel": "Glicko-2 (normalized)",
       "caption": "Your quickplay rating (estimated MMR for this fighter, community-reverse-engineered model) vs. your overall Glicko-2 rating (every fighter/session) — both normalized to 0-100 over this window since their raw scales are unrelated. Rating-vs-rating makes the shapes honestly comparable; divergence usually means your quickplay form differs from your overall form."
+    },
+    "setGsp": {
+      "title": "Set GSP",
+      "description": "Record the GSP shown in-game right now — at the start of a session (GSP inflates while you're away) or after matches you don't want counted. Deltas and gain/loss stats restart from this baseline.",
+      "label": "Current GSP",
+      "save": "Set GSP",
+      "saved": "GSP set to {{gsp}}.",
+      "saveFailed": "Couldn't save the reading. Please try again."
+    },
+    "editReading": {
+      "title": "Edit GSP reading",
+      "description": "Correct the value of this manually-set reading. Its date and fighter stay as recorded.",
+      "saved": "Reading updated.",
+      "saveFailed": "Couldn't update the reading. Please try again."
     }
   },
   "matchData": {

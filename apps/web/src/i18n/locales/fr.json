@@ -319,7 +319,8 @@
       "mmrCaption": "MMR caché estimé derrière chaque lecture (modèle communautaire par rétro-ingénierie) — contrairement au GSP, il ne gonfle pas avec le temps : une ligne plate signifie un niveau stable. Ligne pointillée : entrée dans l'Élite à MMR {{mmr}}.",
       "gspCaption": "Chaque point est une lecture GSP enregistrée après un match avec ce combattant. La ligne pointillée est le seuil calculé du Smash Élite — une estimation du modèle communautaire, pas une valeur publiée par Nintendo.",
       "clickHint": "Cliquez sur un point pour modifier cette lecture.",
-      "locked": "Enregistrez au moins {{count}} matchs avec une lecture GSP pour ce combattant pour voir la courbe."
+      "locked": "Enregistrez au moins {{count}} matchs avec une lecture GSP pour ce combattant pour voir la courbe.",
+      "setManually": "défini manuellement"
     },
     "logger": {
       "title": "Saisie rapide",
@@ -334,14 +335,16 @@
       "chooseResult": "Indiquez si ce match est une victoire ou une défaite.",
       "invalidGsp": "Saisissez le GSP affiché après le match — les virgules sont acceptées, p. ex. 10,300,000.",
       "logged": "Match enregistré ! GSP {{gsp}}",
-      "logFailed": "Échec de l'enregistrement du match. Veuillez réessayer."
+      "logFailed": "Échec de l'enregistrement du match. Veuillez réessayer.",
+      "setGspButton": "Définir le GSP sans enregistrer de match"
     },
     "log": {
       "title": "Journal GSP",
       "editEntry": "Modifier l'entrée GSP du {{date}}",
       "deleteEntry": "Supprimer l'entrée GSP du {{date}}",
       "showRecent": "N'afficher que les récentes",
-      "showAll": "Afficher les {{count}} entrées"
+      "showAll": "Afficher les {{count}} entrées",
+      "setBadge": "Défini"
     },
     "gains": {
       "title": "Analyse des gains",
@@ -397,6 +400,20 @@
       "mmrLabel": "MMR est. (normalisé)",
       "glickoLabel": "Glicko-2 (normalisé)",
       "caption": "Votre niveau en quickplay (MMR estimé pour ce combattant, modèle communautaire par rétro-ingénierie) face à votre classement Glicko-2 global (tous combattants/sessions) — les deux normalisés de 0 à 100 sur cette fenêtre, leurs échelles brutes n'étant pas liées. Comparer classement contre classement rend les formes honnêtement comparables ; une divergence signifie généralement que votre forme en quickplay diffère de votre forme générale."
+    },
+    "setGsp": {
+      "title": "Définir le GSP",
+      "description": "Notez le GSP affiché en jeu maintenant — en début de session (le GSP gonfle pendant votre absence) ou après des matchs que vous ne voulez pas compter. Les deltas et statistiques de gains/pertes repartent de cette base.",
+      "label": "GSP actuel",
+      "save": "Définir le GSP",
+      "saved": "GSP défini à {{gsp}}.",
+      "saveFailed": "Impossible d'enregistrer la lecture. Veuillez réessayer."
+    },
+    "editReading": {
+      "title": "Modifier la lecture GSP",
+      "description": "Corrigez la valeur de cette lecture définie manuellement. Sa date et son combattant ne changent pas.",
+      "saved": "Lecture mise à jour.",
+      "saveFailed": "Impossible de mettre à jour la lecture. Veuillez réessayer."
     }
   },
   "matchData": {

@@ -10,6 +10,7 @@ import {
   groupLeaderboardSchema,
   groupListSchema,
   groupRecordSchema,
+  gspReadingSchema,
   gspSettingsSchema,
   joinGroupRequestSchema,
   matchSchema,
@@ -38,6 +39,7 @@ import {
   startggSyncSummarySchema,
   tournamentEntryListSchema,
   userProfileSchema,
+  type CreateGspReadingInput,
   type CreateMatchInput,
   type CreditPackId,
   type FighterSelectionInput,
@@ -48,6 +50,7 @@ import {
   type ParryggLoginSearchRequest,
   type ParryggLoginStartRequest,
   type ScoutQuery,
+  type UpdateGspReadingInput,
   type UpdateMatchInput,
   type UpsertGspSettingsInput,
   type UpsertOpponentAliasInput,
@@ -411,6 +414,22 @@ export const api = {
     /** PUT /api/gsp-settings */
     update: (input: UpsertGspSettingsInput) =>
       apiRequestParsed('/api/gsp-settings', gspSettingsSchema, { method: 'PUT', body: input }),
+  },
+  gspReadings: {
+    /** GET /api/gsp-readings — the signed-in user's standalone "set GSP" calibration readings (V17). */
+    list: () => apiRequestParsed('/api/gsp-readings', gspReadingSchema.array()),
+    /** POST /api/gsp-readings — `time` is server-stamped. */
+    create: (input: CreateGspReadingInput) =>
+      apiRequestParsed('/api/gsp-readings', gspReadingSchema, { method: 'POST', body: input }),
+    /** PATCH /api/gsp-readings/:id — corrects the value only. */
+    update: (id: string, input: UpdateGspReadingInput) =>
+      apiRequestParsed(`/api/gsp-readings/${encodeURIComponent(id)}`, gspReadingSchema, {
+        method: 'PATCH',
+        body: input,
+      }),
+    /** DELETE /api/gsp-readings/:id */
+    remove: (id: string) =>
+      apiRequest<void>(`/api/gsp-readings/${encodeURIComponent(id)}`, { method: 'DELETE' }),
   },
   stageFavorites: {
     /** GET /api/stage-favorites — the signed-in user's favorited stage ids (an empty default is synthesized server-side, never 404s). */

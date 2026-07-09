@@ -319,7 +319,8 @@
       "mmrCaption": "MMR oculto estimado detrás de cada lectura (modelo de ingeniería inversa de la comunidad) — a diferencia del GSP, no se infla con el tiempo, así que una línea plana significa nivel estable. Línea discontinua: entrada a Elite en MMR {{mmr}}.",
       "gspCaption": "Cada punto es una lectura de GSP registrada tras una partida con este luchador. La línea discontinua es el umbral calculado de Elite Smash — una estimación del modelo comunitario, no un valor publicado por Nintendo.",
       "clickHint": "Haz clic en un punto para editar esa lectura.",
-      "locked": "Registra al menos {{count}} partidas con lectura de GSP para este luchador para ver la curva."
+      "locked": "Registra al menos {{count}} partidas con lectura de GSP para este luchador para ver la curva.",
+      "setManually": "fijado manualmente"
     },
     "logger": {
       "title": "Registro rápido",
@@ -334,14 +335,16 @@
       "chooseResult": "Marca esta partida como victoria o derrota.",
       "invalidGsp": "Introduce el GSP que aparece tras la partida — las comas valen, p. ej. 10,300,000.",
       "logged": "¡Partida registrada! GSP {{gsp}}",
-      "logFailed": "No se pudo registrar la partida. Inténtalo de nuevo."
+      "logFailed": "No se pudo registrar la partida. Inténtalo de nuevo.",
+      "setGspButton": "Fijar GSP sin registrar una partida"
     },
     "log": {
       "title": "Registro de GSP",
       "editEntry": "Editar entrada de GSP del {{date}}",
       "deleteEntry": "Eliminar entrada de GSP del {{date}}",
       "showRecent": "Mostrar solo recientes",
-      "showAll": "Mostrar las {{count}} entradas"
+      "showAll": "Mostrar las {{count}} entradas",
+      "setBadge": "Fijado"
     },
     "gains": {
       "title": "Análisis de ganancias",
@@ -397,6 +400,20 @@
       "mmrLabel": "MMR est. (normalizado)",
       "glickoLabel": "Glicko-2 (normalizado)",
       "caption": "Tu nivel en quickplay (MMR estimado de este luchador, modelo de ingeniería inversa de la comunidad) frente a tu Glicko-2 global (todos los luchadores/sesiones) — ambos normalizados a 0-100 en esta ventana porque sus escalas no están relacionadas. Comparar nivel contra nivel hace las formas honestamente comparables; una divergencia suele significar que tu forma en quickplay difiere de tu forma general."
+    },
+    "setGsp": {
+      "title": "Fijar GSP",
+      "description": "Registra el GSP que muestra el juego ahora mismo: al empezar una sesión (el GSP se infla mientras no juegas) o tras partidas que no quieres contar. Los deltas y las estadísticas de ganancia/pérdida se reinician desde esta base.",
+      "label": "GSP actual",
+      "save": "Fijar GSP",
+      "saved": "GSP fijado en {{gsp}}.",
+      "saveFailed": "No se pudo guardar la lectura. Inténtalo de nuevo."
+    },
+    "editReading": {
+      "title": "Editar lectura de GSP",
+      "description": "Corrige el valor de esta lectura fijada manualmente. Su fecha y luchador no cambian.",
+      "saved": "Lectura actualizada.",
+      "saveFailed": "No se pudo actualizar la lectura. Inténtalo de nuevo."
     }
   },
   "matchData": {
