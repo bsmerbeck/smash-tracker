@@ -1,3 +1,4 @@
+import type { TFunction } from 'i18next';
 import type { Match } from '@smash-tracker/shared';
 import {
   getRecordsByFighter,
@@ -97,12 +98,14 @@ export interface PracticeRecommendation {
  *
  * `nameForFighter`/`nameForStage` are injected so this module stays pure
  * (no sprite/stage-art imports needed beyond stage name lookup, which is
- * data, not rendering).
+ * data, not rendering); `t` is injected the same way so the bullets come
+ * out of the active locale.
  */
 export function buildPracticeRecommendations(
   fighterMatches: Match[],
   coverage: CoverageEntry[],
   nameForFighter: (fighterId: number) => string,
+  t: TFunction,
 ): PracticeRecommendation[] {
   const recs: PracticeRecommendation[] = [];
 
@@ -111,7 +114,11 @@ export function buildPracticeRecommendations(
   if (worstMatchup) {
     recs.push({
       kind: 'worst-matchup',
-      text: `Struggling vs ${nameForFighter(worstMatchup.opponentFighterId)}: ${worstMatchup.wins}-${worstMatchup.losses}`,
+      text: t('fighterAnalysis.practice.struggling', {
+        name: nameForFighter(worstMatchup.opponentFighterId),
+        wins: worstMatchup.wins,
+        losses: worstMatchup.losses,
+      }),
     });
   }
 
@@ -121,17 +128,23 @@ export function buildPracticeRecommendations(
   if (gap) {
     recs.push({
       kind: 'coverage-gap',
-      text: `No games vs ${nameForFighter(gap.opponentFighterId)} — you face them often`,
+      text: t('fighterAnalysis.practice.noGames', {
+        name: nameForFighter(gap.opponentFighterId),
+      }),
     });
   }
 
   const rankedStages = rankStagesByEvidence(fighterMatches, PRACTICE_STAGE_MIN_GAMES);
   const worstStage = rankedStages[rankedStages.length - 1];
   if (worstStage) {
-    const stageName = stagesById.get(worstStage.stageId)?.name ?? 'Unknown stage';
+    const stageName = stagesById.get(worstStage.stageId)?.name ?? t('common.unknown');
     recs.push({
       kind: 'stage-habit',
-      text: `You keep playing on ${stageName}: ${worstStage.wins}-${worstStage.losses}`,
+      text: t('fighterAnalysis.practice.stageHabit', {
+        stage: stageName,
+        wins: worstStage.wins,
+        losses: worstStage.losses,
+      }),
     });
   }
 

@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 import type { Fighter, GspPoint, GspSettings } from '@smash-tracker/shared';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -46,6 +47,7 @@ export function QuickLogger({
   lastPoint: GspPoint | null;
   settings: GspSettings;
 }) {
+  const { t } = useTranslation();
   const lastGsp = lastPoint?.gsp ?? null;
   const createMatch = useCreateMatch();
   const [opponentFighterId, setOpponentFighterId] = useState<number | undefined>(undefined);
@@ -67,16 +69,16 @@ export function QuickLogger({
 
   async function handleSubmit() {
     if (!opponentFighterId) {
-      toast.error("Choose the opponent's character.");
+      toast.error(t('gsp.logger.chooseOpponent'));
       return;
     }
     if (!result) {
-      toast.error('Mark this match as a win or loss.');
+      toast.error(t('gsp.logger.chooseResult'));
       return;
     }
     const gsp = parseGspNumber(gspInput);
     if (gsp === null) {
-      toast.error('Enter the GSP shown after the match — commas are fine, e.g. 10,300,000.');
+      toast.error(t('gsp.logger.invalidGsp'));
       return;
     }
 
@@ -113,10 +115,12 @@ export function QuickLogger({
       });
       const deltaLabel =
         delta === null ? '' : ` (${delta >= 0 ? '+' : ''}${delta.toLocaleString()} GSP)`;
-      toast.success(`Match logged! GSP ${gsp.toLocaleString()}${deltaLabel}${mmrDeltaLabel}`);
+      toast.success(
+        `${t('gsp.logger.logged', { gsp: gsp.toLocaleString() })}${deltaLabel}${mmrDeltaLabel}`,
+      );
       resetForNextMatch(gsp);
     } catch {
-      toast.error('Failed to log the match. Please try again.');
+      toast.error(t('gsp.logger.logFailed'));
     } finally {
       setSubmitting(false);
     }
@@ -126,7 +130,7 @@ export function QuickLogger({
     <Card>
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
-          Quick Logger
+          {t('gsp.logger.title')}
           <span className="flex items-center gap-1.5 text-sm font-normal text-muted-foreground">
             <img src={fighter.url} alt="" className="size-5 object-contain" />
             {fighter.name}
@@ -137,14 +141,14 @@ export function QuickLogger({
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <div className="flex flex-col gap-1.5">
             <label className="text-sm font-medium" htmlFor="gsp-logger-opponent">
-              Opponent Character
+              {t('gsp.logger.opponentCharacter')}
             </label>
             <Select
               value={opponentFighterId !== undefined ? String(opponentFighterId) : undefined}
               onValueChange={(v) => setOpponentFighterId(Number(v))}
             >
               <SelectTrigger id="gsp-logger-opponent" className="w-full">
-                <SelectValue placeholder="Select a character" />
+                <SelectValue placeholder={t('gsp.logger.selectCharacter')} />
               </SelectTrigger>
               <SelectContent>
                 {alphaSpriteList.map((s) => (
@@ -158,7 +162,7 @@ export function QuickLogger({
           </div>
 
           <div className="flex flex-col gap-1.5">
-            <span className="text-sm font-medium">Result</span>
+            <span className="text-sm font-medium">{t('matchForm.result')}</span>
             <ToggleGroup
               type="single"
               variant="outline"
@@ -167,11 +171,11 @@ export function QuickLogger({
                 if (value === 'win' || value === 'loss') setResult(value);
               }}
             >
-              <ToggleGroupItem value="win" aria-label="Win">
-                Win
+              <ToggleGroupItem value="win" aria-label={t('common.win')}>
+                {t('common.win')}
               </ToggleGroupItem>
-              <ToggleGroupItem value="loss" aria-label="Loss">
-                Loss
+              <ToggleGroupItem value="loss" aria-label={t('common.loss')}>
+                {t('common.loss')}
               </ToggleGroupItem>
             </ToggleGroup>
           </div>
@@ -180,7 +184,7 @@ export function QuickLogger({
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <div className="flex flex-col gap-1.5">
             <label className="text-sm font-medium" htmlFor="gsp-logger-gsp">
-              GSP After Match
+              {t('gsp.logger.gspAfterMatch')}
             </label>
             {/* type="text": browsers reject comma pastes into type="number"
                 outright, and elitegsp.com / the game's UI both format GSP
@@ -191,13 +195,13 @@ export function QuickLogger({
               inputMode="numeric"
               value={gspInput}
               onChange={(e) => setGspInput(e.target.value)}
-              placeholder="e.g. 9,420,000"
+              placeholder={t('gsp.logger.gspPlaceholder')}
             />
           </div>
 
           <div className="flex flex-col gap-1.5">
             <label className="text-sm font-medium" htmlFor="gsp-logger-stage">
-              Stage (optional)
+              {t('gsp.logger.stageOptional')}
             </label>
             <Select value={String(stageId)} onValueChange={(v) => setStageId(Number(v))}>
               <SelectTrigger id="gsp-logger-stage" className="w-full">
@@ -208,7 +212,7 @@ export function QuickLogger({
                   {NO_SELECTION_STAGE.name}
                 </SelectItem>
                 <SelectGroup>
-                  <SelectLabel>All stages</SelectLabel>
+                  <SelectLabel>{t('matchForm.allStages')}</SelectLabel>
                   {alphaStageList.map((s) => (
                     <SelectItem key={s.id} value={String(s.id)}>
                       <StageOption stage={s} />
@@ -221,7 +225,7 @@ export function QuickLogger({
         </div>
 
         <Button type="button" onClick={() => void handleSubmit()} disabled={submitting}>
-          {submitting ? 'Logging...' : 'Log Match'}
+          {submitting ? t('gsp.logger.logging') : t('gsp.logger.logMatch')}
         </Button>
       </CardContent>
     </Card>

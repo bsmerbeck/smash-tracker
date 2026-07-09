@@ -44,7 +44,13 @@
     "casual": "Casual",
     "competitive": "Competitivo",
     "unknown": "Desconocido",
-    "notAvailable": "n/d"
+    "notAvailable": "n/d",
+    "noMatchData": "Aún no hay datos de partidas.",
+    "rate": "Ratio",
+    "games_one": "{{count}} partida",
+    "games_other": "{{count}} partidas",
+    "rateOverSample": "({{rate}}% en {{total}})",
+    "goToDashboard": "Ir al Panel"
   },
   "filters": {
     "sourceAria": "Filtrar partidas por origen",
@@ -56,6 +62,41 @@
     "months12": "12 m"
   },
   "shared": {
+    "noFighters": {
+      "title": "¡Aún no has elegido ningún luchador!",
+      "subtitle": "Elige tus luchadores principal y secundarios para empezar a registrar partidas.",
+      "choosePrimary": "Elegir luchadores principales",
+      "chooseSecondary": "Elegir luchadores secundarios"
+    },
+    "matchDelete": {
+      "aria": "Eliminar partida",
+      "confirmTitle": "¿Eliminar esta partida?",
+      "deleted": "¡Partida eliminada!",
+      "deleteFailed": "No se pudo eliminar la partida. Inténtalo de nuevo."
+    },
+    "noMatches": {
+      "title": "¡Aún no has registrado ninguna partida!",
+      "subtitle": "Registra una partida en el Panel y vuelve aquí."
+    },
+    "vod": {
+      "title": "Notas de VOD",
+      "description": "Adjunta un enlace al VOD y notas con marca de tiempo, p. ej. «2:41 — castigo fallado al escudo».",
+      "url": "URL del VOD",
+      "timestamps": "Marcas de tiempo",
+      "noTimestamps": "Aún no hay notas con marca de tiempo.",
+      "timestampsAria": "Notas con marca de tiempo",
+      "deleteTimestamp": "Eliminar marca de tiempo {{time}}",
+      "timePlaceholder": "m:ss",
+      "timeAria": "Tiempo de la marca",
+      "notePlaceholder": "Nota",
+      "noteAria": "Nota de la marca",
+      "addTimestamp": "Añadir marca de tiempo",
+      "timeFormatError": "Introduce un tiempo como m:ss o h:mm:ss",
+      "noteRequired": "Introduce una nota para esta marca de tiempo",
+      "timestampLimit": "Máximo {{max}} marcas de tiempo por partida",
+      "saved": "¡Notas de VOD guardadas!",
+      "saveFailed": "No se pudieron guardar las notas de VOD. Inténtalo de nuevo."
+    },
     "filteredNotice": {
       "message": "Ninguna partida coincide con los filtros actuales.",
       "clear": "Borrar filtros"
@@ -73,18 +114,9 @@
   },
   "dashboard": {
     "loading": "Cargando tu panel...",
-    "empty": {
-      "title": "¡Aún no has elegido ningún luchador!",
-      "subtitle": "Elige tus luchadores principal y secundarios para empezar a registrar partidas.",
-      "choosePrimary": "Elegir luchadores principales",
-      "chooseSecondary": "Elegir luchadores secundarios"
-    },
     "hero": {
       "overallRecord": "Historial general",
       "winRate": "{{rate}}% de victorias",
-      "games_one": "{{count}} partida",
-      "games_other": "{{count}} partidas",
-      "noMatchData": "Aún no hay datos de partidas.",
       "form": "Forma",
       "streakWin": "{{count}}V",
       "streakLoss": "{{count}}D",
@@ -107,9 +139,6 @@
       "ratingDown": "Puntuación a la baja desde la última sesión",
       "ratingUnchanged": "Puntuación sin cambios desde la última sesión"
     },
-    "tracker": {
-      "rate": "Ratio"
-    },
     "formCurve": {
       "title": "Curva de forma",
       "window": "Ventana",
@@ -124,11 +153,7 @@
       "title": "Partidas anteriores",
       "limit": "Límite",
       "limitAria": "Límite de partidas",
-      "empty": "Aún no hay partidas registradas.",
-      "deleteAria": "Eliminar partida",
-      "confirmTitle": "¿Eliminar esta partida?",
-      "deleted": "¡Partida eliminada!",
-      "deleteFailed": "No se pudo eliminar la partida. Inténtalo de nuevo."
+      "empty": "Aún no hay partidas registradas."
     },
     "stages": {
       "title": "Escenarios más jugados",
@@ -222,6 +247,288 @@
       "deleteMatch": "Eliminar partida",
       "edited": "¡Partida editada!",
       "saveFailed": "No se pudo guardar la partida. Inténtalo de nuevo."
+    }
+  },
+  "gsp": {
+    "loading": "Cargando el rastreador de GSP...",
+    "selectFighterAria": "Seleccionar luchador",
+    "empty": {
+      "title": "Sigue tu ascenso de GSP",
+      "body": "El GSP (Poder Smash Global) es la clasificación online de quickplay de Smash Ultimate, registrada por personaje. Registra una partida de quickplay con el GSP de la pantalla de resultados y esta página graficará tu ascenso, desglosará tus ganancias y pérdidas y estimará cuánto te falta para Elite Smash.",
+      "cta": "Registrar una partida en el Panel"
+    },
+    "header": {
+      "title": "Rastreador de GSP",
+      "subtitle": "El Poder Smash Global es por personaje y Nintendo nunca ha publicado su fórmula exacta — todo lo de abajo es una estimación construida con tus propias partidas registradas y un modelo comunitario, obtenido por ingeniería inversa, del MMR oculto tras el GSP."
+    },
+    "deleteConfirm": {
+      "title": "¿Eliminar esta entrada de GSP?",
+      "body": "La partida y su lectura de GSP se eliminan juntas — esta acción no se puede deshacer.",
+      "deleted": "¡Entrada de GSP eliminada!",
+      "deleteFailed": "No se pudo eliminar la entrada. Inténtalo de nuevo."
+    },
+    "hero": {
+      "currentGsp": "GSP actual",
+      "latestReading": "última lectura",
+      "noGsp": "Aún no hay GSP registrado",
+      "estMmr": "MMR est.",
+      "tailReading": "lectura en la cola ({{zone}}) — aproximada",
+      "modelLink": "modelo de ingeniería inversa de la comunidad",
+      "modelAccuracy": "(±1 GSP en la curva principal; las colas son aproximadas)",
+      "eliteThreshold": "Umbral Elite",
+      "thresholdAria": "Umbral de Elite Smash",
+      "saveThreshold": "Guardar umbral",
+      "cancelThreshold": "Cancelar edición del umbral",
+      "editThreshold": "Editar umbral Elite",
+      "recalibrated": "recalibrado el {{date}}",
+      "fromAnchor": "según el ancla del modelo",
+      "computedCaption": "calculado · {{calibration}} · editarlo recalibra el modelo — copia el número actual de",
+      "invalidThreshold": "Introduce un número entero positivo — las comas valen, p. ej. 10,300,000.",
+      "recalibratedToast": "¡Modelo recalibrado con tu lectura del umbral!",
+      "thresholdSaveFailed": "No se pudo guardar el umbral Elite. Inténtalo de nuevo.",
+      "distanceToElite": "Distancia a Elite",
+      "elite": "ELITE",
+      "belowElite": "MMR {{mmr}} · por debajo de Elite ({{elite}})",
+      "recentWinRate": "% de victorias reciente",
+      "lastNGames_one": "última partida",
+      "lastNGames_other": "últimas {{count}} partidas"
+    },
+    "curve": {
+      "title": "Curva de GSP",
+      "gspViewAria": "Vista GSP",
+      "mmrViewAria": "Vista MMR",
+      "gspLabel": "GSP",
+      "eliteLine": "Umbral Elite",
+      "estMmrLabel": "MMR est.",
+      "eliteMmrLine": "Elite (MMR {{mmr}})",
+      "mmrCaption": "MMR oculto estimado detrás de cada lectura (modelo de ingeniería inversa de la comunidad) — a diferencia del GSP, no se infla con el tiempo, así que una línea plana significa nivel estable. Línea discontinua: entrada a Elite en MMR {{mmr}}.",
+      "gspCaption": "Cada punto es una lectura de GSP registrada tras una partida con este luchador. La línea discontinua es el umbral calculado de Elite Smash — una estimación del modelo comunitario, no un valor publicado por Nintendo.",
+      "clickHint": "Haz clic en un punto para editar esa lectura.",
+      "locked": "Registra al menos {{count}} partidas con lectura de GSP para este luchador para ver la curva."
+    },
+    "logger": {
+      "title": "Registro rápido",
+      "opponentCharacter": "Personaje del rival",
+      "selectCharacter": "Selecciona un personaje",
+      "gspAfterMatch": "GSP tras la partida",
+      "gspPlaceholder": "p. ej. 9 420 000",
+      "stageOptional": "Escenario (opcional)",
+      "logMatch": "Registrar partida",
+      "logging": "Registrando...",
+      "chooseOpponent": "Elige el personaje del rival.",
+      "chooseResult": "Marca esta partida como victoria o derrota.",
+      "invalidGsp": "Introduce el GSP que aparece tras la partida — las comas valen, p. ej. 10,300,000.",
+      "logged": "¡Partida registrada! GSP {{gsp}}",
+      "logFailed": "No se pudo registrar la partida. Inténtalo de nuevo."
+    },
+    "log": {
+      "title": "Registro de GSP",
+      "editEntry": "Editar entrada de GSP del {{date}}",
+      "deleteEntry": "Eliminar entrada de GSP del {{date}}",
+      "showRecent": "Mostrar solo recientes",
+      "showAll": "Mostrar las {{count}} entradas"
+    },
+    "gains": {
+      "title": "Análisis de ganancias",
+      "avgGainLifetime": "Ganancia media/victoria (total)",
+      "avgDropLifetime": "Pérdida media/derrota (total)",
+      "biggestGain": "Mayor ganancia individual",
+      "avgGainLast20": "Ganancia media/victoria (últimas 20)",
+      "avgDropLast20": "Pérdida media/derrota (últimas 20)",
+      "biggestDrop": "Mayor pérdida individual",
+      "perWinTitle": "Ganancias por victoria a lo largo del tiempo",
+      "shrinking": "— se reducen a medida que sube tu GSP",
+      "growing": "— al alza",
+      "winNumber": "Victoria n.º {{number}}",
+      "gainedGsp": "GSP ganado",
+      "empty": "Registra algunas victorias y derrotas con lecturas de GSP para ver tus tendencias."
+    },
+    "road": {
+      "title": "Camino a Elite",
+      "empty": "Registra una partida con lectura de GSP para este luchador para ver una proyección.",
+      "alreadyElite": "¡Ya estás en Elite Smash!",
+      "equilibriumTitle": "Estable en tu nivel",
+      "equilibriumBody": "Con tu {{rate}}% de victorias actual, el matchmaking considera que este es tu nivel ahora mismo — cada partida intercambia ~{{points}} MMR en ambos sentidos, así que lo que te hace subir es un porcentaje de victorias >50%, no jugar más partidas. Sigue trabajando los enfrentamientos de esta página y el número te seguirá.",
+      "cappedTitle": "más de {{max}} victorias netas",
+      "cappedBody": "Tu porcentaje de victorias apenas supera el 50%, así que el progreso esperado por partida es mínimo — una pequeña mejora del porcentaje lo acorta drásticamente.",
+      "projected_one": "~{{count}} partida más",
+      "projected_other": "~{{count}} partidas más",
+      "projectedCaption": "para Elite (MMR {{elite}}) a tus ~{{points}} MMR/partida y {{rate}}% de victorias (estimación del modelo comunitario)",
+      "historyOne": "Según tu propio historial de GSP: ~{{label}} partida más ({{model}}).",
+      "historyMany": "Según tu propio historial de GSP: ~{{label}} partidas más ({{model}}).",
+      "decayFit": "ajuste de ganancias decrecientes de V10",
+      "flatFallback": "promedio plano de V10",
+      "assumption1": "Asume que el matchmaking sigue emparejándote con rivales de MMR similar (cada partida intercambia ~{{points}} MMR, el valor de la tabla comunitaria para una partida igualada) y que tu porcentaje de victorias reciente se mantiene.",
+      "assumption2": "Basado en el modelo de MMR de ingeniería inversa de la comunidad, no en el algoritmo de Nintendo — una simulación, no una garantía."
+    },
+    "vsGlicko": {
+      "title": "MMR est. vs Glicko-2",
+      "mmrLabel": "MMR est. (normalizado)",
+      "glickoLabel": "Glicko-2 (normalizado)",
+      "caption": "Tu nivel en quickplay (MMR estimado de este luchador, modelo de ingeniería inversa de la comunidad) frente a tu Glicko-2 global (todos los luchadores/sesiones) — ambos normalizados a 0-100 en esta ventana porque sus escalas no están relacionadas. Comparar nivel contra nivel hace las formas honestamente comparables; una divergencia suele significar que tu forma en quickplay difiere de tu forma general."
+    }
+  },
+  "matchData": {
+    "loading": "Cargando datos de partidas...",
+    "title": "Historial de partidas",
+    "noMatches": "No tienes partidas; registra una y vuelve aquí para ver los datos.",
+    "table": {
+      "columns": {
+        "date": "Fecha",
+        "fighter": "Luchador",
+        "opponentFighter": "Rival",
+        "opponentName": "Nombre del rival",
+        "stage": "Escenario",
+        "matchType": "Tipo",
+        "win": "Resultado",
+        "tournament": "Torneo",
+        "notes": "Notas",
+        "manage": "Gestionar"
+      },
+      "editVod": "Editar notas de VOD",
+      "addVod": "Añadir notas de VOD",
+      "synced": "Sincronizada",
+      "syncedTitle": "Sincronizada desde {{source}} — los datos los gestiona la sincronización",
+      "editMatch": "Editar partida",
+      "searchPlaceholder": "Buscar en {{count}} registros...",
+      "searchAria": "Filtrar partidas",
+      "allOption": "Todos: {{label}}",
+      "columnsButton": "Columnas",
+      "toggleColumns": "Mostrar u ocultar columnas",
+      "exportCsv": "Exportar CSV",
+      "noneFound": "No se encontraron partidas.",
+      "pageOf": "Página {{page}} de {{total}}",
+      "rowsPerPage": "Filas por página",
+      "showN": "Mostrar {{count}}"
+    },
+    "roster": {
+      "title": "Uso del plantel",
+      "showAll": "Mostrar todos ({{count}} más)",
+      "showLess": "Mostrar menos"
+    },
+    "stages": {
+      "title": "Desglose por escenario",
+      "selectAria": "Seleccionar escenario",
+      "noneOnStage": "No hay partidas registradas en este escenario.",
+      "winsShort": "{{count}}V",
+      "lossesShort": "{{count}}D"
+    }
+  },
+  "matchups": {
+    "loading": "Cargando enfrentamientos...",
+    "noFightersSubtitle": "Elige tus luchadores principal y secundarios para empezar a registrar enfrentamientos.",
+    "you": "Tú",
+    "opponent": "Rival",
+    "vs": "vs",
+    "winRateTrend": "Tendencia del % de victorias",
+    "results": "Resultados del enfrentamiento",
+    "selectFighterAria": "Seleccionar tu luchador",
+    "selectOpponentAria": "Seleccionar luchador rival",
+    "selectPlaceholder": "Selecciona un luchador",
+    "record": {
+      "empty": "No hay partidas registradas contra este luchador",
+      "totalMatches": "Partidas totales"
+    },
+    "matrix": {
+      "title": "Matriz de enfrentamientos",
+      "showTop": "Mostrar top {{count}}",
+      "showAll": "Mostrar los {{count}}",
+      "empty": "Aún no hay partidas registradas — juega algunas para construir tu matriz de enfrentamientos.",
+      "yourFighterSr": "Tu luchador",
+      "cellAria": "{{fighter}} vs {{opponent}}: {{wins}}-{{losses}}"
+    },
+    "chart": {
+      "window": "Ventana",
+      "windowAria": "Ventana de tendencia",
+      "rolling5": "Últimas 5",
+      "rolling10": "Últimas 10",
+      "cumulative": "Acumulado",
+      "empty": "Registra una partida para ver la gráfica.",
+      "winRate": "% de victorias"
+    },
+    "insights": {
+      "title": "Análisis del enfrentamiento",
+      "minMatches": "Mín. de partidas por escenario",
+      "minMatchesAria": "Mínimo de partidas por escenario",
+      "empty": "Aún no hay partidas registradas para este enfrentamiento.",
+      "currentStreak": "Racha actual",
+      "streakWins": "{{count}} victorias",
+      "streakLosses": "{{count}} derrotas",
+      "longestWin": "Mayor racha de victorias",
+      "longestLoss": "Mayor racha de derrotas",
+      "recentForm": "Forma reciente (primero la más nueva)",
+      "bestStage": "Mejor escenario",
+      "worstStage": "Peor escenario",
+      "notEnoughStageData": "Aún no hay suficientes datos de escenarios.",
+      "byMatchType": "Por tipo de partida"
+    },
+    "stageTable": {
+      "title": "Desglose por escenario",
+      "stage": "Escenario",
+      "record": "Historial",
+      "winRate": "% de victorias"
+    },
+    "counterpick": {
+      "title": "Asesor de counterpicks",
+      "gather": "Reúne más datos: cada escenario necesita al menos {{count}} partidas registradas en este enfrentamiento para poder sugerir picks o bans.",
+      "pickThese": "Elige estos",
+      "banThese": "Banea / evita estos",
+      "unknownStage": "Escenario desconocido"
+    },
+    "opponentSplit": {
+      "title": "Por rival",
+      "empty": "Aún no hay rivales con nombre registrados para este enfrentamiento."
+    },
+    "table": {
+      "empty": "¡Aún no hay partidas registradas!",
+      "date": "Fecha",
+      "result": "Resultado",
+      "manage": "Gestionar"
+    }
+  },
+  "fighterAnalysis": {
+    "loading": "Cargando análisis del luchador...",
+    "noFightersSubtitle": "Elige tus luchadores principal y secundarios para empezar el análisis.",
+    "title": "Análisis de luchador",
+    "selectAria": "Seleccionar luchador",
+    "selectPlaceholder": "Selecciona un luchador",
+    "hero": {
+      "rateAndGames": "{{rate}}% de victorias · {{count}} partidas",
+      "noMatches": "Aún no hay partidas registradas con este luchador.",
+      "streakWin": "Racha de {{count}}V",
+      "streakLoss": "Racha de {{count}}D",
+      "share": "{{pct}}% de tus partidas",
+      "last10": "Últimas 10 (primero la más nueva)",
+      "formRolling": "Forma (ventana de 10)",
+      "typeColumn": "Tipo"
+    },
+    "stageMastery": {
+      "title": "Dominio de escenarios",
+      "bestPick": "Mejor pick:",
+      "banWorthy": "Digno de ban:",
+      "empty": "Aún no hay datos de escenarios — registra partidas con este luchador para construir la cuadrícula."
+    },
+    "coverage": {
+      "title": "Cobertura de enfrentamientos",
+      "empty": "Aún no hay datos de rivales — registra partidas para ver a quién te enfrentas.",
+      "thin": "datos escasos",
+      "none": "sin datos"
+    },
+    "practice": {
+      "title": "Recomendaciones de práctica",
+      "empty": "Aún no hay datos suficientes para una recomendación — sigue registrando partidas con este luchador.",
+      "struggling": "Dificultades contra {{name}}: {{wins}}-{{losses}}",
+      "noGames": "Sin partidas contra {{name}} — te lo encuentras a menudo",
+      "stageHabit": "Sigues jugando en {{stage}}: {{wins}}-{{losses}}"
+    },
+    "guide": {
+      "title": "Guía de escenarios por enfrentamiento",
+      "empty": "Aún no hay datos de enfrentamientos — registra partidas con este luchador para construir la guía."
+    },
+    "opponents": {
+      "title": "Rivales",
+      "empty": "Aún no hay rivales con nombre registrados.",
+      "matches": "Partidas"
     }
   }
 }

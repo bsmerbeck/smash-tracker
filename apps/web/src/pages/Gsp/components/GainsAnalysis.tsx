@@ -1,3 +1,5 @@
+import { useTranslation } from 'react-i18next';
+import type { TFunction } from 'i18next';
 import {
   BarElement,
   CategoryScale,
@@ -14,12 +16,12 @@ import { chartColors, darkChartOptions } from '@/lib/chartTheme';
 
 ChartJS.register(CategoryScale, LinearScale, BarElement, Tooltip, Legend);
 
-function buildPerWinGainsData(perWinGains: number[]) {
+function buildPerWinGainsData(perWinGains: number[], t: TFunction) {
   return {
     labels: perWinGains.map((_, i) => String(i + 1)),
     datasets: [
       {
-        label: 'GSP gained',
+        label: t('gsp.gains.gainedGsp'),
         data: perWinGains,
         backgroundColor: chartColors.red,
         borderRadius: 2,
@@ -28,7 +30,7 @@ function buildPerWinGainsData(perWinGains: number[]) {
   };
 }
 
-function buildPerWinGainsOptions(): ChartOptions<'bar'> {
+function buildPerWinGainsOptions(t: TFunction): ChartOptions<'bar'> {
   const theme = darkChartOptions();
   return {
     responsive: true,
@@ -47,7 +49,7 @@ function buildPerWinGainsOptions(): ChartOptions<'bar'> {
         borderColor: chartColors.tooltipBorder,
         borderWidth: 1,
         callbacks: {
-          title: (items) => `Win #${items[0]?.label ?? ''}`,
+          title: (items) => t('gsp.gains.winNumber', { number: items[0]?.label ?? '' }),
           label: (item) => `+${Number(item.parsed.y).toLocaleString()} GSP`,
         },
       },
@@ -76,57 +78,56 @@ function formatGsp(value: number | null): string {
  * bell-curve tail effect).
  */
 export function GainsAnalysis({ stats }: { stats: GspGainStats }) {
+  const { t } = useTranslation();
   const hasData = stats.perWinGains.length > 0 || stats.avgDropPerLossLifetime !== null;
 
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Gains Analysis</CardTitle>
+        <CardTitle>{t('gsp.gains.title')}</CardTitle>
       </CardHeader>
       <CardContent className="flex flex-col gap-4">
         {hasData ? (
           <>
             <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
               <StatBlock
-                label="Avg gain/win (lifetime)"
+                label={t('gsp.gains.avgGainLifetime')}
                 value={formatGsp(stats.avgGainPerWinLifetime)}
               />
               <StatBlock
-                label="Avg drop/loss (lifetime)"
+                label={t('gsp.gains.avgDropLifetime')}
                 value={formatGsp(stats.avgDropPerLossLifetime)}
               />
-              <StatBlock label="Biggest single gain" value={formatGsp(stats.biggestGain)} />
+              <StatBlock label={t('gsp.gains.biggestGain')} value={formatGsp(stats.biggestGain)} />
               <StatBlock
-                label="Avg gain/win (last 20)"
+                label={t('gsp.gains.avgGainLast20')}
                 value={formatGsp(stats.avgGainPerWinLast20)}
               />
               <StatBlock
-                label="Avg drop/loss (last 20)"
+                label={t('gsp.gains.avgDropLast20')}
                 value={formatGsp(stats.avgDropPerLossLast20)}
               />
-              <StatBlock label="Biggest single drop" value={formatGsp(stats.biggestDrop)} />
+              <StatBlock label={t('gsp.gains.biggestDrop')} value={formatGsp(stats.biggestDrop)} />
             </div>
 
             {stats.perWinGains.length > 0 && (
               <div>
                 <p className="mb-1 text-sm font-medium text-muted-foreground">
-                  Per-win gains over time
-                  {stats.gainTrend === 'shrinking' && ' — shrinking as your GSP climbs'}
-                  {stats.gainTrend === 'growing' && ' — trending up'}
+                  {t('gsp.gains.perWinTitle')}
+                  {stats.gainTrend === 'shrinking' && ` ${t('gsp.gains.shrinking')}`}
+                  {stats.gainTrend === 'growing' && ` ${t('gsp.gains.growing')}`}
                 </p>
                 <div className="h-32">
                   <Bar
-                    data={buildPerWinGainsData(stats.perWinGains)}
-                    options={buildPerWinGainsOptions()}
+                    data={buildPerWinGainsData(stats.perWinGains, t)}
+                    options={buildPerWinGainsOptions(t)}
                   />
                 </div>
               </div>
             )}
           </>
         ) : (
-          <p className="text-sm text-muted-foreground">
-            Log a few wins and losses with GSP readings to see your gain/loss trends.
-          </p>
+          <p className="text-sm text-muted-foreground">{t('gsp.gains.empty')}</p>
         )}
       </CardContent>
     </Card>

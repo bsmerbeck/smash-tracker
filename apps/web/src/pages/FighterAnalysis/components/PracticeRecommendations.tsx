@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next';
 import type { Match } from '@smash-tracker/shared';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { getFighterById } from '@/data/sprites';
@@ -16,23 +17,23 @@ export function PracticeRecommendations({
   allFilteredMatches: Match[];
   fighterMatches: Match[];
 }) {
+  const { t } = useTranslation();
   const coverage = buildMatchupCoverage(allFilteredMatches, fighterMatches);
   const recs = buildPracticeRecommendations(
     fighterMatches,
     coverage,
-    (fighterId) => getFighterById(fighterId)?.name ?? 'Unknown',
+    (fighterId) => getFighterById(fighterId)?.name ?? t('common.unknown'),
+    t,
   );
 
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Practice Recommendations</CardTitle>
+        <CardTitle>{t('fighterAnalysis.practice.title')}</CardTitle>
       </CardHeader>
       <CardContent>
         {recs.length === 0 ? (
-          <p className="text-sm text-muted-foreground">
-            Not enough data yet for a recommendation — keep reporting matches with this fighter.
-          </p>
+          <p className="text-sm text-muted-foreground">{t('fighterAnalysis.practice.empty')}</p>
         ) : (
           <ul className="flex flex-col gap-2 text-sm">
             {recs.map((rec) => (

@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next';
 import {
   CategoryScale,
   Chart as ChartJS,
@@ -41,6 +42,7 @@ export function FighterHero({
   fighterMatches: Match[];
   allMatches: Match[];
 }) {
+  const { t } = useTranslation();
   const { record, sharePct, streak, sparkline } = buildFighterHero(fighterMatches, allMatches);
   const typeRecords = getMatchTypeRecords(fighterMatches);
   const hasMatches = record.total > 0;
@@ -61,13 +63,14 @@ export function FighterHero({
                   {record.wins}-{record.losses}
                 </span>
                 <p className="text-sm text-muted-foreground">
-                  {record.winRate}% win rate &middot; {record.total} games
+                  {t('fighterAnalysis.hero.rateAndGames', {
+                    rate: record.winRate,
+                    count: record.total,
+                  })}
                 </p>
               </div>
             ) : (
-              <p className="text-sm text-muted-foreground">
-                No matches recorded for this fighter yet.
-              </p>
+              <p className="text-sm text-muted-foreground">{t('fighterAnalysis.hero.noMatches')}</p>
             )}
 
             {hasMatches && (
@@ -78,20 +81,23 @@ export function FighterHero({
                     : 'bg-destructive/15 text-destructive'
                 }`}
               >
-                {streak.count}
-                {streak.isWin ? 'W' : 'L'} streak
+                {streak.isWin
+                  ? t('fighterAnalysis.hero.streakWin', { count: streak.count })
+                  : t('fighterAnalysis.hero.streakLoss', { count: streak.count })}
               </span>
             )}
 
             {hasMatches && (
-              <span className="text-sm text-muted-foreground">{sharePct}% of your games</span>
+              <span className="text-sm text-muted-foreground">
+                {t('fighterAnalysis.hero.share', { pct: sharePct })}
+              </span>
             )}
           </div>
 
           {hasMatches && (
             <div>
               <h3 className="mb-2 text-sm font-medium text-muted-foreground">
-                Last 10 (newest first)
+                {t('fighterAnalysis.hero.last10')}
               </h3>
               <WinLossPips matches={fighterMatches} limit={10} />
             </div>
@@ -99,7 +105,9 @@ export function FighterHero({
 
           {sparkline.length > 1 && (
             <div className="h-24">
-              <h3 className="mb-1 text-sm font-medium text-muted-foreground">Form (rolling 10)</h3>
+              <h3 className="mb-1 text-sm font-medium text-muted-foreground">
+                {t('fighterAnalysis.hero.formRolling')}
+              </h3>
               <div className="h-16">
                 <Line
                   data={{
@@ -121,16 +129,18 @@ export function FighterHero({
         </div>
 
         <div className="w-full lg:w-72">
-          <h3 className="mb-2 text-sm font-medium text-muted-foreground">By Match Type</h3>
+          <h3 className="mb-2 text-sm font-medium text-muted-foreground">
+            {t('matchups.insights.byMatchType')}
+          </h3>
           {typeRecords.length === 0 ? (
-            <p className="text-sm text-muted-foreground">No matches yet.</p>
+            <p className="text-sm text-muted-foreground">{t('shared.pips.empty')}</p>
           ) : (
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Type</TableHead>
-                  <TableHead>Record</TableHead>
-                  <TableHead>Rate</TableHead>
+                  <TableHead>{t('fighterAnalysis.hero.typeColumn')}</TableHead>
+                  <TableHead>{t('matchups.stageTable.record')}</TableHead>
+                  <TableHead>{t('common.rate')}</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>

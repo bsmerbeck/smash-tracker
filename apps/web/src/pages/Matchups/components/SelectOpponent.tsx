@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next';
 import {
   Select,
   SelectContent,
@@ -14,6 +15,7 @@ import { useMatchupsContext } from '../MatchupsContext';
  * showed every SpriteList entry, not just fighters previously faced).
  */
 export function SelectOpponent() {
+  const { t } = useTranslation();
   const { opponent, setOpponent } = useMatchupsContext();
 
   return (
@@ -26,8 +28,8 @@ export function SelectOpponent() {
         }
       }}
     >
-      <SelectTrigger aria-label="Select opponent fighter" className="w-[220px]">
-        <SelectValue placeholder="Select a fighter" />
+      <SelectTrigger aria-label={t('matchups.selectOpponentAria')} className="w-[220px]">
+        <SelectValue placeholder={t('matchups.selectPlaceholder')} />
       </SelectTrigger>
       <SelectContent>
         {alphaSpriteList.map((sprite) => (

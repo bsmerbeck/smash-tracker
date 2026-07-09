@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import type { GspPoint, GspSettings } from '@smash-tracker/shared';
 import { GSP_MODEL, estimateT, mmrToGsp } from '@smash-tracker/shared';
+// Bundled-English i18n instance (see src/test/setup.ts) — the builders take
+// `t`/locale so chart labels localize; passing i18n.t keeps assertions English.
+import i18n from '@/i18n';
 import { buildGspCurveData, buildGspCurveOptions, buildMmrCurveData } from './GspCurve';
 
 describe('buildGspCurveData', () => {
@@ -10,7 +13,7 @@ describe('buildGspCurveData', () => {
       { time: 2, gsp: 9_100_000, win: true },
     ];
 
-    const data = buildGspCurveData(series, 10_000_000);
+    const data = buildGspCurveData(series, 10_000_000, i18n.t, 'en');
 
     expect(data.labels).toHaveLength(2);
     expect(data.datasets[0]!.data).toEqual([9_000_000, 9_100_000]);
@@ -19,7 +22,7 @@ describe('buildGspCurveData', () => {
   });
 
   it('handles an empty series', () => {
-    const data = buildGspCurveData([], 10_000_000);
+    const data = buildGspCurveData([], 10_000_000, i18n.t, 'en');
     expect(data.labels).toEqual([]);
     expect(data.datasets[0]!.data).toEqual([]);
     expect(data.datasets[1]!.data).toEqual([]);
@@ -39,7 +42,7 @@ describe('buildMmrCurveData', () => {
       { time: t1Ms, gsp: Math.round(mmrToGsp(1100, estimateT(t1Ms))), win: true },
     ];
 
-    const data = buildMmrCurveData(series, neverSaved);
+    const data = buildMmrCurveData(series, neverSaved, i18n.t, 'en');
 
     expect(data.labels).toHaveLength(2);
     expect(data.datasets[0]!.label).toBe('Est. MMR');
@@ -57,12 +60,12 @@ describe('buildMmrCurveData', () => {
     ];
     expect(series[1]!.gsp).toBeGreaterThan(series[0]!.gsp);
 
-    const data = buildMmrCurveData(series, neverSaved);
+    const data = buildMmrCurveData(series, neverSaved, i18n.t, 'en');
     expect(data.datasets[0]!.data).toEqual([1050, 1050]);
   });
 
   it('handles an empty series', () => {
-    const data = buildMmrCurveData([], neverSaved);
+    const data = buildMmrCurveData([], neverSaved, i18n.t, 'en');
     expect(data.labels).toEqual([]);
     expect(data.datasets[0]!.data).toEqual([]);
     expect(data.datasets[1]!.data).toEqual([]);
@@ -76,14 +79,14 @@ describe('buildGspCurveOptions', () => {
   ];
 
   it('omits click/hover handlers when no onPointClick is given', () => {
-    const options = buildGspCurveOptions(series);
+    const options = buildGspCurveOptions(series, 'en');
     expect(options.onClick).toBeUndefined();
     expect(options.onHover).toBeUndefined();
   });
 
   it('resolves a click on the GSP dataset to the point index', () => {
     const clicks: number[] = [];
-    const options = buildGspCurveOptions(series, (index) => clicks.push(index));
+    const options = buildGspCurveOptions(series, 'en', (index) => clicks.push(index));
 
     type OnClick = NonNullable<typeof options.onClick>;
     const onClick = options.onClick as OnClick;
@@ -104,7 +107,7 @@ describe('buildGspCurveOptions', () => {
 
   it('ignores clicks that only hit the Elite reference line', () => {
     const clicks: number[] = [];
-    const options = buildGspCurveOptions(series, (index) => clicks.push(index));
+    const options = buildGspCurveOptions(series, 'en', (index) => clicks.push(index));
     (options.onClick as NonNullable<typeof options.onClick>).call(
       undefined as never,
       undefined as never,
