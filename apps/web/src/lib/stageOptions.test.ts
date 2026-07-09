@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Match } from '@smash-tracker/shared';
-import { alphaStageList, getGroupedStageOptions } from './stageOptions';
+import { STANDARD_ONLINE_STAGE_IDS, alphaStageList, getGroupedStageOptions } from './stageOptions';
 
 function makeMatch(mapId: number, mapName: string, id: string): Match {
   return {
@@ -68,5 +68,27 @@ describe('getGroupedStageOptions', () => {
     const groups = getGroupedStageOptions(matches, [1, 3]);
 
     expect(groups.all).toBe(alphaStageList);
+  });
+
+  it('has no standard group unless the picker asks for one', () => {
+    const groups = getGroupedStageOptions(matches, [1]);
+
+    expect(groups.standard).toEqual([]);
+  });
+
+  it('returns the standard online trio in game order (Small Battlefield between its siblings)', () => {
+    const groups = getGroupedStageOptions(matches, [], STANDARD_ONLINE_STAGE_IDS);
+
+    expect(groups.standard.map((s) => s.name)).toEqual([
+      'Battlefield',
+      'Small Battlefield',
+      'Final Destination',
+    ]);
+  });
+
+  it('excludes favorited stages from the standard group (they are already pinned)', () => {
+    const groups = getGroupedStageOptions(matches, [113], STANDARD_ONLINE_STAGE_IDS);
+
+    expect(groups.standard.map((s) => s.name)).toEqual(['Battlefield', 'Final Destination']);
   });
 });
