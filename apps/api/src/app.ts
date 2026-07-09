@@ -17,6 +17,7 @@ import opponentAliasesRoutes from './routes/opponentAliases.js';
 import opponentNotesRoutes from './routes/opponentNotes.js';
 import gspSettingsRoutes from './routes/gspSettings.js';
 import gspReadingsRoutes from './routes/gspReadings.js';
+import gspLiveRoutes from './routes/gspLive.js';
 import stageFavoritesRoutes from './routes/stageFavorites.js';
 import startggRoutes from './routes/startgg.js';
 import parryggRoutes from './routes/parrygg.js';
@@ -36,6 +37,8 @@ export interface BuildAppOptions {
   firebase: FirebaseServices;
   /** One origin, or multiple (e.g. parsed from a comma-separated env var). */
   corsOrigin?: string | string[];
+  /** Overridable fetch for the gsptiers.com live-thresholds call (tests). Defaults to global fetch — no prod config needed. */
+  gspLiveFetch?: typeof fetch;
   /** start.gg integration config; null/omitted disables those routes (503). */
   startgg?: StartggConfig | null;
   /** Overridable fetch for the start.gg OAuth/GraphQL calls (tests). */
@@ -152,6 +155,7 @@ export function buildApp(options: BuildAppOptions) {
       await api.register(opponentNotesRoutes);
       await api.register(gspSettingsRoutes);
       await api.register(gspReadingsRoutes);
+      await api.register(gspLiveRoutes, { fetchImpl: options.gspLiveFetch });
       await api.register(stageFavoritesRoutes);
       await api.register(tournamentsRoutes);
       await api.register(groupsRoutes);

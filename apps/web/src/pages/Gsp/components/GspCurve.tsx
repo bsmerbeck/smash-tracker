@@ -12,12 +12,13 @@ import {
   type ChartOptions,
 } from 'chart.js';
 import { Line } from 'react-chartjs-2';
-import type { GspPoint, GspSettings } from '@smash-tracker/shared';
+import type { GspPoint, GspSettings, TCalibration } from '@smash-tracker/shared';
 import { GSP_MODEL } from '@smash-tracker/shared';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { chartColors, darkChartOptions, redLineDataset } from '@/lib/chartTheme';
 import { calibrationFromSettings, computedEliteThreshold, toMmrSeries } from '../lib/gspMmrModel';
+import { useModelCalibration } from '../lib/useModelCalibration';
 import { useNowMs } from '../lib/useNowMs';
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Tooltip, Legend);
@@ -93,8 +94,9 @@ export function buildMmrCurveData(
   settings: GspSettings,
   t: TFunction,
   locale: string,
+  /** V17.1: pass `useModelCalibration`'s value to fold in the live gsptiers.com reading; defaults to the manual-edit-only calibration. */
+  calibration: TCalibration | undefined = calibrationFromSettings(settings),
 ) {
-  const calibration = calibrationFromSettings(settings);
   const mmrSeries = toMmrSeries(series, calibration);
   return {
     labels: mmrSeries.map((p) => formatPointLabel(p.time, locale)),
@@ -212,7 +214,8 @@ export function GspCurve({
   const [view, setView] = useState<GspCurveView>('gsp');
   const hasEnoughReadings = series.length >= GSP_CURVE_UNLOCK_THRESHOLD;
 
-  const eliteThreshold = computedEliteThreshold(nowMs, calibrationFromSettings(settings));
+  const calibration = useModelCalibration(settings);
+  const eliteThreshold = computedEliteThreshold(nowMs, calibration);
 
   return (
     <Card>
@@ -244,7 +247,7 @@ export function GspCurve({
               <Line
                 data={
                   view === 'mmr'
-                    ? buildMmrCurveData(series, settings, t, i18n.language)
+                    ? buildMmrCurveData(series, settings, t, i18n.language, calibration)
                     : buildGspCurveData(series, eliteThreshold, t, i18n.language)
                 }
                 options={buildGspCurveOptions(series, i18n.language, onPointClick, t)}

@@ -85,8 +85,12 @@ function round1(value: number): number {
  * and top 20%, but sorting by GSP keeps the ladder monotonic even if the
  * threshold ever drifts past a fraction boundary.
  */
-export function getGspTierLadder(t: number): GspTierBoundary[] {
-  const max = estimateMaxGsp(t);
+export function getGspTierLadder(t: number, options?: { maxGsp?: number }): GspTierBoundary[] {
+  // V17.1: a live upstream max reading (see gspLive.ts) replaces the
+  // estimateMaxGsp ratio model when available — an actual observation beats
+  // the captured-ratio estimate, and a few hours of staleness costs only
+  // ~hundreds of GSP against bands tens of thousands wide.
+  const max = options?.maxGsp ?? estimateMaxGsp(t);
   const elite = eliteThresholdGsp(t);
 
   const rows: GspTierBoundary[] = GSP_TIER_FRACTIONS.map(({ id, fraction }) => ({

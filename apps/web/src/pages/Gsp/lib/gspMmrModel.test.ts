@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import type { GspPoint, GspSettings } from '@smash-tracker/shared';
+import type { GspLive, GspPoint, GspSettings } from '@smash-tracker/shared';
 import { GSP_MODEL, eliteThresholdGsp, estimateT, gspToMmr, mmrToGsp } from '@smash-tracker/shared';
 import {
+  bestCalibration,
   calibrationFromSettings,
   computedEliteThreshold,
   estimateMmrAt,
@@ -107,5 +108,37 @@ describe('toMmrSeries', () => {
 
   it('returns an empty array for an empty series', () => {
     expect(toMmrSeries([])).toEqual([]);
+  });
+});
+
+describe('bestCalibration (V17.1)', () => {
+  const live: GspLive = {
+    elite: 14_813_136,
+    max: 16_368_515,
+    fetchedAt: 2_000,
+    source: 'gsptiers.com',
+  };
+
+  it('returns undefined with neither a manual edit nor a live reading', () => {
+    expect(bestCalibration({ eliteThreshold: 10_000_000, updatedAt: 0 })).toBeUndefined();
+    expect(bestCalibration({ eliteThreshold: 10_000_000, updatedAt: 0 }, null)).toBeUndefined();
+  });
+
+  it('uses the live reading when the user never edited manually', () => {
+    const calibration = bestCalibration({ eliteThreshold: 10_000_000, updatedAt: 0 }, live);
+    expect(calibration).toEqual({ eliteThresholdGsp: live.elite, atMs: live.fetchedAt });
+  });
+
+  it('prefers whichever observation is fresher', () => {
+    const olderManual = bestCalibration({ eliteThreshold: 15_000_000, updatedAt: 1_000 }, live);
+    expect(olderManual).toEqual({ eliteThresholdGsp: live.elite, atMs: live.fetchedAt });
+
+    const newerManual = bestCalibration({ eliteThreshold: 15_000_000, updatedAt: 3_000 }, live);
+    expect(newerManual).toEqual({ eliteThresholdGsp: 15_000_000, atMs: 3_000 });
+  });
+
+  it('falls back to the manual edit when no live reading exists', () => {
+    const calibration = bestCalibration({ eliteThreshold: 15_000_000, updatedAt: 3_000 });
+    expect(calibration).toEqual({ eliteThresholdGsp: 15_000_000, atMs: 3_000 });
   });
 });
