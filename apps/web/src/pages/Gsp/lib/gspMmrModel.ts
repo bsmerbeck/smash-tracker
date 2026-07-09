@@ -51,7 +51,8 @@ export interface MmrPoint {
   mmr: number;
   /** 'main' readings are ±1-GSP-accurate; 'top'/'bottom' fall in the approximate linear tails. */
   zone: GspZone;
-  win: boolean;
+  /** Carried through from the source point — `null` for calibration readings (V17). */
+  win: boolean | null;
 }
 
 /** Estimated MMR for a single GSP reading taken at `atMs` (t evaluated at the reading's own time — see module doc). */

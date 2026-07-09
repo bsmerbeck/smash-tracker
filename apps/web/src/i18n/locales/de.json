@@ -319,7 +319,8 @@
       "mmrCaption": "Geschätzte versteckte MMR hinter jeder Ablesung (Community-Modell per Reverse Engineering) — anders als die GSP inflationiert sie nicht mit der Zeit: Eine flache Linie bedeutet konstantes Niveau. Gestrichelte Linie: Elite-Einstieg bei MMR {{mmr}}.",
       "gspCaption": "Jeder Punkt ist eine nach dem Match erfasste GSP-Ablesung für diesen Kämpfer. Die gestrichelte Linie ist die berechnete Elite-Smash-Schwelle — eine Schätzung des Community-Modells, kein von Nintendo veröffentlichter Wert.",
       "clickHint": "Klicke einen Punkt an, um die Ablesung zu bearbeiten.",
-      "locked": "Erfasse mindestens {{count}} Matches mit GSP-Ablesung für diesen Kämpfer, um die Kurve zu sehen."
+      "locked": "Erfasse mindestens {{count}} Matches mit GSP-Ablesung für diesen Kämpfer, um die Kurve zu sehen.",
+      "setManually": "manuell gesetzt"
     },
     "logger": {
       "title": "Schnell-Logger",
@@ -334,14 +335,16 @@
       "chooseResult": "Markiere dieses Match als Sieg oder Niederlage.",
       "invalidGsp": "Gib die nach dem Match angezeigte GSP ein — Kommas sind okay, z. B. 10,300,000.",
       "logged": "Match erfasst! GSP {{gsp}}",
-      "logFailed": "Match konnte nicht erfasst werden. Bitte erneut versuchen."
+      "logFailed": "Match konnte nicht erfasst werden. Bitte erneut versuchen.",
+      "setGspButton": "GSP setzen, ohne ein Match zu loggen"
     },
     "log": {
       "title": "GSP-Log",
       "editEntry": "GSP-Eintrag vom {{date}} bearbeiten",
       "deleteEntry": "GSP-Eintrag vom {{date}} löschen",
       "showRecent": "Nur aktuelle anzeigen",
-      "showAll": "Alle {{count}} Einträge anzeigen"
+      "showAll": "Alle {{count}} Einträge anzeigen",
+      "setBadge": "Gesetzt"
     },
     "gains": {
       "title": "Gewinn-Analyse",
@@ -397,6 +400,20 @@
       "mmrLabel": "Gesch. MMR (normalisiert)",
       "glickoLabel": "Glicko-2 (normalisiert)",
       "caption": "Dein Quickplay-Rating (geschätzte MMR für diesen Kämpfer, Community-Modell per Reverse Engineering) gegen dein gesamtes Glicko-2-Rating (alle Kämpfer/Sitzungen) — beide über dieses Fenster auf 0-100 normalisiert, da ihre Rohskalen nichts miteinander zu tun haben. Rating gegen Rating macht die Formen ehrlich vergleichbar; Abweichungen bedeuten meist, dass deine Quickplay-Form von deiner Gesamtform abweicht."
+    },
+    "setGsp": {
+      "title": "GSP setzen",
+      "description": "Halte das aktuell im Spiel angezeigte GSP fest — zu Sessionbeginn (GSP steigt, während du weg bist) oder nach Matches, die nicht zählen sollen. Deltas und Gewinn-/Verlust-Statistiken starten von dieser Basis neu.",
+      "label": "Aktuelles GSP",
+      "save": "GSP setzen",
+      "saved": "GSP auf {{gsp}} gesetzt.",
+      "saveFailed": "Der Messwert konnte nicht gespeichert werden. Bitte versuche es erneut."
+    },
+    "editReading": {
+      "title": "GSP-Messwert bearbeiten",
+      "description": "Korrigiere den Wert dieses manuell gesetzten Messwerts. Datum und Kämpfer bleiben unverändert.",
+      "saved": "Messwert aktualisiert.",
+      "saveFailed": "Der Messwert konnte nicht aktualisiert werden. Bitte versuche es erneut."
     }
   },
   "matchData": {

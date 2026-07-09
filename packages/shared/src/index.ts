@@ -38,5 +38,6 @@ export * from './billing.js';
 export * from './meta.js';
 export * from './matchupAdvisor.js';
 export * from './gsp.js';
+export * from './gspReading.js';
 export * from './gspMmr.js';
 export * from './gspTiers.js';
