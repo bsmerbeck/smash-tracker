@@ -1,4 +1,7 @@
+import { useEffect, useRef } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useTranslation } from 'react-i18next';
+import { toast } from 'sonner';
 import { api } from '@/lib/api';
 import { useAuth } from '@/hooks/useAuth';
 
@@ -35,6 +38,46 @@ export function useStartggSync() {
       ]);
     },
   });
+}
+
+/**
+ * Fires the FIRST sync automatically for a freshly-linked start.gg account:
+ * linked with no `lastSyncAt` yet — the API stamps `lastSyncAt` after every
+ * sync, even one that imports nothing, so this triggers at most once per
+ * link. Community feedback: after "sign up with start.gg" nothing imported
+ * until people discovered Settings → Integrations → "Sync now". Mounting
+ * this once in MainLayout covers both entry points — the login flow (which
+ * lands on the dashboard) and linking from the Integrations page. A failed
+ * attempt doesn't retry until the next full page load; the manual "Sync
+ * now" button remains the recovery path.
+ */
+export function useStartggAutoSync() {
+  const { t } = useTranslation();
+  const { data: status } = useStartggStatus();
+  // v5 mutate functions are referentially stable; the ref guard below is
+  // what actually prevents re-fires (status refetches re-run the effect).
+  const { mutateAsync: runSync } = useStartggSync();
+  const attempted = useRef(false);
+
+  useEffect(() => {
+    if (attempted.current || status == null || !status.linked || status.lastSyncAt != null) {
+      return;
+    }
+    attempted.current = true;
+    toast.info(t('integrations.startgg.autoSyncStarted'));
+    runSync()
+      .then((summary) => {
+        toast.success(
+          t('integrations.startgg.autoSyncDone', {
+            imported: summary.imported,
+            sets: summary.sets,
+          }),
+        );
+      })
+      .catch(() => {
+        toast.error(t('integrations.startgg.autoSyncFailed'));
+      });
+  }, [status, runSync, t]);
 }
 
 export function useStartggUnlink() {

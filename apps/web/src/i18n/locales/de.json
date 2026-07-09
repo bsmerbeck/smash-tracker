@@ -1028,7 +1028,10 @@
       "connect": "start.gg-Konto verbinden",
       "linked": "start.gg-Konto verknüpft!",
       "linkFailed": "start.gg-Verknüpfung fehlgeschlagen ({{reason}})",
-      "unknownError": "unbekannter Fehler"
+      "unknownError": "unbekannter Fehler",
+      "autoSyncStarted": "Deine start.gg-Turniermatches werden importiert…",
+      "autoSyncDone": "start.gg-Import abgeschlossen: {{imported}} Spiele aus {{sets}} Sets.",
+      "autoSyncFailed": "start.gg-Import fehlgeschlagen. Du kannst es unter Einstellungen → Integrationen erneut versuchen."
     },
     "parrygg": {
       "verified": "Verifiziert",
