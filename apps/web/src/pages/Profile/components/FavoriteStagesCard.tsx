@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 import { ChevronsUpDown, X } from 'lucide-react';
 import type { Stage } from '@smash-tracker/shared';
@@ -26,6 +27,7 @@ import { useStageFavorites, useUpdateStageFavorites } from '@/hooks/useStageFavo
  * order they were added in, which is the order pickers show them.
  */
 export function FavoriteStagesCard() {
+  const { t } = useTranslation();
   const { data: favorites, isLoading } = useStageFavorites();
   const update = useUpdateStageFavorites();
   const [addOpen, setAddOpen] = useState(false);
@@ -40,7 +42,7 @@ export function FavoriteStagesCard() {
     update.mutate(
       { stageIds: nextIds },
       {
-        onError: () => toast.error('Could not save your favorite stages. Please try again.'),
+        onError: () => toast.error(t('profile.favoriteStages.saveError')),
       },
     );
   }
@@ -48,17 +50,14 @@ export function FavoriteStagesCard() {
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Favorite Stages</CardTitle>
-        <CardDescription>
-          Pinned to the top of stage pickers when logging matches — handy for the usual
-          quickplay/Elite Smash rotation.
-        </CardDescription>
+        <CardTitle>{t('profile.favoriteStages.title')}</CardTitle>
+        <CardDescription>{t('profile.favoriteStages.description')}</CardDescription>
       </CardHeader>
       <CardContent className="flex flex-col gap-4">
         {isLoading ? (
-          <p className="text-sm text-muted-foreground">Loading your favorite stages...</p>
+          <p className="text-sm text-muted-foreground">{t('profile.favoriteStages.loading')}</p>
         ) : favoriteStages.length === 0 ? (
-          <p className="text-sm text-muted-foreground">No favorite stages yet.</p>
+          <p className="text-sm text-muted-foreground">{t('profile.favoriteStages.empty')}</p>
         ) : (
           <ul className="flex flex-col gap-2">
             {favoriteStages.map((stage) => (
@@ -71,7 +70,7 @@ export function FavoriteStagesCard() {
                   type="button"
                   variant="ghost"
                   size="icon"
-                  aria-label={`Remove ${stage.name} from favorites`}
+                  aria-label={t('profile.favoriteStages.removeAria', { name: stage.name })}
                   disabled={update.isPending}
                   onClick={() => save(stageIds.filter((id) => id !== stage.id))}
                 >
@@ -90,20 +89,20 @@ export function FavoriteStagesCard() {
               role="combobox"
               // Combobox is not a name-from-content role, so the visible
               // text doesn't become the accessible name on its own.
-              aria-label="Add a favorite stage"
+              aria-label={t('profile.favoriteStages.addAria')}
               aria-expanded={addOpen}
               disabled={isLoading || update.isPending}
               className="justify-between font-normal"
             >
-              Add a favorite stage...
+              {t('profile.favoriteStages.add')}
               <ChevronsUpDown className="opacity-50" />
             </Button>
           </PopoverTrigger>
           <PopoverContent className="w-[--radix-popover-trigger-width] p-0">
             <Command>
-              <CommandInput placeholder="Search stages..." />
+              <CommandInput placeholder={t('profile.favoriteStages.searchPlaceholder')} />
               <CommandList>
-                <CommandEmpty>No stage found.</CommandEmpty>
+                <CommandEmpty>{t('profile.favoriteStages.noStage')}</CommandEmpty>
                 <CommandGroup>
                   {addableStages.map((stage) => (
                     <CommandItem

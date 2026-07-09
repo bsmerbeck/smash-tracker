@@ -1,4 +1,5 @@
 import type { User as FirebaseUser } from 'firebase/auth';
+import { useTranslation } from 'react-i18next';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { describeSignInMethods, formatMemberSince } from '../accountInfo';
@@ -24,19 +25,20 @@ export function AccountCard({
   parryggLinked: boolean;
   parryggGamerTag: string | undefined;
 }) {
-  const memberSince = formatMemberSince(user.metadata.creationTime);
-  const signInMethods = describeSignInMethods(user, { startggLinked, parryggLinked });
+  const { t, i18n } = useTranslation();
+  const memberSince = formatMemberSince(user.metadata.creationTime, i18n.language);
+  const signInMethods = describeSignInMethods(user, { startggLinked, parryggLinked }, t);
   const identity = user.email
     ? user.email
     : parryggGamerTag
-      ? `parry.gg account (no email) — linked to ${parryggGamerTag}`
-      : 'parry.gg account (no email)';
+      ? t('profile.account.parryggNoEmailLinked', { tag: parryggGamerTag })
+      : t('profile.account.parryggNoEmail');
 
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Account</CardTitle>
-        <CardDescription>Your smash-tracker identity.</CardDescription>
+        <CardTitle>{t('profile.account.title')}</CardTitle>
+        <CardDescription>{t('profile.account.description')}</CardDescription>
       </CardHeader>
       <CardContent className="flex flex-col gap-4">
         <div className="flex items-center gap-3">
@@ -46,12 +48,14 @@ export function AccountCard({
           <div className="flex flex-col">
             <span className="font-medium">{identity}</span>
             {memberSince && (
-              <span className="text-sm text-muted-foreground">Member since {memberSince}</span>
+              <span className="text-sm text-muted-foreground">
+                {t('profile.account.memberSince', { date: memberSince })}
+              </span>
             )}
           </div>
         </div>
         <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-sm">
-          <dt className="text-muted-foreground">Sign-in methods</dt>
+          <dt className="text-muted-foreground">{t('profile.account.signInMethods')}</dt>
           <dd className="font-medium">{signInMethods}</dd>
         </dl>
       </CardContent>

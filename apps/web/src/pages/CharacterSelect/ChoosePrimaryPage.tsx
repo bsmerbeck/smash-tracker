@@ -1,18 +1,17 @@
+import { useTranslation } from 'react-i18next';
 import { CharacterSelectScreen } from './CharacterSelectScreen';
 
 /** Ports legacy/src/screens/CharacterSelect/PrimarySelect. */
 export function ChoosePrimaryPage() {
+  const { t } = useTranslation();
   return (
     <CharacterSelectScreen
       slot="primary"
-      heading="Choose Your Primaries"
-      description={
-        'Begin by selecting your primary fighters. You can search using the input below. ' +
-        "To remove a character, simply click it again. When you're finished, press Save."
-      }
+      heading={t('characterSelect.primaryHeading')}
+      description={t('characterSelect.primaryDescription')}
       destinations={[
-        { label: 'Save and Choose Secondaries', href: '/choose-secondary' },
-        { label: 'Save and go to Dashboard', href: '/dashboard' },
+        { label: t('characterSelect.saveAndSecondaries'), href: '/choose-secondary' },
+        { label: t('characterSelect.saveAndDashboard'), href: '/dashboard' },
       ]}
     />
   );

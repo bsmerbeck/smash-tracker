@@ -1,12 +1,14 @@
 import { Link } from 'react-router';
+import { useTranslation } from 'react-i18next';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { useFighters } from '@/hooks/useFighters';
 import { SpriteList } from '@/data/sprites';
 
 function FighterSprites({ ids }: { ids: number[] }) {
+  const { t } = useTranslation();
   const sprites = ids.map((id) => SpriteList.find((s) => s.id === id)).filter((s) => s != null);
   if (sprites.length === 0) {
-    return <span className="text-sm text-muted-foreground">None selected</span>;
+    return <span className="text-sm text-muted-foreground">{t('profile.fighters.none')}</span>;
   }
   return (
     <div className="flex flex-wrap gap-2">
@@ -27,25 +29,30 @@ function FighterSprites({ ids }: { ids: number[] }) {
  * changing either half of the selection.
  */
 export function FightersCard() {
+  const { t } = useTranslation();
   const { data: fighters, isLoading } = useFighters();
 
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Fighters</CardTitle>
-        <CardDescription>Your primary and secondary Smash Ultimate fighters.</CardDescription>
+        <CardTitle>{t('profile.fighters.title')}</CardTitle>
+        <CardDescription>{t('profile.fighters.description')}</CardDescription>
       </CardHeader>
       <CardContent className="flex flex-col gap-4">
         {isLoading ? (
-          <p className="text-sm text-muted-foreground">Loading your fighters...</p>
+          <p className="text-sm text-muted-foreground">{t('profile.fighters.loading')}</p>
         ) : (
           <>
             <div className="flex flex-col gap-2">
-              <span className="text-sm font-medium text-muted-foreground">Primary</span>
+              <span className="text-sm font-medium text-muted-foreground">
+                {t('profile.fighters.primary')}
+              </span>
               <FighterSprites ids={fighters?.primary ?? []} />
             </div>
             <div className="flex flex-col gap-2">
-              <span className="text-sm font-medium text-muted-foreground">Secondary</span>
+              <span className="text-sm font-medium text-muted-foreground">
+                {t('profile.fighters.secondary')}
+              </span>
               <FighterSprites ids={fighters?.secondary ?? []} />
             </div>
           </>
@@ -54,7 +61,7 @@ export function FightersCard() {
           to="/choose-primary"
           className="self-start text-sm text-muted-foreground underline underline-offset-4 hover:text-foreground"
         >
-          Edit fighters
+          {t('profile.fighters.edit')}
         </Link>
       </CardContent>
     </Card>

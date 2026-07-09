@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { UserInfo } from 'firebase/auth';
+import i18n from '@/i18n';
 import { describeSignInMethods, formatMemberSince, getSecurityState } from './accountInfo';
 
 /** Minimal `UserInfo`-shaped provider entry for `providerData` arrays in tests. */
@@ -39,36 +40,53 @@ describe('describeSignInMethods', () => {
       describeSignInMethods(
         { providerData: [provider('password'), provider('google.com')] },
         { startggLinked: false, parryggLinked: false },
+        i18n.t,
       ),
     ).toBe('Email & password, Google');
   });
 
   it('infers start.gg when providerData is empty but a start.gg account is linked', () => {
     expect(
-      describeSignInMethods({ providerData: [] }, { startggLinked: true, parryggLinked: false }),
+      describeSignInMethods(
+        { providerData: [] },
+        { startggLinked: true, parryggLinked: false },
+        i18n.t,
+      ),
     ).toBe('start.gg');
   });
 
   it('infers parry.gg verification when providerData is empty but parry.gg is linked', () => {
     expect(
-      describeSignInMethods({ providerData: [] }, { startggLinked: false, parryggLinked: true }),
+      describeSignInMethods(
+        { providerData: [] },
+        { startggLinked: false, parryggLinked: true },
+        i18n.t,
+      ),
     ).toBe('parry.gg verification');
   });
 
   it('falls back to "Custom sign-in" when nothing is known or linked', () => {
     expect(
-      describeSignInMethods({ providerData: [] }, { startggLinked: false, parryggLinked: false }),
+      describeSignInMethods(
+        { providerData: [] },
+        { startggLinked: false, parryggLinked: false },
+        i18n.t,
+      ),
     ).toBe('Custom sign-in');
   });
 });
 
 describe('formatMemberSince', () => {
   it('formats a creationTime string as "Month Year"', () => {
-    expect(formatMemberSince('Mon, 05 Jan 2026 00:00:00 GMT')).toBe('January 2026');
+    expect(formatMemberSince('Mon, 05 Jan 2026 00:00:00 GMT', 'en')).toBe('January 2026');
+  });
+
+  it('formats with the given locale', () => {
+    expect(formatMemberSince('Mon, 05 Jan 2026 00:00:00 GMT', 'es')).toBe('enero de 2026');
   });
 
   it('returns null when creationTime is missing or unparseable', () => {
-    expect(formatMemberSince(undefined)).toBeNull();
-    expect(formatMemberSince('not a date')).toBeNull();
+    expect(formatMemberSince(undefined, 'en')).toBeNull();
+    expect(formatMemberSince('not a date', 'en')).toBeNull();
   });
 });

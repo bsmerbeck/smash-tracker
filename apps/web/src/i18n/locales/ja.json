@@ -1048,5 +1048,110 @@
       "verifiedToast": "parry.ggアカウントを認証しました！",
       "codeNotFound": "認証コードがまだ見つかりません。もう一度お試しください。"
     }
+  },
+  "profile": {
+    "title": "プロフィール",
+    "account": {
+      "title": "アカウント",
+      "description": "あなたのsmash-trackerアカウント情報。",
+      "parryggNoEmailLinked": "parry.ggアカウント（メールなし）— {{tag}}と連携中",
+      "parryggNoEmail": "parry.ggアカウント（メールなし）",
+      "memberSince": "{{date}}から利用中",
+      "signInMethods": "ログイン方法",
+      "methodEmailPassword": "メールとパスワード",
+      "methodParrygg": "parry.gg認証",
+      "methodCustom": "カスタムログイン"
+    },
+    "security": {
+      "title": "セキュリティ",
+      "descPassword": "ログインに使うパスワードを変更します。",
+      "descResetOnly": "アカウントにパスワードログインを追加します。",
+      "descNoEmail": "アカウントのログイン方法。",
+      "resetExplainer": "現在はパスワードなしでログインしています。パスワードリセットメールを送信するとパスワードを設定でき、今後はメールとパスワードでもログインできるようになります。",
+      "sendReset": "パスワードリセットメールを送信",
+      "sending": "送信中…",
+      "resetSent": "{{email}}にリセットメールを送信しました。リンクからパスワードログインを追加してください。",
+      "noEmailBody": "このアカウントにはパスワードもメールもありません。ログインはparry.ggプロフィール認証で行います。連携の管理は<integrationsLink>連携</integrationsLink>ページから。"
+    },
+    "password": {
+      "currentLabel": "現在のパスワード",
+      "newLabel": "新しいパスワード",
+      "confirmLabel": "新しいパスワード（確認）",
+      "submit": "パスワードを変更",
+      "updating": "更新中…",
+      "updated": "パスワードを更新しました！",
+      "currentRequired": "現在のパスワードを入力してください",
+      "minLength": "パスワードは6文字以上にしてください",
+      "confirmRequired": "新しいパスワードを確認してください",
+      "mismatch": "パスワードが一致しません",
+      "wrongCurrent": "現在のパスワードが正しくありません。",
+      "weak": "パスワードは6文字以上にしてください。",
+      "requiresRecentLogin": "セキュリティのため、一度ログアウトして再ログインしてからお試しください。",
+      "genericError": "問題が発生しました。もう一度お試しください。"
+    },
+    "connected": {
+      "title": "連携アカウント",
+      "description": "試合の自動インポートに使うstart.ggとparry.ggの連携。",
+      "linked": "連携済み",
+      "notLinked": "未連携",
+      "manage": "連携ページで管理"
+    },
+    "fighters": {
+      "title": "ファイター",
+      "description": "スマブラSPのメインとサブのファイター。",
+      "loading": "ファイターを読み込み中...",
+      "primary": "メイン",
+      "secondary": "サブ",
+      "none": "未選択",
+      "edit": "ファイターを編集"
+    },
+    "favoriteStages": {
+      "title": "お気に入りステージ",
+      "description": "試合を記録するときにステージ選択の先頭に固定されます。いつものクイックプレイ/VIPマッチのローテーションに便利です。",
+      "loading": "お気に入りステージを読み込み中...",
+      "empty": "お気に入りステージはまだありません。",
+      "removeAria": "{{name}}をお気に入りから削除",
+      "add": "お気に入りステージを追加...",
+      "addAria": "お気に入りステージを追加",
+      "searchPlaceholder": "ステージを検索...",
+      "noStage": "ステージが見つかりません。",
+      "saveError": "お気に入りステージを保存できませんでした。もう一度お試しください。"
+    },
+    "billing": {
+      "title": "課金",
+      "description": "AIスカウティングレポート用のクレジット。",
+      "freeAccess": "無料アクセス",
+      "credits_one": "{{count}}クレジット",
+      "credits_other": "{{count}}クレジット",
+      "packsStartAt_one": "パックは{{price}}（レポート{{count}}件分）からです。",
+      "packsStartAt_other": "パックは{{price}}（レポート{{count}}件分）からです。",
+      "buyCredits": "クレジットを購入"
+    },
+    "data": {
+      "title": "あなたのデータ",
+      "description": "smash-trackerに記録されているあなたのデータ。",
+      "totalMatches": "総試合数",
+      "fromStartgg": "start.ggから",
+      "fromParrygg": "parry.ggから",
+      "manual": "手動で記録",
+      "groupsJoined": "参加グループ",
+      "aiReports": "生成したAIレポート"
+    }
+  },
+  "characterSelect": {
+    "primaryHeading": "メインファイターを選択",
+    "primaryDescription": "まずはメインのファイターを選びましょう。下の入力欄で検索できます。キャラクターを外すには、もう一度クリックしてください。選び終わったら「保存」を押してください。",
+    "secondaryHeading": "サブファイターを選択",
+    "secondaryDescription": "まずはサブのファイターを選びましょう。下の入力欄で検索できます。キャラクターを外すには、もう一度クリックしてください。選び終わったら「保存」を押してSmash Trackerを使い始めましょう！",
+    "saveAndSecondaries": "保存してサブを選ぶ",
+    "saveAndDashboard": "保存してダッシュボードへ",
+    "saveAndPrimaries": "保存してメインを選ぶ",
+    "loading": "ファイターを読み込み中...",
+    "selected_one": "選択中（{{count}}）",
+    "selected_other": "選択中（{{count}}）",
+    "emptySelected": "ファイターはまだ選択されていません。下のファイターをクリックして追加しましょう。",
+    "filterPlaceholder": "名前で絞り込み...",
+    "saved": "ファイターを保存しました！",
+    "saveFailed": "ファイターを保存できませんでした。もう一度お試しください。"
   }
 }
