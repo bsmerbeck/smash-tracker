@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
@@ -44,6 +45,7 @@ function draftFromNote(note: OpponentNote | undefined): DraftState {
  * reset in-progress edit state from a prop change.
  */
 export function TendenciesCard({ opponent, note }: TendenciesCardProps) {
+  const { t, i18n } = useTranslation();
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState<DraftState>(() => draftFromNote(note));
   const upsertNote = useUpsertOpponentNote();
@@ -91,19 +93,17 @@ export function TendenciesCard({ opponent, note }: TendenciesCardProps) {
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Tendencies</CardTitle>
-        <CardDescription>
-          Your own scouting notes for this opponent — not derived from match history.
-        </CardDescription>
+        <CardTitle>{t('opponents.tendencies.title')}</CardTitle>
+        <CardDescription>{t('opponents.tendencies.description')}</CardDescription>
       </CardHeader>
       <CardContent className="flex flex-col gap-4">
         {editing ? (
           <>
             <div className="flex flex-col gap-2">
-              <Label htmlFor="tendencies-habits">Habits</Label>
+              <Label htmlFor="tendencies-habits">{t('opponents.tendencies.habits')}</Label>
               <Textarea
                 id="tendencies-habits"
-                placeholder="Opening habits, punish routes, recovery mixups..."
+                placeholder={t('opponents.tendencies.habitsPlaceholder')}
                 value={draft.habits}
                 maxLength={OPPONENT_NOTE_TEXT_MAX_LENGTH}
                 onChange={(e) => setDraft((d) => ({ ...d, habits: e.target.value }))}
@@ -112,7 +112,9 @@ export function TendenciesCard({ opponent, note }: TendenciesCardProps) {
             </div>
 
             <div className="flex flex-col gap-2">
-              <Label>Ban these (max {OPPONENT_NOTE_BAN_STAGES_MAX})</Label>
+              <Label>
+                {t('opponents.tendencies.banThese', { count: OPPONENT_NOTE_BAN_STAGES_MAX })}
+              </Label>
               <ToggleGroup
                 type="multiple"
                 variant="outline"
@@ -124,7 +126,7 @@ export function TendenciesCard({ opponent, note }: TendenciesCardProps) {
                   }
                   setDraft((d) => ({ ...d, banThese: ids }));
                 }}
-                aria-label="Stages to ban against this opponent"
+                aria-label={t('opponents.tendencies.banAria')}
                 className="flex-wrap justify-start gap-2"
               >
                 {banStageOptions.map((stage) => (
@@ -141,10 +143,10 @@ export function TendenciesCard({ opponent, note }: TendenciesCardProps) {
             </div>
 
             <div className="flex flex-col gap-2">
-              <Label htmlFor="tendencies-watch-for">Watch for</Label>
+              <Label htmlFor="tendencies-watch-for">{t('opponents.tendencies.watchFor')}</Label>
               <Textarea
                 id="tendencies-watch-for"
-                placeholder="Reads, mind games, tech chases to expect next set..."
+                placeholder={t('opponents.tendencies.watchForPlaceholder')}
                 value={draft.watchFor}
                 maxLength={OPPONENT_NOTE_TEXT_MAX_LENGTH}
                 onChange={(e) => setDraft((d) => ({ ...d, watchFor: e.target.value }))}
@@ -154,10 +156,10 @@ export function TendenciesCard({ opponent, note }: TendenciesCardProps) {
 
             <div className="flex flex-wrap items-center gap-2">
               <Button type="button" onClick={handleSave} disabled={upsertNote.isPending}>
-                {upsertNote.isPending ? 'Saving...' : 'Save'}
+                {upsertNote.isPending ? t('opponents.tendencies.saving') : t('common.save')}
               </Button>
               <Button type="button" variant="outline" onClick={cancelEditing}>
-                Cancel
+                {t('common.cancel')}
               </Button>
               {hasContent && (
                 <Button
@@ -167,7 +169,7 @@ export function TendenciesCard({ opponent, note }: TendenciesCardProps) {
                   disabled={deleteNote.isPending}
                   onClick={handleClear}
                 >
-                  Delete note
+                  {t('opponents.tendencies.deleteNote')}
                 </Button>
               )}
             </div>
@@ -176,14 +178,21 @@ export function TendenciesCard({ opponent, note }: TendenciesCardProps) {
           <>
             {note?.habits && (
               <div>
-                <h4 className="text-sm font-medium text-muted-foreground">Habits</h4>
+                <h4 className="text-sm font-medium text-muted-foreground">
+                  {t('opponents.tendencies.habits')}
+                </h4>
                 <p className="whitespace-pre-wrap text-sm">{note.habits}</p>
               </div>
             )}
             {note?.banThese && note.banThese.length > 0 && (
               <div>
-                <h4 className="mb-1 text-sm font-medium text-muted-foreground">Ban these</h4>
-                <ul className="flex flex-wrap gap-2" aria-label="Stages to ban">
+                <h4 className="mb-1 text-sm font-medium text-muted-foreground">
+                  {t('opponents.tendencies.banTheseView')}
+                </h4>
+                <ul
+                  className="flex flex-wrap gap-2"
+                  aria-label={t('opponents.tendencies.banViewAria')}
+                >
                   {note.banThese.map((stageId) => {
                     const stage = alphaStageList.find((s) => s.id === stageId);
                     if (!stage) {
@@ -200,29 +209,30 @@ export function TendenciesCard({ opponent, note }: TendenciesCardProps) {
             )}
             {note?.watchFor && (
               <div>
-                <h4 className="text-sm font-medium text-muted-foreground">Watch for</h4>
+                <h4 className="text-sm font-medium text-muted-foreground">
+                  {t('opponents.tendencies.watchFor')}
+                </h4>
                 <p className="whitespace-pre-wrap text-sm">{note.watchFor}</p>
               </div>
             )}
             <div className="flex items-center justify-between gap-2">
               {note?.updatedAt && (
                 <p className="text-xs text-muted-foreground">
-                  Saved {new Date(note.updatedAt).toLocaleString()}
+                  {t('opponents.tendencies.savedAt', {
+                    date: new Date(note.updatedAt).toLocaleString(i18n.language),
+                  })}
                 </p>
               )}
               <Button type="button" variant="outline" size="sm" onClick={startEditing}>
-                Edit
+                {t('opponents.tendencies.edit')}
               </Button>
             </div>
           </>
         ) : (
           <div className="flex flex-col items-center gap-3 py-6 text-center">
-            <p className="text-sm text-muted-foreground">
-              No scouting notes yet. Jot down habits, stages to ban, or things to watch for before
-              your next set.
-            </p>
+            <p className="text-sm text-muted-foreground">{t('opponents.tendencies.empty')}</p>
             <Button type="button" onClick={startEditing}>
-              Add a note
+              {t('opponents.tendencies.addNote')}
             </Button>
           </div>
         )}

@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Printer, Copy, Check } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import type { EvidencePacket } from '../evidencePacket';
@@ -14,6 +15,7 @@ const COPY_FEEDBACK_MS = 2000;
  * message to a teammate before a set.
  */
 export function ExportH2HButton({ packet }: { packet: EvidencePacket }) {
+  const { t } = useTranslation();
   const [copied, setCopied] = useState(false);
 
   async function handleCopy() {
@@ -32,11 +34,11 @@ export function ExportH2HButton({ packet }: { packet: EvidencePacket }) {
     <div className="flex flex-wrap items-center gap-2">
       <Button type="button" variant="outline" size="sm" onClick={() => window.print()}>
         <Printer />
-        Export H2H
+        {t('opponents.export.print')}
       </Button>
       <Button type="button" variant="ghost" size="sm" onClick={handleCopy}>
         {copied ? <Check /> : <Copy />}
-        {copied ? 'Copied!' : 'Copy as text'}
+        {copied ? t('opponents.export.copied') : t('opponents.export.copy')}
       </Button>
     </div>
   );

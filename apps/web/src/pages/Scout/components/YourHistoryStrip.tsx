@@ -1,4 +1,5 @@
 import { Link } from 'react-router';
+import { useTranslation } from 'react-i18next';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { WinLossPips } from '@/components/WinLossPips';
@@ -13,13 +14,16 @@ import type { OpponentProfile } from '@/lib/stats';
  * just a compact pointer to it.
  */
 export function YourHistoryStrip({ profile }: { profile: OpponentProfile }) {
+  const { t } = useTranslation();
   return (
     <Card className="border-primary/30 bg-primary/5">
       <CardHeader>
-        <CardTitle>Your History vs Them</CardTitle>
+        <CardTitle>{t('scout.history.title')}</CardTitle>
         <CardDescription>
-          You've played {profile.opponent} before — {profile.record.total} game
-          {profile.record.total === 1 ? '' : 's'} recorded in your own match history.
+          {t('scout.history.description', {
+            name: profile.opponent,
+            count: profile.record.total,
+          })}
         </CardDescription>
       </CardHeader>
       <CardContent className="flex flex-wrap items-center justify-between gap-4">
@@ -27,13 +31,13 @@ export function YourHistoryStrip({ profile }: { profile: OpponentProfile }) {
           <span className="text-lg font-semibold">
             {profile.record.wins}-{profile.record.losses}{' '}
             <span className="text-sm font-normal text-muted-foreground">
-              ({profile.record.winRate}% win rate)
+              {t('scout.history.rate', { rate: profile.record.winRate })}
             </span>
           </span>
           <WinLossPips matches={profile.recent} />
         </div>
         <Button asChild variant="outline" size="sm">
-          <Link to="/opponents">Full scouting report</Link>
+          <Link to="/opponents">{t('scout.history.fullReport')}</Link>
         </Button>
       </CardContent>
     </Card>

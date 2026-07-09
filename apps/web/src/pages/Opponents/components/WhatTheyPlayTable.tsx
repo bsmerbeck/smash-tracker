@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import {
   Table,
@@ -16,23 +17,24 @@ import { getFighterById } from '@/data/sprites';
  * reliably win sit at the top.
  */
 export function WhatTheyPlayTable({ byTheirFighter }: { byTheirFighter: RankedMatchup[] }) {
+  const { t } = useTranslation();
   return (
     <Card>
       <CardHeader>
-        <CardTitle>What They Play</CardTitle>
-        <CardDescription>Ordered by how reliably you beat it.</CardDescription>
+        <CardTitle>{t('opponents.whatTheyPlay.title')}</CardTitle>
+        <CardDescription>{t('opponents.whatTheyPlay.description')}</CardDescription>
       </CardHeader>
       <CardContent>
         {byTheirFighter.length === 0 ? (
-          <p className="text-sm text-muted-foreground">No characters recorded yet.</p>
+          <p className="text-sm text-muted-foreground">{t('opponents.whatTheyPlay.empty')}</p>
         ) : (
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Character</TableHead>
-                <TableHead>Record</TableHead>
-                <TableHead>Win Rate</TableHead>
-                <TableHead className="text-right">Games</TableHead>
+                <TableHead>{t('opponents.whatTheyPlay.character')}</TableHead>
+                <TableHead>{t('matchups.stageTable.record')}</TableHead>
+                <TableHead>{t('matchups.stageTable.winRate')}</TableHead>
+                <TableHead className="text-right">{t('trends.monthly.games')}</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -45,7 +47,7 @@ export function WhatTheyPlayTable({ byTheirFighter }: { byTheirFighter: RankedMa
                         {sprite && (
                           <img src={sprite.url} alt="" className="size-6 object-contain" />
                         )}
-                        <span>{sprite?.name ?? 'Unknown'}</span>
+                        <span>{sprite?.name ?? t('common.unknown')}</span>
                       </div>
                     </TableCell>
                     <TableCell>

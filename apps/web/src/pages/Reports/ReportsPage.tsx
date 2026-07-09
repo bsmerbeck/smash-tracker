@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { Trans, useTranslation } from 'react-i18next';
 import { ChevronDown, ChevronRight, Sparkles } from 'lucide-react';
 import { scoutIdentityKey, type ScoutReportRecord } from '@smash-tracker/shared';
 import { useReportsConfig, useScoutReportsList } from '@/hooks/useScoutReports';
@@ -52,6 +53,7 @@ function ReportGroupRow({
   selectedId: string | null;
   onSelect: (record: ScoutReportRecord) => void;
 }) {
+  const { t, i18n } = useTranslation();
   const [expanded, setExpanded] = useState(false);
   const newest = group.reports[0];
   if (!newest) {
@@ -70,7 +72,7 @@ function ReportGroupRow({
           <span className="font-medium">{group.gamerTag}</span>
           <span className="text-xs text-muted-foreground">{sourceLabel(group.source)}</span>
           <span className="ml-auto text-xs text-muted-foreground">
-            {new Date(newest.createdAt).toLocaleDateString()}
+            {new Date(newest.createdAt).toLocaleDateString(i18n.language)}
           </span>
         </Button>
         {group.reports.length > 1 && (
@@ -80,7 +82,7 @@ function ReportGroupRow({
             size="icon"
             className="size-8 shrink-0"
             onClick={() => setExpanded((v) => !v)}
-            aria-label={expanded ? 'Hide older reports' : 'Show older reports'}
+            aria-label={expanded ? t('reports.hideOlder') : t('reports.showOlder')}
             aria-expanded={expanded}
           >
             {expanded ? <ChevronDown className="size-4" /> : <ChevronRight className="size-4" />}
@@ -97,9 +99,9 @@ function ReportGroupRow({
                 className="h-auto w-full justify-between px-2 py-1.5 font-normal"
                 onClick={() => onSelect(record)}
               >
-                <span className="text-sm text-muted-foreground">Older report</span>
+                <span className="text-sm text-muted-foreground">{t('reports.olderReport')}</span>
                 <span className="text-xs text-muted-foreground">
-                  {new Date(record.createdAt).toLocaleDateString()}
+                  {new Date(record.createdAt).toLocaleDateString(i18n.language)}
                 </span>
               </Button>
             </li>
@@ -130,6 +132,7 @@ function ReportGroupRow({
  * generated yet", which shows the ordinary empty state).
  */
 export function ReportsPage() {
+  const { t } = useTranslation();
   const reportsConfig = useReportsConfig();
   const reportsList = useScoutReportsList();
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -142,36 +145,35 @@ export function ReportsPage() {
     <div className="mx-auto flex max-w-3xl flex-col gap-6">
       <div className="flex items-center gap-2">
         <Sparkles className="size-6 text-primary" />
-        <h1 className="text-2xl font-semibold tracking-tight">AI Reports</h1>
+        <h1 className="text-2xl font-semibold tracking-tight">{t('reports.title')}</h1>
       </div>
 
       {reportsConfig.isSuccess && !enabled && (
         <div className="rounded-lg border border-dashed p-8 text-center text-sm text-muted-foreground">
-          AI reports aren't enabled for this account yet.
+          {t('reports.notEnabled')}
         </div>
       )}
 
       {enabled && (
         <>
           {reportsList.isLoading && (
-            <p className="text-sm text-muted-foreground">Loading your reports…</p>
+            <p className="text-sm text-muted-foreground">{t('reports.loading')}</p>
           )}
 
           {reportsList.isSuccess && groups.length === 0 && (
             <div className="rounded-lg border border-dashed p-16 text-center text-sm text-muted-foreground">
-              No AI scouting reports yet. Generate one from the{' '}
-              <a href="/scout" className="underline">
-                Scout a Player
-              </a>{' '}
-              page.
+              <Trans
+                i18nKey="reports.empty"
+                components={{ scoutLink: <a href="/scout" className="underline" /> }}
+              />
             </div>
           )}
 
           {groups.length > 0 && (
             <Card>
               <CardHeader>
-                <CardTitle>Your Reports</CardTitle>
-                <CardDescription>Grouped by player, most recently scouted first.</CardDescription>
+                <CardTitle>{t('reports.yourReports')}</CardTitle>
+                <CardDescription>{t('reports.groupedBy')}</CardDescription>
               </CardHeader>
               <CardContent className="flex flex-col gap-3">
                 {groups.map((group) => (
