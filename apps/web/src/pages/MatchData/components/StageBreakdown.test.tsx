@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { Match } from '@smash-tracker/shared';
@@ -54,6 +54,31 @@ describe('StageBreakdown', () => {
     // Final Destination (id 3) appears in Favorites and again in All stages.
     // Exact name: /Final Destination/ would also catch "(Gen. Final Destination)".
     expect(screen.getAllByRole('option', { name: 'Final Destination' })).toHaveLength(2);
+  });
+
+  it('reports a heart click via onToggleFavorite without selecting the stage', async () => {
+    const user = userEvent.setup();
+    const onToggleFavorite = vi.fn();
+    render(
+      <StageBreakdown
+        matches={[makeMatch()]}
+        favoriteStageIds={[3]}
+        onToggleFavorite={onToggleFavorite}
+      />,
+    );
+
+    await user.click(screen.getByLabelText('Select stage'));
+    // Final Destination is favorited, so its heart appears on both its
+    // Favorites row and its All stages row — either toggles the same stage.
+    const [heart] = await screen.findAllByRole('button', {
+      name: 'Remove Final Destination from favorites',
+    });
+    await user.click(heart!);
+
+    expect(onToggleFavorite).toHaveBeenCalledWith(3);
+    // The picker is still open and nothing got selected.
+    expect(screen.getByRole('listbox')).toBeInTheDocument();
+    expect(screen.queryByRole('img')).not.toBeInTheDocument();
   });
 
   it('shows a fallback abbreviation tile for a stage lacking art', async () => {

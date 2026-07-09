@@ -39,10 +39,10 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/component
 import { cn } from '@/lib/utils';
 import { SpriteList } from '@/data/sprites';
 import { NO_SELECTION_STAGE } from '@/data/stages';
-import { StageSelectGroups } from '@/components/StageSelectGroups';
+import { StageSelectGroups, StageSelectValue } from '@/components/StageSelectGroups';
 import { useOpponents } from '@/hooks/useOpponents';
 import { useMatches } from '@/hooks/useMatches';
-import { useStageFavorites } from '@/hooks/useStageFavorites';
+import { useStageFavorites, useToggleStageFavorite } from '@/hooks/useStageFavorites';
 import { getGroupedStageOptions, stageOptions } from '@/lib/stageOptions';
 import { parseGspNumber } from '@/pages/Gsp/lib/parseGspNumber';
 
@@ -85,8 +85,17 @@ export function matchTypeLabel(t: TFunction, value: (typeof matchTypeValues)[num
  *
  * A factory (not a module constant) so validation messages come out of the
  * active locale; `useMatchForm` rebuilds it per render with the current `t`.
+ *
+ * `requireOpponent: false` (EditMatchForm) allows a blank opponent name:
+ * quickplay matches logged via the GSP Quick Logger store `opponent: ''`
+ * (anonymous randoms), and editing one must not force inventing a name. The
+ * server tolerates the blank (`optionalOpponentNameInputSchema` omits it),
+ * so the match simply stays anonymous. Manual entry keeps the requirement.
  */
-export function buildMatchFormSchema(t: TFunction) {
+export function buildMatchFormSchema(
+  t: TFunction,
+  { requireOpponent = true }: { requireOpponent?: boolean } = {},
+) {
   return z.object({
     fighterId: z
       .number()
@@ -99,7 +108,9 @@ export function buildMatchFormSchema(t: TFunction) {
     result: z.enum(['win', 'loss'], { message: t('matchForm.validation.chooseResult') }),
     stageId: z.number().int().nonnegative(),
     matchType: z.enum(matchTypeValues),
-    opponentName: z.string().min(1, t('matchForm.validation.opponentRequired')),
+    opponentName: requireOpponent
+      ? z.string().min(1, t('matchForm.validation.opponentRequired'))
+      : z.string(),
     notes: z.string().max(100, t('matchForm.validation.charLimit', { max: 100 })),
     /** Winner's remaining stocks, 0-3. `undefined`/`''` (the "not tracked" state) is allowed — see `STOCKS_NOT_TRACKED`. */
     stocksLeft: z.number().int().min(0).max(3).optional(),
@@ -144,10 +155,13 @@ export function matchFormValuesToInput(values: MatchFormValues): CreateMatchInpu
   };
 }
 
-export function useMatchForm(defaultValues: MatchFormValues): UseFormReturn<MatchFormValues> {
+export function useMatchForm(
+  defaultValues: MatchFormValues,
+  options?: { requireOpponent?: boolean },
+): UseFormReturn<MatchFormValues> {
   const { t } = useTranslation();
   return useForm<MatchFormValues>({
-    resolver: zodResolver(buildMatchFormSchema(t)),
+    resolver: zodResolver(buildMatchFormSchema(t, options)),
     defaultValues,
   });
 }
@@ -306,6 +320,7 @@ export function MatchFormFields({
   const { data: opponents = [] } = useOpponents();
   const { data: allMatches = [] } = useMatches();
   const { data: stageFavorites } = useStageFavorites();
+  const toggleStageFavorite = useToggleStageFavorite();
   const [opponentPopoverOpen, setOpponentPopoverOpen] = useState(false);
 
   const favoriteStageIds = stageFavorites?.stageIds;
@@ -413,11 +428,11 @@ export function MatchFormFields({
               <Select value={String(field.value)} onValueChange={(v) => field.onChange(Number(v))}>
                 <FormControl>
                   <SelectTrigger className="w-full">
-                    <SelectValue />
+                    <StageSelectValue stageId={field.value} />
                   </SelectTrigger>
                 </FormControl>
                 <SelectContent>
-                  <StageSelectGroups groups={stageGroups} />
+                  <StageSelectGroups groups={stageGroups} onToggleFavorite={toggleStageFavorite} />
                 </SelectContent>
               </Select>
               <StageArtPreview stageId={field.value} />

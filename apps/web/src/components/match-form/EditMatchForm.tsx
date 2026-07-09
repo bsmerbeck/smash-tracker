@@ -69,7 +69,10 @@ export function EditMatchForm({
 }) {
   const { t } = useTranslation();
   const updateMatch = useUpdateMatch();
-  const form = useMatchForm(matchToFormValues(match));
+  // requireOpponent: false — Quick Logger matches are stored with
+  // `opponent: ''` (anonymous quickplay randoms) and must stay editable
+  // without inventing a name; blank PATCHes through as "still anonymous".
+  const form = useMatchForm(matchToFormValues(match), { requireOpponent: false });
 
   function handleOpenChange(next: boolean) {
     onOpenChange(next);

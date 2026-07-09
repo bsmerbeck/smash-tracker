@@ -121,4 +121,41 @@ describe('useStageFavorites', () => {
       stageIds: [113, 1],
     });
   });
+
+  it('applies the update optimistically while the PUT is in flight and reverts on failure', async () => {
+    let rejectPut!: (error: Error) => void;
+    const fetchMock = vi.fn().mockImplementation((_url: string, init?: RequestInit) => {
+      if (init?.method === 'PUT') {
+        // Hang until the test releases it, so the optimistic window is observable.
+        return new Promise((_resolve, reject) => {
+          rejectPut = reject;
+        });
+      }
+      return Promise.resolve({
+        ok: true,
+        status: 200,
+        statusText: 'OK',
+        text: async () => JSON.stringify({ stageIds: [], updatedAt: 0 }),
+      });
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(
+      <Wrapper>
+        <FavoritesProbe />
+      </Wrapper>,
+    );
+
+    await waitFor(() => expect(screen.getByText('stageIds: none')).toBeInTheDocument());
+
+    screen.getByRole('button', { name: 'Update' }).click();
+
+    // Optimistic: the cache shows the new list before the PUT has resolved.
+    await waitFor(() => expect(screen.getByText('stageIds: 113,1')).toBeInTheDocument());
+
+    rejectPut(new Error('network down'));
+
+    // Rolled back (and re-synced with server truth by the settle refetch).
+    await waitFor(() => expect(screen.getByText('stageIds: none')).toBeInTheDocument());
+  });
 });

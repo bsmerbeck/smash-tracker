@@ -94,13 +94,24 @@ function SelectLabel({ className, ...props }: React.ComponentProps<typeof Select
 function SelectItem({
   className,
   children,
+  trailing,
   ...props
-}: React.ComponentProps<typeof SelectPrimitive.Item>) {
+}: React.ComponentProps<typeof SelectPrimitive.Item> & {
+  /**
+   * Interactive adornment pinned to the item's right edge (inside the
+   * selected-check gutter). Rendered as a sibling of `ItemText` — anything
+   * inside `ItemText` is echoed into the trigger's `SelectValue` when the
+   * item is selected — and placed before it in the DOM so the
+   * `*:[span]:last:*` styling keeps targeting the `ItemText` span.
+   */
+  trailing?: React.ReactNode;
+}) {
   return (
     <SelectPrimitive.Item
       data-slot="select-item"
       className={cn(
         "relative flex w-full cursor-default items-center gap-2 rounded-sm py-1.5 pr-8 pl-2 text-sm outline-hidden select-none focus:bg-accent focus:text-accent-foreground data-[disabled]:pointer-events-none data-[disabled]:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4 [&_svg:not([class*='text-'])]:text-muted-foreground *:[span]:last:flex *:[span]:last:items-center *:[span]:last:gap-2",
+        trailing != null && 'pr-14',
         className,
       )}
       {...props}
@@ -113,6 +124,14 @@ function SelectItem({
           <CheckIcon className="size-4" />
         </SelectPrimitive.ItemIndicator>
       </span>
+      {trailing != null && (
+        <span
+          data-slot="select-item-trailing"
+          className="absolute right-7 flex items-center [&_button]:pointer-events-auto"
+        >
+          {trailing}
+        </span>
+      )}
       <SelectPrimitive.ItemText>{children}</SelectPrimitive.ItemText>
     </SelectPrimitive.Item>
   );
