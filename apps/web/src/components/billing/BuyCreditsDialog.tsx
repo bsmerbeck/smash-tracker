@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import type { CreditPackId, CreditsStatus } from '@smash-tracker/shared';
 import { ApiError } from '@/lib/api';
 import { useCheckout } from '@/hooks/useBilling';
@@ -43,6 +44,7 @@ export function BuyCreditsDialog({
   onOpenChange: (open: boolean) => void;
   packs: CreditsStatus['packs'];
 }) {
+  const { t } = useTranslation();
   const [selectedPackId, setSelectedPackId] = useState<CreditPackId | null>(packs[0]?.id ?? null);
   const checkout = useCheckout();
 
@@ -64,11 +66,8 @@ export function BuyCreditsDialog({
     <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Buy report credits</DialogTitle>
-          <DialogDescription>
-            Each AI scouting report costs one credit. Pick a pack — you'll be redirected to Stripe
-            to complete the purchase.
-          </DialogDescription>
+          <DialogTitle>{t('billing.title')}</DialogTitle>
+          <DialogDescription>{t('billing.description')}</DialogDescription>
         </DialogHeader>
 
         <div className="flex flex-col gap-3 py-2">
@@ -88,7 +87,9 @@ export function BuyCreditsDialog({
                 <div>
                   <p className="font-medium">{pack.label}</p>
                   <p className="text-sm text-muted-foreground">
-                    {perReportUsd(pack.amountCents, pack.credits)} per report
+                    {t('billing.perReport', {
+                      price: perReportUsd(pack.amountCents, pack.credits),
+                    })}
                   </p>
                 </div>
                 <p className="text-lg font-semibold">{formatUsd(pack.amountCents)}</p>
@@ -101,20 +102,20 @@ export function BuyCreditsDialog({
           <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">
             {checkout.error instanceof ApiError
               ? checkout.error.message
-              : 'Something went wrong starting checkout. Please try again.'}
+              : t('billing.checkoutError')}
           </div>
         )}
 
         <DialogFooter>
           <Button type="button" variant="outline" onClick={() => handleOpenChange(false)}>
-            Cancel
+            {t('common.cancel')}
           </Button>
           <Button
             type="button"
             onClick={handleContinue}
             disabled={!selectedPackId || checkout.isPending}
           >
-            {checkout.isPending ? 'Redirecting…' : 'Continue to checkout'}
+            {checkout.isPending ? t('billing.redirecting') : t('billing.continue')}
           </Button>
         </DialogFooter>
       </DialogContent>

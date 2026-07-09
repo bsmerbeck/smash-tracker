@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { ChevronDown } from 'lucide-react';
 import type { ScoutGame } from '@smash-tracker/shared';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
@@ -32,6 +33,7 @@ export function FullAnalysisSection({
   games: ScoutGame[] | undefined;
   gamerTag: string;
 }) {
+  const { t } = useTranslation();
   const [open, setOpen] = useState(false);
 
   return (
@@ -41,7 +43,7 @@ export function FullAnalysisSection({
           type="button"
           className="flex w-full items-center justify-between px-4 py-3 text-left text-sm font-medium"
         >
-          <span>Full analysis</span>
+          <span>{t('scout.fullAnalysis.title')}</span>
           <ChevronDown
             className={cn('size-4 shrink-0 transition-transform', open && 'rotate-180')}
             aria-hidden="true"
@@ -54,8 +56,8 @@ export function FullAnalysisSection({
         ) : (
           <p className="text-sm text-muted-foreground">
             {games === undefined
-              ? 'Re-scout to enable full analysis.'
-              : 'No per-game data available from this source yet.'}
+              ? t('scout.fullAnalysis.rescout')
+              : t('scout.fullAnalysis.noGameData')}
           </p>
         )}
       </CollapsibleContent>
@@ -66,6 +68,7 @@ export function FullAnalysisSection({
 const MIN_MATCHUP_GAMES = 3;
 
 function FullAnalysisContent({ games, gamerTag }: { games: ScoutGame[]; gamerTag: string }) {
+  const { t } = useTranslation();
   const matches = scoutGamesToMatches(games);
 
   // "Their top character" — the character with the most sampled games,
@@ -92,18 +95,23 @@ function FullAnalysisContent({ games, gamerTag }: { games: ScoutGame[]; gamerTag
 
   return (
     <>
-      <StageMastery fighterMatches={matches} title="Stage Mastery — Overall" />
+      <StageMastery fighterMatches={matches} title={t('scout.fullAnalysis.stageMasteryOverall')} />
 
       {showTopCharacterCard && (
         <StageMastery
           fighterMatches={topCharacterMatches}
-          title={`Stage Mastery — ${topCharacterSprite?.name ?? 'Top character'}`}
+          title={t('scout.fullAnalysis.stageMasteryFor', {
+            name: topCharacterSprite?.name ?? t('scout.fullAnalysis.topCharacter'),
+          })}
         />
       )}
 
       <WhatTheyPlayTable byTheirFighter={matchupSpread} />
 
-      <ScoutingTrendChart matches={matches} title={`${gamerTag}'s Recent Form`} />
+      <ScoutingTrendChart
+        matches={matches}
+        title={t('scout.fullAnalysis.recentForm', { name: gamerTag })}
+      />
 
       <OpponentTable fighterMatches={matches} />
     </>

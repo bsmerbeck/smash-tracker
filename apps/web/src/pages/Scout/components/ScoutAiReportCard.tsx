@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next';
 import { Download, Printer, Sparkles } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -37,6 +38,7 @@ function downloadMarkdown(record: ScoutReportRecord) {
  *   when absent rather than rendering an empty section.
  */
 export function ScoutAiReportCard({ record }: { record: ScoutReportRecord }) {
+  const { t } = useTranslation();
   const { report } = record;
 
   return (
@@ -45,11 +47,11 @@ export function ScoutAiReportCard({ record }: { record: ScoutReportRecord }) {
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Sparkles className="size-4 text-primary" />
-            AI Scouting Report
+            {t('scout.aiReport.title')}
           </CardTitle>
           <CardDescription>{report.overview}</CardDescription>
           <p className="text-xs text-muted-foreground">
-            Generated {formatRelativeDate(record.createdAt)}
+            {t('scout.aiReport.generated', { rel: formatRelativeDate(record.createdAt, t) })}
           </p>
         </CardHeader>
         <CardContent className="flex flex-col gap-5">
@@ -61,16 +63,16 @@ export function ScoutAiReportCard({ record }: { record: ScoutReportRecord }) {
               onClick={() => downloadMarkdown(record)}
             >
               <Download />
-              Download (.md)
+              {t('scout.aiReport.download')}
             </Button>
             <Button type="button" variant="outline" size="sm" onClick={() => window.print()}>
               <Printer />
-              Print / Save as PDF
+              {t('scout.aiReport.print')}
             </Button>
           </div>
 
           <div className="flex flex-col gap-2">
-            <h3 className="text-sm font-semibold">Game plan</h3>
+            <h3 className="text-sm font-semibold">{t('scout.aiReport.gameplan')}</h3>
             <ul className="list-disc space-y-1 pl-5 text-sm">
               {report.gameplan.map((item, index) => (
                 <li key={index}>{item}</li>
@@ -80,11 +82,11 @@ export function ScoutAiReportCard({ record }: { record: ScoutReportRecord }) {
 
           {report.characterStrategy && (
             <div className="flex flex-col gap-2">
-              <h3 className="text-sm font-semibold">Character strategy</h3>
+              <h3 className="text-sm font-semibold">{t('scout.aiReport.characterStrategy')}</h3>
               <div className="flex flex-col gap-2 text-sm">
                 {report.characterStrategy.picks.length > 0 && (
                   <div className="flex flex-wrap items-center gap-2">
-                    <span className="text-muted-foreground">Picks:</span>
+                    <span className="text-muted-foreground">{t('scout.aiReport.picks')}</span>
                     {report.characterStrategy.picks.map((character) => (
                       <Badge key={character} variant="success">
                         {character}
@@ -98,11 +100,11 @@ export function ScoutAiReportCard({ record }: { record: ScoutReportRecord }) {
           )}
 
           <div className="flex flex-col gap-2">
-            <h3 className="text-sm font-semibold">Stage strategy</h3>
+            <h3 className="text-sm font-semibold">{t('scout.aiReport.stageStrategy')}</h3>
             <div className="flex flex-col gap-2 text-sm">
               {report.stageStrategy.bans.length > 0 && (
                 <div className="flex flex-wrap items-center gap-2">
-                  <span className="text-muted-foreground">Bans:</span>
+                  <span className="text-muted-foreground">{t('scout.aiReport.bans')}</span>
                   {report.stageStrategy.bans.map((stage) => (
                     <Badge key={stage} variant="destructive">
                       {stage}
@@ -112,7 +114,7 @@ export function ScoutAiReportCard({ record }: { record: ScoutReportRecord }) {
               )}
               {report.stageStrategy.picks.length > 0 && (
                 <div className="flex flex-wrap items-center gap-2">
-                  <span className="text-muted-foreground">Picks:</span>
+                  <span className="text-muted-foreground">{t('scout.aiReport.picks')}</span>
                   {report.stageStrategy.picks.map((stage) => (
                     <Badge key={stage} variant="success">
                       {stage}
@@ -126,13 +128,13 @@ export function ScoutAiReportCard({ record }: { record: ScoutReportRecord }) {
 
           {report.headToHead && (
             <div className="flex flex-col gap-2">
-              <h3 className="text-sm font-semibold">Head-to-head</h3>
+              <h3 className="text-sm font-semibold">{t('scout.aiReport.headToHead')}</h3>
               <p className="text-sm text-muted-foreground">{report.headToHead}</p>
             </div>
           )}
 
           <div className="flex flex-col gap-2">
-            <h3 className="text-sm font-semibold">Watch for</h3>
+            <h3 className="text-sm font-semibold">{t('scout.aiReport.watchFor')}</h3>
             <ul className="list-disc space-y-1 pl-5 text-sm">
               {report.watchFor.map((item, index) => (
                 <li key={index}>{item}</li>

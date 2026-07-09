@@ -114,6 +114,12 @@
       "p1": "<strong>Glicko-2</strong>はチェスや多くの対戦ラダーで使われているレーティングシステムです。単純な勝率と違い、<em>誰に</em>勝ったか、その結果がどれだけ番狂わせだったかを重み付けします。",
       "p2": "<strong>±の数値（RD）</strong>は不確実性です。対戦を重ねるほど小さくなり、ブランクが空くと大きくなります — 1500 ±50のプレイヤーは実力が確かで、1500 ±300のプレイヤーは未知数です。",
       "p3": "ブラケット戦は間隔が空きがちなため、大会間の長いブランクや少ない対戦数の扱いに優れたGlicko-2を採用しています（Eloや勝率だけよりも適しています）。ここでのレーティングは非公式で、同期・記録された対戦のみから計算されます。"
+    },
+    "relativeDate": {
+      "justNow": "たった今",
+      "minutesAgo": "{{count}}分前",
+      "hoursAgo": "{{count}}時間前",
+      "daysAgo": "{{count}}日前"
     }
   },
   "dashboard": {
@@ -676,6 +682,251 @@
       "verdictFollowed": "従った",
       "verdictAgainst": "逆らった",
       "verdictNeutral": "どちらでもない"
+    }
+  },
+  "billing": {
+    "title": "レポートクレジットを購入",
+    "description": "AIスカウティングレポートは1件につき1クレジットです。パックを選ぶと、Stripeに移動して購入を完了できます。",
+    "perReport": "1レポートあたり{{price}}",
+    "checkoutError": "決済の開始に失敗しました。もう一度お試しください。",
+    "redirecting": "リダイレクト中…",
+    "continue": "決済に進む"
+  },
+  "opponents": {
+    "loading": "スカウティングレポートを読み込み中...",
+    "selectPrompt": "リストから相手を選ぶと、そのスカウティングレポートが表示されます。",
+    "empty": {
+      "title": "まだ分析できる対戦がありません！",
+      "body": "ダッシュボードで対戦を記録するか、start.ggを連携して大会セットを同期すると、相手ごとのスカウティングレポートがここに表示されます。",
+      "connectStartgg": "start.ggを連携"
+    },
+    "noTags": {
+      "title": "相手の名前が記録された対戦がありません。",
+      "body": "対戦を記録するときに相手の名前を入力すると、その相手のスカウティングレポートが使えるようになります。"
+    },
+    "list": {
+      "title": "相手プレイヤー",
+      "faced_one": "対戦した相手 {{count}}人",
+      "faced_other": "対戦した相手 {{count}}人",
+      "searchPlaceholder": "相手を検索...",
+      "searchAria": "相手を検索",
+      "sortAria": "相手を並べ替え",
+      "sortMostPlayed": "対戦数順",
+      "sortRecent": "最近対戦した順",
+      "sortBestRate": "勝率が高い順",
+      "sortWorstRate": "勝率が低い順",
+      "sortAlphabetical": "A → Z",
+      "minGames": "3戦以上",
+      "minGamesAria": "3戦以上の相手のみ表示",
+      "emptyNone": "まだ対戦した相手がいません。",
+      "emptyFiltered": "フィルターに一致する相手がいません。",
+      "rowActions": "{{name}}の操作",
+      "mergeInto": "統合..."
+    },
+    "source": {
+      "mixedAria": "複数ソース",
+      "verified": "認証済み",
+      "manual": "手動",
+      "manualAria": "手動入力",
+      "startggAria": "start.gg認証済み",
+      "parryggAria": "parry.gg認証済み"
+    },
+    "header": {
+      "playedRange": "初対戦 {{first}} · 最終対戦 {{last}}",
+      "encounterSpan": "{{start}}〜{{end}}",
+      "metAt_one": "{{span}}の間に{{count}}つの大会で対戦",
+      "metAt_other": "{{span}}の間に{{count}}つの大会で対戦",
+      "rateOverGames_one": "{{count}}戦で勝率{{rate}}%",
+      "rateOverGames_other": "{{count}}戦で勝率{{rate}}%"
+    },
+    "whatTheyPlay": {
+      "title": "相手の使用キャラ",
+      "description": "安定して勝てている順に並んでいます。",
+      "empty": "まだキャラクターが記録されていません。",
+      "character": "キャラクター"
+    },
+    "stages": {
+      "title": "ステージ",
+      "empty": "まだステージのデータがありません。"
+    },
+    "trend": {
+      "title": "H2Hトレンド",
+      "empty": "トレンドを出すにはまだ対戦数が足りません。",
+      "label": "移動勝率（直近{{count}}戦）"
+    },
+    "encounters": {
+      "title": "最近の対戦",
+      "empty": "まだ対戦が記録されていません。",
+      "aria": "最近の対戦"
+    },
+    "history": {
+      "title": "大会での対戦履歴",
+      "empty": "このプレイヤーとの大会セットはまだありません — 最近対戦したならstart.ggを再同期してください。",
+      "gamesAria": "ゲーム",
+      "losers": "ルーザーズ",
+      "vsThemHere": "この大会での対戦成績 {{wins}}-{{losses}}",
+      "setsAria": "{{title}}でのセット"
+    },
+    "merge": {
+      "title": "「{{name}}」を統合...",
+      "description": "同一人物として扱う相手の名前を選んでください。対戦記録はすべての場所で統合されます。",
+      "noMatches": "一致する相手がいません。",
+      "warning": "「{{opponent}}」は{{label}}で、「{{target}}」は手動入力のみです。認証済みタグを正として保つため、代わりに「{{target}}」を「{{opponent}}」に統合します。",
+      "anyway": "それでも「{{opponent}}」を「{{target}}」に統合する",
+      "merging": "統合中...",
+      "merge": "統合"
+    },
+    "merged": {
+      "title": "統合された名前",
+      "description": "これらの名前は「{{name}}」に統合されています。解除すると再び別々に記録されます。",
+      "unmerge": "統合を解除"
+    },
+    "tendencies": {
+      "title": "癖・傾向",
+      "description": "この相手についての自分のスカウティングメモです — 対戦履歴からの自動生成ではありません。",
+      "habits": "癖",
+      "habitsPlaceholder": "立ち回りの癖、確定反撃のルート、復帰の択など...",
+      "banThese": "拒否ステージ（最大{{count}}）",
+      "banAria": "この相手に対して拒否するステージ",
+      "watchFor": "警戒ポイント",
+      "watchForPlaceholder": "次のセットで警戒すべき読み、駆け引き、受け身狩りなど...",
+      "saving": "保存中...",
+      "deleteNote": "メモを削除",
+      "banTheseView": "拒否ステージ",
+      "banViewAria": "拒否するステージ",
+      "savedAt": "{{date}}に保存",
+      "edit": "編集",
+      "empty": "まだスカウティングメモがありません。次のセットの前に、癖や拒否ステージ、警戒ポイントを書き留めましょう。",
+      "addNote": "メモを追加"
+    },
+    "export": {
+      "print": "H2Hをエクスポート",
+      "copy": "テキストとしてコピー",
+      "copied": "コピーしました！"
+    }
+  },
+  "scout": {
+    "title": "プレイヤーを検索",
+    "prompt": "上にstart.ggのプロフィールURL・スラッグ・プレイヤーIDを貼り付けると、公開されている大会履歴を表示します。",
+    "promptWithParry": "上にstart.ggまたはparry.ggのプロフィールURL・スラッグ/タグ・プレイヤーIDを貼り付けると、公開されている大会履歴を表示します。",
+    "errors": {
+      "notFound": "その検索条件に一致するstart.ggプレイヤーが見つかりませんでした。URL・スラッグ・プレイヤーIDを確認してください。",
+      "badQuery": "start.ggのプロフィールURL・スラッグ・プレイヤーIDではないようです。",
+      "rateLimited": "現在start.ggがリクエストを制限しています。1分後にもう一度お試しください。",
+      "scoutFallback": "プレイヤーの検索中に問題が発生しました。",
+      "generateFallback": "レポートの生成中に問題が発生しました。"
+    },
+    "form": {
+      "description": "start.ggのプロフィールURL、「user/<スラッグ>」形式、または数値のプレイヤーIDを貼り付けると、対戦前に公開大会履歴を確認できます。",
+      "descriptionWithParry": "start.ggまたはparry.ggのプロフィールURL、ゲーマータグ、「user/<スラッグ>」形式、または数値のプレイヤーIDを貼り付けると、対戦前に公開大会履歴を確認できます。",
+      "placeholder": "https://start.gg/user/07dc2239",
+      "placeholderWithParry": "https://start.gg/user/07dc2239 またはparry.ggのプロフィールURL",
+      "inputAria": "start.ggのプロフィールURL・スラッグ・プレイヤーID",
+      "inputAriaWithParry": "start.ggまたはparry.ggのプロフィールURL・スラッグ/タグ・プレイヤーID",
+      "scout": "検索",
+      "scouting": "検索中…",
+      "source": "ソース:",
+      "sourceAria": "スカウティングのソース",
+      "detectedParry": "parry.ggのプロフィールURLを検出しました。",
+      "pending": "公開大会履歴を取得中 — 数秒かかることがあります。"
+    },
+    "report": {
+      "generate": "AIレポートを生成",
+      "regenerate": "レポートを再生成",
+      "generating": "レポートを生成中…",
+      "generatingHint": "レポートを生成中 — 通常1〜2分かかります。"
+    },
+    "billing": {
+      "paymentReceived": "支払いを受け付けました — クレジットはまもなく反映されます。",
+      "checkoutCancelled": "決済をキャンセルしました — 請求は発生していません。",
+      "freeAccess": "無料アクセス",
+      "credits_one": "{{count}}クレジット",
+      "credits_other": "{{count}}クレジット",
+      "buyCredits": "クレジットを購入",
+      "costLine": "レポート1件につき1クレジットです。",
+      "packFor": "{{label}}（{{price}}）",
+      "outOfCredits": "クレジットがなくなりました。",
+      "buyPack": "パックを購入",
+      "toGenerate": "すると、このレポートを生成できます。"
+    },
+    "header": {
+      "viewOn": "{{name}}を{{source}}で見る",
+      "profile": "{{source}}プロフィール",
+      "sample": "{{source}}の公開データ · 直近{{sets}}セット（{{games}}ゲーム）のサンプル"
+    },
+    "characters": {
+      "title": "キャラクター使用状況",
+      "description": "使用キャラを多い順に表示。",
+      "empty": "まだサンプルのゲームがありません。"
+    },
+    "stages": {
+      "title": "ステージ別成績",
+      "description": "ステージごとの成績です。"
+    },
+    "events": {
+      "title": "最近の大会",
+      "description": "新しい順に表示。",
+      "empty": "サンプルに最近の大会がありません。",
+      "placement": "順位",
+      "entrants": "参加者"
+    },
+    "commonOpponents": {
+      "title": "よく当たる相手",
+      "description": "サンプル内のセットでよく対戦している相手です。",
+      "empty": "サンプル内に繰り返し対戦した相手はいません。",
+      "sets_one": "{{count}}セット",
+      "sets_other": "{{count}}セット"
+    },
+    "history": {
+      "title": "この相手との対戦履歴",
+      "description_one": "{{name}}とは対戦経験があります — あなたの記録に{{count}}戦あります。",
+      "description_other": "{{name}}とは対戦経験があります — あなたの記録に{{count}}戦あります。",
+      "rate": "（勝率{{rate}}%）",
+      "fullReport": "スカウティングレポート全文"
+    },
+    "advisor": {
+      "title": "相性アドバイザー",
+      "description": "相手の各キャラに対するあなたのベスト（とワースト）ピック — 自分の戦績にティア表とアーキタイプのデータを組み合わせています。",
+      "noCharacterData": "このスカウトにはまだキャラクターデータがありません — 対戦データが少ないparry.ggではよくあります。セット数が増えたら再確認してください。",
+      "noMyCharacters": "メインまたはサブのファイターを選ぶ（か、対戦をいくつか記録する）と、パーソナライズされたおすすめが表示されます。",
+      "vsName": "vs. {{name}}",
+      "gamesSampled_one": "サンプル{{count}}戦",
+      "gamesSampled_other": "サンプル{{count}}戦",
+      "inYourSets": "あなたのセットで{{record}}",
+      "tier": "ティア{{score}}/10",
+      "archetypeEdge": "アーキタイプ有利",
+      "archetypeDisadvantage": "アーキタイプ不利"
+    },
+    "fullAnalysis": {
+      "title": "完全分析",
+      "rescout": "再検索すると完全分析が有効になります。",
+      "noGameData": "このソースにはまだゲーム単位のデータがありません。",
+      "stageMasteryOverall": "ステージ習熟度 — 全体",
+      "stageMasteryFor": "ステージ習熟度 — {{name}}",
+      "topCharacter": "メインキャラ",
+      "recentForm": "{{name}}の最近の調子"
+    },
+    "aiReport": {
+      "title": "AIスカウティングレポート",
+      "generated": "{{rel}}に生成",
+      "download": "ダウンロード（.md）",
+      "print": "印刷 / PDFとして保存",
+      "gameplan": "ゲームプラン",
+      "characterStrategy": "キャラクター戦略",
+      "stageStrategy": "ステージ戦略",
+      "picks": "ピック:",
+      "bans": "バン:",
+      "headToHead": "直接対決",
+      "watchFor": "警戒ポイント"
+    },
+    "historySelector": {
+      "older": "古いレポートへ",
+      "newer": "新しいレポートへ",
+      "reportOf": "{{total}}件中{{ordinal}}件目のレポート"
+    },
+    "pastReports": {
+      "title": "過去のAIレポート",
+      "description": "これまでに生成したレポート（新しい順）。"
     }
   }
 }

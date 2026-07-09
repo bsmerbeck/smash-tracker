@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { MoreVertical, Search } from 'lucide-react';
 import type { Match } from '@smash-tracker/shared';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -33,12 +34,12 @@ export interface OpponentListProps {
 /** Sort orders for the opponent list. */
 export type OpponentSort = 'most-played' | 'recent' | 'best-rate' | 'worst-rate' | 'alphabetical';
 
-const SORT_LABELS: Record<OpponentSort, string> = {
-  'most-played': 'Most played',
-  recent: 'Recently played',
-  'best-rate': 'Highest win rate',
-  'worst-rate': 'Lowest win rate',
-  alphabetical: 'A → Z',
+const SORT_LABEL_KEYS: Record<OpponentSort, string> = {
+  'most-played': 'opponents.list.sortMostPlayed',
+  recent: 'opponents.list.sortRecent',
+  'best-rate': 'opponents.list.sortBestRate',
+  'worst-rate': 'opponents.list.sortWorstRate',
+  alphabetical: 'opponents.list.sortAlphabetical',
 };
 
 /** Games threshold applied by the "3+ games" small-sample toggle. */
@@ -80,6 +81,7 @@ function sortOpponents(
  * kebab menu with a "Merge into..." action.
  */
 export function OpponentList({ matches, selected, onSelect, onRequestMerge }: OpponentListProps) {
+  const { t } = useTranslation();
   const [query, setQuery] = useState('');
   const [sort, setSort] = useState<OpponentSort>('most-played');
   const [minGamesOnly, setMinGamesOnly] = useState(false);
@@ -117,9 +119,9 @@ export function OpponentList({ matches, selected, onSelect, onRequestMerge }: Op
     <Card className="flex h-full flex-col">
       <CardHeader className="flex flex-col gap-3">
         <div className="flex items-center justify-between gap-2">
-          <CardTitle>Opponents</CardTitle>
+          <CardTitle>{t('opponents.list.title')}</CardTitle>
           <span className="text-sm text-muted-foreground">
-            {opponents.length} opponent{opponents.length === 1 ? '' : 's'} faced
+            {t('opponents.list.faced', { count: opponents.length })}
           </span>
         </div>
         <div className="relative">
@@ -127,20 +129,20 @@ export function OpponentList({ matches, selected, onSelect, onRequestMerge }: Op
           <Input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search opponents..."
-            aria-label="Search opponents"
+            placeholder={t('opponents.list.searchPlaceholder')}
+            aria-label={t('opponents.list.searchAria')}
             className="pl-8"
           />
         </div>
         <div className="flex items-center gap-2">
           <Select value={sort} onValueChange={(value) => setSort(value as OpponentSort)}>
-            <SelectTrigger className="h-8 flex-1" aria-label="Sort opponents">
+            <SelectTrigger className="h-8 flex-1" aria-label={t('opponents.list.sortAria')}>
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              {(Object.keys(SORT_LABELS) as OpponentSort[]).map((key) => (
+              {(Object.keys(SORT_LABEL_KEYS) as OpponentSort[]).map((key) => (
                 <SelectItem key={key} value={key}>
-                  {SORT_LABELS[key]}
+                  {t(SORT_LABEL_KEYS[key])}
                 </SelectItem>
               ))}
             </SelectContent>
@@ -150,9 +152,9 @@ export function OpponentList({ matches, selected, onSelect, onRequestMerge }: Op
             variant="outline"
             pressed={minGamesOnly}
             onPressedChange={setMinGamesOnly}
-            aria-label="Only show opponents with 3 or more games"
+            aria-label={t('opponents.list.minGamesAria')}
           >
-            3+ games
+            {t('opponents.list.minGames')}
           </Toggle>
         </div>
       </CardHeader>
@@ -160,11 +162,11 @@ export function OpponentList({ matches, selected, onSelect, onRequestMerge }: Op
         {filtered.length === 0 ? (
           <p className="text-sm text-muted-foreground">
             {opponents.length === 0
-              ? 'No opponents faced yet.'
-              : 'No opponents match your filters.'}
+              ? t('opponents.list.emptyNone')
+              : t('opponents.list.emptyFiltered')}
           </p>
         ) : (
-          <ul className="flex flex-col gap-1" role="list" aria-label="Opponents">
+          <ul className="flex flex-col gap-1" role="list" aria-label={t('opponents.list.title')}>
             {filtered.map((opponent) => (
               <OpponentRow
                 key={opponent.opponent}
@@ -199,6 +201,7 @@ function OpponentRow({
   onSelect: (opponent: string) => void;
   onRequestMerge: (opponent: string) => void;
 }) {
+  const { t, i18n } = useTranslation();
   return (
     <li
       className={`flex items-center gap-1 rounded-md border px-1 transition-colors ${
@@ -222,11 +225,11 @@ function OpponentRow({
           </span>
           <span className="font-medium">{opponent.winRate}%</span>
           <span className="text-xs text-muted-foreground">
-            {opponent.total} game{opponent.total === 1 ? '' : 's'}
+            {t('common.games', { count: opponent.total })}
           </span>
           {lastPlayedAt != null && (
             <span className="text-xs text-muted-foreground">
-              {new Date(lastPlayedAt).toLocaleDateString()}
+              {new Date(lastPlayedAt).toLocaleDateString(i18n.language)}
             </span>
           )}
         </span>
@@ -237,14 +240,14 @@ function OpponentRow({
             type="button"
             variant="ghost"
             size="icon-sm"
-            aria-label={`Actions for ${opponent.opponent}`}
+            aria-label={t('opponents.list.rowActions', { name: opponent.opponent })}
           >
             <MoreVertical className="size-4" />
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end">
           <DropdownMenuItem onSelect={() => onRequestMerge(opponent.opponent)}>
-            Merge into...
+            {t('opponents.list.mergeInto')}
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>

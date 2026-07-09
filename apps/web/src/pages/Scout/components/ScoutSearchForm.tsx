@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Search } from 'lucide-react';
 import type { ScoutSource } from '@smash-tracker/shared';
 import { Button } from '@/components/ui/button';
@@ -29,6 +30,7 @@ export function ScoutSearchForm({
   /** Hides the source toggle entirely when parry.gg isn't configured on this deployment (V9-B Feature 4). */
   parryggEnabled?: boolean;
 }) {
+  const { t } = useTranslation();
   const [query, setQuery] = useState('');
   const [source, setSource] = useState<ScoutSource>('startgg');
 
@@ -46,11 +48,9 @@ export function ScoutSearchForm({
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Scout a Player</CardTitle>
+        <CardTitle>{t('scout.title')}</CardTitle>
         <CardDescription>
-          {parryggEnabled
-            ? 'Paste a start.gg or parry.gg profile URL, a bare gamer tag, a "user/<slug>" reference, or a numeric player id to pull up their public tournament history before you play them.'
-            : 'Paste a start.gg profile URL, a "user/<slug>" reference, or a numeric player id to pull up their public tournament history before you play them.'}
+          {parryggEnabled ? t('scout.form.descriptionWithParry') : t('scout.form.description')}
         </CardDescription>
       </CardHeader>
       <CardContent>
@@ -63,26 +63,24 @@ export function ScoutSearchForm({
                 onChange={(event) => setQuery(event.target.value)}
                 placeholder={
                   parryggEnabled
-                    ? 'https://start.gg/user/07dc2239 or a parry.gg profile URL'
-                    : 'https://start.gg/user/07dc2239'
+                    ? t('scout.form.placeholderWithParry')
+                    : t('scout.form.placeholder')
                 }
                 className="pl-8"
                 disabled={isPending}
                 aria-label={
-                  parryggEnabled
-                    ? 'start.gg or parry.gg profile URL, slug/tag, or player id'
-                    : 'start.gg profile URL, slug, or player id'
+                  parryggEnabled ? t('scout.form.inputAriaWithParry') : t('scout.form.inputAria')
                 }
               />
             </div>
             <Button type="submit" disabled={isPending || query.trim().length === 0}>
-              {isPending ? 'Scouting…' : 'Scout'}
+              {isPending ? t('scout.form.scouting') : t('scout.form.scout')}
             </Button>
           </div>
 
           {parryggEnabled && (
             <div className="flex items-center gap-2">
-              <span className="text-sm text-muted-foreground">Source:</span>
+              <span className="text-sm text-muted-foreground">{t('scout.form.source')}</span>
               <ToggleGroup
                 type="single"
                 variant="outline"
@@ -94,7 +92,7 @@ export function ScoutSearchForm({
                     setSource(value);
                   }
                 }}
-                aria-label="Scouting source"
+                aria-label={t('scout.form.sourceAria')}
               >
                 <ToggleGroupItem value="startgg" aria-label="start.gg">
                   start.gg
@@ -105,16 +103,14 @@ export function ScoutSearchForm({
               </ToggleGroup>
               {detectedParryUrl && (
                 <span className="text-xs text-muted-foreground">
-                  Detected a parry.gg profile URL.
+                  {t('scout.form.detectedParry')}
                 </span>
               )}
             </div>
           )}
         </form>
         {isPending && (
-          <p className="mt-2 text-sm text-muted-foreground">
-            Pulling their public tournament history — this can take a few seconds.
-          </p>
+          <p className="mt-2 text-sm text-muted-foreground">{t('scout.form.pending')}</p>
         )}
       </CardContent>
     </Card>
