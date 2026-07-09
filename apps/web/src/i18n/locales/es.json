@@ -48,7 +48,9 @@
     "noMatchData": "Aún no hay datos de partidas.",
     "rate": "Ratio",
     "games_one": "{{count}} partida",
-    "games_other": "{{count}} partidas"
+    "games_other": "{{count}} partidas",
+    "rateOverSample": "({{rate}}% en {{total}})",
+    "goToDashboard": "Ir al Panel"
   },
   "filters": {
     "sourceAria": "Filtrar partidas por origen",
@@ -71,6 +73,10 @@
       "confirmTitle": "¿Eliminar esta partida?",
       "deleted": "¡Partida eliminada!",
       "deleteFailed": "No se pudo eliminar la partida. Inténtalo de nuevo."
+    },
+    "noMatches": {
+      "title": "¡Aún no has registrado ninguna partida!",
+      "subtitle": "Registra una partida en el Panel y vuelve aquí."
     },
     "vod": {
       "title": "Notas de VOD",
@@ -366,7 +372,6 @@
     "loading": "Cargando datos de partidas...",
     "title": "Historial de partidas",
     "noMatches": "No tienes partidas; registra una y vuelve aquí para ver los datos.",
-    "goToDashboard": "Ir al Panel",
     "table": {
       "columns": {
         "date": "Fecha",
@@ -407,6 +412,123 @@
       "noneOnStage": "No hay partidas registradas en este escenario.",
       "winsShort": "{{count}}V",
       "lossesShort": "{{count}}D"
+    }
+  },
+  "matchups": {
+    "loading": "Cargando enfrentamientos...",
+    "noFightersSubtitle": "Elige tus luchadores principal y secundarios para empezar a registrar enfrentamientos.",
+    "you": "Tú",
+    "opponent": "Rival",
+    "vs": "vs",
+    "winRateTrend": "Tendencia del % de victorias",
+    "results": "Resultados del enfrentamiento",
+    "selectFighterAria": "Seleccionar tu luchador",
+    "selectOpponentAria": "Seleccionar luchador rival",
+    "selectPlaceholder": "Selecciona un luchador",
+    "record": {
+      "empty": "No hay partidas registradas contra este luchador",
+      "totalMatches": "Partidas totales"
+    },
+    "matrix": {
+      "title": "Matriz de enfrentamientos",
+      "showTop": "Mostrar top {{count}}",
+      "showAll": "Mostrar los {{count}}",
+      "empty": "Aún no hay partidas registradas — juega algunas para construir tu matriz de enfrentamientos.",
+      "yourFighterSr": "Tu luchador",
+      "cellAria": "{{fighter}} vs {{opponent}}: {{wins}}-{{losses}}"
+    },
+    "chart": {
+      "window": "Ventana",
+      "windowAria": "Ventana de tendencia",
+      "rolling5": "Últimas 5",
+      "rolling10": "Últimas 10",
+      "cumulative": "Acumulado",
+      "empty": "Registra una partida para ver la gráfica.",
+      "winRate": "% de victorias"
+    },
+    "insights": {
+      "title": "Análisis del enfrentamiento",
+      "minMatches": "Mín. de partidas por escenario",
+      "minMatchesAria": "Mínimo de partidas por escenario",
+      "empty": "Aún no hay partidas registradas para este enfrentamiento.",
+      "currentStreak": "Racha actual",
+      "streakWins": "{{count}} victorias",
+      "streakLosses": "{{count}} derrotas",
+      "longestWin": "Mayor racha de victorias",
+      "longestLoss": "Mayor racha de derrotas",
+      "recentForm": "Forma reciente (primero la más nueva)",
+      "bestStage": "Mejor escenario",
+      "worstStage": "Peor escenario",
+      "notEnoughStageData": "Aún no hay suficientes datos de escenarios.",
+      "byMatchType": "Por tipo de partida"
+    },
+    "stageTable": {
+      "title": "Desglose por escenario",
+      "stage": "Escenario",
+      "record": "Historial",
+      "winRate": "% de victorias"
+    },
+    "counterpick": {
+      "title": "Asesor de counterpicks",
+      "gather": "Reúne más datos: cada escenario necesita al menos {{count}} partidas registradas en este enfrentamiento para poder sugerir picks o bans.",
+      "pickThese": "Elige estos",
+      "banThese": "Banea / evita estos",
+      "unknownStage": "Escenario desconocido"
+    },
+    "opponentSplit": {
+      "title": "Por rival",
+      "empty": "Aún no hay rivales con nombre registrados para este enfrentamiento."
+    },
+    "table": {
+      "empty": "¡Aún no hay partidas registradas!",
+      "date": "Fecha",
+      "result": "Resultado",
+      "manage": "Gestionar"
+    }
+  },
+  "fighterAnalysis": {
+    "loading": "Cargando análisis del luchador...",
+    "noFightersSubtitle": "Elige tus luchadores principal y secundarios para empezar el análisis.",
+    "title": "Análisis de luchador",
+    "selectAria": "Seleccionar luchador",
+    "selectPlaceholder": "Selecciona un luchador",
+    "hero": {
+      "rateAndGames": "{{rate}}% de victorias · {{count}} partidas",
+      "noMatches": "Aún no hay partidas registradas con este luchador.",
+      "streakWin": "Racha de {{count}}V",
+      "streakLoss": "Racha de {{count}}D",
+      "share": "{{pct}}% de tus partidas",
+      "last10": "Últimas 10 (primero la más nueva)",
+      "formRolling": "Forma (ventana de 10)",
+      "typeColumn": "Tipo"
+    },
+    "stageMastery": {
+      "title": "Dominio de escenarios",
+      "bestPick": "Mejor pick:",
+      "banWorthy": "Digno de ban:",
+      "empty": "Aún no hay datos de escenarios — registra partidas con este luchador para construir la cuadrícula."
+    },
+    "coverage": {
+      "title": "Cobertura de enfrentamientos",
+      "empty": "Aún no hay datos de rivales — registra partidas para ver a quién te enfrentas.",
+      "thin": "datos escasos",
+      "none": "sin datos"
+    },
+    "practice": {
+      "title": "Recomendaciones de práctica",
+      "empty": "Aún no hay datos suficientes para una recomendación — sigue registrando partidas con este luchador.",
+      "struggling": "Dificultades contra {{name}}: {{wins}}-{{losses}}",
+      "noGames": "Sin partidas contra {{name}} — te lo encuentras a menudo",
+      "stageHabit": "Sigues jugando en {{stage}}: {{wins}}-{{losses}}"
+    },
+    "guide": {
+      "title": "Guía de escenarios por enfrentamiento",
+      "empty": "Aún no hay datos de enfrentamientos — registra partidas con este luchador para construir la guía."
+    },
+    "opponents": {
+      "title": "Rivales",
+      "empty": "Aún no hay rivales con nombre registrados.",
+      "matches": "Partidas"
     }
   }
 }

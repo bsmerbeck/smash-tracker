@@ -48,7 +48,9 @@
     "noMatchData": "No match data to report yet.",
     "rate": "Rate",
     "games_one": "{{count}} game",
-    "games_other": "{{count}} games"
+    "games_other": "{{count}} games",
+    "rateOverSample": "({{rate}}% over {{total}})",
+    "goToDashboard": "Go to Dashboard"
   },
   "filters": {
     "sourceAria": "Filter matches by source",
@@ -71,6 +73,10 @@
       "confirmTitle": "Delete this match?",
       "deleted": "Match deleted!",
       "deleteFailed": "Failed to delete match. Please try again."
+    },
+    "noMatches": {
+      "title": "You haven't reported any matches!",
+      "subtitle": "Report a match on the Dashboard and check back here."
     },
     "vod": {
       "title": "VOD Notes",
@@ -366,7 +372,6 @@
     "loading": "Loading match data...",
     "title": "Match History",
     "noMatches": "You have no matches, report a match and check back here to view match data!",
-    "goToDashboard": "Go to Dashboard",
     "table": {
       "columns": {
         "date": "Date",
@@ -407,6 +412,123 @@
       "noneOnStage": "No reported matches on this stage.",
       "winsShort": "{{count}}W",
       "lossesShort": "{{count}}L"
+    }
+  },
+  "matchups": {
+    "loading": "Loading matchups...",
+    "noFightersSubtitle": "Choose your primary and secondary fighters to start tracking matchups.",
+    "you": "You",
+    "opponent": "Opponent",
+    "vs": "vs",
+    "winRateTrend": "Win Rate Trend",
+    "results": "Matchup Results",
+    "selectFighterAria": "Select your fighter",
+    "selectOpponentAria": "Select opponent fighter",
+    "selectPlaceholder": "Select a fighter",
+    "record": {
+      "empty": "No reported matches against this fighter",
+      "totalMatches": "Total Matches"
+    },
+    "matrix": {
+      "title": "Matchup Matrix",
+      "showTop": "Show top {{count}}",
+      "showAll": "Show all {{count}}",
+      "empty": "No matches recorded yet — play some matches to build your matchup matrix.",
+      "yourFighterSr": "Your fighter",
+      "cellAria": "{{fighter}} vs {{opponent}}: {{wins}}-{{losses}}"
+    },
+    "chart": {
+      "window": "Window",
+      "windowAria": "Trend window",
+      "rolling5": "Rolling 5",
+      "rolling10": "Rolling 10",
+      "cumulative": "Cumulative",
+      "empty": "Submit a match to see the match chart.",
+      "winRate": "Win Rate"
+    },
+    "insights": {
+      "title": "Matchup Insights",
+      "minMatches": "Min matches per stage",
+      "minMatchesAria": "Minimum matches per stage",
+      "empty": "No matches recorded for this matchup yet.",
+      "currentStreak": "Current Streak",
+      "streakWins": "{{count}} wins",
+      "streakLosses": "{{count}} losses",
+      "longestWin": "Longest Win Streak",
+      "longestLoss": "Longest Loss Streak",
+      "recentForm": "Recent Form (newest first)",
+      "bestStage": "Best Stage",
+      "worstStage": "Worst Stage",
+      "notEnoughStageData": "Not enough stage data yet.",
+      "byMatchType": "By Match Type"
+    },
+    "stageTable": {
+      "title": "Stage Breakdown",
+      "stage": "Stage",
+      "record": "Record",
+      "winRate": "Win Rate"
+    },
+    "counterpick": {
+      "title": "Counterpick Advisor",
+      "gather": "Gather more data: stages need at least {{count}} recorded matches in this matchup before we can suggest picks or bans.",
+      "pickThese": "Pick these",
+      "banThese": "Ban / avoid these",
+      "unknownStage": "Unknown stage"
+    },
+    "opponentSplit": {
+      "title": "By Opponent",
+      "empty": "No named opponents recorded for this matchup yet."
+    },
+    "table": {
+      "empty": "No matches reported yet!",
+      "date": "Date",
+      "result": "Result",
+      "manage": "Manage"
+    }
+  },
+  "fighterAnalysis": {
+    "loading": "Loading fighter analysis...",
+    "noFightersSubtitle": "Choose your primary and secondary fighters to start tracking analysis.",
+    "title": "Fighter Analysis",
+    "selectAria": "Select fighter",
+    "selectPlaceholder": "Select a fighter",
+    "hero": {
+      "rateAndGames": "{{rate}}% win rate · {{count}} games",
+      "noMatches": "No matches recorded for this fighter yet.",
+      "streakWin": "{{count}}W streak",
+      "streakLoss": "{{count}}L streak",
+      "share": "{{pct}}% of your games",
+      "last10": "Last 10 (newest first)",
+      "formRolling": "Form (rolling 10)",
+      "typeColumn": "Type"
+    },
+    "stageMastery": {
+      "title": "Stage Mastery",
+      "bestPick": "Best pick:",
+      "banWorthy": "Ban-worthy:",
+      "empty": "No stage data yet — report matches with this fighter to build the grid."
+    },
+    "coverage": {
+      "title": "Matchup Coverage",
+      "empty": "No opponent data yet — report matches to see who you actually face.",
+      "thin": "thin data",
+      "none": "no data"
+    },
+    "practice": {
+      "title": "Practice Recommendations",
+      "empty": "Not enough data yet for a recommendation — keep reporting matches with this fighter.",
+      "struggling": "Struggling vs {{name}}: {{wins}}-{{losses}}",
+      "noGames": "No games vs {{name}} — you face them often",
+      "stageHabit": "You keep playing on {{stage}}: {{wins}}-{{losses}}"
+    },
+    "guide": {
+      "title": "Matchup Stage Guide",
+      "empty": "No matchup data yet — report matches with this fighter to build the guide."
+    },
+    "opponents": {
+      "title": "Opponents",
+      "empty": "No named opponents recorded yet.",
+      "matches": "Matches"
     }
   }
 }

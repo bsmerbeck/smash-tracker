@@ -48,7 +48,9 @@
     "noMatchData": "Pas encore de données de match.",
     "rate": "Taux",
     "games_one": "{{count}} match",
-    "games_other": "{{count}} matchs"
+    "games_other": "{{count}} matchs",
+    "rateOverSample": "({{rate}} % sur {{total}})",
+    "goToDashboard": "Aller au tableau de bord"
   },
   "filters": {
     "sourceAria": "Filtrer les matchs par source",
@@ -71,6 +73,10 @@
       "confirmTitle": "Supprimer ce match ?",
       "deleted": "Match supprimé !",
       "deleteFailed": "Échec de la suppression du match. Veuillez réessayer."
+    },
+    "noMatches": {
+      "title": "Vous n'avez encore signalé aucun match !",
+      "subtitle": "Enregistrez un match depuis le tableau de bord puis revenez ici."
     },
     "vod": {
       "title": "Notes VOD",
@@ -366,7 +372,6 @@
     "loading": "Chargement des données de matchs...",
     "title": "Historique des matchs",
     "noMatches": "Vous n'avez aucun match : enregistrez-en un puis revenez ici pour voir vos données.",
-    "goToDashboard": "Aller au tableau de bord",
     "table": {
       "columns": {
         "date": "Date",
@@ -407,6 +412,123 @@
       "noneOnStage": "Aucun match enregistré sur ce stage.",
       "winsShort": "{{count}}V",
       "lossesShort": "{{count}}D"
+    }
+  },
+  "matchups": {
+    "loading": "Chargement des matchups...",
+    "noFightersSubtitle": "Choisissez vos combattants principaux et secondaires pour commencer à suivre vos matchups.",
+    "you": "Vous",
+    "opponent": "Adversaire",
+    "vs": "vs",
+    "winRateTrend": "Évolution du taux de victoire",
+    "results": "Résultats du matchup",
+    "selectFighterAria": "Sélectionner votre combattant",
+    "selectOpponentAria": "Sélectionner le combattant adverse",
+    "selectPlaceholder": "Sélectionnez un combattant",
+    "record": {
+      "empty": "Aucun match enregistré contre ce combattant",
+      "totalMatches": "Matchs au total"
+    },
+    "matrix": {
+      "title": "Matrice des matchups",
+      "showTop": "Top {{count}}",
+      "showAll": "Tout afficher ({{count}})",
+      "empty": "Aucun match enregistré — jouez quelques matchs pour construire votre matrice de matchups.",
+      "yourFighterSr": "Votre combattant",
+      "cellAria": "{{fighter}} vs {{opponent}} : {{wins}}-{{losses}}"
+    },
+    "chart": {
+      "window": "Fenêtre",
+      "windowAria": "Fenêtre de tendance",
+      "rolling5": "5 derniers",
+      "rolling10": "10 derniers",
+      "cumulative": "Cumulé",
+      "empty": "Enregistrez un match pour voir le graphique.",
+      "winRate": "Taux de victoire"
+    },
+    "insights": {
+      "title": "Analyse du matchup",
+      "minMatches": "Min. de matchs par stage",
+      "minMatchesAria": "Minimum de matchs par stage",
+      "empty": "Aucun match enregistré pour ce matchup pour l'instant.",
+      "currentStreak": "Série en cours",
+      "streakWins": "{{count}} victoires",
+      "streakLosses": "{{count}} défaites",
+      "longestWin": "Plus longue série de victoires",
+      "longestLoss": "Plus longue série de défaites",
+      "recentForm": "Forme récente (du plus récent au plus ancien)",
+      "bestStage": "Meilleur stage",
+      "worstStage": "Pire stage",
+      "notEnoughStageData": "Pas encore assez de données de stage.",
+      "byMatchType": "Par type de match"
+    },
+    "stageTable": {
+      "title": "Détail par stage",
+      "stage": "Stage",
+      "record": "Bilan",
+      "winRate": "Taux de victoire"
+    },
+    "counterpick": {
+      "title": "Conseiller de counterpick",
+      "gather": "Rassemblez plus de données : chaque stage doit avoir au moins {{count}} matchs enregistrés dans ce matchup avant de pouvoir suggérer des picks ou des bans.",
+      "pickThese": "À prendre",
+      "banThese": "À bannir / éviter",
+      "unknownStage": "Stage inconnu"
+    },
+    "opponentSplit": {
+      "title": "Par adversaire",
+      "empty": "Aucun adversaire nommé enregistré pour ce matchup pour l'instant."
+    },
+    "table": {
+      "empty": "Aucun match enregistré pour l'instant !",
+      "date": "Date",
+      "result": "Résultat",
+      "manage": "Gérer"
+    }
+  },
+  "fighterAnalysis": {
+    "loading": "Chargement de l'analyse du combattant...",
+    "noFightersSubtitle": "Choisissez vos combattants principaux et secondaires pour commencer l'analyse.",
+    "title": "Analyse du combattant",
+    "selectAria": "Sélectionner un combattant",
+    "selectPlaceholder": "Sélectionnez un combattant",
+    "hero": {
+      "rateAndGames": "{{rate}} % de victoires · {{count}} matchs",
+      "noMatches": "Aucun match enregistré avec ce combattant pour l'instant.",
+      "streakWin": "Série de {{count}}V",
+      "streakLoss": "Série de {{count}}D",
+      "share": "{{pct}} % de vos matchs",
+      "last10": "10 derniers (du plus récent au plus ancien)",
+      "formRolling": "Forme (fenêtre de 10)",
+      "typeColumn": "Type"
+    },
+    "stageMastery": {
+      "title": "Maîtrise des stages",
+      "bestPick": "Meilleur pick :",
+      "banWorthy": "À bannir :",
+      "empty": "Pas encore de données de stage — enregistrez des matchs avec ce combattant pour construire la grille."
+    },
+    "coverage": {
+      "title": "Couverture des matchups",
+      "empty": "Pas encore de données d'adversaires — enregistrez des matchs pour voir qui vous affrontez.",
+      "thin": "données minces",
+      "none": "aucune donnée"
+    },
+    "practice": {
+      "title": "Recommandations d'entraînement",
+      "empty": "Pas encore assez de données pour une recommandation — continuez d'enregistrer des matchs avec ce combattant.",
+      "struggling": "En difficulté contre {{name}} : {{wins}}-{{losses}}",
+      "noGames": "Aucun match contre {{name}} — vous l'affrontez souvent",
+      "stageHabit": "Vous jouez toujours sur {{stage}} : {{wins}}-{{losses}}"
+    },
+    "guide": {
+      "title": "Guide des stages par matchup",
+      "empty": "Pas encore de données de matchup — enregistrez des matchs avec ce combattant pour construire le guide."
+    },
+    "opponents": {
+      "title": "Adversaires",
+      "empty": "Aucun adversaire nommé enregistré pour l'instant.",
+      "matches": "Matchs"
     }
   }
 }

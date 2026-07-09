@@ -51,7 +51,7 @@ export function MatchDataPage() {
       <div className="flex flex-col items-center gap-2 py-16 text-center">
         <h2 className="text-xl font-semibold tracking-tight">{t('matchData.noMatches')}</h2>
         <Button asChild className="mt-2">
-          <Link to="/dashboard">{t('matchData.goToDashboard')}</Link>
+          <Link to="/dashboard">{t('common.goToDashboard')}</Link>
         </Button>
       </div>
     );

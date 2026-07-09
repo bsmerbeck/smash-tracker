@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import type { Match } from '@smash-tracker/shared';
 import { getOpponentRecords } from '@/lib/stats';
@@ -10,6 +11,7 @@ const TOP_N = 5;
  * each — top 5 by games played.
  */
 export function PairingOpponentSplit({ matchupMatches }: { matchupMatches: Match[] }) {
+  const { t } = useTranslation();
   const records = getOpponentRecords(matchupMatches)
     .sort((a, b) => b.total - a.total)
     .slice(0, TOP_N);
@@ -17,13 +19,11 @@ export function PairingOpponentSplit({ matchupMatches }: { matchupMatches: Match
   return (
     <Card>
       <CardHeader>
-        <CardTitle>By Opponent</CardTitle>
+        <CardTitle>{t('matchups.opponentSplit.title')}</CardTitle>
       </CardHeader>
       <CardContent>
         {records.length === 0 ? (
-          <p className="text-sm text-muted-foreground">
-            No named opponents recorded for this matchup yet.
-          </p>
+          <p className="text-sm text-muted-foreground">{t('matchups.opponentSplit.empty')}</p>
         ) : (
           <ul className="flex flex-col gap-2 text-sm">
             {records.map((record) => (

@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { StageOption } from '@/components/StageOption';
 import type { Match } from '@smash-tracker/shared';
@@ -17,6 +18,7 @@ const PICK_BAN_COUNT = 3;
  * user to log more matches instead of showing a misleading recommendation.
  */
 export function CounterpickAdvisor({ matchupMatches }: { matchupMatches: Match[] }) {
+  const { t } = useTranslation();
   const ranked = rankStagesByEvidence(matchupMatches, MIN_GAMES);
   const picks = ranked.slice(0, PICK_BAN_COUNT);
   // Bottom N, worst-first: take the tail (never overlapping the picks
@@ -27,19 +29,22 @@ export function CounterpickAdvisor({ matchupMatches }: { matchupMatches: Match[]
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Counterpick Advisor</CardTitle>
+        <CardTitle>{t('matchups.counterpick.title')}</CardTitle>
       </CardHeader>
       <CardContent className="flex flex-col gap-4">
         {ranked.length === 0 ? (
           <p className="text-sm text-muted-foreground">
-            Gather more data: stages need at least {MIN_GAMES} recorded matches in this matchup
-            before we can suggest picks or bans.
+            {t('matchups.counterpick.gather', { count: MIN_GAMES })}
           </p>
         ) : (
           <>
-            <StageGroup title="Pick these" tone="emerald" stages={picks} />
+            <StageGroup title={t('matchups.counterpick.pickThese')} tone="emerald" stages={picks} />
             {bans.length > 0 && (
-              <StageGroup title="Ban / avoid these" tone="destructive" stages={bans} />
+              <StageGroup
+                title={t('matchups.counterpick.banThese')}
+                tone="destructive"
+                stages={bans}
+              />
             )}
           </>
         )}
@@ -57,6 +62,7 @@ function StageGroup({
   tone: 'emerald' | 'destructive';
   stages: RankedStage[];
 }) {
+  const { t } = useTranslation();
   return (
     <div>
       <h3
@@ -72,10 +78,11 @@ function StageGroup({
               {stageData ? (
                 <StageOption stage={stageData} />
               ) : (
-                <span className="text-sm">Unknown stage</span>
+                <span className="text-sm">{t('matchups.counterpick.unknownStage')}</span>
               )}
               <span className="shrink-0 whitespace-nowrap text-sm text-muted-foreground">
-                {stage.wins}-{stage.losses} ({stage.winRate}% over {stage.total})
+                {stage.wins}-{stage.losses}{' '}
+                {t('common.rateOverSample', { rate: stage.winRate, total: stage.total })}
               </span>
             </li>
           );
