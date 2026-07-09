@@ -293,6 +293,26 @@ describe('GspPage', () => {
     expect(toastSuccess).toHaveBeenCalledWith(expect.stringMatching(/≈ \+\d+ MMR/));
   });
 
+  it('pins favorited stages atop the Quick Logger stage picker', async () => {
+    getFighters.mockResolvedValue({ primary: [mario.id], secondary: [] });
+    listMatches.mockResolvedValue([makeMatch({ id: 'm1', time: 1, win: true, gsp: 9_000_000 })]);
+    // Stage id 3 = Final Destination.
+    getStageFavorites.mockResolvedValue({ stageIds: [3], updatedAt: 0 });
+    const user = userEvent.setup();
+
+    renderGspPage();
+    await screen.findByText('Quick Logger');
+
+    await user.click(screen.getByRole('combobox', { name: 'Stage (optional)' }));
+
+    expect(await screen.findByText('Favorites')).toBeInTheDocument();
+    // Once under Favorites and once under All stages; the Quick Logger
+    // intentionally has no "Most played" group (no matches dependency).
+    // Exact name: /Final Destination/ would also catch "(Gen. Final Destination)".
+    expect(screen.getAllByRole('option', { name: 'Final Destination' })).toHaveLength(2);
+    expect(screen.queryByText('Most played')).not.toBeInTheDocument();
+  });
+
   it('requires an opponent character and result before submitting from the Quick Logger', async () => {
     getFighters.mockResolvedValue({ primary: [mario.id], secondary: [] });
     listMatches.mockResolvedValue([makeMatch({ id: 'm1', time: 1, win: true, gsp: 9_000_000 })]);

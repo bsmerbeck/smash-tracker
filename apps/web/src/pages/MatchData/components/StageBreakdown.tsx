@@ -2,20 +2,13 @@ import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { Match } from '@smash-tracker/shared';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import {
-  Select,
-  SelectContent,
-  SelectGroup,
-  SelectItem,
-  SelectLabel,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
+import { Select, SelectContent, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { NO_SELECTION_STAGE } from '@/data/stages';
 import { getFighterById } from '@/data/sprites';
 import { getStageRecords, getWinLossRecord } from '@/lib/stats';
 import { getGroupedStageOptions, stageOptions } from '@/lib/stageOptions';
-import { StageOption, stageAbbreviation } from '@/components/StageOption';
+import { stageAbbreviation } from '@/components/StageOption';
+import { StageSelectGroups } from '@/components/StageSelectGroups';
 
 /**
  * Ports legacy/src/screens/MatchData/components/StageBreakdown — pick a
@@ -25,16 +18,19 @@ import { StageOption, stageAbbreviation } from '@/components/StageOption';
 export function StageBreakdown({
   matches,
   usageMatches,
+  favoriteStageIds,
 }: {
   matches: Match[];
   /** Unfiltered matches used to compute "Most played" ordering; defaults to `matches` when omitted. */
   usageMatches?: Match[];
+  /** The user's favorited stage ids, pinned as a "Favorites" group. Passed in as a prop (rather than read via `useStageFavorites` here) to keep this component hook/provider-free for tests. */
+  favoriteStageIds?: number[];
 }) {
   const { t } = useTranslation();
   const [stageId, setStageId] = useState<number>(NO_SELECTION_STAGE.id);
-  const { mostPlayed, all: allStages } = useMemo(
-    () => getGroupedStageOptions(usageMatches ?? matches),
-    [usageMatches, matches],
+  const stageGroups = useMemo(
+    () => getGroupedStageOptions(usageMatches ?? matches, favoriteStageIds),
+    [usageMatches, matches, favoriteStageIds],
   );
 
   if (matches.length === 0) {
@@ -76,25 +72,7 @@ export function StageBreakdown({
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value={String(NO_SELECTION_STAGE.id)}>{NO_SELECTION_STAGE.name}</SelectItem>
-            {mostPlayed.length > 0 && (
-              <SelectGroup>
-                <SelectLabel>{t('matchForm.mostPlayed')}</SelectLabel>
-                {mostPlayed.map((s) => (
-                  <SelectItem key={`most-played-${s.id}`} value={String(s.id)}>
-                    <StageOption stage={s} />
-                  </SelectItem>
-                ))}
-              </SelectGroup>
-            )}
-            <SelectGroup>
-              <SelectLabel>{t('matchForm.allStages')}</SelectLabel>
-              {allStages.map((s) => (
-                <SelectItem key={`all-${s.id}`} value={String(s.id)}>
-                  <StageOption stage={s} />
-                </SelectItem>
-              ))}
-            </SelectGroup>
+            <StageSelectGroups groups={stageGroups} />
           </SelectContent>
         </Select>
 
