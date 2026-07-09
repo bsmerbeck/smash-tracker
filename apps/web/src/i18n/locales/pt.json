@@ -1051,5 +1051,110 @@
       "verifiedToast": "Conta do parry.gg verificada!",
       "codeNotFound": "Código de verificação ainda não encontrado. Tente novamente."
     }
+  },
+  "profile": {
+    "title": "Perfil",
+    "account": {
+      "title": "Conta",
+      "description": "Sua identidade no smash-tracker.",
+      "parryggNoEmailLinked": "Conta do parry.gg (sem e-mail) — vinculada a {{tag}}",
+      "parryggNoEmail": "Conta do parry.gg (sem e-mail)",
+      "memberSince": "Membro desde {{date}}",
+      "signInMethods": "Métodos de login",
+      "methodEmailPassword": "E-mail e senha",
+      "methodParrygg": "Verificação do parry.gg",
+      "methodCustom": "Login personalizado"
+    },
+    "security": {
+      "title": "Segurança",
+      "descPassword": "Altere a senha que você usa para entrar.",
+      "descResetOnly": "Adicione o login com senha à sua conta.",
+      "descNoEmail": "Como sua conta faz login.",
+      "resetExplainer": "Atualmente você entra sem senha. Enviar um e-mail de redefinição permite configurar uma, para que você também possa entrar com seu e-mail e uma senha daqui em diante.",
+      "sendReset": "Enviar e-mail de redefinição de senha",
+      "sending": "Enviando…",
+      "resetSent": "E-mail de redefinição enviado para {{email}}. Siga o link para adicionar o login com senha.",
+      "noEmailBody": "Sua conta não tem senha nem e-mail — o login funciona pela verificação do perfil do parry.gg. Gerencie esse vínculo em <integrationsLink>Integrações</integrationsLink>."
+    },
+    "password": {
+      "currentLabel": "Senha atual",
+      "newLabel": "Nova senha",
+      "confirmLabel": "Confirmar nova senha",
+      "submit": "Alterar senha",
+      "updating": "Atualizando…",
+      "updated": "Senha atualizada!",
+      "currentRequired": "A senha atual é obrigatória",
+      "minLength": "A senha deve ter pelo menos 6 caracteres",
+      "confirmRequired": "Confirme sua nova senha",
+      "mismatch": "As senhas não coincidem",
+      "wrongCurrent": "A senha atual está incorreta.",
+      "weak": "A senha deve ter pelo menos 6 caracteres.",
+      "requiresRecentLogin": "Para sua segurança, saia e entre novamente, depois tente de novo.",
+      "genericError": "Algo deu errado. Tente novamente."
+    },
+    "connected": {
+      "title": "Contas conectadas",
+      "description": "Vínculos com start.gg e parry.gg para importação automática de partidas.",
+      "linked": "Vinculada",
+      "notLinked": "Não vinculada",
+      "manage": "Gerenciar em Integrações"
+    },
+    "fighters": {
+      "title": "Lutadores",
+      "description": "Seus lutadores principais e secundários de Smash Ultimate.",
+      "loading": "Carregando seus lutadores...",
+      "primary": "Principais",
+      "secondary": "Secundários",
+      "none": "Nenhum selecionado",
+      "edit": "Editar lutadores"
+    },
+    "favoriteStages": {
+      "title": "Stages favoritos",
+      "description": "Fixados no topo dos seletores de stage ao registrar partidas — útil para a rotação habitual de quickplay/Elite Smash.",
+      "loading": "Carregando seus stages favoritos...",
+      "empty": "Nenhum stage favorito ainda.",
+      "removeAria": "Remover {{name}} dos favoritos",
+      "add": "Adicionar um stage favorito...",
+      "addAria": "Adicionar um stage favorito",
+      "searchPlaceholder": "Buscar stages...",
+      "noStage": "Nenhum stage encontrado.",
+      "saveError": "Não foi possível salvar seus stages favoritos. Tente novamente."
+    },
+    "billing": {
+      "title": "Cobrança",
+      "description": "Créditos para relatórios de scouting de IA.",
+      "freeAccess": "Acesso gratuito",
+      "credits_one": "{{count}} crédito",
+      "credits_other": "{{count}} créditos",
+      "packsStartAt_one": "Os pacotes começam em {{price}} por {{count}} relatório.",
+      "packsStartAt_other": "Os pacotes começam em {{price}} por {{count}} relatórios.",
+      "buyCredits": "Comprar créditos"
+    },
+    "data": {
+      "title": "Seus dados",
+      "description": "O que o smash-tracker tem registrado sobre você.",
+      "totalMatches": "Partidas no total",
+      "fromStartgg": "Do start.gg",
+      "fromParrygg": "Do parry.gg",
+      "manual": "Registradas manualmente",
+      "groupsJoined": "Grupos participados",
+      "aiReports": "Relatórios de IA gerados"
+    }
+  },
+  "characterSelect": {
+    "primaryHeading": "Escolha seus principais",
+    "primaryDescription": "Comece selecionando seus lutadores principais. Você pode buscar usando o campo abaixo. Para remover um personagem, basta clicar nele novamente. Quando terminar, pressione Salvar.",
+    "secondaryHeading": "Escolha seus secundários",
+    "secondaryDescription": "Comece selecionando seus lutadores secundários. Você pode buscar usando o campo abaixo. Para remover um personagem, basta clicar nele novamente. Quando terminar, pressione Salvar para começar a usar o Smash Tracker!",
+    "saveAndSecondaries": "Salvar e escolher secundários",
+    "saveAndDashboard": "Salvar e ir para o Painel",
+    "saveAndPrimaries": "Salvar e escolher principais",
+    "loading": "Carregando seus lutadores...",
+    "selected_one": "Selecionados ({{count}})",
+    "selected_other": "Selecionados ({{count}})",
+    "emptySelected": "Nenhum lutador selecionado ainda. Clique em um lutador abaixo para adicioná-lo.",
+    "filterPlaceholder": "Filtrar por nome...",
+    "saved": "Lutadores salvos!",
+    "saveFailed": "Não foi possível salvar os lutadores. Tente novamente."
   }
 }
