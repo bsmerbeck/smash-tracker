@@ -1,3 +1,5 @@
+import { useTranslation } from 'react-i18next';
+import type { TFunction } from 'i18next';
 import type { Match } from '@smash-tracker/shared';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -55,22 +57,24 @@ export function buildSessionsHeadline(sessions: SessionStats[]): SessionsHeadlin
   return { totalSessions: sessions.length, avgGamesPerSession, bestSession, worstTiltSession };
 }
 
-function formatDate(time: number): string {
-  return new Date(time).toLocaleDateString('en-US', {
+function formatDate(time: number, locale: string): string {
+  return new Date(time).toLocaleDateString(locale, {
     month: 'short',
     day: 'numeric',
     year: 'numeric',
   });
 }
 
-function formatDuration(session: SessionStats): string {
+function formatDuration(session: SessionStats, t: TFunction): string {
   const ms = session.end - session.start;
-  if (ms <= 0) return '< 1 min';
+  if (ms <= 0) return t('trends.sessions.durationUnderMin');
   const minutes = Math.round(ms / 60_000);
-  if (minutes < 60) return `${minutes} min`;
+  if (minutes < 60) return t('trends.sessions.durationMin', { count: minutes });
   const hours = Math.floor(minutes / 60);
   const remaining = minutes % 60;
-  return remaining > 0 ? `${hours}h ${remaining}m` : `${hours}h`;
+  return remaining > 0
+    ? t('trends.sessions.durationHM', { hours, minutes: remaining })
+    : t('trends.sessions.durationH', { hours });
 }
 
 /**
@@ -80,6 +84,7 @@ function formatDuration(session: SessionStats): string {
  * by date.
  */
 export function SessionsAndTilt({ matches }: { matches: Match[] }) {
+  const { t, i18n } = useTranslation();
   const sessions = getSessions(matches);
   const headline = buildSessionsHeadline(sessions);
   const recentSessions = [...sessions].reverse().slice(0, RECENT_SESSION_LIMIT);
@@ -87,35 +92,41 @@ export function SessionsAndTilt({ matches }: { matches: Match[] }) {
   return (
     <Card className="h-full">
       <CardHeader>
-        <CardTitle>Sessions &amp; Tilt</CardTitle>
+        <CardTitle>{t('trends.sessions.title')}</CardTitle>
       </CardHeader>
       <CardContent className="flex flex-col gap-4">
         {sessions.length === 0 ? (
-          <p className="text-sm text-muted-foreground">No match data to report yet.</p>
+          <p className="text-sm text-muted-foreground">{t('common.noMatchData')}</p>
         ) : (
           <>
             <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-              <Headline label="Total Sessions" value={headline.totalSessions} />
-              <Headline label="Avg Games / Session" value={headline.avgGamesPerSession} />
+              <Headline label={t('trends.sessions.total')} value={headline.totalSessions} />
+              <Headline label={t('trends.sessions.avgGames')} value={headline.avgGamesPerSession} />
               <Headline
-                label="Best Session"
+                label={t('trends.sessions.best')}
                 value={
                   headline.bestSession
                     ? `${headline.bestSession.wins}-${headline.bestSession.losses}`
                     : '—'
                 }
-                sub={headline.bestSession ? formatDate(headline.bestSession.start) : undefined}
+                sub={
+                  headline.bestSession
+                    ? formatDate(headline.bestSession.start, i18n.language)
+                    : undefined
+                }
               />
               <Headline
-                label="Worst Tilt"
+                label={t('trends.sessions.worstTilt')}
                 value={
                   headline.worstTiltSession
-                    ? `${headline.worstTiltSession.longestLossRun}L run`
+                    ? t('trends.sessions.tiltRun', {
+                        count: headline.worstTiltSession.longestLossRun,
+                      })
                     : '—'
                 }
                 sub={
                   headline.worstTiltSession
-                    ? formatDate(headline.worstTiltSession.start)
+                    ? formatDate(headline.worstTiltSession.start, i18n.language)
                     : undefined
                 }
                 tone={headline.worstTiltSession ? 'destructive' : undefined}
@@ -125,18 +136,18 @@ export function SessionsAndTilt({ matches }: { matches: Match[] }) {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Date</TableHead>
-                  <TableHead>Duration</TableHead>
-                  <TableHead>W-L</TableHead>
-                  <TableHead>Rate</TableHead>
-                  <TableHead>Longest Loss Run</TableHead>
+                  <TableHead>{t('trends.sessions.date')}</TableHead>
+                  <TableHead>{t('trends.sessions.duration')}</TableHead>
+                  <TableHead>{t('trends.monthly.wl')}</TableHead>
+                  <TableHead>{t('common.rate')}</TableHead>
+                  <TableHead>{t('trends.sessions.lossRun')}</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {recentSessions.map((session) => (
                   <TableRow key={session.start}>
-                    <TableCell>{formatDate(session.start)}</TableCell>
-                    <TableCell>{formatDuration(session)}</TableCell>
+                    <TableCell>{formatDate(session.start, i18n.language)}</TableCell>
+                    <TableCell>{formatDuration(session, t)}</TableCell>
                     <TableCell>
                       {session.wins}-{session.losses}
                     </TableCell>

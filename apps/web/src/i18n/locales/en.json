@@ -97,6 +97,10 @@
       "saved": "VOD notes saved!",
       "saveFailed": "Failed to save VOD notes. Please try again."
     },
+    "startgg": {
+      "view": "View on start.gg",
+      "viewName": "View {{name}} on start.gg"
+    },
     "filteredNotice": {
       "message": "No matches match the current filters.",
       "clear": "Clear filters"
@@ -530,6 +534,148 @@
       "title": "Opponents",
       "empty": "No named opponents recorded yet.",
       "matches": "Matches"
+    }
+  },
+  "trends": {
+    "loading": "Loading trends...",
+    "noMatches": "You have no matches, report a match and check back here to view trends!",
+    "hero": {
+      "currentRating": "Current Rating",
+      "glickoRating": "Glicko-2 rating",
+      "notEnoughGames": "Not enough games yet",
+      "peakRating": "Peak Rating",
+      "bestSessionRating": "Best session rating",
+      "bestMonth": "Best Month",
+      "bestMonthCaption": "{{month}} · {{wins}}-{{losses}} ({{count}} games)",
+      "bestMonthNeeds": "Needs a month with {{count}}+ games",
+      "currentForm": "Current Form",
+      "formCaption": "Last {{played}} of {{window}} games"
+    },
+    "monthly": {
+      "title": "Monthly Performance",
+      "winRateLabel": "Win Rate",
+      "caption": "Faded bars mark months with fewer than {{count}} games — small sample, read with caution.",
+      "tooltipRate": "Win rate: {{value}}%",
+      "tooltipGames": "Games played: {{count}}",
+      "month": "Month",
+      "wl": "W-L",
+      "games": "Games"
+    },
+    "ratingCurve": {
+      "title": "Rating Curve",
+      "current": "current rating",
+      "ratingLabel": "Rating",
+      "caption": "Glicko-2, session-based · unofficial. Dashed lines show the +/-RD uncertainty band.",
+      "locked": "Rating curve unlocks at {{count}} games",
+      "progress": "{{played}}/{{threshold}} games so far",
+      "tooltipGames_one": "{{count}} game this session",
+      "tooltipGames_other": "{{count}} games this session"
+    },
+    "sessions": {
+      "title": "Sessions & Tilt",
+      "total": "Total Sessions",
+      "avgGames": "Avg Games / Session",
+      "best": "Best Session",
+      "worstTilt": "Worst Tilt",
+      "tiltRun": "{{count}}L run",
+      "date": "Date",
+      "duration": "Duration",
+      "lossRun": "Longest Loss Run",
+      "durationUnderMin": "< 1 min",
+      "durationMin": "{{count}} min",
+      "durationHM": "{{hours}}h {{minutes}}m",
+      "durationH": "{{hours}}h"
+    },
+    "setting": {
+      "title": "Setting Comparison",
+      "online": "Online",
+      "offline": "Offline",
+      "unspecified": "Unspecified",
+      "noData": "no data",
+      "even": "You win about the same rate online and offline.",
+      "youWin": "You win",
+      "moreOnline": "more online than offline.",
+      "moreOffline": "more offline than online.",
+      "smallSample": "Need at least {{count}} games both online and offline for a reliable comparison."
+    },
+    "tournaments": {
+      "title": "Tournaments",
+      "loading": "Loading tournaments...",
+      "resyncPrefix": "Tournament entries attach on your next start.gg sync — head to",
+      "resyncSuffix": "and hit Sync now.",
+      "tournament": "Tournament",
+      "event": "Event",
+      "dates": "Dates"
+    },
+    "mix": {
+      "title": "Match-Type Mix Over Time",
+      "tourney": "Tourney",
+      "friendly": "Friendly",
+      "quickplay": "Quickplay",
+      "unspecified": "Unspecified"
+    }
+  },
+  "tournaments": {
+    "loading": "Loading tournament...",
+    "won": "Won",
+    "lost": "Lost",
+    "notFound": {
+      "title": "Tournament not found",
+      "body": "We couldn't find a tournament entry for that link. It may have been synced under a different account, or you followed a stale link.",
+      "back": "Back to Trends"
+    },
+    "header": {
+      "entrants": "{{count}} entrants",
+      "setsPlayed_one": "{{count}} set played",
+      "setsPlayed_other": "{{count}} sets played",
+      "outperformed": "Outperformed seed: {{seed}} → {{placement}}",
+      "underperformed": "Underperformed seed: {{seed}} → {{placement}}",
+      "matched": "Matched seed: {{seed}} → {{placement}}"
+    },
+    "results": {
+      "title": "Event Results",
+      "resync": "Full results attach on your next start.gg sync.",
+      "winner": "{{name}} won this event",
+      "place": "Place",
+      "entrant": "Entrant",
+      "playedTooltip": "You played them at this event"
+    },
+    "timeline": {
+      "title": "Set Timeline",
+      "empty": "No matches recorded for this event yet.",
+      "setsAria": "Sets",
+      "setFallback": "Set {{id}}",
+      "yourFighters": "Your fighters",
+      "opponentFighters": "Opponent fighters",
+      "watchVod": "Watch VOD",
+      "watchVodAria": "Watch VOD for {{set}}",
+      "editVodAria": "Edit VOD notes for {{set}}",
+      "otherMatches": "Other matches during this event"
+    },
+    "charStages": {
+      "yourCharacters": "Your Characters",
+      "opponentsCharacters": "Opponents' Characters",
+      "stagesPlayed": "Stages Played",
+      "noGames": "No games recorded.",
+      "noStageData": "No stage data recorded."
+    },
+    "retro": {
+      "title": "Advisor Retrospective",
+      "description": "Grading each pick against what the Counterpick Advisor would have recommended, using only data from before this tournament started.",
+      "noGames": "No games recorded for this event yet.",
+      "notEnough": "Not enough pre-tournament data to grade these picks.",
+      "adherence": "Advisor adherence: {{rate}}% of classifiable picks",
+      "followedWon": "followed picks won {{rate}}%",
+      "againstWon": "{{rate}}% when against",
+      "setsAria": "Advisor retrospective sets",
+      "unknownStage": "unknown stage",
+      "noDataTooltip": "Not enough pre-tournament data to grade this pick. You played {{stage}}. Result: {{result}}",
+      "advisorTooltip": "Advisor would have said: {{advice}} — you played {{stage}} ({{verdict}}). Result: {{result}}",
+      "advicePick": "pick {{stages}}",
+      "adviceNone": "no clear pick",
+      "verdictFollowed": "followed",
+      "verdictAgainst": "against",
+      "verdictNeutral": "neutral on"
     }
   }
 }

@@ -1,4 +1,5 @@
 import { Link } from 'react-router';
+import { useTranslation } from 'react-i18next';
 import { ExternalLink } from 'lucide-react';
 import type { Match, TournamentEntry } from '@smash-tracker/shared';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -41,17 +42,17 @@ export function buildTournamentEntryRows(
     }));
 }
 
-function formatDate(time: number): string {
-  return new Date(time).toLocaleDateString('en-US', {
+function formatDate(time: number, locale: string): string {
+  return new Date(time).toLocaleDateString(locale, {
     month: 'short',
     day: 'numeric',
     year: 'numeric',
   });
 }
 
-function formatDateRange(entry: TournamentEntry): string {
-  const start = formatDate(entry.firstSetAt);
-  const end = formatDate(entry.lastSetAt);
+function formatDateRange(entry: TournamentEntry, locale: string): string {
+  const start = formatDate(entry.firstSetAt, locale);
+  const end = formatDate(entry.lastSetAt, locale);
   return start === end ? start : `${start} – ${end}`;
 }
 
@@ -69,6 +70,7 @@ function formatDateRange(entry: TournamentEntry): string {
  * trigger the internal row link); hidden entirely when the slug is absent.
  */
 export function Tournaments({ matches }: { matches: Match[] }) {
+  const { t, i18n } = useTranslation();
   const { data: entries, isLoading } = useTournamentEntries();
 
   const rows = buildTournamentEntryRows(entries ?? [], matches);
@@ -76,29 +78,29 @@ export function Tournaments({ matches }: { matches: Match[] }) {
   return (
     <Card className="h-full">
       <CardHeader>
-        <CardTitle>Tournaments</CardTitle>
+        <CardTitle>{t('trends.tournaments.title')}</CardTitle>
       </CardHeader>
       <CardContent>
         {isLoading ? (
-          <p className="text-sm text-muted-foreground">Loading tournaments...</p>
+          <p className="text-sm text-muted-foreground">{t('trends.tournaments.loading')}</p>
         ) : rows.length === 0 ? (
           <p className="text-sm text-muted-foreground">
-            Tournament entries attach on your next start.gg sync — head to{' '}
+            {t('trends.tournaments.resyncPrefix')}{' '}
             <Link to="/settings/integrations" className="font-medium text-primary underline">
-              Integrations
+              {t('nav.integrations')}
             </Link>{' '}
-            and hit Sync now.
+            {t('trends.tournaments.resyncSuffix')}
           </p>
         ) : (
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Tournament</TableHead>
-                <TableHead>Event</TableHead>
-                <TableHead>Dates</TableHead>
-                <TableHead>W-L</TableHead>
-                <TableHead>Rate</TableHead>
-                <TableHead>Games</TableHead>
+                <TableHead>{t('trends.tournaments.tournament')}</TableHead>
+                <TableHead>{t('trends.tournaments.event')}</TableHead>
+                <TableHead>{t('trends.tournaments.dates')}</TableHead>
+                <TableHead>{t('trends.monthly.wl')}</TableHead>
+                <TableHead>{t('common.rate')}</TableHead>
+                <TableHead>{t('trends.monthly.games')}</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -120,7 +122,7 @@ export function Tournaments({ matches }: { matches: Match[] }) {
                             target="_blank"
                             rel="noreferrer"
                             onClick={(e) => e.stopPropagation()}
-                            aria-label="View on start.gg"
+                            aria-label={t('shared.startgg.view')}
                             className="inline-flex text-muted-foreground hover:text-foreground"
                           >
                             <ExternalLink className="size-3.5" />
@@ -129,7 +131,7 @@ export function Tournaments({ matches }: { matches: Match[] }) {
                       </span>
                     </TableCell>
                     <TableCell className="whitespace-normal">{entry.eventName}</TableCell>
-                    <TableCell>{formatDateRange(entry)}</TableCell>
+                    <TableCell>{formatDateRange(entry, i18n.language)}</TableCell>
                     <TableCell>
                       {record.wins}-{record.losses}
                     </TableCell>

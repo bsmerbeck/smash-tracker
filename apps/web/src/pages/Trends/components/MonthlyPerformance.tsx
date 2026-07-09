@@ -1,3 +1,5 @@
+import { useTranslation } from 'react-i18next';
+import type { TFunction } from 'i18next';
 import {
   BarElement,
   CategoryScale,
@@ -26,12 +28,12 @@ ChartJS.register(CategoryScale, LinearScale, BarElement, Tooltip, Legend);
 /** Below this many games in a month, the bar renders at reduced opacity as a small-sample cue. */
 export const SMALL_SAMPLE_THRESHOLD = 3;
 
-/** Formats a `YYYY-MM` month key as a short human label, e.g. '2021-01' -> 'Jan 2021'. */
-export function formatMonthLabel(month: string): string {
+/** Formats a `YYYY-MM` month key as a short human label in the given locale, e.g. '2021-01' -> 'Jan 2021'. */
+export function formatMonthLabel(month: string, locale: string): string {
   const [year, monthNum] = month.split('-').map(Number);
   if (!year || !monthNum) return month;
   const date = new Date(Date.UTC(year, monthNum - 1, 1));
-  return date.toLocaleDateString('en-US', { month: 'short', year: 'numeric', timeZone: 'UTC' });
+  return date.toLocaleDateString(locale, { month: 'short', year: 'numeric', timeZone: 'UTC' });
 }
 
 /**
@@ -40,12 +42,12 @@ export function formatMonthLabel(month: string): string {
  * rendering chart.js. Bars for months under `SMALL_SAMPLE_THRESHOLD` games
  * get a reduced-opacity fill as a small-sample visual cue.
  */
-export function buildMonthlyChartData(records: MonthlyRecord[]) {
+export function buildMonthlyChartData(records: MonthlyRecord[], t: TFunction, locale: string) {
   return {
-    labels: records.map((r) => formatMonthLabel(r.month)),
+    labels: records.map((r) => formatMonthLabel(r.month, locale)),
     datasets: [
       {
-        label: 'Win Rate',
+        label: t('trends.monthly.winRateLabel'),
         data: records.map((r) => r.winRate),
         backgroundColor: records.map((r) =>
           r.total < SMALL_SAMPLE_THRESHOLD ? chartColors.redSoft : chartColors.red,
@@ -60,7 +62,7 @@ export function buildMonthlyChartData(records: MonthlyRecord[]) {
   };
 }
 
-function buildMonthlyChartOptions(records: MonthlyRecord[]): ChartOptions<'bar'> {
+function buildMonthlyChartOptions(records: MonthlyRecord[], t: TFunction): ChartOptions<'bar'> {
   const theme = darkChartOptions();
   return {
     responsive: theme.responsive,
@@ -80,10 +82,10 @@ function buildMonthlyChartOptions(records: MonthlyRecord[]): ChartOptions<'bar'>
         borderColor: chartColors.tooltipBorder,
         borderWidth: 1,
         callbacks: {
-          label: (item) => `Win rate: ${item.formattedValue}%`,
+          label: (item) => t('trends.monthly.tooltipRate', { value: item.formattedValue }),
           afterLabel: (item) => {
             const record = records[item.dataIndex];
-            return record ? `Games played: ${record.total}` : '';
+            return record ? t('trends.monthly.tooltipGames', { count: record.total }) : '';
           },
         },
       },
@@ -97,44 +99,44 @@ function buildMonthlyChartOptions(records: MonthlyRecord[]): ChartOptions<'bar'>
  * at reduced opacity, called out in a caption.
  */
 export function MonthlyPerformance({ matches }: { matches: Match[] }) {
+  const { t, i18n } = useTranslation();
   const records = getMonthlyRecords(matches);
 
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Monthly Performance</CardTitle>
+        <CardTitle>{t('trends.monthly.title')}</CardTitle>
       </CardHeader>
       <CardContent className="flex flex-col gap-4">
         {records.length === 0 ? (
-          <p className="text-sm text-muted-foreground">No match data to report yet.</p>
+          <p className="text-sm text-muted-foreground">{t('common.noMatchData')}</p>
         ) : (
           <div className="flex flex-col gap-4 lg:flex-row">
             <div className="flex flex-col gap-2 lg:w-3/5">
               <div className="h-64">
                 <Bar
-                  data={buildMonthlyChartData(records)}
-                  options={buildMonthlyChartOptions(records)}
+                  data={buildMonthlyChartData(records, t, i18n.language)}
+                  options={buildMonthlyChartOptions(records, t)}
                 />
               </div>
               <p className="text-xs text-muted-foreground">
-                Faded bars mark months with fewer than {SMALL_SAMPLE_THRESHOLD} games — small
-                sample, read with caution.
+                {t('trends.monthly.caption', { count: SMALL_SAMPLE_THRESHOLD })}
               </p>
             </div>
             <div className="max-h-72 overflow-y-auto lg:w-2/5">
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Month</TableHead>
-                    <TableHead>W-L</TableHead>
-                    <TableHead>Rate</TableHead>
-                    <TableHead>Games</TableHead>
+                    <TableHead>{t('trends.monthly.month')}</TableHead>
+                    <TableHead>{t('trends.monthly.wl')}</TableHead>
+                    <TableHead>{t('common.rate')}</TableHead>
+                    <TableHead>{t('trends.monthly.games')}</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {[...records].reverse().map((record) => (
                     <TableRow key={record.month}>
-                      <TableCell>{formatMonthLabel(record.month)}</TableCell>
+                      <TableCell>{formatMonthLabel(record.month, i18n.language)}</TableCell>
                       <TableCell>
                         {record.wins}-{record.losses}
                       </TableCell>
