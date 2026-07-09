@@ -1,6 +1,7 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { AuthProvider } from '@/context/AuthContext';
 import { AnalyticsFilterProvider } from '@/context/AnalyticsFilterContext';
 import i18n from '@/i18n';
@@ -31,8 +32,29 @@ vi.mock('@/lib/api', () => ({
     users: {
       upsertMe: vi.fn().mockResolvedValue({ uid: 'test-uid', email: 'test@example.com' }),
     },
+    // MainLayout mounts useStartggAutoSync; unlinked = the no-op path.
+    startgg: {
+      status: vi.fn().mockResolvedValue({ linked: false }),
+    },
   },
 }));
+
+function renderLayout() {
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  return render(
+    <QueryClientProvider client={queryClient}>
+      <MemoryRouter initialEntries={['/dashboard']}>
+        <AuthProvider>
+          <AnalyticsFilterProvider>
+            <MainLayout>
+              <div>Page content</div>
+            </MainLayout>
+          </AnalyticsFilterProvider>
+        </AuthProvider>
+      </MemoryRouter>
+    </QueryClientProvider>,
+  );
+}
 
 describe('MainLayout', () => {
   beforeEach(() => {
@@ -42,17 +64,7 @@ describe('MainLayout', () => {
   });
 
   it('renders the layout with all nav links and the signed-in user email', async () => {
-    render(
-      <MemoryRouter initialEntries={['/dashboard']}>
-        <AuthProvider>
-          <AnalyticsFilterProvider>
-            <MainLayout>
-              <div>Page content</div>
-            </MainLayout>
-          </AnalyticsFilterProvider>
-        </AuthProvider>
-      </MemoryRouter>,
-    );
+    renderLayout();
 
     expect(await screen.findByText('Page content')).toBeInTheDocument();
 
@@ -67,17 +79,7 @@ describe('MainLayout', () => {
   });
 
   it('renders the Donorbox donate link below Training Grounds in the sidebar', async () => {
-    render(
-      <MemoryRouter initialEntries={['/dashboard']}>
-        <AuthProvider>
-          <AnalyticsFilterProvider>
-            <MainLayout>
-              <div>Page content</div>
-            </MainLayout>
-          </AnalyticsFilterProvider>
-        </AuthProvider>
-      </MemoryRouter>,
-    );
+    renderLayout();
 
     await screen.findByText('Page content');
 

@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { SUPPORTED_LANGUAGES } from '@/i18n';
+import { useStartggAutoSync } from '@/hooks/useStartgg';
 import { Sidebar } from './Sidebar';
 import { Topbar } from './Topbar';
 import { Footer } from './Footer';
@@ -41,6 +42,8 @@ export function MainLayout({ children }: { children: ReactNode }) {
   // page_view reporting lives in routes/RouteAnalytics.tsx (app-wide, public
   // pages included), not here.
   useLanguageDetectionNotice();
+  // First-ever start.gg sync for a freshly-linked account (see the hook doc).
+  useStartggAutoSync();
   return (
     <TooltipProvider>
       <div className="flex min-h-svh flex-col">
