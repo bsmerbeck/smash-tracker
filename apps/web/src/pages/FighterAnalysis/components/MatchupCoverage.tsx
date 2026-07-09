@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next';
 import type { Match } from '@smash-tracker/shared';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { getFighterById } from '@/data/sprites';
@@ -10,10 +11,11 @@ const STATUS_CLASSES: Record<CoverageStatus, string> = {
   none: 'border-destructive/50 bg-destructive/10 opacity-75',
 };
 
-const STATUS_LABEL: Record<CoverageStatus, string> = {
+/** Status chip label key per coverage bucket; 'covered' renders no chip. */
+const STATUS_LABEL_KEYS: Record<CoverageStatus, string> = {
   covered: '',
-  thin: 'thin data',
-  none: 'no data',
+  thin: 'fighterAnalysis.coverage.thin',
+  none: 'fighterAnalysis.coverage.none',
 };
 
 /**
@@ -29,18 +31,17 @@ export function MatchupCoverage({
   allFilteredMatches: Match[];
   fighterMatches: Match[];
 }) {
+  const { t } = useTranslation();
   const coverage = buildMatchupCoverage(allFilteredMatches, fighterMatches);
 
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Matchup Coverage</CardTitle>
+        <CardTitle>{t('fighterAnalysis.coverage.title')}</CardTitle>
       </CardHeader>
       <CardContent>
         {coverage.length === 0 ? (
-          <p className="text-sm text-muted-foreground">
-            No opponent data yet — report matches to see who you actually face.
-          </p>
+          <p className="text-sm text-muted-foreground">{t('fighterAnalysis.coverage.empty')}</p>
         ) : (
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6">
             {coverage.map((entry) => (
@@ -54,9 +55,10 @@ export function MatchupCoverage({
 }
 
 function CoverageTile({ entry }: { entry: CoverageEntry }) {
+  const { t } = useTranslation();
   const sprite = getFighterById(entry.opponentFighterId);
-  const name = sprite?.name ?? 'Unknown';
-  const statusLabel = STATUS_LABEL[entry.status];
+  const name = sprite?.name ?? t('common.unknown');
+  const statusLabelKey = STATUS_LABEL_KEYS[entry.status];
 
   return (
     <div
@@ -78,15 +80,15 @@ function CoverageTile({ entry }: { entry: CoverageEntry }) {
           {entry.record.wins}-{entry.record.losses} &middot; {entry.record.winRate}%
         </span>
       ) : (
-        <span className="text-xs text-muted-foreground">0 games</span>
+        <span className="text-xs text-muted-foreground">{t('common.games', { count: 0 })}</span>
       )}
-      {statusLabel && (
+      {statusLabelKey && (
         <span
           className={`rounded-full px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${
             entry.status === 'none' ? 'text-destructive' : 'text-amber-600'
           }`}
         >
-          {statusLabel}
+          {t(statusLabelKey)}
         </span>
       )}
     </div>

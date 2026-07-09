@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import type { Match } from '@smash-tracker/shared';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import {
@@ -29,6 +30,7 @@ export function StageBreakdown({
   /** Unfiltered matches used to compute "Most played" ordering; defaults to `matches` when omitted. */
   usageMatches?: Match[];
 }) {
+  const { t } = useTranslation();
   const [stageId, setStageId] = useState<number>(NO_SELECTION_STAGE.id);
   const { mostPlayed, all: allStages } = useMemo(
     () => getGroupedStageOptions(usageMatches ?? matches),
@@ -39,10 +41,10 @@ export function StageBreakdown({
     return (
       <Card>
         <CardHeader>
-          <CardTitle>Stage Breakdown</CardTitle>
+          <CardTitle>{t('matchData.stages.title')}</CardTitle>
         </CardHeader>
         <CardContent>
-          <p className="text-sm text-muted-foreground">No match data to report yet.</p>
+          <p className="text-sm text-muted-foreground">{t('common.noMatchData')}</p>
         </CardContent>
       </Card>
     );
@@ -66,18 +68,18 @@ export function StageBreakdown({
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Stage Breakdown</CardTitle>
+        <CardTitle>{t('matchData.stages.title')}</CardTitle>
       </CardHeader>
       <CardContent className="flex flex-col gap-4">
         <Select value={String(stageId)} onValueChange={(v) => setStageId(Number(v))}>
-          <SelectTrigger className="w-full max-w-xs" aria-label="Select stage">
+          <SelectTrigger className="w-full max-w-xs" aria-label={t('matchData.stages.selectAria')}>
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
             <SelectItem value={String(NO_SELECTION_STAGE.id)}>{NO_SELECTION_STAGE.name}</SelectItem>
             {mostPlayed.length > 0 && (
               <SelectGroup>
-                <SelectLabel>Most played</SelectLabel>
+                <SelectLabel>{t('matchForm.mostPlayed')}</SelectLabel>
                 {mostPlayed.map((s) => (
                   <SelectItem key={`most-played-${s.id}`} value={String(s.id)}>
                     <StageOption stage={s} />
@@ -86,7 +88,7 @@ export function StageBreakdown({
               </SelectGroup>
             )}
             <SelectGroup>
-              <SelectLabel>All stages</SelectLabel>
+              <SelectLabel>{t('matchForm.allStages')}</SelectLabel>
               {allStages.map((s) => (
                 <SelectItem key={`all-${s.id}`} value={String(s.id)}>
                   <StageOption stage={s} />
@@ -115,12 +117,12 @@ export function StageBreakdown({
             ))}
           <h3 className="text-lg font-medium">{selectedStage.name}</h3>
           {!record || record.total === 0 ? (
-            <p className="text-sm text-muted-foreground">No reported matches on this stage.</p>
+            <p className="text-sm text-muted-foreground">{t('matchData.stages.noneOnStage')}</p>
           ) : (
             <div className="flex justify-evenly pt-2">
-              <Stat label="Rate" value={`${record.winRate}%`} />
-              <Stat label="Wins" value={record.wins} />
-              <Stat label="Losses" value={record.losses} />
+              <Stat label={t('common.rate')} value={`${record.winRate}%`} />
+              <Stat label={t('common.wins')} value={record.wins} />
+              <Stat label={t('common.losses')} value={record.losses} />
             </div>
           )}
         </div>
@@ -133,8 +135,8 @@ export function StageBreakdown({
                 <span className="flex-1 font-medium">{fighter.name}</span>
                 <div className="flex gap-4 text-sm text-muted-foreground">
                   <span>{winRate}%</span>
-                  <span>{wins}W</span>
-                  <span>{losses}L</span>
+                  <span>{t('matchData.stages.winsShort', { count: wins })}</span>
+                  <span>{t('matchData.stages.lossesShort', { count: losses })}</span>
                 </div>
               </li>
             ))}

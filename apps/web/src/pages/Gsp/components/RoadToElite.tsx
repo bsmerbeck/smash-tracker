@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next';
 import { PartyPopper } from 'lucide-react';
 import type { GspPoint, GspSettings } from '@smash-tracker/shared';
 import {
@@ -28,6 +29,7 @@ import { useNowMs } from '../lib/useNowMs';
  * "from your own GSP history" cross-check line, when it can compute.
  */
 export function RoadToElite({ series, settings }: { series: GspPoint[]; settings: GspSettings }) {
+  const { t } = useTranslation();
   const nowMs = useNowMs();
   const lastPoint = series.length > 0 ? series[series.length - 1]! : null;
   const winRate = getRecentGspWinRate(series) ?? 0;
@@ -50,66 +52,65 @@ export function RoadToElite({ series, settings }: { series: GspPoint[]; settings
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Road to Elite</CardTitle>
+        <CardTitle>{t('gsp.road.title')}</CardTitle>
       </CardHeader>
       <CardContent className="flex flex-col gap-3">
         {mmrProjection === null ? (
-          <p className="text-sm text-muted-foreground">
-            Log a match with a GSP reading for this fighter to see a projection.
-          </p>
+          <p className="text-sm text-muted-foreground">{t('gsp.road.empty')}</p>
         ) : mmrProjection.status === 'already-elite' ? (
           <div className="flex items-center gap-2 text-emerald-500">
             <PartyPopper className="size-6" />
-            <p className="text-lg font-semibold">You&apos;re already in Elite Smash!</p>
+            <p className="text-lg font-semibold">{t('gsp.road.alreadyElite')}</p>
           </div>
         ) : mmrProjection.status === 'equilibrium' ? (
           <>
-            <p className="text-lg font-semibold">Holding steady at your level</p>
+            <p className="text-lg font-semibold">{t('gsp.road.equilibriumTitle')}</p>
             <p className="text-sm text-muted-foreground">
-              At your current {Math.round(winRate * 100)}% win rate, matchmaking thinks this is your
-              level right now — every match trades ~{ASSUMED_MMR_POINTS_PER_MATCH} MMR both ways, so
-              a &gt;50% win rate is what moves you up, not more matches. Keep working the matchups
-              on this page and the number will follow.
+              {t('gsp.road.equilibriumBody', {
+                rate: Math.round(winRate * 100),
+                points: ASSUMED_MMR_POINTS_PER_MATCH,
+              })}
             </p>
           </>
         ) : mmrProjection.status === 'capped' ? (
           <>
-            <p className="text-2xl font-bold">more than {MAX_PROJECTED_MATCHES} net wins</p>
-            <p className="text-sm text-muted-foreground">
-              Your win rate is barely above 50%, so expected progress per match is tiny — a small
-              bump in win rate shortens this dramatically.
+            <p className="text-2xl font-bold">
+              {t('gsp.road.cappedTitle', { max: MAX_PROJECTED_MATCHES })}
             </p>
+            <p className="text-sm text-muted-foreground">{t('gsp.road.cappedBody')}</p>
           </>
         ) : (
           <>
             <p className="text-2xl font-bold">
-              ~{mmrProjection.matchesNeeded} more match
-              {mmrProjection.matchesNeeded === 1 ? '' : 'es'}
+              {t('gsp.road.projected', { count: mmrProjection.matchesNeeded })}
             </p>
             <p className="text-sm text-muted-foreground">
-              to Elite (MMR {GSP_MODEL.ELITE_MMR}) at your ~{ASSUMED_MMR_POINTS_PER_MATCH} MMR/match
-              and {Math.round(winRate * 100)}% win rate (community model estimate)
+              {t('gsp.road.projectedCaption', {
+                elite: GSP_MODEL.ELITE_MMR,
+                points: ASSUMED_MMR_POINTS_PER_MATCH,
+                rate: Math.round(winRate * 100),
+              })}
             </p>
             {decayProjection && (
               <p className="text-xs text-muted-foreground">
-                From your own GSP history instead: ~{decayProjection.matchesNeededLabel} more match
-                {decayProjection.matchesNeededLabel === '1' ? '' : 'es'} (V10&apos;s{' '}
-                {decayProjection.model === 'exponential-decay'
-                  ? 'shrinking-gains fit'
-                  : 'flat-average fallback'}
-                ).
+                {t(
+                  decayProjection.matchesNeededLabel === '1'
+                    ? 'gsp.road.historyOne'
+                    : 'gsp.road.historyMany',
+                  {
+                    label: decayProjection.matchesNeededLabel,
+                    model: t(
+                      decayProjection.model === 'exponential-decay'
+                        ? 'gsp.road.decayFit'
+                        : 'gsp.road.flatFallback',
+                    ),
+                  },
+                )}
               </p>
             )}
             <ul className="list-disc space-y-1 pl-4 text-xs text-muted-foreground">
-              <li>
-                Assumes matchmaking keeps pairing you against similar-MMR opponents (each match
-                trades ~{ASSUMED_MMR_POINTS_PER_MATCH} MMR, the community table&apos;s value for an
-                even match) and that your recent win rate holds.
-              </li>
-              <li>
-                Built on the community-reverse-engineered MMR model, not Nintendo&apos;s algorithm —
-                a simulation, not a guarantee.
-              </li>
+              <li>{t('gsp.road.assumption1', { points: ASSUMED_MMR_POINTS_PER_MATCH })}</li>
+              <li>{t('gsp.road.assumption2')}</li>
             </ul>
           </>
         )}

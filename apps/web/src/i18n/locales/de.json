@@ -44,7 +44,13 @@
     "casual": "Casual",
     "competitive": "Kompetitiv",
     "unknown": "Unbekannt",
-    "notAvailable": "k. A."
+    "notAvailable": "k. A.",
+    "noMatchData": "Noch keine Match-Daten vorhanden.",
+    "rate": "Quote",
+    "games_one": "{{count}} Match",
+    "games_other": "{{count}} Matches",
+    "rateOverSample": "({{rate}} % bei {{total}} Spielen)",
+    "goToDashboard": "Zum Dashboard"
   },
   "filters": {
     "sourceAria": "Matches nach Quelle filtern",
@@ -56,6 +62,41 @@
     "months12": "12 M"
   },
   "shared": {
+    "noFighters": {
+      "title": "Du hast noch keine Kämpfer ausgewählt!",
+      "subtitle": "Wähle deine Main- und Secondary-Kämpfer, um Matches zu erfassen.",
+      "choosePrimary": "Main-Kämpfer wählen",
+      "chooseSecondary": "Secondary-Kämpfer wählen"
+    },
+    "matchDelete": {
+      "aria": "Match löschen",
+      "confirmTitle": "Dieses Match löschen?",
+      "deleted": "Match gelöscht!",
+      "deleteFailed": "Match konnte nicht gelöscht werden. Bitte erneut versuchen."
+    },
+    "noMatches": {
+      "title": "Du hast noch keine Matches gemeldet!",
+      "subtitle": "Erfasse ein Match im Dashboard und schau dann hier wieder vorbei."
+    },
+    "vod": {
+      "title": "VOD-Notizen",
+      "description": "Hänge einen VOD-Link und Notizen mit Zeitstempel an, z. B. „2:41 — Punish auf Schild verpasst“.",
+      "url": "VOD-URL",
+      "timestamps": "Zeitstempel",
+      "noTimestamps": "Noch keine Zeitstempel-Notizen.",
+      "timestampsAria": "Zeitstempel-Notizen",
+      "deleteTimestamp": "Zeitstempel {{time}} löschen",
+      "timePlaceholder": "m:ss",
+      "timeAria": "Zeitstempel-Zeit",
+      "notePlaceholder": "Notiz",
+      "noteAria": "Zeitstempel-Notiz",
+      "addTimestamp": "Zeitstempel hinzufügen",
+      "timeFormatError": "Gib eine Zeit als m:ss oder h:mm:ss ein",
+      "noteRequired": "Gib eine Notiz für diesen Zeitstempel ein",
+      "timestampLimit": "Maximal {{max}} Zeitstempel pro Match",
+      "saved": "VOD-Notizen gespeichert!",
+      "saveFailed": "VOD-Notizen konnten nicht gespeichert werden. Bitte erneut versuchen."
+    },
     "filteredNotice": {
       "message": "Keine Matches entsprechen den aktuellen Filtern.",
       "clear": "Filter zurücksetzen"
@@ -73,18 +114,9 @@
   },
   "dashboard": {
     "loading": "Dein Dashboard wird geladen...",
-    "empty": {
-      "title": "Du hast noch keine Kämpfer ausgewählt!",
-      "subtitle": "Wähle deine Main- und Secondary-Kämpfer, um Matches zu erfassen.",
-      "choosePrimary": "Main-Kämpfer wählen",
-      "chooseSecondary": "Secondary-Kämpfer wählen"
-    },
     "hero": {
       "overallRecord": "Gesamtbilanz",
       "winRate": "{{rate}} % Winrate",
-      "games_one": "{{count}} Match",
-      "games_other": "{{count}} Matches",
-      "noMatchData": "Noch keine Match-Daten vorhanden.",
       "form": "Form",
       "streakWin": "{{count}}S",
       "streakLoss": "{{count}}N",
@@ -107,9 +139,6 @@
       "ratingDown": "Wertung niedriger als in der letzten Sitzung",
       "ratingUnchanged": "Wertung unverändert zur letzten Sitzung"
     },
-    "tracker": {
-      "rate": "Quote"
-    },
     "formCurve": {
       "title": "Formkurve",
       "window": "Fenster",
@@ -124,11 +153,7 @@
       "title": "Letzte Matches",
       "limit": "Limit",
       "limitAria": "Match-Limit",
-      "empty": "Noch keine Matches erfasst.",
-      "deleteAria": "Match löschen",
-      "confirmTitle": "Dieses Match löschen?",
-      "deleted": "Match gelöscht!",
-      "deleteFailed": "Match konnte nicht gelöscht werden. Bitte erneut versuchen."
+      "empty": "Noch keine Matches erfasst."
     },
     "stages": {
       "title": "Meistgespielte Stages",
@@ -222,6 +247,288 @@
       "deleteMatch": "Match löschen",
       "edited": "Match bearbeitet!",
       "saveFailed": "Match konnte nicht gespeichert werden. Bitte erneut versuchen."
+    }
+  },
+  "gsp": {
+    "loading": "GSP-Tracker wird geladen...",
+    "selectFighterAria": "Kämpfer auswählen",
+    "empty": {
+      "title": "Verfolge deinen GSP-Aufstieg",
+      "body": "GSP (Global Smash Power) ist das Online-Quickplay-Ranking von Smash Ultimate und wird pro Charakter geführt. Erfasse ein Quickplay-Match mit der GSP vom Ergebnisbildschirm — diese Seite zeichnet deinen Aufstieg auf, schlüsselt deine Gewinne und Verluste auf und schätzt, wie weit du von Elite Smash entfernt bist.",
+      "cta": "Match im Dashboard erfassen"
+    },
+    "header": {
+      "title": "GSP-Tracker",
+      "subtitle": "Global Smash Power gilt pro Charakter und die genaue Formel wird von Nintendo nie veröffentlicht — alles hier ist eine Schätzung aus deinen eigenen erfassten Matches und einem von der Community per Reverse Engineering rekonstruierten Modell der versteckten MMR hinter der GSP."
+    },
+    "deleteConfirm": {
+      "title": "Diesen GSP-Eintrag löschen?",
+      "body": "Das Match und seine GSP-Ablesung werden gemeinsam entfernt — diese Aktion kann nicht rückgängig gemacht werden.",
+      "deleted": "GSP-Eintrag gelöscht!",
+      "deleteFailed": "Eintrag konnte nicht gelöscht werden. Bitte erneut versuchen."
+    },
+    "hero": {
+      "currentGsp": "Aktuelle GSP",
+      "latestReading": "letzte Ablesung",
+      "noGsp": "Noch keine GSP erfasst",
+      "estMmr": "Gesch. MMR",
+      "tailReading": "Randbereich-Ablesung ({{zone}}) — ungefähr",
+      "modelLink": "Community-Modell (Reverse Engineering)",
+      "modelAccuracy": "(±1 GSP auf der Hauptkurve; Ränder ungefähr)",
+      "eliteThreshold": "Elite-Schwelle",
+      "thresholdAria": "Elite-Smash-Schwelle",
+      "saveThreshold": "Schwelle speichern",
+      "cancelThreshold": "Bearbeitung der Schwelle abbrechen",
+      "editThreshold": "Elite-Schwelle bearbeiten",
+      "recalibrated": "rekalibriert am {{date}}",
+      "fromAnchor": "vom Modellanker",
+      "computedCaption": "berechnet · {{calibration}} · Bearbeiten rekalibriert das Modell — hol dir die aktuelle Zahl von",
+      "invalidThreshold": "Gib eine positive ganze Zahl ein — Kommas sind okay, z. B. 10,300,000.",
+      "recalibratedToast": "Modell anhand deiner Schwellen-Ablesung rekalibriert!",
+      "thresholdSaveFailed": "Elite-Schwelle konnte nicht gespeichert werden. Bitte erneut versuchen.",
+      "distanceToElite": "Abstand zu Elite",
+      "elite": "ELITE",
+      "belowElite": "MMR {{mmr}} · unter Elite ({{elite}})",
+      "recentWinRate": "Aktuelle Winrate",
+      "lastNGames_one": "letztes Match",
+      "lastNGames_other": "letzte {{count}} Matches"
+    },
+    "curve": {
+      "title": "GSP-Kurve",
+      "gspViewAria": "GSP-Ansicht",
+      "mmrViewAria": "MMR-Ansicht",
+      "gspLabel": "GSP",
+      "eliteLine": "Elite-Schwelle",
+      "estMmrLabel": "Gesch. MMR",
+      "eliteMmrLine": "Elite (MMR {{mmr}})",
+      "mmrCaption": "Geschätzte versteckte MMR hinter jeder Ablesung (Community-Modell per Reverse Engineering) — anders als die GSP inflationiert sie nicht mit der Zeit: Eine flache Linie bedeutet konstantes Niveau. Gestrichelte Linie: Elite-Einstieg bei MMR {{mmr}}.",
+      "gspCaption": "Jeder Punkt ist eine nach dem Match erfasste GSP-Ablesung für diesen Kämpfer. Die gestrichelte Linie ist die berechnete Elite-Smash-Schwelle — eine Schätzung des Community-Modells, kein von Nintendo veröffentlichter Wert.",
+      "clickHint": "Klicke einen Punkt an, um die Ablesung zu bearbeiten.",
+      "locked": "Erfasse mindestens {{count}} Matches mit GSP-Ablesung für diesen Kämpfer, um die Kurve zu sehen."
+    },
+    "logger": {
+      "title": "Schnell-Logger",
+      "opponentCharacter": "Gegnerischer Charakter",
+      "selectCharacter": "Charakter wählen",
+      "gspAfterMatch": "GSP nach dem Match",
+      "gspPlaceholder": "z. B. 9 420 000",
+      "stageOptional": "Stage (optional)",
+      "logMatch": "Match erfassen",
+      "logging": "Wird erfasst...",
+      "chooseOpponent": "Wähle den Charakter des Gegners.",
+      "chooseResult": "Markiere dieses Match als Sieg oder Niederlage.",
+      "invalidGsp": "Gib die nach dem Match angezeigte GSP ein — Kommas sind okay, z. B. 10,300,000.",
+      "logged": "Match erfasst! GSP {{gsp}}",
+      "logFailed": "Match konnte nicht erfasst werden. Bitte erneut versuchen."
+    },
+    "log": {
+      "title": "GSP-Log",
+      "editEntry": "GSP-Eintrag vom {{date}} bearbeiten",
+      "deleteEntry": "GSP-Eintrag vom {{date}} löschen",
+      "showRecent": "Nur aktuelle anzeigen",
+      "showAll": "Alle {{count}} Einträge anzeigen"
+    },
+    "gains": {
+      "title": "Gewinn-Analyse",
+      "avgGainLifetime": "Ø Gewinn/Sieg (gesamt)",
+      "avgDropLifetime": "Ø Verlust/Niederlage (gesamt)",
+      "biggestGain": "Größter Einzelgewinn",
+      "avgGainLast20": "Ø Gewinn/Sieg (letzte 20)",
+      "avgDropLast20": "Ø Verlust/Niederlage (letzte 20)",
+      "biggestDrop": "Größter Einzelverlust",
+      "perWinTitle": "Gewinne pro Sieg im Zeitverlauf",
+      "shrinking": "— schrumpfen, während deine GSP steigt",
+      "growing": "— steigend",
+      "winNumber": "Sieg Nr. {{number}}",
+      "gainedGsp": "GSP gewonnen",
+      "empty": "Erfasse ein paar Siege und Niederlagen mit GSP-Ablesungen, um deine Trends zu sehen."
+    },
+    "road": {
+      "title": "Weg nach Elite",
+      "empty": "Erfasse ein Match mit GSP-Ablesung für diesen Kämpfer, um eine Prognose zu sehen.",
+      "alreadyElite": "Du bist schon in Elite Smash!",
+      "equilibriumTitle": "Stabil auf deinem Niveau",
+      "equilibriumBody": "Bei deiner aktuellen Winrate von {{rate}} % hält das Matchmaking dies gerade für dein Niveau — jedes Match tauscht ~{{points}} MMR in beide Richtungen, also bringt dich eine Winrate über 50 % nach oben, nicht mehr Matches. Arbeite weiter an den Matchups auf dieser Seite, dann folgt die Zahl.",
+      "cappedTitle": "mehr als {{max}} Netto-Siege",
+      "cappedBody": "Deine Winrate liegt nur knapp über 50 %, der erwartete Fortschritt pro Match ist also winzig — schon eine kleine Steigerung der Winrate verkürzt das drastisch.",
+      "projected_one": "~{{count}} weiteres Match",
+      "projected_other": "~{{count}} weitere Matches",
+      "projectedCaption": "bis Elite (MMR {{elite}}) bei deinen ~{{points}} MMR/Match und {{rate}} % Winrate (Schätzung des Community-Modells)",
+      "historyOne": "Aus deiner eigenen GSP-Historie: ~{{label}} weiteres Match ({{model}}).",
+      "historyMany": "Aus deiner eigenen GSP-Historie: ~{{label}} weitere Matches ({{model}}).",
+      "decayFit": "V10-Fit mit schrumpfenden Gewinnen",
+      "flatFallback": "flacher V10-Durchschnitt",
+      "assumption1": "Nimmt an, dass das Matchmaking dich weiter gegen Gegner mit ähnlicher MMR paart (jedes Match tauscht ~{{points}} MMR, der Wert der Community-Tabelle für ein ausgeglichenes Match) und dass deine aktuelle Winrate hält.",
+      "assumption2": "Basiert auf dem per Reverse Engineering rekonstruierten Community-MMR-Modell, nicht auf Nintendos Algorithmus — eine Simulation, keine Garantie."
+    },
+    "vsGlicko": {
+      "title": "Gesch. MMR vs. Glicko-2",
+      "mmrLabel": "Gesch. MMR (normalisiert)",
+      "glickoLabel": "Glicko-2 (normalisiert)",
+      "caption": "Dein Quickplay-Rating (geschätzte MMR für diesen Kämpfer, Community-Modell per Reverse Engineering) gegen dein gesamtes Glicko-2-Rating (alle Kämpfer/Sitzungen) — beide über dieses Fenster auf 0-100 normalisiert, da ihre Rohskalen nichts miteinander zu tun haben. Rating gegen Rating macht die Formen ehrlich vergleichbar; Abweichungen bedeuten meist, dass deine Quickplay-Form von deiner Gesamtform abweicht."
+    }
+  },
+  "matchData": {
+    "loading": "Match-Daten werden geladen...",
+    "title": "Match-Verlauf",
+    "noMatches": "Du hast noch keine Matches — erfasse eins und schau hier wieder vorbei, um deine Daten zu sehen!",
+    "table": {
+      "columns": {
+        "date": "Datum",
+        "fighter": "Kämpfer",
+        "opponentFighter": "Gegner",
+        "opponentName": "Gegnername",
+        "stage": "Stage",
+        "matchType": "Typ",
+        "win": "Ergebnis",
+        "tournament": "Turnier",
+        "notes": "Notizen",
+        "manage": "Verwalten"
+      },
+      "editVod": "VOD-Notizen bearbeiten",
+      "addVod": "VOD-Notizen hinzufügen",
+      "synced": "Synchronisiert",
+      "syncedTitle": "Synchronisiert von {{source}} — die Spieldaten verwaltet der Sync",
+      "editMatch": "Match bearbeiten",
+      "searchPlaceholder": "{{count}} Einträge durchsuchen...",
+      "searchAria": "Matches filtern",
+      "allOption": "Alle: {{label}}",
+      "columnsButton": "Spalten",
+      "toggleColumns": "Spalten ein-/ausblenden",
+      "exportCsv": "CSV exportieren",
+      "noneFound": "Keine Matches gefunden.",
+      "pageOf": "Seite {{page}} von {{total}}",
+      "rowsPerPage": "Zeilen pro Seite",
+      "showN": "{{count}} anzeigen"
+    },
+    "roster": {
+      "title": "Roster-Nutzung",
+      "showAll": "Alle anzeigen ({{count}} weitere)",
+      "showLess": "Weniger anzeigen"
+    },
+    "stages": {
+      "title": "Stage-Auswertung",
+      "selectAria": "Stage auswählen",
+      "noneOnStage": "Keine erfassten Matches auf dieser Stage.",
+      "winsShort": "{{count}}S",
+      "lossesShort": "{{count}}N"
+    }
+  },
+  "matchups": {
+    "loading": "Matchups werden geladen...",
+    "noFightersSubtitle": "Wähle deine Main- und Secondary-Kämpfer, um Matchups zu erfassen.",
+    "you": "Du",
+    "opponent": "Gegner",
+    "vs": "vs.",
+    "winRateTrend": "Winrate-Verlauf",
+    "results": "Matchup-Ergebnisse",
+    "selectFighterAria": "Deinen Kämpfer auswählen",
+    "selectOpponentAria": "Gegnerischen Kämpfer auswählen",
+    "selectPlaceholder": "Kämpfer wählen",
+    "record": {
+      "empty": "Keine erfassten Matches gegen diesen Kämpfer",
+      "totalMatches": "Matches gesamt"
+    },
+    "matrix": {
+      "title": "Matchup-Matrix",
+      "showTop": "Top {{count}} anzeigen",
+      "showAll": "Alle {{count}} anzeigen",
+      "empty": "Noch keine Matches erfasst — spiele ein paar Matches, um deine Matchup-Matrix aufzubauen.",
+      "yourFighterSr": "Dein Kämpfer",
+      "cellAria": "{{fighter}} vs. {{opponent}}: {{wins}}-{{losses}}"
+    },
+    "chart": {
+      "window": "Fenster",
+      "windowAria": "Trend-Fenster",
+      "rolling5": "Letzte 5",
+      "rolling10": "Letzte 10",
+      "cumulative": "Kumuliert",
+      "empty": "Erfasse ein Match, um das Diagramm zu sehen.",
+      "winRate": "Winrate"
+    },
+    "insights": {
+      "title": "Matchup-Einblicke",
+      "minMatches": "Min. Matches pro Stage",
+      "minMatchesAria": "Minimale Matches pro Stage",
+      "empty": "Für dieses Matchup sind noch keine Matches erfasst.",
+      "currentStreak": "Aktuelle Serie",
+      "streakWins": "{{count}} Siege",
+      "streakLosses": "{{count}} Niederlagen",
+      "longestWin": "Längste Siegesserie",
+      "longestLoss": "Längste Niederlagenserie",
+      "recentForm": "Aktuelle Form (neueste zuerst)",
+      "bestStage": "Beste Stage",
+      "worstStage": "Schlechteste Stage",
+      "notEnoughStageData": "Noch nicht genug Stage-Daten.",
+      "byMatchType": "Nach Match-Typ"
+    },
+    "stageTable": {
+      "title": "Stage-Auswertung",
+      "stage": "Stage",
+      "record": "Bilanz",
+      "winRate": "Winrate"
+    },
+    "counterpick": {
+      "title": "Counterpick-Berater",
+      "gather": "Sammle mehr Daten: Stages brauchen mindestens {{count}} erfasste Matches in diesem Matchup, bevor Picks oder Bans vorgeschlagen werden können.",
+      "pickThese": "Diese picken",
+      "banThese": "Diese bannen / meiden",
+      "unknownStage": "Unbekannte Stage"
+    },
+    "opponentSplit": {
+      "title": "Nach Gegner",
+      "empty": "Für dieses Matchup sind noch keine benannten Gegner erfasst."
+    },
+    "table": {
+      "empty": "Noch keine Matches erfasst!",
+      "date": "Datum",
+      "result": "Ergebnis",
+      "manage": "Verwalten"
+    }
+  },
+  "fighterAnalysis": {
+    "loading": "Kämpfer-Analyse wird geladen...",
+    "noFightersSubtitle": "Wähle deine Main- und Secondary-Kämpfer, um mit der Analyse zu beginnen.",
+    "title": "Kämpfer-Analyse",
+    "selectAria": "Kämpfer auswählen",
+    "selectPlaceholder": "Kämpfer wählen",
+    "hero": {
+      "rateAndGames": "{{rate}} % Winrate · {{count}} Matches",
+      "noMatches": "Mit diesem Kämpfer sind noch keine Matches erfasst.",
+      "streakWin": "{{count}}S-Serie",
+      "streakLoss": "{{count}}N-Serie",
+      "share": "{{pct}} % deiner Matches",
+      "last10": "Letzte 10 (neueste zuerst)",
+      "formRolling": "Form (gleitende 10)",
+      "typeColumn": "Typ"
+    },
+    "stageMastery": {
+      "title": "Stage-Beherrschung",
+      "bestPick": "Bester Pick:",
+      "banWorthy": "Ban-würdig:",
+      "empty": "Noch keine Stage-Daten — erfasse Matches mit diesem Kämpfer, um das Raster aufzubauen."
+    },
+    "coverage": {
+      "title": "Matchup-Abdeckung",
+      "empty": "Noch keine Gegner-Daten — erfasse Matches, um zu sehen, wem du tatsächlich begegnest.",
+      "thin": "dünne Daten",
+      "none": "keine Daten"
+    },
+    "practice": {
+      "title": "Trainingsempfehlungen",
+      "empty": "Noch nicht genug Daten für eine Empfehlung — erfasse weiter Matches mit diesem Kämpfer.",
+      "struggling": "Schwierigkeiten gegen {{name}}: {{wins}}-{{losses}}",
+      "noGames": "Keine Matches gegen {{name}} — du triffst oft auf ihn",
+      "stageHabit": "Du spielst immer wieder auf {{stage}}: {{wins}}-{{losses}}"
+    },
+    "guide": {
+      "title": "Matchup-Stage-Guide",
+      "empty": "Noch keine Matchup-Daten — erfasse Matches mit diesem Kämpfer, um den Guide aufzubauen."
+    },
+    "opponents": {
+      "title": "Gegner",
+      "empty": "Noch keine benannten Gegner erfasst.",
+      "matches": "Matches"
     }
   }
 }

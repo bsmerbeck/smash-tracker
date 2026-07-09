@@ -1,5 +1,6 @@
 import { useMemo } from 'react';
 import { Link } from 'react-router';
+import { useTranslation } from 'react-i18next';
 import type { Fighter } from '@smash-tracker/shared';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -13,6 +14,7 @@ import { StageBreakdown } from './components/StageBreakdown';
 
 /** Ports legacy/src/screens/MatchData; the source/time filter is now global (see the topbar's AnalyticsFilterControls), not a per-page control. */
 export function MatchDataPage() {
+  const { t } = useTranslation();
   const { data: fighterSelection, isLoading: fightersLoading } = useFighters();
   const { matches, allMatches, isLoading: matchesLoading, filterActive } = useFilteredMatches();
 
@@ -24,24 +26,20 @@ export function MatchDataPage() {
   }, [fighterSelection]);
 
   if (fightersLoading || matchesLoading) {
-    return <div className="text-muted-foreground">Loading match data...</div>;
+    return <div className="text-muted-foreground">{t('matchData.loading')}</div>;
   }
 
   if (fighterSprites.length === 0) {
     return (
       <div className="flex flex-col items-center gap-4 py-16 text-center">
-        <h1 className="text-2xl font-semibold tracking-tight">
-          You haven&apos;t picked any fighters yet!
-        </h1>
-        <p className="max-w-md text-muted-foreground">
-          Choose your primary and secondary fighters to start tracking matches.
-        </p>
+        <h1 className="text-2xl font-semibold tracking-tight">{t('shared.noFighters.title')}</h1>
+        <p className="max-w-md text-muted-foreground">{t('shared.noFighters.subtitle')}</p>
         <div className="flex flex-wrap justify-center gap-2">
           <Button asChild>
-            <Link to="/choose-primary">Choose Primary Fighters</Link>
+            <Link to="/choose-primary">{t('shared.noFighters.choosePrimary')}</Link>
           </Button>
           <Button asChild variant="outline">
-            <Link to="/choose-secondary">Choose Secondary Fighters</Link>
+            <Link to="/choose-secondary">{t('shared.noFighters.chooseSecondary')}</Link>
           </Button>
         </div>
       </div>
@@ -51,11 +49,9 @@ export function MatchDataPage() {
   if (allMatches.length === 0) {
     return (
       <div className="flex flex-col items-center gap-2 py-16 text-center">
-        <h2 className="text-xl font-semibold tracking-tight">
-          You have no matches, report a match and check back here to view match data!
-        </h2>
+        <h2 className="text-xl font-semibold tracking-tight">{t('matchData.noMatches')}</h2>
         <Button asChild className="mt-2">
-          <Link to="/dashboard">Go to Dashboard</Link>
+          <Link to="/dashboard">{t('common.goToDashboard')}</Link>
         </Button>
       </div>
     );
@@ -67,7 +63,7 @@ export function MatchDataPage() {
 
       <Card>
         <CardHeader>
-          <CardTitle>Match History</CardTitle>
+          <CardTitle>{t('matchData.title')}</CardTitle>
         </CardHeader>
         <CardContent>
           <MatchTable matches={matches} fighterSprites={fighterSprites} />

@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next';
 import {
   Select,
   SelectContent,
@@ -9,6 +10,7 @@ import { useMatchupsContext } from '../MatchupsContext';
 
 /** Ports legacy/src/screens/Matchups/components/SelectFighter — picks "your" fighter from the user's selections. */
 export function SelectFighter() {
+  const { t } = useTranslation();
   const { fighter, fighterSprites, setFighter } = useMatchupsContext();
 
   return (
@@ -21,8 +23,8 @@ export function SelectFighter() {
         }
       }}
     >
-      <SelectTrigger aria-label="Select your fighter" className="w-[220px]">
-        <SelectValue placeholder="Select a fighter" />
+      <SelectTrigger aria-label={t('matchups.selectFighterAria')} className="w-[220px]">
+        <SelectValue placeholder={t('matchups.selectPlaceholder')} />
       </SelectTrigger>
       <SelectContent>
         {fighterSprites.map((sprite) => (

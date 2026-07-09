@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import {
   Table,
@@ -18,6 +19,7 @@ import { StageOption } from '@/components/StageOption';
  * still count somewhere visible.
  */
 export function MatchupStageTable({ matchupMatches }: { matchupMatches: Match[] }) {
+  const { t } = useTranslation();
   const records = getStageRecords(matchupMatches).sort((a, b) => {
     if (a.stageId === 0) return 1;
     if (b.stageId === 0) return -1;
@@ -27,18 +29,18 @@ export function MatchupStageTable({ matchupMatches }: { matchupMatches: Match[] 
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Stage Breakdown</CardTitle>
+        <CardTitle>{t('matchups.stageTable.title')}</CardTitle>
       </CardHeader>
       <CardContent>
         {records.length === 0 ? (
-          <p className="text-sm text-muted-foreground">No matches recorded for this matchup yet.</p>
+          <p className="text-sm text-muted-foreground">{t('matchups.insights.empty')}</p>
         ) : (
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Stage</TableHead>
-                <TableHead>Record</TableHead>
-                <TableHead>Win Rate</TableHead>
+                <TableHead>{t('matchups.stageTable.stage')}</TableHead>
+                <TableHead>{t('matchups.stageTable.record')}</TableHead>
+                <TableHead>{t('matchups.stageTable.winRate')}</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -51,7 +53,7 @@ export function MatchupStageTable({ matchupMatches }: { matchupMatches: Match[] 
                           ? { ...UNKNOWN_STAGE, url: '' }
                           : (stagesById.get(record.stageId) ?? {
                               id: record.stageId,
-                              name: 'Unknown',
+                              name: t('common.unknown'),
                               url: '',
                             })
                       }

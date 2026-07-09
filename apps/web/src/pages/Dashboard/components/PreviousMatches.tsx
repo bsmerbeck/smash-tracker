@@ -44,9 +44,9 @@ export function PreviousMatches({ matches }: { matches: Match[] }) {
     if (!pendingDelete) return;
     try {
       await deleteMatch.mutateAsync(pendingDelete.id);
-      toast.success(t('dashboard.previous.deleted'));
+      toast.success(t('shared.matchDelete.deleted'));
     } catch {
-      toast.error(t('dashboard.previous.deleteFailed'));
+      toast.error(t('shared.matchDelete.deleteFailed'));
     } finally {
       setPendingDelete(null);
     }
@@ -113,7 +113,7 @@ export function PreviousMatches({ matches }: { matches: Match[] }) {
                     <Button
                       variant="outline"
                       size="icon-sm"
-                      aria-label={t('dashboard.previous.deleteAria')}
+                      aria-label={t('shared.matchDelete.aria')}
                       onClick={() => setPendingDelete(match)}
                     >
                       <Trash2 />
@@ -132,7 +132,7 @@ export function PreviousMatches({ matches }: { matches: Match[] }) {
       >
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>{t('dashboard.previous.confirmTitle')}</AlertDialogTitle>
+            <AlertDialogTitle>{t('shared.matchDelete.confirmTitle')}</AlertDialogTitle>
             <AlertDialogDescription>{t('common.cannotBeUndone')}</AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

@@ -61,11 +61,11 @@ function OverallRecordCard({ matches }: { matches: Match[] }) {
               </p>
             </div>
             <span className="text-sm text-muted-foreground">
-              {t('dashboard.hero.games', { count: total })}
+              {t('common.games', { count: total })}
             </span>
           </div>
         ) : (
-          <p className="text-sm text-muted-foreground">{t('dashboard.hero.noMatchData')}</p>
+          <p className="text-sm text-muted-foreground">{t('common.noMatchData')}</p>
         )}
       </CardContent>
     </Card>
@@ -180,7 +180,7 @@ function OnlineOfflineCard({ matches }: { matches: Match[] }) {
             <SplitStat label={t('dashboard.hero.offline')} record={offline} />
           </div>
         ) : (
-          <p className="text-sm text-muted-foreground">{t('dashboard.hero.noMatchData')}</p>
+          <p className="text-sm text-muted-foreground">{t('common.noMatchData')}</p>
         )}
       </CardContent>
     </Card>

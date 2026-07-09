@@ -44,7 +44,13 @@
     "casual": "Casual",
     "competitive": "Competitive",
     "unknown": "Unknown",
-    "notAvailable": "n/a"
+    "notAvailable": "n/a",
+    "noMatchData": "No match data to report yet.",
+    "rate": "Rate",
+    "games_one": "{{count}} game",
+    "games_other": "{{count}} games",
+    "rateOverSample": "({{rate}}% over {{total}})",
+    "goToDashboard": "Go to Dashboard"
   },
   "filters": {
     "sourceAria": "Filter matches by source",
@@ -56,6 +62,41 @@
     "months12": "12m"
   },
   "shared": {
+    "noFighters": {
+      "title": "You haven't picked any fighters yet!",
+      "subtitle": "Choose your primary and secondary fighters to start tracking matches.",
+      "choosePrimary": "Choose Primary Fighters",
+      "chooseSecondary": "Choose Secondary Fighters"
+    },
+    "matchDelete": {
+      "aria": "Delete match",
+      "confirmTitle": "Delete this match?",
+      "deleted": "Match deleted!",
+      "deleteFailed": "Failed to delete match. Please try again."
+    },
+    "noMatches": {
+      "title": "You haven't reported any matches!",
+      "subtitle": "Report a match on the Dashboard and check back here."
+    },
+    "vod": {
+      "title": "VOD Notes",
+      "description": "Attach a VOD link and timestamped notes, e.g. \"2:41 — missed punish on shield\".",
+      "url": "VOD URL",
+      "timestamps": "Timestamps",
+      "noTimestamps": "No timestamp notes yet.",
+      "timestampsAria": "Timestamp notes",
+      "deleteTimestamp": "Delete timestamp {{time}}",
+      "timePlaceholder": "m:ss",
+      "timeAria": "Timestamp time",
+      "notePlaceholder": "Note",
+      "noteAria": "Timestamp note",
+      "addTimestamp": "Add timestamp",
+      "timeFormatError": "Enter a time as m:ss or h:mm:ss",
+      "noteRequired": "Enter a note for this timestamp",
+      "timestampLimit": "Limit {{max}} timestamps per match",
+      "saved": "VOD notes saved!",
+      "saveFailed": "Failed to save VOD notes. Please try again."
+    },
     "filteredNotice": {
       "message": "No matches match the current filters.",
       "clear": "Clear filters"
@@ -73,18 +114,9 @@
   },
   "dashboard": {
     "loading": "Loading your dashboard...",
-    "empty": {
-      "title": "You haven't picked any fighters yet!",
-      "subtitle": "Choose your primary and secondary fighters to start tracking matches.",
-      "choosePrimary": "Choose Primary Fighters",
-      "chooseSecondary": "Choose Secondary Fighters"
-    },
     "hero": {
       "overallRecord": "Overall Record",
       "winRate": "{{rate}}% win rate",
-      "games_one": "{{count}} game",
-      "games_other": "{{count}} games",
-      "noMatchData": "No match data to report yet.",
       "form": "Form",
       "streakWin": "{{count}}W",
       "streakLoss": "{{count}}L",
@@ -107,9 +139,6 @@
       "ratingDown": "Rating down from last session",
       "ratingUnchanged": "Rating unchanged from last session"
     },
-    "tracker": {
-      "rate": "Rate"
-    },
     "formCurve": {
       "title": "Form Curve",
       "window": "Window",
@@ -124,11 +153,7 @@
       "title": "Previous Matches",
       "limit": "Limit",
       "limitAria": "Match limit",
-      "empty": "No matches recorded yet.",
-      "deleteAria": "Delete match",
-      "confirmTitle": "Delete this match?",
-      "deleted": "Match deleted!",
-      "deleteFailed": "Failed to delete match. Please try again."
+      "empty": "No matches recorded yet."
     },
     "stages": {
       "title": "Most-Played Stages",
@@ -222,6 +247,288 @@
       "deleteMatch": "Delete Match",
       "edited": "Match edited!",
       "saveFailed": "Failed to save match. Please try again."
+    }
+  },
+  "gsp": {
+    "loading": "Loading GSP tracker...",
+    "selectFighterAria": "Select fighter",
+    "empty": {
+      "title": "Track your GSP climb",
+      "body": "GSP (Global Smash Power) is Smash Ultimate's online quickplay ranking, tracked per-character. Log a quickplay match with the GSP shown on the results screen and this page will chart your climb, break down your win/loss gains, and estimate how far you are from Elite Smash.",
+      "cta": "Log a match on the Dashboard"
+    },
+    "header": {
+      "title": "GSP Tracker",
+      "subtitle": "Global Smash Power is per-character and its exact formula is never published by Nintendo — everything below is an estimate built from your own logged matches and a community-reverse-engineered model of the hidden MMR behind GSP."
+    },
+    "deleteConfirm": {
+      "title": "Delete this GSP entry?",
+      "body": "The match and its GSP reading are removed together — this action cannot be undone.",
+      "deleted": "GSP entry deleted!",
+      "deleteFailed": "Failed to delete the entry. Please try again."
+    },
+    "hero": {
+      "currentGsp": "Current GSP",
+      "latestReading": "latest reading",
+      "noGsp": "No GSP logged yet",
+      "estMmr": "Est. MMR",
+      "tailReading": "{{zone}}-tail reading — approximate",
+      "modelLink": "community-reverse-engineered model",
+      "modelAccuracy": "(±1 GSP in the main curve; tails approximate)",
+      "eliteThreshold": "Elite Threshold",
+      "thresholdAria": "Elite Smash threshold",
+      "saveThreshold": "Save threshold",
+      "cancelThreshold": "Cancel editing threshold",
+      "editThreshold": "Edit Elite threshold",
+      "recalibrated": "recalibrated {{date}}",
+      "fromAnchor": "from the model anchor",
+      "computedCaption": "computed · {{calibration}} · editing recalibrates the model — grab the current number from",
+      "invalidThreshold": "Enter a positive whole number — commas are fine, e.g. 10,300,000.",
+      "recalibratedToast": "Model recalibrated from your threshold reading!",
+      "thresholdSaveFailed": "Failed to save the Elite threshold. Please try again.",
+      "distanceToElite": "Distance to Elite",
+      "elite": "ELITE",
+      "belowElite": "MMR {{mmr}} · below Elite ({{elite}})",
+      "recentWinRate": "Recent Win Rate",
+      "lastNGames_one": "last {{count}} game",
+      "lastNGames_other": "last {{count}} games"
+    },
+    "curve": {
+      "title": "GSP Curve",
+      "gspViewAria": "GSP view",
+      "mmrViewAria": "MMR view",
+      "gspLabel": "GSP",
+      "eliteLine": "Elite threshold",
+      "estMmrLabel": "Est. MMR",
+      "eliteMmrLine": "Elite (MMR {{mmr}})",
+      "mmrCaption": "Estimated hidden MMR behind each reading (community-reverse-engineered model) — unlike GSP, it doesn't inflate over time, so a flat line means flat skill. Dashed line: Elite entry at MMR {{mmr}}.",
+      "gspCaption": "Every point is a logged post-match GSP reading for this fighter. The dashed line is the computed Elite Smash threshold — a community-model estimate, not a Nintendo-published value.",
+      "clickHint": "Click a point to edit that reading.",
+      "locked": "Log at least {{count}} matches with a GSP reading for this fighter to see the curve."
+    },
+    "logger": {
+      "title": "Quick Logger",
+      "opponentCharacter": "Opponent Character",
+      "selectCharacter": "Select a character",
+      "gspAfterMatch": "GSP After Match",
+      "gspPlaceholder": "e.g. 9,420,000",
+      "stageOptional": "Stage (optional)",
+      "logMatch": "Log Match",
+      "logging": "Logging...",
+      "chooseOpponent": "Choose the opponent's character.",
+      "chooseResult": "Mark this match as a win or loss.",
+      "invalidGsp": "Enter the GSP shown after the match — commas are fine, e.g. 10,300,000.",
+      "logged": "Match logged! GSP {{gsp}}",
+      "logFailed": "Failed to log the match. Please try again."
+    },
+    "log": {
+      "title": "GSP Log",
+      "editEntry": "Edit GSP entry from {{date}}",
+      "deleteEntry": "Delete GSP entry from {{date}}",
+      "showRecent": "Show recent only",
+      "showAll": "Show all {{count}} entries"
+    },
+    "gains": {
+      "title": "Gains Analysis",
+      "avgGainLifetime": "Avg gain/win (lifetime)",
+      "avgDropLifetime": "Avg drop/loss (lifetime)",
+      "biggestGain": "Biggest single gain",
+      "avgGainLast20": "Avg gain/win (last 20)",
+      "avgDropLast20": "Avg drop/loss (last 20)",
+      "biggestDrop": "Biggest single drop",
+      "perWinTitle": "Per-win gains over time",
+      "shrinking": "— shrinking as your GSP climbs",
+      "growing": "— trending up",
+      "winNumber": "Win #{{number}}",
+      "gainedGsp": "GSP gained",
+      "empty": "Log a few wins and losses with GSP readings to see your gain/loss trends."
+    },
+    "road": {
+      "title": "Road to Elite",
+      "empty": "Log a match with a GSP reading for this fighter to see a projection.",
+      "alreadyElite": "You're already in Elite Smash!",
+      "equilibriumTitle": "Holding steady at your level",
+      "equilibriumBody": "At your current {{rate}}% win rate, matchmaking thinks this is your level right now — every match trades ~{{points}} MMR both ways, so a >50% win rate is what moves you up, not more matches. Keep working the matchups on this page and the number will follow.",
+      "cappedTitle": "more than {{max}} net wins",
+      "cappedBody": "Your win rate is barely above 50%, so expected progress per match is tiny — a small bump in win rate shortens this dramatically.",
+      "projected_one": "~{{count}} more match",
+      "projected_other": "~{{count}} more matches",
+      "projectedCaption": "to Elite (MMR {{elite}}) at your ~{{points}} MMR/match and {{rate}}% win rate (community model estimate)",
+      "historyOne": "From your own GSP history instead: ~{{label}} more match ({{model}}).",
+      "historyMany": "From your own GSP history instead: ~{{label}} more matches ({{model}}).",
+      "decayFit": "V10's shrinking-gains fit",
+      "flatFallback": "V10's flat-average fallback",
+      "assumption1": "Assumes matchmaking keeps pairing you against similar-MMR opponents (each match trades ~{{points}} MMR, the community table's value for an even match) and that your recent win rate holds.",
+      "assumption2": "Built on the community-reverse-engineered MMR model, not Nintendo's algorithm — a simulation, not a guarantee."
+    },
+    "vsGlicko": {
+      "title": "Est. MMR vs Glicko-2",
+      "mmrLabel": "Est. MMR (normalized)",
+      "glickoLabel": "Glicko-2 (normalized)",
+      "caption": "Your quickplay rating (estimated MMR for this fighter, community-reverse-engineered model) vs. your overall Glicko-2 rating (every fighter/session) — both normalized to 0-100 over this window since their raw scales are unrelated. Rating-vs-rating makes the shapes honestly comparable; divergence usually means your quickplay form differs from your overall form."
+    }
+  },
+  "matchData": {
+    "loading": "Loading match data...",
+    "title": "Match History",
+    "noMatches": "You have no matches, report a match and check back here to view match data!",
+    "table": {
+      "columns": {
+        "date": "Date",
+        "fighter": "Fighter",
+        "opponentFighter": "Opponent",
+        "opponentName": "Opponent Name",
+        "stage": "Stage",
+        "matchType": "Type",
+        "win": "Result",
+        "tournament": "Tournament",
+        "notes": "Notes",
+        "manage": "Manage"
+      },
+      "editVod": "Edit VOD notes",
+      "addVod": "Add VOD notes",
+      "synced": "Synced",
+      "syncedTitle": "Synced from {{source}} — game data is managed by sync",
+      "editMatch": "Edit match",
+      "searchPlaceholder": "Search {{count}} records...",
+      "searchAria": "Filter matches",
+      "allOption": "All {{label}}",
+      "columnsButton": "Columns",
+      "toggleColumns": "Toggle columns",
+      "exportCsv": "Export CSV",
+      "noneFound": "No matches found.",
+      "pageOf": "Page {{page}} of {{total}}",
+      "rowsPerPage": "Rows per page",
+      "showN": "Show {{count}}"
+    },
+    "roster": {
+      "title": "Roster Usage",
+      "showAll": "Show all ({{count}} more)",
+      "showLess": "Show less"
+    },
+    "stages": {
+      "title": "Stage Breakdown",
+      "selectAria": "Select stage",
+      "noneOnStage": "No reported matches on this stage.",
+      "winsShort": "{{count}}W",
+      "lossesShort": "{{count}}L"
+    }
+  },
+  "matchups": {
+    "loading": "Loading matchups...",
+    "noFightersSubtitle": "Choose your primary and secondary fighters to start tracking matchups.",
+    "you": "You",
+    "opponent": "Opponent",
+    "vs": "vs",
+    "winRateTrend": "Win Rate Trend",
+    "results": "Matchup Results",
+    "selectFighterAria": "Select your fighter",
+    "selectOpponentAria": "Select opponent fighter",
+    "selectPlaceholder": "Select a fighter",
+    "record": {
+      "empty": "No reported matches against this fighter",
+      "totalMatches": "Total Matches"
+    },
+    "matrix": {
+      "title": "Matchup Matrix",
+      "showTop": "Show top {{count}}",
+      "showAll": "Show all {{count}}",
+      "empty": "No matches recorded yet — play some matches to build your matchup matrix.",
+      "yourFighterSr": "Your fighter",
+      "cellAria": "{{fighter}} vs {{opponent}}: {{wins}}-{{losses}}"
+    },
+    "chart": {
+      "window": "Window",
+      "windowAria": "Trend window",
+      "rolling5": "Rolling 5",
+      "rolling10": "Rolling 10",
+      "cumulative": "Cumulative",
+      "empty": "Submit a match to see the match chart.",
+      "winRate": "Win Rate"
+    },
+    "insights": {
+      "title": "Matchup Insights",
+      "minMatches": "Min matches per stage",
+      "minMatchesAria": "Minimum matches per stage",
+      "empty": "No matches recorded for this matchup yet.",
+      "currentStreak": "Current Streak",
+      "streakWins": "{{count}} wins",
+      "streakLosses": "{{count}} losses",
+      "longestWin": "Longest Win Streak",
+      "longestLoss": "Longest Loss Streak",
+      "recentForm": "Recent Form (newest first)",
+      "bestStage": "Best Stage",
+      "worstStage": "Worst Stage",
+      "notEnoughStageData": "Not enough stage data yet.",
+      "byMatchType": "By Match Type"
+    },
+    "stageTable": {
+      "title": "Stage Breakdown",
+      "stage": "Stage",
+      "record": "Record",
+      "winRate": "Win Rate"
+    },
+    "counterpick": {
+      "title": "Counterpick Advisor",
+      "gather": "Gather more data: stages need at least {{count}} recorded matches in this matchup before we can suggest picks or bans.",
+      "pickThese": "Pick these",
+      "banThese": "Ban / avoid these",
+      "unknownStage": "Unknown stage"
+    },
+    "opponentSplit": {
+      "title": "By Opponent",
+      "empty": "No named opponents recorded for this matchup yet."
+    },
+    "table": {
+      "empty": "No matches reported yet!",
+      "date": "Date",
+      "result": "Result",
+      "manage": "Manage"
+    }
+  },
+  "fighterAnalysis": {
+    "loading": "Loading fighter analysis...",
+    "noFightersSubtitle": "Choose your primary and secondary fighters to start tracking analysis.",
+    "title": "Fighter Analysis",
+    "selectAria": "Select fighter",
+    "selectPlaceholder": "Select a fighter",
+    "hero": {
+      "rateAndGames": "{{rate}}% win rate · {{count}} games",
+      "noMatches": "No matches recorded for this fighter yet.",
+      "streakWin": "{{count}}W streak",
+      "streakLoss": "{{count}}L streak",
+      "share": "{{pct}}% of your games",
+      "last10": "Last 10 (newest first)",
+      "formRolling": "Form (rolling 10)",
+      "typeColumn": "Type"
+    },
+    "stageMastery": {
+      "title": "Stage Mastery",
+      "bestPick": "Best pick:",
+      "banWorthy": "Ban-worthy:",
+      "empty": "No stage data yet — report matches with this fighter to build the grid."
+    },
+    "coverage": {
+      "title": "Matchup Coverage",
+      "empty": "No opponent data yet — report matches to see who you actually face.",
+      "thin": "thin data",
+      "none": "no data"
+    },
+    "practice": {
+      "title": "Practice Recommendations",
+      "empty": "Not enough data yet for a recommendation — keep reporting matches with this fighter.",
+      "struggling": "Struggling vs {{name}}: {{wins}}-{{losses}}",
+      "noGames": "No games vs {{name}} — you face them often",
+      "stageHabit": "You keep playing on {{stage}}: {{wins}}-{{losses}}"
+    },
+    "guide": {
+      "title": "Matchup Stage Guide",
+      "empty": "No matchup data yet — report matches with this fighter to build the guide."
+    },
+    "opponents": {
+      "title": "Opponents",
+      "empty": "No named opponents recorded yet.",
+      "matches": "Matches"
     }
   }
 }

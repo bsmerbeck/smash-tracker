@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
 import { Link } from 'react-router';
+import { useTranslation } from 'react-i18next';
 import type { Fighter } from '@smash-tracker/shared';
 import { Button } from '@/components/ui/button';
 import { useFighters } from '@/hooks/useFighters';
@@ -21,6 +22,7 @@ import { OpponentTable } from './components/OpponentTable';
  * Ports legacy/src/screens/FighterAnalysis.
  */
 export function FighterAnalysisPage() {
+  const { t } = useTranslation();
   const { data: fighterSelection, isLoading: fightersLoading } = useFighters();
   const { matches, allMatches, isLoading: matchesLoading, filterActive } = useFilteredMatches();
 
@@ -36,24 +38,20 @@ export function FighterAnalysisPage() {
     fighterSprites.find((s) => s.id === selectedFighterId) ?? fighterSprites[0] ?? undefined;
 
   if (fightersLoading || matchesLoading) {
-    return <div className="text-muted-foreground">Loading fighter analysis...</div>;
+    return <div className="text-muted-foreground">{t('fighterAnalysis.loading')}</div>;
   }
 
   if (fighterSprites.length === 0) {
     return (
       <div className="flex flex-col items-center gap-4 py-16 text-center">
-        <h1 className="text-2xl font-semibold tracking-tight">
-          You haven&apos;t picked any fighters yet!
-        </h1>
-        <p className="max-w-md text-muted-foreground">
-          Choose your primary and secondary fighters to start tracking analysis.
-        </p>
+        <h1 className="text-2xl font-semibold tracking-tight">{t('shared.noFighters.title')}</h1>
+        <p className="max-w-md text-muted-foreground">{t('fighterAnalysis.noFightersSubtitle')}</p>
         <div className="flex flex-wrap justify-center gap-2">
           <Button asChild>
-            <Link to="/choose-primary">Choose Primary Fighters</Link>
+            <Link to="/choose-primary">{t('shared.noFighters.choosePrimary')}</Link>
           </Button>
           <Button asChild variant="outline">
-            <Link to="/choose-secondary">Choose Secondary Fighters</Link>
+            <Link to="/choose-secondary">{t('shared.noFighters.chooseSecondary')}</Link>
           </Button>
         </div>
       </div>
@@ -63,14 +61,10 @@ export function FighterAnalysisPage() {
   if (allMatches.length === 0) {
     return (
       <div className="flex flex-col items-center gap-2 py-16 text-center">
-        <h2 className="text-xl font-semibold tracking-tight">
-          You haven&apos;t reported any matches!
-        </h2>
-        <p className="text-muted-foreground">
-          Report a match on the Dashboard and check back here.
-        </p>
+        <h2 className="text-xl font-semibold tracking-tight">{t('shared.noMatches.title')}</h2>
+        <p className="text-muted-foreground">{t('shared.noMatches.subtitle')}</p>
         <Button asChild className="mt-2">
-          <Link to="/dashboard">Go to Dashboard</Link>
+          <Link to="/dashboard">{t('common.goToDashboard')}</Link>
         </Button>
       </div>
     );
@@ -81,7 +75,7 @@ export function FighterAnalysisPage() {
   return (
     <div className="flex flex-col gap-6">
       <div className="flex flex-col items-center gap-2 text-center">
-        <h1 className="text-2xl font-semibold tracking-tight">Fighter Analysis</h1>
+        <h1 className="text-2xl font-semibold tracking-tight">{t('fighterAnalysis.title')}</h1>
         <SelectFighter
           fighter={fighter}
           fighterSprites={fighterSprites}

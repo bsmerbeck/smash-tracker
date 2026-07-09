@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import type { ReactNode } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Pencil, Check, X } from 'lucide-react';
 import type { GspPoint, GspSettings } from '@smash-tracker/shared';
 import { GSP_MODEL } from '@smash-tracker/shared';
@@ -48,6 +49,7 @@ export function getRecentGspWinRate(series: GspPoint[], windowSize = 20): number
  * GSP threshold), and recent GSP win rate.
  */
 export function GspHero({ series, settings }: { series: GspPoint[]; settings: GspSettings }) {
+  const { t } = useTranslation();
   const lastPoint = series.length > 0 ? series[series.length - 1]! : null;
   const winRate = getRecentGspWinRate(series);
 
@@ -59,24 +61,24 @@ export function GspHero({ series, settings }: { series: GspPoint[]; settings: Gs
 
   return (
     <div className="grid grid-cols-2 gap-4 lg:grid-cols-5">
-      <HeroCard label="Current GSP">
+      <HeroCard label={t('gsp.hero.currentGsp')}>
         {lastPoint !== null ? (
           <>
             <span className="text-3xl font-bold">{lastPoint.gsp.toLocaleString()}</span>
-            <p className="text-sm text-muted-foreground">latest reading</p>
+            <p className="text-sm text-muted-foreground">{t('gsp.hero.latestReading')}</p>
           </>
         ) : (
-          <p className="text-sm text-muted-foreground">No GSP logged yet</p>
+          <p className="text-sm text-muted-foreground">{t('gsp.hero.noGsp')}</p>
         )}
       </HeroCard>
 
-      <HeroCard label="Est. MMR">
+      <HeroCard label={t('gsp.hero.estMmr')}>
         {estimate !== null && roundedMmr !== null ? (
           <>
             <span className="text-3xl font-bold">{roundedMmr.toLocaleString()}</span>
             {estimate.zone !== 'main' && (
               <p className="text-xs font-medium text-amber-500">
-                {estimate.zone}-tail reading &mdash; approximate
+                {t('gsp.hero.tailReading', { zone: estimate.zone })}
               </p>
             )}
             <p className="text-xs text-muted-foreground">
@@ -86,24 +88,24 @@ export function GspHero({ series, settings }: { series: GspPoint[]; settings: Gs
                 rel="noreferrer"
                 className="underline underline-offset-2 hover:text-foreground"
               >
-                community-reverse-engineered model
+                {t('gsp.hero.modelLink')}
               </a>{' '}
-              (&plusmn;1 GSP in the main curve; tails approximate)
+              {t('gsp.hero.modelAccuracy')}
             </p>
           </>
         ) : (
-          <p className="text-sm text-muted-foreground">No GSP logged yet</p>
+          <p className="text-sm text-muted-foreground">{t('gsp.hero.noGsp')}</p>
         )}
       </HeroCard>
 
       <EliteThresholdCard settings={settings} />
 
-      <HeroCard label="Distance to Elite">
+      <HeroCard label={t('gsp.hero.distanceToElite')}>
         {roundedMmr === null ? (
-          <p className="text-sm text-muted-foreground">No GSP logged yet</p>
+          <p className="text-sm text-muted-foreground">{t('gsp.hero.noGsp')}</p>
         ) : isElite ? (
           <span className="w-fit rounded-full bg-emerald-500/15 px-2 py-0.5 text-sm font-semibold text-emerald-500">
-            ELITE
+            {t('gsp.hero.elite')}
           </span>
         ) : (
           <>
@@ -111,22 +113,25 @@ export function GspHero({ series, settings }: { series: GspPoint[]; settings: Gs
               {(GSP_MODEL.ELITE_MMR - roundedMmr).toLocaleString()}
             </span>
             <p className="text-sm text-muted-foreground">
-              MMR {roundedMmr.toLocaleString()} &middot; below Elite ({GSP_MODEL.ELITE_MMR})
+              {t('gsp.hero.belowElite', {
+                mmr: roundedMmr.toLocaleString(),
+                elite: GSP_MODEL.ELITE_MMR,
+              })}
             </p>
           </>
         )}
       </HeroCard>
 
-      <HeroCard label="Recent Win Rate">
+      <HeroCard label={t('gsp.hero.recentWinRate')}>
         {winRate !== null ? (
           <>
             <span className="text-3xl font-bold">{Math.round(winRate * 100)}%</span>
             <p className="text-sm text-muted-foreground">
-              last {Math.min(series.length, 20)} games
+              {t('gsp.hero.lastNGames', { count: Math.min(series.length, 20) })}
             </p>
           </>
         ) : (
-          <p className="text-sm text-muted-foreground">No GSP logged yet</p>
+          <p className="text-sm text-muted-foreground">{t('gsp.hero.noGsp')}</p>
         )}
       </HeroCard>
     </div>
@@ -143,6 +148,7 @@ export function GspHero({ series, settings }: { series: GspPoint[]; settings: Gs
  * display keeps drifting forward from there, same as the real threshold does.
  */
 function EliteThresholdCard({ settings }: { settings: GspSettings }) {
+  const { t } = useTranslation();
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(String(settings.eliteThreshold));
   const updateSettings = useUpdateGspSettings();
@@ -153,28 +159,30 @@ function EliteThresholdCard({ settings }: { settings: GspSettings }) {
 
   const calibrationLabel =
     settings.updatedAt > 0
-      ? `recalibrated ${new Date(settings.updatedAt).toLocaleDateString()}`
-      : 'from the model anchor';
+      ? t('gsp.hero.recalibrated', { date: new Date(settings.updatedAt).toLocaleDateString() })
+      : t('gsp.hero.fromAnchor');
 
   async function save() {
     const parsed = parseGspNumber(draft);
     if (parsed === null || parsed <= 0) {
-      toast.error('Enter a positive whole number — commas are fine, e.g. 10,300,000.');
+      toast.error(t('gsp.hero.invalidThreshold'));
       return;
     }
     try {
       await updateSettings.mutateAsync({ eliteThreshold: parsed });
-      toast.success('Model recalibrated from your threshold reading!');
+      toast.success(t('gsp.hero.recalibratedToast'));
       setEditing(false);
     } catch {
-      toast.error('Failed to save the Elite threshold. Please try again.');
+      toast.error(t('gsp.hero.thresholdSaveFailed'));
     }
   }
 
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="text-sm font-medium text-muted-foreground">Elite Threshold</CardTitle>
+        <CardTitle className="text-sm font-medium text-muted-foreground">
+          {t('gsp.hero.eliteThreshold')}
+        </CardTitle>
       </CardHeader>
       <CardContent className="flex flex-col gap-1">
         {editing ? (
@@ -186,7 +194,7 @@ function EliteThresholdCard({ settings }: { settings: GspSettings }) {
               inputMode="numeric"
               value={draft}
               onChange={(e) => setDraft(e.target.value)}
-              aria-label="Elite Smash threshold"
+              aria-label={t('gsp.hero.thresholdAria')}
               className="h-8 w-32"
               autoFocus
             />
@@ -194,7 +202,7 @@ function EliteThresholdCard({ settings }: { settings: GspSettings }) {
               type="button"
               size="icon-sm"
               variant="ghost"
-              aria-label="Save threshold"
+              aria-label={t('gsp.hero.saveThreshold')}
               onClick={() => void save()}
               disabled={updateSettings.isPending}
             >
@@ -204,7 +212,7 @@ function EliteThresholdCard({ settings }: { settings: GspSettings }) {
               type="button"
               size="icon-sm"
               variant="ghost"
-              aria-label="Cancel editing threshold"
+              aria-label={t('gsp.hero.cancelThreshold')}
               onClick={() => {
                 setDraft(String(settings.eliteThreshold));
                 setEditing(false);
@@ -220,7 +228,7 @@ function EliteThresholdCard({ settings }: { settings: GspSettings }) {
               type="button"
               size="icon-xs"
               variant="ghost"
-              aria-label="Edit Elite threshold"
+              aria-label={t('gsp.hero.editThreshold')}
               onClick={() => setEditing(true)}
             >
               <Pencil className="size-3.5" />
@@ -228,8 +236,7 @@ function EliteThresholdCard({ settings }: { settings: GspSettings }) {
           </div>
         )}
         <p className="text-xs text-muted-foreground">
-          computed &middot; {calibrationLabel} &middot; editing recalibrates the model &mdash; grab
-          the current number from{' '}
+          {t('gsp.hero.computedCaption', { calibration: calibrationLabel })}{' '}
           <a
             href={ELITEGSP_URL}
             target="_blank"

@@ -44,7 +44,13 @@
     "casual": "カジュアル",
     "competitive": "大会",
     "unknown": "不明",
-    "notAvailable": "—"
+    "notAvailable": "—",
+    "noMatchData": "まだ対戦データがありません。",
+    "rate": "勝率",
+    "games_one": "{{count}}戦",
+    "games_other": "{{count}}戦",
+    "rateOverSample": "（{{total}}戦中 勝率{{rate}}%）",
+    "goToDashboard": "ダッシュボードへ"
   },
   "filters": {
     "sourceAria": "対戦を種別で絞り込む",
@@ -56,6 +62,41 @@
     "months12": "12ヶ月"
   },
   "shared": {
+    "noFighters": {
+      "title": "まだファイターを選んでいません！",
+      "subtitle": "メインとサブのファイターを選んで、対戦の記録を始めましょう。",
+      "choosePrimary": "メインファイターを選ぶ",
+      "chooseSecondary": "サブファイターを選ぶ"
+    },
+    "matchDelete": {
+      "aria": "対戦を削除",
+      "confirmTitle": "この対戦を削除しますか？",
+      "deleted": "対戦を削除しました！",
+      "deleteFailed": "対戦を削除できませんでした。もう一度お試しください。"
+    },
+    "noMatches": {
+      "title": "まだ対戦を記録していません！",
+      "subtitle": "ダッシュボードで対戦を記録してから、またここを確認しましょう。"
+    },
+    "vod": {
+      "title": "VODメモ",
+      "description": "VODのリンクとタイムスタンプ付きメモを追加できます（例:「2:41 — ガードへの反撃ミス」）。",
+      "url": "VODのURL",
+      "timestamps": "タイムスタンプ",
+      "noTimestamps": "まだタイムスタンプ付きメモがありません。",
+      "timestampsAria": "タイムスタンプ付きメモ",
+      "deleteTimestamp": "タイムスタンプ{{time}}を削除",
+      "timePlaceholder": "m:ss",
+      "timeAria": "タイムスタンプの時間",
+      "notePlaceholder": "メモ",
+      "noteAria": "タイムスタンプのメモ",
+      "addTimestamp": "タイムスタンプを追加",
+      "timeFormatError": "時間は m:ss または h:mm:ss の形式で入力してください",
+      "noteRequired": "このタイムスタンプのメモを入力してください",
+      "timestampLimit": "タイムスタンプは1対戦につき{{max}}件までです",
+      "saved": "VODメモを保存しました！",
+      "saveFailed": "VODメモを保存できませんでした。もう一度お試しください。"
+    },
     "filteredNotice": {
       "message": "現在のフィルターに一致する対戦がありません。",
       "clear": "フィルターを解除"
@@ -73,18 +114,9 @@
   },
   "dashboard": {
     "loading": "ダッシュボードを読み込み中...",
-    "empty": {
-      "title": "まだファイターを選んでいません！",
-      "subtitle": "メインとサブのファイターを選んで、対戦の記録を始めましょう。",
-      "choosePrimary": "メインファイターを選ぶ",
-      "chooseSecondary": "サブファイターを選ぶ"
-    },
     "hero": {
       "overallRecord": "通算戦績",
       "winRate": "勝率{{rate}}%",
-      "games_one": "{{count}}戦",
-      "games_other": "{{count}}戦",
-      "noMatchData": "まだ対戦データがありません。",
       "form": "調子",
       "streakWin": "{{count}}連勝",
       "streakLoss": "{{count}}連敗",
@@ -107,9 +139,6 @@
       "ratingDown": "前回セッションからレーティング下降",
       "ratingUnchanged": "前回セッションからレーティング変化なし"
     },
-    "tracker": {
-      "rate": "勝率"
-    },
     "formCurve": {
       "title": "調子の推移",
       "window": "集計範囲",
@@ -124,11 +153,7 @@
       "title": "最近の対戦",
       "limit": "表示数",
       "limitAria": "表示する対戦数",
-      "empty": "まだ対戦が記録されていません。",
-      "deleteAria": "対戦を削除",
-      "confirmTitle": "この対戦を削除しますか？",
-      "deleted": "対戦を削除しました！",
-      "deleteFailed": "対戦を削除できませんでした。もう一度お試しください。"
+      "empty": "まだ対戦が記録されていません。"
     },
     "stages": {
       "title": "よく遊ぶステージ",
@@ -222,6 +247,288 @@
       "deleteMatch": "対戦を削除",
       "edited": "対戦を編集しました！",
       "saveFailed": "対戦を保存できませんでした。もう一度お試しください。"
+    }
+  },
+  "gsp": {
+    "loading": "GSPトラッカーを読み込み中...",
+    "selectFighterAria": "ファイターを選択",
+    "empty": {
+      "title": "世界戦闘力（GSP）の推移を記録しよう",
+      "body": "GSP（世界戦闘力）はスマブラSPのオンライン・クイックプレイのランキングで、ファイターごとに記録されます。リザルト画面に表示されるGSPと一緒に対戦を記録すると、このページが推移をグラフ化し、勝敗ごとの増減を分析して、VIPマッチまでの距離を推定します。",
+      "cta": "ダッシュボードで対戦を記録"
+    },
+    "header": {
+      "title": "GSPトラッカー",
+      "subtitle": "世界戦闘力（GSP）はファイターごとの数値で、正確な計算式は任天堂から公開されていません — 以下はすべて、あなたが記録した対戦と、GSPの背後にある隠しレートをコミュニティが解析したモデルに基づく推定値です。"
+    },
+    "deleteConfirm": {
+      "title": "このGSP記録を削除しますか？",
+      "body": "対戦とそのGSP値は一緒に削除されます — この操作は取り消せません。",
+      "deleted": "GSP記録を削除しました！",
+      "deleteFailed": "記録を削除できませんでした。もう一度お試しください。"
+    },
+    "hero": {
+      "currentGsp": "現在のGSP",
+      "latestReading": "最新の記録",
+      "noGsp": "まだGSPの記録がありません",
+      "estMmr": "推定MMR",
+      "tailReading": "分布の端（{{zone}}）の値 — 概算",
+      "modelLink": "コミュニティ解析モデル",
+      "modelAccuracy": "（主要区間では±1 GSP、端は概算）",
+      "eliteThreshold": "VIPボーダー",
+      "thresholdAria": "VIPマッチのボーダー",
+      "saveThreshold": "ボーダーを保存",
+      "cancelThreshold": "ボーダーの編集をキャンセル",
+      "editThreshold": "VIPボーダーを編集",
+      "recalibrated": "{{date}}に再調整",
+      "fromAnchor": "モデルの基準点から",
+      "computedCaption": "計算値 · {{calibration}} · 編集するとモデルが再調整されます — 最新の数値の入手先:",
+      "invalidThreshold": "正の整数を入力してください — カンマ入りでも大丈夫です（例: 10,300,000）。",
+      "recalibratedToast": "入力されたボーダー値でモデルを再調整しました！",
+      "thresholdSaveFailed": "VIPボーダーを保存できませんでした。もう一度お試しください。",
+      "distanceToElite": "VIPまでの距離",
+      "elite": "VIP",
+      "belowElite": "MMR {{mmr}} · VIP基準（{{elite}}）未満",
+      "recentWinRate": "直近の勝率",
+      "lastNGames_one": "直近{{count}}戦",
+      "lastNGames_other": "直近{{count}}戦"
+    },
+    "curve": {
+      "title": "GSP推移",
+      "gspViewAria": "GSP表示",
+      "mmrViewAria": "MMR表示",
+      "gspLabel": "GSP",
+      "eliteLine": "VIPボーダー",
+      "estMmrLabel": "推定MMR",
+      "eliteMmrLine": "VIP（MMR {{mmr}}）",
+      "mmrCaption": "各記録の背後にある推定隠しレート（コミュニティ解析モデル）です。GSPと違って時間でインフレしないため、横ばいの線は実力が安定していることを意味します。点線: MMR {{mmr}}のVIPボーダー。",
+      "gspCaption": "各ポイントはこのファイターで対戦後に記録したGSPです。点線は計算されたVIPマッチのボーダー — コミュニティモデルの推定値であり、任天堂公表の値ではありません。",
+      "clickHint": "ポイントをクリックするとその記録を編集できます。",
+      "locked": "このファイターでGSP付きの対戦を{{count}}戦以上記録すると推移が表示されます。"
+    },
+    "logger": {
+      "title": "クイック記録",
+      "opponentCharacter": "相手のファイター",
+      "selectCharacter": "ファイターを選択",
+      "gspAfterMatch": "対戦後のGSP",
+      "gspPlaceholder": "例: 9,420,000",
+      "stageOptional": "ステージ（任意）",
+      "logMatch": "対戦を記録",
+      "logging": "記録中...",
+      "chooseOpponent": "相手のファイターを選んでください。",
+      "chooseResult": "この対戦の勝敗を選んでください。",
+      "invalidGsp": "対戦後に表示されたGSPを入力してください — カンマ入りでも大丈夫です（例: 10,300,000）。",
+      "logged": "対戦を記録しました！ GSP {{gsp}}",
+      "logFailed": "対戦を記録できませんでした。もう一度お試しください。"
+    },
+    "log": {
+      "title": "GSP記録",
+      "editEntry": "{{date}}のGSP記録を編集",
+      "deleteEntry": "{{date}}のGSP記録を削除",
+      "showRecent": "最近の分のみ表示",
+      "showAll": "全{{count}}件を表示"
+    },
+    "gains": {
+      "title": "増減分析",
+      "avgGainLifetime": "勝利あたり平均増加（通算）",
+      "avgDropLifetime": "敗北あたり平均減少（通算）",
+      "biggestGain": "1戦での最大増加",
+      "avgGainLast20": "勝利あたり平均増加（直近20戦）",
+      "avgDropLast20": "敗北あたり平均減少（直近20戦）",
+      "biggestDrop": "1戦での最大減少",
+      "perWinTitle": "勝利ごとの増加量の推移",
+      "shrinking": "— GSPが上がるにつれて縮小中",
+      "growing": "— 増加傾向",
+      "winNumber": "{{number}}勝目",
+      "gainedGsp": "獲得GSP",
+      "empty": "GSP付きの勝敗をいくつか記録すると増減の傾向が表示されます。"
+    },
+    "road": {
+      "title": "VIPへの道",
+      "empty": "このファイターでGSP付きの対戦を記録すると予測が表示されます。",
+      "alreadyElite": "すでにVIPマッチ入りしています！",
+      "equilibriumTitle": "今の実力で安定しています",
+      "equilibriumBody": "現在の勝率{{rate}}%では、マッチメイキングはここがあなたの実力だと判断しています — 各対戦で約{{points}}MMRを取り合うため、上に行くのに必要なのは50%超の勝率であって、対戦数ではありません。このページで相性を磨けば数字は付いてきます。",
+      "cappedTitle": "あと{{max}}勝（純勝利数）以上",
+      "cappedBody": "勝率が50%をわずかに上回る程度なので、1戦あたりの期待進捗はごくわずかです — 勝率が少し上がるだけで大きく短縮されます。",
+      "projected_one": "あと約{{count}}戦",
+      "projected_other": "あと約{{count}}戦",
+      "projectedCaption": "VIP（MMR {{elite}}）まで、約{{points}}MMR/戦・勝率{{rate}}%での見積もり（コミュニティモデルによる推定）",
+      "historyOne": "あなた自身のGSP履歴からの推定: あと約{{label}}戦（{{model}}）。",
+      "historyMany": "あなた自身のGSP履歴からの推定: あと約{{label}}戦（{{model}}）。",
+      "decayFit": "V10の逓減ゲインフィット",
+      "flatFallback": "V10の平均値フォールバック",
+      "assumption1": "マッチメイキングが今後も同程度のMMRの相手を当て続けること（各対戦で約{{points}}MMR — 互角の対戦に対するコミュニティ表の値 — を取り合う）と、直近の勝率が維持されることを前提とします。",
+      "assumption2": "コミュニティが解析したMMRモデルに基づくもので、任天堂のアルゴリズムそのものではありません — シミュレーションであり、保証ではありません。"
+    },
+    "vsGlicko": {
+      "title": "推定MMR vs Glicko-2",
+      "mmrLabel": "推定MMR（正規化）",
+      "glickoLabel": "Glicko-2（正規化）",
+      "caption": "クイックプレイでのレート（このファイターの推定MMR、コミュニティ解析モデル）と、全体のGlicko-2レート（全ファイター・全セッション）の比較です。生のスケールに関連がないため、どちらもこの期間で0〜100に正規化しています。レート同士の比較なので形を公平に見比べられます。乖離がある場合は、クイックプレイでの調子が全体の調子と違うことを意味します。"
+    }
+  },
+  "matchData": {
+    "loading": "対戦データを読み込み中...",
+    "title": "対戦履歴",
+    "noMatches": "まだ対戦がありません。対戦を記録してから、ここでデータを確認しましょう！",
+    "table": {
+      "columns": {
+        "date": "日時",
+        "fighter": "ファイター",
+        "opponentFighter": "相手",
+        "opponentName": "相手の名前",
+        "stage": "ステージ",
+        "matchType": "種類",
+        "win": "結果",
+        "tournament": "大会",
+        "notes": "メモ",
+        "manage": "管理"
+      },
+      "editVod": "VODメモを編集",
+      "addVod": "VODメモを追加",
+      "synced": "同期済み",
+      "syncedTitle": "{{source}}から同期 — 対戦データは同期側が管理します",
+      "editMatch": "対戦を編集",
+      "searchPlaceholder": "{{count}}件から検索...",
+      "searchAria": "対戦を絞り込む",
+      "allOption": "すべての{{label}}",
+      "columnsButton": "列",
+      "toggleColumns": "列の表示切り替え",
+      "exportCsv": "CSVをエクスポート",
+      "noneFound": "対戦が見つかりません。",
+      "pageOf": "{{total}}ページ中{{page}}ページ",
+      "rowsPerPage": "1ページの行数",
+      "showN": "{{count}}件表示"
+    },
+    "roster": {
+      "title": "使用ファイター",
+      "showAll": "すべて表示（あと{{count}}体）",
+      "showLess": "少なく表示"
+    },
+    "stages": {
+      "title": "ステージ別集計",
+      "selectAria": "ステージを選択",
+      "noneOnStage": "このステージでの対戦記録はありません。",
+      "winsShort": "{{count}}勝",
+      "lossesShort": "{{count}}敗"
+    }
+  },
+  "matchups": {
+    "loading": "相性データを読み込み中...",
+    "noFightersSubtitle": "メインとサブのファイターを選んで、相性の記録を始めましょう。",
+    "you": "自分",
+    "opponent": "相手",
+    "vs": "vs",
+    "winRateTrend": "勝率の推移",
+    "results": "対戦結果",
+    "selectFighterAria": "自分のファイターを選択",
+    "selectOpponentAria": "相手のファイターを選択",
+    "selectPlaceholder": "ファイターを選択",
+    "record": {
+      "empty": "このファイターとの対戦記録はありません",
+      "totalMatches": "総対戦数"
+    },
+    "matrix": {
+      "title": "相性マトリクス",
+      "showTop": "上位{{count}}体を表示",
+      "showAll": "全{{count}}体を表示",
+      "empty": "まだ対戦が記録されていません — 対戦をプレイして相性マトリクスを作りましょう。",
+      "yourFighterSr": "自分のファイター",
+      "cellAria": "{{fighter}} vs {{opponent}}: {{wins}}-{{losses}}"
+    },
+    "chart": {
+      "window": "集計範囲",
+      "windowAria": "トレンドの範囲",
+      "rolling5": "直近5戦",
+      "rolling10": "直近10戦",
+      "cumulative": "累計",
+      "empty": "対戦を登録するとグラフが表示されます。",
+      "winRate": "勝率"
+    },
+    "insights": {
+      "title": "相性の分析",
+      "minMatches": "ステージごとの最低対戦数",
+      "minMatchesAria": "ステージごとの最低対戦数",
+      "empty": "この相性の対戦はまだ記録されていません。",
+      "currentStreak": "現在の連続記録",
+      "streakWins": "{{count}}連勝",
+      "streakLosses": "{{count}}連敗",
+      "longestWin": "最長連勝",
+      "longestLoss": "最長連敗",
+      "recentForm": "最近の調子（新しい順）",
+      "bestStage": "得意ステージ",
+      "worstStage": "苦手ステージ",
+      "notEnoughStageData": "ステージのデータがまだ足りません。",
+      "byMatchType": "対戦の種類別"
+    },
+    "stageTable": {
+      "title": "ステージ別集計",
+      "stage": "ステージ",
+      "record": "戦績",
+      "winRate": "勝率"
+    },
+    "counterpick": {
+      "title": "カウンターピック指南",
+      "gather": "データを集めましょう: この相性でピックやバンを提案するには、各ステージで{{count}}戦以上の記録が必要です。",
+      "pickThese": "ここを選ぶ",
+      "banThese": "ここは拒否/回避",
+      "unknownStage": "不明なステージ"
+    },
+    "opponentSplit": {
+      "title": "相手プレイヤー別",
+      "empty": "この相性で名前付きの相手はまだ記録されていません。"
+    },
+    "table": {
+      "empty": "まだ対戦が記録されていません！",
+      "date": "日時",
+      "result": "結果",
+      "manage": "管理"
+    }
+  },
+  "fighterAnalysis": {
+    "loading": "ファイター分析を読み込み中...",
+    "noFightersSubtitle": "メインとサブのファイターを選んで、分析を始めましょう。",
+    "title": "ファイター分析",
+    "selectAria": "ファイターを選択",
+    "selectPlaceholder": "ファイターを選択",
+    "hero": {
+      "rateAndGames": "勝率{{rate}}% · {{count}}戦",
+      "noMatches": "このファイターの対戦はまだ記録されていません。",
+      "streakWin": "{{count}}連勝中",
+      "streakLoss": "{{count}}連敗中",
+      "share": "全対戦の{{pct}}%",
+      "last10": "直近10戦（新しい順）",
+      "formRolling": "調子（直近10戦）",
+      "typeColumn": "種類"
+    },
+    "stageMastery": {
+      "title": "ステージ習熟度",
+      "bestPick": "ベストピック:",
+      "banWorthy": "拒否推奨:",
+      "empty": "まだステージのデータがありません — このファイターで対戦を記録するとグリッドが作られます。"
+    },
+    "coverage": {
+      "title": "相性カバレッジ",
+      "empty": "まだ相手のデータがありません — 対戦を記録すると、実際によく当たる相手が表示されます。",
+      "thin": "データ少",
+      "none": "データなし"
+    },
+    "practice": {
+      "title": "練習のおすすめ",
+      "empty": "おすすめを出すにはまだデータが足りません — このファイターで対戦を記録し続けましょう。",
+      "struggling": "{{name}}が苦手: {{wins}}-{{losses}}",
+      "noGames": "{{name}}との対戦記録なし — よく当たる相手です",
+      "stageHabit": "{{stage}}で戦いがち: {{wins}}-{{losses}}"
+    },
+    "guide": {
+      "title": "相性別ステージガイド",
+      "empty": "まだ相性データがありません — このファイターで対戦を記録するとガイドが作られます。"
+    },
+    "opponents": {
+      "title": "相手プレイヤー",
+      "empty": "名前付きの相手はまだ記録されていません。",
+      "matches": "対戦数"
     }
   }
 }
