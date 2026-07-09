@@ -7,10 +7,12 @@ import {
   opponentMapSchema,
   opponentNoteMapSchema,
   opponentNoteSchema,
+  stageFavoritesSchema,
   userSchema,
   type CreateMatchInput,
   type FighterSelectionInput,
   type GspSettings,
+  type StageFavorites,
   type Match,
   type MatchRecord,
   type OpponentAliasMap,
@@ -19,6 +21,7 @@ import {
   type UpdateMatchInput,
   type UpsertGspSettingsInput,
   type UpsertOpponentNoteInput,
+  type UpsertStageFavoritesInput,
   type User,
 } from '@smash-tracker/shared';
 
@@ -381,5 +384,36 @@ export class RtdbService {
     };
     await this.database.ref(`gspSettings/${uid}`).set(gspSettingsSchema.parse(settings));
     return settings;
+  }
+
+  // ---- stageFavorites/{uid} -----------------------------------------------
+
+  /**
+   * Returns the user's favorited stage ids, synthesizing an empty default
+   * (`stageIds: [], updatedAt: 0`) when they've never saved any — same
+   * no-404 convention as `getGspSettings`. The schema's `stageIds` default
+   * also covers the record RTDB leaves behind after the last favorite is
+   * removed (RTDB drops empty arrays on write, so only `updatedAt` survives).
+   */
+  async getStageFavorites(uid: string): Promise<StageFavorites> {
+    const snapshot = await this.database.ref(`stageFavorites/${uid}`).get();
+    if (!snapshot.exists()) {
+      return { stageIds: [], updatedAt: 0 };
+    }
+    return stageFavoritesSchema.parse(snapshot.val());
+  }
+
+  /**
+   * Writes (fully replaces) the user's favorite-stage list, deduping ids
+   * (first-occurrence-wins, preserving the user's chosen order) and stamping
+   * `updatedAt` server-side.
+   */
+  async setStageFavorites(uid: string, input: UpsertStageFavoritesInput): Promise<StageFavorites> {
+    const favorites: StageFavorites = {
+      stageIds: [...new Set(input.stageIds)],
+      updatedAt: Date.now(),
+    };
+    await this.database.ref(`stageFavorites/${uid}`).set(stageFavoritesSchema.parse(favorites));
+    return favorites;
   }
 }
