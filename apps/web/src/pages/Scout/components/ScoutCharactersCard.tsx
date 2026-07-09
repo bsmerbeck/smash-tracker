@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import {
   Table,
@@ -14,24 +15,25 @@ const MAX_ROWS = 8;
 
 /** The scouted player's most-used characters (sprite + games + win rate). */
 export function ScoutCharactersCard({ characters }: { characters: ScoutCharacterUsage[] }) {
+  const { t } = useTranslation();
   const top = characters.slice(0, MAX_ROWS);
 
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Character Usage</CardTitle>
-        <CardDescription>What they play, most-used first.</CardDescription>
+        <CardTitle>{t('scout.characters.title')}</CardTitle>
+        <CardDescription>{t('scout.characters.description')}</CardDescription>
       </CardHeader>
       <CardContent>
         {top.length === 0 ? (
-          <p className="text-sm text-muted-foreground">No sampled games yet.</p>
+          <p className="text-sm text-muted-foreground">{t('scout.characters.empty')}</p>
         ) : (
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Character</TableHead>
-                <TableHead className="text-right">Win Rate</TableHead>
-                <TableHead className="text-right">Games</TableHead>
+                <TableHead>{t('opponents.whatTheyPlay.character')}</TableHead>
+                <TableHead className="text-right">{t('matchups.stageTable.winRate')}</TableHead>
+                <TableHead className="text-right">{t('trends.monthly.games')}</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -49,7 +51,7 @@ export function ScoutCharactersCard({ characters }: { characters: ScoutCharacter
                             ?
                           </span>
                         )}
-                        <span>{sprite?.name ?? 'Unknown'}</span>
+                        <span>{sprite?.name ?? t('common.unknown')}</span>
                       </div>
                     </TableCell>
                     <TableCell className="text-right">{winRate}%</TableCell>

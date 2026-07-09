@@ -1,3 +1,5 @@
+import { useTranslation } from 'react-i18next';
+import type { TFunction } from 'i18next';
 import {
   CategoryScale,
   Chart as ChartJS,
@@ -25,37 +27,32 @@ const ROLLING_WINDOW = 5;
  * e.g. the Scout page's "Full analysis" section, where `matches` is a
  * scouted player's OWN game history rather than a head-to-head slice.
  */
-export function ScoutingTrendChart({
-  matches,
-  title = 'H2H Trend',
-}: {
-  matches: Match[];
-  title?: string;
-}) {
+export function ScoutingTrendChart({ matches, title }: { matches: Match[]; title?: string }) {
+  const { t, i18n } = useTranslation();
   const series = getRollingWinRate(matches, ROLLING_WINDOW);
 
   return (
     <Card>
       <CardHeader>
-        <CardTitle>{title}</CardTitle>
+        <CardTitle>{title ?? t('opponents.trend.title')}</CardTitle>
       </CardHeader>
       <CardContent>
         {series.length === 0 ? (
-          <p className="text-sm text-muted-foreground">Not enough matches for a trend yet.</p>
+          <p className="text-sm text-muted-foreground">{t('opponents.trend.empty')}</p>
         ) : (
-          <Line data={buildData(series)} options={buildOptions(series)} />
+          <Line data={buildData(series, t)} options={buildOptions(series, i18n.language)} />
         )}
       </CardContent>
     </Card>
   );
 }
 
-function buildData(series: ReturnType<typeof getRollingWinRate>) {
+function buildData(series: ReturnType<typeof getRollingWinRate>, t: TFunction) {
   return {
     labels: series.map((point) => point.index.toString()),
     datasets: [
       {
-        label: `Rolling win rate (last ${ROLLING_WINDOW})`,
+        label: t('opponents.trend.label', { count: ROLLING_WINDOW }),
         ...redLineDataset(),
         data: series.map((point) => point.winRate),
       },
@@ -63,7 +60,10 @@ function buildData(series: ReturnType<typeof getRollingWinRate>) {
   };
 }
 
-function buildOptions(series: ReturnType<typeof getRollingWinRate>): ChartOptions<'line'> {
+function buildOptions(
+  series: ReturnType<typeof getRollingWinRate>,
+  locale: string,
+): ChartOptions<'line'> {
   const theme = darkChartOptions();
   return {
     scales: {
@@ -88,7 +88,7 @@ function buildOptions(series: ReturnType<typeof getRollingWinRate>): ChartOption
           title: (items) => {
             const point = series[items[0]?.dataIndex ?? -1];
             if (!point) return '';
-            return new Date(point.match.time).toLocaleDateString('en-US');
+            return new Date(point.match.time).toLocaleDateString(locale);
           },
           label: (item) => `: ${Math.round(Number(item.formattedValue) * 100) / 100}%`,
         },

@@ -114,6 +114,12 @@
       "p1": "<strong>Glicko-2</strong> é o sistema de pontuação usado no xadrez e em muitas ladders competitivas. Diferente de uma taxa de vitórias simples, ele pesa <em>quem</em> você vence e o quão surpreendente foi o resultado.",
       "p2": "O <strong>número ± (RD)</strong> é a incerteza: ele diminui conforme você joga e cresce quando você fica inativo — um jogador 1500 ±50 é comprovado, um 1500 ±300 é uma incógnita.",
       "p3": "Nós o usamos porque o jogo de bracket é irregular: o Glicko-2 lida com longas pausas entre torneios e amostras pequenas muito melhor do que o Elo ou a taxa de vitórias sozinhos. As pontuações aqui não são oficiais e são calculadas apenas com suas partidas sincronizadas ou registradas."
+    },
+    "relativeDate": {
+      "justNow": "agora mesmo",
+      "minutesAgo": "há {{count}} min",
+      "hoursAgo": "há {{count}} h",
+      "daysAgo": "há {{count}} dias"
     }
   },
   "dashboard": {
@@ -675,6 +681,251 @@
       "verdictFollowed": "seguiu",
       "verdictAgainst": "contra",
       "verdictNeutral": "neutro sobre"
+    }
+  },
+  "billing": {
+    "title": "Comprar créditos de relatório",
+    "description": "Cada relatório de scouting com IA custa um crédito. Escolha um pacote — você será redirecionado ao Stripe para concluir a compra.",
+    "perReport": "{{price}} por relatório",
+    "checkoutError": "Algo deu errado ao iniciar o pagamento. Tente novamente.",
+    "redirecting": "Redirecionando…",
+    "continue": "Continuar para o pagamento"
+  },
+  "opponents": {
+    "loading": "Carregando relatórios de scouting...",
+    "selectPrompt": "Selecione um oponente na lista para ver o relatório de scouting dele.",
+    "empty": {
+      "title": "Ainda não há partidas para analisar!",
+      "body": "Registre uma partida no Painel, ou conecte o start.gg para sincronizar seus sets de torneio, e os relatórios de scouting dos oponentes aparecerão aqui.",
+      "connectStartgg": "Conectar start.gg"
+    },
+    "noTags": {
+      "title": "Nenhuma das suas partidas tem um nome de oponente registrado.",
+      "body": "Adicione o nome do oponente ao registrar uma partida para desbloquear o relatório de scouting dele."
+    },
+    "list": {
+      "title": "Oponentes",
+      "faced_one": "{{count}} oponente enfrentado",
+      "faced_other": "{{count}} oponentes enfrentados",
+      "searchPlaceholder": "Pesquisar oponentes...",
+      "searchAria": "Pesquisar oponentes",
+      "sortAria": "Ordenar oponentes",
+      "sortMostPlayed": "Mais jogados",
+      "sortRecent": "Jogados recentemente",
+      "sortBestRate": "Maior taxa de vitórias",
+      "sortWorstRate": "Menor taxa de vitórias",
+      "sortAlphabetical": "A → Z",
+      "minGames": "3+ partidas",
+      "minGamesAria": "Mostrar só oponentes com 3 ou mais partidas",
+      "emptyNone": "Nenhum oponente enfrentado ainda.",
+      "emptyFiltered": "Nenhum oponente corresponde aos seus filtros.",
+      "rowActions": "Ações para {{name}}",
+      "mergeInto": "Mesclar com..."
+    },
+    "source": {
+      "mixedAria": "fontes mistas",
+      "verified": "verificado",
+      "manual": "manual",
+      "manualAria": "inserido manualmente",
+      "startggAria": "verificado pelo start.gg",
+      "parryggAria": "verificado pelo parry.gg"
+    },
+    "header": {
+      "playedRange": "Primeira partida {{first}} · Última partida {{last}}",
+      "encounterSpan": "{{start}} e {{end}}",
+      "metAt_one": "Vocês se encontraram em {{count}} torneio entre {{span}}",
+      "metAt_other": "Vocês se encontraram em {{count}} torneios entre {{span}}",
+      "rateOverGames_one": "{{rate}}% em {{count}} partida",
+      "rateOverGames_other": "{{rate}}% em {{count}} partidas"
+    },
+    "whatTheyPlay": {
+      "title": "O que ele joga",
+      "description": "Ordenado pela confiabilidade com que você vence.",
+      "empty": "Nenhum personagem registrado ainda.",
+      "character": "Personagem"
+    },
+    "stages": {
+      "title": "Stages",
+      "empty": "Nenhum dado de stage registrado ainda."
+    },
+    "trend": {
+      "title": "Tendência H2H",
+      "empty": "Ainda não há partidas suficientes para uma tendência.",
+      "label": "Taxa de vitórias móvel (últimas {{count}})"
+    },
+    "encounters": {
+      "title": "Encontros recentes",
+      "empty": "Nenhum encontro registrado ainda.",
+      "aria": "Encontros recentes"
+    },
+    "history": {
+      "title": "Histórico de torneios",
+      "empty": "Nenhum set de torneio contra este jogador ainda — ressincronize o start.gg se vocês jogaram recentemente.",
+      "gamesAria": "Partidas",
+      "losers": "Losers",
+      "vsThemHere": "{{wins}}-{{losses}} contra ele aqui",
+      "setsAria": "Sets contra ele em {{title}}"
+    },
+    "merge": {
+      "title": "Mesclar \"{{name}}\" com...",
+      "description": "Escolha o nome de oponente que deve ser tratado como a mesma pessoa. As partidas dele serão combinadas em todo lugar.",
+      "noMatches": "Nenhum oponente correspondente.",
+      "warning": "\"{{opponent}}\" é {{label}} e \"{{target}}\" é só manual. Para manter a tag verificada como canônica, mesclaremos \"{{target}}\" com \"{{opponent}}\" em vez disso.",
+      "anyway": "Mesclar \"{{opponent}}\" com \"{{target}}\" mesmo assim",
+      "merging": "Mesclando...",
+      "merge": "Mesclar"
+    },
+    "merged": {
+      "title": "Nomes mesclados",
+      "description": "Estes nomes estão incorporados a \"{{name}}\". Separe para acompanhá-los individualmente de novo.",
+      "unmerge": "Separar"
+    },
+    "tendencies": {
+      "title": "Tendências",
+      "description": "Suas próprias notas de scouting sobre este oponente — não derivadas do histórico de partidas.",
+      "habits": "Hábitos",
+      "habitsPlaceholder": "Hábitos de abertura, rotas de punição, mixups de recuperação...",
+      "banThese": "Bana estes (máx. {{count}})",
+      "banAria": "Stages para banir contra este oponente",
+      "watchFor": "Fique de olho",
+      "watchForPlaceholder": "Leituras, mind games, tech chases para esperar no próximo set...",
+      "saving": "Salvando...",
+      "deleteNote": "Excluir nota",
+      "banTheseView": "Bana estes",
+      "banViewAria": "Stages para banir",
+      "savedAt": "Salvo em {{date}}",
+      "edit": "Editar",
+      "empty": "Ainda não há notas de scouting. Anote hábitos, stages para banir ou coisas para observar antes do seu próximo set.",
+      "addNote": "Adicionar nota"
+    },
+    "export": {
+      "print": "Exportar H2H",
+      "copy": "Copiar como texto",
+      "copied": "Copiado!"
+    }
+  },
+  "scout": {
+    "title": "Buscar jogador",
+    "prompt": "Cole acima uma URL de perfil do start.gg, um slug ou um id de jogador para ver o histórico público de torneios.",
+    "promptWithParry": "Cole acima uma URL de perfil do start.gg ou parry.gg, um slug/tag ou um id de jogador para ver o histórico público de torneios.",
+    "errors": {
+      "notFound": "Não encontramos um jogador do start.gg para essa busca. Confira a URL, o slug ou o id do jogador.",
+      "badQuery": "Isso não parece uma URL de perfil do start.gg, um slug nem um id de jogador.",
+      "rateLimited": "O start.gg está limitando as requisições agora. Tente novamente em um minuto.",
+      "scoutFallback": "Algo deu errado ao buscar esse jogador.",
+      "generateFallback": "Algo deu errado ao gerar o relatório."
+    },
+    "form": {
+      "description": "Cole uma URL de perfil do start.gg, uma referência \"user/<slug>\" ou um id numérico de jogador para ver o histórico público de torneios antes de enfrentá-lo.",
+      "descriptionWithParry": "Cole uma URL de perfil do start.gg ou parry.gg, um gamer tag, uma referência \"user/<slug>\" ou um id numérico de jogador para ver o histórico público de torneios antes de enfrentá-lo.",
+      "placeholder": "https://start.gg/user/07dc2239",
+      "placeholderWithParry": "https://start.gg/user/07dc2239 ou uma URL de perfil do parry.gg",
+      "inputAria": "URL de perfil do start.gg, slug ou id de jogador",
+      "inputAriaWithParry": "URL de perfil do start.gg ou parry.gg, slug/tag ou id de jogador",
+      "scout": "Buscar",
+      "scouting": "Buscando…",
+      "source": "Fonte:",
+      "sourceAria": "Fonte de scouting",
+      "detectedParry": "URL de perfil do parry.gg detectada.",
+      "pending": "Obtendo o histórico público de torneios — pode levar alguns segundos."
+    },
+    "report": {
+      "generate": "Gerar relatório com IA",
+      "regenerate": "Gerar relatório novamente",
+      "generating": "Gerando relatório…",
+      "generatingHint": "Gerando relatório — normalmente leva um ou dois minutos."
+    },
+    "billing": {
+      "paymentReceived": "Pagamento recebido — seus créditos chegarão em instantes, se ainda não chegaram.",
+      "checkoutCancelled": "Pagamento cancelado — nenhuma cobrança foi feita.",
+      "freeAccess": "Acesso gratuito",
+      "credits_one": "{{count}} crédito",
+      "credits_other": "{{count}} créditos",
+      "buyCredits": "Comprar créditos",
+      "costLine": "Cada relatório custa 1 crédito.",
+      "packFor": "{{label}} por {{price}}",
+      "outOfCredits": "Seus créditos acabaram.",
+      "buyPack": "Compre um pacote",
+      "toGenerate": "para gerar este relatório."
+    },
+    "header": {
+      "viewOn": "Ver {{name}} no {{source}}",
+      "profile": "Perfil no {{source}}",
+      "sample": "Dados públicos do {{source}} · amostra dos últimos {{sets}} sets ({{games}} partidas)"
+    },
+    "characters": {
+      "title": "Uso de personagens",
+      "description": "O que ele joga, o mais usado primeiro.",
+      "empty": "Nenhuma partida na amostra ainda."
+    },
+    "stages": {
+      "title": "Desempenho por stage",
+      "description": "Os resultados dele por stage."
+    },
+    "events": {
+      "title": "Eventos recentes",
+      "description": "Atividade mais recente primeiro.",
+      "empty": "Nenhum evento recente na amostra.",
+      "placement": "Colocação",
+      "entrants": "Participantes"
+    },
+    "commonOpponents": {
+      "title": "Oponentes frequentes",
+      "description": "Com quem ele mais cruza nos sets da amostra.",
+      "empty": "Nenhum oponente repetido na amostra.",
+      "sets_one": "{{count}} set",
+      "sets_other": "{{count}} sets"
+    },
+    "history": {
+      "title": "Seu histórico contra ele",
+      "description_one": "Você já jogou contra {{name}} — {{count}} partida registrada no seu próprio histórico.",
+      "description_other": "Você já jogou contra {{name}} — {{count}} partidas registradas no seu próprio histórico.",
+      "rate": "({{rate}}% de vitórias)",
+      "fullReport": "Relatório de scouting completo"
+    },
+    "advisor": {
+      "title": "Conselheiro de confrontos",
+      "description": "Sua melhor (e pior) escolha contra cada personagem dele — combina seu próprio retrospecto com dados de tier list e arquétipos.",
+      "noCharacterData": "Ainda não há dados de personagens para este scouting — comum no parry.gg enquanto os dados de partidas são escassos. Volte quando ele tiver jogado mais sets.",
+      "noMyCharacters": "Escolha um personagem principal ou secundário (ou registre algumas partidas) para receber recomendações personalizadas.",
+      "vsName": "vs. {{name}}",
+      "gamesSampled_one": "{{count}} partida na amostra",
+      "gamesSampled_other": "{{count}} partidas na amostra",
+      "inYourSets": "{{record}} nos seus sets",
+      "tier": "tier {{score}}/10",
+      "archetypeEdge": "vantagem de arquétipo",
+      "archetypeDisadvantage": "desvantagem de arquétipo"
+    },
+    "fullAnalysis": {
+      "title": "Análise completa",
+      "rescout": "Busque novamente para habilitar a análise completa.",
+      "noGameData": "Esta fonte ainda não oferece dados por partida.",
+      "stageMasteryOverall": "Domínio de stages — Geral",
+      "stageMasteryFor": "Domínio de stages — {{name}}",
+      "topCharacter": "Personagem principal",
+      "recentForm": "Forma recente de {{name}}"
+    },
+    "aiReport": {
+      "title": "Relatório de scouting com IA",
+      "generated": "Gerado {{rel}}",
+      "download": "Baixar (.md)",
+      "print": "Imprimir / Salvar como PDF",
+      "gameplan": "Plano de jogo",
+      "characterStrategy": "Estratégia de personagens",
+      "stageStrategy": "Estratégia de stages",
+      "picks": "Picks:",
+      "bans": "Bans:",
+      "headToHead": "Confronto direto",
+      "watchFor": "Fique de olho"
+    },
+    "historySelector": {
+      "older": "Relatório mais antigo",
+      "newer": "Relatório mais recente",
+      "reportOf": "Relatório {{ordinal}} de {{total}}"
+    },
+    "pastReports": {
+      "title": "Relatórios de IA anteriores",
+      "description": "Relatórios já gerados, o mais recente primeiro."
     }
   }
 }

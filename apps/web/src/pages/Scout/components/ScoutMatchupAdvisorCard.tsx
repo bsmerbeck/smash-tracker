@@ -1,4 +1,5 @@
 import { useMemo } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Swords } from 'lucide-react';
 import type {
   Match,
@@ -20,21 +21,18 @@ interface AdvisorRow {
   worst: MatchupPick | null;
 }
 
-function fighterLabel(fighterId: number): string {
-  return getFighterById(fighterId)?.name ?? 'Unknown';
-}
-
 function PickChip({ pick, tone }: { pick: MatchupPick; tone: 'best' | 'worst' }) {
+  const { t } = useTranslation();
   const sprite = getFighterById(pick.fighterId);
   const evidenceParts: string[] = [];
   if (pick.evidence.record) {
-    evidenceParts.push(`${pick.evidence.record} in your sets`);
+    evidenceParts.push(t('scout.advisor.inYourSets', { record: pick.evidence.record }));
   }
-  evidenceParts.push(`tier ${pick.evidence.tierScore.toFixed(1)}/10`);
+  evidenceParts.push(t('scout.advisor.tier', { score: pick.evidence.tierScore.toFixed(1) }));
   if (pick.evidence.archetypeEdge > 0) {
-    evidenceParts.push('archetype edge');
+    evidenceParts.push(t('scout.advisor.archetypeEdge'));
   } else if (pick.evidence.archetypeEdge < 0) {
-    evidenceParts.push('archetype disadvantage');
+    evidenceParts.push(t('scout.advisor.archetypeDisadvantage'));
   }
 
   return (
@@ -48,7 +46,7 @@ function PickChip({ pick, tone }: { pick: MatchupPick; tone: 'best' | 'worst' })
       )}
       <div className="flex flex-col leading-tight">
         <span className={`text-sm font-medium ${tone === 'worst' ? 'text-muted-foreground' : ''}`}>
-          {sprite?.name ?? 'Unknown'}
+          {sprite?.name ?? t('common.unknown')}
         </span>
         <span className="text-xs text-muted-foreground">{evidenceParts.join(' · ')}</span>
       </div>
@@ -76,6 +74,7 @@ export function ScoutMatchupAdvisorCard({
   scoutedCharacters: ScoutCharacterUsage[];
   matches: Match[];
 }) {
+  const { t } = useTranslation();
   const { data: fighters } = useFighters();
 
   const myFighterIds = useMemo(
@@ -132,24 +131,15 @@ export function ScoutMatchupAdvisorCard({
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
           <Swords className="size-4" />
-          Matchup Advisor
+          {t('scout.advisor.title')}
         </CardTitle>
-        <CardDescription>
-          Your best (and worst) pick against each of their characters — blends your own record with
-          tier list and archetype data.
-        </CardDescription>
+        <CardDescription>{t('scout.advisor.description')}</CardDescription>
       </CardHeader>
       <CardContent>
         {opponentFighterIds.length === 0 ? (
-          <p className="text-sm text-muted-foreground">
-            No character data for this scout yet — common on parry.gg while match data is still
-            sparse. Check back after they've played more sets.
-          </p>
+          <p className="text-sm text-muted-foreground">{t('scout.advisor.noCharacterData')}</p>
         ) : myFighterIds.length === 0 ? (
-          <p className="text-sm text-muted-foreground">
-            Pick a primary or secondary character (or log a few matches) to get personalized
-            recommendations.
-          </p>
+          <p className="text-sm text-muted-foreground">{t('scout.advisor.noMyCharacters')}</p>
         ) : (
           <ul className="flex flex-col gap-4">
             {rows.map((row) => (
@@ -170,10 +160,12 @@ export function ScoutMatchupAdvisorCard({
                   })()}
                   <div className="flex flex-col leading-tight">
                     <span className="text-sm font-medium">
-                      vs. {fighterLabel(row.opponentFighterId)}
+                      {t('scout.advisor.vsName', {
+                        name: getFighterById(row.opponentFighterId)?.name ?? t('common.unknown'),
+                      })}
                     </span>
                     <span className="text-xs text-muted-foreground">
-                      {row.opponentGames} game{row.opponentGames === 1 ? '' : 's'} sampled
+                      {t('scout.advisor.gamesSampled', { count: row.opponentGames })}
                     </span>
                   </div>
                 </div>
