@@ -9,7 +9,9 @@ import {
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { getRecentGspWinRate } from './GspHero';
-import { calibrationFromSettings, estimateMmrAt } from '../lib/gspMmrModel';
+import { estimateMmrAt } from '../lib/gspMmrModel';
+import { useGspLive } from '@/hooks/useGspLive';
+import { useModelCalibration } from '../lib/useModelCalibration';
 import { useNowMs } from '../lib/useNowMs';
 
 const GSPTIERS_URL = 'https://gsptiers.com';
@@ -34,8 +36,11 @@ export function GspTiers({ series, settings }: { series: GspPoint[]; settings: G
   const nowMs = useNowMs();
   const lastPoint = series.length > 0 ? series[series.length - 1]! : null;
 
-  const calibration = calibrationFromSettings(settings);
-  const ladder = getGspTierLadder(estimateT(nowMs, calibration));
+  const calibration = useModelCalibration(settings);
+  // V17.1: the live upstream max (when the API has one) replaces the
+  // captured-ratio estimate for the ladder's fraction boundaries.
+  const { data: live } = useGspLive();
+  const ladder = getGspTierLadder(estimateT(nowMs, calibration), { maxGsp: live?.max });
   const position = lastPoint !== null ? getGspTierPosition(lastPoint.gsp, ladder) : null;
 
   const tierName = (id: GspTierId) => t(`gsp.tiers.names.${id}`);

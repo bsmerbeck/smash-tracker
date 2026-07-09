@@ -306,7 +306,8 @@
       "belowElite": "MMR {{mmr}} · unter Elite ({{elite}})",
       "recentWinRate": "Aktuelle Winrate",
       "lastNGames_one": "letztes Match",
-      "lastNGames_other": "letzte {{count}} Matches"
+      "lastNGames_other": "letzte {{count}} Matches",
+      "liveCalibrated": "automatisch aktualisiert am {{date}} über gsptiers.com"
     },
     "curve": {
       "title": "GSP-Kurve",
