@@ -1,3 +1,5 @@
+import { useTranslation } from 'react-i18next';
+import type { TFunction } from 'i18next';
 import {
   CategoryScale,
   Chart as ChartJS,
@@ -20,9 +22,9 @@ ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Tooltip,
 /** Minimum total games before the curve renders instead of the locked state — mirrors the Dashboard Rating card's `RATING_UNLOCK_THRESHOLD`. */
 export const RATING_CURVE_UNLOCK_THRESHOLD = 5;
 
-/** Formats a rating period's end date as a short x-axis label, e.g. "Jan 5". */
-export function formatPeriodLabel(period: RatingPeriodResult): string {
-  return new Date(period.end).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+/** Formats a rating period's end date as a short x-axis label in the given locale, e.g. "Jan 5". */
+export function formatPeriodLabel(period: RatingPeriodResult, locale: string): string {
+  return new Date(period.end).toLocaleDateString(locale, { month: 'short', day: 'numeric' });
 }
 
 /**
@@ -33,13 +35,13 @@ export function formatPeriodLabel(period: RatingPeriodResult): string {
  * as an uncertainty envelope around the rating line). Exported as a pure
  * builder so the series math can be unit-tested without rendering chart.js.
  */
-export function buildRatingCurveData(periods: RatingPeriodResult[]) {
-  const labels = periods.map((p) => formatPeriodLabel(p));
+export function buildRatingCurveData(periods: RatingPeriodResult[], t: TFunction, locale: string) {
+  const labels = periods.map((p) => formatPeriodLabel(p, locale));
   return {
     labels,
     datasets: [
       {
-        label: 'Rating',
+        label: t('trends.ratingCurve.ratingLabel'),
         ...redLineDataset(),
         data: periods.map((p) => p.rating),
       },
@@ -71,7 +73,11 @@ export function buildRatingCurveData(periods: RatingPeriodResult[]) {
   };
 }
 
-function buildRatingCurveOptions(periods: RatingPeriodResult[]): ChartOptions<'line'> {
+function buildRatingCurveOptions(
+  periods: RatingPeriodResult[],
+  t: TFunction,
+  locale: string,
+): ChartOptions<'line'> {
   const theme = darkChartOptions();
   return {
     responsive: theme.responsive,
@@ -95,13 +101,11 @@ function buildRatingCurveOptions(periods: RatingPeriodResult[]): ChartOptions<'l
           title: (items) => {
             const period = periods[items[0]?.dataIndex ?? -1];
             if (!period) return '';
-            return new Date(period.end).toLocaleDateString('en-US');
+            return new Date(period.end).toLocaleDateString(locale);
           },
           afterBody: (items) => {
             const period = periods[items[0]?.dataIndex ?? -1];
-            return period
-              ? `${period.games} game${period.games === 1 ? '' : 's'} this session`
-              : '';
+            return period ? t('trends.ratingCurve.tooltipGames', { count: period.games }) : '';
           },
         },
       },
@@ -119,6 +123,7 @@ function buildRatingCurveOptions(periods: RatingPeriodResult[]): ChartOptions<'l
  * current-rating callout.
  */
 export function RatingCurve({ matches }: { matches: Match[] }) {
+  const { t, i18n } = useTranslation();
   const hasEnoughGames = matches.length >= RATING_CURVE_UNLOCK_THRESHOLD;
   const { periods, current } = computeRatingHistory(matches);
 
@@ -126,7 +131,7 @@ export function RatingCurve({ matches }: { matches: Match[] }) {
     <Card>
       <CardHeader>
         <CardTitle className="flex items-center gap-1.5">
-          Rating Curve
+          {t('trends.ratingCurve.title')}
           <GlickoExplainer />
         </CardTitle>
       </CardHeader>
@@ -137,25 +142,28 @@ export function RatingCurve({ matches }: { matches: Match[] }) {
               <span className="text-3xl font-bold">
                 {current.rating} <span className="text-lg font-normal">&plusmn;{current.rd}</span>
               </span>
-              <span className="pb-1 text-sm text-muted-foreground">current rating</span>
+              <span className="pb-1 text-sm text-muted-foreground">
+                {t('trends.ratingCurve.current')}
+              </span>
             </div>
             <div className="h-64">
               <Line
-                data={buildRatingCurveData(periods)}
-                options={buildRatingCurveOptions(periods)}
+                data={buildRatingCurveData(periods, t, i18n.language)}
+                options={buildRatingCurveOptions(periods, t, i18n.language)}
               />
             </div>
-            <p className="text-xs text-muted-foreground">
-              Glicko-2, session-based · unofficial. Dashed lines show the +/-RD uncertainty band.
-            </p>
+            <p className="text-xs text-muted-foreground">{t('trends.ratingCurve.caption')}</p>
           </>
         ) : (
           <>
             <p className="text-sm text-muted-foreground">
-              Rating curve unlocks at {RATING_CURVE_UNLOCK_THRESHOLD} games
+              {t('trends.ratingCurve.locked', { count: RATING_CURVE_UNLOCK_THRESHOLD })}
             </p>
             <p className="text-xs text-muted-foreground">
-              {matches.length}/{RATING_CURVE_UNLOCK_THRESHOLD} games so far
+              {t('trends.ratingCurve.progress', {
+                played: matches.length,
+                threshold: RATING_CURVE_UNLOCK_THRESHOLD,
+              })}
             </p>
           </>
         )}

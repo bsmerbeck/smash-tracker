@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import i18n from '@/i18n';
 import { render, screen } from '@testing-library/react';
 import type { Match } from '@smash-tracker/shared';
 import {
@@ -23,12 +24,12 @@ function makeMatch(overrides: Partial<Match> & Pick<Match, 'id' | 'time' | 'win'
 
 describe('formatMonthLabel', () => {
   it('formats a YYYY-MM key as a short month/year label', () => {
-    expect(formatMonthLabel('2021-01')).toBe('Jan 2021');
-    expect(formatMonthLabel('2021-12')).toBe('Dec 2021');
+    expect(formatMonthLabel('2021-01', 'en')).toBe('Jan 2021');
+    expect(formatMonthLabel('2021-12', 'en')).toBe('Dec 2021');
   });
 
   it('falls back to the raw key for malformed input', () => {
-    expect(formatMonthLabel('garbage')).toBe('garbage');
+    expect(formatMonthLabel('garbage', 'en')).toBe('garbage');
   });
 });
 
@@ -44,7 +45,7 @@ describe('buildMonthlyChartData', () => {
       makeMatch({ id: '5', time: Date.UTC(2021, 1, 3), win: false }),
     ];
     const records = getMonthlyRecords(matches);
-    const data = buildMonthlyChartData(records);
+    const data = buildMonthlyChartData(records, i18n.t, 'en');
 
     expect(records[0]?.total).toBe(2);
     expect(records[1]?.total).toBe(3);
@@ -60,7 +61,7 @@ describe('buildMonthlyChartData', () => {
       makeMatch({ id: '3', time: Date.UTC(2021, 0, 3), win: false }),
     ];
     const records = getMonthlyRecords(matches);
-    const data = buildMonthlyChartData(records);
+    const data = buildMonthlyChartData(records, i18n.t, 'en');
 
     expect(data.labels).toEqual(['Jan 2021']);
     expect(data.datasets[0]?.data).toEqual([67]);
@@ -68,7 +69,7 @@ describe('buildMonthlyChartData', () => {
   });
 
   it('returns an empty dataset for no matches', () => {
-    const data = buildMonthlyChartData(getMonthlyRecords([]));
+    const data = buildMonthlyChartData(getMonthlyRecords([]), i18n.t, 'en');
     expect(data.labels).toEqual([]);
     expect(data.datasets[0]?.data).toEqual([]);
   });

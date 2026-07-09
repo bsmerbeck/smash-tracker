@@ -97,6 +97,10 @@
       "saved": "VOD-Notizen gespeichert!",
       "saveFailed": "VOD-Notizen konnten nicht gespeichert werden. Bitte erneut versuchen."
     },
+    "startgg": {
+      "view": "Auf start.gg ansehen",
+      "viewName": "{{name}} auf start.gg ansehen"
+    },
     "filteredNotice": {
       "message": "Keine Matches entsprechen den aktuellen Filtern.",
       "clear": "Filter zurücksetzen"
@@ -530,6 +534,148 @@
       "title": "Gegner",
       "empty": "Noch keine benannten Gegner erfasst.",
       "matches": "Matches"
+    }
+  },
+  "trends": {
+    "loading": "Trends werden geladen...",
+    "noMatches": "Du hast noch keine Matches — erfasse eins und schau hier wieder vorbei, um deine Trends zu sehen!",
+    "hero": {
+      "currentRating": "Aktuelle Wertung",
+      "glickoRating": "Glicko-2-Wertung",
+      "notEnoughGames": "Noch nicht genug Matches",
+      "peakRating": "Höchste Wertung",
+      "bestSessionRating": "Beste Sitzungswertung",
+      "bestMonth": "Bester Monat",
+      "bestMonthCaption": "{{month}} · {{wins}}-{{losses}} ({{count}} Matches)",
+      "bestMonthNeeds": "Braucht einen Monat mit {{count}}+ Matches",
+      "currentForm": "Aktuelle Form",
+      "formCaption": "Letzte {{played}} von {{window}} Matches"
+    },
+    "monthly": {
+      "title": "Monatliche Leistung",
+      "winRateLabel": "Winrate",
+      "caption": "Blasse Balken markieren Monate mit weniger als {{count}} Matches — kleine Stichprobe, mit Vorsicht lesen.",
+      "tooltipRate": "Winrate: {{value}} %",
+      "tooltipGames": "Gespielte Matches: {{count}}",
+      "month": "Monat",
+      "wl": "S-N",
+      "games": "Matches"
+    },
+    "ratingCurve": {
+      "title": "Wertungskurve",
+      "current": "aktuelle Wertung",
+      "ratingLabel": "Wertung",
+      "caption": "Glicko-2, sitzungsbasiert · inoffiziell. Gestrichelte Linien zeigen das ±RD-Unsicherheitsband.",
+      "locked": "Die Kurve wird ab {{count}} Matches freigeschaltet",
+      "progress": "Bisher {{played}}/{{threshold}} Matches",
+      "tooltipGames_one": "{{count}} Match in dieser Sitzung",
+      "tooltipGames_other": "{{count}} Matches in dieser Sitzung"
+    },
+    "sessions": {
+      "title": "Sitzungen & Tilt",
+      "total": "Sitzungen gesamt",
+      "avgGames": "Ø Matches / Sitzung",
+      "best": "Beste Sitzung",
+      "worstTilt": "Schlimmster Tilt",
+      "tiltRun": "{{count}}N-Serie",
+      "date": "Datum",
+      "duration": "Dauer",
+      "lossRun": "Längste Niederlagenserie",
+      "durationUnderMin": "< 1 Min.",
+      "durationMin": "{{count}} Min.",
+      "durationHM": "{{hours}} Std. {{minutes}} Min.",
+      "durationH": "{{hours}} Std."
+    },
+    "setting": {
+      "title": "Umgebungsvergleich",
+      "online": "Online",
+      "offline": "Offline",
+      "unspecified": "Nicht angegeben",
+      "noData": "keine Daten",
+      "even": "Du gewinnst online und offline etwa gleich oft.",
+      "youWin": "Du gewinnst",
+      "moreOnline": "häufiger online als offline.",
+      "moreOffline": "häufiger offline als online.",
+      "smallSample": "Für einen verlässlichen Vergleich braucht es mindestens {{count}} Matches online und offline."
+    },
+    "tournaments": {
+      "title": "Turniere",
+      "loading": "Turniere werden geladen...",
+      "resyncPrefix": "Turnier-Einträge kommen mit deinem nächsten start.gg-Sync — geh zu",
+      "resyncSuffix": "und starte den Sync.",
+      "tournament": "Turnier",
+      "event": "Event",
+      "dates": "Daten"
+    },
+    "mix": {
+      "title": "Match-Typ-Mix im Zeitverlauf",
+      "tourney": "Turnier",
+      "friendly": "Friendly",
+      "quickplay": "Quickplay",
+      "unspecified": "Nicht angegeben"
+    }
+  },
+  "tournaments": {
+    "loading": "Turnier wird geladen...",
+    "won": "Gewonnen",
+    "lost": "Verloren",
+    "notFound": {
+      "title": "Turnier nicht gefunden",
+      "body": "Wir konnten keinen Turnier-Eintrag zu diesem Link finden. Er wurde vielleicht unter einem anderen Konto synchronisiert, oder der Link ist veraltet.",
+      "back": "Zurück zu Trends"
+    },
+    "header": {
+      "entrants": "{{count}} Teilnehmer",
+      "setsPlayed_one": "{{count}} Set gespielt",
+      "setsPlayed_other": "{{count}} Sets gespielt",
+      "outperformed": "Seed übertroffen: {{seed}} → {{placement}}",
+      "underperformed": "Seed verfehlt: {{seed}} → {{placement}}",
+      "matched": "Seed getroffen: {{seed}} → {{placement}}"
+    },
+    "results": {
+      "title": "Event-Ergebnisse",
+      "resync": "Die vollständigen Ergebnisse kommen mit deinem nächsten start.gg-Sync.",
+      "winner": "{{name}} hat dieses Event gewonnen",
+      "place": "Platz",
+      "entrant": "Teilnehmer",
+      "playedTooltip": "Gegen diese Person hast du bei diesem Event gespielt"
+    },
+    "timeline": {
+      "title": "Set-Verlauf",
+      "empty": "Für dieses Event sind noch keine Matches erfasst.",
+      "setsAria": "Sets",
+      "setFallback": "Set {{id}}",
+      "yourFighters": "Deine Kämpfer",
+      "opponentFighters": "Gegnerische Kämpfer",
+      "watchVod": "VOD ansehen",
+      "watchVodAria": "VOD zu {{set}} ansehen",
+      "editVodAria": "VOD-Notizen zu {{set}} bearbeiten",
+      "otherMatches": "Weitere Matches während dieses Events"
+    },
+    "charStages": {
+      "yourCharacters": "Deine Charaktere",
+      "opponentsCharacters": "Charaktere der Gegner",
+      "stagesPlayed": "Gespielte Stages",
+      "noGames": "Keine Matches erfasst.",
+      "noStageData": "Keine Stage-Daten erfasst."
+    },
+    "retro": {
+      "title": "Berater-Rückblick",
+      "description": "Jeder Pick wird daran gemessen, was der Counterpick-Berater empfohlen hätte — nur mit Daten von vor Turnierbeginn.",
+      "noGames": "Für dieses Event sind noch keine Matches erfasst.",
+      "notEnough": "Nicht genug Vor-Turnier-Daten, um diese Picks zu bewerten.",
+      "adherence": "Berater-Befolgung: {{rate}} % der bewertbaren Picks",
+      "followedWon": "befolgte Picks gewannen {{rate}} %",
+      "againstWon": "{{rate}} % bei Picks dagegen",
+      "setsAria": "Sets im Berater-Rückblick",
+      "unknownStage": "unbekannte Stage",
+      "noDataTooltip": "Nicht genug Vor-Turnier-Daten, um diesen Pick zu bewerten. Du hast {{stage}} gespielt. Ergebnis: {{result}}",
+      "advisorTooltip": "Der Berater hätte gesagt: {{advice}} — du hast {{stage}} gespielt ({{verdict}}). Ergebnis: {{result}}",
+      "advicePick": "{{stages}} picken",
+      "adviceNone": "kein klarer Pick",
+      "verdictFollowed": "befolgt",
+      "verdictAgainst": "dagegen",
+      "verdictNeutral": "neutral zu"
     }
   }
 }

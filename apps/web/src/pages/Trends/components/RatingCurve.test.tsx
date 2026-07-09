@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import i18n from '@/i18n';
 import { render, screen } from '@testing-library/react';
 import type { Match } from '@smash-tracker/shared';
 import {
@@ -31,7 +32,7 @@ describe('formatPeriodLabel', () => {
       rd: 300,
       volatility: 0.06,
     };
-    expect(formatPeriodLabel(period)).toBe('Jan 5');
+    expect(formatPeriodLabel(period, 'en')).toBe('Jan 5');
   });
 });
 
@@ -41,7 +42,7 @@ describe('buildRatingCurveData', () => {
       makeMatch({ id: `${i}`, time: i * 1000, win: true }),
     );
     const { periods } = computeRatingHistory(matches);
-    const data = buildRatingCurveData(periods);
+    const data = buildRatingCurveData(periods, i18n.t, 'en');
 
     expect(data.datasets).toHaveLength(3);
     expect(data.datasets[0]?.label).toBe('Rating');
@@ -54,7 +55,7 @@ describe('buildRatingCurveData', () => {
   });
 
   it('returns empty series for no periods', () => {
-    const data = buildRatingCurveData([]);
+    const data = buildRatingCurveData([], i18n.t, 'en');
     expect(data.labels).toEqual([]);
     expect(data.datasets[0]?.data).toEqual([]);
   });

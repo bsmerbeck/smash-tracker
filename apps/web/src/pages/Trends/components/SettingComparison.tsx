@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next';
 import type { Match } from '@smash-tracker/shared';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { getOnlineOfflineSplit, type OnlineOfflineSplit, type WinLossRecord } from '@/lib/stats';
@@ -37,6 +38,7 @@ export function buildSettingTakeaway(split: OnlineOfflineSplit): SettingTakeaway
  * having at least `TAKEAWAY_MIN_SAMPLE` games.
  */
 export function SettingComparison({ matches }: { matches: Match[] }) {
+  const { t } = useTranslation();
   const split = getOnlineOfflineSplit(matches);
   const takeaway = buildSettingTakeaway(split);
   const hasAny = split.online.total > 0 || split.offline.total > 0 || split.unspecified.total > 0;
@@ -44,36 +46,36 @@ export function SettingComparison({ matches }: { matches: Match[] }) {
   return (
     <Card className="h-full">
       <CardHeader>
-        <CardTitle>Setting Comparison</CardTitle>
+        <CardTitle>{t('trends.setting.title')}</CardTitle>
       </CardHeader>
       <CardContent className="flex flex-col gap-4">
         {!hasAny ? (
-          <p className="text-sm text-muted-foreground">No match data to report yet.</p>
+          <p className="text-sm text-muted-foreground">{t('common.noMatchData')}</p>
         ) : (
           <>
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-              <SettingBlock label="Online" record={split.online} />
-              <SettingBlock label="Offline" record={split.offline} />
-              <SettingBlock label="Unspecified" record={split.unspecified} />
+              <SettingBlock label={t('trends.setting.online')} record={split.online} />
+              <SettingBlock label={t('trends.setting.offline')} record={split.offline} />
+              <SettingBlock label={t('trends.setting.unspecified')} record={split.unspecified} />
             </div>
 
             {takeaway.kind === 'takeaway' ? (
               <p className="text-sm">
                 {takeaway.deltaPoints === 0 ? (
-                  <span>You win about the same rate online and offline.</span>
+                  <span>{t('trends.setting.even')}</span>
                 ) : (
                   <span>
-                    You win{' '}
+                    {t('trends.setting.youWin')}{' '}
                     <span className="font-semibold text-foreground">{takeaway.deltaPoints}%</span>{' '}
-                    more{' '}
-                    {takeaway.better === 'online' ? 'online than offline' : 'offline than online'}.
+                    {takeaway.better === 'online'
+                      ? t('trends.setting.moreOnline')
+                      : t('trends.setting.moreOffline')}
                   </span>
                 )}
               </p>
             ) : (
               <p className="text-xs text-muted-foreground">
-                Need at least {TAKEAWAY_MIN_SAMPLE} games both online and offline for a reliable
-                comparison.
+                {t('trends.setting.smallSample', { count: TAKEAWAY_MIN_SAMPLE })}
               </p>
             )}
           </>
@@ -84,11 +86,12 @@ export function SettingComparison({ matches }: { matches: Match[] }) {
 }
 
 function SettingBlock({ label, record }: { label: string; record: WinLossRecord }) {
+  const { t } = useTranslation();
   if (record.total === 0) {
     return (
       <div className="rounded-md border p-3">
         <h3 className="text-sm text-muted-foreground">{label}</h3>
-        <p className="text-sm text-muted-foreground">no data</p>
+        <p className="text-sm text-muted-foreground">{t('trends.setting.noData')}</p>
       </div>
     );
   }
@@ -97,7 +100,7 @@ function SettingBlock({ label, record }: { label: string; record: WinLossRecord 
       <h3 className="text-sm text-muted-foreground">{label}</h3>
       <p className="text-2xl font-semibold">{record.winRate}%</p>
       <p className="text-xs text-muted-foreground">
-        {record.wins}-{record.losses} ({record.total} games)
+        {record.wins}-{record.losses} ({t('common.games', { count: record.total })})
       </p>
     </div>
   );
