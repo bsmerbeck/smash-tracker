@@ -437,6 +437,7 @@
       },
       "editVod": "VODメモを編集",
       "addVod": "VODメモを追加",
+      "watchVod": "VODを見る",
       "synced": "同期済み",
       "syncedTitle": "{{source}}から同期 — 対戦データは同期側が管理します",
       "editMatch": "対戦を編集",
