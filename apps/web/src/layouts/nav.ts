@@ -12,6 +12,7 @@ import {
   Trophy,
   Sparkles,
   Gauge,
+  Video,
   type LucideIcon,
 } from 'lucide-react';
 
@@ -33,6 +34,7 @@ export const navItems: NavItem[] = [
   { titleKey: 'nav.scoutAPlayer', href: '/scout', icon: Search },
   { titleKey: 'nav.aiReports', href: '/reports', icon: Sparkles },
   { titleKey: 'nav.matchData', href: '/match-data', icon: LineChart },
+  { titleKey: 'nav.vodManager', href: '/vod', icon: Video },
   { titleKey: 'nav.trends', href: '/trends', icon: TrendingUp },
   { titleKey: 'nav.gsp', href: '/gsp', icon: Gauge },
   { titleKey: 'nav.groups', href: '/groups', icon: Trophy },
