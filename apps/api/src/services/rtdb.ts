@@ -1,6 +1,7 @@
 import type { Database } from 'firebase-admin/database';
 import {
   DEFAULT_ELITE_THRESHOLD,
+  gspReadingRecordSchema,
   gspSettingsSchema,
   matchRecordSchema,
   opponentAliasMapSchema,
@@ -9,8 +10,11 @@ import {
   opponentNoteSchema,
   stageFavoritesSchema,
   userSchema,
+  type CreateGspReadingInput,
   type CreateMatchInput,
   type FighterSelectionInput,
+  type GspReading,
+  type GspReadingRecord,
   type GspSettings,
   type StageFavorites,
   type Match,
@@ -18,6 +22,7 @@ import {
   type OpponentAliasMap,
   type OpponentNote,
   type OpponentNoteMap,
+  type UpdateGspReadingInput,
   type UpdateMatchInput,
   type UpsertGspSettingsInput,
   type UpsertOpponentNoteInput,
@@ -384,6 +389,77 @@ export class RtdbService {
     };
     await this.database.ref(`gspSettings/${uid}`).set(gspSettingsSchema.parse(settings));
     return settings;
+  }
+
+  // ---- gspReadings/{uid}/{pushKey} ----------------------------------------
+
+  /**
+   * V17: standalone "set GSP without a match" calibration readings (see
+   * packages/shared/src/gspReading.ts for why they exist). List follows the
+   * safeParse-and-skip rule from the production-gap checklist — one corrupt
+   * record must never 500 the whole list.
+   */
+  async listGspReadings(uid: string): Promise<GspReading[]> {
+    const snapshot = await this.database.ref(`gspReadings/${uid}`).get();
+    if (!snapshot.exists()) {
+      return [];
+    }
+
+    const raw = snapshot.val() as Record<string, unknown>;
+    return Object.entries(raw).flatMap(([id, value]) => {
+      const parsed = gspReadingRecordSchema.safeParse(value);
+      return parsed.success ? [{ id, ...parsed.data }] : [];
+    });
+  }
+
+  /** Creates a calibration reading, stamping `time` server-side (same convention as `createMatch`). */
+  async createGspReading(uid: string, input: CreateGspReadingInput): Promise<GspReading> {
+    const record: GspReadingRecord = {
+      fighter_id: input.fighter_id,
+      gsp: input.gsp,
+      time: Date.now(),
+    };
+
+    const ref = this.database.ref(`gspReadings/${uid}`).push();
+    await ref.set(record);
+
+    const id = ref.key;
+    if (!id) {
+      throw new Error('Failed to generate a push key for the new GSP reading');
+    }
+
+    return { id, ...record };
+  }
+
+  /**
+   * Corrects a reading's GSP value. `time` and `fighter_id` are immutable —
+   * editing corrects a flubbed digit, it doesn't re-date or re-home the
+   * reading (mirrors `updateMatch`'s time rule).
+   */
+  async updateGspReading(
+    uid: string,
+    id: string,
+    input: UpdateGspReadingInput,
+  ): Promise<GspReading> {
+    const ref = this.database.ref(`gspReadings/${uid}/${id}`);
+    const existing = await ref.get();
+    if (!existing.exists()) {
+      throw new NotFoundError(`GSP reading ${id} not found`);
+    }
+    const current = gspReadingRecordSchema.parse(existing.val());
+
+    const record: GspReadingRecord = { ...current, gsp: input.gsp };
+    await ref.set(record);
+    return { id, ...record };
+  }
+
+  async deleteGspReading(uid: string, id: string): Promise<void> {
+    const ref = this.database.ref(`gspReadings/${uid}/${id}`);
+    const existing = await ref.get();
+    if (!existing.exists()) {
+      throw new NotFoundError(`GSP reading ${id} not found`);
+    }
+    await ref.remove();
   }
 
   // ---- stageFavorites/{uid} -----------------------------------------------

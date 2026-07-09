@@ -319,7 +319,8 @@
       "mmrCaption": "MMR oculto estimado por trás de cada leitura (modelo de engenharia reversa da comunidade) — diferente do GSP, ele não infla com o tempo, então uma linha plana significa nível estável. Linha tracejada: entrada no Elite em MMR {{mmr}}.",
       "gspCaption": "Cada ponto é uma leitura de GSP registrada após uma partida com este lutador. A linha tracejada é o limite calculado do Elite Smash — uma estimativa do modelo da comunidade, não um valor publicado pela Nintendo.",
       "clickHint": "Clique em um ponto para editar essa leitura.",
-      "locked": "Registre pelo menos {{count}} partidas com leitura de GSP para este lutador para ver a curva."
+      "locked": "Registre pelo menos {{count}} partidas com leitura de GSP para este lutador para ver a curva.",
+      "setManually": "definido manualmente"
     },
     "logger": {
       "title": "Registro rápido",
@@ -334,14 +335,16 @@
       "chooseResult": "Marque esta partida como vitória ou derrota.",
       "invalidGsp": "Insira o GSP mostrado após a partida — vírgulas são aceitas, ex.: 10,300,000.",
       "logged": "Partida registrada! GSP {{gsp}}",
-      "logFailed": "Falha ao registrar a partida. Tente novamente."
+      "logFailed": "Falha ao registrar a partida. Tente novamente.",
+      "setGspButton": "Definir GSP sem registrar uma partida"
     },
     "log": {
       "title": "Registro de GSP",
       "editEntry": "Editar entrada de GSP de {{date}}",
       "deleteEntry": "Excluir entrada de GSP de {{date}}",
       "showRecent": "Mostrar só as recentes",
-      "showAll": "Mostrar todas as {{count}} entradas"
+      "showAll": "Mostrar todas as {{count}} entradas",
+      "setBadge": "Definido"
     },
     "gains": {
       "title": "Análise de ganhos",
@@ -397,6 +400,20 @@
       "mmrLabel": "MMR est. (normalizado)",
       "glickoLabel": "Glicko-2 (normalizado)",
       "caption": "Seu nível no quickplay (MMR estimado deste lutador, modelo de engenharia reversa da comunidade) contra seu Glicko-2 geral (todos os lutadores/sessões) — ambos normalizados de 0 a 100 nesta janela, já que as escalas brutas não têm relação. Comparar rating com rating torna as formas honestamente comparáveis; divergência normalmente significa que sua forma no quickplay difere da sua forma geral."
+    },
+    "setGsp": {
+      "title": "Definir GSP",
+      "description": "Registre o GSP mostrado no jogo agora — no início de uma sessão (o GSP infla enquanto você está fora) ou após partidas que você não quer contar. Deltas e estatísticas de ganho/perda recomeçam desta base.",
+      "label": "GSP atual",
+      "save": "Definir GSP",
+      "saved": "GSP definido em {{gsp}}.",
+      "saveFailed": "Não foi possível salvar a leitura. Tente novamente."
+    },
+    "editReading": {
+      "title": "Editar leitura de GSP",
+      "description": "Corrija o valor desta leitura definida manualmente. A data e o lutador não mudam.",
+      "saved": "Leitura atualizada.",
+      "saveFailed": "Não foi possível atualizar a leitura. Tente novamente."
     }
   },
   "matchData": {

@@ -45,6 +45,10 @@ const updateGspSettings = vi.fn();
 const upsertMe = vi.fn().mockResolvedValue({ uid: 'test-uid', email: 'test@example.com' });
 const getStageFavorites = vi.fn().mockResolvedValue({ stageIds: [], updatedAt: 0 });
 const updateStageFavorites = vi.fn();
+const listGspReadings = vi.fn();
+const createGspReading = vi.fn();
+const updateGspReading = vi.fn();
+const deleteGspReading = vi.fn();
 
 vi.mock('@/lib/api', () => ({
   api: {
@@ -63,6 +67,12 @@ vi.mock('@/lib/api', () => ({
     stageFavorites: {
       get: (...args: unknown[]) => getStageFavorites(...args),
       update: (...args: unknown[]) => updateStageFavorites(...args),
+    },
+    gspReadings: {
+      list: (...args: unknown[]) => listGspReadings(...args),
+      create: (...args: unknown[]) => createGspReading(...args),
+      update: (...args: unknown[]) => updateGspReading(...args),
+      remove: (...args: unknown[]) => deleteGspReading(...args),
     },
   },
 }));
@@ -121,6 +131,7 @@ describe('GspPage', () => {
     setMockUser(makeMockUser());
     getFighters.mockResolvedValue({ primary: [], secondary: [] });
     listMatches.mockResolvedValue([]);
+    listGspReadings.mockResolvedValue([]);
     getGspSettings.mockResolvedValue({ eliteThreshold: 10_000_000, updatedAt: 0 });
     updateGspSettings.mockResolvedValue({ eliteThreshold: 11_000_000, updatedAt: Date.now() });
     createMatch.mockResolvedValue({
@@ -476,6 +487,125 @@ describe('GspPage', () => {
     // delete path too — it hands off to the page's confirmation dialog.
     await user.click(screen.getByRole('button', { name: 'Delete Match' }));
     expect(await screen.findByText('Delete this GSP entry?')).toBeInTheDocument();
+  });
+
+  describe('calibration readings (set GSP without a match)', () => {
+    it('shows a Set row in the log and re-baselines the next delta', async () => {
+      getFighters.mockResolvedValue({ primary: [mario.id], secondary: [] });
+      listMatches.mockResolvedValue([
+        makeMatch({ id: 'm1', time: 1, win: true, gsp: 9_000_000 }),
+        makeMatch({ id: 'm2', time: 300, win: true, gsp: 9_510_000 }),
+      ]);
+      listGspReadings.mockResolvedValue([
+        { id: 'r1', fighter_id: mario.id, gsp: 9_500_000, time: 200 },
+      ]);
+
+      renderGspPage();
+
+      await screen.findByText('GSP Log');
+      const items = screen.getAllByRole('listitem');
+      // Newest first: the post-calibration win deltas from the new baseline.
+      expect(items[0]).toHaveTextContent('Win');
+      expect(items[0]).toHaveTextContent('+10,000');
+      expect(items[1]).toHaveTextContent('Set');
+      expect(items[1]).toHaveTextContent('9,500,000');
+    });
+
+    it('ignores readings for other fighters', async () => {
+      getFighters.mockResolvedValue({ primary: [mario.id], secondary: [] });
+      listMatches.mockResolvedValue([makeMatch({ id: 'm1', time: 1, win: true, gsp: 9_000_000 })]);
+      listGspReadings.mockResolvedValue([
+        { id: 'r1', fighter_id: luigi.id, gsp: 4_000_000, time: 200 },
+      ]);
+
+      renderGspPage();
+
+      await screen.findByText('GSP Log');
+      expect(screen.queryByText('4,000,000')).not.toBeInTheDocument();
+    });
+
+    it('creates a reading from the Quick Logger "set GSP" dialog', async () => {
+      getFighters.mockResolvedValue({ primary: [mario.id], secondary: [] });
+      listMatches.mockResolvedValue([makeMatch({ id: 'm1', time: 1, win: true, gsp: 9_000_000 })]);
+      createGspReading.mockResolvedValue({
+        id: 'r-new',
+        fighter_id: mario.id,
+        gsp: 9_450_000,
+        time: Date.now(),
+      });
+      const user = userEvent.setup();
+
+      renderGspPage();
+      await screen.findByText('Quick Logger');
+
+      await user.click(screen.getByRole('button', { name: 'Set GSP without logging a match' }));
+      const dialog = await screen.findByRole('dialog');
+      // Prefilled with the latest reading for the fighter.
+      const input = within(dialog).getByLabelText('Current GSP');
+      expect(input).toHaveValue('9000000');
+      await user.clear(input);
+      await user.type(input, '9,450,000');
+      await user.click(within(dialog).getByRole('button', { name: 'Set GSP' }));
+
+      await waitFor(() =>
+        expect(createGspReading).toHaveBeenCalledExactlyOnceWith({
+          fighter_id: mario.id,
+          gsp: 9_450_000,
+        }),
+      );
+      expect(toastSuccess).toHaveBeenCalledWith('GSP set to 9,450,000.');
+    });
+
+    it('edits a calibration reading from its log row', async () => {
+      getFighters.mockResolvedValue({ primary: [mario.id], secondary: [] });
+      listMatches.mockResolvedValue([makeMatch({ id: 'm1', time: 1, win: true, gsp: 9_000_000 })]);
+      listGspReadings.mockResolvedValue([
+        { id: 'r1', fighter_id: mario.id, gsp: 9_500_000, time: 200 },
+      ]);
+      updateGspReading.mockResolvedValue({
+        id: 'r1',
+        fighter_id: mario.id,
+        gsp: 9_600_000,
+        time: 200,
+      });
+      const user = userEvent.setup();
+
+      renderGspPage();
+      await screen.findByText('GSP Log');
+
+      // Newest entry (the reading) is the first row.
+      await user.click(screen.getAllByRole('button', { name: /^Edit GSP entry/ })[0]!);
+      const dialog = await screen.findByRole('dialog');
+      expect(dialog).toHaveTextContent('Edit GSP reading');
+
+      const input = within(dialog).getByLabelText('Current GSP');
+      await user.clear(input);
+      await user.type(input, '9600000');
+      await user.click(within(dialog).getByRole('button', { name: 'Save' }));
+
+      await waitFor(() =>
+        expect(updateGspReading).toHaveBeenCalledExactlyOnceWith('r1', { gsp: 9_600_000 }),
+      );
+    });
+
+    it('deletes a calibration reading via the shared confirmation', async () => {
+      getFighters.mockResolvedValue({ primary: [mario.id], secondary: [] });
+      listMatches.mockResolvedValue([makeMatch({ id: 'm1', time: 1, win: true, gsp: 9_000_000 })]);
+      listGspReadings.mockResolvedValue([
+        { id: 'r1', fighter_id: mario.id, gsp: 9_500_000, time: 200 },
+      ]);
+      deleteGspReading.mockResolvedValue(undefined);
+      const user = userEvent.setup();
+
+      renderGspPage();
+      await screen.findByText('GSP Log');
+
+      await user.click(screen.getAllByRole('button', { name: /^Delete GSP entry/ })[0]!);
+      expect(await screen.findByText('Delete this GSP entry?')).toBeInTheDocument();
+      await user.click(screen.getByRole('button', { name: 'Delete' }));
+
+      await waitFor(() => expect(deleteGspReading).toHaveBeenCalledExactlyOnceWith('r1'));
+    });
   });
 
   describe('GSP Tiers card', () => {

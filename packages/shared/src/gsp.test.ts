@@ -1,14 +1,17 @@
 import { describe, expect, it } from 'vitest';
 import type { Match } from './match.js';
+import type { GspReading } from './gspReading.js';
 import {
   DEFAULT_ELITE_THRESHOLD,
   MAX_SIMULATED_MATCHES,
   MIN_OBSERVATIONS_FOR_DECAY_FIT,
   MIN_OBSERVATIONS_FOR_LINEAR_FALLBACK,
   fitGainDecay,
+  getGspEntries,
   getGspGainStats,
   getGspMatches,
   getGspSeries,
+  gspSeriesFromEntries,
   gspSettingsSchema,
   projectMatchesToElite,
   upsertGspSettingsInputSchema,
@@ -355,5 +358,108 @@ describe('projectMatchesToElite', () => {
     });
     const result = projectMatchesToElite(series, gsp + 1_000_000, 0.1);
     expect(result).toBeNull();
+  });
+});
+
+function makeReading(
+  overrides: Partial<GspReading> & Pick<GspReading, 'time' | 'gsp'>,
+): GspReading {
+  return { id: 'r', fighter_id: 1, ...overrides };
+}
+
+describe('getGspEntries / gspSeriesFromEntries (V17 calibration readings)', () => {
+  it('merges matches and readings chronologically, filtered to the fighter', () => {
+    const matches = [
+      makeMatch({ time: 300, win: true, fighter_id: 1, gsp: 9_200_000 }),
+      makeMatch({ time: 100, win: true, fighter_id: 1, gsp: 9_000_000 }),
+      makeMatch({ time: 150, win: true, fighter_id: 2, gsp: 5_000_000 }),
+    ];
+    const readings = [
+      makeReading({ id: 'r1', time: 200, gsp: 9_150_000 }),
+      makeReading({ id: 'r2', time: 250, gsp: 4_000_000, fighter_id: 2 }),
+    ];
+
+    const entries = getGspEntries(matches, readings, 1);
+
+    expect(entries.map((e) => e.kind)).toEqual(['match', 'reading', 'match']);
+    expect(entries.map((e) => e.gsp)).toEqual([9_000_000, 9_150_000, 9_200_000]);
+  });
+
+  it('projects to a series with win: null on calibration points, index-parity kept', () => {
+    const matches = [makeMatch({ time: 100, win: false, fighter_id: 1, gsp: 9_000_000 })];
+    const readings = [makeReading({ id: 'r1', time: 200, gsp: 9_400_000 })];
+
+    const entries = getGspEntries(matches, readings, 1);
+    const series = gspSeriesFromEntries(entries);
+
+    expect(series).toEqual([
+      { time: 100, gsp: 9_000_000, win: false },
+      { time: 200, gsp: 9_400_000, win: null },
+    ]);
+    expect(getGspSeries(matches, 1, readings)).toEqual(series);
+  });
+
+  it('getGspSeries without readings behaves exactly as before', () => {
+    const matches = [
+      makeMatch({ time: 100, win: true, fighter_id: 1, gsp: 9_000_000 }),
+      makeMatch({ time: 200, win: false, fighter_id: 1, gsp: 8_900_000 }),
+    ];
+
+    expect(getGspSeries(matches, 1)).toEqual([
+      { time: 100, gsp: 9_000_000, win: true },
+      { time: 200, gsp: 8_900_000, win: false },
+    ]);
+  });
+});
+
+describe('gain stats around calibration points', () => {
+  it('excludes the drift INTO a calibration point but keeps the clean step out of it', () => {
+    // Session 1 ends at 9,000,000; overnight inflation pushes the displayed
+    // GSP to 9,500,000, which the player logs as a calibration; the next
+    // real win lands on 9,510,000. The +500,000 drift must not count as a
+    // "gain"; the +10,000 win-step (from the calibration baseline) must.
+    const series: GspPoint[] = [
+      { time: 100, gsp: 8_990_000, win: true },
+      { time: 200, gsp: 9_000_000, win: true },
+      { time: 300, gsp: 9_500_000, win: null },
+      { time: 400, gsp: 9_510_000, win: true },
+    ];
+
+    const stats = getGspGainStats(series);
+
+    expect(stats.perWinGains).toEqual([10_000, 10_000]);
+    expect(stats.avgGainPerWinLifetime).toBe(10_000);
+    expect(stats.biggestGain).toBe(10_000);
+    expect(stats.avgDropPerLossLifetime).toBeNull();
+  });
+
+  it('excludes a downward re-baseline from loss stats too', () => {
+    // The player refuses to count a silly-ruleset session that bled GSP:
+    // one real loss (-8,000), then a calibration down to the post-silly
+    // number, then a real loss from there.
+    const series: GspPoint[] = [
+      { time: 100, gsp: 9_000_000, win: true },
+      { time: 200, gsp: 8_992_000, win: false },
+      { time: 300, gsp: 8_700_000, win: null },
+      { time: 400, gsp: 8_691_000, win: false },
+    ];
+
+    const stats = getGspGainStats(series);
+
+    expect(stats.avgDropPerLossLifetime).toBe((8_000 + 9_000) / 2);
+    expect(stats.biggestDrop).toBe(9_000);
+  });
+
+  it('a calibration-only series produces no steps at all', () => {
+    const series: GspPoint[] = [
+      { time: 100, gsp: 9_000_000, win: null },
+      { time: 200, gsp: 9_500_000, win: null },
+    ];
+
+    const stats = getGspGainStats(series);
+
+    expect(stats.perWinGains).toEqual([]);
+    expect(stats.avgGainPerWinLifetime).toBeNull();
+    expect(stats.avgDropPerLossLifetime).toBeNull();
   });
 });
