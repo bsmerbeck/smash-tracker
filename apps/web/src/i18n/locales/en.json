@@ -203,6 +203,7 @@
     "map": "Map",
     "favorites": "Favorites",
     "mostPlayed": "Most played",
+    "standardStages": "Standard",
     "allStages": "All stages",
     "addFavorite": "Add {{stage}} to favorites",
     "removeFavorite": "Remove {{stage}} from favorites",

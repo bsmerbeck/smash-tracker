@@ -23,9 +23,10 @@ export function StageSelectValue({ stageId }: { stageId: number }) {
 /**
  * The option list every stage `<Select>` renders (match forms, set wizard,
  * stage breakdown filter): the "no selection" sentinel first, then the
- * user's pinned Favorites, then Most played, then All stages. Groups repeat
- * stages on purpose — see `getGroupedStageOptions`. Must be rendered inside
- * a `<SelectContent>`.
+ * user's pinned Favorites, then Standard (the online trio, where the picker
+ * asks for it), then Most played, then All stages. Groups repeat stages on
+ * purpose — see `getGroupedStageOptions`. Must be rendered inside a
+ * `<SelectContent>`.
  *
  * When `onToggleFavorite` is given, every stage row gets a heart button that
  * favorites/unfavorites it in place — without selecting the row or closing
@@ -41,7 +42,7 @@ export function StageSelectGroups({
   onToggleFavorite?: (stageId: number) => void;
 }) {
   const { t } = useTranslation();
-  const { favorites, mostPlayed, all } = groups;
+  const { favorites, standard, mostPlayed, all } = groups;
   const favoriteIds = new Set(favorites.map((s) => s.id));
 
   const heartFor = (stage: Stage) =>
@@ -61,6 +62,16 @@ export function StageSelectGroups({
           <SelectLabel>{t('matchForm.favorites')}</SelectLabel>
           {favorites.map((s) => (
             <SelectItem key={`favorite-${s.id}`} value={String(s.id)} trailing={heartFor(s)}>
+              <StageOption stage={s} />
+            </SelectItem>
+          ))}
+        </SelectGroup>
+      )}
+      {standard.length > 0 && (
+        <SelectGroup>
+          <SelectLabel>{t('matchForm.standardStages')}</SelectLabel>
+          {standard.map((s) => (
+            <SelectItem key={`standard-${s.id}`} value={String(s.id)} trailing={heartFor(s)}>
               <StageOption stage={s} />
             </SelectItem>
           ))}
