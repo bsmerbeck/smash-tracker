@@ -1,5 +1,6 @@
 import { useMemo } from 'react';
 import { useParams, Link } from 'react-router';
+import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/ui/button';
 import { useTournamentEntries } from '@/hooks/useTournamentEntries';
 import { useMatches } from '@/hooks/useMatches';
@@ -13,15 +14,13 @@ import { buildSetTimeline } from './lib/setTimeline';
 import { buildRetrospective } from './lib/retrospective';
 
 function NotFoundState() {
+  const { t } = useTranslation();
   return (
     <div className="flex flex-col items-center gap-4 py-16 text-center">
-      <h1 className="text-2xl font-semibold tracking-tight">Tournament not found</h1>
-      <p className="max-w-md text-muted-foreground">
-        We couldn&apos;t find a tournament entry for that link. It may have been synced under a
-        different account, or you followed a stale link.
-      </p>
+      <h1 className="text-2xl font-semibold tracking-tight">{t('tournaments.notFound.title')}</h1>
+      <p className="max-w-md text-muted-foreground">{t('tournaments.notFound.body')}</p>
       <Button asChild className="mt-2">
-        <Link to="/trends">Back to Trends</Link>
+        <Link to="/trends">{t('tournaments.notFound.back')}</Link>
       </Button>
     </div>
   );
@@ -37,6 +36,7 @@ function NotFoundState() {
  * entry.
  */
 export function TournamentDetailPage() {
+  const { t } = useTranslation();
   const { eventId } = useParams<{ eventId: string }>();
   const { data: entries, isLoading: entriesLoading } = useTournamentEntries();
   const { data: allMatches = [], isLoading: matchesLoading } = useMatches();
@@ -66,7 +66,7 @@ export function TournamentDetailPage() {
   }, [allMatches, entryMatches, entry]);
 
   if (entriesLoading || matchesLoading) {
-    return <div className="text-muted-foreground">Loading tournament...</div>;
+    return <div className="text-muted-foreground">{t('tournaments.loading')}</div>;
   }
 
   if (!entry) {
