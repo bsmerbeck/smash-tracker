@@ -31,10 +31,15 @@ function HeroCard({ label, children }: { label: string; children: ReactNode }) {
   );
 }
 
-/** Recent-window win rate (as a 0-1 fraction) over the trailing `windowSize` GSP-bearing matches. */
+/**
+ * Recent-window win rate (as a 0-1 fraction) over the trailing `windowSize`
+ * GSP-bearing MATCHES. Calibration points (`win: null` — V17's "set GSP
+ * without a match") are not matches and are excluded before windowing.
+ */
 export function getRecentGspWinRate(series: GspPoint[], windowSize = 20): number | null {
-  if (series.length === 0) return null;
-  const recent = series.slice(-windowSize);
+  const matchPoints = series.filter((p) => p.win !== null);
+  if (matchPoints.length === 0) return null;
+  const recent = matchPoints.slice(-windowSize);
   const wins = recent.filter((p) => p.win).length;
   return wins / recent.length;
 }
@@ -127,7 +132,10 @@ export function GspHero({ series, settings }: { series: GspPoint[]; settings: Gs
           <>
             <span className="text-3xl font-bold">{Math.round(winRate * 100)}%</span>
             <p className="text-sm text-muted-foreground">
-              {t('gsp.hero.lastNGames', { count: Math.min(series.length, 20) })}
+              {t('gsp.hero.lastNGames', {
+                // Count only match points — calibration readings aren't games.
+                count: Math.min(series.filter((p) => p.win !== null).length, 20),
+              })}
             </p>
           </>
         ) : (

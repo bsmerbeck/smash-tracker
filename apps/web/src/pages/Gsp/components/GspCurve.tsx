@@ -33,6 +33,18 @@ function formatPointLabel(time: number, locale: string): string {
 }
 
 /**
+ * Per-point marker styling: calibration readings (`win: null` — V17's "set
+ * GSP without a match") render as rotated squares, slightly larger than the
+ * round match points, so re-baselines are visually distinct on the line.
+ */
+function calibrationPointStyling(series: GspPoint[]) {
+  return {
+    pointStyle: series.map((p) => (p.win === null ? ('rectRot' as const) : ('circle' as const))),
+    pointRadius: series.map((p) => (p.win === null ? 5 : 3)),
+  };
+}
+
+/**
  * Builds the chart.js dataset: the GSP line plus a flat "Elite threshold"
  * reference line at the same value across every point, so it renders as a
  * horizontal line regardless of x-axis spacing. Exported as a pure builder so
@@ -51,6 +63,7 @@ export function buildGspCurveData(
       {
         label: t('gsp.curve.gspLabel'),
         ...redLineDataset(),
+        ...calibrationPointStyling(series),
         data: series.map((p) => p.gsp),
       },
       {
@@ -89,6 +102,7 @@ export function buildMmrCurveData(
       {
         label: t('gsp.curve.estMmrLabel'),
         ...redLineDataset(),
+        ...calibrationPointStyling(series),
         data: mmrSeries.map((p) => Math.round(p.mmr)),
       },
       {
@@ -111,6 +125,8 @@ export function buildGspCurveOptions(
   series: GspPoint[],
   locale: string,
   onPointClick?: (index: number) => void,
+  /** Optional translator — when given, calibration points get a "(set manually)" tooltip suffix. */
+  t?: TFunction,
 ): ChartOptions<'line'> {
   const theme = darkChartOptions();
   return {
@@ -156,7 +172,16 @@ export function buildGspCurveOptions(
             const point = series[items[0]?.dataIndex ?? -1];
             return point ? new Date(point.time).toLocaleDateString(locale) : '';
           },
-          label: (item) => `${item.dataset.label}: ${Number(item.parsed.y).toLocaleString()}`,
+          label: (item) => {
+            const base = `${item.dataset.label}: ${Number(item.parsed.y).toLocaleString()}`;
+            const point = series[item.dataIndex];
+            // Only the reading line (dataset 0) carries calibration points —
+            // the flat Elite reference line must not inherit the suffix.
+            if (t && item.datasetIndex === 0 && point?.win === null) {
+              return `${base} (${t('gsp.curve.setManually')})`;
+            }
+            return base;
+          },
         },
       },
     },
@@ -179,7 +204,7 @@ export function GspCurve({
 }: {
   series: GspPoint[];
   settings: GspSettings;
-  /** V14: click a reading on the curve to act on it (the page opens the edit dialog for that match). Index-aligned with `series`/`getGspMatches`. */
+  /** V14: click a reading on the curve to act on it (the page opens the match or calibration-reading edit dialog). Index-aligned with `series`/`getGspEntries`. */
   onPointClick?: (index: number) => void;
 }) {
   const { t, i18n } = useTranslation();
@@ -222,7 +247,7 @@ export function GspCurve({
                     ? buildMmrCurveData(series, settings, t, i18n.language)
                     : buildGspCurveData(series, eliteThreshold, t, i18n.language)
                 }
-                options={buildGspCurveOptions(series, i18n.language, onPointClick)}
+                options={buildGspCurveOptions(series, i18n.language, onPointClick, t)}
               />
             </div>
             {view === 'mmr' ? (

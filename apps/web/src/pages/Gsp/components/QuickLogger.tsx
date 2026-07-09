@@ -13,6 +13,14 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import { alphaSpriteList } from '@/components/match-form/MatchForm';
 import { NO_SELECTION_STAGE } from '@/data/stages';
 import {
@@ -23,6 +31,7 @@ import {
 import { StageSelectGroups, StageSelectValue } from '@/components/StageSelectGroups';
 import { useStageFavorites, useToggleStageFavorite } from '@/hooks/useStageFavorites';
 import { useCreateMatch } from '@/hooks/useCreateMatch';
+import { useCreateGspReading } from '@/hooks/useGspReadings';
 import { parseGspNumber } from '../lib/parseGspNumber';
 import { calibrationFromSettings, estimateMmrAt } from '../lib/gspMmrModel';
 
@@ -39,6 +48,13 @@ import { calibrationFromSettings, estimateMmrAt } from '../lib/gspMmrModel';
  * next match (keeping "your fighter" sticky) and shows the GSP delta, plus
  * the estimated hidden-MMR delta when both readings convert cleanly through
  * the reverse-engineered model (V10.1 — see ../lib/gspMmrModel.ts).
+ *
+ * V17 (community request): "Set GSP without a match" — a small dialog that
+ * records a standalone calibration reading (POST /api/gsp-readings). Use it
+ * at the start of a session (GSP inflates while you're away) or after
+ * matches under rulesets you refuse to count: deltas and gain/loss stats
+ * restart from the new baseline instead of blaming the next real match for
+ * the drift (see packages/shared/src/gspReading.ts).
  */
 export function QuickLogger({
   fighter,
@@ -71,6 +87,33 @@ export function QuickLogger({
   const [gspInput, setGspInput] = useState<string>(lastGsp !== null ? String(lastGsp) : '');
   const [stageId, setStageId] = useState<number>(NO_SELECTION_STAGE.id);
   const [submitting, setSubmitting] = useState(false);
+
+  const createReading = useCreateGspReading();
+  const [setGspOpen, setSetGspOpen] = useState(false);
+  const [setGspDraft, setSetGspDraft] = useState('');
+
+  function openSetGsp() {
+    setSetGspDraft(lastGsp !== null ? String(lastGsp) : '');
+    setSetGspOpen(true);
+  }
+
+  async function saveSetGsp() {
+    const gsp = parseGspNumber(setGspDraft);
+    if (gsp === null) {
+      toast.error(t('gsp.logger.invalidGsp'));
+      return;
+    }
+    try {
+      await createReading.mutateAsync({ fighter_id: fighter.id, gsp });
+      toast.success(t('gsp.setGsp.saved', { gsp: gsp.toLocaleString() }));
+      // The new baseline is now the freshest reading — prefill the match
+      // form with it, exactly like logging a match does.
+      setGspInput(String(gsp));
+      setSetGspOpen(false);
+    } catch {
+      toast.error(t('gsp.setGsp.saveFailed'));
+    }
+  }
 
   function resetForNextMatch(nextGsp: number) {
     // The opponent's character is deliberately PERSISTED: quickplay rematches
@@ -233,6 +276,49 @@ export function QuickLogger({
         <Button type="button" onClick={() => void handleSubmit()} disabled={submitting}>
           {submitting ? t('gsp.logger.logging') : t('gsp.logger.logMatch')}
         </Button>
+
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          className="self-center text-muted-foreground"
+          onClick={openSetGsp}
+        >
+          {t('gsp.logger.setGspButton')}
+        </Button>
+
+        <Dialog open={setGspOpen} onOpenChange={setSetGspOpen}>
+          <DialogContent className="max-w-sm">
+            <DialogHeader>
+              <DialogTitle>{t('gsp.setGsp.title')}</DialogTitle>
+              <DialogDescription>{t('gsp.setGsp.description')}</DialogDescription>
+            </DialogHeader>
+            <div className="flex flex-col gap-1.5">
+              <label className="text-sm font-medium" htmlFor="set-gsp-value">
+                {t('gsp.setGsp.label')}
+              </label>
+              {/* type="text": same comma-paste rationale as the match GSP field. */}
+              <Input
+                id="set-gsp-value"
+                type="text"
+                inputMode="numeric"
+                value={setGspDraft}
+                onChange={(e) => setSetGspDraft(e.target.value)}
+                placeholder={t('gsp.logger.gspPlaceholder')}
+                autoFocus
+              />
+            </div>
+            <DialogFooter>
+              <Button
+                type="button"
+                onClick={() => void saveSetGsp()}
+                disabled={createReading.isPending}
+              >
+                {t('gsp.setGsp.save')}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </CardContent>
     </Card>
   );

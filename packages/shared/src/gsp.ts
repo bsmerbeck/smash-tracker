@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import type { GspReading } from './gspReading.js';
 import type { Match } from './match.js';
 
 /**
@@ -61,20 +62,27 @@ export const DEFAULT_ELITE_THRESHOLD = 10_300_000;
 
 /** One chronological GSP reading for a specific fighter. */
 export interface GspPoint {
-  /** Epoch ms of the match this reading came from. */
+  /** Epoch ms of the match (or standalone calibration reading) this came from. */
   time: number;
-  /** The post-match GSP reading. */
+  /** The GSP reading. */
   gsp: number;
-  /** Whether that match was a win. */
-  win: boolean;
+  /**
+   * Whether the match behind this point was a win — or `null` for a
+   * standalone calibration reading ("set GSP without a match", V17). A null
+   * breaks the delta chain: the step INTO it is unattributable drift
+   * (session inflation, off-ruleset matches) and is excluded from all
+   * win/loss statistics; the step OUT of it to the next match point is a
+   * clean delta from the fresh baseline (see `toSteps`).
+   */
+  win: boolean | null;
 }
 
 /**
  * The chronological matches behind a fighter's GSP series — same filter and
  * ordering as `getGspSeries`, but returning the full `Match` records.
- * Index-parity with the series is guaranteed (the series is derived from
- * this), which is what lets a chart click on point `i` resolve to the match
- * to edit/delete.
+ * Index-parity with the series is guaranteed only when the series was built
+ * WITHOUT standalone readings; pages that mix both use `getGspEntries` for
+ * click-to-edit resolution instead.
  */
 export function getGspMatches(matches: Match[], fighterId: number): Match[] {
   return matches
@@ -83,18 +91,64 @@ export function getGspMatches(matches: Match[], fighterId: number): Match[] {
 }
 
 /**
- * Chronological GSP readings for `fighterId`, built from every match that
- * carries a `gsp` value for that fighter. Matches without a `gsp` reading
- * (offline sets, or online sets the player didn't log GSP for) are skipped
- * entirely rather than interpolated — we only ever plot/analyze real
- * readings.
+ * One source record behind a GSP series point: a match carrying a `gsp`
+ * value, or a standalone calibration reading. The union (not the bare
+ * series) is what UI lists/chart clicks resolve through — entry `i` is the
+ * record behind series point `i`.
  */
-export function getGspSeries(matches: Match[], fighterId: number): GspPoint[] {
-  return getGspMatches(matches, fighterId).map((m) => ({
+export type GspEntry =
+  | { kind: 'match'; time: number; gsp: number; win: boolean; match: Match }
+  | { kind: 'reading'; time: number; gsp: number; reading: GspReading };
+
+/**
+ * Chronological entries for `fighterId`: every match with a `gsp` value
+ * merged with every standalone calibration reading, ascending by time (ties
+ * put the match first — a same-instant calibration is a re-baseline of the
+ * state AFTER that match).
+ */
+export function getGspEntries(
+  matches: Match[],
+  readings: GspReading[],
+  fighterId: number,
+): GspEntry[] {
+  const matchEntries: GspEntry[] = getGspMatches(matches, fighterId).map((m) => ({
+    kind: 'match',
     time: m.time,
     gsp: m.gsp!,
     win: m.win,
+    match: m,
   }));
+  const readingEntries: GspEntry[] = readings
+    .filter((r) => r.fighter_id === fighterId)
+    .map((r) => ({ kind: 'reading', time: r.time, gsp: r.gsp, reading: r }));
+
+  return [...matchEntries, ...readingEntries].sort(
+    (a, b) => a.time - b.time || (a.kind === 'match' ? -1 : 1),
+  );
+}
+
+/** Projects `getGspEntries` output to the plain series — index-parity with the entries is guaranteed. */
+export function gspSeriesFromEntries(entries: GspEntry[]): GspPoint[] {
+  return entries.map((e) => ({
+    time: e.time,
+    gsp: e.gsp,
+    win: e.kind === 'match' ? e.win : null,
+  }));
+}
+
+/**
+ * Chronological GSP readings for `fighterId`, built from every match that
+ * carries a `gsp` value for that fighter, plus any standalone calibration
+ * readings. Matches without a `gsp` reading (offline sets, or online sets
+ * the player didn't log GSP for) are skipped entirely rather than
+ * interpolated — we only ever plot/analyze real readings.
+ */
+export function getGspSeries(
+  matches: Match[],
+  fighterId: number,
+  readings: GspReading[] = [],
+): GspPoint[] {
+  return gspSeriesFromEntries(getGspEntries(matches, readings, fighterId));
 }
 
 /** One step between two consecutive GSP readings. */
@@ -106,13 +160,26 @@ interface GspStep {
   win: boolean;
 }
 
+/**
+ * Consecutive-reading deltas, each attributed to the win/loss of the match
+ * it ends at. A step ENDING at a calibration point (`win: null`) is dropped
+ * entirely — that delta is unattributable drift (session inflation, matches
+ * played under rulesets the player refuses to count), which is the whole
+ * reason calibration points exist. The step OUT of a calibration point is
+ * kept: it starts from the freshly-set baseline, so it's a clean read on
+ * the match that produced it.
+ */
 function toSteps(series: GspPoint[]): GspStep[] {
   const steps: GspStep[] = [];
   for (let i = 1; i < series.length; i += 1) {
+    const win = series[i]!.win;
+    if (win === null) {
+      continue;
+    }
     steps.push({
       fromGsp: series[i - 1]!.gsp,
       delta: series[i]!.gsp - series[i - 1]!.gsp,
-      win: series[i]!.win,
+      win,
     });
   }
   return steps;

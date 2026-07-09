@@ -2,8 +2,8 @@ import { useMemo, useState } from 'react';
 import { Link } from 'react-router';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
-import type { Fighter, Match } from '@smash-tracker/shared';
-import { getGspGainStats, getGspMatches, getGspSeries } from '@smash-tracker/shared';
+import type { Fighter, GspEntry, GspReading, Match } from '@smash-tracker/shared';
+import { getGspEntries, getGspGainStats, gspSeriesFromEntries } from '@smash-tracker/shared';
 import { Button } from '@/components/ui/button';
 import {
   AlertDialog,
@@ -20,12 +20,14 @@ import { useMatches } from '@/hooks/useMatches';
 import { useFighters } from '@/hooks/useFighters';
 import { useGspSettings } from '@/hooks/useGspSettings';
 import { useDeleteMatch } from '@/hooks/useDeleteMatch';
+import { useDeleteGspReading, useGspReadings } from '@/hooks/useGspReadings';
 import { getFighterById } from '@/data/sprites';
 import { getGspFighterOptions } from './lib/gspFighters';
 import { GspFighterSelect } from './components/GspFighterSelect';
 import { GspHero } from './components/GspHero';
 import { GspCurve } from './components/GspCurve';
 import { GspMatchLog } from './components/GspMatchLog';
+import { EditGspReadingDialog } from './components/EditGspReadingDialog';
 import { QuickLogger } from './components/QuickLogger';
 import { GainsAnalysis } from './components/GainsAnalysis';
 import { GspTiers } from './components/GspTiers';
@@ -38,24 +40,30 @@ import { GspVsGlicko } from './components/GspVsGlicko';
  * sprite is currently selected. Design language mirrors Fighter
  * Analysis/Trends: a hero stat row followed by a responsive card grid.
  *
- * All GSP data is just regular matches carrying an optional `gsp` field
- * (logged via the same `POST /api/matches` path as everything else, with
- * `matchType: 'quickplay'`) — there is no separate GSP-only record type.
+ * GSP data comes from two record types, merged chronologically into
+ * `GspEntry`s (shared/gsp.ts): regular matches carrying an optional `gsp`
+ * field (the same `POST /api/matches` path as everything else, with
+ * `matchType: 'quickplay'`), plus V17's standalone calibration readings
+ * ("set GSP without a match", `gspReadings/{uid}`) which re-baseline the
+ * series without polluting win/loss statistics.
  *
  * V14: readings are correctable in place — the GspMatchLog rows and the
- * curve's click-to-edit both open the shared EditMatchForm / delete
- * confirmation owned here, so a flubbed digit doesn't require a round-trip
- * through Match Data.
+ * curve's click-to-edit both open the shared EditMatchForm (matches) or
+ * EditGspReadingDialog (calibration readings) / delete confirmation owned
+ * here, so a flubbed digit doesn't require a round-trip through Match Data.
  */
 export function GspPage() {
   const { t } = useTranslation();
   const { data: matches = [], isLoading: matchesLoading } = useMatches();
+  const { data: readings = [], isLoading: readingsLoading } = useGspReadings();
   const { data: fighterSelection, isLoading: fightersLoading } = useFighters();
   const { data: gspSettings, isLoading: settingsLoading } = useGspSettings();
   const deleteMatch = useDeleteMatch();
+  const deleteReading = useDeleteGspReading();
 
   const [editingMatch, setEditingMatch] = useState<Match | null>(null);
-  const [pendingDelete, setPendingDelete] = useState<Match | null>(null);
+  const [editingReading, setEditingReading] = useState<GspReading | null>(null);
+  const [pendingDelete, setPendingDelete] = useState<GspEntry | null>(null);
 
   const fighterOptions = useMemo(
     () =>
@@ -80,7 +88,7 @@ export function GspPage() {
   const fighter: Fighter | undefined =
     fighterOptions.find((f) => f.id === selectedFighterId) ?? fighterOptions[0] ?? undefined;
 
-  const isLoading = matchesLoading || fightersLoading || settingsLoading;
+  const isLoading = matchesLoading || readingsLoading || fightersLoading || settingsLoading;
 
   if (isLoading) {
     return <div className="text-muted-foreground">{t('gsp.loading')}</div>;
@@ -102,18 +110,31 @@ export function GspPage() {
     return <div className="text-muted-foreground">{t('gsp.loading')}</div>;
   }
 
-  // Index-parity: gspMatches[i] is the match behind series[i] (the series is
+  // Index-parity: entries[i] is the record behind series[i] (the series is
   // derived from it in shared/gsp.ts), which is what makes the curve's
-  // point-index → match resolution safe.
-  const gspMatches = getGspMatches(matches, fighter.id);
-  const series = getGspSeries(matches, fighter.id);
+  // point-index → entry resolution safe.
+  const entries = getGspEntries(matches, readings, fighter.id);
+  const series = gspSeriesFromEntries(entries);
   const gainStats = getGspGainStats(series);
   const lastPoint = series.length > 0 ? series[series.length - 1]! : null;
+
+  function editEntry(entry: GspEntry | null) {
+    if (!entry) return;
+    if (entry.kind === 'match') {
+      setEditingMatch(entry.match);
+    } else {
+      setEditingReading(entry.reading);
+    }
+  }
 
   async function confirmDelete() {
     if (!pendingDelete) return;
     try {
-      await deleteMatch.mutateAsync(pendingDelete.id);
+      if (pendingDelete.kind === 'match') {
+        await deleteMatch.mutateAsync(pendingDelete.match.id);
+      } else {
+        await deleteReading.mutateAsync(pendingDelete.reading.id);
+      }
       toast.success(t('gsp.deleteConfirm.deleted'));
     } catch {
       toast.error(t('gsp.deleteConfirm.deleteFailed'));
@@ -139,12 +160,12 @@ export function GspPage() {
       <GspCurve
         series={series}
         settings={gspSettings}
-        onPointClick={(index) => setEditingMatch(gspMatches[index] ?? null)}
+        onPointClick={(index) => editEntry(entries[index] ?? null)}
       />
 
       <QuickLogger fighter={fighter} lastPoint={lastPoint} settings={gspSettings} />
 
-      <GspMatchLog gspMatches={gspMatches} onEdit={setEditingMatch} onDelete={setPendingDelete} />
+      <GspMatchLog entries={entries} onEdit={editEntry} onDelete={setPendingDelete} />
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         <GainsAnalysis stats={gainStats} />
@@ -163,7 +184,25 @@ export function GspPage() {
           // delete path too — hand off to the shared confirmation below.
           onDelete={(match) => {
             setEditingMatch(null);
-            setPendingDelete(match);
+            setPendingDelete({
+              kind: 'match',
+              time: match.time,
+              gsp: match.gsp ?? 0,
+              win: match.win,
+              match,
+            });
+          }}
+        />
+      )}
+
+      {editingReading && (
+        <EditGspReadingDialog
+          reading={editingReading}
+          open={editingReading != null}
+          onOpenChange={(open) => !open && setEditingReading(null)}
+          onDelete={(reading) => {
+            setEditingReading(null);
+            setPendingDelete({ kind: 'reading', time: reading.time, gsp: reading.gsp, reading });
           }}
         />
       )}
