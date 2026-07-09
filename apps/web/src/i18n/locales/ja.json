@@ -9,6 +9,7 @@
     "scoutAPlayer": "プレイヤーを検索",
     "aiReports": "AIレポート",
     "matchData": "対戦データ",
+    "vodManager": "VOD",
     "trends": "トレンド",
     "gsp": "GSP",
     "groups": "グループ",
@@ -462,6 +463,26 @@
       "winsShort": "{{count}}勝",
       "lossesShort": "{{count}}敗"
     }
+  },
+  "vodManager": {
+    "title": "VODマネージャー",
+    "emptyState": "まだVODがありません",
+    "filters": {
+      "fighter": "ファイター",
+      "opponentFighter": "相手のキャラクター",
+      "opponent": "対戦相手",
+      "tournament": "大会",
+      "stage": "ステージ",
+      "allOption": "すべて"
+    },
+    "sort": {
+      "newest": "新しい順",
+      "oldest": "古い順"
+    },
+    "playerPlaceholder": "試合を選択するとVODが再生されます。",
+    "playerUnavailable": "このVODは現在視聴できません。",
+    "openOnHost": "{{host}}で開く",
+    "selectMatchAria": "{{opponent}}戦を選択"
   },
   "matchups": {
     "loading": "相性データを読み込み中...",
