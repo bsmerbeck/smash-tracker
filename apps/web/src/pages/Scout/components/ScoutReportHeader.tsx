@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next';
 import { ExternalLink } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import type { ScoutReportData } from '@smash-tracker/shared';
@@ -15,6 +16,7 @@ import type { ScoutReportData } from '@smash-tracker/shared';
  * shape (see apps/api/src/parrygg/scout.ts).
  */
 export function ScoutReportHeader({ report }: { report: ScoutReportData }) {
+  const { t } = useTranslation();
   const source = report.player.source ?? 'startgg';
   const profileUrl =
     source === 'parrygg'
@@ -36,18 +38,23 @@ export function ScoutReportHeader({ report }: { report: ScoutReportData }) {
               href={profileUrl}
               target="_blank"
               rel="noreferrer"
-              aria-label={`View ${report.player.gamerTag} on ${sourceLabel}`}
+              aria-label={t('scout.header.viewOn', {
+                name: report.player.gamerTag,
+                source: sourceLabel,
+              })}
               className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
             >
               <ExternalLink className="size-3.5" />
-              {sourceLabel} profile
+              {t('scout.header.profile', { source: sourceLabel })}
             </a>
           )}
         </div>
         <p className="text-sm text-muted-foreground">
-          Public {sourceLabel} data · sampled last {report.sampledSets} set
-          {report.sampledSets === 1 ? '' : 's'} ({report.sampledGames} game
-          {report.sampledGames === 1 ? '' : 's'})
+          {t('scout.header.sample', {
+            source: sourceLabel,
+            sets: report.sampledSets,
+            games: report.sampledGames,
+          })}
         </p>
       </CardContent>
     </Card>

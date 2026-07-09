@@ -1,3 +1,5 @@
+import { useTranslation } from 'react-i18next';
+import type { TFunction } from 'i18next';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { WinLossPips } from '@/components/WinLossPips';
 import type { OpponentProfile } from '@/lib/stats';
@@ -5,22 +7,25 @@ import type { OpponentSource } from '@/hooks/useFilteredMatches';
 import type { EncounterContext } from '../tournamentHistory';
 import { OpponentSourceBadge } from './OpponentSourceBadge';
 
-function formatEncounterContext(context: EncounterContext): string | null {
+function formatEncounterContext(
+  context: EncounterContext,
+  t: TFunction,
+  locale: string,
+): string | null {
   if (context.tournamentCount === 0 || !context.span) {
     return null;
   }
   const count = context.tournamentCount;
-  const start = new Date(context.span.start).toLocaleDateString('en-US', {
+  const start = new Date(context.span.start).toLocaleDateString(locale, {
     month: 'short',
     year: 'numeric',
   });
-  const end = new Date(context.span.end).toLocaleDateString('en-US', {
+  const end = new Date(context.span.end).toLocaleDateString(locale, {
     month: 'short',
     year: 'numeric',
   });
-  const tournamentWord = count === 1 ? 'tournament' : 'tournaments';
-  const span = start === end ? start : `${start} and ${end}`;
-  return `Met at ${count} ${tournamentWord} between ${span}`;
+  const span = start === end ? start : t('opponents.header.encounterSpan', { start, end });
+  return t('opponents.header.metAt', { count, span });
 }
 
 /**
@@ -38,8 +43,9 @@ export function ScoutingHeader({
   encounterContext: EncounterContext;
   source: OpponentSource;
 }) {
+  const { t, i18n } = useTranslation();
   const { record } = profile;
-  const encounterLine = formatEncounterContext(encounterContext);
+  const encounterLine = formatEncounterContext(encounterContext, t, i18n.language);
 
   return (
     <Card>
@@ -50,8 +56,10 @@ export function ScoutingHeader({
             <OpponentSourceBadge source={source} />
           </div>
           <p className="mt-1 text-sm text-muted-foreground">
-            First played {new Date(profile.firstPlayedAt).toLocaleDateString()} · Last played{' '}
-            {new Date(profile.lastPlayedAt).toLocaleDateString()}
+            {t('opponents.header.playedRange', {
+              first: new Date(profile.firstPlayedAt).toLocaleDateString(i18n.language),
+              last: new Date(profile.lastPlayedAt).toLocaleDateString(i18n.language),
+            })}
           </p>
           {encounterLine && <p className="mt-1 text-sm text-muted-foreground">{encounterLine}</p>}
         </div>
@@ -60,12 +68,14 @@ export function ScoutingHeader({
             {record.wins}-{record.losses}
           </p>
           <p className="text-sm text-muted-foreground">
-            {record.winRate}% over {record.total} game{record.total === 1 ? '' : 's'}
+            {t('opponents.header.rateOverGames', { rate: record.winRate, count: record.total })}
           </p>
         </div>
       </CardHeader>
       <CardContent>
-        <h3 className="mb-2 text-sm font-medium text-muted-foreground">Last 10 (newest first)</h3>
+        <h3 className="mb-2 text-sm font-medium text-muted-foreground">
+          {t('fighterAnalysis.hero.last10')}
+        </h3>
         <WinLossPips matches={profile.recent} limit={10} />
       </CardContent>
     </Card>

@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { useDeleteOpponentAlias } from '@/hooks/useOpponentAliases';
@@ -16,6 +17,7 @@ export interface MergedNamesCardProps {
  * out into its own separate scouting identity.
  */
 export function MergedNamesCard({ canonical, aliases }: MergedNamesCardProps) {
+  const { t } = useTranslation();
   const deleteAlias = useDeleteOpponentAlias();
 
   if (aliases.length === 0) {
@@ -25,14 +27,11 @@ export function MergedNamesCard({ canonical, aliases }: MergedNamesCardProps) {
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Merged names</CardTitle>
-        <CardDescription>
-          These names are folded into &quot;{canonical}&quot;. Un-merge to track them separately
-          again.
-        </CardDescription>
+        <CardTitle>{t('opponents.merged.title')}</CardTitle>
+        <CardDescription>{t('opponents.merged.description', { name: canonical })}</CardDescription>
       </CardHeader>
       <CardContent>
-        <ul className="flex flex-col gap-2" role="list" aria-label="Merged names">
+        <ul className="flex flex-col gap-2" role="list" aria-label={t('opponents.merged.title')}>
           {aliases.map((alias) => (
             <li key={alias} className="flex items-center justify-between gap-2 text-sm">
               <span className="min-w-0 flex-1 truncate">{alias}</span>
@@ -43,7 +42,7 @@ export function MergedNamesCard({ canonical, aliases }: MergedNamesCardProps) {
                 disabled={deleteAlias.isPending}
                 onClick={() => deleteAlias.mutate(alias)}
               >
-                Un-merge
+                {t('opponents.merged.unmerge')}
               </Button>
             </li>
           ))}

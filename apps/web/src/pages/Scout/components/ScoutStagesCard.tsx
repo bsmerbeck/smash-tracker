@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import type { ScoutStageUsage } from '@smash-tracker/shared';
 import { stagesById } from '@/data/stages';
@@ -6,17 +7,18 @@ const MAX_STAGES = 6;
 
 /** The scouted player's stage results (art tile + record + win rate), most-played first. */
 export function ScoutStagesCard({ stages }: { stages: ScoutStageUsage[] }) {
+  const { t } = useTranslation();
   const top = stages.filter((s) => s.stageId !== 0).slice(0, MAX_STAGES);
 
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Stage Performance</CardTitle>
-        <CardDescription>Their results by stage.</CardDescription>
+        <CardTitle>{t('scout.stages.title')}</CardTitle>
+        <CardDescription>{t('scout.stages.description')}</CardDescription>
       </CardHeader>
       <CardContent>
         {top.length === 0 ? (
-          <p className="text-sm text-muted-foreground">No stage data recorded yet.</p>
+          <p className="text-sm text-muted-foreground">{t('opponents.stages.empty')}</p>
         ) : (
           <ul className="flex flex-col gap-2">
             {top.map((row) => {
@@ -32,11 +34,11 @@ export function ScoutStagesCard({ stages }: { stages: ScoutStageUsage[] }) {
                         {stage ? stage.name.slice(0, 3).toUpperCase() : '??'}
                       </span>
                     )}
-                    <span className="text-sm">{stage?.name ?? 'Unknown'}</span>
+                    <span className="text-sm">{stage?.name ?? t('common.unknown')}</span>
                   </div>
                   <span className="shrink-0 whitespace-nowrap text-sm text-muted-foreground">
-                    {row.wins}-{row.games - row.wins} · {winRate}% · {row.games} game
-                    {row.games === 1 ? '' : 's'}
+                    {row.wins}-{row.games - row.wins} · {winRate}% ·{' '}
+                    {t('common.games', { count: row.games })}
                   </span>
                 </li>
               );
