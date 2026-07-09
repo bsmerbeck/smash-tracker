@@ -33,7 +33,8 @@ import { useStageFavorites, useToggleStageFavorite } from '@/hooks/useStageFavor
 import { useCreateMatch } from '@/hooks/useCreateMatch';
 import { useCreateGspReading } from '@/hooks/useGspReadings';
 import { parseGspNumber } from '../lib/parseGspNumber';
-import { calibrationFromSettings, estimateMmrAt } from '../lib/gspMmrModel';
+import { estimateMmrAt } from '../lib/gspMmrModel';
+import { useModelCalibration } from '../lib/useModelCalibration';
 
 /**
  * Quick-log the core online-quickplay session loop: pick the opponent's
@@ -69,6 +70,7 @@ export function QuickLogger({
   const { t } = useTranslation();
   const lastGsp = lastPoint?.gsp ?? null;
   const createMatch = useCreateMatch();
+  const calibration = useModelCalibration(settings);
   const { data: stageFavorites } = useStageFavorites();
   const toggleStageFavorite = useToggleStageFavorite();
   const favoriteStageIds = stageFavorites?.stageIds;
@@ -149,7 +151,6 @@ export function QuickLogger({
     // its own log time (t drifts). Only shown when BOTH convert "cleanly"
     // (land on the ±1-GSP-accurate main curve); tail readings are too
     // approximate for a single-match delta to mean anything.
-    const calibration = calibrationFromSettings(settings);
     let mmrDeltaLabel = '';
     if (lastPoint !== null) {
       const prev = estimateMmrAt(lastPoint.gsp, lastPoint.time, calibration);

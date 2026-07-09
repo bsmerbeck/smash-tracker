@@ -306,7 +306,8 @@
       "belowElite": "MMR {{mmr}} · below Elite ({{elite}})",
       "recentWinRate": "Recent Win Rate",
       "lastNGames_one": "last {{count}} game",
-      "lastNGames_other": "last {{count}} games"
+      "lastNGames_other": "last {{count}} games",
+      "liveCalibrated": "auto-updated {{date}} from gsptiers.com"
     },
     "curve": {
       "title": "GSP Curve",

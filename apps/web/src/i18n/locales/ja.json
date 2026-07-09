@@ -306,7 +306,8 @@
       "belowElite": "MMR {{mmr}} · VIP基準（{{elite}}）未満",
       "recentWinRate": "直近の勝率",
       "lastNGames_one": "直近{{count}}戦",
-      "lastNGames_other": "直近{{count}}戦"
+      "lastNGames_other": "直近{{count}}戦",
+      "liveCalibrated": "gsptiers.comから{{date}}に自動更新"
     },
     "curve": {
       "title": "GSP推移",

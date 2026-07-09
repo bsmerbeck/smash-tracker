@@ -13,6 +13,7 @@ export function buildTestApp(
     Parameters<typeof buildApp>[0],
     | 'startgg'
     | 'startggFetch'
+    | 'gspLiveFetch'
     | 'parrygg'
     | 'parryggClients'
     | 'reports'

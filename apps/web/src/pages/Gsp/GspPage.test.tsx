@@ -46,6 +46,7 @@ const upsertMe = vi.fn().mockResolvedValue({ uid: 'test-uid', email: 'test@examp
 const getStageFavorites = vi.fn().mockResolvedValue({ stageIds: [], updatedAt: 0 });
 const updateStageFavorites = vi.fn();
 const listGspReadings = vi.fn();
+const getGspLive = vi.fn();
 const createGspReading = vi.fn();
 const updateGspReading = vi.fn();
 const deleteGspReading = vi.fn();
@@ -67,6 +68,9 @@ vi.mock('@/lib/api', () => ({
     stageFavorites: {
       get: (...args: unknown[]) => getStageFavorites(...args),
       update: (...args: unknown[]) => updateStageFavorites(...args),
+    },
+    gspLive: {
+      get: (...args: unknown[]) => getGspLive(...args),
     },
     gspReadings: {
       list: (...args: unknown[]) => listGspReadings(...args),
@@ -132,6 +136,9 @@ describe('GspPage', () => {
     getFighters.mockResolvedValue({ primary: [], secondary: [] });
     listMatches.mockResolvedValue([]);
     listGspReadings.mockResolvedValue([]);
+    // Default: no live thresholds yet (the endpoint 404s until the first
+    // successful upstream fetch) — components fall back to the static anchor.
+    getGspLive.mockRejectedValue(new Error('404: no live thresholds'));
     getGspSettings.mockResolvedValue({ eliteThreshold: 10_000_000, updatedAt: 0 });
     updateGspSettings.mockResolvedValue({ eliteThreshold: 11_000_000, updatedAt: Date.now() });
     createMatch.mockResolvedValue({
@@ -273,41 +280,48 @@ describe('GspPage', () => {
     expect(screen.getByText(/recalibrated/)).toBeInTheDocument();
   });
 
-  it('logs a match through the Quick Logger and shows the GSP + MMR delta toast', async () => {
-    getFighters.mockResolvedValue({ primary: [mario.id], secondary: [] });
-    listMatches.mockResolvedValue([makeMatch({ id: 'm1', time: 1, win: true, gsp: 9_000_000 })]);
-    const user = userEvent.setup();
+  // 10s budget: this walks the full Radix Select + toggle + type + submit
+  // flow and sat right at CI's 5s default once the page gained the
+  // readings/live-thresholds queries.
+  it(
+    'logs a match through the Quick Logger and shows the GSP + MMR delta toast',
+    { timeout: 10_000 },
+    async () => {
+      getFighters.mockResolvedValue({ primary: [mario.id], secondary: [] });
+      listMatches.mockResolvedValue([makeMatch({ id: 'm1', time: 1, win: true, gsp: 9_000_000 })]);
+      const user = userEvent.setup();
 
-    renderGspPage();
+      renderGspPage();
 
-    await screen.findByText('Quick Logger');
+      await screen.findByText('Quick Logger');
 
-    await user.click(screen.getByRole('combobox', { name: 'Opponent Character' }));
-    await user.click(await screen.findByRole('option', { name: luigi.name }));
+      await user.click(screen.getByRole('combobox', { name: 'Opponent Character' }));
+      await user.click(await screen.findByRole('option', { name: luigi.name }));
 
-    await user.click(screen.getByRole('radio', { name: 'Win' }));
+      await user.click(screen.getByRole('radio', { name: 'Win' }));
 
-    const gspInput = screen.getByLabelText('GSP After Match');
-    await user.clear(gspInput);
-    await user.type(gspInput, '9500000');
+      const gspInput = screen.getByLabelText('GSP After Match');
+      await user.clear(gspInput);
+      await user.type(gspInput, '9500000');
 
-    await user.click(screen.getByRole('button', { name: 'Log Match' }));
+      await user.click(screen.getByRole('button', { name: 'Log Match' }));
 
-    await waitFor(() => expect(createMatch).toHaveBeenCalledTimes(1));
-    expect(createMatch).toHaveBeenCalledWith(
-      expect.objectContaining({
-        fighter_id: mario.id,
-        opponent_id: luigi.id,
-        matchType: 'quickplay',
-        win: true,
-        gsp: 9_500_000,
-      }),
-    );
-    // The toast carries both deltas: raw GSP and the estimated MMR change
-    // (both readings land on the main curve, so the conversion is "clean").
-    expect(toastSuccess).toHaveBeenCalledWith(expect.stringContaining('+500,000 GSP'));
-    expect(toastSuccess).toHaveBeenCalledWith(expect.stringMatching(/≈ \+\d+ MMR/));
-  });
+      await waitFor(() => expect(createMatch).toHaveBeenCalledTimes(1));
+      expect(createMatch).toHaveBeenCalledWith(
+        expect.objectContaining({
+          fighter_id: mario.id,
+          opponent_id: luigi.id,
+          matchType: 'quickplay',
+          win: true,
+          gsp: 9_500_000,
+        }),
+      );
+      // The toast carries both deltas: raw GSP and the estimated MMR change
+      // (both readings land on the main curve, so the conversion is "clean").
+      expect(toastSuccess).toHaveBeenCalledWith(expect.stringContaining('+500,000 GSP'));
+      expect(toastSuccess).toHaveBeenCalledWith(expect.stringMatching(/≈ \+\d+ MMR/));
+    },
+  );
 
   it('pins favorited stages atop the Quick Logger stage picker', async () => {
     getFighters.mockResolvedValue({ primary: [mario.id], secondary: [] });
@@ -487,6 +501,66 @@ describe('GspPage', () => {
     // delete path too — it hands off to the page's confirmation dialog.
     await user.click(screen.getByRole('button', { name: 'Delete Match' }));
     expect(await screen.findByText('Delete this GSP entry?')).toBeInTheDocument();
+  });
+
+  describe('live thresholds (gsptiers.com via /api/gsp-live)', () => {
+    it('calibrates the threshold card from the live reading and says so', async () => {
+      getFighters.mockResolvedValue({ primary: [mario.id], secondary: [] });
+      listMatches.mockResolvedValue([makeMatch({ id: 'm1', time: 1, win: true, gsp: 9_050_000 })]);
+      getGspLive.mockResolvedValue({
+        elite: 14_813_136,
+        max: 16_368_515,
+        fetchedAt: Date.now() - 60_000,
+        source: 'gsptiers.com',
+      });
+
+      renderGspPage();
+
+      // The computed threshold now derives from the live calibration: at
+      // ~1 minute of drift it stays within a whisker of the live value.
+      expect(await screen.findByText(nearNumberMatcher(14_813_136))).toBeInTheDocument();
+      expect(screen.getByText(/auto-updated .+ from gsptiers\.com/)).toBeInTheDocument();
+    });
+
+    it('uses the live max for the tier ladder boundaries', async () => {
+      getFighters.mockResolvedValue({ primary: [mario.id], secondary: [] });
+      listMatches.mockResolvedValue([makeMatch({ id: 'm1', time: 1, win: true, gsp: 9_050_000 })]);
+      getGspLive.mockResolvedValue({
+        elite: 14_813_136,
+        max: 16_368_515,
+        fetchedAt: Date.now() - 60_000,
+        source: 'gsptiers.com',
+      });
+
+      renderGspPage();
+
+      // 9,050,000 sits in Top 50%; its boundary is exactly 0.5 x the live
+      // max (16,368,515 / 2 rounded), not the ratio-model estimate.
+      expect(await screen.findByText('GSP Tiers')).toBeInTheDocument();
+      // findByText: the tiers card renders before the live query resolves,
+      // then re-renders with the live max.
+      expect(
+        await screen.findByText(Math.round(16_368_515 * 0.5).toLocaleString('en-US')),
+      ).toBeInTheDocument();
+    });
+
+    it('keeps the manual edit when it is newer than the live reading', async () => {
+      getFighters.mockResolvedValue({ primary: [mario.id], secondary: [] });
+      listMatches.mockResolvedValue([makeMatch({ id: 'm1', time: 1, win: true, gsp: 9_050_000 })]);
+      getGspSettings.mockResolvedValue({ eliteThreshold: 15_000_000, updatedAt: Date.now() });
+      getGspLive.mockResolvedValue({
+        elite: 14_813_136,
+        max: 16_368_515,
+        fetchedAt: Date.now() - 60 * 60 * 1000,
+        source: 'gsptiers.com',
+      });
+
+      renderGspPage();
+
+      expect(await screen.findByText(nearNumberMatcher(15_000_000))).toBeInTheDocument();
+      expect(screen.getByText(/recalibrated \d/)).toBeInTheDocument();
+      expect(screen.queryByText(/auto-updated/)).not.toBeInTheDocument();
+    });
   });
 
   describe('calibration readings (set GSP without a match)', () => {

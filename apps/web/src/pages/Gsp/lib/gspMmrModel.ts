@@ -1,4 +1,4 @@
-import type { GspPoint, GspSettings, GspZone, TCalibration } from '@smash-tracker/shared';
+import type { GspLive, GspPoint, GspSettings, GspZone, TCalibration } from '@smash-tracker/shared';
 import { eliteThresholdGsp, estimateT, gspToMmr } from '@smash-tracker/shared';
 
 /**
@@ -33,6 +33,30 @@ export const GSP_MMR_DOC_URL =
 export function calibrationFromSettings(settings: GspSettings): TCalibration | undefined {
   if (settings.updatedAt <= 0) return undefined;
   return { eliteThresholdGsp: settings.eliteThreshold, atMs: settings.updatedAt };
+}
+
+/**
+ * V17.1: the calibration the model should actually use — the FRESHEST
+ * elite-threshold observation available. Candidates: the user's manual
+ * threshold edit (`calibrationFromSettings`) and the server's live
+ * gsptiers.com reading (`/api/gsp-live`, refreshed a few times a day). The
+ * newer timestamp wins (ties go to live — same instant, but live is an
+ * upstream measurement rather than a hand-typed one). `live` is optional
+ * everywhere: the endpoint 404s until its first successful upstream fetch,
+ * and consumers must keep working from the manual edit / static anchor.
+ */
+export function bestCalibration(
+  settings: GspSettings,
+  live?: GspLive | null,
+): TCalibration | undefined {
+  const manual = calibrationFromSettings(settings);
+  const liveCalibration: TCalibration | undefined = live
+    ? { eliteThresholdGsp: live.elite, atMs: live.fetchedAt }
+    : undefined;
+  if (manual && liveCalibration) {
+    return liveCalibration.atMs >= manual.atMs ? liveCalibration : manual;
+  }
+  return liveCalibration ?? manual;
 }
 
 /**

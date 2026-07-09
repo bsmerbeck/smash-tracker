@@ -10,6 +10,7 @@ import {
   groupLeaderboardSchema,
   groupListSchema,
   groupRecordSchema,
+  gspLiveSchema,
   gspReadingSchema,
   gspSettingsSchema,
   joinGroupRequestSchema,
@@ -414,6 +415,10 @@ export const api = {
     /** PUT /api/gsp-settings */
     update: (input: UpsertGspSettingsInput) =>
       apiRequestParsed('/api/gsp-settings', gspSettingsSchema, { method: 'PUT', body: input }),
+  },
+  gspLive: {
+    /** GET /api/gsp-live — cached live elite/max GSP thresholds (server refreshes from gsptiers.com when stale; 404 until the first successful fetch). */
+    get: () => apiRequestParsed('/api/gsp-live', gspLiveSchema),
   },
   gspReadings: {
     /** GET /api/gsp-readings — the signed-in user's standalone "set GSP" calibration readings (V17). */
