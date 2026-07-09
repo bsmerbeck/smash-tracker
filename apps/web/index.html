@@ -6,6 +6,16 @@
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
     <link rel="manifest" href="/manifest.json" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!--
+      Scoped CSP for YouTube/Twitch VOD embeds (Phase 1: VOD Manager player).
+      MUST be verified against the real deploy target (Firebase preview
+      channel / Cloud Run), not just localhost, before phase sign-off — see
+      plan 01-03's UAT step.
+    -->
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; frame-src https://www.youtube.com https://www.youtube-nocookie.com https://player.twitch.tv https://embed.twitch.tv; script-src 'self' 'unsafe-inline' https://www.youtube.com https://embed.twitch.tv; img-src 'self' https: data:; style-src 'self' 'unsafe-inline'; connect-src 'self' https:"
+    />
     <meta name="theme-color" content="#18181b" />
     <link rel="canonical" href="https://grandfinals.gg/" />
 

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { formatTimestamp, parseTimestamp, vodDeepLink } from './vod';
+import { detectVodProvider, formatTimestamp, parseTimestamp, vodDeepLink } from './vod';
 
 describe('vodDeepLink', () => {
   it('appends &t=<s>s for a youtube.com/watch URL', () => {
@@ -130,5 +130,51 @@ describe('parseTimestamp', () => {
   it('round-trips with formatTimestamp', () => {
     expect(parseTimestamp(formatTimestamp(161))).toBe(161);
     expect(parseTimestamp(formatTimestamp(3661))).toBe(3661);
+  });
+});
+
+describe('detectVodProvider', () => {
+  it('extracts a YouTube long-form video id', () => {
+    expect(detectVodProvider('https://www.youtube.com/watch?v=abc123')).toEqual({
+      provider: 'youtube',
+      videoId: 'abc123',
+    });
+  });
+
+  it('extracts a YouTube short-form (youtu.be) video id', () => {
+    expect(detectVodProvider('https://youtu.be/abc123')).toEqual({
+      provider: 'youtube',
+      videoId: 'abc123',
+    });
+  });
+
+  it('extracts a YouTube short-form video id ignoring the query string', () => {
+    expect(detectVodProvider('https://youtu.be/abc123?t=45')).toEqual({
+      provider: 'youtube',
+      videoId: 'abc123',
+    });
+  });
+
+  it('extracts a Twitch VOD video id', () => {
+    expect(detectVodProvider('https://www.twitch.tv/videos/123456789')).toEqual({
+      provider: 'twitch',
+      videoId: '123456789',
+    });
+  });
+
+  it('returns provider:null for an unsupported host', () => {
+    expect(detectVodProvider('https://vimeo.com/12345')).toEqual({ provider: null });
+  });
+
+  it('returns provider:null for a YouTube watch URL missing the v param', () => {
+    expect(detectVodProvider('https://www.youtube.com/watch')).toEqual({ provider: null });
+  });
+
+  it('returns provider:null for a malformed URL', () => {
+    expect(detectVodProvider('not-a-url')).toEqual({ provider: null });
+  });
+
+  it('returns provider:null for a Twitch live channel URL (not /videos/)', () => {
+    expect(detectVodProvider('https://www.twitch.tv/somechannel')).toEqual({ provider: null });
   });
 });
