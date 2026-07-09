@@ -49,6 +49,8 @@ const reportsConfig = vi.fn().mockResolvedValue({ enabled: false });
 const reportsList = vi.fn().mockResolvedValue([]);
 const billingCredits = vi.fn().mockResolvedValue({ freeAccess: false, balance: 0, packs: [] });
 const billingCheckout = vi.fn();
+const stageFavoritesGet = vi.fn().mockResolvedValue({ stageIds: [], updatedAt: 0 });
+const stageFavoritesUpdate = vi.fn();
 
 vi.mock('@/lib/api', () => {
   class MockApiError extends Error {
@@ -76,6 +78,10 @@ vi.mock('@/lib/api', () => {
       billing: {
         credits: (...args: unknown[]) => billingCredits(...args),
         checkout: (...args: unknown[]) => billingCheckout(...args),
+      },
+      stageFavorites: {
+        get: (...args: unknown[]) => stageFavoritesGet(...args),
+        update: (...args: unknown[]) => stageFavoritesUpdate(...args),
       },
     },
     ApiError: MockApiError,

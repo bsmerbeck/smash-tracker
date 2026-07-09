@@ -16,6 +16,7 @@ import opponentsRoutes from './routes/opponents.js';
 import opponentAliasesRoutes from './routes/opponentAliases.js';
 import opponentNotesRoutes from './routes/opponentNotes.js';
 import gspSettingsRoutes from './routes/gspSettings.js';
+import stageFavoritesRoutes from './routes/stageFavorites.js';
 import startggRoutes from './routes/startgg.js';
 import parryggRoutes from './routes/parrygg.js';
 import parryggAuthRoutes from './routes/parryggAuth.js';
@@ -149,6 +150,7 @@ export function buildApp(options: BuildAppOptions) {
       await api.register(opponentAliasesRoutes);
       await api.register(opponentNotesRoutes);
       await api.register(gspSettingsRoutes);
+      await api.register(stageFavoritesRoutes);
       await api.register(tournamentsRoutes);
       await api.register(groupsRoutes);
       await api.register(startggRoutes, {

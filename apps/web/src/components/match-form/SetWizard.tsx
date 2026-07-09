@@ -20,9 +20,7 @@ import {
 import {
   Select,
   SelectContent,
-  SelectGroup,
   SelectItem,
-  SelectLabel,
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
@@ -37,10 +35,10 @@ import {
 } from '@/components/ui/command';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { cn } from '@/lib/utils';
-import { NO_SELECTION_STAGE } from '@/data/stages';
-import { StageOption } from '@/components/StageOption';
+import { StageSelectGroups } from '@/components/StageSelectGroups';
 import { useOpponents } from '@/hooks/useOpponents';
 import { useMatches } from '@/hooks/useMatches';
+import { useStageFavorites } from '@/hooks/useStageFavorites';
 import { getGroupedStageOptions } from '@/lib/stageOptions';
 import { alphaSpriteList, TournamentFields, matchTypeLabel } from './MatchForm';
 import {
@@ -202,9 +200,11 @@ export function SetWizard({
     await onSubmit(payloads);
   }
 
-  const { mostPlayed, all: allStages } = useMemo(
-    () => getGroupedStageOptions(allMatches),
-    [allMatches],
+  const { data: stageFavorites } = useStageFavorites();
+  const favoriteStageIds = stageFavorites?.stageIds;
+  const stageGroups = useMemo(
+    () => getGroupedStageOptions(allMatches, favoriteStageIds),
+    [allMatches, favoriteStageIds],
   );
 
   return (
@@ -435,27 +435,7 @@ export function SetWizard({
                         </SelectTrigger>
                       </FormControl>
                       <SelectContent>
-                        <SelectItem value={String(NO_SELECTION_STAGE.id)}>
-                          {NO_SELECTION_STAGE.name}
-                        </SelectItem>
-                        {mostPlayed.length > 0 && (
-                          <SelectGroup>
-                            <SelectLabel>{t('matchForm.mostPlayed')}</SelectLabel>
-                            {mostPlayed.map((s) => (
-                              <SelectItem key={`most-played-${s.id}`} value={String(s.id)}>
-                                <StageOption stage={s} />
-                              </SelectItem>
-                            ))}
-                          </SelectGroup>
-                        )}
-                        <SelectGroup>
-                          <SelectLabel>{t('matchForm.allStages')}</SelectLabel>
-                          {allStages.map((s) => (
-                            <SelectItem key={`all-${s.id}`} value={String(s.id)}>
-                              <StageOption stage={s} />
-                            </SelectItem>
-                          ))}
-                        </SelectGroup>
+                        <StageSelectGroups groups={stageGroups} />
                       </SelectContent>
                     </Select>
                   </FormItem>
