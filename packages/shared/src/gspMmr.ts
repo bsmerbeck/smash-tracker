@@ -256,6 +256,28 @@ export function eliteThresholdGsp(t: number): number {
 }
 
 /**
+ * Observed ratio between the live "max GSP" (the current #1 player's GSP,
+ * as tracked by gsptiers.com from community data) and this model's
+ * main-curve `ceiling(t)`. NOT from the reverse-engineering doc: real top
+ * players sit in the linear top TAIL, above the main curve's asymptote, so
+ * the true max runs ~1% past the ceiling. Captured 2026-07-09 from
+ * gsptiers.com (max 16,368,515 / elite 14,813,136; solving t from that
+ * elite gives ceiling 16,211,524 → ratio 1.00968). Like `SLOPE_TOP`, this
+ * drifts slowly — anything derived from it is an estimate and the UI must
+ * label it as such.
+ */
+export const MAX_GSP_OVER_CEILING = 1.00968;
+
+/**
+ * Estimated CURRENT maximum GSP (the #1 player) at drift parameter `t`:
+ * `ceiling(t)` scaled by the observed `MAX_GSP_OVER_CEILING`. This is the
+ * "max" the gsptiers.com tier ladder is defined against (see gspTiers.ts).
+ */
+export function estimateMaxGsp(t: number): number {
+  return ceilingAt(t) * MAX_GSP_OVER_CEILING;
+}
+
+/**
  * Forward transform: hidden MMR -> GSP, at drift parameter `t`. Applies
  * whichever of the three zones `mmr` falls into.
  */

@@ -215,7 +215,10 @@ describe('GspPage', () => {
     renderGspPage();
 
     expect(await screen.findByText('ELITE')).toBeInTheDocument();
-    expect(screen.getByText(/already in Elite Smash/)).toBeInTheDocument();
+    // The tiers card places the reading in the Elite Smash tier (~14.8M
+    // boundary on today's ladder) with Top 5% (0.95·max ≈ 15.5M) up next —
+    // the in-Elite short-term goal the old Road to Elite card never had.
+    expect(screen.getByText(/[\d,]+ GSP to Top 5%/)).toBeInTheDocument();
   });
 
   it('recalibrates the model when the Elite threshold is edited (stored via the settings API)', async () => {
@@ -475,8 +478,28 @@ describe('GspPage', () => {
     expect(await screen.findByText('Delete this GSP entry?')).toBeInTheDocument();
   });
 
-  describe('Road to Elite states', () => {
-    it('projects net wins on the MMR scale at a >50% win rate', async () => {
+  describe('GSP Tiers card', () => {
+    it('places the reading on the gsptiers.com ladder with progress to the next tier', async () => {
+      getFighters.mockResolvedValue({ primary: [mario.id], secondary: [] });
+      // ~9M GSP sits in Top 50% (boundary 0.5·max ≈ 8.2M) on today's ladder,
+      // with Top 40% (0.6·max ≈ 9.8M) as the next step up.
+      listMatches.mockResolvedValue([
+        makeMatch({ id: 'm1', time: 1, win: true, gsp: 9_000_000 }),
+        makeMatch({ id: 'm2', time: 2, win: true, gsp: 9_100_000 }),
+        makeMatch({ id: 'm3', time: 3, win: false, gsp: 9_050_000 }),
+      ]);
+
+      renderGspPage();
+
+      expect(await screen.findByText('GSP Tiers')).toBeInTheDocument();
+      // The current row carries the "You" badge; the next boundary is named
+      // in the progress caption.
+      expect(screen.getByText('You')).toBeInTheDocument();
+      expect(screen.getByText(/[\d,]+ GSP to Top 40%/)).toBeInTheDocument();
+      expect(screen.getByRole('link', { name: 'gsptiers.com' })).toBeInTheDocument();
+    });
+
+    it('shows the compact net-wins-to-Elite line at a >50% win rate', async () => {
       getFighters.mockResolvedValue({ primary: [mario.id], secondary: [] });
       listMatches.mockResolvedValue([
         makeMatch({ id: 'm1', time: 1, win: true, gsp: 9_000_000 }),
@@ -486,9 +509,7 @@ describe('GspPage', () => {
 
       renderGspPage();
 
-      expect(await screen.findByText(/~\d+ more match/)).toBeInTheDocument();
-      expect(screen.getByText(/MMR\/match/)).toBeInTheDocument();
-      expect(screen.getByText(/to Elite \(MMR 1142\)/)).toBeInTheDocument();
+      expect(await screen.findByText(/≈\d+ net wins to Elite Smash/)).toBeInTheDocument();
     });
 
     it('presents equilibrium kindly at a <=50% win rate', async () => {
@@ -500,31 +521,8 @@ describe('GspPage', () => {
 
       renderGspPage();
 
-      expect(await screen.findByText('Holding steady at your level')).toBeInTheDocument();
-      expect(
-        screen.getByText(/matchmaking thinks this is your level right now/),
-      ).toBeInTheDocument();
-      expect(screen.getByText(/>50% win rate is what moves you up/)).toBeInTheDocument();
-    });
-
-    it('keeps the V10 own-history estimate as a secondary line when it can compute', async () => {
-      getFighters.mockResolvedValue({ primary: [mario.id], secondary: [] });
-      // A longer winning series: enough win-steps for the V10 projection's
-      // linear fallback (>= 2 win-steps) and a >50% win rate for the primary.
-      listMatches.mockResolvedValue([
-        makeMatch({ id: 'm1', time: 1, win: true, gsp: 9_000_000 }),
-        makeMatch({ id: 'm2', time: 2, win: true, gsp: 9_100_000 }),
-        makeMatch({ id: 'm3', time: 3, win: true, gsp: 9_200_000 }),
-        makeMatch({ id: 'm4', time: 4, win: true, gsp: 9_300_000 }),
-      ]);
-
-      renderGspPage();
-
-      // Both the primary MMR projection and the secondary own-history line
-      // contain "~N more matches", hence findAll.
-      const projections = await screen.findAllByText(/~\d+ more match/);
-      expect(projections.length).toBe(2);
-      expect(screen.getByText(/From your own GSP history instead/)).toBeInTheDocument();
+      expect(await screen.findByText(/matchmaking has found your level/)).toBeInTheDocument();
+      expect(screen.getByText(/>50% win rate, not more matches/)).toBeInTheDocument();
     });
   });
 });
