@@ -280,41 +280,48 @@ describe('GspPage', () => {
     expect(screen.getByText(/recalibrated/)).toBeInTheDocument();
   });
 
-  it('logs a match through the Quick Logger and shows the GSP + MMR delta toast', async () => {
-    getFighters.mockResolvedValue({ primary: [mario.id], secondary: [] });
-    listMatches.mockResolvedValue([makeMatch({ id: 'm1', time: 1, win: true, gsp: 9_000_000 })]);
-    const user = userEvent.setup();
+  // 10s budget: this walks the full Radix Select + toggle + type + submit
+  // flow and sat right at CI's 5s default once the page gained the
+  // readings/live-thresholds queries.
+  it(
+    'logs a match through the Quick Logger and shows the GSP + MMR delta toast',
+    { timeout: 10_000 },
+    async () => {
+      getFighters.mockResolvedValue({ primary: [mario.id], secondary: [] });
+      listMatches.mockResolvedValue([makeMatch({ id: 'm1', time: 1, win: true, gsp: 9_000_000 })]);
+      const user = userEvent.setup();
 
-    renderGspPage();
+      renderGspPage();
 
-    await screen.findByText('Quick Logger');
+      await screen.findByText('Quick Logger');
 
-    await user.click(screen.getByRole('combobox', { name: 'Opponent Character' }));
-    await user.click(await screen.findByRole('option', { name: luigi.name }));
+      await user.click(screen.getByRole('combobox', { name: 'Opponent Character' }));
+      await user.click(await screen.findByRole('option', { name: luigi.name }));
 
-    await user.click(screen.getByRole('radio', { name: 'Win' }));
+      await user.click(screen.getByRole('radio', { name: 'Win' }));
 
-    const gspInput = screen.getByLabelText('GSP After Match');
-    await user.clear(gspInput);
-    await user.type(gspInput, '9500000');
+      const gspInput = screen.getByLabelText('GSP After Match');
+      await user.clear(gspInput);
+      await user.type(gspInput, '9500000');
 
-    await user.click(screen.getByRole('button', { name: 'Log Match' }));
+      await user.click(screen.getByRole('button', { name: 'Log Match' }));
 
-    await waitFor(() => expect(createMatch).toHaveBeenCalledTimes(1));
-    expect(createMatch).toHaveBeenCalledWith(
-      expect.objectContaining({
-        fighter_id: mario.id,
-        opponent_id: luigi.id,
-        matchType: 'quickplay',
-        win: true,
-        gsp: 9_500_000,
-      }),
-    );
-    // The toast carries both deltas: raw GSP and the estimated MMR change
-    // (both readings land on the main curve, so the conversion is "clean").
-    expect(toastSuccess).toHaveBeenCalledWith(expect.stringContaining('+500,000 GSP'));
-    expect(toastSuccess).toHaveBeenCalledWith(expect.stringMatching(/≈ \+\d+ MMR/));
-  });
+      await waitFor(() => expect(createMatch).toHaveBeenCalledTimes(1));
+      expect(createMatch).toHaveBeenCalledWith(
+        expect.objectContaining({
+          fighter_id: mario.id,
+          opponent_id: luigi.id,
+          matchType: 'quickplay',
+          win: true,
+          gsp: 9_500_000,
+        }),
+      );
+      // The toast carries both deltas: raw GSP and the estimated MMR change
+      // (both readings land on the main curve, so the conversion is "clean").
+      expect(toastSuccess).toHaveBeenCalledWith(expect.stringContaining('+500,000 GSP'));
+      expect(toastSuccess).toHaveBeenCalledWith(expect.stringMatching(/≈ \+\d+ MMR/));
+    },
+  );
 
   it('pins favorited stages atop the Quick Logger stage picker', async () => {
     getFighters.mockResolvedValue({ primary: [mario.id], secondary: [] });
