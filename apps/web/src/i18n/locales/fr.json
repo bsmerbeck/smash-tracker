@@ -1048,5 +1048,110 @@
       "verifiedToast": "Compte parry.gg vérifié !",
       "codeNotFound": "Code de vérification introuvable pour l'instant. Veuillez réessayer."
     }
+  },
+  "profile": {
+    "title": "Profil",
+    "account": {
+      "title": "Compte",
+      "description": "Votre identité smash-tracker.",
+      "parryggNoEmailLinked": "Compte parry.gg (sans e-mail) — lié à {{tag}}",
+      "parryggNoEmail": "Compte parry.gg (sans e-mail)",
+      "memberSince": "Membre depuis {{date}}",
+      "signInMethods": "Méthodes de connexion",
+      "methodEmailPassword": "E-mail et mot de passe",
+      "methodParrygg": "Vérification parry.gg",
+      "methodCustom": "Connexion personnalisée"
+    },
+    "security": {
+      "title": "Sécurité",
+      "descPassword": "Changez le mot de passe que vous utilisez pour vous connecter.",
+      "descResetOnly": "Ajoutez la connexion par mot de passe à votre compte.",
+      "descNoEmail": "Comment votre compte se connecte.",
+      "resetExplainer": "Vous vous connectez actuellement sans mot de passe. L'envoi d'un e-mail de réinitialisation vous permet d'en définir un, pour pouvoir aussi vous connecter avec votre e-mail et un mot de passe à l'avenir.",
+      "sendReset": "Envoyer l'e-mail de réinitialisation",
+      "sending": "Envoi…",
+      "resetSent": "E-mail de réinitialisation envoyé à {{email}}. Suivez le lien pour ajouter la connexion par mot de passe.",
+      "noEmailBody": "Votre compte n'a ni mot de passe ni e-mail — la connexion passe par la vérification du profil parry.gg. Gérez ce lien depuis <integrationsLink>Intégrations</integrationsLink>."
+    },
+    "password": {
+      "currentLabel": "Mot de passe actuel",
+      "newLabel": "Nouveau mot de passe",
+      "confirmLabel": "Confirmer le nouveau mot de passe",
+      "submit": "Changer le mot de passe",
+      "updating": "Mise à jour…",
+      "updated": "Mot de passe mis à jour !",
+      "currentRequired": "Le mot de passe actuel est requis",
+      "minLength": "Le mot de passe doit contenir au moins 6 caractères",
+      "confirmRequired": "Veuillez confirmer votre nouveau mot de passe",
+      "mismatch": "Les mots de passe ne correspondent pas",
+      "wrongCurrent": "Le mot de passe actuel est incorrect.",
+      "weak": "Le mot de passe doit contenir au moins 6 caractères.",
+      "requiresRecentLogin": "Pour votre sécurité, déconnectez-vous puis reconnectez-vous, et réessayez.",
+      "genericError": "Une erreur est survenue. Veuillez réessayer."
+    },
+    "connected": {
+      "title": "Comptes connectés",
+      "description": "Liens start.gg et parry.gg pour l'import automatique des matchs.",
+      "linked": "Lié",
+      "notLinked": "Non lié",
+      "manage": "Gérer dans Intégrations"
+    },
+    "fighters": {
+      "title": "Combattants",
+      "description": "Vos combattants principaux et secondaires de Smash Ultimate.",
+      "loading": "Chargement de vos combattants...",
+      "primary": "Principaux",
+      "secondary": "Secondaires",
+      "none": "Aucun sélectionné",
+      "edit": "Modifier les combattants"
+    },
+    "favoriteStages": {
+      "title": "Stages favoris",
+      "description": "Épinglés en haut des sélecteurs de stage lors de l'enregistrement des matchs — pratique pour la rotation habituelle quickplay/Elite Smash.",
+      "loading": "Chargement de vos stages favoris...",
+      "empty": "Aucun stage favori pour l'instant.",
+      "removeAria": "Retirer {{name}} des favoris",
+      "add": "Ajouter un stage favori...",
+      "addAria": "Ajouter un stage favori",
+      "searchPlaceholder": "Rechercher des stages...",
+      "noStage": "Aucun stage trouvé.",
+      "saveError": "Impossible d'enregistrer vos stages favoris. Veuillez réessayer."
+    },
+    "billing": {
+      "title": "Facturation",
+      "description": "Crédits de rapports de scouting IA.",
+      "freeAccess": "Accès gratuit",
+      "credits_one": "{{count}} crédit",
+      "credits_other": "{{count}} crédits",
+      "packsStartAt_one": "Les packs commencent à {{price}} pour {{count}} rapport.",
+      "packsStartAt_other": "Les packs commencent à {{price}} pour {{count}} rapports.",
+      "buyCredits": "Acheter des crédits"
+    },
+    "data": {
+      "title": "Vos données",
+      "description": "Ce que smash-tracker a enregistré pour vous.",
+      "totalMatches": "Matchs au total",
+      "fromStartgg": "Depuis start.gg",
+      "fromParrygg": "Depuis parry.gg",
+      "manual": "Saisis manuellement",
+      "groupsJoined": "Groupes rejoints",
+      "aiReports": "Rapports IA générés"
+    }
+  },
+  "characterSelect": {
+    "primaryHeading": "Choisissez vos principaux",
+    "primaryDescription": "Commencez par sélectionner vos combattants principaux. Vous pouvez chercher avec le champ ci-dessous. Pour retirer un personnage, cliquez simplement à nouveau dessus. Quand vous avez terminé, appuyez sur Enregistrer.",
+    "secondaryHeading": "Choisissez vos secondaires",
+    "secondaryDescription": "Commencez par sélectionner vos combattants secondaires. Vous pouvez chercher avec le champ ci-dessous. Pour retirer un personnage, cliquez simplement à nouveau dessus. Quand vous avez terminé, appuyez sur Enregistrer pour commencer à utiliser Smash Tracker !",
+    "saveAndSecondaries": "Enregistrer et choisir les secondaires",
+    "saveAndDashboard": "Enregistrer et aller au tableau de bord",
+    "saveAndPrimaries": "Enregistrer et choisir les principaux",
+    "loading": "Chargement de vos combattants...",
+    "selected_one": "Sélectionnés ({{count}})",
+    "selected_other": "Sélectionnés ({{count}})",
+    "emptySelected": "Aucun combattant sélectionné pour le moment. Cliquez sur un combattant ci-dessous pour l’ajouter.",
+    "filterPlaceholder": "Filtrer par nom...",
+    "saved": "Combattants enregistrés !",
+    "saveFailed": "Impossible d'enregistrer les combattants. Veuillez réessayer."
   }
 }

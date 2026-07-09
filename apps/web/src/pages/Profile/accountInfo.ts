@@ -1,4 +1,5 @@
 import type { User as FirebaseUser } from 'firebase/auth';
+import type { TFunction } from 'i18next';
 
 /** Which of the three mutually-exclusive Security card states applies to the signed-in user. */
 export type SecurityState = 'password' | 'reset-only' | 'no-email';
@@ -36,10 +37,11 @@ export function getSecurityState(
 export function describeSignInMethods(
   user: Pick<FirebaseUser, 'providerData'>,
   links: { startggLinked: boolean; parryggLinked: boolean },
+  t: TFunction,
 ): string {
   const known = user.providerData
     .map((p): string | null => {
-      if (p.providerId === 'password') return 'Email & password';
+      if (p.providerId === 'password') return t('profile.account.methodEmailPassword');
       if (p.providerId === 'google.com') return 'Google';
       return null;
     })
@@ -53,13 +55,13 @@ export function describeSignInMethods(
     return 'start.gg';
   }
   if (links.parryggLinked) {
-    return 'parry.gg verification';
+    return t('profile.account.methodParrygg');
   }
-  return 'Custom sign-in';
+  return t('profile.account.methodCustom');
 }
 
-/** "Member since <month year>" from Firebase's `metadata.creationTime` (a `Date`-parseable string), or null if absent. */
-export function formatMemberSince(creationTime: string | undefined): string | null {
+/** "<Month year>" from Firebase's `metadata.creationTime` (a `Date`-parseable string), or null if absent. */
+export function formatMemberSince(creationTime: string | undefined, locale: string): string | null {
   if (!creationTime) {
     return null;
   }
@@ -67,5 +69,5 @@ export function formatMemberSince(creationTime: string | undefined): string | nu
   if (Number.isNaN(date.getTime())) {
     return null;
   }
-  return date.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+  return date.toLocaleDateString(locale, { month: 'long', year: 'numeric' });
 }

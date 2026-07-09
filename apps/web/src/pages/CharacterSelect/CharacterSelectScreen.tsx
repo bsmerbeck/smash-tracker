@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router';
+import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -36,6 +37,7 @@ export function CharacterSelectScreen({
   description,
   destinations,
 }: CharacterSelectScreenProps) {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const { data: fighters, isLoading } = useFighters();
   const saveFighters = useSaveFighters();
@@ -82,15 +84,15 @@ export function CharacterSelectScreen({
         : { primary: fighters?.primary ?? [], secondary: selectedIds };
     try {
       await saveFighters.mutateAsync(input);
-      toast.success('Fighters saved!');
+      toast.success(t('characterSelect.saved'));
       navigate(destination.href);
     } catch {
-      toast.error('Failed to save fighters. Please try again.');
+      toast.error(t('characterSelect.saveFailed'));
     }
   }
 
   if (isLoading) {
-    return <div className="text-muted-foreground">Loading your fighters...</div>;
+    return <div className="text-muted-foreground">{t('characterSelect.loading')}</div>;
   }
 
   return (
@@ -102,12 +104,12 @@ export function CharacterSelectScreen({
 
       <div className="flex flex-col gap-3 rounded-lg border p-4">
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <h2 className="text-lg font-medium">Selected ({selectedSprites.length})</h2>
+          <h2 className="text-lg font-medium">
+            {t('characterSelect.selected', { count: selectedSprites.length })}
+          </h2>
         </div>
         {selectedSprites.length === 0 ? (
-          <p className="text-sm text-muted-foreground">
-            No fighters selected yet. Click a fighter below to add them.
-          </p>
+          <p className="text-sm text-muted-foreground">{t('characterSelect.emptySelected')}</p>
         ) : (
           <div className="flex flex-wrap gap-2">
             {selectedSprites.map((sprite) => (
@@ -124,7 +126,7 @@ export function CharacterSelectScreen({
           <Input
             value={filter}
             onChange={(e) => setFilter(e.target.value)}
-            placeholder="Filter by name..."
+            placeholder={t('characterSelect.filterPlaceholder')}
             className="max-w-xs"
           />
           <div className="flex flex-1 flex-wrap justify-end gap-2">

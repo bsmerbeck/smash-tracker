@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next';
 import { useAuth } from '@/hooks/useAuth';
 import { useStartggStatus } from '@/hooks/useStartgg';
 import { useParryggStatus } from '@/hooks/useParrygg';
@@ -19,6 +20,7 @@ import { YourDataCard } from './components/YourDataCard';
  * change, sign-out-everywhere, avatar upload.
  */
 export function ProfilePage() {
+  const { t } = useTranslation();
   const { user } = useAuth();
   const startgg = useStartggStatus();
   const parrygg = useParryggStatus();
@@ -29,7 +31,7 @@ export function ProfilePage() {
 
   return (
     <div className="mx-auto flex max-w-2xl flex-col gap-6">
-      <h1 className="text-2xl font-semibold tracking-tight">Profile</h1>
+      <h1 className="text-2xl font-semibold tracking-tight">{t('profile.title')}</h1>
 
       <AccountCard
         user={user}

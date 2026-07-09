@@ -1,4 +1,5 @@
 import { Link } from 'react-router';
+import { useTranslation } from 'react-i18next';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { useStartggStatus } from '@/hooks/useStartgg';
@@ -11,14 +12,15 @@ import { useParryggStatus } from '@/hooks/useParrygg';
  * mutations of its own.
  */
 export function ConnectedAccountsCard() {
+  const { t } = useTranslation();
   const startgg = useStartggStatus();
   const parrygg = useParryggStatus();
 
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Connected accounts</CardTitle>
-        <CardDescription>start.gg and parry.gg links for automatic match import.</CardDescription>
+        <CardTitle>{t('profile.connected.title')}</CardTitle>
+        <CardDescription>{t('profile.connected.description')}</CardDescription>
       </CardHeader>
       <CardContent className="flex flex-col gap-3">
         <div className="flex items-center justify-between gap-2 text-sm">
@@ -26,10 +28,10 @@ export function ConnectedAccountsCard() {
           {startgg.data?.linked ? (
             <span className="flex items-center gap-2">
               {startgg.data.gamerTag}
-              <Badge variant="success">Linked</Badge>
+              <Badge variant="success">{t('profile.connected.linked')}</Badge>
             </span>
           ) : (
-            <span className="text-muted-foreground">Not linked</span>
+            <span className="text-muted-foreground">{t('profile.connected.notLinked')}</span>
           )}
         </div>
         <div className="flex items-center justify-between gap-2 text-sm">
@@ -38,18 +40,20 @@ export function ConnectedAccountsCard() {
             <span className="flex items-center gap-2">
               {parrygg.data.gamerTag}
               <Badge variant={parrygg.data.verified ? 'success' : 'outline'}>
-                {parrygg.data.verified ? 'Verified' : 'Unverified'}
+                {parrygg.data.verified
+                  ? t('integrations.parrygg.verified')
+                  : t('integrations.parrygg.unverified')}
               </Badge>
             </span>
           ) : (
-            <span className="text-muted-foreground">Not linked</span>
+            <span className="text-muted-foreground">{t('profile.connected.notLinked')}</span>
           )}
         </div>
         <Link
           to="/settings/integrations"
           className="text-sm text-muted-foreground underline underline-offset-4 hover:text-foreground"
         >
-          Manage on Integrations
+          {t('profile.connected.manage')}
         </Link>
       </CardContent>
     </Card>
