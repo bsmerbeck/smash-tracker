@@ -1,6 +1,7 @@
 import { useState } from 'react';
+import { Link } from 'react-router';
 import { useTranslation } from 'react-i18next';
-import { ExternalLink, Pencil } from 'lucide-react';
+import { ExternalLink, Pencil, Video } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -124,16 +125,14 @@ function VodLink({ set }: { set: TournamentSet }) {
     <div className="flex flex-wrap items-center gap-2">
       {vodUrl && (
         <>
-          <a
-            href={vodUrl}
-            target="_blank"
-            rel="noreferrer"
+          <Link
+            to={`/vod?match=${vodMatch.id}`}
             aria-label={t('tournaments.timeline.watchVodAria', { set: setLabel })}
             className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
           >
             {t('tournaments.timeline.watchVod')}
-            <ExternalLink className="size-3.5" />
-          </a>
+            <Video className="size-3.5" />
+          </Link>
           <VodTimestampChips vodUrl={vodUrl} match={vodMatch} />
         </>
       )}

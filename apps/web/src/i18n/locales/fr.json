@@ -437,6 +437,7 @@
       },
       "editVod": "Modifier les notes VOD",
       "addVod": "Ajouter des notes VOD",
+      "watchVod": "Regarder la VOD",
       "synced": "Synchronisé",
       "syncedTitle": "Synchronisé depuis {{source}} — les données sont gérées par la synchronisation",
       "editMatch": "Modifier le match",
