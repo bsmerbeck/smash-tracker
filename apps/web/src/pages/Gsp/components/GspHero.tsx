@@ -10,12 +10,9 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useUpdateGspSettings } from '@/hooks/useGspSettings';
 import { parseGspNumber } from '../lib/parseGspNumber';
-import {
-  GSP_MMR_DOC_URL,
-  calibrationFromSettings,
-  computedEliteThreshold,
-  estimateMmrAt,
-} from '../lib/gspMmrModel';
+import { GSP_MMR_DOC_URL, computedEliteThreshold, estimateMmrAt } from '../lib/gspMmrModel';
+import { useGspLive } from '@/hooks/useGspLive';
+import { useModelCalibration } from '../lib/useModelCalibration';
 import { useNowMs } from '../lib/useNowMs';
 
 const ELITEGSP_URL = 'https://elitegsp.com';
@@ -58,7 +55,7 @@ export function GspHero({ series, settings }: { series: GspPoint[]; settings: Gs
   const lastPoint = series.length > 0 ? series[series.length - 1]! : null;
   const winRate = getRecentGspWinRate(series);
 
-  const calibration = calibrationFromSettings(settings);
+  const calibration = useModelCalibration(settings);
   const estimate =
     lastPoint !== null ? estimateMmrAt(lastPoint.gsp, lastPoint.time, calibration) : null;
   const roundedMmr = estimate !== null ? Math.round(estimate.mmr) : null;
@@ -162,11 +159,18 @@ function EliteThresholdCard({ settings }: { settings: GspSettings }) {
   const updateSettings = useUpdateGspSettings();
 
   const nowMs = useNowMs();
-  const calibration = calibrationFromSettings(settings);
+  const { data: live } = useGspLive();
+  const calibration = useModelCalibration(settings);
   const computed = computedEliteThreshold(nowMs, calibration);
 
-  const calibrationLabel =
-    settings.updatedAt > 0
+  // V17.1: say which observation is actually calibrating the number — the
+  // live gsptiers.com reading wins whenever it's newer than the manual edit
+  // (matching bestCalibration's pick).
+  const liveActive =
+    live != null && (settings.updatedAt <= 0 || live.fetchedAt >= settings.updatedAt);
+  const calibrationLabel = liveActive
+    ? t('gsp.hero.liveCalibrated', { date: new Date(live.fetchedAt).toLocaleDateString() })
+    : settings.updatedAt > 0
       ? t('gsp.hero.recalibrated', { date: new Date(settings.updatedAt).toLocaleDateString() })
       : t('gsp.hero.fromAnchor');
 

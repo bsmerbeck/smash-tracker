@@ -16,7 +16,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { chartColors, darkChartOptions, redLineDataset } from '@/lib/chartTheme';
 import { computeRatingHistory } from '@/lib/glicko';
 import { GSP_VS_GLICKO_MIN_POINTS, buildGspVsGlickoData } from '../lib/gspVsGlicko';
-import { calibrationFromSettings } from '../lib/gspMmrModel';
+import { useModelCalibration } from '../lib/useModelCalibration';
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Tooltip, Legend);
 
@@ -100,17 +100,15 @@ export function GspVsGlicko({
   settings: GspSettings;
 }) {
   const { t, i18n } = useTranslation();
+  // Hook must run before the early return below.
+  const calibration = useModelCalibration(settings);
   const { periods } = computeRatingHistory(allMatches);
 
   if (gspSeries.length < GSP_VS_GLICKO_MIN_POINTS || periods.length < GSP_VS_GLICKO_MIN_POINTS) {
     return null;
   }
 
-  const { mmr, glicko } = buildGspVsGlickoData(
-    gspSeries,
-    periods,
-    calibrationFromSettings(settings),
-  );
+  const { mmr, glicko } = buildGspVsGlickoData(gspSeries, periods, calibration);
 
   return (
     <Card>

@@ -306,7 +306,8 @@
       "belowElite": "MMR {{mmr}} · sous l'Élite ({{elite}})",
       "recentWinRate": "Taux de victoire récent",
       "lastNGames_one": "dernier match",
-      "lastNGames_other": "{{count}} derniers matchs"
+      "lastNGames_other": "{{count}} derniers matchs",
+      "liveCalibrated": "mis à jour automatiquement le {{date}} depuis gsptiers.com"
     },
     "curve": {
       "title": "Courbe GSP",
