@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next';
 import { ChevronLeft, ChevronRight, History } from 'lucide-react';
 import type { ScoutReportRecord } from '@smash-tracker/shared';
 import { Button } from '@/components/ui/button';
@@ -18,6 +19,7 @@ export function ScoutReportHistorySelector({
   index: number;
   onChange: (index: number) => void;
 }) {
+  const { t, i18n } = useTranslation();
   const total = reports.length;
   const current = reports[index];
   if (!current) {
@@ -40,12 +42,13 @@ export function ScoutReportHistorySelector({
         className="size-7"
         disabled={index >= total - 1}
         onClick={() => onChange(index + 1)}
-        aria-label="Older report"
+        aria-label={t('scout.historySelector.older')}
       >
         <ChevronLeft className="size-4" />
       </Button>
       <span>
-        Report {ordinal} of {total} · {new Date(current.createdAt).toLocaleDateString()}
+        {t('scout.historySelector.reportOf', { ordinal, total })} ·{' '}
+        {new Date(current.createdAt).toLocaleDateString(i18n.language)}
       </span>
       <Button
         type="button"
@@ -54,7 +57,7 @@ export function ScoutReportHistorySelector({
         className="size-7"
         disabled={index <= 0}
         onClick={() => onChange(index - 1)}
-        aria-label="Newer report"
+        aria-label={t('scout.historySelector.newer')}
       >
         <ChevronRight className="size-4" />
       </Button>

@@ -1,4 +1,5 @@
 import { Link } from 'react-router';
+import { useTranslation } from 'react-i18next';
 import type { TournamentEntry } from '@smash-tracker/shared';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -8,17 +9,17 @@ import {
   type TournamentSet,
 } from '../tournamentHistory';
 
-function formatDate(time: number): string {
-  return new Date(time).toLocaleDateString('en-US', {
+function formatDate(time: number, locale: string): string {
+  return new Date(time).toLocaleDateString(locale, {
     month: 'short',
     day: 'numeric',
     year: 'numeric',
   });
 }
 
-function formatDateRange(startTime: number, endTime: number): string {
-  const start = formatDate(startTime);
-  const end = formatDate(endTime);
+function formatDateRange(startTime: number, endTime: number, locale: string): string {
+  const start = formatDate(startTime, locale);
+  const end = formatDate(endTime, locale);
   return start === end ? start : `${start} – ${end}`;
 }
 
@@ -27,14 +28,15 @@ function formatDateRange(startTime: number, endTime: number): string {
  * and a tooltip (native `title`) with the full stage name + date + result.
  */
 function GameChips({ games }: { games: TournamentSet['games'] }) {
+  const { t, i18n } = useTranslation();
   return (
-    <div className="flex flex-wrap gap-1" aria-label="Games">
+    <div className="flex flex-wrap gap-1" aria-label={t('opponents.history.gamesAria')}>
       {games.map((game) => (
         <span
           key={game.match.id}
-          title={`${game.stageName} — ${game.win ? 'Win' : 'Loss'} — ${new Date(
+          title={`${game.stageName} — ${game.win ? t('common.win') : t('common.loss')} — ${new Date(
             game.match.time,
-          ).toLocaleDateString()}`}
+          ).toLocaleDateString(i18n.language)}`}
           className={`inline-flex size-7 items-center justify-center rounded text-[10px] font-semibold ${
             game.win
               ? 'bg-emerald-600/15 text-emerald-700 dark:text-emerald-400'
@@ -49,6 +51,7 @@ function GameChips({ games }: { games: TournamentSet['games'] }) {
 }
 
 function SetRow({ set }: { set: TournamentSet }) {
+  const { t } = useTranslation();
   return (
     <li
       className={`flex flex-wrap items-center justify-between gap-3 rounded-md border p-2 ${
@@ -60,7 +63,7 @@ function SetRow({ set }: { set: TournamentSet }) {
           {set.roundLabel}
           {set.isLosersSide && (
             <Badge variant="destructive" className="ml-2 align-middle">
-              Losers
+              {t('opponents.history.losers')}
             </Badge>
           )}
         </span>
@@ -80,6 +83,7 @@ function TournamentBlockCard({
   block: TournamentBlock;
   registryEntry: TournamentEntry | null;
 }) {
+  const { t, i18n } = useTranslation();
   const title = block.displayName;
   return (
     <div className="rounded-lg border">
@@ -96,14 +100,17 @@ function TournamentBlockCard({
             <span className="font-semibold">{title}</span>
           )}
           <p className="text-xs text-muted-foreground">
-            {formatDateRange(block.startTime, block.endTime)}
+            {formatDateRange(block.startTime, block.endTime, i18n.language)}
           </p>
         </div>
         <span className="text-sm font-semibold">
-          {block.wins}-{block.losses} vs them here
+          {t('opponents.history.vsThemHere', { wins: block.wins, losses: block.losses })}
         </span>
       </div>
-      <ul className="flex flex-col gap-2 p-3" aria-label={`Sets vs them at ${title}`}>
+      <ul
+        className="flex flex-col gap-2 p-3"
+        aria-label={t('opponents.history.setsAria', { title })}
+      >
         {block.sets.map((set) => (
           <SetRow key={set.setId} set={set} />
         ))}
@@ -126,16 +133,15 @@ export function TournamentHistory({
   blocks: TournamentBlock[];
   tournamentEntries: TournamentEntry[];
 }) {
+  const { t } = useTranslation();
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Tournament History</CardTitle>
+        <CardTitle>{t('opponents.history.title')}</CardTitle>
       </CardHeader>
       <CardContent>
         {blocks.length === 0 ? (
-          <p className="text-sm text-muted-foreground">
-            No tournament sets vs this player yet — resync start.gg if you&apos;ve played recently.
-          </p>
+          <p className="text-sm text-muted-foreground">{t('opponents.history.empty')}</p>
         ) : (
           <div className="flex flex-col gap-4">
             {blocks.map((block) => (

@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next';
 import type { LeaderboardEntry } from '@smash-tracker/shared';
 import {
   Table,
@@ -16,6 +17,9 @@ import { formatRelativeDate } from '@/lib/relativeDate';
  * (`isYou`) is visually highlighted.
  */
 export function GroupLeaderboardTable({ entries }: { entries: LeaderboardEntry[] }) {
+  // Only `t` for the relative-date helper here; the rest of this table's
+  // strings are extracted with the Groups page pass.
+  const { t } = useTranslation();
   return (
     <Table>
       <TableHeader>
@@ -43,7 +47,7 @@ export function GroupLeaderboardTable({ entries }: { entries: LeaderboardEntry[]
             </TableCell>
             <TableCell className="text-right tabular-nums">{entry.games}</TableCell>
             <TableCell className="text-right text-muted-foreground">
-              {entry.lastMatchAt != null ? formatRelativeDate(entry.lastMatchAt) : 'never'}
+              {entry.lastMatchAt != null ? formatRelativeDate(entry.lastMatchAt, t) : 'never'}
             </TableCell>
           </TableRow>
         ))}

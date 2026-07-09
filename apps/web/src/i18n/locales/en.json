@@ -101,6 +101,12 @@
       "view": "View on start.gg",
       "viewName": "View {{name}} on start.gg"
     },
+    "relativeDate": {
+      "justNow": "just now",
+      "minutesAgo": "{{count}}m ago",
+      "hoursAgo": "{{count}}h ago",
+      "daysAgo": "{{count}}d ago"
+    },
     "filteredNotice": {
       "message": "No matches match the current filters.",
       "clear": "Clear filters"
@@ -676,6 +682,251 @@
       "verdictFollowed": "followed",
       "verdictAgainst": "against",
       "verdictNeutral": "neutral on"
+    }
+  },
+  "billing": {
+    "title": "Buy report credits",
+    "description": "Each AI scouting report costs one credit. Pick a pack — you'll be redirected to Stripe to complete the purchase.",
+    "perReport": "{{price}} per report",
+    "checkoutError": "Something went wrong starting checkout. Please try again.",
+    "redirecting": "Redirecting…",
+    "continue": "Continue to checkout"
+  },
+  "opponents": {
+    "loading": "Loading scouting reports...",
+    "selectPrompt": "Select an opponent from the list to see their scouting report.",
+    "empty": {
+      "title": "No matches to scout yet!",
+      "body": "Report a match on the Dashboard, or connect start.gg to sync your tournament sets, and opponent scouting reports will show up here.",
+      "connectStartgg": "Connect start.gg"
+    },
+    "noTags": {
+      "title": "None of your matches have an opponent tag recorded.",
+      "body": "Add an opponent name when reporting a match to unlock scouting reports for them."
+    },
+    "list": {
+      "title": "Opponents",
+      "faced_one": "{{count}} opponent faced",
+      "faced_other": "{{count}} opponents faced",
+      "searchPlaceholder": "Search opponents...",
+      "searchAria": "Search opponents",
+      "sortAria": "Sort opponents",
+      "sortMostPlayed": "Most played",
+      "sortRecent": "Recently played",
+      "sortBestRate": "Highest win rate",
+      "sortWorstRate": "Lowest win rate",
+      "sortAlphabetical": "A → Z",
+      "minGames": "3+ games",
+      "minGamesAria": "Only show opponents with 3 or more games",
+      "emptyNone": "No opponents faced yet.",
+      "emptyFiltered": "No opponents match your filters.",
+      "rowActions": "Actions for {{name}}",
+      "mergeInto": "Merge into..."
+    },
+    "source": {
+      "mixedAria": "mixed sources",
+      "verified": "verified",
+      "manual": "manual",
+      "manualAria": "manually entered",
+      "startggAria": "start.gg-verified",
+      "parryggAria": "parry.gg-verified"
+    },
+    "header": {
+      "playedRange": "First played {{first}} · Last played {{last}}",
+      "encounterSpan": "{{start}} and {{end}}",
+      "metAt_one": "Met at {{count}} tournament between {{span}}",
+      "metAt_other": "Met at {{count}} tournaments between {{span}}",
+      "rateOverGames_one": "{{rate}}% over {{count}} game",
+      "rateOverGames_other": "{{rate}}% over {{count}} games"
+    },
+    "whatTheyPlay": {
+      "title": "What They Play",
+      "description": "Ordered by how reliably you beat it.",
+      "empty": "No characters recorded yet.",
+      "character": "Character"
+    },
+    "stages": {
+      "title": "Stages",
+      "empty": "No stage data recorded yet."
+    },
+    "trend": {
+      "title": "H2H Trend",
+      "empty": "Not enough matches for a trend yet.",
+      "label": "Rolling win rate (last {{count}})"
+    },
+    "encounters": {
+      "title": "Recent Encounters",
+      "empty": "No encounters recorded yet.",
+      "aria": "Recent encounters"
+    },
+    "history": {
+      "title": "Tournament History",
+      "empty": "No tournament sets vs this player yet — resync start.gg if you've played recently.",
+      "gamesAria": "Games",
+      "losers": "Losers",
+      "vsThemHere": "{{wins}}-{{losses}} vs them here",
+      "setsAria": "Sets vs them at {{title}}"
+    },
+    "merge": {
+      "title": "Merge \"{{name}}\" into...",
+      "description": "Choose the opponent name that should be treated as the same person. Their matches will be combined everywhere.",
+      "noMatches": "No matching opponents.",
+      "warning": "\"{{opponent}}\" is {{label}} and \"{{target}}\" is manual-only. To keep the verified tag as canonical, we'll merge \"{{target}}\" into \"{{opponent}}\" instead.",
+      "anyway": "Merge \"{{opponent}}\" into \"{{target}}\" anyway",
+      "merging": "Merging...",
+      "merge": "Merge"
+    },
+    "merged": {
+      "title": "Merged names",
+      "description": "These names are folded into \"{{name}}\". Un-merge to track them separately again.",
+      "unmerge": "Un-merge"
+    },
+    "tendencies": {
+      "title": "Tendencies",
+      "description": "Your own scouting notes for this opponent — not derived from match history.",
+      "habits": "Habits",
+      "habitsPlaceholder": "Opening habits, punish routes, recovery mixups...",
+      "banThese": "Ban these (max {{count}})",
+      "banAria": "Stages to ban against this opponent",
+      "watchFor": "Watch for",
+      "watchForPlaceholder": "Reads, mind games, tech chases to expect next set...",
+      "saving": "Saving...",
+      "deleteNote": "Delete note",
+      "banTheseView": "Ban these",
+      "banViewAria": "Stages to ban",
+      "savedAt": "Saved {{date}}",
+      "edit": "Edit",
+      "empty": "No scouting notes yet. Jot down habits, stages to ban, or things to watch for before your next set.",
+      "addNote": "Add a note"
+    },
+    "export": {
+      "print": "Export H2H",
+      "copy": "Copy as text",
+      "copied": "Copied!"
+    }
+  },
+  "scout": {
+    "title": "Scout a Player",
+    "prompt": "Paste a start.gg profile URL, slug, or player id above to pull up their public tournament history.",
+    "promptWithParry": "Paste a start.gg or parry.gg profile URL, slug/tag, or player id above to pull up their public tournament history.",
+    "errors": {
+      "notFound": "We couldn't find a start.gg player for that query. Double-check the URL, slug, or player id.",
+      "badQuery": "That doesn't look like a start.gg profile URL, slug, or player id.",
+      "rateLimited": "start.gg is rate-limiting requests right now. Try again in a minute.",
+      "scoutFallback": "Something went wrong while scouting that player.",
+      "generateFallback": "Something went wrong while generating the report."
+    },
+    "form": {
+      "description": "Paste a start.gg profile URL, a \"user/<slug>\" reference, or a numeric player id to pull up their public tournament history before you play them.",
+      "descriptionWithParry": "Paste a start.gg or parry.gg profile URL, a bare gamer tag, a \"user/<slug>\" reference, or a numeric player id to pull up their public tournament history before you play them.",
+      "placeholder": "https://start.gg/user/07dc2239",
+      "placeholderWithParry": "https://start.gg/user/07dc2239 or a parry.gg profile URL",
+      "inputAria": "start.gg profile URL, slug, or player id",
+      "inputAriaWithParry": "start.gg or parry.gg profile URL, slug/tag, or player id",
+      "scout": "Scout",
+      "scouting": "Scouting…",
+      "source": "Source:",
+      "sourceAria": "Scouting source",
+      "detectedParry": "Detected a parry.gg profile URL.",
+      "pending": "Pulling their public tournament history — this can take a few seconds."
+    },
+    "report": {
+      "generate": "Generate AI report",
+      "regenerate": "Regenerate report",
+      "generating": "Generating report…",
+      "generatingHint": "Generating report — this usually takes a minute or two."
+    },
+    "billing": {
+      "paymentReceived": "Payment received — your credits will land shortly if they haven't already.",
+      "checkoutCancelled": "Checkout cancelled — no charge was made.",
+      "freeAccess": "Free access",
+      "credits_one": "{{count}} credit",
+      "credits_other": "{{count}} credits",
+      "buyCredits": "Buy credits",
+      "costLine": "Each report costs 1 credit.",
+      "packFor": "{{label}} for {{price}}",
+      "outOfCredits": "You're out of credits.",
+      "buyPack": "Buy a pack",
+      "toGenerate": "to generate this report."
+    },
+    "header": {
+      "viewOn": "View {{name}} on {{source}}",
+      "profile": "{{source}} profile",
+      "sample": "Public {{source}} data · sampled last {{sets}} sets ({{games}} games)"
+    },
+    "characters": {
+      "title": "Character Usage",
+      "description": "What they play, most-used first.",
+      "empty": "No sampled games yet."
+    },
+    "stages": {
+      "title": "Stage Performance",
+      "description": "Their results by stage."
+    },
+    "events": {
+      "title": "Recent Events",
+      "description": "Most recent activity first.",
+      "empty": "No recent events sampled.",
+      "placement": "Placement",
+      "entrants": "Entrants"
+    },
+    "commonOpponents": {
+      "title": "Common Opponents",
+      "description": "Who they run into most, in the sampled sets.",
+      "empty": "No repeat opponents in the sample.",
+      "sets_one": "{{count}} set",
+      "sets_other": "{{count}} sets"
+    },
+    "history": {
+      "title": "Your History vs Them",
+      "description_one": "You've played {{name}} before — {{count}} game recorded in your own match history.",
+      "description_other": "You've played {{name}} before — {{count}} games recorded in your own match history.",
+      "rate": "({{rate}}% win rate)",
+      "fullReport": "Full scouting report"
+    },
+    "advisor": {
+      "title": "Matchup Advisor",
+      "description": "Your best (and worst) pick against each of their characters — blends your own record with tier list and archetype data.",
+      "noCharacterData": "No character data for this scout yet — common on parry.gg while match data is still sparse. Check back after they've played more sets.",
+      "noMyCharacters": "Pick a primary or secondary character (or log a few matches) to get personalized recommendations.",
+      "vsName": "vs. {{name}}",
+      "gamesSampled_one": "{{count}} game sampled",
+      "gamesSampled_other": "{{count}} games sampled",
+      "inYourSets": "{{record}} in your sets",
+      "tier": "tier {{score}}/10",
+      "archetypeEdge": "archetype edge",
+      "archetypeDisadvantage": "archetype disadvantage"
+    },
+    "fullAnalysis": {
+      "title": "Full analysis",
+      "rescout": "Re-scout to enable full analysis.",
+      "noGameData": "No per-game data available from this source yet.",
+      "stageMasteryOverall": "Stage Mastery — Overall",
+      "stageMasteryFor": "Stage Mastery — {{name}}",
+      "topCharacter": "Top character",
+      "recentForm": "{{name}}'s Recent Form"
+    },
+    "aiReport": {
+      "title": "AI Scouting Report",
+      "generated": "Generated {{rel}}",
+      "download": "Download (.md)",
+      "print": "Print / Save as PDF",
+      "gameplan": "Game plan",
+      "characterStrategy": "Character strategy",
+      "stageStrategy": "Stage strategy",
+      "picks": "Picks:",
+      "bans": "Bans:",
+      "headToHead": "Head-to-head",
+      "watchFor": "Watch for"
+    },
+    "historySelector": {
+      "older": "Older report",
+      "newer": "Newer report",
+      "reportOf": "Report {{ordinal}} of {{total}}"
+    },
+    "pastReports": {
+      "title": "Past AI Reports",
+      "description": "Reports you've generated before, most recent first."
     }
   }
 }

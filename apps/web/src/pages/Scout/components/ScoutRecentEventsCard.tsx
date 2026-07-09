@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next';
 import { ExternalLink, Trophy } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import {
@@ -54,23 +55,24 @@ function ordinal(n: number): string {
 
 /** The scouted player's most recent events (placement/entrants), most recent first. */
 export function ScoutRecentEventsCard({ events }: { events: ScoutRecentEvent[] }) {
+  const { t, i18n } = useTranslation();
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Recent Events</CardTitle>
-        <CardDescription>Most recent activity first.</CardDescription>
+        <CardTitle>{t('scout.events.title')}</CardTitle>
+        <CardDescription>{t('scout.events.description')}</CardDescription>
       </CardHeader>
       <CardContent>
         {events.length === 0 ? (
-          <p className="text-sm text-muted-foreground">No recent events sampled.</p>
+          <p className="text-sm text-muted-foreground">{t('scout.events.empty')}</p>
         ) : (
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Event</TableHead>
-                <TableHead>Placement</TableHead>
-                <TableHead className="text-right">Entrants</TableHead>
-                <TableHead className="text-right">Date</TableHead>
+                <TableHead>{t('trends.tournaments.event')}</TableHead>
+                <TableHead>{t('scout.events.placement')}</TableHead>
+                <TableHead className="text-right">{t('scout.events.entrants')}</TableHead>
+                <TableHead className="text-right">{t('trends.sessions.date')}</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -112,7 +114,7 @@ export function ScoutRecentEventsCard({ events }: { events: ScoutRecentEvent[] }
                     </TableCell>
                     <TableCell className="text-right">{event.numEntrants ?? '—'}</TableCell>
                     <TableCell className="text-right text-muted-foreground">
-                      {new Date(event.lastSetAt).toLocaleDateString()}
+                      {new Date(event.lastSetAt).toLocaleDateString(i18n.language)}
                     </TableCell>
                   </TableRow>
                 );

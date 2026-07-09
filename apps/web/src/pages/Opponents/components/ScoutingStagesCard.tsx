@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import {
   Table,
@@ -14,23 +15,24 @@ const MAX_STAGES = 6;
 
 /** Stages this opponent takes you to most, sorted by sample size, top 6. */
 export function ScoutingStagesCard({ byStage }: { byStage: StageRecord[] }) {
+  const { t } = useTranslation();
   const top = byStage.slice(0, MAX_STAGES);
 
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Stages</CardTitle>
+        <CardTitle>{t('opponents.stages.title')}</CardTitle>
       </CardHeader>
       <CardContent>
         {top.length === 0 ? (
-          <p className="text-sm text-muted-foreground">No stage data recorded yet.</p>
+          <p className="text-sm text-muted-foreground">{t('opponents.stages.empty')}</p>
         ) : (
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Stage</TableHead>
-                <TableHead>Record</TableHead>
-                <TableHead className="text-right">Win Rate</TableHead>
+                <TableHead>{t('matchups.stageTable.stage')}</TableHead>
+                <TableHead>{t('matchups.stageTable.record')}</TableHead>
+                <TableHead className="text-right">{t('matchups.stageTable.winRate')}</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -39,7 +41,7 @@ export function ScoutingStagesCard({ byStage }: { byStage: StageRecord[] }) {
                   <TableCell>
                     {record.stageId === 0
                       ? 'unknown'
-                      : (stagesById.get(record.stageId)?.name ?? 'Unknown')}
+                      : (stagesById.get(record.stageId)?.name ?? t('common.unknown'))}
                   </TableCell>
                   <TableCell>
                     {record.wins}-{record.losses}
