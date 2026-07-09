@@ -8,7 +8,7 @@ import { getFighterById } from '@/data/sprites';
 import { getStageRecords, getWinLossRecord } from '@/lib/stats';
 import { getGroupedStageOptions, stageOptions } from '@/lib/stageOptions';
 import { stageAbbreviation } from '@/components/StageOption';
-import { StageSelectGroups } from '@/components/StageSelectGroups';
+import { StageSelectGroups, StageSelectValue } from '@/components/StageSelectGroups';
 
 /**
  * Ports legacy/src/screens/MatchData/components/StageBreakdown — pick a
@@ -19,12 +19,15 @@ export function StageBreakdown({
   matches,
   usageMatches,
   favoriteStageIds,
+  onToggleFavorite,
 }: {
   matches: Match[];
   /** Unfiltered matches used to compute "Most played" ordering; defaults to `matches` when omitted. */
   usageMatches?: Match[];
   /** The user's favorited stage ids, pinned as a "Favorites" group. Passed in as a prop (rather than read via `useStageFavorites` here) to keep this component hook/provider-free for tests. */
   favoriteStageIds?: number[];
+  /** Heart-button toggle for the picker rows (see `StageSelectGroups`); a prop for the same provider-free reason as `favoriteStageIds`. */
+  onToggleFavorite?: (stageId: number) => void;
 }) {
   const { t } = useTranslation();
   const [stageId, setStageId] = useState<number>(NO_SELECTION_STAGE.id);
@@ -69,10 +72,10 @@ export function StageBreakdown({
       <CardContent className="flex flex-col gap-4">
         <Select value={String(stageId)} onValueChange={(v) => setStageId(Number(v))}>
           <SelectTrigger className="w-full max-w-xs" aria-label={t('matchData.stages.selectAria')}>
-            <SelectValue />
+            <StageSelectValue stageId={stageId} />
           </SelectTrigger>
           <SelectContent>
-            <StageSelectGroups groups={stageGroups} />
+            <StageSelectGroups groups={stageGroups} onToggleFavorite={onToggleFavorite} />
           </SelectContent>
         </Select>
 

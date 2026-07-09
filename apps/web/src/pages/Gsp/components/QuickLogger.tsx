@@ -16,8 +16,8 @@ import {
 import { alphaSpriteList } from '@/components/match-form/MatchForm';
 import { NO_SELECTION_STAGE } from '@/data/stages';
 import { getGroupedStageOptions, stageOptions } from '@/lib/stageOptions';
-import { StageSelectGroups } from '@/components/StageSelectGroups';
-import { useStageFavorites } from '@/hooks/useStageFavorites';
+import { StageSelectGroups, StageSelectValue } from '@/components/StageSelectGroups';
+import { useStageFavorites, useToggleStageFavorite } from '@/hooks/useStageFavorites';
 import { useCreateMatch } from '@/hooks/useCreateMatch';
 import { parseGspNumber } from '../lib/parseGspNumber';
 import { calibrationFromSettings, estimateMmrAt } from '../lib/gspMmrModel';
@@ -50,6 +50,7 @@ export function QuickLogger({
   const lastGsp = lastPoint?.gsp ?? null;
   const createMatch = useCreateMatch();
   const { data: stageFavorites } = useStageFavorites();
+  const toggleStageFavorite = useToggleStageFavorite();
   const favoriteStageIds = stageFavorites?.stageIds;
   // No matches passed (so no "Most played" group): the quick logger has no
   // match-history dependency today, and pulling one in just for usage
@@ -213,10 +214,10 @@ export function QuickLogger({
             </label>
             <Select value={String(stageId)} onValueChange={(v) => setStageId(Number(v))}>
               <SelectTrigger id="gsp-logger-stage" className="w-full">
-                <SelectValue />
+                <StageSelectValue stageId={stageId} />
               </SelectTrigger>
               <SelectContent>
-                <StageSelectGroups groups={stageGroups} />
+                <StageSelectGroups groups={stageGroups} onToggleFavorite={toggleStageFavorite} />
               </SelectContent>
             </Select>
           </div>
