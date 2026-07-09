@@ -1,12 +1,13 @@
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { QueryClientProvider } from '@tanstack/react-query';
 import { useState, type ReactNode } from 'react';
 import { Toaster } from 'sonner';
 import { AuthProvider } from '@/context/AuthContext';
 import { AnalyticsFilterProvider } from '@/context/AnalyticsFilterContext';
+import { createQueryClient } from '@/lib/queryClient';
 
-/** Top-level providers: TanStack Query + Firebase auth context + global analytics filter + sonner toaster. */
+/** Top-level providers: TanStack Query + Firebase auth context + global analytics filter + sonner toaster. Query defaults (no-4xx-retry, staleTime) live in lib/queryClient.ts. */
 export function AppProviders({ children }: { children: ReactNode }) {
-  const [queryClient] = useState(() => new QueryClient());
+  const [queryClient] = useState(() => createQueryClient());
 
   return (
     <QueryClientProvider client={queryClient}>
