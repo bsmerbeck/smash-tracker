@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { useFighters } from '@/hooks/useFighters';
 import { useFilteredMatches } from '@/hooks/useFilteredMatches';
+import { useStageFavorites } from '@/hooks/useStageFavorites';
 import { getFighterById } from '@/data/sprites';
 import { FilteredEmptyNotice } from '@/components/FilteredEmptyNotice';
 import { MatchTable } from './components/MatchTable';
@@ -17,6 +18,7 @@ export function MatchDataPage() {
   const { t } = useTranslation();
   const { data: fighterSelection, isLoading: fightersLoading } = useFighters();
   const { matches, allMatches, isLoading: matchesLoading, filterActive } = useFilteredMatches();
+  const { data: stageFavorites } = useStageFavorites();
 
   const fighterSprites = useMemo<Fighter[]>(() => {
     const ids = [...(fighterSelection?.primary ?? []), ...(fighterSelection?.secondary ?? [])];
@@ -72,7 +74,11 @@ export function MatchDataPage() {
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         <RosterUsage matches={matches} fighterSprites={fighterSprites} />
-        <StageBreakdown matches={matches} usageMatches={allMatches} />
+        <StageBreakdown
+          matches={matches}
+          usageMatches={allMatches}
+          favoriteStageIds={stageFavorites?.stageIds}
+        />
       </div>
     </div>
   );
