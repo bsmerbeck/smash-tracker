@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import i18n from '@/i18n';
 import { render, screen } from '@testing-library/react';
 import type { TournamentEntry } from '@smash-tracker/shared';
 import { TournamentHeader, buildSeedPlacementBadge } from './TournamentHeader';
@@ -16,25 +17,25 @@ function makeEntry(overrides: Partial<TournamentEntry> = {}): TournamentEntry {
 
 describe('buildSeedPlacementBadge', () => {
   it('returns null when seed is absent', () => {
-    expect(buildSeedPlacementBadge(makeEntry({ placement: 5 }))).toBeNull();
+    expect(buildSeedPlacementBadge(makeEntry({ placement: 5 }), i18n.t)).toBeNull();
   });
 
   it('returns null when placement is absent', () => {
-    expect(buildSeedPlacementBadge(makeEntry({ seed: 5 }))).toBeNull();
+    expect(buildSeedPlacementBadge(makeEntry({ seed: 5 }), i18n.t)).toBeNull();
   });
 
   it('returns a success-toned badge when placement beats seed', () => {
-    const badge = buildSeedPlacementBadge(makeEntry({ seed: 408, placement: 257 }));
+    const badge = buildSeedPlacementBadge(makeEntry({ seed: 408, placement: 257 }), i18n.t);
     expect(badge).toEqual({ tone: 'success', label: 'Outperformed seed: 408 → 257' });
   });
 
   it('returns a destructive-toned badge when placement is worse than seed', () => {
-    const badge = buildSeedPlacementBadge(makeEntry({ seed: 32, placement: 65 }));
+    const badge = buildSeedPlacementBadge(makeEntry({ seed: 32, placement: 65 }), i18n.t);
     expect(badge).toEqual({ tone: 'destructive', label: 'Underperformed seed: 32 → 65' });
   });
 
   it('returns a neutral badge when placement matches seed exactly', () => {
-    const badge = buildSeedPlacementBadge(makeEntry({ seed: 16, placement: 16 }));
+    const badge = buildSeedPlacementBadge(makeEntry({ seed: 16, placement: 16 }), i18n.t);
     expect(badge).toEqual({ tone: 'secondary', label: 'Matched seed: 16 → 16' });
   });
 });

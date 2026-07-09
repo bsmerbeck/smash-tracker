@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next';
 import { ExternalLink, Trophy } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import {
@@ -14,6 +15,7 @@ import type { Match, TournamentEntry } from '@smash-tracker/shared';
 import { buildEventResultRows, type EventResultRow } from '../lib/eventResults';
 
 function ProfileLink({ row }: { row: EventResultRow }) {
+  const { t } = useTranslation();
   if (!row.profileUrl) {
     return null;
   }
@@ -22,7 +24,7 @@ function ProfileLink({ row }: { row: EventResultRow }) {
       href={row.profileUrl}
       target="_blank"
       rel="noreferrer"
-      aria-label={`View ${row.displayName} on start.gg`}
+      aria-label={t('shared.startgg.viewName', { name: row.displayName })}
       className="inline-flex text-muted-foreground hover:text-foreground"
     >
       <ExternalLink className="size-3.5" />
@@ -31,6 +33,7 @@ function ProfileLink({ row }: { row: EventResultRow }) {
 }
 
 function ResultRow({ row }: { row: EventResultRow }) {
+  const { t } = useTranslation();
   const nameCell = (
     <span className="inline-flex items-center gap-2">
       {row.standing.placement === 1 && <Trophy className="size-4 text-amber-500" />}
@@ -55,7 +58,7 @@ function ResultRow({ row }: { row: EventResultRow }) {
                 {nameCell}
               </span>
             </TooltipTrigger>
-            <TooltipContent>You played them at this event</TooltipContent>
+            <TooltipContent>{t('tournaments.results.playedTooltip')}</TooltipContent>
           </Tooltip>
         ) : (
           nameCell
@@ -82,33 +85,34 @@ export function EventResults({
   entry: TournamentEntry;
   entryMatches: Match[];
 }) {
+  const { t } = useTranslation();
   const rows = buildEventResultRows(entry, entryMatches);
   const winner = rows.find((row) => row.standing.placement === 1);
 
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Event Results</CardTitle>
+        <CardTitle>{t('tournaments.results.title')}</CardTitle>
       </CardHeader>
       <CardContent className="flex flex-col gap-4">
         {rows.length === 0 ? (
-          <p className="text-sm text-muted-foreground">
-            Full results attach on your next start.gg sync.
-          </p>
+          <p className="text-sm text-muted-foreground">{t('tournaments.results.resync')}</p>
         ) : (
           <>
             {winner && (
               <div className="flex items-center gap-2 rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2">
                 <Trophy className="size-5 text-amber-500" />
-                <span className="text-sm font-medium">{winner.displayName} won this event</span>
+                <span className="text-sm font-medium">
+                  {t('tournaments.results.winner', { name: winner.displayName })}
+                </span>
                 <ProfileLink row={winner} />
               </div>
             )}
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead className="w-16">Place</TableHead>
-                  <TableHead>Entrant</TableHead>
+                  <TableHead className="w-16">{t('tournaments.results.place')}</TableHead>
+                  <TableHead>{t('tournaments.results.entrant')}</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>

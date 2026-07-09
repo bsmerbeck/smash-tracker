@@ -1,3 +1,5 @@
+import { useTranslation } from 'react-i18next';
+import type { TFunction } from 'i18next';
 import { ExternalLink } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -5,17 +7,17 @@ import { Button } from '@/components/ui/button';
 import type { TournamentEntry } from '@smash-tracker/shared';
 import { buildEventStartggUrl } from '../lib/startggLinks';
 
-function formatDate(time: number): string {
-  return new Date(time).toLocaleDateString('en-US', {
+function formatDate(time: number, locale: string): string {
+  return new Date(time).toLocaleDateString(locale, {
     month: 'short',
     day: 'numeric',
     year: 'numeric',
   });
 }
 
-function formatDateRange(entry: TournamentEntry): string {
-  const start = formatDate(entry.firstSetAt);
-  const end = formatDate(entry.lastSetAt);
+function formatDateRange(entry: TournamentEntry, locale: string): string {
+  const start = formatDate(entry.firstSetAt, locale);
+  const end = formatDate(entry.lastSetAt, locale);
   return start === end ? start : `${start} – ${end}`;
 }
 
@@ -31,18 +33,24 @@ export interface SeedPlacementBadge {
  * (destructive-toned), and an exact match is neutral. Returns `null` when
  * either field is absent — callers must omit the badge cleanly.
  */
-export function buildSeedPlacementBadge(entry: TournamentEntry): SeedPlacementBadge | null {
+export function buildSeedPlacementBadge(
+  entry: TournamentEntry,
+  t: TFunction,
+): SeedPlacementBadge | null {
   if (entry.seed == null || entry.placement == null) {
     return null;
   }
   const { seed, placement } = entry;
   if (placement < seed) {
-    return { tone: 'success', label: `Outperformed seed: ${seed} → ${placement}` };
+    return { tone: 'success', label: t('tournaments.header.outperformed', { seed, placement }) };
   }
   if (placement > seed) {
-    return { tone: 'destructive', label: `Underperformed seed: ${seed} → ${placement}` };
+    return {
+      tone: 'destructive',
+      label: t('tournaments.header.underperformed', { seed, placement }),
+    };
   }
-  return { tone: 'secondary', label: `Matched seed: ${seed} → ${placement}` };
+  return { tone: 'secondary', label: t('tournaments.header.matched', { seed, placement }) };
 }
 
 /**
@@ -54,9 +62,10 @@ export function buildSeedPlacementBadge(entry: TournamentEntry): SeedPlacementBa
  * yet; hidden entirely when neither is present).
  */
 export function TournamentHeader({ entry }: { entry: TournamentEntry }) {
+  const { t, i18n } = useTranslation();
   const title = entry.tournamentName ?? entry.eventName;
   const showEventSubline = entry.tournamentName != null && entry.tournamentName !== entry.eventName;
-  const badge = buildSeedPlacementBadge(entry);
+  const badge = buildSeedPlacementBadge(entry, t);
   const startggUrl = buildEventStartggUrl(entry);
 
   return (
@@ -67,11 +76,15 @@ export function TournamentHeader({ entry }: { entry: TournamentEntry }) {
           {showEventSubline && (
             <p className="mt-1 text-sm text-muted-foreground">{entry.eventName}</p>
           )}
-          <p className="mt-1 text-sm text-muted-foreground">{formatDateRange(entry)}</p>
+          <p className="mt-1 text-sm text-muted-foreground">
+            {formatDateRange(entry, i18n.language)}
+          </p>
         </div>
         <div className="flex flex-col items-end gap-2 text-right">
           {entry.numEntrants != null && (
-            <p className="text-sm text-muted-foreground">{entry.numEntrants} entrants</p>
+            <p className="text-sm text-muted-foreground">
+              {t('tournaments.header.entrants', { count: entry.numEntrants })}
+            </p>
           )}
           {badge && (
             <Badge variant={badge.tone === 'secondary' ? 'secondary' : badge.tone}>
@@ -81,7 +94,7 @@ export function TournamentHeader({ entry }: { entry: TournamentEntry }) {
           {startggUrl && (
             <Button variant="outline" size="sm" asChild>
               <a href={startggUrl} target="_blank" rel="noreferrer">
-                View on start.gg
+                {t('shared.startgg.view')}
                 <ExternalLink className="size-3.5" />
               </a>
             </Button>
@@ -89,7 +102,9 @@ export function TournamentHeader({ entry }: { entry: TournamentEntry }) {
         </div>
       </CardHeader>
       <CardContent>
-        <p className="text-sm text-muted-foreground">{entry.setsPlayed} sets played</p>
+        <p className="text-sm text-muted-foreground">
+          {t('tournaments.header.setsPlayed', { count: entry.setsPlayed })}
+        </p>
       </CardContent>
     </Card>
   );

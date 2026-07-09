@@ -97,6 +97,10 @@
       "saved": "VODメモを保存しました！",
       "saveFailed": "VODメモを保存できませんでした。もう一度お試しください。"
     },
+    "startgg": {
+      "view": "start.ggで見る",
+      "viewName": "{{name}}をstart.ggで見る"
+    },
     "filteredNotice": {
       "message": "現在のフィルターに一致する対戦がありません。",
       "clear": "フィルターを解除"
@@ -529,6 +533,148 @@
       "title": "相手プレイヤー",
       "empty": "名前付きの相手はまだ記録されていません。",
       "matches": "対戦数"
+    }
+  },
+  "trends": {
+    "loading": "トレンドを読み込み中...",
+    "noMatches": "まだ対戦がありません。対戦を記録してから、ここでトレンドを確認しましょう！",
+    "hero": {
+      "currentRating": "現在のレーティング",
+      "glickoRating": "Glicko-2レーティング",
+      "notEnoughGames": "まだ対戦数が足りません",
+      "peakRating": "最高レーティング",
+      "bestSessionRating": "セッション最高値",
+      "bestMonth": "ベストな月",
+      "bestMonthCaption": "{{month}} · {{wins}}-{{losses}}（{{count}}戦）",
+      "bestMonthNeeds": "{{count}}戦以上の月が必要です",
+      "currentForm": "現在の調子",
+      "formCaption": "直近{{window}}戦のうち{{played}}戦"
+    },
+    "monthly": {
+      "title": "月別パフォーマンス",
+      "winRateLabel": "勝率",
+      "caption": "薄いバーは{{count}}戦未満の月です — サンプルが少ないため参考程度に。",
+      "tooltipRate": "勝率: {{value}}%",
+      "tooltipGames": "対戦数: {{count}}",
+      "month": "月",
+      "wl": "勝-敗",
+      "games": "対戦数"
+    },
+    "ratingCurve": {
+      "title": "レーティング推移",
+      "current": "現在のレーティング",
+      "ratingLabel": "レーティング",
+      "caption": "Glicko-2・セッション制・非公式。点線は±RDの不確実性の帯を示します。",
+      "locked": "推移は{{count}}戦で解放されます",
+      "progress": "現在{{played}}/{{threshold}}戦",
+      "tooltipGames_one": "このセッションで{{count}}戦",
+      "tooltipGames_other": "このセッションで{{count}}戦"
+    },
+    "sessions": {
+      "title": "セッションとティルト",
+      "total": "総セッション数",
+      "avgGames": "セッション平均対戦数",
+      "best": "ベストセッション",
+      "worstTilt": "最悪のティルト",
+      "tiltRun": "{{count}}連敗",
+      "date": "日付",
+      "duration": "時間",
+      "lossRun": "最長連敗",
+      "durationUnderMin": "1分未満",
+      "durationMin": "{{count}}分",
+      "durationHM": "{{hours}}時間{{minutes}}分",
+      "durationH": "{{hours}}時間"
+    },
+    "setting": {
+      "title": "オン/オフ環境の比較",
+      "online": "オンライン",
+      "offline": "オフライン",
+      "unspecified": "未指定",
+      "noData": "データなし",
+      "even": "オンラインとオフラインの勝率はほぼ同じです。",
+      "youWin": "勝率の差:",
+      "moreOnline": "オンラインの方が高い。",
+      "moreOffline": "オフラインの方が高い。",
+      "smallSample": "信頼できる比較には、オンライン・オフラインそれぞれ{{count}}戦以上が必要です。"
+    },
+    "tournaments": {
+      "title": "大会",
+      "loading": "大会を読み込み中...",
+      "resyncPrefix": "大会エントリーは次回のstart.gg同期で追加されます —",
+      "resyncSuffix": "から同期を実行してください。",
+      "tournament": "大会",
+      "event": "種目",
+      "dates": "日程"
+    },
+    "mix": {
+      "title": "対戦タイプの推移",
+      "tourney": "大会",
+      "friendly": "フリー",
+      "quickplay": "クイックプレイ",
+      "unspecified": "未指定"
+    }
+  },
+  "tournaments": {
+    "loading": "大会を読み込み中...",
+    "won": "勝利",
+    "lost": "敗北",
+    "notFound": {
+      "title": "大会が見つかりません",
+      "body": "このリンクに対応する大会エントリーが見つかりませんでした。別のアカウントで同期されたか、古いリンクの可能性があります。",
+      "back": "トレンドに戻る"
+    },
+    "header": {
+      "entrants": "参加者{{count}}名",
+      "setsPlayed_one": "{{count}}セットプレイ",
+      "setsPlayed_other": "{{count}}セットプレイ",
+      "outperformed": "シード超え: {{seed}} → {{placement}}",
+      "underperformed": "シード未達: {{seed}} → {{placement}}",
+      "matched": "シード通り: {{seed}} → {{placement}}"
+    },
+    "results": {
+      "title": "大会結果",
+      "resync": "完全な結果は次回のstart.gg同期で追加されます。",
+      "winner": "{{name}}がこの大会で優勝",
+      "place": "順位",
+      "entrant": "参加者",
+      "playedTooltip": "この大会で対戦した相手です"
+    },
+    "timeline": {
+      "title": "セットの流れ",
+      "empty": "この大会の対戦はまだ記録されていません。",
+      "setsAria": "セット",
+      "setFallback": "セット{{id}}",
+      "yourFighters": "自分のファイター",
+      "opponentFighters": "相手のファイター",
+      "watchVod": "VODを見る",
+      "watchVodAria": "{{set}}のVODを見る",
+      "editVodAria": "{{set}}のVODメモを編集",
+      "otherMatches": "この大会中のその他の対戦"
+    },
+    "charStages": {
+      "yourCharacters": "自分の使用キャラ",
+      "opponentsCharacters": "相手の使用キャラ",
+      "stagesPlayed": "プレイしたステージ",
+      "noGames": "対戦の記録がありません。",
+      "noStageData": "ステージのデータがありません。"
+    },
+    "retro": {
+      "title": "アドバイザー振り返り",
+      "description": "各ステージ選択を、この大会開始前のデータのみを使ってカウンターピック指南が推奨したであろう内容と照らし合わせて評価します。",
+      "noGames": "この大会の対戦はまだ記録されていません。",
+      "notEnough": "評価に必要な大会前のデータが足りません。",
+      "adherence": "アドバイザー遵守率: 評価可能な選択の{{rate}}%",
+      "followedWon": "推奨に従った選択の勝率{{rate}}%",
+      "againstWon": "逆らった場合は{{rate}}%",
+      "setsAria": "アドバイザー振り返りのセット",
+      "unknownStage": "不明なステージ",
+      "noDataTooltip": "この選択を評価するには大会前のデータが足りません。プレイしたのは{{stage}}。結果: {{result}}",
+      "advisorTooltip": "アドバイザーの推奨: {{advice}} — 実際にプレイしたのは{{stage}}（{{verdict}}）。結果: {{result}}",
+      "advicePick": "{{stages}}を選ぶ",
+      "adviceNone": "明確な推奨なし",
+      "verdictFollowed": "従った",
+      "verdictAgainst": "逆らった",
+      "verdictNeutral": "どちらでもない"
     }
   }
 }

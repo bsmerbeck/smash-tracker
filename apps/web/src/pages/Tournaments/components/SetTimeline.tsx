@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { ExternalLink, Pencil } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -16,6 +17,7 @@ import { formatTimestamp, vodDeepLink } from '@/lib/vod';
 import { VodNotesDialog } from '@/components/vod/VodNotesDialog';
 
 function GameChip({ match }: { match: Match }) {
+  const { t } = useTranslation();
   const stageId = match.map?.id ?? 0;
   const stage = stageId !== 0 ? stagesById.get(stageId) : undefined;
   const stageName = stage?.name ?? match.map?.name ?? 'unknown';
@@ -38,7 +40,7 @@ function GameChip({ match }: { match: Match }) {
         </span>
       </TooltipTrigger>
       <TooltipContent>
-        {stageName} — {match.win ? 'Win' : 'Loss'}
+        {stageName} — {match.win ? t('common.win') : t('common.loss')}
         {matchup}
       </TooltipContent>
     </Tooltip>
@@ -106,6 +108,7 @@ function VodTimestampChips({ vodUrl, match }: { vodUrl: string; match: Match }) 
  * VOD can be attached even for sets that never got one from start.gg.
  */
 function VodLink({ set }: { set: TournamentSet }) {
+  const { t } = useTranslation();
   const [dialogOpen, setDialogOpen] = useState(false);
   const vodMatch =
     set.games.map((g) => g.match).find((m) => m.vodUrl != null) ?? set.games[0]?.match;
@@ -115,6 +118,8 @@ function VodLink({ set }: { set: TournamentSet }) {
     return null;
   }
 
+  const setLabel = set.roundText ?? t('tournaments.timeline.setFallback', { id: set.setId });
+
   return (
     <div className="flex flex-wrap items-center gap-2">
       {vodUrl && (
@@ -123,10 +128,10 @@ function VodLink({ set }: { set: TournamentSet }) {
             href={vodUrl}
             target="_blank"
             rel="noreferrer"
-            aria-label={`Watch VOD for ${set.roundText ?? `Set ${set.setId}`}`}
+            aria-label={t('tournaments.timeline.watchVodAria', { set: setLabel })}
             className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
           >
-            Watch VOD
+            {t('tournaments.timeline.watchVod')}
             <ExternalLink className="size-3.5" />
           </a>
           <VodTimestampChips vodUrl={vodUrl} match={vodMatch} />
@@ -136,7 +141,7 @@ function VodLink({ set }: { set: TournamentSet }) {
         type="button"
         variant="ghost"
         size="icon-sm"
-        aria-label={`Edit VOD notes for ${set.roundText ?? `Set ${set.setId}`}`}
+        aria-label={t('tournaments.timeline.editVodAria', { set: setLabel })}
         onClick={() => setDialogOpen(true)}
       >
         <Pencil className="size-3.5" />
@@ -149,6 +154,7 @@ function VodLink({ set }: { set: TournamentSet }) {
 }
 
 function OpponentLabel({ set }: { set: TournamentSet }) {
+  const { t } = useTranslation();
   if (!set.opponentName) {
     return null;
   }
@@ -167,7 +173,7 @@ function OpponentLabel({ set }: { set: TournamentSet }) {
             href={profileUrl}
             target="_blank"
             rel="noreferrer"
-            aria-label={`View ${set.opponentName} on start.gg`}
+            aria-label={t('shared.startgg.viewName', { name: set.opponentName })}
             className="inline-flex text-muted-foreground hover:text-foreground"
           >
             <ExternalLink className="size-3.5" />
@@ -180,6 +186,7 @@ function OpponentLabel({ set }: { set: TournamentSet }) {
 }
 
 function SetRow({ set }: { set: TournamentSet }) {
+  const { t } = useTranslation();
   const isLosersSide = set.bracketRound != null && set.bracketRound < 0;
 
   return (
@@ -190,11 +197,19 @@ function SetRow({ set }: { set: TournamentSet }) {
       )}
     >
       <div className="flex flex-wrap items-center gap-3">
-        <span className="min-w-32 text-sm font-medium">{set.roundText ?? `Set ${set.setId}`}</span>
+        <span className="min-w-32 text-sm font-medium">
+          {set.roundText ?? t('tournaments.timeline.setFallback', { id: set.setId })}
+        </span>
         <div className="flex items-center gap-1.5">
-          <FighterTags fighterIds={set.userFighterIds} label="Your fighters" />
-          <span className="text-xs text-muted-foreground">vs</span>
-          <FighterTags fighterIds={set.opponentFighterIds} label="Opponent fighters" />
+          <FighterTags
+            fighterIds={set.userFighterIds}
+            label={t('tournaments.timeline.yourFighters')}
+          />
+          <span className="text-xs text-muted-foreground">{t('matchups.vs')}</span>
+          <FighterTags
+            fighterIds={set.opponentFighterIds}
+            label={t('tournaments.timeline.opponentFighters')}
+          />
         </div>
         <OpponentLabel set={set} />
         <div className="flex items-center gap-1">
@@ -208,7 +223,9 @@ function SetRow({ set }: { set: TournamentSet }) {
         <span className="text-sm text-muted-foreground">
           {set.gamesWon}-{set.gamesLost}
         </span>
-        <Badge variant={set.won ? 'success' : 'destructive'}>{set.won ? 'Won' : 'Lost'}</Badge>
+        <Badge variant={set.won ? 'success' : 'destructive'}>
+          {set.won ? t('tournaments.won') : t('tournaments.lost')}
+        </Badge>
       </div>
     </li>
   );
@@ -233,18 +250,19 @@ export function SetTimeline({
   sets: TournamentSet[];
   otherMatches: Match[];
 }) {
+  const { t, i18n } = useTranslation();
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Set Timeline</CardTitle>
+        <CardTitle>{t('tournaments.timeline.title')}</CardTitle>
       </CardHeader>
       <CardContent className="flex flex-col gap-4">
         {sets.length === 0 && otherMatches.length === 0 ? (
-          <p className="text-sm text-muted-foreground">No matches recorded for this event yet.</p>
+          <p className="text-sm text-muted-foreground">{t('tournaments.timeline.empty')}</p>
         ) : (
           <>
             {sets.length > 0 && (
-              <ul className="flex flex-col gap-2" aria-label="Sets">
+              <ul className="flex flex-col gap-2" aria-label={t('tournaments.timeline.setsAria')}>
                 {sets.map((set) => (
                   <SetRow key={set.setId} set={set} />
                 ))}
@@ -253,9 +271,12 @@ export function SetTimeline({
             {otherMatches.length > 0 && (
               <div>
                 <h3 className="mb-2 text-sm font-medium text-muted-foreground">
-                  Other matches during this event
+                  {t('tournaments.timeline.otherMatches')}
                 </h3>
-                <ul className="flex flex-col gap-2" aria-label="Other matches during this event">
+                <ul
+                  className="flex flex-col gap-2"
+                  aria-label={t('tournaments.timeline.otherMatches')}
+                >
                   {otherMatches.map((match) => {
                     const userSprite = getFighterById(match.fighter_id);
                     const opponentSprite = getFighterById(match.opponent_id);
@@ -266,7 +287,7 @@ export function SetTimeline({
                       >
                         <div className="flex items-center gap-3">
                           <span className="text-sm text-muted-foreground">
-                            {new Date(match.time).toLocaleDateString()}
+                            {new Date(match.time).toLocaleDateString(i18n.language)}
                           </span>
                           <span className="flex items-center gap-1.5">
                             {userSprite && (
@@ -278,7 +299,9 @@ export function SetTimeline({
                               />
                             )}
                             {(userSprite || opponentSprite) && (
-                              <span className="text-xs text-muted-foreground">vs</span>
+                              <span className="text-xs text-muted-foreground">
+                                {t('matchups.vs')}
+                              </span>
                             )}
                             {opponentSprite && (
                               <img
@@ -292,7 +315,7 @@ export function SetTimeline({
                           <GameChip match={match} />
                         </div>
                         <Badge variant={match.win ? 'success' : 'destructive'}>
-                          {match.win ? 'Win' : 'Loss'}
+                          {match.win ? t('common.win') : t('common.loss')}
                         </Badge>
                       </li>
                     );
