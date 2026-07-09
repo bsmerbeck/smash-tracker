@@ -1028,7 +1028,10 @@
       "connect": "Connecter un compte start.gg",
       "linked": "Compte start.gg lié !",
       "linkFailed": "Échec de la liaison start.gg ({{reason}})",
-      "unknownError": "erreur inconnue"
+      "unknownError": "erreur inconnue",
+      "autoSyncStarted": "Importation de vos matchs de tournoi start.gg…",
+      "autoSyncDone": "Import start.gg terminé : {{imported}} parties depuis {{sets}} sets.",
+      "autoSyncFailed": "Échec de l'import start.gg. Vous pouvez réessayer depuis Réglages → Intégrations."
     },
     "parrygg": {
       "verified": "Vérifié",
