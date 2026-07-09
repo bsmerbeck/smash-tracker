@@ -43,6 +43,7 @@ const createMatch = vi.fn();
 const getGspSettings = vi.fn();
 const updateGspSettings = vi.fn();
 const upsertMe = vi.fn().mockResolvedValue({ uid: 'test-uid', email: 'test@example.com' });
+const getStageFavorites = vi.fn().mockResolvedValue({ stageIds: [], updatedAt: 0 });
 
 vi.mock('@/lib/api', () => ({
   api: {
@@ -57,6 +58,9 @@ vi.mock('@/lib/api', () => ({
     gspSettings: {
       get: (...args: unknown[]) => getGspSettings(...args),
       update: (...args: unknown[]) => updateGspSettings(...args),
+    },
+    stageFavorites: {
+      get: (...args: unknown[]) => getStageFavorites(...args),
     },
   },
 }));

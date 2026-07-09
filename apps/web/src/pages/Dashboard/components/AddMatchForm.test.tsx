@@ -30,6 +30,7 @@ const createMatch = vi.fn();
 const listMatches = vi.fn();
 const listOpponents = vi.fn();
 const upsertMe = vi.fn().mockResolvedValue({ uid: 'test-uid', email: 'test@example.com' });
+const getStageFavorites = vi.fn().mockResolvedValue({ stageIds: [], updatedAt: 0 });
 
 vi.mock('@/lib/api', () => ({
   api: {
@@ -42,6 +43,9 @@ vi.mock('@/lib/api', () => ({
     },
     opponents: {
       list: (...args: unknown[]) => listOpponents(...args),
+    },
+    stageFavorites: {
+      get: (...args: unknown[]) => getStageFavorites(...args),
     },
   },
 }));
