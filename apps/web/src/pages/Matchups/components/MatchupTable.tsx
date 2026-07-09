@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 import { Trash2 } from 'lucide-react';
 import type { Match } from '@smash-tracker/shared';
@@ -25,11 +26,12 @@ import { useDeleteMatch } from '@/hooks/useDeleteMatch';
 
 /** Ports legacy/src/screens/Matchups/components/MatchupTable — list of matches for the specific matchup, newest first, with delete + confirm. */
 export function MatchupTable({ matchupMatches }: { matchupMatches: Match[] }) {
+  const { t, i18n } = useTranslation();
   const [pendingDelete, setPendingDelete] = useState<Match | null>(null);
   const deleteMatch = useDeleteMatch();
 
   if (matchupMatches.length === 0) {
-    return <p className="text-sm text-muted-foreground">No matches reported yet!</p>;
+    return <p className="text-sm text-muted-foreground">{t('matchups.table.empty')}</p>;
   }
 
   // Newest first, matching legacy's `.reverse()` after building `newData`.
@@ -39,9 +41,9 @@ export function MatchupTable({ matchupMatches }: { matchupMatches: Match[] }) {
     if (!pendingDelete) return;
     try {
       await deleteMatch.mutateAsync(pendingDelete.id);
-      toast.success('Match deleted!');
+      toast.success(t('shared.matchDelete.deleted'));
     } catch {
-      toast.error('Failed to delete match. Please try again.');
+      toast.error(t('shared.matchDelete.deleteFailed'));
     } finally {
       setPendingDelete(null);
     }
@@ -52,23 +54,23 @@ export function MatchupTable({ matchupMatches }: { matchupMatches: Match[] }) {
       <Table>
         <TableHeader>
           <TableRow>
-            <TableHead>Date</TableHead>
-            <TableHead>Stage</TableHead>
-            <TableHead>Result</TableHead>
-            <TableHead className="text-right">Manage</TableHead>
+            <TableHead>{t('matchups.table.date')}</TableHead>
+            <TableHead>{t('matchups.stageTable.stage')}</TableHead>
+            <TableHead>{t('matchups.table.result')}</TableHead>
+            <TableHead className="text-right">{t('matchups.table.manage')}</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
           {rows.map((match) => (
             <TableRow key={match.id}>
-              <TableCell>{new Date(match.time).toLocaleString()}</TableCell>
+              <TableCell>{new Date(match.time).toLocaleString(i18n.language)}</TableCell>
               <TableCell>{match.map?.name ?? 'unknown'}</TableCell>
-              <TableCell>{match.win ? 'Win' : 'Loss'}</TableCell>
+              <TableCell>{match.win ? t('common.win') : t('common.loss')}</TableCell>
               <TableCell className="text-right">
                 <Button
                   variant="outline"
                   size="icon-sm"
-                  aria-label="Delete match"
+                  aria-label={t('shared.matchDelete.aria')}
                   onClick={() => setPendingDelete(match)}
                 >
                   <Trash2 />
@@ -85,12 +87,12 @@ export function MatchupTable({ matchupMatches }: { matchupMatches: Match[] }) {
       >
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Delete this match?</AlertDialogTitle>
-            <AlertDialogDescription>This action cannot be undone.</AlertDialogDescription>
+            <AlertDialogTitle>{t('shared.matchDelete.confirmTitle')}</AlertDialogTitle>
+            <AlertDialogDescription>{t('common.cannotBeUndone')}</AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={confirmDelete}>Delete</AlertDialogAction>
+            <AlertDialogCancel>{t('common.cancel')}</AlertDialogCancel>
+            <AlertDialogAction onClick={confirmDelete}>{t('common.delete')}</AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>

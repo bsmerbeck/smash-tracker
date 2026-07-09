@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
 import { Link } from 'react-router';
+import { useTranslation } from 'react-i18next';
 import type { Fighter } from '@smash-tracker/shared';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -28,6 +29,7 @@ import { PairingOpponentSplit } from './components/PairingOpponentSplit';
  * `.filter(m => m.fighter_id === fighter.id).filter(m => m.opponent_id === opponent.id)`.
  */
 export function MatchupsPage() {
+  const { t } = useTranslation();
   const { data: fighterSelection, isLoading: fightersLoading } = useFighters();
   const { matches, allMatches, isLoading: matchesLoading, filterActive } = useFilteredMatches();
 
@@ -55,24 +57,20 @@ export function MatchupsPage() {
   };
 
   if (fightersLoading || matchesLoading) {
-    return <div className="text-muted-foreground">Loading matchups...</div>;
+    return <div className="text-muted-foreground">{t('matchups.loading')}</div>;
   }
 
   if (fighterSprites.length === 0) {
     return (
       <div className="flex flex-col items-center gap-4 py-16 text-center">
-        <h1 className="text-2xl font-semibold tracking-tight">
-          You haven&apos;t picked any fighters yet!
-        </h1>
-        <p className="max-w-md text-muted-foreground">
-          Choose your primary and secondary fighters to start tracking matchups.
-        </p>
+        <h1 className="text-2xl font-semibold tracking-tight">{t('shared.noFighters.title')}</h1>
+        <p className="max-w-md text-muted-foreground">{t('matchups.noFightersSubtitle')}</p>
         <div className="flex flex-wrap justify-center gap-2">
           <Button asChild>
-            <Link to="/choose-primary">Choose Primary Fighters</Link>
+            <Link to="/choose-primary">{t('shared.noFighters.choosePrimary')}</Link>
           </Button>
           <Button asChild variant="outline">
-            <Link to="/choose-secondary">Choose Secondary Fighters</Link>
+            <Link to="/choose-secondary">{t('shared.noFighters.chooseSecondary')}</Link>
           </Button>
         </div>
       </div>
@@ -82,14 +80,10 @@ export function MatchupsPage() {
   if (allMatches.length === 0) {
     return (
       <div className="flex flex-col items-center gap-2 py-16 text-center">
-        <h2 className="text-xl font-semibold tracking-tight">
-          You haven&apos;t reported any matches!
-        </h2>
-        <p className="text-muted-foreground">
-          Report a match on the Dashboard and check back here.
-        </p>
+        <h2 className="text-xl font-semibold tracking-tight">{t('shared.noMatches.title')}</h2>
+        <p className="text-muted-foreground">{t('shared.noMatches.subtitle')}</p>
         <Button asChild className="mt-2">
-          <Link to="/dashboard">Go to Dashboard</Link>
+          <Link to="/dashboard">{t('common.goToDashboard')}</Link>
         </Button>
       </div>
     );
@@ -108,12 +102,14 @@ export function MatchupsPage() {
         <Card>
           <CardContent className="flex flex-wrap items-center justify-center gap-6 pt-6">
             <div className="flex flex-col items-center gap-2">
-              <h3 className="text-sm font-medium text-muted-foreground">You</h3>
+              <h3 className="text-sm font-medium text-muted-foreground">{t('matchups.you')}</h3>
               <SelectFighter />
             </div>
-            <span className="text-xl font-semibold">vs</span>
+            <span className="text-xl font-semibold">{t('matchups.vs')}</span>
             <div className="flex flex-col items-center gap-2">
-              <h3 className="text-sm font-medium text-muted-foreground">Opponent</h3>
+              <h3 className="text-sm font-medium text-muted-foreground">
+                {t('matchups.opponent')}
+              </h3>
               <SelectOpponent />
             </div>
           </CardContent>
@@ -126,7 +122,7 @@ export function MatchupsPage() {
             <div className="flex items-center justify-center gap-4">
               {fighter.url && <img src={fighter.url} alt="" className="size-12 object-contain" />}
               <span className="text-lg font-semibold">{fighter.name}</span>
-              <span className="text-muted-foreground">vs</span>
+              <span className="text-muted-foreground">{t('matchups.vs')}</span>
               <span className="text-lg font-semibold">{opponent.name}</span>
               {opponent.url && <img src={opponent.url} alt="" className="size-12 object-contain" />}
             </div>
@@ -145,7 +141,7 @@ export function MatchupsPage() {
           <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
             <Card>
               <CardHeader>
-                <CardTitle>Win Rate Trend</CardTitle>
+                <CardTitle>{t('matchups.winRateTrend')}</CardTitle>
               </CardHeader>
               <CardContent>
                 <MatchupChart matchupMatches={matchupMatches} />
@@ -156,7 +152,7 @@ export function MatchupsPage() {
 
           <Card>
             <CardHeader>
-              <CardTitle>Matchup Results</CardTitle>
+              <CardTitle>{t('matchups.results')}</CardTitle>
             </CardHeader>
             <CardContent>
               <MatchupTable matchupMatches={matchupMatches} />

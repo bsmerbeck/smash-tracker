@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next';
 import type { Match } from '@smash-tracker/shared';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { stageAbbreviation } from '@/components/StageOption';
@@ -26,43 +27,46 @@ const TINT_CLASSES: Record<MasteryTintBucket, string> = {
  */
 export function StageMastery({
   fighterMatches,
-  title = 'Stage Mastery',
+  title,
 }: {
   fighterMatches: Match[];
   title?: string;
 }) {
+  const { t } = useTranslation();
   const tiles = buildStageMasteryTiles(fighterMatches);
   const { bestPick, banWorthy } = buildStageMasteryCaption(fighterMatches);
 
   return (
     <Card>
       <CardHeader>
-        <CardTitle>{title}</CardTitle>
+        <CardTitle>{title ?? t('fighterAnalysis.stageMastery.title')}</CardTitle>
       </CardHeader>
       <CardContent className="flex flex-col gap-4">
         {(bestPick || banWorthy) && (
           <div className="flex flex-wrap gap-4 text-sm">
             {bestPick && (
               <p>
-                <span className="font-medium text-emerald-500">Best pick:</span>{' '}
-                {stagesById.get(bestPick.stageId)?.name ?? 'Unknown'} ({bestPick.winRate}% over{' '}
-                {bestPick.total})
+                <span className="font-medium text-emerald-500">
+                  {t('fighterAnalysis.stageMastery.bestPick')}
+                </span>{' '}
+                {stagesById.get(bestPick.stageId)?.name ?? t('common.unknown')}{' '}
+                {t('common.rateOverSample', { rate: bestPick.winRate, total: bestPick.total })}
               </p>
             )}
             {banWorthy && (
               <p>
-                <span className="font-medium text-destructive">Ban-worthy:</span>{' '}
-                {stagesById.get(banWorthy.stageId)?.name ?? 'Unknown'} ({banWorthy.winRate}% over{' '}
-                {banWorthy.total})
+                <span className="font-medium text-destructive">
+                  {t('fighterAnalysis.stageMastery.banWorthy')}
+                </span>{' '}
+                {stagesById.get(banWorthy.stageId)?.name ?? t('common.unknown')}{' '}
+                {t('common.rateOverSample', { rate: banWorthy.winRate, total: banWorthy.total })}
               </p>
             )}
           </div>
         )}
 
         {tiles.length === 0 ? (
-          <p className="text-sm text-muted-foreground">
-            No stage data yet — report matches with this fighter to build the grid.
-          </p>
+          <p className="text-sm text-muted-foreground">{t('fighterAnalysis.stageMastery.empty')}</p>
         ) : (
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6">
             {tiles.map((tile) => (
@@ -76,8 +80,9 @@ export function StageMastery({
 }
 
 function StageTile({ tile }: { tile: StageMasteryTile }) {
+  const { t } = useTranslation();
   const stage = stagesById.get(tile.stageId);
-  const name = stage?.name ?? 'Unknown';
+  const name = stage?.name ?? t('common.unknown');
 
   return (
     <div className={`flex flex-col overflow-hidden rounded-lg border ${TINT_CLASSES[tile.tint]}`}>

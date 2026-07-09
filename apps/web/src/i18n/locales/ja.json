@@ -48,7 +48,9 @@
     "noMatchData": "まだ対戦データがありません。",
     "rate": "勝率",
     "games_one": "{{count}}戦",
-    "games_other": "{{count}}戦"
+    "games_other": "{{count}}戦",
+    "rateOverSample": "（{{total}}戦中 勝率{{rate}}%）",
+    "goToDashboard": "ダッシュボードへ"
   },
   "filters": {
     "sourceAria": "対戦を種別で絞り込む",
@@ -71,6 +73,10 @@
       "confirmTitle": "この対戦を削除しますか？",
       "deleted": "対戦を削除しました！",
       "deleteFailed": "対戦を削除できませんでした。もう一度お試しください。"
+    },
+    "noMatches": {
+      "title": "まだ対戦を記録していません！",
+      "subtitle": "ダッシュボードで対戦を記録してから、またここを確認しましょう。"
     },
     "vod": {
       "title": "VODメモ",
@@ -366,7 +372,6 @@
     "loading": "対戦データを読み込み中...",
     "title": "対戦履歴",
     "noMatches": "まだ対戦がありません。対戦を記録してから、ここでデータを確認しましょう！",
-    "goToDashboard": "ダッシュボードへ",
     "table": {
       "columns": {
         "date": "日時",
@@ -407,6 +412,123 @@
       "noneOnStage": "このステージでの対戦記録はありません。",
       "winsShort": "{{count}}勝",
       "lossesShort": "{{count}}敗"
+    }
+  },
+  "matchups": {
+    "loading": "相性データを読み込み中...",
+    "noFightersSubtitle": "メインとサブのファイターを選んで、相性の記録を始めましょう。",
+    "you": "自分",
+    "opponent": "相手",
+    "vs": "vs",
+    "winRateTrend": "勝率の推移",
+    "results": "対戦結果",
+    "selectFighterAria": "自分のファイターを選択",
+    "selectOpponentAria": "相手のファイターを選択",
+    "selectPlaceholder": "ファイターを選択",
+    "record": {
+      "empty": "このファイターとの対戦記録はありません",
+      "totalMatches": "総対戦数"
+    },
+    "matrix": {
+      "title": "相性マトリクス",
+      "showTop": "上位{{count}}体を表示",
+      "showAll": "全{{count}}体を表示",
+      "empty": "まだ対戦が記録されていません — 対戦をプレイして相性マトリクスを作りましょう。",
+      "yourFighterSr": "自分のファイター",
+      "cellAria": "{{fighter}} vs {{opponent}}: {{wins}}-{{losses}}"
+    },
+    "chart": {
+      "window": "集計範囲",
+      "windowAria": "トレンドの範囲",
+      "rolling5": "直近5戦",
+      "rolling10": "直近10戦",
+      "cumulative": "累計",
+      "empty": "対戦を登録するとグラフが表示されます。",
+      "winRate": "勝率"
+    },
+    "insights": {
+      "title": "相性の分析",
+      "minMatches": "ステージごとの最低対戦数",
+      "minMatchesAria": "ステージごとの最低対戦数",
+      "empty": "この相性の対戦はまだ記録されていません。",
+      "currentStreak": "現在の連続記録",
+      "streakWins": "{{count}}連勝",
+      "streakLosses": "{{count}}連敗",
+      "longestWin": "最長連勝",
+      "longestLoss": "最長連敗",
+      "recentForm": "最近の調子（新しい順）",
+      "bestStage": "得意ステージ",
+      "worstStage": "苦手ステージ",
+      "notEnoughStageData": "ステージのデータがまだ足りません。",
+      "byMatchType": "対戦の種類別"
+    },
+    "stageTable": {
+      "title": "ステージ別集計",
+      "stage": "ステージ",
+      "record": "戦績",
+      "winRate": "勝率"
+    },
+    "counterpick": {
+      "title": "カウンターピック指南",
+      "gather": "データを集めましょう: この相性でピックやバンを提案するには、各ステージで{{count}}戦以上の記録が必要です。",
+      "pickThese": "ここを選ぶ",
+      "banThese": "ここは拒否/回避",
+      "unknownStage": "不明なステージ"
+    },
+    "opponentSplit": {
+      "title": "相手プレイヤー別",
+      "empty": "この相性で名前付きの相手はまだ記録されていません。"
+    },
+    "table": {
+      "empty": "まだ対戦が記録されていません！",
+      "date": "日時",
+      "result": "結果",
+      "manage": "管理"
+    }
+  },
+  "fighterAnalysis": {
+    "loading": "ファイター分析を読み込み中...",
+    "noFightersSubtitle": "メインとサブのファイターを選んで、分析を始めましょう。",
+    "title": "ファイター分析",
+    "selectAria": "ファイターを選択",
+    "selectPlaceholder": "ファイターを選択",
+    "hero": {
+      "rateAndGames": "勝率{{rate}}% · {{count}}戦",
+      "noMatches": "このファイターの対戦はまだ記録されていません。",
+      "streakWin": "{{count}}連勝中",
+      "streakLoss": "{{count}}連敗中",
+      "share": "全対戦の{{pct}}%",
+      "last10": "直近10戦（新しい順）",
+      "formRolling": "調子（直近10戦）",
+      "typeColumn": "種類"
+    },
+    "stageMastery": {
+      "title": "ステージ習熟度",
+      "bestPick": "ベストピック:",
+      "banWorthy": "拒否推奨:",
+      "empty": "まだステージのデータがありません — このファイターで対戦を記録するとグリッドが作られます。"
+    },
+    "coverage": {
+      "title": "相性カバレッジ",
+      "empty": "まだ相手のデータがありません — 対戦を記録すると、実際によく当たる相手が表示されます。",
+      "thin": "データ少",
+      "none": "データなし"
+    },
+    "practice": {
+      "title": "練習のおすすめ",
+      "empty": "おすすめを出すにはまだデータが足りません — このファイターで対戦を記録し続けましょう。",
+      "struggling": "{{name}}が苦手: {{wins}}-{{losses}}",
+      "noGames": "{{name}}との対戦記録なし — よく当たる相手です",
+      "stageHabit": "{{stage}}で戦いがち: {{wins}}-{{losses}}"
+    },
+    "guide": {
+      "title": "相性別ステージガイド",
+      "empty": "まだ相性データがありません — このファイターで対戦を記録するとガイドが作られます。"
+    },
+    "opponents": {
+      "title": "相手プレイヤー",
+      "empty": "名前付きの相手はまだ記録されていません。",
+      "matches": "対戦数"
     }
   }
 }

@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { Match } from '@smash-tracker/shared';
+// Bundled-English i18n (test setup) — recommendations take `t` so bullets localize.
+import i18n from '@/i18n';
 import {
   buildMatchupCoverage,
   buildPracticeRecommendations,
@@ -110,7 +112,7 @@ describe('buildPracticeRecommendations', () => {
     ];
     const coverage = buildMatchupCoverage(fighterMatches, fighterMatches);
 
-    const recs = buildPracticeRecommendations(fighterMatches, coverage, nameFor);
+    const recs = buildPracticeRecommendations(fighterMatches, coverage, nameFor, i18n.t);
 
     expect(recs).toContainEqual({
       kind: 'worst-matchup',
@@ -125,7 +127,7 @@ describe('buildPracticeRecommendations', () => {
     ]; // only 2 games, below the 3-game minimum
     const coverage = buildMatchupCoverage(fighterMatches, fighterMatches);
 
-    const recs = buildPracticeRecommendations(fighterMatches, coverage, nameFor);
+    const recs = buildPracticeRecommendations(fighterMatches, coverage, nameFor, i18n.t);
 
     expect(recs.find((r) => r.kind === 'worst-matchup')).toBeUndefined();
   });
@@ -139,7 +141,7 @@ describe('buildPracticeRecommendations', () => {
     const fighterMatches: Match[] = []; // selected fighter has never faced Fox
     const coverage = buildMatchupCoverage(allMatches, fighterMatches);
 
-    const recs = buildPracticeRecommendations(fighterMatches, coverage, nameFor);
+    const recs = buildPracticeRecommendations(fighterMatches, coverage, nameFor, i18n.t);
 
     expect(recs).toContainEqual({
       kind: 'coverage-gap',
@@ -153,7 +155,7 @@ describe('buildPracticeRecommendations', () => {
     ]; // only faced once account-wide, below the gap threshold
     const coverage = buildMatchupCoverage(allMatches, []);
 
-    const recs = buildPracticeRecommendations([], coverage, nameFor);
+    const recs = buildPracticeRecommendations([], coverage, nameFor, i18n.t);
 
     expect(recs.find((r) => r.kind === 'coverage-gap')).toBeUndefined();
   });
@@ -179,7 +181,7 @@ describe('buildPracticeRecommendations', () => {
     ];
     const coverage = buildMatchupCoverage(fighterMatches, fighterMatches);
 
-    const recs = buildPracticeRecommendations(fighterMatches, coverage, nameFor);
+    const recs = buildPracticeRecommendations(fighterMatches, coverage, nameFor, i18n.t);
 
     expect(recs).toContainEqual({
       kind: 'stage-habit',
@@ -199,13 +201,13 @@ describe('buildPracticeRecommendations', () => {
     ];
     const coverage = buildMatchupCoverage(fighterMatches, fighterMatches);
 
-    const recs = buildPracticeRecommendations(fighterMatches, coverage, nameFor);
+    const recs = buildPracticeRecommendations(fighterMatches, coverage, nameFor, i18n.t);
 
     expect(recs.find((r) => r.kind === 'stage-habit')).toBeUndefined();
   });
 
   it('returns an honest empty list when nothing qualifies', () => {
-    expect(buildPracticeRecommendations([], [], nameFor)).toEqual([]);
+    expect(buildPracticeRecommendations([], [], nameFor, i18n.t)).toEqual([]);
   });
 
   it('can surface all three recommendations together, each independently triggered', () => {
@@ -244,7 +246,7 @@ describe('buildPracticeRecommendations', () => {
     const allMatches = [...fighterMatches, ...metaOnlyFoxMatches];
     const coverage = buildMatchupCoverage(allMatches, fighterMatches);
 
-    const recs = buildPracticeRecommendations(fighterMatches, coverage, nameFor);
+    const recs = buildPracticeRecommendations(fighterMatches, coverage, nameFor, i18n.t);
 
     expect(recs.map((r) => r.kind).sort()).toEqual(
       ['coverage-gap', 'stage-habit', 'worst-matchup'].sort(),

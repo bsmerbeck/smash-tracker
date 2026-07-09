@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next';
 import type { Fighter } from '@smash-tracker/shared';
 import {
   Select,
@@ -17,6 +18,7 @@ export function SelectFighter({
   fighterSprites: Fighter[];
   onChange: (fighter: Fighter) => void;
 }) {
+  const { t } = useTranslation();
   return (
     <Select
       value={fighter ? String(fighter.id) : undefined}
@@ -27,8 +29,8 @@ export function SelectFighter({
         }
       }}
     >
-      <SelectTrigger aria-label="Select fighter" className="w-[220px]">
-        <SelectValue placeholder="Select a fighter" />
+      <SelectTrigger aria-label={t('fighterAnalysis.selectAria')} className="w-[220px]">
+        <SelectValue placeholder={t('fighterAnalysis.selectPlaceholder')} />
       </SelectTrigger>
       <SelectContent>
         {fighterSprites.map((sprite) => (

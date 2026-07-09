@@ -1,4 +1,6 @@
 import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
+import type { TFunction } from 'i18next';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import {
   Table,
@@ -22,16 +24,16 @@ import { stagesById } from '@/data/stages';
 
 const THRESHOLD_OPTIONS = [1, 2, 3, 5, 10];
 
-function stageCell(record: StageRecord | null) {
+function stageCell(record: StageRecord | null, t: TFunction) {
   if (!record) {
     return <span className="text-muted-foreground">—</span>;
   }
-  const name = stagesById.get(record.stageId)?.name ?? 'Unknown';
+  const name = stagesById.get(record.stageId)?.name ?? t('common.unknown');
   return (
     <span>
       {name}{' '}
       <span className="text-muted-foreground">
-        ({record.winRate}% over {record.total})
+        {t('common.rateOverSample', { rate: record.winRate, total: record.total })}
       </span>
     </span>
   );
@@ -45,17 +47,18 @@ function stageCell(record: StageRecord | null) {
  * matchups lead.
  */
 export function MatchupStageGuide({ fighterMatches }: { fighterMatches: Match[] }) {
+  const { t } = useTranslation();
   const [threshold, setThreshold] = useState(3);
   const rows = getMatchupStageGuide(fighterMatches, threshold);
 
   return (
     <Card>
       <CardHeader className="flex flex-row items-center justify-between">
-        <CardTitle>Matchup Stage Guide</CardTitle>
+        <CardTitle>{t('fighterAnalysis.guide.title')}</CardTitle>
         <div className="flex items-center gap-2">
-          <span className="text-sm text-muted-foreground">Min matches per stage</span>
+          <span className="text-sm text-muted-foreground">{t('matchups.insights.minMatches')}</span>
           <Select value={String(threshold)} onValueChange={(v) => setThreshold(Number(v))}>
-            <SelectTrigger className="w-[72px]" aria-label="Minimum matches per stage">
+            <SelectTrigger className="w-[72px]" aria-label={t('matchups.insights.minMatchesAria')}>
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -70,19 +73,17 @@ export function MatchupStageGuide({ fighterMatches }: { fighterMatches: Match[] 
       </CardHeader>
       <CardContent>
         {rows.length === 0 ? (
-          <p className="text-sm text-muted-foreground">
-            No matchup data yet — report matches with this fighter to build the guide.
-          </p>
+          <p className="text-sm text-muted-foreground">{t('fighterAnalysis.guide.empty')}</p>
         ) : (
           <div className="max-h-[600px] overflow-y-auto">
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Opponent</TableHead>
-                  <TableHead>Record</TableHead>
-                  <TableHead>Win Rate</TableHead>
-                  <TableHead>Best Stage</TableHead>
-                  <TableHead>Worst Stage</TableHead>
+                  <TableHead>{t('matchups.opponent')}</TableHead>
+                  <TableHead>{t('matchups.stageTable.record')}</TableHead>
+                  <TableHead>{t('matchups.stageTable.winRate')}</TableHead>
+                  <TableHead>{t('matchups.insights.bestStage')}</TableHead>
+                  <TableHead>{t('matchups.insights.worstStage')}</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -95,15 +96,15 @@ export function MatchupStageGuide({ fighterMatches }: { fighterMatches: Match[] 
                           {sprite && (
                             <img src={sprite.url} alt="" className="size-6 object-contain" />
                           )}
-                          <span>{sprite?.name ?? 'Unknown'}</span>
+                          <span>{sprite?.name ?? t('common.unknown')}</span>
                         </div>
                       </TableCell>
                       <TableCell>
                         {row.record.wins}-{row.record.losses}
                       </TableCell>
                       <TableCell>{row.record.winRate}%</TableCell>
-                      <TableCell>{stageCell(row.bestStage)}</TableCell>
-                      <TableCell>{stageCell(row.worstStage)}</TableCell>
+                      <TableCell>{stageCell(row.bestStage, t)}</TableCell>
+                      <TableCell>{stageCell(row.worstStage, t)}</TableCell>
                     </TableRow>
                   );
                 })}

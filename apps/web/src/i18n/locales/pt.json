@@ -48,7 +48,9 @@
     "noMatchData": "Ainda não há dados de partidas.",
     "rate": "Taxa",
     "games_one": "{{count}} partida",
-    "games_other": "{{count}} partidas"
+    "games_other": "{{count}} partidas",
+    "rateOverSample": "({{rate}}% em {{total}})",
+    "goToDashboard": "Ir para o Painel"
   },
   "filters": {
     "sourceAria": "Filtrar partidas por origem",
@@ -71,6 +73,10 @@
       "confirmTitle": "Excluir esta partida?",
       "deleted": "Partida excluída!",
       "deleteFailed": "Falha ao excluir a partida. Tente novamente."
+    },
+    "noMatches": {
+      "title": "Você ainda não reportou nenhuma partida!",
+      "subtitle": "Registre uma partida no Painel e volte aqui."
     },
     "vod": {
       "title": "Notas de VOD",
@@ -366,7 +372,6 @@
     "loading": "Carregando dados de partidas...",
     "title": "Histórico de partidas",
     "noMatches": "Você não tem partidas; registre uma e volte aqui para ver os dados!",
-    "goToDashboard": "Ir para o Painel",
     "table": {
       "columns": {
         "date": "Data",
@@ -407,6 +412,123 @@
       "noneOnStage": "Nenhuma partida registrada neste stage.",
       "winsShort": "{{count}}V",
       "lossesShort": "{{count}}D"
+    }
+  },
+  "matchups": {
+    "loading": "Carregando confrontos...",
+    "noFightersSubtitle": "Escolha seus lutadores principal e secundários para começar a registrar confrontos.",
+    "you": "Você",
+    "opponent": "Oponente",
+    "vs": "vs",
+    "winRateTrend": "Tendência da taxa de vitórias",
+    "results": "Resultados do confronto",
+    "selectFighterAria": "Selecionar seu lutador",
+    "selectOpponentAria": "Selecionar lutador do oponente",
+    "selectPlaceholder": "Selecione um lutador",
+    "record": {
+      "empty": "Nenhuma partida registrada contra este lutador",
+      "totalMatches": "Partidas no total"
+    },
+    "matrix": {
+      "title": "Matriz de confrontos",
+      "showTop": "Mostrar top {{count}}",
+      "showAll": "Mostrar todos ({{count}})",
+      "empty": "Nenhuma partida registrada ainda — jogue algumas para montar sua matriz de confrontos.",
+      "yourFighterSr": "Seu lutador",
+      "cellAria": "{{fighter}} vs {{opponent}}: {{wins}}-{{losses}}"
+    },
+    "chart": {
+      "window": "Janela",
+      "windowAria": "Janela de tendência",
+      "rolling5": "Últimas 5",
+      "rolling10": "Últimas 10",
+      "cumulative": "Acumulado",
+      "empty": "Registre uma partida para ver o gráfico.",
+      "winRate": "Taxa de vitórias"
+    },
+    "insights": {
+      "title": "Insights do confronto",
+      "minMatches": "Mín. de partidas por stage",
+      "minMatchesAria": "Mínimo de partidas por stage",
+      "empty": "Nenhuma partida registrada para este confronto ainda.",
+      "currentStreak": "Sequência atual",
+      "streakWins": "{{count}} vitórias",
+      "streakLosses": "{{count}} derrotas",
+      "longestWin": "Maior sequência de vitórias",
+      "longestLoss": "Maior sequência de derrotas",
+      "recentForm": "Forma recente (mais recente primeiro)",
+      "bestStage": "Melhor stage",
+      "worstStage": "Pior stage",
+      "notEnoughStageData": "Ainda não há dados suficientes de stage.",
+      "byMatchType": "Por tipo de partida"
+    },
+    "stageTable": {
+      "title": "Detalhamento por stage",
+      "stage": "Stage",
+      "record": "Retrospecto",
+      "winRate": "Taxa de vitórias"
+    },
+    "counterpick": {
+      "title": "Conselheiro de counterpick",
+      "gather": "Reúna mais dados: cada stage precisa de pelo menos {{count}} partidas registradas neste confronto antes de podermos sugerir picks ou bans.",
+      "pickThese": "Escolha estes",
+      "banThese": "Bana / evite estes",
+      "unknownStage": "Stage desconhecido"
+    },
+    "opponentSplit": {
+      "title": "Por oponente",
+      "empty": "Nenhum oponente nomeado registrado para este confronto ainda."
+    },
+    "table": {
+      "empty": "Nenhuma partida registrada ainda!",
+      "date": "Data",
+      "result": "Resultado",
+      "manage": "Gerenciar"
+    }
+  },
+  "fighterAnalysis": {
+    "loading": "Carregando análise do lutador...",
+    "noFightersSubtitle": "Escolha seus lutadores principal e secundários para começar a análise.",
+    "title": "Análise de lutador",
+    "selectAria": "Selecionar lutador",
+    "selectPlaceholder": "Selecione um lutador",
+    "hero": {
+      "rateAndGames": "{{rate}}% de vitórias · {{count}} partidas",
+      "noMatches": "Nenhuma partida registrada com este lutador ainda.",
+      "streakWin": "Sequência de {{count}}V",
+      "streakLoss": "Sequência de {{count}}D",
+      "share": "{{pct}}% das suas partidas",
+      "last10": "Últimas 10 (mais recente primeiro)",
+      "formRolling": "Forma (janela de 10)",
+      "typeColumn": "Tipo"
+    },
+    "stageMastery": {
+      "title": "Domínio de stages",
+      "bestPick": "Melhor pick:",
+      "banWorthy": "Digno de ban:",
+      "empty": "Ainda não há dados de stage — registre partidas com este lutador para montar a grade."
+    },
+    "coverage": {
+      "title": "Cobertura de confrontos",
+      "empty": "Ainda não há dados de oponentes — registre partidas para ver quem você enfrenta.",
+      "thin": "dados escassos",
+      "none": "sem dados"
+    },
+    "practice": {
+      "title": "Recomendações de treino",
+      "empty": "Ainda não há dados suficientes para uma recomendação — continue registrando partidas com este lutador.",
+      "struggling": "Dificuldade contra {{name}}: {{wins}}-{{losses}}",
+      "noGames": "Nenhuma partida contra {{name}} — você o enfrenta com frequência",
+      "stageHabit": "Você continua jogando em {{stage}}: {{wins}}-{{losses}}"
+    },
+    "guide": {
+      "title": "Guia de stages por confronto",
+      "empty": "Ainda não há dados de confronto — registre partidas com este lutador para montar o guia."
+    },
+    "opponents": {
+      "title": "Oponentes",
+      "empty": "Nenhum oponente nomeado registrado ainda.",
+      "matches": "Partidas"
     }
   }
 }

@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import type { Match } from '@smash-tracker/shared';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -24,6 +25,7 @@ export const MATCHUP_DETAIL_ANCHOR_ID = 'matchup-detail';
  * pairing detail section.
  */
 export function MatchupMatrix({ matches }: { matches: Match[] }) {
+  const { t } = useTranslation();
   const { fighterSprites, setFighter, setOpponent } = useMatchupsContext();
   const [showAllColumns, setShowAllColumns] = useState(false);
 
@@ -58,25 +60,25 @@ export function MatchupMatrix({ matches }: { matches: Match[] }) {
   return (
     <Card>
       <CardHeader className="flex flex-row items-center justify-between">
-        <CardTitle>Matchup Matrix</CardTitle>
+        <CardTitle>{t('matchups.matrix.title')}</CardTitle>
         {hasMoreColumns && (
           <Button variant="outline" size="sm" onClick={() => setShowAllColumns((v) => !v)}>
-            {showAllColumns ? 'Show top 12' : `Show all ${allColumnIds.length}`}
+            {showAllColumns
+              ? t('matchups.matrix.showTop', { count: VISIBLE_COLUMN_CAP })
+              : t('matchups.matrix.showAll', { count: allColumnIds.length })}
           </Button>
         )}
       </CardHeader>
       <CardContent>
         {rowIds.length === 0 || columnIds.length === 0 ? (
-          <p className="text-sm text-muted-foreground">
-            No matches recorded yet — play some matches to build your matchup matrix.
-          </p>
+          <p className="text-sm text-muted-foreground">{t('matchups.matrix.empty')}</p>
         ) : (
           <div className="overflow-x-auto">
             <table className="mx-auto w-max border-separate border-spacing-0 text-sm">
               <thead>
                 <tr>
                   <th className="sticky left-0 z-10 w-40 min-w-40 max-w-40 border-r border-border bg-card p-2 text-left align-bottom">
-                    <span className="sr-only">Your fighter</span>
+                    <span className="sr-only">{t('matchups.matrix.yourFighterSr')}</span>
                   </th>
                   {columnIds.map((opponentId) => {
                     const opponent = getFighterById(opponentId);
@@ -92,7 +94,7 @@ export function MatchupMatrix({ matches }: { matches: Match[] }) {
                             />
                           )}
                           <span className="w-16 truncate text-center text-xs text-muted-foreground">
-                            {opponent?.name ?? 'Unknown'}
+                            {opponent?.name ?? t('common.unknown')}
                           </span>
                         </div>
                       </th>
@@ -118,23 +120,29 @@ export function MatchupMatrix({ matches }: { matches: Match[] }) {
                               loading="lazy"
                             />
                           )}
-                          <span className="truncate" title={fighter?.name ?? 'Unknown'}>
-                            {fighter?.name ?? 'Unknown'}
+                          <span className="truncate" title={fighter?.name ?? t('common.unknown')}>
+                            {fighter?.name ?? t('common.unknown')}
                           </span>
                         </div>
                       </th>
                       {columnIds.map((opponentId) => {
                         const cell = cellByKey.get(`${fighterId}:${opponentId}`);
-                        const opponentName = getFighterById(opponentId)?.name ?? 'Unknown';
-                        const fighterName = fighter?.name ?? 'Unknown';
+                        const opponentName =
+                          getFighterById(opponentId)?.name ?? t('common.unknown');
+                        const fighterName = fighter?.name ?? t('common.unknown');
                         return (
                           <td key={opponentId} className="p-1 text-center">
                             {cell ? (
                               <button
                                 type="button"
                                 onClick={() => selectPairing(fighterId, opponentId)}
-                                aria-label={`${fighterName} vs ${opponentName}: ${cell.wins}-${cell.losses}`}
-                                title={`${cell.wins}-${cell.losses} (${cell.winRate}% over ${cell.total})`}
+                                aria-label={t('matchups.matrix.cellAria', {
+                                  fighter: fighterName,
+                                  opponent: opponentName,
+                                  wins: cell.wins,
+                                  losses: cell.losses,
+                                })}
+                                title={`${cell.wins}-${cell.losses} ${t('common.rateOverSample', { rate: cell.winRate, total: cell.total })}`}
                                 className="flex size-14 items-center justify-center rounded font-medium text-white transition-transform hover:scale-105 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
                                 style={{
                                   backgroundColor: matchupCellBackground(
