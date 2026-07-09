@@ -32,6 +32,7 @@ import {
   reportsConfigSchema,
   scoutReportDataSchema,
   scoutReportRecordSchema,
+  stageFavoritesSchema,
   startggAuthorizeResponseSchema,
   startggStatusSchema,
   startggSyncSummarySchema,
@@ -51,6 +52,7 @@ import {
   type UpsertGspSettingsInput,
   type UpsertOpponentAliasInput,
   type UpsertOpponentNoteInput,
+  type UpsertStageFavoritesInput,
 } from '@smash-tracker/shared';
 import { getFirebaseAuth } from './firebase';
 
@@ -409,6 +411,16 @@ export const api = {
     /** PUT /api/gsp-settings */
     update: (input: UpsertGspSettingsInput) =>
       apiRequestParsed('/api/gsp-settings', gspSettingsSchema, { method: 'PUT', body: input }),
+  },
+  stageFavorites: {
+    /** GET /api/stage-favorites — the signed-in user's favorited stage ids (an empty default is synthesized server-side, never 404s). */
+    get: () => apiRequestParsed('/api/stage-favorites', stageFavoritesSchema),
+    /** PUT /api/stage-favorites — replaces the whole favorites list. */
+    update: (input: UpsertStageFavoritesInput) =>
+      apiRequestParsed('/api/stage-favorites', stageFavoritesSchema, {
+        method: 'PUT',
+        body: input,
+      }),
   },
 };
 

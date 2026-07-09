@@ -5,6 +5,7 @@ import { AccountCard } from './components/AccountCard';
 import { SecurityCard } from './components/SecurityCard';
 import { ConnectedAccountsCard } from './components/ConnectedAccountsCard';
 import { FightersCard } from './components/FightersCard';
+import { FavoriteStagesCard } from './components/FavoriteStagesCard';
 import { BillingCard } from './components/BillingCard';
 import { YourDataCard } from './components/YourDataCard';
 
@@ -39,6 +40,7 @@ export function ProfilePage() {
       <SecurityCard user={user} />
       <ConnectedAccountsCard />
       <FightersCard />
+      <FavoriteStagesCard />
       <BillingCard />
       <YourDataCard />
     </div>
