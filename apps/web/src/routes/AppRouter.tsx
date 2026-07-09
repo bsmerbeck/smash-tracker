@@ -47,6 +47,9 @@ const ReportsPage = lazy(() =>
 const MatchDataPage = lazy(() =>
   import('@/pages/MatchData/MatchDataPage').then((m) => ({ default: m.MatchDataPage })),
 );
+const VodManagerPage = lazy(() =>
+  import('@/pages/VodManager/VodManagerPage').then((m) => ({ default: m.VodManagerPage })),
+);
 const TrendsPage = lazy(() =>
   import('@/pages/Trends/TrendsPage').then((m) => ({ default: m.TrendsPage })),
 );
@@ -178,6 +181,14 @@ export function AppRouter() {
             element={
               <ProtectedRoute>
                 <MatchDataPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/vod"
+            element={
+              <ProtectedRoute>
+                <VodManagerPage />
               </ProtectedRoute>
             }
           />
