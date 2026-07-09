@@ -928,5 +928,125 @@
       "title": "Past AI Reports",
       "description": "Reports you've generated before, most recent first."
     }
+  },
+  "reports": {
+    "title": "AI Reports",
+    "notEnabled": "AI reports aren't enabled for this account yet.",
+    "loading": "Loading your reports…",
+    "empty": "No AI scouting reports yet. Generate one from the <scoutLink>Scout a Player</scoutLink> page.",
+    "yourReports": "Your Reports",
+    "groupedBy": "Grouped by player, most recently scouted first.",
+    "olderReport": "Older report",
+    "hideOlder": "Hide older reports",
+    "showOlder": "Show older reports"
+  },
+  "groups": {
+    "title": "Groups",
+    "loading": "Loading your groups...",
+    "empty": {
+      "title": "No groups yet",
+      "body": "Create a group to start a friend-group leaderboard, or join one with an invite code."
+    },
+    "leaderboardLoading": "Loading leaderboard...",
+    "leaderboardError": "Something went wrong loading this leaderboard.",
+    "create": {
+      "trigger": "Create group",
+      "title": "Create a group",
+      "description": "Start a friend-group leaderboard. You can invite others with a code once it's created.",
+      "nameLabel": "Group name",
+      "namePlaceholder": "e.g. The Locals",
+      "error": "Something went wrong creating the group.",
+      "pending": "Creating...",
+      "confirm": "Create"
+    },
+    "join": {
+      "trigger": "Join with code",
+      "title": "Join a group",
+      "description": "Enter the invite code someone shared with you.",
+      "codeLabel": "Invite code",
+      "codePlaceholder": "e.g. AB3DEFGH",
+      "error": "Something went wrong joining that group.",
+      "pending": "Joining...",
+      "confirm": "Join"
+    },
+    "members_one": "{{count}} member",
+    "members_other": "{{count}} members",
+    "header": {
+      "deleteTrigger": "Delete group",
+      "deleteTitle": "Delete \"{{name}}\"?",
+      "deleteDescription": "This removes the group and its leaderboard for every member. This can't be undone.",
+      "deleteError": "Something went wrong deleting the group.",
+      "deletePending": "Deleting...",
+      "leaveTrigger": "Leave group",
+      "leaveTitle": "Leave \"{{name}}\"?",
+      "leaveDescription": "You'll need a new invite code to rejoin later.",
+      "leaveError": "Something went wrong leaving the group.",
+      "leavePending": "Leaving...",
+      "leaveConfirm": "Leave",
+      "inviteCode": "Invite code:",
+      "copyAria": "Copy invite code"
+    },
+    "table": {
+      "player": "Player",
+      "rating": "Rating",
+      "games": "Games",
+      "lastActive": "Last active",
+      "you": "(you)",
+      "never": "never"
+    }
+  },
+  "integrations": {
+    "title": "Integrations",
+    "connected": "Connected",
+    "checkingStatus": "Checking link status…",
+    "gamerTag": "Gamer tag",
+    "lastSynced": "Last synced",
+    "never": "Never",
+    "syncNow": "Sync now",
+    "syncing": "Syncing…",
+    "unlink": "Unlink",
+    "syncFailed": "Sync failed. Please try again.",
+    "unlinkFailed": "Failed to unlink. Please try again.",
+    "linkDescription": "Link your {{provider}} account to automatically import your Smash Ultimate tournament matches. Imported games join your match pool with a competitive tag.",
+    "unlinkTitle": "Unlink {{provider}}?",
+    "unlinkDescription": "Already-imported matches stay in your history; new tournament results just stop syncing until you reconnect.",
+    "unlinkedToast": "{{provider}} account unlinked.",
+    "summary": {
+      "importedFromSets": "Imported {{imported}} games from {{sets}} sets",
+      "importedFromMatches": "Imported {{imported}} games from {{matches}} matches",
+      "skippedDetail_one": "{{count}} without importable detail",
+      "skippedDetail_other": "{{count}} without importable detail",
+      "unknownStages_one": "{{count}} with unrecognized stages",
+      "unknownStages_other": "{{count}} with unrecognized stages",
+      "dqSkipped_one": "{{count}} DQ skipped",
+      "dqSkipped_other": "{{count}} DQs skipped"
+    },
+    "startgg": {
+      "connect": "Connect start.gg account",
+      "linked": "start.gg account linked!",
+      "linkFailed": "start.gg linking failed ({{reason}})",
+      "unknownError": "unknown error"
+    },
+    "parrygg": {
+      "verified": "Verified",
+      "unverified": "Unverified",
+      "verify": "Verify",
+      "linkedTo": "Linked to {{tag}} on parry.gg!",
+      "linkFailed": "Failed to link that account. Please try again.",
+      "searchPlaceholder": "Search your parry.gg gamer tag...",
+      "searchAria": "Search parry.gg gamer tag",
+      "searching": "Searching...",
+      "noAccounts": "No matching parry.gg accounts.",
+      "link": "Link",
+      "verifyTitle": "Verify your parry.gg account",
+      "verifyDescription": "Paste this code into your parry.gg profile bio, then click Check. It expires in 10 minutes.",
+      "copyCodeAria": "Copy verification code",
+      "generatingCode": "Generating your verification code...",
+      "check": "Check",
+      "checking": "Checking...",
+      "verifyStartFailed": "Failed to start verification. Please try again.",
+      "verifiedToast": "parry.gg account verified!",
+      "codeNotFound": "Verification code not found yet. Please try again."
+    }
   }
 }

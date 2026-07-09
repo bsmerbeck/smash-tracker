@@ -1,4 +1,6 @@
 import { useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
+import type { TFunction } from 'i18next';
 import { toast } from 'sonner';
 import { Check, Copy, RefreshCw, Unlink } from 'lucide-react';
 import type { ParryggSearchResult, ParryggSyncSummary } from '@smash-tracker/shared';
@@ -36,7 +38,7 @@ import {
 } from '@/hooks/useParrygg';
 
 /** Mirrors start.gg's `describeSummary` in IntegrationsPage.tsx — same shape of "imported X, skipped Y" toast copy. */
-function describeSummary(summary: ParryggSyncSummary): string {
+function describeSummary(summary: ParryggSyncSummary, t: TFunction): string {
   const skipped =
     summary.dqOrIncomplete +
     summary.otherGame +
@@ -44,17 +46,23 @@ function describeSummary(summary: ParryggSyncSummary): string {
     summary.teamEntrants +
     summary.unmappedCharacters +
     summary.setsWithoutGameData;
-  const parts = [`Imported ${summary.imported} games from ${summary.matches} matches`];
+  const parts = [
+    t('integrations.summary.importedFromMatches', {
+      imported: summary.imported,
+      matches: summary.matches,
+    }),
+  ];
   if (skipped > 0) {
-    parts.push(`${skipped} without importable detail`);
+    parts.push(t('integrations.summary.skippedDetail', { count: skipped }));
   }
   if (summary.unmappedStages > 0) {
-    parts.push(`${summary.unmappedStages} with unrecognized stages`);
+    parts.push(t('integrations.summary.unknownStages', { count: summary.unmappedStages }));
   }
   return parts.join(' · ');
 }
 
 function SearchAndLink({ onLinked }: { onLinked: () => void }) {
+  const { t } = useTranslation();
   const [tag, setTag] = useState('');
   const { data: candidates, isFetching } = useParryggSearch(tag);
   const link = useParryggLink();
@@ -62,25 +70,27 @@ function SearchAndLink({ onLinked }: { onLinked: () => void }) {
   async function handleLink(candidate: ParryggSearchResult) {
     try {
       await link.mutateAsync({ parryUserId: candidate.id });
-      toast.success(`Linked to ${candidate.gamerTag} on parry.gg!`);
+      toast.success(t('integrations.parrygg.linkedTo', { tag: candidate.gamerTag }));
       onLinked();
     } catch {
-      toast.error('Failed to link that account. Please try again.');
+      toast.error(t('integrations.parrygg.linkFailed'));
     }
   }
 
   return (
     <div className="flex flex-col gap-3">
       <Input
-        placeholder="Search your parry.gg gamer tag..."
+        placeholder={t('integrations.parrygg.searchPlaceholder')}
         value={tag}
         onChange={(e) => setTag(e.target.value)}
-        aria-label="Search parry.gg gamer tag"
+        aria-label={t('integrations.parrygg.searchAria')}
       />
       {tag.trim().length > 0 && (
         <div className="flex flex-col divide-y rounded-md border">
           {isFetching ? (
-            <p className="p-3 text-sm text-muted-foreground">Searching...</p>
+            <p className="p-3 text-sm text-muted-foreground">
+              {t('integrations.parrygg.searching')}
+            </p>
           ) : candidates && candidates.length > 0 ? (
             candidates.map((candidate) => (
               <div key={candidate.id} className="flex items-center justify-between gap-2 p-2">
@@ -106,12 +116,14 @@ function SearchAndLink({ onLinked }: { onLinked: () => void }) {
                   onClick={() => handleLink(candidate)}
                   disabled={link.isPending}
                 >
-                  Link
+                  {t('integrations.parrygg.link')}
                 </Button>
               </div>
             ))
           ) : (
-            <p className="p-3 text-sm text-muted-foreground">No matching parry.gg accounts.</p>
+            <p className="p-3 text-sm text-muted-foreground">
+              {t('integrations.parrygg.noAccounts')}
+            </p>
           )}
         </div>
       )}
@@ -126,6 +138,7 @@ function VerifyDialog({
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }) {
+  const { t } = useTranslation();
   const verifyStart = useParryggVerifyStart();
   const verifyComplete = useParryggVerifyComplete();
   const [copied, setCopied] = useState(false);
@@ -139,7 +152,7 @@ function VerifyDialog({
   useEffect(() => {
     if (open && !verifyStart.data && !verifyStart.isPending) {
       verifyStart.mutate(undefined, {
-        onError: () => toast.error('Failed to start verification. Please try again.'),
+        onError: () => toast.error(t('integrations.parrygg.verifyStartFailed')),
       });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- verifyStart is a fresh mutation object every render; keying on `open` alone is intentional
@@ -165,12 +178,10 @@ function VerifyDialog({
     setCheckError(null);
     try {
       await verifyComplete.mutateAsync();
-      toast.success('parry.gg account verified!');
+      toast.success(t('integrations.parrygg.verifiedToast'));
       onOpenChange(false);
     } catch (err) {
-      setCheckError(
-        err instanceof Error ? err.message : 'Verification code not found yet. Please try again.',
-      );
+      setCheckError(err instanceof Error ? err.message : t('integrations.parrygg.codeNotFound'));
     }
   }
 
@@ -178,11 +189,8 @@ function VerifyDialog({
     <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Verify your parry.gg account</DialogTitle>
-          <DialogDescription>
-            Paste this code into your parry.gg profile bio, then click Check. It expires in 10
-            minutes.
-          </DialogDescription>
+          <DialogTitle>{t('integrations.parrygg.verifyTitle')}</DialogTitle>
+          <DialogDescription>{t('integrations.parrygg.verifyDescription')}</DialogDescription>
         </DialogHeader>
 
         {code ? (
@@ -195,23 +203,27 @@ function VerifyDialog({
               variant="outline"
               size="icon"
               onClick={handleCopy}
-              aria-label="Copy verification code"
+              aria-label={t('integrations.parrygg.copyCodeAria')}
             >
               {copied ? <Check className="size-4" /> : <Copy className="size-4" />}
             </Button>
           </div>
         ) : (
-          <p className="text-sm text-muted-foreground">Generating your verification code...</p>
+          <p className="text-sm text-muted-foreground">
+            {t('integrations.parrygg.generatingCode')}
+          </p>
         )}
 
         {checkError && <p className="text-sm text-destructive">{checkError}</p>}
 
         <DialogFooter>
           <Button type="button" variant="outline" onClick={() => handleOpenChange(false)}>
-            Cancel
+            {t('common.cancel')}
           </Button>
           <Button type="button" onClick={handleCheck} disabled={!code || verifyComplete.isPending}>
-            {verifyComplete.isPending ? 'Checking...' : 'Check'}
+            {verifyComplete.isPending
+              ? t('integrations.parrygg.checking')
+              : t('integrations.parrygg.check')}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -221,6 +233,7 @@ function VerifyDialog({
 
 /** Settings > Integrations: link a parry.gg account, verify ownership, and sync tournament matches. */
 export function ParryggCard() {
+  const { t, i18n } = useTranslation();
   const { data: status, isLoading } = useParryggStatus();
   const sync = useParryggSync();
   const unlink = useParryggUnlink();
@@ -232,9 +245,9 @@ export function ParryggCard() {
     try {
       const summary = await sync.mutateAsync();
       setLastSummary(summary);
-      toast.success(describeSummary(summary));
+      toast.success(describeSummary(summary, t));
     } catch {
-      toast.error('Sync failed. Please try again.');
+      toast.error(t('integrations.syncFailed'));
     }
   };
 
@@ -243,9 +256,9 @@ export function ParryggCard() {
     try {
       await unlink.mutateAsync();
       setLastSummary(null);
-      toast.success('parry.gg account unlinked.');
+      toast.success(t('integrations.unlinkedToast', { provider: 'parry.gg' }));
     } catch {
-      toast.error('Failed to unlink. Please try again.');
+      toast.error(t('integrations.unlinkFailed'));
     }
   };
 
@@ -256,37 +269,42 @@ export function ParryggCard() {
           <CardTitle>parry.gg</CardTitle>
           {status?.linked && (
             <Badge variant={status.verified ? 'success' : 'outline'}>
-              {status.verified ? 'Verified' : 'Unverified'}
+              {status.verified
+                ? t('integrations.parrygg.verified')
+                : t('integrations.parrygg.unverified')}
             </Badge>
           )}
         </div>
         <CardDescription>
-          Link your parry.gg account to automatically import your Smash Ultimate tournament matches.
-          Imported games join your match pool with a competitive tag.
+          {t('integrations.linkDescription', { provider: 'parry.gg' })}
         </CardDescription>
       </CardHeader>
       <CardContent className="flex flex-col gap-4">
         {isLoading ? (
-          <p className="text-sm text-muted-foreground">Checking link status…</p>
+          <p className="text-sm text-muted-foreground">{t('integrations.checkingStatus')}</p>
         ) : status?.linked ? (
           <>
             <dl className="grid grid-cols-2 gap-2 text-sm">
-              <dt className="text-muted-foreground">Gamer tag</dt>
+              <dt className="text-muted-foreground">{t('integrations.gamerTag')}</dt>
               <dd className="font-medium">{status.gamerTag}</dd>
-              <dt className="text-muted-foreground">Last synced</dt>
-              <dd>{status.lastSyncAt ? new Date(status.lastSyncAt).toLocaleString() : 'Never'}</dd>
+              <dt className="text-muted-foreground">{t('integrations.lastSynced')}</dt>
+              <dd>
+                {status.lastSyncAt
+                  ? new Date(status.lastSyncAt).toLocaleString(i18n.language)
+                  : t('integrations.never')}
+              </dd>
             </dl>
             {lastSummary && (
-              <p className="text-sm text-muted-foreground">{describeSummary(lastSummary)}</p>
+              <p className="text-sm text-muted-foreground">{describeSummary(lastSummary, t)}</p>
             )}
             <div className="flex flex-wrap gap-2">
               <Button onClick={handleSync} disabled={sync.isPending}>
                 <RefreshCw className={sync.isPending ? 'animate-spin' : ''} />
-                {sync.isPending ? 'Syncing…' : 'Sync now'}
+                {sync.isPending ? t('integrations.syncing') : t('integrations.syncNow')}
               </Button>
               {!status.verified && (
                 <Button variant="outline" onClick={() => setVerifyOpen(true)}>
-                  Verify
+                  {t('integrations.parrygg.verify')}
                 </Button>
               )}
               <Button
@@ -295,7 +313,7 @@ export function ParryggCard() {
                 disabled={unlink.isPending}
               >
                 <Unlink />
-                Unlink
+                {t('integrations.unlink')}
               </Button>
             </div>
           </>
@@ -309,15 +327,14 @@ export function ParryggCard() {
       <AlertDialog open={confirmUnlink} onOpenChange={(open) => !open && setConfirmUnlink(false)}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Unlink parry.gg?</AlertDialogTitle>
-            <AlertDialogDescription>
-              Already-imported matches stay in your history; new tournament results just stop
-              syncing until you reconnect.
-            </AlertDialogDescription>
+            <AlertDialogTitle>
+              {t('integrations.unlinkTitle', { provider: 'parry.gg' })}
+            </AlertDialogTitle>
+            <AlertDialogDescription>{t('integrations.unlinkDescription')}</AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={handleUnlink}>Unlink</AlertDialogAction>
+            <AlertDialogCancel>{t('common.cancel')}</AlertDialogCancel>
+            <AlertDialogAction onClick={handleUnlink}>{t('integrations.unlink')}</AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>

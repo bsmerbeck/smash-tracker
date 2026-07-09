@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -16,6 +17,7 @@ import { describeGroupsError } from '../describeGroupsError';
 
 /** "Create group" dialog: a single name input, POST /api/groups on confirm. */
 export function CreateGroupDialog({ onCreated }: { onCreated?: (groupId: string) => void }) {
+  const { t } = useTranslation();
   const [open, setOpen] = useState(false);
   const [name, setName] = useState('');
   const createGroup = useCreateGroup();
@@ -45,41 +47,39 @@ export function CreateGroupDialog({ onCreated }: { onCreated?: (groupId: string)
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogTrigger asChild>
-        <Button type="button">Create group</Button>
+        <Button type="button">{t('groups.create.trigger')}</Button>
       </DialogTrigger>
       <DialogContent>
         <form onSubmit={handleSubmit}>
           <DialogHeader>
-            <DialogTitle>Create a group</DialogTitle>
-            <DialogDescription>
-              Start a friend-group leaderboard. You can invite others with a code once it's created.
-            </DialogDescription>
+            <DialogTitle>{t('groups.create.title')}</DialogTitle>
+            <DialogDescription>{t('groups.create.description')}</DialogDescription>
           </DialogHeader>
 
           <div className="flex flex-col gap-2 py-4">
-            <Label htmlFor="group-name">Group name</Label>
+            <Label htmlFor="group-name">{t('groups.create.nameLabel')}</Label>
             <Input
               id="group-name"
               value={name}
               onChange={(event) => setName(event.target.value)}
               maxLength={40}
-              placeholder="e.g. The Locals"
+              placeholder={t('groups.create.namePlaceholder')}
               autoFocus
             />
           </div>
 
           {createGroup.isError && (
             <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">
-              {describeGroupsError(createGroup.error, 'Something went wrong creating the group.')}
+              {describeGroupsError(createGroup.error, t('groups.create.error'))}
             </div>
           )}
 
           <DialogFooter>
             <Button type="button" variant="outline" onClick={() => handleOpenChange(false)}>
-              Cancel
+              {t('common.cancel')}
             </Button>
             <Button type="submit" disabled={!name.trim() || createGroup.isPending}>
-              {createGroup.isPending ? 'Creating...' : 'Create'}
+              {createGroup.isPending ? t('groups.create.pending') : t('groups.create.confirm')}
             </Button>
           </DialogFooter>
         </form>

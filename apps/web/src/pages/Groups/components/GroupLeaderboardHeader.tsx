@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Check, Copy } from 'lucide-react';
 import type { GroupRecord } from '@smash-tracker/shared';
 import { Button } from '@/components/ui/button';
@@ -35,6 +36,7 @@ export function GroupLeaderboardHeader({
   onLeft?: () => void;
   onDeleted?: () => void;
 }) {
+  const { t } = useTranslation();
   const [copied, setCopied] = useState(false);
   const leaveGroup = useLeaveGroup();
   const deleteGroup = useDeleteGroup();
@@ -54,31 +56,30 @@ export function GroupLeaderboardHeader({
           <AlertDialog>
             <AlertDialogTrigger asChild>
               <Button type="button" variant="destructive" size="sm">
-                Delete group
+                {t('groups.header.deleteTrigger')}
               </Button>
             </AlertDialogTrigger>
             <AlertDialogContent>
               <AlertDialogHeader>
-                <AlertDialogTitle>Delete "{group.name}"?</AlertDialogTitle>
+                <AlertDialogTitle>
+                  {t('groups.header.deleteTitle', { name: group.name })}
+                </AlertDialogTitle>
                 <AlertDialogDescription>
-                  This removes the group and its leaderboard for every member. This can't be undone.
+                  {t('groups.header.deleteDescription')}
                 </AlertDialogDescription>
               </AlertDialogHeader>
               {deleteGroup.isError && (
                 <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">
-                  {describeGroupsError(
-                    deleteGroup.error,
-                    'Something went wrong deleting the group.',
-                  )}
+                  {describeGroupsError(deleteGroup.error, t('groups.header.deleteError'))}
                 </div>
               )}
               <AlertDialogFooter>
-                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                <AlertDialogCancel>{t('common.cancel')}</AlertDialogCancel>
                 <AlertDialogAction
                   onClick={() => deleteGroup.mutate(group.id, { onSuccess: () => onDeleted?.() })}
                   disabled={deleteGroup.isPending}
                 >
-                  {deleteGroup.isPending ? 'Deleting...' : 'Delete'}
+                  {deleteGroup.isPending ? t('groups.header.deletePending') : t('common.delete')}
                 </AlertDialogAction>
               </AlertDialogFooter>
             </AlertDialogContent>
@@ -87,28 +88,32 @@ export function GroupLeaderboardHeader({
           <AlertDialog>
             <AlertDialogTrigger asChild>
               <Button type="button" variant="outline" size="sm">
-                Leave group
+                {t('groups.header.leaveTrigger')}
               </Button>
             </AlertDialogTrigger>
             <AlertDialogContent>
               <AlertDialogHeader>
-                <AlertDialogTitle>Leave "{group.name}"?</AlertDialogTitle>
+                <AlertDialogTitle>
+                  {t('groups.header.leaveTitle', { name: group.name })}
+                </AlertDialogTitle>
                 <AlertDialogDescription>
-                  You'll need a new invite code to rejoin later.
+                  {t('groups.header.leaveDescription')}
                 </AlertDialogDescription>
               </AlertDialogHeader>
               {leaveGroup.isError && (
                 <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">
-                  {describeGroupsError(leaveGroup.error, 'Something went wrong leaving the group.')}
+                  {describeGroupsError(leaveGroup.error, t('groups.header.leaveError'))}
                 </div>
               )}
               <AlertDialogFooter>
-                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                <AlertDialogCancel>{t('common.cancel')}</AlertDialogCancel>
                 <AlertDialogAction
                   onClick={() => leaveGroup.mutate(group.id, { onSuccess: () => onLeft?.() })}
                   disabled={leaveGroup.isPending}
                 >
-                  {leaveGroup.isPending ? 'Leaving...' : 'Leave'}
+                  {leaveGroup.isPending
+                    ? t('groups.header.leavePending')
+                    : t('groups.header.leaveConfirm')}
                 </AlertDialogAction>
               </AlertDialogFooter>
             </AlertDialogContent>
@@ -117,7 +122,7 @@ export function GroupLeaderboardHeader({
       </div>
 
       <div className="flex items-center gap-2 text-sm text-muted-foreground">
-        <span>Invite code:</span>
+        <span>{t('groups.header.inviteCode')}</span>
         <code className="rounded bg-muted px-2 py-0.5 font-mono text-foreground">
           {group.inviteCode}
         </code>
@@ -127,7 +132,7 @@ export function GroupLeaderboardHeader({
           size="icon"
           className="size-7"
           onClick={handleCopy}
-          aria-label="Copy invite code"
+          aria-label={t('groups.header.copyAria')}
         >
           {copied ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}
         </Button>
