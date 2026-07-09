@@ -1029,7 +1029,10 @@
       "connect": "start.ggアカウントを連携",
       "linked": "start.ggアカウントを連携しました！",
       "linkFailed": "start.ggの連携に失敗しました（{{reason}}）",
-      "unknownError": "不明なエラー"
+      "unknownError": "不明なエラー",
+      "autoSyncStarted": "start.ggのトーナメント戦績をインポート中…",
+      "autoSyncDone": "start.ggのインポートが完了しました：{{sets}}セットから{{imported}}ゲームを取り込みました。",
+      "autoSyncFailed": "start.ggのインポートに失敗しました。設定 → 連携から再試行できます。"
     },
     "parrygg": {
       "verified": "認証済み",

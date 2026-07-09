@@ -1029,7 +1029,10 @@
       "connect": "Connect start.gg account",
       "linked": "start.gg account linked!",
       "linkFailed": "start.gg linking failed ({{reason}})",
-      "unknownError": "unknown error"
+      "unknownError": "unknown error",
+      "autoSyncStarted": "Importing your start.gg tournament matches…",
+      "autoSyncDone": "start.gg import complete: {{imported}} games from {{sets}} sets.",
+      "autoSyncFailed": "start.gg import failed. You can retry from Settings → Integrations."
     },
     "parrygg": {
       "verified": "Verified",
