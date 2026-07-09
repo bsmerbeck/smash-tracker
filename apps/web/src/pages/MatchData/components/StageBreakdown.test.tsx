@@ -44,6 +44,18 @@ describe('StageBreakdown', () => {
     expect(thumbnail).toBeInTheDocument();
   });
 
+  it('pins a Favorites group when favoriteStageIds are passed', async () => {
+    const user = userEvent.setup();
+    render(<StageBreakdown matches={[makeMatch()]} favoriteStageIds={[3]} />);
+
+    await user.click(screen.getByLabelText('Select stage'));
+
+    expect(await screen.findByText('Favorites')).toBeInTheDocument();
+    // Final Destination (id 3) appears in Favorites and again in All stages.
+    // Exact name: /Final Destination/ would also catch "(Gen. Final Destination)".
+    expect(screen.getAllByRole('option', { name: 'Final Destination' })).toHaveLength(2);
+  });
+
   it('shows a fallback abbreviation tile for a stage lacking art', async () => {
     const user = userEvent.setup();
     render(<StageBreakdown matches={[makeMatch({ map: { id: 2, name: 'Big Battlefield' } })]} />);

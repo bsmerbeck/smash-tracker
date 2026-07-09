@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 import type { Fighter, GspPoint, GspSettings } from '@smash-tracker/shared';
@@ -9,16 +9,15 @@ import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import {
   Select,
   SelectContent,
-  SelectGroup,
   SelectItem,
-  SelectLabel,
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
 import { alphaSpriteList } from '@/components/match-form/MatchForm';
 import { NO_SELECTION_STAGE } from '@/data/stages';
-import { alphaStageList, stageOptions } from '@/lib/stageOptions';
-import { StageOption } from '@/components/StageOption';
+import { getGroupedStageOptions, stageOptions } from '@/lib/stageOptions';
+import { StageSelectGroups } from '@/components/StageSelectGroups';
+import { useStageFavorites } from '@/hooks/useStageFavorites';
 import { useCreateMatch } from '@/hooks/useCreateMatch';
 import { parseGspNumber } from '../lib/parseGspNumber';
 import { calibrationFromSettings, estimateMmrAt } from '../lib/gspMmrModel';
@@ -50,6 +49,15 @@ export function QuickLogger({
   const { t } = useTranslation();
   const lastGsp = lastPoint?.gsp ?? null;
   const createMatch = useCreateMatch();
+  const { data: stageFavorites } = useStageFavorites();
+  const favoriteStageIds = stageFavorites?.stageIds;
+  // No matches passed (so no "Most played" group): the quick logger has no
+  // match-history dependency today, and pulling one in just for usage
+  // ordering isn't worth the extra query on this deliberately light form.
+  const stageGroups = useMemo(
+    () => getGroupedStageOptions([], favoriteStageIds),
+    [favoriteStageIds],
+  );
   const [opponentFighterId, setOpponentFighterId] = useState<number | undefined>(undefined);
   const [result, setResult] = useState<'win' | 'loss' | undefined>(undefined);
   const [gspInput, setGspInput] = useState<string>(lastGsp !== null ? String(lastGsp) : '');
@@ -208,17 +216,7 @@ export function QuickLogger({
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value={String(NO_SELECTION_STAGE.id)}>
-                  {NO_SELECTION_STAGE.name}
-                </SelectItem>
-                <SelectGroup>
-                  <SelectLabel>{t('matchForm.allStages')}</SelectLabel>
-                  {alphaStageList.map((s) => (
-                    <SelectItem key={s.id} value={String(s.id)}>
-                      <StageOption stage={s} />
-                    </SelectItem>
-                  ))}
-                </SelectGroup>
+                <StageSelectGroups groups={stageGroups} />
               </SelectContent>
             </Select>
           </div>
