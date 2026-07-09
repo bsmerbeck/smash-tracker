@@ -3,7 +3,6 @@ import {
   ALL_FILTER_VALUE,
   applyMatchTableFilters,
   getMatchTableFilterOptions,
-  type MatchTableFilterState,
 } from '@/pages/MatchData/lib/matchTableFilters';
 
 /**
