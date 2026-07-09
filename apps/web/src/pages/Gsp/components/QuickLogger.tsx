@@ -15,7 +15,11 @@ import {
 } from '@/components/ui/select';
 import { alphaSpriteList } from '@/components/match-form/MatchForm';
 import { NO_SELECTION_STAGE } from '@/data/stages';
-import { getGroupedStageOptions, stageOptions } from '@/lib/stageOptions';
+import {
+  STANDARD_ONLINE_STAGE_IDS,
+  getGroupedStageOptions,
+  stageOptions,
+} from '@/lib/stageOptions';
 import { StageSelectGroups, StageSelectValue } from '@/components/StageSelectGroups';
 import { useStageFavorites, useToggleStageFavorite } from '@/hooks/useStageFavorites';
 import { useCreateMatch } from '@/hooks/useCreateMatch';
@@ -55,8 +59,11 @@ export function QuickLogger({
   // No matches passed (so no "Most played" group): the quick logger has no
   // match-history dependency today, and pulling one in just for usage
   // ordering isn't worth the extra query on this deliberately light form.
+  // The standard online trio IS pinned — quickplay's preferred-rules
+  // matchmaking lands on BF/SBF/FD, and Small Battlefield alphabetizes far
+  // from its siblings.
   const stageGroups = useMemo(
-    () => getGroupedStageOptions([], favoriteStageIds),
+    () => getGroupedStageOptions([], favoriteStageIds, STANDARD_ONLINE_STAGE_IDS),
     [favoriteStageIds],
   );
   const [opponentFighterId, setOpponentFighterId] = useState<number | undefined>(undefined);

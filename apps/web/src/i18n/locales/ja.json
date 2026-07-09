@@ -203,6 +203,7 @@
     "map": "ステージ",
     "favorites": "お気に入り",
     "mostPlayed": "よく遊ぶステージ",
+    "standardStages": "基本ステージ",
     "allStages": "すべてのステージ",
     "addFavorite": "{{stage}}をお気に入りに追加",
     "removeFavorite": "{{stage}}をお気に入りから削除",
