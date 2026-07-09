@@ -928,5 +928,125 @@
       "title": "Rapports IA passés",
       "description": "Rapports déjà générés, le plus récent en premier."
     }
+  },
+  "reports": {
+    "title": "Rapports IA",
+    "notEnabled": "Les rapports IA ne sont pas encore activés pour ce compte.",
+    "loading": "Chargement de vos rapports…",
+    "empty": "Aucun rapport de scouting IA pour l'instant. Générez-en un depuis la page <scoutLink>Chercher un joueur</scoutLink>.",
+    "yourReports": "Vos rapports",
+    "groupedBy": "Regroupés par joueur, du plus récemment analysé au plus ancien.",
+    "olderReport": "Rapport plus ancien",
+    "hideOlder": "Masquer les anciens rapports",
+    "showOlder": "Afficher les anciens rapports"
+  },
+  "groups": {
+    "title": "Groupes",
+    "loading": "Chargement de vos groupes...",
+    "empty": {
+      "title": "Aucun groupe pour l'instant",
+      "body": "Créez un groupe pour lancer un classement entre amis, ou rejoignez-en un avec un code d'invitation."
+    },
+    "leaderboardLoading": "Chargement du classement...",
+    "leaderboardError": "Une erreur est survenue lors du chargement de ce classement.",
+    "create": {
+      "trigger": "Créer un groupe",
+      "title": "Créer un groupe",
+      "description": "Lancez un classement entre amis. Vous pourrez inviter d'autres personnes avec un code une fois le groupe créé.",
+      "nameLabel": "Nom du groupe",
+      "namePlaceholder": "ex. Les Locaux",
+      "error": "Une erreur est survenue lors de la création du groupe.",
+      "pending": "Création...",
+      "confirm": "Créer"
+    },
+    "join": {
+      "trigger": "Rejoindre avec un code",
+      "title": "Rejoindre un groupe",
+      "description": "Saisissez le code d'invitation qu'on vous a partagé.",
+      "codeLabel": "Code d'invitation",
+      "codePlaceholder": "ex. AB3DEFGH",
+      "error": "Une erreur est survenue en rejoignant ce groupe.",
+      "pending": "Connexion au groupe...",
+      "confirm": "Rejoindre"
+    },
+    "members_one": "{{count}} membre",
+    "members_other": "{{count}} membres",
+    "header": {
+      "deleteTrigger": "Supprimer le groupe",
+      "deleteTitle": "Supprimer « {{name}} » ?",
+      "deleteDescription": "Cela supprime le groupe et son classement pour tous les membres. Cette action est irréversible.",
+      "deleteError": "Une erreur est survenue lors de la suppression du groupe.",
+      "deletePending": "Suppression...",
+      "leaveTrigger": "Quitter le groupe",
+      "leaveTitle": "Quitter « {{name}} » ?",
+      "leaveDescription": "Il vous faudra un nouveau code d'invitation pour revenir plus tard.",
+      "leaveError": "Une erreur est survenue en quittant le groupe.",
+      "leavePending": "Départ...",
+      "leaveConfirm": "Quitter",
+      "inviteCode": "Code d'invitation :",
+      "copyAria": "Copier le code d'invitation"
+    },
+    "table": {
+      "player": "Joueur",
+      "rating": "Classement",
+      "games": "Parties",
+      "lastActive": "Dernière activité",
+      "you": "(vous)",
+      "never": "jamais"
+    }
+  },
+  "integrations": {
+    "title": "Intégrations",
+    "connected": "Connecté",
+    "checkingStatus": "Vérification du statut de liaison…",
+    "gamerTag": "Gamer tag",
+    "lastSynced": "Dernière synchronisation",
+    "never": "Jamais",
+    "syncNow": "Synchroniser maintenant",
+    "syncing": "Synchronisation…",
+    "unlink": "Délier",
+    "syncFailed": "Échec de la synchronisation. Veuillez réessayer.",
+    "unlinkFailed": "Impossible de délier le compte. Veuillez réessayer.",
+    "linkDescription": "Liez votre compte {{provider}} pour importer automatiquement vos matchs de tournoi Smash Ultimate. Les parties importées rejoignent votre historique avec un tag compétitif.",
+    "unlinkTitle": "Délier {{provider}} ?",
+    "unlinkDescription": "Les matchs déjà importés restent dans votre historique ; les nouveaux résultats de tournoi cessent simplement de se synchroniser jusqu'à la reconnexion.",
+    "unlinkedToast": "Compte {{provider}} délié.",
+    "summary": {
+      "importedFromSets": "{{imported}} parties importées depuis {{sets}} sets",
+      "importedFromMatches": "{{imported}} parties importées depuis {{matches}} matchs",
+      "skippedDetail_one": "{{count}} sans détail importable",
+      "skippedDetail_other": "{{count}} sans détail importable",
+      "unknownStages_one": "{{count}} avec des stages non reconnus",
+      "unknownStages_other": "{{count}} avec des stages non reconnus",
+      "dqSkipped_one": "{{count}} DQ ignorée",
+      "dqSkipped_other": "{{count}} DQ ignorées"
+    },
+    "startgg": {
+      "connect": "Connecter un compte start.gg",
+      "linked": "Compte start.gg lié !",
+      "linkFailed": "Échec de la liaison start.gg ({{reason}})",
+      "unknownError": "erreur inconnue"
+    },
+    "parrygg": {
+      "verified": "Vérifié",
+      "unverified": "Non vérifié",
+      "verify": "Vérifier",
+      "linkedTo": "Lié à {{tag}} sur parry.gg !",
+      "linkFailed": "Impossible de lier ce compte. Veuillez réessayer.",
+      "searchPlaceholder": "Recherchez votre gamer tag parry.gg...",
+      "searchAria": "Rechercher un gamer tag parry.gg",
+      "searching": "Recherche...",
+      "noAccounts": "Aucun compte parry.gg correspondant.",
+      "link": "Lier",
+      "verifyTitle": "Vérifiez votre compte parry.gg",
+      "verifyDescription": "Collez ce code dans la bio de votre profil parry.gg, puis cliquez sur Vérifier. Il expire dans 10 minutes.",
+      "copyCodeAria": "Copier le code de vérification",
+      "generatingCode": "Génération de votre code de vérification...",
+      "check": "Vérifier",
+      "checking": "Vérification...",
+      "verifyStartFailed": "Impossible de démarrer la vérification. Veuillez réessayer.",
+      "verifiedToast": "Compte parry.gg vérifié !",
+      "codeNotFound": "Code de vérification introuvable pour l'instant. Veuillez réessayer."
+    }
   }
 }

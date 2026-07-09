@@ -928,5 +928,125 @@
       "title": "過去のAIレポート",
       "description": "これまでに生成したレポート（新しい順）。"
     }
+  },
+  "reports": {
+    "title": "AIレポート",
+    "notEnabled": "このアカウントではAIレポートはまだ有効になっていません。",
+    "loading": "レポートを読み込み中…",
+    "empty": "AIスカウティングレポートはまだありません。<scoutLink>プレイヤーを検索</scoutLink>ページから作成できます。",
+    "yourReports": "あなたのレポート",
+    "groupedBy": "プレイヤーごとにグループ化し、最近スカウトした順に表示します。",
+    "olderReport": "過去のレポート",
+    "hideOlder": "過去のレポートを隠す",
+    "showOlder": "過去のレポートを表示"
+  },
+  "groups": {
+    "title": "グループ",
+    "loading": "グループを読み込み中...",
+    "empty": {
+      "title": "グループはまだありません",
+      "body": "グループを作成して友達同士のリーダーボードを始めるか、招待コードで参加しましょう。"
+    },
+    "leaderboardLoading": "リーダーボードを読み込み中...",
+    "leaderboardError": "リーダーボードの読み込み中に問題が発生しました。",
+    "create": {
+      "trigger": "グループを作成",
+      "title": "グループを作成",
+      "description": "友達同士のリーダーボードを始めましょう。作成後、コードで他の人を招待できます。",
+      "nameLabel": "グループ名",
+      "namePlaceholder": "例: 地元勢",
+      "error": "グループの作成中に問題が発生しました。",
+      "pending": "作成中...",
+      "confirm": "作成"
+    },
+    "join": {
+      "trigger": "コードで参加",
+      "title": "グループに参加",
+      "description": "共有された招待コードを入力してください。",
+      "codeLabel": "招待コード",
+      "codePlaceholder": "例: AB3DEFGH",
+      "error": "グループへの参加中に問題が発生しました。",
+      "pending": "参加中...",
+      "confirm": "参加"
+    },
+    "members_one": "{{count}}人のメンバー",
+    "members_other": "{{count}}人のメンバー",
+    "header": {
+      "deleteTrigger": "グループを削除",
+      "deleteTitle": "「{{name}}」を削除しますか？",
+      "deleteDescription": "グループとそのリーダーボードがすべてのメンバーから削除されます。この操作は取り消せません。",
+      "deleteError": "グループの削除中に問題が発生しました。",
+      "deletePending": "削除中...",
+      "leaveTrigger": "グループを退出",
+      "leaveTitle": "「{{name}}」を退出しますか？",
+      "leaveDescription": "再参加するには新しい招待コードが必要になります。",
+      "leaveError": "グループの退出中に問題が発生しました。",
+      "leavePending": "退出中...",
+      "leaveConfirm": "退出",
+      "inviteCode": "招待コード:",
+      "copyAria": "招待コードをコピー"
+    },
+    "table": {
+      "player": "プレイヤー",
+      "rating": "レーティング",
+      "games": "試合数",
+      "lastActive": "最終アクティブ",
+      "you": "（あなた）",
+      "never": "なし"
+    }
+  },
+  "integrations": {
+    "title": "連携",
+    "connected": "連携済み",
+    "checkingStatus": "連携状態を確認中…",
+    "gamerTag": "ゲーマータグ",
+    "lastSynced": "最終同期",
+    "never": "未同期",
+    "syncNow": "今すぐ同期",
+    "syncing": "同期中…",
+    "unlink": "連携解除",
+    "syncFailed": "同期に失敗しました。もう一度お試しください。",
+    "unlinkFailed": "連携解除に失敗しました。もう一度お試しください。",
+    "linkDescription": "{{provider}}アカウントを連携すると、スマブラSPの大会の試合を自動でインポートできます。インポートされた試合は競技タグ付きで試合データに追加されます。",
+    "unlinkTitle": "{{provider}}の連携を解除しますか？",
+    "unlinkDescription": "インポート済みの試合は履歴に残ります。再連携するまで新しい大会結果の同期が止まるだけです。",
+    "unlinkedToast": "{{provider}}アカウントの連携を解除しました。",
+    "summary": {
+      "importedFromSets": "{{sets}}セットから{{imported}}ゲームをインポートしました",
+      "importedFromMatches": "{{matches}}試合から{{imported}}ゲームをインポートしました",
+      "skippedDetail_one": "{{count}}件はインポート可能な詳細がありません",
+      "skippedDetail_other": "{{count}}件はインポート可能な詳細がありません",
+      "unknownStages_one": "{{count}}件は認識できないステージを含みます",
+      "unknownStages_other": "{{count}}件は認識できないステージを含みます",
+      "dqSkipped_one": "{{count}}件のDQをスキップしました",
+      "dqSkipped_other": "{{count}}件のDQをスキップしました"
+    },
+    "startgg": {
+      "connect": "start.ggアカウントを連携",
+      "linked": "start.ggアカウントを連携しました！",
+      "linkFailed": "start.ggの連携に失敗しました（{{reason}}）",
+      "unknownError": "不明なエラー"
+    },
+    "parrygg": {
+      "verified": "認証済み",
+      "unverified": "未認証",
+      "verify": "認証する",
+      "linkedTo": "parry.ggの{{tag}}と連携しました！",
+      "linkFailed": "そのアカウントの連携に失敗しました。もう一度お試しください。",
+      "searchPlaceholder": "parry.ggのゲーマータグを検索...",
+      "searchAria": "parry.ggのゲーマータグを検索",
+      "searching": "検索中...",
+      "noAccounts": "一致するparry.ggアカウントがありません。",
+      "link": "連携",
+      "verifyTitle": "parry.ggアカウントを認証",
+      "verifyDescription": "このコードをparry.ggプロフィールの自己紹介欄に貼り付けてから「確認」を押してください。コードは10分で期限切れになります。",
+      "copyCodeAria": "認証コードをコピー",
+      "generatingCode": "認証コードを生成中...",
+      "check": "確認",
+      "checking": "確認中...",
+      "verifyStartFailed": "認証を開始できませんでした。もう一度お試しください。",
+      "verifiedToast": "parry.ggアカウントを認証しました！",
+      "codeNotFound": "認証コードがまだ見つかりません。もう一度お試しください。"
+    }
   }
 }

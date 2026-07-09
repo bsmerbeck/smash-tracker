@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -16,6 +17,7 @@ import { describeGroupsError } from '../describeGroupsError';
 
 /** "Join with code" dialog: an 8-char invite code input, POST /api/groups/join on confirm. */
 export function JoinGroupDialog({ onJoined }: { onJoined?: (groupId: string) => void }) {
+  const { t } = useTranslation();
   const [open, setOpen] = useState(false);
   const [code, setCode] = useState('');
   const joinGroup = useJoinGroup();
@@ -46,24 +48,24 @@ export function JoinGroupDialog({ onJoined }: { onJoined?: (groupId: string) => 
     <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogTrigger asChild>
         <Button type="button" variant="outline">
-          Join with code
+          {t('groups.join.trigger')}
         </Button>
       </DialogTrigger>
       <DialogContent>
         <form onSubmit={handleSubmit}>
           <DialogHeader>
-            <DialogTitle>Join a group</DialogTitle>
-            <DialogDescription>Enter the invite code someone shared with you.</DialogDescription>
+            <DialogTitle>{t('groups.join.title')}</DialogTitle>
+            <DialogDescription>{t('groups.join.description')}</DialogDescription>
           </DialogHeader>
 
           <div className="flex flex-col gap-2 py-4">
-            <Label htmlFor="invite-code">Invite code</Label>
+            <Label htmlFor="invite-code">{t('groups.join.codeLabel')}</Label>
             <Input
               id="invite-code"
               value={code}
               onChange={(event) => setCode(event.target.value.toUpperCase())}
               maxLength={8}
-              placeholder="e.g. AB3DEFGH"
+              placeholder={t('groups.join.codePlaceholder')}
               className="font-mono uppercase"
               autoFocus
             />
@@ -71,16 +73,16 @@ export function JoinGroupDialog({ onJoined }: { onJoined?: (groupId: string) => 
 
           {joinGroup.isError && (
             <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">
-              {describeGroupsError(joinGroup.error, 'Something went wrong joining that group.')}
+              {describeGroupsError(joinGroup.error, t('groups.join.error'))}
             </div>
           )}
 
           <DialogFooter>
             <Button type="button" variant="outline" onClick={() => handleOpenChange(false)}>
-              Cancel
+              {t('common.cancel')}
             </Button>
             <Button type="submit" disabled={!code.trim() || joinGroup.isPending}>
-              {joinGroup.isPending ? 'Joining...' : 'Join'}
+              {joinGroup.isPending ? t('groups.join.pending') : t('groups.join.confirm')}
             </Button>
           </DialogFooter>
         </form>
