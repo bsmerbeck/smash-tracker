@@ -308,8 +308,10 @@ describe('GspPage', () => {
     await user.click(screen.getByRole('combobox', { name: 'Stage (optional)' }));
 
     expect(await screen.findByText('Favorites')).toBeInTheDocument();
-    // Once under Favorites and once under All stages; the Quick Logger
-    // intentionally has no "Most played" group (no matches dependency).
+    // Once under Favorites and once under All stages; favoriting Final
+    // Destination also removes it from the Standard trio (already pinned).
+    // The Quick Logger intentionally has no "Most played" group (no matches
+    // dependency).
     // Exact name: /Final Destination/ would also catch "(Gen. Final Destination)".
     expect(screen.getAllByRole('option', { name: 'Final Destination' })).toHaveLength(2);
     expect(screen.queryByText('Most played')).not.toBeInTheDocument();
@@ -340,13 +342,16 @@ describe('GspPage', () => {
     await screen.findByText('Quick Logger');
 
     await user.click(screen.getByRole('combobox', { name: 'Stage (optional)' }));
+    // Final Destination renders under Standard AND All stages (a heart each);
+    // either heart toggles the same favorite.
     await user.click(
-      await screen.findByRole('button', { name: 'Add Final Destination to favorites' }),
+      (await screen.findAllByRole('button', { name: 'Add Final Destination to favorites' }))[0]!,
     );
 
     expect(updateStageFavorites).toHaveBeenCalledWith({ stageIds: [3] });
     // The picker stays open and the stage is now pinned under Favorites —
-    // rendered there and again under All stages, both hearts filled.
+    // rendered there and again under All stages (favoriting removes it from
+    // Standard), both hearts filled.
     expect(await screen.findByText('Favorites')).toBeInTheDocument();
     expect(
       screen.getAllByRole('button', { name: 'Remove Final Destination from favorites' }),
@@ -358,6 +363,24 @@ describe('GspPage', () => {
     expect(screen.getByRole('combobox', { name: 'Stage (optional)' })).toHaveTextContent(
       'no selection',
     );
+  });
+
+  it('pins the standard online trio in the Quick Logger stage picker', async () => {
+    getFighters.mockResolvedValue({ primary: [mario.id], secondary: [] });
+    listMatches.mockResolvedValue([makeMatch({ id: 'm1', time: 1, win: true, gsp: 9_000_000 })]);
+    const user = userEvent.setup();
+
+    renderGspPage();
+    await screen.findByText('Quick Logger');
+
+    await user.click(screen.getByRole('combobox', { name: 'Stage (optional)' }));
+
+    expect(await screen.findByText('Standard')).toBeInTheDocument();
+    // Each of the trio appears once under Standard and once under All stages.
+    // Exact names: /Battlefield/ would also catch Big/Small/(Gen.) variants.
+    expect(screen.getAllByRole('option', { name: 'Battlefield' })).toHaveLength(2);
+    expect(screen.getAllByRole('option', { name: 'Small Battlefield' })).toHaveLength(2);
+    expect(screen.getAllByRole('option', { name: 'Final Destination' })).toHaveLength(2);
   });
 
   it('requires an opponent character and result before submitting from the Quick Logger', async () => {
