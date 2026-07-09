@@ -1,6 +1,7 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { MemoryRouter } from 'react-router';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { Match } from '@smash-tracker/shared';
 import { TooltipProvider } from '@/components/ui/tooltip';
@@ -37,11 +38,13 @@ function renderTimeline(matches: Match[]) {
   const { sets, otherMatches } = buildSetTimeline(matches);
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
-    <QueryClientProvider client={queryClient}>
-      <TooltipProvider>
-        <SetTimeline sets={sets} otherMatches={otherMatches} />
-      </TooltipProvider>
-    </QueryClientProvider>,
+    <MemoryRouter>
+      <QueryClientProvider client={queryClient}>
+        <TooltipProvider>
+          <SetTimeline sets={sets} otherMatches={otherMatches} />
+        </TooltipProvider>
+      </QueryClientProvider>
+    </MemoryRouter>,
   );
 }
 
@@ -211,9 +214,9 @@ describe('SetTimeline', () => {
     renderTimeline(matches);
 
     const link = screen.getByRole('link', { name: 'Watch VOD for Grand Final' });
-    expect(link).toHaveAttribute('href', 'https://youtube.com/watch?v=abc123');
-    expect(link).toHaveAttribute('target', '_blank');
-    expect(link).toHaveAttribute('rel', 'noreferrer');
+    expect(link).toHaveAttribute('href', '/vod?match=g1');
+    expect(link).not.toHaveAttribute('target');
+    expect(link).not.toHaveAttribute('rel');
   });
 
   it('shows the VOD link when only one game in a multi-game set carries the vodUrl', () => {
@@ -232,7 +235,7 @@ describe('SetTimeline', () => {
 
     expect(screen.getByRole('link', { name: /Watch VOD/ })).toHaveAttribute(
       'href',
-      'https://youtube.com/watch?v=abc123',
+      '/vod?match=g2',
     );
   });
 

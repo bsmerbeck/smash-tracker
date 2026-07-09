@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { useNavigate } from 'react-router';
 import { useTranslation } from 'react-i18next';
 import type { TFunction } from 'i18next';
 import { toast } from 'sonner';
@@ -148,6 +149,7 @@ export function MatchTable({
   fighterSprites: Fighter[];
 }) {
   const { t } = useTranslation();
+  const navigate = useNavigate();
   const [sorting, setSorting] = useState<SortingState>([{ id: 'date', desc: true }]);
   const [globalFilter, setGlobalFilter] = useState('');
   const [columnFilters, setColumnFilters] = useState<MatchTableFilterState>(
@@ -264,9 +266,13 @@ export function MatchTable({
               <Button
                 variant="outline"
                 size="icon-sm"
-                aria-label={hasVod ? t('matchData.table.editVod') : t('matchData.table.addVod')}
+                aria-label={hasVod ? t('matchData.table.watchVod') : t('matchData.table.addVod')}
                 className={cn(hasVod && 'border-primary text-primary')}
-                onClick={() => setVodMatch(row.original.match)}
+                onClick={() =>
+                  hasVod
+                    ? navigate(`/vod?match=${row.original.match.id}`)
+                    : setVodMatch(row.original.match)
+                }
               >
                 <Video />
               </Button>
@@ -307,7 +313,7 @@ export function MatchTable({
         },
       },
     ],
-    [t],
+    [t, navigate],
   );
 
   const table = useReactTable({
