@@ -28,7 +28,7 @@ import { GspCurve } from './components/GspCurve';
 import { GspMatchLog } from './components/GspMatchLog';
 import { QuickLogger } from './components/QuickLogger';
 import { GainsAnalysis } from './components/GainsAnalysis';
-import { RoadToElite } from './components/RoadToElite';
+import { GspTiers } from './components/GspTiers';
 import { GspVsGlicko } from './components/GspVsGlicko';
 
 /**
@@ -148,7 +148,7 @@ export function GspPage() {
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         <GainsAnalysis stats={gainStats} />
-        <RoadToElite series={series} settings={gspSettings} />
+        <GspTiers series={series} settings={gspSettings} />
       </div>
 
       <GspVsGlicko gspSeries={series} allMatches={matches} settings={gspSettings} />
