@@ -209,6 +209,42 @@ describe('MatchDataPage', () => {
     });
   });
 
+  it('saves an edit to an anonymous quickplay match without requiring an opponent name', async () => {
+    const user = userEvent.setup();
+    getFighters.mockResolvedValue({ primary: [mario.id], secondary: [] });
+    listMatches.mockResolvedValue([
+      makeMatch({
+        id: 'm1',
+        fighter_id: mario.id,
+        opponent_id: luigi.id,
+        // The GSP Quick Logger stores anonymous quickplay opponents as ''.
+        opponent: '',
+        notes: '',
+        matchType: 'quickplay',
+        win: true,
+        gsp: 9_000_000,
+        map: { id: 0, name: 'no selection' },
+      }),
+    ]);
+
+    renderMatchData();
+
+    await waitFor(() => expect(screen.getByLabelText('Edit match')).toBeInTheDocument());
+    await user.click(screen.getByLabelText('Edit match'));
+
+    const dialog = await screen.findByRole('dialog');
+    // Flip the result and save without touching the blank opponent field —
+    // this used to fail validation with "Opponent name is required".
+    await user.click(within(dialog).getByRole('radio', { name: 'Loss' }));
+    await user.click(within(dialog).getByRole('button', { name: 'Save' }));
+
+    await waitFor(() => expect(updateMatch).toHaveBeenCalledTimes(1));
+    expect(updateMatch).toHaveBeenCalledWith(
+      'm1',
+      expect.objectContaining({ opponent: '', win: false }),
+    );
+  });
+
   it('prefills stocksLeft/eventName/tournamentName in the edit dialog and round-trips them on save', async () => {
     const user = userEvent.setup();
     getFighters.mockResolvedValue({ primary: [mario.id], secondary: [] });

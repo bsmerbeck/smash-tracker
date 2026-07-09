@@ -44,6 +44,7 @@ const getGspSettings = vi.fn();
 const updateGspSettings = vi.fn();
 const upsertMe = vi.fn().mockResolvedValue({ uid: 'test-uid', email: 'test@example.com' });
 const getStageFavorites = vi.fn().mockResolvedValue({ stageIds: [], updatedAt: 0 });
+const updateStageFavorites = vi.fn();
 
 vi.mock('@/lib/api', () => ({
   api: {
@@ -61,6 +62,7 @@ vi.mock('@/lib/api', () => ({
     },
     stageFavorites: {
       get: (...args: unknown[]) => getStageFavorites(...args),
+      update: (...args: unknown[]) => updateStageFavorites(...args),
     },
   },
 }));
@@ -311,6 +313,51 @@ describe('GspPage', () => {
     // Exact name: /Final Destination/ would also catch "(Gen. Final Destination)".
     expect(screen.getAllByRole('option', { name: 'Final Destination' })).toHaveLength(2);
     expect(screen.queryByText('Most played')).not.toBeInTheDocument();
+
+    // Selecting either copy renders the trigger face exactly once — the
+    // repeated groups used to each portal their ItemText into the trigger,
+    // showing the selected stage twice.
+    await user.click(screen.getAllByRole('option', { name: 'Final Destination' })[0]!);
+    expect(screen.getByRole('combobox', { name: 'Stage (optional)' })).toHaveTextContent(
+      /^Final Destination$/,
+    );
+  });
+
+  it('favorites a stage from the heart button without selecting it or closing the picker', async () => {
+    getFighters.mockResolvedValue({ primary: [mario.id], secondary: [] });
+    listMatches.mockResolvedValue([makeMatch({ id: 'm1', time: 1, win: true, gsp: 9_000_000 })]);
+    // Back the mock with a store so the settle-time refetch returns what was
+    // PUT, instead of reverting the optimistic update to an empty list.
+    let stored = { stageIds: [] as number[], updatedAt: 0 };
+    getStageFavorites.mockImplementation(() => Promise.resolve(stored));
+    updateStageFavorites.mockImplementation((input: { stageIds: number[] }) => {
+      stored = { stageIds: input.stageIds, updatedAt: 1 };
+      return Promise.resolve(stored);
+    });
+    const user = userEvent.setup();
+
+    renderGspPage();
+    await screen.findByText('Quick Logger');
+
+    await user.click(screen.getByRole('combobox', { name: 'Stage (optional)' }));
+    await user.click(
+      await screen.findByRole('button', { name: 'Add Final Destination to favorites' }),
+    );
+
+    expect(updateStageFavorites).toHaveBeenCalledWith({ stageIds: [3] });
+    // The picker stays open and the stage is now pinned under Favorites —
+    // rendered there and again under All stages, both hearts filled.
+    expect(await screen.findByText('Favorites')).toBeInTheDocument();
+    expect(
+      screen.getAllByRole('button', { name: 'Remove Final Destination from favorites' }),
+    ).toHaveLength(2);
+    // The heart click must not have selected the stage. The trigger is
+    // aria-hidden while the picker is open (Radix hides outside content),
+    // so close with Escape before querying it.
+    await user.keyboard('{Escape}');
+    expect(screen.getByRole('combobox', { name: 'Stage (optional)' })).toHaveTextContent(
+      'no selection',
+    );
   });
 
   it('requires an opponent character and result before submitting from the Quick Logger', async () => {

@@ -35,10 +35,10 @@ import {
 } from '@/components/ui/command';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { cn } from '@/lib/utils';
-import { StageSelectGroups } from '@/components/StageSelectGroups';
+import { StageSelectGroups, StageSelectValue } from '@/components/StageSelectGroups';
 import { useOpponents } from '@/hooks/useOpponents';
 import { useMatches } from '@/hooks/useMatches';
-import { useStageFavorites } from '@/hooks/useStageFavorites';
+import { useStageFavorites, useToggleStageFavorite } from '@/hooks/useStageFavorites';
 import { getGroupedStageOptions } from '@/lib/stageOptions';
 import { alphaSpriteList, TournamentFields, matchTypeLabel } from './MatchForm';
 import {
@@ -201,6 +201,7 @@ export function SetWizard({
   }
 
   const { data: stageFavorites } = useStageFavorites();
+  const toggleStageFavorite = useToggleStageFavorite();
   const favoriteStageIds = stageFavorites?.stageIds;
   const stageGroups = useMemo(
     () => getGroupedStageOptions(allMatches, favoriteStageIds),
@@ -431,11 +432,14 @@ export function SetWizard({
                     >
                       <FormControl>
                         <SelectTrigger className="w-full">
-                          <SelectValue />
+                          <StageSelectValue stageId={game.stageId} />
                         </SelectTrigger>
                       </FormControl>
                       <SelectContent>
-                        <StageSelectGroups groups={stageGroups} />
+                        <StageSelectGroups
+                          groups={stageGroups}
+                          onToggleFavorite={toggleStageFavorite}
+                        />
                       </SelectContent>
                     </Select>
                   </FormItem>
