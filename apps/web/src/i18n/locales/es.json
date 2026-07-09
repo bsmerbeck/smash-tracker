@@ -9,6 +9,7 @@
     "scoutAPlayer": "Buscar jugador",
     "aiReports": "Informes IA",
     "matchData": "Datos de partidas",
+    "vodManager": "VODs",
     "trends": "Tendencias",
     "gsp": "GSP",
     "groups": "Grupos",
@@ -462,6 +463,26 @@
       "winsShort": "{{count}}V",
       "lossesShort": "{{count}}D"
     }
+  },
+  "vodManager": {
+    "title": "Gestor de VODs",
+    "emptyState": "Aún no hay VODs",
+    "filters": {
+      "fighter": "Luchador",
+      "opponentFighter": "Personaje rival",
+      "opponent": "Rival",
+      "tournament": "Torneo",
+      "stage": "Escenario",
+      "allOption": "Todos"
+    },
+    "sort": {
+      "newest": "Más recientes primero",
+      "oldest": "Más antiguos primero"
+    },
+    "playerPlaceholder": "Selecciona una partida para ver su VOD.",
+    "playerUnavailable": "Este VOD ya no está disponible.",
+    "openOnHost": "Abrir en {{host}}",
+    "selectMatchAria": "Seleccionar partida vs {{opponent}}"
   },
   "matchups": {
     "loading": "Cargando enfrentamientos...",
