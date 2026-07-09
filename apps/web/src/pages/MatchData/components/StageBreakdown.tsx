@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { Match } from '@smash-tracker/shared';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Select, SelectContent, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Select, SelectContent, SelectTrigger } from '@/components/ui/select';
 import { NO_SELECTION_STAGE } from '@/data/stages';
 import { getFighterById } from '@/data/sprites';
 import { getStageRecords, getWinLossRecord } from '@/lib/stats';
