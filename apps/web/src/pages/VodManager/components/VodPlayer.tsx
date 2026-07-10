@@ -14,6 +14,10 @@ export interface VodPlayerProps {
   /** Populated with the live player's `seek` function once available, so a
    * sibling `TimestampList`'s click-to-seek can reach the playing video. */
   seekRef?: RefObject<((seconds: number) => void) | null>;
+  /** Populated with the live player's `getCurrentTime` function once
+   * available, so a sibling `NoteComposer`/inline editor can read the live
+   * playback position on-demand (never polled). */
+  getCurrentTimeRef?: RefObject<(() => number) | null>;
 }
 
 /**
@@ -31,13 +35,28 @@ export interface VodPlayerProps {
  * `seekRef` so `TimestampList`'s row clicks reach the live player instance
  * (never a `vodDeepLink` URL reload — PITFALLS.md Pitfall 1).
  */
-export function VodPlayer({ vodUrl, startSeconds, onReady, seekRef }: VodPlayerProps) {
+export function VodPlayer({
+  vodUrl,
+  startSeconds,
+  onReady,
+  seekRef,
+  getCurrentTimeRef,
+}: VodPlayerProps) {
   const { t } = useTranslation();
-  const { containerRef, isReady, error, seek } = useVodPlayer({ vodUrl, startSeconds });
+  const { containerRef, isReady, error, seek, getCurrentTime } = useVodPlayer({
+    vodUrl,
+    startSeconds,
+  });
 
   useEffect(() => {
     if (seekRef) {
       seekRef.current = seek;
+    }
+  });
+
+  useEffect(() => {
+    if (getCurrentTimeRef) {
+      getCurrentTimeRef.current = getCurrentTime;
     }
   });
 
