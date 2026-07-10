@@ -88,6 +88,7 @@
       "noTimestamps": "No timestamp notes yet.",
       "timestampsAria": "Timestamp notes",
       "deleteTimestamp": "Delete timestamp {{time}}",
+      "editTimestamp": "Edit timestamp {{time}}",
       "timePlaceholder": "m:ss",
       "timeAria": "Timestamp time",
       "notePlaceholder": "Note",
@@ -506,6 +507,13 @@
     "startTime": "Start time",
     "composer": {
       "title": "Add a note"
+    },
+    "notes": {
+      "saveEdit": "Save timestamp edit",
+      "cancelEdit": "Cancel timestamp edit",
+      "deleteConfirmTitle": "Delete this timestamp note?",
+      "editTimeAria": "Edit timestamp time",
+      "editNoteAria": "Edit timestamp note"
     }
   },
   "matchups": {

@@ -88,6 +88,7 @@
       "noTimestamps": "まだタイムスタンプ付きメモがありません。",
       "timestampsAria": "タイムスタンプ付きメモ",
       "deleteTimestamp": "タイムスタンプ{{time}}を削除",
+      "editTimestamp": "タイムスタンプ{{time}}を編集",
       "timePlaceholder": "m:ss",
       "timeAria": "タイムスタンプの時間",
       "notePlaceholder": "メモ",
@@ -506,6 +507,13 @@
     "startTime": "開始時間",
     "composer": {
       "title": "メモを追加"
+    },
+    "notes": {
+      "saveEdit": "タイムスタンプの編集を保存",
+      "cancelEdit": "タイムスタンプの編集をキャンセル",
+      "deleteConfirmTitle": "このタイムスタンプメモを削除しますか？",
+      "editTimeAria": "タイムスタンプの時間を編集",
+      "editNoteAria": "タイムスタンプのメモを編集"
     }
   },
   "matchups": {
