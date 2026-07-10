@@ -34,7 +34,12 @@ describe('useVodPlayer', () => {
     const seekTo = vi.fn();
     const playVideo = vi.fn();
     let capturedConfig: YouTubePlayerConfig | undefined;
-    const Player = vi.fn((_el: HTMLElement, config: YouTubePlayerConfig): YouTubePlayerInstance => {
+    // `function`, not an arrow, so `new window.YT.Player(...)` can construct it.
+    const Player = vi.fn(function (
+      this: unknown,
+      _el: HTMLElement,
+      config: YouTubePlayerConfig,
+    ): YouTubePlayerInstance {
       capturedConfig = config;
       return { seekTo, playVideo, destroy: vi.fn() };
     });
@@ -71,7 +76,11 @@ describe('useVodPlayer', () => {
     const seek = vi.fn();
     let readyCallback: (() => void) | undefined;
     let capturedConfig: TwitchPlayerConfig | undefined;
-    const Player = vi.fn((_el: HTMLElement, config: TwitchPlayerConfig): TwitchPlayerInstance => {
+    const Player = vi.fn(function (
+      this: unknown,
+      _el: HTMLElement,
+      config: TwitchPlayerConfig,
+    ): TwitchPlayerInstance {
       capturedConfig = config;
       return {
         seek,
@@ -127,7 +136,11 @@ describe('useVodPlayer', () => {
 
   it('sets error state when a YouTube onError code indicates the video is unavailable', async () => {
     let capturedConfig: YouTubePlayerConfig | undefined;
-    const Player = vi.fn((_el: HTMLElement, config: YouTubePlayerConfig): YouTubePlayerInstance => {
+    const Player = vi.fn(function (
+      this: unknown,
+      _el: HTMLElement,
+      config: YouTubePlayerConfig,
+    ): YouTubePlayerInstance {
       capturedConfig = config;
       return { seekTo: vi.fn(), playVideo: vi.fn(), destroy: vi.fn() };
     });
