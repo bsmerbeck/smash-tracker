@@ -21,7 +21,7 @@ export type VodProvider =
   | { provider: null };
 
 /** Formats a whole-seconds offset as a Twitch-style `1h2m3s` duration string. */
-function toTwitchDuration(totalSeconds: number): string {
+export function toTwitchDuration(totalSeconds: number): string {
   const hours = Math.floor(totalSeconds / 3600);
   const minutes = Math.floor((totalSeconds % 3600) / 60);
   const seconds = totalSeconds % 60;
@@ -30,6 +30,26 @@ function toTwitchDuration(totalSeconds: number): string {
   if (hours > 0 || minutes > 0) out += `${minutes}m`;
   out += `${seconds}s`;
   return out;
+}
+
+/**
+ * Parses a bare-seconds value (`"123"`, `"123s"`) or an `1h2m3s`-style
+ * duration string (any subset of the h/m/s segments, in order) into whole
+ * seconds. Returns `null` for anything that doesn't match either form —
+ * empty input, non-numeric junk, or a segment out of order.
+ */
+function parseDurationOrSeconds(raw: string): number | null {
+  if (/^\d+$/.test(raw)) {
+    return Number(raw);
+  }
+  const match = /^(?:(\d+)h)?(?:(\d+)m)?(?:(\d+)s)?$/i.exec(raw);
+  if (match && (match[1] !== undefined || match[2] !== undefined || match[3] !== undefined)) {
+    const hours = Number(match[1] ?? 0);
+    const minutes = Number(match[2] ?? 0);
+    const seconds = Number(match[3] ?? 0);
+    return hours * 3600 + minutes * 60 + seconds;
+  }
+  return null;
 }
 
 /**
@@ -66,6 +86,42 @@ export function vodDeepLink(url: string, seconds: number): string {
   }
 
   return url;
+}
+
+/**
+ * Extracts the start-offset (whole seconds) encoded in a stored `vodUrl`'s
+ * `t`/`start` query param, e.g. an entire event recorded as ONE video where
+ * each match's stored URL carries its own offset into that video. YouTube
+ * accepts either `t` or `start`, in bare-seconds (`123`/`123s`) or duration
+ * (`1h2m3s`) form; Twitch accepts `t` in either form. Any other host,
+ * missing param, or malformed value yields `0` — never throws, matching
+ * `detectVodProvider`/`vodDeepLink`'s fallback behavior.
+ */
+export function parseVodStartSeconds(url: string): number {
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return 0;
+  }
+
+  const host = parsed.hostname.toLowerCase();
+  const isYoutube =
+    (YOUTUBE_HOSTS.has(host) && parsed.pathname === '/watch') || YOUTUBE_SHORT_HOSTS.has(host);
+  const isTwitch = TWITCH_HOSTS.has(host) && parsed.pathname.startsWith('/videos/');
+
+  if (!isYoutube && !isTwitch) {
+    return 0;
+  }
+
+  const raw = isYoutube
+    ? (parsed.searchParams.get('t') ?? parsed.searchParams.get('start'))
+    : parsed.searchParams.get('t');
+  if (!raw) {
+    return 0;
+  }
+
+  return parseDurationOrSeconds(raw) ?? 0;
 }
 
 /**

@@ -38,6 +38,7 @@ import {
   DropdownMenu,
   DropdownMenuCheckboxItem,
   DropdownMenuContent,
+  DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
@@ -54,6 +55,7 @@ import {
 } from '@/components/ui/alert-dialog';
 import { getFighterById } from '@/data/sprites';
 import { useDeleteMatch } from '@/hooks/useDeleteMatch';
+import { useUpdateMatch } from '@/hooks/useUpdateMatch';
 import { buildMatchCsv, matchCsvFilename } from '../lib/matchCsv';
 import {
   applyMatchTableFilters,
@@ -65,8 +67,7 @@ import {
 } from '../lib/matchTableFilters';
 import { persistColumnVisibility, readStoredColumnVisibility } from '../lib/columnVisibility';
 import { EditMatchForm } from '@/components/match-form/EditMatchForm';
-import { VodNotesDialog } from '@/components/vod/VodNotesDialog';
-import { cn } from '@/lib/utils';
+import { VodNotesDialog, buildUpdateInput } from '@/components/vod/VodNotesDialog';
 
 const PAGE_SIZE_OPTIONS = [10, 20, 30, 40, 50];
 
@@ -161,7 +162,9 @@ export function MatchTable({
   const [editingMatch, setEditingMatch] = useState<Match | null>(null);
   const [pendingDelete, setPendingDelete] = useState<Match | null>(null);
   const [vodMatch, setVodMatch] = useState<Match | null>(null);
+  const [pendingRemoveVod, setPendingRemoveVod] = useState<Match | null>(null);
   const deleteMatch = useDeleteMatch();
+  const updateMatch = useUpdateMatch();
 
   useEffect(() => {
     persistColumnVisibility(columnVisibility);
@@ -263,19 +266,45 @@ export function MatchTable({
           const source = row.original.match.source;
           return (
             <div className="flex items-center justify-end gap-2">
-              <Button
-                variant="outline"
-                size="icon-sm"
-                aria-label={hasVod ? t('matchData.table.watchVod') : t('matchData.table.addVod')}
-                className={cn(hasVod && 'border-primary text-primary')}
-                onClick={() =>
-                  hasVod
-                    ? navigate(`/vod?match=${row.original.match.id}`)
-                    : setVodMatch(row.original.match)
-                }
-              >
-                <Video />
-              </Button>
+              {hasVod ? (
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button
+                      variant="outline"
+                      size="icon-sm"
+                      aria-label={t('matchData.table.watchVod')}
+                      className="border-primary text-primary"
+                    >
+                      <Video />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="start">
+                    <DropdownMenuItem
+                      onSelect={() => navigate(`/vod?match=${row.original.match.id}`)}
+                    >
+                      {t('matchData.table.vodMenu.goToManager')}
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onSelect={() => setEditingMatch(row.original.match)}>
+                      {t('matchData.table.vodMenu.editLink')}
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      variant="destructive"
+                      onSelect={() => setPendingRemoveVod(row.original.match)}
+                    >
+                      {t('matchData.table.vodMenu.removeLink')}
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              ) : (
+                <Button
+                  variant="outline"
+                  size="icon-sm"
+                  aria-label={t('matchData.table.addVod')}
+                  onClick={() => setVodMatch(row.original.match)}
+                >
+                  <Video />
+                </Button>
+              )}
               {source ? (
                 // Synced matches: game data is managed by start.gg/parry.gg
                 // sync (the API 409s edits/deletes too) — VOD notes above
@@ -339,6 +368,22 @@ export function MatchTable({
       toast.error(t('shared.matchDelete.deleteFailed'));
     } finally {
       setPendingDelete(null);
+    }
+  }
+
+  async function confirmRemoveVod() {
+    if (!pendingRemoveVod) return;
+    try {
+      const input = buildUpdateInput(pendingRemoveVod, {
+        vodUrl: undefined,
+        vodTimestamps: undefined,
+      });
+      await updateMatch.mutateAsync({ id: pendingRemoveVod.id, input });
+      toast.success(t('matchData.table.removeVodConfirm.removed'));
+    } catch {
+      toast.error(t('matchData.table.removeVodConfirm.removeFailed'));
+    } finally {
+      setPendingRemoveVod(null);
     }
   }
 
@@ -554,6 +599,22 @@ export function MatchTable({
           onOpenChange={(open) => !open && setVodMatch(null)}
         />
       )}
+
+      <AlertDialog
+        open={pendingRemoveVod != null}
+        onOpenChange={(open) => !open && setPendingRemoveVod(null)}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t('matchData.table.removeVodConfirm.title')}</AlertDialogTitle>
+            <AlertDialogDescription>{t('common.cannotBeUndone')}</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>{t('common.cancel')}</AlertDialogCancel>
+            <AlertDialogAction onClick={confirmRemoveVod}>{t('common.remove')}</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <AlertDialog
         open={pendingDelete != null}

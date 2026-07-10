@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next';
 import type { Match } from '@smash-tracker/shared';
 import { getFighterById } from '@/data/sprites';
 import { useFilteredMatches } from '@/hooks/useFilteredMatches';
+import { detectVodProvider, parseVodStartSeconds } from '@/lib/vod';
 import { tournamentLabel } from '@/pages/MatchData/lib/matchTableFilters';
 import {
   DEFAULT_VOD_MANAGER_FILTERS,
@@ -79,6 +80,34 @@ export function VodManagerPage() {
   // reload — PITFALLS.md Pitfall 1).
   const playerSeekRef = useRef<((seconds: number) => void) | null>(null);
 
+  // An entire event can be recorded as ONE video with each match's stored
+  // vodUrl carrying its own `?t=` offset into it — switching between two
+  // such matches shares the same video IDENTITY, so `useVodPlayer`
+  // intentionally does NOT remount the underlying player (see its docs) and
+  // therefore never re-applies `startSeconds` on its own. Reposition the
+  // live player manually whenever the identity is unchanged; a genuine
+  // identity change is already handled by the remount applying the new
+  // match's `startSeconds` at construction time. Deliberately keyed on the
+  // `selectedMatch` OBJECT (not `selectedMatchId`) — `filtered`/`selectedMatch`
+  // stay referentially stable across unrelated re-renders (memoized in
+  // `useFilteredMatches`/above), so this only fires on an actual match
+  // switch OR the initial data-load transition from `null` to the
+  // deep-linked match — never on incidental re-renders.
+  const previousVodIdentityRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!selectedMatch?.vodUrl) {
+      previousVodIdentityRef.current = null;
+      return;
+    }
+    const detected = detectVodProvider(selectedMatch.vodUrl);
+    const identityKey =
+      detected.provider != null ? `${detected.provider}:${detected.videoId}` : null;
+    if (identityKey != null && identityKey === previousVodIdentityRef.current) {
+      playerSeekRef.current?.(parseVodStartSeconds(selectedMatch.vodUrl));
+    }
+    previousVodIdentityRef.current = identityKey;
+  }, [selectedMatch]);
+
   function handleSelect(id: string) {
     setSearchParams({ match: id });
   }
@@ -109,7 +138,11 @@ export function VodManagerPage() {
           <div className="flex flex-col gap-4">
             {selectedMatch?.vodUrl != null ? (
               <>
-                <VodPlayer vodUrl={selectedMatch.vodUrl} startSeconds={0} seekRef={playerSeekRef} />
+                <VodPlayer
+                  vodUrl={selectedMatch.vodUrl}
+                  startSeconds={parseVodStartSeconds(selectedMatch.vodUrl)}
+                  seekRef={playerSeekRef}
+                />
                 <TimestampList
                   timestamps={selectedMatch.vodTimestamps ?? []}
                   selectedIndex={selectedTimestampIndex}

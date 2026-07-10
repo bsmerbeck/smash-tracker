@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import type { RefObject } from 'react';
-import { detectVodProvider } from './vod';
+import { detectVodProvider, toTwitchDuration } from './vod';
 
 /** Config shape accepted by the official `new YT.Player(el, config)` constructor. */
 export interface YouTubePlayerConfig {
@@ -33,6 +33,8 @@ export interface TwitchPlayerConfig {
   autoplay?: boolean;
   width?: string | number;
   height?: string | number;
+  /** Initial playback position, `1h2m3s`-style duration form (see `toTwitchDuration`). */
+  time?: string;
 }
 
 /** The subset of the Twitch Embed Player instance API this hook uses. */
@@ -247,6 +249,10 @@ export function useVodPlayer({ vodUrl, startSeconds }: UseVodPlayerOptions): Use
           // API's fixed 400x300 minimum.
           width: '100%',
           height: '100%',
+          // Twitch's initial-position option takes the same `1h2m3s`
+          // duration form as its `?t=` deep-link query param, not raw
+          // seconds — see `toTwitchDuration`.
+          time: toTwitchDuration(startSeconds ?? 0),
         });
         player.addEventListener(window.Twitch.Player.READY, () => {
           if (!cancelled) {
