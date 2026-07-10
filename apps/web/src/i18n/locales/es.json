@@ -215,6 +215,10 @@
     "gspAfterMatch": "GSP tras la partida (opcional)",
     "gspPlaceholder": "p. ej. 12 400 000",
     "vodUrlPlaceholder": "https://youtube.com/watch?v=...",
+    "vodStartSeconds": {
+      "label": "Hora de inicio de la partida en el VOD",
+      "placeholder": "p. ej. 1:23:45"
+    },
     "matchType": "Tipo de partida",
     "matchTypes": {
       "none": "Ninguno",
@@ -245,7 +249,8 @@
       "opponentRequired": "El nombre del rival es obligatorio",
       "charLimit": "Máximo {{max}} caracteres",
       "gspFormat": "Introduce un número como 12 400 000 (o déjalo en blanco)",
-      "vodUrlInvalid": "Introduce una URL válida (o déjala en blanco)"
+      "vodUrlInvalid": "Introduce una URL válida (o déjala en blanco)",
+      "vodStartSecondsInvalid": "Introduce una hora como m:ss, h:mm:ss o segundos (o déjala en blanco)"
     },
     "set": {
       "format": "Formato del set",
@@ -497,7 +502,8 @@
     "playerPlaceholder": "Selecciona una partida para ver su VOD.",
     "playerUnavailable": "Este VOD ya no está disponible.",
     "openOnHost": "Abrir en {{host}}",
-    "selectMatchAria": "Seleccionar partida vs {{opponent}}"
+    "selectMatchAria": "Seleccionar partida vs {{opponent}}",
+    "startTime": "Hora de inicio"
   },
   "matchups": {
     "loading": "Cargando enfrentamientos...",

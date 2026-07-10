@@ -183,4 +183,82 @@ describe('VodManagerPage', () => {
     await waitFor(() => expect(seekTo).toHaveBeenCalledWith(90, true));
     expect(playVideo).toHaveBeenCalled();
   });
+
+  it('prefers a match-level vodStartSeconds over the vodUrl t= param as the player initial start time', async () => {
+    listMatches.mockResolvedValue([
+      makeMatch({
+        id: 'm1',
+        opponent: 'rival-one',
+        vodUrl: 'https://youtube.com/watch?v=abc123&t=30s',
+        vodStartSeconds: 300,
+      }),
+    ]);
+
+    let capturedConfig: YouTubePlayerConfig | undefined;
+    const Player = vi.fn(function (
+      this: unknown,
+      _el: HTMLElement,
+      config: YouTubePlayerConfig,
+    ): YouTubePlayerInstance {
+      capturedConfig = config;
+      return { seekTo: vi.fn(), playVideo: vi.fn(), destroy: vi.fn() };
+    });
+    window.YT = { Player: Player as unknown as YTGlobal['Player'] };
+
+    renderVodManager('/vod?match=m1');
+
+    await waitFor(() => expect(Player).toHaveBeenCalledTimes(1));
+    expect(capturedConfig?.playerVars?.start).toBe(300);
+  });
+
+  it('repositions to the new match vodStartSeconds (over its t= param) when switching between matches sharing one video identity', async () => {
+    const user = userEvent.setup();
+    listMatches.mockResolvedValue([
+      makeMatch({
+        id: 'm1',
+        opponent: 'rival-one',
+        time: 1_700_000_000_000,
+        vodUrl: 'https://youtube.com/watch?v=abc123&t=30s',
+      }),
+      makeMatch({
+        id: 'm2',
+        opponent: 'rival-two',
+        time: 1_700_000_100_000,
+        vodUrl: 'https://youtube.com/watch?v=abc123&t=90s',
+        vodStartSeconds: 500,
+      }),
+    ]);
+
+    const seekTo = vi.fn();
+    const playVideo = vi.fn();
+    let capturedConfig: YouTubePlayerConfig | undefined;
+    const Player = vi.fn(function (
+      this: unknown,
+      _el: HTMLElement,
+      config: YouTubePlayerConfig,
+    ): YouTubePlayerInstance {
+      capturedConfig = config;
+      return { seekTo, playVideo, destroy: vi.fn() };
+    });
+    window.YT = { Player: Player as unknown as YTGlobal['Player'] };
+
+    renderVodManager('/vod?match=m1');
+
+    await waitFor(() => expect(Player).toHaveBeenCalledTimes(1));
+
+    // Un-gate seek() (a no-op until the live player reports ready).
+    act(() => {
+      capturedConfig?.events?.onReady?.();
+    });
+
+    await user.click(screen.getByRole('button', { name: 'Select match vs rival-two' }));
+
+    await waitFor(() => expect(screen.getByText('vs. rival-two')).toBeInTheDocument());
+
+    // Same underlying video (abc123) as m1 — must NOT remount the player.
+    expect(Player).toHaveBeenCalledTimes(1);
+    // m2's vodStartSeconds (500) wins over its t=90s param.
+    await waitFor(() => expect(seekTo).toHaveBeenCalledWith(500, true));
+    expect(playVideo).toHaveBeenCalled();
+  });
 });

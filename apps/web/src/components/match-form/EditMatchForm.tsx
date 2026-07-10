@@ -1,6 +1,7 @@
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 import type { Fighter, Match, UpdateMatchInput } from '@smash-tracker/shared';
+import { formatTimestamp } from '@/lib/vod';
 import {
   Dialog,
   DialogContent,
@@ -35,6 +36,8 @@ function matchToFormValues(match: Match): MatchFormValues {
     // back — a flubbed digit gets fixed in place instead of retyped.
     gsp: match.gsp !== undefined ? match.gsp.toLocaleString('en-US') : '',
     vodUrl: match.vodUrl ?? '',
+    vodStartSeconds:
+      match.vodStartSeconds !== undefined ? formatTimestamp(match.vodStartSeconds) : '',
   };
 }
 
