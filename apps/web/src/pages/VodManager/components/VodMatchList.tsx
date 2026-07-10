@@ -174,7 +174,10 @@ function MatchRow({
   );
 }
 
-/** One dropdown filter, with an "All" reset option prepended. */
+/** One dropdown filter, with an "All" reset option prepended. Renders a
+ * visible label above the control — the "All" option text alone doesn't
+ * identify which dimension a control filters once a real value is selected
+ * (human-verify found five indistinguishable "All" dropdowns). */
 function FilterSelect({
   label,
   value,
@@ -188,23 +191,27 @@ function FilterSelect({
 }) {
   const { t } = useTranslation();
   return (
-    <Select value={value} onValueChange={onChange}>
-      <SelectTrigger className="w-full" aria-label={label}>
-        <SelectValue placeholder={label} />
-      </SelectTrigger>
-      <SelectContent>
-        <SelectItem value={ALL_FILTER_VALUE}>{t('vodManager.filters.allOption')}</SelectItem>
-        {options.map((option) => (
-          <SelectItem key={option} value={option}>
-            {option}
-          </SelectItem>
-        ))}
-      </SelectContent>
-    </Select>
+    <div className="flex flex-col gap-1">
+      <span className="text-xs font-medium text-muted-foreground">{label}</span>
+      <Select value={value} onValueChange={onChange}>
+        <SelectTrigger className="w-full" aria-label={label}>
+          <SelectValue placeholder={label} />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value={ALL_FILTER_VALUE}>{t('vodManager.filters.allOption')}</SelectItem>
+          {options.map((option) => (
+            <SelectItem key={option} value={option}>
+              {option}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+    </div>
   );
 }
 
-/** One searchable combobox filter (opponent/tournament — higher cardinality per D-06), with an "All" reset option. */
+/** One searchable combobox filter (opponent/tournament — higher cardinality per D-06), with an "All" reset option.
+ * Renders a visible label above the control (see FilterSelect doc comment). */
 function FilterCombobox({
   label,
   value,
@@ -220,39 +227,42 @@ function FilterCombobox({
   const displayValue = value === ALL_FILTER_VALUE ? t('vodManager.filters.allOption') : value;
 
   return (
-    <Popover>
-      <PopoverTrigger asChild>
-        <Button
-          type="button"
-          variant="outline"
-          role="combobox"
-          aria-label={label}
-          className="w-full justify-between font-normal"
-        >
-          <span className="truncate">{displayValue}</span>
-          <ChevronsUpDown className="opacity-50" />
-        </Button>
-      </PopoverTrigger>
-      <PopoverContent className="w-[--radix-popover-trigger-width] p-0">
-        <Command>
-          <CommandInput placeholder={label} />
-          <CommandList>
-            <CommandEmpty>{t('vodManager.filters.allOption')}</CommandEmpty>
-            <CommandGroup>
-              <CommandItem value={ALL_FILTER_VALUE} onSelect={() => onChange(ALL_FILTER_VALUE)}>
-                <Check className={cn(value === ALL_FILTER_VALUE ? 'opacity-100' : 'opacity-0')} />
-                {t('vodManager.filters.allOption')}
-              </CommandItem>
-              {options.map((option) => (
-                <CommandItem key={option} value={option} onSelect={() => onChange(option)}>
-                  <Check className={cn(value === option ? 'opacity-100' : 'opacity-0')} />
-                  {option}
+    <div className="flex flex-col gap-1">
+      <span className="text-xs font-medium text-muted-foreground">{label}</span>
+      <Popover>
+        <PopoverTrigger asChild>
+          <Button
+            type="button"
+            variant="outline"
+            role="combobox"
+            aria-label={label}
+            className="w-full justify-between font-normal"
+          >
+            <span className="truncate">{displayValue}</span>
+            <ChevronsUpDown className="opacity-50" />
+          </Button>
+        </PopoverTrigger>
+        <PopoverContent className="w-[--radix-popover-trigger-width] p-0">
+          <Command>
+            <CommandInput placeholder={label} />
+            <CommandList>
+              <CommandEmpty>{t('vodManager.filters.allOption')}</CommandEmpty>
+              <CommandGroup>
+                <CommandItem value={ALL_FILTER_VALUE} onSelect={() => onChange(ALL_FILTER_VALUE)}>
+                  <Check className={cn(value === ALL_FILTER_VALUE ? 'opacity-100' : 'opacity-0')} />
+                  {t('vodManager.filters.allOption')}
                 </CommandItem>
-              ))}
-            </CommandGroup>
-          </CommandList>
-        </Command>
-      </PopoverContent>
-    </Popover>
+                {options.map((option) => (
+                  <CommandItem key={option} value={option} onSelect={() => onChange(option)}>
+                    <Check className={cn(value === option ? 'opacity-100' : 'opacity-0')} />
+                    {option}
+                  </CommandItem>
+                ))}
+              </CommandGroup>
+            </CommandList>
+          </Command>
+        </PopoverContent>
+      </Popover>
+    </div>
   );
 }

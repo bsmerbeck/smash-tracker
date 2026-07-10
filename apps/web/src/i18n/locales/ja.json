@@ -213,6 +213,7 @@
     "notTracked": "記録なし",
     "gspAfterMatch": "対戦後のGSP（任意）",
     "gspPlaceholder": "例: 12,400,000",
+    "vodUrlPlaceholder": "https://youtube.com/watch?v=...",
     "matchType": "対戦の種類",
     "matchTypes": {
       "none": "未指定",
@@ -242,7 +243,8 @@
       "chooseResult": "結果を選んでください",
       "opponentRequired": "相手の名前を入力してください",
       "charLimit": "{{max}}文字以内で入力してください",
-      "gspFormat": "12,400,000 のような数値を入力してください（空欄でも可）"
+      "gspFormat": "12,400,000 のような数値を入力してください（空欄でも可）",
+      "vodUrlInvalid": "有効なURLを入力してください（空欄でも可）"
     },
     "set": {
       "format": "セット形式",

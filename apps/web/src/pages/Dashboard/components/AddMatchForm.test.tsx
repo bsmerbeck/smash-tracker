@@ -185,6 +185,38 @@ describe('AddMatchForm', () => {
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
   });
 
+  it('commits a typed opponent name not in the suggestions and closes the popover on Enter, without submitting the form', async () => {
+    const user = userEvent.setup();
+    renderForm();
+
+    await user.click(screen.getByRole('button', { name: 'Add Match' }));
+    const dialog = await screen.findByRole('dialog');
+    await user.click(within(dialog).getByRole('radio', { name: 'Win' }));
+
+    await user.click(within(dialog).getByRole('combobox', { name: 'Opponent' }));
+    const input = await screen.findByPlaceholderText('Type a name...');
+    await user.clear(input); // pre-filled with 'unknown'
+    await user.type(input, 'BrandNewChallenger{Enter}');
+
+    // Enter closes the popover (the cmdk search input unmounts with it) and
+    // the trigger button reflects the committed free-text value.
+    await waitFor(() =>
+      expect(screen.queryByPlaceholderText('Type a name...')).not.toBeInTheDocument(),
+    );
+    expect(within(dialog).getByRole('combobox', { name: 'Opponent' })).toHaveTextContent(
+      'BrandNewChallenger',
+    );
+
+    // Enter must not have submitted the surrounding form.
+    expect(createMatch).not.toHaveBeenCalled();
+
+    await user.click(within(dialog).getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(createMatch).toHaveBeenCalledTimes(1));
+    expect(createMatch).toHaveBeenCalledWith(
+      expect.objectContaining({ opponent: 'brandnewchallenger' }),
+    );
+  });
+
   it('disables the trigger when the user has no fighters selected', () => {
     renderForm({ fighterSprites: [], fighter: undefined });
     expect(screen.getByRole('button', { name: 'Add Match' })).toBeDisabled();

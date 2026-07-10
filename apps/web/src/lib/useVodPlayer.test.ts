@@ -74,6 +74,11 @@ describe('useVodPlayer', () => {
 
   it('constructs a Twitch.Player for a twitch vodUrl with a dynamic parent and gates seek behind READY', async () => {
     const seek = vi.fn();
+    const addEventListener = vi.fn((event: string, callback: () => void) => {
+      if (event === 'ready') {
+        readyCallback = callback;
+      }
+    });
     let readyCallback: (() => void) | undefined;
     let capturedConfig: TwitchPlayerConfig | undefined;
     const Player = vi.fn(function (
@@ -82,15 +87,14 @@ describe('useVodPlayer', () => {
       config: TwitchPlayerConfig,
     ): TwitchPlayerInstance {
       capturedConfig = config;
-      return {
-        seek,
-        addEventListener: (event: string, callback: () => void) => {
-          if (event === 'Twitch.Player.READY') {
-            readyCallback = callback;
-          }
-        },
-      };
+      return { seek, addEventListener };
     });
+    // Real Twitch Embed API exposes the ready-event name as a constant on
+    // the constructor (`Twitch.Player.READY === 'ready'`) — NOT the literal
+    // string `'Twitch.Player.READY'`. This regression test guards against
+    // hardcoding the wrong literal, which silently stops the ready callback
+    // from ever firing (bug found via human-verify on the real deploy).
+    (Player as unknown as { READY: string }).READY = 'ready';
     window.Twitch = { Player: Player as unknown as TwitchGlobal['Player'] };
 
     const { useVodPlayer } = await import('./useVodPlayer');
@@ -102,6 +106,7 @@ describe('useVodPlayer', () => {
     // Pitfall 4: parent must be derived from the actual serving hostname at
     // runtime, never a hardcoded domain.
     expect(capturedConfig?.parent).toContain(window.location.hostname);
+    expect(addEventListener).toHaveBeenCalledWith('ready', expect.any(Function));
 
     act(() => {
       result.current.seek(10);
