@@ -49,7 +49,13 @@ declare global {
     };
     onYouTubeIframeAPIReady?: () => void;
     Twitch?: {
-      Player: new (element: HTMLElement, config: TwitchPlayerConfig) => TwitchPlayerInstance;
+      Player: (new (element: HTMLElement, config: TwitchPlayerConfig) => TwitchPlayerInstance) & {
+        /** Event name string fired once the embedded player is ready to be
+         * controlled. MUST be read off the constructor — the literal value
+         * is not part of the public contract and has shipped as `'ready'`,
+         * but relying on the constant keeps this correct if that changes. */
+        READY: string;
+      };
     };
   }
 }
@@ -242,7 +248,7 @@ export function useVodPlayer({ vodUrl, startSeconds }: UseVodPlayerOptions): Use
           width: '100%',
           height: '100%',
         });
-        player.addEventListener('Twitch.Player.READY', () => {
+        player.addEventListener(window.Twitch.Player.READY, () => {
           if (!cancelled) {
             setIsReady(true);
           }

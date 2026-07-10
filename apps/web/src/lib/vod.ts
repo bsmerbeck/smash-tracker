@@ -8,7 +8,7 @@
 
 const YOUTUBE_HOSTS = new Set(['youtube.com', 'www.youtube.com', 'm.youtube.com']);
 const YOUTUBE_SHORT_HOSTS = new Set(['youtu.be', 'www.youtu.be']);
-const TWITCH_HOSTS = new Set(['twitch.tv', 'www.twitch.tv']);
+const TWITCH_HOSTS = new Set(['twitch.tv', 'www.twitch.tv', 'm.twitch.tv']);
 
 /**
  * Discriminated union identifying which embeddable provider (if any) a VOD

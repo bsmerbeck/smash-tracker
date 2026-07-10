@@ -11,6 +11,7 @@ function baseValues(overrides: Partial<MatchFormValues> = {}): MatchFormValues {
     opponentName: 'Rival',
     notes: '',
     gsp: '',
+    vodUrl: '',
     ...overrides,
   };
 }
@@ -77,5 +78,24 @@ describe('matchFormValuesToInput', () => {
   it('omits gsp when blank', () => {
     const input = matchFormValuesToInput(baseValues({ gsp: '  ' }));
     expect('gsp' in input).toBe(false);
+  });
+
+  it('includes vodUrl when provided', () => {
+    const input = matchFormValuesToInput(
+      baseValues({ vodUrl: 'https://youtube.com/watch?v=abc123' }),
+    );
+    expect(input.vodUrl).toBe('https://youtube.com/watch?v=abc123');
+  });
+
+  it('trims vodUrl before including it', () => {
+    const input = matchFormValuesToInput(
+      baseValues({ vodUrl: '  https://youtube.com/watch?v=abc123  ' }),
+    );
+    expect(input.vodUrl).toBe('https://youtube.com/watch?v=abc123');
+  });
+
+  it('omits vodUrl when blank or whitespace-only', () => {
+    expect('vodUrl' in matchFormValuesToInput(baseValues({ vodUrl: '' }))).toBe(false);
+    expect('vodUrl' in matchFormValuesToInput(baseValues({ vodUrl: '   ' }))).toBe(false);
   });
 });

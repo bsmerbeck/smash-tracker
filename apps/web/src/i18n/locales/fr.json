@@ -213,6 +213,7 @@
     "notTracked": "Non suivi",
     "gspAfterMatch": "GSP après le match (facultatif)",
     "gspPlaceholder": "p. ex. 12 400 000",
+    "vodUrlPlaceholder": "https://youtube.com/watch?v=...",
     "matchType": "Type de match",
     "matchTypes": {
       "none": "Aucun",
@@ -242,7 +243,8 @@
       "chooseResult": "Choisissez un résultat",
       "opponentRequired": "Le nom de l'adversaire est requis",
       "charLimit": "Limite de {{max}} caractères",
-      "gspFormat": "Saisissez un nombre comme 12 400 000 (ou laissez vide)"
+      "gspFormat": "Saisissez un nombre comme 12 400 000 (ou laissez vide)",
+      "vodUrlInvalid": "Saisissez une URL valide (ou laissez vide)"
     },
     "set": {
       "format": "Format du set",
