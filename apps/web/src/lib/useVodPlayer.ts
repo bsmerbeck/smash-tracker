@@ -24,6 +24,8 @@ export interface YouTubePlayerInstance {
   seekTo(seconds: number, allowSeekAhead: boolean): void;
   playVideo(): void;
   destroy(): void;
+  /** Current playback position, in seconds. Source: developers.google.com/youtube/iframe_api_reference */
+  getCurrentTime(): number;
 }
 
 /** Config shape accepted by the official `new Twitch.Player(el, config)` constructor. */
@@ -42,6 +44,8 @@ export interface TwitchPlayerInstance {
   seek(seconds: number): void;
   addEventListener(event: string, callback: () => void): void;
   destroy?(): void;
+  /** Current playback position, in seconds. Source: dev.twitch.tv/docs/embed/video-and-clips */
+  getCurrentTime(): number;
 }
 
 declare global {
@@ -142,6 +146,10 @@ export interface UseVodPlayerResult {
   error: VodPlayerErrorState | null;
   /** Seeks the live player to `seconds`. No-op until `isReady` is true. */
   seek: (seconds: number) => void;
+  /** Reads the live player's current position, in whole seconds. Returns
+   * `0` (never throws) until `isReady` is true — a pure on-demand read, not
+   * polled. */
+  getCurrentTime: () => number;
 }
 
 /**
@@ -293,5 +301,15 @@ export function useVodPlayer({ vodUrl, startSeconds }: UseVodPlayerOptions): Use
     }
   }
 
-  return { containerRef, isReady, error, seek };
+  /** Pure on-demand read of the live player's position — mirrors `seek`'s
+   * ready-gate guard exactly. Never added to the construction effect's deps
+   * and never polled on an interval/timer (composer `onFocus`-only reads). */
+  function getCurrentTime(): number {
+    if (!isReady || !playerRef.current) {
+      return 0;
+    }
+    return Math.floor(playerRef.current.getCurrentTime());
+  }
+
+  return { containerRef, isReady, error, seek, getCurrentTime };
 }
