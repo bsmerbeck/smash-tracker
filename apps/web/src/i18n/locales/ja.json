@@ -866,7 +866,14 @@
       "source": "ソース:",
       "sourceAria": "スカウティングのソース",
       "detectedParry": "parry.ggのプロフィールURLを検出しました。",
-      "pending": "公開大会履歴を取得中 — 数秒かかることがあります。"
+      "pending": "公開大会履歴を取得中 — 数秒かかることがあります。",
+      "combineBoth": "両方",
+      "startggField": "start.gg",
+      "parryField": "parry.gg",
+      "parryFieldAria": "parry.gg のプロフィールURL またはゲーマータグ",
+      "parryPlaceholder": "parry.gg のプロフィールURL またはゲーマータグ",
+      "combineHint": "両方のサイトでこのプレイヤーを入力すると履歴を統合できます。片方だけ入力すると単一サイトを偵察します。",
+      "startggFieldAria": "start.ggのプロフィールURL・スラッグ・プレイヤーID"
     },
     "report": {
       "generate": "AIレポートを生成",
@@ -890,7 +897,8 @@
     "header": {
       "viewOn": "{{name}}を{{source}}で見る",
       "profile": "{{source}}プロフィール",
-      "sample": "{{source}}の公開データ · 直近{{sets}}セット（{{games}}ゲーム）のサンプル"
+      "sample": "{{source}}の公開データ · 直近{{sets}}セット（{{games}}ゲーム）のサンプル",
+      "sampleCombined": "start.gg + parry.gg の公開データ · 直近{{sets}}セット（{{games}}ゲーム）のサンプル"
     },
     "characters": {
       "title": "キャラクター使用状況",

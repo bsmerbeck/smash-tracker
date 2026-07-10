@@ -973,6 +973,142 @@ describe('POST /api/reports (parry.gg, V9-B, allowlisted)', () => {
 });
 
 // ---------------------------------------------------------------------------
+// V13: reports generated from combined start.gg + parry.gg scout data.
+// ---------------------------------------------------------------------------
+
+describe('POST /api/reports (V13 combined)', () => {
+  const combinedPayload = {
+    query: 'user/07dc2239',
+    source: 'startgg' as const,
+    combineWith: { query: PARRY_USER_ID, source: 'parrygg' as const },
+  };
+
+  it('generates and stores a report from a combined-source scout', async () => {
+    const { app, database } = buildTestApp({
+      startgg: STARTGG_CONFIG,
+      startggFetch: scoutFetchMock(),
+      reports: REPORTS_CONFIG,
+      reportsClient: stubClient(async () => ({
+        stop_reason: 'end_turn',
+        parsed_output: VALID_REPORT,
+      })),
+      parrygg: { apiKey: 'parry-key' },
+      parryggClients: parryClients({
+        getUser: () => ({ id: PARRY_USER_ID, gamerTag: 'Pandem1c' }),
+      }),
+    });
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/reports',
+      headers: authHeader(),
+      payload: combinedPayload,
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({
+      player: {
+        source: 'combined',
+        id: 1802316,
+        parryUserId: PARRY_USER_ID,
+        gamerTag: 'Pandem1c',
+      },
+    });
+
+    const dump = database.dump() as Record<string, unknown>;
+    const scoutReports = dump.scoutReports as Record<string, Record<string, unknown>>;
+    const stored = Object.values(scoutReports[TEST_UID]!)[0]!;
+    expect(stored).toMatchObject({
+      player: { source: 'combined', id: 1802316, parryUserId: PARRY_USER_ID },
+    });
+  });
+
+  it('falls back to the single source that resolves (parry.gg not found), no 400/404', async () => {
+    const { app } = buildTestApp({
+      startgg: STARTGG_CONFIG,
+      startggFetch: scoutFetchMock(),
+      reports: REPORTS_CONFIG,
+      reportsClient: stubClient(async () => ({
+        stop_reason: 'end_turn',
+        parsed_output: VALID_REPORT,
+      })),
+      parrygg: { apiKey: 'parry-key' },
+      parryggClients: parryClients({ getUser: () => null }),
+    });
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/reports',
+      headers: authHeader(),
+      payload: combinedPayload,
+    });
+    expect(response.statusCode).toBe(200);
+    const body = response.json();
+    expect(body.player.id).toBe(1802316);
+    expect(body.player.source).not.toBe('combined');
+  });
+
+  it('does not 400 on a malformed start.gg handle when the parry.gg side resolves', async () => {
+    const { app } = buildTestApp({
+      startgg: STARTGG_CONFIG,
+      startggFetch: scoutFetchMock(),
+      reports: REPORTS_CONFIG,
+      reportsClient: stubClient(async () => ({
+        stop_reason: 'end_turn',
+        parsed_output: VALID_REPORT,
+      })),
+      parrygg: { apiKey: 'parry-key' },
+      parryggClients: parryClients({
+        getUser: () => ({ id: PARRY_USER_ID, gamerTag: 'Pandem1c' }),
+      }),
+    });
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/reports',
+      headers: authHeader(),
+      payload: {
+        query: 'not a valid start.gg reference',
+        source: 'startgg' as const,
+        combineWith: { query: PARRY_USER_ID, source: 'parrygg' as const },
+      },
+    });
+    // Malformed start.gg side is dropped; parry.gg carries the report.
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({ player: { source: 'parrygg' } });
+  });
+
+  it('refunds the credit when a combined scout resolves nothing on either site', async () => {
+    const noPlayerFetch = (async () => gqlResponse({ user: null })) as typeof fetch;
+    const { app, database } = buildTestApp({
+      startgg: STARTGG_CONFIG,
+      startggFetch: noPlayerFetch,
+      reports: {
+        anthropicApiKey: 'sk-test-key',
+        allowedUids: new Set(['someone-else']),
+      },
+      stripe: { secretKey: 'sk-test-123', webhookSecret: 'whsec-test-456' },
+      reportsClient: stubClient(async () => ({
+        stop_reason: 'end_turn',
+        parsed_output: VALID_REPORT,
+      })),
+      parrygg: { apiKey: 'parry-key' },
+      parryggClients: parryClients({ getUser: () => null }),
+    });
+    database.seed(`credits/${TEST_UID}/balance`, 1);
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/reports',
+      headers: authHeader(),
+      payload: combinedPayload,
+    });
+
+    expect(response.statusCode).toBe(404);
+    const balance = await database.ref(`credits/${TEST_UID}/balance`).get();
+    expect(balance.val()).toBe(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // V9-B production fixes: RTDB null-stripping resilience + billing-enabled
 // read access.
 // ---------------------------------------------------------------------------

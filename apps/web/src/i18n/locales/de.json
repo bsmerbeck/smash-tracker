@@ -866,7 +866,14 @@
       "source": "Quelle:",
       "sourceAria": "Scouting-Quelle",
       "detectedParry": "parry.gg-Profil-URL erkannt.",
-      "pending": "Öffentliche Turnier-Historie wird abgerufen — das kann ein paar Sekunden dauern."
+      "pending": "Öffentliche Turnier-Historie wird abgerufen — das kann ein paar Sekunden dauern.",
+      "combineBoth": "Beide",
+      "startggField": "start.gg",
+      "parryField": "parry.gg",
+      "parryFieldAria": "parry.gg-Profil-URL oder Gamertag",
+      "parryPlaceholder": "parry.gg-Profil-URL oder Gamertag",
+      "combineHint": "Gib diesen Spieler auf beiden Seiten ein, um die Historien zu kombinieren. Fülle nur eines aus, um eine einzelne Seite zu scouten.",
+      "startggFieldAria": "start.gg-Profil-URL, Slug oder Spieler-ID"
     },
     "report": {
       "generate": "KI-Bericht generieren",
@@ -890,7 +897,8 @@
     "header": {
       "viewOn": "{{name}} auf {{source}} ansehen",
       "profile": "{{source}}-Profil",
-      "sample": "Öffentliche {{source}}-Daten · Stichprobe der letzten {{sets}} Sets ({{games}} Spiele)"
+      "sample": "Öffentliche {{source}}-Daten · Stichprobe der letzten {{sets}} Sets ({{games}} Spiele)",
+      "sampleCombined": "Öffentliche start.gg- + parry.gg-Daten · Stichprobe der letzten {{sets}} Sets ({{games}} Spiele)"
     },
     "characters": {
       "title": "Charakternutzung",

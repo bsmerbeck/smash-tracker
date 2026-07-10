@@ -50,4 +50,32 @@ describe('ScoutReportHeader', () => {
     render(<ScoutReportHeader report={baseReport({ userSlug: undefined })} />);
     expect(screen.queryByRole('link')).not.toBeInTheDocument();
   });
+
+  it('V13: a combined report links to BOTH sites and shows the combined caption', () => {
+    const report: ScoutReportData = {
+      player: {
+        source: 'combined',
+        id: 1802316,
+        userSlug: 'user/07dc2239',
+        parryUserId: '019ce9ba-debd-7e11-84a2-77258f52644e',
+        gamerTag: 'Pandem1c',
+      },
+      sampledSets: 5,
+      sampledGames: 12,
+      characters: [],
+      stages: [],
+      recentEvents: [],
+      commonOpponents: [],
+    };
+    render(<ScoutReportHeader report={report} />);
+    expect(screen.getByRole('link', { name: /View Pandem1c on start\.gg/ })).toHaveAttribute(
+      'href',
+      'https://start.gg/user/07dc2239',
+    );
+    expect(screen.getByRole('link', { name: /View Pandem1c on parry\.gg/ })).toHaveAttribute(
+      'href',
+      'https://parry.gg/profile/019ce9ba-debd-7e11-84a2-77258f52644e',
+    );
+    expect(screen.getByText(/Public start\.gg \+ parry\.gg data/)).toBeInTheDocument();
+  });
 });

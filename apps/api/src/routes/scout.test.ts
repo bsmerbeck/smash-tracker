@@ -332,3 +332,92 @@ describe('POST /api/scout (parry.gg, V9-B)', () => {
     expect(response.json()).toMatchObject({ player: { id: 1802316 } });
   });
 });
+
+// ---------------------------------------------------------------------------
+// V13: combine start.gg + parry.gg into one scout via `combineWith`.
+// ---------------------------------------------------------------------------
+
+describe('POST /api/scout (V13 combined)', () => {
+  const combinedPayload = {
+    query: 'user/07dc2239',
+    source: 'startgg' as const,
+    combineWith: { query: PARRY_USER_ID, source: 'parrygg' as const },
+  };
+
+  it('merges both sites into a single combined identity when both resolve', async () => {
+    const { app } = buildTestApp({
+      startgg: CONFIG,
+      startggFetch: scoutFetchMock(),
+      parrygg: { apiKey: 'parry-key' },
+      parryggClients: parryClients({
+        getUser: () => ({ id: PARRY_USER_ID, gamerTag: 'Pandem1c' }),
+      }),
+    });
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/scout',
+      headers: authHeader(),
+      payload: combinedPayload,
+    });
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({
+      player: {
+        source: 'combined',
+        id: 1802316,
+        parryUserId: PARRY_USER_ID,
+        gamerTag: 'Pandem1c',
+      },
+    });
+  });
+
+  it('falls back to the single source that resolves (parry.gg not found)', async () => {
+    const { app } = buildTestApp({
+      startgg: CONFIG,
+      startggFetch: scoutFetchMock(),
+      parrygg: { apiKey: 'parry-key' },
+      parryggClients: parryClients({ getUser: () => null }),
+    });
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/scout',
+      headers: authHeader(),
+      payload: combinedPayload,
+    });
+    expect(response.statusCode).toBe(200);
+    // Only start.gg resolved → single-source report, NOT a combined identity.
+    const body = response.json();
+    expect(body.player.id).toBe(1802316);
+    expect(body.player.source).not.toBe('combined');
+    expect(body.player.parryUserId).toBeUndefined();
+  });
+
+  it('falls back to start.gg when parry.gg is not configured on this deployment', async () => {
+    const { app } = buildTestApp({ startgg: CONFIG, startggFetch: scoutFetchMock() });
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/scout',
+      headers: authHeader(),
+      payload: combinedPayload,
+    });
+    // No 503 for the combined request — the unconfigured side is dropped.
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({ player: { id: 1802316 } });
+  });
+
+  it('returns 404 when neither site resolves the player', async () => {
+    const noPlayerFetch = (async () => gqlResponse({ user: null })) as typeof fetch;
+    const { app } = buildTestApp({
+      startgg: CONFIG,
+      startggFetch: noPlayerFetch,
+      parrygg: { apiKey: 'parry-key' },
+      parryggClients: parryClients({ getUser: () => null }),
+    });
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/scout',
+      headers: authHeader(),
+      payload: combinedPayload,
+    });
+    expect(response.statusCode).toBe(404);
+  });
+});
