@@ -374,6 +374,30 @@ describe('GET /api/groups/:id/leaderboard', () => {
     expect(secondViewOfOwner.isYou).toBe(false);
   });
 
+  it('skips a corrupt match record instead of failing the whole leaderboard (safeParse-and-skip)', async () => {
+    const { app, database } = buildTestApp();
+    const created = await createGroup(app);
+    const { id: groupId } = created.json();
+
+    database.seed(`matches/${TEST_UID}`, {
+      m1: { fighter_id: 1, opponent_id: 2, time: 1000, win: true },
+      // Real prod corruption shape: string-typed `time` (see matches.test.ts).
+      corrupt: { fighter_id: 1, opponent_id: 2, time: '2000', win: false },
+    });
+
+    const response = await app.inject({
+      method: 'GET',
+      url: `/api/groups/${groupId}/leaderboard`,
+      headers: authHeader(),
+    });
+
+    expect(response.statusCode).toBe(200);
+    const owner = response.json().entries.find((e: { uid: string }) => e.uid === TEST_UID);
+    // Rating computed from the one good match only — corrupt record skipped.
+    expect(owner.games).toBe(1);
+    expect(owner.lastMatchAt).toBe(1000);
+  });
+
   it('caches the leaderboard so a second call does not re-read match history', async () => {
     const { app, database } = buildTestApp();
     const created = await createGroup(app);
