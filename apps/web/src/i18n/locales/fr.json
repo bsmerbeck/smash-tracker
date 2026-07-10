@@ -88,6 +88,7 @@
       "noTimestamps": "Pas encore de notes horodatées.",
       "timestampsAria": "Notes horodatées",
       "deleteTimestamp": "Supprimer l'horodatage {{time}}",
+      "editTimestamp": "Modifier l'horodatage {{time}}",
       "timePlaceholder": "m:ss",
       "timeAria": "Temps de l'horodatage",
       "notePlaceholder": "Note",
@@ -506,6 +507,13 @@
     "startTime": "Heure de début",
     "composer": {
       "title": "Ajouter une note"
+    },
+    "notes": {
+      "saveEdit": "Enregistrer la modification de l'horodatage",
+      "cancelEdit": "Annuler la modification de l'horodatage",
+      "deleteConfirmTitle": "Supprimer cette note horodatée ?",
+      "editTimeAria": "Modifier l'heure de l'horodatage",
+      "editNoteAria": "Modifier la note de l'horodatage"
     }
   },
   "matchups": {

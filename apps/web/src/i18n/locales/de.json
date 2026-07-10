@@ -88,6 +88,7 @@
       "noTimestamps": "Noch keine Zeitstempel-Notizen.",
       "timestampsAria": "Zeitstempel-Notizen",
       "deleteTimestamp": "Zeitstempel {{time}} löschen",
+      "editTimestamp": "Zeitstempel {{time}} bearbeiten",
       "timePlaceholder": "m:ss",
       "timeAria": "Zeitstempel-Zeit",
       "notePlaceholder": "Notiz",
@@ -506,6 +507,13 @@
     "startTime": "Startzeit",
     "composer": {
       "title": "Notiz hinzufügen"
+    },
+    "notes": {
+      "saveEdit": "Zeitstempel-Bearbeitung speichern",
+      "cancelEdit": "Zeitstempel-Bearbeitung abbrechen",
+      "deleteConfirmTitle": "Diese Zeitstempel-Notiz löschen?",
+      "editTimeAria": "Zeitstempel-Zeit bearbeiten",
+      "editNoteAria": "Zeitstempel-Notiz bearbeiten"
     }
   },
   "matchups": {
