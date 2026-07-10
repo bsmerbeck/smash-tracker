@@ -88,6 +88,7 @@
       "noTimestamps": "Ainda não há notas com marcação de tempo.",
       "timestampsAria": "Notas com marcação de tempo",
       "deleteTimestamp": "Excluir marcação {{time}}",
+      "editTimestamp": "Editar marcação {{time}}",
       "timePlaceholder": "m:ss",
       "timeAria": "Tempo da marcação",
       "notePlaceholder": "Nota",
@@ -506,6 +507,13 @@
     "startTime": "Horário de início",
     "composer": {
       "title": "Adicionar uma nota"
+    },
+    "notes": {
+      "saveEdit": "Salvar edição da marcação",
+      "cancelEdit": "Cancelar edição da marcação",
+      "deleteConfirmTitle": "Excluir esta nota com marcação de tempo?",
+      "editTimeAria": "Editar hora da marcação",
+      "editNoteAria": "Editar nota da marcação"
     }
   },
   "matchups": {
