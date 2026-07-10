@@ -54,6 +54,7 @@ function buildDefaultValues(fighterId: number): MatchFormValues {
     tournamentName: '',
     gsp: '',
     vodUrl: '',
+    vodStartSeconds: '',
   };
 }
 

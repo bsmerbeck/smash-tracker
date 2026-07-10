@@ -12,6 +12,7 @@ function baseValues(overrides: Partial<MatchFormValues> = {}): MatchFormValues {
     notes: '',
     gsp: '',
     vodUrl: '',
+    vodStartSeconds: '',
     ...overrides,
   };
 }
@@ -97,5 +98,41 @@ describe('matchFormValuesToInput', () => {
   it('omits vodUrl when blank or whitespace-only', () => {
     expect('vodUrl' in matchFormValuesToInput(baseValues({ vodUrl: '' }))).toBe(false);
     expect('vodUrl' in matchFormValuesToInput(baseValues({ vodUrl: '   ' }))).toBe(false);
+  });
+
+  it('parses and includes vodStartSeconds when vodUrl is present', () => {
+    const input = matchFormValuesToInput(
+      baseValues({
+        vodUrl: 'https://youtube.com/watch?v=abc123',
+        vodStartSeconds: '1:23:45',
+      }),
+    );
+    expect(input.vodStartSeconds).toBe(5025);
+  });
+
+  it('accepts bare-seconds and duration-form vodStartSeconds input', () => {
+    expect(
+      matchFormValuesToInput(
+        baseValues({ vodUrl: 'https://youtube.com/watch?v=abc123', vodStartSeconds: '5025' }),
+      ).vodStartSeconds,
+    ).toBe(5025);
+    expect(
+      matchFormValuesToInput(
+        baseValues({ vodUrl: 'https://youtube.com/watch?v=abc123', vodStartSeconds: '1h23m45s' }),
+      ).vodStartSeconds,
+    ).toBe(5025);
+  });
+
+  it('omits vodStartSeconds when blank', () => {
+    const input = matchFormValuesToInput(
+      baseValues({ vodUrl: 'https://youtube.com/watch?v=abc123', vodStartSeconds: '' }),
+    );
+    expect('vodStartSeconds' in input).toBe(false);
+  });
+
+  it('omits vodStartSeconds when vodUrl is blank, even if vodStartSeconds was typed', () => {
+    const input = matchFormValuesToInput(baseValues({ vodUrl: '', vodStartSeconds: '1:23:45' }));
+    expect('vodStartSeconds' in input).toBe(false);
+    expect('vodUrl' in input).toBe(false);
   });
 });

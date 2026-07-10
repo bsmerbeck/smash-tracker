@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   detectVodProvider,
   formatTimestamp,
+  parseFlexibleTimestamp,
   parseTimestamp,
   parseVodStartSeconds,
   vodDeepLink,
@@ -253,5 +254,40 @@ describe('parseVodStartSeconds', () => {
 
   it('returns 0 for a malformed t value', () => {
     expect(parseVodStartSeconds('https://youtube.com/watch?v=abc123&t=notaduration')).toBe(0);
+  });
+});
+
+describe('parseFlexibleTimestamp', () => {
+  it('parses h:mm:ss clock style', () => {
+    expect(parseFlexibleTimestamp('1:23:45')).toBe(5025);
+  });
+
+  it('parses m:ss clock style', () => {
+    expect(parseFlexibleTimestamp('23:45')).toBe(1425);
+  });
+
+  it('parses bare seconds', () => {
+    expect(parseFlexibleTimestamp('5025')).toBe(5025);
+  });
+
+  it('parses 1h23m45s duration style', () => {
+    expect(parseFlexibleTimestamp('1h23m45s')).toBe(5025);
+  });
+
+  it('parses a partial duration form (2m10s)', () => {
+    expect(parseFlexibleTimestamp('2m10s')).toBe(130);
+  });
+
+  it('returns null for empty/whitespace-only input', () => {
+    expect(parseFlexibleTimestamp('')).toBeNull();
+    expect(parseFlexibleTimestamp('   ')).toBeNull();
+  });
+
+  it('returns null for out-of-range minutes/seconds in clock style', () => {
+    expect(parseFlexibleTimestamp('1:60')).toBeNull();
+  });
+
+  it('returns null for non-numeric junk', () => {
+    expect(parseFlexibleTimestamp('not a time')).toBeNull();
   });
 });

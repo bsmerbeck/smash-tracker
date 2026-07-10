@@ -206,3 +206,23 @@ export function parseTimestamp(value: string): number | null {
 
   return hours * 3600 + minutes * 60 + seconds;
 }
+
+/**
+ * Parses a user-typed VOD start-time offset into whole seconds, accepting
+ * whichever of the shapes a player is most likely to type: `h:mm:ss`/`m:ss`
+ * clock style (delegates to `parseTimestamp`), bare seconds (`5025`), or an
+ * `1h23m45s`-style duration string (delegates to the same duration parser
+ * `vodDeepLink`'s `t=` param uses, so a value typed here and a value read
+ * back from a URL always agree). Returns `null` for anything that matches
+ * neither form.
+ */
+export function parseFlexibleTimestamp(value: string): number | null {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return null;
+  }
+  if (trimmed.includes(':')) {
+    return parseTimestamp(trimmed);
+  }
+  return parseDurationOrSeconds(trimmed);
+}
