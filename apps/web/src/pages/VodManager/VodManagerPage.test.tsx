@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { act, render, screen, waitFor } from '@testing-library/react';
+import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes } from 'react-router';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -336,5 +336,221 @@ describe('VodManagerPage', () => {
 
     // Adding a note must never pause/interrupt playback.
     expect(playVideo).not.toHaveBeenCalled();
+  });
+
+  it('edits a timestamp note in place (no dialog), re-sorting ascending, via a single full-carry-through PATCH', async () => {
+    const user = userEvent.setup();
+    listMatches.mockResolvedValue([
+      makeMatch({
+        id: 'm1',
+        opponent: 'rival-one',
+        vodUrl: 'https://youtube.com/watch?v=abc123',
+        gsp: 1_234_567,
+        vodTimestamps: [
+          { seconds: 30, note: 'note A' },
+          { seconds: 90, note: 'note B' },
+        ],
+      }),
+    ]);
+
+    let capturedConfig: YouTubePlayerConfig | undefined;
+    const Player = vi.fn(function (
+      this: unknown,
+      _el: HTMLElement,
+      config: YouTubePlayerConfig,
+    ): YouTubePlayerInstance {
+      capturedConfig = config;
+      return {
+        seekTo: vi.fn(),
+        playVideo: vi.fn(),
+        destroy: vi.fn(),
+        getCurrentTime: vi.fn(() => 754),
+      };
+    });
+    window.YT = { Player: Player as unknown as YTGlobal['Player'] };
+
+    renderVodManager('/vod?match=m1');
+    await waitFor(() => expect(Player).toHaveBeenCalledTimes(1));
+    act(() => {
+      capturedConfig?.events?.onReady?.();
+    });
+
+    // (1) Clicking pencil on note B's row swaps it into inline time+text inputs prefilled from the row's current values.
+    await user.click(screen.getByLabelText('Edit timestamp 1:30'));
+    const timeInput = screen.getByLabelText('Edit timestamp time');
+    const noteInput = screen.getByLabelText('Edit timestamp note');
+    expect(timeInput).toHaveValue('1:30');
+    expect(noteInput).toHaveValue('note B');
+
+    // (2) Editing the time to sort before note A, then Enter commits.
+    await user.clear(timeInput);
+    await user.type(timeInput, '0:10{Enter}');
+
+    await waitFor(() => expect(updateMatch).toHaveBeenCalledTimes(1));
+    const [id, input] = updateMatch.mock.calls[0] as [string, Record<string, unknown>];
+    expect(id).toBe('m1');
+    // Every other match field is carried through unchanged.
+    expect(input.win).toBe(true);
+    expect(input.fighter_id).toBe(mario.id);
+    expect(input.gsp).toBe(1_234_567);
+    // The edited entry (now 10s) re-sorts ahead of note A (30s).
+    expect(input.vodTimestamps).toEqual([
+      { seconds: 10, note: 'note B' },
+      { seconds: 30, note: 'note A' },
+    ]);
+  });
+
+  it('discards an in-place edit on Escape without mutating', async () => {
+    const user = userEvent.setup();
+    listMatches.mockResolvedValue([
+      makeMatch({
+        id: 'm1',
+        opponent: 'rival-one',
+        vodUrl: 'https://youtube.com/watch?v=abc123',
+        vodTimestamps: [
+          { seconds: 30, note: 'note A' },
+          { seconds: 90, note: 'note B' },
+        ],
+      }),
+    ]);
+
+    let capturedConfig: YouTubePlayerConfig | undefined;
+    const Player = vi.fn(function (
+      this: unknown,
+      _el: HTMLElement,
+      config: YouTubePlayerConfig,
+    ): YouTubePlayerInstance {
+      capturedConfig = config;
+      return {
+        seekTo: vi.fn(),
+        playVideo: vi.fn(),
+        destroy: vi.fn(),
+        getCurrentTime: vi.fn(() => 754),
+      };
+    });
+    window.YT = { Player: Player as unknown as YTGlobal['Player'] };
+
+    renderVodManager('/vod?match=m1');
+    await waitFor(() => expect(Player).toHaveBeenCalledTimes(1));
+    act(() => {
+      capturedConfig?.events?.onReady?.();
+    });
+
+    await user.click(screen.getByLabelText('Edit timestamp 1:30'));
+    const timeInput = screen.getByLabelText('Edit timestamp time');
+    await user.clear(timeInput);
+    await user.type(timeInput, '5:00');
+    await user.type(timeInput, '{Escape}');
+
+    expect(updateMatch).not.toHaveBeenCalled();
+    // Edit mode closed with no value change — the pencil affordance and
+    // original note text are back, the edit inputs are gone.
+    expect(screen.queryByLabelText('Edit timestamp time')).not.toBeInTheDocument();
+    expect(screen.getByLabelText('Edit timestamp 1:30')).toBeInTheDocument();
+    expect(screen.getByText('note B')).toBeInTheDocument();
+  });
+
+  it('removes a note via an AlertDialog confirm (not an immediate delete), via a single full-carry-through PATCH', async () => {
+    const user = userEvent.setup();
+    listMatches.mockResolvedValue([
+      makeMatch({
+        id: 'm1',
+        opponent: 'rival-one',
+        vodUrl: 'https://youtube.com/watch?v=abc123',
+        vodTimestamps: [
+          { seconds: 30, note: 'note A' },
+          { seconds: 90, note: 'note B' },
+        ],
+      }),
+    ]);
+
+    let capturedConfig: YouTubePlayerConfig | undefined;
+    const Player = vi.fn(function (
+      this: unknown,
+      _el: HTMLElement,
+      config: YouTubePlayerConfig,
+    ): YouTubePlayerInstance {
+      capturedConfig = config;
+      return {
+        seekTo: vi.fn(),
+        playVideo: vi.fn(),
+        destroy: vi.fn(),
+        getCurrentTime: vi.fn(() => 754),
+      };
+    });
+    window.YT = { Player: Player as unknown as YTGlobal['Player'] };
+
+    renderVodManager('/vod?match=m1');
+    await waitFor(() => expect(Player).toHaveBeenCalledTimes(1));
+    act(() => {
+      capturedConfig?.events?.onReady?.();
+    });
+
+    // (1) Clicking trash opens a confirm — no immediate delete.
+    await user.click(screen.getByLabelText('Delete timestamp 1:30'));
+    const alert = await screen.findByRole('alertdialog');
+    expect(within(alert).getByText('Delete this timestamp note?')).toBeInTheDocument();
+
+    // (2) Canceling closes the dialog with no mutation.
+    await user.click(within(alert).getByRole('button', { name: 'Cancel' }));
+    expect(updateMatch).not.toHaveBeenCalled();
+    expect(screen.getByText('note B')).toBeInTheDocument();
+
+    // (3) Confirming removes the note via the same full-carry-through PATCH.
+    await user.click(screen.getByLabelText('Delete timestamp 1:30'));
+    const alert2 = await screen.findByRole('alertdialog');
+    await user.click(within(alert2).getByRole('button', { name: 'Remove' }));
+
+    await waitFor(() => expect(updateMatch).toHaveBeenCalledTimes(1));
+    const [id, input] = updateMatch.mock.calls[0] as [string, Record<string, unknown>];
+    expect(id).toBe('m1');
+    expect(input.vodTimestamps).toEqual([{ seconds: 30, note: 'note A' }]);
+  });
+
+  it('seeks the live player and highlights the clicked row body; edit/delete on another row do not change the selection (D-13/D-14)', async () => {
+    const user = userEvent.setup();
+    listMatches.mockResolvedValue([
+      makeMatch({
+        id: 'm1',
+        opponent: 'rival-one',
+        vodUrl: 'https://youtube.com/watch?v=abc123',
+        vodTimestamps: [
+          { seconds: 30, note: 'note A' },
+          { seconds: 90, note: 'note B' },
+        ],
+      }),
+    ]);
+
+    const seekTo = vi.fn();
+    const playVideo = vi.fn();
+    let capturedConfig: YouTubePlayerConfig | undefined;
+    const Player = vi.fn(function (
+      this: unknown,
+      _el: HTMLElement,
+      config: YouTubePlayerConfig,
+    ): YouTubePlayerInstance {
+      capturedConfig = config;
+      return { seekTo, playVideo, destroy: vi.fn(), getCurrentTime: vi.fn(() => 754) };
+    });
+    window.YT = { Player: Player as unknown as YTGlobal['Player'] };
+
+    renderVodManager('/vod?match=m1');
+    await waitFor(() => expect(Player).toHaveBeenCalledTimes(1));
+    act(() => {
+      capturedConfig?.events?.onReady?.();
+    });
+
+    // Clicking the row BODY (not pencil/trash) seeks the live player and highlights the row.
+    const noteARow = screen.getByText('note A').closest('button')!;
+    await user.click(noteARow);
+    await waitFor(() => expect(seekTo).toHaveBeenCalledWith(30, true));
+    expect(noteARow).toHaveClass('bg-accent');
+
+    // Editing (then canceling) a DIFFERENT row must not change the selection or re-seek.
+    await user.click(screen.getByLabelText('Edit timestamp 1:30'));
+    await user.click(screen.getByLabelText('Cancel timestamp edit'));
+
+    expect(noteARow).toHaveClass('bg-accent');
+    expect(seekTo).toHaveBeenCalledTimes(1);
   });
 });
