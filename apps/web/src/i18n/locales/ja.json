@@ -505,6 +505,10 @@
     "openOnHost": "{{host}}で開く",
     "selectMatchAria": "{{opponent}}戦を選択",
     "startTime": "開始時間",
+    "useCurrentTime": "現在の再生位置を使用",
+    "meta": {
+      "edit": "詳細を編集"
+    },
     "composer": {
       "title": "メモを追加"
     },

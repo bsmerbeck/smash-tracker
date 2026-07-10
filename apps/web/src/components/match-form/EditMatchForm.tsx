@@ -20,7 +20,7 @@ import {
 } from '@/components/match-form/MatchForm';
 
 /** Maps a stored `Match` to the shared form's value shape, applying legacy's fallbacks for older records missing optional fields. */
-function matchToFormValues(match: Match): MatchFormValues {
+export function matchToFormValues(match: Match): MatchFormValues {
   return {
     fighterId: match.fighter_id,
     opponentFighterId: match.opponent_id,

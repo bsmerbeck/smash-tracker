@@ -2,13 +2,13 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
-import type { Match, VodTimestamp } from '@smash-tracker/shared';
+import type { Fighter, Match, VodTimestamp } from '@smash-tracker/shared';
 import { getFighterById } from '@/data/sprites';
+import { useFighters } from '@/hooks/useFighters';
 import { useFilteredMatches } from '@/hooks/useFilteredMatches';
 import { useUpdateMatch } from '@/hooks/useUpdateMatch';
-import { detectVodProvider, formatTimestamp, parseVodStartSeconds } from '@/lib/vod';
+import { detectVodProvider, parseVodStartSeconds } from '@/lib/vod';
 import { buildUpdateInput } from '@/components/vod/VodNotesDialog';
-import { tournamentLabel } from '@/pages/MatchData/lib/matchTableFilters';
 import {
   DEFAULT_VOD_MANAGER_FILTERS,
   applyVodManagerFilters,
@@ -20,6 +20,7 @@ import {
 import { VodMatchList } from './components/VodMatchList';
 import { VodPlayer } from './components/VodPlayer';
 import { TimestampList } from './components/TimestampList';
+import { SelectedMatchMeta } from './components/SelectedMatchMeta';
 
 /**
  * Resolves the second to start playback at for `match`'s VOD: the player's
@@ -55,6 +56,16 @@ export function VodManagerPage() {
 
   const { matches, isLoading } = useFilteredMatches();
   const vodMatches = useMemo(() => matches.filter((m) => m.vodUrl != null), [matches]);
+
+  // Fighters offered by the inline edit form's "Your Fighter" select
+  // (NOTE-04) — same primary+secondary sprite lookup MatchDataPage uses.
+  const { data: fighterSelection } = useFighters();
+  const fighterSprites = useMemo<Fighter[]>(() => {
+    const ids = [...(fighterSelection?.primary ?? []), ...(fighterSelection?.secondary ?? [])];
+    return ids
+      .map((id) => getFighterById(id))
+      .filter((sprite): sprite is Fighter => sprite != null);
+  }, [fighterSelection]);
 
   const [filters, setFilters] = useState<VodManagerFilterState>(DEFAULT_VOD_MANAGER_FILTERS);
   const [sort, setSort] = useState<VodSortDirection>('newest');
@@ -201,52 +212,16 @@ export function VodManagerPage() {
               </div>
             )}
 
-            {selectedMatch && <SelectedMatchMeta match={selectedMatch} />}
+            {selectedMatch && (
+              <SelectedMatchMeta
+                match={selectedMatch}
+                fighterSprites={fighterSprites}
+                getCurrentTimeRef={getCurrentTimeRef}
+              />
+            )}
           </div>
         </div>
       )}
-    </div>
-  );
-}
-
-function SelectedMatchMeta({ match }: { match: Match }) {
-  const { t } = useTranslation();
-  const fighter = getFighterById(match.fighter_id);
-  const opponentFighter = getFighterById(match.opponent_id);
-
-  return (
-    <div className="flex flex-col gap-2 rounded-lg border p-4 text-sm">
-      <h2 className="text-xl font-semibold tracking-tight">
-        vs. {match.opponent || t('common.unknown')}
-      </h2>
-      <dl className="grid grid-cols-2 gap-2 text-muted-foreground">
-        <div>
-          <dt className="text-xs">{t('vodManager.filters.fighter')}</dt>
-          <dd className="text-foreground">{fighter?.name ?? t('common.unknown')}</dd>
-        </div>
-        <div>
-          <dt className="text-xs">{t('vodManager.filters.opponentFighter')}</dt>
-          <dd className="text-foreground">{opponentFighter?.name ?? t('common.unknown')}</dd>
-        </div>
-        <div>
-          <dt className="text-xs">{t('vodManager.filters.stage')}</dt>
-          <dd className="text-foreground">{match.map?.name ?? t('common.unknown')}</dd>
-        </div>
-        <div>
-          <dt className="text-xs">{t('vodManager.filters.tournament')}</dt>
-          <dd className="text-foreground">{tournamentLabel(match)}</dd>
-        </div>
-        <div>
-          <dt className="text-xs">{t('matchData.table.columns.win')}</dt>
-          <dd className="text-foreground">{match.win ? t('common.win') : t('common.loss')}</dd>
-        </div>
-        {match.vodStartSeconds !== undefined && (
-          <div>
-            <dt className="text-xs">{t('vodManager.startTime')}</dt>
-            <dd className="text-foreground">{formatTimestamp(match.vodStartSeconds)}</dd>
-          </div>
-        )}
-      </dl>
     </div>
   );
 }

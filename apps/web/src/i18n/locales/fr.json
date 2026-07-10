@@ -505,6 +505,10 @@
     "openOnHost": "Ouvrir sur {{host}}",
     "selectMatchAria": "Sélectionner le match contre {{opponent}}",
     "startTime": "Heure de début",
+    "useCurrentTime": "Utiliser le temps actuel du lecteur",
+    "meta": {
+      "edit": "Modifier les détails"
+    },
     "composer": {
       "title": "Ajouter une note"
     },

@@ -505,6 +505,10 @@
     "openOnHost": "Open on {{host}}",
     "selectMatchAria": "Select match vs {{opponent}}",
     "startTime": "Start time",
+    "useCurrentTime": "Use current player time",
+    "meta": {
+      "edit": "Edit details"
+    },
     "composer": {
       "title": "Add a note"
     },
