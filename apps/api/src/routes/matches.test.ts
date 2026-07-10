@@ -272,6 +272,48 @@ describe('POST /api/matches', () => {
     });
   });
 
+  it('accepts and stores vodStartSeconds', async () => {
+    const { app, database } = buildTestApp();
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/matches',
+      headers: authHeader(),
+      payload: {
+        ...validCreateInput,
+        vodUrl: 'https://youtube.com/watch?v=abc123',
+        vodStartSeconds: 5025,
+      },
+    });
+
+    expect(response.statusCode).toBe(201);
+    expect(response.json()).toMatchObject({ vodStartSeconds: 5025 });
+
+    const dump = database.dump() as Record<string, unknown>;
+    const matches = dump.matches as Record<string, Record<string, unknown>>;
+    const stored = Object.values(matches[TEST_UID]!)[0]!;
+    expect(stored).toMatchObject({ vodStartSeconds: 5025 });
+  });
+
+  it('omits vodStartSeconds from the stored record when not provided', async () => {
+    const { app, database } = buildTestApp();
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/matches',
+      headers: authHeader(),
+      payload: { ...validCreateInput, vodUrl: 'https://youtube.com/watch?v=abc123' },
+    });
+
+    expect(response.statusCode).toBe(201);
+    expect(response.json()).not.toHaveProperty('vodStartSeconds');
+
+    const dump = database.dump() as Record<string, unknown>;
+    const matches = dump.matches as Record<string, Record<string, unknown>>;
+    const stored = Object.values(matches[TEST_UID]!)[0]!;
+    expect(stored).not.toHaveProperty('vodStartSeconds');
+  });
+
   it('rejects source/externalId from client input (server-only fields)', async () => {
     const { app } = buildTestApp();
 
@@ -612,6 +654,88 @@ describe('PATCH /api/matches/:id', () => {
     const stored = matches[TEST_UID]!.existingKey!;
     expect(stored).not.toHaveProperty('vodUrl');
     expect(stored).not.toHaveProperty('vodTimestamps');
+  });
+
+  it('sets vodStartSeconds', async () => {
+    const { app, database } = buildTestApp();
+    database.seed(`matches/${TEST_UID}/existingKey`, {
+      fighter_id: 1,
+      opponent_id: 8,
+      time: 1700000000000,
+      win: false,
+    });
+
+    const response = await app.inject({
+      method: 'PATCH',
+      url: '/api/matches/existingKey',
+      headers: authHeader(),
+      payload: {
+        ...validCreateInput,
+        vodUrl: 'https://youtube.com/watch?v=abc123',
+        vodStartSeconds: 5025,
+      },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({ vodStartSeconds: 5025 });
+
+    const dump = database.dump() as Record<string, unknown>;
+    const matches = dump.matches as Record<string, Record<string, unknown>>;
+    expect(matches[TEST_UID]!.existingKey).toMatchObject({ vodStartSeconds: 5025 });
+  });
+
+  it('updates existing vodStartSeconds', async () => {
+    const { app, database } = buildTestApp();
+    database.seed(`matches/${TEST_UID}/existingKey`, {
+      fighter_id: 1,
+      opponent_id: 8,
+      time: 1700000000000,
+      win: false,
+      vodUrl: 'https://youtube.com/watch?v=abc123',
+      vodStartSeconds: 5025,
+    });
+
+    const response = await app.inject({
+      method: 'PATCH',
+      url: '/api/matches/existingKey',
+      headers: authHeader(),
+      payload: {
+        ...validCreateInput,
+        vodUrl: 'https://youtube.com/watch?v=abc123',
+        vodStartSeconds: 90,
+      },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({ vodStartSeconds: 90 });
+  });
+
+  it('clears vodStartSeconds when omitted from the update payload', async () => {
+    const { app, database } = buildTestApp();
+    database.seed(`matches/${TEST_UID}/existingKey`, {
+      fighter_id: 1,
+      opponent_id: 8,
+      time: 1700000000000,
+      win: false,
+      vodUrl: 'https://youtube.com/watch?v=abc123',
+      vodStartSeconds: 5025,
+    });
+
+    const response = await app.inject({
+      method: 'PATCH',
+      url: '/api/matches/existingKey',
+      headers: authHeader(),
+      payload: { ...validCreateInput, vodUrl: 'https://youtube.com/watch?v=abc123' },
+    });
+
+    expect(response.statusCode).toBe(200);
+    const body = response.json();
+    expect(body).not.toHaveProperty('vodStartSeconds');
+
+    const dump = database.dump() as Record<string, unknown>;
+    const matches = dump.matches as Record<string, Record<string, unknown>>;
+    const stored = matches[TEST_UID]!.existingKey!;
+    expect(stored).not.toHaveProperty('vodStartSeconds');
   });
 
   it('returns 400 when vodTimestamps exceeds 20 entries', async () => {

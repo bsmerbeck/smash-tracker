@@ -150,6 +150,15 @@ export const matchRecordSchema = z.object({
    */
   vodTimestamps: z.array(vodTimestampSchema).max(20).optional(),
   /**
+   * User-set offset (whole seconds) into the match's VOD where this match
+   * begins — takes precedence over any `t=`/`start=` param in `vodUrl` (see
+   * `parseVodStartSeconds` on the web). Lets an entire event recorded as ONE
+   * video be shared by several matches: the player types each match's start
+   * time once instead of hand-editing the URL's query param. Same
+   * user-editable / conditional-spread convention as `vodUrl`/`vodTimestamps`.
+   */
+  vodStartSeconds: z.number().int().nonnegative().optional(),
+  /**
    * Post-match GSP (Global Smash Power) reading, as shown on the in-game
    * results screen (V10). Only meaningful for online matches — GSP is
    * per-fighter, so a series of these across matches sharing `fighter_id`
@@ -237,9 +246,9 @@ const optionalNameInputSchema = z
  * remain server-set only (see `matchRecordSchema`) and are intentionally
  * NOT accepted here.
  *
- * `vodUrl`/`vodTimestamps` (V7-E) are user-editable here too — omitting
- * either field (rather than sending it) is how a caller clears it, following
- * the same full-overwrite + conditional-spread convention as
+ * `vodUrl`/`vodTimestamps`/`vodStartSeconds` (V7-E) are user-editable here
+ * too — omitting a field (rather than sending it) is how a caller clears it,
+ * following the same full-overwrite + conditional-spread convention as
  * `stocksLeft`/`eventName`/`tournamentName` (see `RtdbService.updateMatch`).
  *
  * `gsp` (V10) follows the same convention — omit to leave/clear it.
@@ -257,6 +266,7 @@ export const createMatchInputSchema = z.object({
   tournamentName: optionalNameInputSchema,
   vodUrl: z.string().url().optional(),
   vodTimestamps: z.array(vodTimestampSchema).max(20).optional(),
+  vodStartSeconds: z.number().int().nonnegative().optional(),
   gsp: z.number().int().min(0).optional(),
 });
 export type CreateMatchInput = z.infer<typeof createMatchInputSchema>;

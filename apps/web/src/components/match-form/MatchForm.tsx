@@ -45,6 +45,7 @@ import { useMatches } from '@/hooks/useMatches';
 import { useStageFavorites, useToggleStageFavorite } from '@/hooks/useStageFavorites';
 import { getGroupedStageOptions, stageOptions } from '@/lib/stageOptions';
 import { parseGspNumber } from '@/pages/Gsp/lib/parseGspNumber';
+import { parseFlexibleTimestamp } from '@/lib/vod';
 
 export const alphaSpriteList = [...SpriteList].sort((a, b) => a.name.localeCompare(b.name));
 
@@ -137,6 +138,20 @@ export function buildMatchFormSchema(
       .refine((value) => value.trim() === '' || z.string().url().safeParse(value.trim()).success, {
         message: t('matchForm.validation.vodUrlInvalid'),
       }),
+    /**
+     * Optional user-typed offset into the VOD where this match begins
+     * (V-Manager fix-up #3): only meaningful alongside a non-blank `vodUrl`
+     * (see `matchFormValuesToInput`, which omits it when the link is
+     * blank — the "clearing the VOD link drops the start time too" rule).
+     * Accepts any of `parseFlexibleTimestamp`'s forms; blank is always
+     * valid regardless of `vodUrl` so the field never blocks save while
+     * disabled.
+     */
+    vodStartSeconds: z
+      .string()
+      .refine((value) => value.trim() === '' || parseFlexibleTimestamp(value.trim()) !== null, {
+        message: t('matchForm.validation.vodStartSecondsInvalid'),
+      }),
   });
 }
 
@@ -152,6 +167,9 @@ export function matchFormValuesToInput(values: MatchFormValues): CreateMatchInpu
   const tournamentName = values.tournamentName?.trim();
   const gsp = values.gsp.trim() === '' ? null : parseGspNumber(values.gsp);
   const vodUrl = values.vodUrl.trim();
+  const vodStartSecondsRaw = values.vodStartSeconds.trim();
+  const vodStartSeconds =
+    vodUrl && vodStartSecondsRaw ? parseFlexibleTimestamp(vodStartSecondsRaw) : null;
   return {
     fighter_id: values.fighterId,
     opponent_id: values.opponentFighterId,
@@ -170,6 +188,10 @@ export function matchFormValuesToInput(values: MatchFormValues): CreateMatchInpu
     // longer has a URL are meaningless) and to carry existing timestamps
     // through when the link is merely edited, not cleared.
     ...(vodUrl ? { vodUrl } : {}),
+    // `vodStartSeconds` only makes sense alongside a link — clearing `vodUrl`
+    // (or leaving the start-time field blank) drops it from the payload too,
+    // same clear-on-omit convention as `vodTimestamps` above.
+    ...(vodStartSeconds !== null ? { vodStartSeconds } : {}),
   };
 }
 
@@ -340,6 +362,8 @@ export function MatchFormFields({
   const { data: stageFavorites } = useStageFavorites();
   const toggleStageFavorite = useToggleStageFavorite();
   const [opponentPopoverOpen, setOpponentPopoverOpen] = useState(false);
+  const vodUrlValue = form.watch('vodUrl');
+  const vodLinkPresent = vodUrlValue.trim() !== '';
 
   const favoriteStageIds = stageFavorites?.stageIds;
   const stageGroups = useMemo(
@@ -511,19 +535,40 @@ export function MatchFormFields({
 
         <TournamentFields control={form.control} />
 
-        <FormField
-          control={form.control}
-          name="vodUrl"
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel>{t('shared.vod.url')}</FormLabel>
-              <FormControl>
-                <Input {...field} type="url" placeholder={t('matchForm.vodUrlPlaceholder')} />
-              </FormControl>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <FormField
+            control={form.control}
+            name="vodUrl"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>{t('shared.vod.url')}</FormLabel>
+                <FormControl>
+                  <Input {...field} type="url" placeholder={t('matchForm.vodUrlPlaceholder')} />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+
+          <FormField
+            control={form.control}
+            name="vodStartSeconds"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>{t('matchForm.vodStartSeconds.label')}</FormLabel>
+                <FormControl>
+                  <Input
+                    {...field}
+                    type="text"
+                    disabled={!vodLinkPresent}
+                    placeholder={t('matchForm.vodStartSeconds.placeholder')}
+                  />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+        </div>
 
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <FormField

@@ -4,7 +4,7 @@ import { useTranslation } from 'react-i18next';
 import type { Match } from '@smash-tracker/shared';
 import { getFighterById } from '@/data/sprites';
 import { useFilteredMatches } from '@/hooks/useFilteredMatches';
-import { detectVodProvider, parseVodStartSeconds } from '@/lib/vod';
+import { detectVodProvider, formatTimestamp, parseVodStartSeconds } from '@/lib/vod';
 import { tournamentLabel } from '@/pages/MatchData/lib/matchTableFilters';
 import {
   DEFAULT_VOD_MANAGER_FILTERS,
@@ -17,6 +17,19 @@ import {
 import { VodMatchList } from './components/VodMatchList';
 import { VodPlayer } from './components/VodPlayer';
 import { TimestampList } from './components/TimestampList';
+
+/**
+ * Resolves the second to start playback at for `match`'s VOD: the player's
+ * own user-set `vodStartSeconds` (V-Manager fix-up #3 — lets one video shared
+ * by several matches be typed once per match, no URL `t=` editing required)
+ * takes precedence over whatever offset happens to be encoded in the stored
+ * `vodUrl`'s `t=`/`start=` query param. Shared by both the initial player
+ * mount (`startSeconds` prop) and the same-video-identity reposition effect
+ * below so the two can never drift apart.
+ */
+function resolveMatchStartSeconds(match: Match): number {
+  return match.vodStartSeconds ?? parseVodStartSeconds(match.vodUrl ?? '');
+}
 
 /**
  * `/vod` — the VOD Manager: a master-detail page listing every match with a
@@ -103,7 +116,7 @@ export function VodManagerPage() {
     const identityKey =
       detected.provider != null ? `${detected.provider}:${detected.videoId}` : null;
     if (identityKey != null && identityKey === previousVodIdentityRef.current) {
-      playerSeekRef.current?.(parseVodStartSeconds(selectedMatch.vodUrl));
+      playerSeekRef.current?.(resolveMatchStartSeconds(selectedMatch));
     }
     previousVodIdentityRef.current = identityKey;
   }, [selectedMatch]);
@@ -140,7 +153,7 @@ export function VodManagerPage() {
               <>
                 <VodPlayer
                   vodUrl={selectedMatch.vodUrl}
-                  startSeconds={parseVodStartSeconds(selectedMatch.vodUrl)}
+                  startSeconds={resolveMatchStartSeconds(selectedMatch)}
                   seekRef={playerSeekRef}
                 />
                 <TimestampList
@@ -195,6 +208,12 @@ function SelectedMatchMeta({ match }: { match: Match }) {
           <dt className="text-xs">{t('matchData.table.columns.win')}</dt>
           <dd className="text-foreground">{match.win ? t('common.win') : t('common.loss')}</dd>
         </div>
+        {match.vodStartSeconds !== undefined && (
+          <div>
+            <dt className="text-xs">{t('vodManager.startTime')}</dt>
+            <dd className="text-foreground">{formatTimestamp(match.vodStartSeconds)}</dd>
+          </div>
+        )}
       </dl>
     </div>
   );
