@@ -327,7 +327,7 @@
       "title": "Quick Logger",
       "opponentCharacter": "Opponent Character",
       "selectCharacter": "Select a character",
-      "gspAfterMatch": "GSP After Match",
+      "gspAfterMatch": "GSP After Match (optional)",
       "gspPlaceholder": "e.g. 9,420,000",
       "stageOptional": "Stage (optional)",
       "logMatch": "Log Match",
@@ -336,6 +336,7 @@
       "chooseResult": "Mark this match as a win or loss.",
       "invalidGsp": "Enter the GSP shown after the match — commas are fine, e.g. 10,300,000.",
       "logged": "Match logged! GSP {{gsp}}",
+      "loggedNoGsp": "Match logged!",
       "logFailed": "Failed to log the match. Please try again.",
       "setGspButton": "Set GSP without logging a match"
     },
