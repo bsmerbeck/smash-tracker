@@ -157,6 +157,7 @@ export class RtdbService {
       ...(input.tournamentName !== undefined ? { tournamentName: input.tournamentName } : {}),
       ...(input.vodUrl !== undefined ? { vodUrl: input.vodUrl } : {}),
       ...(input.vodTimestamps !== undefined ? { vodTimestamps: input.vodTimestamps } : {}),
+      ...(input.vodStartSeconds !== undefined ? { vodStartSeconds: input.vodStartSeconds } : {}),
       ...(input.gsp !== undefined ? { gsp: input.gsp } : {}),
     };
 
@@ -206,15 +207,16 @@ export class RtdbService {
       win: input.win,
       // See createMatch — RTDB rejects `undefined` values, so these are
       // only included when the input actually set them. Omitting
-      // opponent/vodUrl/vodTimestamps/gsp from the input is how a caller
-      // clears them, since this is a full overwrite (`.set()`, not a partial
-      // patch).
+      // opponent/vodUrl/vodTimestamps/vodStartSeconds/gsp from the input is
+      // how a caller clears them, since this is a full overwrite (`.set()`,
+      // not a partial patch).
       ...(input.opponent !== undefined ? { opponent: input.opponent } : {}),
       ...(input.stocksLeft !== undefined ? { stocksLeft: input.stocksLeft } : {}),
       ...(input.eventName !== undefined ? { eventName: input.eventName } : {}),
       ...(input.tournamentName !== undefined ? { tournamentName: input.tournamentName } : {}),
       ...(input.vodUrl !== undefined ? { vodUrl: input.vodUrl } : {}),
       ...(input.vodTimestamps !== undefined ? { vodTimestamps: input.vodTimestamps } : {}),
+      ...(input.vodStartSeconds !== undefined ? { vodStartSeconds: input.vodStartSeconds } : {}),
       ...(input.gsp !== undefined ? { gsp: input.gsp } : {}),
       // Server-set provenance survives the overwrite — the full-overwrite
       // rebuild used to strip these, breaking source badges after a VOD edit.
