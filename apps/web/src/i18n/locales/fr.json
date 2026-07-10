@@ -327,7 +327,7 @@
       "title": "Saisie rapide",
       "opponentCharacter": "Personnage adverse",
       "selectCharacter": "Sélectionnez un personnage",
-      "gspAfterMatch": "GSP après le match",
+      "gspAfterMatch": "GSP après le match (facultatif)",
       "gspPlaceholder": "p. ex. 9 420 000",
       "stageOptional": "Stage (facultatif)",
       "logMatch": "Enregistrer le match",
@@ -336,6 +336,7 @@
       "chooseResult": "Indiquez si ce match est une victoire ou une défaite.",
       "invalidGsp": "Saisissez le GSP affiché après le match — les virgules sont acceptées, p. ex. 10,300,000.",
       "logged": "Match enregistré ! GSP {{gsp}}",
+      "loggedNoGsp": "Match enregistré !",
       "logFailed": "Échec de l'enregistrement du match. Veuillez réessayer.",
       "setGspButton": "Définir le GSP sans enregistrer de match"
     },
