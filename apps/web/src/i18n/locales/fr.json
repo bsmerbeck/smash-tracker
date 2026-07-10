@@ -866,7 +866,14 @@
       "source": "Source :",
       "sourceAria": "Source de scouting",
       "detectedParry": "URL de profil parry.gg détectée.",
-      "pending": "Récupération de son historique public de tournois — cela peut prendre quelques secondes."
+      "pending": "Récupération de son historique public de tournois — cela peut prendre quelques secondes.",
+      "combineBoth": "Les deux",
+      "startggField": "start.gg",
+      "parryField": "parry.gg",
+      "parryFieldAria": "URL de profil parry.gg ou tag de joueur",
+      "parryPlaceholder": "URL de profil parry.gg ou tag de joueur",
+      "combineHint": "Saisis ce joueur sur chaque site pour combiner leurs historiques. N'en remplis qu'un seul pour scouter un seul site.",
+      "startggFieldAria": "URL de profil start.gg, slug ou id de joueur"
     },
     "report": {
       "generate": "Générer un rapport IA",
@@ -890,7 +897,8 @@
     "header": {
       "viewOn": "Voir {{name}} sur {{source}}",
       "profile": "Profil {{source}}",
-      "sample": "Données publiques {{source}} · échantillon des {{sets}} derniers sets ({{games}} matchs)"
+      "sample": "Données publiques {{source}} · échantillon des {{sets}} derniers sets ({{games}} matchs)",
+      "sampleCombined": "Données publiques start.gg + parry.gg · échantillon des {{sets}} derniers sets ({{games}} matchs)"
     },
     "characters": {
       "title": "Personnages utilisés",

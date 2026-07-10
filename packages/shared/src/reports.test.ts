@@ -99,6 +99,26 @@ describe('scoutReportRecordSchema back-compat', () => {
     expect(parsed.report.headToHead).toBeUndefined();
   });
 
+  it('V13: parses a stored record with a combined-source player (both ids present)', () => {
+    const record = {
+      id: 'report-4',
+      createdAt: 1_700_000_000_000,
+      model: 'claude-opus-4-8',
+      player: {
+        source: 'combined',
+        id: 1802316,
+        userSlug: 'user/07dc2239',
+        parryUserId: '019ce9ba-debd-7e11-84a2-77258f52644e',
+        gamerTag: 'Pandem1c',
+      },
+      report: FULL_REPORT,
+    };
+    const parsed = scoutReportRecordSchema.parse(record);
+    expect(parsed.player.source).toBe('combined');
+    expect(parsed.player.id).toBe(1802316);
+    expect(parsed.player.parryUserId).toBe('019ce9ba-debd-7e11-84a2-77258f52644e');
+  });
+
   it('V9-B: still parses an explicit headToHead: null (records seeded/written before the null-strip fix, read via a null-preserving path)', () => {
     const record = {
       id: 'report-3',

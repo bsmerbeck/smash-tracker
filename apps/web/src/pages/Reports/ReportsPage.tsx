@@ -1,7 +1,11 @@
 import { useMemo, useState } from 'react';
 import { Trans, useTranslation } from 'react-i18next';
 import { ChevronDown, ChevronRight, Sparkles } from 'lucide-react';
-import { scoutIdentityKey, type ScoutReportRecord } from '@smash-tracker/shared';
+import {
+  scoutIdentityKey,
+  type ScoutIdentitySource,
+  type ScoutReportRecord,
+} from '@smash-tracker/shared';
 import { useReportsConfig, useScoutReportsList } from '@/hooks/useScoutReports';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -10,12 +14,15 @@ import { ScoutAiReportCard } from '@/pages/Scout/components/ScoutAiReportCard';
 interface ReportGroup {
   key: string;
   gamerTag: string;
-  source: 'startgg' | 'parrygg';
+  source: ScoutIdentitySource;
   /** Newest-first, mirroring GET /api/reports' own ordering. */
   reports: ScoutReportRecord[];
 }
 
-function sourceLabel(source: 'startgg' | 'parrygg'): string {
+function sourceLabel(source: ScoutIdentitySource): string {
+  if (source === 'combined') {
+    return 'start.gg + parry.gg';
+  }
   return source === 'parrygg' ? 'parry.gg' : 'start.gg';
 }
 

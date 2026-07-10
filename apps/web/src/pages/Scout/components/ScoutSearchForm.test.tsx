@@ -14,7 +14,7 @@ describe('ScoutSearchForm', () => {
     await user.type(screen.getByLabelText(/start\.gg profile URL/), 'user/07dc2239');
     await user.click(screen.getByRole('button', { name: 'Scout' }));
 
-    expect(onSubmit).toHaveBeenCalledWith('user/07dc2239', 'startgg');
+    expect(onSubmit).toHaveBeenCalledWith({ query: 'user/07dc2239', source: 'startgg' });
   });
 
   it('shows the source toggle when parrygg is enabled, and submits the selected source', async () => {
@@ -26,7 +26,7 @@ describe('ScoutSearchForm', () => {
     await user.click(screen.getByRole('radio', { name: 'parry.gg' }));
     await user.click(screen.getByRole('button', { name: 'Scout' }));
 
-    expect(onSubmit).toHaveBeenCalledWith('PowPow', 'parrygg');
+    expect(onSubmit).toHaveBeenCalledWith({ query: 'PowPow', source: 'parrygg' });
   });
 
   it('auto-detects a pasted parry.gg profile URL and overrides the toggle', async () => {
@@ -48,10 +48,10 @@ describe('ScoutSearchForm', () => {
     expect(screen.getByRole('radio', { name: 'parry.gg' })).toBeDisabled();
 
     await user.click(screen.getByRole('button', { name: 'Scout' }));
-    expect(onSubmit).toHaveBeenCalledWith(
-      'https://parry.gg/profile/019ce9ba-debd-7e11-84a2-77258f52644e',
-      'parrygg',
-    );
+    expect(onSubmit).toHaveBeenCalledWith({
+      query: 'https://parry.gg/profile/019ce9ba-debd-7e11-84a2-77258f52644e',
+      source: 'parrygg',
+    });
   });
 
   it('does not submit an empty query', async () => {
@@ -62,5 +62,37 @@ describe('ScoutSearchForm', () => {
     expect(screen.getByRole('button', { name: 'Scout' })).toBeDisabled();
     await user.click(screen.getByRole('button', { name: 'Scout' }));
     expect(onSubmit).not.toHaveBeenCalled();
+  });
+
+  it('V13: "Both" mode submits a combined request when both fields are filled', async () => {
+    const user = userEvent.setup();
+    const onSubmit = vi.fn();
+    render(<ScoutSearchForm onSubmit={onSubmit} isPending={false} parryggEnabled />);
+
+    await user.click(screen.getByRole('radio', { name: 'Both' }));
+    await user.type(screen.getByLabelText(/start\.gg profile URL/), 'user/07dc2239');
+    await user.type(screen.getByLabelText(/parry\.gg profile URL/), 'Pandem1c');
+    await user.click(screen.getByRole('button', { name: 'Scout' }));
+
+    expect(onSubmit).toHaveBeenCalledWith({
+      query: 'user/07dc2239',
+      source: 'startgg',
+      combineWith: { query: 'Pandem1c', source: 'parrygg' },
+    });
+  });
+
+  it('V13: "Both" mode with only one field filled submits a single-source request', async () => {
+    const user = userEvent.setup();
+    const onSubmit = vi.fn();
+    render(<ScoutSearchForm onSubmit={onSubmit} isPending={false} parryggEnabled />);
+
+    await user.click(screen.getByRole('radio', { name: 'Both' }));
+    await user.type(screen.getByLabelText(/parry\.gg profile URL/), 'Pandem1c');
+    await user.click(screen.getByRole('button', { name: 'Scout' }));
+
+    expect(onSubmit).toHaveBeenCalledWith({ query: 'Pandem1c', source: 'parrygg' });
+    expect(onSubmit).not.toHaveBeenCalledWith(
+      expect.objectContaining({ combineWith: expect.anything() }),
+    );
   });
 });
