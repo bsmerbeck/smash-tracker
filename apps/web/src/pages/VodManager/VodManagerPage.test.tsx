@@ -553,4 +553,224 @@ describe('VodManagerPage', () => {
     expect(noteARow).toHaveClass('bg-accent');
     expect(seekTo).toHaveBeenCalledTimes(1);
   });
+
+  it('shows an Edit affordance on the metadata card; editing and saving persists a full carry-through PATCH', async () => {
+    const user = userEvent.setup();
+    listMatches.mockResolvedValue([
+      makeMatch({
+        id: 'm1',
+        opponent: 'rival-one',
+        vodUrl: 'https://youtube.com/watch?v=abc123',
+        gsp: 1_234_567,
+        notes: 'existing notes',
+        vodTimestamps: [{ seconds: 30, note: 'note A' }],
+      }),
+    ]);
+
+    let capturedConfig: YouTubePlayerConfig | undefined;
+    const Player = vi.fn(function (
+      this: unknown,
+      _el: HTMLElement,
+      config: YouTubePlayerConfig,
+    ): YouTubePlayerInstance {
+      capturedConfig = config;
+      return {
+        seekTo: vi.fn(),
+        playVideo: vi.fn(),
+        destroy: vi.fn(),
+        getCurrentTime: vi.fn(() => 754),
+      };
+    });
+    window.YT = { Player: Player as unknown as YTGlobal['Player'] };
+
+    renderVodManager('/vod?match=m1');
+    await waitFor(() => expect(Player).toHaveBeenCalledTimes(1));
+    act(() => {
+      capturedConfig?.events?.onReady?.();
+    });
+
+    // (1) The read-only card shows an Edit affordance; clicking it renders the inline form.
+    await user.click(screen.getByRole('button', { name: 'Edit details' }));
+    expect(screen.getByRole('radio', { name: 'Win' })).toBeInTheDocument();
+
+    // (2) Changing a field (result win -> loss) and saving PATCHes once with the full carry-through input.
+    await user.click(screen.getByRole('radio', { name: 'Loss' }));
+    await user.click(screen.getByRole('button', { name: 'Save' }));
+
+    await waitFor(() => expect(updateMatch).toHaveBeenCalledTimes(1));
+    const [id, input] = updateMatch.mock.calls[0] as [string, Record<string, unknown>];
+    expect(id).toBe('m1');
+    expect(input.win).toBe(false);
+    // notes/vodTimestamps/gsp from the fixture are preserved (carry-through).
+    expect(input.notes).toBe('existing notes');
+    expect(input.gsp).toBe(1_234_567);
+    expect(input.vodTimestamps).toEqual([{ seconds: 30, note: 'note A' }]);
+
+    // (3) Save returns to the read-only view.
+    expect(screen.getByRole('button', { name: 'Edit details' })).toBeInTheDocument();
+  });
+
+  it('returns to the read-only view without a mutation on Cancel', async () => {
+    const user = userEvent.setup();
+    listMatches.mockResolvedValue([
+      makeMatch({
+        id: 'm1',
+        opponent: 'rival-one',
+        vodUrl: 'https://youtube.com/watch?v=abc123',
+      }),
+    ]);
+
+    let capturedConfig: YouTubePlayerConfig | undefined;
+    const Player = vi.fn(function (
+      this: unknown,
+      _el: HTMLElement,
+      config: YouTubePlayerConfig,
+    ): YouTubePlayerInstance {
+      capturedConfig = config;
+      return {
+        seekTo: vi.fn(),
+        playVideo: vi.fn(),
+        destroy: vi.fn(),
+        getCurrentTime: vi.fn(() => 754),
+      };
+    });
+    window.YT = { Player: Player as unknown as YTGlobal['Player'] };
+
+    renderVodManager('/vod?match=m1');
+    await waitFor(() => expect(Player).toHaveBeenCalledTimes(1));
+    act(() => {
+      capturedConfig?.events?.onReady?.();
+    });
+
+    await user.click(screen.getByRole('button', { name: 'Edit details' }));
+    await user.click(screen.getByRole('radio', { name: 'Loss' }));
+    await user.click(screen.getByRole('button', { name: 'Cancel' }));
+
+    expect(updateMatch).not.toHaveBeenCalled();
+    expect(screen.getByText('vs. rival-one')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Edit details' })).toBeInTheDocument();
+  });
+
+  it('disables sync-owned fields but keeps notes/vodUrl/vodStartSeconds/gsp editable for a synced match', async () => {
+    const user = userEvent.setup();
+    listMatches.mockResolvedValue([
+      makeMatch({
+        id: 'm1',
+        opponent: 'rival-one',
+        vodUrl: 'https://youtube.com/watch?v=abc123',
+        source: 'startgg',
+      }),
+    ]);
+
+    let capturedConfig: YouTubePlayerConfig | undefined;
+    const Player = vi.fn(function (
+      this: unknown,
+      _el: HTMLElement,
+      config: YouTubePlayerConfig,
+    ): YouTubePlayerInstance {
+      capturedConfig = config;
+      return {
+        seekTo: vi.fn(),
+        playVideo: vi.fn(),
+        destroy: vi.fn(),
+        getCurrentTime: vi.fn(() => 754),
+      };
+    });
+    window.YT = { Player: Player as unknown as YTGlobal['Player'] };
+
+    renderVodManager('/vod?match=m1');
+    await waitFor(() => expect(Player).toHaveBeenCalledTimes(1));
+    act(() => {
+      capturedConfig?.events?.onReady?.();
+    });
+
+    await user.click(screen.getByRole('button', { name: 'Edit details' }));
+
+    // Sync-owned controls are disabled (mirrors changesSyncOwnedFields).
+    expect(screen.getByRole('combobox', { name: 'Your Fighter' })).toBeDisabled();
+    expect(screen.getByRole('radio', { name: 'Win' })).toBeDisabled();
+
+    // Annotation fields stay editable.
+    expect(screen.getByRole('textbox', { name: 'Notes' })).not.toBeDisabled();
+    expect(screen.getByRole('textbox', { name: 'VOD URL' })).not.toBeDisabled();
+    expect(screen.getByRole('textbox', { name: 'GSP after match (optional)' })).not.toBeDisabled();
+  });
+
+  it('fills the VOD start-time field from the live position via "Use current player time"', async () => {
+    const user = userEvent.setup();
+    listMatches.mockResolvedValue([
+      makeMatch({
+        id: 'm1',
+        opponent: 'rival-one',
+        vodUrl: 'https://youtube.com/watch?v=abc123',
+      }),
+    ]);
+
+    let capturedConfig: YouTubePlayerConfig | undefined;
+    const Player = vi.fn(function (
+      this: unknown,
+      _el: HTMLElement,
+      config: YouTubePlayerConfig,
+    ): YouTubePlayerInstance {
+      capturedConfig = config;
+      return {
+        seekTo: vi.fn(),
+        playVideo: vi.fn(),
+        destroy: vi.fn(),
+        getCurrentTime: vi.fn(() => 754),
+      };
+    });
+    window.YT = { Player: Player as unknown as YTGlobal['Player'] };
+
+    renderVodManager('/vod?match=m1');
+    await waitFor(() => expect(Player).toHaveBeenCalledTimes(1));
+    act(() => {
+      capturedConfig?.events?.onReady?.();
+    });
+
+    await user.click(screen.getByRole('button', { name: 'Edit details' }));
+    await user.click(screen.getByRole('button', { name: 'Use current player time' }));
+
+    expect(screen.getByRole('textbox', { name: 'Match start time in VOD' })).toHaveValue('12:34');
+  });
+
+  it('does not remount the player when editing match metadata', async () => {
+    const user = userEvent.setup();
+    listMatches.mockResolvedValue([
+      makeMatch({
+        id: 'm1',
+        opponent: 'rival-one',
+        vodUrl: 'https://youtube.com/watch?v=abc123',
+      }),
+    ]);
+
+    let capturedConfig: YouTubePlayerConfig | undefined;
+    const Player = vi.fn(function (
+      this: unknown,
+      _el: HTMLElement,
+      config: YouTubePlayerConfig,
+    ): YouTubePlayerInstance {
+      capturedConfig = config;
+      return {
+        seekTo: vi.fn(),
+        playVideo: vi.fn(),
+        destroy: vi.fn(),
+        getCurrentTime: vi.fn(() => 754),
+      };
+    });
+    window.YT = { Player: Player as unknown as YTGlobal['Player'] };
+
+    renderVodManager('/vod?match=m1');
+    await waitFor(() => expect(Player).toHaveBeenCalledTimes(1));
+    act(() => {
+      capturedConfig?.events?.onReady?.();
+    });
+
+    await user.click(screen.getByRole('button', { name: 'Edit details' }));
+    await user.click(screen.getByRole('radio', { name: 'Loss' }));
+    await user.click(screen.getByRole('button', { name: 'Save' }));
+
+    await waitFor(() => expect(updateMatch).toHaveBeenCalledTimes(1));
+    expect(Player).toHaveBeenCalledTimes(1);
+  });
 });
