@@ -328,7 +328,7 @@
       "title": "Registro rápido",
       "opponentCharacter": "Personaje del rival",
       "selectCharacter": "Selecciona un personaje",
-      "gspAfterMatch": "GSP tras la partida",
+      "gspAfterMatch": "GSP tras la partida (opcional)",
       "gspPlaceholder": "p. ej. 9 420 000",
       "stageOptional": "Escenario (opcional)",
       "logMatch": "Registrar partida",
@@ -337,6 +337,7 @@
       "chooseResult": "Marca esta partida como victoria o derrota.",
       "invalidGsp": "Introduce el GSP que aparece tras la partida — las comas valen, p. ej. 10,300,000.",
       "logged": "¡Partida registrada! GSP {{gsp}}",
+      "loggedNoGsp": "¡Partida registrada!",
       "logFailed": "No se pudo registrar la partida. Inténtalo de nuevo.",
       "setGspButton": "Fijar GSP sin registrar una partida"
     },
