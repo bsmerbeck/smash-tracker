@@ -213,6 +213,7 @@
     "notTracked": "Não registrado",
     "gspAfterMatch": "GSP após a partida (opcional)",
     "gspPlaceholder": "ex.: 12 400 000",
+    "vodUrlPlaceholder": "https://youtube.com/watch?v=...",
     "matchType": "Tipo de partida",
     "matchTypes": {
       "none": "Nenhum",
@@ -242,7 +243,8 @@
       "chooseResult": "Escolha um resultado",
       "opponentRequired": "O nome do oponente é obrigatório",
       "charLimit": "Máximo de {{max}} caracteres",
-      "gspFormat": "Insira um número como 12 400 000 (ou deixe em branco)"
+      "gspFormat": "Insira um número como 12 400 000 (ou deixe em branco)",
+      "vodUrlInvalid": "Insira uma URL válida (ou deixe em branco)"
     },
     "set": {
       "format": "Formato do set",

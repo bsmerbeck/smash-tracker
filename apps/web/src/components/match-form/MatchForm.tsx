@@ -126,6 +126,17 @@ export function buildMatchFormSchema(
     gsp: z.string().refine((value) => value.trim() === '' || parseGspNumber(value) !== null, {
       message: t('matchForm.validation.gspFormat'),
     }),
+    /**
+     * Optional VOD link (V-Manager fix-up): blank clears it (see
+     * `matchFormValuesToInput`'s omission — and `EditMatchForm`'s
+     * clear-also-drops-timestamps handling), a non-blank value must be a
+     * valid URL.
+     */
+    vodUrl: z
+      .string()
+      .refine((value) => value.trim() === '' || z.string().url().safeParse(value.trim()).success, {
+        message: t('matchForm.validation.vodUrlInvalid'),
+      }),
   });
 }
 
@@ -140,6 +151,7 @@ export function matchFormValuesToInput(values: MatchFormValues): CreateMatchInpu
   const eventName = values.eventName?.trim();
   const tournamentName = values.tournamentName?.trim();
   const gsp = values.gsp.trim() === '' ? null : parseGspNumber(values.gsp);
+  const vodUrl = values.vodUrl.trim();
   return {
     fighter_id: values.fighterId,
     opponent_id: values.opponentFighterId,
@@ -152,6 +164,12 @@ export function matchFormValuesToInput(values: MatchFormValues): CreateMatchInpu
     ...(eventName ? { eventName } : {}),
     ...(tournamentName ? { tournamentName } : {}),
     ...(gsp !== null ? { gsp } : {}),
+    // Blank clears (omitted, never sent as ''/null — see RTDB null-stripping
+    // convention). `EditMatchForm` layers on top of this to also drop
+    // `vodTimestamps` when the link is cleared (offsets into a video that no
+    // longer has a URL are meaningless) and to carry existing timestamps
+    // through when the link is merely edited, not cleared.
+    ...(vodUrl ? { vodUrl } : {}),
   };
 }
 
@@ -492,6 +510,20 @@ export function MatchFormFields({
         />
 
         <TournamentFields control={form.control} />
+
+        <FormField
+          control={form.control}
+          name="vodUrl"
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel>{t('shared.vod.url')}</FormLabel>
+              <FormControl>
+                <Input {...field} type="url" placeholder={t('matchForm.vodUrlPlaceholder')} />
+              </FormControl>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
 
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <FormField
