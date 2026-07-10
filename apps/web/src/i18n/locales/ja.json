@@ -327,7 +327,7 @@
       "title": "クイック記録",
       "opponentCharacter": "相手のファイター",
       "selectCharacter": "ファイターを選択",
-      "gspAfterMatch": "対戦後のGSP",
+      "gspAfterMatch": "対戦後のGSP（任意）",
       "gspPlaceholder": "例: 9,420,000",
       "stageOptional": "ステージ（任意）",
       "logMatch": "対戦を記録",
@@ -336,6 +336,7 @@
       "chooseResult": "この対戦の勝敗を選んでください。",
       "invalidGsp": "対戦後に表示されたGSPを入力してください — カンマ入りでも大丈夫です（例: 10,300,000）。",
       "logged": "対戦を記録しました！ GSP {{gsp}}",
+      "loggedNoGsp": "対戦を記録しました！",
       "logFailed": "対戦を記録できませんでした。もう一度お試しください。",
       "setGspButton": "試合を記録せずに世界戦闘力を設定"
     },
