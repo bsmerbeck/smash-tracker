@@ -141,6 +141,7 @@ const TIER_SCORE_BY_FIGHTER_ID: Readonly<Record<number, number>> = {
   83: B_PLUS, // Sephiroth
   84: S, // Pyra/Mythra
   85: S, // Kazuya
+  86: A, // Sora
 };
 
 /**
@@ -234,6 +235,7 @@ const ARCHETYPES_BY_FIGHTER_ID: Readonly<Record<number, Archetype[]>> = {
   83: ['swordfighter'], // Sephiroth
   84: ['swordfighter', 'zoner'], // Pyra/Mythra
   85: ['rushdown', 'grappler'], // Kazuya
+  86: ['swordfighter', 'zoner'], // Sora
 };
 
 const DEFAULT_TIER_SCORE = B; // Mid-pack fallback for any fighter id not explicitly listed above.

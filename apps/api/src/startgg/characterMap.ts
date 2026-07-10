@@ -2,12 +2,11 @@
  * start.gg SSBU character id -> smash-tracker fighter id (SpriteList id).
  *
  * Generated 2026-07-03 from `videogame(id: 1386) { characters { id name } }`
- * against the roster in @smash-tracker/shared (85 fighters). Two manual
+ * against the roster in @smash-tracker/shared (86 fighters). Two manual
  * aliases: start.gg "Rosalina" -> "Rosalina & Luma" (51), "Simon Belmont"
  * -> "Simon" (70). Intentionally unmapped: 1746 "Random Character" (not a
- * real pick) and 1897 "Sora" (not in the roster yet — see the Sora backlog
- * task); games with unmapped characters are skipped at import and counted
- * in the sync summary.
+ * real pick); games with unmapped characters are skipped at import and
+ * counted in the sync summary.
  */
 export const startggCharacterToFighterId = new Map<number, number>([
   [1271, 67], // Bayonetta
@@ -95,4 +94,5 @@ export const startggCharacterToFighterId = new Map<number, number>([
   [1777, 83], // Sephiroth
   [1795, 84], // Pyra & Mythra -> Pyra/Mythra
   [1846, 85], // Kazuya
+  [1897, 86], // Sora
 ]);
