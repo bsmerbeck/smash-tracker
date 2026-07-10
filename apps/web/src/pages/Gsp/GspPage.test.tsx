@@ -300,7 +300,7 @@ describe('GspPage', () => {
 
       await user.click(screen.getByRole('radio', { name: 'Win' }));
 
-      const gspInput = screen.getByLabelText('GSP After Match');
+      const gspInput = screen.getByLabelText('GSP After Match (optional)');
       await user.clear(gspInput);
       await user.type(gspInput, '9500000');
 
@@ -322,6 +322,32 @@ describe('GspPage', () => {
       expect(toastSuccess).toHaveBeenCalledWith(expect.stringMatching(/≈ \+\d+ MMR/));
     },
   );
+
+  it('logs a match through the Quick Logger with a blank GSP field, omitting gsp from the payload', async () => {
+    getFighters.mockResolvedValue({ primary: [mario.id], secondary: [] });
+    listMatches.mockResolvedValue([makeMatch({ id: 'm1', time: 1, win: true, gsp: 9_000_000 })]);
+    const user = userEvent.setup();
+
+    renderGspPage();
+
+    await screen.findByText('Quick Logger');
+
+    await user.click(screen.getByRole('combobox', { name: 'Opponent Character' }));
+    await user.click(await screen.findByRole('option', { name: luigi.name }));
+
+    await user.click(screen.getByRole('radio', { name: 'Win' }));
+
+    // The field prefills with the fighter's last reading — clear it so the
+    // submission is genuinely blank.
+    const gspInput = screen.getByLabelText('GSP After Match (optional)');
+    await user.clear(gspInput);
+
+    await user.click(screen.getByRole('button', { name: 'Log Match' }));
+
+    await waitFor(() => expect(createMatch).toHaveBeenCalledTimes(1));
+    expect(createMatch.mock.calls[0]![0]).not.toHaveProperty('gsp');
+    expect(toastSuccess).toHaveBeenCalled();
+  });
 
   it('pins favorited stages atop the Quick Logger stage picker', async () => {
     getFighters.mockResolvedValue({ primary: [mario.id], secondary: [] });
@@ -436,7 +462,7 @@ describe('GspPage', () => {
     await user.click(screen.getByRole('combobox', { name: 'Opponent Character' }));
     await user.click(await screen.findByRole('option', { name: luigi.name }));
     await user.click(screen.getByRole('radio', { name: 'Win' }));
-    const gspInput = screen.getByLabelText('GSP After Match');
+    const gspInput = screen.getByLabelText('GSP After Match (optional)');
     await user.clear(gspInput);
     await user.type(gspInput, '9500000');
     await user.click(screen.getByRole('button', { name: 'Log Match' }));
@@ -444,7 +470,7 @@ describe('GspPage', () => {
 
     // Rematch: same opponent stays selected — only result + GSP needed.
     await user.click(screen.getByRole('radio', { name: 'Loss' }));
-    const gspInput2 = screen.getByLabelText('GSP After Match');
+    const gspInput2 = screen.getByLabelText('GSP After Match (optional)');
     await user.clear(gspInput2);
     await user.type(gspInput2, '9300000');
     await user.click(screen.getByRole('button', { name: 'Log Match' }));
