@@ -302,10 +302,13 @@ async function loadMatches(database: Database, uid: string): Promise<Match[]> {
     return [];
   }
   const raw = snapshot.val() as Record<string, unknown>;
-  return Object.entries(raw).map(([id, value]) => ({
-    id,
-    ...matchRecordSchema.parse(value),
-  }));
+  // safeParse-and-skip (production-gap rule, mirrors RtdbService.listMatches):
+  // one member's corrupt match record must never 500 the whole group
+  // leaderboard — their rating is simply computed without the bad record.
+  return Object.entries(raw).flatMap(([id, value]) => {
+    const parsed = matchRecordSchema.safeParse(value);
+    return parsed.success ? [{ id, ...parsed.data }] : [];
+  });
 }
 
 /**
