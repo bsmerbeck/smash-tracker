@@ -37,6 +37,7 @@
     "cancel": "Cancelar",
     "save": "Salvar",
     "delete": "Excluir",
+    "remove": "Remover",
     "win": "Vitória",
     "loss": "Derrota",
     "cannotBeUndone": "Esta ação não pode ser desfeita.",
@@ -441,6 +442,16 @@
       "editVod": "Editar notas de VOD",
       "addVod": "Adicionar notas de VOD",
       "watchVod": "Assistir VOD",
+      "vodMenu": {
+        "goToManager": "Ir para o Gerenciador de VODs",
+        "editLink": "Editar link do VOD",
+        "removeLink": "Remover link do VOD"
+      },
+      "removeVodConfirm": {
+        "title": "Remover este link de VOD?",
+        "removed": "Link do VOD removido",
+        "removeFailed": "Falha ao remover o link do VOD. Tente novamente."
+      },
       "synced": "Sincronizada",
       "syncedTitle": "Sincronizada do {{source}} — os dados são gerenciados pela sincronização",
       "editMatch": "Editar partida",
