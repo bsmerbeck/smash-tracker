@@ -51,6 +51,12 @@ describe('vodDeepLink', () => {
     );
   });
 
+  it('works for m.twitch.tv host (mobile)', () => {
+    expect(vodDeepLink('https://m.twitch.tv/videos/123456789', 65)).toBe(
+      'https://m.twitch.tv/videos/123456789?t=1m5s',
+    );
+  });
+
   it('returns the base URL unchanged for an unrecognized host', () => {
     expect(vodDeepLink('https://example.com/some-vod', 161)).toBe('https://example.com/some-vod');
   });
@@ -159,6 +165,13 @@ describe('detectVodProvider', () => {
     expect(detectVodProvider('https://www.twitch.tv/videos/123456789')).toEqual({
       provider: 'twitch',
       videoId: '123456789',
+    });
+  });
+
+  it('extracts a Twitch VOD video id from a mobile (m.twitch.tv) URL', () => {
+    expect(detectVodProvider('https://m.twitch.tv/videos/123456')).toEqual({
+      provider: 'twitch',
+      videoId: '123456',
     });
   });
 
