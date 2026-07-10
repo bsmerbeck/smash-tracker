@@ -34,6 +34,7 @@ function matchToFormValues(match: Match): MatchFormValues {
     // Prefilled with locale separators, matching what parseGspNumber accepts
     // back — a flubbed digit gets fixed in place instead of retyped.
     gsp: match.gsp !== undefined ? match.gsp.toLocaleString('en-US') : '',
+    vodUrl: match.vodUrl ?? '',
   };
 }
 
@@ -82,13 +83,19 @@ export function EditMatchForm({
   }
 
   async function onSubmit(values: MatchFormValues) {
-    // PATCH is a full overwrite (omitted = cleared), so fields this form
-    // doesn't own must be carried through from the record or editing a match
-    // silently wipes its VOD link/notes (it used to).
+    // PATCH is a full overwrite (omitted = cleared). `vodUrl` is now owned by
+    // this form (`matchFormValuesToInput` already omits it when blank —
+    // clearing the field). `vodTimestamps` isn't collected here (that's
+    // `VodNotesDialog`'s job), so it must be carried through explicitly —
+    // except when the VOD link was just cleared, since timestamps are
+    // offsets into a video that no longer has a URL and would otherwise be
+    // left orphaned on the record.
+    const vodUrlBlank = values.vodUrl.trim() === '';
     const input: UpdateMatchInput = {
       ...matchFormValuesToInput(values),
-      ...(match.vodUrl !== undefined ? { vodUrl: match.vodUrl } : {}),
-      ...(match.vodTimestamps !== undefined ? { vodTimestamps: match.vodTimestamps } : {}),
+      ...(!vodUrlBlank && match.vodTimestamps !== undefined
+        ? { vodTimestamps: match.vodTimestamps }
+        : {}),
     };
     try {
       await updateMatch.mutateAsync({ id: match.id, input });
