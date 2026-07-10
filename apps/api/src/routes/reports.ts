@@ -12,6 +12,7 @@ import { StartggApiError } from '../startgg/client.js';
 import { parseScoutInput, ScoutCache, ScoutInputError, scoutPlayer } from '../startgg/scout.js';
 import { parseParryProfileUrl, ParryScoutCache, scoutParryPlayer } from '../parrygg/scout.js';
 import type { ParryggClients } from '../parrygg/client.js';
+import { resolveCombinedScout } from '../scout/combine.js';
 import {
   assembleReportPayload,
   Anthropic,
@@ -167,14 +168,23 @@ const reportsRoutes: FastifyPluginAsyncZod<ReportsRoutesOptions> = async (app, o
         ? 'parrygg'
         : (request.body.source ?? 'startgg');
 
-      if (effectiveSource === 'parrygg' && !parryggConfig) {
+      // V13 combined scouting: a second lookup on the OTHER site is merged into
+      // the report's data. combineWith targeting the SAME site is ignored (the
+      // UI never produces it). Combined mode deliberately SKIPS the
+      // single-source 503/400 pre-checks below: an unconfigured or malformed
+      // side is gracefully dropped by the resolver so the other side can still
+      // carry the report (locked "succeed with whatever resolves" behavior).
+      const combineWith = request.body.combineWith;
+      const combined = Boolean(combineWith) && combineWith!.source !== effectiveSource;
+
+      if (!combined && effectiveSource === 'parrygg' && !parryggConfig) {
         return reply.code(503).send({
           error: 'Service Unavailable',
           message: 'parry.gg integration is not configured on this server',
           statusCode: 503,
         });
       }
-      if (effectiveSource === 'startgg' && !startggConfig) {
+      if (!combined && effectiveSource === 'startgg' && !startggConfig) {
         return reply.code(503).send({
           error: 'Service Unavailable',
           message: 'start.gg integration is not configured on this server',
@@ -183,7 +193,7 @@ const reportsRoutes: FastifyPluginAsyncZod<ReportsRoutesOptions> = async (app, o
       }
 
       let input;
-      if (effectiveSource === 'startgg') {
+      if (!combined && effectiveSource === 'startgg') {
         try {
           input = parseScoutInput(rawQuery);
         } catch (err) {
@@ -224,7 +234,35 @@ const reportsRoutes: FastifyPluginAsyncZod<ReportsRoutesOptions> = async (app, o
       }
 
       let scout;
-      if (effectiveSource === 'parrygg') {
+      if (combined) {
+        const result = await resolveCombinedScout(
+          [{ query: rawQuery, source: effectiveSource }, combineWith!],
+          {
+            startggConfig,
+            parryggConfig: parryggConfig ?? null,
+            fetchImpl,
+            parryggClients: options.parryggClients,
+            scoutCache,
+            parryScoutCache,
+          },
+        );
+        if (!result.ok) {
+          await refundIfSpent();
+          if (result.kind === 'rateLimited') {
+            return reply.code(429).send({
+              error: 'Too Many Requests',
+              message: 'start.gg is rate-limiting requests right now — try again shortly',
+              statusCode: 429,
+            });
+          }
+          return reply.code(404).send({
+            error: 'Not Found',
+            message: 'No player found for that query on either start.gg or parry.gg',
+            statusCode: 404,
+          });
+        }
+        scout = result.report;
+      } else if (effectiveSource === 'parrygg') {
         scout = await scoutParryPlayer(
           parryggConfig!.apiKey,
           rawQuery,

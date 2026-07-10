@@ -1,10 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import {
+  isCombinedIdentity,
   isParryggIdentity,
   isStartggIdentity,
   scoutGameSchema,
   scoutIdentityKey,
   scoutPlayerIdentitySchema,
+  scoutQuerySchema,
   scoutRecentEventSchema,
   scoutReportDataSchema,
   type ScoutPlayerIdentity,
@@ -50,6 +52,34 @@ describe('scoutPlayerIdentitySchema — V9-B back-compat + parry.gg identity des
       scoutPlayerIdentitySchema.parse({ gamerTag: 'Pandem1c', source: 'startgg' }),
     ).toThrow();
   });
+
+  it('parses a V13 combined identity carrying BOTH a numeric id and a parryUserId', () => {
+    const parsed = scoutPlayerIdentitySchema.parse({
+      id: 1802316,
+      gamerTag: 'Pandem1c',
+      userSlug: 'user/07dc2239',
+      source: 'combined',
+      parryUserId: '019ce9ba-debd-7e11-84a2-77258f52644e',
+    });
+    expect(isCombinedIdentity(parsed)).toBe(true);
+    // A combined identity is neither an exclusively-startgg nor an
+    // exclusively-parrygg identity.
+    expect(isStartggIdentity(parsed)).toBe(false);
+    expect(isParryggIdentity(parsed)).toBe(false);
+  });
+
+  it('rejects a combined identity missing either id or parryUserId', () => {
+    expect(() =>
+      scoutPlayerIdentitySchema.parse({
+        gamerTag: 'Pandem1c',
+        source: 'combined',
+        parryUserId: '019ce9ba-debd-7e11-84a2-77258f52644e',
+      }),
+    ).toThrow();
+    expect(() =>
+      scoutPlayerIdentitySchema.parse({ id: 1802316, gamerTag: 'Pandem1c', source: 'combined' }),
+    ).toThrow();
+  });
 });
 
 describe('scoutIdentityKey', () => {
@@ -71,6 +101,45 @@ describe('scoutIdentityKey', () => {
     const startgg: ScoutPlayerIdentity = { id: 42, gamerTag: 'A' };
     const parrygg: ScoutPlayerIdentity = { gamerTag: 'B', source: 'parrygg', parryUserId: '42' };
     expect(scoutIdentityKey(startgg)).not.toBe(scoutIdentityKey(parrygg));
+  });
+
+  it('keys a combined identity by BOTH ids, distinct from either single-source key', () => {
+    const combined: ScoutPlayerIdentity = {
+      id: 1802316,
+      gamerTag: 'Pandem1c',
+      source: 'combined',
+      parryUserId: '019ce9ba-debd-7e11-84a2-77258f52644e',
+    };
+    expect(scoutIdentityKey(combined)).toBe(
+      'combined:startgg=1802316:parrygg=019ce9ba-debd-7e11-84a2-77258f52644e',
+    );
+    // A combined report and a start.gg-only report for the same player must not
+    // group together — different data scopes.
+    expect(scoutIdentityKey(combined)).not.toBe(
+      scoutIdentityKey({ id: 1802316, gamerTag: 'Pandem1c' }),
+    );
+  });
+});
+
+describe('scoutQuerySchema — V13 combineWith', () => {
+  it('parses a single-source query with no combineWith (unchanged default)', () => {
+    const parsed = scoutQuerySchema.parse({ query: 'user/07dc2239', source: 'startgg' });
+    expect(parsed.combineWith).toBeUndefined();
+  });
+
+  it('parses a combined query carrying a second-site lookup', () => {
+    const parsed = scoutQuerySchema.parse({
+      query: 'user/07dc2239',
+      source: 'startgg',
+      combineWith: { query: 'Pandem1c', source: 'parrygg' },
+    });
+    expect(parsed.combineWith).toEqual({ query: 'Pandem1c', source: 'parrygg' });
+  });
+
+  it('requires combineWith.source (the second lookup must name its site)', () => {
+    expect(() =>
+      scoutQuerySchema.parse({ query: 'user/07dc2239', combineWith: { query: 'Pandem1c' } }),
+    ).toThrow();
   });
 });
 
