@@ -38,7 +38,7 @@ export const startggSyncSummarySchema = z.object({
   imported: z.number().int().nonnegative(),
   /** Sets carrying no per-game detail — nothing importable. */
   setsWithoutGames: z.number().int().nonnegative(),
-  /** Games skipped because a character had no roster mapping (Random/Sora/...). */
+  /** Games skipped because a character had no roster mapping (Random Character, etc.). */
   gamesUnmappedCharacter: z.number().int().nonnegative(),
   /** Games skipped because selections were missing/incomplete. */
   gamesMissingSelections: z.number().int().nonnegative(),
