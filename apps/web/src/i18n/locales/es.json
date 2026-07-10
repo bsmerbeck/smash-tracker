@@ -505,6 +505,10 @@
     "openOnHost": "Abrir en {{host}}",
     "selectMatchAria": "Seleccionar partida vs {{opponent}}",
     "startTime": "Hora de inicio",
+    "useCurrentTime": "Usar tiempo actual del reproductor",
+    "meta": {
+      "edit": "Editar detalles"
+    },
     "composer": {
       "title": "Añadir una nota"
     },
