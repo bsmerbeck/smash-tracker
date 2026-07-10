@@ -5,6 +5,8 @@ import { detectVodProvider } from './vod';
 /** Config shape accepted by the official `new YT.Player(el, config)` constructor. */
 export interface YouTubePlayerConfig {
   videoId: string;
+  width?: string | number;
+  height?: string | number;
   playerVars?: {
     autoplay?: 0 | 1;
     start?: number;
@@ -196,6 +198,10 @@ export function useVodPlayer({ vodUrl, startSeconds }: UseVodPlayerOptions): Use
         }
         const player = new window.YT.Player(containerRef.current, {
           videoId,
+          // Fill the aspect-video container (VodPlayer.tsx) instead of the
+          // API's fixed 640x390 default.
+          width: '100%',
+          height: '100%',
           playerVars: {
             autoplay: 0,
             start: startSeconds ?? 0,
@@ -231,6 +237,10 @@ export function useVodPlayer({ vodUrl, startSeconds }: UseVodPlayerOptions): Use
           // single domain (breaks on localhost/preview-channel hosts).
           parent: [window.location.hostname],
           autoplay: false,
+          // Fill the aspect-video container (VodPlayer.tsx) instead of the
+          // API's fixed 400x300 minimum.
+          width: '100%',
+          height: '100%',
         });
         player.addEventListener('Twitch.Player.READY', () => {
           if (!cancelled) {
