@@ -143,5 +143,11 @@ None - no external service configuration required.
 
 ---
 
+## Self-Check: PASSED
+
+All 9 key files confirmed present on disk; all 5 commits (ec58ee3, 52c950c, c369e23, cd93e23, 841648a) confirmed present in git log.
+
+---
+
 _Phase: 02-inline-annotation-match-editing_
 _Completed: 2026-07-10_
