@@ -117,14 +117,15 @@ export function QuickLogger({
     }
   }
 
-  function resetForNextMatch(nextGsp: number) {
+  function resetForNextMatch(nextGsp: number | null) {
     // The opponent's character is deliberately PERSISTED: quickplay rematches
     // against the same player are common, so the next log usually needs only
     // Win/Loss + the new GSP. Result resets (must be chosen every match),
-    // GSP prefills with the reading just entered, stage resets (it changes
-    // game to game and is optional anyway).
+    // GSP prefills with the reading just entered (falling back to the
+    // fighter's last known reading, or blank when neither exists), stage
+    // resets (it changes game to game and is optional anyway).
     setResult(undefined);
-    setGspInput(String(nextGsp));
+    setGspInput(nextGsp !== null ? String(nextGsp) : '');
     setStageId(NO_SELECTION_STAGE.id);
   }
 
@@ -137,22 +138,30 @@ export function QuickLogger({
       toast.error(t('gsp.logger.chooseResult'));
       return;
     }
-    const gsp = parseGspNumber(gspInput);
-    if (gsp === null) {
-      toast.error(t('gsp.logger.invalidGsp'));
-      return;
+
+    // A blank/whitespace-only field means "no GSP for this match" — allowed.
+    // Any non-blank value is still validated exactly as before.
+    const trimmedGspInput = gspInput.trim();
+    let gsp: number | null = null;
+    if (trimmedGspInput !== '') {
+      gsp = parseGspNumber(gspInput);
+      if (gsp === null) {
+        toast.error(t('gsp.logger.invalidGsp'));
+        return;
+      }
     }
 
     const stage = stageOptions.find((s) => s.id === stageId) ?? NO_SELECTION_STAGE;
-    const delta = lastGsp !== null ? gsp - lastGsp : null;
+    const delta = gsp !== null && lastGsp !== null ? gsp - lastGsp : null;
 
     // V10.1: alongside the raw GSP delta, estimate the hidden-MMR delta by
     // converting both readings through the reverse-engineered model — each at
     // its own log time (t drifts). Only shown when BOTH convert "cleanly"
     // (land on the ±1-GSP-accurate main curve); tail readings are too
-    // approximate for a single-match delta to mean anything.
+    // approximate for a single-match delta to mean anything. Meaningless
+    // without a GSP for this match, so it's skipped entirely when blank.
     let mmrDeltaLabel = '';
-    if (lastPoint !== null) {
+    if (gsp !== null && lastPoint !== null) {
       const prev = estimateMmrAt(lastPoint.gsp, lastPoint.time, calibration);
       const next = estimateMmrAt(gsp, Date.now(), calibration);
       if (prev.zone === 'main' && next.zone === 'main') {
@@ -171,14 +180,20 @@ export function QuickLogger({
         notes: '',
         matchType: 'quickplay',
         win: result === 'win',
-        gsp,
+        // Never send gsp: null/undefined — omit the field entirely when
+        // blank (RTDB null-stripping convention).
+        ...(gsp !== null ? { gsp } : {}),
       });
-      const deltaLabel =
-        delta === null ? '' : ` (${delta >= 0 ? '+' : ''}${delta.toLocaleString()} GSP)`;
-      toast.success(
-        `${t('gsp.logger.logged', { gsp: gsp.toLocaleString() })}${deltaLabel}${mmrDeltaLabel}`,
-      );
-      resetForNextMatch(gsp);
+      if (gsp !== null) {
+        const deltaLabel =
+          delta === null ? '' : ` (${delta >= 0 ? '+' : ''}${delta.toLocaleString()} GSP)`;
+        toast.success(
+          `${t('gsp.logger.logged', { gsp: gsp.toLocaleString() })}${deltaLabel}${mmrDeltaLabel}`,
+        );
+      } else {
+        toast.success(t('gsp.logger.loggedNoGsp'));
+      }
+      resetForNextMatch(gsp ?? lastGsp);
     } catch {
       toast.error(t('gsp.logger.logFailed'));
     } finally {
