@@ -37,6 +37,7 @@
     "cancel": "キャンセル",
     "save": "保存",
     "delete": "削除",
+    "remove": "削除",
     "win": "勝ち",
     "loss": "負け",
     "cannotBeUndone": "この操作は取り消せません。",
@@ -441,6 +442,16 @@
       "editVod": "VODメモを編集",
       "addVod": "VODメモを追加",
       "watchVod": "VODを見る",
+      "vodMenu": {
+        "goToManager": "VODマネージャーへ移動",
+        "editLink": "VODリンクを編集",
+        "removeLink": "VODリンクを削除"
+      },
+      "removeVodConfirm": {
+        "title": "このVODリンクを削除しますか？",
+        "removed": "VODリンクを削除しました",
+        "removeFailed": "VODリンクを削除できませんでした。もう一度お試しください。"
+      },
       "synced": "同期済み",
       "syncedTitle": "{{source}}から同期 — 対戦データは同期側が管理します",
       "editMatch": "対戦を編集",

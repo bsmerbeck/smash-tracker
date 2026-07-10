@@ -37,6 +37,7 @@
     "cancel": "Cancel",
     "save": "Save",
     "delete": "Delete",
+    "remove": "Remove",
     "win": "Win",
     "loss": "Loss",
     "cannotBeUndone": "This action cannot be undone.",
@@ -441,6 +442,16 @@
       "editVod": "Edit VOD notes",
       "addVod": "Add VOD notes",
       "watchVod": "Watch VOD",
+      "vodMenu": {
+        "goToManager": "Go to VOD Manager",
+        "editLink": "Edit VOD link",
+        "removeLink": "Remove VOD link"
+      },
+      "removeVodConfirm": {
+        "title": "Remove this VOD link?",
+        "removed": "VOD link removed",
+        "removeFailed": "Failed to remove VOD link. Please try again."
+      },
       "synced": "Synced",
       "syncedTitle": "Synced from {{source}} — game data is managed by sync",
       "editMatch": "Edit match",
