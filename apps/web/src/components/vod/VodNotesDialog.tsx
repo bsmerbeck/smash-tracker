@@ -23,8 +23,12 @@ import { formatTimestamp, parseTimestamp, vodDeepLink } from '@/lib/vod';
  * (overridden by the caller). Required because `PATCH /api/matches/:id` is a
  * full overwrite (see `RtdbService.updateMatch`) — omitting a field here
  * would clear it, not leave it untouched.
+ *
+ * Exported so `MatchTable`'s "Remove VOD link" action (its VOD icon's
+ * dropdown menu) can reuse the exact same full-overwrite-minus-VOD-fields
+ * payload rather than re-deriving it.
  */
-function buildUpdateInput(
+export function buildUpdateInput(
   match: Match,
   overrides: { vodUrl: string | undefined; vodTimestamps: VodTimestamp[] | undefined },
 ): UpdateMatchInput {

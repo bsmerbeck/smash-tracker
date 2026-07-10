@@ -37,6 +37,7 @@
     "cancel": "Abbrechen",
     "save": "Speichern",
     "delete": "Löschen",
+    "remove": "Entfernen",
     "win": "Sieg",
     "loss": "Niederlage",
     "cannotBeUndone": "Diese Aktion kann nicht rückgängig gemacht werden.",
@@ -441,6 +442,16 @@
       "editVod": "VOD-Notizen bearbeiten",
       "addVod": "VOD-Notizen hinzufügen",
       "watchVod": "VOD ansehen",
+      "vodMenu": {
+        "goToManager": "Zum VOD-Manager",
+        "editLink": "VOD-Link bearbeiten",
+        "removeLink": "VOD-Link entfernen"
+      },
+      "removeVodConfirm": {
+        "title": "Diesen VOD-Link entfernen?",
+        "removed": "VOD-Link entfernt",
+        "removeFailed": "VOD-Link konnte nicht entfernt werden. Bitte erneut versuchen."
+      },
       "synced": "Synchronisiert",
       "syncedTitle": "Synchronisiert von {{source}} — die Spieldaten verwaltet der Sync",
       "editMatch": "Match bearbeiten",
