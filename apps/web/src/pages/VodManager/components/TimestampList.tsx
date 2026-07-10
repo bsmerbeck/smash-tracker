@@ -1,9 +1,9 @@
 import type { RefObject } from 'react';
+import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { VodTimestamp } from '@smash-tracker/shared';
-import { cn } from '@/lib/utils';
-import { formatTimestamp } from '@/lib/vod';
 import { NoteComposer } from './NoteComposer';
+import { TimestampRow } from './TimestampRow';
 
 export interface TimestampListProps {
   timestamps: VodTimestamp[];
@@ -27,14 +27,21 @@ export interface TimestampListProps {
  * Click-to-seek list of the selected match's VOD timestamp notes (PLAY-03),
  * with a persistent inline `NoteComposer` (NOTE-01) rendered above the rows
  * — never a modal. Adapted from `VodNotesDialog`'s timestamp row markup
- * (lines 152-187); add/edit/delete affordances land here across this phase's
- * plans (this plan ships add only).
+ * (lines 152-187). Plan 01 shipped add-only; this plan extends each row via
+ * `TimestampRow` with in-place edit (NOTE-02) and AlertDialog-confirmed
+ * delete (NOTE-03).
  *
  * Invoked by `VodManagerPage`'s detail panel, directly below `VodPlayer`
- * (D-03). Clicking a row seeks the live player AND highlights the row using
- * the locked D-13 sidebar-active-link tokens (`bg-accent
- * text-accent-foreground` + `border-l-2 border-primary`) — the composer
- * never writes to `selectedIndex`/`onSelect` (D-13/D-14 preserved).
+ * (D-03). Clicking a row body seeks the live player AND highlights the row
+ * using the locked D-13 sidebar-active-link tokens (`bg-accent
+ * text-accent-foreground` + `border-l-2 border-primary`) — edit/delete never
+ * write to `selectedIndex`/`onSelect` (D-13/D-14 preserved).
+ *
+ * Owns `editingIndex` (one row edits at a time — starting a new edit
+ * implicitly closes any other open edit) and translates each row's
+ * commit/delete callback into the next full re-sorted/filtered array, which
+ * is the only shape `onUpdateTimestamps` (the caller's single PATCH mutation
+ * site) ever receives.
  */
 export function TimestampList({
   timestamps,
@@ -45,6 +52,20 @@ export function TimestampList({
   onUpdateTimestamps,
 }: TimestampListProps) {
   const { t } = useTranslation();
+  const [editingIndex, setEditingIndex] = useState<number | null>(null);
+
+  function handleCommitEdit(index: number, next: VodTimestamp) {
+    const updated = timestamps
+      .map((stamp, i) => (i === index ? next : stamp))
+      .sort((a, b) => a.seconds - b.seconds);
+    onUpdateTimestamps(updated);
+    setEditingIndex(null);
+  }
+
+  function handleDelete(index: number) {
+    onUpdateTimestamps(timestamps.filter((_, i) => i !== index));
+    setEditingIndex((current) => (current === index ? null : current));
+  }
 
   return (
     <div className="flex flex-col gap-3">
@@ -58,27 +79,22 @@ export function TimestampList({
         <p className="text-sm text-muted-foreground">{t('shared.vod.noTimestamps')}</p>
       ) : (
         <ul className="flex flex-col gap-2" aria-label={t('shared.vod.timestampsAria')}>
-          {timestamps.map((stamp, index) => {
-            const isSelected = index === selectedIndex;
-            return (
-              <li key={`${stamp.seconds}-${index}`}>
-                <button
-                  type="button"
-                  onClick={() => {
-                    onSeek(stamp.seconds);
-                    onSelect(index);
-                  }}
-                  className={cn(
-                    'flex w-full items-center gap-2 rounded-md border p-2 text-left text-sm',
-                    isSelected && 'bg-accent text-accent-foreground border-l-2 border-primary',
-                  )}
-                >
-                  <span className="shrink-0 font-mono">{formatTimestamp(stamp.seconds)}</span>
-                  <span className="truncate">{stamp.note}</span>
-                </button>
-              </li>
-            );
-          })}
+          {timestamps.map((stamp, index) => (
+            <li key={`${stamp.seconds}-${index}`}>
+              <TimestampRow
+                stamp={stamp}
+                index={index}
+                isSelected={index === selectedIndex}
+                isEditing={editingIndex === index}
+                onSeek={onSeek}
+                onSelect={onSelect}
+                onStartEdit={setEditingIndex}
+                onCancelEdit={() => setEditingIndex(null)}
+                onCommitEdit={handleCommitEdit}
+                onDelete={handleDelete}
+              />
+            </li>
+          ))}
         </ul>
       )}
     </div>
