@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router';
 import { useTranslation } from 'react-i18next';
 import type { Match } from '@smash-tracker/shared';
@@ -14,13 +14,15 @@ import {
   type VodSortDirection,
 } from './lib/vodManagerFilters';
 import { VodMatchList } from './components/VodMatchList';
+import { VodPlayer } from './components/VodPlayer';
+import { TimestampList } from './components/TimestampList';
 
 /**
  * `/vod` — the VOD Manager: a master-detail page listing every match with a
  * VOD attached (LIB-01), filterable/sortable (LIB-02) in the left panel,
- * with the right panel showing the selected match's read-only metadata plus
- * an `aspect-video` placeholder — the seam plan 01-03 replaces with the
- * real embedded player + timestamp list.
+ * with the right panel showing the embedded, seekable player (PLAY-01/02),
+ * the click-to-seek timestamp list directly below it (PLAY-03, D-03), and
+ * the selected match's read-only metadata.
  *
  * Selection is URL-driven (`?match=<id>`, `useSearchParams` — the single
  * source of truth per ARCHITECTURE.md): selecting a list row updates the
@@ -39,6 +41,18 @@ export function VodManagerPage() {
 
   const [filters, setFilters] = useState<VodManagerFilterState>(DEFAULT_VOD_MANAGER_FILTERS);
   const [sort, setSort] = useState<VodSortDirection>('newest');
+  const [selectedTimestampIndex, setSelectedTimestampIndex] = useState<number | null>(null);
+
+  // A new match starts with no timestamp note selected — the highlight is
+  // fixed to the last click (D-13/D-14), not carried over between matches.
+  // React's "adjusting state when a prop changes" pattern (reset during
+  // render, not an effect) so switching matches never flashes a stale
+  // selection from the previous match before an effect gets a chance to run.
+  const [trackedMatchId, setTrackedMatchId] = useState(selectedMatchId);
+  if (selectedMatchId !== trackedMatchId) {
+    setTrackedMatchId(selectedMatchId);
+    setSelectedTimestampIndex(null);
+  }
 
   const filterOptions = useMemo(() => getVodManagerFilterOptions(vodMatches), [vodMatches]);
   const filtered = useMemo(() => {
@@ -60,8 +74,17 @@ export function VodManagerPage() {
   // throwing — the right panel just falls back to the placeholder copy.
   const selectedMatch = filtered.find((m) => m.id === selectedMatchId) ?? null;
 
+  // Populated by VodPlayer once its live player instance exists; invoking
+  // it is how TimestampList's row clicks reach the LIVE player (not a URL
+  // reload — PITFALLS.md Pitfall 1).
+  const playerSeekRef = useRef<((seconds: number) => void) | null>(null);
+
   function handleSelect(id: string) {
     setSearchParams({ match: id });
+  }
+
+  function handleSeek(seconds: number) {
+    playerSeekRef.current?.(seconds);
   }
 
   return (
@@ -84,9 +107,21 @@ export function VodManagerPage() {
           />
 
           <div className="flex flex-col gap-4">
-            <div className="aspect-video rounded-lg border bg-muted flex items-center justify-center text-sm text-muted-foreground">
-              {t('vodManager.playerPlaceholder')}
-            </div>
+            {selectedMatch?.vodUrl != null ? (
+              <>
+                <VodPlayer vodUrl={selectedMatch.vodUrl} startSeconds={0} seekRef={playerSeekRef} />
+                <TimestampList
+                  timestamps={selectedMatch.vodTimestamps ?? []}
+                  selectedIndex={selectedTimestampIndex}
+                  onSelect={setSelectedTimestampIndex}
+                  onSeek={handleSeek}
+                />
+              </>
+            ) : (
+              <div className="aspect-video rounded-lg border bg-muted flex items-center justify-center text-sm text-muted-foreground">
+                {t('vodManager.playerPlaceholder')}
+              </div>
+            )}
 
             {selectedMatch && <SelectedMatchMeta match={selectedMatch} />}
           </div>
