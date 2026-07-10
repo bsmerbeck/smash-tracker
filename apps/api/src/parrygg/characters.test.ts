@@ -7,6 +7,7 @@ describe('parryggCharacterSlugToFighterId', () => {
     expect(parryggCharacterSlugToFighterId('captain-falcon')).toBe(12);
     expect(parryggCharacterSlugToFighterId('r-o-b')).toBe(45);
     expect(parryggCharacterSlugToFighterId('mr-game-and-watch')).toBe(30);
+    expect(parryggCharacterSlugToFighterId('sora')).toBe(86);
   });
 
   it('is case/dash/underscore-insensitive', () => {
