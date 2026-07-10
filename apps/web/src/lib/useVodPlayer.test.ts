@@ -76,11 +76,13 @@ describe('useVodPlayer', () => {
   });
 
   it('getCurrentTime() returns 0 without throwing before the player is ready (Pitfall 3 guard)', async () => {
+    let capturedConfig: YouTubePlayerConfig | undefined;
     const Player = vi.fn(function (
       this: unknown,
       _el: HTMLElement,
-      _config: YouTubePlayerConfig,
+      config: YouTubePlayerConfig,
     ): YouTubePlayerInstance {
+      capturedConfig = config;
       return {
         seekTo: vi.fn(),
         playVideo: vi.fn(),
@@ -95,8 +97,12 @@ describe('useVodPlayer', () => {
       useVodPlayer({ vodUrl: 'https://www.youtube.com/watch?v=abc123' }),
     );
 
-    // Called before construction/onReady — must return 0, not throw.
+    // Called before construction/onReady (containerRef never attached, so
+    // the player never constructs) — must return 0, not throw.
     expect(() => result.current.getCurrentTime()).not.toThrow();
+    expect(result.current.getCurrentTime()).toBe(0);
+    expect(Player).not.toHaveBeenCalled();
+    expect(capturedConfig).toBeUndefined();
     expect(result.current.getCurrentTime()).toBe(0);
   });
 
