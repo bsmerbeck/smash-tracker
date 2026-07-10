@@ -1,11 +1,13 @@
 import { useMutation } from '@tanstack/react-query';
-import type { ScoutSource } from '@smash-tracker/shared';
+import type { CombineWithLookup, ScoutSource } from '@smash-tracker/shared';
 import { api } from '@/lib/api';
 
 export interface ScoutPlayerInput {
   query: string;
   /** V9-B Feature 4: which site to resolve a bare tag/slug/id against; a pasted parry.gg profile URL auto-detects server-side regardless of this. */
   source?: ScoutSource;
+  /** V13: an additional lookup on the OTHER site to merge into one combined scout. */
+  combineWith?: CombineWithLookup;
 }
 
 /**

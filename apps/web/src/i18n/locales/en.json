@@ -866,7 +866,14 @@
       "source": "Source:",
       "sourceAria": "Scouting source",
       "detectedParry": "Detected a parry.gg profile URL.",
-      "pending": "Pulling their public tournament history — this can take a few seconds."
+      "pending": "Pulling their public tournament history — this can take a few seconds.",
+      "combineBoth": "Both",
+      "startggField": "start.gg",
+      "parryField": "parry.gg",
+      "parryFieldAria": "parry.gg profile URL or gamer tag",
+      "parryPlaceholder": "parry.gg profile URL or gamer tag",
+      "combineHint": "Enter this player on each site to combine their histories. Fill in just one to scout a single site.",
+      "startggFieldAria": "start.gg profile URL, slug, or player id"
     },
     "report": {
       "generate": "Generate AI report",
@@ -890,7 +897,8 @@
     "header": {
       "viewOn": "View {{name}} on {{source}}",
       "profile": "{{source}} profile",
-      "sample": "Public {{source}} data · sampled last {{sets}} sets ({{games}} games)"
+      "sample": "Public {{source}} data · sampled last {{sets}} sets ({{games}} games)",
+      "sampleCombined": "Public start.gg + parry.gg data · sampled last {{sets}} sets ({{games}} games)"
     },
     "characters": {
       "title": "Character Usage",

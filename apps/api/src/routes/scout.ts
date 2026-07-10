@@ -9,6 +9,7 @@ import { StartggApiError } from '../startgg/client.js';
 import { parseScoutInput, ScoutCache, ScoutInputError, scoutPlayer } from '../startgg/scout.js';
 import { parseParryProfileUrl, ParryScoutCache, scoutParryPlayer } from '../parrygg/scout.js';
 import type { ParryggClients } from '../parrygg/client.js';
+import { resolveCombinedScout } from '../scout/combine.js';
 
 export interface ScoutRoutesOptions {
   config: StartggConfig | null;
@@ -82,6 +83,41 @@ const scoutRoutes: FastifyPluginAsyncZod<ScoutRoutesOptions> = async (app, optio
       const effectiveSource = parseParryProfileUrl(rawQuery)
         ? 'parrygg'
         : (request.body.source ?? 'startgg');
+
+      // V13 combined scouting: a second lookup on the OTHER site merges into
+      // one report. combineWith targeting the SAME site as the primary is
+      // ignored (the UI never produces it) and falls through to the normal
+      // single-source path below. Graceful per source-gating: an unconfigured
+      // side is simply skipped inside the resolver, never a 503 here.
+      const combineWith = request.body.combineWith;
+      if (combineWith && combineWith.source !== effectiveSource) {
+        const result = await resolveCombinedScout(
+          [{ query: rawQuery, source: effectiveSource }, combineWith],
+          {
+            startggConfig: config,
+            parryggConfig: parryggConfig ?? null,
+            fetchImpl,
+            parryggClients: options.parryggClients,
+            scoutCache: cache,
+            parryScoutCache: parryCache,
+          },
+        );
+        if (!result.ok) {
+          if (result.kind === 'rateLimited') {
+            return reply.code(429).send({
+              error: 'Too Many Requests',
+              message: 'start.gg is rate-limiting requests right now — try again shortly',
+              statusCode: 429,
+            });
+          }
+          return reply.code(404).send({
+            error: 'Not Found',
+            message: 'No player found for that query on either start.gg or parry.gg',
+            statusCode: 404,
+          });
+        }
+        return result.report;
+      }
 
       if (effectiveSource === 'parrygg') {
         if (!parryggConfig) {

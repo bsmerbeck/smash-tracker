@@ -8,7 +8,6 @@ import {
   scoutIdentityKey,
   type ScoutReportData,
   type ScoutReportRecord,
-  type ScoutSource,
 } from '@smash-tracker/shared';
 import { ApiError } from '@/lib/api';
 import { useScoutPlayer } from '@/hooks/useScoutPlayer';
@@ -18,7 +17,7 @@ import { useCredits } from '@/hooks/useBilling';
 import { useParryggStatus } from '@/hooks/useParrygg';
 import { getOpponentProfile } from '@/lib/stats';
 import { Button } from '@/components/ui/button';
-import { ScoutSearchForm } from './components/ScoutSearchForm';
+import { ScoutSearchForm, type ScoutSubmitRequest } from './components/ScoutSearchForm';
 import { ScoutReportHeader } from './components/ScoutReportHeader';
 import { ScoutCharactersCard } from './components/ScoutCharactersCard';
 import { ScoutStagesCard } from './components/ScoutStagesCard';
@@ -110,7 +109,9 @@ export function ScoutPage() {
   // status fetch, rather than assuming enabled on an ambiguous error.
   const parryggEnabled = parryggStatus.isSuccess;
 
-  const [lastQuery, setLastQuery] = useState<{ query: string; source: ScoutSource } | null>(null);
+  // The exact request behind what's on screen — carries the optional
+  // `combineWith` (V13) so Regenerate re-runs the same combined lookup.
+  const [lastQuery, setLastQuery] = useState<ScoutSubmitRequest | null>(null);
   const [selectedRecord, setSelectedRecord] = useState<ScoutReportRecord | null>(null);
   const [buyCreditsOpen, setBuyCreditsOpen] = useState(false);
   // V9-B Feature 1: which of the CURRENT player's stored reports the history
@@ -190,12 +191,12 @@ export function ScoutPage() {
   const storedRecordForCurrentPlayer =
     reportsForCurrentPlayer[historyIndex ?? 0] ?? reportsForCurrentPlayer[0] ?? null;
 
-  const handleSubmit = (query: string, source: ScoutSource) => {
+  const handleSubmit = (request: ScoutSubmitRequest) => {
     setSelectedRecord(null);
     setHistoryIndex(null);
     generateReport.reset();
-    setLastQuery({ query, source });
-    scout.mutate({ query, source });
+    setLastQuery(request);
+    scout.mutate(request);
   };
 
   // Clicking a past-reports row toggles it: selecting the same record again
