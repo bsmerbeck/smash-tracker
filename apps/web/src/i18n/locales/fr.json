@@ -503,7 +503,10 @@
     "playerUnavailable": "Cette VOD n'est plus disponible.",
     "openOnHost": "Ouvrir sur {{host}}",
     "selectMatchAria": "Sélectionner le match contre {{opponent}}",
-    "startTime": "Heure de début"
+    "startTime": "Heure de début",
+    "composer": {
+      "title": "Ajouter une note"
+    }
   },
   "matchups": {
     "loading": "Chargement des matchups...",

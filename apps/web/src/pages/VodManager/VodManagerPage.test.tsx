@@ -31,6 +31,7 @@ vi.mock('@/lib/firebase', async () => {
 const getFighters = vi.fn();
 const listMatches = vi.fn();
 const listOpponents = vi.fn();
+const updateMatch = vi.fn();
 const upsertMe = vi.fn().mockResolvedValue({ uid: 'test-uid', email: 'test@example.com' });
 
 vi.mock('@/lib/api', () => ({
@@ -41,6 +42,7 @@ vi.mock('@/lib/api', () => ({
     },
     matches: {
       list: (...args: unknown[]) => listMatches(...args),
+      update: (...args: unknown[]) => updateMatch(...args),
     },
     opponents: {
       list: (...args: unknown[]) => listOpponents(...args),
@@ -102,6 +104,7 @@ describe('VodManagerPage', () => {
     setMockUser(makeMockUser());
     getFighters.mockResolvedValue({ primary: [mario.id], secondary: [] });
     listOpponents.mockResolvedValue(['rival-one', 'rival-two']);
+    updateMatch.mockResolvedValue({});
   });
 
   afterEach(() => {
@@ -124,7 +127,12 @@ describe('VodManagerPage', () => {
       config: YouTubePlayerConfig,
     ): YouTubePlayerInstance {
       capturedConfig = config;
-      return { seekTo: vi.fn(), playVideo: vi.fn(), destroy: vi.fn() };
+      return {
+        seekTo: vi.fn(),
+        playVideo: vi.fn(),
+        destroy: vi.fn(),
+        getCurrentTime: vi.fn(() => 754),
+      };
     });
     window.YT = { Player: Player as unknown as YTGlobal['Player'] };
 
@@ -160,7 +168,7 @@ describe('VodManagerPage', () => {
       config: YouTubePlayerConfig,
     ): YouTubePlayerInstance {
       capturedConfig = config;
-      return { seekTo, playVideo, destroy: vi.fn() };
+      return { seekTo, playVideo, destroy: vi.fn(), getCurrentTime: vi.fn(() => 754) };
     });
     window.YT = { Player: Player as unknown as YTGlobal['Player'] };
 
@@ -201,7 +209,12 @@ describe('VodManagerPage', () => {
       config: YouTubePlayerConfig,
     ): YouTubePlayerInstance {
       capturedConfig = config;
-      return { seekTo: vi.fn(), playVideo: vi.fn(), destroy: vi.fn() };
+      return {
+        seekTo: vi.fn(),
+        playVideo: vi.fn(),
+        destroy: vi.fn(),
+        getCurrentTime: vi.fn(() => 754),
+      };
     });
     window.YT = { Player: Player as unknown as YTGlobal['Player'] };
 
@@ -238,7 +251,7 @@ describe('VodManagerPage', () => {
       config: YouTubePlayerConfig,
     ): YouTubePlayerInstance {
       capturedConfig = config;
-      return { seekTo, playVideo, destroy: vi.fn() };
+      return { seekTo, playVideo, destroy: vi.fn(), getCurrentTime: vi.fn(() => 754) };
     });
     window.YT = { Player: Player as unknown as YTGlobal['Player'] };
 
@@ -260,5 +273,68 @@ describe('VodManagerPage', () => {
     // m2's vodStartSeconds (500) wins over its t=90s param.
     await waitFor(() => expect(seekTo).toHaveBeenCalledWith(500, true));
     expect(playVideo).toHaveBeenCalled();
+  });
+
+  it('adds a timestamp note via the inline composer, prefilled from the live position, sorted ascending, carrying through other match fields', async () => {
+    const user = userEvent.setup();
+    listMatches.mockResolvedValue([
+      makeMatch({
+        id: 'm1',
+        opponent: 'rival-one',
+        vodUrl: 'https://youtube.com/watch?v=abc123',
+        gsp: 1_234_567,
+        vodTimestamps: [{ seconds: 900, note: 'existing note' }],
+      }),
+    ]);
+
+    const seekTo = vi.fn();
+    const playVideo = vi.fn();
+    const getCurrentTime = vi.fn(() => 754);
+    let capturedConfig: YouTubePlayerConfig | undefined;
+    const Player = vi.fn(function (
+      this: unknown,
+      _el: HTMLElement,
+      config: YouTubePlayerConfig,
+    ): YouTubePlayerInstance {
+      capturedConfig = config;
+      return { seekTo, playVideo, destroy: vi.fn(), getCurrentTime };
+    });
+    window.YT = { Player: Player as unknown as YTGlobal['Player'] };
+
+    renderVodManager('/vod?match=m1');
+
+    await waitFor(() => expect(Player).toHaveBeenCalledTimes(1));
+
+    // Un-gate getCurrentTime()/seek() (both no-ops until the live player reports ready).
+    act(() => {
+      capturedConfig?.events?.onReady?.();
+    });
+
+    // (1) A composer time input and note input render below the player.
+    const timeInput = screen.getByLabelText('Timestamp time');
+    const noteInput = screen.getByLabelText('Timestamp note');
+
+    // (2) Focusing the time input prefills it from getCurrentTime() (754s -> 12:34).
+    await user.click(timeInput);
+    expect(timeInput).toHaveValue('12:34');
+
+    // (3) Enter on the note input saves — single carry-through PATCH.
+    await user.type(noteInput, 'new note{Enter}');
+
+    await waitFor(() => expect(updateMatch).toHaveBeenCalledTimes(1));
+    const [id, input] = updateMatch.mock.calls[0] as [string, Record<string, unknown>];
+    expect(id).toBe('m1');
+    // Other match fields survive the PATCH untouched.
+    expect(input.win).toBe(true);
+    expect(input.fighter_id).toBe(mario.id);
+    expect(input.gsp).toBe(1_234_567);
+    // (4) Ascending sort: the new 754s note lands BEFORE the existing 900s note.
+    expect(input.vodTimestamps).toEqual([
+      { seconds: 754, note: 'new note' },
+      { seconds: 900, note: 'existing note' },
+    ]);
+
+    // Adding a note must never pause/interrupt playback.
+    expect(playVideo).not.toHaveBeenCalled();
   });
 });

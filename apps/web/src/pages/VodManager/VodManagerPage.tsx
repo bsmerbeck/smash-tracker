@@ -1,10 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router';
 import { useTranslation } from 'react-i18next';
-import type { Match } from '@smash-tracker/shared';
+import { toast } from 'sonner';
+import type { Match, VodTimestamp } from '@smash-tracker/shared';
 import { getFighterById } from '@/data/sprites';
 import { useFilteredMatches } from '@/hooks/useFilteredMatches';
+import { useUpdateMatch } from '@/hooks/useUpdateMatch';
 import { detectVodProvider, formatTimestamp, parseVodStartSeconds } from '@/lib/vod';
+import { buildUpdateInput } from '@/components/vod/VodNotesDialog';
 import { tournamentLabel } from '@/pages/MatchData/lib/matchTableFilters';
 import {
   DEFAULT_VOD_MANAGER_FILTERS,
@@ -93,6 +96,13 @@ export function VodManagerPage() {
   // reload — PITFALLS.md Pitfall 1).
   const playerSeekRef = useRef<((seconds: number) => void) | null>(null);
 
+  // Populated by VodPlayer once its live player instance exists; invoking it
+  // is how NoteComposer's on-focus prefill reads the LIVE playback position
+  // (a one-shot read, never polled — D-14 / CONTEXT.md's no-polling rule).
+  const getCurrentTimeRef = useRef<(() => number) | null>(null);
+
+  const updateMatch = useUpdateMatch();
+
   // An entire event can be recorded as ONE video with each match's stored
   // vodUrl carrying its own `?t=` offset into it — switching between two
   // such matches shares the same video IDENTITY, so `useVodPlayer`
@@ -129,6 +139,25 @@ export function VodManagerPage() {
     playerSeekRef.current?.(seconds);
   }
 
+  // Single PATCH mutation site for all note add/edit/delete flows — a
+  // full-overwrite carry-through payload via buildUpdateInput, NEVER a
+  // bespoke partial-update helper (RESEARCH.md "Don't Hand-Roll").
+  async function handleUpdateTimestamps(next: VodTimestamp[]) {
+    if (!selectedMatch) {
+      return;
+    }
+    const input = buildUpdateInput(selectedMatch, {
+      vodUrl: selectedMatch.vodUrl,
+      vodTimestamps: next.length > 0 ? next : undefined,
+    });
+    try {
+      await updateMatch.mutateAsync({ id: selectedMatch.id, input });
+      toast.success(t('shared.vod.saved'));
+    } catch {
+      toast.error(t('shared.vod.saveFailed'));
+    }
+  }
+
   return (
     <div className="flex flex-col gap-6">
       <h1 className="text-2xl font-semibold tracking-tight">{t('vodManager.title')}</h1>
@@ -155,12 +184,15 @@ export function VodManagerPage() {
                   vodUrl={selectedMatch.vodUrl}
                   startSeconds={resolveMatchStartSeconds(selectedMatch)}
                   seekRef={playerSeekRef}
+                  getCurrentTimeRef={getCurrentTimeRef}
                 />
                 <TimestampList
                   timestamps={selectedMatch.vodTimestamps ?? []}
                   selectedIndex={selectedTimestampIndex}
                   onSelect={setSelectedTimestampIndex}
                   onSeek={handleSeek}
+                  getCurrentTimeRef={getCurrentTimeRef}
+                  onUpdateTimestamps={handleUpdateTimestamps}
                 />
               </>
             ) : (

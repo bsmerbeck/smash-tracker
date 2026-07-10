@@ -41,7 +41,7 @@ describe('useVodPlayer', () => {
       config: YouTubePlayerConfig,
     ): YouTubePlayerInstance {
       capturedConfig = config;
-      return { seekTo, playVideo, destroy: vi.fn() };
+      return { seekTo, playVideo, destroy: vi.fn(), getCurrentTime: vi.fn(() => 42) };
     });
     window.YT = { Player: Player as unknown as YTGlobal['Player'] };
 
@@ -70,6 +70,40 @@ describe('useVodPlayer', () => {
     });
     expect(seekTo).toHaveBeenCalledWith(42, true);
     expect(playVideo).toHaveBeenCalled();
+
+    // getCurrentTime() reads the live position once ready (Math.floor'd).
+    expect(result.current.getCurrentTime()).toBe(42);
+  });
+
+  it('getCurrentTime() returns 0 without throwing before the player is ready (Pitfall 3 guard)', async () => {
+    let capturedConfig: YouTubePlayerConfig | undefined;
+    const Player = vi.fn(function (
+      this: unknown,
+      _el: HTMLElement,
+      config: YouTubePlayerConfig,
+    ): YouTubePlayerInstance {
+      capturedConfig = config;
+      return {
+        seekTo: vi.fn(),
+        playVideo: vi.fn(),
+        destroy: vi.fn(),
+        getCurrentTime: vi.fn(() => 99),
+      };
+    });
+    window.YT = { Player: Player as unknown as YTGlobal['Player'] };
+
+    const { useVodPlayer } = await import('./useVodPlayer');
+    const { result } = renderHook(() =>
+      useVodPlayer({ vodUrl: 'https://www.youtube.com/watch?v=abc123' }),
+    );
+
+    // Called before construction/onReady (containerRef never attached, so
+    // the player never constructs) — must return 0, not throw.
+    expect(() => result.current.getCurrentTime()).not.toThrow();
+    expect(result.current.getCurrentTime()).toBe(0);
+    expect(Player).not.toHaveBeenCalled();
+    expect(capturedConfig).toBeUndefined();
+    expect(result.current.getCurrentTime()).toBe(0);
   });
 
   it('constructs a Twitch.Player for a twitch vodUrl with a dynamic parent and gates seek behind READY', async () => {
@@ -87,7 +121,7 @@ describe('useVodPlayer', () => {
       config: TwitchPlayerConfig,
     ): TwitchPlayerInstance {
       capturedConfig = config;
-      return { seek, addEventListener };
+      return { seek, addEventListener, getCurrentTime: vi.fn(() => 10) };
     });
     // Real Twitch Embed API exposes the ready-event name as a constant on
     // the constructor (`Twitch.Player.READY === 'ready'`) — NOT the literal
@@ -147,7 +181,12 @@ describe('useVodPlayer', () => {
       config: YouTubePlayerConfig,
     ): YouTubePlayerInstance {
       capturedConfig = config;
-      return { seekTo: vi.fn(), playVideo: vi.fn(), destroy: vi.fn() };
+      return {
+        seekTo: vi.fn(),
+        playVideo: vi.fn(),
+        destroy: vi.fn(),
+        getCurrentTime: vi.fn(() => 0),
+      };
     });
     window.YT = { Player: Player as unknown as YTGlobal['Player'] };
 
