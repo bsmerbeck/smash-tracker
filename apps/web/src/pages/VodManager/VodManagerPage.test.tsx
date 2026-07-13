@@ -1789,6 +1789,114 @@ describe('VodManagerPage', () => {
     expect(screen.getByLabelText('Edit timestamp note')).toBeInTheDocument();
   });
 
+  it("retest fix-up #5: quick-tag capture at an EXISTING note's exact timecode adds the tag to that note instead of creating a duplicate row", async () => {
+    const user = userEvent.setup();
+    let currentMatch = makeMatch({
+      id: 'm1',
+      opponent: 'rival-one',
+      vodUrl: 'https://youtube.com/watch?v=abc123',
+      vodTimestamps: [{ seconds: 754, note: 'existing note', tags: ['punish'] }],
+    });
+    listMatches.mockImplementation(() => Promise.resolve([currentMatch]));
+    updateMatch.mockImplementation((...args: unknown[]) => {
+      const input = args[1] as Record<string, unknown>;
+      currentMatch = { ...currentMatch, ...input };
+      return Promise.resolve(currentMatch);
+    });
+
+    let capturedConfig: YouTubePlayerConfig | undefined;
+    const Player = vi.fn(function (
+      this: unknown,
+      _el: HTMLElement,
+      config: YouTubePlayerConfig,
+    ): YouTubePlayerInstance {
+      capturedConfig = config;
+      return {
+        seekTo: vi.fn(),
+        playVideo: vi.fn(),
+        pauseVideo: vi.fn(),
+        destroy: vi.fn(),
+        // Same 754s the existing note was captured at.
+        getCurrentTime: vi.fn(() => 754),
+      };
+    });
+    window.YT = { Player: Player as unknown as YTGlobal['Player'], PlayerState: { ENDED: 0 } };
+
+    renderVodManager('/vod?match=m1');
+    await waitFor(() => expect(Player).toHaveBeenCalledTimes(1));
+    act(() => {
+      capturedConfig?.events?.onReady?.();
+    });
+    await waitFor(() => expect(screen.getByText('existing note')).toBeInTheDocument());
+
+    // Capturing "Edgeguard" at the SAME 754s the existing note already sits
+    // at must add the tag to that note, not create a second row.
+    await user.click(screen.getByRole('button', { name: 'Quick tag: Edgeguard' }));
+
+    await waitFor(() => expect(updateMatch).toHaveBeenCalledTimes(1));
+    const [id, input] = updateMatch.mock.calls[0] as [string, Record<string, unknown>];
+    expect(id).toBe('m1');
+    // ONE row, both tags, note text preserved (not cleared) — no duplicate.
+    expect(input.vodTimestamps).toEqual([
+      { seconds: 754, note: 'existing note', tags: ['punish', 'edgeguard'] },
+    ]);
+
+    // That SAME (only) row drops into edit mode.
+    const noteInput = await screen.findByLabelText('Edit timestamp note');
+    expect(noteInput).toHaveValue('existing note');
+    expect(screen.queryAllByLabelText('Edit timestamp note')).toHaveLength(1);
+  });
+
+  it('retest fix-up #5: quick-tag capture at a timecode with NO existing note still creates a new row (unaffected)', async () => {
+    const user = userEvent.setup();
+    let currentMatch = makeMatch({
+      id: 'm1',
+      opponent: 'rival-one',
+      vodUrl: 'https://youtube.com/watch?v=abc123',
+      vodTimestamps: [{ seconds: 900, note: 'existing note' }],
+    });
+    listMatches.mockImplementation(() => Promise.resolve([currentMatch]));
+    updateMatch.mockImplementation((...args: unknown[]) => {
+      const input = args[1] as Record<string, unknown>;
+      currentMatch = { ...currentMatch, ...input };
+      return Promise.resolve(currentMatch);
+    });
+
+    let capturedConfig: YouTubePlayerConfig | undefined;
+    const Player = vi.fn(function (
+      this: unknown,
+      _el: HTMLElement,
+      config: YouTubePlayerConfig,
+    ): YouTubePlayerInstance {
+      capturedConfig = config;
+      return {
+        seekTo: vi.fn(),
+        playVideo: vi.fn(),
+        pauseVideo: vi.fn(),
+        destroy: vi.fn(),
+        // Different second than the existing note (900s).
+        getCurrentTime: vi.fn(() => 754),
+      };
+    });
+    window.YT = { Player: Player as unknown as YTGlobal['Player'], PlayerState: { ENDED: 0 } };
+
+    renderVodManager('/vod?match=m1');
+    await waitFor(() => expect(Player).toHaveBeenCalledTimes(1));
+    act(() => {
+      capturedConfig?.events?.onReady?.();
+    });
+
+    await user.click(screen.getByRole('button', { name: 'Quick tag: Punish' }));
+
+    await waitFor(() => expect(updateMatch).toHaveBeenCalledTimes(1));
+    const [, input] = updateMatch.mock.calls[0] as [string, Record<string, unknown>];
+    // A NEW row at 754s, sorted before the existing 900s note.
+    expect(input.vodTimestamps).toEqual([
+      { seconds: 754, note: '', tags: ['punish'] },
+      { seconds: 900, note: 'existing note' },
+    ]);
+  });
+
   it('blocks a quick-tag capture once the match is at the MAX_TIMESTAMPS cap, via the existing cap toast', async () => {
     const user = userEvent.setup();
     const twentyExisting = Array.from({ length: 20 }, (_, i) => ({

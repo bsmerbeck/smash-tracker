@@ -37,6 +37,12 @@ export const PRESET_SLUGS: Set<string> = new Set<string>([
   ...NOTE_PRESET_TAGS,
 ]);
 
+/** Note-level tags are capped at 5 per note (TAG-04) — keeps a single
+ * moment's tags skimmable. Shared between `TimestampRow` (the note-tag
+ * combobox) and `VodManagerPage`'s quick-tag same-timecode dedupe (retest
+ * fix-up #5) so the cap can never drift between the two call sites. */
+export const MAX_NOTE_TAGS = 5;
+
 /**
  * Resolves a stored tag slug/string to its display label: preset slugs
  * resolve through i18n (`tags.preset.<slug>`); custom tags render as the
