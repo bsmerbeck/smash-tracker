@@ -529,7 +529,17 @@
       "empty": "このプレイリストにはまだ試合がありません",
       "limitReached": "プレイリストの上限に達しました（{{max}}）",
       "matchCount_one": "{{count}}試合",
-      "matchCount_other": "{{count}}試合"
+      "matchCount_other": "{{count}}試合",
+      "addToPlaylist": "プレイリストに追加",
+      "addToPlaylistAria": "この試合をプレイリストに追加",
+      "added": "プレイリストに追加しました",
+      "moveUp": "上へ移動",
+      "moveDown": "下へ移動",
+      "removeFromPlaylist": "プレイリストから削除",
+      "rename": "名前を変更",
+      "renamePlaceholder": "プレイリスト名を変更",
+      "delete": "削除",
+      "deleteConfirmTitle": "このプレイリストを削除しますか？"
     }
   },
   "tags": {

@@ -529,7 +529,17 @@
       "empty": "Aucun match dans cette playlist pour l'instant",
       "limitReached": "Limite de playlists atteinte ({{max}})",
       "matchCount_one": "{{count}} match",
-      "matchCount_other": "{{count}} matchs"
+      "matchCount_other": "{{count}} matchs",
+      "addToPlaylist": "Ajouter à une playlist",
+      "addToPlaylistAria": "Ajouter ce match à une playlist",
+      "added": "Ajouté à la playlist",
+      "moveUp": "Monter",
+      "moveDown": "Descendre",
+      "removeFromPlaylist": "Retirer de la playlist",
+      "rename": "Renommer",
+      "renamePlaceholder": "Renommer la playlist",
+      "delete": "Supprimer",
+      "deleteConfirmTitle": "Supprimer cette playlist ?"
     }
   },
   "tags": {

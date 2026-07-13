@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import type { KeyboardEvent } from 'react';
 import { useSearchParams } from 'react-router';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
+import { Trash2 } from 'lucide-react';
 import {
   MAX_PLAYLISTS_PER_USER,
   type Fighter,
@@ -12,12 +14,29 @@ import { getFighterById } from '@/data/sprites';
 import { useFighters } from '@/hooks/useFighters';
 import { useFilteredMatches } from '@/hooks/useFilteredMatches';
 import { useUpdateMatch } from '@/hooks/useUpdateMatch';
-import { useCreatePlaylist, usePlaylists } from '@/hooks/usePlaylists';
+import {
+  useCreatePlaylist,
+  useDeletePlaylist,
+  usePlaylists,
+  useUpdatePlaylist,
+} from '@/hooks/usePlaylists';
 import { detectVodProvider, parseVodStartSeconds } from '@/lib/vod';
 import { deriveCustomTagVocabulary } from '@/lib/tags';
-import { resolvePlaylistMatches } from '@/lib/playlists';
+import { movePlaylistItem, resolvePlaylistMatches } from '@/lib/playlists';
 import { ApiError } from '@/lib/api';
 import { buildUpdateInput } from '@/components/vod/VodNotesDialog';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import {
   DEFAULT_VOD_MANAGER_FILTERS,
   applyVodManagerFilters,
@@ -73,6 +92,8 @@ export function VodManagerPage() {
 
   const { data: playlists = [] } = usePlaylists();
   const createPlaylist = useCreatePlaylist();
+  const updatePlaylist = useUpdatePlaylist();
+  const deletePlaylist = useDeletePlaylist();
   const selectedPlaylist = useMemo(
     () => playlists.find((playlist) => playlist.id === selectedPlaylistId) ?? null,
     [playlists, selectedPlaylistId],
@@ -117,6 +138,19 @@ export function VodManagerPage() {
     setTrackedMatchId(selectedMatchId);
     setSelectedTimestampIndex(null);
   }
+
+  // Inline rename draft for the active playlist's selector row — re-seeded
+  // from the playlist's current name whenever the SELECTED PLAYLIST ID
+  // changes (same "adjusting state when a prop changes" reset-during-render
+  // pattern as `trackedMatchId` above), never on every render (which would
+  // otherwise clobber in-progress typing on invalidation-driven refetches).
+  const [trackedPlaylistId, setTrackedPlaylistId] = useState(selectedPlaylistId);
+  const [renameDraft, setRenameDraft] = useState(selectedPlaylist?.name ?? '');
+  if (selectedPlaylistId !== trackedPlaylistId) {
+    setTrackedPlaylistId(selectedPlaylistId);
+    setRenameDraft(selectedPlaylist?.name ?? '');
+  }
+  const [confirmingDeletePlaylist, setConfirmingDeletePlaylist] = useState(false);
 
   const filterOptions = useMemo(() => getVodManagerFilterOptions(vodMatches), [vodMatches]);
   const filtered = useMemo(() => {
@@ -228,6 +262,82 @@ export function VodManagerPage() {
     }
   }
 
+  // Reorder/remove arrays are computed from `playlistMatches` (the RESOLVED
+  // present-only set, T-04-05's soft-orphan join) rather than the raw stored
+  // matchIds — sending back the resolved ids prunes any soft-orphaned id
+  // (deleted match, foreign id, stale cache) on save, per T-04-07's
+  // mitigation. `updatePlaylist.isPending` is threaded into `VodMatchList`
+  // as `reorderPending`, the race guard for rapid reorder clicks.
+  async function handleMoveMatch(index: number, dir: 'up' | 'down') {
+    if (!selectedPlaylist || !playlistMatches) {
+      return;
+    }
+    const next = movePlaylistItem(
+      playlistMatches.map((m) => m.id),
+      index,
+      dir,
+    );
+    try {
+      await updatePlaylist.mutateAsync({ id: selectedPlaylist.id, input: { matchIds: next } });
+    } catch {
+      toast.error(t('shared.vod.saveFailed'));
+    }
+  }
+
+  async function handleRemoveFromPlaylist(matchId: string) {
+    if (!selectedPlaylist || !playlistMatches) {
+      return;
+    }
+    const next = playlistMatches.map((m) => m.id).filter((id) => id !== matchId);
+    try {
+      await updatePlaylist.mutateAsync({ id: selectedPlaylist.id, input: { matchIds: next } });
+    } catch {
+      toast.error(t('shared.vod.saveFailed'));
+    }
+  }
+
+  async function handleCommitRename() {
+    if (!selectedPlaylist) {
+      return;
+    }
+    const trimmed = renameDraft.trim();
+    if (trimmed.length < 1 || trimmed.length > 40 || trimmed === selectedPlaylist.name) {
+      setRenameDraft(selectedPlaylist.name);
+      return;
+    }
+    try {
+      await updatePlaylist.mutateAsync({ id: selectedPlaylist.id, input: { name: trimmed } });
+    } catch {
+      setRenameDraft(selectedPlaylist.name);
+      toast.error(t('shared.vod.saveFailed'));
+    }
+  }
+
+  function handleRenameKeyDown(e: KeyboardEvent<HTMLInputElement>) {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      (e.target as HTMLInputElement).blur();
+    }
+  }
+
+  // Deleting a playlist never touches its member matches — only the
+  // `playlists/{uid}/{playlistId}` node is removed. If the deleted playlist
+  // was the active selection, fall back to Library (never leave `?playlist=`
+  // pointing at a now-nonexistent id).
+  async function handleConfirmDeletePlaylist() {
+    if (!selectedPlaylist) {
+      return;
+    }
+    try {
+      await deletePlaylist.mutateAsync(selectedPlaylist.id);
+      handleSelectPlaylist(null);
+    } catch {
+      toast.error(t('shared.vod.saveFailed'));
+    } finally {
+      setConfirmingDeletePlaylist(false);
+    }
+  }
+
   function handleSeek(seconds: number) {
     playerSeekRef.current?.(seconds);
   }
@@ -267,6 +377,49 @@ export function VodManagerPage() {
               onCreate={handleCreatePlaylist}
               creating={createPlaylist.isPending}
             />
+            {selectedPlaylist && (
+              <div className="flex items-center gap-2">
+                <Input
+                  value={renameDraft}
+                  onChange={(e) => setRenameDraft(e.target.value)}
+                  onKeyDown={handleRenameKeyDown}
+                  onBlur={handleCommitRename}
+                  placeholder={t('vodManager.playlists.renamePlaceholder')}
+                  aria-label={t('vodManager.playlists.rename')}
+                  maxLength={40}
+                  className="flex-1"
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  aria-label={t('vodManager.playlists.delete')}
+                  onClick={() => setConfirmingDeletePlaylist(true)}
+                >
+                  <Trash2 />
+                  {t('vodManager.playlists.delete')}
+                </Button>
+                <AlertDialog
+                  open={confirmingDeletePlaylist}
+                  onOpenChange={setConfirmingDeletePlaylist}
+                >
+                  <AlertDialogContent>
+                    <AlertDialogHeader>
+                      <AlertDialogTitle>
+                        {t('vodManager.playlists.deleteConfirmTitle')}
+                      </AlertDialogTitle>
+                      <AlertDialogDescription>{t('common.cannotBeUndone')}</AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                      <AlertDialogCancel>{t('common.cancel')}</AlertDialogCancel>
+                      <AlertDialogAction onClick={handleConfirmDeletePlaylist}>
+                        {t('common.delete')}
+                      </AlertDialogAction>
+                    </AlertDialogFooter>
+                  </AlertDialogContent>
+                </AlertDialog>
+              </div>
+            )}
             <VodMatchList
               matches={displayedMatches}
               filters={filters}
@@ -277,6 +430,9 @@ export function VodManagerPage() {
               selectedId={selectedMatchId}
               onSelect={handleSelect}
               isPlaylistView={selectedPlaylist != null}
+              onMoveMatch={handleMoveMatch}
+              onRemoveFromPlaylist={handleRemoveFromPlaylist}
+              reorderPending={updatePlaylist.isPending}
             />
           </div>
 
@@ -311,6 +467,7 @@ export function VodManagerPage() {
                 fighterSprites={fighterSprites}
                 getCurrentTimeRef={getCurrentTimeRef}
                 tagVocabulary={tagVocabulary}
+                playlists={playlists}
               />
             )}
           </div>
