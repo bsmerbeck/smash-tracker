@@ -1516,7 +1516,7 @@ describe('VodManagerPage', () => {
     expect(updateMatch).not.toHaveBeenCalled();
   });
 
-  it('customizes the quick-tag panel (adds a custom tag, removes a preset) and persists the set to localStorage', async () => {
+  it('customizes the quick-tag panel (adds a custom tag, removes a preset) via an explicit Save, persisting only on Save', async () => {
     const user = userEvent.setup();
     listMatches.mockResolvedValue([
       makeMatch({
@@ -1544,25 +1544,39 @@ describe('VodManagerPage', () => {
     );
     const panel = screen.getByRole('region', { name: 'Quick tags' });
 
-    // (1) Enter customize mode: preset buttons swap for removable chips.
+    // (1) Entering customize mode with no edits yet reads "Done", not
+    // "Save" — nothing to persist.
     await user.click(within(panel).getByRole('button', { name: 'Customize quick tags' }));
     expect(
       within(panel).queryByRole('button', { name: 'Quick tag: Punish' }),
     ).not.toBeInTheDocument();
+    expect(
+      within(panel).getByRole('button', { name: 'Finish customizing quick tags' }),
+    ).toHaveTextContent('Done');
 
-    // (2) Remove the "Punish" preset via its chip X.
+    // (2) Remove the "Punish" preset via its chip X — this is a LOCAL draft
+    // edit, not yet persisted.
     await user.click(within(panel).getByRole('button', { name: 'Remove Punish from quick tags' }));
+    expect(window.localStorage.getItem('smash-tracker.vodQuickTags')).toBeNull();
 
-    // (3) Add a freeform custom tag via the reused TagAddCombobox (scoped
+    // (3) Once dirty, the primary button becomes "Save" and a sibling
+    // "Cancel" appears.
+    expect(within(panel).getByRole('button', { name: 'Save quick tags' })).toHaveTextContent(
+      'Save',
+    );
+    expect(within(panel).getByRole('button', { name: 'Cancel' })).toBeInTheDocument();
+
+    // (4) Add a freeform custom tag via the reused TagAddCombobox (scoped
     // to the panel — SelectedMatchMeta renders its OWN "Add a tag" combobox
-    // for match-level tags).
+    // for match-level tags). Still not persisted.
     await user.click(within(panel).getByRole('combobox', { name: 'Add a tag' }));
     await user.type(screen.getByPlaceholderText('Search or create a tag...'), 'my-custom-tag');
     await user.click(await screen.findByText('Create "my-custom-tag"'));
+    expect(window.localStorage.getItem('smash-tracker.vodQuickTags')).toBeNull();
 
-    // (4) Exit customize mode — the button row reflects the new set (Punish
-    // gone, the custom tag present), and it persisted to localStorage.
-    await user.click(within(panel).getByRole('button', { name: 'Customize quick tags' }));
+    // (5) Save persists the draft and exits customize mode — the button row
+    // reflects the new set (Punish gone, the custom tag present).
+    await user.click(within(panel).getByRole('button', { name: 'Save quick tags' }));
     expect(
       within(panel).queryByRole('button', { name: 'Quick tag: Punish' }),
     ).not.toBeInTheDocument();
@@ -1573,6 +1587,47 @@ describe('VodManagerPage', () => {
     const stored = JSON.parse(window.localStorage.getItem('smash-tracker.vodQuickTags')!);
     expect(stored).not.toContain('punish');
     expect(stored).toContain('my-custom-tag');
+  });
+
+  it('Cancel discards quick-tag customize edits without persisting, reverting to the pre-edit set', async () => {
+    const user = userEvent.setup();
+    listMatches.mockResolvedValue([
+      makeMatch({
+        id: 'm1',
+        opponent: 'rival-one',
+        vodUrl: 'https://youtube.com/watch?v=abc123',
+      }),
+    ]);
+
+    window.YT = {
+      Player: vi.fn(function (this: unknown) {
+        return {
+          seekTo: vi.fn(),
+          playVideo: vi.fn(),
+          destroy: vi.fn(),
+          getCurrentTime: vi.fn(() => 0),
+        };
+      }) as unknown as YTGlobal['Player'],
+      PlayerState: { ENDED: 0 },
+    };
+
+    renderVodManager('/vod?match=m1');
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Quick tag: Punish' })).toBeInTheDocument(),
+    );
+    const panel = screen.getByRole('region', { name: 'Quick tags' });
+
+    await user.click(within(panel).getByRole('button', { name: 'Customize quick tags' }));
+    await user.click(within(panel).getByRole('button', { name: 'Remove Punish from quick tags' }));
+    expect(
+      within(panel).queryByRole('button', { name: 'Remove Punish from quick tags' }),
+    ).not.toBeInTheDocument();
+
+    await user.click(within(panel).getByRole('button', { name: 'Cancel' }));
+
+    // Reverted to the pre-edit set — Punish is back — and nothing persisted.
+    expect(within(panel).getByRole('button', { name: 'Quick tag: Punish' })).toBeInTheDocument();
+    expect(window.localStorage.getItem('smash-tracker.vodQuickTags')).toBeNull();
   });
 
   it('toggles the player between compact and fill via a pure className swap (no remount) and persists the choice', async () => {

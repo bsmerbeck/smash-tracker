@@ -21,12 +21,27 @@ export interface QuickTagPanelProps {
   /** Fires with the clicked button's tag slug — the caller (VodManagerPage)
    * owns the instant-capture PATCH via `handleUpdateTimestamps`. */
   onQuickTag: (tagSlug: string) => void;
-  /** Fires with the FULL next quick-tag set whenever Customize adds/removes
-   * a tag — the caller owns persistence via `persistQuickTags`. */
+  /** Fires with the FULL next quick-tag set once the user explicitly Saves
+   * (or hits Done with no changes) — the caller owns persistence via
+   * `persistQuickTags`. Never fires on every individual add/remove inside
+   * customize mode; edits stay LOCAL until committed (see `draftTags`
+   * below). */
   onQuickTagsChange: (next: string[]) => void;
   /** Custom tag vocabulary derived across all loaded VOD matches — offered
    * in the Customize add-combobox alongside the note presets. */
   tagVocabulary: string[];
+}
+
+/** Same-membership, order-INSENSITIVE comparison — the customize UI lets the
+ * user add/remove tags but never reorder them, so this is a cheap-but-exact
+ * way to answer "does the draft actually differ from what's persisted" for
+ * the Done/Save button-label + Save/Cancel gate. */
+function tagSetsEqual(a: string[], b: string[]): boolean {
+  if (a.length !== b.length) {
+    return false;
+  }
+  const bSorted = [...b].sort();
+  return [...a].sort().every((tag, i) => tag === bSorted[i]);
 }
 
 /**
@@ -39,6 +54,16 @@ export interface QuickTagPanelProps {
  * via the reused `TagAddCombobox`, and persists per device (`vodPrefs.ts`,
  * no server storage). Playlist-agnostic — renders whenever a VOD is
  * playable, in Library view or inside a playlist.
+ *
+ * Customize mode edits a LOCAL draft (`draftTags`), never the live
+ * `quickTags` prop directly — entering customize snapshots the current set;
+ * add/remove only mutate the draft. The primary button reads "Done" while
+ * the draft is pristine (a plain exit, no PATCH-equivalent persistence
+ * call); the moment it diverges it becomes "Save" with a sibling "Cancel"
+ * that discards the draft and reverts to the pre-edit set. `onQuickTagsChange`
+ * (the caller's persistence hook) fires ONLY from Save, or from Done when
+ * there IS a pending draft to commit — never on every individual
+ * add/remove, unlike the pre-fix-up behavior.
  */
 export function QuickTagPanel({
   quickTags,
@@ -48,15 +73,41 @@ export function QuickTagPanel({
   tagVocabulary,
 }: QuickTagPanelProps) {
   const { t } = useTranslation();
-  const [customizing, setCustomizing] = useState(false);
+  // `null` when NOT customizing — the sentinel this component uses to
+  // decide which of the two render branches (buttons vs. removable chips)
+  // to show, doubling as "is there an in-progress draft to persist".
+  const [draftTags, setDraftTags] = useState<string[] | null>(null);
+  const customizing = draftTags !== null;
+  const isDirty = customizing && !tagSetsEqual(draftTags, quickTags);
+
+  function handleEnterCustomize() {
+    setDraftTags([...quickTags]);
+  }
 
   function handleAddQuickTag(tag: string) {
-    onQuickTagsChange(addTagToList(quickTags, tag, MAX_QUICK_TAGS));
+    setDraftTags((current) => addTagToList(current ?? quickTags, tag, MAX_QUICK_TAGS));
   }
 
   function handleRemoveQuickTag(tag: string) {
-    onQuickTagsChange(removeTagFromList(quickTags, tag));
+    setDraftTags((current) => removeTagFromList(current ?? quickTags, tag));
   }
+
+  // Done (pristine) or Save (dirty) — persists (Save only; Done has nothing
+  // to persist) and exits customize mode either way.
+  function handleDoneOrSave() {
+    if (draftTags && isDirty) {
+      onQuickTagsChange(draftTags);
+    }
+    setDraftTags(null);
+  }
+
+  // Cancel — discards the draft, reverting to the pre-edit set, WITHOUT
+  // calling onQuickTagsChange.
+  function handleCancel() {
+    setDraftTags(null);
+  }
+
+  const displayedTags = draftTags ?? quickTags;
 
   return (
     <div
@@ -66,22 +117,39 @@ export function QuickTagPanel({
     >
       <div className="flex items-center justify-between gap-2">
         <span className="text-sm font-medium">{t('vodManager.capture.title')}</span>
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          aria-pressed={customizing}
-          aria-label={t('vodManager.capture.customizeAria')}
-          onClick={() => setCustomizing((current) => !current)}
-        >
-          {t('vodManager.capture.customize')}
-        </Button>
+        <div className="flex items-center gap-2">
+          {customizing && isDirty && (
+            <Button type="button" variant="outline" size="sm" onClick={handleCancel}>
+              {t('common.cancel')}
+            </Button>
+          )}
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            aria-pressed={customizing}
+            aria-label={
+              !customizing
+                ? t('vodManager.capture.customizeAria')
+                : isDirty
+                  ? t('vodManager.capture.saveCustomizeAria')
+                  : t('vodManager.capture.doneCustomizeAria')
+            }
+            onClick={customizing ? handleDoneOrSave : handleEnterCustomize}
+          >
+            {!customizing
+              ? t('vodManager.capture.customize')
+              : isDirty
+                ? t('common.save')
+                : t('vodManager.capture.done')}
+          </Button>
+        </div>
       </div>
       {!customizing && (
         <p className="text-xs text-muted-foreground">{t('vodManager.capture.quickTagHint')}</p>
       )}
       <div className="flex flex-wrap items-center gap-2">
-        {quickTags.map((tagSlug) => {
+        {displayedTags.map((tagSlug) => {
           const label = tagLabel(t, tagSlug);
           if (customizing) {
             return (
@@ -115,7 +183,7 @@ export function QuickTagPanel({
         {customizing && (
           <TagAddCombobox
             presets={NOTE_PRESET_TAGS}
-            existingTags={quickTags}
+            existingTags={displayedTags}
             vocabulary={tagVocabulary}
             onAdd={handleAddQuickTag}
             ariaLabel={t('tags.addAria')}
