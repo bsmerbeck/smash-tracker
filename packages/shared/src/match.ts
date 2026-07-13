@@ -33,6 +33,21 @@ export const vodTimestampSchema = z.object({
   seconds: z.number().int().min(0),
   /** Free-text callout for this moment, e.g. "missed punish on shield". */
   note: z.string().trim().min(1).max(200),
+  /**
+   * Note-level tags (TAG-01..05), e.g. preset slugs like 'punish' or
+   * freeform custom text. Embedded directly on the timestamp entry rather
+   * than referencing a separate tag registry — there is no tags tree,
+   * matching the "embedded arrays, no registry" model used for match-level
+   * `tags` below. Capped at 5 per note to keep a single moment's tags
+   * skimmable. Optional (not `.default([])`): absence means "no tags on
+   * this note" for both legacy notes and freshly-created ones, a
+   * meaningful, valid state like every other optional field on this
+   * schema. Because RTDB silently drops keys holding an empty array on
+   * write, sending `tags: []` and omitting `tags` are equivalent on
+   * read-back — see `RtdbService.updateMatch`'s clearing-semantics
+   * comment.
+   */
+  tags: z.array(z.string().trim().min(1).max(24)).max(5).optional(),
 });
 export type VodTimestamp = z.infer<typeof vodTimestampSchema>;
 
@@ -167,6 +182,23 @@ export const matchRecordSchema = z.object({
    * `stocksLeft`.
    */
   gsp: z.number().int().min(0).optional(),
+  /**
+   * Match-level tags (TAG-01..05), e.g. preset slugs like
+   * 'practice-friendlies' or freeform custom text the player types. Stored
+   * as a plain embedded array on the match record — there is no separate
+   * tags tree/registry to keep in sync, so deleting a match cascades tag
+   * removal for free. Capped at 10 per match. User-editable, same
+   * optional/conditional-spread convention as `vodTimestamps`/
+   * `vodStartSeconds`/`gsp` (see `createMatchInputSchema` /
+   * `RtdbService.createMatch`/`updateMatch`). Deliberately `.optional()`,
+   * NOT `.default([])`: this is a read schema over records that predate
+   * the field, and absence (legacy/untagged matches) is a meaningful,
+   * valid state — unlike `stageFavoritesSchema`'s single always-present
+   * document, where `.default([])` is correct. RTDB silently drops keys
+   * holding an empty array on write, so `tags: []` and an omitted `tags`
+   * key are equivalent on read-back.
+   */
+  tags: z.array(z.string().trim().min(1).max(24)).max(10).optional(),
 });
 export type MatchRecord = z.infer<typeof matchRecordSchema>;
 
@@ -252,6 +284,12 @@ const optionalNameInputSchema = z
  * `stocksLeft`/`eventName`/`tournamentName` (see `RtdbService.updateMatch`).
  *
  * `gsp` (V10) follows the same convention — omit to leave/clear it.
+ *
+ * `tags` (TAG-01..05) follows the same convention too — omit (or send an
+ * empty array) to leave/clear match-level tags. Note-level tags ride
+ * inside each `vodTimestamps` entry (see `vodTimestampSchema.tags`) and
+ * need no separate handling here since `vodTimestamps` is already passed
+ * through wholesale.
  */
 export const createMatchInputSchema = z.object({
   fighter_id: z.number().int().positive(),
@@ -268,6 +306,7 @@ export const createMatchInputSchema = z.object({
   vodTimestamps: z.array(vodTimestampSchema).max(20).optional(),
   vodStartSeconds: z.number().int().nonnegative().optional(),
   gsp: z.number().int().min(0).optional(),
+  tags: z.array(z.string().trim().min(1).max(24)).max(10).optional(),
 });
 export type CreateMatchInput = z.infer<typeof createMatchInputSchema>;
 
