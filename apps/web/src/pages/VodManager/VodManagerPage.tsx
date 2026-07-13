@@ -4,13 +4,16 @@ import { useSearchParams } from 'react-router';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 import {
+  Check,
   ChevronLeft,
   ChevronRight,
   Maximize2,
   Minimize2,
+  Pencil,
   SkipBack,
   SkipForward,
   Trash2,
+  X,
 } from 'lucide-react';
 import {
   MAX_PLAYLISTS_PER_USER,
@@ -146,12 +149,6 @@ export function VodManagerPage() {
     [playlistMatches, selectedMatchId],
   );
 
-  // Custom tag vocabulary (TAG-01..05) spans ALL loaded VOD-bearing matches
-  // (locked decision, 03-CONTEXT.md) — not just the currently filtered/
-  // selected one — so the add-combobox always offers every custom tag the
-  // user has ever typed, reused by 03-03's note-tag combobox too.
-  const tagVocabulary = useMemo(() => deriveCustomTagVocabulary(vodMatches), [vodMatches]);
-
   // Fighters offered by the inline edit form's "Your Fighter" select
   // (NOTE-04) — same primary+secondary sprite lookup MatchDataPage uses.
   const { data: fighterSelection } = useFighters();
@@ -173,6 +170,20 @@ export function VodManagerPage() {
   // localStorage once at mount, persisted on every add/remove. Never sent
   // to the API (locked decision).
   const [quickTags, setQuickTags] = useState<string[]>(() => readStoredQuickTags());
+  // Custom tag vocabulary (TAG-01..05) spans ALL loaded VOD-bearing matches
+  // (locked decision, 03-CONTEXT.md) — not just the currently filtered/
+  // selected one — so the add-combobox always offers every custom tag the
+  // user has ever typed, reused by 03-03's note-tag combobox too. Also
+  // folds in `quickTags` (the Quick Tags panel's device-local button set,
+  // above): a tag the user customizes into their Quick Tags set reads as
+  // "already added" from their perspective and must be offered in every
+  // OTHER add-combobox immediately — not only once it happens to get
+  // captured onto some note first (the bug this fold-in fixes; see
+  // `deriveCustomTagVocabulary`'s `extraTags` doc comment).
+  const tagVocabulary = useMemo(
+    () => deriveCustomTagVocabulary(vodMatches, quickTags),
+    [vodMatches, quickTags],
+  );
   // Player compact/fill size (device preference, `vodPrefs.ts`) — a PURE
   // className toggle on the wrapper below; the VodPlayer JSX element stays
   // at exactly one unconditional position and this value is never threaded
@@ -204,11 +215,17 @@ export function VodManagerPage() {
   // changes (same "adjusting state when a prop changes" reset-during-render
   // pattern as `trackedMatchId` above), never on every render (which would
   // otherwise clobber in-progress typing on invalidation-driven refetches).
+  // `renaming` gates which of the two rows (read-only name + Rename button,
+  // vs the editable Input + Save/Cancel) renders — switching to a DIFFERENT
+  // playlist mid-rename must never leave the new playlist's row stuck open
+  // in edit mode, so it resets to `false` in lockstep with the draft.
   const [trackedPlaylistId, setTrackedPlaylistId] = useState(selectedPlaylistId);
   const [renameDraft, setRenameDraft] = useState(selectedPlaylist?.name ?? '');
+  const [renaming, setRenaming] = useState(false);
   if (selectedPlaylistId !== trackedPlaylistId) {
     setTrackedPlaylistId(selectedPlaylistId);
     setRenameDraft(selectedPlaylist?.name ?? '');
+    setRenaming(false);
   }
   const [confirmingDeletePlaylist, setConfirmingDeletePlaylist] = useState(false);
 
@@ -266,6 +283,41 @@ export function VodManagerPage() {
   // inherits a stale autoplay intent.
   const autoplayNextRef = useRef(false);
 
+  // Drift recovery (video-end fix-up): set to `true` by handleEnded on
+  // EVERY ENDED event, regardless of Library/playlist context — after
+  // ENDED, a host platform's post-roll UI (documented for Twitch: the "Up
+  // Next" overlay) can autoplay ITS OWN recommended video into the SAME
+  // embedded iframe, silently hijacking it out from under the live player
+  // object `useVodPlayer` returned. Cleared by handleSelect the moment the
+  // user makes ANY selection (row click, quick-tag-triggered advance, deep
+  // link, cold-open); if that selection targets the SAME video identity the
+  // player was already showing, the existing no-op/reposition-seek path
+  // (see `previousVodIdentityRef` below) is insufficient to recover a
+  // hijacked iframe, so handleSelect instead bumps `remountToken` to force
+  // `useVodPlayer` to fully reconstruct the player.
+  const driftedRef = useRef(false);
+  // Bumped by handleSelect's drift-recovery branch (directly, or via the
+  // deferred effect below) — passed straight through to `VodPlayer`'s
+  // `remountToken` prop, which `useVodPlayer` combines with video identity
+  // to form its construction-effect key (see its doc comment). A no-op
+  // remount trigger on its own; only forces a rebuild when combined with an
+  // ENDED-observed drift.
+  const [remountToken, setRemountToken] = useState(0);
+  // Set by handleSelect when drift recovery targets a DIFFERENT match
+  // sharing the current video identity (e.g. auto-advancing to the next
+  // match in a shared-video playlist) — `react-router`'s `setSearchParams`
+  // commits its navigation on a render separate from a plain `useState`
+  // update fired in the same handler, so bumping `remountToken` directly
+  // there would race and reconstruct using the STALE (pre-navigation)
+  // match's `startSeconds`/`vodUrl`. Recording the TARGET id here and
+  // bumping `remountToken` only once `selectedMatch` has actually
+  // transitioned to it (the effect below, keyed on `selectedMatch`)
+  // guarantees the reconstruction always reads the CORRECT match's props.
+  // Reselecting the exact SAME match id needs no such deferral (nothing
+  // about `selectedMatch` changes either way) — handleSelect bumps
+  // `remountToken` immediately for that case instead.
+  const forceRemountForIdRef = useRef<string | null>(null);
+
   const updateMatch = useUpdateMatch();
 
   // An entire event can be recorded as ONE video with each match's stored
@@ -296,6 +348,16 @@ export function VodManagerPage() {
     previousVodIdentityRef.current = identityKey;
   }, [selectedMatch]);
 
+  // Consumes `forceRemountForIdRef` (see its doc comment above) once
+  // `selectedMatch` has actually landed on the target — the deferred half
+  // of the different-match drift-recovery branch.
+  useEffect(() => {
+    if (selectedMatch && forceRemountForIdRef.current === selectedMatch.id) {
+      forceRemountForIdRef.current = null;
+      setRemountToken((token) => token + 1);
+    }
+  }, [selectedMatch]);
+
   // Single-use reset for autoplayNextRef (see its declaration above).
   // Declared AFTER the VodPlayer/useVodPlayer usage in this component's
   // render (VodPlayer is mounted further down in the JSX below) so the
@@ -309,7 +371,38 @@ export function VodManagerPage() {
     autoplayNextRef.current = false;
   }, [selectedMatch?.id]);
 
+  // Every selection path (row click, quick-tag-triggered advance, deep
+  // link, cold-open) routes through here, which is also the single place
+  // that resolves drift recovery (see `driftedRef`'s doc comment above): if
+  // the LAST ENDED event left the flag set and the target match shares the
+  // SAME video identity the player was already showing (including
+  // reselecting the exact same match), the normal no-op/reposition-seek
+  // path can't recover a hijacked iframe, so a forced remount is requested
+  // via `remountToken` instead.
   function handleSelect(id: string) {
+    const wasDrifted = driftedRef.current;
+    driftedRef.current = false;
+    if (wasDrifted && selectedMatch) {
+      const targetMatch = displayedMatches.find((m) => m.id === id);
+      const currentIdentity = videoIdentityOf(selectedMatch);
+      const targetIdentity = targetMatch ? videoIdentityOf(targetMatch) : null;
+      if (currentIdentity != null && currentIdentity === targetIdentity) {
+        if (id === selectedMatch.id) {
+          // Reselecting the exact SAME match: nothing about vodUrl/
+          // startSeconds needs to change either way, so it's safe (and
+          // more responsive) to force the remount immediately rather than
+          // deferring — `?match=` may not even change (see below), so no
+          // downstream effect would ever fire for this case.
+          setRemountToken((token) => token + 1);
+        } else {
+          // Advancing to a DIFFERENT match sharing this identity: defer to
+          // the `forceRemountForIdRef` effect (see its doc comment) so the
+          // reconstruction always reads the TARGET match's props, never a
+          // stale pre-navigation render's.
+          forceRemountForIdRef.current = id;
+        }
+      }
+    }
     setSearchParams((prev) => {
       const next = new URLSearchParams(prev);
       next.set('match', id);
@@ -317,10 +410,16 @@ export function VodManagerPage() {
     });
   }
 
-  // LIST-04 auto-advance: fires when the live player reports ENDED. Only
-  // acts while a playlist is active; otherwise a no-op (Library view has
-  // no "next match" concept). Two branches mirroring the existing
-  // reposition mechanism (Pattern 4):
+  // Video-end auto-advance: fires when the live player reports ENDED.
+  // Advances through `displayedMatches` — the SAME list the left panel
+  // renders, so this is playlist order while a playlist is active and the
+  // current filtered/sorted order in Library view (LIST-04 originally
+  // playlist-only; Library now shares the identical two-branch logic,
+  // since `displayedMatches` already resolves to whichever list is
+  // visible). Also flags `driftedRef` unconditionally — see its doc
+  // comment — so a subsequent reselect of a same-identity video can
+  // recover from a hijacked iframe regardless of whether an advance
+  // actually happened below.
   //   - same video identity as the current match -> just select the next
   //     match id; previousVodIdentityRef's reposition effect (above) seeks
   //     the ALREADY-PLAYING player to the new match's start time, no
@@ -330,14 +429,15 @@ export function VodManagerPage() {
   //     next match id; the identity change remounts useVodPlayer, which
   //     reads the flag as autoplayOnConstruct.
   function handleEnded() {
-    if (!selectedPlaylist || !playlistMatches || !selectedMatch) {
+    driftedRef.current = true;
+    if (!selectedMatch) {
       return;
     }
-    const index = playlistMatches.findIndex((m) => m.id === selectedMatch.id);
+    const index = displayedMatches.findIndex((m) => m.id === selectedMatch.id);
     if (index === -1) {
       return;
     }
-    const nextMatch = playlistMatches[index + 1];
+    const nextMatch = displayedMatches[index + 1];
     if (!nextMatch) {
       return;
     }
@@ -446,6 +546,29 @@ export function VodManagerPage() {
     }
   }
 
+  // Enters rename mode (Task: rename affordance) — seeds the draft fresh
+  // from the CURRENT playlist name every time, so re-entering after a
+  // previous cancel never carries over a stale draft.
+  function handleStartRename() {
+    if (!selectedPlaylist) {
+      return;
+    }
+    setRenameDraft(selectedPlaylist.name);
+    setRenaming(true);
+  }
+
+  // Reverts the draft and exits rename mode without mutating — Esc or the
+  // explicit Cancel button.
+  function handleCancelRename() {
+    setRenameDraft(selectedPlaylist?.name ?? '');
+    setRenaming(false);
+  }
+
+  // Enter or the explicit Save button. An unchanged/invalid draft is treated
+  // as an implicit cancel (revert + close, no PATCH) rather than an error —
+  // matches the pre-rename-mode "silent no-op" behavior. On failure the
+  // draft is left AS TYPED (not reverted) and rename mode stays open so the
+  // user can retry without re-typing.
   async function handleCommitRename() {
     if (!selectedPlaylist) {
       return;
@@ -453,12 +576,13 @@ export function VodManagerPage() {
     const trimmed = renameDraft.trim();
     if (trimmed.length < 1 || trimmed.length > 40 || trimmed === selectedPlaylist.name) {
       setRenameDraft(selectedPlaylist.name);
+      setRenaming(false);
       return;
     }
     try {
       await updatePlaylist.mutateAsync({ id: selectedPlaylist.id, input: { name: trimmed } });
+      setRenaming(false);
     } catch {
-      setRenameDraft(selectedPlaylist.name);
       toast.error(t('shared.vod.saveFailed'));
     }
   }
@@ -466,7 +590,10 @@ export function VodManagerPage() {
   function handleRenameKeyDown(e: KeyboardEvent<HTMLInputElement>) {
     if (e.key === 'Enter') {
       e.preventDefault();
-      (e.target as HTMLInputElement).blur();
+      handleCommitRename();
+    } else if (e.key === 'Escape') {
+      e.preventDefault();
+      handleCancelRename();
     }
   }
 
@@ -595,16 +722,65 @@ export function VodManagerPage() {
             />
             {selectedPlaylist && (
               <div className="flex items-center gap-2">
-                <Input
-                  value={renameDraft}
-                  onChange={(e) => setRenameDraft(e.target.value)}
-                  onKeyDown={handleRenameKeyDown}
-                  onBlur={handleCommitRename}
-                  placeholder={t('vodManager.playlists.renamePlaceholder')}
-                  aria-label={t('vodManager.playlists.rename')}
-                  maxLength={40}
-                  className="flex-1"
-                />
+                {/* Rename affordance (Task: rename UX): a clear read-only
+                    row with an explicit Rename trigger by default; entering
+                    rename mode swaps in a labeled Input + Save/Cancel pair
+                    rather than a permanently-open, unlabeled input (D-
+                    fixed-up from the original always-editable field, which
+                    read as an unexplained bare box). */}
+                {renaming ? (
+                  <>
+                    <Input
+                      value={renameDraft}
+                      onChange={(e) => setRenameDraft(e.target.value)}
+                      onKeyDown={handleRenameKeyDown}
+                      placeholder={t('vodManager.playlists.renamePlaceholder')}
+                      aria-label={t('vodManager.playlists.renamePlaceholder')}
+                      maxLength={40}
+                      className="flex-1"
+                      autoFocus
+                    />
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="icon-sm"
+                      aria-label={t('vodManager.playlists.saveRenameAria')}
+                      // Prevents the Input's onBlur-adjacent focus loss from
+                      // stealing the click before onClick fires — mousedown
+                      // on this button would otherwise blur the input first.
+                      onMouseDown={(e) => e.preventDefault()}
+                      onClick={handleCommitRename}
+                    >
+                      <Check />
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="icon-sm"
+                      aria-label={t('vodManager.playlists.cancelRenameAria')}
+                      onMouseDown={(e) => e.preventDefault()}
+                      onClick={handleCancelRename}
+                    >
+                      <X />
+                    </Button>
+                  </>
+                ) : (
+                  <>
+                    <span className="flex-1 truncate text-sm font-medium">
+                      {selectedPlaylist.name}
+                    </span>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      aria-label={t('vodManager.playlists.rename')}
+                      onClick={handleStartRename}
+                    >
+                      <Pencil />
+                      {t('vodManager.playlists.rename')}
+                    </Button>
+                  </>
+                )}
                 <Button
                   type="button"
                   variant="outline"
@@ -652,7 +828,28 @@ export function VodManagerPage() {
             />
           </div>
 
-          <div className="flex flex-col gap-4">
+          <div
+            className={cn(
+              'flex flex-col gap-4',
+              // Compact-mode desktop "combination rail" (fix-up #7): on lg+
+              // viewports ONLY while compact, the detail panel becomes a
+              // two-column grid — player+controls on the left, quick tags +
+              // timestamp notes stacked in a rail on the right. Fill mode
+              // and small screens ALWAYS stay the plain stacked flex-col
+              // above (unaffected by these `lg:` classes, which never apply
+              // outside compact). Every child below gets its OWN `lg:col-
+              // start-*`/`lg:row-start-*` placement (CSS Grid visually
+              // reorders WITHOUT moving DOM nodes) rather than being
+              // regrouped into nested wrapper divs, so the plain-stacked
+              // DOM order — and therefore the VodPlayer element's position
+              // in the tree — is IDENTICAL in both layouts. Combined with
+              // the existing className-only (never remount-triggering)
+              // compact/fill toggle below, this preserves the "VodPlayer
+              // never remounts on a layout/size change" invariant.
+              playerSize === 'compact' &&
+                'lg:grid lg:grid-cols-[2fr_minmax(320px,1fr)] lg:items-start lg:gap-6',
+            )}
+          >
             {selectedMatch?.vodUrl != null ? (
               <>
                 {/* Compact/fill size toggle (Task 3) is a PURE className
@@ -660,11 +857,15 @@ export function VodManagerPage() {
                     exactly one unconditional JSX position below, never
                     remounted, never given a size-dependent key, and
                     playerSize is never threaded into useVodPlayer's
-                    options/identity. */}
+                    options/identity. Compact's own cap is bumped (720px,
+                    was 560px) below `lg`, and removed entirely at `lg`
+                    where the grid column (`2fr`) governs width instead —
+                    letting compact run noticeably larger on desktop. */}
                 <div
                   className={cn(
                     'relative',
-                    playerSize === 'compact' && 'mx-auto w-full md:max-w-[560px]',
+                    playerSize === 'compact' &&
+                      'mx-auto w-full md:max-w-[720px] lg:col-start-1 lg:row-start-1 lg:mx-0 lg:max-w-none',
                   )}
                 >
                   <VodPlayer
@@ -675,6 +876,7 @@ export function VodManagerPage() {
                     onEnded={handleEnded}
                     onAutoplayBlocked={handleAutoplayBlocked}
                     autoplayOnConstructRef={autoplayNextRef}
+                    remountToken={remountToken}
                   />
                   <Button
                     type="button"
@@ -692,18 +894,29 @@ export function VodManagerPage() {
                   </Button>
                 </div>
                 {autoplayBlocked && (
-                  <p className="text-sm text-muted-foreground">
+                  <p
+                    className={cn(
+                      'text-sm text-muted-foreground',
+                      playerSize === 'compact' && 'lg:col-start-1 lg:row-start-2',
+                    )}
+                  >
                     {t('vodManager.playback.autoplayBlocked')}
                   </p>
                 )}
-                {/* Quick tags panel (Task 2) — directly below the player,
-                    playlist-agnostic (works in Library view too). */}
-                <QuickTagPanel
-                  quickTags={quickTags}
-                  onQuickTag={handleQuickTag}
-                  onQuickTagsChange={handleQuickTagsChange}
-                  tagVocabulary={tagVocabulary}
-                />
+                {/* Quick tags panel (Task 2) — directly below the player in
+                    the stacked layout; the TOP of the right rail in the
+                    compact+lg combination-rail layout. */}
+                <div
+                  data-testid="vod-quicktag-rail"
+                  className={cn(playerSize === 'compact' && 'lg:col-start-2 lg:row-start-1')}
+                >
+                  <QuickTagPanel
+                    quickTags={quickTags}
+                    onQuickTag={handleQuickTag}
+                    onQuickTagsChange={handleQuickTagsChange}
+                    tagVocabulary={tagVocabulary}
+                  />
+                </div>
                 {/* Playback controls (LIST-04 playlist Prev/Next + Task 3
                     timestamp Prev/Next), grouped together below the player.
                     Playlist Prev/Next only renders while a playlist is
@@ -711,7 +924,12 @@ export function VodManagerPage() {
                     navigation must never surprise-autoplay). Timestamp
                     Prev/Next always renders (disabled with zero notes) —
                     playlist-agnostic, works in Library view too. */}
-                <div className="flex flex-wrap items-center justify-center gap-4">
+                <div
+                  className={cn(
+                    'flex flex-wrap items-center justify-center gap-4',
+                    playerSize === 'compact' && 'lg:col-start-1 lg:row-start-3',
+                  )}
+                >
                   {selectedPlaylist && playlistMatches && playlistMatches.length > 0 && (
                     <div className="flex items-center gap-3">
                       <Button
@@ -768,17 +986,30 @@ export function VodManagerPage() {
                     </Button>
                   </div>
                 </div>
-                <TimestampList
-                  timestamps={selectedMatch.vodTimestamps ?? []}
-                  selectedIndex={selectedTimestampIndex}
-                  onSelect={setSelectedTimestampIndex}
-                  onSeek={handleSeek}
-                  getCurrentTimeRef={getCurrentTimeRef}
-                  onUpdateTimestamps={handleUpdateTimestamps}
-                  tagVocabulary={tagVocabulary}
-                  editingIndex={editingIndex}
-                  onEditingIndexChange={setEditingIndex}
-                />
+                {/* The BOTTOM of the right rail in compact+lg — spans down
+                    through the controls row (row-span-2) so it fills the
+                    rail's full height alongside the left column, and
+                    scrolls independently once its content overflows rather
+                    than growing the page. */}
+                <div
+                  data-testid="vod-timestamp-rail"
+                  className={cn(
+                    playerSize === 'compact' &&
+                      'lg:col-start-2 lg:row-start-2 lg:row-span-2 lg:max-h-[min(70vh,640px)] lg:overflow-y-auto',
+                  )}
+                >
+                  <TimestampList
+                    timestamps={selectedMatch.vodTimestamps ?? []}
+                    selectedIndex={selectedTimestampIndex}
+                    onSelect={setSelectedTimestampIndex}
+                    onSeek={handleSeek}
+                    getCurrentTimeRef={getCurrentTimeRef}
+                    onUpdateTimestamps={handleUpdateTimestamps}
+                    tagVocabulary={tagVocabulary}
+                    editingIndex={editingIndex}
+                    onEditingIndexChange={setEditingIndex}
+                  />
+                </div>
               </>
             ) : (
               <div className="aspect-video rounded-lg border bg-muted flex items-center justify-center text-sm text-muted-foreground">

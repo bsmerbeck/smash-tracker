@@ -81,8 +81,19 @@ export function removeTagFromList(list: string[], tag: string): string[] {
  * tags" group and for locked-decision cross-match vocabulary. Mirrors
  * `getVodManagerFilterOptions`'s Set+iterate-all+sort shape. Case-insensitive
  * dedupe: the first-seen casing wins.
+ *
+ * `extraTags` folds in additional custom-tag sources that aren't (yet)
+ * persisted on any match/note — namely the Quick Tags panel's device-local
+ * button set (`vodPrefs.ts`'s `quickTags`). A tag the user customizes into
+ * their Quick Tags set is, from the user's perspective, already "added" —
+ * it should be offered in every OTHER add-combobox immediately, not only
+ * after it's actually been applied to some match/note (the bug this
+ * parameter fixes: a freshly-customized quick tag was invisible to every
+ * other combobox until it happened to get captured onto a note first). Same
+ * preset-exclusion + case-insensitive dedupe rules apply; entries already
+ * seen from `matches` take casing precedence.
  */
-export function deriveCustomTagVocabulary(matches: Match[]): string[] {
+export function deriveCustomTagVocabulary(matches: Match[], extraTags: string[] = []): string[] {
   const seen = new Map<string, string>();
   for (const match of matches) {
     for (const tag of match.tags ?? []) {
@@ -96,6 +107,11 @@ export function deriveCustomTagVocabulary(matches: Match[]): string[] {
           seen.set(tag.toLowerCase(), tag);
         }
       }
+    }
+  }
+  for (const tag of extraTags) {
+    if (!PRESET_SLUGS.has(tag) && !seen.has(tag.toLowerCase())) {
+      seen.set(tag.toLowerCase(), tag);
     }
   }
   return [...seen.values()].sort((a, b) => a.localeCompare(b));
