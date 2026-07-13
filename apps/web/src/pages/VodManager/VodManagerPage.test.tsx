@@ -144,6 +144,7 @@ describe('VodManagerPage', () => {
       return {
         seekTo: vi.fn(),
         playVideo: vi.fn(),
+        pauseVideo: vi.fn(),
         destroy: vi.fn(),
         getCurrentTime: vi.fn(() => 754),
       };
@@ -182,7 +183,13 @@ describe('VodManagerPage', () => {
       config: YouTubePlayerConfig,
     ): YouTubePlayerInstance {
       capturedConfig = config;
-      return { seekTo, playVideo, destroy: vi.fn(), getCurrentTime: vi.fn(() => 754) };
+      return {
+        seekTo,
+        playVideo,
+        pauseVideo: vi.fn(),
+        destroy: vi.fn(),
+        getCurrentTime: vi.fn(() => 754),
+      };
     });
     window.YT = { Player: Player as unknown as YTGlobal['Player'], PlayerState: { ENDED: 0 } };
 
@@ -226,6 +233,7 @@ describe('VodManagerPage', () => {
       return {
         seekTo: vi.fn(),
         playVideo: vi.fn(),
+        pauseVideo: vi.fn(),
         destroy: vi.fn(),
         getCurrentTime: vi.fn(() => 754),
       };
@@ -265,7 +273,13 @@ describe('VodManagerPage', () => {
       config: YouTubePlayerConfig,
     ): YouTubePlayerInstance {
       capturedConfig = config;
-      return { seekTo, playVideo, destroy: vi.fn(), getCurrentTime: vi.fn(() => 754) };
+      return {
+        seekTo,
+        playVideo,
+        pauseVideo: vi.fn(),
+        destroy: vi.fn(),
+        getCurrentTime: vi.fn(() => 754),
+      };
     });
     window.YT = { Player: Player as unknown as YTGlobal['Player'], PlayerState: { ENDED: 0 } };
 
@@ -316,7 +330,13 @@ describe('VodManagerPage', () => {
       config: YouTubePlayerConfig,
     ): YouTubePlayerInstance {
       configs.push(config);
-      return { seekTo: vi.fn(), playVideo: vi.fn(), destroy, getCurrentTime: vi.fn(() => 754) };
+      return {
+        seekTo: vi.fn(),
+        playVideo: vi.fn(),
+        pauseVideo: vi.fn(),
+        destroy,
+        getCurrentTime: vi.fn(() => 754),
+      };
     });
     window.YT = { Player: Player as unknown as YTGlobal['Player'], PlayerState: { ENDED: 0 } };
 
@@ -375,6 +395,7 @@ describe('VodManagerPage', () => {
       return {
         seekTo: vi.fn(),
         playVideo: vi.fn(),
+        pauseVideo: vi.fn(),
         destroy: vi.fn(),
         getCurrentTime: vi.fn(() => 0),
       };
@@ -427,6 +448,7 @@ describe('VodManagerPage', () => {
       return {
         seekTo: vi.fn(),
         playVideo: vi.fn(),
+        pauseVideo: vi.fn(),
         destroy: vi.fn(),
         getCurrentTime: vi.fn(() => 0),
       };
@@ -475,6 +497,7 @@ describe('VodManagerPage', () => {
       return {
         seekTo: vi.fn(),
         playVideo: vi.fn(),
+        pauseVideo: vi.fn(),
         destroy: vi.fn(),
         getCurrentTime: vi.fn(() => 0),
       };
@@ -524,6 +547,7 @@ describe('VodManagerPage', () => {
       return {
         seekTo: vi.fn(),
         playVideo: vi.fn(),
+        pauseVideo: vi.fn(),
         destroy: vi.fn(),
         getCurrentTime: vi.fn(() => 0),
       };
@@ -567,7 +591,13 @@ describe('VodManagerPage', () => {
       config: YouTubePlayerConfig,
     ): YouTubePlayerInstance {
       configs.push(config);
-      return { seekTo: vi.fn(), playVideo: vi.fn(), destroy, getCurrentTime: vi.fn(() => 0) };
+      return {
+        seekTo: vi.fn(),
+        playVideo: vi.fn(),
+        pauseVideo: vi.fn(),
+        destroy,
+        getCurrentTime: vi.fn(() => 0),
+      };
     });
     window.YT = { Player: Player as unknown as YTGlobal['Player'], PlayerState: { ENDED: 0 } };
 
@@ -615,6 +645,7 @@ describe('VodManagerPage', () => {
         return {
           seekTo: vi.fn(),
           playVideo: vi.fn(),
+          pauseVideo: vi.fn(),
           destroy: vi.fn(),
           getCurrentTime: vi.fn(() => 0),
         };
@@ -680,7 +711,7 @@ describe('VodManagerPage', () => {
       config: YouTubePlayerConfig,
     ): YouTubePlayerInstance {
       capturedConfig = config;
-      return { seekTo, playVideo, destroy: vi.fn(), getCurrentTime };
+      return { seekTo, playVideo, pauseVideo: vi.fn(), destroy: vi.fn(), getCurrentTime };
     });
     window.YT = { Player: Player as unknown as YTGlobal['Player'], PlayerState: { ENDED: 0 } };
 
@@ -746,6 +777,7 @@ describe('VodManagerPage', () => {
       return {
         seekTo: vi.fn(),
         playVideo: vi.fn(),
+        pauseVideo: vi.fn(),
         destroy: vi.fn(),
         getCurrentTime: vi.fn(() => 754),
       };
@@ -807,6 +839,7 @@ describe('VodManagerPage', () => {
       return {
         seekTo: vi.fn(),
         playVideo: vi.fn(),
+        pauseVideo: vi.fn(),
         destroy: vi.fn(),
         getCurrentTime: vi.fn(() => 754),
       };
@@ -857,6 +890,7 @@ describe('VodManagerPage', () => {
       return {
         seekTo: vi.fn(),
         playVideo: vi.fn(),
+        pauseVideo: vi.fn(),
         destroy: vi.fn(),
         getCurrentTime: vi.fn(() => 754),
       };
@@ -913,7 +947,13 @@ describe('VodManagerPage', () => {
       config: YouTubePlayerConfig,
     ): YouTubePlayerInstance {
       capturedConfig = config;
-      return { seekTo, playVideo: vi.fn(), destroy: vi.fn(), getCurrentTime: vi.fn(() => 754) };
+      return {
+        seekTo,
+        playVideo: vi.fn(),
+        pauseVideo: vi.fn(),
+        destroy: vi.fn(),
+        getCurrentTime: vi.fn(() => 754),
+      };
     });
     window.YT = { Player: Player as unknown as YTGlobal['Player'], PlayerState: { ENDED: 0 } };
 
@@ -971,6 +1011,7 @@ describe('VodManagerPage', () => {
       return {
         seekTo: vi.fn(),
         playVideo: vi.fn(),
+        pauseVideo: vi.fn(),
         destroy: vi.fn(),
         getCurrentTime: vi.fn(() => 754),
       };
@@ -1027,6 +1068,7 @@ describe('VodManagerPage', () => {
       return {
         seekTo: vi.fn(),
         playVideo: vi.fn(),
+        pauseVideo: vi.fn(),
         destroy: vi.fn(),
         getCurrentTime: vi.fn(() => 0),
       };
@@ -1081,7 +1123,13 @@ describe('VodManagerPage', () => {
       config: YouTubePlayerConfig,
     ): YouTubePlayerInstance {
       capturedConfig = config;
-      return { seekTo, playVideo, destroy: vi.fn(), getCurrentTime: vi.fn(() => 754) };
+      return {
+        seekTo,
+        playVideo,
+        pauseVideo: vi.fn(),
+        destroy: vi.fn(),
+        getCurrentTime: vi.fn(() => 754),
+      };
     });
     window.YT = { Player: Player as unknown as YTGlobal['Player'], PlayerState: { ENDED: 0 } };
 
@@ -1128,6 +1176,7 @@ describe('VodManagerPage', () => {
       return {
         seekTo: vi.fn(),
         playVideo: vi.fn(),
+        pauseVideo: vi.fn(),
         destroy: vi.fn(),
         getCurrentTime: vi.fn(() => 754),
       };
@@ -1181,6 +1230,7 @@ describe('VodManagerPage', () => {
       return {
         seekTo: vi.fn(),
         playVideo: vi.fn(),
+        pauseVideo: vi.fn(),
         destroy: vi.fn(),
         getCurrentTime: vi.fn(() => 754),
       };
@@ -1223,6 +1273,7 @@ describe('VodManagerPage', () => {
       return {
         seekTo: vi.fn(),
         playVideo: vi.fn(),
+        pauseVideo: vi.fn(),
         destroy: vi.fn(),
         getCurrentTime: vi.fn(() => 754),
       };
@@ -1267,6 +1318,7 @@ describe('VodManagerPage', () => {
       return {
         seekTo: vi.fn(),
         playVideo: vi.fn(),
+        pauseVideo: vi.fn(),
         destroy: vi.fn(),
         getCurrentTime: vi.fn(() => 754),
       };
@@ -1307,6 +1359,7 @@ describe('VodManagerPage', () => {
       return {
         seekTo: vi.fn(),
         playVideo: vi.fn(),
+        pauseVideo: vi.fn(),
         destroy: vi.fn(),
         getCurrentTime: vi.fn(() => 754),
       };
@@ -1360,6 +1413,7 @@ describe('VodManagerPage', () => {
       return {
         seekTo: vi.fn(),
         playVideo: vi.fn(),
+        pauseVideo: vi.fn(),
         destroy: vi.fn(),
         getCurrentTime: vi.fn(() => 754),
       };
@@ -1402,6 +1456,7 @@ describe('VodManagerPage', () => {
       return {
         seekTo: vi.fn(),
         playVideo: vi.fn(),
+        pauseVideo: vi.fn(),
         destroy: vi.fn(),
         getCurrentTime: vi.fn(() => 754),
       };
@@ -1446,6 +1501,7 @@ describe('VodManagerPage', () => {
       return {
         seekTo: vi.fn(),
         playVideo: vi.fn(),
+        pauseVideo: vi.fn(),
         destroy: vi.fn(),
         getCurrentTime: vi.fn(() => 754),
       };
@@ -1497,6 +1553,7 @@ describe('VodManagerPage', () => {
       return {
         seekTo: vi.fn(),
         playVideo: vi.fn(),
+        pauseVideo: vi.fn(),
         destroy: vi.fn(),
         getCurrentTime: vi.fn(() => 754),
       };
@@ -1537,6 +1594,69 @@ describe('VodManagerPage', () => {
     ]);
   });
 
+  it('retest fix-up #2: quick-tag capture pauses the player at the captured moment WITHOUT seeking, even after the refetch it triggers', async () => {
+    const user = userEvent.setup();
+    // Same mutable "server" record + dynamic mock pattern as the capture
+    // test above — REQUIRED to reproduce the reported bug: a static
+    // `mockResolvedValue` always resolves the SAME fixture object, so the
+    // `selectedMatch` reference never actually changes on refetch and the
+    // bug (reposition effect keyed on object identity) can never surface.
+    let currentMatch = makeMatch({
+      id: 'm1',
+      opponent: 'rival-one',
+      vodUrl: 'https://youtube.com/watch?v=abc123',
+      vodTimestamps: [{ seconds: 900, note: 'existing note' }],
+    });
+    listMatches.mockImplementation(() => Promise.resolve([currentMatch]));
+    updateMatch.mockImplementation((...args: unknown[]) => {
+      const input = args[1] as Record<string, unknown>;
+      currentMatch = { ...currentMatch, ...input };
+      return Promise.resolve(currentMatch);
+    });
+
+    const seekTo = vi.fn();
+    const pauseVideo = vi.fn();
+    let capturedConfig: YouTubePlayerConfig | undefined;
+    const Player = vi.fn(function (
+      this: unknown,
+      _el: HTMLElement,
+      config: YouTubePlayerConfig,
+    ): YouTubePlayerInstance {
+      capturedConfig = config;
+      return {
+        seekTo,
+        playVideo: vi.fn(),
+        pauseVideo,
+        destroy: vi.fn(),
+        getCurrentTime: vi.fn(() => 754),
+      };
+    });
+    window.YT = { Player: Player as unknown as YTGlobal['Player'], PlayerState: { ENDED: 0 } };
+
+    renderVodManager('/vod?match=m1');
+    await waitFor(() => expect(Player).toHaveBeenCalledTimes(1));
+    act(() => {
+      capturedConfig?.events?.onReady?.();
+    });
+
+    await user.click(screen.getByRole('button', { name: 'Quick tag: Punish' }));
+
+    // pause() fires (freezing the captured frame) — never seek(), which
+    // would jump the player back to its start time.
+    await waitFor(() => expect(pauseVideo).toHaveBeenCalledTimes(1));
+
+    // The PATCH's onSuccess invalidateQueries refetch resolves, producing a
+    // BRAND NEW `matches`/`selectedMatch` object even though the selected
+    // match id (m1) never changed. The reposition effect must recognize
+    // this is NOT a match switch and never seek — reproducing the reported
+    // "player resets to 0:00" bug if it does.
+    await waitFor(() => expect(updateMatch).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(screen.getByLabelText('Edit timestamp note')).toBeInTheDocument());
+    expect(seekTo).not.toHaveBeenCalled();
+    // Only ONE player construction throughout — no remount either.
+    expect(Player).toHaveBeenCalledTimes(1);
+  });
+
   it('blocks a quick-tag capture once the match is at the MAX_TIMESTAMPS cap, via the existing cap toast', async () => {
     const user = userEvent.setup();
     const twentyExisting = Array.from({ length: 20 }, (_, i) => ({
@@ -1562,6 +1682,7 @@ describe('VodManagerPage', () => {
       return {
         seekTo: vi.fn(),
         playVideo: vi.fn(),
+        pauseVideo: vi.fn(),
         destroy: vi.fn(),
         getCurrentTime: vi.fn(() => 754),
       };
@@ -1596,6 +1717,7 @@ describe('VodManagerPage', () => {
         return {
           seekTo: vi.fn(),
           playVideo: vi.fn(),
+          pauseVideo: vi.fn(),
           destroy: vi.fn(),
           getCurrentTime: vi.fn(() => 0),
         };
@@ -1642,6 +1764,7 @@ describe('VodManagerPage', () => {
         return {
           seekTo: vi.fn(),
           playVideo: vi.fn(),
+          pauseVideo: vi.fn(),
           destroy: vi.fn(),
           getCurrentTime: vi.fn(() => 0),
         };
@@ -1715,6 +1838,7 @@ describe('VodManagerPage', () => {
         return {
           seekTo: vi.fn(),
           playVideo: vi.fn(),
+          pauseVideo: vi.fn(),
           destroy: vi.fn(),
           getCurrentTime: vi.fn(() => 0),
         };
@@ -1755,6 +1879,7 @@ describe('VodManagerPage', () => {
       return {
         seekTo: vi.fn(),
         playVideo: vi.fn(),
+        pauseVideo: vi.fn(),
         destroy: vi.fn(),
         getCurrentTime: vi.fn(() => 0),
       };
@@ -1797,6 +1922,7 @@ describe('VodManagerPage', () => {
         return {
           seekTo: vi.fn(),
           playVideo: vi.fn(),
+          pauseVideo: vi.fn(),
           destroy: vi.fn(),
           getCurrentTime: vi.fn(() => 0),
         };
@@ -1855,7 +1981,13 @@ describe('VodManagerPage', () => {
       config: YouTubePlayerConfig,
     ): YouTubePlayerInstance {
       capturedConfig = config;
-      return { seekTo, playVideo: vi.fn(), destroy: vi.fn(), getCurrentTime: vi.fn(() => 0) };
+      return {
+        seekTo,
+        playVideo: vi.fn(),
+        pauseVideo: vi.fn(),
+        destroy: vi.fn(),
+        getCurrentTime: vi.fn(() => 0),
+      };
     });
     window.YT = { Player: Player as unknown as YTGlobal['Player'], PlayerState: { ENDED: 0 } };
 
@@ -1904,6 +2036,7 @@ describe('VodManagerPage', () => {
         return {
           seekTo: vi.fn(),
           playVideo: vi.fn(),
+          pauseVideo: vi.fn(),
           destroy: vi.fn(),
           getCurrentTime: vi.fn(() => 0),
         };
