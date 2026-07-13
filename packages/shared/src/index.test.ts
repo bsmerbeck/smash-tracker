@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   createMatchInputSchema,
+  createPlaylistInputSchema,
   fighterIdListSchema,
   fighterSchema,
   fighterSelectionSchema,
@@ -12,9 +13,12 @@ import {
   opponentListSchema,
   opponentMapSchema,
   opponentNameInputSchema,
+  playlistRecordSchema,
+  playlistSchema,
   stageSchema,
   tournamentEntrySchema,
   updateMatchInputSchema,
+  updatePlaylistInputSchema,
   upsertOpponentAliasInputSchema,
   userProfileSchema,
   userSchema,
@@ -463,6 +467,75 @@ describe('upsertOpponentAliasInputSchema', () => {
 
   it('rejects a blank canonical name', () => {
     expect(() => upsertOpponentAliasInputSchema.parse({ canonical: '' })).toThrow();
+  });
+});
+
+describe('playlistRecordSchema', () => {
+  it('parses a record with matchIds and defaults matchIds to [] when the key is absent', () => {
+    expect(
+      playlistRecordSchema.parse({ name: 'Combo reel', createdAt: 1_700_000_000_000 }),
+    ).toEqual({ name: 'Combo reel', createdAt: 1_700_000_000_000, matchIds: [] });
+  });
+
+  it('parses a record with matchIds present', () => {
+    const record = { name: 'Counterpicks', createdAt: 1_700_000_000_000, matchIds: ['m1', 'm2'] };
+    expect(playlistRecordSchema.parse(record)).toEqual(record);
+  });
+
+  it('rejects a blank/whitespace-only name', () => {
+    expect(() =>
+      playlistRecordSchema.parse({ name: '   ', createdAt: 1_700_000_000_000 }),
+    ).toThrow();
+  });
+
+  it('rejects a name longer than 40 chars after trim', () => {
+    expect(() =>
+      playlistRecordSchema.parse({ name: 'a'.repeat(41), createdAt: 1_700_000_000_000 }),
+    ).toThrow();
+  });
+
+  it('rejects a matchIds array longer than 100 entries', () => {
+    const matchIds = Array.from({ length: 101 }, (_, i) => `m${i}`);
+    expect(() =>
+      playlistRecordSchema.parse({ name: 'Too many', createdAt: 1_700_000_000_000, matchIds }),
+    ).toThrow();
+  });
+});
+
+describe('playlistSchema', () => {
+  it('extends playlistRecordSchema with an id', () => {
+    const playlist = {
+      id: '-Nabc123',
+      name: 'Combo reel',
+      createdAt: 1_700_000_000_000,
+      matchIds: [],
+    };
+    expect(playlistSchema.parse(playlist)).toEqual(playlist);
+  });
+});
+
+describe('createPlaylistInputSchema', () => {
+  it('accepts a name only', () => {
+    expect(createPlaylistInputSchema.parse({ name: 'Combo reel' })).toEqual({
+      name: 'Combo reel',
+    });
+  });
+
+  it('rejects a blank name', () => {
+    expect(() => createPlaylistInputSchema.parse({ name: '   ' })).toThrow();
+  });
+});
+
+describe('updatePlaylistInputSchema', () => {
+  it('accepts an optional name and/or matchIds', () => {
+    expect(updatePlaylistInputSchema.parse({})).toEqual({});
+    expect(updatePlaylistInputSchema.parse({ name: 'Renamed' })).toEqual({ name: 'Renamed' });
+    expect(updatePlaylistInputSchema.parse({ matchIds: ['m1'] })).toEqual({ matchIds: ['m1'] });
+  });
+
+  it('rejects a matchIds array longer than 100 entries', () => {
+    const matchIds = Array.from({ length: 101 }, (_, i) => `m${i}`);
+    expect(() => updatePlaylistInputSchema.parse({ matchIds })).toThrow();
   });
 });
 
