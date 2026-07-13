@@ -5,6 +5,8 @@ import type { Match } from '@smash-tracker/shared';
 import { getFighterById } from '@/data/sprites';
 import { ALL_FILTER_VALUE, tournamentLabel } from '@/pages/MatchData/lib/matchTableFilters';
 import type { VodManagerFilterState, VodSortDirection } from '../lib/vodManagerFilters';
+import { tagLabel } from '@/lib/tags';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
   Select,
@@ -30,6 +32,7 @@ type VodManagerFilterOptions = {
   stages: string[];
   tournaments: string[];
   opponents: string[];
+  tagsInUse: string[];
 };
 
 /**
@@ -69,6 +72,13 @@ export function VodMatchList({
     value: VodManagerFilterState[K],
   ) {
     onFiltersChange({ ...filters, [key]: value });
+  }
+
+  function toggleTag(tag: string) {
+    const next = filters.tags.includes(tag)
+      ? filters.tags.filter((selected) => selected !== tag)
+      : [...filters.tags, tag];
+    setFilter('tags', next);
   }
 
   return (
@@ -113,6 +123,25 @@ export function VodMatchList({
             <SelectItem value="oldest">{t('vodManager.sort.oldest')}</SelectItem>
           </SelectContent>
         </Select>
+        {filterOptions.tagsInUse.length > 0 && (
+          <div className="flex flex-col gap-1">
+            <span className="text-xs font-medium text-muted-foreground">
+              {t('vodManager.filters.tagsLabel')}
+            </span>
+            <div className="flex flex-wrap gap-1.5">
+              {filterOptions.tagsInUse.map((tag) => {
+                const selected = filters.tags.includes(tag);
+                return (
+                  <Badge key={tag} asChild variant={selected ? 'default' : 'outline'}>
+                    <button type="button" aria-pressed={selected} onClick={() => toggleTag(tag)}>
+                      {tagLabel(t, tag)}
+                    </button>
+                  </Badge>
+                );
+              })}
+            </div>
+          </div>
+        )}
       </div>
 
       <div className="flex max-h-[60vh] flex-col gap-1 overflow-y-auto md:max-h-none">

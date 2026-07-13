@@ -494,7 +494,8 @@
       "opponent": "Gegner",
       "tournament": "Turnier",
       "stage": "Stage",
-      "allOption": "Alle"
+      "allOption": "Alle",
+      "tagsLabel": "Tags"
     },
     "sort": {
       "newest": "Neueste zuerst",

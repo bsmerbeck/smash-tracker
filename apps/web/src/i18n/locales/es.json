@@ -494,7 +494,8 @@
       "opponent": "Rival",
       "tournament": "Torneo",
       "stage": "Escenario",
-      "allOption": "Todos"
+      "allOption": "Todos",
+      "tagsLabel": "Etiquetas"
     },
     "sort": {
       "newest": "Más recientes primero",
