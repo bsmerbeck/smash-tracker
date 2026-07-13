@@ -2380,4 +2380,83 @@ describe('VodManagerPage', () => {
     expect(screen.getByRole('button', { name: 'Previous note' })).toBeDisabled();
     expect(screen.getByRole('button', { name: 'Next note' })).toBeDisabled();
   });
+
+  it('retest fix-up #9: applying a tag filter that excludes the current selection auto-selects the first still-visible match instead of going blank', async () => {
+    const user = userEvent.setup();
+    listMatches.mockResolvedValue([
+      makeMatch({
+        id: 'm1',
+        opponent: 'rival-one',
+        time: 1_700_000_000_000,
+        vodUrl: 'https://youtube.com/watch?v=abc123',
+        tags: ['practice-friendlies'],
+      }),
+      makeMatch({
+        id: 'm2',
+        opponent: 'rival-two',
+        time: 1_700_000_100_000,
+        vodUrl: 'https://youtube.com/watch?v=xyz789',
+      }),
+    ]);
+
+    window.YT = {
+      Player: vi.fn(function (this: unknown) {
+        return {
+          seekTo: vi.fn(),
+          playVideo: vi.fn(),
+          pauseVideo: vi.fn(),
+          destroy: vi.fn(),
+          getCurrentTime: vi.fn(() => 0),
+        };
+      }) as unknown as YTGlobal['Player'],
+      PlayerState: { ENDED: 0 },
+    };
+
+    // m2 (newest, untagged) is selected via deep-link.
+    renderVodManager('/vod?match=m2');
+    await waitFor(() => expect(screen.getByText('vs. rival-two')).toBeInTheDocument());
+
+    // Filtering to the "Practice/Friendlies" tag excludes m2 (untagged) —
+    // only m1 remains visible.
+    await user.click(screen.getByRole('button', { name: 'Practice/Friendlies' }));
+
+    // The panel must NOT go blank ("Select a match") — it auto-selects the
+    // first (only) still-visible match, m1.
+    await waitFor(() => expect(screen.getByText('vs. rival-one')).toBeInTheDocument());
+    expect(screen.queryByText('Select a match to watch its VOD.')).not.toBeInTheDocument();
+  });
+
+  it('retest fix-up #9: cold-open with no ?match= still auto-selects the first visible match (unaffected)', async () => {
+    listMatches.mockResolvedValue([
+      makeMatch({
+        id: 'm1',
+        opponent: 'rival-one',
+        time: 1_700_000_000_000,
+        vodUrl: 'https://youtube.com/watch?v=abc123',
+      }),
+      makeMatch({
+        id: 'm2',
+        opponent: 'rival-two',
+        time: 1_700_000_100_000,
+        vodUrl: 'https://youtube.com/watch?v=xyz789',
+      }),
+    ]);
+
+    window.YT = {
+      Player: vi.fn(function (this: unknown) {
+        return {
+          seekTo: vi.fn(),
+          playVideo: vi.fn(),
+          pauseVideo: vi.fn(),
+          destroy: vi.fn(),
+          getCurrentTime: vi.fn(() => 0),
+        };
+      }) as unknown as YTGlobal['Player'],
+      PlayerState: { ENDED: 0 },
+    };
+
+    // No `?match=` at all — Library sorts newest-first by default, so m2 auto-selects.
+    renderVodManager('/vod');
+    await waitFor(() => expect(screen.getByText('vs. rival-two')).toBeInTheDocument());
+  });
 });
