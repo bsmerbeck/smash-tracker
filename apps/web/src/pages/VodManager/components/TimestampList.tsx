@@ -21,6 +21,9 @@ export interface TimestampListProps {
    * re-sorted ascending) whenever the composer adds a note — the caller
    * owns the single PATCH mutation (`VodManagerPage`). */
   onUpdateTimestamps: (next: VodTimestamp[]) => void;
+  /** Custom tag vocabulary derived across ALL loaded VOD matches (03-02
+   * locked decision) — forwarded to every row's note-tag add-combobox. */
+  tagVocabulary: string[];
 }
 
 /**
@@ -50,6 +53,7 @@ export function TimestampList({
   onSeek,
   getCurrentTimeRef,
   onUpdateTimestamps,
+  tagVocabulary,
 }: TimestampListProps) {
   const { t } = useTranslation();
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
@@ -65,6 +69,20 @@ export function TimestampList({
   function handleDelete(index: number) {
     onUpdateTimestamps(timestamps.filter((_, i) => i !== index));
     setEditingIndex((current) => (current === index ? null : current));
+  }
+
+  // Tags never affect ordering (only time edits re-sort) — replace element
+  // `index`'s tags in place, omitting the `tags` key entirely when the
+  // resulting list is empty so RTDB drops it (mirrors the omit-to-clear
+  // convention `buildUpdateInput`/`SelectedMatchMeta` already use for
+  // match-level tags).
+  function handleUpdateTags(index: number, tags: string[]) {
+    const updated = timestamps.map((stamp, i) =>
+      i === index
+        ? { seconds: stamp.seconds, note: stamp.note, ...(tags.length > 0 ? { tags } : {}) }
+        : stamp,
+    );
+    onUpdateTimestamps(updated);
   }
 
   return (
@@ -92,6 +110,8 @@ export function TimestampList({
                 onCancelEdit={() => setEditingIndex(null)}
                 onCommitEdit={handleCommitEdit}
                 onDelete={handleDelete}
+                onUpdateTags={handleUpdateTags}
+                tagVocabulary={tagVocabulary}
               />
             </li>
           ))}
