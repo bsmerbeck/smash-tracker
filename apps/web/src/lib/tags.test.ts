@@ -141,4 +141,29 @@ describe('deriveCustomTagVocabulary', () => {
     const matches: Match[] = [makeMatch({ id: 'm1', time: 1, win: true, tags: ['punish'] })];
     expect(deriveCustomTagVocabulary(matches)).toEqual([]);
   });
+
+  it('folds in extraTags (Quick Tags panel device-local set) not yet persisted on any match/note', () => {
+    const matches: Match[] = [makeMatch({ id: 'm1', time: 1, win: true, tags: ['alpha custom'] })];
+
+    // A custom quick-tag never applied to any match/note yet — must still
+    // be offered (the bug fix: previously invisible until first captured).
+    expect(deriveCustomTagVocabulary(matches, ['beta custom'])).toEqual([
+      'alpha custom',
+      'beta custom',
+    ]);
+  });
+
+  it('extraTags excludes presets and dedupes case-insensitively against matches, preferring the matches casing', () => {
+    const matches: Match[] = [makeMatch({ id: 'm1', time: 1, win: true, tags: ['Alpha Custom'] })];
+
+    expect(deriveCustomTagVocabulary(matches, ['punish', 'alpha CUSTOM', 'beta custom'])).toEqual([
+      'Alpha Custom',
+      'beta custom',
+    ]);
+  });
+
+  it('defaults extraTags to empty when omitted', () => {
+    const matches: Match[] = [makeMatch({ id: 'm1', time: 1, win: true, tags: ['zeta'] })];
+    expect(deriveCustomTagVocabulary(matches)).toEqual(['zeta']);
+  });
 });

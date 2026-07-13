@@ -994,6 +994,70 @@ describe('VodManagerPage', () => {
     ]);
   });
 
+  it("a newly-created custom tag appears in a DIFFERENT note's add-combobox after the matches list refetches", async () => {
+    const user = userEvent.setup();
+
+    // Dynamic mock: `listMatches`/`updateMatch` mirror a real backend (the
+    // PATCH mutates server-side state, and a subsequent GET reflects it) —
+    // unlike this file's usual static `mockResolvedValue`, which always
+    // resolves to the SAME fixture and so can never expose a real
+    // stale-cache bug (the fix under test).
+    let storedMatch = makeMatch({
+      id: 'm1',
+      opponent: 'rival-one',
+      vodUrl: 'https://youtube.com/watch?v=abc123',
+      vodTimestamps: [
+        { seconds: 30, note: 'note A' },
+        { seconds: 90, note: 'note B' },
+      ],
+    });
+    listMatches.mockImplementation(() => Promise.resolve([storedMatch]));
+    updateMatch.mockImplementation((_id: string, input: Record<string, unknown>) => {
+      storedMatch = { ...storedMatch, ...input };
+      return Promise.resolve({ ...storedMatch, id: 'm1' });
+    });
+
+    let capturedConfig: YouTubePlayerConfig | undefined;
+    const Player = vi.fn(function (
+      this: unknown,
+      _el: HTMLElement,
+      config: YouTubePlayerConfig,
+    ): YouTubePlayerInstance {
+      capturedConfig = config;
+      return {
+        seekTo: vi.fn(),
+        playVideo: vi.fn(),
+        destroy: vi.fn(),
+        getCurrentTime: vi.fn(() => 0),
+      };
+    });
+    window.YT = { Player: Player as unknown as YTGlobal['Player'], PlayerState: { ENDED: 0 } };
+
+    renderVodManager('/vod?match=m1');
+    await waitFor(() => expect(Player).toHaveBeenCalledTimes(1));
+    act(() => {
+      capturedConfig?.events?.onReady?.();
+    });
+
+    // (1) Add a brand-new custom tag to note A's combobox.
+    const noteARow = screen.getByText('note A').closest('li')!;
+    await user.click(within(noteARow).getByRole('combobox', { name: 'Add a tag' }));
+    await user.type(screen.getByPlaceholderText('Search or create a tag...'), 'my-new-tag');
+    await user.click(await screen.findByRole('option', { name: 'Create "my-new-tag"' }));
+
+    await waitFor(() => expect(updateMatch).toHaveBeenCalledTimes(1));
+    // The chip renders on note A immediately (confirms the mutation landed
+    // and the matches query already reflects it).
+    await waitFor(() => expect(within(noteARow).getByText('my-new-tag')).toBeInTheDocument());
+
+    // (2) Open note B's OWN add-combobox — the custom tag just created on
+    // note A must be offered here too (the shared vocabulary, 03-02 locked
+    // decision), not just remain visible on the note that created it.
+    const noteBRow = screen.getByText('note B').closest('li')!;
+    await user.click(within(noteBRow).getByRole('combobox', { name: 'Add a tag' }));
+    expect(await screen.findByRole('option', { name: 'my-new-tag' })).toBeInTheDocument();
+  });
+
   it('seeks the live player and highlights the clicked row body; edit/delete on another row do not change the selection (D-13/D-14)', async () => {
     const user = userEvent.setup();
     listMatches.mockResolvedValue([
@@ -1514,6 +1578,53 @@ describe('VodManagerPage', () => {
 
     // Already at the 20-note cap — the click must not PATCH a 21st note.
     expect(updateMatch).not.toHaveBeenCalled();
+  });
+
+  it("a custom tag added via Quick Tags Customize is immediately offered in a note's OWN add-combobox, even before it is ever captured onto a note", async () => {
+    const user = userEvent.setup();
+    listMatches.mockResolvedValue([
+      makeMatch({
+        id: 'm1',
+        opponent: 'rival-one',
+        vodUrl: 'https://youtube.com/watch?v=abc123',
+        vodTimestamps: [{ seconds: 30, note: 'note A' }],
+      }),
+    ]);
+
+    window.YT = {
+      Player: vi.fn(function (this: unknown) {
+        return {
+          seekTo: vi.fn(),
+          playVideo: vi.fn(),
+          destroy: vi.fn(),
+          getCurrentTime: vi.fn(() => 0),
+        };
+      }) as unknown as YTGlobal['Player'],
+      PlayerState: { ENDED: 0 },
+    };
+
+    renderVodManager('/vod?match=m1');
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Quick tag: Punish' })).toBeInTheDocument(),
+    );
+    const panel = screen.getByRole('region', { name: 'Quick tags' });
+
+    // (1) Customize the Quick Tags panel to add a brand-new custom tag —
+    // this is device-local (`vodPrefs.ts`) and touches NO match/note data,
+    // so it never goes through updateMatch/invalidateQueries at all.
+    await user.click(within(panel).getByRole('button', { name: 'Customize quick tags' }));
+    await user.click(within(panel).getByRole('combobox', { name: 'Add a tag' }));
+    await user.type(screen.getByPlaceholderText('Search or create a tag...'), 'my-quick-custom');
+    await user.click(await screen.findByRole('option', { name: 'Create "my-quick-custom"' }));
+    await user.click(within(panel).getByRole('button', { name: 'Save quick tags' }));
+    expect(updateMatch).not.toHaveBeenCalled();
+
+    // (2) The tag was never applied to any note yet — it must still be
+    // offered in note A's regular add-combobox, since from the user's
+    // perspective they already "added" it.
+    const noteARow = screen.getByText('note A').closest('li')!;
+    await user.click(within(noteARow).getByRole('combobox', { name: 'Add a tag' }));
+    expect(await screen.findByRole('option', { name: 'my-quick-custom' })).toBeInTheDocument();
   });
 
   it('customizes the quick-tag panel (adds a custom tag, removes a preset) via an explicit Save, persisting only on Save', async () => {
