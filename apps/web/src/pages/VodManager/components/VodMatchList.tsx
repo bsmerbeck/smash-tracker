@@ -55,6 +55,7 @@ export function VodMatchList({
   onSortChange,
   selectedId,
   onSelect,
+  isPlaylistView = false,
 }: {
   matches: Match[];
   filters: VodManagerFilterState;
@@ -64,6 +65,13 @@ export function VodMatchList({
   onSortChange: (sort: VodSortDirection) => void;
   selectedId: string | null;
   onSelect: (id: string) => void;
+  /**
+   * A playlist (not Library) is the active view: playlist order IS the
+   * order, so the filter/sort controls are hidden (they'd otherwise imply a
+   * re-ordering the playlist doesn't apply) and an empty resolved list shows
+   * the playlist-specific empty-state copy rather than the normal empty rows.
+   */
+  isPlaylistView?: boolean;
 }) {
   const { t } = useTranslation();
 
@@ -83,77 +91,83 @@ export function VodMatchList({
 
   return (
     <div className="flex flex-col gap-3">
-      <div className="flex flex-col gap-2">
-        <FilterSelect
-          label={t('vodManager.filters.fighter')}
-          value={filters.fighter}
-          options={filterOptions.fighters}
-          onChange={(value) => setFilter('fighter', value)}
-        />
-        <FilterSelect
-          label={t('vodManager.filters.opponentFighter')}
-          value={filters.opponentFighter}
-          options={filterOptions.opponentFighters}
-          onChange={(value) => setFilter('opponentFighter', value)}
-        />
-        <FilterSelect
-          label={t('vodManager.filters.stage')}
-          value={filters.stage}
-          options={filterOptions.stages}
-          onChange={(value) => setFilter('stage', value)}
-        />
-        <FilterCombobox
-          label={t('vodManager.filters.opponent')}
-          value={filters.opponent}
-          options={filterOptions.opponents}
-          onChange={(value) => setFilter('opponent', value)}
-        />
-        <FilterCombobox
-          label={t('vodManager.filters.tournament')}
-          value={filters.tournament}
-          options={filterOptions.tournaments}
-          onChange={(value) => setFilter('tournament', value)}
-        />
-        <Select value={sort} onValueChange={(value) => onSortChange(value as VodSortDirection)}>
-          <SelectTrigger className="w-full" aria-label={t('vodManager.filters.allOption')}>
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="newest">{t('vodManager.sort.newest')}</SelectItem>
-            <SelectItem value="oldest">{t('vodManager.sort.oldest')}</SelectItem>
-          </SelectContent>
-        </Select>
-        {filterOptions.tagsInUse.length > 0 && (
-          <div className="flex flex-col gap-1">
-            <span className="text-xs font-medium text-muted-foreground">
-              {t('vodManager.filters.tagsLabel')}
-            </span>
-            <div className="flex flex-wrap gap-1.5">
-              {filterOptions.tagsInUse.map((tag) => {
-                const selected = filters.tags.includes(tag);
-                return (
-                  <Badge key={tag} asChild variant={selected ? 'default' : 'outline'}>
-                    <button type="button" aria-pressed={selected} onClick={() => toggleTag(tag)}>
-                      {tagLabel(t, tag)}
-                    </button>
-                  </Badge>
-                );
-              })}
-            </div>
-          </div>
-        )}
-      </div>
-
-      <div className="flex max-h-[60vh] flex-col gap-1 overflow-y-auto md:max-h-none">
-        {matches.map((match) => (
-          <MatchRow
-            key={match.id}
-            match={match}
-            isSelected={match.id === selectedId}
-            onSelect={() => onSelect(match.id)}
+      {!isPlaylistView && (
+        <div className="flex flex-col gap-2">
+          <FilterSelect
+            label={t('vodManager.filters.fighter')}
+            value={filters.fighter}
+            options={filterOptions.fighters}
+            onChange={(value) => setFilter('fighter', value)}
           />
-        ))}
-      </div>
+          <FilterSelect
+            label={t('vodManager.filters.opponentFighter')}
+            value={filters.opponentFighter}
+            options={filterOptions.opponentFighters}
+            onChange={(value) => setFilter('opponentFighter', value)}
+          />
+          <FilterSelect
+            label={t('vodManager.filters.stage')}
+            value={filters.stage}
+            options={filterOptions.stages}
+            onChange={(value) => setFilter('stage', value)}
+          />
+          <FilterCombobox
+            label={t('vodManager.filters.opponent')}
+            value={filters.opponent}
+            options={filterOptions.opponents}
+            onChange={(value) => setFilter('opponent', value)}
+          />
+          <FilterCombobox
+            label={t('vodManager.filters.tournament')}
+            value={filters.tournament}
+            options={filterOptions.tournaments}
+            onChange={(value) => setFilter('tournament', value)}
+          />
+          <Select value={sort} onValueChange={(value) => onSortChange(value as VodSortDirection)}>
+            <SelectTrigger className="w-full" aria-label={t('vodManager.filters.allOption')}>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="newest">{t('vodManager.sort.newest')}</SelectItem>
+              <SelectItem value="oldest">{t('vodManager.sort.oldest')}</SelectItem>
+            </SelectContent>
+          </Select>
+          {filterOptions.tagsInUse.length > 0 && (
+            <div className="flex flex-col gap-1">
+              <span className="text-xs font-medium text-muted-foreground">
+                {t('vodManager.filters.tagsLabel')}
+              </span>
+              <div className="flex flex-wrap gap-1.5">
+                {filterOptions.tagsInUse.map((tag) => {
+                  const selected = filters.tags.includes(tag);
+                  return (
+                    <Badge key={tag} asChild variant={selected ? 'default' : 'outline'}>
+                      <button type="button" aria-pressed={selected} onClick={() => toggleTag(tag)}>
+                        {tagLabel(t, tag)}
+                      </button>
+                    </Badge>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {isPlaylistView && matches.length === 0 ? (
+        <p className="text-sm text-muted-foreground">{t('vodManager.playlists.empty')}</p>
+      ) : (
+        <div className="flex max-h-[60vh] flex-col gap-1 overflow-y-auto md:max-h-none">
+          {matches.map((match) => (
+            <MatchRow
+              key={match.id}
+              match={match}
+              isSelected={match.id === selectedId}
+              onSelect={() => onSelect(match.id)}
+            />
+          ))}
+        </div>
+      )}
     </div>
   );
 }

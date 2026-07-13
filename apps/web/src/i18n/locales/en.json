@@ -519,6 +519,17 @@
       "deleteConfirmTitle": "Delete this timestamp note?",
       "editTimeAria": "Edit timestamp time",
       "editNoteAria": "Edit timestamp note"
+    },
+    "playlists": {
+      "library": "Library",
+      "newPlaylist": "New playlist",
+      "createPlaceholder": "Playlist name",
+      "create": "Create",
+      "selectAria": "Select playlist",
+      "empty": "No matches in this playlist yet",
+      "limitReached": "Playlist limit reached ({{max}})",
+      "matchCount_one": "{{count}} match",
+      "matchCount_other": "{{count}} matches"
     }
   },
   "tags": {
