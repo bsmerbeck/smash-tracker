@@ -8,7 +8,12 @@ import { AnalyticsFilterProvider } from '@/context/AnalyticsFilterContext';
 import { VodManagerPage } from './VodManagerPage';
 import { resetAuthMock, setMockUser, makeMockUser } from '@/test/mockAuth';
 import { SpriteList } from '@/data/sprites';
-import type { YouTubePlayerConfig, YouTubePlayerInstance } from '@/lib/useVodPlayer';
+import type {
+  TwitchPlayerConfig,
+  TwitchPlayerInstance,
+  YouTubePlayerConfig,
+  YouTubePlayerInstance,
+} from '@/lib/useVodPlayer';
 
 vi.mock('firebase/auth', async () => {
   const mock = await import('@/test/mockAuth');
@@ -96,11 +101,13 @@ function renderVodManager(initialEntry: string) {
 }
 
 type YTGlobal = NonNullable<Window['YT']>;
+type TwitchGlobal = NonNullable<Window['Twitch']>;
 
 /** Removes any injected vendor scripts/globals so the useVodPlayer module-level singleton loaders start clean for every test. */
 function resetVendorGlobals() {
   document.head.querySelectorAll('script').forEach((el) => el.remove());
   delete (window as { YT?: unknown }).YT;
+  delete (window as { Twitch?: unknown }).Twitch;
   delete (window as { onYouTubeIframeAPIReady?: unknown }).onYouTubeIframeAPIReady;
 }
 
@@ -144,6 +151,7 @@ describe('VodManagerPage', () => {
       return {
         seekTo: vi.fn(),
         playVideo: vi.fn(),
+        pauseVideo: vi.fn(),
         destroy: vi.fn(),
         getCurrentTime: vi.fn(() => 754),
       };
@@ -182,7 +190,13 @@ describe('VodManagerPage', () => {
       config: YouTubePlayerConfig,
     ): YouTubePlayerInstance {
       capturedConfig = config;
-      return { seekTo, playVideo, destroy: vi.fn(), getCurrentTime: vi.fn(() => 754) };
+      return {
+        seekTo,
+        playVideo,
+        pauseVideo: vi.fn(),
+        destroy: vi.fn(),
+        getCurrentTime: vi.fn(() => 754),
+      };
     });
     window.YT = { Player: Player as unknown as YTGlobal['Player'], PlayerState: { ENDED: 0 } };
 
@@ -226,6 +240,7 @@ describe('VodManagerPage', () => {
       return {
         seekTo: vi.fn(),
         playVideo: vi.fn(),
+        pauseVideo: vi.fn(),
         destroy: vi.fn(),
         getCurrentTime: vi.fn(() => 754),
       };
@@ -265,7 +280,13 @@ describe('VodManagerPage', () => {
       config: YouTubePlayerConfig,
     ): YouTubePlayerInstance {
       capturedConfig = config;
-      return { seekTo, playVideo, destroy: vi.fn(), getCurrentTime: vi.fn(() => 754) };
+      return {
+        seekTo,
+        playVideo,
+        pauseVideo: vi.fn(),
+        destroy: vi.fn(),
+        getCurrentTime: vi.fn(() => 754),
+      };
     });
     window.YT = { Player: Player as unknown as YTGlobal['Player'], PlayerState: { ENDED: 0 } };
 
@@ -316,7 +337,13 @@ describe('VodManagerPage', () => {
       config: YouTubePlayerConfig,
     ): YouTubePlayerInstance {
       configs.push(config);
-      return { seekTo: vi.fn(), playVideo: vi.fn(), destroy, getCurrentTime: vi.fn(() => 754) };
+      return {
+        seekTo: vi.fn(),
+        playVideo: vi.fn(),
+        pauseVideo: vi.fn(),
+        destroy,
+        getCurrentTime: vi.fn(() => 754),
+      };
     });
     window.YT = { Player: Player as unknown as YTGlobal['Player'], PlayerState: { ENDED: 0 } };
 
@@ -375,6 +402,7 @@ describe('VodManagerPage', () => {
       return {
         seekTo: vi.fn(),
         playVideo: vi.fn(),
+        pauseVideo: vi.fn(),
         destroy: vi.fn(),
         getCurrentTime: vi.fn(() => 0),
       };
@@ -427,6 +455,7 @@ describe('VodManagerPage', () => {
       return {
         seekTo: vi.fn(),
         playVideo: vi.fn(),
+        pauseVideo: vi.fn(),
         destroy: vi.fn(),
         getCurrentTime: vi.fn(() => 0),
       };
@@ -456,7 +485,7 @@ describe('VodManagerPage', () => {
     expect(configs[1]?.playerVars?.autoplay).toBe(1);
   });
 
-  it('LIST-04: ENDED is a no-op when the selected match is the LAST one in the visible list (no next match to advance to)', async () => {
+  it('LIST-04: ENDED never advances/remounts when the selected match is the LAST one in the visible list, and PAUSES instead (retest fix-up #10)', async () => {
     listMatches.mockResolvedValue([
       makeMatch({
         id: 'm1',
@@ -465,6 +494,7 @@ describe('VodManagerPage', () => {
       }),
     ]);
 
+    const pauseVideo = vi.fn();
     let capturedConfig: YouTubePlayerConfig | undefined;
     const Player = vi.fn(function (
       this: unknown,
@@ -475,6 +505,7 @@ describe('VodManagerPage', () => {
       return {
         seekTo: vi.fn(),
         playVideo: vi.fn(),
+        pauseVideo,
         destroy: vi.fn(),
         getCurrentTime: vi.fn(() => 0),
       };
@@ -485,13 +516,70 @@ describe('VodManagerPage', () => {
 
     await waitFor(() => expect(Player).toHaveBeenCalledTimes(1));
     act(() => {
+      capturedConfig?.events?.onReady?.();
+    });
+    act(() => {
       capturedConfig?.events?.onStateChange?.({ data: window.YT!.PlayerState.ENDED });
     });
 
     // No next match in the visible list — ENDED must not attempt to
-    // advance or remount.
+    // advance or remount, but DOES pause (best-effort Twitch "Up Next"
+    // hijack preemption — this fixture is YouTube, but the pause call
+    // itself is provider-agnostic in useVodPlayer).
     expect(Player).toHaveBeenCalledTimes(1);
+    expect(pauseVideo).toHaveBeenCalledTimes(1);
     expect(screen.getByText('vs. rival-one')).toBeInTheDocument();
+  });
+
+  it('retest fix-up #10: ENDED on a Twitch VOD with no next match pauses (best-effort Up-Next hijack preemption) and flags drift for the next reselect', async () => {
+    const user = userEvent.setup();
+    listMatches.mockResolvedValue([
+      makeMatch({
+        id: 'm1',
+        opponent: 'rival-one',
+        vodUrl: 'https://twitch.tv/videos/98765',
+      }),
+    ]);
+
+    const pause = vi.fn();
+    const destroy = vi.fn();
+    const listeners: Record<string, () => void> = {};
+    const addEventListener = vi.fn((event: string, callback: () => void) => {
+      listeners[event] = callback;
+    });
+    const configs: TwitchPlayerConfig[] = [];
+    const Player = vi.fn(function (
+      this: unknown,
+      _el: HTMLElement,
+      config: TwitchPlayerConfig,
+    ): TwitchPlayerInstance {
+      configs.push(config);
+      return { seek: vi.fn(), pause, addEventListener, destroy, getCurrentTime: vi.fn(() => 0) };
+    });
+    (Player as unknown as { READY: string; ENDED: string }).READY = 'ready';
+    (Player as unknown as { READY: string; ENDED: string }).ENDED = 'ended';
+    window.Twitch = { Player: Player as unknown as TwitchGlobal['Player'] };
+
+    renderVodManager('/vod?match=m1');
+    await waitFor(() => expect(Player).toHaveBeenCalledTimes(1));
+    act(() => {
+      listeners.ready?.();
+    });
+
+    // ENDED fires with no next match — best-effort pause, no advance.
+    act(() => {
+      listeners.ended?.();
+    });
+    await waitFor(() => expect(pause).toHaveBeenCalledTimes(1));
+    expect(Player).toHaveBeenCalledTimes(1);
+
+    // Drift is flagged regardless of the pause outcome — reselecting the
+    // SAME (only) match forces a fresh player construction rather than a
+    // silent no-op, recovering from a hijack even if the pause lost the race.
+    await user.click(screen.getByRole('button', { name: 'Select match vs rival-one' }));
+    await waitFor(() => expect(Player).toHaveBeenCalledTimes(2));
+    expect(destroy).toHaveBeenCalledTimes(1);
+    expect(configs[1]?.video).toBe('98765');
   });
 
   it('LIST-04: renders Prev/Next playback controls + "N of M" while a playlist is active, and manual Next never autoplays', async () => {
@@ -524,6 +612,7 @@ describe('VodManagerPage', () => {
       return {
         seekTo: vi.fn(),
         playVideo: vi.fn(),
+        pauseVideo: vi.fn(),
         destroy: vi.fn(),
         getCurrentTime: vi.fn(() => 0),
       };
@@ -567,7 +656,13 @@ describe('VodManagerPage', () => {
       config: YouTubePlayerConfig,
     ): YouTubePlayerInstance {
       configs.push(config);
-      return { seekTo: vi.fn(), playVideo: vi.fn(), destroy, getCurrentTime: vi.fn(() => 0) };
+      return {
+        seekTo: vi.fn(),
+        playVideo: vi.fn(),
+        pauseVideo: vi.fn(),
+        destroy,
+        getCurrentTime: vi.fn(() => 0),
+      };
     });
     window.YT = { Player: Player as unknown as YTGlobal['Player'], PlayerState: { ENDED: 0 } };
 
@@ -615,6 +710,7 @@ describe('VodManagerPage', () => {
         return {
           seekTo: vi.fn(),
           playVideo: vi.fn(),
+          pauseVideo: vi.fn(),
           destroy: vi.fn(),
           getCurrentTime: vi.fn(() => 0),
         };
@@ -680,7 +776,7 @@ describe('VodManagerPage', () => {
       config: YouTubePlayerConfig,
     ): YouTubePlayerInstance {
       capturedConfig = config;
-      return { seekTo, playVideo, destroy: vi.fn(), getCurrentTime };
+      return { seekTo, playVideo, pauseVideo: vi.fn(), destroy: vi.fn(), getCurrentTime };
     });
     window.YT = { Player: Player as unknown as YTGlobal['Player'], PlayerState: { ENDED: 0 } };
 
@@ -746,6 +842,7 @@ describe('VodManagerPage', () => {
       return {
         seekTo: vi.fn(),
         playVideo: vi.fn(),
+        pauseVideo: vi.fn(),
         destroy: vi.fn(),
         getCurrentTime: vi.fn(() => 754),
       };
@@ -807,6 +904,7 @@ describe('VodManagerPage', () => {
       return {
         seekTo: vi.fn(),
         playVideo: vi.fn(),
+        pauseVideo: vi.fn(),
         destroy: vi.fn(),
         getCurrentTime: vi.fn(() => 754),
       };
@@ -857,6 +955,7 @@ describe('VodManagerPage', () => {
       return {
         seekTo: vi.fn(),
         playVideo: vi.fn(),
+        pauseVideo: vi.fn(),
         destroy: vi.fn(),
         getCurrentTime: vi.fn(() => 754),
       };
@@ -913,7 +1012,13 @@ describe('VodManagerPage', () => {
       config: YouTubePlayerConfig,
     ): YouTubePlayerInstance {
       capturedConfig = config;
-      return { seekTo, playVideo: vi.fn(), destroy: vi.fn(), getCurrentTime: vi.fn(() => 754) };
+      return {
+        seekTo,
+        playVideo: vi.fn(),
+        pauseVideo: vi.fn(),
+        destroy: vi.fn(),
+        getCurrentTime: vi.fn(() => 754),
+      };
     });
     window.YT = { Player: Player as unknown as YTGlobal['Player'], PlayerState: { ENDED: 0 } };
 
@@ -947,6 +1052,81 @@ describe('VodManagerPage', () => {
     expect(seekTo).not.toHaveBeenCalled();
   });
 
+  it('retest fix-up #4: adds two tags sequentially to the same note via its combobox, both persisting (cap still enforced)', async () => {
+    const user = userEvent.setup();
+    // Mutable "server" record, gated behind a manually-resolved promise
+    // (rather than the usual immediate `Promise.resolve`) — REQUIRED to
+    // deterministically reproduce the reported race: both PATCHes are
+    // dispatched while `stamp.tags` (the prop) STILL reflects the
+    // pre-either-add state (neither PATCH has resolved/refetched yet), so
+    // a fix that recomputes the second add's payload from the stale prop
+    // — instead of tracking its own last-dispatched value — would silently
+    // drop the first tag.
+    let currentMatch = makeMatch({
+      id: 'm1',
+      opponent: 'rival-one',
+      vodUrl: 'https://youtube.com/watch?v=abc123',
+      vodTimestamps: [{ seconds: 30, note: 'note A' }],
+    });
+    listMatches.mockImplementation(() => Promise.resolve([currentMatch]));
+    let releaseGate: (() => void) | undefined;
+    const gate = new Promise<void>((resolve) => {
+      releaseGate = resolve;
+    });
+    updateMatch.mockImplementation((...args: unknown[]) => {
+      const input = args[1] as Record<string, unknown>;
+      // Both calls await the SAME gate — resolving in dispatch order once
+      // released, mirroring a real backend applying two PATCHes in the
+      // order they were sent.
+      return gate.then(() => {
+        currentMatch = { ...currentMatch, ...input };
+        return currentMatch;
+      });
+    });
+
+    window.YT = {
+      Player: vi.fn(function (this: unknown) {
+        return {
+          seekTo: vi.fn(),
+          playVideo: vi.fn(),
+          pauseVideo: vi.fn(),
+          destroy: vi.fn(),
+          getCurrentTime: vi.fn(() => 0),
+        };
+      }) as unknown as YTGlobal['Player'],
+      PlayerState: { ENDED: 0 },
+    };
+
+    renderVodManager('/vod?match=m1');
+    await waitFor(() => expect(screen.getByText('note A')).toBeInTheDocument());
+    const noteARow = screen.getByText('note A').closest('li')!;
+
+    // (1) Add the first tag — its PATCH is now pending behind the gate.
+    await user.click(within(noteARow).getByRole('combobox', { name: 'Add a tag' }));
+    await user.click(await screen.findByRole('option', { name: 'Punish' }));
+    await waitFor(() => expect(updateMatch).toHaveBeenCalledTimes(1));
+
+    // (2) Add a SECOND tag while the first PATCH is STILL pending —
+    // `stamp.tags` (the prop) is provably still stale here (no refetch has
+    // happened, since nothing has resolved yet).
+    await user.click(within(noteARow).getByRole('combobox', { name: 'Add a tag' }));
+    await user.click(await screen.findByRole('option', { name: 'Edgeguard' }));
+    await waitFor(() => expect(updateMatch).toHaveBeenCalledTimes(2));
+
+    // (3) Release the gate — both PATCHes resolve in dispatch order.
+    releaseGate?.();
+
+    // (4) The FINAL persisted state has BOTH tags — the second add must
+    // never silently overwrite the first.
+    await waitFor(() => {
+      expect(within(noteARow).getByText('Punish')).toBeInTheDocument();
+      expect(within(noteARow).getByText('Edgeguard')).toBeInTheDocument();
+    });
+    expect((currentMatch as unknown as { vodTimestamps: unknown }).vodTimestamps).toEqual([
+      { seconds: 30, note: 'note A', tags: ['punish', 'edgeguard'] },
+    ]);
+  });
+
   it('removes a note tag via the chip X, omitting tags from that note only, without disturbing other notes', async () => {
     const user = userEvent.setup();
     listMatches.mockResolvedValue([
@@ -971,6 +1151,7 @@ describe('VodManagerPage', () => {
       return {
         seekTo: vi.fn(),
         playVideo: vi.fn(),
+        pauseVideo: vi.fn(),
         destroy: vi.fn(),
         getCurrentTime: vi.fn(() => 754),
       };
@@ -1027,6 +1208,7 @@ describe('VodManagerPage', () => {
       return {
         seekTo: vi.fn(),
         playVideo: vi.fn(),
+        pauseVideo: vi.fn(),
         destroy: vi.fn(),
         getCurrentTime: vi.fn(() => 0),
       };
@@ -1081,7 +1263,13 @@ describe('VodManagerPage', () => {
       config: YouTubePlayerConfig,
     ): YouTubePlayerInstance {
       capturedConfig = config;
-      return { seekTo, playVideo, destroy: vi.fn(), getCurrentTime: vi.fn(() => 754) };
+      return {
+        seekTo,
+        playVideo,
+        pauseVideo: vi.fn(),
+        destroy: vi.fn(),
+        getCurrentTime: vi.fn(() => 754),
+      };
     });
     window.YT = { Player: Player as unknown as YTGlobal['Player'], PlayerState: { ENDED: 0 } };
 
@@ -1128,6 +1316,7 @@ describe('VodManagerPage', () => {
       return {
         seekTo: vi.fn(),
         playVideo: vi.fn(),
+        pauseVideo: vi.fn(),
         destroy: vi.fn(),
         getCurrentTime: vi.fn(() => 754),
       };
@@ -1181,6 +1370,7 @@ describe('VodManagerPage', () => {
       return {
         seekTo: vi.fn(),
         playVideo: vi.fn(),
+        pauseVideo: vi.fn(),
         destroy: vi.fn(),
         getCurrentTime: vi.fn(() => 754),
       };
@@ -1223,6 +1413,7 @@ describe('VodManagerPage', () => {
       return {
         seekTo: vi.fn(),
         playVideo: vi.fn(),
+        pauseVideo: vi.fn(),
         destroy: vi.fn(),
         getCurrentTime: vi.fn(() => 754),
       };
@@ -1267,6 +1458,7 @@ describe('VodManagerPage', () => {
       return {
         seekTo: vi.fn(),
         playVideo: vi.fn(),
+        pauseVideo: vi.fn(),
         destroy: vi.fn(),
         getCurrentTime: vi.fn(() => 754),
       };
@@ -1283,6 +1475,52 @@ describe('VodManagerPage', () => {
     await user.click(screen.getByRole('button', { name: 'Use current player time' }));
 
     expect(screen.getByRole('textbox', { name: 'Match start time in VOD' })).toHaveValue('12:34');
+  });
+
+  it('retest fix-up #8: "Add to playlist" renders prominently in the metadata card\'s header row (next to the title, not buried below tags) and adds the match to an existing playlist', async () => {
+    const user = userEvent.setup();
+    listMatches.mockResolvedValue([
+      makeMatch({
+        id: 'm1',
+        opponent: 'rival-one',
+        vodUrl: 'https://youtube.com/watch?v=abc123',
+      }),
+    ]);
+    listPlaylists.mockResolvedValue([
+      { id: 'p1', name: 'My Playlist', createdAt: 1, matchIds: [] },
+    ]);
+
+    window.YT = {
+      Player: vi.fn(function (this: unknown) {
+        return {
+          seekTo: vi.fn(),
+          playVideo: vi.fn(),
+          pauseVideo: vi.fn(),
+          destroy: vi.fn(),
+          getCurrentTime: vi.fn(() => 0),
+        };
+      }) as unknown as YTGlobal['Player'],
+      PlayerState: { ENDED: 0 },
+    };
+
+    renderVodManager('/vod?match=m1');
+    await waitFor(() => expect(screen.getByText('vs. rival-one')).toBeInTheDocument());
+
+    // (1) The button lives in the SAME header row as the title (a sibling
+    // element), not somewhere further down the card past the tags block.
+    const title = screen.getByText('vs. rival-one');
+    const addToPlaylistButton = screen.getByRole('combobox', {
+      name: 'Add this match to a playlist',
+    });
+    expect(title.parentElement).toBe(addToPlaylistButton.parentElement?.parentElement);
+    // Icon + label, not an icon-only affordance.
+    expect(addToPlaylistButton).toHaveTextContent('Add to playlist');
+
+    // (2) Clicking it and picking an existing playlist adds the match.
+    await user.click(addToPlaylistButton);
+    await user.click(await screen.findByRole('option', { name: 'My Playlist' }));
+
+    await waitFor(() => expect(updatePlaylist).toHaveBeenCalledWith('p1', { matchIds: ['m1'] }));
   });
 
   it('renders match tag chips and adds a preset tag via the combobox, carrying other fields through', async () => {
@@ -1307,6 +1545,7 @@ describe('VodManagerPage', () => {
       return {
         seekTo: vi.fn(),
         playVideo: vi.fn(),
+        pauseVideo: vi.fn(),
         destroy: vi.fn(),
         getCurrentTime: vi.fn(() => 754),
       };
@@ -1360,6 +1599,7 @@ describe('VodManagerPage', () => {
       return {
         seekTo: vi.fn(),
         playVideo: vi.fn(),
+        pauseVideo: vi.fn(),
         destroy: vi.fn(),
         getCurrentTime: vi.fn(() => 754),
       };
@@ -1402,6 +1642,7 @@ describe('VodManagerPage', () => {
       return {
         seekTo: vi.fn(),
         playVideo: vi.fn(),
+        pauseVideo: vi.fn(),
         destroy: vi.fn(),
         getCurrentTime: vi.fn(() => 754),
       };
@@ -1446,6 +1687,7 @@ describe('VodManagerPage', () => {
       return {
         seekTo: vi.fn(),
         playVideo: vi.fn(),
+        pauseVideo: vi.fn(),
         destroy: vi.fn(),
         getCurrentTime: vi.fn(() => 754),
       };
@@ -1497,6 +1739,7 @@ describe('VodManagerPage', () => {
       return {
         seekTo: vi.fn(),
         playVideo: vi.fn(),
+        pauseVideo: vi.fn(),
         destroy: vi.fn(),
         getCurrentTime: vi.fn(() => 754),
       };
@@ -1537,6 +1780,234 @@ describe('VodManagerPage', () => {
     ]);
   });
 
+  it('retest fix-up #2: quick-tag capture pauses the player at the captured moment WITHOUT seeking, even after the refetch it triggers', async () => {
+    const user = userEvent.setup();
+    // Same mutable "server" record + dynamic mock pattern as the capture
+    // test above — REQUIRED to reproduce the reported bug: a static
+    // `mockResolvedValue` always resolves the SAME fixture object, so the
+    // `selectedMatch` reference never actually changes on refetch and the
+    // bug (reposition effect keyed on object identity) can never surface.
+    let currentMatch = makeMatch({
+      id: 'm1',
+      opponent: 'rival-one',
+      vodUrl: 'https://youtube.com/watch?v=abc123',
+      vodTimestamps: [{ seconds: 900, note: 'existing note' }],
+    });
+    listMatches.mockImplementation(() => Promise.resolve([currentMatch]));
+    updateMatch.mockImplementation((...args: unknown[]) => {
+      const input = args[1] as Record<string, unknown>;
+      currentMatch = { ...currentMatch, ...input };
+      return Promise.resolve(currentMatch);
+    });
+
+    const seekTo = vi.fn();
+    const pauseVideo = vi.fn();
+    let capturedConfig: YouTubePlayerConfig | undefined;
+    const Player = vi.fn(function (
+      this: unknown,
+      _el: HTMLElement,
+      config: YouTubePlayerConfig,
+    ): YouTubePlayerInstance {
+      capturedConfig = config;
+      return {
+        seekTo,
+        playVideo: vi.fn(),
+        pauseVideo,
+        destroy: vi.fn(),
+        getCurrentTime: vi.fn(() => 754),
+      };
+    });
+    window.YT = { Player: Player as unknown as YTGlobal['Player'], PlayerState: { ENDED: 0 } };
+
+    renderVodManager('/vod?match=m1');
+    await waitFor(() => expect(Player).toHaveBeenCalledTimes(1));
+    act(() => {
+      capturedConfig?.events?.onReady?.();
+    });
+
+    await user.click(screen.getByRole('button', { name: 'Quick tag: Punish' }));
+
+    // pause() fires (freezing the captured frame) — never seek(), which
+    // would jump the player back to its start time.
+    await waitFor(() => expect(pauseVideo).toHaveBeenCalledTimes(1));
+
+    // The PATCH's onSuccess invalidateQueries refetch resolves, producing a
+    // BRAND NEW `matches`/`selectedMatch` object even though the selected
+    // match id (m1) never changed. The reposition effect must recognize
+    // this is NOT a match switch and never seek — reproducing the reported
+    // "player resets to 0:00" bug if it does.
+    await waitFor(() => expect(updateMatch).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(screen.getByLabelText('Edit timestamp note')).toBeInTheDocument());
+    expect(seekTo).not.toHaveBeenCalled();
+    // Only ONE player construction throughout — no remount either.
+    expect(Player).toHaveBeenCalledTimes(1);
+  });
+
+  it('retest fix-up #3: the freshly-captured tag stays visible and removable while its row is in edit mode', async () => {
+    const user = userEvent.setup();
+    let currentMatch = makeMatch({
+      id: 'm1',
+      opponent: 'rival-one',
+      vodUrl: 'https://youtube.com/watch?v=abc123',
+      vodTimestamps: [],
+    });
+    listMatches.mockImplementation(() => Promise.resolve([currentMatch]));
+    updateMatch.mockImplementation((...args: unknown[]) => {
+      const input = args[1] as Record<string, unknown>;
+      currentMatch = { ...currentMatch, ...input };
+      return Promise.resolve(currentMatch);
+    });
+
+    let capturedConfig: YouTubePlayerConfig | undefined;
+    const Player = vi.fn(function (
+      this: unknown,
+      _el: HTMLElement,
+      config: YouTubePlayerConfig,
+    ): YouTubePlayerInstance {
+      capturedConfig = config;
+      return {
+        seekTo: vi.fn(),
+        playVideo: vi.fn(),
+        pauseVideo: vi.fn(),
+        destroy: vi.fn(),
+        getCurrentTime: vi.fn(() => 754),
+      };
+    });
+    window.YT = { Player: Player as unknown as YTGlobal['Player'], PlayerState: { ENDED: 0 } };
+
+    renderVodManager('/vod?match=m1');
+    await waitFor(() => expect(Player).toHaveBeenCalledTimes(1));
+    act(() => {
+      capturedConfig?.events?.onReady?.();
+    });
+
+    // Capture drops the new row straight into edit mode.
+    await user.click(screen.getByRole('button', { name: 'Quick tag: Punish' }));
+    const noteInput = await screen.findByLabelText('Edit timestamp note');
+    const editingRow = noteInput.closest('li')!;
+
+    // The captured "Punish" tag chip is visible AND removable while the
+    // row is still in edit mode — previously chips only rendered in the
+    // read-mode branch.
+    expect(within(editingRow).getByText('Punish')).toBeInTheDocument();
+    const removeButton = within(editingRow).getByRole('button', { name: 'Remove tag Punish' });
+    await user.click(removeButton);
+
+    await waitFor(() => expect(updateMatch).toHaveBeenCalledTimes(2));
+    const [, secondInput] = updateMatch.mock.calls[1] as [string, Record<string, unknown>];
+    expect(secondInput.vodTimestamps).toEqual([{ seconds: 754, note: '' }]);
+    // Still in edit mode — removing a tag never closes the row.
+    expect(screen.getByLabelText('Edit timestamp note')).toBeInTheDocument();
+  });
+
+  it("retest fix-up #5: quick-tag capture at an EXISTING note's exact timecode adds the tag to that note instead of creating a duplicate row", async () => {
+    const user = userEvent.setup();
+    let currentMatch = makeMatch({
+      id: 'm1',
+      opponent: 'rival-one',
+      vodUrl: 'https://youtube.com/watch?v=abc123',
+      vodTimestamps: [{ seconds: 754, note: 'existing note', tags: ['punish'] }],
+    });
+    listMatches.mockImplementation(() => Promise.resolve([currentMatch]));
+    updateMatch.mockImplementation((...args: unknown[]) => {
+      const input = args[1] as Record<string, unknown>;
+      currentMatch = { ...currentMatch, ...input };
+      return Promise.resolve(currentMatch);
+    });
+
+    let capturedConfig: YouTubePlayerConfig | undefined;
+    const Player = vi.fn(function (
+      this: unknown,
+      _el: HTMLElement,
+      config: YouTubePlayerConfig,
+    ): YouTubePlayerInstance {
+      capturedConfig = config;
+      return {
+        seekTo: vi.fn(),
+        playVideo: vi.fn(),
+        pauseVideo: vi.fn(),
+        destroy: vi.fn(),
+        // Same 754s the existing note was captured at.
+        getCurrentTime: vi.fn(() => 754),
+      };
+    });
+    window.YT = { Player: Player as unknown as YTGlobal['Player'], PlayerState: { ENDED: 0 } };
+
+    renderVodManager('/vod?match=m1');
+    await waitFor(() => expect(Player).toHaveBeenCalledTimes(1));
+    act(() => {
+      capturedConfig?.events?.onReady?.();
+    });
+    await waitFor(() => expect(screen.getByText('existing note')).toBeInTheDocument());
+
+    // Capturing "Edgeguard" at the SAME 754s the existing note already sits
+    // at must add the tag to that note, not create a second row.
+    await user.click(screen.getByRole('button', { name: 'Quick tag: Edgeguard' }));
+
+    await waitFor(() => expect(updateMatch).toHaveBeenCalledTimes(1));
+    const [id, input] = updateMatch.mock.calls[0] as [string, Record<string, unknown>];
+    expect(id).toBe('m1');
+    // ONE row, both tags, note text preserved (not cleared) — no duplicate.
+    expect(input.vodTimestamps).toEqual([
+      { seconds: 754, note: 'existing note', tags: ['punish', 'edgeguard'] },
+    ]);
+
+    // That SAME (only) row drops into edit mode.
+    const noteInput = await screen.findByLabelText('Edit timestamp note');
+    expect(noteInput).toHaveValue('existing note');
+    expect(screen.queryAllByLabelText('Edit timestamp note')).toHaveLength(1);
+  });
+
+  it('retest fix-up #5: quick-tag capture at a timecode with NO existing note still creates a new row (unaffected)', async () => {
+    const user = userEvent.setup();
+    let currentMatch = makeMatch({
+      id: 'm1',
+      opponent: 'rival-one',
+      vodUrl: 'https://youtube.com/watch?v=abc123',
+      vodTimestamps: [{ seconds: 900, note: 'existing note' }],
+    });
+    listMatches.mockImplementation(() => Promise.resolve([currentMatch]));
+    updateMatch.mockImplementation((...args: unknown[]) => {
+      const input = args[1] as Record<string, unknown>;
+      currentMatch = { ...currentMatch, ...input };
+      return Promise.resolve(currentMatch);
+    });
+
+    let capturedConfig: YouTubePlayerConfig | undefined;
+    const Player = vi.fn(function (
+      this: unknown,
+      _el: HTMLElement,
+      config: YouTubePlayerConfig,
+    ): YouTubePlayerInstance {
+      capturedConfig = config;
+      return {
+        seekTo: vi.fn(),
+        playVideo: vi.fn(),
+        pauseVideo: vi.fn(),
+        destroy: vi.fn(),
+        // Different second than the existing note (900s).
+        getCurrentTime: vi.fn(() => 754),
+      };
+    });
+    window.YT = { Player: Player as unknown as YTGlobal['Player'], PlayerState: { ENDED: 0 } };
+
+    renderVodManager('/vod?match=m1');
+    await waitFor(() => expect(Player).toHaveBeenCalledTimes(1));
+    act(() => {
+      capturedConfig?.events?.onReady?.();
+    });
+
+    await user.click(screen.getByRole('button', { name: 'Quick tag: Punish' }));
+
+    await waitFor(() => expect(updateMatch).toHaveBeenCalledTimes(1));
+    const [, input] = updateMatch.mock.calls[0] as [string, Record<string, unknown>];
+    // A NEW row at 754s, sorted before the existing 900s note.
+    expect(input.vodTimestamps).toEqual([
+      { seconds: 754, note: '', tags: ['punish'] },
+      { seconds: 900, note: 'existing note' },
+    ]);
+  });
+
   it('blocks a quick-tag capture once the match is at the MAX_TIMESTAMPS cap, via the existing cap toast', async () => {
     const user = userEvent.setup();
     const twentyExisting = Array.from({ length: 20 }, (_, i) => ({
@@ -1562,6 +2033,7 @@ describe('VodManagerPage', () => {
       return {
         seekTo: vi.fn(),
         playVideo: vi.fn(),
+        pauseVideo: vi.fn(),
         destroy: vi.fn(),
         getCurrentTime: vi.fn(() => 754),
       };
@@ -1596,6 +2068,7 @@ describe('VodManagerPage', () => {
         return {
           seekTo: vi.fn(),
           playVideo: vi.fn(),
+          pauseVideo: vi.fn(),
           destroy: vi.fn(),
           getCurrentTime: vi.fn(() => 0),
         };
@@ -1642,6 +2115,7 @@ describe('VodManagerPage', () => {
         return {
           seekTo: vi.fn(),
           playVideo: vi.fn(),
+          pauseVideo: vi.fn(),
           destroy: vi.fn(),
           getCurrentTime: vi.fn(() => 0),
         };
@@ -1715,6 +2189,7 @@ describe('VodManagerPage', () => {
         return {
           seekTo: vi.fn(),
           playVideo: vi.fn(),
+          pauseVideo: vi.fn(),
           destroy: vi.fn(),
           getCurrentTime: vi.fn(() => 0),
         };
@@ -1755,6 +2230,7 @@ describe('VodManagerPage', () => {
       return {
         seekTo: vi.fn(),
         playVideo: vi.fn(),
+        pauseVideo: vi.fn(),
         destroy: vi.fn(),
         getCurrentTime: vi.fn(() => 0),
       };
@@ -1764,21 +2240,22 @@ describe('VodManagerPage', () => {
     renderVodManager('/vod?match=m1');
     await waitFor(() => expect(Player).toHaveBeenCalledTimes(1));
 
-    // (1) Defaults to fill — the toggle offers to switch TO compact.
-    const toggle = screen.getByRole('button', { name: 'Switch to compact player' });
+    // (1) Defaults to compact (retest fix-up #1) — the toggle offers to
+    // switch TO full-size.
+    const toggle = screen.getByRole('button', { name: 'Switch to full-size player' });
     await user.click(toggle);
 
     // (2) The toggle flips its own label/icon and the choice persists —
     // but the player itself is NEVER reconstructed by a size change.
-    expect(screen.getByRole('button', { name: 'Switch to full-size player' })).toBeInTheDocument();
-    expect(Player).toHaveBeenCalledTimes(1);
-    expect(window.localStorage.getItem('smash-tracker.vodPlayerSize')).toBe('compact');
-
-    // (3) Toggling back to fill also never remounts.
-    await user.click(screen.getByRole('button', { name: 'Switch to full-size player' }));
     expect(screen.getByRole('button', { name: 'Switch to compact player' })).toBeInTheDocument();
     expect(Player).toHaveBeenCalledTimes(1);
     expect(window.localStorage.getItem('smash-tracker.vodPlayerSize')).toBe('fill');
+
+    // (3) Toggling back to compact also never remounts.
+    await user.click(screen.getByRole('button', { name: 'Switch to compact player' }));
+    expect(screen.getByRole('button', { name: 'Switch to full-size player' })).toBeInTheDocument();
+    expect(Player).toHaveBeenCalledTimes(1);
+    expect(window.localStorage.getItem('smash-tracker.vodPlayerSize')).toBe('compact');
   });
 
   it('compact mode applies the lg+ combination-rail grid placement to the quick-tags and timestamp-list rails (fill mode does not)', async () => {
@@ -1796,6 +2273,7 @@ describe('VodManagerPage', () => {
         return {
           seekTo: vi.fn(),
           playVideo: vi.fn(),
+          pauseVideo: vi.fn(),
           destroy: vi.fn(),
           getCurrentTime: vi.fn(() => 0),
         };
@@ -1805,27 +2283,73 @@ describe('VodManagerPage', () => {
 
     renderVodManager('/vod?match=m1');
     await waitFor(() =>
-      expect(screen.getByRole('button', { name: 'Switch to compact player' })).toBeInTheDocument(),
+      expect(
+        screen.getByRole('button', { name: 'Switch to full-size player' }),
+      ).toBeInTheDocument(),
     );
 
-    // (1) Fill mode (default): no grid/rail classes on either rail.
+    // (1) Compact mode (now the default, retest fix-up #1) already applies
+    // the lg+ two-column rail placement — the shared rail wrapper (retest
+    // fix-up #7: quick tags + notes now share ONE flex column so notes can
+    // fill whatever height quick tags doesn't use) carries the grid
+    // placement; the notes rail scrolls internally rather than growing the
+    // page.
+    const rail = screen.getByTestId('vod-rail');
     const quickTagRail = screen.getByTestId('vod-quicktag-rail');
     const timestampRail = screen.getByTestId('vod-timestamp-rail');
-    expect(quickTagRail.className).not.toContain('lg:col-start-2');
-    expect(timestampRail.className).not.toContain('lg:col-start-2');
-
-    // (2) Switching to compact applies the lg+ two-column rail placement —
-    // quick tags in the rail's top cell, timestamp list in the bottom cell,
-    // scrollable rather than growing the page.
-    await user.click(screen.getByRole('button', { name: 'Switch to compact player' }));
-    expect(quickTagRail.className).toContain('lg:col-start-2');
-    expect(quickTagRail.className).toContain('lg:row-start-1');
-    expect(timestampRail.className).toContain('lg:col-start-2');
+    expect(rail.className).toContain('lg:col-start-2');
+    expect(rail.className).toContain('lg:row-start-1');
+    expect(rail.className).toContain('lg:flex-col');
+    expect(rail.className).toContain('lg:self-stretch');
+    expect(timestampRail.className).toContain('lg:flex-1');
+    expect(timestampRail.className).toContain('lg:min-h-0');
     expect(timestampRail.className).toContain('lg:overflow-y-auto');
+
+    // (2) Switching to fill removes the grid/rail classes.
+    await user.click(screen.getByRole('button', { name: 'Switch to full-size player' }));
+    expect(rail.className).not.toContain('lg:col-start-2');
+    expect(quickTagRail.className).not.toContain('lg:shrink-0');
+    expect(timestampRail.className).not.toContain('lg:flex-1');
 
     // (3) The single VodPlayer instance mounted throughout — the layout
     // swap is a pure className change, never a remount.
     expect(window.YT!.Player).toHaveBeenCalledTimes(1);
+  });
+
+  it('retest fix-up #6: the "Add a note" composer is a sticky header above the note list, in both rail and stacked layouts', async () => {
+    listMatches.mockResolvedValue([
+      makeMatch({
+        id: 'm1',
+        opponent: 'rival-one',
+        vodUrl: 'https://youtube.com/watch?v=abc123',
+        vodTimestamps: [{ seconds: 30, note: 'note A' }],
+      }),
+    ]);
+
+    window.YT = {
+      Player: vi.fn(function (this: unknown) {
+        return {
+          seekTo: vi.fn(),
+          playVideo: vi.fn(),
+          pauseVideo: vi.fn(),
+          destroy: vi.fn(),
+          getCurrentTime: vi.fn(() => 0),
+        };
+      }) as unknown as YTGlobal['Player'],
+      PlayerState: { ENDED: 0 },
+    };
+
+    renderVodManager('/vod?match=m1');
+    await waitFor(() => expect(screen.getByText('note A')).toBeInTheDocument());
+
+    // The composer's sticky wrapper is present regardless of playerSize —
+    // `sticky` degrades gracefully to the document scroll when there's no
+    // internal scrolling ancestor (stacked/fill layout), so it's never
+    // conditionally applied only in compact+lg.
+    const composerLabel = screen.getByText('Add a note');
+    const stickyWrapper = composerLabel.closest('div')?.parentElement;
+    expect(stickyWrapper?.className).toContain('sticky');
+    expect(stickyWrapper?.className).toContain('top-0');
   });
 
   it('Prev/Next timestamp buttons seek to and select the previous/next time-sorted note, clamped at the boundaries', async () => {
@@ -1851,7 +2375,13 @@ describe('VodManagerPage', () => {
       config: YouTubePlayerConfig,
     ): YouTubePlayerInstance {
       capturedConfig = config;
-      return { seekTo, playVideo: vi.fn(), destroy: vi.fn(), getCurrentTime: vi.fn(() => 0) };
+      return {
+        seekTo,
+        playVideo: vi.fn(),
+        pauseVideo: vi.fn(),
+        destroy: vi.fn(),
+        getCurrentTime: vi.fn(() => 0),
+      };
     });
     window.YT = { Player: Player as unknown as YTGlobal['Player'], PlayerState: { ENDED: 0 } };
 
@@ -1900,6 +2430,7 @@ describe('VodManagerPage', () => {
         return {
           seekTo: vi.fn(),
           playVideo: vi.fn(),
+          pauseVideo: vi.fn(),
           destroy: vi.fn(),
           getCurrentTime: vi.fn(() => 0),
         };
@@ -1913,5 +2444,84 @@ describe('VodManagerPage', () => {
     );
     expect(screen.getByRole('button', { name: 'Previous note' })).toBeDisabled();
     expect(screen.getByRole('button', { name: 'Next note' })).toBeDisabled();
+  });
+
+  it('retest fix-up #9: applying a tag filter that excludes the current selection auto-selects the first still-visible match instead of going blank', async () => {
+    const user = userEvent.setup();
+    listMatches.mockResolvedValue([
+      makeMatch({
+        id: 'm1',
+        opponent: 'rival-one',
+        time: 1_700_000_000_000,
+        vodUrl: 'https://youtube.com/watch?v=abc123',
+        tags: ['practice-friendlies'],
+      }),
+      makeMatch({
+        id: 'm2',
+        opponent: 'rival-two',
+        time: 1_700_000_100_000,
+        vodUrl: 'https://youtube.com/watch?v=xyz789',
+      }),
+    ]);
+
+    window.YT = {
+      Player: vi.fn(function (this: unknown) {
+        return {
+          seekTo: vi.fn(),
+          playVideo: vi.fn(),
+          pauseVideo: vi.fn(),
+          destroy: vi.fn(),
+          getCurrentTime: vi.fn(() => 0),
+        };
+      }) as unknown as YTGlobal['Player'],
+      PlayerState: { ENDED: 0 },
+    };
+
+    // m2 (newest, untagged) is selected via deep-link.
+    renderVodManager('/vod?match=m2');
+    await waitFor(() => expect(screen.getByText('vs. rival-two')).toBeInTheDocument());
+
+    // Filtering to the "Practice/Friendlies" tag excludes m2 (untagged) —
+    // only m1 remains visible.
+    await user.click(screen.getByRole('button', { name: 'Practice/Friendlies' }));
+
+    // The panel must NOT go blank ("Select a match") — it auto-selects the
+    // first (only) still-visible match, m1.
+    await waitFor(() => expect(screen.getByText('vs. rival-one')).toBeInTheDocument());
+    expect(screen.queryByText('Select a match to watch its VOD.')).not.toBeInTheDocument();
+  });
+
+  it('retest fix-up #9: cold-open with no ?match= still auto-selects the first visible match (unaffected)', async () => {
+    listMatches.mockResolvedValue([
+      makeMatch({
+        id: 'm1',
+        opponent: 'rival-one',
+        time: 1_700_000_000_000,
+        vodUrl: 'https://youtube.com/watch?v=abc123',
+      }),
+      makeMatch({
+        id: 'm2',
+        opponent: 'rival-two',
+        time: 1_700_000_100_000,
+        vodUrl: 'https://youtube.com/watch?v=xyz789',
+      }),
+    ]);
+
+    window.YT = {
+      Player: vi.fn(function (this: unknown) {
+        return {
+          seekTo: vi.fn(),
+          playVideo: vi.fn(),
+          pauseVideo: vi.fn(),
+          destroy: vi.fn(),
+          getCurrentTime: vi.fn(() => 0),
+        };
+      }) as unknown as YTGlobal['Player'],
+      PlayerState: { ENDED: 0 },
+    };
+
+    // No `?match=` at all — Library sorts newest-first by default, so m2 auto-selects.
+    renderVodManager('/vod');
+    await waitFor(() => expect(screen.getByText('vs. rival-two')).toBeInTheDocument());
   });
 });
