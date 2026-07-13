@@ -520,6 +520,33 @@
       "editNoteAria": "Edit timestamp note"
     }
   },
+  "tags": {
+    "preset": {
+      "tournament-set": "Tournament Set",
+      "practice-friendlies": "Practice/Friendlies",
+      "bad-matchup": "Bad Matchup",
+      "good-read-highlight": "Good Read/Highlight Reel",
+      "to-review": "To Review",
+      "neutral": "Neutral",
+      "punish": "Punish",
+      "edgeguard": "Edgeguard",
+      "recovery": "Recovery",
+      "kill-confirm": "Kill Confirm",
+      "defense": "Defense",
+      "mixup": "Mixup",
+      "matchup-note": "Matchup Note",
+      "mental-game": "Mental Game",
+      "mistake": "Mistake",
+      "highlight": "Highlight"
+    },
+    "combobox": {
+      "placeholder": "Search or create a tag...",
+      "create": "Create \"{{tag}}\"",
+      "empty": "No tags found."
+    },
+    "addAria": "Add a tag",
+    "removeAria": "Remove tag {{tag}}"
+  },
   "matchups": {
     "loading": "Loading matchups...",
     "noFightersSubtitle": "Choose your primary and secondary fighters to start tracking matchups.",

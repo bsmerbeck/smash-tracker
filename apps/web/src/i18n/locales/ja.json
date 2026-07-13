@@ -520,6 +520,33 @@
       "editNoteAria": "タイムスタンプのメモを編集"
     }
   },
+  "tags": {
+    "preset": {
+      "tournament-set": "トーナメントセット",
+      "practice-friendlies": "練習/フレンドリー",
+      "bad-matchup": "不利な対面",
+      "good-read-highlight": "ナイスリード/ハイライト",
+      "to-review": "要確認",
+      "neutral": "ニュートラル",
+      "punish": "パニッシュ",
+      "edgeguard": "崖狩り",
+      "recovery": "復帰",
+      "kill-confirm": "キル確定",
+      "defense": "防御",
+      "mixup": "択",
+      "matchup-note": "対面メモ",
+      "mental-game": "メンタル",
+      "mistake": "ミス",
+      "highlight": "ハイライト"
+    },
+    "combobox": {
+      "placeholder": "タグを検索または作成...",
+      "create": "「{{tag}}」を作成",
+      "empty": "タグが見つかりません。"
+    },
+    "addAria": "タグを追加",
+    "removeAria": "タグ{{tag}}を削除"
+  },
   "matchups": {
     "loading": "相性データを読み込み中...",
     "noFightersSubtitle": "メインとサブのファイターを選んで、相性の記録を始めましょう。",

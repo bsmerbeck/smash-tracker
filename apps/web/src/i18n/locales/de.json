@@ -520,6 +520,33 @@
       "editNoteAria": "Zeitstempel-Notiz bearbeiten"
     }
   },
+  "tags": {
+    "preset": {
+      "tournament-set": "Turnier-Set",
+      "practice-friendlies": "Übung/Friendlies",
+      "bad-matchup": "Schlechtes Matchup",
+      "good-read-highlight": "Guter Read/Highlight",
+      "to-review": "Zu überprüfen",
+      "neutral": "Neutral",
+      "punish": "Punish",
+      "edgeguard": "Edgeguard",
+      "recovery": "Recovery",
+      "kill-confirm": "Kill-Bestätigung",
+      "defense": "Verteidigung",
+      "mixup": "Mixup",
+      "matchup-note": "Matchup-Notiz",
+      "mental-game": "Mentalspiel",
+      "mistake": "Fehler",
+      "highlight": "Highlight"
+    },
+    "combobox": {
+      "placeholder": "Tag suchen oder erstellen...",
+      "create": "\"{{tag}}\" erstellen",
+      "empty": "Keine Tags gefunden."
+    },
+    "addAria": "Tag hinzufügen",
+    "removeAria": "Tag {{tag}} entfernen"
+  },
   "matchups": {
     "loading": "Matchups werden geladen...",
     "noFightersSubtitle": "Wähle deine Main- und Secondary-Kämpfer, um Matchups zu erfassen.",
