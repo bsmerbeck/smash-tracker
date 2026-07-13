@@ -529,7 +529,10 @@
       "empty": "Aún no hay partidas en esta lista",
       "limitReached": "Límite de listas alcanzado ({{max}})",
       "matchCount_one": "{{count}} partida",
-      "matchCount_other": "{{count}} partidas"
+      "matchCount_other": "{{count}} partidas",
+      "addToPlaylist": "Añadir a una lista",
+      "addToPlaylistAria": "Añadir esta partida a una lista",
+      "added": "Añadido a la lista"
     }
   },
   "tags": {

@@ -529,7 +529,10 @@
       "empty": "Noch keine Matches in dieser Playlist",
       "limitReached": "Playlist-Limit erreicht ({{max}})",
       "matchCount_one": "{{count}} Match",
-      "matchCount_other": "{{count}} Matches"
+      "matchCount_other": "{{count}} Matches",
+      "addToPlaylist": "Zur Playlist hinzufügen",
+      "addToPlaylistAria": "Dieses Match zu einer Playlist hinzufügen",
+      "added": "Zur Playlist hinzugefügt"
     }
   },
   "tags": {

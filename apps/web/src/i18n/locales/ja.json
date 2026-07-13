@@ -529,7 +529,10 @@
       "empty": "このプレイリストにはまだ試合がありません",
       "limitReached": "プレイリストの上限に達しました（{{max}}）",
       "matchCount_one": "{{count}}試合",
-      "matchCount_other": "{{count}}試合"
+      "matchCount_other": "{{count}}試合",
+      "addToPlaylist": "プレイリストに追加",
+      "addToPlaylistAria": "この試合をプレイリストに追加",
+      "added": "プレイリストに追加しました"
     }
   },
   "tags": {

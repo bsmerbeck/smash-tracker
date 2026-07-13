@@ -311,6 +311,7 @@ export function VodManagerPage() {
                 fighterSprites={fighterSprites}
                 getCurrentTimeRef={getCurrentTimeRef}
                 tagVocabulary={tagVocabulary}
+                playlists={playlists}
               />
             )}
           </div>
