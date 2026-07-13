@@ -2178,24 +2178,67 @@ describe('VodManagerPage', () => {
     );
 
     // (1) Compact mode (now the default, retest fix-up #1) already applies
-    // the lg+ two-column rail placement — quick tags in the rail's top cell,
-    // timestamp list in the bottom cell, scrollable rather than growing the
+    // the lg+ two-column rail placement — the shared rail wrapper (retest
+    // fix-up #7: quick tags + notes now share ONE flex column so notes can
+    // fill whatever height quick tags doesn't use) carries the grid
+    // placement; the notes rail scrolls internally rather than growing the
     // page.
+    const rail = screen.getByTestId('vod-rail');
     const quickTagRail = screen.getByTestId('vod-quicktag-rail');
     const timestampRail = screen.getByTestId('vod-timestamp-rail');
-    expect(quickTagRail.className).toContain('lg:col-start-2');
-    expect(quickTagRail.className).toContain('lg:row-start-1');
-    expect(timestampRail.className).toContain('lg:col-start-2');
+    expect(rail.className).toContain('lg:col-start-2');
+    expect(rail.className).toContain('lg:row-start-1');
+    expect(rail.className).toContain('lg:flex-col');
+    expect(rail.className).toContain('lg:self-stretch');
+    expect(timestampRail.className).toContain('lg:flex-1');
+    expect(timestampRail.className).toContain('lg:min-h-0');
     expect(timestampRail.className).toContain('lg:overflow-y-auto');
 
-    // (2) Switching to fill removes the grid/rail classes from both rails.
+    // (2) Switching to fill removes the grid/rail classes.
     await user.click(screen.getByRole('button', { name: 'Switch to full-size player' }));
-    expect(quickTagRail.className).not.toContain('lg:col-start-2');
-    expect(timestampRail.className).not.toContain('lg:col-start-2');
+    expect(rail.className).not.toContain('lg:col-start-2');
+    expect(quickTagRail.className).not.toContain('lg:shrink-0');
+    expect(timestampRail.className).not.toContain('lg:flex-1');
 
     // (3) The single VodPlayer instance mounted throughout — the layout
     // swap is a pure className change, never a remount.
     expect(window.YT!.Player).toHaveBeenCalledTimes(1);
+  });
+
+  it('retest fix-up #6: the "Add a note" composer is a sticky header above the note list, in both rail and stacked layouts', async () => {
+    listMatches.mockResolvedValue([
+      makeMatch({
+        id: 'm1',
+        opponent: 'rival-one',
+        vodUrl: 'https://youtube.com/watch?v=abc123',
+        vodTimestamps: [{ seconds: 30, note: 'note A' }],
+      }),
+    ]);
+
+    window.YT = {
+      Player: vi.fn(function (this: unknown) {
+        return {
+          seekTo: vi.fn(),
+          playVideo: vi.fn(),
+          pauseVideo: vi.fn(),
+          destroy: vi.fn(),
+          getCurrentTime: vi.fn(() => 0),
+        };
+      }) as unknown as YTGlobal['Player'],
+      PlayerState: { ENDED: 0 },
+    };
+
+    renderVodManager('/vod?match=m1');
+    await waitFor(() => expect(screen.getByText('note A')).toBeInTheDocument());
+
+    // The composer's sticky wrapper is present regardless of playerSize —
+    // `sticky` degrades gracefully to the document scroll when there's no
+    // internal scrolling ancestor (stacked/fill layout), so it's never
+    // conditionally applied only in compact+lg.
+    const composerLabel = screen.getByText('Add a note');
+    const stickyWrapper = composerLabel.closest('div')?.parentElement;
+    expect(stickyWrapper?.className).toContain('sticky');
+    expect(stickyWrapper?.className).toContain('top-0');
   });
 
   it('Prev/Next timestamp buttons seek to and select the previous/next time-sorted note, clamped at the boundaries', async () => {

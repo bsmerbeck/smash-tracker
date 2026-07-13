@@ -95,11 +95,23 @@ export function TimestampList({
 
   return (
     <div className="flex flex-col gap-3">
-      <NoteComposer
-        timestamps={timestamps}
-        getCurrentTimeRef={getCurrentTimeRef}
-        onUpdateTimestamps={onUpdateTimestamps}
-      />
+      {/* Sticky notes header (retest fix-up #6): stays pinned to the top of
+          the nearest scrolling ancestor while the note list below scrolls
+          under it. In the compact+lg rail layout that ancestor is the
+          `vod-timestamp-rail` wrapper (`overflow-y-auto`, fix-up #7); in
+          the stacked layout (fill mode, or below `lg`) there is no internal
+          scroll container, so `sticky` falls back to the document/viewport
+          scroll instead — the composer stays visible at the top of the
+          page as the user scrolls through a long note list either way.
+          `bg-background` keeps note rows from visibly scrolling underneath
+          it once it's pinned. */}
+      <div className="sticky top-0 z-10 bg-background">
+        <NoteComposer
+          timestamps={timestamps}
+          getCurrentTimeRef={getCurrentTimeRef}
+          onUpdateTimestamps={onUpdateTimestamps}
+        />
+      </div>
 
       {timestamps.length === 0 ? (
         <p className="text-sm text-muted-foreground">{t('shared.vod.noTimestamps')}</p>
