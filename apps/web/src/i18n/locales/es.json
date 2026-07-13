@@ -519,6 +519,17 @@
       "deleteConfirmTitle": "¿Eliminar esta nota con marca de tiempo?",
       "editTimeAria": "Editar hora de la marca de tiempo",
       "editNoteAria": "Editar nota de la marca de tiempo"
+    },
+    "playlists": {
+      "library": "Biblioteca",
+      "newPlaylist": "Nueva lista",
+      "createPlaceholder": "Nombre de la lista",
+      "create": "Crear",
+      "selectAria": "Seleccionar lista",
+      "empty": "Aún no hay partidas en esta lista",
+      "limitReached": "Límite de listas alcanzado ({{max}})",
+      "matchCount_one": "{{count}} partida",
+      "matchCount_other": "{{count}} partidas"
     }
   },
   "tags": {
