@@ -301,17 +301,18 @@ describe('useVodPlayer', () => {
     };
 
     const { useVodPlayer } = await import('./useVodPlayer');
+    const autoplayOnConstructRef = { current: true };
     const { result } = renderHook(() =>
       useVodPlayer({
         vodUrl: 'https://www.youtube.com/watch?v=abc123',
         onAutoplayBlocked,
-        autoplayOnConstruct: true,
+        autoplayOnConstructRef,
       }),
     );
     result.current.containerRef.current = document.createElement('div');
 
     await waitFor(() => expect(Player).toHaveBeenCalledTimes(1));
-    // autoplayOnConstruct is closure-captured into playerVars.autoplay.
+    // autoplayOnConstructRef.current is read inside the construction effect.
     expect(capturedConfig?.playerVars?.autoplay).toBe(1);
 
     act(() => {
@@ -346,18 +347,19 @@ describe('useVodPlayer', () => {
     window.Twitch = { Player: Player as unknown as TwitchGlobal['Player'] };
 
     const { useVodPlayer } = await import('./useVodPlayer');
+    const autoplayOnConstructRef = { current: true };
     const { result } = renderHook(() =>
       useVodPlayer({
         vodUrl: 'https://twitch.tv/videos/98765',
         onEnded,
         onAutoplayBlocked,
-        autoplayOnConstruct: true,
+        autoplayOnConstructRef,
       }),
     );
     result.current.containerRef.current = document.createElement('div');
 
     await waitFor(() => expect(Player).toHaveBeenCalledTimes(1));
-    // autoplayOnConstruct is closure-captured into the Twitch config.
+    // autoplayOnConstructRef.current is read inside the construction effect.
     expect(capturedConfig?.autoplay).toBe(true);
     expect(addEventListener).toHaveBeenCalledWith('ended', expect.any(Function));
     expect(addEventListener).toHaveBeenCalledWith('playback_blocked', expect.any(Function));
@@ -373,7 +375,7 @@ describe('useVodPlayer', () => {
     expect(onAutoplayBlocked).toHaveBeenCalledTimes(1);
   });
 
-  it('does not remount the player when autoplayOnConstruct changes without an identity change', async () => {
+  it('does not remount the player when autoplayOnConstructRef.current changes without an identity change', async () => {
     let capturedConfig: YouTubePlayerConfig | undefined;
     const Player = vi.fn(function (
       this: unknown,
@@ -394,22 +396,26 @@ describe('useVodPlayer', () => {
     };
 
     const { useVodPlayer } = await import('./useVodPlayer');
+    const autoplayOnConstructRef = { current: false };
     const { result, rerender } = renderHook(
-      ({ autoplayOnConstruct }: { autoplayOnConstruct: boolean }) =>
+      () =>
         useVodPlayer({
           vodUrl: 'https://www.youtube.com/watch?v=abc123',
-          autoplayOnConstruct,
+          autoplayOnConstructRef,
         }),
-      { initialProps: { autoplayOnConstruct: false } },
+      { initialProps: undefined },
     );
     result.current.containerRef.current = document.createElement('div');
 
     await waitFor(() => expect(Player).toHaveBeenCalledTimes(1));
     expect(capturedConfig?.playerVars?.autoplay).toBe(0);
 
-    // Flip the flag without changing the video identity — must NOT
-    // trigger a second construction (the identity-keyed invariant).
-    rerender({ autoplayOnConstruct: true });
+    // Mutate the ref (mirrors handleEnded setting it true) and rerender
+    // without changing the video identity — must NOT trigger a second
+    // construction (the identity-keyed invariant); a mutated ref alone is
+    // never a remount trigger.
+    autoplayOnConstructRef.current = true;
+    rerender(undefined);
     expect(Player).toHaveBeenCalledTimes(1);
   });
 });
