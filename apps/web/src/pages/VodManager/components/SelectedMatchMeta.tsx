@@ -46,13 +46,15 @@ const MAX_MATCH_TAGS = 10;
 const CREATE_PLAYLIST_ITEM_VALUE = '__create-playlist__';
 
 /**
- * "Add to playlist" affordance (LIST-02) — a sibling row to the tag row on
- * this same card, per CONTEXT.md. Reuses `TagAddCombobox`'s Popover+Command
- * shape: existing playlists list as `CommandItem`s keyed by playlist `id`
- * (stable cmdk value, mirrors `PlaylistSelector`), plus a "create new" row
- * using the typed `CommandInput` text as the candidate name. Adding is
- * idempotent via `addMatchToPlaylistIds` — re-adding an already-member match
- * is a no-op PATCH that still resolves cleanly.
+ * "Add to playlist" affordance (LIST-02) — rendered in `SelectedMatchMeta`'s
+ * HEADER row, next to the match title (retest fix-up #8: previously sat
+ * past the tags row at the bottom of the card, reading as buried rather
+ * than the prominent affordance it's meant to be). Reuses `TagAddCombobox`'s
+ * Popover+Command shape: existing playlists list as `CommandItem`s keyed by
+ * playlist `id` (stable cmdk value, mirrors `PlaylistSelector`), plus a
+ * "create new" row using the typed `CommandInput` text as the candidate
+ * name. Adding is idempotent via `addMatchToPlaylistIds` — re-adding an
+ * already-member match is a no-op PATCH that still resolves cleanly.
  */
 function AddToPlaylistMenu({ playlists, matchId }: { playlists: Playlist[]; matchId: string }) {
   const { t } = useTranslation();
@@ -313,7 +315,13 @@ export function SelectedMatchMeta({
 
   return (
     <div className="flex flex-col gap-2 rounded-lg border p-4 text-sm">
-      <div className="flex items-center justify-between gap-2">
+      {/* Retest fix-up #8: "Add to playlist" moved into this HEADER row,
+          next to the match title, instead of being buried past the tags
+          row at the bottom of the card — a visible icon+label button is
+          the whole point of the affordance, so it needs to read as
+          prominent from the moment the card renders. Same menu component/
+          behavior as before, just relocated. */}
+      <div className="flex flex-wrap items-center justify-between gap-2">
         <h2 className="text-xl font-semibold tracking-tight">
           vs. {match.opponent || t('common.unknown')}
         </h2>
@@ -328,6 +336,7 @@ export function SelectedMatchMeta({
               {t('matchData.table.synced')}
             </Badge>
           )}
+          <AddToPlaylistMenu playlists={playlists} matchId={match.id} />
           <Button type="button" variant="outline" size="sm" onClick={handleEdit}>
             {t('vodManager.meta.edit')}
           </Button>
@@ -386,11 +395,6 @@ export function SelectedMatchMeta({
           onAdd={handleAddTag}
           ariaLabel={t('tags.addAria')}
         />
-      </div>
-      {/* "Add to playlist" (LIST-02) — a sibling row to the tag row above,
-          same surface per CONTEXT.md. */}
-      <div className="flex items-center gap-2">
-        <AddToPlaylistMenu playlists={playlists} matchId={match.id} />
       </div>
     </div>
   );
