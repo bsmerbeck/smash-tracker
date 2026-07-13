@@ -27,6 +27,7 @@ import reportsRoutes from './routes/reports.js';
 import billingRoutes, { type StripeLikeClient } from './routes/billing.js';
 import tournamentsRoutes from './routes/tournaments.js';
 import groupsRoutes from './routes/groups.js';
+import playlistsRoutes from './routes/playlists.js';
 import { ConflictError, NotFoundError } from './services/rtdb.js';
 import type { FirebaseServices } from './firebase/admin.js';
 import type { ParryggConfig, ReportsConfig, StartggConfig, StripeConfig } from './config/env.js';
@@ -159,6 +160,7 @@ export function buildApp(options: BuildAppOptions) {
       await api.register(stageFavoritesRoutes);
       await api.register(tournamentsRoutes);
       await api.register(groupsRoutes);
+      await api.register(playlistsRoutes);
       await api.register(startggRoutes, {
         config: options.startgg ?? null,
         fetchImpl: options.startggFetch,
