@@ -29,6 +29,11 @@ export interface VodPlayerProps {
    * caller passes the ref object itself; `useVodPlayer` reads `.current`
    * inside its construction effect, never a remount trigger on its own. */
   autoplayOnConstructRef?: RefObject<boolean>;
+  /** Bump to force a full player reconstruction even when the video
+   * identity is unchanged — drift recovery after a host platform (e.g.
+   * Twitch's "Up Next" overlay) hijacks the embedded iframe post-ENDED.
+   * Passed straight through to `useVodPlayer`; see its doc comment. */
+  remountToken?: number;
 }
 
 /**
@@ -55,6 +60,7 @@ export function VodPlayer({
   onEnded,
   onAutoplayBlocked,
   autoplayOnConstructRef,
+  remountToken,
 }: VodPlayerProps) {
   const { t } = useTranslation();
   const { containerRef, isReady, error, seek, getCurrentTime } = useVodPlayer({
@@ -63,6 +69,7 @@ export function VodPlayer({
     onEnded,
     onAutoplayBlocked,
     autoplayOnConstructRef,
+    remountToken,
   });
 
   useEffect(() => {

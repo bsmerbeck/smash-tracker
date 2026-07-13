@@ -174,6 +174,23 @@ export interface UseVodPlayerOptions {
    * NEVER added to the identity-keyed effect's dependency array — refs are
    * always safe to omit. */
   autoplayOnConstructRef?: RefObject<boolean>;
+  /**
+   * Bump this (e.g. an incrementing counter) to force a full player
+   * reconstruction even when the video IDENTITY is unchanged — the escape
+   * hatch for iframe "drift": after an ENDED event, a host platform's
+   * post-roll UI (documented for Twitch: the "Up Next" overlay) can
+   * autoplay ITS OWN recommended video into the SAME embedded iframe,
+   * silently hijacking it out from under the live player object this hook
+   * returned. When the caller detects that (see `VodManagerPage`'s
+   * `driftedRef`) and the user reselects a video sharing the SAME identity
+   * the player was already showing, the normal "same identity -> no-op /
+   * reposition-seek" path is insufficient to recover a hijacked iframe — a
+   * fresh construction is required. Combined with `identityKey` to form the
+   * actual construction-effect key, so this is a NO-OP remount trigger on
+   * its own (an identity change already remounts); it only forces an
+   * ADDITIONAL remount when the identity did NOT change. Defaults to `0`.
+   */
+  remountToken?: number;
 }
 
 export interface UseVodPlayerResult {
@@ -207,16 +224,19 @@ export interface UseVodPlayerResult {
  * seeks a live player instance.
  *
  * The player-construction effect is keyed on video IDENTITY
- * (`${provider}:${videoId}`), not on `vodUrl`/`startSeconds`/the whole
- * match object, so unrelated metadata edits never remount an in-progress
- * playback (PITFALLS.md UX row). This invariant is UNCHANGED by the
- * `onEnded`/`onAutoplayBlocked`/`autoplayOnConstructRef` additions below:
- * `onEnded`/`onAutoplayBlocked` are stored in latest-value refs (updated
- * every render, mirroring `VodPlayer.tsx`'s `seekRef`/`getCurrentTimeRef`
- * population pattern) so they never need to appear in the construction
- * effect's deps, and `autoplayOnConstructRef.current` is read ONCE per
- * construction, INSIDE the effect body (never during render, per
- * `react-hooks/refs`) — none of the three ever trigger their own remount.
+ * (`${provider}:${videoId}`) combined with `remountToken` (see its doc
+ * comment), not on `vodUrl`/`startSeconds`/the whole match object, so
+ * unrelated metadata edits never remount an in-progress playback
+ * (PITFALLS.md UX row) — `remountToken` defaults to `0` and only the
+ * caller's explicit drift-recovery bump changes it. This invariant is
+ * UNCHANGED by the `onEnded`/`onAutoplayBlocked`/`autoplayOnConstructRef`
+ * additions below: `onEnded`/`onAutoplayBlocked` are stored in latest-value
+ * refs (updated every render, mirroring `VodPlayer.tsx`'s
+ * `seekRef`/`getCurrentTimeRef` population pattern) so they never need to
+ * appear in the construction effect's deps, and
+ * `autoplayOnConstructRef.current` is read ONCE per construction, INSIDE
+ * the effect body (never during render, per `react-hooks/refs`) — none of
+ * the three ever trigger their own remount.
  */
 export function useVodPlayer({
   vodUrl,
@@ -224,6 +244,7 @@ export function useVodPlayer({
   onEnded,
   onAutoplayBlocked,
   autoplayOnConstructRef,
+  remountToken,
 }: UseVodPlayerOptions): UseVodPlayerResult {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const playerRef = useRef<YouTubePlayerInstance | TwitchPlayerInstance | null>(null);
@@ -238,19 +259,24 @@ export function useVodPlayer({
   const detected = detectVodProvider(vodUrl);
   const identityKey =
     detected.provider != null ? `${detected.provider}:${detected.videoId}` : 'unsupported';
+  // The construction effect's ACTUAL key — identity plus `remountToken`, so
+  // bumping the token forces a fresh construction even when identity is
+  // unchanged (see `remountToken`'s doc comment above).
+  const effectKey = `${identityKey}::${remountToken ?? 0}`;
 
-  const [trackedIdentityKey, setTrackedIdentityKey] = useState(identityKey);
+  const [trackedEffectKey, setTrackedEffectKey] = useState(effectKey);
   const [isReady, setIsReady] = useState(false);
   const [error, setError] = useState<VodPlayerErrorState | null>(
     detected.provider === null ? 'unsupported' : null,
   );
 
-  // Reset ready/error state during render when the video identity changes —
-  // React's "adjusting state when a prop changes" pattern, not an effect, so
-  // switching to a new match's video never flashes the PREVIOUS video's
-  // stale ready/error state before the construction effect below re-runs.
-  if (identityKey !== trackedIdentityKey) {
-    setTrackedIdentityKey(identityKey);
+  // Reset ready/error state during render when the effective construction
+  // key changes — React's "adjusting state when a prop changes" pattern,
+  // not an effect, so switching to a new match's video (or a forced
+  // drift-recovery remount of the SAME video) never flashes stale
+  // ready/error state before the construction effect below re-runs.
+  if (effectKey !== trackedEffectKey) {
+    setTrackedEffectKey(effectKey);
     setIsReady(false);
     setError(detected.provider === null ? 'unsupported' : null);
   }
@@ -360,15 +386,15 @@ export function useVodPlayer({
       playerRef.current = null;
       providerRef.current = null;
     };
-    // Intentionally keyed on video IDENTITY only (see doc comment above) —
-    // startSeconds/detected are captured via closure for the initial
-    // construction and must NOT trigger a remount on their own.
-    // onEndedRef/onAutoplayBlockedRef/autoplayOnConstructRef are all refs
-    // (read via .current inside this effect / the event handlers above),
-    // so they're intentionally excluded too — reading a ref never needs to
-    // be a dependency.
+    // Intentionally keyed on `effectKey` (video IDENTITY + `remountToken`,
+    // see doc comments above) — startSeconds/detected are captured via
+    // closure for the initial construction and must NOT trigger a remount
+    // on their own. onEndedRef/onAutoplayBlockedRef/autoplayOnConstructRef
+    // are all refs (read via .current inside this effect / the event
+    // handlers above), so they're intentionally excluded too — reading a
+    // ref never needs to be a dependency.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [identityKey]);
+  }, [effectKey]);
 
   function seek(seconds: number) {
     if (!isReady || !playerRef.current) {

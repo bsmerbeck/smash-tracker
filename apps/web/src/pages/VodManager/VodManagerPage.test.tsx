@@ -289,7 +289,7 @@ describe('VodManagerPage', () => {
     expect(playVideo).toHaveBeenCalled();
   });
 
-  it('LIST-04: auto-advances to the next playlist match via reposition (no remount) when the ENDED event fires and they share one video identity', async () => {
+  it('LIST-04: auto-advances to the next playlist match, forcing a fresh player construction (drift recovery) even though they share one video identity', async () => {
     listMatches.mockResolvedValue([
       makeMatch({
         id: 'm1',
@@ -308,16 +308,15 @@ describe('VodManagerPage', () => {
       { id: 'p1', name: 'My Playlist', createdAt: 1, matchIds: ['m1', 'm2'] },
     ]);
 
-    const seekTo = vi.fn();
-    const playVideo = vi.fn();
-    let capturedConfig: YouTubePlayerConfig | undefined;
+    const configs: YouTubePlayerConfig[] = [];
+    const destroy = vi.fn();
     const Player = vi.fn(function (
       this: unknown,
       _el: HTMLElement,
       config: YouTubePlayerConfig,
     ): YouTubePlayerInstance {
-      capturedConfig = config;
-      return { seekTo, playVideo, destroy: vi.fn(), getCurrentTime: vi.fn(() => 754) };
+      configs.push(config);
+      return { seekTo: vi.fn(), playVideo: vi.fn(), destroy, getCurrentTime: vi.fn(() => 754) };
     });
     window.YT = { Player: Player as unknown as YTGlobal['Player'], PlayerState: { ENDED: 0 } };
 
@@ -325,18 +324,26 @@ describe('VodManagerPage', () => {
 
     await waitFor(() => expect(Player).toHaveBeenCalledTimes(1));
     act(() => {
-      capturedConfig?.events?.onReady?.();
+      configs[0]?.events?.onReady?.();
     });
 
-    // Fire ENDED via the live SDK constant, never a hardcoded literal.
+    // Fire ENDED via the live SDK constant, never a hardcoded literal — this
+    // is the ONLY signal available that the host platform (Twitch's "Up
+    // Next" overlay, most notably) may have hijacked the iframe, so the
+    // drift-recovery path treats every ENDED as a potential drift and
+    // forces a full reconstruction on the SAME-identity advance, trading a
+    // brief re-buffer for reliably recovering a hijacked embed.
     act(() => {
-      capturedConfig?.events?.onStateChange?.({ data: window.YT!.PlayerState.ENDED });
+      configs[0]?.events?.onStateChange?.({ data: window.YT!.PlayerState.ENDED });
     });
 
     await waitFor(() => expect(screen.getByText('vs. rival-two')).toBeInTheDocument());
-    // Same identity (abc123) — must reposition, never remount.
-    expect(Player).toHaveBeenCalledTimes(1);
-    await waitFor(() => expect(seekTo).toHaveBeenCalledWith(90, true));
+    // Same identity (abc123) — the OLD (potentially-hijacked) instance is
+    // destroyed and a NEW one is constructed at the next match's start time.
+    await waitFor(() => expect(Player).toHaveBeenCalledTimes(2));
+    expect(destroy).toHaveBeenCalledTimes(1);
+    expect(configs[1]?.videoId).toBe('abc123');
+    expect(configs[1]?.playerVars?.start).toBe(90);
   });
 
   it('LIST-04: auto-advances to the next playlist match with autoplay when the ENDED event fires and they have different video identities', async () => {
@@ -394,7 +401,62 @@ describe('VodManagerPage', () => {
     await waitFor(() => expect(screen.getByText('vs. rival-two')).toBeInTheDocument());
   });
 
-  it('LIST-04: ENDED is a no-op outside a playlist view (Library has no "next match")', async () => {
+  it('LIST-04(a): auto-advances to the next match in LIBRARY view too (no playlist active), using the current filtered/sorted list order', async () => {
+    listMatches.mockResolvedValue([
+      makeMatch({
+        id: 'm1',
+        opponent: 'rival-one',
+        time: 1_700_000_000_000,
+        vodUrl: 'https://youtube.com/watch?v=abc123',
+      }),
+      makeMatch({
+        id: 'm2',
+        opponent: 'rival-two',
+        time: 1_700_000_100_000,
+        vodUrl: 'https://youtube.com/watch?v=xyz789',
+      }),
+    ]);
+
+    const configs: YouTubePlayerConfig[] = [];
+    const Player = vi.fn(function (
+      this: unknown,
+      _el: HTMLElement,
+      config: YouTubePlayerConfig,
+    ): YouTubePlayerInstance {
+      configs.push(config);
+      return {
+        seekTo: vi.fn(),
+        playVideo: vi.fn(),
+        destroy: vi.fn(),
+        getCurrentTime: vi.fn(() => 0),
+      };
+    });
+    window.YT = { Player: Player as unknown as YTGlobal['Player'], PlayerState: { ENDED: 0 } };
+
+    // Library sorts "newest" by default (VodMatchList) — m2 (later `time`)
+    // is FIRST in the visible list, so ENDED on m2 must advance to m1.
+    renderVodManager('/vod?match=m2');
+
+    await waitFor(() => expect(Player).toHaveBeenCalledTimes(1));
+    expect(configs[0]?.videoId).toBe('xyz789');
+    act(() => {
+      configs[0]?.events?.onReady?.();
+    });
+
+    act(() => {
+      configs[0]?.events?.onStateChange?.({ data: window.YT!.PlayerState.ENDED });
+    });
+
+    // No playlist active — this is the SAME two-branch advance logic as the
+    // playlist case, applied to the Library list order. Different identity
+    // -> remounts with autoplay requested.
+    await waitFor(() => expect(screen.getByText('vs. rival-one')).toBeInTheDocument());
+    await waitFor(() => expect(Player).toHaveBeenCalledTimes(2));
+    expect(configs[1]?.videoId).toBe('abc123');
+    expect(configs[1]?.playerVars?.autoplay).toBe(1);
+  });
+
+  it('LIST-04: ENDED is a no-op when the selected match is the LAST one in the visible list (no next match to advance to)', async () => {
     listMatches.mockResolvedValue([
       makeMatch({
         id: 'm1',
@@ -426,7 +488,8 @@ describe('VodManagerPage', () => {
       capturedConfig?.events?.onStateChange?.({ data: window.YT!.PlayerState.ENDED });
     });
 
-    // No playlist active — ENDED must not attempt to advance or remount.
+    // No next match in the visible list — ENDED must not attempt to
+    // advance or remount.
     expect(Player).toHaveBeenCalledTimes(1);
     expect(screen.getByText('vs. rival-one')).toBeInTheDocument();
   });
@@ -484,6 +547,54 @@ describe('VodManagerPage', () => {
     expect(configs[1]?.playerVars?.autoplay).toBe(0);
     expect(screen.getByText('2 of 2')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Next match' })).toBeDisabled();
+  });
+
+  it('drift recovery: reselecting the SAME already-ended match forces a fresh player construction instead of a no-op', async () => {
+    const user = userEvent.setup();
+    listMatches.mockResolvedValue([
+      makeMatch({
+        id: 'm1',
+        opponent: 'rival-one',
+        vodUrl: 'https://youtube.com/watch?v=abc123',
+      }),
+    ]);
+
+    const configs: YouTubePlayerConfig[] = [];
+    const destroy = vi.fn();
+    const Player = vi.fn(function (
+      this: unknown,
+      _el: HTMLElement,
+      config: YouTubePlayerConfig,
+    ): YouTubePlayerInstance {
+      configs.push(config);
+      return { seekTo: vi.fn(), playVideo: vi.fn(), destroy, getCurrentTime: vi.fn(() => 0) };
+    });
+    window.YT = { Player: Player as unknown as YTGlobal['Player'], PlayerState: { ENDED: 0 } };
+
+    renderVodManager('/vod?match=m1');
+
+    await waitFor(() => expect(Player).toHaveBeenCalledTimes(1));
+    act(() => {
+      configs[0]?.events?.onReady?.();
+    });
+
+    // ENDED fires — the SDK gives no signal about WHETHER the host platform
+    // hijacked the iframe (Twitch's "Up Next" overlay), only that playback
+    // ended. Reproduces the reported bug: clicking the SAME video again
+    // afterward previously did nothing (unchanged searchParams + unchanged
+    // video identity meant neither the URL nor the player ever updated).
+    act(() => {
+      configs[0]?.events?.onStateChange?.({ data: window.YT!.PlayerState.ENDED });
+    });
+    expect(Player).toHaveBeenCalledTimes(1);
+
+    await user.click(screen.getByRole('button', { name: 'Select match vs rival-one' }));
+
+    // Same identity, same match id — the OLD instance is destroyed and a
+    // NEW one constructed, restoring the embed rather than silently no-op'ing.
+    await waitFor(() => expect(Player).toHaveBeenCalledTimes(2));
+    expect(destroy).toHaveBeenCalledTimes(1);
+    expect(configs[1]?.videoId).toBe('abc123');
   });
 
   it('renames the active playlist via an explicit Rename -> Save flow, with Escape reverting without mutating', async () => {
