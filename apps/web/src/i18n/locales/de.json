@@ -532,7 +532,10 @@
       "matchCount_other": "{{count}} Matches",
       "addToPlaylist": "Zur Playlist hinzufügen",
       "addToPlaylistAria": "Dieses Match zu einer Playlist hinzufügen",
-      "added": "Zur Playlist hinzugefügt"
+      "added": "Zur Playlist hinzugefügt",
+      "moveUp": "Nach oben",
+      "moveDown": "Nach unten",
+      "removeFromPlaylist": "Aus Playlist entfernen"
     }
   },
   "tags": {
