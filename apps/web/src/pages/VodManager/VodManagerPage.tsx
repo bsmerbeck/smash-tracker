@@ -149,12 +149,6 @@ export function VodManagerPage() {
     [playlistMatches, selectedMatchId],
   );
 
-  // Custom tag vocabulary (TAG-01..05) spans ALL loaded VOD-bearing matches
-  // (locked decision, 03-CONTEXT.md) — not just the currently filtered/
-  // selected one — so the add-combobox always offers every custom tag the
-  // user has ever typed, reused by 03-03's note-tag combobox too.
-  const tagVocabulary = useMemo(() => deriveCustomTagVocabulary(vodMatches), [vodMatches]);
-
   // Fighters offered by the inline edit form's "Your Fighter" select
   // (NOTE-04) — same primary+secondary sprite lookup MatchDataPage uses.
   const { data: fighterSelection } = useFighters();
@@ -176,6 +170,20 @@ export function VodManagerPage() {
   // localStorage once at mount, persisted on every add/remove. Never sent
   // to the API (locked decision).
   const [quickTags, setQuickTags] = useState<string[]>(() => readStoredQuickTags());
+  // Custom tag vocabulary (TAG-01..05) spans ALL loaded VOD-bearing matches
+  // (locked decision, 03-CONTEXT.md) — not just the currently filtered/
+  // selected one — so the add-combobox always offers every custom tag the
+  // user has ever typed, reused by 03-03's note-tag combobox too. Also
+  // folds in `quickTags` (the Quick Tags panel's device-local button set,
+  // above): a tag the user customizes into their Quick Tags set reads as
+  // "already added" from their perspective and must be offered in every
+  // OTHER add-combobox immediately — not only once it happens to get
+  // captured onto some note first (the bug this fold-in fixes; see
+  // `deriveCustomTagVocabulary`'s `extraTags` doc comment).
+  const tagVocabulary = useMemo(
+    () => deriveCustomTagVocabulary(vodMatches, quickTags),
+    [vodMatches, quickTags],
+  );
   // Player compact/fill size (device preference, `vodPrefs.ts`) — a PURE
   // className toggle on the wrapper below; the VodPlayer JSX element stays
   // at exactly one unconditional position and this value is never threaded
