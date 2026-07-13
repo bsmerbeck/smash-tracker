@@ -23,9 +23,12 @@ export interface VodPlayerProps {
   /** Fires when the browser blocks an autoplay-triggering call — the
    * authoritative "show the native play-button fallback" signal. */
   onAutoplayBlocked?: () => void;
-  /** Requests autoplay for this ONE player construction only (closure-
-   * captured inside `useVodPlayer`, never a remount trigger on its own). */
-  autoplayOnConstruct?: boolean;
+  /** Requests autoplay for this ONE player construction only. Passed
+   * through to `useVodPlayer` as a REF (never a snapshotted boolean) —
+   * React refs must not be read during render (`react-hooks/refs`), so the
+   * caller passes the ref object itself; `useVodPlayer` reads `.current`
+   * inside its construction effect, never a remount trigger on its own. */
+  autoplayOnConstructRef?: RefObject<boolean>;
 }
 
 /**
@@ -51,7 +54,7 @@ export function VodPlayer({
   getCurrentTimeRef,
   onEnded,
   onAutoplayBlocked,
-  autoplayOnConstruct,
+  autoplayOnConstructRef,
 }: VodPlayerProps) {
   const { t } = useTranslation();
   const { containerRef, isReady, error, seek, getCurrentTime } = useVodPlayer({
@@ -59,7 +62,7 @@ export function VodPlayer({
     startSeconds,
     onEnded,
     onAutoplayBlocked,
-    autoplayOnConstruct,
+    autoplayOnConstructRef,
   });
 
   useEffect(() => {

@@ -164,13 +164,16 @@ export interface UseVodPlayerOptions {
    * event. The authoritative "show the native play-button fallback"
    * signal (never a timeout heuristic). */
   onAutoplayBlocked?: () => void;
-  /** Read ONCE inside the construction effect body (closure-captured,
-   * exactly like `startSeconds`) to request autoplay for that one
-   * construction only. NEVER added to the identity-keyed effect's
-   * dependency array — setting this does not, by itself, trigger a
-   * remount; it only takes effect the next time construction actually
-   * happens (i.e. a genuine video-identity change). */
-  autoplayOnConstruct?: boolean;
+  /** Threaded as a REF (never a snapshotted boolean): React refs must not
+   * be read during render (`react-hooks/refs`), so the caller (ultimately
+   * `VodManagerPage`) passes the ref object itself and this hook reads
+   * `.current` ONLY inside the construction effect body below — an effect
+   * read is exempt from that rule. Consulted once per construction (same
+   * "read once, never a remount trigger on its own" treatment as
+   * `startSeconds`) to request autoplay for that one construction only.
+   * NEVER added to the identity-keyed effect's dependency array — refs are
+   * always safe to omit. */
+  autoplayOnConstructRef?: RefObject<boolean>;
 }
 
 export interface UseVodPlayerResult {
@@ -207,20 +210,20 @@ export interface UseVodPlayerResult {
  * (`${provider}:${videoId}`), not on `vodUrl`/`startSeconds`/the whole
  * match object, so unrelated metadata edits never remount an in-progress
  * playback (PITFALLS.md UX row). This invariant is UNCHANGED by the
- * `onEnded`/`onAutoplayBlocked`/`autoplayOnConstruct` additions below:
+ * `onEnded`/`onAutoplayBlocked`/`autoplayOnConstructRef` additions below:
  * `onEnded`/`onAutoplayBlocked` are stored in latest-value refs (updated
  * every render, mirroring `VodPlayer.tsx`'s `seekRef`/`getCurrentTimeRef`
  * population pattern) so they never need to appear in the construction
- * effect's deps, and `autoplayOnConstruct` is closure-captured ONCE per
- * construction exactly like `startSeconds` — none of the three ever
- * trigger their own remount.
+ * effect's deps, and `autoplayOnConstructRef.current` is read ONCE per
+ * construction, INSIDE the effect body (never during render, per
+ * `react-hooks/refs`) — none of the three ever trigger their own remount.
  */
 export function useVodPlayer({
   vodUrl,
   startSeconds,
   onEnded,
   onAutoplayBlocked,
-  autoplayOnConstruct,
+  autoplayOnConstructRef,
 }: UseVodPlayerOptions): UseVodPlayerResult {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const playerRef = useRef<YouTubePlayerInstance | TwitchPlayerInstance | null>(null);
@@ -260,6 +263,11 @@ export function useVodPlayer({
     let cancelled = false;
     playerRef.current = null;
     providerRef.current = null;
+    // autoplayOnConstructRef.current is read HERE, inside the effect body
+    // (never during render — react-hooks/refs), exactly once for THIS
+    // construction. Mirrors the startSeconds closure-capture treatment
+    // below.
+    const shouldAutoplay = autoplayOnConstructRef?.current ?? false;
 
     if (detected.provider === 'youtube') {
       const videoId = detected.videoId;
@@ -274,10 +282,7 @@ export function useVodPlayer({
           width: '100%',
           height: '100%',
           playerVars: {
-            // autoplayOnConstruct is closure-captured here, exactly like
-            // startSeconds below — read once for THIS construction only,
-            // never re-consulted without a genuine identity-change remount.
-            autoplay: autoplayOnConstruct ? 1 : 0,
+            autoplay: shouldAutoplay ? 1 : 0,
             start: startSeconds ?? 0,
             origin: window.location.origin,
           },
@@ -319,9 +324,7 @@ export function useVodPlayer({
           // ACTUAL serving hostname — derive it at runtime, never hardcode a
           // single domain (breaks on localhost/preview-channel hosts).
           parent: [window.location.hostname],
-          // autoplayOnConstruct is closure-captured here, exactly like
-          // startSeconds below — read once for THIS construction only.
-          autoplay: Boolean(autoplayOnConstruct),
+          autoplay: shouldAutoplay,
           // Fill the aspect-video container (VodPlayer.tsx) instead of the
           // API's fixed 400x300 minimum.
           width: '100%',
@@ -358,11 +361,12 @@ export function useVodPlayer({
       providerRef.current = null;
     };
     // Intentionally keyed on video IDENTITY only (see doc comment above) —
-    // startSeconds/autoplayOnConstruct/detected are captured via closure for
-    // the initial construction and must NOT trigger a remount on their own.
-    // onEndedRef/onAutoplayBlockedRef are refs (read via .current inside the
-    // event handlers above), so they're intentionally excluded too — they
-    // always resolve to the latest callback without needing to be a dep.
+    // startSeconds/detected are captured via closure for the initial
+    // construction and must NOT trigger a remount on their own.
+    // onEndedRef/onAutoplayBlockedRef/autoplayOnConstructRef are all refs
+    // (read via .current inside this effect / the event handlers above),
+    // so they're intentionally excluded too — reading a ref never needs to
+    // be a dependency.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [identityKey]);
 
