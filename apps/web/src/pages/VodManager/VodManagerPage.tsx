@@ -463,6 +463,17 @@ export function VodManagerPage() {
   //   - different video identity -> flag autoplay FIRST, then select the
   //     next match id; the identity change remounts useVodPlayer, which
   //     reads the flag as autoplayOnConstruct.
+  //   - NO next match (end of playlist or end of the library list, retest
+  //     fix-up #10) -> best-effort PAUSE the live player immediately.
+  //     `driftedRef` is already flagged above regardless of an advance
+  //     target, but Twitch's own "Up Next" post-roll overlay can start
+  //     autoplaying a recommended video into the SAME iframe within the
+  //     same tick ENDED fires — pausing here is a best-effort preemption of
+  //     that hijack attempt (never guaranteed, since it's the HOST
+  //     platform's own overlay, not something this app controls). Even if
+  //     the pause doesn't win the race, `driftedRef` guarantees any
+  //     subsequent reselection (including of the SAME match) forces a
+  //     fresh player construction rather than a no-op.
   function handleEnded() {
     driftedRef.current = true;
     if (!selectedMatch) {
@@ -470,10 +481,12 @@ export function VodManagerPage() {
     }
     const index = displayedMatches.findIndex((m) => m.id === selectedMatch.id);
     if (index === -1) {
+      playerPauseRef.current?.();
       return;
     }
     const nextMatch = displayedMatches[index + 1];
     if (!nextMatch) {
+      playerPauseRef.current?.();
       return;
     }
     const currentIdentity = videoIdentityOf(selectedMatch);
