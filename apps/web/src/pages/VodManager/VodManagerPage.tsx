@@ -952,20 +952,6 @@ export function VodManagerPage() {
                     {t('vodManager.playback.autoplayBlocked')}
                   </p>
                 )}
-                {/* Quick tags panel (Task 2) — directly below the player in
-                    the stacked layout; the TOP of the right rail in the
-                    compact+lg combination-rail layout. */}
-                <div
-                  data-testid="vod-quicktag-rail"
-                  className={cn(playerSize === 'compact' && 'lg:col-start-2 lg:row-start-1')}
-                >
-                  <QuickTagPanel
-                    quickTags={quickTags}
-                    onQuickTag={handleQuickTag}
-                    onQuickTagsChange={handleQuickTagsChange}
-                    tagVocabulary={tagVocabulary}
-                  />
-                </div>
                 {/* Playback controls (LIST-04 playlist Prev/Next + Task 3
                     timestamp Prev/Next), grouped together below the player.
                     Playlist Prev/Next only renders while a playlist is
@@ -1035,29 +1021,64 @@ export function VodManagerPage() {
                     </Button>
                   </div>
                 </div>
-                {/* The BOTTOM of the right rail in compact+lg — spans down
-                    through the controls row (row-span-2) so it fills the
-                    rail's full height alongside the left column, and
-                    scrolls independently once its content overflows rather
-                    than growing the page. */}
+                {/* Right rail (lg+ compact only, retest fix-up #7): quick
+                    tags and notes are now ONE flex column spanning all
+                    three left-column row tracks (`lg:row-span-3
+                    lg:self-stretch`) instead of being separately-placed
+                    grid items. Previously the notes rail started at
+                    `row-start-2` — which only begins once the (much
+                    taller) video row finishes — leaving a dead gap between
+                    the bottom of the short quick-tags panel and the top of
+                    the notes rail below it (the reported screenshot bug).
+                    Sharing one flex column lets notes (`lg:flex-1
+                    lg:min-h-0`) fill exactly the space quick tags doesn't
+                    use, with no gap either way. */}
                 <div
-                  data-testid="vod-timestamp-rail"
+                  data-testid="vod-rail"
                   className={cn(
                     playerSize === 'compact' &&
-                      'lg:col-start-2 lg:row-start-2 lg:row-span-2 lg:max-h-[min(70vh,640px)] lg:overflow-y-auto',
+                      'lg:col-start-2 lg:row-start-1 lg:row-span-3 lg:flex lg:flex-col lg:gap-4 lg:self-stretch',
                   )}
                 >
-                  <TimestampList
-                    timestamps={selectedMatch.vodTimestamps ?? []}
-                    selectedIndex={selectedTimestampIndex}
-                    onSelect={setSelectedTimestampIndex}
-                    onSeek={handleSeek}
-                    getCurrentTimeRef={getCurrentTimeRef}
-                    onUpdateTimestamps={handleUpdateTimestamps}
-                    tagVocabulary={tagVocabulary}
-                    editingIndex={editingIndex}
-                    onEditingIndexChange={setEditingIndex}
-                  />
+                  {/* Quick tags panel (Task 2) — directly below the player
+                      in the stacked layout; the TOP of the right rail in
+                      the compact+lg combination-rail layout. */}
+                  <div
+                    data-testid="vod-quicktag-rail"
+                    className={cn(playerSize === 'compact' && 'lg:shrink-0')}
+                  >
+                    <QuickTagPanel
+                      quickTags={quickTags}
+                      onQuickTag={handleQuickTag}
+                      onQuickTagsChange={handleQuickTagsChange}
+                      tagVocabulary={tagVocabulary}
+                    />
+                  </div>
+                  {/* Notes (fix-up #7): fills whatever height remains below
+                      quick tags in compact+lg (`lg:flex-1 lg:min-h-0`),
+                      scrolling internally once its content overflows
+                      rather than growing the page — `TimestampList`'s own
+                      sticky composer (fix-up #6) stays pinned to the top
+                      of THIS scrolling container as the note rows below it
+                      scroll. */}
+                  <div
+                    data-testid="vod-timestamp-rail"
+                    className={cn(
+                      playerSize === 'compact' && 'lg:min-h-0 lg:flex-1 lg:overflow-y-auto',
+                    )}
+                  >
+                    <TimestampList
+                      timestamps={selectedMatch.vodTimestamps ?? []}
+                      selectedIndex={selectedTimestampIndex}
+                      onSelect={setSelectedTimestampIndex}
+                      onSeek={handleSeek}
+                      getCurrentTimeRef={getCurrentTimeRef}
+                      onUpdateTimestamps={handleUpdateTimestamps}
+                      tagVocabulary={tagVocabulary}
+                      editingIndex={editingIndex}
+                      onEditingIndexChange={setEditingIndex}
+                    />
+                  </div>
                 </div>
               </>
             ) : (
