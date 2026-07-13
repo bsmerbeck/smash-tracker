@@ -1393,4 +1393,131 @@ describe('VodManagerPage', () => {
     expect(stored).not.toContain('punish');
     expect(stored).toContain('my-custom-tag');
   });
+
+  it('toggles the player between compact and fill via a pure className swap (no remount) and persists the choice', async () => {
+    const user = userEvent.setup();
+    listMatches.mockResolvedValue([
+      makeMatch({
+        id: 'm1',
+        opponent: 'rival-one',
+        vodUrl: 'https://youtube.com/watch?v=abc123',
+      }),
+    ]);
+
+    const Player = vi.fn(function (this: unknown) {
+      return {
+        seekTo: vi.fn(),
+        playVideo: vi.fn(),
+        destroy: vi.fn(),
+        getCurrentTime: vi.fn(() => 0),
+      };
+    });
+    window.YT = { Player: Player as unknown as YTGlobal['Player'], PlayerState: { ENDED: 0 } };
+
+    renderVodManager('/vod?match=m1');
+    await waitFor(() => expect(Player).toHaveBeenCalledTimes(1));
+
+    // (1) Defaults to fill — the toggle offers to switch TO compact.
+    const toggle = screen.getByRole('button', { name: 'Switch to compact player' });
+    await user.click(toggle);
+
+    // (2) The toggle flips its own label/icon and the choice persists —
+    // but the player itself is NEVER reconstructed by a size change.
+    expect(screen.getByRole('button', { name: 'Switch to full-size player' })).toBeInTheDocument();
+    expect(Player).toHaveBeenCalledTimes(1);
+    expect(window.localStorage.getItem('smash-tracker.vodPlayerSize')).toBe('compact');
+
+    // (3) Toggling back to fill also never remounts.
+    await user.click(screen.getByRole('button', { name: 'Switch to full-size player' }));
+    expect(screen.getByRole('button', { name: 'Switch to compact player' })).toBeInTheDocument();
+    expect(Player).toHaveBeenCalledTimes(1);
+    expect(window.localStorage.getItem('smash-tracker.vodPlayerSize')).toBe('fill');
+  });
+
+  it('Prev/Next timestamp buttons seek to and select the previous/next time-sorted note, clamped at the boundaries', async () => {
+    const user = userEvent.setup();
+    listMatches.mockResolvedValue([
+      makeMatch({
+        id: 'm1',
+        opponent: 'rival-one',
+        vodUrl: 'https://youtube.com/watch?v=abc123',
+        vodTimestamps: [
+          { seconds: 30, note: 'note A' },
+          { seconds: 90, note: 'note B' },
+          { seconds: 150, note: 'note C' },
+        ],
+      }),
+    ]);
+
+    const seekTo = vi.fn();
+    let capturedConfig: YouTubePlayerConfig | undefined;
+    const Player = vi.fn(function (
+      this: unknown,
+      _el: HTMLElement,
+      config: YouTubePlayerConfig,
+    ): YouTubePlayerInstance {
+      capturedConfig = config;
+      return { seekTo, playVideo: vi.fn(), destroy: vi.fn(), getCurrentTime: vi.fn(() => 0) };
+    });
+    window.YT = { Player: Player as unknown as YTGlobal['Player'], PlayerState: { ENDED: 0 } };
+
+    renderVodManager('/vod?match=m1');
+    await waitFor(() => expect(Player).toHaveBeenCalledTimes(1));
+    act(() => {
+      capturedConfig?.events?.onReady?.();
+    });
+
+    const prevButton = screen.getByRole('button', { name: 'Previous note' });
+    const nextButton = screen.getByRole('button', { name: 'Next note' });
+
+    // (1) Nothing selected yet — Next jumps to the FIRST note.
+    await user.click(nextButton);
+    await waitFor(() => expect(seekTo).toHaveBeenCalledWith(30, true));
+
+    // (2) Next again moves forward to the second note.
+    await user.click(nextButton);
+    await waitFor(() => expect(seekTo).toHaveBeenCalledWith(90, true));
+
+    // (3) Next again reaches the LAST note; clamped there — a further Next
+    // stays on the last note (re-seeks to the same position, never walks
+    // off the end).
+    await user.click(nextButton);
+    await waitFor(() => expect(seekTo).toHaveBeenCalledWith(150, true));
+    seekTo.mockClear();
+    await user.click(nextButton);
+    await waitFor(() => expect(seekTo).toHaveBeenCalledWith(150, true));
+
+    // (4) Prev walks back from the clamped last selection.
+    await user.click(prevButton);
+    await waitFor(() => expect(seekTo).toHaveBeenCalledWith(90, true));
+  });
+
+  it('disables the Prev/Next timestamp buttons when the selected match has zero notes', async () => {
+    listMatches.mockResolvedValue([
+      makeMatch({
+        id: 'm1',
+        opponent: 'rival-one',
+        vodUrl: 'https://youtube.com/watch?v=abc123',
+      }),
+    ]);
+
+    window.YT = {
+      Player: vi.fn(function (this: unknown) {
+        return {
+          seekTo: vi.fn(),
+          playVideo: vi.fn(),
+          destroy: vi.fn(),
+          getCurrentTime: vi.fn(() => 0),
+        };
+      }) as unknown as YTGlobal['Player'],
+      PlayerState: { ENDED: 0 },
+    };
+
+    renderVodManager('/vod?match=m1');
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Previous note' })).toBeInTheDocument(),
+    );
+    expect(screen.getByRole('button', { name: 'Previous note' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Next note' })).toBeDisabled();
+  });
 });

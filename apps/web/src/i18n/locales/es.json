@@ -553,7 +553,13 @@
       "customizeAria": "Personalizar etiquetas rápidas",
       "removeQuickTagAria": "Quitar {{label}} de las etiquetas rápidas",
       "quickTagAria": "Etiqueta rápida: {{label}}",
-      "quickTagHint": "Toca una etiqueta para capturar este momento"
+      "quickTagHint": "Toca una etiqueta para capturar este momento",
+      "prevTimestamp": "Nota anterior",
+      "nextTimestamp": "Nota siguiente"
+    },
+    "player": {
+      "compactAria": "Cambiar a reproductor compacto",
+      "fillAria": "Cambiar a reproductor de tamaño completo"
     }
   },
   "tags": {

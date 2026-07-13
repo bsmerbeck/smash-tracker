@@ -553,7 +553,13 @@
       "customizeAria": "Personnaliser les tags rapides",
       "removeQuickTagAria": "Retirer {{label}} des tags rapides",
       "quickTagAria": "Tag rapide : {{label}}",
-      "quickTagHint": "Appuyez sur un tag pour capturer ce moment"
+      "quickTagHint": "Appuyez sur un tag pour capturer ce moment",
+      "prevTimestamp": "Note précédente",
+      "nextTimestamp": "Note suivante"
+    },
+    "player": {
+      "compactAria": "Passer au lecteur compact",
+      "fillAria": "Passer au lecteur pleine taille"
     }
   },
   "tags": {
