@@ -519,6 +519,17 @@
       "deleteConfirmTitle": "Diese Zeitstempel-Notiz löschen?",
       "editTimeAria": "Zeitstempel-Zeit bearbeiten",
       "editNoteAria": "Zeitstempel-Notiz bearbeiten"
+    },
+    "playlists": {
+      "library": "Bibliothek",
+      "newPlaylist": "Neue Playlist",
+      "createPlaceholder": "Playlist-Name",
+      "create": "Erstellen",
+      "selectAria": "Playlist auswählen",
+      "empty": "Noch keine Matches in dieser Playlist",
+      "limitReached": "Playlist-Limit erreicht ({{max}})",
+      "matchCount_one": "{{count}} Match",
+      "matchCount_other": "{{count}} Matches"
     }
   },
   "tags": {

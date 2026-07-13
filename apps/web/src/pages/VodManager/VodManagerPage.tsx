@@ -2,13 +2,21 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
-import type { Fighter, Match, VodTimestamp } from '@smash-tracker/shared';
+import {
+  MAX_PLAYLISTS_PER_USER,
+  type Fighter,
+  type Match,
+  type VodTimestamp,
+} from '@smash-tracker/shared';
 import { getFighterById } from '@/data/sprites';
 import { useFighters } from '@/hooks/useFighters';
 import { useFilteredMatches } from '@/hooks/useFilteredMatches';
 import { useUpdateMatch } from '@/hooks/useUpdateMatch';
+import { useCreatePlaylist, usePlaylists } from '@/hooks/usePlaylists';
 import { detectVodProvider, parseVodStartSeconds } from '@/lib/vod';
 import { deriveCustomTagVocabulary } from '@/lib/tags';
+import { resolvePlaylistMatches } from '@/lib/playlists';
+import { ApiError } from '@/lib/api';
 import { buildUpdateInput } from '@/components/vod/VodNotesDialog';
 import {
   DEFAULT_VOD_MANAGER_FILTERS,
@@ -22,6 +30,7 @@ import { VodMatchList } from './components/VodMatchList';
 import { VodPlayer } from './components/VodPlayer';
 import { TimestampList } from './components/TimestampList';
 import { SelectedMatchMeta } from './components/SelectedMatchMeta';
+import { PlaylistSelector } from './components/PlaylistSelector';
 
 /**
  * Resolves the second to start playback at for `match`'s VOD: the player's
@@ -54,9 +63,29 @@ export function VodManagerPage() {
   const { t } = useTranslation();
   const [searchParams, setSearchParams] = useSearchParams();
   const selectedMatchId = searchParams.get('match');
+  // Sibling param to `?match=` — a playlist can be active with no match
+  // selected, and Library (browsing all VOD matches) has no playlist. Never
+  // conflate the two selections.
+  const selectedPlaylistId = searchParams.get('playlist');
 
   const { matches, isLoading } = useFilteredMatches();
   const vodMatches = useMemo(() => matches.filter((m) => m.vodUrl != null), [matches]);
+
+  const { data: playlists = [] } = usePlaylists();
+  const createPlaylist = useCreatePlaylist();
+  const selectedPlaylist = useMemo(
+    () => playlists.find((playlist) => playlist.id === selectedPlaylistId) ?? null,
+    [playlists, selectedPlaylistId],
+  );
+  // Resolved against `vodMatches` (every VOD-bearing match the caller owns,
+  // T-04-05's client-side soft-orphan join) rather than the locally-filtered
+  // list — filters are hidden while a playlist is active (D- per CONTEXT),
+  // so playlist order is unaffected by whatever the filter controls were
+  // last set to.
+  const playlistMatches = useMemo(
+    () => (selectedPlaylist ? resolvePlaylistMatches(selectedPlaylist, vodMatches) : null),
+    [selectedPlaylist, vodMatches],
+  );
 
   // Custom tag vocabulary (TAG-01..05) spans ALL loaded VOD-bearing matches
   // (locked decision, 03-CONTEXT.md) — not just the currently filtered/
@@ -94,20 +123,32 @@ export function VodManagerPage() {
     return sortByRecency(applyVodManagerFilters(vodMatches, filters), sort);
   }, [vodMatches, filters, sort]);
 
+  // The list the panel actually renders: a playlist's matches (in playlist
+  // order, soft-orphan skipped) when one is selected, else the normal
+  // filter/sort pipeline's result.
+  const displayedMatches = playlistMatches ?? filtered;
+
   // D-04 cold-open: once loaded, with nothing deep-linked/clicked yet and at
   // least one VOD match available, auto-select the most-recent one via a
   // replace navigation so the back button doesn't get stuck on an empty
   // intermediate URL.
   useEffect(() => {
-    if (isLoading || selectedMatchId != null || filtered.length === 0) {
+    if (isLoading || selectedMatchId != null || displayedMatches.length === 0) {
       return;
     }
-    setSearchParams({ match: filtered[0]!.id }, { replace: true });
-  }, [isLoading, selectedMatchId, filtered, setSearchParams]);
+    setSearchParams(
+      (prev) => {
+        const next = new URLSearchParams(prev);
+        next.set('match', displayedMatches[0]!.id);
+        return next;
+      },
+      { replace: true },
+    );
+  }, [isLoading, selectedMatchId, displayedMatches, setSearchParams]);
 
   // T-01-04: an unknown/stale ?match= id resolves to null rather than
   // throwing — the right panel just falls back to the placeholder copy.
-  const selectedMatch = filtered.find((m) => m.id === selectedMatchId) ?? null;
+  const selectedMatch = displayedMatches.find((m) => m.id === selectedMatchId) ?? null;
 
   // Populated by VodPlayer once its live player instance exists; invoking
   // it is how TimestampList's row clicks reach the LIVE player (not a URL
@@ -150,7 +191,41 @@ export function VodManagerPage() {
   }, [selectedMatch]);
 
   function handleSelect(id: string) {
-    setSearchParams({ match: id });
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev);
+      next.set('match', id);
+      return next;
+    });
+  }
+
+  // Sibling-param update (see `selectedPlaylistId` doc comment above) — the
+  // current `?match=` selection is preserved as-is; if it isn't in the newly
+  // selected playlist, `selectedMatch` resolves to null (T-01-04's existing
+  // stale-id fallback) and the panel shows the placeholder rather than
+  // throwing.
+  function handleSelectPlaylist(id: string | null) {
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev);
+      if (id != null) {
+        next.set('playlist', id);
+      } else {
+        next.delete('playlist');
+      }
+      return next;
+    });
+  }
+
+  async function handleCreatePlaylist(name: string) {
+    try {
+      const playlist = await createPlaylist.mutateAsync({ name });
+      handleSelectPlaylist(playlist.id);
+    } catch (error) {
+      if (error instanceof ApiError && error.status === 403) {
+        toast.error(t('vodManager.playlists.limitReached', { max: MAX_PLAYLISTS_PER_USER }));
+      } else {
+        console.error('Failed to create playlist', error);
+      }
+    }
   }
 
   function handleSeek(seconds: number) {
@@ -184,16 +259,26 @@ export function VodManagerPage() {
         <p className="text-sm text-muted-foreground">{t('vodManager.emptyState')}</p>
       ) : (
         <div className="grid gap-4 md:grid-cols-[360px_1fr]">
-          <VodMatchList
-            matches={filtered}
-            filters={filters}
-            filterOptions={filterOptions}
-            onFiltersChange={setFilters}
-            sort={sort}
-            onSortChange={setSort}
-            selectedId={selectedMatchId}
-            onSelect={handleSelect}
-          />
+          <div className="flex flex-col gap-3">
+            <PlaylistSelector
+              playlists={playlists}
+              selectedPlaylistId={selectedPlaylistId}
+              onSelect={handleSelectPlaylist}
+              onCreate={handleCreatePlaylist}
+              creating={createPlaylist.isPending}
+            />
+            <VodMatchList
+              matches={displayedMatches}
+              filters={filters}
+              filterOptions={filterOptions}
+              onFiltersChange={setFilters}
+              sort={sort}
+              onSortChange={setSort}
+              selectedId={selectedMatchId}
+              onSelect={handleSelect}
+              isPlaylistView={selectedPlaylist != null}
+            />
+          </div>
 
           <div className="flex flex-col gap-4">
             {selectedMatch?.vodUrl != null ? (

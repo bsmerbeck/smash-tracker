@@ -519,6 +519,17 @@
       "deleteConfirmTitle": "このタイムスタンプメモを削除しますか？",
       "editTimeAria": "タイムスタンプの時間を編集",
       "editNoteAria": "タイムスタンプのメモを編集"
+    },
+    "playlists": {
+      "library": "ライブラリ",
+      "newPlaylist": "新しいプレイリスト",
+      "createPlaceholder": "プレイリスト名",
+      "create": "作成",
+      "selectAria": "プレイリストを選択",
+      "empty": "このプレイリストにはまだ試合がありません",
+      "limitReached": "プレイリストの上限に達しました（{{max}}）",
+      "matchCount_one": "{{count}}試合",
+      "matchCount_other": "{{count}}試合"
     }
   },
   "tags": {
