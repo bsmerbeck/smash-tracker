@@ -31,8 +31,13 @@ export type MatchType = z.infer<typeof matchTypeSchema>;
 export const vodTimestampSchema = z.object({
   /** Offset in whole seconds into the VOD this note refers to. */
   seconds: z.number().int().min(0),
-  /** Free-text callout for this moment, e.g. "missed punish on shield". */
-  note: z.string().trim().min(1).max(200),
+  /**
+   * Free-text callout for this moment, e.g. "missed punish on shield".
+   * Deliberately allows an empty string: the VOD Manager's quick-tag flow
+   * (QuickTagPanel) captures a timestamp + tags instantly with no note text
+   * — a tag-only moment is a legitimate, valid entry, not an error.
+   */
+  note: z.string().trim().max(200),
   /**
    * Note-level tags (TAG-01..05), e.g. preset slugs like 'punish' or
    * freeform custom text. Embedded directly on the timestamp entry rather
