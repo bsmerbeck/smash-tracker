@@ -1412,6 +1412,52 @@ describe('VodManagerPage', () => {
     expect(screen.getByRole('textbox', { name: 'Match start time in VOD' })).toHaveValue('12:34');
   });
 
+  it('retest fix-up #8: "Add to playlist" renders prominently in the metadata card\'s header row (next to the title, not buried below tags) and adds the match to an existing playlist', async () => {
+    const user = userEvent.setup();
+    listMatches.mockResolvedValue([
+      makeMatch({
+        id: 'm1',
+        opponent: 'rival-one',
+        vodUrl: 'https://youtube.com/watch?v=abc123',
+      }),
+    ]);
+    listPlaylists.mockResolvedValue([
+      { id: 'p1', name: 'My Playlist', createdAt: 1, matchIds: [] },
+    ]);
+
+    window.YT = {
+      Player: vi.fn(function (this: unknown) {
+        return {
+          seekTo: vi.fn(),
+          playVideo: vi.fn(),
+          pauseVideo: vi.fn(),
+          destroy: vi.fn(),
+          getCurrentTime: vi.fn(() => 0),
+        };
+      }) as unknown as YTGlobal['Player'],
+      PlayerState: { ENDED: 0 },
+    };
+
+    renderVodManager('/vod?match=m1');
+    await waitFor(() => expect(screen.getByText('vs. rival-one')).toBeInTheDocument());
+
+    // (1) The button lives in the SAME header row as the title (a sibling
+    // element), not somewhere further down the card past the tags block.
+    const title = screen.getByText('vs. rival-one');
+    const addToPlaylistButton = screen.getByRole('combobox', {
+      name: 'Add this match to a playlist',
+    });
+    expect(title.parentElement).toBe(addToPlaylistButton.parentElement?.parentElement);
+    // Icon + label, not an icon-only affordance.
+    expect(addToPlaylistButton).toHaveTextContent('Add to playlist');
+
+    // (2) Clicking it and picking an existing playlist adds the match.
+    await user.click(addToPlaylistButton);
+    await user.click(await screen.findByRole('option', { name: 'My Playlist' }));
+
+    await waitFor(() => expect(updatePlaylist).toHaveBeenCalledWith('p1', { matchIds: ['m1'] }));
+  });
+
   it('renders match tag chips and adds a preset tag via the combobox, carrying other fields through', async () => {
     const user = userEvent.setup();
     listMatches.mockResolvedValue([
