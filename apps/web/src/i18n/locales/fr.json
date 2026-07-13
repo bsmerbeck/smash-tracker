@@ -520,6 +520,33 @@
       "editNoteAria": "Modifier la note de l'horodatage"
     }
   },
+  "tags": {
+    "preset": {
+      "tournament-set": "Set de tournoi",
+      "practice-friendlies": "Entraînement/Amicaux",
+      "bad-matchup": "Mauvais matchup",
+      "good-read-highlight": "Bonne lecture/Highlight",
+      "to-review": "À revoir",
+      "neutral": "Neutre",
+      "punish": "Punition",
+      "edgeguard": "Edgeguard",
+      "recovery": "Récupération",
+      "kill-confirm": "Confirmation de kill",
+      "defense": "Défense",
+      "mixup": "Mixup",
+      "matchup-note": "Note de matchup",
+      "mental-game": "Jeu mental",
+      "mistake": "Erreur",
+      "highlight": "Highlight"
+    },
+    "combobox": {
+      "placeholder": "Rechercher ou créer un tag...",
+      "create": "Créer \"{{tag}}\"",
+      "empty": "Aucun tag trouvé."
+    },
+    "addAria": "Ajouter un tag",
+    "removeAria": "Retirer le tag {{tag}}"
+  },
   "matchups": {
     "loading": "Chargement des matchups...",
     "noFightersSubtitle": "Choisissez vos combattants principaux et secondaires pour commencer à suivre vos matchups.",
