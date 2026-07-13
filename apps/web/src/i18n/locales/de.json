@@ -91,7 +91,7 @@
       "editTimestamp": "Zeitstempel {{time}} bearbeiten",
       "timePlaceholder": "m:ss",
       "timeAria": "Zeitstempel-Zeit",
-      "notePlaceholder": "Notiz",
+      "notePlaceholder": "Notiz (optional)",
       "noteAria": "Zeitstempel-Notiz",
       "addTimestamp": "Zeitstempel hinzufügen",
       "timeFormatError": "Gib eine Zeit als m:ss oder h:mm:ss ein",

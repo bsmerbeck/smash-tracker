@@ -880,6 +880,60 @@ describe('VodManagerPage', () => {
     expect(playVideo).not.toHaveBeenCalled();
   });
 
+  it('retest fix-up #2: the composer saves a tag-only entry — a valid TIME alone with no note text', async () => {
+    const user = userEvent.setup();
+    listMatches.mockResolvedValue([
+      makeMatch({
+        id: 'm1',
+        opponent: 'rival-one',
+        vodUrl: 'https://youtube.com/watch?v=abc123',
+        gsp: 1_234_567,
+        vodTimestamps: [{ seconds: 900, note: 'existing note' }],
+      }),
+    ]);
+
+    let capturedConfig: YouTubePlayerConfig | undefined;
+    const Player = vi.fn(function (
+      this: unknown,
+      _el: HTMLElement,
+      config: YouTubePlayerConfig,
+    ): YouTubePlayerInstance {
+      capturedConfig = config;
+      return {
+        seekTo: vi.fn(),
+        playVideo: vi.fn(),
+        pauseVideo: vi.fn(),
+        destroy: vi.fn(),
+        getCurrentTime: vi.fn(() => 754),
+      };
+    });
+    window.YT = { Player: Player as unknown as YTGlobal['Player'], PlayerState: { ENDED: 0 } };
+
+    renderVodManager('/vod?match=m1');
+    await waitFor(() => expect(Player).toHaveBeenCalledTimes(1));
+    act(() => {
+      capturedConfig?.events?.onReady?.();
+    });
+
+    // Time input only — the note input is left blank entirely. Clear the
+    // focus-prefilled value (getCurrentTime()) before typing the target time.
+    const timeInput = screen.getByLabelText('Timestamp time');
+    await user.click(timeInput);
+    await user.clear(timeInput);
+    await user.type(timeInput, '5:00{Enter}');
+
+    // Saves with no "note text required" error — the empty-note entry
+    // lands in the PATCH, ready for the user to tag via the row's "+" chip.
+    expect(screen.queryByText('Enter a note for this timestamp')).not.toBeInTheDocument();
+    await waitFor(() => expect(updateMatch).toHaveBeenCalledTimes(1));
+    const [id, input] = updateMatch.mock.calls[0] as [string, Record<string, unknown>];
+    expect(id).toBe('m1');
+    expect(input.vodTimestamps).toEqual([
+      { seconds: 300, note: '' },
+      { seconds: 900, note: 'existing note' },
+    ]);
+  });
+
   it('edits a timestamp note in place (no dialog), re-sorting ascending, via a single full-carry-through PATCH', async () => {
     const user = userEvent.setup();
     listMatches.mockResolvedValue([
@@ -940,6 +994,62 @@ describe('VodManagerPage', () => {
     expect(input.vodTimestamps).toEqual([
       { seconds: 10, note: 'note B' },
       { seconds: 30, note: 'note A' },
+    ]);
+  });
+
+  it('retest fix-up #2: an in-place row edit allows clearing the note text to empty and saving, keeping tags/time', async () => {
+    const user = userEvent.setup();
+    listMatches.mockResolvedValue([
+      makeMatch({
+        id: 'm1',
+        opponent: 'rival-one',
+        vodUrl: 'https://youtube.com/watch?v=abc123',
+        vodTimestamps: [
+          { seconds: 30, note: 'note A' },
+          { seconds: 90, note: 'note B', tags: ['punish'] },
+        ],
+      }),
+    ]);
+
+    let capturedConfig: YouTubePlayerConfig | undefined;
+    const Player = vi.fn(function (
+      this: unknown,
+      _el: HTMLElement,
+      config: YouTubePlayerConfig,
+    ): YouTubePlayerInstance {
+      capturedConfig = config;
+      return {
+        seekTo: vi.fn(),
+        playVideo: vi.fn(),
+        pauseVideo: vi.fn(),
+        destroy: vi.fn(),
+        getCurrentTime: vi.fn(() => 754),
+      };
+    });
+    window.YT = { Player: Player as unknown as YTGlobal['Player'], PlayerState: { ENDED: 0 } };
+
+    renderVodManager('/vod?match=m1');
+    await waitFor(() => expect(Player).toHaveBeenCalledTimes(1));
+    act(() => {
+      capturedConfig?.events?.onReady?.();
+    });
+
+    await user.click(screen.getByLabelText('Edit timestamp 1:30'));
+    const noteInput = screen.getByLabelText('Edit timestamp note');
+    expect(noteInput).toHaveValue('note B');
+
+    // Clear the note text entirely, then commit — no "note required" error,
+    // time/tags are unaffected.
+    await user.clear(noteInput);
+    await user.keyboard('{Enter}');
+
+    expect(screen.queryByText('Enter a note for this timestamp')).not.toBeInTheDocument();
+    await waitFor(() => expect(updateMatch).toHaveBeenCalledTimes(1));
+    const [id, input] = updateMatch.mock.calls[0] as [string, Record<string, unknown>];
+    expect(id).toBe('m1');
+    expect(input.vodTimestamps).toEqual([
+      { seconds: 30, note: 'note A' },
+      { seconds: 90, note: '', tags: ['punish'] },
     ]);
   });
 
