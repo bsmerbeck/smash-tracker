@@ -494,7 +494,8 @@
       "opponent": "対戦相手",
       "tournament": "大会",
       "stage": "ステージ",
-      "allOption": "すべて"
+      "allOption": "すべて",
+      "tagsLabel": "タグ"
     },
     "sort": {
       "newest": "新しい順",

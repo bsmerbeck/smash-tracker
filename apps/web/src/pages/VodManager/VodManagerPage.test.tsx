@@ -540,13 +540,16 @@ describe('VodManagerPage', () => {
       capturedConfig?.events?.onReady?.();
     });
 
-    // (1) note A's existing preset tag renders as a chip with its translated label.
-    expect(await screen.findByText('Punish')).toBeInTheDocument();
+    // (1) note A's existing preset tag renders as a chip with its translated
+    // label (scoped to note A's row — the tag filter row in VodMatchList
+    // also renders "Punish" as a toggle chip, so a plain text query would
+    // be ambiguous).
+    const noteARow = screen.getByText('note A').closest('li')!;
+    expect(within(noteARow).getByText('Punish')).toBeInTheDocument();
 
     // (2) Opening note A's add-combobox (scoped to its row) and picking
     // another preset PATCHes both tags onto note A, carrying note B and
     // other match fields through unchanged — and never seeks/selects.
-    const noteARow = screen.getByText('note A').closest('li')!;
     await user.click(within(noteARow).getByRole('combobox', { name: 'Add a tag' }));
     await user.click(await screen.findByRole('option', { name: 'Edgeguard' }));
 
@@ -869,8 +872,13 @@ describe('VodManagerPage', () => {
       capturedConfig?.events?.onReady?.();
     });
 
-    // (1) The existing preset tag renders as a chip with its translated label.
-    expect(await screen.findByText('Practice/Friendlies')).toBeInTheDocument();
+    // (1) The existing preset tag renders as a chip with its translated label
+    // (scoped via the chip's unique remove-button accessible name — the tag
+    // filter row in VodMatchList also renders "Practice/Friendlies" as a
+    // toggle chip, so a plain text query would be ambiguous).
+    expect(
+      await screen.findByRole('button', { name: 'Remove tag Practice/Friendlies' }),
+    ).toBeInTheDocument();
 
     // (2) Opening the add-combobox and picking another preset PATCHes with
     // both tags, carrying gsp/vodTimestamps through unchanged.
