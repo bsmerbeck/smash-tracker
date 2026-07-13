@@ -211,6 +211,7 @@ export function VodManagerPage() {
                   onSeek={handleSeek}
                   getCurrentTimeRef={getCurrentTimeRef}
                   onUpdateTimestamps={handleUpdateTimestamps}
+                  tagVocabulary={tagVocabulary}
                 />
               </>
             ) : (
