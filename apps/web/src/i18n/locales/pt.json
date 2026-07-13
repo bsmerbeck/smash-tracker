@@ -91,7 +91,7 @@
       "editTimestamp": "Editar marcação {{time}}",
       "timePlaceholder": "m:ss",
       "timeAria": "Tempo da marcação",
-      "notePlaceholder": "Nota",
+      "notePlaceholder": "Nota (opcional)",
       "noteAria": "Nota da marcação",
       "addTimestamp": "Adicionar marcação",
       "timeFormatError": "Insira um tempo como m:ss ou h:mm:ss",

@@ -91,7 +91,7 @@
       "editTimestamp": "Edit timestamp {{time}}",
       "timePlaceholder": "m:ss",
       "timeAria": "Timestamp time",
-      "notePlaceholder": "Note",
+      "notePlaceholder": "Note (optional)",
       "noteAria": "Timestamp note",
       "addTimestamp": "Add timestamp",
       "timeFormatError": "Enter a time as m:ss or h:mm:ss",
