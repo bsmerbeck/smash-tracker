@@ -734,6 +734,142 @@ describe('VodManagerPage', () => {
     expect(screen.getByRole('textbox', { name: 'Match start time in VOD' })).toHaveValue('12:34');
   });
 
+  it('renders match tag chips and adds a preset tag via the combobox, carrying other fields through', async () => {
+    const user = userEvent.setup();
+    listMatches.mockResolvedValue([
+      makeMatch({
+        id: 'm1',
+        opponent: 'rival-one',
+        vodUrl: 'https://youtube.com/watch?v=abc123',
+        gsp: 1_234_567,
+        tags: ['practice-friendlies'],
+      }),
+    ]);
+
+    let capturedConfig: YouTubePlayerConfig | undefined;
+    const Player = vi.fn(function (
+      this: unknown,
+      _el: HTMLElement,
+      config: YouTubePlayerConfig,
+    ): YouTubePlayerInstance {
+      capturedConfig = config;
+      return {
+        seekTo: vi.fn(),
+        playVideo: vi.fn(),
+        destroy: vi.fn(),
+        getCurrentTime: vi.fn(() => 754),
+      };
+    });
+    window.YT = { Player: Player as unknown as YTGlobal['Player'] };
+
+    renderVodManager('/vod?match=m1');
+    await waitFor(() => expect(Player).toHaveBeenCalledTimes(1));
+    act(() => {
+      capturedConfig?.events?.onReady?.();
+    });
+
+    // (1) The existing preset tag renders as a chip with its translated label.
+    expect(await screen.findByText('Practice/Friendlies')).toBeInTheDocument();
+
+    // (2) Opening the add-combobox and picking another preset PATCHes with
+    // both tags, carrying gsp/vodTimestamps through unchanged.
+    await user.click(screen.getByRole('combobox', { name: 'Add a tag' }));
+    await user.click(await screen.findByRole('option', { name: 'Bad Matchup' }));
+
+    await waitFor(() => expect(updateMatch).toHaveBeenCalledTimes(1));
+    const [id, input] = updateMatch.mock.calls[0] as [string, Record<string, unknown>];
+    expect(id).toBe('m1');
+    expect(input.tags).toEqual(['practice-friendlies', 'bad-matchup']);
+    expect(input.gsp).toBe(1_234_567);
+  });
+
+  it('removes a match tag via the chip X, omitting tags from the payload when it was the last one', async () => {
+    const user = userEvent.setup();
+    listMatches.mockResolvedValue([
+      makeMatch({
+        id: 'm1',
+        opponent: 'rival-one',
+        vodUrl: 'https://youtube.com/watch?v=abc123',
+        tags: ['practice-friendlies'],
+      }),
+    ]);
+
+    let capturedConfig: YouTubePlayerConfig | undefined;
+    const Player = vi.fn(function (
+      this: unknown,
+      _el: HTMLElement,
+      config: YouTubePlayerConfig,
+    ): YouTubePlayerInstance {
+      capturedConfig = config;
+      return {
+        seekTo: vi.fn(),
+        playVideo: vi.fn(),
+        destroy: vi.fn(),
+        getCurrentTime: vi.fn(() => 754),
+      };
+    });
+    window.YT = { Player: Player as unknown as YTGlobal['Player'] };
+
+    renderVodManager('/vod?match=m1');
+    await waitFor(() => expect(Player).toHaveBeenCalledTimes(1));
+    act(() => {
+      capturedConfig?.events?.onReady?.();
+    });
+
+    await user.click(await screen.findByRole('button', { name: 'Remove tag Practice/Friendlies' }));
+
+    await waitFor(() => expect(updateMatch).toHaveBeenCalledTimes(1));
+    const [id, input] = updateMatch.mock.calls[0] as [string, Record<string, unknown>];
+    expect(id).toBe('m1');
+    expect(input).not.toHaveProperty('tags');
+  });
+
+  it('carries match tags through a match-detail edit save even when the VOD link is cleared', async () => {
+    const user = userEvent.setup();
+    listMatches.mockResolvedValue([
+      makeMatch({
+        id: 'm1',
+        opponent: 'rival-one',
+        vodUrl: 'https://youtube.com/watch?v=abc123',
+        vodTimestamps: [{ seconds: 30, note: 'note A' }],
+        tags: ['to-review'],
+      }),
+    ]);
+
+    let capturedConfig: YouTubePlayerConfig | undefined;
+    const Player = vi.fn(function (
+      this: unknown,
+      _el: HTMLElement,
+      config: YouTubePlayerConfig,
+    ): YouTubePlayerInstance {
+      capturedConfig = config;
+      return {
+        seekTo: vi.fn(),
+        playVideo: vi.fn(),
+        destroy: vi.fn(),
+        getCurrentTime: vi.fn(() => 754),
+      };
+    });
+    window.YT = { Player: Player as unknown as YTGlobal['Player'] };
+
+    renderVodManager('/vod?match=m1');
+    await waitFor(() => expect(Player).toHaveBeenCalledTimes(1));
+    act(() => {
+      capturedConfig?.events?.onReady?.();
+    });
+
+    await user.click(screen.getByRole('button', { name: 'Edit details' }));
+    const vodUrlInput = screen.getByRole('textbox', { name: 'VOD URL' });
+    await user.clear(vodUrlInput);
+    await user.click(screen.getByRole('button', { name: 'Save' }));
+
+    await waitFor(() => expect(updateMatch).toHaveBeenCalledTimes(1));
+    const [, input] = updateMatch.mock.calls[0] as [string, Record<string, unknown>];
+    // vodTimestamps are dropped (VOD link cleared) but the match tag survives.
+    expect(input).not.toHaveProperty('vodTimestamps');
+    expect(input.tags).toEqual(['to-review']);
+  });
+
   it('does not remount the player when editing match metadata', async () => {
     const user = userEvent.setup();
     listMatches.mockResolvedValue([

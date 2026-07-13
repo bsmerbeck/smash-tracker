@@ -2,13 +2,17 @@ import type { RefObject } from 'react';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
+import { X } from 'lucide-react';
 import type { Fighter, Match, UpdateMatchInput } from '@smash-tracker/shared';
 import { getFighterById } from '@/data/sprites';
 import { formatTimestamp } from '@/lib/vod';
+import { MATCH_PRESET_TAGS, addTagToList, removeTagFromList, tagLabel } from '@/lib/tags';
 import { useUpdateMatch } from '@/hooks/useUpdateMatch';
+import { buildUpdateInput } from '@/components/vod/VodNotesDialog';
 import { tournamentLabel } from '@/pages/MatchData/lib/matchTableFilters';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { TagAddCombobox } from './TagAddCombobox';
 import {
   MatchFormFields,
   matchFormValuesToInput,
@@ -16,6 +20,8 @@ import {
   type MatchFormValues,
 } from '@/components/match-form/MatchForm';
 import { matchToFormValues } from '@/components/match-form/EditMatchForm';
+
+const MAX_MATCH_TAGS = 10;
 
 /**
  * The VOD Manager's selected-match metadata card (NOTE-04). View mode
@@ -38,12 +44,15 @@ export function SelectedMatchMeta({
   match,
   fighterSprites,
   getCurrentTimeRef,
+  tagVocabulary,
 }: {
   match: Match;
   /** The fighters offered for "Your Fighter" — the signed-in user's primary+secondary selections. */
   fighterSprites: Fighter[];
   /** Populated by `VodPlayer` with the live player's `getCurrentTime` function once available. */
   getCurrentTimeRef: RefObject<(() => number) | null>;
+  /** Custom tag vocabulary derived across ALL loaded VOD matches (03-02 locked decision) — fed into the match TagAddCombobox's "your existing custom tags" group. */
+  tagVocabulary: string[];
 }) {
   const { t } = useTranslation();
   const updateMatch = useUpdateMatch();
@@ -69,12 +78,16 @@ export function SelectedMatchMeta({
     // Full-overwrite PATCH — mirrors EditMatchForm.onSubmit exactly: carry
     // vodTimestamps through unless the VOD link was just cleared (offsets
     // into a video that no longer has a URL would otherwise be orphaned).
+    // match.tags carries through UNCONDITIONALLY (no vodUrlBlank guard) —
+    // match-level tags are independent annotations, not tied to the VOD
+    // link, so clearing the VOD never drops them (TAG-01..05).
     const vodUrlBlank = values.vodUrl.trim() === '';
     const input: UpdateMatchInput = {
       ...matchFormValuesToInput(values),
       ...(!vodUrlBlank && match.vodTimestamps !== undefined
         ? { vodTimestamps: match.vodTimestamps }
         : {}),
+      ...(match.tags !== undefined ? { tags: match.tags } : {}),
     };
     try {
       await updateMatch.mutateAsync({ id: match.id, input });
@@ -82,6 +95,36 @@ export function SelectedMatchMeta({
       setMode('view');
     } catch {
       toast.error(t('matchForm.edit.saveFailed'));
+    }
+  }
+
+  async function handleAddTag(tag: string) {
+    const next = addTagToList(match.tags ?? [], tag, MAX_MATCH_TAGS);
+    const input = buildUpdateInput(match, {
+      vodUrl: match.vodUrl,
+      vodTimestamps: match.vodTimestamps,
+      tags: next.length > 0 ? next : undefined,
+    });
+    try {
+      await updateMatch.mutateAsync({ id: match.id, input });
+      toast.success(t('shared.vod.saved'));
+    } catch {
+      toast.error(t('shared.vod.saveFailed'));
+    }
+  }
+
+  async function handleRemoveTag(tag: string) {
+    const next = removeTagFromList(match.tags ?? [], tag);
+    const input = buildUpdateInput(match, {
+      vodUrl: match.vodUrl,
+      vodTimestamps: match.vodTimestamps,
+      tags: next.length > 0 ? next : undefined,
+    });
+    try {
+      await updateMatch.mutateAsync({ id: match.id, input });
+      toast.success(t('shared.vod.saved'));
+    } catch {
+      toast.error(t('shared.vod.saveFailed'));
     }
   }
 
@@ -172,6 +215,32 @@ export function SelectedMatchMeta({
           </div>
         )}
       </dl>
+      {/* Match-tag chips (TAG-01..05) live on the VIEW state, NOT gated
+          behind edit mode — tags are annotations, not sync-owned game
+          facts, so they stay editable even on a synced match. */}
+      <div className="flex flex-wrap items-center gap-2">
+        {(match.tags ?? []).map((tag) => (
+          <Badge key={tag} variant="secondary" className="gap-1">
+            {tagLabel(t, tag)}
+            <button
+              type="button"
+              aria-label={t('tags.removeAria', { tag: tagLabel(t, tag) })}
+              onClick={() => handleRemoveTag(tag)}
+              disabled={updateMatch.isPending}
+              className="-mr-1 rounded-full p-0.5 hover:bg-black/10"
+            >
+              <X className="size-3" />
+            </button>
+          </Badge>
+        ))}
+        <TagAddCombobox
+          presets={MATCH_PRESET_TAGS}
+          existingTags={match.tags ?? []}
+          vocabulary={tagVocabulary}
+          onAdd={handleAddTag}
+          ariaLabel={t('tags.addAria')}
+        />
+      </div>
     </div>
   );
 }
