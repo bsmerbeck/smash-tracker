@@ -1781,6 +1781,53 @@ describe('VodManagerPage', () => {
     expect(window.localStorage.getItem('smash-tracker.vodPlayerSize')).toBe('fill');
   });
 
+  it('compact mode applies the lg+ combination-rail grid placement to the quick-tags and timestamp-list rails (fill mode does not)', async () => {
+    const user = userEvent.setup();
+    listMatches.mockResolvedValue([
+      makeMatch({
+        id: 'm1',
+        opponent: 'rival-one',
+        vodUrl: 'https://youtube.com/watch?v=abc123',
+      }),
+    ]);
+
+    window.YT = {
+      Player: vi.fn(function (this: unknown) {
+        return {
+          seekTo: vi.fn(),
+          playVideo: vi.fn(),
+          destroy: vi.fn(),
+          getCurrentTime: vi.fn(() => 0),
+        };
+      }) as unknown as YTGlobal['Player'],
+      PlayerState: { ENDED: 0 },
+    };
+
+    renderVodManager('/vod?match=m1');
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Switch to compact player' })).toBeInTheDocument(),
+    );
+
+    // (1) Fill mode (default): no grid/rail classes on either rail.
+    const quickTagRail = screen.getByTestId('vod-quicktag-rail');
+    const timestampRail = screen.getByTestId('vod-timestamp-rail');
+    expect(quickTagRail.className).not.toContain('lg:col-start-2');
+    expect(timestampRail.className).not.toContain('lg:col-start-2');
+
+    // (2) Switching to compact applies the lg+ two-column rail placement —
+    // quick tags in the rail's top cell, timestamp list in the bottom cell,
+    // scrollable rather than growing the page.
+    await user.click(screen.getByRole('button', { name: 'Switch to compact player' }));
+    expect(quickTagRail.className).toContain('lg:col-start-2');
+    expect(quickTagRail.className).toContain('lg:row-start-1');
+    expect(timestampRail.className).toContain('lg:col-start-2');
+    expect(timestampRail.className).toContain('lg:overflow-y-auto');
+
+    // (3) The single VodPlayer instance mounted throughout — the layout
+    // swap is a pure className change, never a remount.
+    expect(window.YT!.Player).toHaveBeenCalledTimes(1);
+  });
+
   it('Prev/Next timestamp buttons seek to and select the previous/next time-sorted note, clamped at the boundaries', async () => {
     const user = userEvent.setup();
     listMatches.mockResolvedValue([
