@@ -314,6 +314,71 @@ describe('POST /api/matches', () => {
     expect(stored).not.toHaveProperty('vodStartSeconds');
   });
 
+  it('accepts and stores match-level tags', async () => {
+    const { app, database } = buildTestApp();
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/matches',
+      headers: authHeader(),
+      payload: { ...validCreateInput, tags: ['practice-friendlies', 'my custom tag'] },
+    });
+
+    expect(response.statusCode).toBe(201);
+    expect(response.json()).toMatchObject({ tags: ['practice-friendlies', 'my custom tag'] });
+
+    const dump = database.dump() as Record<string, unknown>;
+    const matches = dump.matches as Record<string, Record<string, unknown>>;
+    const stored = Object.values(matches[TEST_UID]!)[0]!;
+    expect(stored).toMatchObject({ tags: ['practice-friendlies', 'my custom tag'] });
+  });
+
+  it('accepts and stores note-level tags inside vodTimestamps entries', async () => {
+    const { app, database } = buildTestApp();
+
+    const vodTimestamps = [
+      { seconds: 161, note: 'missed punish on shield', tags: ['punish', 'my custom tag'] },
+    ];
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/matches',
+      headers: authHeader(),
+      payload: {
+        ...validCreateInput,
+        vodUrl: 'https://youtube.com/watch?v=abc123',
+        vodTimestamps,
+      },
+    });
+
+    expect(response.statusCode).toBe(201);
+    expect(response.json()).toMatchObject({ vodTimestamps });
+
+    const dump = database.dump() as Record<string, unknown>;
+    const matches = dump.matches as Record<string, Record<string, unknown>>;
+    const stored = Object.values(matches[TEST_UID]!)[0]!;
+    expect(stored).toMatchObject({ vodTimestamps });
+  });
+
+  it('omits tags from the stored record when not provided', async () => {
+    const { app, database } = buildTestApp();
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/matches',
+      headers: authHeader(),
+      payload: { ...validCreateInput },
+    });
+
+    expect(response.statusCode).toBe(201);
+    expect(response.json()).not.toHaveProperty('tags');
+
+    const dump = database.dump() as Record<string, unknown>;
+    const matches = dump.matches as Record<string, Record<string, unknown>>;
+    const stored = Object.values(matches[TEST_UID]!)[0]!;
+    expect(stored).not.toHaveProperty('tags');
+  });
+
   it('rejects source/externalId from client input (server-only fields)', async () => {
     const { app } = buildTestApp();
 
@@ -738,6 +803,47 @@ describe('PATCH /api/matches/:id', () => {
     expect(stored).not.toHaveProperty('vodStartSeconds');
   });
 
+  it('drops tags from the stored record when the update payload sends an explicit empty array', async () => {
+    const { app, database } = buildTestApp();
+    database.seed(`matches/${TEST_UID}/existingKey`, {
+      fighter_id: 1,
+      opponent_id: 8,
+      time: 1700000000000,
+      win: false,
+      tags: ['practice-friendlies'],
+    });
+
+    const response = await app.inject({
+      method: 'PATCH',
+      url: '/api/matches/existingKey',
+      headers: authHeader(),
+      payload: { ...validCreateInput, tags: [] },
+    });
+
+    // The PATCH response echoes the in-memory record built from the
+    // request (no RTDB round-trip before responding), so it still reflects
+    // the `tags: []` the caller sent.
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({ tags: [] });
+
+    // But RTDB silently drops keys holding an empty array on write, so the
+    // persisted record — and any subsequent read — genuinely lacks the
+    // `tags` key. This confirms that behavior rather than relying on
+    // `.optional()` semantics alone.
+    const dump = database.dump() as Record<string, unknown>;
+    const matches = dump.matches as Record<string, Record<string, unknown>>;
+    const stored = matches[TEST_UID]!.existingKey!;
+    expect(stored).not.toHaveProperty('tags');
+
+    const list = await app.inject({
+      method: 'GET',
+      url: '/api/matches',
+      headers: authHeader(),
+    });
+    const [readBack] = list.json() as Array<Record<string, unknown>>;
+    expect(readBack).not.toHaveProperty('tags');
+  });
+
   it('returns 400 when vodTimestamps exceeds 20 entries', async () => {
     const { app, database } = buildTestApp();
     database.seed(`matches/${TEST_UID}/existingKey`, {
@@ -962,6 +1068,34 @@ describe('PATCH /api/matches/:id', () => {
       externalId: 'sgg:123:g1',
       time: syncedRecord.time,
     });
+  });
+
+  it('allows a tags-only update on a synced match (tags are not sync-owned)', async () => {
+    const { app, database } = buildTestApp();
+    database.seed(`matches/${TEST_UID}/sgg-123-g1`, {
+      ...syncedRecord,
+    });
+
+    const response = await app.inject({
+      method: 'PATCH',
+      url: '/api/matches/sgg-123-g1',
+      headers: authHeader(),
+      payload: {
+        ...syncedCarryThroughPayload,
+        tags: ['practice-friendlies'],
+      },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({
+      tags: ['practice-friendlies'],
+      source: 'startgg',
+      externalId: 'sgg:123:g1',
+    });
+
+    const dump = database.dump() as Record<string, unknown>;
+    const matches = dump.matches as Record<string, Record<string, unknown>>;
+    expect(matches[TEST_UID]!['sgg-123-g1']).toMatchObject({ tags: ['practice-friendlies'] });
   });
 });
 
