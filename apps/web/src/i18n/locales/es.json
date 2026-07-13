@@ -546,6 +546,14 @@
       "prev": "Partida anterior",
       "next": "Partida siguiente",
       "autoplayBlocked": "La reproducción automática fue bloqueada — presiona reproducir para continuar"
+    },
+    "capture": {
+      "title": "Etiquetas rápidas",
+      "customize": "Personalizar",
+      "customizeAria": "Personalizar etiquetas rápidas",
+      "removeQuickTagAria": "Quitar {{label}} de las etiquetas rápidas",
+      "quickTagAria": "Etiqueta rápida: {{label}}",
+      "quickTagHint": "Toca una etiqueta para capturar este momento"
     }
   },
   "tags": {

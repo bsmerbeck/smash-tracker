@@ -546,6 +546,14 @@
       "prev": "前の対戦",
       "next": "次の対戦",
       "autoplayBlocked": "自動再生がブロックされました — 再生ボタンを押して続行してください"
+    },
+    "capture": {
+      "title": "クイックタグ",
+      "customize": "カスタマイズ",
+      "customizeAria": "クイックタグをカスタマイズ",
+      "removeQuickTagAria": "クイックタグから{{label}}を削除",
+      "quickTagAria": "クイックタグ: {{label}}",
+      "quickTagHint": "タグをタップしてこの瞬間をキャプチャ"
     }
   },
   "tags": {

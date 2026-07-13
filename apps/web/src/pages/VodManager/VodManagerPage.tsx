@@ -20,7 +20,7 @@ import {
   usePlaylists,
   useUpdatePlaylist,
 } from '@/hooks/usePlaylists';
-import { detectVodProvider, parseVodStartSeconds } from '@/lib/vod';
+import { MAX_TIMESTAMPS, detectVodProvider, parseVodStartSeconds } from '@/lib/vod';
 import { deriveCustomTagVocabulary } from '@/lib/tags';
 import { movePlaylistItem, resolvePlaylistMatches } from '@/lib/playlists';
 import { ApiError } from '@/lib/api';
@@ -45,9 +45,11 @@ import {
   type VodManagerFilterState,
   type VodSortDirection,
 } from './lib/vodManagerFilters';
+import { readStoredQuickTags, persistQuickTags } from './lib/vodPrefs';
 import { VodMatchList } from './components/VodMatchList';
 import { VodPlayer } from './components/VodPlayer';
 import { TimestampList } from './components/TimestampList';
+import { QuickTagPanel } from './components/QuickTagPanel';
 import { SelectedMatchMeta } from './components/SelectedMatchMeta';
 import { PlaylistSelector } from './components/PlaylistSelector';
 
@@ -152,6 +154,10 @@ export function VodManagerPage() {
   // handler can command a freshly-inserted row straight into edit mode once
   // the PATCH resolves and the new sorted array position is known.
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
+  // Quick-tag button set (device preference, `vodPrefs.ts`) — seeded from
+  // localStorage once at mount, persisted on every add/remove. Never sent
+  // to the API (locked decision).
+  const [quickTags, setQuickTags] = useState<string[]>(() => readStoredQuickTags());
   // Set by handleAutoplayBlocked (LIST-04) whenever the browser blocks an
   // auto-advance attempt — surfaces the native play-button fallback hint
   // (Task 3). Reset alongside selectedTimestampIndex below: a blocked flag
@@ -484,6 +490,35 @@ export function VodManagerPage() {
     }
   }
 
+  function handleQuickTagsChange(next: string[]) {
+    setQuickTags(next);
+    persistQuickTags(next);
+  }
+
+  // Quick-tag capture (Task 2): one click on a QuickTagPanel button
+  // instantly saves a pre-tagged, empty-text note at the current playback
+  // time via the EXISTING handleUpdateTimestamps PATCH site (never a
+  // parallel mutation) — the shared MAX_TIMESTAMPS cap (also enforced by
+  // NoteComposer) is checked here, not inside QuickTagPanel. The
+  // just-captured note then drops into inline edit mode (setEditingIndex)
+  // so the user can optionally type text: Enter commits, Esc keeps the
+  // already-saved note.
+  function handleQuickTag(tagSlug: string) {
+    if (!selectedMatch) {
+      return;
+    }
+    const existing = selectedMatch.vodTimestamps ?? [];
+    if (existing.length >= MAX_TIMESTAMPS) {
+      toast.error(t('shared.vod.timestampLimit', { max: MAX_TIMESTAMPS }));
+      return;
+    }
+    const seconds = getCurrentTimeRef.current?.() ?? 0;
+    const newNote: VodTimestamp = { seconds, note: '', tags: [tagSlug] };
+    const next = [...existing, newNote].sort((a, b) => a.seconds - b.seconds);
+    handleUpdateTimestamps(next);
+    setEditingIndex(next.indexOf(newNote));
+  }
+
   return (
     <div className="flex flex-col gap-6">
       <h1 className="text-2xl font-semibold tracking-tight">{t('vodManager.title')}</h1>
@@ -576,6 +611,14 @@ export function VodManagerPage() {
                     {t('vodManager.playback.autoplayBlocked')}
                   </p>
                 )}
+                {/* Quick tags panel (Task 2) — directly below the player,
+                    playlist-agnostic (works in Library view too). */}
+                <QuickTagPanel
+                  quickTags={quickTags}
+                  onQuickTag={handleQuickTag}
+                  onQuickTagsChange={handleQuickTagsChange}
+                  tagVocabulary={tagVocabulary}
+                />
                 {/* Playlist playback controls (LIST-04) — only while a
                     playlist is active; clicking Prev/Next never sets
                     autoplayNextRef (manual navigation must never
