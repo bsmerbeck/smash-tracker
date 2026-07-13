@@ -3,7 +3,7 @@ import type { KeyboardEvent } from 'react';
 import { useSearchParams } from 'react-router';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
-import { Trash2 } from 'lucide-react';
+import { SkipBack, SkipForward, Trash2 } from 'lucide-react';
 import {
   MAX_PLAYLISTS_PER_USER,
   type Fighter,
@@ -65,6 +65,20 @@ function resolveMatchStartSeconds(match: Match): number {
 }
 
 /**
+ * `${provider}:${videoId}` identity key for `match`'s VOD, or `null` if it
+ * has no VOD / an unrecognized host — mirrors the reposition effect's own
+ * identity computation below and `useVodPlayer`'s internal `identityKey`,
+ * so "same video" is judged identically everywhere in this component.
+ */
+function videoIdentityOf(match: Match): string | null {
+  if (!match.vodUrl) {
+    return null;
+  }
+  const detected = detectVodProvider(match.vodUrl);
+  return detected.provider != null ? `${detected.provider}:${detected.videoId}` : null;
+}
+
+/**
  * `/vod` — the VOD Manager: a master-detail page listing every match with a
  * VOD attached (LIB-01), filterable/sortable (LIB-02) in the left panel,
  * with the right panel showing the embedded, seekable player (PLAY-01/02),
@@ -107,6 +121,13 @@ export function VodManagerPage() {
     () => (selectedPlaylist ? resolvePlaylistMatches(selectedPlaylist, vodMatches) : null),
     [selectedPlaylist, vodMatches],
   );
+  // The selected match's position within playlistMatches (`-1` if no
+  // playlist is active or the selection isn't in it) — drives the Prev/Next
+  // boundary disable state and the "N of M" indicator (Task 3).
+  const playlistMatchIndex = useMemo(
+    () => (playlistMatches ? playlistMatches.findIndex((m) => m.id === selectedMatchId) : -1),
+    [playlistMatches, selectedMatchId],
+  );
 
   // Custom tag vocabulary (TAG-01..05) spans ALL loaded VOD-bearing matches
   // (locked decision, 03-CONTEXT.md) — not just the currently filtered/
@@ -127,6 +148,11 @@ export function VodManagerPage() {
   const [filters, setFilters] = useState<VodManagerFilterState>(DEFAULT_VOD_MANAGER_FILTERS);
   const [sort, setSort] = useState<VodSortDirection>('newest');
   const [selectedTimestampIndex, setSelectedTimestampIndex] = useState<number | null>(null);
+  // Set by handleAutoplayBlocked (LIST-04) whenever the browser blocks an
+  // auto-advance attempt — surfaces the native play-button fallback hint
+  // (Task 3). Reset alongside selectedTimestampIndex below: a blocked flag
+  // from the PREVIOUS video must never carry over to a newly selected one.
+  const [autoplayBlocked, setAutoplayBlocked] = useState(false);
 
   // A new match starts with no timestamp note selected — the highlight is
   // fixed to the last click (D-13/D-14), not carried over between matches.
@@ -137,6 +163,7 @@ export function VodManagerPage() {
   if (selectedMatchId !== trackedMatchId) {
     setTrackedMatchId(selectedMatchId);
     setSelectedTimestampIndex(null);
+    setAutoplayBlocked(false);
   }
 
   // Inline rename draft for the active playlist's selector row — re-seeded
@@ -194,6 +221,18 @@ export function VodManagerPage() {
   // (a one-shot read, never polled — D-14 / CONTEXT.md's no-polling rule).
   const getCurrentTimeRef = useRef<(() => number) | null>(null);
 
+  // LIST-04: single-use autoplay-intent flag (RESEARCH.md Open Question 2).
+  // Set to `true` ONLY by handleEnded's cross-identity branch, immediately
+  // before the setSearchParams call that triggers useVodPlayer's identity-
+  // keyed remount — that remount reads this value (passed down as the
+  // `autoplayOnConstruct` prop) via closure-capture at construction. Every
+  // OTHER selection path (manual row click, Prev/Next, deep-link, cold-
+  // open) leaves this `false`, so only an ENDED-triggered advance ever
+  // autoplays. Reset back to `false` by the effect below, keyed on
+  // selectedMatch identity, so a subsequent manual selection never
+  // inherits a stale autoplay intent.
+  const autoplayNextRef = useRef(false);
+
   const updateMatch = useUpdateMatch();
 
   // An entire event can be recorded as ONE video with each match's stored
@@ -224,12 +263,90 @@ export function VodManagerPage() {
     previousVodIdentityRef.current = identityKey;
   }, [selectedMatch]);
 
+  // Single-use reset for autoplayNextRef (see its declaration above).
+  // Declared AFTER the VodPlayer/useVodPlayer usage in this component's
+  // render (VodPlayer is mounted further down in the JSX below) so the
+  // CHILD's construction effect — which reads autoplayOnConstruct via
+  // closure-capture — always fires before this reset runs. React commits
+  // child effects before parent effects on every render, so this ordering
+  // holds regardless of textual position, but keeping it declared here
+  // (after VodPlayer's own hook usage in the render this effect belongs
+  // to) documents the invariant explicitly (RESEARCH.md Open Question 2).
+  useEffect(() => {
+    autoplayNextRef.current = false;
+  }, [selectedMatch?.id]);
+
   function handleSelect(id: string) {
     setSearchParams((prev) => {
       const next = new URLSearchParams(prev);
       next.set('match', id);
       return next;
     });
+  }
+
+  // LIST-04 auto-advance: fires when the live player reports ENDED. Only
+  // acts while a playlist is active; otherwise a no-op (Library view has
+  // no "next match" concept). Two branches mirroring the existing
+  // reposition mechanism (Pattern 4):
+  //   - same video identity as the current match -> just select the next
+  //     match id; previousVodIdentityRef's reposition effect (above) seeks
+  //     the ALREADY-PLAYING player to the new match's start time, no
+  //     remount, no autoplay flag needed (documented MVP limitation:
+  //     mid-video segments only advance at true video end).
+  //   - different video identity -> flag autoplay FIRST, then select the
+  //     next match id; the identity change remounts useVodPlayer, which
+  //     reads the flag as autoplayOnConstruct.
+  function handleEnded() {
+    if (!selectedPlaylist || !playlistMatches || !selectedMatch) {
+      return;
+    }
+    const index = playlistMatches.findIndex((m) => m.id === selectedMatch.id);
+    if (index === -1) {
+      return;
+    }
+    const nextMatch = playlistMatches[index + 1];
+    if (!nextMatch) {
+      return;
+    }
+    const currentIdentity = videoIdentityOf(selectedMatch);
+    const nextIdentity = videoIdentityOf(nextMatch);
+    if (currentIdentity == null || currentIdentity !== nextIdentity) {
+      autoplayNextRef.current = true;
+    }
+    handleSelect(nextMatch.id);
+  }
+
+  // Authoritative "the browser blocked our auto-advance attempt" signal
+  // (onAutoplayBlocked / PLAYBACK_BLOCKED, T-04-08) — surfaces the native
+  // play-button fallback hint (Task 3) rather than leaving the user stuck
+  // mid-transition. Reset alongside autoplayBlocked's other reset above
+  // whenever the selected match changes.
+  function handleAutoplayBlocked() {
+    setAutoplayBlocked(true);
+  }
+
+  // Manual Prev/Next playback navigation (Task 3) — deliberately does NOT
+  // touch autoplayNextRef: only handleEnded's cross-identity branch may
+  // request autoplay. Manual navigation (a row click, Prev, or Next) must
+  // never surprise-autoplay (RESEARCH.md anti-pattern list).
+  function handlePrevMatch() {
+    if (!playlistMatches || playlistMatchIndex <= 0) {
+      return;
+    }
+    const prevMatch = playlistMatches[playlistMatchIndex - 1];
+    if (prevMatch) {
+      handleSelect(prevMatch.id);
+    }
+  }
+
+  function handleNextMatch() {
+    if (!playlistMatches || playlistMatchIndex === -1) {
+      return;
+    }
+    const nextMatch = playlistMatches[playlistMatchIndex + 1];
+    if (nextMatch) {
+      handleSelect(nextMatch.id);
+    }
   }
 
   // Sibling-param update (see `selectedPlaylistId` doc comment above) — the
@@ -444,7 +561,52 @@ export function VodManagerPage() {
                   startSeconds={resolveMatchStartSeconds(selectedMatch)}
                   seekRef={playerSeekRef}
                   getCurrentTimeRef={getCurrentTimeRef}
+                  onEnded={handleEnded}
+                  onAutoplayBlocked={handleAutoplayBlocked}
+                  autoplayOnConstructRef={autoplayNextRef}
                 />
+                {autoplayBlocked && (
+                  <p className="text-sm text-muted-foreground">
+                    {t('vodManager.playback.autoplayBlocked')}
+                  </p>
+                )}
+                {/* Playlist playback controls (LIST-04) — only while a
+                    playlist is active; clicking Prev/Next never sets
+                    autoplayNextRef (manual navigation must never
+                    surprise-autoplay). */}
+                {selectedPlaylist && playlistMatches && playlistMatches.length > 0 && (
+                  <div className="flex items-center justify-center gap-3">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="icon-sm"
+                      aria-label={t('vodManager.playback.prev')}
+                      disabled={playlistMatchIndex <= 0}
+                      onClick={handlePrevMatch}
+                    >
+                      <SkipBack />
+                    </Button>
+                    <span className="text-sm text-muted-foreground">
+                      {t('vodManager.playback.position', {
+                        current: playlistMatchIndex + 1,
+                        total: playlistMatches.length,
+                      })}
+                    </span>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="icon-sm"
+                      aria-label={t('vodManager.playback.next')}
+                      disabled={
+                        playlistMatchIndex === -1 ||
+                        playlistMatchIndex >= playlistMatches.length - 1
+                      }
+                      onClick={handleNextMatch}
+                    >
+                      <SkipForward />
+                    </Button>
+                  </div>
+                )}
                 <TimestampList
                   timestamps={selectedMatch.vodTimestamps ?? []}
                   selectedIndex={selectedTimestampIndex}

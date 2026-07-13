@@ -540,6 +540,12 @@
       "renamePlaceholder": "Renommer la playlist",
       "delete": "Supprimer",
       "deleteConfirmTitle": "Supprimer cette playlist ?"
+    },
+    "playback": {
+      "position": "{{current}} sur {{total}}",
+      "prev": "Match précédent",
+      "next": "Match suivant",
+      "autoplayBlocked": "La lecture automatique a été bloquée — appuyez sur lecture pour continuer"
     }
   },
   "tags": {
