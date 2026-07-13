@@ -290,6 +290,15 @@ export function VodManagerPage() {
   const playerPauseRef = useRef<(() => void) | null>(null);
 
   // Populated by VodPlayer once its live player instance exists; invoking it
+  // is how handleEnded's no-advance-target branches (retest fix-up #1)
+  // reliably cancel a host platform's post-roll autoplay (documented for
+  // Twitch: the "Up Next" overlay) — a plain pause() issued while already
+  // ENDED does not cancel it, so this seeks back off the very end first.
+  // NEVER used for the quick-tag capture flow; that stays on
+  // `playerPauseRef` above (an in-place pause, never a seek).
+  const playerPauseAtEndRef = useRef<(() => boolean) | null>(null);
+
+  // Populated by VodPlayer once its live player instance exists; invoking it
   // is how NoteComposer's on-focus prefill reads the LIVE playback position
   // (a one-shot read, never polled — D-14 / CONTEXT.md's no-polling rule).
   const getCurrentTimeRef = useRef<(() => number) | null>(null);
@@ -445,6 +454,25 @@ export function VodManagerPage() {
     });
   }
 
+  // Retest fix-up #1: called ONLY from handleEnded's two no-advance-target
+  // branches (end of playlist / end of the library list). A plain pause()
+  // issued while the player is already in the ENDED state does not cancel
+  // Twitch's "Up Next" autoplay countdown — `playerPauseAtEndRef` (wired to
+  // `useVodPlayer`'s `pauseAtEnd`) seeks back off the very end before
+  // pausing instead, which reliably exits the ended state. If that
+  // workaround itself couldn't be applied (Twitch's `getDuration()` missing
+  // or unusable — `pauseAtEnd` returns `false`), fall back to forcing an
+  // immediate paused rebuild of OUR video via the remountToken drift
+  // mechanism: a freshly constructed embed has no post-roll overlay to
+  // cancel, and `useVodPlayer` never autoplays a construction unless
+  // `autoplayNextRef.current` is true (unrelated to this path).
+  function preventEndOfListAutoplay() {
+    const handled = playerPauseAtEndRef.current?.() ?? true;
+    if (!handled) {
+      setRemountToken((token) => token + 1);
+    }
+  }
+
   // Video-end auto-advance: fires when the live player reports ENDED.
   // Advances through `displayedMatches` — the SAME list the left panel
   // renders, so this is playlist order while a playlist is active and the
@@ -464,16 +492,12 @@ export function VodManagerPage() {
   //     next match id; the identity change remounts useVodPlayer, which
   //     reads the flag as autoplayOnConstruct.
   //   - NO next match (end of playlist or end of the library list, retest
-  //     fix-up #10) -> best-effort PAUSE the live player immediately.
+  //     fix-up #10) -> reliably cancel the host platform's post-roll
+  //     autoplay via `preventEndOfListAutoplay` (retest fix-up #1).
   //     `driftedRef` is already flagged above regardless of an advance
-  //     target, but Twitch's own "Up Next" post-roll overlay can start
-  //     autoplaying a recommended video into the SAME iframe within the
-  //     same tick ENDED fires — pausing here is a best-effort preemption of
-  //     that hijack attempt (never guaranteed, since it's the HOST
-  //     platform's own overlay, not something this app controls). Even if
-  //     the pause doesn't win the race, `driftedRef` guarantees any
-  //     subsequent reselection (including of the SAME match) forces a
-  //     fresh player construction rather than a no-op.
+  //     target as a second layer of protection: any subsequent reselection
+  //     (including of the SAME match) forces a fresh player construction if
+  //     `preventEndOfListAutoplay`'s own workaround somehow didn't win.
   function handleEnded() {
     driftedRef.current = true;
     if (!selectedMatch) {
@@ -481,12 +505,12 @@ export function VodManagerPage() {
     }
     const index = displayedMatches.findIndex((m) => m.id === selectedMatch.id);
     if (index === -1) {
-      playerPauseRef.current?.();
+      preventEndOfListAutoplay();
       return;
     }
     const nextMatch = displayedMatches[index + 1];
     if (!nextMatch) {
-      playerPauseRef.current?.();
+      preventEndOfListAutoplay();
       return;
     }
     const currentIdentity = videoIdentityOf(selectedMatch);
@@ -952,6 +976,7 @@ export function VodManagerPage() {
                     startSeconds={resolveMatchStartSeconds(selectedMatch)}
                     seekRef={playerSeekRef}
                     pauseRef={playerPauseRef}
+                    pauseAtEndRef={playerPauseAtEndRef}
                     getCurrentTimeRef={getCurrentTimeRef}
                     onEnded={handleEnded}
                     onAutoplayBlocked={handleAutoplayBlocked}

@@ -91,7 +91,7 @@
       "editTimestamp": "タイムスタンプ{{time}}を編集",
       "timePlaceholder": "m:ss",
       "timeAria": "タイムスタンプの時間",
-      "notePlaceholder": "メモ",
+      "notePlaceholder": "メモ（任意）",
       "noteAria": "タイムスタンプのメモ",
       "addTimestamp": "タイムスタンプを追加",
       "timeFormatError": "時間は m:ss または h:mm:ss の形式で入力してください",
