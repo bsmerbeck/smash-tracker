@@ -64,19 +64,27 @@ export type VodPlayerSize = 'fill' | 'compact';
 
 /**
  * Parses the persisted player size preference: only the exact stored
- * `'compact'` value resolves to `'compact'`; anything else (null, malformed,
- * an unrecognized string) falls back to `'fill'` (today's default behavior).
+ * `'fill'` value resolves to `'fill'`; anything else (null, malformed, an
+ * unrecognized string) falls back to `'compact'` — the side-rail (compact)
+ * view is now the DEFAULT player size (retest fix-up #1: it reads better on
+ * lg+ desktop viewports out of the box). An explicit stored preference
+ * (either value, written by `persistPlayerSize` the first time the user
+ * toggles) always wins over this default. Below `lg`, compact's own layout
+ * classes never apply the two-column rail grid (see `VodManagerPage`'s
+ * `playerSize === 'compact' && 'lg:grid ...'` guard) — compact just renders
+ * a narrower centered player there, so this default is safe at every
+ * viewport size, not only desktop.
  */
 export function parseStoredPlayerSize(raw: string | null): VodPlayerSize {
-  return raw === 'compact' ? 'compact' : 'fill';
+  return raw === 'fill' ? 'fill' : 'compact';
 }
 
 export function readStoredPlayerSize(): VodPlayerSize {
-  if (typeof window === 'undefined') return 'fill';
+  if (typeof window === 'undefined') return 'compact';
   try {
     return parseStoredPlayerSize(window.localStorage.getItem(VOD_PLAYER_SIZE_STORAGE_KEY));
   } catch {
-    return 'fill';
+    return 'compact';
   }
 }
 

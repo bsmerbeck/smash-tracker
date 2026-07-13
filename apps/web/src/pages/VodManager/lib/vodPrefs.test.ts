@@ -85,18 +85,18 @@ describe('persistQuickTags / readStoredQuickTags', () => {
 });
 
 describe('parseStoredPlayerSize', () => {
-  it('returns "compact" only for the exact stored "compact" value', () => {
-    expect(parseStoredPlayerSize('compact')).toBe('compact');
+  it('returns "fill" only for the exact stored "fill" value', () => {
+    expect(parseStoredPlayerSize('fill')).toBe('fill');
   });
 
-  it('returns "fill" for null input', () => {
-    expect(parseStoredPlayerSize(null)).toBe('fill');
+  it('returns "compact" (the default) for null input', () => {
+    expect(parseStoredPlayerSize(null)).toBe('compact');
   });
 
-  it('returns "fill" for malformed/unknown input', () => {
-    expect(parseStoredPlayerSize('huge')).toBe('fill');
-    expect(parseStoredPlayerSize('')).toBe('fill');
-    expect(parseStoredPlayerSize('"compact"')).toBe('fill');
+  it('returns "compact" (the default) for malformed/unknown input', () => {
+    expect(parseStoredPlayerSize('huge')).toBe('compact');
+    expect(parseStoredPlayerSize('')).toBe('compact');
+    expect(parseStoredPlayerSize('"fill"')).toBe('compact');
   });
 });
 
@@ -106,24 +106,24 @@ describe('persistPlayerSize / readStoredPlayerSize', () => {
   });
 
   it('round-trips through localStorage', () => {
-    persistPlayerSize('compact');
-    expect(readStoredPlayerSize()).toBe('compact');
+    persistPlayerSize('fill');
+    expect(readStoredPlayerSize()).toBe('fill');
   });
 
   it('persists under the documented storage key', () => {
-    persistPlayerSize('compact');
-    expect(window.localStorage.getItem(VOD_PLAYER_SIZE_STORAGE_KEY)).toBe('compact');
+    persistPlayerSize('fill');
+    expect(window.localStorage.getItem(VOD_PLAYER_SIZE_STORAGE_KEY)).toBe('fill');
   });
 
-  it('reads the "fill" default when nothing has been persisted', () => {
-    expect(readStoredPlayerSize()).toBe('fill');
+  it('reads the "compact" default when nothing has been persisted', () => {
+    expect(readStoredPlayerSize()).toBe('compact');
   });
 
   it('never throws when localStorage.setItem fails', () => {
     const spy = vi.spyOn(window.localStorage.__proto__, 'setItem').mockImplementation(() => {
       throw new Error('quota exceeded');
     });
-    expect(() => persistPlayerSize('compact')).not.toThrow();
+    expect(() => persistPlayerSize('fill')).not.toThrow();
     spy.mockRestore();
   });
 });

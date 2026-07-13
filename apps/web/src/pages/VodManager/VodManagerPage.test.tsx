@@ -1764,21 +1764,22 @@ describe('VodManagerPage', () => {
     renderVodManager('/vod?match=m1');
     await waitFor(() => expect(Player).toHaveBeenCalledTimes(1));
 
-    // (1) Defaults to fill — the toggle offers to switch TO compact.
-    const toggle = screen.getByRole('button', { name: 'Switch to compact player' });
+    // (1) Defaults to compact (retest fix-up #1) — the toggle offers to
+    // switch TO full-size.
+    const toggle = screen.getByRole('button', { name: 'Switch to full-size player' });
     await user.click(toggle);
 
     // (2) The toggle flips its own label/icon and the choice persists —
     // but the player itself is NEVER reconstructed by a size change.
-    expect(screen.getByRole('button', { name: 'Switch to full-size player' })).toBeInTheDocument();
-    expect(Player).toHaveBeenCalledTimes(1);
-    expect(window.localStorage.getItem('smash-tracker.vodPlayerSize')).toBe('compact');
-
-    // (3) Toggling back to fill also never remounts.
-    await user.click(screen.getByRole('button', { name: 'Switch to full-size player' }));
     expect(screen.getByRole('button', { name: 'Switch to compact player' })).toBeInTheDocument();
     expect(Player).toHaveBeenCalledTimes(1);
     expect(window.localStorage.getItem('smash-tracker.vodPlayerSize')).toBe('fill');
+
+    // (3) Toggling back to compact also never remounts.
+    await user.click(screen.getByRole('button', { name: 'Switch to compact player' }));
+    expect(screen.getByRole('button', { name: 'Switch to full-size player' })).toBeInTheDocument();
+    expect(Player).toHaveBeenCalledTimes(1);
+    expect(window.localStorage.getItem('smash-tracker.vodPlayerSize')).toBe('compact');
   });
 
   it('compact mode applies the lg+ combination-rail grid placement to the quick-tags and timestamp-list rails (fill mode does not)', async () => {
@@ -1805,23 +1806,26 @@ describe('VodManagerPage', () => {
 
     renderVodManager('/vod?match=m1');
     await waitFor(() =>
-      expect(screen.getByRole('button', { name: 'Switch to compact player' })).toBeInTheDocument(),
+      expect(
+        screen.getByRole('button', { name: 'Switch to full-size player' }),
+      ).toBeInTheDocument(),
     );
 
-    // (1) Fill mode (default): no grid/rail classes on either rail.
+    // (1) Compact mode (now the default, retest fix-up #1) already applies
+    // the lg+ two-column rail placement — quick tags in the rail's top cell,
+    // timestamp list in the bottom cell, scrollable rather than growing the
+    // page.
     const quickTagRail = screen.getByTestId('vod-quicktag-rail');
     const timestampRail = screen.getByTestId('vod-timestamp-rail');
-    expect(quickTagRail.className).not.toContain('lg:col-start-2');
-    expect(timestampRail.className).not.toContain('lg:col-start-2');
-
-    // (2) Switching to compact applies the lg+ two-column rail placement —
-    // quick tags in the rail's top cell, timestamp list in the bottom cell,
-    // scrollable rather than growing the page.
-    await user.click(screen.getByRole('button', { name: 'Switch to compact player' }));
     expect(quickTagRail.className).toContain('lg:col-start-2');
     expect(quickTagRail.className).toContain('lg:row-start-1');
     expect(timestampRail.className).toContain('lg:col-start-2');
     expect(timestampRail.className).toContain('lg:overflow-y-auto');
+
+    // (2) Switching to fill removes the grid/rail classes from both rails.
+    await user.click(screen.getByRole('button', { name: 'Switch to full-size player' }));
+    expect(quickTagRail.className).not.toContain('lg:col-start-2');
+    expect(timestampRail.className).not.toContain('lg:col-start-2');
 
     // (3) The single VodPlayer instance mounted throughout — the layout
     // swap is a pure className change, never a remount.
