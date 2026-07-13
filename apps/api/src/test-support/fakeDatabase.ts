@@ -14,6 +14,9 @@
  *   first try) and mirrors the real SDK's `{ committed, snapshot }` result —
  *   `updateFn` returning `undefined` aborts the transaction without writing,
  *   matching real RTDB semantics.
+ * - `.set()` drops any key (at any depth) whose value is an empty array,
+ *   matching real RTDB's documented empty-array-drop-on-write behavior
+ *   (see RtdbService's `getStageFavorites`/tags comments).
  */
 
 type JsonValue = null | boolean | number | string | JsonValue[] | { [key: string]: JsonValue };
@@ -51,6 +54,29 @@ function generateKey(): string {
   return `-fakeKey${pushCounter.toString().padStart(6, '0')}`;
 }
 
+/**
+ * Recursively drops any object key whose value is an empty array, mirroring
+ * real RTDB's behavior of never persisting empty-array values on write.
+ * Arrays themselves are left intact (RTDB arrays hold sparse/dense element
+ * lists, not keys to strip); only nested object keys are inspected.
+ */
+function stripEmptyArrays(value: unknown): unknown {
+  if (Array.isArray(value)) {
+    return value.map(stripEmptyArrays);
+  }
+  if (value !== null && typeof value === 'object') {
+    const result: Record<string, unknown> = {};
+    for (const [key, val] of Object.entries(value as Record<string, unknown>)) {
+      if (Array.isArray(val) && val.length === 0) {
+        continue;
+      }
+      result[key] = stripEmptyArrays(val);
+    }
+    return result;
+  }
+  return value;
+}
+
 export class FakeDatabase {
   private root: Record<string, JsonValue> = {};
 
@@ -86,7 +112,7 @@ export class FakeDatabase {
 
   private setAtPath(segments: string[], value: unknown): void {
     if (segments.length === 0) {
-      this.root = (value ?? {}) as Record<string, JsonValue>;
+      this.root = stripEmptyArrays(value ?? {}) as Record<string, JsonValue>;
       return;
     }
 
@@ -104,7 +130,7 @@ export class FakeDatabase {
       }
       node = node[segment] as Record<string, unknown>;
     }
-    node[segments[segments.length - 1]!] = value as JsonValue;
+    node[segments[segments.length - 1]!] = stripEmptyArrays(value) as JsonValue;
   }
 
   private deleteAtPath(segments: string[]): void {
