@@ -553,7 +553,13 @@
       "customizeAria": "クイックタグをカスタマイズ",
       "removeQuickTagAria": "クイックタグから{{label}}を削除",
       "quickTagAria": "クイックタグ: {{label}}",
-      "quickTagHint": "タグをタップしてこの瞬間をキャプチャ"
+      "quickTagHint": "タグをタップしてこの瞬間をキャプチャ",
+      "prevTimestamp": "前のメモ",
+      "nextTimestamp": "次のメモ"
+    },
+    "player": {
+      "compactAria": "コンパクトプレーヤーに切り替え",
+      "fillAria": "フルサイズプレーヤーに切り替え"
     }
   },
   "tags": {
