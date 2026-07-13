@@ -4,14 +4,17 @@ import {
   gspReadingRecordSchema,
   gspSettingsSchema,
   matchRecordSchema,
+  MAX_PLAYLISTS_PER_USER,
   opponentAliasMapSchema,
   opponentMapSchema,
   opponentNoteMapSchema,
   opponentNoteSchema,
+  playlistRecordSchema,
   stageFavoritesSchema,
   userSchema,
   type CreateGspReadingInput,
   type CreateMatchInput,
+  type CreatePlaylistInput,
   type FighterSelectionInput,
   type GspReading,
   type GspReadingRecord,
@@ -22,8 +25,11 @@ import {
   type OpponentAliasMap,
   type OpponentNote,
   type OpponentNoteMap,
+  type Playlist,
+  type PlaylistRecord,
   type UpdateGspReadingInput,
   type UpdateMatchInput,
+  type UpdatePlaylistInput,
   type UpsertGspSettingsInput,
   type UpsertOpponentNoteInput,
   type UpsertStageFavoritesInput,
@@ -50,6 +56,14 @@ export class ConflictError extends Error {
   constructor(message: string) {
     super(message);
     this.name = 'ConflictError';
+  }
+}
+
+/** Thrown for a 403-worthy write: the caller is at/over a per-user cap (e.g. the 50-playlist limit). */
+export class ForbiddenError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'ForbiddenError';
   }
 }
 
@@ -530,5 +544,92 @@ export class RtdbService {
     };
     await this.database.ref(`stageFavorites/${uid}`).set(stageFavoritesSchema.parse(favorites));
     return favorites;
+  }
+
+  // ---- playlists/{uid}/{pushKey} -------------------------------------------
+
+  /**
+   * VOD Manager overhaul: user-curated ordered collections of match ids (see
+   * packages/shared/src/playlist.ts for the data-model rationale). List
+   * follows the safeParse-and-skip rule from the production-gap checklist —
+   * one corrupt record must never 500 the whole list (mirrors
+   * `listGspReadings`).
+   */
+  async listPlaylists(uid: string): Promise<Playlist[]> {
+    const snapshot = await this.database.ref(`playlists/${uid}`).get();
+    if (!snapshot.exists()) {
+      return [];
+    }
+
+    const raw = snapshot.val() as Record<string, unknown>;
+    return Object.entries(raw).flatMap(([id, value]) => {
+      const parsed = playlistRecordSchema.safeParse(value);
+      return parsed.success ? [{ id, ...parsed.data }] : [];
+    });
+  }
+
+  /**
+   * Creates a playlist, stamping `createdAt` server-side and starting with
+   * no matches. Enforces `MAX_PLAYLISTS_PER_USER` (unbounded per-user growth
+   * is a DoS vector — see the plan's threat model T-04-04).
+   */
+  async createPlaylist(uid: string, input: CreatePlaylistInput): Promise<Playlist> {
+    const existingSnapshot = await this.database.ref(`playlists/${uid}`).get();
+    const existingCount = existingSnapshot.exists()
+      ? Object.keys(existingSnapshot.val() as Record<string, unknown>).length
+      : 0;
+    if (existingCount >= MAX_PLAYLISTS_PER_USER) {
+      throw new ForbiddenError(`You can create at most ${MAX_PLAYLISTS_PER_USER} playlists`);
+    }
+
+    const record: PlaylistRecord = {
+      name: input.name,
+      createdAt: Date.now(),
+      matchIds: [],
+    };
+
+    const ref = this.database.ref(`playlists/${uid}`).push();
+    await ref.set(record);
+
+    const id = ref.key;
+    if (!id) {
+      throw new Error('Failed to generate a push key for the new playlist');
+    }
+
+    return { id, ...record };
+  }
+
+  /**
+   * Updates a playlist's name and/or matchIds. Merges against the current
+   * record first (conditional-spread) so a rename-only or reorder-only call
+   * never wipes the field the caller omitted — RTDB's `.set()` is a full
+   * overwrite, and `undefined` values are rejected outright, so a naive
+   * `{ ...input }` write would drop whichever field wasn't sent.
+   */
+  async updatePlaylist(uid: string, id: string, input: UpdatePlaylistInput): Promise<Playlist> {
+    const ref = this.database.ref(`playlists/${uid}/${id}`);
+    const existing = await ref.get();
+    if (!existing.exists()) {
+      throw new NotFoundError(`Playlist ${id} not found`);
+    }
+    const current = playlistRecordSchema.parse(existing.val());
+
+    const record: PlaylistRecord = {
+      ...current,
+      ...(input.name !== undefined ? { name: input.name } : {}),
+      ...(input.matchIds !== undefined ? { matchIds: input.matchIds } : {}),
+    };
+
+    await ref.set(playlistRecordSchema.parse(record));
+    return { id, ...record };
+  }
+
+  async deletePlaylist(uid: string, id: string): Promise<void> {
+    const ref = this.database.ref(`playlists/${uid}/${id}`);
+    const existing = await ref.get();
+    if (!existing.exists()) {
+      throw new NotFoundError(`Playlist ${id} not found`);
+    }
+    await ref.remove();
   }
 }
