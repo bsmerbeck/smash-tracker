@@ -546,6 +546,20 @@
       "prev": "Match précédent",
       "next": "Match suivant",
       "autoplayBlocked": "La lecture automatique a été bloquée — appuyez sur lecture pour continuer"
+    },
+    "capture": {
+      "title": "Tags rapides",
+      "customize": "Personnaliser",
+      "customizeAria": "Personnaliser les tags rapides",
+      "removeQuickTagAria": "Retirer {{label}} des tags rapides",
+      "quickTagAria": "Tag rapide : {{label}}",
+      "quickTagHint": "Appuyez sur un tag pour capturer ce moment",
+      "prevTimestamp": "Note précédente",
+      "nextTimestamp": "Note suivante"
+    },
+    "player": {
+      "compactAria": "Passer au lecteur compact",
+      "fillAria": "Passer au lecteur pleine taille"
     }
   },
   "tags": {

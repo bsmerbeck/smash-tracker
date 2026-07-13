@@ -1,5 +1,4 @@
 import type { RefObject } from 'react';
-import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { VodTimestamp } from '@smash-tracker/shared';
 import { NoteComposer } from './NoteComposer';
@@ -24,6 +23,12 @@ export interface TimestampListProps {
   /** Custom tag vocabulary derived across ALL loaded VOD matches (03-02
    * locked decision) — forwarded to every row's note-tag add-combobox. */
   tagVocabulary: string[];
+  /** Index of the one row (of the whole list) currently in edit mode, or
+   * `null` if none — lifted to `VodManagerPage` (controlled, mirroring
+   * `selectedIndex`/`onSelect`) so the quick-tag panel can command a
+   * freshly-captured row straight into edit mode after its PATCH resolves. */
+  editingIndex: number | null;
+  onEditingIndexChange: (index: number | null) => void;
 }
 
 /**
@@ -40,11 +45,13 @@ export interface TimestampListProps {
  * text-accent-foreground` + `border-l-2 border-primary`) — edit/delete never
  * write to `selectedIndex`/`onSelect` (D-13/D-14 preserved).
  *
- * Owns `editingIndex` (one row edits at a time — starting a new edit
- * implicitly closes any other open edit) and translates each row's
- * commit/delete callback into the next full re-sorted/filtered array, which
- * is the only shape `onUpdateTimestamps` (the caller's single PATCH mutation
- * site) ever receives.
+ * `editingIndex` is a CONTROLLED prop (one row edits at a time — starting a
+ * new edit implicitly closes any other open edit), owned by
+ * `VodManagerPage` so the quick-tag panel can command a freshly-captured
+ * row into edit mode after its PATCH resolves. This component translates
+ * each row's commit/delete callback into the next full re-sorted/filtered
+ * array, which is the only shape `onUpdateTimestamps` (the caller's single
+ * PATCH mutation site) ever receives.
  */
 export function TimestampList({
   timestamps,
@@ -54,21 +61,22 @@ export function TimestampList({
   getCurrentTimeRef,
   onUpdateTimestamps,
   tagVocabulary,
+  editingIndex,
+  onEditingIndexChange,
 }: TimestampListProps) {
   const { t } = useTranslation();
-  const [editingIndex, setEditingIndex] = useState<number | null>(null);
 
   function handleCommitEdit(index: number, next: VodTimestamp) {
     const updated = timestamps
       .map((stamp, i) => (i === index ? next : stamp))
       .sort((a, b) => a.seconds - b.seconds);
     onUpdateTimestamps(updated);
-    setEditingIndex(null);
+    onEditingIndexChange(null);
   }
 
   function handleDelete(index: number) {
     onUpdateTimestamps(timestamps.filter((_, i) => i !== index));
-    setEditingIndex((current) => (current === index ? null : current));
+    onEditingIndexChange(editingIndex === index ? null : editingIndex);
   }
 
   // Tags never affect ordering (only time edits re-sort) — replace element
@@ -106,8 +114,8 @@ export function TimestampList({
                 isEditing={editingIndex === index}
                 onSeek={onSeek}
                 onSelect={onSelect}
-                onStartEdit={setEditingIndex}
-                onCancelEdit={() => setEditingIndex(null)}
+                onStartEdit={onEditingIndexChange}
+                onCancelEdit={() => onEditingIndexChange(null)}
                 onCommitEdit={handleCommitEdit}
                 onDelete={handleDelete}
                 onUpdateTags={handleUpdateTags}

@@ -3,7 +3,15 @@ import type { KeyboardEvent } from 'react';
 import { useSearchParams } from 'react-router';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
-import { SkipBack, SkipForward, Trash2 } from 'lucide-react';
+import {
+  ChevronLeft,
+  ChevronRight,
+  Maximize2,
+  Minimize2,
+  SkipBack,
+  SkipForward,
+  Trash2,
+} from 'lucide-react';
 import {
   MAX_PLAYLISTS_PER_USER,
   type Fighter,
@@ -20,10 +28,11 @@ import {
   usePlaylists,
   useUpdatePlaylist,
 } from '@/hooks/usePlaylists';
-import { detectVodProvider, parseVodStartSeconds } from '@/lib/vod';
+import { MAX_TIMESTAMPS, detectVodProvider, parseVodStartSeconds } from '@/lib/vod';
 import { deriveCustomTagVocabulary } from '@/lib/tags';
 import { movePlaylistItem, resolvePlaylistMatches } from '@/lib/playlists';
 import { ApiError } from '@/lib/api';
+import { cn } from '@/lib/utils';
 import { buildUpdateInput } from '@/components/vod/VodNotesDialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -45,9 +54,17 @@ import {
   type VodManagerFilterState,
   type VodSortDirection,
 } from './lib/vodManagerFilters';
+import {
+  readStoredQuickTags,
+  persistQuickTags,
+  readStoredPlayerSize,
+  persistPlayerSize,
+  type VodPlayerSize,
+} from './lib/vodPrefs';
 import { VodMatchList } from './components/VodMatchList';
 import { VodPlayer } from './components/VodPlayer';
 import { TimestampList } from './components/TimestampList';
+import { QuickTagPanel } from './components/QuickTagPanel';
 import { SelectedMatchMeta } from './components/SelectedMatchMeta';
 import { PlaylistSelector } from './components/PlaylistSelector';
 
@@ -148,6 +165,20 @@ export function VodManagerPage() {
   const [filters, setFilters] = useState<VodManagerFilterState>(DEFAULT_VOD_MANAGER_FILTERS);
   const [sort, setSort] = useState<VodSortDirection>('newest');
   const [selectedTimestampIndex, setSelectedTimestampIndex] = useState<number | null>(null);
+  // Lifted from `TimestampList` (Task 1) so the quick-tag panel's capture
+  // handler can command a freshly-inserted row straight into edit mode once
+  // the PATCH resolves and the new sorted array position is known.
+  const [editingIndex, setEditingIndex] = useState<number | null>(null);
+  // Quick-tag button set (device preference, `vodPrefs.ts`) — seeded from
+  // localStorage once at mount, persisted on every add/remove. Never sent
+  // to the API (locked decision).
+  const [quickTags, setQuickTags] = useState<string[]>(() => readStoredQuickTags());
+  // Player compact/fill size (device preference, `vodPrefs.ts`) — a PURE
+  // className toggle on the wrapper below; the VodPlayer JSX element stays
+  // at exactly one unconditional position and this value is never threaded
+  // into `useVodPlayer`'s options/identity, so toggling never remounts the
+  // player (playback continues uninterrupted).
+  const [playerSize, setPlayerSize] = useState<VodPlayerSize>(() => readStoredPlayerSize());
   // Set by handleAutoplayBlocked (LIST-04) whenever the browser blocks an
   // auto-advance attempt — surfaces the native play-button fallback hint
   // (Task 3). Reset alongside selectedTimestampIndex below: a blocked flag
@@ -164,6 +195,8 @@ export function VodManagerPage() {
     setTrackedMatchId(selectedMatchId);
     setSelectedTimestampIndex(null);
     setAutoplayBlocked(false);
+    // A row editing on the PREVIOUS match must never carry over either.
+    setEditingIndex(null);
   }
 
   // Inline rename draft for the active playlist's selector row — re-seeded
@@ -478,6 +511,72 @@ export function VodManagerPage() {
     }
   }
 
+  function handleQuickTagsChange(next: string[]) {
+    setQuickTags(next);
+    persistQuickTags(next);
+  }
+
+  // Quick-tag capture (Task 2): one click on a QuickTagPanel button
+  // instantly saves a pre-tagged, empty-text note at the current playback
+  // time via the EXISTING handleUpdateTimestamps PATCH site (never a
+  // parallel mutation) — the shared MAX_TIMESTAMPS cap (also enforced by
+  // NoteComposer) is checked here, not inside QuickTagPanel. The
+  // just-captured note then drops into inline edit mode (setEditingIndex)
+  // so the user can optionally type text: Enter commits, Esc keeps the
+  // already-saved note.
+  function handleQuickTag(tagSlug: string) {
+    if (!selectedMatch) {
+      return;
+    }
+    const existing = selectedMatch.vodTimestamps ?? [];
+    if (existing.length >= MAX_TIMESTAMPS) {
+      toast.error(t('shared.vod.timestampLimit', { max: MAX_TIMESTAMPS }));
+      return;
+    }
+    const seconds = getCurrentTimeRef.current?.() ?? 0;
+    const newNote: VodTimestamp = { seconds, note: '', tags: [tagSlug] };
+    const next = [...existing, newNote].sort((a, b) => a.seconds - b.seconds);
+    handleUpdateTimestamps(next);
+    setEditingIndex(next.indexOf(newNote));
+  }
+
+  // Player compact/fill toggle (Task 3) — a pure className swap on the
+  // wrapper below; never threaded into useVodPlayer, so the player never
+  // remounts and playback continues uninterrupted.
+  function handleTogglePlayerSize() {
+    const next: VodPlayerSize = playerSize === 'compact' ? 'fill' : 'compact';
+    setPlayerSize(next);
+    persistPlayerSize(next);
+  }
+
+  // Prev/Next TIMESTAMP jump (Task 3) — distinct from the playlist Prev/
+  // Next added in 04-04. Moves selectedTimestampIndex by -1/+1 through the
+  // same time-sorted note order TimestampList renders (clamped at the
+  // boundaries); if nothing is selected yet, Prev jumps to the last note
+  // and Next jumps to the first. Reuses the existing seek ref + lifted
+  // selection state — no new player code.
+  function handlePrevTimestamp() {
+    const notes = selectedMatch?.vodTimestamps ?? [];
+    if (notes.length === 0) {
+      return;
+    }
+    const nextIndex =
+      selectedTimestampIndex == null ? notes.length - 1 : Math.max(0, selectedTimestampIndex - 1);
+    handleSeek(notes[nextIndex]!.seconds);
+    setSelectedTimestampIndex(nextIndex);
+  }
+
+  function handleNextTimestamp() {
+    const notes = selectedMatch?.vodTimestamps ?? [];
+    if (notes.length === 0) {
+      return;
+    }
+    const nextIndex =
+      selectedTimestampIndex == null ? 0 : Math.min(notes.length - 1, selectedTimestampIndex + 1);
+    handleSeek(notes[nextIndex]!.seconds);
+    setSelectedTimestampIndex(nextIndex);
+  }
+
   return (
     <div className="flex flex-col gap-6">
       <h1 className="text-2xl font-semibold tracking-tight">{t('vodManager.title')}</h1>
@@ -556,57 +655,119 @@ export function VodManagerPage() {
           <div className="flex flex-col gap-4">
             {selectedMatch?.vodUrl != null ? (
               <>
-                <VodPlayer
-                  vodUrl={selectedMatch.vodUrl}
-                  startSeconds={resolveMatchStartSeconds(selectedMatch)}
-                  seekRef={playerSeekRef}
-                  getCurrentTimeRef={getCurrentTimeRef}
-                  onEnded={handleEnded}
-                  onAutoplayBlocked={handleAutoplayBlocked}
-                  autoplayOnConstructRef={autoplayNextRef}
-                />
+                {/* Compact/fill size toggle (Task 3) is a PURE className
+                    swap on this wrapper — the VodPlayer element stays at
+                    exactly one unconditional JSX position below, never
+                    remounted, never given a size-dependent key, and
+                    playerSize is never threaded into useVodPlayer's
+                    options/identity. */}
+                <div
+                  className={cn(
+                    'relative',
+                    playerSize === 'compact' && 'mx-auto w-full md:max-w-[560px]',
+                  )}
+                >
+                  <VodPlayer
+                    vodUrl={selectedMatch.vodUrl}
+                    startSeconds={resolveMatchStartSeconds(selectedMatch)}
+                    seekRef={playerSeekRef}
+                    getCurrentTimeRef={getCurrentTimeRef}
+                    onEnded={handleEnded}
+                    onAutoplayBlocked={handleAutoplayBlocked}
+                    autoplayOnConstructRef={autoplayNextRef}
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="icon-sm"
+                    className="absolute top-2 right-2 z-10"
+                    aria-label={
+                      playerSize === 'compact'
+                        ? t('vodManager.player.fillAria')
+                        : t('vodManager.player.compactAria')
+                    }
+                    onClick={handleTogglePlayerSize}
+                  >
+                    {playerSize === 'compact' ? <Maximize2 /> : <Minimize2 />}
+                  </Button>
+                </div>
                 {autoplayBlocked && (
                   <p className="text-sm text-muted-foreground">
                     {t('vodManager.playback.autoplayBlocked')}
                   </p>
                 )}
-                {/* Playlist playback controls (LIST-04) — only while a
-                    playlist is active; clicking Prev/Next never sets
-                    autoplayNextRef (manual navigation must never
-                    surprise-autoplay). */}
-                {selectedPlaylist && playlistMatches && playlistMatches.length > 0 && (
-                  <div className="flex items-center justify-center gap-3">
+                {/* Quick tags panel (Task 2) — directly below the player,
+                    playlist-agnostic (works in Library view too). */}
+                <QuickTagPanel
+                  quickTags={quickTags}
+                  onQuickTag={handleQuickTag}
+                  onQuickTagsChange={handleQuickTagsChange}
+                  tagVocabulary={tagVocabulary}
+                />
+                {/* Playback controls (LIST-04 playlist Prev/Next + Task 3
+                    timestamp Prev/Next), grouped together below the player.
+                    Playlist Prev/Next only renders while a playlist is
+                    active; clicking it never sets autoplayNextRef (manual
+                    navigation must never surprise-autoplay). Timestamp
+                    Prev/Next always renders (disabled with zero notes) —
+                    playlist-agnostic, works in Library view too. */}
+                <div className="flex flex-wrap items-center justify-center gap-4">
+                  {selectedPlaylist && playlistMatches && playlistMatches.length > 0 && (
+                    <div className="flex items-center gap-3">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="icon-sm"
+                        aria-label={t('vodManager.playback.prev')}
+                        disabled={playlistMatchIndex <= 0}
+                        onClick={handlePrevMatch}
+                      >
+                        <SkipBack />
+                      </Button>
+                      <span className="text-sm text-muted-foreground">
+                        {t('vodManager.playback.position', {
+                          current: playlistMatchIndex + 1,
+                          total: playlistMatches.length,
+                        })}
+                      </span>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="icon-sm"
+                        aria-label={t('vodManager.playback.next')}
+                        disabled={
+                          playlistMatchIndex === -1 ||
+                          playlistMatchIndex >= playlistMatches.length - 1
+                        }
+                        onClick={handleNextMatch}
+                      >
+                        <SkipForward />
+                      </Button>
+                    </div>
+                  )}
+                  <div className="flex items-center gap-2">
                     <Button
                       type="button"
                       variant="outline"
                       size="icon-sm"
-                      aria-label={t('vodManager.playback.prev')}
-                      disabled={playlistMatchIndex <= 0}
-                      onClick={handlePrevMatch}
+                      aria-label={t('vodManager.capture.prevTimestamp')}
+                      disabled={(selectedMatch.vodTimestamps ?? []).length === 0}
+                      onClick={handlePrevTimestamp}
                     >
-                      <SkipBack />
+                      <ChevronLeft />
                     </Button>
-                    <span className="text-sm text-muted-foreground">
-                      {t('vodManager.playback.position', {
-                        current: playlistMatchIndex + 1,
-                        total: playlistMatches.length,
-                      })}
-                    </span>
                     <Button
                       type="button"
                       variant="outline"
                       size="icon-sm"
-                      aria-label={t('vodManager.playback.next')}
-                      disabled={
-                        playlistMatchIndex === -1 ||
-                        playlistMatchIndex >= playlistMatches.length - 1
-                      }
-                      onClick={handleNextMatch}
+                      aria-label={t('vodManager.capture.nextTimestamp')}
+                      disabled={(selectedMatch.vodTimestamps ?? []).length === 0}
+                      onClick={handleNextTimestamp}
                     >
-                      <SkipForward />
+                      <ChevronRight />
                     </Button>
                   </div>
-                )}
+                </div>
                 <TimestampList
                   timestamps={selectedMatch.vodTimestamps ?? []}
                   selectedIndex={selectedTimestampIndex}
@@ -615,6 +776,8 @@ export function VodManagerPage() {
                   getCurrentTimeRef={getCurrentTimeRef}
                   onUpdateTimestamps={handleUpdateTimestamps}
                   tagVocabulary={tagVocabulary}
+                  editingIndex={editingIndex}
+                  onEditingIndexChange={setEditingIndex}
                 />
               </>
             ) : (

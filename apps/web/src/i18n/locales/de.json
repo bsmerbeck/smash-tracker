@@ -546,6 +546,20 @@
       "prev": "Vorheriges Match",
       "next": "Nächstes Match",
       "autoplayBlocked": "Automatische Wiedergabe wurde blockiert — zum Fortfahren auf Play drücken"
+    },
+    "capture": {
+      "title": "Schnell-Tags",
+      "customize": "Anpassen",
+      "customizeAria": "Schnell-Tags anpassen",
+      "removeQuickTagAria": "{{label}} aus den Schnell-Tags entfernen",
+      "quickTagAria": "Schnell-Tag: {{label}}",
+      "quickTagHint": "Tippe auf einen Tag, um diesen Moment festzuhalten",
+      "prevTimestamp": "Vorherige Notiz",
+      "nextTimestamp": "Nächste Notiz"
+    },
+    "player": {
+      "compactAria": "Zu kompaktem Player wechseln",
+      "fillAria": "Zu Player in voller Größe wechseln"
     }
   },
   "tags": {
