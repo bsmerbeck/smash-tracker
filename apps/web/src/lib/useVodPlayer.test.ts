@@ -551,11 +551,13 @@ describe('useVodPlayer', () => {
       }
     });
     let readyCallback: (() => void) | undefined;
+    let capturedConfig: TwitchPlayerConfig | undefined;
     const Player = vi.fn(function (
       this: unknown,
       _el: HTMLElement,
-      _config: TwitchPlayerConfig,
+      config: TwitchPlayerConfig,
     ): TwitchPlayerInstance {
+      capturedConfig = config;
       return { seek, pause, addEventListener, getCurrentTime: vi.fn(() => 0), getDuration };
     });
     (Player as unknown as { READY: string }).READY = 'ready';
@@ -566,6 +568,7 @@ describe('useVodPlayer', () => {
     result.current.containerRef.current = document.createElement('div');
 
     await waitFor(() => expect(Player).toHaveBeenCalledTimes(1));
+    expect(capturedConfig?.video).toBe('98765');
     act(() => {
       readyCallback?.();
     });
@@ -592,11 +595,13 @@ describe('useVodPlayer', () => {
       }
     });
     let readyCallback: (() => void) | undefined;
+    let capturedConfig: TwitchPlayerConfig | undefined;
     const Player = vi.fn(function (
       this: unknown,
       _el: HTMLElement,
-      _config: TwitchPlayerConfig,
+      config: TwitchPlayerConfig,
     ): TwitchPlayerInstance {
+      capturedConfig = config;
       // No getDuration on this instance — mirrors an embed API surface that
       // doesn't expose it.
       return { seek, pause, addEventListener, getCurrentTime: vi.fn(() => 0) };
@@ -609,6 +614,7 @@ describe('useVodPlayer', () => {
     result.current.containerRef.current = document.createElement('div');
 
     await waitFor(() => expect(Player).toHaveBeenCalledTimes(1));
+    expect(capturedConfig?.video).toBe('98765');
     act(() => {
       readyCallback?.();
     });
