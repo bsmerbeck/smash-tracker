@@ -5,9 +5,7 @@ import { Plus } from 'lucide-react';
 import type { VodTimestamp } from '@smash-tracker/shared';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { formatTimestamp, parseFlexibleTimestamp } from '@/lib/vod';
-
-const MAX_TIMESTAMPS = 20;
+import { MAX_TIMESTAMPS, formatTimestamp, parseFlexibleTimestamp } from '@/lib/vod';
 
 export interface NoteComposerProps {
   /** The selected match's current timestamp notes — used only to enforce

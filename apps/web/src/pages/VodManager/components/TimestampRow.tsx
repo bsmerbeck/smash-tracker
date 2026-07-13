@@ -113,7 +113,14 @@ export function TimestampRow({
       setError(t('shared.vod.noteRequired'));
       return;
     }
-    onCommitEdit(index, { seconds, note });
+    // Preserve this note's existing tags (e.g. the quick-tag panel's
+    // pre-tag) — the time+text edit inputs never touch tags, so committing
+    // must carry them through unchanged rather than silently dropping them.
+    onCommitEdit(index, {
+      seconds,
+      note,
+      ...(stamp.tags && stamp.tags.length > 0 ? { tags: stamp.tags } : {}),
+    });
   }
 
   function cancel() {

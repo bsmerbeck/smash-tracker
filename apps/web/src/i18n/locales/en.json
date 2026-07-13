@@ -546,6 +546,20 @@
       "prev": "Previous match",
       "next": "Next match",
       "autoplayBlocked": "Autoplay was blocked — press play to continue"
+    },
+    "capture": {
+      "title": "Quick tags",
+      "customize": "Customize",
+      "customizeAria": "Customize quick tags",
+      "removeQuickTagAria": "Remove {{label}} from quick tags",
+      "quickTagAria": "Quick tag: {{label}}",
+      "quickTagHint": "Tap a tag to capture this moment",
+      "prevTimestamp": "Previous note",
+      "nextTimestamp": "Next note"
+    },
+    "player": {
+      "compactAria": "Switch to compact player",
+      "fillAria": "Switch to full-size player"
     }
   },
   "tags": {

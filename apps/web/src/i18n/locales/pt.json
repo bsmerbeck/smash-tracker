@@ -546,6 +546,20 @@
       "prev": "Partida anterior",
       "next": "Próxima partida",
       "autoplayBlocked": "A reprodução automática foi bloqueada — pressione reproduzir para continuar"
+    },
+    "capture": {
+      "title": "Tags rápidas",
+      "customize": "Personalizar",
+      "customizeAria": "Personalizar tags rápidas",
+      "removeQuickTagAria": "Remover {{label}} das tags rápidas",
+      "quickTagAria": "Tag rápida: {{label}}",
+      "quickTagHint": "Toque em uma tag para capturar este momento",
+      "prevTimestamp": "Nota anterior",
+      "nextTimestamp": "Próxima nota"
+    },
+    "player": {
+      "compactAria": "Mudar para player compacto",
+      "fillAria": "Mudar para player em tamanho completo"
     }
   },
   "tags": {
