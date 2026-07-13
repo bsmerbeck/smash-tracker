@@ -525,6 +525,7 @@
       "newPlaylist": "Nueva lista",
       "createPlaceholder": "Nombre de la lista",
       "create": "Crear",
+      "createNamed": "Crear \"{{name}}\"",
       "selectAria": "Seleccionar lista",
       "empty": "Aún no hay partidas en esta lista",
       "limitReached": "Límite de listas alcanzado ({{max}})",

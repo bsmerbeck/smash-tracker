@@ -525,6 +525,7 @@
       "newPlaylist": "Neue Playlist",
       "createPlaceholder": "Playlist-Name",
       "create": "Erstellen",
+      "createNamed": "„{{name}}“ erstellen",
       "selectAria": "Playlist auswählen",
       "empty": "Noch keine Matches in dieser Playlist",
       "limitReached": "Playlist-Limit erreicht ({{max}})",

@@ -525,6 +525,7 @@
       "newPlaylist": "Nouvelle playlist",
       "createPlaceholder": "Nom de la playlist",
       "create": "Créer",
+      "createNamed": "Créer « {{name}} »",
       "selectAria": "Sélectionner une playlist",
       "empty": "Aucun match dans cette playlist pour l'instant",
       "limitReached": "Limite de playlists atteinte ({{max}})",

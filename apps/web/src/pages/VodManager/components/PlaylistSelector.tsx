@@ -125,18 +125,24 @@ export function PlaylistSelector({
                 </CommandItem>
               ))}
             </CommandGroup>
-            {trimmedName !== '' && (
-              <CommandGroup>
-                <CommandItem
-                  value={CREATE_ITEM_VALUE}
-                  disabled={!canCreate || creating}
-                  onSelect={handleCreate}
-                >
-                  <Plus className="size-4" />
-                  {t('vodManager.playlists.create')}
-                </CommandItem>
-              </CommandGroup>
-            )}
+            {/* Always-visible create affordance (never gated on typed text)
+                so the popover reads as "browse OR create", not a bare search
+                box — before typing this shows a generic "+ New playlist"
+                hint; once a name is typed it becomes the actionable
+                "Create '{typed}'" row. Same stable sentinel `value` either
+                way (cmdk selection tracking). */}
+            <CommandGroup>
+              <CommandItem
+                value={CREATE_ITEM_VALUE}
+                disabled={!canCreate || creating}
+                onSelect={handleCreate}
+              >
+                <Plus className="size-4" />
+                {trimmedName === ''
+                  ? t('vodManager.playlists.newPlaylist')
+                  : t('vodManager.playlists.createNamed', { name: trimmedName })}
+              </CommandItem>
+            </CommandGroup>
           </CommandList>
         </Command>
       </PopoverContent>
