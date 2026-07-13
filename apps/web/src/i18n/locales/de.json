@@ -535,7 +535,11 @@
       "added": "Zur Playlist hinzugefügt",
       "moveUp": "Nach oben",
       "moveDown": "Nach unten",
-      "removeFromPlaylist": "Aus Playlist entfernen"
+      "removeFromPlaylist": "Aus Playlist entfernen",
+      "rename": "Umbenennen",
+      "renamePlaceholder": "Playlist umbenennen",
+      "delete": "Löschen",
+      "deleteConfirmTitle": "Diese Playlist löschen?"
     }
   },
   "tags": {

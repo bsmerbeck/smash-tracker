@@ -535,7 +535,11 @@
       "added": "Añadido a la lista",
       "moveUp": "Subir",
       "moveDown": "Bajar",
-      "removeFromPlaylist": "Quitar de la lista"
+      "removeFromPlaylist": "Quitar de la lista",
+      "rename": "Renombrar",
+      "renamePlaceholder": "Renombrar lista",
+      "delete": "Eliminar",
+      "deleteConfirmTitle": "¿Eliminar esta lista?"
     }
   },
   "tags": {
