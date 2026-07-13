@@ -14,6 +14,10 @@ export interface VodPlayerProps {
   /** Populated with the live player's `seek` function once available, so a
    * sibling `TimestampList`'s click-to-seek can reach the playing video. */
   seekRef?: RefObject<((seconds: number) => void) | null>;
+  /** Populated with the live player's `pause` function once available, so
+   * the quick-tag capture flow can freeze playback at the captured moment
+   * without seeking (retest fix-up #2). */
+  pauseRef?: RefObject<(() => void) | null>;
   /** Populated with the live player's `getCurrentTime` function once
    * available, so a sibling `NoteComposer`/inline editor can read the live
    * playback position on-demand (never polled). */
@@ -56,6 +60,7 @@ export function VodPlayer({
   startSeconds,
   onReady,
   seekRef,
+  pauseRef,
   getCurrentTimeRef,
   onEnded,
   onAutoplayBlocked,
@@ -63,7 +68,7 @@ export function VodPlayer({
   remountToken,
 }: VodPlayerProps) {
   const { t } = useTranslation();
-  const { containerRef, isReady, error, seek, getCurrentTime } = useVodPlayer({
+  const { containerRef, isReady, error, seek, pause, getCurrentTime } = useVodPlayer({
     vodUrl,
     startSeconds,
     onEnded,
@@ -75,6 +80,12 @@ export function VodPlayer({
   useEffect(() => {
     if (seekRef) {
       seekRef.current = seek;
+    }
+  });
+
+  useEffect(() => {
+    if (pauseRef) {
+      pauseRef.current = pause;
     }
   });
 

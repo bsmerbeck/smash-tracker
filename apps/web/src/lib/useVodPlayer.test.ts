@@ -33,6 +33,7 @@ describe('useVodPlayer', () => {
   it('constructs a YT.Player for a youtube vodUrl and gates seek behind onReady', async () => {
     const seekTo = vi.fn();
     const playVideo = vi.fn();
+    const pauseVideo = vi.fn();
     let capturedConfig: YouTubePlayerConfig | undefined;
     // `function`, not an arrow, so `new window.YT.Player(...)` can construct it.
     const Player = vi.fn(function (
@@ -41,7 +42,7 @@ describe('useVodPlayer', () => {
       config: YouTubePlayerConfig,
     ): YouTubePlayerInstance {
       capturedConfig = config;
-      return { seekTo, playVideo, destroy: vi.fn(), getCurrentTime: vi.fn(() => 42) };
+      return { seekTo, playVideo, pauseVideo, destroy: vi.fn(), getCurrentTime: vi.fn(() => 42) };
     });
     window.YT = { Player: Player as unknown as YTGlobal['Player'], PlayerState: { ENDED: 0 } };
 
@@ -60,6 +61,12 @@ describe('useVodPlayer', () => {
     });
     expect(seekTo).not.toHaveBeenCalled();
 
+    // pause() before ready must also be a no-op, not throw.
+    act(() => {
+      result.current.pause();
+    });
+    expect(pauseVideo).not.toHaveBeenCalled();
+
     act(() => {
       capturedConfig?.events?.onReady?.();
     });
@@ -70,6 +77,11 @@ describe('useVodPlayer', () => {
     });
     expect(seekTo).toHaveBeenCalledWith(42, true);
     expect(playVideo).toHaveBeenCalled();
+
+    act(() => {
+      result.current.pause();
+    });
+    expect(pauseVideo).toHaveBeenCalledTimes(1);
 
     // getCurrentTime() reads the live position once ready (Math.floor'd).
     expect(result.current.getCurrentTime()).toBe(42);
@@ -86,6 +98,7 @@ describe('useVodPlayer', () => {
       return {
         seekTo: vi.fn(),
         playVideo: vi.fn(),
+        pauseVideo: vi.fn(),
         destroy: vi.fn(),
         getCurrentTime: vi.fn(() => 99),
       };
@@ -106,8 +119,9 @@ describe('useVodPlayer', () => {
     expect(result.current.getCurrentTime()).toBe(0);
   });
 
-  it('constructs a Twitch.Player for a twitch vodUrl with a dynamic parent and gates seek behind READY', async () => {
+  it('constructs a Twitch.Player for a twitch vodUrl with a dynamic parent and gates seek/pause behind READY', async () => {
     const seek = vi.fn();
+    const pause = vi.fn();
     const addEventListener = vi.fn((event: string, callback: () => void) => {
       if (event === 'ready') {
         readyCallback = callback;
@@ -121,7 +135,7 @@ describe('useVodPlayer', () => {
       config: TwitchPlayerConfig,
     ): TwitchPlayerInstance {
       capturedConfig = config;
-      return { seek, addEventListener, getCurrentTime: vi.fn(() => 10) };
+      return { seek, pause, addEventListener, getCurrentTime: vi.fn(() => 10) };
     });
     // Real Twitch Embed API exposes the ready-event name as a constant on
     // the constructor (`Twitch.Player.READY === 'ready'`) — NOT the literal
@@ -148,6 +162,11 @@ describe('useVodPlayer', () => {
     expect(seek).not.toHaveBeenCalled();
 
     act(() => {
+      result.current.pause();
+    });
+    expect(pause).not.toHaveBeenCalled();
+
+    act(() => {
       readyCallback?.();
     });
     await waitFor(() => expect(result.current.isReady).toBe(true));
@@ -156,6 +175,11 @@ describe('useVodPlayer', () => {
       result.current.seek(10);
     });
     expect(seek).toHaveBeenCalledWith(10);
+
+    act(() => {
+      result.current.pause();
+    });
+    expect(pause).toHaveBeenCalledTimes(1);
   });
 
   it('reports an unsupported state and constructs no player for an unrecognized host', async () => {
@@ -187,6 +211,7 @@ describe('useVodPlayer', () => {
       return {
         seekTo: vi.fn(),
         playVideo: vi.fn(),
+        pauseVideo: vi.fn(),
         destroy: vi.fn(),
         getCurrentTime: vi.fn(() => 0),
       };
@@ -248,6 +273,7 @@ describe('useVodPlayer', () => {
       return {
         seekTo: vi.fn(),
         playVideo: vi.fn(),
+        pauseVideo: vi.fn(),
         destroy: vi.fn(),
         getCurrentTime: vi.fn(() => 0),
       };
@@ -291,6 +317,7 @@ describe('useVodPlayer', () => {
       return {
         seekTo: vi.fn(),
         playVideo: vi.fn(),
+        pauseVideo: vi.fn(),
         destroy: vi.fn(),
         getCurrentTime: vi.fn(() => 0),
       };
@@ -335,7 +362,7 @@ describe('useVodPlayer', () => {
       config: TwitchPlayerConfig,
     ): TwitchPlayerInstance {
       capturedConfig = config;
-      return { seek: vi.fn(), addEventListener, getCurrentTime: vi.fn(() => 0) };
+      return { seek: vi.fn(), pause: vi.fn(), addEventListener, getCurrentTime: vi.fn(() => 0) };
     });
     (Player as unknown as { READY: string; ENDED: string; PLAYBACK_BLOCKED: string }).READY =
       'ready';
@@ -386,6 +413,7 @@ describe('useVodPlayer', () => {
       return {
         seekTo: vi.fn(),
         playVideo: vi.fn(),
+        pauseVideo: vi.fn(),
         destroy: vi.fn(),
         getCurrentTime: vi.fn(() => 0),
       };
@@ -431,6 +459,7 @@ describe('useVodPlayer', () => {
       return {
         seekTo: vi.fn(),
         playVideo: vi.fn(),
+        pauseVideo: vi.fn(),
         destroy,
         getCurrentTime: vi.fn(() => 0),
       };

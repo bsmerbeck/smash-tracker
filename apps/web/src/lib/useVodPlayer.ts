@@ -28,6 +28,9 @@ export interface YouTubePlayerConfig {
 export interface YouTubePlayerInstance {
   seekTo(seconds: number, allowSeekAhead: boolean): void;
   playVideo(): void;
+  /** Pauses playback. Official method name per
+   * developers.google.com/youtube/iframe_api_reference#pauseVideo. */
+  pauseVideo(): void;
   destroy(): void;
   /** Current playback position, in seconds. Source: developers.google.com/youtube/iframe_api_reference */
   getCurrentTime(): number;
@@ -47,6 +50,9 @@ export interface TwitchPlayerConfig {
 /** The subset of the Twitch Embed Player instance API this hook uses. */
 export interface TwitchPlayerInstance {
   seek(seconds: number): void;
+  /** Pauses playback. Official method name per
+   * dev.twitch.tv/docs/embed/video-and-clips (Player Methods: `pause()`). */
+  pause(): void;
   addEventListener(event: string, callback: () => void): void;
   destroy?(): void;
   /** Current playback position, in seconds. Source: dev.twitch.tv/docs/embed/video-and-clips */
@@ -202,6 +208,9 @@ export interface UseVodPlayerResult {
   error: VodPlayerErrorState | null;
   /** Seeks the live player to `seconds`. No-op until `isReady` is true. */
   seek: (seconds: number) => void;
+  /** Pauses the live player in place (no seek). No-op until `isReady` is
+   * true — mirrors `seek`'s ready-gate guard. */
+  pause: () => void;
   /** Reads the live player's current position, in whole seconds. Returns
    * `0` (never throws) until `isReady` is true — a pure on-demand read, not
    * polled. */
@@ -423,5 +432,19 @@ export function useVodPlayer({
     return Math.floor(playerRef.current.getCurrentTime());
   }
 
-  return { containerRef, isReady, error, seek, getCurrentTime };
+  /** Pauses the live player at its CURRENT position — never seeks. Mirrors
+   * `seek`'s ready-gate guard exactly. Used by the quick-tag capture flow
+   * (retest fix-up #2) to freeze playback at the just-captured moment. */
+  function pause() {
+    if (!isReady || !playerRef.current) {
+      return;
+    }
+    if (providerRef.current === 'youtube') {
+      (playerRef.current as YouTubePlayerInstance).pauseVideo();
+    } else if (providerRef.current === 'twitch') {
+      (playerRef.current as TwitchPlayerInstance).pause();
+    }
+  }
+
+  return { containerRef, isReady, error, seek, pause, getCurrentTime };
 }
