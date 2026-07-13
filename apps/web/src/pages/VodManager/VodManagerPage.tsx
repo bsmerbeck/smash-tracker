@@ -267,6 +267,11 @@ export function VodManagerPage() {
   const playerSeekRef = useRef<((seconds: number) => void) | null>(null);
 
   // Populated by VodPlayer once its live player instance exists; invoking it
+  // is how the quick-tag capture flow freezes playback at the just-captured
+  // moment (retest fix-up #2) — never seeks, just pauses in place.
+  const playerPauseRef = useRef<(() => void) | null>(null);
+
+  // Populated by VodPlayer once its live player instance exists; invoking it
   // is how NoteComposer's on-focus prefill reads the LIVE playback position
   // (a one-shot read, never polled — D-14 / CONTEXT.md's no-polling rule).
   const getCurrentTimeRef = useRef<(() => number) | null>(null);
@@ -325,28 +330,40 @@ export function VodManagerPage() {
   // such matches shares the same video IDENTITY, so `useVodPlayer`
   // intentionally does NOT remount the underlying player (see its docs) and
   // therefore never re-applies `startSeconds` on its own. Reposition the
-  // live player manually whenever the identity is unchanged; a genuine
-  // identity change is already handled by the remount applying the new
-  // match's `startSeconds` at construction time. Deliberately keyed on the
-  // `selectedMatch` OBJECT (not `selectedMatchId`) — `filtered`/`selectedMatch`
-  // stay referentially stable across unrelated re-renders (memoized in
-  // `useFilteredMatches`/above), so this only fires on an actual match
-  // switch OR the initial data-load transition from `null` to the
-  // deep-linked match — never on incidental re-renders.
+  // live player manually whenever the identity is unchanged AND the
+  // selection actually switched matches; a genuine identity change is
+  // already handled by the remount applying the new match's `startSeconds`
+  // at construction time.
+  //
+  // Retest fix-up #2 (root cause of "player resets to 0:00 on quick-tag
+  // capture"): this effect is keyed on `selectedMatch` (needed to read its
+  // `vodUrl`), but `selectedMatch` is a BRAND NEW object reference every
+  // time `matches` refetches — including the invalidateQueries refetch that
+  // follows the quick-tag capture's own PATCH — even when the actual
+  // selection hasn't changed. Detecting "did the match actually switch" by
+  // comparing `selectedMatchId` (a stable primitive, unaffected by refetch
+  // object identity) against the id this effect last repositioned for is
+  // what distinguishes a genuine match switch from an unrelated refetch —
+  // the effect body still runs on every refetch, but only ever calls
+  // `seek` when `selectedMatchId` itself changed.
   const previousVodIdentityRef = useRef<string | null>(null);
+  const previousMatchIdRef = useRef<string | null>(null);
   useEffect(() => {
     if (!selectedMatch?.vodUrl) {
       previousVodIdentityRef.current = null;
+      previousMatchIdRef.current = selectedMatchId;
       return;
     }
     const detected = detectVodProvider(selectedMatch.vodUrl);
     const identityKey =
       detected.provider != null ? `${detected.provider}:${detected.videoId}` : null;
-    if (identityKey != null && identityKey === previousVodIdentityRef.current) {
+    const matchSwitched = selectedMatchId !== previousMatchIdRef.current;
+    if (matchSwitched && identityKey != null && identityKey === previousVodIdentityRef.current) {
       playerSeekRef.current?.(resolveMatchStartSeconds(selectedMatch));
     }
     previousVodIdentityRef.current = identityKey;
-  }, [selectedMatch]);
+    previousMatchIdRef.current = selectedMatchId;
+  }, [selectedMatchId, selectedMatch]);
 
   // Consumes `forceRemountForIdRef` (see its doc comment above) once
   // `selectedMatch` has actually landed on the target — the deferred half
@@ -651,6 +668,15 @@ export function VodManagerPage() {
   // just-captured note then drops into inline edit mode (setEditingIndex)
   // so the user can optionally type text: Enter commits, Esc keeps the
   // already-saved note.
+  //
+  // Retest fix-up #2: capture also PAUSES the live player at the just-read
+  // `seconds` position — never a seek, just a freeze-in-place — so the
+  // captured frame stays visible while the user types the note text. Fired
+  // synchronously, before the async PATCH, so it feels instant regardless
+  // of network latency. Never touches `selectedMatch.vodTimestamps` update
+  // ordering above the reposition-effect fix (see `previousMatchIdRef`'s
+  // doc comment) — that fix is what stops the invalidateQueries refetch
+  // this PATCH triggers from seeking the player back to its start time.
   function handleQuickTag(tagSlug: string) {
     if (!selectedMatch) {
       return;
@@ -661,6 +687,7 @@ export function VodManagerPage() {
       return;
     }
     const seconds = getCurrentTimeRef.current?.() ?? 0;
+    playerPauseRef.current?.();
     const newNote: VodTimestamp = { seconds, note: '', tags: [tagSlug] };
     const next = [...existing, newNote].sort((a, b) => a.seconds - b.seconds);
     handleUpdateTimestamps(next);
@@ -872,6 +899,7 @@ export function VodManagerPage() {
                     vodUrl={selectedMatch.vodUrl}
                     startSeconds={resolveMatchStartSeconds(selectedMatch)}
                     seekRef={playerSeekRef}
+                    pauseRef={playerPauseRef}
                     getCurrentTimeRef={getCurrentTimeRef}
                     onEnded={handleEnded}
                     onAutoplayBlocked={handleAutoplayBlocked}
