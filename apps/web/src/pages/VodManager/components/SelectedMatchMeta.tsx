@@ -2,16 +2,33 @@ import type { RefObject } from 'react';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
-import { X } from 'lucide-react';
-import type { Fighter, Match, UpdateMatchInput } from '@smash-tracker/shared';
+import { ListPlus, Plus, X } from 'lucide-react';
+import {
+  MAX_PLAYLISTS_PER_USER,
+  type Fighter,
+  type Match,
+  type Playlist,
+  type UpdateMatchInput,
+} from '@smash-tracker/shared';
 import { getFighterById } from '@/data/sprites';
 import { formatTimestamp } from '@/lib/vod';
 import { MATCH_PRESET_TAGS, addTagToList, removeTagFromList, tagLabel } from '@/lib/tags';
+import { addMatchToPlaylistIds } from '@/lib/playlists';
 import { useUpdateMatch } from '@/hooks/useUpdateMatch';
+import { useCreatePlaylist, useUpdatePlaylist } from '@/hooks/usePlaylists';
 import { buildUpdateInput } from '@/components/vod/VodNotesDialog';
 import { tournamentLabel } from '@/pages/MatchData/lib/matchTableFilters';
+import { ApiError } from '@/lib/api';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import {
+  Command,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from '@/components/ui/command';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { TagAddCombobox } from './TagAddCombobox';
 import {
   MatchFormFields,
@@ -22,6 +39,132 @@ import {
 import { matchToFormValues } from '@/components/match-form/EditMatchForm';
 
 const MAX_MATCH_TAGS = 10;
+
+// Fixed sentinel `CommandItem` value for the "create new playlist" row — same
+// stable-value rule as `TagAddCombobox`'s `CREATE_ITEM_VALUE`: cmdk tracks
+// selection by item `value`, so this must never be keyed off the typed name.
+const CREATE_PLAYLIST_ITEM_VALUE = '__create-playlist__';
+
+/**
+ * "Add to playlist" affordance (LIST-02) — a sibling row to the tag row on
+ * this same card, per CONTEXT.md. Reuses `TagAddCombobox`'s Popover+Command
+ * shape: existing playlists list as `CommandItem`s keyed by playlist `id`
+ * (stable cmdk value, mirrors `PlaylistSelector`), plus a "create new" row
+ * using the typed `CommandInput` text as the candidate name. Adding is
+ * idempotent via `addMatchToPlaylistIds` — re-adding an already-member match
+ * is a no-op PATCH that still resolves cleanly.
+ */
+function AddToPlaylistMenu({ playlists, matchId }: { playlists: Playlist[]; matchId: string }) {
+  const { t } = useTranslation();
+  const [open, setOpen] = useState(false);
+  const [search, setSearch] = useState('');
+  const updatePlaylist = useUpdatePlaylist();
+  const createPlaylist = useCreatePlaylist();
+
+  const trimmedSearch = search.trim();
+  const searchLower = trimmedSearch.toLowerCase();
+  const canCreate = trimmedSearch.length >= 1 && trimmedSearch.length <= 40;
+  const isPending = updatePlaylist.isPending || createPlaylist.isPending;
+
+  const filteredPlaylists = playlists.filter(
+    (playlist) => searchLower === '' || playlist.name.toLowerCase().includes(searchLower),
+  );
+
+  function reset() {
+    setSearch('');
+    setOpen(false);
+  }
+
+  async function addToPlaylist(playlist: Playlist) {
+    try {
+      await updatePlaylist.mutateAsync({
+        id: playlist.id,
+        input: { matchIds: addMatchToPlaylistIds(playlist.matchIds, matchId) },
+      });
+      toast.success(t('vodManager.playlists.added'));
+    } catch {
+      toast.error(t('shared.vod.saveFailed'));
+    }
+    reset();
+  }
+
+  async function handleCreateAndAdd() {
+    if (!canCreate) {
+      return;
+    }
+    try {
+      const playlist = await createPlaylist.mutateAsync({ name: trimmedSearch });
+      await updatePlaylist.mutateAsync({
+        id: playlist.id,
+        input: { matchIds: addMatchToPlaylistIds(playlist.matchIds, matchId) },
+      });
+      toast.success(t('vodManager.playlists.added'));
+    } catch (error) {
+      if (error instanceof ApiError && error.status === 403) {
+        toast.error(t('vodManager.playlists.limitReached', { max: MAX_PLAYLISTS_PER_USER }));
+      } else {
+        toast.error(t('shared.vod.saveFailed'));
+      }
+    }
+    reset();
+  }
+
+  return (
+    <Popover open={open} onOpenChange={(next) => (next ? setOpen(true) : reset())}>
+      <PopoverTrigger asChild>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          role="combobox"
+          aria-label={t('vodManager.playlists.addToPlaylistAria')}
+          aria-expanded={open}
+          disabled={isPending}
+        >
+          <ListPlus className="size-4" />
+          {t('vodManager.playlists.addToPlaylist')}
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent className="w-[--radix-popover-trigger-width] min-w-56 p-0">
+        <Command shouldFilter={false}>
+          <CommandInput
+            placeholder={t('vodManager.playlists.createPlaceholder')}
+            value={search}
+            onValueChange={setSearch}
+            maxLength={40}
+          />
+          <CommandList>
+            {filteredPlaylists.length > 0 && (
+              <CommandGroup>
+                {filteredPlaylists.map((playlist) => (
+                  <CommandItem
+                    key={playlist.id}
+                    value={playlist.id}
+                    onSelect={() => addToPlaylist(playlist)}
+                  >
+                    {playlist.name}
+                  </CommandItem>
+                ))}
+              </CommandGroup>
+            )}
+            {trimmedSearch !== '' && (
+              <CommandGroup>
+                <CommandItem
+                  value={CREATE_PLAYLIST_ITEM_VALUE}
+                  disabled={!canCreate || isPending}
+                  onSelect={handleCreateAndAdd}
+                >
+                  <Plus className="size-4" />
+                  {t('vodManager.playlists.create')}
+                </CommandItem>
+              </CommandGroup>
+            )}
+          </CommandList>
+        </Command>
+      </PopoverContent>
+    </Popover>
+  );
+}
 
 /**
  * The VOD Manager's selected-match metadata card (NOTE-04). View mode
@@ -45,6 +188,7 @@ export function SelectedMatchMeta({
   fighterSprites,
   getCurrentTimeRef,
   tagVocabulary,
+  playlists,
 }: {
   match: Match;
   /** The fighters offered for "Your Fighter" — the signed-in user's primary+secondary selections. */
@@ -53,6 +197,8 @@ export function SelectedMatchMeta({
   getCurrentTimeRef: RefObject<(() => number) | null>;
   /** Custom tag vocabulary derived across ALL loaded VOD matches (03-02 locked decision) — fed into the match TagAddCombobox's "your existing custom tags" group. */
   tagVocabulary: string[];
+  /** The signed-in user's playlists — fed into the "Add to playlist" menu (LIST-02). */
+  playlists: Playlist[];
 }) {
   const { t } = useTranslation();
   const updateMatch = useUpdateMatch();
@@ -240,6 +386,11 @@ export function SelectedMatchMeta({
           onAdd={handleAddTag}
           ariaLabel={t('tags.addAria')}
         />
+      </div>
+      {/* "Add to playlist" (LIST-02) — a sibling row to the tag row above,
+          same surface per CONTEXT.md. */}
+      <div className="flex items-center gap-2">
+        <AddToPlaylistMenu playlists={playlists} matchId={match.id} />
       </div>
     </div>
   );
