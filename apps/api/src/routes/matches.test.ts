@@ -360,6 +360,31 @@ describe('POST /api/matches', () => {
     expect(stored).toMatchObject({ vodTimestamps });
   });
 
+  it('accepts and stores a tag-only vodTimestamp entry with an empty note', async () => {
+    const { app, database } = buildTestApp();
+
+    const vodTimestamps = [{ seconds: 42, note: '', tags: ['punish'] }];
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/matches',
+      headers: authHeader(),
+      payload: {
+        ...validCreateInput,
+        vodUrl: 'https://youtube.com/watch?v=abc123',
+        vodTimestamps,
+      },
+    });
+
+    expect(response.statusCode).toBe(201);
+    expect(response.json()).toMatchObject({ vodTimestamps });
+
+    const dump = database.dump() as Record<string, unknown>;
+    const matches = dump.matches as Record<string, Record<string, unknown>>;
+    const stored = Object.values(matches[TEST_UID]!)[0]!;
+    expect(stored).toMatchObject({ vodTimestamps });
+  });
+
   it('omits tags from the stored record when not provided', async () => {
     const { app, database } = buildTestApp();
 
@@ -868,7 +893,7 @@ describe('PATCH /api/matches/:id', () => {
     expect(response.statusCode).toBe(400);
   });
 
-  it('returns 400 when a vodTimestamps note is empty', async () => {
+  it('accepts a vodTimestamps entry with a blank note (tag-only quick capture)', async () => {
     const { app, database } = buildTestApp();
     database.seed(`matches/${TEST_UID}/existingKey`, {
       fighter_id: 1,
@@ -888,7 +913,10 @@ describe('PATCH /api/matches/:id', () => {
       },
     });
 
-    expect(response.statusCode).toBe(400);
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({
+      vodTimestamps: [{ seconds: 10, note: '' }],
+    });
   });
 
   it('returns 400 when a vodTimestamps seconds value is negative', async () => {
