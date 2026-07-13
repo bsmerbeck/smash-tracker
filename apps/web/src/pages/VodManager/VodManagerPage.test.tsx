@@ -422,6 +422,61 @@ describe('VodManagerPage', () => {
     expect(screen.getByText('vs. rival-one')).toBeInTheDocument();
   });
 
+  it('LIST-04: renders Prev/Next playback controls + "N of M" while a playlist is active, and manual Next never autoplays', async () => {
+    const user = userEvent.setup();
+    listMatches.mockResolvedValue([
+      makeMatch({
+        id: 'm1',
+        opponent: 'rival-one',
+        time: 1_700_000_000_000,
+        vodUrl: 'https://youtube.com/watch?v=abc123',
+      }),
+      makeMatch({
+        id: 'm2',
+        opponent: 'rival-two',
+        time: 1_700_000_100_000,
+        vodUrl: 'https://youtube.com/watch?v=xyz789',
+      }),
+    ]);
+    listPlaylists.mockResolvedValue([
+      { id: 'p1', name: 'My Playlist', createdAt: 1, matchIds: ['m1', 'm2'] },
+    ]);
+
+    const configs: YouTubePlayerConfig[] = [];
+    const Player = vi.fn(function (
+      this: unknown,
+      _el: HTMLElement,
+      config: YouTubePlayerConfig,
+    ): YouTubePlayerInstance {
+      configs.push(config);
+      return {
+        seekTo: vi.fn(),
+        playVideo: vi.fn(),
+        destroy: vi.fn(),
+        getCurrentTime: vi.fn(() => 0),
+      };
+    });
+    window.YT = { Player: Player as unknown as YTGlobal['Player'], PlayerState: { ENDED: 0 } };
+
+    renderVodManager('/vod?playlist=p1&match=m1');
+
+    await waitFor(() => expect(Player).toHaveBeenCalledTimes(1));
+    expect(screen.getByText('1 of 2')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Previous match' })).toBeDisabled();
+    const nextButton = screen.getByRole('button', { name: 'Next match' });
+    expect(nextButton).not.toBeDisabled();
+
+    await user.click(nextButton);
+
+    await waitFor(() => expect(screen.getByText('vs. rival-two')).toBeInTheDocument());
+    // Different identity (xyz789) — remounts, but Next must NOT request
+    // autoplay (manual navigation never surprise-autoplays).
+    await waitFor(() => expect(Player).toHaveBeenCalledTimes(2));
+    expect(configs[1]?.playerVars?.autoplay).toBe(0);
+    expect(screen.getByText('2 of 2')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Next match' })).toBeDisabled();
+  });
+
   it('adds a timestamp note via the inline composer, prefilled from the live position, sorted ascending, carrying through other match fields', async () => {
     const user = userEvent.setup();
     listMatches.mockResolvedValue([

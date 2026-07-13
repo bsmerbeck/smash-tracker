@@ -3,7 +3,7 @@ import type { KeyboardEvent } from 'react';
 import { useSearchParams } from 'react-router';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
-import { Trash2 } from 'lucide-react';
+import { SkipBack, SkipForward, Trash2 } from 'lucide-react';
 import {
   MAX_PLAYLISTS_PER_USER,
   type Fighter,
@@ -120,6 +120,13 @@ export function VodManagerPage() {
   const playlistMatches = useMemo(
     () => (selectedPlaylist ? resolvePlaylistMatches(selectedPlaylist, vodMatches) : null),
     [selectedPlaylist, vodMatches],
+  );
+  // The selected match's position within playlistMatches (`-1` if no
+  // playlist is active or the selection isn't in it) — drives the Prev/Next
+  // boundary disable state and the "N of M" indicator (Task 3).
+  const playlistMatchIndex = useMemo(
+    () => (playlistMatches ? playlistMatches.findIndex((m) => m.id === selectedMatchId) : -1),
+    [playlistMatches, selectedMatchId],
   );
 
   // Custom tag vocabulary (TAG-01..05) spans ALL loaded VOD-bearing matches
@@ -316,6 +323,30 @@ export function VodManagerPage() {
   // whenever the selected match changes.
   function handleAutoplayBlocked() {
     setAutoplayBlocked(true);
+  }
+
+  // Manual Prev/Next playback navigation (Task 3) — deliberately does NOT
+  // touch autoplayNextRef: only handleEnded's cross-identity branch may
+  // request autoplay. Manual navigation (a row click, Prev, or Next) must
+  // never surprise-autoplay (RESEARCH.md anti-pattern list).
+  function handlePrevMatch() {
+    if (!playlistMatches || playlistMatchIndex <= 0) {
+      return;
+    }
+    const prevMatch = playlistMatches[playlistMatchIndex - 1];
+    if (prevMatch) {
+      handleSelect(prevMatch.id);
+    }
+  }
+
+  function handleNextMatch() {
+    if (!playlistMatches || playlistMatchIndex === -1) {
+      return;
+    }
+    const nextMatch = playlistMatches[playlistMatchIndex + 1];
+    if (nextMatch) {
+      handleSelect(nextMatch.id);
+    }
   }
 
   // Sibling-param update (see `selectedPlaylistId` doc comment above) — the
@@ -534,6 +565,48 @@ export function VodManagerPage() {
                   onAutoplayBlocked={handleAutoplayBlocked}
                   autoplayOnConstructRef={autoplayNextRef}
                 />
+                {autoplayBlocked && (
+                  <p className="text-sm text-muted-foreground">
+                    {t('vodManager.playback.autoplayBlocked')}
+                  </p>
+                )}
+                {/* Playlist playback controls (LIST-04) — only while a
+                    playlist is active; clicking Prev/Next never sets
+                    autoplayNextRef (manual navigation must never
+                    surprise-autoplay). */}
+                {selectedPlaylist && playlistMatches && playlistMatches.length > 0 && (
+                  <div className="flex items-center justify-center gap-3">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="icon-sm"
+                      aria-label={t('vodManager.playback.prev')}
+                      disabled={playlistMatchIndex <= 0}
+                      onClick={handlePrevMatch}
+                    >
+                      <SkipBack />
+                    </Button>
+                    <span className="text-sm text-muted-foreground">
+                      {t('vodManager.playback.position', {
+                        current: playlistMatchIndex + 1,
+                        total: playlistMatches.length,
+                      })}
+                    </span>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="icon-sm"
+                      aria-label={t('vodManager.playback.next')}
+                      disabled={
+                        playlistMatchIndex === -1 ||
+                        playlistMatchIndex >= playlistMatches.length - 1
+                      }
+                      onClick={handleNextMatch}
+                    >
+                      <SkipForward />
+                    </Button>
+                  </div>
+                )}
                 <TimestampList
                   timestamps={selectedMatch.vodTimestamps ?? []}
                   selectedIndex={selectedTimestampIndex}

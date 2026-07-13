@@ -540,6 +540,12 @@
       "renamePlaceholder": "Playlist umbenennen",
       "delete": "Löschen",
       "deleteConfirmTitle": "Diese Playlist löschen?"
+    },
+    "playback": {
+      "position": "{{current}} von {{total}}",
+      "prev": "Vorheriges Match",
+      "next": "Nächstes Match",
+      "autoplayBlocked": "Automatische Wiedergabe wurde blockiert — zum Fortfahren auf Play drücken"
     }
   },
   "tags": {
