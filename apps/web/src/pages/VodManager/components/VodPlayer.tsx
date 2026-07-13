@@ -18,6 +18,14 @@ export interface VodPlayerProps {
    * available, so a sibling `NoteComposer`/inline editor can read the live
    * playback position on-demand (never polled). */
   getCurrentTimeRef?: RefObject<(() => number) | null>;
+  /** Fires when the live player reports ENDED (LIST-04 auto-advance). */
+  onEnded?: () => void;
+  /** Fires when the browser blocks an autoplay-triggering call — the
+   * authoritative "show the native play-button fallback" signal. */
+  onAutoplayBlocked?: () => void;
+  /** Requests autoplay for this ONE player construction only (closure-
+   * captured inside `useVodPlayer`, never a remount trigger on its own). */
+  autoplayOnConstruct?: boolean;
 }
 
 /**
@@ -41,11 +49,17 @@ export function VodPlayer({
   onReady,
   seekRef,
   getCurrentTimeRef,
+  onEnded,
+  onAutoplayBlocked,
+  autoplayOnConstruct,
 }: VodPlayerProps) {
   const { t } = useTranslation();
   const { containerRef, isReady, error, seek, getCurrentTime } = useVodPlayer({
     vodUrl,
     startSeconds,
+    onEnded,
+    onAutoplayBlocked,
+    autoplayOnConstruct,
   });
 
   useEffect(() => {
