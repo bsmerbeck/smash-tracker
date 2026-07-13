@@ -275,6 +275,41 @@ export function VodManagerPage() {
   // inherits a stale autoplay intent.
   const autoplayNextRef = useRef(false);
 
+  // Drift recovery (video-end fix-up): set to `true` by handleEnded on
+  // EVERY ENDED event, regardless of Library/playlist context — after
+  // ENDED, a host platform's post-roll UI (documented for Twitch: the "Up
+  // Next" overlay) can autoplay ITS OWN recommended video into the SAME
+  // embedded iframe, silently hijacking it out from under the live player
+  // object `useVodPlayer` returned. Cleared by handleSelect the moment the
+  // user makes ANY selection (row click, quick-tag-triggered advance, deep
+  // link, cold-open); if that selection targets the SAME video identity the
+  // player was already showing, the existing no-op/reposition-seek path
+  // (see `previousVodIdentityRef` below) is insufficient to recover a
+  // hijacked iframe, so handleSelect instead bumps `remountToken` to force
+  // `useVodPlayer` to fully reconstruct the player.
+  const driftedRef = useRef(false);
+  // Bumped by handleSelect's drift-recovery branch (directly, or via the
+  // deferred effect below) — passed straight through to `VodPlayer`'s
+  // `remountToken` prop, which `useVodPlayer` combines with video identity
+  // to form its construction-effect key (see its doc comment). A no-op
+  // remount trigger on its own; only forces a rebuild when combined with an
+  // ENDED-observed drift.
+  const [remountToken, setRemountToken] = useState(0);
+  // Set by handleSelect when drift recovery targets a DIFFERENT match
+  // sharing the current video identity (e.g. auto-advancing to the next
+  // match in a shared-video playlist) — `react-router`'s `setSearchParams`
+  // commits its navigation on a render separate from a plain `useState`
+  // update fired in the same handler, so bumping `remountToken` directly
+  // there would race and reconstruct using the STALE (pre-navigation)
+  // match's `startSeconds`/`vodUrl`. Recording the TARGET id here and
+  // bumping `remountToken` only once `selectedMatch` has actually
+  // transitioned to it (the effect below, keyed on `selectedMatch`)
+  // guarantees the reconstruction always reads the CORRECT match's props.
+  // Reselecting the exact SAME match id needs no such deferral (nothing
+  // about `selectedMatch` changes either way) — handleSelect bumps
+  // `remountToken` immediately for that case instead.
+  const forceRemountForIdRef = useRef<string | null>(null);
+
   const updateMatch = useUpdateMatch();
 
   // An entire event can be recorded as ONE video with each match's stored
@@ -305,6 +340,16 @@ export function VodManagerPage() {
     previousVodIdentityRef.current = identityKey;
   }, [selectedMatch]);
 
+  // Consumes `forceRemountForIdRef` (see its doc comment above) once
+  // `selectedMatch` has actually landed on the target — the deferred half
+  // of the different-match drift-recovery branch.
+  useEffect(() => {
+    if (selectedMatch && forceRemountForIdRef.current === selectedMatch.id) {
+      forceRemountForIdRef.current = null;
+      setRemountToken((token) => token + 1);
+    }
+  }, [selectedMatch]);
+
   // Single-use reset for autoplayNextRef (see its declaration above).
   // Declared AFTER the VodPlayer/useVodPlayer usage in this component's
   // render (VodPlayer is mounted further down in the JSX below) so the
@@ -318,7 +363,38 @@ export function VodManagerPage() {
     autoplayNextRef.current = false;
   }, [selectedMatch?.id]);
 
+  // Every selection path (row click, quick-tag-triggered advance, deep
+  // link, cold-open) routes through here, which is also the single place
+  // that resolves drift recovery (see `driftedRef`'s doc comment above): if
+  // the LAST ENDED event left the flag set and the target match shares the
+  // SAME video identity the player was already showing (including
+  // reselecting the exact same match), the normal no-op/reposition-seek
+  // path can't recover a hijacked iframe, so a forced remount is requested
+  // via `remountToken` instead.
   function handleSelect(id: string) {
+    const wasDrifted = driftedRef.current;
+    driftedRef.current = false;
+    if (wasDrifted && selectedMatch) {
+      const targetMatch = displayedMatches.find((m) => m.id === id);
+      const currentIdentity = videoIdentityOf(selectedMatch);
+      const targetIdentity = targetMatch ? videoIdentityOf(targetMatch) : null;
+      if (currentIdentity != null && currentIdentity === targetIdentity) {
+        if (id === selectedMatch.id) {
+          // Reselecting the exact SAME match: nothing about vodUrl/
+          // startSeconds needs to change either way, so it's safe (and
+          // more responsive) to force the remount immediately rather than
+          // deferring — `?match=` may not even change (see below), so no
+          // downstream effect would ever fire for this case.
+          setRemountToken((token) => token + 1);
+        } else {
+          // Advancing to a DIFFERENT match sharing this identity: defer to
+          // the `forceRemountForIdRef` effect (see its doc comment) so the
+          // reconstruction always reads the TARGET match's props, never a
+          // stale pre-navigation render's.
+          forceRemountForIdRef.current = id;
+        }
+      }
+    }
     setSearchParams((prev) => {
       const next = new URLSearchParams(prev);
       next.set('match', id);
@@ -326,10 +402,16 @@ export function VodManagerPage() {
     });
   }
 
-  // LIST-04 auto-advance: fires when the live player reports ENDED. Only
-  // acts while a playlist is active; otherwise a no-op (Library view has
-  // no "next match" concept). Two branches mirroring the existing
-  // reposition mechanism (Pattern 4):
+  // Video-end auto-advance: fires when the live player reports ENDED.
+  // Advances through `displayedMatches` — the SAME list the left panel
+  // renders, so this is playlist order while a playlist is active and the
+  // current filtered/sorted order in Library view (LIST-04 originally
+  // playlist-only; Library now shares the identical two-branch logic,
+  // since `displayedMatches` already resolves to whichever list is
+  // visible). Also flags `driftedRef` unconditionally — see its doc
+  // comment — so a subsequent reselect of a same-identity video can
+  // recover from a hijacked iframe regardless of whether an advance
+  // actually happened below.
   //   - same video identity as the current match -> just select the next
   //     match id; previousVodIdentityRef's reposition effect (above) seeks
   //     the ALREADY-PLAYING player to the new match's start time, no
@@ -339,14 +421,15 @@ export function VodManagerPage() {
   //     next match id; the identity change remounts useVodPlayer, which
   //     reads the flag as autoplayOnConstruct.
   function handleEnded() {
-    if (!selectedPlaylist || !playlistMatches || !selectedMatch) {
+    driftedRef.current = true;
+    if (!selectedMatch) {
       return;
     }
-    const index = playlistMatches.findIndex((m) => m.id === selectedMatch.id);
+    const index = displayedMatches.findIndex((m) => m.id === selectedMatch.id);
     if (index === -1) {
       return;
     }
-    const nextMatch = playlistMatches[index + 1];
+    const nextMatch = displayedMatches[index + 1];
     if (!nextMatch) {
       return;
     }
@@ -760,6 +843,7 @@ export function VodManagerPage() {
                     onEnded={handleEnded}
                     onAutoplayBlocked={handleAutoplayBlocked}
                     autoplayOnConstructRef={autoplayNextRef}
+                    remountToken={remountToken}
                   />
                   <Button
                     type="button"

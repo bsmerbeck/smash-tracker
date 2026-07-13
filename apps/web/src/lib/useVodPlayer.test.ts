@@ -418,4 +418,58 @@ describe('useVodPlayer', () => {
     rerender(undefined);
     expect(Player).toHaveBeenCalledTimes(1);
   });
+
+  it('forces a full player reconstruction when remountToken changes, even with an unchanged video identity (drift recovery)', async () => {
+    let capturedConfig: YouTubePlayerConfig | undefined;
+    const destroy = vi.fn();
+    const Player = vi.fn(function (
+      this: unknown,
+      _el: HTMLElement,
+      config: YouTubePlayerConfig,
+    ): YouTubePlayerInstance {
+      capturedConfig = config;
+      return {
+        seekTo: vi.fn(),
+        playVideo: vi.fn(),
+        destroy,
+        getCurrentTime: vi.fn(() => 0),
+      };
+    });
+    window.YT = {
+      Player: Player as unknown as YTGlobal['Player'],
+      PlayerState: { ENDED: 0 },
+    };
+
+    const { useVodPlayer } = await import('./useVodPlayer');
+    const { result, rerender } = renderHook(
+      ({ remountToken }: { remountToken: number }) =>
+        useVodPlayer({ vodUrl: 'https://www.youtube.com/watch?v=abc123', remountToken }),
+      { initialProps: { remountToken: 0 } },
+    );
+    result.current.containerRef.current = document.createElement('div');
+
+    await waitFor(() => expect(Player).toHaveBeenCalledTimes(1));
+    act(() => {
+      capturedConfig?.events?.onReady?.();
+    });
+    await waitFor(() => expect(result.current.isReady).toBe(true));
+
+    // Same vodUrl/identity — a plain rerender with an unchanged remountToken
+    // must NOT reconstruct (the existing identity-keyed invariant).
+    rerender({ remountToken: 0 });
+    expect(Player).toHaveBeenCalledTimes(1);
+
+    // Bumping remountToken (mirrors VodManagerPage's drift-recovery
+    // handleSelect branch) forces a fresh construction: the old instance is
+    // destroyed and a new one is built, even though the identity never
+    // changed.
+    result.current.containerRef.current = document.createElement('div');
+    rerender({ remountToken: 1 });
+    await waitFor(() => expect(Player).toHaveBeenCalledTimes(2));
+    expect(destroy).toHaveBeenCalledTimes(1);
+    expect(capturedConfig?.videoId).toBe('abc123');
+    // A fresh construction resets isReady until the new instance's onReady
+    // fires again.
+    expect(result.current.isReady).toBe(false);
+  });
 });
