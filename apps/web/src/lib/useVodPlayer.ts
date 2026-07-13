@@ -57,6 +57,14 @@ export interface TwitchPlayerInstance {
   destroy?(): void;
   /** Current playback position, in seconds. Source: dev.twitch.tv/docs/embed/video-and-clips */
   getCurrentTime(): number;
+  /** Duration of the current video, in seconds. Official method name per
+   * dev.twitch.tv/docs/embed/video-and-clips (Player Methods: `getDuration()`).
+   * Used by `pauseAtEnd` (retest fix-up #1) to seek back off the very end of
+   * an ENDED video before pausing — a plain `pause()` issued while already
+   * in the ENDED state does not cancel Twitch's "Up Next" autoplay
+   * countdown. Optional because callers must feature-detect before relying
+   * on it (defensive against embed API surface drift). */
+  getDuration?(): number;
 }
 
 declare global {
@@ -211,6 +219,17 @@ export interface UseVodPlayerResult {
   /** Pauses the live player in place (no seek). No-op until `isReady` is
    * true — mirrors `seek`'s ready-gate guard. */
   pause: () => void;
+  /** ENDED-specific pause (retest fix-up #1) — use ONLY when there's no
+   * advance target (Library or playlist end), never for a plain in-place
+   * pause (see `pause` above for that). Returns `true` when the video was
+   * successfully left in a non-autoplaying state (YouTube: plain
+   * `pauseVideo()`; Twitch: seek back off the very end then `pause()`, the
+   * reliable way to cancel Twitch's "Up Next" countdown, since a plain
+   * `pause()` issued while already ENDED does not cancel it). Returns
+   * `false` when the Twitch workaround couldn't be applied reliably (e.g.
+   * `getDuration()` is missing or returns an unusable value) — the caller
+   * should then fall back to its own remount-based recovery. */
+  pauseAtEnd: () => boolean;
   /** Reads the live player's current position, in whole seconds. Returns
    * `0` (never throws) until `isReady` is true — a pure on-demand read, not
    * polled. */
@@ -446,5 +465,40 @@ export function useVodPlayer({
     }
   }
 
-  return { containerRef, isReady, error, seek, pause, getCurrentTime };
+  /**
+   * ENDED-specific pause — see `UseVodPlayerResult.pauseAtEnd`'s doc
+   * comment for the full rationale. When not ready / no live player, treat
+   * it as a no-op success (mirrors `pause`'s ready-gate guard: nothing to
+   * recover from since no player is showing anything yet).
+   */
+  function pauseAtEnd(): boolean {
+    if (!isReady || !playerRef.current) {
+      return true;
+    }
+    if (providerRef.current === 'youtube') {
+      (playerRef.current as YouTubePlayerInstance).pauseVideo();
+      return true;
+    }
+    if (providerRef.current === 'twitch') {
+      const twitchPlayer = playerRef.current as TwitchPlayerInstance;
+      if (typeof twitchPlayer.getDuration !== 'function') {
+        return false;
+      }
+      let duration: number;
+      try {
+        duration = twitchPlayer.getDuration();
+      } catch {
+        return false;
+      }
+      if (!Number.isFinite(duration) || duration <= 0) {
+        return false;
+      }
+      twitchPlayer.seek(Math.max(0, duration - 1));
+      twitchPlayer.pause();
+      return true;
+    }
+    return true;
+  }
+
+  return { containerRef, isReady, error, seek, pause, pauseAtEnd, getCurrentTime };
 }
