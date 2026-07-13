@@ -25,6 +25,7 @@ import {
 } from '@/components/ui/command';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { cn } from '@/lib/utils';
+import { PlaylistRow } from './PlaylistRow';
 
 type VodManagerFilterOptions = {
   fighters: string[];
@@ -56,6 +57,9 @@ export function VodMatchList({
   selectedId,
   onSelect,
   isPlaylistView = false,
+  onMoveMatch,
+  onRemoveFromPlaylist,
+  reorderPending = false,
 }: {
   matches: Match[];
   filters: VodManagerFilterState;
@@ -72,6 +76,12 @@ export function VodMatchList({
    * the playlist-specific empty-state copy rather than the normal empty rows.
    */
   isPlaylistView?: boolean;
+  /** Reorders the match at `index` one slot toward `dir` — only relevant in playlist view. */
+  onMoveMatch?: (index: number, dir: 'up' | 'down') => void;
+  /** Removes `matchId` from the active playlist — only relevant in playlist view. */
+  onRemoveFromPlaylist?: (matchId: string) => void;
+  /** Whether a reorder mutation is in flight (race guard, RESEARCH.md Pitfall 3) — disables PlaylistRow's arrow buttons. */
+  reorderPending?: boolean;
 }) {
   const { t } = useTranslation();
 
@@ -158,14 +168,29 @@ export function VodMatchList({
         <p className="text-sm text-muted-foreground">{t('vodManager.playlists.empty')}</p>
       ) : (
         <div className="flex max-h-[60vh] flex-col gap-1 overflow-y-auto md:max-h-none">
-          {matches.map((match) => (
-            <MatchRow
-              key={match.id}
-              match={match}
-              isSelected={match.id === selectedId}
-              onSelect={() => onSelect(match.id)}
-            />
-          ))}
+          {matches.map((match, index) =>
+            isPlaylistView ? (
+              <PlaylistRow
+                key={match.id}
+                match={match}
+                isSelected={match.id === selectedId}
+                onSelect={() => onSelect(match.id)}
+                onMoveUp={() => onMoveMatch?.(index, 'up')}
+                onMoveDown={() => onMoveMatch?.(index, 'down')}
+                onRemove={() => onRemoveFromPlaylist?.(match.id)}
+                canMoveUp={index > 0}
+                canMoveDown={index < matches.length - 1}
+                reorderPending={reorderPending}
+              />
+            ) : (
+              <MatchRow
+                key={match.id}
+                match={match}
+                isSelected={match.id === selectedId}
+                onSelect={() => onSelect(match.id)}
+              />
+            ),
+          )}
         </div>
       )}
     </div>
