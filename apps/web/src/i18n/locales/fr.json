@@ -535,7 +535,11 @@
       "added": "Ajouté à la playlist",
       "moveUp": "Monter",
       "moveDown": "Descendre",
-      "removeFromPlaylist": "Retirer de la playlist"
+      "removeFromPlaylist": "Retirer de la playlist",
+      "rename": "Renommer",
+      "renamePlaceholder": "Renommer la playlist",
+      "delete": "Supprimer",
+      "deleteConfirmTitle": "Supprimer cette playlist ?"
     }
   },
   "tags": {
