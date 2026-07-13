@@ -148,6 +148,10 @@ export function VodManagerPage() {
   const [filters, setFilters] = useState<VodManagerFilterState>(DEFAULT_VOD_MANAGER_FILTERS);
   const [sort, setSort] = useState<VodSortDirection>('newest');
   const [selectedTimestampIndex, setSelectedTimestampIndex] = useState<number | null>(null);
+  // Lifted from `TimestampList` (Task 1) so the quick-tag panel's capture
+  // handler can command a freshly-inserted row straight into edit mode once
+  // the PATCH resolves and the new sorted array position is known.
+  const [editingIndex, setEditingIndex] = useState<number | null>(null);
   // Set by handleAutoplayBlocked (LIST-04) whenever the browser blocks an
   // auto-advance attempt — surfaces the native play-button fallback hint
   // (Task 3). Reset alongside selectedTimestampIndex below: a blocked flag
@@ -164,6 +168,8 @@ export function VodManagerPage() {
     setTrackedMatchId(selectedMatchId);
     setSelectedTimestampIndex(null);
     setAutoplayBlocked(false);
+    // A row editing on the PREVIOUS match must never carry over either.
+    setEditingIndex(null);
   }
 
   // Inline rename draft for the active playlist's selector row — re-seeded
@@ -615,6 +621,8 @@ export function VodManagerPage() {
                   getCurrentTimeRef={getCurrentTimeRef}
                   onUpdateTimestamps={handleUpdateTimestamps}
                   tagVocabulary={tagVocabulary}
+                  editingIndex={editingIndex}
+                  onEditingIndexChange={setEditingIndex}
                 />
               </>
             ) : (
