@@ -32,7 +32,7 @@ import {
   useUpdatePlaylist,
 } from '@/hooks/usePlaylists';
 import { MAX_TIMESTAMPS, detectVodProvider, parseVodStartSeconds } from '@/lib/vod';
-import { deriveCustomTagVocabulary } from '@/lib/tags';
+import { MAX_NOTE_TAGS, addTagToList, deriveCustomTagVocabulary } from '@/lib/tags';
 import { movePlaylistItem, resolvePlaylistMatches } from '@/lib/playlists';
 import { ApiError } from '@/lib/api';
 import { cn } from '@/lib/utils';
@@ -677,17 +677,38 @@ export function VodManagerPage() {
   // ordering above the reposition-effect fix (see `previousMatchIdRef`'s
   // doc comment) — that fix is what stops the invalidateQueries refetch
   // this PATCH triggers from seeking the player back to its start time.
+  //
+  // Retest fix-up #5 (same-timecode = same note): if a note ALREADY exists
+  // at exactly this second (e.g. two quick-tag captures on the same paused
+  // frame), the tag is added to THAT existing note (deduped, capped at
+  // `MAX_NOTE_TAGS`) and that row drops into edit mode — never a second
+  // duplicate row at the identical timestamp. The `MAX_TIMESTAMPS` cap only
+  // applies to the "create a new row" path; adding a tag to an existing row
+  // never counts against it.
   function handleQuickTag(tagSlug: string) {
     if (!selectedMatch) {
       return;
     }
     const existing = selectedMatch.vodTimestamps ?? [];
+    const seconds = getCurrentTimeRef.current?.() ?? 0;
+    playerPauseRef.current?.();
+
+    const existingIndexAtSecond = existing.findIndex((stamp) => stamp.seconds === seconds);
+    if (existingIndexAtSecond !== -1) {
+      const target = existing[existingIndexAtSecond]!;
+      const nextTags = addTagToList(target.tags ?? [], tagSlug, MAX_NOTE_TAGS);
+      const updated = existing.map((stamp, i) =>
+        i === existingIndexAtSecond ? { ...stamp, tags: nextTags } : stamp,
+      );
+      handleUpdateTimestamps(updated);
+      setEditingIndex(existingIndexAtSecond);
+      return;
+    }
+
     if (existing.length >= MAX_TIMESTAMPS) {
       toast.error(t('shared.vod.timestampLimit', { max: MAX_TIMESTAMPS }));
       return;
     }
-    const seconds = getCurrentTimeRef.current?.() ?? 0;
-    playerPauseRef.current?.();
     const newNote: VodTimestamp = { seconds, note: '', tags: [tagSlug] };
     const next = [...existing, newNote].sort((a, b) => a.seconds - b.seconds);
     handleUpdateTimestamps(next);

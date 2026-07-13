@@ -19,11 +19,14 @@ import {
 } from '@/components/ui/alert-dialog';
 import { cn } from '@/lib/utils';
 import { formatTimestamp, parseFlexibleTimestamp } from '@/lib/vod';
-import { NOTE_PRESET_TAGS, addTagToList, removeTagFromList, tagLabel } from '@/lib/tags';
+import {
+  MAX_NOTE_TAGS,
+  NOTE_PRESET_TAGS,
+  addTagToList,
+  removeTagFromList,
+  tagLabel,
+} from '@/lib/tags';
 import { TagAddCombobox } from './TagAddCombobox';
-
-/** Note-level tags are capped at 5 per note (TAG-04) — keeps a single moment's tags skimmable. */
-const MAX_NOTE_TAGS = 5;
 
 /** Order-sensitive array equality — note tags are never reordered by
  * add/remove, so a simple index-wise compare is sufficient (unlike
