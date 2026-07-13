@@ -243,8 +243,24 @@ export function VodManagerPage() {
   // least one VOD match available, auto-select the most-recent one via a
   // replace navigation so the back button doesn't get stuck on an empty
   // intermediate URL.
+  //
+  // Retest fix-up #9: also fires whenever the CURRENT `selectedMatchId`
+  // isn't actually present in `displayedMatches` — not only when nothing is
+  // selected yet. Applying a filter/tag combination that excludes the
+  // currently-selected match previously left `?match=` pointed at an
+  // invisible id, and the panel fell back to the "Select a match" blank
+  // placeholder even though the (now-different) filtered list still has
+  // results — wrong per the same D-04 principle this effect already
+  // enforces on cold-open: never show an empty detail panel when there's
+  // something to show. Same replace-navigation auto-select, just no longer
+  // gated on `selectedMatchId == null`.
   useEffect(() => {
-    if (isLoading || selectedMatchId != null || displayedMatches.length === 0) {
+    if (isLoading || displayedMatches.length === 0) {
+      return;
+    }
+    const selectionIsVisible =
+      selectedMatchId != null && displayedMatches.some((m) => m.id === selectedMatchId);
+    if (selectionIsVisible) {
       return;
     }
     setSearchParams(
@@ -257,8 +273,10 @@ export function VodManagerPage() {
     );
   }, [isLoading, selectedMatchId, displayedMatches, setSearchParams]);
 
-  // T-01-04: an unknown/stale ?match= id resolves to null rather than
-  // throwing — the right panel just falls back to the placeholder copy.
+  // A `?match=` id not (yet) present in `displayedMatches` — including the
+  // one render between a filter change and the auto-select effect above
+  // committing its replacement — resolves to `null` rather than throwing;
+  // the right panel falls back to the placeholder copy for that one render.
   const selectedMatch = displayedMatches.find((m) => m.id === selectedMatchId) ?? null;
 
   // Populated by VodPlayer once its live player instance exists; invoking
