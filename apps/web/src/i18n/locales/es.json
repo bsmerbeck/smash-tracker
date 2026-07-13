@@ -539,6 +539,8 @@
       "removeFromPlaylist": "Quitar de la lista",
       "rename": "Renombrar",
       "renamePlaceholder": "Renombrar lista",
+      "saveRenameAria": "Guardar nombre de la lista",
+      "cancelRenameAria": "Cancelar cambio de nombre",
       "delete": "Eliminar",
       "deleteConfirmTitle": "¿Eliminar esta lista?"
     },

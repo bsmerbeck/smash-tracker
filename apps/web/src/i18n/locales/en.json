@@ -539,6 +539,8 @@
       "removeFromPlaylist": "Remove from playlist",
       "rename": "Rename",
       "renamePlaceholder": "Rename playlist",
+      "saveRenameAria": "Save playlist name",
+      "cancelRenameAria": "Cancel rename",
       "delete": "Delete",
       "deleteConfirmTitle": "Delete this playlist?"
     },

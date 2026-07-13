@@ -34,6 +34,9 @@ const listOpponents = vi.fn();
 const updateMatch = vi.fn();
 const upsertMe = vi.fn().mockResolvedValue({ uid: 'test-uid', email: 'test@example.com' });
 const listPlaylists = vi.fn().mockResolvedValue([]);
+const createPlaylist = vi.fn();
+const updatePlaylist = vi.fn();
+const removePlaylist = vi.fn();
 
 vi.mock('@/lib/api', () => ({
   api: {
@@ -50,6 +53,9 @@ vi.mock('@/lib/api', () => ({
     },
     playlists: {
       list: (...args: unknown[]) => listPlaylists(...args),
+      create: (...args: unknown[]) => createPlaylist(...args),
+      update: (...args: unknown[]) => updatePlaylist(...args),
+      remove: (...args: unknown[]) => removePlaylist(...args),
     },
   },
 }));
@@ -110,6 +116,9 @@ describe('VodManagerPage', () => {
     listOpponents.mockResolvedValue(['rival-one', 'rival-two']);
     updateMatch.mockResolvedValue({});
     listPlaylists.mockResolvedValue([]);
+    createPlaylist.mockResolvedValue({ id: 'p1', name: 'New', createdAt: 1, matchIds: [] });
+    updatePlaylist.mockResolvedValue({});
+    removePlaylist.mockResolvedValue({});
   });
 
   afterEach(() => {
@@ -475,6 +484,67 @@ describe('VodManagerPage', () => {
     expect(configs[1]?.playerVars?.autoplay).toBe(0);
     expect(screen.getByText('2 of 2')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Next match' })).toBeDisabled();
+  });
+
+  it('renames the active playlist via an explicit Rename -> Save flow, with Escape reverting without mutating', async () => {
+    const user = userEvent.setup();
+    listMatches.mockResolvedValue([
+      makeMatch({
+        id: 'm1',
+        opponent: 'rival-one',
+        vodUrl: 'https://youtube.com/watch?v=abc123',
+      }),
+    ]);
+    listPlaylists.mockResolvedValue([
+      { id: 'p1', name: 'My Playlist', createdAt: 1, matchIds: ['m1'] },
+    ]);
+
+    window.YT = {
+      Player: vi.fn(function (this: unknown) {
+        return {
+          seekTo: vi.fn(),
+          playVideo: vi.fn(),
+          destroy: vi.fn(),
+          getCurrentTime: vi.fn(() => 0),
+        };
+      }) as unknown as YTGlobal['Player'],
+      PlayerState: { ENDED: 0 },
+    };
+
+    renderVodManager('/vod?playlist=p1&match=m1');
+
+    // (1) Default view: no bare/unlabeled rename input — only an explicit
+    // Rename trigger.
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Rename' })).toBeInTheDocument());
+    expect(screen.queryByRole('textbox', { name: 'Rename playlist' })).not.toBeInTheDocument();
+
+    // (2) Clicking Rename swaps in a clearly labeled input plus Save/Cancel.
+    await user.click(screen.getByRole('button', { name: 'Rename' }));
+    const input = screen.getByRole('textbox', { name: 'Rename playlist' });
+    expect(input).toHaveValue('My Playlist');
+    expect(screen.getByRole('button', { name: 'Save playlist name' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Cancel rename' })).toBeInTheDocument();
+
+    // (3) Escape reverts the draft and exits rename mode WITHOUT mutating.
+    await user.type(input, ' extra');
+    await user.keyboard('{Escape}');
+    expect(updatePlaylist).not.toHaveBeenCalled();
+    expect(screen.queryByRole('textbox', { name: 'Rename playlist' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Rename' })).toBeInTheDocument();
+
+    // (4) Re-entering rename mode re-seeds the draft fresh (the ' extra'
+    // from step 3 must not carry over), and Enter saves via a name-only
+    // PATCH.
+    await user.click(screen.getByRole('button', { name: 'Rename' }));
+    const input2 = screen.getByRole('textbox', { name: 'Rename playlist' });
+    expect(input2).toHaveValue('My Playlist');
+    await user.clear(input2);
+    await user.type(input2, 'Renamed Playlist{Enter}');
+
+    await waitFor(() =>
+      expect(updatePlaylist).toHaveBeenCalledWith('p1', { name: 'Renamed Playlist' }),
+    );
+    expect(screen.queryByRole('textbox', { name: 'Rename playlist' })).not.toBeInTheDocument();
   });
 
   it('adds a timestamp note via the inline composer, prefilled from the live position, sorted ascending, carrying through other match fields', async () => {
