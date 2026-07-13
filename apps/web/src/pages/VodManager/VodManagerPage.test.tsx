@@ -134,7 +134,7 @@ describe('VodManagerPage', () => {
         getCurrentTime: vi.fn(() => 754),
       };
     });
-    window.YT = { Player: Player as unknown as YTGlobal['Player'] };
+    window.YT = { Player: Player as unknown as YTGlobal['Player'], PlayerState: { ENDED: 0 } };
 
     renderVodManager('/vod?match=m1');
 
@@ -170,7 +170,7 @@ describe('VodManagerPage', () => {
       capturedConfig = config;
       return { seekTo, playVideo, destroy: vi.fn(), getCurrentTime: vi.fn(() => 754) };
     });
-    window.YT = { Player: Player as unknown as YTGlobal['Player'] };
+    window.YT = { Player: Player as unknown as YTGlobal['Player'], PlayerState: { ENDED: 0 } };
 
     renderVodManager('/vod?match=m1');
 
@@ -216,7 +216,7 @@ describe('VodManagerPage', () => {
         getCurrentTime: vi.fn(() => 754),
       };
     });
-    window.YT = { Player: Player as unknown as YTGlobal['Player'] };
+    window.YT = { Player: Player as unknown as YTGlobal['Player'], PlayerState: { ENDED: 0 } };
 
     renderVodManager('/vod?match=m1');
 
@@ -253,7 +253,7 @@ describe('VodManagerPage', () => {
       capturedConfig = config;
       return { seekTo, playVideo, destroy: vi.fn(), getCurrentTime: vi.fn(() => 754) };
     });
-    window.YT = { Player: Player as unknown as YTGlobal['Player'] };
+    window.YT = { Player: Player as unknown as YTGlobal['Player'], PlayerState: { ENDED: 0 } };
 
     renderVodManager('/vod?match=m1');
 
@@ -299,7 +299,7 @@ describe('VodManagerPage', () => {
       capturedConfig = config;
       return { seekTo, playVideo, destroy: vi.fn(), getCurrentTime };
     });
-    window.YT = { Player: Player as unknown as YTGlobal['Player'] };
+    window.YT = { Player: Player as unknown as YTGlobal['Player'], PlayerState: { ENDED: 0 } };
 
     renderVodManager('/vod?match=m1');
 
@@ -367,7 +367,7 @@ describe('VodManagerPage', () => {
         getCurrentTime: vi.fn(() => 754),
       };
     });
-    window.YT = { Player: Player as unknown as YTGlobal['Player'] };
+    window.YT = { Player: Player as unknown as YTGlobal['Player'], PlayerState: { ENDED: 0 } };
 
     renderVodManager('/vod?match=m1');
     await waitFor(() => expect(Player).toHaveBeenCalledTimes(1));
@@ -428,7 +428,7 @@ describe('VodManagerPage', () => {
         getCurrentTime: vi.fn(() => 754),
       };
     });
-    window.YT = { Player: Player as unknown as YTGlobal['Player'] };
+    window.YT = { Player: Player as unknown as YTGlobal['Player'], PlayerState: { ENDED: 0 } };
 
     renderVodManager('/vod?match=m1');
     await waitFor(() => expect(Player).toHaveBeenCalledTimes(1));
@@ -478,7 +478,7 @@ describe('VodManagerPage', () => {
         getCurrentTime: vi.fn(() => 754),
       };
     });
-    window.YT = { Player: Player as unknown as YTGlobal['Player'] };
+    window.YT = { Player: Player as unknown as YTGlobal['Player'], PlayerState: { ENDED: 0 } };
 
     renderVodManager('/vod?match=m1');
     await waitFor(() => expect(Player).toHaveBeenCalledTimes(1));
@@ -532,7 +532,7 @@ describe('VodManagerPage', () => {
       capturedConfig = config;
       return { seekTo, playVideo: vi.fn(), destroy: vi.fn(), getCurrentTime: vi.fn(() => 754) };
     });
-    window.YT = { Player: Player as unknown as YTGlobal['Player'] };
+    window.YT = { Player: Player as unknown as YTGlobal['Player'], PlayerState: { ENDED: 0 } };
 
     renderVodManager('/vod?match=m1');
     await waitFor(() => expect(Player).toHaveBeenCalledTimes(1));
@@ -592,7 +592,7 @@ describe('VodManagerPage', () => {
         getCurrentTime: vi.fn(() => 754),
       };
     });
-    window.YT = { Player: Player as unknown as YTGlobal['Player'] };
+    window.YT = { Player: Player as unknown as YTGlobal['Player'], PlayerState: { ENDED: 0 } };
 
     renderVodManager('/vod?match=m1');
     await waitFor(() => expect(Player).toHaveBeenCalledTimes(1));
@@ -636,7 +636,7 @@ describe('VodManagerPage', () => {
       capturedConfig = config;
       return { seekTo, playVideo, destroy: vi.fn(), getCurrentTime: vi.fn(() => 754) };
     });
-    window.YT = { Player: Player as unknown as YTGlobal['Player'] };
+    window.YT = { Player: Player as unknown as YTGlobal['Player'], PlayerState: { ENDED: 0 } };
 
     renderVodManager('/vod?match=m1');
     await waitFor(() => expect(Player).toHaveBeenCalledTimes(1));
@@ -685,7 +685,7 @@ describe('VodManagerPage', () => {
         getCurrentTime: vi.fn(() => 754),
       };
     });
-    window.YT = { Player: Player as unknown as YTGlobal['Player'] };
+    window.YT = { Player: Player as unknown as YTGlobal['Player'], PlayerState: { ENDED: 0 } };
 
     renderVodManager('/vod?match=m1');
     await waitFor(() => expect(Player).toHaveBeenCalledTimes(1));
@@ -738,7 +738,7 @@ describe('VodManagerPage', () => {
         getCurrentTime: vi.fn(() => 754),
       };
     });
-    window.YT = { Player: Player as unknown as YTGlobal['Player'] };
+    window.YT = { Player: Player as unknown as YTGlobal['Player'], PlayerState: { ENDED: 0 } };
 
     renderVodManager('/vod?match=m1');
     await waitFor(() => expect(Player).toHaveBeenCalledTimes(1));
@@ -780,7 +780,7 @@ describe('VodManagerPage', () => {
         getCurrentTime: vi.fn(() => 754),
       };
     });
-    window.YT = { Player: Player as unknown as YTGlobal['Player'] };
+    window.YT = { Player: Player as unknown as YTGlobal['Player'], PlayerState: { ENDED: 0 } };
 
     renderVodManager('/vod?match=m1');
     await waitFor(() => expect(Player).toHaveBeenCalledTimes(1));
@@ -824,7 +824,7 @@ describe('VodManagerPage', () => {
         getCurrentTime: vi.fn(() => 754),
       };
     });
-    window.YT = { Player: Player as unknown as YTGlobal['Player'] };
+    window.YT = { Player: Player as unknown as YTGlobal['Player'], PlayerState: { ENDED: 0 } };
 
     renderVodManager('/vod?match=m1');
     await waitFor(() => expect(Player).toHaveBeenCalledTimes(1));
@@ -864,7 +864,7 @@ describe('VodManagerPage', () => {
         getCurrentTime: vi.fn(() => 754),
       };
     });
-    window.YT = { Player: Player as unknown as YTGlobal['Player'] };
+    window.YT = { Player: Player as unknown as YTGlobal['Player'], PlayerState: { ENDED: 0 } };
 
     renderVodManager('/vod?match=m1');
     await waitFor(() => expect(Player).toHaveBeenCalledTimes(1));
@@ -917,7 +917,7 @@ describe('VodManagerPage', () => {
         getCurrentTime: vi.fn(() => 754),
       };
     });
-    window.YT = { Player: Player as unknown as YTGlobal['Player'] };
+    window.YT = { Player: Player as unknown as YTGlobal['Player'], PlayerState: { ENDED: 0 } };
 
     renderVodManager('/vod?match=m1');
     await waitFor(() => expect(Player).toHaveBeenCalledTimes(1));
@@ -959,7 +959,7 @@ describe('VodManagerPage', () => {
         getCurrentTime: vi.fn(() => 754),
       };
     });
-    window.YT = { Player: Player as unknown as YTGlobal['Player'] };
+    window.YT = { Player: Player as unknown as YTGlobal['Player'], PlayerState: { ENDED: 0 } };
 
     renderVodManager('/vod?match=m1');
     await waitFor(() => expect(Player).toHaveBeenCalledTimes(1));
@@ -1003,7 +1003,7 @@ describe('VodManagerPage', () => {
         getCurrentTime: vi.fn(() => 754),
       };
     });
-    window.YT = { Player: Player as unknown as YTGlobal['Player'] };
+    window.YT = { Player: Player as unknown as YTGlobal['Player'], PlayerState: { ENDED: 0 } };
 
     renderVodManager('/vod?match=m1');
     await waitFor(() => expect(Player).toHaveBeenCalledTimes(1));

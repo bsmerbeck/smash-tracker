@@ -43,7 +43,7 @@ describe('useVodPlayer', () => {
       capturedConfig = config;
       return { seekTo, playVideo, destroy: vi.fn(), getCurrentTime: vi.fn(() => 42) };
     });
-    window.YT = { Player: Player as unknown as YTGlobal['Player'] };
+    window.YT = { Player: Player as unknown as YTGlobal['Player'], PlayerState: { ENDED: 0 } };
 
     const { useVodPlayer } = await import('./useVodPlayer');
     const { result } = renderHook(() =>
@@ -90,7 +90,7 @@ describe('useVodPlayer', () => {
         getCurrentTime: vi.fn(() => 99),
       };
     });
-    window.YT = { Player: Player as unknown as YTGlobal['Player'] };
+    window.YT = { Player: Player as unknown as YTGlobal['Player'], PlayerState: { ENDED: 0 } };
 
     const { useVodPlayer } = await import('./useVodPlayer');
     const { result } = renderHook(() =>
@@ -161,7 +161,10 @@ describe('useVodPlayer', () => {
   it('reports an unsupported state and constructs no player for an unrecognized host', async () => {
     const YTPlayer = vi.fn();
     const TwitchPlayer = vi.fn();
-    window.YT = { Player: YTPlayer as unknown as YTGlobal['Player'] };
+    window.YT = {
+      Player: YTPlayer as unknown as YTGlobal['Player'],
+      PlayerState: { ENDED: 0 },
+    };
     window.Twitch = { Player: TwitchPlayer as unknown as TwitchGlobal['Player'] };
 
     const { useVodPlayer } = await import('./useVodPlayer');
@@ -188,7 +191,7 @@ describe('useVodPlayer', () => {
         getCurrentTime: vi.fn(() => 0),
       };
     });
-    window.YT = { Player: Player as unknown as YTGlobal['Player'] };
+    window.YT = { Player: Player as unknown as YTGlobal['Player'], PlayerState: { ENDED: 0 } };
 
     const { useVodPlayer } = await import('./useVodPlayer');
     const { result } = renderHook(() =>
@@ -231,5 +234,182 @@ describe('useVodPlayer', () => {
       'script[src="https://embed.twitch.tv/embed/v1.js"]',
     );
     expect(scripts).toHaveLength(1);
+  });
+
+  it('fires onEnded when YouTube reports the ENDED player state via the live SDK constant', async () => {
+    const onEnded = vi.fn();
+    let capturedConfig: YouTubePlayerConfig | undefined;
+    const Player = vi.fn(function (
+      this: unknown,
+      _el: HTMLElement,
+      config: YouTubePlayerConfig,
+    ): YouTubePlayerInstance {
+      capturedConfig = config;
+      return {
+        seekTo: vi.fn(),
+        playVideo: vi.fn(),
+        destroy: vi.fn(),
+        getCurrentTime: vi.fn(() => 0),
+      };
+    });
+    // Real IFrame API exposes ENDED as a numeric constant (documented value
+    // 0) off `YT.PlayerState` — read live, never hardcoded.
+    window.YT = {
+      Player: Player as unknown as YTGlobal['Player'],
+      PlayerState: { ENDED: 0 },
+    };
+
+    const { useVodPlayer } = await import('./useVodPlayer');
+    const { result } = renderHook(() =>
+      useVodPlayer({ vodUrl: 'https://www.youtube.com/watch?v=abc123', onEnded }),
+    );
+    result.current.containerRef.current = document.createElement('div');
+
+    await waitFor(() => expect(Player).toHaveBeenCalledTimes(1));
+
+    // A non-ENDED state change must NOT fire onEnded.
+    act(() => {
+      capturedConfig?.events?.onStateChange?.({ data: 1 }); // PLAYING
+    });
+    expect(onEnded).not.toHaveBeenCalled();
+
+    act(() => {
+      capturedConfig?.events?.onStateChange?.({ data: window.YT!.PlayerState.ENDED });
+    });
+    expect(onEnded).toHaveBeenCalledTimes(1);
+  });
+
+  it('fires onAutoplayBlocked when YouTube reports its onAutoplayBlocked event', async () => {
+    const onAutoplayBlocked = vi.fn();
+    let capturedConfig: YouTubePlayerConfig | undefined;
+    const Player = vi.fn(function (
+      this: unknown,
+      _el: HTMLElement,
+      config: YouTubePlayerConfig,
+    ): YouTubePlayerInstance {
+      capturedConfig = config;
+      return {
+        seekTo: vi.fn(),
+        playVideo: vi.fn(),
+        destroy: vi.fn(),
+        getCurrentTime: vi.fn(() => 0),
+      };
+    });
+    window.YT = {
+      Player: Player as unknown as YTGlobal['Player'],
+      PlayerState: { ENDED: 0 },
+    };
+
+    const { useVodPlayer } = await import('./useVodPlayer');
+    const { result } = renderHook(() =>
+      useVodPlayer({
+        vodUrl: 'https://www.youtube.com/watch?v=abc123',
+        onAutoplayBlocked,
+        autoplayOnConstruct: true,
+      }),
+    );
+    result.current.containerRef.current = document.createElement('div');
+
+    await waitFor(() => expect(Player).toHaveBeenCalledTimes(1));
+    // autoplayOnConstruct is closure-captured into playerVars.autoplay.
+    expect(capturedConfig?.playerVars?.autoplay).toBe(1);
+
+    act(() => {
+      capturedConfig?.events?.onAutoplayBlocked?.();
+    });
+    expect(onAutoplayBlocked).toHaveBeenCalledTimes(1);
+  });
+
+  it('fires onEnded/onAutoplayBlocked when Twitch fires its live ENDED/PLAYBACK_BLOCKED event names', async () => {
+    const onEnded = vi.fn();
+    const onAutoplayBlocked = vi.fn();
+    const listeners: Record<string, () => void> = {};
+    const addEventListener = vi.fn((event: string, callback: () => void) => {
+      listeners[event] = callback;
+    });
+    let capturedConfig: TwitchPlayerConfig | undefined;
+    const Player = vi.fn(function (
+      this: unknown,
+      _el: HTMLElement,
+      config: TwitchPlayerConfig,
+    ): TwitchPlayerInstance {
+      capturedConfig = config;
+      return { seek: vi.fn(), addEventListener, getCurrentTime: vi.fn(() => 0) };
+    });
+    (Player as unknown as { READY: string; ENDED: string; PLAYBACK_BLOCKED: string }).READY =
+      'ready';
+    (Player as unknown as { READY: string; ENDED: string; PLAYBACK_BLOCKED: string }).ENDED =
+      'ended';
+    (
+      Player as unknown as { READY: string; ENDED: string; PLAYBACK_BLOCKED: string }
+    ).PLAYBACK_BLOCKED = 'playback_blocked';
+    window.Twitch = { Player: Player as unknown as TwitchGlobal['Player'] };
+
+    const { useVodPlayer } = await import('./useVodPlayer');
+    const { result } = renderHook(() =>
+      useVodPlayer({
+        vodUrl: 'https://twitch.tv/videos/98765',
+        onEnded,
+        onAutoplayBlocked,
+        autoplayOnConstruct: true,
+      }),
+    );
+    result.current.containerRef.current = document.createElement('div');
+
+    await waitFor(() => expect(Player).toHaveBeenCalledTimes(1));
+    // autoplayOnConstruct is closure-captured into the Twitch config.
+    expect(capturedConfig?.autoplay).toBe(true);
+    expect(addEventListener).toHaveBeenCalledWith('ended', expect.any(Function));
+    expect(addEventListener).toHaveBeenCalledWith('playback_blocked', expect.any(Function));
+
+    act(() => {
+      listeners.ended?.();
+    });
+    expect(onEnded).toHaveBeenCalledTimes(1);
+
+    act(() => {
+      listeners.playback_blocked?.();
+    });
+    expect(onAutoplayBlocked).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not remount the player when autoplayOnConstruct changes without an identity change', async () => {
+    let capturedConfig: YouTubePlayerConfig | undefined;
+    const Player = vi.fn(function (
+      this: unknown,
+      _el: HTMLElement,
+      config: YouTubePlayerConfig,
+    ): YouTubePlayerInstance {
+      capturedConfig = config;
+      return {
+        seekTo: vi.fn(),
+        playVideo: vi.fn(),
+        destroy: vi.fn(),
+        getCurrentTime: vi.fn(() => 0),
+      };
+    });
+    window.YT = {
+      Player: Player as unknown as YTGlobal['Player'],
+      PlayerState: { ENDED: 0 },
+    };
+
+    const { useVodPlayer } = await import('./useVodPlayer');
+    const { result, rerender } = renderHook(
+      ({ autoplayOnConstruct }: { autoplayOnConstruct: boolean }) =>
+        useVodPlayer({
+          vodUrl: 'https://www.youtube.com/watch?v=abc123',
+          autoplayOnConstruct,
+        }),
+      { initialProps: { autoplayOnConstruct: false } },
+    );
+    result.current.containerRef.current = document.createElement('div');
+
+    await waitFor(() => expect(Player).toHaveBeenCalledTimes(1));
+    expect(capturedConfig?.playerVars?.autoplay).toBe(0);
+
+    // Flip the flag without changing the video identity — must NOT
+    // trigger a second construction (the identity-keyed invariant).
+    rerender({ autoplayOnConstruct: true });
+    expect(Player).toHaveBeenCalledTimes(1);
   });
 });
