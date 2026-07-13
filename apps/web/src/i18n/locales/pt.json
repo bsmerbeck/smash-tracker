@@ -520,6 +520,33 @@
       "editNoteAria": "Editar nota da marcação"
     }
   },
+  "tags": {
+    "preset": {
+      "tournament-set": "Set de torneio",
+      "practice-friendlies": "Prática/Amistosos",
+      "bad-matchup": "Matchup ruim",
+      "good-read-highlight": "Boa leitura/Highlight",
+      "to-review": "Para revisar",
+      "neutral": "Neutro",
+      "punish": "Punição",
+      "edgeguard": "Edgeguard",
+      "recovery": "Recuperação",
+      "kill-confirm": "Confirmação de kill",
+      "defense": "Defesa",
+      "mixup": "Mixup",
+      "matchup-note": "Nota de matchup",
+      "mental-game": "Jogo mental",
+      "mistake": "Erro",
+      "highlight": "Highlight"
+    },
+    "combobox": {
+      "placeholder": "Buscar ou criar uma tag...",
+      "create": "Criar \"{{tag}}\"",
+      "empty": "Nenhuma tag encontrada."
+    },
+    "addAria": "Adicionar uma tag",
+    "removeAria": "Remover tag {{tag}}"
+  },
   "matchups": {
     "loading": "Carregando confrontos...",
     "noFightersSubtitle": "Escolha seus lutadores principal e secundários para começar a registrar confrontos.",

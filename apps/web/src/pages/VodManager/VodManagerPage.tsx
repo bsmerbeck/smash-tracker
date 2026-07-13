@@ -8,6 +8,7 @@ import { useFighters } from '@/hooks/useFighters';
 import { useFilteredMatches } from '@/hooks/useFilteredMatches';
 import { useUpdateMatch } from '@/hooks/useUpdateMatch';
 import { detectVodProvider, parseVodStartSeconds } from '@/lib/vod';
+import { deriveCustomTagVocabulary } from '@/lib/tags';
 import { buildUpdateInput } from '@/components/vod/VodNotesDialog';
 import {
   DEFAULT_VOD_MANAGER_FILTERS,
@@ -56,6 +57,12 @@ export function VodManagerPage() {
 
   const { matches, isLoading } = useFilteredMatches();
   const vodMatches = useMemo(() => matches.filter((m) => m.vodUrl != null), [matches]);
+
+  // Custom tag vocabulary (TAG-01..05) spans ALL loaded VOD-bearing matches
+  // (locked decision, 03-CONTEXT.md) — not just the currently filtered/
+  // selected one — so the add-combobox always offers every custom tag the
+  // user has ever typed, reused by 03-03's note-tag combobox too.
+  const tagVocabulary = useMemo(() => deriveCustomTagVocabulary(vodMatches), [vodMatches]);
 
   // Fighters offered by the inline edit form's "Your Fighter" select
   // (NOTE-04) — same primary+secondary sprite lookup MatchDataPage uses.
@@ -217,6 +224,7 @@ export function VodManagerPage() {
                 match={selectedMatch}
                 fighterSprites={fighterSprites}
                 getCurrentTimeRef={getCurrentTimeRef}
+                tagVocabulary={tagVocabulary}
               />
             )}
           </div>
