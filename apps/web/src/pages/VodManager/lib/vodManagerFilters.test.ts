@@ -29,13 +29,14 @@ function makeMatch(overrides: Partial<Match> = {}): Match {
 }
 
 describe('DEFAULT_VOD_MANAGER_FILTERS', () => {
-  it('defaults fighter/opponentFighter/stage/tournament/opponent to ALL_FILTER_VALUE', () => {
+  it('defaults fighter/opponentFighter/stage/tournament/opponent to ALL_FILTER_VALUE and tags to []', () => {
     expect(DEFAULT_VOD_MANAGER_FILTERS).toEqual({
       fighter: ALL_FILTER_VALUE,
       opponentFighter: ALL_FILTER_VALUE,
       stage: ALL_FILTER_VALUE,
       tournament: ALL_FILTER_VALUE,
       opponent: ALL_FILTER_VALUE,
+      tags: [],
     });
   });
 
@@ -70,6 +71,58 @@ describe('applyVodManagerFilters', () => {
       opponent: 'Zackray',
     });
     expect(result.map((m) => m.id)).toEqual(['m1']);
+  });
+
+  describe('tags', () => {
+    const tagMatches = [
+      makeMatch({ id: 'm1', opponent: 'Zackray', tags: ['bad-matchup'] }),
+      makeMatch({ id: 'm2', opponent: 'MkLeo', tags: ['tournament-set'] }),
+      makeMatch({
+        id: 'm3',
+        opponent: 'Light',
+        tags: [],
+        vodTimestamps: [{ seconds: 10, note: 'punish', tags: ['punish'] }],
+      }),
+      makeMatch({ id: 'm4', opponent: 'Tweek' }),
+    ];
+
+    it('surfaces a match whose match-level tags contain the selected tag', () => {
+      const result = applyVodManagerFilters(tagMatches, {
+        ...DEFAULT_VOD_MANAGER_FILTERS,
+        tags: ['bad-matchup'],
+      });
+      expect(result.map((m) => m.id)).toEqual(['m1']);
+    });
+
+    it('surfaces a match whose ONLY hit is a note-level tag', () => {
+      const result = applyVodManagerFilters(tagMatches, {
+        ...DEFAULT_VOD_MANAGER_FILTERS,
+        tags: ['punish'],
+      });
+      expect(result.map((m) => m.id)).toEqual(['m3']);
+    });
+
+    it('ORs within multiple selected tags', () => {
+      const result = applyVodManagerFilters(tagMatches, {
+        ...DEFAULT_VOD_MANAGER_FILTERS,
+        tags: ['bad-matchup', 'punish'],
+      });
+      expect(result.map((m) => m.id).sort()).toEqual(['m1', 'm3']);
+    });
+
+    it('AND-composes with the dropdown filters — a tag hit excluded by opponent does not surface', () => {
+      const result = applyVodManagerFilters(tagMatches, {
+        ...DEFAULT_VOD_MANAGER_FILTERS,
+        opponent: 'MkLeo',
+        tags: ['bad-matchup'],
+      });
+      expect(result).toHaveLength(0);
+    });
+
+    it('returns the delegated result unchanged when tags is empty', () => {
+      const result = applyVodManagerFilters(tagMatches, DEFAULT_VOD_MANAGER_FILTERS);
+      expect(result).toHaveLength(4);
+    });
   });
 });
 
@@ -113,5 +166,22 @@ describe('getVodManagerFilterOptions', () => {
     expect(options.stages).toBeDefined();
     expect(options.tournaments).toBeDefined();
     expect(options.opponents).toEqual(['MkLeo', 'Zackray']);
+  });
+
+  it('derives tagsInUse from both match.tags and note tags, sorted and deduped, excluding zero-use presets', () => {
+    const matches = [
+      makeMatch({ id: 'm1', tags: ['bad-matchup', 'to-review'] }),
+      makeMatch({
+        id: 'm2',
+        tags: ['bad-matchup'],
+        vodTimestamps: [{ seconds: 5, note: 'n', tags: ['punish', 'edgeguard'] }],
+      }),
+      makeMatch({ id: 'm3', tags: [] }),
+    ];
+
+    const options = getVodManagerFilterOptions(matches);
+
+    expect(options.tagsInUse).toEqual(['bad-matchup', 'edgeguard', 'punish', 'to-review']);
+    expect(options.tagsInUse).not.toContain('tournament-set');
   });
 });
