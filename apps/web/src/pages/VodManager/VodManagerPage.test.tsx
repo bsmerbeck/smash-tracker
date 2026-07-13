@@ -507,6 +507,107 @@ describe('VodManagerPage', () => {
     expect(input.vodTimestamps).toEqual([{ seconds: 30, note: 'note A' }]);
   });
 
+  it('renders note tag chips and adds a preset tag via the note combobox, carrying other notes and match fields through without seeking', async () => {
+    const user = userEvent.setup();
+    listMatches.mockResolvedValue([
+      makeMatch({
+        id: 'm1',
+        opponent: 'rival-one',
+        vodUrl: 'https://youtube.com/watch?v=abc123',
+        gsp: 1_234_567,
+        vodTimestamps: [
+          { seconds: 30, note: 'note A', tags: ['punish'] },
+          { seconds: 90, note: 'note B' },
+        ],
+      }),
+    ]);
+
+    const seekTo = vi.fn();
+    let capturedConfig: YouTubePlayerConfig | undefined;
+    const Player = vi.fn(function (
+      this: unknown,
+      _el: HTMLElement,
+      config: YouTubePlayerConfig,
+    ): YouTubePlayerInstance {
+      capturedConfig = config;
+      return { seekTo, playVideo: vi.fn(), destroy: vi.fn(), getCurrentTime: vi.fn(() => 754) };
+    });
+    window.YT = { Player: Player as unknown as YTGlobal['Player'] };
+
+    renderVodManager('/vod?match=m1');
+    await waitFor(() => expect(Player).toHaveBeenCalledTimes(1));
+    act(() => {
+      capturedConfig?.events?.onReady?.();
+    });
+
+    // (1) note A's existing preset tag renders as a chip with its translated label.
+    expect(await screen.findByText('Punish')).toBeInTheDocument();
+
+    // (2) Opening note A's add-combobox (scoped to its row) and picking
+    // another preset PATCHes both tags onto note A, carrying note B and
+    // other match fields through unchanged — and never seeks/selects.
+    const noteARow = screen.getByText('note A').closest('li')!;
+    await user.click(within(noteARow).getByRole('combobox', { name: 'Add a tag' }));
+    await user.click(await screen.findByRole('option', { name: 'Edgeguard' }));
+
+    await waitFor(() => expect(updateMatch).toHaveBeenCalledTimes(1));
+    const [id, input] = updateMatch.mock.calls[0] as [string, Record<string, unknown>];
+    expect(id).toBe('m1');
+    expect(input.vodTimestamps).toEqual([
+      { seconds: 30, note: 'note A', tags: ['punish', 'edgeguard'] },
+      { seconds: 90, note: 'note B' },
+    ]);
+    expect(input.gsp).toBe(1_234_567);
+    expect(seekTo).not.toHaveBeenCalled();
+  });
+
+  it('removes a note tag via the chip X, omitting tags from that note only, without disturbing other notes', async () => {
+    const user = userEvent.setup();
+    listMatches.mockResolvedValue([
+      makeMatch({
+        id: 'm1',
+        opponent: 'rival-one',
+        vodUrl: 'https://youtube.com/watch?v=abc123',
+        vodTimestamps: [
+          { seconds: 30, note: 'note A', tags: ['punish'] },
+          { seconds: 90, note: 'note B', tags: ['mistake'] },
+        ],
+      }),
+    ]);
+
+    let capturedConfig: YouTubePlayerConfig | undefined;
+    const Player = vi.fn(function (
+      this: unknown,
+      _el: HTMLElement,
+      config: YouTubePlayerConfig,
+    ): YouTubePlayerInstance {
+      capturedConfig = config;
+      return {
+        seekTo: vi.fn(),
+        playVideo: vi.fn(),
+        destroy: vi.fn(),
+        getCurrentTime: vi.fn(() => 754),
+      };
+    });
+    window.YT = { Player: Player as unknown as YTGlobal['Player'] };
+
+    renderVodManager('/vod?match=m1');
+    await waitFor(() => expect(Player).toHaveBeenCalledTimes(1));
+    act(() => {
+      capturedConfig?.events?.onReady?.();
+    });
+
+    await user.click(await screen.findByRole('button', { name: 'Remove tag Punish' }));
+
+    await waitFor(() => expect(updateMatch).toHaveBeenCalledTimes(1));
+    const [id, input] = updateMatch.mock.calls[0] as [string, Record<string, unknown>];
+    expect(id).toBe('m1');
+    expect(input.vodTimestamps).toEqual([
+      { seconds: 30, note: 'note A' },
+      { seconds: 90, note: 'note B', tags: ['mistake'] },
+    ]);
+  });
+
   it('seeks the live player and highlights the clicked row body; edit/delete on another row do not change the selection (D-13/D-14)', async () => {
     const user = userEvent.setup();
     listMatches.mockResolvedValue([
