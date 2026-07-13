@@ -8,7 +8,12 @@ import { AnalyticsFilterProvider } from '@/context/AnalyticsFilterContext';
 import { VodManagerPage } from './VodManagerPage';
 import { resetAuthMock, setMockUser, makeMockUser } from '@/test/mockAuth';
 import { SpriteList } from '@/data/sprites';
-import type { YouTubePlayerConfig, YouTubePlayerInstance } from '@/lib/useVodPlayer';
+import type {
+  TwitchPlayerConfig,
+  TwitchPlayerInstance,
+  YouTubePlayerConfig,
+  YouTubePlayerInstance,
+} from '@/lib/useVodPlayer';
 
 vi.mock('firebase/auth', async () => {
   const mock = await import('@/test/mockAuth');
@@ -96,11 +101,13 @@ function renderVodManager(initialEntry: string) {
 }
 
 type YTGlobal = NonNullable<Window['YT']>;
+type TwitchGlobal = NonNullable<Window['Twitch']>;
 
 /** Removes any injected vendor scripts/globals so the useVodPlayer module-level singleton loaders start clean for every test. */
 function resetVendorGlobals() {
   document.head.querySelectorAll('script').forEach((el) => el.remove());
   delete (window as { YT?: unknown }).YT;
+  delete (window as { Twitch?: unknown }).Twitch;
   delete (window as { onYouTubeIframeAPIReady?: unknown }).onYouTubeIframeAPIReady;
 }
 
@@ -478,7 +485,7 @@ describe('VodManagerPage', () => {
     expect(configs[1]?.playerVars?.autoplay).toBe(1);
   });
 
-  it('LIST-04: ENDED is a no-op when the selected match is the LAST one in the visible list (no next match to advance to)', async () => {
+  it('LIST-04: ENDED never advances/remounts when the selected match is the LAST one in the visible list, and PAUSES instead (retest fix-up #10)', async () => {
     listMatches.mockResolvedValue([
       makeMatch({
         id: 'm1',
@@ -487,6 +494,7 @@ describe('VodManagerPage', () => {
       }),
     ]);
 
+    const pauseVideo = vi.fn();
     let capturedConfig: YouTubePlayerConfig | undefined;
     const Player = vi.fn(function (
       this: unknown,
@@ -497,7 +505,7 @@ describe('VodManagerPage', () => {
       return {
         seekTo: vi.fn(),
         playVideo: vi.fn(),
-        pauseVideo: vi.fn(),
+        pauseVideo,
         destroy: vi.fn(),
         getCurrentTime: vi.fn(() => 0),
       };
@@ -508,13 +516,70 @@ describe('VodManagerPage', () => {
 
     await waitFor(() => expect(Player).toHaveBeenCalledTimes(1));
     act(() => {
+      capturedConfig?.events?.onReady?.();
+    });
+    act(() => {
       capturedConfig?.events?.onStateChange?.({ data: window.YT!.PlayerState.ENDED });
     });
 
     // No next match in the visible list — ENDED must not attempt to
-    // advance or remount.
+    // advance or remount, but DOES pause (best-effort Twitch "Up Next"
+    // hijack preemption — this fixture is YouTube, but the pause call
+    // itself is provider-agnostic in useVodPlayer).
     expect(Player).toHaveBeenCalledTimes(1);
+    expect(pauseVideo).toHaveBeenCalledTimes(1);
     expect(screen.getByText('vs. rival-one')).toBeInTheDocument();
+  });
+
+  it('retest fix-up #10: ENDED on a Twitch VOD with no next match pauses (best-effort Up-Next hijack preemption) and flags drift for the next reselect', async () => {
+    const user = userEvent.setup();
+    listMatches.mockResolvedValue([
+      makeMatch({
+        id: 'm1',
+        opponent: 'rival-one',
+        vodUrl: 'https://twitch.tv/videos/98765',
+      }),
+    ]);
+
+    const pause = vi.fn();
+    const destroy = vi.fn();
+    const listeners: Record<string, () => void> = {};
+    const addEventListener = vi.fn((event: string, callback: () => void) => {
+      listeners[event] = callback;
+    });
+    const configs: TwitchPlayerConfig[] = [];
+    const Player = vi.fn(function (
+      this: unknown,
+      _el: HTMLElement,
+      config: TwitchPlayerConfig,
+    ): TwitchPlayerInstance {
+      configs.push(config);
+      return { seek: vi.fn(), pause, addEventListener, destroy, getCurrentTime: vi.fn(() => 0) };
+    });
+    (Player as unknown as { READY: string; ENDED: string }).READY = 'ready';
+    (Player as unknown as { READY: string; ENDED: string }).ENDED = 'ended';
+    window.Twitch = { Player: Player as unknown as TwitchGlobal['Player'] };
+
+    renderVodManager('/vod?match=m1');
+    await waitFor(() => expect(Player).toHaveBeenCalledTimes(1));
+    act(() => {
+      listeners.ready?.();
+    });
+
+    // ENDED fires with no next match — best-effort pause, no advance.
+    act(() => {
+      listeners.ended?.();
+    });
+    await waitFor(() => expect(pause).toHaveBeenCalledTimes(1));
+    expect(Player).toHaveBeenCalledTimes(1);
+
+    // Drift is flagged regardless of the pause outcome — reselecting the
+    // SAME (only) match forces a fresh player construction rather than a
+    // silent no-op, recovering from a hijack even if the pause lost the race.
+    await user.click(screen.getByRole('button', { name: 'Select match vs rival-one' }));
+    await waitFor(() => expect(Player).toHaveBeenCalledTimes(2));
+    expect(destroy).toHaveBeenCalledTimes(1);
+    expect(configs[1]?.video).toBe('98765');
   });
 
   it('LIST-04: renders Prev/Next playback controls + "N of M" while a playlist is active, and manual Next never autoplays', async () => {
