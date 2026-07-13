@@ -18,6 +18,12 @@ export interface VodPlayerProps {
    * the quick-tag capture flow can freeze playback at the captured moment
    * without seeking (retest fix-up #2). */
   pauseRef?: RefObject<(() => void) | null>;
+  /** Populated with the live player's `pauseAtEnd` function once available
+   * — the ENDED-specific (no advance target) pause used to reliably cancel
+   * a host platform's post-roll "Up Next" autoplay (retest fix-up #1). See
+   * `useVodPlayer`'s `pauseAtEnd` doc comment; never used for the quick-tag
+   * capture flow (that's `pauseRef` above). */
+  pauseAtEndRef?: RefObject<(() => boolean) | null>;
   /** Populated with the live player's `getCurrentTime` function once
    * available, so a sibling `NoteComposer`/inline editor can read the live
    * playback position on-demand (never polled). */
@@ -61,6 +67,7 @@ export function VodPlayer({
   onReady,
   seekRef,
   pauseRef,
+  pauseAtEndRef,
   getCurrentTimeRef,
   onEnded,
   onAutoplayBlocked,
@@ -68,7 +75,7 @@ export function VodPlayer({
   remountToken,
 }: VodPlayerProps) {
   const { t } = useTranslation();
-  const { containerRef, isReady, error, seek, pause, getCurrentTime } = useVodPlayer({
+  const { containerRef, isReady, error, seek, pause, pauseAtEnd, getCurrentTime } = useVodPlayer({
     vodUrl,
     startSeconds,
     onEnded,
@@ -86,6 +93,12 @@ export function VodPlayer({
   useEffect(() => {
     if (pauseRef) {
       pauseRef.current = pause;
+    }
+  });
+
+  useEffect(() => {
+    if (pauseAtEndRef) {
+      pauseAtEndRef.current = pauseAtEnd;
     }
   });
 
