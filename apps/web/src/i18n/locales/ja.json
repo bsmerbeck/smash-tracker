@@ -539,6 +539,8 @@
       "removeFromPlaylist": "プレイリストから削除",
       "rename": "名前を変更",
       "renamePlaceholder": "プレイリスト名を変更",
+      "saveRenameAria": "プレイリスト名を保存",
+      "cancelRenameAria": "名前の変更をキャンセル",
       "delete": "削除",
       "deleteConfirmTitle": "このプレイリストを削除しますか？"
     },

@@ -539,6 +539,8 @@
       "removeFromPlaylist": "Retirer de la playlist",
       "rename": "Renommer",
       "renamePlaceholder": "Renommer la playlist",
+      "saveRenameAria": "Enregistrer le nom de la playlist",
+      "cancelRenameAria": "Annuler le renommage",
       "delete": "Supprimer",
       "deleteConfirmTitle": "Supprimer cette playlist ?"
     },

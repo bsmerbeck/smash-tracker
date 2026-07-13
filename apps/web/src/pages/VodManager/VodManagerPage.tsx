@@ -4,13 +4,16 @@ import { useSearchParams } from 'react-router';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 import {
+  Check,
   ChevronLeft,
   ChevronRight,
   Maximize2,
   Minimize2,
+  Pencil,
   SkipBack,
   SkipForward,
   Trash2,
+  X,
 } from 'lucide-react';
 import {
   MAX_PLAYLISTS_PER_USER,
@@ -204,11 +207,17 @@ export function VodManagerPage() {
   // changes (same "adjusting state when a prop changes" reset-during-render
   // pattern as `trackedMatchId` above), never on every render (which would
   // otherwise clobber in-progress typing on invalidation-driven refetches).
+  // `renaming` gates which of the two rows (read-only name + Rename button,
+  // vs the editable Input + Save/Cancel) renders — switching to a DIFFERENT
+  // playlist mid-rename must never leave the new playlist's row stuck open
+  // in edit mode, so it resets to `false` in lockstep with the draft.
   const [trackedPlaylistId, setTrackedPlaylistId] = useState(selectedPlaylistId);
   const [renameDraft, setRenameDraft] = useState(selectedPlaylist?.name ?? '');
+  const [renaming, setRenaming] = useState(false);
   if (selectedPlaylistId !== trackedPlaylistId) {
     setTrackedPlaylistId(selectedPlaylistId);
     setRenameDraft(selectedPlaylist?.name ?? '');
+    setRenaming(false);
   }
   const [confirmingDeletePlaylist, setConfirmingDeletePlaylist] = useState(false);
 
@@ -446,6 +455,29 @@ export function VodManagerPage() {
     }
   }
 
+  // Enters rename mode (Task: rename affordance) — seeds the draft fresh
+  // from the CURRENT playlist name every time, so re-entering after a
+  // previous cancel never carries over a stale draft.
+  function handleStartRename() {
+    if (!selectedPlaylist) {
+      return;
+    }
+    setRenameDraft(selectedPlaylist.name);
+    setRenaming(true);
+  }
+
+  // Reverts the draft and exits rename mode without mutating — Esc or the
+  // explicit Cancel button.
+  function handleCancelRename() {
+    setRenameDraft(selectedPlaylist?.name ?? '');
+    setRenaming(false);
+  }
+
+  // Enter or the explicit Save button. An unchanged/invalid draft is treated
+  // as an implicit cancel (revert + close, no PATCH) rather than an error —
+  // matches the pre-rename-mode "silent no-op" behavior. On failure the
+  // draft is left AS TYPED (not reverted) and rename mode stays open so the
+  // user can retry without re-typing.
   async function handleCommitRename() {
     if (!selectedPlaylist) {
       return;
@@ -453,12 +485,13 @@ export function VodManagerPage() {
     const trimmed = renameDraft.trim();
     if (trimmed.length < 1 || trimmed.length > 40 || trimmed === selectedPlaylist.name) {
       setRenameDraft(selectedPlaylist.name);
+      setRenaming(false);
       return;
     }
     try {
       await updatePlaylist.mutateAsync({ id: selectedPlaylist.id, input: { name: trimmed } });
+      setRenaming(false);
     } catch {
-      setRenameDraft(selectedPlaylist.name);
       toast.error(t('shared.vod.saveFailed'));
     }
   }
@@ -466,7 +499,10 @@ export function VodManagerPage() {
   function handleRenameKeyDown(e: KeyboardEvent<HTMLInputElement>) {
     if (e.key === 'Enter') {
       e.preventDefault();
-      (e.target as HTMLInputElement).blur();
+      handleCommitRename();
+    } else if (e.key === 'Escape') {
+      e.preventDefault();
+      handleCancelRename();
     }
   }
 
@@ -595,16 +631,65 @@ export function VodManagerPage() {
             />
             {selectedPlaylist && (
               <div className="flex items-center gap-2">
-                <Input
-                  value={renameDraft}
-                  onChange={(e) => setRenameDraft(e.target.value)}
-                  onKeyDown={handleRenameKeyDown}
-                  onBlur={handleCommitRename}
-                  placeholder={t('vodManager.playlists.renamePlaceholder')}
-                  aria-label={t('vodManager.playlists.rename')}
-                  maxLength={40}
-                  className="flex-1"
-                />
+                {/* Rename affordance (Task: rename UX): a clear read-only
+                    row with an explicit Rename trigger by default; entering
+                    rename mode swaps in a labeled Input + Save/Cancel pair
+                    rather than a permanently-open, unlabeled input (D-
+                    fixed-up from the original always-editable field, which
+                    read as an unexplained bare box). */}
+                {renaming ? (
+                  <>
+                    <Input
+                      value={renameDraft}
+                      onChange={(e) => setRenameDraft(e.target.value)}
+                      onKeyDown={handleRenameKeyDown}
+                      placeholder={t('vodManager.playlists.renamePlaceholder')}
+                      aria-label={t('vodManager.playlists.renamePlaceholder')}
+                      maxLength={40}
+                      className="flex-1"
+                      autoFocus
+                    />
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="icon-sm"
+                      aria-label={t('vodManager.playlists.saveRenameAria')}
+                      // Prevents the Input's onBlur-adjacent focus loss from
+                      // stealing the click before onClick fires — mousedown
+                      // on this button would otherwise blur the input first.
+                      onMouseDown={(e) => e.preventDefault()}
+                      onClick={handleCommitRename}
+                    >
+                      <Check />
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="icon-sm"
+                      aria-label={t('vodManager.playlists.cancelRenameAria')}
+                      onMouseDown={(e) => e.preventDefault()}
+                      onClick={handleCancelRename}
+                    >
+                      <X />
+                    </Button>
+                  </>
+                ) : (
+                  <>
+                    <span className="flex-1 truncate text-sm font-medium">
+                      {selectedPlaylist.name}
+                    </span>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      aria-label={t('vodManager.playlists.rename')}
+                      onClick={handleStartRename}
+                    >
+                      <Pencil />
+                      {t('vodManager.playlists.rename')}
+                    </Button>
+                  </>
+                )}
                 <Button
                   type="button"
                   variant="outline"

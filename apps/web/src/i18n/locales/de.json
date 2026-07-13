@@ -539,6 +539,8 @@
       "removeFromPlaylist": "Aus Playlist entfernen",
       "rename": "Umbenennen",
       "renamePlaceholder": "Playlist umbenennen",
+      "saveRenameAria": "Playlist-Namen speichern",
+      "cancelRenameAria": "Umbenennen abbrechen",
       "delete": "Löschen",
       "deleteConfirmTitle": "Diese Playlist löschen?"
     },
