@@ -33,6 +33,7 @@ const listMatches = vi.fn();
 const listOpponents = vi.fn();
 const updateMatch = vi.fn();
 const upsertMe = vi.fn().mockResolvedValue({ uid: 'test-uid', email: 'test@example.com' });
+const listPlaylists = vi.fn().mockResolvedValue([]);
 
 vi.mock('@/lib/api', () => ({
   api: {
@@ -46,6 +47,9 @@ vi.mock('@/lib/api', () => ({
     },
     opponents: {
       list: (...args: unknown[]) => listOpponents(...args),
+    },
+    playlists: {
+      list: (...args: unknown[]) => listPlaylists(...args),
     },
   },
 }));
@@ -105,6 +109,7 @@ describe('VodManagerPage', () => {
     getFighters.mockResolvedValue({ primary: [mario.id], secondary: [] });
     listOpponents.mockResolvedValue(['rival-one', 'rival-two']);
     updateMatch.mockResolvedValue({});
+    listPlaylists.mockResolvedValue([]);
   });
 
   afterEach(() => {
@@ -134,7 +139,7 @@ describe('VodManagerPage', () => {
         getCurrentTime: vi.fn(() => 754),
       };
     });
-    window.YT = { Player: Player as unknown as YTGlobal['Player'] };
+    window.YT = { Player: Player as unknown as YTGlobal['Player'], PlayerState: { ENDED: 0 } };
 
     renderVodManager('/vod?match=m1');
 
@@ -170,7 +175,7 @@ describe('VodManagerPage', () => {
       capturedConfig = config;
       return { seekTo, playVideo, destroy: vi.fn(), getCurrentTime: vi.fn(() => 754) };
     });
-    window.YT = { Player: Player as unknown as YTGlobal['Player'] };
+    window.YT = { Player: Player as unknown as YTGlobal['Player'], PlayerState: { ENDED: 0 } };
 
     renderVodManager('/vod?match=m1');
 
@@ -216,7 +221,7 @@ describe('VodManagerPage', () => {
         getCurrentTime: vi.fn(() => 754),
       };
     });
-    window.YT = { Player: Player as unknown as YTGlobal['Player'] };
+    window.YT = { Player: Player as unknown as YTGlobal['Player'], PlayerState: { ENDED: 0 } };
 
     renderVodManager('/vod?match=m1');
 
@@ -253,7 +258,7 @@ describe('VodManagerPage', () => {
       capturedConfig = config;
       return { seekTo, playVideo, destroy: vi.fn(), getCurrentTime: vi.fn(() => 754) };
     });
-    window.YT = { Player: Player as unknown as YTGlobal['Player'] };
+    window.YT = { Player: Player as unknown as YTGlobal['Player'], PlayerState: { ENDED: 0 } };
 
     renderVodManager('/vod?match=m1');
 
@@ -273,6 +278,203 @@ describe('VodManagerPage', () => {
     // m2's vodStartSeconds (500) wins over its t=90s param.
     await waitFor(() => expect(seekTo).toHaveBeenCalledWith(500, true));
     expect(playVideo).toHaveBeenCalled();
+  });
+
+  it('LIST-04: auto-advances to the next playlist match via reposition (no remount) when the ENDED event fires and they share one video identity', async () => {
+    listMatches.mockResolvedValue([
+      makeMatch({
+        id: 'm1',
+        opponent: 'rival-one',
+        time: 1_700_000_000_000,
+        vodUrl: 'https://youtube.com/watch?v=abc123&t=30s',
+      }),
+      makeMatch({
+        id: 'm2',
+        opponent: 'rival-two',
+        time: 1_700_000_100_000,
+        vodUrl: 'https://youtube.com/watch?v=abc123&t=90s',
+      }),
+    ]);
+    listPlaylists.mockResolvedValue([
+      { id: 'p1', name: 'My Playlist', createdAt: 1, matchIds: ['m1', 'm2'] },
+    ]);
+
+    const seekTo = vi.fn();
+    const playVideo = vi.fn();
+    let capturedConfig: YouTubePlayerConfig | undefined;
+    const Player = vi.fn(function (
+      this: unknown,
+      _el: HTMLElement,
+      config: YouTubePlayerConfig,
+    ): YouTubePlayerInstance {
+      capturedConfig = config;
+      return { seekTo, playVideo, destroy: vi.fn(), getCurrentTime: vi.fn(() => 754) };
+    });
+    window.YT = { Player: Player as unknown as YTGlobal['Player'], PlayerState: { ENDED: 0 } };
+
+    renderVodManager('/vod?playlist=p1&match=m1');
+
+    await waitFor(() => expect(Player).toHaveBeenCalledTimes(1));
+    act(() => {
+      capturedConfig?.events?.onReady?.();
+    });
+
+    // Fire ENDED via the live SDK constant, never a hardcoded literal.
+    act(() => {
+      capturedConfig?.events?.onStateChange?.({ data: window.YT!.PlayerState.ENDED });
+    });
+
+    await waitFor(() => expect(screen.getByText('vs. rival-two')).toBeInTheDocument());
+    // Same identity (abc123) — must reposition, never remount.
+    expect(Player).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(seekTo).toHaveBeenCalledWith(90, true));
+  });
+
+  it('LIST-04: auto-advances to the next playlist match with autoplay when the ENDED event fires and they have different video identities', async () => {
+    listMatches.mockResolvedValue([
+      makeMatch({
+        id: 'm1',
+        opponent: 'rival-one',
+        time: 1_700_000_000_000,
+        vodUrl: 'https://youtube.com/watch?v=abc123',
+      }),
+      makeMatch({
+        id: 'm2',
+        opponent: 'rival-two',
+        time: 1_700_000_100_000,
+        vodUrl: 'https://youtube.com/watch?v=xyz789',
+      }),
+    ]);
+    listPlaylists.mockResolvedValue([
+      { id: 'p1', name: 'My Playlist', createdAt: 1, matchIds: ['m1', 'm2'] },
+    ]);
+
+    const configs: YouTubePlayerConfig[] = [];
+    const Player = vi.fn(function (
+      this: unknown,
+      _el: HTMLElement,
+      config: YouTubePlayerConfig,
+    ): YouTubePlayerInstance {
+      configs.push(config);
+      return {
+        seekTo: vi.fn(),
+        playVideo: vi.fn(),
+        destroy: vi.fn(),
+        getCurrentTime: vi.fn(() => 0),
+      };
+    });
+    window.YT = { Player: Player as unknown as YTGlobal['Player'], PlayerState: { ENDED: 0 } };
+
+    renderVodManager('/vod?playlist=p1&match=m1');
+
+    await waitFor(() => expect(Player).toHaveBeenCalledTimes(1));
+    expect(configs[0]?.playerVars?.autoplay).toBe(0);
+    act(() => {
+      configs[0]?.events?.onReady?.();
+    });
+
+    // Fire ENDED on the FIRST (m1/abc123) player instance.
+    act(() => {
+      configs[0]?.events?.onStateChange?.({ data: window.YT!.PlayerState.ENDED });
+    });
+
+    // Different identity (xyz789) — must remount with autoplay requested.
+    await waitFor(() => expect(Player).toHaveBeenCalledTimes(2));
+    expect(configs[1]?.videoId).toBe('xyz789');
+    expect(configs[1]?.playerVars?.autoplay).toBe(1);
+    await waitFor(() => expect(screen.getByText('vs. rival-two')).toBeInTheDocument());
+  });
+
+  it('LIST-04: ENDED is a no-op outside a playlist view (Library has no "next match")', async () => {
+    listMatches.mockResolvedValue([
+      makeMatch({
+        id: 'm1',
+        opponent: 'rival-one',
+        vodUrl: 'https://youtube.com/watch?v=abc123',
+      }),
+    ]);
+
+    let capturedConfig: YouTubePlayerConfig | undefined;
+    const Player = vi.fn(function (
+      this: unknown,
+      _el: HTMLElement,
+      config: YouTubePlayerConfig,
+    ): YouTubePlayerInstance {
+      capturedConfig = config;
+      return {
+        seekTo: vi.fn(),
+        playVideo: vi.fn(),
+        destroy: vi.fn(),
+        getCurrentTime: vi.fn(() => 0),
+      };
+    });
+    window.YT = { Player: Player as unknown as YTGlobal['Player'], PlayerState: { ENDED: 0 } };
+
+    renderVodManager('/vod?match=m1');
+
+    await waitFor(() => expect(Player).toHaveBeenCalledTimes(1));
+    act(() => {
+      capturedConfig?.events?.onStateChange?.({ data: window.YT!.PlayerState.ENDED });
+    });
+
+    // No playlist active — ENDED must not attempt to advance or remount.
+    expect(Player).toHaveBeenCalledTimes(1);
+    expect(screen.getByText('vs. rival-one')).toBeInTheDocument();
+  });
+
+  it('LIST-04: renders Prev/Next playback controls + "N of M" while a playlist is active, and manual Next never autoplays', async () => {
+    const user = userEvent.setup();
+    listMatches.mockResolvedValue([
+      makeMatch({
+        id: 'm1',
+        opponent: 'rival-one',
+        time: 1_700_000_000_000,
+        vodUrl: 'https://youtube.com/watch?v=abc123',
+      }),
+      makeMatch({
+        id: 'm2',
+        opponent: 'rival-two',
+        time: 1_700_000_100_000,
+        vodUrl: 'https://youtube.com/watch?v=xyz789',
+      }),
+    ]);
+    listPlaylists.mockResolvedValue([
+      { id: 'p1', name: 'My Playlist', createdAt: 1, matchIds: ['m1', 'm2'] },
+    ]);
+
+    const configs: YouTubePlayerConfig[] = [];
+    const Player = vi.fn(function (
+      this: unknown,
+      _el: HTMLElement,
+      config: YouTubePlayerConfig,
+    ): YouTubePlayerInstance {
+      configs.push(config);
+      return {
+        seekTo: vi.fn(),
+        playVideo: vi.fn(),
+        destroy: vi.fn(),
+        getCurrentTime: vi.fn(() => 0),
+      };
+    });
+    window.YT = { Player: Player as unknown as YTGlobal['Player'], PlayerState: { ENDED: 0 } };
+
+    renderVodManager('/vod?playlist=p1&match=m1');
+
+    await waitFor(() => expect(Player).toHaveBeenCalledTimes(1));
+    expect(screen.getByText('1 of 2')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Previous match' })).toBeDisabled();
+    const nextButton = screen.getByRole('button', { name: 'Next match' });
+    expect(nextButton).not.toBeDisabled();
+
+    await user.click(nextButton);
+
+    await waitFor(() => expect(screen.getByText('vs. rival-two')).toBeInTheDocument());
+    // Different identity (xyz789) — remounts, but Next must NOT request
+    // autoplay (manual navigation never surprise-autoplays).
+    await waitFor(() => expect(Player).toHaveBeenCalledTimes(2));
+    expect(configs[1]?.playerVars?.autoplay).toBe(0);
+    expect(screen.getByText('2 of 2')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Next match' })).toBeDisabled();
   });
 
   it('adds a timestamp note via the inline composer, prefilled from the live position, sorted ascending, carrying through other match fields', async () => {
@@ -299,7 +501,7 @@ describe('VodManagerPage', () => {
       capturedConfig = config;
       return { seekTo, playVideo, destroy: vi.fn(), getCurrentTime };
     });
-    window.YT = { Player: Player as unknown as YTGlobal['Player'] };
+    window.YT = { Player: Player as unknown as YTGlobal['Player'], PlayerState: { ENDED: 0 } };
 
     renderVodManager('/vod?match=m1');
 
@@ -367,7 +569,7 @@ describe('VodManagerPage', () => {
         getCurrentTime: vi.fn(() => 754),
       };
     });
-    window.YT = { Player: Player as unknown as YTGlobal['Player'] };
+    window.YT = { Player: Player as unknown as YTGlobal['Player'], PlayerState: { ENDED: 0 } };
 
     renderVodManager('/vod?match=m1');
     await waitFor(() => expect(Player).toHaveBeenCalledTimes(1));
@@ -428,7 +630,7 @@ describe('VodManagerPage', () => {
         getCurrentTime: vi.fn(() => 754),
       };
     });
-    window.YT = { Player: Player as unknown as YTGlobal['Player'] };
+    window.YT = { Player: Player as unknown as YTGlobal['Player'], PlayerState: { ENDED: 0 } };
 
     renderVodManager('/vod?match=m1');
     await waitFor(() => expect(Player).toHaveBeenCalledTimes(1));
@@ -478,7 +680,7 @@ describe('VodManagerPage', () => {
         getCurrentTime: vi.fn(() => 754),
       };
     });
-    window.YT = { Player: Player as unknown as YTGlobal['Player'] };
+    window.YT = { Player: Player as unknown as YTGlobal['Player'], PlayerState: { ENDED: 0 } };
 
     renderVodManager('/vod?match=m1');
     await waitFor(() => expect(Player).toHaveBeenCalledTimes(1));
@@ -532,7 +734,7 @@ describe('VodManagerPage', () => {
       capturedConfig = config;
       return { seekTo, playVideo: vi.fn(), destroy: vi.fn(), getCurrentTime: vi.fn(() => 754) };
     });
-    window.YT = { Player: Player as unknown as YTGlobal['Player'] };
+    window.YT = { Player: Player as unknown as YTGlobal['Player'], PlayerState: { ENDED: 0 } };
 
     renderVodManager('/vod?match=m1');
     await waitFor(() => expect(Player).toHaveBeenCalledTimes(1));
@@ -592,7 +794,7 @@ describe('VodManagerPage', () => {
         getCurrentTime: vi.fn(() => 754),
       };
     });
-    window.YT = { Player: Player as unknown as YTGlobal['Player'] };
+    window.YT = { Player: Player as unknown as YTGlobal['Player'], PlayerState: { ENDED: 0 } };
 
     renderVodManager('/vod?match=m1');
     await waitFor(() => expect(Player).toHaveBeenCalledTimes(1));
@@ -636,7 +838,7 @@ describe('VodManagerPage', () => {
       capturedConfig = config;
       return { seekTo, playVideo, destroy: vi.fn(), getCurrentTime: vi.fn(() => 754) };
     });
-    window.YT = { Player: Player as unknown as YTGlobal['Player'] };
+    window.YT = { Player: Player as unknown as YTGlobal['Player'], PlayerState: { ENDED: 0 } };
 
     renderVodManager('/vod?match=m1');
     await waitFor(() => expect(Player).toHaveBeenCalledTimes(1));
@@ -685,7 +887,7 @@ describe('VodManagerPage', () => {
         getCurrentTime: vi.fn(() => 754),
       };
     });
-    window.YT = { Player: Player as unknown as YTGlobal['Player'] };
+    window.YT = { Player: Player as unknown as YTGlobal['Player'], PlayerState: { ENDED: 0 } };
 
     renderVodManager('/vod?match=m1');
     await waitFor(() => expect(Player).toHaveBeenCalledTimes(1));
@@ -738,7 +940,7 @@ describe('VodManagerPage', () => {
         getCurrentTime: vi.fn(() => 754),
       };
     });
-    window.YT = { Player: Player as unknown as YTGlobal['Player'] };
+    window.YT = { Player: Player as unknown as YTGlobal['Player'], PlayerState: { ENDED: 0 } };
 
     renderVodManager('/vod?match=m1');
     await waitFor(() => expect(Player).toHaveBeenCalledTimes(1));
@@ -780,7 +982,7 @@ describe('VodManagerPage', () => {
         getCurrentTime: vi.fn(() => 754),
       };
     });
-    window.YT = { Player: Player as unknown as YTGlobal['Player'] };
+    window.YT = { Player: Player as unknown as YTGlobal['Player'], PlayerState: { ENDED: 0 } };
 
     renderVodManager('/vod?match=m1');
     await waitFor(() => expect(Player).toHaveBeenCalledTimes(1));
@@ -824,7 +1026,7 @@ describe('VodManagerPage', () => {
         getCurrentTime: vi.fn(() => 754),
       };
     });
-    window.YT = { Player: Player as unknown as YTGlobal['Player'] };
+    window.YT = { Player: Player as unknown as YTGlobal['Player'], PlayerState: { ENDED: 0 } };
 
     renderVodManager('/vod?match=m1');
     await waitFor(() => expect(Player).toHaveBeenCalledTimes(1));
@@ -864,7 +1066,7 @@ describe('VodManagerPage', () => {
         getCurrentTime: vi.fn(() => 754),
       };
     });
-    window.YT = { Player: Player as unknown as YTGlobal['Player'] };
+    window.YT = { Player: Player as unknown as YTGlobal['Player'], PlayerState: { ENDED: 0 } };
 
     renderVodManager('/vod?match=m1');
     await waitFor(() => expect(Player).toHaveBeenCalledTimes(1));
@@ -917,7 +1119,7 @@ describe('VodManagerPage', () => {
         getCurrentTime: vi.fn(() => 754),
       };
     });
-    window.YT = { Player: Player as unknown as YTGlobal['Player'] };
+    window.YT = { Player: Player as unknown as YTGlobal['Player'], PlayerState: { ENDED: 0 } };
 
     renderVodManager('/vod?match=m1');
     await waitFor(() => expect(Player).toHaveBeenCalledTimes(1));
@@ -959,7 +1161,7 @@ describe('VodManagerPage', () => {
         getCurrentTime: vi.fn(() => 754),
       };
     });
-    window.YT = { Player: Player as unknown as YTGlobal['Player'] };
+    window.YT = { Player: Player as unknown as YTGlobal['Player'], PlayerState: { ENDED: 0 } };
 
     renderVodManager('/vod?match=m1');
     await waitFor(() => expect(Player).toHaveBeenCalledTimes(1));
@@ -1003,7 +1205,7 @@ describe('VodManagerPage', () => {
         getCurrentTime: vi.fn(() => 754),
       };
     });
-    window.YT = { Player: Player as unknown as YTGlobal['Player'] };
+    window.YT = { Player: Player as unknown as YTGlobal['Player'], PlayerState: { ENDED: 0 } };
 
     renderVodManager('/vod?match=m1');
     await waitFor(() => expect(Player).toHaveBeenCalledTimes(1));

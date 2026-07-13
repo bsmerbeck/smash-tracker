@@ -16,6 +16,11 @@ export interface YouTubePlayerConfig {
     onReady?: () => void;
     onStateChange?: (event: { data: number }) => void;
     onError?: (event: { data: number }) => void;
+    /** Fires any time the browser blocks autoplay or a scripted playback
+     * call (`autoplay` param, `loadPlaylist`, `loadVideoById`,
+     * `loadVideoByUrl`, `playVideo`) — the authoritative "autoplay was
+     * blocked" signal per the official IFrame API reference. */
+    onAutoplayBlocked?: () => void;
   };
 }
 
@@ -52,6 +57,13 @@ declare global {
   interface Window {
     YT?: {
       Player: new (element: HTMLElement, config: YouTubePlayerConfig) => YouTubePlayerInstance;
+      /** Numeric player-state constants delivered via `onStateChange`'s
+       * `event.data`. `ENDED`'s documented value is `0`, but this MUST
+       * always be read off the live constant, never hardcoded — the
+       * institutionalized READY-literal discipline (Phase 1). */
+      PlayerState: {
+        ENDED: number;
+      };
     };
     onYouTubeIframeAPIReady?: () => void;
     Twitch?: {
@@ -61,6 +73,14 @@ declare global {
          * is not part of the public contract and has shipped as `'ready'`,
          * but relying on the constant keeps this correct if that changes. */
         READY: string;
+        /** Event name string fired when the video or stream ends. Same
+         * read-off-the-constructor discipline as READY. */
+        ENDED: string;
+        /** Event name string fired when playback is blocked — "usually
+         * fired after an unmuted autoplay or unmuted programmatic call on
+         * play()" per the official Embed API reference. Same
+         * read-off-the-constructor discipline as READY. */
+        PLAYBACK_BLOCKED: string;
       };
     };
   }
@@ -135,6 +155,25 @@ export interface UseVodPlayerOptions {
   vodUrl: string;
   /** Initial playback position, in whole seconds. Only applied at construction time. */
   startSeconds?: number;
+  /** Fires when the live player reports its ENDED state — gated on
+   * `window.YT.PlayerState.ENDED` / `window.Twitch.Player.ENDED` (SDK
+   * constants, never a hardcoded literal). */
+  onEnded?: () => void;
+  /** Fires when the browser blocks an autoplay-triggering call —
+   * YouTube's `onAutoplayBlocked` event / Twitch's `PLAYBACK_BLOCKED`
+   * event. The authoritative "show the native play-button fallback"
+   * signal (never a timeout heuristic). */
+  onAutoplayBlocked?: () => void;
+  /** Threaded as a REF (never a snapshotted boolean): React refs must not
+   * be read during render (`react-hooks/refs`), so the caller (ultimately
+   * `VodManagerPage`) passes the ref object itself and this hook reads
+   * `.current` ONLY inside the construction effect body below — an effect
+   * read is exempt from that rule. Consulted once per construction (same
+   * "read once, never a remount trigger on its own" treatment as
+   * `startSeconds`) to request autoplay for that one construction only.
+   * NEVER added to the identity-keyed effect's dependency array — refs are
+   * always safe to omit. */
+  autoplayOnConstructRef?: RefObject<boolean>;
 }
 
 export interface UseVodPlayerResult {
@@ -170,12 +209,31 @@ export interface UseVodPlayerResult {
  * The player-construction effect is keyed on video IDENTITY
  * (`${provider}:${videoId}`), not on `vodUrl`/`startSeconds`/the whole
  * match object, so unrelated metadata edits never remount an in-progress
- * playback (PITFALLS.md UX row).
+ * playback (PITFALLS.md UX row). This invariant is UNCHANGED by the
+ * `onEnded`/`onAutoplayBlocked`/`autoplayOnConstructRef` additions below:
+ * `onEnded`/`onAutoplayBlocked` are stored in latest-value refs (updated
+ * every render, mirroring `VodPlayer.tsx`'s `seekRef`/`getCurrentTimeRef`
+ * population pattern) so they never need to appear in the construction
+ * effect's deps, and `autoplayOnConstructRef.current` is read ONCE per
+ * construction, INSIDE the effect body (never during render, per
+ * `react-hooks/refs`) — none of the three ever trigger their own remount.
  */
-export function useVodPlayer({ vodUrl, startSeconds }: UseVodPlayerOptions): UseVodPlayerResult {
+export function useVodPlayer({
+  vodUrl,
+  startSeconds,
+  onEnded,
+  onAutoplayBlocked,
+  autoplayOnConstructRef,
+}: UseVodPlayerOptions): UseVodPlayerResult {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const playerRef = useRef<YouTubePlayerInstance | TwitchPlayerInstance | null>(null);
   const providerRef = useRef<'youtube' | 'twitch' | null>(null);
+  const onEndedRef = useRef(onEnded);
+  const onAutoplayBlockedRef = useRef(onAutoplayBlocked);
+  useEffect(() => {
+    onEndedRef.current = onEnded;
+    onAutoplayBlockedRef.current = onAutoplayBlocked;
+  });
 
   const detected = detectVodProvider(vodUrl);
   const identityKey =
@@ -205,6 +263,11 @@ export function useVodPlayer({ vodUrl, startSeconds }: UseVodPlayerOptions): Use
     let cancelled = false;
     playerRef.current = null;
     providerRef.current = null;
+    // autoplayOnConstructRef.current is read HERE, inside the effect body
+    // (never during render — react-hooks/refs), exactly once for THIS
+    // construction. Mirrors the startSeconds closure-capture treatment
+    // below.
+    const shouldAutoplay = autoplayOnConstructRef?.current ?? false;
 
     if (detected.provider === 'youtube') {
       const videoId = detected.videoId;
@@ -219,7 +282,7 @@ export function useVodPlayer({ vodUrl, startSeconds }: UseVodPlayerOptions): Use
           width: '100%',
           height: '100%',
           playerVars: {
-            autoplay: 0,
+            autoplay: shouldAutoplay ? 1 : 0,
             start: startSeconds ?? 0,
             origin: window.location.origin,
           },
@@ -229,10 +292,19 @@ export function useVodPlayer({ vodUrl, startSeconds }: UseVodPlayerOptions): Use
                 setIsReady(true);
               }
             },
-            onStateChange: () => {},
+            onStateChange: (event) => {
+              if (!cancelled && window.YT && event.data === window.YT.PlayerState.ENDED) {
+                onEndedRef.current?.();
+              }
+            },
             onError: (event) => {
               if (!cancelled && YOUTUBE_UNAVAILABLE_ERROR_CODES.has(event.data)) {
                 setError('unavailable');
+              }
+            },
+            onAutoplayBlocked: () => {
+              if (!cancelled) {
+                onAutoplayBlockedRef.current?.();
               }
             },
           },
@@ -252,7 +324,7 @@ export function useVodPlayer({ vodUrl, startSeconds }: UseVodPlayerOptions): Use
           // ACTUAL serving hostname — derive it at runtime, never hardcode a
           // single domain (breaks on localhost/preview-channel hosts).
           parent: [window.location.hostname],
-          autoplay: false,
+          autoplay: shouldAutoplay,
           // Fill the aspect-video container (VodPlayer.tsx) instead of the
           // API's fixed 400x300 minimum.
           width: '100%',
@@ -265,6 +337,16 @@ export function useVodPlayer({ vodUrl, startSeconds }: UseVodPlayerOptions): Use
         player.addEventListener(window.Twitch.Player.READY, () => {
           if (!cancelled) {
             setIsReady(true);
+          }
+        });
+        player.addEventListener(window.Twitch.Player.ENDED, () => {
+          if (!cancelled) {
+            onEndedRef.current?.();
+          }
+        });
+        player.addEventListener(window.Twitch.Player.PLAYBACK_BLOCKED, () => {
+          if (!cancelled) {
+            onAutoplayBlockedRef.current?.();
           }
         });
         playerRef.current = player;
@@ -281,6 +363,10 @@ export function useVodPlayer({ vodUrl, startSeconds }: UseVodPlayerOptions): Use
     // Intentionally keyed on video IDENTITY only (see doc comment above) —
     // startSeconds/detected are captured via closure for the initial
     // construction and must NOT trigger a remount on their own.
+    // onEndedRef/onAutoplayBlockedRef/autoplayOnConstructRef are all refs
+    // (read via .current inside this effect / the event handlers above),
+    // so they're intentionally excluded too — reading a ref never needs to
+    // be a dependency.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [identityKey]);
 
