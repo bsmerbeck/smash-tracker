@@ -91,7 +91,7 @@
       "editTimestamp": "Modifier l'horodatage {{time}}",
       "timePlaceholder": "m:ss",
       "timeAria": "Temps de l'horodatage",
-      "notePlaceholder": "Note",
+      "notePlaceholder": "Note (facultatif)",
       "noteAria": "Note de l'horodatage",
       "addTimestamp": "Ajouter un horodatage",
       "timeFormatError": "Saisissez un temps au format m:ss ou h:mm:ss",

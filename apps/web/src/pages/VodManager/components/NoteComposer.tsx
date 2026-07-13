@@ -49,21 +49,23 @@ export function NoteComposer({
     }
   }
 
+  // Retest fix-up #2: note text is optional — a valid TIME alone saves,
+  // mirroring the quick-tag capture flow's tag-only moments (the shared
+  // `vodTimestampSchema.note` deliberately allows an empty string, see its
+  // doc comment). The user adds tags to the freshly-created row via its
+  // "+" chip as usual; this composer stays a single-purpose time+optional-
+  // text entry point, never prompting for tags itself.
   function handleAdd() {
     const seconds = parseFlexibleTimestamp(timeInput);
     if (seconds == null) {
       setTimeError(t('shared.vod.timeFormatError'));
       return;
     }
-    const note = noteInput.trim();
-    if (!note) {
-      setTimeError(t('shared.vod.noteRequired'));
-      return;
-    }
     if (timestamps.length >= MAX_TIMESTAMPS) {
       setTimeError(t('shared.vod.timestampLimit', { max: MAX_TIMESTAMPS }));
       return;
     }
+    const note = noteInput.trim();
     onUpdateTimestamps([...timestamps, { seconds, note }].sort((a, b) => a.seconds - b.seconds));
     setTimeInput('');
     setNoteInput('');

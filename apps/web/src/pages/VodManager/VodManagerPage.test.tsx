@@ -531,7 +531,7 @@ describe('VodManagerPage', () => {
     expect(screen.getByText('vs. rival-one')).toBeInTheDocument();
   });
 
-  it('retest fix-up #10: ENDED on a Twitch VOD with no next match pauses (best-effort Up-Next hijack preemption) and flags drift for the next reselect', async () => {
+  it('retest fix-up #1: ENDED on a Twitch VOD with no next match seeks back off the end then pauses (reliably cancels Up-Next autoplay) and flags drift for the next reselect', async () => {
     const user = userEvent.setup();
     listMatches.mockResolvedValue([
       makeMatch({
@@ -541,6 +541,70 @@ describe('VodManagerPage', () => {
       }),
     ]);
 
+    const seek = vi.fn();
+    const pause = vi.fn();
+    const getDuration = vi.fn(() => 125);
+    const destroy = vi.fn();
+    const listeners: Record<string, () => void> = {};
+    const addEventListener = vi.fn((event: string, callback: () => void) => {
+      listeners[event] = callback;
+    });
+    const configs: TwitchPlayerConfig[] = [];
+    const Player = vi.fn(function (
+      this: unknown,
+      _el: HTMLElement,
+      config: TwitchPlayerConfig,
+    ): TwitchPlayerInstance {
+      configs.push(config);
+      return {
+        seek,
+        pause,
+        addEventListener,
+        destroy,
+        getCurrentTime: vi.fn(() => 0),
+        getDuration,
+      };
+    });
+    (Player as unknown as { READY: string; ENDED: string }).READY = 'ready';
+    (Player as unknown as { READY: string; ENDED: string }).ENDED = 'ended';
+    window.Twitch = { Player: Player as unknown as TwitchGlobal['Player'] };
+
+    renderVodManager('/vod?match=m1');
+    await waitFor(() => expect(Player).toHaveBeenCalledTimes(1));
+    act(() => {
+      listeners.ready?.();
+    });
+
+    // ENDED fires with no next match — seek back off the very end (exiting
+    // the ended state, the reliable way to cancel Twitch's "Up Next"
+    // countdown) then pause. No advance, no remount fallback needed since
+    // the workaround succeeded.
+    act(() => {
+      listeners.ended?.();
+    });
+    await waitFor(() => expect(pause).toHaveBeenCalledTimes(1));
+    expect(seek).toHaveBeenCalledWith(124);
+    expect(Player).toHaveBeenCalledTimes(1);
+
+    // Drift is still flagged regardless of the workaround's outcome —
+    // reselecting the SAME (only) match forces a fresh player construction
+    // rather than a silent no-op, a second layer of hijack recovery.
+    await user.click(screen.getByRole('button', { name: 'Select match vs rival-one' }));
+    await waitFor(() => expect(Player).toHaveBeenCalledTimes(2));
+    expect(destroy).toHaveBeenCalledTimes(1);
+    expect(configs[1]?.video).toBe('98765');
+  });
+
+  it('retest fix-up #1: ENDED on a Twitch VOD with no next match and no getDuration() falls back to an immediate paused remount', async () => {
+    listMatches.mockResolvedValue([
+      makeMatch({
+        id: 'm1',
+        opponent: 'rival-one',
+        vodUrl: 'https://twitch.tv/videos/98765',
+      }),
+    ]);
+
+    const seek = vi.fn();
     const pause = vi.fn();
     const destroy = vi.fn();
     const listeners: Record<string, () => void> = {};
@@ -554,7 +618,9 @@ describe('VodManagerPage', () => {
       config: TwitchPlayerConfig,
     ): TwitchPlayerInstance {
       configs.push(config);
-      return { seek: vi.fn(), pause, addEventListener, destroy, getCurrentTime: vi.fn(() => 0) };
+      // No getDuration on this instance — mirrors an embed API surface that
+      // doesn't expose it, exercising the remount fallback.
+      return { seek, pause, addEventListener, destroy, getCurrentTime: vi.fn(() => 0) };
     });
     (Player as unknown as { READY: string; ENDED: string }).READY = 'ready';
     (Player as unknown as { READY: string; ENDED: string }).ENDED = 'ended';
@@ -566,20 +632,17 @@ describe('VodManagerPage', () => {
       listeners.ready?.();
     });
 
-    // ENDED fires with no next match — best-effort pause, no advance.
     act(() => {
       listeners.ended?.();
     });
-    await waitFor(() => expect(pause).toHaveBeenCalledTimes(1));
-    expect(Player).toHaveBeenCalledTimes(1);
 
-    // Drift is flagged regardless of the pause outcome — reselecting the
-    // SAME (only) match forces a fresh player construction rather than a
-    // silent no-op, recovering from a hijack even if the pause lost the race.
-    await user.click(screen.getByRole('button', { name: 'Select match vs rival-one' }));
+    // The seek-back+pause workaround couldn't be applied, so a fresh
+    // (unstarted, paused) player construction is forced immediately —
+    // a fresh embed has no post-roll overlay to cancel.
     await waitFor(() => expect(Player).toHaveBeenCalledTimes(2));
     expect(destroy).toHaveBeenCalledTimes(1);
     expect(configs[1]?.video).toBe('98765');
+    expect(seek).not.toHaveBeenCalled();
   });
 
   it('LIST-04: renders Prev/Next playback controls + "N of M" while a playlist is active, and manual Next never autoplays', async () => {
@@ -817,6 +880,60 @@ describe('VodManagerPage', () => {
     expect(playVideo).not.toHaveBeenCalled();
   });
 
+  it('retest fix-up #2: the composer saves a tag-only entry — a valid TIME alone with no note text', async () => {
+    const user = userEvent.setup();
+    listMatches.mockResolvedValue([
+      makeMatch({
+        id: 'm1',
+        opponent: 'rival-one',
+        vodUrl: 'https://youtube.com/watch?v=abc123',
+        gsp: 1_234_567,
+        vodTimestamps: [{ seconds: 900, note: 'existing note' }],
+      }),
+    ]);
+
+    let capturedConfig: YouTubePlayerConfig | undefined;
+    const Player = vi.fn(function (
+      this: unknown,
+      _el: HTMLElement,
+      config: YouTubePlayerConfig,
+    ): YouTubePlayerInstance {
+      capturedConfig = config;
+      return {
+        seekTo: vi.fn(),
+        playVideo: vi.fn(),
+        pauseVideo: vi.fn(),
+        destroy: vi.fn(),
+        getCurrentTime: vi.fn(() => 754),
+      };
+    });
+    window.YT = { Player: Player as unknown as YTGlobal['Player'], PlayerState: { ENDED: 0 } };
+
+    renderVodManager('/vod?match=m1');
+    await waitFor(() => expect(Player).toHaveBeenCalledTimes(1));
+    act(() => {
+      capturedConfig?.events?.onReady?.();
+    });
+
+    // Time input only — the note input is left blank entirely. Clear the
+    // focus-prefilled value (getCurrentTime()) before typing the target time.
+    const timeInput = screen.getByLabelText('Timestamp time');
+    await user.click(timeInput);
+    await user.clear(timeInput);
+    await user.type(timeInput, '5:00{Enter}');
+
+    // Saves with no "note text required" error — the empty-note entry
+    // lands in the PATCH, ready for the user to tag via the row's "+" chip.
+    expect(screen.queryByText('Enter a note for this timestamp')).not.toBeInTheDocument();
+    await waitFor(() => expect(updateMatch).toHaveBeenCalledTimes(1));
+    const [id, input] = updateMatch.mock.calls[0] as [string, Record<string, unknown>];
+    expect(id).toBe('m1');
+    expect(input.vodTimestamps).toEqual([
+      { seconds: 300, note: '' },
+      { seconds: 900, note: 'existing note' },
+    ]);
+  });
+
   it('edits a timestamp note in place (no dialog), re-sorting ascending, via a single full-carry-through PATCH', async () => {
     const user = userEvent.setup();
     listMatches.mockResolvedValue([
@@ -877,6 +994,62 @@ describe('VodManagerPage', () => {
     expect(input.vodTimestamps).toEqual([
       { seconds: 10, note: 'note B' },
       { seconds: 30, note: 'note A' },
+    ]);
+  });
+
+  it('retest fix-up #2: an in-place row edit allows clearing the note text to empty and saving, keeping tags/time', async () => {
+    const user = userEvent.setup();
+    listMatches.mockResolvedValue([
+      makeMatch({
+        id: 'm1',
+        opponent: 'rival-one',
+        vodUrl: 'https://youtube.com/watch?v=abc123',
+        vodTimestamps: [
+          { seconds: 30, note: 'note A' },
+          { seconds: 90, note: 'note B', tags: ['punish'] },
+        ],
+      }),
+    ]);
+
+    let capturedConfig: YouTubePlayerConfig | undefined;
+    const Player = vi.fn(function (
+      this: unknown,
+      _el: HTMLElement,
+      config: YouTubePlayerConfig,
+    ): YouTubePlayerInstance {
+      capturedConfig = config;
+      return {
+        seekTo: vi.fn(),
+        playVideo: vi.fn(),
+        pauseVideo: vi.fn(),
+        destroy: vi.fn(),
+        getCurrentTime: vi.fn(() => 754),
+      };
+    });
+    window.YT = { Player: Player as unknown as YTGlobal['Player'], PlayerState: { ENDED: 0 } };
+
+    renderVodManager('/vod?match=m1');
+    await waitFor(() => expect(Player).toHaveBeenCalledTimes(1));
+    act(() => {
+      capturedConfig?.events?.onReady?.();
+    });
+
+    await user.click(screen.getByLabelText('Edit timestamp 1:30'));
+    const noteInput = screen.getByLabelText('Edit timestamp note');
+    expect(noteInput).toHaveValue('note B');
+
+    // Clear the note text entirely, then commit — no "note required" error,
+    // time/tags are unaffected.
+    await user.clear(noteInput);
+    await user.keyboard('{Enter}');
+
+    expect(screen.queryByText('Enter a note for this timestamp')).not.toBeInTheDocument();
+    await waitFor(() => expect(updateMatch).toHaveBeenCalledTimes(1));
+    const [id, input] = updateMatch.mock.calls[0] as [string, Record<string, unknown>];
+    expect(id).toBe('m1');
+    expect(input.vodTimestamps).toEqual([
+      { seconds: 30, note: 'note A' },
+      { seconds: 90, note: '', tags: ['punish'] },
     ]);
   });
 

@@ -190,6 +190,10 @@ export function TimestampRow({
     }
   }
 
+  // Retest fix-up #2: note text is optional here too — clearing it to
+  // empty and saving is valid (mirrors the composer's tag-only entries and
+  // the shared `vodTimestampSchema.note`, which deliberately allows an
+  // empty string). Time/tags are unaffected either way.
   function commit() {
     const seconds = parseFlexibleTimestamp(timeInput);
     if (seconds == null) {
@@ -197,10 +201,6 @@ export function TimestampRow({
       return;
     }
     const note = noteInput.trim();
-    if (!note) {
-      setError(t('shared.vod.noteRequired'));
-      return;
-    }
     // Preserve this note's existing tags (e.g. the quick-tag panel's
     // pre-tag, or a tag just added while this row was in edit mode via the
     // fix-up #3 chips below) — the time+text edit inputs never touch tags,

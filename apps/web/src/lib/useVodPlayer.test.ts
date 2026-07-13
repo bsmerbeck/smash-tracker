@@ -501,4 +501,131 @@ describe('useVodPlayer', () => {
     // fires again.
     expect(result.current.isReady).toBe(false);
   });
+
+  it('pauseAtEnd() on YouTube just calls pauseVideo() and returns true (retest fix-up #1)', async () => {
+    const pauseVideo = vi.fn();
+    let capturedConfig: YouTubePlayerConfig | undefined;
+    const Player = vi.fn(function (
+      this: unknown,
+      _el: HTMLElement,
+      config: YouTubePlayerConfig,
+    ): YouTubePlayerInstance {
+      capturedConfig = config;
+      return {
+        seekTo: vi.fn(),
+        playVideo: vi.fn(),
+        pauseVideo,
+        destroy: vi.fn(),
+        getCurrentTime: vi.fn(() => 0),
+      };
+    });
+    window.YT = { Player: Player as unknown as YTGlobal['Player'], PlayerState: { ENDED: 0 } };
+
+    const { useVodPlayer } = await import('./useVodPlayer');
+    const { result } = renderHook(() =>
+      useVodPlayer({ vodUrl: 'https://www.youtube.com/watch?v=abc123' }),
+    );
+    result.current.containerRef.current = document.createElement('div');
+
+    await waitFor(() => expect(Player).toHaveBeenCalledTimes(1));
+    act(() => {
+      capturedConfig?.events?.onReady?.();
+    });
+    await waitFor(() => expect(result.current.isReady).toBe(true));
+
+    let handled: boolean | undefined;
+    act(() => {
+      handled = result.current.pauseAtEnd();
+    });
+    expect(handled).toBe(true);
+    expect(pauseVideo).toHaveBeenCalledTimes(1);
+  });
+
+  it('pauseAtEnd() on Twitch seeks back off the end then pauses, returning true (retest fix-up #1)', async () => {
+    const seek = vi.fn();
+    const pause = vi.fn();
+    const getDuration = vi.fn(() => 125);
+    const addEventListener = vi.fn((event: string, callback: () => void) => {
+      if (event === 'ready') {
+        readyCallback = callback;
+      }
+    });
+    let readyCallback: (() => void) | undefined;
+    let capturedConfig: TwitchPlayerConfig | undefined;
+    const Player = vi.fn(function (
+      this: unknown,
+      _el: HTMLElement,
+      config: TwitchPlayerConfig,
+    ): TwitchPlayerInstance {
+      capturedConfig = config;
+      return { seek, pause, addEventListener, getCurrentTime: vi.fn(() => 0), getDuration };
+    });
+    (Player as unknown as { READY: string }).READY = 'ready';
+    window.Twitch = { Player: Player as unknown as TwitchGlobal['Player'] };
+
+    const { useVodPlayer } = await import('./useVodPlayer');
+    const { result } = renderHook(() => useVodPlayer({ vodUrl: 'https://twitch.tv/videos/98765' }));
+    result.current.containerRef.current = document.createElement('div');
+
+    await waitFor(() => expect(Player).toHaveBeenCalledTimes(1));
+    expect(capturedConfig?.video).toBe('98765');
+    act(() => {
+      readyCallback?.();
+    });
+    await waitFor(() => expect(result.current.isReady).toBe(true));
+
+    let handled: boolean | undefined;
+    act(() => {
+      handled = result.current.pauseAtEnd();
+    });
+    expect(handled).toBe(true);
+    // Twitch's own ENDED-state pause() ignore quirk means a plain pause is
+    // insufficient — seek back off the very end (duration - 1) first, THEN
+    // pause, so the seek exits the ended state before the pause commits.
+    expect(seek).toHaveBeenCalledWith(124);
+    expect(pause).toHaveBeenCalledTimes(1);
+  });
+
+  it('pauseAtEnd() on Twitch returns false when getDuration is unavailable, without calling seek/pause (retest fix-up #1 fallback)', async () => {
+    const seek = vi.fn();
+    const pause = vi.fn();
+    const addEventListener = vi.fn((event: string, callback: () => void) => {
+      if (event === 'ready') {
+        readyCallback = callback;
+      }
+    });
+    let readyCallback: (() => void) | undefined;
+    let capturedConfig: TwitchPlayerConfig | undefined;
+    const Player = vi.fn(function (
+      this: unknown,
+      _el: HTMLElement,
+      config: TwitchPlayerConfig,
+    ): TwitchPlayerInstance {
+      capturedConfig = config;
+      // No getDuration on this instance — mirrors an embed API surface that
+      // doesn't expose it.
+      return { seek, pause, addEventListener, getCurrentTime: vi.fn(() => 0) };
+    });
+    (Player as unknown as { READY: string }).READY = 'ready';
+    window.Twitch = { Player: Player as unknown as TwitchGlobal['Player'] };
+
+    const { useVodPlayer } = await import('./useVodPlayer');
+    const { result } = renderHook(() => useVodPlayer({ vodUrl: 'https://twitch.tv/videos/98765' }));
+    result.current.containerRef.current = document.createElement('div');
+
+    await waitFor(() => expect(Player).toHaveBeenCalledTimes(1));
+    expect(capturedConfig?.video).toBe('98765');
+    act(() => {
+      readyCallback?.();
+    });
+    await waitFor(() => expect(result.current.isReady).toBe(true));
+
+    let handled: boolean | undefined;
+    act(() => {
+      handled = result.current.pauseAtEnd();
+    });
+    expect(handled).toBe(false);
+    expect(seek).not.toHaveBeenCalled();
+    expect(pause).not.toHaveBeenCalled();
+  });
 });
