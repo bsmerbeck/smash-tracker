@@ -987,6 +987,81 @@ describe('VodManagerPage', () => {
     expect(seekTo).not.toHaveBeenCalled();
   });
 
+  it('retest fix-up #4: adds two tags sequentially to the same note via its combobox, both persisting (cap still enforced)', async () => {
+    const user = userEvent.setup();
+    // Mutable "server" record, gated behind a manually-resolved promise
+    // (rather than the usual immediate `Promise.resolve`) — REQUIRED to
+    // deterministically reproduce the reported race: both PATCHes are
+    // dispatched while `stamp.tags` (the prop) STILL reflects the
+    // pre-either-add state (neither PATCH has resolved/refetched yet), so
+    // a fix that recomputes the second add's payload from the stale prop
+    // — instead of tracking its own last-dispatched value — would silently
+    // drop the first tag.
+    let currentMatch = makeMatch({
+      id: 'm1',
+      opponent: 'rival-one',
+      vodUrl: 'https://youtube.com/watch?v=abc123',
+      vodTimestamps: [{ seconds: 30, note: 'note A' }],
+    });
+    listMatches.mockImplementation(() => Promise.resolve([currentMatch]));
+    let releaseGate: (() => void) | undefined;
+    const gate = new Promise<void>((resolve) => {
+      releaseGate = resolve;
+    });
+    updateMatch.mockImplementation((...args: unknown[]) => {
+      const input = args[1] as Record<string, unknown>;
+      // Both calls await the SAME gate — resolving in dispatch order once
+      // released, mirroring a real backend applying two PATCHes in the
+      // order they were sent.
+      return gate.then(() => {
+        currentMatch = { ...currentMatch, ...input };
+        return currentMatch;
+      });
+    });
+
+    window.YT = {
+      Player: vi.fn(function (this: unknown) {
+        return {
+          seekTo: vi.fn(),
+          playVideo: vi.fn(),
+          pauseVideo: vi.fn(),
+          destroy: vi.fn(),
+          getCurrentTime: vi.fn(() => 0),
+        };
+      }) as unknown as YTGlobal['Player'],
+      PlayerState: { ENDED: 0 },
+    };
+
+    renderVodManager('/vod?match=m1');
+    await waitFor(() => expect(screen.getByText('note A')).toBeInTheDocument());
+    const noteARow = screen.getByText('note A').closest('li')!;
+
+    // (1) Add the first tag — its PATCH is now pending behind the gate.
+    await user.click(within(noteARow).getByRole('combobox', { name: 'Add a tag' }));
+    await user.click(await screen.findByRole('option', { name: 'Punish' }));
+    await waitFor(() => expect(updateMatch).toHaveBeenCalledTimes(1));
+
+    // (2) Add a SECOND tag while the first PATCH is STILL pending —
+    // `stamp.tags` (the prop) is provably still stale here (no refetch has
+    // happened, since nothing has resolved yet).
+    await user.click(within(noteARow).getByRole('combobox', { name: 'Add a tag' }));
+    await user.click(await screen.findByRole('option', { name: 'Edgeguard' }));
+    await waitFor(() => expect(updateMatch).toHaveBeenCalledTimes(2));
+
+    // (3) Release the gate — both PATCHes resolve in dispatch order.
+    releaseGate?.();
+
+    // (4) The FINAL persisted state has BOTH tags — the second add must
+    // never silently overwrite the first.
+    await waitFor(() => {
+      expect(within(noteARow).getByText('Punish')).toBeInTheDocument();
+      expect(within(noteARow).getByText('Edgeguard')).toBeInTheDocument();
+    });
+    expect((currentMatch as unknown as { vodTimestamps: unknown }).vodTimestamps).toEqual([
+      { seconds: 30, note: 'note A', tags: ['punish', 'edgeguard'] },
+    ]);
+  });
+
   it('removes a note tag via the chip X, omitting tags from that note only, without disturbing other notes', async () => {
     const user = userEvent.setup();
     listMatches.mockResolvedValue([
@@ -1655,6 +1730,63 @@ describe('VodManagerPage', () => {
     expect(seekTo).not.toHaveBeenCalled();
     // Only ONE player construction throughout — no remount either.
     expect(Player).toHaveBeenCalledTimes(1);
+  });
+
+  it('retest fix-up #3: the freshly-captured tag stays visible and removable while its row is in edit mode', async () => {
+    const user = userEvent.setup();
+    let currentMatch = makeMatch({
+      id: 'm1',
+      opponent: 'rival-one',
+      vodUrl: 'https://youtube.com/watch?v=abc123',
+      vodTimestamps: [],
+    });
+    listMatches.mockImplementation(() => Promise.resolve([currentMatch]));
+    updateMatch.mockImplementation((...args: unknown[]) => {
+      const input = args[1] as Record<string, unknown>;
+      currentMatch = { ...currentMatch, ...input };
+      return Promise.resolve(currentMatch);
+    });
+
+    let capturedConfig: YouTubePlayerConfig | undefined;
+    const Player = vi.fn(function (
+      this: unknown,
+      _el: HTMLElement,
+      config: YouTubePlayerConfig,
+    ): YouTubePlayerInstance {
+      capturedConfig = config;
+      return {
+        seekTo: vi.fn(),
+        playVideo: vi.fn(),
+        pauseVideo: vi.fn(),
+        destroy: vi.fn(),
+        getCurrentTime: vi.fn(() => 754),
+      };
+    });
+    window.YT = { Player: Player as unknown as YTGlobal['Player'], PlayerState: { ENDED: 0 } };
+
+    renderVodManager('/vod?match=m1');
+    await waitFor(() => expect(Player).toHaveBeenCalledTimes(1));
+    act(() => {
+      capturedConfig?.events?.onReady?.();
+    });
+
+    // Capture drops the new row straight into edit mode.
+    await user.click(screen.getByRole('button', { name: 'Quick tag: Punish' }));
+    const noteInput = await screen.findByLabelText('Edit timestamp note');
+    const editingRow = noteInput.closest('li')!;
+
+    // The captured "Punish" tag chip is visible AND removable while the
+    // row is still in edit mode — previously chips only rendered in the
+    // read-mode branch.
+    expect(within(editingRow).getByText('Punish')).toBeInTheDocument();
+    const removeButton = within(editingRow).getByRole('button', { name: 'Remove tag Punish' });
+    await user.click(removeButton);
+
+    await waitFor(() => expect(updateMatch).toHaveBeenCalledTimes(2));
+    const [, secondInput] = updateMatch.mock.calls[1] as [string, Record<string, unknown>];
+    expect(secondInput.vodTimestamps).toEqual([{ seconds: 754, note: '' }]);
+    // Still in edit mode — removing a tag never closes the row.
+    expect(screen.getByLabelText('Edit timestamp note')).toBeInTheDocument();
   });
 
   it('blocks a quick-tag capture once the match is at the MAX_TIMESTAMPS cap, via the existing cap toast', async () => {

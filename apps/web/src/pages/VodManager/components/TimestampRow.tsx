@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import type { KeyboardEvent } from 'react';
 import { useTranslation } from 'react-i18next';
+import type { TFunction } from 'i18next';
 import { Check, Pencil, Trash2, X } from 'lucide-react';
 import type { VodTimestamp } from '@smash-tracker/shared';
 import { Badge } from '@/components/ui/badge';
@@ -23,6 +24,57 @@ import { TagAddCombobox } from './TagAddCombobox';
 
 /** Note-level tags are capped at 5 per note (TAG-04) — keeps a single moment's tags skimmable. */
 const MAX_NOTE_TAGS = 5;
+
+/** Order-sensitive array equality — note tags are never reordered by
+ * add/remove, so a simple index-wise compare is sufficient (unlike
+ * `QuickTagPanel`'s order-insensitive `tagSetsEqual`, which allows a
+ * user-driven reorder that doesn't apply here). */
+function tagsEqual(a: string[], b: string[]): boolean {
+  return a.length === b.length && a.every((tag, i) => tag === b[i]);
+}
+
+/** Removable tag-chip row shared by both the read and edit views (retest
+ * fix-up #3: chips were previously only rendered in read mode, so a
+ * quick-tag capture's pre-applied tag was invisible the instant its row
+ * dropped into edit mode). */
+function NoteTagChips({
+  t,
+  tags,
+  vocabulary,
+  onAdd,
+  onRemove,
+}: {
+  t: TFunction;
+  tags: string[];
+  vocabulary: string[];
+  onAdd: (tag: string) => void;
+  onRemove: (tag: string) => void;
+}) {
+  return (
+    <div className="flex flex-wrap items-center gap-2 pl-2">
+      {tags.map((tag) => (
+        <Badge key={tag} variant="secondary" className="gap-1">
+          {tagLabel(t, tag)}
+          <button
+            type="button"
+            aria-label={t('tags.removeAria', { tag: tagLabel(t, tag) })}
+            onClick={() => onRemove(tag)}
+            className="-mr-1 rounded-full p-0.5 hover:bg-black/10"
+          >
+            <X className="size-3" />
+          </button>
+        </Badge>
+      ))}
+      <TagAddCombobox
+        presets={NOTE_PRESET_TAGS}
+        existingTags={tags}
+        vocabulary={vocabulary}
+        onAdd={onAdd}
+        ariaLabel={t('tags.addAria')}
+      />
+    </div>
+  );
+}
 
 export interface TimestampRowProps {
   stamp: VodTimestamp;
@@ -86,6 +138,39 @@ export function TimestampRow({
   const [error, setError] = useState<string | null>(null);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
 
+  // Retest fix-up #4 ("can't add multiple tags to one note"): `onUpdateTags`
+  // PATCHes go through a full server round-trip (no optimistic cache write —
+  // see `useUpdateMatch`), so `stamp.tags` (the prop) only reflects the
+  // FIRST add of a rapid add-add sequence once its refetch lands. A second
+  // add fired before that refetch resolves would otherwise recompute
+  // `addTagToList` against the STALE pre-first-add `stamp.tags`, silently
+  // dropping the first tag when its own (also-stale-based) PATCH resolves.
+  // `pendingTags` tracks the last tag list THIS row itself dispatched —
+  // `null` when there is no in-flight write, in which case `stamp.tags` is
+  // authoritative. Cleared (falling back to reading props again) once the
+  // incoming `stamp.tags` prop actually catches up to match what was last
+  // dispatched — the "adjusting state during render" pattern this file
+  // already uses for `trackedIsEditing`, not an effect (avoids a flash of
+  // stale tags before the effect would fire).
+  const [pendingTags, setPendingTags] = useState<string[] | null>(null);
+  if (pendingTags !== null && tagsEqual(stamp.tags ?? [], pendingTags)) {
+    setPendingTags(null);
+  }
+  const currentTags = pendingTags ?? stamp.tags ?? [];
+
+  function dispatchTags(next: string[]) {
+    setPendingTags(next);
+    onUpdateTags(index, next);
+  }
+
+  function handleAddTag(tag: string) {
+    dispatchTags(addTagToList(currentTags, tag, MAX_NOTE_TAGS));
+  }
+
+  function handleRemoveTag(tag: string) {
+    dispatchTags(removeTagFromList(currentTags, tag));
+  }
+
   // The row stays mounted across edit/view toggles — re-seed the draft from
   // the current stamp every time it (re-)enters edit mode, not just once.
   // "Adjusting state when a prop changes" (reset during render, not an
@@ -114,12 +199,16 @@ export function TimestampRow({
       return;
     }
     // Preserve this note's existing tags (e.g. the quick-tag panel's
-    // pre-tag) — the time+text edit inputs never touch tags, so committing
-    // must carry them through unchanged rather than silently dropping them.
+    // pre-tag, or a tag just added while this row was in edit mode via the
+    // fix-up #3 chips below) — the time+text edit inputs never touch tags,
+    // so committing must carry them through unchanged rather than silently
+    // dropping them. Reads `currentTags` (pending-aware, see its doc
+    // comment above), not the raw `stamp.tags` prop, so an in-flight tag
+    // add isn't lost if its PATCH hasn't refetched yet when Enter commits.
     onCommitEdit(index, {
       seconds,
       note,
-      ...(stamp.tags && stamp.tags.length > 0 ? { tags: stamp.tags } : {}),
+      ...(currentTags.length > 0 ? { tags: currentTags } : {}),
     });
   }
 
@@ -191,6 +280,21 @@ export function TimestampRow({
           </Button>
         </div>
         {error && <p className="text-sm text-destructive">{error}</p>}
+        {/* Retest fix-up #3: tag chips (add/remove) stay visible and
+            interactive while this row is in edit mode — previously they
+            only rendered in the read-mode branch below, so a freshly
+            quick-tag-captured note's tag was invisible the instant its row
+            dropped straight into edit mode. Add/remove here go through the
+            SAME `dispatchTags`/`onUpdateTags` PATCH site as read mode,
+            independent of the time/note draft above — `commit()` reads
+            `currentTags` so any tag change made here survives an Enter/Save. */}
+        <NoteTagChips
+          t={t}
+          tags={currentTags}
+          vocabulary={tagVocabulary}
+          onAdd={handleAddTag}
+          onRemove={handleRemoveTag}
+        />
       </div>
     );
   }
@@ -248,29 +352,16 @@ export function TimestampRow({
       {/* Note-tag chips (TAG-02/TAG-04) — a sibling of the seek button, never
           inside it, so chip/removal/add-combobox clicks never fire
           onSeek/onSelect (D-13/D-14). Sits under the note text so a dense
-          row stays scannable. */}
-      <div className="flex flex-wrap items-center gap-2 pl-2">
-        {(stamp.tags ?? []).map((tag) => (
-          <Badge key={tag} variant="secondary" className="gap-1">
-            {tagLabel(t, tag)}
-            <button
-              type="button"
-              aria-label={t('tags.removeAria', { tag: tagLabel(t, tag) })}
-              onClick={() => onUpdateTags(index, removeTagFromList(stamp.tags ?? [], tag))}
-              className="-mr-1 rounded-full p-0.5 hover:bg-black/10"
-            >
-              <X className="size-3" />
-            </button>
-          </Badge>
-        ))}
-        <TagAddCombobox
-          presets={NOTE_PRESET_TAGS}
-          existingTags={stamp.tags ?? []}
-          vocabulary={tagVocabulary}
-          onAdd={(tag) => onUpdateTags(index, addTagToList(stamp.tags ?? [], tag, MAX_NOTE_TAGS))}
-          ariaLabel={t('tags.addAria')}
-        />
-      </div>
+          row stays scannable. Same `NoteTagChips` component the edit-mode
+          branch above renders (retest fix-up #3) — identical markup, one
+          definition. */}
+      <NoteTagChips
+        t={t}
+        tags={currentTags}
+        vocabulary={tagVocabulary}
+        onAdd={handleAddTag}
+        onRemove={handleRemoveTag}
+      />
     </div>
   );
 }
