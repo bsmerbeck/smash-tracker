@@ -11,6 +11,14 @@ const YOUTUBE_SHORT_HOSTS = new Set(['youtu.be', 'www.youtu.be']);
 const TWITCH_HOSTS = new Set(['twitch.tv', 'www.twitch.tv', 'm.twitch.tv']);
 
 /**
+ * Maximum timestamp notes allowed per match (NOTE-01). Single shared source
+ * — every note-creation path (the persistent composer AND the quick-tag
+ * panel capture) enforces this same constant so the cap is never able to
+ * diverge between the two entry points.
+ */
+export const MAX_TIMESTAMPS = 20;
+
+/**
  * Discriminated union identifying which embeddable provider (if any) a VOD
  * URL belongs to, plus the provider-specific video id needed to construct
  * an embedded player (`YT.Player` / `Twitch.Player`).
