@@ -540,6 +540,12 @@
       "renamePlaceholder": "プレイリスト名を変更",
       "delete": "削除",
       "deleteConfirmTitle": "このプレイリストを削除しますか？"
+    },
+    "playback": {
+      "position": "{{total}}件中{{current}}件目",
+      "prev": "前の対戦",
+      "next": "次の対戦",
+      "autoplayBlocked": "自動再生がブロックされました — 再生ボタンを押して続行してください"
     }
   },
   "tags": {

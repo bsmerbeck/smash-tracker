@@ -540,6 +540,12 @@
       "renamePlaceholder": "Renombrar lista",
       "delete": "Eliminar",
       "deleteConfirmTitle": "¿Eliminar esta lista?"
+    },
+    "playback": {
+      "position": "{{current}} de {{total}}",
+      "prev": "Partida anterior",
+      "next": "Partida siguiente",
+      "autoplayBlocked": "La reproducción automática fue bloqueada — presiona reproducir para continuar"
     }
   },
   "tags": {

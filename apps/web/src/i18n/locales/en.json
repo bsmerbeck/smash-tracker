@@ -540,6 +540,12 @@
       "renamePlaceholder": "Rename playlist",
       "delete": "Delete",
       "deleteConfirmTitle": "Delete this playlist?"
+    },
+    "playback": {
+      "position": "{{current}} of {{total}}",
+      "prev": "Previous match",
+      "next": "Next match",
+      "autoplayBlocked": "Autoplay was blocked — press play to continue"
     }
   },
   "tags": {
