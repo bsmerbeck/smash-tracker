@@ -115,9 +115,20 @@ export type TournamentEntryList = z.infer<typeof tournamentEntryListSchema>;
 // V7-A: scout any start.gg player (server-aggregated public history)
 // ---------------------------------------------------------------------------
 
-/** Which tournament site a scouting query/identity/event resolves against (V9-B Feature 4). Reused everywhere this app needs the same two-value enum. */
+/** Which tournament site a scouting query/individual event resolves against (V9-B Feature 4). Reused everywhere this app needs the same two-value enum — a query targets ONE site, and a single event always belongs to ONE site. */
 export const scoutSourceSchema = z.enum(['startgg', 'parrygg']);
 export type ScoutSource = z.infer<typeof scoutSourceSchema>;
+
+/**
+ * The site(s) a resolved scout IDENTITY draws from — the two-value
+ * `scoutSourceSchema` plus `'combined'` (V13), used only where a scout can span
+ * BOTH sites at once: a `ScoutReportData.player` merged from a start.gg AND a
+ * parry.gg profile the user asserted are the same person. Deliberately a
+ * SEPARATE enum from `scoutSourceSchema` so `'combined'` can never leak into a
+ * request `source` or a per-event `source`, where it's meaningless.
+ */
+export const scoutIdentitySourceSchema = z.enum(['startgg', 'parrygg', 'combined']);
+export type ScoutIdentitySource = z.infer<typeof scoutIdentitySourceSchema>;
 
 /**
  * The identity resolved from the caller's scouting query — start.gg OR (V9-B
@@ -133,31 +144,41 @@ export type ScoutSource = z.infer<typeof scoutSourceSchema>;
  *   not by the field's own optionality, since old records may have `source`
  *   absent while still trivially satisfying "id present").
  * - `parryUserId` (parry.gg's UUID v7 user id) is optional and is the
- *   parry.gg equivalent key: present exactly when `source === 'parrygg'`.
+ *   parry.gg equivalent key: present when `source === 'parrygg'` OR (V13)
+ *   `source === 'combined'`.
+ * - (V13) `source: 'combined'` is a scout merged from BOTH sites for one
+ *   asserted-same person, so it carries BOTH `id` (+ `userSlug` when the
+ *   start.gg side had one) AND `parryUserId`.
  *
- * The `.refine` below is the single place that enforces "exactly one of
- * (id, parryUserId) is present, matching `source`" — every other consumer
- * can just read `source ?? 'startgg'` and the matching id field without
- * re-deriving this invariant.
+ * The `.refine`s below are the single place that enforces "the id field(s)
+ * present match `source`" — every other consumer can just read
+ * `source ?? 'startgg'` and the matching id field without re-deriving this
+ * invariant.
  */
 export const scoutPlayerIdentitySchema = z
   .object({
-    /** start.gg player id — the key used for the sets query. Present iff source is start.gg (or absent, pre-V9-B). */
+    /** start.gg player id — the key used for the sets query. Present for start.gg (or absent, pre-V9-B) and combined identities. */
     id: z.number().int().positive().optional(),
     gamerTag: z.string().min(1),
     /** start.gg profile slug, e.g. "user/07dc2239", when start.gg provides one. */
     userSlug: z.string().optional(),
-    /** Which site resolved this identity. Absent means start.gg (every identity stored before V9-B). */
-    source: scoutSourceSchema.optional(),
-    /** parry.gg user id (UUID v7) — the key used for the matches query. Present iff source is 'parrygg'. */
+    /** Which site(s) resolved this identity. Absent means start.gg (every identity stored before V9-B); `'combined'` (V13) spans both. */
+    source: scoutIdentitySourceSchema.optional(),
+    /** parry.gg user id (UUID v7) — the key used for the matches query. Present for 'parrygg' and (V13) 'combined' identities. */
     parryUserId: z.string().min(1).optional(),
   })
-  .refine((identity) => (identity.source === 'parrygg' ? Boolean(identity.parryUserId) : true), {
-    message: 'parrygg identities must carry parryUserId',
-    path: ['parryUserId'],
-  })
+  .refine(
+    (identity) =>
+      identity.source === 'parrygg' || identity.source === 'combined'
+        ? Boolean(identity.parryUserId)
+        : true,
+    {
+      message: 'parrygg and combined identities must carry parryUserId',
+      path: ['parryUserId'],
+    },
+  )
   .refine((identity) => (identity.source !== 'parrygg' ? identity.id !== undefined : true), {
-    message: 'startgg identities must carry a numeric id',
+    message: 'startgg and combined identities must carry a numeric id',
     path: ['id'],
   });
 export type ScoutPlayerIdentity = z.infer<typeof scoutPlayerIdentitySchema>;
@@ -169,11 +190,18 @@ export function isStartggIdentity(
   return (identity.source ?? 'startgg') === 'startgg';
 }
 
-/** True when `identity` resolves to a parry.gg player. */
+/** True when `identity` resolves to a parry.gg player (single-source, not combined). */
 export function isParryggIdentity(
   identity: Pick<ScoutPlayerIdentity, 'source'>,
 ): identity is ScoutPlayerIdentity & { source: 'parrygg'; parryUserId: string } {
   return identity.source === 'parrygg';
+}
+
+/** True when `identity` (V13) spans BOTH sites — a scout merged from a start.gg AND a parry.gg profile. */
+export function isCombinedIdentity(
+  identity: Pick<ScoutPlayerIdentity, 'source'>,
+): identity is ScoutPlayerIdentity & { source: 'combined'; id: number; parryUserId: string } {
+  return identity.source === 'combined';
 }
 
 /**
@@ -187,6 +215,12 @@ export function isParryggIdentity(
  * so this never throws on a malformed record.
  */
 export function scoutIdentityKey(identity: ScoutPlayerIdentity): string {
+  // (V13) A combined identity is a distinct data scope from either single
+  // source, so it gets its own key composing BOTH ids — a combined report and
+  // a start.gg-only report for the same player intentionally don't collide.
+  if (isCombinedIdentity(identity)) {
+    return `combined:startgg=${identity.id}:parrygg=${identity.parryUserId}`;
+  }
   if (isParryggIdentity(identity)) {
     return `parrygg:${identity.parryUserId}`;
   }
@@ -330,9 +364,22 @@ export type ScoutReportData = z.infer<typeof scoutReportDataSchema>;
  * (non-URL) query; it defaults to `'startgg'` for back-compat with pre-V9-B
  * clients that never sent it. A pasted URL always auto-detects its own site
  * (start.gg vs. parry.gg) and overrides `source` — see `parseScoutInput`.
+ *
+ * (V13) `combineWith` is an OPTIONAL second lookup on the OTHER site: when
+ * present, the server scouts BOTH `{query, source}` and `combineWith`, then
+ * merges the two `ScoutReportData`s (see `mergeScoutReports`) into one combined
+ * scout — the mechanism behind "combine start.gg + parry.gg" scouting. Absent
+ * for every single-source query (the default, unchanged behavior).
  */
+export const combineWithLookupSchema = z.object({
+  query: z.string().min(1),
+  source: scoutSourceSchema,
+});
+export type CombineWithLookup = z.infer<typeof combineWithLookupSchema>;
+
 export const scoutQuerySchema = z.object({
   query: z.string().min(1),
   source: scoutSourceSchema.optional(),
+  combineWith: combineWithLookupSchema.optional(),
 });
 export type ScoutQuery = z.infer<typeof scoutQuerySchema>;

@@ -110,7 +110,7 @@ export async function createGroup(
     [`userGroups/${uid}/${groupId}`]: true,
     [`groupInviteCodes/${inviteCode}`]: groupId,
   };
-  await database.ref('').update(updates);
+  await database.ref().update(updates);
 
   return { id: groupId, name, ownerUid: uid, inviteCode, createdAt, memberCount: 1 };
 }
@@ -160,7 +160,7 @@ export async function joinGroup(
     [`groupMembers/${groupId}/${uid}`]: { displayName, joinedAt } satisfies GroupMemberRecord,
     [`userGroups/${uid}/${groupId}`]: true,
   };
-  await database.ref('').update(updates);
+  await database.ref().update(updates);
 
   return { id: groupId, ...group, memberCount: count + 1 };
 }
@@ -214,7 +214,7 @@ export async function leaveGroup(database: Database, uid: string, groupId: strin
     [`groupMembers/${groupId}/${uid}`]: null,
     [`userGroups/${uid}/${groupId}`]: null,
   };
-  await database.ref('').update(updates);
+  await database.ref().update(updates);
 }
 
 /** Deletes a group entirely (owner only): meta, memberships, back-references, and invite-code index. */
@@ -241,7 +241,7 @@ export async function deleteGroup(database: Database, uid: string, groupId: stri
   for (const memberUid of memberUids) {
     updates[`userGroups/${memberUid}/${groupId}`] = null;
   }
-  await database.ref('').update(updates);
+  await database.ref().update(updates);
 }
 
 // ---------------------------------------------------------------------------
@@ -302,10 +302,13 @@ async function loadMatches(database: Database, uid: string): Promise<Match[]> {
     return [];
   }
   const raw = snapshot.val() as Record<string, unknown>;
-  return Object.entries(raw).map(([id, value]) => ({
-    id,
-    ...matchRecordSchema.parse(value),
-  }));
+  // safeParse-and-skip (production-gap rule, mirrors RtdbService.listMatches):
+  // one member's corrupt match record must never 500 the whole group
+  // leaderboard — their rating is simply computed without the bad record.
+  return Object.entries(raw).flatMap(([id, value]) => {
+    const parsed = matchRecordSchema.safeParse(value);
+    return parsed.success ? [{ id, ...parsed.data }] : [];
+  });
 }
 
 /**

@@ -80,9 +80,21 @@ function stripEmptyArrays(value: unknown): unknown {
 export class FakeDatabase {
   private root: Record<string, JsonValue> = {};
 
-  /** `path` defaults to the root, matching firebase-admin's `Database.ref()` (used for multi-path root updates). */
-  ref(path = ''): FakeReference {
-    const segments = path.split('/').filter(Boolean);
+  /**
+   * `ref()` (no argument) is the root, matching firebase-admin's
+   * `Database.ref()` for multi-path root updates. An *explicit* empty string
+   * is rejected exactly as real firebase-admin does — `database.ref('')`
+   * throws "path argument was an invalid path" there, so accepting it here
+   * would let a prod-only 500 pass the test suite (it did: all group
+   * mutations used `ref('')` and only 500'd in production).
+   */
+  ref(path?: string): FakeReference {
+    if (path === '') {
+      throw new Error(
+        'path argument was an invalid path = "". Paths must be non-empty strings and can\'t contain ".", "#", "$", "[", or "]". Use ref() with no argument for the root.',
+      );
+    }
+    const segments = (path ?? '').split('/').filter(Boolean);
     return this.refForSegments(segments);
   }
 

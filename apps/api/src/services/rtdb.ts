@@ -145,10 +145,23 @@ export class RtdbService {
     }
 
     const raw = snapshot.val() as Record<string, unknown>;
-    return Object.entries(raw).map(([id, value]) => ({
-      id,
-      ...matchRecordSchema.parse(value),
-    }));
+    // safeParse-and-skip (production-gap rule, mirrors listGspReadings): one
+    // corrupt record must never 500 the whole list — a single string-typed
+    // `time` took down GET /api/matches for an affected user for days.
+    // Skips log the record id + failing field paths (never values, never uid)
+    // so corrupt data stays discoverable in Cloud Run logs.
+    return Object.entries(raw).flatMap(([id, value]) => {
+      const parsed = matchRecordSchema.safeParse(value);
+      if (!parsed.success) {
+        console.warn(
+          `listMatches: skipping corrupt match record ${id}: ${parsed.error.issues
+            .map((issue) => `${issue.path.join('.') || '(root)'}: ${issue.code}`)
+            .join('; ')}`,
+        );
+        return [];
+      }
+      return [{ id, ...parsed.data }];
+    });
   }
 
   async createMatch(uid: string, input: CreateMatchInput): Promise<Match> {
@@ -272,8 +285,30 @@ export class RtdbService {
     if (!snapshot.exists()) {
       return [];
     }
-    const map = opponentMapSchema.parse(snapshot.val());
-    return Object.keys(map);
+    // safeParse-and-skip (production-gap rule): a corrupt node (Cloud Run
+    // logs showed one user's node stored as a bare boolean) or a corrupt
+    // entry value must never 500 the whole list.
+    const raw: unknown = snapshot.val();
+    if (raw === null || typeof raw !== 'object') {
+      console.warn(
+        `listOpponents: skipping corrupt opponents node (expected record, got ${typeof raw})`,
+      );
+      return [];
+    }
+    const parsed = opponentMapSchema.safeParse(raw);
+    if (parsed.success) {
+      return Object.keys(parsed.data);
+    }
+    // Salvage entry-wise: an opponent name is the key; keep every key whose
+    // value is the canonical `true`, skip (and log) anything else.
+    const entries = Object.entries(raw as Record<string, unknown>);
+    const skipped = entries.filter(([, value]) => value !== true).length;
+    if (skipped > 0) {
+      console.warn(
+        `listOpponents: skipping ${skipped} corrupt opponent entr${skipped === 1 ? 'y' : 'ies'}`,
+      );
+    }
+    return entries.filter(([, value]) => value === true).map(([name]) => name);
   }
 
   private async addOpponent(uid: string, name: string): Promise<void> {

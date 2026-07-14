@@ -14,48 +14,66 @@ import type { ScoutReportData } from '@smash-tracker/shared';
  * `userSlug` (that field is start.gg-only), so their profile link is built
  * from `parryUserId` instead — the verified `https://parry.gg/profile/{id}`
  * shape (see apps/api/src/parrygg/scout.ts).
+ *
+ * V13: a `'combined'` identity spans BOTH sites, so it renders BOTH profile
+ * links and a combined sample caption. Each link is only shown when its id
+ * field is present.
  */
 export function ScoutReportHeader({ report }: { report: ScoutReportData }) {
   const { t } = useTranslation();
   const source = report.player.source ?? 'startgg';
-  const profileUrl =
-    source === 'parrygg'
-      ? report.player.parryUserId
-        ? `https://parry.gg/profile/${report.player.parryUserId}`
-        : null
-      : report.player.userSlug
-        ? `https://start.gg/${report.player.userSlug}`
-        : null;
-  const sourceLabel = source === 'parrygg' ? 'parry.gg' : 'start.gg';
+
+  const startggUrl = report.player.userSlug ? `https://start.gg/${report.player.userSlug}` : null;
+  const parryUrl = report.player.parryUserId
+    ? `https://parry.gg/profile/${report.player.parryUserId}`
+    : null;
+
+  // Which profile link(s) to show, in display order, each with its site label.
+  const profileLinks: Array<{ url: string; label: string }> = [];
+  if (source === 'combined') {
+    if (startggUrl) profileLinks.push({ url: startggUrl, label: 'start.gg' });
+    if (parryUrl) profileLinks.push({ url: parryUrl, label: 'parry.gg' });
+  } else if (source === 'parrygg') {
+    if (parryUrl) profileLinks.push({ url: parryUrl, label: 'parry.gg' });
+  } else if (startggUrl) {
+    profileLinks.push({ url: startggUrl, label: 'start.gg' });
+  }
+
+  const sampleText =
+    source === 'combined'
+      ? t('scout.header.sampleCombined', {
+          sets: report.sampledSets,
+          games: report.sampledGames,
+        })
+      : t('scout.header.sample', {
+          source: source === 'parrygg' ? 'parry.gg' : 'start.gg',
+          sets: report.sampledSets,
+          games: report.sampledGames,
+        });
 
   return (
     <Card>
       <CardContent className="flex flex-col gap-1">
         <div className="flex flex-wrap items-center gap-2">
           <h2 className="text-2xl font-semibold tracking-tight">{report.player.gamerTag}</h2>
-          {profileUrl && (
+          {profileLinks.map((link) => (
             <a
-              href={profileUrl}
+              key={link.label}
+              href={link.url}
               target="_blank"
               rel="noreferrer"
               aria-label={t('scout.header.viewOn', {
                 name: report.player.gamerTag,
-                source: sourceLabel,
+                source: link.label,
               })}
               className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
             >
               <ExternalLink className="size-3.5" />
-              {t('scout.header.profile', { source: sourceLabel })}
+              {t('scout.header.profile', { source: link.label })}
             </a>
-          )}
+          ))}
         </div>
-        <p className="text-sm text-muted-foreground">
-          {t('scout.header.sample', {
-            source: sourceLabel,
-            sets: report.sampledSets,
-            games: report.sampledGames,
-          })}
-        </p>
+        <p className="text-sm text-muted-foreground">{sampleText}</p>
       </CardContent>
     </Card>
   );
