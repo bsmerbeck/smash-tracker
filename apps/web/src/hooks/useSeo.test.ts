@@ -28,13 +28,13 @@ describe('useSeo', () => {
   it('updates existing tags in place without duplicating them', () => {
     renderHook(() =>
       useSeo({
-        title: 'FAQ | Smash Tracker',
+        title: 'FAQ | grandfinals.gg',
         description: 'Answers to common questions.',
         canonicalPath: '/faq',
       }),
     );
 
-    expect(document.title).toBe('FAQ | Smash Tracker');
+    expect(document.title).toBe('FAQ | grandfinals.gg');
     expect(document.head.querySelectorAll('link[rel="canonical"]')).toHaveLength(1);
     expect(document.head.querySelector('link[rel="canonical"]')).toHaveAttribute(
       'href',
@@ -47,7 +47,7 @@ describe('useSeo', () => {
     );
     expect(document.head.querySelector('meta[property="og:title"]')).toHaveAttribute(
       'content',
-      'FAQ | Smash Tracker',
+      'FAQ | grandfinals.gg',
     );
     expect(document.head.querySelector('meta[property="og:description"]')).toHaveAttribute(
       'content',
@@ -59,7 +59,7 @@ describe('useSeo', () => {
     );
     expect(document.head.querySelector('meta[name="twitter:title"]')).toHaveAttribute(
       'content',
-      'FAQ | Smash Tracker',
+      'FAQ | grandfinals.gg',
     );
     expect(document.head.querySelector('meta[name="twitter:description"]')).toHaveAttribute(
       'content',

@@ -18,7 +18,7 @@ import { LandingContent } from './LandingContent';
  */
 export function HomePage() {
   useSeo({
-    title: 'Smash Tracker — Free Super Smash Bros. Ultimate Analytics & GSP Tracker',
+    title: 'grandfinals.gg — Free Super Smash Bros. Ultimate Analytics & GSP Tracker',
     description:
       'Free Super Smash Bros. Ultimate analytics: GSP & Elite Smash tracking, start.gg/parry.gg sync, matchup stats, stage mastery, and AI scouting reports.',
     canonicalPath: '/',
@@ -38,7 +38,7 @@ export function HomePage() {
     <div className="flex flex-col items-center gap-12 px-4 py-12">
       <div className="flex w-full max-w-5xl flex-col items-center gap-8 lg:flex-row lg:items-start lg:justify-between">
         <div className="flex max-w-md flex-col gap-3 text-center lg:text-left">
-          <h1 className="text-3xl font-bold tracking-tight">Smash Tracker</h1>
+          <h1 className="text-3xl font-bold tracking-tight">grandfinals.gg</h1>
           <p className="text-lg text-muted-foreground">
             Free analytics for competitive Super Smash Bros. Ultimate players.
           </p>

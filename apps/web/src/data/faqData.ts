@@ -16,14 +16,14 @@ export interface FaqEntry {
 
 export const faqEntries: FaqEntry[] = [
   {
-    question: 'Is Smash Tracker free?',
+    question: 'Is grandfinals.gg free?',
     answer:
       'Yes — every core feature is free: GSP and Elite Smash tracking, start.gg/parry.gg sync, matchup analytics, stage mastery, Glicko-2 ratings, and scouting any player. AI-generated pre-bracket scouting reports are the one optional paid add-on, sold in small credit packs.',
   },
   {
     question: 'How does the GSP / Elite Smash tracker work?',
     answer:
-      "Log a quickplay match with the GSP shown on the results screen and Smash Tracker plots your climb per character, using a community-reverse-engineered model of the hidden MMR behind GSP. There's no public Elite Smash API, so you set your character's Elite threshold yourself (the GSP page links to elitegsp.com's crowd-sourced estimates for reference), and Smash Tracker projects how many matches until you cross it.",
+      "Log a quickplay match with the GSP shown on the results screen and grandfinals.gg plots your climb per character, using a community-reverse-engineered model of the hidden MMR behind GSP. There's no public Elite Smash API, so you set your character's Elite threshold yourself (the GSP page links to elitegsp.com's crowd-sourced estimates for reference), and grandfinals.gg projects how many matches until you cross it.",
   },
   {
     question: 'Do I need a start.gg account?',
@@ -48,12 +48,12 @@ export const faqEntries: FaqEntry[] = [
   {
     question: 'How does start.gg/parry.gg sync work?',
     answer:
-      'Link a start.gg or parry.gg account (from Settings → Integrations) and Smash Tracker pulls in your tournament sets automatically — characters, stages, seeds, and placements — instead of you typing every bracket match in by hand. Sync only reads public match data the same way each site’s own results pages do.',
+      'Link a start.gg or parry.gg account (from Settings → Integrations) and grandfinals.gg pulls in your tournament sets automatically — characters, stages, seeds, and placements — instead of you typing every bracket match in by hand. Sync only reads public match data the same way each site’s own results pages do.',
   },
   {
     question: 'How are AI scouting reports priced?',
     answer:
-      'AI scouting reports are priced at-cost: they run on the Claude API, and non-allowlisted accounts buy small credit packs to cover that usage — Smash Tracker doesn’t mark them up. Allowlisted accounts (and the app owner) generate reports for free.',
+      'AI scouting reports are priced at-cost: they run on the Claude API, and non-allowlisted accounts buy small credit packs to cover that usage — grandfinals.gg doesn’t mark them up. Allowlisted accounts (and the app owner) generate reports for free.',
   },
   {
     question: 'What is Elite Smash?',
@@ -61,8 +61,8 @@ export const faqEntries: FaqEntry[] = [
       "Elite Smash is Smash Ultimate's top online quickplay bracket — once a character's GSP crosses that character's Elite threshold, quickplay matchmaking for that character moves you into the Elite pool of higher-ranked opponents.",
   },
   {
-    question: 'Does Smash Tracker work for every character?',
+    question: 'Does grandfinals.gg work for every character?',
     answer:
-      'Yes — GSP, matchup, and stage tracking are all per-character, since GSP and Elite Smash thresholds themselves are tracked per-character in the game. Pick any primary or secondary fighter and Smash Tracker tracks it the same way.',
+      'Yes — GSP, matchup, and stage tracking are all per-character, since GSP and Elite Smash thresholds themselves are tracked per-character in the game. Pick any primary or secondary fighter and grandfinals.gg tracks it the same way.',
   },
 ];
