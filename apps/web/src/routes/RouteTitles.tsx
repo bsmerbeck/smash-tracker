@@ -46,7 +46,7 @@ export function RouteTitles() {
   useEffect(() => {
     const titleKey = titleKeyForPath(pathname);
     if (titleKey !== null) {
-      document.title = `${t(titleKey)} | Smash Tracker`;
+      document.title = `${t(titleKey)} | grandfinals.gg`;
     }
   }, [pathname, t]);
   return null;

@@ -27,14 +27,14 @@ function faqJsonLd() {
 /**
  * Public, crawlable FAQ page — the full `faqEntries` list (the landing page
  * shows only a preview). Its own URL and its own FAQPage structured data
- * mean this is the canonical place search engines should surface Smash
- * Tracker FAQ answers (e.g. "how much GSP for Elite Smash").
+ * mean this is the canonical place search engines should surface
+ * grandfinals.gg FAQ answers (e.g. "how much GSP for Elite Smash").
  */
 export function FaqPage() {
   useSeo({
-    title: 'Frequently Asked Questions | Smash Tracker',
+    title: 'Frequently Asked Questions | grandfinals.gg',
     description:
-      'Answers to common Smash Tracker questions: GSP and Elite Smash tracking, start.gg/parry.gg sync, pricing, and how the GSP calculator works.',
+      'Answers to common grandfinals.gg questions: GSP and Elite Smash tracking, start.gg/parry.gg sync, pricing, and how the GSP calculator works.',
     canonicalPath: '/faq',
   });
 

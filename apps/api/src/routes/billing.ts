@@ -127,7 +127,7 @@ const billingRoutes: FastifyPluginAsyncZod<BillingRoutesOptions> = async (app, o
               currency: 'usd',
               unit_amount: pack.amountCents,
               product_data: {
-                name: `Smash Tracker — AI report credits (${pack.label})`,
+                name: `grandfinals.gg — AI report credits (${pack.label})`,
               },
             },
             quantity: 1,

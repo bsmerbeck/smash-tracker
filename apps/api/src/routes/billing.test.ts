@@ -225,7 +225,7 @@ describe('POST /api/billing/checkout (configured)', () => {
         price_data: {
           currency: 'usd',
           unit_amount: 2000,
-          product_data: { name: 'Smash Tracker — AI report credits (15 reports)' },
+          product_data: { name: 'grandfinals.gg — AI report credits (15 reports)' },
         },
         quantity: 1,
       },

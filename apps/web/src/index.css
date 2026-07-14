@@ -4,7 +4,7 @@
 @custom-variant dark (&:is(.dark *));
 
 /*
- * Smash Tracker theme: dark-only, Super Smash Bros. Ultimate inspired —
+ * grandfinals.gg theme: dark-only, Super Smash Bros. Ultimate inspired —
  * near-black/dark-grey surfaces with the bold Nintendo red (#e60012,
  * ~oklch(0.55 0.22 27.5)) as the primary accent. The app has no light mode;
  * :root carries the dark palette and .dark mirrors it so `dark:` utilities
