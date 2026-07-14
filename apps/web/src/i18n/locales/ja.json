@@ -518,7 +518,10 @@
       "cancelEdit": "タイムスタンプの編集をキャンセル",
       "deleteConfirmTitle": "このタイムスタンプメモを削除しますか？",
       "editTimeAria": "タイムスタンプの時間を編集",
-      "editNoteAria": "タイムスタンプのメモを編集"
+      "editNoteAria": "タイムスタンプのメモを編集",
+      "filterByTag": "タグで絞り込む",
+      "filterByTagAria": "{{label}}でメモを絞り込む",
+      "noMatchingNotes": "選択したフィルターに一致するメモはありません"
     },
     "playlists": {
       "library": "ライブラリ",

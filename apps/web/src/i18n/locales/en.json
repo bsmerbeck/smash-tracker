@@ -518,7 +518,10 @@
       "cancelEdit": "Cancel timestamp edit",
       "deleteConfirmTitle": "Delete this timestamp note?",
       "editTimeAria": "Edit timestamp time",
-      "editNoteAria": "Edit timestamp note"
+      "editNoteAria": "Edit timestamp note",
+      "filterByTag": "Filter by tag",
+      "filterByTagAria": "Filter notes by {{label}}",
+      "noMatchingNotes": "No notes match the selected filter"
     },
     "playlists": {
       "library": "Library",

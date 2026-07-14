@@ -32,7 +32,12 @@ import {
   useUpdatePlaylist,
 } from '@/hooks/usePlaylists';
 import { MAX_TIMESTAMPS, detectVodProvider, parseVodStartSeconds } from '@/lib/vod';
-import { MAX_NOTE_TAGS, addTagToList, deriveCustomTagVocabulary } from '@/lib/tags';
+import {
+  MAX_NOTE_TAGS,
+  addTagToList,
+  deriveCustomTagVocabulary,
+  filterTimestampIndices,
+} from '@/lib/tags';
 import { movePlaylistItem, resolvePlaylistMatches } from '@/lib/playlists';
 import { ApiError } from '@/lib/api';
 import { cn } from '@/lib/utils';
@@ -162,6 +167,12 @@ export function VodManagerPage() {
   const [filters, setFilters] = useState<VodManagerFilterState>(DEFAULT_VOD_MANAGER_FILTERS);
   const [sort, setSort] = useState<VodSortDirection>('newest');
   const [selectedTimestampIndex, setSelectedTimestampIndex] = useState<number | null>(null);
+  // Note-tag filter chips (retest fix-up #12, "filter notes by tag") — OR
+  // semantics across selected slugs, empty means no narrowing. Reset
+  // alongside `selectedTimestampIndex` whenever the selected match changes
+  // (below) — a filter set for the PREVIOUS match's tag vocabulary must
+  // never silently carry over and hide a newly-selected match's notes.
+  const [noteTagFilter, setNoteTagFilter] = useState<string[]>([]);
   // Lifted from `TimestampList` (Task 1) so the quick-tag panel's capture
   // handler can command a freshly-inserted row straight into edit mode once
   // the PATCH resolves and the new sorted array position is known.
@@ -208,6 +219,8 @@ export function VodManagerPage() {
     setAutoplayBlocked(false);
     // A row editing on the PREVIOUS match must never carry over either.
     setEditingIndex(null);
+    // Nor must a note-tag filter set for the PREVIOUS match's vocabulary.
+    setNoteTagFilter([]);
   }
 
   // Inline rename draft for the active playlist's selector row — re-seeded
@@ -473,16 +486,18 @@ export function VodManagerPage() {
     }
   }
 
-  // Video-end auto-advance: fires when the live player reports ENDED.
-  // Advances through `displayedMatches` — the SAME list the left panel
-  // renders, so this is playlist order while a playlist is active and the
-  // current filtered/sorted order in Library view (LIST-04 originally
-  // playlist-only; Library now shares the identical two-branch logic,
-  // since `displayedMatches` already resolves to whichever list is
-  // visible). Also flags `driftedRef` unconditionally — see its doc
-  // comment — so a subsequent reselect of a same-identity video can
-  // recover from a hijacked iframe regardless of whether an advance
-  // actually happened below.
+  // Shared by `handleEnded` (real ENDED backstop) and `handleEndGuard`
+  // (Twitch proactive end-guard, retest fix-up #11) — both observe the SAME
+  // "this video is finished/about to finish" signal and must apply the
+  // IDENTICAL advance-or-stop decision. Advances through `displayedMatches`
+  // — the SAME list the left panel renders, so this is playlist order while
+  // a playlist is active and the current filtered/sorted order in Library
+  // view (LIST-04 originally playlist-only; Library now shares the
+  // identical two-branch logic, since `displayedMatches` already resolves
+  // to whichever list is visible). Also flags `driftedRef` unconditionally
+  // — see its doc comment — so a subsequent reselect of a same-identity
+  // video can recover from a hijacked iframe regardless of whether an
+  // advance actually happened below.
   //   - same video identity as the current match -> just select the next
   //     match id; previousVodIdentityRef's reposition effect (above) seeks
   //     the ALREADY-PLAYING player to the new match's start time, no
@@ -492,25 +507,25 @@ export function VodManagerPage() {
   //     next match id; the identity change remounts useVodPlayer, which
   //     reads the flag as autoplayOnConstruct.
   //   - NO next match (end of playlist or end of the library list, retest
-  //     fix-up #10) -> reliably cancel the host platform's post-roll
-  //     autoplay via `preventEndOfListAutoplay` (retest fix-up #1).
-  //     `driftedRef` is already flagged above regardless of an advance
-  //     target as a second layer of protection: any subsequent reselection
-  //     (including of the SAME match) forces a fresh player construction if
-  //     `preventEndOfListAutoplay`'s own workaround somehow didn't win.
-  function handleEnded() {
+  //     fix-up #10) -> stop playback via `stopPlayback` (see its doc
+  //     comment for the `useEndPause` distinction). `driftedRef` is already
+  //     flagged above regardless of an advance target as a second layer of
+  //     protection: any subsequent reselection (including of the SAME
+  //     match) forces a fresh player construction if the stop strategy
+  //     somehow didn't win.
+  function advanceOrStop(useEndPause: boolean) {
     driftedRef.current = true;
     if (!selectedMatch) {
       return;
     }
     const index = displayedMatches.findIndex((m) => m.id === selectedMatch.id);
     if (index === -1) {
-      preventEndOfListAutoplay();
+      stopPlayback(useEndPause);
       return;
     }
     const nextMatch = displayedMatches[index + 1];
     if (!nextMatch) {
-      preventEndOfListAutoplay();
+      stopPlayback(useEndPause);
       return;
     }
     const currentIdentity = videoIdentityOf(selectedMatch);
@@ -519,6 +534,40 @@ export function VodManagerPage() {
       autoplayNextRef.current = true;
     }
     handleSelect(nextMatch.id);
+  }
+
+  // No-advance-target stop strategy (retest fix-up #11): a real `ENDED`
+  // event has ALREADY entered the ended state — Twitch's "Up Next" countdown
+  // may already be armed by the time this fires — so it needs
+  // `preventEndOfListAutoplay`'s seek-back-then-pause workaround
+  // (`pauseAtEnd`, retest fix-up #1) to reliably exit that state. The
+  // proactive guard (`handleEndGuard`) fires BEFORE the player ever reaches
+  // the ended state, so a plain in-place pause is sufficient there — no seek
+  // trick needed, since the "Up Next" overlay never gets a chance to arm.
+  function stopPlayback(useEndPause: boolean) {
+    if (useEndPause) {
+      preventEndOfListAutoplay();
+    } else {
+      playerPauseRef.current?.();
+    }
+  }
+
+  // Video-end auto-advance: fires when the live player reports ENDED
+  // (backstop for both providers — see `useVodPlayer`'s `onEndGuard` doc
+  // comment on why Twitch also gets the proactive `handleEndGuard` below).
+  function handleEnded() {
+    advanceOrStop(true);
+  }
+
+  // Twitch proactive end-guard trip (retest fix-up #11, wired to
+  // `useVodPlayer`'s `onEndGuard` via `VodPlayer`) — fires ~1.5s BEFORE the
+  // video actually reaches its end, while the player is still safely in a
+  // non-ended state, eliminating the "Up Next" overlay window entirely
+  // rather than reacting to it after the fact. Reuses the exact same
+  // advance-or-stop decision as `handleEnded`. Never fires for YouTube (see
+  // `useVodPlayer`'s doc comment).
+  function handleEndGuard() {
+    advanceOrStop(false);
   }
 
   // Authoritative "the browser blocked our auto-advance attempt" signal
@@ -779,30 +828,49 @@ export function VodManagerPage() {
     persistPlayerSize(next);
   }
 
+  // Indices (into the FULL, unfiltered `selectedMatch.vodTimestamps` array)
+  // of the notes currently visible under `noteTagFilter` (retest fix-up
+  // #12) — the SAME helper `TimestampList` uses for its own row visibility,
+  // so Prev/Next TIMESTAMP navigation below and the rendered rows always
+  // agree on what's "visible".
+  const visibleTimestampIndices = useMemo(
+    () => filterTimestampIndices(selectedMatch?.vodTimestamps ?? [], noteTagFilter),
+    [selectedMatch, noteTagFilter],
+  );
+
   // Prev/Next TIMESTAMP jump (Task 3) — distinct from the playlist Prev/
   // Next added in 04-04. Moves selectedTimestampIndex by -1/+1 through the
-  // same time-sorted note order TimestampList renders (clamped at the
-  // boundaries); if nothing is selected yet, Prev jumps to the last note
-  // and Next jumps to the first. Reuses the existing seek ref + lifted
-  // selection state — no new player code.
+  // same time-sorted note order TimestampList renders, but restricted to
+  // `visibleTimestampIndices` (retest fix-up #12: filtered-out notes are
+  // skipped entirely) — clamped at the boundaries of the VISIBLE set; if
+  // nothing is selected yet (or the current selection isn't itself
+  // visible), Prev jumps to the last visible note and Next jumps to the
+  // first. Reuses the existing seek ref + lifted selection state — no new
+  // player code.
   function handlePrevTimestamp() {
-    const notes = selectedMatch?.vodTimestamps ?? [];
-    if (notes.length === 0) {
+    const indices = visibleTimestampIndices;
+    if (indices.length === 0) {
       return;
     }
-    const nextIndex =
-      selectedTimestampIndex == null ? notes.length - 1 : Math.max(0, selectedTimestampIndex - 1);
+    const notes = selectedMatch?.vodTimestamps ?? [];
+    const posInVisible =
+      selectedTimestampIndex == null ? -1 : indices.indexOf(selectedTimestampIndex);
+    const nextPos = posInVisible === -1 ? indices.length - 1 : Math.max(0, posInVisible - 1);
+    const nextIndex = indices[nextPos]!;
     handleSeek(notes[nextIndex]!.seconds);
     setSelectedTimestampIndex(nextIndex);
   }
 
   function handleNextTimestamp() {
-    const notes = selectedMatch?.vodTimestamps ?? [];
-    if (notes.length === 0) {
+    const indices = visibleTimestampIndices;
+    if (indices.length === 0) {
       return;
     }
-    const nextIndex =
-      selectedTimestampIndex == null ? 0 : Math.min(notes.length - 1, selectedTimestampIndex + 1);
+    const notes = selectedMatch?.vodTimestamps ?? [];
+    const posInVisible =
+      selectedTimestampIndex == null ? -1 : indices.indexOf(selectedTimestampIndex);
+    const nextPos = posInVisible === -1 ? 0 : Math.min(indices.length - 1, posInVisible + 1);
+    const nextIndex = indices[nextPos]!;
     handleSeek(notes[nextIndex]!.seconds);
     setSelectedTimestampIndex(nextIndex);
   }
@@ -979,6 +1047,7 @@ export function VodManagerPage() {
                     pauseAtEndRef={playerPauseAtEndRef}
                     getCurrentTimeRef={getCurrentTimeRef}
                     onEnded={handleEnded}
+                    onEndGuard={handleEndGuard}
                     onAutoplayBlocked={handleAutoplayBlocked}
                     autoplayOnConstructRef={autoplayNextRef}
                     remountToken={remountToken}
@@ -1060,7 +1129,7 @@ export function VodManagerPage() {
                       variant="outline"
                       size="icon-sm"
                       aria-label={t('vodManager.capture.prevTimestamp')}
-                      disabled={(selectedMatch.vodTimestamps ?? []).length === 0}
+                      disabled={visibleTimestampIndices.length === 0}
                       onClick={handlePrevTimestamp}
                     >
                       <ChevronLeft />
@@ -1070,7 +1139,7 @@ export function VodManagerPage() {
                       variant="outline"
                       size="icon-sm"
                       aria-label={t('vodManager.capture.nextTimestamp')}
-                      disabled={(selectedMatch.vodTimestamps ?? []).length === 0}
+                      disabled={visibleTimestampIndices.length === 0}
                       onClick={handleNextTimestamp}
                     >
                       <ChevronRight />
@@ -1133,6 +1202,8 @@ export function VodManagerPage() {
                       tagVocabulary={tagVocabulary}
                       editingIndex={editingIndex}
                       onEditingIndexChange={setEditingIndex}
+                      noteTagFilter={noteTagFilter}
+                      onNoteTagFilterChange={setNoteTagFilter}
                     />
                   </div>
                 </div>
