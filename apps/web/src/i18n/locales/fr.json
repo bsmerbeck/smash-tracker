@@ -518,7 +518,10 @@
       "cancelEdit": "Annuler la modification de l'horodatage",
       "deleteConfirmTitle": "Supprimer cette note horodatée ?",
       "editTimeAria": "Modifier l'heure de l'horodatage",
-      "editNoteAria": "Modifier la note de l'horodatage"
+      "editNoteAria": "Modifier la note de l'horodatage",
+      "filterByTag": "Filtrer par tag",
+      "filterByTagAria": "Filtrer les notes par {{label}}",
+      "noMatchingNotes": "Aucune note ne correspond au filtre sélectionné"
     },
     "playlists": {
       "library": "Bibliothèque",

@@ -1,6 +1,8 @@
 import type { RefObject } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { VodTimestamp } from '@smash-tracker/shared';
+import { deriveNoteTagOptions, filterTimestampIndices, tagLabel } from '@/lib/tags';
+import { Badge } from '@/components/ui/badge';
 import { NoteComposer } from './NoteComposer';
 import { TimestampRow } from './TimestampRow';
 
@@ -29,6 +31,12 @@ export interface TimestampListProps {
    * freshly-captured row straight into edit mode after its PATCH resolves. */
   editingIndex: number | null;
   onEditingIndexChange: (index: number | null) => void;
+  /** Selected note-tag filter slugs (OR semantics, retest fix-up #12,
+   * "filter notes by tag") — lifted to `VodManagerPage` (mirrors
+   * `editingIndex`) since the Prev/Next TIMESTAMP jump buttons live outside
+   * this component and must navigate only the same VISIBLE (filtered) set. */
+  noteTagFilter: string[];
+  onNoteTagFilterChange: (next: string[]) => void;
 }
 
 /**
@@ -63,8 +71,26 @@ export function TimestampList({
   tagVocabulary,
   editingIndex,
   onEditingIndexChange,
+  noteTagFilter,
+  onNoteTagFilterChange,
 }: TimestampListProps) {
   const { t } = useTranslation();
+
+  // Tags in use across THIS match's notes (retest fix-up #12) — the chip
+  // row's option list. Hidden entirely when no note has any tag.
+  const noteTagOptions = deriveNoteTagOptions(timestamps);
+  // Indices (into the FULL, unfiltered `timestamps` array — never
+  // re-indexed) of the currently-visible rows. Shared with
+  // `VodManagerPage`'s Prev/Next timestamp navigation via the exact same
+  // `filterTimestampIndices` helper so both apply identical semantics.
+  const visibleIndices = new Set(filterTimestampIndices(timestamps, noteTagFilter));
+
+  function toggleTagFilter(tag: string) {
+    const next = noteTagFilter.includes(tag)
+      ? noteTagFilter.filter((selected) => selected !== tag)
+      : [...noteTagFilter, tag];
+    onNoteTagFilterChange(next);
+  }
 
   function handleCommitEdit(index: number, next: VodTimestamp) {
     const updated = timestamps
@@ -116,26 +142,69 @@ export function TimestampList({
       {timestamps.length === 0 ? (
         <p className="text-sm text-muted-foreground">{t('shared.vod.noTimestamps')}</p>
       ) : (
-        <ul className="flex flex-col gap-2" aria-label={t('shared.vod.timestampsAria')}>
-          {timestamps.map((stamp, index) => (
-            <li key={`${stamp.seconds}-${index}`}>
-              <TimestampRow
-                stamp={stamp}
-                index={index}
-                isSelected={index === selectedIndex}
-                isEditing={editingIndex === index}
-                onSeek={onSeek}
-                onSelect={onSelect}
-                onStartEdit={onEditingIndexChange}
-                onCancelEdit={() => onEditingIndexChange(null)}
-                onCommitEdit={handleCommitEdit}
-                onDelete={handleDelete}
-                onUpdateTags={handleUpdateTags}
-                tagVocabulary={tagVocabulary}
-              />
-            </li>
-          ))}
-        </ul>
+        <>
+          {/* Note-tag filter chip row (retest fix-up #12, "filter notes by
+              tag") — hidden entirely when no note on this match has any
+              tag. Toggling a chip filters visible rows below (OR within
+              selected chips); the underlying `timestamps` array is NEVER
+              re-sliced — `index` passed to each `TimestampRow` below always
+              stays the note's true position, so edit/delete/seek keep
+              hitting the correct note regardless of the active filter. */}
+          {noteTagOptions.length > 0 && (
+            <div className="flex flex-col gap-1">
+              <span className="text-xs font-medium text-muted-foreground">
+                {t('vodManager.notes.filterByTag')}
+              </span>
+              <div className="flex flex-wrap gap-1.5">
+                {noteTagOptions.map((tag) => {
+                  const label = tagLabel(t, tag);
+                  const selected = noteTagFilter.includes(tag);
+                  return (
+                    <Badge key={tag} asChild variant={selected ? 'default' : 'outline'}>
+                      <button
+                        type="button"
+                        aria-pressed={selected}
+                        aria-label={t('vodManager.notes.filterByTagAria', { label })}
+                        onClick={() => toggleTagFilter(tag)}
+                      >
+                        {label}
+                      </button>
+                    </Badge>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+          {visibleIndices.size === 0 ? (
+            <p className="text-sm text-muted-foreground">{t('vodManager.notes.noMatchingNotes')}</p>
+          ) : (
+            <ul className="flex flex-col gap-2" aria-label={t('shared.vod.timestampsAria')}>
+              {timestamps.map((stamp, index) => {
+                if (!visibleIndices.has(index)) {
+                  return null;
+                }
+                return (
+                  <li key={`${stamp.seconds}-${index}`}>
+                    <TimestampRow
+                      stamp={stamp}
+                      index={index}
+                      isSelected={index === selectedIndex}
+                      isEditing={editingIndex === index}
+                      onSeek={onSeek}
+                      onSelect={onSelect}
+                      onStartEdit={onEditingIndexChange}
+                      onCancelEdit={() => onEditingIndexChange(null)}
+                      onCommitEdit={handleCommitEdit}
+                      onDelete={handleDelete}
+                      onUpdateTags={handleUpdateTags}
+                      tagVocabulary={tagVocabulary}
+                    />
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </>
       )}
     </div>
   );
