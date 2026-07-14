@@ -13,12 +13,12 @@ export const featureEntries: FeatureEntry[] = [
   {
     title: 'GSP tracker & Elite Smash projection',
     description:
-      'Log a quickplay match with the GSP shown on the results screen and Smash Tracker charts your climb per character. A community-reverse-engineered model of the hidden MMR behind GSP estimates your matches-to-Elite once you set your character’s Elite Smash threshold.',
+      'Log a quickplay match with the GSP shown on the results screen and grandfinals.gg charts your climb per character. A community-reverse-engineered model of the hidden MMR behind GSP estimates your matches-to-Elite once you set your character’s Elite Smash threshold.',
   },
   {
     title: 'start.gg and parry.gg sync',
     description:
-      'Link a start.gg or parry.gg account and Smash Tracker imports your tournament sets automatically — characters, stages, seeds, and placements — instead of typing every bracket match in by hand.',
+      'Link a start.gg or parry.gg account and grandfinals.gg imports your tournament sets automatically — characters, stages, seeds, and placements — instead of typing every bracket match in by hand.',
   },
   {
     title: 'Matchup analytics & stage mastery',
