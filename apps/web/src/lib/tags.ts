@@ -1,5 +1,5 @@
 import type { TFunction } from 'i18next';
-import type { Match } from '@smash-tracker/shared';
+import type { Match, VodTimestamp } from '@smash-tracker/shared';
 
 /**
  * Fixed match-level preset tag slugs (TAG-03). Order matches CONTEXT.md and
@@ -121,4 +121,45 @@ export function deriveCustomTagVocabulary(matches: Match[], extraTags: string[] 
     }
   }
   return [...seen.values()].sort((a, b) => a.localeCompare(b));
+}
+
+/**
+ * Sorted, deduped tag slugs in use across `timestamps` (a single match's
+ * notes) — the note-tag filter chip row's option list (retest fix-up #12,
+ * "filter notes by tag"). Presets AND custom tags are both included (unlike
+ * `deriveCustomTagVocabulary`, which deliberately EXCLUDES presets for the
+ * add-combobox's "custom tags" grouping) since every tag actually applied to
+ * a note should be filterable.
+ */
+export function deriveNoteTagOptions(timestamps: VodTimestamp[]): string[] {
+  const seen = new Set<string>();
+  for (const stamp of timestamps) {
+    for (const tag of stamp.tags ?? []) {
+      seen.add(tag);
+    }
+  }
+  return [...seen].sort((a, b) => a.localeCompare(b));
+}
+
+/**
+ * Returns the indices (into `timestamps`, UNCHANGED — never re-indexed) of
+ * notes matching ANY tag in `selectedTags` (OR semantics) — every index when
+ * `selectedTags` is empty (no filter narrowing). Shared by
+ * `VodManagerPage`'s Prev/Next timestamp navigation and `TimestampList`'s
+ * row visibility (retest fix-up #12) so both apply IDENTICAL filter
+ * semantics and neither accidentally re-indexes the underlying array —
+ * edit/delete/seek all target the note's ORIGINAL position in the full
+ * `vodTimestamps` array.
+ */
+export function filterTimestampIndices(
+  timestamps: VodTimestamp[],
+  selectedTags: string[],
+): number[] {
+  if (selectedTags.length === 0) {
+    return timestamps.map((_, i) => i);
+  }
+  return timestamps
+    .map((stamp, i) => ({ stamp, i }))
+    .filter(({ stamp }) => (stamp.tags ?? []).some((tag) => selectedTags.includes(tag)))
+    .map(({ i }) => i);
 }

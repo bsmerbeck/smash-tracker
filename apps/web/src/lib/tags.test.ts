@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { Match } from '@smash-tracker/shared';
+import type { Match, VodTimestamp } from '@smash-tracker/shared';
 // Bundled-English i18n (test setup) — tagLabel takes `t` so preset labels localize.
 import i18n from '@/i18n';
 import {
@@ -8,6 +8,8 @@ import {
   PRESET_SLUGS,
   addTagToList,
   deriveCustomTagVocabulary,
+  deriveNoteTagOptions,
+  filterTimestampIndices,
   removeTagFromList,
   tagLabel,
 } from './tags';
@@ -165,5 +167,54 @@ describe('deriveCustomTagVocabulary', () => {
   it('defaults extraTags to empty when omitted', () => {
     const matches: Match[] = [makeMatch({ id: 'm1', time: 1, win: true, tags: ['zeta'] })];
     expect(deriveCustomTagVocabulary(matches)).toEqual(['zeta']);
+  });
+});
+
+describe('deriveNoteTagOptions (retest fix-up #12)', () => {
+  it('returns sorted, deduped tags across all notes, including presets', () => {
+    const timestamps: VodTimestamp[] = [
+      { seconds: 10, note: 'a', tags: ['mistake', 'zeta custom'] },
+      { seconds: 20, note: 'b', tags: ['punish'] },
+      { seconds: 30, note: 'c', tags: ['mistake'] },
+    ];
+    expect(deriveNoteTagOptions(timestamps)).toEqual(['mistake', 'punish', 'zeta custom']);
+  });
+
+  it('returns an empty array when no note has any tag', () => {
+    const timestamps: VodTimestamp[] = [
+      { seconds: 10, note: 'a' },
+      { seconds: 20, note: 'b', tags: [] },
+    ];
+    expect(deriveNoteTagOptions(timestamps)).toEqual([]);
+  });
+});
+
+describe('filterTimestampIndices (retest fix-up #12)', () => {
+  const timestamps: VodTimestamp[] = [
+    { seconds: 10, note: 'a', tags: ['mistake'] },
+    { seconds: 20, note: 'b', tags: ['punish'] },
+    { seconds: 30, note: 'c' },
+    { seconds: 40, note: 'd', tags: ['mistake', 'punish'] },
+  ];
+
+  it('returns every index (in order) when selectedTags is empty', () => {
+    expect(filterTimestampIndices(timestamps, [])).toEqual([0, 1, 2, 3]);
+  });
+
+  it('returns only indices matching ANY selected tag (OR semantics), preserving original positions', () => {
+    expect(filterTimestampIndices(timestamps, ['mistake'])).toEqual([0, 3]);
+    expect(filterTimestampIndices(timestamps, ['punish'])).toEqual([1, 3]);
+    expect(filterTimestampIndices(timestamps, ['mistake', 'punish'])).toEqual([0, 1, 3]);
+  });
+
+  it('returns an empty array when no note matches any selected tag', () => {
+    expect(filterTimestampIndices(timestamps, ['edgeguard'])).toEqual([]);
+  });
+
+  it('never re-indexes — the returned indices are positions in the ORIGINAL array', () => {
+    const result = filterTimestampIndices(timestamps, ['mistake']);
+    for (const i of result) {
+      expect(timestamps[i]!.tags).toContain('mistake');
+    }
   });
 });

@@ -33,6 +33,12 @@ export interface VodPlayerProps {
   /** Fires when the browser blocks an autoplay-triggering call — the
    * authoritative "show the native play-button fallback" signal. */
   onAutoplayBlocked?: () => void;
+  /** Twitch-only proactive end-guard (retest fix-up #11) — fires ~1.5s
+   * BEFORE the video actually reaches its end, while the player is still
+   * safely in a non-ended state, so the caller can act early enough to
+   * prevent Twitch's "Up Next" post-roll overlay from ever appearing. See
+   * `useVodPlayer`'s `onEndGuard` doc comment. */
+  onEndGuard?: () => void;
   /** Requests autoplay for this ONE player construction only. Passed
    * through to `useVodPlayer` as a REF (never a snapshotted boolean) —
    * React refs must not be read during render (`react-hooks/refs`), so the
@@ -71,6 +77,7 @@ export function VodPlayer({
   getCurrentTimeRef,
   onEnded,
   onAutoplayBlocked,
+  onEndGuard,
   autoplayOnConstructRef,
   remountToken,
 }: VodPlayerProps) {
@@ -80,6 +87,7 @@ export function VodPlayer({
     startSeconds,
     onEnded,
     onAutoplayBlocked,
+    onEndGuard,
     autoplayOnConstructRef,
     remountToken,
   });

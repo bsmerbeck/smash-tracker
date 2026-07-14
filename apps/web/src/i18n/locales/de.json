@@ -518,7 +518,10 @@
       "cancelEdit": "Zeitstempel-Bearbeitung abbrechen",
       "deleteConfirmTitle": "Diese Zeitstempel-Notiz löschen?",
       "editTimeAria": "Zeitstempel-Zeit bearbeiten",
-      "editNoteAria": "Zeitstempel-Notiz bearbeiten"
+      "editNoteAria": "Zeitstempel-Notiz bearbeiten",
+      "filterByTag": "Nach Tag filtern",
+      "filterByTagAria": "Notizen nach {{label}} filtern",
+      "noMatchingNotes": "Keine Notizen entsprechen dem ausgewählten Filter"
     },
     "playlists": {
       "library": "Bibliothek",

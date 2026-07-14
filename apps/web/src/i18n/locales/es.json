@@ -518,7 +518,10 @@
       "cancelEdit": "Cancelar edición de marca de tiempo",
       "deleteConfirmTitle": "¿Eliminar esta nota con marca de tiempo?",
       "editTimeAria": "Editar hora de la marca de tiempo",
-      "editNoteAria": "Editar nota de la marca de tiempo"
+      "editNoteAria": "Editar nota de la marca de tiempo",
+      "filterByTag": "Filtrar por etiqueta",
+      "filterByTagAria": "Filtrar notas por {{label}}",
+      "noMatchingNotes": "Ninguna nota coincide con el filtro seleccionado"
     },
     "playlists": {
       "library": "Biblioteca",
