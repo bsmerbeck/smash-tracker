@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useState, type ReactNode } from 'react';
 import { useForm, type UseFormReturn } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -7,6 +7,7 @@ import type { TFunction } from 'i18next';
 import { Check, ChevronDown, ChevronsUpDown } from 'lucide-react';
 import type { Fighter } from '@smash-tracker/shared';
 import { matchTypeValues, type CreateMatchInput } from '@smash-tracker/shared';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
   Form,
@@ -45,6 +46,7 @@ import { useMatches } from '@/hooks/useMatches';
 import { useStageFavorites, useToggleStageFavorite } from '@/hooks/useStageFavorites';
 import { getGroupedStageOptions, stageOptions } from '@/lib/stageOptions';
 import { parseGspNumber } from '@/pages/Gsp/lib/parseGspNumber';
+import { parseFlexibleTimestamp } from '@/lib/vod';
 
 export const alphaSpriteList = [...SpriteList].sort((a, b) => a.name.localeCompare(b.name));
 
@@ -126,6 +128,31 @@ export function buildMatchFormSchema(
     gsp: z.string().refine((value) => value.trim() === '' || parseGspNumber(value) !== null, {
       message: t('matchForm.validation.gspFormat'),
     }),
+    /**
+     * Optional VOD link (V-Manager fix-up): blank clears it (see
+     * `matchFormValuesToInput`'s omission — and `EditMatchForm`'s
+     * clear-also-drops-timestamps handling), a non-blank value must be a
+     * valid URL.
+     */
+    vodUrl: z
+      .string()
+      .refine((value) => value.trim() === '' || z.string().url().safeParse(value.trim()).success, {
+        message: t('matchForm.validation.vodUrlInvalid'),
+      }),
+    /**
+     * Optional user-typed offset into the VOD where this match begins
+     * (V-Manager fix-up #3): only meaningful alongside a non-blank `vodUrl`
+     * (see `matchFormValuesToInput`, which omits it when the link is
+     * blank — the "clearing the VOD link drops the start time too" rule).
+     * Accepts any of `parseFlexibleTimestamp`'s forms; blank is always
+     * valid regardless of `vodUrl` so the field never blocks save while
+     * disabled.
+     */
+    vodStartSeconds: z
+      .string()
+      .refine((value) => value.trim() === '' || parseFlexibleTimestamp(value.trim()) !== null, {
+        message: t('matchForm.validation.vodStartSecondsInvalid'),
+      }),
   });
 }
 
@@ -140,6 +167,10 @@ export function matchFormValuesToInput(values: MatchFormValues): CreateMatchInpu
   const eventName = values.eventName?.trim();
   const tournamentName = values.tournamentName?.trim();
   const gsp = values.gsp.trim() === '' ? null : parseGspNumber(values.gsp);
+  const vodUrl = values.vodUrl.trim();
+  const vodStartSecondsRaw = values.vodStartSeconds.trim();
+  const vodStartSeconds =
+    vodUrl && vodStartSecondsRaw ? parseFlexibleTimestamp(vodStartSecondsRaw) : null;
   return {
     fighter_id: values.fighterId,
     opponent_id: values.opponentFighterId,
@@ -152,6 +183,16 @@ export function matchFormValuesToInput(values: MatchFormValues): CreateMatchInpu
     ...(eventName ? { eventName } : {}),
     ...(tournamentName ? { tournamentName } : {}),
     ...(gsp !== null ? { gsp } : {}),
+    // Blank clears (omitted, never sent as ''/null — see RTDB null-stripping
+    // convention). `EditMatchForm` layers on top of this to also drop
+    // `vodTimestamps` when the link is cleared (offsets into a video that no
+    // longer has a URL are meaningless) and to carry existing timestamps
+    // through when the link is merely edited, not cleared.
+    ...(vodUrl ? { vodUrl } : {}),
+    // `vodStartSeconds` only makes sense alongside a link — clearing `vodUrl`
+    // (or leaving the start-time field blank) drops it from the payload too,
+    // same clear-on-omit convention as `vodTimestamps` above.
+    ...(vodStartSeconds !== null ? { vodStartSeconds } : {}),
   };
 }
 
@@ -301,20 +342,37 @@ export function TournamentFields<TFieldValues extends Record<string, unknown>>({
 }
 
 /**
- * Shared field layout behind AddMatchForm and EditMatchForm — both dialogs
- * differ only in their trigger, title, default values, and submit handler;
- * the fields themselves (fighter/opponent pickers, result toggle, stage,
- * match type, opponent name combobox, notes) are identical, ported from
+ * Shared field layout behind AddMatchForm, EditMatchForm, and 02-03's
+ * `SelectedMatchMeta` inline edit — differ only in their trigger, title,
+ * default values, and submit handler; the fields themselves (fighter/
+ * opponent pickers, result toggle, stage, match type, opponent name
+ * combobox, notes) are identical, ported from
  * legacy/src/screens/Dashboard/components/DashboardToolbar/components/AddMatchForm
  * and legacy/src/screens/MatchData/components/MatchTable/components/EditMatchForm.
+ *
+ * Sync-owned field set (`syncLocked`) mirrors `changesSyncOwnedFields`
+ * (apps/api/src/services/rtdb.ts) VERBATIM: fighterId (fighter_id),
+ * opponentFighterId (opponent_id), stageId (map), opponentName (opponent),
+ * matchType, result (win), stocksLeft, eventName + tournamentName
+ * (TournamentFields) — each wrapped in its own `<fieldset disabled
+ * className="contents">` so layout is unchanged and native controls
+ * cascade-disable. Always-editable: notes, vodUrl, vodStartSeconds, gsp.
+ * Default `syncLocked=false` means every wrapping fieldset is inert — zero
+ * behavior change for AddMatchForm/EditMatchForm.
  */
 export function MatchFormFields({
   form,
   fighterSprites,
+  syncLocked = false,
+  vodStartSecondsAccessory,
 }: {
   form: UseFormReturn<MatchFormValues>;
   /** The fighters offered for "Your Fighter" — the signed-in user's primary+secondary selections. */
   fighterSprites: Fighter[];
+  /** When true, disables exactly the 9 sync-owned controls (see the doc comment above) — used by `SelectedMatchMeta` on synced matches. */
+  syncLocked?: boolean;
+  /** Optional slot rendered adjacent to the vodStartSeconds field (02-03's "Use current player time" button). Default undefined renders nothing — safe no-op for other callers. */
+  vodStartSecondsAccessory?: ReactNode;
 }) {
   const { t } = useTranslation();
   const { data: opponents = [] } = useOpponents();
@@ -322,6 +380,8 @@ export function MatchFormFields({
   const { data: stageFavorites } = useStageFavorites();
   const toggleStageFavorite = useToggleStageFavorite();
   const [opponentPopoverOpen, setOpponentPopoverOpen] = useState(false);
+  const vodUrlValue = form.watch('vodUrl');
+  const vodLinkPresent = vodUrlValue.trim() !== '';
 
   const favoriteStageIds = stageFavorites?.stageIds;
   const stageGroups = useMemo(
@@ -332,116 +392,135 @@ export function MatchFormFields({
   return (
     <Form {...form}>
       <div className="flex flex-col gap-4">
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+        {syncLocked && (
+          <Badge variant="outline" className="w-fit">
+            {t('matchData.table.synced')}
+          </Badge>
+        )}
+        <fieldset disabled={syncLocked} className="contents">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <FormField
+              control={form.control}
+              name="fighterId"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>{t('matchForm.yourFighter')}</FormLabel>
+                  <Select
+                    value={String(field.value)}
+                    onValueChange={(v) => field.onChange(Number(v))}
+                  >
+                    <FormControl>
+                      <SelectTrigger className="w-full">
+                        <SelectValue />
+                      </SelectTrigger>
+                    </FormControl>
+                    <SelectContent>
+                      {fighterSprites.map((s) => (
+                        <SelectItem key={s.id} value={String(s.id)}>
+                          <img src={s.url} alt="" className="size-6 object-contain" />
+                          {s.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            <FormField
+              control={form.control}
+              name="opponentFighterId"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>{t('matchForm.opponentFighter')}</FormLabel>
+                  <Select
+                    value={String(field.value)}
+                    onValueChange={(v) => field.onChange(Number(v))}
+                  >
+                    <FormControl>
+                      <SelectTrigger className="w-full">
+                        <SelectValue />
+                      </SelectTrigger>
+                    </FormControl>
+                    <SelectContent>
+                      {alphaSpriteList.map((s) => (
+                        <SelectItem key={s.id} value={String(s.id)}>
+                          <img src={s.url} alt="" className="size-6 object-contain" />
+                          {s.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+          </div>
+        </fieldset>
+
+        <fieldset disabled={syncLocked} className="contents">
           <FormField
             control={form.control}
-            name="fighterId"
+            name="result"
             render={({ field }) => (
               <FormItem>
-                <FormLabel>{t('matchForm.yourFighter')}</FormLabel>
-                <Select
-                  value={String(field.value)}
-                  onValueChange={(v) => field.onChange(Number(v))}
-                >
-                  <FormControl>
-                    <SelectTrigger className="w-full">
-                      <SelectValue />
-                    </SelectTrigger>
-                  </FormControl>
-                  <SelectContent>
-                    {fighterSprites.map((s) => (
-                      <SelectItem key={s.id} value={String(s.id)}>
-                        <img src={s.url} alt="" className="size-6 object-contain" />
-                        {s.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                <FormMessage />
-              </FormItem>
-            )}
-          />
-          <FormField
-            control={form.control}
-            name="opponentFighterId"
-            render={({ field }) => (
-              <FormItem>
-                <FormLabel>{t('matchForm.opponentFighter')}</FormLabel>
-                <Select
-                  value={String(field.value)}
-                  onValueChange={(v) => field.onChange(Number(v))}
-                >
-                  <FormControl>
-                    <SelectTrigger className="w-full">
-                      <SelectValue />
-                    </SelectTrigger>
-                  </FormControl>
-                  <SelectContent>
-                    {alphaSpriteList.map((s) => (
-                      <SelectItem key={s.id} value={String(s.id)}>
-                        <img src={s.url} alt="" className="size-6 object-contain" />
-                        {s.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                <FormMessage />
-              </FormItem>
-            )}
-          />
-        </div>
-
-        <FormField
-          control={form.control}
-          name="result"
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel>{t('matchForm.result')}</FormLabel>
-              <FormControl>
-                <ToggleGroup
-                  type="single"
-                  variant="outline"
-                  value={field.value ?? ''}
-                  onValueChange={(value) => {
-                    if (value) field.onChange(value);
-                  }}
-                >
-                  <ToggleGroupItem value="win" aria-label={t('common.win')}>
-                    {t('common.win')}
-                  </ToggleGroupItem>
-                  <ToggleGroupItem value="loss" aria-label={t('common.loss')}>
-                    {t('common.loss')}
-                  </ToggleGroupItem>
-                </ToggleGroup>
-              </FormControl>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
-
-        <FormField
-          control={form.control}
-          name="stageId"
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel>{t('matchForm.map')}</FormLabel>
-              <Select value={String(field.value)} onValueChange={(v) => field.onChange(Number(v))}>
+                <FormLabel>{t('matchForm.result')}</FormLabel>
                 <FormControl>
-                  <SelectTrigger className="w-full">
-                    <StageSelectValue stageId={field.value} />
-                  </SelectTrigger>
+                  <ToggleGroup
+                    type="single"
+                    variant="outline"
+                    value={field.value ?? ''}
+                    onValueChange={(value) => {
+                      if (value) field.onChange(value);
+                    }}
+                  >
+                    <ToggleGroupItem value="win" aria-label={t('common.win')}>
+                      {t('common.win')}
+                    </ToggleGroupItem>
+                    <ToggleGroupItem value="loss" aria-label={t('common.loss')}>
+                      {t('common.loss')}
+                    </ToggleGroupItem>
+                  </ToggleGroup>
                 </FormControl>
-                <SelectContent>
-                  <StageSelectGroups groups={stageGroups} onToggleFavorite={toggleStageFavorite} />
-                </SelectContent>
-              </Select>
-              <StageArtPreview stageId={field.value} />
-              <FormMessage />
-            </FormItem>
-          )}
-        />
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+        </fieldset>
 
-        <StocksSelectField control={form.control} />
+        <fieldset disabled={syncLocked} className="contents">
+          <FormField
+            control={form.control}
+            name="stageId"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>{t('matchForm.map')}</FormLabel>
+                <Select
+                  value={String(field.value)}
+                  onValueChange={(v) => field.onChange(Number(v))}
+                >
+                  <FormControl>
+                    <SelectTrigger className="w-full">
+                      <StageSelectValue stageId={field.value} />
+                    </SelectTrigger>
+                  </FormControl>
+                  <SelectContent>
+                    <StageSelectGroups
+                      groups={stageGroups}
+                      onToggleFavorite={toggleStageFavorite}
+                    />
+                  </SelectContent>
+                </Select>
+                <StageArtPreview stageId={field.value} />
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+        </fieldset>
+
+        <fieldset disabled={syncLocked} className="contents">
+          <StocksSelectField control={form.control} />
+        </fieldset>
 
         <FormField
           control={form.control}
@@ -463,96 +542,160 @@ export function MatchFormFields({
           )}
         />
 
-        <FormField
-          control={form.control}
-          name="matchType"
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel>{t('matchForm.matchType')}</FormLabel>
-              <FormControl>
-                <ToggleGroup
-                  type="single"
-                  variant="outline"
-                  value={field.value}
-                  onValueChange={(value) => {
-                    if (value) field.onChange(value);
-                  }}
-                  className="flex flex-wrap justify-start"
-                >
-                  {matchTypeValues.map((value) => (
-                    <ToggleGroupItem key={value} value={value}>
-                      {matchTypeLabel(t, value)}
-                    </ToggleGroupItem>
-                  ))}
-                </ToggleGroup>
-              </FormControl>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
-
-        <TournamentFields control={form.control} />
-
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+        <fieldset disabled={syncLocked} className="contents">
           <FormField
             control={form.control}
-            name="opponentName"
+            name="matchType"
             render={({ field }) => (
               <FormItem>
-                <FormLabel>{t('matchForm.opponent')}</FormLabel>
-                <Popover open={opponentPopoverOpen} onOpenChange={setOpponentPopoverOpen}>
-                  <PopoverTrigger asChild>
-                    <FormControl>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        role="combobox"
-                        aria-expanded={opponentPopoverOpen}
-                        className="w-full justify-between font-normal"
-                      >
-                        {field.value || t('matchForm.opponentCombobox')}
-                        <ChevronsUpDown className="opacity-50" />
-                      </Button>
-                    </FormControl>
-                  </PopoverTrigger>
-                  <PopoverContent className="w-[--radix-popover-trigger-width] p-0">
-                    <Command>
-                      <CommandInput
-                        placeholder={t('matchForm.opponentSearch')}
-                        value={field.value}
-                        onValueChange={(value) => field.onChange(value)}
-                        // Select-all on focus: the field arrives pre-filled
-                        // ('unknown' on add, the saved name on edit), so
-                        // typing should replace it, not append to it.
-                        onFocus={(e) => e.currentTarget.select()}
-                      />
-                      <CommandList>
-                        <CommandEmpty>{t('matchForm.opponentAddHint')}</CommandEmpty>
-                        <CommandGroup>
-                          {opponents.map((name) => (
-                            <CommandItem
-                              key={name}
-                              value={name}
-                              onSelect={(value) => {
-                                field.onChange(value);
-                                setOpponentPopoverOpen(false);
-                              }}
-                            >
-                              <Check
-                                className={cn(field.value === name ? 'opacity-100' : 'opacity-0')}
-                              />
-                              {name}
-                            </CommandItem>
-                          ))}
-                        </CommandGroup>
-                      </CommandList>
-                    </Command>
-                  </PopoverContent>
-                </Popover>
+                <FormLabel>{t('matchForm.matchType')}</FormLabel>
+                <FormControl>
+                  <ToggleGroup
+                    type="single"
+                    variant="outline"
+                    value={field.value}
+                    onValueChange={(value) => {
+                      if (value) field.onChange(value);
+                    }}
+                    className="flex flex-wrap justify-start"
+                  >
+                    {matchTypeValues.map((value) => (
+                      <ToggleGroupItem key={value} value={value}>
+                        {matchTypeLabel(t, value)}
+                      </ToggleGroupItem>
+                    ))}
+                  </ToggleGroup>
+                </FormControl>
                 <FormMessage />
               </FormItem>
             )}
           />
+        </fieldset>
+
+        <fieldset disabled={syncLocked} className="contents">
+          <TournamentFields control={form.control} />
+        </fieldset>
+
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <FormField
+            control={form.control}
+            name="vodUrl"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>{t('shared.vod.url')}</FormLabel>
+                <FormControl>
+                  <Input {...field} type="url" placeholder={t('matchForm.vodUrlPlaceholder')} />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+
+          <FormField
+            control={form.control}
+            name="vodStartSeconds"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>{t('matchForm.vodStartSeconds.label')}</FormLabel>
+                <div className="flex items-center gap-2">
+                  <FormControl>
+                    <Input
+                      {...field}
+                      type="text"
+                      disabled={!vodLinkPresent}
+                      placeholder={t('matchForm.vodStartSeconds.placeholder')}
+                    />
+                  </FormControl>
+                  {vodStartSecondsAccessory}
+                </div>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+        </div>
+
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <fieldset disabled={syncLocked} className="contents">
+            <FormField
+              control={form.control}
+              name="opponentName"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>{t('matchForm.opponent')}</FormLabel>
+                  <Popover open={opponentPopoverOpen} onOpenChange={setOpponentPopoverOpen}>
+                    <PopoverTrigger asChild>
+                      <FormControl>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          role="combobox"
+                          aria-expanded={opponentPopoverOpen}
+                          className="w-full justify-between font-normal"
+                        >
+                          {field.value || t('matchForm.opponentCombobox')}
+                          <ChevronsUpDown className="opacity-50" />
+                        </Button>
+                      </FormControl>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-[--radix-popover-trigger-width] p-0">
+                      <Command>
+                        <CommandInput
+                          placeholder={t('matchForm.opponentSearch')}
+                          value={field.value}
+                          onValueChange={(value) => field.onChange(value)}
+                          // Select-all on focus: the field arrives pre-filled
+                          // ('unknown' on add, the saved name on edit), so
+                          // typing should replace it, not append to it.
+                          onFocus={(e) => e.currentTarget.select()}
+                          // cmdk's own Enter handling only fires an item's
+                          // onSelect when a suggestion is highlighted — typing
+                          // a brand-new name (no match in the list) leaves
+                          // nothing highlighted, so Enter silently did nothing
+                          // visible even though field.value was already
+                          // correct (human-verify: "hitting enter does not
+                          // add the name"). Explicitly commit the typed value
+                          // and close the popover on Enter so free text is
+                          // never left hanging; preventDefault covers the
+                          // (portalled, so unlikely anyway) risk of a stray
+                          // form submit. Doesn't interfere with selecting an
+                          // actual highlighted suggestion — that still runs
+                          // via cmdk's own Enter listener on the Command
+                          // root, since we don't stopPropagation.
+                          onKeyDown={(e) => {
+                            if (e.key !== 'Enter') return;
+                            e.preventDefault();
+                            field.onChange(field.value);
+                            setOpponentPopoverOpen(false);
+                          }}
+                        />
+                        <CommandList>
+                          <CommandEmpty>{t('matchForm.opponentAddHint')}</CommandEmpty>
+                          <CommandGroup>
+                            {opponents.map((name) => (
+                              <CommandItem
+                                key={name}
+                                value={name}
+                                onSelect={(value) => {
+                                  field.onChange(value);
+                                  setOpponentPopoverOpen(false);
+                                }}
+                              >
+                                <Check
+                                  className={cn(field.value === name ? 'opacity-100' : 'opacity-0')}
+                                />
+                                {name}
+                              </CommandItem>
+                            ))}
+                          </CommandGroup>
+                        </CommandList>
+                      </Command>
+                    </PopoverContent>
+                  </Popover>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+          </fieldset>
 
           <FormField
             control={form.control}

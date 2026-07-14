@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { formatTimestamp, parseTimestamp, vodDeepLink } from './vod';
+import {
+  detectVodProvider,
+  formatTimestamp,
+  parseFlexibleTimestamp,
+  parseTimestamp,
+  parseVodStartSeconds,
+  vodDeepLink,
+} from './vod';
 
 describe('vodDeepLink', () => {
   it('appends &t=<s>s for a youtube.com/watch URL', () => {
@@ -48,6 +55,12 @@ describe('vodDeepLink', () => {
   it('works for www.twitch.tv host', () => {
     expect(vodDeepLink('https://www.twitch.tv/videos/123456789', 65)).toBe(
       'https://www.twitch.tv/videos/123456789?t=1m5s',
+    );
+  });
+
+  it('works for m.twitch.tv host (mobile)', () => {
+    expect(vodDeepLink('https://m.twitch.tv/videos/123456789', 65)).toBe(
+      'https://m.twitch.tv/videos/123456789?t=1m5s',
     );
   });
 
@@ -130,5 +143,151 @@ describe('parseTimestamp', () => {
   it('round-trips with formatTimestamp', () => {
     expect(parseTimestamp(formatTimestamp(161))).toBe(161);
     expect(parseTimestamp(formatTimestamp(3661))).toBe(3661);
+  });
+});
+
+describe('detectVodProvider', () => {
+  it('extracts a YouTube long-form video id', () => {
+    expect(detectVodProvider('https://www.youtube.com/watch?v=abc123')).toEqual({
+      provider: 'youtube',
+      videoId: 'abc123',
+    });
+  });
+
+  it('extracts a YouTube short-form (youtu.be) video id', () => {
+    expect(detectVodProvider('https://youtu.be/abc123')).toEqual({
+      provider: 'youtube',
+      videoId: 'abc123',
+    });
+  });
+
+  it('extracts a YouTube short-form video id ignoring the query string', () => {
+    expect(detectVodProvider('https://youtu.be/abc123?t=45')).toEqual({
+      provider: 'youtube',
+      videoId: 'abc123',
+    });
+  });
+
+  it('extracts a Twitch VOD video id', () => {
+    expect(detectVodProvider('https://www.twitch.tv/videos/123456789')).toEqual({
+      provider: 'twitch',
+      videoId: '123456789',
+    });
+  });
+
+  it('extracts a Twitch VOD video id from a mobile (m.twitch.tv) URL', () => {
+    expect(detectVodProvider('https://m.twitch.tv/videos/123456')).toEqual({
+      provider: 'twitch',
+      videoId: '123456',
+    });
+  });
+
+  it('returns provider:null for an unsupported host', () => {
+    expect(detectVodProvider('https://vimeo.com/12345')).toEqual({ provider: null });
+  });
+
+  it('returns provider:null for a YouTube watch URL missing the v param', () => {
+    expect(detectVodProvider('https://www.youtube.com/watch')).toEqual({ provider: null });
+  });
+
+  it('returns provider:null for a malformed URL', () => {
+    expect(detectVodProvider('not-a-url')).toEqual({ provider: null });
+  });
+
+  it('returns provider:null for a Twitch live channel URL (not /videos/)', () => {
+    expect(detectVodProvider('https://www.twitch.tv/somechannel')).toEqual({ provider: null });
+  });
+});
+
+describe('parseVodStartSeconds', () => {
+  it('parses a bare-seconds t param on a youtube.com/watch URL', () => {
+    expect(parseVodStartSeconds('https://youtube.com/watch?v=abc123&t=161')).toBe(161);
+  });
+
+  it('parses a trailing-s t param on a youtube.com/watch URL', () => {
+    expect(parseVodStartSeconds('https://youtube.com/watch?v=abc123&t=161s')).toBe(161);
+  });
+
+  it('parses a duration-form t param (1h2m3s) on a youtube.com/watch URL', () => {
+    expect(parseVodStartSeconds('https://youtube.com/watch?v=abc123&t=1h2m3s')).toBe(3723);
+  });
+
+  it('parses a partial duration-form t param (2m10s) on a youtube.com/watch URL', () => {
+    expect(parseVodStartSeconds('https://youtube.com/watch?v=abc123&t=2m10s')).toBe(130);
+  });
+
+  it('falls back to the start param when t is absent on a youtube.com/watch URL', () => {
+    expect(parseVodStartSeconds('https://youtube.com/watch?v=abc123&start=90')).toBe(90);
+  });
+
+  it('prefers t over start when both are present', () => {
+    expect(parseVodStartSeconds('https://youtube.com/watch?v=abc123&start=5&t=90')).toBe(90);
+  });
+
+  it('parses a bare-seconds t param on a youtu.be short URL', () => {
+    expect(parseVodStartSeconds('https://youtu.be/abc123?t=90')).toBe(90);
+  });
+
+  it('returns 0 for a youtube.com/watch URL with no t or start param', () => {
+    expect(parseVodStartSeconds('https://youtube.com/watch?v=abc123')).toBe(0);
+  });
+
+  it('parses a duration-form t param (1h2m3s) on a twitch.tv/videos URL', () => {
+    expect(parseVodStartSeconds('https://twitch.tv/videos/123456789?t=1h2m3s')).toBe(3723);
+  });
+
+  it('parses a bare-seconds t param on a twitch.tv/videos URL', () => {
+    expect(parseVodStartSeconds('https://twitch.tv/videos/123456789?t=161')).toBe(161);
+  });
+
+  it('returns 0 for a twitch.tv/videos URL with no t param', () => {
+    expect(parseVodStartSeconds('https://twitch.tv/videos/123456789')).toBe(0);
+  });
+
+  it('returns 0 for an unrecognized host', () => {
+    expect(parseVodStartSeconds('https://example.com/some-vod?t=161')).toBe(0);
+  });
+
+  it('returns 0 for a malformed URL rather than throwing', () => {
+    expect(parseVodStartSeconds('not a url')).toBe(0);
+  });
+
+  it('returns 0 for a malformed t value', () => {
+    expect(parseVodStartSeconds('https://youtube.com/watch?v=abc123&t=notaduration')).toBe(0);
+  });
+});
+
+describe('parseFlexibleTimestamp', () => {
+  it('parses h:mm:ss clock style', () => {
+    expect(parseFlexibleTimestamp('1:23:45')).toBe(5025);
+  });
+
+  it('parses m:ss clock style', () => {
+    expect(parseFlexibleTimestamp('23:45')).toBe(1425);
+  });
+
+  it('parses bare seconds', () => {
+    expect(parseFlexibleTimestamp('5025')).toBe(5025);
+  });
+
+  it('parses 1h23m45s duration style', () => {
+    expect(parseFlexibleTimestamp('1h23m45s')).toBe(5025);
+  });
+
+  it('parses a partial duration form (2m10s)', () => {
+    expect(parseFlexibleTimestamp('2m10s')).toBe(130);
+  });
+
+  it('returns null for empty/whitespace-only input', () => {
+    expect(parseFlexibleTimestamp('')).toBeNull();
+    expect(parseFlexibleTimestamp('   ')).toBeNull();
+  });
+
+  it('returns null for out-of-range minutes/seconds in clock style', () => {
+    expect(parseFlexibleTimestamp('1:60')).toBeNull();
+  });
+
+  it('returns null for non-numeric junk', () => {
+    expect(parseFlexibleTimestamp('not a time')).toBeNull();
   });
 });

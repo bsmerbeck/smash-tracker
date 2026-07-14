@@ -6,6 +6,21 @@
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
     <link rel="manifest" href="/manifest.json" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!--
+      Scoped CSP for YouTube/Twitch VOD embeds (Phase 1: VOD Manager player).
+      Verified against the real deploy target (Firebase preview channel) per
+      plan 01-03's UAT step. Beyond the embed hosts, the app itself needs:
+      - script-src https://www.googletagmanager.com (GA4 gtag loader)
+      - script-src https://apis.google.com (Firebase Auth Google sign-in helper)
+      - script-src 'unsafe-eval' (bundle deps feature-detect Function();
+        the site shipped with no CSP before this tag, so this is not a
+        regression — tighten later if the dependency goes away)
+      - frame-src on the Firebase authDomain hosts (auth helper iframe)
+    -->
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; frame-src https://www.youtube.com https://www.youtube-nocookie.com https://player.twitch.tv https://embed.twitch.tv https://grandfinals.gg https://smash-tracker-f97b7.firebaseapp.com; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://www.youtube.com https://embed.twitch.tv https://www.googletagmanager.com https://apis.google.com; img-src 'self' https: data:; style-src 'self' 'unsafe-inline'; connect-src 'self' https:"
+    />
     <meta name="theme-color" content="#18181b" />
     <link rel="canonical" href="https://grandfinals.gg/" />
 

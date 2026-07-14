@@ -9,6 +9,7 @@
     "scoutAPlayer": "Spieler suchen",
     "aiReports": "KI-Berichte",
     "matchData": "Match-Daten",
+    "vodManager": "VODs",
     "trends": "Trends",
     "gsp": "GSP",
     "groups": "Gruppen",
@@ -36,6 +37,7 @@
     "cancel": "Abbrechen",
     "save": "Speichern",
     "delete": "Löschen",
+    "remove": "Entfernen",
     "win": "Sieg",
     "loss": "Niederlage",
     "cannotBeUndone": "Diese Aktion kann nicht rückgängig gemacht werden.",
@@ -86,9 +88,10 @@
       "noTimestamps": "Noch keine Zeitstempel-Notizen.",
       "timestampsAria": "Zeitstempel-Notizen",
       "deleteTimestamp": "Zeitstempel {{time}} löschen",
+      "editTimestamp": "Zeitstempel {{time}} bearbeiten",
       "timePlaceholder": "m:ss",
       "timeAria": "Zeitstempel-Zeit",
-      "notePlaceholder": "Notiz",
+      "notePlaceholder": "Notiz (optional)",
       "noteAria": "Zeitstempel-Notiz",
       "addTimestamp": "Zeitstempel hinzufügen",
       "timeFormatError": "Gib eine Zeit als m:ss oder h:mm:ss ein",
@@ -212,6 +215,11 @@
     "notTracked": "Nicht erfasst",
     "gspAfterMatch": "GSP nach dem Match (optional)",
     "gspPlaceholder": "z. B. 12 400 000",
+    "vodUrlPlaceholder": "https://youtube.com/watch?v=...",
+    "vodStartSeconds": {
+      "label": "Startzeit des Matches im VOD",
+      "placeholder": "z. B. 1:23:45"
+    },
     "matchType": "Match-Typ",
     "matchTypes": {
       "none": "Keiner",
@@ -241,7 +249,9 @@
       "chooseResult": "Wähle ein Ergebnis",
       "opponentRequired": "Gegnername ist erforderlich",
       "charLimit": "Maximal {{max}} Zeichen",
-      "gspFormat": "Gib eine Zahl wie 12 400 000 ein (oder lass das Feld leer)"
+      "gspFormat": "Gib eine Zahl wie 12 400 000 ein (oder lass das Feld leer)",
+      "vodUrlInvalid": "Gib eine gültige URL ein (oder lass das Feld leer)",
+      "vodStartSecondsInvalid": "Gib eine Zeit als m:ss, h:mm:ss oder in Sekunden ein (oder lass das Feld leer)"
     },
     "set": {
       "format": "Set-Format",
@@ -437,6 +447,17 @@
       },
       "editVod": "VOD-Notizen bearbeiten",
       "addVod": "VOD-Notizen hinzufügen",
+      "watchVod": "VOD ansehen",
+      "vodMenu": {
+        "goToManager": "Zum VOD-Manager",
+        "editLink": "VOD-Link bearbeiten",
+        "removeLink": "VOD-Link entfernen"
+      },
+      "removeVodConfirm": {
+        "title": "Diesen VOD-Link entfernen?",
+        "removed": "VOD-Link entfernt",
+        "removeFailed": "VOD-Link konnte nicht entfernt werden. Bitte erneut versuchen."
+      },
       "synced": "Synchronisiert",
       "syncedTitle": "Synchronisiert von {{source}} — die Spieldaten verwaltet der Sync",
       "editMatch": "Match bearbeiten",
@@ -463,6 +484,119 @@
       "winsShort": "{{count}}S",
       "lossesShort": "{{count}}N"
     }
+  },
+  "vodManager": {
+    "title": "VOD-Manager",
+    "emptyState": "Noch keine VODs",
+    "filters": {
+      "fighter": "Kämpfer",
+      "opponentFighter": "Gegner-Charakter",
+      "opponent": "Gegner",
+      "tournament": "Turnier",
+      "stage": "Stage",
+      "allOption": "Alle",
+      "tagsLabel": "Tags"
+    },
+    "sort": {
+      "newest": "Neueste zuerst",
+      "oldest": "Älteste zuerst"
+    },
+    "playerPlaceholder": "Wähle ein Match, um dessen VOD anzusehen.",
+    "playerUnavailable": "Dieses VOD ist nicht mehr verfügbar.",
+    "openOnHost": "Auf {{host}} öffnen",
+    "selectMatchAria": "Match gegen {{opponent}} auswählen",
+    "startTime": "Startzeit",
+    "useCurrentTime": "Aktuelle Wiedergabezeit übernehmen",
+    "meta": {
+      "edit": "Details bearbeiten"
+    },
+    "composer": {
+      "title": "Notiz hinzufügen"
+    },
+    "notes": {
+      "saveEdit": "Zeitstempel-Bearbeitung speichern",
+      "cancelEdit": "Zeitstempel-Bearbeitung abbrechen",
+      "deleteConfirmTitle": "Diese Zeitstempel-Notiz löschen?",
+      "editTimeAria": "Zeitstempel-Zeit bearbeiten",
+      "editNoteAria": "Zeitstempel-Notiz bearbeiten",
+      "filterByTag": "Nach Tag filtern",
+      "filterByTagAria": "Notizen nach {{label}} filtern",
+      "noMatchingNotes": "Keine Notizen entsprechen dem ausgewählten Filter"
+    },
+    "playlists": {
+      "library": "Bibliothek",
+      "newPlaylist": "Neue Playlist",
+      "createPlaceholder": "Playlist-Name",
+      "create": "Erstellen",
+      "createNamed": "„{{name}}“ erstellen",
+      "selectAria": "Playlist auswählen",
+      "empty": "Noch keine Matches in dieser Playlist",
+      "limitReached": "Playlist-Limit erreicht ({{max}})",
+      "matchCount_one": "{{count}} Match",
+      "matchCount_other": "{{count}} Matches",
+      "addToPlaylist": "Zur Playlist hinzufügen",
+      "addToPlaylistAria": "Dieses Match zu einer Playlist hinzufügen",
+      "added": "Zur Playlist hinzugefügt",
+      "moveUp": "Nach oben",
+      "moveDown": "Nach unten",
+      "removeFromPlaylist": "Aus Playlist entfernen",
+      "rename": "Umbenennen",
+      "renamePlaceholder": "Playlist umbenennen",
+      "saveRenameAria": "Playlist-Namen speichern",
+      "cancelRenameAria": "Umbenennen abbrechen",
+      "delete": "Löschen",
+      "deleteConfirmTitle": "Diese Playlist löschen?"
+    },
+    "playback": {
+      "position": "{{current}} von {{total}}",
+      "prev": "Vorheriges Match",
+      "next": "Nächstes Match",
+      "autoplayBlocked": "Automatische Wiedergabe wurde blockiert — zum Fortfahren auf Play drücken"
+    },
+    "capture": {
+      "title": "Schnell-Tags",
+      "customize": "Anpassen",
+      "customizeAria": "Schnell-Tags anpassen",
+      "doneCustomizeAria": "Anpassen der Schnell-Tags beenden",
+      "saveCustomizeAria": "Schnell-Tags speichern",
+      "done": "Fertig",
+      "removeQuickTagAria": "{{label}} aus den Schnell-Tags entfernen",
+      "quickTagAria": "Schnell-Tag: {{label}}",
+      "quickTagHint": "Tippe auf einen Tag, um diesen Moment festzuhalten",
+      "prevTimestamp": "Vorherige Notiz",
+      "nextTimestamp": "Nächste Notiz"
+    },
+    "player": {
+      "compactAria": "Zu kompaktem Player wechseln",
+      "fillAria": "Zu Player in voller Größe wechseln"
+    }
+  },
+  "tags": {
+    "preset": {
+      "tournament-set": "Turnier-Set",
+      "practice-friendlies": "Übung/Friendlies",
+      "bad-matchup": "Schlechtes Matchup",
+      "good-read-highlight": "Guter Read/Highlight",
+      "to-review": "Zu überprüfen",
+      "neutral": "Neutral",
+      "punish": "Punish",
+      "edgeguard": "Edgeguard",
+      "recovery": "Recovery",
+      "kill-confirm": "Kill-Bestätigung",
+      "defense": "Verteidigung",
+      "mixup": "Mixup",
+      "matchup-note": "Matchup-Notiz",
+      "mental-game": "Mentalspiel",
+      "mistake": "Fehler",
+      "highlight": "Highlight"
+    },
+    "combobox": {
+      "placeholder": "Tag suchen oder erstellen...",
+      "create": "\"{{tag}}\" erstellen",
+      "empty": "Keine Tags gefunden."
+    },
+    "addAria": "Tag hinzufügen",
+    "removeAria": "Tag {{tag}} entfernen"
   },
   "matchups": {
     "loading": "Matchups werden geladen...",
