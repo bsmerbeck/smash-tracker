@@ -30,8 +30,8 @@ const DEFAULT_WIN_RATE_PERCENT = 50;
  * (`estimateT(now)` with no `TCalibration`).
  */
 export function GspCalculatorPage() {
-  // V12 SEO: base title is 55 chars; appending " | Smash Tracker" (16 more)
-  // would push it to 71 — over the ~65-char threshold search results
+  // V12 SEO: base title is 55 chars; appending " | grandfinals.gg" (17 more)
+  // would push it to 72 — over the ~65-char threshold search results
   // typically render before truncating — so the brand suffix is dropped here.
   const title = 'Elite Smash GSP Calculator — GSP to MMR & Road to Elite';
   useSeo({
@@ -260,7 +260,7 @@ export function GspCalculatorPage() {
             <p>
               This is a community reverse-engineered model, not Nintendo&apos;s published algorithm
               &mdash; treat every number here as an estimate (typically within a few GSP in the main
-              curve, less precise in the tails), not a guarantee. Smash Tracker is not affiliated
+              curve, less precise in the tails), not a guarantee. grandfinals.gg is not affiliated
               with or endorsed by Nintendo.
             </p>
           </section>
@@ -270,7 +270,7 @@ export function GspCalculatorPage() {
           <CardContent className="flex flex-col items-center gap-3 py-4 text-center">
             <h2 className="text-lg font-semibold">Track your GSP automatically</h2>
             <p className="max-w-md text-sm text-muted-foreground">
-              Log matches on Smash Tracker and this same model charts your climb per character,
+              Log matches on grandfinals.gg and this same model charts your climb per character,
               tracks your win rate, and updates your Road to Elite projection as you play &mdash;
               free.
             </p>

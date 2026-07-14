@@ -73,7 +73,7 @@ describe('HomePage', () => {
     renderHome();
 
     expect(
-      await screen.findByRole('heading', { level: 1, name: 'Smash Tracker' }),
+      await screen.findByRole('heading', { level: 1, name: 'grandfinals.gg' }),
     ).toBeInTheDocument();
     expect(
       screen.getByText('Free analytics for competitive Super Smash Bros. Ultimate players.'),
@@ -115,7 +115,7 @@ describe('HomePage', () => {
 
     expect(await screen.findByText('Dashboard content')).toBeInTheDocument();
     expect(
-      screen.queryByRole('heading', { level: 1, name: 'Smash Tracker' }),
+      screen.queryByRole('heading', { level: 1, name: 'grandfinals.gg' }),
     ).not.toBeInTheDocument();
   });
 });
