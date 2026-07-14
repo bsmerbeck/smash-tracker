@@ -4,7 +4,7 @@ import { useSeo } from '@/hooks/useSeo';
 
 /** V12 SEO: noindex — a 404 page has no unique content worth ranking, and indexing it would waste crawl budget. */
 export function NotFoundPage() {
-  useSeo({ title: 'Page not found | Smash Tracker', noindex: true });
+  useSeo({ title: 'Page not found | grandfinals.gg', noindex: true });
 
   return (
     <div className="flex min-h-svh flex-col items-center justify-center gap-4 px-4 text-center">

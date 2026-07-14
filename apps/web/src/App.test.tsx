@@ -40,7 +40,7 @@ describe('App', () => {
     render(<App />);
 
     expect(
-      await screen.findByRole('heading', { level: 1, name: /smash tracker/i }),
+      await screen.findByRole('heading', { level: 1, name: /grandfinals\.gg/i }),
     ).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /^sign in$/i })).toBeInTheDocument();
   });

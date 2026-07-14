@@ -32,7 +32,7 @@ describe('FaqPage', () => {
     renderFaqPage();
 
     expect(await screen.findByText(faqEntries[0]!.question)).toBeInTheDocument();
-    expect(document.title).toBe('Frequently Asked Questions | Smash Tracker');
+    expect(document.title).toBe('Frequently Asked Questions | grandfinals.gg');
   });
 
   it('emits FAQPage JSON-LD generated from faqEntries', () => {

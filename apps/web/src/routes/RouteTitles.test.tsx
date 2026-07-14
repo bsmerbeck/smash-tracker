@@ -21,7 +21,7 @@ describe('RouteTitles', () => {
 
   it('applies the translated title to the document (English under the test fallback)', () => {
     renderAt('/matchups');
-    expect(document.title).toBe('Matchups | Smash Tracker');
+    expect(document.title).toBe('Matchups | grandfinals.gg');
   });
 
   it('titles tournament detail pages', () => {

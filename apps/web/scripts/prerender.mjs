@@ -35,14 +35,14 @@ const ROUTES = [
     out: 'index.html',
     readySelector: '#features-heading',
     mustInclude: 'Everything a competitive Smash Ultimate player needs',
-    expectTitle: 'Smash Tracker — Free Super Smash Bros. Ultimate Analytics & GSP Tracker',
+    expectTitle: 'grandfinals.gg — Free Super Smash Bros. Ultimate Analytics & GSP Tracker',
   },
   {
     path: '/faq',
     out: 'faq/index.html',
     readySelector: 'h1',
     mustInclude: 'Frequently asked questions',
-    expectTitle: 'Frequently Asked Questions | Smash Tracker',
+    expectTitle: 'Frequently Asked Questions | grandfinals.gg',
   },
   {
     path: '/gsp-calculator',
