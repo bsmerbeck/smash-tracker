@@ -84,6 +84,38 @@ describe('GET /api/matches', () => {
 
     expect(response.statusCode).toBe(401);
   });
+
+  it('skips a corrupt record instead of failing the whole list (safeParse-and-skip)', async () => {
+    const { app, database } = buildTestApp();
+
+    database.seed(`matches/${TEST_UID}`, {
+      goodKey: {
+        fighter_id: 1,
+        opponent_id: 8,
+        time: 1700000000000,
+        win: true,
+      },
+      // Real prod corruption shape: `time` stored as a string 500'd the
+      // entire GET /api/matches for the affected user (2026-07-06 onward).
+      corruptKey: {
+        fighter_id: 1,
+        opponent_id: 8,
+        time: '1700000000001',
+        win: false,
+      },
+    });
+
+    const response = await app.inject({
+      method: 'GET',
+      url: '/api/matches',
+      headers: authHeader(),
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual([
+      { id: 'goodKey', fighter_id: 1, opponent_id: 8, time: 1700000000000, win: true },
+    ]);
+  });
 });
 
 describe('POST /api/matches', () => {

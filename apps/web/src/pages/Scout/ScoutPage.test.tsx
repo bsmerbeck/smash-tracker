@@ -34,6 +34,14 @@ vi.mock('@/lib/firebase', async () => {
   return mock.firebaseLibMock();
 });
 
+// parry.gg status drives whether the source toggle (and the V13 "Both" mode)
+// is shown. Default false so the single-source tests keep the parry-free input
+// aria; the combined test flips it true for its duration.
+const parryStatus = vi.hoisted(() => ({ isSuccess: false }));
+vi.mock('@/hooks/useParrygg', () => ({
+  useParryggStatus: () => parryStatus,
+}));
+
 const scoutLookup = vi.fn();
 const matchesList = vi.fn().mockResolvedValue([]);
 const upsertMe = vi.fn().mockResolvedValue({ uid: 'test-uid', email: 'test@example.com' });
@@ -354,6 +362,48 @@ describe('ScoutPage — AI reports feature enabled', () => {
     reportsList.mockResolvedValue([]);
     billingCredits.mockResolvedValue({ freeAccess: false, balance: 0, packs: [] });
     setMockUser(makeMockUser());
+  });
+
+  afterEach(() => {
+    parryStatus.isSuccess = false;
+  });
+
+  it('V13: plumbs a combined "Both" request through to scout and report generation', async () => {
+    parryStatus.isSuccess = true;
+    const user = userEvent.setup();
+    const combinedReport = {
+      ...REPORT,
+      player: {
+        source: 'combined' as const,
+        id: 1802316,
+        userSlug: 'user/07dc2239',
+        parryUserId: '019ce9ba-debd-7e11-84a2-77258f52644e',
+        gamerTag: 'Pandem1c',
+      },
+    };
+    scoutLookup.mockResolvedValue(combinedReport);
+    reportsGenerate.mockResolvedValue(GENERATED_RECORD);
+
+    renderPage();
+    await user.click(screen.getByRole('radio', { name: 'Both' }));
+    await user.type(screen.getByLabelText(/start\.gg profile URL/), 'user/07dc2239');
+    await user.type(screen.getByLabelText(/parry\.gg profile URL/), 'Pandem1c');
+    await user.click(screen.getByRole('button', { name: 'Scout' }));
+
+    const combinedRequest = {
+      query: 'user/07dc2239',
+      source: 'startgg',
+      combineWith: { query: 'Pandem1c', source: 'parrygg' },
+    };
+    await waitFor(() => expect(scoutLookup).toHaveBeenCalledWith(combinedRequest));
+
+    // The combined header renders both site labels and the combined caption.
+    expect(await screen.findByText('Pandem1c')).toBeInTheDocument();
+    expect(screen.getByText(/Public start\.gg \+ parry\.gg data/)).toBeInTheDocument();
+
+    // Regenerate re-uses the exact combined request (lastQuery plumbing).
+    await user.click(screen.getByRole('button', { name: /Generate AI report/ }));
+    await waitFor(() => expect(reportsGenerate).toHaveBeenCalledWith(combinedRequest));
   });
 
   it('shows the "Generate AI report" button once a scout result is on screen', async () => {
