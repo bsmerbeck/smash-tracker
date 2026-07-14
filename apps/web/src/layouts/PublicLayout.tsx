@@ -15,7 +15,7 @@ export function PublicLayout({ children }: { children: ReactNode }) {
     <div className="flex min-h-svh flex-col">
       <header className="sticky top-0 z-40 flex h-14 items-center gap-4 border-b bg-background px-4">
         <Link to="/" className="text-lg font-semibold tracking-tight">
-          Smash Tracker
+          grandfinals.gg
         </Link>
         <div className="flex-1" />
         <Link to="/" className="text-sm font-medium text-muted-foreground hover:text-foreground">
