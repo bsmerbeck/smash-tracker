@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { act, render, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes } from 'react-router';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -2696,5 +2696,364 @@ describe('VodManagerPage', () => {
     // No `?match=` at all — Library sorts newest-first by default, so m2 auto-selects.
     renderVodManager('/vod');
     await waitFor(() => expect(screen.getByText('vs. rival-two')).toBeInTheDocument());
+  });
+
+  it('retest fix-up #11: the Twitch proactive end-guard advances to the next match ~1.5s before the video truly ends, without ENDED ever needing to fire', async () => {
+    vi.useFakeTimers();
+    try {
+      // Library sorts "newest" by default (no playlist active) — m1 (later
+      // `time`) must sort FIRST so it has a "next" (m2) to advance to.
+      listMatches.mockResolvedValue([
+        makeMatch({
+          id: 'm1',
+          opponent: 'rival-one',
+          time: 1_700_000_100_000,
+          vodUrl: 'https://twitch.tv/videos/98765',
+        }),
+        makeMatch({
+          id: 'm2',
+          opponent: 'rival-two',
+          time: 1_700_000_000_000,
+          vodUrl: 'https://youtube.com/watch?v=xyz789',
+        }),
+      ]);
+
+      let currentTime = 0;
+      const getCurrentTime = vi.fn(() => currentTime);
+      const getDuration = vi.fn(() => 125);
+      const listeners: Record<string, () => void> = {};
+      const addEventListener = vi.fn((event: string, callback: () => void) => {
+        listeners[event] = callback;
+      });
+      const TwitchPlayer = vi.fn(function (this: unknown): TwitchPlayerInstance {
+        return { seek: vi.fn(), pause: vi.fn(), addEventListener, getCurrentTime, getDuration };
+      });
+      (TwitchPlayer as unknown as { READY: string; ENDED: string }).READY = 'ready';
+      (TwitchPlayer as unknown as { READY: string; ENDED: string }).ENDED = 'ended';
+      window.Twitch = { Player: TwitchPlayer as unknown as TwitchGlobal['Player'] };
+
+      const ytConfigs: YouTubePlayerConfig[] = [];
+      const YTPlayer = vi.fn(function (
+        this: unknown,
+        _el: HTMLElement,
+        config: YouTubePlayerConfig,
+      ): YouTubePlayerInstance {
+        ytConfigs.push(config);
+        return {
+          seekTo: vi.fn(),
+          playVideo: vi.fn(),
+          pauseVideo: vi.fn(),
+          destroy: vi.fn(),
+          getCurrentTime: vi.fn(() => 0),
+        };
+      });
+      window.YT = {
+        Player: YTPlayer as unknown as YTGlobal['Player'],
+        PlayerState: { ENDED: 0 },
+      };
+
+      renderVodManager('/vod?match=m1');
+      await vi.waitFor(() => expect(TwitchPlayer).toHaveBeenCalledTimes(1));
+      act(() => {
+        listeners.ready?.();
+      });
+      await vi.waitFor(() => expect(screen.getByText('vs. rival-one')).toBeInTheDocument());
+
+      // Crosses duration(125) - 1.5s while the player is still safely
+      // non-ended — the real `ended` listener is NEVER invoked in this test.
+      currentTime = 124;
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(500);
+      });
+
+      // Different identity (YouTube xyz789) — the guard trip advances via
+      // the SAME path ENDED uses, requesting autoplay on the new
+      // construction.
+      await vi.waitFor(() => expect(screen.getByText('vs. rival-two')).toBeInTheDocument());
+      expect(YTPlayer).toHaveBeenCalledTimes(1);
+      expect(ytConfigs[0]?.playerVars?.autoplay).toBe(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('retest fix-up #11: with no next match, the Twitch proactive end-guard pauses in place (never seeks) and still flags drift for reselect recovery', async () => {
+    vi.useFakeTimers();
+    try {
+      listMatches.mockResolvedValue([
+        makeMatch({
+          id: 'm1',
+          opponent: 'rival-one',
+          vodUrl: 'https://twitch.tv/videos/98765',
+        }),
+      ]);
+
+      let currentTime = 0;
+      const getCurrentTime = vi.fn(() => currentTime);
+      const getDuration = vi.fn(() => 125);
+      const seek = vi.fn();
+      const pause = vi.fn();
+      const destroy = vi.fn();
+      const listeners: Record<string, () => void> = {};
+      const addEventListener = vi.fn((event: string, callback: () => void) => {
+        listeners[event] = callback;
+      });
+      const configs: TwitchPlayerConfig[] = [];
+      const Player = vi.fn(function (
+        this: unknown,
+        _el: HTMLElement,
+        config: TwitchPlayerConfig,
+      ): TwitchPlayerInstance {
+        configs.push(config);
+        return { seek, pause, addEventListener, destroy, getCurrentTime, getDuration };
+      });
+      (Player as unknown as { READY: string; ENDED: string }).READY = 'ready';
+      (Player as unknown as { READY: string; ENDED: string }).ENDED = 'ended';
+      window.Twitch = { Player: Player as unknown as TwitchGlobal['Player'] };
+
+      renderVodManager('/vod?match=m1');
+      await vi.waitFor(() => expect(Player).toHaveBeenCalledTimes(1));
+      act(() => {
+        listeners.ready?.();
+      });
+      await vi.waitFor(() => expect(screen.getByText('vs. rival-one')).toBeInTheDocument());
+
+      currentTime = 124;
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(500);
+      });
+
+      // Plain pause in place — never the pauseAtEnd seek-back workaround
+      // (only needed once the player has ALREADY entered the ended state,
+      // which the proactive guard prevents entirely).
+      await vi.waitFor(() => expect(pause).toHaveBeenCalledTimes(1));
+      expect(seek).not.toHaveBeenCalled();
+      expect(Player).toHaveBeenCalledTimes(1);
+
+      // Drift is still flagged — reselecting the SAME match forces a fresh
+      // player construction (second layer of hijack recovery). Plain
+      // `fireEvent.click` (not `userEvent`, which deadlocks against fake
+      // timers here) — a synchronous DOM click is all this needs.
+      act(() => {
+        fireEvent.click(screen.getByRole('button', { name: 'Select match vs rival-one' }));
+      });
+      await vi.waitFor(() => expect(Player).toHaveBeenCalledTimes(2));
+      expect(destroy).toHaveBeenCalledTimes(1);
+      expect(configs[1]?.video).toBe('98765');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('retest fix-up #12: toggling a note-tag filter chip hides non-matching notes, and Prev/Next timestamp navigation only visits the VISIBLE set', async () => {
+    const user = userEvent.setup();
+    listMatches.mockResolvedValue([
+      makeMatch({
+        id: 'm1',
+        opponent: 'rival-one',
+        vodUrl: 'https://youtube.com/watch?v=abc123',
+        vodTimestamps: [
+          { seconds: 30, note: 'note A', tags: ['mistake'] },
+          { seconds: 90, note: 'note B', tags: ['punish'] },
+          { seconds: 150, note: 'note C', tags: ['mistake'] },
+        ],
+      }),
+    ]);
+
+    const seekTo = vi.fn();
+    let capturedConfig: YouTubePlayerConfig | undefined;
+    const Player = vi.fn(function (
+      this: unknown,
+      _el: HTMLElement,
+      config: YouTubePlayerConfig,
+    ): YouTubePlayerInstance {
+      capturedConfig = config;
+      return {
+        seekTo,
+        playVideo: vi.fn(),
+        pauseVideo: vi.fn(),
+        destroy: vi.fn(),
+        getCurrentTime: vi.fn(() => 0),
+      };
+    });
+    window.YT = { Player: Player as unknown as YTGlobal['Player'], PlayerState: { ENDED: 0 } };
+
+    renderVodManager('/vod?match=m1');
+    await waitFor(() => expect(Player).toHaveBeenCalledTimes(1));
+    act(() => {
+      capturedConfig?.events?.onReady?.();
+    });
+
+    // All three notes render initially.
+    expect(screen.getByText('note A')).toBeInTheDocument();
+    expect(screen.getByText('note B')).toBeInTheDocument();
+    expect(screen.getByText('note C')).toBeInTheDocument();
+
+    // (1) Toggling the "Mistake" filter chip hides note B (punish-only).
+    await user.click(screen.getByRole('button', { name: 'Filter notes by Mistake' }));
+    expect(screen.getByText('note A')).toBeInTheDocument();
+    expect(screen.queryByText('note B')).not.toBeInTheDocument();
+    expect(screen.getByText('note C')).toBeInTheDocument();
+
+    // (2) Prev/Next TIMESTAMP navigation only visits the VISIBLE (filtered)
+    // notes — Next skips straight from note A (30s) to note C (150s),
+    // never landing on the filtered-out note B (90s).
+    const nextButton = screen.getByRole('button', { name: 'Next note' });
+    await user.click(nextButton);
+    await waitFor(() => expect(seekTo).toHaveBeenCalledWith(30, true));
+    await user.click(nextButton);
+    await waitFor(() => expect(seekTo).toHaveBeenCalledWith(150, true));
+
+    // (3) Clearing the filter (toggling the same chip off) shows all notes
+    // again.
+    await user.click(screen.getByRole('button', { name: 'Filter notes by Mistake' }));
+    expect(screen.getByText('note B')).toBeInTheDocument();
+  });
+
+  it('retest fix-up #12: editing a note while a tag filter is active PATCHes the CORRECT underlying note (index mapping survives filtering)', async () => {
+    const user = userEvent.setup();
+    listMatches.mockResolvedValue([
+      makeMatch({
+        id: 'm1',
+        opponent: 'rival-one',
+        vodUrl: 'https://youtube.com/watch?v=abc123',
+        vodTimestamps: [
+          { seconds: 30, note: 'note A', tags: ['mistake'] },
+          { seconds: 90, note: 'note B', tags: ['punish'] },
+          { seconds: 150, note: 'note C', tags: ['mistake'] },
+        ],
+      }),
+    ]);
+
+    let capturedConfig: YouTubePlayerConfig | undefined;
+    const Player = vi.fn(function (
+      this: unknown,
+      _el: HTMLElement,
+      config: YouTubePlayerConfig,
+    ): YouTubePlayerInstance {
+      capturedConfig = config;
+      return {
+        seekTo: vi.fn(),
+        playVideo: vi.fn(),
+        pauseVideo: vi.fn(),
+        destroy: vi.fn(),
+        getCurrentTime: vi.fn(() => 0),
+      };
+    });
+    window.YT = { Player: Player as unknown as YTGlobal['Player'], PlayerState: { ENDED: 0 } };
+
+    renderVodManager('/vod?match=m1');
+    await waitFor(() => expect(Player).toHaveBeenCalledTimes(1));
+    act(() => {
+      capturedConfig?.events?.onReady?.();
+    });
+
+    // Filter to "Mistake" — hides note B (the underlying index-1 note),
+    // leaving note A (index 0) and note C (index 2) visible, in that order.
+    await user.click(screen.getByRole('button', { name: 'Filter notes by Mistake' }));
+    expect(screen.queryByText('note B')).not.toBeInTheDocument();
+
+    // Editing note C — the SECOND VISIBLE row, but the THIRD underlying
+    // note (150s) — must PATCH that exact entry, leaving A/B untouched.
+    await user.click(screen.getByLabelText('Edit timestamp 2:30'));
+    const noteInput = screen.getByLabelText('Edit timestamp note');
+    await user.clear(noteInput);
+    await user.type(noteInput, 'note C edited{Enter}');
+
+    await waitFor(() => expect(updateMatch).toHaveBeenCalledTimes(1));
+    const [id, input] = updateMatch.mock.calls[0] as [string, Record<string, unknown>];
+    expect(id).toBe('m1');
+    expect(input.vodTimestamps).toEqual([
+      { seconds: 30, note: 'note A', tags: ['mistake'] },
+      { seconds: 90, note: 'note B', tags: ['punish'] },
+      { seconds: 150, note: 'note C edited', tags: ['mistake'] },
+    ]);
+  });
+
+  it('retest fix-up #12: deleting a note while a tag filter is active removes the CORRECT underlying note (index mapping survives filtering)', async () => {
+    const user = userEvent.setup();
+    listMatches.mockResolvedValue([
+      makeMatch({
+        id: 'm1',
+        opponent: 'rival-one',
+        vodUrl: 'https://youtube.com/watch?v=abc123',
+        vodTimestamps: [
+          { seconds: 30, note: 'note A', tags: ['mistake'] },
+          { seconds: 90, note: 'note B', tags: ['punish'] },
+          { seconds: 150, note: 'note C', tags: ['mistake'] },
+        ],
+      }),
+    ]);
+
+    let capturedConfig: YouTubePlayerConfig | undefined;
+    const Player = vi.fn(function (
+      this: unknown,
+      _el: HTMLElement,
+      config: YouTubePlayerConfig,
+    ): YouTubePlayerInstance {
+      capturedConfig = config;
+      return {
+        seekTo: vi.fn(),
+        playVideo: vi.fn(),
+        pauseVideo: vi.fn(),
+        destroy: vi.fn(),
+        getCurrentTime: vi.fn(() => 0),
+      };
+    });
+    window.YT = { Player: Player as unknown as YTGlobal['Player'], PlayerState: { ENDED: 0 } };
+
+    renderVodManager('/vod?match=m1');
+    await waitFor(() => expect(Player).toHaveBeenCalledTimes(1));
+    act(() => {
+      capturedConfig?.events?.onReady?.();
+    });
+
+    await user.click(screen.getByRole('button', { name: 'Filter notes by Mistake' }));
+    expect(screen.queryByText('note B')).not.toBeInTheDocument();
+
+    // Deleting note C (second visible row, third underlying note).
+    await user.click(screen.getByLabelText('Delete timestamp 2:30'));
+    const alert = await screen.findByRole('alertdialog');
+    await user.click(within(alert).getByRole('button', { name: 'Remove' }));
+
+    await waitFor(() => expect(updateMatch).toHaveBeenCalledTimes(1));
+    const [id, input] = updateMatch.mock.calls[0] as [string, Record<string, unknown>];
+    expect(id).toBe('m1');
+    // note A and note B (the filtered-OUT note) both survive untouched —
+    // only note C (the note actually clicked) is removed.
+    expect(input.vodTimestamps).toEqual([
+      { seconds: 30, note: 'note A', tags: ['mistake'] },
+      { seconds: 90, note: 'note B', tags: ['punish'] },
+    ]);
+  });
+
+  it('retest fix-up #12: the note-tag filter chip row is hidden entirely when no note on the match has any tag', async () => {
+    listMatches.mockResolvedValue([
+      makeMatch({
+        id: 'm1',
+        opponent: 'rival-one',
+        vodUrl: 'https://youtube.com/watch?v=abc123',
+        vodTimestamps: [{ seconds: 30, note: 'note A' }],
+      }),
+    ]);
+
+    window.YT = {
+      Player: vi.fn(function (this: unknown) {
+        return {
+          seekTo: vi.fn(),
+          playVideo: vi.fn(),
+          pauseVideo: vi.fn(),
+          destroy: vi.fn(),
+          getCurrentTime: vi.fn(() => 0),
+        };
+      }) as unknown as YTGlobal['Player'],
+      PlayerState: { ENDED: 0 },
+    };
+
+    renderVodManager('/vod?match=m1');
+    await waitFor(() => expect(screen.getByText('note A')).toBeInTheDocument());
+
+    // No note has any tag — the filter chip row never renders.
+    expect(screen.queryByText('Filter by tag')).not.toBeInTheDocument();
   });
 });
