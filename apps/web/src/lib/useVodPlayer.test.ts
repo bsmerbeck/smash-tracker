@@ -586,6 +586,194 @@ describe('useVodPlayer', () => {
     expect(pause).toHaveBeenCalledTimes(1);
   });
 
+  it('retest fix-up #11: Twitch proactive end-guard fires onEndGuard once currentTime crosses duration - 1.5s, before ENDED ever fires', async () => {
+    vi.useFakeTimers();
+    try {
+      const onEndGuard = vi.fn();
+      const onEnded = vi.fn();
+      let currentTime = 0;
+      const getCurrentTime = vi.fn(() => currentTime);
+      const getDuration = vi.fn(() => 125);
+      const addEventListener = vi.fn((event: string, callback: () => void) => {
+        if (event === 'ready') {
+          readyCallback = callback;
+        }
+      });
+      let readyCallback: (() => void) | undefined;
+      const Player = vi.fn(function (this: unknown): TwitchPlayerInstance {
+        return { seek: vi.fn(), pause: vi.fn(), addEventListener, getCurrentTime, getDuration };
+      });
+      (Player as unknown as { READY: string }).READY = 'ready';
+      window.Twitch = { Player: Player as unknown as TwitchGlobal['Player'] };
+
+      const { useVodPlayer } = await import('./useVodPlayer');
+      const { result } = renderHook(() =>
+        useVodPlayer({ vodUrl: 'https://twitch.tv/videos/98765', onEnded, onEndGuard }),
+      );
+      result.current.containerRef.current = document.createElement('div');
+
+      await vi.waitFor(() => expect(Player).toHaveBeenCalledTimes(1));
+      act(() => {
+        readyCallback?.();
+      });
+      await vi.waitFor(() => expect(result.current.isReady).toBe(true));
+
+      // Still well before the threshold — no fire.
+      currentTime = 100;
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(500);
+      });
+      expect(onEndGuard).not.toHaveBeenCalled();
+
+      // Crosses duration (125) - 1.5s = 123.5s.
+      currentTime = 124;
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(500);
+      });
+      expect(onEndGuard).toHaveBeenCalledTimes(1);
+      expect(onEnded).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('retest fix-up #11: the end-guard interval is cleared on identity change and on unmount', async () => {
+    vi.useFakeTimers();
+    try {
+      const onEndGuard = vi.fn();
+      const getCurrentTime = vi.fn(() => 0);
+      const getDuration = vi.fn(() => 125);
+      const listeners: Record<string, () => void> = {};
+      const addEventListener = vi.fn((event: string, callback: () => void) => {
+        listeners[event] = callback;
+      });
+      const Player = vi.fn(function (this: unknown): TwitchPlayerInstance {
+        return { seek: vi.fn(), pause: vi.fn(), addEventListener, getCurrentTime, getDuration };
+      });
+      (Player as unknown as { READY: string }).READY = 'ready';
+      window.Twitch = { Player: Player as unknown as TwitchGlobal['Player'] };
+
+      const { useVodPlayer } = await import('./useVodPlayer');
+      const { result, rerender, unmount } = renderHook(
+        ({ vodUrl }: { vodUrl: string }) => useVodPlayer({ vodUrl, onEndGuard }),
+        { initialProps: { vodUrl: 'https://twitch.tv/videos/98765' } },
+      );
+      result.current.containerRef.current = document.createElement('div');
+
+      await vi.waitFor(() => expect(Player).toHaveBeenCalledTimes(1));
+      act(() => {
+        listeners.ready?.();
+      });
+      await vi.waitFor(() => expect(result.current.isReady).toBe(true));
+
+      // Switching to a different video identity must clear the old
+      // interval — a stale timer must never keep polling the OLD player
+      // instance or fire the NEW hook's onEndGuard unexpectedly.
+      result.current.containerRef.current = document.createElement('div');
+      rerender({ vodUrl: 'https://twitch.tv/videos/55555' });
+      await vi.waitFor(() => expect(Player).toHaveBeenCalledTimes(2));
+      act(() => {
+        listeners.ready?.();
+      });
+      await vi.waitFor(() => expect(result.current.isReady).toBe(true));
+
+      const callsBeforeUnmount = getCurrentTime.mock.calls.length;
+      unmount();
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(5000);
+      });
+      // No interval keeps polling after unmount.
+      expect(getCurrentTime.mock.calls.length).toBe(callsBeforeUnmount);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('retest fix-up #11: the end-guard never fires while duration is 0/NaN (VOD metadata not ready)', async () => {
+    vi.useFakeTimers();
+    try {
+      const onEndGuard = vi.fn();
+      const getCurrentTime = vi.fn(() => 999);
+      const getDuration = vi.fn(() => 0);
+      const addEventListener = vi.fn((event: string, callback: () => void) => {
+        if (event === 'ready') {
+          readyCallback = callback;
+        }
+      });
+      let readyCallback: (() => void) | undefined;
+      const Player = vi.fn(function (this: unknown): TwitchPlayerInstance {
+        return { seek: vi.fn(), pause: vi.fn(), addEventListener, getCurrentTime, getDuration };
+      });
+      (Player as unknown as { READY: string }).READY = 'ready';
+      window.Twitch = { Player: Player as unknown as TwitchGlobal['Player'] };
+
+      const { useVodPlayer } = await import('./useVodPlayer');
+      const { result } = renderHook(() =>
+        useVodPlayer({ vodUrl: 'https://twitch.tv/videos/98765', onEndGuard }),
+      );
+      result.current.containerRef.current = document.createElement('div');
+
+      await vi.waitFor(() => expect(Player).toHaveBeenCalledTimes(1));
+      act(() => {
+        readyCallback?.();
+      });
+      await vi.waitFor(() => expect(result.current.isReady).toBe(true));
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(5000);
+      });
+      expect(onEndGuard).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('retest fix-up #11: a real ENDED event is a no-op once the guard already fired for this construction (double-fire prevention)', async () => {
+    vi.useFakeTimers();
+    try {
+      const onEndGuard = vi.fn();
+      const onEnded = vi.fn();
+      const currentTime = 124;
+      const getCurrentTime = vi.fn(() => currentTime);
+      const getDuration = vi.fn(() => 125);
+      const listeners: Record<string, () => void> = {};
+      const addEventListener = vi.fn((event: string, callback: () => void) => {
+        listeners[event] = callback;
+      });
+      const Player = vi.fn(function (this: unknown): TwitchPlayerInstance {
+        return { seek: vi.fn(), pause: vi.fn(), addEventListener, getCurrentTime, getDuration };
+      });
+      (Player as unknown as { READY: string }).READY = 'ready';
+      window.Twitch = { Player: Player as unknown as TwitchGlobal['Player'] };
+
+      const { useVodPlayer } = await import('./useVodPlayer');
+      const { result } = renderHook(() =>
+        useVodPlayer({ vodUrl: 'https://twitch.tv/videos/98765', onEnded, onEndGuard }),
+      );
+      result.current.containerRef.current = document.createElement('div');
+
+      await vi.waitFor(() => expect(Player).toHaveBeenCalledTimes(1));
+      act(() => {
+        listeners.ready?.();
+      });
+      await vi.waitFor(() => expect(result.current.isReady).toBe(true));
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(500);
+      });
+      expect(onEndGuard).toHaveBeenCalledTimes(1);
+
+      // The REAL ENDED event fires shortly after (the video actually
+      // finished) — it must be a no-op since the guard already handled it.
+      act(() => {
+        listeners.ended?.();
+      });
+      expect(onEnded).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('pauseAtEnd() on Twitch returns false when getDuration is unavailable, without calling seek/pause (retest fix-up #1 fallback)', async () => {
     const seek = vi.fn();
     const pause = vi.fn();

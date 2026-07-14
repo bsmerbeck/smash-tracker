@@ -103,6 +103,16 @@ declare global {
 const YOUTUBE_IFRAME_API_SRC = 'https://www.youtube.com/iframe_api';
 const TWITCH_EMBED_API_SRC = 'https://embed.twitch.tv/embed/v1.js';
 
+/** Poll interval for the Twitch proactive end-guard (retest fix-up #11) —
+ * narrowly scoped to this one end-of-video check (never a general
+ * highlight-tracking poll, which CONTEXT.md forbids). */
+const TWITCH_END_GUARD_INTERVAL_MS = 500;
+
+/** How many seconds before the video's reported `getDuration()` the guard
+ * fires — see `onEndGuard`'s doc comment for why this needs to fire BEFORE
+ * the true end rather than reactively on ENDED. */
+const TWITCH_END_GUARD_THRESHOLD_SECONDS = 1.5;
+
 /** YouTube onError codes that mean the video is permanently unavailable (deleted, private,
  * region-locked, or embedding disabled by the owner) rather than a transient issue. */
 const YOUTUBE_UNAVAILABLE_ERROR_CODES = new Set([2, 5, 100, 101, 150]);
@@ -178,6 +188,27 @@ export interface UseVodPlayerOptions {
    * event. The authoritative "show the native play-button fallback"
    * signal (never a timeout heuristic). */
   onAutoplayBlocked?: () => void;
+  /**
+   * Twitch-only proactive end-guard (retest fix-up #11). Twitch's own
+   * `ENDED` event fires only once the video has ALREADY reached its true
+   * end — at which point the platform's own "Up Next" post-roll overlay has
+   * already started its countdown, so a REACTIVE pause (even `pauseAtEnd`'s
+   * seek-back-then-pause workaround, issued from the `onEnded` handler) is
+   * too late to prevent the overlay from ever appearing. This callback
+   * instead fires from a light interval watching the live playback position
+   * (500ms, created/destroyed with the player — narrowly scoped to this one
+   * end-of-video check, never a general highlight-tracking poll) roughly
+   * `TWITCH_END_GUARD_THRESHOLD_SECONDS` BEFORE the video would actually
+   * reach its end, while the player is still safely in a non-ended state.
+   * The caller decides what to do (advance to a next video, or pause in
+   * place) — identical to how it already handles `onEnded`. `onEnded`
+   * remains wired as a backstop for BOTH providers: if this guard already
+   * fired for the current video, the subsequent real `ENDED` event is a
+   * no-op (idempotent, per-identity `firedRef`). Never fires for YouTube —
+   * its own `ENDED` event already works reliably with no post-roll hijack
+   * risk (see `onEnded`'s doc comment above).
+   */
+  onEndGuard?: () => void;
   /** Threaded as a REF (never a snapshotted boolean): React refs must not
    * be read during render (`react-hooks/refs`), so the caller (ultimately
    * `VodManagerPage`) passes the ref object itself and this hook reads
@@ -271,6 +302,7 @@ export function useVodPlayer({
   startSeconds,
   onEnded,
   onAutoplayBlocked,
+  onEndGuard,
   autoplayOnConstructRef,
   remountToken,
 }: UseVodPlayerOptions): UseVodPlayerResult {
@@ -279,9 +311,18 @@ export function useVodPlayer({
   const providerRef = useRef<'youtube' | 'twitch' | null>(null);
   const onEndedRef = useRef(onEnded);
   const onAutoplayBlockedRef = useRef(onAutoplayBlocked);
+  const onEndGuardRef = useRef(onEndGuard);
+  // Per-construction "already handled the end of this video" latch —
+  // reset at the top of the construction effect below (a new video
+  // identity or a forced remount always gets a fresh latch). Set the
+  // moment EITHER the proactive guard fires OR (if the guard never fires
+  // in time / doesn't apply) the real `ENDED` event fires — whichever
+  // happens first wins, and the other becomes a no-op (retest fix-up #11).
+  const endGuardFiredRef = useRef(false);
   useEffect(() => {
     onEndedRef.current = onEnded;
     onAutoplayBlockedRef.current = onAutoplayBlocked;
+    onEndGuardRef.current = onEndGuard;
   });
 
   const detected = detectVodProvider(vodUrl);
@@ -317,6 +358,9 @@ export function useVodPlayer({
     let cancelled = false;
     playerRef.current = null;
     providerRef.current = null;
+    // A fresh construction (new video identity OR a forced drift-recovery
+    // remount) always starts with a clean end-guard latch.
+    endGuardFiredRef.current = false;
     // autoplayOnConstructRef.current is read HERE, inside the effect body
     // (never during render — react-hooks/refs), exactly once for THIS
     // construction. Mirrors the startSeconds closure-capture treatment
@@ -394,7 +438,12 @@ export function useVodPlayer({
           }
         });
         player.addEventListener(window.Twitch.Player.ENDED, () => {
-          if (!cancelled) {
+          // Backstop for the proactive end-guard (retest fix-up #11) below —
+          // if the guard already fired for this construction, the real
+          // ENDED event is a no-op (idempotent): the advance/pause it would
+          // trigger already happened.
+          if (!cancelled && !endGuardFiredRef.current) {
+            endGuardFiredRef.current = true;
             onEndedRef.current?.();
           }
         });
@@ -423,6 +472,55 @@ export function useVodPlayer({
     // ref never needs to be a dependency.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [effectKey]);
+
+  // Twitch proactive end-guard (retest fix-up #11) — see `onEndGuard`'s doc
+  // comment above for the full rationale. A light interval, created only
+  // once THIS construction's Twitch player is actually ready (mirrors the
+  // construction effect's own async readiness gating) and torn down on
+  // every identity change / forced remount / unmount, exactly like any
+  // other player-scoped resource. YouTube never enters this branch.
+  useEffect(() => {
+    if (!isReady || providerRef.current !== 'twitch' || !playerRef.current) {
+      return;
+    }
+    const player = playerRef.current as TwitchPlayerInstance;
+    const getDuration = player.getDuration;
+    if (typeof getDuration !== 'function') {
+      // No getDuration() surface to check against — nothing this guard can
+      // do; the ENDED backstop still applies (see the listener above).
+      return;
+    }
+    const intervalId = window.setInterval(() => {
+      if (endGuardFiredRef.current) {
+        return;
+      }
+      let duration: number;
+      let currentTime: number;
+      try {
+        duration = getDuration.call(player);
+        currentTime = player.getCurrentTime();
+      } catch {
+        return;
+      }
+      // VOD metadata not ready yet (or an unusual duration-less stream) —
+      // skip this tick rather than misfiring on a 0/NaN duration.
+      if (!Number.isFinite(duration) || duration <= 0) {
+        return;
+      }
+      if (currentTime >= duration - TWITCH_END_GUARD_THRESHOLD_SECONDS) {
+        endGuardFiredRef.current = true;
+        onEndGuardRef.current?.();
+      }
+    }, TWITCH_END_GUARD_INTERVAL_MS);
+    return () => {
+      window.clearInterval(intervalId);
+    };
+    // Keyed on the SAME construction identity as the player-construction
+    // effect (`effectKey`) plus `isReady` — a fresh interval starts only
+    // once a NEW Twitch player instance actually becomes ready, and is
+    // always torn down before the next one starts (identity/remountToken
+    // change) or on unmount.
+  }, [effectKey, isReady]);
 
   function seek(seconds: number) {
     if (!isReady || !playerRef.current) {
