@@ -9,6 +9,7 @@
     "scoutAPlayer": "プレイヤーを検索",
     "aiReports": "AIレポート",
     "matchData": "対戦データ",
+    "vodManager": "VOD",
     "trends": "トレンド",
     "gsp": "GSP",
     "groups": "グループ",
@@ -36,6 +37,7 @@
     "cancel": "キャンセル",
     "save": "保存",
     "delete": "削除",
+    "remove": "削除",
     "win": "勝ち",
     "loss": "負け",
     "cannotBeUndone": "この操作は取り消せません。",
@@ -86,9 +88,10 @@
       "noTimestamps": "まだタイムスタンプ付きメモがありません。",
       "timestampsAria": "タイムスタンプ付きメモ",
       "deleteTimestamp": "タイムスタンプ{{time}}を削除",
+      "editTimestamp": "タイムスタンプ{{time}}を編集",
       "timePlaceholder": "m:ss",
       "timeAria": "タイムスタンプの時間",
-      "notePlaceholder": "メモ",
+      "notePlaceholder": "メモ（任意）",
       "noteAria": "タイムスタンプのメモ",
       "addTimestamp": "タイムスタンプを追加",
       "timeFormatError": "時間は m:ss または h:mm:ss の形式で入力してください",
@@ -212,6 +215,11 @@
     "notTracked": "記録なし",
     "gspAfterMatch": "対戦後のGSP（任意）",
     "gspPlaceholder": "例: 12,400,000",
+    "vodUrlPlaceholder": "https://youtube.com/watch?v=...",
+    "vodStartSeconds": {
+      "label": "VOD内の試合開始時間",
+      "placeholder": "例: 1:23:45"
+    },
     "matchType": "対戦の種類",
     "matchTypes": {
       "none": "未指定",
@@ -241,7 +249,9 @@
       "chooseResult": "結果を選んでください",
       "opponentRequired": "相手の名前を入力してください",
       "charLimit": "{{max}}文字以内で入力してください",
-      "gspFormat": "12,400,000 のような数値を入力してください（空欄でも可）"
+      "gspFormat": "12,400,000 のような数値を入力してください（空欄でも可）",
+      "vodUrlInvalid": "有効なURLを入力してください（空欄でも可）",
+      "vodStartSecondsInvalid": "m:ss、h:mm:ss、または秒数で時間を入力してください（空欄でも可）"
     },
     "set": {
       "format": "セット形式",
@@ -437,6 +447,17 @@
       },
       "editVod": "VODメモを編集",
       "addVod": "VODメモを追加",
+      "watchVod": "VODを見る",
+      "vodMenu": {
+        "goToManager": "VODマネージャーへ移動",
+        "editLink": "VODリンクを編集",
+        "removeLink": "VODリンクを削除"
+      },
+      "removeVodConfirm": {
+        "title": "このVODリンクを削除しますか？",
+        "removed": "VODリンクを削除しました",
+        "removeFailed": "VODリンクを削除できませんでした。もう一度お試しください。"
+      },
       "synced": "同期済み",
       "syncedTitle": "{{source}}から同期 — 対戦データは同期側が管理します",
       "editMatch": "対戦を編集",
@@ -463,6 +484,119 @@
       "winsShort": "{{count}}勝",
       "lossesShort": "{{count}}敗"
     }
+  },
+  "vodManager": {
+    "title": "VODマネージャー",
+    "emptyState": "まだVODがありません",
+    "filters": {
+      "fighter": "ファイター",
+      "opponentFighter": "相手のキャラクター",
+      "opponent": "対戦相手",
+      "tournament": "大会",
+      "stage": "ステージ",
+      "allOption": "すべて",
+      "tagsLabel": "タグ"
+    },
+    "sort": {
+      "newest": "新しい順",
+      "oldest": "古い順"
+    },
+    "playerPlaceholder": "試合を選択するとVODが再生されます。",
+    "playerUnavailable": "このVODは現在視聴できません。",
+    "openOnHost": "{{host}}で開く",
+    "selectMatchAria": "{{opponent}}戦を選択",
+    "startTime": "開始時間",
+    "useCurrentTime": "現在の再生位置を使用",
+    "meta": {
+      "edit": "詳細を編集"
+    },
+    "composer": {
+      "title": "メモを追加"
+    },
+    "notes": {
+      "saveEdit": "タイムスタンプの編集を保存",
+      "cancelEdit": "タイムスタンプの編集をキャンセル",
+      "deleteConfirmTitle": "このタイムスタンプメモを削除しますか？",
+      "editTimeAria": "タイムスタンプの時間を編集",
+      "editNoteAria": "タイムスタンプのメモを編集",
+      "filterByTag": "タグで絞り込む",
+      "filterByTagAria": "{{label}}でメモを絞り込む",
+      "noMatchingNotes": "選択したフィルターに一致するメモはありません"
+    },
+    "playlists": {
+      "library": "ライブラリ",
+      "newPlaylist": "新しいプレイリスト",
+      "createPlaceholder": "プレイリスト名",
+      "create": "作成",
+      "createNamed": "「{{name}}」を作成",
+      "selectAria": "プレイリストを選択",
+      "empty": "このプレイリストにはまだ試合がありません",
+      "limitReached": "プレイリストの上限に達しました（{{max}}）",
+      "matchCount_one": "{{count}}試合",
+      "matchCount_other": "{{count}}試合",
+      "addToPlaylist": "プレイリストに追加",
+      "addToPlaylistAria": "この試合をプレイリストに追加",
+      "added": "プレイリストに追加しました",
+      "moveUp": "上へ移動",
+      "moveDown": "下へ移動",
+      "removeFromPlaylist": "プレイリストから削除",
+      "rename": "名前を変更",
+      "renamePlaceholder": "プレイリスト名を変更",
+      "saveRenameAria": "プレイリスト名を保存",
+      "cancelRenameAria": "名前の変更をキャンセル",
+      "delete": "削除",
+      "deleteConfirmTitle": "このプレイリストを削除しますか？"
+    },
+    "playback": {
+      "position": "{{total}}件中{{current}}件目",
+      "prev": "前の対戦",
+      "next": "次の対戦",
+      "autoplayBlocked": "自動再生がブロックされました — 再生ボタンを押して続行してください"
+    },
+    "capture": {
+      "title": "クイックタグ",
+      "customize": "カスタマイズ",
+      "customizeAria": "クイックタグをカスタマイズ",
+      "doneCustomizeAria": "クイックタグのカスタマイズを終了",
+      "saveCustomizeAria": "クイックタグを保存",
+      "done": "完了",
+      "removeQuickTagAria": "クイックタグから{{label}}を削除",
+      "quickTagAria": "クイックタグ: {{label}}",
+      "quickTagHint": "タグをタップしてこの瞬間をキャプチャ",
+      "prevTimestamp": "前のメモ",
+      "nextTimestamp": "次のメモ"
+    },
+    "player": {
+      "compactAria": "コンパクトプレーヤーに切り替え",
+      "fillAria": "フルサイズプレーヤーに切り替え"
+    }
+  },
+  "tags": {
+    "preset": {
+      "tournament-set": "トーナメントセット",
+      "practice-friendlies": "練習/フレンドリー",
+      "bad-matchup": "不利な対面",
+      "good-read-highlight": "ナイスリード/ハイライト",
+      "to-review": "要確認",
+      "neutral": "ニュートラル",
+      "punish": "パニッシュ",
+      "edgeguard": "崖狩り",
+      "recovery": "復帰",
+      "kill-confirm": "キル確定",
+      "defense": "防御",
+      "mixup": "択",
+      "matchup-note": "対面メモ",
+      "mental-game": "メンタル",
+      "mistake": "ミス",
+      "highlight": "ハイライト"
+    },
+    "combobox": {
+      "placeholder": "タグを検索または作成...",
+      "create": "「{{tag}}」を作成",
+      "empty": "タグが見つかりません。"
+    },
+    "addAria": "タグを追加",
+    "removeAria": "タグ{{tag}}を削除"
   },
   "matchups": {
     "loading": "相性データを読み込み中...",

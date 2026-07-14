@@ -1,7 +1,7 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { MemoryRouter, Route, Routes } from 'react-router';
+import { MemoryRouter, Route, Routes, useSearchParams } from 'react-router';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { AuthProvider } from '@/context/AuthContext';
 import {
@@ -76,6 +76,12 @@ function makeMatch(overrides: Partial<Record<string, unknown>> = {}) {
   };
 }
 
+/** Stands in for `/vod` so navigation from the VOD menu's "Go to VOD Manager" item can be asserted without rendering the real VodManagerPage. */
+function VodRouteProbe() {
+  const [params] = useSearchParams();
+  return <div>VOD Manager page (match={params.get('match')})</div>;
+}
+
 function renderMatchData() {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
@@ -88,6 +94,7 @@ function renderMatchData() {
               <Route path="/choose-primary" element={<div>Choose primary page</div>} />
               <Route path="/choose-secondary" element={<div>Choose secondary page</div>} />
               <Route path="/dashboard" element={<div>Dashboard page</div>} />
+              <Route path="/vod" element={<VodRouteProbe />} />
             </Routes>
           </AnalyticsFilterProvider>
         </AuthProvider>
@@ -296,6 +303,101 @@ describe('MatchDataPage', () => {
     );
   });
 
+  it('clears vodUrl and vodTimestamps when the VOD link field is blanked on save', async () => {
+    const user = userEvent.setup();
+    getFighters.mockResolvedValue({ primary: [mario.id], secondary: [] });
+    listMatches.mockResolvedValue([
+      makeMatch({
+        id: 'm1',
+        fighter_id: mario.id,
+        opponent_id: luigi.id,
+        opponent: 'rival',
+        notes: 'gg',
+        matchType: 'quickplay',
+        win: true,
+        map: { id: 0, name: 'no selection' },
+        vodUrl: 'https://youtube.com/watch?v=abc123',
+        vodTimestamps: [{ seconds: 161, note: 'missed punish on shield' }],
+      }),
+    ]);
+
+    renderMatchData();
+
+    await waitFor(() => expect(screen.getByLabelText('Edit match')).toBeInTheDocument());
+    await user.click(screen.getByLabelText('Edit match'));
+
+    const dialog = await screen.findByRole('dialog');
+    expect(within(dialog).getByLabelText('VOD URL')).toHaveValue(
+      'https://youtube.com/watch?v=abc123',
+    );
+
+    await user.clear(within(dialog).getByLabelText('VOD URL'));
+    await user.click(within(dialog).getByRole('button', { name: 'Save' }));
+
+    await waitFor(() => expect(updateMatch).toHaveBeenCalledTimes(1));
+    const payload = updateMatch.mock.calls[0]![1];
+    expect(payload).not.toHaveProperty('vodUrl');
+    expect(payload).not.toHaveProperty('vodTimestamps');
+  });
+
+  it('carries existing vodTimestamps through when the VOD link is edited (not cleared)', async () => {
+    const user = userEvent.setup();
+    getFighters.mockResolvedValue({ primary: [mario.id], secondary: [] });
+    listMatches.mockResolvedValue([
+      makeMatch({
+        id: 'm1',
+        fighter_id: mario.id,
+        opponent_id: luigi.id,
+        opponent: 'rival',
+        notes: 'gg',
+        matchType: 'quickplay',
+        win: true,
+        map: { id: 0, name: 'no selection' },
+        vodUrl: 'https://youtube.com/watch?v=abc123',
+        vodTimestamps: [{ seconds: 161, note: 'missed punish on shield' }],
+      }),
+    ]);
+
+    renderMatchData();
+
+    await waitFor(() => expect(screen.getByLabelText('Edit match')).toBeInTheDocument());
+    await user.click(screen.getByLabelText('Edit match'));
+
+    const dialog = await screen.findByRole('dialog');
+    await user.clear(within(dialog).getByLabelText('VOD URL'));
+    await user.type(within(dialog).getByLabelText('VOD URL'), 'https://youtube.com/watch?v=xyz789');
+    await user.click(within(dialog).getByRole('button', { name: 'Save' }));
+
+    await waitFor(() => expect(updateMatch).toHaveBeenCalledTimes(1));
+    expect(updateMatch).toHaveBeenCalledWith(
+      'm1',
+      expect.objectContaining({
+        vodUrl: 'https://youtube.com/watch?v=xyz789',
+        vodTimestamps: [{ seconds: 161, note: 'missed punish on shield' }],
+      }),
+    );
+  });
+
+  it('blocks saving an invalid VOD URL with an inline validation error', async () => {
+    const user = userEvent.setup();
+    getFighters.mockResolvedValue({ primary: [mario.id], secondary: [] });
+    listMatches.mockResolvedValue([makeMatch({ id: 'm1' })]);
+
+    renderMatchData();
+
+    await waitFor(() => expect(screen.getByLabelText('Edit match')).toBeInTheDocument());
+    await user.click(screen.getByLabelText('Edit match'));
+
+    const dialog = await screen.findByRole('dialog');
+    await user.type(within(dialog).getByLabelText('VOD URL'), 'not-a-url');
+    await user.click(within(dialog).getByRole('button', { name: 'Save' }));
+
+    expect(
+      await within(dialog).findByText('Enter a valid URL (or leave blank)'),
+    ).toBeInTheDocument();
+    expect(updateMatch).not.toHaveBeenCalled();
+  });
+
   it('shows a clear-filters notice (not the no-matches hero) when the global filter empties an existing match set', async () => {
     const user = userEvent.setup();
     window.localStorage.setItem(
@@ -323,7 +425,7 @@ describe('MatchDataPage', () => {
     expect(screen.getAllByText('rival').length).toBeGreaterThan(0);
   });
 
-  it('shows "Add VOD notes" for a match without a vodUrl and "Edit VOD notes" for one with', async () => {
+  it('shows "Add VOD notes" for a match without a vodUrl and "Watch VOD" for one with', async () => {
     getFighters.mockResolvedValue({ primary: [mario.id], secondary: [] });
     listMatches.mockResolvedValue([
       makeMatch({ id: 'm1', opponent: 'rival' }),
@@ -337,7 +439,104 @@ describe('MatchDataPage', () => {
     renderMatchData();
 
     await waitFor(() => expect(screen.getAllByLabelText('Add VOD notes')).toHaveLength(1));
-    expect(screen.getAllByLabelText('Edit VOD notes')).toHaveLength(1);
+    expect(screen.getAllByLabelText('Watch VOD')).toHaveLength(1);
+  });
+
+  it('opens a 3-item action menu (Go to VOD Manager, Edit VOD link, Remove VOD link) from the VOD icon when the match has a VOD', async () => {
+    const user = userEvent.setup();
+    getFighters.mockResolvedValue({ primary: [mario.id], secondary: [] });
+    listMatches.mockResolvedValue([
+      makeMatch({ id: 'm1', vodUrl: 'https://youtube.com/watch?v=abc123' }),
+    ]);
+
+    renderMatchData();
+
+    await waitFor(() => expect(screen.getByLabelText('Watch VOD')).toBeInTheDocument());
+    await user.click(screen.getByLabelText('Watch VOD'));
+
+    const menu = await screen.findByRole('menu');
+    expect(within(menu).getByRole('menuitem', { name: 'Go to VOD Manager' })).toBeInTheDocument();
+    expect(within(menu).getByRole('menuitem', { name: 'Edit VOD link' })).toBeInTheDocument();
+    expect(within(menu).getByRole('menuitem', { name: 'Remove VOD link' })).toBeInTheDocument();
+  });
+
+  it('navigates to the VOD Manager, preselecting the match, via "Go to VOD Manager"', async () => {
+    const user = userEvent.setup();
+    getFighters.mockResolvedValue({ primary: [mario.id], secondary: [] });
+    listMatches.mockResolvedValue([
+      makeMatch({ id: 'm1', vodUrl: 'https://youtube.com/watch?v=abc123' }),
+    ]);
+
+    renderMatchData();
+
+    await waitFor(() => expect(screen.getByLabelText('Watch VOD')).toBeInTheDocument());
+    await user.click(screen.getByLabelText('Watch VOD'));
+    await user.click(await screen.findByRole('menuitem', { name: 'Go to VOD Manager' }));
+
+    expect(await screen.findByText('VOD Manager page (match=m1)')).toBeInTheDocument();
+  });
+
+  it('opens the Edit Match dialog prefilled via "Edit VOD link"', async () => {
+    const user = userEvent.setup();
+    getFighters.mockResolvedValue({ primary: [mario.id], secondary: [] });
+    listMatches.mockResolvedValue([
+      makeMatch({ id: 'm1', vodUrl: 'https://youtube.com/watch?v=abc123' }),
+    ]);
+
+    renderMatchData();
+
+    await waitFor(() => expect(screen.getByLabelText('Watch VOD')).toBeInTheDocument());
+    await user.click(screen.getByLabelText('Watch VOD'));
+    await user.click(await screen.findByRole('menuitem', { name: 'Edit VOD link' }));
+
+    const dialog = await screen.findByRole('dialog');
+    expect(within(dialog).getByText('Edit Match')).toBeInTheDocument();
+    expect(within(dialog).getByLabelText('VOD URL')).toHaveValue(
+      'https://youtube.com/watch?v=abc123',
+    );
+  });
+
+  it('clears vodUrl and vodTimestamps via a full PATCH after confirming "Remove VOD link"', async () => {
+    const user = userEvent.setup();
+    getFighters.mockResolvedValue({ primary: [mario.id], secondary: [] });
+    listMatches.mockResolvedValue([
+      makeMatch({
+        id: 'm1',
+        fighter_id: mario.id,
+        opponent_id: luigi.id,
+        opponent: 'rival',
+        notes: 'gg',
+        matchType: 'quickplay',
+        win: true,
+        map: { id: 0, name: 'no selection' },
+        vodUrl: 'https://youtube.com/watch?v=abc123',
+        vodTimestamps: [{ seconds: 161, note: 'missed punish on shield' }],
+      }),
+    ]);
+
+    renderMatchData();
+
+    await waitFor(() => expect(screen.getByLabelText('Watch VOD')).toBeInTheDocument());
+    await user.click(screen.getByLabelText('Watch VOD'));
+    await user.click(await screen.findByRole('menuitem', { name: 'Remove VOD link' }));
+
+    const alert = await screen.findByRole('alertdialog');
+    expect(within(alert).getByText('Remove this VOD link?')).toBeInTheDocument();
+    await user.click(within(alert).getByRole('button', { name: 'Remove' }));
+
+    await waitFor(() => expect(updateMatch).toHaveBeenCalledTimes(1));
+    expect(updateMatch).toHaveBeenCalledWith('m1', {
+      fighter_id: mario.id,
+      opponent_id: luigi.id,
+      map: { id: 0, name: 'no selection' },
+      opponent: 'rival',
+      notes: 'gg',
+      matchType: 'quickplay',
+      win: true,
+    });
+    const payload = updateMatch.mock.calls[0]![1];
+    expect(payload).not.toHaveProperty('vodUrl');
+    expect(payload).not.toHaveProperty('vodTimestamps');
   });
 
   it('opens the VOD notes dialog and saves a new VOD URL and timestamp', async () => {

@@ -9,6 +9,7 @@
     "scoutAPlayer": "Scout a Player",
     "aiReports": "AI Reports",
     "matchData": "Match Data",
+    "vodManager": "VODs",
     "trends": "Trends",
     "gsp": "GSP",
     "groups": "Groups",
@@ -36,6 +37,7 @@
     "cancel": "Cancel",
     "save": "Save",
     "delete": "Delete",
+    "remove": "Remove",
     "win": "Win",
     "loss": "Loss",
     "cannotBeUndone": "This action cannot be undone.",
@@ -86,9 +88,10 @@
       "noTimestamps": "No timestamp notes yet.",
       "timestampsAria": "Timestamp notes",
       "deleteTimestamp": "Delete timestamp {{time}}",
+      "editTimestamp": "Edit timestamp {{time}}",
       "timePlaceholder": "m:ss",
       "timeAria": "Timestamp time",
-      "notePlaceholder": "Note",
+      "notePlaceholder": "Note (optional)",
       "noteAria": "Timestamp note",
       "addTimestamp": "Add timestamp",
       "timeFormatError": "Enter a time as m:ss or h:mm:ss",
@@ -212,6 +215,11 @@
     "notTracked": "Not tracked",
     "gspAfterMatch": "GSP after match (optional)",
     "gspPlaceholder": "e.g. 12,400,000",
+    "vodUrlPlaceholder": "https://youtube.com/watch?v=...",
+    "vodStartSeconds": {
+      "label": "Match start time in VOD",
+      "placeholder": "e.g. 1:23:45"
+    },
     "matchType": "Match Type",
     "matchTypes": {
       "none": "None",
@@ -241,7 +249,9 @@
       "chooseResult": "Choose a result",
       "opponentRequired": "Opponent name is required",
       "charLimit": "Limit {{max}} characters",
-      "gspFormat": "Enter a number like 12,400,000 (or leave blank)"
+      "gspFormat": "Enter a number like 12,400,000 (or leave blank)",
+      "vodUrlInvalid": "Enter a valid URL (or leave blank)",
+      "vodStartSecondsInvalid": "Enter a time as m:ss, h:mm:ss, or seconds (or leave blank)"
     },
     "set": {
       "format": "Set Format",
@@ -437,6 +447,17 @@
       },
       "editVod": "Edit VOD notes",
       "addVod": "Add VOD notes",
+      "watchVod": "Watch VOD",
+      "vodMenu": {
+        "goToManager": "Go to VOD Manager",
+        "editLink": "Edit VOD link",
+        "removeLink": "Remove VOD link"
+      },
+      "removeVodConfirm": {
+        "title": "Remove this VOD link?",
+        "removed": "VOD link removed",
+        "removeFailed": "Failed to remove VOD link. Please try again."
+      },
       "synced": "Synced",
       "syncedTitle": "Synced from {{source}} — game data is managed by sync",
       "editMatch": "Edit match",
@@ -463,6 +484,119 @@
       "winsShort": "{{count}}W",
       "lossesShort": "{{count}}L"
     }
+  },
+  "vodManager": {
+    "title": "VOD Manager",
+    "emptyState": "No VODs yet",
+    "filters": {
+      "fighter": "Fighter",
+      "opponentFighter": "Opponent's Character",
+      "opponent": "Opponent",
+      "tournament": "Tournament",
+      "stage": "Stage",
+      "allOption": "All",
+      "tagsLabel": "Tags"
+    },
+    "sort": {
+      "newest": "Newest first",
+      "oldest": "Oldest first"
+    },
+    "playerPlaceholder": "Select a match to watch its VOD.",
+    "playerUnavailable": "This VOD is no longer available.",
+    "openOnHost": "Open on {{host}}",
+    "selectMatchAria": "Select match vs {{opponent}}",
+    "startTime": "Start time",
+    "useCurrentTime": "Use current player time",
+    "meta": {
+      "edit": "Edit details"
+    },
+    "composer": {
+      "title": "Add a note"
+    },
+    "notes": {
+      "saveEdit": "Save timestamp edit",
+      "cancelEdit": "Cancel timestamp edit",
+      "deleteConfirmTitle": "Delete this timestamp note?",
+      "editTimeAria": "Edit timestamp time",
+      "editNoteAria": "Edit timestamp note",
+      "filterByTag": "Filter by tag",
+      "filterByTagAria": "Filter notes by {{label}}",
+      "noMatchingNotes": "No notes match the selected filter"
+    },
+    "playlists": {
+      "library": "Library",
+      "newPlaylist": "New playlist",
+      "createPlaceholder": "Playlist name",
+      "create": "Create",
+      "createNamed": "Create \"{{name}}\"",
+      "selectAria": "Select playlist",
+      "empty": "No matches in this playlist yet",
+      "limitReached": "Playlist limit reached ({{max}})",
+      "matchCount_one": "{{count}} match",
+      "matchCount_other": "{{count}} matches",
+      "addToPlaylist": "Add to playlist",
+      "addToPlaylistAria": "Add this match to a playlist",
+      "added": "Added to playlist",
+      "moveUp": "Move up",
+      "moveDown": "Move down",
+      "removeFromPlaylist": "Remove from playlist",
+      "rename": "Rename",
+      "renamePlaceholder": "Rename playlist",
+      "saveRenameAria": "Save playlist name",
+      "cancelRenameAria": "Cancel rename",
+      "delete": "Delete",
+      "deleteConfirmTitle": "Delete this playlist?"
+    },
+    "playback": {
+      "position": "{{current}} of {{total}}",
+      "prev": "Previous match",
+      "next": "Next match",
+      "autoplayBlocked": "Autoplay was blocked — press play to continue"
+    },
+    "capture": {
+      "title": "Quick tags",
+      "customize": "Customize",
+      "customizeAria": "Customize quick tags",
+      "doneCustomizeAria": "Finish customizing quick tags",
+      "saveCustomizeAria": "Save quick tags",
+      "done": "Done",
+      "removeQuickTagAria": "Remove {{label}} from quick tags",
+      "quickTagAria": "Quick tag: {{label}}",
+      "quickTagHint": "Tap a tag to capture this moment",
+      "prevTimestamp": "Previous note",
+      "nextTimestamp": "Next note"
+    },
+    "player": {
+      "compactAria": "Switch to compact player",
+      "fillAria": "Switch to full-size player"
+    }
+  },
+  "tags": {
+    "preset": {
+      "tournament-set": "Tournament Set",
+      "practice-friendlies": "Practice/Friendlies",
+      "bad-matchup": "Bad Matchup",
+      "good-read-highlight": "Good Read/Highlight Reel",
+      "to-review": "To Review",
+      "neutral": "Neutral",
+      "punish": "Punish",
+      "edgeguard": "Edgeguard",
+      "recovery": "Recovery",
+      "kill-confirm": "Kill Confirm",
+      "defense": "Defense",
+      "mixup": "Mixup",
+      "matchup-note": "Matchup Note",
+      "mental-game": "Mental Game",
+      "mistake": "Mistake",
+      "highlight": "Highlight"
+    },
+    "combobox": {
+      "placeholder": "Search or create a tag...",
+      "create": "Create \"{{tag}}\"",
+      "empty": "No tags found."
+    },
+    "addAria": "Add a tag",
+    "removeAria": "Remove tag {{tag}}"
   },
   "matchups": {
     "loading": "Loading matchups...",

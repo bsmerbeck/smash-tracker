@@ -31,6 +31,7 @@ import {
   parryggSyncSummarySchema,
   parryggVerificationCompleteResponseSchema,
   parryggVerificationStartResponseSchema,
+  playlistSchema,
   reportsConfigSchema,
   scoutReportDataSchema,
   scoutReportRecordSchema,
@@ -50,6 +51,8 @@ import {
   type ParryggLoginCompleteRequest,
   type ParryggLoginSearchRequest,
   type ParryggLoginStartRequest,
+  type CreatePlaylistInput,
+  type UpdatePlaylistInput,
   type ScoutQuery,
   type UpdateGspReadingInput,
   type UpdateMatchInput,
@@ -435,6 +438,22 @@ export const api = {
     /** DELETE /api/gsp-readings/:id */
     remove: (id: string) =>
       apiRequest<void>(`/api/gsp-readings/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+  },
+  playlists: {
+    /** GET /api/playlists — the signed-in user's playlists. */
+    list: () => apiRequestParsed('/api/playlists', playlistSchema.array()),
+    /** POST /api/playlists — `createdAt` is server-stamped, `matchIds` starts empty. */
+    create: (input: CreatePlaylistInput) =>
+      apiRequestParsed('/api/playlists', playlistSchema, { method: 'POST', body: input }),
+    /** PATCH /api/playlists/:id — rename and/or reorder (both optional). */
+    update: (id: string, input: UpdatePlaylistInput) =>
+      apiRequestParsed(`/api/playlists/${encodeURIComponent(id)}`, playlistSchema, {
+        method: 'PATCH',
+        body: input,
+      }),
+    /** DELETE /api/playlists/:id */
+    remove: (id: string) =>
+      apiRequest<void>(`/api/playlists/${encodeURIComponent(id)}`, { method: 'DELETE' }),
   },
   stageFavorites: {
     /** GET /api/stage-favorites — the signed-in user's favorited stage ids (an empty default is synthesized server-side, never 404s). */

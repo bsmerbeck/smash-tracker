@@ -23,10 +23,26 @@ import { formatTimestamp, parseTimestamp, vodDeepLink } from '@/lib/vod';
  * (overridden by the caller). Required because `PATCH /api/matches/:id` is a
  * full overwrite (see `RtdbService.updateMatch`) — omitting a field here
  * would clear it, not leave it untouched.
+ *
+ * `tags` (TAG-01..05) defaults to carrying `match.tags` through unchanged —
+ * every existing caller (VOD note edits here, `MatchTable`'s "Remove VOD
+ * link" action) preserves match-level tags automatically without having to
+ * know tags exist. Pass `overrides.tags` to override (e.g.
+ * `SelectedMatchMeta`'s tag add/remove handlers); override wins when set,
+ * even to `undefined` (clearing all tags) — that's why this is a distinct
+ * key in `overrides` rather than folded into the `match.tags` fallback.
+ *
+ * Exported so `MatchTable`'s "Remove VOD link" action (its VOD icon's
+ * dropdown menu) can reuse the exact same full-overwrite-minus-VOD-fields
+ * payload rather than re-deriving it.
  */
-function buildUpdateInput(
+export function buildUpdateInput(
   match: Match,
-  overrides: { vodUrl: string | undefined; vodTimestamps: VodTimestamp[] | undefined },
+  overrides: {
+    vodUrl: string | undefined;
+    vodTimestamps: VodTimestamp[] | undefined;
+    tags?: string[] | undefined;
+  },
 ): UpdateMatchInput {
   return {
     fighter_id: match.fighter_id,
@@ -44,6 +60,20 @@ function buildUpdateInput(
     ...(match.gsp !== undefined ? { gsp: match.gsp } : {}),
     ...(overrides.vodUrl !== undefined ? { vodUrl: overrides.vodUrl } : {}),
     ...(overrides.vodTimestamps !== undefined ? { vodTimestamps: overrides.vodTimestamps } : {}),
+    // 'tags' in overrides (not just overrides.tags !== undefined) is the
+    // deliberate check here: a caller that explicitly passes `tags: undefined`
+    // (SelectedMatchMeta clearing the last tag) means "omit tags from the
+    // payload, don't fall back to match.tags" — that's how the last tag gets
+    // dropped. A caller that never mentions `tags` at all (every other
+    // existing call site) means "I don't know/care about tags, carry the
+    // current value through unchanged."
+    ...('tags' in overrides
+      ? overrides.tags !== undefined
+        ? { tags: overrides.tags }
+        : {}
+      : match.tags !== undefined
+        ? { tags: match.tags }
+        : {}),
   };
 }
 

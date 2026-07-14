@@ -9,6 +9,7 @@
     "scoutAPlayer": "Buscar jugador",
     "aiReports": "Informes IA",
     "matchData": "Datos de partidas",
+    "vodManager": "VODs",
     "trends": "Tendencias",
     "gsp": "GSP",
     "groups": "Grupos",
@@ -36,6 +37,7 @@
     "cancel": "Cancelar",
     "save": "Guardar",
     "delete": "Eliminar",
+    "remove": "Quitar",
     "win": "Victoria",
     "loss": "Derrota",
     "cannotBeUndone": "Esta acción no se puede deshacer.",
@@ -86,9 +88,10 @@
       "noTimestamps": "Aún no hay notas con marca de tiempo.",
       "timestampsAria": "Notas con marca de tiempo",
       "deleteTimestamp": "Eliminar marca de tiempo {{time}}",
+      "editTimestamp": "Editar marca de tiempo {{time}}",
       "timePlaceholder": "m:ss",
       "timeAria": "Tiempo de la marca",
-      "notePlaceholder": "Nota",
+      "notePlaceholder": "Nota (opcional)",
       "noteAria": "Nota de la marca",
       "addTimestamp": "Añadir marca de tiempo",
       "timeFormatError": "Introduce un tiempo como m:ss o h:mm:ss",
@@ -212,6 +215,11 @@
     "notTracked": "Sin registrar",
     "gspAfterMatch": "GSP tras la partida (opcional)",
     "gspPlaceholder": "p. ej. 12 400 000",
+    "vodUrlPlaceholder": "https://youtube.com/watch?v=...",
+    "vodStartSeconds": {
+      "label": "Hora de inicio de la partida en el VOD",
+      "placeholder": "p. ej. 1:23:45"
+    },
     "matchType": "Tipo de partida",
     "matchTypes": {
       "none": "Ninguno",
@@ -241,7 +249,9 @@
       "chooseResult": "Elige un resultado",
       "opponentRequired": "El nombre del rival es obligatorio",
       "charLimit": "Máximo {{max}} caracteres",
-      "gspFormat": "Introduce un número como 12 400 000 (o déjalo en blanco)"
+      "gspFormat": "Introduce un número como 12 400 000 (o déjalo en blanco)",
+      "vodUrlInvalid": "Introduce una URL válida (o déjala en blanco)",
+      "vodStartSecondsInvalid": "Introduce una hora como m:ss, h:mm:ss o segundos (o déjala en blanco)"
     },
     "set": {
       "format": "Formato del set",
@@ -437,6 +447,17 @@
       },
       "editVod": "Editar notas de VOD",
       "addVod": "Añadir notas de VOD",
+      "watchVod": "Ver VOD",
+      "vodMenu": {
+        "goToManager": "Ir al Gestor de VODs",
+        "editLink": "Editar enlace de VOD",
+        "removeLink": "Quitar enlace de VOD"
+      },
+      "removeVodConfirm": {
+        "title": "¿Quitar este enlace de VOD?",
+        "removed": "Enlace de VOD eliminado",
+        "removeFailed": "No se pudo quitar el enlace de VOD. Inténtalo de nuevo."
+      },
       "synced": "Sincronizada",
       "syncedTitle": "Sincronizada desde {{source}} — los datos los gestiona la sincronización",
       "editMatch": "Editar partida",
@@ -463,6 +484,119 @@
       "winsShort": "{{count}}V",
       "lossesShort": "{{count}}D"
     }
+  },
+  "vodManager": {
+    "title": "Gestor de VODs",
+    "emptyState": "Aún no hay VODs",
+    "filters": {
+      "fighter": "Luchador",
+      "opponentFighter": "Personaje rival",
+      "opponent": "Rival",
+      "tournament": "Torneo",
+      "stage": "Escenario",
+      "allOption": "Todos",
+      "tagsLabel": "Etiquetas"
+    },
+    "sort": {
+      "newest": "Más recientes primero",
+      "oldest": "Más antiguos primero"
+    },
+    "playerPlaceholder": "Selecciona una partida para ver su VOD.",
+    "playerUnavailable": "Este VOD ya no está disponible.",
+    "openOnHost": "Abrir en {{host}}",
+    "selectMatchAria": "Seleccionar partida vs {{opponent}}",
+    "startTime": "Hora de inicio",
+    "useCurrentTime": "Usar tiempo actual del reproductor",
+    "meta": {
+      "edit": "Editar detalles"
+    },
+    "composer": {
+      "title": "Añadir una nota"
+    },
+    "notes": {
+      "saveEdit": "Guardar edición de marca de tiempo",
+      "cancelEdit": "Cancelar edición de marca de tiempo",
+      "deleteConfirmTitle": "¿Eliminar esta nota con marca de tiempo?",
+      "editTimeAria": "Editar hora de la marca de tiempo",
+      "editNoteAria": "Editar nota de la marca de tiempo",
+      "filterByTag": "Filtrar por etiqueta",
+      "filterByTagAria": "Filtrar notas por {{label}}",
+      "noMatchingNotes": "Ninguna nota coincide con el filtro seleccionado"
+    },
+    "playlists": {
+      "library": "Biblioteca",
+      "newPlaylist": "Nueva lista",
+      "createPlaceholder": "Nombre de la lista",
+      "create": "Crear",
+      "createNamed": "Crear \"{{name}}\"",
+      "selectAria": "Seleccionar lista",
+      "empty": "Aún no hay partidas en esta lista",
+      "limitReached": "Límite de listas alcanzado ({{max}})",
+      "matchCount_one": "{{count}} partida",
+      "matchCount_other": "{{count}} partidas",
+      "addToPlaylist": "Añadir a una lista",
+      "addToPlaylistAria": "Añadir esta partida a una lista",
+      "added": "Añadido a la lista",
+      "moveUp": "Subir",
+      "moveDown": "Bajar",
+      "removeFromPlaylist": "Quitar de la lista",
+      "rename": "Renombrar",
+      "renamePlaceholder": "Renombrar lista",
+      "saveRenameAria": "Guardar nombre de la lista",
+      "cancelRenameAria": "Cancelar cambio de nombre",
+      "delete": "Eliminar",
+      "deleteConfirmTitle": "¿Eliminar esta lista?"
+    },
+    "playback": {
+      "position": "{{current}} de {{total}}",
+      "prev": "Partida anterior",
+      "next": "Partida siguiente",
+      "autoplayBlocked": "La reproducción automática fue bloqueada — presiona reproducir para continuar"
+    },
+    "capture": {
+      "title": "Etiquetas rápidas",
+      "customize": "Personalizar",
+      "customizeAria": "Personalizar etiquetas rápidas",
+      "doneCustomizeAria": "Terminar de personalizar las etiquetas rápidas",
+      "saveCustomizeAria": "Guardar etiquetas rápidas",
+      "done": "Listo",
+      "removeQuickTagAria": "Quitar {{label}} de las etiquetas rápidas",
+      "quickTagAria": "Etiqueta rápida: {{label}}",
+      "quickTagHint": "Toca una etiqueta para capturar este momento",
+      "prevTimestamp": "Nota anterior",
+      "nextTimestamp": "Nota siguiente"
+    },
+    "player": {
+      "compactAria": "Cambiar a reproductor compacto",
+      "fillAria": "Cambiar a reproductor de tamaño completo"
+    }
+  },
+  "tags": {
+    "preset": {
+      "tournament-set": "Set de torneo",
+      "practice-friendlies": "Práctica/Amistosos",
+      "bad-matchup": "Mal matchup",
+      "good-read-highlight": "Buena lectura/Highlight",
+      "to-review": "Para revisar",
+      "neutral": "Neutral",
+      "punish": "Castigo",
+      "edgeguard": "Edgeguard",
+      "recovery": "Recuperación",
+      "kill-confirm": "Confirmación de KO",
+      "defense": "Defensa",
+      "mixup": "Mixup",
+      "matchup-note": "Nota de matchup",
+      "mental-game": "Juego mental",
+      "mistake": "Error",
+      "highlight": "Highlight"
+    },
+    "combobox": {
+      "placeholder": "Buscar o crear una etiqueta...",
+      "create": "Crear \"{{tag}}\"",
+      "empty": "No se encontraron etiquetas."
+    },
+    "addAria": "Añadir una etiqueta",
+    "removeAria": "Quitar etiqueta {{tag}}"
   },
   "matchups": {
     "loading": "Cargando enfrentamientos...",
