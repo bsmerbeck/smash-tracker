@@ -49,7 +49,7 @@ export function Topbar() {
         onClick={() => navigate('/dashboard')}
         className="text-lg font-semibold tracking-tight"
       >
-        Smash Tracker
+        grandfinals.gg
       </button>
 
       <div className="flex-1" />
