@@ -1,9 +1,9 @@
-## Smash Tracker
+## grandfinals.gg
 
 **Use it live → https://grandfinals.gg**
 alternative link: https://smash-tracker-f97b7.web.app
 
-Smash Tracker is a match-tracking app for **Super Smash Bros. Ultimate**. Sign in, pick a
+grandfinals.gg is a match-tracking app for **Super Smash Bros. Ultimate**. Sign in, pick a
 primary/secondary fighter, log wins and losses (opponent, stage, match type, notes) after each
 set, and review your results: win/loss trends, best/worst matchups, per-stage performance,
 per-opponent history, and a per-fighter GSP (Global Smash Power) tracker with an Elite Smash

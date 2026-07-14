@@ -62,7 +62,7 @@ const html = `<!doctype html>
   </head>
   <body>
     <div class="accent-bar"></div>
-    <h1>Smash Tracker</h1>
+    <h1>grandfinals.gg</h1>
     <div class="tagline">Free Super Smash Bros. Ultimate analytics</div>
     <div class="features">GSP &amp; Elite Smash tracking · matchup stats · AI scouting</div>
     <div class="domain">grandfinals.gg</div>
