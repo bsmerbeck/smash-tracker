@@ -1396,5 +1396,21 @@
     "filterPlaceholder": "Nach Name filtern...",
     "saved": "Kämpfer gespeichert!",
     "saveFailed": "Kämpfer konnten nicht gespeichert werden. Bitte versuche es erneut."
+  },
+  "share": {
+    "loadingTitle": "Review wird geladen… · grandfinals.gg",
+    "unavailableTitle": "Dieser Review ist nicht mehr verfügbar",
+    "unavailableMessage": "Der Link wurde möglicherweise widerrufen oder hat nie existiert.",
+    "unavailableHomeLink": "Zu grandfinals.gg",
+    "resultWin": "Sieg",
+    "resultLoss": "Niederlage",
+    "reviewedMoments_one": "{{count}} besprochener Moment",
+    "reviewedMoments_other": "{{count}} besprochene Momente",
+    "sharedBy": "Geteilt von {{name}}",
+    "watchOnHost": "Auf {{host}} ansehen",
+    "videoUnavailable": "Dieses VOD ist nicht mehr verfügbar.",
+    "ctaTitle": "Analysiere deine eigenen Matches",
+    "ctaBody": "Verfolge deine eigenen VODs mit klickbaren Zeitmarken — kostenlos, keine Kreditkarte nötig.",
+    "ctaButton": "Kostenlos starten"
   }
 }
