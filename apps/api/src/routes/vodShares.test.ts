@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { authHeader, buildTestApp, TEST_UID } from '../test-support/testApp.js';
+import { authHeader, buildTestApp, registerUser, TEST_UID } from '../test-support/testApp.js';
+
+const SECOND_UID = 'test-uid-456';
+const SECOND_TOKEN = 'valid-test-token-2';
 
 function seedMatch(database: ReturnType<typeof buildTestApp>['database'], overrides = {}) {
   database.seed(`matches/${TEST_UID}`, {
@@ -322,5 +325,78 @@ describe('POST /api/vod-shares/:id/revoke', () => {
     const response = await app.inject({ method: 'POST', url: '/api/vod-shares/nope/revoke' });
 
     expect(response.statusCode).toBe(401);
+  });
+});
+
+describe('WR-02: cross-user ownership', () => {
+  it("404s when creating a share against another user's matchId (never a body/params uid, T-05-04)", async () => {
+    const { app, auth, database } = buildTestApp();
+    seedMatch(database); // seeds matches/{TEST_UID}/m1
+    registerUser(auth, SECOND_TOKEN, { uid: SECOND_UID, email: 'second@example.com' });
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/vod-shares',
+      headers: authHeader(SECOND_TOKEN),
+      payload: { matchId: 'm1', redaction: REDACTION_ALL_ON },
+    });
+
+    // Same 404 as "a match that does not exist" -- ownership is enforced by
+    // path shape (matches/{uid}/{matchId}), so a foreign matchId is
+    // indistinguishable from a nonexistent one; never a 403 that would
+    // confirm the match's existence to a non-owner.
+    expect(response.statusCode).toBe(404);
+  });
+
+  it("404s when revoking another user's shareId, without silently succeeding or leaking existence", async () => {
+    const { app, auth, database } = buildTestApp();
+    seedMatch(database);
+    registerUser(auth, SECOND_TOKEN, { uid: SECOND_UID, email: 'second@example.com' });
+
+    const createResponse = await app.inject({
+      method: 'POST',
+      url: '/api/vod-shares',
+      headers: authHeader(),
+      payload: { matchId: 'm1', redaction: REDACTION_ALL_ON },
+    });
+    const { shareId, token } = createResponse.json();
+
+    const response = await app.inject({
+      method: 'POST',
+      url: `/api/vod-shares/${shareId}/revoke`,
+      headers: authHeader(SECOND_TOKEN),
+    });
+
+    // Same 404 as "an unknown share" -- indistinguishable from a share that
+    // never existed.
+    expect(response.statusCode).toBe(404);
+
+    // And the share must remain untouched -- user B's failed attempt did
+    // not revoke user A's share.
+    const dump = database.dump() as Record<string, unknown>;
+    const tokens = dump.shareTokens as Record<string, Record<string, unknown>>;
+    expect(tokens[token]!.revokedAt).toBeUndefined();
+  });
+
+  it("GET /api/vod-shares never includes another user's shares", async () => {
+    const { app, auth, database } = buildTestApp();
+    seedMatch(database);
+    registerUser(auth, SECOND_TOKEN, { uid: SECOND_UID, email: 'second@example.com' });
+
+    await app.inject({
+      method: 'POST',
+      url: '/api/vod-shares',
+      headers: authHeader(),
+      payload: { matchId: 'm1', redaction: REDACTION_ALL_ON },
+    });
+
+    const response = await app.inject({
+      method: 'GET',
+      url: '/api/vod-shares',
+      headers: authHeader(SECOND_TOKEN),
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual([]);
   });
 });
