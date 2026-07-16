@@ -106,6 +106,34 @@ describe('renderShareHtml', () => {
     expect(html).toContain('&lt;script&gt;');
   });
 
+  it("inserts String.replace $-patterns ($&, $`, $', $$) in the display name and token verbatim — never expanded", async () => {
+    const fetchImpl = fetchOk(FAKE_SHELL);
+    const snapshot = makeSnapshot({
+      redaction: { includedNotes: false, includedTags: false, showDisplayName: true },
+      // `$&`/`$\``/`$'`/`$$` are special in a String.replace replacement
+      // STRING — a replacer function must keep them inert.
+      ownerDisplayName: "a$&b$`c$'d$$e",
+    });
+
+    const html = await renderShareHtml({
+      // The HTML route renders even for tokens getShareByToken rejects, so a
+      // `$` can reach the canonical/og:url rewrite via the URL param.
+      token: 'token$with$dollars',
+      snapshot,
+      webBaseUrl: WEB_BASE_URL,
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+    });
+
+    // escapeHtml turns the apostrophe into &#39;; every $ must survive
+    // literally — `$$` must NOT collapse to `$`, `$&` must NOT expand to the
+    // matched text, and `$\``/`$'` must NOT splice in surrounding tag text.
+    expect(html).toContain('Shared by a$&amp;b$`c$&#39;d$$e.');
+    expect(html).toContain(`href="${WEB_BASE_URL}/s/token$with$dollars"`);
+    expect(html).toContain(
+      `<meta property="og:url" content="${WEB_BASE_URL}/s/token$with$dollars">`,
+    );
+  });
+
   it('produces generic non-leaking meta with noindex for a null (unknown/revoked) snapshot', async () => {
     const fetchImpl = fetchOk(FAKE_SHELL);
 
