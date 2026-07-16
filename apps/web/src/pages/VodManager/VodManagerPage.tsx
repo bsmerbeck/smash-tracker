@@ -7,6 +7,7 @@ import {
   Check,
   ChevronLeft,
   ChevronRight,
+  Link2,
   Maximize2,
   Minimize2,
   Pencil,
@@ -75,6 +76,7 @@ import { TimestampList } from './components/TimestampList';
 import { QuickTagPanel } from './components/QuickTagPanel';
 import { SelectedMatchMeta } from './components/SelectedMatchMeta';
 import { PlaylistSelector } from './components/PlaylistSelector';
+import { MySharesDialog } from './MySharesDialog';
 
 /**
  * Resolves the second to start playback at for `match`'s VOD: the player's
@@ -241,6 +243,10 @@ export function VodManagerPage() {
     setRenaming(false);
   }
   const [confirmingDeletePlaylist, setConfirmingDeletePlaylist] = useState(false);
+  // "My shares" manage/revoke dialog (SHARE-04/05) — a toolbar entry point
+  // independent of the selected match, so it stays open across selection
+  // changes rather than living in URL state like `?match=`/`?playlist=`.
+  const [mySharesOpen, setMySharesOpen] = useState(false);
 
   const filterOptions = useMemo(() => getVodManagerFilterOptions(vodMatches), [vodMatches]);
   const filtered = useMemo(() => {
@@ -877,7 +883,14 @@ export function VodManagerPage() {
 
   return (
     <div className="flex flex-col gap-6">
-      <h1 className="text-2xl font-semibold tracking-tight">{t('vodManager.title')}</h1>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h1 className="text-2xl font-semibold tracking-tight">{t('vodManager.title')}</h1>
+        <Button type="button" variant="outline" size="sm" onClick={() => setMySharesOpen(true)}>
+          <Link2 className="size-4" />
+          {t('vodManager.shares.mySharesButton')}
+        </Button>
+      </div>
+      <MySharesDialog open={mySharesOpen} onOpenChange={setMySharesOpen} />
 
       {!isLoading && vodMatches.length === 0 ? (
         <p className="text-sm text-muted-foreground">{t('vodManager.emptyState')}</p>
