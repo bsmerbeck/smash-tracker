@@ -35,6 +35,8 @@ import {
   reportsConfigSchema,
   scoutReportDataSchema,
   scoutReportRecordSchema,
+  shareCreatedResponseSchema,
+  shareSummarySchema,
   stageFavoritesSchema,
   startggAuthorizeResponseSchema,
   startggStatusSchema,
@@ -53,6 +55,7 @@ import {
   type ParryggLoginStartRequest,
   type CreatePlaylistInput,
   type UpdatePlaylistInput,
+  type CreateShareInput,
   type ScoutQuery,
   type UpdateGspReadingInput,
   type UpdateMatchInput,
@@ -464,6 +467,19 @@ export const api = {
         method: 'PUT',
         body: input,
       }),
+  },
+  vodShares: {
+    /** GET /api/vod-shares — the signed-in user's share links (active + revoked). */
+    list: () => apiRequestParsed('/api/vod-shares', shareSummarySchema.array()),
+    /** POST /api/vod-shares — creates a new redacted share snapshot + token. */
+    create: (input: CreateShareInput) =>
+      apiRequestParsed('/api/vod-shares', shareCreatedResponseSchema, {
+        method: 'POST',
+        body: input,
+      }),
+    /** POST /api/vod-shares/:id/revoke — soft-revokes; the share stays listed. */
+    revoke: (id: string) =>
+      apiRequest<void>(`/api/vod-shares/${encodeURIComponent(id)}/revoke`, { method: 'POST' }),
   },
 };
 
