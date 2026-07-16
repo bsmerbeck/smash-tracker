@@ -104,6 +104,25 @@ const vodSharesRoutes: FastifyPluginAsyncZod<VodSharesRoutesOptions> = async (ap
       return reply.code(204).send();
     },
   );
+
+  // DELETE /api/vod-shares/:id — hard-deletes a REVOKED share (list hygiene).
+  // Active shares 409 (ConflictError → global handler): revoke is the only
+  // way to end access; delete only clears the dead record afterward.
+  app.delete(
+    '/vod-shares/:id',
+    {
+      schema: {
+        params: shareIdParamsSchema,
+        response: {
+          204: z.undefined(),
+        },
+      },
+    },
+    async (request, reply) => {
+      await rtdb.deleteShare(request.uid, request.params.id);
+      return reply.code(204).send();
+    },
+  );
 };
 
 export default vodSharesRoutes;

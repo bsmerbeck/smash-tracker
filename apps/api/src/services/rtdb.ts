@@ -833,4 +833,36 @@ export class RtdbService {
 
     await tokenRef.update({ revokedAt: Date.now() });
   }
+
+  /**
+   * Hard-deletes a REVOKED share: removes the token, the snapshot, and the
+   * owner-index entry in one atomic root-level multi-path update. Active
+   * shares must be revoked first (409) — deletion is a list-hygiene action,
+   * never a substitute for the one-way revoke transition.
+   */
+  async deleteShare(uid: string, shareId: string): Promise<void> {
+    const indexRef = this.database.ref(`sharesByUser/${uid}/${shareId}`);
+    const indexSnapshot = await indexRef.get();
+    if (!indexSnapshot.exists() || typeof indexSnapshot.val() !== 'string') {
+      throw new NotFoundError(`Share ${shareId} not found`);
+    }
+    const token = indexSnapshot.val() as string;
+
+    const tokenSnapshot = await this.database.ref(`shareTokens/${token}`).get();
+    if (!tokenSnapshot.exists()) {
+      throw new NotFoundError(`Share ${shareId} not found`);
+    }
+    const tokenRecord = tokenSnapshot.val() as { revokedAt?: number | null };
+    if (tokenRecord.revokedAt == null) {
+      throw new ConflictError('Revoke the share before deleting it');
+    }
+
+    // Root-level multi-path update: null values delete keys atomically.
+    // Server-only write path — never expressible through client RTDB rules.
+    await this.database.ref().update({
+      [`shareTokens/${token}`]: null,
+      [`shareSnapshots/${shareId}`]: null,
+      [`sharesByUser/${uid}/${shareId}`]: null,
+    });
+  }
 }

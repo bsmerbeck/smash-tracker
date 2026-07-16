@@ -328,6 +328,104 @@ describe('POST /api/vod-shares/:id/revoke', () => {
   });
 });
 
+describe('DELETE /api/vod-shares/:id', () => {
+  async function createAndRevoke(app: ReturnType<typeof buildTestApp>['app']) {
+    const createResponse = await app.inject({
+      method: 'POST',
+      url: '/api/vod-shares',
+      headers: authHeader(),
+      payload: { matchId: 'm1', redaction: REDACTION_ALL_ON },
+    });
+    const { shareId, token } = createResponse.json();
+    await app.inject({
+      method: 'POST',
+      url: `/api/vod-shares/${shareId}/revoke`,
+      headers: authHeader(),
+    });
+    return { shareId, token };
+  }
+
+  it('hard-deletes a revoked share — token, snapshot, and index entry all removed', async () => {
+    const { app, database } = buildTestApp();
+    seedMatch(database);
+    const { shareId, token } = await createAndRevoke(app);
+
+    const response = await app.inject({
+      method: 'DELETE',
+      url: `/api/vod-shares/${shareId}`,
+      headers: authHeader(),
+    });
+
+    expect(response.statusCode).toBe(204);
+    const dump = database.dump() as Record<string, unknown>;
+    const snapshots = (dump.shareSnapshots ?? {}) as Record<string, unknown>;
+    expect(snapshots[shareId]).toBeUndefined();
+    const tokens = (dump.shareTokens ?? {}) as Record<string, unknown>;
+    expect(tokens[token]).toBeUndefined();
+    const index = ((dump.sharesByUser ?? {}) as Record<string, Record<string, unknown>>)[TEST_UID];
+    expect(index?.[shareId]).toBeUndefined();
+
+    const listResponse = await app.inject({
+      method: 'GET',
+      url: '/api/vod-shares',
+      headers: authHeader(),
+    });
+    expect(listResponse.json()).toEqual([]);
+  });
+
+  it('409s for an ACTIVE share — revoke must come first', async () => {
+    const { app, database } = buildTestApp();
+    seedMatch(database);
+    const createResponse = await app.inject({
+      method: 'POST',
+      url: '/api/vod-shares',
+      headers: authHeader(),
+      payload: { matchId: 'm1', redaction: REDACTION_ALL_ON },
+    });
+    const { shareId, token } = createResponse.json();
+
+    const response = await app.inject({
+      method: 'DELETE',
+      url: `/api/vod-shares/${shareId}`,
+      headers: authHeader(),
+    });
+
+    expect(response.statusCode).toBe(409);
+    const dump = database.dump() as Record<string, unknown>;
+    const tokens = dump.shareTokens as Record<string, unknown>;
+    expect(tokens[token]).toBeDefined();
+  });
+
+  it('404s for an unknown share and rejects unauthenticated requests', async () => {
+    const { app } = buildTestApp();
+
+    const missing = await app.inject({
+      method: 'DELETE',
+      url: '/api/vod-shares/nope',
+      headers: authHeader(),
+    });
+    expect(missing.statusCode).toBe(404);
+
+    const unauthenticated = await app.inject({ method: 'DELETE', url: '/api/vod-shares/nope' });
+    expect(unauthenticated.statusCode).toBe(401);
+  });
+
+  it("404s when deleting another user's revoked share (cross-user)", async () => {
+    const { app, auth, database } = buildTestApp();
+    seedMatch(database);
+    const { shareId } = await createAndRevoke(app);
+    registerUser(auth, SECOND_TOKEN, { uid: SECOND_UID, email: 'second@example.com' });
+
+    const response = await app.inject({
+      method: 'DELETE',
+      url: `/api/vod-shares/${shareId}`,
+      headers: authHeader(SECOND_TOKEN),
+    });
+
+    expect(response.statusCode).toBe(404);
+  });
+});
+
 describe('WR-02: cross-user ownership', () => {
   it("404s when creating a share against another user's matchId (never a body/params uid, T-05-04)", async () => {
     const { app, auth, database } = buildTestApp();
