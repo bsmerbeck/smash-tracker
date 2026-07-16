@@ -11,6 +11,16 @@ const SHELL_CACHE_KEY = 'spa-shell';
 // why this is a plain in-memory Map, not an RTDB-backed cache.
 const shellCache = createTtlCache<string>(SHELL_CACHE_TTL_MS);
 
+/**
+ * Test-only seam: clears the module-level shell cache. Without it, the first
+ * successful test in a file populates the cache and every later
+ * shell-fetch-FAILURE test silently exercises the cached happy path instead
+ * of the fallback it claims to cover. Never called by production code.
+ */
+export function resetShareHtmlCachesForTests(): void {
+  shellCache.clear();
+}
+
 const FALLBACK_TITLE = 'Shared VOD review · grandfinals.gg';
 const FALLBACK_DESCRIPTION =
   'Watch a shared VOD review with click-to-seek timestamps on grandfinals.gg.';
