@@ -21,6 +21,18 @@ const SPRITE_CACHE_TTL_MS = 60 * 60 * 1000;
 const pngCache = createTtlCache<Buffer>(PNG_CACHE_TTL_MS);
 const spriteCache = createTtlCache<string>(SPRITE_CACHE_TTL_MS);
 
+/**
+ * Test-only seam: clears the module-level PNG + sprite caches. Without it,
+ * the first successful test in a file caches sprite data-URIs (1h TTL) and
+ * every later sprite-fetch-FAILURE test silently renders the cached sprites
+ * instead of the sprite-less degrade branch it claims to cover. Never
+ * called by production code.
+ */
+export function resetOgImageCachesForTests(): void {
+  pngCache.clear();
+  spriteCache.clear();
+}
+
 /** Satori's plain-object element form (no JSX transform in apps/api — RESEARCH.md Pattern 5). Cast at the `satori()` call site since satori's own type expects React's `ReactNode` (a devDependency this package never installs). */
 type SatoriElement = {
   type: string;

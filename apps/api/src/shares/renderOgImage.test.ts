@@ -1,6 +1,6 @@
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { PublicShareSnapshot } from '@smash-tracker/shared';
-import { renderOgImage } from './renderOgImage.js';
+import { renderOgImage, resetOgImageCachesForTests } from './renderOgImage.js';
 
 const WEB_BASE_URL = 'https://grandfinals.gg';
 
@@ -43,6 +43,15 @@ function fetchFails() {
 }
 
 describe('renderOgImage', () => {
+  beforeEach(() => {
+    // The module-level sprite cache (1h TTL) would otherwise carry the
+    // sprites fetched by the first test into the sprite-fetch-FAILURE test
+    // below, rendering a normal card instead of the degrade branch
+    // (iteration-2 review WR-04). Only the statically-imported module
+    // instance needs this — the vi.resetModules() tests get fresh caches.
+    resetOgImageCachesForTests();
+  });
+
   it('produces a non-empty 1200x630 PNG for an active snapshot', async () => {
     const fetchImpl = fetchOkPng();
     const snapshot = makeSnapshot();
@@ -123,6 +132,10 @@ describe('renderOgImage', () => {
       fetchImpl: fetchImpl as unknown as typeof fetch,
     });
 
+    // Both sprite fetches must actually have been attempted (and rejected) —
+    // cached sprite data-URIs would short-circuit fetchSpriteDataUri and
+    // render a normal card, never reaching the sprite-less degrade branch.
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
     expect(png).not.toBeNull();
     expect(png!.subarray(0, 8)).toEqual(PNG_SIGNATURE);
   });
