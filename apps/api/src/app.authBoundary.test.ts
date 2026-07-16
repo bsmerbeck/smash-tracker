@@ -29,8 +29,10 @@ const KNOWN_ANONYMOUS_ROUTES: Array<{ method: 'GET' | 'POST'; url: string }> = [
   { method: 'POST', url: '/api/auth/parrygg/login/start' },
   { method: 'POST', url: '/api/auth/parrygg/login/complete' },
   { method: 'POST', url: '/api/billing/webhook' },
-  // NEW this phase — stubbed registration seam only, no real handler logic:
   { method: 'GET', url: '/api/vod-shares/:token' },
+  // NEW this phase — root-scoped (not /api-prefixed) HTML shell + OG image:
+  { method: 'GET', url: '/s/:token' },
+  { method: 'GET', url: '/s/:token/og.png' },
 ];
 
 describe('auth boundary', () => {
