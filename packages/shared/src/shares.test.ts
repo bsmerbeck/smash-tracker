@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   createShareInputSchema,
   MAX_SHARES_PER_USER,
+  publicShareSnapshotSchema,
   shareSnapshotSchema,
   shareTokenSchema,
 } from './shares.js';
@@ -107,6 +108,88 @@ describe('shareSnapshotSchema', () => {
     });
     expect(redacted.reviewedMomentsCount).toBe(5);
     expect(redacted.timestamps).toBeUndefined();
+  });
+});
+
+function fullyPopulatedPublicSnapshot() {
+  return {
+    createdAt: 1000,
+    result: 'win' as const,
+    fighterId: 1,
+    opponentFighterId: 2,
+    stage: { id: 3, name: 'Battlefield' },
+    matchDate: 500,
+    vodUrl: 'https://youtu.be/abc123',
+    vodStartSeconds: 42,
+    reviewedMomentsCount: 2,
+    timestamps: [
+      { seconds: 10, note: 'missed punish', tags: ['punish'] },
+      { seconds: 90, note: 'good edgeguard' },
+    ],
+    tags: ['practice-friendlies'],
+    ownerDisplayName: 'Some Player',
+    redaction: {
+      includedNotes: true,
+      includedTags: true,
+      showDisplayName: true,
+    },
+  };
+}
+
+function fullyRedactedPublicSnapshot() {
+  return {
+    createdAt: 1000,
+    result: 'loss' as const,
+    fighterId: 1,
+    opponentFighterId: 2,
+    matchDate: 500,
+    vodUrl: 'https://youtu.be/abc123',
+    reviewedMomentsCount: 2,
+    redaction: {
+      includedNotes: false,
+      includedTags: false,
+      showDisplayName: false,
+    },
+  };
+}
+
+describe('publicShareSnapshotSchema', () => {
+  it('parses a fully-populated public object and yields every field except uid/matchId', () => {
+    const parsed = publicShareSnapshotSchema.parse(fullyPopulatedPublicSnapshot());
+    expect(parsed.timestamps).toHaveLength(2);
+    expect(parsed.tags).toEqual(['practice-friendlies']);
+    expect(parsed.ownerDisplayName).toBe('Some Player');
+    expect(parsed.redaction).toEqual({
+      includedNotes: true,
+      includedTags: true,
+      showDisplayName: true,
+    });
+    expect('uid' in parsed).toBe(false);
+    expect('matchId' in parsed).toBe(false);
+  });
+
+  it('has no field for uid or matchId (structurally absent)', () => {
+    const shape = publicShareSnapshotSchema.shape;
+    expect(shape).not.toHaveProperty('uid');
+    expect(shape).not.toHaveProperty('matchId');
+  });
+
+  it('parses a fully-redacted public object (timestamps/tags/ownerDisplayName absent)', () => {
+    const input = fullyRedactedPublicSnapshot();
+    const parsed = publicShareSnapshotSchema.parse(input);
+
+    expect('timestamps' in input).toBe(false);
+    expect('tags' in input).toBe(false);
+    expect('ownerDisplayName' in input).toBe(false);
+    expect(parsed.timestamps).toBeUndefined();
+    expect(parsed.tags).toBeUndefined();
+    expect(parsed.ownerDisplayName).toBeUndefined();
+  });
+
+  it('rejects an object missing a required match fact (result)', () => {
+    const { result: _result, ...withoutResult } = fullyPopulatedPublicSnapshot();
+    const parsed = publicShareSnapshotSchema.safeParse(withoutResult);
+    expect(parsed.success).toBe(false);
   });
 });
 
