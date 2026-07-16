@@ -174,11 +174,15 @@ function replaceMetaTag(
   const tagRegex = new RegExp(`<meta[^>]*${selectorAttr}="${selectorValue}"[^>]*>`, 'i');
   if (!tagRegex.test(html)) return html;
 
+  // Replacer FUNCTIONS (never replacement strings) so `$&`/`$\``/`$'`/`$$`
+  // in user-derived content (owner display name, token) stay inert —
+  // String.replace treats `$`-patterns in a replacement STRING specially,
+  // which would corrupt the emitted tag (escapeHtml does not touch `$`).
   return html.replace(tagRegex, (tag) => {
     if (/content="[^"]*"/i.test(tag)) {
-      return tag.replace(/content="[^"]*"/i, `content="${escapedValue}"`);
+      return tag.replace(/content="[^"]*"/i, () => `content="${escapedValue}"`);
     }
-    return tag.replace(/\/?>$/, ` content="${escapedValue}"$&`);
+    return tag.replace(/\/?>$/, (closer) => ` content="${escapedValue}"${closer}`);
   });
 }
 
@@ -188,11 +192,13 @@ function replaceLinkHref(html: string, relValue: string, hrefValue: string): str
   const tagRegex = new RegExp(`<link[^>]*rel="${relValue}"[^>]*>`, 'i');
   if (!tagRegex.test(html)) return html;
 
+  // Replacer functions for the same `$`-pattern reason as replaceMetaTag —
+  // the URL token flows into this value.
   return html.replace(tagRegex, (tag) => {
     if (/href="[^"]*"/i.test(tag)) {
-      return tag.replace(/href="[^"]*"/i, `href="${escapedValue}"`);
+      return tag.replace(/href="[^"]*"/i, () => `href="${escapedValue}"`);
     }
-    return tag.replace(/\/?>$/, ` href="${escapedValue}"$&`);
+    return tag.replace(/\/?>$/, (closer) => ` href="${escapedValue}"${closer}`);
   });
 }
 
