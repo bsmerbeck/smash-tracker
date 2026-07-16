@@ -11,6 +11,7 @@ import {
   opponentNoteMapSchema,
   opponentNoteSchema,
   playlistRecordSchema,
+  publicShareSnapshotSchema,
   shareSnapshotSchema,
   shareTokenSchema,
   stageFavoritesSchema,
@@ -31,6 +32,7 @@ import {
   type OpponentNoteMap,
   type Playlist,
   type PlaylistRecord,
+  type PublicShareSnapshot,
   type ShareCreatedResponse,
   type ShareSnapshot,
   type ShareSummary,
@@ -864,5 +866,70 @@ export class RtdbService {
       [`shareSnapshots/${shareId}`]: null,
       [`sharesByUser/${uid}/${shareId}`]: null,
     });
+  }
+
+  /**
+   * Phase 6 (Anonymous Share Experience & Discord Unfurls): resolves a
+   * bearer `token` to the redacted, uid/matchId-free public snapshot
+   * anonymous callers (the JSON endpoint, the OG meta/image pipeline) are
+   * allowed to see. Two-hop join, mirroring `listSharesForUser`'s shape:
+   * `shareTokens/{token}` (revocation check) -> `shareSnapshots/{shareId}`.
+   *
+   * Returns `null` — never throws — for: an unknown token, a
+   * corrupt/unparseable token or snapshot record, AND a revoked token
+   * (`revokedAt` set). Unknown vs. revoked are deliberately
+   * indistinguishable from this method's return type alone (VIEW-05's
+   * no-oracle rule) — callers map `null` to an identical 404.
+   *
+   * `revokedAt` is re-checked against RTDB on EVERY call — this method's
+   * result must never be cached (RESEARCH.md Pitfall 4): a cached "active"
+   * result would break the "revocation takes effect immediately" guarantee.
+   *
+   * Never reads `matches/{uid}` — only `shareTokens/` and `shareSnapshots/`
+   * (T-06-01: the anonymous path must never reach a user's private match
+   * tree).
+   */
+  async getShareByToken(token: string): Promise<PublicShareSnapshot | null> {
+    const tokenSnapshot = await this.database.ref(`shareTokens/${token}`).get();
+    if (!tokenSnapshot.exists()) {
+      return null;
+    }
+    const parsedToken = shareTokenSchema.safeParse(tokenSnapshot.val());
+    if (!parsedToken.success) {
+      return null;
+    }
+    if (parsedToken.data.revokedAt != null) {
+      return null;
+    }
+
+    const snapshotSnapshot = await this.database
+      .ref(`shareSnapshots/${parsedToken.data.shareId}`)
+      .get();
+    if (!snapshotSnapshot.exists()) {
+      return null;
+    }
+    const parsedSnapshot = shareSnapshotSchema.safeParse(snapshotSnapshot.val());
+    if (!parsedSnapshot.success) {
+      return null;
+    }
+    const snapshot = parsedSnapshot.data;
+
+    const publicSnapshot: PublicShareSnapshot = {
+      createdAt: snapshot.createdAt,
+      result: snapshot.result,
+      fighterId: snapshot.fighterId,
+      opponentFighterId: snapshot.opponentFighterId,
+      ...(snapshot.stage ? { stage: snapshot.stage } : {}),
+      matchDate: snapshot.matchDate,
+      vodUrl: snapshot.vodUrl,
+      ...(snapshot.vodStartSeconds != null ? { vodStartSeconds: snapshot.vodStartSeconds } : {}),
+      reviewedMomentsCount: snapshot.reviewedMomentsCount,
+      ...(snapshot.timestamps ? { timestamps: snapshot.timestamps } : {}),
+      ...(snapshot.tags ? { tags: snapshot.tags } : {}),
+      ...(snapshot.ownerDisplayName ? { ownerDisplayName: snapshot.ownerDisplayName } : {}),
+      redaction: snapshot.redaction,
+    };
+
+    return publicShareSnapshotSchema.parse(publicSnapshot);
   }
 }
