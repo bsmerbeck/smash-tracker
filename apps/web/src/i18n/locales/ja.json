@@ -1299,7 +1299,11 @@
       "signInMethods": "ログイン方法",
       "methodEmailPassword": "メールとパスワード",
       "methodParrygg": "parry.gg認証",
-      "methodCustom": "カスタムログイン"
+      "methodCustom": "カスタムログイン",
+      "displayNameLabel": "表示名",
+      "displayNamePlaceholder": "表示名を追加",
+      "displayNameHelper": "「表示名を表示する」をオンにすると、VOD共有リンクに表示されます。",
+      "displayNameSaved": "表示名を更新しました。"
     },
     "security": {
       "title": "セキュリティ",

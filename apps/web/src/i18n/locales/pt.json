@@ -1299,7 +1299,11 @@
       "signInMethods": "Métodos de login",
       "methodEmailPassword": "E-mail e senha",
       "methodParrygg": "Verificação do parry.gg",
-      "methodCustom": "Login personalizado"
+      "methodCustom": "Login personalizado",
+      "displayNameLabel": "Nome de exibição",
+      "displayNamePlaceholder": "Adicione um nome de exibição",
+      "displayNameHelper": "Aparece nos links de VOD compartilhados quando você ativa 'Mostrar seu nome de exibição'.",
+      "displayNameSaved": "Nome de exibição atualizado."
     },
     "security": {
       "title": "Segurança",

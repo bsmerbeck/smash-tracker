@@ -1299,7 +1299,11 @@
       "signInMethods": "Anmeldemethoden",
       "methodEmailPassword": "E-Mail & Passwort",
       "methodParrygg": "parry.gg-Verifizierung",
-      "methodCustom": "Benutzerdefinierte Anmeldung"
+      "methodCustom": "Benutzerdefinierte Anmeldung",
+      "displayNameLabel": "Anzeigename",
+      "displayNamePlaceholder": "Anzeigenamen hinzufügen",
+      "displayNameHelper": "Erscheint auf geteilten VOD-Links, wenn du „Deinen Anzeigenamen zeigen“ aktivierst.",
+      "displayNameSaved": "Anzeigename aktualisiert."
     },
     "security": {
       "title": "Sicherheit",

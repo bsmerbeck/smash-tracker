@@ -1298,7 +1298,11 @@
       "signInMethods": "Métodos de inicio de sesión",
       "methodEmailPassword": "Correo y contraseña",
       "methodParrygg": "Verificación de parry.gg",
-      "methodCustom": "Inicio de sesión personalizado"
+      "methodCustom": "Inicio de sesión personalizado",
+      "displayNameLabel": "Nombre visible",
+      "displayNamePlaceholder": "Añade un nombre visible",
+      "displayNameHelper": "Aparece en los enlaces de VOD compartidos cuando activas 'Mostrar tu nombre visible'.",
+      "displayNameSaved": "Nombre visible actualizado."
     },
     "title": "Perfil",
     "security": {

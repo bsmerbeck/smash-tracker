@@ -48,6 +48,7 @@ export const getAuth = vi.fn(() => mockAuthInstance);
 export const reauthenticateWithCredential = vi.fn();
 export const updatePassword = vi.fn();
 export const sendPasswordResetEmail = vi.fn();
+export const updateProfile = vi.fn();
 
 export class GoogleAuthProvider {}
 
@@ -81,6 +82,7 @@ export function resetAuthMock() {
   reauthenticateWithCredential.mockReset();
   updatePassword.mockReset();
   sendPasswordResetEmail.mockReset();
+  updateProfile.mockReset();
 }
 
 /**
