@@ -29,6 +29,13 @@ interface ShareMeta {
   title: string;
   description: string;
   canonicalUrl: string;
+  /**
+   * The per-token generated OG card (`/s/:token/og.png`) for an ACTIVE
+   * snapshot; `null` for an unknown/revoked/malformed token, which leaves
+   * the shell's static `og-image.png` untouched — the generic image never
+   * discloses whether a token ever referred to a real share (VIEW-05).
+   */
+  ogImageUrl: string | null;
 }
 
 /**
@@ -38,7 +45,9 @@ interface ShareMeta {
  * NOT through `/s/:token` itself, which would recurse through the same
  * Hosting rewrite — then string-swaps ONLY the 7 head tags `useSeo.ts`
  * already manages client-side (og:title, twitter:title, description,
- * og:description, twitter:description, canonical, og:url), plus always sets
+ * og:description, twitter:description, canonical, og:url), plus — for an
+ * ACTIVE snapshot only — `og:image`/`twitter:image` (pointed at the
+ * generated per-token card `/s/:token/og.png`), plus always sets
  * `robots: noindex` (unlisted means unlisted, VIEW-05). Every other static
  * head tag (viewport, favicon, theme-color, etc.) is left untouched.
  *
@@ -69,7 +78,7 @@ export async function renderShareHtml({
   try {
     shell = await getShell(webBaseUrl, fetchImpl);
   } catch {
-    return fallbackHtml(meta);
+    return fallbackHtml(meta, webBaseUrl);
   }
 
   return applyMeta(shell, meta);
@@ -96,7 +105,15 @@ function computeMeta(
   const canonicalUrl = `${webBaseUrl}/s/${token}`;
 
   if (!snapshot) {
-    return { title: FALLBACK_TITLE, description: FALLBACK_DESCRIPTION, canonicalUrl };
+    // ogImageUrl stays null — the shell's static og-image.png remains, so a
+    // crawler is never pointed at a per-token card URL for a token that may
+    // not exist (VIEW-05).
+    return {
+      title: FALLBACK_TITLE,
+      description: FALLBACK_DESCRIPTION,
+      canonicalUrl,
+      ogImageUrl: null,
+    };
   }
 
   const fighterAName = getFighterById(snapshot.fighterId)?.name ?? 'Unknown fighter';
@@ -119,7 +136,12 @@ function computeMeta(
     description += ` Shared by ${snapshot.ownerDisplayName}.`;
   }
 
-  return { title, description, canonicalUrl };
+  // Active snapshot: point crawlers at the generated per-token OG card —
+  // this rewrite is what makes the satori/resvg pipeline reachable at all
+  // (without it every unfurl shows the generic static og-image.png).
+  const ogImageUrl = `${webBaseUrl}/s/${token}/og.png`;
+
+  return { title, description, canonicalUrl, ogImageUrl };
 }
 
 function applyMeta(html: string, meta: ShareMeta): string {
@@ -131,6 +153,12 @@ function applyMeta(html: string, meta: ShareMeta): string {
   out = replaceMetaTag(out, 'name', 'twitter:description', meta.description);
   out = replaceLinkHref(out, 'canonical', meta.canonicalUrl);
   out = replaceMetaTag(out, 'property', 'og:url', meta.canonicalUrl);
+  // Only for an active snapshot — a null ogImageUrl keeps the shell's
+  // generic static image (unknown/revoked tokens must not hint at validity).
+  if (meta.ogImageUrl) {
+    out = replaceMetaTag(out, 'property', 'og:image', meta.ogImageUrl);
+    out = replaceMetaTag(out, 'name', 'twitter:image', meta.ogImageUrl);
+  }
   out = setRobotsNoindex(out);
   return out;
 }
@@ -187,10 +215,13 @@ function setRobotsNoindex(html: string): string {
  * the same computed OG meta and a plain link back to the site, so a
  * Hosting-origin hiccup degrades to a simple page rather than a 500.
  */
-function fallbackHtml(meta: ShareMeta): string {
+function fallbackHtml(meta: ShareMeta, webBaseUrl: string): string {
   const title = escapeHtml(meta.title);
   const description = escapeHtml(meta.description);
   const canonicalUrl = escapeHtml(meta.canonicalUrl);
+  // Active snapshot → the per-token generated card; null snapshot → the
+  // generic static image (same non-leaking posture as applyMeta).
+  const ogImageUrl = escapeHtml(meta.ogImageUrl ?? `${webBaseUrl}/og-image.png`);
   return `<!doctype html>
 <html lang="en">
 <head>
@@ -204,6 +235,8 @@ function fallbackHtml(meta: ShareMeta): string {
 <meta name="twitter:description" content="${description}">
 <link rel="canonical" href="${canonicalUrl}">
 <meta property="og:url" content="${canonicalUrl}">
+<meta property="og:image" content="${ogImageUrl}">
+<meta name="twitter:image" content="${ogImageUrl}">
 </head>
 <body>
 <p>${title}</p>

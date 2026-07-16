@@ -17,6 +17,8 @@ const FAKE_SHELL = `<!doctype html>
 <meta name="twitter:description" content="Static default description">
 <link rel="canonical" href="https://grandfinals.gg/">
 <meta property="og:url" content="https://grandfinals.gg/">
+<meta property="og:image" content="https://grandfinals.gg/og-image.png">
+<meta name="twitter:image" content="https://grandfinals.gg/og-image.png">
 </head>
 <body>
 <div id="root"></div>
@@ -74,6 +76,14 @@ describe('renderShareHtml', () => {
     );
     expect(html).toMatch(/<meta name="robots" content="noindex">/);
     expect(html).toContain(`href="${WEB_BASE_URL}/s/${TOKEN}"`);
+    // The generated per-token OG card must replace the shell's static image
+    // — this is what makes /s/:token/og.png reachable by crawlers at all.
+    expect(html).toContain(
+      `<meta property="og:image" content="${WEB_BASE_URL}/s/${TOKEN}/og.png">`,
+    );
+    expect(html).toContain(
+      `<meta name="twitter:image" content="${WEB_BASE_URL}/s/${TOKEN}/og.png">`,
+    );
     expect(html).not.toContain('SECRET NOTE TEXT');
     expect(html).not.toContain('SECRET TAG');
   });
@@ -111,6 +121,15 @@ describe('renderShareHtml', () => {
     expect(html).not.toContain('Mario');
     expect(html).not.toContain('Link');
     expect(html).not.toContain('Battlefield');
+    // The shell's generic static image is kept UNTOUCHED — a per-token card
+    // URL would hint the token might be valid (VIEW-05).
+    expect(html).toContain(
+      '<meta property="og:image" content="https://grandfinals.gg/og-image.png">',
+    );
+    expect(html).toContain(
+      '<meta name="twitter:image" content="https://grandfinals.gg/og-image.png">',
+    );
+    expect(html).not.toContain('/og.png');
   });
 
   it('falls back to a hardcoded safe template when the shell fetch rejects', async () => {
@@ -127,6 +146,10 @@ describe('renderShareHtml', () => {
     expect(html).toContain('<!doctype html>');
     expect(html).toContain('Mario vs Link — VOD review · grandfinals.gg');
     expect(html).toMatch(/<meta name="robots" content="noindex">/);
+    // Even the degraded path can unfurl an image (active snapshot → per-token card).
+    expect(html).toContain(
+      `<meta property="og:image" content="${WEB_BASE_URL}/s/${TOKEN}/og.png">`,
+    );
   });
 
   it('falls back to the hardcoded safe template when the shell fetch returns a non-2xx status', async () => {
@@ -145,5 +168,8 @@ describe('renderShareHtml', () => {
 
     expect(html).toContain('<!doctype html>');
     expect(html).toMatch(/<meta name="robots" content="noindex">/);
+    // Null snapshot in the degraded path → the generic static image, never
+    // a per-token card URL (VIEW-05).
+    expect(html).toContain(`<meta property="og:image" content="${WEB_BASE_URL}/og-image.png">`);
   });
 });

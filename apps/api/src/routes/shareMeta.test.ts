@@ -16,6 +16,8 @@ const FAKE_SHELL = `<!doctype html>
 <meta name="twitter:description" content="Static default description">
 <link rel="canonical" href="https://grandfinals.gg/">
 <meta property="og:url" content="https://grandfinals.gg/">
+<meta property="og:image" content="https://grandfinals.gg/og-image.png">
+<meta name="twitter:image" content="https://grandfinals.gg/og-image.png">
 </head>
 <body>
 <div id="root"></div>
@@ -96,6 +98,14 @@ describe('GET /s/:token', () => {
     expect(response.headers['cache-control']).toBe('no-store');
     expect(response.headers['referrer-policy']).toBe('strict-origin-when-cross-origin');
     expect(response.body).toContain('Mario vs Link');
+    // og:image/twitter:image are swapped to the generated per-token card
+    // (buildTestApp's default webBaseUrl is http://localhost:5173).
+    expect(response.body).toContain(
+      `<meta property="og:image" content="http://localhost:5173/s/${TOKEN}/og.png">`,
+    );
+    expect(response.body).toContain(
+      `<meta name="twitter:image" content="http://localhost:5173/s/${TOKEN}/og.png">`,
+    );
   });
 
   it('returns 200 with generic non-leaking noindex meta for an unknown/revoked token', async () => {
@@ -115,6 +125,12 @@ describe('GET /s/:token', () => {
       expect(response.body).toContain('Shared VOD review');
       expect(response.body).toMatch(/<meta name="robots" content="noindex">/);
       expect(response.body).not.toContain('Mario');
+      // The shell's generic static image is left untouched — never a
+      // per-token card URL for an unknown/revoked token (VIEW-05).
+      expect(response.body).toContain(
+        '<meta property="og:image" content="https://grandfinals.gg/og-image.png">',
+      );
+      expect(response.body).not.toContain('/og.png"');
     }
   });
 });
