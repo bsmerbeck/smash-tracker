@@ -1396,5 +1396,21 @@
     "filterPlaceholder": "Filter by name...",
     "saved": "Fighters saved!",
     "saveFailed": "Failed to save fighters. Please try again."
+  },
+  "share": {
+    "loadingTitle": "Loading review… · grandfinals.gg",
+    "unavailableTitle": "This review is no longer available",
+    "unavailableMessage": "The link may have been revoked, or it never existed.",
+    "unavailableHomeLink": "Go to grandfinals.gg",
+    "resultWin": "Win",
+    "resultLoss": "Loss",
+    "reviewedMoments_one": "{{count}} reviewed moment",
+    "reviewedMoments_other": "{{count}} reviewed moments",
+    "sharedBy": "Shared by {{name}}",
+    "watchOnHost": "Watch on {{host}}",
+    "videoUnavailable": "This VOD is no longer available.",
+    "ctaTitle": "Review your own set",
+    "ctaBody": "Track your own VODs with click-to-seek timestamps — free, no credit card.",
+    "ctaButton": "Get started free"
   }
 }

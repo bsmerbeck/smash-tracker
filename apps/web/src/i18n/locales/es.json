@@ -1396,5 +1396,21 @@
     "filterPlaceholder": "Filtrar por nombre...",
     "saved": "¡Luchadores guardados!",
     "saveFailed": "No se pudieron guardar los luchadores. Inténtalo de nuevo."
+  },
+  "share": {
+    "loadingTitle": "Cargando reseña… · grandfinals.gg",
+    "unavailableTitle": "Esta reseña ya no está disponible",
+    "unavailableMessage": "Puede que el enlace haya sido revocado, o que nunca haya existido.",
+    "unavailableHomeLink": "Ir a grandfinals.gg",
+    "resultWin": "Victoria",
+    "resultLoss": "Derrota",
+    "reviewedMoments_one": "{{count}} momento revisado",
+    "reviewedMoments_other": "{{count}} momentos revisados",
+    "sharedBy": "Compartido por {{name}}",
+    "watchOnHost": "Ver en {{host}}",
+    "videoUnavailable": "Este VOD ya no está disponible.",
+    "ctaTitle": "Revisa tus propias partidas",
+    "ctaBody": "Registra tus propios VODs con marcas de tiempo de salto directo — gratis, sin tarjeta de crédito.",
+    "ctaButton": "Empezar gratis"
   }
 }
