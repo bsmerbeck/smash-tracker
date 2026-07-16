@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 import { Check, Copy } from 'lucide-react';
@@ -58,9 +58,12 @@ export function ShareDialog({
     (share) => share.matchId === match.id && share.status === 'active',
   );
 
-  function handleOpenChange(next: boolean) {
-    onOpenChange(next);
-    if (next) {
+  // Reset must key off the `open` PROP, not Radix's onOpenChange: the parent
+  // controls `open`, and re-opening via the Share button never fires
+  // onOpenChange — so resetting only there left the dialog stuck on the
+  // stale 'created' step when sharing the same match again.
+  useEffect(() => {
+    if (open) {
       setStep('create');
       setIncludeNotes(true);
       setIncludeTags(true);
@@ -68,6 +71,10 @@ export function ShareDialog({
       setCreatedUrl('');
       setCopied(false);
     }
+  }, [open]);
+
+  function handleOpenChange(next: boolean) {
+    onOpenChange(next);
   }
 
   async function handleCreate() {
