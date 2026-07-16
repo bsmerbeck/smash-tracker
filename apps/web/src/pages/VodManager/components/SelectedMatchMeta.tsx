@@ -2,7 +2,7 @@ import type { RefObject } from 'react';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
-import { ListPlus, Plus, Share2, X } from 'lucide-react';
+import { Link2, ListPlus, Plus, Share2, X } from 'lucide-react';
 import {
   MAX_PLAYLISTS_PER_USER,
   type Fighter,
@@ -16,6 +16,7 @@ import { MATCH_PRESET_TAGS, addTagToList, removeTagFromList, tagLabel } from '@/
 import { addMatchToPlaylistIds } from '@/lib/playlists';
 import { useUpdateMatch } from '@/hooks/useUpdateMatch';
 import { useCreatePlaylist, useUpdatePlaylist } from '@/hooks/usePlaylists';
+import { useVodShares } from '@/hooks/useVodShares';
 import { buildUpdateInput } from '@/components/vod/VodNotesDialog';
 import { tournamentLabel } from '@/pages/MatchData/lib/matchTableFilters';
 import { ApiError } from '@/lib/api';
@@ -210,6 +211,15 @@ export function SelectedMatchMeta({
   const fighter = getFighterById(match.fighter_id);
   const opponentFighter = getFighterById(match.opponent_id);
 
+  // "Shared" indicator (SHARE-05) — client-side soft-orphan join against the
+  // owner's full share list, mirroring `resolvePlaylistMatches`'s pattern:
+  // a match "has an active share" the moment any of its issued shares is
+  // still active, independent of which one.
+  const sharesQuery = useVodShares();
+  const hasActiveShare = (sharesQuery.data ?? []).some(
+    (share) => share.matchId === match.id && share.status === 'active',
+  );
+
   // requireOpponent: false — mirrors EditMatchForm: Quick Logger matches are
   // stored with `opponent: ''` (anonymous quickplay randoms) and must stay
   // editable without inventing a name.
@@ -336,6 +346,12 @@ export function SelectedMatchMeta({
               })}
             >
               {t('matchData.table.synced')}
+            </Badge>
+          )}
+          {hasActiveShare && (
+            <Badge variant="outline" title={t('vodManager.shares.sharedBadgeTooltip')}>
+              <Link2 className="size-3" />
+              {t('vodManager.shares.sharedBadge')}
             </Badge>
           )}
           <AddToPlaylistMenu playlists={playlists} matchId={match.id} />
