@@ -9,6 +9,7 @@ import {
   signInWithPopup,
   signOut as firebaseSignOut,
   updatePassword,
+  updateProfile,
   type User as FirebaseUser,
 } from 'firebase/auth';
 import { createContext, useEffect, useMemo, useState, type ReactNode } from 'react';
@@ -38,6 +39,11 @@ export interface AuthContextValue {
    * reset flow adds password sign-in alongside their existing method.
    */
   sendPasswordReset: (email: string) => Promise<void>;
+  /**
+   * Profile > Account "display name": the name attached to VOD share links
+   * when the owner enables "Show your display name". `null` clears it.
+   */
+  updateDisplayName: (displayName: string | null) => Promise<void>;
 }
 
 export const AuthContext = createContext<AuthContextValue | undefined>(undefined);
@@ -61,6 +67,11 @@ async function provisionUser(): Promise<void> {
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<FirebaseUser | null>(null);
   const [loading, setLoading] = useState(true);
+  // `updateProfile` mutates the FirebaseUser object in place — the object
+  // keeps its identity and `onAuthStateChanged` never fires — so consumers
+  // holding `user` would render stale profile data. Bumping this version
+  // invalidates the memoized context value, forcing consumers to re-read.
+  const [profileVersion, setProfileVersion] = useState(0);
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(getFirebaseAuth(), (nextUser) => {
@@ -70,8 +81,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return unsubscribe;
   }, []);
 
-  const value = useMemo<AuthContextValue>(
-    () => ({
+  const value = useMemo<AuthContextValue>(() => {
+    // Reading profileVersion here keeps it an honest dependency: its bump is
+    // what refreshes this value (and every consumer) after an in-place
+    // profile mutation.
+    void profileVersion;
+    return {
       user,
       loading,
       signInWithEmail: async (email, password) => {
@@ -111,9 +126,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       sendPasswordReset: async (email) => {
         await sendPasswordResetEmail(getFirebaseAuth(), email);
       },
-    }),
-    [user, loading],
-  );
+      updateDisplayName: async (displayName) => {
+        const current = getFirebaseAuth().currentUser;
+        if (!current) {
+          throw new Error('No signed-in account.');
+        }
+        await updateProfile(current, { displayName });
+        setProfileVersion((version) => version + 1);
+      },
+    };
+  }, [user, loading, profileVersion]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

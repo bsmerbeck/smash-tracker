@@ -1299,7 +1299,11 @@
       "signInMethods": "Sign-in methods",
       "methodEmailPassword": "Email & password",
       "methodParrygg": "parry.gg verification",
-      "methodCustom": "Custom sign-in"
+      "methodCustom": "Custom sign-in",
+      "displayNameLabel": "Display name",
+      "displayNamePlaceholder": "Add a display name",
+      "displayNameHelper": "Appears on VOD share links when you enable 'Show your display name'.",
+      "displayNameSaved": "Display name updated."
     },
     "security": {
       "title": "Security",

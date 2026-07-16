@@ -31,6 +31,7 @@ vi.mock('firebase/auth', async () => {
     reauthenticateWithCredential: mock.reauthenticateWithCredential,
     updatePassword: mock.updatePassword,
     sendPasswordResetEmail: mock.sendPasswordResetEmail,
+    updateProfile: mock.updateProfile,
   };
 });
 
@@ -201,6 +202,67 @@ describe('ProfilePage', () => {
       expect(
         await screen.findByText('Password should be at least 6 characters'),
       ).toBeInTheDocument();
+    });
+  });
+
+  describe('display name', () => {
+    it('prefills the input with the current display name and disables Save until edited', async () => {
+      setMockUser(makeMockUser({ email: 'pilot@example.com', displayName: 'Pilot' }));
+      renderPage();
+
+      const input = await screen.findByLabelText('Display name');
+      expect(input).toHaveValue('Pilot');
+      expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled();
+    });
+
+    it('lets an account without a display name set one (the share-dialog name toggle path)', async () => {
+      setMockUser(makeMockUser({ email: 'pilot@example.com' }));
+      const user = userEvent.setup();
+      const { updateProfile } = await import('firebase/auth');
+      vi.mocked(updateProfile).mockResolvedValue(undefined as never);
+
+      renderPage();
+      const input = await screen.findByLabelText('Display name');
+      expect(input).toHaveValue('');
+
+      await user.type(input, 'GrandFinalist');
+      await user.click(screen.getByRole('button', { name: 'Save' }));
+
+      await waitFor(() =>
+        expect(updateProfile).toHaveBeenCalledWith(expect.anything(), {
+          displayName: 'GrandFinalist',
+        }),
+      );
+      expect(toastSuccess).toHaveBeenCalledWith('Display name updated.');
+    });
+
+    it('clears the display name when saving an emptied field', async () => {
+      setMockUser(makeMockUser({ email: 'pilot@example.com', displayName: 'Pilot' }));
+      const user = userEvent.setup();
+      const { updateProfile } = await import('firebase/auth');
+      vi.mocked(updateProfile).mockResolvedValue(undefined as never);
+
+      renderPage();
+      const input = await screen.findByLabelText('Display name');
+      await user.clear(input);
+      await user.click(screen.getByRole('button', { name: 'Save' }));
+
+      await waitFor(() =>
+        expect(updateProfile).toHaveBeenCalledWith(expect.anything(), { displayName: null }),
+      );
+    });
+
+    it('surfaces a friendly error when the update fails', async () => {
+      setMockUser(makeMockUser({ email: 'pilot@example.com' }));
+      const user = userEvent.setup();
+      const { updateProfile } = await import('firebase/auth');
+      vi.mocked(updateProfile).mockRejectedValue(new Error('network down'));
+
+      renderPage();
+      await user.type(await screen.findByLabelText('Display name'), 'GrandFinalist');
+      await user.click(screen.getByRole('button', { name: 'Save' }));
+
+      await waitFor(() => expect(toastError).toHaveBeenCalled());
     });
   });
 
