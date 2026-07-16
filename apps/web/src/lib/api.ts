@@ -32,6 +32,7 @@ import {
   parryggVerificationCompleteResponseSchema,
   parryggVerificationStartResponseSchema,
   playlistSchema,
+  publicShareSnapshotSchema,
   reportsConfigSchema,
   scoutReportDataSchema,
   scoutReportRecordSchema,
@@ -483,6 +484,16 @@ export const api = {
     /** DELETE /api/vod-shares/:id — removes a REVOKED share from the list (409 if still active). */
     remove: (id: string) =>
       apiRequest<void>(`/api/vod-shares/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+    /**
+     * GET /api/vod-shares/:token — anonymous, unauthenticated read of a
+     * redacted share snapshot by its public token. No Authorization header
+     * is sent for signed-out callers (`getAuthHeader` already no-ops
+     * without a current Firebase user); a real signed-in caller opening
+     * their own share link would harmlessly attach one, which the API
+     * ignores on this route.
+     */
+    getPublic: (token: string) =>
+      apiRequestParsed(`/api/vod-shares/${encodeURIComponent(token)}`, publicShareSnapshotSchema),
   },
 };
 

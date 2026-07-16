@@ -1396,5 +1396,21 @@
     "filterPlaceholder": "名前で絞り込み...",
     "saved": "ファイターを保存しました！",
     "saveFailed": "ファイターを保存できませんでした。もう一度お試しください。"
+  },
+  "share": {
+    "loadingTitle": "レビューを読み込み中… · grandfinals.gg",
+    "unavailableTitle": "このレビューは現在利用できません",
+    "unavailableMessage": "リンクが取り消されたか、存在しなかった可能性があります。",
+    "unavailableHomeLink": "grandfinals.ggへ",
+    "resultWin": "勝利",
+    "resultLoss": "敗北",
+    "reviewedMoments_one": "レビュー済みの場面 {{count}}件",
+    "reviewedMoments_other": "レビュー済みの場面 {{count}}件",
+    "sharedBy": "{{name}}が共有",
+    "watchOnHost": "{{host}}で見る",
+    "videoUnavailable": "このVODは現在利用できません。",
+    "ctaTitle": "自分の対戦をレビューしよう",
+    "ctaBody": "クリックで再生位置に飛べるタイムスタンプ付きで、自分のVODを記録しよう — 無料、クレジットカード不要。",
+    "ctaButton": "無料で始める"
   }
 }

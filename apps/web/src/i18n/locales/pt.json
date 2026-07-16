@@ -1396,5 +1396,21 @@
     "filterPlaceholder": "Filtrar por nome...",
     "saved": "Lutadores salvos!",
     "saveFailed": "Não foi possível salvar os lutadores. Tente novamente."
+  },
+  "share": {
+    "loadingTitle": "Carregando resenha… · grandfinals.gg",
+    "unavailableTitle": "Esta resenha não está mais disponível",
+    "unavailableMessage": "O link pode ter sido revogado, ou nunca existiu.",
+    "unavailableHomeLink": "Ir para grandfinals.gg",
+    "resultWin": "Vitória",
+    "resultLoss": "Derrota",
+    "reviewedMoments_one": "{{count}} momento revisado",
+    "reviewedMoments_other": "{{count}} momentos revisados",
+    "sharedBy": "Compartilhado por {{name}}",
+    "watchOnHost": "Assistir em {{host}}",
+    "videoUnavailable": "Este VOD não está mais disponível.",
+    "ctaTitle": "Revise suas próprias partidas",
+    "ctaBody": "Acompanhe seus próprios VODs com marcações de tempo clicáveis — grátis, sem cartão de crédito.",
+    "ctaButton": "Começar grátis"
   }
 }

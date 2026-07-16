@@ -80,6 +80,9 @@ const GspCalculatorPage = lazy(() =>
     default: m.GspCalculatorPage,
   })),
 );
+const ShareViewPage = lazy(() =>
+  import('@/pages/Share/ShareViewPage').then((m) => ({ default: m.ShareViewPage })),
+);
 
 /** Minimal route-transition fallback — matches HomePage's `loading → null` behavior in spirit without layout shift once content lands. */
 function RouteFallback() {
@@ -96,7 +99,9 @@ function RouteFallback() {
  * `/not-found` are public (the latter three are prerendered/crawlable — see
  * scripts/prerender.mjs); every other route is wrapped in `ProtectedRoute`
  * (redirects unauthenticated users to `/`, which hosts sign-in — matching
- * legacy behavior). Unknown paths redirect to `/not-found`.
+ * legacy behavior). Unknown paths redirect to `/not-found`. `/s/:token`
+ * (Phase 6) is also public — anonymous VOD review share links — but is
+ * deliberately `noindex` (unlisted), not part of the prerendered/crawlable set.
  */
 export function AppRouter() {
   return (
@@ -112,6 +117,12 @@ export function AppRouter() {
           {/* Public, crawlable (V12 SEO). */}
           <Route path="/faq" element={<FaqPage />} />
           <Route path="/gsp-calculator" element={<GspCalculatorPage />} />
+          {/* Public, anonymous VOD review share links — noindex (unlisted, per
+              CONTEXT.md), no auth. GET /s/:token also serves a server-rendered
+              HTML shell with per-token OG meta for crawlers/unfurl bots
+              (apps/api/src/routes/shareMeta.ts); this route is what a REAL
+              browser boots into once the SPA takes over. */}
+          <Route path="/s/:token" element={<ShareViewPage />} />
           <Route
             path="/dashboard"
             element={
