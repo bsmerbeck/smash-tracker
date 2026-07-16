@@ -120,7 +120,12 @@ async function getStaticFallback(webBaseUrl: string, fetchImpl: typeof fetch): P
     const buffer = Buffer.from(await response.arrayBuffer());
     fallbackCache.set(FALLBACK_CACHE_KEY, buffer);
     return buffer;
-  } catch {
+  } catch (err) {
+    // Log-and-degrade, never throw — reaching this means BOTH the render
+    // and the Hosting-origin static image failed, which must leave a trace
+    // in Cloud Run logs. console.error because this module-level helper has
+    // no request-scoped Fastify logger.
+    console.error('static og-image fallback fetch failed, serving embedded 1x1 PNG', err);
     return LAST_RESORT_PNG;
   }
 }

@@ -93,7 +93,12 @@ export async function renderOgImage({
     const png = await render(snapshot, webBaseUrl, fetchImpl);
     pngCache.set(token, png);
     return png;
-  } catch {
+  } catch (err) {
+    // Log-and-degrade, never throw (the caller serves the static fallback) —
+    // but a silent degrade would make a persistent satori/resvg failure
+    // invisible in Cloud Run logs. console.error because this module-level
+    // helper has no request-scoped Fastify logger.
+    console.error('og-image render failed, caller will serve the static fallback', err);
     return null;
   }
 }
@@ -273,7 +278,9 @@ async function fetchSpriteDataUri(
     const dataUri = `data:image/png;base64,${buffer.toString('base64')}`;
     spriteCache.set(cacheKey, dataUri);
     return dataUri;
-  } catch {
+  } catch (err) {
+    // Log-and-degrade (the card renders sprite-less), never throw.
+    console.error(`og-image sprite fetch failed for fighter ${fighterId}, degrading card`, err);
     return null;
   }
 }

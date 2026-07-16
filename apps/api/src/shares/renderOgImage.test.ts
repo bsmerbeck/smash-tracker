@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { PublicShareSnapshot } from '@smash-tracker/shared';
 import { renderOgImage, resetOgImageCachesForTests } from './renderOgImage.js';
 
@@ -50,6 +50,14 @@ describe('renderOgImage', () => {
     // (iteration-2 review WR-04). Only the statically-imported module
     // instance needs this — the vi.resetModules() tests get fresh caches.
     resetOgImageCachesForTests();
+    // The sprite-degrade and pipeline-failure tests deliberately trigger the
+    // log-and-degrade console.error — silence it so test output stays clean
+    // (behavior is asserted via the rendered output, not the log).
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
   });
 
   it('produces a non-empty 1200x630 PNG for an active snapshot', async () => {
