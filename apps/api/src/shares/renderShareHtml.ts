@@ -87,7 +87,12 @@ export async function renderShareHtml({
   let shell: string;
   try {
     shell = await getShell(webBaseUrl, fetchImpl);
-  } catch {
+  } catch (err) {
+    // Log-and-degrade, never throw (the crawler path must not 500) — but a
+    // silent degrade would make a Hosting-origin outage invisible in Cloud
+    // Run logs. console.error because this module-level helper has no
+    // request-scoped Fastify logger.
+    console.error('share HTML shell fetch failed, serving fallback template', err);
     return fallbackHtml(meta, webBaseUrl);
   }
 

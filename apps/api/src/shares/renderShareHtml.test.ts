@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { PublicShareSnapshot } from '@smash-tracker/shared';
 import { renderShareHtml, resetShareHtmlCachesForTests } from './renderShareHtml.js';
 
@@ -59,6 +59,14 @@ describe('renderShareHtml', () => {
     // by an earlier test into the shell-fetch-FAILURE tests below, silently
     // satisfying them via the cached happy path (iteration-2 review WR-03).
     resetShareHtmlCachesForTests();
+    // The shell-fetch-failure tests deliberately trigger the log-and-degrade
+    // console.error — silence it so test output stays clean (behavior is
+    // asserted via the fallback content, not the log).
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
   });
 
   it('produces per-token OG meta from an active snapshot, noindex, and no note/tag text', async () => {
