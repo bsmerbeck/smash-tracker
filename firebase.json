@@ -15,6 +15,13 @@
         }
       },
       {
+        "source": "/s/**",
+        "run": {
+          "serviceId": "smash-tracker-api",
+          "region": "us-central1"
+        }
+      },
+      {
         "source": "**",
         "destination": "/spa.html"
       }
