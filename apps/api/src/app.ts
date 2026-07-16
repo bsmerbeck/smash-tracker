@@ -28,6 +28,8 @@ import billingRoutes, { type StripeLikeClient } from './routes/billing.js';
 import tournamentsRoutes from './routes/tournaments.js';
 import groupsRoutes from './routes/groups.js';
 import playlistsRoutes from './routes/playlists.js';
+import vodSharesRoutes from './routes/vodShares.js';
+import publicVodSharesRoutes from './routes/publicVodShares.js';
 import { ConflictError, NotFoundError } from './services/rtdb.js';
 import type { FirebaseServices } from './firebase/admin.js';
 import type { ParryggConfig, ReportsConfig, StartggConfig, StripeConfig } from './config/env.js';
@@ -161,6 +163,10 @@ export function buildApp(options: BuildAppOptions) {
       await api.register(tournamentsRoutes);
       await api.register(groupsRoutes);
       await api.register(playlistsRoutes);
+      await api.register(vodSharesRoutes, {
+        webBaseUrl: options.webBaseUrl ?? 'http://localhost:5173',
+      });
+      await api.register(publicVodSharesRoutes);
       await api.register(startggRoutes, {
         config: options.startgg ?? null,
         fetchImpl: options.startggFetch,

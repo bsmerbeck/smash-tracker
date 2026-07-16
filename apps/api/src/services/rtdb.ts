@@ -5,16 +5,20 @@ import {
   gspSettingsSchema,
   matchRecordSchema,
   MAX_PLAYLISTS_PER_USER,
+  MAX_SHARES_PER_USER,
   opponentAliasMapSchema,
   opponentMapSchema,
   opponentNoteMapSchema,
   opponentNoteSchema,
   playlistRecordSchema,
+  shareSnapshotSchema,
+  shareTokenSchema,
   stageFavoritesSchema,
   userSchema,
   type CreateGspReadingInput,
   type CreateMatchInput,
   type CreatePlaylistInput,
+  type CreateShareInput,
   type FighterSelectionInput,
   type GspReading,
   type GspReadingRecord,
@@ -27,6 +31,10 @@ import {
   type OpponentNoteMap,
   type Playlist,
   type PlaylistRecord,
+  type ShareCreatedResponse,
+  type ShareSnapshot,
+  type ShareSummary,
+  type ShareToken,
   type UpdateGspReadingInput,
   type UpdateMatchInput,
   type UpdatePlaylistInput,
@@ -35,6 +43,8 @@ import {
   type UpsertStageFavoritesInput,
   type User,
 } from '@smash-tracker/shared';
+import { buildShareSnapshot } from '../shares/buildShareSnapshot.js';
+import { generateShareToken } from '../shares/token.js';
 
 export class NotFoundError extends Error {
   constructor(message: string) {
@@ -631,5 +641,154 @@ export class RtdbService {
       throw new NotFoundError(`Playlist ${id} not found`);
     }
     await ref.remove();
+  }
+
+  // ---- shares: shareSnapshots/{shareId} + shareTokens/{token} + sharesByUser/{uid}/{shareId} ----
+
+  /**
+   * Creates a redacted snapshot COPY of `matches/{uid}/{input.matchId}` at
+   * THIS moment — never re-read live afterward (SHARE-01). Enforces
+   * `MAX_SHARES_PER_USER` (mirrors `createPlaylist`'s cap-check). Ownership
+   * is enforced by path shape: `matches/{uid}/{matchId}` is scoped to the
+   * caller's own uid, never a body-supplied one (T-05-04).
+   *
+   * `sharesByUser/{uid}/{shareId}` stores the ISSUED TOKEN (not a bare
+   * `true`): this doubles as both the owner index (existence + count for
+   * the cap check) and the shareId->token lookup `listSharesForUser`/
+   * `revokeShare` need, without a second global-scope index or an
+   * `orderByChild` RTDB rule (`database.rules.json` stays deny-all/unchanged
+   * this phase — T-05-07 accept disposition).
+   */
+  async createShare(
+    uid: string,
+    input: CreateShareInput,
+    webBaseUrl: string,
+  ): Promise<ShareCreatedResponse> {
+    const existingSnapshot = await this.database.ref(`sharesByUser/${uid}`).get();
+    const existingCount = existingSnapshot.exists()
+      ? Object.keys(existingSnapshot.val() as Record<string, unknown>).length
+      : 0;
+    if (existingCount >= MAX_SHARES_PER_USER) {
+      throw new ForbiddenError(`You can create at most ${MAX_SHARES_PER_USER} shares`);
+    }
+
+    const matchSnapshot = await this.database.ref(`matches/${uid}/${input.matchId}`).get();
+    if (!matchSnapshot.exists()) {
+      throw new NotFoundError(`Match ${input.matchId} not found`);
+    }
+    const match = matchRecordSchema.parse(matchSnapshot.val());
+    if (!match.vodUrl) {
+      throw new ValidationError('This match has no VOD to share');
+    }
+
+    const shareRef = this.database.ref('shareSnapshots').push();
+    const shareId = shareRef.key;
+    if (!shareId) {
+      throw new Error('Failed to generate a push key for the new share');
+    }
+
+    const snapshot: ShareSnapshot = buildShareSnapshot(
+      uid,
+      input.matchId,
+      match,
+      input.redaction,
+      input.ownerDisplayName,
+    );
+    await shareRef.set(shareSnapshotSchema.parse(snapshot));
+
+    const token = generateShareToken();
+    const tokenRecord: ShareToken = {
+      shareId,
+      ownerUid: uid,
+      permissions: 'view',
+      createdAt: Date.now(),
+    };
+    await this.database.ref(`shareTokens/${token}`).set(shareTokenSchema.parse(tokenRecord));
+    await this.database.ref(`sharesByUser/${uid}/${shareId}`).set(token);
+
+    return { shareId, token, url: `${webBaseUrl}/s/${token}` };
+  }
+
+  /**
+   * Lists the caller's shares (active + revoked, SHARE-05). Joins
+   * `sharesByUser/{uid}/{shareId}` -> `shareSnapshots/{shareId}` +
+   * `shareTokens/{token}` per record; a missing or corrupt record at either
+   * hop is skipped (safeParse-and-skip), never breaking the whole list —
+   * mirrors `listPlaylists`'s per-record error isolation.
+   */
+  async listSharesForUser(uid: string, webBaseUrl: string): Promise<ShareSummary[]> {
+    const indexSnapshot = await this.database.ref(`sharesByUser/${uid}`).get();
+    if (!indexSnapshot.exists()) {
+      return [];
+    }
+    const index = indexSnapshot.val() as Record<string, unknown>;
+
+    const rows = await Promise.all(
+      Object.entries(index).map(async ([shareId, tokenValue]): Promise<ShareSummary | null> => {
+        if (typeof tokenValue !== 'string') {
+          return null;
+        }
+
+        const [snapshotSnapshot, tokenSnapshot] = await Promise.all([
+          this.database.ref(`shareSnapshots/${shareId}`).get(),
+          this.database.ref(`shareTokens/${tokenValue}`).get(),
+        ]);
+        if (!snapshotSnapshot.exists() || !tokenSnapshot.exists()) {
+          return null;
+        }
+
+        const parsedSnapshot = shareSnapshotSchema.safeParse(snapshotSnapshot.val());
+        const parsedToken = shareTokenSchema.safeParse(tokenSnapshot.val());
+        if (!parsedSnapshot.success || !parsedToken.success) {
+          return null;
+        }
+        const snapshot = parsedSnapshot.data;
+        const token = parsedToken.data;
+
+        return {
+          shareId,
+          matchId: snapshot.matchId,
+          permissions: token.permissions,
+          createdAt: snapshot.createdAt,
+          redaction: snapshot.redaction,
+          status: token.revokedAt ? 'revoked' : 'active',
+          ...(token.revokedAt !== undefined && token.revokedAt !== null
+            ? { revokedAt: token.revokedAt }
+            : {}),
+          url: `${webBaseUrl}/s/${tokenValue}`,
+          result: snapshot.result,
+          fighterId: snapshot.fighterId,
+          opponentFighterId: snapshot.opponentFighterId,
+          ...(snapshot.stage ? { stage: snapshot.stage } : {}),
+        };
+      }),
+    );
+
+    return rows.filter((row): row is ShareSummary => row !== null);
+  }
+
+  /**
+   * Soft-revokes a share by setting `revokedAt` on its token record — NEVER
+   * `ref.remove()` (the locked "no hard delete" decision; the manage list
+   * keeps revoked history, SHARE-04). Scoped to `uid` via
+   * `sharesByUser/{uid}/{shareId}`'s existence, exactly like
+   * `deletePlaylist` scopes via `playlists/{uid}/{id}` — 404s for a missing
+   * OR foreign share, never leaking which case it was.
+   */
+  async revokeShare(uid: string, shareId: string): Promise<void> {
+    const indexRef = this.database.ref(`sharesByUser/${uid}/${shareId}`);
+    const indexSnapshot = await indexRef.get();
+    if (!indexSnapshot.exists() || typeof indexSnapshot.val() !== 'string') {
+      throw new NotFoundError(`Share ${shareId} not found`);
+    }
+    const token = indexSnapshot.val() as string;
+
+    const tokenRef = this.database.ref(`shareTokens/${token}`);
+    const tokenSnapshot = await tokenRef.get();
+    if (!tokenSnapshot.exists()) {
+      throw new NotFoundError(`Share ${shareId} not found`);
+    }
+
+    await tokenRef.update({ revokedAt: Date.now() });
   }
 }
