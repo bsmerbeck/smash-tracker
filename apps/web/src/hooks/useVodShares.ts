@@ -36,3 +36,13 @@ export function useRevokeVodShare() {
     },
   });
 }
+
+export function useDeleteVodShare() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => api.vodShares.remove(id),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: vodSharesQueryKey });
+    },
+  });
+}

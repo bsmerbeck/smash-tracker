@@ -594,7 +594,13 @@
       "revokeConfirmDescription": "Les personnes qui l'ont déjà ouvert perdent l'accès immédiatement. Les aperçus déjà publiés sur Discord peuvent continuer à afficher l'ancien aperçu.",
       "revokeConfirmAction": "Révoquer le lien",
       "sharedBadge": "Partagé",
-      "sharedBadgeTooltip": "Ce match a un lien de partage actif"
+      "sharedBadgeTooltip": "Ce match a un lien de partage actif",
+      "showDisplayNameUnavailable": "Votre compte n'a pas de nom d'affichage — définissez-le dans Profil pour l'associer",
+      "deleteShareAria": "Supprimer le lien révoqué",
+      "deleteConfirmTitle": "Retirer ce lien révoqué ?",
+      "deleteConfirmDescription": "Le lien est déjà révoqué — cela supprime seulement l'entrée de votre liste. Cette action est irréversible.",
+      "deleteConfirmAction": "Retirer",
+      "deletedToast": "Lien supprimé"
     },
     "playback": {
       "position": "{{current}} sur {{total}}",

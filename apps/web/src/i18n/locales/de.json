@@ -594,7 +594,13 @@
       "revokeConfirmDescription": "Personen, die ihn bereits geöffnet haben, verlieren sofort den Zugriff. Bereits in Discord geteilte Vorschauen können weiterhin die alte Vorschau anzeigen.",
       "revokeConfirmAction": "Link widerrufen",
       "sharedBadge": "Geteilt",
-      "sharedBadgeTooltip": "Dieses Match hat einen aktiven Freigabelink"
+      "sharedBadgeTooltip": "Dieses Match hat einen aktiven Freigabelink",
+      "showDisplayNameUnavailable": "Dein Konto hat keinen Anzeigenamen — lege ihn im Profil fest, um ihn anzuhängen",
+      "deleteShareAria": "Widerrufenen Link löschen",
+      "deleteConfirmTitle": "Diesen widerrufenen Link entfernen?",
+      "deleteConfirmDescription": "Der Link ist bereits widerrufen — dies entfernt nur den Eintrag aus deiner Liste. Das kann nicht rückgängig gemacht werden.",
+      "deleteConfirmAction": "Entfernen",
+      "deletedToast": "Link entfernt"
     },
     "playback": {
       "position": "{{current}} von {{total}}",

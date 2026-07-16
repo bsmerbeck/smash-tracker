@@ -594,7 +594,13 @@
       "revokeConfirmDescription": "People who already opened it lose access now. Previews already posted in Discord may keep showing the old preview.",
       "revokeConfirmAction": "Revoke link",
       "sharedBadge": "Shared",
-      "sharedBadgeTooltip": "This match has an active share link"
+      "sharedBadgeTooltip": "This match has an active share link",
+      "showDisplayNameUnavailable": "Your account has no display name — set one in Profile to attach it",
+      "deleteShareAria": "Delete revoked share",
+      "deleteConfirmTitle": "Remove this revoked share?",
+      "deleteConfirmDescription": "The link is already revoked — this only clears the record from your list. This can't be undone.",
+      "deleteConfirmAction": "Remove",
+      "deletedToast": "Share removed"
     },
     "playback": {
       "position": "{{current}} of {{total}}",

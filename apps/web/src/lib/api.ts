@@ -480,6 +480,9 @@ export const api = {
     /** POST /api/vod-shares/:id/revoke — soft-revokes; the share stays listed. */
     revoke: (id: string) =>
       apiRequest<void>(`/api/vod-shares/${encodeURIComponent(id)}/revoke`, { method: 'POST' }),
+    /** DELETE /api/vod-shares/:id — removes a REVOKED share from the list (409 if still active). */
+    remove: (id: string) =>
+      apiRequest<void>(`/api/vod-shares/${encodeURIComponent(id)}`, { method: 'DELETE' }),
   },
 };
 

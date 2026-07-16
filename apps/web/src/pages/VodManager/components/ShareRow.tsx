@@ -16,7 +16,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
-import { useRevokeVodShare } from '@/hooks/useVodShares';
+import { useDeleteVodShare, useRevokeVodShare } from '@/hooks/useVodShares';
 import { cn } from '@/lib/utils';
 
 /**
@@ -30,7 +30,9 @@ import { cn } from '@/lib/utils';
 export function ShareRow({ share }: { share: ShareSummary }) {
   const { t } = useTranslation();
   const revokeShare = useRevokeVodShare();
+  const deleteShare = useDeleteVodShare();
   const [confirmingRevoke, setConfirmingRevoke] = useState(false);
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
 
   const fighter = getFighterById(share.fighterId);
   const opponentFighter = getFighterById(share.opponentFighterId);
@@ -57,6 +59,16 @@ export function ShareRow({ share }: { share: ShareSummary }) {
     setConfirmingRevoke(false);
   }
 
+  async function confirmDelete() {
+    try {
+      await deleteShare.mutateAsync(share.shareId);
+      toast.success(t('vodManager.shares.deletedToast'));
+    } catch {
+      toast.error(t('shared.vod.saveFailed'));
+    }
+    setConfirmingDelete(false);
+  }
+
   return (
     <div
       className={cn(
@@ -78,7 +90,11 @@ export function ShareRow({ share }: { share: ShareSummary }) {
         </div>
         <span className="text-xs text-muted-foreground">
           {t('vodManager.shares.snapshotDate', {
-            date: new Date(share.createdAt).toLocaleDateString(),
+            // Date AND time: same-day shares are otherwise visually identical.
+            date: new Date(share.createdAt).toLocaleString(undefined, {
+              dateStyle: 'short',
+              timeStyle: 'short',
+            }),
           })}
         </span>
         <div className="flex flex-wrap items-center gap-1">
@@ -131,6 +147,35 @@ export function ShareRow({ share }: { share: ShareSummary }) {
                 <AlertDialogCancel>{t('common.cancel')}</AlertDialogCancel>
                 <AlertDialogAction onClick={confirmRevoke} disabled={revokeShare.isPending}>
                   {t('vodManager.shares.revokeConfirmAction')}
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
+        </>
+      )}
+      {isRevoked && (
+        <>
+          <Button
+            type="button"
+            variant="outline"
+            size="icon-sm"
+            aria-label={t('vodManager.shares.deleteShareAria')}
+            onClick={() => setConfirmingDelete(true)}
+          >
+            <Trash2 />
+          </Button>
+          <AlertDialog open={confirmingDelete} onOpenChange={setConfirmingDelete}>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>{t('vodManager.shares.deleteConfirmTitle')}</AlertDialogTitle>
+                <AlertDialogDescription>
+                  {t('vodManager.shares.deleteConfirmDescription')}
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>{t('common.cancel')}</AlertDialogCancel>
+                <AlertDialogAction onClick={confirmDelete} disabled={deleteShare.isPending}>
+                  {t('vodManager.shares.deleteConfirmAction')}
                 </AlertDialogAction>
               </AlertDialogFooter>
             </AlertDialogContent>

@@ -109,7 +109,8 @@ describe('ShareDialog', () => {
     expect(screen.queryByText('Your name')).not.toBeInTheDocument();
   });
 
-  it('toggling updates the summary chips', async () => {
+  it('toggling updates the summary chips (account with a display name)', async () => {
+    setMockUser(makeMockUser({ displayName: 'TestPlayer' }));
     const user = userEvent.setup();
     renderDialog(baseMatch());
 
@@ -119,6 +120,20 @@ describe('ShareDialog', () => {
 
     expect(screen.queryByText('Your notes')).not.toBeInTheDocument();
     expect(screen.getByText('Your name')).toBeInTheDocument();
+  });
+
+  it('disables the display-name toggle and never shows the Name chip when the account has no display name', async () => {
+    // Default mock user has no displayName — the server would silently drop
+    // the name, so the dialog must not pretend one will be attached.
+    renderDialog(baseMatch());
+
+    await screen.findByText('Share this review');
+    const nameSwitch = screen.getByRole('switch', { name: 'Show your display name' });
+    expect(nameSwitch).toBeDisabled();
+    expect(
+      screen.getByText('Your account has no display name — set one in Profile to attach it'),
+    ).toBeInTheDocument();
+    expect(screen.queryByText('Your name')).not.toBeInTheDocument();
   });
 
   it('submitting calls the create mutation and advances to the created step showing the url', async () => {

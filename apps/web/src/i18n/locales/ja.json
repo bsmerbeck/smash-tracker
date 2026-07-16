@@ -594,7 +594,13 @@
       "revokeConfirmDescription": "すでに開いた人は今すぐアクセスできなくなります。すでにDiscordに投稿されたプレビューには古いプレビューが表示され続ける場合があります。",
       "revokeConfirmAction": "リンクを取り消す",
       "sharedBadge": "共有中",
-      "sharedBadgeTooltip": "この試合には有効な共有リンクがあります"
+      "sharedBadgeTooltip": "この試合には有効な共有リンクがあります",
+      "showDisplayNameUnavailable": "アカウントに表示名が設定されていません — プロフィールで設定すると添付できます",
+      "deleteShareAria": "取り消し済みリンクを削除",
+      "deleteConfirmTitle": "この取り消し済みリンクを削除しますか？",
+      "deleteConfirmDescription": "リンクはすでに取り消されています — リストから記録を削除するだけです。元に戻せません。",
+      "deleteConfirmAction": "削除",
+      "deletedToast": "リンクを削除しました"
     },
     "playback": {
       "position": "{{total}}件中{{current}}件目",
