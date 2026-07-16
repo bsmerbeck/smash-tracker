@@ -340,43 +340,52 @@ describe('MatchDataPage', () => {
     expect(payload).not.toHaveProperty('vodTimestamps');
   });
 
-  it('carries existing vodTimestamps through when the VOD link is edited (not cleared)', async () => {
-    const user = userEvent.setup();
-    getFighters.mockResolvedValue({ primary: [mario.id], secondary: [] });
-    listMatches.mockResolvedValue([
-      makeMatch({
-        id: 'm1',
-        fighter_id: mario.id,
-        opponent_id: luigi.id,
-        opponent: 'rival',
-        notes: 'gg',
-        matchType: 'quickplay',
-        win: true,
-        map: { id: 0, name: 'no selection' },
-        vodUrl: 'https://youtube.com/watch?v=abc123',
-        vodTimestamps: [{ seconds: 161, note: 'missed punish on shield' }],
-      }),
-    ]);
+  // Interaction-heavy test sits near the 5s default on slow CI runners
+  // (same class as the Quick Logger flake fixed in #159) — explicit timeout.
+  it(
+    'carries existing vodTimestamps through when the VOD link is edited (not cleared)',
+    { timeout: 10_000 },
+    async () => {
+      const user = userEvent.setup();
+      getFighters.mockResolvedValue({ primary: [mario.id], secondary: [] });
+      listMatches.mockResolvedValue([
+        makeMatch({
+          id: 'm1',
+          fighter_id: mario.id,
+          opponent_id: luigi.id,
+          opponent: 'rival',
+          notes: 'gg',
+          matchType: 'quickplay',
+          win: true,
+          map: { id: 0, name: 'no selection' },
+          vodUrl: 'https://youtube.com/watch?v=abc123',
+          vodTimestamps: [{ seconds: 161, note: 'missed punish on shield' }],
+        }),
+      ]);
 
-    renderMatchData();
+      renderMatchData();
 
-    await waitFor(() => expect(screen.getByLabelText('Edit match')).toBeInTheDocument());
-    await user.click(screen.getByLabelText('Edit match'));
+      await waitFor(() => expect(screen.getByLabelText('Edit match')).toBeInTheDocument());
+      await user.click(screen.getByLabelText('Edit match'));
 
-    const dialog = await screen.findByRole('dialog');
-    await user.clear(within(dialog).getByLabelText('VOD URL'));
-    await user.type(within(dialog).getByLabelText('VOD URL'), 'https://youtube.com/watch?v=xyz789');
-    await user.click(within(dialog).getByRole('button', { name: 'Save' }));
+      const dialog = await screen.findByRole('dialog');
+      await user.clear(within(dialog).getByLabelText('VOD URL'));
+      await user.type(
+        within(dialog).getByLabelText('VOD URL'),
+        'https://youtube.com/watch?v=xyz789',
+      );
+      await user.click(within(dialog).getByRole('button', { name: 'Save' }));
 
-    await waitFor(() => expect(updateMatch).toHaveBeenCalledTimes(1));
-    expect(updateMatch).toHaveBeenCalledWith(
-      'm1',
-      expect.objectContaining({
-        vodUrl: 'https://youtube.com/watch?v=xyz789',
-        vodTimestamps: [{ seconds: 161, note: 'missed punish on shield' }],
-      }),
-    );
-  });
+      await waitFor(() => expect(updateMatch).toHaveBeenCalledTimes(1));
+      expect(updateMatch).toHaveBeenCalledWith(
+        'm1',
+        expect.objectContaining({
+          vodUrl: 'https://youtube.com/watch?v=xyz789',
+          vodTimestamps: [{ seconds: 161, note: 'missed punish on shield' }],
+        }),
+      );
+    },
+  );
 
   it('blocks saving an invalid VOD URL with an inline validation error', async () => {
     const user = userEvent.setup();
