@@ -103,6 +103,22 @@ describe('renderShareHtml', () => {
     expect(html).not.toContain('SECRET TAG');
   });
 
+  it('omits the stage segment when the stage is the "no selection" sentinel (id 0)', async () => {
+    const fetchImpl = fetchOk(FAKE_SHELL);
+    const snapshot = makeSnapshot({ stage: { id: 0, name: 'no selection' } });
+
+    const html = await renderShareHtml({
+      token: TOKEN,
+      snapshot,
+      webBaseUrl: WEB_BASE_URL,
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+    });
+
+    // "4 timestamped moments · 1/15/2026" — no " · no selection" in between.
+    expect(html).not.toContain('no selection');
+    expect(html).toMatch(/<meta property="og:description" content="4 timestamped moments · 1\//);
+  });
+
   it('escapes the owner display name when showDisplayName is true', async () => {
     const fetchImpl = fetchOk(FAKE_SHELL);
     const snapshot = makeSnapshot({

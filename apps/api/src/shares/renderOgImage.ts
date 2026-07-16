@@ -115,7 +115,9 @@ async function render(
 
   const fighterAName = getFighterById(snapshot.fighterId)?.name ?? 'Unknown fighter';
   const fighterBName = getFighterById(snapshot.opponentFighterId)?.name ?? 'Unknown fighter';
-  const stageLabel = snapshot.stage?.name ?? null;
+  // Stage id 0 is the "no selection" sentinel (shared stageData) — omit it
+  // from the card rather than rendering the literal "no selection".
+  const stageLabel = snapshot.stage && snapshot.stage.id !== 0 ? snapshot.stage.name : null;
   const matchDateLabel = new Date(snapshot.matchDate).toLocaleDateString('en-US');
   const resultLabel = snapshot.result === 'win' ? 'W' : 'L';
   const ownerDisplayName =

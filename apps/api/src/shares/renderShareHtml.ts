@@ -133,7 +133,9 @@ function computeMeta(
 
   const fighterAName = getFighterById(snapshot.fighterId)?.name ?? 'Unknown fighter';
   const fighterBName = getFighterById(snapshot.opponentFighterId)?.name ?? 'Unknown fighter';
-  const stageLabel = snapshot.stage?.name;
+  // Stage id 0 is the "no selection" sentinel (shared stageData) — omit the
+  // stage segment rather than rendering the literal "no selection" in meta.
+  const stageLabel = snapshot.stage && snapshot.stage.id !== 0 ? snapshot.stage.name : undefined;
   const matchDateLabel = new Date(snapshot.matchDate).toLocaleDateString('en-US');
 
   const title = `${fighterAName} vs ${fighterBName} — VOD review · grandfinals.gg`;

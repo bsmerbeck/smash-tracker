@@ -3,6 +3,7 @@ import { Link, useParams, useSearchParams } from 'react-router';
 import { useTranslation } from 'react-i18next';
 import { ExternalLink } from 'lucide-react';
 import { getFighterById } from '@/data/sprites';
+import { NO_SELECTION_STAGE } from '@/data/stages';
 import { PublicLayout } from '@/layouts/PublicLayout';
 import { useSeo } from '@/hooks/useSeo';
 import { usePublicVodShare } from '@/hooks/useVodShares';
@@ -49,10 +50,21 @@ export function ShareViewPage() {
   const appliedDeepLinkRef = useRef(false);
   const [autoplayBlocked, setAutoplayBlocked] = useState(false);
 
-  const { containerRef, isReady, error, seek } = useVodPlayer({
+  const { containerRef, isReady, error, seek, pause, pauseAtEnd } = useVodPlayer({
     vodUrl: snapshot?.vodUrl ?? '',
     startSeconds: deepLinkSeconds ?? snapshot?.vodStartSeconds ?? 0,
     onAutoplayBlocked: () => setAutoplayBlocked(true),
+    // Twitch proactive end-guard (v1.0 retest fix-up #11): fires ~1.5s before
+    // the video ends, while the player is still in a non-ended state — a
+    // plain in-place pause here means the "Up Next" overlay never arms.
+    // Never fires for YouTube (see useVodPlayer's doc comment).
+    onEndGuard: () => pause(),
+    // Backstop for a real ENDED (e.g. the guard missed, or YouTube): seek
+    // back off the very end and pause, which exits the ended state before
+    // any post-roll UI can hijack the iframe.
+    onEnded: () => {
+      pauseAtEnd();
+    },
   });
 
   // VIEW-03: seek to the `?t=` deep-link exactly once, the moment the live
@@ -136,7 +148,9 @@ export function ShareViewPage() {
             </Badge>
           </div>
           <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted-foreground">
-            {snapshot.stage && <span>{snapshot.stage.name}</span>}
+            {snapshot.stage && snapshot.stage.id !== NO_SELECTION_STAGE.id && (
+              <span>{snapshot.stage.name}</span>
+            )}
             <span>{new Date(snapshot.matchDate).toLocaleDateString()}</span>
             <span>{t('share.reviewedMoments', { count: snapshot.reviewedMomentsCount })}</span>
           </div>
