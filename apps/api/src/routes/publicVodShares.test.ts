@@ -1,7 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import { buildTestApp } from '../test-support/testApp.js';
 
-const TOKEN = 'a-valid-token';
+// Valid-SHAPE tokens (43-char base64url, matching generateShareToken's
+// output): getShareByToken rejects anything outside
+// /^[A-Za-z0-9_-]{20,128}$/ before ever reading RTDB, so short/illegal
+// tokens would never exercise the lookup paths these tests target.
+const TOKEN = 'aValidToken_-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+const UNKNOWN_TOKEN = 'noSuchToken_-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+const REVOKED_TOKEN = 'revokedToken_-aaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
 const SHARE_ID = 'share-1';
 
 function seedActiveShare(
@@ -58,7 +64,7 @@ describe('GET /api/vod-shares/:token', () => {
 
     const response = await app.inject({
       method: 'GET',
-      url: '/api/vod-shares/no-such-token',
+      url: `/api/vod-shares/${UNKNOWN_TOKEN}`,
     });
 
     expect(response.statusCode).toBe(404);
@@ -67,23 +73,42 @@ describe('GET /api/vod-shares/:token', () => {
   it('returns an identical 404 body for a revoked token as for an unknown token (no oracle)', async () => {
     const { app, database } = buildTestApp();
     seedActiveShare(database, {
-      token: 'revoked-token',
+      token: REVOKED_TOKEN,
       shareId: 'revoked-share',
       revokedAt: 2000,
     });
 
     const unknownResponse = await app.inject({
       method: 'GET',
-      url: '/api/vod-shares/no-such-token',
+      url: `/api/vod-shares/${UNKNOWN_TOKEN}`,
     });
     const revokedResponse = await app.inject({
       method: 'GET',
-      url: '/api/vod-shares/revoked-token',
+      url: `/api/vod-shares/${REVOKED_TOKEN}`,
     });
 
     expect(revokedResponse.statusCode).toBe(404);
     expect(unknownResponse.statusCode).toBe(404);
     expect(revokedResponse.json()).toEqual(unknownResponse.json());
+  });
+
+  it('returns the identical 404 (never a 500) for a malformed token with RTDB-illegal path characters', async () => {
+    const { app } = buildTestApp();
+
+    // `foo.bar` would make firebase-admin's ref() throw synchronously if it
+    // ever reached an RTDB read — the shape guard must collapse it to the
+    // same 404 as an unknown token (no charset validity oracle).
+    const malformedResponse = await app.inject({
+      method: 'GET',
+      url: '/api/vod-shares/foo.bar',
+    });
+    const unknownResponse = await app.inject({
+      method: 'GET',
+      url: `/api/vod-shares/${UNKNOWN_TOKEN}`,
+    });
+
+    expect(malformedResponse.statusCode).toBe(404);
+    expect(malformedResponse.json()).toEqual(unknownResponse.json());
   });
 
   it('rate-limits to 60 req/min keyed on the RIGHTMOST X-Forwarded-For entry (the trusted-proxy-appended one) — rotating a spoofed leftmost entry does NOT mint a fresh bucket', async () => {

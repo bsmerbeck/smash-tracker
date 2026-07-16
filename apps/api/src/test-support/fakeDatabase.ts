@@ -86,12 +86,22 @@ export class FakeDatabase {
    * is rejected exactly as real firebase-admin does — `database.ref('')`
    * throws "path argument was an invalid path" there, so accepting it here
    * would let a prod-only 500 pass the test suite (it did: all group
-   * mutations used `ref('')` and only 500'd in production).
+   * mutations used `ref('')` and only 500'd in production). The same
+   * prod-parity rule applies to firebase-admin's illegal path characters
+   * (`.`, `#`, `$`, `[`, `]`), which the real SDK rejects with a synchronous
+   * throw — without replicating that here, a user-controlled URL param
+   * interpolated into a ref path (e.g. a crafted share token like
+   * `foo.bar`) 500s only in production while every test stays green.
    */
   ref(path?: string): FakeReference {
     if (path === '') {
       throw new Error(
         'path argument was an invalid path = "". Paths must be non-empty strings and can\'t contain ".", "#", "$", "[", or "]". Use ref() with no argument for the root.',
+      );
+    }
+    if (path !== undefined && /[.#$[\]]/.test(path)) {
+      throw new Error(
+        `path argument was an invalid path = "${path}". Paths must be non-empty strings and can't contain ".", "#", "$", "[", or "]".`,
       );
     }
     const segments = (path ?? '').split('/').filter(Boolean);
