@@ -594,7 +594,13 @@
       "revokeConfirmDescription": "Quienes ya lo abrieron pierden el acceso de inmediato. Las vistas previas ya publicadas en Discord podrían seguir mostrando la vista previa anterior.",
       "revokeConfirmAction": "Revocar enlace",
       "sharedBadge": "Compartido",
-      "sharedBadgeTooltip": "Esta partida tiene un enlace de compartir activo"
+      "sharedBadgeTooltip": "Esta partida tiene un enlace de compartir activo",
+      "showDisplayNameUnavailable": "Tu cuenta no tiene nombre visible — configúralo en Perfil para adjuntarlo",
+      "deleteShareAria": "Eliminar enlace revocado",
+      "deleteConfirmTitle": "¿Quitar este enlace revocado?",
+      "deleteConfirmDescription": "El enlace ya está revocado — esto solo elimina el registro de tu lista. No se puede deshacer.",
+      "deleteConfirmAction": "Quitar",
+      "deletedToast": "Enlace eliminado"
     },
     "playback": {
       "position": "{{current}} de {{total}}",

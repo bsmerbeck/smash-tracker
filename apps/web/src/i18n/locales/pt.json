@@ -594,7 +594,13 @@
       "revokeConfirmDescription": "Quem já abriu perde o acesso imediatamente. Prévias já publicadas no Discord podem continuar mostrando a prévia antiga.",
       "revokeConfirmAction": "Revogar link",
       "sharedBadge": "Compartilhado",
-      "sharedBadgeTooltip": "Esta partida tem um link de compartilhamento ativo"
+      "sharedBadgeTooltip": "Esta partida tem um link de compartilhamento ativo",
+      "showDisplayNameUnavailable": "Sua conta não tem nome de exibição — defina um no Perfil para anexá-lo",
+      "deleteShareAria": "Excluir link revogado",
+      "deleteConfirmTitle": "Remover este link revogado?",
+      "deleteConfirmDescription": "O link já está revogado — isso apenas remove o registro da sua lista. Não é possível desfazer.",
+      "deleteConfirmAction": "Remover",
+      "deletedToast": "Link removido"
     },
     "playback": {
       "position": "{{current}} de {{total}}",

@@ -38,10 +38,13 @@ export function ShareDialog({
   match,
   open,
   onOpenChange,
+  onViewShares,
 }: {
   match: Match;
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  /** Opens the My shares dialog (created-step shortcut) after closing this one. */
+  onViewShares?: () => void;
 }) {
   const { t } = useTranslation();
   const { user } = useAuth();
@@ -57,6 +60,12 @@ export function ShareDialog({
   const hasActiveShare = (sharesQuery.data ?? []).some(
     (share) => share.matchId === match.id && share.status === 'active',
   );
+
+  // The server only attaches a name when one actually exists (effective
+  // redaction). Without a display name the toggle would silently no-op, so
+  // disable it and say why instead of letting the preview chips lie.
+  const hasDisplayName = Boolean(user?.displayName);
+  const effectiveShowName = showDisplayName && hasDisplayName;
 
   // Reset must key off the `open` PROP, not Radix's onOpenChange: the parent
   // controls `open`, and re-opening via the Share button never fires
@@ -163,13 +172,16 @@ export function ShareDialog({
                     {t('vodManager.shares.showDisplayNameLabel')}
                   </Label>
                   <p className="text-xs text-muted-foreground">
-                    {t('vodManager.shares.showDisplayNameHelper')}
+                    {hasDisplayName
+                      ? t('vodManager.shares.showDisplayNameHelper')
+                      : t('vodManager.shares.showDisplayNameUnavailable')}
                   </p>
                 </div>
                 <Switch
                   id="share-show-display-name"
-                  checked={showDisplayName}
+                  checked={effectiveShowName}
                   onCheckedChange={setShowDisplayName}
+                  disabled={!hasDisplayName}
                 />
               </div>
 
@@ -190,7 +202,7 @@ export function ShareDialog({
                   {includeTags && (
                     <Badge variant="secondary">{t('vodManager.shares.summaryTags')}</Badge>
                   )}
-                  {showDisplayName && (
+                  {effectiveShowName && (
                     <Badge variant="secondary">{t('vodManager.shares.summaryName')}</Badge>
                   )}
                 </div>
@@ -227,6 +239,18 @@ export function ShareDialog({
             </div>
 
             <DialogFooter className="mt-4">
+              {onViewShares && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => {
+                    onOpenChange(false);
+                    onViewShares();
+                  }}
+                >
+                  {t('vodManager.shares.mySharesButton')}
+                </Button>
+              )}
               <Button type="button" onClick={() => onOpenChange(false)}>
                 {t('vodManager.shares.doneButton')}
               </Button>

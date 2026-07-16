@@ -193,6 +193,7 @@ export function SelectedMatchMeta({
   getCurrentTimeRef,
   tagVocabulary,
   playlists,
+  onOpenMyShares,
 }: {
   match: Match;
   /** The fighters offered for "Your Fighter" — the signed-in user's primary+secondary selections. */
@@ -203,6 +204,8 @@ export function SelectedMatchMeta({
   tagVocabulary: string[];
   /** The signed-in user's playlists — fed into the "Add to playlist" menu (LIST-02). */
   playlists: Playlist[];
+  /** Opens the page-level My shares dialog (ShareDialog created-step shortcut). */
+  onOpenMyShares?: () => void;
 }) {
   const { t } = useTranslation();
   const updateMatch = useUpdateMatch();
@@ -426,7 +429,12 @@ export function SelectedMatchMeta({
           ariaLabel={t('tags.addAria')}
         />
       </div>
-      <ShareDialog match={match} open={shareDialogOpen} onOpenChange={setShareDialogOpen} />
+      <ShareDialog
+        match={match}
+        open={shareDialogOpen}
+        onOpenChange={setShareDialogOpen}
+        onViewShares={onOpenMyShares}
+      />
     </div>
   );
 }

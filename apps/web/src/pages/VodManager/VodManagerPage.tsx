@@ -1234,6 +1234,7 @@ export function VodManagerPage() {
                 getCurrentTimeRef={getCurrentTimeRef}
                 tagVocabulary={tagVocabulary}
                 playlists={playlists}
+                onOpenMyShares={() => setMySharesOpen(true)}
               />
             )}
           </div>
