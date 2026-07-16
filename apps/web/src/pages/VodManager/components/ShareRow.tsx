@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
-import { Copy, Trash2 } from 'lucide-react';
+import { Copy, Link2Off, Trash2 } from 'lucide-react';
 import type { ShareSummary } from '@smash-tracker/shared';
 import { getFighterById } from '@/data/sprites';
 import { Badge } from '@/components/ui/badge';
@@ -133,7 +133,10 @@ export function ShareRow({ share }: { share: ShareSummary }) {
             aria-label={t('vodManager.shares.revokeLinkAria')}
             onClick={() => setConfirmingRevoke(true)}
           >
-            <Trash2 />
+            {/* Link2Off (kill the link) — deliberately distinct from the
+                revoked row's Trash2 (delete the row) so the two destructive
+                actions read differently at a glance. */}
+            <Link2Off />
           </Button>
           <AlertDialog open={confirmingRevoke} onOpenChange={setConfirmingRevoke}>
             <AlertDialogContent>
