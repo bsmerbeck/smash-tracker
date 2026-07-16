@@ -1,4 +1,4 @@
-import Fastify, { type FastifyBaseLogger, type FastifyError } from 'fastify';
+import Fastify, { type FastifyBaseLogger, type FastifyError, type FastifyRequest } from 'fastify';
 import cors from '@fastify/cors';
 import rateLimit from '@fastify/rate-limit';
 import {
@@ -72,17 +72,41 @@ export interface BuildAppOptions {
   logger?: boolean | FastifyBaseLogger;
 }
 
+/**
+ * Phase 6 (Anonymous Share Experience & Discord Unfurls): rate-limit key for
+ * the anonymous share routes. Deliberately NOT `request.ip`: with
+ * `trustProxy: true`, `request.ip` resolves to the LEFTMOST X-Forwarded-For
+ * entry, which is client-supplied — Cloud Run's front end APPENDS the real
+ * client address to whatever XFF the caller sent, it never strips
+ * caller-supplied entries. Keying on the leftmost entry therefore lets an
+ * anonymous caller mint a fresh 60/min bucket per request by rotating a
+ * spoofed header (TRUST-01 bypass). The RIGHTMOST entry is the one the
+ * trusted Google front end actually appended — the closest-to-us,
+ * non-spoofable address — so that is the key, falling back to the raw
+ * socket address when no XFF header is present (direct connection).
+ */
+function anonRateLimitKey(request: FastifyRequest): string {
+  const xff = request.headers['x-forwarded-for'];
+  // Multiple header instances arrive as an array; the trusted proxy appends
+  // to the last one, so take the final entry of the final header value.
+  const headerValue = Array.isArray(xff) ? xff[xff.length - 1] : xff;
+  if (headerValue) {
+    const last = headerValue.split(',').pop()?.trim();
+    if (last) return last;
+  }
+  return request.socket.remoteAddress ?? request.ip;
+}
+
 export function buildApp(options: BuildAppOptions) {
   const app = Fastify({
     logger: options.logger ?? true,
-    // Phase 6 (Anonymous Share Experience & Discord Unfurls): REQUIRED for
-    // @fastify/rate-limit's default request.ip-based keyGenerator to reflect
-    // the real client address. Without this, request.ip resolves to the raw
-    // connecting-socket address — behind a Firebase Hosting rewrite to Cloud
-    // Run, that's Google's internal proxy hop, not the visitor (RESEARCH.md
-    // Pattern 3 / Pitfall 1). Cloud Run's own reverse proxy is a single
-    // trusted hop in front of this service, so trusting the outermost
-    // X-Forwarded-For entry (`true`) is the correct setting for this topology.
+    // Phase 6 (Anonymous Share Experience & Discord Unfurls): lets Fastify
+    // parse X-Forwarded-For at all (behind a Firebase Hosting rewrite to
+    // Cloud Run the raw socket peer is Google's internal proxy hop, never
+    // the visitor — RESEARCH.md Pattern 3 / Pitfall 1). NOTE: `true` makes
+    // `request.ip` the LEFTMOST (client-spoofable) XFF entry, so the rate
+    // limiter must NOT key on `request.ip` — see `anonRateLimitKey` above,
+    // which keys on the rightmost (trusted-proxy-appended) entry instead.
     trustProxy: true,
   }).withTypeProvider<ZodTypeProvider>();
 
@@ -97,8 +121,10 @@ export function buildApp(options: BuildAppOptions) {
   // route is completely unaffected — only routes that opt in via a
   // per-route `config: { rateLimit: {...} }` (currently just the anonymous
   // GET /api/vod-shares/:token) are actually rate-limited (RESEARCH.md
-  // Pattern 2, TRUST-01).
-  app.register(rateLimit, { global: false });
+  // Pattern 2, TRUST-01). `keyGenerator` buckets by the non-spoofable
+  // rightmost X-Forwarded-For entry, never `request.ip` — see
+  // `anonRateLimitKey`.
+  app.register(rateLimit, { global: false, keyGenerator: anonRateLimitKey });
 
   app.register(firebasePlugin, options.firebase);
   app.register(authPlugin);
@@ -185,7 +211,11 @@ export function buildApp(options: BuildAppOptions) {
   // scope, not inside `/api` (RESEARCH.md Pattern 2, TRUST-01).
   app.register(
     async (anon) => {
-      await anon.register(rateLimit, { max: 60, timeWindow: '1 minute' });
+      await anon.register(rateLimit, {
+        max: 60,
+        timeWindow: '1 minute',
+        keyGenerator: anonRateLimitKey,
+      });
       await anon.register(shareMetaRoutes, {
         webBaseUrl: options.webBaseUrl ?? 'http://localhost:5173',
         fetchImpl: options.shareFetch,
