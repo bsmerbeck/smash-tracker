@@ -86,10 +86,12 @@ describe('GET /api/vod-shares/:token', () => {
     expect(revokedResponse.json()).toEqual(unknownResponse.json());
   });
 
-  it('rate-limits to 60 req/min per real client IP (X-Forwarded-For, trustProxy), independent per IP', async () => {
+  it('rate-limits to 60 req/min keyed on the RIGHTMOST X-Forwarded-For entry (the trusted-proxy-appended one) — rotating a spoofed leftmost entry does NOT mint a fresh bucket', async () => {
     const { app, database } = buildTestApp();
     seedActiveShare(database);
 
+    // In production Cloud Run APPENDS the real client IP as the rightmost
+    // XFF entry; anything left of it is attacker-supplied.
     const FIRST_IP = '1.2.3.4';
     const SECOND_IP = '5.6.7.8';
 
@@ -111,6 +113,16 @@ describe('GET /api/vod-shares/:token', () => {
     });
     expect(sixtyFirst.statusCode).toBe(429);
 
+    // Spoof attempt: rotate the LEFT side while the trusted rightmost entry
+    // stays FIRST_IP — must land in the SAME (already exhausted) bucket.
+    const spoofedLeft = await app.inject({
+      method: 'GET',
+      url: `/api/vod-shares/${TOKEN}`,
+      headers: { 'x-forwarded-for': `6.6.6.6, ${FIRST_IP}` },
+    });
+    expect(spoofedLeft.statusCode).toBe(429);
+
+    // A genuinely different client (different rightmost entry) gets its own bucket.
     const differentIp = await app.inject({
       method: 'GET',
       url: `/api/vod-shares/${TOKEN}`,
