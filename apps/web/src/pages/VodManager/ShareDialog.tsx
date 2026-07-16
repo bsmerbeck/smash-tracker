@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 import { Check, Copy } from 'lucide-react';
@@ -70,8 +70,13 @@ export function ShareDialog({
   // Reset must key off the `open` PROP, not Radix's onOpenChange: the parent
   // controls `open`, and re-opening via the Share button never fires
   // onOpenChange — so resetting only there left the dialog stuck on the
-  // stale 'created' step when sharing the same match again.
-  useEffect(() => {
+  // stale 'created' step when sharing the same match again. Render-time
+  // state adjustment (the React-docs pattern for prop-driven resets) rather
+  // than an effect — setState-in-effect trips react-hooks' cascading-render
+  // lint and re-renders a committed frame for no reason.
+  const [wasOpen, setWasOpen] = useState(open);
+  if (open !== wasOpen) {
+    setWasOpen(open);
     if (open) {
       setStep('create');
       setIncludeNotes(true);
@@ -80,7 +85,7 @@ export function ShareDialog({
       setCreatedUrl('');
       setCopied(false);
     }
-  }, [open]);
+  }
 
   function handleOpenChange(next: boolean) {
     onOpenChange(next);
