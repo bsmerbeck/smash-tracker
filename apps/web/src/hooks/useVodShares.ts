@@ -46,3 +46,20 @@ export function useDeleteVodShare() {
     },
   });
 }
+
+/**
+ * GET /api/vod-shares/:token — anonymous read of a redacted public share
+ * snapshot. Deliberately has NO `enabled: Boolean(user)` gate (unlike
+ * `useVodShares` above): this is a public read for signed-out visitors,
+ * not a signed-in user's own data. `retry: false` matches the app-wide
+ * no-retry-on-4xx convention — a 404 here means the token is unknown or
+ * revoked (identical body either way, per the API's no-oracle guarantee)
+ * and retrying would never succeed.
+ */
+export function usePublicVodShare(token: string) {
+  return useQuery({
+    queryKey: ['vod-shares', 'public', token] as const,
+    queryFn: () => api.vodShares.getPublic(token),
+    retry: false,
+  });
+}
