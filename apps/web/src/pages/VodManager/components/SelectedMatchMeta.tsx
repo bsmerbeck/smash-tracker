@@ -2,7 +2,7 @@ import type { RefObject } from 'react';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
-import { ListPlus, Plus, X } from 'lucide-react';
+import { ListPlus, Plus, Share2, X } from 'lucide-react';
 import {
   MAX_PLAYLISTS_PER_USER,
   type Fighter,
@@ -30,6 +30,7 @@ import {
 } from '@/components/ui/command';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { TagAddCombobox } from './TagAddCombobox';
+import { ShareDialog } from '@/pages/VodManager/ShareDialog';
 import {
   MatchFormFields,
   matchFormValuesToInput,
@@ -205,6 +206,7 @@ export function SelectedMatchMeta({
   const { t } = useTranslation();
   const updateMatch = useUpdateMatch();
   const [mode, setMode] = useState<'view' | 'edit'>('view');
+  const [shareDialogOpen, setShareDialogOpen] = useState(false);
   const fighter = getFighterById(match.fighter_id);
   const opponentFighter = getFighterById(match.opponent_id);
 
@@ -337,6 +339,18 @@ export function SelectedMatchMeta({
             </Badge>
           )}
           <AddToPlaylistMenu playlists={playlists} matchId={match.id} />
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            disabled={!match.vodUrl}
+            title={!match.vodUrl ? t('vodManager.shares.requiresVod') : undefined}
+            aria-label={t('vodManager.shares.shareButtonAria')}
+            onClick={() => setShareDialogOpen(true)}
+          >
+            <Share2 className="size-4" />
+            {t('vodManager.shares.shareButton')}
+          </Button>
           <Button type="button" variant="outline" size="sm" onClick={handleEdit}>
             {t('vodManager.meta.edit')}
           </Button>
@@ -396,6 +410,7 @@ export function SelectedMatchMeta({
           ariaLabel={t('tags.addAria')}
         />
       </div>
+      <ShareDialog match={match} open={shareDialogOpen} onOpenChange={setShareDialogOpen} />
     </div>
   );
 }
