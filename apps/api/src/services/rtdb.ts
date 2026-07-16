@@ -48,6 +48,18 @@ import {
 import { buildShareSnapshot } from '../shares/buildShareSnapshot.js';
 import { generateShareToken } from '../shares/token.js';
 
+/**
+ * Shape of a real share bearer token: `generateShareToken` emits 43 chars of
+ * base64url (`randomBytes(32).toString('base64url')`); the 20–128 bounds
+ * leave headroom without admitting short-junk probes. Checked in
+ * `getShareByToken` BEFORE any RTDB read — firebase-admin's `ref()` throws
+ * synchronously for paths containing `.`, `#`, `$`, `[`, or `]`, so an
+ * unguarded crafted token (e.g. `/s/foo.bar`, `/s/og.png`) would 500 every
+ * anonymous route instead of collapsing to the identical unknown-token
+ * outcome (404 / generic shell / static fallback).
+ */
+const SHARE_TOKEN_SHAPE = /^[A-Za-z0-9_-]{20,128}$/;
+
 export class NotFoundError extends Error {
   constructor(message: string) {
     super(message);
@@ -876,10 +888,15 @@ export class RtdbService {
    * `shareTokens/{token}` (revocation check) -> `shareSnapshots/{shareId}`.
    *
    * Returns `null` — never throws — for: an unknown token, a
-   * corrupt/unparseable token or snapshot record, AND a revoked token
-   * (`revokedAt` set). Unknown vs. revoked are deliberately
-   * indistinguishable from this method's return type alone (VIEW-05's
-   * no-oracle rule) — callers map `null` to an identical 404.
+   * corrupt/unparseable token or snapshot record, a MALFORMED token (any
+   * character outside the base64url alphabet `generateShareToken` emits —
+   * checked BEFORE any RTDB read, since firebase-admin's `ref()` throws
+   * synchronously on `.`/`#`/`$`/`[`/`]` and a crafted `/s/foo.bar` probe
+   * must collapse to the same null/404 as an unknown token, never a 500
+   * charset oracle), AND a revoked token (`revokedAt` set). Unknown,
+   * malformed, and revoked are deliberately indistinguishable from this
+   * method's return type alone (VIEW-05's no-oracle rule) — callers map
+   * `null` to an identical 404.
    *
    * `revokedAt` is re-checked against RTDB on EVERY call — this method's
    * result must never be cached (RESEARCH.md Pitfall 4): a cached "active"
@@ -890,6 +907,9 @@ export class RtdbService {
    * tree).
    */
   async getShareByToken(token: string): Promise<PublicShareSnapshot | null> {
+    if (!SHARE_TOKEN_SHAPE.test(token)) {
+      return null;
+    }
     const tokenSnapshot = await this.database.ref(`shareTokens/${token}`).get();
     if (!tokenSnapshot.exists()) {
       return null;
