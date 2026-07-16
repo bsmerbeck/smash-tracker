@@ -108,6 +108,38 @@ export const shareSnapshotSchema = z.object({
 export type ShareSnapshot = z.infer<typeof shareSnapshotSchema>;
 
 /**
+ * Phase 6 (Anonymous Share Experience & Discord Unfurls): the
+ * anonymous-facing response contract for `GET /api/vod-shares/:token` (and
+ * the OG meta/image pipeline that derives from the same lookup). This is
+ * the SAME author-from-scratch discipline as `shareSnapshotSchema` above
+ * (a NEW `z.object` literal, NOT `.omit()`/`.pick()`'d from it or from
+ * `matchRecordSchema`) — every field is `uid`/`matchId`-free BY SHAPE, so a
+ * future accidental leak of either becomes a Fastify response-serialization
+ * error (via `fastify-type-provider-zod`'s `response[200]` schema), not a
+ * silent logic bug. Must never be derived from `matchRecordSchema` either.
+ */
+export const publicShareSnapshotSchema = z.object({
+  createdAt: z.number().int().nonnegative(),
+  result: z.enum(['win', 'loss']),
+  fighterId: z.number().int().positive(),
+  opponentFighterId: z.number().int().positive(),
+  stage: matchStageSchema.nullish(),
+  matchDate: z.number().int().nonnegative(),
+  vodUrl: z.string().url(),
+  vodStartSeconds: z.number().int().nonnegative().nullish(),
+  reviewedMomentsCount: z.number().int().nonnegative(),
+  timestamps: z.array(shareTimestampSchema).max(20).nullish(),
+  tags: z.array(z.string().trim().min(1).max(24)).max(10).nullish(),
+  ownerDisplayName: z.string().trim().max(60).nullish(),
+  redaction: z.object({
+    includedNotes: z.boolean(),
+    includedTags: z.boolean(),
+    showDisplayName: z.boolean(),
+  }),
+});
+export type PublicShareSnapshot = z.infer<typeof publicShareSnapshotSchema>;
+
+/**
  * `shareTokens/{token}` — the public lookup key. `token` is the RTDB key
  * this record lives at, distinct from `shareId` (see module doc).
  * Permission-aware from day one for Phase 8 coaching forward-compat; this

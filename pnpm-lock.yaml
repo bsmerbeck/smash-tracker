@@ -57,6 +57,9 @@ importers:
       '@fastify/cors':
         specifier: ^11.2.0
         version: 11.2.0
+      '@fastify/rate-limit':
+        specifier: ^11.1.0
+        version: 11.1.0
       '@parry-gg/client':
         specifier: ^1.0.12
         version: 1.0.12(patch_hash=adbb25f4718b505898b5ee7b38d73d7c54979474e9b930ca42005718fbb3d739)(google-protobuf@4.0.2)(grpc-web@2.0.2)(xhr2@0.2.1)
@@ -612,6 +615,9 @@ packages:
   '@fastify/proxy-addr@5.1.0':
     resolution: {integrity: sha512-INS+6gh91cLUjB+PVHfu1UqcB76Sqtpyp7bnL+FYojhjygvOPA9ctiD/JDKsyD9Xgu4hUhCSJBPig/w7duNajw==}
 
+  '@fastify/rate-limit@11.1.0':
+    resolution: {integrity: sha512-BeJ9tizLvmTXGD7deYU5G04OtHhwk5uHxbpEPVp09gKvUBIXmau/4Bshxhu9ci54MvVWfGjCEx4RzvsTntojwA==}
+
   '@fastify/swagger@9.7.0':
     resolution: {integrity: sha512-Vp1SC1GC2Hrkd3faFILv86BzUNyFz5N4/xdExqtCgkGASOzn/x+eMe4qXIGq7cdT6wif/P/oa6r1Ruqx19paZA==}
 
@@ -928,6 +934,10 @@ packages:
 
   '@kurkle/color@0.3.4':
     resolution: {integrity: sha512-M5UknZPHRu3DEDWoipU6sE8PdkZ6Z/S+v4dD+Ke8IaNlpdSQah50lz1KtcFBa2vsdOnwbbnxJwVM4wty6udA5w==}
+
+  '@lukeed/ms@2.0.2':
+    resolution: {integrity: sha512-9I2Zn6+NJLfaGoz9jN3lpwDgAYvfGeNYdbAIjJOqzs4Tpc+VU3Jqq4IofSUBKajiDS8k9fZIg18/z13mpk1bsA==}
+    engines: {node: '>=8'}
 
   '@napi-rs/wasm-runtime@1.1.6':
     resolution: {integrity: sha512-ZLv/JdUfkvOy9eCnnBaGfiO+XimbjebAeO+MRQqD/B+FR1tnRN0tpKSJHRbE8sFfS6aqsXZ67TQjfwfsxULVbg==}
@@ -4291,6 +4301,12 @@ snapshots:
       '@fastify/forwarded': 3.0.1
       ipaddr.js: 2.4.0
 
+  '@fastify/rate-limit@11.1.0':
+    dependencies:
+      '@lukeed/ms': 2.0.2
+      fastify-plugin: 6.0.0
+      toad-cache: 3.7.1
+
   '@fastify/swagger@9.7.0':
     dependencies:
       fastify-plugin: 5.1.0
@@ -4763,6 +4779,8 @@ snapshots:
     optional: true
 
   '@kurkle/color@0.3.4': {}
+
+  '@lukeed/ms@2.0.2': {}
 
   '@napi-rs/wasm-runtime@1.1.6(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.1)':
     dependencies:

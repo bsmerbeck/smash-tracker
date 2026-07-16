@@ -1,5 +1,6 @@
 import Fastify, { type FastifyBaseLogger, type FastifyError } from 'fastify';
 import cors from '@fastify/cors';
+import rateLimit from '@fastify/rate-limit';
 import {
   hasZodFastifySchemaValidationErrors,
   isResponseSerializationError,
@@ -66,6 +67,15 @@ export interface BuildAppOptions {
 export function buildApp(options: BuildAppOptions) {
   const app = Fastify({
     logger: options.logger ?? true,
+    // Phase 6 (Anonymous Share Experience & Discord Unfurls): REQUIRED for
+    // @fastify/rate-limit's default request.ip-based keyGenerator to reflect
+    // the real client address. Without this, request.ip resolves to the raw
+    // connecting-socket address — behind a Firebase Hosting rewrite to Cloud
+    // Run, that's Google's internal proxy hop, not the visitor (RESEARCH.md
+    // Pattern 3 / Pitfall 1). Cloud Run's own reverse proxy is a single
+    // trusted hop in front of this service, so trusting the outermost
+    // X-Forwarded-For entry (`true`) is the correct setting for this topology.
+    trustProxy: true,
   }).withTypeProvider<ZodTypeProvider>();
 
   app.setValidatorCompiler(validatorCompiler);
@@ -74,6 +84,13 @@ export function buildApp(options: BuildAppOptions) {
   app.register(cors, {
     origin: options.corsOrigin ?? 'http://localhost:5173',
   });
+
+  // Registered top-level with global:false so every existing (authenticated)
+  // route is completely unaffected — only routes that opt in via a
+  // per-route `config: { rateLimit: {...} }` (currently just the anonymous
+  // GET /api/vod-shares/:token) are actually rate-limited (RESEARCH.md
+  // Pattern 2, TRUST-01).
+  app.register(rateLimit, { global: false });
 
   app.register(firebasePlugin, options.firebase);
   app.register(authPlugin);
