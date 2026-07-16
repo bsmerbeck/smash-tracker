@@ -31,6 +31,8 @@ import groupsRoutes from './routes/groups.js';
 import playlistsRoutes from './routes/playlists.js';
 import vodSharesRoutes from './routes/vodShares.js';
 import publicVodSharesRoutes from './routes/publicVodShares.js';
+import shareMetaRoutes from './routes/shareMeta.js';
+import shareOgImageRoutes from './routes/shareOgImage.js';
 import { ConflictError, NotFoundError } from './services/rtdb.js';
 import type { FirebaseServices } from './firebase/admin.js';
 import type { ParryggConfig, ReportsConfig, StartggConfig, StripeConfig } from './config/env.js';
@@ -61,6 +63,12 @@ export interface BuildAppOptions {
   webBaseUrl?: string;
   /** Overridable Stripe client for /api/billing (tests). */
   stripeClient?: StripeLikeClient;
+  /**
+   * Overridable fetch for GET /s/:token and /s/:token/og.png's shell/sprite/
+   * static-fallback-image fetches (tests). Defaults to global fetch — no
+   * prod config needed (mirrors gspLiveFetch/startggFetch).
+   */
+  shareFetch?: typeof fetch;
   logger?: boolean | FastifyBaseLogger;
 }
 
@@ -164,6 +172,30 @@ export function buildApp(options: BuildAppOptions) {
     async () => {
       return { status: 'ok' } as const;
     },
+  );
+
+  // Phase 6 (Anonymous Share Experience & Discord Unfurls): GET /s/:token
+  // and GET /s/:token/og.png are root-scoped — NOT under `/api` — so their
+  // literal paths match firebase.json's new `/s/**` Hosting rewrite
+  // (Anti-Pattern: registering these under `/api` would silently 404
+  // against that rewrite, since Hosting forwards the literal path rather
+  // than stripping a prefix). Each gets its own scoped @fastify/rate-limit
+  // instance (60/min) rather than reusing the `/api` block's top-level
+  // `global: false` registration, since these routes live in a sibling
+  // scope, not inside `/api` (RESEARCH.md Pattern 2, TRUST-01).
+  app.register(
+    async (anon) => {
+      await anon.register(rateLimit, { max: 60, timeWindow: '1 minute' });
+      await anon.register(shareMetaRoutes, {
+        webBaseUrl: options.webBaseUrl ?? 'http://localhost:5173',
+        fetchImpl: options.shareFetch,
+      });
+      await anon.register(shareOgImageRoutes, {
+        webBaseUrl: options.webBaseUrl ?? 'http://localhost:5173',
+        fetchImpl: options.shareFetch,
+      });
+    },
+    { prefix: '/' },
   );
 
   app.register(
