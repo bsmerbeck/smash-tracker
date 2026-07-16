@@ -1396,5 +1396,21 @@
     "filterPlaceholder": "Filtrer par nom...",
     "saved": "Combattants enregistrés !",
     "saveFailed": "Impossible d'enregistrer les combattants. Veuillez réessayer."
+  },
+  "share": {
+    "loadingTitle": "Chargement de l’avis… · grandfinals.gg",
+    "unavailableTitle": "Cet avis n'est plus disponible",
+    "unavailableMessage": "Le lien a peut-être été révoqué, ou il n'a jamais existé.",
+    "unavailableHomeLink": "Aller sur grandfinals.gg",
+    "resultWin": "Victoire",
+    "resultLoss": "Défaite",
+    "reviewedMoments_one": "{{count}} moment analysé",
+    "reviewedMoments_other": "{{count}} moments analysés",
+    "sharedBy": "Partagé par {{name}}",
+    "watchOnHost": "Regarder sur {{host}}",
+    "videoUnavailable": "Ce VOD n'est plus disponible.",
+    "ctaTitle": "Analysez vos propres matchs",
+    "ctaBody": "Suivez vos propres VODs avec des marqueurs temporels cliquables — gratuit, sans carte bancaire.",
+    "ctaButton": "Commencer gratuitement"
   }
 }
