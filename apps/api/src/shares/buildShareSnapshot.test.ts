@@ -124,6 +124,20 @@ describe('buildShareSnapshot', () => {
     expect('vodStartSeconds' in snapshot).toBe(false);
   });
 
+  it('WR-01: toggle ON but no displayName available persists the EFFECTIVE (false) value, not the raw toggle', () => {
+    const match = makeMatch();
+
+    const snapshot = buildShareSnapshot('uid-1', 'match-1', match, {
+      includeNotes: true,
+      includeTags: true,
+      showDisplayName: true,
+      // no ownerDisplayName passed -- e.g. an email/password account with no Firebase displayName.
+    });
+
+    expect('ownerDisplayName' in snapshot).toBe(false);
+    expect(snapshot.redaction.showDisplayName).toBe(false);
+  });
+
   it("omits a timestamp's tags sub-array when that note has no tags", () => {
     const match = makeMatch({
       vodTimestamps: [{ seconds: 10, note: 'no tags here' }],

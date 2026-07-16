@@ -20,9 +20,11 @@ import { matchStageSchema } from './stage.js';
  *   one (`permissions: 'view' | 'edit'` + reserved `requiresAuth`) so Phase
  *   8 coaching sessions attach without a migration — this phase only ever
  *   writes `permissions: 'view'` and leaves `requiresAuth` absent.
- * - `sharesByUser/{uid}/{shareId}: true` — the owner index, same
- *   set-membership idiom as every other per-user subtree in this codebase
- *   (e.g. `opponents/{uid}/{opponentName}`).
+ * - `sharesByUser/{uid}/{shareId}: token` — the owner index, storing the
+ *   ISSUED TOKEN (not a bare `true` set-membership marker like most other
+ *   per-user subtrees in this codebase, e.g. `opponents/{uid}/{opponentName}`)
+ *   so it doubles as the shareId->token lookup `listSharesForUser`/
+ *   `revokeShare` need without a second global-scope index.
  *
  * Every optional field on both stored schemas uses `.nullish()` (never bare
  * `.optional()`), and every write uses the conditional-spread idiom, per

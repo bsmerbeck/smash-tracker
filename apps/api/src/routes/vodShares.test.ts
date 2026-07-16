@@ -16,6 +16,31 @@ function seedMatch(database: ReturnType<typeof buildTestApp>['database'], overri
   });
 }
 
+/**
+ * Seeds `count` ACTIVE shares for `uid`: both the `sharesByUser/{uid}`
+ * index entry (token string) AND a matching `shareTokens/{token}` record
+ * with no `revokedAt` — required so `countActiveShares`'s join actually
+ * counts them (a bare `sharesByUser` entry with no token record is treated
+ * as inactive/corrupt and skipped, mirroring `listSharesForUser`).
+ */
+function seedActiveShares(
+  database: ReturnType<typeof buildTestApp>['database'],
+  uid: string,
+  count: number,
+) {
+  const shares: Record<string, unknown> = {};
+  const tokens: Record<string, unknown> = {};
+  for (let i = 0; i < count; i += 1) {
+    const token = `${uid}-token-${i}`;
+    shares[`s${i}`] = token;
+    tokens[token] = { shareId: `s${i}`, ownerUid: uid, permissions: 'view', createdAt: 1000 };
+  }
+  database.seed(`sharesByUser/${uid}`, shares);
+  for (const [token, record] of Object.entries(tokens)) {
+    database.seed(`shareTokens/${token}`, record);
+  }
+}
+
 const REDACTION_ALL_ON = { includeNotes: true, includeTags: true, showDisplayName: false };
 
 describe('POST /api/vod-shares', () => {
@@ -91,11 +116,7 @@ describe('POST /api/vod-shares', () => {
   it('rejects the 101st share with 403', async () => {
     const { app, database } = buildTestApp();
     seedMatch(database);
-    const seeded: Record<string, unknown> = {};
-    for (let i = 0; i < 100; i += 1) {
-      seeded[`s${i}`] = 'sometoken';
-    }
-    database.seed(`sharesByUser/${TEST_UID}`, seeded);
+    seedActiveShares(database, TEST_UID, 100);
 
     const response = await app.inject({
       method: 'POST',
@@ -105,6 +126,38 @@ describe('POST /api/vod-shares', () => {
     });
 
     expect(response.statusCode).toBe(403);
+  });
+
+  it('CR-01: revoking one of 100 active shares lets the 101st create succeed (cap counts active shares only)', async () => {
+    const { app, database } = buildTestApp();
+    seedMatch(database);
+    seedActiveShares(database, TEST_UID, 100);
+
+    // At the cap: rejected, same as the previous test.
+    const atCap = await app.inject({
+      method: 'POST',
+      url: '/api/vod-shares',
+      headers: authHeader(),
+      payload: { matchId: 'm1', redaction: REDACTION_ALL_ON },
+    });
+    expect(atCap.statusCode).toBe(403);
+
+    // Revoke one of the 100 via the real route.
+    const revokeResponse = await app.inject({
+      method: 'POST',
+      url: '/api/vod-shares/s0/revoke',
+      headers: authHeader(),
+    });
+    expect(revokeResponse.statusCode).toBe(204);
+
+    // Now under the active cap: the 101st create succeeds.
+    const afterRevoke = await app.inject({
+      method: 'POST',
+      url: '/api/vod-shares',
+      headers: authHeader(),
+      payload: { matchId: 'm1', redaction: REDACTION_ALL_ON },
+    });
+    expect(afterRevoke.statusCode).toBe(201);
   });
 
   it('rejects a match with no vodUrl with a clear non-500 status', async () => {

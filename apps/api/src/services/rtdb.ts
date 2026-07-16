@@ -646,29 +646,71 @@ export class RtdbService {
   // ---- shares: shareSnapshots/{shareId} + shareTokens/{token} + sharesByUser/{uid}/{shareId} ----
 
   /**
+   * Counts the caller's ACTIVE (non-revoked) shares by joining
+   * `sharesByUser/{uid}` -> `shareTokens/{token}` and filtering on
+   * `revokedAt == null` — mirrors `listSharesForUser`'s per-record
+   * safeParse-and-skip so a missing/corrupt token record never inflates the
+   * count or throws. Used by `createShare`'s `MAX_SHARES_PER_USER` check
+   * (review CR-01); revoked shares stay in the index for history (SHARE-04)
+   * but must never count toward the active cap.
+   */
+  private async countActiveShares(uid: string): Promise<number> {
+    const indexSnapshot = await this.database.ref(`sharesByUser/${uid}`).get();
+    if (!indexSnapshot.exists()) {
+      return 0;
+    }
+    const index = indexSnapshot.val() as Record<string, unknown>;
+
+    const activeFlags = await Promise.all(
+      Object.values(index).map(async (tokenValue): Promise<boolean> => {
+        if (typeof tokenValue !== 'string') {
+          return false;
+        }
+        const tokenSnapshot = await this.database.ref(`shareTokens/${tokenValue}`).get();
+        if (!tokenSnapshot.exists()) {
+          return false;
+        }
+        const parsedToken = shareTokenSchema.safeParse(tokenSnapshot.val());
+        return parsedToken.success && parsedToken.data.revokedAt == null;
+      }),
+    );
+
+    return activeFlags.filter(Boolean).length;
+  }
+
+  /**
    * Creates a redacted snapshot COPY of `matches/{uid}/{input.matchId}` at
    * THIS moment — never re-read live afterward (SHARE-01). Enforces
-   * `MAX_SHARES_PER_USER` (mirrors `createPlaylist`'s cap-check). Ownership
-   * is enforced by path shape: `matches/{uid}/{matchId}` is scoped to the
-   * caller's own uid, never a body-supplied one (T-05-04).
+   * `MAX_SHARES_PER_USER` on the count of ACTIVE (non-revoked) shares only —
+   * mirrors the join `listSharesForUser` already does (resolve each
+   * `sharesByUser/{uid}` entry's token record, safeParse-and-skip a
+   * missing/corrupt one) so a user who revokes old links can always create
+   * new ones, matching both this cap's own intent and the "revoke frees up
+   * room" UI copy (review CR-01). Ownership is enforced by path shape:
+   * `matches/{uid}/{matchId}` is scoped to the caller's own uid, never a
+   * body-supplied one (T-05-04).
+   *
+   * NOTE (review WR-03, accepted): this is a read-then-write cap check —
+   * two concurrent `createShare` calls for the same uid could both read the
+   * same pre-increment active count and both pass. Same non-atomic pattern
+   * already present in `createPlaylist`'s cap check; not worth a
+   * transactional redesign for a solo-user-scoped, 100-share cap. Left as a
+   * documented, accepted race rather than silently unaddressed.
    *
    * `sharesByUser/{uid}/{shareId}` stores the ISSUED TOKEN (not a bare
-   * `true`): this doubles as both the owner index (existence + count for
-   * the cap check) and the shareId->token lookup `listSharesForUser`/
-   * `revokeShare` need, without a second global-scope index or an
-   * `orderByChild` RTDB rule (`database.rules.json` stays deny-all/unchanged
-   * this phase — T-05-07 accept disposition).
+   * `true`): this doubles as both the owner index (existence + the token
+   * lookup the cap-check join needs) and the shareId->token lookup
+   * `listSharesForUser`/`revokeShare` need, without a second global-scope
+   * index or an `orderByChild` RTDB rule (`database.rules.json` stays
+   * deny-all/unchanged this phase — T-05-07 accept disposition).
    */
   async createShare(
     uid: string,
     input: CreateShareInput,
     webBaseUrl: string,
   ): Promise<ShareCreatedResponse> {
-    const existingSnapshot = await this.database.ref(`sharesByUser/${uid}`).get();
-    const existingCount = existingSnapshot.exists()
-      ? Object.keys(existingSnapshot.val() as Record<string, unknown>).length
-      : 0;
-    if (existingCount >= MAX_SHARES_PER_USER) {
+    const activeCount = await this.countActiveShares(uid);
+    if (activeCount >= MAX_SHARES_PER_USER) {
       throw new ForbiddenError(`You can create at most ${MAX_SHARES_PER_USER} shares`);
     }
 
