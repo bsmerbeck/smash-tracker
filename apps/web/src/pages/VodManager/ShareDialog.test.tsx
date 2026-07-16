@@ -143,6 +143,43 @@ describe('ShareDialog', () => {
     expect(screen.getByDisplayValue('https://grandfinals.gg/s/tok')).toBeInTheDocument();
   });
 
+  it('re-opening after a share was created resets to the create step (fresh share, defaults restored)', async () => {
+    // Regression: the reset used to live only in Radix's onOpenChange, which
+    // never fires when the PARENT flips the controlled `open` prop — so
+    // re-clicking Share showed the stale 'created' step of the previous link.
+    const user = userEvent.setup();
+    createVodShare.mockResolvedValue({
+      shareId: 'share-1',
+      token: 'tok',
+      url: 'https://grandfinals.gg/s/tok',
+    });
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const dialogAt = (open: boolean) => (
+      <QueryClientProvider client={queryClient}>
+        <AuthProvider>
+          <ShareDialog match={baseMatch()} open={open} onOpenChange={vi.fn()} />
+        </AuthProvider>
+      </QueryClientProvider>
+    );
+    const { rerender } = render(dialogAt(true));
+
+    await screen.findByText('Share this review');
+    await user.click(screen.getByRole('button', { name: 'Create share link' }));
+    expect(await screen.findByText('Share link ready')).toBeInTheDocument();
+
+    // Parent closes (Done) and re-opens via the Share button — prop-driven,
+    // no Radix interaction involved.
+    rerender(dialogAt(false));
+    rerender(dialogAt(true));
+
+    expect(await screen.findByText('Share this review')).toBeInTheDocument();
+    expect(screen.queryByText('Share link ready')).not.toBeInTheDocument();
+    expect(screen.getByRole('switch', { name: 'Show your display name' })).toHaveAttribute(
+      'data-state',
+      'unchecked',
+    );
+  });
+
   it('clicking Copy invokes the clipboard API and shows the copied affordance', async () => {
     // userEvent.setup() eagerly installs a Clipboard stub on `navigator.clipboard`
     // (jsdom has no real Clipboard API), so the spy must attach to that
