@@ -51,15 +51,19 @@ export function useDeleteVodShare() {
  * GET /api/vod-shares/:token — anonymous read of a redacted public share
  * snapshot. Deliberately has NO `enabled: Boolean(user)` gate (unlike
  * `useVodShares` above): this is a public read for signed-out visitors,
- * not a signed-in user's own data. `retry: false` matches the app-wide
- * no-retry-on-4xx convention — a 404 here means the token is unknown or
- * revoked (identical body either way, per the API's no-oracle guarantee)
- * and retrying would never succeed.
+ * not a signed-in user's own data.
+ *
+ * Deliberately NO `retry` override: the app-wide default predicate
+ * (`shouldRetryQuery` in queryClient.ts) already never retries a 4xx —
+ * so a 404 (unknown/revoked token, identical body either way per the
+ * API's no-oracle guarantee) still fails immediately to the unavailable
+ * page — while network blips and 5xx keep the normal retry budget. A
+ * blanket `retry: false` here previously made ShareViewPage tell a
+ * recipient on a flaky connection that the share was permanently gone.
  */
 export function usePublicVodShare(token: string) {
   return useQuery({
     queryKey: ['vod-shares', 'public', token] as const,
     queryFn: () => api.vodShares.getPublic(token),
-    retry: false,
   });
 }
