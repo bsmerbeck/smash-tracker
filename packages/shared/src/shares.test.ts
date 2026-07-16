@@ -187,7 +187,8 @@ describe('publicShareSnapshotSchema', () => {
   });
 
   it('rejects an object missing a required match fact (result)', () => {
-    const { result: _result, ...withoutResult } = fullyPopulatedPublicSnapshot();
+    const withoutResult = { ...fullyPopulatedPublicSnapshot() } as Record<string, unknown>;
+    delete withoutResult.result;
     const parsed = publicShareSnapshotSchema.safeParse(withoutResult);
     expect(parsed.success).toBe(false);
   });
