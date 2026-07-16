@@ -56,7 +56,12 @@ export function buildShareSnapshot(
     redaction: {
       includedNotes: redaction.includeNotes,
       includedTags: redaction.includeTags,
-      showDisplayName: redaction.showDisplayName,
+      // Effective value ("was a name actually included"), not the raw
+      // toggle — a signed-in user with no displayName set still has the
+      // toggle at `true`, but no ownerDisplayName field is ever written
+      // above; this must agree with that, or the manage-list "Name" chip
+      // (ShareRow.tsx) lies about what was shared (review WR-01).
+      showDisplayName: Boolean(redaction.showDisplayName && ownerDisplayName),
     },
   };
 }
