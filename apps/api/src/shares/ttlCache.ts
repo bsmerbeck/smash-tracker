@@ -23,6 +23,8 @@ interface Entry<T> {
 export interface TtlCache<T> {
   get(key: string): T | undefined;
   set(key: string, value: T): void;
+  /** Drops every entry. Exists for test isolation — module-level caches otherwise persist across tests in a file, silently short-circuiting failure-path tests onto the cached happy path. */
+  clear(): void;
 }
 
 export function createTtlCache<T>(ttlMs: number): TtlCache<T> {
@@ -35,6 +37,9 @@ export function createTtlCache<T>(ttlMs: number): TtlCache<T> {
     },
     set(key: string, value: T): void {
       store.set(key, { value, expiresAt: Date.now() + ttlMs });
+    },
+    clear(): void {
+      store.clear();
     },
   };
 }

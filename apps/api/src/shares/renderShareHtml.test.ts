@@ -1,6 +1,6 @@
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { PublicShareSnapshot } from '@smash-tracker/shared';
-import { renderShareHtml } from './renderShareHtml.js';
+import { renderShareHtml, resetShareHtmlCachesForTests } from './renderShareHtml.js';
 
 const WEB_BASE_URL = 'https://grandfinals.gg';
 const TOKEN = 'a-valid-token';
@@ -54,6 +54,13 @@ function makeSnapshot(overrides: Partial<PublicShareSnapshot> = {}): PublicShare
 }
 
 describe('renderShareHtml', () => {
+  beforeEach(() => {
+    // The module-level shell cache would otherwise carry the shell fetched
+    // by an earlier test into the shell-fetch-FAILURE tests below, silently
+    // satisfying them via the cached happy path (iteration-2 review WR-03).
+    resetShareHtmlCachesForTests();
+  });
+
   it('produces per-token OG meta from an active snapshot, noindex, and no note/tag text', async () => {
     const fetchImpl = fetchOk(FAKE_SHELL);
     const snapshot = makeSnapshot({
@@ -171,9 +178,16 @@ describe('renderShareHtml', () => {
       fetchImpl: fetchImpl as unknown as typeof fetch,
     });
 
+    // The rejecting fetch must actually have been attempted — a populated
+    // shell cache would short-circuit getShell before fetchImpl runs.
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
     expect(html).toContain('<!doctype html>');
     expect(html).toContain('Mario vs Link — VOD review · grandfinals.gg');
     expect(html).toMatch(/<meta name="robots" content="noindex">/);
+    // Only the hardcoded fallback template can satisfy these: the fetched
+    // shell has a root div + bundle script and no "Reload this page" link.
+    expect(html).not.toContain('<div id="root">');
+    expect(html).toContain('Reload this page');
     // Even the degraded path can unfurl an image (active snapshot → per-token card).
     expect(html).toContain(
       `<meta property="og:image" content="${WEB_BASE_URL}/s/${TOKEN}/og.png">`,
@@ -194,8 +208,14 @@ describe('renderShareHtml', () => {
       fetchImpl: fetchImpl as unknown as typeof fetch,
     });
 
+    // The non-2xx fetch must actually have been attempted (no cached shell).
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
     expect(html).toContain('<!doctype html>');
     expect(html).toMatch(/<meta name="robots" content="noindex">/);
+    // Only the hardcoded fallback template can satisfy these — the cached
+    // shell (which also carries this og:image URL) has a root div.
+    expect(html).not.toContain('<div id="root">');
+    expect(html).toContain('Reload this page');
     // Null snapshot in the degraded path → the generic static image, never
     // a per-token card URL (VIEW-05).
     expect(html).toContain(`<meta property="og:image" content="${WEB_BASE_URL}/og-image.png">`);
