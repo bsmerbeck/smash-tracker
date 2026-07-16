@@ -44,3 +44,4 @@ export * from './gspMmr.js';
 export * from './gspTiers.js';
 export * from './gspLive.js';
 export * from './playlist.js';
+export * from './shares.js';
