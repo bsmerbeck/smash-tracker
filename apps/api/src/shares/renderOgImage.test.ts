@@ -105,7 +105,7 @@ describe('renderOgImage', () => {
     expect(height).toBe(630);
   });
 
-  it('includes the owner display name only when showDisplayName is true, and escapes it', async () => {
+  it('includes the owner display name RAW (satori has no HTML context) only when showDisplayName is true', async () => {
     vi.resetModules();
     const satoriMock = vi.fn().mockResolvedValue('<svg></svg>');
     vi.doMock('satori', () => ({ default: satoriMock }));
@@ -115,7 +115,11 @@ describe('renderOgImage', () => {
     const fetchImpl = fetchOkPng();
     const snapshotWithName = makeSnapshot({
       redaction: { includedNotes: false, includedTags: false, showDisplayName: true },
-      ownerDisplayName: '<script>alert(1)</script>',
+      // HTML-special characters are common in gamer tags — they must render
+      // verbatim on the card, never as entity forms (review WR-06): satori
+      // rasterizes text to vector paths, so there is no injection sink and
+      // escaping would print "&amp;"/"&lt;" literally onto the PNG.
+      ownerDisplayName: "Fire & Ice <o'Brien>",
     });
 
     await renderWithMockedSatori({
@@ -128,8 +132,9 @@ describe('renderOgImage', () => {
     expect(satoriMock).toHaveBeenCalledTimes(1);
     const treeArg = satoriMock.mock.calls[0]![0];
     const serialized = JSON.stringify(treeArg);
-    expect(serialized).not.toContain('<script>alert(1)</script>');
-    expect(serialized).toContain('&lt;script&gt;');
+    expect(serialized).toContain("Shared by Fire & Ice <o'Brien>");
+    expect(serialized).not.toContain('&amp;');
+    expect(serialized).not.toContain('&lt;');
 
     satoriMock.mockClear();
     const snapshotWithoutFlag = makeSnapshot({
@@ -214,7 +219,7 @@ describe('renderOgImage', () => {
     vi.resetModules();
   });
 
-  it('escapes an HTML-special tournament name and owner display name on a recap card', async () => {
+  it('passes HTML-special tournament/opponent/owner names to satori RAW — never entity-escaped (review WR-06)', async () => {
     vi.resetModules();
     const satoriMock = vi.fn().mockResolvedValue('<svg></svg>');
     vi.doMock('satori', () => ({ default: satoriMock }));
@@ -222,22 +227,29 @@ describe('renderOgImage', () => {
     const { renderOgImage: renderWithMockedSatori } = await import('./renderOgImage.js');
 
     const fetchImpl = fetchOkPng();
+    // `&` is extremely common in tournament names, `<`/`'` in gamer tags —
+    // satori renders text as vector paths (no HTML parsing), so escaping
+    // would corrupt the flagship shareable card with literal "&amp;" text.
     const snapshot = makeRecapSnapshot({
-      tournamentName: '<script>alert(1)</script>',
-      ownerDisplayName: '<script>alert(2)</script>',
+      tournamentName: 'Fire & Ice X',
+      notableWinOpponentName: '<CG> Marss',
+      ownerDisplayName: "o'Brien & co",
     });
 
     await renderWithMockedSatori({
-      token: 'recap-token-escape',
+      token: 'recap-token-raw-text',
       snapshot,
       webBaseUrl: WEB_BASE_URL,
       fetchImpl: fetchImpl as unknown as typeof fetch,
     });
 
     const serialized = JSON.stringify(satoriMock.mock.calls[0]![0]);
-    expect(serialized).not.toContain('<script>alert(1)</script>');
-    expect(serialized).not.toContain('<script>alert(2)</script>');
-    expect(serialized).toContain('&lt;script&gt;');
+    expect(serialized).toContain('Fire & Ice X');
+    expect(serialized).toContain('Notable win vs <CG> Marss 1');
+    expect(serialized).toContain("Shared by o'Brien & co");
+    expect(serialized).not.toContain('&amp;');
+    expect(serialized).not.toContain('&lt;');
+    expect(serialized).not.toContain('&#');
 
     vi.doUnmock('satori');
     vi.resetModules();

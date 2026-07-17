@@ -1,4 +1,3 @@
-import escapeHtml from 'escape-html';
 import satori from 'satori';
 import { Resvg } from '@resvg/resvg-js';
 import { formatOrdinal, getFighterById, type PublicShareSnapshot } from '@smash-tracker/shared';
@@ -63,12 +62,13 @@ export interface RenderOgImageOptions {
  * (PNG rasterization). Content is derived ONLY from the public, redacted
  * snapshot — both fighter sprites, W/L result, stage, match date, reviewed-
  * moments count, grandfinals.gg branding, and the owner display name ONLY
- * when `redaction.showDisplayName` is true (OG-02/OG-03, T-06-02). The
- * display name is passed through `escape-html` before it becomes a satori
- * text node (T-06-03) — defense-in-depth even though satori rasterizes text
- * to vector paths rather than parsing HTML, matching the plan's explicit
- * requirement and this codebase's first cross-user-text-to-anonymous-party
- * surface.
+ * when `redaction.showDisplayName` is true (OG-02/OG-03, T-06-02). Free-text
+ * fields (owner display name, tournament name) are passed to satori RAW
+ * (review WR-06): satori rasterizes text children to vector paths — there is
+ * no HTML parsing and therefore no injection sink — so HTML-escaping here
+ * would render entity forms literally onto the card ("Fire & Ice" becoming
+ * "Fire &amp; Ice"). Escaping lives exclusively in `renderShareHtml.ts`,
+ * where the same strings DO enter real HTML attribute contexts.
  *
  * Sprites are fetched server-side from the Hosting origin
  * (`${webBaseUrl}${getFighterById(id).url}`), base64-encoded into a
@@ -129,7 +129,7 @@ async function render(
   const resultLabel = snapshot.result === 'win' ? 'W' : 'L';
   const ownerDisplayName =
     snapshot.redaction!.showDisplayName && snapshot.ownerDisplayName
-      ? escapeHtml(snapshot.ownerDisplayName)
+      ? snapshot.ownerDisplayName
       : null;
 
   const tree = buildTree({
@@ -164,9 +164,10 @@ async function render(
  * omitted gracefully when the source data is absent/zero, per CONTEXT.md's
  * deterministic rules — never a fabricated or "0" line. `tournamentName`
  * and `ownerDisplayName` are free text (start.gg/parry.gg-sourced, and
- * owner-provided respectively) and are passed through `escape-html` before
- * they become satori text nodes, mirroring the vod-review branch's
- * `ownerDisplayName` discipline (T-07-04-01).
+ * owner-provided respectively) and are passed to satori RAW (review WR-06):
+ * satori text nodes have no HTML context, so escaping would print entity
+ * forms literally on the card. Escaping stays where the HTML context is —
+ * `renderShareHtml.ts`'s attribute writers.
  *
  * `publicShareSnapshotSchema`'s `.refine()` guarantees `tournamentName`,
  * `tournamentDate`, the set record, and `characterFighterIds` are present
@@ -187,7 +188,7 @@ async function renderRecap(
     (fighterId) => getFighterById(fighterId)?.name ?? 'Unknown fighter',
   );
 
-  const tournamentName = escapeHtml(snapshot.tournamentName!);
+  const tournamentName = snapshot.tournamentName!;
   const tournamentDateLabel = new Date(snapshot.tournamentDate!).toLocaleDateString('en-US');
   const placementLabel = snapshot.placement != null ? formatOrdinal(snapshot.placement) : null;
   const seedToFinishLabel =
@@ -197,11 +198,11 @@ async function renderRecap(
   const setRecordLabel = `${snapshot.setRecordWins ?? 0}–${snapshot.setRecordLosses ?? 0}`;
   const notableWinLabel =
     snapshot.notableWinOpponentSeed != null
-      ? `Notable win vs ${
-          snapshot.notableWinOpponentName ? escapeHtml(snapshot.notableWinOpponentName) : 'seed'
-        } ${snapshot.notableWinOpponentSeed}`
+      ? `Notable win vs ${snapshot.notableWinOpponentName || 'seed'} ${
+          snapshot.notableWinOpponentSeed
+        }`
       : null;
-  const ownerDisplayName = snapshot.ownerDisplayName ? escapeHtml(snapshot.ownerDisplayName) : null;
+  const ownerDisplayName = snapshot.ownerDisplayName || null;
 
   const tree = buildRecapTree({
     sprites,
@@ -352,11 +353,11 @@ interface RecapTreeInput {
   setRecordLabel: string;
   /** Notable-win line, or `null` when the entry has zero wins with a known-seed opponent. */
   notableWinLabel: string | null;
-  /** Already `escapeHtml`-escaped. */
+  /** RAW free text — satori text nodes have no HTML context (review WR-06), so no escaping. */
   tournamentName: string;
   tournamentDateLabel: string;
   reviewedMomentsCount: number;
-  /** Already `escapeHtml`-escaped, or `null` when the owner did not opt in / no name was captured. */
+  /** RAW free text (see `tournamentName`), or `null` when the owner did not opt in / no name was captured. */
   ownerDisplayName: string | null;
 }
 
