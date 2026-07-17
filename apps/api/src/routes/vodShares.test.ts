@@ -546,6 +546,19 @@ describe('POST /api/vod-shares — kind recap', () => {
     expect(response.statusCode).toBe(404);
   });
 
+  it('404s for an entryKey containing the DEL control char (firebase-illegal, WR-08)', async () => {
+    const { app } = buildTestApp();
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/vod-shares',
+      headers: authHeader(),
+      payload: { kind: 'recap', entryKey: `foo${String.fromCharCode(0x7f)}bar` },
+    });
+
+    expect(response.statusCode).toBe(404);
+  });
+
   it('404s for an entryKey containing a slash (would read a NESTED child of a real entry)', async () => {
     const { app, database } = buildTestApp();
     seedTournamentEntry(database, TEST_UID, '99');

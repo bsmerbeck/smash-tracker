@@ -77,7 +77,7 @@ const SHARE_TOKEN_SHAPE = /^[A-Za-z0-9_-]{20,128}$/;
  * gets — never a 500.
  */
 // eslint-disable-next-line no-control-regex -- control chars are exactly what RTDB keys forbid
-const ENTRY_KEY_SHAPE = /^[^.#$[\]/\u0000-\u001f]{1,200}$/;
+const ENTRY_KEY_SHAPE = /^[^.#$[\]/\u0000-\u001f\u007f]{1,200}$/;
 
 export class NotFoundError extends Error {
   constructor(message: string) {

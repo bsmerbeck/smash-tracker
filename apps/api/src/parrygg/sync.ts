@@ -20,7 +20,7 @@ import { resolveParryggStage } from './stages.js';
 export const PARRYGG_SSBU_SLUG = 'super-smash-bros-ultimate';
 
 // eslint-disable-next-line no-control-regex -- control chars are exactly what RTDB keys forbid
-const RTDB_ILLEGAL = /[.#$[\]/\u0000-\u001f]/g;
+const RTDB_ILLEGAL = /[.#$[\]/\u0000-\u001f\u007f]/g;
 
 /** Same tag normalization convention as start.gg's sync (see ../startgg/sync.ts). */
 export function normalizeOpponentTag(name: string | null | undefined): string {
