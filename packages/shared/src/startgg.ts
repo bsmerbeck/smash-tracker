@@ -73,15 +73,31 @@ export const eventStandingSchema = z.object({
 export type EventStanding = z.infer<typeof eventStandingSchema>;
 
 /**
- * `tournamentEntries/{uid}/{eventId}` — one entry per start.gg event the
+ * `tournamentEntries/{uid}/{entryKey}` — one entry per tournament event the
  * user has processed sets for, accumulated during sync. Server-only write;
  * exposed read-only via GET /api/tournaments. Optional fields are omitted
- * (not `undefined`) when start.gg doesn't provide them, per the RTDB
+ * (not `undefined`) when the source site doesn't provide them, per the RTDB
  * undefined-rejection rule matches already follow.
+ *
+ * Two sources write this tree:
+ * - start.gg (`apps/api/src/startgg/sync.ts`'s `accumulateRegistry`): keyed
+ *   by the numeric start.gg `eventId`, which doubles as the RTDB child key
+ *   (as a string). `source` is absent on these legacy/ongoing records —
+ *   absence means 'startgg', the only source that existed before this field.
+ * - parry.gg (`apps/api/src/parrygg/sync.ts`): parry.gg has no numeric event
+ *   id equivalent, so `eventId` is OMITTED (never present) and the record is
+ *   keyed by a derived, sanitized `entryKey` (`pgg-{event-slug}` or a
+ *   composite fallback) instead. `source: 'parrygg'` is always present.
+ *
+ * `entryKey` is the source-agnostic routing key the web uses to link into a
+ * tournament: GET /api/tournaments always fills it from the RTDB child key
+ * on read (see routes/tournaments.ts), so it's marked `.nullish()` here only
+ * to keep legacy stored records (written before this field existed, which
+ * lack it entirely) parseable.
  */
 export const tournamentEntrySchema = z.object({
-  /** start.gg event id — the key this record is stored under (as a string). */
-  eventId: z.number().int().positive(),
+  /** start.gg event id — start.gg-only; absent for parry.gg entries (which have no numeric event id). */
+  eventId: z.number().int().positive().nullish(),
   /** Event name, e.g. "Ultimate Singles". */
   eventName: z.string().min(1),
   /** Tournament name, e.g. "The Big House 9", when start.gg provides one. */
@@ -104,6 +120,16 @@ export const tournamentEntrySchema = z.object({
   eventSlug: z.string().optional(),
   /** Top finishers of the event (capped, ~8), fetched post-sync. */
   topStandings: z.array(eventStandingSchema).max(8).optional(),
+  /** Which site this entry came from. Absent means 'startgg' (every entry stored before this field existed). */
+  source: z.enum(['startgg', 'parrygg']).nullish(),
+  /**
+   * The stable, URL-safe registry identifier the web routes on — the RTDB
+   * child key this record is stored under. Always filled on read by
+   * GET /api/tournaments (see routes/tournaments.ts); `.nullish()` here only
+   * to keep legacy stored records (written before this field existed)
+   * parseable.
+   */
+  entryKey: z.string().min(1).nullish(),
 });
 export type TournamentEntry = z.infer<typeof tournamentEntrySchema>;
 

@@ -581,4 +581,20 @@ describe('tournamentEntrySchema', () => {
       tournamentEntrySchema.parse({ ...base, topStandings: [{ placement: 1 }] }),
     ).toThrow();
   });
+
+  it('parses a parry.gg entry (source parrygg, no eventId, with entryKey)', () => {
+    const entry = {
+      eventName: 'Ultimate Singles',
+      firstSetAt: 0,
+      lastSetAt: 0,
+      setsPlayed: 1,
+      source: 'parrygg' as const,
+      entryKey: 'pgg-foo',
+    };
+    expect(tournamentEntrySchema.parse(entry)).toEqual(entry);
+  });
+
+  it('still parses a legacy start.gg entry (no source, numeric eventId, no entryKey)', () => {
+    expect(tournamentEntrySchema.parse(base)).toEqual(base);
+  });
 });
