@@ -9,10 +9,8 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { getFighterById } from '@/data/sprites';
 import { stagesById } from '@/data/stages';
 import { stageAbbreviation } from '@/components/StageOption';
-import type { Match } from '@smash-tracker/shared';
-import type { TournamentSet } from '../lib/setTimeline';
+import { formatOpponentEventContext, type Match, type TournamentSet } from '@smash-tracker/shared';
 import { buildStartggUrl } from '../lib/startggLinks';
-import { formatOpponentEventContext } from '../lib/ordinal';
 import { cn } from '@/lib/utils';
 import { formatTimestamp, vodDeepLink } from '@/lib/vod';
 import { VodNotesDialog } from '@/components/vod/VodNotesDialog';

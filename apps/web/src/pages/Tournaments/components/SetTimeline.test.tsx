@@ -3,10 +3,9 @@ import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import type { Match } from '@smash-tracker/shared';
+import { buildSetTimeline, type Match } from '@smash-tracker/shared';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { SetTimeline } from './SetTimeline';
-import { buildSetTimeline } from '../lib/setTimeline';
 import { SpriteList } from '@/data/sprites';
 
 const updateMatch = vi.fn();
