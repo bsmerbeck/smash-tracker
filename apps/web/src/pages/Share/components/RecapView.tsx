@@ -1,5 +1,6 @@
 import { Link } from 'react-router';
 import { useTranslation } from 'react-i18next';
+import { Download } from 'lucide-react';
 import type { PublicShareSnapshot } from '@smash-tracker/shared';
 import { formatOrdinal } from '@smash-tracker/shared';
 import { getFighterById } from '@/data/sprites';
@@ -22,7 +23,7 @@ import { Button } from '@/components/ui/button';
  * recap shares flow through the exact same pipeline/scaffolding as VOD
  * review shares — only the in-page render differs by kind.
  */
-export function RecapView({ snapshot }: { snapshot: PublicShareSnapshot }) {
+export function RecapView({ snapshot, token }: { snapshot: PublicShareSnapshot; token: string }) {
   const { t } = useTranslation();
 
   const placement = snapshot.placement ?? null;
@@ -98,6 +99,13 @@ export function RecapView({ snapshot }: { snapshot: PublicShareSnapshot }) {
             </p>
           )}
         </div>
+
+        <Button asChild variant="outline" className="w-fit gap-1.5">
+          <a href={`/s/${token}/og.png`} download>
+            <Download className="size-4" />
+            {t('share.recap.download')}
+          </a>
+        </Button>
 
         <div className="rounded-lg border bg-muted/40 p-4 text-center">
           <p className="font-medium">{t('share.ctaTitle')}</p>

@@ -126,7 +126,7 @@ export function ShareViewPage() {
   // revoked/unknown recap token never reaches this branch either, since it
   // fails the `unavailable` check above first).
   if (snapshot.kind === 'recap') {
-    return <RecapView snapshot={snapshot} />;
+    return <RecapView snapshot={snapshot} token={token ?? ''} />;
   }
 
   // Review-only path below: the schema refine guarantees these fields for a

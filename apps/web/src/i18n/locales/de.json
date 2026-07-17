@@ -1440,7 +1440,8 @@
       "notableWinSeed": "Bemerkenswerter Sieg gegen Setzung {{seed}}",
       "charactersLabel": "Gespielte Charaktere",
       "reviewedMoments_one": "{{count}} besprochener Moment",
-      "reviewedMoments_other": "{{count}} besprochene Momente"
+      "reviewedMoments_other": "{{count}} besprochene Momente",
+      "download": "Bild herunterladen"
     }
   }
 }
