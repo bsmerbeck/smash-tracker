@@ -86,7 +86,9 @@ export function ShareViewPage() {
   // just a `[snapshot]` dep) so a later refetch/rerender of the same share
   // never double-fires. The public snapshot never exposes a true `shareId`
   // (redaction-by-shape — see `publicShareSnapshotSchema`), so the stamped
-  // value is the route TOKEN; the server maps it on signup the same way.
+  // value is the route TOKEN; the server resolves it to the durable shareId
+  // (via `shareTokens/{token}`) at provisioning time and drops it silently
+  // when it can't be resolved (see `RtdbService.upsertUser`).
   const hasFiredShareOpenedRef = useRef(false);
   useEffect(() => {
     if (!snapshot || hasFiredShareOpenedRef.current) {

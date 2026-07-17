@@ -58,9 +58,12 @@ export const AuthContext = createContext<AuthContextValue | undefined>(undefined
  * surface a clearer error if the profile is genuinely missing.
  *
  * Phase 7 (FUNNEL-02): also threads the localStorage referral stamp (set by
- * `ShareViewPage` on share-page mount) through as `referredByShareId` — the
- * API's write-once/first-touch semantics mean sending it on every sign-in is
- * harmless for a returning user with existing attribution. The stamp is
+ * `ShareViewPage` on share-page mount) through as `referredByShareId`. The
+ * stamped value is the share-page route TOKEN — the server resolves it to
+ * the durable shareId before storing (and silently drops one it can't
+ * resolve) — and the API's write-once/first-touch semantics mean sending it
+ * on every sign-in is harmless for a returning user with existing
+ * attribution. The stamp is
  * cleared after a successful provision so it's consumed exactly once; a call
  * made with no stamp present preserves the exact bodyless `upsertMe()` every
  * pre-Phase-7 caller sends.

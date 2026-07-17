@@ -20,9 +20,12 @@ const usersRoutes: FastifyPluginAsyncZod = async (app) => {
   // Phase 7 (Recap Cards & Share-Loop Analytics): accepts an optional
   // `referredByShareId` body (FUNNEL-02) — the client reads its localStorage
   // share-referral stamp and passes it through on every provisioning call
-  // (not just signup); `RtdbService.upsertUser` applies write-once, first-
-  // touch semantics, so a returning user's stale stamp can never overwrite
-  // an existing attribution.
+  // (not just signup). The stamped value is the share-page route TOKEN (the
+  // public snapshot never exposes a shareId); `RtdbService.upsertUser`
+  // resolves it via `shareTokens/{token}` to the durable shareId before
+  // storing (review CR-01) — an unresolvable token is silently dropped —
+  // and applies write-once, first-touch semantics, so a returning user's
+  // stale stamp can never overwrite an existing attribution.
   app.put(
     '/users/me',
     {
@@ -40,7 +43,9 @@ const usersRoutes: FastifyPluginAsyncZod = async (app) => {
       const email = request.userEmail;
       await rtdb.upsertUser(request.uid, {
         email,
-        referredByShareId: request.body?.referredByShareId,
+        // Wire name is `referredByShareId` for client back-compat, but the
+        // VALUE is the share-page bearer token — upsertUser resolves it.
+        referralToken: request.body?.referredByShareId,
       });
       return { uid: request.uid, email };
     },

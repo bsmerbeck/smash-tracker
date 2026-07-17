@@ -37,43 +37,119 @@ describe('PUT /api/users/me', () => {
   });
 
   // Phase 7 (Recap Cards & Share-Loop Analytics): referredByShareId is a
-  // write-once, first-touch attribution field (FUNNEL-02).
+  // write-once, first-touch attribution field (FUNNEL-02). The incoming
+  // value is the share-page bearer TOKEN (the public snapshot never exposes
+  // a shareId), resolved server-side via shareTokens/{token} to the durable
+  // shareId before storage (review CR-01).
   describe('referredByShareId (write-once attribution)', () => {
-    it('stores referredByShareId for a brand-new profile', async () => {
+    // Real stamped values are 43-char base64url bearer tokens.
+    const REFERRAL_TOKEN = 'a'.repeat(43);
+    const OTHER_TOKEN = 'b'.repeat(43);
+
+    function seedShareToken(
+      database: ReturnType<typeof buildTestApp>['database'],
+      token: string,
+      shareId: string,
+      extra: Record<string, unknown> = {},
+    ) {
+      database.seed(`shareTokens/${token}`, {
+        shareId,
+        ownerUid: 'owner-uid-1',
+        permissions: 'view',
+        createdAt: 1000,
+        ...extra,
+      });
+    }
+
+    it('resolves a valid token to its shareId and stores the shareId (never the token)', async () => {
+      const { app, database } = buildTestApp();
+      seedShareToken(database, REFERRAL_TOKEN, 'share-1');
+
+      const response = await app.inject({
+        method: 'PUT',
+        url: '/api/users/me',
+        headers: authHeader(),
+        payload: { referredByShareId: REFERRAL_TOKEN },
+      });
+
+      expect(response.statusCode).toBe(200);
+      expect(database.dump()).toMatchObject({
+        users: { [TEST_UID]: { email: TEST_EMAIL, referredByShareId: 'share-1' } },
+      });
+    });
+
+    it('never overwrites an existing attribution (write-once), even with a new valid token', async () => {
+      const { app, database } = buildTestApp();
+      seedShareToken(database, REFERRAL_TOKEN, 'share-old');
+      seedShareToken(database, OTHER_TOKEN, 'share-new');
+
+      await app.inject({
+        method: 'PUT',
+        url: '/api/users/me',
+        headers: authHeader(),
+        payload: { referredByShareId: REFERRAL_TOKEN },
+      });
+
+      await app.inject({
+        method: 'PUT',
+        url: '/api/users/me',
+        headers: authHeader(),
+        payload: { referredByShareId: OTHER_TOKEN },
+      });
+
+      expect(database.dump()).toMatchObject({
+        users: { [TEST_UID]: { email: TEST_EMAIL, referredByShareId: 'share-old' } },
+      });
+    });
+
+    it('silently drops an unknown token (200, no field written) — provisioning never fails on a bad referral', async () => {
       const { app, database } = buildTestApp();
 
       const response = await app.inject({
         method: 'PUT',
         url: '/api/users/me',
         headers: authHeader(),
-        payload: { referredByShareId: 'abc' },
+        payload: { referredByShareId: OTHER_TOKEN },
+      });
+
+      expect(response.statusCode).toBe(200);
+      const dump = database.dump() as { users: Record<string, Record<string, unknown>> };
+      expect(dump.users[TEST_UID]!.email).toBe(TEST_EMAIL);
+      expect('referredByShareId' in dump.users[TEST_UID]!).toBe(false);
+    });
+
+    it('silently drops a malformed token with RTDB-illegal path characters (200, never a 500)', async () => {
+      const { app, database } = buildTestApp();
+
+      // FakeDatabase throws on `.` in a ref path exactly like firebase-admin
+      // does — this passing with 200 proves the SHARE_TOKEN_SHAPE guard runs
+      // BEFORE any shareTokens/{token} read.
+      const response = await app.inject({
+        method: 'PUT',
+        url: '/api/users/me',
+        headers: authHeader(),
+        payload: { referredByShareId: 'crafted.path#token$probe' },
+      });
+
+      expect(response.statusCode).toBe(200);
+      const dump = database.dump() as { users: Record<string, Record<string, unknown>> };
+      expect('referredByShareId' in dump.users[TEST_UID]!).toBe(false);
+    });
+
+    it('still attributes through a REVOKED share token (revocation kills viewing, not attribution)', async () => {
+      const { app, database } = buildTestApp();
+      seedShareToken(database, REFERRAL_TOKEN, 'share-revoked', { revokedAt: 2000 });
+
+      const response = await app.inject({
+        method: 'PUT',
+        url: '/api/users/me',
+        headers: authHeader(),
+        payload: { referredByShareId: REFERRAL_TOKEN },
       });
 
       expect(response.statusCode).toBe(200);
       expect(database.dump()).toMatchObject({
-        users: { [TEST_UID]: { email: TEST_EMAIL, referredByShareId: 'abc' } },
-      });
-    });
-
-    it('never overwrites an existing referredByShareId (write-once)', async () => {
-      const { app, database } = buildTestApp();
-
-      await app.inject({
-        method: 'PUT',
-        url: '/api/users/me',
-        headers: authHeader(),
-        payload: { referredByShareId: 'old' },
-      });
-
-      await app.inject({
-        method: 'PUT',
-        url: '/api/users/me',
-        headers: authHeader(),
-        payload: { referredByShareId: 'new' },
-      });
-
-      expect(database.dump()).toMatchObject({
-        users: { [TEST_UID]: { email: TEST_EMAIL, referredByShareId: 'old' } },
+        users: { [TEST_UID]: { email: TEST_EMAIL, referredByShareId: 'share-revoked' } },
       });
     });
 
