@@ -1,5 +1,8 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+import type { Ga4Config } from '../config/env.js';
 import { authHeader, buildTestApp, registerUser, TEST_UID } from '../test-support/testApp.js';
+
+const GA4_CONFIG: Ga4Config = { measurementId: 'G-TEST', apiSecret: 'test-secret' };
 
 const SECOND_UID = 'test-uid-456';
 const SECOND_TOKEN = 'valid-test-token-2';
@@ -650,5 +653,55 @@ describe('WR-02: cross-user ownership', () => {
 
     expect(response.statusCode).toBe(200);
     expect(response.json()).toEqual([]);
+  });
+});
+
+describe('POST /api/vod-shares — review_shared GA4 event (Phase 7)', () => {
+  it('records a review_shared event after a successful create, and still returns 201 when the GA4 fetch rejects', async () => {
+    const ga4Fetch = vi.fn<typeof fetch>(() => Promise.reject(new Error('network partition')));
+    const { app, database } = buildTestApp({
+      ga4: GA4_CONFIG,
+      ga4Fetch: ga4Fetch as unknown as typeof fetch,
+    });
+    seedMatch(database);
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/vod-shares',
+      headers: authHeader(),
+      payload: { matchId: 'm1', redaction: REDACTION_ALL_ON },
+    });
+
+    expect(response.statusCode).toBe(201);
+    // Let the fire-and-forget microtask (never awaited by the handler) settle.
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(ga4Fetch).toHaveBeenCalledTimes(1);
+    const [url, init] = ga4Fetch.mock.calls[0]!;
+    expect(String(url)).toContain('measurement_id=');
+    const body = JSON.parse(String((init as RequestInit).body));
+    expect(body.events[0].name).toBe('review_shared');
+    expect(body.events[0].params).toEqual({ kind: 'review' });
+  });
+
+  it('does not attempt an MP call and still returns 201 when GA4 is unconfigured (ga4 null)', async () => {
+    const ga4Fetch = vi.fn<typeof fetch>(() =>
+      Promise.resolve(new Response(null, { status: 200 })),
+    );
+    const { app, database } = buildTestApp({
+      ga4: null,
+      ga4Fetch: ga4Fetch as unknown as typeof fetch,
+    });
+    seedMatch(database);
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/vod-shares',
+      headers: authHeader(),
+      payload: { matchId: 'm1', redaction: REDACTION_ALL_ON },
+    });
+
+    expect(response.statusCode).toBe(201);
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(ga4Fetch).not.toHaveBeenCalled();
   });
 });
