@@ -910,6 +910,25 @@
       "verdictFollowed": "befolgt",
       "verdictAgainst": "dagegen",
       "verdictNeutral": "neutral zu"
+    },
+    "recap": {
+      "generateButton": "Recap erstellen",
+      "submitButton": "Erstellen",
+      "dialogTitle": "Recap-Karte erstellen",
+      "dialogDescription": "Teile deine Platzierung, Set-Bilanz und überprüften Momente als Link — kein Konto zum Ansehen nötig.",
+      "showDisplayNameLabel": "Deinen Anzeigenamen zeigen",
+      "showDisplayNameHelper": "Standardmäßig aktiviert — dein Name erscheint auf der Recap-Karte",
+      "showDisplayNameUnavailable": "Dein Konto hat keinen Anzeigenamen — lege einen im Profil fest, um ihn anzuhängen",
+      "regenerateHint": "Erneutes Erstellen erzeugt einen neuen Link — der alte funktioniert weiter und ändert sich nicht.",
+      "generateFailedToast": "Recap konnte nicht erstellt werden. Bitte versuche es erneut.",
+      "limitReached": "Freigabelimit erreicht ({{max}}). Widerrufe einen alten Link, um einen neuen zu erstellen.",
+      "createdTitle": "Recap-Link bereit",
+      "createdBody": "Jeder mit diesem Link kann deinen Recap ansehen — kein Konto nötig.",
+      "copyButton": "Link kopieren",
+      "copiedButton": "Kopiert!",
+      "copiedToast": "Link in die Zwischenablage kopiert",
+      "copyFailedToast": "Kopieren fehlgeschlagen — kopiere den Link manuell.",
+      "doneButton": "Fertig"
     }
   },
   "billing": {

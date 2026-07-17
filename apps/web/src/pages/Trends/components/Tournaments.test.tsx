@@ -36,12 +36,17 @@ vi.mock('@/lib/api', () => ({
 }));
 
 function makeEntry(overrides: Partial<TournamentEntry> = {}): TournamentEntry {
+  const eventId = overrides.eventId ?? 1;
   return {
-    eventId: 1,
+    eventId,
     eventName: 'Ultimate Singles',
     firstSetAt: Date.UTC(2021, 0, 1),
     lastSetAt: Date.UTC(2021, 0, 3),
     setsPlayed: 2,
+    // Phase 7: GET /api/tournaments always fills entryKey from the RTDB
+    // child key on read — defaulted to match the numeric eventId here so
+    // existing fixtures keep routing the same way.
+    entryKey: String(eventId),
     ...overrides,
   };
 }
@@ -172,6 +177,22 @@ describe('Tournaments component', () => {
     renderTournaments([]);
 
     await screen.findByRole('link', { name: 'Ultimate Singles' });
+    expect(screen.queryByRole('link', { name: 'View on start.gg' })).not.toBeInTheDocument();
+  });
+
+  it('links a parry.gg row on its entryKey, never a numeric eventId', async () => {
+    listTournaments.mockResolvedValue([
+      makeEntry({
+        eventId: undefined,
+        entryKey: 'pgg-the-big-house-9',
+        tournamentName: 'The Big House 9',
+        source: 'parrygg',
+      }),
+    ]);
+    renderTournaments([]);
+
+    const link = await screen.findByRole('link', { name: 'The Big House 9' });
+    expect(link).toHaveAttribute('href', '/tournaments/pgg-the-big-house-9');
     expect(screen.queryByRole('link', { name: 'View on start.gg' })).not.toBeInTheDocument();
   });
 });
