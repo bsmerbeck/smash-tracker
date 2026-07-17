@@ -1,6 +1,7 @@
 import { useMemo } from 'react';
 import { useParams, Link } from 'react-router';
 import { useTranslation } from 'react-i18next';
+import { matchesForEntry, buildSetTimeline } from '@smash-tracker/shared';
 import { Button } from '@/components/ui/button';
 import { useTournamentEntries } from '@/hooks/useTournamentEntries';
 import { useMatches } from '@/hooks/useMatches';
@@ -9,8 +10,6 @@ import { EventResults } from './components/EventResults';
 import { SetTimeline } from './components/SetTimeline';
 import { CharactersAndStages } from './components/CharactersAndStages';
 import { AdvisorRetrospective } from './components/AdvisorRetrospective';
-import { matchesForEntry } from './lib/matchesForEntry';
-import { buildSetTimeline } from './lib/setTimeline';
 import { buildRetrospective } from './lib/retrospective';
 
 function NotFoundState() {

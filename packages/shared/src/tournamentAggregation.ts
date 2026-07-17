@@ -1,10 +1,53 @@
-import type { Match } from '@smash-tracker/shared';
+import type { Match } from './match.js';
+import type { TournamentEntry } from './startgg.js';
+
+const WINDOW_PAD_MS = 24 * 60 * 60 * 1000;
 
 /**
- * Parses the `sgg:{setId}:g{n}` externalId convention (see
- * apps/api/src/startgg/sync.ts `gamesFromSet`) into its set id and game
- * number. Returns `null` for manually-entered matches (no `externalId`) or
- * any externalId that doesn't match the expected shape.
+ * Matches carry no `eventId` (start.gg sync enriches them with name fields
+ * only — see docs on `MatchRecord`), so a match is attributed to a
+ * `TournamentEntry` by:
+ *
+ *  1. `match.eventName === entry.eventName` (required — entries always have
+ *     an event name).
+ *  2. `entry.tournamentName == null || match.tournamentName === entry.tournamentName`
+ *     — when the entry has no tournament name, any (or no) match
+ *     tournamentName is accepted; when it does, the match must match
+ *     exactly. This disambiguates same-named events run at different
+ *     tournaments (e.g. two different weeklies both hosting "Ultimate
+ *     Singles").
+ *  3. `match.time` falls within `[entry.firstSetAt - 24h, entry.lastSetAt + 24h]`
+ *     — a padded window around the entry's known set range, to tolerate
+ *     clock skew / grouping edge cases without accidentally spanning into an
+ *     unrelated same-named event weeks apart.
+ *
+ * Pure and side-effect free so it's usable both for building the per-entry
+ * timeline and for computing per-entry records in the Trends tournaments
+ * table.
+ */
+export function matchesForEntry(matches: Match[], entry: TournamentEntry): Match[] {
+  const windowStart = entry.firstSetAt - WINDOW_PAD_MS;
+  const windowEnd = entry.lastSetAt + WINDOW_PAD_MS;
+
+  return matches.filter((match) => {
+    if (match.eventName !== entry.eventName) {
+      return false;
+    }
+    if (entry.tournamentName != null && match.tournamentName !== entry.tournamentName) {
+      return false;
+    }
+    return match.time >= windowStart && match.time <= windowEnd;
+  });
+}
+
+/**
+ * Parses either of the two externalId conventions this codebase writes:
+ *  - start.gg: `sgg:{setId}:g{n}` (see apps/api/src/startgg/sync.ts `gamesFromSet`)
+ *  - parry.gg: `pgg-{matchId}-g{n}` (see apps/api/src/parrygg/sync.ts
+ *    `gamesFromMatchContext`) — dash-separated; the matchId is used as the
+ *    setId so all games of one parry.gg match group into one set.
+ * Returns `null` for manually-entered matches (no `externalId`) or any
+ * externalId that doesn't match either expected shape.
  */
 export function parseExternalId(
   externalId: string | undefined,
@@ -12,7 +55,9 @@ export function parseExternalId(
   if (!externalId) {
     return null;
   }
-  const match = /^sgg:(.+):g(\d+)$/.exec(externalId);
+  const sggMatch = /^sgg:(.+):g(\d+)$/.exec(externalId);
+  const pggMatch = sggMatch ? null : /^pgg-(.+)-g(\d+)$/.exec(externalId);
+  const match = sggMatch ?? pggMatch;
   if (!match) {
     return null;
   }
@@ -132,4 +177,53 @@ export function buildSetTimeline(entryMatches: Match[]): SetTimeline {
   otherMatches.sort((a, b) => a.time - b.time);
 
   return { sets, otherMatches };
+}
+
+/**
+ * English ordinal suffix for a positive integer (1st, 2nd, 3rd, 4th, ...11th,
+ * 12th, 13th, 21st...). The 11-13 teens are a special case that always take
+ * "th" regardless of their last digit. Exported standalone (rather than
+ * baked into a single formatter) so callers can compose it with their own
+ * label text.
+ */
+export function ordinalSuffix(n: number): string {
+  const abs = Math.abs(n);
+  const lastTwo = abs % 100;
+  if (lastTwo >= 11 && lastTwo <= 13) {
+    return 'th';
+  }
+  switch (abs % 10) {
+    case 1:
+      return 'st';
+    case 2:
+      return 'nd';
+    case 3:
+      return 'rd';
+    default:
+      return 'th';
+  }
+}
+
+/** Formats a positive integer with its ordinal suffix, e.g. `129` -> "129th". */
+export function formatOrdinal(n: number): string {
+  return `${n}${ordinalSuffix(n)}`;
+}
+
+/**
+ * Compact "seed 56 · placed 129th" label for an opponent's per-event
+ * context, when at least one of seed/placement is known. Returns `null`
+ * when both are absent so callers can omit the fragment cleanly.
+ */
+export function formatOpponentEventContext(opponent: {
+  seed?: number;
+  placement?: number;
+}): string | null {
+  const parts: string[] = [];
+  if (opponent.seed != null) {
+    parts.push(`seed ${opponent.seed}`);
+  }
+  if (opponent.placement != null) {
+    parts.push(`placed ${formatOrdinal(opponent.placement)}`);
+  }
+  return parts.length > 0 ? parts.join(' · ') : null;
 }

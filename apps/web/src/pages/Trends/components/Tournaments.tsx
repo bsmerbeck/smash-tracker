@@ -1,7 +1,7 @@
 import { Link } from 'react-router';
 import { useTranslation } from 'react-i18next';
 import { ExternalLink } from 'lucide-react';
-import type { Match, TournamentEntry } from '@smash-tracker/shared';
+import { matchesForEntry, type Match, type TournamentEntry } from '@smash-tracker/shared';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import {
   Table,
@@ -13,7 +13,6 @@ import {
 } from '@/components/ui/table';
 import { getWinLossRecord, type WinLossRecord } from '@/lib/stats';
 import { useTournamentEntries } from '@/hooks/useTournamentEntries';
-import { matchesForEntry } from '@/pages/Tournaments/lib/matchesForEntry';
 import { buildStartggUrl } from '@/pages/Tournaments/lib/startggLinks';
 
 export interface TournamentEntryRow {

@@ -45,3 +45,4 @@ export * from './gspTiers.js';
 export * from './gspLive.js';
 export * from './playlist.js';
 export * from './shares.js';
+export * from './tournamentAggregation.js';
