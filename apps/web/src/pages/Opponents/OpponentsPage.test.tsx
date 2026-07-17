@@ -453,6 +453,40 @@ describe('OpponentsPage', () => {
       expect(screen.getByText('Losers')).toBeInTheDocument();
     });
 
+    // Review WR-04: parry.gg registry entries have NO numeric eventId — the
+    // link must route on the source-agnostic entryKey, never render
+    // `/tournaments/undefined`.
+    it('links via entryKey for a parry.gg registry entry (which has no eventId)', async () => {
+      listTournaments.mockResolvedValue([
+        {
+          entryKey: 'pgg-test-weekly-42',
+          eventName: 'Ultimate Singles',
+          tournamentName: 'Test Weekly 42',
+          firstSetAt: 0,
+          lastSetAt: 10,
+          setsPlayed: 2,
+          source: 'parrygg',
+        },
+      ]);
+      listMatches.mockResolvedValue([
+        makeMatch({
+          id: 'm1',
+          time: 5,
+          opponent: 'rival',
+          win: true,
+          eventName: 'Ultimate Singles',
+          tournamentName: 'Test Weekly 42',
+          source: 'parrygg',
+          externalId: 'pgg-match-1-g1',
+        }),
+      ]);
+
+      renderOpponents();
+
+      const link = await screen.findByRole('link', { name: 'Test Weekly 42' });
+      expect(link).toHaveAttribute('href', '/tournaments/pgg-test-weekly-42');
+    });
+
     it('shows the encounter context line summarizing tournament count and date span', async () => {
       listMatches.mockResolvedValue([
         makeMatch({
