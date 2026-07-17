@@ -53,6 +53,27 @@ function baseSnapshot(overrides: Partial<PublicShareSnapshot> = {}): PublicShare
   };
 }
 
+function baseRecapSnapshot(overrides: Partial<PublicShareSnapshot> = {}): PublicShareSnapshot {
+  return {
+    createdAt: 1_700_000_000_000,
+    kind: 'recap',
+    recapSource: 'startgg',
+    tournamentName: 'Genesis 10',
+    tournamentDate: 1_700_000_000_000,
+    placement: 3,
+    seed: 5,
+    numEntrants: 128,
+    setRecordWins: 4,
+    setRecordLosses: 1,
+    notableWinOpponentName: 'MkLeo',
+    notableWinOpponentSeed: 1,
+    characterFighterIds: [1, 10],
+    reviewedMomentsCount: 2,
+    ownerDisplayName: 'TestPlayer',
+    ...overrides,
+  };
+}
+
 function renderShare(initialEntry: string) {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
@@ -184,5 +205,42 @@ describe('ShareViewPage', () => {
 
     expect(await screen.findByText('Review your own set')).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Get started free' })).toHaveAttribute('href', '/');
+  });
+
+  it('renders RecapView (tournament name + set record, no player) for a kind: recap snapshot', async () => {
+    getPublic.mockResolvedValue(baseRecapSnapshot());
+
+    renderShare('/s/tok123');
+
+    expect(await screen.findByText('Genesis 10')).toBeInTheDocument();
+    expect(screen.getByText('4–1 set record')).toBeInTheDocument();
+    expect(document.querySelector('iframe')).toBeNull();
+  });
+
+  it('omits the reviewed-moments line for a recap snapshot with a zero count', async () => {
+    getPublic.mockResolvedValue(baseRecapSnapshot({ reviewedMomentsCount: 0 }));
+
+    renderShare('/s/tok123');
+
+    await screen.findByText('Genesis 10');
+    expect(screen.queryByText(/reviewed moment/)).not.toBeInTheDocument();
+  });
+
+  it('renders the reviewed-moments line for a recap snapshot with a positive count', async () => {
+    getPublic.mockResolvedValue(baseRecapSnapshot({ reviewedMomentsCount: 3 }));
+
+    renderShare('/s/tok123');
+
+    expect(await screen.findByText('3 reviewed moments')).toBeInTheDocument();
+  });
+
+  it('still renders the player for a vod-review snapshot (kind absent) — regression', async () => {
+    getPublic.mockResolvedValue(baseSnapshot());
+    const { Player } = mountYouTubePlayer();
+
+    renderShare('/s/tok123');
+
+    expect(await screen.findByText(/Mario vs\. Luigi/)).toBeInTheDocument();
+    await waitFor(() => expect(Player).toHaveBeenCalledTimes(1));
   });
 });
