@@ -910,6 +910,25 @@
       "verdictFollowed": "followed",
       "verdictAgainst": "against",
       "verdictNeutral": "neutral on"
+    },
+    "recap": {
+      "generateButton": "Generate recap",
+      "submitButton": "Generate",
+      "dialogTitle": "Generate a recap card",
+      "dialogDescription": "Share your placement, set record, and reviewed moments as a link — no account needed to view it.",
+      "showDisplayNameLabel": "Show your display name",
+      "showDisplayNameHelper": "On by default — your name appears on the recap card",
+      "showDisplayNameUnavailable": "Your account has no display name — set one in Profile to attach it",
+      "regenerateHint": "Generating again creates a new link — the old one keeps working and won't change.",
+      "generateFailedToast": "Couldn't generate the recap. Please try again.",
+      "limitReached": "Share limit reached ({{max}}). Revoke an old link to create a new one.",
+      "createdTitle": "Recap link ready",
+      "createdBody": "Anyone with this link can view your recap — no account needed.",
+      "copyButton": "Copy link",
+      "copiedButton": "Copied!",
+      "copiedToast": "Link copied to clipboard",
+      "copyFailedToast": "Couldn't copy — copy the link manually.",
+      "doneButton": "Done"
     }
   },
   "billing": {

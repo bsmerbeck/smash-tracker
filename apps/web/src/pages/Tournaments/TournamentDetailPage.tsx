@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { useParams, Link } from 'react-router';
 import { useTranslation } from 'react-i18next';
 import { matchesForEntry, buildSetTimeline } from '@smash-tracker/shared';
@@ -10,6 +10,7 @@ import { EventResults } from './components/EventResults';
 import { SetTimeline } from './components/SetTimeline';
 import { CharactersAndStages } from './components/CharactersAndStages';
 import { AdvisorRetrospective } from './components/AdvisorRetrospective';
+import { GenerateRecapDialog } from './components/GenerateRecapDialog';
 import { buildRetrospective } from './lib/retrospective';
 
 function NotFoundState() {
@@ -45,12 +46,21 @@ function NotFoundState() {
  * `slug`/`eventSlug`/`topStandings` rather than on `source` directly, so a
  * parry.gg entry (which never has those fields) renders its available data
  * gracefully with no code change needed in the child components.
+ *
+ * Phase 7 (RECAP-01/02): a "Generate recap" action opens `GenerateRecapDialog`
+ * when the entry has processed at least one completed set (`setsPlayed >= 1`
+ * — a synced tournament with no processable sets yet has nothing
+ * deterministic to summarize). Every entry on this page already belongs to
+ * the signed-in owner (`useTournamentEntries` scopes to the caller's own
+ * registry), so no separate ownership check is needed client-side; the
+ * server independently enforces it (T-07-05-02).
  */
 export function TournamentDetailPage() {
   const { t } = useTranslation();
   const { eventId } = useParams<{ eventId: string }>();
   const { data: entries, isLoading: entriesLoading } = useTournamentEntries();
   const { data: allMatches = [], isLoading: matchesLoading } = useMatches();
+  const [recapDialogOpen, setRecapDialogOpen] = useState(false);
 
   const entry = useMemo(() => {
     if (!entries || !eventId) {
@@ -83,13 +93,29 @@ export function TournamentDetailPage() {
     return <NotFoundState />;
   }
 
+  const canGenerateRecap = entry.setsPlayed >= 1;
+
   return (
     <div className="flex flex-col gap-6">
+      {canGenerateRecap && (
+        <div className="flex justify-end">
+          <Button type="button" onClick={() => setRecapDialogOpen(true)}>
+            {t('tournaments.recap.generateButton')}
+          </Button>
+        </div>
+      )}
       <TournamentHeader entry={entry} />
       <EventResults entry={entry} entryMatches={entryMatches} />
       <SetTimeline sets={timeline.sets} otherMatches={timeline.otherMatches} />
       <CharactersAndStages matches={entryMatches} />
       {retrospective && <AdvisorRetrospective retrospective={retrospective} />}
+      {canGenerateRecap && entry.entryKey && (
+        <GenerateRecapDialog
+          entryKey={entry.entryKey}
+          open={recapDialogOpen}
+          onOpenChange={setRecapDialogOpen}
+        />
+      )}
     </div>
   );
 }
