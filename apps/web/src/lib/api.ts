@@ -210,9 +210,11 @@ export const api = {
     /**
      * PUT /api/users/me — idempotent user provisioning. Optionally carries a
      * `referredByShareId` (Phase 7 FUNNEL-02) from the localStorage referral
-     * stamp — the API stores it write-once/first-touch, so passing one on a
-     * returning user's sign-in is harmless. Omit the argument entirely to
-     * preserve the exact bodyless request every pre-Phase-7 caller sends.
+     * stamp. The stamped value is the share-page route TOKEN — the API
+     * resolves it server-side to the durable shareId before storing
+     * (write-once/first-touch), so passing one on a returning user's sign-in
+     * is harmless. Omit the argument entirely to preserve the exact bodyless
+     * request every pre-Phase-7 caller sends.
      */
     upsertMe: (input?: { referredByShareId?: string }) =>
       apiRequestParsed('/api/users/me', userProfileSchema.pick({ uid: true, email: true }), {

@@ -133,24 +133,48 @@ export class RtdbService {
 
   /**
    * Idempotent upsert, called on every sign-in provisioning (not just
-   * signup). Phase 7 (Recap Cards & Share-Loop Analytics): `referredByShareId`
-   * is write-once, first-touch attribution (FUNNEL-02) — reads the existing
-   * profile first and keeps its `referredByShareId` if one already exists,
-   * so a returning user's stale 30-day-old localStorage stamp can never
-   * overwrite (or grant) an attribution after the fact. Conditional-spread,
+   * signup). Phase 7 (Recap Cards & Share-Loop Analytics): `referralToken`
+   * is the share-page route TOKEN the client stamped in localStorage (the
+   * public snapshot deliberately exposes no shareId — redaction-by-shape),
+   * so it is resolved server-side (review CR-01) via `shareTokens/{token}`
+   * to the durable shareId before anything is persisted: the stored
+   * `referredByShareId` survives share-token rotation and never scatters a
+   * live bearer credential into a third party's user node. A malformed or
+   * unknown token silently drops the field — provisioning must never fail
+   * on a bad referral. A REVOKED share still attributes (revocation kills
+   * viewing, not the fact the visit happened), which is why `revokedAt` is
+   * deliberately not checked here. Write-once, first-touch (FUNNEL-02):
+   * an existing attribution is never overwritten. Conditional-spread,
    * never writes `null` (CONCERNS.md).
    */
-  async upsertUser(
-    uid: string,
-    input: { email: string; referredByShareId?: string },
-  ): Promise<void> {
+  async upsertUser(uid: string, input: { email: string; referralToken?: string }): Promise<void> {
     const existing = await this.getUser(uid);
-    const referredByShareId = existing?.referredByShareId ?? input.referredByShareId;
+    const referredByShareId =
+      existing?.referredByShareId ?? (await this.resolveReferralShareId(input.referralToken));
     const user: User = {
       email: input.email,
       ...(referredByShareId ? { referredByShareId } : {}),
     };
     await this.database.ref(`users/${uid}`).set(user);
+  }
+
+  /**
+   * Resolves a client-stamped share-page TOKEN to its durable shareId, or
+   * `undefined` when it can't be resolved (malformed shape, unknown token,
+   * corrupt token record). Guarded by `SHARE_TOKEN_SHAPE` BEFORE any RTDB
+   * read — same crafted-path 500 trap `getShareByToken` documents.
+   * Deliberately ignores `revokedAt`: a revoked share still attributes.
+   */
+  private async resolveReferralShareId(token: string | undefined): Promise<string | undefined> {
+    if (!token || !SHARE_TOKEN_SHAPE.test(token)) {
+      return undefined;
+    }
+    const tokenSnapshot = await this.database.ref(`shareTokens/${token}`).get();
+    if (!tokenSnapshot.exists()) {
+      return undefined;
+    }
+    const parsedToken = shareTokenSchema.safeParse(tokenSnapshot.val());
+    return parsedToken.success ? parsedToken.data.shareId : undefined;
   }
 
   async getUser(uid: string): Promise<User | null> {
