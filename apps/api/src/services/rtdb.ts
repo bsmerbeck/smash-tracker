@@ -841,7 +841,17 @@ export class RtdbService {
       }
       const entry = parsedEntry.data;
       const matches = await this.listMatches(uid);
-      storedSnapshot = buildRecapSnapshot(uid, entry, matches, input.ownerDisplayName);
+      // Walkthrough amendment (07-09): absent `detail` defaults to 'full'
+      // (the new recommended default) — deliberately applied HERE, not as a
+      // zod `.default()` on the input schema, so every existing 'review'
+      // caller (which never sends `detail`) keeps compiling unchanged.
+      storedSnapshot = buildRecapSnapshot(
+        uid,
+        entry,
+        matches,
+        input.ownerDisplayName,
+        input.detail ?? 'full',
+      );
     } else {
       // 'review' (default) — matchId/redaction guaranteed present by
       // createShareInputSchema's refine.
@@ -1118,6 +1128,12 @@ export class RtdbService {
         characterFighterIds: recap.characterFighterIds,
         reviewedMomentsCount: recap.reviewedMomentsCount,
         ...(recap.ownerDisplayName ? { ownerDisplayName: recap.ownerDisplayName } : {}),
+        // Walkthrough amendment (07-09): detail/tournamentUrl/sets pass
+        // through verbatim — already redaction-safe by construction
+        // (buildRecapSnapshot only ever stores public bracket data here).
+        ...(recap.detail === 'full' ? { detail: 'full' as const } : {}),
+        ...(recap.tournamentUrl ? { tournamentUrl: recap.tournamentUrl } : {}),
+        ...(recap.sets && recap.sets.length > 0 ? { sets: recap.sets } : {}),
       };
 
       return publicShareSnapshotSchema.parse(publicRecapSnapshot);

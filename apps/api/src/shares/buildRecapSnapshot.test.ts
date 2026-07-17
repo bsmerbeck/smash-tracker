@@ -238,3 +238,239 @@ describe('buildRecapSnapshot', () => {
     expect('ownerDisplayName' in withoutName).toBe(false);
   });
 });
+
+describe('buildRecapSnapshot — walkthrough amendment (07-09): detail/tournamentUrl/sets', () => {
+  it('defaults to detail "full" when the 5th arg is omitted, building the set timeline', () => {
+    const entry = makeEntry();
+    const matches: Match[] = [
+      makeSetMatch({
+        id: 'm1',
+        time: 1_000,
+        win: true,
+        externalId: 'sgg:set-1:g1',
+        roundText: 'Winners Round 3',
+        opponent: 'RivalTag',
+        map: { id: 3, name: 'Battlefield' },
+      }),
+    ];
+
+    const snapshot = buildRecapSnapshot('uid-1', entry, matches);
+
+    expect(snapshot.detail).toBe('full');
+    expect(snapshot.sets).toHaveLength(1);
+    expect(snapshot.sets![0]!).toEqual({
+      roundLabel: 'Winners Round 3',
+      opponentName: 'RivalTag',
+      wins: 1,
+      losses: 0,
+      win: true,
+      stages: ['Battlefield'],
+    });
+  });
+
+  it('omits detail and sets entirely for an explicit "summary" generation', () => {
+    const entry = makeEntry();
+    const matches: Match[] = [
+      makeSetMatch({ id: 'm1', time: 1_000, win: true, externalId: 'sgg:set-1:g1' }),
+    ];
+
+    const snapshot = buildRecapSnapshot('uid-1', entry, matches, undefined, 'summary');
+
+    expect('detail' in snapshot).toBe(false);
+    expect('sets' in snapshot).toBe(false);
+  });
+
+  it('falls back roundLabel to a positional "Set N" when the source has no round text', () => {
+    const entry = makeEntry();
+    const matches: Match[] = [
+      makeSetMatch({ id: 'm1', time: 1_000, win: true, externalId: 'sgg:set-1:g1' }),
+      makeSetMatch({ id: 'm2', time: 2_000, win: false, externalId: 'sgg:set-2:g1' }),
+    ];
+
+    const snapshot = buildRecapSnapshot('uid-1', entry, matches);
+
+    expect(snapshot.sets!.map((s) => s.roundLabel)).toEqual(['Set 1', 'Set 2']);
+  });
+
+  it('falls back opponentName to "Unknown opponent" when the source has no opponent tag', () => {
+    const entry = makeEntry();
+    const matches: Match[] = [
+      makeSetMatch({
+        id: 'm1',
+        time: 1_000,
+        win: true,
+        externalId: 'sgg:set-1:g1',
+        opponent: undefined,
+      }),
+    ];
+
+    const snapshot = buildRecapSnapshot('uid-1', entry, matches);
+
+    expect(snapshot.sets![0]!.opponentName).toBe('Unknown opponent');
+  });
+
+  it('dedupes stage names within a set and omits stage id 0 (no selection)', () => {
+    const entry = makeEntry();
+    const matches: Match[] = [
+      makeSetMatch({
+        id: 'm1',
+        time: 1_000,
+        win: true,
+        externalId: 'sgg:set-1:g1',
+        map: { id: 3, name: 'Battlefield' },
+      }),
+      makeSetMatch({
+        id: 'm2',
+        time: 1_100,
+        win: true,
+        externalId: 'sgg:set-1:g2',
+        map: { id: 3, name: 'Battlefield' },
+      }),
+      makeSetMatch({
+        id: 'm3',
+        time: 1_200,
+        win: false,
+        externalId: 'sgg:set-1:g3',
+        map: { id: 0, name: 'no selection' },
+      }),
+    ];
+
+    const snapshot = buildRecapSnapshot('uid-1', entry, matches);
+
+    expect(snapshot.sets![0]!.stages).toEqual(['Battlefield']);
+  });
+
+  it('omits the stages field entirely when no game in the set carried a real stage', () => {
+    const entry = makeEntry();
+    const matches: Match[] = [
+      makeSetMatch({
+        id: 'm1',
+        time: 1_000,
+        win: true,
+        externalId: 'sgg:set-1:g1',
+        map: undefined,
+      }),
+    ];
+
+    const snapshot = buildRecapSnapshot('uid-1', entry, matches);
+
+    expect('stages' in snapshot.sets![0]!).toBe(false);
+  });
+
+  it("uses the set's own opponentPlacement when present, without consulting topStandings", () => {
+    const entry = makeEntry({
+      topStandings: [{ placement: 99, name: 'wrong-lookup', gamerTag: 'rivaltag' }],
+    });
+    const matches: Match[] = [
+      makeSetMatch({
+        id: 'm1',
+        time: 1_000,
+        win: true,
+        externalId: 'sgg:set-1:g1',
+        opponent: 'RivalTag',
+        opponentPlacement: 7,
+      }),
+    ];
+
+    const snapshot = buildRecapSnapshot('uid-1', entry, matches);
+
+    expect(snapshot.sets![0]!.opponentPlacement).toBe(7);
+  });
+
+  it('falls back to a case-insensitive topStandings tag lookup when the set has no own opponentPlacement', () => {
+    const entry = makeEntry({
+      topStandings: [{ placement: 12, name: 'Rival Player', gamerTag: 'RivalTag' }],
+    });
+    const matches: Match[] = [
+      makeSetMatch({
+        id: 'm1',
+        time: 1_000,
+        win: true,
+        externalId: 'sgg:set-1:g1',
+        opponent: 'rivaltag',
+      }),
+    ];
+
+    const snapshot = buildRecapSnapshot('uid-1', entry, matches);
+
+    expect(snapshot.sets![0]!.opponentPlacement).toBe(12);
+  });
+
+  it('gracefully omits opponentPlacement when neither the set nor topStandings knows it (e.g. parry.gg)', () => {
+    const entry = makeEntry({ source: 'parrygg', topStandings: undefined });
+    const matches: Match[] = [
+      makeSetMatch({
+        id: 'm1',
+        time: 1_000,
+        win: true,
+        externalId: 'pgg-abc-g1',
+        opponent: 'RivalTag',
+      }),
+    ];
+
+    const snapshot = buildRecapSnapshot('uid-1', entry, matches);
+
+    expect('opponentPlacement' in snapshot.sets![0]!).toBe(false);
+  });
+
+  it('keeps the MOST RECENT 20 sets (chronological) when a run has more', () => {
+    const entry = makeEntry();
+    const matches: Match[] = Array.from({ length: 25 }, (_, i) =>
+      makeSetMatch({
+        id: `m${i}`,
+        time: 1_000 + i * 100,
+        win: true,
+        externalId: `sgg:set-${i}:g1`,
+      }),
+    );
+
+    const snapshot = buildRecapSnapshot('uid-1', entry, matches);
+
+    expect(snapshot.sets).toHaveLength(20);
+    // The 25 sets are positionally labeled "Set 1".."Set 25" (no roundText
+    // seeded here); keeping the LAST 20 means "Set 6".."Set 25" survive.
+    expect(snapshot.sets![0]!.roundLabel).toBe('Set 6');
+    expect(snapshot.sets![19]!.roundLabel).toBe('Set 25');
+  });
+
+  it('computes tournamentUrl from entry.eventSlug for a startgg entry', () => {
+    const entry = makeEntry({
+      eventSlug: 'tournament/the-big-house-9/event/ultimate-singles',
+    });
+    const matches: Match[] = [
+      makeSetMatch({ id: 'm1', time: 1_000, win: true, externalId: 'sgg:set-1:g1' }),
+    ];
+
+    const snapshot = buildRecapSnapshot('uid-1', entry, matches);
+
+    expect(snapshot.tournamentUrl).toBe(
+      'https://start.gg/tournament/the-big-house-9/event/ultimate-singles',
+    );
+  });
+
+  it('never invents a tournamentUrl for a parrygg entry, even with slug/eventSlug present', () => {
+    const entry = makeEntry({
+      source: 'parrygg',
+      slug: 'pgg-the-big-house-9',
+      eventSlug: 'pgg-the-big-house-9-ultimate-singles',
+    });
+    const matches: Match[] = [
+      makeSetMatch({ id: 'm1', time: 1_000, win: true, externalId: 'pgg-abc-g1' }),
+    ];
+
+    const snapshot = buildRecapSnapshot('uid-1', entry, matches);
+
+    expect('tournamentUrl' in snapshot).toBe(false);
+  });
+
+  it('omits tournamentUrl regardless of detail when the entry has no slug at all', () => {
+    const entry = makeEntry();
+    const matches: Match[] = [
+      makeSetMatch({ id: 'm1', time: 1_000, win: true, externalId: 'sgg:set-1:g1' }),
+    ];
+
+    const snapshot = buildRecapSnapshot('uid-1', entry, matches, undefined, 'summary');
+
+    expect('tournamentUrl' in snapshot).toBe(false);
+  });
+});
