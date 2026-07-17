@@ -16,10 +16,21 @@ const usersRoutes: FastifyPluginAsyncZod = async (app) => {
   // Cloud Function (auth onCreate trigger writing `users/{uid} = { email }`),
   // deleted from the smash-tracker-f97b7 project on 2026-07-08. The user node
   // is now created only when the client calls this endpoint.
+  //
+  // Phase 7 (Recap Cards & Share-Loop Analytics): accepts an optional
+  // `referredByShareId` body (FUNNEL-02) — the client reads its localStorage
+  // share-referral stamp and passes it through on every provisioning call
+  // (not just signup); `RtdbService.upsertUser` applies write-once, first-
+  // touch semantics, so a returning user's stale stamp can never overwrite
+  // an existing attribution.
   app.put(
     '/users/me',
     {
       schema: {
+        // `.nullish()`, not just `.optional()`: Fastify sets `request.body`
+        // to `null` (not `undefined`) for a bodyless request with no
+        // Content-Type header — the shape every pre-Phase-7 client sends.
+        body: z.object({ referredByShareId: z.string().optional() }).nullish(),
         response: {
           200: z.object({ uid: z.string(), email: z.string().email() }),
         },
@@ -27,7 +38,10 @@ const usersRoutes: FastifyPluginAsyncZod = async (app) => {
     },
     async (request) => {
       const email = request.userEmail;
-      await rtdb.upsertUser(request.uid, { email });
+      await rtdb.upsertUser(request.uid, {
+        email,
+        referredByShareId: request.body?.referredByShareId,
+      });
       return { uid: request.uid, email };
     },
   );

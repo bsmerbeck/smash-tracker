@@ -5,9 +5,15 @@ import { z } from 'zod';
  * Function's `onCreate` auth trigger as `{ email }`; that behavior is now
  * replaced by an idempotent `PUT /api/users/me` called by the client after
  * sign-in, populated from the verified Firebase ID token's email claim.
+ *
+ * Phase 7 (Recap Cards & Share-Loop Analytics): `referredByShareId` is a
+ * write-once, first-touch attribution field (FUNNEL-02) — `.nullish()` per
+ * the conditional-spread RTDB write discipline (CONCERNS.md); once set by
+ * `RtdbService.upsertUser`, it is never overwritten by a later call.
  */
 export const userSchema = z.object({
   email: z.string().email(),
+  referredByShareId: z.string().nullish(),
 });
 export type User = z.infer<typeof userSchema>;
 

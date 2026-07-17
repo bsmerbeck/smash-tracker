@@ -131,7 +131,25 @@ export class RtdbService {
 
   // ---- users/{uid} ----------------------------------------------------
 
-  async upsertUser(uid: string, user: User): Promise<void> {
+  /**
+   * Idempotent upsert, called on every sign-in provisioning (not just
+   * signup). Phase 7 (Recap Cards & Share-Loop Analytics): `referredByShareId`
+   * is write-once, first-touch attribution (FUNNEL-02) — reads the existing
+   * profile first and keeps its `referredByShareId` if one already exists,
+   * so a returning user's stale 30-day-old localStorage stamp can never
+   * overwrite (or grant) an attribution after the fact. Conditional-spread,
+   * never writes `null` (CONCERNS.md).
+   */
+  async upsertUser(
+    uid: string,
+    input: { email: string; referredByShareId?: string },
+  ): Promise<void> {
+    const existing = await this.getUser(uid);
+    const referredByShareId = existing?.referredByShareId ?? input.referredByShareId;
+    const user: User = {
+      email: input.email,
+      ...(referredByShareId ? { referredByShareId } : {}),
+    };
     await this.database.ref(`users/${uid}`).set(user);
   }
 

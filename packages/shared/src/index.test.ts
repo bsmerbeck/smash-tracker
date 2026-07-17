@@ -42,6 +42,17 @@ describe('userSchema', () => {
   it('rejects an invalid email', () => {
     expect(() => userSchema.parse({ email: 'not-an-email' })).toThrow();
   });
+
+  it('accepts a record with referredByShareId (Phase 7 attribution)', () => {
+    expect(userSchema.parse({ email: 'a@example.com', referredByShareId: 'share-abc' })).toEqual({
+      email: 'a@example.com',
+      referredByShareId: 'share-abc',
+    });
+  });
+
+  it('accepts a record with no referredByShareId (backward compatible)', () => {
+    expect(userSchema.parse({ email: 'a@example.com' })).toEqual({ email: 'a@example.com' });
+  });
 });
 
 describe('userProfileSchema', () => {

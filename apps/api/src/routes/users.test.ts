@@ -35,6 +35,64 @@ describe('PUT /api/users/me', () => {
 
     expect(response.statusCode).toBe(401);
   });
+
+  // Phase 7 (Recap Cards & Share-Loop Analytics): referredByShareId is a
+  // write-once, first-touch attribution field (FUNNEL-02).
+  describe('referredByShareId (write-once attribution)', () => {
+    it('stores referredByShareId for a brand-new profile', async () => {
+      const { app, database } = buildTestApp();
+
+      const response = await app.inject({
+        method: 'PUT',
+        url: '/api/users/me',
+        headers: authHeader(),
+        payload: { referredByShareId: 'abc' },
+      });
+
+      expect(response.statusCode).toBe(200);
+      expect(database.dump()).toMatchObject({
+        users: { [TEST_UID]: { email: TEST_EMAIL, referredByShareId: 'abc' } },
+      });
+    });
+
+    it('never overwrites an existing referredByShareId (write-once)', async () => {
+      const { app, database } = buildTestApp();
+
+      await app.inject({
+        method: 'PUT',
+        url: '/api/users/me',
+        headers: authHeader(),
+        payload: { referredByShareId: 'old' },
+      });
+
+      await app.inject({
+        method: 'PUT',
+        url: '/api/users/me',
+        headers: authHeader(),
+        payload: { referredByShareId: 'new' },
+      });
+
+      expect(database.dump()).toMatchObject({
+        users: { [TEST_UID]: { email: TEST_EMAIL, referredByShareId: 'old' } },
+      });
+    });
+
+    it('still upserts the email with no body (backward compatible with the zero-arg call)', async () => {
+      const { app, database } = buildTestApp();
+
+      const response = await app.inject({
+        method: 'PUT',
+        url: '/api/users/me',
+        headers: authHeader(),
+      });
+
+      expect(response.statusCode).toBe(200);
+      expect(response.json()).toEqual({ uid: TEST_UID, email: TEST_EMAIL });
+      const dump = database.dump() as { users: Record<string, Record<string, unknown>> };
+      expect(dump.users[TEST_UID]!.email).toBe(TEST_EMAIL);
+      expect('referredByShareId' in dump.users[TEST_UID]!).toBe(false);
+    });
+  });
 });
 
 describe('GET /api/users/me', () => {
