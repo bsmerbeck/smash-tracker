@@ -53,6 +53,26 @@ function makeSnapshot(overrides: Partial<PublicShareSnapshot> = {}): PublicShare
   };
 }
 
+function makeRecapSnapshot(overrides: Partial<PublicShareSnapshot> = {}): PublicShareSnapshot {
+  return {
+    createdAt: 1000,
+    kind: 'recap',
+    recapSource: 'startgg',
+    tournamentName: 'Genesis X',
+    tournamentDate: new Date('2026-01-15').getTime(),
+    placement: 3,
+    seed: 8,
+    numEntrants: 128,
+    setRecordWins: 5,
+    setRecordLosses: 2,
+    notableWinOpponentName: 'Some Player',
+    notableWinOpponentSeed: 1,
+    characterFighterIds: [1, 3],
+    reviewedMomentsCount: 4,
+    ...overrides,
+  };
+}
+
 describe('renderShareHtml', () => {
   beforeEach(() => {
     // The module-level shell cache would otherwise carry the shell fetched
@@ -216,6 +236,68 @@ describe('renderShareHtml', () => {
     expect(html).toContain(
       `<meta property="og:image" content="${WEB_BASE_URL}/s/${TOKEN}/og.png">`,
     );
+  });
+
+  it('produces stat-derived OG meta for a recap snapshot, including the placement ordinal', async () => {
+    const fetchImpl = fetchOk(FAKE_SHELL);
+    const snapshot = makeRecapSnapshot();
+
+    const html = await renderShareHtml({
+      token: TOKEN,
+      snapshot,
+      webBaseUrl: WEB_BASE_URL,
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+    });
+
+    expect(html).toMatch(
+      /<meta property="og:title" content="3rd at Genesis X — recap · grandfinals\.gg">/,
+    );
+    expect(html).toMatch(/<meta property="og:description" content="5–2 set record/);
+    expect(html).toContain('seed 8');
+    expect(html).toContain('4 reviewed moments');
+    expect(html).toMatch(/<meta name="robots" content="noindex">/);
+    expect(html).toContain(
+      `<meta property="og:image" content="${WEB_BASE_URL}/s/${TOKEN}/og.png">`,
+    );
+  });
+
+  it('omits the placement ordinal and the reviewed-moments phrase when absent/zero', async () => {
+    const fetchImpl = fetchOk(FAKE_SHELL);
+    const snapshot = makeRecapSnapshot({
+      placement: undefined,
+      seed: undefined,
+      reviewedMomentsCount: 0,
+    });
+
+    const html = await renderShareHtml({
+      token: TOKEN,
+      snapshot,
+      webBaseUrl: WEB_BASE_URL,
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+    });
+
+    expect(html).toMatch(
+      /<meta property="og:title" content="Genesis X — recap · grandfinals\.gg">/,
+    );
+    expect(html).not.toContain(' at Genesis X');
+    expect(html).not.toContain('seed');
+    expect(html).not.toContain('reviewed moment');
+    expect(html).toMatch(/<meta property="og:description" content="5–2 set record\. Watch/);
+  });
+
+  it('escapes an HTML-special tournament name in recap meta', async () => {
+    const fetchImpl = fetchOk(FAKE_SHELL);
+    const snapshot = makeRecapSnapshot({ tournamentName: '<script>alert(1)</script>' });
+
+    const html = await renderShareHtml({
+      token: TOKEN,
+      snapshot,
+      webBaseUrl: WEB_BASE_URL,
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+    });
+
+    expect(html).not.toContain('<script>alert(1)</script>');
+    expect(html).toContain('&lt;script&gt;');
   });
 
   it('falls back to the hardcoded safe template when the shell fetch returns a non-2xx status', async () => {
