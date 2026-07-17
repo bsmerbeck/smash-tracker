@@ -910,6 +910,25 @@
       "verdictFollowed": "従った",
       "verdictAgainst": "逆らった",
       "verdictNeutral": "どちらでもない"
+    },
+    "recap": {
+      "generateButton": "リキャップを作成",
+      "submitButton": "作成",
+      "dialogTitle": "リキャップカードを作成",
+      "dialogDescription": "順位、セット成績、確認した名場面をリンクとして共有できます — 閲覧にアカウントは不要です。",
+      "showDisplayNameLabel": "表示名を表示する",
+      "showDisplayNameHelper": "デフォルトでオン — リキャップカードにあなたの名前が表示されます",
+      "showDisplayNameUnavailable": "アカウントに表示名が設定されていません — プロフィールで設定すると添付できます",
+      "regenerateHint": "再作成すると新しいリンクが作られます — 古いリンクはそのまま使えて変わりません。",
+      "generateFailedToast": "リキャップを作成できませんでした。もう一度お試しください。",
+      "limitReached": "共有上限に達しました（{{max}}）。古いリンクを取り消して新しく作成してください。",
+      "createdTitle": "リキャップリンクの準備ができました",
+      "createdBody": "このリンクを持つ人は誰でもあなたのリキャップを閲覧できます — アカウントは不要です。",
+      "copyButton": "リンクをコピー",
+      "copiedButton": "コピーしました！",
+      "copiedToast": "リンクをクリップボードにコピーしました",
+      "copyFailedToast": "コピーできませんでした — リンクを手動でコピーしてください。",
+      "doneButton": "完了"
     }
   },
   "billing": {

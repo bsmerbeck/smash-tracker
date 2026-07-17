@@ -910,6 +910,25 @@
       "verdictFollowed": "seguida",
       "verdictAgainst": "en contra",
       "verdictNeutral": "neutral sobre"
+    },
+    "recap": {
+      "generateButton": "Generar recap",
+      "submitButton": "Generar",
+      "dialogTitle": "Generar una tarjeta recap",
+      "dialogDescription": "Comparte tu clasificación, récord de sets y momentos revisados como un enlace — no se necesita cuenta para verlo.",
+      "showDisplayNameLabel": "Mostrar tu nombre visible",
+      "showDisplayNameHelper": "Activado por defecto — tu nombre aparece en la tarjeta recap",
+      "showDisplayNameUnavailable": "Tu cuenta no tiene un nombre visible — configura uno en Perfil para adjuntarlo",
+      "regenerateHint": "Generar de nuevo crea un enlace nuevo — el anterior sigue funcionando y no cambiará.",
+      "generateFailedToast": "No se pudo generar el recap. Inténtalo de nuevo.",
+      "limitReached": "Límite de comparticiones alcanzado ({{max}}). Revoca un enlace antiguo para crear uno nuevo.",
+      "createdTitle": "Enlace de recap listo",
+      "createdBody": "Cualquiera con este enlace puede ver tu recap — no se necesita cuenta.",
+      "copyButton": "Copiar enlace",
+      "copiedButton": "¡Copiado!",
+      "copiedToast": "Enlace copiado al portapapeles",
+      "copyFailedToast": "No se pudo copiar — copia el enlace manualmente.",
+      "doneButton": "Listo"
     }
   },
   "billing": {

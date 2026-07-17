@@ -1,5 +1,6 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes } from 'react-router';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { Match, TournamentEntry } from '@smash-tracker/shared';
@@ -29,17 +30,25 @@ vi.mock('@/lib/firebase', async () => {
 
 const listMatches = vi.fn();
 const listTournaments = vi.fn();
+const createVodShare = vi.fn();
 
-vi.mock('@/lib/api', () => ({
-  api: {
-    matches: {
-      list: (...args: unknown[]) => listMatches(...args),
+vi.mock('@/lib/api', async () => {
+  const actual = await vi.importActual<typeof import('@/lib/api')>('@/lib/api');
+  return {
+    ...actual,
+    api: {
+      matches: {
+        list: (...args: unknown[]) => listMatches(...args),
+      },
+      tournaments: {
+        list: (...args: unknown[]) => listTournaments(...args),
+      },
+      vodShares: {
+        create: (...args: unknown[]) => createVodShare(...args),
+      },
     },
-    tournaments: {
-      list: (...args: unknown[]) => listTournaments(...args),
-    },
-  },
-}));
+  };
+});
 
 const mario = SpriteList.find((s) => s.id === 1)!; // Mario
 const luigi = SpriteList.find((s) => s.id === 10)!; // Luigi
@@ -230,5 +239,52 @@ describe('TournamentDetailPage', () => {
     // synced for a parry.gg entry — no crash, no start.gg-only affordance.
     expect(screen.getByText('Full results attach on your next start.gg sync.')).toBeInTheDocument();
     expect(screen.queryByRole('link', { name: /View on start\.gg/ })).not.toBeInTheDocument();
+  });
+
+  it('shows the Generate recap action for a synced entry and opens the dialog', async () => {
+    listTournaments.mockResolvedValue([makeEntry({ eventId: 42, setsPlayed: 3 })]);
+    listMatches.mockResolvedValue([]);
+    const user = userEvent.setup();
+
+    renderPage('42');
+
+    const generateButton = await screen.findByRole('button', { name: 'Generate recap' });
+    await user.click(generateButton);
+
+    expect(await screen.findByText('Generate a recap card')).toBeInTheDocument();
+  });
+
+  it('omits the Generate recap action when the entry has no completed sets', async () => {
+    listTournaments.mockResolvedValue([makeEntry({ eventId: 42, setsPlayed: 0 })]);
+    listMatches.mockResolvedValue([]);
+
+    renderPage('42');
+
+    await screen.findByText('Set Timeline');
+    expect(screen.queryByRole('button', { name: 'Generate recap' })).not.toBeInTheDocument();
+  });
+
+  it('generating a recap posts kind recap + entryKey and shows a copyable link', async () => {
+    listTournaments.mockResolvedValue([makeEntry({ eventId: 42, entryKey: '42', setsPlayed: 3 })]);
+    listMatches.mockResolvedValue([]);
+    createVodShare.mockResolvedValue({
+      shareId: 'share-1',
+      token: 'tok',
+      url: 'https://grandfinals.gg/s/tok',
+    });
+    const user = userEvent.setup();
+
+    renderPage('42');
+
+    await user.click(await screen.findByRole('button', { name: 'Generate recap' }));
+    await user.click(await screen.findByRole('button', { name: 'Generate' }));
+
+    await waitFor(() => expect(createVodShare).toHaveBeenCalledTimes(1));
+    expect(createVodShare).toHaveBeenCalledWith(
+      expect.objectContaining({ kind: 'recap', entryKey: '42' }),
+    );
+
+    expect(await screen.findByText('Recap link ready')).toBeInTheDocument();
+    expect(screen.getByDisplayValue('https://grandfinals.gg/s/tok')).toBeInTheDocument();
   });
 });
