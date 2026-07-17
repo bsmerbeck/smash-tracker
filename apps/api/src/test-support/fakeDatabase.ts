@@ -99,7 +99,8 @@ export class FakeDatabase {
         'path argument was an invalid path = "". Paths must be non-empty strings and can\'t contain ".", "#", "$", "[", or "]". Use ref() with no argument for the root.',
       );
     }
-    if (path !== undefined && /[.#$[\]]/.test(path)) {
+    // eslint-disable-next-line no-control-regex -- mirrors firebase-admin INVALID_PATH_REGEX (controls + DEL are path-illegal)
+    if (path !== undefined && /[.#$[\]\u0000-\u001f\u007f]/.test(path)) {
       throw new Error(
         `path argument was an invalid path = "${path}". Paths must be non-empty strings and can't contain ".", "#", "$", "[", or "]".`,
       );
