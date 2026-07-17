@@ -33,6 +33,13 @@ type RecapStep = 'create' | 'created';
  * achievement card is meaningless, unlike a VOD review which defaults OFF).
  * "Generate recap" always creates a fresh snapshot+token — regenerating
  * never updates a previously issued link in place.
+ *
+ * Walkthrough amendment (07-09): a second Switch, "Full recap", DEFAULTS ON
+ * — it controls the `detail: 'summary' | 'full'` sent to the create call.
+ * "Full" stores (and later renders) the whole set-by-set timeline; opponent
+ * tags/placements/stages are public bracket data, not private notes, so the
+ * helper text explains that plainly rather than framing it as a privacy
+ * trade-off.
  */
 export function GenerateRecapDialog({
   entryKey,
@@ -48,6 +55,7 @@ export function GenerateRecapDialog({
   const createShare = useCreateVodShare();
   const [step, setStep] = useState<RecapStep>('create');
   const [showDisplayName, setShowDisplayName] = useState(true);
+  const [fullRecap, setFullRecap] = useState(true);
   const [createdUrl, setCreatedUrl] = useState('');
   const [copied, setCopied] = useState(false);
 
@@ -67,6 +75,7 @@ export function GenerateRecapDialog({
     if (open) {
       setStep('create');
       setShowDisplayName(true);
+      setFullRecap(true);
       setCreatedUrl('');
       setCopied(false);
     }
@@ -81,6 +90,7 @@ export function GenerateRecapDialog({
       const result = await createShare.mutateAsync({
         kind: 'recap',
         entryKey,
+        detail: fullRecap ? 'full' : 'summary',
         ...(effectiveShowName && user?.displayName ? { ownerDisplayName: user.displayName } : {}),
       });
       setCreatedUrl(result.url);
@@ -135,6 +145,16 @@ export function GenerateRecapDialog({
                   onCheckedChange={setShowDisplayName}
                   disabled={!hasDisplayName}
                 />
+              </div>
+
+              <div className="flex items-center justify-between gap-4">
+                <div className="flex flex-col gap-0.5">
+                  <Label htmlFor="recap-full-detail">{t('tournaments.recap.fullRecapLabel')}</Label>
+                  <p className="text-xs text-muted-foreground">
+                    {t('tournaments.recap.fullRecapHelper')}
+                  </p>
+                </div>
+                <Switch id="recap-full-detail" checked={fullRecap} onCheckedChange={setFullRecap} />
               </div>
 
               <p className="text-xs text-muted-foreground">
