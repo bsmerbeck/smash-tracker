@@ -46,6 +46,44 @@ function seedActiveShares(
 
 const REDACTION_ALL_ON = { includeNotes: true, includeTags: true, showDisplayName: false };
 
+/** Seeds a `tournamentEntries/{uid}/{entryKey}` record recap creation reads. */
+function seedTournamentEntry(
+  database: ReturnType<typeof buildTestApp>['database'],
+  uid: string,
+  entryKey: string,
+  overrides = {},
+) {
+  database.seed(`tournamentEntries/${uid}`, {
+    [entryKey]: {
+      eventName: 'Ultimate Singles',
+      tournamentName: 'The Big House 9',
+      seed: 8,
+      placement: 3,
+      firstSetAt: 1000,
+      lastSetAt: 5000,
+      setsPlayed: 1,
+      ...overrides,
+    },
+  });
+}
+
+/** Seeds a single won set (one match, one game) matching seedTournamentEntry's event/tournament window. */
+function seedRecapMatch(database: ReturnType<typeof buildTestApp>['database'], uid: string) {
+  database.seed(`matches/${uid}`, {
+    m1: {
+      fighter_id: 1,
+      opponent_id: 2,
+      time: 1000,
+      win: true,
+      eventName: 'Ultimate Singles',
+      tournamentName: 'The Big House 9',
+      externalId: 'sgg:set-1:g1',
+      opponentSeed: 1,
+      opponent: 'RivalTag',
+    },
+  });
+}
+
 describe('POST /api/vod-shares', () => {
   it('creates a share and returns shareId, token, and url', async () => {
     const { app, database } = buildTestApp();
@@ -423,6 +461,122 @@ describe('DELETE /api/vod-shares/:id', () => {
     });
 
     expect(response.statusCode).toBe(404);
+  });
+});
+
+describe('POST /api/vod-shares — kind recap', () => {
+  it("creates a recap share for the caller's own seeded tournamentEntries and reads back kind recap + computed stats", async () => {
+    const { app, database } = buildTestApp();
+    seedTournamentEntry(database, TEST_UID, '99');
+    seedRecapMatch(database, TEST_UID);
+
+    const createResponse = await app.inject({
+      method: 'POST',
+      url: '/api/vod-shares',
+      headers: authHeader(),
+      payload: { kind: 'recap', entryKey: '99' },
+    });
+
+    expect(createResponse.statusCode).toBe(201);
+    const created = createResponse.json();
+    expect(created.shareId).toEqual(expect.any(String));
+    expect(created.token).toEqual(expect.any(String));
+
+    const readResponse = await app.inject({
+      method: 'GET',
+      url: `/api/vod-shares/${created.token}`,
+    });
+
+    expect(readResponse.statusCode).toBe(200);
+    const body = readResponse.json();
+    expect(body.kind).toBe('recap');
+    expect(body.tournamentName).toBe('The Big House 9');
+    expect(body.setRecordWins).toBe(1);
+    expect(body.setRecordLosses).toBe(0);
+    expect(body.characterFighterIds).toEqual([1]);
+    expect('uid' in body).toBe(false);
+    expect('entryKey' in body).toBe(false);
+  });
+
+  it("404s for a recap create against another user's entryKey (never a body/params uid, T-05-04)", async () => {
+    const { app, auth, database } = buildTestApp();
+    seedTournamentEntry(database, TEST_UID, '99'); // owned by TEST_UID only
+    registerUser(auth, SECOND_TOKEN, { uid: SECOND_UID, email: 'second@example.com' });
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/vod-shares',
+      headers: authHeader(SECOND_TOKEN),
+      payload: { kind: 'recap', entryKey: '99' },
+    });
+
+    expect(response.statusCode).toBe(404);
+  });
+
+  it('404s for a recap create against a nonexistent entryKey', async () => {
+    const { app } = buildTestApp();
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/vod-shares',
+      headers: authHeader(),
+      payload: { kind: 'recap', entryKey: 'nope' },
+    });
+
+    expect(response.statusCode).toBe(404);
+  });
+
+  it('rejects the 101st recap share with 403 (same cap as review shares)', async () => {
+    const { app, database } = buildTestApp();
+    seedTournamentEntry(database, TEST_UID, '99');
+    seedRecapMatch(database, TEST_UID);
+    seedActiveShares(database, TEST_UID, 100);
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/vod-shares',
+      headers: authHeader(),
+      payload: { kind: 'recap', entryKey: '99' },
+    });
+
+    expect(response.statusCode).toBe(403);
+  });
+
+  it('rejects a recap body missing entryKey with 400', async () => {
+    const { app } = buildTestApp();
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/vod-shares',
+      headers: authHeader(),
+      payload: { kind: 'recap' },
+    });
+
+    expect(response.statusCode).toBe(400);
+  });
+
+  it('an existing vod-review create (no kind) still returns 201 and reads back a review snapshot with no kind field', async () => {
+    const { app, database } = buildTestApp();
+    seedMatch(database);
+
+    const createResponse = await app.inject({
+      method: 'POST',
+      url: '/api/vod-shares',
+      headers: authHeader(),
+      payload: { matchId: 'm1', redaction: REDACTION_ALL_ON },
+    });
+    expect(createResponse.statusCode).toBe(201);
+    const { token } = createResponse.json();
+
+    const readResponse = await app.inject({
+      method: 'GET',
+      url: `/api/vod-shares/${token}`,
+    });
+
+    expect(readResponse.statusCode).toBe(200);
+    const body = readResponse.json();
+    expect('kind' in body).toBe(false);
+    expect(body.result).toBe('win');
   });
 });
 
