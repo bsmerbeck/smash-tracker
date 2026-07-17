@@ -23,10 +23,13 @@ import { navItems } from '@/layouts/nav';
  * app-chrome titles.
  */
 const ROUTE_TITLE_KEYS: ReadonlyArray<{ prefix: string; titleKey: string }> = [
-  ...navItems.map(({ href, titleKey }) => ({ prefix: href, titleKey })),
+  // Explicit entries FIRST: `.find()` takes the first match, and the
+  // `/tournaments/` detail prefix must beat the `/tournaments` nav item for
+  // detail paths (the exact list path still falls through to the nav item).
   { prefix: '/profile', titleKey: 'nav.profile' },
   { prefix: '/tournaments/', titleKey: 'nav.tournament' },
   { prefix: '/auth/startgg', titleKey: 'nav.signingInWithStartgg' },
+  ...navItems.map(({ href, titleKey }) => ({ prefix: href, titleKey })),
 ];
 
 /** The `nav.*` i18n key for a pathname, or null for unmapped (public/SEO) routes. */
