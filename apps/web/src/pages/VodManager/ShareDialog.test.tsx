@@ -150,6 +150,7 @@ describe('ShareDialog', () => {
 
     await waitFor(() => expect(createVodShare).toHaveBeenCalledTimes(1));
     expect(createVodShare).toHaveBeenCalledWith({
+      kind: 'review',
       matchId: 'match-1',
       redaction: { includeNotes: true, includeTags: true, showDisplayName: false },
     });
