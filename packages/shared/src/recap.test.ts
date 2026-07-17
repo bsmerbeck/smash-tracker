@@ -1,0 +1,95 @@
+import { describe, expect, it } from 'vitest';
+import { recapSetSchema, recapSnapshotSchema } from './recap.js';
+
+function makeSet(overrides: Partial<Record<string, unknown>> = {}) {
+  return {
+    roundLabel: 'Winners Round 3',
+    opponentName: 'RivalTag',
+    wins: 3,
+    losses: 1,
+    win: true,
+    ...overrides,
+  };
+}
+
+function makeSnapshot(overrides: Partial<Record<string, unknown>> = {}) {
+  return {
+    uid: 'uid-1',
+    entryKey: '99',
+    createdAt: 1000,
+    kind: 'recap' as const,
+    source: 'startgg' as const,
+    tournamentName: 'The Big House 9',
+    tournamentDate: 500,
+    setRecordWins: 2,
+    setRecordLosses: 1,
+    characterFighterIds: [1, 5],
+    reviewedMomentsCount: 0,
+    ...overrides,
+  };
+}
+
+describe('recapSetSchema', () => {
+  it('parses a minimal set (no opponentPlacement/stages)', () => {
+    const parsed = recapSetSchema.parse(makeSet());
+    expect(parsed.roundLabel).toBe('Winners Round 3');
+    expect('opponentPlacement' in parsed).toBe(false);
+    expect('stages' in parsed).toBe(false);
+  });
+
+  it('parses a fully-populated set with opponentPlacement + stages', () => {
+    const parsed = recapSetSchema.parse(
+      makeSet({ opponentPlacement: 5, stages: ['Battlefield', "Yoshi's Story"] }),
+    );
+    expect(parsed.opponentPlacement).toBe(5);
+    expect(parsed.stages).toEqual(['Battlefield', "Yoshi's Story"]);
+  });
+
+  it('rejects an empty opponentName', () => {
+    const result = recapSetSchema.safeParse(makeSet({ opponentName: '' }));
+    expect(result.success).toBe(false);
+  });
+});
+
+describe('recapSnapshotSchema (07-09 walkthrough amendment fields)', () => {
+  it('an old-style snapshot with no detail/tournamentUrl/sets still parses (backward compatible)', () => {
+    const parsed = recapSnapshotSchema.parse(makeSnapshot());
+    expect(parsed.detail).toBeUndefined();
+    expect(parsed.tournamentUrl).toBeUndefined();
+    expect(parsed.sets).toBeUndefined();
+  });
+
+  it('parses a "summary" generation (detail/tournamentUrl/sets all absent)', () => {
+    const parsed = recapSnapshotSchema.parse(makeSnapshot());
+    expect('detail' in parsed).toBe(false);
+    expect('sets' in parsed).toBe(false);
+  });
+
+  it('parses a "full" generation with detail:"full", tournamentUrl, and a populated sets array', () => {
+    const parsed = recapSnapshotSchema.parse(
+      makeSnapshot({
+        detail: 'full',
+        tournamentUrl: 'https://start.gg/tournament/big-house-9/event/ultimate-singles',
+        sets: [makeSet(), makeSet({ roundLabel: 'Grand Finals', win: false, wins: 1, losses: 3 })],
+      }),
+    );
+    expect(parsed.detail).toBe('full');
+    expect(parsed.tournamentUrl).toBe(
+      'https://start.gg/tournament/big-house-9/event/ultimate-singles',
+    );
+    expect(parsed.sets).toHaveLength(2);
+  });
+
+  it('rejects an invalid tournamentUrl', () => {
+    const result = recapSnapshotSchema.safeParse(
+      makeSnapshot({ tournamentUrl: 'not-a-valid-url' }),
+    );
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects more than 20 sets', () => {
+    const sets = Array.from({ length: 21 }, (_, i) => makeSet({ roundLabel: `Set ${i + 1}` }));
+    const result = recapSnapshotSchema.safeParse(makeSnapshot({ detail: 'full', sets }));
+    expect(result.success).toBe(false);
+  });
+});
