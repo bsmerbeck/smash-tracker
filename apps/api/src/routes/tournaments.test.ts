@@ -135,6 +135,40 @@ describe('GET /api/tournaments', () => {
     expect(parryggEntry).toMatchObject({ entryKey: 'pgg-foo', source: 'parrygg' });
   });
 
+  // Review WR-03: safeParse-and-skip (production-gap rule) — one corrupt
+  // record must never 500 the whole registry list.
+  it('skips a corrupt entry and still returns the healthy ones (never a 500)', async () => {
+    const { app, database } = buildTestApp();
+    database.seed(`tournamentEntries/${TEST_UID}`, {
+      '987': {
+        eventId: 987,
+        eventName: 'Ultimate Singles',
+        firstSetAt: 1_700_000_000_000,
+        lastSetAt: 1_700_000_500_000,
+        setsPlayed: 5,
+      },
+      corrupt: {
+        eventName: 'Broken Entry',
+        // string-typed time — the exact corruption class that once took
+        // down GET /api/matches for days (see rtdb.ts's listMatches).
+        firstSetAt: 'not-a-number',
+        lastSetAt: 1_700_000_400_000,
+        setsPlayed: 1,
+      },
+    });
+
+    const response = await app.inject({
+      method: 'GET',
+      url: '/api/tournaments',
+      headers: authHeader(),
+    });
+
+    expect(response.statusCode).toBe(200);
+    const entries = response.json() as Record<string, unknown>[];
+    expect(entries).toHaveLength(1);
+    expect(entries[0]).toMatchObject({ eventId: 987, entryKey: '987' });
+  });
+
   it('omits slug/eventSlug/topStandings when absent from the stored entry', async () => {
     const { app, database } = buildTestApp();
     database.seed(`tournamentEntries/${TEST_UID}`, {
