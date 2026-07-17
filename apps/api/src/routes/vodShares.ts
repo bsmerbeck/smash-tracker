@@ -33,6 +33,15 @@ export interface VodSharesRoutesOptions {
  * revoke is a one-way soft state transition (sets `revokedAt`, never
  * removes the record — the locked "no hard delete" decision), which reads
  * more honestly as an action verb than a generic delete/patch.
+ *
+ * Phase 7 (Recap Cards & Share-Loop Analytics): `POST /vod-shares` also
+ * accepts `{ kind: 'recap', entryKey }` — a deterministic post-tournament
+ * stats card built from the caller's own `tournamentEntries/{uid}/{entryKey}`
+ * + `matches/{uid}` (see `RtdbService.createShare`'s recap branch and
+ * `buildRecapSnapshot`). No new route topology: `ValidationError` /
+ * `ForbiddenError` / `NotFoundError` mapping below already covers the
+ * recap-specific failure cases (a foreign/absent `entryKey` 404s the same
+ * way a foreign/absent `matchId` already does).
  */
 const vodSharesRoutes: FastifyPluginAsyncZod<VodSharesRoutesOptions> = async (app, options) => {
   const rtdb = new RtdbService(app.firebase.database);
