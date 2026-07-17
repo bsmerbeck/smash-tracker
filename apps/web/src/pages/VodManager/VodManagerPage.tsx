@@ -33,6 +33,7 @@ import {
   useUpdatePlaylist,
 } from '@/hooks/usePlaylists';
 import { MAX_TIMESTAMPS, detectVodProvider, parseVodStartSeconds } from '@/lib/vod';
+import { logProductEvent } from '@/lib/firebase';
 import {
   MAX_NOTE_TAGS,
   addTagToList,
@@ -822,6 +823,10 @@ export function VodManagerPage() {
     const newNote: VodTimestamp = { seconds, note: '', tags: [tagSlug] };
     const next = [...existing, newNote].sort((a, b) => a.seconds - b.seconds);
     handleUpdateTimestamps(next);
+    // FUNNEL-01: this branch is the one genuine note CREATION path through
+    // quick-tag capture — the sibling branch above adds a tag to an EXISTING
+    // note and must never fire this (RESEARCH.md Pitfall 3).
+    logProductEvent('vod_note_created');
     setEditingIndex(next.indexOf(newNote));
   }
 
