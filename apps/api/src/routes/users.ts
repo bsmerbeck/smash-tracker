@@ -33,7 +33,13 @@ const usersRoutes: FastifyPluginAsyncZod = async (app) => {
         // `.nullish()`, not just `.optional()`: Fastify sets `request.body`
         // to `null` (not `undefined`) for a bodyless request with no
         // Content-Type header — the shape every pre-Phase-7 client sends.
-        body: z.object({ referredByShareId: z.string().optional() }).nullish(),
+        // `.max(128)` (review WR-02): a real stamped value is a 43-char
+        // base64url share token (SHARE_TOKEN_SHAPE allows up to 128), so an
+        // unbounded blob is rejected at the boundary before it can reach the
+        // token lookup or round-trip through RTDB. Charset validation happens
+        // in `upsertUser` (non-conforming values are silently dropped, never
+        // an error — provisioning must not fail on a bad referral).
+        body: z.object({ referredByShareId: z.string().max(128).optional() }).nullish(),
         response: {
           200: z.object({ uid: z.string(), email: z.string().email() }),
         },

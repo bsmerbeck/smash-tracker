@@ -136,6 +136,21 @@ describe('PUT /api/users/me', () => {
       expect('referredByShareId' in dump.users[TEST_UID]!).toBe(false);
     });
 
+    it('rejects an oversized referredByShareId with 400 before any lookup (review WR-02)', async () => {
+      const { app, database } = buildTestApp();
+
+      const response = await app.inject({
+        method: 'PUT',
+        url: '/api/users/me',
+        headers: authHeader(),
+        payload: { referredByShareId: 'x'.repeat(129) },
+      });
+
+      expect(response.statusCode).toBe(400);
+      const dump = database.dump() as { users?: Record<string, unknown> };
+      expect(dump.users?.[TEST_UID]).toBeUndefined();
+    });
+
     it('still attributes through a REVOKED share token (revocation kills viewing, not attribution)', async () => {
       const { app, database } = buildTestApp();
       seedShareToken(database, REFERRAL_TOKEN, 'share-revoked', { revokedAt: 2000 });
