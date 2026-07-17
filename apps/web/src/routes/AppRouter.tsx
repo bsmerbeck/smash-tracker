@@ -57,6 +57,11 @@ const GspPage = lazy(() => import('@/pages/Gsp/GspPage').then((m) => ({ default:
 const GroupsPage = lazy(() =>
   import('@/pages/Groups/GroupsPage').then((m) => ({ default: m.GroupsPage })),
 );
+const TournamentsPage = lazy(() =>
+  import('@/pages/Tournaments/TournamentsPage').then((m) => ({
+    default: m.TournamentsPage,
+  })),
+);
 const TournamentDetailPage = lazy(() =>
   import('@/pages/Tournaments/TournamentDetailPage').then((m) => ({
     default: m.TournamentDetailPage,
@@ -216,6 +221,14 @@ export function AppRouter() {
             element={
               <ProtectedRoute>
                 <GspPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/tournaments"
+            element={
+              <ProtectedRoute>
+                <TournamentsPage />
               </ProtectedRoute>
             }
           />
