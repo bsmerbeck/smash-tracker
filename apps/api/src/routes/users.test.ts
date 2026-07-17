@@ -168,6 +168,40 @@ describe('PUT /api/users/me', () => {
       });
     });
 
+    // Review WR-05: provisioning must scope its writes to the fields it
+    // owns — never full-overwrite the users/{uid} node — and a later
+    // unstamped call must never erase an earlier call's attribution.
+    it('does not erase an existing attribution on a later unstamped provisioning call', async () => {
+      const { app, database } = buildTestApp();
+      seedShareToken(database, REFERRAL_TOKEN, 'share-1');
+
+      await app.inject({
+        method: 'PUT',
+        url: '/api/users/me',
+        headers: authHeader(),
+        payload: { referredByShareId: REFERRAL_TOKEN },
+      });
+
+      // Bodyless re-provision (token refresh, second tab) — with a full-node
+      // set() this would wipe the field the first call just wrote.
+      await app.inject({ method: 'PUT', url: '/api/users/me', headers: authHeader() });
+
+      expect(database.dump()).toMatchObject({
+        users: { [TEST_UID]: { email: TEST_EMAIL, referredByShareId: 'share-1' } },
+      });
+    });
+
+    it('preserves user-node fields it does not own across re-provisioning (scoped writes)', async () => {
+      const { app, database } = buildTestApp();
+      database.seed(`users/${TEST_UID}`, { email: 'stale@example.com', someFutureField: true });
+
+      await app.inject({ method: 'PUT', url: '/api/users/me', headers: authHeader() });
+
+      expect(database.dump()).toMatchObject({
+        users: { [TEST_UID]: { email: TEST_EMAIL, someFutureField: true } },
+      });
+    });
+
     it('still upserts the email with no body (backward compatible with the zero-arg call)', async () => {
       const { app, database } = buildTestApp();
 

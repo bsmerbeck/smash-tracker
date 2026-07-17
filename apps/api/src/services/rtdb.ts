@@ -158,19 +158,32 @@ export class RtdbService {
    * unknown token silently drops the field — provisioning must never fail
    * on a bad referral. A REVOKED share still attributes (revocation kills
    * viewing, not the fact the visit happened), which is why `revokedAt` is
-   * deliberately not checked here. Write-once, first-touch (FUNNEL-02):
-   * an existing attribution is never overwritten. Conditional-spread,
-   * never writes `null` (CONCERNS.md).
+   * deliberately not checked here.
+   *
+   * Write-once, first-touch (FUNNEL-02) is enforced with an RTDB
+   * TRANSACTION on the single `referredByShareId` child (review WR-05): the
+   * update function aborts (returns `undefined`) when a value already
+   * exists, so two concurrent provisioning calls (two tabs finishing
+   * sign-in, or sign-in racing a token-refresh re-provision) can never
+   * overwrite — or erase — each other's attribution. Every write here is
+   * scoped to the exact child it owns (`email`, `referredByShareId`); this
+   * method never `set()`s the whole `users/{uid}` node, so fields written
+   * by other features survive re-provisioning. Never writes `null`
+   * (CONCERNS.md).
    */
   async upsertUser(uid: string, input: { email: string; referralToken?: string }): Promise<void> {
-    const existing = await this.getUser(uid);
-    const referredByShareId =
-      existing?.referredByShareId ?? (await this.resolveReferralShareId(input.referralToken));
-    const user: User = {
-      email: input.email,
-      ...(referredByShareId ? { referredByShareId } : {}),
-    };
-    await this.database.ref(`users/${uid}`).set(user);
+    await this.database.ref(`users/${uid}/email`).set(input.email);
+
+    if (!input.referralToken) {
+      return;
+    }
+    const referredByShareId = await this.resolveReferralShareId(input.referralToken);
+    if (!referredByShareId) {
+      return;
+    }
+    await this.database
+      .ref(`users/${uid}/referredByShareId`)
+      .transaction((current) => (current == null ? referredByShareId : undefined));
   }
 
   /**
