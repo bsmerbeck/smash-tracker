@@ -1430,6 +1430,18 @@
     "videoUnavailable": "Este VOD não está mais disponível.",
     "ctaTitle": "Revise suas próprias partidas",
     "ctaBody": "Acompanhe seus próprios VODs com marcações de tempo clicáveis — grátis, sem cartão de crédito.",
-    "ctaButton": "Começar grátis"
+    "ctaButton": "Começar grátis",
+    "recap": {
+      "heading": "Resumo do torneio",
+      "placement": "{{placement}} lugar",
+      "seedToFinish": "Cabeça de chave {{seed}} → {{placement}}",
+      "setRecord": "Retrospecto de sets: {{wins}}–{{losses}}",
+      "notableWinNamed": "Vitória notável contra {{name}}",
+      "notableWinSeed": "Vitória notável contra o cabeça de chave {{seed}}",
+      "charactersLabel": "Personagens jogados",
+      "reviewedMoments_one": "{{count}} momento revisado",
+      "reviewedMoments_other": "{{count}} momentos revisados",
+      "download": "Baixar imagem"
+    }
   }
 }

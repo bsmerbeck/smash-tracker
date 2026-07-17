@@ -1430,6 +1430,18 @@
     "videoUnavailable": "このVODは現在利用できません。",
     "ctaTitle": "自分の対戦をレビューしよう",
     "ctaBody": "クリックで再生位置に飛べるタイムスタンプ付きで、自分のVODを記録しよう — 無料、クレジットカード不要。",
-    "ctaButton": "無料で始める"
+    "ctaButton": "無料で始める",
+    "recap": {
+      "heading": "トーナメント振り返り",
+      "placement": "{{placement}}位",
+      "seedToFinish": "シード{{seed}} → {{placement}}",
+      "setRecord": "セット戦績: {{wins}}–{{losses}}",
+      "notableWinNamed": "{{name}}への注目の勝利",
+      "notableWinSeed": "シード{{seed}}への注目の勝利",
+      "charactersLabel": "使用キャラクター",
+      "reviewedMoments_one": "レビュー済みの場面 {{count}}件",
+      "reviewedMoments_other": "レビュー済みの場面 {{count}}件",
+      "download": "画像をダウンロード"
+    }
   }
 }

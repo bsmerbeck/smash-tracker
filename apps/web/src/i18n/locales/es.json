@@ -1430,6 +1430,18 @@
     "videoUnavailable": "Este VOD ya no está disponible.",
     "ctaTitle": "Revisa tus propias partidas",
     "ctaBody": "Registra tus propios VODs con marcas de tiempo de salto directo — gratis, sin tarjeta de crédito.",
-    "ctaButton": "Empezar gratis"
+    "ctaButton": "Empezar gratis",
+    "recap": {
+      "heading": "Resumen del torneo",
+      "placement": "{{placement}} lugar",
+      "seedToFinish": "Cabeza de serie {{seed}} → {{placement}}",
+      "setRecord": "Récord de sets: {{wins}}–{{losses}}",
+      "notableWinNamed": "Victoria destacada contra {{name}}",
+      "notableWinSeed": "Victoria destacada contra el cabeza de serie {{seed}}",
+      "charactersLabel": "Personajes jugados",
+      "reviewedMoments_one": "{{count}} momento revisado",
+      "reviewedMoments_other": "{{count}} momentos revisados",
+      "download": "Descargar imagen"
+    }
   }
 }
