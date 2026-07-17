@@ -59,14 +59,19 @@ function formatDateRange(entry: TournamentEntry, locale: string): string {
  * V4 Phase B: per-tournament results, rebuilt from `useTournamentEntries`
  * (the start.gg tournament registry, Phase A sync) instead of grouping
  * matches by name — a more reliable source now that it exists, and it gives
- * every row a stable `eventId` to link to `/tournaments/:eventId`. Entries
+ * every row a stable `entryKey` to link to `/tournaments/:entryKey`. Entries
  * only start showing up after a sync that populates the registry, so the
  * resync-hint empty state is preserved for accounts with matches but no
  * entries yet.
  *
  * V5 Phase B: rows also carry a small outbound start.gg icon-link when the
  * entry's `slug` has synced (`stopPropagation` on click so it doesn't also
- * trigger the internal row link); hidden entirely when the slug is absent.
+ * trigger the internal row link); hidden entirely when the slug is absent
+ * (always the case for a parry.gg entry, Phase 7).
+ *
+ * Phase 7: row links + keys route on the source-agnostic `entryKey` (never
+ * the start.gg-only numeric `eventId`, which is absent on parry.gg entries)
+ * so both sources' rows link correctly into the detail page.
  */
 export function Tournaments({ matches }: { matches: Match[] }) {
   const { t, i18n } = useTranslation();
@@ -106,11 +111,11 @@ export function Tournaments({ matches }: { matches: Match[] }) {
               {rows.map(({ entry, record }) => {
                 const startggUrl = buildStartggUrl(entry.slug);
                 return (
-                  <TableRow key={entry.eventId}>
+                  <TableRow key={entry.entryKey ?? entry.eventId}>
                     <TableCell className="font-medium">
                       <span className="inline-flex items-center gap-1.5">
                         <Link
-                          to={`/tournaments/${entry.eventId}`}
+                          to={`/tournaments/${entry.entryKey}`}
                           className="underline-offset-2 hover:underline"
                         >
                           {entry.tournamentName ?? entry.eventName}

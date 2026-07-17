@@ -910,6 +910,25 @@
       "verdictFollowed": "seguiu",
       "verdictAgainst": "contra",
       "verdictNeutral": "neutro sobre"
+    },
+    "recap": {
+      "generateButton": "Gerar recap",
+      "submitButton": "Gerar",
+      "dialogTitle": "Gerar um cartão recap",
+      "dialogDescription": "Compartilhe sua colocação, retrospecto de sets e momentos revisados como um link — sem necessidade de conta para visualizar.",
+      "showDisplayNameLabel": "Mostrar seu nome de exibição",
+      "showDisplayNameHelper": "Ativado por padrão — seu nome aparece no cartão recap",
+      "showDisplayNameUnavailable": "Sua conta não tem um nome de exibição — defina um em Perfil para anexá-lo",
+      "regenerateHint": "Gerar novamente cria um novo link — o antigo continua funcionando e não vai mudar.",
+      "generateFailedToast": "Não foi possível gerar o recap. Tente novamente.",
+      "limitReached": "Limite de compartilhamentos atingido ({{max}}). Revogue um link antigo para criar um novo.",
+      "createdTitle": "Link do recap pronto",
+      "createdBody": "Qualquer pessoa com este link pode ver seu recap — sem necessidade de conta.",
+      "copyButton": "Copiar link",
+      "copiedButton": "Copiado!",
+      "copiedToast": "Link copiado para a área de transferência",
+      "copyFailedToast": "Não foi possível copiar — copie o link manualmente.",
+      "doneButton": "Concluído"
     }
   },
   "billing": {
