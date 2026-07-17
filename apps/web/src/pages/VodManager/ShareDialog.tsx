@@ -94,6 +94,7 @@ export function ShareDialog({
   async function handleCreate() {
     try {
       const result = await createShare.mutateAsync({
+        kind: 'review',
         matchId: match.id,
         redaction: { includeNotes, includeTags, showDisplayName },
         ...(showDisplayName && user?.displayName ? { ownerDisplayName: user.displayName } : {}),

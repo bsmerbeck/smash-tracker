@@ -34,8 +34,10 @@ export function ShareRow({ share }: { share: ShareSummary }) {
   const [confirmingRevoke, setConfirmingRevoke] = useState(false);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
 
-  const fighter = getFighterById(share.fighterId);
-  const opponentFighter = getFighterById(share.opponentFighterId);
+  const isRecap = share.kind === 'recap';
+  const fighter = share.fighterId != null ? getFighterById(share.fighterId) : undefined;
+  const opponentFighter =
+    share.opponentFighterId != null ? getFighterById(share.opponentFighterId) : undefined;
   const isRevoked = share.status === 'revoked';
 
   async function handleCopy() {
@@ -80,7 +82,9 @@ export function ShareRow({ share }: { share: ShareSummary }) {
         <div className="flex flex-wrap items-center gap-2">
           <Badge variant="outline">{t('vodManager.shares.permissionView')}</Badge>
           <span className="font-medium">
-            {fighter?.name ?? t('common.unknown')} vs {opponentFighter?.name ?? t('common.unknown')}
+            {isRecap
+              ? (share.tournamentName ?? t('common.unknown'))
+              : `${fighter?.name ?? t('common.unknown')} vs ${opponentFighter?.name ?? t('common.unknown')}`}
           </span>
           {isRevoked && (
             <span className="text-xs font-medium text-destructive">
@@ -98,17 +102,17 @@ export function ShareRow({ share }: { share: ShareSummary }) {
           })}
         </span>
         <div className="flex flex-wrap items-center gap-1">
-          {share.redaction.includedNotes && (
+          {share.redaction?.includedNotes && (
             <Badge variant="secondary" className="text-xs">
               {t('vodManager.shares.chipNotes')}
             </Badge>
           )}
-          {share.redaction.includedTags && (
+          {share.redaction?.includedTags && (
             <Badge variant="secondary" className="text-xs">
               {t('vodManager.shares.chipTags')}
             </Badge>
           )}
-          {share.redaction.showDisplayName && (
+          {share.redaction?.showDisplayName && (
             <Badge variant="secondary" className="text-xs">
               {t('vodManager.shares.chipName')}
             </Badge>

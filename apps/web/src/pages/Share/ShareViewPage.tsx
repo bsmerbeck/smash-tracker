@@ -82,8 +82,8 @@ export function ShareViewPage() {
 
   useSeo({
     title: snapshot
-      ? `${getFighterById(snapshot.fighterId)?.name ?? t('common.unknown')} vs ${
-          getFighterById(snapshot.opponentFighterId)?.name ?? t('common.unknown')
+      ? `${getFighterById(snapshot.fighterId!)?.name ?? t('common.unknown')} vs ${
+          getFighterById(snapshot.opponentFighterId!)?.name ?? t('common.unknown')
         } — VOD review · grandfinals.gg`
       : unavailable
         ? t('share.unavailableTitle')
@@ -116,8 +116,11 @@ export function ShareViewPage() {
     );
   }
 
-  const fighter = getFighterById(snapshot.fighterId);
-  const opponentFighter = getFighterById(snapshot.opponentFighterId);
+  // Review-only path below: the schema refine guarantees these fields for a
+  // non-recap snapshot (the flat+refine shape cannot express that in types);
+  // the recap branch of this page lands in plan 07-06.
+  const fighter = getFighterById(snapshot.fighterId!);
+  const opponentFighter = getFighterById(snapshot.opponentFighterId!);
 
   function handleSelectTimestamp(seconds: number) {
     seek(seconds);
@@ -151,7 +154,7 @@ export function ShareViewPage() {
             {snapshot.stage && snapshot.stage.id !== NO_SELECTION_STAGE.id && (
               <span>{snapshot.stage.name}</span>
             )}
-            <span>{new Date(snapshot.matchDate).toLocaleDateString()}</span>
+            <span>{new Date(snapshot.matchDate!).toLocaleDateString()}</span>
             <span>{t('share.reviewedMoments', { count: snapshot.reviewedMomentsCount })}</span>
           </div>
           {snapshot.tags && snapshot.tags.length > 0 && (
@@ -173,12 +176,12 @@ export function ShareViewPage() {
         {error === 'unsupported' ? (
           <div className="flex flex-col gap-3 rounded-lg border bg-muted p-4">
             <a
-              href={snapshot.vodUrl}
+              href={snapshot.vodUrl!}
               target="_blank"
               rel="noreferrer"
               className="inline-flex w-fit items-center gap-1.5 text-sm text-primary hover:underline"
             >
-              {t('share.watchOnHost', { host: safeHostname(snapshot.vodUrl) })}
+              {t('share.watchOnHost', { host: safeHostname(snapshot.vodUrl!) })}
               <ExternalLink className="size-3.5" />
             </a>
             {snapshot.timestamps && snapshot.timestamps.length > 0 && (
