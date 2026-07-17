@@ -1,6 +1,10 @@
-import type { Match, TournamentEntry } from '@smash-tracker/shared';
+import {
+  buildSetTimeline,
+  type Match,
+  type TournamentEntry,
+  type TournamentSet,
+} from '@smash-tracker/shared';
 import { rankStagesByEvidence, type RankedStage } from '@/lib/stats';
-import { buildSetTimeline, type TournamentSet } from './setTimeline';
 
 /** Stages need at least this many recorded pre-tournament games in the pairing to be graded — mirrors CounterpickAdvisor's `MIN_GAMES`. */
 const MIN_GAMES = 2;
