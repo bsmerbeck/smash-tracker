@@ -1430,6 +1430,18 @@
     "videoUnavailable": "This VOD is no longer available.",
     "ctaTitle": "Review your own set",
     "ctaBody": "Track your own VODs with click-to-seek timestamps — free, no credit card.",
-    "ctaButton": "Get started free"
+    "ctaButton": "Get started free",
+    "recap": {
+      "heading": "Tournament Recap",
+      "placement": "{{placement}} place",
+      "seedToFinish": "Seed {{seed}} → {{placement}}",
+      "setRecord": "{{wins}}–{{losses}} set record",
+      "notableWinNamed": "Notable win vs {{name}}",
+      "notableWinSeed": "Notable win vs seed {{seed}}",
+      "charactersLabel": "Characters played",
+      "reviewedMoments_one": "{{count}} reviewed moment",
+      "reviewedMoments_other": "{{count}} reviewed moments",
+      "download": "Download image"
+    }
   }
 }
