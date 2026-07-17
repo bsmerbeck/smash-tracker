@@ -27,6 +27,26 @@ function makeSnapshot(overrides: Partial<PublicShareSnapshot> = {}): PublicShare
   };
 }
 
+function makeRecapSnapshot(overrides: Partial<PublicShareSnapshot> = {}): PublicShareSnapshot {
+  return {
+    createdAt: 1000,
+    kind: 'recap',
+    recapSource: 'startgg',
+    tournamentName: 'Genesis X',
+    tournamentDate: new Date('2026-01-15').getTime(),
+    placement: 3,
+    seed: 8,
+    numEntrants: 128,
+    setRecordWins: 5,
+    setRecordLosses: 2,
+    notableWinOpponentName: 'Some Player',
+    notableWinOpponentSeed: 1,
+    characterFighterIds: [1, 3],
+    reviewedMomentsCount: 4,
+    ...overrides,
+  };
+}
+
 function fetchOkPng() {
   return vi.fn().mockResolvedValue({
     ok: true,
@@ -146,6 +166,81 @@ describe('renderOgImage', () => {
     expect(fetchImpl).toHaveBeenCalledTimes(2);
     expect(png).not.toBeNull();
     expect(png!.subarray(0, 8)).toEqual(PNG_SIGNATURE);
+  });
+
+  it('produces a non-empty 1200x630 PNG for a recap snapshot', async () => {
+    const fetchImpl = fetchOkPng();
+    const snapshot = makeRecapSnapshot();
+
+    const png = await renderOgImage({
+      token: 'recap-token-1',
+      snapshot,
+      webBaseUrl: WEB_BASE_URL,
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+    });
+
+    expect(png).not.toBeNull();
+    expect(png!.length).toBeGreaterThan(0);
+    expect(png!.subarray(0, 8)).toEqual(PNG_SIGNATURE);
+
+    const width = png!.readUInt32BE(16);
+    const height = png!.readUInt32BE(20);
+    expect(width).toBe(1200);
+    expect(height).toBe(630);
+  });
+
+  it('renders a recap card with reviewedMomentsCount 0 and omits the reviewed-moments node', async () => {
+    vi.resetModules();
+    const satoriMock = vi.fn().mockResolvedValue('<svg></svg>');
+    vi.doMock('satori', () => ({ default: satoriMock }));
+
+    const { renderOgImage: renderWithMockedSatori } = await import('./renderOgImage.js');
+
+    const fetchImpl = fetchOkPng();
+    const snapshot = makeRecapSnapshot({ reviewedMomentsCount: 0 });
+
+    await renderWithMockedSatori({
+      token: 'recap-token-zero-moments',
+      snapshot,
+      webBaseUrl: WEB_BASE_URL,
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+    });
+
+    expect(satoriMock).toHaveBeenCalledTimes(1);
+    const serialized = JSON.stringify(satoriMock.mock.calls[0]![0]);
+    expect(serialized).not.toContain('reviewed moment');
+
+    vi.doUnmock('satori');
+    vi.resetModules();
+  });
+
+  it('escapes an HTML-special tournament name and owner display name on a recap card', async () => {
+    vi.resetModules();
+    const satoriMock = vi.fn().mockResolvedValue('<svg></svg>');
+    vi.doMock('satori', () => ({ default: satoriMock }));
+
+    const { renderOgImage: renderWithMockedSatori } = await import('./renderOgImage.js');
+
+    const fetchImpl = fetchOkPng();
+    const snapshot = makeRecapSnapshot({
+      tournamentName: '<script>alert(1)</script>',
+      ownerDisplayName: '<script>alert(2)</script>',
+    });
+
+    await renderWithMockedSatori({
+      token: 'recap-token-escape',
+      snapshot,
+      webBaseUrl: WEB_BASE_URL,
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+    });
+
+    const serialized = JSON.stringify(satoriMock.mock.calls[0]![0]);
+    expect(serialized).not.toContain('<script>alert(1)</script>');
+    expect(serialized).not.toContain('<script>alert(2)</script>');
+    expect(serialized).toContain('&lt;script&gt;');
+
+    vi.doUnmock('satori');
+    vi.resetModules();
   });
 
   it('returns null (never throws) when the render pipeline fails entirely', async () => {

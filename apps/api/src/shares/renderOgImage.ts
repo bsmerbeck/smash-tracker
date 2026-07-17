@@ -1,12 +1,15 @@
 import escapeHtml from 'escape-html';
 import satori from 'satori';
 import { Resvg } from '@resvg/resvg-js';
-import { getFighterById, type PublicShareSnapshot } from '@smash-tracker/shared';
+import { formatOrdinal, getFighterById, type PublicShareSnapshot } from '@smash-tracker/shared';
 import { createTtlCache } from './ttlCache.js';
 import { interRegularFont } from './fonts/interRegular.js';
 
 const IMAGE_WIDTH = 1200;
 const IMAGE_HEIGHT = 630;
+
+/** Caps how many character sprites a recap card renders — a long tournament run can feature many more characters than fit legibly on a 1200x630 card. */
+const MAX_RECAP_SPRITES = 3;
 
 /** Matches the `og.png` route's own `Cache-Control: public, max-age=300` — no point caching the render longer than clients/crawlers are told to. */
 const PNG_CACHE_TTL_MS = 5 * 60 * 1000;
@@ -108,16 +111,8 @@ async function render(
   webBaseUrl: string,
   fetchImpl: typeof fetch,
 ): Promise<Buffer> {
-  // Phase 7 (Recap Cards & Share-Loop Analytics): recap-specific OG card
-  // art is a later plan in this phase (see RESEARCH.md's Recommended
-  // Project Structure) — this pipeline still only knows how to render a
-  // vod-review card. Treat a recap snapshot the same as any other render
-  // failure (the caller's try/catch degrades to the static fallback,
-  // T-06-04) rather than crash on the review-only fields below, which the
-  // flat+refine `publicShareSnapshotSchema` types as nullable for a recap
-  // snapshot even though this function never receives one today.
   if (snapshot.kind === 'recap') {
-    throw new Error('renderOgImage: recap snapshots are not yet supported');
+    return renderRecap(snapshot, webBaseUrl, fetchImpl);
   }
 
   const [spriteA, spriteB] = await Promise.all([
@@ -145,6 +140,78 @@ async function render(
     resultLabel,
     stageLabel,
     matchDateLabel,
+    reviewedMomentsCount: snapshot.reviewedMomentsCount,
+    ownerDisplayName,
+  });
+
+  const svg = await satori(tree as unknown as Parameters<typeof satori>[0], {
+    width: IMAGE_WIDTH,
+    height: IMAGE_HEIGHT,
+    fonts: [{ name: 'Inter', data: interRegularFont, weight: 400, style: 'normal' }],
+  });
+
+  const resvg = new Resvg(svg, { fitTo: { mode: 'width', value: IMAGE_WIDTH } });
+  return resvg.render().asPng();
+}
+
+/**
+ * Phase 7 (Recap Cards & Share-Loop Analytics): renders a `kind: 'recap'`
+ * snapshot's 1200x630 achievement card — placement, seed→finish, set
+ * record, notable win, up to `MAX_RECAP_SPRITES` character sprites (same
+ * `fetchSpriteDataUri` TTL-cached fetch path as the vod-review card),
+ * reviewed-moments count, tournament name+date, and small corner branding.
+ * Every optional stat (seed→finish, notable win, reviewed moments) is
+ * omitted gracefully when the source data is absent/zero, per CONTEXT.md's
+ * deterministic rules — never a fabricated or "0" line. `tournamentName`
+ * and `ownerDisplayName` are free text (start.gg/parry.gg-sourced, and
+ * owner-provided respectively) and are passed through `escape-html` before
+ * they become satori text nodes, mirroring the vod-review branch's
+ * `ownerDisplayName` discipline (T-07-04-01).
+ *
+ * `publicShareSnapshotSchema`'s `.refine()` guarantees `tournamentName`,
+ * `tournamentDate`, the set record, and `characterFighterIds` are present
+ * whenever `kind === 'recap'` — the non-null assertions below rely on that
+ * runtime guarantee (the flat/refine schema can't express it as a
+ * TypeScript-narrowed type; see 07-03-SUMMARY.md's documented trade-off).
+ */
+async function renderRecap(
+  snapshot: PublicShareSnapshot,
+  webBaseUrl: string,
+  fetchImpl: typeof fetch,
+): Promise<Buffer> {
+  const fighterIds = (snapshot.characterFighterIds ?? []).slice(0, MAX_RECAP_SPRITES);
+  const sprites = await Promise.all(
+    fighterIds.map((fighterId) => fetchSpriteDataUri(fighterId, webBaseUrl, fetchImpl)),
+  );
+  const fighterNames = fighterIds.map(
+    (fighterId) => getFighterById(fighterId)?.name ?? 'Unknown fighter',
+  );
+
+  const tournamentName = escapeHtml(snapshot.tournamentName!);
+  const tournamentDateLabel = new Date(snapshot.tournamentDate!).toLocaleDateString('en-US');
+  const placementLabel = snapshot.placement != null ? formatOrdinal(snapshot.placement) : null;
+  const seedToFinishLabel =
+    snapshot.seed != null && snapshot.placement != null
+      ? `Seed ${snapshot.seed} → ${formatOrdinal(snapshot.placement)}`
+      : null;
+  const setRecordLabel = `${snapshot.setRecordWins ?? 0}–${snapshot.setRecordLosses ?? 0}`;
+  const notableWinLabel =
+    snapshot.notableWinOpponentSeed != null
+      ? `Notable win vs ${
+          snapshot.notableWinOpponentName ? escapeHtml(snapshot.notableWinOpponentName) : 'seed'
+        } ${snapshot.notableWinOpponentSeed}`
+      : null;
+  const ownerDisplayName = snapshot.ownerDisplayName ? escapeHtml(snapshot.ownerDisplayName) : null;
+
+  const tree = buildRecapTree({
+    sprites,
+    fighterNames,
+    placementLabel,
+    seedToFinishLabel,
+    setRecordLabel,
+    notableWinLabel,
+    tournamentName,
+    tournamentDateLabel,
     reviewedMomentsCount: snapshot.reviewedMomentsCount,
     ownerDisplayName,
   });
@@ -265,6 +332,169 @@ function buildTree(input: TreeInput): SatoriElement {
           type: 'div',
           props: {
             style: { display: 'flex', fontSize: 28, color: '#71717a' },
+            children: 'grandfinals.gg',
+          },
+        },
+      ],
+    },
+  };
+}
+
+interface RecapTreeInput {
+  /** Up to `MAX_RECAP_SPRITES` sprite data-URIs, `null` per-entry when that fetch failed/is unavailable. */
+  sprites: (string | null)[];
+  fighterNames: string[];
+  /** Ordinal placement label (e.g. "3rd"), or `null` when the entry has no known placement. */
+  placementLabel: string | null;
+  /** "Seed N → Mth" delta label, or `null` unless BOTH seed and placement are known. */
+  seedToFinishLabel: string | null;
+  /** "W–L" set record — always present (defaults to "0–0"). */
+  setRecordLabel: string;
+  /** Notable-win line, or `null` when the entry has zero wins with a known-seed opponent. */
+  notableWinLabel: string | null;
+  /** Already `escapeHtml`-escaped. */
+  tournamentName: string;
+  tournamentDateLabel: string;
+  reviewedMomentsCount: number;
+  /** Already `escapeHtml`-escaped, or `null` when the owner did not opt in / no name was captured. */
+  ownerDisplayName: string | null;
+}
+
+function buildRecapTree(input: RecapTreeInput): SatoriElement {
+  const spriteNode = (src: string | null, name: string): SatoriElement =>
+    src
+      ? { type: 'img', props: { src, width: 120, height: 120, style: { objectFit: 'contain' } } }
+      : {
+          type: 'div',
+          props: {
+            style: {
+              width: 120,
+              height: 120,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              color: '#a1a1aa',
+              fontSize: 16,
+            },
+            children: name,
+          },
+        };
+
+  const headlineLabel = input.placementLabel ? `${input.placementLabel} place` : 'Tournament recap';
+  const metaLine = [input.tournamentName, input.tournamentDateLabel].join(' · ');
+
+  const statLines: SatoriElement[] = [
+    {
+      type: 'div',
+      props: {
+        style: { display: 'flex', fontSize: 32, fontWeight: 700 },
+        children: `Set record: ${input.setRecordLabel}`,
+      },
+    },
+  ];
+  // Every stat below is conditional per CONTEXT.md's deterministic rules —
+  // omit the fragment entirely rather than render a fabricated/empty line.
+  if (input.seedToFinishLabel) {
+    statLines.push({
+      type: 'div',
+      props: {
+        style: { display: 'flex', fontSize: 28, color: '#d4d4d8' },
+        children: input.seedToFinishLabel,
+      },
+    });
+  }
+  if (input.notableWinLabel) {
+    statLines.push({
+      type: 'div',
+      props: {
+        style: { display: 'flex', fontSize: 28, color: '#d4d4d8' },
+        children: input.notableWinLabel,
+      },
+    });
+  }
+  if (input.reviewedMomentsCount > 0) {
+    statLines.push({
+      type: 'div',
+      props: {
+        style: { display: 'flex', fontSize: 28, color: '#d4d4d8' },
+        children: `${input.reviewedMomentsCount} reviewed moments`,
+      },
+    });
+  }
+  if (input.ownerDisplayName) {
+    statLines.push({
+      type: 'div',
+      props: {
+        style: { display: 'flex', fontSize: 24, color: '#a1a1aa' },
+        children: `Shared by ${input.ownerDisplayName}`,
+      },
+    });
+  }
+
+  return {
+    type: 'div',
+    props: {
+      style: {
+        display: 'flex',
+        flexDirection: 'column',
+        width: '100%',
+        height: '100%',
+        background: '#18181b',
+        color: '#fafafa',
+        fontFamily: 'Inter',
+        padding: 64,
+      },
+      children: [
+        {
+          type: 'div',
+          props: {
+            style: { display: 'flex', flexDirection: 'column', gap: 4 },
+            children: [
+              {
+                type: 'div',
+                props: {
+                  style: { display: 'flex', fontSize: 56, fontWeight: 700 },
+                  children: headlineLabel,
+                },
+              },
+              {
+                type: 'div',
+                props: {
+                  style: { display: 'flex', fontSize: 28, color: '#a1a1aa' },
+                  children: metaLine,
+                },
+              },
+            ],
+          },
+        },
+        {
+          type: 'div',
+          props: {
+            style: { display: 'flex', alignItems: 'center', gap: 32, flex: 1 },
+            children: [
+              {
+                type: 'div',
+                props: {
+                  style: { display: 'flex', gap: 16 },
+                  children: input.sprites.map((src, i) =>
+                    spriteNode(src, input.fighterNames[i] ?? ''),
+                  ),
+                },
+              },
+              {
+                type: 'div',
+                props: {
+                  style: { display: 'flex', flexDirection: 'column', gap: 8, flex: 1 },
+                  children: statLines,
+                },
+              },
+            ],
+          },
+        },
+        {
+          type: 'div',
+          props: {
+            style: { display: 'flex', justifyContent: 'flex-end', fontSize: 24, color: '#71717a' },
             children: 'grandfinals.gg',
           },
         },
