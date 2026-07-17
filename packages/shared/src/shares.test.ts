@@ -232,6 +232,56 @@ describe('publicShareSnapshotSchema', () => {
     });
     expect(result.success).toBe(false);
   });
+
+  it('parses a "full" recap public snapshot (detail, tournamentUrl, and the set timeline)', () => {
+    const parsed = publicShareSnapshotSchema.parse({
+      createdAt: 1000,
+      kind: 'recap' as const,
+      recapSource: 'startgg' as const,
+      tournamentName: 'The Big House 9',
+      tournamentDate: 500,
+      setRecordWins: 2,
+      setRecordLosses: 1,
+      characterFighterIds: [1, 5],
+      reviewedMomentsCount: 0,
+      detail: 'full' as const,
+      tournamentUrl: 'https://start.gg/tournament/the-big-house-9/event/ultimate-singles',
+      sets: [
+        {
+          roundLabel: 'Winners Round 3',
+          opponentName: 'RivalTag',
+          opponentPlacement: 5,
+          wins: 3,
+          losses: 1,
+          win: true,
+          stages: ['Battlefield'],
+        },
+      ],
+    });
+    expect(parsed.detail).toBe('full');
+    expect(parsed.tournamentUrl).toBe(
+      'https://start.gg/tournament/the-big-house-9/event/ultimate-singles',
+    );
+    expect(parsed.sets).toHaveLength(1);
+    expect(parsed.sets![0]!.opponentPlacement).toBe(5);
+  });
+
+  it('a "summary" recap public snapshot (no detail/tournamentUrl/sets) still parses (backward compatible)', () => {
+    const parsed = publicShareSnapshotSchema.parse({
+      createdAt: 1000,
+      kind: 'recap' as const,
+      recapSource: 'startgg' as const,
+      tournamentName: 'The Big House 9',
+      tournamentDate: 500,
+      setRecordWins: 2,
+      setRecordLosses: 1,
+      characterFighterIds: [1, 5],
+      reviewedMomentsCount: 0,
+    });
+    expect(parsed.detail).toBeUndefined();
+    expect(parsed.tournamentUrl).toBeUndefined();
+    expect(parsed.sets).toBeUndefined();
+  });
 });
 
 describe('shareTokenSchema', () => {
@@ -319,6 +369,31 @@ describe('createShareInputSchema', () => {
   it('rejects a recap input missing entryKey', () => {
     const result = createShareInputSchema.safeParse({ kind: 'recap' });
     expect(result.success).toBe(false);
+  });
+
+  it('accepts a recap input with an explicit detail (summary or full)', () => {
+    const full = createShareInputSchema.parse({ kind: 'recap', entryKey: '99', detail: 'full' });
+    expect(full.detail).toBe('full');
+
+    const summary = createShareInputSchema.parse({
+      kind: 'recap',
+      entryKey: '99',
+      detail: 'summary',
+    });
+    expect(summary.detail).toBe('summary');
+  });
+
+  it('a recap input with no detail field still parses (detail stays undefined, not defaulted at the schema level)', () => {
+    const parsed = createShareInputSchema.parse({ kind: 'recap', entryKey: '99' });
+    expect(parsed.detail).toBeUndefined();
+  });
+
+  it('a review input with no detail field still parses (detail is recap-only)', () => {
+    const parsed = createShareInputSchema.parse({
+      matchId: 'match-1',
+      redaction: { includeNotes: false, includeTags: false, showDisplayName: false },
+    });
+    expect(parsed.detail).toBeUndefined();
   });
 });
 
