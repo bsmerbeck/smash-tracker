@@ -6,6 +6,7 @@ function makeEntry(overrides: Partial<TournamentEntry> = {}): TournamentEntry {
   return {
     eventName: 'Ultimate Singles',
     tournamentName: 'The Big House 9',
+    entryKey: '99',
     firstSetAt: 1_000,
     lastSetAt: 5_000,
     setsPlayed: 3,
@@ -210,6 +211,7 @@ describe('buildRecapSnapshot', () => {
     expect(snapshot.source).toBe('parrygg');
     expect(snapshot.tournamentDate).toBe(4_242);
     expect(snapshot.uid).toBe('uid-1');
+    expect(snapshot.entryKey).toBe('99');
   });
 
   it('defaults source to startgg when the entry has no source field', () => {
