@@ -52,6 +52,12 @@ export interface VodSharesRoutesOptions {
  * `ForbiddenError` / `NotFoundError` mapping below already covers the
  * recap-specific failure cases (a foreign/absent `entryKey` 404s the same
  * way a foreign/absent `matchId` already does).
+ *
+ * Walkthrough amendment (07-09): the same body also accepts an optional
+ * `detail: 'summary' | 'full'` (meaningful only for `kind: 'recap'`) —
+ * `RtdbService.createShare` treats an absent value as `'full'` before
+ * calling `buildRecapSnapshot`. Still no new route topology; `detail` rides
+ * inside the existing `createShareInputSchema` body.
  */
 const vodSharesRoutes: FastifyPluginAsyncZod<VodSharesRoutesOptions> = async (app, options) => {
   const rtdb = new RtdbService(app.firebase.database);

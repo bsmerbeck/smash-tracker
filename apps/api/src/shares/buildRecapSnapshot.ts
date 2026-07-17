@@ -1,11 +1,19 @@
 import {
+  buildRecapTournamentUrl,
   buildSetTimeline,
   matchesForEntry,
   type Match,
+  type RecapSet,
   type RecapSnapshot,
   type TournamentEntry,
   type TournamentSet,
 } from '@smash-tracker/shared';
+
+/** `recapSetSchema.sets`'s own array cap — `buildFullDetailSets` keeps the MOST RECENT sets (the bracket climax) when a run exceeds this. */
+const MAX_RECAP_SETS_STORED = 20;
+
+/** Free-text fallback when a set's opponent tag was never captured by the source sync (parry.gg's synthetic no-game-detail path, or a pre-opponent-tag legacy import). */
+const UNKNOWN_OPPONENT_LABEL = 'Unknown opponent';
 
 /**
  * The won set representing the "notable win" — the best-seeded opponent
@@ -49,6 +57,83 @@ function distinctCharacterFighterIds(sets: TournamentSet[]): number[] {
 }
 
 /**
+ * Walkthrough amendment (07-09): the opponent's final event placement for
+ * one set's recap row. Prefers the set's OWN `opponentPlacement` (start.gg
+ * Phase B sync duplicates this per-game onto the match record, so it's
+ * already the correct per-opponent value when present). Falls back to a
+ * case-insensitive tag lookup against the tournament entry's `topStandings`
+ * (start.gg's post-sync top-finishers enrichment) for sets whose own
+ * per-match field is absent — e.g. an entry synced before Phase B ran.
+ * parry.gg entries never carry `topStandings` (07-RESEARCH.md Pitfall 1/
+ * Assumption A5) and parry.gg matches never carry `opponentPlacement`
+ * either, so this gracefully returns `undefined` for every parry.gg set,
+ * exactly as CONTEXT.md's "graceful omission" rule requires.
+ */
+function lookupOpponentPlacement(set: TournamentSet, entry: TournamentEntry): number | undefined {
+  if (set.opponentPlacement != null) {
+    return set.opponentPlacement;
+  }
+  if (!set.opponentName || !entry.topStandings || entry.topStandings.length === 0) {
+    return undefined;
+  }
+  const tag = set.opponentName.trim().toLowerCase();
+  const standing = entry.topStandings.find(
+    (candidate) =>
+      candidate.gamerTag?.trim().toLowerCase() === tag ||
+      candidate.name.trim().toLowerCase() === tag,
+  );
+  return standing?.placement;
+}
+
+/**
+ * Distinct stage NAMES played across one set's games, first-seen
+ * (game-order) — stage id `0` ("no selection") is never included, matching
+ * the "unknown sentinel omitted" convention used everywhere else a stage is
+ * rendered from a match record. Capped at `recapSetSchema.stages`'s own
+ * array max (10) — a set legitimately playing more than 10 distinct stages
+ * is not a realistic case, but the cap keeps this function's output always
+ * schema-valid without relying on the caller to re-check.
+ */
+function distinctStageNames(set: TournamentSet): string[] {
+  const names: string[] = [];
+  for (const game of set.games) {
+    const stage = game.match.map;
+    if (stage && stage.id !== 0 && !names.includes(stage.name)) {
+      names.push(stage.name);
+    }
+  }
+  return names.slice(0, 10);
+}
+
+/**
+ * Walkthrough amendment (07-09): builds the `detail: 'full'` set timeline —
+ * one `RecapSet` per chronological `TournamentSet`, capped to the most
+ * recent `MAX_RECAP_SETS_STORED` (the bracket climax, not the earliest pool
+ * sets) when a run has more. `roundLabel` prefers the source site's own
+ * round text, falling back to a positional "Set N" (1-based, in the ORIGINAL
+ * chronological order, so the label stays stable even after the cap slices
+ * off earlier sets).
+ */
+function buildFullDetailSets(sets: TournamentSet[], entry: TournamentEntry): RecapSet[] {
+  const recapSets: RecapSet[] = sets.map((set, index) => {
+    const opponentPlacement = lookupOpponentPlacement(set, entry);
+    const stages = distinctStageNames(set);
+    return {
+      roundLabel: set.roundText ?? `Set ${index + 1}`,
+      opponentName: set.opponentName ?? UNKNOWN_OPPONENT_LABEL,
+      ...(opponentPlacement != null ? { opponentPlacement } : {}),
+      wins: set.gamesWon,
+      losses: set.gamesLost,
+      win: set.won,
+      ...(stages.length > 0 ? { stages } : {}),
+    };
+  });
+  return recapSets.length > MAX_RECAP_SETS_STORED
+    ? recapSets.slice(-MAX_RECAP_SETS_STORED)
+    : recapSets;
+}
+
+/**
  * Builds a `RecapSnapshot` from a tournament entry + the user's FULL match
  * list — called once, at share-creation time, never again (same
  * SHARE-01-style immutability rule as `buildShareSnapshot`: a later re-sync
@@ -75,12 +160,22 @@ function distinctCharacterFighterIds(sets: TournamentSet[]): number[] {
  * `entryKey`) and must merge it onto the raw stored entry first, the same
  * convention `GET /api/tournaments` uses when stamping it from the RTDB
  * child key on read.
+ *
+ * Walkthrough amendment (07-09): `detail` (defaulted to `'full'` by the
+ * caller — `RtdbService.createShare` — when the request omitted it) governs
+ * whether the full chronological set timeline (`sets`) is built and stored
+ * at all; a `'summary'` generation never computes `buildFullDetailSets`,
+ * matching CONTEXT.md's snapshot-immutability rule (nothing is silently
+ * upgradeable after creation). `tournamentUrl` is computed regardless of
+ * `detail` — it's a fixed fact about the tournament entry, not a
+ * detail-level toggle.
  */
 export function buildRecapSnapshot(
   uid: string,
   entry: TournamentEntry,
   matches: Match[],
   ownerDisplayName?: string,
+  detail: 'summary' | 'full' = 'full',
 ): RecapSnapshot {
   const entryMatches = matchesForEntry(matches, entry);
   const { sets } = buildSetTimeline(entryMatches);
@@ -93,6 +188,7 @@ export function buildRecapSnapshot(
     (total, match) => total + (match.vodTimestamps?.length ?? 0),
     0,
   );
+  const tournamentUrl = buildRecapTournamentUrl(entry);
 
   return {
     uid,
@@ -119,5 +215,9 @@ export function buildRecapSnapshot(
     characterFighterIds,
     reviewedMomentsCount,
     ...(ownerDisplayName ? { ownerDisplayName } : {}),
+    ...(tournamentUrl ? { tournamentUrl } : {}),
+    ...(detail === 'full'
+      ? { detail: 'full' as const, sets: buildFullDetailSets(sets, entry) }
+      : {}),
   };
 }
