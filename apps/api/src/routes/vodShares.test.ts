@@ -529,6 +529,59 @@ describe('POST /api/vod-shares — kind recap', () => {
     expect(response.statusCode).toBe(404);
   });
 
+  // Review WR-01: entryKey is interpolated into an RTDB path — a crafted
+  // value must collapse to the same 404 an absent entry gets, never a 500.
+  it('404s (never 500s) for an entryKey with RTDB-illegal path characters', async () => {
+    const { app } = buildTestApp();
+
+    // FakeDatabase's ref() throws on `.`/`#`/`$`/`[`/`]` exactly like
+    // firebase-admin — a 404 here proves the shape guard runs BEFORE the read.
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/vod-shares',
+      headers: authHeader(),
+      payload: { kind: 'recap', entryKey: 'foo.bar' },
+    });
+
+    expect(response.statusCode).toBe(404);
+  });
+
+  it('404s for an entryKey containing a slash (would read a NESTED child of a real entry)', async () => {
+    const { app, database } = buildTestApp();
+    seedTournamentEntry(database, TEST_UID, '99');
+    seedRecapMatch(database, TEST_UID);
+
+    // `99/eventName` resolves to a real nested string under the seeded entry
+    // — without the guard, tournamentEntrySchema would throw out of the
+    // parse (500) instead of 404ing.
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/vod-shares',
+      headers: authHeader(),
+      payload: { kind: 'recap', entryKey: '99/eventName' },
+    });
+
+    expect(response.statusCode).toBe(404);
+  });
+
+  it('404s (never 500s) when the stored tournament entry is corrupt', async () => {
+    const { app, database } = buildTestApp();
+    // Corrupt: string-typed firstSetAt, missing setsPlayed.
+    seedTournamentEntry(database, TEST_UID, '99', {
+      firstSetAt: 'not-a-number',
+      setsPlayed: undefined,
+    });
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/vod-shares',
+      headers: authHeader(),
+      payload: { kind: 'recap', entryKey: '99' },
+    });
+
+    expect(response.statusCode).toBe(404);
+  });
+
   it('rejects the 101st recap share with 403 (same cap as review shares)', async () => {
     const { app, database } = buildTestApp();
     seedTournamentEntry(database, TEST_UID, '99');

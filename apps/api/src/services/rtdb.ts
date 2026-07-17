@@ -64,6 +64,21 @@ import { generateShareToken } from '../shares/token.js';
  */
 const SHARE_TOKEN_SHAPE = /^[A-Za-z0-9_-]{20,128}$/;
 
+/**
+ * Shape of a real tournament-registry entryKey — same crafted-path trap as
+ * `SHARE_TOKEN_SHAPE` above, applied to `createShare`'s recap branch (review
+ * WR-01): firebase-admin's `ref()` throws synchronously for `.`, `#`, `$`,
+ * `[`, `]`, and a `/` would silently read a NESTED child instead of an
+ * entry. The two registry writers can never produce those characters
+ * (start.gg keys are `String(eventId)`; parry.gg keys are stripped through
+ * `RTDB_ILLEGAL` in parrygg/sync.ts's `deriveParryggEntryKey`), so this
+ * denylist exactly mirrors the derivation: any key a sync wrote passes, any
+ * crafted path-breaking probe collapses to the same 404 an absent entry
+ * gets — never a 500.
+ */
+// eslint-disable-next-line no-control-regex -- control chars are exactly what RTDB keys forbid
+const ENTRY_KEY_SHAPE = /^[^.#$[\]/\u0000-\u001f]{1,200}$/;
+
 export class NotFoundError extends Error {
   constructor(message: string) {
     super(message);
@@ -789,16 +804,29 @@ export class RtdbService {
     if (input.kind === 'recap') {
       // entryKey is guaranteed present by createShareInputSchema's refine.
       const entryKey = input.entryKey!;
+      // Shape-check BEFORE any RTDB path interpolation (review WR-01): a
+      // crafted key with `.`/`#`/`$`/`[`/`]` would make `ref()` throw
+      // synchronously (500), and one with `/` would read a NESTED child of a
+      // real entry. Both collapse to the same 404 an absent entry produces.
+      if (!ENTRY_KEY_SHAPE.test(entryKey)) {
+        throw new NotFoundError(`Tournament entry ${entryKey} not found`);
+      }
       const entrySnapshot = await this.database.ref(`tournamentEntries/${uid}/${entryKey}`).get();
       if (!entrySnapshot.exists()) {
         throw new NotFoundError(`Tournament entry ${entryKey} not found`);
       }
       // Stamp entryKey from the path segment we just read BY (never trust a
       // stored/legacy value) — mirrors GET /api/tournaments' own convention.
-      const entry = tournamentEntrySchema.parse({
+      // safeParse -> 404 (review WR-01): a corrupt stored entry must produce
+      // the same not-found outcome as an absent one, never a 500.
+      const parsedEntry = tournamentEntrySchema.safeParse({
         ...(entrySnapshot.val() as object),
         entryKey,
       });
+      if (!parsedEntry.success) {
+        throw new NotFoundError(`Tournament entry ${entryKey} not found`);
+      }
+      const entry = parsedEntry.data;
       const matches = await this.listMatches(uid);
       storedSnapshot = buildRecapSnapshot(uid, entry, matches, input.ownerDisplayName);
     } else {
