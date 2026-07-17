@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { matchStageSchema } from './stage.js';
+import { recapSetSchema } from './recap.js';
 
 /**
  * Phase 5 (Share Foundation & Owner Controls): privacy-controlled, revocable
@@ -164,6 +165,18 @@ export const publicShareSnapshotSchema = z
     notableWinOpponentName: z.string().min(1).nullish(),
     notableWinOpponentSeed: z.number().int().positive().nullish(),
     characterFighterIds: z.array(z.number().int().positive()).nullish(),
+    /**
+     * Walkthrough amendment (07-09): which generation mode produced this
+     * recap. Absent means `'summary'` (every pre-07-09 recap, and every
+     * summary-mode generation going forward) — mirrors `kind`'s own
+     * absent-means-review convention. Meaningless (and absent) on a
+     * vod-review snapshot.
+     */
+    detail: z.enum(['summary', 'full']).nullish(),
+    /** External event page on the source site — see `recapSnapshotSchema.tournamentUrl`'s doc for the derivation rule. Absent when not trustworthily derivable. */
+    tournamentUrl: z.string().url().nullish(),
+    /** The full set timeline — present only when `detail === 'full'`. See `recapSnapshotSchema.sets`. */
+    sets: z.array(recapSetSchema).max(20).nullish(),
     // --- shared across both kinds ---
     reviewedMomentsCount: z.number().int().nonnegative(),
     ownerDisplayName: z.string().trim().max(60).nullish(),
@@ -238,6 +251,19 @@ export const createShareInputSchema = z
     ownerDisplayName: z.string().trim().max(60).optional(),
     /** Required for kind 'recap' — the caller's own `tournamentEntries/{uid}/{entryKey}` routing key. Bounded: real keys are `String(eventId)` or `pgg-{slug}`; the RTDB-safety charset itself is enforced server-side (rtdb.ts's ENTRY_KEY_SHAPE, review WR-01). */
     entryKey: z.string().min(1).max(200).optional(),
+    /**
+     * Walkthrough amendment (07-09): meaningful only for kind 'recap' —
+     * whether the recap is generated with the full set-by-set timeline
+     * (`'full'`) or just the top-line stats (`'summary'`). Deliberately
+     * OPTIONAL rather than `.default()` (matching `matchId`/`redaction`/
+     * `entryKey`'s own per-kind-conditional-optional convention above,
+     * rather than `kind`'s own always-required-with-default convention) so
+     * every existing 'review' caller (which never sends this field) keeps
+     * compiling with no changes. `RtdbService.createShare` treats an absent
+     * value as `'full'` (the new default recommended by 07-CONTEXT.md's
+     * Walkthrough Amendment) before calling `buildRecapSnapshot`.
+     */
+    detail: z.enum(['summary', 'full']).optional(),
   })
   .refine(
     (input) =>

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { Match, TournamentEntry } from './index.js';
 import {
+  buildRecapTournamentUrl,
   buildSetTimeline,
   formatOpponentEventContext,
   formatOrdinal,
@@ -366,5 +367,42 @@ describe('formatOpponentEventContext', () => {
 
   it('returns null when both are absent', () => {
     expect(formatOpponentEventContext({})).toBeNull();
+  });
+});
+
+describe('buildRecapTournamentUrl', () => {
+  it('prefers eventSlug over the tournament-level slug for a startgg entry', () => {
+    expect(
+      buildRecapTournamentUrl({
+        eventSlug: 'tournament/the-box-juice-box-26/event/ultimate-singles',
+        slug: 'tournament/the-box-juice-box-26',
+      }),
+    ).toBe('https://start.gg/tournament/the-box-juice-box-26/event/ultimate-singles');
+  });
+
+  it('falls back to the tournament slug when eventSlug is absent (startgg)', () => {
+    expect(buildRecapTournamentUrl({ slug: 'tournament/the-box-juice-box-26' })).toBe(
+      'https://start.gg/tournament/the-box-juice-box-26',
+    );
+  });
+
+  it('treats an absent source as startgg (pre-Phase-7 convention)', () => {
+    expect(buildRecapTournamentUrl({ eventSlug: 'tournament/genesis-10/event/singles' })).toBe(
+      'https://start.gg/tournament/genesis-10/event/singles',
+    );
+  });
+
+  it('returns null when neither slug is present (startgg, not yet enriched)', () => {
+    expect(buildRecapTournamentUrl({})).toBeNull();
+  });
+
+  it('always returns null for a parrygg entry, even when slug/eventSlug are present (never invent a parry.gg URL)', () => {
+    expect(
+      buildRecapTournamentUrl({
+        source: 'parrygg',
+        slug: 'pgg-the-big-house-9',
+        eventSlug: 'pgg-the-big-house-9-ultimate-singles',
+      }),
+    ).toBeNull();
   });
 });
