@@ -85,13 +85,22 @@ function TournamentBlockCard({
 }) {
   const { t, i18n } = useTranslation();
   const title = block.displayName;
+  // Route on the source-agnostic `entryKey` (always stamped by
+  // GET /api/tournaments from the RTDB child key — review WR-04): parry.gg
+  // entries have NO numeric eventId, so linking via eventId rendered a dead
+  // `/tournaments/undefined` for them. Falls back to eventId only for a
+  // legacy start.gg entry shape that somehow lacks entryKey (its child key
+  // IS String(eventId)), and renders a plain title when neither exists.
+  const entryPath =
+    registryEntry?.entryKey ??
+    (registryEntry?.eventId != null ? String(registryEntry.eventId) : null);
   return (
     <div className="rounded-lg border">
       <div className="flex flex-wrap items-center justify-between gap-2 border-b p-3">
         <div>
-          {registryEntry ? (
+          {entryPath ? (
             <Link
-              to={`/tournaments/${registryEntry.eventId}`}
+              to={`/tournaments/${entryPath}`}
               className="font-semibold text-primary underline-offset-2 hover:underline"
             >
               {title}
