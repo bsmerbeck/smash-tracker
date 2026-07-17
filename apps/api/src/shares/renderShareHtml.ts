@@ -1,5 +1,5 @@
 import escapeHtml from 'escape-html';
-import { getFighterById, type PublicShareSnapshot } from '@smash-tracker/shared';
+import { formatOrdinal, getFighterById, type PublicShareSnapshot } from '@smash-tracker/shared';
 import { createTtlCache } from './ttlCache.js';
 
 /** How long the fetched `spa.html` shell is cached in-memory before a re-fetch. */
@@ -119,14 +119,10 @@ function computeMeta(
 ): ShareMeta {
   const canonicalUrl = `${webBaseUrl}/s/${token}`;
 
-  // Phase 7 (Recap Cards & Share-Loop Analytics): recap-specific meta copy
-  // is a later plan in this phase (see RESEARCH.md's Recommended Project
-  // Structure) — until then, a recap snapshot gets the same generic,
-  // non-leaking meta as an unknown/revoked token rather than crash on the
-  // review-only fields below (the JSON `GET /api/vod-shares/:token`
-  // endpoint already serves the real recap stats via
-  // `publicShareSnapshotSchema` — only THIS route's unfurl copy defers).
-  if (!snapshot || snapshot.kind === 'recap') {
+  // Unknown/revoked/malformed token FIRST, before any kind branch — meta
+  // must never disclose whether a token ever referred to a real share
+  // (VIEW-05's no-oracle discipline).
+  if (!snapshot) {
     // ogImageUrl stays null — the shell's static og-image.png remains, so a
     // crawler is never pointed at a per-token card URL for a token that may
     // not exist (VIEW-05).
@@ -136,6 +132,10 @@ function computeMeta(
       canonicalUrl,
       ogImageUrl: null,
     };
+  }
+
+  if (snapshot.kind === 'recap') {
+    return computeRecapMeta(snapshot, token, webBaseUrl);
   }
 
   const fighterAName = getFighterById(snapshot.fighterId!)?.name ?? 'Unknown fighter';
@@ -163,6 +163,51 @@ function computeMeta(
   // Active snapshot: point crawlers at the generated per-token OG card —
   // this rewrite is what makes the satori/resvg pipeline reachable at all
   // (without it every unfurl shows the generic static og-image.png).
+  const ogImageUrl = `${webBaseUrl}/s/${token}/og.png`;
+
+  return { title, description, canonicalUrl, ogImageUrl };
+}
+
+/**
+ * Phase 7 (Recap Cards & Share-Loop Analytics): meta copy for a `kind:
+ * 'recap'` snapshot — derived ONLY from the deterministic card stats
+ * (`publicShareSnapshotSchema`'s `.refine()` guarantees `tournamentName`,
+ * `tournamentDate`, the set record, and `characterFighterIds` are present
+ * whenever `kind === 'recap'`, even though the flat/refine schema can't
+ * express that as a TypeScript-narrowed type — see 07-03-SUMMARY.md). Every
+ * fragment (seed→finish, reviewed-moments) is omitted gracefully when the
+ * source data is absent/zero, per CONTEXT.md's deterministic-rules
+ * ("zero reviewed moments: omit the line", "missing seed data: omit the
+ * seed→finish line gracefully"). `tournamentName` is free text sourced from
+ * start.gg/parry.gg (same trust tier as `ownerDisplayName`) — it is escaped
+ * exactly once, inside `replaceMetaTag`/`fallbackHtml` when this string is
+ * written into a `content="..."` attribute, matching the discipline already
+ * documented on the vod-review branch above (do NOT escape here too).
+ */
+function computeRecapMeta(
+  snapshot: PublicShareSnapshot,
+  token: string,
+  webBaseUrl: string,
+): ShareMeta {
+  const canonicalUrl = `${webBaseUrl}/s/${token}`;
+
+  const placementPrefix =
+    snapshot.placement != null ? `${formatOrdinal(snapshot.placement)} at ` : '';
+  const title = `${placementPrefix}${snapshot.tournamentName} — recap · grandfinals.gg`;
+
+  const wins = snapshot.setRecordWins ?? 0;
+  const losses = snapshot.setRecordLosses ?? 0;
+  const descriptionParts = [`${wins}–${losses} set record`];
+  if (snapshot.seed != null && snapshot.placement != null) {
+    descriptionParts.push(`seed ${snapshot.seed} → ${formatOrdinal(snapshot.placement)} finish`);
+  }
+  if (snapshot.reviewedMomentsCount > 0) {
+    descriptionParts.push(`${snapshot.reviewedMomentsCount} reviewed moments`);
+  }
+  const description = `${descriptionParts.join(' · ')}. Watch the recap on grandfinals.gg.`;
+
+  // Recap tokens always point at the per-token generated card — the recap
+  // card's whole purpose is to be shared/unfurled/downloaded (RECAP-03).
   const ogImageUrl = `${webBaseUrl}/s/${token}/og.png`;
 
   return { title, description, canonicalUrl, ogImageUrl };
