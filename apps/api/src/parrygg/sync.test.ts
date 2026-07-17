@@ -124,6 +124,7 @@ interface BuildOptions {
   matchGames?: MatchGame[];
   eventName?: string;
   tournamentName?: string;
+  eventSlug?: string;
   opponentGamerTag?: string;
   opponentSeed?: number;
   mySeed?: number;
@@ -143,6 +144,7 @@ function makeMatchContext(options: BuildOptions = {}): ParryggMatchContext {
     matchGames = [],
     eventName = 'Ultimate Singles',
     tournamentName = 'Test Weekly 42',
+    eventSlug,
     opponentGamerTag = 'PowPow',
     opponentSeed = 12,
     mySeed = 8,
@@ -188,6 +190,9 @@ function makeMatchContext(options: BuildOptions = {}): ParryggMatchContext {
   const eventPath = new Path();
   eventPath.setType(PathType.PATH_TYPE_EVENT);
   eventPath.setName(eventName);
+  if (eventSlug) {
+    eventPath.setSlug(eventSlug);
+  }
   hierarchy.setPathsList([tournamentPath, eventPath]);
   context.setHierarchy(hierarchy);
 
@@ -438,5 +443,82 @@ describe('importParryggMatches', () => {
     expect(summary.imported).toBe(0);
     const tree = database.dump() as Record<string, unknown>;
     expect(tree['matches']).toBeUndefined();
+  });
+
+  it('writes a tournamentEntries registry record for an importable match with an event slug + user seed', async () => {
+    const database = new FakeDatabase();
+    const context = makeMatchContext({
+      eventSlug: 'tournament/test-weekly-42/event/ultimate-singles',
+      mySeed: 8,
+    });
+    const clients = clientsReturning([context]);
+
+    await importParryggMatches(database as never, 'uid-1', PARRY_USER_ID, 'api-key', clients);
+
+    const tree = database.dump() as Record<string, Record<string, unknown>>;
+    const registry = tree['tournamentEntries']?.['uid-1'] as Record<string, unknown> | undefined;
+    expect(registry).toBeDefined();
+    const entryKey = 'pgg-tournamenttest-weekly-42eventultimate-singles';
+    const record = registry?.[entryKey] as Record<string, unknown> | undefined;
+    expect(record).toBeDefined();
+    expect(record).toMatchObject({
+      source: 'parrygg',
+      entryKey,
+      eventName: 'Ultimate Singles',
+      tournamentName: 'Test Weekly 42',
+      seed: 8,
+    });
+    expect((record?.setsPlayed as number) >= 1).toBe(true);
+  });
+
+  it('omits the seed key entirely when the user has no seed (never writes null)', async () => {
+    const database = new FakeDatabase();
+    const context = makeMatchContext({
+      eventSlug: 'tournament/test-weekly-42/event/ultimate-singles',
+      mySeed: 0,
+    });
+    const clients = clientsReturning([context]);
+
+    await importParryggMatches(database as never, 'uid-1', PARRY_USER_ID, 'api-key', clients);
+
+    const tree = database.dump() as Record<string, Record<string, unknown>>;
+    const registry = tree['tournamentEntries']?.['uid-1'] as Record<string, unknown>;
+    const entryKey = 'pgg-tournamenttest-weekly-42eventultimate-singles';
+    const record = registry[entryKey] as Record<string, unknown>;
+    expect(record).toBeDefined();
+    expect('seed' in record).toBe(false);
+    for (const value of Object.values(record)) {
+      expect(value).not.toBeNull();
+    }
+  });
+
+  it('is idempotent — re-syncing the same context overwrites the registry entry in place', async () => {
+    const database = new FakeDatabase();
+    const context = makeMatchContext({
+      eventSlug: 'tournament/test-weekly-42/event/ultimate-singles',
+      mySeed: 8,
+    });
+    const clients = clientsReturning([context]);
+
+    await importParryggMatches(database as never, 'uid-1', PARRY_USER_ID, 'api-key', clients);
+    await importParryggMatches(database as never, 'uid-1', PARRY_USER_ID, 'api-key', clients);
+
+    const tree = database.dump() as Record<string, Record<string, unknown>>;
+    const registry = tree['tournamentEntries']?.['uid-1'] as Record<string, unknown>;
+    expect(Object.keys(registry)).toHaveLength(1);
+  });
+
+  it('falls back to a sanitized eventName|tournamentName composite key when no event slug exists', async () => {
+    const database = new FakeDatabase();
+    const context = makeMatchContext({ mySeed: 8 });
+    const clients = clientsReturning([context]);
+
+    await importParryggMatches(database as never, 'uid-1', PARRY_USER_ID, 'api-key', clients);
+
+    const tree = database.dump() as Record<string, Record<string, unknown>>;
+    const registry = tree['tournamentEntries']?.['uid-1'] as Record<string, unknown>;
+    expect(Object.keys(registry)).toHaveLength(1);
+    const [entryKey] = Object.keys(registry);
+    expect(entryKey?.startsWith('pgg-')).toBe(true);
   });
 });
