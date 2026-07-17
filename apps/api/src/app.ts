@@ -35,7 +35,13 @@ import shareMetaRoutes from './routes/shareMeta.js';
 import shareOgImageRoutes from './routes/shareOgImage.js';
 import { ConflictError, NotFoundError } from './services/rtdb.js';
 import type { FirebaseServices } from './firebase/admin.js';
-import type { ParryggConfig, ReportsConfig, StartggConfig, StripeConfig } from './config/env.js';
+import type {
+  Ga4Config,
+  ParryggConfig,
+  ReportsConfig,
+  StartggConfig,
+  StripeConfig,
+} from './config/env.js';
 import type { AnthropicLikeClient } from './reports/generate.js';
 import type { ParryggClients } from './parrygg/client.js';
 
@@ -69,6 +75,14 @@ export interface BuildAppOptions {
    * prod config needed (mirrors gspLiveFetch/startggFetch).
    */
   shareFetch?: typeof fetch;
+  /**
+   * GA4 Measurement Protocol config; null/omitted makes the fire-and-forget
+   * `review_shared` server event a silent no-op (never a 503 — GA4 is
+   * instrumentation on an existing route, not a route of its own).
+   */
+  ga4?: Ga4Config | null;
+  /** Overridable fetch for the GA4 Measurement Protocol POST (tests). */
+  ga4Fetch?: typeof fetch;
   logger?: boolean | FastifyBaseLogger;
 }
 
@@ -244,6 +258,8 @@ export function buildApp(options: BuildAppOptions) {
       await api.register(playlistsRoutes);
       await api.register(vodSharesRoutes, {
         webBaseUrl: options.webBaseUrl ?? 'http://localhost:5173',
+        ga4: options.ga4 ?? null,
+        ga4Fetch: options.ga4Fetch,
       });
       await api.register(publicVodSharesRoutes);
       await api.register(startggRoutes, {

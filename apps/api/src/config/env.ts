@@ -71,6 +71,16 @@ const envSchema = z.object({
    * via a bio-text verification code; see routes/parrygg.ts).
    */
   PARRYGG_API_KEY: z.string().optional(),
+
+  // ---- Phase 7 (Recap Cards & Share-Loop Analytics): GA4 Measurement
+  // Protocol server events (optional — when incomplete, review_shared is a
+  // silent no-op; unlike the integrations above, absence never 503s a
+  // route, since GA4 is instrumentation on an EXISTING product route, not a
+  // route that exists solely to serve the integration) ----------------------
+  /** GA4 Data Streams -> (web stream) -> Measurement ID (G-XXXXXXX). */
+  GA4_MEASUREMENT_ID: z.string().optional(),
+  /** GA4 Data Streams -> (web stream) -> Measurement Protocol API secrets. */
+  GA4_API_SECRET: z.string().optional(),
 });
 
 export type Env = z.infer<typeof envSchema>;
@@ -199,4 +209,26 @@ export function getParryggConfig(env: Env): ParryggConfig | null {
     return null;
   }
   return { apiKey: env.PARRYGG_API_KEY };
+}
+
+export interface Ga4Config {
+  measurementId: string;
+  apiSecret: string;
+}
+
+/**
+ * Assembles the GA4 Measurement Protocol config when fully present (both a
+ * measurement id AND an api secret), else null — same all-or-nothing
+ * pattern as `getStartggConfig`/`getReportsConfig`/`getStripeConfig`. Unlike
+ * those, a null result must NEVER 503 a route: `review_shared` is
+ * instrumentation on the existing `POST /api/vod-shares` route, so its
+ * caller (`sendMeasurementProtocolEvent`) treats a null config as a silent,
+ * per-call no-op, and the one-time "unconfigured" notice is logged once at
+ * startup instead (see index.ts) — never per-request.
+ */
+export function getGa4Config(env: Env): Ga4Config | null {
+  if (!env.GA4_MEASUREMENT_ID || !env.GA4_API_SECRET) {
+    return null;
+  }
+  return { measurementId: env.GA4_MEASUREMENT_ID, apiSecret: env.GA4_API_SECRET };
 }

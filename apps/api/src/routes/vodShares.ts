@@ -6,6 +6,8 @@ import {
   shareSummarySchema,
 } from '@smash-tracker/shared';
 import { z } from 'zod';
+import { reviewShared } from '../analytics/ga4.js';
+import type { Ga4Config } from '../config/env.js';
 import { ForbiddenError, RtdbService, ValidationError } from '../services/rtdb.js';
 
 const shareIdParamsSchema = z.object({
@@ -15,6 +17,14 @@ const shareIdParamsSchema = z.object({
 export interface VodSharesRoutesOptions {
   /** SPA origin the share url is built against, e.g. `${webBaseUrl}/s/{token}` (env.WEB_BASE_URL). */
   webBaseUrl: string;
+  /**
+   * GA4 Measurement Protocol config; null/omitted makes the fire-and-forget
+   * `review_shared` event a silent no-op (Phase 7 — never a 503, this route
+   * pre-dates and does not depend on GA4).
+   */
+  ga4?: Ga4Config | null;
+  /** Overridable fetch for the GA4 Measurement Protocol POST (tests). */
+  ga4Fetch?: typeof fetch;
 }
 
 /**
@@ -45,7 +55,8 @@ export interface VodSharesRoutesOptions {
  */
 const vodSharesRoutes: FastifyPluginAsyncZod<VodSharesRoutesOptions> = async (app, options) => {
   const rtdb = new RtdbService(app.firebase.database);
-  const { webBaseUrl } = options;
+  const { webBaseUrl, ga4Fetch } = options;
+  const ga4 = options.ga4 ?? null;
 
   app.addHook('preHandler', app.authenticate);
 
@@ -65,6 +76,11 @@ const vodSharesRoutes: FastifyPluginAsyncZod<VodSharesRoutesOptions> = async (ap
     async (request, reply) => {
       try {
         const result = await rtdb.createShare(request.uid, request.body, webBaseUrl);
+        // Fire-and-forget, AFTER the share is durably written — never
+        // `await`ed, so a slow/failed GA4 POST can never delay or fail this
+        // 201 (Pitfall 5 / T-07-07-02). `ga4` null (unconfigured) is an
+        // instant no-op inside reviewShared/sendMeasurementProtocolEvent.
+        void reviewShared(ga4, request.uid, request.body.kind, ga4Fetch);
         return reply.code(201).send(result);
       } catch (err) {
         if (err instanceof ForbiddenError) {
