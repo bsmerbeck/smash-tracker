@@ -102,6 +102,39 @@ describe('GET /api/tournaments', () => {
     });
   });
 
+  it('injects entryKey from the RTDB child key on both start.gg and parry.gg entries', async () => {
+    const { app, database } = buildTestApp();
+    database.seed(`tournamentEntries/${TEST_UID}`, {
+      '99': {
+        eventId: 99,
+        eventName: 'Ultimate Singles',
+        firstSetAt: 1_700_000_000_000,
+        lastSetAt: 1_700_000_500_000,
+        setsPlayed: 3,
+      },
+      'pgg-foo': {
+        eventName: 'Ultimate Singles',
+        firstSetAt: 1_701_000_000_000,
+        lastSetAt: 1_701_000_900_000,
+        setsPlayed: 2,
+        source: 'parrygg',
+      },
+    });
+
+    const response = await app.inject({
+      method: 'GET',
+      url: '/api/tournaments',
+      headers: authHeader(),
+    });
+
+    expect(response.statusCode).toBe(200);
+    const entries = response.json() as Record<string, unknown>[];
+    const startggEntry = entries.find((e) => e.eventId === 99);
+    const parryggEntry = entries.find((e) => e.entryKey === 'pgg-foo');
+    expect(startggEntry?.entryKey).toBe('99');
+    expect(parryggEntry).toMatchObject({ entryKey: 'pgg-foo', source: 'parrygg' });
+  });
+
   it('omits slug/eventSlug/topStandings when absent from the stored entry', async () => {
     const { app, database } = buildTestApp();
     database.seed(`tournamentEntries/${TEST_UID}`, {
