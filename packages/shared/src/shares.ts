@@ -236,8 +236,8 @@ export const createShareInputSchema = z
       .optional(),
     /** Meaningful when `redaction.showDisplayName` is true (review) or always for a recap (identity default ON — see 07-CONTEXT.md). */
     ownerDisplayName: z.string().trim().max(60).optional(),
-    /** Required for kind 'recap' — the caller's own `tournamentEntries/{uid}/{entryKey}` routing key. */
-    entryKey: z.string().min(1).optional(),
+    /** Required for kind 'recap' — the caller's own `tournamentEntries/{uid}/{entryKey}` routing key. Bounded: real keys are `String(eventId)` or `pgg-{slug}`; the RTDB-safety charset itself is enforced server-side (rtdb.ts's ENTRY_KEY_SHAPE, review WR-01). */
+    entryKey: z.string().min(1).max(200).optional(),
   })
   .refine(
     (input) =>
