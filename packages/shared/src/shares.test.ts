@@ -186,11 +186,51 @@ describe('publicShareSnapshotSchema', () => {
     expect(parsed.ownerDisplayName).toBeUndefined();
   });
 
-  it('rejects an object missing a required match fact (result)', () => {
-    const withoutResult = { ...fullyPopulatedPublicSnapshot() } as Record<string, unknown>;
-    delete withoutResult.result;
-    const parsed = publicShareSnapshotSchema.safeParse(withoutResult);
+  it('rejects a (non-recap) object missing vodUrl — a review snapshot always needs one', () => {
+    const withoutVodUrl = { ...fullyPopulatedPublicSnapshot() } as Record<string, unknown>;
+    delete withoutVodUrl.vodUrl;
+    const parsed = publicShareSnapshotSchema.safeParse(withoutVodUrl);
     expect(parsed.success).toBe(false);
+  });
+
+  it('a review public snapshot with vodUrl still parses (backward compatible, kind absent)', () => {
+    const parsed = publicShareSnapshotSchema.parse(fullyPopulatedPublicSnapshot());
+    expect(parsed.kind).toBeUndefined();
+    expect(parsed.vodUrl).toBe('https://youtu.be/abc123');
+  });
+
+  it('parses a recap public snapshot (kind recap, tournament stats, no vodUrl)', () => {
+    const parsed = publicShareSnapshotSchema.parse({
+      createdAt: 1000,
+      kind: 'recap' as const,
+      recapSource: 'startgg' as const,
+      tournamentName: 'The Big House 9',
+      tournamentDate: 500,
+      placement: 3,
+      seed: 8,
+      numEntrants: 128,
+      setRecordWins: 2,
+      setRecordLosses: 1,
+      notableWinOpponentName: 'RivalTag',
+      notableWinOpponentSeed: 1,
+      characterFighterIds: [1, 5],
+      reviewedMomentsCount: 4,
+      ownerDisplayName: 'Some Player',
+    });
+    expect(parsed.kind).toBe('recap');
+    expect(parsed.tournamentName).toBe('The Big House 9');
+    expect(parsed.setRecordWins).toBe(2);
+    expect(parsed.characterFighterIds).toEqual([1, 5]);
+    expect('vodUrl' in parsed).toBe(false);
+  });
+
+  it('rejects a recap snapshot missing required recap fields', () => {
+    const result = publicShareSnapshotSchema.safeParse({
+      createdAt: 1000,
+      kind: 'recap' as const,
+      reviewedMomentsCount: 0,
+    });
+    expect(result.success).toBe(false);
   });
 });
 
@@ -233,12 +273,13 @@ describe('shareTokenSchema', () => {
 });
 
 describe('createShareInputSchema', () => {
-  it('accepts a well-formed create input', () => {
+  it('accepts a well-formed create input (kind defaults to review)', () => {
     const parsed = createShareInputSchema.parse({
       matchId: 'match-1',
       redaction: { includeNotes: true, includeTags: true, showDisplayName: false },
     });
     expect(parsed.matchId).toBe('match-1');
+    expect(parsed.kind).toBe('review');
   });
 
   it('accepts an optional ownerDisplayName', () => {
@@ -254,6 +295,29 @@ describe('createShareInputSchema', () => {
     const result = createShareInputSchema.safeParse({
       redaction: { includeNotes: true, includeTags: true, showDisplayName: false },
     });
+    expect(result.success).toBe(false);
+  });
+
+  it('a review input with no kind field still parses (backward compatible)', () => {
+    const parsed = createShareInputSchema.parse({
+      matchId: 'match-1',
+      redaction: { includeNotes: false, includeTags: false, showDisplayName: false },
+    });
+    expect(parsed.kind).toBe('review');
+    expect(parsed.entryKey).toBeUndefined();
+  });
+
+  it('accepts a recap input (kind recap + entryKey)', () => {
+    const parsed = createShareInputSchema.parse({
+      kind: 'recap',
+      entryKey: '99',
+    });
+    expect(parsed.kind).toBe('recap');
+    expect(parsed.entryKey).toBe('99');
+  });
+
+  it('rejects a recap input missing entryKey', () => {
+    const result = createShareInputSchema.safeParse({ kind: 'recap' });
     expect(result.success).toBe(false);
   });
 });

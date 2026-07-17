@@ -117,26 +117,80 @@ export type ShareSnapshot = z.infer<typeof shareSnapshotSchema>;
  * future accidental leak of either becomes a Fastify response-serialization
  * error (via `fastify-type-provider-zod`'s `response[200]` schema), not a
  * silent logic bug. Must never be derived from `matchRecordSchema` either.
+ *
+ * Phase 7 (Recap Cards & Share-Loop Analytics): extended to a FLAT dual
+ * shape carrying both a vod-review AND a recap public snapshot, gated by
+ * `kind` — modeled on `startgg.ts`'s `scoutPlayerIdentitySchema` precedent
+ * (one flat `z.object` + `.refine()`s), deliberately avoiding a Zod
+ * discriminated-union helper (see RESEARCH.md Pitfall 4: an untested
+ * combination with Fastify's response serializer). `kind` absent/undefined
+ * means a vod-review snapshot — every pre-Phase-7 record, and every review
+ * share created going forward, since `RtdbService`'s review branch never
+ * sets it.
  */
-export const publicShareSnapshotSchema = z.object({
-  createdAt: z.number().int().nonnegative(),
-  result: z.enum(['win', 'loss']),
-  fighterId: z.number().int().positive(),
-  opponentFighterId: z.number().int().positive(),
-  stage: matchStageSchema.nullish(),
-  matchDate: z.number().int().nonnegative(),
-  vodUrl: z.string().url(),
-  vodStartSeconds: z.number().int().nonnegative().nullish(),
-  reviewedMomentsCount: z.number().int().nonnegative(),
-  timestamps: z.array(shareTimestampSchema).max(20).nullish(),
-  tags: z.array(z.string().trim().min(1).max(24)).max(10).nullish(),
-  ownerDisplayName: z.string().trim().max(60).nullish(),
-  redaction: z.object({
-    includedNotes: z.boolean(),
-    includedTags: z.boolean(),
-    showDisplayName: z.boolean(),
-  }),
-});
+export const publicShareSnapshotSchema = z
+  .object({
+    createdAt: z.number().int().nonnegative(),
+    /** Absent means a vod-review snapshot (the default, backward-compatible shape). */
+    kind: z.enum(['recap']).nullish(),
+    // --- vod-review fields: nullish here (absent on a recap snapshot); the
+    // first `.refine()` below enforces they're all present for a review one ---
+    result: z.enum(['win', 'loss']).nullish(),
+    fighterId: z.number().int().positive().nullish(),
+    opponentFighterId: z.number().int().positive().nullish(),
+    stage: matchStageSchema.nullish(),
+    matchDate: z.number().int().nonnegative().nullish(),
+    vodUrl: z.string().url().nullish(),
+    vodStartSeconds: z.number().int().nonnegative().nullish(),
+    timestamps: z.array(shareTimestampSchema).max(20).nullish(),
+    tags: z.array(z.string().trim().min(1).max(24)).max(10).nullish(),
+    redaction: z
+      .object({
+        includedNotes: z.boolean(),
+        includedTags: z.boolean(),
+        showDisplayName: z.boolean(),
+      })
+      .nullish(),
+    // --- recap-only fields: nullish here (absent on a vod-review snapshot);
+    // the second `.refine()` below enforces the required subset for a recap ---
+    recapSource: z.enum(['startgg', 'parrygg']).nullish(),
+    tournamentName: z.string().min(1).nullish(),
+    tournamentDate: z.number().int().nonnegative().nullish(),
+    placement: z.number().int().positive().nullish(),
+    seed: z.number().int().positive().nullish(),
+    numEntrants: z.number().int().positive().nullish(),
+    setRecordWins: z.number().int().nonnegative().nullish(),
+    setRecordLosses: z.number().int().nonnegative().nullish(),
+    notableWinOpponentName: z.string().min(1).nullish(),
+    notableWinOpponentSeed: z.number().int().positive().nullish(),
+    characterFighterIds: z.array(z.number().int().positive()).nullish(),
+    // --- shared across both kinds ---
+    reviewedMomentsCount: z.number().int().nonnegative(),
+    ownerDisplayName: z.string().trim().max(60).nullish(),
+  })
+  .refine(
+    (snapshot) =>
+      snapshot.kind !== 'recap' ? Boolean(snapshot.vodUrl) && Boolean(snapshot.redaction) : true,
+    {
+      message: 'a vod-review snapshot must carry vodUrl and redaction',
+      path: ['vodUrl'],
+    },
+  )
+  .refine(
+    (snapshot) =>
+      snapshot.kind === 'recap'
+        ? Boolean(snapshot.tournamentName) &&
+          snapshot.tournamentDate != null &&
+          snapshot.setRecordWins != null &&
+          snapshot.setRecordLosses != null &&
+          snapshot.characterFighterIds != null
+        : true,
+    {
+      message:
+        'a recap snapshot must carry tournamentName, tournamentDate, set record, and characterFighterIds',
+      path: ['tournamentName'],
+    },
+  );
 export type PublicShareSnapshot = z.infer<typeof publicShareSnapshotSchema>;
 
 /**
@@ -158,44 +212,93 @@ export const shareTokenSchema = z.object({
 });
 export type ShareToken = z.infer<typeof shareTokenSchema>;
 
-/** POST /api/vod-shares body. */
-export const createShareInputSchema = z.object({
-  matchId: z.string().min(1),
-  redaction: z.object({
-    includeNotes: z.boolean(),
-    includeTags: z.boolean(),
-    showDisplayName: z.boolean(),
-  }),
-  /** Only meaningful when `redaction.showDisplayName` is true. */
-  ownerDisplayName: z.string().trim().max(60).optional(),
-});
+/**
+ * POST /api/vod-shares body. Kind-discriminated (Phase 7): `kind` defaults
+ * to `'review'` for backward compatibility with every pre-Phase-7 client,
+ * which never sends this field at all. `matchId`/`redaction` are required
+ * for a review share; `entryKey` is required for a recap share — enforced
+ * by the `.refine()`s below (a single Zod object can't make a field
+ * required only for one branch via its own optionality alone).
+ */
+export const createShareInputSchema = z
+  .object({
+    /** Discriminates which snapshot builder handles this create. Absent means 'review' (every pre-Phase-7 client). */
+    kind: z.enum(['review', 'recap']).default('review'),
+    /** Required for kind 'review'. */
+    matchId: z.string().min(1).optional(),
+    /** Required for kind 'review'. */
+    redaction: z
+      .object({
+        includeNotes: z.boolean(),
+        includeTags: z.boolean(),
+        showDisplayName: z.boolean(),
+      })
+      .optional(),
+    /** Meaningful when `redaction.showDisplayName` is true (review) or always for a recap (identity default ON — see 07-CONTEXT.md). */
+    ownerDisplayName: z.string().trim().max(60).optional(),
+    /** Required for kind 'recap' — the caller's own `tournamentEntries/{uid}/{entryKey}` routing key. */
+    entryKey: z.string().min(1).optional(),
+  })
+  .refine(
+    (input) =>
+      input.kind === 'review' ? Boolean(input.matchId) && Boolean(input.redaction) : true,
+    {
+      message: 'review shares require matchId and redaction',
+      path: ['matchId'],
+    },
+  )
+  .refine((input) => (input.kind === 'recap' ? Boolean(input.entryKey) : true), {
+    message: 'recap shares require entryKey',
+    path: ['entryKey'],
+  });
 export type CreateShareInput = z.infer<typeof createShareInputSchema>;
 
 /**
  * GET /api/vod-shares list-row response shape — everything the owner's "My
  * shares" manage list needs to render a row (chips, badges, copy/revoke
  * actions) without re-deriving them from the snapshot (SHARE-05).
+ *
+ * Phase 7: extended to a flat dual shape (same `kind`-gated + `.refine()`
+ * discipline as `publicShareSnapshotSchema` above) so a recap row can be
+ * represented alongside a vod-review row in the same list response.
  */
-export const shareSummarySchema = z.object({
-  shareId: z.string(),
-  matchId: z.string(),
-  permissions: z.enum(['view', 'edit']),
-  /** The snapshot date — when this share was created. */
-  createdAt: z.number().int().nonnegative(),
-  redaction: z.object({
-    includedNotes: z.boolean(),
-    includedTags: z.boolean(),
-    showDisplayName: z.boolean(),
-  }),
-  status: z.enum(['active', 'revoked']),
-  revokedAt: z.number().int().nonnegative().nullish(),
-  url: z.string().url(),
-  // Small display facts the row renders without a second fetch.
-  result: z.enum(['win', 'loss']),
-  fighterId: z.number().int().positive(),
-  opponentFighterId: z.number().int().positive(),
-  stage: matchStageSchema.nullish(),
-});
+export const shareSummarySchema = z
+  .object({
+    shareId: z.string(),
+    /** Absent for a recap row (no source match). */
+    matchId: z.string().nullish(),
+    permissions: z.enum(['view', 'edit']),
+    /** The snapshot date — when this share was created. */
+    createdAt: z.number().int().nonnegative(),
+    /** Absent means a vod-review row (the default, backward-compatible shape). */
+    kind: z.enum(['recap']).nullish(),
+    redaction: z
+      .object({
+        includedNotes: z.boolean(),
+        includedTags: z.boolean(),
+        showDisplayName: z.boolean(),
+      })
+      .nullish(),
+    status: z.enum(['active', 'revoked']),
+    revokedAt: z.number().int().nonnegative().nullish(),
+    url: z.string().url(),
+    // Small display facts the row renders without a second fetch.
+    result: z.enum(['win', 'loss']).nullish(),
+    fighterId: z.number().int().positive().nullish(),
+    opponentFighterId: z.number().int().positive().nullish(),
+    stage: matchStageSchema.nullish(),
+    // --- recap display fields ---
+    tournamentName: z.string().min(1).nullish(),
+    placement: z.number().int().positive().nullish(),
+  })
+  .refine((row) => (row.kind !== 'recap' ? Boolean(row.matchId) && Boolean(row.redaction) : true), {
+    message: 'a vod-review row must carry matchId and redaction',
+    path: ['matchId'],
+  })
+  .refine((row) => (row.kind === 'recap' ? Boolean(row.tournamentName) : true), {
+    message: 'a recap row must carry tournamentName',
+    path: ['tournamentName'],
+  });
 export type ShareSummary = z.infer<typeof shareSummarySchema>;
 
 /** POST /api/vod-shares 201 response — the create result the web copy-step reads. */

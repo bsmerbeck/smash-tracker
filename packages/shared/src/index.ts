@@ -46,3 +46,4 @@ export * from './gspLive.js';
 export * from './playlist.js';
 export * from './shares.js';
 export * from './tournamentAggregation.js';
+export * from './recap.js';
