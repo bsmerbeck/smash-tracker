@@ -263,7 +263,7 @@ describe('publicShareSnapshotSchema', () => {
       'https://start.gg/tournament/the-big-house-9/event/ultimate-singles',
     );
     expect(parsed.sets).toHaveLength(1);
-    expect(parsed.sets![0].opponentPlacement).toBe(5);
+    expect(parsed.sets![0]!.opponentPlacement).toBe(5);
   });
 
   it('a "summary" recap public snapshot (no detail/tournamentUrl/sets) still parses (backward compatible)', () => {
