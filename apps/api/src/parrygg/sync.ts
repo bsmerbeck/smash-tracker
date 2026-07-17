@@ -434,13 +434,14 @@ export async function importParryggMatches(
       matchUpdates[game.key] = game.record;
       opponentUpdates[game.opponentTag] = true;
     }
-    // Only accumulate for matches that produced importable games (completed,
-    // singles, SSBU) — `accumulateParryggRegistry` independently re-checks
-    // the same gate, mirroring start.gg's accumulateRegistry/gamesFromSet
-    // pair.
-    if (games.length > 0) {
-      accumulateParryggRegistry(registry, context, parryUserId);
-    }
+    // Accumulate registry stats for EVERY context, unconditionally —
+    // `accumulateParryggRegistry` applies its own completed/singles/SSBU
+    // gate internally, mirroring start.gg's accumulateRegistry/gamesFromSet
+    // pair (review WR-07: gating on `games.length > 0` here dropped
+    // completed sets whose every game was skipped for unmapped characters —
+    // undercounting setsPlayed and shrinking the firstSetAt/lastSetAt window
+    // `matchesForEntry` attributes matches by).
+    accumulateParryggRegistry(registry, context, parryUserId);
   }
 
   if (Object.keys(matchUpdates).length > 0) {

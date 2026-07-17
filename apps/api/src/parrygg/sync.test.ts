@@ -508,6 +508,44 @@ describe('importParryggMatches', () => {
     expect(Object.keys(registry)).toHaveLength(1);
   });
 
+  // Review WR-07: a completed, singles, SSBU set must count toward the
+  // registry even when every one of its games is skipped (e.g. unmapped
+  // characters) — mirroring start.gg's accumulateRegistry, which runs
+  // unconditionally per set.
+  it('counts a completed set toward setsPlayed even when all its games have unmapped characters', async () => {
+    const database = new FakeDatabase();
+    const unmappedGame = new MatchGame();
+    unmappedGame.setStagesList([makeStage('battlefield')]);
+    unmappedGame.setSlotsList([
+      makeGameSlot(0, MY_USER_ID, 'totally-unknown-character', 1),
+      makeGameSlot(1, OPPONENT_USER_ID, 'sonic', 2),
+    ]);
+    const context = makeMatchContext({
+      eventSlug: 'tournament/test-weekly-42/event/ultimate-singles',
+      matchGames: [unmappedGame],
+    });
+    const clients = clientsReturning([context]);
+
+    const summary = await importParryggMatches(
+      database as never,
+      'uid-1',
+      PARRY_USER_ID,
+      'api-key',
+      clients,
+    );
+
+    // No importable games…
+    expect(summary.imported).toBe(0);
+    expect(summary.unmappedCharacters).toBe(1);
+    // …but the completed set still registers.
+    const tree = database.dump() as Record<string, Record<string, unknown>>;
+    const registry = tree['tournamentEntries']?.['uid-1'] as Record<string, unknown> | undefined;
+    const record = registry?.['pgg-tournamenttest-weekly-42eventultimate-singles'] as
+      Record<string, unknown> | undefined;
+    expect(record).toBeDefined();
+    expect(record?.setsPlayed).toBe(1);
+  });
+
   it('falls back to a sanitized eventName|tournamentName composite key when no event slug exists', async () => {
     const database = new FakeDatabase();
     const context = makeMatchContext({ mySeed: 8 });
