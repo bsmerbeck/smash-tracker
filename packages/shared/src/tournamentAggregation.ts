@@ -227,3 +227,28 @@ export function formatOpponentEventContext(opponent: {
   }
   return parts.length > 0 ? parts.join(' · ') : null;
 }
+
+const STARTGG_BASE_URL = 'https://start.gg';
+
+/**
+ * Phase 7 walkthrough amendment (07-09): a trustworthy external tournament
+ * link for a recap card — built ONLY from fields the registry actually
+ * stores, never guessed. start.gg entries (`source` absent or `'startgg'`)
+ * deep-link from `eventSlug` (preferred — the specific bracket the entry
+ * belongs to) or fall back to the tournament-level `slug`, exactly mirroring
+ * `apps/web`'s `buildEventStartggUrl`/`buildStartggUrl` (kept as a separate,
+ * duplicate implementation here since `apps/api` cannot import from
+ * `apps/web`, and this is the only site the shared package needs to know
+ * about). parry.gg has no verified public event-URL shape (07-CONTEXT.md's
+ * Walkthrough Amendment: "do NOT invent parry.gg URL shapes") — parry.gg
+ * entries always return `null` here, by design, not merely absence of data.
+ */
+export function buildRecapTournamentUrl(
+  entry: Pick<TournamentEntry, 'source' | 'slug' | 'eventSlug'>,
+): string | null {
+  if (entry.source === 'parrygg') {
+    return null;
+  }
+  const slug = entry.eventSlug ?? entry.slug;
+  return slug ? `${STARTGG_BASE_URL}/${slug}` : null;
+}

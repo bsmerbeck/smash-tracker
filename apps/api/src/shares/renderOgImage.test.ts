@@ -47,6 +47,17 @@ function makeRecapSnapshot(overrides: Partial<PublicShareSnapshot> = {}): Public
   };
 }
 
+function makeSet(overrides: Partial<Record<string, unknown>> = {}) {
+  return {
+    roundLabel: 'Winners Round 3',
+    opponentName: 'RivalTag',
+    wins: 3,
+    losses: 1,
+    win: true,
+    ...overrides,
+  };
+}
+
 function fetchOkPng() {
   return vi.fn().mockResolvedValue({
     ok: true,
@@ -250,6 +261,112 @@ describe('renderOgImage', () => {
     expect(serialized).not.toContain('&amp;');
     expect(serialized).not.toContain('&lt;');
     expect(serialized).not.toContain('&#');
+
+    vi.doUnmock('satori');
+    vi.resetModules();
+  });
+
+  it('renders a non-empty 1200x630 PNG for a "full" recap with more than 5 sets (set-rows column + "+N more sets")', async () => {
+    const fetchImpl = fetchOkPng();
+    const sets = Array.from({ length: 7 }, (_, i) =>
+      makeSet({ roundLabel: `Set ${i + 1}`, opponentName: `Rival${i + 1}` }),
+    );
+    const snapshot = makeRecapSnapshot({ detail: 'full', sets });
+
+    const png = await renderOgImage({
+      token: 'recap-token-full-many-sets',
+      snapshot,
+      webBaseUrl: WEB_BASE_URL,
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+    });
+
+    expect(png).not.toBeNull();
+    expect(png!.subarray(0, 8)).toEqual(PNG_SIGNATURE);
+    expect(png!.readUInt32BE(16)).toBe(1200);
+    expect(png!.readUInt32BE(20)).toBe(630);
+  });
+
+  it('shows only the LAST 5 sets plus a "+N more sets" row, truncating long round/opponent labels', async () => {
+    vi.resetModules();
+    const satoriMock = vi.fn().mockResolvedValue('<svg></svg>');
+    vi.doMock('satori', () => ({ default: satoriMock }));
+
+    const { renderOgImage: renderWithMockedSatori } = await import('./renderOgImage.js');
+
+    const fetchImpl = fetchOkPng();
+    const sets = [
+      makeSet({ roundLabel: 'Pools Set 1', opponentName: 'EarlyOpponent' }),
+      makeSet({ roundLabel: 'Pools Set 2', opponentName: 'EarlyOpponent2' }),
+      makeSet({
+        roundLabel: 'Winners Semi-Final Extra Long',
+        opponentName: 'AVeryLongOpponentTagName',
+        win: false,
+        wins: 1,
+        losses: 3,
+      }),
+      makeSet({ roundLabel: 'Winners Finals', opponentName: 'Finalist' }),
+      makeSet({ roundLabel: 'Grand Finals Reset', opponentName: 'ChampOne' }),
+      makeSet({ roundLabel: 'Grand Finals', opponentName: 'ChampTwo' }),
+    ];
+    const snapshot = makeRecapSnapshot({ detail: 'full', sets });
+
+    await renderWithMockedSatori({
+      token: 'recap-token-truncate',
+      snapshot,
+      webBaseUrl: WEB_BASE_URL,
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+    });
+
+    const serialized = JSON.stringify(satoriMock.mock.calls[0]![0]);
+    // Only the last 5 sets render; the 1 earliest set is summarized.
+    expect(serialized).toContain('+1 more sets');
+    expect(serialized).not.toContain('Pools Set 1');
+    // roundLabel truncated to ~18 chars with an ellipsis.
+    expect(serialized).toContain('Winners Semi-Fina…');
+    expect(serialized).not.toContain('Winners Semi-Final Extra Long');
+    // opponentName truncated to ~16 chars with an ellipsis.
+    expect(serialized).toContain('AVeryLongOppone…');
+    expect(serialized).not.toContain('AVeryLongOpponentTagName');
+
+    vi.doUnmock('satori');
+    vi.resetModules();
+  });
+
+  it('falls back to the character-sprite column for a "full" recap with zero sets (never throws, still a valid PNG)', async () => {
+    const fetchImpl = fetchOkPng();
+    const snapshot = makeRecapSnapshot({ detail: 'full', sets: [] });
+
+    const png = await renderOgImage({
+      token: 'recap-token-full-zero-sets',
+      snapshot,
+      webBaseUrl: WEB_BASE_URL,
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+    });
+
+    expect(png).not.toBeNull();
+    expect(png!.subarray(0, 8)).toEqual(PNG_SIGNATURE);
+  });
+
+  it('uses the character-sprite column (never a set-rows column) for a "summary" recap, even if sets were somehow present', async () => {
+    vi.resetModules();
+    const satoriMock = vi.fn().mockResolvedValue('<svg></svg>');
+    vi.doMock('satori', () => ({ default: satoriMock }));
+
+    const { renderOgImage: renderWithMockedSatori } = await import('./renderOgImage.js');
+
+    const fetchImpl = fetchOkPng();
+    const snapshot = makeRecapSnapshot({ sets: [makeSet()] as never });
+
+    await renderWithMockedSatori({
+      token: 'recap-token-summary-ignores-sets',
+      snapshot,
+      webBaseUrl: WEB_BASE_URL,
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+    });
+
+    const serialized = JSON.stringify(satoriMock.mock.calls[0]![0]);
+    expect(serialized).not.toContain('more sets');
+    expect(serialized).not.toContain('Winners Round 3 vs RivalTag');
 
     vi.doUnmock('satori');
     vi.resetModules();

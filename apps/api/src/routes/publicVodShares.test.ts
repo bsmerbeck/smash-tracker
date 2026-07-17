@@ -93,6 +93,76 @@ describe('GET /api/vod-shares/:token', () => {
     expect('vodUrl' in body).toBe(false);
   });
 
+  it('returns a "full" recap public snapshot with detail, tournamentUrl, and the set timeline (07-09)', async () => {
+    const { app, database } = buildTestApp();
+    const token = TOKEN;
+    const shareId = SHARE_ID;
+    database.seed(`shareTokens/${token}`, {
+      shareId,
+      ownerUid: 'owner-uid',
+      permissions: 'view',
+      createdAt: 1000,
+    });
+    database.seed(`shareSnapshots/${shareId}`, {
+      uid: 'owner-uid',
+      entryKey: '99',
+      createdAt: 1000,
+      kind: 'recap',
+      source: 'startgg',
+      tournamentName: 'The Big House 9',
+      tournamentDate: 500,
+      setRecordWins: 1,
+      setRecordLosses: 0,
+      characterFighterIds: [1],
+      reviewedMomentsCount: 0,
+      detail: 'full',
+      tournamentUrl: 'https://start.gg/tournament/the-big-house-9/event/ultimate-singles',
+      sets: [
+        {
+          roundLabel: 'Winners Round 3',
+          opponentName: 'RivalTag',
+          opponentPlacement: 5,
+          wins: 3,
+          losses: 1,
+          win: true,
+          stages: ['Battlefield'],
+        },
+      ],
+    });
+
+    const response = await app.inject({ method: 'GET', url: `/api/vod-shares/${token}` });
+
+    expect(response.statusCode).toBe(200);
+    const body = response.json();
+    expect(body.detail).toBe('full');
+    expect(body.tournamentUrl).toBe(
+      'https://start.gg/tournament/the-big-house-9/event/ultimate-singles',
+    );
+    expect(body.sets).toEqual([
+      {
+        roundLabel: 'Winners Round 3',
+        opponentName: 'RivalTag',
+        opponentPlacement: 5,
+        wins: 3,
+        losses: 1,
+        win: true,
+        stages: ['Battlefield'],
+      },
+    ]);
+  });
+
+  it('omits detail/tournamentUrl/sets for a "summary" (pre-07-09-style) recap snapshot', async () => {
+    const { app, database } = buildTestApp();
+    seedActiveRecapShare(database);
+
+    const response = await app.inject({ method: 'GET', url: `/api/vod-shares/${TOKEN}` });
+
+    const body = response.json();
+    expect('detail' in body).toBe(false);
+    expect('tournamentUrl' in body).toBe(false);
+    expect('sets' in body).toBe(false);
+  });
+
   it('returns 200 with a redacted public snapshot (no uid/matchId) and Cache-Control: no-store for an active token', async () => {
     const { app, database } = buildTestApp();
     seedActiveShare(database);

@@ -82,7 +82,7 @@ describe('GenerateRecapDialog', () => {
     ).toBeInTheDocument();
   });
 
-  it('clicking Generate calls api.vodShares.create with kind recap + entryKey + ownerDisplayName, then shows a copyable link', async () => {
+  it('clicking Generate calls api.vodShares.create with kind recap + entryKey + detail full + ownerDisplayName, then shows a copyable link', async () => {
     const user = userEvent.setup();
     createVodShare.mockResolvedValue({
       shareId: 'share-1',
@@ -98,6 +98,7 @@ describe('GenerateRecapDialog', () => {
     expect(createVodShare).toHaveBeenCalledWith({
       kind: 'recap',
       entryKey: 'pgg-the-big-house-9',
+      detail: 'full',
       ownerDisplayName: 'TestPlayer',
     });
 
@@ -119,7 +120,43 @@ describe('GenerateRecapDialog', () => {
     await user.click(screen.getByRole('button', { name: 'Generate' }));
 
     await waitFor(() => expect(createVodShare).toHaveBeenCalledTimes(1));
-    expect(createVodShare).toHaveBeenCalledWith({ kind: 'recap', entryKey: 'pgg-the-big-house-9' });
+    expect(createVodShare).toHaveBeenCalledWith({
+      kind: 'recap',
+      entryKey: 'pgg-the-big-house-9',
+      detail: 'full',
+    });
+  });
+
+  it('defaults the Full-recap switch to ON', async () => {
+    renderDialog();
+
+    await screen.findByText('Generate a recap card');
+    expect(screen.getByRole('switch', { name: 'Full recap' })).toHaveAttribute(
+      'data-state',
+      'checked',
+    );
+  });
+
+  it('sends detail: "summary" when the Full-recap switch is toggled off', async () => {
+    const user = userEvent.setup();
+    createVodShare.mockResolvedValue({
+      shareId: 'share-1',
+      token: 'tok',
+      url: 'https://grandfinals.gg/s/tok',
+    });
+    renderDialog('pgg-the-big-house-9');
+
+    await screen.findByText('Generate a recap card');
+    await user.click(screen.getByRole('switch', { name: 'Full recap' }));
+    await user.click(screen.getByRole('button', { name: 'Generate' }));
+
+    await waitFor(() => expect(createVodShare).toHaveBeenCalledTimes(1));
+    expect(createVodShare).toHaveBeenCalledWith({
+      kind: 'recap',
+      entryKey: 'pgg-the-big-house-9',
+      detail: 'summary',
+      ownerDisplayName: 'TestPlayer',
+    });
   });
 
   it('clicking Copy invokes the clipboard API and shows the copied affordance', async () => {
@@ -169,6 +206,10 @@ describe('GenerateRecapDialog', () => {
     expect(await screen.findByText('Generate a recap card')).toBeInTheDocument();
     expect(screen.queryByText('Recap link ready')).not.toBeInTheDocument();
     expect(screen.getByRole('switch', { name: 'Show your display name' })).toHaveAttribute(
+      'data-state',
+      'checked',
+    );
+    expect(screen.getByRole('switch', { name: 'Full recap' })).toHaveAttribute(
       'data-state',
       'checked',
     );

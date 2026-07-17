@@ -647,6 +647,74 @@ describe('POST /api/vod-shares — kind recap', () => {
     expect('kind' in body).toBe(false);
     expect(body.result).toBe('win');
   });
+
+  it('defaults to detail "full" and stores the set timeline when the request omits detail', async () => {
+    const { app, database } = buildTestApp();
+    seedTournamentEntry(database, TEST_UID, '99');
+    seedRecapMatch(database, TEST_UID);
+
+    const createResponse = await app.inject({
+      method: 'POST',
+      url: '/api/vod-shares',
+      headers: authHeader(),
+      payload: { kind: 'recap', entryKey: '99' },
+    });
+    expect(createResponse.statusCode).toBe(201);
+    const { token } = createResponse.json();
+
+    const readResponse = await app.inject({ method: 'GET', url: `/api/vod-shares/${token}` });
+    const body = readResponse.json();
+
+    expect(body.detail).toBe('full');
+    expect(body.sets).toHaveLength(1);
+    expect(body.sets[0]).toMatchObject({ opponentName: 'RivalTag', wins: 1, losses: 0, win: true });
+  });
+
+  it('stores no set timeline (and no detail field) for an explicit detail: "summary"', async () => {
+    const { app, database } = buildTestApp();
+    seedTournamentEntry(database, TEST_UID, '99');
+    seedRecapMatch(database, TEST_UID);
+
+    const createResponse = await app.inject({
+      method: 'POST',
+      url: '/api/vod-shares',
+      headers: authHeader(),
+      payload: { kind: 'recap', entryKey: '99', detail: 'summary' },
+    });
+    expect(createResponse.statusCode).toBe(201);
+    const { token } = createResponse.json();
+
+    const readResponse = await app.inject({ method: 'GET', url: `/api/vod-shares/${token}` });
+    const body = readResponse.json();
+
+    expect('detail' in body).toBe(false);
+    expect('sets' in body).toBe(false);
+    // The rest of the recap stats are unaffected by detail.
+    expect(body.setRecordWins).toBe(1);
+  });
+
+  it('reads back tournamentUrl built from the seeded entry eventSlug', async () => {
+    const { app, database } = buildTestApp();
+    seedTournamentEntry(database, TEST_UID, '99', {
+      eventSlug: 'tournament/the-big-house-9/event/ultimate-singles',
+    });
+    seedRecapMatch(database, TEST_UID);
+
+    const createResponse = await app.inject({
+      method: 'POST',
+      url: '/api/vod-shares',
+      headers: authHeader(),
+      payload: { kind: 'recap', entryKey: '99' },
+    });
+    const { token } = createResponse.json();
+
+    const readResponse = await app.inject({ method: 'GET', url: `/api/vod-shares/${token}` });
+    const body = readResponse.json();
+
+    expect(body.tournamentUrl).toBe(
+      'https://start.gg/tournament/the-big-house-9/event/ultimate-singles',
+    );
+  });
 });
 
 describe('WR-02: cross-user ownership', () => {

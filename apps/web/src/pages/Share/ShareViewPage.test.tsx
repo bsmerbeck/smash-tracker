@@ -239,6 +239,95 @@ describe('ShareViewPage', () => {
     expect(downloadLink).toHaveAttribute('download');
   });
 
+  it('renders the Set timeline section (round label, opponent + placement, score, stage chips) when sets are present (07-09)', async () => {
+    getPublic.mockResolvedValue(
+      baseRecapSnapshot({
+        detail: 'full',
+        sets: [
+          {
+            roundLabel: 'Winners Round 3',
+            opponentName: 'RivalTag',
+            opponentPlacement: 17,
+            wins: 3,
+            losses: 1,
+            win: true,
+            stages: ['Battlefield', "Yoshi's Story"],
+          },
+          {
+            roundLabel: 'Grand Finals',
+            opponentName: 'MkLeo',
+            wins: 1,
+            losses: 3,
+            win: false,
+          },
+        ],
+      }),
+    );
+
+    renderShare('/s/tok123');
+
+    expect(await screen.findByText('Set timeline')).toBeInTheDocument();
+    expect(screen.getByText('Winners Round 3')).toBeInTheDocument();
+    expect(screen.getByText('RivalTag · 17th')).toBeInTheDocument();
+    expect(screen.getByText('3–1')).toBeInTheDocument();
+    expect(screen.getByText('Battlefield')).toBeInTheDocument();
+    expect(screen.getByText("Yoshi's Story")).toBeInTheDocument();
+    // Second set has no opponentPlacement — bare opponent tag, no ordinal.
+    expect(screen.getByText('MkLeo')).toBeInTheDocument();
+    expect(screen.getByText('1–3')).toBeInTheDocument();
+  });
+
+  it('omits the Set timeline section entirely for a "summary" recap (no sets)', async () => {
+    getPublic.mockResolvedValue(baseRecapSnapshot());
+
+    renderShare('/s/tok123');
+
+    await screen.findByText('Genesis 10');
+    expect(screen.queryByText('Set timeline')).not.toBeInTheDocument();
+  });
+
+  it('renders a "View bracket on start.gg" link when tournamentUrl is present (recapSource startgg)', async () => {
+    getPublic.mockResolvedValue(
+      baseRecapSnapshot({
+        tournamentUrl: 'https://start.gg/tournament/genesis-10/event/ultimate-singles',
+      }),
+    );
+
+    renderShare('/s/tok123');
+
+    const bracketLink = await screen.findByRole('link', { name: /View bracket on start\.gg/ });
+    expect(bracketLink).toHaveAttribute(
+      'href',
+      'https://start.gg/tournament/genesis-10/event/ultimate-singles',
+    );
+    expect(bracketLink).toHaveAttribute('target', '_blank');
+    expect(bracketLink).toHaveAttribute('rel', 'noreferrer');
+  });
+
+  it('renders a "View bracket on parry.gg" link when recapSource is parrygg', async () => {
+    getPublic.mockResolvedValue(
+      baseRecapSnapshot({
+        recapSource: 'parrygg',
+        tournamentUrl: 'https://example.com/some-verified-parrygg-url',
+      }),
+    );
+
+    renderShare('/s/tok123');
+
+    expect(
+      await screen.findByRole('link', { name: /View bracket on parry\.gg/ }),
+    ).toBeInTheDocument();
+  });
+
+  it('omits the bracket-link button entirely when tournamentUrl is absent', async () => {
+    getPublic.mockResolvedValue(baseRecapSnapshot());
+
+    renderShare('/s/tok123');
+
+    await screen.findByText('Genesis 10');
+    expect(screen.queryByText(/View bracket on/)).not.toBeInTheDocument();
+  });
+
   it('omits the reviewed-moments line for a recap snapshot with a zero count', async () => {
     getPublic.mockResolvedValue(baseRecapSnapshot({ reviewedMomentsCount: 0 }));
 
