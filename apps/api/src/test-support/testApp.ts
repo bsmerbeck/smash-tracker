@@ -22,6 +22,8 @@ export function buildTestApp(
     | 'webBaseUrl'
     | 'stripeClient'
     | 'shareFetch'
+    | 'ga4'
+    | 'ga4Fetch'
   > = {},
 ) {
   const database = new FakeDatabase();
