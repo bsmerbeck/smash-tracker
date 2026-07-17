@@ -119,7 +119,14 @@ function computeMeta(
 ): ShareMeta {
   const canonicalUrl = `${webBaseUrl}/s/${token}`;
 
-  if (!snapshot) {
+  // Phase 7 (Recap Cards & Share-Loop Analytics): recap-specific meta copy
+  // is a later plan in this phase (see RESEARCH.md's Recommended Project
+  // Structure) — until then, a recap snapshot gets the same generic,
+  // non-leaking meta as an unknown/revoked token rather than crash on the
+  // review-only fields below (the JSON `GET /api/vod-shares/:token`
+  // endpoint already serves the real recap stats via
+  // `publicShareSnapshotSchema` — only THIS route's unfurl copy defers).
+  if (!snapshot || snapshot.kind === 'recap') {
     // ogImageUrl stays null — the shell's static og-image.png remains, so a
     // crawler is never pointed at a per-token card URL for a token that may
     // not exist (VIEW-05).
@@ -131,12 +138,12 @@ function computeMeta(
     };
   }
 
-  const fighterAName = getFighterById(snapshot.fighterId)?.name ?? 'Unknown fighter';
-  const fighterBName = getFighterById(snapshot.opponentFighterId)?.name ?? 'Unknown fighter';
+  const fighterAName = getFighterById(snapshot.fighterId!)?.name ?? 'Unknown fighter';
+  const fighterBName = getFighterById(snapshot.opponentFighterId!)?.name ?? 'Unknown fighter';
   // Stage id 0 is the "no selection" sentinel (shared stageData) — omit the
   // stage segment rather than rendering the literal "no selection" in meta.
   const stageLabel = snapshot.stage && snapshot.stage.id !== 0 ? snapshot.stage.name : undefined;
-  const matchDateLabel = new Date(snapshot.matchDate).toLocaleDateString('en-US');
+  const matchDateLabel = new Date(snapshot.matchDate!).toLocaleDateString('en-US');
 
   const title = `${fighterAName} vs ${fighterBName} — VOD review · grandfinals.gg`;
   let description =
@@ -149,7 +156,7 @@ function computeMeta(
   // `replaceMetaTag`/`fallbackHtml` (whichever renders this string into a
   // `content="..."` attribute) — do NOT escape here too, or the escaping
   // itself would double-encode (T-06-03).
-  if (snapshot.redaction.showDisplayName && snapshot.ownerDisplayName) {
+  if (snapshot.redaction!.showDisplayName && snapshot.ownerDisplayName) {
     description += ` Shared by ${snapshot.ownerDisplayName}.`;
   }
 

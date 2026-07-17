@@ -108,20 +108,32 @@ async function render(
   webBaseUrl: string,
   fetchImpl: typeof fetch,
 ): Promise<Buffer> {
+  // Phase 7 (Recap Cards & Share-Loop Analytics): recap-specific OG card
+  // art is a later plan in this phase (see RESEARCH.md's Recommended
+  // Project Structure) — this pipeline still only knows how to render a
+  // vod-review card. Treat a recap snapshot the same as any other render
+  // failure (the caller's try/catch degrades to the static fallback,
+  // T-06-04) rather than crash on the review-only fields below, which the
+  // flat+refine `publicShareSnapshotSchema` types as nullable for a recap
+  // snapshot even though this function never receives one today.
+  if (snapshot.kind === 'recap') {
+    throw new Error('renderOgImage: recap snapshots are not yet supported');
+  }
+
   const [spriteA, spriteB] = await Promise.all([
-    fetchSpriteDataUri(snapshot.fighterId, webBaseUrl, fetchImpl),
-    fetchSpriteDataUri(snapshot.opponentFighterId, webBaseUrl, fetchImpl),
+    fetchSpriteDataUri(snapshot.fighterId!, webBaseUrl, fetchImpl),
+    fetchSpriteDataUri(snapshot.opponentFighterId!, webBaseUrl, fetchImpl),
   ]);
 
-  const fighterAName = getFighterById(snapshot.fighterId)?.name ?? 'Unknown fighter';
-  const fighterBName = getFighterById(snapshot.opponentFighterId)?.name ?? 'Unknown fighter';
+  const fighterAName = getFighterById(snapshot.fighterId!)?.name ?? 'Unknown fighter';
+  const fighterBName = getFighterById(snapshot.opponentFighterId!)?.name ?? 'Unknown fighter';
   // Stage id 0 is the "no selection" sentinel (shared stageData) — omit it
   // from the card rather than rendering the literal "no selection".
   const stageLabel = snapshot.stage && snapshot.stage.id !== 0 ? snapshot.stage.name : null;
-  const matchDateLabel = new Date(snapshot.matchDate).toLocaleDateString('en-US');
+  const matchDateLabel = new Date(snapshot.matchDate!).toLocaleDateString('en-US');
   const resultLabel = snapshot.result === 'win' ? 'W' : 'L';
   const ownerDisplayName =
-    snapshot.redaction.showDisplayName && snapshot.ownerDisplayName
+    snapshot.redaction!.showDisplayName && snapshot.ownerDisplayName
       ? escapeHtml(snapshot.ownerDisplayName)
       : null;
 

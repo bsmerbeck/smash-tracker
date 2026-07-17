@@ -40,7 +40,59 @@ function seedActiveShare(
   return { token, shareId };
 }
 
+function seedActiveRecapShare(
+  database: ReturnType<typeof buildTestApp>['database'],
+  overrides: { token?: string; shareId?: string } = {},
+) {
+  const token = overrides.token ?? TOKEN;
+  const shareId = overrides.shareId ?? SHARE_ID;
+
+  database.seed(`shareTokens/${token}`, {
+    shareId,
+    ownerUid: 'owner-uid',
+    permissions: 'view',
+    createdAt: 1000,
+  });
+  database.seed(`shareSnapshots/${shareId}`, {
+    uid: 'owner-uid',
+    entryKey: '99',
+    createdAt: 1000,
+    kind: 'recap',
+    source: 'startgg',
+    tournamentName: 'The Big House 9',
+    tournamentDate: 500,
+    placement: 3,
+    seed: 8,
+    setRecordWins: 2,
+    setRecordLosses: 1,
+    characterFighterIds: [1, 5],
+    reviewedMomentsCount: 0,
+  });
+
+  return { token, shareId };
+}
+
 describe('GET /api/vod-shares/:token', () => {
+  it('returns a recap public snapshot (kind recap) distinguishable from a review snapshot', async () => {
+    const { app, database } = buildTestApp();
+    seedActiveRecapShare(database);
+
+    const response = await app.inject({
+      method: 'GET',
+      url: `/api/vod-shares/${TOKEN}`,
+    });
+
+    expect(response.statusCode).toBe(200);
+    const body = response.json();
+    expect(body.kind).toBe('recap');
+    expect(body.tournamentName).toBe('The Big House 9');
+    expect(body.setRecordWins).toBe(2);
+    expect(body.characterFighterIds).toEqual([1, 5]);
+    expect('uid' in body).toBe(false);
+    expect('entryKey' in body).toBe(false);
+    expect('vodUrl' in body).toBe(false);
+  });
+
   it('returns 200 with a redacted public snapshot (no uid/matchId) and Cache-Control: no-store for an active token', async () => {
     const { app, database } = buildTestApp();
     seedActiveShare(database);

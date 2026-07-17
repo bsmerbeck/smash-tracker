@@ -12,9 +12,11 @@ import {
   opponentNoteSchema,
   playlistRecordSchema,
   publicShareSnapshotSchema,
+  recapSnapshotSchema,
   shareSnapshotSchema,
   shareTokenSchema,
   stageFavoritesSchema,
+  tournamentEntrySchema,
   userSchema,
   type CreateGspReadingInput,
   type CreateMatchInput,
@@ -33,6 +35,7 @@ import {
   type Playlist,
   type PlaylistRecord,
   type PublicShareSnapshot,
+  type RecapSnapshot,
   type ShareCreatedResponse,
   type ShareSnapshot,
   type ShareSummary,
@@ -45,6 +48,7 @@ import {
   type UpsertStageFavoritesInput,
   type User,
 } from '@smash-tracker/shared';
+import { buildRecapSnapshot } from '../shares/buildRecapSnapshot.js';
 import { buildShareSnapshot } from '../shares/buildShareSnapshot.js';
 import { generateShareToken } from '../shares/token.js';
 
@@ -717,6 +721,16 @@ export class RtdbService {
    * `listSharesForUser`/`revokeShare` need, without a second global-scope
    * index or an `orderByChild` RTDB rule (`database.rules.json` stays
    * deny-all/unchanged this phase — T-05-07 accept disposition).
+   *
+   * Phase 7: branches on `input.kind`. The 'recap' branch reads
+   * `tournamentEntries/${uid}/${input.entryKey}` — ownership enforced by
+   * PATH SHAPE, uid always from the auth context, never the body
+   * (T-05-04/T-07-03-01) — plus the caller's FULL `matches/${uid}` list
+   * (aggregation needs every match, unlike a single-match review share),
+   * and calls `buildRecapSnapshot` instead of `buildShareSnapshot`. Both
+   * branches still share the same cap check, push-keyed
+   * `shareSnapshots/{shareId}`, `shareTokens/{token}`, and
+   * `sharesByUser/{uid}/{shareId}` write tail.
    */
   async createShare(
     uid: string,
@@ -728,13 +742,39 @@ export class RtdbService {
       throw new ForbiddenError(`You can create at most ${MAX_SHARES_PER_USER} shares`);
     }
 
-    const matchSnapshot = await this.database.ref(`matches/${uid}/${input.matchId}`).get();
-    if (!matchSnapshot.exists()) {
-      throw new NotFoundError(`Match ${input.matchId} not found`);
-    }
-    const match = matchRecordSchema.parse(matchSnapshot.val());
-    if (!match.vodUrl) {
-      throw new ValidationError('This match has no VOD to share');
+    let storedSnapshot: ShareSnapshot | RecapSnapshot;
+
+    if (input.kind === 'recap') {
+      // entryKey is guaranteed present by createShareInputSchema's refine.
+      const entryKey = input.entryKey!;
+      const entrySnapshot = await this.database.ref(`tournamentEntries/${uid}/${entryKey}`).get();
+      if (!entrySnapshot.exists()) {
+        throw new NotFoundError(`Tournament entry ${entryKey} not found`);
+      }
+      // Stamp entryKey from the path segment we just read BY (never trust a
+      // stored/legacy value) — mirrors GET /api/tournaments' own convention.
+      const entry = tournamentEntrySchema.parse({
+        ...(entrySnapshot.val() as object),
+        entryKey,
+      });
+      const matches = await this.listMatches(uid);
+      storedSnapshot = buildRecapSnapshot(uid, entry, matches, input.ownerDisplayName);
+    } else {
+      // 'review' (default) — matchId/redaction guaranteed present by
+      // createShareInputSchema's refine.
+      const matchId = input.matchId!;
+      const redaction = input.redaction!;
+
+      const matchSnapshot = await this.database.ref(`matches/${uid}/${matchId}`).get();
+      if (!matchSnapshot.exists()) {
+        throw new NotFoundError(`Match ${matchId} not found`);
+      }
+      const match = matchRecordSchema.parse(matchSnapshot.val());
+      if (!match.vodUrl) {
+        throw new ValidationError('This match has no VOD to share');
+      }
+
+      storedSnapshot = buildShareSnapshot(uid, matchId, match, redaction, input.ownerDisplayName);
     }
 
     const shareRef = this.database.ref('shareSnapshots').push();
@@ -742,15 +782,11 @@ export class RtdbService {
     if (!shareId) {
       throw new Error('Failed to generate a push key for the new share');
     }
-
-    const snapshot: ShareSnapshot = buildShareSnapshot(
-      uid,
-      input.matchId,
-      match,
-      input.redaction,
-      input.ownerDisplayName,
+    await shareRef.set(
+      input.kind === 'recap'
+        ? recapSnapshotSchema.parse(storedSnapshot)
+        : shareSnapshotSchema.parse(storedSnapshot),
     );
-    await shareRef.set(shareSnapshotSchema.parse(snapshot));
 
     const token = generateShareToken();
     const tokenRecord: ShareToken = {
@@ -771,6 +807,13 @@ export class RtdbService {
    * `shareTokens/{token}` per record; a missing or corrupt record at either
    * hop is skipped (safeParse-and-skip), never breaking the whole list —
    * mirrors `listPlaylists`'s per-record error isolation.
+   *
+   * Phase 7: branches the per-row shape on the stored snapshot's `kind` —
+   * a recap row carries `tournamentName`/`placement`; a vod-review row is
+   * unchanged. The raw record is checked for `kind === 'recap'` BEFORE
+   * choosing which storage schema to `safeParse` against (recapSnapshotSchema
+   * vs. shareSnapshotSchema), since a vod-review record predates `kind`
+   * entirely and has no such field to disambiguate on its own.
    */
   async listSharesForUser(uid: string, webBaseUrl: string): Promise<ShareSummary[]> {
     const indexSnapshot = await this.database.ref(`sharesByUser/${uid}`).get();
@@ -793,13 +836,40 @@ export class RtdbService {
           return null;
         }
 
-        const parsedSnapshot = shareSnapshotSchema.safeParse(snapshotSnapshot.val());
         const parsedToken = shareTokenSchema.safeParse(tokenSnapshot.val());
-        if (!parsedSnapshot.success || !parsedToken.success) {
+        if (!parsedToken.success) {
+          return null;
+        }
+        const token = parsedToken.data;
+        const rawSnapshot = snapshotSnapshot.val();
+
+        if ((rawSnapshot as { kind?: unknown } | null)?.kind === 'recap') {
+          const parsedRecap = recapSnapshotSchema.safeParse(rawSnapshot);
+          if (!parsedRecap.success) {
+            return null;
+          }
+          const recap = parsedRecap.data;
+
+          return {
+            shareId,
+            permissions: token.permissions,
+            createdAt: recap.createdAt,
+            kind: 'recap',
+            status: token.revokedAt ? 'revoked' : 'active',
+            ...(token.revokedAt !== undefined && token.revokedAt !== null
+              ? { revokedAt: token.revokedAt }
+              : {}),
+            url: `${webBaseUrl}/s/${tokenValue}`,
+            tournamentName: recap.tournamentName,
+            ...(recap.placement != null ? { placement: recap.placement } : {}),
+          };
+        }
+
+        const parsedSnapshot = shareSnapshotSchema.safeParse(rawSnapshot);
+        if (!parsedSnapshot.success) {
           return null;
         }
         const snapshot = parsedSnapshot.data;
-        const token = parsedToken.data;
 
         return {
           shareId,
@@ -905,6 +975,12 @@ export class RtdbService {
    * Never reads `matches/{uid}` — only `shareTokens/` and `shareSnapshots/`
    * (T-06-01: the anonymous path must never reach a user's private match
    * tree).
+   *
+   * Phase 7: branches on the STORED snapshot's `kind` before choosing which
+   * of the two storage schemas (`recapSnapshotSchema`/`shareSnapshotSchema`)
+   * applies, then authors its own public snapshot object literal from
+   * scratch either way (redaction-by-shape — never spreads the stored
+   * record, T-07-03-02).
    */
   async getShareByToken(token: string): Promise<PublicShareSnapshot | null> {
     if (!SHARE_TOKEN_SHAPE.test(token)) {
@@ -928,7 +1004,43 @@ export class RtdbService {
     if (!snapshotSnapshot.exists()) {
       return null;
     }
-    const parsedSnapshot = shareSnapshotSchema.safeParse(snapshotSnapshot.val());
+    const rawSnapshot = snapshotSnapshot.val();
+
+    if ((rawSnapshot as { kind?: unknown } | null)?.kind === 'recap') {
+      const parsedRecap = recapSnapshotSchema.safeParse(rawSnapshot);
+      if (!parsedRecap.success) {
+        return null;
+      }
+      const recap = parsedRecap.data;
+
+      const publicRecapSnapshot: PublicShareSnapshot = {
+        createdAt: recap.createdAt,
+        kind: 'recap',
+        recapSource: recap.source,
+        tournamentName: recap.tournamentName,
+        tournamentDate: recap.tournamentDate,
+        ...(recap.placement != null ? { placement: recap.placement } : {}),
+        ...(recap.seed != null ? { seed: recap.seed } : {}),
+        ...(recap.numEntrants != null ? { numEntrants: recap.numEntrants } : {}),
+        setRecordWins: recap.setRecordWins,
+        setRecordLosses: recap.setRecordLosses,
+        ...(recap.notableWin
+          ? {
+              ...(recap.notableWin.opponentName
+                ? { notableWinOpponentName: recap.notableWin.opponentName }
+                : {}),
+              notableWinOpponentSeed: recap.notableWin.opponentSeed,
+            }
+          : {}),
+        characterFighterIds: recap.characterFighterIds,
+        reviewedMomentsCount: recap.reviewedMomentsCount,
+        ...(recap.ownerDisplayName ? { ownerDisplayName: recap.ownerDisplayName } : {}),
+      };
+
+      return publicShareSnapshotSchema.parse(publicRecapSnapshot);
+    }
+
+    const parsedSnapshot = shareSnapshotSchema.safeParse(rawSnapshot);
     if (!parsedSnapshot.success) {
       return null;
     }
