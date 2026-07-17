@@ -10,6 +10,12 @@ const IMAGE_HEIGHT = 630;
 /** Caps how many character sprites a recap card renders — a long tournament run can feature many more characters than fit legibly on a 1200x630 card. */
 const MAX_RECAP_SPRITES = 3;
 
+/** Walkthrough amendment (07-09): caps how many set rows the OG card's compact set-rows column shows — the LAST N chronologically (the run's climax), matching CONTEXT.md's "og.png card gains up to ~5 compact set rows". */
+const MAX_RECAP_SET_ROWS = 5;
+/** Per-field character caps for the compact set-rows column (CONTEXT.md: "roundLabel (truncate ~18 chars), opponent tag (truncate ~16)"). */
+const SET_ROW_ROUND_LABEL_MAX = 18;
+const SET_ROW_OPPONENT_NAME_MAX = 16;
+
 /** Matches the `og.png` route's own `Cache-Control: public, max-age=300` — no point caching the render longer than clients/crawlers are told to. */
 const PNG_CACHE_TTL_MS = 5 * 60 * 1000;
 /** Sprites are static, content-addressed-by-fighter-id assets — safe to cache far longer than the PNG itself. */
@@ -204,6 +210,21 @@ async function renderRecap(
       : null;
   const ownerDisplayName = snapshot.ownerDisplayName || null;
 
+  // Walkthrough amendment (07-09): a "full" generation's set timeline drives
+  // a compact set-rows column REPLACING the character-sprite column (see
+  // `buildRecapTree`'s doc) — the summary layout (detail absent/'summary',
+  // or a full generation with zero sets) is completely unchanged.
+  const allSets = snapshot.detail === 'full' ? (snapshot.sets ?? []) : [];
+  const recentSets = allSets.slice(-MAX_RECAP_SET_ROWS);
+  const moreSetsCount =
+    allSets.length > MAX_RECAP_SET_ROWS ? allSets.length - MAX_RECAP_SET_ROWS : 0;
+  const setRows: RecapSetRowInput[] = recentSets.map((set) => ({
+    win: set.win,
+    roundLabel: truncate(set.roundLabel, SET_ROW_ROUND_LABEL_MAX),
+    opponentName: truncate(set.opponentName, SET_ROW_OPPONENT_NAME_MAX),
+    scoreLabel: `${set.wins}-${set.losses}`,
+  }));
+
   const tree = buildRecapTree({
     sprites,
     fighterNames,
@@ -215,6 +236,8 @@ async function renderRecap(
     tournamentDateLabel,
     reviewedMomentsCount: snapshot.reviewedMomentsCount,
     ownerDisplayName,
+    setRows: setRows.length > 0 ? setRows : null,
+    moreSetsCount,
   });
 
   const svg = await satori(tree as unknown as Parameters<typeof satori>[0], {
@@ -341,6 +364,15 @@ function buildTree(input: TreeInput): SatoriElement {
   };
 }
 
+/** One compact row in the recap card's set-rows column (walkthrough amendment, 07-09) — already truncated by the caller. */
+interface RecapSetRowInput {
+  win: boolean;
+  roundLabel: string;
+  opponentName: string;
+  /** "W-L" game score for this set, e.g. "3-1". */
+  scoreLabel: string;
+}
+
 interface RecapTreeInput {
   /** Up to `MAX_RECAP_SPRITES` sprite data-URIs, `null` per-entry when that fetch failed/is unavailable. */
   sprites: (string | null)[];
@@ -359,6 +391,15 @@ interface RecapTreeInput {
   reviewedMomentsCount: number;
   /** RAW free text (see `tournamentName`), or `null` when the owner did not opt in / no name was captured. */
   ownerDisplayName: string | null;
+  /**
+   * Walkthrough amendment (07-09): up to `MAX_RECAP_SET_ROWS` recent sets,
+   * or `null` for a summary-detail generation (or a full generation with
+   * zero sets) — when present, REPLACES the character-sprite column with
+   * the compact set-rows column (see `buildRecapTree`).
+   */
+  setRows: RecapSetRowInput[] | null;
+  /** Count of earlier sets not shown in `setRows` (0 when the whole timeline fit). */
+  moreSetsCount: number;
 }
 
 function buildRecapTree(input: RecapTreeInput): SatoriElement {
@@ -473,15 +514,17 @@ function buildRecapTree(input: RecapTreeInput): SatoriElement {
           props: {
             style: { display: 'flex', alignItems: 'center', gap: 32, flex: 1 },
             children: [
-              {
-                type: 'div',
-                props: {
-                  style: { display: 'flex', gap: 16 },
-                  children: input.sprites.map((src, i) =>
-                    spriteNode(src, input.fighterNames[i] ?? ''),
-                  ),
-                },
-              },
+              input.setRows
+                ? buildSetRowsColumn(input.setRows, input.moreSetsCount)
+                : {
+                    type: 'div',
+                    props: {
+                      style: { display: 'flex', gap: 16 },
+                      children: input.sprites.map((src, i) =>
+                        spriteNode(src, input.fighterNames[i] ?? ''),
+                      ),
+                    },
+                  },
               {
                 type: 'div',
                 props: {
@@ -499,6 +542,82 @@ function buildRecapTree(input: RecapTreeInput): SatoriElement {
             children: 'grandfinals.gg',
           },
         },
+      ],
+    },
+  };
+}
+
+/** Truncates `text` to at most `max` characters, appending an ellipsis when it was cut — never throws, always returns a string shorter than or equal to `max`. */
+function truncate(text: string, max: number): string {
+  return text.length > max ? `${text.slice(0, Math.max(0, max - 1))}…` : text;
+}
+
+/**
+ * Walkthrough amendment (07-09): the recap card's compact set-rows column —
+ * REPLACES the character-sprite column when a "full" generation's set
+ * timeline is present (see `renderRecap`'s `setRows` computation). Renders
+ * up to `MAX_RECAP_SET_ROWS` rows (a `W`/`L` colored mark, the truncated
+ * round label + opponent tag, and the game score), plus a final muted
+ * "+N more sets" row when the full timeline exceeded that cap. Round
+ * label/opponent tag are already truncated by the caller — this function
+ * never re-truncates.
+ */
+function buildSetRowsColumn(rows: RecapSetRowInput[], moreCount: number): SatoriElement {
+  const rowNode = (row: RecapSetRowInput): SatoriElement => ({
+    type: 'div',
+    props: {
+      style: { display: 'flex', alignItems: 'center', gap: 8, fontSize: 20 },
+      children: [
+        {
+          type: 'div',
+          props: {
+            style: {
+              display: 'flex',
+              width: 24,
+              height: 24,
+              borderRadius: 4,
+              alignItems: 'center',
+              justifyContent: 'center',
+              fontWeight: 700,
+              fontSize: 14,
+              background: row.win ? '#059669' : '#dc2626',
+              color: '#fafafa',
+            },
+            children: row.win ? 'W' : 'L',
+          },
+        },
+        {
+          type: 'div',
+          props: {
+            style: { display: 'flex', color: '#d4d4d8', flex: 1 },
+            children: `${row.roundLabel} vs ${row.opponentName}`,
+          },
+        },
+        {
+          type: 'div',
+          props: { style: { display: 'flex', color: '#a1a1aa' }, children: row.scoreLabel },
+        },
+      ],
+    },
+  });
+
+  return {
+    type: 'div',
+    props: {
+      style: { display: 'flex', flexDirection: 'column', gap: 6, width: 420 },
+      children: [
+        ...rows.map(rowNode),
+        ...(moreCount > 0
+          ? [
+              {
+                type: 'div',
+                props: {
+                  style: { display: 'flex', fontSize: 18, color: '#71717a' },
+                  children: `+${moreCount} more sets`,
+                },
+              } satisfies SatoriElement,
+            ]
+          : []),
       ],
     },
   };
