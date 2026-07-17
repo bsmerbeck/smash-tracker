@@ -135,3 +135,18 @@ export function logAnalyticsPageView(pagePath: string): void {
     }
   });
 }
+
+/**
+ * Generic product-event logger (Phase 7 share-loop analytics: `share_opened`,
+ * `vod_note_created`) — the same lazy-`initAnalytics`/webdriver-no-op/
+ * never-throws contract as `logAnalyticsPageView` above, just with a
+ * caller-supplied event name and params instead of the hardcoded `page_view`
+ * shape. Fire-and-forget: callers never await this and it never rejects.
+ */
+export function logProductEvent(name: string, params?: Record<string, string | number>): void {
+  void initAnalytics().then((ctx) => {
+    if (ctx) {
+      ctx.mod.logEvent(ctx.analytics, name, params);
+    }
+  });
+}
