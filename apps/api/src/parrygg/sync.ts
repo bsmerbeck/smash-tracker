@@ -1,5 +1,5 @@
 import type { Database } from 'firebase-admin/database';
-import type { MatchRecord, ParryggSyncSummary } from '@smash-tracker/shared';
+import type { MatchRecord, ParryggSyncSummary, TournamentEntry } from '@smash-tracker/shared';
 import { MatchState } from '@parry-gg/client';
 import { getUserMatches, type ParryggClients, type ParryggMatchContext } from './client.js';
 import { parryggCharacterSlugToFighterId } from './characters.js';
@@ -278,11 +278,127 @@ export function gamesFromMatchContext(
 }
 
 /**
+ * Mutable accumulator for one parry.gg event's tournament registry entry
+ * while iterating match contexts; converted to a `TournamentEntry` (with
+ * optional fields omitted, per the RTDB undefined rule) once accumulation is
+ * complete. Mirrors start.gg's `RegistryAccumulator` (../startgg/sync.ts),
+ * minus the fields parry.gg doesn't expose (numEntrants, placement,
+ * top standings) — see Pitfall 1/Assumption A5 in 07-RESEARCH.md.
+ */
+interface ParryggRegistryAccumulator {
+  eventName: string;
+  tournamentName?: string;
+  seed?: number;
+  firstSetAt: number;
+  lastSetAt: number;
+  setsPlayed: number;
+}
+
+/**
+ * Derives a stable, RTDB-safe registry key for a parry.gg event: `pgg-` plus
+ * the sanitized event slug when parry.gg provides one, falling back to a
+ * sanitized `eventName|tournamentName` composite when it doesn't (parry.gg
+ * events don't always carry a slug). Reuses the same `RTDB_ILLEGAL` regex
+ * already used to sanitize opponent tags — this also strips `/`, so a
+ * multi-segment slug (`tournament/foo/event/bar`) collapses into one legal
+ * RTDB key segment. NEVER a numeric id (parry.gg has none) — see
+ * tournamentEntrySchema's doc in packages/shared/src/startgg.ts.
+ */
+function deriveParryggEntryKey(
+  paths: PathEntry[],
+  eventName: string,
+  tournamentName: string | undefined,
+): string {
+  const eventSlug = pathSlugByType(paths, PATH_TYPE_EVENT);
+  const raw = eventSlug ?? `${eventName}|${tournamentName ?? ''}`;
+  return `pgg-${raw.replace(RTDB_ILLEGAL, '')}`;
+}
+
+/**
+ * Folds one parry.gg match context into the per-event registry accumulator
+ * map, independently re-checking the same completed/singles/SSBU gating
+ * `gamesFromMatchContext` applies (mirrors start.gg's `accumulateRegistry`
+ * running its own independent gate alongside `gamesFromSet` — see
+ * ../startgg/sync.ts). Exported for tests. A context only contributes when
+ * an event name is resolvable (no event path → nothing to group by) and the
+ * user's own seed is identifiable (team entrants / unidentifiable seed are
+ * skipped, same as the match-import path).
+ */
+export function accumulateParryggRegistry(
+  accumulators: Map<string, ParryggRegistryAccumulator>,
+  context: ParryggMatchContext,
+  parryUserId: string,
+): void {
+  const match = context.match;
+  if (!match) {
+    return;
+  }
+
+  const slots = match.slotsList;
+  const bothScoresZero = slots.length === 2 && slots.every((s) => s.score === 0);
+  if (match.state !== MatchState.MATCH_STATE_COMPLETED || bothScoresZero) {
+    return;
+  }
+  if (!context.game || context.game.slug !== PARRYGG_SSBU_SLUG) {
+    return;
+  }
+
+  const seedResult = findSeeds(context.seedsList, parryUserId);
+  if (seedResult === 'team' || !seedResult) {
+    return;
+  }
+  const { mine } = seedResult;
+
+  const paths = context.hierarchy?.pathsList ?? [];
+  const eventName = pathNameByType(paths, PATH_TYPE_EVENT);
+  if (!eventName) {
+    return;
+  }
+  const tournamentName = pathNameByType(paths, PATH_TYPE_TOURNAMENT);
+  const seed = typeof mine.seed === 'number' && mine.seed > 0 ? mine.seed : undefined;
+
+  const endedAtSeconds = match.endedAt?.seconds ?? match.stateUpdatedAt?.seconds;
+  const time =
+    typeof endedAtSeconds === 'number'
+      ? endedAtSeconds * 1000
+      : (context.eventStartDate?.seconds ?? 0) * 1000;
+
+  const entryKey = deriveParryggEntryKey(paths, eventName, tournamentName);
+
+  const existing = accumulators.get(entryKey);
+  if (!existing) {
+    accumulators.set(entryKey, {
+      eventName,
+      ...(tournamentName ? { tournamentName } : {}),
+      ...(seed != null ? { seed } : {}),
+      firstSetAt: time,
+      lastSetAt: time,
+      setsPlayed: 1,
+    });
+    return;
+  }
+
+  existing.setsPlayed += 1;
+  if (tournamentName) {
+    existing.tournamentName = tournamentName;
+  }
+  if (seed != null) {
+    existing.seed = seed;
+  }
+  existing.firstSetAt = Math.min(existing.firstSetAt, time);
+  existing.lastSetAt = Math.max(existing.lastSetAt, time);
+}
+
+/**
  * Imports every completed, singles SSBU match for the linked parry.gg user
  * into `matches/{uid}`, idempotently (stable keys `pgg-{matchId}-g{n}`, same
  * re-sync-overwrites-in-place convention as start.gg's `importPlayerMatches`
- * — see ../startgg/sync.ts). Always user-initiated; there is no background
- * scheduler for this sync.
+ * — see ../startgg/sync.ts). Also accumulates a per-event tournament
+ * registry under tournamentEntries/{uid}, keyed by a derived, sanitized
+ * `entryKey` (parry.gg has no numeric event id — see
+ * `deriveParryggEntryKey`), idempotent the same way (re-syncs overwrite in
+ * place — this IS the backfill path for RECAP-01's parry.gg parity). Always
+ * user-initiated; there is no background scheduler for this sync.
  */
 export async function importParryggMatches(
   database: Database,
@@ -307,20 +423,45 @@ export async function importParryggMatches(
 
   const matchUpdates: Record<string, MatchRecord> = {};
   const opponentUpdates: Record<string, true> = {};
+  const registry = new Map<string, ParryggRegistryAccumulator>();
 
   for (const context of contexts) {
-    for (const game of gamesFromMatchContext(context, parryUserId, summary)) {
+    const games = gamesFromMatchContext(context, parryUserId, summary);
+    for (const game of games) {
       if (!(game.key in matchUpdates)) {
         summary.imported += 1;
       }
       matchUpdates[game.key] = game.record;
       opponentUpdates[game.opponentTag] = true;
     }
+    // Only accumulate for matches that produced importable games (completed,
+    // singles, SSBU) — `accumulateParryggRegistry` independently re-checks
+    // the same gate, mirroring start.gg's accumulateRegistry/gamesFromSet
+    // pair.
+    if (games.length > 0) {
+      accumulateParryggRegistry(registry, context, parryUserId);
+    }
   }
 
   if (Object.keys(matchUpdates).length > 0) {
     await database.ref(`matches/${uid}`).update(matchUpdates);
     await database.ref(`opponents/${uid}`).update(opponentUpdates);
+  }
+  if (registry.size > 0) {
+    const registryUpdates: Record<string, TournamentEntry> = {};
+    for (const [entryKey, acc] of registry) {
+      registryUpdates[entryKey] = {
+        eventName: acc.eventName,
+        ...(acc.tournamentName ? { tournamentName: acc.tournamentName } : {}),
+        ...(acc.seed != null ? { seed: acc.seed } : {}),
+        firstSetAt: acc.firstSetAt,
+        lastSetAt: acc.lastSetAt,
+        setsPlayed: acc.setsPlayed,
+        source: 'parrygg',
+        entryKey,
+      };
+    }
+    await database.ref(`tournamentEntries/${uid}`).update(registryUpdates);
   }
   await database.ref(`parryggLinks/${uid}/lastSyncAt`).set(Date.now());
 
