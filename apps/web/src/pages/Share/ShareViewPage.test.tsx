@@ -217,6 +217,16 @@ describe('ShareViewPage', () => {
     expect(document.querySelector('iframe')).toBeNull();
   });
 
+  it('renders a Download button linking to the og.png asset with the download attribute for a recap snapshot', async () => {
+    getPublic.mockResolvedValue(baseRecapSnapshot());
+
+    renderShare('/s/tok123');
+
+    const downloadLink = await screen.findByRole('link', { name: /Download image/ });
+    expect(downloadLink).toHaveAttribute('href', '/s/tok123/og.png');
+    expect(downloadLink).toHaveAttribute('download');
+  });
+
   it('omits the reviewed-moments line for a recap snapshot with a zero count', async () => {
     getPublic.mockResolvedValue(baseRecapSnapshot({ reviewedMomentsCount: 0 }));
 

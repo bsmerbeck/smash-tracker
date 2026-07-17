@@ -1440,7 +1440,8 @@
       "notableWinSeed": "Notable win vs seed {{seed}}",
       "charactersLabel": "Characters played",
       "reviewedMoments_one": "{{count}} reviewed moment",
-      "reviewedMoments_other": "{{count}} reviewed moments"
+      "reviewedMoments_other": "{{count}} reviewed moments",
+      "download": "Download image"
     }
   }
 }

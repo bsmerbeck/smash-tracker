@@ -1440,7 +1440,8 @@
       "notableWinSeed": "Victoire notable contre la tête de série {{seed}}",
       "charactersLabel": "Personnages joués",
       "reviewedMoments_one": "{{count}} moment analysé",
-      "reviewedMoments_other": "{{count}} moments analysés"
+      "reviewedMoments_other": "{{count}} moments analysés",
+      "download": "Télécharger l'image"
     }
   }
 }

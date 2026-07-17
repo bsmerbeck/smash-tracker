@@ -1440,7 +1440,8 @@
       "notableWinSeed": "シード{{seed}}への注目の勝利",
       "charactersLabel": "使用キャラクター",
       "reviewedMoments_one": "レビュー済みの場面 {{count}}件",
-      "reviewedMoments_other": "レビュー済みの場面 {{count}}件"
+      "reviewedMoments_other": "レビュー済みの場面 {{count}}件",
+      "download": "画像をダウンロード"
     }
   }
 }
