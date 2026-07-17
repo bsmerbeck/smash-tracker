@@ -6,6 +6,8 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { PublicShareSnapshot } from '@smash-tracker/shared';
 import type { YouTubePlayerConfig, YouTubePlayerInstance } from '@/lib/useVodPlayer';
 import { ApiError } from '@/lib/api';
+import { logProductEvent } from '@/lib/firebase';
+import { stamp } from '@/lib/shareReferral';
 import { ShareViewPage } from './ShareViewPage';
 
 const getPublic = vi.fn();
@@ -21,6 +23,16 @@ vi.mock('@/lib/api', async () => {
     },
   };
 });
+
+vi.mock('@/lib/firebase', () => ({
+  logProductEvent: vi.fn(),
+}));
+
+vi.mock('@/lib/shareReferral', () => ({
+  stamp: vi.fn(),
+  read: vi.fn(() => null),
+  clear: vi.fn(),
+}));
 
 type YTGlobal = NonNullable<Window['YT']>;
 
@@ -252,5 +264,40 @@ describe('ShareViewPage', () => {
 
     expect(await screen.findByText(/Mario vs\. Luigi/)).toBeInTheDocument();
     await waitFor(() => expect(Player).toHaveBeenCalledTimes(1));
+  });
+
+  it('fires share_opened (share_kind: review) and stamps the referral bridge once a vod-review snapshot resolves (FUNNEL-01/02)', async () => {
+    getPublic.mockResolvedValue(baseSnapshot());
+    mountYouTubePlayer();
+
+    renderShare('/s/tok123');
+
+    await screen.findByText(/Mario vs\. Luigi/);
+    expect(logProductEvent).toHaveBeenCalledExactlyOnceWith('share_opened', {
+      share_kind: 'review',
+    });
+    expect(stamp).toHaveBeenCalledExactlyOnceWith('tok123');
+  });
+
+  it('fires share_opened (share_kind: recap) and stamps the referral bridge once a recap snapshot resolves (FUNNEL-01/02)', async () => {
+    getPublic.mockResolvedValue(baseRecapSnapshot());
+
+    renderShare('/s/tok123');
+
+    await screen.findByText('Genesis 10');
+    expect(logProductEvent).toHaveBeenCalledExactlyOnceWith('share_opened', {
+      share_kind: 'recap',
+    });
+    expect(stamp).toHaveBeenCalledExactlyOnceWith('tok123');
+  });
+
+  it('never fires share_opened or stamps the referral for a 404 (revoked/unknown token)', async () => {
+    getPublic.mockRejectedValue(new ApiError(404, 'This share is no longer available'));
+
+    renderShare('/s/dead-token');
+
+    await screen.findByText('This review is no longer available');
+    expect(logProductEvent).not.toHaveBeenCalled();
+    expect(stamp).not.toHaveBeenCalled();
   });
 });

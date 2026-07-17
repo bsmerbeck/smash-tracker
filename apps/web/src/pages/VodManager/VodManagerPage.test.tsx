@@ -7,6 +7,7 @@ import { AuthProvider } from '@/context/AuthContext';
 import { AnalyticsFilterProvider } from '@/context/AnalyticsFilterContext';
 import { VodManagerPage } from './VodManagerPage';
 import { resetAuthMock, setMockUser, makeMockUser } from '@/test/mockAuth';
+import { logProductEvent } from '@/lib/firebase';
 import { SpriteList } from '@/data/sprites';
 import type {
   TwitchPlayerConfig,
@@ -2179,6 +2180,96 @@ describe('VodManagerPage', () => {
       { seconds: 754, note: '', tags: ['punish'] },
       { seconds: 900, note: 'existing note' },
     ]);
+  });
+
+  it('FUNNEL-01: fires vod_note_created for a quick-tag capture that creates a NEW row, never for one that tags an EXISTING row', async () => {
+    const user = userEvent.setup();
+    let currentMatch = makeMatch({
+      id: 'm1',
+      opponent: 'rival-one',
+      vodUrl: 'https://youtube.com/watch?v=abc123',
+      vodTimestamps: [{ seconds: 754, note: 'existing note', tags: ['punish'] }],
+    });
+    listMatches.mockImplementation(() => Promise.resolve([currentMatch]));
+    updateMatch.mockImplementation((...args: unknown[]) => {
+      const input = args[1] as Record<string, unknown>;
+      currentMatch = { ...currentMatch, ...input };
+      return Promise.resolve(currentMatch);
+    });
+
+    let capturedConfig: YouTubePlayerConfig | undefined;
+    const Player = vi.fn(function (
+      this: unknown,
+      _el: HTMLElement,
+      config: YouTubePlayerConfig,
+    ): YouTubePlayerInstance {
+      capturedConfig = config;
+      return {
+        seekTo: vi.fn(),
+        playVideo: vi.fn(),
+        pauseVideo: vi.fn(),
+        destroy: vi.fn(),
+        getCurrentTime: vi.fn(() => 754),
+      };
+    });
+    window.YT = { Player: Player as unknown as YTGlobal['Player'], PlayerState: { ENDED: 0 } };
+
+    renderVodManager('/vod?match=m1');
+    await waitFor(() => expect(Player).toHaveBeenCalledTimes(1));
+    act(() => {
+      capturedConfig?.events?.onReady?.();
+    });
+    await waitFor(() => expect(screen.getByText('existing note')).toBeInTheDocument());
+
+    // Same 754s as the existing note — adds a tag to it, does NOT create a row.
+    await user.click(screen.getByRole('button', { name: 'Quick tag: Edgeguard' }));
+    await waitFor(() => expect(updateMatch).toHaveBeenCalledTimes(1));
+    expect(logProductEvent).not.toHaveBeenCalledWith('vod_note_created');
+  });
+
+  it('FUNNEL-01: fires vod_note_created exactly once when a quick-tag capture creates a brand-new row', async () => {
+    const user = userEvent.setup();
+    let currentMatch = makeMatch({
+      id: 'm1',
+      opponent: 'rival-one',
+      vodUrl: 'https://youtube.com/watch?v=abc123',
+      vodTimestamps: [{ seconds: 900, note: 'existing note' }],
+    });
+    listMatches.mockImplementation(() => Promise.resolve([currentMatch]));
+    updateMatch.mockImplementation((...args: unknown[]) => {
+      const input = args[1] as Record<string, unknown>;
+      currentMatch = { ...currentMatch, ...input };
+      return Promise.resolve(currentMatch);
+    });
+
+    let capturedConfig: YouTubePlayerConfig | undefined;
+    const Player = vi.fn(function (
+      this: unknown,
+      _el: HTMLElement,
+      config: YouTubePlayerConfig,
+    ): YouTubePlayerInstance {
+      capturedConfig = config;
+      return {
+        seekTo: vi.fn(),
+        playVideo: vi.fn(),
+        pauseVideo: vi.fn(),
+        destroy: vi.fn(),
+        // Different second than the existing note (900s) — a NEW row.
+        getCurrentTime: vi.fn(() => 754),
+      };
+    });
+    window.YT = { Player: Player as unknown as YTGlobal['Player'], PlayerState: { ENDED: 0 } };
+
+    renderVodManager('/vod?match=m1');
+    await waitFor(() => expect(Player).toHaveBeenCalledTimes(1));
+    act(() => {
+      capturedConfig?.events?.onReady?.();
+    });
+
+    await user.click(screen.getByRole('button', { name: 'Quick tag: Punish' }));
+
+    await waitFor(() => expect(updateMatch).toHaveBeenCalledTimes(1));
+    expect(logProductEvent).toHaveBeenCalledExactlyOnceWith('vod_note_created');
   });
 
   it('blocks a quick-tag capture once the match is at the MAX_TIMESTAMPS cap, via the existing cap toast', async () => {

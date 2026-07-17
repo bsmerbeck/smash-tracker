@@ -15,6 +15,7 @@ import {
 import { createContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { createGoogleAuthProvider, getFirebaseAuth } from '@/lib/firebase';
 import { api } from '@/lib/api';
+import * as shareReferral from '@/lib/shareReferral';
 
 export interface AuthContextValue {
   user: FirebaseUser | null;
@@ -55,10 +56,24 @@ export const AuthContext = createContext<AuthContextValue | undefined>(undefined
  * swallowed (logged only) — provisioning failure shouldn't block the user
  * from being considered signed in on the client; subsequent API calls will
  * surface a clearer error if the profile is genuinely missing.
+ *
+ * Phase 7 (FUNNEL-02): also threads the localStorage referral stamp (set by
+ * `ShareViewPage` on share-page mount) through as `referredByShareId` — the
+ * API's write-once/first-touch semantics mean sending it on every sign-in is
+ * harmless for a returning user with existing attribution. The stamp is
+ * cleared after a successful provision so it's consumed exactly once; a call
+ * made with no stamp present preserves the exact bodyless `upsertMe()` every
+ * pre-Phase-7 caller sends.
  */
 async function provisionUser(): Promise<void> {
   try {
-    await api.users.upsertMe();
+    const referredByShareId = shareReferral.read();
+    if (referredByShareId) {
+      await api.users.upsertMe({ referredByShareId });
+      shareReferral.clear();
+    } else {
+      await api.users.upsertMe();
+    }
   } catch (error) {
     console.error('Failed to provision user profile after sign-in', error);
   }
