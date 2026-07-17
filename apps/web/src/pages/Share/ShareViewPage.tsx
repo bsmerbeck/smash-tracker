@@ -10,6 +10,8 @@ import { usePublicVodShare } from '@/hooks/useVodShares';
 import { useVodPlayer } from '@/lib/useVodPlayer';
 import { formatTimestamp, parseFlexibleTimestamp } from '@/lib/vod';
 import { tagLabel } from '@/lib/tags';
+import { logProductEvent } from '@/lib/firebase';
+import * as shareReferral from '@/lib/shareReferral';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ShareTimestampRow } from './components/ShareTimestampRow';
@@ -78,6 +80,24 @@ export function ShareViewPage() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isReady, deepLinkSeconds]);
+
+  // FUNNEL-01/02: fires `share_opened` and stamps the referral bridge
+  // exactly once, the moment the snapshot resolves — guarded by a ref (not
+  // just a `[snapshot]` dep) so a later refetch/rerender of the same share
+  // never double-fires. The public snapshot never exposes a true `shareId`
+  // (redaction-by-shape — see `publicShareSnapshotSchema`), so the stamped
+  // value is the route TOKEN; the server maps it on signup the same way.
+  const hasFiredShareOpenedRef = useRef(false);
+  useEffect(() => {
+    if (!snapshot || hasFiredShareOpenedRef.current) {
+      return;
+    }
+    hasFiredShareOpenedRef.current = true;
+    logProductEvent('share_opened', { share_kind: snapshot.kind === 'recap' ? 'recap' : 'review' });
+    if (token) {
+      shareReferral.stamp(token);
+    }
+  }, [snapshot, token]);
 
   const unavailable = isError || (!isPending && !snapshot);
 

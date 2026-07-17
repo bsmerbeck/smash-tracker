@@ -207,10 +207,17 @@ async function apiRequestParsed<TSchema extends z.ZodType>(
 
 export const api = {
   users: {
-    /** PUT /api/users/me — idempotent user provisioning. */
-    upsertMe: () =>
+    /**
+     * PUT /api/users/me — idempotent user provisioning. Optionally carries a
+     * `referredByShareId` (Phase 7 FUNNEL-02) from the localStorage referral
+     * stamp — the API stores it write-once/first-touch, so passing one on a
+     * returning user's sign-in is harmless. Omit the argument entirely to
+     * preserve the exact bodyless request every pre-Phase-7 caller sends.
+     */
+    upsertMe: (input?: { referredByShareId?: string }) =>
       apiRequestParsed('/api/users/me', userProfileSchema.pick({ uid: true, email: true }), {
         method: 'PUT',
+        body: input,
       }),
     /** GET /api/users/me */
     getMe: () => apiRequestParsed('/api/users/me', userProfileSchema),

@@ -6,6 +6,7 @@ import type { VodTimestamp } from '@smash-tracker/shared';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { MAX_TIMESTAMPS, formatTimestamp, parseFlexibleTimestamp } from '@/lib/vod';
+import { logProductEvent } from '@/lib/firebase';
 
 export interface NoteComposerProps {
   /** The selected match's current timestamp notes — used only to enforce
@@ -67,6 +68,10 @@ export function NoteComposer({
     }
     const note = noteInput.trim();
     onUpdateTimestamps([...timestamps, { seconds, note }].sort((a, b) => a.seconds - b.seconds));
+    // FUNNEL-01: fired here (a genuine note CREATION), never inside the
+    // shared `onUpdateTimestamps` PATCH handler that edit/delete/reorder also
+    // flow through — RESEARCH.md Pitfall 3.
+    logProductEvent('vod_note_created');
     setTimeInput('');
     setNoteInput('');
     setTimeError(null);
