@@ -30,9 +30,21 @@ function NotFoundState() {
  * seed->placement badge + start.gg deep link), Event Results (top-8
  * standings), set-by-set timeline, characters/stages summary, and the
  * Advisor Retrospective. Reached by clicking a tournament row in Trends, or
- * by direct URL (`/tournaments/:eventId`); an unknown/foreign eventId
+ * by direct URL (`/tournaments/:eventId`); an unknown/foreign entryKey
  * renders a friendly not-found state rather than crashing on a missing
  * entry.
+ *
+ * Phase 7: the route's `:eventId` path segment now carries the
+ * source-agnostic `entryKey` (the URL param label is unchanged to avoid
+ * touching the route table, but its value is looked up against
+ * `entry.entryKey`, never a parsed numeric start.gg `eventId` — parry.gg
+ * entries have no numeric id at all). `GET /api/tournaments` always fills
+ * `entryKey` from the RTDB child key on read, so every entry the page can
+ * see carries one. start.gg-only affordances (the "View on start.gg" link,
+ * the Event Results standings table) already gate on the presence of
+ * `slug`/`eventSlug`/`topStandings` rather than on `source` directly, so a
+ * parry.gg entry (which never has those fields) renders its available data
+ * gracefully with no code change needed in the child components.
  */
 export function TournamentDetailPage() {
   const { t } = useTranslation();
@@ -44,8 +56,7 @@ export function TournamentDetailPage() {
     if (!entries || !eventId) {
       return undefined;
     }
-    const parsedId = Number(eventId);
-    return entries.find((e) => e.eventId === parsedId);
+    return entries.find((e) => e.entryKey === eventId);
   }, [entries, eventId]);
 
   const entryMatches = useMemo(() => {
