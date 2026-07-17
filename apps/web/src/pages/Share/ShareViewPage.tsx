@@ -13,6 +13,7 @@ import { tagLabel } from '@/lib/tags';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ShareTimestampRow } from './components/ShareTimestampRow';
+import { RecapView } from './components/RecapView';
 
 /** Best-effort hostname extraction for the "Watch on {host}" fallback link — mirrors `VodPlayer.tsx`'s `safeHostname`. */
 function safeHostname(url: string): string {
@@ -82,9 +83,11 @@ export function ShareViewPage() {
 
   useSeo({
     title: snapshot
-      ? `${getFighterById(snapshot.fighterId!)?.name ?? t('common.unknown')} vs ${
-          getFighterById(snapshot.opponentFighterId!)?.name ?? t('common.unknown')
-        } — VOD review · grandfinals.gg`
+      ? snapshot.kind === 'recap'
+        ? `${snapshot.tournamentName} — Recap · grandfinals.gg`
+        : `${getFighterById(snapshot.fighterId!)?.name ?? t('common.unknown')} vs ${
+            getFighterById(snapshot.opponentFighterId!)?.name ?? t('common.unknown')
+          } — VOD review · grandfinals.gg`
       : unavailable
         ? t('share.unavailableTitle')
         : t('share.loadingTitle'),
@@ -116,9 +119,18 @@ export function ShareViewPage() {
     );
   }
 
+  // A recap snapshot has no vodUrl — the player branch below would break —
+  // so the kind fork happens here, BEFORE any review-only field access,
+  // matching the same after-the-unavailable/pending-guard placement the
+  // unavailable page itself relies on (VIEW-05's no-oracle discipline: a
+  // revoked/unknown recap token never reaches this branch either, since it
+  // fails the `unavailable` check above first).
+  if (snapshot.kind === 'recap') {
+    return <RecapView snapshot={snapshot} />;
+  }
+
   // Review-only path below: the schema refine guarantees these fields for a
-  // non-recap snapshot (the flat+refine shape cannot express that in types);
-  // the recap branch of this page lands in plan 07-06.
+  // non-recap snapshot (the flat+refine shape cannot express that in types).
   const fighter = getFighterById(snapshot.fighterId!);
   const opponentFighter = getFighterById(snapshot.opponentFighterId!);
 

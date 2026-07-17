@@ -1430,6 +1430,17 @@
     "videoUnavailable": "Ce VOD n'est plus disponible.",
     "ctaTitle": "Analysez vos propres matchs",
     "ctaBody": "Suivez vos propres VODs avec des marqueurs temporels cliquables — gratuit, sans carte bancaire.",
-    "ctaButton": "Commencer gratuitement"
+    "ctaButton": "Commencer gratuitement",
+    "recap": {
+      "heading": "Récapitulatif du tournoi",
+      "placement": "{{placement}} place",
+      "seedToFinish": "Tête de série {{seed}} → {{placement}}",
+      "setRecord": "Bilan des manches : {{wins}}–{{losses}}",
+      "notableWinNamed": "Victoire notable contre {{name}}",
+      "notableWinSeed": "Victoire notable contre la tête de série {{seed}}",
+      "charactersLabel": "Personnages joués",
+      "reviewedMoments_one": "{{count}} moment analysé",
+      "reviewedMoments_other": "{{count}} moments analysés"
+    }
   }
 }

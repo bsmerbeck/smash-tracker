@@ -1430,6 +1430,17 @@
     "videoUnavailable": "Dieses VOD ist nicht mehr verfügbar.",
     "ctaTitle": "Analysiere deine eigenen Matches",
     "ctaBody": "Verfolge deine eigenen VODs mit klickbaren Zeitmarken — kostenlos, keine Kreditkarte nötig.",
-    "ctaButton": "Kostenlos starten"
+    "ctaButton": "Kostenlos starten",
+    "recap": {
+      "heading": "Turnier-Rückblick",
+      "placement": "{{placement}} Platz",
+      "seedToFinish": "Setzung {{seed}} → {{placement}}",
+      "setRecord": "Satzbilanz: {{wins}}–{{losses}}",
+      "notableWinNamed": "Bemerkenswerter Sieg gegen {{name}}",
+      "notableWinSeed": "Bemerkenswerter Sieg gegen Setzung {{seed}}",
+      "charactersLabel": "Gespielte Charaktere",
+      "reviewedMoments_one": "{{count}} besprochener Moment",
+      "reviewedMoments_other": "{{count}} besprochene Momente"
+    }
   }
 }
