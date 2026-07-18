@@ -148,8 +148,8 @@ describe('AuthContext — query cache clear on uid transition (FB-01)', () => {
     act(() => setMockUser(makeMockUser({ uid: 'uidA' })));
     await waitFor(() => expect(clearSpy).toHaveBeenCalledTimes(1));
     expect(cancelQueriesSpy).toHaveBeenCalledTimes(1);
-    const cancelOrder = cancelQueriesSpy.mock.invocationCallOrder[0];
-    const clearOrder = clearSpy.mock.invocationCallOrder[0];
+    const cancelOrder = cancelQueriesSpy.mock.invocationCallOrder[0]!;
+    const clearOrder = clearSpy.mock.invocationCallOrder[0]!;
     expect(cancelOrder).toBeLessThan(clearOrder);
 
     // uidA -> uidA again (same uid, no transition)
