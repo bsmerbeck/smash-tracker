@@ -894,7 +894,9 @@
       "setsPlayed_other": "{{count}} sets played",
       "outperformed": "Outperformed seed: {{seed}} → {{placement}}",
       "underperformed": "Underperformed seed: {{seed}} → {{placement}}",
-      "matched": "Matched seed: {{seed}} → {{placement}}"
+      "matched": "Matched seed: {{seed}} → {{placement}}",
+      "viewTournamentStartgg": "View {{name}} on start.gg",
+      "viewTournamentParrygg": "View {{name}} on parry.gg"
     },
     "results": {
       "title": "Event Results",
@@ -914,6 +916,7 @@
       "watchVod": "Watch VOD",
       "watchVodAria": "Watch VOD for {{set}}",
       "editVodAria": "Edit VOD notes for {{set}}",
+      "viewSetAria": "View {{set}} on start.gg",
       "otherMatches": "Other matches during this event"
     },
     "charStages": {
@@ -1462,8 +1465,8 @@
     "sharedBy": "Shared by {{name}}",
     "watchOnHost": "Watch on {{host}}",
     "videoUnavailable": "This VOD is no longer available.",
-    "ctaTitle": "Review your own set",
-    "ctaBody": "Track your own VODs with click-to-seek timestamps — free, no credit card.",
+    "ctaTitle": "Your competitive memory, all in one place",
+    "ctaBody": "grandfinals.gg is a free tracker for Super Smash Bros. Ultimate — log your matches and tournaments, review VODs with click-to-seek notes, scout matchups, and follow your GSP and rating over time. No account needed to look around; free to start.",
     "ctaButton": "Get started free",
     "recap": {
       "heading": "Tournament Recap",
@@ -1479,6 +1482,8 @@
       "opponentWithPlacement": "{{name}} · {{placement}}",
       "viewBracketStartgg": "View bracket on start.gg",
       "viewBracketParrygg": "View bracket on parry.gg",
+      "viewTournamentStartgg": "View {{name}} on start.gg",
+      "viewTournamentParrygg": "View {{name}} on parry.gg",
       "viewOpponentStartgg": "View {{name}} on start.gg",
       "viewOpponentParrygg": "View {{name}} on parry.gg",
       "viewSetAria": "View {{round}} on start.gg",

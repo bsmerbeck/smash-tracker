@@ -9,7 +9,13 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { getFighterById } from '@/data/sprites';
 import { stagesById } from '@/data/stages';
 import { stageAbbreviation } from '@/components/StageOption';
-import { formatOpponentEventContext, type Match, type TournamentSet } from '@smash-tracker/shared';
+import {
+  buildRecapSetUrl,
+  formatOpponentEventContext,
+  type Match,
+  type TournamentEntry,
+  type TournamentSet,
+} from '@smash-tracker/shared';
 import { buildStartggUrl } from '../lib/startggLinks';
 import { cn } from '@/lib/utils';
 import { formatTimestamp, vodDeepLink } from '@/lib/vod';
@@ -188,9 +194,11 @@ function OpponentLabel({ set }: { set: TournamentSet }) {
   );
 }
 
-function SetRow({ set }: { set: TournamentSet }) {
+function SetRow({ set, entry }: { set: TournamentSet; entry: TournamentEntry }) {
   const { t } = useTranslation();
   const isLosersSide = set.bracketRound != null && set.bracketRound < 0;
+  const setLabel = set.roundText ?? t('tournaments.timeline.setFallback', { id: set.setId });
+  const setUrl = buildRecapSetUrl(entry, set);
 
   return (
     <li
@@ -200,8 +208,19 @@ function SetRow({ set }: { set: TournamentSet }) {
       )}
     >
       <div className="flex flex-wrap items-center gap-3">
-        <span className="min-w-32 text-sm font-medium">
-          {set.roundText ?? t('tournaments.timeline.setFallback', { id: set.setId })}
+        <span className="inline-flex min-w-32 items-center gap-1 text-sm font-medium">
+          {setLabel}
+          {setUrl && (
+            <a
+              href={setUrl}
+              target="_blank"
+              rel="noreferrer"
+              aria-label={t('tournaments.timeline.viewSetAria', { set: setLabel })}
+              className="inline-flex text-muted-foreground hover:text-foreground"
+            >
+              <ExternalLink className="size-3.5" />
+            </a>
+          )}
         </span>
         <div className="flex items-center gap-1.5">
           <FighterTags
@@ -237,7 +256,10 @@ function SetRow({ set }: { set: TournamentSet }) {
 /**
  * Chronological set-by-set breakdown of an entry's matches: round label
  * (falling back to "Set {id}" when start.gg's `roundText` hasn't synced
- * yet), a losers-side tint when `bracketRound` is negative, opponent
+ * yet, and gaining an outbound link to the set's start.gg page when
+ * `buildRecapSetUrl(entry, set)` resolves — start.gg only, parry.gg sets
+ * are never URL-addressable and render the label with no icon), a
+ * losers-side tint when `bracketRound` is negative, opponent
  * character tag(s), the opponent's human tag with an outbound start.gg
  * profile link (when `opponentUserSlug` synced) and a compact
  * "seed N · placed Nth" context label (when either is known), per-game stage
@@ -247,9 +269,11 @@ function SetRow({ set }: { set: TournamentSet }) {
  * separate list below.
  */
 export function SetTimeline({
+  entry,
   sets,
   otherMatches,
 }: {
+  entry: TournamentEntry;
   sets: TournamentSet[];
   otherMatches: Match[];
 }) {
@@ -267,7 +291,7 @@ export function SetTimeline({
             {sets.length > 0 && (
               <ul className="flex flex-col gap-2" aria-label={t('tournaments.timeline.setsAria')}>
                 {sets.map((set) => (
-                  <SetRow key={set.setId} set={set} />
+                  <SetRow key={set.setId} set={set} entry={entry} />
                 ))}
               </ul>
             )}

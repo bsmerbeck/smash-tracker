@@ -287,7 +287,9 @@ describe('ShareViewPage', () => {
 
     renderShare('/s/tok123');
 
-    expect(await screen.findByText('Review your own set')).toBeInTheDocument();
+    expect(
+      await screen.findByText('Your competitive memory, all in one place'),
+    ).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Get started free' })).toHaveAttribute('href', '/');
   });
 
@@ -564,6 +566,32 @@ describe('ShareViewPage', () => {
 
     await screen.findByText('Genesis 10');
     expect(screen.queryByText(/View bracket on/)).not.toBeInTheDocument();
+  });
+
+  it('renders an inline external link on the recap title when tournamentUrl is present', async () => {
+    getPublic.mockResolvedValue(
+      baseRecapSnapshot({
+        tournamentUrl: 'https://start.gg/tournament/genesis-10/event/ultimate-singles',
+      }),
+    );
+
+    renderShare('/s/tok123');
+
+    const titleLink = await screen.findByRole('link', { name: 'View Genesis 10 on start.gg' });
+    expect(titleLink).toHaveAttribute(
+      'href',
+      'https://start.gg/tournament/genesis-10/event/ultimate-singles',
+    );
+    expect(titleLink).toHaveAttribute('target', '_blank');
+  });
+
+  it('omits the recap title link when tournamentUrl is absent', async () => {
+    getPublic.mockResolvedValue(baseRecapSnapshot());
+
+    renderShare('/s/tok123');
+
+    await screen.findByText('Genesis 10');
+    expect(screen.queryByRole('link', { name: /View Genesis 10 on/ })).not.toBeInTheDocument();
   });
 
   it('omits the reviewed-moments line for a recap snapshot with a zero count', async () => {

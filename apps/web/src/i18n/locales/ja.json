@@ -894,7 +894,9 @@
       "setsPlayed_other": "{{count}}セットプレイ",
       "outperformed": "シード超え: {{seed}} → {{placement}}",
       "underperformed": "シード未達: {{seed}} → {{placement}}",
-      "matched": "シード通り: {{seed}} → {{placement}}"
+      "matched": "シード通り: {{seed}} → {{placement}}",
+      "viewTournamentStartgg": "{{name}}をstart.ggで見る",
+      "viewTournamentParrygg": "{{name}}をparry.ggで見る"
     },
     "results": {
       "title": "大会結果",
@@ -914,6 +916,7 @@
       "watchVod": "VODを見る",
       "watchVodAria": "{{set}}のVODを見る",
       "editVodAria": "{{set}}のVODメモを編集",
+      "viewSetAria": "{{set}}をstart.ggで見る",
       "otherMatches": "この大会中のその他の対戦"
     },
     "charStages": {
@@ -1462,8 +1465,8 @@
     "sharedBy": "{{name}}が共有",
     "watchOnHost": "{{host}}で見る",
     "videoUnavailable": "このVODは現在利用できません。",
-    "ctaTitle": "自分の対戦をレビューしよう",
-    "ctaBody": "クリックで再生位置に飛べるタイムスタンプ付きで、自分のVODを記録しよう — 無料、クレジットカード不要。",
+    "ctaTitle": "あなたの対戦の記録を、まとめてひとつに",
+    "ctaBody": "grandfinals.ggはSuper Smash Bros. Ultimateのための無料トラッカーです — 対戦や大会を記録し、クリックで再生位置に飛べるメモ付きでVODを見返し、対戦相性を分析し、GSPやレーティングの推移を追えます。見て回るのにアカウントは不要、始めるのも無料です。",
     "ctaButton": "無料で始める",
     "recap": {
       "heading": "トーナメント振り返り",
@@ -1479,6 +1482,8 @@
       "opponentWithPlacement": "{{name}} · {{placement}}",
       "viewBracketStartgg": "start.ggでブラケットを見る",
       "viewBracketParrygg": "parry.ggでブラケットを見る",
+      "viewTournamentStartgg": "{{name}}をstart.ggで見る",
+      "viewTournamentParrygg": "{{name}}をparry.ggで見る",
       "viewOpponentStartgg": "start.ggで{{name}}を見る",
       "viewOpponentParrygg": "parry.ggで{{name}}を見る",
       "viewSetAria": "start.ggで{{round}}を見る",
