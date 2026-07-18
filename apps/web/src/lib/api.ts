@@ -266,6 +266,18 @@ export const api = {
     remove: (id: string) =>
       apiRequest<void>(`/api/matches/${encodeURIComponent(id)}`, { method: 'DELETE' }),
     /**
+     * POST /api/matches/:id/clear-vod — the explicit "remove VOD link"
+     * intent (MatchTable's "Remove VOD link" action): drops
+     * `vodUrl`/`vodStartSeconds`/`vodTimestamps` together in one call.
+     * Now that the PATCH above preserves `vodTimestamps` whenever it's
+     * omitted (Phase 8), this dedicated endpoint is the only way to also
+     * clear the note subtree — RESEARCH Pitfall 2.
+     */
+    clearVod: (id: string) =>
+      apiRequestParsed(`/api/matches/${encodeURIComponent(id)}/clear-vod`, matchSchema, {
+        method: 'POST',
+      }),
+    /**
      * POST /api/matches/:id/notes — creates ONE timestamp note via the
      * dedicated note endpoint (Phase 8: note writes never ride the
      * full-match PATCH). Returns the created, id-bearing note.

@@ -55,7 +55,7 @@ import {
 } from '@/components/ui/alert-dialog';
 import { getFighterById } from '@/data/sprites';
 import { useDeleteMatch } from '@/hooks/useDeleteMatch';
-import { useUpdateMatch } from '@/hooks/useUpdateMatch';
+import { useClearVodAndNotes } from '@/hooks/useVodNotes';
 import { buildMatchCsv, matchCsvFilename } from '../lib/matchCsv';
 import {
   applyMatchTableFilters,
@@ -67,7 +67,7 @@ import {
 } from '../lib/matchTableFilters';
 import { persistColumnVisibility, readStoredColumnVisibility } from '../lib/columnVisibility';
 import { EditMatchForm } from '@/components/match-form/EditMatchForm';
-import { VodNotesDialog, buildUpdateInput } from '@/components/vod/VodNotesDialog';
+import { VodNotesDialog } from '@/components/vod/VodNotesDialog';
 
 const PAGE_SIZE_OPTIONS = [10, 20, 30, 40, 50];
 
@@ -164,7 +164,7 @@ export function MatchTable({
   const [vodMatch, setVodMatch] = useState<Match | null>(null);
   const [pendingRemoveVod, setPendingRemoveVod] = useState<Match | null>(null);
   const deleteMatch = useDeleteMatch();
-  const updateMatch = useUpdateMatch();
+  const clearVodAndNotes = useClearVodAndNotes();
 
   useEffect(() => {
     persistColumnVisibility(columnVisibility);
@@ -374,11 +374,11 @@ export function MatchTable({
   async function confirmRemoveVod() {
     if (!pendingRemoveVod) return;
     try {
-      const input = buildUpdateInput(pendingRemoveVod, {
-        vodUrl: undefined,
-        vodTimestamps: undefined,
-      });
-      await updateMatch.mutateAsync({ id: pendingRemoveVod.id, input });
+      // Phase 8: "omit to clear" no longer works for vodTimestamps (an
+      // unrelated match-fact PATCH now preserves notes on omission) — this
+      // explicit clear-VOD-and-notes endpoint is the ONLY way to still drop
+      // both together (RESEARCH Pitfall 2).
+      await clearVodAndNotes.mutateAsync(pendingRemoveVod.id);
       toast.success(t('matchData.table.removeVodConfirm.removed'));
     } catch {
       toast.error(t('matchData.table.removeVodConfirm.removeFailed'));
