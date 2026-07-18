@@ -1098,6 +1098,62 @@ describe('DELETE /api/matches/:id', () => {
   });
 });
 
+describe('POST /api/matches/:id/clear-vod', () => {
+  it('drops vodUrl/vodStartSeconds/vodTimestamps together and returns the updated match', async () => {
+    const { app, database } = buildTestApp();
+    database.seed(`matches/${TEST_UID}/m1`, {
+      fighter_id: 1,
+      opponent_id: 8,
+      time: 1700000000000,
+      win: true,
+      opponent: 'someplayer',
+      vodUrl: 'https://youtube.com/watch?v=abc123',
+      vodStartSeconds: 30,
+      vodTimestamps: [{ seconds: 42, note: 'missed a punish' }],
+    });
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/matches/m1/clear-vod',
+      headers: authHeader(),
+    });
+
+    expect(response.statusCode).toBe(200);
+    const body = response.json();
+    expect(body).not.toHaveProperty('vodUrl');
+    expect(body).not.toHaveProperty('vodStartSeconds');
+    expect(body).not.toHaveProperty('vodTimestamps');
+    expect(body).toMatchObject({ opponent: 'someplayer' });
+
+    const dump = database.dump() as Record<string, unknown>;
+    const matches = dump.matches as Record<string, Record<string, unknown>>;
+    expect(matches[TEST_UID]!.m1).not.toHaveProperty('vodTimestamps');
+  });
+
+  it('returns 404 for a match that does not exist', async () => {
+    const { app } = buildTestApp();
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/matches/missing/clear-vod',
+      headers: authHeader(),
+    });
+
+    expect(response.statusCode).toBe(404);
+  });
+
+  it('returns 401 for an unauthenticated request', async () => {
+    const { app } = buildTestApp();
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/matches/m1/clear-vod',
+    });
+
+    expect(response.statusCode).toBe(401);
+  });
+});
+
 describe('Owner note CRUD: POST/PATCH/DELETE /api/matches/:id/notes[/:noteId]', () => {
   function seedMatch(database: ReturnType<typeof buildTestApp>['database'], overrides = {}) {
     database.seed(`matches/${TEST_UID}/m1`, {

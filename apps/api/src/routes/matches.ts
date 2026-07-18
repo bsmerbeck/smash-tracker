@@ -91,6 +91,28 @@ const matchesRoutes: FastifyPluginAsyncZod = async (app) => {
     },
   );
 
+  // POST /api/matches/:id/clear-vod — the one explicit "remove VOD" intent
+  // (MatchTable's "Remove VOD link" action). Now that the PATCH above
+  // preserves `vodTimestamps` whenever it's omitted (08-02), this is the
+  // ONLY way to drop `vodUrl`/`vodStartSeconds`/`vodTimestamps` together —
+  // RESEARCH Pitfall 2. A separate route (not a PATCH flag) keeps the
+  // full-overwrite PATCH's "omit = preserve" contract simple and
+  // unambiguous for every other caller.
+  app.post(
+    '/matches/:id/clear-vod',
+    {
+      schema: {
+        params: matchIdParamsSchema,
+        response: {
+          200: matchSchema,
+        },
+      },
+    },
+    async (request) => {
+      return rtdb.clearVodAndNotes(request.uid, request.params.id);
+    },
+  );
+
   // Phase 8 (Coaching Edit Sessions): owner note CRUD — these are the
   // ONLY write path for `vodTimestamps` now that the match-fact PATCH above
   // no longer accepts the field at all (08-01). All three are scoped to
