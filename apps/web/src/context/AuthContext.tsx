@@ -12,7 +12,8 @@ import {
   updateProfile,
   type User as FirebaseUser,
 } from 'firebase/auth';
-import { createContext, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { createContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { createGoogleAuthProvider, getFirebaseAuth } from '@/lib/firebase';
 import { api } from '@/lib/api';
 import * as shareReferral from '@/lib/shareReferral';
@@ -90,14 +91,31 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // holding `user` would render stale profile data. Bumping this version
   // invalidates the memoized context value, forcing consumers to re-read.
   const [profileVersion, setProfileVersion] = useState(0);
+  const queryClient = useQueryClient();
+  // FB-01: tracks the previously observed authenticated uid so every
+  // uid transition (null->uidB, uidA->uidB, uidA->null) clears the whole
+  // TanStack Query cache — otherwise a signed-out->signed-in-as-another-
+  // account flow can render the previous account's cached VODs/notes/shares.
+  const previousUidRef = useRef<string | null>(null);
+  // Guards the very first onAuthStateChanged callback (app boot, restored
+  // session or null) from wiping a freshly hydrated cache.
+  const isFirstRunRef = useRef(true);
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(getFirebaseAuth(), (nextUser) => {
+      const nextUid = nextUser?.uid ?? null;
+      if (!isFirstRunRef.current && previousUidRef.current !== nextUid) {
+        // Cancel first so an in-flight response for the OLD uid cannot
+        // settle into the cache after it's been cleared.
+        void queryClient.cancelQueries().then(() => queryClient.clear());
+      }
+      isFirstRunRef.current = false;
+      previousUidRef.current = nextUid;
       setUser(nextUser);
       setLoading(false);
     });
     return unsubscribe;
-  }, []);
+  }, [queryClient]);
 
   const value = useMemo<AuthContextValue>(() => {
     // Reading profileVersion here keeps it an honest dependency: its bump is

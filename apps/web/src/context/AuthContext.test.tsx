@@ -1,9 +1,15 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, act } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { AuthProvider } from './AuthContext';
 import { useAuth } from '@/hooks/useAuth';
-import { resetAuthMock, signInWithEmailAndPassword } from '@/test/mockAuth';
+import {
+  resetAuthMock,
+  signInWithEmailAndPassword,
+  setMockUser,
+  makeMockUser,
+} from '@/test/mockAuth';
 
 vi.mock('firebase/auth', async () => {
   const mock = await import('@/test/mockAuth');
@@ -61,10 +67,13 @@ function TestConsumer() {
 }
 
 function renderWithProvider() {
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
-    <AuthProvider>
-      <TestConsumer />
-    </AuthProvider>,
+    <QueryClientProvider client={queryClient}>
+      <AuthProvider>
+        <TestConsumer />
+      </AuthProvider>
+    </QueryClientProvider>,
   );
 }
 
@@ -99,5 +108,61 @@ describe('AuthContext.provisionUser — referral attribution (FUNNEL-02)', () =>
     await waitFor(() => expect(upsertMe).toHaveBeenCalledTimes(1));
     expect(upsertMe).toHaveBeenCalledWith();
     expect(clearReferral).not.toHaveBeenCalled();
+  });
+});
+
+describe('AuthContext — query cache clear on uid transition (FB-01)', () => {
+  beforeEach(() => {
+    resetAuthMock();
+    vi.clearAllMocks();
+    readReferral.mockReturnValue(null);
+  });
+
+  function renderWithQueryClient() {
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const clearSpy = vi.spyOn(queryClient, 'clear');
+    const cancelQueriesSpy = vi.spyOn(queryClient, 'cancelQueries');
+    render(
+      <QueryClientProvider client={queryClient}>
+        <AuthProvider>
+          <div />
+        </AuthProvider>
+      </QueryClientProvider>,
+    );
+    return { queryClient, clearSpy, cancelQueriesSpy };
+  }
+
+  it('does NOT clear the query cache on the first onAuthStateChanged callback (app boot)', async () => {
+    const { clearSpy } = renderWithQueryClient();
+
+    // Give any pending microtasks a chance to run before asserting the negative.
+    await waitFor(() => expect(clearSpy).not.toHaveBeenCalled());
+  });
+
+  it('cancels then clears the query cache on every subsequent uid transition, but not on a repeat of the same uid', async () => {
+    const { clearSpy, cancelQueriesSpy } = renderWithQueryClient();
+
+    expect(clearSpy).not.toHaveBeenCalled();
+
+    // null -> uidA (sign-in)
+    act(() => setMockUser(makeMockUser({ uid: 'uidA' })));
+    await waitFor(() => expect(clearSpy).toHaveBeenCalledTimes(1));
+    expect(cancelQueriesSpy).toHaveBeenCalledTimes(1);
+    const cancelOrder = cancelQueriesSpy.mock.invocationCallOrder[0];
+    const clearOrder = clearSpy.mock.invocationCallOrder[0];
+    expect(cancelOrder).toBeLessThan(clearOrder);
+
+    // uidA -> uidA again (same uid, no transition)
+    act(() => setMockUser(makeMockUser({ uid: 'uidA' })));
+    await Promise.resolve();
+    expect(clearSpy).toHaveBeenCalledTimes(1);
+
+    // uidA -> uidB (account switch)
+    act(() => setMockUser(makeMockUser({ uid: 'uidB' })));
+    await waitFor(() => expect(clearSpy).toHaveBeenCalledTimes(2));
+
+    // uidB -> null (sign-out)
+    act(() => setMockUser(null));
+    await waitFor(() => expect(clearSpy).toHaveBeenCalledTimes(3));
   });
 });

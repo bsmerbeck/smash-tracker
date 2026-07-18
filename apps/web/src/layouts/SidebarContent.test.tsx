@@ -1,9 +1,22 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import type { ReactElement } from 'react';
 import { AuthProvider } from '@/context/AuthContext';
 import { SidebarContent } from './SidebarContent';
 import { resetAuthMock, setMockUser, makeMockUser } from '@/test/mockAuth';
+
+function renderWithProviders(ui: ReactElement) {
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  return render(
+    <QueryClientProvider client={queryClient}>
+      <MemoryRouter initialEntries={['/dashboard']}>
+        <AuthProvider>{ui}</AuthProvider>
+      </MemoryRouter>
+    </QueryClientProvider>,
+  );
+}
 
 vi.mock('firebase/auth', async () => {
   const mock = await import('@/test/mockAuth');
@@ -39,13 +52,7 @@ describe('SidebarContent', () => {
   });
 
   it('makes the avatar + email block a link to /profile', () => {
-    render(
-      <MemoryRouter initialEntries={['/dashboard']}>
-        <AuthProvider>
-          <SidebarContent />
-        </AuthProvider>
-      </MemoryRouter>,
-    );
+    renderWithProviders(<SidebarContent />);
 
     const profileLink = screen.getByRole('link', { name: 'Your profile' });
     expect(profileLink).toHaveAttribute('href', '/profile');
@@ -53,13 +60,7 @@ describe('SidebarContent', () => {
   });
 
   it('makes the nav region the scrollable area so the footer stays pinned below the fold', () => {
-    render(
-      <MemoryRouter initialEntries={['/dashboard']}>
-        <AuthProvider>
-          <SidebarContent />
-        </AuthProvider>
-      </MemoryRouter>,
-    );
+    renderWithProviders(<SidebarContent />);
 
     const nav = screen.getByRole('navigation', { name: 'Main navigation' });
     expect(nav.className).toEqual(expect.stringContaining('min-h-0'));
@@ -68,13 +69,7 @@ describe('SidebarContent', () => {
   });
 
   it('renders the Training Grounds and Donate footer links outside the scrollable nav', () => {
-    render(
-      <MemoryRouter initialEntries={['/dashboard']}>
-        <AuthProvider>
-          <SidebarContent />
-        </AuthProvider>
-      </MemoryRouter>,
-    );
+    renderWithProviders(<SidebarContent />);
 
     const nav = screen.getByRole('navigation', { name: 'Main navigation' });
     const trainingGroundsLink = screen.getByRole('link', { name: /Training Grounds/ });
