@@ -1,13 +1,18 @@
-import { describe, expect, it, vi, afterEach } from 'vitest';
+import { describe, expect, it, vi, afterEach, beforeEach } from 'vitest';
 import { renderHook, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { ReactNode } from 'react';
+import { toast } from 'sonner';
 import {
   useCoachSession,
   useCreateCoachNote,
   useDeleteCoachNote,
   useUpdateCoachNote,
 } from './useCoachNotes';
+
+vi.mock('sonner', () => ({
+  toast: { error: vi.fn(), success: vi.fn() },
+}));
 
 const baseSessionResponse = {
   createdAt: 1_700_000_000_000,
@@ -42,6 +47,10 @@ function mockFetchOnce(response: {
 }
 
 describe('useCoachNotes', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
   afterEach(() => {
     vi.unstubAllGlobals();
   });
@@ -150,6 +159,107 @@ describe('useCoachNotes', () => {
       );
       expect(init?.method).toBe('DELETE');
       expect(init?.body).toBeUndefined();
+    });
+  });
+
+  // Review WR-03: coach writes must never fail silently — a revoked/expired
+  // token mid-session, the 20-note cap 403, a rate-limit 429, or a
+  // validation 400 all discard the coach's work; every one now toasts.
+  describe('coach write failure toasts (WR-03)', () => {
+    it('toasts the share-gone message when a create fails with 404 (revoked/expired mid-session)', async () => {
+      const fetchMock = mockFetchOnce({
+        ok: false,
+        status: 404,
+        body: {
+          error: 'Not Found',
+          message: 'This share is no longer available',
+          statusCode: 404,
+        },
+      });
+      vi.stubGlobal('fetch', fetchMock);
+
+      const { result } = renderHook(() => useCreateCoachNote('tok123'), { wrapper: Wrapper });
+
+      await expect(
+        result.current.mutateAsync({
+          sessionId: SESSION_ID,
+          displayName: 'Coach Ken',
+          seconds: 1,
+          note: 'x',
+        }),
+      ).rejects.toThrow();
+
+      await waitFor(() =>
+        expect(toast.error).toHaveBeenCalledWith(
+          "This coaching link is no longer available — your change wasn't saved.",
+        ),
+      );
+    });
+
+    it('toasts the generic save-failed message for a non-404 failure (e.g. the cap 403)', async () => {
+      const fetchMock = mockFetchOnce({
+        ok: false,
+        status: 403,
+        body: {
+          error: 'Forbidden',
+          message: 'This review already has the maximum number of notes',
+          statusCode: 403,
+        },
+      });
+      vi.stubGlobal('fetch', fetchMock);
+
+      const { result } = renderHook(() => useCreateCoachNote('tok123'), { wrapper: Wrapper });
+
+      await expect(
+        result.current.mutateAsync({
+          sessionId: SESSION_ID,
+          displayName: 'Coach Ken',
+          seconds: 1,
+          note: 'x',
+        }),
+      ).rejects.toThrow();
+
+      await waitFor(() =>
+        expect(toast.error).toHaveBeenCalledWith('Failed to save VOD notes. Please try again.'),
+      );
+    });
+
+    it('toasts when an update fails', async () => {
+      const fetchMock = mockFetchOnce({ ok: false, status: 429, statusText: 'Too Many Requests' });
+      vi.stubGlobal('fetch', fetchMock);
+
+      const { result } = renderHook(() => useUpdateCoachNote('tok123'), { wrapper: Wrapper });
+
+      await expect(
+        result.current.mutateAsync({ noteId: 'note-1', input: { sessionId: SESSION_ID } }),
+      ).rejects.toThrow();
+
+      await waitFor(() => expect(toast.error).toHaveBeenCalled());
+    });
+
+    it('toasts when a delete fails', async () => {
+      const fetchMock = mockFetchOnce({
+        ok: false,
+        status: 404,
+        body: {
+          error: 'Not Found',
+          message: 'This share is no longer available',
+          statusCode: 404,
+        },
+      });
+      vi.stubGlobal('fetch', fetchMock);
+
+      const { result } = renderHook(() => useDeleteCoachNote('tok123'), { wrapper: Wrapper });
+
+      await expect(
+        result.current.mutateAsync({ noteId: 'note-1', sessionId: SESSION_ID }),
+      ).rejects.toThrow();
+
+      await waitFor(() =>
+        expect(toast.error).toHaveBeenCalledWith(
+          "This coaching link is no longer available — your change wasn't saved.",
+        ),
+      );
     });
   });
 });
