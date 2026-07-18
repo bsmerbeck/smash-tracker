@@ -978,5 +978,91 @@ describe('ShareViewPage', () => {
         expect.objectContaining({ onError: expect.any(Function) }),
       );
     });
+
+    it("a customized quick tag is offered in an own note's add-combobox even before it lands on a note", async () => {
+      window.localStorage.setItem(
+        'smash-tracker.vodQuickTags',
+        JSON.stringify(['my-share-custom']),
+      );
+      try {
+        getPublic.mockResolvedValue(baseSnapshot());
+        coachSessionQuery.mockReturnValue({
+          data: baseCoachSession({
+            timestamps: [
+              {
+                seconds: 42,
+                note: 'My own note',
+                id: 'note-mine',
+                coach: { displayName: 'Coach Ken' },
+                own: true,
+              },
+            ],
+          }),
+        });
+        getStoredDisplayNameMock.mockReturnValue('Coach Ken');
+        mountYouTubePlayer();
+        const user = userEvent.setup();
+
+        renderShare('/s/tok123');
+
+        await screen.findByText('My own note');
+        await user.click(screen.getByRole('combobox', { name: 'Add a tag' }));
+
+        expect(await screen.findByRole('option', { name: 'my-share-custom' })).toBeInTheDocument();
+      } finally {
+        window.localStorage.removeItem('smash-tracker.vodQuickTags');
+      }
+    });
+
+    it('renders the contributor filter with 2+ authors and narrows notes by author', async () => {
+      getPublic.mockResolvedValue(baseSnapshot());
+      coachSessionQuery.mockReturnValue({
+        data: baseCoachSession({
+          timestamps: [
+            { seconds: 10, note: 'Owner moment', id: 'own-1' },
+            {
+              seconds: 42,
+              note: 'Rival moment',
+              id: 'note-other',
+              coach: { displayName: 'Rival Coach' },
+            },
+          ],
+        }),
+      });
+      getStoredDisplayNameMock.mockReturnValue('Coach Ken');
+      mountYouTubePlayer();
+      const user = userEvent.setup();
+
+      renderShare('/s/tok123');
+
+      await screen.findByText('Owner moment');
+      expect(screen.getByText('Filter by contributor')).toBeInTheDocument();
+      expect(screen.getByText('Rival moment')).toBeInTheDocument();
+
+      const ownerChip = screen.getByRole('button', { name: 'Filter notes by TestPlayer' });
+      const rivalChip = screen.getByRole('button', { name: 'Filter notes by Rival Coach' });
+      expect(ownerChip).toBeInTheDocument();
+      expect(rivalChip).toBeInTheDocument();
+
+      await user.click(rivalChip);
+      expect(screen.queryByText('Owner moment')).not.toBeInTheDocument();
+      expect(screen.getByText('Rival moment')).toBeInTheDocument();
+
+      await user.click(rivalChip);
+      expect(screen.getByText('Owner moment')).toBeInTheDocument();
+      expect(screen.getByText('Rival moment')).toBeInTheDocument();
+    });
+
+    it('hides the contributor filter with a single author', async () => {
+      getPublic.mockResolvedValue(baseSnapshot());
+      coachSessionQuery.mockReturnValue({ data: baseCoachSession() });
+      getStoredDisplayNameMock.mockReturnValue('Coach Ken');
+      mountYouTubePlayer();
+
+      renderShare('/s/tok123');
+
+      await screen.findByText('Owner note');
+      expect(screen.queryByText('Filter by contributor')).not.toBeInTheDocument();
+    });
   });
 });
