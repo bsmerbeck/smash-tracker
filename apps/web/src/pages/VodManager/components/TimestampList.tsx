@@ -3,6 +3,11 @@ import { useTranslation } from 'react-i18next';
 import type { VodTimestamp } from '@smash-tracker/shared';
 import type { VodTimestampInput } from '@/lib/api';
 import { deriveNoteTagOptions, filterTimestampIndices, tagLabel } from '@/lib/tags';
+import {
+  contributorLabel,
+  deriveContributorKeys,
+  filterContributorIndices,
+} from '@/lib/contributors';
 import { Badge } from '@/components/ui/badge';
 import { NoteComposer } from './NoteComposer';
 import { TimestampRow } from './TimestampRow';
@@ -51,6 +56,13 @@ export interface TimestampListProps {
    * (filtered) set. */
   noteTagFilter: string[];
   onNoteTagFilterChange: (next: string[]) => void;
+  /** Selected contributor filter key (single-select — mirrors `noteTagFilter`
+   * but OR/single rather than a list), or `null` for no narrowing — lifted
+   * to `VodManagerPage` (mirrors `noteTagFilter`) since the Prev/Next
+   * TIMESTAMP jump buttons live outside this component and must navigate
+   * only the same VISIBLE (filtered) set. AND-composes with `noteTagFilter`. */
+  contributorFilter: string | null;
+  onContributorFilterChange: (next: string | null) => void;
 }
 
 /**
@@ -90,17 +102,25 @@ export function TimestampList({
   onEditingNoteIdChange,
   noteTagFilter,
   onNoteTagFilterChange,
+  contributorFilter,
+  onContributorFilterChange,
 }: TimestampListProps) {
   const { t } = useTranslation();
 
   // Tags in use across THIS match's notes (retest fix-up #12) — the chip
   // row's option list. Hidden entirely when no note has any tag.
   const noteTagOptions = deriveNoteTagOptions(timestamps);
-  // Stable ids of the currently-visible rows. Shared with
-  // `VodManagerPage`'s Prev/Next timestamp navigation via the exact same
-  // `filterTimestampIndices` helper so both apply identical semantics.
+  // Distinct authors across THIS match's notes — the contributor chip
+  // row's option list. Hidden entirely when fewer than 2 distinct authors.
+  const contributorKeys = deriveContributorKeys(timestamps);
+  // Stable ids of the currently-visible rows: the AND of the tag filter and
+  // the contributor filter. Shared with `VodManagerPage`'s Prev/Next
+  // timestamp navigation via the exact same helpers so both apply
+  // identical semantics and never disagree on what's "visible".
+  const tagIndices = filterTimestampIndices(timestamps, noteTagFilter);
+  const contributorIndexSet = new Set(filterContributorIndices(timestamps, contributorFilter));
   const visibleIds = new Set(
-    filterTimestampIndices(timestamps, noteTagFilter).map((i) => timestamps[i]!.id),
+    tagIndices.filter((i) => contributorIndexSet.has(i)).map((i) => timestamps[i]!.id),
   );
 
   function toggleTagFilter(tag: string) {
@@ -108,6 +128,10 @@ export function TimestampList({
       ? noteTagFilter.filter((selected) => selected !== tag)
       : [...noteTagFilter, tag];
     onNoteTagFilterChange(next);
+  }
+
+  function toggleContributorFilter(key: string) {
+    onContributorFilterChange(contributorFilter === key ? null : key);
   }
 
   function handleCommitEdit(id: string, next: VodTimestampInput) {
@@ -150,6 +174,31 @@ export function TimestampList({
               selected chips); every row is addressed by its stable note id,
               so edit/delete/seek keep hitting the correct note regardless
               of the active filter. */}
+          {contributorKeys.length >= 2 && (
+            <div className="flex flex-col gap-1">
+              <span className="text-xs font-medium text-muted-foreground">
+                {t('vodManager.notes.filterByContributor')}
+              </span>
+              <div className="flex flex-wrap gap-1.5">
+                {contributorKeys.map((key) => {
+                  const label = contributorLabel(key, t('vodManager.notes.contributorYou'));
+                  const selected = contributorFilter === key;
+                  return (
+                    <Badge key={key} asChild variant={selected ? 'default' : 'outline'}>
+                      <button
+                        type="button"
+                        aria-pressed={selected}
+                        aria-label={t('vodManager.notes.filterByContributorAria', { label })}
+                        onClick={() => toggleContributorFilter(key)}
+                      >
+                        {label}
+                      </button>
+                    </Badge>
+                  );
+                })}
+              </div>
+            </div>
+          )}
           {noteTagOptions.length > 0 && (
             <div className="flex flex-col gap-1">
               <span className="text-xs font-medium text-muted-foreground">
