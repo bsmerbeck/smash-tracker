@@ -35,6 +35,7 @@ import {
   deriveCustomTagVocabulary,
   filterTimestampIndices,
 } from '@/lib/tags';
+import { filterContributorIndices } from '@/lib/contributors';
 import { movePlaylistItem, resolvePlaylistMatches } from '@/lib/playlists';
 import { ApiError, type VodTimestampInput } from '@/lib/api';
 import { cn } from '@/lib/utils';
@@ -174,6 +175,11 @@ export function VodManagerPage() {
   // (below) — a filter set for the PREVIOUS match's tag vocabulary must
   // never silently carry over and hide a newly-selected match's notes.
   const [noteTagFilter, setNoteTagFilter] = useState<string[]>([]);
+  // Single-select "Filter by contributor" chip row (item 2) — AND-composes
+  // with `noteTagFilter` above. Resets on match change alongside it, for
+  // the same reason: a filter set for the PREVIOUS match's author list must
+  // never silently carry over and hide a newly-selected match's notes.
+  const [contributorFilter, setContributorFilter] = useState<string | null>(null);
   // Lifted from `TimestampList` so the quick-tag panel's capture handler
   // can command a freshly-created row straight into edit mode once the
   // create resolves with the server-assigned note id. Id-keyed for the
@@ -224,6 +230,8 @@ export function VodManagerPage() {
     setEditingNoteId(null);
     // Nor must a note-tag filter set for the PREVIOUS match's vocabulary.
     setNoteTagFilter([]);
+    // Nor must a contributor filter set for the PREVIOUS match's authors.
+    setContributorFilter(null);
   }
 
   // Inline rename draft for the active playlist's selector row — re-seeded
@@ -913,8 +921,10 @@ export function VodManagerPage() {
   // entries themselves so navigation is id-addressed end-to-end.
   const visibleTimestamps = useMemo(() => {
     const notes = selectedMatch?.vodTimestamps ?? [];
-    return filterTimestampIndices(notes, noteTagFilter).map((i) => notes[i]!);
-  }, [selectedMatch, noteTagFilter]);
+    const tagIndices = filterTimestampIndices(notes, noteTagFilter);
+    const contributorIndexSet = new Set(filterContributorIndices(notes, contributorFilter));
+    return tagIndices.filter((i) => contributorIndexSet.has(i)).map((i) => notes[i]!);
+  }, [selectedMatch, noteTagFilter, contributorFilter]);
 
   // Prev/Next TIMESTAMP jump — distinct from the playlist Prev/Next added
   // in 04-04. Moves the id-keyed `selectedNoteId` through the same
@@ -1294,6 +1304,8 @@ export function VodManagerPage() {
                       onEditingNoteIdChange={setEditingNoteId}
                       noteTagFilter={noteTagFilter}
                       onNoteTagFilterChange={setNoteTagFilter}
+                      contributorFilter={contributorFilter}
+                      onContributorFilterChange={setContributorFilter}
                     />
                   </div>
                 </div>

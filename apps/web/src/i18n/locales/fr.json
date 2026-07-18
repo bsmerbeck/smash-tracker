@@ -525,6 +525,9 @@
       "editNoteAria": "Modifier la note de l'horodatage",
       "filterByTag": "Filtrer par tag",
       "filterByTagAria": "Filtrer les notes par {{label}}",
+      "filterByContributor": "Filtrer par contributeur",
+      "filterByContributorAria": "Filtrer les notes par {{label}}",
+      "contributorYou": "Vous",
       "noMatchingNotes": "Aucune note ne correspond au filtre sélectionné"
     },
     "playlists": {
@@ -1499,6 +1502,11 @@
       "attribution": "Note de {{name}}",
       "nameTaken": "Ce nom est déjà utilisé sur cette review — choisissez-en un autre.",
       "shareGoneToast": "Ce lien de coaching n'est plus disponible — votre modification n'a pas été enregistrée."
+    },
+    "notes": {
+      "filterByContributor": "Filtrer par contributeur",
+      "filterByContributorAria": "Filtrer les notes par {{label}}",
+      "contributorOwner": "Propriétaire"
     }
   }
 }

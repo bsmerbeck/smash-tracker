@@ -525,6 +525,9 @@
       "editNoteAria": "Zeitstempel-Notiz bearbeiten",
       "filterByTag": "Nach Tag filtern",
       "filterByTagAria": "Notizen nach {{label}} filtern",
+      "filterByContributor": "Nach Mitwirkendem filtern",
+      "filterByContributorAria": "Notizen nach {{label}} filtern",
+      "contributorYou": "Du",
       "noMatchingNotes": "Keine Notizen entsprechen dem ausgewählten Filter"
     },
     "playlists": {
@@ -1499,6 +1502,11 @@
       "attribution": "Notiz von {{name}}",
       "nameTaken": "Dieser Name ist für diese Review bereits vergeben — wähle einen anderen.",
       "shareGoneToast": "Dieser Coaching-Link ist nicht mehr verfügbar — deine Änderung wurde nicht gespeichert."
+    },
+    "notes": {
+      "filterByContributor": "Nach Mitwirkendem filtern",
+      "filterByContributorAria": "Notizen nach {{label}} filtern",
+      "contributorOwner": "Eigentümer"
     }
   }
 }

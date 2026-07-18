@@ -525,6 +525,9 @@
       "editNoteAria": "タイムスタンプのメモを編集",
       "filterByTag": "タグで絞り込む",
       "filterByTagAria": "{{label}}でメモを絞り込む",
+      "filterByContributor": "投稿者で絞り込む",
+      "filterByContributorAria": "{{label}}でメモを絞り込む",
+      "contributorYou": "あなた",
       "noMatchingNotes": "選択したフィルターに一致するメモはありません"
     },
     "playlists": {
@@ -1499,6 +1502,11 @@
       "attribution": "{{name}}のメモ",
       "nameTaken": "その名前はこのレビューで既に使われています。別の名前を選んでください。",
       "shareGoneToast": "このコーチングリンクは利用できなくなりました — 変更は保存されませんでした。"
+    },
+    "notes": {
+      "filterByContributor": "投稿者で絞り込む",
+      "filterByContributorAria": "{{label}}でメモを絞り込む",
+      "contributorOwner": "オーナー"
     }
   }
 }
