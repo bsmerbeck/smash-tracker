@@ -64,9 +64,11 @@ type SessionTimestamp = NonNullable<PublicShareSnapshot['timestamps']>[number];
 
 /**
  * Per-call mutation callbacks (FB-04) threaded through `withDisplayName` for
- * a coach's FIRST write only — the moment the server actually accepts or
- * rejects the just-submitted display name. Never used for a write on an
- * already-committed session (that name can't 409).
+ * EVERY name-bearing create (review CR-01): the deferred FIRST write (the
+ * moment the server actually accepts or rejects the just-submitted display
+ * name) AND a write reusing a locally-stored name — that name is a GLOBAL
+ * per-browser record (`coachSession.ts`) while the server's uniqueness check
+ * is per-match, so a name accepted on some OTHER review can still 409 here.
  */
 interface CoachWriteOptions {
   onSuccess?: () => void;
@@ -552,9 +554,11 @@ export function ShareViewPage() {
   // to state/localStorage ONLY once the server accepts it — a per-call
   // `CoachWriteOptions` threaded through `withDisplayName` does that commit
   // on success and re-prompts on a 409, WITHOUT ever writing the rejected
-  // name to state or storage. A write on an already-committed session (the
-  // common case) calls its action with no options — that path can never
-  // 409 (the name is already accepted).
+  // name to state or storage. A write reusing a STORED name carries a 409
+  // handler too (review CR-01): the stored name is per-browser while the
+  // server's uniqueness check is per-match, so it can still collide on THIS
+  // review — that handler demotes the stale name and re-enters the same
+  // deferred re-prompt flow, so the coach's write is never silently lost.
   const pendingWriteRef = useRef<
     ((displayName: string, options?: CoachWriteOptions) => void) | null
   >(null);
@@ -641,13 +645,33 @@ export function ShareViewPage() {
   // one-field dialog; `action` fires — with the entered name passed
   // EXPLICITLY (review WR-04) plus per-call `CoachWriteOptions` (FB-04) —
   // once the coach submits. Every later write reuses the in-state name and
-  // never opens the dialog (that name already cleared the server, so it can
-  // never 409 — `action` is called with no options at all). The name is
-  // never re-read from localStorage after the prompt: persistence there is
-  // best-effort and may silently fail (Safari private mode).
+  // never opens the dialog up front — but it STILL carries a 409 handler
+  // (review CR-01): the seeded name came from the GLOBAL per-browser
+  // localStorage record and may have been accepted on a DIFFERENT review,
+  // while the server's uniqueness check is per-match. On a 409 the stored
+  // name is demoted and the write falls into the exact same deferred
+  // re-prompt flow as a first write — never a silent drop (the generic
+  // toast handler deliberately skips 409s, so this is the ONLY surface for
+  // that failure). The name is never re-read from localStorage after the
+  // prompt: persistence there is best-effort and may silently fail (Safari
+  // private mode).
   function withDisplayName(action: (displayName: string, options?: CoachWriteOptions) => void) {
     if (coachDisplayName) {
-      action(coachDisplayName);
+      const storedName = coachDisplayName;
+      action(storedName, {
+        onError: (error: unknown) => {
+          if (error instanceof ApiError && error.status === 409) {
+            // Stored name is taken on THIS review — demote it and re-prompt
+            // with the rejected candidate restored, keeping the write
+            // pending exactly like the first-write path.
+            setCoachDisplayName('');
+            pendingWriteRef.current = action;
+            setNamePromptValue(storedName);
+            setNameTaken(true);
+            setNameDialogOpen(true);
+          }
+        },
+      });
       return;
     }
     pendingWriteRef.current = action;
@@ -703,17 +727,15 @@ export function ShareViewPage() {
 
   function handleCreateCoachNote(input: { seconds: number; note: string }) {
     withDisplayName((displayName, options) => {
-      const payload = {
-        sessionId: mySessionId,
-        displayName,
-        seconds: input.seconds,
-        note: input.note,
-      };
-      if (options) {
-        createCoachNote.mutate(payload, options);
-      } else {
-        createCoachNote.mutate(payload);
-      }
+      createCoachNote.mutate(
+        {
+          sessionId: mySessionId,
+          displayName,
+          seconds: input.seconds,
+          note: input.note,
+        },
+        options,
+      );
     });
   }
 
@@ -761,18 +783,16 @@ export function ShareViewPage() {
       return;
     }
     withDisplayName((displayName, options) => {
-      const payload = {
-        sessionId: mySessionId,
-        displayName,
-        seconds,
-        note: '',
-        tags: [tagSlug],
-      };
-      if (options) {
-        createCoachNote.mutate(payload, options);
-      } else {
-        createCoachNote.mutate(payload);
-      }
+      createCoachNote.mutate(
+        {
+          sessionId: mySessionId,
+          displayName,
+          seconds,
+          note: '',
+          tags: [tagSlug],
+        },
+        options,
+      );
     });
   }
 
