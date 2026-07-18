@@ -1,4 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import type { BulkShareRequest } from '@smash-tracker/shared';
 import { api, type CreateShareRequest } from '@/lib/api';
 import { useAuth } from './useAuth';
 
@@ -40,6 +41,22 @@ export function useDeleteVodShare() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (id: string) => api.vodShares.remove(id),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: vodSharesQueryKey });
+    },
+  });
+}
+
+/**
+ * POST /api/vod-shares/bulk (FB-03) — batch revoke or delete. ONE mutation,
+ * ONE list invalidation on success, regardless of how many shareIds are
+ * included — this is what makes bulk actions a single round-trip instead of
+ * N sequential per-row calls.
+ */
+export function useBulkVodShares() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (input: BulkShareRequest) => api.vodShares.bulk(input),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: vodSharesQueryKey });
     },
