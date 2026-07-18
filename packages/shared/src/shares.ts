@@ -52,16 +52,27 @@ export type ShareTimestamp = z.infer<typeof shareTimestampSchema>;
 
 /**
  * Phase 8 (Coaching Edit Sessions): the public, edit-session variant of
- * `shareTimestampSchema` — additive `id`/`coach` fields so the coach UI can
- * tell which notes are "mine" (edit/delete affordance) and the owner can see
- * per-note attribution. Both fields are `.nullish()`, never required: a
+ * `shareTimestampSchema` — additive `id`/`coach`/`own` fields so the coach
+ * UI can tell which notes are "mine" (edit/delete affordance) and everyone
+ * can see per-note attribution. All are `.nullish()`, never required: a
  * frozen VIEW-tier snapshot never populates them (this schema is only used
  * by the live-redacted EDIT-tier recompute), so `publicShareSnapshotSchema`
  * stays backward-compatible with every existing view-tier response.
+ *
+ * `coach` here deliberately carries the display name ONLY — never the
+ * `sessionId` (review WR-02): the sessionId is the secret the per-session
+ * write-ownership guard checks, so serving every coach's sessionId to every
+ * edit-token holder would make that guard spoofable with data the API
+ * itself hands out. Own-note detection is instead the server-computed `own`
+ * flag, derived from the sessionId the REQUESTING client sends on the
+ * session read — the secret never travels back out.
  */
 const publicShareTimestampSchema = shareTimestampSchema.extend({
   id: z.string().nullish(),
-  coach: coachAttributionSchema.nullish(),
+  /** Attribution for a coach-authored note — display name only, no sessionId (WR-02). */
+  coach: z.object({ displayName: coachAttributionSchema.shape.displayName }).nullish(),
+  /** True when the requesting session authored this note (server-computed). */
+  own: z.boolean().nullish(),
 });
 
 /**

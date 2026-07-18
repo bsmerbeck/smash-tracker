@@ -46,24 +46,26 @@ describe('useCoachNotes', () => {
     vi.unstubAllGlobals();
   });
 
+  const SESSION_ID = '11111111-1111-4111-8111-111111111111';
+
   describe('useCoachSession', () => {
-    it('GETs /api/vod-shares/:token/session and never attaches an auth header', async () => {
+    it('GETs /api/vod-shares/:token/session with the caller sessionId as a query param (WR-02) and never attaches an auth header', async () => {
       const fetchMock = mockFetchOnce({ ok: true, status: 200, body: baseSessionResponse });
       vi.stubGlobal('fetch', fetchMock);
 
-      const { result } = renderHook(() => useCoachSession('tok123'), { wrapper: Wrapper });
+      const { result } = renderHook(() => useCoachSession('tok123', SESSION_ID), {
+        wrapper: Wrapper,
+      });
 
       await waitFor(() => expect(result.current.isSuccess).toBe(true));
 
       expect(fetchMock).toHaveBeenCalledTimes(1);
       const [url, init] = fetchMock.mock.calls[0]!;
-      expect(String(url)).toContain('/api/vod-shares/tok123/session');
+      expect(String(url)).toContain(`/api/vod-shares/tok123/session?sessionId=${SESSION_ID}`);
       expect(init?.headers ?? {}).not.toHaveProperty('Authorization');
       expect(result.current.data?.permissions).toBe('edit');
     });
   });
-
-  const SESSION_ID = '11111111-1111-4111-8111-111111111111';
 
   describe('useCreateCoachNote', () => {
     it('POSTs sessionId + displayName in the request BODY', async () => {

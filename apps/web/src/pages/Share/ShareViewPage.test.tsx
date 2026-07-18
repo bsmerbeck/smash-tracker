@@ -649,7 +649,9 @@ describe('ShareViewPage', () => {
               seconds: 42,
               note: 'Rival coach note',
               id: 'note-other',
-              coach: { sessionId: 'other-session-id', displayName: 'Rival Coach' },
+              // WR-02: the session response carries display-name-only
+              // attribution and NO `own` flag for another session's note.
+              coach: { displayName: 'Rival Coach' },
             },
           ],
         }),
@@ -665,7 +667,7 @@ describe('ShareViewPage', () => {
       expect(screen.queryByRole('button', { name: /Delete timestamp/ })).not.toBeInTheDocument();
     });
 
-    it("shows edit/delete affordances for the coach's OWN note", async () => {
+    it("shows edit/delete affordances for the coach's OWN note (server-computed `own` flag, WR-02)", async () => {
       getPublic.mockResolvedValue(baseSnapshot());
       coachSessionQuery.mockReturnValue({
         data: baseCoachSession({
@@ -674,7 +676,8 @@ describe('ShareViewPage', () => {
               seconds: 42,
               note: 'My own note',
               id: 'note-mine',
-              coach: { sessionId: MY_SESSION_ID, displayName: 'Coach Ken' },
+              coach: { displayName: 'Coach Ken' },
+              own: true,
             },
           ],
         }),

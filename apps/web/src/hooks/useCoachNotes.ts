@@ -20,8 +20,17 @@ import { ApiError, getApiBaseUrl } from '@/lib/api';
  * the same browser.
  */
 
-export const coachSessionQueryKey = (token: string) =>
+/**
+ * Token-scoped key PREFIX — what the write mutations invalidate. The full
+ * query key below additionally carries the caller's sessionId (the server
+ * computes each note's `own` flag from it, review WR-02), and TanStack's
+ * prefix matching means invalidating this scope hits it regardless.
+ */
+export const coachSessionScopeKey = (token: string) =>
   ['vod-shares', 'coach-session', token] as const;
+
+export const coachSessionQueryKey = (token: string, sessionId: string) =>
+  [...coachSessionScopeKey(token), sessionId] as const;
 
 interface CoachRequestOptions {
   method?: 'GET' | 'POST' | 'PATCH' | 'DELETE';
@@ -59,21 +68,25 @@ async function coachRequest<TResponse>(
 
 /**
  * GET /api/vod-shares/:token/session — the LIVE edit-session view. Resolves
- * with `permissions: 'edit'` (plus per-note `id`/`coach`) only for a valid,
- * unrevoked, unexpired EDIT-tier token; 404s (identical body, no oracle) for
- * a view-tier/unknown/revoked/expired token, in which case this query simply
- * fails and the caller falls back to the existing frozen view-tier render.
- * Deliberately no `enabled` gate keyed off token validity — the query itself
- * IS the "is this an edit-tier link" probe.
+ * with `permissions: 'edit'` (plus per-note `id`/`coach`/`own`) only for a
+ * valid, unrevoked, unexpired EDIT-tier token; 404s (identical body, no
+ * oracle) for a view-tier/unknown/revoked/expired token, in which case this
+ * query simply fails and the caller falls back to the existing frozen
+ * view-tier render. Deliberately no `enabled` gate keyed off token validity
+ * — the query itself IS the "is this an edit-tier link" probe.
+ *
+ * `sessionId` is this browser's own coach session id, sent as a query param
+ * so the SERVER computes each note's `own` flag (review WR-02) — the
+ * response never carries any coach's sessionId.
  */
-export function useCoachSession(token: string) {
+export function useCoachSession(token: string, sessionId: string) {
   return useQuery({
-    queryKey: coachSessionQueryKey(token),
+    queryKey: coachSessionQueryKey(token, sessionId),
     queryFn: () =>
-      coachRequest<unknown>(`/api/vod-shares/${encodeURIComponent(token)}/session`).then((json) =>
-        publicShareSnapshotSchema.parse(json),
-      ),
-    enabled: Boolean(token),
+      coachRequest<unknown>(
+        `/api/vod-shares/${encodeURIComponent(token)}/session?sessionId=${encodeURIComponent(sessionId)}`,
+      ).then((json) => publicShareSnapshotSchema.parse(json)),
+    enabled: Boolean(token) && Boolean(sessionId),
   });
 }
 
@@ -95,7 +108,7 @@ export function useCreateCoachNote(token: string) {
         body: input,
       }).then((json): VodTimestamp => vodTimestampEntrySchema.parse(json)),
     onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: coachSessionQueryKey(token) });
+      await queryClient.invalidateQueries({ queryKey: coachSessionScopeKey(token) });
     },
   });
 }
@@ -122,7 +135,7 @@ export function useUpdateCoachNote(token: string) {
         { method: 'PATCH', body: input },
       ).then((json): VodTimestamp => vodTimestampEntrySchema.parse(json)),
     onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: coachSessionQueryKey(token) });
+      await queryClient.invalidateQueries({ queryKey: coachSessionScopeKey(token) });
     },
   });
 }
@@ -141,7 +154,7 @@ export function useDeleteCoachNote(token: string) {
         { method: 'DELETE' },
       ),
     onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: coachSessionQueryKey(token) });
+      await queryClient.invalidateQueries({ queryKey: coachSessionScopeKey(token) });
     },
   });
 }
