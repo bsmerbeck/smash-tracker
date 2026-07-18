@@ -525,6 +525,9 @@
       "editNoteAria": "Editar nota de la marca de tiempo",
       "filterByTag": "Filtrar por etiqueta",
       "filterByTagAria": "Filtrar notas por {{label}}",
+      "filterByContributor": "Filtrar por colaborador",
+      "filterByContributorAria": "Filtrar notas por {{label}}",
+      "contributorYou": "Tú",
       "noMatchingNotes": "Ninguna nota coincide con el filtro seleccionado"
     },
     "playlists": {
@@ -1499,6 +1502,11 @@
       "attribution": "Nota de {{name}}",
       "nameTaken": "Ese nombre ya está en uso en esta reseña — elige otro.",
       "shareGoneToast": "Este enlace de coaching ya no está disponible — tu cambio no se guardó."
+    },
+    "notes": {
+      "filterByContributor": "Filtrar por colaborador",
+      "filterByContributorAria": "Filtrar notas por {{label}}",
+      "contributorOwner": "Propietario"
     }
   }
 }

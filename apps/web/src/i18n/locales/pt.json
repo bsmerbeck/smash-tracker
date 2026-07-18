@@ -525,6 +525,9 @@
       "editNoteAria": "Editar nota da marcação",
       "filterByTag": "Filtrar por tag",
       "filterByTagAria": "Filtrar notas por {{label}}",
+      "filterByContributor": "Filtrar por colaborador",
+      "filterByContributorAria": "Filtrar notas por {{label}}",
+      "contributorYou": "Você",
       "noMatchingNotes": "Nenhuma nota corresponde ao filtro selecionado"
     },
     "playlists": {
@@ -1499,6 +1502,11 @@
       "attribution": "Nota de {{name}}",
       "nameTaken": "Esse nome já está em uso nesta análise — escolha outro.",
       "shareGoneToast": "Este link de coaching não está mais disponível — sua alteração não foi salva."
+    },
+    "notes": {
+      "filterByContributor": "Filtrar por colaborador",
+      "filterByContributorAria": "Filtrar notas por {{label}}",
+      "contributorOwner": "Proprietário"
     }
   }
 }
