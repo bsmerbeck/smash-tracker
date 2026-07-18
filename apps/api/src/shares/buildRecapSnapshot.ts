@@ -1,4 +1,6 @@
 import {
+  buildRecapOpponentUrl,
+  buildRecapSetUrl,
   buildRecapTournamentUrl,
   buildSetTimeline,
   matchesForEntry,
@@ -144,12 +146,20 @@ function buildGames(set: TournamentSet): RecapGame[] {
  * Walkthrough amendment round 2 (07-10): each set also carries `games`
  * (`buildGames`) — the per-game character matchup + stage, so a viewer sees
  * exactly what was played on which stage, not just an aggregate score.
+ *
+ * Walkthrough round 3 (07-11): each set also carries `opponentUrl`
+ * (`buildRecapOpponentUrl`) and `setUrl` (`buildRecapSetUrl`, start.gg
+ * only) — external provider links built server-side from stored registry/
+ * match fields against verified, fixed URL shapes, omitted whenever the
+ * backing field isn't on record.
  */
 function buildFullDetailSets(sets: TournamentSet[], entry: TournamentEntry): RecapSet[] {
   const recapSets: RecapSet[] = sets.map((set, index) => {
     const opponentPlacement = lookupOpponentPlacement(set, entry);
     const stages = distinctStageNames(set);
     const games = buildGames(set);
+    const opponentUrl = buildRecapOpponentUrl(entry, set);
+    const setUrl = buildRecapSetUrl(entry, set);
     return {
       roundLabel: set.roundText ?? `Set ${index + 1}`,
       opponentName: set.opponentName ?? UNKNOWN_OPPONENT_LABEL,
@@ -159,6 +169,8 @@ function buildFullDetailSets(sets: TournamentSet[], entry: TournamentEntry): Rec
       win: set.won,
       ...(stages.length > 0 ? { stages } : {}),
       ...(games.length > 0 ? { games } : {}),
+      ...(opponentUrl ? { opponentUrl } : {}),
+      ...(setUrl ? { setUrl } : {}),
     };
   });
   return recapSets.length > MAX_RECAP_SETS_STORED

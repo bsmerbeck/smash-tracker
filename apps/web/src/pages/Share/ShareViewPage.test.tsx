@@ -339,6 +339,110 @@ describe('ShareViewPage', () => {
     expect(within(timelineSection).queryByAltText('Mario')).not.toBeInTheDocument();
   });
 
+  it('renders the opponent tag as an external link when opponentUrl is present (start.gg, 07-11 walkthrough round 3)', async () => {
+    getPublic.mockResolvedValue(
+      baseRecapSnapshot({
+        detail: 'full',
+        sets: [
+          {
+            roundLabel: 'Winners Round 3',
+            opponentName: 'RivalTag',
+            wins: 3,
+            losses: 1,
+            win: true,
+            opponentUrl: 'https://start.gg/user/07dc2239',
+          },
+        ],
+      }),
+    );
+
+    renderShare('/s/tok123');
+
+    const opponentLink = await screen.findByRole('link', { name: 'View RivalTag on start.gg' });
+    expect(opponentLink).toHaveAttribute('href', 'https://start.gg/user/07dc2239');
+    expect(opponentLink).toHaveAttribute('target', '_blank');
+    expect(opponentLink).toHaveAttribute('rel', 'noreferrer');
+  });
+
+  it('renders the opponent tag as a parry.gg external link when recapSource is parrygg', async () => {
+    getPublic.mockResolvedValue(
+      baseRecapSnapshot({
+        recapSource: 'parrygg',
+        detail: 'full',
+        sets: [
+          {
+            roundLabel: 'Winners Round 3',
+            opponentName: 'RivalTag',
+            wins: 3,
+            losses: 1,
+            win: true,
+            opponentUrl: 'https://parry.gg/profile/3f9a1c2e-1234-4abc-89ef-abcdef012345',
+          },
+        ],
+      }),
+    );
+
+    renderShare('/s/tok123');
+
+    const opponentLink = await screen.findByRole('link', { name: 'View RivalTag on parry.gg' });
+    expect(opponentLink).toHaveAttribute(
+      'href',
+      'https://parry.gg/profile/3f9a1c2e-1234-4abc-89ef-abcdef012345',
+    );
+  });
+
+  it('renders a set-page link when setUrl is present (start.gg only)', async () => {
+    getPublic.mockResolvedValue(
+      baseRecapSnapshot({
+        detail: 'full',
+        sets: [
+          {
+            roundLabel: 'Winners Round 3',
+            opponentName: 'RivalTag',
+            wins: 3,
+            losses: 1,
+            win: true,
+            setUrl:
+              'https://start.gg/tournament/genesis-10/event/ultimate-singles/set/12345/summary',
+          },
+        ],
+      }),
+    );
+
+    renderShare('/s/tok123');
+
+    const setLink = await screen.findByRole('link', { name: 'View Winners Round 3 on start.gg' });
+    expect(setLink).toHaveAttribute(
+      'href',
+      'https://start.gg/tournament/genesis-10/event/ultimate-singles/set/12345/summary',
+    );
+    expect(setLink).toHaveAttribute('target', '_blank');
+    expect(setLink).toHaveAttribute('rel', 'noreferrer');
+  });
+
+  it('omits the opponent/set external-link affordances entirely when opponentUrl/setUrl are absent', async () => {
+    getPublic.mockResolvedValue(
+      baseRecapSnapshot({
+        detail: 'full',
+        sets: [
+          {
+            roundLabel: 'Winners Round 3',
+            opponentName: 'RivalTag',
+            wins: 3,
+            losses: 1,
+            win: true,
+          },
+        ],
+      }),
+    );
+
+    renderShare('/s/tok123');
+
+    await screen.findByText('Set timeline');
+    expect(screen.queryByRole('link', { name: /View RivalTag/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: /View Winners Round 3/ })).not.toBeInTheDocument();
+  });
+
   it('omits the Set timeline section entirely for a "summary" recap (no sets)', async () => {
     getPublic.mockResolvedValue(baseRecapSnapshot());
 

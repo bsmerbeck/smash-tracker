@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import type { Match, TournamentEntry } from './index.js';
 import {
+  buildRecapOpponentUrl,
+  buildRecapSetUrl,
   buildRecapTournamentUrl,
   buildSetTimeline,
   formatOpponentEventContext,
@@ -274,6 +276,25 @@ describe('buildSetTimeline', () => {
     expect(sets[0]?.opponentUserSlug).toBeUndefined();
   });
 
+  it('reads opponentParryUserId off whichever game carries it (07-11 walkthrough round 3)', () => {
+    const withMeta = makeMatch({
+      id: 'a',
+      time: 100,
+      externalId: 'pgg-M1-g1',
+      opponentParryUserId: '3f9a1c2e-1234-4abc-89ef-abcdef012345',
+    });
+    const withoutMeta = makeMatch({ id: 'b', time: 200, externalId: 'pgg-M1-g2' });
+    const { sets } = buildSetTimeline([withoutMeta, withMeta]);
+
+    expect(sets[0]?.opponentParryUserId).toBe('3f9a1c2e-1234-4abc-89ef-abcdef012345');
+  });
+
+  it('leaves opponentParryUserId undefined when no game in the set carries it', () => {
+    const games = [makeMatch({ id: 'a', time: 100, externalId: 'pgg-M1-g1' })];
+    const { sets } = buildSetTimeline(games);
+    expect(sets[0]?.opponentParryUserId).toBeUndefined();
+  });
+
   describe('parry.gg set grouping', () => {
     it('groups pgg-{matchId}-g{n} games into one set, keyed on the matchId', () => {
       const g1 = makeMatch({ id: 'm1', time: 100, externalId: 'pgg-M1-g1', win: true });
@@ -396,13 +417,100 @@ describe('buildRecapTournamentUrl', () => {
     expect(buildRecapTournamentUrl({})).toBeNull();
   });
 
-  it('always returns null for a parrygg entry, even when slug/eventSlug are present (never invent a parry.gg URL)', () => {
+  // Walkthrough round 3 (07-11): a verified parry.gg URL shape supersedes
+  // the earlier "never invent a parry.gg URL" stance — see
+  // 07-CONTEXT.md's walkthrough round 3 and `buildRecapTournamentUrl`'s doc.
+  it('builds the deeper bracket URL for a parrygg entry when both slug and eventSlug are stored', () => {
     expect(
       buildRecapTournamentUrl({
         source: 'parrygg',
-        slug: 'pgg-the-big-house-9',
-        eventSlug: 'pgg-the-big-house-9-ultimate-singles',
+        slug: 'third-street-throwdown-summer-e3-019f5918',
+        eventSlug: 'ultimate-singles',
       }),
+    ).toBe(
+      'https://parry.gg/third-street-throwdown-summer-e3-019f5918/ultimate-singles/main/bracket',
+    );
+  });
+
+  it('falls back to the bare tournament page for a parrygg entry when only slug is stored', () => {
+    expect(
+      buildRecapTournamentUrl({
+        source: 'parrygg',
+        slug: 'third-street-throwdown-summer-e3-019f5918',
+      }),
+    ).toBe('https://parry.gg/third-street-throwdown-summer-e3-019f5918');
+  });
+
+  it('returns null for a parrygg entry with no tournament-level slug stored yet', () => {
+    expect(buildRecapTournamentUrl({ source: 'parrygg' })).toBeNull();
+  });
+
+  it('omits a parrygg URL when the stored slug fails the safe-slug-segment check', () => {
+    expect(buildRecapTournamentUrl({ source: 'parrygg', slug: 'has a space/../weird' })).toBeNull();
+  });
+});
+
+describe('buildRecapOpponentUrl (07-11 walkthrough round 3)', () => {
+  it('builds a start.gg profile URL from a valid opponentUserSlug', () => {
+    expect(buildRecapOpponentUrl({}, { opponentUserSlug: 'user/07dc2239' })).toBe(
+      'https://start.gg/user/07dc2239',
+    );
+  });
+
+  it('omits a start.gg opponentUrl for an unexpected slug shape', () => {
+    expect(buildRecapOpponentUrl({}, { opponentUserSlug: 'not-a-user-slug' })).toBeNull();
+  });
+
+  it('omits a start.gg opponentUrl entirely when opponentUserSlug is absent', () => {
+    expect(buildRecapOpponentUrl({}, {})).toBeNull();
+  });
+
+  it('builds a parry.gg profile URL from a valid opponentParryUserId', () => {
+    expect(
+      buildRecapOpponentUrl(
+        { source: 'parrygg' },
+        { opponentParryUserId: '3f9a1c2e-1234-4abc-89ef-abcdef012345' },
+      ),
+    ).toBe('https://parry.gg/profile/3f9a1c2e-1234-4abc-89ef-abcdef012345');
+  });
+
+  it('omits a parry.gg opponentUrl when opponentParryUserId is not a valid UUID', () => {
+    expect(
+      buildRecapOpponentUrl({ source: 'parrygg' }, { opponentParryUserId: 'not-a-uuid' }),
+    ).toBeNull();
+  });
+
+  it('omits a parry.gg opponentUrl entirely when opponentParryUserId is absent', () => {
+    expect(buildRecapOpponentUrl({ source: 'parrygg' }, {})).toBeNull();
+  });
+});
+
+describe('buildRecapSetUrl (07-11 walkthrough round 3)', () => {
+  it('builds a start.gg set URL from eventSlug + a numeric setId', () => {
+    expect(
+      buildRecapSetUrl(
+        { eventSlug: 'tournament/the-big-house-9/event/ultimate-singles' },
+        { setId: '123456' },
+      ),
+    ).toBe('https://start.gg/tournament/the-big-house-9/event/ultimate-singles/set/123456/summary');
+  });
+
+  it('omits setUrl when eventSlug is absent', () => {
+    expect(buildRecapSetUrl({}, { setId: '123456' })).toBeNull();
+  });
+
+  it('omits setUrl when setId is not numeric', () => {
+    expect(
+      buildRecapSetUrl(
+        { eventSlug: 'tournament/the-big-house-9/event/ultimate-singles' },
+        { setId: 'M1' },
+      ),
+    ).toBeNull();
+  });
+
+  it('never builds a setUrl for a parrygg entry, even with an eventSlug + numeric setId', () => {
+    expect(
+      buildRecapSetUrl({ source: 'parrygg', eventSlug: 'ultimate-singles' }, { setId: '123456' }),
     ).toBeNull();
   });
 });

@@ -59,6 +59,26 @@ export const recapSetSchema = z.object({
    * own identical cap for the same rationale).
    */
   games: z.array(recapGameSchema).max(10).nullish(),
+  /**
+   * Walkthrough round 3 (07-11): an external, public profile link for this
+   * set's human opponent — start.gg (`https://start.gg/{userSlug}`) or
+   * parry.gg (`https://parry.gg/profile/{parryUserId}`), per
+   * `buildRecapOpponentUrl`. Built SERVER-SIDE ONLY from stored registry/
+   * match fields against a verified, fixed URL shape — never client-
+   * constructed. Omitted (not `null`) when no trustworthy source field is
+   * on record (pre-sync-fix data, or a source that never captured a user
+   * id/slug).
+   */
+  opponentUrl: z.string().url().nullish(),
+  /**
+   * Walkthrough round 3 (07-11): the external set page on the source site —
+   * start.gg only (`https://start.gg/{eventSlug}/set/{setId}/summary`, per
+   * `buildRecapSetUrl`). parry.gg sets have no verified public URL shape and
+   * NEVER carry this field (mirrors `recapSnapshotSchema.tournamentUrl`'s
+   * "do NOT invent parry.gg URL shapes" rule). Omitted (not `null`) when the
+   * entry's `eventSlug` hasn't synced yet.
+   */
+  setUrl: z.string().url().nullish(),
 });
 export type RecapSet = z.infer<typeof recapSetSchema>;
 
