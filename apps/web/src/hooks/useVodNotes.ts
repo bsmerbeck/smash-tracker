@@ -56,3 +56,21 @@ export function useDeleteNote() {
     },
   });
 }
+
+/**
+ * POST /api/matches/:id/clear-vod — the one explicit "remove VOD" intent
+ * (`MatchTable`'s "Remove VOD link" action). Drops `vodUrl`/
+ * `vodStartSeconds`/`vodTimestamps` together; now that an unrelated
+ * match-fact PATCH preserves notes on omission (Phase 8), this dedicated
+ * endpoint is the only way to also clear the note subtree (RESEARCH
+ * Pitfall 2).
+ */
+export function useClearVodAndNotes() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (matchId: string) => api.matches.clearVod(matchId),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: matchesQueryKey });
+    },
+  });
+}
