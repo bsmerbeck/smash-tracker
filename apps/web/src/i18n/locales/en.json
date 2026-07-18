@@ -1442,6 +1442,7 @@
       "notableWinNamed": "Notable win vs {{name}}",
       "notableWinSeed": "Notable win vs seed {{seed}}",
       "charactersLabel": "Characters played",
+      "gameDetailLabel": "Games in this set",
       "setTimelineHeading": "Set timeline",
       "setScoreLabel": "{{wins}}–{{losses}}",
       "opponentWithPlacement": "{{name}} · {{placement}}",
