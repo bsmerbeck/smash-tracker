@@ -92,6 +92,18 @@ const SHARE_TOKEN_SHAPE = /^[A-Za-z0-9_-]{20,128}$/;
 // eslint-disable-next-line no-control-regex -- control chars are exactly what RTDB keys forbid
 const ENTRY_KEY_SHAPE = /^[^.#$[\]/\u0000-\u001f\u007f]{1,200}$/;
 
+/**
+ * Shape guard for a caller-supplied matchId before it reaches a `ref()`
+ * path (review WR-07): reuses the ENTRY_KEY_SHAPE denylist (RTDB-illegal
+ * `.` `#` `$` `[` `]` — a synchronous firebase-admin throw, i.e. a 500 —
+ * plus `/`, which would silently address a NESTED child of the caller's own
+ * subtree, control chars, and DEL). Any real push key passes; a crafted id
+ * must collapse to the same not-found outcome an absent match gets.
+ */
+function isPathSafeMatchId(matchId: string): boolean {
+  return ENTRY_KEY_SHAPE.test(matchId);
+}
+
 /** Edit-tier share links expire 30 days after creation (Phase 8, COACH-01/02). */
 const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
 
@@ -439,6 +451,11 @@ export class RtdbService {
    * implicit-omission path exists anymore (RESEARCH Pitfall 2).
    */
   async clearVodAndNotes(uid: string, id: string): Promise<Match> {
+    // Review WR-07: crafted ids must 404 like an absent match, never reach
+    // ref() (synchronous throw -> 500) or address a nested child.
+    if (!isPathSafeMatchId(id)) {
+      throw new NotFoundError('Match not found');
+    }
     const ref = this.database.ref(`matches/${uid}/${id}`);
     const existing = await ref.get();
     if (!existing.exists()) {
@@ -519,6 +536,12 @@ export class RtdbService {
     input: VodTimestampInput,
     coach?: CoachAttribution,
   ): Promise<VodTimestamp> {
+    // Review WR-07: crafted ids must 404 like an absent match, never reach
+    // ref() (synchronous throw -> 500) or address a nested child. The coach
+    // path's matchId is server-resolved (a real push key) and passes.
+    if (!isPathSafeMatchId(matchId)) {
+      throw new NotFoundError('Match not found');
+    }
     const matchSnapshot = await this.database.ref(`matches/${uid}/${matchId}`).get();
     if (!matchSnapshot.exists()) {
       throw new NotFoundError(`Match ${matchId} not found`);
@@ -584,6 +607,10 @@ export class RtdbService {
     computeNext: (current: Omit<VodTimestamp, 'id'>) => Omit<VodTimestamp, 'id'>,
     requireCoachSessionId?: string,
   ): Promise<VodTimestamp | null> {
+    // Review WR-07: crafted ids collapse to this method's not-found signal.
+    if (!isPathSafeMatchId(matchId)) {
+      return null;
+    }
     const matchSnapshot = await this.database.ref(`matches/${uid}/${matchId}`).get();
     if (!matchSnapshot.exists()) {
       return null;
@@ -670,6 +697,10 @@ export class RtdbService {
     noteId: string,
     requireCoachSessionId?: string,
   ): Promise<boolean> {
+    // Review WR-07: crafted ids collapse to this method's not-found signal.
+    if (!isPathSafeMatchId(matchId)) {
+      return false;
+    }
     const matchSnapshot = await this.database.ref(`matches/${uid}/${matchId}`).get();
     if (!matchSnapshot.exists()) {
       return false;
