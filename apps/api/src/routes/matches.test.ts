@@ -273,10 +273,8 @@ describe('POST /api/matches', () => {
     expect(response.statusCode).toBe(400);
   });
 
-  it('accepts and stores vodUrl and vodTimestamps', async () => {
+  it('accepts and stores vodUrl but silently ignores a client-supplied vodTimestamps (Phase 8: notes are create-only via dedicated note endpoints)', async () => {
     const { app, database } = buildTestApp();
-
-    const vodTimestamps = [{ seconds: 161, note: 'missed punish on shield' }];
 
     const response = await app.inject({
       method: 'POST',
@@ -285,23 +283,23 @@ describe('POST /api/matches', () => {
       payload: {
         ...validCreateInput,
         vodUrl: 'https://youtube.com/watch?v=abc123',
-        vodTimestamps,
+        // vodTimestamps is no longer part of createMatchInputSchema (08-01) —
+        // an attempt to smuggle it through this path is stripped by Zod's
+        // default strip-unknown-keys behavior, not rejected with a 400.
+        vodTimestamps: [{ seconds: 161, note: 'missed punish on shield' }],
       },
     });
 
     expect(response.statusCode).toBe(201);
-    expect(response.json()).toMatchObject({
-      vodUrl: 'https://youtube.com/watch?v=abc123',
-      vodTimestamps,
-    });
+    const body = response.json();
+    expect(body).toMatchObject({ vodUrl: 'https://youtube.com/watch?v=abc123' });
+    expect(body).not.toHaveProperty('vodTimestamps');
 
     const dump = database.dump() as Record<string, unknown>;
     const matches = dump.matches as Record<string, Record<string, unknown>>;
     const stored = Object.values(matches[TEST_UID]!)[0]!;
-    expect(stored).toMatchObject({
-      vodUrl: 'https://youtube.com/watch?v=abc123',
-      vodTimestamps,
-    });
+    expect(stored).toMatchObject({ vodUrl: 'https://youtube.com/watch?v=abc123' });
+    expect(stored).not.toHaveProperty('vodTimestamps');
   });
 
   it('accepts and stores vodStartSeconds', async () => {
@@ -363,58 +361,6 @@ describe('POST /api/matches', () => {
     const matches = dump.matches as Record<string, Record<string, unknown>>;
     const stored = Object.values(matches[TEST_UID]!)[0]!;
     expect(stored).toMatchObject({ tags: ['practice-friendlies', 'my custom tag'] });
-  });
-
-  it('accepts and stores note-level tags inside vodTimestamps entries', async () => {
-    const { app, database } = buildTestApp();
-
-    const vodTimestamps = [
-      { seconds: 161, note: 'missed punish on shield', tags: ['punish', 'my custom tag'] },
-    ];
-
-    const response = await app.inject({
-      method: 'POST',
-      url: '/api/matches',
-      headers: authHeader(),
-      payload: {
-        ...validCreateInput,
-        vodUrl: 'https://youtube.com/watch?v=abc123',
-        vodTimestamps,
-      },
-    });
-
-    expect(response.statusCode).toBe(201);
-    expect(response.json()).toMatchObject({ vodTimestamps });
-
-    const dump = database.dump() as Record<string, unknown>;
-    const matches = dump.matches as Record<string, Record<string, unknown>>;
-    const stored = Object.values(matches[TEST_UID]!)[0]!;
-    expect(stored).toMatchObject({ vodTimestamps });
-  });
-
-  it('accepts and stores a tag-only vodTimestamp entry with an empty note', async () => {
-    const { app, database } = buildTestApp();
-
-    const vodTimestamps = [{ seconds: 42, note: '', tags: ['punish'] }];
-
-    const response = await app.inject({
-      method: 'POST',
-      url: '/api/matches',
-      headers: authHeader(),
-      payload: {
-        ...validCreateInput,
-        vodUrl: 'https://youtube.com/watch?v=abc123',
-        vodTimestamps,
-      },
-    });
-
-    expect(response.statusCode).toBe(201);
-    expect(response.json()).toMatchObject({ vodTimestamps });
-
-    const dump = database.dump() as Record<string, unknown>;
-    const matches = dump.matches as Record<string, Record<string, unknown>>;
-    const stored = Object.values(matches[TEST_UID]!)[0]!;
-    expect(stored).toMatchObject({ vodTimestamps });
   });
 
   it('omits tags from the stored record when not provided', async () => {
@@ -680,7 +626,7 @@ describe('PATCH /api/matches/:id', () => {
     expect(response.statusCode).toBe(400);
   });
 
-  it('sets vodUrl and vodTimestamps', async () => {
+  it('sets vodUrl and silently ignores a client-supplied vodTimestamps on a match with no existing notes', async () => {
     const { app, database } = buildTestApp();
     database.seed(`matches/${TEST_UID}/existingKey`, {
       fighter_id: 1,
@@ -688,11 +634,6 @@ describe('PATCH /api/matches/:id', () => {
       time: 1700000000000,
       win: false,
     });
-
-    const vodTimestamps = [
-      { seconds: 161, note: 'missed punish on shield' },
-      { seconds: 490, note: 'lost ledge trump war' },
-    ];
 
     const response = await app.inject({
       method: 'PATCH',
@@ -701,25 +642,26 @@ describe('PATCH /api/matches/:id', () => {
       payload: {
         ...validCreateInput,
         vodUrl: 'https://youtube.com/watch?v=abc123',
-        vodTimestamps,
+        // vodTimestamps is no longer part of updateMatchInputSchema (08-01)
+        // — Zod strips it silently rather than rejecting the request.
+        vodTimestamps: [{ seconds: 161, note: 'missed punish on shield' }],
       },
     });
 
     expect(response.statusCode).toBe(200);
-    expect(response.json()).toMatchObject({
-      vodUrl: 'https://youtube.com/watch?v=abc123',
-      vodTimestamps,
-    });
+    const body = response.json();
+    expect(body).toMatchObject({ vodUrl: 'https://youtube.com/watch?v=abc123' });
+    expect(body).not.toHaveProperty('vodTimestamps');
 
     const dump = database.dump() as Record<string, unknown>;
     const matches = dump.matches as Record<string, Record<string, unknown>>;
     expect(matches[TEST_UID]!.existingKey).toMatchObject({
       vodUrl: 'https://youtube.com/watch?v=abc123',
-      vodTimestamps,
     });
+    expect(matches[TEST_UID]!.existingKey).not.toHaveProperty('vodTimestamps');
   });
 
-  it('updates existing vodUrl and vodTimestamps', async () => {
+  it('REGRESSION (RESEARCH Pitfall 1): note-survival-on-match-fact-edit — a PATCH updating vodUrl on a match with an existing legacy-array note preserves that note untouched, ignoring any client-supplied vodTimestamps attempt', async () => {
     const { app, database } = buildTestApp();
     database.seed(`matches/${TEST_UID}/existingKey`, {
       fighter_id: 1,
@@ -727,6 +669,7 @@ describe('PATCH /api/matches/:id', () => {
       time: 1700000000000,
       win: false,
       vodUrl: 'https://youtube.com/watch?v=abc123',
+      // Legacy dense-array shape — every pre-Phase-8 stored note.
       vodTimestamps: [{ seconds: 161, note: 'missed punish on shield' }],
     });
 
@@ -737,18 +680,28 @@ describe('PATCH /api/matches/:id', () => {
       payload: {
         ...validCreateInput,
         vodUrl: 'https://youtube.com/watch?v=xyz789',
-        vodTimestamps: [{ seconds: 300, note: 'updated note' }],
+        // An attempt to smuggle a replacement note through the match-fact
+        // PATCH — this MUST be ignored; the original note must survive
+        // untouched, not be replaced or wiped.
+        vodTimestamps: [{ seconds: 300, note: 'a stomped-in note' }],
       },
     });
 
     expect(response.statusCode).toBe(200);
     expect(response.json()).toMatchObject({
       vodUrl: 'https://youtube.com/watch?v=xyz789',
-      vodTimestamps: [{ seconds: 300, note: 'updated note' }],
+      vodTimestamps: [{ seconds: 161, note: 'missed punish on shield' }],
+    });
+
+    const dump = database.dump() as Record<string, unknown>;
+    const matches = dump.matches as Record<string, Record<string, unknown>>;
+    expect(matches[TEST_UID]!.existingKey).toMatchObject({
+      vodUrl: 'https://youtube.com/watch?v=xyz789',
+      vodTimestamps: [{ seconds: 161, note: 'missed punish on shield' }],
     });
   });
 
-  it('clears vodUrl and vodTimestamps when omitted from the update payload', async () => {
+  it('clears vodUrl when omitted from the update payload, but PRESERVES existing vodTimestamps notes (omission no longer clears notes)', async () => {
     const { app, database } = buildTestApp();
     database.seed(`matches/${TEST_UID}/existingKey`, {
       fighter_id: 1,
@@ -769,13 +722,17 @@ describe('PATCH /api/matches/:id', () => {
     expect(response.statusCode).toBe(200);
     const body = response.json();
     expect(body).not.toHaveProperty('vodUrl');
-    expect(body).not.toHaveProperty('vodTimestamps');
+    expect(body).toMatchObject({
+      vodTimestamps: [{ seconds: 161, note: 'missed punish on shield' }],
+    });
 
     const dump = database.dump() as Record<string, unknown>;
     const matches = dump.matches as Record<string, Record<string, unknown>>;
     const stored = matches[TEST_UID]!.existingKey!;
     expect(stored).not.toHaveProperty('vodUrl');
-    expect(stored).not.toHaveProperty('vodTimestamps');
+    expect(stored).toMatchObject({
+      vodTimestamps: [{ seconds: 161, note: 'missed punish on shield' }],
+    });
   });
 
   it('sets vodStartSeconds', async () => {
@@ -899,79 +856,6 @@ describe('PATCH /api/matches/:id', () => {
     });
     const [readBack] = list.json() as Array<Record<string, unknown>>;
     expect(readBack).not.toHaveProperty('tags');
-  });
-
-  it('returns 400 when vodTimestamps exceeds 20 entries', async () => {
-    const { app, database } = buildTestApp();
-    database.seed(`matches/${TEST_UID}/existingKey`, {
-      fighter_id: 1,
-      opponent_id: 8,
-      time: 1700000000000,
-      win: false,
-    });
-
-    const vodTimestamps = Array.from({ length: 21 }, (_, i) => ({
-      seconds: i,
-      note: `note ${i}`,
-    }));
-
-    const response = await app.inject({
-      method: 'PATCH',
-      url: '/api/matches/existingKey',
-      headers: authHeader(),
-      payload: { ...validCreateInput, vodUrl: 'https://youtube.com/watch?v=abc123', vodTimestamps },
-    });
-
-    expect(response.statusCode).toBe(400);
-  });
-
-  it('accepts a vodTimestamps entry with a blank note (tag-only quick capture)', async () => {
-    const { app, database } = buildTestApp();
-    database.seed(`matches/${TEST_UID}/existingKey`, {
-      fighter_id: 1,
-      opponent_id: 8,
-      time: 1700000000000,
-      win: false,
-    });
-
-    const response = await app.inject({
-      method: 'PATCH',
-      url: '/api/matches/existingKey',
-      headers: authHeader(),
-      payload: {
-        ...validCreateInput,
-        vodUrl: 'https://youtube.com/watch?v=abc123',
-        vodTimestamps: [{ seconds: 10, note: '   ' }],
-      },
-    });
-
-    expect(response.statusCode).toBe(200);
-    expect(response.json()).toMatchObject({
-      vodTimestamps: [{ seconds: 10, note: '' }],
-    });
-  });
-
-  it('returns 400 when a vodTimestamps seconds value is negative', async () => {
-    const { app, database } = buildTestApp();
-    database.seed(`matches/${TEST_UID}/existingKey`, {
-      fighter_id: 1,
-      opponent_id: 8,
-      time: 1700000000000,
-      win: false,
-    });
-
-    const response = await app.inject({
-      method: 'PATCH',
-      url: '/api/matches/existingKey',
-      headers: authHeader(),
-      payload: {
-        ...validCreateInput,
-        vodUrl: 'https://youtube.com/watch?v=abc123',
-        vodTimestamps: [{ seconds: -5, note: 'negative seconds' }],
-      },
-    });
-
-    expect(response.statusCode).toBe(400);
   });
 
   it('sets a gsp reading', async () => {
@@ -1211,5 +1095,207 @@ describe('DELETE /api/matches/:id', () => {
     const dump = database.dump() as Record<string, unknown>;
     const matches = dump.matches as Record<string, Record<string, unknown>>;
     expect(matches[TEST_UID]!['sgg-123-g1']).toMatchObject({ source: 'startgg' });
+  });
+});
+
+describe('Owner note CRUD: POST/PATCH/DELETE /api/matches/:id/notes[/:noteId]', () => {
+  function seedMatch(database: ReturnType<typeof buildTestApp>['database'], overrides = {}) {
+    database.seed(`matches/${TEST_UID}/m1`, {
+      fighter_id: 1,
+      opponent_id: 8,
+      time: 1700000000000,
+      win: true,
+      ...overrides,
+    });
+  }
+
+  it('creates a note and returns it with an id', async () => {
+    const { app, database } = buildTestApp();
+    seedMatch(database);
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/matches/m1/notes',
+      headers: authHeader(),
+      payload: { seconds: 42, note: 'missed a punish', tags: ['punish'] },
+    });
+
+    expect(response.statusCode).toBe(201);
+    const body = response.json();
+    expect(body).toMatchObject({ seconds: 42, note: 'missed a punish', tags: ['punish'] });
+    expect(typeof body.id).toBe('string');
+
+    const dump = database.dump() as Record<string, unknown>;
+    const matches = dump.matches as Record<string, Record<string, unknown>>;
+    const vodTimestamps = (matches[TEST_UID]!.m1 as Record<string, unknown>)
+      .vodTimestamps as Record<string, unknown>;
+    expect(vodTimestamps[body.id]).toMatchObject({ seconds: 42, note: 'missed a punish' });
+  });
+
+  it('returns 404 when creating a note on a missing match', async () => {
+    const { app } = buildTestApp();
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/matches/missing/notes',
+      headers: authHeader(),
+      payload: { seconds: 1, note: 'x' },
+    });
+
+    expect(response.statusCode).toBe(404);
+  });
+
+  it('returns 401 for an unauthenticated create', async () => {
+    const { app } = buildTestApp();
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/matches/m1/notes',
+      payload: { seconds: 1, note: 'x' },
+    });
+
+    expect(response.statusCode).toBe(401);
+  });
+
+  it('rejects the 21st note with a 403 and leaves the stored node at exactly 20 children', async () => {
+    const { app, database } = buildTestApp();
+    const twenty = Object.fromEntries(
+      Array.from({ length: 20 }, (_, i) => [`k${i}`, { seconds: i, note: `note ${i}` }]),
+    );
+    seedMatch(database, { vodTimestamps: twenty });
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/matches/m1/notes',
+      headers: authHeader(),
+      payload: { seconds: 999, note: 'one too many' },
+    });
+
+    expect(response.statusCode).toBe(403);
+
+    const dump = database.dump() as Record<string, unknown>;
+    const matches = dump.matches as Record<string, Record<string, unknown>>;
+    const vodTimestamps = (matches[TEST_UID]!.m1 as Record<string, unknown>)
+      .vodTimestamps as Record<string, unknown>;
+    expect(Object.keys(vodTimestamps)).toHaveLength(20);
+  });
+
+  it('migrates a legacy-array match to keyed shape (push-style keys, not 0/1) on first note write', async () => {
+    const { app, database } = buildTestApp();
+    seedMatch(database, { vodTimestamps: [{ seconds: 10, note: 'old note' }] });
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/matches/m1/notes',
+      headers: authHeader(),
+      payload: { seconds: 20, note: 'new note' },
+    });
+
+    expect(response.statusCode).toBe(201);
+
+    const dump = database.dump() as Record<string, unknown>;
+    const matches = dump.matches as Record<string, Record<string, unknown>>;
+    const vodTimestamps = (matches[TEST_UID]!.m1 as Record<string, unknown>).vodTimestamps;
+    expect(Array.isArray(vodTimestamps)).toBe(false);
+    const keys = Object.keys(vodTimestamps as Record<string, unknown>);
+    expect(keys).toHaveLength(2);
+    expect(keys).not.toContain('0');
+    expect(keys).not.toContain('1');
+  });
+
+  it('updates a note by id', async () => {
+    const { app, database } = buildTestApp();
+    seedMatch(database, { vodTimestamps: { n1: { seconds: 10, note: 'original' } } });
+
+    const response = await app.inject({
+      method: 'PATCH',
+      url: '/api/matches/m1/notes/n1',
+      headers: authHeader(),
+      payload: { seconds: 15, note: 'edited' },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({ id: 'n1', seconds: 15, note: 'edited' });
+  });
+
+  it('returns 404 updating a missing noteId', async () => {
+    const { app, database } = buildTestApp();
+    seedMatch(database, { vodTimestamps: { n1: { seconds: 10, note: 'original' } } });
+
+    const response = await app.inject({
+      method: 'PATCH',
+      url: '/api/matches/m1/notes/missing',
+      headers: authHeader(),
+      payload: { seconds: 15, note: 'edited' },
+    });
+
+    expect(response.statusCode).toBe(404);
+  });
+
+  it('returns 401 for an unauthenticated update', async () => {
+    const { app, database } = buildTestApp();
+    seedMatch(database, { vodTimestamps: { n1: { seconds: 10, note: 'original' } } });
+
+    const response = await app.inject({
+      method: 'PATCH',
+      url: '/api/matches/m1/notes/n1',
+      payload: { seconds: 15, note: 'edited' },
+    });
+
+    expect(response.statusCode).toBe(401);
+  });
+
+  it('deletes a note by id, including a coach-authored note (owner moderation)', async () => {
+    const { app, database } = buildTestApp();
+    seedMatch(database, {
+      vodTimestamps: {
+        n1: { seconds: 10, note: 'owner note' },
+        n2: {
+          seconds: 20,
+          note: 'coach note',
+          coach: { sessionId: '11111111-1111-4111-8111-111111111111', displayName: 'Coach' },
+        },
+      },
+    });
+
+    const response = await app.inject({
+      method: 'DELETE',
+      url: '/api/matches/m1/notes/n2',
+      headers: authHeader(),
+    });
+
+    expect(response.statusCode).toBe(204);
+
+    const dump = database.dump() as Record<string, unknown>;
+    const matches = dump.matches as Record<string, Record<string, unknown>>;
+    const vodTimestamps = (matches[TEST_UID]!.m1 as Record<string, unknown>)
+      .vodTimestamps as Record<string, unknown>;
+    expect(vodTimestamps).not.toHaveProperty('n2');
+    expect(vodTimestamps).toHaveProperty('n1');
+  });
+
+  it('returns 404 deleting a missing noteId', async () => {
+    const { app, database } = buildTestApp();
+    seedMatch(database, { vodTimestamps: { n1: { seconds: 10, note: 'original' } } });
+
+    const response = await app.inject({
+      method: 'DELETE',
+      url: '/api/matches/m1/notes/missing',
+      headers: authHeader(),
+    });
+
+    expect(response.statusCode).toBe(404);
+  });
+
+  it('returns 401 for an unauthenticated delete', async () => {
+    const { app, database } = buildTestApp();
+    seedMatch(database, { vodTimestamps: { n1: { seconds: 10, note: 'original' } } });
+
+    const response = await app.inject({
+      method: 'DELETE',
+      url: '/api/matches/m1/notes/n1',
+    });
+
+    expect(response.statusCode).toBe(401);
   });
 });
