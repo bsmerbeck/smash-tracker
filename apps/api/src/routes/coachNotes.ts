@@ -127,11 +127,16 @@ const coachNotesRoutes: FastifyPluginAsyncZod = async (app) => {
           return reply.code(404).send(UNAVAILABLE_404_BODY);
         }
         if (err instanceof ForbiddenError) {
-          // Cap rejection: a valid-token holder gets the real reason
-          // (mirrors the owner route's 403), not a fake 404.
-          return reply
-            .code(403)
-            .send({ error: 'Forbidden', message: err.message, statusCode: 403 });
+          // Cap rejection: a valid-token holder gets a real 403 — but with
+          // a STATIC message, never `err.message` (review WR-01): the
+          // service's cap message interpolates the owner's private matchId
+          // (an RTDB push key, creation-time-encoded) — the one identifier
+          // the anonymous surface must never serve.
+          return reply.code(403).send({
+            error: 'Forbidden',
+            message: 'This review already has the maximum number of notes',
+            statusCode: 403,
+          });
         }
         throw err;
       }

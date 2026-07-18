@@ -230,6 +230,15 @@ describe('POST /api/vod-shares/:token/notes', () => {
     });
 
     expect(response.statusCode).toBe(403);
+    // Review WR-01: the 403 body must be a static message — the service's
+    // cap error interpolates the owner's private matchId (an RTDB push
+    // key), which the anonymous surface must never serve.
+    expect(response.json()).toEqual({
+      error: 'Forbidden',
+      message: 'This review already has the maximum number of notes',
+      statusCode: 403,
+    });
+    expect(JSON.stringify(response.json())).not.toContain('m1');
   });
 
   it('enforces the 200-char note / 5-tag / uuid-sessionId caps via Zod (400)', async () => {
