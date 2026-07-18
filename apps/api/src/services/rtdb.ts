@@ -1758,6 +1758,14 @@ export class RtdbService {
   ): Promise<{ processed: number; skipped: number }> {
     const resolved = await Promise.all(
       shareIds.map(async (shareId) => {
+        // Review WR-02 (guard-before-ref discipline, WR-07): a crafted or
+        // corrupt shareId containing an RTDB-illegal character (`.#$[]`,
+        // controls) would make ref() throw synchronously inside this map
+        // callback, rejecting the whole Promise.all and 500ing the route —
+        // skip it instead, honoring the skip-not-fail contract above.
+        if (!ENTRY_KEY_SHAPE.test(shareId)) {
+          return null;
+        }
         const indexSnapshot = await this.database.ref(`sharesByUser/${uid}/${shareId}`).get();
         const tokenValue = indexSnapshot.val();
         if (!indexSnapshot.exists() || typeof tokenValue !== 'string') {
