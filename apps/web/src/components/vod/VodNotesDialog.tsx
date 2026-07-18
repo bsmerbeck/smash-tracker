@@ -15,32 +15,36 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useUpdateMatch } from '@/hooks/useUpdateMatch';
+import { useCreateNote, useDeleteNote } from '@/hooks/useVodNotes';
 import { formatTimestamp, parseTimestamp, vodDeepLink } from '@/lib/vod';
 
+const LOCAL_ID_PREFIX = 'local-';
+
 /**
- * Builds the full `UpdateMatchInput` PATCH payload for `match`, carrying
- * every existing field through unchanged except `vodUrl`/`vodTimestamps`
- * (overridden by the caller). Required because `PATCH /api/matches/:id` is a
- * full overwrite (see `RtdbService.updateMatch`) — omitting a field here
- * would clear it, not leave it untouched.
+ * Builds the `UpdateMatchInput` PATCH payload for `match`'s vodUrl (and
+ * optionally tags), carrying every other field through unchanged. Required
+ * because `PATCH /api/matches/:id` is a full overwrite (see
+ * `RtdbService.updateMatch`) — omitting a field here would clear it, not
+ * leave it untouched.
+ *
+ * Phase 8: narrowed to `{ vodUrl, tags? }` — `vodTimestamps` is no longer a
+ * parameter at all. Note writes (add/remove) go through the dedicated
+ * `useCreateNote`/`useDeleteNote` endpoints instead (this dialog's own
+ * `handleSave`, below), and the server preserves any existing note subtree
+ * automatically on every match-fact PATCH that omits it, so there is nothing
+ * left for this helper to carry through for notes.
  *
  * `tags` (TAG-01..05) defaults to carrying `match.tags` through unchanged —
- * every existing caller (VOD note edits here, `MatchTable`'s "Remove VOD
- * link" action) preserves match-level tags automatically without having to
- * know tags exist. Pass `overrides.tags` to override (e.g.
+ * every existing caller preserves match-level tags automatically without
+ * having to know tags exist. Pass `overrides.tags` to override (e.g.
  * `SelectedMatchMeta`'s tag add/remove handlers); override wins when set,
  * even to `undefined` (clearing all tags) — that's why this is a distinct
  * key in `overrides` rather than folded into the `match.tags` fallback.
- *
- * Exported so `MatchTable`'s "Remove VOD link" action (its VOD icon's
- * dropdown menu) can reuse the exact same full-overwrite-minus-VOD-fields
- * payload rather than re-deriving it.
  */
 export function buildUpdateInput(
   match: Match,
   overrides: {
     vodUrl: string | undefined;
-    vodTimestamps: VodTimestamp[] | undefined;
     tags?: string[] | undefined;
   },
 ): UpdateMatchInput {
@@ -59,7 +63,6 @@ export function buildUpdateInput(
     // QuickLogger match's GSP the moment VOD notes were added.
     ...(match.gsp !== undefined ? { gsp: match.gsp } : {}),
     ...(overrides.vodUrl !== undefined ? { vodUrl: overrides.vodUrl } : {}),
-    ...(overrides.vodTimestamps !== undefined ? { vodTimestamps: overrides.vodTimestamps } : {}),
     // 'tags' in overrides (not just overrides.tags !== undefined) is the
     // deliberate check here: a caller that explicitly passes `tags: undefined`
     // (SelectedMatchMeta clearing the last tag) means "omit tags from the
@@ -82,9 +85,16 @@ const MAX_TIMESTAMPS = 20;
 /**
  * Dialog for attaching a VOD link and timestamped notes to a match (V7-E),
  * e.g. "2:41 — missed punish on shield". Opened from `SetTimeline` (per-set
- * VOD edit affordance) and `MatchTable` (per-row VOD icon button). Saves via
- * `useUpdateMatch` — a full PATCH carrying every other field through
- * unchanged (see `buildUpdateInput`).
+ * VOD edit affordance) and `MatchTable` (per-row VOD icon button).
+ *
+ * Phase 8 re-point (resolved directive: re-point, do not retire): the UI is
+ * unchanged, but persistence no longer rides one full-match PATCH. `Save`
+ * diffs the local draft against the note ids that existed when the dialog
+ * opened — new (`local-`-prefixed) entries go through `useCreateNote`,
+ * removed existing ids go through `useDeleteNote` — and only PATCHes the
+ * match (via the now-narrowed `buildUpdateInput`) for the `vodUrl` field.
+ * There's no in-place edit affordance in this dialog (only add/remove), so
+ * `useUpdateNote` is never needed here.
  */
 export function VodNotesDialog({
   match,
@@ -97,17 +107,26 @@ export function VodNotesDialog({
 }) {
   const { t } = useTranslation();
   const updateMatch = useUpdateMatch();
+  const createNote = useCreateNote();
+  const deleteNote = useDeleteNote();
   const [url, setUrl] = useState(match.vodUrl ?? '');
   const [timestamps, setTimestamps] = useState<VodTimestamp[]>(match.vodTimestamps ?? []);
+  // The note ids that existed on the server when the dialog was opened —
+  // the baseline `handleSave` diffs against to know which ids were removed.
+  const [initialNoteIds, setInitialNoteIds] = useState<string[]>(
+    (match.vodTimestamps ?? []).map((stamp) => stamp.id),
+  );
   const [timeInput, setTimeInput] = useState('');
   const [noteInput, setNoteInput] = useState('');
   const [timeError, setTimeError] = useState<string | null>(null);
+  const isSaving = updateMatch.isPending || createNote.isPending || deleteNote.isPending;
 
   function handleOpenChange(next: boolean) {
     onOpenChange(next);
     if (next) {
       setUrl(match.vodUrl ?? '');
       setTimestamps(match.vodTimestamps ?? []);
+      setInitialNoteIds((match.vodTimestamps ?? []).map((stamp) => stamp.id));
       setTimeInput('');
       setNoteInput('');
       setTimeError(null);
@@ -129,13 +148,12 @@ export function VodNotesDialog({
       setTimeError(t('shared.vod.timestampLimit', { max: MAX_TIMESTAMPS }));
       return;
     }
-    // Phase 8: `VodTimestamp` is id-bearing. This legacy dialog still edits
-    // a local draft array, so a freshly-added entry gets a synthetic local
-    // id (never persisted as a real key — the server ignores client-sent
-    // `vodTimestamps` on match PATCHes since 08-02, and this dialog's save
-    // path is re-pointed at the dedicated note endpoints in 08-05).
+    // `VodTimestamp` is id-bearing. This dialog edits a local draft array
+    // and only persists on Save (below), so a freshly-added entry gets a
+    // synthetic local id — never a real key — that `handleSave` recognizes
+    // and creates via the dedicated note endpoint.
     setTimestamps((prev) =>
-      [...prev, { id: `local-${crypto.randomUUID()}`, seconds, note }].sort(
+      [...prev, { id: `${LOCAL_ID_PREFIX}${crypto.randomUUID()}`, seconds, note }].sort(
         (a, b) => a.seconds - b.seconds,
       ),
     );
@@ -144,18 +162,36 @@ export function VodNotesDialog({
     setTimeError(null);
   }
 
-  function handleRemoveTimestamp(index: number) {
-    setTimestamps((prev) => prev.filter((_, i) => i !== index));
+  function handleRemoveTimestamp(id: string) {
+    setTimestamps((prev) => prev.filter((stamp) => stamp.id !== id));
   }
 
   async function handleSave() {
-    const trimmedUrl = url.trim();
-    const input = buildUpdateInput(match, {
-      vodUrl: trimmedUrl ? trimmedUrl : undefined,
-      vodTimestamps: timestamps.length > 0 ? timestamps : undefined,
-    });
+    const currentIds = new Set(
+      timestamps.filter((stamp) => !stamp.id.startsWith(LOCAL_ID_PREFIX)).map((stamp) => stamp.id),
+    );
+    const removedIds = initialNoteIds.filter((id) => !currentIds.has(id));
+    const newEntries = timestamps.filter((stamp) => stamp.id.startsWith(LOCAL_ID_PREFIX));
+
     try {
+      // Deletes first, then creates — frees up the shared 20-note cap
+      // before any new note attempts to claim a slot.
+      await Promise.all(
+        removedIds.map((noteId) => deleteNote.mutateAsync({ matchId: match.id, noteId })),
+      );
+      await Promise.all(
+        newEntries.map((entry) =>
+          createNote.mutateAsync({
+            matchId: match.id,
+            input: { seconds: entry.seconds, note: entry.note },
+          }),
+        ),
+      );
+
+      const trimmedUrl = url.trim();
+      const input = buildUpdateInput(match, { vodUrl: trimmedUrl ? trimmedUrl : undefined });
       await updateMatch.mutateAsync({ id: match.id, input });
+
       toast.success(t('shared.vod.saved'));
       onOpenChange(false);
     } catch {
@@ -189,9 +225,9 @@ export function VodNotesDialog({
               <p className="text-sm text-muted-foreground">{t('shared.vod.noTimestamps')}</p>
             ) : (
               <ul className="flex flex-col gap-2" aria-label={t('shared.vod.timestampsAria')}>
-                {timestamps.map((stamp, index) => (
+                {timestamps.map((stamp) => (
                   <li
-                    key={`${stamp.seconds}-${index}`}
+                    key={stamp.id}
                     className="flex items-center justify-between gap-2 rounded-md border p-2 text-sm"
                   >
                     <span className="flex min-w-0 flex-1 items-center gap-2">
@@ -216,7 +252,7 @@ export function VodNotesDialog({
                       aria-label={t('shared.vod.deleteTimestamp', {
                         time: formatTimestamp(stamp.seconds),
                       })}
-                      onClick={() => handleRemoveTimestamp(index)}
+                      onClick={() => handleRemoveTimestamp(stamp.id)}
                     >
                       <Trash2 />
                     </Button>
@@ -260,7 +296,7 @@ export function VodNotesDialog({
           <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
             {t('common.cancel')}
           </Button>
-          <Button type="button" onClick={handleSave} disabled={updateMatch.isPending}>
+          <Button type="button" onClick={handleSave} disabled={isSaving}>
             {t('common.save')}
           </Button>
         </DialogFooter>
