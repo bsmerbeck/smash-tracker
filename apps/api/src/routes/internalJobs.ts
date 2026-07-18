@@ -5,6 +5,9 @@ import { errorResponseSchema } from '@smash-tracker/shared';
 import type { Ga4Config, InternalJobsConfig } from '../config/env.js';
 import { checkInternalJobSecret } from '../plugins/internalJobAuth.js';
 import { runProjectGa4 } from '../jobs/projectGa4.js';
+import { runReconcile } from '../jobs/reconcile.js';
+import { runSweepStuckReportJobs } from '../jobs/sweepStuckReportJobs.js';
+import { runPrune } from '../jobs/prune.js';
 
 const INTERNAL_JOBS_SECRET_HEADER = 'x-internal-jobs-secret';
 
@@ -19,6 +22,23 @@ const projectGa4ResultSchema = z.object({
   projected: z.number().int().nonnegative(),
   skipped: z.number().int().nonnegative(),
   failed: z.number().int().nonnegative(),
+});
+
+const reconcileResultSchema = z.object({
+  checked: z.number().int().nonnegative(),
+  missing: z.number().int().nonnegative(),
+  phantom: z.number().int().nonnegative(),
+  duplicate: z.number().int().nonnegative(),
+});
+
+const sweepStuckReportJobsResultSchema = z.object({
+  swept: z.number().int().nonnegative(),
+  refunded: z.number().int().nonnegative(),
+});
+
+const pruneResultSchema = z.object({
+  prunedLedgerDays: z.array(z.string()),
+  prunedExceptionDays: z.array(z.string()),
 });
 
 /**
@@ -84,6 +104,66 @@ const internalJobsRoutes: FastifyPluginAsyncZod<InternalJobsRoutesOptions> = asy
       // only consent-granted events — never re-derives a canonical event
       // (Pitfall 2, see jobs/projectGa4.ts's own doc comment).
       return runProjectGa4(app.firebase.database, ga4, ga4Fetch);
+    },
+  );
+
+  app.get(
+    '/internal/jobs/reconcile',
+    {
+      preHandler: requireInternalJobsSecret,
+      schema: {
+        response: {
+          200: reconcileResultSchema,
+          401: errorResponseSchema,
+        },
+      },
+    },
+    async (request) => {
+      // MEAS-07: bounded single-day-shard comparison; writes ONLY to
+      // reconciliationExceptions, never mutates a canonical/domain record
+      // (see jobs/reconcile.ts's own doc comment).
+      const result = await runReconcile(app.firebase.database);
+      request.log.info(result, 'reconcile run summary');
+      return result;
+    },
+  );
+
+  app.get(
+    '/internal/jobs/sweep-stuck-jobs',
+    {
+      preHandler: requireInternalJobsSecret,
+      schema: {
+        response: {
+          200: sweepStuckReportJobsResultSchema,
+          401: errorResponseSchema,
+        },
+      },
+    },
+    async (request) => {
+      // BILL-06: recovers orphaned `running` report jobs — atomic refund per
+      // job, idempotent via the reportJobsByStatus/running index.
+      const result = await runSweepStuckReportJobs(app.firebase.database);
+      request.log.info(result, 'sweep-stuck-jobs run summary');
+      return result;
+    },
+  );
+
+  app.get(
+    '/internal/jobs/prune',
+    {
+      preHandler: requireInternalJobsSecret,
+      schema: {
+        response: {
+          200: pruneResultSchema,
+          401: errorResponseSchema,
+        },
+      },
+    },
+    async (request) => {
+      // MEAS-08: whole-day-node retention pruning — never a per-record scan.
+      const result = await runPrune(app.firebase.database);
+      request.log.info(result, 'prune run summary');
+      return result;
     },
   );
 };
