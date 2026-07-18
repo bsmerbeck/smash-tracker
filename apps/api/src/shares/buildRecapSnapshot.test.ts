@@ -265,6 +265,7 @@ describe('buildRecapSnapshot — walkthrough amendment (07-09): detail/tournamen
       losses: 0,
       win: true,
       stages: ['Battlefield'],
+      games: [{ fighterId: 1, opponentFighterId: 2, stageName: 'Battlefield', win: true }],
     });
   });
 
@@ -355,6 +356,53 @@ describe('buildRecapSnapshot — walkthrough amendment (07-09): detail/tournamen
     const snapshot = buildRecapSnapshot('uid-1', entry, matches);
 
     expect('stages' in snapshot.sets![0]!).toBe(false);
+  });
+
+  it('populates per-game character+stage detail (07-10 walkthrough amendment round 2)', () => {
+    const entry = makeEntry();
+    const matches: Match[] = [
+      makeSetMatch({
+        id: 'm1',
+        time: 1_000,
+        win: true,
+        fighter_id: 1,
+        opponent_id: 5,
+        externalId: 'sgg:set-1:g1',
+        map: { id: 3, name: 'Battlefield' },
+      }),
+      makeSetMatch({
+        id: 'm2',
+        time: 1_100,
+        win: false,
+        fighter_id: 1,
+        opponent_id: 5,
+        externalId: 'sgg:set-1:g2',
+        map: { id: 0, name: 'no selection' },
+      }),
+    ];
+
+    const snapshot = buildRecapSnapshot('uid-1', entry, matches);
+
+    expect(snapshot.sets![0]!.games).toEqual([
+      { fighterId: 1, opponentFighterId: 5, stageName: 'Battlefield', win: true },
+      { fighterId: 1, opponentFighterId: 5, win: false },
+    ]);
+  });
+
+  it('caps games at 10 per set (recapGameSchema.games array max)', () => {
+    const entry = makeEntry();
+    const matches: Match[] = Array.from({ length: 11 }, (_, i) =>
+      makeSetMatch({
+        id: `m${i + 1}`,
+        time: 1_000 + i,
+        win: i % 2 === 0,
+        externalId: `sgg:set-1:g${i + 1}`,
+      }),
+    );
+
+    const snapshot = buildRecapSnapshot('uid-1', entry, matches);
+
+    expect(snapshot.sets![0]!.games).toHaveLength(10);
   });
 
   it("uses the set's own opponentPlacement when present, without consulting topStandings", () => {
