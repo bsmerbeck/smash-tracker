@@ -932,7 +932,9 @@
       "copiedToast": "Link copied to clipboard",
       "copyFailedToast": "Couldn't copy — copy the link manually.",
       "doneButton": "Done"
-    }
+    },
+    "listLoading": "Loading tournaments...",
+    "noMatches": "No tournaments yet — sync your start.gg or parry.gg matches and check back here!"
   },
   "billing": {
     "title": "Buy report credits",

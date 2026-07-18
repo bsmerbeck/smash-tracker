@@ -18,13 +18,13 @@ export function TournamentsPage() {
   const { matches, allMatches, isLoading, filterActive } = useFilteredMatches();
 
   if (isLoading) {
-    return <div className="text-muted-foreground">{t('trends.loading')}</div>;
+    return <div className="text-muted-foreground">{t('tournaments.listLoading')}</div>;
   }
 
   if (allMatches.length === 0) {
     return (
       <div className="flex flex-col items-center gap-2 py-16 text-center">
-        <h2 className="text-xl font-semibold tracking-tight">{t('trends.noMatches')}</h2>
+        <h2 className="text-xl font-semibold tracking-tight">{t('tournaments.noMatches')}</h2>
         <Button asChild className="mt-2">
           <Link to="/dashboard">{t('common.goToDashboard')}</Link>
         </Button>

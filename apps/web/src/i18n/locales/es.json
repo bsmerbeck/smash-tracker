@@ -932,7 +932,9 @@
       "copiedToast": "Enlace copiado al portapapeles",
       "copyFailedToast": "No se pudo copiar — copia el enlace manualmente.",
       "doneButton": "Listo"
-    }
+    },
+    "listLoading": "Cargando torneos...",
+    "noMatches": "Aún no hay torneos: sincroniza tus partidas de start.gg o parry.gg y vuelve aquí."
   },
   "billing": {
     "title": "Comprar créditos de informes",
