@@ -894,7 +894,9 @@
       "setsPlayed_other": "{{count}} sets jugados",
       "outperformed": "Superó el seed: {{seed}} → {{placement}}",
       "underperformed": "Por debajo del seed: {{seed}} → {{placement}}",
-      "matched": "Igualó el seed: {{seed}} → {{placement}}"
+      "matched": "Igualó el seed: {{seed}} → {{placement}}",
+      "viewTournamentStartgg": "Ver {{name}} en start.gg",
+      "viewTournamentParrygg": "Ver {{name}} en parry.gg"
     },
     "results": {
       "title": "Resultados del evento",
@@ -914,6 +916,7 @@
       "watchVod": "Ver VOD",
       "watchVodAria": "Ver VOD de {{set}}",
       "editVodAria": "Editar notas de VOD de {{set}}",
+      "viewSetAria": "Ver {{set}} en start.gg",
       "otherMatches": "Otras partidas durante este evento"
     },
     "charStages": {
@@ -1462,8 +1465,8 @@
     "sharedBy": "Compartido por {{name}}",
     "watchOnHost": "Ver en {{host}}",
     "videoUnavailable": "Este VOD ya no está disponible.",
-    "ctaTitle": "Revisa tus propias partidas",
-    "ctaBody": "Registra tus propios VODs con marcas de tiempo de salto directo — gratis, sin tarjeta de crédito.",
+    "ctaTitle": "Tu memoria competitiva, todo en un solo lugar",
+    "ctaBody": "grandfinals.gg es un tracker gratuito para Super Smash Bros. Ultimate — registra tus partidas y torneos, revisa tus VODs con notas de salto directo, analiza matchups y sigue tu GSP y tu rating con el tiempo. No hace falta cuenta para explorar; empezar es gratis.",
     "ctaButton": "Empezar gratis",
     "recap": {
       "heading": "Resumen del torneo",
@@ -1479,6 +1482,8 @@
       "opponentWithPlacement": "{{name}} · {{placement}}",
       "viewBracketStartgg": "Ver el bracket en start.gg",
       "viewBracketParrygg": "Ver el bracket en parry.gg",
+      "viewTournamentStartgg": "Ver {{name}} en start.gg",
+      "viewTournamentParrygg": "Ver {{name}} en parry.gg",
       "viewOpponentStartgg": "Ver a {{name}} en start.gg",
       "viewOpponentParrygg": "Ver a {{name}} en parry.gg",
       "viewSetAria": "Ver {{round}} en start.gg",
