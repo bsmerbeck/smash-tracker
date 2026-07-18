@@ -74,6 +74,7 @@
     "matchDelete": {
       "aria": "Excluir partida",
       "confirmTitle": "Excluir esta partida?",
+      "sharesNote": "Os links compartilhados do VOD desta partida serão revogados.",
       "deleted": "Partida excluída!",
       "deleteFailed": "Falha ao excluir a partida. Tente novamente."
     },
@@ -456,6 +457,7 @@
       },
       "removeVodConfirm": {
         "title": "Remover este link de VOD?",
+        "sharesNote": "Os links compartilhados deste VOD serão revogados.",
         "removed": "Link do VOD removido",
         "removeFailed": "Falha ao remover o link do VOD. Tente novamente."
       },

@@ -74,6 +74,7 @@
     "matchDelete": {
       "aria": "対戦を削除",
       "confirmTitle": "この対戦を削除しますか？",
+      "sharesNote": "この対戦のVODの共有リンクは失効します。",
       "deleted": "対戦を削除しました！",
       "deleteFailed": "対戦を削除できませんでした。もう一度お試しください。"
     },
@@ -456,6 +457,7 @@
       },
       "removeVodConfirm": {
         "title": "このVODリンクを削除しますか？",
+        "sharesNote": "このVODの共有リンクは失効します。",
         "removed": "VODリンクを削除しました",
         "removeFailed": "VODリンクを削除できませんでした。もう一度お試しください。"
       },

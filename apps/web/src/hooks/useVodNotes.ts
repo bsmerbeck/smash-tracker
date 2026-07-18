@@ -1,6 +1,7 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { api, type VodTimestampInput } from '@/lib/api';
 import { matchesQueryKey } from './useMatches';
+import { vodSharesQueryKey } from './useVodShares';
 
 /**
  * Mutation hooks for the dedicated timestamp-note endpoints (Phase 8:
@@ -64,13 +65,20 @@ export function useDeleteNote() {
  * match-fact PATCH preserves notes on omission (Phase 8), this dedicated
  * endpoint is the only way to also clear the note subtree (RESEARCH
  * Pitfall 2).
+ *
+ * FB-05: also invalidates `vodSharesQueryKey` — the server cascade-revokes
+ * any share links attached to this VOD (Plan 03), so the owner's My Shares
+ * list must refetch too, without a manual page refresh.
  */
 export function useClearVodAndNotes() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (matchId: string) => api.matches.clearVod(matchId),
     onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: matchesQueryKey });
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: matchesQueryKey }),
+        queryClient.invalidateQueries({ queryKey: vodSharesQueryKey }),
+      ]);
     },
   });
 }

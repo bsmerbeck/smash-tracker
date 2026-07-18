@@ -74,6 +74,7 @@
     "matchDelete": {
       "aria": "Match löschen",
       "confirmTitle": "Dieses Match löschen?",
+      "sharesNote": "Alle Share-Links für den VOD dieses Matches werden widerrufen.",
       "deleted": "Match gelöscht!",
       "deleteFailed": "Match konnte nicht gelöscht werden. Bitte erneut versuchen."
     },
@@ -456,6 +457,7 @@
       },
       "removeVodConfirm": {
         "title": "Diesen VOD-Link entfernen?",
+        "sharesNote": "Alle Share-Links für diesen VOD werden widerrufen.",
         "removed": "VOD-Link entfernt",
         "removeFailed": "VOD-Link konnte nicht entfernt werden. Bitte erneut versuchen."
       },

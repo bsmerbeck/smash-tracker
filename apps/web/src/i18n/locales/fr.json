@@ -74,6 +74,7 @@
     "matchDelete": {
       "aria": "Supprimer le match",
       "confirmTitle": "Supprimer ce match ?",
+      "sharesNote": "Les liens de partage du VOD de ce match seront révoqués.",
       "deleted": "Match supprimé !",
       "deleteFailed": "Échec de la suppression du match. Veuillez réessayer."
     },
@@ -456,6 +457,7 @@
       },
       "removeVodConfirm": {
         "title": "Supprimer ce lien VOD ?",
+        "sharesNote": "Les liens de partage de ce VOD seront révoqués.",
         "removed": "Lien VOD supprimé",
         "removeFailed": "Échec de la suppression du lien VOD. Veuillez réessayer."
       },

@@ -607,7 +607,11 @@ export function MatchTable({
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>{t('matchData.table.removeVodConfirm.title')}</AlertDialogTitle>
-            <AlertDialogDescription>{t('common.cannotBeUndone')}</AlertDialogDescription>
+            <AlertDialogDescription>
+              {t('common.cannotBeUndone')}
+              <br />
+              {t('matchData.table.removeVodConfirm.sharesNote')}
+            </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>{t('common.cancel')}</AlertDialogCancel>
@@ -623,7 +627,11 @@ export function MatchTable({
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>{t('shared.matchDelete.confirmTitle')}</AlertDialogTitle>
-            <AlertDialogDescription>{t('common.cannotBeUndone')}</AlertDialogDescription>
+            <AlertDialogDescription>
+              {t('common.cannotBeUndone')}
+              <br />
+              {t('shared.matchDelete.sharesNote')}
+            </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>{t('common.cancel')}</AlertDialogCancel>
