@@ -140,6 +140,58 @@ describe('SignInCard — Google popup abandonment grace timer (FB-02)', () => {
     expect(googleButton).toBeDisabled();
   });
 
+  it('WR-01: a late rejection from an ABANDONED attempt never toasts, never re-enables the buttons mid-retry, and never kills the retry attempt’s grace timer', async () => {
+    let rejectFirst: ((error: unknown) => void) | undefined;
+    const firstPending = new Promise((_resolve, reject) => {
+      rejectFirst = reject;
+    });
+    firstPending.catch(() => {});
+    signInWithPopup.mockReturnValueOnce(firstPending);
+
+    renderCard();
+    const googleButton = screen.getByRole('button', { name: /continue with google/i });
+
+    // Attempt 1: popup abandoned, grace timer re-enables the buttons while
+    // the SDK promise is still pending (the FB-02 baseline).
+    act(() => {
+      fireEvent.click(googleButton);
+    });
+    act(() => {
+      window.dispatchEvent(new Event('focus'));
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(POPUP_FOCUS_GRACE_MS);
+    });
+    expect(googleButton).not.toBeDisabled();
+
+    // Attempt 2: the user retries while attempt 1's promise is STILL pending.
+    signInWithPopup.mockReturnValue(new Promise(() => {}));
+    act(() => {
+      fireEvent.click(googleButton);
+    });
+    expect(googleButton).toBeDisabled();
+
+    // Attempt 1's rejection finally lands (7-8s late): it is stale — no
+    // toast, and attempt 2's submitting state stays intact.
+    await act(async () => {
+      rejectFirst?.({ code: 'auth/popup-closed-by-user' });
+      await Promise.resolve();
+    });
+    expect(toastError).not.toHaveBeenCalled();
+    expect(googleButton).toBeDisabled();
+
+    // Attempt 2's own abandonment path still works — its focus-return grace
+    // timer was NOT torn down by attempt 1's stale settle.
+    act(() => {
+      window.dispatchEvent(new Event('focus'));
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(POPUP_FOCUS_GRACE_MS);
+    });
+    expect(googleButton).not.toBeDisabled();
+    expect(toastError).not.toHaveBeenCalled();
+  });
+
   it('still toasts when the popup rejects before the grace timer fires (e.g. auth/popup-blocked)', async () => {
     signInWithPopup.mockRejectedValue({ code: 'auth/popup-blocked' });
     renderCard();
