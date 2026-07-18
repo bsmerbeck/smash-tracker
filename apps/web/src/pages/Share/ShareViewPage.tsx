@@ -8,6 +8,7 @@ import { getFighterById } from '@/data/sprites';
 import { NO_SELECTION_STAGE } from '@/data/stages';
 import { PublicLayout } from '@/layouts/PublicLayout';
 import { useSeo } from '@/hooks/useSeo';
+import { ApiError } from '@/lib/api';
 import { usePublicVodShare } from '@/hooks/useVodShares';
 import {
   useCoachSession,
@@ -60,6 +61,17 @@ import { RecapView } from './components/RecapView';
  * `id`/`coach` fields (absent on a frozen view-tier snapshot) are populated
  * ONLY by the live `/session` recompute (08-03). */
 type SessionTimestamp = NonNullable<PublicShareSnapshot['timestamps']>[number];
+
+/**
+ * Per-call mutation callbacks (FB-04) threaded through `withDisplayName` for
+ * a coach's FIRST write only — the moment the server actually accepts or
+ * rejects the just-submitted display name. Never used for a write on an
+ * already-committed session (that name can't 409).
+ */
+interface CoachWriteOptions {
+  onSuccess?: () => void;
+  onError?: (error: unknown) => void;
+}
 
 /** Best-effort hostname extraction for the "Watch on {host}" fallback link — mirrors `VodPlayer.tsx`'s `safeHostname`. */
 function safeHostname(url: string): string {
@@ -522,6 +534,10 @@ export function ShareViewPage() {
   const [editingNoteId, setEditingNoteId] = useState<string | null>(null);
   const [nameDialogOpen, setNameDialogOpen] = useState(false);
   const [namePromptValue, setNamePromptValue] = useState('');
+  // FB-04: the server rejected the coach's most recently SUBMITTED name with
+  // a 409 (already taken on this review). Drives the name-taken message in
+  // the prompt; the rejected name is never committed below.
+  const [nameTaken, setNameTaken] = useState(false);
   // The coach's display name, held in COMPONENT STATE as the source of
   // truth (review WR-04): seeded from localStorage when available, updated
   // directly from the name prompt, and passed explicitly to every write.
@@ -532,7 +548,16 @@ export function ShareViewPage() {
   const [coachDisplayName, setCoachDisplayName] = useState<string>(
     () => getStoredDisplayName() ?? '',
   );
-  const pendingWriteRef = useRef<((displayName: string) => void) | null>(null);
+  // FB-04: the FIRST write (deferred behind the name prompt) is committed
+  // to state/localStorage ONLY once the server accepts it — a per-call
+  // `CoachWriteOptions` threaded through `withDisplayName` does that commit
+  // on success and re-prompts on a 409, WITHOUT ever writing the rejected
+  // name to state or storage. A write on an already-committed session (the
+  // common case) calls its action with no options — that path can never
+  // 409 (the name is already accepted).
+  const pendingWriteRef = useRef<
+    ((displayName: string, options?: CoachWriteOptions) => void) | null
+  >(null);
 
   const unavailable = isError || (!isPending && !snapshot);
 
@@ -614,17 +639,20 @@ export function ShareViewPage() {
   // Name-prompt gate (RESEARCH: fires on the FIRST WRITE attempt, never on
   // page load): if no display name is known yet, defer `action` behind the
   // one-field dialog; `action` fires — with the entered name passed
-  // EXPLICITLY (review WR-04) — once the coach submits. Every later write
-  // reuses the in-state name and never opens the dialog. The name is never
-  // re-read from localStorage after the prompt: persistence there is
+  // EXPLICITLY (review WR-04) plus per-call `CoachWriteOptions` (FB-04) —
+  // once the coach submits. Every later write reuses the in-state name and
+  // never opens the dialog (that name already cleared the server, so it can
+  // never 409 — `action` is called with no options at all). The name is
+  // never re-read from localStorage after the prompt: persistence there is
   // best-effort and may silently fail (Safari private mode).
-  function withDisplayName(action: (displayName: string) => void) {
+  function withDisplayName(action: (displayName: string, options?: CoachWriteOptions) => void) {
     if (coachDisplayName) {
       action(coachDisplayName);
       return;
     }
     pendingWriteRef.current = action;
     setNamePromptValue('');
+    setNameTaken(false);
     setNameDialogOpen(true);
   }
 
@@ -633,24 +661,59 @@ export function ShareViewPage() {
     if (!trimmed) {
       return;
     }
-    // Component state is the source of truth for every subsequent write;
-    // localStorage persistence below is best-effort only (WR-04).
-    setCoachDisplayName(trimmed);
-    setDisplayName(trimmed);
-    setNameDialogOpen(false);
     const action = pendingWriteRef.current;
-    pendingWriteRef.current = null;
-    action?.(trimmed);
+    if (!action) {
+      return;
+    }
+    // Resubmitting clears any stale "name taken" message from a prior
+    // rejection while this attempt is in flight.
+    setNameTaken(false);
+    action(trimmed, {
+      onSuccess: () => {
+        // Component state is the source of truth for every subsequent
+        // write; localStorage persistence below is best-effort only
+        // (WR-04). Committed ONLY now that the server has actually
+        // accepted this name (FB-04) — never optimistically beforehand.
+        setCoachDisplayName(trimmed);
+        setDisplayName(trimmed);
+        setNameTaken(false);
+        setNameDialogOpen(false);
+        pendingWriteRef.current = null;
+      },
+      onError: (error: unknown) => {
+        if (error instanceof ApiError && error.status === 409) {
+          // Name rejected by the server (already taken on this review) —
+          // never persisted to state or localStorage. Re-open the prompt
+          // with the rejected candidate restored so the coach can retry;
+          // `pendingWriteRef` stays intact so the SAME write retries once a
+          // name is accepted.
+          setNameTaken(true);
+          setNamePromptValue(trimmed);
+          setNameDialogOpen(true);
+          return;
+        }
+        // Any other failure: the shared `toastCoachWriteError` handler
+        // (fired from `useCreateCoachNote`'s own onError) already surfaced
+        // the generic save-failed toast — nothing else to do here.
+        pendingWriteRef.current = null;
+        setNameDialogOpen(false);
+      },
+    });
   }
 
   function handleCreateCoachNote(input: { seconds: number; note: string }) {
-    withDisplayName((displayName) => {
-      createCoachNote.mutate({
+    withDisplayName((displayName, options) => {
+      const payload = {
         sessionId: mySessionId,
         displayName,
         seconds: input.seconds,
         note: input.note,
-      });
+      };
+      if (options) {
+        createCoachNote.mutate(payload, options);
+      } else {
+        createCoachNote.mutate(payload);
+      }
     });
   }
 
@@ -697,14 +760,19 @@ export function ShareViewPage() {
       });
       return;
     }
-    withDisplayName((displayName) => {
-      createCoachNote.mutate({
+    withDisplayName((displayName, options) => {
+      const payload = {
         sessionId: mySessionId,
         displayName,
         seconds,
         note: '',
         tags: [tagSlug],
-      });
+      };
+      if (options) {
+        createCoachNote.mutate(payload, options);
+      } else {
+        createCoachNote.mutate(payload);
+      }
     });
   }
 
@@ -855,12 +923,24 @@ export function ShareViewPage() {
         </div>
       </div>
 
-      {/* Phase 8: the coach's one-time, first-write-deferred name prompt. */}
-      <Dialog open={nameDialogOpen} onOpenChange={setNameDialogOpen}>
+      {/* Phase 8: the coach's one-time, first-write-deferred name prompt.
+          FB-04: re-opens showing the name-taken message on a 409, without
+          ever persisting the rejected name. */}
+      <Dialog
+        open={nameDialogOpen}
+        onOpenChange={(open) => {
+          setNameDialogOpen(open);
+          if (!open) {
+            setNameTaken(false);
+          }
+        }}
+      >
         <DialogContent className="max-w-sm">
           <DialogHeader>
             <DialogTitle>{t('share.coach.namePromptTitle')}</DialogTitle>
-            <DialogDescription>{t('share.coach.namePromptDescription')}</DialogDescription>
+            <DialogDescription>
+              {nameTaken ? t('share.coach.nameTaken') : t('share.coach.namePromptDescription')}
+            </DialogDescription>
           </DialogHeader>
           <div className="flex flex-col gap-1.5">
             <Label htmlFor="coach-display-name">{t('share.coach.nameLabel')}</Label>

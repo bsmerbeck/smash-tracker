@@ -74,6 +74,7 @@
     "matchDelete": {
       "aria": "Delete match",
       "confirmTitle": "Delete this match?",
+      "sharesNote": "Any share links for this match's VOD will be revoked.",
       "deleted": "Match deleted!",
       "deleteFailed": "Failed to delete match. Please try again."
     },
@@ -456,6 +457,7 @@
       },
       "removeVodConfirm": {
         "title": "Remove this VOD link?",
+        "sharesNote": "Any share links for this VOD will be revoked.",
         "removed": "VOD link removed",
         "removeFailed": "Failed to remove VOD link. Please try again."
       },
@@ -517,7 +519,7 @@
     "notes": {
       "saveEdit": "Save timestamp edit",
       "cancelEdit": "Cancel timestamp edit",
-      "coachAttribution": "Coach {{name}}",
+      "coachAttribution": "{{name}}",
       "deleteConfirmTitle": "Delete this timestamp note?",
       "editTimeAria": "Edit timestamp time",
       "editNoteAria": "Edit timestamp note",
@@ -1489,7 +1491,8 @@
       "namePromptDescription": "Your name will show next to any notes you add here.",
       "nameLabel": "Your name",
       "nameSubmit": "Continue",
-      "attribution": "Coach note by {{name}}",
+      "attribution": "Note by {{name}}",
+      "nameTaken": "That name is already taken on this review — pick another.",
       "shareGoneToast": "This coaching link is no longer available — your change wasn't saved."
     }
   }

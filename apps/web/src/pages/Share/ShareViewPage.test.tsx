@@ -57,7 +57,20 @@ vi.mock('@/lib/coachSession', () => ({
 const coachSessionQuery = vi.fn<() => { data: PublicShareSnapshot | undefined }>(() => ({
   data: undefined,
 }));
-const createCoachNoteMutate = vi.fn();
+// FB-04: `ShareViewPage` now threads per-call `{ onSuccess, onError }`
+// mutation options through `createCoachNote.mutate` for a coach's FIRST
+// write (deferred behind the name prompt) — this default implementation
+// mirrors a SUCCESSFUL server write by invoking `onSuccess` synchronously,
+// matching every pre-existing test's expectation that a write "just
+// succeeds". Individual 409 tests below override this with
+// `mockImplementationOnce` to simulate a name-collision rejection instead.
+// A write on an already-committed session calls `.mutate(payload)` with no
+// second argument at all — `options` is `undefined` and the `?.` no-ops.
+const createCoachNoteMutate = vi.fn(
+  (_payload: unknown, options?: { onSuccess?: () => void; onError?: (error: unknown) => void }) => {
+    options?.onSuccess?.();
+  },
+);
 const updateCoachNoteMutate = vi.fn();
 const deleteCoachNoteMutate = vi.fn();
 
@@ -665,7 +678,7 @@ describe('ShareViewPage', () => {
       renderShare('/s/tok123');
 
       await screen.findByText('Rival coach note');
-      expect(screen.getByText('Coach note by Rival Coach')).toBeInTheDocument();
+      expect(screen.getByText('Note by Rival Coach')).toBeInTheDocument();
       expect(screen.queryByRole('button', { name: /Edit timestamp/ })).not.toBeInTheDocument();
       expect(screen.queryByRole('button', { name: /Delete timestamp/ })).not.toBeInTheDocument();
     });
@@ -715,12 +728,19 @@ describe('ShareViewPage', () => {
       await user.click(screen.getByRole('button', { name: 'Continue' }));
 
       expect(setDisplayNameMock).toHaveBeenCalledWith('Coach Ken');
-      expect(createCoachNoteMutate).toHaveBeenCalledExactlyOnceWith({
-        sessionId: MY_SESSION_ID,
-        displayName: 'Coach Ken',
-        seconds: 5,
-        note: '',
-      });
+      // FB-04: the first write's `.mutate` call also carries per-call
+      // `{ onSuccess, onError }` options — the default mock implementation
+      // invokes `onSuccess` synchronously, which is what actually commits
+      // the name above.
+      expect(createCoachNoteMutate).toHaveBeenCalledExactlyOnceWith(
+        {
+          sessionId: MY_SESSION_ID,
+          displayName: 'Coach Ken',
+          seconds: 5,
+          note: '',
+        },
+        expect.objectContaining({ onSuccess: expect.any(Function), onError: expect.any(Function) }),
+      );
       expect(screen.queryByText('What should we call you?')).not.toBeInTheDocument();
 
       // A second write, now that a name is stored, never reopens the prompt.
@@ -729,6 +749,54 @@ describe('ShareViewPage', () => {
 
       expect(screen.queryByText('What should we call you?')).not.toBeInTheDocument();
       expect(createCoachNoteMutate).toHaveBeenCalledTimes(2);
+    });
+
+    it('FB-04: a 409 on the first write re-opens the name prompt with the name-taken message and never persists the rejected name; a later accepted name commits and creates the note', async () => {
+      getPublic.mockResolvedValue(baseSnapshot());
+      coachSessionQuery.mockReturnValue({ data: baseCoachSession() });
+      getStoredDisplayNameMock.mockReturnValue(null);
+      createCoachNoteMutate.mockImplementationOnce((_payload: unknown, options) => {
+        options?.onError?.(
+          new ApiError(409, 'That name is already taken on this review — pick another.'),
+        );
+      });
+      mountYouTubePlayer();
+      const user = userEvent.setup();
+
+      renderShare('/s/tok123');
+
+      await screen.findByText('Add a note');
+      await user.type(screen.getByLabelText('Timestamp time'), '0:05');
+      await user.click(screen.getByRole('button', { name: 'Add timestamp' }));
+
+      await user.type(await screen.findByLabelText('Your name'), 'Coach Ken');
+      await user.click(screen.getByRole('button', { name: 'Continue' }));
+
+      // The prompt re-opens showing the name-taken message — the rejected
+      // name is never committed to component state or localStorage
+      // (setDisplayName never fires), and no generic save-failed toast
+      // handling happens here (toastCoachWriteError's 409 skip is exercised
+      // separately in useCoachNotes.test.tsx).
+      expect(
+        await screen.findByText('That name is already taken on this review — pick another.'),
+      ).toBeInTheDocument();
+      expect(setDisplayNameMock).not.toHaveBeenCalled();
+      expect(createCoachNoteMutate).toHaveBeenCalledTimes(1);
+
+      // A second submission with an accepted name commits and creates the
+      // note — the SAME deferred write retries, no need to re-click "Add
+      // timestamp".
+      await user.clear(screen.getByLabelText('Your name'));
+      await user.type(screen.getByLabelText('Your name'), 'Coach Ken 2');
+      await user.click(screen.getByRole('button', { name: 'Continue' }));
+
+      expect(setDisplayNameMock).toHaveBeenCalledExactlyOnceWith('Coach Ken 2');
+      expect(createCoachNoteMutate).toHaveBeenCalledTimes(2);
+      expect(createCoachNoteMutate).toHaveBeenLastCalledWith(
+        expect.objectContaining({ displayName: 'Coach Ken 2', seconds: 5, note: '' }),
+        expect.objectContaining({ onSuccess: expect.any(Function), onError: expect.any(Function) }),
+      );
+      expect(screen.queryByText('What should we call you?')).not.toBeInTheDocument();
     });
 
     it('REGRESSION (WR-04): with localStorage completely unavailable, the entered name still flows through and the prompt never loops', async () => {
@@ -752,12 +820,15 @@ describe('ShareViewPage', () => {
       await user.click(screen.getByRole('button', { name: 'Continue' }));
 
       // The write carries the ENTERED name — never the (empty) storage value.
-      expect(createCoachNoteMutate).toHaveBeenCalledExactlyOnceWith({
-        sessionId: MY_SESSION_ID,
-        displayName: 'Coach Ken',
-        seconds: 5,
-        note: '',
-      });
+      expect(createCoachNoteMutate).toHaveBeenCalledExactlyOnceWith(
+        {
+          sessionId: MY_SESSION_ID,
+          displayName: 'Coach Ken',
+          seconds: 5,
+          note: '',
+        },
+        expect.objectContaining({ onSuccess: expect.any(Function), onError: expect.any(Function) }),
+      );
 
       // A second write reuses the in-state name — the prompt never reopens.
       await user.type(screen.getByLabelText('Timestamp time'), '0:07');

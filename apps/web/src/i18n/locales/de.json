@@ -74,6 +74,7 @@
     "matchDelete": {
       "aria": "Match löschen",
       "confirmTitle": "Dieses Match löschen?",
+      "sharesNote": "Alle Share-Links für den VOD dieses Matches werden widerrufen.",
       "deleted": "Match gelöscht!",
       "deleteFailed": "Match konnte nicht gelöscht werden. Bitte erneut versuchen."
     },
@@ -456,6 +457,7 @@
       },
       "removeVodConfirm": {
         "title": "Diesen VOD-Link entfernen?",
+        "sharesNote": "Alle Share-Links für diesen VOD werden widerrufen.",
         "removed": "VOD-Link entfernt",
         "removeFailed": "VOD-Link konnte nicht entfernt werden. Bitte erneut versuchen."
       },
@@ -517,7 +519,7 @@
     "notes": {
       "saveEdit": "Zeitstempel-Bearbeitung speichern",
       "cancelEdit": "Zeitstempel-Bearbeitung abbrechen",
-      "coachAttribution": "Coach: {{name}}",
+      "coachAttribution": "{{name}}",
       "deleteConfirmTitle": "Diese Zeitstempel-Notiz löschen?",
       "editTimeAria": "Zeitstempel-Zeit bearbeiten",
       "editNoteAria": "Zeitstempel-Notiz bearbeiten",
@@ -1489,7 +1491,8 @@
       "namePromptDescription": "Dein Name wird neben den Notizen angezeigt, die du hier hinzufügst.",
       "nameLabel": "Dein Name",
       "nameSubmit": "Weiter",
-      "attribution": "Coach-Notiz von {{name}}",
+      "attribution": "Notiz von {{name}}",
+      "nameTaken": "Dieser Name ist für diese Review bereits vergeben — wähle einen anderen.",
       "shareGoneToast": "Dieser Coaching-Link ist nicht mehr verfügbar — deine Änderung wurde nicht gespeichert."
     }
   }
