@@ -592,12 +592,29 @@ export class RtdbService {
     const notesRef = this.database.ref(`matches/${uid}/${matchId}/vodTimestamps`);
     let updated: VodTimestamp | undefined;
 
-    await notesRef.transaction((raw) => {
+    const result = await notesRef.transaction((raw) => {
+      // Reset per run (review CR-01): a value captured during a DISCARDED
+      // (hash-mismatch) run must never leak into the final outcome — only
+      // the run whose return value actually commits may report success.
+      updated = undefined;
+      if (raw === null || raw === undefined) {
+        // Real RTDB runs this function against the SDK's LOCAL CACHE first
+        // — on a listener-less server process that is `null` even when
+        // server data exists (`get()`'s temporary registration is removed
+        // once it resolves). Returning `undefined` here would abort the
+        // transaction PERMANENTLY — there is no retry with server data —
+        // 404ing every note edit against real RTDB (review CR-01).
+        // Returning the input unchanged instead forces the SDK's hash
+        // compare: it either commits a no-op (node truly empty — `updated`
+        // stays unset, callers 404 correctly) or fails and re-runs this
+        // function with the real server value.
+        return raw;
+      }
       const entries = normalizeVodTimestampsNode(raw);
       const target = entries.find((entry) => entry.id === noteId);
       if (!target) {
-        // Abort — no matching note, nothing to write (mirrors
-        // upsertUser's referral-transaction abort convention).
+        // Verified-missing (non-null node, no matching note) — abort is
+        // correct here (mirrors upsertUser's referral-transaction abort).
         return undefined;
       }
       if (
@@ -622,6 +639,12 @@ export class RtdbService {
       return nextNode;
     });
 
+    // Success is derived from the COMMITTED transaction result, never from
+    // a closure flag alone (review CR-01's secondary defect): an aborted
+    // transaction returns null even if some discarded run found the target.
+    if (!result.committed) {
+      return null;
+    }
     return updated ?? null;
   }
 
@@ -645,11 +668,19 @@ export class RtdbService {
     const notesRef = this.database.ref(`matches/${uid}/${matchId}/vodTimestamps`);
     let found = false;
 
-    await notesRef.transaction((raw) => {
+    const result = await notesRef.transaction((raw) => {
+      // Reset per run — see writeNoteUpdate's identical comment (CR-01).
+      found = false;
+      if (raw === null || raw === undefined) {
+        // Unknown local cache — never abort here; force the SDK's
+        // server-verified retry (or a harmless no-op commit when the node
+        // is truly empty). See writeNoteUpdate's comment (review CR-01).
+        return raw;
+      }
       const entries = normalizeVodTimestampsNode(raw);
       const target = entries.find((entry) => entry.id === noteId);
       if (!target) {
-        // Abort — no matching note, nothing to write.
+        // Verified-missing — abort, nothing to write.
         return undefined;
       }
       if (
@@ -673,7 +704,9 @@ export class RtdbService {
       return Object.keys(nextNode).length === 0 ? null : nextNode;
     });
 
-    return found;
+    // Derive success from the committed result AND the final run's flag —
+    // never a stale flag from a discarded run (review CR-01).
+    return result.committed && found;
   }
 
   /**

@@ -396,6 +396,83 @@ describe('RtdbService.createNote / updateNote / deleteNote — owner note CRUD (
 });
 
 // ---------------------------------------------------------------------------
+// Review CR-01 regression: FakeDatabase.transaction now emulates real RTDB's
+// null-local-cache FIRST run (see fakeDatabase.test.ts). These tests pin the
+// note transactions' survival of that first run: the pre-fix code returned
+// `undefined` when the (null) first run found no matching note, aborting
+// permanently — 404ing EVERY owner/coach note edit and delete in production
+// while the old always-real-data fake kept the whole suite green.
+// ---------------------------------------------------------------------------
+describe('CR-01 regression: note edit/delete vs real-RTDB null-first-run transaction semantics', () => {
+  function seedMatch(database: FakeDatabase, overrides: Record<string, unknown> = {}) {
+    database.seed(`matches/${UID}/m1`, {
+      fighter_id: 1,
+      opponent_id: 8,
+      time: 1700000000000,
+      win: true,
+      ...overrides,
+    });
+  }
+
+  it('updateNote commits through the null-first-run + server-verified retry path', async () => {
+    const database = new FakeDatabase();
+    const rtdb = new RtdbService(database as never);
+    seedMatch(database, { vodTimestamps: { realNote: { seconds: 10, note: 'original' } } });
+
+    const updated = await rtdb.updateNote(UID, 'm1', 'realNote', { seconds: 12, note: 'edited' });
+
+    expect(updated).toMatchObject({ id: 'realNote', seconds: 12, note: 'edited' });
+    const stored = database.dump().matches as Record<string, Record<string, unknown>>;
+    expect((stored[UID]!.m1 as Record<string, unknown>).vodTimestamps).toMatchObject({
+      realNote: { seconds: 12, note: 'edited' },
+    });
+  });
+
+  it('deleteNote commits through the null-first-run + server-verified retry path', async () => {
+    const database = new FakeDatabase();
+    const rtdb = new RtdbService(database as never);
+    seedMatch(database, {
+      vodTimestamps: {
+        realNote: { seconds: 10, note: 'to delete' },
+        keptNote: { seconds: 20, note: 'kept' },
+      },
+    });
+
+    await rtdb.deleteNote(UID, 'm1', 'realNote');
+
+    const stored = database.dump().matches as Record<string, Record<string, unknown>>;
+    const vodTimestamps = (stored[UID]!.m1 as Record<string, unknown>).vodTimestamps as Record<
+      string,
+      unknown
+    >;
+    expect(vodTimestamps).not.toHaveProperty('realNote');
+    expect(vodTimestamps).toHaveProperty('keptNote');
+  });
+
+  it('updateNote on a match with NO vodTimestamps node 404s without fabricating a node (no-op commit)', async () => {
+    const database = new FakeDatabase();
+    const rtdb = new RtdbService(database as never);
+    seedMatch(database);
+
+    await expect(rtdb.updateNote(UID, 'm1', 'anyNote', { seconds: 1, note: 'x' })).rejects.toThrow(
+      'Note anyNote not found',
+    );
+    const stored = database.dump().matches as Record<string, Record<string, unknown>>;
+    expect(stored[UID]!.m1).not.toHaveProperty('vodTimestamps');
+  });
+
+  it('deleteNote on a match with NO vodTimestamps node 404s without fabricating a node', async () => {
+    const database = new FakeDatabase();
+    const rtdb = new RtdbService(database as never);
+    seedMatch(database);
+
+    await expect(rtdb.deleteNote(UID, 'm1', 'anyNote')).rejects.toThrow('Note anyNote not found');
+    const stored = database.dump().matches as Record<string, Record<string, unknown>>;
+    expect(stored[UID]!.m1).not.toHaveProperty('vodTimestamps');
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Phase 8 Plan 3 (Coaching Edit Sessions): the coach backend — an edit-tier
 // token resolves to a LIVE redacted recompute (never the frozen snapshot),
 // and three anonymous session-scoped write helpers guard ownership +
