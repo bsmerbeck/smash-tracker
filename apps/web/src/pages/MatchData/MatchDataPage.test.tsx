@@ -339,11 +339,11 @@ describe('MatchDataPage', () => {
     await user.click(screen.getByLabelText('Edit match'));
 
     const dialog = await screen.findByRole('dialog');
-    expect(within(dialog).getByLabelText('VOD URL')).toHaveValue(
+    expect(within(dialog).getByLabelText('VOD URL (YouTube or Twitch)')).toHaveValue(
       'https://youtube.com/watch?v=abc123',
     );
 
-    await user.clear(within(dialog).getByLabelText('VOD URL'));
+    await user.clear(within(dialog).getByLabelText('VOD URL (YouTube or Twitch)'));
     await user.click(within(dialog).getByRole('button', { name: 'Save' }));
 
     await waitFor(() => expect(updateMatch).toHaveBeenCalledTimes(1));
@@ -381,9 +381,9 @@ describe('MatchDataPage', () => {
       await user.click(screen.getByLabelText('Edit match'));
 
       const dialog = await screen.findByRole('dialog');
-      await user.clear(within(dialog).getByLabelText('VOD URL'));
+      await user.clear(within(dialog).getByLabelText('VOD URL (YouTube or Twitch)'));
       await user.type(
-        within(dialog).getByLabelText('VOD URL'),
+        within(dialog).getByLabelText('VOD URL (YouTube or Twitch)'),
         'https://youtube.com/watch?v=xyz789',
       );
       await user.click(within(dialog).getByRole('button', { name: 'Save' }));
@@ -408,7 +408,7 @@ describe('MatchDataPage', () => {
     await user.click(screen.getByLabelText('Edit match'));
 
     const dialog = await screen.findByRole('dialog');
-    await user.type(within(dialog).getByLabelText('VOD URL'), 'not-a-url');
+    await user.type(within(dialog).getByLabelText('VOD URL (YouTube or Twitch)'), 'not-a-url');
     await user.click(within(dialog).getByRole('button', { name: 'Save' }));
 
     expect(
@@ -510,7 +510,7 @@ describe('MatchDataPage', () => {
 
     const dialog = await screen.findByRole('dialog');
     expect(within(dialog).getByText('Edit Match')).toBeInTheDocument();
-    expect(within(dialog).getByLabelText('VOD URL')).toHaveValue(
+    expect(within(dialog).getByLabelText('VOD URL (YouTube or Twitch)')).toHaveValue(
       'https://youtube.com/watch?v=abc123',
     );
   });
@@ -575,7 +575,10 @@ describe('MatchDataPage', () => {
     const dialog = await screen.findByRole('dialog');
     expect(within(dialog).getByText('VOD Notes')).toBeInTheDocument();
 
-    await user.type(within(dialog).getByLabelText('VOD URL'), 'https://youtube.com/watch?v=abc123');
+    await user.type(
+      within(dialog).getByLabelText('VOD URL (YouTube or Twitch)'),
+      'https://youtube.com/watch?v=abc123',
+    );
     await user.type(within(dialog).getByLabelText('Timestamp time'), '2:41');
     await user.type(within(dialog).getByLabelText('Timestamp note'), 'missed punish on shield');
     await user.click(within(dialog).getByRole('button', { name: 'Add timestamp' }));

@@ -85,7 +85,7 @@
     "vod": {
       "title": "VOD Notes",
       "description": "Attach a VOD link and timestamped notes, e.g. \"2:41 — missed punish on shield\".",
-      "url": "VOD URL",
+      "url": "VOD URL (YouTube or Twitch)",
       "timestamps": "Timestamps",
       "noTimestamps": "No timestamp notes yet.",
       "timestampsAria": "Timestamp notes",
@@ -253,6 +253,7 @@
       "charLimit": "Limit {{max}} characters",
       "gspFormat": "Enter a number like 12,400,000 (or leave blank)",
       "vodUrlInvalid": "Enter a valid URL (or leave blank)",
+      "vodUrlRequired": "Enter a valid VOD link (YouTube or Twitch)",
       "vodStartSecondsInvalid": "Enter a time as m:ss, h:mm:ss, or seconds (or leave blank)"
     },
     "set": {

@@ -85,7 +85,7 @@
     "vod": {
       "title": "Notas de VOD",
       "description": "Adjunta un enlace al VOD y notas con marca de tiempo, p. ej. «2:41 — castigo fallado al escudo».",
-      "url": "URL del VOD",
+      "url": "URL del VOD (YouTube or Twitch)",
       "timestamps": "Marcas de tiempo",
       "noTimestamps": "Aún no hay notas con marca de tiempo.",
       "timestampsAria": "Notas con marca de tiempo",
@@ -253,6 +253,7 @@
       "charLimit": "Máximo {{max}} caracteres",
       "gspFormat": "Introduce un número como 12 400 000 (o déjalo en blanco)",
       "vodUrlInvalid": "Introduce una URL válida (o déjala en blanco)",
+      "vodUrlRequired": "Introduce un enlace de VOD válido (YouTube or Twitch)",
       "vodStartSecondsInvalid": "Introduce una hora como m:ss, h:mm:ss o segundos (o déjala en blanco)"
     },
     "set": {
