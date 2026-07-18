@@ -522,7 +522,17 @@ export function ShareViewPage() {
   const [editingNoteId, setEditingNoteId] = useState<string | null>(null);
   const [nameDialogOpen, setNameDialogOpen] = useState(false);
   const [namePromptValue, setNamePromptValue] = useState('');
-  const pendingWriteRef = useRef<(() => void) | null>(null);
+  // The coach's display name, held in COMPONENT STATE as the source of
+  // truth (review WR-04): seeded from localStorage when available, updated
+  // directly from the name prompt, and passed explicitly to every write.
+  // localStorage persistence is best-effort only — `coachSession.ts`
+  // deliberately swallows storage failures (Safari private mode / disabled
+  // storage), so re-reading storage after a write would yield '' there and
+  // 400 every coach write forever while re-opening the prompt each time.
+  const [coachDisplayName, setCoachDisplayName] = useState<string>(
+    () => getStoredDisplayName() ?? '',
+  );
+  const pendingWriteRef = useRef<((displayName: string) => void) | null>(null);
 
   const unavailable = isError || (!isPending && !snapshot);
 
@@ -602,12 +612,15 @@ export function ShareViewPage() {
   }
 
   // Name-prompt gate (RESEARCH: fires on the FIRST WRITE attempt, never on
-  // page load): if no display name is stored yet, defer `action` behind the
-  // one-field dialog; `action` fires once the coach submits a name. Every
-  // later write reuses the already-stored name and never opens the dialog.
-  function withDisplayName(action: () => void) {
-    if (getStoredDisplayName()) {
-      action();
+  // page load): if no display name is known yet, defer `action` behind the
+  // one-field dialog; `action` fires — with the entered name passed
+  // EXPLICITLY (review WR-04) — once the coach submits. Every later write
+  // reuses the in-state name and never opens the dialog. The name is never
+  // re-read from localStorage after the prompt: persistence there is
+  // best-effort and may silently fail (Safari private mode).
+  function withDisplayName(action: (displayName: string) => void) {
+    if (coachDisplayName) {
+      action(coachDisplayName);
       return;
     }
     pendingWriteRef.current = action;
@@ -620,18 +633,21 @@ export function ShareViewPage() {
     if (!trimmed) {
       return;
     }
+    // Component state is the source of truth for every subsequent write;
+    // localStorage persistence below is best-effort only (WR-04).
+    setCoachDisplayName(trimmed);
     setDisplayName(trimmed);
     setNameDialogOpen(false);
     const action = pendingWriteRef.current;
     pendingWriteRef.current = null;
-    action?.();
+    action?.(trimmed);
   }
 
   function handleCreateCoachNote(input: { seconds: number; note: string }) {
-    withDisplayName(() => {
+    withDisplayName((displayName) => {
       createCoachNote.mutate({
         sessionId: mySessionId,
-        displayName: getStoredDisplayName() ?? '',
+        displayName,
         seconds: input.seconds,
         note: input.note,
       });
@@ -681,10 +697,10 @@ export function ShareViewPage() {
       });
       return;
     }
-    withDisplayName(() => {
+    withDisplayName((displayName) => {
       createCoachNote.mutate({
         sessionId: mySessionId,
-        displayName: getStoredDisplayName() ?? '',
+        displayName,
         seconds,
         note: '',
         tags: [tagSlug],
