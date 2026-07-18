@@ -517,7 +517,7 @@
     "notes": {
       "saveEdit": "タイムスタンプの編集を保存",
       "cancelEdit": "タイムスタンプの編集をキャンセル",
-      "coachAttribution": "{{name}}（コーチ）",
+      "coachAttribution": "{{name}}",
       "deleteConfirmTitle": "このタイムスタンプメモを削除しますか？",
       "editTimeAria": "タイムスタンプの時間を編集",
       "editNoteAria": "タイムスタンプのメモを編集",
@@ -1489,7 +1489,8 @@
       "namePromptDescription": "ここで追加したメモの横にあなたの名前が表示されます。",
       "nameLabel": "お名前",
       "nameSubmit": "続ける",
-      "attribution": "{{name}}（コーチ）のメモ",
+      "attribution": "{{name}}のメモ",
+      "nameTaken": "その名前はこのレビューで既に使われています。別の名前を選んでください。",
       "shareGoneToast": "このコーチングリンクは利用できなくなりました — 変更は保存されませんでした。"
     }
   }
