@@ -1442,6 +1442,7 @@
       "notableWinNamed": "Victoire notable contre {{name}}",
       "notableWinSeed": "Victoire notable contre la tête de série {{seed}}",
       "charactersLabel": "Personnages joués",
+      "gameDetailLabel": "Jeux de cette manche",
       "setTimelineHeading": "Chronologie des manches",
       "setScoreLabel": "{{wins}}–{{losses}}",
       "opponentWithPlacement": "{{name}} · {{placement}}",

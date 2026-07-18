@@ -202,11 +202,17 @@ async function renderRecap(
       ? `Seed ${snapshot.seed} → ${formatOrdinal(snapshot.placement)}`
       : null;
   const setRecordLabel = `${snapshot.setRecordWins ?? 0}–${snapshot.setRecordLosses ?? 0}`;
+  // Walkthrough amendment round 2 (07-10): parenthesized "(seed N)" suffix
+  // ONLY when an opponent name is also known — the previous inline
+  // concatenation (`vs ${name} ${seed}`) rendered a bare trailing number with
+  // no label ("Notable win vs jarbo v1 4876") whenever both fields were
+  // present. The name-absent branch already read fine ("vs seed 4876") and
+  // is unchanged.
   const notableWinLabel =
     snapshot.notableWinOpponentSeed != null
-      ? `Notable win vs ${snapshot.notableWinOpponentName || 'seed'} ${
-          snapshot.notableWinOpponentSeed
-        }`
+      ? snapshot.notableWinOpponentName
+        ? `Notable win vs ${snapshot.notableWinOpponentName} (seed ${snapshot.notableWinOpponentSeed})`
+        : `Notable win vs seed ${snapshot.notableWinOpponentSeed}`
       : null;
   const ownerDisplayName = snapshot.ownerDisplayName || null;
 
@@ -214,16 +220,40 @@ async function renderRecap(
   // a compact set-rows column REPLACING the character-sprite column (see
   // `buildRecapTree`'s doc) — the summary layout (detail absent/'summary',
   // or a full generation with zero sets) is completely unchanged.
+  //
+  // Walkthrough amendment round 2 (07-10): each row now leads with the SET's
+  // character matchup (its first game's fighter ids) instead of an abstract
+  // W/L letter square — "smash players care about character choice ... just
+  // showing my characters used gives nothing" (spec). Sprites reuse the same
+  // TTL-cached `fetchSpriteDataUri` fetch path as the top-level character
+  // sprites above; a fetch failure/unmapped id degrades to a text fallback
+  // (never throws, never blanks the row). W/L is now conveyed by coloring
+  // the game-score text instead.
   const allSets = snapshot.detail === 'full' ? (snapshot.sets ?? []) : [];
   const recentSets = allSets.slice(-MAX_RECAP_SET_ROWS);
   const moreSetsCount =
     allSets.length > MAX_RECAP_SET_ROWS ? allSets.length - MAX_RECAP_SET_ROWS : 0;
-  const setRows: RecapSetRowInput[] = recentSets.map((set) => ({
-    win: set.win,
-    roundLabel: truncate(set.roundLabel, SET_ROW_ROUND_LABEL_MAX),
-    opponentName: truncate(set.opponentName, SET_ROW_OPPONENT_NAME_MAX),
-    scoreLabel: `${set.wins}-${set.losses}`,
-  }));
+  const setRows: RecapSetRowInput[] = await Promise.all(
+    recentSets.map(async (set): Promise<RecapSetRowInput> => {
+      const firstGame = set.games?.[0];
+      const fighterAId = firstGame?.fighterId ?? undefined;
+      const fighterBId = firstGame?.opponentFighterId ?? undefined;
+      const [spriteA, spriteB] = await Promise.all([
+        fighterAId != null ? fetchSpriteDataUri(fighterAId, webBaseUrl, fetchImpl) : null,
+        fighterBId != null ? fetchSpriteDataUri(fighterBId, webBaseUrl, fetchImpl) : null,
+      ]);
+      return {
+        win: set.win,
+        roundLabel: truncate(set.roundLabel, SET_ROW_ROUND_LABEL_MAX),
+        opponentName: truncate(set.opponentName, SET_ROW_OPPONENT_NAME_MAX),
+        scoreLabel: `${set.wins}-${set.losses}`,
+        spriteA,
+        spriteB,
+        fighterAName: fighterAId != null ? (getFighterById(fighterAId)?.name ?? '?') : '?',
+        fighterBName: fighterBId != null ? (getFighterById(fighterBId)?.name ?? '?') : '?',
+      };
+    }),
+  );
 
   const tree = buildRecapTree({
     sprites,
@@ -364,13 +394,28 @@ function buildTree(input: TreeInput): SatoriElement {
   };
 }
 
-/** One compact row in the recap card's set-rows column (walkthrough amendment, 07-09) — already truncated by the caller. */
+/**
+ * One compact row in the recap card's set-rows column (walkthrough
+ * amendment, 07-09; sprite pair added in round 2, 07-10) — `roundLabel`/
+ * `opponentName` are already truncated by the caller. `spriteA`/`spriteB`
+ * are the SET's character matchup, sourced from its first game — `null`
+ * per-entry when that game/fighter id/sprite fetch is unavailable, in which
+ * case `buildSetRowsColumn` falls back to `fighterAName`/`fighterBName` text
+ * (never a broken image, never throws).
+ */
 interface RecapSetRowInput {
   win: boolean;
   roundLabel: string;
   opponentName: string;
   /** "W-L" game score for this set, e.g. "3-1". */
   scoreLabel: string;
+  /** The set's first game's sprite pair — `null` when unresolvable. */
+  spriteA: string | null;
+  spriteB: string | null;
+  /** Text fallback for `spriteA` when it's `null` (e.g. "?" for a fully unknown matchup). */
+  fighterAName: string;
+  /** Text fallback for `spriteB` when it's `null`. */
+  fighterBName: string;
 }
 
 interface RecapTreeInput {
@@ -555,14 +600,40 @@ function truncate(text: string, max: number): string {
 /**
  * Walkthrough amendment (07-09): the recap card's compact set-rows column —
  * REPLACES the character-sprite column when a "full" generation's set
- * timeline is present (see `renderRecap`'s `setRows` computation). Renders
- * up to `MAX_RECAP_SET_ROWS` rows (a `W`/`L` colored mark, the truncated
- * round label + opponent tag, and the game score), plus a final muted
- * "+N more sets" row when the full timeline exceeded that cap. Round
- * label/opponent tag are already truncated by the caller — this function
- * never re-truncates.
+ * timeline is present (see `renderRecap`'s `setRows` computation).
+ *
+ * Walkthrough amendment round 2 (07-10): each row now leads with the set's
+ * character-matchup sprite pair (mine vs opponent's, from the set's first
+ * game) INSTEAD OF an abstract W/L letter square — per the walkthrough
+ * spec, "just showing my characters used gives nothing" without the stage/
+ * matchup context a sprite pair conveys at a glance. A `null` sprite
+ * degrades to a short text fallback (never a broken `<img>`, never throws).
+ * W/L is now conveyed by coloring the game-score text (green win / red
+ * loss) instead of the removed letter square. Renders up to
+ * `MAX_RECAP_SET_ROWS` rows plus a final muted "+N more sets" row when the
+ * full timeline exceeded that cap. Round label/opponent tag are already
+ * truncated by the caller — this function never re-truncates.
  */
 function buildSetRowsColumn(rows: RecapSetRowInput[], moreCount: number): SatoriElement {
+  const miniSprite = (src: string | null, name: string): SatoriElement =>
+    src
+      ? { type: 'img', props: { src, width: 28, height: 28, style: { objectFit: 'contain' } } }
+      : {
+          type: 'div',
+          props: {
+            style: {
+              display: 'flex',
+              width: 28,
+              height: 28,
+              alignItems: 'center',
+              justifyContent: 'center',
+              color: '#a1a1aa',
+              fontSize: 10,
+            },
+            children: name.slice(0, 3),
+          },
+        };
+
   const rowNode = (row: RecapSetRowInput): SatoriElement => ({
     type: 'div',
     props: {
@@ -571,19 +642,18 @@ function buildSetRowsColumn(rows: RecapSetRowInput[], moreCount: number): Satori
         {
           type: 'div',
           props: {
-            style: {
-              display: 'flex',
-              width: 24,
-              height: 24,
-              borderRadius: 4,
-              alignItems: 'center',
-              justifyContent: 'center',
-              fontWeight: 700,
-              fontSize: 14,
-              background: row.win ? '#059669' : '#dc2626',
-              color: '#fafafa',
-            },
-            children: row.win ? 'W' : 'L',
+            style: { display: 'flex', alignItems: 'center', gap: 4 },
+            children: [
+              miniSprite(row.spriteA, row.fighterAName),
+              {
+                type: 'div',
+                props: {
+                  style: { display: 'flex', fontSize: 12, color: '#71717a' },
+                  children: 'vs',
+                },
+              },
+              miniSprite(row.spriteB, row.fighterBName),
+            ],
           },
         },
         {
@@ -595,7 +665,10 @@ function buildSetRowsColumn(rows: RecapSetRowInput[], moreCount: number): Satori
         },
         {
           type: 'div',
-          props: { style: { display: 'flex', color: '#a1a1aa' }, children: row.scoreLabel },
+          props: {
+            style: { display: 'flex', color: row.win ? '#34d399' : '#f87171', fontWeight: 700 },
+            children: row.scoreLabel,
+          },
         },
       ],
     },

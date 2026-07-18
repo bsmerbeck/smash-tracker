@@ -1,12 +1,61 @@
 import { Link } from 'react-router';
 import { useTranslation } from 'react-i18next';
 import { Download, ExternalLink } from 'lucide-react';
-import type { PublicShareSnapshot } from '@smash-tracker/shared';
+import type { PublicShareSnapshot, RecapGame } from '@smash-tracker/shared';
 import { formatOrdinal } from '@smash-tracker/shared';
 import { getFighterById } from '@/data/sprites';
 import { PublicLayout } from '@/layouts/PublicLayout';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { cn } from '@/lib/utils';
+
+/**
+ * Walkthrough amendment round 2 (07-10): one game's character matchup +
+ * stage within a set's timeline — sprite pair (mine vs opponent's) and a
+ * stage-name chip, with a subtle per-game W/L tint (border/background),
+ * mirroring the owner-facing `SetTimeline.tsx`'s `FighterTags` sprite
+ * rendering convention. Renders nothing for a field it can't resolve
+ * (unmapped fighter id, missing stage) rather than a broken image or blank
+ * chip — a per-game record is never guaranteed complete (07-CONTEXT.md
+ * "graceful omission" rule, same as the set-level fields above).
+ */
+function GameDetail({ game }: { game: RecapGame }) {
+  const { t } = useTranslation();
+  const myFighter = game.fighterId != null ? getFighterById(game.fighterId) : undefined;
+  const opponentFighter =
+    game.opponentFighterId != null ? getFighterById(game.opponentFighterId) : undefined;
+
+  return (
+    <div
+      className={cn(
+        'flex items-center gap-1.5 rounded border px-1.5 py-1 text-xs',
+        game.win === true && 'border-emerald-600/40 bg-emerald-600/5',
+        game.win === false && 'border-destructive/40 bg-destructive/5',
+      )}
+    >
+      {myFighter && (
+        <img
+          src={myFighter.url}
+          alt={myFighter.name}
+          title={myFighter.name}
+          className="size-6 shrink-0 object-contain"
+        />
+      )}
+      {(myFighter || opponentFighter) && (
+        <span className="text-muted-foreground">{t('matchups.vs')}</span>
+      )}
+      {opponentFighter && (
+        <img
+          src={opponentFighter.url}
+          alt={opponentFighter.name}
+          title={opponentFighter.name}
+          className="size-6 shrink-0 object-contain"
+        />
+      )}
+      {game.stageName && <span className="text-muted-foreground">{game.stageName}</span>}
+    </div>
+  );
+}
 
 /**
  * Anonymous recap detail render (RECAP-02/RECAP-03), for a `snapshot.kind
@@ -33,6 +82,13 @@ import { Button } from '@/components/ui/button';
  * present (start.gg only — parry.gg's public event-URL shape is unverified
  * and never invented), an outbound "View bracket on {site}" button links to
  * the source event page; absent entirely when no trustworthy URL exists.
+ *
+ * Walkthrough amendment round 2 (07-10): when a set carries `games`
+ * (per-game character+stage detail), each set row renders a `GameDetail`
+ * strip per game — sprite pair (mine vs opponent's) + stage chip + a subtle
+ * per-game W/L tint — REPLACING the old set-level `stages` badge row, which
+ * only shows for a pre-07-10 snapshot whose sets have no `games` at all
+ * (backward compatible, never both at once).
  */
 export function RecapView({ snapshot, token }: { snapshot: PublicShareSnapshot; token: string }) {
   const { t } = useTranslation();
@@ -140,14 +196,26 @@ export function RecapView({ snapshot, token }: { snapshot: PublicShareSnapshot; 
                       {t('share.recap.setScoreLabel', { wins: set.wins, losses: set.losses })}
                     </span>
                   </div>
-                  {set.stages && set.stages.length > 0 && (
-                    <div className="flex flex-wrap gap-1.5">
-                      {set.stages.map((stage) => (
-                        <Badge key={stage} variant="outline" className="text-xs">
-                          {stage}
-                        </Badge>
+                  {set.games && set.games.length > 0 ? (
+                    <div
+                      className="flex flex-wrap gap-1.5"
+                      aria-label={t('share.recap.gameDetailLabel')}
+                    >
+                      {set.games.map((game, gameIndex) => (
+                        <GameDetail key={gameIndex} game={game} />
                       ))}
                     </div>
+                  ) : (
+                    set.stages &&
+                    set.stages.length > 0 && (
+                      <div className="flex flex-wrap gap-1.5">
+                        {set.stages.map((stage) => (
+                          <Badge key={stage} variant="outline" className="text-xs">
+                            {stage}
+                          </Badge>
+                        ))}
+                      </div>
+                    )
                   )}
                 </div>
               ))}

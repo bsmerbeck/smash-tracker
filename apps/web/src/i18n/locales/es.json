@@ -1442,6 +1442,7 @@
       "notableWinNamed": "Victoria destacada contra {{name}}",
       "notableWinSeed": "Victoria destacada contra el cabeza de serie {{seed}}",
       "charactersLabel": "Personajes jugados",
+      "gameDetailLabel": "Partidas de este set",
       "setTimelineHeading": "Cronología de sets",
       "setScoreLabel": "{{wins}}–{{losses}}",
       "opponentWithPlacement": "{{name}} · {{placement}}",
