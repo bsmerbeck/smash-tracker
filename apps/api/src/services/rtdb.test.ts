@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { FakeDatabase } from '../test-support/fakeDatabase.js';
-import { RtdbService } from './rtdb.js';
+import { ConflictError, RtdbService } from './rtdb.js';
 
 const UID = 'test-uid-123';
 const WEB_BASE_URL = 'https://grandfinals.gg';
@@ -147,6 +147,190 @@ describe('RtdbService.clearVodAndNotes', () => {
     const rtdb = new RtdbService(database as never);
 
     await expect(rtdb.clearVodAndNotes(UID, 'missing')).rejects.toThrow('Match missing not found');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Walkthrough hardening FB-05: clearVodAndNotes/deleteMatch soft-revoke
+// every ACTIVE review-kind share for the match, in the SAME server call —
+// a coach must never retain write access to a match whose VOD the owner
+// believes is gone (T-09-08). Seeded as TWO records (snapshot + token),
+// exactly the shape `createShare` actually produces, never a synthetic
+// matchId on the token (RESEARCH Pitfall 5).
+// ---------------------------------------------------------------------------
+function seedMatchWithVod(database: FakeDatabase, uid: string, matchId: string): void {
+  database.seed(`matches/${uid}/${matchId}`, {
+    fighter_id: 1,
+    opponent_id: 8,
+    time: 1700000000000,
+    map: { id: 1, name: 'Battlefield' },
+    opponent: 'someplayer',
+    notes: 'close game',
+    matchType: 'online-friendly',
+    win: true,
+    vodUrl: 'https://youtube.com/watch?v=abc123',
+  });
+}
+
+interface SeedShareOptions {
+  uid?: string;
+  shareId?: string;
+  token?: string;
+  matchId?: string;
+  kind?: 'review' | 'recap';
+  revokedAt?: number;
+}
+
+function seedReviewShare(database: FakeDatabase, options: SeedShareOptions = {}): string {
+  const uid = options.uid ?? UID;
+  const shareId = options.shareId ?? 'share1';
+  const token = options.token ?? 'shareTokenAAAAABBBBBCCCCC01';
+  database.seed(`sharesByUser/${uid}/${shareId}`, token);
+  if (options.kind === 'recap') {
+    database.seed(`shareSnapshots/${shareId}`, {
+      kind: 'recap',
+      uid,
+      createdAt: 1700000100000,
+      tournamentName: 'Test Tournament',
+      tournamentDate: 1700000000000,
+      setRecordWins: 3,
+      setRecordLosses: 1,
+      characterFighterIds: [1],
+      reviewedMomentsCount: 0,
+    });
+  } else {
+    database.seed(`shareSnapshots/${shareId}`, {
+      uid,
+      matchId: options.matchId ?? 'm1',
+      createdAt: 1700000100000,
+      result: 'win',
+      fighterId: 1,
+      opponentFighterId: 8,
+      matchDate: 1700000000000,
+      vodUrl: 'https://youtube.com/watch?v=abc123',
+      reviewedMomentsCount: 0,
+      redaction: { includedNotes: true, includedTags: true, showDisplayName: false },
+    });
+  }
+  database.seed(`shareTokens/${token}`, {
+    shareId,
+    ownerUid: uid,
+    permissions: 'view',
+    createdAt: 1700000100000,
+    ...(options.revokedAt !== undefined ? { revokedAt: options.revokedAt } : {}),
+  });
+  return token;
+}
+
+describe('RtdbService.clearVodAndNotes / deleteMatch — FB-05 share-cascade revoke', () => {
+  it('clearVodAndNotes stamps revokedAt on an ACTIVE review share for the SAME match, and clears the VOD, in one call', async () => {
+    const database = new FakeDatabase();
+    const rtdb = new RtdbService(database as never);
+    seedMatchWithVod(database, UID, 'm1');
+    const token = seedReviewShare(database, { matchId: 'm1' });
+
+    const result = await rtdb.clearVodAndNotes(UID, 'm1');
+
+    expect(result).not.toHaveProperty('vodUrl');
+    const tokenRecord = database.dump().shareTokens as Record<string, Record<string, unknown>>;
+    expect(tokenRecord[token]).toHaveProperty('revokedAt');
+    expect(typeof tokenRecord[token]!.revokedAt).toBe('number');
+  });
+
+  it('deleteMatch removes the match AND revokes the ACTIVE review share in the same call', async () => {
+    const database = new FakeDatabase();
+    const rtdb = new RtdbService(database as never);
+    seedMatchWithVod(database, UID, 'm1');
+    const token = seedReviewShare(database, { matchId: 'm1' });
+
+    await rtdb.deleteMatch(UID, 'm1');
+
+    const stored = database.dump().matches as Record<string, Record<string, unknown>> | undefined;
+    expect(stored?.[UID]?.['m1']).toBeUndefined();
+    const tokenRecord = database.dump().shareTokens as Record<string, Record<string, unknown>>;
+    expect(tokenRecord[token]).toHaveProperty('revokedAt');
+  });
+
+  it('never revokes a recap share (kind: recap, no matchId)', async () => {
+    const database = new FakeDatabase();
+    const rtdb = new RtdbService(database as never);
+    seedMatchWithVod(database, UID, 'm1');
+    const recapToken = seedReviewShare(database, { shareId: 'recapShare', kind: 'recap' });
+
+    await rtdb.clearVodAndNotes(UID, 'm1');
+
+    const tokenRecord = database.dump().shareTokens as Record<string, Record<string, unknown>>;
+    expect(tokenRecord[recapToken]).not.toHaveProperty('revokedAt');
+  });
+
+  it('never revokes a share for a DIFFERENT match', async () => {
+    const database = new FakeDatabase();
+    const rtdb = new RtdbService(database as never);
+    seedMatchWithVod(database, UID, 'm1');
+    database.seed(`matches/${UID}/m2`, {
+      fighter_id: 1,
+      opponent_id: 8,
+      time: 1700000000000,
+      matchType: 'online-friendly',
+      win: true,
+    });
+    const otherToken = seedReviewShare(database, {
+      shareId: 'otherShare',
+      token: 'shareTokenOTHERMATCHBBBBB02',
+      matchId: 'm2',
+    });
+
+    await rtdb.clearVodAndNotes(UID, 'm1');
+
+    const tokenRecord = database.dump().shareTokens as Record<string, Record<string, unknown>>;
+    expect(tokenRecord[otherToken]).not.toHaveProperty('revokedAt');
+  });
+
+  it('leaves an already-revoked share unchanged (not re-stamped)', async () => {
+    const database = new FakeDatabase();
+    const rtdb = new RtdbService(database as never);
+    seedMatchWithVod(database, UID, 'm1');
+    const originalRevokedAt = 1650000000000;
+    const token = seedReviewShare(database, { matchId: 'm1', revokedAt: originalRevokedAt });
+
+    await rtdb.clearVodAndNotes(UID, 'm1');
+
+    const tokenRecord = database.dump().shareTokens as Record<string, Record<string, unknown>>;
+    expect(tokenRecord[token]!.revokedAt).toBe(originalRevokedAt);
+  });
+
+  it('performs the existing clear/delete with no extra writes when the match has zero shares', async () => {
+    const database = new FakeDatabase();
+    const rtdb = new RtdbService(database as never);
+    seedMatchWithVod(database, UID, 'm1');
+
+    const result = await rtdb.clearVodAndNotes(UID, 'm1');
+
+    expect(result).not.toHaveProperty('vodUrl');
+    expect(database.dump().shareTokens).toBeUndefined();
+  });
+
+  it('does NOT revoke a share whose only matching matchId lives on the TOKEN record — proves the join reads the SNAPSHOT (RESEARCH Pitfall 5)', async () => {
+    const database = new FakeDatabase();
+    const rtdb = new RtdbService(database as never);
+    seedMatchWithVod(database, UID, 'm1');
+    // A genuine snapshot for a DIFFERENT match, so it never matches m1 via
+    // the correct (snapshot) lookup...
+    const token = seedReviewShare(database, {
+      shareId: 'shareX',
+      token: 'shareTokenXXXXXXXXXXXXXXX03',
+      matchId: 'some-other-match',
+    });
+    // ...but a synthetic `matchId` field is injected directly onto the
+    // TOKEN record (a shape that should never exist in real data) — if the
+    // cascade ever mistakenly read matchId off the token, this would leak
+    // a false-positive revoke.
+    database.seed(`shareTokens/${token}/matchId`, 'm1');
+
+    await rtdb.clearVodAndNotes(UID, 'm1');
+
+    const tokenRecord = database.dump().shareTokens as Record<string, Record<string, unknown>>;
+    expect(tokenRecord[token]).not.toHaveProperty('revokedAt');
   });
 });
 
@@ -1281,6 +1465,149 @@ describe('RtdbService.createCoachNote — anonymous coach create (token-resolved
         note: 'one too many',
       }),
     ).rejects.toThrow(/already has 20 notes/);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Walkthrough hardening FB-04: server-enforced coach display-name
+// uniqueness INSIDE createNote's transaction — impersonation via a
+// duplicate typed name must be rejected (T-09-06), without weakening the
+// anonymous surface's no-oracle 404 discipline for any other failure mode.
+// ---------------------------------------------------------------------------
+describe('RtdbService.createCoachNote — FB-04 display-name uniqueness (server-enforced)', () => {
+  it('throws ConflictError when a DIFFERENT session already uses the same name, case-insensitively', async () => {
+    const database = new FakeDatabase();
+    const rtdb = new RtdbService(database as never);
+    seedEditShare(database, {
+      matchOverrides: {
+        vodTimestamps: {
+          existing: {
+            seconds: 5,
+            note: 'earlier note',
+            coach: { sessionId: OTHER_SESSION, displayName: 'Sam' },
+          },
+        },
+      },
+    });
+
+    await expect(
+      rtdb.createCoachNote(EDIT_TOKEN, COACH_SESSION, 'sam', { seconds: 10, note: 'x' }),
+    ).rejects.toThrow(ConflictError);
+    await expect(
+      rtdb.createCoachNote(EDIT_TOKEN, COACH_SESSION, 'sam', { seconds: 10, note: 'x' }),
+    ).rejects.toThrow('That name is already taken on this review');
+  });
+
+  it('collapses inner whitespace before comparing — "Sam  Jones" collides with "Sam Jones"', async () => {
+    const database = new FakeDatabase();
+    const rtdb = new RtdbService(database as never);
+    seedEditShare(database, {
+      matchOverrides: {
+        vodTimestamps: {
+          existing: {
+            seconds: 5,
+            note: 'earlier note',
+            coach: { sessionId: OTHER_SESSION, displayName: 'Sam Jones' },
+          },
+        },
+      },
+    });
+
+    await expect(
+      rtdb.createCoachNote(EDIT_TOKEN, COACH_SESSION, 'Sam  Jones', { seconds: 10, note: 'x' }),
+    ).rejects.toThrow(ConflictError);
+  });
+
+  it('allows the SAME session to reuse its own stored name (no conflict, ever)', async () => {
+    const database = new FakeDatabase();
+    const rtdb = new RtdbService(database as never);
+    seedEditShare(database, {
+      matchOverrides: {
+        vodTimestamps: {
+          existing: {
+            seconds: 5,
+            note: 'earlier note',
+            coach: { sessionId: COACH_SESSION, displayName: 'Sam' },
+          },
+        },
+      },
+    });
+
+    const note = await rtdb.createCoachNote(EDIT_TOKEN, COACH_SESSION, 'sam', {
+      seconds: 10,
+      note: 'second note, same session',
+    });
+
+    expect(note.coach).toEqual({ sessionId: COACH_SESSION, displayName: 'sam' });
+  });
+
+  it("throws ConflictError when the name case-folds to the owner's shared display name", async () => {
+    const database = new FakeDatabase();
+    const rtdb = new RtdbService(database as never);
+    seedEditShare(database);
+    database.seed('shareSnapshots/share1/ownerDisplayName', 'Owner Name');
+
+    await expect(
+      rtdb.createCoachNote(EDIT_TOKEN, COACH_SESSION, 'owner  name', { seconds: 1, note: 'x' }),
+    ).rejects.toThrow(ConflictError);
+  });
+
+  it('creates the note normally for a genuinely unique name', async () => {
+    const database = new FakeDatabase();
+    const rtdb = new RtdbService(database as never);
+    seedEditShare(database, {
+      matchOverrides: {
+        vodTimestamps: {
+          existing: {
+            seconds: 5,
+            note: 'earlier note',
+            coach: { sessionId: OTHER_SESSION, displayName: 'Sam' },
+          },
+        },
+      },
+    });
+
+    const note = await rtdb.createCoachNote(EDIT_TOKEN, COACH_SESSION, 'Alex', {
+      seconds: 10,
+      note: 'unique name',
+    });
+
+    expect(note.coach).toEqual({ sessionId: COACH_SESSION, displayName: 'Alex' });
+  });
+
+  it('recomputes the collision decision fresh on every transaction run (CR-01) — the null-first-run never lets a real conflict slip through on retry', async () => {
+    const database = new FakeDatabase();
+    const rtdb = new RtdbService(database as never);
+    // Non-empty seeded vodTimestamps forces FakeDatabase's two-run
+    // transaction emulation (see fakeDatabase.ts's CR-01 doc comment): the
+    // FIRST run always sees raw=null (no collision visible from an empty
+    // node), the SECOND run sees the REAL stored data — only a
+    // `nameConflict` flag re-derived fresh on THAT run catches the
+    // collision; a flag captured from the discarded first run would
+    // false-negative.
+    seedEditShare(database, {
+      matchOverrides: {
+        vodTimestamps: {
+          existing: {
+            seconds: 5,
+            note: 'earlier note',
+            coach: { sessionId: OTHER_SESSION, displayName: 'Sam' },
+          },
+        },
+      },
+    });
+
+    await expect(
+      rtdb.createCoachNote(EDIT_TOKEN, COACH_SESSION, 'Sam', { seconds: 10, note: 'x' }),
+    ).rejects.toThrow(ConflictError);
+
+    // The colliding note must never have been written.
+    const stored = database.dump().matches as Record<string, Record<string, unknown>>;
+    const vodTimestamps = (stored[UID]!.m1 as Record<string, unknown>).vodTimestamps as Record<
+      string,
+      unknown
+    >;
+    expect(Object.keys(vodTimestamps)).toHaveLength(1);
   });
 });
 
