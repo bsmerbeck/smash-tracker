@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { FakeDatabase } from '../test-support/fakeDatabase.js';
 import { RtdbService } from './rtdb.js';
 
@@ -673,6 +673,164 @@ describe('WR-06 regression: edit/delete migrate legacy-array nodes instead of pe
     // The migrated note keeps the exact key the edit assigned it.
     expect(vodTimestamps[migrated.id]).toMatchObject({ seconds: 10, note: 'migrated note' });
     expect(Object.keys(vodTimestamps)).toHaveLength(2);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Review WR-08: the note transactions rebuild the whole `vodTimestamps` node
+// from the NORMALIZED entry list — and post-CR-02 the normalizer SKIPS any
+// unparseable entry, so a naive rebuild silently and permanently destroys
+// corrupt siblings on any unrelated note write. Corrupt entries must ride
+// through every write OPAQUELY (raw value, untouched) so they stay
+// hand-repairable, count toward the shared 20-note cap, and stay invisible
+// to reads (CR-02's skip is unchanged).
+// ---------------------------------------------------------------------------
+describe('WR-08 regression: note writes carry unparseable sibling entries through opaquely', () => {
+  // The incident-class corruption: a string-typed number field.
+  const CORRUPT_ENTRY = { seconds: 'not-a-number', note: 'corrupt sibling' };
+
+  function seedMatch(database: FakeDatabase, overrides: Record<string, unknown> = {}) {
+    database.seed(`matches/${UID}/m1`, {
+      fighter_id: 1,
+      opponent_id: 8,
+      time: 1700000000000,
+      win: true,
+      ...overrides,
+    });
+  }
+
+  function storedNotes(database: FakeDatabase): Record<string, unknown> {
+    const stored = database.dump().matches as Record<string, Record<string, unknown>>;
+    return (stored[UID]!.m1 as Record<string, unknown>).vodTimestamps as Record<string, unknown>;
+  }
+
+  it('createNote preserves a corrupt keyed sibling VERBATIM under its original key (and warns key-only at write time)', async () => {
+    const database = new FakeDatabase();
+    const rtdb = new RtdbService(database as never);
+    seedMatch(database, {
+      vodTimestamps: {
+        goodNote: { seconds: 10, note: 'valid' },
+        badNote: CORRUPT_ENTRY,
+      },
+    });
+
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      const created = await rtdb.createNote(UID, 'm1', { seconds: 20, note: 'brand new' });
+
+      const vodTimestamps = storedNotes(database);
+      expect(Object.keys(vodTimestamps)).toHaveLength(3);
+      expect(vodTimestamps.badNote).toEqual(CORRUPT_ENTRY);
+      expect(vodTimestamps.goodNote).toMatchObject({ seconds: 10, note: 'valid' });
+      expect(vodTimestamps[created.id]).toMatchObject({ seconds: 20, note: 'brand new' });
+
+      // Write-time warn fires with the carried KEY only — never the contents.
+      const writeWarn = warnSpy.mock.calls.find(
+        ([message]) => typeof message === 'string' && message.includes('opaquely'),
+      );
+      expect(writeWarn?.[0]).toContain('badNote');
+      expect(writeWarn?.[0]).not.toContain('corrupt sibling');
+    } finally {
+      warnSpy.mockRestore();
+    }
+  });
+
+  it('updateNote on a VALID note leaves the corrupt sibling untouched', async () => {
+    const database = new FakeDatabase();
+    const rtdb = new RtdbService(database as never);
+    seedMatch(database, {
+      vodTimestamps: {
+        goodNote: { seconds: 10, note: 'valid' },
+        badNote: CORRUPT_ENTRY,
+      },
+    });
+
+    const updated = await rtdb.updateNote(UID, 'm1', 'goodNote', {
+      seconds: 15,
+      note: 'edited',
+    });
+
+    expect(updated).toMatchObject({ id: 'goodNote', seconds: 15, note: 'edited' });
+    const vodTimestamps = storedNotes(database);
+    expect(Object.keys(vodTimestamps)).toHaveLength(2);
+    expect(vodTimestamps.badNote).toEqual(CORRUPT_ENTRY);
+    expect(vodTimestamps.goodNote).toMatchObject({ seconds: 15, note: 'edited' });
+  });
+
+  it('deleteNote of the last VALID note keeps the node alive with the corrupt sibling intact', async () => {
+    const database = new FakeDatabase();
+    const rtdb = new RtdbService(database as never);
+    seedMatch(database, {
+      vodTimestamps: {
+        onlyValid: { seconds: 10, note: 'only valid note' },
+        badNote: CORRUPT_ENTRY,
+      },
+    });
+
+    await rtdb.deleteNote(UID, 'm1', 'onlyValid');
+
+    // The empty-node check must count the preserved raw key: the node
+    // survives with EXACTLY the corrupt entry, never gets nulled away.
+    const vodTimestamps = storedNotes(database);
+    expect(vodTimestamps).toEqual({ badNote: CORRUPT_ENTRY });
+  });
+
+  it('corrupt entries COUNT toward the shared 20-note cap — 19 valid + 1 corrupt rejects a new note and writes nothing', async () => {
+    const database = new FakeDatabase();
+    const rtdb = new RtdbService(database as never);
+    const nineteen = Object.fromEntries(
+      Array.from({ length: 19 }, (_, i) => [`k${i}`, { seconds: i, note: `note ${i}` }]),
+    );
+    seedMatch(database, { vodTimestamps: { ...nineteen, badNote: CORRUPT_ENTRY } });
+
+    await expect(
+      rtdb.createNote(UID, 'm1', { seconds: 999, note: 'one too many' }),
+    ).rejects.toThrow(/already has 20 notes/);
+
+    const vodTimestamps = storedNotes(database);
+    expect(Object.keys(vodTimestamps)).toHaveLength(20);
+    expect(vodTimestamps.badNote).toEqual(CORRUPT_ENTRY);
+  });
+
+  it('reads still omit the preserved corrupt entry (CR-02 skip unchanged)', async () => {
+    const database = new FakeDatabase();
+    const rtdb = new RtdbService(database as never);
+    seedMatch(database, {
+      vodTimestamps: {
+        goodNote: { seconds: 10, note: 'valid' },
+        badNote: CORRUPT_ENTRY,
+      },
+    });
+
+    const matches = await rtdb.listMatches(UID);
+
+    expect(matches).toHaveLength(1);
+    expect(matches[0]!.vodTimestamps).toHaveLength(1);
+    expect(matches[0]!.vodTimestamps![0]).toMatchObject({ id: 'goodNote', seconds: 10 });
+  });
+
+  it('legacy-array migration carries a corrupt legacy element through under a fresh push key as a raw value', async () => {
+    const database = new FakeDatabase();
+    const rtdb = new RtdbService(database as never);
+    seedMatch(database, {
+      vodTimestamps: [{ seconds: 10, note: 'valid legacy' }, CORRUPT_ENTRY],
+    });
+
+    const created = await rtdb.createNote(UID, 'm1', { seconds: 20, note: 'brand new' });
+
+    const vodTimestamps = storedNotes(database);
+    const keys = Object.keys(vodTimestamps);
+    expect(keys).toHaveLength(3);
+    for (const key of keys) {
+      // Fully migrated — no legacy indices survive as keys.
+      expect(key).not.toMatch(/^legacy-/);
+      expect(key).not.toMatch(/^\d+$/);
+    }
+    const values = Object.values(vodTimestamps);
+    expect(values).toContainEqual({ seconds: 10, note: 'valid legacy' });
+    // The corrupt element rides through VERBATIM under its new push key.
+    expect(values).toContainEqual(CORRUPT_ENTRY);
+    expect(vodTimestamps[created.id]).toMatchObject({ seconds: 20, note: 'brand new' });
   });
 });
 
