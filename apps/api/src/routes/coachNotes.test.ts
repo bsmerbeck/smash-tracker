@@ -82,7 +82,56 @@ describe('GET /api/vod-shares/:token/session', () => {
     const body = response.json();
     expect(body.permissions).toBe('edit');
     expect(body.timestamps).toHaveLength(1);
-    expect(body.timestamps[0]).toMatchObject({ id: 'coachNote', coach: COACH });
+    // Review WR-02: attribution is display-name only — no sessionId served.
+    expect(body.timestamps[0]).toMatchObject({
+      id: 'coachNote',
+      coach: { displayName: 'Coach Person' },
+    });
+    expect(body.timestamps[0].coach).not.toHaveProperty('sessionId');
+  });
+
+  it("WR-02: marks the caller's own notes via ?sessionId= and never serves any coach's sessionId", async () => {
+    const { app, database } = buildTestApp();
+    seedEditShare(database, {
+      matchOverrides: {
+        vodTimestamps: {
+          mine: { seconds: 10, note: 'my note', coach: COACH },
+          theirs: {
+            seconds: 20,
+            note: 'their note',
+            coach: { sessionId: OTHER_SESSION, displayName: 'Other Coach' },
+          },
+        },
+      },
+    });
+
+    const response = await app.inject({
+      method: 'GET',
+      url: `/api/vod-shares/${EDIT_TOKEN}/session?sessionId=${COACH_SESSION}`,
+    });
+
+    expect(response.statusCode).toBe(200);
+    const body = response.json();
+    const byId = Object.fromEntries(
+      (body.timestamps as Array<{ id: string; own?: boolean }>).map((stamp) => [stamp.id, stamp]),
+    );
+    expect(byId.mine!.own).toBe(true);
+    expect(byId.theirs!.own).toBeUndefined();
+    // The spoofing oracle WR-02 closed: no sessionId — anyone's — in the body.
+    expect(response.body).not.toContain(COACH_SESSION);
+    expect(response.body).not.toContain(OTHER_SESSION);
+  });
+
+  it('WR-02: rejects a malformed sessionId query param with 400 (zod-bounded before the service layer)', async () => {
+    const { app, database } = buildTestApp();
+    seedEditShare(database);
+
+    const response = await app.inject({
+      method: 'GET',
+      url: `/api/vod-shares/${EDIT_TOKEN}/session?sessionId=not-a-uuid`,
+    });
+
+    expect(response.statusCode).toBe(400);
   });
 
   it('returns the identical 404 body for unknown, revoked, expired, and view-tier tokens', async () => {

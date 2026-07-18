@@ -547,7 +547,57 @@ describe('RtdbService.getEditSessionByToken — live-redacted edit-session read'
     const byId = Object.fromEntries(session!.timestamps!.map((stamp) => [stamp.id, stamp]));
     expect(byId.ownerNote).toMatchObject({ seconds: 10, note: 'owner note' });
     expect(byId.ownerNote!.coach ?? undefined).toBeUndefined();
-    expect(byId.coachNote).toMatchObject({ seconds: 20, note: 'coach note', coach: COACH });
+    // Review WR-02: attribution is display-name ONLY — the stored sessionId
+    // (the write-ownership secret) must never be serialized.
+    expect(byId.coachNote).toMatchObject({
+      seconds: 20,
+      note: 'coach note',
+      coach: { displayName: 'Coach Person' },
+    });
+    expect(byId.coachNote!.coach).not.toHaveProperty('sessionId');
+  });
+
+  it("WR-02: computes each note's `own` flag from the caller's sessionId — and never serves any sessionId back", async () => {
+    const database = new FakeDatabase();
+    const rtdb = new RtdbService(database as never);
+    seedEditShare(database, {
+      matchOverrides: {
+        vodTimestamps: {
+          mine: { seconds: 10, note: 'my note', coach: COACH },
+          theirs: {
+            seconds: 20,
+            note: 'their note',
+            coach: { sessionId: OTHER_SESSION, displayName: 'Other Coach' },
+          },
+          ownerNote: { seconds: 30, note: 'owner note' },
+        },
+      },
+    });
+
+    const session = await rtdb.getEditSessionByToken(EDIT_TOKEN, COACH_SESSION);
+
+    const byId = Object.fromEntries(session!.timestamps!.map((stamp) => [stamp.id, stamp]));
+    expect(byId.mine!.own).toBe(true);
+    expect(byId.theirs!.own ?? undefined).toBeUndefined();
+    expect(byId.ownerNote!.own ?? undefined).toBeUndefined();
+    // No sessionId anywhere in the serialized session — not even the caller's own.
+    expect(JSON.stringify(session)).not.toContain(COACH_SESSION);
+    expect(JSON.stringify(session)).not.toContain(OTHER_SESSION);
+  });
+
+  it('WR-02: without a caller sessionId, no note is marked own (and still no sessionId is served)', async () => {
+    const database = new FakeDatabase();
+    const rtdb = new RtdbService(database as never);
+    seedEditShare(database, {
+      matchOverrides: {
+        vodTimestamps: { mine: { seconds: 10, note: 'my note', coach: COACH } },
+      },
+    });
+
+    const session = await rtdb.getEditSessionByToken(EDIT_TOKEN);
+
+    expect(session!.timestamps![0]!.own ?? undefined).toBeUndefined();
+    expect(JSON.stringify(session)).not.toContain(COACH_SESSION);
   });
 
   it('reflects a note the owner added AFTER share creation (live recompute, not the frozen snapshot)', async () => {
@@ -593,7 +643,7 @@ describe('RtdbService.getEditSessionByToken — live-redacted edit-session read'
     expect(session!.timestamps![0]).toMatchObject({
       id: 'coachNote',
       note: 'my own note',
-      coach: COACH,
+      coach: { displayName: 'Coach Person' },
     });
   });
 

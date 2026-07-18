@@ -179,8 +179,8 @@ function CoachComposer({
 /**
  * One coach edit-session timestamp row. Read-only for every note (click to
  * seek), plus edit/delete/tag affordances — and, per Phase 8's locked
- * capability matrix, ONLY when `isOwn` (`stamp.coach?.sessionId ===
- * mySessionId` — checked by the caller). Coach-authored notes (own or
+ * capability matrix, ONLY when `isOwn` (the SERVER-computed `stamp.own`
+ * flag, review WR-02 — checked by the caller). Coach-authored notes (own or
  * another session's) additionally render an attribution line. Mirrors
  * `VodManager/components/TimestampRow.tsx`'s edit-mode/view-mode idiom.
  */
@@ -442,7 +442,13 @@ export function ShareViewPage() {
   const { token } = useParams<{ token: string }>();
   const [searchParams] = useSearchParams();
   const { data: snapshot, isPending, isError } = usePublicVodShare(token ?? '');
-  const { data: coachSession } = useCoachSession(token ?? '');
+  // Phase 8: this browser's coach session id — generated (and persisted)
+  // once per browser regardless of tier; harmless on a view-tier share. It
+  // rides the session READ as a query param so the server computes each
+  // note's `own` flag (review WR-02) — the response never carries any
+  // coach's sessionId.
+  const [mySessionId] = useState(() => getOrCreateSessionId());
+  const { data: coachSession } = useCoachSession(token ?? '', mySessionId);
   const createCoachNote = useCreateCoachNote(token ?? '');
   const updateCoachNote = useUpdateCoachNote(token ?? '');
   const deleteCoachNote = useDeleteCoachNote(token ?? '');
@@ -512,10 +518,6 @@ export function ShareViewPage() {
     }
   }, [snapshot, token]);
 
-  // Phase 8: this browser's coach session id — generated (and persisted)
-  // once per browser regardless of tier; harmless on a view-tier share
-  // (never read from or written anywhere unless a coach write happens).
-  const [mySessionId] = useState(() => getOrCreateSessionId());
   const [quickTags, setQuickTags] = useState<string[]>(() => readStoredQuickTags());
   const [editingNoteId, setEditingNoteId] = useState<string | null>(null);
   const [nameDialogOpen, setNameDialogOpen] = useState(false);
@@ -670,9 +672,7 @@ export function ShareViewPage() {
   function handleCoachQuickTag(tagSlug: string) {
     const seconds = getCurrentTimeRef.current?.() ?? 0;
     pause();
-    const ownAtSecond = timestamps.find(
-      (stamp) => stamp.seconds === seconds && stamp.coach?.sessionId === mySessionId,
-    );
+    const ownAtSecond = timestamps.find((stamp) => stamp.seconds === seconds && stamp.own === true);
     if (ownAtSecond?.id) {
       const nextTags = addTagToList(ownAtSecond.tags ?? [], tagSlug, MAX_NOTE_TAGS);
       updateCoachNote.mutate({
@@ -803,7 +803,7 @@ export function ShareViewPage() {
                     <CoachTimestampRow
                       key={stamp.id ?? i}
                       stamp={stamp}
-                      isOwn={stamp.coach?.sessionId === mySessionId}
+                      isOwn={stamp.own === true}
                       isSelected={selectedSeconds === stamp.seconds}
                       isEditing={stamp.id != null && editingNoteId === stamp.id}
                       onSeek={seek}

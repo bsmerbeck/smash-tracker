@@ -1611,16 +1611,30 @@ export class RtdbService {
    * Redaction carve-out (resolved research Open Question 1): the
    * `includedNotes` toggle governs the OWNER's notes only — coach-authored
    * notes (any session) are ALWAYS included, so a coach always sees their
-   * own contributions mid-session. Every included note carries its `id` and
-   * (when coach-authored) `coach` attribution so the client can render
-   * edit/delete affordances for exactly the caller's own notes.
+   * own contributions mid-session. Every included note carries its `id`,
+   * (when coach-authored) a display-name-only `coach` attribution, and a
+   * server-computed `own` flag so the client can render edit/delete
+   * affordances for exactly the caller's own notes.
+   *
+   * `callerSessionId` (review WR-02) is the REQUESTING coach's sessionId,
+   * sent as a query param on the session read. Stored `coach.sessionId`
+   * values are NEVER serialized into the response — they are the secret the
+   * write-path ownership guard checks, so publishing them to every
+   * edit-token holder would make that guard spoofable with data this very
+   * endpoint hands out. Instead each note gets `own: true` iff its stored
+   * sessionId matches the caller's claim; a wrong/absent claim only
+   * mis-renders the caller's OWN affordances (writes still re-verify the
+   * real sessionId inside the transaction).
    *
    * Returns `null` — never throws — for every token failure
    * (`resolveEditSession` above), a deleted source match, a corrupt match
    * record, and a match whose VOD was removed since sharing (nothing left
    * to coach against). All collapse to the caller's identical 404.
    */
-  async getEditSessionByToken(token: string): Promise<PublicShareSnapshot | null> {
+  async getEditSessionByToken(
+    token: string,
+    callerSessionId?: string,
+  ): Promise<PublicShareSnapshot | null> {
     const resolved = await this.resolveEditSession(token);
     if (!resolved) {
       return null;
@@ -1652,7 +1666,14 @@ export class RtdbService {
         note: entry.note,
         ...(entry.tags && entry.tags.length > 0 ? { tags: entry.tags } : {}),
         id: entry.id,
-        ...(entry.coach != null ? { coach: entry.coach } : {}),
+        // Display name ONLY — the stored sessionId never leaves the server
+        // (review WR-02); own-ness travels as the computed flag below.
+        ...(entry.coach != null ? { coach: { displayName: entry.coach.displayName } } : {}),
+        ...(entry.coach != null &&
+        callerSessionId !== undefined &&
+        entry.coach.sessionId === callerSessionId
+          ? { own: true }
+          : {}),
       }));
 
     const session: PublicShareSnapshot = {

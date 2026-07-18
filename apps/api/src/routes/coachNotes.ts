@@ -36,6 +36,17 @@ const deleteCoachNoteQuerySchema = z.object({
 });
 
 /**
+ * The session READ's optional `sessionId` query param (review WR-02): the
+ * caller's own claimed session, used ONLY to compute each note's `own` flag
+ * server-side — stored sessionIds are never serialized into the response.
+ * Optional (a plain view of an edit link works without it); zod-bounded to
+ * the uuid shape so junk never reaches the service layer.
+ */
+const sessionQuerySchema = z.object({
+  sessionId: coachAttributionSchema.shape.sessionId.optional(),
+});
+
+/**
  * The ONE 404 body every failure mode sends — unknown token, revoked,
  * expired, wrong tier, missing note, "note isn't yours". Never render a
  * service error's message here (no-oracle belt and suspenders, T-08-13).
@@ -81,6 +92,7 @@ const coachNotesRoutes: FastifyPluginAsyncZod = async (app) => {
     {
       schema: {
         params: tokenParamsSchema,
+        querystring: sessionQuerySchema,
         response: {
           200: publicShareSnapshotSchema,
           404: errorResponseSchema,
@@ -88,7 +100,10 @@ const coachNotesRoutes: FastifyPluginAsyncZod = async (app) => {
       },
     },
     async (request, reply) => {
-      const session = await rtdb.getEditSessionByToken(request.params.token);
+      const session = await rtdb.getEditSessionByToken(
+        request.params.token,
+        request.query.sessionId,
+      );
       if (!session) {
         return reply.code(404).send(UNAVAILABLE_404_BODY);
       }

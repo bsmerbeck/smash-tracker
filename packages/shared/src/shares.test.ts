@@ -273,7 +273,7 @@ describe('publicShareSnapshotSchema', () => {
     expect(parsed.timestamps![0]!.coach).toBeUndefined();
   });
 
-  it('parses an edit-session recompute with permissions and per-timestamp id/coach', () => {
+  it('parses an edit-session recompute with permissions and per-timestamp id/coach/own', () => {
     const parsed = publicShareSnapshotSchema.parse({
       ...fullyPopulatedPublicSnapshot(),
       permissions: 'edit' as const,
@@ -288,6 +288,27 @@ describe('publicShareSnapshotSchema', () => {
           seconds: 90,
           note: 'coach note',
           id: '-Nx2',
+          coach: { displayName: 'Coach A' },
+          own: true,
+        },
+      ],
+    });
+    expect(parsed.permissions).toBe('edit');
+    expect(parsed.timestamps![0]!.id).toBe('-Nx1');
+    expect(parsed.timestamps![0]!.own).toBeUndefined();
+    expect(parsed.timestamps![1]!.coach).toEqual({ displayName: 'Coach A' });
+    expect(parsed.timestamps![1]!.own).toBe(true);
+  });
+
+  it('WR-02: the public timestamp coach attribution has NO sessionId field — a stray one is stripped by shape', () => {
+    const parsed = publicShareSnapshotSchema.parse({
+      ...fullyPopulatedPublicSnapshot(),
+      permissions: 'edit' as const,
+      timestamps: [
+        {
+          seconds: 90,
+          note: 'coach note',
+          id: '-Nx2',
           coach: {
             sessionId: '11111111-1111-4111-8111-111111111111',
             displayName: 'Coach A',
@@ -295,12 +316,10 @@ describe('publicShareSnapshotSchema', () => {
         },
       ],
     });
-    expect(parsed.permissions).toBe('edit');
-    expect(parsed.timestamps![0]!.id).toBe('-Nx1');
-    expect(parsed.timestamps![1]!.coach).toEqual({
-      sessionId: '11111111-1111-4111-8111-111111111111',
-      displayName: 'Coach A',
-    });
+    // Redaction-by-shape: even if a caller accidentally passed the stored
+    // attribution through, the schema's strip mode drops the secret.
+    expect(parsed.timestamps![0]!.coach).toEqual({ displayName: 'Coach A' });
+    expect(parsed.timestamps![0]!.coach).not.toHaveProperty('sessionId');
   });
 
   it('a "summary" recap public snapshot (no detail/tournamentUrl/sets) still parses (backward compatible)', () => {
