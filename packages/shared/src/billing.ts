@@ -12,6 +12,8 @@ import { z } from 'zod';
  * - `credits/{uid}/balance`         -> number (int, >= 0)
  * - `creditLedger/{uid}/{pushKey}`  -> creditLedgerEntrySchema
  * - `processedStripeEvents/{eventId}` -> number (epoch ms, webhook idempotency guard)
+ * - `processedStripeEventsByDay/{yyyymmdd}/{eventId}` -> true (day-mirror, reconciliation lookups)
+ * - `creditLedgerByDay/{yyyymmdd}/{uid}/{pushKey}` -> creditLedgerEntrySchema (day-mirror, reconciliation lookups)
  *
  * Pack constants live here (not buried in a route) specifically so prices/
  * credit counts are a one-line edit away from a future price change —
@@ -49,9 +51,17 @@ export const creditsStatusSchema = z.object({
 });
 export type CreditsStatus = z.infer<typeof creditsStatusSchema>;
 
-/** POST /api/billing/checkout request body. */
+/**
+ * POST /api/billing/checkout request body. `attemptId` (BILL-03) is a
+ * client-generated UUID, stable across retries of the SAME "buy credits"
+ * click, fresh for every NEW click — passed through as the Stripe Checkout
+ * Session's `idempotencyKey` so a retried create() never spawns a duplicate
+ * session. Optional so an un-updated client (deploy-first) never 400s; the
+ * server falls back to a per-request UUID when absent.
+ */
 export const checkoutRequestSchema = z.object({
   packId: creditPackIdSchema,
+  attemptId: z.string().min(1).optional(),
 });
 export type CheckoutRequest = z.infer<typeof checkoutRequestSchema>;
 
