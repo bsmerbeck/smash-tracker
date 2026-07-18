@@ -74,6 +74,7 @@
     "matchDelete": {
       "aria": "Delete match",
       "confirmTitle": "Delete this match?",
+      "sharesNote": "Any share links for this match's VOD will be revoked.",
       "deleted": "Match deleted!",
       "deleteFailed": "Failed to delete match. Please try again."
     },
@@ -456,6 +457,7 @@
       },
       "removeVodConfirm": {
         "title": "Remove this VOD link?",
+        "sharesNote": "Any share links for this VOD will be revoked.",
         "removed": "VOD link removed",
         "removeFailed": "Failed to remove VOD link. Please try again."
       },
