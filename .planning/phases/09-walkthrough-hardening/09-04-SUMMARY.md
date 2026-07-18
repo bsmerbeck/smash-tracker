@@ -167,3 +167,7 @@ None - no external service configuration required.
 
 _Phase: 09-walkthrough-hardening_
 _Completed: 2026-07-18_
+
+## Self-Check: PASSED
+
+All 12 modified source files verified present on disk; all 3 commits (`0f42a02`, `2d752dc`, `00f9fc6`) verified present in git history.
