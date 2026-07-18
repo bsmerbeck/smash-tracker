@@ -596,6 +596,7 @@
       "chipTags": "Tags",
       "chipName": "Nom",
       "revokedStatus": "Révoqué",
+      "expiredStatus": "Expiré",
       "copyLinkAria": "Copier le lien de partage",
       "revokeLinkAria": "Révoquer le lien de partage",
       "revokeConfirmTitle": "Révoquer ce lien de partage ?",

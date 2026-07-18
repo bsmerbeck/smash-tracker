@@ -596,6 +596,7 @@
       "chipTags": "Tags",
       "chipName": "Name",
       "revokedStatus": "Widerrufen",
+      "expiredStatus": "Abgelaufen",
       "copyLinkAria": "Freigabelink kopieren",
       "revokeLinkAria": "Freigabelink widerrufen",
       "revokeConfirmTitle": "Diesen Freigabelink widerrufen?",

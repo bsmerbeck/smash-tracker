@@ -362,7 +362,14 @@ export const shareSummarySchema = z
         showDisplayName: z.boolean(),
       })
       .nullish(),
-    status: z.enum(['active', 'revoked']),
+    /**
+     * Phase 8 walkthrough fix (review WR-05): `'expired'` — an edit-tier
+     * share whose `expiresAt` has elapsed. Dead for every coach/anonymous
+     * path (identical to revoked there), surfaced distinctly here so the
+     * manage list can label it instead of rendering a working Copy button
+     * for a dead link. Expired shares do NOT count toward the active cap.
+     */
+    status: z.enum(['active', 'revoked', 'expired']),
     revokedAt: z.number().int().nonnegative().nullish(),
     url: z.string().url(),
     // Small display facts the row renders without a second fetch.

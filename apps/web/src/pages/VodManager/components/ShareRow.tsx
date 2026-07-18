@@ -39,6 +39,13 @@ export function ShareRow({ share }: { share: ShareSummary }) {
   const opponentFighter =
     share.opponentFighterId != null ? getFighterById(share.opponentFighterId) : undefined;
   const isRevoked = share.status === 'revoked';
+  /**
+   * Review WR-05: an edit-tier link past its 30-day `expiresAt`. The link is
+   * dead (identical to revoked on every anonymous path), so the row dims,
+   * labels itself, and drops the Copy action — but KEEPS Revoke: revoking an
+   * expired share is the path to deleting its row (delete requires revoked).
+   */
+  const isExpired = share.status === 'expired';
   /** COACH-01: an edit-tier (coaching) link gets a visually distinct badge. */
   const isEdit = share.permissions === 'edit';
 
@@ -77,7 +84,7 @@ export function ShareRow({ share }: { share: ShareSummary }) {
     <div
       className={cn(
         'flex items-center gap-2 rounded-md border p-2 text-sm',
-        isRevoked && 'opacity-60',
+        (isRevoked || isExpired) && 'opacity-60',
       )}
     >
       <div className="flex flex-1 flex-col items-start gap-1">
@@ -97,6 +104,11 @@ export function ShareRow({ share }: { share: ShareSummary }) {
           {isRevoked && (
             <span className="text-xs font-medium text-destructive">
               {t('vodManager.shares.revokedStatus')}
+            </span>
+          )}
+          {isExpired && (
+            <span className="text-xs font-medium text-muted-foreground">
+              {t('vodManager.shares.expiredStatus')}
             </span>
           )}
         </div>
@@ -129,15 +141,18 @@ export function ShareRow({ share }: { share: ShareSummary }) {
       </div>
       {!isRevoked && (
         <>
-          <Button
-            type="button"
-            variant="outline"
-            size="icon-sm"
-            aria-label={t('vodManager.shares.copyLinkAria')}
-            onClick={handleCopy}
-          >
-            <Copy />
-          </Button>
+          {/* WR-05: no Copy for an expired share — the link is dead. */}
+          {!isExpired && (
+            <Button
+              type="button"
+              variant="outline"
+              size="icon-sm"
+              aria-label={t('vodManager.shares.copyLinkAria')}
+              onClick={handleCopy}
+            >
+              <Copy />
+            </Button>
+          )}
           <Button
             type="button"
             variant="outline"

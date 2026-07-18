@@ -215,6 +215,110 @@ describe('RtdbService.createShare — permission tiering + edit-tier expiry', ()
   });
 });
 
+describe('WR-05: expired edit shares — manage-list status + active-cap exclusion', () => {
+  /** Seeds a review share (snapshot + token + owner index) directly. */
+  function seedShare(
+    database: FakeDatabase,
+    shareId: string,
+    token: string,
+    tokenOverrides: Record<string, unknown> = {},
+  ) {
+    database.seed(`shareSnapshots/${shareId}`, {
+      uid: UID,
+      matchId: 'm1',
+      createdAt: 1700000100000,
+      result: 'win',
+      fighterId: 1,
+      opponentFighterId: 8,
+      matchDate: 1700000000000,
+      vodUrl: 'https://youtube.com/watch?v=abc123',
+      reviewedMomentsCount: 0,
+      redaction: { includedNotes: true, includedTags: true, showDisplayName: false },
+    });
+    database.seed(`shareTokens/${token}`, {
+      shareId,
+      ownerUid: UID,
+      permissions: 'edit',
+      createdAt: 1700000100000,
+      ...tokenOverrides,
+    });
+    database.seed(`sharesByUser/${UID}/${shareId}`, token);
+  }
+
+  it("listSharesForUser marks an edit share past expiresAt as 'expired' (not 'active')", async () => {
+    const database = new FakeDatabase();
+    const rtdb = new RtdbService(database as never);
+    seedShare(database, 'expiredShare', 'expiredTokenAAAAABBBBB', {
+      expiresAt: Date.now() - 1000,
+    });
+    seedShare(database, 'liveShare', 'liveTokenAAAAABBBBBCCC', {
+      expiresAt: Date.now() + 1000000,
+    });
+    seedShare(database, 'revokedShare', 'revokedTokenAAAAABBBBB', {
+      expiresAt: Date.now() - 1000,
+      revokedAt: 1700000200000,
+    });
+
+    const rows = await rtdb.listSharesForUser(UID, WEB_BASE_URL);
+
+    const byId = Object.fromEntries(rows.map((row) => [row.shareId, row]));
+    expect(byId.expiredShare!.status).toBe('expired');
+    expect(byId.liveShare!.status).toBe('active');
+    // Revocation (an explicit owner action) wins over expiry when both apply.
+    expect(byId.revokedShare!.status).toBe('revoked');
+  });
+
+  it('expired shares do NOT count toward the 100-active cap — createShare succeeds when 100 shares exist but some are expired', async () => {
+    const database = new FakeDatabase();
+    const rtdb = new RtdbService(database as never);
+    database.seed(`matches/${UID}/m1`, {
+      fighter_id: 1,
+      opponent_id: 8,
+      time: 1700000000000,
+      win: true,
+      vodUrl: 'https://youtube.com/watch?v=abc123',
+    });
+    // 99 live shares + 1 expired = 99 ACTIVE, so one slot remains.
+    for (let i = 0; i < 99; i += 1) {
+      seedShare(database, `share${i}`, `liveToken${String(i).padStart(12, '0')}`, {
+        expiresAt: Date.now() + 1000000,
+      });
+    }
+    seedShare(database, 'expiredShare', 'expiredTokenAAAAABBBBB', {
+      expiresAt: Date.now() - 1000,
+    });
+
+    const created = await rtdb.createShare(
+      UID,
+      {
+        kind: 'review',
+        matchId: 'm1',
+        redaction: { includeNotes: true, includeTags: true, showDisplayName: false },
+        permissions: 'view',
+      } as never,
+      WEB_BASE_URL,
+    );
+    expect(created.shareId).toBeTruthy();
+
+    // With 100 genuinely ACTIVE shares the cap still bites.
+    seedShare(database, 'share99', 'liveToken999999999999', {
+      expiresAt: Date.now() + 1000000,
+    });
+    await expect(
+      rtdb.createShare(
+        UID,
+        {
+          kind: 'review',
+          matchId: 'm1',
+          redaction: { includeNotes: true, includeTags: true, showDisplayName: false },
+          permissions: 'view',
+        } as never,
+        WEB_BASE_URL,
+      ),
+    ).rejects.toThrow(/at most 100 shares/);
+  });
+});
+
 describe('RtdbService.createNote / updateNote / deleteNote — owner note CRUD (capped transaction)', () => {
   function seedMatch(database: FakeDatabase, overrides: Record<string, unknown> = {}) {
     database.seed(`matches/${UID}/m1`, {
