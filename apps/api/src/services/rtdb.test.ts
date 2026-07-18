@@ -319,6 +319,148 @@ describe('WR-05: expired edit shares — manage-list status + active-cap exclusi
   });
 });
 
+describe('FB-03: deleteShare active-removal + bulkUpdateShares', () => {
+  /** Seeds a review share (snapshot + token + owner index) directly. */
+  function seedShare(
+    database: FakeDatabase,
+    shareId: string,
+    token: string,
+    tokenOverrides: Record<string, unknown> = {},
+  ) {
+    database.seed(`shareSnapshots/${shareId}`, {
+      uid: UID,
+      matchId: 'm1',
+      createdAt: 1700000100000,
+      result: 'win',
+      fighterId: 1,
+      opponentFighterId: 8,
+      matchDate: 1700000000000,
+      vodUrl: 'https://youtube.com/watch?v=abc123',
+      reviewedMomentsCount: 0,
+      redaction: { includedNotes: true, includedTags: true, showDisplayName: false },
+    });
+    database.seed(`shareTokens/${token}`, {
+      shareId,
+      ownerUid: UID,
+      permissions: 'view',
+      createdAt: 1700000100000,
+      ...tokenOverrides,
+    });
+    database.seed(`sharesByUser/${UID}/${shareId}`, token);
+  }
+
+  /** Wraps `database.ref` to count how many times `.update()` is invoked across any ref. */
+  function countRootUpdates(database: FakeDatabase): { count: () => number } {
+    let calls = 0;
+    const originalRef = database.ref.bind(database);
+    vi.spyOn(database, 'ref').mockImplementation((path?: string) => {
+      const ref = originalRef(path);
+      return {
+        ...ref,
+        update: async (values: Record<string, unknown>) => {
+          calls += 1;
+          return ref.update(values);
+        },
+      };
+    });
+    return { count: () => calls };
+  }
+
+  it('deleteShare on an ACTIVE share resolves (no ConflictError) and nulls token + snapshot + index', async () => {
+    const database = new FakeDatabase();
+    const rtdb = new RtdbService(database as never);
+    seedShare(database, 'activeShare', 'activeTokenAAAAABBBBB');
+
+    await expect(rtdb.deleteShare(UID, 'activeShare')).resolves.toBeUndefined();
+
+    const dump = database.dump() as Record<string, unknown>;
+    const tokens = dump.shareTokens as Record<string, unknown> | undefined;
+    expect(tokens?.activeTokenAAAAABBBBB).toBeUndefined();
+    const snapshots = dump.shareSnapshots as Record<string, unknown> | undefined;
+    expect(snapshots?.activeShare).toBeUndefined();
+    const index = (dump.sharesByUser as Record<string, Record<string, unknown>> | undefined)?.[UID];
+    expect(index?.activeShare).toBeUndefined();
+  });
+
+  it('deleteShare on a missing/foreign shareId still throws NotFoundError', async () => {
+    const database = new FakeDatabase();
+    const rtdb = new RtdbService(database as never);
+
+    await expect(rtdb.deleteShare(UID, 'nope')).rejects.toThrow('Share nope not found');
+  });
+
+  it("bulkUpdateShares(uid, 'revoke', [active, alreadyRevoked, foreign]) stamps revokedAt only on the active one and returns { processed: 1, skipped: 2 } with exactly ONE update() call", async () => {
+    const database = new FakeDatabase();
+    const rtdb = new RtdbService(database as never);
+    seedShare(database, 'activeShare', 'activeTokenAAAAABBBBB');
+    seedShare(database, 'revokedShare', 'revokedTokenAAAAABBBBB', { revokedAt: 1700000200000 });
+    // "foreign" — a token record exists but there is no sharesByUser/{UID} index entry for it.
+    database.seed('shareTokens/foreignTokenAAAAABBBBB', {
+      shareId: 'foreignShare',
+      ownerUid: 'other-uid',
+      permissions: 'view',
+      createdAt: 1700000100000,
+    });
+
+    const { count } = countRootUpdates(database);
+
+    const result = await rtdb.bulkUpdateShares(UID, 'revoke', [
+      'activeShare',
+      'revokedShare',
+      'foreignShare',
+    ]);
+
+    expect(result).toEqual({ processed: 1, skipped: 2 });
+    expect(count()).toBe(1);
+    const dump = database.dump() as Record<string, unknown>;
+    const tokens = dump.shareTokens as Record<string, Record<string, unknown>>;
+    expect(tokens.activeTokenAAAAABBBBB!.revokedAt).toEqual(expect.any(Number));
+    expect(tokens.revokedTokenAAAAABBBBB!.revokedAt).toBe(1700000200000); // untouched
+  });
+
+  it("bulkUpdateShares(uid, 'delete', [active, revoked, missing]) removes both the active and revoked shares and returns { processed: 2, skipped: 1 } with exactly ONE update() call", async () => {
+    const database = new FakeDatabase();
+    const rtdb = new RtdbService(database as never);
+    seedShare(database, 'activeShare', 'activeTokenAAAAABBBBB');
+    seedShare(database, 'revokedShare', 'revokedTokenAAAAABBBBB', { revokedAt: 1700000200000 });
+
+    const { count } = countRootUpdates(database);
+
+    const result = await rtdb.bulkUpdateShares(UID, 'delete', [
+      'activeShare',
+      'revokedShare',
+      'missingShare',
+    ]);
+
+    expect(result).toEqual({ processed: 2, skipped: 1 });
+    expect(count()).toBe(1);
+    const dump = database.dump() as Record<string, unknown>;
+    const tokens = dump.shareTokens as Record<string, unknown> | undefined;
+    expect(tokens?.activeTokenAAAAABBBBB).toBeUndefined();
+    expect(tokens?.revokedTokenAAAAABBBBB).toBeUndefined();
+    const snapshots = dump.shareSnapshots as Record<string, unknown> | undefined;
+    expect(snapshots?.activeShare).toBeUndefined();
+    expect(snapshots?.revokedShare).toBeUndefined();
+  });
+
+  it('bulkUpdateShares never throws for skipped ids; an empty actionable set performs no write and returns { processed: 0, skipped: N }', async () => {
+    const database = new FakeDatabase();
+    const rtdb = new RtdbService(database as never);
+    seedShare(database, 'revokedShare', 'revokedTokenAAAAABBBBB', { revokedAt: 1700000200000 });
+
+    const { count } = countRootUpdates(database);
+
+    const result = await rtdb.bulkUpdateShares(UID, 'revoke', [
+      'revokedShare',
+      'missingA',
+      'missingB',
+    ]);
+
+    expect(result).toEqual({ processed: 0, skipped: 3 });
+    expect(count()).toBe(0);
+  });
+});
+
 describe('RtdbService.createNote / updateNote / deleteNote — owner note CRUD (capped transaction)', () => {
   function seedMatch(database: FakeDatabase, overrides: Record<string, unknown> = {}) {
     database.seed(`matches/${UID}/m1`, {
