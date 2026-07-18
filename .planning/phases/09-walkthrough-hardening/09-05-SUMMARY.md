@@ -156,3 +156,13 @@ Each task was committed atomically:
 
 _Phase: 09-walkthrough-hardening_
 _Completed: 2026-07-18_
+
+## Self-Check: PASSED
+
+- FOUND: apps/web/src/hooks/useCoachNotes.ts
+- FOUND: apps/web/src/pages/Share/ShareViewPage.tsx
+- FOUND: apps/web/src/hooks/useVodNotes.ts
+- FOUND: apps/web/src/hooks/useDeleteMatch.ts
+- FOUND: apps/web/src/pages/MatchData/components/MatchTable.tsx
+- FOUND commit: efd356b (Task 1)
+- FOUND commit: aefbc70 (Task 2)
