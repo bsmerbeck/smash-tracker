@@ -1475,7 +1475,7 @@ describe('VodManagerPage', () => {
     expect(seekTo).toHaveBeenCalledTimes(1);
   });
 
-  it('shows an Edit affordance on the metadata card; editing and saving persists a full carry-through PATCH', async () => {
+  it('shows an Edit affordance on the metadata card; editing and saving persists a full carry-through PATCH that no longer mentions vodTimestamps', async () => {
     const user = userEvent.setup();
     listMatches.mockResolvedValue([
       makeMatch({
@@ -1523,10 +1523,12 @@ describe('VodManagerPage', () => {
     const [id, input] = updateMatch.mock.calls[0] as [string, Record<string, unknown>];
     expect(id).toBe('m1');
     expect(input.win).toBe(false);
-    // notes/vodTimestamps/gsp from the fixture are preserved (carry-through).
+    // notes/gsp from the fixture are preserved (carry-through); vodTimestamps
+    // is NEVER sent on this PATCH anymore (Phase 8: the server preserves the
+    // note subtree automatically on any match-fact PATCH that omits it).
     expect(input.notes).toBe('existing notes');
     expect(input.gsp).toBe(1_234_567);
-    expect(input.vodTimestamps).toEqual([{ id: 'n1', seconds: 30, note: 'note A' }]);
+    expect(input).not.toHaveProperty('vodTimestamps');
 
     // (3) Save returns to the read-only view.
     expect(screen.getByRole('button', { name: 'Edit details' })).toBeInTheDocument();

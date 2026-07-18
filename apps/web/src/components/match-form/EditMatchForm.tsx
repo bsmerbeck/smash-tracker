@@ -89,17 +89,13 @@ export function EditMatchForm({
     // PATCH is a full overwrite (omitted = cleared). `vodUrl` is now owned by
     // this form (`matchFormValuesToInput` already omits it when blank —
     // clearing the field). `vodTimestamps` isn't collected here (that's
-    // `VodNotesDialog`'s job), so it must be carried through explicitly —
-    // except when the VOD link was just cleared, since timestamps are
-    // offsets into a video that no longer has a URL and would otherwise be
-    // left orphaned on the record.
-    const vodUrlBlank = values.vodUrl.trim() === '';
-    const input: UpdateMatchInput = {
-      ...matchFormValuesToInput(values),
-      ...(!vodUrlBlank && match.vodTimestamps !== undefined
-        ? { vodTimestamps: match.vodTimestamps }
-        : {}),
-    };
+    // `VodNotesDialog`'s job) and is deliberately NEVER carried through —
+    // `updateMatchInputSchema` no longer accepts the field at all, and the
+    // server (`RtdbService.updateMatch`) preserves any existing note subtree
+    // automatically on every match-fact PATCH that omits it (Phase 8). The
+    // one legitimate "also clear notes" intent lives on `MatchTable`'s
+    // explicit "Remove VOD link" action, not here.
+    const input: UpdateMatchInput = matchFormValuesToInput(values);
     try {
       await updateMatch.mutateAsync({ id: match.id, input });
       toast.success(t('matchForm.edit.edited'));

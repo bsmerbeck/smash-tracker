@@ -176,9 +176,10 @@ function AddToPlaylistMenu({ playlists, matchId }: { playlists: Playlist[]; matc
  * clicking it swaps in the shared `MatchFormFields` (the same field set
  * `EditMatchForm` uses — no divergent second form) inline, right here in
  * the card — never a separate page or dialog. Save reuses
- * `matchFormValuesToInput` + the exact `vodTimestamps` carry-through
- * `EditMatchForm.onSubmit` uses, then PATCHes via `useUpdateMatch` and
- * returns to view mode; Cancel returns to view mode with no mutation.
+ * `matchFormValuesToInput` (mirroring `EditMatchForm.onSubmit`; notes are
+ * NEVER carried through — the server preserves them automatically, Phase 8),
+ * then PATCHes via `useUpdateMatch` and returns to view mode; Cancel returns
+ * to view mode with no mutation.
  * `syncLocked` disables exactly the 9 sync-owned fields on a synced match
  * (see `MatchFormFields`'s `changesSyncOwnedFields` cross-reference);
  * notes/vodUrl/vodStartSeconds/gsp always stay editable. The
@@ -238,18 +239,15 @@ export function SelectedMatchMeta({
   }
 
   async function onSubmit(values: MatchFormValues) {
-    // Full-overwrite PATCH — mirrors EditMatchForm.onSubmit exactly: carry
-    // vodTimestamps through unless the VOD link was just cleared (offsets
-    // into a video that no longer has a URL would otherwise be orphaned).
-    // match.tags carries through UNCONDITIONALLY (no vodUrlBlank guard) —
-    // match-level tags are independent annotations, not tied to the VOD
-    // link, so clearing the VOD never drops them (TAG-01..05).
-    const vodUrlBlank = values.vodUrl.trim() === '';
+    // Full-overwrite PATCH — mirrors EditMatchForm.onSubmit: `vodTimestamps`
+    // is NEVER carried through (the server preserves any existing note
+    // subtree automatically now that `updateMatchInputSchema` doesn't accept
+    // the field at all — Phase 8). match.tags carries through
+    // UNCONDITIONALLY — match-level tags are independent annotations, not
+    // tied to the VOD link, so clearing the VOD never drops them
+    // (TAG-01..05).
     const input: UpdateMatchInput = {
       ...matchFormValuesToInput(values),
-      ...(!vodUrlBlank && match.vodTimestamps !== undefined
-        ? { vodTimestamps: match.vodTimestamps }
-        : {}),
       ...(match.tags !== undefined ? { tags: match.tags } : {}),
     };
     try {
@@ -265,7 +263,6 @@ export function SelectedMatchMeta({
     const next = addTagToList(match.tags ?? [], tag, MAX_MATCH_TAGS);
     const input = buildUpdateInput(match, {
       vodUrl: match.vodUrl,
-      vodTimestamps: match.vodTimestamps,
       tags: next.length > 0 ? next : undefined,
     });
     try {
@@ -280,7 +277,6 @@ export function SelectedMatchMeta({
     const next = removeTagFromList(match.tags ?? [], tag);
     const input = buildUpdateInput(match, {
       vodUrl: match.vodUrl,
-      vodTimestamps: match.vodTimestamps,
       tags: next.length > 0 ? next : undefined,
     });
     try {

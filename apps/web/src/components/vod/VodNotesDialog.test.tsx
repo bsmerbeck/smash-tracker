@@ -6,11 +6,15 @@ import type { Match } from '@smash-tracker/shared';
 import { VodNotesDialog } from './VodNotesDialog';
 
 const updateMatch = vi.fn();
+const createNote = vi.fn();
+const deleteNote = vi.fn();
 
 vi.mock('@/lib/api', () => ({
   api: {
     matches: {
       update: (...args: unknown[]) => updateMatch(...args),
+      createNote: (...args: unknown[]) => createNote(...args),
+      deleteNote: (...args: unknown[]) => deleteNote(...args),
     },
   },
 }));
@@ -125,9 +129,14 @@ describe('VodNotesDialog', () => {
     expect(link).toHaveAttribute('rel', 'noreferrer');
   });
 
-  it('saves vodUrl and vodTimestamps via the matches update API, carrying other fields through unchanged', async () => {
+  it('saves vodUrl via the matches update API (carrying other fields through, never vodTimestamps) and creates the new note via the dedicated endpoint', async () => {
     const user = userEvent.setup();
     updateMatch.mockResolvedValue(baseMatch());
+    createNote.mockResolvedValue({
+      id: 'server-n1',
+      seconds: 161,
+      note: 'missed punish on shield',
+    });
     const match = baseMatch({ stocksLeft: 2, eventName: 'Ultimate Singles' });
     renderDialog(match);
 
@@ -139,6 +148,11 @@ describe('VodNotesDialog', () => {
     await user.click(screen.getByRole('button', { name: 'Save' }));
 
     await waitFor(() => expect(updateMatch).toHaveBeenCalledTimes(1));
+    expect(createNote).toHaveBeenCalledWith('match-1', {
+      seconds: 161,
+      note: 'missed punish on shield',
+    });
+    expect(deleteNote).not.toHaveBeenCalled();
     expect(updateMatch).toHaveBeenCalledWith('match-1', {
       fighter_id: 1,
       opponent_id: 8,
@@ -150,19 +164,15 @@ describe('VodNotesDialog', () => {
       stocksLeft: 2,
       eventName: 'Ultimate Singles',
       vodUrl: 'https://youtube.com/watch?v=abc123',
-      vodTimestamps: [
-        {
-          id: expect.any(String) as unknown as string,
-          seconds: 161,
-          note: 'missed punish on shield',
-        },
-      ],
     });
+    const payload = updateMatch.mock.calls[0]![1];
+    expect(payload).not.toHaveProperty('vodTimestamps');
   });
 
-  it('clears vodUrl and vodTimestamps when the URL is emptied and all timestamps removed', async () => {
+  it('clears vodUrl (via update) and deletes a removed existing note (via the dedicated endpoint)', async () => {
     const user = userEvent.setup();
     updateMatch.mockResolvedValue(baseMatch());
+    deleteNote.mockResolvedValue(undefined);
     const match = baseMatch({
       vodUrl: 'https://youtube.com/watch?v=abc123',
       vodTimestamps: [{ id: 'n1', seconds: 161, note: 'missed punish on shield' }],
@@ -174,6 +184,8 @@ describe('VodNotesDialog', () => {
     await user.click(screen.getByRole('button', { name: 'Save' }));
 
     await waitFor(() => expect(updateMatch).toHaveBeenCalledTimes(1));
+    expect(deleteNote).toHaveBeenCalledWith('match-1', 'n1');
+    expect(createNote).not.toHaveBeenCalled();
     const payload = updateMatch.mock.calls[0]![1];
     expect(payload).not.toHaveProperty('vodUrl');
     expect(payload).not.toHaveProperty('vodTimestamps');
