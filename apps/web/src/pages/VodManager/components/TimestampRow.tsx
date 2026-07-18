@@ -354,6 +354,20 @@ export function TimestampRow({
         </AlertDialog>
       </div>
 
+      {/* Coach attribution chip (COACH-05) — a distinct, tag-visually-separate
+          marker so the owner can tell a session contribution from their own
+          note at a glance. Present on every coach-authored note regardless of
+          which coach session wrote it; edit/delete above are NEVER gated on
+          authorship — the owner moderates (deletes/edits) any note through
+          the same controls (08-02/08-04's existing deleteNote/updateNote). */}
+      {stamp.coach && (
+        <div className="pl-2">
+          <Badge variant="default" className="w-fit">
+            {t('vodManager.notes.coachAttribution', { name: stamp.coach.displayName })}
+          </Badge>
+        </div>
+      )}
+
       {/* Note-tag chips (TAG-02/TAG-04) — a sibling of the seek button, never
           inside it, so chip/removal/add-combobox clicks never fire
           onSeek/onSelect (D-13/D-14). Sits under the note text so a dense

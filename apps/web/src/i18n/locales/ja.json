@@ -517,6 +517,7 @@
     "notes": {
       "saveEdit": "タイムスタンプの編集を保存",
       "cancelEdit": "タイムスタンプの編集をキャンセル",
+      "coachAttribution": "{{name}}（コーチ）",
       "deleteConfirmTitle": "このタイムスタンプメモを削除しますか？",
       "editTimeAria": "タイムスタンプの時間を編集",
       "editNoteAria": "タイムスタンプのメモを編集",
