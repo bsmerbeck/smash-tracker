@@ -1442,6 +1442,7 @@
       "notableWinNamed": "{{name}}への注目の勝利",
       "notableWinSeed": "シード{{seed}}への注目の勝利",
       "charactersLabel": "使用キャラクター",
+      "gameDetailLabel": "このセットのゲーム",
       "setTimelineHeading": "セットタイムライン",
       "setScoreLabel": "{{wins}}–{{losses}}",
       "opponentWithPlacement": "{{name}} · {{placement}}",
