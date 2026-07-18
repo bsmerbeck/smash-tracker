@@ -1246,6 +1246,65 @@ describe('Owner note CRUD: POST/PATCH/DELETE /api/matches/:id/notes[/:noteId]', 
     expect(response.statusCode).toBe(404);
   });
 
+  it('WR-07: a crafted :id with RTDB-illegal characters 404s on every note route + clear-vod — never a 500', async () => {
+    const { app, database } = buildTestApp();
+    seedMatch(database, { vodTimestamps: { n1: { seconds: 1, note: 'x' } } });
+
+    // `.` `#` `$` `[` `]` make firebase-admin's ref() throw synchronously
+    // (500 without the guard); DEL (%7F) is path-illegal too (WR-08 class).
+    const craftedIds = ['foo.bar', 'foo%23bar', 'foo$bar', 'foo%5Bbar%5D', 'foo%7Fbar'];
+
+    for (const id of craftedIds) {
+      const create = await app.inject({
+        method: 'POST',
+        url: `/api/matches/${id}/notes`,
+        headers: authHeader(),
+        payload: { seconds: 1, note: 'x' },
+      });
+      expect(create.statusCode).toBe(404);
+
+      const update = await app.inject({
+        method: 'PATCH',
+        url: `/api/matches/${id}/notes/n1`,
+        headers: authHeader(),
+        payload: { seconds: 1, note: 'x' },
+      });
+      expect(update.statusCode).toBe(404);
+
+      const remove = await app.inject({
+        method: 'DELETE',
+        url: `/api/matches/${id}/notes/n1`,
+        headers: authHeader(),
+      });
+      expect(remove.statusCode).toBe(404);
+
+      const clearVod = await app.inject({
+        method: 'POST',
+        url: `/api/matches/${id}/clear-vod`,
+        headers: authHeader(),
+      });
+      expect(clearVod.statusCode).toBe(404);
+    }
+  });
+
+  it('WR-07: a crafted :id containing a slash (would address a NESTED child) 404s on the note create', async () => {
+    const { app, database } = buildTestApp();
+    seedMatch(database);
+
+    const response = await app.inject({
+      method: 'POST',
+      url: `/api/matches/m1%2Fnested/notes`,
+      headers: authHeader(),
+      payload: { seconds: 1, note: 'x' },
+    });
+
+    expect(response.statusCode).toBe(404);
+    // Nothing was written under a nested child of the real match.
+    const dump = database.dump() as Record<string, unknown>;
+    const matches = dump.matches as Record<string, Record<string, unknown>>;
+    expect(matches[TEST_UID]!.m1 as Record<string, unknown>).not.toHaveProperty('nested');
+  });
+
   it('REGRESSION (CR-02): a corrupt sibling entry never breaks a note write — the new note lands, the corrupt entry is dropped', async () => {
     const { app, database } = buildTestApp();
     seedMatch(database, {
