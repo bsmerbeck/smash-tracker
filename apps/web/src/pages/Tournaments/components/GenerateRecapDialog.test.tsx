@@ -99,6 +99,7 @@ describe('GenerateRecapDialog', () => {
       kind: 'recap',
       entryKey: 'pgg-the-big-house-9',
       detail: 'full',
+      permissions: 'view',
       ownerDisplayName: 'TestPlayer',
     });
 
@@ -124,6 +125,7 @@ describe('GenerateRecapDialog', () => {
       kind: 'recap',
       entryKey: 'pgg-the-big-house-9',
       detail: 'full',
+      permissions: 'view',
     });
   });
 
@@ -155,6 +157,7 @@ describe('GenerateRecapDialog', () => {
       kind: 'recap',
       entryKey: 'pgg-the-big-house-9',
       detail: 'summary',
+      permissions: 'view',
       ownerDisplayName: 'TestPlayer',
     });
   });

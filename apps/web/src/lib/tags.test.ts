@@ -127,7 +127,12 @@ describe('deriveCustomTagVocabulary', () => {
         time: 2,
         win: false,
         vodTimestamps: [
-          { seconds: 5, note: 'note', tags: ['edgeguard', 'alpha CUSTOM', 'beta custom'] },
+          {
+            id: 'n1',
+            seconds: 5,
+            note: 'note',
+            tags: ['edgeguard', 'alpha CUSTOM', 'beta custom'],
+          },
         ],
       }),
     ];
@@ -173,17 +178,17 @@ describe('deriveCustomTagVocabulary', () => {
 describe('deriveNoteTagOptions (retest fix-up #12)', () => {
   it('returns sorted, deduped tags across all notes, including presets', () => {
     const timestamps: VodTimestamp[] = [
-      { seconds: 10, note: 'a', tags: ['mistake', 'zeta custom'] },
-      { seconds: 20, note: 'b', tags: ['punish'] },
-      { seconds: 30, note: 'c', tags: ['mistake'] },
+      { id: 'n1', seconds: 10, note: 'a', tags: ['mistake', 'zeta custom'] },
+      { id: 'n2', seconds: 20, note: 'b', tags: ['punish'] },
+      { id: 'n3', seconds: 30, note: 'c', tags: ['mistake'] },
     ];
     expect(deriveNoteTagOptions(timestamps)).toEqual(['mistake', 'punish', 'zeta custom']);
   });
 
   it('returns an empty array when no note has any tag', () => {
     const timestamps: VodTimestamp[] = [
-      { seconds: 10, note: 'a' },
-      { seconds: 20, note: 'b', tags: [] },
+      { id: 'n1', seconds: 10, note: 'a' },
+      { id: 'n2', seconds: 20, note: 'b', tags: [] },
     ];
     expect(deriveNoteTagOptions(timestamps)).toEqual([]);
   });
@@ -191,10 +196,10 @@ describe('deriveNoteTagOptions (retest fix-up #12)', () => {
 
 describe('filterTimestampIndices (retest fix-up #12)', () => {
   const timestamps: VodTimestamp[] = [
-    { seconds: 10, note: 'a', tags: ['mistake'] },
-    { seconds: 20, note: 'b', tags: ['punish'] },
-    { seconds: 30, note: 'c' },
-    { seconds: 40, note: 'd', tags: ['mistake', 'punish'] },
+    { id: 'n1', seconds: 10, note: 'a', tags: ['mistake'] },
+    { id: 'n2', seconds: 20, note: 'b', tags: ['punish'] },
+    { id: 'n3', seconds: 30, note: 'c' },
+    { id: 'n4', seconds: 40, note: 'd', tags: ['mistake', 'punish'] },
   ];
 
   it('returns every index (in order) when selectedTags is empty', () => {
