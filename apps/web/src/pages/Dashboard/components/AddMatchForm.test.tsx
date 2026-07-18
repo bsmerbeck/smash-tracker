@@ -1,4 +1,5 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
+import type { ComponentProps } from 'react';
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -75,7 +76,10 @@ async function fillOpponentName(
   await user.type(input, name);
 }
 
-function renderForm(contextOverrides: Partial<DashboardContextValue> = {}) {
+function renderForm(
+  contextOverrides: Partial<DashboardContextValue> = {},
+  formProps: ComponentProps<typeof AddMatchForm> = {},
+) {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   const contextValue: DashboardContextValue = {
     fighterSprites: [mario, luigi],
@@ -87,7 +91,7 @@ function renderForm(contextOverrides: Partial<DashboardContextValue> = {}) {
     <QueryClientProvider client={queryClient}>
       <AuthProvider>
         <DashboardContext.Provider value={contextValue}>
-          <AddMatchForm />
+          <AddMatchForm {...formProps} />
         </DashboardContext.Provider>
       </AuthProvider>
     </QueryClientProvider>,
@@ -220,6 +224,59 @@ describe('AddMatchForm', () => {
   it('disables the trigger when the user has no fighters selected', () => {
     renderForm({ fighterSprites: [], fighter: undefined });
     expect(screen.getByRole('button', { name: 'Add Match' })).toBeDisabled();
+  });
+
+  it('requireVod blocks submit with an empty VOD URL and shows the required error', async () => {
+    const user = userEvent.setup();
+    renderForm({}, { requireVod: true });
+
+    await user.click(screen.getByRole('button', { name: 'Add Match' }));
+    const dialog = await screen.findByRole('dialog');
+
+    await user.click(within(dialog).getByRole('radio', { name: 'Win' }));
+    await fillOpponentName(user, dialog, 'rival');
+    await user.click(within(dialog).getByRole('button', { name: 'Save' }));
+
+    expect(
+      await within(dialog).findByText('Enter a valid VOD link (YouTube or Twitch)'),
+    ).toBeInTheDocument();
+    expect(createMatch).not.toHaveBeenCalled();
+  });
+
+  it('requireVod accepts a valid VOD URL', async () => {
+    const user = userEvent.setup();
+    renderForm({}, { requireVod: true });
+
+    await user.click(screen.getByRole('button', { name: 'Add Match' }));
+    const dialog = await screen.findByRole('dialog');
+
+    await user.click(within(dialog).getByRole('radio', { name: 'Win' }));
+    await fillOpponentName(user, dialog, 'rival');
+    await user.type(
+      screen.getByPlaceholderText('https://youtube.com/watch?v=...'),
+      'https://youtube.com/watch?v=abc123',
+    );
+    await user.click(within(dialog).getByRole('button', { name: 'Save' }));
+
+    await waitFor(() => expect(createMatch).toHaveBeenCalledTimes(1));
+    expect(createMatch).toHaveBeenCalledWith(
+      expect.objectContaining({ vodUrl: 'https://youtube.com/watch?v=abc123' }),
+    );
+  });
+
+  it('Dashboard mode (default) still allows an empty VOD URL', async () => {
+    const user = userEvent.setup();
+    renderForm();
+
+    await user.click(screen.getByRole('button', { name: 'Add Match' }));
+    const dialog = await screen.findByRole('dialog');
+
+    await user.click(within(dialog).getByRole('radio', { name: 'Win' }));
+    await fillOpponentName(user, dialog, 'rival');
+    await user.click(within(dialog).getByRole('button', { name: 'Save' }));
+
+    await waitFor(() => expect(createMatch).toHaveBeenCalledTimes(1));
+    expect(createMatch.mock.calls[0]![0]).not.toHaveProperty('vodUrl');
   });
 
   it('omits stocksLeft/eventName/tournamentName by default (single game mode)', async () => {

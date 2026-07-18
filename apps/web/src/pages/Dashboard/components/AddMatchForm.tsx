@@ -1,7 +1,7 @@
-import { useState } from 'react';
+import { useContext, useState, type ComponentProps } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
-import type { CreateMatchInput } from '@smash-tracker/shared';
+import type { CreateMatchInput, Fighter } from '@smash-tracker/shared';
 import {
   Dialog,
   DialogContent,
@@ -32,7 +32,7 @@ import {
   getSetScore,
   type SetGameValues,
 } from '@/components/match-form/setWizardLogic';
-import { useDashboardContext } from '../DashboardContext';
+import { DashboardContext } from '../DashboardContext';
 
 type EntryMode = 'single' | 'set';
 
@@ -71,16 +71,41 @@ function buildDefaultValues(fighterId: number): MatchFormValues {
  * which collects shared fields once and per-game rows progressively, then
  * submits one match per game sequentially via the same create-match
  * mutation (no cross-game transaction/rollback — see `handleSetSubmit`).
+ *
+ * VOD Manager's toolbar mounts this same dialog with `requireVod` +
+ * trigger-customization props (see VodManagerPage) so a match added from
+ * the VOD page always carries a link. When called with no props (Dashboard),
+ * `fighterSprites`/`fighter` fall back to `DashboardContext` and the trigger
+ * renders exactly as before — a non-throwing `useContext` read keeps this
+ * component usable outside the Dashboard's provider tree.
  */
-export function AddMatchForm() {
+export function AddMatchForm({
+  requireVod = false,
+  triggerLabel,
+  triggerVariant,
+  triggerSize,
+  fighterSprites: fighterSpritesProp,
+  fighter: fighterProp,
+}: {
+  requireVod?: boolean;
+  triggerLabel?: string;
+  triggerVariant?: ComponentProps<typeof Button>['variant'];
+  triggerSize?: ComponentProps<typeof Button>['size'];
+  fighterSprites?: Fighter[];
+  fighter?: Fighter;
+} = {}) {
   const { t } = useTranslation();
-  const { fighter, fighterSprites } = useDashboardContext();
+  const dashboardContext = useContext(DashboardContext);
+  const fighterSprites = fighterSpritesProp ?? dashboardContext?.fighterSprites ?? [];
+  const fighter = fighterProp ?? dashboardContext?.fighter;
   const createMatch = useCreateMatch();
   const [open, setOpen] = useState(false);
   const [mode, setMode] = useState<EntryMode>('single');
   const [games, setGames] = useState<SetGameValues[]>([]);
 
-  const form = useMatchForm(buildDefaultValues(fighter?.id ?? fighterSprites[0]?.id ?? 0));
+  const form = useMatchForm(buildDefaultValues(fighter?.id ?? fighterSprites[0]?.id ?? 0), {
+    requireVod,
+  });
   const setForm = useSetSharedForm(
     defaultSetSharedValues(fighter?.id ?? fighterSprites[0]?.id ?? 0),
   );
@@ -155,7 +180,9 @@ export function AddMatchForm() {
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogTrigger asChild>
-        <Button disabled={fighterSprites.length === 0}>{t('dashboard.addMatch.title')}</Button>
+        <Button disabled={fighterSprites.length === 0} variant={triggerVariant} size={triggerSize}>
+          {triggerLabel ?? t('dashboard.addMatch.title')}
+        </Button>
       </DialogTrigger>
       <DialogContent className="max-h-[90vh] max-w-2xl overflow-y-auto">
         <DialogHeader>
@@ -182,7 +209,7 @@ export function AddMatchForm() {
 
         {mode === 'single' ? (
           <form onSubmit={form.handleSubmit(onSubmit)} noValidate>
-            <MatchFormFields form={form} fighterSprites={fighterSprites} />
+            <MatchFormFields form={form} fighterSprites={fighterSprites} requireVod={requireVod} />
             <DialogFooter className="mt-4">
               <Button type="button" variant="outline" onClick={() => setOpen(false)}>
                 {t('common.cancel')}

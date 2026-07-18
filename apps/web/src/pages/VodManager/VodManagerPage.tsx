@@ -66,6 +66,7 @@ import {
   persistPlayerSize,
   type VodPlayerSize,
 } from './lib/vodPrefs';
+import { AddMatchForm } from '@/pages/Dashboard/components/AddMatchForm';
 import { VodMatchList } from './components/VodMatchList';
 import { VodPlayer } from './components/VodPlayer';
 import { TimestampList } from './components/TimestampList';
@@ -969,10 +970,17 @@ export function VodManagerPage() {
     <div className="flex flex-col gap-6">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h1 className="text-2xl font-semibold tracking-tight">{t('vodManager.title')}</h1>
-        <Button type="button" variant="outline" size="sm" onClick={() => setMySharesOpen(true)}>
-          <Link2 className="size-4" />
-          {t('vodManager.shares.mySharesButton')}
-        </Button>
+        <div className="flex items-center gap-2">
+          {/* requireVod guarantees a non-blank vodUrl, so the new match
+              always qualifies for `vodMatches` (m.vodUrl != null) once
+              useCreateMatch's existing matchesQueryKey invalidation runs —
+              no extra invalidation wiring needed here. */}
+          <AddMatchForm requireVod fighterSprites={fighterSprites} triggerSize="sm" />
+          <Button type="button" variant="outline" size="sm" onClick={() => setMySharesOpen(true)}>
+            <Link2 className="size-4" />
+            {t('vodManager.shares.mySharesButton')}
+          </Button>
+        </div>
       </div>
       <MySharesDialog open={mySharesOpen} onOpenChange={setMySharesOpen} />
 

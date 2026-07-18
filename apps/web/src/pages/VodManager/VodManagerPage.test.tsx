@@ -37,6 +37,7 @@ vi.mock('@/lib/firebase', async () => {
 const getFighters = vi.fn();
 const listMatches = vi.fn();
 const listOpponents = vi.fn();
+const createMatch = vi.fn();
 const updateMatch = vi.fn();
 const createNote = vi.fn();
 const updateNote = vi.fn();
@@ -55,6 +56,7 @@ vi.mock('@/lib/api', () => ({
     },
     matches: {
       list: (...args: unknown[]) => listMatches(...args),
+      create: (...args: unknown[]) => createMatch(...args),
       update: (...args: unknown[]) => updateMatch(...args),
       createNote: (...args: unknown[]) => createNote(...args),
       updateNote: (...args: unknown[]) => updateNote(...args),
@@ -147,6 +149,16 @@ describe('VodManagerPage', () => {
 
   afterEach(() => {
     resetVendorGlobals();
+  });
+
+  it('renders an Add Match button in the VOD toolbar and opens the add-match dialog', async () => {
+    listMatches.mockResolvedValue([]);
+    const user = userEvent.setup();
+    renderVodManager('/vod');
+
+    await user.click(await screen.findByRole('button', { name: 'Add Match' }));
+    const dialog = await screen.findByRole('dialog');
+    expect(within(dialog).getByRole('button', { name: 'Save' })).toBeInTheDocument();
   });
 
   it('applies the deep-linked match t= offset as the player initial start time', async () => {
@@ -1618,7 +1630,7 @@ describe('VodManagerPage', () => {
 
     // Annotation fields stay editable.
     expect(screen.getByRole('textbox', { name: 'Notes' })).not.toBeDisabled();
-    expect(screen.getByRole('textbox', { name: 'VOD URL' })).not.toBeDisabled();
+    expect(screen.getByRole('textbox', { name: 'VOD URL (YouTube or Twitch)' })).not.toBeDisabled();
     expect(screen.getByRole('textbox', { name: 'GSP after match (optional)' })).not.toBeDisabled();
   });
 
@@ -1840,7 +1852,7 @@ describe('VodManagerPage', () => {
     });
 
     await user.click(screen.getByRole('button', { name: 'Edit details' }));
-    const vodUrlInput = screen.getByRole('textbox', { name: 'VOD URL' });
+    const vodUrlInput = screen.getByRole('textbox', { name: 'VOD URL (YouTube or Twitch)' });
     await user.clear(vodUrlInput);
     await user.click(screen.getByRole('button', { name: 'Save' }));
 
