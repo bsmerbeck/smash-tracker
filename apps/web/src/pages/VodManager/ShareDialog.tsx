@@ -16,6 +16,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
+import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { useAuth } from '@/hooks/useAuth';
 import { useCreateVodShare, useVodShares } from '@/hooks/useVodShares';
 import { ApiError } from '@/lib/api';
@@ -23,6 +24,15 @@ import { ApiError } from '@/lib/api';
 const COPY_FEEDBACK_MS = 2000;
 
 type ShareStep = 'create' | 'created';
+
+/**
+ * COACH-01 permission tier. This dialog only ever creates `kind: 'review'`
+ * shares (recaps are created by `GenerateRecapDialog`, which offers no tier
+ * control) — so the Edit (coaching) option is structurally review-only here;
+ * the authoritative recap-edit block is `createShareInputSchema`'s
+ * `.refine()` (400), this UI is defense-in-depth.
+ */
+type ShareTier = 'view' | 'edit';
 
 /**
  * Owner share-creation dialog (SHARE-01/02/03). Two steps: `'create'` — the
@@ -51,6 +61,7 @@ export function ShareDialog({
   const createShare = useCreateVodShare();
   const sharesQuery = useVodShares();
   const [step, setStep] = useState<ShareStep>('create');
+  const [tier, setTier] = useState<ShareTier>('view');
   const [includeNotes, setIncludeNotes] = useState(true);
   const [includeTags, setIncludeTags] = useState(true);
   const [showDisplayName, setShowDisplayName] = useState(false);
@@ -79,6 +90,7 @@ export function ShareDialog({
     setWasOpen(open);
     if (open) {
       setStep('create');
+      setTier('view');
       setIncludeNotes(true);
       setIncludeTags(true);
       setShowDisplayName(false);
@@ -96,6 +108,7 @@ export function ShareDialog({
       const result = await createShare.mutateAsync({
         kind: 'review',
         matchId: match.id,
+        permissions: tier,
         redaction: { includeNotes, includeTags, showDisplayName },
         ...(showDisplayName && user?.displayName ? { ownerDisplayName: user.displayName } : {}),
       });
@@ -139,6 +152,38 @@ export function ShareDialog({
                   {t('vodManager.shares.reshareHint')}
                 </p>
               )}
+
+              {/* COACH-01 tier choice — review shares only (this dialog never
+                  creates recaps; see the ShareTier type note above). */}
+              <div className="flex flex-col gap-1.5">
+                <Label id="share-tier-label">{t('vodManager.shares.tierLabel')}</Label>
+                <ToggleGroup
+                  type="single"
+                  variant="outline"
+                  size="sm"
+                  value={tier}
+                  onValueChange={(next) => {
+                    // Radix fires with '' when the active item is re-clicked —
+                    // a tier is always one of the two options, never "none".
+                    if (next) {
+                      setTier(next as ShareTier);
+                    }
+                  }}
+                  aria-labelledby="share-tier-label"
+                >
+                  <ToggleGroupItem value="view">
+                    {t('vodManager.shares.tierViewOption')}
+                  </ToggleGroupItem>
+                  <ToggleGroupItem value="edit">
+                    {t('vodManager.shares.tierEditOption')}
+                  </ToggleGroupItem>
+                </ToggleGroup>
+                <p className="text-xs text-muted-foreground">
+                  {tier === 'edit'
+                    ? t('vodManager.shares.tierEditHelper')
+                    : t('vodManager.shares.tierViewHelper')}
+                </p>
+              </div>
 
               <div className="flex items-center justify-between gap-4">
                 <div className="flex flex-col gap-0.5">
