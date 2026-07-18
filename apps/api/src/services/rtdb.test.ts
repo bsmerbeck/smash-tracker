@@ -597,6 +597,25 @@ describe('RtdbService.getEditSessionByToken — live-redacted edit-session read'
     });
   });
 
+  it('REGRESSION (CR-02): a corrupt note entry never 500s the session read — the session resolves with the entry dropped', async () => {
+    const database = new FakeDatabase();
+    const rtdb = new RtdbService(database as never);
+    seedEditShare(database, {
+      matchOverrides: {
+        vodTimestamps: {
+          bad: { seconds: 'x', note: 'corrupt entry' },
+          good: { seconds: 12, note: 'healthy entry' },
+        },
+      },
+    });
+
+    const session = await rtdb.getEditSessionByToken(EDIT_TOKEN);
+
+    expect(session).not.toBeNull();
+    expect(session!.timestamps).toHaveLength(1);
+    expect(session!.timestamps![0]).toMatchObject({ id: 'good', seconds: 12 });
+  });
+
   it('returns null for an unknown token', async () => {
     const database = new FakeDatabase();
     const rtdb = new RtdbService(database as never);

@@ -116,6 +116,51 @@ describe('GET /api/matches', () => {
       { id: 'goodKey', fighter_id: 1, opponent_id: 8, time: 1700000000000, win: true },
     ]);
   });
+
+  it('REGRESSION (CR-02): one corrupt vodTimestamps entry never 500s the list — the match survives with the bad entry dropped', async () => {
+    const { app, database } = buildTestApp();
+
+    database.seed(`matches/${TEST_UID}`, {
+      // Corrupt entry in the legacy-array shape (string-typed seconds — the
+      // same corruption class as the string-typed `time` prod incident).
+      legacyShaped: {
+        fighter_id: 1,
+        opponent_id: 8,
+        time: 1700000000000,
+        win: true,
+        vodTimestamps: [
+          { seconds: 'x', note: 'corrupt' },
+          { seconds: 9, note: 'kept legacy' },
+        ],
+      },
+      // Corrupt entry in the keyed shape.
+      keyedShaped: {
+        fighter_id: 1,
+        opponent_id: 8,
+        time: 1700000000001,
+        win: false,
+        vodTimestamps: {
+          bad: { seconds: 'x', note: 'corrupt' },
+          good: { seconds: 4, note: 'kept keyed' },
+        },
+      },
+    });
+
+    const response = await app.inject({
+      method: 'GET',
+      url: '/api/matches',
+      headers: authHeader(),
+    });
+
+    expect(response.statusCode).toBe(200);
+    const body = response.json() as Array<{ id: string; vodTimestamps?: unknown[] }>;
+    expect(body).toHaveLength(2);
+    const byId = Object.fromEntries(body.map((match) => [match.id, match]));
+    expect(byId.legacyShaped!.vodTimestamps).toMatchObject([{ seconds: 9, note: 'kept legacy' }]);
+    expect(byId.keyedShaped!.vodTimestamps).toMatchObject([
+      { id: 'good', seconds: 4, note: 'kept keyed' },
+    ]);
+  });
 });
 
 describe('POST /api/matches', () => {
@@ -1199,6 +1244,33 @@ describe('Owner note CRUD: POST/PATCH/DELETE /api/matches/:id/notes[/:noteId]', 
     });
 
     expect(response.statusCode).toBe(404);
+  });
+
+  it('REGRESSION (CR-02): a corrupt sibling entry never breaks a note write — the new note lands, the corrupt entry is dropped', async () => {
+    const { app, database } = buildTestApp();
+    seedMatch(database, {
+      vodTimestamps: {
+        bad: { seconds: 'x', note: 'corrupt sibling' },
+        good: { seconds: 9, note: 'healthy sibling' },
+      },
+    });
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/matches/m1/notes',
+      headers: authHeader(),
+      payload: { seconds: 42, note: 'new note' },
+    });
+
+    expect(response.statusCode).toBe(201);
+    const body = response.json();
+
+    const dump = database.dump() as Record<string, unknown>;
+    const matches = dump.matches as Record<string, Record<string, unknown>>;
+    const vodTimestamps = (matches[TEST_UID]!.m1 as Record<string, unknown>)
+      .vodTimestamps as Record<string, unknown>;
+    expect(vodTimestamps[body.id]).toMatchObject({ seconds: 42, note: 'new note' });
+    expect(vodTimestamps.good).toMatchObject({ seconds: 9, note: 'healthy sibling' });
   });
 
   it('returns 401 for an unauthenticated create', async () => {
