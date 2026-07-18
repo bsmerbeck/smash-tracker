@@ -174,6 +174,9 @@ describe('ShareViewPage', () => {
     // leave behind — `clearAllMocks` only clears call history, not those.
     coachSessionQuery.mockReturnValue({ data: undefined });
     getStoredDisplayNameMock.mockReturnValue(null);
+    setDisplayNameMock.mockImplementation((name: string) => {
+      getStoredDisplayNameMock.mockReturnValue(name);
+    });
   });
 
   afterEach(() => {
@@ -726,6 +729,45 @@ describe('ShareViewPage', () => {
 
       expect(screen.queryByText('What should we call you?')).not.toBeInTheDocument();
       expect(createCoachNoteMutate).toHaveBeenCalledTimes(2);
+    });
+
+    it('REGRESSION (WR-04): with localStorage completely unavailable, the entered name still flows through and the prompt never loops', async () => {
+      getPublic.mockResolvedValue(baseSnapshot());
+      coachSessionQuery.mockReturnValue({ data: baseCoachSession() });
+      // Storage is dead: persisting silently fails AND read-back keeps
+      // returning null (Safari private mode / disabled storage). The flow
+      // must rely on component state, never a read-after-write of storage.
+      getStoredDisplayNameMock.mockReturnValue(null);
+      setDisplayNameMock.mockImplementation(() => {});
+      mountYouTubePlayer();
+      const user = userEvent.setup();
+
+      renderShare('/s/tok123');
+
+      await screen.findByText('Add a note');
+      await user.type(screen.getByLabelText('Timestamp time'), '0:05');
+      await user.click(screen.getByRole('button', { name: 'Add timestamp' }));
+
+      await user.type(await screen.findByLabelText('Your name'), 'Coach Ken');
+      await user.click(screen.getByRole('button', { name: 'Continue' }));
+
+      // The write carries the ENTERED name — never the (empty) storage value.
+      expect(createCoachNoteMutate).toHaveBeenCalledExactlyOnceWith({
+        sessionId: MY_SESSION_ID,
+        displayName: 'Coach Ken',
+        seconds: 5,
+        note: '',
+      });
+
+      // A second write reuses the in-state name — the prompt never reopens.
+      await user.type(screen.getByLabelText('Timestamp time'), '0:07');
+      await user.click(screen.getByRole('button', { name: 'Add timestamp' }));
+
+      expect(screen.queryByText('What should we call you?')).not.toBeInTheDocument();
+      expect(createCoachNoteMutate).toHaveBeenCalledTimes(2);
+      expect(createCoachNoteMutate).toHaveBeenLastCalledWith(
+        expect.objectContaining({ displayName: 'Coach Ken', seconds: 7 }),
+      );
     });
 
     it('ownership-filtered quick-tag merge: an OWNER note at the current second is never mutated — a NEW coach note is created instead', async () => {
