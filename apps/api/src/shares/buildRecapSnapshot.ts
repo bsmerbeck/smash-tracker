@@ -3,11 +3,15 @@ import {
   buildSetTimeline,
   matchesForEntry,
   type Match,
+  type RecapGame,
   type RecapSet,
   type RecapSnapshot,
   type TournamentEntry,
   type TournamentSet,
 } from '@smash-tracker/shared';
+
+/** `recapSetSchema.games`'s own array cap (mirrors `stages`'s identical cap/rationale). */
+const MAX_RECAP_GAMES_PER_SET = 10;
 
 /** `recapSetSchema.sets`'s own array cap — `buildFullDetailSets` keeps the MOST RECENT sets (the bracket climax) when a run exceeds this. */
 const MAX_RECAP_SETS_STORED = 20;
@@ -106,6 +110,29 @@ function distinctStageNames(set: TournamentSet): string[] {
 }
 
 /**
+ * Walkthrough amendment round 2 (07-10): per-game character+stage detail for
+ * one set — one `RecapGame` per game, in game-number order (already sorted
+ * by `buildSetTimeline`). `fighter_id`/`opponent_id`/`win` are always present
+ * on a `Match` record (schema-required), so only `stageName` is
+ * conditionally spread — stage id `0` ("no selection") is omitted, matching
+ * `distinctStageNames`'s identical sentinel-omission convention. Capped at
+ * `MAX_RECAP_GAMES_PER_SET` so this always produces a schema-valid array
+ * without relying on the caller to re-check.
+ */
+function buildGames(set: TournamentSet): RecapGame[] {
+  return set.games.slice(0, MAX_RECAP_GAMES_PER_SET).map((game): RecapGame => {
+    const stage = game.match.map;
+    const stageName = stage && stage.id !== 0 ? stage.name : undefined;
+    return {
+      fighterId: game.match.fighter_id,
+      opponentFighterId: game.match.opponent_id,
+      ...(stageName ? { stageName } : {}),
+      win: game.match.win,
+    };
+  });
+}
+
+/**
  * Walkthrough amendment (07-09): builds the `detail: 'full'` set timeline —
  * one `RecapSet` per chronological `TournamentSet`, capped to the most
  * recent `MAX_RECAP_SETS_STORED` (the bracket climax, not the earliest pool
@@ -113,11 +140,16 @@ function distinctStageNames(set: TournamentSet): string[] {
  * round text, falling back to a positional "Set N" (1-based, in the ORIGINAL
  * chronological order, so the label stays stable even after the cap slices
  * off earlier sets).
+ *
+ * Walkthrough amendment round 2 (07-10): each set also carries `games`
+ * (`buildGames`) — the per-game character matchup + stage, so a viewer sees
+ * exactly what was played on which stage, not just an aggregate score.
  */
 function buildFullDetailSets(sets: TournamentSet[], entry: TournamentEntry): RecapSet[] {
   const recapSets: RecapSet[] = sets.map((set, index) => {
     const opponentPlacement = lookupOpponentPlacement(set, entry);
     const stages = distinctStageNames(set);
+    const games = buildGames(set);
     return {
       roundLabel: set.roundText ?? `Set ${index + 1}`,
       opponentName: set.opponentName ?? UNKNOWN_OPPONENT_LABEL,
@@ -126,6 +158,7 @@ function buildFullDetailSets(sets: TournamentSet[], entry: TournamentEntry): Rec
       losses: set.gamesLost,
       win: set.won,
       ...(stages.length > 0 ? { stages } : {}),
+      ...(games.length > 0 ? { games } : {}),
     };
   });
   return recapSets.length > MAX_RECAP_SETS_STORED
