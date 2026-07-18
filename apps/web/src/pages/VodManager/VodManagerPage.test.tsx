@@ -38,6 +38,9 @@ const getFighters = vi.fn();
 const listMatches = vi.fn();
 const listOpponents = vi.fn();
 const updateMatch = vi.fn();
+const createNote = vi.fn();
+const updateNote = vi.fn();
+const deleteNote = vi.fn();
 const upsertMe = vi.fn().mockResolvedValue({ uid: 'test-uid', email: 'test@example.com' });
 const listPlaylists = vi.fn().mockResolvedValue([]);
 const createPlaylist = vi.fn();
@@ -53,6 +56,9 @@ vi.mock('@/lib/api', () => ({
     matches: {
       list: (...args: unknown[]) => listMatches(...args),
       update: (...args: unknown[]) => updateMatch(...args),
+      createNote: (...args: unknown[]) => createNote(...args),
+      updateNote: (...args: unknown[]) => updateNote(...args),
+      deleteNote: (...args: unknown[]) => deleteNote(...args),
     },
     opponents: {
       list: (...args: unknown[]) => listOpponents(...args),
@@ -123,6 +129,9 @@ describe('VodManagerPage', () => {
     getFighters.mockResolvedValue({ primary: [mario.id], secondary: [] });
     listOpponents.mockResolvedValue(['rival-one', 'rival-two']);
     updateMatch.mockResolvedValue({});
+    createNote.mockResolvedValue({ id: 'n-new', seconds: 0, note: '' });
+    updateNote.mockResolvedValue({ id: 'n-new', seconds: 0, note: '' });
+    deleteNote.mockResolvedValue(undefined);
     listPlaylists.mockResolvedValue([]);
     createPlaylist.mockResolvedValue({ id: 'p1', name: 'New', createdAt: 1, matchIds: [] });
     updatePlaylist.mockResolvedValue({});
@@ -818,7 +827,7 @@ describe('VodManagerPage', () => {
     expect(screen.queryByRole('textbox', { name: 'Rename playlist' })).not.toBeInTheDocument();
   });
 
-  it('adds a timestamp note via the inline composer, prefilled from the live position, sorted ascending, carrying through other match fields', async () => {
+  it('adds a timestamp note via the inline composer, prefilled from the live position, via the dedicated create-note endpoint', async () => {
     const user = userEvent.setup();
     listMatches.mockResolvedValue([
       makeMatch({
@@ -826,7 +835,7 @@ describe('VodManagerPage', () => {
         opponent: 'rival-one',
         vodUrl: 'https://youtube.com/watch?v=abc123',
         gsp: 1_234_567,
-        vodTimestamps: [{ seconds: 900, note: 'existing note' }],
+        vodTimestamps: [{ id: 'n1', seconds: 900, note: 'existing note' }],
       }),
     ]);
 
@@ -861,21 +870,14 @@ describe('VodManagerPage', () => {
     await user.click(timeInput);
     expect(timeInput).toHaveValue('12:34');
 
-    // (3) Enter on the note input saves — single carry-through PATCH.
+    // (3) Enter on the note input saves — ONE create against the dedicated
+    // note endpoint, never a full-match PATCH (match facts can no longer be
+    // stomped by a note write, and vice versa).
     await user.type(noteInput, 'new note{Enter}');
 
-    await waitFor(() => expect(updateMatch).toHaveBeenCalledTimes(1));
-    const [id, input] = updateMatch.mock.calls[0] as [string, Record<string, unknown>];
-    expect(id).toBe('m1');
-    // Other match fields survive the PATCH untouched.
-    expect(input.win).toBe(true);
-    expect(input.fighter_id).toBe(mario.id);
-    expect(input.gsp).toBe(1_234_567);
-    // (4) Ascending sort: the new 754s note lands BEFORE the existing 900s note.
-    expect(input.vodTimestamps).toEqual([
-      { seconds: 754, note: 'new note' },
-      { seconds: 900, note: 'existing note' },
-    ]);
+    await waitFor(() => expect(createNote).toHaveBeenCalledTimes(1));
+    expect(createNote).toHaveBeenCalledWith('m1', { seconds: 754, note: 'new note' });
+    expect(updateMatch).not.toHaveBeenCalled();
 
     // Adding a note must never pause/interrupt playback.
     expect(playVideo).not.toHaveBeenCalled();
@@ -889,7 +891,7 @@ describe('VodManagerPage', () => {
         opponent: 'rival-one',
         vodUrl: 'https://youtube.com/watch?v=abc123',
         gsp: 1_234_567,
-        vodTimestamps: [{ seconds: 900, note: 'existing note' }],
+        vodTimestamps: [{ id: 'n1', seconds: 900, note: 'existing note' }],
       }),
     ]);
 
@@ -923,16 +925,13 @@ describe('VodManagerPage', () => {
     await user.clear(timeInput);
     await user.type(timeInput, '5:00{Enter}');
 
-    // Saves with no "note text required" error — the empty-note entry
-    // lands in the PATCH, ready for the user to tag via the row's "+" chip.
+    // Saves with no "note text required" error — the empty-note entry goes
+    // to the dedicated create endpoint, ready for the user to tag via the
+    // row's "+" chip.
     expect(screen.queryByText('Enter a note for this timestamp')).not.toBeInTheDocument();
-    await waitFor(() => expect(updateMatch).toHaveBeenCalledTimes(1));
-    const [id, input] = updateMatch.mock.calls[0] as [string, Record<string, unknown>];
-    expect(id).toBe('m1');
-    expect(input.vodTimestamps).toEqual([
-      { seconds: 300, note: '' },
-      { seconds: 900, note: 'existing note' },
-    ]);
+    await waitFor(() => expect(createNote).toHaveBeenCalledTimes(1));
+    expect(createNote).toHaveBeenCalledWith('m1', { seconds: 300, note: '' });
+    expect(updateMatch).not.toHaveBeenCalled();
   });
 
   it('edits a timestamp note in place (no dialog), re-sorting ascending, via a single full-carry-through PATCH', async () => {

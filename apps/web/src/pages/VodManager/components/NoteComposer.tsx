@@ -5,19 +5,22 @@ import { Plus } from 'lucide-react';
 import type { VodTimestamp } from '@smash-tracker/shared';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import type { VodTimestampInput } from '@/lib/api';
 import { MAX_TIMESTAMPS, formatTimestamp, parseFlexibleTimestamp } from '@/lib/vod';
 import { logProductEvent } from '@/lib/firebase';
 
 export interface NoteComposerProps {
   /** The selected match's current timestamp notes — used only to enforce
-   * the 20-note cap and to build the next sorted array; never mutated. */
+   * the 20-note cap; never mutated, never rebuilt. */
   timestamps: VodTimestamp[];
   /** Populated by `VodPlayer` with the live player's `getCurrentTime`
    * function once available (mirrors `seekRef`'s plumbing). */
   getCurrentTimeRef: RefObject<(() => number) | null>;
-  /** Fires with the full next `vodTimestamps` array (existing + new,
-   * re-sorted ascending) — the caller owns the single PATCH mutation. */
-  onUpdateTimestamps: (next: VodTimestamp[]) => void;
+  /** Fires with the single new note's `{ seconds, note }` — the caller owns
+   * the create mutation (`POST /api/matches/:id/notes`, Phase 8). This
+   * composer never builds or sorts a next array: the server + read
+   * normalizer own ordering now. */
+  onCreateNote: (input: VodTimestampInput) => void;
 }
 
 /**
@@ -25,7 +28,7 @@ export interface NoteComposerProps {
  * the top of `TimestampList` directly below the player — never a modal
  * (the phase goal explicitly retires the old `VodNotesDialog` flow here).
  *
- * Ports `VodNotesDialog.handleAddTimestamp`'s parse/cap/sort logic verbatim,
+ * Ports `VodNotesDialog.handleAddTimestamp`'s parse/cap logic verbatim,
  * swapping the stricter `parseTimestamp` for `parseFlexibleTimestamp` per
  * CONTEXT.md (`1:23:45` / `95` / `1h2m3s` all accepted). Focusing the time
  * input pulls the live position ONCE via `getCurrentTimeRef` — a one-shot
@@ -33,11 +36,7 @@ export interface NoteComposerProps {
  * Saving never touches `selectedIndex`/`onSelect` (D-13/D-14 preserved) and
  * never pauses/interrupts playback.
  */
-export function NoteComposer({
-  timestamps,
-  getCurrentTimeRef,
-  onUpdateTimestamps,
-}: NoteComposerProps) {
+export function NoteComposer({ timestamps, getCurrentTimeRef, onCreateNote }: NoteComposerProps) {
   const { t } = useTranslation();
   const [timeInput, setTimeInput] = useState('');
   const [noteInput, setNoteInput] = useState('');
@@ -67,10 +66,10 @@ export function NoteComposer({
       return;
     }
     const note = noteInput.trim();
-    onUpdateTimestamps([...timestamps, { seconds, note }].sort((a, b) => a.seconds - b.seconds));
-    // FUNNEL-01: fired here (a genuine note CREATION), never inside the
-    // shared `onUpdateTimestamps` PATCH handler that edit/delete/reorder also
-    // flow through — RESEARCH.md Pitfall 3.
+    onCreateNote({ seconds, note });
+    // FUNNEL-01: fired here (a genuine note CREATION), never inside any
+    // shared handler that edit/delete flows also pass through —
+    // RESEARCH.md Pitfall 3.
     logProductEvent('vod_note_created');
     setTimeInput('');
     setNoteInput('');
