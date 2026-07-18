@@ -124,6 +124,60 @@ const SHARE_UNAVAILABLE_MESSAGE = 'This share is no longer available';
  */
 const MAX_VOD_TIMESTAMPS_PER_MATCH = 20;
 
+/**
+ * Review WR-08: the three note transactions (`createNote`,
+ * `writeNoteUpdate`, `removeNote`) rebuild the whole `vodTimestamps` node
+ * from `normalizeVodTimestampsNode`'s output — which (post-CR-02) SKIPS any
+ * entry that fails `vodTimestampEntrySchema`. Rebuilding from only the
+ * parsed entries would silently and PERMANENTLY delete every unparseable
+ * sibling as a side effect of an unrelated note create/edit/delete — the
+ * exact recoverability this codebase's string-typed-`time` incident relied
+ * on (that corruption was repaired BY HAND from the still-present raw
+ * data). This collector returns those siblings so the rebuild can carry
+ * them through OPAQUELY: the raw value verbatim, under its original key
+ * (keyed shape) or a fresh push key (legacy-array shape, whose indices
+ * were never real RTDB keys — the same one-time migration the parsed
+ * entries get). Legacy `null` holes (RTDB array-coercion artifacts, not
+ * data) are the one exception: dropped, exactly as RTDB itself strips
+ * null children on write. Reads still skip these entries (CR-02's
+ * normalizer is unchanged) — they persist only to stay hand-repairable.
+ * Callers count them toward the shared 20-note cap (they ARE notes, just
+ * corrupt — counting them closes a would-be cap bypass via corruption).
+ */
+function collectOpaqueVodTimestampEntries(
+  raw: unknown,
+  parsedIds: ReadonlySet<string>,
+  mintKey: () => string,
+): Array<[string, unknown]> {
+  if (raw === null || raw === undefined || typeof raw !== 'object') {
+    return [];
+  }
+  if (Array.isArray(raw)) {
+    return raw.flatMap((element, index): Array<[string, unknown]> => {
+      if (parsedIds.has(`legacy-${index}`) || element === null || element === undefined) {
+        return [];
+      }
+      return [[mintKey(), element]];
+    });
+  }
+  return Object.entries(raw as Record<string, unknown>).filter(([key]) => !parsedIds.has(key));
+}
+
+/**
+ * Write-time counterpart of the normalizer's read-time skip warning
+ * (review WR-08): one warn per committed note write that carried opaque
+ * (unparseable) entries through the rebuild — keys only, never contents.
+ */
+function warnOpaqueNoteCarry(context: string, keys: readonly string[]): void {
+  if (keys.length > 0) {
+    console.warn(
+      `RtdbService.${context}: carried ${keys.length} unparseable vodTimestamps entr${
+        keys.length === 1 ? 'y' : 'ies'
+      } through the rebuild opaquely: ${keys.join(', ')}`,
+    );
+  }
+}
+
 export class NotFoundError extends Error {
   constructor(message: string) {
     super(message);
@@ -528,7 +582,9 @@ export class RtdbService {
    * `ForbiddenError` if the match is already at the shared 20-note cap
    * (T-08-05) — the transaction aborts (returns `undefined`) without
    * writing in that case, matching `upsertUser`'s referral-transaction
-   * abort convention.
+   * abort convention. Unparseable sibling entries are carried through the
+   * rebuild opaquely and COUNT toward the cap (review WR-08 — see
+   * `collectOpaqueVodTimestampEntries`).
    */
   async createNote(
     uid: string,
@@ -561,9 +617,19 @@ export class RtdbService {
     };
 
     let capExceeded = false;
-    await notesRef.transaction((raw) => {
+    let carriedOpaqueKeys: string[] = [];
+    const result = await notesRef.transaction((raw) => {
+      carriedOpaqueKeys = [];
       const entries = normalizeVodTimestampsNode(raw);
-      if (entries.length >= MAX_VOD_TIMESTAMPS_PER_MATCH) {
+      // Review WR-08: unparseable siblings ride through the rebuild
+      // verbatim instead of being silently destroyed, and count toward the
+      // shared cap (see collectOpaqueVodTimestampEntries).
+      const opaque = collectOpaqueVodTimestampEntries(
+        raw,
+        new Set(entries.map((entry) => entry.id)),
+        () => notesRef.push().key!,
+      );
+      if (entries.length + opaque.length >= MAX_VOD_TIMESTAMPS_PER_MATCH) {
         capExceeded = true;
         return undefined;
       }
@@ -576,9 +642,16 @@ export class RtdbService {
         const key = entryId.startsWith('legacy-') ? notesRef.push().key! : entryId;
         nextNode[key] = rest;
       }
+      for (const [key, value] of opaque) {
+        nextNode[key] = value;
+        carriedOpaqueKeys.push(key);
+      }
       nextNode[newNoteId] = newEntryRecord;
       return nextNode;
     });
+    if (result.committed) {
+      warnOpaqueNoteCarry('createNote', carriedOpaqueKeys);
+    }
 
     if (capExceeded) {
       throw new ForbiddenError(
@@ -618,12 +691,14 @@ export class RtdbService {
 
     const notesRef = this.database.ref(`matches/${uid}/${matchId}/vodTimestamps`);
     let updated: VodTimestamp | undefined;
+    let carriedOpaqueKeys: string[] = [];
 
     const result = await notesRef.transaction((raw) => {
       // Reset per run (review CR-01): a value captured during a DISCARDED
       // (hash-mismatch) run must never leak into the final outcome — only
       // the run whose return value actually commits may report success.
       updated = undefined;
+      carriedOpaqueKeys = [];
       if (raw === null || raw === undefined) {
         // Real RTDB runs this function against the SDK's LOCAL CACHE first
         // — on a listener-less server process that is `null` even when
@@ -673,6 +748,17 @@ export class RtdbService {
           nextNode[key] = rest;
         }
       }
+      // Review WR-08: carry unparseable siblings through verbatim — a
+      // corrupt entry must survive an unrelated note edit, never be
+      // silently destroyed by the normalized rebuild.
+      for (const [key, value] of collectOpaqueVodTimestampEntries(
+        raw,
+        new Set(entries.map((entry) => entry.id)),
+        () => notesRef.push().key!,
+      )) {
+        nextNode[key] = value;
+        carriedOpaqueKeys.push(key);
+      }
       return nextNode;
     });
 
@@ -682,6 +768,7 @@ export class RtdbService {
     if (!result.committed) {
       return null;
     }
+    warnOpaqueNoteCarry('writeNoteUpdate', carriedOpaqueKeys);
     return updated ?? null;
   }
 
@@ -708,10 +795,12 @@ export class RtdbService {
 
     const notesRef = this.database.ref(`matches/${uid}/${matchId}/vodTimestamps`);
     let found = false;
+    let carriedOpaqueKeys: string[] = [];
 
     const result = await notesRef.transaction((raw) => {
       // Reset per run — see writeNoteUpdate's identical comment (CR-01).
       found = false;
+      carriedOpaqueKeys = [];
       if (raw === null || raw === undefined) {
         // Unknown local cache — never abort here; force the SDK's
         // server-verified retry (or a harmless no-op commit when the node
@@ -741,13 +830,31 @@ export class RtdbService {
           nextNode[key] = rest;
         }
       }
+      // Review WR-08: carry unparseable siblings through verbatim — a
+      // corrupt entry must survive an unrelated note delete. (The target
+      // itself is always a PARSED entry — `entries.find` above — so it can
+      // never reappear here: parsedIds includes it.)
+      for (const [key, value] of collectOpaqueVodTimestampEntries(
+        raw,
+        new Set(entries.map((entry) => entry.id)),
+        () => notesRef.push().key!,
+      )) {
+        nextNode[key] = value;
+        carriedOpaqueKeys.push(key);
+      }
       // Deleting the last remaining note must remove the `vodTimestamps`
       // node entirely (`null`), not leave a stray empty object behind —
       // matches real RTDB's null-removes-the-key semantics and this
-      // codebase's "absent key, not empty container" convention.
+      // codebase's "absent key, not empty container" convention. Preserved
+      // opaque keys count as children here (review WR-08): deleting the
+      // last VALID note keeps the node alive when a corrupt sibling
+      // remains.
       return Object.keys(nextNode).length === 0 ? null : nextNode;
     });
 
+    if (result.committed) {
+      warnOpaqueNoteCarry('removeNote', carriedOpaqueKeys);
+    }
     // Derive success from the committed result AND the final run's flag —
     // never a stale flag from a discarded run (review CR-01).
     return result.committed && found;
