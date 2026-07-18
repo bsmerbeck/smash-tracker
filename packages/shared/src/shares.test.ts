@@ -266,6 +266,43 @@ describe('publicShareSnapshotSchema', () => {
     expect(parsed.sets![0]!.opponentPlacement).toBe(5);
   });
 
+  it('a view-tier response with no permissions/id/coach fields still parses (backward compatible)', () => {
+    const parsed = publicShareSnapshotSchema.parse(fullyPopulatedPublicSnapshot());
+    expect(parsed.permissions).toBeUndefined();
+    expect(parsed.timestamps![0]!.id).toBeUndefined();
+    expect(parsed.timestamps![0]!.coach).toBeUndefined();
+  });
+
+  it('parses an edit-session recompute with permissions and per-timestamp id/coach', () => {
+    const parsed = publicShareSnapshotSchema.parse({
+      ...fullyPopulatedPublicSnapshot(),
+      permissions: 'edit' as const,
+      timestamps: [
+        {
+          seconds: 10,
+          note: 'missed punish',
+          tags: ['punish'],
+          id: '-Nx1',
+        },
+        {
+          seconds: 90,
+          note: 'coach note',
+          id: '-Nx2',
+          coach: {
+            sessionId: '11111111-1111-4111-8111-111111111111',
+            displayName: 'Coach A',
+          },
+        },
+      ],
+    });
+    expect(parsed.permissions).toBe('edit');
+    expect(parsed.timestamps![0]!.id).toBe('-Nx1');
+    expect(parsed.timestamps![1]!.coach).toEqual({
+      sessionId: '11111111-1111-4111-8111-111111111111',
+      displayName: 'Coach A',
+    });
+  });
+
   it('a "summary" recap public snapshot (no detail/tournamentUrl/sets) still parses (backward compatible)', () => {
     const parsed = publicShareSnapshotSchema.parse({
       createdAt: 1000,
@@ -295,6 +332,7 @@ describe('shareTokenSchema', () => {
     expect(parsed.permissions).toBe('view');
     expect(parsed.requiresAuth).toBeUndefined();
     expect(parsed.revokedAt).toBeUndefined();
+    expect(parsed.expiresAt).toBeUndefined();
   });
 
   it('parses an edit-tier share with revokedAt set (forward-compat + revoked)', () => {
@@ -309,6 +347,18 @@ describe('shareTokenSchema', () => {
     expect(parsed.permissions).toBe('edit');
     expect(parsed.requiresAuth).toBe(true);
     expect(parsed.revokedAt).toBe(2000);
+  });
+
+  it('parses an edit-tier share carrying expiresAt alongside revokedAt', () => {
+    const parsed = shareTokenSchema.parse({
+      shareId: 'share-1',
+      ownerUid: 'uid-1',
+      permissions: 'edit',
+      createdAt: 1000,
+      expiresAt: 1000 + 30 * 24 * 60 * 60 * 1000,
+    });
+    expect(parsed.expiresAt).toBe(1000 + 30 * 24 * 60 * 60 * 1000);
+    expect(parsed.revokedAt).toBeUndefined();
   });
 
   it('rejects an unknown permissions value', () => {
@@ -394,6 +444,42 @@ describe('createShareInputSchema', () => {
       redaction: { includeNotes: false, includeTags: false, showDisplayName: false },
     });
     expect(parsed.detail).toBeUndefined();
+  });
+
+  it('defaults permissions to view when omitted', () => {
+    const parsed = createShareInputSchema.parse({
+      matchId: 'match-1',
+      redaction: { includeNotes: true, includeTags: true, showDisplayName: false },
+    });
+    expect(parsed.permissions).toBe('view');
+  });
+
+  it('accepts an explicit edit permission on a review share', () => {
+    const parsed = createShareInputSchema.parse({
+      kind: 'review',
+      matchId: 'm',
+      redaction: { includeNotes: true, includeTags: true, showDisplayName: false },
+      permissions: 'edit',
+    });
+    expect(parsed.permissions).toBe('edit');
+  });
+
+  it('rejects an edit-permission recap share (coaching applies to VOD reviews only)', () => {
+    const result = createShareInputSchema.safeParse({
+      kind: 'recap',
+      entryKey: 'x',
+      permissions: 'edit',
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('accepts a view-permission recap share', () => {
+    const parsed = createShareInputSchema.parse({
+      kind: 'recap',
+      entryKey: 'x',
+      permissions: 'view',
+    });
+    expect(parsed.permissions).toBe('view');
   });
 });
 

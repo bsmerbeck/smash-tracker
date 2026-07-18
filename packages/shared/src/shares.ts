@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { matchStageSchema } from './stage.js';
 import { recapSetSchema } from './recap.js';
+import { coachAttributionSchema } from './match.js';
 
 /**
  * Phase 5 (Share Foundation & Owner Controls): privacy-controlled, revocable
@@ -48,6 +49,20 @@ const shareTimestampSchema = z.object({
   tags: z.array(z.string().trim().min(1).max(24)).max(5).nullish(),
 });
 export type ShareTimestamp = z.infer<typeof shareTimestampSchema>;
+
+/**
+ * Phase 8 (Coaching Edit Sessions): the public, edit-session variant of
+ * `shareTimestampSchema` — additive `id`/`coach` fields so the coach UI can
+ * tell which notes are "mine" (edit/delete affordance) and the owner can see
+ * per-note attribution. Both fields are `.nullish()`, never required: a
+ * frozen VIEW-tier snapshot never populates them (this schema is only used
+ * by the live-redacted EDIT-tier recompute), so `publicShareSnapshotSchema`
+ * stays backward-compatible with every existing view-tier response.
+ */
+const publicShareTimestampSchema = shareTimestampSchema.extend({
+  id: z.string().nullish(),
+  coach: coachAttributionSchema.nullish(),
+});
 
 /**
  * `shareSnapshots/{shareId}` — a redacted COPY of a match, taken once at
@@ -128,12 +143,21 @@ export type ShareSnapshot = z.infer<typeof shareSnapshotSchema>;
  * means a vod-review snapshot — every pre-Phase-7 record, and every review
  * share created going forward, since `RtdbService`'s review branch never
  * sets it.
+ *
+ * Phase 8 (Coaching Edit Sessions): extended additively for the edit-session
+ * live-recompute response — `permissions` (top-level tier) and per-review-
+ * timestamp `id`/`coach` (via `publicShareTimestampSchema`). All new fields
+ * are nullish so the frozen VIEW-tier response (which never populates them)
+ * still validates unchanged; only the live EDIT-tier recompute (a later
+ * 08-0x plan) ever sets them.
  */
 export const publicShareSnapshotSchema = z
   .object({
     createdAt: z.number().int().nonnegative(),
     /** Absent means a vod-review snapshot (the default, backward-compatible shape). */
     kind: z.enum(['recap']).nullish(),
+    /** Phase 8: the share's permission tier. Absent on pre-Phase-8 responses (treated as 'view'). */
+    permissions: z.enum(['view', 'edit']).nullish(),
     // --- vod-review fields: nullish here (absent on a recap snapshot); the
     // first `.refine()` below enforces they're all present for a review one ---
     result: z.enum(['win', 'loss']).nullish(),
@@ -143,7 +167,7 @@ export const publicShareSnapshotSchema = z
     matchDate: z.number().int().nonnegative().nullish(),
     vodUrl: z.string().url().nullish(),
     vodStartSeconds: z.number().int().nonnegative().nullish(),
-    timestamps: z.array(shareTimestampSchema).max(20).nullish(),
+    timestamps: z.array(publicShareTimestampSchema).max(20).nullish(),
     tags: z.array(z.string().trim().min(1).max(24)).max(10).nullish(),
     redaction: z
       .object({
@@ -222,6 +246,15 @@ export const shareTokenSchema = z.object({
   createdAt: z.number().int().nonnegative(),
   /** Soft-revoke timestamp (epoch ms); absent/null means the share is active. */
   revokedAt: z.number().int().nonnegative().nullish(),
+  /**
+   * Phase 8 (Coaching Edit Sessions): epoch ms after which this token stops
+   * working — set ONLY for edit-tier tokens (coaching links default-expire
+   * after 30 days; view-tier tokens stay indefinite-until-revoked and never
+   * get this field). An elapsed `expiresAt` is treated identically to
+   * `revokedAt`: same identical-404/unavailable semantics, re-checked on
+   * every read AND write, never cached.
+   */
+  expiresAt: z.number().int().nonnegative().nullish(),
 });
 export type ShareToken = z.infer<typeof shareTokenSchema>;
 
@@ -264,6 +297,15 @@ export const createShareInputSchema = z
      * Walkthrough Amendment) before calling `buildRecapSnapshot`.
      */
     detail: z.enum(['summary', 'full']).optional(),
+    /**
+     * Phase 8 (Coaching Edit Sessions): the share's permission tier the
+     * owner chooses at create time. Defaults to `'view'` so every
+     * pre-Phase-8 caller (which never sends this field) keeps compiling
+     * with unchanged behavior. `'edit'` is blocked for `kind: 'recap'` by
+     * the `.refine()` below — a recap has no single match for a coach to
+     * attach notes to.
+     */
+    permissions: z.enum(['view', 'edit']).default('view'),
   })
   .refine(
     (input) =>
@@ -276,6 +318,10 @@ export const createShareInputSchema = z
   .refine((input) => (input.kind === 'recap' ? Boolean(input.entryKey) : true), {
     message: 'recap shares require entryKey',
     path: ['entryKey'],
+  })
+  .refine((input) => !(input.kind === 'recap' && input.permissions === 'edit'), {
+    message: 'coaching (edit-permission) shares apply to VOD reviews only, not recaps',
+    path: ['permissions'],
   });
 export type CreateShareInput = z.infer<typeof createShareInputSchema>;
 
