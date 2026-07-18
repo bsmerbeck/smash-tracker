@@ -74,15 +74,31 @@ export async function addCredits(
  */
 export async function spendCredit(database: Database, uid: string, ref: string): Promise<boolean> {
   const result = await balanceRef(database, uid).transaction((current) => {
+    if (current === null || current === undefined) {
+      // Real RTDB runs this against the SDK's LOCAL CACHE first — `null` on
+      // a listener-less server even when a positive balance exists (review
+      // CR-01's abort-on-null-first-run class). Aborting here would be
+      // permanent (no server-verified retry), 402ing users who hold
+      // credits. Returning the input unchanged instead forces the hash
+      // compare: a no-op commit when the balance node truly doesn't exist
+      // (detected below via the committed snapshot), or a retry with the
+      // real balance.
+      return current;
+    }
     const balance = typeof current === 'number' ? current : 0;
     if (balance <= 0) {
-      // Aborts the transaction — no write happens.
+      // Verified-zero balance — abort, no write happens.
       return undefined;
     }
     return balance - 1;
   });
 
   if (!result.committed) {
+    return false;
+  }
+  if (typeof result.snapshot.val() !== 'number') {
+    // The commit was the null-input no-op (balance node never existed) —
+    // nothing was spent.
     return false;
   }
 

@@ -9,11 +9,16 @@
  * - `.push()` generates a unique string key and returns a ref-like object
  *   whose `.key` is available synchronously (as real RTDB's push() does).
  * - `DataSnapshot.exists()`/`val()` reflect the current in-memory tree.
- * - `.transaction(updateFn)` runs synchronously against the in-memory tree
- *   (there's no concurrent access in tests, so every attempt "wins" on the
- *   first try) and mirrors the real SDK's `{ committed, snapshot }` result —
- *   `updateFn` returning `undefined` aborts the transaction without writing,
- *   matching real RTDB semantics.
+ * - `.transaction(updateFn)` emulates the real SDK's null-local-cache first
+ *   run (review CR-01): `updateFn` is ALWAYS invoked with `null` first —
+ *   exactly what a listener-less server process sees even when server data
+ *   exists. Returning `undefined` on that first run aborts PERMANENTLY (no
+ *   retry with server data — the real SDK's documented behavior); returning
+ *   a value triggers the hash-compare: it commits directly when the stored
+ *   node is truly empty, otherwise `updateFn` re-runs with the real stored
+ *   value. Mirrors the real `{ committed, snapshot }` result either way.
+ *   Without this emulation, an update function that aborts on a null/empty
+ *   node passes every test here and 404s on every call in production.
  * - `.set()` drops any key (at any depth) whose value is an empty array,
  *   matching real RTDB's documented empty-array-drop-on-write behavior
  *   (see RtdbService's `getStageFavorites`/tags comments).
@@ -207,6 +212,22 @@ export class FakeDatabase {
       },
       transaction: async (updateFn: (current: unknown) => unknown) => {
         const current = this.getAtPath(segments);
+        // Real-RTDB emulation (review CR-01): the FIRST run always sees the
+        // SDK's local cache — `null` on a listener-less server process, even
+        // when server data exists. Aborting (undefined) here is FINAL: the
+        // real SDK never retries an aborted transaction with server data.
+        const firstRun = updateFn(null);
+        if (firstRun === undefined) {
+          return { committed: false, snapshot: makeSnapshot(current) };
+        }
+        if (current === null) {
+          // Local guess matched the server (node truly empty): the first
+          // run's return value commits directly.
+          this.setAtPath(segments, firstRun);
+          return { committed: true, snapshot: makeSnapshot(this.getAtPath(segments)) };
+        }
+        // Hash mismatch: re-run the update function with the REAL stored
+        // value — the retry path a correct update function must survive.
         const next = updateFn(current);
         if (next === undefined) {
           return { committed: false, snapshot: makeSnapshot(current) };
