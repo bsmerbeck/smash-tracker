@@ -20,8 +20,8 @@ describe('buildShareSnapshot', () => {
       map: { id: 3, name: 'Battlefield' },
       vodStartSeconds: 15,
       vodTimestamps: [
-        { seconds: 10, note: 'missed punish', tags: ['punish'] },
-        { seconds: 90, note: 'good edgeguard' },
+        { id: 'note-1', seconds: 10, note: 'missed punish', tags: ['punish'] },
+        { id: 'note-2', seconds: 90, note: 'good edgeguard' },
       ],
       tags: ['practice-friendlies'],
     });
@@ -56,7 +56,7 @@ describe('buildShareSnapshot', () => {
 
   it('with all toggles OFF omits timestamps/tags/ownerDisplayName keys entirely', () => {
     const match = makeMatch({
-      vodTimestamps: [{ seconds: 10, note: 'missed punish' }],
+      vodTimestamps: [{ id: 'note-1', seconds: 10, note: 'missed punish' }],
       tags: ['practice-friendlies'],
     });
 
@@ -83,8 +83,8 @@ describe('buildShareSnapshot', () => {
   it('sets reviewedMomentsCount to the vodTimestamps length even when include-notes is OFF', () => {
     const match = makeMatch({
       vodTimestamps: [
-        { seconds: 10, note: 'a' },
-        { seconds: 20, note: 'b' },
+        { id: 'note-1', seconds: 10, note: 'a' },
+        { id: 'note-2', seconds: 20, note: 'b' },
       ],
     });
 
@@ -140,7 +140,7 @@ describe('buildShareSnapshot', () => {
 
   it("omits a timestamp's tags sub-array when that note has no tags", () => {
     const match = makeMatch({
-      vodTimestamps: [{ seconds: 10, note: 'no tags here' }],
+      vodTimestamps: [{ id: 'note-1', seconds: 10, note: 'no tags here' }],
     });
 
     const snapshot = buildShareSnapshot('uid-1', 'match-1', match, {
