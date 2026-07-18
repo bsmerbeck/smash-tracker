@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { act, render, screen, waitFor } from '@testing-library/react';
+import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes } from 'react-router';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -275,6 +275,68 @@ describe('ShareViewPage', () => {
     // Second set has no opponentPlacement — bare opponent tag, no ordinal.
     expect(screen.getByText('MkLeo')).toBeInTheDocument();
     expect(screen.getByText('1–3')).toBeInTheDocument();
+  });
+
+  it('renders per-game sprite pairs + stage chips for a set carrying games (07-10 walkthrough amendment round 2)', async () => {
+    getPublic.mockResolvedValue(
+      baseRecapSnapshot({
+        detail: 'full',
+        sets: [
+          {
+            roundLabel: 'Winners Round 3',
+            opponentName: 'RivalTag',
+            wins: 2,
+            losses: 1,
+            win: true,
+            games: [
+              { fighterId: 1, opponentFighterId: 10, stageName: 'Battlefield', win: true },
+              { fighterId: 1, opponentFighterId: 10, stageName: "Yoshi's Story", win: false },
+              { fighterId: 1, opponentFighterId: 10, stageName: 'Battlefield', win: true },
+            ],
+          },
+        ],
+      }),
+    );
+
+    renderShare('/s/tok123');
+
+    const heading = await screen.findByText('Set timeline');
+    const timelineSection = heading.closest('div')!;
+    // Sprite images for each game (Mario=fighter 1, Luigi=fighter 10) —
+    // scoped to the set-timeline section since the top "Characters played"
+    // section above it also renders a Mario/Luigi sprite each.
+    expect(within(timelineSection).getAllByAltText('Mario')).toHaveLength(3);
+    expect(within(timelineSection).getAllByAltText('Luigi')).toHaveLength(3);
+    // Stage chips per game.
+    expect(within(timelineSection).getAllByText('Battlefield')).toHaveLength(2);
+    expect(within(timelineSection).getByText("Yoshi's Story")).toBeInTheDocument();
+  });
+
+  it('falls back to the old set-level stage-chip row for a pre-07-10 set with no games array (backward compatible)', async () => {
+    getPublic.mockResolvedValue(
+      baseRecapSnapshot({
+        detail: 'full',
+        sets: [
+          {
+            roundLabel: 'Winners Round 3',
+            opponentName: 'RivalTag',
+            wins: 3,
+            losses: 1,
+            win: true,
+            stages: ['Battlefield', "Yoshi's Story"],
+          },
+        ],
+      }),
+    );
+
+    renderShare('/s/tok123');
+
+    const heading = await screen.findByText('Set timeline');
+    const timelineSection = heading.closest('div')!;
+    expect(within(timelineSection).getByText('Battlefield')).toBeInTheDocument();
+    expect(within(timelineSection).getByText("Yoshi's Story")).toBeInTheDocument();
+    // No per-game sprites are rendered for a set with no `games` array.
+    expect(within(timelineSection).queryByAltText('Mario')).not.toBeInTheDocument();
   });
 
   it('omits the Set timeline section entirely for a "summary" recap (no sets)', async () => {

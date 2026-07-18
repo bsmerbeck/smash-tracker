@@ -1442,6 +1442,7 @@
       "notableWinNamed": "Bemerkenswerter Sieg gegen {{name}}",
       "notableWinSeed": "Bemerkenswerter Sieg gegen Setzung {{seed}}",
       "charactersLabel": "Gespielte Charaktere",
+      "gameDetailLabel": "Spiele in diesem Satz",
       "setTimelineHeading": "Satzverlauf",
       "setScoreLabel": "{{wins}}–{{losses}}",
       "opponentWithPlacement": "{{name}} · {{placement}}",
