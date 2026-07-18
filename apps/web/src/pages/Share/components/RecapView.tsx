@@ -98,6 +98,11 @@ function GameDetail({ game }: { game: RecapGame }) {
  * matching outbound link to the set's own page. Both are absent entirely
  * (no dead/malformed affordance rendered) whenever the backing field isn't
  * on record.
+ *
+ * Quick task 260718-i0q: the tournament TITLE gains the same trailing
+ * outbound link from `snapshot.tournamentUrl` (aria sourced by
+ * `recapSource`, hidden when absent) — distinct from, and additive to, the
+ * bottom "View bracket on {site}" button below, which is unchanged.
  */
 export function RecapView({ snapshot, token }: { snapshot: PublicShareSnapshot; token: string }) {
   const { t } = useTranslation();
@@ -117,7 +122,25 @@ export function RecapView({ snapshot, token }: { snapshot: PublicShareSnapshot; 
           <span className="text-sm font-medium uppercase tracking-wide text-muted-foreground">
             {t('share.recap.heading')}
           </span>
-          <h1 className="text-2xl font-semibold tracking-tight">{snapshot.tournamentName}</h1>
+          <h1 className="inline-flex items-center gap-1.5 text-2xl font-semibold tracking-tight">
+            {snapshot.tournamentName}
+            {snapshot.tournamentUrl && (
+              <a
+                href={snapshot.tournamentUrl}
+                target="_blank"
+                rel="noreferrer"
+                aria-label={t(
+                  snapshot.recapSource === 'parrygg'
+                    ? 'share.recap.viewTournamentParrygg'
+                    : 'share.recap.viewTournamentStartgg',
+                  { name: snapshot.tournamentName },
+                )}
+                className="inline-flex text-muted-foreground hover:text-foreground"
+              >
+                <ExternalLink className="size-4" />
+              </a>
+            )}
+          </h1>
           {snapshot.tournamentDate != null && (
             <span className="text-sm text-muted-foreground">
               {new Date(snapshot.tournamentDate).toLocaleDateString()}
