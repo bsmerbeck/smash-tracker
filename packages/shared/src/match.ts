@@ -312,9 +312,26 @@ export type MatchRecord = z.infer<typeof matchRecordSchema>;
 /**
  * A match record as returned by the API, with its RTDB push key surfaced as
  * `id` (legacy attached this as `key` client-side; the API calls it `id`).
+ *
+ * `vodTimestamps` is re-declared here as a PLAIN (non-preprocess) array
+ * schema, overriding the `z.preprocess`-wrapped field it would otherwise
+ * inherit from `matchRecordSchema`. `matchSchema` is used ONLY as a Fastify
+ * response schema — `fastify-type-provider-zod`'s `serializerCompiler`
+ * encodes outgoing data via Zod v4's `safeEncode`, never `safeParse`, and a
+ * `z.preprocess` transform is decode-only: encoding through it throws
+ * `ZodEncodeError: Encountered unidirectional transform during encode`
+ * (discovered as the root cause of every PATCH/GET/POST /api/matches 500
+ * once 08-01 wrapped `vodTimestamps` in `z.preprocess`). The object handed
+ * to this schema for serialization is always an already-normalized `Match`
+ * (built from `matchRecordSchema.parse`/`safeParse` over the raw RTDB node
+ * earlier in the request), so no re-normalization is needed on the way out
+ * — a plain array schema is both correct and encode-safe here.
+ * `matchRecordSchema` itself keeps the preprocess version unchanged, since
+ * every one of ITS callers parses raw RTDB data (decode direction only).
  */
 export const matchSchema = matchRecordSchema.extend({
   id: z.string().min(1),
+  vodTimestamps: z.array(vodTimestampEntrySchema).max(20).optional(),
 });
 export type Match = z.infer<typeof matchSchema>;
 

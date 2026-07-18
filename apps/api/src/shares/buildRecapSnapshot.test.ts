@@ -162,7 +162,7 @@ describe('buildRecapSnapshot', () => {
         time: 1_000,
         win: true,
         externalId: 'sgg:set-1:g1',
-        vodTimestamps: [{ seconds: 10, note: 'a' }],
+        vodTimestamps: [{ id: 'note-1', seconds: 10, note: 'a' }],
       }),
       makeSetMatch({
         id: 'm2',
@@ -170,8 +170,8 @@ describe('buildRecapSnapshot', () => {
         win: false,
         externalId: 'sgg:set-2:g1',
         vodTimestamps: [
-          { seconds: 5, note: 'b' },
-          { seconds: 15, note: 'c' },
+          { id: 'note-2', seconds: 5, note: 'b' },
+          { id: 'note-3', seconds: 15, note: 'c' },
         ],
       }),
     ];
