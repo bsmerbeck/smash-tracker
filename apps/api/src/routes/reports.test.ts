@@ -1278,3 +1278,267 @@ describe('GET /api/reports* — billing-enabled read access (V9-B fix)', () => {
     expect(single.statusCode).toBe(403);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Phase 10 BILL-06/MEAS-03: durable, idempotent report-job state machine.
+// ---------------------------------------------------------------------------
+
+describe('POST /api/reports — reportJobs state machine (BILL-06/MEAS-03)', () => {
+  const NON_ALLOWLIST_CONFIG: ReportsConfig = {
+    anthropicApiKey: 'sk-test-key',
+    allowedUids: new Set(['someone-else']),
+  };
+  const STRIPE_CONFIG = {
+    secretKey: 'sk-test-123',
+    webhookSecret: 'whsec-test-456',
+  };
+
+  function eventsNamed(database: { dump(): unknown }, eventName: string) {
+    const dump = database.dump() as Record<string, unknown>;
+    const ledger = (dump.eventLedger ?? {}) as Record<string, Record<string, unknown>>;
+    return Object.values(ledger)
+      .flatMap((day) => Object.values(day))
+      .filter((event) => (event as { eventName: string }).eventName === eventName);
+  }
+
+  it('a second POST with a succeeded jobId returns the cached result without a second Anthropic call or a second credit spend', async () => {
+    let callCount = 0;
+    const { app, database } = buildTestApp({
+      startgg: STARTGG_CONFIG,
+      startggFetch: scoutFetchMock(),
+      reports: NON_ALLOWLIST_CONFIG,
+      stripe: STRIPE_CONFIG,
+      reportsClient: stubClient(async () => {
+        callCount += 1;
+        return { stop_reason: 'end_turn', parsed_output: VALID_REPORT };
+      }),
+    });
+    database.seed(`credits/${TEST_UID}/balance`, 5);
+
+    const jobId = 'job-idempotent-1';
+    const first = await app.inject({
+      method: 'POST',
+      url: '/api/reports',
+      headers: authHeader(),
+      payload: { query: 'user/07dc2239', jobId },
+    });
+    expect(first.statusCode).toBe(200);
+    expect(callCount).toBe(1);
+
+    const balanceAfterFirst = await database.ref(`credits/${TEST_UID}/balance`).get();
+    expect(balanceAfterFirst.val()).toBe(4);
+
+    const second = await app.inject({
+      method: 'POST',
+      url: '/api/reports',
+      headers: authHeader(),
+      payload: { query: 'user/07dc2239', jobId },
+    });
+    expect(second.statusCode).toBe(200);
+    expect(second.json()).toEqual(first.json());
+    // No additional Anthropic call, no additional spend.
+    expect(callCount).toBe(1);
+    const balanceAfterSecond = await database.ref(`credits/${TEST_UID}/balance`).get();
+    expect(balanceAfterSecond.val()).toBe(4);
+  });
+
+  it('a POST with a jobId already `running` within the staleness window answers 409', async () => {
+    const { app, database } = buildTestApp({
+      startgg: STARTGG_CONFIG,
+      startggFetch: scoutFetchMock(),
+      reports: REPORTS_CONFIG,
+      reportsClient: stubClient(async () => ({
+        stop_reason: 'end_turn',
+        parsed_output: VALID_REPORT,
+      })),
+    });
+    const jobId = 'job-running-1';
+    database.seed(`reportJobs/${TEST_UID}/${jobId}`, {
+      status: 'running',
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+      attempt: 0,
+      creditRef: jobId,
+    });
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/reports',
+      headers: authHeader(),
+      payload: { query: 'user/07dc2239', jobId },
+    });
+    expect(response.statusCode).toBe(409);
+  });
+
+  it('a stale `running` job (past the staleness window) is treated as abandoned and the retry proceeds', async () => {
+    const { app, database } = buildTestApp({
+      startgg: STARTGG_CONFIG,
+      startggFetch: scoutFetchMock(),
+      reports: REPORTS_CONFIG,
+      reportsClient: stubClient(async () => ({
+        stop_reason: 'end_turn',
+        parsed_output: VALID_REPORT,
+      })),
+    });
+    const jobId = 'job-stale-1';
+    database.seed(`reportJobs/${TEST_UID}/${jobId}`, {
+      status: 'running',
+      createdAt: Date.now() - 20 * 60 * 1000,
+      updatedAt: Date.now() - 20 * 60 * 1000, // 20 min ago, past the 15 min staleness window
+      attempt: 0,
+      creditRef: jobId,
+    });
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/reports',
+      headers: authHeader(),
+      payload: { query: 'user/07dc2239', jobId },
+    });
+    expect(response.statusCode).toBe(200);
+  });
+
+  it('a generation failure transitions the job to failed, refunds the balance, clears the running index, and emits exactly one report_failed + one credit_refunded', async () => {
+    const { app, database } = buildTestApp({
+      startgg: STARTGG_CONFIG,
+      startggFetch: scoutFetchMock(),
+      reports: NON_ALLOWLIST_CONFIG,
+      stripe: STRIPE_CONFIG,
+      reportsClient: stubClient(async () => ({ stop_reason: 'refusal', parsed_output: null })),
+    });
+    database.seed(`credits/${TEST_UID}/balance`, 1);
+    const jobId = 'job-failure-1';
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/reports',
+      headers: authHeader(),
+      payload: { query: 'user/07dc2239', jobId },
+    });
+    expect(response.statusCode).toBe(502);
+
+    const balance = await database.ref(`credits/${TEST_UID}/balance`).get();
+    expect(balance.val()).toBe(1);
+
+    const jobSnapshot = await database.ref(`reportJobs/${TEST_UID}/${jobId}`).get();
+    expect(jobSnapshot.val()).toMatchObject({ status: 'failed', creditRef: jobId });
+
+    const runningIndex = await database
+      .ref(`reportJobsByStatus/running/${TEST_UID}/${jobId}`)
+      .get();
+    expect(runningIndex.exists()).toBe(false);
+
+    expect(eventsNamed(database, 'report_failed')).toHaveLength(1);
+    expect(eventsNamed(database, 'credit_refunded')).toHaveLength(1);
+  });
+
+  it('a successful run emits exactly one report_started and one report_completed', async () => {
+    const { app, database } = buildTestApp({
+      startgg: STARTGG_CONFIG,
+      startggFetch: scoutFetchMock(),
+      reports: REPORTS_CONFIG,
+      reportsClient: stubClient(async () => ({
+        stop_reason: 'end_turn',
+        parsed_output: VALID_REPORT,
+      })),
+    });
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/reports',
+      headers: authHeader(),
+      payload: { query: 'user/07dc2239', jobId: 'job-success-events-1' },
+    });
+    expect(response.statusCode).toBe(200);
+
+    expect(eventsNamed(database, 'report_started')).toHaveLength(1);
+    expect(eventsNamed(database, 'report_completed')).toHaveLength(1);
+    expect(eventsNamed(database, 'report_failed')).toHaveLength(0);
+  });
+
+  it('sets reportJobsByStatus/running and reportJobsByDay while running, then clears/updates them on success', async () => {
+    const { app, database } = buildTestApp({
+      startgg: STARTGG_CONFIG,
+      startggFetch: scoutFetchMock(),
+      reports: REPORTS_CONFIG,
+      reportsClient: stubClient(async () => ({
+        stop_reason: 'end_turn',
+        parsed_output: VALID_REPORT,
+      })),
+    });
+    const jobId = 'job-index-1';
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/reports',
+      headers: authHeader(),
+      payload: { query: 'user/07dc2239', jobId },
+    });
+    expect(response.statusCode).toBe(200);
+
+    // Terminal: the running index is cleared after success.
+    const runningIndex = await database
+      .ref(`reportJobsByStatus/running/${TEST_UID}/${jobId}`)
+      .get();
+    expect(runningIndex.exists()).toBe(false);
+
+    const dump = database.dump() as Record<string, unknown>;
+    const byDay = dump.reportJobsByDay as Record<string, Record<string, unknown>>;
+    const dayEntries = Object.values(byDay ?? {});
+    const matching = dayEntries.flatMap((day) => (jobId in day ? [day[jobId]] : []));
+    expect(matching).toHaveLength(1);
+    expect(matching[0]).toMatchObject({ uid: TEST_UID, status: 'succeeded' });
+
+    const jobSnapshot = await database.ref(`reportJobs/${TEST_UID}/${jobId}`).get();
+    expect(jobSnapshot.val()).toMatchObject({ status: 'succeeded', resultRef: response.json().id });
+  });
+
+  it('creditRef is derived from the jobId, not a separate reports:${uid}: ref', async () => {
+    const { app, database } = buildTestApp({
+      startgg: STARTGG_CONFIG,
+      startggFetch: scoutFetchMock(),
+      reports: NON_ALLOWLIST_CONFIG,
+      stripe: STRIPE_CONFIG,
+      reportsClient: stubClient(async () => ({
+        stop_reason: 'end_turn',
+        parsed_output: VALID_REPORT,
+      })),
+    });
+    database.seed(`credits/${TEST_UID}/balance`, 1);
+    const jobId = 'job-creditref-1';
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/reports',
+      headers: authHeader(),
+      payload: { query: 'user/07dc2239', jobId },
+    });
+    expect(response.statusCode).toBe(200);
+
+    const dump = database.dump() as Record<string, unknown>;
+    const ledger = dump.creditLedger as Record<string, Record<string, unknown>>;
+    const entries = Object.values(ledger[TEST_UID]!);
+    expect(entries).toHaveLength(1);
+    expect(entries[0]).toMatchObject({ type: 'spend', ref: jobId });
+  });
+
+  it('a request with no jobId (legacy client) falls back to a server-generated jobId and still works', async () => {
+    const { app } = buildTestApp({
+      startgg: STARTGG_CONFIG,
+      startggFetch: scoutFetchMock(),
+      reports: REPORTS_CONFIG,
+      reportsClient: stubClient(async () => ({
+        stop_reason: 'end_turn',
+        parsed_output: VALID_REPORT,
+      })),
+    });
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/reports',
+      headers: authHeader(),
+      payload: { query: 'user/07dc2239' },
+    });
+    expect(response.statusCode).toBe(200);
+  });
+});

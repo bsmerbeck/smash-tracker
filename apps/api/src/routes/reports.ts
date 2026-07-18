@@ -4,8 +4,10 @@ import { z } from 'zod';
 import {
   errorResponseSchema,
   generateReportRequestSchema,
+  reportJobSchema,
   reportsConfigSchema,
   scoutReportRecordSchema,
+  type ReportJob,
 } from '@smash-tracker/shared';
 import type { ParryggConfig, ReportsConfig, StartggConfig, StripeConfig } from '../config/env.js';
 import { StartggApiError } from '../startgg/client.js';
@@ -21,6 +23,18 @@ import {
   type AnthropicLikeClient,
 } from '../reports/generate.js';
 import { refundCredit, spendCredit } from '../billing/credits.js';
+import { createEvent, dayShardKey } from '../events/ledger.js';
+import { buildBillingEnvelope } from '../events/envelope.js';
+
+/**
+ * BILL-06/MEAS-03 (Phase 10): a `running` report job older than this is
+ * considered abandoned (crashed mid-generation, never reached a terminal
+ * state) rather than genuinely in-flight — a retry with the same jobId is
+ * allowed to proceed instead of 409ing forever. Comfortably beyond any real
+ * Anthropic call; the stuck-job sweep (a later plan) uses the same window to
+ * find and recover jobs that were never retried by their own client.
+ */
+const REPORT_JOB_STALE_MS = 15 * 60 * 1000;
 
 export interface ReportsRoutesOptions {
   config: ReportsConfig | null;
@@ -63,10 +77,22 @@ const reportIdParamsSchema = z.object({
  * behavior is EXACTLY the pre-V7-C 403 (no behavior change); when
  * `stripeConfig` is present, `POST /reports` spends one credit up front
  * (`spendCredit`, RTDB-transaction-safe against concurrent requests) and
- * refunds it (`refundCredit`) on every failure path after that point — a
- * failed generation must never cost the caller a credit. A zero balance at
- * spend time answers 402, which is the web app's cue to open the "buy
- * credits" dialog.
+ * refunds it (`refundCredit`, via `failJob()`) on every failure path after
+ * that point — a failed generation must never cost the caller a credit. A
+ * zero balance at spend time answers 402, which is the web app's cue to open
+ * the "buy credits" dialog.
+ *
+ * BILL-06/MEAS-03 (Phase 10): generation is wrapped in a durable
+ * `reportJobs/{uid}/{jobId}` state machine (`queued -> running -> succeeded |
+ * failed`), keyed on a client-supplied (or server-generated fallback) jobId.
+ * `creditRef` is the jobId itself — no separate `reports:${uid}:` ref — so
+ * `credit_spent`/`credit_refunded` ledger entries and the `report_started` /
+ * `report_completed` / `report_failed` B events all correlate on the same
+ * key. A retry with a jobId that already `succeeded` returns the cached
+ * result without spending a credit or calling Anthropic again; a retry
+ * against a `running` job within the staleness window 409s instead of
+ * double-generating. Execution itself stays synchronous-in-request per
+ * STACK.md — only the STATE is durable.
  */
 const reportsRoutes: FastifyPluginAsyncZod<ReportsRoutesOptions> = async (app, options) => {
   const { config, startggConfig, stripeConfig, parryggConfig } = options;
@@ -144,6 +170,7 @@ const reportsRoutes: FastifyPluginAsyncZod<ReportsRoutesOptions> = async (app, o
           402: errorResponseSchema,
           403: errorResponseSchema,
           404: errorResponseSchema,
+          409: errorResponseSchema,
           429: errorResponseSchema,
           502: errorResponseSchema,
           503: errorResponseSchema,
@@ -159,6 +186,95 @@ const reportsRoutes: FastifyPluginAsyncZod<ReportsRoutesOptions> = async (app, o
           message: 'AI reports are not enabled for this account',
           statusCode: 403,
         });
+      }
+
+      // BILL-06: durable, idempotent report job. `jobId` is client-generated
+      // (one per "Generate report" click); a legacy/un-updated client that
+      // omits it falls back to a server-generated jobId, which still works —
+      // it just can't be retried idempotently from the client side.
+      const jobId = request.body.jobId ?? randomUUID();
+      const jobRef = app.firebase.database.ref(`reportJobs/${request.uid}/${jobId}`);
+      const existingSnapshot = await jobRef.get();
+      const existingJob: ReportJob | null = existingSnapshot.exists()
+        ? reportJobSchema.parse(existingSnapshot.val())
+        : null;
+
+      // Idempotent retry: a jobId that already succeeded returns the stored
+      // result WITHOUT spending a credit or calling Anthropic again. If the
+      // stored resultRef is somehow missing its report record (should never
+      // happen under the single-writer-per-job invariant), fall through and
+      // regenerate rather than 500ing the caller.
+      if (existingJob?.status === 'succeeded' && existingJob.resultRef) {
+        const resultSnapshot = await app.firebase.database
+          .ref(`scoutReports/${request.uid}/${existingJob.resultRef}`)
+          .get();
+        if (resultSnapshot.exists()) {
+          return scoutReportRecordSchema.parse({
+            id: existingJob.resultRef,
+            ...(resultSnapshot.val() as object),
+          });
+        }
+      }
+
+      // A job still `running` within the staleness window is genuinely
+      // in-flight (or was, up to REPORT_JOB_STALE_MS ago) — reject the
+      // duplicate attempt rather than double-spend/double-generate. Past the
+      // staleness window, treat it as abandoned and let this request retry.
+      if (
+        existingJob?.status === 'running' &&
+        Date.now() - existingJob.updatedAt < REPORT_JOB_STALE_MS
+      ) {
+        return reply.code(409).send({
+          error: 'Conflict',
+          message: 'A report generation for this job is already in progress',
+          statusCode: 409,
+        });
+      }
+
+      const jobCreatedAt = existingJob?.createdAt ?? Date.now();
+      const jobAttempt = existingJob ? existingJob.attempt + 1 : 0;
+      // Set once the job first reaches `running`; reused by every terminal
+      // transition so the running-index write and its clear land in the
+      // same day shard.
+      let jobDay: string | null = null;
+
+      /**
+       * BILL-06/MEAS-03: single failure path for every failure/refund site
+       * below. Transitions the job to `failed`, clears the `running` index
+       * (a no-op if the job never reached `running`), refunds the spent
+       * credit (if any), and emits exactly one `report_failed` B event.
+       */
+      async function failJob(): Promise<void> {
+        const now = Date.now();
+        await jobRef.set(
+          reportJobSchema.parse({
+            status: 'failed',
+            createdAt: jobCreatedAt,
+            updatedAt: now,
+            attempt: jobAttempt,
+            creditRef: jobId,
+          }),
+        );
+        const day = jobDay ?? dayShardKey(now);
+        await app.firebase.database.ref().update({
+          [`reportJobsByStatus/running/${request.uid}/${jobId}`]: null,
+          [`reportJobsByDay/${day}/${jobId}`]: { uid: request.uid, status: 'failed' },
+        });
+        if (spent) {
+          await refundCredit(app.firebase.database, request.uid, jobId);
+        }
+        void createEvent(
+          app.firebase.database,
+          buildBillingEnvelope({
+            eventName: 'report_failed',
+            source: 'job',
+            actorId: request.uid,
+            sessionId: request.uid,
+            causationId: `${jobId}:report_failed`,
+            consentState: 'unknown',
+            payload: {},
+          }),
+        );
       }
 
       const rawQuery = request.body.query;
@@ -208,28 +324,37 @@ const reportsRoutes: FastifyPluginAsyncZod<ReportsRoutesOptions> = async (app, o
         }
       }
 
+      // Every check above this point (403/503/400) is a pure request-shape
+      // rejection — nothing has been attempted yet, so no job record is
+      // written for those. From here on, the request WILL attempt
+      // generation, so the job enters `queued`.
+      await jobRef.set(
+        reportJobSchema.parse({
+          status: 'queued',
+          createdAt: jobCreatedAt,
+          updatedAt: Date.now(),
+          attempt: jobAttempt,
+          creditRef: jobId,
+        }),
+      );
+
       // V7-C: non-allowlisted uids spend one credit per generation attempt.
       // Spent up front (before the start.gg/Claude calls) so a concurrent
       // second request from the same uid can't both observe a positive
       // balance (spendCredit uses an RTDB transaction) — refunded on any
-      // failure below. `creditRef` ties the spend and a possible refund to
-      // the same request in the ledger.
-      const creditRef = `reports:${request.uid}:${randomUUID()}`;
+      // failure below. BILL-06 (Phase 10): `creditRef` is the jobId itself
+      // (a client-generated, non-PII UUID) so credit_spent, the creditLedger
+      // entry, and the report_* B events all correlate on the same key.
       let spent = false;
       if (!freeAccess) {
-        spent = await spendCredit(app.firebase.database, request.uid, creditRef);
+        spent = await spendCredit(app.firebase.database, request.uid, jobId);
         if (!spent) {
+          await failJob();
           return reply.code(402).send({
             error: 'Payment Required',
             message: 'You need report credits — buy a pack to continue',
             statusCode: 402,
           });
-        }
-      }
-
-      async function refundIfSpent(): Promise<void> {
-        if (spent) {
-          await refundCredit(app.firebase.database, request.uid, creditRef);
         }
       }
 
@@ -247,7 +372,7 @@ const reportsRoutes: FastifyPluginAsyncZod<ReportsRoutesOptions> = async (app, o
           },
         );
         if (!result.ok) {
-          await refundIfSpent();
+          await failJob();
           if (result.kind === 'rateLimited') {
             return reply.code(429).send({
               error: 'Too Many Requests',
@@ -270,7 +395,7 @@ const reportsRoutes: FastifyPluginAsyncZod<ReportsRoutesOptions> = async (app, o
           options.parryggClients,
         );
         if (!scout) {
-          await refundIfSpent();
+          await failJob();
           return reply.code(404).send({
             error: 'Not Found',
             message: 'No parry.gg player found for that query',
@@ -282,20 +407,20 @@ const reportsRoutes: FastifyPluginAsyncZod<ReportsRoutesOptions> = async (app, o
           scout = await scoutPlayer(startggConfig!.apiToken, input!, fetchImpl, scoutCache);
         } catch (err) {
           if (err instanceof StartggApiError && err.status === 429) {
-            await refundIfSpent();
+            await failJob();
             return reply.code(429).send({
               error: 'Too Many Requests',
               message: 'start.gg is rate-limiting requests right now — try again shortly',
               statusCode: 429,
             });
           }
-          await refundIfSpent();
+          await failJob();
           request.log.error({ err }, 'start.gg scout lookup failed during report generation');
           throw err;
         }
 
         if (!scout) {
-          await refundIfSpent();
+          await failJob();
           return reply.code(404).send({
             error: 'Not Found',
             message: 'No start.gg player found for that query',
@@ -306,12 +431,45 @@ const reportsRoutes: FastifyPluginAsyncZod<ReportsRoutesOptions> = async (app, o
 
       const payload = await assembleReportPayload(request.uid, scout, app.firebase.database);
 
+      // BILL-06/MEAS-03: transition to `running` immediately before the
+      // Claude call — this is the durable "generation is genuinely
+      // in-flight" marker the staleness check above and the stuck-job sweep
+      // (a later plan) rely on. `jobDay` is captured so the terminal
+      // transition below clears the SAME day shard this write touches.
+      const runningAt = Date.now();
+      jobDay = dayShardKey(runningAt);
+      await jobRef.set(
+        reportJobSchema.parse({
+          status: 'running',
+          createdAt: jobCreatedAt,
+          updatedAt: runningAt,
+          attempt: jobAttempt,
+          creditRef: jobId,
+        }),
+      );
+      await app.firebase.database.ref().update({
+        [`reportJobsByStatus/running/${request.uid}/${jobId}`]: true,
+        [`reportJobsByDay/${jobDay}/${jobId}`]: { uid: request.uid, status: 'running' },
+      });
+      void createEvent(
+        app.firebase.database,
+        buildBillingEnvelope({
+          eventName: 'report_started',
+          source: 'job',
+          actorId: request.uid,
+          sessionId: request.uid,
+          causationId: `${jobId}:report_started`,
+          consentState: 'unknown',
+          payload: {},
+        }),
+      );
+
       let report;
       try {
         report = await generateScoutReport(client, payload);
       } catch (err) {
         if (err instanceof ReportGenerationError) {
-          await refundIfSpent();
+          await failJob();
           const message =
             err.reason === 'refusal'
               ? 'The model declined to generate a report for this request'
@@ -325,7 +483,7 @@ const reportsRoutes: FastifyPluginAsyncZod<ReportsRoutesOptions> = async (app, o
           });
         }
         if (err instanceof Anthropic.RateLimitError) {
-          await refundIfSpent();
+          await failJob();
           return reply.code(429).send({
             error: 'Too Many Requests',
             message: 'Claude is rate-limiting requests right now — try again shortly',
@@ -333,7 +491,7 @@ const reportsRoutes: FastifyPluginAsyncZod<ReportsRoutesOptions> = async (app, o
           });
         }
         if (err instanceof Anthropic.APIError) {
-          await refundIfSpent();
+          await failJob();
           request.log.error({ err }, 'Claude report generation failed');
           return reply.code(502).send({
             error: 'Bad Gateway',
@@ -341,7 +499,7 @@ const reportsRoutes: FastifyPluginAsyncZod<ReportsRoutesOptions> = async (app, o
             statusCode: 502,
           });
         }
-        await refundIfSpent();
+        await failJob();
         throw err;
       }
 
@@ -367,7 +525,7 @@ const reportsRoutes: FastifyPluginAsyncZod<ReportsRoutesOptions> = async (app, o
       try {
         await ref.set(record);
       } catch (err) {
-        await refundIfSpent();
+        await failJob();
         throw err;
       }
 
@@ -375,9 +533,42 @@ const reportsRoutes: FastifyPluginAsyncZod<ReportsRoutesOptions> = async (app, o
       if (!id) {
         // The report was generated and stored — this is a server bug (push()
         // failing to yield a key), not a failed generation, so the spent
-        // credit is NOT refunded here.
+        // credit is NOT refunded here. The job is deliberately left in
+        // `running` rather than transitioned here — there is no resultRef to
+        // record, and the stuck-job sweep will eventually recover it.
         throw new Error('Failed to generate a push key for the new scout report');
       }
+
+      // BILL-06/MEAS-03: terminal success transition. Clears the `running`
+      // index (same day shard the running write used) and emits exactly one
+      // `report_completed` B event.
+      const succeededAt = Date.now();
+      await jobRef.set(
+        reportJobSchema.parse({
+          status: 'succeeded',
+          createdAt: jobCreatedAt,
+          updatedAt: succeededAt,
+          attempt: jobAttempt,
+          creditRef: jobId,
+          resultRef: id,
+        }),
+      );
+      await app.firebase.database.ref().update({
+        [`reportJobsByStatus/running/${request.uid}/${jobId}`]: null,
+        [`reportJobsByDay/${jobDay}/${jobId}`]: { uid: request.uid, status: 'succeeded' },
+      });
+      void createEvent(
+        app.firebase.database,
+        buildBillingEnvelope({
+          eventName: 'report_completed',
+          source: 'job',
+          actorId: request.uid,
+          sessionId: request.uid,
+          causationId: `${jobId}:report_completed`,
+          consentState: 'unknown',
+          payload: {},
+        }),
+      );
 
       return { id, ...record };
     },

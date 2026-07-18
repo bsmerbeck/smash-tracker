@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { generatedScoutReportSchema, scoutReportRecordSchema } from './reports.js';
+import {
+  generatedScoutReportSchema,
+  generateReportRequestSchema,
+  reportJobSchema,
+  reportJobStatusSchema,
+  scoutReportRecordSchema,
+} from './reports.js';
 
 /**
  * V7-B.1: `characterStrategy` is a REQUIRED field on freshly-generated
@@ -133,5 +139,72 @@ describe('scoutReportRecordSchema back-compat', () => {
   it('V9-B: the GENERATION schema still requires headToHead to be emitted (nullable, never absent)', () => {
     expect(generatedScoutReportSchema.safeParse(RTDB_STRIPPED_REPORT).success).toBe(false);
     expect(generatedScoutReportSchema.safeParse(FULL_REPORT).success).toBe(true);
+  });
+});
+
+/**
+ * Phase 10 BILL-06: the durable report-job state machine schema + the
+ * optional jobId field on the generation request.
+ */
+describe('reportJobStatusSchema', () => {
+  it('enumerates exactly the five report-job states', () => {
+    expect(reportJobStatusSchema.options).toEqual([
+      'queued',
+      'running',
+      'succeeded',
+      'failed',
+      'refunded',
+    ]);
+  });
+});
+
+describe('reportJobSchema', () => {
+  it('accepts a freshly-queued job', () => {
+    const parsed = reportJobSchema.safeParse({
+      status: 'queued',
+      createdAt: 1_700_000_000_000,
+      updatedAt: 1_700_000_000_000,
+      attempt: 0,
+      creditRef: 'job-abc-123',
+    });
+    expect(parsed.success).toBe(true);
+  });
+
+  it('accepts a succeeded job with a resultRef', () => {
+    const parsed = reportJobSchema.safeParse({
+      status: 'succeeded',
+      createdAt: 1_700_000_000_000,
+      updatedAt: 1_700_000_000_100,
+      attempt: 0,
+      creditRef: 'job-abc-123',
+      resultRef: 'report-push-key',
+    });
+    expect(parsed.success).toBe(true);
+  });
+
+  it('rejects an unknown status', () => {
+    const parsed = reportJobSchema.safeParse({
+      status: 'in_progress',
+      createdAt: 1_700_000_000_000,
+      updatedAt: 1_700_000_000_000,
+      attempt: 0,
+      creditRef: 'job-abc-123',
+    });
+    expect(parsed.success).toBe(false);
+  });
+});
+
+describe('generateReportRequestSchema jobId (deploy-first optional)', () => {
+  it('accepts a request with a jobId', () => {
+    const parsed = generateReportRequestSchema.safeParse({
+      query: 'user/07dc2239',
+      jobId: 'client-generated-uuid',
+    });
+    expect(parsed.success).toBe(true);
+  });
+
+  it('accepts a request without a jobId (un-updated client never 400s)', () => {
+    const parsed = generateReportRequestSchema.safeParse({ query: 'user/07dc2239' });
+    expect(parsed.success).toBe(true);
   });
 });
