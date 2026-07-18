@@ -489,7 +489,24 @@ export class RtdbService {
         : {}),
     };
 
-    await ref.set(record);
+    // FB-05 (walkthrough gap): removing the VOD via a match EDIT (this
+    // full-overwrite path clears `vodUrl` by omission — see the spread
+    // comment above) must revoke the match's active review shares exactly
+    // like the explicit clear-VOD action does. A REPLACED or unchanged URL
+    // is not a removal and leaves shares alive.
+    const vodRemoved = current.vodUrl !== undefined && input.vodUrl === undefined;
+    if (vodRemoved) {
+      const activeTokens = await this.resolveActiveReviewShareTokens(uid, id);
+      const revokedAt = Date.now();
+      await this.database.ref().update({
+        [`matches/${uid}/${id}`]: record,
+        ...Object.fromEntries(
+          activeTokens.map((token) => [`shareTokens/${token}/revokedAt`, revokedAt]),
+        ),
+      });
+    } else {
+      await ref.set(record);
+    }
     if (input.opponent !== undefined) {
       await this.addOpponent(uid, input.opponent);
     }

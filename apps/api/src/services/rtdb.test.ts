@@ -251,6 +251,40 @@ describe('RtdbService.clearVodAndNotes / deleteMatch — FB-05 share-cascade rev
     expect(tokenRecord[token]).toHaveProperty('revokedAt');
   });
 
+  // Walkthrough gap (2026-07-18): the user removed the VOD by EDITING the
+  // match (updateMatch clears vodUrl by omission on the full-overwrite path)
+  // and the share stayed alive — only clear-VOD/delete-match cascaded.
+  it('updateMatch that REMOVES the vodUrl revokes the ACTIVE review share in the same call', async () => {
+    const database = new FakeDatabase();
+    const rtdb = new RtdbService(database as never);
+    seedMatchWithVod(database, UID, 'm1');
+    const token = seedReviewShare(database, { matchId: 'm1' });
+
+    const updated = await rtdb.updateMatch(UID, 'm1', { ...BASE_MATCH_INPUT } as never);
+
+    expect(updated).not.toHaveProperty('vodUrl');
+    const stored = database.dump().matches as Record<string, Record<string, unknown>>;
+    expect(stored[UID]!.m1).not.toHaveProperty('vodUrl');
+    const tokenRecord = database.dump().shareTokens as Record<string, Record<string, unknown>>;
+    expect(tokenRecord[token]).toHaveProperty('revokedAt');
+  });
+
+  it('updateMatch that KEEPS or REPLACES the vodUrl never revokes the share', async () => {
+    const database = new FakeDatabase();
+    const rtdb = new RtdbService(database as never);
+    seedMatchWithVod(database, UID, 'm1');
+    const token = seedReviewShare(database, { matchId: 'm1' });
+
+    const updated = await rtdb.updateMatch(UID, 'm1', {
+      ...BASE_MATCH_INPUT,
+      vodUrl: 'https://youtube.com/watch?v=replaced',
+    } as never);
+
+    expect(updated.vodUrl).toBe('https://youtube.com/watch?v=replaced');
+    const tokenRecord = database.dump().shareTokens as Record<string, Record<string, unknown>>;
+    expect(tokenRecord[token]).not.toHaveProperty('revokedAt');
+  });
+
   it('never revokes a recap share (kind: recap, no matchId)', async () => {
     const database = new FakeDatabase();
     const rtdb = new RtdbService(database as never);
