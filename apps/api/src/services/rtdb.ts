@@ -178,6 +178,17 @@ function warnOpaqueNoteCarry(context: string, keys: readonly string[]): void {
   }
 }
 
+/**
+ * Walkthrough amendment (FB-04, coach display-name uniqueness): a plain
+ * string transform, never a fuzzy-match library (RESEARCH Don't Hand-Roll) —
+ * trims, collapses inner whitespace to a single space, and case-folds, so
+ * "Sam", "sam", and "Sam  Jones"/"Sam Jones" collide as intended while
+ * distinct names never accidentally match.
+ */
+function normalizeCoachName(name: string): string {
+  return name.trim().replace(/\s+/g, ' ').toLowerCase();
+}
+
 export class NotFoundError extends Error {
   constructor(message: string) {
     super(message);
@@ -497,12 +508,71 @@ export class RtdbService {
   }
 
   /**
+   * Walkthrough amendment (FB-05, VOD-removal share cascade): resolves
+   * every ACTIVE review-kind share for `(uid, matchId)` to its bearer
+   * token, via the SAME two-hop join `listSharesForUser` already proves
+   * (`sharesByUser/{uid}` -> `shareSnapshots/{shareId}` -> `shareTokens/
+   * {token}`). Deliberately reads `matchId` from the SNAPSHOT, never the
+   * token record — `shareTokenSchema` has no `matchId` field at all
+   * (RESEARCH's correction to CONTEXT.md); reading the wrong node would
+   * silently resolve zero shares instead of erroring. A recap share
+   * (`kind: 'recap'`, no `matchId`) or a share for a different match is
+   * skipped, same as an already-revoked one — only genuinely ACTIVE
+   * review shares for THIS match are returned.
+   */
+  private async resolveActiveReviewShareTokens(uid: string, matchId: string): Promise<string[]> {
+    const indexSnapshot = await this.database.ref(`sharesByUser/${uid}`).get();
+    if (!indexSnapshot.exists()) {
+      return [];
+    }
+    const index = indexSnapshot.val() as Record<string, unknown>;
+
+    const results = await Promise.all(
+      Object.entries(index).map(async ([shareId, tokenValue]): Promise<string | null> => {
+        if (typeof tokenValue !== 'string') {
+          return null;
+        }
+        const [snapshotSnapshot, tokenSnapshot] = await Promise.all([
+          this.database.ref(`shareSnapshots/${shareId}`).get(),
+          this.database.ref(`shareTokens/${tokenValue}`).get(),
+        ]);
+        if (!snapshotSnapshot.exists() || !tokenSnapshot.exists()) {
+          return null;
+        }
+        const rawSnapshot = snapshotSnapshot.val();
+        // A recap snapshot carries no matchId at all — skip before parsing
+        // against shareSnapshotSchema (which would fail on it anyway).
+        if ((rawSnapshot as { kind?: unknown } | null)?.kind === 'recap') {
+          return null;
+        }
+        const parsedSnapshot = shareSnapshotSchema.safeParse(rawSnapshot);
+        if (!parsedSnapshot.success || parsedSnapshot.data.matchId !== matchId) {
+          return null;
+        }
+        const parsedToken = shareTokenSchema.safeParse(tokenSnapshot.val());
+        if (!parsedToken.success || parsedToken.data.revokedAt != null) {
+          // Already inactive (or corrupt) — never re-stamped, never actioned.
+          return null;
+        }
+        return tokenValue;
+      }),
+    );
+    return results.filter((t): t is string => t !== null);
+  }
+
+  /**
    * The one legitimate "remove VOD" intent (MatchTable's "remove VOD"
    * action, wired in a later 08-0x plan): blanks `vodUrl`/`vodStartSeconds`
    * and drops the `vodTimestamps` node in the same write. Now that omitting
    * `vodTimestamps` from an `updateMatch` payload means "preserve" (see
    * above), this explicit method is the ONLY way to clear notes — no
    * implicit-omission path exists anymore (RESEARCH Pitfall 2).
+   *
+   * Walkthrough amendment (FB-05): folds a soft-revoke of every ACTIVE
+   * review share for this match into the SAME root-level multi-path update
+   * as the VOD-clearing write — a coach never retains write access to a
+   * match whose VOD the owner believes is gone (T-09-08). Recap shares are
+   * untouched; an already-revoked share is left unchanged.
    */
   async clearVodAndNotes(uid: string, id: string): Promise<Match> {
     // Review WR-07: crafted ids must 404 like an absent match, never reach
@@ -538,10 +608,22 @@ export class RtdbService {
       ...(current.externalId !== undefined ? { externalId: current.externalId } : {}),
     };
 
-    await ref.set(record);
+    const activeTokens = await this.resolveActiveReviewShareTokens(uid, id);
+    const revokedAt = Date.now();
+    await this.database.ref().update({
+      [`matches/${uid}/${id}`]: record,
+      ...Object.fromEntries(
+        activeTokens.map((token) => [`shareTokens/${token}/revokedAt`, revokedAt]),
+      ),
+    });
     return { id, ...record };
   }
 
+  /**
+   * Walkthrough amendment (FB-05): same cascade as `clearVodAndNotes`
+   * above, folded into the SAME root-level multi-path update as the match
+   * removal — a deleted match's share links die atomically with it.
+   */
   async deleteMatch(uid: string, id: string): Promise<void> {
     const ref = this.database.ref(`matches/${uid}/${id}`);
     const existing = await ref.get();
@@ -556,7 +638,14 @@ export class RtdbService {
         `Match ${id} is synced from ${current.source}; unlink or re-sync to manage it`,
       );
     }
-    await ref.remove();
+    const activeTokens = await this.resolveActiveReviewShareTokens(uid, id);
+    const revokedAt = Date.now();
+    await this.database.ref().update({
+      [`matches/${uid}/${id}`]: null,
+      ...Object.fromEntries(
+        activeTokens.map((token) => [`shareTokens/${token}/revokedAt`, revokedAt]),
+      ),
+    });
   }
 
   // ---- matches/{uid}/{matchId}/vodTimestamps/{pushKey} -------------------
@@ -585,12 +674,24 @@ export class RtdbService {
    * abort convention. Unparseable sibling entries are carried through the
    * rebuild opaquely and COUNT toward the cap (review WR-08 — see
    * `collectOpaqueVodTimestampEntries`).
+   *
+   * Walkthrough amendment (FB-04, coach display-name uniqueness): `coach`
+   * attribution — a DIFFERENT session already using the same normalized
+   * name on this match, OR a name colliding with `ownerDisplayName` (passed
+   * only by `createCoachNote`, never the owner path) — aborts the
+   * transaction with `nameConflict` set, mirroring `capExceeded`'s
+   * abort-without-writing convention; the caller throws `ConflictError`.
+   * The decision is recomputed fresh every transaction invocation (CR-01
+   * discipline — see `writeNoteUpdate`'s "Reset per run" comment) by
+   * reading `entries` computed on THAT run, never a value memoized across
+   * runs.
    */
   async createNote(
     uid: string,
     matchId: string,
     input: VodTimestampInput,
     coach?: CoachAttribution,
+    ownerDisplayName?: string,
   ): Promise<VodTimestamp> {
     // Review WR-07: crafted ids must 404 like an absent match, never reach
     // ref() (synchronous throw -> 500) or address a nested child. The coach
@@ -617,9 +718,14 @@ export class RtdbService {
     };
 
     let capExceeded = false;
+    let nameConflict = false;
     let carriedOpaqueKeys: string[] = [];
     const result = await notesRef.transaction((raw) => {
+      // Reset per run (review CR-01): a value captured during a DISCARDED
+      // (hash-mismatch) run must never leak into the final outcome — only
+      // the run whose return value actually commits may report success.
       carriedOpaqueKeys = [];
+      nameConflict = false;
       const entries = normalizeVodTimestampsNode(raw);
       // Review WR-08: unparseable siblings ride through the rebuild
       // verbatim instead of being silently destroyed, and count toward the
@@ -632,6 +738,24 @@ export class RtdbService {
       if (entries.length + opaque.length >= MAX_VOD_TIMESTAMPS_PER_MATCH) {
         capExceeded = true;
         return undefined;
+      }
+
+      if (coach !== undefined) {
+        const normalizedNew = normalizeCoachName(coach.displayName);
+        if (ownerDisplayName != null && normalizeCoachName(ownerDisplayName) === normalizedNew) {
+          nameConflict = true;
+          return undefined;
+        }
+        const collidesWithOtherSession = entries.some(
+          (entry) =>
+            entry.coach != null &&
+            entry.coach.sessionId !== coach.sessionId &&
+            normalizeCoachName(entry.coach.displayName) === normalizedNew,
+        );
+        if (collidesWithOtherSession) {
+          nameConflict = true;
+          return undefined;
+        }
       }
 
       const nextNode: Record<string, unknown> = {};
@@ -657,6 +781,14 @@ export class RtdbService {
       throw new ForbiddenError(
         `Match ${matchId} already has ${MAX_VOD_TIMESTAMPS_PER_MATCH} notes`,
       );
+    }
+
+    if (nameConflict) {
+      // Static, private-data-free message (FB-04): never echoes the
+      // submitted name or matchId — this is a deliberately narrow, reviewed
+      // exception to the anonymous coach surface's no-oracle 404 discipline
+      // (it can only ever be reached AFTER resolveEditSession succeeded).
+      throw new ConflictError('That name is already taken on this review');
     }
 
     return { id: newNoteId, ...newEntryRecord };
@@ -1958,6 +2090,11 @@ export class RtdbService {
    * shared capped transaction with the coach attribution stamped on. Cap
    * rejection bubbles as `ForbiddenError` (the route maps it to 403 — a
    * valid-token holder gets a real cap message, not a fake 404).
+   *
+   * Walkthrough amendment (FB-04): passes the share's `ownerDisplayName`
+   * through to `createNote` so the owner's own shared name is also
+   * protected against impersonation — a colliding coach name throws
+   * `ConflictError` (the route maps it to a static-message 409).
    */
   async createCoachNote(
     token: string,
@@ -1969,10 +2106,13 @@ export class RtdbService {
     if (!resolved) {
       throw new NotFoundError(SHARE_UNAVAILABLE_MESSAGE);
     }
-    return this.createNote(resolved.tokenRecord.ownerUid, resolved.snapshot.matchId, input, {
-      sessionId,
-      displayName,
-    });
+    return this.createNote(
+      resolved.tokenRecord.ownerUid,
+      resolved.snapshot.matchId,
+      input,
+      { sessionId, displayName },
+      resolved.snapshot.ownerDisplayName ?? undefined,
+    );
   }
 
   /**
