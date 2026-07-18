@@ -1,5 +1,7 @@
 import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import {
+  bulkShareRequestSchema,
+  bulkShareResponseSchema,
   createShareInputSchema,
   errorResponseSchema,
   shareCreatedResponseSchema,
@@ -136,9 +138,11 @@ const vodSharesRoutes: FastifyPluginAsyncZod<VodSharesRoutesOptions> = async (ap
     },
   );
 
-  // DELETE /api/vod-shares/:id — hard-deletes a REVOKED share (list hygiene).
-  // Active shares 409 (ConflictError → global handler): revoke is the only
-  // way to end access; delete only clears the dead record afterward.
+  // DELETE /api/vod-shares/:id — hard-deletes a share, ACTIVE or revoked
+  // (walkthrough amendment FB-03: removing shareTokens/{token} directly
+  // kills all anonymous access atomically, so an active share no longer
+  // needs a revoke-first step — overrides the earlier Phase 5 "no hard
+  // delete without revoke first" decision).
   app.delete(
     '/vod-shares/:id',
     {
@@ -153,6 +157,30 @@ const vodSharesRoutes: FastifyPluginAsyncZod<VodSharesRoutesOptions> = async (ap
       await rtdb.deleteShare(request.uid, request.params.id);
       return reply.code(204).send();
     },
+  );
+
+  // POST /api/vod-shares/bulk — walkthrough amendment (FB-03, My Shares
+  // management overhaul): batch revoke or delete up to MAX_SHARES_PER_USER
+  // shares in ONE round-trip. Inherits the file-wide authenticate
+  // preHandler (no per-route auth wiring); uid comes only from
+  // `request.uid`, never body/params (T-05-04). Skip-not-fail: a
+  // foreign/missing/already-revoked id is counted in `skipped`, never
+  // raised as an error, so this route never needs custom error mapping —
+  // body validation failures (the >100/empty/bad-action cases) are handled
+  // by fastify-type-provider-zod as 400.
+  app.post(
+    '/vod-shares/bulk',
+    {
+      schema: {
+        body: bulkShareRequestSchema,
+        response: {
+          200: bulkShareResponseSchema,
+          400: errorResponseSchema,
+        },
+      },
+    },
+    async (request) =>
+      rtdb.bulkUpdateShares(request.uid, request.body.action, request.body.shareIds),
   );
 };
 

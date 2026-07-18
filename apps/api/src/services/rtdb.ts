@@ -1641,7 +1641,9 @@ export class RtdbService {
     );
 
     const actionable = resolved.filter(
-      (entry): entry is { shareId: string; token: string; revokedAt?: number | null } => {
+      (
+        entry,
+      ): entry is { shareId: string; token: string; revokedAt: number | null | undefined } => {
         if (entry === null) {
           return false;
         }
