@@ -34,6 +34,40 @@ vi.mock('@/lib/shareReferral', () => ({
   clear: vi.fn(),
 }));
 
+// Phase 8: a fixed, deterministic coach identity — the real module's
+// crypto.randomUUID()-backed id would make "own vs. not-own" note fixtures
+// unpredictable across test runs.
+const MY_SESSION_ID = '11111111-1111-4111-8111-111111111111';
+const getStoredDisplayNameMock = vi.fn<() => string | null>(() => null);
+const setDisplayNameMock = vi.fn((name: string) => {
+  // Mirrors the real module's persist-then-read-back semantics closely
+  // enough for the name-prompt gate: once set, subsequent reads see it.
+  getStoredDisplayNameMock.mockReturnValue(name);
+});
+
+vi.mock('@/lib/coachSession', () => ({
+  getOrCreateSessionId: () => MY_SESSION_ID,
+  getStoredDisplayName: () => getStoredDisplayNameMock(),
+  setDisplayName: (name: string) => setDisplayNameMock(name),
+}));
+
+// Phase 8: the coach edit-session query + write mutations — mocked so every
+// PRE-EXISTING (view-tier/recap) test never fires a real fetch, and the new
+// coach-specific tests below control the session response deterministically.
+const coachSessionQuery = vi.fn<() => { data: PublicShareSnapshot | undefined }>(() => ({
+  data: undefined,
+}));
+const createCoachNoteMutate = vi.fn();
+const updateCoachNoteMutate = vi.fn();
+const deleteCoachNoteMutate = vi.fn();
+
+vi.mock('@/hooks/useCoachNotes', () => ({
+  useCoachSession: () => coachSessionQuery(),
+  useCreateCoachNote: () => ({ mutate: createCoachNoteMutate }),
+  useUpdateCoachNote: () => ({ mutate: updateCoachNoteMutate }),
+  useDeleteCoachNote: () => ({ mutate: deleteCoachNoteMutate }),
+}));
+
 type YTGlobal = NonNullable<Window['YT']>;
 
 /** Removes any injected vendor scripts/globals so `useVodPlayer`'s module-level singleton loaders start clean for every test — mirrors `VodManagerPage.test.tsx`'s convention. */
@@ -61,6 +95,16 @@ function baseSnapshot(overrides: Partial<PublicShareSnapshot> = {}): PublicShare
     tags: ['neutral'],
     ownerDisplayName: 'TestPlayer',
     redaction: { includedNotes: true, includedTags: true, showDisplayName: true },
+    ...overrides,
+  };
+}
+
+/** An edit-tier `GET /api/vod-shares/:token/session` response — Phase 8. */
+function baseCoachSession(overrides: Partial<PublicShareSnapshot> = {}): PublicShareSnapshot {
+  return {
+    ...baseSnapshot(),
+    permissions: 'edit',
+    timestamps: [{ seconds: 10, note: 'Owner note', id: 'owner-note-1' }],
     ...overrides,
   };
 }
@@ -126,6 +170,10 @@ describe('ShareViewPage', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     resetVendorGlobals();
+    // Reset the per-test overrides `mockReturnValue`/`mockImplementation`
+    // leave behind — `clearAllMocks` only clears call history, not those.
+    coachSessionQuery.mockReturnValue({ data: undefined });
+    getStoredDisplayNameMock.mockReturnValue(null);
   });
 
   afterEach(() => {
@@ -554,5 +602,153 @@ describe('ShareViewPage', () => {
     await screen.findByText('This review is no longer available');
     expect(logProductEvent).not.toHaveBeenCalled();
     expect(stamp).not.toHaveBeenCalled();
+  });
+
+  describe('coach edit-tier affordances (Phase 8)', () => {
+    it('renders no composer/quick-tag/edit affordances for a view-tier share (session query resolves undefined)', async () => {
+      getPublic.mockResolvedValue(baseSnapshot());
+      coachSessionQuery.mockReturnValue({ data: undefined });
+      mountYouTubePlayer();
+
+      renderShare('/s/tok123');
+
+      await screen.findByText(/Mario vs\. Luigi/);
+      expect(screen.queryByText('Add a note')).not.toBeInTheDocument();
+      expect(screen.queryByText('Quick tags')).not.toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: /Edit timestamp/ })).not.toBeInTheDocument();
+    });
+
+    it('renders the composer for an edit-tier share; adding a note fires the create mutation with sessionId + displayName', async () => {
+      getPublic.mockResolvedValue(baseSnapshot());
+      coachSessionQuery.mockReturnValue({ data: baseCoachSession() });
+      getStoredDisplayNameMock.mockReturnValue('Coach Ken');
+      mountYouTubePlayer();
+      const user = userEvent.setup();
+
+      renderShare('/s/tok123');
+
+      await screen.findByText('Add a note');
+      await user.type(screen.getByLabelText('Timestamp time'), '1:30');
+      await user.type(screen.getByLabelText('Timestamp note'), 'great punish');
+      await user.click(screen.getByRole('button', { name: 'Add timestamp' }));
+
+      expect(createCoachNoteMutate).toHaveBeenCalledExactlyOnceWith({
+        sessionId: MY_SESSION_ID,
+        displayName: 'Coach Ken',
+        seconds: 90,
+        note: 'great punish',
+      });
+    });
+
+    it('shows no edit/delete affordance for a note authored by a DIFFERENT coach session', async () => {
+      getPublic.mockResolvedValue(baseSnapshot());
+      coachSessionQuery.mockReturnValue({
+        data: baseCoachSession({
+          timestamps: [
+            {
+              seconds: 42,
+              note: 'Rival coach note',
+              id: 'note-other',
+              coach: { sessionId: 'other-session-id', displayName: 'Rival Coach' },
+            },
+          ],
+        }),
+      });
+      getStoredDisplayNameMock.mockReturnValue('Coach Ken');
+      mountYouTubePlayer();
+
+      renderShare('/s/tok123');
+
+      await screen.findByText('Rival coach note');
+      expect(screen.getByText('Coach note by Rival Coach')).toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: /Edit timestamp/ })).not.toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: /Delete timestamp/ })).not.toBeInTheDocument();
+    });
+
+    it("shows edit/delete affordances for the coach's OWN note", async () => {
+      getPublic.mockResolvedValue(baseSnapshot());
+      coachSessionQuery.mockReturnValue({
+        data: baseCoachSession({
+          timestamps: [
+            {
+              seconds: 42,
+              note: 'My own note',
+              id: 'note-mine',
+              coach: { sessionId: MY_SESSION_ID, displayName: 'Coach Ken' },
+            },
+          ],
+        }),
+      });
+      getStoredDisplayNameMock.mockReturnValue('Coach Ken');
+      mountYouTubePlayer();
+
+      renderShare('/s/tok123');
+
+      await screen.findByText('My own note');
+      expect(screen.getByRole('button', { name: /Edit timestamp/ })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /Delete timestamp/ })).toBeInTheDocument();
+    });
+
+    it('opens the name prompt on the first write when no display name is stored, then never again', async () => {
+      getPublic.mockResolvedValue(baseSnapshot());
+      coachSessionQuery.mockReturnValue({ data: baseCoachSession() });
+      getStoredDisplayNameMock.mockReturnValue(null);
+      mountYouTubePlayer();
+      const user = userEvent.setup();
+
+      renderShare('/s/tok123');
+
+      await screen.findByText('Add a note');
+      await user.type(screen.getByLabelText('Timestamp time'), '0:05');
+      await user.click(screen.getByRole('button', { name: 'Add timestamp' }));
+
+      expect(await screen.findByText('What should we call you?')).toBeInTheDocument();
+      expect(createCoachNoteMutate).not.toHaveBeenCalled();
+
+      await user.type(screen.getByLabelText('Your name'), 'Coach Ken');
+      await user.click(screen.getByRole('button', { name: 'Continue' }));
+
+      expect(setDisplayNameMock).toHaveBeenCalledWith('Coach Ken');
+      expect(createCoachNoteMutate).toHaveBeenCalledExactlyOnceWith({
+        sessionId: MY_SESSION_ID,
+        displayName: 'Coach Ken',
+        seconds: 5,
+        note: '',
+      });
+      expect(screen.queryByText('What should we call you?')).not.toBeInTheDocument();
+
+      // A second write, now that a name is stored, never reopens the prompt.
+      await user.type(screen.getByLabelText('Timestamp time'), '0:07');
+      await user.click(screen.getByRole('button', { name: 'Add timestamp' }));
+
+      expect(screen.queryByText('What should we call you?')).not.toBeInTheDocument();
+      expect(createCoachNoteMutate).toHaveBeenCalledTimes(2);
+    });
+
+    it('ownership-filtered quick-tag merge: an OWNER note at the current second is never mutated — a NEW coach note is created instead', async () => {
+      getPublic.mockResolvedValue(baseSnapshot());
+      coachSessionQuery.mockReturnValue({
+        data: baseCoachSession({
+          timestamps: [{ seconds: 0, note: 'Owner note at second 0', id: 'owner-note-1' }],
+        }),
+      });
+      getStoredDisplayNameMock.mockReturnValue('Coach Ken');
+      // getCurrentTime defaults to `() => 0` in mountYouTubePlayer — matches
+      // the owner note's `seconds: 0` above, exercising the same-second path.
+      mountYouTubePlayer();
+      const user = userEvent.setup();
+
+      renderShare('/s/tok123');
+
+      await screen.findByText('Quick tags');
+      const quickTagButtons = screen.getAllByRole('button', { name: /^Quick tag:/ });
+      await user.click(quickTagButtons[0]!);
+
+      // The owner's note is NEVER touched — no update call at all.
+      expect(updateCoachNoteMutate).not.toHaveBeenCalled();
+      expect(createCoachNoteMutate).toHaveBeenCalledExactlyOnceWith(
+        expect.objectContaining({ sessionId: MY_SESSION_ID, seconds: 0, note: '' }),
+      );
+    });
   });
 });

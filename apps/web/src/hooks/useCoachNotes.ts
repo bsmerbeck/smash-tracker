@@ -1,0 +1,149 @@
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import {
+  errorResponseSchema,
+  publicShareSnapshotSchema,
+  vodTimestampEntrySchema,
+  type PublicShareSnapshot,
+  type VodTimestamp,
+} from '@smash-tracker/shared';
+import { ApiError, getApiBaseUrl } from '@/lib/api';
+
+/**
+ * Anonymous client for the coach-edit-session surface (Phase 8 Plan 3's
+ * route contract): `GET /api/vod-shares/:token/session` (the LIVE
+ * redacted recompute) plus `POST/PATCH/DELETE /api/vod-shares/:token/notes[/:noteId]`.
+ * Deliberately self-contained rather than routed through `apps/web/src/lib/api.ts`'s
+ * `apiRequest`/`apiRequestParsed` helpers (private to that module, and this
+ * plan's declared files don't include it) — these routes are token-scoped,
+ * never user-scoped, and are never called with a Firebase auth header
+ * regardless of whether a coach happens to also be signed in as an owner in
+ * the same browser.
+ */
+
+export const coachSessionQueryKey = (token: string) =>
+  ['vod-shares', 'coach-session', token] as const;
+
+interface CoachRequestOptions {
+  method?: 'GET' | 'POST' | 'PATCH' | 'DELETE';
+  body?: unknown;
+}
+
+async function coachRequest<TResponse>(
+  path: string,
+  options: CoachRequestOptions = {},
+): Promise<TResponse> {
+  const hasBody = options.body !== undefined;
+  const response = await fetch(`${getApiBaseUrl()}${path}`, {
+    method: options.method ?? 'GET',
+    headers: hasBody ? { 'Content-Type': 'application/json' } : {},
+    body: hasBody ? JSON.stringify(options.body) : undefined,
+  });
+
+  if (response.status === 204) {
+    return undefined as TResponse;
+  }
+
+  const text = await response.text();
+  const json: unknown = text ? JSON.parse(text) : undefined;
+
+  if (!response.ok) {
+    const parsedError = errorResponseSchema.safeParse(json);
+    if (parsedError.success) {
+      throw new ApiError(response.status, parsedError.data.message, parsedError.data.details);
+    }
+    throw new ApiError(response.status, response.statusText || 'Request failed');
+  }
+
+  return json as TResponse;
+}
+
+/**
+ * GET /api/vod-shares/:token/session — the LIVE edit-session view. Resolves
+ * with `permissions: 'edit'` (plus per-note `id`/`coach`) only for a valid,
+ * unrevoked, unexpired EDIT-tier token; 404s (identical body, no oracle) for
+ * a view-tier/unknown/revoked/expired token, in which case this query simply
+ * fails and the caller falls back to the existing frozen view-tier render.
+ * Deliberately no `enabled` gate keyed off token validity — the query itself
+ * IS the "is this an edit-tier link" probe.
+ */
+export function useCoachSession(token: string) {
+  return useQuery({
+    queryKey: coachSessionQueryKey(token),
+    queryFn: () =>
+      coachRequest<unknown>(`/api/vod-shares/${encodeURIComponent(token)}/session`).then((json) =>
+        publicShareSnapshotSchema.parse(json),
+      ),
+    enabled: Boolean(token),
+  });
+}
+
+export interface CreateCoachNoteInput {
+  sessionId: string;
+  displayName: string;
+  seconds: number;
+  note: string;
+  tags?: string[];
+}
+
+/** POST /api/vod-shares/:token/notes — sessionId + displayName travel in the body. */
+export function useCreateCoachNote(token: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (input: CreateCoachNoteInput) =>
+      coachRequest<unknown>(`/api/vod-shares/${encodeURIComponent(token)}/notes`, {
+        method: 'POST',
+        body: input,
+      }).then((json): VodTimestamp => vodTimestampEntrySchema.parse(json)),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: coachSessionQueryKey(token) });
+    },
+  });
+}
+
+export interface UpdateCoachNoteInput {
+  sessionId: string;
+  seconds?: number;
+  note?: string;
+  tags?: string[];
+}
+
+/**
+ * PATCH /api/vod-shares/:token/notes/:noteId — partial body; absent fields
+ * preserve the stored value. `sessionId` travels in the body — the server
+ * scopes the write to a note the caller's OWN session authored (404 on any
+ * mismatch, per the identical-404 no-oracle rule).
+ */
+export function useUpdateCoachNote(token: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ noteId, input }: { noteId: string; input: UpdateCoachNoteInput }) =>
+      coachRequest<unknown>(
+        `/api/vod-shares/${encodeURIComponent(token)}/notes/${encodeURIComponent(noteId)}`,
+        { method: 'PATCH', body: input },
+      ).then((json): VodTimestamp => vodTimestampEntrySchema.parse(json)),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: coachSessionQueryKey(token) });
+    },
+  });
+}
+
+/**
+ * DELETE /api/vod-shares/:token/notes/:noteId?sessionId=... — `sessionId`
+ * travels as a QUERY param (no DELETE body — the route contract locked in
+ * 08-03), never in the body.
+ */
+export function useDeleteCoachNote(token: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ noteId, sessionId }: { noteId: string; sessionId: string }) =>
+      coachRequest<void>(
+        `/api/vod-shares/${encodeURIComponent(token)}/notes/${encodeURIComponent(noteId)}?sessionId=${encodeURIComponent(sessionId)}`,
+        { method: 'DELETE' },
+      ),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: coachSessionQueryKey(token) });
+    },
+  });
+}
+
+export type { PublicShareSnapshot };
