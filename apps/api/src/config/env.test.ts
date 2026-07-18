@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { loadEnv, parseCorsOrigins } from './env.js';
+import { getInternalJobsConfig, loadEnv, parseCorsOrigins } from './env.js';
 
 const base = {
   FIREBASE_DATABASE_URL: 'https://example-default-rtdb.firebaseio.com',
@@ -56,5 +56,17 @@ describe('parseCorsOrigins', () => {
 
   it('drops empty entries', () => {
     expect(parseCorsOrigins('http://localhost:5173,,')).toEqual(['http://localhost:5173']);
+  });
+});
+
+describe('getInternalJobsConfig', () => {
+  it('returns null when INTERNAL_JOBS_SECRET is unset', () => {
+    const env = loadEnv(base);
+    expect(getInternalJobsConfig(env)).toBeNull();
+  });
+
+  it('returns the secret when INTERNAL_JOBS_SECRET is set', () => {
+    const env = loadEnv({ ...base, INTERNAL_JOBS_SECRET: 'shh-scheduler-secret' });
+    expect(getInternalJobsConfig(env)).toEqual({ secret: 'shh-scheduler-secret' });
   });
 });

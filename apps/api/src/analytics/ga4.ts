@@ -21,7 +21,30 @@ export async function sendMeasurementProtocolEvent(
   params: Record<string, string | number>,
   fetchImpl: typeof fetch = fetch,
 ): Promise<void> {
-  if (!config) return;
+  await sendMeasurementProtocolEventResult(config, clientId, eventName, params, fetchImpl);
+}
+
+/**
+ * Phase 10 Plan 5 (Canonical Measurement & Money Safety): same POST as
+ * `sendMeasurementProtocolEvent` above (identical URL-building, identical
+ * "never log the URL — it embeds api_secret" discipline), but resolves to
+ * whether the projection actually succeeded instead of always resolving to
+ * void. `jobs/projectGa4.ts` needs this to know whether to remove an outbox
+ * key (success) or increment its retry `attempt` (failure) — a distinction
+ * `sendMeasurementProtocolEvent`'s fire-and-forget contract deliberately
+ * never surfaces to its own (route-triggered) callers. Extracting the
+ * shared transport here keeps `sendMeasurementProtocolEvent`'s signature and
+ * behavior (always resolves, never throws) completely unchanged for
+ * `reviewShared`'s existing callers.
+ */
+export async function sendMeasurementProtocolEventResult(
+  config: Ga4Config | null,
+  clientId: string,
+  eventName: string,
+  params: Record<string, string | number>,
+  fetchImpl: typeof fetch = fetch,
+): Promise<boolean> {
+  if (!config) return false;
   const url = `${GA4_MP_ENDPOINT}?measurement_id=${encodeURIComponent(config.measurementId)}&api_secret=${encodeURIComponent(config.apiSecret)}`;
   try {
     const response = await fetchImpl(url, {
@@ -32,12 +55,15 @@ export async function sendMeasurementProtocolEvent(
       console.error(
         `GA4 Measurement Protocol POST for "${eventName}" returned status ${response.status} (non-blocking)`,
       );
+      return false;
     }
+    return true;
   } catch (err) {
     console.error(
       `GA4 Measurement Protocol POST for "${eventName}" failed (non-blocking)`,
       err instanceof Error ? err.message : err,
     );
+    return false;
   }
 }
 

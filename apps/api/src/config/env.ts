@@ -81,6 +81,14 @@ const envSchema = z.object({
   GA4_MEASUREMENT_ID: z.string().optional(),
   /** GA4 Data Streams -> (web stream) -> Measurement Protocol API secrets. */
   GA4_API_SECRET: z.string().optional(),
+
+  // ---- Phase 10 (Canonical Measurement & Money Safety): Cloud Scheduler ->
+  // /internal/jobs/* auth (optional — when unset, the ENTIRE /internal/jobs/*
+  // scope answers 503, same all-or-nothing convention as STRIPE_SECRET_KEY).
+  // Deliberately a shared secret, not OIDC — avoids a new npm dependency
+  // (RESEARCH.md Pattern 4).
+  /** Shared secret Cloud Scheduler sends as the X-Internal-Jobs-Secret header. */
+  INTERNAL_JOBS_SECRET: z.string().optional(),
 });
 
 export type Env = z.infer<typeof envSchema>;
@@ -231,4 +239,23 @@ export function getGa4Config(env: Env): Ga4Config | null {
     return null;
   }
   return { measurementId: env.GA4_MEASUREMENT_ID, apiSecret: env.GA4_API_SECRET };
+}
+
+export interface InternalJobsConfig {
+  secret: string;
+}
+
+/**
+ * Assembles the `/internal/jobs/*` shared-secret config when present, else
+ * null — same all-or-nothing pattern as `getStripeConfig`/`getGa4Config`/
+ * `getParryggConfig`. When null, EVERY `/internal/jobs/*` path answers 503
+ * (T-10-05-01) — this scope has no "instrumentation on an existing route"
+ * exception like GA4 does, since it exists solely to serve
+ * Cloud-Scheduler-triggered jobs and must never be silently reachable.
+ */
+export function getInternalJobsConfig(env: Env): InternalJobsConfig | null {
+  if (!env.INTERNAL_JOBS_SECRET) {
+    return null;
+  }
+  return { secret: env.INTERNAL_JOBS_SECRET };
 }

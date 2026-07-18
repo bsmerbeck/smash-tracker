@@ -33,12 +33,14 @@ import vodSharesRoutes from './routes/vodShares.js';
 import publicVodSharesRoutes from './routes/publicVodShares.js';
 import coachNotesRoutes from './routes/coachNotes.js';
 import eventsRoutes from './routes/events.js';
+import internalJobsRoutes from './routes/internalJobs.js';
 import shareMetaRoutes from './routes/shareMeta.js';
 import shareOgImageRoutes from './routes/shareOgImage.js';
 import { ConflictError, NotFoundError } from './services/rtdb.js';
 import type { FirebaseServices } from './firebase/admin.js';
 import type {
   Ga4Config,
+  InternalJobsConfig,
   ParryggConfig,
   ReportsConfig,
   StartggConfig,
@@ -85,6 +87,12 @@ export interface BuildAppOptions {
   ga4?: Ga4Config | null;
   /** Overridable fetch for the GA4 Measurement Protocol POST (tests). */
   ga4Fetch?: typeof fetch;
+  /**
+   * Phase 10 (Canonical Measurement & Money Safety): shared-secret config
+   * for the Cloud-Scheduler-facing `/internal/jobs/*` scope; null/omitted
+   * makes the ENTIRE scope answer 503 (never a silently-open route).
+   */
+  internalJobs?: InternalJobsConfig | null;
   logger?: boolean | FastifyBaseLogger;
 }
 
@@ -243,6 +251,19 @@ export function buildApp(options: BuildAppOptions) {
     },
     { prefix: '/' },
   );
+
+  // Phase 10 Plan 5 (Canonical Measurement & Money Safety): the
+  // Cloud-Scheduler-facing internal job routes — root-scoped (NOT under
+  // `/api`), a sibling to the `/s/**` block above, so Cloud Scheduler's HTTP
+  // target hits the literal `/internal/jobs/*` path. Gated internally by the
+  // shared-secret preHandler in internalJobs.ts (503 when unconfigured, 401
+  // on a missing/wrong secret) — never protected by the anonymous
+  // rate-limiter above, which is irrelevant to this scope's own auth model.
+  app.register(internalJobsRoutes, {
+    internalJobs: options.internalJobs ?? null,
+    ga4: options.ga4 ?? null,
+    ga4Fetch: options.ga4Fetch,
+  });
 
   app.register(
     async (api) => {

@@ -24,6 +24,7 @@ export function buildTestApp(
     | 'shareFetch'
     | 'ga4'
     | 'ga4Fetch'
+    | 'internalJobs'
   > = {},
 ) {
   const database = new FakeDatabase();

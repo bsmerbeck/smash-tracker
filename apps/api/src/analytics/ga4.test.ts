@@ -1,7 +1,12 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { Ga4Config } from '../config/env.js';
 import { getGa4Config } from '../config/env.js';
-import { reviewShared, reviewSharedClientId, sendMeasurementProtocolEvent } from './ga4.js';
+import {
+  reviewShared,
+  reviewSharedClientId,
+  sendMeasurementProtocolEvent,
+  sendMeasurementProtocolEventResult,
+} from './ga4.js';
 
 const config: Ga4Config = { measurementId: 'G-TEST123', apiSecret: 'shh-secret-value' };
 
@@ -64,6 +69,71 @@ describe('sendMeasurementProtocolEvent', () => {
       ),
     ).resolves.toBeUndefined();
 
+    expect(consoleSpy).toHaveBeenCalled();
+    const loggedText = consoleSpy.mock.calls.flat().join(' ');
+    expect(loggedText).not.toContain(config.apiSecret);
+
+    consoleSpy.mockRestore();
+  });
+});
+
+describe('sendMeasurementProtocolEventResult', () => {
+  it('resolves false and never calls fetch when config is null', async () => {
+    const mockFetch = fakeFetch(() => new Response(null, { status: 200 }));
+
+    const result = await sendMeasurementProtocolEventResult(
+      null,
+      'client-1',
+      'checkout_completed',
+      { packId: 'pack5' },
+      mockFetch,
+    );
+
+    expect(result).toBe(false);
+    expect(mockFetch).not.toHaveBeenCalled();
+  });
+
+  it('resolves true on a 2xx response', async () => {
+    const mockFetch = fakeFetch(() => new Response(null, { status: 200 }));
+
+    const result = await sendMeasurementProtocolEventResult(
+      config,
+      'client-1',
+      'checkout_completed',
+      { packId: 'pack5' },
+      mockFetch,
+    );
+
+    expect(result).toBe(true);
+  });
+
+  it('resolves false (never throws) on a non-ok response', async () => {
+    const mockFetch = fakeFetch(() => new Response(null, { status: 500 }));
+
+    const result = await sendMeasurementProtocolEventResult(
+      config,
+      'client-1',
+      'checkout_completed',
+      { packId: 'pack5' },
+      mockFetch,
+    );
+
+    expect(result).toBe(false);
+  });
+
+  it('resolves false (never rejects) when fetch rejects, and never logs the api_secret', async () => {
+    const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const mockFetch = fakeFetch(() => Promise.reject(new Error('network partition')));
+
+    const result = await sendMeasurementProtocolEventResult(
+      config,
+      'client-1',
+      'checkout_completed',
+      { packId: 'pack5' },
+      mockFetch,
+    );
+
+    expect(result).toBe(false);
     expect(consoleSpy).toHaveBeenCalled();
     const loggedText = consoleSpy.mock.calls.flat().join(' ');
     expect(loggedText).not.toContain(config.apiSecret);
