@@ -91,6 +91,11 @@ export function GenerateRecapDialog({
         kind: 'recap',
         entryKey,
         detail: fullRecap ? 'full' : 'summary',
+        // Recap links are always view-tier (the shared schema 400s an
+        // edit-tier recap); stated explicitly since `CreateShareInput` is
+        // the schema's OUTPUT type, where the `.default('view')` makes the
+        // field required at call sites.
+        permissions: 'view',
         ...(effectiveShowName && user?.displayName ? { ownerDisplayName: user.displayName } : {}),
       });
       setCreatedUrl(result.url);
