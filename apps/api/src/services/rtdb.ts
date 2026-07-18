@@ -96,6 +96,16 @@ const ENTRY_KEY_SHAPE = /^[^.#$[\]/\u0000-\u001f\u007f]{1,200}$/;
 const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
 
 /**
+ * The single, canonical message every coach-path `NotFoundError` carries —
+ * unknown token, revoked, expired, wrong tier, missing note, and
+ * "note isn't yours" ALL surface identically (T-08-13's no-oracle rule,
+ * RESEARCH A3). The route layer additionally collapses the whole 404 body,
+ * but keeping the message uniform here means even a future caller that
+ * lets the global handler render `error.message` leaks nothing.
+ */
+const SHARE_UNAVAILABLE_MESSAGE = 'This share is no longer available';
+
+/**
  * Shared note cap across every writer (owner + coach, Phase 8) — mirrors
  * `vodTimestampEntrySchema`'s `.max(20)` read-side cap, enforced here
  * write-side by the `createNote` transaction on the parent node (T-08-05).
@@ -557,68 +567,79 @@ export class RtdbService {
   }
 
   /**
-   * Edits an existing note's `seconds`/`note`/`tags` in place — `coach`
-   * attribution (if any) is left untouched (only 08-03's coach path ever
-   * sets it, and only on create). The owner path may edit ANY note on an
-   * owned match (no own-note-only restriction — owner moderation).
+   * The single note-EDIT transaction both the owner path (`updateNote`) and
+   * the coach path (`updateCoachNote`) run through — one implementation of
+   * the parent-node transaction, two `computeNext` policies. When
+   * `requireCoachSessionId` is set, the target note must carry a `coach`
+   * sub-object whose `sessionId` matches — a mismatch, an OWNER note (no
+   * `coach` at all), and a genuinely missing note all abort identically
+   * (return `null`), so "not yours" and "doesn't exist" are
+   * indistinguishable (T-08-09, RESEARCH A3). Returns `null` for
+   * not-found/not-yours; the callers translate to their own NotFoundError.
    */
-  async updateNote(
+  private async writeNoteUpdate(
     uid: string,
     matchId: string,
     noteId: string,
-    input: VodTimestampInput,
-  ): Promise<VodTimestamp> {
-    const notesRef = this.database.ref(`matches/${uid}/${matchId}/vodTimestamps`);
-    let updated: VodTimestamp | undefined;
-    let matchExists = true;
-
+    computeNext: (current: Omit<VodTimestamp, 'id'>) => Omit<VodTimestamp, 'id'>,
+    requireCoachSessionId?: string,
+  ): Promise<VodTimestamp | null> {
     const matchSnapshot = await this.database.ref(`matches/${uid}/${matchId}`).get();
     if (!matchSnapshot.exists()) {
-      matchExists = false;
+      return null;
     }
 
-    if (matchExists) {
-      await notesRef.transaction((raw) => {
-        const entries = normalizeVodTimestampsNode(raw);
-        const target = entries.find((entry) => entry.id === noteId);
-        if (!target) {
-          // Abort — no matching note, nothing to write (mirrors
-          // upsertUser's referral-transaction abort convention).
-          return undefined;
+    const notesRef = this.database.ref(`matches/${uid}/${matchId}/vodTimestamps`);
+    let updated: VodTimestamp | undefined;
+
+    await notesRef.transaction((raw) => {
+      const entries = normalizeVodTimestampsNode(raw);
+      const target = entries.find((entry) => entry.id === noteId);
+      if (!target) {
+        // Abort — no matching note, nothing to write (mirrors
+        // upsertUser's referral-transaction abort convention).
+        return undefined;
+      }
+      if (
+        requireCoachSessionId !== undefined &&
+        target.coach?.sessionId !== requireCoachSessionId
+      ) {
+        // Ownership guard INSIDE the transaction (no check-then-write
+        // race): not the caller's note — abort without writing.
+        return undefined;
+      }
+
+      const nextNode: Record<string, unknown> = {};
+      for (const { id: entryId, ...rest } of entries) {
+        if (entryId === noteId) {
+          const nextEntry = computeNext(rest);
+          nextNode[entryId] = nextEntry;
+          updated = { id: entryId, ...nextEntry };
+        } else {
+          nextNode[entryId] = rest;
         }
+      }
+      return nextNode;
+    });
 
-        const nextNode: Record<string, unknown> = {};
-        for (const { id: entryId, ...rest } of entries) {
-          if (entryId === noteId) {
-            const nextEntry: Omit<VodTimestamp, 'id'> = {
-              seconds: input.seconds,
-              note: input.note,
-              ...(input.tags !== undefined ? { tags: input.tags } : {}),
-              ...(rest.coach !== undefined ? { coach: rest.coach } : {}),
-            };
-            nextNode[entryId] = nextEntry;
-            updated = { id: entryId, ...nextEntry };
-          } else {
-            nextNode[entryId] = rest;
-          }
-        }
-        return nextNode;
-      });
-    }
-
-    if (!matchExists || !updated) {
-      throw new NotFoundError(`Note ${noteId} not found on match ${matchId}`);
-    }
-    return updated;
+    return updated ?? null;
   }
 
   /**
-   * Deletes a note (owner moderation — deletes coach-authored notes too).
+   * The single note-DELETE transaction both `deleteNote` (owner) and
+   * `deleteCoachNote` run through — same ownership-guard-inside-the-
+   * transaction discipline as `writeNoteUpdate` above. Returns `false` for
+   * not-found/not-yours (callers translate to NotFoundError).
    */
-  async deleteNote(uid: string, matchId: string, noteId: string): Promise<void> {
+  private async removeNote(
+    uid: string,
+    matchId: string,
+    noteId: string,
+    requireCoachSessionId?: string,
+  ): Promise<boolean> {
     const matchSnapshot = await this.database.ref(`matches/${uid}/${matchId}`).get();
     if (!matchSnapshot.exists()) {
-      throw new NotFoundError(`Note ${noteId} not found on match ${matchId}`);
+      return false;
     }
 
     const notesRef = this.database.ref(`matches/${uid}/${matchId}/vodTimestamps`);
@@ -626,8 +647,15 @@ export class RtdbService {
 
     await notesRef.transaction((raw) => {
       const entries = normalizeVodTimestampsNode(raw);
-      if (!entries.some((entry) => entry.id === noteId)) {
+      const target = entries.find((entry) => entry.id === noteId);
+      if (!target) {
         // Abort — no matching note, nothing to write.
+        return undefined;
+      }
+      if (
+        requireCoachSessionId !== undefined &&
+        target.coach?.sessionId !== requireCoachSessionId
+      ) {
         return undefined;
       }
       found = true;
@@ -645,7 +673,39 @@ export class RtdbService {
       return Object.keys(nextNode).length === 0 ? null : nextNode;
     });
 
-    if (!found) {
+    return found;
+  }
+
+  /**
+   * Edits an existing note's `seconds`/`note`/`tags` in place — `coach`
+   * attribution (if any) is left untouched (only 08-03's coach path ever
+   * sets it, and only on create). The owner path may edit ANY note on an
+   * owned match (no own-note-only restriction — owner moderation).
+   */
+  async updateNote(
+    uid: string,
+    matchId: string,
+    noteId: string,
+    input: VodTimestampInput,
+  ): Promise<VodTimestamp> {
+    const updated = await this.writeNoteUpdate(uid, matchId, noteId, (current) => ({
+      seconds: input.seconds,
+      note: input.note,
+      ...(input.tags !== undefined ? { tags: input.tags } : {}),
+      ...(current.coach != null ? { coach: current.coach } : {}),
+    }));
+    if (!updated) {
+      throw new NotFoundError(`Note ${noteId} not found on match ${matchId}`);
+    }
+    return updated;
+  }
+
+  /**
+   * Deletes a note (owner moderation — deletes coach-authored notes too).
+   */
+  async deleteNote(uid: string, matchId: string, noteId: string): Promise<void> {
+    const removed = await this.removeNote(uid, matchId, noteId);
+    if (!removed) {
       throw new NotFoundError(`Note ${noteId} not found on match ${matchId}`);
     }
   }
@@ -1371,6 +1431,12 @@ export class RtdbService {
     if (parsedToken.data.revokedAt != null) {
       return null;
     }
+    // Phase 8 (Coaching Edit Sessions): an elapsed `expiresAt` (stamped only
+    // on edit-tier tokens) is treated IDENTICALLY to revoked — re-checked
+    // against RTDB on every call, never cached, no distinguishing oracle.
+    if (parsedToken.data.expiresAt != null && parsedToken.data.expiresAt < Date.now()) {
+      return null;
+    }
 
     const snapshotSnapshot = await this.database
       .ref(`shareSnapshots/${parsedToken.data.shareId}`)
@@ -1443,5 +1509,225 @@ export class RtdbService {
     };
 
     return publicShareSnapshotSchema.parse(publicSnapshot);
+  }
+
+  // ---- Phase 8 Plan 3: coach edit sessions (anonymous, token-scoped) -----
+
+  /**
+   * Resolves an edit-tier bearer token to its owner/match target, or `null`
+   * on ANY failure — malformed shape, unknown token, corrupt record,
+   * revoked, EXPIRED, or wrong tier (view/recap). All failure modes are
+   * deliberately indistinguishable (T-08-13). Called FRESH by every coach
+   * read AND write — never cache the result (T-08-12: a revoked/expired
+   * token's in-flight write must die on this re-check).
+   *
+   * This is the gate on the ONE deliberate exception to "anonymous requests
+   * never touch `matches/{uid}`" (T-08-08): the owner uid and match id come
+   * exclusively from the server-stored token/snapshot records — never from
+   * anything the caller supplied beyond the bearer token itself.
+   */
+  private async resolveEditSession(
+    token: string,
+  ): Promise<{ tokenRecord: ShareToken; snapshot: ShareSnapshot } | null> {
+    if (!SHARE_TOKEN_SHAPE.test(token)) {
+      return null;
+    }
+    const tokenSnapshot = await this.database.ref(`shareTokens/${token}`).get();
+    if (!tokenSnapshot.exists()) {
+      return null;
+    }
+    const parsedToken = shareTokenSchema.safeParse(tokenSnapshot.val());
+    if (!parsedToken.success) {
+      return null;
+    }
+    if (parsedToken.data.revokedAt != null) {
+      return null;
+    }
+    if (parsedToken.data.expiresAt != null && parsedToken.data.expiresAt < Date.now()) {
+      return null;
+    }
+    if (parsedToken.data.permissions !== 'edit') {
+      return null;
+    }
+
+    const snapshotSnapshot = await this.database
+      .ref(`shareSnapshots/${parsedToken.data.shareId}`)
+      .get();
+    if (!snapshotSnapshot.exists()) {
+      return null;
+    }
+    // A recap snapshot can never be edit-tier (createShareInputSchema's
+    // refine), and would fail this parse anyway — same null outcome.
+    const parsedSnapshot = shareSnapshotSchema.safeParse(snapshotSnapshot.val());
+    if (!parsedSnapshot.success) {
+      return null;
+    }
+
+    return { tokenRecord: parsedToken.data, snapshot: parsedSnapshot.data };
+  }
+
+  /**
+   * The edit-session read (COACH-03): resolves an edit-tier token to a LIVE
+   * redacted recompute of the source match — never the frozen
+   * `shareSnapshots/{shareId}` copy `getShareByToken` serves. The share's
+   * STORED redaction config still applies (the toggles chosen at share
+   * time), re-applied field-by-field to live data: a fresh
+   * `PublicShareSnapshot`-shaped object is authored from scratch — the raw
+   * match record is never spread (redaction-by-shape, T-08-10).
+   *
+   * Redaction carve-out (resolved research Open Question 1): the
+   * `includedNotes` toggle governs the OWNER's notes only — coach-authored
+   * notes (any session) are ALWAYS included, so a coach always sees their
+   * own contributions mid-session. Every included note carries its `id` and
+   * (when coach-authored) `coach` attribution so the client can render
+   * edit/delete affordances for exactly the caller's own notes.
+   *
+   * Returns `null` — never throws — for every token failure
+   * (`resolveEditSession` above), a deleted source match, a corrupt match
+   * record, and a match whose VOD was removed since sharing (nothing left
+   * to coach against). All collapse to the caller's identical 404.
+   */
+  async getEditSessionByToken(token: string): Promise<PublicShareSnapshot | null> {
+    const resolved = await this.resolveEditSession(token);
+    if (!resolved) {
+      return null;
+    }
+    const { tokenRecord, snapshot } = resolved;
+
+    const matchSnapshot = await this.database
+      .ref(`matches/${tokenRecord.ownerUid}/${snapshot.matchId}`)
+      .get();
+    if (!matchSnapshot.exists()) {
+      return null;
+    }
+    const parsedMatch = matchRecordSchema.safeParse(matchSnapshot.val());
+    if (!parsedMatch.success) {
+      return null;
+    }
+    const match = parsedMatch.data;
+    if (!match.vodUrl) {
+      return null;
+    }
+
+    // `matchRecordSchema`'s dual-read preprocess already normalized the
+    // stored node (either shape) into an id-bearing, seconds-sorted array.
+    const liveNotes = match.vodTimestamps ?? [];
+    const visibleTimestamps = liveNotes
+      .filter((entry) => entry.coach != null || snapshot.redaction.includedNotes)
+      .map((entry) => ({
+        seconds: entry.seconds,
+        note: entry.note,
+        ...(entry.tags && entry.tags.length > 0 ? { tags: entry.tags } : {}),
+        id: entry.id,
+        ...(entry.coach != null ? { coach: entry.coach } : {}),
+      }));
+
+    const session: PublicShareSnapshot = {
+      createdAt: snapshot.createdAt,
+      permissions: 'edit',
+      result: match.win ? 'win' : 'loss',
+      fighterId: match.fighter_id,
+      opponentFighterId: match.opponent_id,
+      ...(match.map ? { stage: match.map } : {}),
+      matchDate: match.time,
+      vodUrl: match.vodUrl,
+      ...(match.vodStartSeconds !== undefined ? { vodStartSeconds: match.vodStartSeconds } : {}),
+      // Aggregate over ALL live notes (redacted ones included) — mirrors
+      // buildShareSnapshot's redaction-surviving count semantics.
+      reviewedMomentsCount: liveNotes.length,
+      ...(visibleTimestamps.length > 0 ? { timestamps: visibleTimestamps } : {}),
+      ...(snapshot.redaction.includedTags && match.tags && match.tags.length > 0
+        ? { tags: match.tags }
+        : {}),
+      ...(snapshot.ownerDisplayName ? { ownerDisplayName: snapshot.ownerDisplayName } : {}),
+      redaction: snapshot.redaction,
+    };
+
+    return publicShareSnapshotSchema.parse(session);
+  }
+
+  /**
+   * Coach note create (COACH-02): resolves the token fresh (revoked AND
+   * expired re-checked on this very call), then funnels into `createNote`'s
+   * shared capped transaction with the coach attribution stamped on. Cap
+   * rejection bubbles as `ForbiddenError` (the route maps it to 403 — a
+   * valid-token holder gets a real cap message, not a fake 404).
+   */
+  async createCoachNote(
+    token: string,
+    sessionId: string,
+    displayName: string,
+    input: VodTimestampInput,
+  ): Promise<VodTimestamp> {
+    const resolved = await this.resolveEditSession(token);
+    if (!resolved) {
+      throw new NotFoundError(SHARE_UNAVAILABLE_MESSAGE);
+    }
+    return this.createNote(resolved.tokenRecord.ownerUid, resolved.snapshot.matchId, input, {
+      sessionId,
+      displayName,
+    });
+  }
+
+  /**
+   * Coach note edit (COACH-02/04): session-scoped — the ownership guard
+   * runs INSIDE `writeNoteUpdate`'s transaction, and a mismatch (someone
+   * else's note, an owner note, or a note that doesn't exist) throws the
+   * same `NotFoundError` as a dead token. PATCH semantics: absent fields
+   * preserve the existing values (unlike the owner PATCH, whose body always
+   * carries the full note).
+   */
+  async updateCoachNote(
+    token: string,
+    sessionId: string,
+    noteId: string,
+    input: Partial<VodTimestampInput>,
+  ): Promise<VodTimestamp> {
+    const resolved = await this.resolveEditSession(token);
+    if (!resolved) {
+      throw new NotFoundError(SHARE_UNAVAILABLE_MESSAGE);
+    }
+    const updated = await this.writeNoteUpdate(
+      resolved.tokenRecord.ownerUid,
+      resolved.snapshot.matchId,
+      noteId,
+      (current) => ({
+        seconds: input.seconds ?? current.seconds,
+        note: input.note ?? current.note,
+        ...(input.tags !== undefined
+          ? input.tags.length > 0
+            ? { tags: input.tags }
+            : {}
+          : current.tags && current.tags.length > 0
+            ? { tags: current.tags }
+            : {}),
+        ...(current.coach != null ? { coach: current.coach } : {}),
+      }),
+      sessionId,
+    );
+    if (!updated) {
+      throw new NotFoundError(SHARE_UNAVAILABLE_MESSAGE);
+    }
+    return updated;
+  }
+
+  /**
+   * Coach note delete (COACH-02/04): same session-scoped,
+   * guard-inside-the-transaction discipline as `updateCoachNote`.
+   */
+  async deleteCoachNote(token: string, sessionId: string, noteId: string): Promise<void> {
+    const resolved = await this.resolveEditSession(token);
+    if (!resolved) {
+      throw new NotFoundError(SHARE_UNAVAILABLE_MESSAGE);
+    }
+    const removed = await this.removeNote(
+      resolved.tokenRecord.ownerUid,
+      resolved.snapshot.matchId,
+      noteId,
+      sessionId,
+    );
+    if (!removed) {
+      throw new NotFoundError(SHARE_UNAVAILABLE_MESSAGE);
+    }
   }
 }
