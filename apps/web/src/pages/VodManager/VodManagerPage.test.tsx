@@ -90,6 +90,13 @@ function makeMatch(overrides: Partial<Record<string, unknown>> = {}) {
   };
 }
 
+/** Mutable "server" record shape for the dynamic-mock tests below — the
+ * base `makeMatch` fixture plus a reassignable id-bearing note array the
+ * note-endpoint mock implementations rewrite in place. */
+type MutableMatch = ReturnType<typeof makeMatch> & {
+  vodTimestamps?: Record<string, unknown>[];
+};
+
 function renderVodManager(initialEntry: string) {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
@@ -934,7 +941,7 @@ describe('VodManagerPage', () => {
     expect(updateMatch).not.toHaveBeenCalled();
   });
 
-  it('edits a timestamp note in place (no dialog), re-sorting ascending, via a single full-carry-through PATCH', async () => {
+  it('edits a timestamp note in place (no dialog), via a single update-by-id against the dedicated note endpoint', async () => {
     const user = userEvent.setup();
     listMatches.mockResolvedValue([
       makeMatch({
@@ -943,8 +950,8 @@ describe('VodManagerPage', () => {
         vodUrl: 'https://youtube.com/watch?v=abc123',
         gsp: 1_234_567,
         vodTimestamps: [
-          { seconds: 30, note: 'note A' },
-          { seconds: 90, note: 'note B' },
+          { id: 'n1', seconds: 30, note: 'note A' },
+          { id: 'n2', seconds: 90, note: 'note B' },
         ],
       }),
     ]);
@@ -979,22 +986,15 @@ describe('VodManagerPage', () => {
     expect(timeInput).toHaveValue('1:30');
     expect(noteInput).toHaveValue('note B');
 
-    // (2) Editing the time to sort before note A, then Enter commits.
+    // (2) Editing the time, then Enter commits — ONE update-by-id against
+    // the dedicated note endpoint, addressed by note B's stable id (never
+    // an array position). Re-sorting is the server + read normalizer's job.
     await user.clear(timeInput);
     await user.type(timeInput, '0:10{Enter}');
 
-    await waitFor(() => expect(updateMatch).toHaveBeenCalledTimes(1));
-    const [id, input] = updateMatch.mock.calls[0] as [string, Record<string, unknown>];
-    expect(id).toBe('m1');
-    // Every other match field is carried through unchanged.
-    expect(input.win).toBe(true);
-    expect(input.fighter_id).toBe(mario.id);
-    expect(input.gsp).toBe(1_234_567);
-    // The edited entry (now 10s) re-sorts ahead of note A (30s).
-    expect(input.vodTimestamps).toEqual([
-      { seconds: 10, note: 'note B' },
-      { seconds: 30, note: 'note A' },
-    ]);
+    await waitFor(() => expect(updateNote).toHaveBeenCalledTimes(1));
+    expect(updateNote).toHaveBeenCalledWith('m1', 'n2', { seconds: 10, note: 'note B' });
+    expect(updateMatch).not.toHaveBeenCalled();
   });
 
   it('retest fix-up #2: an in-place row edit allows clearing the note text to empty and saving, keeping tags/time', async () => {
@@ -1005,8 +1005,8 @@ describe('VodManagerPage', () => {
         opponent: 'rival-one',
         vodUrl: 'https://youtube.com/watch?v=abc123',
         vodTimestamps: [
-          { seconds: 30, note: 'note A' },
-          { seconds: 90, note: 'note B', tags: ['punish'] },
+          { id: 'n1', seconds: 30, note: 'note A' },
+          { id: 'n2', seconds: 90, note: 'note B', tags: ['punish'] },
         ],
       }),
     ]);
@@ -1044,13 +1044,13 @@ describe('VodManagerPage', () => {
     await user.keyboard('{Enter}');
 
     expect(screen.queryByText('Enter a note for this timestamp')).not.toBeInTheDocument();
-    await waitFor(() => expect(updateMatch).toHaveBeenCalledTimes(1));
-    const [id, input] = updateMatch.mock.calls[0] as [string, Record<string, unknown>];
-    expect(id).toBe('m1');
-    expect(input.vodTimestamps).toEqual([
-      { seconds: 30, note: 'note A' },
-      { seconds: 90, note: '', tags: ['punish'] },
-    ]);
+    await waitFor(() => expect(updateNote).toHaveBeenCalledTimes(1));
+    expect(updateNote).toHaveBeenCalledWith('m1', 'n2', {
+      seconds: 90,
+      note: '',
+      tags: ['punish'],
+    });
+    expect(updateMatch).not.toHaveBeenCalled();
   });
 
   it('discards an in-place edit on Escape without mutating', async () => {
@@ -1061,8 +1061,8 @@ describe('VodManagerPage', () => {
         opponent: 'rival-one',
         vodUrl: 'https://youtube.com/watch?v=abc123',
         vodTimestamps: [
-          { seconds: 30, note: 'note A' },
-          { seconds: 90, note: 'note B' },
+          { id: 'n1', seconds: 30, note: 'note A' },
+          { id: 'n2', seconds: 90, note: 'note B' },
         ],
       }),
     ]);
@@ -1096,6 +1096,7 @@ describe('VodManagerPage', () => {
     await user.type(timeInput, '5:00');
     await user.type(timeInput, '{Escape}');
 
+    expect(updateNote).not.toHaveBeenCalled();
     expect(updateMatch).not.toHaveBeenCalled();
     // Edit mode closed with no value change — the pencil affordance and
     // original note text are back, the edit inputs are gone.
@@ -1104,7 +1105,7 @@ describe('VodManagerPage', () => {
     expect(screen.getByText('note B')).toBeInTheDocument();
   });
 
-  it('removes a note via an AlertDialog confirm (not an immediate delete), via a single full-carry-through PATCH', async () => {
+  it('removes a note via an AlertDialog confirm (not an immediate delete), via a single delete-by-id', async () => {
     const user = userEvent.setup();
     listMatches.mockResolvedValue([
       makeMatch({
@@ -1112,8 +1113,8 @@ describe('VodManagerPage', () => {
         opponent: 'rival-one',
         vodUrl: 'https://youtube.com/watch?v=abc123',
         vodTimestamps: [
-          { seconds: 30, note: 'note A' },
-          { seconds: 90, note: 'note B' },
+          { id: 'n1', seconds: 30, note: 'note A' },
+          { id: 'n2', seconds: 90, note: 'note B' },
         ],
       }),
     ]);
@@ -1148,21 +1149,21 @@ describe('VodManagerPage', () => {
 
     // (2) Canceling closes the dialog with no mutation.
     await user.click(within(alert).getByRole('button', { name: 'Cancel' }));
-    expect(updateMatch).not.toHaveBeenCalled();
+    expect(deleteNote).not.toHaveBeenCalled();
     expect(screen.getByText('note B')).toBeInTheDocument();
 
-    // (3) Confirming removes the note via the same full-carry-through PATCH.
+    // (3) Confirming removes the note via ONE delete-by-id against the
+    // dedicated note endpoint — never a rebuilt-array match PATCH.
     await user.click(screen.getByLabelText('Delete timestamp 1:30'));
     const alert2 = await screen.findByRole('alertdialog');
     await user.click(within(alert2).getByRole('button', { name: 'Remove' }));
 
-    await waitFor(() => expect(updateMatch).toHaveBeenCalledTimes(1));
-    const [id, input] = updateMatch.mock.calls[0] as [string, Record<string, unknown>];
-    expect(id).toBe('m1');
-    expect(input.vodTimestamps).toEqual([{ seconds: 30, note: 'note A' }]);
+    await waitFor(() => expect(deleteNote).toHaveBeenCalledTimes(1));
+    expect(deleteNote).toHaveBeenCalledWith('m1', 'n2');
+    expect(updateMatch).not.toHaveBeenCalled();
   });
 
-  it('renders note tag chips and adds a preset tag via the note combobox, carrying other notes and match fields through without seeking', async () => {
+  it('renders note tag chips and adds a preset tag via the note combobox, updating only that note by id without seeking', async () => {
     const user = userEvent.setup();
     listMatches.mockResolvedValue([
       makeMatch({
@@ -1171,8 +1172,8 @@ describe('VodManagerPage', () => {
         vodUrl: 'https://youtube.com/watch?v=abc123',
         gsp: 1_234_567,
         vodTimestamps: [
-          { seconds: 30, note: 'note A', tags: ['punish'] },
-          { seconds: 90, note: 'note B' },
+          { id: 'n1', seconds: 30, note: 'note A', tags: ['punish'] },
+          { id: 'n2', seconds: 90, note: 'note B' },
         ],
       }),
     ]);
@@ -1209,19 +1210,19 @@ describe('VodManagerPage', () => {
     expect(within(noteARow).getByText('Punish')).toBeInTheDocument();
 
     // (2) Opening note A's add-combobox (scoped to its row) and picking
-    // another preset PATCHes both tags onto note A, carrying note B and
-    // other match fields through unchanged — and never seeks/selects.
+    // another preset dispatches ONE update-by-id carrying note A's full
+    // body with both tags — note B and match facts are never touched, and
+    // it never seeks/selects.
     await user.click(within(noteARow).getByRole('combobox', { name: 'Add a tag' }));
     await user.click(await screen.findByRole('option', { name: 'Edgeguard' }));
 
-    await waitFor(() => expect(updateMatch).toHaveBeenCalledTimes(1));
-    const [id, input] = updateMatch.mock.calls[0] as [string, Record<string, unknown>];
-    expect(id).toBe('m1');
-    expect(input.vodTimestamps).toEqual([
-      { seconds: 30, note: 'note A', tags: ['punish', 'edgeguard'] },
-      { seconds: 90, note: 'note B' },
-    ]);
-    expect(input.gsp).toBe(1_234_567);
+    await waitFor(() => expect(updateNote).toHaveBeenCalledTimes(1));
+    expect(updateNote).toHaveBeenCalledWith('m1', 'n1', {
+      seconds: 30,
+      note: 'note A',
+      tags: ['punish', 'edgeguard'],
+    });
+    expect(updateMatch).not.toHaveBeenCalled();
     expect(seekTo).not.toHaveBeenCalled();
   });
 
@@ -1229,31 +1230,35 @@ describe('VodManagerPage', () => {
     const user = userEvent.setup();
     // Mutable "server" record, gated behind a manually-resolved promise
     // (rather than the usual immediate `Promise.resolve`) — REQUIRED to
-    // deterministically reproduce the reported race: both PATCHes are
+    // deterministically reproduce the reported race: both note PATCHes are
     // dispatched while `stamp.tags` (the prop) STILL reflects the
     // pre-either-add state (neither PATCH has resolved/refetched yet), so
     // a fix that recomputes the second add's payload from the stale prop
     // — instead of tracking its own last-dispatched value — would silently
     // drop the first tag.
-    let currentMatch = makeMatch({
+    let currentMatch: MutableMatch = makeMatch({
       id: 'm1',
       opponent: 'rival-one',
       vodUrl: 'https://youtube.com/watch?v=abc123',
-      vodTimestamps: [{ seconds: 30, note: 'note A' }],
+      vodTimestamps: [{ id: 'n1', seconds: 30, note: 'note A' }],
     });
     listMatches.mockImplementation(() => Promise.resolve([currentMatch]));
     let releaseGate: (() => void) | undefined;
     const gate = new Promise<void>((resolve) => {
       releaseGate = resolve;
     });
-    updateMatch.mockImplementation((...args: unknown[]) => {
-      const input = args[1] as Record<string, unknown>;
+    updateNote.mockImplementation((...args: unknown[]) => {
+      const [, noteId, input] = args as [string, string, Record<string, unknown>];
       // Both calls await the SAME gate — resolving in dispatch order once
-      // released, mirroring a real backend applying two PATCHes in the
-      // order they were sent.
+      // released, mirroring a real backend applying two note PATCHes in
+      // the order they were sent.
       return gate.then(() => {
-        currentMatch = { ...currentMatch, ...input };
-        return currentMatch;
+        const notes = currentMatch.vodTimestamps!;
+        currentMatch = {
+          ...currentMatch,
+          vodTimestamps: notes.map((n) => (n.id === noteId ? { id: noteId, ...input } : n)),
+        };
+        return { id: noteId, ...input };
       });
     });
 
@@ -1274,17 +1279,17 @@ describe('VodManagerPage', () => {
     await waitFor(() => expect(screen.getByText('note A')).toBeInTheDocument());
     const noteARow = screen.getByText('note A').closest('li')!;
 
-    // (1) Add the first tag — its PATCH is now pending behind the gate.
+    // (1) Add the first tag — its update-by-id is now pending behind the gate.
     await user.click(within(noteARow).getByRole('combobox', { name: 'Add a tag' }));
     await user.click(await screen.findByRole('option', { name: 'Punish' }));
-    await waitFor(() => expect(updateMatch).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(updateNote).toHaveBeenCalledTimes(1));
 
     // (2) Add a SECOND tag while the first PATCH is STILL pending —
     // `stamp.tags` (the prop) is provably still stale here (no refetch has
     // happened, since nothing has resolved yet).
     await user.click(within(noteARow).getByRole('combobox', { name: 'Add a tag' }));
     await user.click(await screen.findByRole('option', { name: 'Edgeguard' }));
-    await waitFor(() => expect(updateMatch).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(updateNote).toHaveBeenCalledTimes(2));
 
     // (3) Release the gate — both PATCHes resolve in dispatch order.
     releaseGate?.();
@@ -1296,7 +1301,7 @@ describe('VodManagerPage', () => {
       expect(within(noteARow).getByText('Edgeguard')).toBeInTheDocument();
     });
     expect((currentMatch as unknown as { vodTimestamps: unknown }).vodTimestamps).toEqual([
-      { seconds: 30, note: 'note A', tags: ['punish', 'edgeguard'] },
+      { id: 'n1', seconds: 30, note: 'note A', tags: ['punish', 'edgeguard'] },
     ]);
   });
 
@@ -1308,8 +1313,8 @@ describe('VodManagerPage', () => {
         opponent: 'rival-one',
         vodUrl: 'https://youtube.com/watch?v=abc123',
         vodTimestamps: [
-          { seconds: 30, note: 'note A', tags: ['punish'] },
-          { seconds: 90, note: 'note B', tags: ['mistake'] },
+          { id: 'n1', seconds: 30, note: 'note A', tags: ['punish'] },
+          { id: 'n2', seconds: 90, note: 'note B', tags: ['mistake'] },
         ],
       }),
     ]);
@@ -1339,36 +1344,40 @@ describe('VodManagerPage', () => {
 
     await user.click(await screen.findByRole('button', { name: 'Remove tag Punish' }));
 
-    await waitFor(() => expect(updateMatch).toHaveBeenCalledTimes(1));
-    const [id, input] = updateMatch.mock.calls[0] as [string, Record<string, unknown>];
-    expect(id).toBe('m1');
-    expect(input.vodTimestamps).toEqual([
-      { seconds: 30, note: 'note A' },
-      { seconds: 90, note: 'note B', tags: ['mistake'] },
-    ]);
+    // ONE update-by-id targeting note A only — the emptied tag list is
+    // omitted from the body entirely (omit-to-clear convention), and note B
+    // is never touched.
+    await waitFor(() => expect(updateNote).toHaveBeenCalledTimes(1));
+    expect(updateNote).toHaveBeenCalledWith('m1', 'n1', { seconds: 30, note: 'note A' });
+    expect(updateMatch).not.toHaveBeenCalled();
   });
 
   it("a newly-created custom tag appears in a DIFFERENT note's add-combobox after the matches list refetches", async () => {
     const user = userEvent.setup();
 
-    // Dynamic mock: `listMatches`/`updateMatch` mirror a real backend (the
-    // PATCH mutates server-side state, and a subsequent GET reflects it) —
-    // unlike this file's usual static `mockResolvedValue`, which always
-    // resolves to the SAME fixture and so can never expose a real
+    // Dynamic mock: `listMatches`/`updateNote` mirror a real backend (the
+    // note PATCH mutates server-side state, and a subsequent GET reflects
+    // it) — unlike this file's usual static `mockResolvedValue`, which
+    // always resolves to the SAME fixture and so can never expose a real
     // stale-cache bug (the fix under test).
-    let storedMatch = makeMatch({
+    let storedMatch: MutableMatch = makeMatch({
       id: 'm1',
       opponent: 'rival-one',
       vodUrl: 'https://youtube.com/watch?v=abc123',
       vodTimestamps: [
-        { seconds: 30, note: 'note A' },
-        { seconds: 90, note: 'note B' },
+        { id: 'n1', seconds: 30, note: 'note A' },
+        { id: 'n2', seconds: 90, note: 'note B' },
       ],
     });
     listMatches.mockImplementation(() => Promise.resolve([storedMatch]));
-    updateMatch.mockImplementation((_id: string, input: Record<string, unknown>) => {
-      storedMatch = { ...storedMatch, ...input };
-      return Promise.resolve({ ...storedMatch, id: 'm1' });
+    updateNote.mockImplementation((...args: unknown[]) => {
+      const [, noteId, input] = args as [string, string, Record<string, unknown>];
+      const notes = storedMatch.vodTimestamps!;
+      storedMatch = {
+        ...storedMatch,
+        vodTimestamps: notes.map((n) => (n.id === noteId ? { id: noteId, ...input } : n)),
+      };
+      return Promise.resolve({ id: noteId, ...input });
     });
 
     let capturedConfig: YouTubePlayerConfig | undefined;
@@ -1400,7 +1409,7 @@ describe('VodManagerPage', () => {
     await user.type(screen.getByPlaceholderText('Search or create a tag...'), 'my-new-tag');
     await user.click(await screen.findByRole('option', { name: 'Create "my-new-tag"' }));
 
-    await waitFor(() => expect(updateMatch).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(updateNote).toHaveBeenCalledTimes(1));
     // The chip renders on note A immediately (confirms the mutation landed
     // and the matches query already reflects it).
     await waitFor(() => expect(within(noteARow).getByText('my-new-tag')).toBeInTheDocument());
@@ -1421,8 +1430,8 @@ describe('VodManagerPage', () => {
         opponent: 'rival-one',
         vodUrl: 'https://youtube.com/watch?v=abc123',
         vodTimestamps: [
-          { seconds: 30, note: 'note A' },
-          { seconds: 90, note: 'note B' },
+          { id: 'n1', seconds: 30, note: 'note A' },
+          { id: 'n2', seconds: 90, note: 'note B' },
         ],
       }),
     ]);
@@ -1475,7 +1484,7 @@ describe('VodManagerPage', () => {
         vodUrl: 'https://youtube.com/watch?v=abc123',
         gsp: 1_234_567,
         notes: 'existing notes',
-        vodTimestamps: [{ seconds: 30, note: 'note A' }],
+        vodTimestamps: [{ id: 'n1', seconds: 30, note: 'note A' }],
       }),
     ]);
 
@@ -1517,7 +1526,7 @@ describe('VodManagerPage', () => {
     // notes/vodTimestamps/gsp from the fixture are preserved (carry-through).
     expect(input.notes).toBe('existing notes');
     expect(input.gsp).toBe(1_234_567);
-    expect(input.vodTimestamps).toEqual([{ seconds: 30, note: 'note A' }]);
+    expect(input.vodTimestamps).toEqual([{ id: 'n1', seconds: 30, note: 'note A' }]);
 
     // (3) Save returns to the read-only view.
     expect(screen.getByRole('button', { name: 'Edit details' })).toBeInTheDocument();
@@ -1800,7 +1809,7 @@ describe('VodManagerPage', () => {
         id: 'm1',
         opponent: 'rival-one',
         vodUrl: 'https://youtube.com/watch?v=abc123',
-        vodTimestamps: [{ seconds: 30, note: 'note A' }],
+        vodTimestamps: [{ id: 'n1', seconds: 30, note: 'note A' }],
         tags: ['to-review'],
       }),
     ]);
@@ -1884,22 +1893,39 @@ describe('VodManagerPage', () => {
   it('captures an instant pre-tagged note via a Quick tags panel button, then opens it in edit mode', async () => {
     const user = userEvent.setup();
     // A mutable "server" record so invalidateQueries' refetch (triggered by
-    // updateMatch's onSuccess) actually reflects the just-PATCHed note —
-    // needed here (unlike the read-only-of-call-args tests above) because
-    // this test asserts on the freshly-inserted row's rendered edit state,
-    // which only appears once TimestampList re-renders with the updated
-    // vodTimestamps array.
-    let currentMatch = makeMatch({
+    // the note mutations' onSuccess) actually reflects the just-created
+    // note — needed here (unlike the read-only-of-call-args tests above)
+    // because this test asserts on the freshly-inserted row's rendered edit
+    // state, which only appears once TimestampList re-renders with the
+    // updated vodTimestamps array. The server assigns the new note's id and
+    // returns the array seconds-sorted, exactly like the real normalizer.
+    let currentMatch: MutableMatch = makeMatch({
       id: 'm1',
       opponent: 'rival-one',
       vodUrl: 'https://youtube.com/watch?v=abc123',
-      vodTimestamps: [{ seconds: 900, note: 'existing note' }],
+      vodTimestamps: [{ id: 'n1', seconds: 900, note: 'existing note' }],
     });
     listMatches.mockImplementation(() => Promise.resolve([currentMatch]));
-    updateMatch.mockImplementation((...args: unknown[]) => {
-      const input = args[1] as Record<string, unknown>;
-      currentMatch = { ...currentMatch, ...input };
-      return Promise.resolve(currentMatch);
+    createNote.mockImplementation((...args: unknown[]) => {
+      const [, input] = args as [string, Record<string, unknown>];
+      const created: Record<string, unknown> = { id: 'n-new', ...input };
+      currentMatch = {
+        ...currentMatch,
+        vodTimestamps: [...currentMatch.vodTimestamps!, created].sort(
+          (a, b) => (a.seconds as number) - (b.seconds as number),
+        ),
+      };
+      return Promise.resolve(created);
+    });
+    updateNote.mockImplementation((...args: unknown[]) => {
+      const [, noteId, input] = args as [string, string, Record<string, unknown>];
+      currentMatch = {
+        ...currentMatch,
+        vodTimestamps: currentMatch.vodTimestamps!.map((n) =>
+          n.id === noteId ? { id: noteId, ...input } : n,
+        ),
+      };
+      return Promise.resolve({ id: noteId, ...input });
     });
 
     let capturedConfig: YouTubePlayerConfig | undefined;
@@ -1927,30 +1953,27 @@ describe('VodManagerPage', () => {
 
     // (1) One click on the panel's preset button instantly captures a note
     // at the current playback time (754s), pre-tagged, empty text — via the
-    // EXISTING single-PATCH site.
+    // dedicated create-note endpoint.
     await user.click(screen.getByRole('button', { name: 'Quick tag: Punish' }));
 
-    await waitFor(() => expect(updateMatch).toHaveBeenCalledTimes(1));
-    const [id, input] = updateMatch.mock.calls[0] as [string, Record<string, unknown>];
-    expect(id).toBe('m1');
-    expect(input.vodTimestamps).toEqual([
-      { seconds: 754, note: '', tags: ['punish'] },
-      { seconds: 900, note: 'existing note' },
-    ]);
+    await waitFor(() => expect(createNote).toHaveBeenCalledTimes(1));
+    expect(createNote).toHaveBeenCalledWith('m1', { seconds: 754, note: '', tags: ['punish'] });
+    expect(updateMatch).not.toHaveBeenCalled();
 
-    // (2) The freshly-captured row (754s, sorted first) opens in edit mode.
+    // (2) The freshly-captured row (754s, sorted first by the server) opens
+    // in edit mode, keyed by the id the create resolved with.
     const noteInput = await screen.findByLabelText('Edit timestamp note');
     expect(noteInput).toHaveValue('');
     expect(screen.getByLabelText('Edit timestamp time')).toHaveValue('12:34');
 
-    // (3) Typing text and pressing Enter commits it via the same PATCH site.
+    // (3) Typing text and pressing Enter commits it via update-by-id.
     await user.type(noteInput, 'clean edgeguard{Enter}');
-    await waitFor(() => expect(updateMatch).toHaveBeenCalledTimes(2));
-    const [, secondInput] = updateMatch.mock.calls[1] as [string, Record<string, unknown>];
-    expect(secondInput.vodTimestamps).toEqual([
-      { seconds: 754, note: 'clean edgeguard', tags: ['punish'] },
-      { seconds: 900, note: 'existing note' },
-    ]);
+    await waitFor(() => expect(updateNote).toHaveBeenCalledTimes(1));
+    expect(updateNote).toHaveBeenCalledWith('m1', 'n-new', {
+      seconds: 754,
+      note: 'clean edgeguard',
+      tags: ['punish'],
+    });
   });
 
   it('retest fix-up #2: quick-tag capture pauses the player at the captured moment WITHOUT seeking, even after the refetch it triggers', async () => {
@@ -1960,17 +1983,23 @@ describe('VodManagerPage', () => {
     // `mockResolvedValue` always resolves the SAME fixture object, so the
     // `selectedMatch` reference never actually changes on refetch and the
     // bug (reposition effect keyed on object identity) can never surface.
-    let currentMatch = makeMatch({
+    let currentMatch: MutableMatch = makeMatch({
       id: 'm1',
       opponent: 'rival-one',
       vodUrl: 'https://youtube.com/watch?v=abc123',
-      vodTimestamps: [{ seconds: 900, note: 'existing note' }],
+      vodTimestamps: [{ id: 'n1', seconds: 900, note: 'existing note' }],
     });
     listMatches.mockImplementation(() => Promise.resolve([currentMatch]));
-    updateMatch.mockImplementation((...args: unknown[]) => {
-      const input = args[1] as Record<string, unknown>;
-      currentMatch = { ...currentMatch, ...input };
-      return Promise.resolve(currentMatch);
+    createNote.mockImplementation((...args: unknown[]) => {
+      const [, input] = args as [string, Record<string, unknown>];
+      const created: Record<string, unknown> = { id: 'n-new', ...input };
+      currentMatch = {
+        ...currentMatch,
+        vodTimestamps: [...currentMatch.vodTimestamps!, created].sort(
+          (a, b) => (a.seconds as number) - (b.seconds as number),
+        ),
+      };
+      return Promise.resolve(created);
     });
 
     const seekTo = vi.fn();
@@ -2004,12 +2033,12 @@ describe('VodManagerPage', () => {
     // would jump the player back to its start time.
     await waitFor(() => expect(pauseVideo).toHaveBeenCalledTimes(1));
 
-    // The PATCH's onSuccess invalidateQueries refetch resolves, producing a
-    // BRAND NEW `matches`/`selectedMatch` object even though the selected
+    // The create's onSuccess invalidateQueries refetch resolves, producing
+    // a BRAND NEW `matches`/`selectedMatch` object even though the selected
     // match id (m1) never changed. The reposition effect must recognize
     // this is NOT a match switch and never seek — reproducing the reported
     // "player resets to 0:00" bug if it does.
-    await waitFor(() => expect(updateMatch).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(createNote).toHaveBeenCalledTimes(1));
     await waitFor(() => expect(screen.getByLabelText('Edit timestamp note')).toBeInTheDocument());
     expect(seekTo).not.toHaveBeenCalled();
     // Only ONE player construction throughout — no remount either.
@@ -2018,17 +2047,31 @@ describe('VodManagerPage', () => {
 
   it('retest fix-up #3: the freshly-captured tag stays visible and removable while its row is in edit mode', async () => {
     const user = userEvent.setup();
-    let currentMatch = makeMatch({
+    let currentMatch: MutableMatch = makeMatch({
       id: 'm1',
       opponent: 'rival-one',
       vodUrl: 'https://youtube.com/watch?v=abc123',
       vodTimestamps: [],
     });
     listMatches.mockImplementation(() => Promise.resolve([currentMatch]));
-    updateMatch.mockImplementation((...args: unknown[]) => {
-      const input = args[1] as Record<string, unknown>;
-      currentMatch = { ...currentMatch, ...input };
-      return Promise.resolve(currentMatch);
+    createNote.mockImplementation((...args: unknown[]) => {
+      const [, input] = args as [string, Record<string, unknown>];
+      const created: Record<string, unknown> = { id: 'n-new', ...input };
+      currentMatch = {
+        ...currentMatch,
+        vodTimestamps: [...(currentMatch.vodTimestamps ?? []), created],
+      };
+      return Promise.resolve(created);
+    });
+    updateNote.mockImplementation((...args: unknown[]) => {
+      const [, noteId, input] = args as [string, string, Record<string, unknown>];
+      currentMatch = {
+        ...currentMatch,
+        vodTimestamps: (currentMatch.vodTimestamps ?? []).map((n) =>
+          n.id === noteId ? { id: noteId, ...input } : n,
+        ),
+      };
+      return Promise.resolve({ id: noteId, ...input });
     });
 
     let capturedConfig: YouTubePlayerConfig | undefined;
@@ -2066,26 +2109,32 @@ describe('VodManagerPage', () => {
     const removeButton = within(editingRow).getByRole('button', { name: 'Remove tag Punish' });
     await user.click(removeButton);
 
-    await waitFor(() => expect(updateMatch).toHaveBeenCalledTimes(2));
-    const [, secondInput] = updateMatch.mock.calls[1] as [string, Record<string, unknown>];
-    expect(secondInput.vodTimestamps).toEqual([{ seconds: 754, note: '' }]);
+    // The removal dispatches update-by-id with the emptied tag list omitted
+    // (omit-to-clear), targeting the id the create resolved with.
+    await waitFor(() => expect(updateNote).toHaveBeenCalledTimes(1));
+    expect(updateNote).toHaveBeenCalledWith('m1', 'n-new', { seconds: 754, note: '' });
     // Still in edit mode — removing a tag never closes the row.
     expect(screen.getByLabelText('Edit timestamp note')).toBeInTheDocument();
   });
 
   it("retest fix-up #5: quick-tag capture at an EXISTING note's exact timecode adds the tag to that note instead of creating a duplicate row", async () => {
     const user = userEvent.setup();
-    let currentMatch = makeMatch({
+    let currentMatch: MutableMatch = makeMatch({
       id: 'm1',
       opponent: 'rival-one',
       vodUrl: 'https://youtube.com/watch?v=abc123',
-      vodTimestamps: [{ seconds: 754, note: 'existing note', tags: ['punish'] }],
+      vodTimestamps: [{ id: 'n1', seconds: 754, note: 'existing note', tags: ['punish'] }],
     });
     listMatches.mockImplementation(() => Promise.resolve([currentMatch]));
-    updateMatch.mockImplementation((...args: unknown[]) => {
-      const input = args[1] as Record<string, unknown>;
-      currentMatch = { ...currentMatch, ...input };
-      return Promise.resolve(currentMatch);
+    updateNote.mockImplementation((...args: unknown[]) => {
+      const [, noteId, input] = args as [string, string, Record<string, unknown>];
+      currentMatch = {
+        ...currentMatch,
+        vodTimestamps: currentMatch.vodTimestamps!.map((n) =>
+          n.id === noteId ? { id: noteId, ...input } : n,
+        ),
+      };
+      return Promise.resolve({ id: noteId, ...input });
     });
 
     let capturedConfig: YouTubePlayerConfig | undefined;
@@ -2114,16 +2163,18 @@ describe('VodManagerPage', () => {
     await waitFor(() => expect(screen.getByText('existing note')).toBeInTheDocument());
 
     // Capturing "Edgeguard" at the SAME 754s the existing note already sits
-    // at must add the tag to that note, not create a second row.
+    // at must add the tag to that note via update-by-id, not create a
+    // second row.
     await user.click(screen.getByRole('button', { name: 'Quick tag: Edgeguard' }));
 
-    await waitFor(() => expect(updateMatch).toHaveBeenCalledTimes(1));
-    const [id, input] = updateMatch.mock.calls[0] as [string, Record<string, unknown>];
-    expect(id).toBe('m1');
+    await waitFor(() => expect(updateNote).toHaveBeenCalledTimes(1));
     // ONE row, both tags, note text preserved (not cleared) — no duplicate.
-    expect(input.vodTimestamps).toEqual([
-      { seconds: 754, note: 'existing note', tags: ['punish', 'edgeguard'] },
-    ]);
+    expect(updateNote).toHaveBeenCalledWith('m1', 'n1', {
+      seconds: 754,
+      note: 'existing note',
+      tags: ['punish', 'edgeguard'],
+    });
+    expect(createNote).not.toHaveBeenCalled();
 
     // That SAME (only) row drops into edit mode.
     const noteInput = await screen.findByLabelText('Edit timestamp note');
@@ -2133,17 +2184,23 @@ describe('VodManagerPage', () => {
 
   it('retest fix-up #5: quick-tag capture at a timecode with NO existing note still creates a new row (unaffected)', async () => {
     const user = userEvent.setup();
-    let currentMatch = makeMatch({
+    let currentMatch: MutableMatch = makeMatch({
       id: 'm1',
       opponent: 'rival-one',
       vodUrl: 'https://youtube.com/watch?v=abc123',
-      vodTimestamps: [{ seconds: 900, note: 'existing note' }],
+      vodTimestamps: [{ id: 'n1', seconds: 900, note: 'existing note' }],
     });
     listMatches.mockImplementation(() => Promise.resolve([currentMatch]));
-    updateMatch.mockImplementation((...args: unknown[]) => {
-      const input = args[1] as Record<string, unknown>;
-      currentMatch = { ...currentMatch, ...input };
-      return Promise.resolve(currentMatch);
+    createNote.mockImplementation((...args: unknown[]) => {
+      const [, input] = args as [string, Record<string, unknown>];
+      const created: Record<string, unknown> = { id: 'n-new', ...input };
+      currentMatch = {
+        ...currentMatch,
+        vodTimestamps: [...currentMatch.vodTimestamps!, created].sort(
+          (a, b) => (a.seconds as number) - (b.seconds as number),
+        ),
+      };
+      return Promise.resolve(created);
     });
 
     let capturedConfig: YouTubePlayerConfig | undefined;
@@ -2172,29 +2229,22 @@ describe('VodManagerPage', () => {
 
     await user.click(screen.getByRole('button', { name: 'Quick tag: Punish' }));
 
-    await waitFor(() => expect(updateMatch).toHaveBeenCalledTimes(1));
-    const [, input] = updateMatch.mock.calls[0] as [string, Record<string, unknown>];
-    // A NEW row at 754s, sorted before the existing 900s note.
-    expect(input.vodTimestamps).toEqual([
-      { seconds: 754, note: '', tags: ['punish'] },
-      { seconds: 900, note: 'existing note' },
-    ]);
+    // A NEW note at 754s via the dedicated create endpoint — the existing
+    // 900s note is never touched.
+    await waitFor(() => expect(createNote).toHaveBeenCalledTimes(1));
+    expect(createNote).toHaveBeenCalledWith('m1', { seconds: 754, note: '', tags: ['punish'] });
+    expect(updateNote).not.toHaveBeenCalled();
   });
 
   it('FUNNEL-01: fires vod_note_created for a quick-tag capture that creates a NEW row, never for one that tags an EXISTING row', async () => {
     const user = userEvent.setup();
-    let currentMatch = makeMatch({
+    const currentMatch = makeMatch({
       id: 'm1',
       opponent: 'rival-one',
       vodUrl: 'https://youtube.com/watch?v=abc123',
-      vodTimestamps: [{ seconds: 754, note: 'existing note', tags: ['punish'] }],
+      vodTimestamps: [{ id: 'n1', seconds: 754, note: 'existing note', tags: ['punish'] }],
     });
     listMatches.mockImplementation(() => Promise.resolve([currentMatch]));
-    updateMatch.mockImplementation((...args: unknown[]) => {
-      const input = args[1] as Record<string, unknown>;
-      currentMatch = { ...currentMatch, ...input };
-      return Promise.resolve(currentMatch);
-    });
 
     let capturedConfig: YouTubePlayerConfig | undefined;
     const Player = vi.fn(function (
@@ -2220,26 +2270,24 @@ describe('VodManagerPage', () => {
     });
     await waitFor(() => expect(screen.getByText('existing note')).toBeInTheDocument());
 
-    // Same 754s as the existing note — adds a tag to it, does NOT create a row.
+    // Same 754s as the existing note — adds a tag to it via update-by-id,
+    // does NOT create a row.
     await user.click(screen.getByRole('button', { name: 'Quick tag: Edgeguard' }));
-    await waitFor(() => expect(updateMatch).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(updateNote).toHaveBeenCalledTimes(1));
+    expect(createNote).not.toHaveBeenCalled();
     expect(logProductEvent).not.toHaveBeenCalledWith('vod_note_created');
   });
 
   it('FUNNEL-01: fires vod_note_created exactly once when a quick-tag capture creates a brand-new row', async () => {
     const user = userEvent.setup();
-    let currentMatch = makeMatch({
+    const currentMatch = makeMatch({
       id: 'm1',
       opponent: 'rival-one',
       vodUrl: 'https://youtube.com/watch?v=abc123',
-      vodTimestamps: [{ seconds: 900, note: 'existing note' }],
+      vodTimestamps: [{ id: 'n1', seconds: 900, note: 'existing note' }],
     });
     listMatches.mockImplementation(() => Promise.resolve([currentMatch]));
-    updateMatch.mockImplementation((...args: unknown[]) => {
-      const input = args[1] as Record<string, unknown>;
-      currentMatch = { ...currentMatch, ...input };
-      return Promise.resolve(currentMatch);
-    });
+    createNote.mockResolvedValue({ id: 'n-new', seconds: 754, note: '', tags: ['punish'] });
 
     let capturedConfig: YouTubePlayerConfig | undefined;
     const Player = vi.fn(function (
@@ -2267,13 +2315,14 @@ describe('VodManagerPage', () => {
 
     await user.click(screen.getByRole('button', { name: 'Quick tag: Punish' }));
 
-    await waitFor(() => expect(updateMatch).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(createNote).toHaveBeenCalledTimes(1));
     expect(logProductEvent).toHaveBeenCalledExactlyOnceWith('vod_note_created');
   });
 
   it('blocks a quick-tag capture once the match is at the MAX_TIMESTAMPS cap, via the existing cap toast', async () => {
     const user = userEvent.setup();
     const twentyExisting = Array.from({ length: 20 }, (_, i) => ({
+      id: `n${i}`,
       seconds: i,
       note: `note ${i}`,
     }));
@@ -2311,8 +2360,9 @@ describe('VodManagerPage', () => {
 
     await user.click(screen.getByRole('button', { name: 'Quick tag: Punish' }));
 
-    // Already at the 20-note cap — the click must not PATCH a 21st note.
-    expect(updateMatch).not.toHaveBeenCalled();
+    // Already at the 20-note cap — the click must not create a 21st note.
+    expect(createNote).not.toHaveBeenCalled();
+    expect(updateNote).not.toHaveBeenCalled();
   });
 
   it("a custom tag added via Quick Tags Customize is immediately offered in a note's OWN add-combobox, even before it is ever captured onto a note", async () => {
@@ -2322,7 +2372,7 @@ describe('VodManagerPage', () => {
         id: 'm1',
         opponent: 'rival-one',
         vodUrl: 'https://youtube.com/watch?v=abc123',
-        vodTimestamps: [{ seconds: 30, note: 'note A' }],
+        vodTimestamps: [{ id: 'n1', seconds: 30, note: 'note A' }],
       }),
     ]);
 
@@ -2585,7 +2635,7 @@ describe('VodManagerPage', () => {
         id: 'm1',
         opponent: 'rival-one',
         vodUrl: 'https://youtube.com/watch?v=abc123',
-        vodTimestamps: [{ seconds: 30, note: 'note A' }],
+        vodTimestamps: [{ id: 'n1', seconds: 30, note: 'note A' }],
       }),
     ]);
 
@@ -2623,9 +2673,9 @@ describe('VodManagerPage', () => {
         opponent: 'rival-one',
         vodUrl: 'https://youtube.com/watch?v=abc123',
         vodTimestamps: [
-          { seconds: 30, note: 'note A' },
-          { seconds: 90, note: 'note B' },
-          { seconds: 150, note: 'note C' },
+          { id: 'n1', seconds: 30, note: 'note A' },
+          { id: 'n2', seconds: 90, note: 'note B' },
+          { id: 'n3', seconds: 150, note: 'note C' },
         ],
       }),
     ]);
@@ -2943,9 +2993,9 @@ describe('VodManagerPage', () => {
         opponent: 'rival-one',
         vodUrl: 'https://youtube.com/watch?v=abc123',
         vodTimestamps: [
-          { seconds: 30, note: 'note A', tags: ['mistake'] },
-          { seconds: 90, note: 'note B', tags: ['punish'] },
-          { seconds: 150, note: 'note C', tags: ['mistake'] },
+          { id: 'n1', seconds: 30, note: 'note A', tags: ['mistake'] },
+          { id: 'n2', seconds: 90, note: 'note B', tags: ['punish'] },
+          { id: 'n3', seconds: 150, note: 'note C', tags: ['mistake'] },
         ],
       }),
     ]);
@@ -3008,9 +3058,9 @@ describe('VodManagerPage', () => {
         opponent: 'rival-one',
         vodUrl: 'https://youtube.com/watch?v=abc123',
         vodTimestamps: [
-          { seconds: 30, note: 'note A', tags: ['mistake'] },
-          { seconds: 90, note: 'note B', tags: ['punish'] },
-          { seconds: 150, note: 'note C', tags: ['mistake'] },
+          { id: 'n1', seconds: 30, note: 'note A', tags: ['mistake'] },
+          { id: 'n2', seconds: 90, note: 'note B', tags: ['punish'] },
+          { id: 'n3', seconds: 150, note: 'note C', tags: ['mistake'] },
         ],
       }),
     ]);
@@ -3038,26 +3088,26 @@ describe('VodManagerPage', () => {
       capturedConfig?.events?.onReady?.();
     });
 
-    // Filter to "Mistake" — hides note B (the underlying index-1 note),
-    // leaving note A (index 0) and note C (index 2) visible, in that order.
+    // Filter to "Mistake" — hides note B, leaving note A and note C
+    // visible, in that order.
     await user.click(screen.getByRole('button', { name: 'Filter notes by Mistake' }));
     expect(screen.queryByText('note B')).not.toBeInTheDocument();
 
     // Editing note C — the SECOND VISIBLE row, but the THIRD underlying
-    // note (150s) — must PATCH that exact entry, leaving A/B untouched.
+    // note (150s, id n3) — must dispatch update-by-id at that exact note,
+    // leaving A/B untouched (id addressing survives filtering trivially).
     await user.click(screen.getByLabelText('Edit timestamp 2:30'));
     const noteInput = screen.getByLabelText('Edit timestamp note');
     await user.clear(noteInput);
     await user.type(noteInput, 'note C edited{Enter}');
 
-    await waitFor(() => expect(updateMatch).toHaveBeenCalledTimes(1));
-    const [id, input] = updateMatch.mock.calls[0] as [string, Record<string, unknown>];
-    expect(id).toBe('m1');
-    expect(input.vodTimestamps).toEqual([
-      { seconds: 30, note: 'note A', tags: ['mistake'] },
-      { seconds: 90, note: 'note B', tags: ['punish'] },
-      { seconds: 150, note: 'note C edited', tags: ['mistake'] },
-    ]);
+    await waitFor(() => expect(updateNote).toHaveBeenCalledTimes(1));
+    expect(updateNote).toHaveBeenCalledWith('m1', 'n3', {
+      seconds: 150,
+      note: 'note C edited',
+      tags: ['mistake'],
+    });
+    expect(updateMatch).not.toHaveBeenCalled();
   });
 
   it('retest fix-up #12: deleting a note while a tag filter is active removes the CORRECT underlying note (index mapping survives filtering)', async () => {
@@ -3068,9 +3118,9 @@ describe('VodManagerPage', () => {
         opponent: 'rival-one',
         vodUrl: 'https://youtube.com/watch?v=abc123',
         vodTimestamps: [
-          { seconds: 30, note: 'note A', tags: ['mistake'] },
-          { seconds: 90, note: 'note B', tags: ['punish'] },
-          { seconds: 150, note: 'note C', tags: ['mistake'] },
+          { id: 'n1', seconds: 30, note: 'note A', tags: ['mistake'] },
+          { id: 'n2', seconds: 90, note: 'note B', tags: ['punish'] },
+          { id: 'n3', seconds: 150, note: 'note C', tags: ['mistake'] },
         ],
       }),
     ]);
@@ -3101,20 +3151,16 @@ describe('VodManagerPage', () => {
     await user.click(screen.getByRole('button', { name: 'Filter notes by Mistake' }));
     expect(screen.queryByText('note B')).not.toBeInTheDocument();
 
-    // Deleting note C (second visible row, third underlying note).
+    // Deleting note C (second visible row, third underlying note, id n3).
     await user.click(screen.getByLabelText('Delete timestamp 2:30'));
     const alert = await screen.findByRole('alertdialog');
     await user.click(within(alert).getByRole('button', { name: 'Remove' }));
 
-    await waitFor(() => expect(updateMatch).toHaveBeenCalledTimes(1));
-    const [id, input] = updateMatch.mock.calls[0] as [string, Record<string, unknown>];
-    expect(id).toBe('m1');
     // note A and note B (the filtered-OUT note) both survive untouched —
-    // only note C (the note actually clicked) is removed.
-    expect(input.vodTimestamps).toEqual([
-      { seconds: 30, note: 'note A', tags: ['mistake'] },
-      { seconds: 90, note: 'note B', tags: ['punish'] },
-    ]);
+    // only note C (the note actually clicked) is deleted, by its id.
+    await waitFor(() => expect(deleteNote).toHaveBeenCalledTimes(1));
+    expect(deleteNote).toHaveBeenCalledWith('m1', 'n3');
+    expect(updateMatch).not.toHaveBeenCalled();
   });
 
   it('retest fix-up #12: the note-tag filter chip row is hidden entirely when no note on the match has any tag', async () => {
@@ -3123,7 +3169,7 @@ describe('VodManagerPage', () => {
         id: 'm1',
         opponent: 'rival-one',
         vodUrl: 'https://youtube.com/watch?v=abc123',
-        vodTimestamps: [{ seconds: 30, note: 'note A' }],
+        vodTimestamps: [{ id: 'n1', seconds: 30, note: 'note A' }],
       }),
     ]);
 

@@ -16,17 +16,11 @@ import {
   Trash2,
   X,
 } from 'lucide-react';
-import {
-  MAX_PLAYLISTS_PER_USER,
-  type Fighter,
-  type Match,
-  type VodTimestamp,
-} from '@smash-tracker/shared';
+import { MAX_PLAYLISTS_PER_USER, type Fighter, type Match } from '@smash-tracker/shared';
 import { getFighterById } from '@/data/sprites';
 import { useFighters } from '@/hooks/useFighters';
 import { useFilteredMatches } from '@/hooks/useFilteredMatches';
-import { useUpdateMatch } from '@/hooks/useUpdateMatch';
-import { useCreateNote } from '@/hooks/useVodNotes';
+import { useCreateNote, useDeleteNote, useUpdateNote } from '@/hooks/useVodNotes';
 import {
   useCreatePlaylist,
   useDeletePlaylist,
@@ -44,7 +38,6 @@ import {
 import { movePlaylistItem, resolvePlaylistMatches } from '@/lib/playlists';
 import { ApiError, type VodTimestampInput } from '@/lib/api';
 import { cn } from '@/lib/utils';
-import { buildUpdateInput } from '@/components/vod/VodNotesDialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import {
@@ -170,17 +163,23 @@ export function VodManagerPage() {
 
   const [filters, setFilters] = useState<VodManagerFilterState>(DEFAULT_VOD_MANAGER_FILTERS);
   const [sort, setSort] = useState<VodSortDirection>('newest');
-  const [selectedTimestampIndex, setSelectedTimestampIndex] = useState<number | null>(null);
+  // Stable note id of the last-clicked timestamp note (or `null`) — keyed
+  // by id, never array position (Phase 8, RESEARCH Pitfall 3): a concurrent
+  // write reordering the notes array can never move the highlight (or the
+  // Prev/Next cursor below) onto a different note.
+  const [selectedNoteId, setSelectedNoteId] = useState<string | null>(null);
   // Note-tag filter chips (retest fix-up #12, "filter notes by tag") — OR
   // semantics across selected slugs, empty means no narrowing. Reset
-  // alongside `selectedTimestampIndex` whenever the selected match changes
+  // alongside `selectedNoteId` whenever the selected match changes
   // (below) — a filter set for the PREVIOUS match's tag vocabulary must
   // never silently carry over and hide a newly-selected match's notes.
   const [noteTagFilter, setNoteTagFilter] = useState<string[]>([]);
-  // Lifted from `TimestampList` (Task 1) so the quick-tag panel's capture
-  // handler can command a freshly-inserted row straight into edit mode once
-  // the PATCH resolves and the new sorted array position is known.
-  const [editingIndex, setEditingIndex] = useState<number | null>(null);
+  // Lifted from `TimestampList` so the quick-tag panel's capture handler
+  // can command a freshly-created row straight into edit mode once the
+  // create resolves with the server-assigned note id. Id-keyed for the
+  // same Pitfall-3 reason as `selectedNoteId` above: an open editor must
+  // never silently retarget a different note under a concurrent reorder.
+  const [editingNoteId, setEditingNoteId] = useState<string | null>(null);
   // Quick-tag button set (device preference, `vodPrefs.ts`) — seeded from
   // localStorage once at mount, persisted on every add/remove. Never sent
   // to the API (locked decision).
@@ -219,10 +218,10 @@ export function VodManagerPage() {
   const [trackedMatchId, setTrackedMatchId] = useState(selectedMatchId);
   if (selectedMatchId !== trackedMatchId) {
     setTrackedMatchId(selectedMatchId);
-    setSelectedTimestampIndex(null);
+    setSelectedNoteId(null);
     setAutoplayBlocked(false);
     // A row editing on the PREVIOUS match must never carry over either.
-    setEditingIndex(null);
+    setEditingNoteId(null);
     // Nor must a note-tag filter set for the PREVIOUS match's vocabulary.
     setNoteTagFilter([]);
   }
@@ -371,8 +370,9 @@ export function VodManagerPage() {
   // `remountToken` immediately for that case instead.
   const forceRemountForIdRef = useRef<string | null>(null);
 
-  const updateMatch = useUpdateMatch();
   const createNote = useCreateNote();
+  const updateNote = useUpdateNote();
+  const deleteNote = useDeleteNote();
 
   // An entire event can be recorded as ONE video with each match's stored
   // vodUrl carrying its own `?t=` offset into it — switching between two
@@ -766,19 +766,57 @@ export function VodManagerPage() {
     }
   }
 
-  // Single PATCH mutation site for all note edit/delete flows — a
-  // full-overwrite carry-through payload via buildUpdateInput, NEVER a
-  // bespoke partial-update helper (RESEARCH.md "Don't Hand-Roll").
-  async function handleUpdateTimestamps(next: VodTimestamp[]) {
+  // Row-edit mutation wrapper: a committed `{ seconds, note, tags? }` goes
+  // to `PATCH /api/matches/:id/notes/:noteId` addressed by the note's
+  // stable id — never a rebuilt full array, never a full-match PATCH.
+  async function handleCommitNoteEdit(id: string, next: VodTimestampInput) {
     if (!selectedMatch) {
       return;
     }
-    const input = buildUpdateInput(selectedMatch, {
-      vodUrl: selectedMatch.vodUrl,
-      vodTimestamps: next.length > 0 ? next : undefined,
-    });
     try {
-      await updateMatch.mutateAsync({ id: selectedMatch.id, input });
+      await updateNote.mutateAsync({ matchId: selectedMatch.id, noteId: id, input: next });
+      toast.success(t('shared.vod.saved'));
+    } catch {
+      toast.error(t('shared.vod.saveFailed'));
+    }
+  }
+
+  // Row-delete mutation wrapper: `DELETE /api/matches/:id/notes/:noteId`.
+  async function handleDeleteNote(id: string) {
+    if (!selectedMatch) {
+      return;
+    }
+    try {
+      await deleteNote.mutateAsync({ matchId: selectedMatch.id, noteId: id });
+      toast.success(t('shared.vod.saved'));
+    } catch {
+      toast.error(t('shared.vod.saveFailed'));
+    }
+  }
+
+  // Tag-change mutation wrapper (TAG-02): the note endpoints take a
+  // full-note body, so the target's current `seconds`/`note` are carried
+  // through unchanged with the next tag list. The `tags` key is omitted
+  // entirely when the list empties so RTDB drops it (the established
+  // omit-to-clear convention).
+  async function handleUpdateNoteTags(id: string, tags: string[]) {
+    if (!selectedMatch) {
+      return;
+    }
+    const target = (selectedMatch.vodTimestamps ?? []).find((stamp) => stamp.id === id);
+    if (!target) {
+      return;
+    }
+    try {
+      await updateNote.mutateAsync({
+        matchId: selectedMatch.id,
+        noteId: id,
+        input: {
+          seconds: target.seconds,
+          note: target.note,
+          ...(tags.length > 0 ? { tags } : {}),
+        },
+      });
       toast.success(t('shared.vod.saved'));
     } catch {
       toast.error(t('shared.vod.saveFailed'));
@@ -790,14 +828,14 @@ export function VodManagerPage() {
     persistQuickTags(next);
   }
 
-  // Quick-tag capture (Task 2): one click on a QuickTagPanel button
-  // instantly saves a pre-tagged, empty-text note at the current playback
-  // time via the EXISTING handleUpdateTimestamps PATCH site (never a
-  // parallel mutation) — the shared MAX_TIMESTAMPS cap (also enforced by
-  // NoteComposer) is checked here, not inside QuickTagPanel. The
-  // just-captured note then drops into inline edit mode (setEditingIndex)
-  // so the user can optionally type text: Enter commits, Esc keeps the
-  // already-saved note.
+  // Quick-tag capture: one click on a QuickTagPanel button instantly saves
+  // a pre-tagged, empty-text note at the current playback time via the
+  // dedicated create-note endpoint — the shared MAX_TIMESTAMPS cap (also
+  // enforced by NoteComposer) is checked here, not inside QuickTagPanel.
+  // The just-captured note then drops into inline edit mode
+  // (setEditingNoteId, keyed by the server-assigned id the create resolves
+  // with) so the user can optionally type text: Enter commits, Esc keeps
+  // the already-saved note.
   //
   // Retest fix-up #2: capture also PAUSES the live player at the just-read
   // `seconds` position — never a seek, just a freeze-in-place — so the
@@ -811,11 +849,11 @@ export function VodManagerPage() {
   // Retest fix-up #5 (same-timecode = same note): if a note ALREADY exists
   // at exactly this second (e.g. two quick-tag captures on the same paused
   // frame), the tag is added to THAT existing note (deduped, capped at
-  // `MAX_NOTE_TAGS`) and that row drops into edit mode — never a second
-  // duplicate row at the identical timestamp. The `MAX_TIMESTAMPS` cap only
-  // applies to the "create a new row" path; adding a tag to an existing row
-  // never counts against it.
-  function handleQuickTag(tagSlug: string) {
+  // `MAX_NOTE_TAGS`) via update-by-id and that row drops into edit mode —
+  // never a second duplicate row at the identical timestamp. The
+  // `MAX_TIMESTAMPS` cap only applies to the "create a new row" path;
+  // adding a tag to an existing row never counts against it.
+  async function handleQuickTag(tagSlug: string) {
     if (!selectedMatch) {
       return;
     }
@@ -823,15 +861,14 @@ export function VodManagerPage() {
     const seconds = getCurrentTimeRef.current?.() ?? 0;
     playerPauseRef.current?.();
 
-    const existingIndexAtSecond = existing.findIndex((stamp) => stamp.seconds === seconds);
-    if (existingIndexAtSecond !== -1) {
-      const target = existing[existingIndexAtSecond]!;
-      const nextTags = addTagToList(target.tags ?? [], tagSlug, MAX_NOTE_TAGS);
-      const updated = existing.map((stamp, i) =>
-        i === existingIndexAtSecond ? { ...stamp, tags: nextTags } : stamp,
-      );
-      handleUpdateTimestamps(updated);
-      setEditingIndex(existingIndexAtSecond);
+    // The same-second DECISION stays client-side for the owner path (locked
+    // — only the dispatch target changed): find an existing note at this
+    // exact playback second, then dispatch update-by-id or create.
+    const existingAtSecond = existing.find((stamp) => stamp.seconds === seconds);
+    if (existingAtSecond) {
+      const nextTags = addTagToList(existingAtSecond.tags ?? [], tagSlug, MAX_NOTE_TAGS);
+      handleUpdateNoteTags(existingAtSecond.id, nextTags);
+      setEditingNoteId(existingAtSecond.id);
       return;
     }
 
@@ -839,14 +876,24 @@ export function VodManagerPage() {
       toast.error(t('shared.vod.timestampLimit', { max: MAX_TIMESTAMPS }));
       return;
     }
-    const newNote: VodTimestamp = { seconds, note: '', tags: [tagSlug] };
-    const next = [...existing, newNote].sort((a, b) => a.seconds - b.seconds);
-    handleUpdateTimestamps(next);
     // FUNNEL-01: this branch is the one genuine note CREATION path through
     // quick-tag capture — the sibling branch above adds a tag to an EXISTING
-    // note and must never fire this (RESEARCH.md Pitfall 3).
+    // note and must never fire this (RESEARCH.md Pitfall 3). Fired before
+    // the create resolves, mirroring NoteComposer's dispatch-time event.
     logProductEvent('vod_note_created');
-    setEditingIndex(next.indexOf(newNote));
+    try {
+      const created = await createNote.mutateAsync({
+        matchId: selectedMatch.id,
+        input: { seconds, note: '', tags: [tagSlug] },
+      });
+      toast.success(t('shared.vod.saved'));
+      // The server-assigned id arrives with the create response — the
+      // freshly-captured row opens in edit mode once the invalidated
+      // matches query renders it.
+      setEditingNoteId(created.id);
+    } catch {
+      toast.error(t('shared.vod.saveFailed'));
+    }
   }
 
   // Player compact/fill toggle (Task 3) — a pure className swap on the
@@ -858,51 +905,54 @@ export function VodManagerPage() {
     persistPlayerSize(next);
   }
 
-  // Indices (into the FULL, unfiltered `selectedMatch.vodTimestamps` array)
-  // of the notes currently visible under `noteTagFilter` (retest fix-up
-  // #12) — the SAME helper `TimestampList` uses for its own row visibility,
-  // so Prev/Next TIMESTAMP navigation below and the rendered rows always
-  // agree on what's "visible".
-  const visibleTimestampIndices = useMemo(
-    () => filterTimestampIndices(selectedMatch?.vodTimestamps ?? [], noteTagFilter),
-    [selectedMatch, noteTagFilter],
-  );
+  // The notes (from the FULL, normalizer-sorted `selectedMatch.vodTimestamps`
+  // array) currently visible under `noteTagFilter` (retest fix-up #12) —
+  // the SAME `filterTimestampIndices` helper `TimestampList` uses for its
+  // own row visibility, so Prev/Next TIMESTAMP navigation below and the
+  // rendered rows always agree on what's "visible". Mapped to the note
+  // entries themselves so navigation is id-addressed end-to-end.
+  const visibleTimestamps = useMemo(() => {
+    const notes = selectedMatch?.vodTimestamps ?? [];
+    return filterTimestampIndices(notes, noteTagFilter).map((i) => notes[i]!);
+  }, [selectedMatch, noteTagFilter]);
 
-  // Prev/Next TIMESTAMP jump (Task 3) — distinct from the playlist Prev/
-  // Next added in 04-04. Moves selectedTimestampIndex by -1/+1 through the
-  // same time-sorted note order TimestampList renders, but restricted to
-  // `visibleTimestampIndices` (retest fix-up #12: filtered-out notes are
-  // skipped entirely) — clamped at the boundaries of the VISIBLE set; if
-  // nothing is selected yet (or the current selection isn't itself
-  // visible), Prev jumps to the last visible note and Next jumps to the
-  // first. Reuses the existing seek ref + lifted selection state — no new
-  // player code.
+  // Prev/Next TIMESTAMP jump — distinct from the playlist Prev/Next added
+  // in 04-04. Moves the id-keyed `selectedNoteId` through the same
+  // time-sorted note order TimestampList renders, restricted to
+  // `visibleTimestamps` (retest fix-up #12: filtered-out notes are skipped
+  // entirely) — clamped at the boundaries of the VISIBLE set; if nothing is
+  // selected yet (or the current selection isn't itself visible), Prev
+  // jumps to the last visible note and Next jumps to the first. The cursor
+  // position is resolved by finding the selected ID fresh each press, so a
+  // concurrent reorder can never advance from a stale position (Pitfall 3).
   function handlePrevTimestamp() {
-    const indices = visibleTimestampIndices;
-    if (indices.length === 0) {
+    if (visibleTimestamps.length === 0) {
       return;
     }
-    const notes = selectedMatch?.vodTimestamps ?? [];
     const posInVisible =
-      selectedTimestampIndex == null ? -1 : indices.indexOf(selectedTimestampIndex);
-    const nextPos = posInVisible === -1 ? indices.length - 1 : Math.max(0, posInVisible - 1);
-    const nextIndex = indices[nextPos]!;
-    handleSeek(notes[nextIndex]!.seconds);
-    setSelectedTimestampIndex(nextIndex);
+      selectedNoteId == null
+        ? -1
+        : visibleTimestamps.findIndex((stamp) => stamp.id === selectedNoteId);
+    const nextPos =
+      posInVisible === -1 ? visibleTimestamps.length - 1 : Math.max(0, posInVisible - 1);
+    const target = visibleTimestamps[nextPos]!;
+    handleSeek(target.seconds);
+    setSelectedNoteId(target.id);
   }
 
   function handleNextTimestamp() {
-    const indices = visibleTimestampIndices;
-    if (indices.length === 0) {
+    if (visibleTimestamps.length === 0) {
       return;
     }
-    const notes = selectedMatch?.vodTimestamps ?? [];
     const posInVisible =
-      selectedTimestampIndex == null ? -1 : indices.indexOf(selectedTimestampIndex);
-    const nextPos = posInVisible === -1 ? 0 : Math.min(indices.length - 1, posInVisible + 1);
-    const nextIndex = indices[nextPos]!;
-    handleSeek(notes[nextIndex]!.seconds);
-    setSelectedTimestampIndex(nextIndex);
+      selectedNoteId == null
+        ? -1
+        : visibleTimestamps.findIndex((stamp) => stamp.id === selectedNoteId);
+    const nextPos =
+      posInVisible === -1 ? 0 : Math.min(visibleTimestamps.length - 1, posInVisible + 1);
+    const target = visibleTimestamps[nextPos]!;
+    handleSeek(target.seconds);
+    setSelectedNoteId(target.id);
   }
 
   return (
@@ -1166,7 +1216,7 @@ export function VodManagerPage() {
                       variant="outline"
                       size="icon-sm"
                       aria-label={t('vodManager.capture.prevTimestamp')}
-                      disabled={visibleTimestampIndices.length === 0}
+                      disabled={visibleTimestamps.length === 0}
                       onClick={handlePrevTimestamp}
                     >
                       <ChevronLeft />
@@ -1176,7 +1226,7 @@ export function VodManagerPage() {
                       variant="outline"
                       size="icon-sm"
                       aria-label={t('vodManager.capture.nextTimestamp')}
-                      disabled={visibleTimestampIndices.length === 0}
+                      disabled={visibleTimestamps.length === 0}
                       onClick={handleNextTimestamp}
                     >
                       <ChevronRight />
@@ -1231,15 +1281,17 @@ export function VodManagerPage() {
                   >
                     <TimestampList
                       timestamps={selectedMatch.vodTimestamps ?? []}
-                      selectedIndex={selectedTimestampIndex}
-                      onSelect={setSelectedTimestampIndex}
+                      selectedNoteId={selectedNoteId}
+                      onSelect={setSelectedNoteId}
                       onSeek={handleSeek}
                       getCurrentTimeRef={getCurrentTimeRef}
                       onCreateNote={handleCreateNote}
-                      onUpdateTimestamps={handleUpdateTimestamps}
+                      onCommitEdit={handleCommitNoteEdit}
+                      onDelete={handleDeleteNote}
+                      onUpdateTags={handleUpdateNoteTags}
                       tagVocabulary={tagVocabulary}
-                      editingIndex={editingIndex}
-                      onEditingIndexChange={setEditingIndex}
+                      editingNoteId={editingNoteId}
+                      onEditingNoteIdChange={setEditingNoteId}
                       noteTagFilter={noteTagFilter}
                       onNoteTagFilterChange={setNoteTagFilter}
                     />
