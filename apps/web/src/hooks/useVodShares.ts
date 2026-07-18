@@ -1,6 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import type { CreateShareInput } from '@smash-tracker/shared';
-import { api } from '@/lib/api';
+import { api, type CreateShareRequest } from '@/lib/api';
 import { useAuth } from './useAuth';
 
 export const vodSharesQueryKey = ['vod-shares'] as const;
@@ -19,7 +18,7 @@ export function useVodShares() {
 export function useCreateVodShare() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (input: CreateShareInput) => api.vodShares.create(input),
+    mutationFn: (input: CreateShareRequest) => api.vodShares.create(input),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: vodSharesQueryKey });
     },
