@@ -1450,6 +1450,9 @@
       "opponentWithPlacement": "{{name}} · {{placement}}",
       "viewBracketStartgg": "Voir le bracket sur start.gg",
       "viewBracketParrygg": "Voir le bracket sur parry.gg",
+      "viewOpponentStartgg": "Voir {{name}} sur start.gg",
+      "viewOpponentParrygg": "Voir {{name}} sur parry.gg",
+      "viewSetAria": "Voir {{round}} sur start.gg",
       "reviewedMoments_one": "{{count}} moment analysé",
       "reviewedMoments_other": "{{count}} moments analysés",
       "download": "Télécharger l'image"

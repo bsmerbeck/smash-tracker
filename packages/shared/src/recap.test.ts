@@ -103,6 +103,40 @@ describe('recapSetSchema.games (07-10 walkthrough amendment round 2)', () => {
   });
 });
 
+describe('recapSetSchema.opponentUrl/setUrl (07-11 walkthrough round 3)', () => {
+  it('parses a set carrying both opponentUrl and setUrl', () => {
+    const parsed = recapSetSchema.parse(
+      makeSet({
+        opponentUrl: 'https://start.gg/user/07dc2239',
+        setUrl: 'https://start.gg/tournament/x/event/y/set/12345/summary',
+      }),
+    );
+    expect(parsed.opponentUrl).toBe('https://start.gg/user/07dc2239');
+    expect(parsed.setUrl).toBe('https://start.gg/tournament/x/event/y/set/12345/summary');
+  });
+
+  it('parses a parry.gg opponentUrl (profile link), never a setUrl', () => {
+    const parsed = recapSetSchema.parse(
+      makeSet({ opponentUrl: 'https://parry.gg/profile/3f9a1c2e-1234-4abc-89ef-abcdef012345' }),
+    );
+    expect(parsed.opponentUrl).toBe(
+      'https://parry.gg/profile/3f9a1c2e-1234-4abc-89ef-abcdef012345',
+    );
+    expect('setUrl' in parsed).toBe(false);
+  });
+
+  it('omits opponentUrl/setUrl (not null) when neither is derivable', () => {
+    const parsed = recapSetSchema.parse(makeSet());
+    expect('opponentUrl' in parsed).toBe(false);
+    expect('setUrl' in parsed).toBe(false);
+  });
+
+  it('rejects an invalid opponentUrl/setUrl', () => {
+    expect(recapSetSchema.safeParse(makeSet({ opponentUrl: 'not-a-url' })).success).toBe(false);
+    expect(recapSetSchema.safeParse(makeSet({ setUrl: 'not-a-url' })).success).toBe(false);
+  });
+});
+
 describe('recapSnapshotSchema (07-09 walkthrough amendment fields)', () => {
   it('an old-style snapshot with no detail/tournamentUrl/sets still parses (backward compatible)', () => {
     const parsed = recapSnapshotSchema.parse(makeSnapshot());

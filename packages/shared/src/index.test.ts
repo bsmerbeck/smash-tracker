@@ -239,6 +239,28 @@ describe('matchRecordSchema', () => {
       }),
     ).toThrow();
   });
+
+  it('parses opponentParryUserId when parry.gg provides it (07-11 walkthrough round 3)', () => {
+    const record = {
+      fighter_id: 1,
+      opponent_id: 8,
+      time: 1700000000000,
+      win: true,
+      opponentParryUserId: '3f9a1c2e-1234-4abc-89ef-abcdef012345',
+    };
+    expect(matchRecordSchema.parse(record)).toEqual(record);
+  });
+
+  it('omits opponentParryUserId when absent', () => {
+    const record = {
+      fighter_id: 1,
+      opponent_id: 8,
+      time: 1700000000000,
+      win: true,
+    };
+    const parsed = matchRecordSchema.parse(record);
+    expect('opponentParryUserId' in parsed).toBe(false);
+  });
 });
 
 describe('matchSchema', () => {

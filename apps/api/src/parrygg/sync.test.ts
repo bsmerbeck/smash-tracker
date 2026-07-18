@@ -125,6 +125,8 @@ interface BuildOptions {
   eventName?: string;
   tournamentName?: string;
   eventSlug?: string;
+  /** Walkthrough round 3 (07-11): the tournament-level path slug. */
+  tournamentSlug?: string;
   opponentGamerTag?: string;
   opponentSeed?: number;
   mySeed?: number;
@@ -145,6 +147,7 @@ function makeMatchContext(options: BuildOptions = {}): ParryggMatchContext {
     eventName = 'Ultimate Singles',
     tournamentName = 'Test Weekly 42',
     eventSlug,
+    tournamentSlug,
     opponentGamerTag = 'PowPow',
     opponentSeed = 12,
     mySeed = 8,
@@ -187,6 +190,9 @@ function makeMatchContext(options: BuildOptions = {}): ParryggMatchContext {
   const tournamentPath = new Path();
   tournamentPath.setType(PathType.PATH_TYPE_TOURNAMENT);
   tournamentPath.setName(tournamentName);
+  if (tournamentSlug) {
+    tournamentPath.setSlug(tournamentSlug);
+  }
   const eventPath = new Path();
   eventPath.setType(PathType.PATH_TYPE_EVENT);
   eventPath.setName(eventName);
@@ -280,6 +286,9 @@ describe('gamesFromMatchContext', () => {
         roundText: 'Losers Round 2',
         bracketRound: -2,
         opponentSeed: 12,
+        // Walkthrough round 3 (07-11): the parry.gg parity for start.gg's
+        // opponentUserSlug, feeding buildRecapOpponentUrl.
+        opponentParryUserId: OPPONENT_USER_ID,
       });
     }
     expect(games[0]?.key).toBe('pgg-match-111-g1');
@@ -328,11 +337,13 @@ describe('gamesFromMatchContext', () => {
       win: true,
       source: 'parrygg',
       externalId: 'pgg-match-111-g1',
+      opponentParryUserId: OPPONENT_USER_ID,
     });
     expect(games[1]?.record).toMatchObject({
       fighter_id: 1,
       opponent_id: 41,
       win: false,
+      opponentParryUserId: OPPONENT_USER_ID,
     });
     expect(summary.unmappedCharacters).toBe(0);
     expect(summary.unmappedStages).toBe(0);
@@ -469,6 +480,45 @@ describe('importParryggMatches', () => {
       seed: 8,
     });
     expect((record?.setsPlayed as number) >= 1).toBe(true);
+  });
+
+  // Walkthrough round 3 (07-11): parry.gg's tournament-level/event-level
+  // path slugs are now persisted directly on the registry entry (unlike
+  // start.gg, no separate post-sync enrichment step) — feeds
+  // buildRecapTournamentUrl's parry.gg bracket-link branch.
+  it('persists the tournament-level and event-level slug on the registry entry', async () => {
+    const database = new FakeDatabase();
+    const context = makeMatchContext({
+      tournamentSlug: 'third-street-throwdown-summer-e3-019f5918',
+      eventSlug: 'ultimate-singles',
+    });
+    const clients = clientsReturning([context]);
+
+    await importParryggMatches(database as never, 'uid-1', PARRY_USER_ID, 'api-key', clients);
+
+    const tree = database.dump() as Record<string, Record<string, unknown>>;
+    const registry = tree['tournamentEntries']?.['uid-1'] as Record<string, unknown>;
+    const [entryKey] = Object.keys(registry);
+    const record = registry[entryKey as string] as Record<string, unknown>;
+    expect(record).toMatchObject({
+      slug: 'third-street-throwdown-summer-e3-019f5918',
+      eventSlug: 'ultimate-singles',
+    });
+  });
+
+  it('omits slug/eventSlug entirely when parry.gg provides no path slugs (never writes null)', async () => {
+    const database = new FakeDatabase();
+    const context = makeMatchContext();
+    const clients = clientsReturning([context]);
+
+    await importParryggMatches(database as never, 'uid-1', PARRY_USER_ID, 'api-key', clients);
+
+    const tree = database.dump() as Record<string, Record<string, unknown>>;
+    const registry = tree['tournamentEntries']?.['uid-1'] as Record<string, unknown>;
+    const [entryKey] = Object.keys(registry);
+    const record = registry[entryKey as string] as Record<string, unknown>;
+    expect('slug' in record).toBe(false);
+    expect('eventSlug' in record).toBe(false);
   });
 
   it('omits the seed key entirely when the user has no seed (never writes null)', async () => {

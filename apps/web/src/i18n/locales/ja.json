@@ -1450,6 +1450,9 @@
       "opponentWithPlacement": "{{name}} · {{placement}}",
       "viewBracketStartgg": "start.ggでブラケットを見る",
       "viewBracketParrygg": "parry.ggでブラケットを見る",
+      "viewOpponentStartgg": "start.ggで{{name}}を見る",
+      "viewOpponentParrygg": "parry.ggで{{name}}を見る",
+      "viewSetAria": "start.ggで{{round}}を見る",
       "reviewedMoments_one": "レビュー済みの場面 {{count}}件",
       "reviewedMoments_other": "レビュー済みの場面 {{count}}件",
       "download": "画像をダウンロード"
