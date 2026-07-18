@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Link } from 'react-router';
 import { useTranslation } from 'react-i18next';
-import { ExternalLink, Pencil, Video } from 'lucide-react';
+import { ExternalLink, Video } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -141,7 +141,10 @@ function VodLink({ set }: { set: TournamentSet }) {
         aria-label={t('tournaments.timeline.editVodAria', { set: setLabel })}
         onClick={() => setDialogOpen(true)}
       >
-        <Pencil className="size-3.5" />
+        {/* Video (not Pencil): this button attaches/edits a VOD. text-primary
+            mirrors MatchTable's has-VOD convention so attached state reads at
+            a glance. */}
+        <Video className={vodUrl ? 'size-3.5 text-primary' : 'size-3.5'} />
       </Button>
       {dialogOpen && (
         <VodNotesDialog match={vodMatch} open={dialogOpen} onOpenChange={setDialogOpen} />
