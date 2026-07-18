@@ -89,6 +89,15 @@ function GameDetail({ game }: { game: RecapGame }) {
  * per-game W/L tint — REPLACING the old set-level `stages` badge row, which
  * only shows for a pre-07-10 snapshot whose sets have no `games` at all
  * (backward compatible, never both at once).
+ *
+ * Walkthrough round 3 (07-11): when a set carries `opponentUrl` (start.gg or
+ * parry.gg), the opponent tag becomes an outbound profile link (small
+ * `ExternalLink` icon, mirroring the owner-facing `SetTimeline.tsx`'s
+ * `OpponentLabel` convention exactly); when it carries `setUrl` (start.gg
+ * only — parry.gg sets are never URL-addressable), the round label gains a
+ * matching outbound link to the set's own page. Both are absent entirely
+ * (no dead/malformed affordance rendered) whenever the backing field isn't
+ * on record.
  */
 export function RecapView({ snapshot, token }: { snapshot: PublicShareSnapshot; token: string }) {
   const { t } = useTranslation();
@@ -183,14 +192,42 @@ export function RecapView({ snapshot, token }: { snapshot: PublicShareSnapshot; 
                     <Badge variant={set.win ? 'success' : 'destructive'}>
                       {set.win ? t('share.resultWin') : t('share.resultLoss')}
                     </Badge>
-                    <span className="font-medium">{set.roundLabel}</span>
-                    <span className="text-muted-foreground">
+                    <span className="inline-flex items-center gap-1 font-medium">
+                      {set.roundLabel}
+                      {set.setUrl && (
+                        <a
+                          href={set.setUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                          aria-label={t('share.recap.viewSetAria', { round: set.roundLabel })}
+                          className="inline-flex text-muted-foreground hover:text-foreground"
+                        >
+                          <ExternalLink className="size-3" />
+                        </a>
+                      )}
+                    </span>
+                    <span className="inline-flex items-center gap-1 text-muted-foreground">
                       {set.opponentPlacement != null
                         ? t('share.recap.opponentWithPlacement', {
                             name: set.opponentName,
                             placement: formatOrdinal(set.opponentPlacement),
                           })
                         : set.opponentName}
+                      {set.opponentUrl && (
+                        <a
+                          href={set.opponentUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                          aria-label={
+                            snapshot.recapSource === 'parrygg'
+                              ? t('share.recap.viewOpponentParrygg', { name: set.opponentName })
+                              : t('share.recap.viewOpponentStartgg', { name: set.opponentName })
+                          }
+                          className="inline-flex text-muted-foreground hover:text-foreground"
+                        >
+                          <ExternalLink className="size-3" />
+                        </a>
+                      )}
                     </span>
                     <span className="text-muted-foreground">
                       {t('share.recap.setScoreLabel', { wins: set.wins, losses: set.losses })}

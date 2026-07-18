@@ -89,6 +89,12 @@ export function findSeeds(
  * mutating the summary counters for everything skipped. Exported for tests.
  * Mirrors start.gg's `gamesFromSet` structure/conventions closely — see
  * ../startgg/sync.ts.
+ *
+ * Walkthrough round 3 (07-11): also persists `opponentParryUserId` (the
+ * opponent's parry.gg user id, a UUID) onto every produced record, when the
+ * opponent's user is resolvable — the parry.gg parity for start.gg's
+ * `opponentUserSlug`, read by `buildRecapOpponentUrl` to build the
+ * opponent's `https://parry.gg/profile/{id}` link on a recap card.
  */
 export function gamesFromMatchContext(
   context: ParryggMatchContext,
@@ -201,6 +207,7 @@ export function gamesFromMatchContext(
           ...(roundText ? { roundText } : {}),
           ...(bracketRound !== undefined ? { bracketRound } : {}),
           ...(opponentSeed != null ? { opponentSeed } : {}),
+          ...(opponentUser?.id ? { opponentParryUserId: opponentUser.id } : {}),
         },
       });
     }
@@ -270,6 +277,7 @@ export function gamesFromMatchContext(
         ...(roundText ? { roundText } : {}),
         ...(bracketRound !== undefined ? { bracketRound } : {}),
         ...(opponentSeed != null ? { opponentSeed } : {}),
+        ...(opponentUser?.id ? { opponentParryUserId: opponentUser.id } : {}),
       },
     });
   });
@@ -284,6 +292,11 @@ export function gamesFromMatchContext(
  * complete. Mirrors start.gg's `RegistryAccumulator` (../startgg/sync.ts),
  * minus the fields parry.gg doesn't expose (numEntrants, placement,
  * top standings) — see Pitfall 1/Assumption A5 in 07-RESEARCH.md.
+ *
+ * Walkthrough round 3 (07-11): `slug`/`eventSlug` capture parry.gg's own
+ * tournament-level/event-level path slugs directly during sync (unlike
+ * start.gg, which fetches these in a separate post-sync enrichment step) —
+ * feeds `buildRecapTournamentUrl`'s parry.gg bracket-link branch.
  */
 interface ParryggRegistryAccumulator {
   eventName: string;
@@ -292,6 +305,8 @@ interface ParryggRegistryAccumulator {
   firstSetAt: number;
   lastSetAt: number;
   setsPlayed: number;
+  slug?: string;
+  eventSlug?: string;
 }
 
 /**
@@ -356,6 +371,8 @@ export function accumulateParryggRegistry(
   }
   const tournamentName = pathNameByType(paths, PATH_TYPE_TOURNAMENT);
   const seed = typeof mine.seed === 'number' && mine.seed > 0 ? mine.seed : undefined;
+  const slug = pathSlugByType(paths, PATH_TYPE_TOURNAMENT);
+  const eventSlug = pathSlugByType(paths, PATH_TYPE_EVENT);
 
   const endedAtSeconds = match.endedAt?.seconds ?? match.stateUpdatedAt?.seconds;
   const time =
@@ -371,6 +388,8 @@ export function accumulateParryggRegistry(
       eventName,
       ...(tournamentName ? { tournamentName } : {}),
       ...(seed != null ? { seed } : {}),
+      ...(slug ? { slug } : {}),
+      ...(eventSlug ? { eventSlug } : {}),
       firstSetAt: time,
       lastSetAt: time,
       setsPlayed: 1,
@@ -384,6 +403,12 @@ export function accumulateParryggRegistry(
   }
   if (seed != null) {
     existing.seed = seed;
+  }
+  if (slug) {
+    existing.slug = slug;
+  }
+  if (eventSlug) {
+    existing.eventSlug = eventSlug;
   }
   existing.firstSetAt = Math.min(existing.firstSetAt, time);
   existing.lastSetAt = Math.max(existing.lastSetAt, time);
@@ -455,6 +480,8 @@ export async function importParryggMatches(
         eventName: acc.eventName,
         ...(acc.tournamentName ? { tournamentName: acc.tournamentName } : {}),
         ...(acc.seed != null ? { seed: acc.seed } : {}),
+        ...(acc.slug ? { slug: acc.slug } : {}),
+        ...(acc.eventSlug ? { eventSlug: acc.eventSlug } : {}),
         firstSetAt: acc.firstSetAt,
         lastSetAt: acc.lastSetAt,
         setsPlayed: acc.setsPlayed,

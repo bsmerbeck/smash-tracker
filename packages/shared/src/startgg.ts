@@ -114,9 +114,23 @@ export const tournamentEntrySchema = z.object({
   lastSetAt: z.number().int().nonnegative(),
   /** Count of non-DQ sets processed for this event. */
   setsPlayed: z.number().int().nonnegative(),
-  /** Tournament slug (e.g. "tournament/the-box-juice-box-26"), fetched post-sync. */
+  /**
+   * Tournament-level path slug, fetched post-sync for start.gg (e.g.
+   * "tournament/the-box-juice-box-26"). Walkthrough round 3 (07-11): also
+   * populated DIRECTLY during sync (not a separate enrichment step) for
+   * parry.gg entries, from the match context's own hierarchy path — a bare
+   * kebab slug (e.g. "third-street-throwdown-summer-e3-019f5918"), a
+   * different shape than start.gg's multi-segment slug but the same field,
+   * since both represent "this site's own tournament-level URL slug".
+   */
   slug: z.string().optional(),
-  /** Event slug (e.g. "tournament/the-box-juice-box-26/event/ultimate-singles"), fetched post-sync. */
+  /**
+   * Event-level path slug, fetched post-sync for start.gg (e.g.
+   * "tournament/the-box-juice-box-26/event/ultimate-singles"). Walkthrough
+   * round 3 (07-11): also populated directly during sync for parry.gg
+   * entries (same source/shape rationale as `slug` above) — used together
+   * with `slug` by `buildRecapTournamentUrl`'s parry.gg bracket-link branch.
+   */
   eventSlug: z.string().optional(),
   /** Top finishers of the event (capped, ~8), fetched post-sync. */
   topStandings: z.array(eventStandingSchema).max(8).optional(),
