@@ -1462,6 +1462,13 @@
       "reviewedMoments_one": "{{count}} reviewed moment",
       "reviewedMoments_other": "{{count}} reviewed moments",
       "download": "Download image"
+    },
+    "coach": {
+      "namePromptTitle": "What should we call you?",
+      "namePromptDescription": "Your name will show next to any notes you add here.",
+      "nameLabel": "Your name",
+      "nameSubmit": "Continue",
+      "attribution": "Coach note by {{name}}"
     }
   }
 }

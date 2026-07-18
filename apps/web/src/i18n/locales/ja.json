@@ -1462,6 +1462,13 @@
       "reviewedMoments_one": "レビュー済みの場面 {{count}}件",
       "reviewedMoments_other": "レビュー済みの場面 {{count}}件",
       "download": "画像をダウンロード"
+    },
+    "coach": {
+      "namePromptTitle": "お名前を教えてください",
+      "namePromptDescription": "ここで追加したメモの横にあなたの名前が表示されます。",
+      "nameLabel": "お名前",
+      "nameSubmit": "続ける",
+      "attribution": "{{name}}（コーチ）のメモ"
     }
   }
 }
