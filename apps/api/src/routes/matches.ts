@@ -1,10 +1,22 @@
 import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
-import { createMatchInputSchema, matchSchema, updateMatchInputSchema } from '@smash-tracker/shared';
+import {
+  createMatchInputSchema,
+  errorResponseSchema,
+  matchSchema,
+  updateMatchInputSchema,
+  vodTimestampEntrySchema,
+  vodTimestampSchema,
+} from '@smash-tracker/shared';
 import { z } from 'zod';
-import { RtdbService } from '../services/rtdb.js';
+import { ForbiddenError, RtdbService } from '../services/rtdb.js';
 
 const matchIdParamsSchema = z.object({
   id: z.string().min(1),
+});
+
+const noteParamsSchema = z.object({
+  id: z.string().min(1),
+  noteId: z.string().min(1),
 });
 
 const matchesRoutes: FastifyPluginAsyncZod = async (app) => {
@@ -75,6 +87,76 @@ const matchesRoutes: FastifyPluginAsyncZod = async (app) => {
     },
     async (request, reply) => {
       await rtdb.deleteMatch(request.uid, request.params.id);
+      return reply.code(204).send();
+    },
+  );
+
+  // Phase 8 (Coaching Edit Sessions): owner note CRUD — these are the
+  // ONLY write path for `vodTimestamps` now that the match-fact PATCH above
+  // no longer accepts the field at all (08-01). All three are scoped to
+  // `request.uid` (never a body/param uid) and ride this already-registered
+  // `matchesRoutes` plugin (no new buildApp option, no app.ts change).
+  // `body` is `vodTimestampSchema` directly — never hand-rolled — per
+  // RESEARCH Pitfall 5.
+
+  // POST /api/matches/:id/notes
+  app.post(
+    '/matches/:id/notes',
+    {
+      schema: {
+        params: matchIdParamsSchema,
+        body: vodTimestampSchema,
+        response: {
+          201: vodTimestampEntrySchema,
+          403: errorResponseSchema,
+        },
+      },
+    },
+    async (request, reply) => {
+      try {
+        const note = await rtdb.createNote(request.uid, request.params.id, request.body);
+        return reply.code(201).send(note);
+      } catch (err) {
+        if (err instanceof ForbiddenError) {
+          return reply
+            .code(403)
+            .send({ error: 'Forbidden', message: err.message, statusCode: 403 });
+        }
+        throw err; // NotFoundError bubbles to the global 404 handler
+      }
+    },
+  );
+
+  // PATCH /api/matches/:id/notes/:noteId
+  app.patch(
+    '/matches/:id/notes/:noteId',
+    {
+      schema: {
+        params: noteParamsSchema,
+        body: vodTimestampSchema,
+        response: {
+          200: vodTimestampEntrySchema,
+        },
+      },
+    },
+    async (request) => {
+      return rtdb.updateNote(request.uid, request.params.id, request.params.noteId, request.body);
+    },
+  );
+
+  // DELETE /api/matches/:id/notes/:noteId
+  app.delete(
+    '/matches/:id/notes/:noteId',
+    {
+      schema: {
+        params: noteParamsSchema,
+        response: {
+          204: z.undefined(),
+        },
+      },
+    },
+    async (request, reply) => {
+      await rtdb.deleteNote(request.uid, request.params.id, request.params.noteId);
       return reply.code(204).send();
     },
   );
