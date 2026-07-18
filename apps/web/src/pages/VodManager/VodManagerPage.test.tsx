@@ -3194,4 +3194,96 @@ describe('VodManagerPage', () => {
     // No note has any tag — the filter chip row never renders.
     expect(screen.queryByText('Filter by tag')).not.toBeInTheDocument();
   });
+
+  it('contributor filter appears with 2+ authors, filters by author, and AND-composes with the tag filter', async () => {
+    const user = userEvent.setup();
+    listMatches.mockResolvedValue([
+      makeMatch({
+        id: 'm1',
+        opponent: 'rival-one',
+        vodUrl: 'https://youtube.com/watch?v=abc123',
+        vodTimestamps: [
+          { id: 'own-1', seconds: 10, note: 'owner alpha', tags: ['punish'] },
+          { id: 'own-2', seconds: 20, note: 'owner beta' },
+          {
+            id: 'coach-1',
+            seconds: 30,
+            note: 'coach note',
+            coach: {
+              sessionId: '22222222-2222-4222-8222-222222222222',
+              displayName: 'Rival Coach',
+            },
+            tags: ['punish'],
+          },
+        ],
+      }),
+    ]);
+
+    window.YT = {
+      Player: vi.fn(function (this: unknown) {
+        return {
+          seekTo: vi.fn(),
+          playVideo: vi.fn(),
+          pauseVideo: vi.fn(),
+          destroy: vi.fn(),
+          getCurrentTime: vi.fn(() => 0),
+        };
+      }) as unknown as YTGlobal['Player'],
+      PlayerState: { ENDED: 0 },
+    };
+
+    renderVodManager('/vod?match=m1');
+    await waitFor(() => expect(screen.getByText('owner alpha')).toBeInTheDocument());
+
+    expect(screen.getByText('Filter by contributor')).toBeInTheDocument();
+    const youChip = screen.getByRole('button', { name: 'Filter notes by You' });
+    const rivalChip = screen.getByRole('button', { name: 'Filter notes by Rival Coach' });
+    expect(youChip).toBeInTheDocument();
+    expect(rivalChip).toBeInTheDocument();
+    expect(screen.getByText('owner beta')).toBeInTheDocument();
+    expect(screen.getByText('coach note')).toBeInTheDocument();
+
+    // Click "You" — owner notes stay visible, the coach note disappears.
+    await user.click(youChip);
+    expect(screen.getByText('owner alpha')).toBeInTheDocument();
+    expect(screen.getByText('owner beta')).toBeInTheDocument();
+    expect(screen.queryByText('coach note')).not.toBeInTheDocument();
+
+    // With "You" still active, also filter by the "Punish" tag — AND
+    // composition leaves only owner alpha (owner beta lacks the tag; the
+    // coach note lacks the contributor match).
+    await user.click(screen.getByRole('button', { name: 'Filter notes by Punish' }));
+    expect(screen.getByText('owner alpha')).toBeInTheDocument();
+    expect(screen.queryByText('owner beta')).not.toBeInTheDocument();
+    expect(screen.queryByText('coach note')).not.toBeInTheDocument();
+  });
+
+  it('hides the contributor filter with a single author', async () => {
+    listMatches.mockResolvedValue([
+      makeMatch({
+        id: 'm1',
+        opponent: 'rival-one',
+        vodUrl: 'https://youtube.com/watch?v=abc123',
+        vodTimestamps: [{ id: 'own-1', seconds: 10, note: 'owner alpha' }],
+      }),
+    ]);
+
+    window.YT = {
+      Player: vi.fn(function (this: unknown) {
+        return {
+          seekTo: vi.fn(),
+          playVideo: vi.fn(),
+          pauseVideo: vi.fn(),
+          destroy: vi.fn(),
+          getCurrentTime: vi.fn(() => 0),
+        };
+      }) as unknown as YTGlobal['Player'],
+      PlayerState: { ENDED: 0 },
+    };
+
+    renderVodManager('/vod?match=m1');
+    await waitFor(() => expect(screen.getByText('owner alpha')).toBeInTheDocument());
+
+    expect(screen.queryByText('Filter by contributor')).not.toBeInTheDocument();
+  });
 });
