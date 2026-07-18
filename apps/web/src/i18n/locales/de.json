@@ -517,7 +517,7 @@
     "notes": {
       "saveEdit": "Zeitstempel-Bearbeitung speichern",
       "cancelEdit": "Zeitstempel-Bearbeitung abbrechen",
-      "coachAttribution": "Coach: {{name}}",
+      "coachAttribution": "{{name}}",
       "deleteConfirmTitle": "Diese Zeitstempel-Notiz löschen?",
       "editTimeAria": "Zeitstempel-Zeit bearbeiten",
       "editNoteAria": "Zeitstempel-Notiz bearbeiten",
@@ -1489,7 +1489,8 @@
       "namePromptDescription": "Dein Name wird neben den Notizen angezeigt, die du hier hinzufügst.",
       "nameLabel": "Dein Name",
       "nameSubmit": "Weiter",
-      "attribution": "Coach-Notiz von {{name}}",
+      "attribution": "Notiz von {{name}}",
+      "nameTaken": "Dieser Name ist für diese Review bereits vergeben — wähle einen anderen.",
       "shareGoneToast": "Dieser Coaching-Link ist nicht mehr verfügbar — deine Änderung wurde nicht gespeichert."
     }
   }
