@@ -54,7 +54,83 @@ export const vodTimestampSchema = z.object({
    */
   tags: z.array(z.string().trim().min(1).max(24)).max(5).optional(),
 });
-export type VodTimestamp = z.infer<typeof vodTimestampSchema>;
+
+/**
+ * Phase 8 (Coaching Edit Sessions): attribution stamped on a timestamp note
+ * written by an edit-tier share's coach, rather than the match owner.
+ * `sessionId` is the coach's per-browser localStorage uuid (not a real
+ * account) — see `apps/web/src/lib/coachSession.ts` (a later 08-0x plan) for
+ * the generation side. `.nullish()`: absent means "an owner-authored note,"
+ * per the RTDB null-stripping convention (CONCERNS.md).
+ */
+export const coachAttributionSchema = z.object({
+  sessionId: z.string().uuid(),
+  displayName: z.string().trim().min(1).max(60),
+});
+export type CoachAttribution = z.infer<typeof coachAttributionSchema>;
+
+/**
+ * Phase 8: the id-bearing, normalized shape every `VodTimestamp` reader
+ * actually sees after `matchRecordSchema`'s dual-read preprocess runs (see
+ * `normalizeVodTimestampsNode` below). Extends the base `vodTimestampSchema`
+ * (never redeclares its caps — RESEARCH Pitfall 5) with a stable `id`
+ * (synthesized for legacy array entries, the RTDB push key for keyed-subtree
+ * entries) and an optional `coach` attribution (absent = owner-authored).
+ */
+export const vodTimestampEntrySchema = vodTimestampSchema.extend({
+  id: z.string(),
+  coach: coachAttributionSchema.nullish(),
+});
+export type VodTimestamp = z.infer<typeof vodTimestampEntrySchema>;
+
+/**
+ * Phase 8 dual-read normalizer for the `vodTimestamps` node. Accepts EITHER
+ * shape the node has ever been stored in:
+ * - a legacy dense JS array (every record written before this migration) —
+ *   each element gets a synthesized `id` of `legacy-<index>` (display-stable
+ *   within a single read only; a record migrates to the keyed shape the
+ *   first time its notes are written post-deploy).
+ * - a keyed push-key subtree (`{ [pushKey]: VodTimestamp }`) — each value's
+ *   own RTDB key becomes its `id`, and any `coach` attribution rides through
+ *   unchanged.
+ *
+ * `null`/`undefined` normalizes to `[]`. Every entry is parsed through
+ * `vodTimestampEntrySchema` (inheriting the 200-char/5-tag caps), so a
+ * malformed or over-cap entry fails parse rather than silently passing
+ * through — see 08-01-PLAN.md's threat model (T-08-01): the API layer
+ * (later 08-0x plans) is responsible for safeParse-and-skip at the list
+ * boundary, mirroring the existing whole-record safeParse-and-skip
+ * convention (`listMatches`).
+ *
+ * The result is ALWAYS sorted by `seconds` ascending before returning —
+ * unconditional, not inherited from write-time ordering, because a keyed
+ * object's key-iteration order tracks push-key CREATION time, not
+ * `seconds` (a coach can add an earlier-seconds note after a later one
+ * already exists). Exported for reuse by the API note-cap transaction and
+ * the coach edit-session read (later 08-0x plans) — the single
+ * discriminator implementation in this codebase.
+ */
+export function normalizeVodTimestampsNode(raw: unknown): VodTimestamp[] {
+  let entries: VodTimestamp[];
+  if (raw === null || raw === undefined) {
+    entries = [];
+  } else if (Array.isArray(raw)) {
+    entries = raw.map((element, index) =>
+      vodTimestampEntrySchema.parse({
+        ...(element as Record<string, unknown>),
+        id: `legacy-${index}`,
+      }),
+    );
+  } else {
+    entries = Object.entries(raw as Record<string, unknown>).map(([key, value]) =>
+      vodTimestampEntrySchema.parse({
+        ...(value as Record<string, unknown>),
+        id: key,
+      }),
+    );
+  }
+  return entries.slice().sort((a, b) => a.seconds - b.seconds);
+}
 
 /**
  * `matches/{uid}/{pushKey}` — the stored shape, derived verbatim from
@@ -175,11 +251,26 @@ export const matchRecordSchema = z.object({
   vodUrl: z.string().url().optional(),
   /**
    * User-authored VOD timestamp notes (V7-E), e.g. "2:41 — missed punish on
-   * shield". Unlike the start.gg-only fields above, this is set entirely by
-   * the player via the update path — capped at 20 entries per match so a
-   * single game's notes stay skimmable.
+   * shield". Capped at 20 entries per match so a single game's notes stay
+   * skimmable.
+   *
+   * Phase 8 (Coaching Edit Sessions): this is now a DUAL-READ field — the
+   * raw RTDB node is either a legacy dense array or a keyed push-key
+   * subtree (see `normalizeVodTimestampsNode`'s doc comment). The
+   * `z.preprocess` below reshapes+sorts the raw node (guarding
+   * null/undefined so the field itself stays optional/absent, never
+   * fabricating `[]`) before the normal `z.array(...)` validation runs, so
+   * every existing reader keeps seeing a plain, stable-sorted, id-bearing
+   * `VodTimestamp[]` with zero call-site changes. `createMatchInputSchema`/
+   * `updateMatchInputSchema` no longer accept this field from the client at
+   * all — note writes now go through dedicated note endpoints (owner and
+   * coach), never the match-fact PATCH path (see `RtdbService.updateMatch`'s
+   * unconditional carry-through of `current.vodTimestamps`).
    */
-  vodTimestamps: z.array(vodTimestampSchema).max(20).optional(),
+  vodTimestamps: z.preprocess(
+    (raw) => (raw === null || raw === undefined ? undefined : normalizeVodTimestampsNode(raw)),
+    z.array(vodTimestampEntrySchema).max(20).optional(),
+  ),
   /**
    * User-set offset (whole seconds) into the match's VOD where this match
    * begins — takes precedence over any `t=`/`start=` param in `vodUrl` (see
@@ -294,18 +385,22 @@ const optionalNameInputSchema = z
  * remain server-set only (see `matchRecordSchema`) and are intentionally
  * NOT accepted here.
  *
- * `vodUrl`/`vodTimestamps`/`vodStartSeconds` (V7-E) are user-editable here
- * too — omitting a field (rather than sending it) is how a caller clears it,
- * following the same full-overwrite + conditional-spread convention as
+ * `vodUrl`/`vodStartSeconds` (V7-E) are user-editable here too — omitting a
+ * field (rather than sending it) is how a caller clears it, following the
+ * same full-overwrite + conditional-spread convention as
  * `stocksLeft`/`eventName`/`tournamentName` (see `RtdbService.updateMatch`).
  *
  * `gsp` (V10) follows the same convention — omit to leave/clear it.
  *
  * `tags` (TAG-01..05) follows the same convention too — omit (or send an
- * empty array) to leave/clear match-level tags. Note-level tags ride
- * inside each `vodTimestamps` entry (see `vodTimestampSchema.tags`) and
- * need no separate handling here since `vodTimestamps` is already passed
- * through wholesale.
+ * empty array) to leave/clear match-level tags.
+ *
+ * Phase 8 (Coaching Edit Sessions): `vodTimestamps` is deliberately NOT
+ * accepted here anymore. Notes are now server-preserved across every
+ * match-fact PATCH (`RtdbService.updateMatch` carries `current.vodTimestamps`
+ * through unconditionally) and are written exclusively via dedicated note
+ * endpoints (owner and coach) — the client can no longer influence the notes
+ * node through this create/update path at all.
  */
 export const createMatchInputSchema = z.object({
   fighter_id: z.number().int().positive(),
@@ -319,7 +414,6 @@ export const createMatchInputSchema = z.object({
   eventName: optionalNameInputSchema,
   tournamentName: optionalNameInputSchema,
   vodUrl: z.string().url().optional(),
-  vodTimestamps: z.array(vodTimestampSchema).max(20).optional(),
   vodStartSeconds: z.number().int().nonnegative().optional(),
   gsp: z.number().int().min(0).optional(),
   tags: z.array(z.string().trim().min(1).max(24)).max(10).optional(),
@@ -332,6 +426,9 @@ export type CreateMatchInput = z.infer<typeof createMatchInputSchema>;
  * create; PATCH semantics here mean "identify by id in the URL", not
  * "partial update" — full field set is still required to keep behavior
  * identical to legacy's edit form.
+ *
+ * Phase 8: same as `createMatchInputSchema`, `vodTimestamps` is not accepted
+ * here — see that schema's doc comment above.
  */
 export const updateMatchInputSchema = createMatchInputSchema;
 export type UpdateMatchInput = z.infer<typeof updateMatchInputSchema>;
