@@ -24,7 +24,13 @@ import {
   removeTagFromList,
   MAX_NOTE_TAGS,
   NOTE_PRESET_TAGS,
+  PRESET_SLUGS,
 } from '@/lib/tags';
+import {
+  contributorLabel,
+  deriveContributorKeys,
+  filterContributorIndices,
+} from '@/lib/contributors';
 import { cn } from '@/lib/utils';
 import { logProductEvent } from '@/lib/firebase';
 import * as shareReferral from '@/lib/shareReferral';
@@ -88,15 +94,30 @@ function safeHostname(url: string): string {
  * Sorted, deduped tag vocabulary across the coach edit-session's live note
  * list — fed into each own-note's add-combobox. A plain helper (not a hook):
  * derived AFTER this component's early returns, where hooks can't run.
+ *
+ * Also folds in `quickTags` (the page's Quick Tags panel state): a custom
+ * tag the coach adds to their Quick Tags set reads as "already added" from
+ * their perspective and must be offered in the add-combobox immediately —
+ * not only once it happens to get captured onto a note first (mirrors
+ * `deriveCustomTagVocabulary`'s `extraTags` fold-in on the owner page).
+ * Presets already render via the combobox's `presets` prop, so only
+ * non-preset quick tags are folded in here.
  */
-function computeTagVocabulary(stamps: SessionTimestamp[]): string[] {
-  const seen = new Set<string>();
+function computeTagVocabulary(stamps: SessionTimestamp[], quickTags: string[] = []): string[] {
+  const seen = new Map<string, string>();
   for (const stamp of stamps) {
     for (const tag of stamp.tags ?? []) {
-      seen.add(tag);
+      if (!seen.has(tag.toLowerCase())) {
+        seen.set(tag.toLowerCase(), tag);
+      }
     }
   }
-  return [...seen].sort((a, b) => a.localeCompare(b));
+  for (const tag of quickTags) {
+    if (!PRESET_SLUGS.has(tag) && !seen.has(tag.toLowerCase())) {
+      seen.set(tag.toLowerCase(), tag);
+    }
+  }
+  return [...seen.values()].sort((a, b) => a.localeCompare(b));
 }
 
 /**
@@ -534,6 +555,10 @@ export function ShareViewPage() {
 
   const [quickTags, setQuickTags] = useState<string[]>(() => readStoredQuickTags());
   const [editingNoteId, setEditingNoteId] = useState<string | null>(null);
+  // Single-select "Filter by contributor" chip row (mirrors the owner
+  // page's note-tag filter pattern) — narrows the rendered notes by author
+  // when 2+ distinct authors exist. `null` means no narrowing.
+  const [contributorFilter, setContributorFilter] = useState<string | null>(null);
   const [nameDialogOpen, setNameDialogOpen] = useState(false);
   const [namePromptValue, setNamePromptValue] = useState('');
   // FB-04: the server rejected the coach's most recently SUBMITTED name with
@@ -628,7 +653,16 @@ export function ShareViewPage() {
   const timestamps: SessionTimestamp[] = isEditTier
     ? (coachSession?.timestamps ?? [])
     : (snapshot.timestamps ?? []);
-  const tagVocabulary = computeTagVocabulary(timestamps);
+  const tagVocabulary = computeTagVocabulary(timestamps, quickTags);
+  // Contributor filter (item 2) — distinct authors across the rendered note
+  // list, and the visible subset narrowed by `contributorFilter`. Plain
+  // consts (not hooks): derived AFTER the early returns above, same
+  // position as `tagVocabulary`.
+  const contributorKeys = deriveContributorKeys(timestamps);
+  const ownerContributorLabel = snapshot.ownerDisplayName ?? t('share.notes.contributorOwner');
+  const visibleTimestamps = filterContributorIndices(timestamps, contributorFilter).map(
+    (i) => timestamps[i]!,
+  );
 
   function handleSelectTimestamp(seconds: number) {
     seek(seconds);
@@ -908,9 +942,36 @@ export function ShareViewPage() {
               </>
             )}
 
-            {timestamps.length > 0 && (
+            {contributorKeys.length >= 2 && (
+              <div className="flex flex-col gap-1">
+                <span className="text-xs font-medium text-muted-foreground">
+                  {t('share.notes.filterByContributor')}
+                </span>
+                <div className="flex flex-wrap gap-1.5">
+                  {contributorKeys.map((key) => {
+                    const label = contributorLabel(key, ownerContributorLabel);
+                    const selected = contributorFilter === key;
+                    return (
+                      <Badge key={key} asChild variant={selected ? 'default' : 'outline'}>
+                        <button
+                          type="button"
+                          aria-pressed={selected}
+                          aria-label={t('share.notes.filterByContributorAria', { label })}
+                          onClick={() =>
+                            setContributorFilter(contributorFilter === key ? null : key)
+                          }
+                        >
+                          {label}
+                        </button>
+                      </Badge>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+            {visibleTimestamps.length > 0 && (
               <div className="flex flex-col gap-2">
-                {timestamps.map((stamp, i) =>
+                {visibleTimestamps.map((stamp, i) =>
                   isEditTier ? (
                     <CoachTimestampRow
                       key={stamp.id ?? i}
