@@ -1,4 +1,5 @@
 import type { Database } from 'firebase-admin/database';
+import { z } from 'zod';
 import {
   DEFAULT_ELITE_THRESHOLD,
   gspReadingRecordSchema,
@@ -6,6 +7,7 @@ import {
   matchRecordSchema,
   MAX_PLAYLISTS_PER_USER,
   MAX_SHARES_PER_USER,
+  normalizeVodTimestampsNode,
   opponentAliasMapSchema,
   opponentMapSchema,
   opponentNoteMapSchema,
@@ -18,6 +20,8 @@ import {
   stageFavoritesSchema,
   tournamentEntrySchema,
   userSchema,
+  vodTimestampSchema,
+  type CoachAttribution,
   type CreateGspReadingInput,
   type CreateMatchInput,
   type CreatePlaylistInput,
@@ -47,10 +51,19 @@ import {
   type UpsertOpponentNoteInput,
   type UpsertStageFavoritesInput,
   type User,
+  type VodTimestamp,
 } from '@smash-tracker/shared';
 import { buildRecapSnapshot } from '../shares/buildRecapSnapshot.js';
 import { buildShareSnapshot } from '../shares/buildShareSnapshot.js';
 import { generateShareToken } from '../shares/token.js';
+
+/**
+ * POST/PATCH body shape for the owner (and, via the optional `coach` param,
+ * coach) note-write endpoints — exactly `vodTimestampSchema`'s inferred
+ * type, never hand-rolled (RESEARCH Pitfall 5: this schema is the single
+ * source of truth for the 200-char/5-tag caps).
+ */
+export type VodTimestampInput = z.infer<typeof vodTimestampSchema>;
 
 /**
  * Shape of a real share bearer token: `generateShareToken` emits 43 chars of
@@ -78,6 +91,16 @@ const SHARE_TOKEN_SHAPE = /^[A-Za-z0-9_-]{20,128}$/;
  */
 // eslint-disable-next-line no-control-regex -- control chars are exactly what RTDB keys forbid
 const ENTRY_KEY_SHAPE = /^[^.#$[\]/\u0000-\u001f\u007f]{1,200}$/;
+
+/** Edit-tier share links expire 30 days after creation (Phase 8, COACH-01/02). */
+const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
+
+/**
+ * Shared note cap across every writer (owner + coach, Phase 8) — mirrors
+ * `vodTimestampEntrySchema`'s `.max(20)` read-side cap, enforced here
+ * write-side by the `createNote` transaction on the parent node (T-08-05).
+ */
+const MAX_VOD_TIMESTAMPS_PER_MATCH = 20;
 
 export class NotFoundError extends Error {
   constructor(message: string) {
@@ -281,7 +304,9 @@ export class RtdbService {
       ...(input.eventName !== undefined ? { eventName: input.eventName } : {}),
       ...(input.tournamentName !== undefined ? { tournamentName: input.tournamentName } : {}),
       ...(input.vodUrl !== undefined ? { vodUrl: input.vodUrl } : {}),
-      ...(input.vodTimestamps !== undefined ? { vodTimestamps: input.vodTimestamps } : {}),
+      // Phase 8: `vodTimestamps` is no longer part of `CreateMatchInput`
+      // (08-01 dropped it) — a newly-created match never has notes on
+      // create; they're added afterward via `createNote`.
       ...(input.vodStartSeconds !== undefined ? { vodStartSeconds: input.vodStartSeconds } : {}),
       ...(input.gsp !== undefined ? { gsp: input.gsp } : {}),
       ...(input.tags !== undefined ? { tags: input.tags } : {}),
@@ -308,6 +333,18 @@ export class RtdbService {
       throw new NotFoundError(`Match ${id} not found`);
     }
     const current = matchRecordSchema.parse(existing.val());
+    // Phase 8: the RAW (pre-normalizer) `vodTimestamps` node, read straight
+    // off `existing.val()` rather than through `current` above. This
+    // distinction matters: `matchRecordSchema`'s `vodTimestamps` field is a
+    // `z.preprocess` that ALWAYS reshapes the node into a flat, id-bearing
+    // array (see `normalizeVodTimestampsNode`) — carrying THAT parsed
+    // shape through would silently flatten a keyed push-key subtree into a
+    // plain array on every unrelated match-fact PATCH, destroying the real
+    // push keys the note-cap transaction (`createNote`/`updateNote`/
+    // `deleteNote` below) relies on as note ids. The raw node must be
+    // carried through OPAQUELY — whatever shape it's currently in (legacy
+    // array, keyed object, or absent) — never reshaped by this path.
+    const rawVodTimestamps = (existing.val() as Record<string, unknown> | null)?.vodTimestamps;
 
     // Synced matches: sync owns the game facts (idempotent re-writes would
     // clobber user edits anyway) — only the user-annotation fields may
@@ -333,15 +370,14 @@ export class RtdbService {
       win: input.win,
       // See createMatch — RTDB rejects `undefined` values, so these are
       // only included when the input actually set them. Omitting
-      // opponent/vodUrl/vodTimestamps/vodStartSeconds/gsp/tags from the input
-      // is how a caller clears them, since this is a full overwrite
-      // (`.set()`, not a partial patch).
+      // opponent/vodUrl/vodStartSeconds/gsp/tags from the input is how a
+      // caller clears them, since this is a full overwrite (`.set()`, not a
+      // partial patch).
       ...(input.opponent !== undefined ? { opponent: input.opponent } : {}),
       ...(input.stocksLeft !== undefined ? { stocksLeft: input.stocksLeft } : {}),
       ...(input.eventName !== undefined ? { eventName: input.eventName } : {}),
       ...(input.tournamentName !== undefined ? { tournamentName: input.tournamentName } : {}),
       ...(input.vodUrl !== undefined ? { vodUrl: input.vodUrl } : {}),
-      ...(input.vodTimestamps !== undefined ? { vodTimestamps: input.vodTimestamps } : {}),
       ...(input.vodStartSeconds !== undefined ? { vodStartSeconds: input.vodStartSeconds } : {}),
       ...(input.gsp !== undefined ? { gsp: input.gsp } : {}),
       ...(input.tags !== undefined ? { tags: input.tags } : {}),
@@ -349,6 +385,21 @@ export class RtdbService {
       // rebuild used to strip these, breaking source badges after a VOD edit.
       ...(current.source !== undefined ? { source: current.source } : {}),
       ...(current.externalId !== undefined ? { externalId: current.externalId } : {}),
+      // Phase 8 (Coaching Edit Sessions): `vodTimestamps` is no longer
+      // accepted on `UpdateMatchInput` at all (08-01 dropped it from
+      // `updateMatchInputSchema`), so this is now an UNCONDITIONAL carry of
+      // the RAW node — never from `input`, and never through the
+      // schema-normalizing `current` (see `rawVodTimestamps` above). This is
+      // the migration's crux (RESEARCH Pitfall 1): a match-fact PATCH (e.g.
+      // correcting the opponent/stage/result) must never stomp the note
+      // subtree, whatever shape it's currently stored in (legacy array or
+      // keyed push-key object — this carries either through opaquely).
+      // Notes are written exclusively via `createNote`/`updateNote`/
+      // `deleteNote` below, and deliberately cleared only via
+      // `clearVodAndNotes` (never by omission on this path).
+      ...(rawVodTimestamps !== undefined
+        ? { vodTimestamps: rawVodTimestamps as MatchRecord['vodTimestamps'] }
+        : {}),
     };
 
     await ref.set(record);
@@ -356,6 +407,57 @@ export class RtdbService {
       await this.addOpponent(uid, input.opponent);
     }
 
+    // The RESPONSE, unlike the stored `record` above, always carries the
+    // NORMALIZED (id-bearing, sorted) `vodTimestamps` shape — every reader
+    // of a `Match` (this API's callers, `matchSchema`'s response
+    // serialization) expects that shape regardless of the raw storage
+    // representation. `current.vodTimestamps` (from the schema-parsed
+    // record fetched above) already IS that normalized shape.
+    return {
+      id,
+      ...record,
+      ...(current.vodTimestamps !== undefined ? { vodTimestamps: current.vodTimestamps } : {}),
+    };
+  }
+
+  /**
+   * The one legitimate "remove VOD" intent (MatchTable's "remove VOD"
+   * action, wired in a later 08-0x plan): blanks `vodUrl`/`vodStartSeconds`
+   * and drops the `vodTimestamps` node in the same write. Now that omitting
+   * `vodTimestamps` from an `updateMatch` payload means "preserve" (see
+   * above), this explicit method is the ONLY way to clear notes — no
+   * implicit-omission path exists anymore (RESEARCH Pitfall 2).
+   */
+  async clearVodAndNotes(uid: string, id: string): Promise<Match> {
+    const ref = this.database.ref(`matches/${uid}/${id}`);
+    const existing = await ref.get();
+    if (!existing.exists()) {
+      throw new NotFoundError(`Match ${id} not found`);
+    }
+    const current = matchRecordSchema.parse(existing.val());
+
+    // Rebuild every OTHER field explicitly (rather than spread-then-delete)
+    // so `vodUrl`/`vodStartSeconds`/`vodTimestamps` are guaranteed absent
+    // from the written record, not just unset on a local variable.
+    const record: MatchRecord = {
+      fighter_id: current.fighter_id,
+      opponent_id: current.opponent_id,
+      time: current.time,
+      map: current.map,
+      notes: current.notes,
+      matchType: current.matchType,
+      win: current.win,
+      ...(current.opponent !== undefined ? { opponent: current.opponent } : {}),
+      ...(current.stocksLeft !== undefined ? { stocksLeft: current.stocksLeft } : {}),
+      ...(current.eventName !== undefined ? { eventName: current.eventName } : {}),
+      ...(current.tournamentName !== undefined ? { tournamentName: current.tournamentName } : {}),
+      ...(current.gsp !== undefined ? { gsp: current.gsp } : {}),
+      ...(current.tags !== undefined ? { tags: current.tags } : {}),
+      ...(current.source !== undefined ? { source: current.source } : {}),
+      ...(current.externalId !== undefined ? { externalId: current.externalId } : {}),
+    };
+
+    await ref.set(record);
     return { id, ...record };
   }
 
@@ -374,6 +476,178 @@ export class RtdbService {
       );
     }
     await ref.remove();
+  }
+
+  // ---- matches/{uid}/{matchId}/vodTimestamps/{pushKey} -------------------
+  // Phase 8 (Coaching Edit Sessions): notes are now created/edited/deleted
+  // through these dedicated keyed-subtree helpers instead of the match-fact
+  // PATCH path. All three run their write inside a `.transaction()` on the
+  // PARENT node (`vodTimestamps`, not a single-child `.set()`), because the
+  // 20-note cap is shared and concurrent — an owner write and a (future,
+  // 08-03) coach write must never both slip past the cap by racing two
+  // separate `.get()`-then-`.set()` sequences. This is the SAME shared
+  // write path 08-03's coach helpers extend via the optional `coach` param.
+
+  /**
+   * Creates a note under `matches/{uid}/{matchId}/vodTimestamps/{pushKey}`.
+   * `coach`, when supplied, stamps coach attribution on the new note (the
+   * seam 08-03's coach-facing write extends — the owner path never passes
+   * it). Migrates a legacy dense-array node to the keyed-object shape in
+   * the same transaction on first post-deploy write: every existing entry
+   * keeps its real RTDB key when already keyed, or is assigned a FRESH push
+   * key when it was a legacy array element (whose `id` — synthesized by
+   * `normalizeVodTimestampsNode` as `legacy-<index>` — was never a real
+   * RTDB key). Throws `NotFoundError` if the match doesn't exist, and
+   * `ForbiddenError` if the match is already at the shared 20-note cap
+   * (T-08-05) — the transaction aborts (returns `undefined`) without
+   * writing in that case, matching `upsertUser`'s referral-transaction
+   * abort convention.
+   */
+  async createNote(
+    uid: string,
+    matchId: string,
+    input: VodTimestampInput,
+    coach?: CoachAttribution,
+  ): Promise<VodTimestamp> {
+    const matchSnapshot = await this.database.ref(`matches/${uid}/${matchId}`).get();
+    if (!matchSnapshot.exists()) {
+      throw new NotFoundError(`Match ${matchId} not found`);
+    }
+
+    const notesRef = this.database.ref(`matches/${uid}/${matchId}/vodTimestamps`);
+    const newNoteId = notesRef.push().key;
+    if (!newNoteId) {
+      throw new Error('Failed to generate a push key for the new note');
+    }
+
+    const newEntryRecord: Omit<VodTimestamp, 'id'> = {
+      seconds: input.seconds,
+      note: input.note,
+      ...(input.tags !== undefined ? { tags: input.tags } : {}),
+      ...(coach !== undefined ? { coach } : {}),
+    };
+
+    let capExceeded = false;
+    await notesRef.transaction((raw) => {
+      const entries = normalizeVodTimestampsNode(raw);
+      if (entries.length >= MAX_VOD_TIMESTAMPS_PER_MATCH) {
+        capExceeded = true;
+        return undefined;
+      }
+
+      const nextNode: Record<string, unknown> = {};
+      for (const { id: entryId, ...rest } of entries) {
+        // A real keyed-subtree entry's id IS its RTDB key already; a
+        // legacy array element's id was synthesized as `legacy-<index>` by
+        // the normalizer and was never a real key — mint a fresh one now.
+        const key = entryId.startsWith('legacy-') ? notesRef.push().key! : entryId;
+        nextNode[key] = rest;
+      }
+      nextNode[newNoteId] = newEntryRecord;
+      return nextNode;
+    });
+
+    if (capExceeded) {
+      throw new ForbiddenError(
+        `Match ${matchId} already has ${MAX_VOD_TIMESTAMPS_PER_MATCH} notes`,
+      );
+    }
+
+    return { id: newNoteId, ...newEntryRecord };
+  }
+
+  /**
+   * Edits an existing note's `seconds`/`note`/`tags` in place — `coach`
+   * attribution (if any) is left untouched (only 08-03's coach path ever
+   * sets it, and only on create). The owner path may edit ANY note on an
+   * owned match (no own-note-only restriction — owner moderation).
+   */
+  async updateNote(
+    uid: string,
+    matchId: string,
+    noteId: string,
+    input: VodTimestampInput,
+  ): Promise<VodTimestamp> {
+    const notesRef = this.database.ref(`matches/${uid}/${matchId}/vodTimestamps`);
+    let updated: VodTimestamp | undefined;
+    let matchExists = true;
+
+    const matchSnapshot = await this.database.ref(`matches/${uid}/${matchId}`).get();
+    if (!matchSnapshot.exists()) {
+      matchExists = false;
+    }
+
+    if (matchExists) {
+      await notesRef.transaction((raw) => {
+        const entries = normalizeVodTimestampsNode(raw);
+        const target = entries.find((entry) => entry.id === noteId);
+        if (!target) {
+          // Abort — no matching note, nothing to write (mirrors
+          // upsertUser's referral-transaction abort convention).
+          return undefined;
+        }
+
+        const nextNode: Record<string, unknown> = {};
+        for (const { id: entryId, ...rest } of entries) {
+          if (entryId === noteId) {
+            const nextEntry: Omit<VodTimestamp, 'id'> = {
+              seconds: input.seconds,
+              note: input.note,
+              ...(input.tags !== undefined ? { tags: input.tags } : {}),
+              ...(rest.coach !== undefined ? { coach: rest.coach } : {}),
+            };
+            nextNode[entryId] = nextEntry;
+            updated = { id: entryId, ...nextEntry };
+          } else {
+            nextNode[entryId] = rest;
+          }
+        }
+        return nextNode;
+      });
+    }
+
+    if (!matchExists || !updated) {
+      throw new NotFoundError(`Note ${noteId} not found on match ${matchId}`);
+    }
+    return updated;
+  }
+
+  /**
+   * Deletes a note (owner moderation — deletes coach-authored notes too).
+   */
+  async deleteNote(uid: string, matchId: string, noteId: string): Promise<void> {
+    const matchSnapshot = await this.database.ref(`matches/${uid}/${matchId}`).get();
+    if (!matchSnapshot.exists()) {
+      throw new NotFoundError(`Note ${noteId} not found on match ${matchId}`);
+    }
+
+    const notesRef = this.database.ref(`matches/${uid}/${matchId}/vodTimestamps`);
+    let found = false;
+
+    await notesRef.transaction((raw) => {
+      const entries = normalizeVodTimestampsNode(raw);
+      if (!entries.some((entry) => entry.id === noteId)) {
+        // Abort — no matching note, nothing to write.
+        return undefined;
+      }
+      found = true;
+
+      const nextNode: Record<string, unknown> = {};
+      for (const { id: entryId, ...rest } of entries) {
+        if (entryId !== noteId) {
+          nextNode[entryId] = rest;
+        }
+      }
+      // Deleting the last remaining note must remove the `vodTimestamps`
+      // node entirely (`null`), not leave a stray empty object behind —
+      // matches real RTDB's null-removes-the-key semantics and this
+      // codebase's "absent key, not empty container" convention.
+      return Object.keys(nextNode).length === 0 ? null : nextNode;
+    });
+
+    if (!found) {
+      throw new NotFoundError(`Note ${noteId} not found on match ${matchId}`);
+    }
   }
 
   // ---- opponents/{uid}/{name} --------------------------------------------
@@ -882,11 +1156,18 @@ export class RtdbService {
     );
 
     const token = generateShareToken();
+    // Phase 8 (Coaching Edit Sessions): `permissions` comes from the
+    // validated input (defaulted to 'view' by createShareInputSchema for
+    // every pre-Phase-8 caller) instead of being hardcoded. Edit-tier links
+    // additionally get a 30-day `expiresAt` — view-tier links never get one
+    // (omit the key entirely rather than writing `null`, per the RTDB
+    // null-stripping convention in CONCERNS.md).
     const tokenRecord: ShareToken = {
       shareId,
       ownerUid: uid,
-      permissions: 'view',
+      permissions: input.permissions,
       createdAt: Date.now(),
+      ...(input.permissions === 'edit' ? { expiresAt: Date.now() + THIRTY_DAYS_MS } : {}),
     };
     await this.database.ref(`shareTokens/${token}`).set(shareTokenSchema.parse(tokenRecord));
     await this.database.ref(`sharesByUser/${uid}/${shareId}`).set(token);
