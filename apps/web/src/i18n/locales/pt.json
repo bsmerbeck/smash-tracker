@@ -517,6 +517,7 @@
     "notes": {
       "saveEdit": "Salvar edição da marcação",
       "cancelEdit": "Cancelar edição da marcação",
+      "coachAttribution": "Coach: {{name}}",
       "deleteConfirmTitle": "Excluir esta nota com marcação de tempo?",
       "editTimeAria": "Editar hora da marcação",
       "editNoteAria": "Editar nota da marcação",

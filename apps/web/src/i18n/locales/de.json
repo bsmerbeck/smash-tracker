@@ -517,6 +517,7 @@
     "notes": {
       "saveEdit": "Zeitstempel-Bearbeitung speichern",
       "cancelEdit": "Zeitstempel-Bearbeitung abbrechen",
+      "coachAttribution": "Coach: {{name}}",
       "deleteConfirmTitle": "Diese Zeitstempel-Notiz löschen?",
       "editTimeAria": "Zeitstempel-Zeit bearbeiten",
       "editNoteAria": "Zeitstempel-Notiz bearbeiten",
