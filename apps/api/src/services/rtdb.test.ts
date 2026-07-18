@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { FakeDatabase } from '../test-support/fakeDatabase.js';
-import { RtdbService } from './rtdb.js';
+import { ConflictError, RtdbService } from './rtdb.js';
 
 const UID = 'test-uid-123';
 const WEB_BASE_URL = 'https://grandfinals.gg';
@@ -1281,6 +1281,149 @@ describe('RtdbService.createCoachNote — anonymous coach create (token-resolved
         note: 'one too many',
       }),
     ).rejects.toThrow(/already has 20 notes/);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Walkthrough hardening FB-04: server-enforced coach display-name
+// uniqueness INSIDE createNote's transaction — impersonation via a
+// duplicate typed name must be rejected (T-09-06), without weakening the
+// anonymous surface's no-oracle 404 discipline for any other failure mode.
+// ---------------------------------------------------------------------------
+describe('RtdbService.createCoachNote — FB-04 display-name uniqueness (server-enforced)', () => {
+  it('throws ConflictError when a DIFFERENT session already uses the same name, case-insensitively', async () => {
+    const database = new FakeDatabase();
+    const rtdb = new RtdbService(database as never);
+    seedEditShare(database, {
+      matchOverrides: {
+        vodTimestamps: {
+          existing: {
+            seconds: 5,
+            note: 'earlier note',
+            coach: { sessionId: OTHER_SESSION, displayName: 'Sam' },
+          },
+        },
+      },
+    });
+
+    await expect(
+      rtdb.createCoachNote(EDIT_TOKEN, COACH_SESSION, 'sam', { seconds: 10, note: 'x' }),
+    ).rejects.toThrow(ConflictError);
+    await expect(
+      rtdb.createCoachNote(EDIT_TOKEN, COACH_SESSION, 'sam', { seconds: 10, note: 'x' }),
+    ).rejects.toThrow('That name is already taken on this review');
+  });
+
+  it('collapses inner whitespace before comparing — "Sam  Jones" collides with "Sam Jones"', async () => {
+    const database = new FakeDatabase();
+    const rtdb = new RtdbService(database as never);
+    seedEditShare(database, {
+      matchOverrides: {
+        vodTimestamps: {
+          existing: {
+            seconds: 5,
+            note: 'earlier note',
+            coach: { sessionId: OTHER_SESSION, displayName: 'Sam Jones' },
+          },
+        },
+      },
+    });
+
+    await expect(
+      rtdb.createCoachNote(EDIT_TOKEN, COACH_SESSION, 'Sam  Jones', { seconds: 10, note: 'x' }),
+    ).rejects.toThrow(ConflictError);
+  });
+
+  it('allows the SAME session to reuse its own stored name (no conflict, ever)', async () => {
+    const database = new FakeDatabase();
+    const rtdb = new RtdbService(database as never);
+    seedEditShare(database, {
+      matchOverrides: {
+        vodTimestamps: {
+          existing: {
+            seconds: 5,
+            note: 'earlier note',
+            coach: { sessionId: COACH_SESSION, displayName: 'Sam' },
+          },
+        },
+      },
+    });
+
+    const note = await rtdb.createCoachNote(EDIT_TOKEN, COACH_SESSION, 'sam', {
+      seconds: 10,
+      note: 'second note, same session',
+    });
+
+    expect(note.coach).toEqual({ sessionId: COACH_SESSION, displayName: 'sam' });
+  });
+
+  it("throws ConflictError when the name case-folds to the owner's shared display name", async () => {
+    const database = new FakeDatabase();
+    const rtdb = new RtdbService(database as never);
+    seedEditShare(database);
+    database.seed('shareSnapshots/share1/ownerDisplayName', 'Owner Name');
+
+    await expect(
+      rtdb.createCoachNote(EDIT_TOKEN, COACH_SESSION, 'owner  name', { seconds: 1, note: 'x' }),
+    ).rejects.toThrow(ConflictError);
+  });
+
+  it('creates the note normally for a genuinely unique name', async () => {
+    const database = new FakeDatabase();
+    const rtdb = new RtdbService(database as never);
+    seedEditShare(database, {
+      matchOverrides: {
+        vodTimestamps: {
+          existing: {
+            seconds: 5,
+            note: 'earlier note',
+            coach: { sessionId: OTHER_SESSION, displayName: 'Sam' },
+          },
+        },
+      },
+    });
+
+    const note = await rtdb.createCoachNote(EDIT_TOKEN, COACH_SESSION, 'Alex', {
+      seconds: 10,
+      note: 'unique name',
+    });
+
+    expect(note.coach).toEqual({ sessionId: COACH_SESSION, displayName: 'Alex' });
+  });
+
+  it('recomputes the collision decision fresh on every transaction run (CR-01) — the null-first-run never lets a real conflict slip through on retry', async () => {
+    const database = new FakeDatabase();
+    const rtdb = new RtdbService(database as never);
+    // Non-empty seeded vodTimestamps forces FakeDatabase's two-run
+    // transaction emulation (see fakeDatabase.ts's CR-01 doc comment): the
+    // FIRST run always sees raw=null (no collision visible from an empty
+    // node), the SECOND run sees the REAL stored data — only a
+    // `nameConflict` flag re-derived fresh on THAT run catches the
+    // collision; a flag captured from the discarded first run would
+    // false-negative.
+    seedEditShare(database, {
+      matchOverrides: {
+        vodTimestamps: {
+          existing: {
+            seconds: 5,
+            note: 'earlier note',
+            coach: { sessionId: OTHER_SESSION, displayName: 'Sam' },
+          },
+        },
+      },
+    });
+
+    await expect(
+      rtdb.createCoachNote(EDIT_TOKEN, COACH_SESSION, 'Sam', { seconds: 10, note: 'x' }),
+    ).rejects.toThrow(ConflictError);
+
+    // The colliding note must never have been written.
+    const stored = database.dump().matches as Record<string, Record<string, unknown>>;
+    const vodTimestamps = (stored[UID]!.m1 as Record<string, unknown>).vodTimestamps as Record<
+      string,
+      unknown
+    >;
+    expect(Object.keys(vodTimestamps)).toHaveLength(1);
   });
 });
 

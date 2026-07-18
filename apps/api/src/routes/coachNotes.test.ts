@@ -326,6 +326,63 @@ describe('POST /api/vod-shares/:token/notes', () => {
     });
     expect(badSession.statusCode).toBe(400);
   });
+
+  // Walkthrough hardening FB-04: server-enforced coach display-name
+  // uniqueness — impersonation via a duplicate typed name is rejected with
+  // a distinct, static 409 (never the generic 404/save-failed shape), but
+  // ONLY on a token that already resolved successfully.
+  it('returns a static 409 when the name collides with an existing contributor on the same review', async () => {
+    const { app, database } = buildTestApp();
+    seedEditShare(database, {
+      matchOverrides: {
+        vodTimestamps: {
+          existing: {
+            seconds: 5,
+            note: 'earlier note',
+            coach: { sessionId: OTHER_SESSION, displayName: 'Sam' },
+          },
+        },
+      },
+    });
+
+    const response = await app.inject({
+      method: 'POST',
+      url: `/api/vod-shares/${EDIT_TOKEN}/notes`,
+      payload: { sessionId: COACH_SESSION, displayName: 'sam', seconds: 1, note: 'x' },
+    });
+
+    expect(response.statusCode).toBe(409);
+    expect(response.json()).toEqual({
+      error: 'Conflict',
+      message: 'That name is already taken on this review',
+      statusCode: 409,
+    });
+  });
+
+  it('still returns the identical 404 body (never 409) for a REVOKED token even with a colliding name', async () => {
+    const { app, database } = buildTestApp();
+    seedEditShare(database, {
+      tokenOverrides: { revokedAt: 1700000200000 },
+      matchOverrides: {
+        vodTimestamps: {
+          existing: {
+            seconds: 5,
+            note: 'earlier note',
+            coach: { sessionId: OTHER_SESSION, displayName: 'Sam' },
+          },
+        },
+      },
+    });
+
+    const response = await app.inject({
+      method: 'POST',
+      url: `/api/vod-shares/${EDIT_TOKEN}/notes`,
+      payload: { sessionId: COACH_SESSION, displayName: 'Sam', seconds: 1, note: 'x' },
+    });
+
+    expect(response.statusCode).toBe(404);
+    expect(response.json()).toEqual(UNAVAILABLE_404);
+  });
 });
 
 describe('PATCH /api/vod-shares/:token/notes/:noteId', () => {
