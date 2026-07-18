@@ -346,8 +346,27 @@ export async function importPlayerMatches(
     await database.ref(`opponents/${uid}`).update(opponentUpdates);
   }
   if (registry.size > 0) {
+    // Walkthrough amendment (07-10): read the CURRENT registry first so
+    // previously-fetched enrichment fields (slug/eventSlug/topStandings) can
+    // be carried forward as a baseline below. Every sync re-derives
+    // registryUpdates from scratch off THIS run's own paginated sets (not an
+    // incremental diff), and the closing `.update()` REPLACES each event's
+    // whole node — without this read-and-merge step, an event that drops out
+    // of this run's `MAX_EVENT_DETAIL_FETCHES` most-recently-active window
+    // (or whose `fetchEventDetails` call transiently fails) would have its
+    // ALREADY-FETCHED slug/eventSlug/topStandings silently wiped by this
+    // sync, permanently breaking a recap's "View bracket on start.gg" link
+    // for that tournament until it happens to re-enter the top N and
+    // re-fetch successfully again.
+    const existingRegistrySnapshot = await database.ref(`tournamentEntries/${uid}`).get();
+    const existingRegistry = (existingRegistrySnapshot.val() ?? {}) as Record<
+      string,
+      TournamentEntry | undefined
+    >;
+
     const registryUpdates: Record<string, TournamentEntry> = {};
     for (const [eventId, acc] of registry) {
+      const existingEntry = existingRegistry[String(eventId)];
       registryUpdates[String(eventId)] = {
         eventId: acc.eventId,
         eventName: acc.eventName,
@@ -358,6 +377,14 @@ export async function importPlayerMatches(
         firstSetAt: acc.firstSetAt,
         lastSetAt: acc.lastSetAt,
         setsPlayed: acc.setsPlayed,
+        // Baseline carried forward from the existing stored entry — the
+        // enrichment loop below overwrites these with fresh values for any
+        // event it successfully re-fetches this sync.
+        ...(existingEntry?.slug ? { slug: existingEntry.slug } : {}),
+        ...(existingEntry?.eventSlug ? { eventSlug: existingEntry.eventSlug } : {}),
+        ...(existingEntry?.topStandings && existingEntry.topStandings.length > 0
+          ? { topStandings: existingEntry.topStandings }
+          : {}),
       };
     }
 

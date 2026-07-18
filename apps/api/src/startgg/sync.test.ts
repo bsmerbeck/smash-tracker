@@ -826,4 +826,110 @@ describe('importPlayerMatches', () => {
     const expectedIds = Array.from({ length: 20 }, (_, i) => 1024 - i);
     expect(requestedEventIds).toEqual(expectedIds);
   });
+
+  // Walkthrough amendment round 2 (07-10): every sync rebuilds registryUpdates
+  // from scratch off THIS run's own paginated sets, and the closing
+  // `.update()` REPLACES each event's whole node — so without a
+  // read-and-merge-forward step, a resync whose enrichment fetch fails (or
+  // whose event drops outside the MAX_EVENT_DETAIL_FETCHES recency window)
+  // would silently WIPE the previously-fetched slug/eventSlug/topStandings,
+  // permanently breaking a recap's "View bracket on start.gg" link for that
+  // tournament. These two tests pin the fix.
+  it('preserves a previously-fetched slug/eventSlug/topStandings when a resync enrichment fetch fails', async () => {
+    const database = new FakeDatabase();
+
+    // First sync: enrichment succeeds, registry gets slug/eventSlug/topStandings.
+    const firstFetchMock = routedFetchMock(
+      async () => pageResponse([makeSet()]),
+      async () => eventDetailsResponse(),
+    );
+    await importPlayerMatches(
+      database as never,
+      'uid-1',
+      PLAYER_ID,
+      'server-token',
+      firstFetchMock as typeof fetch,
+    );
+    const afterFirstSync = database.dump() as Record<string, Record<string, unknown>>;
+    expect(
+      (afterFirstSync['tournamentEntries']?.['uid-1'] as Record<string, unknown>)['987'],
+    ).toMatchObject({ slug: 'tournament/the-box-juice-box-26' });
+
+    // Second sync: same event, but this time the detail fetch fails.
+    const secondFetchMock = routedFetchMock(
+      async () => pageResponse([makeSet()]),
+      async () => new Response('boom', { status: 500 }),
+    );
+    await importPlayerMatches(
+      database as never,
+      'uid-1',
+      PLAYER_ID,
+      'server-token',
+      secondFetchMock as typeof fetch,
+      { warn: vi.fn() },
+    );
+
+    const afterSecondSync = database.dump() as Record<string, Record<string, unknown>>;
+    const entry = (afterSecondSync['tournamentEntries']?.['uid-1'] as Record<string, unknown>)[
+      '987'
+    ] as Record<string, unknown>;
+    expect(entry).toMatchObject({
+      slug: 'tournament/the-box-juice-box-26',
+      eventSlug: 'tournament/the-box-juice-box-26/event/ultimate-singles',
+    });
+    expect(entry['topStandings']).toEqual([
+      { placement: 1, name: 'Champ', gamerTag: 'Champ', userSlug: 'user/abc123' },
+    ]);
+  });
+
+  it('preserves a previously-fetched slug/eventSlug when an event drops outside the MAX_EVENT_DETAIL_FETCHES recency window on resync', async () => {
+    const database = new FakeDatabase();
+
+    // First sync: a single event gets enriched (well within the top-20 cap).
+    const firstFetchMock = routedFetchMock(
+      async () => pageResponse([makeSet()]),
+      async () => eventDetailsResponse(),
+    );
+    await importPlayerMatches(
+      database as never,
+      'uid-1',
+      PLAYER_ID,
+      'server-token',
+      firstFetchMock as typeof fetch,
+    );
+
+    // Second sync: 25 NEW, more-recent events push event 987 outside the
+    // top-20 most-recently-active enrichment window — it's still present in
+    // this run's registry (still returned by the sets query), just not
+    // re-fetched for detail.
+    const newerSets = Array.from({ length: 25 }, (_, i) =>
+      makeSet({
+        id: 2000 + i,
+        completedAt: 1_700_000_100 + i,
+        event: { id: 3000 + i, name: `Newer Event ${i}`, isOnline: true, videogame: { id: 1386 } },
+      }),
+    );
+    const secondFetchMock = routedFetchMock(
+      async () => pageResponse([makeSet(), ...newerSets]),
+      async () => eventDetailsResponse(),
+    );
+    await importPlayerMatches(
+      database as never,
+      'uid-1',
+      PLAYER_ID,
+      'server-token',
+      secondFetchMock as typeof fetch,
+    );
+
+    const afterSecondSync = database.dump() as Record<string, Record<string, unknown>>;
+    const entry = (afterSecondSync['tournamentEntries']?.['uid-1'] as Record<string, unknown>)[
+      '987'
+    ] as Record<string, unknown>;
+    // Event 987 is no longer in the top-20-by-recency (25 newer events exist),
+    // but its slug/eventSlug from the FIRST sync must survive this resync.
+    expect(entry).toMatchObject({
+      slug: 'tournament/the-box-juice-box-26',
+      eventSlug: 'tournament/the-box-juice-box-26/event/ultimate-singles',
+    });
+  });
 });
