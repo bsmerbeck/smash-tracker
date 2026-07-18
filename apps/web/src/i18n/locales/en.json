@@ -517,6 +517,7 @@
     "notes": {
       "saveEdit": "Save timestamp edit",
       "cancelEdit": "Cancel timestamp edit",
+      "coachAttribution": "Coach {{name}}",
       "deleteConfirmTitle": "Delete this timestamp note?",
       "editTimeAria": "Edit timestamp time",
       "editNoteAria": "Edit timestamp note",

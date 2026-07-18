@@ -517,6 +517,7 @@
     "notes": {
       "saveEdit": "Enregistrer la modification de l'horodatage",
       "cancelEdit": "Annuler la modification de l'horodatage",
+      "coachAttribution": "Coach : {{name}}",
       "deleteConfirmTitle": "Supprimer cette note horodatée ?",
       "editTimeAria": "Modifier l'heure de l'horodatage",
       "editNoteAria": "Modifier la note de l'horodatage",
