@@ -94,13 +94,18 @@ export type VodTimestamp = z.infer<typeof vodTimestampEntrySchema>;
  *   own RTDB key becomes its `id`, and any `coach` attribution rides through
  *   unchanged.
  *
- * `null`/`undefined` normalizes to `[]`. Every entry is parsed through
- * `vodTimestampEntrySchema` (inheriting the 200-char/5-tag caps), so a
- * malformed or over-cap entry fails parse rather than silently passing
- * through — see 08-01-PLAN.md's threat model (T-08-01): the API layer
- * (later 08-0x plans) is responsible for safeParse-and-skip at the list
- * boundary, mirroring the existing whole-record safeParse-and-skip
- * convention (`listMatches`).
+ * `null`/`undefined` normalizes to `[]`. Every entry is `safeParse`d through
+ * `vodTimestampEntrySchema` (inheriting the 200-char/5-tag caps), and a
+ * malformed or over-cap entry is SKIPPED — never thrown on (review CR-02).
+ * This normalizer runs inside `matchRecordSchema`'s `z.preprocess`, and in
+ * Zod v4 an exception thrown inside a preprocess callback is NOT converted
+ * into a validation issue: it propagates straight out of `safeParse`,
+ * bypassing every safeParse-and-skip guard downstream (`listMatches`,
+ * `getEditSessionByToken`) and 500ing the whole request for one corrupt
+ * entry — the exact incident class the safeParse-and-skip production rule
+ * exists for. The shared read normalizer is therefore TOTAL: strictness for
+ * bad note data is enforced at the write boundaries (the note endpoints'
+ * body schemas), never here on the read path.
  *
  * The result is ALWAYS sorted by `seconds` ascending before returning —
  * unconditional, not inherited from write-time ordering, because a keyed
@@ -111,25 +116,40 @@ export type VodTimestamp = z.infer<typeof vodTimestampEntrySchema>;
  * discriminator implementation in this codebase.
  */
 export function normalizeVodTimestampsNode(raw: unknown): VodTimestamp[] {
-  let entries: VodTimestamp[];
   if (raw === null || raw === undefined) {
-    entries = [];
-  } else if (Array.isArray(raw)) {
-    entries = raw.map((element, index) =>
-      vodTimestampEntrySchema.parse({
-        ...(element as Record<string, unknown>),
-        id: `legacy-${index}`,
-      }),
-    );
-  } else {
-    entries = Object.entries(raw as Record<string, unknown>).map(([key, value]) =>
-      vodTimestampEntrySchema.parse({
-        ...(value as Record<string, unknown>),
-        id: key,
-      }),
-    );
+    return [];
   }
-  return entries.slice().sort((a, b) => a.seconds - b.seconds);
+
+  let rawEntries: Array<[string, unknown]>;
+  if (Array.isArray(raw)) {
+    // Legacy dense array — includes RTDB's array-coercion edge where a
+    // mostly-numeric keyed node comes back as an array with `null` holes;
+    // those holes fail the per-entry safeParse below and are skipped.
+    rawEntries = raw.map((element, index): [string, unknown] => [`legacy-${index}`, element]);
+  } else if (typeof raw === 'object') {
+    rawEntries = Object.entries(raw as Record<string, unknown>);
+  } else {
+    // A scalar node is wholesale corrupt — nothing salvageable.
+    return [];
+  }
+
+  const entries = rawEntries.flatMap(([key, value]): VodTimestamp[] => {
+    const parsed = vodTimestampEntrySchema.safeParse({
+      ...(typeof value === 'object' && value !== null ? value : {}),
+      id: key,
+    });
+    if (!parsed.success) {
+      // Skip-and-report, never throw (review CR-02) — key only, no values.
+      // (Guarded globalThis access: this package compiles without dom/node
+      // libs, so `console` isn't a typed global here.)
+      (globalThis as { console?: { warn(message: string): void } }).console?.warn(
+        `normalizeVodTimestampsNode: skipping corrupt note entry ${key}`,
+      );
+      return [];
+    }
+    return [parsed.data];
+  });
+  return entries.sort((a, b) => a.seconds - b.seconds);
 }
 
 /**
