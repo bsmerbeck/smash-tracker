@@ -39,6 +39,8 @@ export function ShareRow({ share }: { share: ShareSummary }) {
   const opponentFighter =
     share.opponentFighterId != null ? getFighterById(share.opponentFighterId) : undefined;
   const isRevoked = share.status === 'revoked';
+  /** COACH-01: an edit-tier (coaching) link gets a visually distinct badge. */
+  const isEdit = share.permissions === 'edit';
 
   async function handleCopy() {
     try {
@@ -80,7 +82,13 @@ export function ShareRow({ share }: { share: ShareSummary }) {
     >
       <div className="flex flex-1 flex-col items-start gap-1">
         <div className="flex flex-wrap items-center gap-2">
-          <Badge variant="outline">{t('vodManager.shares.permissionView')}</Badge>
+          {isEdit ? (
+            // Filled (default) variant — coaching links must read differently
+            // from plain view links at a glance in the manage list.
+            <Badge>{t('vodManager.shares.permissionEdit')}</Badge>
+          ) : (
+            <Badge variant="outline">{t('vodManager.shares.permissionView')}</Badge>
+          )}
           <span className="font-medium">
             {isRecap
               ? (share.tournamentName ?? t('common.unknown'))
