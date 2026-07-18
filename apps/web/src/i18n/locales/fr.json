@@ -1462,6 +1462,13 @@
       "reviewedMoments_one": "{{count}} moment analysé",
       "reviewedMoments_other": "{{count}} moments analysés",
       "download": "Télécharger l'image"
+    },
+    "coach": {
+      "namePromptTitle": "Comment devons-nous vous appeler ?",
+      "namePromptDescription": "Votre nom apparaîtra à côté des notes que vous ajoutez ici.",
+      "nameLabel": "Votre nom",
+      "nameSubmit": "Continuer",
+      "attribution": "Note de coach de {{name}}"
     }
   }
 }

@@ -1462,6 +1462,13 @@
       "reviewedMoments_one": "{{count}} besprochener Moment",
       "reviewedMoments_other": "{{count}} besprochene Momente",
       "download": "Bild herunterladen"
+    },
+    "coach": {
+      "namePromptTitle": "Wie sollen wir dich nennen?",
+      "namePromptDescription": "Dein Name wird neben den Notizen angezeigt, die du hier hinzufügst.",
+      "nameLabel": "Dein Name",
+      "nameSubmit": "Weiter",
+      "attribution": "Coach-Notiz von {{name}}"
     }
   }
 }

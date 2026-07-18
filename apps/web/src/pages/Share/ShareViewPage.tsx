@@ -1,21 +1,65 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import type { KeyboardEvent, RefObject } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router';
 import { useTranslation } from 'react-i18next';
-import { ExternalLink } from 'lucide-react';
+import { Check, ExternalLink, Pencil, Plus, Trash2, X } from 'lucide-react';
+import type { PublicShareSnapshot } from '@smash-tracker/shared';
 import { getFighterById } from '@/data/sprites';
 import { NO_SELECTION_STAGE } from '@/data/stages';
 import { PublicLayout } from '@/layouts/PublicLayout';
 import { useSeo } from '@/hooks/useSeo';
 import { usePublicVodShare } from '@/hooks/useVodShares';
+import {
+  useCoachSession,
+  useCreateCoachNote,
+  useDeleteCoachNote,
+  useUpdateCoachNote,
+} from '@/hooks/useCoachNotes';
 import { useVodPlayer } from '@/lib/useVodPlayer';
-import { formatTimestamp, parseFlexibleTimestamp } from '@/lib/vod';
-import { tagLabel } from '@/lib/tags';
+import { formatTimestamp, parseFlexibleTimestamp, MAX_TIMESTAMPS } from '@/lib/vod';
+import {
+  tagLabel,
+  addTagToList,
+  removeTagFromList,
+  MAX_NOTE_TAGS,
+  NOTE_PRESET_TAGS,
+} from '@/lib/tags';
+import { cn } from '@/lib/utils';
 import { logProductEvent } from '@/lib/firebase';
 import * as shareReferral from '@/lib/shareReferral';
+import { getOrCreateSessionId, getStoredDisplayName, setDisplayName } from '@/lib/coachSession';
+import { readStoredQuickTags, persistQuickTags } from '@/pages/VodManager/lib/vodPrefs';
+import { QuickTagPanel } from '@/pages/VodManager/components/QuickTagPanel';
+import { TagAddCombobox } from '@/pages/VodManager/components/TagAddCombobox';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import { ShareTimestampRow } from './components/ShareTimestampRow';
 import { RecapView } from './components/RecapView';
+
+/** One entry of the coach edit-session's `timestamps` array — the additive
+ * `id`/`coach` fields (absent on a frozen view-tier snapshot) are populated
+ * ONLY by the live `/session` recompute (08-03). */
+type SessionTimestamp = NonNullable<PublicShareSnapshot['timestamps']>[number];
 
 /** Best-effort hostname extraction for the "Watch on {host}" fallback link — mirrors `VodPlayer.tsx`'s `safeHostname`. */
 function safeHostname(url: string): string {
@@ -24,6 +68,352 @@ function safeHostname(url: string): string {
   } catch {
     return url;
   }
+}
+
+/**
+ * Sorted, deduped tag vocabulary across the coach edit-session's live note
+ * list — fed into each own-note's add-combobox. A plain helper (not a hook):
+ * derived AFTER this component's early returns, where hooks can't run.
+ */
+function computeTagVocabulary(stamps: SessionTimestamp[]): string[] {
+  const seen = new Set<string>();
+  for (const stamp of stamps) {
+    for (const tag of stamp.tags ?? []) {
+      seen.add(tag);
+    }
+  }
+  return [...seen].sort((a, b) => a.localeCompare(b));
+}
+
+/**
+ * Coach-facing "add a timestamp note" composer for an edit-tier share.
+ * Mirrors `VodManager/components/NoteComposer.tsx`'s shape (live-position
+ * time input via `getCurrentTimeRef`, optional note text, Enter-to-submit,
+ * the shared `MAX_TIMESTAMPS` cap) — not the literal component, since the
+ * coach's note list is `SessionTimestamp[]` (nullish `id`/`coach`), not the
+ * owner-side `VodTimestamp[]` NoteComposer is typed against.
+ */
+function CoachComposer({
+  noteCount,
+  getCurrentTimeRef,
+  onCreateNote,
+}: {
+  noteCount: number;
+  getCurrentTimeRef: RefObject<(() => number) | null>;
+  onCreateNote: (input: { seconds: number; note: string }) => void;
+}) {
+  const { t } = useTranslation();
+  const [timeInput, setTimeInput] = useState('');
+  const [noteInput, setNoteInput] = useState('');
+  const [timeError, setTimeError] = useState<string | null>(null);
+
+  function handleTimeFocus() {
+    const current = getCurrentTimeRef.current?.();
+    if (current != null) {
+      setTimeInput(formatTimestamp(current));
+    }
+  }
+
+  function handleAdd() {
+    const seconds = parseFlexibleTimestamp(timeInput);
+    if (seconds == null) {
+      setTimeError(t('shared.vod.timeFormatError'));
+      return;
+    }
+    if (noteCount >= MAX_TIMESTAMPS) {
+      setTimeError(t('shared.vod.timestampLimit', { max: MAX_TIMESTAMPS }));
+      return;
+    }
+    onCreateNote({ seconds, note: noteInput.trim() });
+    setTimeInput('');
+    setNoteInput('');
+    setTimeError(null);
+  }
+
+  function handleKeyDown(e: KeyboardEvent<HTMLInputElement>) {
+    if (e.key !== 'Enter') return;
+    e.preventDefault();
+    handleAdd();
+  }
+
+  return (
+    <div className="flex flex-col gap-1.5">
+      <span className="text-xs font-medium text-muted-foreground">
+        {t('vodManager.composer.title')}
+      </span>
+      <div className="flex flex-wrap items-start gap-2">
+        <Input
+          value={timeInput}
+          onFocus={handleTimeFocus}
+          onChange={(e) => {
+            setTimeInput(e.target.value);
+            setTimeError(null);
+          }}
+          onKeyDown={handleKeyDown}
+          placeholder={t('shared.vod.timePlaceholder')}
+          aria-label={t('shared.vod.timeAria')}
+          className="w-24"
+        />
+        <Input
+          value={noteInput}
+          onChange={(e) => {
+            setNoteInput(e.target.value);
+            setTimeError(null);
+          }}
+          onKeyDown={handleKeyDown}
+          placeholder={t('shared.vod.notePlaceholder')}
+          aria-label={t('shared.vod.noteAria')}
+          maxLength={200}
+          className="min-w-[10rem] flex-1"
+        />
+        <Button type="button" variant="outline" size="icon-sm" onClick={handleAdd}>
+          <Plus />
+          <span className="sr-only">{t('shared.vod.addTimestamp')}</span>
+        </Button>
+      </div>
+      {timeError && <p className="text-sm text-destructive">{timeError}</p>}
+    </div>
+  );
+}
+
+/**
+ * One coach edit-session timestamp row. Read-only for every note (click to
+ * seek), plus edit/delete/tag affordances — and, per Phase 8's locked
+ * capability matrix, ONLY when `isOwn` (`stamp.coach?.sessionId ===
+ * mySessionId` — checked by the caller). Coach-authored notes (own or
+ * another session's) additionally render an attribution line. Mirrors
+ * `VodManager/components/TimestampRow.tsx`'s edit-mode/view-mode idiom.
+ */
+function CoachTimestampRow({
+  stamp,
+  isOwn,
+  isSelected,
+  isEditing,
+  onSeek,
+  onSelect,
+  onStartEdit,
+  onCancelEdit,
+  onCommitEdit,
+  onDelete,
+  onAddTag,
+  onRemoveTag,
+  tagVocabulary,
+}: {
+  stamp: SessionTimestamp;
+  isOwn: boolean;
+  isSelected: boolean;
+  isEditing: boolean;
+  onSeek: (seconds: number) => void;
+  onSelect: (seconds: number) => void;
+  onStartEdit: (id: string) => void;
+  onCancelEdit: () => void;
+  onCommitEdit: (id: string, next: { seconds: number; note: string; tags?: string[] }) => void;
+  onDelete: (id: string) => void;
+  onAddTag: (id: string, tag: string) => void;
+  onRemoveTag: (id: string, tag: string) => void;
+  tagVocabulary: string[];
+}) {
+  const { t } = useTranslation();
+  const tags = stamp.tags ?? [];
+  const [timeInput, setTimeInput] = useState(() => formatTimestamp(stamp.seconds));
+  const [noteInput, setNoteInput] = useState(stamp.note);
+  const [error, setError] = useState<string | null>(null);
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
+
+  // Re-seed the draft every time this row (re-)enters edit mode — mirrors
+  // `TimestampRow`'s "adjust state during render" pattern (never an effect).
+  const [trackedIsEditing, setTrackedIsEditing] = useState(isEditing);
+  if (isEditing !== trackedIsEditing) {
+    setTrackedIsEditing(isEditing);
+    if (isEditing) {
+      setTimeInput(formatTimestamp(stamp.seconds));
+      setNoteInput(stamp.note);
+      setError(null);
+    }
+  }
+
+  function commit() {
+    if (!stamp.id) return;
+    const seconds = parseFlexibleTimestamp(timeInput);
+    if (seconds == null) {
+      setError(t('shared.vod.timeFormatError'));
+      return;
+    }
+    onCommitEdit(stamp.id, {
+      seconds,
+      note: noteInput.trim(),
+      ...(tags.length > 0 ? { tags } : {}),
+    });
+  }
+
+  function cancel() {
+    setTimeInput(formatTimestamp(stamp.seconds));
+    setNoteInput(stamp.note);
+    setError(null);
+    onCancelEdit();
+  }
+
+  function handleKeyDown(e: KeyboardEvent<HTMLInputElement>) {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      commit();
+    } else if (e.key === 'Escape') {
+      e.preventDefault();
+      cancel();
+    }
+  }
+
+  function confirmDelete() {
+    if (stamp.id) {
+      onDelete(stamp.id);
+    }
+    setConfirmingDelete(false);
+  }
+
+  const tagRow = (tags.length > 0 || isOwn) && (
+    <div className="flex flex-wrap items-center gap-2 pl-2">
+      {tags.map((tag) => (
+        <Badge key={tag} variant="secondary" className="gap-1">
+          {tagLabel(t, tag)}
+          {isOwn && stamp.id && (
+            <button
+              type="button"
+              aria-label={t('tags.removeAria', { tag: tagLabel(t, tag) })}
+              onClick={() => onRemoveTag(stamp.id!, tag)}
+              className="-mr-1 rounded-full p-0.5 hover:bg-black/10"
+            >
+              <X className="size-3" />
+            </button>
+          )}
+        </Badge>
+      ))}
+      {isOwn && stamp.id && (
+        <TagAddCombobox
+          presets={NOTE_PRESET_TAGS}
+          existingTags={tags}
+          vocabulary={tagVocabulary}
+          onAdd={(tag) => onAddTag(stamp.id!, tag)}
+          ariaLabel={t('tags.addAria')}
+        />
+      )}
+    </div>
+  );
+
+  const attribution = stamp.coach && (
+    <p className="pl-2 text-xs text-muted-foreground">
+      {t('share.coach.attribution', { name: stamp.coach.displayName })}
+    </p>
+  );
+
+  if (isOwn && isEditing) {
+    return (
+      <div className="flex flex-col gap-1.5 rounded-md border p-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <Input
+            value={timeInput}
+            onChange={(e) => {
+              setTimeInput(e.target.value);
+              setError(null);
+            }}
+            onKeyDown={handleKeyDown}
+            aria-label={t('vodManager.notes.editTimeAria')}
+            className="w-24"
+            autoFocus
+          />
+          <Input
+            value={noteInput}
+            onChange={(e) => {
+              setNoteInput(e.target.value);
+              setError(null);
+            }}
+            onKeyDown={handleKeyDown}
+            aria-label={t('vodManager.notes.editNoteAria')}
+            maxLength={200}
+            className="min-w-[10rem] flex-1"
+          />
+          <Button
+            type="button"
+            variant="outline"
+            size="icon-sm"
+            aria-label={t('vodManager.notes.saveEdit')}
+            onClick={commit}
+          >
+            <Check />
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            size="icon-sm"
+            aria-label={t('vodManager.notes.cancelEdit')}
+            onClick={cancel}
+          >
+            <X />
+          </Button>
+        </div>
+        {error && <p className="text-sm text-destructive">{error}</p>}
+        {tagRow}
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex flex-col gap-1.5">
+      <div className="flex items-center gap-2">
+        <button
+          type="button"
+          onClick={() => {
+            onSeek(stamp.seconds);
+            onSelect(stamp.seconds);
+          }}
+          className={cn(
+            'flex flex-1 items-center gap-2 rounded-md border p-2 text-left text-sm',
+            isSelected && 'bg-accent text-accent-foreground border-l-2 border-primary',
+          )}
+        >
+          <span className="shrink-0 font-mono">{formatTimestamp(stamp.seconds)}</span>
+          <span className="truncate">{stamp.note}</span>
+        </button>
+        {isOwn && stamp.id && (
+          <>
+            <Button
+              type="button"
+              variant="outline"
+              size="icon-sm"
+              aria-label={t('shared.vod.editTimestamp', { time: formatTimestamp(stamp.seconds) })}
+              onClick={() => onStartEdit(stamp.id!)}
+            >
+              <Pencil />
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              size="icon-sm"
+              aria-label={t('shared.vod.deleteTimestamp', { time: formatTimestamp(stamp.seconds) })}
+              onClick={() => setConfirmingDelete(true)}
+            >
+              <Trash2 />
+            </Button>
+            <AlertDialog open={confirmingDelete} onOpenChange={setConfirmingDelete}>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>{t('vodManager.notes.deleteConfirmTitle')}</AlertDialogTitle>
+                  <AlertDialogDescription>{t('common.cannotBeUndone')}</AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>{t('common.cancel')}</AlertDialogCancel>
+                  <AlertDialogAction onClick={confirmDelete}>
+                    {t('common.remove')}
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
+          </>
+        )}
+      </div>
+      {attribution}
+      {tagRow}
+    </div>
+  );
 }
 
 /**
@@ -37,12 +427,25 @@ function safeHostname(url: string): string {
  * (read-only usage: no `onUpdateTimestamps`-adjacent callbacks exist on that
  * hook to begin with) and `TimestampRow`'s highlight visual tokens via
  * `ShareTimestampRow`.
+ *
+ * Phase 8 (Coaching Edit Sessions): additionally fires `useCoachSession` in
+ * parallel with the frozen `usePublicVodShare` read on EVERY visit — the
+ * session endpoint 404s (silently, no page-level error) for a
+ * view-tier/unknown/revoked/expired token, and resolves with
+ * `permissions: 'edit'` only for a genuine coaching link. Its `timestamps`
+ * (id/coach-bearing, LIVE-recomputed) become the rendered note list whenever
+ * it resolves; view-tier rendering is otherwise byte-identical to pre-Phase-8
+ * behavior.
  */
 export function ShareViewPage() {
   const { t } = useTranslation();
   const { token } = useParams<{ token: string }>();
   const [searchParams] = useSearchParams();
   const { data: snapshot, isPending, isError } = usePublicVodShare(token ?? '');
+  const { data: coachSession } = useCoachSession(token ?? '');
+  const createCoachNote = useCreateCoachNote(token ?? '');
+  const updateCoachNote = useUpdateCoachNote(token ?? '');
+  const deleteCoachNote = useDeleteCoachNote(token ?? '');
 
   const deepLinkSeconds = useMemo(() => {
     const raw = searchParams.get('t');
@@ -53,7 +456,7 @@ export function ShareViewPage() {
   const appliedDeepLinkRef = useRef(false);
   const [autoplayBlocked, setAutoplayBlocked] = useState(false);
 
-  const { containerRef, isReady, error, seek, pause, pauseAtEnd } = useVodPlayer({
+  const { containerRef, isReady, error, seek, pause, pauseAtEnd, getCurrentTime } = useVodPlayer({
     vodUrl: snapshot?.vodUrl ?? '',
     startSeconds: deepLinkSeconds ?? snapshot?.vodStartSeconds ?? 0,
     onAutoplayBlocked: () => setAutoplayBlocked(true),
@@ -68,6 +471,14 @@ export function ShareViewPage() {
     onEnded: () => {
       pauseAtEnd();
     },
+  });
+
+  // Populated every render (mirrors `VodPlayer.tsx`'s own idiom) so the coach
+  // composer/quick-tag panel can pull the LIVE playback position on demand
+  // without polling.
+  const getCurrentTimeRef = useRef<(() => number) | null>(null);
+  useEffect(() => {
+    getCurrentTimeRef.current = getCurrentTime;
   });
 
   // VIEW-03: seek to the `?t=` deep-link exactly once, the moment the live
@@ -100,6 +511,16 @@ export function ShareViewPage() {
       shareReferral.stamp(token);
     }
   }, [snapshot, token]);
+
+  // Phase 8: this browser's coach session id — generated (and persisted)
+  // once per browser regardless of tier; harmless on a view-tier share
+  // (never read from or written anywhere unless a coach write happens).
+  const [mySessionId] = useState(() => getOrCreateSessionId());
+  const [quickTags, setQuickTags] = useState<string[]>(() => readStoredQuickTags());
+  const [editingNoteId, setEditingNoteId] = useState<string | null>(null);
+  const [nameDialogOpen, setNameDialogOpen] = useState(false);
+  const [namePromptValue, setNamePromptValue] = useState('');
+  const pendingWriteRef = useRef<(() => void) | null>(null);
 
   const unavailable = isError || (!isPending && !snapshot);
 
@@ -146,7 +567,9 @@ export function ShareViewPage() {
   // matching the same after-the-unavailable/pending-guard placement the
   // unavailable page itself relies on (VIEW-05's no-oracle discipline: a
   // revoked/unknown recap token never reaches this branch either, since it
-  // fails the `unavailable` check above first).
+  // fails the `unavailable` check above first). Recap tokens are never
+  // edit-tier (createShareInputSchema blocks it), so `coachSession` never
+  // resolves here either.
   if (snapshot.kind === 'recap') {
     return <RecapView snapshot={snapshot} token={token ?? ''} />;
   }
@@ -156,9 +579,117 @@ export function ShareViewPage() {
   const fighter = getFighterById(snapshot.fighterId!);
   const opponentFighter = getFighterById(snapshot.opponentFighterId!);
 
+  // Phase 8 (COACH-02/03/05): an edit-tier coach session resolved — the LIVE
+  // recomputed note list (id/coach-bearing) replaces the frozen snapshot's
+  // `timestamps` for rendering; every other displayed field stays the frozen
+  // share-time copy (match facts don't change once shared, per Phase 5/6).
+  const isEditTier = coachSession?.permissions === 'edit';
+  const timestamps: SessionTimestamp[] = isEditTier
+    ? (coachSession?.timestamps ?? [])
+    : (snapshot.timestamps ?? []);
+  const tagVocabulary = computeTagVocabulary(timestamps);
+
   function handleSelectTimestamp(seconds: number) {
     seek(seconds);
     setSelectedSeconds(seconds);
+  }
+
+  function handleQuickTagsChange(next: string[]) {
+    setQuickTags(next);
+    persistQuickTags(next);
+  }
+
+  // Name-prompt gate (RESEARCH: fires on the FIRST WRITE attempt, never on
+  // page load): if no display name is stored yet, defer `action` behind the
+  // one-field dialog; `action` fires once the coach submits a name. Every
+  // later write reuses the already-stored name and never opens the dialog.
+  function withDisplayName(action: () => void) {
+    if (getStoredDisplayName()) {
+      action();
+      return;
+    }
+    pendingWriteRef.current = action;
+    setNamePromptValue('');
+    setNameDialogOpen(true);
+  }
+
+  function handleNamePromptSubmit() {
+    const trimmed = namePromptValue.trim();
+    if (!trimmed) {
+      return;
+    }
+    setDisplayName(trimmed);
+    setNameDialogOpen(false);
+    const action = pendingWriteRef.current;
+    pendingWriteRef.current = null;
+    action?.();
+  }
+
+  function handleCreateCoachNote(input: { seconds: number; note: string }) {
+    withDisplayName(() => {
+      createCoachNote.mutate({
+        sessionId: mySessionId,
+        displayName: getStoredDisplayName() ?? '',
+        seconds: input.seconds,
+        note: input.note,
+      });
+    });
+  }
+
+  function handleCommitCoachNote(
+    id: string,
+    next: { seconds: number; note: string; tags?: string[] },
+  ) {
+    updateCoachNote.mutate({ noteId: id, input: { sessionId: mySessionId, ...next } });
+    setEditingNoteId(null);
+  }
+
+  function handleDeleteCoachNote(id: string) {
+    if (editingNoteId === id) {
+      setEditingNoteId(null);
+    }
+    deleteCoachNote.mutate({ noteId: id, sessionId: mySessionId });
+  }
+
+  function handleAddCoachTag(id: string, tag: string) {
+    const target = timestamps.find((stamp) => stamp.id === id);
+    const nextTags = addTagToList(target?.tags ?? [], tag, MAX_NOTE_TAGS);
+    updateCoachNote.mutate({ noteId: id, input: { sessionId: mySessionId, tags: nextTags } });
+  }
+
+  function handleRemoveCoachTag(id: string, tag: string) {
+    const target = timestamps.find((stamp) => stamp.id === id);
+    const nextTags = removeTagFromList(target?.tags ?? [], tag);
+    updateCoachNote.mutate({ noteId: id, input: { sessionId: mySessionId, tags: nextTags } });
+  }
+
+  // Ownership-filtered same-second quick-tag merge (RESEARCH Pitfall 4 /
+  // T-08-21): only an existing note AT THIS SECOND authored by THIS session
+  // is merged into — an owner's (or another coach's) note at the identical
+  // second is NEVER touched; the fallback is always "create a new note".
+  function handleCoachQuickTag(tagSlug: string) {
+    const seconds = getCurrentTimeRef.current?.() ?? 0;
+    pause();
+    const ownAtSecond = timestamps.find(
+      (stamp) => stamp.seconds === seconds && stamp.coach?.sessionId === mySessionId,
+    );
+    if (ownAtSecond?.id) {
+      const nextTags = addTagToList(ownAtSecond.tags ?? [], tagSlug, MAX_NOTE_TAGS);
+      updateCoachNote.mutate({
+        noteId: ownAtSecond.id,
+        input: { sessionId: mySessionId, tags: nextTags },
+      });
+      return;
+    }
+    withDisplayName(() => {
+      createCoachNote.mutate({
+        sessionId: mySessionId,
+        displayName: getStoredDisplayName() ?? '',
+        seconds,
+        note: '',
+        tags: [tagSlug],
+      });
+    });
   }
 
   return (
@@ -218,9 +749,9 @@ export function ShareViewPage() {
               {t('share.watchOnHost', { host: safeHostname(snapshot.vodUrl!) })}
               <ExternalLink className="size-3.5" />
             </a>
-            {snapshot.timestamps && snapshot.timestamps.length > 0 && (
+            {timestamps.length > 0 && (
               <ul className="flex flex-col gap-1 text-sm">
-                {snapshot.timestamps.map((stamp, i) => (
+                {timestamps.map((stamp, i) => (
                   <li key={i} className="flex gap-2">
                     <span className="shrink-0 font-mono text-muted-foreground">
                       {formatTimestamp(stamp.seconds)}
@@ -247,16 +778,55 @@ export function ShareViewPage() {
           </p>
         )}
 
-        {error === null && snapshot.timestamps && snapshot.timestamps.length > 0 && (
-          <div className="flex flex-col gap-2">
-            {snapshot.timestamps.map((stamp, i) => (
-              <ShareTimestampRow
-                key={i}
-                stamp={stamp}
-                isSelected={selectedSeconds === stamp.seconds}
-                onSelect={handleSelectTimestamp}
-              />
-            ))}
+        {error === null && (
+          <div className="flex flex-col gap-3">
+            {isEditTier && (
+              <>
+                <CoachComposer
+                  noteCount={timestamps.length}
+                  getCurrentTimeRef={getCurrentTimeRef}
+                  onCreateNote={handleCreateCoachNote}
+                />
+                <QuickTagPanel
+                  quickTags={quickTags}
+                  onQuickTag={handleCoachQuickTag}
+                  onQuickTagsChange={handleQuickTagsChange}
+                  tagVocabulary={tagVocabulary}
+                />
+              </>
+            )}
+
+            {timestamps.length > 0 && (
+              <div className="flex flex-col gap-2">
+                {timestamps.map((stamp, i) =>
+                  isEditTier ? (
+                    <CoachTimestampRow
+                      key={stamp.id ?? i}
+                      stamp={stamp}
+                      isOwn={stamp.coach?.sessionId === mySessionId}
+                      isSelected={selectedSeconds === stamp.seconds}
+                      isEditing={stamp.id != null && editingNoteId === stamp.id}
+                      onSeek={seek}
+                      onSelect={handleSelectTimestamp}
+                      onStartEdit={setEditingNoteId}
+                      onCancelEdit={() => setEditingNoteId(null)}
+                      onCommitEdit={handleCommitCoachNote}
+                      onDelete={handleDeleteCoachNote}
+                      onAddTag={handleAddCoachTag}
+                      onRemoveTag={handleRemoveCoachTag}
+                      tagVocabulary={tagVocabulary}
+                    />
+                  ) : (
+                    <ShareTimestampRow
+                      key={i}
+                      stamp={stamp}
+                      isSelected={selectedSeconds === stamp.seconds}
+                      onSelect={handleSelectTimestamp}
+                    />
+                  ),
+                )}
+              </div>
+            )}
           </div>
         )}
 
@@ -268,6 +838,41 @@ export function ShareViewPage() {
           </Button>
         </div>
       </div>
+
+      {/* Phase 8: the coach's one-time, first-write-deferred name prompt. */}
+      <Dialog open={nameDialogOpen} onOpenChange={setNameDialogOpen}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>{t('share.coach.namePromptTitle')}</DialogTitle>
+            <DialogDescription>{t('share.coach.namePromptDescription')}</DialogDescription>
+          </DialogHeader>
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="coach-display-name">{t('share.coach.nameLabel')}</Label>
+            <Input
+              id="coach-display-name"
+              value={namePromptValue}
+              onChange={(e) => setNamePromptValue(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault();
+                  handleNamePromptSubmit();
+                }
+              }}
+              maxLength={60}
+              autoFocus
+            />
+          </div>
+          <DialogFooter className="mt-2">
+            <Button
+              type="button"
+              onClick={handleNamePromptSubmit}
+              disabled={!namePromptValue.trim()}
+            >
+              {t('share.coach.nameSubmit')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </PublicLayout>
   );
 }
