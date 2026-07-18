@@ -57,7 +57,9 @@ describe('VodNotesDialog', () => {
       }),
     );
 
-    expect(screen.getByLabelText('VOD URL')).toHaveValue('https://youtube.com/watch?v=abc123');
+    expect(screen.getByLabelText('VOD URL (YouTube or Twitch)')).toHaveValue(
+      'https://youtube.com/watch?v=abc123',
+    );
     expect(screen.getByText('2:41')).toBeInTheDocument();
     expect(screen.getByText('missed punish on shield')).toBeInTheDocument();
   });
@@ -140,7 +142,10 @@ describe('VodNotesDialog', () => {
     const match = baseMatch({ stocksLeft: 2, eventName: 'Ultimate Singles' });
     renderDialog(match);
 
-    await user.type(screen.getByLabelText('VOD URL'), 'https://youtube.com/watch?v=abc123');
+    await user.type(
+      screen.getByLabelText('VOD URL (YouTube or Twitch)'),
+      'https://youtube.com/watch?v=abc123',
+    );
     await user.type(screen.getByLabelText('Timestamp time'), '2:41');
     await user.type(screen.getByLabelText('Timestamp note'), 'missed punish on shield');
     await user.click(screen.getByRole('button', { name: 'Add timestamp' }));
@@ -180,7 +185,7 @@ describe('VodNotesDialog', () => {
     renderDialog(match);
 
     await user.click(screen.getByRole('button', { name: 'Delete timestamp 2:41' }));
-    await user.clear(screen.getByLabelText('VOD URL'));
+    await user.clear(screen.getByLabelText('VOD URL (YouTube or Twitch)'));
     await user.click(screen.getByRole('button', { name: 'Save' }));
 
     await waitFor(() => expect(updateMatch).toHaveBeenCalledTimes(1));

@@ -85,7 +85,7 @@
     "vod": {
       "title": "VOD-Notizen",
       "description": "Hänge einen VOD-Link und Notizen mit Zeitstempel an, z. B. „2:41 — Punish auf Schild verpasst“.",
-      "url": "VOD-URL",
+      "url": "VOD-URL (YouTube or Twitch)",
       "timestamps": "Zeitstempel",
       "noTimestamps": "Noch keine Zeitstempel-Notizen.",
       "timestampsAria": "Zeitstempel-Notizen",
