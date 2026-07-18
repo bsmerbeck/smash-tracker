@@ -1,6 +1,29 @@
 import { z } from 'zod';
 
 /**
+ * Phase 7 walkthrough amendment round 2 (07-10, 2026-07-17): one GAME within
+ * a set's generation-time timeline — the character matchup and stage played,
+ * so a recap can show "what did I play, on which stage, and did I win THAT
+ * game" instead of only an aggregate set score. Stored ONLY inside
+ * `recapSetSchema.games` (07-09's set-level `stages` array is left untouched
+ * for backward compatibility with every pre-07-10 stored snapshot). Every
+ * field is `.nullish()` — a game missing a fighter/stage selection (start.gg
+ * sync gaps, manual-entry-adjacent edge cases) simply omits that one field
+ * rather than failing the whole set's timeline.
+ */
+export const recapGameSchema = z.object({
+  /** The tracked user's fighter id for this game. Omitted when unknown/unmapped. */
+  fighterId: z.number().int().positive().nullish(),
+  /** The opponent's fighter id for this game. Omitted when unknown/unmapped. */
+  opponentFighterId: z.number().int().positive().nullish(),
+  /** The stage NAME played, when known — stage id 0 ("no selection") is never stored here. */
+  stageName: z.string().min(1).nullish(),
+  /** Whether the tracked user won this individual game. Omitted when unknown. */
+  win: z.boolean().nullish(),
+});
+export type RecapGame = z.infer<typeof recapGameSchema>;
+
+/**
  * Phase 7 walkthrough amendment (07-09, 2026-07-17): one set of the
  * generation-time set timeline — round label, opponent, game score, and the
  * stages played — stored ONLY when the recap was generated with
@@ -27,6 +50,15 @@ export const recapSetSchema = z.object({
   win: z.boolean(),
   /** Distinct stage NAMES played across the set's games, first-seen order; stage id 0 ("no selection") is never included. Omitted (not `[]`) when no game carried a real stage. */
   stages: z.array(z.string().min(1)).max(10).nullish(),
+  /**
+   * Walkthrough amendment round 2 (07-10): per-game character+stage detail
+   * — one entry per game in the set, in game-number order. Omitted (not
+   * `[]`) for a pre-07-10 stored snapshot (never backfilled) and for any set
+   * whose games couldn't be enumerated. Capped at 10 (a realistic worst-case
+   * "first to 10" set has at most 10 games — see `recapSetSchema.stages`'s
+   * own identical cap for the same rationale).
+   */
+  games: z.array(recapGameSchema).max(10).nullish(),
 });
 export type RecapSet = z.infer<typeof recapSetSchema>;
 

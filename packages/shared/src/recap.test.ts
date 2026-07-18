@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { recapSetSchema, recapSnapshotSchema } from './recap.js';
+import { recapGameSchema, recapSetSchema, recapSnapshotSchema } from './recap.js';
 
 function makeSet(overrides: Partial<Record<string, unknown>> = {}) {
   return {
@@ -47,6 +47,58 @@ describe('recapSetSchema', () => {
 
   it('rejects an empty opponentName', () => {
     const result = recapSetSchema.safeParse(makeSet({ opponentName: '' }));
+    expect(result.success).toBe(false);
+  });
+});
+
+describe('recapGameSchema (07-10 walkthrough amendment round 2)', () => {
+  it('parses a fully-populated game', () => {
+    const parsed = recapGameSchema.parse({
+      fighterId: 1,
+      opponentFighterId: 5,
+      stageName: 'Battlefield',
+      win: true,
+    });
+    expect(parsed).toEqual({
+      fighterId: 1,
+      opponentFighterId: 5,
+      stageName: 'Battlefield',
+      win: true,
+    });
+  });
+
+  it('parses an empty game (every field omitted)', () => {
+    const parsed = recapGameSchema.parse({});
+    expect('fighterId' in parsed).toBe(false);
+    expect('opponentFighterId' in parsed).toBe(false);
+    expect('stageName' in parsed).toBe(false);
+    expect('win' in parsed).toBe(false);
+  });
+});
+
+describe('recapSetSchema.games (07-10 walkthrough amendment round 2)', () => {
+  it('parses a set with a populated games array, in game order', () => {
+    const parsed = recapSetSchema.parse(
+      makeSet({
+        games: [
+          { fighterId: 1, opponentFighterId: 5, stageName: 'Battlefield', win: true },
+          { fighterId: 1, opponentFighterId: 5, stageName: "Yoshi's Story", win: false },
+        ],
+      }),
+    );
+    expect(parsed.games).toHaveLength(2);
+    expect(parsed.games?.[0]).toMatchObject({ stageName: 'Battlefield', win: true });
+    expect(parsed.games?.[1]).toMatchObject({ stageName: "Yoshi's Story", win: false });
+  });
+
+  it('omits games (not []) for a pre-07-10 stored set', () => {
+    const parsed = recapSetSchema.parse(makeSet());
+    expect('games' in parsed).toBe(false);
+  });
+
+  it('rejects more than 10 games in one set', () => {
+    const games = Array.from({ length: 11 }, () => ({ win: true }));
+    const result = recapSetSchema.safeParse(makeSet({ games }));
     expect(result.success).toBe(false);
   });
 });
