@@ -27,12 +27,24 @@ import { cn } from '@/lib/utils';
  * renders at reduced opacity and drops BOTH the copy and revoke actions —
  * no un-revoke; the owner creates a new link instead.
  */
-export function ShareRow({ share }: { share: ShareSummary }) {
+export function ShareRow({
+  share,
+  selectionMode = false,
+  selected = false,
+  onToggleSelected,
+}: {
+  share: ShareSummary;
+  /** FB-03 bulk-select mode, driven by MySharesDialog. */
+  selectionMode?: boolean;
+  selected?: boolean;
+  onToggleSelected?: (next: boolean) => void;
+}) {
   const { t } = useTranslation();
   const revokeShare = useRevokeVodShare();
   const deleteShare = useDeleteVodShare();
   const [confirmingRevoke, setConfirmingRevoke] = useState(false);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const [confirmingActiveDelete, setConfirmingActiveDelete] = useState(false);
 
   const isRecap = share.kind === 'recap';
   const fighter = share.fighterId != null ? getFighterById(share.fighterId) : undefined;
@@ -80,6 +92,22 @@ export function ShareRow({ share }: { share: ShareSummary }) {
     setConfirmingDelete(false);
   }
 
+  /**
+   * WR-05/FB-03: an ACTIVE share's Delete now succeeds directly (Plan 02
+   * dropped the 409-while-active guard) — no forced revoke-then-delete
+   * chain. Reuses the same `useDeleteVodShare` mutation as the revoked-row
+   * Delete; only the confirm copy and the dialog-open state differ.
+   */
+  async function confirmActiveDelete() {
+    try {
+      await deleteShare.mutateAsync(share.shareId);
+      toast.success(t('vodManager.shares.deletedToast'));
+    } catch {
+      toast.error(t('shared.vod.saveFailed'));
+    }
+    setConfirmingActiveDelete(false);
+  }
+
   return (
     <div
       className={cn(
@@ -87,6 +115,14 @@ export function ShareRow({ share }: { share: ShareSummary }) {
         (isRevoked || isExpired) && 'opacity-60',
       )}
     >
+      {selectionMode && (
+        <input
+          type="checkbox"
+          aria-label={t('vodManager.shares.selectRowAria')}
+          checked={selected}
+          onChange={(event) => onToggleSelected?.(event.target.checked)}
+        />
+      )}
       <div className="flex flex-1 flex-col items-start gap-1">
         <div className="flex flex-wrap items-center gap-2">
           {isEdit ? (
@@ -181,6 +217,46 @@ export function ShareRow({ share }: { share: ShareSummary }) {
               </AlertDialogFooter>
             </AlertDialogContent>
           </AlertDialog>
+          {/*
+            WR-05/FB-03: Delete is now available on ACTIVE (non-expired) rows
+            too — one honest confirm, no forced revoke-then-delete chain. An
+            expired-but-not-yet-revoked row keeps only Revoke (the existing
+            path to becoming deletable); it does not get this Delete.
+          */}
+          {!isExpired && (
+            <>
+              <Button
+                type="button"
+                variant="outline"
+                size="icon-sm"
+                aria-label={t('vodManager.shares.deleteActiveShareAria')}
+                onClick={() => setConfirmingActiveDelete(true)}
+              >
+                <Trash2 />
+              </Button>
+              <AlertDialog open={confirmingActiveDelete} onOpenChange={setConfirmingActiveDelete}>
+                <AlertDialogContent>
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>
+                      {t('vodManager.shares.deleteActiveConfirmTitle')}
+                    </AlertDialogTitle>
+                    <AlertDialogDescription>
+                      {t('vodManager.shares.deleteActiveConfirmDescription')}
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel>{t('common.cancel')}</AlertDialogCancel>
+                    <AlertDialogAction
+                      onClick={confirmActiveDelete}
+                      disabled={deleteShare.isPending}
+                    >
+                      {t('vodManager.shares.deleteConfirmAction')}
+                    </AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
+            </>
+          )}
         </>
       )}
       {isRevoked && (
