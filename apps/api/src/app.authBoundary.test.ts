@@ -20,7 +20,10 @@ import { buildTestApp } from './test-support/testApp.js';
  * routes) are the explicit inverse check for the routes this phase itself
  * adds; they don't generalize to routes added by other future phases.
  */
-const KNOWN_ANONYMOUS_ROUTES: Array<{ method: 'GET' | 'POST'; url: string }> = [
+const KNOWN_ANONYMOUS_ROUTES: Array<{
+  method: 'GET' | 'POST' | 'PATCH' | 'DELETE';
+  url: string;
+}> = [
   { method: 'GET', url: '/healthz' },
   { method: 'GET', url: '/api/gsp-live' },
   { method: 'GET', url: '/api/auth/startgg/login' },
@@ -30,9 +33,18 @@ const KNOWN_ANONYMOUS_ROUTES: Array<{ method: 'GET' | 'POST'; url: string }> = [
   { method: 'POST', url: '/api/auth/parrygg/login/complete' },
   { method: 'POST', url: '/api/billing/webhook' },
   { method: 'GET', url: '/api/vod-shares/:token' },
-  // NEW this phase — root-scoped (not /api-prefixed) HTML shell + OG image:
+  // Phase 6 — root-scoped (not /api-prefixed) HTML shell + OG image:
   { method: 'GET', url: '/s/:token' },
   { method: 'GET', url: '/s/:token/og.png' },
+  // Phase 8 (Coaching Edit Sessions) — DELIBERATELY anonymous coach
+  // surface: a bearer edit-token in the path IS the credential (no
+  // account). All four are identical-404 no-oracle, no-store, and
+  // rate-limited per-token (20/min) + per-IP (floor) — see
+  // routes/coachNotes.ts and the nested scope in app.ts.
+  { method: 'GET', url: '/api/vod-shares/:token/session' },
+  { method: 'POST', url: '/api/vod-shares/:token/notes' },
+  { method: 'PATCH', url: '/api/vod-shares/:token/notes/:noteId' },
+  { method: 'DELETE', url: '/api/vod-shares/:token/notes/:noteId' },
 ];
 
 describe('auth boundary', () => {
@@ -42,10 +54,51 @@ describe('auth boundary', () => {
     for (const route of KNOWN_ANONYMOUS_ROUTES) {
       const response = await app.inject({
         method: route.method,
-        url: route.url.replace(':token', 'x'),
+        url: route.url.replace(':token', 'x').replace(':noteId', 'n1'),
       });
       expect(response.statusCode, `${route.method} ${route.url}`).not.toBe(401);
     }
+  });
+
+  it('each coach route requires no auth but rejects an unknown token with the canonical 404', async () => {
+    const { app } = buildTestApp();
+    const token = 'unknownTokenAAAAABBBBBCC';
+    const sessionId = '11111111-1111-4111-8111-111111111111';
+    const canonical404 = {
+      error: 'Not Found',
+      message: 'This share is no longer available',
+      statusCode: 404,
+    };
+
+    const session = await app.inject({
+      method: 'GET',
+      url: `/api/vod-shares/${token}/session`,
+    });
+    expect(session.statusCode).toBe(404);
+    expect(session.json()).toEqual(canonical404);
+
+    const create = await app.inject({
+      method: 'POST',
+      url: `/api/vod-shares/${token}/notes`,
+      payload: { sessionId, displayName: 'Coach', seconds: 1, note: 'x' },
+    });
+    expect(create.statusCode).toBe(404);
+    expect(create.json()).toEqual(canonical404);
+
+    const patch = await app.inject({
+      method: 'PATCH',
+      url: `/api/vod-shares/${token}/notes/n1`,
+      payload: { sessionId, note: 'x' },
+    });
+    expect(patch.statusCode).toBe(404);
+    expect(patch.json()).toEqual(canonical404);
+
+    const del = await app.inject({
+      method: 'DELETE',
+      url: `/api/vod-shares/${token}/notes/n1?sessionId=${sessionId}`,
+    });
+    expect(del.statusCode).toBe(404);
+    expect(del.json()).toEqual(canonical404);
   });
 
   it('POST /api/vod-shares requires auth', async () => {
