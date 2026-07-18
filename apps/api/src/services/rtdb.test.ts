@@ -577,6 +577,106 @@ describe('CR-01 regression: note edit/delete vs real-RTDB null-first-run transac
 });
 
 // ---------------------------------------------------------------------------
+// Review WR-06: edit/delete on a legacy dense-array node must apply the SAME
+// re-keying migration createNote does — never persist a synthesized
+// `legacy-<index>` id as a real RTDB key (which a later createNote would
+// silently re-key wholesale, 404ing every concurrently-held note id).
+// ---------------------------------------------------------------------------
+describe('WR-06 regression: edit/delete migrate legacy-array nodes instead of persisting legacy-N keys', () => {
+  function seedMatch(database: FakeDatabase, overrides: Record<string, unknown> = {}) {
+    database.seed(`matches/${UID}/m1`, {
+      fighter_id: 1,
+      opponent_id: 8,
+      time: 1700000000000,
+      win: true,
+      ...overrides,
+    });
+  }
+
+  it('updateNote on a legacy-array match re-keys EVERY entry with real push keys and returns the post-migration id', async () => {
+    const database = new FakeDatabase();
+    const rtdb = new RtdbService(database as never);
+    seedMatch(database, {
+      vodTimestamps: [
+        { seconds: 10, note: 'first legacy' },
+        { seconds: 20, note: 'second legacy' },
+      ],
+    });
+
+    const updated = await rtdb.updateNote(UID, 'm1', 'legacy-0', {
+      seconds: 11,
+      note: 'edited legacy',
+    });
+
+    // The returned id is the note's NEW real push key, never legacy-0.
+    expect(updated.id).not.toMatch(/^legacy-/);
+    expect(updated).toMatchObject({ seconds: 11, note: 'edited legacy' });
+
+    const stored = database.dump().matches as Record<string, Record<string, unknown>>;
+    const vodTimestamps = (stored[UID]!.m1 as Record<string, unknown>).vodTimestamps as Record<
+      string,
+      unknown
+    >;
+    const keys = Object.keys(vodTimestamps);
+    expect(keys).toHaveLength(2);
+    for (const key of keys) {
+      expect(key).not.toMatch(/^legacy-/);
+      expect(key).not.toMatch(/^\d+$/);
+    }
+    expect(vodTimestamps[updated.id]).toMatchObject({ seconds: 11, note: 'edited legacy' });
+    expect(Object.values(vodTimestamps)).toContainEqual({
+      seconds: 20,
+      note: 'second legacy',
+    });
+  });
+
+  it('deleteNote on a legacy-array match removes the target and re-keys the survivors with real push keys', async () => {
+    const database = new FakeDatabase();
+    const rtdb = new RtdbService(database as never);
+    seedMatch(database, {
+      vodTimestamps: [
+        { seconds: 10, note: 'doomed legacy' },
+        { seconds: 20, note: 'surviving legacy' },
+      ],
+    });
+
+    await rtdb.deleteNote(UID, 'm1', 'legacy-0');
+
+    const stored = database.dump().matches as Record<string, Record<string, unknown>>;
+    const vodTimestamps = (stored[UID]!.m1 as Record<string, unknown>).vodTimestamps as Record<
+      string,
+      unknown
+    >;
+    const keys = Object.keys(vodTimestamps);
+    expect(keys).toHaveLength(1);
+    expect(keys[0]).not.toMatch(/^legacy-/);
+    expect(keys[0]).not.toMatch(/^\d+$/);
+    expect(vodTimestamps[keys[0]!]).toEqual({ seconds: 20, note: 'surviving legacy' });
+  });
+
+  it('a subsequent createNote after a migrating edit does NOT re-key the already-migrated notes (ids are stable)', async () => {
+    const database = new FakeDatabase();
+    const rtdb = new RtdbService(database as never);
+    seedMatch(database, { vodTimestamps: [{ seconds: 10, note: 'legacy note' }] });
+
+    const migrated = await rtdb.updateNote(UID, 'm1', 'legacy-0', {
+      seconds: 10,
+      note: 'migrated note',
+    });
+    await rtdb.createNote(UID, 'm1', { seconds: 50, note: 'brand new' });
+
+    const stored = database.dump().matches as Record<string, Record<string, unknown>>;
+    const vodTimestamps = (stored[UID]!.m1 as Record<string, unknown>).vodTimestamps as Record<
+      string,
+      unknown
+    >;
+    // The migrated note keeps the exact key the edit assigned it.
+    expect(vodTimestamps[migrated.id]).toMatchObject({ seconds: 10, note: 'migrated note' });
+    expect(Object.keys(vodTimestamps)).toHaveLength(2);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Phase 8 Plan 3 (Coaching Edit Sessions): the coach backend — an edit-tier
 // token resolves to a LIVE redacted recompute (never the frozen snapshot),
 // and three anonymous session-scoped write helpers guard ownership +

@@ -628,12 +628,22 @@ export class RtdbService {
 
       const nextNode: Record<string, unknown> = {};
       for (const { id: entryId, ...rest } of entries) {
+        // Same migration createNote applies (review WR-06): a `legacy-*` id
+        // was synthesized by the normalizer for a dense-array element and
+        // was NEVER a real RTDB key — persisting it would store a lying
+        // key shape that a later createNote silently re-keys wholesale.
+        // Mint a fresh push key now instead, so any write to a legacy node
+        // fully migrates it exactly once and ids are stable thereafter.
+        const key = entryId.startsWith('legacy-') ? notesRef.push().key! : entryId;
         if (entryId === noteId) {
           const nextEntry = computeNext(rest);
-          nextNode[entryId] = nextEntry;
-          updated = { id: entryId, ...nextEntry };
+          nextNode[key] = nextEntry;
+          // The updated note reports its POST-migration id — the client
+          // invalidates and refetches after every write, so a stale
+          // `legacy-*` id never survives the migration.
+          updated = { id: key, ...nextEntry };
         } else {
-          nextNode[entryId] = rest;
+          nextNode[key] = rest;
         }
       }
       return nextNode;
@@ -694,7 +704,10 @@ export class RtdbService {
       const nextNode: Record<string, unknown> = {};
       for (const { id: entryId, ...rest } of entries) {
         if (entryId !== noteId) {
-          nextNode[entryId] = rest;
+          // Re-key legacy entries with real push keys — see
+          // writeNoteUpdate's identical migration comment (review WR-06).
+          const key = entryId.startsWith('legacy-') ? notesRef.push().key! : entryId;
+          nextNode[key] = rest;
         }
       }
       // Deleting the last remaining note must remove the `vodTimestamps`
