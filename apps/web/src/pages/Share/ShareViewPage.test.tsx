@@ -57,15 +57,16 @@ vi.mock('@/lib/coachSession', () => ({
 const coachSessionQuery = vi.fn<() => { data: PublicShareSnapshot | undefined }>(() => ({
   data: undefined,
 }));
-// FB-04: `ShareViewPage` now threads per-call `{ onSuccess, onError }`
-// mutation options through `createCoachNote.mutate` for a coach's FIRST
-// write (deferred behind the name prompt) — this default implementation
-// mirrors a SUCCESSFUL server write by invoking `onSuccess` synchronously,
-// matching every pre-existing test's expectation that a write "just
-// succeeds". Individual 409 tests below override this with
+// FB-04/CR-01: `ShareViewPage` threads per-call mutation options through
+// `createCoachNote.mutate` for EVERY name-bearing create — the deferred
+// FIRST write carries `{ onSuccess, onError }` (the name-commit path), and
+// a write reusing a STORED name carries `{ onError }` alone (the stored
+// name can still 409 on THIS review — it's a global per-browser record
+// while the server's uniqueness check is per-match). This default
+// implementation mirrors a SUCCESSFUL server write by invoking `onSuccess`
+// synchronously, matching every pre-existing test's expectation that a
+// write "just succeeds". Individual 409 tests below override this with
 // `mockImplementationOnce` to simulate a name-collision rejection instead.
-// A write on an already-committed session calls `.mutate(payload)` with no
-// second argument at all — `options` is `undefined` and the `?.` no-ops.
 const createCoachNoteMutate = vi.fn(
   (_payload: unknown, options?: { onSuccess?: () => void; onError?: (error: unknown) => void }) => {
     options?.onSuccess?.();
@@ -648,12 +649,17 @@ describe('ShareViewPage', () => {
       await user.type(screen.getByLabelText('Timestamp note'), 'great punish');
       await user.click(screen.getByRole('button', { name: 'Add timestamp' }));
 
-      expect(createCoachNoteMutate).toHaveBeenCalledExactlyOnceWith({
-        sessionId: MY_SESSION_ID,
-        displayName: 'Coach Ken',
-        seconds: 90,
-        note: 'great punish',
-      });
+      // CR-01: a stored-name write carries a per-call `{ onError }` (the
+      // stored name can still 409 on THIS review).
+      expect(createCoachNoteMutate).toHaveBeenCalledExactlyOnceWith(
+        {
+          sessionId: MY_SESSION_ID,
+          displayName: 'Coach Ken',
+          seconds: 90,
+          note: 'great punish',
+        },
+        expect.objectContaining({ onError: expect.any(Function) }),
+      );
     });
 
     it('shows no edit/delete affordance for a note authored by a DIFFERENT coach session', async () => {
@@ -799,6 +805,52 @@ describe('ShareViewPage', () => {
       expect(screen.queryByText('What should we call you?')).not.toBeInTheDocument();
     });
 
+    it('CR-01: a 409 on a write with a STORED display name (accepted on a different review) demotes the name and re-opens the prompt — the note is never silently lost', async () => {
+      getPublic.mockResolvedValue(baseSnapshot());
+      coachSessionQuery.mockReturnValue({ data: baseCoachSession() });
+      // "Sam" was stored by an EARLIER review on this browser (the coach
+      // session record is global per-browser) — the server's PER-MATCH
+      // uniqueness check has never accepted it for THIS review.
+      getStoredDisplayNameMock.mockReturnValue('Sam');
+      createCoachNoteMutate.mockImplementationOnce((_payload: unknown, options) => {
+        options?.onError?.(
+          new ApiError(409, 'That name is already taken on this review — pick another.'),
+        );
+      });
+      mountYouTubePlayer();
+      const user = userEvent.setup();
+
+      renderShare('/s/tok123');
+
+      await screen.findByText('Add a note');
+      await user.type(screen.getByLabelText('Timestamp time'), '0:05');
+      await user.click(screen.getByRole('button', { name: 'Add timestamp' }));
+
+      // The prompt opens with the name-taken message instead of silently
+      // dropping the write; the rejected candidate is pre-filled for
+      // editing, and the stale name is never re-persisted.
+      expect(
+        await screen.findByText('That name is already taken on this review — pick another.'),
+      ).toBeInTheDocument();
+      expect(screen.getByLabelText('Your name')).toHaveValue('Sam');
+      expect(setDisplayNameMock).not.toHaveBeenCalled();
+      expect(createCoachNoteMutate).toHaveBeenCalledTimes(1);
+
+      // Submitting a fresh name retries the SAME pending write and commits
+      // — no need to re-type the note.
+      await user.clear(screen.getByLabelText('Your name'));
+      await user.type(screen.getByLabelText('Your name'), 'Sam 2');
+      await user.click(screen.getByRole('button', { name: 'Continue' }));
+
+      expect(setDisplayNameMock).toHaveBeenCalledExactlyOnceWith('Sam 2');
+      expect(createCoachNoteMutate).toHaveBeenCalledTimes(2);
+      expect(createCoachNoteMutate).toHaveBeenLastCalledWith(
+        expect.objectContaining({ displayName: 'Sam 2', seconds: 5 }),
+        expect.objectContaining({ onSuccess: expect.any(Function), onError: expect.any(Function) }),
+      );
+      expect(screen.queryByText('What should we call you?')).not.toBeInTheDocument();
+    });
+
     it('REGRESSION (WR-04): with localStorage completely unavailable, the entered name still flows through and the prompt never loops', async () => {
       getPublic.mockResolvedValue(baseSnapshot());
       coachSessionQuery.mockReturnValue({ data: baseCoachSession() });
@@ -838,6 +890,7 @@ describe('ShareViewPage', () => {
       expect(createCoachNoteMutate).toHaveBeenCalledTimes(2);
       expect(createCoachNoteMutate).toHaveBeenLastCalledWith(
         expect.objectContaining({ displayName: 'Coach Ken', seconds: 7 }),
+        expect.objectContaining({ onError: expect.any(Function) }),
       );
     });
 
@@ -864,6 +917,7 @@ describe('ShareViewPage', () => {
       expect(updateCoachNoteMutate).not.toHaveBeenCalled();
       expect(createCoachNoteMutate).toHaveBeenCalledExactlyOnceWith(
         expect.objectContaining({ sessionId: MY_SESSION_ID, seconds: 0, note: '' }),
+        expect.objectContaining({ onError: expect.any(Function) }),
       );
     });
   });
