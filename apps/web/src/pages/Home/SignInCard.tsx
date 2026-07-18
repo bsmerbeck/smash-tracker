@@ -70,6 +70,14 @@ export function SignInCard() {
   const graceTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const popupCleanupRef = useRef<(() => void) | null>(null);
   const isMountedRef = useRef(true);
+  // Review WR-01 (overlapping-attempt guard): the grace timer re-enables the
+  // buttons at 1.8s while the SDK promise can stay pending for 7-8s (or
+  // forever under COOP) — so a SECOND attempt routinely starts while the
+  // first is still unsettled. The refs above are single shared slots; every
+  // touch of them below is gated on being the LATEST attempt, so a stale
+  // attempt's late settle can never toast, re-enable the buttons
+  // mid-attempt, or tear down its successor's grace timer/listeners.
+  const attemptRef = useRef(0);
 
   useEffect(() => {
     isMountedRef.current = true;
@@ -95,6 +103,15 @@ export function SignInCard() {
   };
 
   const handleGoogleSignIn = async () => {
+    const attempt = ++attemptRef.current;
+    // A pending grace timer can only belong to an abandoned prior attempt
+    // (the buttons stay disabled until it fires or that attempt settles) —
+    // clear it so `startGraceTimer`'s occupied-slot guard can't starve THIS
+    // attempt's own timer.
+    if (graceTimeoutRef.current) {
+      clearTimeout(graceTimeoutRef.current);
+      graceTimeoutRef.current = null;
+    }
     setSubmitting(true);
     settledRef.current = false;
     resetByGraceRef.current = false;
@@ -137,8 +154,15 @@ export function SignInCard() {
 
     try {
       await signInWithGoogle();
-      settledRef.current = true;
+      if (attempt === attemptRef.current) {
+        settledRef.current = true;
+      }
     } catch (error) {
+      if (attempt !== attemptRef.current) {
+        // Stale attempt (the user already retried): never toast, never
+        // touch shared state — the successor attempt owns it now (WR-01).
+        return;
+      }
       settledRef.current = true;
       // Suppress the confusing late toast when the buttons were already
       // silently re-enabled by the grace timer (e.g. popup-closed-by-user
@@ -147,10 +171,19 @@ export function SignInCard() {
         toast.error(getAuthErrorMessage(error));
       }
     } finally {
-      if (isMountedRef.current) {
-        setSubmitting(false);
+      if (attempt === attemptRef.current) {
+        if (isMountedRef.current) {
+          setSubmitting(false);
+        }
+        cleanup();
+      } else {
+        // Stale attempt: remove only its OWN listeners — the shared refs
+        // (grace timer, popup cleanup) belong to the latest attempt, and
+        // running the full cleanup() here would kill the successor's grace
+        // timer (re-wedging the buttons under COOP) and leak its listeners.
+        window.removeEventListener('focus', handleFocusReturn);
+        document.removeEventListener('visibilitychange', handleVisibilityChange);
       }
-      cleanup();
     }
   };
 
