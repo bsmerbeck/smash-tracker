@@ -496,12 +496,28 @@ describe('buildRecapSnapshot — walkthrough amendment (07-09): detail/tournamen
     );
   });
 
-  it('never invents a tournamentUrl for a parrygg entry, even with slug/eventSlug present', () => {
+  // Walkthrough round 3 (07-11): a verified parry.gg bracket-URL shape
+  // supersedes the earlier "never invent a parry.gg URL" stance — see
+  // 07-CONTEXT.md's walkthrough round 3 and `buildRecapTournamentUrl`'s doc.
+  it('builds a parrygg tournamentUrl when the registry stores real parry.gg slugs', () => {
     const entry = makeEntry({
       source: 'parrygg',
-      slug: 'pgg-the-big-house-9',
-      eventSlug: 'pgg-the-big-house-9-ultimate-singles',
+      slug: 'third-street-throwdown-summer-e3-019f5918',
+      eventSlug: 'ultimate-singles',
     });
+    const matches: Match[] = [
+      makeSetMatch({ id: 'm1', time: 1_000, win: true, externalId: 'pgg-abc-g1' }),
+    ];
+
+    const snapshot = buildRecapSnapshot('uid-1', entry, matches);
+
+    expect(snapshot.tournamentUrl).toBe(
+      'https://parry.gg/third-street-throwdown-summer-e3-019f5918/ultimate-singles/main/bracket',
+    );
+  });
+
+  it('omits tournamentUrl for a parrygg entry with no tournament-level slug synced yet', () => {
+    const entry = makeEntry({ source: 'parrygg' });
     const matches: Match[] = [
       makeSetMatch({ id: 'm1', time: 1_000, win: true, externalId: 'pgg-abc-g1' }),
     ];
@@ -520,5 +536,63 @@ describe('buildRecapSnapshot — walkthrough amendment (07-09): detail/tournamen
     const snapshot = buildRecapSnapshot('uid-1', entry, matches, undefined, 'summary');
 
     expect('tournamentUrl' in snapshot).toBe(false);
+  });
+});
+
+describe('buildRecapSnapshot — walkthrough round 3 (07-11): opponentUrl/setUrl', () => {
+  it('populates opponentUrl (start.gg profile link) and setUrl (start.gg set page) for a startgg set', () => {
+    const entry = makeEntry({
+      eventSlug: 'tournament/the-big-house-9/event/ultimate-singles',
+    });
+    const matches: Match[] = [
+      makeSetMatch({
+        id: 'm1',
+        time: 1_000,
+        win: true,
+        externalId: 'sgg:123456:g1',
+        opponent: 'RivalTag',
+        opponentUserSlug: 'user/07dc2239',
+      }),
+    ];
+
+    const snapshot = buildRecapSnapshot('uid-1', entry, matches);
+
+    expect(snapshot.sets![0]!.opponentUrl).toBe('https://start.gg/user/07dc2239');
+    expect(snapshot.sets![0]!.setUrl).toBe(
+      'https://start.gg/tournament/the-big-house-9/event/ultimate-singles/set/123456/summary',
+    );
+  });
+
+  it('omits opponentUrl/setUrl entirely when the underlying fields are absent', () => {
+    const entry = makeEntry();
+    const matches: Match[] = [
+      makeSetMatch({ id: 'm1', time: 1_000, win: true, externalId: 'sgg:set-1:g1' }),
+    ];
+
+    const snapshot = buildRecapSnapshot('uid-1', entry, matches);
+
+    expect('opponentUrl' in snapshot.sets![0]!).toBe(false);
+    expect('setUrl' in snapshot.sets![0]!).toBe(false);
+  });
+
+  it('populates opponentUrl (parry.gg profile link), never setUrl, for a parrygg set', () => {
+    const entry = makeEntry({ source: 'parrygg' });
+    const matches: Match[] = [
+      makeSetMatch({
+        id: 'm1',
+        time: 1_000,
+        win: true,
+        externalId: 'pgg-abc-g1',
+        opponent: 'RivalTag',
+        opponentParryUserId: '3f9a1c2e-1234-4abc-89ef-abcdef012345',
+      }),
+    ];
+
+    const snapshot = buildRecapSnapshot('uid-1', entry, matches);
+
+    expect(snapshot.sets![0]!.opponentUrl).toBe(
+      'https://parry.gg/profile/3f9a1c2e-1234-4abc-89ef-abcdef012345',
+    );
+    expect('setUrl' in snapshot.sets![0]!).toBe(false);
   });
 });

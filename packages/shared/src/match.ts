@@ -152,6 +152,17 @@ export const matchRecordSchema = z.object({
    */
   opponentUserSlug: z.string().optional(),
   /**
+   * Walkthrough round 3 (07-11): the human opponent's parry.gg user id (a
+   * UUID), when parry.gg provides it — the parry.gg equivalent of
+   * `opponentUserSlug` (start.gg has no numeric/slug user id parity, so this
+   * is a separate field rather than a reused one). Same per-event
+   * duplication rationale as `opponentSeed`/`opponentUserSlug`. Server-set,
+   * imported matches only (`apps/api/src/parrygg/sync.ts`). Feeds
+   * `buildRecapOpponentUrl`'s parry.gg profile-link branch
+   * (`https://parry.gg/profile/{id}`).
+   */
+  opponentParryUserId: z.string().optional(),
+  /**
    * URL of a VOD for the set this game belonged to. Originally populated
    * only by start.gg's TO-curated `Set.vodUrl` (verified via the V6-W1b
    * probe to exist but be null on essentially every real set sampled,
