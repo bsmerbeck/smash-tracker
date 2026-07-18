@@ -178,6 +178,17 @@ function warnOpaqueNoteCarry(context: string, keys: readonly string[]): void {
   }
 }
 
+/**
+ * Walkthrough amendment (FB-04, coach display-name uniqueness): a plain
+ * string transform, never a fuzzy-match library (RESEARCH Don't Hand-Roll) —
+ * trims, collapses inner whitespace to a single space, and case-folds, so
+ * "Sam", "sam", and "Sam  Jones"/"Sam Jones" collide as intended while
+ * distinct names never accidentally match.
+ */
+function normalizeCoachName(name: string): string {
+  return name.trim().replace(/\s+/g, ' ').toLowerCase();
+}
+
 export class NotFoundError extends Error {
   constructor(message: string) {
     super(message);
@@ -585,12 +596,24 @@ export class RtdbService {
    * abort convention. Unparseable sibling entries are carried through the
    * rebuild opaquely and COUNT toward the cap (review WR-08 — see
    * `collectOpaqueVodTimestampEntries`).
+   *
+   * Walkthrough amendment (FB-04, coach display-name uniqueness): `coach`
+   * attribution — a DIFFERENT session already using the same normalized
+   * name on this match, OR a name colliding with `ownerDisplayName` (passed
+   * only by `createCoachNote`, never the owner path) — aborts the
+   * transaction with `nameConflict` set, mirroring `capExceeded`'s
+   * abort-without-writing convention; the caller throws `ConflictError`.
+   * The decision is recomputed fresh every transaction invocation (CR-01
+   * discipline — see `writeNoteUpdate`'s "Reset per run" comment) by
+   * reading `entries` computed on THAT run, never a value memoized across
+   * runs.
    */
   async createNote(
     uid: string,
     matchId: string,
     input: VodTimestampInput,
     coach?: CoachAttribution,
+    ownerDisplayName?: string,
   ): Promise<VodTimestamp> {
     // Review WR-07: crafted ids must 404 like an absent match, never reach
     // ref() (synchronous throw -> 500) or address a nested child. The coach
@@ -617,9 +640,14 @@ export class RtdbService {
     };
 
     let capExceeded = false;
+    let nameConflict = false;
     let carriedOpaqueKeys: string[] = [];
     const result = await notesRef.transaction((raw) => {
+      // Reset per run (review CR-01): a value captured during a DISCARDED
+      // (hash-mismatch) run must never leak into the final outcome — only
+      // the run whose return value actually commits may report success.
       carriedOpaqueKeys = [];
+      nameConflict = false;
       const entries = normalizeVodTimestampsNode(raw);
       // Review WR-08: unparseable siblings ride through the rebuild
       // verbatim instead of being silently destroyed, and count toward the
@@ -632,6 +660,24 @@ export class RtdbService {
       if (entries.length + opaque.length >= MAX_VOD_TIMESTAMPS_PER_MATCH) {
         capExceeded = true;
         return undefined;
+      }
+
+      if (coach !== undefined) {
+        const normalizedNew = normalizeCoachName(coach.displayName);
+        if (ownerDisplayName != null && normalizeCoachName(ownerDisplayName) === normalizedNew) {
+          nameConflict = true;
+          return undefined;
+        }
+        const collidesWithOtherSession = entries.some(
+          (entry) =>
+            entry.coach != null &&
+            entry.coach.sessionId !== coach.sessionId &&
+            normalizeCoachName(entry.coach.displayName) === normalizedNew,
+        );
+        if (collidesWithOtherSession) {
+          nameConflict = true;
+          return undefined;
+        }
       }
 
       const nextNode: Record<string, unknown> = {};
@@ -657,6 +703,14 @@ export class RtdbService {
       throw new ForbiddenError(
         `Match ${matchId} already has ${MAX_VOD_TIMESTAMPS_PER_MATCH} notes`,
       );
+    }
+
+    if (nameConflict) {
+      // Static, private-data-free message (FB-04): never echoes the
+      // submitted name or matchId — this is a deliberately narrow, reviewed
+      // exception to the anonymous coach surface's no-oracle 404 discipline
+      // (it can only ever be reached AFTER resolveEditSession succeeded).
+      throw new ConflictError('That name is already taken on this review');
     }
 
     return { id: newNoteId, ...newEntryRecord };
@@ -1958,6 +2012,11 @@ export class RtdbService {
    * shared capped transaction with the coach attribution stamped on. Cap
    * rejection bubbles as `ForbiddenError` (the route maps it to 403 — a
    * valid-token holder gets a real cap message, not a fake 404).
+   *
+   * Walkthrough amendment (FB-04): passes the share's `ownerDisplayName`
+   * through to `createNote` so the owner's own shared name is also
+   * protected against impersonation — a colliding coach name throws
+   * `ConflictError` (the route maps it to a static-message 409).
    */
   async createCoachNote(
     token: string,
@@ -1969,10 +2028,13 @@ export class RtdbService {
     if (!resolved) {
       throw new NotFoundError(SHARE_UNAVAILABLE_MESSAGE);
     }
-    return this.createNote(resolved.tokenRecord.ownerUid, resolved.snapshot.matchId, input, {
-      sessionId,
-      displayName,
-    });
+    return this.createNote(
+      resolved.tokenRecord.ownerUid,
+      resolved.snapshot.matchId,
+      input,
+      { sessionId, displayName },
+      resolved.snapshot.ownerDisplayName ?? undefined,
+    );
   }
 
   /**

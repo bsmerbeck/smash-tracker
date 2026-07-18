@@ -7,7 +7,7 @@ import {
   vodTimestampSchema,
 } from '@smash-tracker/shared';
 import { z } from 'zod';
-import { ForbiddenError, NotFoundError, RtdbService } from '../services/rtdb.js';
+import { ConflictError, ForbiddenError, NotFoundError, RtdbService } from '../services/rtdb.js';
 
 const tokenParamsSchema = z.object({
   token: z.string().min(1),
@@ -74,6 +74,13 @@ const UNAVAILABLE_404_BODY = {
  * stored token record; no caller-supplied identifier ever reaches an RTDB
  * path (T-08-08).
  *
+ * Walkthrough amendment (FB-04): POST /notes has ONE deliberate, reviewed
+ * exception to the 404-only rule above — a 409 (STATIC message, never
+ * `err.message`) for a coach display name that collides with an existing
+ * contributor (or the owner) on the same match. It only ever fires AFTER
+ * the 404 token-resolution gate already succeeded, so a revoked/expired/
+ * unknown token with a colliding name still returns the identical 404.
+ *
  * Rate limits are registered in app.ts's nested coach scope (per-token
  * 20/min + per-IP floor), NOT per-route here — see the registration block.
  */
@@ -122,6 +129,7 @@ const coachNotesRoutes: FastifyPluginAsyncZod = async (app) => {
           201: vodTimestampEntrySchema,
           403: errorResponseSchema,
           404: errorResponseSchema,
+          409: errorResponseSchema,
         },
       },
     },
@@ -151,6 +159,18 @@ const coachNotesRoutes: FastifyPluginAsyncZod = async (app) => {
             error: 'Forbidden',
             message: 'This review already has the maximum number of notes',
             statusCode: 403,
+          });
+        }
+        if (err instanceof ConflictError) {
+          // Walkthrough amendment (FB-04): a deliberately distinct, static
+          // 409 — never `err.message` — for a colliding coach display name.
+          // Only reachable AFTER resolveEditSession already succeeded (the
+          // 404 gate above runs first for every token failure), so this
+          // does not weaken the no-oracle discipline (RESEARCH Pitfall 4).
+          return reply.code(409).send({
+            error: 'Conflict',
+            message: 'That name is already taken on this review',
+            statusCode: 409,
           });
         }
         throw err;
