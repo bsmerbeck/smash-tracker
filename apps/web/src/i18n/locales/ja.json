@@ -1469,7 +1469,8 @@
       "namePromptDescription": "ここで追加したメモの横にあなたの名前が表示されます。",
       "nameLabel": "お名前",
       "nameSubmit": "続ける",
-      "attribution": "{{name}}（コーチ）のメモ"
+      "attribution": "{{name}}（コーチ）のメモ",
+      "shareGoneToast": "このコーチングリンクは利用できなくなりました — 変更は保存されませんでした。"
     }
   }
 }

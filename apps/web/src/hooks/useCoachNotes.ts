@@ -1,4 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useTranslation } from 'react-i18next';
+import { toast } from 'sonner';
 import {
   errorResponseSchema,
   publicShareSnapshotSchema,
@@ -6,6 +8,7 @@ import {
   type PublicShareSnapshot,
   type VodTimestamp,
 } from '@smash-tracker/shared';
+import type { TFunction } from 'i18next';
 import { ApiError, getApiBaseUrl } from '@/lib/api';
 
 /**
@@ -90,6 +93,19 @@ export function useCoachSession(token: string, sessionId: string) {
   });
 }
 
+/**
+ * Shared failure toast for every coach write (review WR-03): a coach's work
+ * must never vanish silently. A 404 means the share itself died mid-session
+ * (revoked/expired — guaranteed eventually, edit tokens expire after 30
+ * days) and gets its own message; everything else (429 rate limit, 403 cap,
+ * 400 validation, network) collapses to the generic save-failed copy the
+ * owner-side note surfaces already use.
+ */
+function toastCoachWriteError(t: TFunction, error: unknown): void {
+  const status = error instanceof ApiError ? error.status : undefined;
+  toast.error(status === 404 ? t('share.coach.shareGoneToast') : t('shared.vod.saveFailed'));
+}
+
 export interface CreateCoachNoteInput {
   sessionId: string;
   displayName: string;
@@ -100,6 +116,7 @@ export interface CreateCoachNoteInput {
 
 /** POST /api/vod-shares/:token/notes — sessionId + displayName travel in the body. */
 export function useCreateCoachNote(token: string) {
+  const { t } = useTranslation();
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (input: CreateCoachNoteInput) =>
@@ -110,6 +127,7 @@ export function useCreateCoachNote(token: string) {
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: coachSessionScopeKey(token) });
     },
+    onError: (error) => toastCoachWriteError(t, error),
   });
 }
 
@@ -127,6 +145,7 @@ export interface UpdateCoachNoteInput {
  * mismatch, per the identical-404 no-oracle rule).
  */
 export function useUpdateCoachNote(token: string) {
+  const { t } = useTranslation();
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: ({ noteId, input }: { noteId: string; input: UpdateCoachNoteInput }) =>
@@ -137,6 +156,7 @@ export function useUpdateCoachNote(token: string) {
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: coachSessionScopeKey(token) });
     },
+    onError: (error) => toastCoachWriteError(t, error),
   });
 }
 
@@ -146,6 +166,7 @@ export function useUpdateCoachNote(token: string) {
  * 08-03), never in the body.
  */
 export function useDeleteCoachNote(token: string) {
+  const { t } = useTranslation();
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: ({ noteId, sessionId }: { noteId: string; sessionId: string }) =>
@@ -156,6 +177,7 @@ export function useDeleteCoachNote(token: string) {
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: coachSessionScopeKey(token) });
     },
+    onError: (error) => toastCoachWriteError(t, error),
   });
 }
 

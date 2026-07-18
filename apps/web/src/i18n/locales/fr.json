@@ -1469,7 +1469,8 @@
       "namePromptDescription": "Votre nom apparaîtra à côté des notes que vous ajoutez ici.",
       "nameLabel": "Votre nom",
       "nameSubmit": "Continuer",
-      "attribution": "Note de coach de {{name}}"
+      "attribution": "Note de coach de {{name}}",
+      "shareGoneToast": "Ce lien de coaching n'est plus disponible — votre modification n'a pas été enregistrée."
     }
   }
 }
