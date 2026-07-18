@@ -398,3 +398,26 @@ export const shareCreatedResponseSchema = z.object({
   url: z.string().url(),
 });
 export type ShareCreatedResponse = z.infer<typeof shareCreatedResponseSchema>;
+
+/**
+ * Walkthrough amendment (FB-03, My Shares management overhaul): request/
+ * response shapes for `POST /api/vod-shares/bulk` — batch revoke or delete
+ * up to `MAX_SHARES_PER_USER` shares in one round-trip. These are wire
+ * contracts only (never persisted to RTDB), so the module doc's
+ * conditional-spread + `.nullish()` null-stripping rule does not apply
+ * here — do not reflexively add `.nullish()` to these fields.
+ */
+export const bulkShareActionSchema = z.enum(['revoke', 'delete']);
+export type BulkShareAction = z.infer<typeof bulkShareActionSchema>;
+
+export const bulkShareRequestSchema = z.object({
+  action: bulkShareActionSchema,
+  shareIds: z.array(z.string().min(1)).min(1).max(MAX_SHARES_PER_USER),
+});
+export type BulkShareRequest = z.infer<typeof bulkShareRequestSchema>;
+
+export const bulkShareResponseSchema = z.object({
+  processed: z.number().int().nonnegative(),
+  skipped: z.number().int().nonnegative(),
+});
+export type BulkShareResponse = z.infer<typeof bulkShareResponseSchema>;
