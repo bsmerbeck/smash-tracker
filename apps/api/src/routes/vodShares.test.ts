@@ -48,6 +48,8 @@ function seedActiveShares(
 }
 
 const REDACTION_ALL_ON = { includeNotes: true, includeTags: true, showDisplayName: false };
+/** The STORED shape of REDACTION_ALL_ON (post-buildShareSnapshot key names) — used when seeding shareSnapshots directly. */
+const REDACTION_ALL_ON_STORED = { includedNotes: true, includedTags: true, showDisplayName: false };
 
 /** Seeds a `tournamentEntries/{uid}/{entryKey}` record recap creation reads. */
 function seedTournamentEntry(
@@ -414,7 +416,7 @@ describe('DELETE /api/vod-shares/:id', () => {
     expect(listResponse.json()).toEqual([]);
   });
 
-  it('409s for an ACTIVE share — revoke must come first', async () => {
+  it('FB-03: 204s for an ACTIVE share — revoke-first is no longer required, and the link dies immediately', async () => {
     const { app, database } = buildTestApp();
     seedMatch(database);
     const createResponse = await app.inject({
@@ -431,10 +433,12 @@ describe('DELETE /api/vod-shares/:id', () => {
       headers: authHeader(),
     });
 
-    expect(response.statusCode).toBe(409);
+    expect(response.statusCode).toBe(204);
     const dump = database.dump() as Record<string, unknown>;
-    const tokens = dump.shareTokens as Record<string, unknown>;
-    expect(tokens[token]).toBeDefined();
+    const tokens = (dump.shareTokens ?? {}) as Record<string, unknown>;
+    expect(tokens[token]).toBeUndefined();
+    const snapshots = (dump.shareSnapshots ?? {}) as Record<string, unknown>;
+    expect(snapshots[shareId]).toBeUndefined();
   });
 
   it('404s for an unknown share and rejects unauthenticated requests', async () => {
@@ -464,6 +468,132 @@ describe('DELETE /api/vod-shares/:id', () => {
     });
 
     expect(response.statusCode).toBe(404);
+  });
+});
+
+describe('POST /api/vod-shares/bulk', () => {
+  /** Seeds one review share (snapshot + token + owner index) directly, matching createShare's own record shape. */
+  function seedShare(
+    database: ReturnType<typeof buildTestApp>['database'],
+    uid: string,
+    shareId: string,
+    token: string,
+    tokenOverrides: Record<string, unknown> = {},
+  ) {
+    database.seed(`shareSnapshots/${shareId}`, {
+      uid,
+      matchId: 'm1',
+      createdAt: 1000,
+      result: 'win',
+      fighterId: 1,
+      opponentFighterId: 2,
+      matchDate: 500,
+      vodUrl: 'https://youtu.be/abc123',
+      reviewedMomentsCount: 1,
+      redaction: REDACTION_ALL_ON_STORED,
+    });
+    database.seed(`shareTokens/${token}`, {
+      shareId,
+      ownerUid: uid,
+      permissions: 'view',
+      createdAt: 1000,
+      ...tokenOverrides,
+    });
+    database.seed(`sharesByUser/${uid}/${shareId}`, token);
+  }
+
+  it('revoke over a seeded mix returns 200 with expected processed/skipped counts', async () => {
+    const { app, database } = buildTestApp();
+    seedShare(database, TEST_UID, 'activeShare', 'activeTokenAAAAABBBBB');
+    seedShare(database, TEST_UID, 'revokedShare', 'revokedTokenAAAAABBBBB', {
+      revokedAt: 2000,
+    });
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/vod-shares/bulk',
+      headers: authHeader(),
+      payload: { action: 'revoke', shareIds: ['activeShare', 'revokedShare', 'nope'] },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({ processed: 1, skipped: 2 });
+    const dump = database.dump() as Record<string, unknown>;
+    const tokens = dump.shareTokens as Record<string, Record<string, unknown>>;
+    expect(tokens.activeTokenAAAAABBBBB!.revokedAt).toEqual(expect.any(Number));
+  });
+
+  it('a body with 101 shareIds is rejected with 400', async () => {
+    const { app } = buildTestApp();
+    const shareIds = Array.from({ length: 101 }, (_, i) => `share${i}`);
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/vod-shares/bulk',
+      headers: authHeader(),
+      payload: { action: 'revoke', shareIds },
+    });
+
+    expect(response.statusCode).toBe(400);
+  });
+
+  it('an empty shareIds array is rejected with 400', async () => {
+    const { app } = buildTestApp();
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/vod-shares/bulk',
+      headers: authHeader(),
+      payload: { action: 'revoke', shareIds: [] },
+    });
+
+    expect(response.statusCode).toBe(400);
+  });
+
+  it('an invalid action is rejected with 400', async () => {
+    const { app } = buildTestApp();
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/vod-shares/bulk',
+      headers: authHeader(),
+      payload: { action: 'archive', shareIds: ['s1'] },
+    });
+
+    expect(response.statusCode).toBe(400);
+  });
+
+  it('a bulk request including a foreign shareId returns 200 and counts it as skipped, never an error', async () => {
+    const { app, auth, database } = buildTestApp();
+    seedShare(database, TEST_UID, 'ownShare', 'ownTokenAAAAAAABBBBB');
+    registerUser(auth, SECOND_TOKEN, { uid: SECOND_UID, email: 'second@example.com' });
+    seedShare(database, SECOND_UID, 'otherShare', 'otherTokenAAAAAABBBBB');
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/vod-shares/bulk',
+      headers: authHeader(),
+      payload: { action: 'delete', shareIds: ['ownShare', 'otherShare'] },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({ processed: 1, skipped: 1 });
+    const dump = database.dump() as Record<string, unknown>;
+    const tokens = (dump.shareTokens ?? {}) as Record<string, unknown>;
+    // The foreign share (owned by SECOND_UID) is untouched.
+    expect(tokens.otherTokenAAAAAABBBBB).toBeDefined();
+  });
+
+  it('rejects unauthenticated requests', async () => {
+    const { app } = buildTestApp();
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/vod-shares/bulk',
+      payload: { action: 'revoke', shareIds: ['s1'] },
+    });
+
+    expect(response.statusCode).toBe(401);
   });
 });
 
