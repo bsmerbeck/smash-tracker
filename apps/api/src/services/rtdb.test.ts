@@ -394,3 +394,369 @@ describe('RtdbService.createNote / updateNote / deleteNote — owner note CRUD (
     );
   });
 });
+
+// ---------------------------------------------------------------------------
+// Phase 8 Plan 3 (Coaching Edit Sessions): the coach backend — an edit-tier
+// token resolves to a LIVE redacted recompute (never the frozen snapshot),
+// and three anonymous session-scoped write helpers guard ownership +
+// re-check revocation/expiry on every single call (T-08-09/T-08-12).
+// ---------------------------------------------------------------------------
+
+const EDIT_TOKEN = 'editTokenAAAAABBBBBCCCCC';
+const COACH_SESSION = '11111111-1111-4111-8111-111111111111';
+const OTHER_SESSION = '22222222-2222-4222-8222-222222222222';
+const COACH = { sessionId: COACH_SESSION, displayName: 'Coach Person' };
+
+interface SeedEditShareOptions {
+  redaction?: { includedNotes: boolean; includedTags: boolean; showDisplayName: boolean };
+  tokenOverrides?: Record<string, unknown>;
+  matchOverrides?: Record<string, unknown>;
+}
+
+function seedEditShare(database: FakeDatabase, options: SeedEditShareOptions = {}): void {
+  const redaction = options.redaction ?? {
+    includedNotes: true,
+    includedTags: true,
+    showDisplayName: false,
+  };
+  database.seed(`matches/${UID}/m1`, {
+    fighter_id: 1,
+    opponent_id: 8,
+    time: 1700000000000,
+    win: true,
+    vodUrl: 'https://youtube.com/watch?v=abc123',
+    ...options.matchOverrides,
+  });
+  database.seed('shareSnapshots/share1', {
+    uid: UID,
+    matchId: 'm1',
+    createdAt: 1700000100000,
+    result: 'win',
+    fighterId: 1,
+    opponentFighterId: 8,
+    matchDate: 1700000000000,
+    vodUrl: 'https://youtube.com/watch?v=abc123',
+    reviewedMomentsCount: 0,
+    redaction,
+  });
+  database.seed(`shareTokens/${EDIT_TOKEN}`, {
+    shareId: 'share1',
+    ownerUid: UID,
+    permissions: 'edit',
+    createdAt: 1700000100000,
+    expiresAt: Date.now() + 24 * 60 * 60 * 1000,
+    ...options.tokenOverrides,
+  });
+}
+
+describe('RtdbService.getEditSessionByToken — live-redacted edit-session read', () => {
+  it("resolves an edit token to a live view carrying permissions: 'edit', per-note ids, and coach attribution", async () => {
+    const database = new FakeDatabase();
+    const rtdb = new RtdbService(database as never);
+    seedEditShare(database, {
+      matchOverrides: {
+        vodTimestamps: {
+          ownerNote: { seconds: 10, note: 'owner note' },
+          coachNote: { seconds: 20, note: 'coach note', coach: COACH },
+        },
+      },
+    });
+
+    const session = await rtdb.getEditSessionByToken(EDIT_TOKEN);
+
+    expect(session).not.toBeNull();
+    expect(session!.permissions).toBe('edit');
+    expect(session!.timestamps).toHaveLength(2);
+    const byId = Object.fromEntries(session!.timestamps!.map((stamp) => [stamp.id, stamp]));
+    expect(byId.ownerNote).toMatchObject({ seconds: 10, note: 'owner note' });
+    expect(byId.ownerNote!.coach ?? undefined).toBeUndefined();
+    expect(byId.coachNote).toMatchObject({ seconds: 20, note: 'coach note', coach: COACH });
+  });
+
+  it('reflects a note the owner added AFTER share creation (live recompute, not the frozen snapshot)', async () => {
+    const database = new FakeDatabase();
+    const rtdb = new RtdbService(database as never);
+    // Frozen snapshot has NO timestamps and reviewedMomentsCount 0 — the
+    // live match got a note afterward. A frozen read would show nothing.
+    seedEditShare(database, {
+      matchOverrides: {
+        vodTimestamps: { postShareNote: { seconds: 33, note: 'added after sharing' } },
+      },
+    });
+
+    const session = await rtdb.getEditSessionByToken(EDIT_TOKEN);
+
+    expect(session).not.toBeNull();
+    expect(session!.reviewedMomentsCount).toBe(1);
+    expect(session!.timestamps).toHaveLength(1);
+    expect(session!.timestamps![0]).toMatchObject({
+      id: 'postShareNote',
+      seconds: 33,
+      note: 'added after sharing',
+    });
+  });
+
+  it('includedNotes=false hides owner notes but ALWAYS keeps coach-authored notes (own-notes carve-out)', async () => {
+    const database = new FakeDatabase();
+    const rtdb = new RtdbService(database as never);
+    seedEditShare(database, {
+      redaction: { includedNotes: false, includedTags: false, showDisplayName: false },
+      matchOverrides: {
+        vodTimestamps: {
+          ownerNote: { seconds: 10, note: 'owner secret note' },
+          coachNote: { seconds: 20, note: 'my own note', coach: COACH },
+        },
+      },
+    });
+
+    const session = await rtdb.getEditSessionByToken(EDIT_TOKEN);
+
+    expect(session).not.toBeNull();
+    expect(session!.timestamps).toHaveLength(1);
+    expect(session!.timestamps![0]).toMatchObject({
+      id: 'coachNote',
+      note: 'my own note',
+      coach: COACH,
+    });
+  });
+
+  it('returns null for an unknown token', async () => {
+    const database = new FakeDatabase();
+    const rtdb = new RtdbService(database as never);
+    seedEditShare(database);
+
+    expect(await rtdb.getEditSessionByToken('someUnknownTokenABCDEFGH')).toBeNull();
+  });
+
+  it('returns null for a revoked token', async () => {
+    const database = new FakeDatabase();
+    const rtdb = new RtdbService(database as never);
+    seedEditShare(database, { tokenOverrides: { revokedAt: 1700000200000 } });
+
+    expect(await rtdb.getEditSessionByToken(EDIT_TOKEN)).toBeNull();
+  });
+
+  it('returns null for an expired token (identical treatment to revoked — no oracle)', async () => {
+    const database = new FakeDatabase();
+    const rtdb = new RtdbService(database as never);
+    seedEditShare(database, { tokenOverrides: { expiresAt: Date.now() - 1000 } });
+
+    expect(await rtdb.getEditSessionByToken(EDIT_TOKEN)).toBeNull();
+  });
+
+  it('returns null for a view-tier token (view stays on getShareByToken)', async () => {
+    const database = new FakeDatabase();
+    const rtdb = new RtdbService(database as never);
+    seedEditShare(database, { tokenOverrides: { permissions: 'view' } });
+
+    expect(await rtdb.getEditSessionByToken(EDIT_TOKEN)).toBeNull();
+  });
+});
+
+describe('RtdbService.getShareByToken — expiry parity with revocation', () => {
+  it('returns null for an expired token (expiresAt re-checked on every read, same as revokedAt)', async () => {
+    const database = new FakeDatabase();
+    const rtdb = new RtdbService(database as never);
+    seedEditShare(database, { tokenOverrides: { expiresAt: Date.now() - 1000 } });
+
+    expect(await rtdb.getShareByToken(EDIT_TOKEN)).toBeNull();
+  });
+});
+
+describe('RtdbService.createCoachNote — anonymous coach create (token-resolved, capped)', () => {
+  it('creates a coach-attributed note through a valid edit token', async () => {
+    const database = new FakeDatabase();
+    const rtdb = new RtdbService(database as never);
+    seedEditShare(database);
+
+    const note = await rtdb.createCoachNote(EDIT_TOKEN, COACH_SESSION, 'Coach Person', {
+      seconds: 42,
+      note: 'work on ledge trapping',
+    });
+
+    expect(note.coach).toEqual(COACH);
+    const stored = database.dump().matches as Record<string, Record<string, unknown>>;
+    const vodTimestamps = (stored[UID]!.m1 as Record<string, unknown>).vodTimestamps as Record<
+      string,
+      unknown
+    >;
+    expect(vodTimestamps[note.id]).toMatchObject({
+      seconds: 42,
+      note: 'work on ledge trapping',
+      coach: COACH,
+    });
+  });
+
+  it('throws NotFoundError for a revoked token (re-checked on the write itself, never cached)', async () => {
+    const database = new FakeDatabase();
+    const rtdb = new RtdbService(database as never);
+    seedEditShare(database, { tokenOverrides: { revokedAt: 1700000200000 } });
+
+    await expect(
+      rtdb.createCoachNote(EDIT_TOKEN, COACH_SESSION, 'Coach Person', { seconds: 1, note: 'x' }),
+    ).rejects.toThrow('This share is no longer available');
+  });
+
+  it('throws NotFoundError for an EXPIRED token on a write', async () => {
+    const database = new FakeDatabase();
+    const rtdb = new RtdbService(database as never);
+    seedEditShare(database, { tokenOverrides: { expiresAt: Date.now() - 1000 } });
+
+    await expect(
+      rtdb.createCoachNote(EDIT_TOKEN, COACH_SESSION, 'Coach Person', { seconds: 1, note: 'x' }),
+    ).rejects.toThrow('This share is no longer available');
+  });
+
+  it('throws NotFoundError for a view-tier token (wrong tier — no oracle)', async () => {
+    const database = new FakeDatabase();
+    const rtdb = new RtdbService(database as never);
+    seedEditShare(database, { tokenOverrides: { permissions: 'view' } });
+
+    await expect(
+      rtdb.createCoachNote(EDIT_TOKEN, COACH_SESSION, 'Coach Person', { seconds: 1, note: 'x' }),
+    ).rejects.toThrow('This share is no longer available');
+  });
+
+  it('aborts at the shared 20-note cap', async () => {
+    const database = new FakeDatabase();
+    const rtdb = new RtdbService(database as never);
+    const twenty = Object.fromEntries(
+      Array.from({ length: 20 }, (_, i) => [`k${i}`, { seconds: i, note: `note ${i}` }]),
+    );
+    seedEditShare(database, { matchOverrides: { vodTimestamps: twenty } });
+
+    await expect(
+      rtdb.createCoachNote(EDIT_TOKEN, COACH_SESSION, 'Coach Person', {
+        seconds: 999,
+        note: 'one too many',
+      }),
+    ).rejects.toThrow(/already has 20 notes/);
+  });
+});
+
+describe('RtdbService.updateCoachNote / deleteCoachNote — sessionId ownership guard', () => {
+  it("updateCoachNote edits the caller's own note, merging absent fields from the existing entry", async () => {
+    const database = new FakeDatabase();
+    const rtdb = new RtdbService(database as never);
+    seedEditShare(database, {
+      matchOverrides: {
+        vodTimestamps: {
+          myNote: { seconds: 20, note: 'original', tags: ['punish'], coach: COACH },
+        },
+      },
+    });
+
+    const updated = await rtdb.updateCoachNote(EDIT_TOKEN, COACH_SESSION, 'myNote', {
+      note: 'edited by me',
+    });
+
+    // Partial PATCH: seconds/tags absent from the input are preserved, and
+    // the coach attribution is never touched.
+    expect(updated).toMatchObject({
+      id: 'myNote',
+      seconds: 20,
+      note: 'edited by me',
+      tags: ['punish'],
+      coach: COACH,
+    });
+  });
+
+  it("updateCoachNote throws NotFoundError for another session's note (indistinguishable from missing)", async () => {
+    const database = new FakeDatabase();
+    const rtdb = new RtdbService(database as never);
+    seedEditShare(database, {
+      matchOverrides: {
+        vodTimestamps: {
+          theirNote: {
+            seconds: 20,
+            note: 'someone else wrote this',
+            coach: { sessionId: OTHER_SESSION, displayName: 'Other Coach' },
+          },
+        },
+      },
+    });
+
+    await expect(
+      rtdb.updateCoachNote(EDIT_TOKEN, COACH_SESSION, 'theirNote', { note: 'hijack' }),
+    ).rejects.toThrow('This share is no longer available');
+  });
+
+  it('updateCoachNote throws NotFoundError for an OWNER note (no coach sub-object — untouchable)', async () => {
+    const database = new FakeDatabase();
+    const rtdb = new RtdbService(database as never);
+    seedEditShare(database, {
+      matchOverrides: {
+        vodTimestamps: { ownerNote: { seconds: 10, note: 'owner note' } },
+      },
+    });
+
+    await expect(
+      rtdb.updateCoachNote(EDIT_TOKEN, COACH_SESSION, 'ownerNote', { note: 'hijack' }),
+    ).rejects.toThrow('This share is no longer available');
+  });
+
+  it("deleteCoachNote deletes the caller's own note", async () => {
+    const database = new FakeDatabase();
+    const rtdb = new RtdbService(database as never);
+    seedEditShare(database, {
+      matchOverrides: {
+        vodTimestamps: {
+          myNote: { seconds: 20, note: 'mine', coach: COACH },
+          ownerNote: { seconds: 10, note: 'owner note' },
+        },
+      },
+    });
+
+    await rtdb.deleteCoachNote(EDIT_TOKEN, COACH_SESSION, 'myNote');
+
+    const stored = database.dump().matches as Record<string, Record<string, unknown>>;
+    const vodTimestamps = (stored[UID]!.m1 as Record<string, unknown>).vodTimestamps as Record<
+      string,
+      unknown
+    >;
+    expect(vodTimestamps).not.toHaveProperty('myNote');
+    expect(vodTimestamps).toHaveProperty('ownerNote');
+  });
+
+  it("deleteCoachNote throws NotFoundError for another session's note and leaves it stored", async () => {
+    const database = new FakeDatabase();
+    const rtdb = new RtdbService(database as never);
+    seedEditShare(database, {
+      matchOverrides: {
+        vodTimestamps: {
+          theirNote: {
+            seconds: 20,
+            note: 'not yours',
+            coach: { sessionId: OTHER_SESSION, displayName: 'Other Coach' },
+          },
+        },
+      },
+    });
+
+    await expect(rtdb.deleteCoachNote(EDIT_TOKEN, COACH_SESSION, 'theirNote')).rejects.toThrow(
+      'This share is no longer available',
+    );
+
+    const stored = database.dump().matches as Record<string, Record<string, unknown>>;
+    const vodTimestamps = (stored[UID]!.m1 as Record<string, unknown>).vodTimestamps as Record<
+      string,
+      unknown
+    >;
+    expect(vodTimestamps).toHaveProperty('theirNote');
+  });
+
+  it('deleteCoachNote throws NotFoundError for an expired token (revoke/expiry re-checked per write)', async () => {
+    const database = new FakeDatabase();
+    const rtdb = new RtdbService(database as never);
+    seedEditShare(database, {
+      tokenOverrides: { expiresAt: Date.now() - 1000 },
+      matchOverrides: {
+        vodTimestamps: { myNote: { seconds: 20, note: 'mine', coach: COACH } },
+      },
+    });
+
+    await expect(rtdb.deleteCoachNote(EDIT_TOKEN, COACH_SESSION, 'myNote')).rejects.toThrow(
+      'This share is no longer available',
+    );
+  });
+});
