@@ -4,7 +4,7 @@ import { ExternalLink } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import type { TournamentEntry } from '@smash-tracker/shared';
+import { buildRecapTournamentUrl, type TournamentEntry } from '@smash-tracker/shared';
 import { buildEventStartggUrl } from '../lib/startggLinks';
 
 function formatDate(time: number, locale: string): string {
@@ -55,7 +55,9 @@ export function buildSeedPlacementBadge(
 
 /**
  * Tournament detail header: tournament name (falling back to the event name
- * when start.gg didn't provide one), the event name sub-line, date range,
+ * when start.gg didn't provide one) with an inline outbound link via
+ * `buildRecapTournamentUrl(entry)` (both start.gg and parry.gg, hidden when
+ * no trustworthy URL exists), the event name sub-line, date range,
  * entrant count, the seed->placement badge when both are known, and an
  * outbound "View on start.gg" button when `eventSlug`/`slug` has synced
  * (falls back to the tournament slug when the event slug isn't available
@@ -67,12 +69,31 @@ export function TournamentHeader({ entry }: { entry: TournamentEntry }) {
   const showEventSubline = entry.tournamentName != null && entry.tournamentName !== entry.eventName;
   const badge = buildSeedPlacementBadge(entry, t);
   const startggUrl = buildEventStartggUrl(entry);
+  const tournamentUrl = buildRecapTournamentUrl(entry);
 
   return (
     <Card>
       <CardHeader className="flex flex-row flex-wrap items-start justify-between gap-4">
         <div>
-          <CardTitle className="text-2xl">{title}</CardTitle>
+          <CardTitle className="inline-flex items-center gap-1.5 text-2xl">
+            {title}
+            {tournamentUrl && (
+              <a
+                href={tournamentUrl}
+                target="_blank"
+                rel="noreferrer"
+                aria-label={t(
+                  entry.source === 'parrygg'
+                    ? 'tournaments.header.viewTournamentParrygg'
+                    : 'tournaments.header.viewTournamentStartgg',
+                  { name: title },
+                )}
+                className="inline-flex text-muted-foreground hover:text-foreground"
+              >
+                <ExternalLink className="size-4" />
+              </a>
+            )}
+          </CardTitle>
           {showEventSubline && (
             <p className="mt-1 text-sm text-muted-foreground">{entry.eventName}</p>
           )}

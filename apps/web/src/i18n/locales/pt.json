@@ -894,7 +894,9 @@
       "setsPlayed_other": "{{count}} sets jogados",
       "outperformed": "Superou o seed: {{seed}} → {{placement}}",
       "underperformed": "Abaixo do seed: {{seed}} → {{placement}}",
-      "matched": "Igualou o seed: {{seed}} → {{placement}}"
+      "matched": "Igualou o seed: {{seed}} → {{placement}}",
+      "viewTournamentStartgg": "Ver {{name}} no start.gg",
+      "viewTournamentParrygg": "Ver {{name}} no parry.gg"
     },
     "results": {
       "title": "Resultados do evento",
@@ -914,6 +916,7 @@
       "watchVod": "Assistir VOD",
       "watchVodAria": "Assistir VOD de {{set}}",
       "editVodAria": "Editar notas de VOD de {{set}}",
+      "viewSetAria": "Ver {{set}} no start.gg",
       "otherMatches": "Outras partidas durante este evento"
     },
     "charStages": {
@@ -1462,8 +1465,8 @@
     "sharedBy": "Compartilhado por {{name}}",
     "watchOnHost": "Assistir em {{host}}",
     "videoUnavailable": "Este VOD não está mais disponível.",
-    "ctaTitle": "Revise suas próprias partidas",
-    "ctaBody": "Acompanhe seus próprios VODs com marcações de tempo clicáveis — grátis, sem cartão de crédito.",
+    "ctaTitle": "Sua memória competitiva, tudo em um só lugar",
+    "ctaBody": "grandfinals.gg é um tracker gratuito para Super Smash Bros. Ultimate — registre suas partidas e torneios, revise seus VODs com notas de salto direto, analise matchups e acompanhe seu GSP e rating ao longo do tempo. Não precisa de conta para dar uma olhada; é grátis para começar.",
     "ctaButton": "Começar grátis",
     "recap": {
       "heading": "Resumo do torneio",
@@ -1479,6 +1482,8 @@
       "opponentWithPlacement": "{{name}} · {{placement}}",
       "viewBracketStartgg": "Ver chave no start.gg",
       "viewBracketParrygg": "Ver chave no parry.gg",
+      "viewTournamentStartgg": "Ver {{name}} no start.gg",
+      "viewTournamentParrygg": "Ver {{name}} no parry.gg",
       "viewOpponentStartgg": "Ver {{name}} no start.gg",
       "viewOpponentParrygg": "Ver {{name}} no parry.gg",
       "viewSetAria": "Ver {{round}} no start.gg",

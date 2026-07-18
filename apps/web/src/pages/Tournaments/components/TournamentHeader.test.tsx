@@ -111,4 +111,22 @@ describe('TournamentHeader', () => {
     render(<TournamentHeader entry={makeEntry({ slug: undefined, eventSlug: undefined })} />);
     expect(screen.queryByRole('link', { name: /View on start\.gg/ })).not.toBeInTheDocument();
   });
+
+  it('renders an inline external link on the tournament title when a slug is present', () => {
+    render(
+      <TournamentHeader
+        entry={makeEntry({
+          tournamentName: 'The Big House 9',
+          eventSlug: 'tournament/tbh9/event/ult',
+        })}
+      />,
+    );
+    const link = screen.getByRole('link', { name: 'View The Big House 9 on start.gg' });
+    expect(link).toHaveAttribute('href', 'https://start.gg/tournament/tbh9/event/ult');
+  });
+
+  it('omits the inline title link when no slug is present', () => {
+    render(<TournamentHeader entry={makeEntry()} />);
+    expect(screen.queryByRole('link', { name: /View .* on start\.gg/ })).not.toBeInTheDocument();
+  });
 });

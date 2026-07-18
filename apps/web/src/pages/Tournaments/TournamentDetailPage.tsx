@@ -106,7 +106,7 @@ export function TournamentDetailPage() {
       )}
       <TournamentHeader entry={entry} />
       <EventResults entry={entry} entryMatches={entryMatches} />
-      <SetTimeline sets={timeline.sets} otherMatches={timeline.otherMatches} />
+      <SetTimeline entry={entry} sets={timeline.sets} otherMatches={timeline.otherMatches} />
       <CharactersAndStages matches={entryMatches} />
       {retrospective && <AdvisorRetrospective retrospective={retrospective} />}
       {canGenerateRecap && entry.entryKey && (
