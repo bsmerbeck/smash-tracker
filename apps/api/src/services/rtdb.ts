@@ -1565,10 +1565,14 @@ export class RtdbService {
   }
 
   /**
-   * Hard-deletes a REVOKED share: removes the token, the snapshot, and the
-   * owner-index entry in one atomic root-level multi-path update. Active
-   * shares must be revoked first (409) — deletion is a list-hygiene action,
-   * never a substitute for the one-way revoke transition.
+   * Hard-deletes a share — ACTIVE or revoked — removing the token, the
+   * snapshot, and the owner-index entry in one atomic root-level multi-path
+   * update. Walkthrough amendment (FB-03, My Shares management overhaul):
+   * removing `shareTokens/{token}` directly kills all anonymous access to
+   * an active share atomically, so deletion no longer requires a separate
+   * revoke-first step (overrides the earlier Phase 5 "no hard delete
+   * without revoke first" decision, per explicit owner feedback) —
+   * deletion is now a single owner action, not a two-step confirm chain.
    */
   async deleteShare(uid: string, shareId: string): Promise<void> {
     const indexRef = this.database.ref(`sharesByUser/${uid}/${shareId}`);
@@ -1582,10 +1586,6 @@ export class RtdbService {
     if (!tokenSnapshot.exists()) {
       throw new NotFoundError(`Share ${shareId} not found`);
     }
-    const tokenRecord = tokenSnapshot.val() as { revokedAt?: number | null };
-    if (tokenRecord.revokedAt == null) {
-      throw new ConflictError('Revoke the share before deleting it');
-    }
 
     // Root-level multi-path update: null values delete keys atomically.
     // Server-only write path — never expressible through client RTDB rules.
@@ -1594,6 +1594,77 @@ export class RtdbService {
       [`shareSnapshots/${shareId}`]: null,
       [`sharesByUser/${uid}/${shareId}`]: null,
     });
+  }
+
+  /**
+   * Walkthrough amendment (FB-03, My Shares management overhaul): batch
+   * revoke or delete up to `MAX_SHARES_PER_USER` shares in ONE round-trip
+   * and ONE atomic root-level multi-path update — never N calls to
+   * `revokeShare`/`deleteShare` per id (RESEARCH Pitfall 6). Resolves every
+   * requested shareId in parallel via the SAME two-hop join
+   * `listSharesForUser`/`revokeShare`/`deleteShare` use
+   * (`sharesByUser/{uid}/{shareId}` -> token -> `shareTokens/{token}`),
+   * scoped to `uid` ONLY — a shareId with no index entry under the
+   * caller's uid (missing OR owned by someone else) is unresolved and
+   * skipped, never actioned or reported as an error (T-09-03).
+   *
+   * - `'revoke'`: actionable = resolved AND not already revoked (an
+   *   already-revoked or foreign/missing id is skipped, never re-stamped
+   *   or errored).
+   * - `'delete'`: actionable = resolved, regardless of revoked state —
+   *   inherits `deleteShare`'s own active-deletable relaxation above (only
+   *   a missing/foreign id is skipped).
+   *
+   * Never throws for a skipped id; returns `{ processed, skipped }`
+   * counts instead. Performs no write at all when the actionable set is
+   * empty.
+   */
+  async bulkUpdateShares(
+    uid: string,
+    action: 'revoke' | 'delete',
+    shareIds: string[],
+  ): Promise<{ processed: number; skipped: number }> {
+    const resolved = await Promise.all(
+      shareIds.map(async (shareId) => {
+        const indexSnapshot = await this.database.ref(`sharesByUser/${uid}/${shareId}`).get();
+        const tokenValue = indexSnapshot.val();
+        if (!indexSnapshot.exists() || typeof tokenValue !== 'string') {
+          return null;
+        }
+        const tokenSnapshot = await this.database.ref(`shareTokens/${tokenValue}`).get();
+        if (!tokenSnapshot.exists()) {
+          return null;
+        }
+        const tokenRecord = tokenSnapshot.val() as { revokedAt?: number | null };
+        return { shareId, token: tokenValue, revokedAt: tokenRecord.revokedAt };
+      }),
+    );
+
+    const actionable = resolved.filter(
+      (entry): entry is { shareId: string; token: string; revokedAt?: number | null } => {
+        if (entry === null) {
+          return false;
+        }
+        return action === 'revoke' ? entry.revokedAt == null : true;
+      },
+    );
+
+    const updates: Record<string, unknown> = {};
+    for (const entry of actionable) {
+      if (action === 'revoke') {
+        updates[`shareTokens/${entry.token}/revokedAt`] = Date.now();
+      } else {
+        updates[`shareTokens/${entry.token}`] = null;
+        updates[`shareSnapshots/${entry.shareId}`] = null;
+        updates[`sharesByUser/${uid}/${entry.shareId}`] = null;
+      }
+    }
+
+    if (Object.keys(updates).length > 0) {
+      await this.database.ref().update(updates);
+    }
+
+    return { processed: actionable.length, skipped: shareIds.length - actionable.length };
   }
 
   /**
