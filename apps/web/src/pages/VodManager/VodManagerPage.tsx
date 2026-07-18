@@ -26,6 +26,7 @@ import { getFighterById } from '@/data/sprites';
 import { useFighters } from '@/hooks/useFighters';
 import { useFilteredMatches } from '@/hooks/useFilteredMatches';
 import { useUpdateMatch } from '@/hooks/useUpdateMatch';
+import { useCreateNote } from '@/hooks/useVodNotes';
 import {
   useCreatePlaylist,
   useDeletePlaylist,
@@ -41,7 +42,7 @@ import {
   filterTimestampIndices,
 } from '@/lib/tags';
 import { movePlaylistItem, resolvePlaylistMatches } from '@/lib/playlists';
-import { ApiError } from '@/lib/api';
+import { ApiError, type VodTimestampInput } from '@/lib/api';
 import { cn } from '@/lib/utils';
 import { buildUpdateInput } from '@/components/vod/VodNotesDialog';
 import { Button } from '@/components/ui/button';
@@ -371,6 +372,7 @@ export function VodManagerPage() {
   const forceRemountForIdRef = useRef<string | null>(null);
 
   const updateMatch = useUpdateMatch();
+  const createNote = useCreateNote();
 
   // An entire event can be recorded as ONE video with each match's stored
   // vodUrl carrying its own `?t=` offset into it — switching between two
@@ -747,7 +749,24 @@ export function VodManagerPage() {
     playerSeekRef.current?.(seconds);
   }
 
-  // Single PATCH mutation site for all note add/edit/delete flows — a
+  // Create-note mutation wrapper (Phase 8): the composer's single new note
+  // goes through the dedicated `POST /api/matches/:id/notes` endpoint —
+  // never the full-match PATCH — so a note add can never stomp a concurrent
+  // match-fact edit (or vice versa). The server owns id assignment and the
+  // read normalizer owns ordering; nothing is built or sorted client-side.
+  async function handleCreateNote(input: VodTimestampInput) {
+    if (!selectedMatch) {
+      return;
+    }
+    try {
+      await createNote.mutateAsync({ matchId: selectedMatch.id, input });
+      toast.success(t('shared.vod.saved'));
+    } catch {
+      toast.error(t('shared.vod.saveFailed'));
+    }
+  }
+
+  // Single PATCH mutation site for all note edit/delete flows — a
   // full-overwrite carry-through payload via buildUpdateInput, NEVER a
   // bespoke partial-update helper (RESEARCH.md "Don't Hand-Roll").
   async function handleUpdateTimestamps(next: VodTimestamp[]) {
@@ -1216,6 +1235,7 @@ export function VodManagerPage() {
                       onSelect={setSelectedTimestampIndex}
                       onSeek={handleSeek}
                       getCurrentTimeRef={getCurrentTimeRef}
+                      onCreateNote={handleCreateNote}
                       onUpdateTimestamps={handleUpdateTimestamps}
                       tagVocabulary={tagVocabulary}
                       editingIndex={editingIndex}

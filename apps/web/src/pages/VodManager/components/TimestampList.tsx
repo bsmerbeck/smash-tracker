@@ -1,6 +1,7 @@
 import type { RefObject } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { VodTimestamp } from '@smash-tracker/shared';
+import type { VodTimestampInput } from '@/lib/api';
 import { deriveNoteTagOptions, filterTimestampIndices, tagLabel } from '@/lib/tags';
 import { Badge } from '@/components/ui/badge';
 import { NoteComposer } from './NoteComposer';
@@ -18,9 +19,13 @@ export interface TimestampListProps {
   /** Populated by `VodPlayer` with the live player's `getCurrentTime`
    * function, forwarded to the inline `NoteComposer`'s on-focus prefill. */
   getCurrentTimeRef: RefObject<(() => number) | null>;
-  /** Fires with the full next `vodTimestamps` array (existing + new,
-   * re-sorted ascending) whenever the composer adds a note — the caller
-   * owns the single PATCH mutation (`VodManagerPage`). */
+  /** Fires with the composer's single new `{ seconds, note }` — the caller
+   * (`VodManagerPage`) owns the create mutation against the dedicated
+   * `POST /api/matches/:id/notes` endpoint (Phase 8). */
+  onCreateNote: (input: VodTimestampInput) => void;
+  /** Fires with the full next `vodTimestamps` array whenever a row
+   * edits/deletes/re-tags a note — the caller owns the single PATCH
+   * mutation (`VodManagerPage`). */
   onUpdateTimestamps: (next: VodTimestamp[]) => void;
   /** Custom tag vocabulary derived across ALL loaded VOD matches (03-02
    * locked decision) — forwarded to every row's note-tag add-combobox. */
@@ -67,6 +72,7 @@ export function TimestampList({
   onSelect,
   onSeek,
   getCurrentTimeRef,
+  onCreateNote,
   onUpdateTimestamps,
   tagVocabulary,
   editingIndex,
@@ -135,7 +141,7 @@ export function TimestampList({
         <NoteComposer
           timestamps={timestamps}
           getCurrentTimeRef={getCurrentTimeRef}
-          onUpdateTimestamps={onUpdateTimestamps}
+          onCreateNote={onCreateNote}
         />
       </div>
 
