@@ -287,7 +287,9 @@ describe('ShareViewPage', () => {
 
     renderShare('/s/tok123');
 
-    expect(await screen.findByText('Review your own set')).toBeInTheDocument();
+    expect(
+      await screen.findByText('Your competitive memory, all in one place'),
+    ).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Get started free' })).toHaveAttribute('href', '/');
   });
 
