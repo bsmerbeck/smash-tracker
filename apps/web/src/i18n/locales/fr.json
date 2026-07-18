@@ -894,7 +894,9 @@
       "setsPlayed_other": "{{count}} sets joués",
       "outperformed": "Seed dépassé : {{seed}} → {{placement}}",
       "underperformed": "Sous le seed : {{seed}} → {{placement}}",
-      "matched": "Seed respecté : {{seed}} → {{placement}}"
+      "matched": "Seed respecté : {{seed}} → {{placement}}",
+      "viewTournamentStartgg": "Voir {{name}} sur start.gg",
+      "viewTournamentParrygg": "Voir {{name}} sur parry.gg"
     },
     "results": {
       "title": "Résultats de l'évènement",
@@ -914,6 +916,7 @@
       "watchVod": "Voir la VOD",
       "watchVodAria": "Voir la VOD de {{set}}",
       "editVodAria": "Modifier les notes VOD de {{set}}",
+      "viewSetAria": "Voir {{set}} sur start.gg",
       "otherMatches": "Autres matchs pendant cet évènement"
     },
     "charStages": {
@@ -1462,8 +1465,8 @@
     "sharedBy": "Partagé par {{name}}",
     "watchOnHost": "Regarder sur {{host}}",
     "videoUnavailable": "Ce VOD n'est plus disponible.",
-    "ctaTitle": "Analysez vos propres matchs",
-    "ctaBody": "Suivez vos propres VODs avec des marqueurs temporels cliquables — gratuit, sans carte bancaire.",
+    "ctaTitle": "Toute votre mémoire compétitive au même endroit",
+    "ctaBody": "grandfinals.gg est un tracker gratuit pour Super Smash Bros. Ultimate — enregistrez vos matchs et tournois, analysez vos VODs avec des notes cliquables, étudiez les matchups et suivez votre GSP et votre rating dans le temps. Aucun compte n'est nécessaire pour explorer ; c'est gratuit pour commencer.",
     "ctaButton": "Commencer gratuitement",
     "recap": {
       "heading": "Récapitulatif du tournoi",
@@ -1479,6 +1482,8 @@
       "opponentWithPlacement": "{{name}} · {{placement}}",
       "viewBracketStartgg": "Voir le bracket sur start.gg",
       "viewBracketParrygg": "Voir le bracket sur parry.gg",
+      "viewTournamentStartgg": "Voir {{name}} sur start.gg",
+      "viewTournamentParrygg": "Voir {{name}} sur parry.gg",
       "viewOpponentStartgg": "Voir {{name}} sur start.gg",
       "viewOpponentParrygg": "Voir {{name}} sur parry.gg",
       "viewSetAria": "Voir {{round}} sur start.gg",

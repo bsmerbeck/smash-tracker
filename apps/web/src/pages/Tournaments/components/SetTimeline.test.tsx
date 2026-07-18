@@ -3,7 +3,7 @@ import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { buildSetTimeline, type Match } from '@smash-tracker/shared';
+import { buildSetTimeline, type Match, type TournamentEntry } from '@smash-tracker/shared';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { SetTimeline } from './SetTimeline';
 import { SpriteList } from '@/data/sprites';
@@ -33,14 +33,25 @@ function makeMatch(overrides: Partial<Match> & Pick<Match, 'id' | 'time' | 'win'
   };
 }
 
-function renderTimeline(matches: Match[]) {
+function makeEntry(overrides: Partial<TournamentEntry> = {}): TournamentEntry {
+  return {
+    eventId: 1,
+    eventName: 'Ultimate Singles',
+    firstSetAt: Date.UTC(2021, 0, 1),
+    lastSetAt: Date.UTC(2021, 0, 1),
+    setsPlayed: 3,
+    ...overrides,
+  };
+}
+
+function renderTimeline(matches: Match[], entry: TournamentEntry = makeEntry()) {
   const { sets, otherMatches } = buildSetTimeline(matches);
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
     <MemoryRouter>
       <QueryClientProvider client={queryClient}>
         <TooltipProvider>
-          <SetTimeline sets={sets} otherMatches={otherMatches} />
+          <SetTimeline entry={entry} sets={sets} otherMatches={otherMatches} />
         </TooltipProvider>
       </QueryClientProvider>
     </MemoryRouter>,
@@ -173,6 +184,37 @@ describe('SetTimeline', () => {
     ];
     renderTimeline(matches);
     expect(screen.queryByRole('link')).not.toBeInTheDocument();
+  });
+
+  it('links the set round label to its start.gg set page when the entry has an eventSlug', () => {
+    const matches = [
+      makeMatch({
+        id: 'g1',
+        time: 100,
+        win: true,
+        externalId: 'sgg:1:g1',
+        roundText: 'Grand Final',
+      }),
+    ];
+    renderTimeline(matches, makeEntry({ eventSlug: 'tournament/x/event/y' }));
+    const link = screen.getByRole('link', { name: 'View Grand Final on start.gg' });
+    expect(link).toHaveAttribute('href', 'https://start.gg/tournament/x/event/y/set/1/summary');
+    expect(link).toHaveAttribute('target', '_blank');
+    expect(link).toHaveAttribute('rel', 'noreferrer');
+  });
+
+  it('omits the set link for a parry.gg entry', () => {
+    const matches = [
+      makeMatch({
+        id: 'g1',
+        time: 100,
+        win: true,
+        externalId: 'sgg:1:g1',
+        roundText: 'Grand Final',
+      }),
+    ];
+    renderTimeline(matches, makeEntry({ source: 'parrygg', eventSlug: 'x' }));
+    expect(screen.queryByRole('link', { name: /View Grand Final/ })).not.toBeInTheDocument();
   });
 
   it('shows a compact seed/placement context next to the opponent when present', () => {
