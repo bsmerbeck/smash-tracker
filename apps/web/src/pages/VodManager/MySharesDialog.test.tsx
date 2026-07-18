@@ -175,8 +175,8 @@ describe('MySharesDialog selection mode + bulk actions (FB-03)', () => {
 
     const rowCheckboxes = screen.getAllByRole('checkbox', { name: 'Select this share' });
     expect(rowCheckboxes).toHaveLength(2);
-    await user.click(rowCheckboxes[0]);
-    await user.click(rowCheckboxes[1]);
+    await user.click(rowCheckboxes[0]!);
+    await user.click(rowCheckboxes[1]!);
 
     expect(screen.getByText('2 selected')).toBeInTheDocument();
 
@@ -211,7 +211,7 @@ describe('MySharesDialog selection mode + bulk actions (FB-03)', () => {
     await user.click(screen.getByRole('button', { name: 'Select' }));
 
     const rowCheckboxes = screen.getAllByRole('checkbox', { name: 'Select this share' });
-    await user.click(rowCheckboxes[0]);
+    await user.click(rowCheckboxes[0]!);
 
     expect(screen.getByText('1 selected')).toBeInTheDocument();
 
@@ -237,7 +237,7 @@ describe('MySharesDialog selection mode + bulk actions (FB-03)', () => {
     await screen.findAllByText('Mario vs Fox');
     await user.click(screen.getByRole('button', { name: 'Select' }));
     const rowCheckboxes = screen.getAllByRole('checkbox', { name: 'Select this share' });
-    await user.click(rowCheckboxes[0]);
+    await user.click(rowCheckboxes[0]!);
     expect(screen.getByText('1 selected')).toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: 'Cancel' }));
