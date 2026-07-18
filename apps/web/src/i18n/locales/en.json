@@ -525,6 +525,9 @@
       "editNoteAria": "Edit timestamp note",
       "filterByTag": "Filter by tag",
       "filterByTagAria": "Filter notes by {{label}}",
+      "filterByContributor": "Filter by contributor",
+      "filterByContributorAria": "Filter notes by {{label}}",
+      "contributorYou": "You",
       "noMatchingNotes": "No notes match the selected filter"
     },
     "playlists": {
@@ -1499,6 +1502,11 @@
       "attribution": "Note by {{name}}",
       "nameTaken": "That name is already taken on this review — pick another.",
       "shareGoneToast": "This coaching link is no longer available — your change wasn't saved."
+    },
+    "notes": {
+      "filterByContributor": "Filter by contributor",
+      "filterByContributorAria": "Filter notes by {{label}}",
+      "contributorOwner": "Owner"
     }
   }
 }
