@@ -1,8 +1,11 @@
 import { describe, expect, it, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { ShareSummary } from '@smash-tracker/shared';
 import { ShareRow } from './ShareRow';
+
+const removeShare = vi.fn().mockResolvedValue(undefined);
 
 vi.mock('@/lib/api', async () => {
   const actual = await vi.importActual<typeof import('@/lib/api')>('@/lib/api');
@@ -11,7 +14,7 @@ vi.mock('@/lib/api', async () => {
     api: {
       vodShares: {
         revoke: vi.fn(),
-        remove: vi.fn(),
+        remove: (...args: unknown[]) => removeShare(...args),
       },
     },
   };
@@ -33,11 +36,18 @@ function makeShare(overrides: Partial<ShareSummary> = {}): ShareSummary {
   };
 }
 
-function renderRow(share: ShareSummary) {
+function renderRow(
+  share: ShareSummary,
+  props: {
+    selectionMode?: boolean;
+    selected?: boolean;
+    onToggleSelected?: (next: boolean) => void;
+  } = {},
+) {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   render(
     <QueryClientProvider client={queryClient}>
-      <ShareRow share={share} />
+      <ShareRow share={share} {...props} />
     </QueryClientProvider>,
   );
 }
@@ -86,5 +96,66 @@ describe('ShareRow expired state (WR-05)', () => {
 
     expect(screen.queryByText('Expired')).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Copy share link' })).toBeInTheDocument();
+  });
+});
+
+describe('ShareRow active-row Delete (FB-03)', () => {
+  it('renders a Delete button on an active row and confirming it deletes in one click', async () => {
+    const user = userEvent.setup();
+    renderRow(makeShare({ status: 'active' }));
+
+    // Active row keeps Copy + Revoke and now also has Delete — no forced
+    // revoke-then-delete chain.
+    expect(screen.getByRole('button', { name: 'Copy share link' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Revoke share link' })).toBeInTheDocument();
+    const deleteButton = screen.getByRole('button', { name: 'Delete share' });
+    expect(deleteButton).toBeInTheDocument();
+
+    await user.click(deleteButton);
+
+    expect(screen.getByText('Delete this share link?')).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "This permanently removes the share and kills the link immediately — anyone with it loses access now. Previews already posted in Discord may keep showing the old preview. This can't be undone.",
+      ),
+    ).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Remove' }));
+
+    expect(removeShare).toHaveBeenCalledWith('share-1');
+  });
+
+  it('an expired row does not get the active-row Delete', () => {
+    renderRow(makeShare({ status: 'expired' }));
+
+    expect(screen.queryByRole('button', { name: 'Delete share' })).not.toBeInTheDocument();
+  });
+
+  it('a revoked row keeps its existing revoked-only Delete, not the active-row Delete', () => {
+    renderRow(makeShare({ status: 'revoked' }));
+
+    expect(screen.queryByRole('button', { name: 'Delete share' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Delete revoked share' })).toBeInTheDocument();
+  });
+});
+
+describe('ShareRow selection checkbox (FB-03)', () => {
+  it('renders no checkbox when selectionMode is false (default)', () => {
+    renderRow(makeShare());
+
+    expect(screen.queryByRole('checkbox')).not.toBeInTheDocument();
+  });
+
+  it('renders a checkbox reflecting `selected` and calls onToggleSelected on change', async () => {
+    const user = userEvent.setup();
+    const onToggleSelected = vi.fn();
+    renderRow(makeShare(), { selectionMode: true, selected: false, onToggleSelected });
+
+    const checkbox = screen.getByRole('checkbox', { name: 'Select this share' });
+    expect(checkbox).not.toBeChecked();
+
+    await user.click(checkbox);
+
+    expect(onToggleSelected).toHaveBeenCalledWith(true);
   });
 });

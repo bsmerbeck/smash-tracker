@@ -1,5 +1,6 @@
 import type { z } from 'zod';
 import {
+  bulkShareResponseSchema,
   checkoutRequestSchema,
   checkoutResponseSchema,
   createGroupRequestSchema,
@@ -46,6 +47,7 @@ import {
   userProfileSchema,
   vodTimestampEntrySchema,
   vodTimestampSchema,
+  type BulkShareRequest,
   type CreateGspReadingInput,
   type CreateMatchInput,
   type CreditPackId,
@@ -550,6 +552,17 @@ export const api = {
     /** DELETE /api/vod-shares/:id — removes a REVOKED share from the list (409 if still active). */
     remove: (id: string) =>
       apiRequest<void>(`/api/vod-shares/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+    /**
+     * POST /api/vod-shares/bulk — walkthrough amendment (FB-03): batch
+     * revoke or delete up to MAX_SHARES_PER_USER shares in ONE round-trip.
+     * The server re-validates ownership per shareId; the UI never asserts
+     * authority over the selection.
+     */
+    bulk: (input: BulkShareRequest) =>
+      apiRequestParsed('/api/vod-shares/bulk', bulkShareResponseSchema, {
+        method: 'POST',
+        body: input,
+      }),
     /**
      * GET /api/vod-shares/:token — anonymous, unauthenticated read of a
      * redacted share snapshot by its public token. No Authorization header

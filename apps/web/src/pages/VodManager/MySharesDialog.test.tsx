@@ -27,6 +27,7 @@ vi.mock('@/lib/firebase', async () => {
 
 const listVodShares = vi.fn();
 const revokeVodShare = vi.fn().mockResolvedValue(undefined);
+const bulkVodShares = vi.fn().mockResolvedValue({ processed: 0, skipped: 0 });
 const upsertMe = vi.fn().mockResolvedValue({ uid: 'test-uid', email: 'test@example.com' });
 
 vi.mock('@/lib/api', async () => {
@@ -40,6 +41,7 @@ vi.mock('@/lib/api', async () => {
       vodShares: {
         list: (...args: unknown[]) => listVodShares(...args),
         revoke: (...args: unknown[]) => revokeVodShare(...args),
+        bulk: (...args: unknown[]) => bulkVodShares(...args),
       },
     },
   };
@@ -89,6 +91,7 @@ describe('MySharesDialog', () => {
     setMockUser(makeMockUser());
     listVodShares.mockResolvedValue([activeShare(), revokedShare()]);
     revokeVodShare.mockResolvedValue(undefined);
+    bulkVodShares.mockResolvedValue({ processed: 2, skipped: 0 });
   });
 
   afterEach(() => {
@@ -132,5 +135,114 @@ describe('MySharesDialog', () => {
     expect(
       screen.getByText('Share a VOD review from its Share button to see it listed here.'),
     ).toBeInTheDocument();
+  });
+});
+
+describe('MySharesDialog selection mode + bulk actions (FB-03)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    setMockUser(makeMockUser());
+    listVodShares.mockResolvedValue([activeShare(), revokedShare()]);
+    revokeVodShare.mockResolvedValue(undefined);
+    bulkVodShares.mockResolvedValue({ processed: 2, skipped: 0 });
+  });
+
+  afterEach(() => {
+    resetAuthMock();
+  });
+
+  it('entering selection mode reveals per-row checkboxes, select-all, and a live count', async () => {
+    const user = userEvent.setup();
+    renderDialog();
+
+    await screen.findAllByText('Mario vs Fox');
+    await user.click(screen.getByRole('button', { name: 'Select' }));
+
+    // select-all + 2 per-row checkboxes.
+    expect(screen.getAllByRole('checkbox')).toHaveLength(3);
+    expect(screen.getByText('0 selected')).toBeInTheDocument();
+    // Bulk buttons are disabled with nothing selected.
+    expect(screen.getByRole('button', { name: 'Revoke' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Delete' })).toBeDisabled();
+  });
+
+  it('selecting two shares and confirming bulk Revoke fires ONE mutation with both ids, then clears selection', async () => {
+    const user = userEvent.setup();
+    renderDialog();
+
+    await screen.findAllByText('Mario vs Fox');
+    await user.click(screen.getByRole('button', { name: 'Select' }));
+
+    const rowCheckboxes = screen.getAllByRole('checkbox', { name: 'Select this share' });
+    expect(rowCheckboxes).toHaveLength(2);
+    await user.click(rowCheckboxes[0]);
+    await user.click(rowCheckboxes[1]);
+
+    expect(screen.getByText('2 selected')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Revoke' }));
+
+    // ONE dialog-level confirm summarizing the count for this action.
+    expect(await screen.findByText('Revoke selected share links?')).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        'People who already opened these 2 links lose access now. Previews already posted in Discord may keep showing the old preview.',
+      ),
+    ).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Revoke link' }));
+
+    await waitFor(() => expect(bulkVodShares).toHaveBeenCalledTimes(1));
+    expect(bulkVodShares).toHaveBeenCalledWith({
+      action: 'revoke',
+      shareIds: expect.arrayContaining(['share-active', 'share-revoked']),
+    });
+    // Selection cleared + selection mode exited after a successful bulk action.
+    await waitFor(() =>
+      expect(screen.queryByRole('button', { name: 'Cancel' })).not.toBeInTheDocument(),
+    );
+  });
+
+  it('bulk Delete opens its own count-summarizing confirm and fires the delete action', async () => {
+    const user = userEvent.setup();
+    renderDialog();
+
+    await screen.findAllByText('Mario vs Fox');
+    await user.click(screen.getByRole('button', { name: 'Select' }));
+
+    const rowCheckboxes = screen.getAllByRole('checkbox', { name: 'Select this share' });
+    await user.click(rowCheckboxes[0]);
+
+    expect(screen.getByText('1 selected')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Delete' }));
+
+    expect(await screen.findByText('Delete selected share links?')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Remove' }));
+
+    await waitFor(() =>
+      expect(bulkVodShares).toHaveBeenCalledWith({
+        action: 'delete',
+        shareIds: ['share-active'],
+      }),
+    );
+    expect(bulkVodShares).toHaveBeenCalledTimes(1);
+  });
+
+  it('leaving selection mode via Cancel clears the selection', async () => {
+    const user = userEvent.setup();
+    renderDialog();
+
+    await screen.findAllByText('Mario vs Fox');
+    await user.click(screen.getByRole('button', { name: 'Select' }));
+    const rowCheckboxes = screen.getAllByRole('checkbox', { name: 'Select this share' });
+    await user.click(rowCheckboxes[0]);
+    expect(screen.getByText('1 selected')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Cancel' }));
+
+    // Selection UI is gone entirely (selectionMode false).
+    expect(screen.queryByRole('checkbox')).not.toBeInTheDocument();
   });
 });
