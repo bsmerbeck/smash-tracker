@@ -35,6 +35,10 @@ const listMatches = vi.fn();
 const listOpponents = vi.fn();
 const updateMatch = vi.fn();
 const deleteMatch = vi.fn();
+const clearVod = vi.fn();
+const createNote = vi.fn();
+const updateNote = vi.fn();
+const deleteNote = vi.fn();
 const upsertMe = vi.fn().mockResolvedValue({ uid: 'test-uid', email: 'test@example.com' });
 const getStageFavorites = vi.fn().mockResolvedValue({ stageIds: [], updatedAt: 0 });
 
@@ -48,6 +52,10 @@ vi.mock('@/lib/api', () => ({
       list: (...args: unknown[]) => listMatches(...args),
       update: (...args: unknown[]) => updateMatch(...args),
       remove: (...args: unknown[]) => deleteMatch(...args),
+      clearVod: (...args: unknown[]) => clearVod(...args),
+      createNote: (...args: unknown[]) => createNote(...args),
+      updateNote: (...args: unknown[]) => updateNote(...args),
+      deleteNote: (...args: unknown[]) => deleteNote(...args),
     },
     opponents: {
       list: (...args: unknown[]) => listOpponents(...args),
@@ -113,6 +121,10 @@ describe('MatchDataPage', () => {
     listOpponents.mockResolvedValue(['rival', 'other']);
     updateMatch.mockResolvedValue(makeMatch());
     deleteMatch.mockResolvedValue(undefined);
+    clearVod.mockResolvedValue(makeMatch());
+    createNote.mockResolvedValue({ id: 'server-note-1', seconds: 0, note: '' });
+    updateNote.mockResolvedValue({ id: 'server-note-1', seconds: 0, note: '' });
+    deleteNote.mockResolvedValue(undefined);
   });
 
   it('shows an empty state with links to choose fighters when the user has none selected', async () => {
@@ -343,7 +355,7 @@ describe('MatchDataPage', () => {
   // Interaction-heavy test sits near the 5s default on slow CI runners
   // (same class as the Quick Logger flake fixed in #159) — explicit timeout.
   it(
-    'carries existing vodTimestamps through when the VOD link is edited (not cleared)',
+    'never sends vodTimestamps when the VOD link is edited (not cleared) — the server preserves notes automatically',
     { timeout: 10_000 },
     async () => {
       const user = userEvent.setup();
@@ -379,11 +391,9 @@ describe('MatchDataPage', () => {
       await waitFor(() => expect(updateMatch).toHaveBeenCalledTimes(1));
       expect(updateMatch).toHaveBeenCalledWith(
         'm1',
-        expect.objectContaining({
-          vodUrl: 'https://youtube.com/watch?v=xyz789',
-          vodTimestamps: [{ seconds: 161, note: 'missed punish on shield' }],
-        }),
+        expect.objectContaining({ vodUrl: 'https://youtube.com/watch?v=xyz789' }),
       );
+      expect(updateMatch.mock.calls[0]![1]).not.toHaveProperty('vodTimestamps');
     },
   );
 
@@ -505,7 +515,7 @@ describe('MatchDataPage', () => {
     );
   });
 
-  it('clears vodUrl and vodTimestamps via a full PATCH after confirming "Remove VOD link"', async () => {
+  it('clears vodUrl and vodTimestamps via the explicit clear-VOD endpoint after confirming "Remove VOD link"', async () => {
     const user = userEvent.setup();
     getFighters.mockResolvedValue({ primary: [mario.id], secondary: [] });
     listMatches.mockResolvedValue([
@@ -533,19 +543,12 @@ describe('MatchDataPage', () => {
     expect(within(alert).getByText('Remove this VOD link?')).toBeInTheDocument();
     await user.click(within(alert).getByRole('button', { name: 'Remove' }));
 
-    await waitFor(() => expect(updateMatch).toHaveBeenCalledTimes(1));
-    expect(updateMatch).toHaveBeenCalledWith('m1', {
-      fighter_id: mario.id,
-      opponent_id: luigi.id,
-      map: { id: 0, name: 'no selection' },
-      opponent: 'rival',
-      notes: 'gg',
-      matchType: 'quickplay',
-      win: true,
-    });
-    const payload = updateMatch.mock.calls[0]![1];
-    expect(payload).not.toHaveProperty('vodUrl');
-    expect(payload).not.toHaveProperty('vodTimestamps');
+    // Phase 8: "omit to clear" no longer clears vodTimestamps (an unrelated
+    // PATCH now preserves notes on omission) — removing a VOD calls the
+    // dedicated clear-VOD-and-notes endpoint instead of PATCHing the match.
+    await waitFor(() => expect(clearVod).toHaveBeenCalledTimes(1));
+    expect(clearVod).toHaveBeenCalledWith('m1');
+    expect(updateMatch).not.toHaveBeenCalled();
   });
 
   it('opens the VOD notes dialog and saves a new VOD URL and timestamp', async () => {
@@ -578,16 +581,19 @@ describe('MatchDataPage', () => {
     await user.click(within(dialog).getByRole('button', { name: 'Add timestamp' }));
     await user.click(within(dialog).getByRole('button', { name: 'Save' }));
 
+    // Phase 8: the vodUrl PATCH and the note creation are two separate
+    // calls — the dialog is re-pointed at the dedicated note endpoint
+    // instead of carrying `vodTimestamps` through the match PATCH.
     await waitFor(() => expect(updateMatch).toHaveBeenCalledTimes(1));
     expect(updateMatch).toHaveBeenCalledWith(
       'm1',
-      expect.objectContaining({
-        vodUrl: 'https://youtube.com/watch?v=abc123',
-        // The legacy dialog stamps a synthetic local id on freshly-added
-        // draft entries (Phase 8 id-bearing VodTimestamp shape).
-        vodTimestamps: [{ id: expect.any(String), seconds: 161, note: 'missed punish on shield' }],
-      }),
+      expect.objectContaining({ vodUrl: 'https://youtube.com/watch?v=abc123' }),
     );
+    expect(updateMatch.mock.calls[0]![1]).not.toHaveProperty('vodTimestamps');
+    expect(createNote).toHaveBeenCalledWith('m1', {
+      seconds: 161,
+      note: 'missed punish on shield',
+    });
   });
 
   it('deletes a match after confirmation', async () => {

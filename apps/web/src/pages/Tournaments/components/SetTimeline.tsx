@@ -75,11 +75,14 @@ function VodTimestampChips({ vodUrl, match }: { vodUrl: string; match: Match }) 
   if (!timestamps || timestamps.length === 0) {
     return null;
   }
+  // Defensive re-sort kept as harmless belt-and-suspenders — the shared
+  // normalizer (packages/shared) already guarantees seconds-ascending order
+  // on every read, so this is a no-op in practice.
   const sorted = [...timestamps].sort((a, b) => a.seconds - b.seconds);
   return (
     <div className="flex flex-wrap items-center gap-1">
-      {sorted.map((stamp, index) => (
-        <Tooltip key={`${stamp.seconds}-${index}`}>
+      {sorted.map((stamp) => (
+        <Tooltip key={stamp.id}>
           <TooltipTrigger asChild>
             <a
               href={vodDeepLink(vodUrl, stamp.seconds)}
