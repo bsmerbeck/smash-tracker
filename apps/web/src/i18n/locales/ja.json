@@ -932,7 +932,9 @@
       "copiedToast": "リンクをクリップボードにコピーしました",
       "copyFailedToast": "コピーできませんでした — リンクを手動でコピーしてください。",
       "doneButton": "完了"
-    }
+    },
+    "listLoading": "大会を読み込み中...",
+    "noMatches": "まだ大会がありません。start.ggまたはparry.ggの対戦を同期してから、ここで確認しましょう！"
   },
   "billing": {
     "title": "レポートクレジットを購入",

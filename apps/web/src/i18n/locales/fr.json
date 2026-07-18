@@ -932,7 +932,9 @@
       "copiedToast": "Lien copié dans le presse-papiers",
       "copyFailedToast": "Impossible de copier — copiez le lien manuellement.",
       "doneButton": "Terminé"
-    }
+    },
+    "listLoading": "Chargement des tournois...",
+    "noMatches": "Aucun tournoi pour le moment : synchronisez vos matchs start.gg ou parry.gg puis revenez ici."
   },
   "billing": {
     "title": "Acheter des crédits de rapport",

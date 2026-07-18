@@ -932,7 +932,9 @@
       "copiedToast": "Link in die Zwischenablage kopiert",
       "copyFailedToast": "Kopieren fehlgeschlagen — kopiere den Link manuell.",
       "doneButton": "Fertig"
-    }
+    },
+    "listLoading": "Turniere werden geladen...",
+    "noMatches": "Noch keine Turniere — synchronisiere deine start.gg- oder parry.gg-Matches und schau hier wieder vorbei!"
   },
   "billing": {
     "title": "Berichts-Credits kaufen",
