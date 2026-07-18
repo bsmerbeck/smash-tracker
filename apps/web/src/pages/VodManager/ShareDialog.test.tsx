@@ -152,11 +152,63 @@ describe('ShareDialog', () => {
     expect(createVodShare).toHaveBeenCalledWith({
       kind: 'review',
       matchId: 'match-1',
+      permissions: 'view',
       redaction: { includeNotes: true, includeTags: true, showDisplayName: false },
     });
 
     expect(await screen.findByText('Share link ready')).toBeInTheDocument();
     expect(screen.getByDisplayValue('https://grandfinals.gg/s/tok')).toBeInTheDocument();
+  });
+
+  it('defaults the permission tier to View with the view-tier helper copy', async () => {
+    renderDialog(baseMatch());
+
+    await screen.findByText('Share this review');
+    expect(screen.getByRole('radio', { name: 'View' })).toHaveAttribute('aria-checked', 'true');
+    expect(screen.getByRole('radio', { name: 'Edit (coaching)' })).toHaveAttribute(
+      'aria-checked',
+      'false',
+    );
+    expect(
+      screen.getByText(
+        'The link holder can watch and read what you include — nothing on this review can be changed.',
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it('selecting Edit shows the honest coaching copy and sends permissions: edit on a review-kind create', async () => {
+    // COACH-01: the edit tier is only ever offered for VOD reviews — this
+    // dialog structurally cannot create a recap (`kind: 'review'` is
+    // hardcoded in its create body, asserted below); the recap surface
+    // (GenerateRecapDialog) has no tier control at all, and the API's
+    // createShareInputSchema refine 400s a recap+edit combination anyway.
+    const user = userEvent.setup();
+    createVodShare.mockResolvedValue({
+      shareId: 'share-1',
+      token: 'tok',
+      url: 'https://grandfinals.gg/s/tok',
+    });
+    renderDialog(baseMatch());
+
+    await screen.findByText('Share this review');
+    await user.click(screen.getByRole('radio', { name: 'Edit (coaching)' }));
+
+    // Honest copy: what an edit link allows + the 30-day expiry.
+    expect(
+      screen.getByText(
+        "A coach with this link can add and manage their own timestamped notes on this review. They can't touch your notes, the match details, or the VOD. Edit links expire after 30 days.",
+      ),
+    ).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Create share link' }));
+
+    await waitFor(() => expect(createVodShare).toHaveBeenCalledTimes(1));
+    expect(createVodShare).toHaveBeenCalledWith({
+      kind: 'review',
+      matchId: 'match-1',
+      permissions: 'edit',
+      redaction: { includeNotes: true, includeTags: true, showDisplayName: false },
+    });
   });
 
   it('re-opening after a share was created resets to the create step (fresh share, defaults restored)', async () => {
@@ -180,6 +232,7 @@ describe('ShareDialog', () => {
     const { rerender } = render(dialogAt(true));
 
     await screen.findByText('Share this review');
+    await user.click(screen.getByRole('radio', { name: 'Edit (coaching)' }));
     await user.click(screen.getByRole('button', { name: 'Create share link' }));
     expect(await screen.findByText('Share link ready')).toBeInTheDocument();
 
@@ -194,6 +247,9 @@ describe('ShareDialog', () => {
       'data-state',
       'unchecked',
     );
+    // The tier resets to the View default too — a fresh share never
+    // silently inherits the previous link's coaching permission.
+    expect(screen.getByRole('radio', { name: 'View' })).toHaveAttribute('aria-checked', 'true');
   });
 
   it('clicking Copy invokes the clipboard API and shows the copied affordance', async () => {

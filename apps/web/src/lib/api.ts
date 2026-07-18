@@ -56,7 +56,7 @@ import {
   type ParryggLoginStartRequest,
   type CreatePlaylistInput,
   type UpdatePlaylistInput,
-  type CreateShareInput,
+  createShareInputSchema,
   type ScoutQuery,
   type UpdateGspReadingInput,
   type UpdateMatchInput,
@@ -66,6 +66,14 @@ import {
   type UpsertStageFavoritesInput,
 } from '@smash-tracker/shared';
 import { getFirebaseAuth } from './firebase';
+
+/**
+ * POST /api/vod-shares request body, typed from the schema's INPUT side:
+ * `kind` and `permissions` carry Zod `.default()`s (`'review'`/`'view'`),
+ * so callers may omit them — the shared `CreateShareInput` (`z.infer`, the
+ * OUTPUT type) would force every caller to spell out both defaults.
+ */
+export type CreateShareRequest = z.input<typeof createShareInputSchema>;
 
 /**
  * Thrown for any non-2xx response. Carries the parsed error envelope
@@ -482,7 +490,7 @@ export const api = {
     /** GET /api/vod-shares — the signed-in user's share links (active + revoked). */
     list: () => apiRequestParsed('/api/vod-shares', shareSummarySchema.array()),
     /** POST /api/vod-shares — creates a new redacted share snapshot + token. */
-    create: (input: CreateShareInput) =>
+    create: (input: CreateShareRequest) =>
       apiRequestParsed('/api/vod-shares', shareCreatedResponseSchema, {
         method: 'POST',
         body: input,
