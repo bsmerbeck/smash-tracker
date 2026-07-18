@@ -230,6 +230,63 @@ describe('renderOgImage', () => {
     vi.resetModules();
   });
 
+  it('formats the notable-win seed as "(seed N)" when the opponent name is known (07-10 polish fix)', async () => {
+    vi.resetModules();
+    const satoriMock = vi.fn().mockResolvedValue('<svg></svg>');
+    vi.doMock('satori', () => ({ default: satoriMock }));
+
+    const { renderOgImage: renderWithMockedSatori } = await import('./renderOgImage.js');
+
+    const fetchImpl = fetchOkPng();
+    const snapshot = makeRecapSnapshot({
+      notableWinOpponentName: 'jarbo v1',
+      notableWinOpponentSeed: 4876,
+    });
+
+    await renderWithMockedSatori({
+      token: 'recap-token-notable-win-named',
+      snapshot,
+      webBaseUrl: WEB_BASE_URL,
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+    });
+
+    const serialized = JSON.stringify(satoriMock.mock.calls[0]![0]);
+    // Previously this rendered "Notable win vs jarbo v1 4876" (a bare
+    // trailing number with no label) — now parenthesized and labeled.
+    expect(serialized).toContain('Notable win vs jarbo v1 (seed 4876)');
+    expect(serialized).not.toContain('jarbo v1 4876');
+
+    vi.doUnmock('satori');
+    vi.resetModules();
+  });
+
+  it('formats the notable-win line as "vs seed N" when no opponent name is known', async () => {
+    vi.resetModules();
+    const satoriMock = vi.fn().mockResolvedValue('<svg></svg>');
+    vi.doMock('satori', () => ({ default: satoriMock }));
+
+    const { renderOgImage: renderWithMockedSatori } = await import('./renderOgImage.js');
+
+    const fetchImpl = fetchOkPng();
+    const snapshot = makeRecapSnapshot({
+      notableWinOpponentName: undefined,
+      notableWinOpponentSeed: 12,
+    });
+
+    await renderWithMockedSatori({
+      token: 'recap-token-notable-win-seed-only',
+      snapshot,
+      webBaseUrl: WEB_BASE_URL,
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+    });
+
+    const serialized = JSON.stringify(satoriMock.mock.calls[0]![0]);
+    expect(serialized).toContain('Notable win vs seed 12');
+
+    vi.doUnmock('satori');
+    vi.resetModules();
+  });
+
   it('passes HTML-special tournament/opponent/owner names to satori RAW — never entity-escaped (review WR-06)', async () => {
     vi.resetModules();
     const satoriMock = vi.fn().mockResolvedValue('<svg></svg>');
@@ -256,7 +313,7 @@ describe('renderOgImage', () => {
 
     const serialized = JSON.stringify(satoriMock.mock.calls[0]![0]);
     expect(serialized).toContain('Fire & Ice X');
-    expect(serialized).toContain('Notable win vs <CG> Marss 1');
+    expect(serialized).toContain('Notable win vs <CG> Marss (seed 1)');
     expect(serialized).toContain("Shared by o'Brien & co");
     expect(serialized).not.toContain('&amp;');
     expect(serialized).not.toContain('&lt;');
@@ -327,6 +384,99 @@ describe('renderOgImage', () => {
     // opponentName truncated to ~16 chars with an ellipsis.
     expect(serialized).toContain('AVeryLongOppone…');
     expect(serialized).not.toContain('AVeryLongOpponentTagName');
+
+    vi.doUnmock('satori');
+    vi.resetModules();
+  });
+
+  it('renders each set row with its character-matchup sprite pair instead of a W/L letter square (07-10 walkthrough amendment round 2)', async () => {
+    vi.resetModules();
+    const satoriMock = vi.fn().mockResolvedValue('<svg></svg>');
+    vi.doMock('satori', () => ({ default: satoriMock }));
+
+    const { renderOgImage: renderWithMockedSatori } = await import('./renderOgImage.js');
+
+    const fetchImpl = fetchOkPng();
+    const sets = [
+      makeSet({
+        roundLabel: 'Winners Finals',
+        opponentName: 'Finalist',
+        games: [{ fighterId: 1, opponentFighterId: 3, stageName: 'Battlefield', win: true }],
+      }),
+    ];
+    const snapshot = makeRecapSnapshot({ detail: 'full', sets: sets as never });
+
+    await renderWithMockedSatori({
+      token: 'recap-token-set-row-sprites',
+      snapshot,
+      webBaseUrl: WEB_BASE_URL,
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+    });
+
+    const serialized = JSON.stringify(satoriMock.mock.calls[0]![0]);
+    // Sprite pair (mine + opponent's) rendered as data-URI <img> nodes.
+    expect(serialized).toContain('data:image/png;base64');
+    // The old abstract W/L letter square (24x24, borderRadius 4, background
+    // #059669/#dc2626) is gone — W/L is now conveyed by the score text color.
+    expect(serialized).not.toContain('"width":24,"height":24,"borderRadius":4');
+    expect(serialized).not.toContain('"children":"W"');
+    expect(serialized).not.toContain('"children":"L"');
+
+    vi.doUnmock('satori');
+    vi.resetModules();
+  });
+
+  it('still renders a valid, non-null PNG for a "full" recap with sets when every set-row sprite fetch fails', async () => {
+    const fetchImpl = fetchFails();
+    const sets = [
+      makeSet({
+        roundLabel: 'Winners Finals',
+        opponentName: 'Finalist',
+        games: [{ fighterId: 1, opponentFighterId: 3, stageName: 'Battlefield', win: true }],
+      }),
+    ];
+    const snapshot = makeRecapSnapshot({ detail: 'full', sets: sets as never });
+
+    const png = await renderOgImage({
+      token: 'recap-token-set-row-sprite-fail',
+      snapshot,
+      webBaseUrl: WEB_BASE_URL,
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+    });
+
+    expect(png).not.toBeNull();
+    expect(png!.subarray(0, 8)).toEqual(PNG_SIGNATURE);
+  });
+
+  it('degrades a set row to a text fallback (never a broken image) when the sprite fetch fails', async () => {
+    vi.resetModules();
+    const satoriMock = vi.fn().mockResolvedValue('<svg></svg>');
+    vi.doMock('satori', () => ({ default: satoriMock }));
+
+    const { renderOgImage: renderWithMockedSatori } = await import('./renderOgImage.js');
+
+    const fetchImpl = fetchFails();
+    const sets = [
+      makeSet({
+        roundLabel: 'Winners Finals',
+        opponentName: 'Finalist',
+        games: [{ fighterId: 1, opponentFighterId: 3, stageName: 'Battlefield', win: true }],
+      }),
+    ];
+    const snapshot = makeRecapSnapshot({ detail: 'full', sets: sets as never });
+
+    await renderWithMockedSatori({
+      token: 'recap-token-set-row-sprite-fail-tree',
+      snapshot,
+      webBaseUrl: WEB_BASE_URL,
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+    });
+
+    const serialized = JSON.stringify(satoriMock.mock.calls[0]![0]);
+    expect(serialized).not.toContain('data:image/png;base64');
+    // Text fallback uses the fighter name (truncated) in place of the sprite.
+    expect(serialized).toContain('Mar');
+    expect(serialized).toContain('Lin');
 
     vi.doUnmock('satori');
     vi.resetModules();
