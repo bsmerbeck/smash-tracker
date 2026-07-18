@@ -49,7 +49,7 @@ describe('VodNotesDialog', () => {
     renderDialog(
       baseMatch({
         vodUrl: 'https://youtube.com/watch?v=abc123',
-        vodTimestamps: [{ seconds: 161, note: 'missed punish on shield' }],
+        vodTimestamps: [{ id: 'n1', seconds: 161, note: 'missed punish on shield' }],
       }),
     );
 
@@ -65,7 +65,9 @@ describe('VodNotesDialog', () => {
 
   it('adds a new timestamp parsed from m:ss input, sorted by seconds', async () => {
     const user = userEvent.setup();
-    renderDialog(baseMatch({ vodTimestamps: [{ seconds: 490, note: 'lost ledge trump war' }] }));
+    renderDialog(
+      baseMatch({ vodTimestamps: [{ id: 'n1', seconds: 490, note: 'lost ledge trump war' }] }),
+    );
 
     await user.type(screen.getByLabelText('Timestamp time'), '2:41');
     await user.type(screen.getByLabelText('Timestamp note'), 'missed punish on shield');
@@ -101,7 +103,9 @@ describe('VodNotesDialog', () => {
 
   it('deletes an existing timestamp', async () => {
     const user = userEvent.setup();
-    renderDialog(baseMatch({ vodTimestamps: [{ seconds: 161, note: 'missed punish on shield' }] }));
+    renderDialog(
+      baseMatch({ vodTimestamps: [{ id: 'n1', seconds: 161, note: 'missed punish on shield' }] }),
+    );
 
     await user.click(screen.getByRole('button', { name: 'Delete timestamp 2:41' }));
     expect(screen.getByText('No timestamp notes yet.')).toBeInTheDocument();
@@ -111,7 +115,7 @@ describe('VodNotesDialog', () => {
     renderDialog(
       baseMatch({
         vodUrl: 'https://youtube.com/watch?v=abc123',
-        vodTimestamps: [{ seconds: 161, note: 'missed punish on shield' }],
+        vodTimestamps: [{ id: 'n1', seconds: 161, note: 'missed punish on shield' }],
       }),
     );
 
@@ -146,7 +150,13 @@ describe('VodNotesDialog', () => {
       stocksLeft: 2,
       eventName: 'Ultimate Singles',
       vodUrl: 'https://youtube.com/watch?v=abc123',
-      vodTimestamps: [{ seconds: 161, note: 'missed punish on shield' }],
+      vodTimestamps: [
+        {
+          id: expect.any(String) as unknown as string,
+          seconds: 161,
+          note: 'missed punish on shield',
+        },
+      ],
     });
   });
 
@@ -155,7 +165,7 @@ describe('VodNotesDialog', () => {
     updateMatch.mockResolvedValue(baseMatch());
     const match = baseMatch({
       vodUrl: 'https://youtube.com/watch?v=abc123',
-      vodTimestamps: [{ seconds: 161, note: 'missed punish on shield' }],
+      vodTimestamps: [{ id: 'n1', seconds: 161, note: 'missed punish on shield' }],
     });
     renderDialog(match);
 

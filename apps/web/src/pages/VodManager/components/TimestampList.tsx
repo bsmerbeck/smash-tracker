@@ -1,6 +1,7 @@
 import type { RefObject } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { VodTimestamp } from '@smash-tracker/shared';
+import type { VodTimestampInput } from '@/lib/api';
 import { deriveNoteTagOptions, filterTimestampIndices, tagLabel } from '@/lib/tags';
 import { Badge } from '@/components/ui/badge';
 import { NoteComposer } from './NoteComposer';
@@ -8,33 +9,46 @@ import { TimestampRow } from './TimestampRow';
 
 export interface TimestampListProps {
   timestamps: VodTimestamp[];
-  /** Index of the last-clicked note, or `null` if none. Fixed to the last
-   * click — does NOT track live playback position (D-13/D-14). */
-  selectedIndex: number | null;
-  onSelect: (index: number) => void;
+  /** Stable note id of the last-clicked note, or `null` if none. Fixed to
+   * the last click — does NOT track live playback position (D-13/D-14).
+   * Id-keyed (never an array index) so a concurrent write reordering the
+   * array can never move the highlight to a different note (Pitfall 3). */
+  selectedNoteId: string | null;
+  onSelect: (id: string) => void;
   /** Seeks the live player (via `VodPlayer`'s `useVodPlayer` instance) —
    * never a navigate-to-URL fallback, per PITFALLS.md Pitfall 1. */
   onSeek: (seconds: number) => void;
   /** Populated by `VodPlayer` with the live player's `getCurrentTime`
    * function, forwarded to the inline `NoteComposer`'s on-focus prefill. */
   getCurrentTimeRef: RefObject<(() => number) | null>;
-  /** Fires with the full next `vodTimestamps` array (existing + new,
-   * re-sorted ascending) whenever the composer adds a note — the caller
-   * owns the single PATCH mutation (`VodManagerPage`). */
-  onUpdateTimestamps: (next: VodTimestamp[]) => void;
+  /** Fires with the composer's single new `{ seconds, note }` — the caller
+   * (`VodManagerPage`) owns the create mutation against the dedicated
+   * `POST /api/matches/:id/notes` endpoint (Phase 8). */
+  onCreateNote: (input: VodTimestampInput) => void;
+  /** Fires with a row's committed `{ seconds, note, tags? }` addressed by
+   * stable note id — the caller owns the update-by-id mutation. */
+  onCommitEdit: (id: string, next: VodTimestampInput) => void;
+  /** Fires with the confirmed-deleted note's stable id — the caller owns
+   * the delete-by-id mutation. */
+  onDelete: (id: string) => void;
+  /** Fires with a note's full next tag list addressed by stable note id —
+   * the caller owns the update-by-id mutation (TAG-02). */
+  onUpdateTags: (id: string, tags: string[]) => void;
   /** Custom tag vocabulary derived across ALL loaded VOD matches (03-02
    * locked decision) — forwarded to every row's note-tag add-combobox. */
   tagVocabulary: string[];
-  /** Index of the one row (of the whole list) currently in edit mode, or
-   * `null` if none — lifted to `VodManagerPage` (controlled, mirroring
-   * `selectedIndex`/`onSelect`) so the quick-tag panel can command a
-   * freshly-captured row straight into edit mode after its PATCH resolves. */
-  editingIndex: number | null;
-  onEditingIndexChange: (index: number | null) => void;
+  /** Stable note id of the one row (of the whole list) currently in edit
+   * mode, or `null` if none — lifted to `VodManagerPage` (controlled,
+   * mirroring `selectedNoteId`/`onSelect`) so the quick-tag panel can
+   * command a freshly-captured row straight into edit mode once its create
+   * resolves with the server-assigned id. */
+  editingNoteId: string | null;
+  onEditingNoteIdChange: (id: string | null) => void;
   /** Selected note-tag filter slugs (OR semantics, retest fix-up #12,
    * "filter notes by tag") — lifted to `VodManagerPage` (mirrors
-   * `editingIndex`) since the Prev/Next TIMESTAMP jump buttons live outside
-   * this component and must navigate only the same VISIBLE (filtered) set. */
+   * `editingNoteId`) since the Prev/Next TIMESTAMP jump buttons live
+   * outside this component and must navigate only the same VISIBLE
+   * (filtered) set. */
   noteTagFilter: string[];
   onNoteTagFilterChange: (next: string[]) => void;
 }
@@ -53,24 +67,27 @@ export interface TimestampListProps {
  * text-accent-foreground` + `border-l-2 border-primary`) — edit/delete never
  * write to `selectedIndex`/`onSelect` (D-13/D-14 preserved).
  *
- * `editingIndex` is a CONTROLLED prop (one row edits at a time — starting a
- * new edit implicitly closes any other open edit), owned by
+ * `editingNoteId` is a CONTROLLED prop (one row edits at a time — starting
+ * a new edit implicitly closes any other open edit), owned by
  * `VodManagerPage` so the quick-tag panel can command a freshly-captured
- * row into edit mode after its PATCH resolves. This component translates
- * each row's commit/delete callback into the next full re-sorted/filtered
- * array, which is the only shape `onUpdateTimestamps` (the caller's single
- * PATCH mutation site) ever receives.
+ * row into edit mode once its create resolves. Every row callback reports
+ * the note's stable id (Phase 8) straight through to the caller's per-op
+ * mutations — this component never rebuilds a full next array, and never
+ * re-sorts (the read normalizer already returns seconds-ascending order).
  */
 export function TimestampList({
   timestamps,
-  selectedIndex,
+  selectedNoteId,
   onSelect,
   onSeek,
   getCurrentTimeRef,
-  onUpdateTimestamps,
+  onCreateNote,
+  onCommitEdit,
+  onDelete,
+  onUpdateTags,
   tagVocabulary,
-  editingIndex,
-  onEditingIndexChange,
+  editingNoteId,
+  onEditingNoteIdChange,
   noteTagFilter,
   onNoteTagFilterChange,
 }: TimestampListProps) {
@@ -79,11 +96,12 @@ export function TimestampList({
   // Tags in use across THIS match's notes (retest fix-up #12) — the chip
   // row's option list. Hidden entirely when no note has any tag.
   const noteTagOptions = deriveNoteTagOptions(timestamps);
-  // Indices (into the FULL, unfiltered `timestamps` array — never
-  // re-indexed) of the currently-visible rows. Shared with
+  // Stable ids of the currently-visible rows. Shared with
   // `VodManagerPage`'s Prev/Next timestamp navigation via the exact same
   // `filterTimestampIndices` helper so both apply identical semantics.
-  const visibleIndices = new Set(filterTimestampIndices(timestamps, noteTagFilter));
+  const visibleIds = new Set(
+    filterTimestampIndices(timestamps, noteTagFilter).map((i) => timestamps[i]!.id),
+  );
 
   function toggleTagFilter(tag: string) {
     const next = noteTagFilter.includes(tag)
@@ -92,31 +110,14 @@ export function TimestampList({
     onNoteTagFilterChange(next);
   }
 
-  function handleCommitEdit(index: number, next: VodTimestamp) {
-    const updated = timestamps
-      .map((stamp, i) => (i === index ? next : stamp))
-      .sort((a, b) => a.seconds - b.seconds);
-    onUpdateTimestamps(updated);
-    onEditingIndexChange(null);
+  function handleCommitEdit(id: string, next: VodTimestampInput) {
+    onCommitEdit(id, next);
+    onEditingNoteIdChange(null);
   }
 
-  function handleDelete(index: number) {
-    onUpdateTimestamps(timestamps.filter((_, i) => i !== index));
-    onEditingIndexChange(editingIndex === index ? null : editingIndex);
-  }
-
-  // Tags never affect ordering (only time edits re-sort) — replace element
-  // `index`'s tags in place, omitting the `tags` key entirely when the
-  // resulting list is empty so RTDB drops it (mirrors the omit-to-clear
-  // convention `buildUpdateInput`/`SelectedMatchMeta` already use for
-  // match-level tags).
-  function handleUpdateTags(index: number, tags: string[]) {
-    const updated = timestamps.map((stamp, i) =>
-      i === index
-        ? { seconds: stamp.seconds, note: stamp.note, ...(tags.length > 0 ? { tags } : {}) }
-        : stamp,
-    );
-    onUpdateTimestamps(updated);
+  function handleDelete(id: string) {
+    onDelete(id);
+    onEditingNoteIdChange(editingNoteId === id ? null : editingNoteId);
   }
 
   return (
@@ -135,7 +136,7 @@ export function TimestampList({
         <NoteComposer
           timestamps={timestamps}
           getCurrentTimeRef={getCurrentTimeRef}
-          onUpdateTimestamps={onUpdateTimestamps}
+          onCreateNote={onCreateNote}
         />
       </div>
 
@@ -146,10 +147,9 @@ export function TimestampList({
           {/* Note-tag filter chip row (retest fix-up #12, "filter notes by
               tag") — hidden entirely when no note on this match has any
               tag. Toggling a chip filters visible rows below (OR within
-              selected chips); the underlying `timestamps` array is NEVER
-              re-sliced — `index` passed to each `TimestampRow` below always
-              stays the note's true position, so edit/delete/seek keep
-              hitting the correct note regardless of the active filter. */}
+              selected chips); every row is addressed by its stable note id,
+              so edit/delete/seek keep hitting the correct note regardless
+              of the active filter. */}
           {noteTagOptions.length > 0 && (
             <div className="flex flex-col gap-1">
               <span className="text-xs font-medium text-muted-foreground">
@@ -175,28 +175,27 @@ export function TimestampList({
               </div>
             </div>
           )}
-          {visibleIndices.size === 0 ? (
+          {visibleIds.size === 0 ? (
             <p className="text-sm text-muted-foreground">{t('vodManager.notes.noMatchingNotes')}</p>
           ) : (
             <ul className="flex flex-col gap-2" aria-label={t('shared.vod.timestampsAria')}>
-              {timestamps.map((stamp, index) => {
-                if (!visibleIndices.has(index)) {
+              {timestamps.map((stamp) => {
+                if (!visibleIds.has(stamp.id)) {
                   return null;
                 }
                 return (
-                  <li key={`${stamp.seconds}-${index}`}>
+                  <li key={stamp.id}>
                     <TimestampRow
                       stamp={stamp}
-                      index={index}
-                      isSelected={index === selectedIndex}
-                      isEditing={editingIndex === index}
+                      isSelected={stamp.id === selectedNoteId}
+                      isEditing={editingNoteId === stamp.id}
                       onSeek={onSeek}
                       onSelect={onSelect}
-                      onStartEdit={onEditingIndexChange}
-                      onCancelEdit={() => onEditingIndexChange(null)}
+                      onStartEdit={onEditingNoteIdChange}
+                      onCancelEdit={() => onEditingNoteIdChange(null)}
                       onCommitEdit={handleCommitEdit}
                       onDelete={handleDelete}
-                      onUpdateTags={handleUpdateTags}
+                      onUpdateTags={onUpdateTags}
                       tagVocabulary={tagVocabulary}
                     />
                   </li>

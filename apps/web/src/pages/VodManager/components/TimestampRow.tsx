@@ -18,6 +18,7 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { cn } from '@/lib/utils';
+import type { VodTimestampInput } from '@/lib/api';
 import { formatTimestamp, parseFlexibleTimestamp } from '@/lib/vod';
 import {
   MAX_NOTE_TAGS,
@@ -80,10 +81,11 @@ function NoteTagChips({
 }
 
 export interface TimestampRowProps {
+  /** The note this row renders — `stamp.id` (the stable, server-assigned
+   * note id, Phase 8) is the identity every callback below reports, never
+   * an array position: a concurrent write reordering the array can never
+   * redirect a commit/delete at the wrong note (RESEARCH Pitfall 3). */
   stamp: VodTimestamp;
-  /** This row's position in the CURRENT (already-sorted) `timestamps` array
-   * — the identity `TimestampList` uses to target commit/delete. */
-  index: number;
   /** Whether this is the last-clicked row (D-13/D-14) — fixed to the last
    * click, unaffected by edit/delete on any row. */
   isSelected: boolean;
@@ -92,18 +94,19 @@ export interface TimestampRowProps {
   isEditing: boolean;
   /** Seeks the live player (never a navigate-to-URL fallback). */
   onSeek: (seconds: number) => void;
-  onSelect: (index: number) => void;
-  onStartEdit: (index: number) => void;
+  onSelect: (id: string) => void;
+  onStartEdit: (id: string) => void;
   onCancelEdit: () => void;
-  /** Fires with the validated `{ seconds, note }` once Enter/save commits —
-   * the parent builds the next re-sorted array and owns the PATCH. */
-  onCommitEdit: (index: number, next: VodTimestamp) => void;
-  /** Fires once the AlertDialog confirm is accepted — the parent builds the
-   * next filtered array and owns the PATCH. */
-  onDelete: (index: number) => void;
+  /** Fires with the validated `{ seconds, note, tags? }` once Enter/save
+   * commits — the parent owns the update-by-id mutation (`PATCH
+   * /api/matches/:id/notes/:noteId`). */
+  onCommitEdit: (id: string, next: VodTimestampInput) => void;
+  /** Fires once the AlertDialog confirm is accepted — the parent owns the
+   * delete-by-id mutation. */
+  onDelete: (id: string) => void;
   /** Fires with the note's full next tag list (add or remove) — the parent
-   * rebuilds the `vodTimestamps` array element and owns the PATCH (TAG-02). */
-  onUpdateTags: (index: number, tags: string[]) => void;
+   * owns the update-by-id mutation (TAG-02). */
+  onUpdateTags: (id: string, tags: string[]) => void;
   /** Custom tag vocabulary derived across ALL loaded VOD matches (03-02
    * locked decision) — fed into this note's add-combobox "your existing
    * custom tags" group. */
@@ -123,7 +126,6 @@ export interface TimestampRowProps {
  */
 export function TimestampRow({
   stamp,
-  index,
   isSelected,
   isEditing,
   onSeek,
@@ -163,7 +165,7 @@ export function TimestampRow({
 
   function dispatchTags(next: string[]) {
     setPendingTags(next);
-    onUpdateTags(index, next);
+    onUpdateTags(stamp.id, next);
   }
 
   function handleAddTag(tag: string) {
@@ -208,7 +210,7 @@ export function TimestampRow({
     // dropping them. Reads `currentTags` (pending-aware, see its doc
     // comment above), not the raw `stamp.tags` prop, so an in-flight tag
     // add isn't lost if its PATCH hasn't refetched yet when Enter commits.
-    onCommitEdit(index, {
+    onCommitEdit(stamp.id, {
       seconds,
       note,
       ...(currentTags.length > 0 ? { tags: currentTags } : {}),
@@ -233,7 +235,7 @@ export function TimestampRow({
   }
 
   function confirmDelete() {
-    onDelete(index);
+    onDelete(stamp.id);
     setConfirmingDelete(false);
   }
 
@@ -309,7 +311,7 @@ export function TimestampRow({
           type="button"
           onClick={() => {
             onSeek(stamp.seconds);
-            onSelect(index);
+            onSelect(stamp.id);
           }}
           className={cn(
             'flex flex-1 items-center gap-2 rounded-md border p-2 text-left text-sm',
@@ -324,7 +326,7 @@ export function TimestampRow({
           variant="outline"
           size="icon-sm"
           aria-label={t('shared.vod.editTimestamp', { time: formatTimestamp(stamp.seconds) })}
-          onClick={() => onStartEdit(index)}
+          onClick={() => onStartEdit(stamp.id)}
         >
           <Pencil />
         </Button>

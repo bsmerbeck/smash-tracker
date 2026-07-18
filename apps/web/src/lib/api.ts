@@ -44,6 +44,8 @@ import {
   startggSyncSummarySchema,
   tournamentEntryListSchema,
   userProfileSchema,
+  vodTimestampEntrySchema,
+  vodTimestampSchema,
   type CreateGspReadingInput,
   type CreateMatchInput,
   type CreditPackId,
@@ -74,6 +76,14 @@ import { getFirebaseAuth } from './firebase';
  * OUTPUT type) would force every caller to spell out both defaults.
  */
 export type CreateShareRequest = z.input<typeof createShareInputSchema>;
+
+/**
+ * Request body for the dedicated note endpoints (`POST/PATCH
+ * /api/matches/:id/notes[/:noteId]`) — the id-less `vodTimestampSchema`
+ * shape. The server owns id assignment (RTDB push keys); responses come
+ * back as the id-bearing `vodTimestampEntrySchema` shape.
+ */
+export type VodTimestampInput = z.infer<typeof vodTimestampSchema>;
 
 /**
  * Thrown for any non-2xx response. Carries the parsed error envelope
@@ -255,6 +265,33 @@ export const api = {
     /** DELETE /api/matches/:id */
     remove: (id: string) =>
       apiRequest<void>(`/api/matches/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+    /**
+     * POST /api/matches/:id/notes — creates ONE timestamp note via the
+     * dedicated note endpoint (Phase 8: note writes never ride the
+     * full-match PATCH). Returns the created, id-bearing note.
+     */
+    createNote: (matchId: string, input: VodTimestampInput) =>
+      apiRequestParsed(
+        `/api/matches/${encodeURIComponent(matchId)}/notes`,
+        vodTimestampEntrySchema,
+        {
+          method: 'POST',
+          body: input,
+        },
+      ),
+    /** PATCH /api/matches/:id/notes/:noteId — full-note replace addressed by stable note id. */
+    updateNote: (matchId: string, noteId: string, input: VodTimestampInput) =>
+      apiRequestParsed(
+        `/api/matches/${encodeURIComponent(matchId)}/notes/${encodeURIComponent(noteId)}`,
+        vodTimestampEntrySchema,
+        { method: 'PATCH', body: input },
+      ),
+    /** DELETE /api/matches/:id/notes/:noteId — removes one note by stable note id. */
+    deleteNote: (matchId: string, noteId: string) =>
+      apiRequest<void>(
+        `/api/matches/${encodeURIComponent(matchId)}/notes/${encodeURIComponent(noteId)}`,
+        { method: 'DELETE' },
+      ),
   },
   opponents: {
     /** GET /api/opponents */

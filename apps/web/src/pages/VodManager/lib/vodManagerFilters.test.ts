@@ -81,7 +81,7 @@ describe('applyVodManagerFilters', () => {
         id: 'm3',
         opponent: 'Light',
         tags: [],
-        vodTimestamps: [{ seconds: 10, note: 'punish', tags: ['punish'] }],
+        vodTimestamps: [{ id: 'n1', seconds: 10, note: 'punish', tags: ['punish'] }],
       }),
       makeMatch({ id: 'm4', opponent: 'Tweek' }),
     ];
@@ -174,7 +174,7 @@ describe('getVodManagerFilterOptions', () => {
       makeMatch({
         id: 'm2',
         tags: ['bad-matchup'],
-        vodTimestamps: [{ seconds: 5, note: 'n', tags: ['punish', 'edgeguard'] }],
+        vodTimestamps: [{ id: 'n1', seconds: 5, note: 'n', tags: ['punish', 'edgeguard'] }],
       }),
       makeMatch({ id: 'm3', tags: [] }),
     ];
