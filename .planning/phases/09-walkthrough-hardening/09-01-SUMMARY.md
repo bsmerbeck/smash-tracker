@@ -150,3 +150,14 @@ None - no external service configuration required.
 
 _Phase: 09-walkthrough-hardening_
 _Completed: 2026-07-18_
+
+## Self-Check: PASSED
+
+- FOUND: apps/web/src/context/AuthContext.tsx
+- FOUND: apps/web/src/pages/Home/SignInCard.tsx
+- FOUND: .planning/phases/09-walkthrough-hardening/09-01-SUMMARY.md
+- FOUND commit: 5508b44 (test RED, FB-01)
+- FOUND commit: 6b6a95d (feat GREEN, FB-01)
+- FOUND commit: 29a4dc6 (test RED, FB-02)
+- FOUND commit: 92f22d8 (feat GREEN, FB-02)
+- FOUND commit: e207a83 (docs, SUMMARY.md)
