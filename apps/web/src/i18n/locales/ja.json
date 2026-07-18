@@ -253,6 +253,7 @@
       "charLimit": "{{max}}文字以内で入力してください",
       "gspFormat": "12,400,000 のような数値を入力してください（空欄でも可）",
       "vodUrlInvalid": "有効なURLを入力してください（空欄でも可）",
+      "vodUrlRequired": "有効なVODリンクを入力してください (YouTube or Twitch)",
       "vodStartSecondsInvalid": "m:ss、h:mm:ss、または秒数で時間を入力してください（空欄でも可）"
     },
     "set": {

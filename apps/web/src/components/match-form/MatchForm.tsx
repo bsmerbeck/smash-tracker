@@ -96,7 +96,10 @@ export function matchTypeLabel(t: TFunction, value: (typeof matchTypeValues)[num
  */
 export function buildMatchFormSchema(
   t: TFunction,
-  { requireOpponent = true }: { requireOpponent?: boolean } = {},
+  {
+    requireOpponent = true,
+    requireVod = false,
+  }: { requireOpponent?: boolean; requireVod?: boolean } = {},
 ) {
   return z.object({
     fighterId: z
@@ -129,16 +132,25 @@ export function buildMatchFormSchema(
       message: t('matchForm.validation.gspFormat'),
     }),
     /**
-     * Optional VOD link (V-Manager fix-up): blank clears it (see
+     * VOD link (V-Manager fix-up): blank clears it (see
      * `matchFormValuesToInput`'s omission — and `EditMatchForm`'s
      * clear-also-drops-timestamps handling), a non-blank value must be a
-     * valid URL.
+     * valid URL. When `requireVod` is true (VOD Manager's Add Match mount),
+     * blank is rejected — the whole point of that mount is capturing a link.
      */
-    vodUrl: z
-      .string()
-      .refine((value) => value.trim() === '' || z.string().url().safeParse(value.trim()).success, {
-        message: t('matchForm.validation.vodUrlInvalid'),
-      }),
+    vodUrl: z.string().refine(
+      (value) => {
+        const trimmed = value.trim();
+        return requireVod
+          ? trimmed !== '' && z.string().url().safeParse(trimmed).success
+          : trimmed === '' || z.string().url().safeParse(trimmed).success;
+      },
+      {
+        message: t(
+          requireVod ? 'matchForm.validation.vodUrlRequired' : 'matchForm.validation.vodUrlInvalid',
+        ),
+      },
+    ),
     /**
      * Optional user-typed offset into the VOD where this match begins
      * (V-Manager fix-up #3): only meaningful alongside a non-blank `vodUrl`
@@ -198,7 +210,7 @@ export function matchFormValuesToInput(values: MatchFormValues): CreateMatchInpu
 
 export function useMatchForm(
   defaultValues: MatchFormValues,
-  options?: { requireOpponent?: boolean },
+  options?: { requireOpponent?: boolean; requireVod?: boolean },
 ): UseFormReturn<MatchFormValues> {
   const { t } = useTranslation();
   return useForm<MatchFormValues>({
@@ -365,6 +377,7 @@ export function MatchFormFields({
   fighterSprites,
   syncLocked = false,
   vodStartSecondsAccessory,
+  requireVod = false,
 }: {
   form: UseFormReturn<MatchFormValues>;
   /** The fighters offered for "Your Fighter" — the signed-in user's primary+secondary selections. */
@@ -373,6 +386,8 @@ export function MatchFormFields({
   syncLocked?: boolean;
   /** Optional slot rendered adjacent to the vodStartSeconds field (02-03's "Use current player time" button). Default undefined renders nothing — safe no-op for other callers. */
   vodStartSecondsAccessory?: ReactNode;
+  /** When true, renders an `aria-hidden` required marker on the VOD URL label and sets `aria-required` on its input — used by the VOD Manager's required-VOD Add Match mount. Default false is a no-op for every other caller. */
+  requireVod?: boolean;
 }) {
   const { t } = useTranslation();
   const { data: opponents = [] } = useOpponents();
@@ -582,9 +597,17 @@ export function MatchFormFields({
             name="vodUrl"
             render={({ field }) => (
               <FormItem>
-                <FormLabel>{t('shared.vod.url')}</FormLabel>
+                <FormLabel>
+                  {t('shared.vod.url')}
+                  {requireVod && <span aria-hidden="true"> *</span>}
+                </FormLabel>
                 <FormControl>
-                  <Input {...field} type="url" placeholder={t('matchForm.vodUrlPlaceholder')} />
+                  <Input
+                    {...field}
+                    type="url"
+                    placeholder={t('matchForm.vodUrlPlaceholder')}
+                    aria-required={requireVod || undefined}
+                  />
                 </FormControl>
                 <FormMessage />
               </FormItem>
