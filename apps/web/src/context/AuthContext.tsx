@@ -16,6 +16,7 @@ import { createContext, useEffect, useMemo, useRef, useState, type ReactNode } f
 import { useQueryClient } from '@tanstack/react-query';
 import { createGoogleAuthProvider, getFirebaseAuth } from '@/lib/firebase';
 import { api } from '@/lib/api';
+import { postCanonicalEvent } from '@/lib/canonicalEvents';
 import * as shareReferral from '@/lib/shareReferral';
 
 export interface AuthContextValue {
@@ -134,6 +135,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         await provisionUser();
       },
       signInWithGoogle: async () => {
+        // MEAS-09: fired at the CTA activation, before the popup — this is
+        // the acquisition-funnel signal for "a visitor tried to sign in",
+        // distinct from `signup_completed` (server-only D event, fired only
+        // on successful first-ever provisioning in users.ts).
+        postCanonicalEvent('signup_cta_clicked');
         await signInWithPopup(getFirebaseAuth(), createGoogleAuthProvider());
         await provisionUser();
       },

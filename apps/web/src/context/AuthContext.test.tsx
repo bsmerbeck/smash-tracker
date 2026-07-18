@@ -7,6 +7,7 @@ import { useAuth } from '@/hooks/useAuth';
 import {
   resetAuthMock,
   signInWithEmailAndPassword,
+  signInWithPopup,
   setMockUser,
   makeMockUser,
 } from '@/test/mockAuth';
@@ -55,6 +56,12 @@ vi.mock('@/lib/shareReferral', () => ({
   stamp: (...args: unknown[]) => stampReferral(...args),
 }));
 
+const postCanonicalEvent = vi.fn();
+
+vi.mock('@/lib/canonicalEvents', () => ({
+  postCanonicalEvent: (...args: unknown[]) => postCanonicalEvent(...args),
+}));
+
 /** Minimal consumer exercising `signInWithEmail`, whose implementation calls
  * the module-private `provisionUser()` (FUNNEL-02 attribution) on success. */
 function TestConsumer() {
@@ -72,6 +79,27 @@ function renderWithProvider() {
     <QueryClientProvider client={queryClient}>
       <AuthProvider>
         <TestConsumer />
+      </AuthProvider>
+    </QueryClientProvider>,
+  );
+}
+
+/** Minimal consumer exercising `signInWithGoogle` (MEAS-09: `signup_cta_clicked`). */
+function GoogleTestConsumer() {
+  const { signInWithGoogle } = useAuth();
+  return (
+    <button type="button" onClick={() => void signInWithGoogle()}>
+      sign in with google
+    </button>
+  );
+}
+
+function renderWithGoogleProvider() {
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  return render(
+    <QueryClientProvider client={queryClient}>
+      <AuthProvider>
+        <GoogleTestConsumer />
       </AuthProvider>
     </QueryClientProvider>,
   );
@@ -164,5 +192,31 @@ describe('AuthContext — query cache clear on uid transition (FB-01)', () => {
     // uidB -> null (sign-out)
     act(() => setMockUser(null));
     await waitFor(() => expect(clearSpy).toHaveBeenCalledTimes(3));
+  });
+});
+
+describe('AuthContext.signInWithGoogle — signup_cta_clicked (MEAS-09)', () => {
+  beforeEach(() => {
+    resetAuthMock();
+    vi.clearAllMocks();
+    readReferral.mockReturnValue(null);
+    signInWithPopup.mockResolvedValue(undefined);
+  });
+
+  it('fires signup_cta_clicked once, before the popup is triggered', async () => {
+    const callOrder: string[] = [];
+    postCanonicalEvent.mockImplementation(() => callOrder.push('postCanonicalEvent'));
+    signInWithPopup.mockImplementation(async () => {
+      callOrder.push('signInWithPopup');
+    });
+
+    const user = userEvent.setup();
+    renderWithGoogleProvider();
+
+    await user.click(screen.getByRole('button', { name: 'sign in with google' }));
+
+    await waitFor(() => expect(signInWithPopup).toHaveBeenCalledOnce());
+    expect(postCanonicalEvent).toHaveBeenCalledExactlyOnceWith('signup_cta_clicked');
+    expect(callOrder).toEqual(['postCanonicalEvent', 'signInWithPopup']);
   });
 });
