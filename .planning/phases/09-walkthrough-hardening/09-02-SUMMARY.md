@@ -159,6 +159,10 @@ None - no external service configuration required. This is a deploy-first, backe
 - The API surface FB-03's web UI (Plan 09-04, My Shares management overhaul) needs is complete and tested: `bulkShareRequestSchema`/`bulkShareResponseSchema` for the bulk-select UI, and DELETE now returning 204 for an active share so the per-row Delete button can drop its "revoke first" gating.
 - No blockers. Full API suite (738 tests, up from the 727 baseline) and shared suite (354 tests) both green; `pnpm --filter @smash-tracker/api lint`, `pnpm --filter @smash-tracker/shared lint`, and `pnpm --filter @smash-tracker/api exec tsc --noEmit` all clean.
 
+## Self-Check: PASSED
+
+All key files confirmed present on disk (`packages/shared/src/shares.ts`, `apps/api/src/services/rtdb.ts`, `apps/api/src/services/rtdb.test.ts`, `apps/api/src/routes/vodShares.ts`, `apps/api/src/routes/vodShares.test.ts`, this SUMMARY.md). All 5 task/summary commit hashes (`0e2b357`, `9c1fbfb`, `cd5123d`, `04136ba`, `7d9d0dc`) confirmed present in `git log --oneline --all`.
+
 ---
 
 _Phase: 09-walkthrough-hardening_
