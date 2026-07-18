@@ -67,10 +67,13 @@ function TestConsumer() {
 }
 
 function renderWithProvider() {
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
-    <AuthProvider>
-      <TestConsumer />
-    </AuthProvider>,
+    <QueryClientProvider client={queryClient}>
+      <AuthProvider>
+        <TestConsumer />
+      </AuthProvider>
+    </QueryClientProvider>,
   );
 }
 
