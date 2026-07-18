@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { errorResponseSchema } from '@smash-tracker/shared';
 import type { Ga4Config, InternalJobsConfig } from '../config/env.js';
 import { checkInternalJobSecret } from '../plugins/internalJobAuth.js';
+import { runProjectGa4 } from '../jobs/projectGa4.js';
 
 const INTERNAL_JOBS_SECRET_HEADER = 'x-internal-jobs-secret';
 
@@ -42,7 +43,7 @@ const internalJobsRoutes: FastifyPluginAsyncZod<InternalJobsRoutesOptions> = asy
   app,
   options,
 ) => {
-  const { internalJobs } = options;
+  const { internalJobs, ga4, ga4Fetch } = options;
 
   if (!internalJobs) {
     app.all('/internal/jobs*', async (_request, reply) => {
@@ -79,10 +80,10 @@ const internalJobsRoutes: FastifyPluginAsyncZod<InternalJobsRoutesOptions> = asy
       },
     },
     async () => {
-      // Phase 10 Plan 5 Task 2 wires this to the real GA4 outbox drain
-      // (jobs/projectGa4.ts's runProjectGa4) — this scaffold's own tests
-      // only need to prove the 503/401/authorized-runs-handler gate.
-      return { projected: 0, skipped: 0, failed: 0 };
+      // MEAS-06: drains the bounded outboxPending day-shards and projects
+      // only consent-granted events — never re-derives a canonical event
+      // (Pitfall 2, see jobs/projectGa4.ts's own doc comment).
+      return runProjectGa4(app.firebase.database, ga4, ga4Fetch);
     },
   );
 };
