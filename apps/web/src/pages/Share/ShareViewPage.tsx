@@ -32,6 +32,7 @@ import {
   filterContributorIndices,
 } from '@/lib/contributors';
 import { cn } from '@/lib/utils';
+import { postCanonicalEvent } from '@/lib/canonicalEvents';
 import { logProductEvent } from '@/lib/firebase';
 import * as shareReferral from '@/lib/shareReferral';
 import { getOrCreateSessionId, getStoredDisplayName, setDisplayName } from '@/lib/coachSession';
@@ -552,6 +553,25 @@ export function ShareViewPage() {
       shareReferral.stamp(token);
     }
   }, [snapshot, token]);
+
+  // MEAS-09: `share_view_loaded` is a DISTINCT signal from `share_opened`
+  // above — it fires only once the live player reports `isReady` (a usable,
+  // playable render), not merely once the snapshot fetch resolves. This is
+  // the crawler-safe distinction from the server-side `share_resolved`
+  // access count (any GET, bots included): a bot that only hits the API
+  // never renders a player, so it never fires this event. Guarded by its
+  // own ref so it fires exactly once per view, independent of the
+  // share_opened effect's own guard.
+  const hasFiredShareViewLoadedRef = useRef(false);
+  useEffect(() => {
+    if (!snapshot || !isReady || hasFiredShareViewLoadedRef.current) {
+      return;
+    }
+    hasFiredShareViewLoadedRef.current = true;
+    postCanonicalEvent('share_view_loaded', {
+      share_kind: snapshot.kind === 'recap' ? 'recap' : 'review',
+    });
+  }, [snapshot, isReady]);
 
   const [quickTags, setQuickTags] = useState<string[]>(() => readStoredQuickTags());
   const [editingNoteId, setEditingNoteId] = useState<string | null>(null);

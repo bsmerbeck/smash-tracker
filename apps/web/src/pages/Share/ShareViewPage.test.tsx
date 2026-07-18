@@ -6,6 +6,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { PublicShareSnapshot } from '@smash-tracker/shared';
 import type { YouTubePlayerConfig, YouTubePlayerInstance } from '@/lib/useVodPlayer';
 import { ApiError } from '@/lib/api';
+import { postCanonicalEvent } from '@/lib/canonicalEvents';
 import { logProductEvent } from '@/lib/firebase';
 import { stamp } from '@/lib/shareReferral';
 import { ShareViewPage } from './ShareViewPage';
@@ -26,6 +27,10 @@ vi.mock('@/lib/api', async () => {
 
 vi.mock('@/lib/firebase', () => ({
   logProductEvent: vi.fn(),
+}));
+
+vi.mock('@/lib/canonicalEvents', () => ({
+  postCanonicalEvent: vi.fn(),
 }));
 
 vi.mock('@/lib/shareReferral', () => ({
@@ -654,6 +659,65 @@ describe('ShareViewPage', () => {
     await screen.findByText('This review is no longer available');
     expect(logProductEvent).not.toHaveBeenCalled();
     expect(stamp).not.toHaveBeenCalled();
+  });
+
+  // MEAS-09: share_view_loaded must be a DISTINCT trigger from share_opened
+  // above — it does not fire on snapshot resolve alone, only once the live
+  // player reports ready.
+  it('does not fire share_view_loaded on snapshot resolve alone (player not yet ready)', async () => {
+    getPublic.mockResolvedValue(baseSnapshot());
+    mountYouTubePlayer();
+
+    renderShare('/s/tok123');
+
+    await screen.findByText(/Mario vs\. Luigi/);
+    // share_opened (GA4) fires immediately, but the canonical
+    // share_view_loaded event must not — the player has not signaled ready.
+    expect(logProductEvent).toHaveBeenCalledExactlyOnceWith('share_opened', {
+      share_kind: 'review',
+    });
+    expect(postCanonicalEvent).not.toHaveBeenCalled();
+  });
+
+  it('fires share_view_loaded (share_kind: review) exactly once, only after the player reports ready', async () => {
+    getPublic.mockResolvedValue(baseSnapshot());
+    const { Player, getConfig } = mountYouTubePlayer();
+
+    renderShare('/s/tok123');
+
+    await waitFor(() => expect(Player).toHaveBeenCalledTimes(1));
+    expect(postCanonicalEvent).not.toHaveBeenCalled();
+
+    act(() => {
+      getConfig()?.events?.onReady?.();
+    });
+
+    await waitFor(() =>
+      expect(postCanonicalEvent).toHaveBeenCalledExactlyOnceWith('share_view_loaded', {
+        share_kind: 'review',
+      }),
+    );
+
+    // A later onReady re-fire (defensive — the player SDK never calls it
+    // twice, but the effect's own ref guard must still hold) never
+    // double-fires.
+    act(() => {
+      getConfig()?.events?.onReady?.();
+    });
+    expect(postCanonicalEvent).toHaveBeenCalledTimes(1);
+  });
+
+  it('fires share_view_loaded (share_kind: recap) for a recap snapshot with no player (no isReady gate applies)', async () => {
+    getPublic.mockResolvedValue(baseRecapSnapshot());
+
+    renderShare('/s/tok123');
+
+    await screen.findByText('Genesis 10');
+    // A recap snapshot never mounts a video player, so `isReady` from
+    // `useVodPlayer` stays at its default (no vodUrl) — RecapView has no
+    // playable moment to gate on, so share_view_loaded intentionally never
+    // fires here; only share_opened (GA4) does.
+    expect(postCanonicalEvent).not.toHaveBeenCalled();
   });
 
   describe('coach edit-tier affordances (Phase 8)', () => {

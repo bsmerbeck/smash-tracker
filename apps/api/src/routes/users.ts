@@ -5,6 +5,8 @@ import {
   userProfileSchema,
 } from '@smash-tracker/shared';
 import { z } from 'zod';
+import { buildDomainEnvelope } from '../events/envelope.js';
+import { createEvent } from '../events/ledger.js';
 import { NotFoundError, RtdbService } from '../services/rtdb.js';
 
 const usersRoutes: FastifyPluginAsyncZod = async (app) => {
@@ -26,6 +28,13 @@ const usersRoutes: FastifyPluginAsyncZod = async (app) => {
   // storing (review CR-01) — an unresolvable token is silently dropped —
   // and applies write-once, first-touch semantics, so a returning user's
   // stale stamp can never overwrite an existing attribution.
+  //
+  // Phase 10 Plan 4 (Canonical Measurement, MEAS-02): this handler is the
+  // ONLY place `signup_completed` can fire, and it must fire EXACTLY ONCE
+  // per account — never client-mirrored. `upsertUser` runs on every sign-in
+  // (idempotent), so "first-ever provision" is detected by reading
+  // `users/{uid}/email`'s existence BEFORE the upsert write; a returning
+  // user (email already present) emits nothing.
   app.put(
     '/users/me',
     {
@@ -47,12 +56,35 @@ const usersRoutes: FastifyPluginAsyncZod = async (app) => {
     },
     async (request) => {
       const email = request.userEmail;
+
+      const existingEmailSnapshot = await app.firebase.database
+        .ref(`users/${request.uid}/email`)
+        .get();
+      const isFirstProvision = !existingEmailSnapshot.exists();
+
       await rtdb.upsertUser(request.uid, {
         email,
         // Wire name is `referredByShareId` for client back-compat, but the
         // VALUE is the share-page bearer token — upsertUser resolves it.
         referralToken: request.body?.referredByShareId,
       });
+
+      if (isFirstProvision) {
+        const sessionIdHeader = request.headers['x-session-id'];
+        const sessionId =
+          (Array.isArray(sessionIdHeader) ? sessionIdHeader[0] : sessionIdHeader) ?? 'unknown';
+        void createEvent(
+          app.firebase.database,
+          buildDomainEnvelope({
+            eventName: 'signup_completed',
+            actorId: request.uid,
+            sessionId,
+            causationId: request.uid,
+            consentState: 'unknown',
+          }),
+        );
+      }
+
       return { uid: request.uid, email };
     },
   );

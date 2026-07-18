@@ -36,6 +36,63 @@ describe('PUT /api/users/me', () => {
     expect(response.statusCode).toBe(401);
   });
 
+  // Phase 10 Plan 4 (Canonical Measurement, MEAS-02): `signup_completed` is
+  // a server-only D event fired exactly once, on first-ever provisioning —
+  // never on a returning user's re-provision. The handler's own `void
+  // createEvent(...)` call is fire-and-forget, so tests flush a macrotask
+  // tick after `inject()` before asserting on the ledger.
+  describe('signup_completed (first-provision D event)', () => {
+    function allLedgerRows(database: ReturnType<typeof buildTestApp>['database']): unknown[] {
+      const dump = database.dump() as { eventLedger?: Record<string, Record<string, unknown>> };
+      const days = dump.eventLedger ?? {};
+      return Object.values(days).flatMap((day) => Object.values(day));
+    }
+
+    async function flushMacrotask(): Promise<void> {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    }
+
+    it('emits exactly one signup_completed row for a uid whose email did not exist before the call', async () => {
+      const { app, database } = buildTestApp();
+
+      const response = await app.inject({
+        method: 'PUT',
+        url: '/api/users/me',
+        headers: authHeader(),
+      });
+      await flushMacrotask();
+
+      expect(response.statusCode).toBe(200);
+      const rows = allLedgerRows(database);
+      expect(rows).toHaveLength(1);
+      expect(rows[0]).toMatchObject({
+        eventName: 'signup_completed',
+        actorId: TEST_UID,
+        causationId: TEST_UID,
+        source: 'api',
+        actorKind: 'authenticated',
+        consentState: 'unknown',
+      });
+    });
+
+    it('emits no event for a returning user (email already present)', async () => {
+      const { app, database } = buildTestApp();
+
+      await app.inject({ method: 'PUT', url: '/api/users/me', headers: authHeader() });
+      await flushMacrotask();
+
+      const second = await app.inject({
+        method: 'PUT',
+        url: '/api/users/me',
+        headers: authHeader(),
+      });
+      await flushMacrotask();
+
+      expect(second.statusCode).toBe(200);
+      expect(allLedgerRows(database)).toHaveLength(1);
+    });
+  });
+
   // Phase 7 (Recap Cards & Share-Loop Analytics): referredByShareId is a
   // write-once, first-touch attribution field (FUNNEL-02). The incoming
   // value is the share-page bearer TOKEN (the public snapshot never exposes
