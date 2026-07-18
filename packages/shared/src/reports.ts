@@ -113,14 +113,61 @@ export type ScoutReportRecord = z.infer<typeof scoutReportRecordSchema>;
  * including the same optional `source` (V9-B Feature 4) for bare-query
  * disambiguation between start.gg and parry.gg, and the same optional
  * `combineWith` (V13) that merges a second-site scout into the report's data
- * (see `scoutQuerySchema`).
+ * (see `scoutQuerySchema`). `jobId` (BILL-06/Phase 10) is a client-generated
+ * UUID, one per "Generate report" click, used to key the durable
+ * `reportJobs/{uid}/{jobId}` state machine for idempotent retries. Optional
+ * so an un-updated client (deploy-first) never 400s — the server falls back
+ * to a server-generated jobId when absent, same convention as
+ * `checkoutRequestSchema.attemptId`.
  */
 export const generateReportRequestSchema = z.object({
   query: z.string().min(1),
   source: scoutSourceSchema.optional(),
   combineWith: combineWithLookupSchema.optional(),
+  jobId: z.string().min(1).optional(),
 });
 export type GenerateReportRequest = z.infer<typeof generateReportRequestSchema>;
+
+/**
+ * BILL-06/MEAS-03 (Phase 10): the durable report-job state machine.
+ * `reportJobs/{uid}/{jobId}` — turns synchronous, state-less report
+ * generation into an idempotent, resumable `queued -> running ->
+ * succeeded | failed | refunded` job. `creditRef` is set to the jobId itself
+ * (a client-generated, non-PII UUID) so `credit_spent`/`credit_refunded`
+ * ledger entries and the `report_*` B events all correlate on the same key.
+ * `resultRef` (the `scoutReports/{uid}` push key) is present only once the
+ * job reaches `succeeded`.
+ *
+ * Single-writer-per-job invariant: only the request that CREATED a jobId
+ * (i.e. wrote its `queued` state) ever writes to that job's node again —
+ * there is no concurrent-writer scenario for a given `{uid, jobId}` pair, so
+ * these transitions are plain sequential writes, not `.transaction()`s (the
+ * stuck-job sweep, a later plan, is the one other writer, and it only acts
+ * on jobs that have gone stale, never racing a live in-flight request).
+ */
+export const reportJobStatusSchema = z.enum([
+  'queued',
+  'running',
+  'succeeded',
+  'failed',
+  'refunded',
+]);
+export type ReportJobStatus = z.infer<typeof reportJobStatusSchema>;
+
+export const reportJobSchema = z.object({
+  status: reportJobStatusSchema,
+  /** Epoch ms — when this job's `queued` state was first written. */
+  createdAt: z.number(),
+  /** Epoch ms — updated on every state transition; drives the stuck-job sweep's staleness check. */
+  updatedAt: z.number(),
+  /** Retry/resume counter — incremented if a job is ever resumed from a non-terminal state. */
+  attempt: z.number().int().min(0),
+  /** The credit-ledger correlation key for this job — always equal to the jobId. */
+  creditRef: z.string(),
+  /** The `scoutReports/{uid}` push key once generation succeeds; absent until then. */
+  resultRef: z.string().optional(),
+});
+export type ReportJob = z.infer<typeof reportJobSchema>;
 
 /**
  * GET /api/reports/config response — whether the signed-in caller can
