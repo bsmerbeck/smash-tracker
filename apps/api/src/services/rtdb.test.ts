@@ -332,6 +332,29 @@ describe('RtdbService.clearVodAndNotes / deleteMatch — FB-05 share-cascade rev
     const tokenRecord = database.dump().shareTokens as Record<string, Record<string, unknown>>;
     expect(tokenRecord[token]).not.toHaveProperty('revokedAt');
   });
+
+  it('WR-04: a corrupt sharesByUser index VALUE (RTDB-illegal token) never crashes the cascade — clearVodAndNotes and deleteMatch still land, skipping the corrupt entry', async () => {
+    const database = new FakeDatabase();
+    const rtdb = new RtdbService(database as never);
+    seedMatchWithVod(database, UID, 'm1');
+    // A hand-mangled index entry: the VALUE (the token) contains '.', which
+    // would make ref(`shareTokens/${tokenValue}`) throw synchronously and
+    // wedge the owner out of deleting/clearing this match entirely (FB-05's
+    // "must not crash the whole operation" requirement).
+    database.seed(`sharesByUser/${UID}/corruptShare`, 'bad.token');
+    const goodToken = seedReviewShare(database, { matchId: 'm1' });
+
+    const result = await rtdb.clearVodAndNotes(UID, 'm1');
+
+    expect(result).not.toHaveProperty('vodUrl');
+    const tokenRecord = database.dump().shareTokens as Record<string, Record<string, unknown>>;
+    expect(tokenRecord[goodToken]).toHaveProperty('revokedAt');
+
+    // deleteMatch shares the same resolve helper — prove it end-to-end too.
+    await expect(rtdb.deleteMatch(UID, 'm1')).resolves.toBeUndefined();
+    const stored = database.dump().matches as Record<string, Record<string, unknown>> | undefined;
+    expect(stored?.[UID]?.['m1']).toBeUndefined();
+  });
 });
 
 describe('RtdbService.createShare — permission tiering + edit-tier expiry', () => {
@@ -661,6 +684,17 @@ describe('FB-03: deleteShare active-removal + bulkUpdateShares', () => {
     const dump = database.dump() as Record<string, unknown>;
     const tokens = dump.shareTokens as Record<string, Record<string, unknown>>;
     expect(tokens.activeTokenAAAAABBBBB!.revokedAt).toEqual(expect.any(Number));
+  });
+
+  it('WR-04: a shareId whose INDEX VALUE is a corrupt/RTDB-illegal token is skipped, never a throw', async () => {
+    const database = new FakeDatabase();
+    const rtdb = new RtdbService(database as never);
+    database.seed(`sharesByUser/${UID}/corruptShare`, 'bad.token');
+
+    await expect(rtdb.bulkUpdateShares(UID, 'revoke', ['corruptShare'])).resolves.toEqual({
+      processed: 0,
+      skipped: 1,
+    });
   });
 });
 

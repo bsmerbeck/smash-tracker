@@ -529,7 +529,13 @@ export class RtdbService {
 
     const results = await Promise.all(
       Object.entries(index).map(async ([shareId, tokenValue]): Promise<string | null> => {
-        if (typeof tokenValue !== 'string') {
+        // Review WR-04: a corrupt index VALUE containing an RTDB-illegal
+        // character would make ref(`shareTokens/${tokenValue}`) throw
+        // synchronously, rejecting the whole Promise.all — and this helper
+        // runs inside deleteMatch/clearVodAndNotes, so one hand-mangled
+        // entry would wedge match deletion entirely. The cascade skips the
+        // corrupt entry; the match write still lands.
+        if (typeof tokenValue !== 'string' || !SHARE_TOKEN_SHAPE.test(tokenValue)) {
           return null;
         }
         const [snapshotSnapshot, tokenSnapshot] = await Promise.all([
@@ -1591,7 +1597,10 @@ export class RtdbService {
 
     const rows = await Promise.all(
       Object.entries(index).map(async ([shareId, tokenValue]): Promise<ShareSummary | null> => {
-        if (typeof tokenValue !== 'string') {
+        // Review WR-04: a corrupt index VALUE with an RTDB-illegal character
+        // is skipped before it can reach ref() (synchronous throw -> 500) —
+        // same per-record isolation as the safeParse-and-skip hops below.
+        if (typeof tokenValue !== 'string' || !SHARE_TOKEN_SHAPE.test(tokenValue)) {
           return null;
         }
 
@@ -1768,7 +1777,13 @@ export class RtdbService {
         }
         const indexSnapshot = await this.database.ref(`sharesByUser/${uid}/${shareId}`).get();
         const tokenValue = indexSnapshot.val();
-        if (!indexSnapshot.exists() || typeof tokenValue !== 'string') {
+        // Review WR-04: a corrupt index VALUE with an RTDB-illegal character
+        // must be skipped, never reach ref() (synchronous throw -> 500).
+        if (
+          !indexSnapshot.exists() ||
+          typeof tokenValue !== 'string' ||
+          !SHARE_TOKEN_SHAPE.test(tokenValue)
+        ) {
           return null;
         }
         const tokenSnapshot = await this.database.ref(`shareTokens/${tokenValue}`).get();
