@@ -583,7 +583,9 @@ describe('MatchDataPage', () => {
       'm1',
       expect.objectContaining({
         vodUrl: 'https://youtube.com/watch?v=abc123',
-        vodTimestamps: [{ seconds: 161, note: 'missed punish on shield' }],
+        // The legacy dialog stamps a synthetic local id on freshly-added
+        // draft entries (Phase 8 id-bearing VodTimestamp shape).
+        vodTimestamps: [{ id: expect.any(String), seconds: 161, note: 'missed punish on shield' }],
       }),
     );
   });

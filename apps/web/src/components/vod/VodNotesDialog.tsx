@@ -129,7 +129,16 @@ export function VodNotesDialog({
       setTimeError(t('shared.vod.timestampLimit', { max: MAX_TIMESTAMPS }));
       return;
     }
-    setTimestamps((prev) => [...prev, { seconds, note }].sort((a, b) => a.seconds - b.seconds));
+    // Phase 8: `VodTimestamp` is id-bearing. This legacy dialog still edits
+    // a local draft array, so a freshly-added entry gets a synthetic local
+    // id (never persisted as a real key — the server ignores client-sent
+    // `vodTimestamps` on match PATCHes since 08-02, and this dialog's save
+    // path is re-pointed at the dedicated note endpoints in 08-05).
+    setTimestamps((prev) =>
+      [...prev, { id: `local-${crypto.randomUUID()}`, seconds, note }].sort(
+        (a, b) => a.seconds - b.seconds,
+      ),
+    );
     setTimeInput('');
     setNoteInput('');
     setTimeError(null);

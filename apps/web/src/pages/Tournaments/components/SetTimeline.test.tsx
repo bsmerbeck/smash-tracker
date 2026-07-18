@@ -254,8 +254,8 @@ describe('SetTimeline', () => {
         roundText: 'Grand Final',
         vodUrl: 'https://youtube.com/watch?v=abc123',
         vodTimestamps: [
-          { seconds: 490, note: 'lost ledge trump war' },
-          { seconds: 161, note: 'missed punish on shield' },
+          { id: 'n1', seconds: 490, note: 'lost ledge trump war' },
+          { id: 'n2', seconds: 161, note: 'missed punish on shield' },
         ],
       }),
     ];
