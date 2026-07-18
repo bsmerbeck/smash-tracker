@@ -100,9 +100,17 @@ export function useCoachSession(token: string, sessionId: string) {
  * days) and gets its own message; everything else (429 rate limit, 403 cap,
  * 400 validation, network) collapses to the generic save-failed copy the
  * owner-side note surfaces already use.
+ *
+ * A 409 (first-write name collision, FB-04) is deliberately skipped here —
+ * `ShareViewPage`'s per-call mutation options own that UX (re-opening the
+ * name prompt with a "name taken" message), so this generic handler must
+ * never also fire the save-failed toast on top of it.
  */
 function toastCoachWriteError(t: TFunction, error: unknown): void {
   const status = error instanceof ApiError ? error.status : undefined;
+  if (status === 409) {
+    return;
+  }
   toast.error(status === 404 ? t('share.coach.shareGoneToast') : t('shared.vod.saveFailed'));
 }
 

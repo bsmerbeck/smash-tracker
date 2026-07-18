@@ -74,6 +74,7 @@
     "matchDelete": {
       "aria": "Supprimer le match",
       "confirmTitle": "Supprimer ce match ?",
+      "sharesNote": "Les liens de partage du VOD de ce match seront révoqués.",
       "deleted": "Match supprimé !",
       "deleteFailed": "Échec de la suppression du match. Veuillez réessayer."
     },
@@ -456,6 +457,7 @@
       },
       "removeVodConfirm": {
         "title": "Supprimer ce lien VOD ?",
+        "sharesNote": "Les liens de partage de ce VOD seront révoqués.",
         "removed": "Lien VOD supprimé",
         "removeFailed": "Échec de la suppression du lien VOD. Veuillez réessayer."
       },
@@ -517,7 +519,7 @@
     "notes": {
       "saveEdit": "Enregistrer la modification de l'horodatage",
       "cancelEdit": "Annuler la modification de l'horodatage",
-      "coachAttribution": "Coach : {{name}}",
+      "coachAttribution": "{{name}}",
       "deleteConfirmTitle": "Supprimer cette note horodatée ?",
       "editTimeAria": "Modifier l'heure de l'horodatage",
       "editNoteAria": "Modifier la note de l'horodatage",
@@ -1489,7 +1491,8 @@
       "namePromptDescription": "Votre nom apparaîtra à côté des notes que vous ajoutez ici.",
       "nameLabel": "Votre nom",
       "nameSubmit": "Continuer",
-      "attribution": "Note de coach de {{name}}",
+      "attribution": "Note de {{name}}",
+      "nameTaken": "Ce nom est déjà utilisé sur cette review — choisissez-en un autre.",
       "shareGoneToast": "Ce lien de coaching n'est plus disponible — votre modification n'a pas été enregistrée."
     }
   }

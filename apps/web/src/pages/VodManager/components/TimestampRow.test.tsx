@@ -31,20 +31,20 @@ function renderRow(stamp: VodTimestamp) {
 }
 
 describe('TimestampRow coach attribution (COACH-05)', () => {
-  it('renders a "Coach {name}" chip for a note carrying a coach sub-object', () => {
+  it('renders a plain-name chip for a note carrying a coach sub-object (FB-04: no "Coach" prefix — the chip styling alone marks it distinct)', () => {
     renderRow(
       makeStamp({
         coach: { sessionId: '11111111-1111-4111-8111-111111111111', displayName: 'Mike' },
       }),
     );
 
-    expect(screen.getByText('Coach Mike')).toBeInTheDocument();
+    expect(screen.getByText('Mike')).toBeInTheDocument();
   });
 
   it('renders no coach chip for an owner-authored note (no coach sub-object)', () => {
     renderRow(makeStamp());
 
-    expect(screen.queryByText(/^Coach /)).not.toBeInTheDocument();
+    expect(screen.queryByText('Mike')).not.toBeInTheDocument();
   });
 
   it('still renders owner edit/delete controls on a coach-authored note (owner moderation, no authorship gating)', () => {

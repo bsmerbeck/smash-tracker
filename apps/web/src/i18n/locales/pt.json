@@ -74,6 +74,7 @@
     "matchDelete": {
       "aria": "Excluir partida",
       "confirmTitle": "Excluir esta partida?",
+      "sharesNote": "Os links compartilhados do VOD desta partida serão revogados.",
       "deleted": "Partida excluída!",
       "deleteFailed": "Falha ao excluir a partida. Tente novamente."
     },
@@ -456,6 +457,7 @@
       },
       "removeVodConfirm": {
         "title": "Remover este link de VOD?",
+        "sharesNote": "Os links compartilhados deste VOD serão revogados.",
         "removed": "Link do VOD removido",
         "removeFailed": "Falha ao remover o link do VOD. Tente novamente."
       },
@@ -517,7 +519,7 @@
     "notes": {
       "saveEdit": "Salvar edição da marcação",
       "cancelEdit": "Cancelar edição da marcação",
-      "coachAttribution": "Coach: {{name}}",
+      "coachAttribution": "{{name}}",
       "deleteConfirmTitle": "Excluir esta nota com marcação de tempo?",
       "editTimeAria": "Editar hora da marcação",
       "editNoteAria": "Editar nota da marcação",
@@ -1489,7 +1491,8 @@
       "namePromptDescription": "Seu nome aparecerá ao lado das notas que você adicionar aqui.",
       "nameLabel": "Seu nome",
       "nameSubmit": "Continuar",
-      "attribution": "Nota do coach de {{name}}",
+      "attribution": "Nota de {{name}}",
+      "nameTaken": "Esse nome já está em uso nesta análise — escolha outro.",
       "shareGoneToast": "Este link de coaching não está mais disponível — sua alteração não foi salva."
     }
   }
