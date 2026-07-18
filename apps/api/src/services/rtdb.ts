@@ -508,12 +508,71 @@ export class RtdbService {
   }
 
   /**
+   * Walkthrough amendment (FB-05, VOD-removal share cascade): resolves
+   * every ACTIVE review-kind share for `(uid, matchId)` to its bearer
+   * token, via the SAME two-hop join `listSharesForUser` already proves
+   * (`sharesByUser/{uid}` -> `shareSnapshots/{shareId}` -> `shareTokens/
+   * {token}`). Deliberately reads `matchId` from the SNAPSHOT, never the
+   * token record — `shareTokenSchema` has no `matchId` field at all
+   * (RESEARCH's correction to CONTEXT.md); reading the wrong node would
+   * silently resolve zero shares instead of erroring. A recap share
+   * (`kind: 'recap'`, no `matchId`) or a share for a different match is
+   * skipped, same as an already-revoked one — only genuinely ACTIVE
+   * review shares for THIS match are returned.
+   */
+  private async resolveActiveReviewShareTokens(uid: string, matchId: string): Promise<string[]> {
+    const indexSnapshot = await this.database.ref(`sharesByUser/${uid}`).get();
+    if (!indexSnapshot.exists()) {
+      return [];
+    }
+    const index = indexSnapshot.val() as Record<string, unknown>;
+
+    const results = await Promise.all(
+      Object.entries(index).map(async ([shareId, tokenValue]): Promise<string | null> => {
+        if (typeof tokenValue !== 'string') {
+          return null;
+        }
+        const [snapshotSnapshot, tokenSnapshot] = await Promise.all([
+          this.database.ref(`shareSnapshots/${shareId}`).get(),
+          this.database.ref(`shareTokens/${tokenValue}`).get(),
+        ]);
+        if (!snapshotSnapshot.exists() || !tokenSnapshot.exists()) {
+          return null;
+        }
+        const rawSnapshot = snapshotSnapshot.val();
+        // A recap snapshot carries no matchId at all — skip before parsing
+        // against shareSnapshotSchema (which would fail on it anyway).
+        if ((rawSnapshot as { kind?: unknown } | null)?.kind === 'recap') {
+          return null;
+        }
+        const parsedSnapshot = shareSnapshotSchema.safeParse(rawSnapshot);
+        if (!parsedSnapshot.success || parsedSnapshot.data.matchId !== matchId) {
+          return null;
+        }
+        const parsedToken = shareTokenSchema.safeParse(tokenSnapshot.val());
+        if (!parsedToken.success || parsedToken.data.revokedAt != null) {
+          // Already inactive (or corrupt) — never re-stamped, never actioned.
+          return null;
+        }
+        return tokenValue;
+      }),
+    );
+    return results.filter((t): t is string => t !== null);
+  }
+
+  /**
    * The one legitimate "remove VOD" intent (MatchTable's "remove VOD"
    * action, wired in a later 08-0x plan): blanks `vodUrl`/`vodStartSeconds`
    * and drops the `vodTimestamps` node in the same write. Now that omitting
    * `vodTimestamps` from an `updateMatch` payload means "preserve" (see
    * above), this explicit method is the ONLY way to clear notes — no
    * implicit-omission path exists anymore (RESEARCH Pitfall 2).
+   *
+   * Walkthrough amendment (FB-05): folds a soft-revoke of every ACTIVE
+   * review share for this match into the SAME root-level multi-path update
+   * as the VOD-clearing write — a coach never retains write access to a
+   * match whose VOD the owner believes is gone (T-09-08). Recap shares are
+   * untouched; an already-revoked share is left unchanged.
    */
   async clearVodAndNotes(uid: string, id: string): Promise<Match> {
     // Review WR-07: crafted ids must 404 like an absent match, never reach
@@ -549,10 +608,22 @@ export class RtdbService {
       ...(current.externalId !== undefined ? { externalId: current.externalId } : {}),
     };
 
-    await ref.set(record);
+    const activeTokens = await this.resolveActiveReviewShareTokens(uid, id);
+    const revokedAt = Date.now();
+    await this.database.ref().update({
+      [`matches/${uid}/${id}`]: record,
+      ...Object.fromEntries(
+        activeTokens.map((token) => [`shareTokens/${token}/revokedAt`, revokedAt]),
+      ),
+    });
     return { id, ...record };
   }
 
+  /**
+   * Walkthrough amendment (FB-05): same cascade as `clearVodAndNotes`
+   * above, folded into the SAME root-level multi-path update as the match
+   * removal — a deleted match's share links die atomically with it.
+   */
   async deleteMatch(uid: string, id: string): Promise<void> {
     const ref = this.database.ref(`matches/${uid}/${id}`);
     const existing = await ref.get();
@@ -567,7 +638,14 @@ export class RtdbService {
         `Match ${id} is synced from ${current.source}; unlink or re-sync to manage it`,
       );
     }
-    await ref.remove();
+    const activeTokens = await this.resolveActiveReviewShareTokens(uid, id);
+    const revokedAt = Date.now();
+    await this.database.ref().update({
+      [`matches/${uid}/${id}`]: null,
+      ...Object.fromEntries(
+        activeTokens.map((token) => [`shareTokens/${token}/revokedAt`, revokedAt]),
+      ),
+    });
   }
 
   // ---- matches/{uid}/{matchId}/vodTimestamps/{pushKey} -------------------
