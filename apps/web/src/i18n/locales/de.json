@@ -253,6 +253,7 @@
       "charLimit": "Maximal {{max}} Zeichen",
       "gspFormat": "Gib eine Zahl wie 12 400 000 ein (oder lass das Feld leer)",
       "vodUrlInvalid": "Gib eine gültige URL ein (oder lass das Feld leer)",
+      "vodUrlRequired": "Gib einen gültigen VOD-Link ein (YouTube or Twitch)",
       "vodStartSecondsInvalid": "Gib eine Zeit als m:ss, h:mm:ss oder in Sekunden ein (oder lass das Feld leer)"
     },
     "set": {
