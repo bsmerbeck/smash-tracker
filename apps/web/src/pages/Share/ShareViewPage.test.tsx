@@ -74,10 +74,16 @@ const createCoachNoteMutate = vi.fn(
 );
 const updateCoachNoteMutate = vi.fn();
 const deleteCoachNoteMutate = vi.fn();
+// WR-03: the name prompt gates its submit on the create mutation's pending
+// state — tests flip this to simulate an in-flight first write.
+let createCoachNoteIsPending = false;
 
 vi.mock('@/hooks/useCoachNotes', () => ({
   useCoachSession: () => coachSessionQuery(),
-  useCreateCoachNote: () => ({ mutate: createCoachNoteMutate }),
+  useCreateCoachNote: () => ({
+    mutate: createCoachNoteMutate,
+    isPending: createCoachNoteIsPending,
+  }),
   useUpdateCoachNote: () => ({ mutate: updateCoachNoteMutate }),
   useDeleteCoachNote: () => ({ mutate: deleteCoachNoteMutate }),
 }));
@@ -191,6 +197,7 @@ describe('ShareViewPage', () => {
     setDisplayNameMock.mockImplementation((name: string) => {
       getStoredDisplayNameMock.mockReturnValue(name);
     });
+    createCoachNoteIsPending = false;
   });
 
   afterEach(() => {
@@ -892,6 +899,29 @@ describe('ShareViewPage', () => {
         expect.objectContaining({ displayName: 'Coach Ken', seconds: 7 }),
         expect.objectContaining({ onError: expect.any(Function) }),
       );
+    });
+
+    it('WR-03: the name-prompt submit is inert while the first write is in flight — no duplicate notes from a double click or held Enter', async () => {
+      getPublic.mockResolvedValue(baseSnapshot());
+      coachSessionQuery.mockReturnValue({ data: baseCoachSession() });
+      getStoredDisplayNameMock.mockReturnValue(null);
+      // The first write is in flight (the dialog stays open until
+      // onSuccess, FB-04) — every further submit must be a no-op.
+      createCoachNoteIsPending = true;
+      mountYouTubePlayer();
+      const user = userEvent.setup();
+
+      renderShare('/s/tok123');
+
+      await screen.findByText('Add a note');
+      await user.type(screen.getByLabelText('Timestamp time'), '0:05');
+      await user.click(screen.getByRole('button', { name: 'Add timestamp' }));
+
+      await user.type(await screen.findByLabelText('Your name'), 'Coach Ken');
+      // The submit button is disabled and Enter (incl. key-repeat) no-ops.
+      expect(screen.getByRole('button', { name: 'Continue' })).toBeDisabled();
+      await user.keyboard('{Enter}{Enter}{Enter}');
+      expect(createCoachNoteMutate).not.toHaveBeenCalled();
     });
 
     it('ownership-filtered quick-tag merge: an OWNER note at the current second is never mutated — a NEW coach note is created instead', async () => {

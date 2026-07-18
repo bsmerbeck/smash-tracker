@@ -681,6 +681,14 @@ export function ShareViewPage() {
   }
 
   function handleNamePromptSubmit() {
+    // Review WR-03: the prompt stays OPEN while the first write is in
+    // flight (it closes only in onSuccess, FB-04) — without this guard a
+    // double click or held-Enter key-repeat would POST the same note N
+    // times (the same session never name-conflicts with itself, so every
+    // duplicate succeeds and burns the shared 20-note cap).
+    if (createCoachNote.isPending) {
+      return;
+    }
     const trimmed = namePromptValue.trim();
     if (!trimmed) {
       return;
@@ -969,7 +977,9 @@ export function ShareViewPage() {
               value={namePromptValue}
               onChange={(e) => setNamePromptValue(e.target.value)}
               onKeyDown={(e) => {
-                if (e.key === 'Enter') {
+                // WR-03: key-repeat from a held Enter must not double-submit
+                // while the first write is in flight.
+                if (e.key === 'Enter' && !createCoachNote.isPending) {
                   e.preventDefault();
                   handleNamePromptSubmit();
                 }
@@ -982,7 +992,7 @@ export function ShareViewPage() {
             <Button
               type="button"
               onClick={handleNamePromptSubmit}
-              disabled={!namePromptValue.trim()}
+              disabled={!namePromptValue.trim() || createCoachNote.isPending}
             >
               {t('share.coach.nameSubmit')}
             </Button>
