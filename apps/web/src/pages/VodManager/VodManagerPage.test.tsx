@@ -1630,7 +1630,7 @@ describe('VodManagerPage', () => {
 
     // Annotation fields stay editable.
     expect(screen.getByRole('textbox', { name: 'Notes' })).not.toBeDisabled();
-    expect(screen.getByRole('textbox', { name: 'VOD URL' })).not.toBeDisabled();
+    expect(screen.getByRole('textbox', { name: 'VOD URL (YouTube or Twitch)' })).not.toBeDisabled();
     expect(screen.getByRole('textbox', { name: 'GSP after match (optional)' })).not.toBeDisabled();
   });
 
@@ -1852,7 +1852,7 @@ describe('VodManagerPage', () => {
     });
 
     await user.click(screen.getByRole('button', { name: 'Edit details' }));
-    const vodUrlInput = screen.getByRole('textbox', { name: 'VOD URL' });
+    const vodUrlInput = screen.getByRole('textbox', { name: 'VOD URL (YouTube or Twitch)' });
     await user.clear(vodUrlInput);
     await user.click(screen.getByRole('button', { name: 'Save' }));
 

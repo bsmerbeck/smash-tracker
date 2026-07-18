@@ -85,7 +85,7 @@
     "vod": {
       "title": "Notas de VOD",
       "description": "Adjunta un enlace al VOD y notas con marca de tiempo, p. ej. «2:41 — castigo fallado al escudo».",
-      "url": "URL del VOD",
+      "url": "URL del VOD (YouTube or Twitch)",
       "timestamps": "Marcas de tiempo",
       "noTimestamps": "Aún no hay notas con marca de tiempo.",
       "timestampsAria": "Notas con marca de tiempo",

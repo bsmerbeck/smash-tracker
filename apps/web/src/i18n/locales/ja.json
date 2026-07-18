@@ -85,7 +85,7 @@
     "vod": {
       "title": "VODメモ",
       "description": "VODのリンクとタイムスタンプ付きメモを追加できます（例:「2:41 — ガードへの反撃ミス」）。",
-      "url": "VODのURL",
+      "url": "VODのURL (YouTube or Twitch)",
       "timestamps": "タイムスタンプ",
       "noTimestamps": "まだタイムスタンプ付きメモがありません。",
       "timestampsAria": "タイムスタンプ付きメモ",
