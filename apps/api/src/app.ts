@@ -31,6 +31,7 @@ import groupsRoutes from './routes/groups.js';
 import playlistsRoutes from './routes/playlists.js';
 import vodSharesRoutes from './routes/vodShares.js';
 import publicVodSharesRoutes from './routes/publicVodShares.js';
+import coachNotesRoutes from './routes/coachNotes.js';
 import shareMetaRoutes from './routes/shareMeta.js';
 import shareOgImageRoutes from './routes/shareOgImage.js';
 import { ConflictError, NotFoundError } from './services/rtdb.js';
@@ -262,6 +263,32 @@ export function buildApp(options: BuildAppOptions) {
         ga4Fetch: options.ga4Fetch,
       });
       await api.register(publicVodSharesRoutes);
+      // Phase 8 Plan 3 (Coaching Edit Sessions): the anonymous coach
+      // surface gets its own encapsulated scope carrying TWO stacked
+      // @fastify/rate-limit registrations (RESEARCH's nested-scope pattern,
+      // verified by coachNotes.test.ts's spike tests): an outer per-IP
+      // floor (generous, defense-in-depth — keyed on `anonRateLimitKey`'s
+      // non-spoofable rightmost-XFF entry, reused verbatim) wrapping an
+      // inner per-TOKEN 20/min bucket (the locked primary write limit —
+      // rotating spoofed IPs cannot mint a fresh bucket for one leaked
+      // token, and one hot token cannot starve other tokens' buckets).
+      // Encapsulation keeps both instances entirely off every other route.
+      await api.register(async (coachScope) => {
+        await coachScope.register(rateLimit, {
+          max: 100,
+          timeWindow: '1 minute',
+          keyGenerator: anonRateLimitKey,
+        });
+        await coachScope.register(async (perToken) => {
+          await perToken.register(rateLimit, {
+            max: 20,
+            timeWindow: '1 minute',
+            keyGenerator: (req) =>
+              (req.params as { token?: string }).token ?? anonRateLimitKey(req),
+          });
+          await perToken.register(coachNotesRoutes);
+        });
+      });
       await api.register(startggRoutes, {
         config: options.startgg ?? null,
         fetchImpl: options.startggFetch,
