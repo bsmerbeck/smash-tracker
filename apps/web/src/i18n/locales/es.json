@@ -1462,6 +1462,13 @@
       "reviewedMoments_one": "{{count}} momento revisado",
       "reviewedMoments_other": "{{count}} momentos revisados",
       "download": "Descargar imagen"
+    },
+    "coach": {
+      "namePromptTitle": "¿Cómo te llamamos?",
+      "namePromptDescription": "Tu nombre aparecerá junto a las notas que agregues aquí.",
+      "nameLabel": "Tu nombre",
+      "nameSubmit": "Continuar",
+      "attribution": "Nota de coach de {{name}}"
     }
   }
 }
