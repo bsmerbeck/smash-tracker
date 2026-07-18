@@ -19,11 +19,33 @@ const FREE_REPORTS_CONFIG: ReportsConfig = {
   allowedUids: new Set([TEST_UID]),
 };
 
+/**
+ * B-event emission (`void createEvent(...)`) is intentionally fire-and-forget
+ * — callers never await it. Flush the microtask/macrotask queue before
+ * asserting on `eventLedger` so these tests aren't racing the emission.
+ */
+async function flush(): Promise<void> {
+  await new Promise((resolve) => setTimeout(resolve, 0));
+}
+
+function eventLedgerEntries(dump: Record<string, unknown>, eventName: string) {
+  const ledgerByDay = dump.eventLedger as Record<string, Record<string, unknown>> | undefined;
+  if (!ledgerByDay) return [];
+  return Object.values(ledgerByDay).flatMap((dayEntries) =>
+    Object.values(dayEntries).filter(
+      (entry) => (entry as { eventName?: string }).eventName === eventName,
+    ),
+  );
+}
+
 function stubStripeClient(overrides: Partial<StripeLikeClient> = {}): StripeLikeClient {
   return {
     checkout: {
       sessions: {
-        create: vi.fn(async () => ({ url: 'https://checkout.stripe.com/session/test' })),
+        create: vi.fn(async () => ({
+          id: 'cs_test_default',
+          url: 'https://checkout.stripe.com/session/test',
+        })),
       },
     },
     webhooks: {
@@ -39,6 +61,7 @@ function makeCheckoutCompletedEvent(overrides: {
   id?: string;
   uid?: string;
   packId?: string;
+  paymentStatus?: string;
 }): Stripe.Event {
   return {
     id: overrides.id ?? 'evt_test_1',
@@ -47,6 +70,35 @@ function makeCheckoutCompletedEvent(overrides: {
     data: {
       object: {
         id: 'cs_test_1',
+        object: 'checkout.session',
+        // BILL-04: checkout.session.completed only fulfills when the
+        // payment already settled synchronously — default to 'paid' here
+        // (the sync/card-payment case) so every pre-existing test in this
+        // file keeps its original meaning; async-payment tests override
+        // this explicitly.
+        payment_status: overrides.paymentStatus ?? 'paid',
+        metadata: {
+          uid: overrides.uid ?? TEST_UID,
+          packId: overrides.packId ?? 'pack5',
+        },
+      },
+    },
+  } as unknown as Stripe.Event;
+}
+
+function makeAsyncPaymentEvent(overrides: {
+  type: 'checkout.session.async_payment_succeeded' | 'checkout.session.async_payment_failed';
+  id?: string;
+  uid?: string;
+  packId?: string;
+}): Stripe.Event {
+  return {
+    id: overrides.id ?? 'evt_async_1',
+    object: 'event',
+    type: overrides.type,
+    data: {
+      object: {
+        id: 'cs_test_async_1',
         object: 'checkout.session',
         metadata: {
           uid: overrides.uid ?? TEST_UID,
@@ -187,6 +239,7 @@ describe('POST /api/billing/checkout (configured)', () => {
 
   it('looks up the pack server-side and creates a Checkout Session with the correct params, ignoring any client amount', async () => {
     const create = vi.fn(async (params: Stripe.Checkout.SessionCreateParams) => ({
+      id: 'cs_test_abc',
       url: 'https://checkout.stripe.com/session/abc',
       params,
     }));
@@ -230,6 +283,82 @@ describe('POST /api/billing/checkout (configured)', () => {
         quantity: 1,
       },
     ]);
+  });
+
+  it('passes a second arg carrying idempotencyKey — the client-supplied attemptId when present', async () => {
+    const create = vi.fn<StripeLikeClient['checkout']['sessions']['create']>(async () => ({
+      id: 'cs_test_idem',
+      url: 'https://checkout.stripe.com/session/idem',
+    }));
+    const { app } = buildTestApp({
+      stripe: STRIPE_CONFIG,
+      reports: REPORTS_CONFIG,
+      stripeClient: stubStripeClient({ checkout: { sessions: { create } } }),
+    });
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/billing/checkout',
+      headers: authHeader(),
+      payload: { packId: 'pack5', attemptId: 'attempt-client-1' },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(create).toHaveBeenCalledTimes(1);
+    const options = create.mock.calls[0]![1];
+    expect(options).toEqual({ idempotencyKey: 'attempt-client-1' });
+  });
+
+  it('falls back to a generated idempotencyKey when attemptId is absent (un-updated client)', async () => {
+    const create = vi.fn<StripeLikeClient['checkout']['sessions']['create']>(async () => ({
+      id: 'cs_test_fallback',
+      url: 'https://checkout.stripe.com/session/fallback',
+    }));
+    const { app } = buildTestApp({
+      stripe: STRIPE_CONFIG,
+      reports: REPORTS_CONFIG,
+      stripeClient: stubStripeClient({ checkout: { sessions: { create } } }),
+    });
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/billing/checkout',
+      headers: authHeader(),
+      payload: { packId: 'pack5' },
+    });
+
+    expect(response.statusCode).toBe(200);
+    const options = create.mock.calls[0]![1] as { idempotencyKey?: string } | undefined;
+    expect(options?.idempotencyKey).toBeTypeOf('string');
+    expect(options?.idempotencyKey!.length).toBeGreaterThan(0);
+  });
+
+  it('emits one checkout_started D event, keyed on the created session id', async () => {
+    const create = vi.fn(async () => ({
+      id: 'cs_test_started',
+      url: 'https://checkout.stripe.com/session/started',
+    }));
+    const { app, database } = buildTestApp({
+      stripe: STRIPE_CONFIG,
+      reports: REPORTS_CONFIG,
+      stripeClient: stubStripeClient({ checkout: { sessions: { create } } }),
+    });
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/billing/checkout',
+      headers: authHeader(),
+      payload: { packId: 'pack5', attemptId: 'attempt-started-1' },
+    });
+    expect(response.statusCode).toBe(200);
+    await flush();
+
+    const events = eventLedgerEntries(
+      database.dump() as Record<string, unknown>,
+      'checkout_started',
+    );
+    expect(events).toHaveLength(1);
+    expect(events[0]).toMatchObject({ causationId: 'cs_test_started' });
   });
 });
 
@@ -376,7 +505,10 @@ describe('POST /api/billing/webhook (configured)', () => {
   });
 
   it('the raw-body content-type parser is scoped to the webhook route only — POST /billing/checkout still gets parsed JSON', async () => {
-    const create = vi.fn(async () => ({ url: 'https://checkout.stripe.com/session/xyz' }));
+    const create = vi.fn(async () => ({
+      id: 'cs_test_scope',
+      url: 'https://checkout.stripe.com/session/xyz',
+    }));
     const constructEventImpl: StripeLikeClient['webhooks']['constructEvent'] = () =>
       makeCheckoutCompletedEvent({ id: 'evt_scope' });
     const constructEvent = vi.fn(constructEventImpl);
@@ -412,5 +544,116 @@ describe('POST /api/billing/webhook (configured)', () => {
     expect(constructEvent).toHaveBeenCalledTimes(1);
     const [rawPayload] = constructEvent.mock.calls[0]!;
     expect(Buffer.isBuffer(rawPayload) || typeof rawPayload === 'string').toBe(true);
+  });
+
+  it('does NOT fulfill checkout.session.completed when payment_status is not paid (async payment still settling)', async () => {
+    const event = makeCheckoutCompletedEvent({
+      id: 'evt_pending_async',
+      uid: TEST_UID,
+      packId: 'pack5',
+      paymentStatus: 'unpaid',
+    });
+    const constructEvent = vi.fn(() => event);
+    const { app, database } = buildTestApp({
+      stripe: STRIPE_CONFIG,
+      reports: REPORTS_CONFIG,
+      stripeClient: stubStripeClient({ webhooks: { constructEvent } }),
+    });
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/billing/webhook',
+      headers: { 'stripe-signature': 'good-sig', 'content-type': 'application/json' },
+      payload: JSON.stringify({}),
+    });
+
+    expect(response.statusCode).toBe(200);
+    const dump = database.dump() as Record<string, unknown>;
+    expect(dump.credits).toBeUndefined();
+  });
+
+  it('checkout.session.async_payment_succeeded grants credits (BILL-04 convergence)', async () => {
+    const event = makeAsyncPaymentEvent({
+      type: 'checkout.session.async_payment_succeeded',
+      id: 'evt_async_success',
+      uid: TEST_UID,
+      packId: 'pack5',
+    });
+    const constructEvent = vi.fn(() => event);
+    const { app, database } = buildTestApp({
+      stripe: STRIPE_CONFIG,
+      reports: REPORTS_CONFIG,
+      stripeClient: stubStripeClient({ webhooks: { constructEvent } }),
+    });
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/billing/webhook',
+      headers: { 'stripe-signature': 'good-sig', 'content-type': 'application/json' },
+      payload: JSON.stringify({}),
+    });
+
+    expect(response.statusCode).toBe(200);
+    const balanceSnapshot = await database.ref(`credits/${TEST_UID}/balance`).get();
+    expect(balanceSnapshot.val()).toBe(5);
+  });
+
+  it('checkout.session.async_payment_failed grants no credits', async () => {
+    const event = makeAsyncPaymentEvent({
+      type: 'checkout.session.async_payment_failed',
+      id: 'evt_async_failed',
+      uid: TEST_UID,
+      packId: 'pack5',
+    });
+    const constructEvent = vi.fn(() => event);
+    const { app, database } = buildTestApp({
+      stripe: STRIPE_CONFIG,
+      reports: REPORTS_CONFIG,
+      stripeClient: stubStripeClient({ webhooks: { constructEvent } }),
+    });
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/billing/webhook',
+      headers: { 'stripe-signature': 'good-sig', 'content-type': 'application/json' },
+      payload: JSON.stringify({}),
+    });
+
+    expect(response.statusCode).toBe(200);
+    const dump = database.dump() as Record<string, unknown>;
+    expect(dump.credits).toBeUndefined();
+  });
+
+  it('emits one checkout_completed B event per granting event, and none for a replay (one atomic fulfillment call)', async () => {
+    const event = makeCheckoutCompletedEvent({ id: 'evt_completed_once', uid: TEST_UID });
+    const constructEvent = vi.fn(() => event);
+    const { app, database } = buildTestApp({
+      stripe: STRIPE_CONFIG,
+      reports: REPORTS_CONFIG,
+      stripeClient: stubStripeClient({ webhooks: { constructEvent } }),
+    });
+
+    const first = await app.inject({
+      method: 'POST',
+      url: '/api/billing/webhook',
+      headers: { 'stripe-signature': 'good-sig', 'content-type': 'application/json' },
+      payload: JSON.stringify({ n: 1 }),
+    });
+    const second = await app.inject({
+      method: 'POST',
+      url: '/api/billing/webhook',
+      headers: { 'stripe-signature': 'good-sig', 'content-type': 'application/json' },
+      payload: JSON.stringify({ n: 1 }),
+    });
+    expect(first.statusCode).toBe(200);
+    expect(second.statusCode).toBe(200);
+    await flush();
+
+    const events = eventLedgerEntries(
+      database.dump() as Record<string, unknown>,
+      'checkout_completed',
+    );
+    expect(events).toHaveLength(1);
+    expect(events[0]).toMatchObject({ causationId: 'evt_completed_once:checkout_completed' });
   });
 });

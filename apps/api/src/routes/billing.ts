@@ -1,5 +1,6 @@
+import { randomUUID } from 'node:crypto';
 import Stripe from 'stripe';
-import type { FastifyInstance } from 'fastify';
+import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import {
   checkoutRequestSchema,
@@ -9,7 +10,9 @@ import {
   CREDIT_PACKS,
 } from '@smash-tracker/shared';
 import type { ReportsConfig, StripeConfig } from '../config/env.js';
-import { addCredits, getBalance, markStripeEventProcessed } from '../billing/credits.js';
+import { fulfillCheckoutSession, getBalance } from '../billing/credits.js';
+import { createEvent } from '../events/ledger.js';
+import { buildBillingEnvelope, buildDomainEnvelope } from '../events/envelope.js';
 
 /**
  * Minimal structural seam over the `stripe` client — just the two calls this
@@ -19,7 +22,10 @@ import { addCredits, getBalance, markStripeEventProcessed } from '../billing/cre
 export interface StripeLikeClient {
   checkout: {
     sessions: {
-      create: (params: Stripe.Checkout.SessionCreateParams) => Promise<{ url: string | null }>;
+      create: (
+        params: Stripe.Checkout.SessionCreateParams,
+        options?: { idempotencyKey?: string },
+      ) => Promise<{ id: string; url: string | null }>;
     };
   };
   webhooks: {
@@ -55,6 +61,14 @@ export interface BillingRoutesOptions {
  * `fastify.register`), so it does not leak to sibling plugins/routes that
  * still want normal JSON body parsing (see `billing.test.ts` for a test that
  * asserts exactly this).
+ *
+ * Phase 10 (BILL-01..05): Checkout creation carries a stable per-attempt
+ * idempotency key and emits `checkout_started` (D); the webhook converges
+ * `checkout.session.completed` (only when `payment_status === 'paid'`),
+ * `checkout.session.async_payment_succeeded` (always), and
+ * `checkout.session.async_payment_failed` (never) onto ONE atomic
+ * fulfillment path (`fulfillCheckoutSession`, `billing/credits.ts`), and
+ * emits `checkout_completed` (B) once per granting event.
  */
 const billingRoutes: FastifyPluginAsyncZod<BillingRoutesOptions> = async (app, options) => {
   const { stripeConfig, reportsConfig, webBaseUrl } = options;
@@ -119,29 +133,49 @@ const billingRoutes: FastifyPluginAsyncZod<BillingRoutesOptions> = async (app, o
         });
       }
 
-      const session = await stripe.checkout.sessions.create({
-        mode: 'payment',
-        line_items: [
-          {
-            price_data: {
-              currency: 'usd',
-              unit_amount: pack.amountCents,
-              product_data: {
-                name: `grandfinals.gg — AI report credits (${pack.label})`,
+      // BILL-03: a stable per-attempt idempotency key — the client-supplied
+      // attemptId when present (stable across retries of the SAME click),
+      // else a per-request fallback UUID for un-updated clients.
+      const idempotencyKey = request.body.attemptId ?? randomUUID();
+
+      const session = await stripe.checkout.sessions.create(
+        {
+          mode: 'payment',
+          line_items: [
+            {
+              price_data: {
+                currency: 'usd',
+                unit_amount: pack.amountCents,
+                product_data: {
+                  name: `grandfinals.gg — AI report credits (${pack.label})`,
+                },
               },
+              quantity: 1,
             },
-            quantity: 1,
-          },
-        ],
-        client_reference_id: request.uid,
-        metadata: { uid: request.uid, packId: pack.id },
-        success_url: `${webBaseUrl}/scout?billing=success`,
-        cancel_url: `${webBaseUrl}/scout?billing=cancelled`,
-      });
+          ],
+          client_reference_id: request.uid,
+          metadata: { uid: request.uid, packId: pack.id },
+          success_url: `${webBaseUrl}/scout?billing=success`,
+          cancel_url: `${webBaseUrl}/scout?billing=cancelled`,
+        },
+        { idempotencyKey },
+      );
 
       if (!session.url) {
         throw new Error('Stripe Checkout Session was created without a url');
       }
+
+      void createEvent(
+        app.firebase.database,
+        buildDomainEnvelope({
+          eventName: 'checkout_started',
+          actorId: request.uid,
+          sessionId: request.uid,
+          causationId: session.id,
+          consentState: 'unknown',
+          payload: { packId: pack.id },
+        }),
+      );
 
       return { url: session.url };
     },
@@ -164,6 +198,47 @@ const billingRoutes: FastifyPluginAsyncZod<BillingRoutesOptions> = async (app, o
         done(null, body);
       },
     );
+
+    // BILL-01/BILL-04/BILL-05: resolves uid/packId (for logging/eventing),
+    // then delegates to the converged atomic `fulfillCheckoutSession` —
+    // called from every branch below that should grant credits. Emits
+    // `checkout_completed` (B) exactly once per granting event.
+    async function fulfillAndAck(
+      request: FastifyRequest,
+      reply: FastifyReply,
+      event: Stripe.Event,
+      session: Stripe.Checkout.Session,
+    ) {
+      const uid = session.metadata?.uid;
+      const packId = session.metadata?.packId;
+      const pack = CREDIT_PACKS.find((candidate) => candidate.id === packId);
+
+      if (!uid || !pack) {
+        request.log.error(
+          { eventId: event.id, uid, packId },
+          'Stripe checkout fulfillment missing uid/packId metadata or unknown pack',
+        );
+        return reply.code(200).send();
+      }
+
+      const { granted } = await fulfillCheckoutSession(app.firebase.database, session, event.id);
+      if (granted) {
+        void createEvent(
+          app.firebase.database,
+          buildBillingEnvelope({
+            eventName: 'checkout_completed',
+            source: 'stripe',
+            actorId: uid,
+            sessionId: uid,
+            causationId: `${event.id}:checkout_completed`,
+            consentState: 'unknown',
+            payload: { packId: pack.id },
+          }),
+        );
+      }
+
+      return reply.code(200).send();
+    }
 
     webhookScope.post('/billing/webhook', async (request, reply) => {
       const signature = request.headers['stripe-signature'];
@@ -196,33 +271,38 @@ const billingRoutes: FastifyPluginAsyncZod<BillingRoutesOptions> = async (app, o
         });
       }
 
-      if (event.type !== 'checkout.session.completed') {
-        // Unknown/irrelevant event types are acknowledged, not treated as errors.
-        return reply.code(200).send();
+      // BILL-04: sync (card) and async (e.g. bank debit/redirect) payment
+      // methods converge on one fulfillment path — `checkout.session.completed`
+      // fires for BOTH, but only actually means "paid" for sync methods
+      // (`payment_status === 'paid'`); async methods settle later via
+      // `async_payment_succeeded`/`async_payment_failed`.
+      switch (event.type) {
+        case 'checkout.session.completed': {
+          const session = event.data.object as Stripe.Checkout.Session;
+          if (session.payment_status !== 'paid') {
+            // Async payment still pending settlement — a later
+            // async_payment_succeeded/async_payment_failed event decides
+            // the outcome. Acknowledge without granting.
+            return reply.code(200).send();
+          }
+          return fulfillAndAck(request, reply, event, session);
+        }
+        case 'checkout.session.async_payment_succeeded': {
+          const session = event.data.object as Stripe.Checkout.Session;
+          return fulfillAndAck(request, reply, event, session);
+        }
+        case 'checkout.session.async_payment_failed': {
+          const session = event.data.object as Stripe.Checkout.Session;
+          request.log.warn(
+            { eventId: event.id, sessionId: session.id },
+            'Stripe checkout.session.async_payment_failed — no credits granted',
+          );
+          return reply.code(200).send();
+        }
+        default:
+          // Unknown/irrelevant event types are acknowledged, not treated as errors.
+          return reply.code(200).send();
       }
-
-      const session = event.data.object as Stripe.Checkout.Session;
-      const uid = session.metadata?.uid;
-      const packId = session.metadata?.packId;
-      const pack = CREDIT_PACKS.find((candidate) => candidate.id === packId);
-
-      if (!uid || !pack) {
-        request.log.error(
-          { eventId: event.id, uid, packId },
-          'Stripe checkout.session.completed missing uid/packId metadata or unknown pack',
-        );
-        return reply.code(200).send();
-      }
-
-      const shouldProcess = await markStripeEventProcessed(app.firebase.database, event.id);
-      if (!shouldProcess) {
-        // Replayed delivery of an event we've already credited — no-op.
-        return reply.code(200).send();
-      }
-
-      await addCredits(app.firebase.database, uid, pack.credits, event.id);
-
-      return reply.code(200).send();
     });
   });
 };

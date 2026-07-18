@@ -477,11 +477,18 @@ export const api = {
   billing: {
     /** GET /api/billing/credits — the signed-in user's free-access flag, credit balance, and the available packs. */
     credits: () => apiRequestParsed('/api/billing/credits', creditsStatusSchema),
-    /** POST /api/billing/checkout — creates a Stripe Checkout Session for a credit pack; returns the URL to redirect to. */
+    /**
+     * POST /api/billing/checkout — creates a Stripe Checkout Session for a
+     * credit pack; returns the URL to redirect to. `attemptId` (BILL-03) is
+     * generated fresh here, once per call — since this function is invoked
+     * exactly once per "buy credits" click (via `useCheckoutMutation`'s
+     * `mutationFn`), that gives Stripe a stable idempotency key scoped to
+     * THIS click; a retry of the same click never re-generates it.
+     */
     checkout: (packId: CreditPackId) =>
       apiRequestParsed('/api/billing/checkout', checkoutResponseSchema, {
         method: 'POST',
-        body: checkoutRequestSchema.parse({ packId }),
+        body: checkoutRequestSchema.parse({ packId, attemptId: crypto.randomUUID() }),
       }),
   },
   gspSettings: {
