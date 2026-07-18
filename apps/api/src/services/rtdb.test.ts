@@ -643,6 +643,25 @@ describe('FB-03: deleteShare active-removal + bulkUpdateShares', () => {
     expect(result).toEqual({ processed: 0, skipped: 3 });
     expect(count()).toBe(0);
   });
+
+  it("WR-02: an RTDB-illegal shareId (e.g. 'a.b') is skipped — never a synchronous ref() throw / 500", async () => {
+    const database = new FakeDatabase();
+    const rtdb = new RtdbService(database as never);
+    seedShare(database, 'activeShare', 'activeTokenAAAAABBBBB');
+
+    // Pure crafted-id request: skip-not-fail, per the method's own contract.
+    await expect(rtdb.bulkUpdateShares(UID, 'revoke', ['a.b'])).resolves.toEqual({
+      processed: 0,
+      skipped: 1,
+    });
+
+    // Mixed request: the crafted id never poisons the legitimate one.
+    const result = await rtdb.bulkUpdateShares(UID, 'revoke', ['a.b', 'activeShare']);
+    expect(result).toEqual({ processed: 1, skipped: 1 });
+    const dump = database.dump() as Record<string, unknown>;
+    const tokens = dump.shareTokens as Record<string, Record<string, unknown>>;
+    expect(tokens.activeTokenAAAAABBBBB!.revokedAt).toEqual(expect.any(Number));
+  });
 });
 
 describe('RtdbService.createNote / updateNote / deleteNote — owner note CRUD (capped transaction)', () => {
