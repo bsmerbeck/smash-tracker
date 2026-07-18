@@ -32,6 +32,7 @@ import playlistsRoutes from './routes/playlists.js';
 import vodSharesRoutes from './routes/vodShares.js';
 import publicVodSharesRoutes from './routes/publicVodShares.js';
 import coachNotesRoutes from './routes/coachNotes.js';
+import eventsRoutes from './routes/events.js';
 import shareMetaRoutes from './routes/shareMeta.js';
 import shareOgImageRoutes from './routes/shareOgImage.js';
 import { ConflictError, NotFoundError } from './services/rtdb.js';
@@ -263,6 +264,11 @@ export function buildApp(options: BuildAppOptions) {
         ga4Fetch: options.ga4Fetch,
       });
       await api.register(publicVodSharesRoutes);
+      // Phase 10 Plan 4 (Canonical Measurement): the durable, same-origin
+      // X-class ingestion route — anonymous-tolerant (no `app.authenticate`,
+      // same posture as `publicVodSharesRoutes` above), per-route rate
+      // limited via `config.rateLimit` inside `events.ts` itself (MEAS-04).
+      await api.register(eventsRoutes);
       // Phase 8 Plan 3 (Coaching Edit Sessions): the anonymous coach
       // surface gets its own encapsulated scope carrying TWO stacked
       // @fastify/rate-limit registrations (RESEARCH's nested-scope pattern,
