@@ -596,6 +596,7 @@
       "chipTags": "タグ",
       "chipName": "名前",
       "revokedStatus": "取り消し済み",
+      "expiredStatus": "期限切れ",
       "copyLinkAria": "共有リンクをコピー",
       "revokeLinkAria": "共有リンクを取り消す",
       "revokeConfirmTitle": "この共有リンクを取り消しますか？",

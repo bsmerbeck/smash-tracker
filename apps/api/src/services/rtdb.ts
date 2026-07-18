@@ -1101,13 +1101,26 @@ export class RtdbService {
   // ---- shares: shareSnapshots/{shareId} + shareTokens/{token} + sharesByUser/{uid}/{shareId} ----
 
   /**
-   * Counts the caller's ACTIVE (non-revoked) shares by joining
+   * True when an edit-tier token's `expiresAt` has elapsed — expired is
+   * treated like revoked everywhere: dead on every anonymous path, excluded
+   * from the active-share cap, and labeled distinctly in the manage list
+   * (review WR-05). View-tier tokens never carry `expiresAt`.
+   */
+  private static isTokenExpired(token: ShareToken): boolean {
+    return token.expiresAt != null && token.expiresAt < Date.now();
+  }
+
+  /**
+   * Counts the caller's ACTIVE (non-revoked, non-EXPIRED) shares by joining
    * `sharesByUser/{uid}` -> `shareTokens/{token}` and filtering on
-   * `revokedAt == null` — mirrors `listSharesForUser`'s per-record
-   * safeParse-and-skip so a missing/corrupt token record never inflates the
-   * count or throws. Used by `createShare`'s `MAX_SHARES_PER_USER` check
-   * (review CR-01); revoked shares stay in the index for history (SHARE-04)
-   * but must never count toward the active cap.
+   * `revokedAt == null` plus an unelapsed `expiresAt` — mirrors
+   * `listSharesForUser`'s per-record safeParse-and-skip so a missing/corrupt
+   * token record never inflates the count or throws. Used by `createShare`'s
+   * `MAX_SHARES_PER_USER` check (review CR-01); revoked shares stay in the
+   * index for history (SHARE-04) but must never count toward the active cap,
+   * and neither must dead 30-day coaching links (review WR-05) — otherwise
+   * expired shares would permanently consume cap slots that only a manual
+   * revoke could free.
    */
   private async countActiveShares(uid: string): Promise<number> {
     const indexSnapshot = await this.database.ref(`sharesByUser/${uid}`).get();
@@ -1126,7 +1139,11 @@ export class RtdbService {
           return false;
         }
         const parsedToken = shareTokenSchema.safeParse(tokenSnapshot.val());
-        return parsedToken.success && parsedToken.data.revokedAt == null;
+        return (
+          parsedToken.success &&
+          parsedToken.data.revokedAt == null &&
+          !RtdbService.isTokenExpired(parsedToken.data)
+        );
       }),
     );
 
@@ -1322,7 +1339,13 @@ export class RtdbService {
             permissions: token.permissions,
             createdAt: recap.createdAt,
             kind: 'recap',
-            status: token.revokedAt ? 'revoked' : 'active',
+            // Review WR-05: an elapsed expiresAt surfaces as 'expired'
+            // (revocation wins when both apply — it was an explicit action).
+            status: token.revokedAt
+              ? 'revoked'
+              : RtdbService.isTokenExpired(token)
+                ? 'expired'
+                : 'active',
             ...(token.revokedAt !== undefined && token.revokedAt !== null
               ? { revokedAt: token.revokedAt }
               : {}),
@@ -1344,7 +1367,12 @@ export class RtdbService {
           permissions: token.permissions,
           createdAt: snapshot.createdAt,
           redaction: snapshot.redaction,
-          status: token.revokedAt ? 'revoked' : 'active',
+          // Review WR-05: see the recap branch's status comment above.
+          status: token.revokedAt
+            ? 'revoked'
+            : RtdbService.isTokenExpired(token)
+              ? 'expired'
+              : 'active',
           ...(token.revokedAt !== undefined && token.revokedAt !== null
             ? { revokedAt: token.revokedAt }
             : {}),

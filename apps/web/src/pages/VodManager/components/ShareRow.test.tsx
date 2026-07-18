@@ -67,3 +67,24 @@ describe('ShareRow tier badge (COACH-01)', () => {
     expect(screen.getByText('Revoked')).toBeInTheDocument();
   });
 });
+
+describe('ShareRow expired state (WR-05)', () => {
+  it('labels an expired edit share, drops the dead-link Copy action, but keeps Revoke', () => {
+    renderRow(makeShare({ permissions: 'edit', status: 'expired' }));
+
+    expect(screen.getByText('Expired')).toBeInTheDocument();
+    // The link is dead — no working Copy button for it.
+    expect(screen.queryByRole('button', { name: 'Copy share link' })).not.toBeInTheDocument();
+    // Revoke stays available: revoking is the path to deleting the row.
+    expect(screen.getByRole('button', { name: 'Revoke share link' })).toBeInTheDocument();
+    // Not yet revoked, so no delete action either.
+    expect(screen.queryByRole('button', { name: 'Delete revoked share' })).not.toBeInTheDocument();
+  });
+
+  it('an active share shows neither the Expired label nor loses its Copy action', () => {
+    renderRow(makeShare({ status: 'active' }));
+
+    expect(screen.queryByText('Expired')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Copy share link' })).toBeInTheDocument();
+  });
+});
