@@ -11,6 +11,7 @@ import {
 import { healthCheckSchema } from '@smash-tracker/shared';
 import firebasePlugin from './plugins/firebase.js';
 import authPlugin from './plugins/auth.js';
+import resolveSubjectPlugin from './plugins/resolveSubject.js';
 import usersRoutes from './routes/users.js';
 import matchesRoutes from './routes/matches.js';
 import opponentsRoutes from './routes/opponents.js';
@@ -36,7 +37,7 @@ import eventsRoutes from './routes/events.js';
 import internalJobsRoutes from './routes/internalJobs.js';
 import shareMetaRoutes from './routes/shareMeta.js';
 import shareOgImageRoutes from './routes/shareOgImage.js';
-import { ConflictError, NotFoundError } from './services/rtdb.js';
+import { ConflictError, ForbiddenError, NotFoundError } from './services/rtdb.js';
 import type { FirebaseServices } from './firebase/admin.js';
 import type {
   Ga4Config,
@@ -152,6 +153,14 @@ export function buildApp(options: BuildAppOptions) {
 
   app.register(firebasePlugin, options.firebase);
   app.register(authPlugin);
+  // Phase 11 (Coach Workspace Tenancy & Feature Parity, TEN-02): sibling of
+  // authPlugin, registered top-level (NOT inside the `/api` scope) so the
+  // `app.resolveSubject` decorator is available to every route file that
+  // opts in via its own `app.addHook('preHandler', app.resolveSubject)`.
+  // Never registered as a route-scoped hook itself — see
+  // apps/api/src/plugins/resolveSubject.ts for why per-file opt-in (not
+  // global registration) is the correct boundary.
+  app.register(resolveSubjectPlugin);
 
   app.setErrorHandler<FastifyError>((error, request, reply) => {
     if (hasZodFastifySchemaValidationErrors(error)) {
@@ -188,6 +197,21 @@ export function buildApp(options: BuildAppOptions) {
         error: 'Conflict',
         message: error.message,
         statusCode: 409,
+      });
+      return;
+    }
+
+    // Phase 11 (TEN-02): `app.resolveSubject` throws `ForbiddenError` from a
+    // preHandler, which runs BEFORE the route handler body — a route's own
+    // local `if (err instanceof ForbiddenError)` try/catch (used elsewhere
+    // for in-handler errors like the playlist cap) never sees it, so this
+    // needs its own global mapping, mirroring NotFoundError/ConflictError
+    // above.
+    if (error instanceof ForbiddenError) {
+      reply.code(403).send({
+        error: 'Forbidden',
+        message: error.message,
+        statusCode: 403,
       });
       return;
     }
