@@ -477,8 +477,16 @@ export const api = {
   },
   coaching: {
     clients: {
-      /** GET /api/coaching/clients — the signed-in coach's non-archived clients. */
-      list: () => apiRequestParsed('/api/coaching/clients', clientHubListSchema),
+      /**
+       * GET /api/coaching/clients — the signed-in coach's clients. Defaults
+       * to non-archived only; pass `true` to also include soft-archived
+       * clients (the restore entry point, TEN-06).
+       */
+      list: (includeArchived?: boolean) =>
+        apiRequestParsed(
+          `/api/coaching/clients${includeArchived ? '?includeArchived=true' : ''}`,
+          clientHubListSchema,
+        ),
       /** POST /api/coaching/clients — label-only creation; 409 on a duplicate (case-insensitive) label. */
       create: (input: CreateClientRequest) =>
         apiRequestParsed('/api/coaching/clients', clientHubRowSchema, {

@@ -15,13 +15,26 @@ import { useAuth } from './useAuth';
  */
 export const coachingClientsQueryKey = ['coaching-clients'] as const;
 
-/** GET /api/coaching/clients — the signed-in coach's non-archived clients. */
-export function useCoachingClients() {
+/**
+ * GET /api/coaching/clients — the signed-in coach's clients.
+ *
+ * Defaults to non-archived only (matching every existing caller). Pass
+ * `{ includeArchived: true }` for the Client Hub's archived-clients toggle
+ * (TEN-06 restore path) — this uses a distinct query key
+ * (`[...coachingClientsQueryKey, 'all']`) so the two views cache
+ * independently; both are still invalidated together by any mutation below
+ * since TanStack Query's default `invalidateQueries` matches by key prefix.
+ * Pass `{ enabled: false }` to skip the fetch entirely until needed (e.g.
+ * only fetching the archived view once the coach actually toggles it on).
+ */
+export function useCoachingClients(options: { includeArchived?: boolean; enabled?: boolean } = {}) {
   const { user } = useAuth();
+  const includeArchived = options.includeArchived ?? false;
+  const enabled = (options.enabled ?? true) && Boolean(user);
   return useQuery({
-    queryKey: coachingClientsQueryKey,
-    queryFn: () => api.coaching.clients.list(),
-    enabled: Boolean(user),
+    queryKey: includeArchived ? [...coachingClientsQueryKey, 'all'] : coachingClientsQueryKey,
+    queryFn: () => api.coaching.clients.list(includeArchived),
+    enabled,
   });
 }
 
