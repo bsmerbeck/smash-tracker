@@ -1509,5 +1509,55 @@
       "filterByContributorAria": "Filter notes by {{label}}",
       "contributorOwner": "Owner"
     }
+  },
+  "coaching": {
+    "modeSwitch": {
+      "personal": "Personal",
+      "coaching": "Coaching",
+      "ariaLabel": "Switch between Personal and Coaching mode"
+    },
+    "clientChip": {
+      "ariaLabel": "Managing {{label}}"
+    },
+    "hub": {
+      "title": "Client Hub",
+      "loading": "Loading your clients...",
+      "empty": {
+        "title": "No clients yet",
+        "body": "Create your first client to start managing their matches, VODs, and analytics separately from your own."
+      },
+      "createTrigger": "Create your first client",
+      "createAnotherTrigger": "Add client",
+      "create": {
+        "title": "Create a client",
+        "description": "Give this client a display label. You can add their mains and notes later.",
+        "labelLabel": "Client label",
+        "labelPlaceholder": "e.g. Alex \"Falcon\" Kim",
+        "error": "Something went wrong creating this client.",
+        "pending": "Creating...",
+        "confirm": "Create"
+      },
+      "clients_one": "{{count}} client",
+      "clients_other": "{{count}} clients",
+      "openWorkspace": "Open workspace"
+    },
+    "unavailable": {
+      "sync": {
+        "title": "Not available for managed clients",
+        "reason": "start.gg and parry.gg sync are tied to your own linked accounts and can't sync into a client's library. Add their matches manually instead."
+      },
+      "gsp": {
+        "title": "Not available for managed clients",
+        "reason": "GSP tracking is tied to your own quickplay account and isn't available for managed clients."
+      },
+      "billing": {
+        "title": "Not available for managed clients",
+        "reason": "AI scouting reports and credits are billed to your own account and aren't available for managed clients."
+      },
+      "vodShares": {
+        "title": "Not available for managed clients",
+        "reason": "Sharing a client's VOD review is coming in a future update — client-visible delivery isn't available yet."
+      }
+    }
   }
 }

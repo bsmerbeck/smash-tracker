@@ -18,6 +18,7 @@ import {
 } from 'lucide-react';
 import { MAX_PLAYLISTS_PER_USER, type Fighter, type Match } from '@smash-tracker/shared';
 import { getFighterById } from '@/data/sprites';
+import { useActiveSubject } from '@/hooks/useActiveSubject';
 import { useFighters } from '@/hooks/useFighters';
 import { useFilteredMatches } from '@/hooks/useFilteredMatches';
 import { useCreateNote, useDeleteNote, useUpdateNote } from '@/hooks/useVodNotes';
@@ -67,6 +68,7 @@ import {
   type VodPlayerSize,
 } from './lib/vodPrefs';
 import { AddMatchForm } from '@/pages/Dashboard/components/AddMatchForm';
+import { UnavailableInCoaching } from '@/pages/Coaching/UnavailableInCoaching';
 import { VodMatchList } from './components/VodMatchList';
 import { VodPlayer } from './components/VodPlayer';
 import { TimestampList } from './components/TimestampList';
@@ -118,6 +120,10 @@ function videoIdentityOf(match: Match): string | null {
  */
 export function VodManagerPage() {
   const { t } = useTranslation();
+  // PAR-04 (T-11-14): VOD shares are hidden in Coaching mode this phase
+  // (CONTEXT.md) — the "My shares" entry point below renders an honest
+  // unavailable state instead, never the coach's own personal share list.
+  const { mode: activeMode } = useActiveSubject();
   const [searchParams, setSearchParams] = useSearchParams();
   const selectedMatchId = searchParams.get('match');
   // Sibling param to `?match=` — a playlist can be active with no match
@@ -976,13 +982,19 @@ export function VodManagerPage() {
               useCreateMatch's existing matchesQueryKey invalidation runs —
               no extra invalidation wiring needed here. */}
           <AddMatchForm requireVod fighterSprites={fighterSprites} triggerSize="sm" />
-          <Button type="button" variant="outline" size="sm" onClick={() => setMySharesOpen(true)}>
-            <Link2 className="size-4" />
-            {t('vodManager.shares.mySharesButton')}
-          </Button>
+          {activeMode === 'coaching' ? (
+            <UnavailableInCoaching capability="vodShares" variant="inline" />
+          ) : (
+            <Button type="button" variant="outline" size="sm" onClick={() => setMySharesOpen(true)}>
+              <Link2 className="size-4" />
+              {t('vodManager.shares.mySharesButton')}
+            </Button>
+          )}
         </div>
       </div>
-      <MySharesDialog open={mySharesOpen} onOpenChange={setMySharesOpen} />
+      {activeMode !== 'coaching' && (
+        <MySharesDialog open={mySharesOpen} onOpenChange={setMySharesOpen} />
+      )}
 
       {!isLoading && vodMatches.length === 0 ? (
         <p className="text-sm text-muted-foreground">{t('vodManager.emptyState')}</p>

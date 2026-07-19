@@ -1509,5 +1509,55 @@
       "filterByContributorAria": "Notizen nach {{label}} filtern",
       "contributorOwner": "Eigentümer"
     }
+  },
+  "coaching": {
+    "modeSwitch": {
+      "personal": "Persönlich",
+      "coaching": "Coaching",
+      "ariaLabel": "Zwischen persönlichem und Coaching-Modus wechseln"
+    },
+    "clientChip": {
+      "ariaLabel": "Verwaltet: {{label}}"
+    },
+    "hub": {
+      "title": "Kunden-Hub",
+      "loading": "Deine Kunden werden geladen...",
+      "empty": {
+        "title": "Noch keine Kunden",
+        "body": "Erstelle deinen ersten Kunden, um dessen Matches, VODs und Statistiken getrennt von deinen eigenen zu verwalten."
+      },
+      "createTrigger": "Ersten Kunden erstellen",
+      "createAnotherTrigger": "Kunde hinzufügen",
+      "create": {
+        "title": "Kunden erstellen",
+        "description": "Gib diesem Kunden ein Anzeigelabel. Mains und Notizen kannst du später hinzufügen.",
+        "labelLabel": "Kundenlabel",
+        "labelPlaceholder": "z. B. Alex „Falcon“ Kim",
+        "error": "Beim Erstellen dieses Kunden ist etwas schiefgelaufen.",
+        "pending": "Wird erstellt...",
+        "confirm": "Erstellen"
+      },
+      "clients_one": "{{count}} Kunde",
+      "clients_other": "{{count}} Kunden",
+      "openWorkspace": "Arbeitsbereich öffnen"
+    },
+    "unavailable": {
+      "sync": {
+        "title": "Für verwaltete Kunden nicht verfügbar",
+        "reason": "Die start.gg- und parry.gg-Synchronisierung ist an deine eigenen verknüpften Konten gebunden und kann nicht in die Bibliothek eines Kunden synchronisiert werden. Füge dessen Matches stattdessen manuell hinzu."
+      },
+      "gsp": {
+        "title": "Für verwaltete Kunden nicht verfügbar",
+        "reason": "Die GSP-Verfolgung ist an dein eigenes Quickplay-Konto gebunden und für verwaltete Kunden nicht verfügbar."
+      },
+      "billing": {
+        "title": "Für verwaltete Kunden nicht verfügbar",
+        "reason": "KI-Scouting-Berichte und Guthaben werden deinem eigenen Konto berechnet und sind für verwaltete Kunden nicht verfügbar."
+      },
+      "vodShares": {
+        "title": "Für verwaltete Kunden nicht verfügbar",
+        "reason": "Das Teilen der VOD-Auswertung eines Kunden kommt in einem zukünftigen Update — die für den Kunden sichtbare Zustellung ist noch nicht verfügbar."
+      }
+    }
   }
 }

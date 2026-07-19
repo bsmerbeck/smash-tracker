@@ -2,6 +2,7 @@ import { lazy, Suspense } from 'react';
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router';
 import { useTranslation } from 'react-i18next';
 import { HomePage } from '@/pages/Home/HomePage';
+import { UnavailableInCoaching } from '@/pages/Coaching/UnavailableInCoaching';
 import { ActiveSubjectSync } from './ActiveSubjectSync';
 import { ProtectedRoute } from './ProtectedRoute';
 import { RouteAnalytics } from './RouteAnalytics';
@@ -294,7 +295,11 @@ export function AppRouter() {
               pages" shape. ClientWorkspaceLayout renders <Outlet /> for
               whichever child matched. The five data pages below are the
               EXACT SAME lazy() components the personal routes above use —
-              imported once, reused unmodified (PAR-01/02/03), never forked. */}
+              imported once, reused unmodified (PAR-01/02/03), never forked.
+              GSP/integrations/reports are NOT feature-parity capabilities
+              (CONTEXT.md) — visiting them under a client workspace renders
+              the honest PAR-04 unavailable state, never the coach's own
+              personal GSP/integrations/reports data. */}
           <Route
             path="/coach/:clientId"
             element={
@@ -309,6 +314,9 @@ export function AppRouter() {
             <Route path="fighter-analysis" element={<FighterAnalysisPage />} />
             <Route path="matchups" element={<MatchupsPage />} />
             <Route path="match-data" element={<MatchDataPage />} />
+            <Route path="gsp" element={<UnavailableInCoaching capability="gsp" />} />
+            <Route path="integrations" element={<UnavailableInCoaching capability="sync" />} />
+            <Route path="reports" element={<UnavailableInCoaching capability="billing" />} />
           </Route>
           {/* Public: receives the custom token from the "login with start.gg" flow. */}
           <Route path="/auth/startgg" element={<StartggAuthPage />} />
