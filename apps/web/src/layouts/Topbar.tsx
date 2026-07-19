@@ -111,16 +111,18 @@ export function Topbar() {
         <Menu className="size-5" />
       </Button>
 
-      <button
-        type="button"
-        onClick={() => navigate('/dashboard')}
-        className="text-lg font-semibold tracking-tight"
-      >
-        grandfinals.gg
-      </button>
+      <div className="flex items-center gap-4">
+        <button
+          type="button"
+          onClick={() => navigate('/dashboard')}
+          className="text-lg font-semibold tracking-tight"
+        >
+          grandfinals.gg
+        </button>
 
-      <ModeSwitch mode={mode} className="hidden sm:flex" />
-      {isCoachingWithClient && <ClientChip clientId={clientId} />}
+        <ModeSwitch mode={mode} className="hidden sm:flex" />
+        {isCoachingWithClient && <ClientChip clientId={clientId} />}
+      </div>
 
       <div className="flex-1" />
 
