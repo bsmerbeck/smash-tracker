@@ -1522,10 +1522,14 @@
       "ariaLabel": "Cambiar entre el modo Personal y el de Entrenamiento"
     },
     "clientChip": {
-      "ariaLabel": "Gestionando a {{label}}"
+      "ariaLabel": "Gestionando a {{label}}",
+      "hubPlaceholder": "Seleccionar cliente",
+      "hubAriaLabel": "Selecciona un cliente para gestionar"
     },
     "clientMenu": {
       "switchClient": "Cambiar de cliente",
+      "selectClient": "Selecciona un cliente",
+      "noClients": "Aún no hay clientes",
       "allClients": "Todos los clientes",
       "exitCoaching": "Salir del entrenamiento",
       "currentAria": "{{label}} (actual)"
@@ -1608,6 +1612,7 @@
         "drafts_other": "{{count}} borradores",
         "archivedBadge": "Archivado",
         "actionsAria": "Acciones para {{label}}",
+        "rowAria": "Abrir el espacio de trabajo de {{label}}",
         "actions": {
           "openWorkspace": "Abrir espacio de trabajo",
           "export": "Exportar espacio de trabajo",

@@ -1522,10 +1522,14 @@
       "ariaLabel": "Zwischen persönlichem und Coaching-Modus wechseln"
     },
     "clientChip": {
-      "ariaLabel": "Verwaltet: {{label}}"
+      "ariaLabel": "Verwaltet: {{label}}",
+      "hubPlaceholder": "Client auswählen",
+      "hubAriaLabel": "Einen Client zum Verwalten auswählen"
     },
     "clientMenu": {
       "switchClient": "Client wechseln",
+      "selectClient": "Client auswählen",
+      "noClients": "Noch keine Clients",
       "allClients": "Alle Clients",
       "exitCoaching": "Coaching verlassen",
       "currentAria": "{{label}} (aktuell)"
@@ -1608,6 +1612,7 @@
         "drafts_other": "{{count}} Entwürfe",
         "archivedBadge": "Archiviert",
         "actionsAria": "Aktionen für {{label}}",
+        "rowAria": "Workspace von {{label}} öffnen",
         "actions": {
           "openWorkspace": "Arbeitsbereich öffnen",
           "export": "Arbeitsbereich exportieren",

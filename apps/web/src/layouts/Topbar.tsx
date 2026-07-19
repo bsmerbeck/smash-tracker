@@ -122,6 +122,53 @@ function ClientChip({ clientId }: { clientId: string }) {
 }
 
 /**
+ * Phase 11 fix round 3 (FB-4): a neutral "Select client ▾" picker shown at
+ * the `/coach` hub itself (no client selected yet) — the hub previously had
+ * no chip at all, so a coach landing there had to scroll/click into the
+ * table to pick a client. Mirrors `ClientChip`'s dropdown shape (same
+ * trigger affordance) but neutral-styled (dashed border, muted text, no
+ * accent fill) since there's no "current" client to badge, and its menu is
+ * just the client list — no "All clients"/"Exit coaching" items, since
+ * being ON the hub already means "all clients".
+ */
+function HubClientPicker() {
+  const { t } = useTranslation();
+  const navigate = useNavigate();
+  const clients = useCoachingClients();
+  const clientList = clients.data ?? [];
+
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <button
+          type="button"
+          aria-label={t('coaching.clientChip.hubAriaLabel')}
+          className="inline-flex items-center gap-1 rounded-full border border-dashed border-muted-foreground/50 px-2.5 py-1 text-xs font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
+        >
+          {t('coaching.clientChip.hubPlaceholder')}
+          <ChevronDown className="size-3" />
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="start">
+        <DropdownMenuLabel>{t('coaching.clientMenu.selectClient')}</DropdownMenuLabel>
+        {clientList.length === 0 ? (
+          <DropdownMenuItem disabled>{t('coaching.clientMenu.noClients')}</DropdownMenuItem>
+        ) : (
+          clientList.map((client) => (
+            <DropdownMenuItem
+              key={client.clientId}
+              onSelect={() => navigate(`/coach/${client.clientId}/overview`)}
+            >
+              {client.label}
+            </DropdownMenuItem>
+          ))
+        )}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
+/**
  * Top app bar: title (links home), the Personal/Coaching mode switch + a
  * conditional client-name chip (Phase 11, TEN-07), the global analytics
  * filter (source + time range — hidden below `lg` for space, where it
@@ -138,6 +185,9 @@ export function Topbar() {
   const { mode, clientId } = useActiveSubject();
   const { data: profile } = useProfile();
   const isCoachingWithClient = mode === 'coaching' && clientId != null;
+  // Phase 11 fix round 3 (FB-4): the hub itself — coaching mode, no client
+  // selected yet. Mutually exclusive with `isCoachingWithClient` above.
+  const isCoachingHub = mode === 'coaching' && clientId == null;
   // Phase 11 walkthrough fix round 1 (FB-3): coaching mode is opt-in
   // (Profile > Account) — hide the switch entirely for beginners who never
   // turned it on, UNLESS they're already deep-linked under `/coach` (mode is
@@ -183,6 +233,7 @@ export function Topbar() {
 
         {showModeSwitch && <ModeSwitch mode={mode} className="hidden sm:flex" />}
         {isCoachingWithClient && <ClientChip clientId={clientId} />}
+        {isCoachingHub && <HubClientPicker />}
       </div>
 
       <div className="flex-1" />
@@ -206,6 +257,11 @@ export function Topbar() {
             {isCoachingWithClient && (
               <div className="sm:hidden">
                 <ClientChip clientId={clientId} />
+              </div>
+            )}
+            {isCoachingHub && (
+              <div className="sm:hidden">
+                <HubClientPicker />
               </div>
             )}
             <p className="text-xs font-medium text-muted-foreground">

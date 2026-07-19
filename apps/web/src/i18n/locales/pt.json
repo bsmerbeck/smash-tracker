@@ -1522,10 +1522,14 @@
       "ariaLabel": "Alternar entre o modo Pessoal e o modo Coaching"
     },
     "clientChip": {
-      "ariaLabel": "Gerenciando {{label}}"
+      "ariaLabel": "Gerenciando {{label}}",
+      "hubPlaceholder": "Selecionar cliente",
+      "hubAriaLabel": "Selecione um cliente para gerenciar"
     },
     "clientMenu": {
       "switchClient": "Trocar de cliente",
+      "selectClient": "Selecionar um cliente",
+      "noClients": "Ainda não há clientes",
       "allClients": "Todos os clientes",
       "exitCoaching": "Sair do coaching",
       "currentAria": "{{label}} (atual)"
@@ -1608,6 +1612,7 @@
         "drafts_other": "{{count}} rascunhos",
         "archivedBadge": "Arquivado",
         "actionsAria": "Ações para {{label}}",
+        "rowAria": "Abrir o espaço de trabalho de {{label}}",
         "actions": {
           "openWorkspace": "Abrir espaço de trabalho",
           "export": "Exportar espaço de trabalho",

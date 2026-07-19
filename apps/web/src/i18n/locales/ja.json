@@ -1522,10 +1522,14 @@
       "ariaLabel": "個人モードとコーチングモードを切り替え"
     },
     "clientChip": {
-      "ariaLabel": "{{label}}を管理中"
+      "ariaLabel": "{{label}}を管理中",
+      "hubPlaceholder": "クライアントを選択",
+      "hubAriaLabel": "管理するクライアントを選択"
     },
     "clientMenu": {
       "switchClient": "クライアントを切り替え",
+      "selectClient": "クライアントを選択",
+      "noClients": "クライアントはまだいません",
       "allClients": "すべてのクライアント",
       "exitCoaching": "コーチングを終了",
       "currentAria": "{{label}}（現在選択中）"
@@ -1608,6 +1612,7 @@
         "drafts_other": "{{count}}件の下書き",
         "archivedBadge": "アーカイブ済み",
         "actionsAria": "{{label}}の操作",
+        "rowAria": "{{label}}のワークスペースを開く",
         "actions": {
           "openWorkspace": "ワークスペースを開く",
           "export": "ワークスペースをエクスポート",

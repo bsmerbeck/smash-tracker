@@ -238,15 +238,41 @@ export function ClientHubTable({
                 </TableCell>
               </TableRow>
             ) : (
-              table.getRowModel().rows.map((row) => (
-                <TableRow key={row.id}>
-                  {row.getVisibleCells().map((cell) => (
-                    <TableCell key={cell.id}>
-                      {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                    </TableCell>
-                  ))}
-                </TableRow>
-              ))
+              table.getRowModel().rows.map((row) => {
+                const client = row.original;
+                const openWorkspace = () => navigate(`/coach/${client.clientId}/overview`);
+                return (
+                  <TableRow
+                    key={row.id}
+                    role="button"
+                    tabIndex={0}
+                    aria-label={t('coaching.hub.table.rowAria', { label: client.label })}
+                    className="cursor-pointer hover:bg-accent/50"
+                    onClick={openWorkspace}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        openWorkspace();
+                      }
+                    }}
+                  >
+                    {row.getVisibleCells().map((cell) => (
+                      <TableCell
+                        key={cell.id}
+                        // The actions cell owns its own dropdown-menu trigger —
+                        // stop its clicks from also firing the row's own
+                        // navigation (FB-4: "make row-click affordance
+                        // obvious", without hijacking the per-row menu).
+                        onClick={
+                          cell.column.id === 'actions' ? (e) => e.stopPropagation() : undefined
+                        }
+                      >
+                        {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                      </TableCell>
+                    ))}
+                  </TableRow>
+                );
+              })
             )}
           </TableBody>
         </Table>

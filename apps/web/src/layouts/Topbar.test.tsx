@@ -265,3 +265,79 @@ describe('Topbar client chip dropdown (walkthrough fix round 2, D-04/D4)', () =>
     expect(screen.queryByRole('button', { name: /Managing/ })).not.toBeInTheDocument();
   });
 });
+
+/**
+ * Phase 11 fix round 3 (FB-4): the hub itself (`/coach`, no client selected)
+ * gets a neutral "Select client ▾" picker so a coach can jump straight into
+ * a client's Overview without scrolling to the table.
+ */
+describe('Topbar hub client picker (walkthrough fix round 3, FB-4)', () => {
+  beforeEach(() => {
+    resetAuthMock();
+    vi.clearAllMocks();
+    getMe.mockResolvedValue({
+      uid: 'test-uid',
+      email: 'test@example.com',
+      fighters: { primary: [], secondary: [] },
+      coachingModeEnabled: true,
+    });
+    listClients.mockResolvedValue([
+      { clientId: 'tetra', label: 'Tetra', draftCount: 0 },
+      { clientId: 'other-client', label: 'Other Client', draftCount: 0 },
+    ]);
+    setMockUser(makeMockUser({ email: 'pilot@example.com' }));
+  });
+
+  it('shows a neutral "Select client" picker on the hub, listing every client', async () => {
+    const user = userEvent.setup();
+    renderTopbarAt('/coach');
+
+    const picker = await screen.findByRole('button', { name: 'Select a client to manage' });
+    expect(picker).toHaveTextContent('Select client');
+    await user.click(picker);
+
+    expect(await screen.findByText('Select a client')).toBeInTheDocument();
+    expect(screen.getByRole('menuitem', { name: 'Tetra' })).toBeInTheDocument();
+    expect(screen.getByRole('menuitem', { name: 'Other Client' })).toBeInTheDocument();
+  });
+
+  it("selecting a client from the hub picker opens that client's Overview", async () => {
+    const user = userEvent.setup();
+    renderTopbarAt('/coach');
+
+    const picker = await screen.findByRole('button', { name: 'Select a client to manage' });
+    await user.click(picker);
+    await user.click(await screen.findByRole('menuitem', { name: 'Other Client' }));
+
+    // Once inside the workspace, the accent client-switcher chip renders
+    // instead of the neutral hub picker.
+    expect(
+      await screen.findByRole('button', { name: /Managing Other Client/ }),
+    ).toBeInTheDocument();
+  });
+
+  it('does not render the hub picker on a personal route or inside a client workspace', async () => {
+    renderTopbarAt('/dashboard');
+    await screen.findByText('grandfinals.gg');
+    expect(
+      screen.queryByRole('button', { name: 'Select a client to manage' }),
+    ).not.toBeInTheDocument();
+
+    renderTopbarAt('/coach/tetra/overview');
+    expect(await screen.findByRole('button', { name: /Managing Tetra/ })).toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: 'Select a client to manage' }),
+    ).not.toBeInTheDocument();
+  });
+
+  it('shows a disabled "no clients" item when the coach has none yet', async () => {
+    const user = userEvent.setup();
+    listClients.mockResolvedValue([]);
+    renderTopbarAt('/coach');
+
+    const picker = await screen.findByRole('button', { name: 'Select a client to manage' });
+    await user.click(picker);
+
+    expect(await screen.findByText('No clients yet')).toBeInTheDocument();
+  });
+});
