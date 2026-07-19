@@ -6,6 +6,7 @@ const opponentsRoutes: FastifyPluginAsyncZod = async (app) => {
   const rtdb = new RtdbService(app.firebase.database);
 
   app.addHook('preHandler', app.authenticate);
+  app.addHook('preHandler', app.resolveSubject);
 
   // GET /api/opponents
   app.get(
@@ -18,7 +19,7 @@ const opponentsRoutes: FastifyPluginAsyncZod = async (app) => {
       },
     },
     async (request) => {
-      return rtdb.listOpponents(request.uid);
+      return rtdb.listOpponents(request.subjectId);
     },
   );
 };

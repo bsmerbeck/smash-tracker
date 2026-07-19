@@ -24,6 +24,7 @@ const opponentAliasesRoutes: FastifyPluginAsyncZod = async (app) => {
   const rtdb = new RtdbService(app.firebase.database);
 
   app.addHook('preHandler', app.authenticate);
+  app.addHook('preHandler', app.resolveSubject);
 
   // GET /api/opponents/aliases
   app.get(
@@ -36,7 +37,7 @@ const opponentAliasesRoutes: FastifyPluginAsyncZod = async (app) => {
       },
     },
     async (request) => {
-      return rtdb.listOpponentAliases(request.uid);
+      return rtdb.listOpponentAliases(request.subjectId);
     },
   );
 
@@ -56,7 +57,7 @@ const opponentAliasesRoutes: FastifyPluginAsyncZod = async (app) => {
     async (request, reply) => {
       try {
         return await rtdb.setOpponentAlias(
-          request.uid,
+          request.subjectId,
           request.params.alias,
           request.body.canonical,
         );
@@ -86,7 +87,7 @@ const opponentAliasesRoutes: FastifyPluginAsyncZod = async (app) => {
       },
     },
     async (request, reply) => {
-      await rtdb.deleteOpponentAlias(request.uid, request.params.alias);
+      await rtdb.deleteOpponentAlias(request.subjectId, request.params.alias);
       return reply.code(204).send();
     },
   );

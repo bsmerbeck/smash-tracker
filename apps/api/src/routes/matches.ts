@@ -23,6 +23,7 @@ const matchesRoutes: FastifyPluginAsyncZod = async (app) => {
   const rtdb = new RtdbService(app.firebase.database);
 
   app.addHook('preHandler', app.authenticate);
+  app.addHook('preHandler', app.resolveSubject);
 
   // GET /api/matches
   app.get(
@@ -35,7 +36,7 @@ const matchesRoutes: FastifyPluginAsyncZod = async (app) => {
       },
     },
     async (request) => {
-      return rtdb.listMatches(request.uid);
+      return rtdb.listMatches(request.subjectId);
     },
   );
 
@@ -51,7 +52,7 @@ const matchesRoutes: FastifyPluginAsyncZod = async (app) => {
       },
     },
     async (request, reply) => {
-      const match = await rtdb.createMatch(request.uid, request.body);
+      const match = await rtdb.createMatch(request.subjectId, request.body);
       return reply.code(201).send(match);
     },
   );
@@ -70,7 +71,7 @@ const matchesRoutes: FastifyPluginAsyncZod = async (app) => {
       },
     },
     async (request) => {
-      return rtdb.updateMatch(request.uid, request.params.id, request.body);
+      return rtdb.updateMatch(request.subjectId, request.params.id, request.body);
     },
   );
 
@@ -86,7 +87,7 @@ const matchesRoutes: FastifyPluginAsyncZod = async (app) => {
       },
     },
     async (request, reply) => {
-      await rtdb.deleteMatch(request.uid, request.params.id);
+      await rtdb.deleteMatch(request.subjectId, request.params.id);
       return reply.code(204).send();
     },
   );
@@ -109,17 +110,17 @@ const matchesRoutes: FastifyPluginAsyncZod = async (app) => {
       },
     },
     async (request) => {
-      return rtdb.clearVodAndNotes(request.uid, request.params.id);
+      return rtdb.clearVodAndNotes(request.subjectId, request.params.id);
     },
   );
 
   // Phase 8 (Coaching Edit Sessions): owner note CRUD — these are the
   // ONLY write path for `vodTimestamps` now that the match-fact PATCH above
-  // no longer accepts the field at all (08-01). All three are scoped to
-  // `request.uid` (never a body/param uid) and ride this already-registered
-  // `matchesRoutes` plugin (no new buildApp option, no app.ts change).
-  // `body` is `vodTimestampSchema` directly — never hand-rolled — per
-  // RESEARCH Pitfall 5.
+  // no longer accepts the field at all (08-01). All three are scoped to the
+  // resolved subject (Phase 11: `request.subjectId`, never a body/param id)
+  // and ride this already-registered `matchesRoutes` plugin (no new
+  // buildApp option, no app.ts change). `body` is `vodTimestampSchema`
+  // directly — never hand-rolled — per RESEARCH Pitfall 5.
 
   // POST /api/matches/:id/notes
   app.post(
@@ -136,7 +137,7 @@ const matchesRoutes: FastifyPluginAsyncZod = async (app) => {
     },
     async (request, reply) => {
       try {
-        const note = await rtdb.createNote(request.uid, request.params.id, request.body);
+        const note = await rtdb.createNote(request.subjectId, request.params.id, request.body);
         return reply.code(201).send(note);
       } catch (err) {
         if (err instanceof ForbiddenError) {
@@ -162,7 +163,12 @@ const matchesRoutes: FastifyPluginAsyncZod = async (app) => {
       },
     },
     async (request) => {
-      return rtdb.updateNote(request.uid, request.params.id, request.params.noteId, request.body);
+      return rtdb.updateNote(
+        request.subjectId,
+        request.params.id,
+        request.params.noteId,
+        request.body,
+      );
     },
   );
 
@@ -178,7 +184,7 @@ const matchesRoutes: FastifyPluginAsyncZod = async (app) => {
       },
     },
     async (request, reply) => {
-      await rtdb.deleteNote(request.uid, request.params.id, request.params.noteId);
+      await rtdb.deleteNote(request.subjectId, request.params.id, request.params.noteId);
       return reply.code(204).send();
     },
   );
