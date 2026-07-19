@@ -19,6 +19,7 @@ import {
   publishReview,
   setSectionHidden,
 } from './reviews.js';
+import { createClient, listClients } from './tenants.js';
 
 const TENANT_ID = 'tenant-1';
 const COACH_UID = 'coach-1';
@@ -438,5 +439,50 @@ describe('DEFAULT_REVIEW_SECTIONS', () => {
       expect(section.hidden).toBe(false);
       expect(section.body).toBe('');
     }
+  });
+});
+
+describe('listClients() draftCount/deliveryState wiring (Task 3, Pitfall 5)', () => {
+  it('reports draftCount >= 1 for a tenant with an open (non-archived) draft', async () => {
+    const database = new FakeDatabase();
+    const { tenantId } = await createClient(asDatabase(database), COACH_UID, 'Alex', {
+      sessionId: SESSION_ID,
+    });
+    await autosaveDraft(asDatabase(database), tenantId, 'review-1', { sections: [] }, 0);
+
+    const rows = await listClients(asDatabase(database), COACH_UID);
+
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.draftCount).toBeGreaterThanOrEqual(1);
+  });
+
+  it('reports deliveryState "acknowledged" for a tenant whose most recent delivery is acknowledged', async () => {
+    const database = new FakeDatabase();
+    const { tenantId } = await createClient(asDatabase(database), COACH_UID, 'Alex', {
+      sessionId: SESSION_ID,
+    });
+    await autosaveDraft(asDatabase(database), tenantId, 'review-1', { sections: [] }, 0);
+    await publishReview(asDatabase(database), tenantId, 'review-1', {
+      coachUid: COACH_UID,
+      sessionId: SESSION_ID,
+    });
+    database.seed(`reviewDeliveries/${tenantId}/review-1/delivery-1`, {
+      status: 'acknowledged',
+      createdAt: 10,
+      version: 1,
+    });
+
+    const rows = await listClients(asDatabase(database), COACH_UID);
+
+    expect(rows[0]?.deliveryState).toBe('acknowledged');
+  });
+
+  it('keeps draftCount 0 and deliveryState null for a client with no reviews at all', async () => {
+    const database = new FakeDatabase();
+    await createClient(asDatabase(database), COACH_UID, 'Alex', { sessionId: SESSION_ID });
+
+    const rows = await listClients(asDatabase(database), COACH_UID);
+
+    expect(rows[0]).toMatchObject({ draftCount: 0, deliveryState: null });
   });
 });

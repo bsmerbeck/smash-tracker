@@ -3,12 +3,14 @@ import type { Database } from 'firebase-admin/database';
 import {
   clientHubRowSchema,
   coachClientEntrySchema,
+  mapDeliveryStateToHubState,
   type ClientHubList,
   type ClientHubRow,
 } from '@smash-tracker/shared';
 import { buildDomainEnvelope } from '../events/envelope.js';
 import { createEvent } from '../events/ledger.js';
 import { ConflictError, ForbiddenError, RtdbService } from '../services/rtdb.js';
+import { countOpenDrafts, getMostRecentDeliveryStateForTenant } from './reviews.js';
 
 /**
  * Phase 11 (Coach Workspace Tenancy & Feature Parity, TEN-01/TEN-05/TEN-06):
@@ -198,9 +200,13 @@ export async function createClient(
  * Lists a coach's clients as compact, purpose-built Client Hub rows (TEN-05,
  * TEN-03: `clientHubRowSchema` structurally omits coachUid, membership
  * internals, and any client PII beyond the label). `lastActivityAt` is
- * assembled from the client's own `matches/{tenantId}` tree (max `time`);
- * `draftCount`/`deliveryState` stay at their Foundation defaults (0 / null)
- * since review authoring/delivery ship in Phase 12.
+ * assembled from the client's own `matches/{tenantId}` tree (max `time`).
+ * `draftCount`/`deliveryState` (Phase 12 Plan 03, Pitfall 5) are now real:
+ * `draftCount` from `reviews.ts`'s `countOpenDrafts` (non-archived
+ * `reviewDrafts/{tenantId}` entries) and `deliveryState` from
+ * `getMostRecentDeliveryStateForTenant` projected through the documented
+ * 6-state -> 3-value Hub mapping (`mapDeliveryStateToHubState`, plan 02) —
+ * bounded to THIS tenant's own subtree, never a full cross-tenant scan.
  *
  * Defaults to non-archived clients only (11-03's original contract,
  * preserved for every existing caller). Pass `{ includeArchived: true }`
@@ -231,7 +237,11 @@ export async function listClients(
   const rtdb = new RtdbService(database);
   return Promise.all(
     entries.map(async ({ tenantId, label, archivedAt }) => {
-      const matches = await rtdb.listMatches(tenantId);
+      const [matches, draftCount, deliveryState6] = await Promise.all([
+        rtdb.listMatches(tenantId),
+        countOpenDrafts(database, tenantId),
+        getMostRecentDeliveryStateForTenant(database, tenantId),
+      ]);
       const lastActivityAt = matches.reduce<number | null>(
         (latest, match) => (latest === null || match.time > latest ? match.time : latest),
         null,
@@ -240,8 +250,8 @@ export async function listClients(
         clientId: tenantId,
         label,
         lastActivityAt,
-        draftCount: 0,
-        deliveryState: null,
+        draftCount,
+        deliveryState: deliveryState6 === null ? null : mapDeliveryStateToHubState(deliveryState6),
         archivedAt,
       } satisfies ClientHubRow);
     }),
