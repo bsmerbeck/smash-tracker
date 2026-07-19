@@ -1,8 +1,11 @@
-import type { z } from 'zod';
+import { z } from 'zod';
 import {
   bulkShareResponseSchema,
   checkoutRequestSchema,
   checkoutResponseSchema,
+  clientHubListSchema,
+  clientHubRowSchema,
+  createClientRequestSchema,
   createGroupRequestSchema,
   creditsStatusSchema,
   errorResponseSchema,
@@ -48,6 +51,7 @@ import {
   vodTimestampEntrySchema,
   vodTimestampSchema,
   type BulkShareRequest,
+  type CreateClientRequest,
   type CreateGspReadingInput,
   type CreateMatchInput,
   type CreditPackId,
@@ -209,6 +213,26 @@ async function apiRequest<TResponse, TBody = unknown>(
 
   return json as TResponse;
 }
+
+/**
+ * GET /api/coaching/clients/:id/export response shape. Mirrors
+ * `apps/api/src/routes/coachingTenants.ts`'s `clientWorkspaceExportSchema`
+ * exactly (that schema is assembled inline in the route file, not exported
+ * from `@smash-tracker/shared` — duplicated here rather than promoting it to
+ * shared, to keep this plan's footprint to the web package).
+ */
+const clientWorkspaceExportSchema = z.object({
+  clientId: z.string(),
+  label: z.string(),
+  exportedAt: z.number().int().nonnegative(),
+  matches: matchSchema.array(),
+  playlists: playlistSchema.array(),
+  opponents: z.array(z.string()),
+  opponentAliases: opponentAliasMapSchema,
+  opponentNotes: opponentNoteMapSchema,
+  stageFavorites: stageFavoritesSchema,
+  fighterSelection: fighterSelectionSchema,
+});
 
 /** Runs `apiRequest` then validates the parsed JSON against `schema`. */
 async function apiRequestParsed<TSchema extends z.ZodType>(
@@ -450,6 +474,35 @@ export const api = {
     /** GET /api/reports/:id — a single stored AI report. */
     get: (id: string) =>
       apiRequestParsed(`/api/reports/${encodeURIComponent(id)}`, scoutReportRecordSchema),
+  },
+  coaching: {
+    clients: {
+      /** GET /api/coaching/clients — the signed-in coach's non-archived clients. */
+      list: () => apiRequestParsed('/api/coaching/clients', clientHubListSchema),
+      /** POST /api/coaching/clients — label-only creation; 409 on a duplicate (case-insensitive) label. */
+      create: (input: CreateClientRequest) =>
+        apiRequestParsed('/api/coaching/clients', clientHubRowSchema, {
+          method: 'POST',
+          body: createClientRequestSchema.parse(input),
+        }),
+      /** PATCH /api/coaching/clients/:id/archive — soft archive by default, or restore with `archived: false`. */
+      archive: (clientId: string, archived = true) =>
+        apiRequest<void>(`/api/coaching/clients/${encodeURIComponent(clientId)}/archive`, {
+          method: 'PATCH',
+          body: { archived },
+        }),
+      /** DELETE /api/coaching/clients/:id — irreversible hard-delete cascade. */
+      remove: (clientId: string) =>
+        apiRequest<void>(`/api/coaching/clients/${encodeURIComponent(clientId)}`, {
+          method: 'DELETE',
+        }),
+      /** GET /api/coaching/clients/:id/export — synchronous JSON dump of the client's workspace (TEN-06). */
+      export: (clientId: string) =>
+        apiRequestParsed(
+          `/api/coaching/clients/${encodeURIComponent(clientId)}/export`,
+          clientWorkspaceExportSchema,
+        ),
+    },
   },
   groups: {
     /** GET /api/groups — the signed-in user's groups. */
