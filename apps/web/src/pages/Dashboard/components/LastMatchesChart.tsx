@@ -41,16 +41,27 @@ type SeriesPoint = RollingWinRatePoint | RunningWinRatePoint;
 
 /**
  * Builds the chart series for the selected window. `'cumulative'` falls back
- * to `getRunningWinRateSeries` (the original all-time running rate);
- * numeric windows use `getRollingWinRate` (the v3 form curve). Exported as a
- * pure builder so window-switching behavior can be unit-tested without
- * rendering chart.js.
+ * to `getRunningWinRateSeries` (the original all-time running rate) and
+ * plots every match. A numeric window (5/10/20) uses `getRollingWinRate`
+ * (the v3 form curve's trailing-average smoothing) but then SLICES to only
+ * the trailing `window` points.
+ *
+ * Phase 11 fix round 3 (FB-10, BUG): before this fix, a numeric window only
+ * changed the trailing-average smoothing width — every match still plotted,
+ * so picking "Last 5" and "Last 20" produced curves of identical length
+ * (only the y-values differed), reading to the owner as "plots ALL data
+ * regardless of the selected window." The slice below makes the window
+ * selector also limit which matches are shown, matching its plain-language
+ * "Last N" label. `matches` itself already carries the global analytics
+ * source/time-range filter (applied by the caller via `useFilteredMatches`
+ * before it ever reaches this component) — that coupling was already
+ * correct and is unchanged here.
  */
 export function buildSeries(matches: Match[], window: WindowValue): SeriesPoint[] {
   if (window === 'cumulative') {
     return getRunningWinRateSeries(matches);
   }
-  return getRollingWinRate(matches, window);
+  return getRollingWinRate(matches, window).slice(-window);
 }
 
 /** Ports legacy/src/screens/Dashboard/components/LastMatchesChart; upgraded to a rolling win-rate form curve with a window selector (V3 Phase C). */

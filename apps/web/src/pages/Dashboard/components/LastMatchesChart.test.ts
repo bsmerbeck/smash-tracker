@@ -20,23 +20,46 @@ const matches: Match[] = Array.from({ length: 25 }, (_, i) =>
 );
 
 describe('buildSeries', () => {
-  it('produces one point per match regardless of window', () => {
-    expect(buildSeries(matches, 5)).toHaveLength(25);
-    expect(buildSeries(matches, 10)).toHaveLength(25);
-    expect(buildSeries(matches, 20)).toHaveLength(25);
+  // Phase 11 fix round 3 (FB-10, BUG): before this fix, a numeric window
+  // (5/10/20) only changed the trailing-average smoothing width while still
+  // plotting every match — so "Last 5" and "Last 20" produced curves of
+  // identical length, reading to the owner as "plots ALL data regardless of
+  // the selected window." A numeric window must now also LIMIT the plotted
+  // points to that many trailing matches; only 'cumulative' plots everything.
+  it('limits the plotted series to the selected window (Last N no longer plots ALL data)', () => {
+    expect(buildSeries(matches, 5)).toHaveLength(5);
+    expect(buildSeries(matches, 10)).toHaveLength(10);
+    expect(buildSeries(matches, 20)).toHaveLength(20);
     expect(buildSeries(matches, 'cumulative')).toHaveLength(25);
+  });
+
+  // FB-10 regression: the specific "two windows, different point sets"
+  // assertion called for in the fix-round spec.
+  it('FB-10 regression: two different windows plot different match sets', () => {
+    const window5 = buildSeries(matches, 5);
+    const window20 = buildSeries(matches, 20);
+
+    expect(window5).toHaveLength(5);
+    expect(window20).toHaveLength(20);
+    expect(window5.map((p) => p.match.id)).toEqual(matches.slice(-5).map((m) => m.id));
+    expect(window20.map((p) => p.match.id)).toEqual(matches.slice(-20).map((m) => m.id));
+    // The 5-window's points are a strict trailing subset of the 20-window's.
+    expect(window20.map((p) => p.match.id)).toEqual(
+      expect.arrayContaining(window5.map((p) => p.match.id)),
+    );
   });
 
   it('windows of 5/10/20 compute a trailing win rate that differs from the cumulative series', () => {
     const window5 = buildSeries(matches, 5);
     const cumulative = buildSeries(matches, 'cumulative');
 
-    // At the last point (index 25), the trailing-5 window only looks at the
-    // last 5 matches (indices 20-24: loss,win,loss,win,loss = 2/5 = 40%),
-    // while cumulative looks at the full 25-match history (12/25 = 48%).
-    expect(window5[24]?.winRate).toBeCloseTo(40, 5);
-    expect(cumulative[24]?.winRate).toBeCloseTo(48, 5);
-    expect(window5[24]?.winRate).not.toBeCloseTo(cumulative[24]?.winRate ?? -1, 5);
+    // The most recent match (index 25 overall): the trailing-5 window only
+    // looks at the last 5 matches (indices 20-24: loss,win,loss,win,loss =
+    // 2/5 = 40%), while cumulative looks at the full 25-match history
+    // (12/25 = 48%).
+    expect(window5.at(-1)?.winRate).toBeCloseTo(40, 5);
+    expect(cumulative.at(-1)?.winRate).toBeCloseTo(48, 5);
+    expect(window5.at(-1)?.winRate).not.toBeCloseTo(cumulative.at(-1)?.winRate ?? -1, 5);
   });
 
   it('a smaller window reacts faster to a recent streak than a larger window', () => {
@@ -49,8 +72,8 @@ describe('buildSeries', () => {
     const window5 = buildSeries(streaky, 5);
     const window20 = buildSeries(streaky, 20);
 
-    const last5 = window5[window5.length - 1]?.winRate ?? -1;
-    const last20 = window20[window20.length - 1]?.winRate ?? -1;
+    const last5 = window5.at(-1)?.winRate ?? -1;
+    const last20 = window20.at(-1)?.winRate ?? -1;
 
     // Window-5 sees an all-loss trailing window (0%); window-20 is diluted
     // by the earlier alternating results and stays higher.
@@ -68,13 +91,14 @@ describe('buildSeries', () => {
     expect(series[1]?.winRate).toBe(50);
   });
 
-  it('early points in a rolling window use however many matches exist so far', () => {
+  it('a window larger than the available history returns every match (no padding, no crash)', () => {
     const threeMatches = [
       makeMatch({ id: 'a', time: 1, win: true }),
       makeMatch({ id: 'b', time: 2, win: true }),
       makeMatch({ id: 'c', time: 3, win: false }),
     ];
     const series = buildSeries(threeMatches, 10);
+    expect(series).toHaveLength(3);
     expect(series[0]?.winRate).toBe(100); // 1/1
     expect(series[1]?.winRate).toBe(100); // 2/2
     expect(series[2]?.winRate).toBeCloseTo(66.6667, 3); // 2/3
