@@ -9,6 +9,25 @@ import { buildDomainEnvelope } from '../events/envelope.js';
 import { createEvent } from '../events/ledger.js';
 import { NotFoundError, RtdbService } from '../services/rtdb.js';
 
+/**
+ * Phase 11 (Coach Workspace Tenancy & Feature Parity, PAR-04): route
+ * boundary for this file —
+ *
+ * SUBJECT-RESOLVED (opts into the resolver preHandler, may target a managed
+ * client's tenant): `GET /users/me/fighters`, `PUT /users/me/fighters`,
+ * nested below in their own sub-scope. A coaching request can only ever
+ * read/write a client's fighter selection through these two routes.
+ *
+ * PERSONAL-ONLY (never subject-resolved, always `request.uid`): `PUT
+ * /users/me` (profile/email upsert + `signup_completed` emission) and `GET
+ * /users/me` (profile response, including its inline
+ * `getFighterSelection(request.uid)` call — that call shapes the COACH's
+ * OWN profile response, not a client-scoped read, and must stay on
+ * `request.uid` even though it calls the identically-named RtdbService
+ * method the fighters sub-scope below also calls). A coaching-mode request
+ * can never overwrite or read the coach's own profile through a tenant
+ * header.
+ */
 const usersRoutes: FastifyPluginAsyncZod = async (app) => {
   const rtdb = new RtdbService(app.firebase.database);
 
@@ -117,37 +136,61 @@ const usersRoutes: FastifyPluginAsyncZod = async (app) => {
     },
   );
 
-  // GET /api/users/me/fighters
-  app.get(
-    '/users/me/fighters',
-    {
-      schema: {
-        response: {
-          200: fighterSelectionSchema,
-        },
-      },
-    },
-    async (request) => {
-      return rtdb.getFighterSelection(request.uid);
-    },
-  );
-
-  // PUT /api/users/me/fighters
-  app.put(
-    '/users/me/fighters',
-    {
-      schema: {
-        body: fighterSelectionInputSchema,
-        response: {
-          200: fighterSelectionSchema,
-        },
-      },
-    },
-    async (request) => {
-      await rtdb.setFighterSelection(request.uid, request.body);
-      return request.body;
-    },
-  );
+  // Phase 11 (PAR-03/PAR-04): the fighters sub-routes are the ONLY part of
+  // usersRoutes that may target a managed client — nested so `resolveSubject`
+  // never touches `/users/me` (mirrors app.ts's `coachNotesRoutes` nested-
+  // scope registration pattern for scoping an extra hook to a subset of
+  // routes within one file). Without this split, a coach could never set a
+  // managed client's mains (blocking PAR-03 for every analytics page that
+  // gates on `useFighters()`), or — the more dangerous alternative — a
+  // coaching-mode request could accidentally overwrite the coach's own
+  // fighter selection instead.
+  await app.register(fightersSubScope(rtdb));
 };
+
+/**
+ * A separate `FastifyPluginAsyncZod`-typed function (rather than an inline
+ * `app.register(async (scope) => ...)` callback) is required here so
+ * TypeScript correctly threads the `ZodTypeProvider` generic through the
+ * nested scope's schema-typed `.get`/`.put` handlers — an inline arrow
+ * callback loses that inference and leaves `request.body` typed `unknown`.
+ */
+function fightersSubScope(rtdb: RtdbService): FastifyPluginAsyncZod {
+  return async (app) => {
+    app.addHook('preHandler', app.resolveSubject);
+
+    // GET /api/users/me/fighters
+    app.get(
+      '/users/me/fighters',
+      {
+        schema: {
+          response: {
+            200: fighterSelectionSchema,
+          },
+        },
+      },
+      async (request) => {
+        return rtdb.getFighterSelection(request.subjectId);
+      },
+    );
+
+    // PUT /api/users/me/fighters
+    app.put(
+      '/users/me/fighters',
+      {
+        schema: {
+          body: fighterSelectionInputSchema,
+          response: {
+            200: fighterSelectionSchema,
+          },
+        },
+      },
+      async (request) => {
+        await rtdb.setFighterSelection(request.subjectId, request.body);
+        return request.body;
+      },
+    );
+  };
+}
 
 export default usersRoutes;
