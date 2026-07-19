@@ -6,8 +6,19 @@ import { useLocation, useParams } from 'react-router';
  * purely from the route, never hidden global state. Mirrors the API's own
  * `X-Active-Subject` contract (`apps/api/src/coaching/subject.ts`).
  *
- * - Any route under `/coach/:clientId/...` — `{ mode: 'coaching', clientId }`.
- * - Every other route — `{ mode: 'personal', clientId: null }`.
+ * `mode` is CHROME state (which segmented-control value should read active,
+ * which nested pages render) and is `'coaching'` for ANY route under
+ * `/coach` — including the hub (`/coach`) itself, which has no client
+ * selected yet. `clientId` is the API-SUBJECT-determining field: non-null
+ * only inside `/coach/:clientId/...`. These are deliberately split (walkthrough
+ * fix FB-1) — every consumer that derives the `X-Active-Subject` header or a
+ * subject-scoped query key MUST branch on `clientId != null`, never on
+ * `mode === 'coaching'` alone, or hub reads would incorrectly scope to a
+ * "current" client that doesn't exist.
+ *
+ * - Any route under `/coach` (`/coach` itself or `/coach/...`) — `mode: 'coaching'`.
+ * - Every other route — `mode: 'personal'`.
+ * - `clientId` — the route param inside `/coach/:clientId/...`, else `null`.
  *
  * Named `Coaching`/`Subject`/`Client`, never a bare CamelCase `Coach`-prefixed
  * identifier — this codebase already has an unrelated Phase 8 "coach"
@@ -23,8 +34,9 @@ export interface ActiveSubject {
 export function useActiveSubject(): ActiveSubject {
   const location = useLocation();
   const { clientId } = useParams<{ clientId?: string }>();
-  const isCoaching = location.pathname.startsWith('/coach');
-  return isCoaching && clientId
-    ? { mode: 'coaching', clientId }
-    : { mode: 'personal', clientId: null };
+  const isCoaching = location.pathname === '/coach' || location.pathname.startsWith('/coach/');
+  return {
+    mode: isCoaching ? 'coaching' : 'personal',
+    clientId: isCoaching && clientId ? clientId : null,
+  };
 }

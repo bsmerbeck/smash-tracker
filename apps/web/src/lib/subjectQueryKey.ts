@@ -9,11 +9,13 @@ import type { ActiveSubject } from '@/hooks/useActiveSubject';
  * structural fix (a `queryClient.clear()`/`invalidateQueries()` on
  * mode/client transition is still worthwhile belt-and-suspenders insurance,
  * applied at mutation call sites, but the key shape is the primary fix).
+ *
+ * Scoped by `clientId != null`, NEVER by `mode` alone (walkthrough fix
+ * FB-1) — `mode: 'coaching'` is also true at the `/coach` hub, which has no
+ * client selected; hub reads must stay in the `'personal'` cache namespace.
  */
-export function subjectScope({ mode, clientId }: ActiveSubject): readonly unknown[] {
-  return mode === 'coaching' && clientId
-    ? (['client', clientId] as const)
-    : (['personal'] as const);
+export function subjectScope({ clientId }: ActiveSubject): readonly unknown[] {
+  return clientId ? (['client', clientId] as const) : (['personal'] as const);
 }
 
 /**
@@ -30,9 +32,11 @@ export function setActiveSubject(subject: ActiveSubject): void {
   activeSubject = subject;
 }
 
-/** The `X-Active-Subject` header value matching the API's resolver contract. */
+/**
+ * The `X-Active-Subject` header value matching the API's resolver contract.
+ * Derived from `clientId != null`, NEVER from `mode` alone (walkthrough fix
+ * FB-1) — see `subjectScope` above for the same rationale.
+ */
 export function getActiveSubjectHeader(): string {
-  return activeSubject.mode === 'coaching' && activeSubject.clientId
-    ? `client:${activeSubject.clientId}`
-    : 'personal';
+  return activeSubject.clientId ? `client:${activeSubject.clientId}` : 'personal';
 }
