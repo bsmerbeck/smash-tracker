@@ -35,6 +35,14 @@
   --chart-3: oklch(0.8 0.16 85);
   --chart-4: oklch(0.62 0.17 255);
   --chart-5: oklch(0.45 0 0);
+  /*
+   * Coaching mode accent (Phase 11 fix round 2, D-06/D6): a distinct violet
+   * hue (mockup #8b7cf6) so coaching chrome reads as visually distinct from
+   * the app's red without re-theming personal mode. Single token — recoloring
+   * coaching mode later is a one-line change.
+   */
+  --coaching-accent: oklch(0.67 0.15 287);
+  --coaching-accent-foreground: oklch(0.16 0.005 285);
 }
 
 .dark {
@@ -61,6 +69,8 @@
   --chart-3: oklch(0.8 0.16 85);
   --chart-4: oklch(0.62 0.17 255);
   --chart-5: oklch(0.45 0 0);
+  --coaching-accent: oklch(0.67 0.15 287);
+  --coaching-accent-foreground: oklch(0.16 0.005 285);
 }
 
 @theme inline {
@@ -87,6 +97,8 @@
   --color-chart-3: var(--chart-3);
   --color-chart-4: var(--chart-4);
   --color-chart-5: var(--chart-5);
+  --color-coaching-accent: var(--coaching-accent);
+  --color-coaching-accent-foreground: var(--coaching-accent-foreground);
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);

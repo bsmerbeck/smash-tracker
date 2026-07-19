@@ -1,13 +1,20 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router';
 import { useTranslation } from 'react-i18next';
-import { LogOut, Menu } from 'lucide-react';
+import { Check, ChevronDown, LogOut, Menu } from 'lucide-react';
 import { toast } from 'sonner';
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
 import { Sheet, SheetContent, SheetTitle, SheetHeader } from '@/components/ui/sheet';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { useAuth } from '@/hooks/useAuth';
 import { useActiveSubject } from '@/hooks/useActiveSubject';
 import { useCoachingClients } from '@/hooks/useCoachingClients';
@@ -49,23 +56,68 @@ function ModeSwitch({ mode, className }: { mode: 'personal' | 'coaching'; classN
       <ToggleGroupItem value="personal" size="sm">
         {t('coaching.modeSwitch.personal')}
       </ToggleGroupItem>
-      <ToggleGroupItem value="coaching" size="sm">
+      <ToggleGroupItem value="coaching" size="sm" className="data-[state=on]:text-coaching-accent">
         {t('coaching.modeSwitch.coaching')}
       </ToggleGroupItem>
     </ToggleGroup>
   );
 }
 
-/** The persistent client-name chip shown next to the mode switch in Coaching mode. */
+/**
+ * The client-switcher chip shown next to the mode switch in a client
+ * workspace (D-04/D4). A radix dropdown-menu (not a bare badge): opening it
+ * shows every client the coach manages (the active one checked), then
+ * "All clients" (back to the hub) and "Exit coaching" (back to personal).
+ */
 function ClientChip({ clientId }: { clientId: string }) {
   const { t } = useTranslation();
+  const navigate = useNavigate();
   const clients = useCoachingClients();
-  const label = clients.data?.find((client) => client.clientId === clientId)?.label ?? clientId;
+  const activeLabel =
+    clients.data?.find((client) => client.clientId === clientId)?.label ?? clientId;
 
   return (
-    <Badge variant="secondary" aria-label={t('coaching.clientChip.ariaLabel', { label })}>
-      {label}
-    </Badge>
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <button
+          type="button"
+          aria-label={t('coaching.clientChip.ariaLabel', { label: activeLabel })}
+          className="inline-flex items-center gap-1 rounded-full border border-coaching-accent bg-coaching-accent/10 px-2.5 py-1 text-xs font-medium text-coaching-accent transition-colors hover:bg-coaching-accent/20"
+        >
+          {activeLabel}
+          <ChevronDown className="size-3" />
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="start">
+        <DropdownMenuLabel>{t('coaching.clientMenu.switchClient')}</DropdownMenuLabel>
+        {(clients.data ?? []).map((client) => {
+          const isActive = client.clientId === clientId;
+          return (
+            <DropdownMenuItem
+              key={client.clientId}
+              aria-label={
+                isActive ? t('coaching.clientMenu.currentAria', { label: client.label }) : undefined
+              }
+              onSelect={() => {
+                if (!isActive) {
+                  navigate(`/coach/${client.clientId}/overview`);
+                }
+              }}
+            >
+              {isActive ? <Check className="size-4" /> : <span className="size-4" />}
+              {client.label}
+            </DropdownMenuItem>
+          );
+        })}
+        <DropdownMenuSeparator />
+        <DropdownMenuItem onSelect={() => navigate('/coach')}>
+          {t('coaching.clientMenu.allClients')}
+        </DropdownMenuItem>
+        <DropdownMenuItem onSelect={() => navigate('/dashboard')}>
+          {t('coaching.clientMenu.exitCoaching')}
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }
 
@@ -107,7 +159,7 @@ export function Topbar() {
     <header
       className={cn(
         'sticky top-0 z-40 flex h-14 items-center gap-2 border-b bg-background px-4',
-        isCoachingWithClient && 'border-b-2 border-b-primary',
+        isCoachingWithClient && 'border-b-2 border-b-coaching-accent',
       )}
     >
       <Button

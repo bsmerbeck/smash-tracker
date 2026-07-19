@@ -33,6 +33,8 @@ const getMe = vi.fn().mockResolvedValue({
   coachingModeEnabled: false,
 });
 
+const listClients = vi.fn().mockResolvedValue([]);
+
 vi.mock('@/lib/api', () => ({
   api: {
     users: {
@@ -44,7 +46,7 @@ vi.mock('@/lib/api', () => ({
     },
     coaching: {
       clients: {
-        list: vi.fn().mockResolvedValue([]),
+        list: (...args: unknown[]) => listClients(...args),
       },
     },
   },
@@ -55,6 +57,9 @@ vi.mock('@/lib/api', () => ({
  * `clientId` param, so `Topbar`'s `ModeSwitch` must still read `mode:
  * 'coaching'` (not `'personal'`) for its value to reflect the hub — a
  * fresh `/dashboard` route asserts the reverse case for the Personal click.
+ * Fix round 2 (D-04/D4): routes include `/coach/:clientId/*` so the client
+ * chip's `useActiveSubject()` resolves a real `clientId`, mirroring
+ * `useMatches.test.tsx`'s two-route `Wrapper` pattern.
  */
 function renderTopbarAt(path: string) {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -64,6 +69,7 @@ function renderTopbarAt(path: string) {
         <AuthProvider>
           <AnalyticsFilterProvider>
             <Routes>
+              <Route path="/coach/:clientId/*" element={<Topbar />} />
               <Route path="*" element={<Topbar />} />
             </Routes>
           </AnalyticsFilterProvider>
@@ -175,5 +181,87 @@ describe('Topbar ModeSwitch visibility (walkthrough fix FB-3)', () => {
     renderTopbarAt('/coach');
 
     expect((await screen.findAllByRole('radio', { name: 'Coaching' })).length).toBeGreaterThan(0);
+  });
+});
+
+/**
+ * Fix round 2 (D-04/D4): the client chip is a client-switcher dropdown, not
+ * a bare badge — "Switch client" label, every client (active one checked),
+ * a separator, then "All clients" (→ /coach) and "Exit coaching"
+ * (→ /dashboard).
+ */
+describe('Topbar client chip dropdown (walkthrough fix round 2, D-04/D4)', () => {
+  beforeEach(() => {
+    resetAuthMock();
+    vi.clearAllMocks();
+    getMe.mockResolvedValue({
+      uid: 'test-uid',
+      email: 'test@example.com',
+      fighters: { primary: [], secondary: [] },
+      coachingModeEnabled: true,
+    });
+    listClients.mockResolvedValue([
+      { clientId: 'tetra', label: 'Tetra', draftCount: 0 },
+      { clientId: 'other-client', label: 'Other Client', draftCount: 0 },
+    ]);
+    setMockUser(makeMockUser({ email: 'pilot@example.com' }));
+  });
+
+  it('opens to a "Switch client" menu with both clients, "All clients", and "Exit coaching"', async () => {
+    const user = userEvent.setup();
+    renderTopbarAt('/coach/tetra/overview');
+
+    const chip = await screen.findByRole('button', { name: /Managing Tetra/ });
+    await user.click(chip);
+
+    expect(await screen.findByText('Switch client')).toBeInTheDocument();
+    expect(screen.getByRole('menuitem', { name: /Tetra/ })).toBeInTheDocument();
+    expect(screen.getByRole('menuitem', { name: 'Other Client' })).toBeInTheDocument();
+    expect(screen.getByRole('menuitem', { name: 'All clients' })).toBeInTheDocument();
+    expect(screen.getByRole('menuitem', { name: 'Exit coaching' })).toBeInTheDocument();
+  });
+
+  it("selecting the other client navigates to that client's overview", async () => {
+    const user = userEvent.setup();
+    renderTopbarAt('/coach/tetra/overview');
+
+    const chip = await screen.findByRole('button', { name: /Managing Tetra/ });
+    await user.click(chip);
+    await user.click(screen.getByRole('menuitem', { name: 'Other Client' }));
+
+    const chipAfter = await screen.findByRole('button', { name: /Managing Other Client/ });
+    expect(chipAfter).toBeInTheDocument();
+  });
+
+  it('"All clients" navigates to /coach (the hub sidebar renders)', async () => {
+    const user = userEvent.setup();
+    renderTopbarAt('/coach/tetra/overview');
+
+    const chip = await screen.findByRole('button', { name: /Managing Tetra/ });
+    await user.click(chip);
+    await user.click(screen.getByRole('menuitem', { name: 'All clients' }));
+
+    // Once on the hub (no clientId), the chip no longer renders.
+    await screen.findAllByRole('radio', { name: 'Coaching' });
+    expect(screen.queryByRole('button', { name: /Managing/ })).not.toBeInTheDocument();
+  });
+
+  it('"Exit coaching" navigates to /dashboard (chip and coaching accent border disappear)', async () => {
+    const user = userEvent.setup();
+    renderTopbarAt('/coach/tetra/overview');
+
+    const chip = await screen.findByRole('button', { name: /Managing Tetra/ });
+    await user.click(chip);
+    await user.click(screen.getByRole('menuitem', { name: 'Exit coaching' }));
+
+    await screen.findByText('grandfinals.gg');
+    expect(screen.queryByRole('button', { name: /Managing/ })).not.toBeInTheDocument();
+  });
+
+  it('does not render a dropdown chip on a personal route', async () => {
+    renderTopbarAt('/dashboard');
+
+    await screen.findByText('grandfinals.gg');
+    expect(screen.queryByRole('button', { name: /Managing/ })).not.toBeInTheDocument();
   });
 });
