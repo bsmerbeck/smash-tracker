@@ -82,6 +82,15 @@ export const EVENT_CATALOG = {
   report_failed: 'B',
   share_view_loaded: 'X',
   signup_cta_clicked: 'X',
+  // Phase 11 (TEN-01/PAR-02): coaching_mode_enabled and coaching_client_selected
+  // are deliberately NOT here — mode/client selection is pure route state
+  // (TEN-07) with no durable server-side transition to hang a D event off;
+  // inventing a synthetic write just to emit one would violate MEAS-02's
+  // "emitted after a durable state transition" rule. Revisit as X-class
+  // same-origin experience events (X_EVENT_ALLOWLIST) if product wants
+  // mode/selection funnel data later.
+  managed_client_created: 'D',
+  client_vod_attached: 'D',
 } as const;
 export type EventCatalogName = keyof typeof EVENT_CATALOG;
 export type EventClass = (typeof EVENT_CATALOG)[EventCatalogName];
