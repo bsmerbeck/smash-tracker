@@ -1539,7 +1539,63 @@
       },
       "clients_one": "{{count}} client",
       "clients_other": "{{count}} clients",
-      "openWorkspace": "Open workspace"
+      "openWorkspace": "Open workspace",
+      "showArchived": "Show archived clients",
+      "archive": {
+        "archived": "{{label}} archived",
+        "restored": "{{label}} restored",
+        "error": "Something went wrong archiving this client."
+      },
+      "delete": {
+        "title": "Delete this client?",
+        "description": "This permanently deletes {{label}} and all of their matches, VODs, notes, tags, and playlists. This can't be undone.",
+        "confirmLabel": "Type \"{{label}}\" to confirm",
+        "pending": "Deleting...",
+        "confirm": "Delete client",
+        "deleted": "{{label}} deleted",
+        "error": "Something went wrong deleting this client."
+      },
+      "export": {
+        "success": "Exported {{label}}'s workspace",
+        "error": "Something went wrong exporting this client's workspace."
+      },
+      "table": {
+        "columns": {
+          "label": "Client",
+          "lastActivity": "Last activity",
+          "nextAction": "Next action",
+          "draftCount": "Drafts",
+          "deliveryState": "Delivery",
+          "actions": "Actions"
+        },
+        "noActivity": "No activity yet",
+        "delivery": {
+          "delivered": "Delivered",
+          "acknowledged": "Acknowledged",
+          "none": "Not delivered"
+        },
+        "nextAction": {
+          "archived": "Archived",
+          "addFirstMatch": "Add first match",
+          "continueDraft": "Continue draft",
+          "openWorkspace": "Open workspace"
+        },
+        "drafts_one": "{{count}} draft",
+        "drafts_other": "{{count}} drafts",
+        "archivedBadge": "Archived",
+        "actionsAria": "Actions for {{label}}",
+        "actions": {
+          "openWorkspace": "Open workspace",
+          "export": "Export workspace",
+          "archive": "Archive",
+          "restore": "Restore",
+          "delete": "Delete"
+        },
+        "searchPlaceholder": "Search clients...",
+        "searchAria": "Filter clients",
+        "noneFound": "No clients found.",
+        "pageOf": "Page {{page}} of {{total}}"
+      }
     },
     "unavailable": {
       "sync": {

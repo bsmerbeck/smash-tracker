@@ -178,31 +178,42 @@ export async function createClient(
 }
 
 /**
- * Lists a coach's non-archived clients as compact, purpose-built Client Hub
- * rows (TEN-05, TEN-03: `clientHubRowSchema` structurally omits coachUid,
- * membership internals, and any client PII beyond the label). `lastActivityAt`
- * is assembled from the client's own `matches/{tenantId}` tree (max
- * `time`); `draftCount`/`deliveryState` stay at their Foundation defaults
- * (0 / null) since review authoring/delivery ship in Phase 12.
+ * Lists a coach's clients as compact, purpose-built Client Hub rows (TEN-05,
+ * TEN-03: `clientHubRowSchema` structurally omits coachUid, membership
+ * internals, and any client PII beyond the label). `lastActivityAt` is
+ * assembled from the client's own `matches/{tenantId}` tree (max `time`);
+ * `draftCount`/`deliveryState` stay at their Foundation defaults (0 / null)
+ * since review authoring/delivery ship in Phase 12.
+ *
+ * Defaults to non-archived clients only (11-03's original contract,
+ * preserved for every existing caller). Pass `{ includeArchived: true }`
+ * (11-06, TEN-06 "soft-archive/restore") to also return archived rows with
+ * their real `archivedAt` — without this, a soft-archived client would have
+ * no read path back into the UI, making "restore" unreachable.
  */
-export async function listClients(database: Database, coachUid: string): Promise<ClientHubList> {
+export async function listClients(
+  database: Database,
+  coachUid: string,
+  options: { includeArchived?: boolean } = {},
+): Promise<ClientHubList> {
+  const includeArchived = options.includeArchived ?? false;
   const snapshot = await database.ref(`coachClients/${coachUid}`).get();
   if (!snapshot.exists()) {
     return [];
   }
 
   const raw = snapshot.val() as Record<string, unknown>;
-  const activeEntries = Object.entries(raw).flatMap(([tenantId, value]) => {
+  const entries = Object.entries(raw).flatMap(([tenantId, value]) => {
     const parsed = coachClientEntrySchema.safeParse(value);
-    if (!parsed.success || parsed.data.archivedAt != null) {
+    if (!parsed.success || (!includeArchived && parsed.data.archivedAt != null)) {
       return [];
     }
-    return [{ tenantId, label: parsed.data.label }];
+    return [{ tenantId, label: parsed.data.label, archivedAt: parsed.data.archivedAt ?? null }];
   });
 
   const rtdb = new RtdbService(database);
   return Promise.all(
-    activeEntries.map(async ({ tenantId, label }) => {
+    entries.map(async ({ tenantId, label, archivedAt }) => {
       const matches = await rtdb.listMatches(tenantId);
       const lastActivityAt = matches.reduce<number | null>(
         (latest, match) => (latest === null || match.time > latest ? match.time : latest),
@@ -214,7 +225,7 @@ export async function listClients(database: Database, coachUid: string): Promise
         lastActivityAt,
         draftCount: 0,
         deliveryState: null,
-        archivedAt: null,
+        archivedAt,
       } satisfies ClientHubRow);
     }),
   );

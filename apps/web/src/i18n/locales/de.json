@@ -1539,7 +1539,63 @@
       },
       "clients_one": "{{count}} Kunde",
       "clients_other": "{{count}} Kunden",
-      "openWorkspace": "Arbeitsbereich öffnen"
+      "openWorkspace": "Arbeitsbereich öffnen",
+      "showArchived": "Archivierte Kunden anzeigen",
+      "archive": {
+        "archived": "{{label}} archiviert",
+        "restored": "{{label}} wiederhergestellt",
+        "error": "Beim Archivieren dieses Kunden ist etwas schiefgelaufen."
+      },
+      "delete": {
+        "title": "Diesen Kunden löschen?",
+        "description": "Dadurch werden {{label}} sowie alle Matches, VODs, Notizen, Tags und Playlists dauerhaft gelöscht. Dies kann nicht rückgängig gemacht werden.",
+        "confirmLabel": "Gib „{{label}}“ ein, um zu bestätigen",
+        "pending": "Wird gelöscht...",
+        "confirm": "Kunden löschen",
+        "deleted": "{{label}} gelöscht",
+        "error": "Beim Löschen dieses Kunden ist etwas schiefgelaufen."
+      },
+      "export": {
+        "success": "Arbeitsbereich von {{label}} exportiert",
+        "error": "Beim Exportieren des Arbeitsbereichs dieses Kunden ist etwas schiefgelaufen."
+      },
+      "table": {
+        "columns": {
+          "label": "Kunde",
+          "lastActivity": "Letzte Aktivität",
+          "nextAction": "Nächster Schritt",
+          "draftCount": "Entwürfe",
+          "deliveryState": "Zustellung",
+          "actions": "Aktionen"
+        },
+        "noActivity": "Noch keine Aktivität",
+        "delivery": {
+          "delivered": "Zugestellt",
+          "acknowledged": "Bestätigt",
+          "none": "Nicht zugestellt"
+        },
+        "nextAction": {
+          "archived": "Archiviert",
+          "addFirstMatch": "Erstes Match hinzufügen",
+          "continueDraft": "Entwurf fortsetzen",
+          "openWorkspace": "Arbeitsbereich öffnen"
+        },
+        "drafts_one": "{{count}} Entwurf",
+        "drafts_other": "{{count}} Entwürfe",
+        "archivedBadge": "Archiviert",
+        "actionsAria": "Aktionen für {{label}}",
+        "actions": {
+          "openWorkspace": "Arbeitsbereich öffnen",
+          "export": "Arbeitsbereich exportieren",
+          "archive": "Archivieren",
+          "restore": "Wiederherstellen",
+          "delete": "Löschen"
+        },
+        "searchPlaceholder": "Kunden suchen...",
+        "searchAria": "Kunden filtern",
+        "noneFound": "Keine Kunden gefunden.",
+        "pageOf": "Seite {{page}} von {{total}}"
+      }
     },
     "unavailable": {
       "sync": {

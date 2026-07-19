@@ -1539,7 +1539,63 @@
       },
       "clients_one": "{{count}} cliente",
       "clients_other": "{{count}} clientes",
-      "openWorkspace": "Abrir espacio de trabajo"
+      "openWorkspace": "Abrir espacio de trabajo",
+      "showArchived": "Mostrar clientes archivados",
+      "archive": {
+        "archived": "{{label}} archivado",
+        "restored": "{{label}} restaurado",
+        "error": "Algo salió mal al archivar este cliente."
+      },
+      "delete": {
+        "title": "¿Eliminar este cliente?",
+        "description": "Esto elimina permanentemente a {{label}} y todas sus partidas, VODs, notas, etiquetas y listas de reproducción. Esta acción no se puede deshacer.",
+        "confirmLabel": "Escribe \"{{label}}\" para confirmar",
+        "pending": "Eliminando...",
+        "confirm": "Eliminar cliente",
+        "deleted": "{{label}} eliminado",
+        "error": "Algo salió mal al eliminar este cliente."
+      },
+      "export": {
+        "success": "Espacio de trabajo de {{label}} exportado",
+        "error": "Algo salió mal al exportar el espacio de trabajo de este cliente."
+      },
+      "table": {
+        "columns": {
+          "label": "Cliente",
+          "lastActivity": "Última actividad",
+          "nextAction": "Próxima acción",
+          "draftCount": "Borradores",
+          "deliveryState": "Entrega",
+          "actions": "Acciones"
+        },
+        "noActivity": "Sin actividad todavía",
+        "delivery": {
+          "delivered": "Entregado",
+          "acknowledged": "Confirmado",
+          "none": "No entregado"
+        },
+        "nextAction": {
+          "archived": "Archivado",
+          "addFirstMatch": "Añadir primera partida",
+          "continueDraft": "Continuar borrador",
+          "openWorkspace": "Abrir espacio de trabajo"
+        },
+        "drafts_one": "{{count}} borrador",
+        "drafts_other": "{{count}} borradores",
+        "archivedBadge": "Archivado",
+        "actionsAria": "Acciones para {{label}}",
+        "actions": {
+          "openWorkspace": "Abrir espacio de trabajo",
+          "export": "Exportar espacio de trabajo",
+          "archive": "Archivar",
+          "restore": "Restaurar",
+          "delete": "Eliminar"
+        },
+        "searchPlaceholder": "Buscar clientes...",
+        "searchAria": "Filtrar clientes",
+        "noneFound": "No se encontraron clientes.",
+        "pageOf": "Página {{page}} de {{total}}"
+      }
     },
     "unavailable": {
       "sync": {

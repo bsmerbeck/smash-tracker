@@ -1539,7 +1539,63 @@
       },
       "clients_one": "{{count}} client",
       "clients_other": "{{count}} clients",
-      "openWorkspace": "Ouvrir l'espace de travail"
+      "openWorkspace": "Ouvrir l'espace de travail",
+      "showArchived": "Afficher les clients archivés",
+      "archive": {
+        "archived": "{{label}} archivé",
+        "restored": "{{label}} restauré",
+        "error": "Une erreur est survenue lors de l'archivage de ce client."
+      },
+      "delete": {
+        "title": "Supprimer ce client ?",
+        "description": "Cela supprime définitivement {{label}} ainsi que tous ses matchs, VODs, notes, étiquettes et playlists. Cette action est irréversible.",
+        "confirmLabel": "Tapez « {{label}} » pour confirmer",
+        "pending": "Suppression...",
+        "confirm": "Supprimer le client",
+        "deleted": "{{label}} supprimé",
+        "error": "Une erreur est survenue lors de la suppression de ce client."
+      },
+      "export": {
+        "success": "Espace de travail de {{label}} exporté",
+        "error": "Une erreur est survenue lors de l'exportation de l'espace de travail de ce client."
+      },
+      "table": {
+        "columns": {
+          "label": "Client",
+          "lastActivity": "Dernière activité",
+          "nextAction": "Prochaine action",
+          "draftCount": "Brouillons",
+          "deliveryState": "Livraison",
+          "actions": "Actions"
+        },
+        "noActivity": "Aucune activité pour l'instant",
+        "delivery": {
+          "delivered": "Livré",
+          "acknowledged": "Confirmé",
+          "none": "Non livré"
+        },
+        "nextAction": {
+          "archived": "Archivé",
+          "addFirstMatch": "Ajouter le premier match",
+          "continueDraft": "Continuer le brouillon",
+          "openWorkspace": "Ouvrir l'espace de travail"
+        },
+        "drafts_one": "{{count}} brouillon",
+        "drafts_other": "{{count}} brouillons",
+        "archivedBadge": "Archivé",
+        "actionsAria": "Actions pour {{label}}",
+        "actions": {
+          "openWorkspace": "Ouvrir l'espace de travail",
+          "export": "Exporter l'espace de travail",
+          "archive": "Archiver",
+          "restore": "Restaurer",
+          "delete": "Supprimer"
+        },
+        "searchPlaceholder": "Rechercher des clients...",
+        "searchAria": "Filtrer les clients",
+        "noneFound": "Aucun client trouvé.",
+        "pageOf": "Page {{page}} sur {{total}}"
+      }
     },
     "unavailable": {
       "sync": {

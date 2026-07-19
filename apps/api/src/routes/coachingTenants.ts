@@ -27,6 +27,11 @@ const clientIdParamsSchema = z.object({
 
 const archiveClientBodySchema = z.object({ archived: z.boolean() }).nullish();
 
+const listClientsQuerySchema = z.object({
+  /** `?includeArchived=true` also returns soft-archived rows (TEN-06 restore path). */
+  includeArchived: z.enum(['true', 'false']).optional(),
+});
+
 const clientWorkspaceExportSchema = z.object({
   clientId: z.string(),
   label: z.string(),
@@ -102,18 +107,22 @@ const coachingTenantsRoutes: FastifyPluginAsyncZod = async (app) => {
     },
   );
 
-  // GET /api/coaching/clients
+  // GET /api/coaching/clients — pass ?includeArchived=true to also list
+  // soft-archived clients (the restore entry point in the UI).
   app.get(
     '/coaching/clients',
     {
       schema: {
+        querystring: listClientsQuerySchema,
         response: {
           200: clientHubListSchema,
         },
       },
     },
     async (request) => {
-      return listClients(app.firebase.database, request.uid);
+      return listClients(app.firebase.database, request.uid, {
+        includeArchived: request.query.includeArchived === 'true',
+      });
     },
   );
 

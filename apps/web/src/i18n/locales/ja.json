@@ -1539,7 +1539,63 @@
       },
       "clients_one": "{{count}}人のクライアント",
       "clients_other": "{{count}}人のクライアント",
-      "openWorkspace": "ワークスペースを開く"
+      "openWorkspace": "ワークスペースを開く",
+      "showArchived": "アーカイブ済みクライアントを表示",
+      "archive": {
+        "archived": "{{label}}をアーカイブしました",
+        "restored": "{{label}}を復元しました",
+        "error": "このクライアントのアーカイブ中に問題が発生しました。"
+      },
+      "delete": {
+        "title": "このクライアントを削除しますか?",
+        "description": "{{label}}とそのすべての試合、VOD、メモ、タグ、プレイリストが完全に削除されます。この操作は元に戻せません。",
+        "confirmLabel": "確認のため「{{label}}」と入力してください",
+        "pending": "削除中...",
+        "confirm": "クライアントを削除",
+        "deleted": "{{label}}を削除しました",
+        "error": "このクライアントの削除中に問題が発生しました。"
+      },
+      "export": {
+        "success": "{{label}}のワークスペースをエクスポートしました",
+        "error": "このクライアントのワークスペースのエクスポート中に問題が発生しました。"
+      },
+      "table": {
+        "columns": {
+          "label": "クライアント",
+          "lastActivity": "最終アクティビティ",
+          "nextAction": "次のアクション",
+          "draftCount": "下書き",
+          "deliveryState": "配信",
+          "actions": "操作"
+        },
+        "noActivity": "まだアクティビティがありません",
+        "delivery": {
+          "delivered": "配信済み",
+          "acknowledged": "確認済み",
+          "none": "未配信"
+        },
+        "nextAction": {
+          "archived": "アーカイブ済み",
+          "addFirstMatch": "最初の試合を追加",
+          "continueDraft": "下書きを続ける",
+          "openWorkspace": "ワークスペースを開く"
+        },
+        "drafts_one": "{{count}}件の下書き",
+        "drafts_other": "{{count}}件の下書き",
+        "archivedBadge": "アーカイブ済み",
+        "actionsAria": "{{label}}の操作",
+        "actions": {
+          "openWorkspace": "ワークスペースを開く",
+          "export": "ワークスペースをエクスポート",
+          "archive": "アーカイブ",
+          "restore": "復元",
+          "delete": "削除"
+        },
+        "searchPlaceholder": "クライアントを検索...",
+        "searchAria": "クライアントを絞り込む",
+        "noneFound": "クライアントが見つかりません。",
+        "pageOf": "{{total}}ページ中{{page}}ページ目"
+      }
     },
     "unavailable": {
       "sync": {
