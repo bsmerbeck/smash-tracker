@@ -77,7 +77,14 @@ export function reviewSharedClientId(uid: string): string {
   return createHash('sha256').update(uid).digest('hex').slice(0, 32);
 }
 
-export type ReviewSharedKind = 'review' | 'recap';
+/**
+ * Phase 12 (Coach Reviews & Delivery): widened to include 'coachReview' so
+ * this type stays in lockstep with `createShareInputSchema.kind`'s literal
+ * union in `packages/shared/src/shares.ts` — `reviewShared`'s call site in
+ * `vodShares.ts` passes `request.body.kind` straight through, so this type
+ * must accept every value that schema can validly produce.
+ */
+export type ReviewSharedKind = 'review' | 'recap' | 'coachReview';
 
 /**
  * Fires the `review_shared` server event (param `kind: review|recap`) for a
