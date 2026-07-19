@@ -56,6 +56,7 @@ import {
 import { getFighterById } from '@/data/sprites';
 import { useDeleteMatch } from '@/hooks/useDeleteMatch';
 import { useClearVodAndNotes } from '@/hooks/useVodNotes';
+import { useSubjectPath } from '@/hooks/useSubjectPath';
 import { buildMatchCsv, matchCsvFilename } from '../lib/matchCsv';
 import {
   applyMatchTableFilters,
@@ -151,6 +152,7 @@ export function MatchTable({
 }) {
   const { t } = useTranslation();
   const navigate = useNavigate();
+  const subjectPath = useSubjectPath();
   const [sorting, setSorting] = useState<SortingState>([{ id: 'date', desc: true }]);
   const [globalFilter, setGlobalFilter] = useState('');
   const [columnFilters, setColumnFilters] = useState<MatchTableFilterState>(
@@ -280,7 +282,7 @@ export function MatchTable({
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="start">
                     <DropdownMenuItem
-                      onSelect={() => navigate(`/vod?match=${row.original.match.id}`)}
+                      onSelect={() => navigate(subjectPath(`/vod?match=${row.original.match.id}`))}
                     >
                       {t('matchData.table.vodMenu.goToManager')}
                     </DropdownMenuItem>
@@ -342,7 +344,7 @@ export function MatchTable({
         },
       },
     ],
-    [t, navigate],
+    [t, navigate, subjectPath],
   );
 
   const table = useReactTable({

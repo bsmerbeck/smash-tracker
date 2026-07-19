@@ -5,6 +5,7 @@ import type { Fighter } from '@smash-tracker/shared';
 import { Button } from '@/components/ui/button';
 import { useFighters } from '@/hooks/useFighters';
 import { useFilteredMatches } from '@/hooks/useFilteredMatches';
+import { useSubjectPath } from '@/hooks/useSubjectPath';
 import { getFighterById } from '@/data/sprites';
 import { FilteredEmptyNotice } from '@/components/FilteredEmptyNotice';
 import { DashboardContext, type DashboardContextValue } from './DashboardContext';
@@ -19,6 +20,7 @@ import { StageTiles } from './components/StageTiles';
 /** Ports legacy/src/screens/Dashboard. */
 export function DashboardPage() {
   const { t } = useTranslation();
+  const subjectPath = useSubjectPath();
   const { data: fighterSelection, isLoading: fightersLoading } = useFighters();
   const {
     matches,
@@ -61,10 +63,12 @@ export function DashboardPage() {
         <p className="max-w-md text-muted-foreground">{t('shared.noFighters.subtitle')}</p>
         <div className="flex flex-wrap justify-center gap-2">
           <Button asChild>
-            <Link to="/choose-primary">{t('shared.noFighters.choosePrimary')}</Link>
+            <Link to={subjectPath('/choose-primary')}>{t('shared.noFighters.choosePrimary')}</Link>
           </Button>
           <Button asChild variant="outline">
-            <Link to="/choose-secondary">{t('shared.noFighters.chooseSecondary')}</Link>
+            <Link to={subjectPath('/choose-secondary')}>
+              {t('shared.noFighters.chooseSecondary')}
+            </Link>
           </Button>
         </div>
       </div>

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { render, screen } from '@testing-library/react';
-import { MemoryRouter } from 'react-router';
+import { MemoryRouter, Route, Routes } from 'react-router';
 import type { Fighter, Match } from '@smash-tracker/shared';
 import { buildMatchupSnapshot, MatchupSnapshot } from './MatchupSnapshot';
 import { DashboardContext, type DashboardContextValue } from '../DashboardContext';
@@ -97,6 +97,7 @@ const mario: Fighter = { id: 1, name: 'Mario', url: '/assets/sprites/1-mario-spr
 function renderWithContext(
   matches: Match[],
   contextOverrides: Partial<DashboardContextValue> = {},
+  initialPath = '/dashboard',
 ) {
   const contextValue: DashboardContextValue = {
     fighterSprites: [mario],
@@ -105,9 +106,12 @@ function renderWithContext(
     ...contextOverrides,
   };
   return render(
-    <MemoryRouter>
+    <MemoryRouter initialEntries={[initialPath]}>
       <DashboardContext.Provider value={contextValue}>
-        <MatchupSnapshot matches={matches} />
+        <Routes>
+          <Route path="/coach/:clientId/*" element={<MatchupSnapshot matches={matches} />} />
+          <Route path="*" element={<MatchupSnapshot matches={matches} />} />
+        </Routes>
       </DashboardContext.Provider>
     </MemoryRouter>,
   );
@@ -132,5 +136,18 @@ describe('MatchupSnapshot', () => {
     const matches = [makeMatch('1', 1, true, 2), makeMatch('2', 2, false, 2)];
     renderWithContext(matches);
     expect(screen.getByText(/Play a few more games \(3\+ per opponent\)/)).toBeInTheDocument();
+  });
+
+  // Phase 11 fix round 3 (FB-6, the originally-reported bug): in a client
+  // workspace, "Open Matchup Lab" must stay under /coach/:clientId/... —
+  // previously it hardcoded the personal /matchups route, escaping the
+  // workspace into the coach's own data.
+  it('FB-6 regression: stays subject-aware in a coaching client workspace', () => {
+    const matches = Array.from({ length: 5 }, (_, i) => makeMatch(`${i}`, i, true, 2));
+    renderWithContext(matches, {}, '/coach/tetra/dashboard');
+    expect(screen.getByRole('link', { name: 'Open Matchup Lab' })).toHaveAttribute(
+      'href',
+      '/coach/tetra/matchups',
+    );
   });
 });
