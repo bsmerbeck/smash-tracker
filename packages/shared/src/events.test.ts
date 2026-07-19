@@ -70,6 +70,18 @@ describe('EVENT_CATALOG', () => {
       report_failed: 'B',
       share_view_loaded: 'X',
       signup_cta_clicked: 'X',
+      managed_client_created: 'D',
+      client_vod_attached: 'D',
     });
+  });
+
+  it('maps the two new Phase 11 coaching-lifecycle events to class D', () => {
+    expect(EVENT_CATALOG.managed_client_created).toBe('D');
+    expect(EVENT_CATALOG.client_vod_attached).toBe('D');
+  });
+
+  it('does not ship coaching_mode_enabled or coaching_client_selected (deferred — no durable server transition)', () => {
+    expect(EVENT_CATALOG).not.toHaveProperty('coaching_mode_enabled');
+    expect(EVENT_CATALOG).not.toHaveProperty('coaching_client_selected');
   });
 });
