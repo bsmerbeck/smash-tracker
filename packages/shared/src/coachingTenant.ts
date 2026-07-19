@@ -94,3 +94,46 @@ export type ClientHubRow = z.infer<typeof clientHubRowSchema>;
 /** GET /api/coaching/clients response. */
 export const clientHubListSchema = clientHubRowSchema.array();
 export type ClientHubList = z.infer<typeof clientHubListSchema>;
+
+/**
+ * Phase 12 (Coach Reviews & Delivery, D-05): review status and delivery
+ * status are SEPARATE state machines — this is the delivery one. Review
+ * status (`Draft / Published v1..vN / Archived`) lives elsewhere (review
+ * status is tracked per-version, not modeled as a shared enum here).
+ */
+export const REVIEW_DELIVERY_STATES = [
+  'not-delivered',
+  'delivered',
+  'viewed',
+  'acknowledged',
+  'expired',
+  'revoked',
+] as const;
+export type ReviewDeliveryState = (typeof REVIEW_DELIVERY_STATES)[number];
+
+/**
+ * Projects the full 6-state delivery machine (`REVIEW_DELIVERY_STATES`)
+ * down onto `clientHubRowSchema.deliveryState`'s 3-value enum (`'none' |
+ * 'delivered' | 'acknowledged'`) for the Client Hub row summary (Pitfall 5
+ * / D-05): `'acknowledged'` -> `'acknowledged'`; `'delivered'`/`'viewed'`
+ * -> `'delivered'`; `'not-delivered'`/`'expired'`/`'revoked'` -> `'none'`.
+ * `deliveryState` is deliberately kept at 3 values (never widened) — a
+ * dead/expired link and "never delivered" are indistinguishable at
+ * Hub-row granularity by design; the full 6-state machine is only ever
+ * surfaced on the review's own delivery-detail view, not the Hub listing.
+ */
+export function mapDeliveryStateToHubState(
+  state: ReviewDeliveryState,
+): NonNullable<ClientHubRow['deliveryState']> {
+  switch (state) {
+    case 'acknowledged':
+      return 'acknowledged';
+    case 'delivered':
+    case 'viewed':
+      return 'delivered';
+    case 'not-delivered':
+    case 'expired':
+    case 'revoked':
+      return 'none';
+  }
+}

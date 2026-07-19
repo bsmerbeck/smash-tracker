@@ -161,12 +161,18 @@ export type ShareSnapshot = z.infer<typeof shareSnapshotSchema>;
  * are nullish so the frozen VIEW-tier response (which never populates them)
  * still validates unchanged; only the live EDIT-tier recompute (a later
  * 08-0x plan) ever sets them.
+ *
+ * Phase 12 (Coach Reviews & Delivery, DLV-02): extended additively a third
+ * way for `kind: 'coachReview'` — the anonymous no-account delivery page's
+ * response. New fields are nullish (absent on every pre-Phase-12 vod-review
+ * or recap snapshot) and gated by the third `.refine()` below, exactly like
+ * the recap branch's `tournamentName`/`placement` fields were added.
  */
 export const publicShareSnapshotSchema = z
   .object({
     createdAt: z.number().int().nonnegative(),
     /** Absent means a vod-review snapshot (the default, backward-compatible shape). */
-    kind: z.enum(['recap']).nullish(),
+    kind: z.enum(['recap', 'coachReview']).nullish(),
     /** Phase 8: the share's permission tier. Absent on pre-Phase-8 responses (treated as 'view'). */
     permissions: z.enum(['view', 'edit']).nullish(),
     // --- vod-review fields: nullish here (absent on a recap snapshot); the
@@ -212,13 +218,38 @@ export const publicShareSnapshotSchema = z
     tournamentUrl: z.string().url().nullish(),
     /** The full set timeline — present only when `detail === 'full'`. See `recapSnapshotSchema.sets`. */
     sets: z.array(recapSetSchema).max(20).nullish(),
+    // --- coachReview-only fields (Phase 12, DLV-02): nullish here (absent on
+    // a vod-review or recap snapshot); the third `.refine()` below enforces
+    // the required subset for a coachReview delivery ---
+    /** The delivering coach's display name — shown on the no-account delivery page. */
+    coachDisplayName: z.string().trim().max(60).nullish(),
+    /** Epoch ms the pinned version was published — "publication date" on the delivery page. */
+    reviewPublishedAt: z.number().int().nonnegative().nullish(),
+    /**
+     * Every distinct source VOD a citation in the delivered version's body
+     * refers to (D-04 multi-VOD first-class) — lets the delivery page
+     * re-key `useVodPlayer` and seek when a citation from a different
+     * source is clicked, without a second fetch.
+     */
+    citationSources: z
+      .array(
+        z.object({
+          sourceVodRef: z.string().min(1),
+          vodUrl: z.string().url(),
+          label: z.string().trim().max(120).nullish(),
+        }),
+      )
+      .max(20)
+      .nullish(),
     // --- shared across both kinds ---
     reviewedMomentsCount: z.number().int().nonnegative(),
     ownerDisplayName: z.string().trim().max(60).nullish(),
   })
   .refine(
     (snapshot) =>
-      snapshot.kind !== 'recap' ? Boolean(snapshot.vodUrl) && Boolean(snapshot.redaction) : true,
+      snapshot.kind !== 'recap' && snapshot.kind !== 'coachReview'
+        ? Boolean(snapshot.vodUrl) && Boolean(snapshot.redaction)
+        : true,
     {
       message: 'a vod-review snapshot must carry vodUrl and redaction',
       path: ['vodUrl'],
@@ -237,6 +268,16 @@ export const publicShareSnapshotSchema = z
       message:
         'a recap snapshot must carry tournamentName, tournamentDate, set record, and characterFighterIds',
       path: ['tournamentName'],
+    },
+  )
+  .refine(
+    (snapshot) =>
+      snapshot.kind === 'coachReview'
+        ? Boolean(snapshot.coachDisplayName) && snapshot.reviewPublishedAt != null
+        : true,
+    {
+      message: 'a coachReview snapshot must carry coachDisplayName and reviewPublishedAt',
+      path: ['coachDisplayName'],
     },
   );
 export type PublicShareSnapshot = z.infer<typeof publicShareSnapshotSchema>;
@@ -276,11 +317,22 @@ export type ShareToken = z.infer<typeof shareTokenSchema>;
  * for a review share; `entryKey` is required for a recap share — enforced
  * by the `.refine()`s below (a single Zod object can't make a field
  * required only for one branch via its own optionality alone).
+ *
+ * Phase 12 (Coach Reviews & Delivery, DLV-01): a THIRD kind, `'coachReview'`,
+ * reuses this same bearer-token/revocation pipeline for delivering a coach's
+ * PUBLISHED review document to a client. Naming collision, documented
+ * explicitly (RESEARCH.md Open Question 1): `kind: 'review'` here ALREADY
+ * means "a vod-review share" (a match's timestamped-note review, Phase 5/6)
+ * — a completely different concept from a coach-authored review document.
+ * `'coachReview'` is a deliberately NON-colliding new literal; the existing
+ * `'review'` literal's meaning is never renamed or repurposed (mirrors
+ * `apps/api/src/coaching/subject.ts`'s own documented naming-collision
+ * precedent for an unrelated "coach" term).
  */
 export const createShareInputSchema = z
   .object({
     /** Discriminates which snapshot builder handles this create. Absent means 'review' (every pre-Phase-7 client). */
-    kind: z.enum(['review', 'recap']).default('review'),
+    kind: z.enum(['review', 'recap', 'coachReview']).default('review'),
     /** Required for kind 'review'. */
     matchId: z.string().min(1).optional(),
     /** Required for kind 'review'. */
@@ -317,6 +369,10 @@ export const createShareInputSchema = z
      * attach notes to.
      */
     permissions: z.enum(['view', 'edit']).default('view'),
+    /** Required for kind 'coachReview' — the review document this delivery pins (DLV-01: exactly ONE published version). */
+    reviewId: z.string().min(1).optional(),
+    /** Required for kind 'coachReview' — the immutable published version number this delivery pins to. */
+    version: z.number().int().positive().optional(),
   })
   .refine(
     (input) =>
@@ -330,6 +386,14 @@ export const createShareInputSchema = z
     message: 'recap shares require entryKey',
     path: ['entryKey'],
   })
+  .refine(
+    (input) =>
+      input.kind === 'coachReview' ? Boolean(input.reviewId) && Boolean(input.version) : true,
+    {
+      message: 'coachReview shares require reviewId and version',
+      path: ['reviewId'],
+    },
+  )
   .refine((input) => !(input.kind === 'recap' && input.permissions === 'edit'), {
     message: 'coaching (edit-permission) shares apply to VOD reviews only, not recaps',
     path: ['permissions'],
@@ -344,6 +408,12 @@ export type CreateShareInput = z.infer<typeof createShareInputSchema>;
  * Phase 7: extended to a flat dual shape (same `kind`-gated + `.refine()`
  * discipline as `publicShareSnapshotSchema` above) so a recap row can be
  * represented alongside a vod-review row in the same list response.
+ *
+ * Phase 12 (Coach Reviews & Delivery): `kind` gains the same third
+ * `'coachReview'` literal as the other two schemas above; no new display
+ * fields are added here (the delivery page's coach-identity/pub-date/
+ * citation-sources fields live on `publicShareSnapshotSchema`, not this
+ * owner-facing list row).
  */
 export const shareSummarySchema = z
   .object({
@@ -354,7 +424,7 @@ export const shareSummarySchema = z
     /** The snapshot date — when this share was created. */
     createdAt: z.number().int().nonnegative(),
     /** Absent means a vod-review row (the default, backward-compatible shape). */
-    kind: z.enum(['recap']).nullish(),
+    kind: z.enum(['recap', 'coachReview']).nullish(),
     redaction: z
       .object({
         includedNotes: z.boolean(),
@@ -381,10 +451,16 @@ export const shareSummarySchema = z
     tournamentName: z.string().min(1).nullish(),
     placement: z.number().int().positive().nullish(),
   })
-  .refine((row) => (row.kind !== 'recap' ? Boolean(row.matchId) && Boolean(row.redaction) : true), {
-    message: 'a vod-review row must carry matchId and redaction',
-    path: ['matchId'],
-  })
+  .refine(
+    (row) =>
+      row.kind !== 'recap' && row.kind !== 'coachReview'
+        ? Boolean(row.matchId) && Boolean(row.redaction)
+        : true,
+    {
+      message: 'a vod-review row must carry matchId and redaction',
+      path: ['matchId'],
+    },
+  )
   .refine((row) => (row.kind === 'recap' ? Boolean(row.tournamentName) : true), {
     message: 'a recap row must carry tournamentName',
     path: ['tournamentName'],
