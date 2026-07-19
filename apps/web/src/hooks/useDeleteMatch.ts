@@ -1,5 +1,6 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '@/lib/api';
+import { useActiveSubject } from './useActiveSubject';
 import { matchesQueryKey } from './useMatches';
 import { vodSharesQueryKey } from './useVodShares';
 
@@ -12,11 +13,12 @@ import { vodSharesQueryKey } from './useVodShares';
  */
 export function useDeleteMatch() {
   const queryClient = useQueryClient();
+  const subject = useActiveSubject();
   return useMutation({
     mutationFn: (id: string) => api.matches.remove(id),
     onSuccess: async () => {
       await Promise.all([
-        queryClient.invalidateQueries({ queryKey: matchesQueryKey }),
+        queryClient.invalidateQueries({ queryKey: matchesQueryKey(subject) }),
         queryClient.invalidateQueries({ queryKey: vodSharesQueryKey }),
       ]);
     },
