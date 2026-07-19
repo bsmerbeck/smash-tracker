@@ -108,6 +108,11 @@ function renderVodManager(initialEntry: string) {
           <AnalyticsFilterProvider>
             <Routes>
               <Route path="/vod" element={<VodManagerPage />} />
+              {/* Phase 11 fix round 3 (FB-9): the coaching-route mirror —
+                  VOD Manager's Add Match must keep requiring a VOD URL
+                  there too (unchanged; only the Match Data surface is
+                  scoped VOD-optional). */}
+              <Route path="/coach/:clientId/vods" element={<VodManagerPage />} />
             </Routes>
           </AnalyticsFilterProvider>
         </AuthProvider>
@@ -159,6 +164,41 @@ describe('VodManagerPage', () => {
     await user.click(await screen.findByRole('button', { name: 'Add Match' }));
     const dialog = await screen.findByRole('dialog');
     expect(within(dialog).getByRole('button', { name: 'Save' })).toBeInTheDocument();
+  });
+
+  // Phase 11 fix round 3 (FB-9): "Only the VOD Manager page's Add Match
+  // keeps the required VOD URL" — verified in both personal and coaching
+  // contexts (the Dashboard mirror lives in DashboardPage.test.tsx).
+  it('FB-9: Add Match on the VOD Manager still requires a VOD URL, in personal mode', async () => {
+    listMatches.mockResolvedValue([]);
+    const user = userEvent.setup();
+    renderVodManager('/vod');
+
+    await user.click(await screen.findByRole('button', { name: 'Add Match' }));
+    const dialog = await screen.findByRole('dialog');
+    await user.click(within(dialog).getByRole('radio', { name: 'Win' }));
+    await user.click(within(dialog).getByRole('button', { name: 'Save' }));
+
+    expect(
+      await within(dialog).findByText('Enter a valid VOD link (YouTube or Twitch)'),
+    ).toBeInTheDocument();
+    expect(createMatch).not.toHaveBeenCalled();
+  });
+
+  it('FB-9: Add Match on the coaching VOD Manager still requires a VOD URL', async () => {
+    listMatches.mockResolvedValue([]);
+    const user = userEvent.setup();
+    renderVodManager('/coach/tetra/vods');
+
+    await user.click(await screen.findByRole('button', { name: 'Add Match' }));
+    const dialog = await screen.findByRole('dialog');
+    await user.click(within(dialog).getByRole('radio', { name: 'Win' }));
+    await user.click(within(dialog).getByRole('button', { name: 'Save' }));
+
+    expect(
+      await within(dialog).findByText('Enter a valid VOD link (YouTube or Twitch)'),
+    ).toBeInTheDocument();
+    expect(createMatch).not.toHaveBeenCalled();
   });
 
   it('applies the deep-linked match t= offset as the player initial start time', async () => {
