@@ -1636,6 +1636,15 @@
       },
       "winRateEmpty": "—",
       "fightersTitle": "Kämpfer",
+      "fightersCard": {
+        "primary": "Hauptkämpfer",
+        "secondary": "Nebenkämpfer",
+        "empty": "Noch keine Kämpfer ausgewählt."
+      },
+      "recentMatches": {
+        "title": "Letzte Matches",
+        "empty": "Noch keine Matches."
+      },
       "checklist": {
         "fighters": {
           "title": "Kämpfer festlegen",

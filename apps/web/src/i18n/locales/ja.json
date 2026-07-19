@@ -1636,6 +1636,15 @@
       },
       "winRateEmpty": "—",
       "fightersTitle": "使用キャラクター",
+      "fightersCard": {
+        "primary": "メイン",
+        "secondary": "サブ",
+        "empty": "まだファイターが選択されていません。"
+      },
+      "recentMatches": {
+        "title": "最近の対戦",
+        "empty": "まだ対戦がありません。"
+      },
       "checklist": {
         "fighters": {
           "title": "使用キャラクターを設定",

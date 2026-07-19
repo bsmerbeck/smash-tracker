@@ -1636,6 +1636,15 @@
       },
       "winRateEmpty": "—",
       "fightersTitle": "Fighters",
+      "fightersCard": {
+        "primary": "Primary",
+        "secondary": "Secondary",
+        "empty": "No fighters selected yet."
+      },
+      "recentMatches": {
+        "title": "Recent matches",
+        "empty": "No matches yet."
+      },
       "checklist": {
         "fighters": {
           "title": "Set fighters",

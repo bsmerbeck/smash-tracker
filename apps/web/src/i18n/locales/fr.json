@@ -1636,6 +1636,15 @@
       },
       "winRateEmpty": "—",
       "fightersTitle": "Personnages",
+      "fightersCard": {
+        "primary": "Principal",
+        "secondary": "Secondaire",
+        "empty": "Aucun combattant sélectionné pour le moment."
+      },
+      "recentMatches": {
+        "title": "Matchs récents",
+        "empty": "Aucun match pour le moment."
+      },
       "checklist": {
         "fighters": {
           "title": "Définir les personnages",

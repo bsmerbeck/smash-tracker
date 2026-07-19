@@ -154,6 +154,89 @@ describe('ClientOverviewPage', () => {
     );
   });
 
+  // Phase 11 fix round 3 (FB-7): overview enrichment — a Fighters card with
+  // sprites and a recent-matches mini-list.
+  describe('FB-7 overview enrichment', () => {
+    it('shows an empty state for the Fighters card and recent matches when the client has neither', async () => {
+      matchesList.mockResolvedValue([]);
+      getFighters.mockResolvedValue({ primary: [], secondary: [] });
+
+      renderOverview();
+
+      expect(await screen.findByText('No fighters selected yet.')).toBeInTheDocument();
+      expect(screen.getByText('No matches yet.')).toBeInTheDocument();
+    });
+
+    it("renders the client's primary/secondary fighter sprites", async () => {
+      matchesList.mockResolvedValue([]);
+      getFighters.mockResolvedValue({ primary: [1], secondary: [10] });
+
+      renderOverview();
+
+      expect(await screen.findByText('Primary')).toBeInTheDocument();
+      expect(screen.getByText('Secondary')).toBeInTheDocument();
+      expect(screen.getByText('Mario')).toBeInTheDocument();
+      expect(screen.getByText('Luigi')).toBeInTheDocument();
+    });
+
+    it('renders the last 5 matches with date, opponent tag, characters, and a W/L chip', async () => {
+      getFighters.mockResolvedValue({ primary: [1], secondary: [] });
+      matchesList.mockResolvedValue([
+        makeMatch({
+          id: 'win-match',
+          fighter_id: 1,
+          opponent_id: 10,
+          opponent: 'rival',
+          win: true,
+        }),
+        makeMatch({
+          id: 'loss-match',
+          fighter_id: 1,
+          opponent_id: 10,
+          opponent: 'other',
+          win: false,
+          time: Date.now() - 1000,
+        }),
+      ]);
+
+      renderOverview();
+
+      expect(await screen.findByText('rival')).toBeInTheDocument();
+      expect(screen.getByText('Recent matches')).toBeInTheDocument();
+      expect(screen.getByText('other')).toBeInTheDocument();
+      expect(screen.getByText('Win')).toBeInTheDocument();
+      expect(screen.getByText('Loss')).toBeInTheDocument();
+    });
+
+    it('caps the recent-matches list at the 5 most recent by date', async () => {
+      getFighters.mockResolvedValue({ primary: [1], secondary: [] });
+      const now = Date.now();
+      matchesList.mockResolvedValue(
+        Array.from({ length: 8 }, (_, i) =>
+          makeMatch({
+            id: `m${i}`,
+            fighter_id: 1,
+            opponent_id: 10,
+            opponent: `opponent-${i}`,
+            win: true,
+            time: now - i * 1000,
+          }),
+        ),
+      );
+
+      renderOverview();
+
+      await screen.findByText('opponent-0');
+      // The 5 most recent (i=0..4); the older 3 (i=5..7) must be excluded.
+      for (let i = 0; i < 5; i++) {
+        expect(screen.getByText(`opponent-${i}`)).toBeInTheDocument();
+      }
+      for (let i = 5; i < 8; i++) {
+        expect(screen.queryByText(`opponent-${i}`)).not.toBeInTheDocument();
+      }
+    });
+  });
+
   it('keeps showing the checklist (not quick actions) while any step is incomplete', async () => {
     matchesList.mockResolvedValue([
       makeMatch({ id: 'm1', win: true }),
