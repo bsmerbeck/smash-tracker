@@ -138,9 +138,10 @@ describe('SidebarContent coaching-hub rail (walkthrough fix round 2, D-01/D1)', 
 });
 
 /**
- * Phase 11 fix round 2 (D-01/D1, D-03/D3): the client-workspace rail at
- * /coach/:clientId/* — back link, accent-tinted client header card, then
- * exactly four items (Overview/Fighters/Matches & VODs/Analytics).
+ * Phase 11 fix round 2 (D-01/D1, D-03/D3), fix round 3 (FB-5): the
+ * client-workspace rail at /coach/:clientId/* — back link, accent-tinted
+ * client header card, then exactly five items (Overview/Fighters/Matches/
+ * VODs/Analytics — fix round 3 split the old "Matches & VODs" item in two).
  */
 describe('SidebarContent client-workspace rail (walkthrough fix round 2, D-01/D1)', () => {
   beforeEach(() => {
@@ -157,7 +158,7 @@ describe('SidebarContent client-workspace rail (walkthrough fix round 2, D-01/D1
     expect(screen.queryByRole('link', { name: /Choose Primary/ })).not.toBeInTheDocument();
   });
 
-  it('renders the All Clients back link, the accent client header card, and exactly four workspace items', async () => {
+  it('renders the All Clients back link, the accent client header card, and exactly five workspace items', async () => {
     renderWithProviders(<SidebarContent />, '/coach/tetra/overview');
 
     const backLink = screen.getByRole('link', { name: /All Clients/ });
@@ -174,10 +175,11 @@ describe('SidebarContent client-workspace rail (walkthrough fix round 2, D-01/D1
       'href',
       '/coach/tetra/fighters',
     );
-    expect(screen.getByRole('link', { name: 'Matches & VODs' })).toHaveAttribute(
+    expect(screen.getByRole('link', { name: 'Matches' })).toHaveAttribute(
       'href',
-      '/coach/tetra/vods',
+      '/coach/tetra/match-data',
     );
+    expect(screen.getByRole('link', { name: 'VODs' })).toHaveAttribute('href', '/coach/tetra/vods');
     expect(screen.getByRole('link', { name: 'Analytics' })).toHaveAttribute(
       'href',
       '/coach/tetra/dashboard',

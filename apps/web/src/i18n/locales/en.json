@@ -1539,7 +1539,8 @@
       "managedClient": "Managed client",
       "overview": "Overview",
       "fighters": "Fighters",
-      "matchesAndVods": "Matches & VODs",
+      "matches": "Matches",
+      "vods": "VODs",
       "analytics": "Analytics"
     },
     "hub": {

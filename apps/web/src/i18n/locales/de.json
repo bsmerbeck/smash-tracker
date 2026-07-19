@@ -1539,7 +1539,8 @@
       "managedClient": "Verwalteter Client",
       "overview": "Übersicht",
       "fighters": "Kämpfer",
-      "matchesAndVods": "Matches & VODs",
+      "matches": "Matches",
+      "vods": "VODs",
       "analytics": "Analysen"
     },
     "hub": {

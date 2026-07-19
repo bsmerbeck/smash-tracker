@@ -1539,7 +1539,8 @@
       "managedClient": "管理中のクライアント",
       "overview": "概要",
       "fighters": "ファイター",
-      "matchesAndVods": "対戦とVOD",
+      "matches": "対戦",
+      "vods": "VOD",
       "analytics": "分析"
     },
     "hub": {

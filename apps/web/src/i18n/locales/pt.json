@@ -1539,7 +1539,8 @@
       "managedClient": "Cliente gerenciado",
       "overview": "Visão geral",
       "fighters": "Lutadores",
-      "matchesAndVods": "Partidas e VODs",
+      "matches": "Partidas",
+      "vods": "VODs",
       "analytics": "Análises"
     },
     "hub": {

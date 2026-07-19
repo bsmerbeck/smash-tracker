@@ -15,23 +15,32 @@ function initialFromEmail(email: string | null | undefined): string {
 }
 
 interface WorkspaceNavItem {
-  key: 'overview' | 'fighters' | 'matchesAndVods' | 'analytics';
+  key: 'overview' | 'fighters' | 'matches' | 'vods' | 'analytics';
   href: string;
   isActive: (pathname: string) => boolean;
 }
 
 /**
- * Phase 11 fix round 2 (D-03/D3): the exactly-four client-workspace items.
- * Every item but Analytics matches its own path 1:1; Analytics also covers
- * the client-scoped fighter-analysis/matchups sub-routes, so its active
- * state is computed here rather than relying on `NavLink`'s own `to` match.
+ * Phase 11 fix round 3 (FB-5): the exactly-five client-workspace items —
+ * fix round 2's four (D-03/D3) with "Matches & VODs" split into standalone
+ * Matches (`match-data`, the match editor/list) and VODs (`vods`) items, so
+ * the editor has a first-class nav entry instead of being reachable only
+ * via the Overview checklist's "Add matches" button. Every item but
+ * Analytics matches its own path 1:1; Analytics also covers the
+ * client-scoped fighter-analysis/matchups sub-routes, so its active state
+ * is computed here rather than relying on `NavLink`'s own `to` match.
  */
 function buildWorkspaceItems(clientId: string): WorkspaceNavItem[] {
   const base = `/coach/${clientId}`;
   return [
     { key: 'overview', href: `${base}/overview`, isActive: (p) => p === `${base}/overview` },
     { key: 'fighters', href: `${base}/fighters`, isActive: (p) => p === `${base}/fighters` },
-    { key: 'matchesAndVods', href: `${base}/vods`, isActive: (p) => p === `${base}/vods` },
+    {
+      key: 'matches',
+      href: `${base}/match-data`,
+      isActive: (p) => p === `${base}/match-data`,
+    },
+    { key: 'vods', href: `${base}/vods`, isActive: (p) => p === `${base}/vods` },
     {
       key: 'analytics',
       href: `${base}/dashboard`,
