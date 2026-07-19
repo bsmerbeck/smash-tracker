@@ -48,6 +48,14 @@ export const CANONICAL_TENANT_TREES = [
   'stageFavorites',
   'primaryFighters',
   'secondaryFighters',
+  // Phase 12 Plan 03 (Coach Reviews & Delivery): the review-authoring trees
+  // `apps/api/src/coaching/reviews.ts` reads/writes. `reviewDeliveries` is
+  // deliberately NOT here yet — it's 12-04's tree to add alongside its own
+  // delivery routes (see 12-02-SUMMARY.md's deferral note).
+  'reviewDrafts',
+  'reviewVersions',
+  'reviewVersionIndex',
+  'reviewStatus',
 ] as const;
 
 /**
@@ -61,8 +69,17 @@ export function normalizeClientLabel(label: string): string {
   return label.trim().replace(/\s+/g, ' ').toLowerCase();
 }
 
-/** Throws when the caller has no `clientMembers/{tenantId}/{coachUid}` record. */
-async function requireMembership(
+/**
+ * Throws when the caller has no `clientMembers/{tenantId}/{coachUid}`
+ * record. Exported (Phase 12, Plan 03) so `apps/api/src/routes/coachingReviews.ts`
+ * can gate its own `/api/coaching/clients/:clientId/reviews/*` routes the
+ * SAME way this module's own archive/delete/export routes already do —
+ * direct membership check on the URL's `:clientId`, never the
+ * `X-Active-Subject` header/`resolveSubject` mechanism (that pair is for
+ * header-driven same-subject routes like `/api/matches`, not this
+ * URL-param-driven `/coaching/clients/:clientId/*` family).
+ */
+export async function requireMembership(
   database: Database,
   coachUid: string,
   tenantId: string,
