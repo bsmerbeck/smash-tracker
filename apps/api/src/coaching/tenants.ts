@@ -3,12 +3,14 @@ import type { Database } from 'firebase-admin/database';
 import {
   clientHubRowSchema,
   coachClientEntrySchema,
+  mapDeliveryStateToHubState,
   type ClientHubList,
   type ClientHubRow,
 } from '@smash-tracker/shared';
 import { buildDomainEnvelope } from '../events/envelope.js';
 import { createEvent } from '../events/ledger.js';
 import { ConflictError, ForbiddenError, RtdbService } from '../services/rtdb.js';
+import { countOpenDrafts, getMostRecentDeliveryStateForTenant } from './reviews.js';
 
 /**
  * Phase 11 (Coach Workspace Tenancy & Feature Parity, TEN-01/TEN-05/TEN-06):
@@ -48,6 +50,14 @@ export const CANONICAL_TENANT_TREES = [
   'stageFavorites',
   'primaryFighters',
   'secondaryFighters',
+  // Phase 12 Plan 03 (Coach Reviews & Delivery): the review-authoring trees
+  // `apps/api/src/coaching/reviews.ts` reads/writes. `reviewDeliveries` is
+  // deliberately NOT here yet — it's 12-04's tree to add alongside its own
+  // delivery routes (see 12-02-SUMMARY.md's deferral note).
+  'reviewDrafts',
+  'reviewVersions',
+  'reviewVersionIndex',
+  'reviewStatus',
 ] as const;
 
 /**
@@ -61,8 +71,17 @@ export function normalizeClientLabel(label: string): string {
   return label.trim().replace(/\s+/g, ' ').toLowerCase();
 }
 
-/** Throws when the caller has no `clientMembers/{tenantId}/{coachUid}` record. */
-async function requireMembership(
+/**
+ * Throws when the caller has no `clientMembers/{tenantId}/{coachUid}`
+ * record. Exported (Phase 12, Plan 03) so `apps/api/src/routes/coachingReviews.ts`
+ * can gate its own `/api/coaching/clients/:clientId/reviews/*` routes the
+ * SAME way this module's own archive/delete/export routes already do —
+ * direct membership check on the URL's `:clientId`, never the
+ * `X-Active-Subject` header/`resolveSubject` mechanism (that pair is for
+ * header-driven same-subject routes like `/api/matches`, not this
+ * URL-param-driven `/coaching/clients/:clientId/*` family).
+ */
+export async function requireMembership(
   database: Database,
   coachUid: string,
   tenantId: string,
@@ -181,9 +200,13 @@ export async function createClient(
  * Lists a coach's clients as compact, purpose-built Client Hub rows (TEN-05,
  * TEN-03: `clientHubRowSchema` structurally omits coachUid, membership
  * internals, and any client PII beyond the label). `lastActivityAt` is
- * assembled from the client's own `matches/{tenantId}` tree (max `time`);
- * `draftCount`/`deliveryState` stay at their Foundation defaults (0 / null)
- * since review authoring/delivery ship in Phase 12.
+ * assembled from the client's own `matches/{tenantId}` tree (max `time`).
+ * `draftCount`/`deliveryState` (Phase 12 Plan 03, Pitfall 5) are now real:
+ * `draftCount` from `reviews.ts`'s `countOpenDrafts` (non-archived
+ * `reviewDrafts/{tenantId}` entries) and `deliveryState` from
+ * `getMostRecentDeliveryStateForTenant` projected through the documented
+ * 6-state -> 3-value Hub mapping (`mapDeliveryStateToHubState`, plan 02) —
+ * bounded to THIS tenant's own subtree, never a full cross-tenant scan.
  *
  * Defaults to non-archived clients only (11-03's original contract,
  * preserved for every existing caller). Pass `{ includeArchived: true }`
@@ -214,7 +237,11 @@ export async function listClients(
   const rtdb = new RtdbService(database);
   return Promise.all(
     entries.map(async ({ tenantId, label, archivedAt }) => {
-      const matches = await rtdb.listMatches(tenantId);
+      const [matches, draftCount, deliveryState6] = await Promise.all([
+        rtdb.listMatches(tenantId),
+        countOpenDrafts(database, tenantId),
+        getMostRecentDeliveryStateForTenant(database, tenantId),
+      ]);
       const lastActivityAt = matches.reduce<number | null>(
         (latest, match) => (latest === null || match.time > latest ? match.time : latest),
         null,
@@ -223,8 +250,8 @@ export async function listClients(
         clientId: tenantId,
         label,
         lastActivityAt,
-        draftCount: 0,
-        deliveryState: null,
+        draftCount,
+        deliveryState: deliveryState6 === null ? null : mapDeliveryStateToHubState(deliveryState6),
         archivedAt,
       } satisfies ClientHubRow);
     }),

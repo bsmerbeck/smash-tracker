@@ -48,6 +48,61 @@ const SAME_SUBJECT_ROUTES = [
     path: `/api/coaching/clients/${TENANT_ID}/export`,
     usesSubjectHeader: false,
   },
+  // Phase 12 Plan 03 (Coach Reviews & Delivery): every coach-side review
+  // route, gated the same way as the archive/delete/export routes above —
+  // a direct membership check on the URL's `:clientId`, no header.
+  {
+    method: 'GET',
+    path: `/api/coaching/clients/${TENANT_ID}/reviews`,
+    usesSubjectHeader: false,
+  },
+  {
+    method: 'POST',
+    path: `/api/coaching/clients/${TENANT_ID}/reviews`,
+    usesSubjectHeader: false,
+  },
+  {
+    method: 'GET',
+    path: `/api/coaching/clients/${TENANT_ID}/reviews/review-1/draft`,
+    usesSubjectHeader: false,
+  },
+  {
+    method: 'PATCH',
+    path: `/api/coaching/clients/${TENANT_ID}/reviews/review-1/draft`,
+    usesSubjectHeader: false,
+    body: { expectedRevision: 0 },
+  },
+  {
+    method: 'GET',
+    path: `/api/coaching/clients/${TENANT_ID}/reviews/review-1/preview`,
+    usesSubjectHeader: false,
+  },
+  {
+    method: 'POST',
+    path: `/api/coaching/clients/${TENANT_ID}/reviews/review-1/publish`,
+    usesSubjectHeader: false,
+  },
+  {
+    method: 'POST',
+    path: `/api/coaching/clients/${TENANT_ID}/reviews/review-1/sections/summary/hide`,
+    usesSubjectHeader: false,
+  },
+  {
+    method: 'POST',
+    path: `/api/coaching/clients/${TENANT_ID}/reviews/review-1/sections/summary/show`,
+    usesSubjectHeader: false,
+  },
+  {
+    method: 'POST',
+    path: `/api/coaching/clients/${TENANT_ID}/reviews/review-1/sections`,
+    usesSubjectHeader: false,
+    body: { kind: 'general' },
+  },
+  {
+    method: 'POST',
+    path: `/api/coaching/clients/${TENANT_ID}/reviews/review-1/archive`,
+    usesSubjectHeader: false,
+  },
 ] as const;
 
 /**
@@ -67,6 +122,14 @@ const TREE_TO_ROUTE_PATH: Record<(typeof CANONICAL_TENANT_TREES)[number], string
   stageFavorites: '/api/stage-favorites',
   primaryFighters: '/api/users/me/fighters',
   secondaryFighters: '/api/users/me/fighters',
+  // Phase 12 Plan 03: reviewDrafts is written by the draft-fetch route;
+  // reviewVersions/reviewVersionIndex/reviewStatus are all written together
+  // by publish (mirrors primaryFighters/secondaryFighters both pointing at
+  // the same route above).
+  reviewDrafts: `/api/coaching/clients/${TENANT_ID}/reviews/review-1/draft`,
+  reviewVersions: `/api/coaching/clients/${TENANT_ID}/reviews/review-1/publish`,
+  reviewVersionIndex: `/api/coaching/clients/${TENANT_ID}/reviews/review-1/publish`,
+  reviewStatus: `/api/coaching/clients/${TENANT_ID}/reviews/review-1/publish`,
 };
 
 describe('CANONICAL_TENANT_TREES stays in lockstep with the harness route list', () => {
