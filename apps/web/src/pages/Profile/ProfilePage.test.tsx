@@ -41,6 +41,12 @@ vi.mock('@/lib/firebase', async () => {
 });
 
 const upsertMe = vi.fn().mockResolvedValue({ uid: 'test-uid', email: 'test@example.com' });
+const getMe = vi.fn().mockResolvedValue({
+  uid: 'test-uid',
+  email: 'test@example.com',
+  fighters: { primary: [], secondary: [] },
+  coachingModeEnabled: false,
+});
 const startggStatus = vi.fn().mockResolvedValue({ linked: false });
 const parryggStatus = vi.fn().mockResolvedValue({ linked: false });
 const getFighters = vi.fn().mockResolvedValue({ primary: [], secondary: [] });
@@ -66,6 +72,7 @@ vi.mock('@/lib/api', () => {
     api: {
       users: {
         upsertMe: (...args: unknown[]) => upsertMe(...args),
+        getMe: (...args: unknown[]) => getMe(...args),
         getFighters: (...args: unknown[]) => getFighters(...args),
       },
       startgg: { status: (...args: unknown[]) => startggStatus(...args) },
@@ -109,6 +116,12 @@ describe('ProfilePage', () => {
     resetAuthMock();
     vi.clearAllMocks();
     upsertMe.mockResolvedValue({ uid: 'test-uid', email: 'test@example.com' });
+    getMe.mockResolvedValue({
+      uid: 'test-uid',
+      email: 'test@example.com',
+      fighters: { primary: [], secondary: [] },
+      coachingModeEnabled: false,
+    });
     startggStatus.mockResolvedValue({ linked: false });
     parryggStatus.mockResolvedValue({ linked: false });
     getFighters.mockResolvedValue({ primary: [], secondary: [] });
@@ -263,6 +276,70 @@ describe('ProfilePage', () => {
       await user.click(screen.getByRole('button', { name: 'Save' }));
 
       await waitFor(() => expect(toastError).toHaveBeenCalled());
+    });
+  });
+
+  describe('coaching mode toggle (walkthrough fix FB-3)', () => {
+    beforeEach(() => {
+      setMockUser(makeMockUser({ email: 'pilot@example.com' }));
+    });
+
+    it('renders off by default and enables it on click, showing a success toast', async () => {
+      const user = userEvent.setup();
+      renderPage();
+
+      const toggle = await screen.findByRole('switch', { name: 'Enable coaching mode' });
+      expect(toggle).not.toBeChecked();
+
+      getMe.mockResolvedValue({
+        uid: 'test-uid',
+        email: 'test@example.com',
+        fighters: { primary: [], secondary: [] },
+        coachingModeEnabled: true,
+      });
+      await user.click(toggle);
+
+      await waitFor(() => expect(upsertMe).toHaveBeenCalledWith({ coachingModeEnabled: true }));
+      await waitFor(() => expect(toggle).toBeChecked());
+      expect(toastSuccess).toHaveBeenCalledWith('Coaching mode enabled.');
+    });
+
+    it('renders checked when already enabled and can be turned back off', async () => {
+      getMe.mockResolvedValue({
+        uid: 'test-uid',
+        email: 'test@example.com',
+        fighters: { primary: [], secondary: [] },
+        coachingModeEnabled: true,
+      });
+      const user = userEvent.setup();
+      renderPage();
+
+      const toggle = await screen.findByRole('switch', { name: 'Enable coaching mode' });
+      await waitFor(() => expect(toggle).toBeChecked());
+
+      getMe.mockResolvedValue({
+        uid: 'test-uid',
+        email: 'test@example.com',
+        fighters: { primary: [], secondary: [] },
+        coachingModeEnabled: false,
+      });
+      await user.click(toggle);
+
+      await waitFor(() => expect(upsertMe).toHaveBeenCalledWith({ coachingModeEnabled: false }));
+      expect(toastSuccess).toHaveBeenCalledWith('Coaching mode disabled.');
+    });
+
+    it('shows an error toast when the update fails', async () => {
+      upsertMe.mockRejectedValueOnce(new Error('network down'));
+      const user = userEvent.setup();
+      renderPage();
+
+      const toggle = await screen.findByRole('switch', { name: 'Enable coaching mode' });
+      await user.click(toggle);
+
+      await waitFor(() =>
+        expect(toastError).toHaveBeenCalledWith('Something went wrong updating coaching mode.'),
+      );
     });
   });
 

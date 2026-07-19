@@ -1363,7 +1363,12 @@
       "displayNameLabel": "表示名",
       "displayNamePlaceholder": "表示名を追加",
       "displayNameHelper": "「表示名を表示する」をオンにすると、VOD共有リンクに表示されます。",
-      "displayNameSaved": "表示名を更新しました。"
+      "displayNameSaved": "表示名を更新しました。",
+      "coachingModeLabel": "コーチングモードを有効にする",
+      "coachingModeDescription": "コーチとして他のプレイヤーの試合、VOD、分析を管理します",
+      "coachingModeEnabledToast": "コーチングモードを有効にしました。",
+      "coachingModeDisabledToast": "コーチングモードを無効にしました。",
+      "coachingModeError": "コーチングモードの更新中に問題が発生しました。"
     },
     "security": {
       "title": "セキュリティ",
@@ -1614,6 +1619,11 @@
         "title": "管理対象クライアントでは利用できません",
         "reason": "クライアントのVODレビューの共有は今後のアップデートで提供予定です — クライアントに見える形での配信はまだ利用できません。"
       }
+    },
+    "disabled": {
+      "title": "コーチングモードはオフです",
+      "body": "プロフィール → アカウントで有効にすると、コーチとして他のプレイヤーの試合、VOD、分析を管理できます。",
+      "cta": "プロフィールへ"
     }
   }
 }

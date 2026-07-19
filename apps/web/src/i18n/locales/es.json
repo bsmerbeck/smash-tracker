@@ -1362,7 +1362,12 @@
       "displayNameLabel": "Nombre visible",
       "displayNamePlaceholder": "Añade un nombre visible",
       "displayNameHelper": "Aparece en los enlaces de VOD compartidos cuando activas 'Mostrar tu nombre visible'.",
-      "displayNameSaved": "Nombre visible actualizado."
+      "displayNameSaved": "Nombre visible actualizado.",
+      "coachingModeLabel": "Activar el modo Entrenamiento",
+      "coachingModeDescription": "Gestiona los partidos, VODs y análisis de otros jugadores en modo Entrenamiento",
+      "coachingModeEnabledToast": "Modo Entrenamiento activado.",
+      "coachingModeDisabledToast": "Modo Entrenamiento desactivado.",
+      "coachingModeError": "Se produjo un error al actualizar el modo Entrenamiento."
     },
     "title": "Perfil",
     "security": {
@@ -1614,6 +1619,11 @@
         "title": "No disponible para clientes gestionados",
         "reason": "Compartir la revisión de un VOD de un cliente llegará en una futura actualización — la entrega visible para el cliente aún no está disponible."
       }
+    },
+    "disabled": {
+      "title": "El modo Entrenamiento está desactivado",
+      "body": "Actívalo en Perfil → Cuenta para gestionar los partidos, VODs y análisis de otros jugadores en modo Entrenamiento.",
+      "cta": "Ir a Perfil"
     }
   }
 }

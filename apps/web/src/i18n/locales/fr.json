@@ -1363,7 +1363,12 @@
       "displayNameLabel": "Nom d'affichage",
       "displayNamePlaceholder": "Ajoutez un nom d'affichage",
       "displayNameHelper": "Apparaît sur les liens de partage de VOD lorsque vous activez « Afficher votre nom d'affichage ».",
-      "displayNameSaved": "Nom d'affichage mis à jour."
+      "displayNameSaved": "Nom d'affichage mis à jour.",
+      "coachingModeLabel": "Activer le mode Coaching",
+      "coachingModeDescription": "Gérez les matchs, VODs et analyses d'autres joueurs en tant que coach",
+      "coachingModeEnabledToast": "Mode Coaching activé.",
+      "coachingModeDisabledToast": "Mode Coaching désactivé.",
+      "coachingModeError": "Une erreur s'est produite lors de la mise à jour du mode Coaching."
     },
     "security": {
       "title": "Sécurité",
@@ -1614,6 +1619,11 @@
         "title": "Non disponible pour les clients gérés",
         "reason": "Le partage de la revue VOD d'un client arrivera dans une future mise à jour — la diffusion visible par le client n'est pas encore disponible."
       }
+    },
+    "disabled": {
+      "title": "Le mode Coaching est désactivé",
+      "body": "Activez-le dans Profil → Compte pour gérer les matchs, VODs et analyses d'autres joueurs en tant que coach.",
+      "cta": "Aller au profil"
     }
   }
 }

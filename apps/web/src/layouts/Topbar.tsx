@@ -11,6 +11,7 @@ import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { useAuth } from '@/hooks/useAuth';
 import { useActiveSubject } from '@/hooks/useActiveSubject';
 import { useCoachingClients } from '@/hooks/useCoachingClients';
+import { useProfile } from '@/hooks/useProfile';
 import { cn } from '@/lib/utils';
 import { AnalyticsFilterControls } from '@/components/AnalyticsFilterControls';
 import { LanguageSelect } from '@/components/LanguageSelect';
@@ -83,7 +84,15 @@ export function Topbar() {
   const navigate = useNavigate();
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const { mode, clientId } = useActiveSubject();
+  const { data: profile } = useProfile();
   const isCoachingWithClient = mode === 'coaching' && clientId != null;
+  // Phase 11 walkthrough fix round 1 (FB-3): coaching mode is opt-in
+  // (Profile > Account) — hide the switch entirely for beginners who never
+  // turned it on, UNLESS they're already deep-linked under `/coach` (mode is
+  // 'coaching' for the hub AND the workspace post FB-1), so a bookmarked or
+  // shared coaching URL never lands on a topbar with no way back to
+  // Personal.
+  const showModeSwitch = profile?.coachingModeEnabled === true || mode === 'coaching';
 
   const handleSignOut = async () => {
     try {
@@ -120,7 +129,7 @@ export function Topbar() {
           grandfinals.gg
         </button>
 
-        <ModeSwitch mode={mode} className="hidden sm:flex" />
+        {showModeSwitch && <ModeSwitch mode={mode} className="hidden sm:flex" />}
         {isCoachingWithClient && <ClientChip clientId={clientId} />}
       </div>
 
@@ -141,7 +150,7 @@ export function Topbar() {
           </SheetHeader>
           <div className="flex flex-col gap-3 p-4 pb-0">
             {/* The mode switch hides in the topbar below `sm`; the mobile nav carries it instead. */}
-            <ModeSwitch mode={mode} className="sm:hidden" />
+            {showModeSwitch && <ModeSwitch mode={mode} className="sm:hidden" />}
             {isCoachingWithClient && (
               <div className="sm:hidden">
                 <ClientChip clientId={clientId} />

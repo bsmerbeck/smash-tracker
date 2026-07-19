@@ -26,10 +26,18 @@ vi.mock('@/lib/firebase', async () => {
   return mock.firebaseLibMock();
 });
 
+const getMe = vi.fn().mockResolvedValue({
+  uid: 'test-uid',
+  email: 'test@example.com',
+  fighters: { primary: [], secondary: [] },
+  coachingModeEnabled: false,
+});
+
 vi.mock('@/lib/api', () => ({
   api: {
     users: {
       upsertMe: vi.fn().mockResolvedValue({ uid: 'test-uid', email: 'test@example.com' }),
+      getMe: (...args: unknown[]) => getMe(...args),
     },
     startgg: {
       status: vi.fn().mockResolvedValue({ linked: false }),
@@ -69,6 +77,16 @@ describe('Topbar ModeSwitch', () => {
   beforeEach(() => {
     resetAuthMock();
     vi.clearAllMocks();
+    // These tests exercise the switch's active-VALUE logic (FB-1), not its
+    // visibility gating (FB-3, covered in its own describe block below) —
+    // coaching mode enabled so the switch stays visible across the
+    // hub-to-personal navigation these tests drive.
+    getMe.mockResolvedValue({
+      uid: 'test-uid',
+      email: 'test@example.com',
+      fighters: { primary: [], secondary: [] },
+      coachingModeEnabled: true,
+    });
     setMockUser(makeMockUser({ email: 'pilot@example.com' }));
   });
 
@@ -89,7 +107,11 @@ describe('Topbar ModeSwitch', () => {
     const user = userEvent.setup();
     renderTopbarAt('/coach');
 
-    const [personalButton] = await screen.findAllByRole('radio', { name: 'Personal' });
+    const personalButtons = await screen.findAllByRole('radio', { name: 'Personal' });
+    const personalButton = personalButtons[0];
+    if (!personalButton) {
+      throw new Error('expected at least one Personal radio button');
+    }
     await user.click(personalButton);
 
     // Radix ToggleGroup only fires onValueChange for an actual value change;
@@ -106,5 +128,52 @@ describe('Topbar ModeSwitch', () => {
     expect(screen.queryByRole('img', { hidden: true })).not.toBeInTheDocument();
     // No clientId on the hub route, so no client-name badge should render.
     expect(screen.queryAllByText(/tenant-/).length).toBe(0);
+  });
+});
+
+/** Phase 11 walkthrough fix round 1 (FB-3): the switch is opt-in via Profile. */
+describe('Topbar ModeSwitch visibility (walkthrough fix FB-3)', () => {
+  beforeEach(() => {
+    resetAuthMock();
+    vi.clearAllMocks();
+    setMockUser(makeMockUser({ email: 'pilot@example.com' }));
+  });
+
+  it('hides the mode switch on a personal route when coaching mode is disabled', async () => {
+    getMe.mockResolvedValue({
+      uid: 'test-uid',
+      email: 'test@example.com',
+      fighters: { primary: [], secondary: [] },
+      coachingModeEnabled: false,
+    });
+    renderTopbarAt('/dashboard');
+
+    await screen.findByText('grandfinals.gg');
+    expect(screen.queryAllByRole('radio', { name: 'Coaching' })).toHaveLength(0);
+    expect(screen.queryAllByRole('radio', { name: 'Personal' })).toHaveLength(0);
+  });
+
+  it('shows the mode switch on a personal route once coaching mode is enabled', async () => {
+    getMe.mockResolvedValue({
+      uid: 'test-uid',
+      email: 'test@example.com',
+      fighters: { primary: [], secondary: [] },
+      coachingModeEnabled: true,
+    });
+    renderTopbarAt('/dashboard');
+
+    expect((await screen.findAllByRole('radio', { name: 'Coaching' })).length).toBeGreaterThan(0);
+  });
+
+  it('still shows the mode switch under /coach even when coaching mode is disabled (deep-link)', async () => {
+    getMe.mockResolvedValue({
+      uid: 'test-uid',
+      email: 'test@example.com',
+      fighters: { primary: [], secondary: [] },
+      coachingModeEnabled: false,
+    });
+    renderTopbarAt('/coach');
+
+    expect((await screen.findAllByRole('radio', { name: 'Coaching' })).length).toBeGreaterThan(0);
   });
 });
