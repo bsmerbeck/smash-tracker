@@ -10,6 +10,7 @@ import { useStageFavorites, useToggleStageFavorite } from '@/hooks/useStageFavor
 import { useSubjectPath } from '@/hooks/useSubjectPath';
 import { getFighterById } from '@/data/sprites';
 import { FilteredEmptyNotice } from '@/components/FilteredEmptyNotice';
+import { AddMatchForm } from '@/pages/Dashboard/components/AddMatchForm';
 import { MatchTable } from './components/MatchTable';
 import { RosterUsage } from './components/RosterUsage';
 import { StageBreakdown } from './components/StageBreakdown';
@@ -57,9 +58,12 @@ export function MatchDataPage() {
     return (
       <div className="flex flex-col items-center gap-2 py-16 text-center">
         <h2 className="text-xl font-semibold tracking-tight">{t('matchData.noMatches')}</h2>
-        <Button asChild className="mt-2">
-          <Link to={subjectPath('/dashboard')}>{t('common.goToDashboard')}</Link>
-        </Button>
+        <div className="mt-2 flex flex-wrap justify-center gap-2">
+          <AddMatchForm fighterSprites={fighterSprites} fighter={fighterSprites[0]} />
+          <Button asChild variant="outline">
+            <Link to={subjectPath('/dashboard')}>{t('common.goToDashboard')}</Link>
+          </Button>
+        </div>
       </div>
     );
   }
@@ -69,8 +73,9 @@ export function MatchDataPage() {
       {filterActive && matches.length === 0 && <FilteredEmptyNotice />}
 
       <Card>
-        <CardHeader>
+        <CardHeader className="flex flex-row items-center justify-between">
           <CardTitle>{t('matchData.title')}</CardTitle>
+          <AddMatchForm fighterSprites={fighterSprites} fighter={fighterSprites[0]} />
         </CardHeader>
         <CardContent>
           <MatchTable matches={matches} fighterSprites={fighterSprites} />
