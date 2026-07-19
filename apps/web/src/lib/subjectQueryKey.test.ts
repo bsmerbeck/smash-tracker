@@ -31,4 +31,9 @@ describe('setActiveSubject / getActiveSubjectHeader', () => {
     setActiveSubject({ mode: 'personal', clientId: null });
     expect(getActiveSubjectHeader()).toBe('personal');
   });
+
+  it('walkthrough fix FB-1: stays personal at the /coach hub (mode coaching, no clientId)', () => {
+    setActiveSubject({ mode: 'coaching', clientId: null });
+    expect(getActiveSubjectHeader()).toBe('personal');
+  });
 });

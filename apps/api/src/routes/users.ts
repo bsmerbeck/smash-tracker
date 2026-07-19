@@ -67,7 +67,16 @@ const usersRoutes: FastifyPluginAsyncZod = async (app) => {
         // token lookup or round-trip through RTDB. Charset validation happens
         // in `upsertUser` (non-conforming values are silently dropped, never
         // an error — provisioning must not fail on a bad referral).
-        body: z.object({ referredByShareId: z.string().max(128).optional() }).nullish(),
+        //
+        // Phase 11 walkthrough fix round 1 (FB-3): `coachingModeEnabled` is
+        // the Profile > Account toggle — optional so every existing
+        // provisioning caller (which never sends it) is untouched.
+        body: z
+          .object({
+            referredByShareId: z.string().max(128).optional(),
+            coachingModeEnabled: z.boolean().optional(),
+          })
+          .nullish(),
         response: {
           200: z.object({ uid: z.string(), email: z.string().email() }),
         },
@@ -86,6 +95,7 @@ const usersRoutes: FastifyPluginAsyncZod = async (app) => {
         // Wire name is `referredByShareId` for client back-compat, but the
         // VALUE is the share-page bearer token — upsertUser resolves it.
         referralToken: request.body?.referredByShareId,
+        coachingModeEnabled: request.body?.coachingModeEnabled,
       });
 
       if (isFirstProvision) {
@@ -132,6 +142,7 @@ const usersRoutes: FastifyPluginAsyncZod = async (app) => {
         uid: request.uid,
         email: user.email,
         fighters,
+        coachingModeEnabled: user.coachingModeEnabled ?? false,
       };
     },
   );

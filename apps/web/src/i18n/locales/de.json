@@ -1363,7 +1363,12 @@
       "displayNameLabel": "Anzeigename",
       "displayNamePlaceholder": "Anzeigenamen hinzufügen",
       "displayNameHelper": "Erscheint auf geteilten VOD-Links, wenn du „Deinen Anzeigenamen zeigen“ aktivierst.",
-      "displayNameSaved": "Anzeigename aktualisiert."
+      "displayNameSaved": "Anzeigename aktualisiert.",
+      "coachingModeLabel": "Coaching-Modus aktivieren",
+      "coachingModeDescription": "Verwalte die Matches, VODs und Analysen anderer Spieler als Coach",
+      "coachingModeEnabledToast": "Coaching-Modus aktiviert.",
+      "coachingModeDisabledToast": "Coaching-Modus deaktiviert.",
+      "coachingModeError": "Beim Aktualisieren des Coaching-Modus ist ein Fehler aufgetreten."
     },
     "security": {
       "title": "Sicherheit",
@@ -1614,6 +1619,11 @@
         "title": "Für verwaltete Kunden nicht verfügbar",
         "reason": "Das Teilen der VOD-Auswertung eines Kunden kommt in einem zukünftigen Update — die für den Kunden sichtbare Zustellung ist noch nicht verfügbar."
       }
+    },
+    "disabled": {
+      "title": "Der Coaching-Modus ist deaktiviert",
+      "body": "Aktiviere ihn unter Profil → Konto, um die Matches, VODs und Analysen anderer Spieler als Coach zu verwalten.",
+      "cta": "Zum Profil"
     }
   }
 }

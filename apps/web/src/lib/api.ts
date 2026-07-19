@@ -261,8 +261,13 @@ export const api = {
      * (write-once/first-touch), so passing one on a returning user's sign-in
      * is harmless. Omit the argument entirely to preserve the exact bodyless
      * request every pre-Phase-7 caller sends.
+     *
+     * Phase 11 walkthrough fix round 1 (FB-3): also accepts
+     * `coachingModeEnabled` — the Profile > Account toggle. The response
+     * stays `{ uid, email }`; callers that changed the toggle should
+     * invalidate/refetch `getMe()` to observe the new value.
      */
-    upsertMe: (input?: { referredByShareId?: string }) =>
+    upsertMe: (input?: { referredByShareId?: string; coachingModeEnabled?: boolean }) =>
       apiRequestParsed('/api/users/me', userProfileSchema.pick({ uid: true, email: true }), {
         method: 'PUT',
         body: input,

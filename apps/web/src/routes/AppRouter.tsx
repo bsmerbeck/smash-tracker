@@ -3,6 +3,7 @@ import { BrowserRouter, Navigate, Route, Routes } from 'react-router';
 import { useTranslation } from 'react-i18next';
 import { HomePage } from '@/pages/Home/HomePage';
 import { UnavailableInCoaching } from '@/pages/Coaching/UnavailableInCoaching';
+import { CoachingModeGate } from '@/pages/Coaching/CoachingModeGate';
 import { ActiveSubjectSync } from './ActiveSubjectSync';
 import { ProtectedRoute } from './ProtectedRoute';
 import { RouteAnalytics } from './RouteAnalytics';
@@ -280,12 +281,17 @@ export function AppRouter() {
             }
           />
           {/* Phase 11 (Coach Workspace Tenancy & Feature Parity, TEN-07): the
-              Client Hub landing shell. */}
+              Client Hub landing shell. Walkthrough fix round 1 (FB-3):
+              coaching mode is opt-in — CoachingModeGate renders the
+              friendly "enable it in Profile" state instead of the hub
+              until the user turns the toggle on. */}
           <Route
             path="/coach"
             element={
               <ProtectedRoute>
-                <ClientHubPage />
+                <CoachingModeGate>
+                  <ClientHubPage />
+                </CoachingModeGate>
               </ProtectedRoute>
             }
           />
@@ -299,12 +305,17 @@ export function AppRouter() {
               GSP/integrations/reports are NOT feature-parity capabilities
               (CONTEXT.md) — visiting them under a client workspace renders
               the honest PAR-04 unavailable state, never the coach's own
-              personal GSP/integrations/reports data. */}
+              personal GSP/integrations/reports data. Walkthrough fix round 1
+              (FB-3): CoachingModeGate wraps the whole workspace too, so a
+              direct `/coach/:clientId/...` deep-link with coaching mode off
+              gets the same friendly gate instead of a client's data. */}
           <Route
             path="/coach/:clientId"
             element={
               <ProtectedRoute>
-                <ClientWorkspaceLayout />
+                <CoachingModeGate>
+                  <ClientWorkspaceLayout />
+                </CoachingModeGate>
               </ProtectedRoute>
             }
           >

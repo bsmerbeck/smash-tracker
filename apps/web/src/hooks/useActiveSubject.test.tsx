@@ -34,8 +34,8 @@ describe('useActiveSubject', () => {
     expect(screen.getByText('mode: coaching, clientId: tenant-123')).toBeInTheDocument();
   });
 
-  it('resolves personal mode on the /coach hub route with no clientId param', () => {
+  it('walkthrough fix FB-1: resolves coaching mode (no clientId) on the /coach hub route', () => {
     renderAt('/coach');
-    expect(screen.getByText('mode: personal, clientId: null')).toBeInTheDocument();
+    expect(screen.getByText('mode: coaching, clientId: null')).toBeInTheDocument();
   });
 });

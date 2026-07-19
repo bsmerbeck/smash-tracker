@@ -308,6 +308,86 @@ describe('GET /api/users/me', () => {
       uid: TEST_UID,
       email: TEST_EMAIL,
       fighters: { primary: [1, 2], secondary: [3] },
+      coachingModeEnabled: false,
+    });
+  });
+
+  // Phase 11 walkthrough fix round 1 (FB-3): coaching mode is an explicit
+  // opt-in — defaults false, settable/clearable via PUT, never overwritten
+  // by an unrelated provisioning call.
+  describe('coachingModeEnabled', () => {
+    it('defaults to false when never set', async () => {
+      const { app } = buildTestApp();
+      await app.inject({ method: 'PUT', url: '/api/users/me', headers: authHeader() });
+
+      const response = await app.inject({
+        method: 'GET',
+        url: '/api/users/me',
+        headers: authHeader(),
+      });
+
+      expect(response.json()).toMatchObject({ coachingModeEnabled: false });
+    });
+
+    it('PUT /api/users/me sets coachingModeEnabled to true', async () => {
+      const { app, database } = buildTestApp();
+
+      const response = await app.inject({
+        method: 'PUT',
+        url: '/api/users/me',
+        headers: authHeader(),
+        payload: { coachingModeEnabled: true },
+      });
+
+      expect(response.statusCode).toBe(200);
+      expect(database.dump()).toMatchObject({
+        users: { [TEST_UID]: { email: TEST_EMAIL, coachingModeEnabled: true } },
+      });
+
+      const getResponse = await app.inject({
+        method: 'GET',
+        url: '/api/users/me',
+        headers: authHeader(),
+      });
+      expect(getResponse.json()).toMatchObject({ coachingModeEnabled: true });
+    });
+
+    it('PUT /api/users/me can turn coachingModeEnabled back off', async () => {
+      const { app, database } = buildTestApp();
+
+      await app.inject({
+        method: 'PUT',
+        url: '/api/users/me',
+        headers: authHeader(),
+        payload: { coachingModeEnabled: true },
+      });
+      await app.inject({
+        method: 'PUT',
+        url: '/api/users/me',
+        headers: authHeader(),
+        payload: { coachingModeEnabled: false },
+      });
+
+      expect(database.dump()).toMatchObject({
+        users: { [TEST_UID]: { email: TEST_EMAIL, coachingModeEnabled: false } },
+      });
+    });
+
+    it('a provisioning call that omits coachingModeEnabled leaves a previously-set value untouched', async () => {
+      const { app, database } = buildTestApp();
+
+      await app.inject({
+        method: 'PUT',
+        url: '/api/users/me',
+        headers: authHeader(),
+        payload: { coachingModeEnabled: true },
+      });
+      // Bodyless re-provision (token refresh) — must not reset the toggle.
+      await app.inject({ method: 'PUT', url: '/api/users/me', headers: authHeader() });
+
+      expect(database.dump()).toMatchObject({
+        users: { [TEST_UID]: { email: TEST_EMAIL, coachingModeEnabled: true } },
+      });
     });
   });
 });

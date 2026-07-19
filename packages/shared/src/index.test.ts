@@ -53,6 +53,18 @@ describe('userSchema', () => {
   it('accepts a record with no referredByShareId (backward compatible)', () => {
     expect(userSchema.parse({ email: 'a@example.com' })).toEqual({ email: 'a@example.com' });
   });
+
+  // Phase 11 walkthrough fix round 1 (FB-3).
+  it('accepts a record with coachingModeEnabled true', () => {
+    expect(userSchema.parse({ email: 'a@example.com', coachingModeEnabled: true })).toEqual({
+      email: 'a@example.com',
+      coachingModeEnabled: true,
+    });
+  });
+
+  it('accepts a record with no coachingModeEnabled (absent means disabled)', () => {
+    expect(userSchema.parse({ email: 'a@example.com' })).toEqual({ email: 'a@example.com' });
+  });
 });
 
 describe('userProfileSchema', () => {
@@ -61,8 +73,20 @@ describe('userProfileSchema', () => {
       uid: 'abc123',
       email: 'a@example.com',
       fighters: { primary: [1, 2], secondary: [] },
+      coachingModeEnabled: false,
     };
     expect(userProfileSchema.parse(profile)).toEqual(profile);
+  });
+
+  // Phase 11 walkthrough fix round 1 (FB-3): the API always defaults this
+  // to a real boolean, so the response schema requires it (never nullish).
+  it('rejects a profile missing coachingModeEnabled', () => {
+    const profile = {
+      uid: 'abc123',
+      email: 'a@example.com',
+      fighters: { primary: [1, 2], secondary: [] },
+    };
+    expect(() => userProfileSchema.parse(profile)).toThrow();
   });
 });
 

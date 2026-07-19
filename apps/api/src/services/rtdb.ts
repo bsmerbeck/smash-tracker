@@ -276,13 +276,25 @@ export class RtdbService {
    * exists, so two concurrent provisioning calls (two tabs finishing
    * sign-in, or sign-in racing a token-refresh re-provision) can never
    * overwrite — or erase — each other's attribution. Every write here is
-   * scoped to the exact child it owns (`email`, `referredByShareId`); this
-   * method never `set()`s the whole `users/{uid}` node, so fields written
-   * by other features survive re-provisioning. Never writes `null`
-   * (CONCERNS.md).
+   * scoped to the exact child it owns (`email`, `referredByShareId`,
+   * `coachingModeEnabled`); this method never `set()`s the whole
+   * `users/{uid}` node, so fields written by other features survive
+   * re-provisioning. Never writes `null` (CONCERNS.md).
+   *
+   * Phase 11 walkthrough fix round 1 (FB-3): `coachingModeEnabled` is only
+   * written when explicitly present in `input` (conditional-spread), so
+   * every existing bodyless/referral-only caller (sign-in provisioning)
+   * leaves a previously-set toggle untouched.
    */
-  async upsertUser(uid: string, input: { email: string; referralToken?: string }): Promise<void> {
+  async upsertUser(
+    uid: string,
+    input: { email: string; referralToken?: string; coachingModeEnabled?: boolean },
+  ): Promise<void> {
     await this.database.ref(`users/${uid}/email`).set(input.email);
+
+    if (input.coachingModeEnabled !== undefined) {
+      await this.database.ref(`users/${uid}/coachingModeEnabled`).set(input.coachingModeEnabled);
+    }
 
     if (!input.referralToken) {
       return;

@@ -7,7 +7,9 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Switch } from '@/components/ui/switch';
 import { useAuth } from '@/hooks/useAuth';
+import { useProfile, useUpdateCoachingModeEnabled } from '@/hooks/useProfile';
 import { getAuthErrorMessage } from '@/lib/firebaseErrors';
 import { describeSignInMethods, formatMemberSince } from '../accountInfo';
 
@@ -69,8 +71,51 @@ export function AccountCard({
           <dd className="font-medium">{signInMethods}</dd>
         </dl>
         <DisplayNameForm user={user} />
+        <CoachingModeToggle />
       </CardContent>
     </Card>
+  );
+}
+
+/**
+ * Phase 11 walkthrough fix round 1 (FB-3): coaching mode is opt-in. Off by
+ * default (`useProfile()`'s `coachingModeEnabled` defaults `false`
+ * server-side), so beginners never see the Topbar's Personal/Coaching
+ * switch or the `/coach/*` routes until they explicitly turn this on here.
+ */
+function CoachingModeToggle() {
+  const { t } = useTranslation();
+  const { data: profile } = useProfile();
+  const update = useUpdateCoachingModeEnabled();
+  const enabled = profile?.coachingModeEnabled ?? false;
+
+  function handleCheckedChange(next: boolean) {
+    update.mutate(next, {
+      onSuccess: () =>
+        toast.success(
+          next
+            ? t('profile.account.coachingModeEnabledToast')
+            : t('profile.account.coachingModeDisabledToast'),
+        ),
+      onError: () => toast.error(t('profile.account.coachingModeError')),
+    });
+  }
+
+  return (
+    <div className="flex items-center justify-between gap-4 rounded-md border p-3">
+      <div className="flex flex-col gap-0.5">
+        <Label htmlFor="profile-coaching-mode">{t('profile.account.coachingModeLabel')}</Label>
+        <p className="text-xs text-muted-foreground">
+          {t('profile.account.coachingModeDescription')}
+        </p>
+      </div>
+      <Switch
+        id="profile-coaching-mode"
+        checked={enabled}
+        disabled={update.isPending || profile === undefined}
+        onCheckedChange={handleCheckedChange}
+      />
+    </div>
   );
 }
 
