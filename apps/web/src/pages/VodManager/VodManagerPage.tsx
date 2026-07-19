@@ -68,7 +68,6 @@ import {
   type VodPlayerSize,
 } from './lib/vodPrefs';
 import { AddMatchForm } from '@/pages/Dashboard/components/AddMatchForm';
-import { UnavailableInCoaching } from '@/pages/Coaching/UnavailableInCoaching';
 import { VodMatchList } from './components/VodMatchList';
 import { VodPlayer } from './components/VodPlayer';
 import { TimestampList } from './components/TimestampList';
@@ -982,9 +981,11 @@ export function VodManagerPage() {
               useCreateMatch's existing matchesQueryKey invalidation runs —
               no extra invalidation wiring needed here. */}
           <AddMatchForm requireVod fighterSprites={fighterSprites} triggerSize="sm" />
-          {activeMode === 'coaching' ? (
-            <UnavailableInCoaching capability="vodShares" variant="inline" />
-          ) : (
+          {/* D-05/D5: VOD shares are a non-parity capability — the coaching
+              surface renders no button here at all (not a disabled control,
+              not an "unavailable" chip), so manual "+ Add match" reads as
+              the only path. */}
+          {activeMode !== 'coaching' && (
             <Button type="button" variant="outline" size="sm" onClick={() => setMySharesOpen(true)}>
               <Link2 className="size-4" />
               {t('vodManager.shares.mySharesButton')}

@@ -1663,24 +1663,6 @@
       "fighterAnalysis": "Kämpferanalyse",
       "matchups": "Matchups"
     },
-    "unavailable": {
-      "sync": {
-        "title": "Für verwaltete Kunden nicht verfügbar",
-        "reason": "Die start.gg- und parry.gg-Synchronisierung ist an deine eigenen verknüpften Konten gebunden und kann nicht in die Bibliothek eines Kunden synchronisiert werden. Füge dessen Matches stattdessen manuell hinzu."
-      },
-      "gsp": {
-        "title": "Für verwaltete Kunden nicht verfügbar",
-        "reason": "Die GSP-Verfolgung ist an dein eigenes Quickplay-Konto gebunden und für verwaltete Kunden nicht verfügbar."
-      },
-      "billing": {
-        "title": "Für verwaltete Kunden nicht verfügbar",
-        "reason": "KI-Scouting-Berichte und Guthaben werden deinem eigenen Konto berechnet und sind für verwaltete Kunden nicht verfügbar."
-      },
-      "vodShares": {
-        "title": "Für verwaltete Kunden nicht verfügbar",
-        "reason": "Das Teilen der VOD-Auswertung eines Kunden kommt in einem zukünftigen Update — die für den Kunden sichtbare Zustellung ist noch nicht verfügbar."
-      }
-    },
     "disabled": {
       "title": "Der Coaching-Modus ist deaktiviert",
       "body": "Aktiviere ihn unter Profil → Konto, um die Matches, VODs und Analysen anderer Spieler als Coach zu verwalten.",

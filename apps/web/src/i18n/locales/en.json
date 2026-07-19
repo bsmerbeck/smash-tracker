@@ -1663,24 +1663,6 @@
       "fighterAnalysis": "Fighter Analysis",
       "matchups": "Matchups"
     },
-    "unavailable": {
-      "sync": {
-        "title": "Not available for managed clients",
-        "reason": "start.gg and parry.gg sync are tied to your own linked accounts and can't sync into a client's library. Add their matches manually instead."
-      },
-      "gsp": {
-        "title": "Not available for managed clients",
-        "reason": "GSP tracking is tied to your own quickplay account and isn't available for managed clients."
-      },
-      "billing": {
-        "title": "Not available for managed clients",
-        "reason": "AI scouting reports and credits are billed to your own account and aren't available for managed clients."
-      },
-      "vodShares": {
-        "title": "Not available for managed clients",
-        "reason": "Sharing a client's VOD review is coming in a future update — client-visible delivery isn't available yet."
-      }
-    },
     "disabled": {
       "title": "Coaching mode is off",
       "body": "Enable it in Profile → Account to manage other players' matches, VODs, and analytics as a coach.",

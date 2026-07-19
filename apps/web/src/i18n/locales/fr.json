@@ -1663,24 +1663,6 @@
       "fighterAnalysis": "Analyse de personnage",
       "matchups": "Confrontations"
     },
-    "unavailable": {
-      "sync": {
-        "title": "Non disponible pour les clients gérés",
-        "reason": "La synchronisation start.gg et parry.gg est liée à vos propres comptes et ne peut pas synchroniser la bibliothèque d'un client. Ajoutez ses matchs manuellement."
-      },
-      "gsp": {
-        "title": "Non disponible pour les clients gérés",
-        "reason": "Le suivi du GSP est lié à votre propre compte quickplay et n'est pas disponible pour les clients gérés."
-      },
-      "billing": {
-        "title": "Non disponible pour les clients gérés",
-        "reason": "Les rapports IA et les crédits sont facturés sur votre propre compte et ne sont pas disponibles pour les clients gérés."
-      },
-      "vodShares": {
-        "title": "Non disponible pour les clients gérés",
-        "reason": "Le partage de la revue VOD d'un client arrivera dans une future mise à jour — la diffusion visible par le client n'est pas encore disponible."
-      }
-    },
     "disabled": {
       "title": "Le mode Coaching est désactivé",
       "body": "Activez-le dans Profil → Compte pour gérer les matchs, VODs et analyses d'autres joueurs en tant que coach.",

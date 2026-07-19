@@ -1663,24 +1663,6 @@
       "fighterAnalysis": "Análise de personagem",
       "matchups": "Confrontos"
     },
-    "unavailable": {
-      "sync": {
-        "title": "Não disponível para clientes gerenciados",
-        "reason": "A sincronização com start.gg e parry.gg está vinculada às suas próprias contas conectadas e não pode sincronizar com a biblioteca de um cliente. Adicione as partidas dele manualmente."
-      },
-      "gsp": {
-        "title": "Não disponível para clientes gerenciados",
-        "reason": "O rastreamento de GSP está vinculado à sua própria conta de quickplay e não está disponível para clientes gerenciados."
-      },
-      "billing": {
-        "title": "Não disponível para clientes gerenciados",
-        "reason": "Relatórios de IA e créditos são cobrados na sua própria conta e não estão disponíveis para clientes gerenciados."
-      },
-      "vodShares": {
-        "title": "Não disponível para clientes gerenciados",
-        "reason": "O compartilhamento da revisão de VOD de um cliente chegará em uma atualização futura — a entrega visível ao cliente ainda não está disponível."
-      }
-    },
     "disabled": {
       "title": "O modo Coaching está desativado",
       "body": "Ative-o em Perfil → Conta para gerenciar as partidas, VODs e análises de outros jogadores como treinador.",
