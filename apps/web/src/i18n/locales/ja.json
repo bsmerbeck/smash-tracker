@@ -1620,23 +1620,48 @@
         "pageOf": "{{total}}ページ中{{page}}ページ目"
       }
     },
-    "unavailable": {
-      "sync": {
-        "title": "管理対象クライアントでは利用できません",
-        "reason": "start.ggとparry.ggの同期はあなた自身の連携アカウントに紐づいており、クライアントのライブラリには同期できません。試合は手動で追加してください。"
+    "overview": {
+      "title": "概要",
+      "subtitle": "このクライアントのすべてを一目で確認でき、次にやるべきことが明確に分かります。",
+      "cards": {
+        "matches": "試合数",
+        "vods": "VOD数",
+        "winRate": "勝率"
       },
-      "gsp": {
-        "title": "管理対象クライアントでは利用できません",
-        "reason": "GSPトラッキングはあなた自身のクイックプレイアカウントに紐づいており、管理対象クライアントでは利用できません。"
-      },
-      "billing": {
-        "title": "管理対象クライアントでは利用できません",
-        "reason": "AIスカウティングレポートとクレジットはあなた自身のアカウントに課金されるため、管理対象クライアントでは利用できません。"
-      },
-      "vodShares": {
-        "title": "管理対象クライアントでは利用できません",
-        "reason": "クライアントのVODレビューの共有は今後のアップデートで提供予定です — クライアントに見える形での配信はまだ利用できません。"
+      "winRateEmpty": "—",
+      "fightersTitle": "使用キャラクター",
+      "checklist": {
+        "fighters": {
+          "title": "使用キャラクターを設定",
+          "description": "このクライアントのメイン・サブキャラクターを選んでください。分析に必要です。",
+          "editButton": "編集"
+        },
+        "matches": {
+          "title": "試合を追加",
+          "description_one": "{{count}}試合登録済み",
+          "description_other": "{{count}}試合登録済み",
+          "addButton": "試合を追加",
+          "addMoreButton": "さらに追加"
+        },
+        "vod": {
+          "title": "VODを紐付け",
+          "description": "YouTubeまたはTwitchの録画をリンクして注釈を始めましょう。",
+          "attachButton": "VODを紐付け"
+        }
       }
+    },
+    "fighters": {
+      "subtitle": "クライアントの使用キャラクター。分析はこれらに基づいて計算されます。",
+      "primaryHeading": "メイン",
+      "primaryDescription": "クライアントのメインキャラクターを選んでください。もう一度クリックすると解除されます。",
+      "secondaryHeading": "サブ",
+      "secondaryDescription": "クライアントのサブキャラクターを選んでください。もう一度クリックすると解除されます。",
+      "saveButton": "保存"
+    },
+    "analyticsNav": {
+      "dashboard": "ダッシュボード",
+      "fighterAnalysis": "キャラクター分析",
+      "matchups": "相性表"
     },
     "disabled": {
       "title": "コーチングモードはオフです",

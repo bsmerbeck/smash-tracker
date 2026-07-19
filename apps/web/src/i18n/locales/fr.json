@@ -1620,23 +1620,48 @@
         "pageOf": "Page {{page}} sur {{total}}"
       }
     },
-    "unavailable": {
-      "sync": {
-        "title": "Non disponible pour les clients gérés",
-        "reason": "La synchronisation start.gg et parry.gg est liée à vos propres comptes et ne peut pas synchroniser la bibliothèque d'un client. Ajoutez ses matchs manuellement."
+    "overview": {
+      "title": "Aperçu",
+      "subtitle": "Tout sur ce client en un coup d'œil, avec une prochaine étape claire.",
+      "cards": {
+        "matches": "Matchs",
+        "vods": "VODs",
+        "winRate": "Taux de victoire"
       },
-      "gsp": {
-        "title": "Non disponible pour les clients gérés",
-        "reason": "Le suivi du GSP est lié à votre propre compte quickplay et n'est pas disponible pour les clients gérés."
-      },
-      "billing": {
-        "title": "Non disponible pour les clients gérés",
-        "reason": "Les rapports IA et les crédits sont facturés sur votre propre compte et ne sont pas disponibles pour les clients gérés."
-      },
-      "vodShares": {
-        "title": "Non disponible pour les clients gérés",
-        "reason": "Le partage de la revue VOD d'un client arrivera dans une future mise à jour — la diffusion visible par le client n'est pas encore disponible."
+      "winRateEmpty": "—",
+      "fightersTitle": "Personnages",
+      "checklist": {
+        "fighters": {
+          "title": "Définir les personnages",
+          "description": "Choisissez les personnages principal et secondaire de ce client pour que ses statistiques puissent être calculées.",
+          "editButton": "Modifier"
+        },
+        "matches": {
+          "title": "Ajouter des matchs",
+          "description_one": "{{count}} match enregistré",
+          "description_other": "{{count}} matchs enregistrés",
+          "addButton": "Ajouter des matchs",
+          "addMoreButton": "Ajouter plus"
+        },
+        "vod": {
+          "title": "Associer un VOD",
+          "description": "Associez un enregistrement YouTube ou Twitch pour commencer à annoter.",
+          "attachButton": "Associer un VOD"
+        }
       }
+    },
+    "fighters": {
+      "subtitle": "Les personnages du client. Ses statistiques sont calculées à partir de ceux-ci.",
+      "primaryHeading": "Principal",
+      "primaryDescription": "Choisissez les personnages principaux du client. Cliquez à nouveau sur un personnage pour le retirer.",
+      "secondaryHeading": "Secondaire",
+      "secondaryDescription": "Choisissez les personnages secondaires du client. Cliquez à nouveau sur un personnage pour le retirer.",
+      "saveButton": "Enregistrer"
+    },
+    "analyticsNav": {
+      "dashboard": "Tableau de bord",
+      "fighterAnalysis": "Analyse de personnage",
+      "matchups": "Confrontations"
     },
     "disabled": {
       "title": "Le mode Coaching est désactivé",

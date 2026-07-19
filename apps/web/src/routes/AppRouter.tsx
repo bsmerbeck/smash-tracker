@@ -2,7 +2,6 @@ import { lazy, Suspense } from 'react';
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router';
 import { useTranslation } from 'react-i18next';
 import { HomePage } from '@/pages/Home/HomePage';
-import { UnavailableInCoaching } from '@/pages/Coaching/UnavailableInCoaching';
 import { CoachingModeGate } from '@/pages/Coaching/CoachingModeGate';
 import { ActiveSubjectSync } from './ActiveSubjectSync';
 import { ProtectedRoute } from './ProtectedRoute';
@@ -98,6 +97,19 @@ const ClientHubPage = lazy(() =>
 const ClientWorkspaceLayout = lazy(() =>
   import('@/pages/Coaching/ClientWorkspaceLayout').then((m) => ({
     default: m.ClientWorkspaceLayout,
+  })),
+);
+// Phase 11 fix round 2 (D-02/D2, D-03/D3): the client workspace's own pages
+// (Overview landing, Fighters, and the Analytics sub-nav grouping wrapper).
+const ClientOverviewPage = lazy(() =>
+  import('@/pages/Coaching/ClientOverviewPage').then((m) => ({ default: m.ClientOverviewPage })),
+);
+const ClientFightersPage = lazy(() =>
+  import('@/pages/Coaching/ClientFightersPage').then((m) => ({ default: m.ClientFightersPage })),
+);
+const ClientAnalyticsLayout = lazy(() =>
+  import('@/pages/Coaching/ClientAnalyticsLayout').then((m) => ({
+    default: m.ClientAnalyticsLayout,
   })),
 );
 
@@ -299,16 +311,24 @@ export function AppRouter() {
               nested children below are NOT individually wrapped, matching
               the plan's "one nested Route whose children are the existing
               pages" shape. ClientWorkspaceLayout renders <Outlet /> for
-              whichever child matched. The five data pages below are the
-              EXACT SAME lazy() components the personal routes above use —
-              imported once, reused unmodified (PAR-01/02/03), never forked.
-              GSP/integrations/reports are NOT feature-parity capabilities
-              (CONTEXT.md) — visiting them under a client workspace renders
-              the honest PAR-04 unavailable state, never the coach's own
-              personal GSP/integrations/reports data. Walkthrough fix round 1
-              (FB-3): CoachingModeGate wraps the whole workspace too, so a
-              direct `/coach/:clientId/...` deep-link with coaching mode off
-              gets the same friendly gate instead of a client's data. */}
+              whichever child matched. Phase 11 fix round 2 (D-02/D2): the
+              index redirects to `overview` (NOT `vods` — the sync-disabled
+              VOD page the owner rejected as a landing surface), `overview`
+              and `fighters` are new client-workspace-only pages, and
+              `dashboard`/`fighter-analysis`/`matchups` are grouped under
+              `ClientAnalyticsLayout` (D-03/D3: one Analytics sidebar item,
+              a small secondary sub-nav underneath). `vods`/`match-data` are
+              the EXACT SAME lazy() components the personal routes above
+              use — imported once, reused unmodified (PAR-01/02/03), never
+              forked. GSP/integrations/reports are NOT feature-parity
+              capabilities (CONTEXT.md); rather than rendering an
+              "unavailable" stub, a deep link to any of them redirects
+              cleanly (replace) to `overview` (D-05/D5) — no personal
+              GSP/integrations/reports data, and no flash of a disabled
+              page. Walkthrough fix round 1 (FB-3): CoachingModeGate wraps
+              the whole workspace too, so a direct `/coach/:clientId/...`
+              deep-link with coaching mode off gets the same friendly gate
+              instead of a client's data. */}
           <Route
             path="/coach/:clientId"
             element={
@@ -319,15 +339,19 @@ export function AppRouter() {
               </ProtectedRoute>
             }
           >
-            <Route index element={<Navigate to="vods" replace />} />
+            <Route index element={<Navigate to="overview" replace />} />
+            <Route path="overview" element={<ClientOverviewPage />} />
+            <Route path="fighters" element={<ClientFightersPage />} />
             <Route path="vods" element={<VodManagerPage />} />
-            <Route path="dashboard" element={<DashboardPage />} />
-            <Route path="fighter-analysis" element={<FighterAnalysisPage />} />
-            <Route path="matchups" element={<MatchupsPage />} />
             <Route path="match-data" element={<MatchDataPage />} />
-            <Route path="gsp" element={<UnavailableInCoaching capability="gsp" />} />
-            <Route path="integrations" element={<UnavailableInCoaching capability="sync" />} />
-            <Route path="reports" element={<UnavailableInCoaching capability="billing" />} />
+            <Route element={<ClientAnalyticsLayout />}>
+              <Route path="dashboard" element={<DashboardPage />} />
+              <Route path="fighter-analysis" element={<FighterAnalysisPage />} />
+              <Route path="matchups" element={<MatchupsPage />} />
+            </Route>
+            <Route path="gsp" element={<Navigate to="../overview" replace />} />
+            <Route path="integrations" element={<Navigate to="../overview" replace />} />
+            <Route path="reports" element={<Navigate to="../overview" replace />} />
           </Route>
           {/* Public: receives the custom token from the "login with start.gg" flow. */}
           <Route path="/auth/startgg" element={<StartggAuthPage />} />

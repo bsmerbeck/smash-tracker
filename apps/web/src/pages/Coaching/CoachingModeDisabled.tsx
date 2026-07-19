@@ -8,11 +8,10 @@ import { Button } from '@/components/ui/button';
  * renders for a signed-in user whose `coachingModeEnabled` profile flag
  * isn't `true` — coaching mode is opt-in (Profile > Account), so a direct
  * deep-link to a `/coach` URL (bookmark, shared link, browser back/forward)
- * must never dead-end; it always offers a way back into the app. Sibling to
- * `UnavailableInCoaching` (same visual language — dashed panel, `Ban` icon)
- * but distinct: that component gates individual EXCLUDED capabilities
- * inside an already-active coaching workspace, this one gates the whole
- * `/coach/*` surface before coaching mode has even been turned on.
+ * must never dead-end; it always offers a way back into the app. Shares its
+ * dashed-panel/`Ban`-icon visual language with `CoachingModeGate`'s other
+ * gated states — this one specifically gates the whole `/coach/*` surface
+ * before coaching mode has even been turned on.
  */
 export function CoachingModeDisabled() {
   const { t } = useTranslation();

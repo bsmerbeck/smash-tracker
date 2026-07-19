@@ -1620,23 +1620,48 @@
         "pageOf": "Page {{page}} of {{total}}"
       }
     },
-    "unavailable": {
-      "sync": {
-        "title": "Not available for managed clients",
-        "reason": "start.gg and parry.gg sync are tied to your own linked accounts and can't sync into a client's library. Add their matches manually instead."
+    "overview": {
+      "title": "Overview",
+      "subtitle": "Everything about this client at a glance, with one clear next step.",
+      "cards": {
+        "matches": "Matches",
+        "vods": "VODs",
+        "winRate": "Win rate"
       },
-      "gsp": {
-        "title": "Not available for managed clients",
-        "reason": "GSP tracking is tied to your own quickplay account and isn't available for managed clients."
-      },
-      "billing": {
-        "title": "Not available for managed clients",
-        "reason": "AI scouting reports and credits are billed to your own account and aren't available for managed clients."
-      },
-      "vodShares": {
-        "title": "Not available for managed clients",
-        "reason": "Sharing a client's VOD review is coming in a future update — client-visible delivery isn't available yet."
+      "winRateEmpty": "—",
+      "fightersTitle": "Fighters",
+      "checklist": {
+        "fighters": {
+          "title": "Set fighters",
+          "description": "Choose this client's primary and secondary fighters so their analytics can be computed.",
+          "editButton": "Edit"
+        },
+        "matches": {
+          "title": "Add matches",
+          "description_one": "{{count}} match logged",
+          "description_other": "{{count}} matches logged",
+          "addButton": "Add matches",
+          "addMoreButton": "Add more"
+        },
+        "vod": {
+          "title": "Attach a VOD",
+          "description": "Link a YouTube or Twitch recording to start annotating.",
+          "attachButton": "Attach VOD"
+        }
       }
+    },
+    "fighters": {
+      "subtitle": "The client's mains. Their analytics are computed against these.",
+      "primaryHeading": "Primary",
+      "primaryDescription": "Choose the client's primary fighters. Click a fighter again to remove it.",
+      "secondaryHeading": "Secondary",
+      "secondaryDescription": "Choose the client's secondary fighters. Click a fighter again to remove it.",
+      "saveButton": "Save"
+    },
+    "analyticsNav": {
+      "dashboard": "Dashboard",
+      "fighterAnalysis": "Fighter Analysis",
+      "matchups": "Matchups"
     },
     "disabled": {
       "title": "Coaching mode is off",

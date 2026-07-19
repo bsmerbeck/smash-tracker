@@ -6,13 +6,14 @@ import { setActiveSubject } from '@/lib/subjectQueryKey';
 /**
  * Phase 11 (Coach Workspace Tenancy & Feature Parity, TEN-07): the
  * `/coach/:clientId` layout route. Renders `<Outlet />` for the nested
- * pages — the SAME Dashboard/FighterAnalysis/Matchups/MatchData/VodManager
- * components the personal `/dashboard` etc. routes use, imported unchanged
- * (PAR-01/02/03) — plus the GSP/integrations/reports stub routes that render
- * `UnavailableInCoaching` (PAR-04). The Topbar (not this component) renders
- * the client-name chip/accent border: both independently derive
- * `{ mode, clientId }` from the route via `useActiveSubject()`, so no prop
- * drilling is needed here.
+ * pages — Overview/Fighters (fix round 2) plus the SAME Dashboard/
+ * FighterAnalysis/Matchups/MatchData/VodManager components the personal
+ * `/dashboard` etc. routes use, imported unchanged (PAR-01/02/03). The
+ * GSP/integrations/reports routes are non-parity capabilities (PAR-04) that
+ * redirect straight to `overview` rather than rendering any stub. The
+ * Topbar (not this component) renders the client-name chip/accent border:
+ * both independently derive `{ mode, clientId }` from the route via
+ * `useActiveSubject()`, so no prop drilling is needed here.
  *
  * `setActiveSubject` is called here so `api.ts`'s `X-Active-Subject` header
  * is correct from this layout's very first render. The GLOBAL mechanism that

@@ -19,7 +19,6 @@ import { useUpdateMatch } from '@/hooks/useUpdateMatch';
 import { useCreatePlaylist, useUpdatePlaylist } from '@/hooks/usePlaylists';
 import { useVodShares } from '@/hooks/useVodShares';
 import { buildUpdateInput } from '@/components/vod/VodNotesDialog';
-import { UnavailableInCoaching } from '@/pages/Coaching/UnavailableInCoaching';
 import { tournamentLabel } from '@/pages/MatchData/lib/matchTableFilters';
 import { ApiError } from '@/lib/api';
 import { Badge } from '@/components/ui/badge';
@@ -368,9 +367,10 @@ export function SelectedMatchMeta({
             </Badge>
           )}
           <AddToPlaylistMenu playlists={playlists} matchId={match.id} />
-          {coachingMode === 'coaching' ? (
-            <UnavailableInCoaching capability="vodShares" variant="inline" />
-          ) : (
+          {/* D-05/D5: VOD shares are a non-parity capability — the coaching
+              surface renders no Share control at all (not disabled, not an
+              "unavailable" chip). */}
+          {coachingMode !== 'coaching' && (
             <Button
               type="button"
               variant="outline"
