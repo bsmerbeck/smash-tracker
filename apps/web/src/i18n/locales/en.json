@@ -1620,6 +1620,49 @@
         "pageOf": "Page {{page}} of {{total}}"
       }
     },
+    "overview": {
+      "title": "Overview",
+      "subtitle": "Everything about this client at a glance, with one clear next step.",
+      "cards": {
+        "matches": "Matches",
+        "vods": "VODs",
+        "winRate": "Win rate"
+      },
+      "winRateEmpty": "—",
+      "fightersTitle": "Fighters",
+      "checklist": {
+        "fighters": {
+          "title": "Set fighters",
+          "description": "Choose this client's primary and secondary fighters so their analytics can be computed.",
+          "editButton": "Edit"
+        },
+        "matches": {
+          "title": "Add matches",
+          "description_one": "{{count}} match logged",
+          "description_other": "{{count}} matches logged",
+          "addButton": "Add matches",
+          "addMoreButton": "Add more"
+        },
+        "vod": {
+          "title": "Attach a VOD",
+          "description": "Link a YouTube or Twitch recording to start annotating.",
+          "attachButton": "Attach VOD"
+        }
+      }
+    },
+    "fighters": {
+      "subtitle": "The client's mains. Their analytics are computed against these.",
+      "primaryHeading": "Primary",
+      "primaryDescription": "Choose the client's primary fighters. Click a fighter again to remove it.",
+      "secondaryHeading": "Secondary",
+      "secondaryDescription": "Choose the client's secondary fighters. Click a fighter again to remove it.",
+      "saveButton": "Save"
+    },
+    "analyticsNav": {
+      "dashboard": "Dashboard",
+      "fighterAnalysis": "Fighter Analysis",
+      "matchups": "Matchups"
+    },
     "unavailable": {
       "sync": {
         "title": "Not available for managed clients",

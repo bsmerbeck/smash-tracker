@@ -1620,6 +1620,49 @@
         "pageOf": "Seite {{page}} von {{total}}"
       }
     },
+    "overview": {
+      "title": "Übersicht",
+      "subtitle": "Alles zu diesem Klienten auf einen Blick, mit einem klaren nächsten Schritt.",
+      "cards": {
+        "matches": "Matches",
+        "vods": "VODs",
+        "winRate": "Siegquote"
+      },
+      "winRateEmpty": "—",
+      "fightersTitle": "Kämpfer",
+      "checklist": {
+        "fighters": {
+          "title": "Kämpfer festlegen",
+          "description": "Wähle die Haupt- und Zweitkämpfer dieses Klienten aus, damit seine Statistiken berechnet werden können.",
+          "editButton": "Bearbeiten"
+        },
+        "matches": {
+          "title": "Matches hinzufügen",
+          "description_one": "{{count}} Match erfasst",
+          "description_other": "{{count}} Matches erfasst",
+          "addButton": "Matches hinzufügen",
+          "addMoreButton": "Mehr hinzufügen"
+        },
+        "vod": {
+          "title": "VOD verknüpfen",
+          "description": "Verknüpfe eine YouTube- oder Twitch-Aufnahme, um mit dem Annotieren zu beginnen.",
+          "attachButton": "VOD verknüpfen"
+        }
+      }
+    },
+    "fighters": {
+      "subtitle": "Die Hauptkämpfer des Klienten. Seine Statistiken werden anhand dieser berechnet.",
+      "primaryHeading": "Hauptkämpfer",
+      "primaryDescription": "Wähle die Hauptkämpfer des Klienten aus. Klicke erneut auf einen Kämpfer, um ihn zu entfernen.",
+      "secondaryHeading": "Zweitkämpfer",
+      "secondaryDescription": "Wähle die Zweitkämpfer des Klienten aus. Klicke erneut auf einen Kämpfer, um ihn zu entfernen.",
+      "saveButton": "Speichern"
+    },
+    "analyticsNav": {
+      "dashboard": "Dashboard",
+      "fighterAnalysis": "Kämpferanalyse",
+      "matchups": "Matchups"
+    },
     "unavailable": {
       "sync": {
         "title": "Für verwaltete Kunden nicht verfügbar",

@@ -1620,6 +1620,49 @@
         "pageOf": "Page {{page}} sur {{total}}"
       }
     },
+    "overview": {
+      "title": "Aperçu",
+      "subtitle": "Tout sur ce client en un coup d'œil, avec une prochaine étape claire.",
+      "cards": {
+        "matches": "Matchs",
+        "vods": "VODs",
+        "winRate": "Taux de victoire"
+      },
+      "winRateEmpty": "—",
+      "fightersTitle": "Personnages",
+      "checklist": {
+        "fighters": {
+          "title": "Définir les personnages",
+          "description": "Choisissez les personnages principal et secondaire de ce client pour que ses statistiques puissent être calculées.",
+          "editButton": "Modifier"
+        },
+        "matches": {
+          "title": "Ajouter des matchs",
+          "description_one": "{{count}} match enregistré",
+          "description_other": "{{count}} matchs enregistrés",
+          "addButton": "Ajouter des matchs",
+          "addMoreButton": "Ajouter plus"
+        },
+        "vod": {
+          "title": "Associer un VOD",
+          "description": "Associez un enregistrement YouTube ou Twitch pour commencer à annoter.",
+          "attachButton": "Associer un VOD"
+        }
+      }
+    },
+    "fighters": {
+      "subtitle": "Les personnages du client. Ses statistiques sont calculées à partir de ceux-ci.",
+      "primaryHeading": "Principal",
+      "primaryDescription": "Choisissez les personnages principaux du client. Cliquez à nouveau sur un personnage pour le retirer.",
+      "secondaryHeading": "Secondaire",
+      "secondaryDescription": "Choisissez les personnages secondaires du client. Cliquez à nouveau sur un personnage pour le retirer.",
+      "saveButton": "Enregistrer"
+    },
+    "analyticsNav": {
+      "dashboard": "Tableau de bord",
+      "fighterAnalysis": "Analyse de personnage",
+      "matchups": "Confrontations"
+    },
     "unavailable": {
       "sync": {
         "title": "Non disponible pour les clients gérés",
