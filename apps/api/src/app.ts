@@ -30,6 +30,7 @@ import billingRoutes, { type StripeLikeClient } from './routes/billing.js';
 import tournamentsRoutes from './routes/tournaments.js';
 import groupsRoutes from './routes/groups.js';
 import playlistsRoutes from './routes/playlists.js';
+import coachingTenantsRoutes from './routes/coachingTenants.js';
 import vodSharesRoutes from './routes/vodShares.js';
 import publicVodSharesRoutes from './routes/publicVodShares.js';
 import coachNotesRoutes from './routes/coachNotes.js';
@@ -303,6 +304,7 @@ export function buildApp(options: BuildAppOptions) {
       await api.register(tournamentsRoutes);
       await api.register(groupsRoutes);
       await api.register(playlistsRoutes);
+      await api.register(coachingTenantsRoutes);
       await api.register(vodSharesRoutes, {
         webBaseUrl: options.webBaseUrl ?? 'http://localhost:5173',
         ga4: options.ga4 ?? null,
