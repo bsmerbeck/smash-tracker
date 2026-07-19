@@ -1,18 +1,28 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { render, screen } from '@testing-library/react';
-import { MemoryRouter } from 'react-router';
+import { MemoryRouter, Route, Routes } from 'react-router';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { ReactElement } from 'react';
 import { AuthProvider } from '@/context/AuthContext';
 import { SidebarContent } from './SidebarContent';
 import { resetAuthMock, setMockUser, makeMockUser } from '@/test/mockAuth';
 
-function renderWithProviders(ui: ReactElement) {
+/**
+ * Phase 11 fix round 2 (D-01/D1): routes include `/coach/:clientId/*` so
+ * `useActiveSubject()` resolves a real `clientId` for the workspace-rail
+ * cases, mirroring `useMatches.test.tsx`'s two-route `Wrapper` pattern.
+ */
+function renderWithProviders(ui: ReactElement, path = '/dashboard') {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
     <QueryClientProvider client={queryClient}>
-      <MemoryRouter initialEntries={['/dashboard']}>
-        <AuthProvider>{ui}</AuthProvider>
+      <MemoryRouter initialEntries={[path]}>
+        <AuthProvider>
+          <Routes>
+            <Route path="/coach/:clientId/*" element={ui} />
+            <Route path="*" element={ui} />
+          </Routes>
+        </AuthProvider>
       </MemoryRouter>
     </QueryClientProvider>,
   );
@@ -36,10 +46,17 @@ vi.mock('@/lib/firebase', async () => {
   return mock.firebaseLibMock();
 });
 
+const listClients = vi.fn().mockResolvedValue([]);
+
 vi.mock('@/lib/api', () => ({
   api: {
     users: {
       upsertMe: vi.fn().mockResolvedValue({ uid: 'test-uid', email: 'test@example.com' }),
+    },
+    coaching: {
+      clients: {
+        list: (...args: unknown[]) => listClients(...args),
+      },
     },
   },
 }));
@@ -77,5 +94,100 @@ describe('SidebarContent', () => {
 
     expect(nav).not.toContainElement(trainingGroundsLink);
     expect(nav).not.toContainElement(donateLink);
+  });
+});
+
+/**
+ * Phase 11 fix round 2 (D-01/D1): the coaching-hub rail at /coach — no
+ * clientId — replaces the personal nav entirely with a minimal "Coaching" /
+ * "You" pair (PAR-04/TEN-05: zero personal navItems anywhere under /coach).
+ */
+describe('SidebarContent coaching-hub rail (walkthrough fix round 2, D-01/D1)', () => {
+  beforeEach(() => {
+    resetAuthMock();
+    vi.clearAllMocks();
+    setMockUser(makeMockUser({ email: 'pilot@example.com' }));
+  });
+
+  it('renders no personal navItems at /coach', () => {
+    renderWithProviders(<SidebarContent />, '/coach');
+
+    expect(screen.queryByRole('link', { name: /Fighter Analysis/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: /Choose Primary/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: /Match Data/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: /GSP/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: /Tournaments/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: /Groups/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: /AI Reports/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: /Scouting/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: /Integrations/ })).not.toBeInTheDocument();
+  });
+
+  it('renders a Coaching section with an active All Clients item and a You section with Back to Personal', () => {
+    renderWithProviders(<SidebarContent />, '/coach');
+
+    expect(screen.getByText('Coaching')).toBeInTheDocument();
+    const allClients = screen.getByRole('link', { name: 'All Clients' });
+    expect(allClients).toHaveAttribute('href', '/coach');
+    expect(allClients.className).toEqual(expect.stringContaining('coaching-accent'));
+
+    expect(screen.getByText('You')).toBeInTheDocument();
+    const backToPersonal = screen.getByRole('link', { name: /Back to Personal/ });
+    expect(backToPersonal).toHaveAttribute('href', '/dashboard');
+  });
+});
+
+/**
+ * Phase 11 fix round 2 (D-01/D1, D-03/D3): the client-workspace rail at
+ * /coach/:clientId/* — back link, accent-tinted client header card, then
+ * exactly four items (Overview/Fighters/Matches & VODs/Analytics).
+ */
+describe('SidebarContent client-workspace rail (walkthrough fix round 2, D-01/D1)', () => {
+  beforeEach(() => {
+    resetAuthMock();
+    vi.clearAllMocks();
+    listClients.mockResolvedValue([{ clientId: 'tetra', label: 'Tetra', draftCount: 0 }]);
+    setMockUser(makeMockUser({ email: 'pilot@example.com' }));
+  });
+
+  it('renders no personal navItems at /coach/:clientId/overview', () => {
+    renderWithProviders(<SidebarContent />, '/coach/tetra/overview');
+
+    expect(screen.queryByRole('link', { name: /Fighter Analysis/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: /Choose Primary/ })).not.toBeInTheDocument();
+  });
+
+  it('renders the All Clients back link, the accent client header card, and exactly four workspace items', async () => {
+    renderWithProviders(<SidebarContent />, '/coach/tetra/overview');
+
+    const backLink = screen.getByRole('link', { name: /All Clients/ });
+    expect(backLink).toHaveAttribute('href', '/coach');
+
+    expect(await screen.findByText('Tetra')).toBeInTheDocument();
+    expect(screen.getByText('Managed client')).toBeInTheDocument();
+
+    expect(screen.getByRole('link', { name: 'Overview' })).toHaveAttribute(
+      'href',
+      '/coach/tetra/overview',
+    );
+    expect(screen.getByRole('link', { name: 'Fighters' })).toHaveAttribute(
+      'href',
+      '/coach/tetra/fighters',
+    );
+    expect(screen.getByRole('link', { name: 'Matches & VODs' })).toHaveAttribute(
+      'href',
+      '/coach/tetra/vods',
+    );
+    expect(screen.getByRole('link', { name: 'Analytics' })).toHaveAttribute(
+      'href',
+      '/coach/tetra/dashboard',
+    );
+  });
+
+  it('highlights Analytics as active on the client-scoped fighter-analysis sub-route', () => {
+    renderWithProviders(<SidebarContent />, '/coach/tetra/fighter-analysis');
+
+    const analytics = screen.getByRole('link', { name: 'Analytics' });
+    expect(analytics.className).toEqual(expect.stringContaining('coaching-accent'));
   });
 });
