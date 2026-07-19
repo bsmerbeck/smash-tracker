@@ -2,6 +2,8 @@ import { lazy, Suspense } from 'react';
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router';
 import { useTranslation } from 'react-i18next';
 import { HomePage } from '@/pages/Home/HomePage';
+import { UnavailableInCoaching } from '@/pages/Coaching/UnavailableInCoaching';
+import { ActiveSubjectSync } from './ActiveSubjectSync';
 import { ProtectedRoute } from './ProtectedRoute';
 import { RouteAnalytics } from './RouteAnalytics';
 import { RouteTitles } from './RouteTitles';
@@ -88,6 +90,15 @@ const GspCalculatorPage = lazy(() =>
 const ShareViewPage = lazy(() =>
   import('@/pages/Share/ShareViewPage').then((m) => ({ default: m.ShareViewPage })),
 );
+// Phase 11 (Coach Workspace Tenancy & Feature Parity): /coach + /coach/:clientId/*.
+const ClientHubPage = lazy(() =>
+  import('@/pages/Coaching/ClientHubPage').then((m) => ({ default: m.ClientHubPage })),
+);
+const ClientWorkspaceLayout = lazy(() =>
+  import('@/pages/Coaching/ClientWorkspaceLayout').then((m) => ({
+    default: m.ClientWorkspaceLayout,
+  })),
+);
 
 /** Minimal route-transition fallback — matches HomePage's `loading → null` behavior in spirit without layout shift once content lands. */
 function RouteFallback() {
@@ -116,6 +127,10 @@ export function AppRouter() {
           effect flush), and page-level useSeo effects run before both. */}
       <RouteTitles />
       <RouteAnalytics />
+      {/* Phase 11 TEN-04/TEN-07: keeps api.ts's X-Active-Subject header in
+          sync with the route on every navigation, coaching or personal —
+          see ActiveSubjectSync's own doc comment. */}
+      <ActiveSubjectSync />
       <Suspense fallback={<RouteFallback />}>
         <Routes>
           <Route path="/" element={<HomePage />} />
@@ -264,6 +279,45 @@ export function AppRouter() {
               </ProtectedRoute>
             }
           />
+          {/* Phase 11 (Coach Workspace Tenancy & Feature Parity, TEN-07): the
+              Client Hub landing shell. */}
+          <Route
+            path="/coach"
+            element={
+              <ProtectedRoute>
+                <ClientHubPage />
+              </ProtectedRoute>
+            }
+          />
+          {/* A single ProtectedRoute gates the whole workspace layout — its
+              nested children below are NOT individually wrapped, matching
+              the plan's "one nested Route whose children are the existing
+              pages" shape. ClientWorkspaceLayout renders <Outlet /> for
+              whichever child matched. The five data pages below are the
+              EXACT SAME lazy() components the personal routes above use —
+              imported once, reused unmodified (PAR-01/02/03), never forked.
+              GSP/integrations/reports are NOT feature-parity capabilities
+              (CONTEXT.md) — visiting them under a client workspace renders
+              the honest PAR-04 unavailable state, never the coach's own
+              personal GSP/integrations/reports data. */}
+          <Route
+            path="/coach/:clientId"
+            element={
+              <ProtectedRoute>
+                <ClientWorkspaceLayout />
+              </ProtectedRoute>
+            }
+          >
+            <Route index element={<Navigate to="vods" replace />} />
+            <Route path="vods" element={<VodManagerPage />} />
+            <Route path="dashboard" element={<DashboardPage />} />
+            <Route path="fighter-analysis" element={<FighterAnalysisPage />} />
+            <Route path="matchups" element={<MatchupsPage />} />
+            <Route path="match-data" element={<MatchDataPage />} />
+            <Route path="gsp" element={<UnavailableInCoaching capability="gsp" />} />
+            <Route path="integrations" element={<UnavailableInCoaching capability="sync" />} />
+            <Route path="reports" element={<UnavailableInCoaching capability="billing" />} />
+          </Route>
           {/* Public: receives the custom token from the "login with start.gg" flow. */}
           <Route path="/auth/startgg" element={<StartggAuthPage />} />
           <Route path="/not-found" element={<NotFoundPage />} />

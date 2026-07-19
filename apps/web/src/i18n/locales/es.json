@@ -1509,5 +1509,55 @@
       "filterByContributorAria": "Filtrar notas por {{label}}",
       "contributorOwner": "Propietario"
     }
+  },
+  "coaching": {
+    "modeSwitch": {
+      "personal": "Personal",
+      "coaching": "Entrenamiento",
+      "ariaLabel": "Cambiar entre el modo Personal y el de Entrenamiento"
+    },
+    "clientChip": {
+      "ariaLabel": "Gestionando a {{label}}"
+    },
+    "hub": {
+      "title": "Centro de clientes",
+      "loading": "Cargando tus clientes...",
+      "empty": {
+        "title": "Aún no hay clientes",
+        "body": "Crea tu primer cliente para empezar a gestionar sus partidas, VODs y estadísticas por separado de las tuyas."
+      },
+      "createTrigger": "Crear tu primer cliente",
+      "createAnotherTrigger": "Añadir cliente",
+      "create": {
+        "title": "Crear un cliente",
+        "description": "Ponle una etiqueta a este cliente. Podrás añadir sus personajes y notas más adelante.",
+        "labelLabel": "Etiqueta del cliente",
+        "labelPlaceholder": "p. ej. Alex \"Falcon\" Kim",
+        "error": "Algo salió mal al crear este cliente.",
+        "pending": "Creando...",
+        "confirm": "Crear"
+      },
+      "clients_one": "{{count}} cliente",
+      "clients_other": "{{count}} clientes",
+      "openWorkspace": "Abrir espacio de trabajo"
+    },
+    "unavailable": {
+      "sync": {
+        "title": "No disponible para clientes gestionados",
+        "reason": "La sincronización con start.gg y parry.gg está vinculada a tus propias cuentas y no puede sincronizarse con la biblioteca de un cliente. Añade sus partidas manualmente."
+      },
+      "gsp": {
+        "title": "No disponible para clientes gestionados",
+        "reason": "El seguimiento de GSP está vinculado a tu propia cuenta de quickplay y no está disponible para clientes gestionados."
+      },
+      "billing": {
+        "title": "No disponible para clientes gestionados",
+        "reason": "Los informes de IA y los créditos se facturan a tu propia cuenta y no están disponibles para clientes gestionados."
+      },
+      "vodShares": {
+        "title": "No disponible para clientes gestionados",
+        "reason": "Compartir la revisión de un VOD de un cliente llegará en una futura actualización — la entrega visible para el cliente aún no está disponible."
+      }
+    }
   }
 }

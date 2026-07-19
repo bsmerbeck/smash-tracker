@@ -14,10 +14,12 @@ import { getFighterById } from '@/data/sprites';
 import { formatTimestamp } from '@/lib/vod';
 import { MATCH_PRESET_TAGS, addTagToList, removeTagFromList, tagLabel } from '@/lib/tags';
 import { addMatchToPlaylistIds } from '@/lib/playlists';
+import { useActiveSubject } from '@/hooks/useActiveSubject';
 import { useUpdateMatch } from '@/hooks/useUpdateMatch';
 import { useCreatePlaylist, useUpdatePlaylist } from '@/hooks/usePlaylists';
 import { useVodShares } from '@/hooks/useVodShares';
 import { buildUpdateInput } from '@/components/vod/VodNotesDialog';
+import { UnavailableInCoaching } from '@/pages/Coaching/UnavailableInCoaching';
 import { tournamentLabel } from '@/pages/MatchData/lib/matchTableFilters';
 import { ApiError } from '@/lib/api';
 import { Badge } from '@/components/ui/badge';
@@ -215,14 +217,26 @@ export function SelectedMatchMeta({
   const fighter = getFighterById(match.fighter_id);
   const opponentFighter = getFighterById(match.opponent_id);
 
+  // PAR-04 (T-11-14): VOD shares are hidden in Coaching mode this phase
+  // (CONTEXT.md) — `coachingMode` (deliberately distinct from this
+  // component's own `mode` view/edit state above) drives an honest
+  // unavailable state on the Share entry point below, never the coach's own
+  // personal share list.
+  const { mode: coachingMode } = useActiveSubject();
+
   // "Shared" indicator (SHARE-05) — client-side soft-orphan join against the
   // owner's full share list, mirroring `resolvePlaylistMatches`'s pattern:
   // a match "has an active share" the moment any of its issued shares is
-  // still active, independent of which one.
+  // still active, independent of which one. Skipped entirely in Coaching
+  // mode: the coach's personal share list can never reference a client's
+  // match id, so this would only ever resolve to `false` there — and
+  // Coaching mode never shows the Share affordance anyway.
   const sharesQuery = useVodShares();
-  const hasActiveShare = (sharesQuery.data ?? []).some(
-    (share) => share.matchId === match.id && share.status === 'active',
-  );
+  const hasActiveShare =
+    coachingMode !== 'coaching' &&
+    (sharesQuery.data ?? []).some(
+      (share) => share.matchId === match.id && share.status === 'active',
+    );
 
   // requireOpponent: false — mirrors EditMatchForm: Quick Logger matches are
   // stored with `opponent: ''` (anonymous quickplay randoms) and must stay
@@ -354,18 +368,22 @@ export function SelectedMatchMeta({
             </Badge>
           )}
           <AddToPlaylistMenu playlists={playlists} matchId={match.id} />
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            disabled={!match.vodUrl}
-            title={!match.vodUrl ? t('vodManager.shares.requiresVod') : undefined}
-            aria-label={t('vodManager.shares.shareButtonAria')}
-            onClick={() => setShareDialogOpen(true)}
-          >
-            <Share2 className="size-4" />
-            {t('vodManager.shares.shareButton')}
-          </Button>
+          {coachingMode === 'coaching' ? (
+            <UnavailableInCoaching capability="vodShares" variant="inline" />
+          ) : (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={!match.vodUrl}
+              title={!match.vodUrl ? t('vodManager.shares.requiresVod') : undefined}
+              aria-label={t('vodManager.shares.shareButtonAria')}
+              onClick={() => setShareDialogOpen(true)}
+            >
+              <Share2 className="size-4" />
+              {t('vodManager.shares.shareButton')}
+            </Button>
+          )}
           <Button type="button" variant="outline" size="sm" onClick={handleEdit}>
             {t('vodManager.meta.edit')}
           </Button>
@@ -425,12 +443,14 @@ export function SelectedMatchMeta({
           ariaLabel={t('tags.addAria')}
         />
       </div>
-      <ShareDialog
-        match={match}
-        open={shareDialogOpen}
-        onOpenChange={setShareDialogOpen}
-        onViewShares={onOpenMyShares}
-      />
+      {coachingMode !== 'coaching' && (
+        <ShareDialog
+          match={match}
+          open={shareDialogOpen}
+          onOpenChange={setShareDialogOpen}
+          onViewShares={onOpenMyShares}
+        />
+      )}
     </div>
   );
 }

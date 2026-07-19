@@ -1509,5 +1509,55 @@
       "filterByContributorAria": "{{label}}でメモを絞り込む",
       "contributorOwner": "オーナー"
     }
+  },
+  "coaching": {
+    "modeSwitch": {
+      "personal": "個人",
+      "coaching": "コーチング",
+      "ariaLabel": "個人モードとコーチングモードを切り替え"
+    },
+    "clientChip": {
+      "ariaLabel": "{{label}}を管理中"
+    },
+    "hub": {
+      "title": "クライアントハブ",
+      "loading": "クライアントを読み込み中...",
+      "empty": {
+        "title": "クライアントはまだいません",
+        "body": "最初のクライアントを作成すると、自分のデータとは別に試合・VOD・分析を管理できます。"
+      },
+      "createTrigger": "最初のクライアントを作成",
+      "createAnotherTrigger": "クライアントを追加",
+      "create": {
+        "title": "クライアントを作成",
+        "description": "このクライアントの表示名を入力してください。使用キャラクターやメモは後から追加できます。",
+        "labelLabel": "クライアント名",
+        "labelPlaceholder": "例: Alex「Falcon」Kim",
+        "error": "クライアントの作成中に問題が発生しました。",
+        "pending": "作成中...",
+        "confirm": "作成"
+      },
+      "clients_one": "{{count}}人のクライアント",
+      "clients_other": "{{count}}人のクライアント",
+      "openWorkspace": "ワークスペースを開く"
+    },
+    "unavailable": {
+      "sync": {
+        "title": "管理対象クライアントでは利用できません",
+        "reason": "start.ggとparry.ggの同期はあなた自身の連携アカウントに紐づいており、クライアントのライブラリには同期できません。試合は手動で追加してください。"
+      },
+      "gsp": {
+        "title": "管理対象クライアントでは利用できません",
+        "reason": "GSPトラッキングはあなた自身のクイックプレイアカウントに紐づいており、管理対象クライアントでは利用できません。"
+      },
+      "billing": {
+        "title": "管理対象クライアントでは利用できません",
+        "reason": "AIスカウティングレポートとクレジットはあなた自身のアカウントに課金されるため、管理対象クライアントでは利用できません。"
+      },
+      "vodShares": {
+        "title": "管理対象クライアントでは利用できません",
+        "reason": "クライアントのVODレビューの共有は今後のアップデートで提供予定です — クライアントに見える形での配信はまだ利用できません。"
+      }
+    }
   }
 }
