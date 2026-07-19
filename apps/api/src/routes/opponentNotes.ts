@@ -25,6 +25,7 @@ const opponentNotesRoutes: FastifyPluginAsyncZod = async (app) => {
   const rtdb = new RtdbService(app.firebase.database);
 
   app.addHook('preHandler', app.authenticate);
+  app.addHook('preHandler', app.resolveSubject);
 
   // GET /api/opponent-notes
   app.get(
@@ -37,7 +38,7 @@ const opponentNotesRoutes: FastifyPluginAsyncZod = async (app) => {
       },
     },
     async (request) => {
-      return rtdb.listOpponentNotes(request.uid);
+      return rtdb.listOpponentNotes(request.subjectId);
     },
   );
 
@@ -54,7 +55,7 @@ const opponentNotesRoutes: FastifyPluginAsyncZod = async (app) => {
       },
     },
     async (request) => {
-      return rtdb.setOpponentNote(request.uid, request.params.name, request.body);
+      return rtdb.setOpponentNote(request.subjectId, request.params.name, request.body);
     },
   );
 
@@ -71,7 +72,7 @@ const opponentNotesRoutes: FastifyPluginAsyncZod = async (app) => {
       },
     },
     async (request, reply) => {
-      await rtdb.deleteOpponentNote(request.uid, request.params.name);
+      await rtdb.deleteOpponentNote(request.subjectId, request.params.name);
       return reply.code(204).send();
     },
   );

@@ -16,6 +16,7 @@ const stageFavoritesRoutes: FastifyPluginAsyncZod = async (app) => {
   const rtdb = new RtdbService(app.firebase.database);
 
   app.addHook('preHandler', app.authenticate);
+  app.addHook('preHandler', app.resolveSubject);
 
   // GET /api/stage-favorites
   app.get(
@@ -28,7 +29,7 @@ const stageFavoritesRoutes: FastifyPluginAsyncZod = async (app) => {
       },
     },
     async (request) => {
-      return rtdb.getStageFavorites(request.uid);
+      return rtdb.getStageFavorites(request.subjectId);
     },
   );
 
@@ -44,7 +45,7 @@ const stageFavoritesRoutes: FastifyPluginAsyncZod = async (app) => {
       },
     },
     async (request) => {
-      return rtdb.setStageFavorites(request.uid, request.body);
+      return rtdb.setStageFavorites(request.subjectId, request.body);
     },
   );
 };
