@@ -1654,6 +1654,12 @@
           "description": "Link a YouTube or Twitch recording to start annotating.",
           "attachButton": "Attach VOD"
         }
+      },
+      "quickActions": {
+        "title": "Quick actions",
+        "addMatch": "Add match",
+        "attachVod": "Attach VOD",
+        "openAnalytics": "Open analytics"
       }
     },
     "fighters": {

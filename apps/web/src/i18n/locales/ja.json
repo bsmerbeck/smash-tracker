@@ -1654,6 +1654,12 @@
           "description": "YouTubeまたはTwitchの録画をリンクして注釈を始めましょう。",
           "attachButton": "VODを紐付け"
         }
+      },
+      "quickActions": {
+        "title": "クイックアクション",
+        "addMatch": "対戦を追加",
+        "attachVod": "VODを添付",
+        "openAnalytics": "分析を開く"
       }
     },
     "fighters": {

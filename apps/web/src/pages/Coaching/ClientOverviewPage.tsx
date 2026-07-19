@@ -77,6 +77,11 @@ export function ClientOverviewPage() {
   ];
 
   const firstIncompleteIndex = steps.findIndex((step) => !step.done);
+  // Phase 11 fix round 3 (FB-8): once every step is done, the tutorial
+  // checklist never shows again — it's replaced by a compact "Quick
+  // actions" row so a returning coach isn't stuck looking at three
+  // permanently-checked rows.
+  const allStepsDone = firstIncompleteIndex === -1;
 
   return (
     <div className="flex flex-col gap-6">
@@ -114,41 +119,60 @@ export function ClientOverviewPage() {
         </Card>
       </div>
 
-      <div className="overflow-hidden rounded-lg border">
-        {steps.map((step, index) => (
-          <div
-            key={step.key}
-            data-testid={`checklist-${step.key}`}
-            data-done={step.done}
-            className={cn('flex items-center gap-3 px-4 py-3', index > 0 && 'border-t')}
-          >
-            <span
-              aria-hidden="true"
-              className={cn(
-                'flex size-6 shrink-0 items-center justify-center rounded-full border text-xs',
-                step.done ? 'border-emerald-500 text-emerald-500' : 'text-muted-foreground',
-              )}
-            >
-              {step.done ? <Check className="size-3.5" /> : index + 1}
-            </span>
-            <div className="flex-1">
-              <p className="font-medium">{t(step.titleKey)}</p>
-              <p className="text-sm text-muted-foreground">{step.description}</p>
-            </div>
-            <Button
-              asChild
-              variant={index === firstIncompleteIndex ? 'default' : 'outline'}
-              className={
-                index === firstIncompleteIndex
-                  ? 'bg-coaching-accent text-coaching-accent-foreground hover:bg-coaching-accent/90'
-                  : undefined
-              }
-            >
-              <Link to={step.href}>{step.buttonLabel}</Link>
+      {allStepsDone ? (
+        <div data-testid="quick-actions" className="flex flex-col gap-2">
+          <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
+            {t('coaching.overview.quickActions.title')}
+          </p>
+          <div className="flex flex-wrap gap-2">
+            <Button asChild variant="outline">
+              <Link to="../match-data">{t('coaching.overview.quickActions.addMatch')}</Link>
+            </Button>
+            <Button asChild variant="outline">
+              <Link to="../vods">{t('coaching.overview.quickActions.attachVod')}</Link>
+            </Button>
+            <Button asChild variant="outline">
+              <Link to="../dashboard">{t('coaching.overview.quickActions.openAnalytics')}</Link>
             </Button>
           </div>
-        ))}
-      </div>
+        </div>
+      ) : (
+        <div className="overflow-hidden rounded-lg border">
+          {steps.map((step, index) => (
+            <div
+              key={step.key}
+              data-testid={`checklist-${step.key}`}
+              data-done={step.done}
+              className={cn('flex items-center gap-3 px-4 py-3', index > 0 && 'border-t')}
+            >
+              <span
+                aria-hidden="true"
+                className={cn(
+                  'flex size-6 shrink-0 items-center justify-center rounded-full border text-xs',
+                  step.done ? 'border-emerald-500 text-emerald-500' : 'text-muted-foreground',
+                )}
+              >
+                {step.done ? <Check className="size-3.5" /> : index + 1}
+              </span>
+              <div className="flex-1">
+                <p className="font-medium">{t(step.titleKey)}</p>
+                <p className="text-sm text-muted-foreground">{step.description}</p>
+              </div>
+              <Button
+                asChild
+                variant={index === firstIncompleteIndex ? 'default' : 'outline'}
+                className={
+                  index === firstIncompleteIndex
+                    ? 'bg-coaching-accent text-coaching-accent-foreground hover:bg-coaching-accent/90'
+                    : undefined
+                }
+              >
+                <Link to={step.href}>{step.buttonLabel}</Link>
+              </Button>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

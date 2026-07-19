@@ -121,7 +121,10 @@ describe('ClientOverviewPage', () => {
     expect(screen.getByText('50%')).toBeInTheDocument();
   });
 
-  it('marks all three steps done once fighters are set and a match has a vodUrl', async () => {
+  // Phase 11 fix round 3 (FB-8): once every step is done, the tutorial
+  // checklist is replaced by a compact "Quick actions" row — it never shows
+  // completed tutorial steps again.
+  it('FB-8: replaces the checklist with a Quick actions row once all three steps are done', async () => {
     matchesList.mockResolvedValue([
       makeMatch({ id: 'm1', win: true, vodUrl: 'https://youtu.be/abc' }),
     ]);
@@ -129,16 +132,42 @@ describe('ClientOverviewPage', () => {
 
     renderOverview();
 
+    expect(await screen.findByTestId('quick-actions')).toBeInTheDocument();
+    expect(screen.getByText('Quick actions')).toBeInTheDocument();
+
+    // The checklist rows are gone entirely, not just marked done.
+    expect(screen.queryByTestId('checklist-fighters')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('checklist-matches')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('checklist-vod')).not.toBeInTheDocument();
+
+    expect(screen.getByRole('link', { name: 'Add match' })).toHaveAttribute(
+      'href',
+      '/coach/tetra/match-data',
+    );
+    expect(screen.getByRole('link', { name: 'Attach VOD' })).toHaveAttribute(
+      'href',
+      '/coach/tetra/vods',
+    );
+    expect(screen.getByRole('link', { name: 'Open analytics' })).toHaveAttribute(
+      'href',
+      '/coach/tetra/dashboard',
+    );
+  });
+
+  it('keeps showing the checklist (not quick actions) while any step is incomplete', async () => {
+    matchesList.mockResolvedValue([
+      makeMatch({ id: 'm1', win: true }),
+      makeMatch({ id: 'm2', win: false }),
+    ]);
+    getFighters.mockResolvedValue({ primary: [1], secondary: [] });
+
+    renderOverview();
+
     await waitFor(() =>
       expect(screen.getByTestId('checklist-fighters')).toHaveAttribute('data-done', 'true'),
     );
     expect(screen.getByTestId('checklist-matches')).toHaveAttribute('data-done', 'true');
-    expect(screen.getByTestId('checklist-vod')).toHaveAttribute('data-done', 'true');
-
-    // No row is "first incomplete" anymore — no button carries the accent class.
-    const links = screen.getAllByRole('link');
-    for (const link of links) {
-      expect(link.className).not.toContain('bg-coaching-accent');
-    }
+    expect(screen.getByTestId('checklist-vod')).toHaveAttribute('data-done', 'false');
+    expect(screen.queryByTestId('quick-actions')).not.toBeInTheDocument();
   });
 });

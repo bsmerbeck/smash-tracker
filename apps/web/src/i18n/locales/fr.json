@@ -1654,6 +1654,12 @@
           "description": "Associez un enregistrement YouTube ou Twitch pour commencer à annoter.",
           "attachButton": "Associer un VOD"
         }
+      },
+      "quickActions": {
+        "title": "Actions rapides",
+        "addMatch": "Ajouter un match",
+        "attachVod": "Joindre un VOD",
+        "openAnalytics": "Ouvrir l'analytique"
       }
     },
     "fighters": {

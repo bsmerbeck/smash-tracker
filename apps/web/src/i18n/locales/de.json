@@ -1654,6 +1654,12 @@
           "description": "Verknüpfe eine YouTube- oder Twitch-Aufnahme, um mit dem Annotieren zu beginnen.",
           "attachButton": "VOD verknüpfen"
         }
+      },
+      "quickActions": {
+        "title": "Schnellaktionen",
+        "addMatch": "Match hinzufügen",
+        "attachVod": "VOD anhängen",
+        "openAnalytics": "Analysen öffnen"
       }
     },
     "fighters": {

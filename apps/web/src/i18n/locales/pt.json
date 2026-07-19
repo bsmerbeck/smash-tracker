@@ -1654,6 +1654,12 @@
           "description": "Vincule uma gravação do YouTube ou Twitch para começar a anotar.",
           "attachButton": "Anexar VOD"
         }
+      },
+      "quickActions": {
+        "title": "Ações rápidas",
+        "addMatch": "Adicionar partida",
+        "attachVod": "Anexar VOD",
+        "openAnalytics": "Abrir análises"
       }
     },
     "fighters": {
