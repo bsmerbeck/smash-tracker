@@ -1522,10 +1522,14 @@
       "ariaLabel": "Alternar entre o modo Pessoal e o modo Coaching"
     },
     "clientChip": {
-      "ariaLabel": "Gerenciando {{label}}"
+      "ariaLabel": "Gerenciando {{label}}",
+      "hubPlaceholder": "Selecionar cliente",
+      "hubAriaLabel": "Selecione um cliente para gerenciar"
     },
     "clientMenu": {
       "switchClient": "Trocar de cliente",
+      "selectClient": "Selecionar um cliente",
+      "noClients": "Ainda não há clientes",
       "allClients": "Todos os clientes",
       "exitCoaching": "Sair do coaching",
       "currentAria": "{{label}} (atual)"
@@ -1539,7 +1543,8 @@
       "managedClient": "Cliente gerenciado",
       "overview": "Visão geral",
       "fighters": "Lutadores",
-      "matchesAndVods": "Partidas e VODs",
+      "matches": "Partidas",
+      "vods": "VODs",
       "analytics": "Análises"
     },
     "hub": {
@@ -1607,6 +1612,7 @@
         "drafts_other": "{{count}} rascunhos",
         "archivedBadge": "Arquivado",
         "actionsAria": "Ações para {{label}}",
+        "rowAria": "Abrir o espaço de trabalho de {{label}}",
         "actions": {
           "openWorkspace": "Abrir espaço de trabalho",
           "export": "Exportar espaço de trabalho",
@@ -1630,6 +1636,15 @@
       },
       "winRateEmpty": "—",
       "fightersTitle": "Personagens",
+      "fightersCard": {
+        "primary": "Principal",
+        "secondary": "Secundário",
+        "empty": "Ainda não há lutadores selecionados."
+      },
+      "recentMatches": {
+        "title": "Partidas recentes",
+        "empty": "Ainda não há partidas."
+      },
       "checklist": {
         "fighters": {
           "title": "Definir personagens",
@@ -1648,6 +1663,12 @@
           "description": "Vincule uma gravação do YouTube ou Twitch para começar a anotar.",
           "attachButton": "Anexar VOD"
         }
+      },
+      "quickActions": {
+        "title": "Ações rápidas",
+        "addMatch": "Adicionar partida",
+        "attachVod": "Anexar VOD",
+        "openAnalytics": "Abrir análises"
       }
     },
     "fighters": {

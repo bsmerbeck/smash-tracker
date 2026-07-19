@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { useFighters } from '@/hooks/useFighters';
 import { useFilteredMatches } from '@/hooks/useFilteredMatches';
+import { useSubjectPath } from '@/hooks/useSubjectPath';
 import { getFighterById } from '@/data/sprites';
 import { FilteredEmptyNotice } from '@/components/FilteredEmptyNotice';
 import { alphaSpriteList } from '@/components/match-form/MatchForm';
@@ -30,6 +31,7 @@ import { PairingOpponentSplit } from './components/PairingOpponentSplit';
  */
 export function MatchupsPage() {
   const { t } = useTranslation();
+  const subjectPath = useSubjectPath();
   const { data: fighterSelection, isLoading: fightersLoading } = useFighters();
   const { matches, allMatches, isLoading: matchesLoading, filterActive } = useFilteredMatches();
 
@@ -67,10 +69,12 @@ export function MatchupsPage() {
         <p className="max-w-md text-muted-foreground">{t('matchups.noFightersSubtitle')}</p>
         <div className="flex flex-wrap justify-center gap-2">
           <Button asChild>
-            <Link to="/choose-primary">{t('shared.noFighters.choosePrimary')}</Link>
+            <Link to={subjectPath('/choose-primary')}>{t('shared.noFighters.choosePrimary')}</Link>
           </Button>
           <Button asChild variant="outline">
-            <Link to="/choose-secondary">{t('shared.noFighters.chooseSecondary')}</Link>
+            <Link to={subjectPath('/choose-secondary')}>
+              {t('shared.noFighters.chooseSecondary')}
+            </Link>
           </Button>
         </div>
       </div>
@@ -83,7 +87,7 @@ export function MatchupsPage() {
         <h2 className="text-xl font-semibold tracking-tight">{t('shared.noMatches.title')}</h2>
         <p className="text-muted-foreground">{t('shared.noMatches.subtitle')}</p>
         <Button asChild className="mt-2">
-          <Link to="/dashboard">{t('common.goToDashboard')}</Link>
+          <Link to={subjectPath('/dashboard')}>{t('common.goToDashboard')}</Link>
         </Button>
       </div>
     );

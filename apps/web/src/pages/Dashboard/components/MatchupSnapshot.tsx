@@ -5,6 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { getFighterById } from '@/data/sprites';
 import { filterByFighter, rankMatchupsByEvidence, type RankedMatchup } from '@/lib/stats';
+import { useSubjectPath } from '@/hooks/useSubjectPath';
 import { useDashboardContext } from '../DashboardContext';
 
 const SNAPSHOT_COUNT = 3;
@@ -47,6 +48,7 @@ export function buildMatchupSnapshot(fighterMatches: Match[]): MatchupSnapshotDa
 export function MatchupSnapshot({ matches }: { matches: Match[] }) {
   const { t } = useTranslation();
   const { fighter } = useDashboardContext();
+  const subjectPath = useSubjectPath();
 
   if (!fighter || matches.length === 0) {
     return (
@@ -66,7 +68,7 @@ export function MatchupSnapshot({ matches }: { matches: Match[] }) {
       <CardHeader className="flex flex-row items-center justify-between">
         <CardTitle>{t('dashboard.snapshot.title')}</CardTitle>
         <Button asChild variant="outline" size="sm">
-          <Link to="/matchups">{t('dashboard.snapshot.openLab')}</Link>
+          <Link to={subjectPath('/matchups')}>{t('dashboard.snapshot.openLab')}</Link>
         </Button>
       </CardHeader>
       <CardContent className="grid grid-cols-1 gap-4 sm:grid-cols-2">

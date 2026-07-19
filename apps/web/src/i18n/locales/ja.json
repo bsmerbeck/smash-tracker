@@ -1522,10 +1522,14 @@
       "ariaLabel": "個人モードとコーチングモードを切り替え"
     },
     "clientChip": {
-      "ariaLabel": "{{label}}を管理中"
+      "ariaLabel": "{{label}}を管理中",
+      "hubPlaceholder": "クライアントを選択",
+      "hubAriaLabel": "管理するクライアントを選択"
     },
     "clientMenu": {
       "switchClient": "クライアントを切り替え",
+      "selectClient": "クライアントを選択",
+      "noClients": "クライアントはまだいません",
       "allClients": "すべてのクライアント",
       "exitCoaching": "コーチングを終了",
       "currentAria": "{{label}}（現在選択中）"
@@ -1539,7 +1543,8 @@
       "managedClient": "管理中のクライアント",
       "overview": "概要",
       "fighters": "ファイター",
-      "matchesAndVods": "対戦とVOD",
+      "matches": "対戦",
+      "vods": "VOD",
       "analytics": "分析"
     },
     "hub": {
@@ -1607,6 +1612,7 @@
         "drafts_other": "{{count}}件の下書き",
         "archivedBadge": "アーカイブ済み",
         "actionsAria": "{{label}}の操作",
+        "rowAria": "{{label}}のワークスペースを開く",
         "actions": {
           "openWorkspace": "ワークスペースを開く",
           "export": "ワークスペースをエクスポート",
@@ -1630,6 +1636,15 @@
       },
       "winRateEmpty": "—",
       "fightersTitle": "使用キャラクター",
+      "fightersCard": {
+        "primary": "メイン",
+        "secondary": "サブ",
+        "empty": "まだファイターが選択されていません。"
+      },
+      "recentMatches": {
+        "title": "最近の対戦",
+        "empty": "まだ対戦がありません。"
+      },
       "checklist": {
         "fighters": {
           "title": "使用キャラクターを設定",
@@ -1648,6 +1663,12 @@
           "description": "YouTubeまたはTwitchの録画をリンクして注釈を始めましょう。",
           "attachButton": "VODを紐付け"
         }
+      },
+      "quickActions": {
+        "title": "クイックアクション",
+        "addMatch": "対戦を追加",
+        "attachVod": "VODを添付",
+        "openAnalytics": "分析を開く"
       }
     },
     "fighters": {

@@ -1522,10 +1522,14 @@
       "ariaLabel": "Switch between Personal and Coaching mode"
     },
     "clientChip": {
-      "ariaLabel": "Managing {{label}}"
+      "ariaLabel": "Managing {{label}}",
+      "hubPlaceholder": "Select client",
+      "hubAriaLabel": "Select a client to manage"
     },
     "clientMenu": {
       "switchClient": "Switch client",
+      "selectClient": "Select a client",
+      "noClients": "No clients yet",
       "allClients": "All clients",
       "exitCoaching": "Exit coaching",
       "currentAria": "{{label}} (current)"
@@ -1539,7 +1543,8 @@
       "managedClient": "Managed client",
       "overview": "Overview",
       "fighters": "Fighters",
-      "matchesAndVods": "Matches & VODs",
+      "matches": "Matches",
+      "vods": "VODs",
       "analytics": "Analytics"
     },
     "hub": {
@@ -1607,6 +1612,7 @@
         "drafts_other": "{{count}} drafts",
         "archivedBadge": "Archived",
         "actionsAria": "Actions for {{label}}",
+        "rowAria": "Open {{label}}'s workspace",
         "actions": {
           "openWorkspace": "Open workspace",
           "export": "Export workspace",
@@ -1630,6 +1636,15 @@
       },
       "winRateEmpty": "—",
       "fightersTitle": "Fighters",
+      "fightersCard": {
+        "primary": "Primary",
+        "secondary": "Secondary",
+        "empty": "No fighters selected yet."
+      },
+      "recentMatches": {
+        "title": "Recent matches",
+        "empty": "No matches yet."
+      },
       "checklist": {
         "fighters": {
           "title": "Set fighters",
@@ -1648,6 +1663,12 @@
           "description": "Link a YouTube or Twitch recording to start annotating.",
           "attachButton": "Attach VOD"
         }
+      },
+      "quickActions": {
+        "title": "Quick actions",
+        "addMatch": "Add match",
+        "attachVod": "Attach VOD",
+        "openAnalytics": "Open analytics"
       }
     },
     "fighters": {

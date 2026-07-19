@@ -1522,10 +1522,14 @@
       "ariaLabel": "Basculer entre le mode Personnel et le mode Coaching"
     },
     "clientChip": {
-      "ariaLabel": "Gestion de {{label}}"
+      "ariaLabel": "Gestion de {{label}}",
+      "hubPlaceholder": "Sélectionner un client",
+      "hubAriaLabel": "Sélectionner un client à gérer"
     },
     "clientMenu": {
       "switchClient": "Changer de client",
+      "selectClient": "Sélectionner un client",
+      "noClients": "Aucun client pour le moment",
       "allClients": "Tous les clients",
       "exitCoaching": "Quitter le coaching",
       "currentAria": "{{label}} (actuel)"
@@ -1539,7 +1543,8 @@
       "managedClient": "Client géré",
       "overview": "Aperçu",
       "fighters": "Combattants",
-      "matchesAndVods": "Matchs et VODs",
+      "matches": "Matchs",
+      "vods": "VODs",
       "analytics": "Analytique"
     },
     "hub": {
@@ -1607,6 +1612,7 @@
         "drafts_other": "{{count}} brouillons",
         "archivedBadge": "Archivé",
         "actionsAria": "Actions pour {{label}}",
+        "rowAria": "Ouvrir l'espace de travail de {{label}}",
         "actions": {
           "openWorkspace": "Ouvrir l'espace de travail",
           "export": "Exporter l'espace de travail",
@@ -1630,6 +1636,15 @@
       },
       "winRateEmpty": "—",
       "fightersTitle": "Personnages",
+      "fightersCard": {
+        "primary": "Principal",
+        "secondary": "Secondaire",
+        "empty": "Aucun combattant sélectionné pour le moment."
+      },
+      "recentMatches": {
+        "title": "Matchs récents",
+        "empty": "Aucun match pour le moment."
+      },
       "checklist": {
         "fighters": {
           "title": "Définir les personnages",
@@ -1648,6 +1663,12 @@
           "description": "Associez un enregistrement YouTube ou Twitch pour commencer à annoter.",
           "attachButton": "Associer un VOD"
         }
+      },
+      "quickActions": {
+        "title": "Actions rapides",
+        "addMatch": "Ajouter un match",
+        "attachVod": "Joindre un VOD",
+        "openAnalytics": "Ouvrir l'analytique"
       }
     },
     "fighters": {

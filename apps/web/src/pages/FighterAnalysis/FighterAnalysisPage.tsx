@@ -5,6 +5,7 @@ import type { Fighter } from '@smash-tracker/shared';
 import { Button } from '@/components/ui/button';
 import { useFighters } from '@/hooks/useFighters';
 import { useFilteredMatches } from '@/hooks/useFilteredMatches';
+import { useSubjectPath } from '@/hooks/useSubjectPath';
 import { getFighterById } from '@/data/sprites';
 import { FilteredEmptyNotice } from '@/components/FilteredEmptyNotice';
 import { SelectFighter } from './components/SelectFighter';
@@ -23,6 +24,7 @@ import { OpponentTable } from './components/OpponentTable';
  */
 export function FighterAnalysisPage() {
   const { t } = useTranslation();
+  const subjectPath = useSubjectPath();
   const { data: fighterSelection, isLoading: fightersLoading } = useFighters();
   const { matches, allMatches, isLoading: matchesLoading, filterActive } = useFilteredMatches();
 
@@ -48,10 +50,12 @@ export function FighterAnalysisPage() {
         <p className="max-w-md text-muted-foreground">{t('fighterAnalysis.noFightersSubtitle')}</p>
         <div className="flex flex-wrap justify-center gap-2">
           <Button asChild>
-            <Link to="/choose-primary">{t('shared.noFighters.choosePrimary')}</Link>
+            <Link to={subjectPath('/choose-primary')}>{t('shared.noFighters.choosePrimary')}</Link>
           </Button>
           <Button asChild variant="outline">
-            <Link to="/choose-secondary">{t('shared.noFighters.chooseSecondary')}</Link>
+            <Link to={subjectPath('/choose-secondary')}>
+              {t('shared.noFighters.chooseSecondary')}
+            </Link>
           </Button>
         </div>
       </div>
@@ -64,7 +68,7 @@ export function FighterAnalysisPage() {
         <h2 className="text-xl font-semibold tracking-tight">{t('shared.noMatches.title')}</h2>
         <p className="text-muted-foreground">{t('shared.noMatches.subtitle')}</p>
         <Button asChild className="mt-2">
-          <Link to="/dashboard">{t('common.goToDashboard')}</Link>
+          <Link to={subjectPath('/dashboard')}>{t('common.goToDashboard')}</Link>
         </Button>
       </div>
     );

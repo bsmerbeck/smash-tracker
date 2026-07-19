@@ -1522,10 +1522,14 @@
       "ariaLabel": "Cambiar entre el modo Personal y el de Entrenamiento"
     },
     "clientChip": {
-      "ariaLabel": "Gestionando a {{label}}"
+      "ariaLabel": "Gestionando a {{label}}",
+      "hubPlaceholder": "Seleccionar cliente",
+      "hubAriaLabel": "Selecciona un cliente para gestionar"
     },
     "clientMenu": {
       "switchClient": "Cambiar de cliente",
+      "selectClient": "Selecciona un cliente",
+      "noClients": "Aún no hay clientes",
       "allClients": "Todos los clientes",
       "exitCoaching": "Salir del entrenamiento",
       "currentAria": "{{label}} (actual)"
@@ -1539,7 +1543,8 @@
       "managedClient": "Cliente gestionado",
       "overview": "Resumen",
       "fighters": "Luchadores",
-      "matchesAndVods": "Partidas y VODs",
+      "matches": "Partidas",
+      "vods": "VODs",
       "analytics": "Analíticas"
     },
     "hub": {
@@ -1607,6 +1612,7 @@
         "drafts_other": "{{count}} borradores",
         "archivedBadge": "Archivado",
         "actionsAria": "Acciones para {{label}}",
+        "rowAria": "Abrir el espacio de trabajo de {{label}}",
         "actions": {
           "openWorkspace": "Abrir espacio de trabajo",
           "export": "Exportar espacio de trabajo",
@@ -1630,6 +1636,15 @@
       },
       "winRateEmpty": "—",
       "fightersTitle": "Personajes",
+      "fightersCard": {
+        "primary": "Principal",
+        "secondary": "Secundario",
+        "empty": "Aún no se han elegido personajes."
+      },
+      "recentMatches": {
+        "title": "Partidas recientes",
+        "empty": "Aún no hay partidas."
+      },
       "checklist": {
         "fighters": {
           "title": "Definir personajes",
@@ -1648,6 +1663,12 @@
           "description": "Vincula una grabación de YouTube o Twitch para empezar a anotar.",
           "attachButton": "Adjuntar VOD"
         }
+      },
+      "quickActions": {
+        "title": "Acciones rápidas",
+        "addMatch": "Agregar partida",
+        "attachVod": "Adjuntar VOD",
+        "openAnalytics": "Abrir analíticas"
       }
     },
     "fighters": {

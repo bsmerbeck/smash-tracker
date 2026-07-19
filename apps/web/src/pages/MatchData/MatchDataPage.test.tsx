@@ -90,11 +90,11 @@ function VodRouteProbe() {
   return <div>VOD Manager page (match={params.get('match')})</div>;
 }
 
-function renderMatchData() {
+function renderMatchData(initialEntry = '/match-data') {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
     <QueryClientProvider client={queryClient}>
-      <MemoryRouter initialEntries={['/match-data']}>
+      <MemoryRouter initialEntries={[initialEntry]}>
         <AuthProvider>
           <AnalyticsFilterProvider>
             <Routes>
@@ -103,6 +103,11 @@ function renderMatchData() {
               <Route path="/choose-secondary" element={<div>Choose secondary page</div>} />
               <Route path="/dashboard" element={<div>Dashboard page</div>} />
               <Route path="/vod" element={<VodRouteProbe />} />
+              {/* Phase 11 fix round 3 (FB-6): the coaching-route mirror — proves
+                  "Go to VOD Manager" stays subject-aware instead of escaping
+                  to the personal /vod route above. */}
+              <Route path="/coach/:clientId/match-data" element={<MatchDataPage />} />
+              <Route path="/coach/:clientId/vods" element={<VodRouteProbe />} />
             </Routes>
           </AnalyticsFilterProvider>
         </AuthProvider>
@@ -492,6 +497,24 @@ describe('MatchDataPage', () => {
     await user.click(screen.getByLabelText('Watch VOD'));
     await user.click(await screen.findByRole('menuitem', { name: 'Go to VOD Manager' }));
 
+    expect(await screen.findByText('VOD Manager page (match=m1)')).toBeInTheDocument();
+  });
+
+  it('FB-6 regression: "Go to VOD Manager" stays under /coach/:clientId/vods in a client workspace', async () => {
+    const user = userEvent.setup();
+    getFighters.mockResolvedValue({ primary: [mario.id], secondary: [] });
+    listMatches.mockResolvedValue([
+      makeMatch({ id: 'm1', vodUrl: 'https://youtube.com/watch?v=abc123' }),
+    ]);
+
+    renderMatchData('/coach/tetra/match-data');
+
+    await waitFor(() => expect(screen.getByLabelText('Watch VOD')).toBeInTheDocument());
+    await user.click(screen.getByLabelText('Watch VOD'));
+    await user.click(await screen.findByRole('menuitem', { name: 'Go to VOD Manager' }));
+
+    // Only mounted at /coach/:clientId/vods — if this renders, navigation
+    // stayed inside the client workspace instead of escaping to /vod.
     expect(await screen.findByText('VOD Manager page (match=m1)')).toBeInTheDocument();
   });
 
