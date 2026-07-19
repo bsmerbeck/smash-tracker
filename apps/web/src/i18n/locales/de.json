@@ -1524,6 +1524,24 @@
     "clientChip": {
       "ariaLabel": "Verwaltet: {{label}}"
     },
+    "clientMenu": {
+      "switchClient": "Client wechseln",
+      "allClients": "Alle Clients",
+      "exitCoaching": "Coaching verlassen",
+      "currentAria": "{{label}} (aktuell)"
+    },
+    "sidebar": {
+      "sectionCoaching": "Coaching",
+      "sectionYou": "Du",
+      "backToPersonal": "Zurück zu Persönlich",
+      "allClients": "Alle Clients",
+      "allClientsBack": "Alle Clients",
+      "managedClient": "Verwalteter Client",
+      "overview": "Übersicht",
+      "fighters": "Kämpfer",
+      "matchesAndVods": "Matches & VODs",
+      "analytics": "Analysen"
+    },
     "hub": {
       "title": "Kunden-Hub",
       "loading": "Deine Kunden werden geladen...",

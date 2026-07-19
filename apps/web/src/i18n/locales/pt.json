@@ -1524,6 +1524,24 @@
     "clientChip": {
       "ariaLabel": "Gerenciando {{label}}"
     },
+    "clientMenu": {
+      "switchClient": "Trocar de cliente",
+      "allClients": "Todos os clientes",
+      "exitCoaching": "Sair do coaching",
+      "currentAria": "{{label}} (atual)"
+    },
+    "sidebar": {
+      "sectionCoaching": "Coaching",
+      "sectionYou": "Você",
+      "backToPersonal": "Voltar ao Pessoal",
+      "allClients": "Todos os clientes",
+      "allClientsBack": "Todos os clientes",
+      "managedClient": "Cliente gerenciado",
+      "overview": "Visão geral",
+      "fighters": "Lutadores",
+      "matchesAndVods": "Partidas e VODs",
+      "analytics": "Análises"
+    },
     "hub": {
       "title": "Central de clientes",
       "loading": "Carregando seus clientes...",

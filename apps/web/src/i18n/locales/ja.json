@@ -1524,6 +1524,24 @@
     "clientChip": {
       "ariaLabel": "{{label}}を管理中"
     },
+    "clientMenu": {
+      "switchClient": "クライアントを切り替え",
+      "allClients": "すべてのクライアント",
+      "exitCoaching": "コーチングを終了",
+      "currentAria": "{{label}}（現在選択中）"
+    },
+    "sidebar": {
+      "sectionCoaching": "コーチング",
+      "sectionYou": "あなた",
+      "backToPersonal": "個人モードに戻る",
+      "allClients": "すべてのクライアント",
+      "allClientsBack": "すべてのクライアント",
+      "managedClient": "管理中のクライアント",
+      "overview": "概要",
+      "fighters": "ファイター",
+      "matchesAndVods": "対戦とVOD",
+      "analytics": "分析"
+    },
     "hub": {
       "title": "クライアントハブ",
       "loading": "クライアントを読み込み中...",
