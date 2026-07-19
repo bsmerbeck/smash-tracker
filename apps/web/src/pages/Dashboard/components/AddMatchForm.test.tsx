@@ -3,6 +3,7 @@ import type { ComponentProps } from 'react';
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { MemoryRouter } from 'react-router';
 import { AuthProvider } from '@/context/AuthContext';
 import { AddMatchForm } from './AddMatchForm';
 import { DashboardContext, type DashboardContextValue } from '../DashboardContext';
@@ -88,13 +89,15 @@ function renderForm(
     ...contextOverrides,
   };
   return render(
-    <QueryClientProvider client={queryClient}>
-      <AuthProvider>
-        <DashboardContext.Provider value={contextValue}>
-          <AddMatchForm {...formProps} />
-        </DashboardContext.Provider>
-      </AuthProvider>
-    </QueryClientProvider>,
+    <MemoryRouter>
+      <QueryClientProvider client={queryClient}>
+        <AuthProvider>
+          <DashboardContext.Provider value={contextValue}>
+            <AddMatchForm {...formProps} />
+          </DashboardContext.Provider>
+        </AuthProvider>
+      </QueryClientProvider>
+    </MemoryRouter>,
   );
 }
 

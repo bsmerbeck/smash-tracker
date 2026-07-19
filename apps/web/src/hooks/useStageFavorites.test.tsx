@@ -1,8 +1,13 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { MemoryRouter } from 'react-router';
 import type { ReactNode } from 'react';
-import { useStageFavorites, useUpdateStageFavorites } from './useStageFavorites';
+import {
+  stageFavoritesQueryKey,
+  useStageFavorites,
+  useUpdateStageFavorites,
+} from './useStageFavorites';
 import { resetAuthMock, setMockUser, makeMockUser } from '@/test/mockAuth';
 
 vi.mock('firebase/auth', async () => {
@@ -25,12 +30,19 @@ vi.mock('@/lib/firebase', async () => {
 
 import { AuthProvider } from '@/context/AuthContext';
 
-function Wrapper({ children }: { children: ReactNode }) {
-  const [queryClient] = [new QueryClient({ defaultOptions: { queries: { retry: false } } })];
+function Wrapper({
+  children,
+  queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } }),
+}: {
+  children: ReactNode;
+  queryClient?: QueryClient;
+}) {
   return (
-    <QueryClientProvider client={queryClient}>
-      <AuthProvider>{children}</AuthProvider>
-    </QueryClientProvider>
+    <MemoryRouter>
+      <QueryClientProvider client={queryClient}>
+        <AuthProvider>{children}</AuthProvider>
+      </QueryClientProvider>
+    </MemoryRouter>
   );
 }
 
@@ -157,5 +169,30 @@ describe('useStageFavorites', () => {
 
     // Rolled back (and re-synced with server truth by the settle refetch).
     await waitFor(() => expect(screen.getByText('stageIds: none')).toBeInTheDocument());
+  });
+
+  it('caches under the personal-scoped key on a non-coaching route (TEN-04)', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        statusText: 'OK',
+        text: async () => JSON.stringify({ stageIds: [113], updatedAt: 0 }),
+      }),
+    );
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+
+    render(
+      <Wrapper queryClient={queryClient}>
+        <FavoritesProbe />
+      </Wrapper>,
+    );
+
+    await waitFor(() => expect(screen.getByText('stageIds: 113')).toBeInTheDocument());
+
+    const key = stageFavoritesQueryKey({ mode: 'personal', clientId: null });
+    expect(key).toEqual(['personal', 'stageFavorites']);
+    expect(queryClient.getQueryData(key)).toBeDefined();
   });
 });

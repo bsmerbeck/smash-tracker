@@ -70,6 +70,7 @@ import {
   type UpsertStageFavoritesInput,
 } from '@smash-tracker/shared';
 import { getFirebaseAuth } from './firebase';
+import { getActiveSubjectHeader } from './subjectQueryKey';
 
 /**
  * POST /api/vod-shares request body, typed from the schema's INPUT side:
@@ -185,6 +186,7 @@ async function apiRequest<TResponse, TBody = unknown>(
     method: options.method ?? 'GET',
     headers: {
       ...authHeader,
+      'X-Active-Subject': getActiveSubjectHeader(),
       ...(hasBody ? { 'Content-Type': 'application/json' } : {}),
     },
     body: hasBody ? JSON.stringify(options.body) : undefined,

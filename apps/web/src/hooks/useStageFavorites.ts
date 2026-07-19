@@ -3,20 +3,26 @@ import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 import type { StageFavorites, UpsertStageFavoritesInput } from '@smash-tracker/shared';
 import { api } from '@/lib/api';
+import { subjectScope } from '@/lib/subjectQueryKey';
+import { useActiveSubject, type ActiveSubject } from './useActiveSubject';
 import { useAuth } from './useAuth';
 
-export const stageFavoritesQueryKey = ['stageFavorites'] as const;
+/** TEN-04: subject-scoped so Personal/Client A/Client B favorited stages never share a cache entry. */
+export function stageFavoritesQueryKey(subject: ActiveSubject) {
+  return [...subjectScope(subject), 'stageFavorites'] as const;
+}
 
 /**
- * GET /api/stage-favorites — the signed-in user's favorited stages, pinned
+ * GET /api/stage-favorites — the active subject's favorited stages, pinned
  * to the top of every stage picker. The API always returns a value (an empty
  * list when nothing's been favorited yet), so callers never need to handle a
  * missing-favorites case themselves.
  */
 export function useStageFavorites() {
   const { user } = useAuth();
+  const subject = useActiveSubject();
   return useQuery({
-    queryKey: stageFavoritesQueryKey,
+    queryKey: stageFavoritesQueryKey(subject),
     queryFn: () => api.stageFavorites.get(),
     enabled: Boolean(user),
   });
@@ -32,12 +38,14 @@ export function useStageFavorites() {
  */
 export function useUpdateStageFavorites() {
   const queryClient = useQueryClient();
+  const subject = useActiveSubject();
+  const queryKey = stageFavoritesQueryKey(subject);
   return useMutation({
     mutationFn: (input: UpsertStageFavoritesInput) => api.stageFavorites.update(input),
     onMutate: async (input) => {
-      await queryClient.cancelQueries({ queryKey: stageFavoritesQueryKey });
-      const previous = queryClient.getQueryData<StageFavorites>(stageFavoritesQueryKey);
-      queryClient.setQueryData<StageFavorites>(stageFavoritesQueryKey, {
+      await queryClient.cancelQueries({ queryKey });
+      const previous = queryClient.getQueryData<StageFavorites>(queryKey);
+      queryClient.setQueryData<StageFavorites>(queryKey, {
         stageIds: input.stageIds,
         // Placeholder until the settle-time refetch brings the server stamp.
         updatedAt: Date.now(),
@@ -46,11 +54,11 @@ export function useUpdateStageFavorites() {
     },
     onError: (_error, _input, context) => {
       if (context?.previous !== undefined) {
-        queryClient.setQueryData(stageFavoritesQueryKey, context.previous);
+        queryClient.setQueryData(queryKey, context.previous);
       }
     },
     onSettled: async () => {
-      await queryClient.invalidateQueries({ queryKey: stageFavoritesQueryKey });
+      await queryClient.invalidateQueries({ queryKey });
     },
   });
 }

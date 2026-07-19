@@ -1,8 +1,9 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { MemoryRouter, Route, Routes } from 'react-router';
 import type { ReactNode } from 'react';
-import { useMatches } from './useMatches';
+import { useMatches, matchesQueryKey } from './useMatches';
 import { resetAuthMock, setMockUser, makeMockUser } from '@/test/mockAuth';
 
 vi.mock('firebase/auth', async () => {
@@ -42,12 +43,26 @@ const rawMatch = {
   win: true,
 };
 
-function Wrapper({ children }: { children: ReactNode }) {
-  const [queryClient] = [new QueryClient({ defaultOptions: { queries: { retry: false } } })];
+function Wrapper({
+  children,
+  queryClient,
+  initialEntries = ['/dashboard'],
+}: {
+  children: ReactNode;
+  queryClient: QueryClient;
+  initialEntries?: string[];
+}) {
   return (
-    <QueryClientProvider client={queryClient}>
-      <AuthProvider>{children}</AuthProvider>
-    </QueryClientProvider>
+    <MemoryRouter initialEntries={initialEntries}>
+      <QueryClientProvider client={queryClient}>
+        <AuthProvider>
+          <Routes>
+            <Route path="/coach/:clientId/*" element={children} />
+            <Route path="*" element={children} />
+          </Routes>
+        </AuthProvider>
+      </QueryClientProvider>
+    </MemoryRouter>
   );
 }
 
@@ -80,8 +95,9 @@ describe('useMatches', () => {
   });
 
   it('fetches matches with a Bearer auth header and validates the response against the shared schema', async () => {
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     render(
-      <Wrapper>
+      <Wrapper queryClient={queryClient}>
         <MatchesProbe />
       </Wrapper>,
     );
@@ -96,5 +112,39 @@ describe('useMatches', () => {
     const [url, init] = call;
     expect(String(url)).toContain('/api/matches');
     expect((init?.headers as Record<string, string>).Authorization).toBe('Bearer mock-id-token');
+  });
+
+  it('caches under the personal-scoped key on a non-coaching route (TEN-04)', async () => {
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <Wrapper queryClient={queryClient} initialEntries={['/dashboard']}>
+        <MatchesProbe />
+      </Wrapper>,
+    );
+
+    await waitFor(() => expect(screen.getByText('matches: 1')).toBeInTheDocument());
+
+    const key = matchesQueryKey({ mode: 'personal', clientId: null });
+    expect(key).toEqual(['personal', 'matches']);
+    expect(queryClient.getQueryData(key)).toBeDefined();
+  });
+
+  it('caches under the client-scoped key on a /coach/:clientId route (TEN-04)', async () => {
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <Wrapper queryClient={queryClient} initialEntries={['/coach/tenant-1/vods']}>
+        <MatchesProbe />
+      </Wrapper>,
+    );
+
+    await waitFor(() => expect(screen.getByText('matches: 1')).toBeInTheDocument());
+
+    const key = matchesQueryKey({ mode: 'coaching', clientId: 'tenant-1' });
+    expect(key).toEqual(['client', 'tenant-1', 'matches']);
+    expect(queryClient.getQueryData(key)).toBeDefined();
+    // The personal-scoped key must stay empty — no cross-subject bleed.
+    expect(
+      queryClient.getQueryData(matchesQueryKey({ mode: 'personal', clientId: null })),
+    ).toBeUndefined();
   });
 });

@@ -1,5 +1,6 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { api, type VodTimestampInput } from '@/lib/api';
+import { useActiveSubject } from './useActiveSubject';
 import { matchesQueryKey } from './useMatches';
 import { vodSharesQueryKey } from './useVodShares';
 
@@ -18,11 +19,12 @@ import { vodSharesQueryKey } from './useVodShares';
 /** POST /api/matches/:id/notes. Resolves with the created, id-bearing note. */
 export function useCreateNote() {
   const queryClient = useQueryClient();
+  const subject = useActiveSubject();
   return useMutation({
     mutationFn: ({ matchId, input }: { matchId: string; input: VodTimestampInput }) =>
       api.matches.createNote(matchId, input),
     onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: matchesQueryKey });
+      await queryClient.invalidateQueries({ queryKey: matchesQueryKey(subject) });
     },
   });
 }
@@ -30,6 +32,7 @@ export function useCreateNote() {
 /** PATCH /api/matches/:id/notes/:noteId — full-note replace by stable note id. */
 export function useUpdateNote() {
   const queryClient = useQueryClient();
+  const subject = useActiveSubject();
   return useMutation({
     mutationFn: ({
       matchId,
@@ -41,7 +44,7 @@ export function useUpdateNote() {
       input: VodTimestampInput;
     }) => api.matches.updateNote(matchId, noteId, input),
     onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: matchesQueryKey });
+      await queryClient.invalidateQueries({ queryKey: matchesQueryKey(subject) });
     },
   });
 }
@@ -49,11 +52,12 @@ export function useUpdateNote() {
 /** DELETE /api/matches/:id/notes/:noteId — removes one note by stable note id. */
 export function useDeleteNote() {
   const queryClient = useQueryClient();
+  const subject = useActiveSubject();
   return useMutation({
     mutationFn: ({ matchId, noteId }: { matchId: string; noteId: string }) =>
       api.matches.deleteNote(matchId, noteId),
     onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: matchesQueryKey });
+      await queryClient.invalidateQueries({ queryKey: matchesQueryKey(subject) });
     },
   });
 }
@@ -72,11 +76,12 @@ export function useDeleteNote() {
  */
 export function useClearVodAndNotes() {
   const queryClient = useQueryClient();
+  const subject = useActiveSubject();
   return useMutation({
     mutationFn: (matchId: string) => api.matches.clearVod(matchId),
     onSuccess: async () => {
       await Promise.all([
-        queryClient.invalidateQueries({ queryKey: matchesQueryKey }),
+        queryClient.invalidateQueries({ queryKey: matchesQueryKey(subject) }),
         queryClient.invalidateQueries({ queryKey: vodSharesQueryKey }),
       ]);
     },
