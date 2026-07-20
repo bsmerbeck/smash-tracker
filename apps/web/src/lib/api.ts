@@ -20,6 +20,7 @@ import {
   gspReadingSchema,
   gspSettingsSchema,
   joinGroupRequestSchema,
+  manualTournamentEntryInputSchema,
   matchSchema,
   opponentAliasMapSchema,
   opponentListSchema,
@@ -52,6 +53,7 @@ import {
   startggStatusSchema,
   startggSyncSummarySchema,
   tournamentEntryListSchema,
+  tournamentEntrySchema,
   userProfileSchema,
   vodTimestampEntrySchema,
   vodTimestampSchema,
@@ -63,6 +65,7 @@ import {
   type CreditPackId,
   type FighterSelectionInput,
   type GenerateReportRequest,
+  type ManualTournamentEntryInput,
   type Match,
   type OnboardingIntent,
   type ParryggLinkRequest,
@@ -322,6 +325,25 @@ const deliveryListItemResponseSchema = z.object({
 });
 export type ReviewDeliveryListItem = z.infer<typeof deliveryListItemResponseSchema>;
 
+/**
+ * GET /api/onboarding/progress response shape (Phase 13, ONBD-04/D-04) —
+ * assembled inline in `apps/api/src/routes/onboarding.ts`, not exported
+ * from `@smash-tracker/shared`, duplicated here per this file's own
+ * `clientWorkspaceExportSchema`/`reviewListItemResponseSchema` precedent
+ * above. The four booleans are the SAME `eventDedup` markers the player
+ * activation D events write server-side — `GuidedPathCard`/
+ * `useOnboardingProgress` must read them as-is, never recompute them from
+ * `matches`/`vodTimestamps`/`tournamentEntries` locally (D-04's explicit
+ * anti-pattern).
+ */
+const onboardingProgressSchema = z.object({
+  analytics: z.boolean(),
+  vod: z.boolean(),
+  tournamentPrep: z.boolean(),
+  scout: z.boolean(),
+});
+export type OnboardingProgress = z.infer<typeof onboardingProgressSchema>;
+
 /** Runs `apiRequest` then validates the parsed JSON against `schema`. */
 async function apiRequestParsed<TSchema extends z.ZodType>(
   path: string,
@@ -550,6 +572,26 @@ export const api = {
   tournaments: {
     /** GET /api/tournaments */
     list: () => apiRequestParsed('/api/tournaments', tournamentEntryListSchema),
+    /**
+     * POST /api/tournaments/manual-entry (Phase 13, ONBD-04 D-05): the
+     * prep-path integration-failure recovery — records an event to prepare
+     * for without a start.gg/parry.gg sync, reaching the same
+     * server-verified `tournament_prep_activated` outcome. Returns the
+     * full written entry (including the server-derived `entryKey`).
+     */
+    manualEntry: (input: ManualTournamentEntryInput) =>
+      apiRequestParsed('/api/tournaments/manual-entry', tournamentEntrySchema, {
+        method: 'POST',
+        body: manualTournamentEntryInputSchema.parse(input),
+      }),
+  },
+  /**
+   * Phase 13 (ONBD-04, D-04): the guided-path checklist's server-derived
+   * done-states.
+   */
+  onboarding: {
+    /** GET /api/onboarding/progress — personal-only, always the signed-in user's own activation. */
+    getProgress: () => apiRequestParsed('/api/onboarding/progress', onboardingProgressSchema),
   },
   scout: {
     /** POST /api/scout — scout ANY start.gg OR parry.gg player (V9-B) by URL, slug/tag, or numeric id. */
