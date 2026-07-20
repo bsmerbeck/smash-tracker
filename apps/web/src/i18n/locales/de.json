@@ -1684,6 +1684,75 @@
       "fighterAnalysis": "Kämpferanalyse",
       "matchups": "Matchups"
     },
+    "reviews": {
+      "composer": {
+        "loadError": "Beim Laden dieser Review ist ein Fehler aufgetreten.",
+        "publish": "Veröffentlichen",
+        "publishSuccess": "v{{version}} veröffentlicht",
+        "publishError": "Beim Veröffentlichen dieser Review ist ein Fehler aufgetreten.",
+        "sourceBar": {
+          "label": "Quelle:",
+          "none": "Keine Quelle ausgewählt",
+          "noPlayer": "Wähle eine Quelle aus, um mit dem Ansehen zu beginnen."
+        },
+        "sourcesDrawer": {
+          "trigger": "Quellen ▾",
+          "title": "Quellen",
+          "description": "Wechsle das VOD, das Player und Beweisliste anzeigen. Reviews mit mehreren VODs werden vollständig unterstützt — Zitate können auf jedes von ihnen verweisen.",
+          "empty": "Dieser Klient hat noch keine VODs in der Bibliothek.",
+          "vsOpponent": "vs {{opponent}}"
+        },
+        "evidence": {
+          "heading_one": "Beweis ({{count}})",
+          "heading_other": "Beweise ({{count}})",
+          "empty": "Diese Quelle hat noch keine Notizen mit Zeitstempel."
+        },
+        "tabs": {
+          "clientReview": "Klienten-Review",
+          "privateNotes": "🔒 Private Notizen"
+        },
+        "autosave": {
+          "saving": "Wird gespeichert…",
+          "saved": "Gespeichert",
+          "error": "Konnte nicht gespeichert werden — Verbindung prüfen."
+        },
+        "sections": {
+          "kinds": {
+            "summary": "Zusammenfassung",
+            "strengths": "Stärken",
+            "priorities": "Prioritäten",
+            "practicePlan": "Trainingsplan",
+            "general": "Allgemeine Notizen",
+            "matchupNotes": "Matchup-Notizen",
+            "stageNotes": "Stage-Notizen",
+            "drills": "Übungen",
+            "nextGoals": "Nächste Ziele"
+          },
+          "sectionOptionsAria": "Abschnittsoptionen: {{section}}",
+          "hideSection": "Abschnitt ausblenden",
+          "addSection": "Abschnitt hinzufügen — ausgeblendeten wiederherstellen oder Allgemeine Notizen hinzufügen",
+          "addGeneralNotes": "Allgemeine Notizen",
+          "undoBanner": "Abschnitt „{{section}}“ ausgeblendet — Inhalt bleibt erhalten",
+          "undo": "Rückgängig",
+          "undoAria": "Ausblenden von Abschnitt {{section}} rückgängig machen"
+        },
+        "privateNotes": {
+          "banner": "Nur du kannst das sehen. Wird nie zugestellt, erscheint nie in Vorschauen und wird getrennt von der Review gespeichert.",
+          "textareaAria": "Private Notizen zu dieser Review",
+          "placeholder": "Private Notizen zu dieser Review, nicht zum aktuellen Quell-VOD…",
+          "scopeHint": "Private Notizen zu dieser Review, nicht zum aktuellen Quell-VOD — Aufnahmen und Beweise bleiben links nutzbar, während du hier schreibst."
+        },
+        "conflictDialog": {
+          "title": "Jemand anderes hat Änderungen an dieser Review gespeichert",
+          "description": "Deine Änderungen wurden nicht gespeichert, weil sich die Review zuerst auf dem Server geändert hat. Wähle, welche Version behalten werden soll — das passiert nie stillschweigend.",
+          "mineLabel": "Deine Version",
+          "theirsLabel": "Ihre Version",
+          "empty": "(leer)",
+          "seeTheirs": "Ihre ansehen",
+          "keepMine": "Meine behalten"
+        }
+      }
+    },
     "disabled": {
       "title": "Der Coaching-Modus ist deaktiviert",
       "body": "Aktiviere ihn unter Profil → Konto, um die Matches, VODs und Analysen anderer Spieler als Coach zu verwalten.",

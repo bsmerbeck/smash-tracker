@@ -1684,6 +1684,75 @@
       "fighterAnalysis": "Analyse de personnage",
       "matchups": "Confrontations"
     },
+    "reviews": {
+      "composer": {
+        "loadError": "Une erreur est survenue lors du chargement de cette revue.",
+        "publish": "Publier",
+        "publishSuccess": "v{{version}} publiée",
+        "publishError": "Une erreur est survenue lors de la publication de cette revue.",
+        "sourceBar": {
+          "label": "Source :",
+          "none": "Aucune source sélectionnée",
+          "noPlayer": "Sélectionnez une source pour commencer à regarder."
+        },
+        "sourcesDrawer": {
+          "trigger": "Sources ▾",
+          "title": "Sources",
+          "description": "Changez le VOD affiché par le lecteur et la liste de preuves. Les revues multi-VOD sont pleinement prises en charge — les citations peuvent référencer n'importe lequel d'entre eux.",
+          "empty": "Ce client n'a pas encore de VOD dans sa bibliothèque.",
+          "vsOpponent": "vs {{opponent}}"
+        },
+        "evidence": {
+          "heading_one": "Preuve ({{count}})",
+          "heading_other": "Preuves ({{count}})",
+          "empty": "Cette source n'a pas encore de notes horodatées."
+        },
+        "tabs": {
+          "clientReview": "Revue client",
+          "privateNotes": "🔒 Notes privées"
+        },
+        "autosave": {
+          "saving": "Enregistrement…",
+          "saved": "Enregistré",
+          "error": "Impossible d'enregistrer — vérifiez votre connexion."
+        },
+        "sections": {
+          "kinds": {
+            "summary": "Résumé",
+            "strengths": "Points forts",
+            "priorities": "Priorités",
+            "practicePlan": "Plan d'entraînement",
+            "general": "Notes générales",
+            "matchupNotes": "Notes de confrontation",
+            "stageNotes": "Notes de stage",
+            "drills": "Exercices",
+            "nextGoals": "Prochains objectifs"
+          },
+          "sectionOptionsAria": "Options de la section : {{section}}",
+          "hideSection": "Masquer la section",
+          "addSection": "Ajouter une section — restaurer une section masquée ou ajouter des Notes générales",
+          "addGeneralNotes": "Notes générales",
+          "undoBanner": "Section « {{section}} » masquée — contenu conservé",
+          "undo": "Annuler",
+          "undoAria": "Annuler le masquage de la section {{section}}"
+        },
+        "privateNotes": {
+          "banner": "Vous seul(e) pouvez voir ceci. Jamais transmis, jamais dans les aperçus, stocké séparément de la revue.",
+          "textareaAria": "Notes privées de cette revue",
+          "placeholder": "Notes privées pour cette revue, pas pour le VOD source actuel…",
+          "scopeHint": "Notes privées pour cette revue, pas pour le VOD source actuel — les images et les preuves restent utilisables à gauche pendant que vous écrivez ici."
+        },
+        "conflictDialog": {
+          "title": "Quelqu'un d'autre a enregistré des modifications sur cette revue",
+          "description": "Vos modifications n'ont pas été enregistrées car la revue a changé côté serveur en premier. Choisissez la version à conserver — cela ne se produit jamais silencieusement.",
+          "mineLabel": "Votre version",
+          "theirsLabel": "Leur version",
+          "empty": "(vide)",
+          "seeTheirs": "Voir la leur",
+          "keepMine": "Garder la mienne"
+        }
+      }
+    },
     "disabled": {
       "title": "Le mode Coaching est désactivé",
       "body": "Activez-le dans Profil → Compte pour gérer les matchs, VODs et analyses d'autres joueurs en tant que coach.",

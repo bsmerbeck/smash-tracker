@@ -1684,6 +1684,75 @@
       "fighterAnalysis": "Análisis de personaje",
       "matchups": "Enfrentamientos"
     },
+    "reviews": {
+      "composer": {
+        "loadError": "Ocurrió un error al cargar esta reseña.",
+        "publish": "Publicar",
+        "publishSuccess": "Publicada v{{version}}",
+        "publishError": "Ocurrió un error al publicar esta reseña.",
+        "sourceBar": {
+          "label": "Fuente:",
+          "none": "Ninguna fuente seleccionada",
+          "noPlayer": "Selecciona una fuente para empezar a ver."
+        },
+        "sourcesDrawer": {
+          "trigger": "Fuentes ▾",
+          "title": "Fuentes",
+          "description": "Cambia el VOD que muestran el reproductor y la lista de evidencia. Las reseñas con varios VODs son totalmente compatibles — las citas pueden referenciar cualquiera de ellos.",
+          "empty": "Este cliente aún no tiene VODs en su biblioteca.",
+          "vsOpponent": "vs {{opponent}}"
+        },
+        "evidence": {
+          "heading_one": "Evidencia ({{count}})",
+          "heading_other": "Evidencia ({{count}})",
+          "empty": "Esta fuente todavía no tiene notas con marca de tiempo."
+        },
+        "tabs": {
+          "clientReview": "Reseña del cliente",
+          "privateNotes": "🔒 Notas privadas"
+        },
+        "autosave": {
+          "saving": "Guardando…",
+          "saved": "Guardado",
+          "error": "No se pudo guardar — revisa tu conexión."
+        },
+        "sections": {
+          "kinds": {
+            "summary": "Resumen",
+            "strengths": "Fortalezas",
+            "priorities": "Prioridades",
+            "practicePlan": "Plan de práctica",
+            "general": "Notas generales",
+            "matchupNotes": "Notas de enfrentamiento",
+            "stageNotes": "Notas de escenario",
+            "drills": "Ejercicios",
+            "nextGoals": "Próximos objetivos"
+          },
+          "sectionOptionsAria": "Opciones de la sección: {{section}}",
+          "hideSection": "Ocultar sección",
+          "addSection": "Añadir sección — restaurar oculta o añadir Notas generales",
+          "addGeneralNotes": "Notas generales",
+          "undoBanner": "Sección \"{{section}}\" oculta — el contenido se conservó",
+          "undo": "Deshacer",
+          "undoAria": "Deshacer ocultar sección {{section}}"
+        },
+        "privateNotes": {
+          "banner": "Solo tú puedes ver esto. Nunca se entrega, nunca aparece en las vistas previas, se guarda por separado de la reseña.",
+          "textareaAria": "Notas privadas de esta reseña",
+          "placeholder": "Notas privadas para esta reseña, no para el VOD de origen actual…",
+          "scopeHint": "Notas privadas para esta reseña, no para el VOD de origen actual — las imágenes y la evidencia siguen disponibles a la izquierda mientras escribes aquí."
+        },
+        "conflictDialog": {
+          "title": "Alguien más guardó cambios en esta reseña",
+          "description": "Tus cambios no se guardaron porque la reseña cambió primero en el servidor. Elige qué versión conservar — esto nunca ocurre en silencio.",
+          "mineLabel": "Tu versión",
+          "theirsLabel": "Su versión",
+          "empty": "(vacío)",
+          "seeTheirs": "Ver la suya",
+          "keepMine": "Conservar la mía"
+        }
+      }
+    },
     "disabled": {
       "title": "El modo Entrenamiento está desactivado",
       "body": "Actívalo en Perfil → Cuenta para gestionar los partidos, VODs y análisis de otros jugadores en modo Entrenamiento.",

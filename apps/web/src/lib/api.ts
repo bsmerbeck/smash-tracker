@@ -5,7 +5,9 @@ import {
   checkoutResponseSchema,
   clientHubListSchema,
   clientHubRowSchema,
+  clientVisibleVersionSchema,
   createClientRequestSchema,
+  createDraftPatchInputSchema,
   createGroupRequestSchema,
   creditsStatusSchema,
   errorResponseSchema,
@@ -38,6 +40,9 @@ import {
   playlistSchema,
   publicShareSnapshotSchema,
   reportsConfigSchema,
+  REVIEW_DELIVERY_STATES,
+  REVIEW_SECTION_KINDS,
+  reviewDraftSchema,
   scoutReportDataSchema,
   scoutReportRecordSchema,
   shareCreatedResponseSchema,
@@ -52,6 +57,7 @@ import {
   vodTimestampSchema,
   type BulkShareRequest,
   type CreateClientRequest,
+  type CreateDraftPatchInput,
   type CreateGspReadingInput,
   type CreateMatchInput,
   type CreditPackId,
@@ -206,7 +212,20 @@ async function apiRequest<TResponse, TBody = unknown>(
   if (!response.ok) {
     const parsedError = errorResponseSchema.safeParse(json);
     if (parsedError.success) {
-      throw new ApiError(response.status, parsedError.data.message, parsedError.data.details);
+      // Phase 12 (Coach Reviews & Delivery, T-12-18): some routes (the
+      // autosave draft PATCH's 409) attach extra route-specific fields
+      // directly on the error body (e.g. `serverDraft`) rather than nesting
+      // them under `details` — `errorResponseSchema`'s default Zod object
+      // mode silently strips any key it doesn't know about, which would
+      // otherwise drop `serverDraft` before a caller ever sees it. Falling
+      // back to the full raw `json` (only when the endpoint didn't already
+      // populate `details` itself) preserves those fields for callers like
+      // `useReviewAutosave` that need to read them off `ApiError.details`.
+      throw new ApiError(
+        response.status,
+        parsedError.data.message,
+        parsedError.data.details ?? json,
+      );
     }
     throw new ApiError(response.status, response.statusText || 'Request failed');
   }
@@ -233,6 +252,42 @@ const clientWorkspaceExportSchema = z.object({
   stageFavorites: stageFavoritesSchema,
   fighterSelection: fighterSelectionSchema,
 });
+
+/**
+ * Phase 12 (Coach Reviews & Delivery): response/request shapes for the
+ * coach-side review routes (`apps/api/src/routes/coachingReviews.ts`) that
+ * are assembled inline in that route file, not exported from
+ * `@smash-tracker/shared` — duplicated here rather than promoting them to
+ * shared, mirroring `clientWorkspaceExportSchema`'s existing precedent
+ * above. `REVIEW_STATUSES`'s literal values are copied from
+ * `apps/api/src/coaching/reviews.ts` (an API-internal module this package
+ * cannot import).
+ */
+const REVIEW_STATUSES = ['draft', 'published', 'archived'] as const;
+
+const reviewListItemResponseSchema = z.object({
+  reviewId: z.string().min(1),
+  status: z.enum(REVIEW_STATUSES),
+  latestVersion: z.number().int().positive().nullable(),
+  revision: z.number().int().nonnegative(),
+  deliveryState: z.enum(REVIEW_DELIVERY_STATES).nullable(),
+  createdAt: z.number().int().nonnegative(),
+  lastAutosavedAt: z.number().int().nonnegative(),
+});
+export type ReviewListItem = z.infer<typeof reviewListItemResponseSchema>;
+
+const reviewCreatedResponseSchema = z.object({
+  reviewId: z.string().min(1),
+  revision: z.number().int().positive(),
+});
+
+const reviewPublishResultSchema = z.object({ version: z.number().int().positive() });
+
+const addReviewSectionRequestSchema = z.object({
+  kind: z.enum(REVIEW_SECTION_KINDS),
+  title: z.string().trim().max(60).nullish(),
+});
+export type AddReviewSectionRequest = z.infer<typeof addReviewSectionRequestSchema>;
 
 /** Runs `apiRequest` then validates the parsed JSON against `schema`. */
 async function apiRequestParsed<TSchema extends z.ZodType>(
@@ -514,6 +569,92 @@ export const api = {
         apiRequestParsed(
           `/api/coaching/clients/${encodeURIComponent(clientId)}/export`,
           clientWorkspaceExportSchema,
+        ),
+    },
+    /**
+     * Phase 12 (Coach Reviews & Delivery): coach-side review-authoring
+     * routes, nested under `/api/coaching/clients/:clientId/reviews`. Every
+     * call takes `clientId` as an explicit argument (never the
+     * `X-Active-Subject` header) — these routes gate directly on the URL's
+     * `:clientId` param (`requireMembership`, no header), matching
+     * `apps/api/src/routes/coachingReviews.ts`'s own documented pattern.
+     */
+    reviews: {
+      /** GET .../reviews — the review + delivery state list for one client (D-05). */
+      list: (clientId: string) =>
+        apiRequestParsed(
+          `/api/coaching/clients/${encodeURIComponent(clientId)}/reviews`,
+          reviewListItemResponseSchema.array(),
+        ),
+      /** POST .../reviews — starts a new review draft (the first autosave, revision 0). */
+      create: (clientId: string) =>
+        apiRequestParsed(
+          `/api/coaching/clients/${encodeURIComponent(clientId)}/reviews`,
+          reviewCreatedResponseSchema,
+          { method: 'POST' },
+        ),
+      /**
+       * GET .../reviews/:reviewId/draft — the ONLY composer-side fetch that
+       * returns `coachPrivateNotes` (coach-only; REV-03). Never spread into
+       * any preview/delivery component's props.
+       */
+      getDraft: (clientId: string, reviewId: string) =>
+        apiRequestParsed(
+          `/api/coaching/clients/${encodeURIComponent(clientId)}/reviews/${encodeURIComponent(reviewId)}/draft`,
+          reviewDraftSchema,
+        ),
+      /**
+       * PATCH .../reviews/:reviewId/draft — autosave (REV-02/D-07). A stale
+       * `expectedRevision` maps to a 409 whose body carries `serverDraft`
+       * (see `apiRequest`'s `ApiError.details` fallback above) — callers
+       * (`useReviewAutosave`) must catch `ApiError` with `status === 409`
+       * rather than treating a rejected promise as a generic failure.
+       */
+      patchDraft: (clientId: string, reviewId: string, input: CreateDraftPatchInput) =>
+        apiRequestParsed(
+          `/api/coaching/clients/${encodeURIComponent(clientId)}/reviews/${encodeURIComponent(reviewId)}/draft`,
+          reviewDraftSchema,
+          { method: 'PATCH', body: createDraftPatchInputSchema.parse(input) },
+        ),
+      /** GET .../preview — the exact client-visible render (no private notes; REV-05). */
+      preview: (clientId: string, reviewId: string) =>
+        apiRequestParsed(
+          `/api/coaching/clients/${encodeURIComponent(clientId)}/reviews/${encodeURIComponent(reviewId)}/preview`,
+          clientVisibleVersionSchema,
+        ),
+      /** POST .../publish — server-authoritative seal; body carries no content field (D-06/T-12-06). */
+      publish: (clientId: string, reviewId: string) =>
+        apiRequestParsed(
+          `/api/coaching/clients/${encodeURIComponent(clientId)}/reviews/${encodeURIComponent(reviewId)}/publish`,
+          reviewPublishResultSchema,
+          { method: 'POST' },
+        ),
+      /** POST .../sections/:sectionId/hide — D-03 "Hide section" (content preserved, Undo-able). */
+      hideSection: (clientId: string, reviewId: string, sectionId: string) =>
+        apiRequestParsed(
+          `/api/coaching/clients/${encodeURIComponent(clientId)}/reviews/${encodeURIComponent(reviewId)}/sections/${encodeURIComponent(sectionId)}/hide`,
+          reviewDraftSchema,
+          { method: 'POST' },
+        ),
+      /** POST .../sections/:sectionId/show — the Undo counterpart; restores in place (never duplicates). */
+      showSection: (clientId: string, reviewId: string, sectionId: string) =>
+        apiRequestParsed(
+          `/api/coaching/clients/${encodeURIComponent(clientId)}/reviews/${encodeURIComponent(reviewId)}/sections/${encodeURIComponent(sectionId)}/show`,
+          reviewDraftSchema,
+          { method: 'POST' },
+        ),
+      /** POST .../sections — "Add section" (restores a hidden suggested block, or adds General Notes / an optional SSBU-specific section). */
+      addSection: (clientId: string, reviewId: string, input: AddReviewSectionRequest) =>
+        apiRequestParsed(
+          `/api/coaching/clients/${encodeURIComponent(clientId)}/reviews/${encodeURIComponent(reviewId)}/sections`,
+          reviewDraftSchema,
+          { method: 'POST', body: addReviewSectionRequestSchema.parse(input) },
+        ),
+      /** POST .../archive — removes the review from the active (non-archived) list. */
+      archive: (clientId: string, reviewId: string) =>
+        apiRequest<void>(
+          `/api/coaching/clients/${encodeURIComponent(clientId)}/reviews/${encodeURIComponent(reviewId)}/archive`,
+          { method: 'POST' },
         ),
     },
   },

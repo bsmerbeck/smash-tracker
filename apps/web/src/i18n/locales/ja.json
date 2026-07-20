@@ -1684,6 +1684,75 @@
       "fighterAnalysis": "キャラクター分析",
       "matchups": "相性表"
     },
+    "reviews": {
+      "composer": {
+        "loadError": "このレビューの読み込み中に問題が発生しました。",
+        "publish": "公開",
+        "publishSuccess": "v{{version}}を公開しました",
+        "publishError": "このレビューの公開中に問題が発生しました。",
+        "sourceBar": {
+          "label": "ソース：",
+          "none": "ソースが選択されていません",
+          "noPlayer": "視聴を始めるにはソースを選択してください。"
+        },
+        "sourcesDrawer": {
+          "trigger": "ソース ▾",
+          "title": "ソース",
+          "description": "プレイヤーとエビデンスリストに表示するVODを切り替えます。複数VODのレビューにも完全対応 — 引用はそのどれでも参照できます。",
+          "empty": "このクライアントのライブラリにはまだVODがありません。",
+          "vsOpponent": "vs {{opponent}}"
+        },
+        "evidence": {
+          "heading_one": "エビデンス（{{count}}）",
+          "heading_other": "エビデンス（{{count}}）",
+          "empty": "このソースにはまだタイムスタンプ付きのメモがありません。"
+        },
+        "tabs": {
+          "clientReview": "クライアント向けレビュー",
+          "privateNotes": "🔒 非公開メモ"
+        },
+        "autosave": {
+          "saving": "保存中…",
+          "saved": "保存しました",
+          "error": "保存できませんでした — 接続を確認してください。"
+        },
+        "sections": {
+          "kinds": {
+            "summary": "サマリー",
+            "strengths": "強み",
+            "priorities": "優先事項",
+            "practicePlan": "練習プラン",
+            "general": "一般メモ",
+            "matchupNotes": "対策メモ",
+            "stageNotes": "ステージメモ",
+            "drills": "ドリル",
+            "nextGoals": "次の目標"
+          },
+          "sectionOptionsAria": "セクションオプション：{{section}}",
+          "hideSection": "セクションを非表示",
+          "addSection": "セクションを追加 — 非表示のものを復元するか一般メモを追加",
+          "addGeneralNotes": "一般メモ",
+          "undoBanner": "セクション「{{section}}」を非表示にしました — 内容は保持されています",
+          "undo": "元に戻す",
+          "undoAria": "セクション{{section}}の非表示を元に戻す"
+        },
+        "privateNotes": {
+          "banner": "これはあなただけが見られます。送信されず、プレビューにも表示されず、レビューとは別に保存されます。",
+          "textareaAria": "このレビューの非公開メモ",
+          "placeholder": "このレビュー用の非公開メモです。現在のソースVODのものではありません…",
+          "scopeHint": "このレビュー用の非公開メモで、現在のソースVODのものではありません — ここで入力している間も左側の映像とエビデンスは引き続き使用できます。"
+        },
+        "conflictDialog": {
+          "title": "他の人がこのレビューの変更を保存しました",
+          "description": "サーバー側でレビューが先に変更されたため、あなたの変更は保存されませんでした。どちらのバージョンを残すか選んでください — これが黙って上書きされることはありません。",
+          "mineLabel": "あなたのバージョン",
+          "theirsLabel": "相手のバージョン",
+          "empty": "（空）",
+          "seeTheirs": "相手のバージョンを見る",
+          "keepMine": "自分のバージョンを残す"
+        }
+      }
+    },
     "disabled": {
       "title": "コーチングモードはオフです",
       "body": "プロフィール → アカウントで有効にすると、コーチとして他のプレイヤーの試合、VOD、分析を管理できます。",
