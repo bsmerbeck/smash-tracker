@@ -1887,7 +1887,12 @@
     },
     "originChip": {
       "fromArtifact": "{{artifact}}からアクセスしました",
-      "backToWatching": "視聴していた内容に戻る"
+      "backToWatching": "視聴していた内容に戻る",
+      "artifact": {
+        "vodShare": "共有されたVOD",
+        "recap": "大会のリキャップ",
+        "coachReview": "コーチのレビュー"
+      }
     },
     "guided": {
       "progress": "ステップ {{current}} / {{total}}",

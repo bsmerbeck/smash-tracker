@@ -1887,7 +1887,12 @@
     },
     "originChip": {
       "fromArtifact": "Você veio de {{artifact}}",
-      "backToWatching": "Voltar para o que você estava vendo"
+      "backToWatching": "Voltar para o que você estava vendo",
+      "artifact": {
+        "vodShare": "um VOD compartilhado",
+        "recap": "um resumo de torneio",
+        "coachReview": "uma avaliação do treinador"
+      }
     },
     "guided": {
       "progress": "Passo {{current}} de {{total}}",

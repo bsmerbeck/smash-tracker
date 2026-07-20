@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { ParryggLinkRequest } from '@smash-tracker/shared';
 import { api } from '@/lib/api';
 import { useAuth } from '@/hooks/useAuth';
+import { onboardingProgressQueryKey } from '@/hooks/useOnboardingProgress';
 
 /** Link status for the signed-in user; refetches after link/unlink/verify/sync. */
 export function useParryggStatus() {
@@ -83,7 +84,12 @@ export function useParryggVerifyComplete() {
   });
 }
 
-/** Runs a match sync; imported matches/opponents invalidate immediately. */
+/**
+ * Runs a match sync; imported matches/opponents invalidate immediately.
+ * Phase 13 (ONBD-04, D-04): also invalidates `onboardingProgressQueryKey` —
+ * mirrors `useStartggSync`'s own reasoning (`reconcilePlayerActivation`
+ * runs after every parry.gg sync too, 13-05).
+ */
 export function useParryggSync() {
   const queryClient = useQueryClient();
   return useMutation({
@@ -93,6 +99,7 @@ export function useParryggSync() {
         queryClient.invalidateQueries({ queryKey: ['matches'] }),
         queryClient.invalidateQueries({ queryKey: ['opponents'] }),
         queryClient.invalidateQueries({ queryKey: ['parrygg', 'status'] }),
+        queryClient.invalidateQueries({ queryKey: onboardingProgressQueryKey }),
       ]);
     },
   });

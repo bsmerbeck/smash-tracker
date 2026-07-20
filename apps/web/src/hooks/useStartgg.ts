@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 import { api } from '@/lib/api';
 import { useAuth } from '@/hooks/useAuth';
+import { onboardingProgressQueryKey } from '@/hooks/useOnboardingProgress';
 
 /** Link status for the signed-in user; refetches after link/unlink/sync. */
 export function useStartggStatus() {
@@ -25,7 +26,14 @@ export function useStartggConnect() {
   });
 }
 
-/** Runs a tournament sync; imported matches/opponents invalidate immediately. */
+/**
+ * Runs a tournament sync; imported matches/opponents invalidate immediately.
+ * Phase 13 (ONBD-04, D-04): also invalidates `onboardingProgressQueryKey` —
+ * a sync can populate `tournamentEntries`/cross the `analytics_activated`
+ * games threshold server-side (`reconcilePlayerActivation` runs after every
+ * sync, 13-05), so the guided-path card must reflect that without a manual
+ * refresh.
+ */
 export function useStartggSync() {
   const queryClient = useQueryClient();
   return useMutation({
@@ -35,6 +43,7 @@ export function useStartggSync() {
         queryClient.invalidateQueries({ queryKey: ['matches'] }),
         queryClient.invalidateQueries({ queryKey: ['opponents'] }),
         queryClient.invalidateQueries({ queryKey: ['startgg', 'status'] }),
+        queryClient.invalidateQueries({ queryKey: onboardingProgressQueryKey }),
       ]);
     },
   });

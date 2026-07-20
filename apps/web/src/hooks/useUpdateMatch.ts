@@ -5,6 +5,7 @@ import { useActiveSubject } from './useActiveSubject';
 import { matchesQueryKey } from './useMatches';
 import { opponentsQueryKey } from './useOpponents';
 import { vodSharesQueryKey } from './useVodShares';
+import { onboardingProgressQueryKey } from './useOnboardingProgress';
 
 /**
  * PATCH /api/matches/:id. Invalidates matches + opponents (opponent name may
@@ -13,6 +14,8 @@ import { vodSharesQueryKey } from './useVodShares';
  * server-side, and My Shares must reflect that without a manual refresh.
  * `vodSharesQueryKey` is NOT subject-scoped: VOD shares are hidden entirely
  * in Coaching mode this phase (CONTEXT.md), so it stays a flat personal key.
+ * Phase 13 (ONBD-04, D-04): also invalidates `onboardingProgressQueryKey` —
+ * attaching a `vodUrl` can cross the `vod_activated` threshold server-side.
  */
 export function useUpdateMatch() {
   const queryClient = useQueryClient();
@@ -25,6 +28,7 @@ export function useUpdateMatch() {
         queryClient.invalidateQueries({ queryKey: matchesQueryKey(subject) }),
         queryClient.invalidateQueries({ queryKey: opponentsQueryKey(subject) }),
         queryClient.invalidateQueries({ queryKey: vodSharesQueryKey }),
+        queryClient.invalidateQueries({ queryKey: onboardingProgressQueryKey }),
       ]);
     },
   });
