@@ -1666,3 +1666,118 @@ describe('Owner note CRUD: POST/PATCH/DELETE /api/matches/:id/notes[/:noteId]', 
     expect(response.statusCode).toBe(401);
   });
 });
+
+/**
+ * Phase 13 (ONBD-04): personal writes (never client-library writes) fire
+ * `reconcilePlayerActivation`, which emits `analytics_activated` once the
+ * personal library reaches `ANALYTICS_MIN_GAMES` (5) and `vod_activated`
+ * once a personal match reaches vodUrl + 2 notes. Fire-and-forget, same
+ * `await new Promise((resolve) => setTimeout(resolve, 0))` flush pattern as
+ * the `client_vod_attached carry-over` describe above.
+ */
+describe('player activation reconciliation (ONBD-04)', () => {
+  it('fires analytics_activated once a PERSONAL match creation crosses the 5-game threshold', async () => {
+    const { app, database } = buildTestApp();
+    for (let i = 0; i < 4; i += 1) {
+      database.seed(`matches/${TEST_UID}/existing${i}`, {
+        fighter_id: 1,
+        opponent_id: 8,
+        time: 1700000000000,
+        win: true,
+      });
+    }
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/matches',
+      headers: authHeader(),
+      payload: validCreateInput,
+    });
+
+    expect(response.statusCode).toBe(201);
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const rows = eventRows(database.dump());
+    const fired = rows.filter((row) => row.eventName === 'analytics_activated');
+    expect(fired).toHaveLength(1);
+    expect(fired[0]?.actorId).toBe(TEST_UID);
+  });
+
+  it('does not re-fire analytics_activated on a second personal creation past the threshold', async () => {
+    const { app, database } = buildTestApp();
+    for (let i = 0; i < 5; i += 1) {
+      database.seed(`matches/${TEST_UID}/existing${i}`, {
+        fighter_id: 1,
+        opponent_id: 8,
+        time: 1700000000000,
+        win: true,
+      });
+    }
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/matches',
+      headers: authHeader(),
+      payload: validCreateInput,
+    });
+
+    expect(response.statusCode).toBe(201);
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const rows = eventRows(database.dump());
+    expect(rows.filter((row) => row.eventName === 'analytics_activated')).toHaveLength(1);
+  });
+
+  it('does NOT reconcile activation for a client-library match creation (subjectId !== uid)', async () => {
+    const { app, database } = buildTestApp();
+    const tenantId = await createManagedClient(app);
+    for (let i = 0; i < 4; i += 1) {
+      database.seed(`matches/${tenantId}/existing${i}`, {
+        fighter_id: 1,
+        opponent_id: 8,
+        time: 1700000000000,
+        win: true,
+      });
+    }
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/matches',
+      headers: { ...authHeader(), 'x-active-subject': `client:${tenantId}` },
+      payload: validCreateInput,
+    });
+
+    expect(response.statusCode).toBe(201);
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const rows = eventRows(database.dump());
+    expect(rows.filter((row) => row.eventName === 'analytics_activated')).toHaveLength(0);
+  });
+
+  it('fires vod_activated once a note POST brings a personal match to vodUrl + 2 notes', async () => {
+    const { app, database } = buildTestApp();
+    database.seed(`matches/${TEST_UID}/m1`, {
+      fighter_id: 1,
+      opponent_id: 8,
+      time: 1700000000000,
+      win: true,
+      vodUrl: 'https://youtube.com/watch?v=abc123',
+      vodTimestamps: { n1: { seconds: 5, note: 'first note' } },
+    });
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/matches/m1/notes',
+      headers: authHeader(),
+      payload: { seconds: 30, note: 'second note' },
+    });
+
+    expect(response.statusCode).toBe(201);
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const rows = eventRows(database.dump());
+    const fired = rows.filter((row) => row.eventName === 'vod_activated');
+    expect(fired).toHaveLength(1);
+    expect(fired[0]?.actorId).toBe(TEST_UID);
+  });
+});
