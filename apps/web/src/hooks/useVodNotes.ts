@@ -3,6 +3,7 @@ import { api, type VodTimestampInput } from '@/lib/api';
 import { useActiveSubject } from './useActiveSubject';
 import { matchesQueryKey } from './useMatches';
 import { vodSharesQueryKey } from './useVodShares';
+import { onboardingProgressQueryKey } from './useOnboardingProgress';
 
 /**
  * Mutation hooks for the dedicated timestamp-note endpoints (Phase 8:
@@ -14,6 +15,10 @@ import { vodSharesQueryKey } from './useVodShares';
  * (id-bearing, seconds-sorted) read refetches — mirrors `useVodShares`'s
  * invalidation convention. Unlike `useUpdateMatch`, the `opponents` query is
  * NOT invalidated: a note write can never change an opponent name.
+ *
+ * `useCreateNote`/`useUpdateNote` also invalidate `onboardingProgressQueryKey`
+ * (Phase 13, ONBD-04/D-04): a note write can cross `vod_activated`'s "one
+ * VOD + two notes" threshold server-side.
  */
 
 /** POST /api/matches/:id/notes. Resolves with the created, id-bearing note. */
@@ -24,7 +29,10 @@ export function useCreateNote() {
     mutationFn: ({ matchId, input }: { matchId: string; input: VodTimestampInput }) =>
       api.matches.createNote(matchId, input),
     onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: matchesQueryKey(subject) });
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: matchesQueryKey(subject) }),
+        queryClient.invalidateQueries({ queryKey: onboardingProgressQueryKey }),
+      ]);
     },
   });
 }
@@ -44,7 +52,10 @@ export function useUpdateNote() {
       input: VodTimestampInput;
     }) => api.matches.updateNote(matchId, noteId, input),
     onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: matchesQueryKey(subject) });
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: matchesQueryKey(subject) }),
+        queryClient.invalidateQueries({ queryKey: onboardingProgressQueryKey }),
+      ]);
     },
   });
 }

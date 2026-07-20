@@ -4,6 +4,7 @@ import { toast } from 'sonner';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { SUPPORTED_LANGUAGES } from '@/i18n';
 import { useStartggAutoSync } from '@/hooks/useStartgg';
+import { GuidedPathCard } from '@/components/onboarding/GuidedPathCard';
 import { Sidebar } from './Sidebar';
 import { Topbar } from './Topbar';
 import { Footer } from './Footer';
@@ -37,6 +38,13 @@ function useLanguageDetectionNotice() {
  * `TooltipProvider` so any page can use `Tooltip`/`TooltipTrigger` without
  * repeating the provider setup (first consumer: the tournament detail
  * page's stage-chip and Advisor Retrospective tooltips).
+ *
+ * Phase 13 (ONBD-03, D-04): `GuidedPathCard` is mounted here, pinned above
+ * every page's own content, so it follows the signed-in user across
+ * whichever real feature page their saved onboarding intent lands on
+ * (VOD Manager, Fighter Analysis, Tournaments, Scout, Client Hub) —
+ * `GuidedPathCard` itself self-guards (renders nothing without a saved,
+ * incomplete intent), so this mount is unconditional.
  */
 export function MainLayout({ children }: { children: ReactNode }) {
   // page_view reporting lives in routes/RouteAnalytics.tsx (app-wide, public
@@ -51,7 +59,10 @@ export function MainLayout({ children }: { children: ReactNode }) {
         <div className="flex flex-1">
           <Sidebar />
           <div className="flex min-w-0 flex-1 flex-col">
-            <main className="flex-1 p-4 sm:p-6">{children}</main>
+            <main className="flex-1 p-4 sm:p-6">
+              <GuidedPathCard />
+              {children}
+            </main>
             <Footer />
           </div>
         </div>
