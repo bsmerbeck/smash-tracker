@@ -1,6 +1,22 @@
 import { describe, expect, it } from 'vitest';
 import { authHeader, buildTestApp, TEST_EMAIL, TEST_UID } from '../test-support/testApp.js';
 
+/**
+ * Shared by every describe block below that asserts on `eventLedger` D-event
+ * rows (`signup_completed`, `onboarding_intent_selected`,
+ * `coaching_mode_enabled`) — module-scoped so it is not re-declared per
+ * describe block.
+ */
+function allLedgerRows(database: ReturnType<typeof buildTestApp>['database']): unknown[] {
+  const dump = database.dump() as { eventLedger?: Record<string, Record<string, unknown>> };
+  const days = dump.eventLedger ?? {};
+  return Object.values(days).flatMap((day) => Object.values(day));
+}
+
+async function flushMacrotask(): Promise<void> {
+  await new Promise((resolve) => setTimeout(resolve, 0));
+}
+
 describe('PUT /api/users/me', () => {
   it('upserts the user node from the verified token email', async () => {
     const { app, database } = buildTestApp();
@@ -42,16 +58,6 @@ describe('PUT /api/users/me', () => {
   // createEvent(...)` call is fire-and-forget, so tests flush a macrotask
   // tick after `inject()` before asserting on the ledger.
   describe('signup_completed (first-provision D event)', () => {
-    function allLedgerRows(database: ReturnType<typeof buildTestApp>['database']): unknown[] {
-      const dump = database.dump() as { eventLedger?: Record<string, Record<string, unknown>> };
-      const days = dump.eventLedger ?? {};
-      return Object.values(days).flatMap((day) => Object.values(day));
-    }
-
-    async function flushMacrotask(): Promise<void> {
-      await new Promise((resolve) => setTimeout(resolve, 0));
-    }
-
     it('emits exactly one signup_completed row for a uid whose email did not exist before the call', async () => {
       const { app, database } = buildTestApp();
 
@@ -275,6 +281,285 @@ describe('PUT /api/users/me', () => {
       expect('referredByShareId' in dump.users[TEST_UID]!).toBe(false);
     });
   });
+
+  // Phase 13 (ONBD-02/D-01/D-02): onboardingIntent persistence — the
+  // conditional-spread `.nullish()` write discipline (production-gap item
+  // 3), same as coachingModeEnabled/referredByShareId above.
+  describe('onboardingIntent (conditional-spread persistence)', () => {
+    it('persists a valid onboardingIntent on the user node', async () => {
+      const { app, database } = buildTestApp();
+
+      const response = await app.inject({
+        method: 'PUT',
+        url: '/api/users/me',
+        headers: authHeader(),
+        payload: { onboardingIntent: 'scout' },
+      });
+
+      expect(response.statusCode).toBe(200);
+      expect(database.dump()).toMatchObject({
+        users: { [TEST_UID]: { email: TEST_EMAIL, onboardingIntent: 'scout' } },
+      });
+    });
+
+    it('rejects a body with an onboardingIntent outside the five-value enum (400, never written)', async () => {
+      const { app, database } = buildTestApp();
+
+      const response = await app.inject({
+        method: 'PUT',
+        url: '/api/users/me',
+        headers: authHeader(),
+        payload: { onboardingIntent: 'not_an_intent' },
+      });
+
+      expect(response.statusCode).toBe(400);
+      const dump = database.dump() as { users?: Record<string, unknown> };
+      expect(dump.users?.[TEST_UID]).toBeUndefined();
+    });
+
+    it('never writes onboardingIntent when the field is omitted (no null write — production-gap item 3)', async () => {
+      const { app, database } = buildTestApp();
+
+      const response = await app.inject({
+        method: 'PUT',
+        url: '/api/users/me',
+        headers: authHeader(),
+      });
+
+      expect(response.statusCode).toBe(200);
+      const dump = database.dump() as { users: Record<string, Record<string, unknown>> };
+      expect('onboardingIntent' in dump.users[TEST_UID]!).toBe(false);
+    });
+
+    it('a later omitted-field call leaves a previously-saved onboardingIntent untouched', async () => {
+      const { app, database } = buildTestApp();
+
+      await app.inject({
+        method: 'PUT',
+        url: '/api/users/me',
+        headers: authHeader(),
+        payload: { onboardingIntent: 'prepare' },
+      });
+      // Bodyless re-provision (token refresh) — must not clear the saved intent.
+      await app.inject({ method: 'PUT', url: '/api/users/me', headers: authHeader() });
+
+      expect(database.dump()).toMatchObject({
+        users: { [TEST_UID]: { email: TEST_EMAIL, onboardingIntent: 'prepare' } },
+      });
+    });
+  });
+
+  // Phase 13 (ONBD-02/D-01/D-02): onboarding_intent_selected fires once per
+  // GENUINE intent change (read-before-write guard, mirrors
+  // signup_completed's isFirstProvision check), carrying the asked-vs-
+  // skipped cohort split in payload.asked.
+  describe('onboarding_intent_selected (change-guarded D event)', () => {
+    it('emits with payload { intent, asked } when onboardingIntent is set with onboardingAsked true', async () => {
+      const { app, database } = buildTestApp();
+
+      const response = await app.inject({
+        method: 'PUT',
+        url: '/api/users/me',
+        headers: authHeader(),
+        payload: { onboardingIntent: 'scout', onboardingAsked: true },
+      });
+      await flushMacrotask();
+
+      expect(response.statusCode).toBe(200);
+      const rows = allLedgerRows(database);
+      expect(rows).toHaveLength(2); // signup_completed (first provision) + this event
+      expect(rows).toContainEqual(
+        expect.objectContaining({
+          eventName: 'onboarding_intent_selected',
+          actorId: TEST_UID,
+          causationId: TEST_UID,
+          payload: { intent: 'scout', asked: true },
+        }),
+      );
+    });
+
+    it('marks payload.asked false for a context-skipped selection (onboardingAsked omitted)', async () => {
+      const { app, database } = buildTestApp();
+
+      await app.inject({
+        method: 'PUT',
+        url: '/api/users/me',
+        headers: authHeader(),
+        payload: { onboardingIntent: 'review_vod' },
+      });
+      await flushMacrotask();
+
+      const rows = allLedgerRows(database);
+      expect(rows).toContainEqual(
+        expect.objectContaining({
+          eventName: 'onboarding_intent_selected',
+          payload: { intent: 'review_vod', asked: false },
+        }),
+      );
+    });
+
+    it('does not re-emit on a second identical PUT with the same intent', async () => {
+      const { app, database } = buildTestApp();
+
+      await app.inject({
+        method: 'PUT',
+        url: '/api/users/me',
+        headers: authHeader(),
+        payload: { onboardingIntent: 'scout', onboardingAsked: true },
+      });
+      await flushMacrotask();
+      await app.inject({
+        method: 'PUT',
+        url: '/api/users/me',
+        headers: authHeader(),
+        payload: { onboardingIntent: 'scout', onboardingAsked: true },
+      });
+      await flushMacrotask();
+
+      const rows = allLedgerRows(database).filter(
+        (row) => (row as { eventName?: string }).eventName === 'onboarding_intent_selected',
+      );
+      expect(rows).toHaveLength(1);
+    });
+
+    it('emits again when a saved intent genuinely changes', async () => {
+      const { app, database } = buildTestApp();
+
+      await app.inject({
+        method: 'PUT',
+        url: '/api/users/me',
+        headers: authHeader(),
+        payload: { onboardingIntent: 'scout' },
+      });
+      await flushMacrotask();
+      await app.inject({
+        method: 'PUT',
+        url: '/api/users/me',
+        headers: authHeader(),
+        payload: { onboardingIntent: 'coach_clients' },
+      });
+      await flushMacrotask();
+
+      const rows = allLedgerRows(database).filter(
+        (row) => (row as { eventName?: string }).eventName === 'onboarding_intent_selected',
+      );
+      expect(rows).toHaveLength(2);
+    });
+
+    it('emits nothing when onboardingIntent is omitted entirely', async () => {
+      const { app, database } = buildTestApp();
+
+      await app.inject({ method: 'PUT', url: '/api/users/me', headers: authHeader() });
+      await flushMacrotask();
+
+      const rows = allLedgerRows(database).filter(
+        (row) => (row as { eventName?: string }).eventName === 'onboarding_intent_selected',
+      );
+      expect(rows).toHaveLength(0);
+    });
+  });
+
+  // Phase 13 (ONBD-05/D-06, RESEARCH.md Pitfall 2): coaching_mode_enabled
+  // was NEVER wired before this phase — this is the newly-added emission,
+  // gated on a genuine false/absent -> true flip (never a repeat true, never
+  // a false/no-op call).
+  describe('coaching_mode_enabled (newly-wired D event)', () => {
+    it('emits once on a genuine false/absent -> true flip', async () => {
+      const { app, database } = buildTestApp();
+
+      const response = await app.inject({
+        method: 'PUT',
+        url: '/api/users/me',
+        headers: authHeader(),
+        payload: { coachingModeEnabled: true },
+      });
+      await flushMacrotask();
+
+      expect(response.statusCode).toBe(200);
+      const rows = allLedgerRows(database);
+      expect(rows).toContainEqual(
+        expect.objectContaining({
+          eventName: 'coaching_mode_enabled',
+          actorId: TEST_UID,
+          causationId: TEST_UID,
+        }),
+      );
+    });
+
+    it('does not re-emit on a repeat PUT with coachingModeEnabled true', async () => {
+      const { app, database } = buildTestApp();
+
+      await app.inject({
+        method: 'PUT',
+        url: '/api/users/me',
+        headers: authHeader(),
+        payload: { coachingModeEnabled: true },
+      });
+      await flushMacrotask();
+      await app.inject({
+        method: 'PUT',
+        url: '/api/users/me',
+        headers: authHeader(),
+        payload: { coachingModeEnabled: true },
+      });
+      await flushMacrotask();
+
+      const rows = allLedgerRows(database).filter(
+        (row) => (row as { eventName?: string }).eventName === 'coaching_mode_enabled',
+      );
+      expect(rows).toHaveLength(1);
+    });
+
+    it('does not emit for a false or absent coachingModeEnabled value', async () => {
+      const { app, database } = buildTestApp();
+
+      await app.inject({
+        method: 'PUT',
+        url: '/api/users/me',
+        headers: authHeader(),
+        payload: { coachingModeEnabled: false },
+      });
+      await flushMacrotask();
+      await app.inject({ method: 'PUT', url: '/api/users/me', headers: authHeader() });
+      await flushMacrotask();
+
+      const rows = allLedgerRows(database).filter(
+        (row) => (row as { eventName?: string }).eventName === 'coaching_mode_enabled',
+      );
+      expect(rows).toHaveLength(0);
+    });
+
+    it('re-emits on a later false -> true flip after an explicit disable', async () => {
+      const { app, database } = buildTestApp();
+
+      await app.inject({
+        method: 'PUT',
+        url: '/api/users/me',
+        headers: authHeader(),
+        payload: { coachingModeEnabled: true },
+      });
+      await flushMacrotask();
+      await app.inject({
+        method: 'PUT',
+        url: '/api/users/me',
+        headers: authHeader(),
+        payload: { coachingModeEnabled: false },
+      });
+      await flushMacrotask();
+      await app.inject({
+        method: 'PUT',
+        url: '/api/users/me',
+        headers: authHeader(),
+        payload: { coachingModeEnabled: true },
+      });
+      await flushMacrotask();
+
+      const rows = allLedgerRows(database).filter(
+        (row) => (row as { eventName?: string }).eventName === 'coaching_mode_enabled',
+      );
+      expect(rows).toHaveLength(2);
+    });
+  });
 });
 
 describe('GET /api/users/me', () => {
@@ -309,6 +594,7 @@ describe('GET /api/users/me', () => {
       email: TEST_EMAIL,
       fighters: { primary: [1, 2], secondary: [3] },
       coachingModeEnabled: false,
+      onboardingIntent: null,
     });
   });
 
