@@ -1684,6 +1684,75 @@
       "fighterAnalysis": "Fighter Analysis",
       "matchups": "Matchups"
     },
+    "reviews": {
+      "composer": {
+        "loadError": "Something went wrong loading this review.",
+        "publish": "Publish",
+        "publishSuccess": "Published v{{version}}",
+        "publishError": "Something went wrong publishing this review.",
+        "sourceBar": {
+          "label": "Source:",
+          "none": "No source selected",
+          "noPlayer": "Select a source to start watching."
+        },
+        "sourcesDrawer": {
+          "trigger": "Sources ▾",
+          "title": "Sources",
+          "description": "Switch which VOD the player and evidence list are showing. Multi-VOD reviews are first-class — citations can reference any of them.",
+          "empty": "No VODs in this client's library yet.",
+          "vsOpponent": "vs {{opponent}}"
+        },
+        "evidence": {
+          "heading_one": "Evidence ({{count}})",
+          "heading_other": "Evidence ({{count}})",
+          "empty": "No timestamped notes on this source yet."
+        },
+        "tabs": {
+          "clientReview": "Client review",
+          "privateNotes": "🔒 Private notes"
+        },
+        "autosave": {
+          "saving": "Saving…",
+          "saved": "Saved",
+          "error": "Couldn't save — check your connection."
+        },
+        "sections": {
+          "kinds": {
+            "summary": "Summary",
+            "strengths": "Strengths",
+            "priorities": "Priorities",
+            "practicePlan": "Practice Plan",
+            "general": "General Notes",
+            "matchupNotes": "Matchup Notes",
+            "stageNotes": "Stage Notes",
+            "drills": "Drills",
+            "nextGoals": "Next Goals"
+          },
+          "sectionOptionsAria": "Section options: {{section}}",
+          "hideSection": "Hide section",
+          "addSection": "Add section — restore hidden or add General Notes",
+          "addGeneralNotes": "General Notes",
+          "undoBanner": "Section \"{{section}}\" hidden — content kept",
+          "undo": "Undo",
+          "undoAria": "Undo hide section {{section}}"
+        },
+        "privateNotes": {
+          "banner": "Only you can see this. Never delivered, never in previews, stored separately from the review.",
+          "textareaAria": "Private notes for this review",
+          "placeholder": "Private notes for this review, not the current source VOD…",
+          "scopeHint": "Private notes for this review, not the current source VOD — footage and evidence stay usable on the left while you write here."
+        },
+        "conflictDialog": {
+          "title": "Someone else saved changes to this review",
+          "description": "Your changes weren't saved because the review changed on the server first. Pick which version to keep — this never happens silently.",
+          "mineLabel": "Your version",
+          "theirsLabel": "Their version",
+          "empty": "(empty)",
+          "seeTheirs": "See theirs",
+          "keepMine": "Keep mine"
+        }
+      }
+    },
     "disabled": {
       "title": "Coaching mode is off",
       "body": "Enable it in Profile → Account to manage other players' matches, VODs, and analytics as a coach.",

@@ -1684,6 +1684,75 @@
       "fighterAnalysis": "Análise de personagem",
       "matchups": "Confrontos"
     },
+    "reviews": {
+      "composer": {
+        "loadError": "Algo deu errado ao carregar esta análise.",
+        "publish": "Publicar",
+        "publishSuccess": "v{{version}} publicada",
+        "publishError": "Algo deu errado ao publicar esta análise.",
+        "sourceBar": {
+          "label": "Fonte:",
+          "none": "Nenhuma fonte selecionada",
+          "noPlayer": "Selecione uma fonte para começar a assistir."
+        },
+        "sourcesDrawer": {
+          "trigger": "Fontes ▾",
+          "title": "Fontes",
+          "description": "Troque o VOD que o player e a lista de evidências estão exibindo. Análises com vários VODs são totalmente suportadas — as citações podem referenciar qualquer um deles.",
+          "empty": "Este cliente ainda não tem VODs na biblioteca.",
+          "vsOpponent": "vs {{opponent}}"
+        },
+        "evidence": {
+          "heading_one": "Evidência ({{count}})",
+          "heading_other": "Evidências ({{count}})",
+          "empty": "Esta fonte ainda não tem notas com marca de tempo."
+        },
+        "tabs": {
+          "clientReview": "Análise do cliente",
+          "privateNotes": "🔒 Notas privadas"
+        },
+        "autosave": {
+          "saving": "Salvando…",
+          "saved": "Salvo",
+          "error": "Não foi possível salvar — verifique sua conexão."
+        },
+        "sections": {
+          "kinds": {
+            "summary": "Resumo",
+            "strengths": "Pontos fortes",
+            "priorities": "Prioridades",
+            "practicePlan": "Plano de treino",
+            "general": "Notas gerais",
+            "matchupNotes": "Notas de confronto",
+            "stageNotes": "Notas de estágio",
+            "drills": "Exercícios",
+            "nextGoals": "Próximos objetivos"
+          },
+          "sectionOptionsAria": "Opções da seção: {{section}}",
+          "hideSection": "Ocultar seção",
+          "addSection": "Adicionar seção — restaurar oculta ou adicionar Notas gerais",
+          "addGeneralNotes": "Notas gerais",
+          "undoBanner": "Seção \"{{section}}\" ocultada — conteúdo mantido",
+          "undo": "Desfazer",
+          "undoAria": "Desfazer ocultar seção {{section}}"
+        },
+        "privateNotes": {
+          "banner": "Só você pode ver isso. Nunca é entregue, nunca aparece em pré-visualizações, é armazenado separadamente da análise.",
+          "textareaAria": "Notas privadas desta análise",
+          "placeholder": "Notas privadas para esta análise, não para o VOD de origem atual…",
+          "scopeHint": "Notas privadas para esta análise, não para o VOD de origem atual — as imagens e evidências continuam disponíveis à esquerda enquanto você escreve aqui."
+        },
+        "conflictDialog": {
+          "title": "Outra pessoa salvou alterações nesta análise",
+          "description": "Suas alterações não foram salvas porque a análise mudou primeiro no servidor. Escolha qual versão manter — isso nunca acontece silenciosamente.",
+          "mineLabel": "Sua versão",
+          "theirsLabel": "A versão deles",
+          "empty": "(vazio)",
+          "seeTheirs": "Ver a deles",
+          "keepMine": "Manter a minha"
+        }
+      }
+    },
     "disabled": {
       "title": "O modo Coaching está desativado",
       "body": "Ative-o em Perfil → Conta para gerenciar as partidas, VODs e análises de outros jogadores como treinador.",
