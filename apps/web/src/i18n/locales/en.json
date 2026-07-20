@@ -1854,5 +1854,173 @@
       "button": "Get started free"
     },
     "footer": "Acknowledging is recorded as a link acknowledgement (whoever holds this link). This link is revocable and can expire · it grants access to exactly one published version · no drafts, private notes, or workspace access · bot and unfurl visits never count as \"Viewed\"."
+  },
+  "onboarding": {
+    "welcome": {
+      "title": "What are you here to do?",
+      "subtitle": "Pick one to get started — you can always switch later.",
+      "skip": "Skip for now",
+      "suggested": "Suggested for you",
+      "error": "Something went wrong saving that — please try again."
+    },
+    "intent": {
+      "prepare": {
+        "title": "Prepare for a tournament",
+        "description": "Get ready for an upcoming event"
+      },
+      "review_vod": {
+        "title": "Review a VOD",
+        "description": "Watch and annotate a recorded set"
+      },
+      "track_improvement": {
+        "title": "Track improvement",
+        "description": "Log matches and watch your trends"
+      },
+      "scout": {
+        "title": "Scout an opponent",
+        "description": "Build a report before you play them"
+      },
+      "coach_clients": {
+        "title": "Coach clients",
+        "description": "Manage clients, review their VODs, track their progress"
+      }
+    },
+    "originChip": {
+      "fromArtifact": "You came from {{artifact}}",
+      "backToWatching": "Back to what you were watching"
+    },
+    "guided": {
+      "progress": "Step {{current}} of {{total}}",
+      "switchIntent": "Switch intent",
+      "steps": {
+        "reviewVod": {
+          "addVod": {
+            "title": "Attach a VOD",
+            "description": "Link a recording to one of your matches",
+            "button": "Add a VOD"
+          },
+          "addTwoNotes": {
+            "title": "Add two notes",
+            "description": "Timestamp key moments while it's fresh",
+            "button": "Add notes"
+          },
+          "tagMatch": {
+            "title": "Tag the match",
+            "description": "Make it easy to find later",
+            "button": "Add tags"
+          }
+        },
+        "trackImprovement": {
+          "connectSync": {
+            "title": "Connect start.gg or parry.gg",
+            "description": "Sync your matches automatically",
+            "button": "Connect"
+          },
+          "logGames": {
+            "title": "Log 5 games",
+            "description": "Manual entry works too — sync isn't required",
+            "button": "Log a match"
+          },
+          "viewTrends": {
+            "title": "See your trends",
+            "description": "Your rating curve and monthly performance",
+            "button": "View trends"
+          }
+        },
+        "prepare": {
+          "linkEvent": {
+            "title": "Link your event",
+            "description": "Pull in bracket and opponent info from start.gg",
+            "button": "Link event"
+          },
+          "scoutOpponent": {
+            "title": "Scout your first opponent",
+            "description": "Build a report before you play them",
+            "button": "Scout"
+          },
+          "reviewMatchups": {
+            "title": "Review your matchups",
+            "description": "Check stage mastery and matchup coverage",
+            "button": "View matchups"
+          }
+        },
+        "scout": {
+          "runScout": {
+            "title": "Run a scout",
+            "description": "Search for an opponent to build a report",
+            "button": "Scout an opponent"
+          },
+          "reviewReport": {
+            "title": "Review the report",
+            "description": "See tendencies, stage picks, and matchup notes",
+            "button": "Open report"
+          }
+        },
+        "coachClients": {
+          "enableCoaching": {
+            "title": "Coaching mode enabled",
+            "description": "You can switch back to Personal anytime",
+            "button": "Done"
+          },
+          "createClient": {
+            "title": "Create your first client",
+            "description": "Opens the existing Client Hub create dialog",
+            "button": "Create client"
+          },
+          "publishReview": {
+            "title": "Publish your first review",
+            "description": "Send feedback your client can open with no account",
+            "button": "Write a review"
+          }
+        }
+      }
+    },
+    "recovery": {
+      "syncFailed": {
+        "title": "Sync didn't finish",
+        "description": "You can still log matches manually — everything below counts the same.",
+        "button": "Log matches manually"
+      },
+      "eventAssociationFailed": {
+        "title": "Couldn't link that event automatically",
+        "description": "Associate it manually instead — your progress isn't lost.",
+        "button": "Associate manually"
+      },
+      "opponentLookupFailed": {
+        "title": "Couldn't find that opponent automatically",
+        "description": "Enter them manually to keep scouting.",
+        "button": "Enter opponent manually"
+      }
+    },
+    "prep": {
+      "manualAssociate": {
+        "label": "Event name",
+        "date": "Event date",
+        "submit": "Associate event"
+      }
+    },
+    "dashboard": {
+      "nextBestAction": {
+        "chooseIntent": {
+          "title": "Not sure what to do first?",
+          "button": "Choose what you're here to do"
+        },
+        "createFirstClient": {
+          "title": "Create your first client",
+          "description": "Coaching mode is on — set up a client to get started.",
+          "button": "Create client"
+        },
+        "currentStep": {
+          "title": "Pick up where you left off"
+        }
+      }
+    },
+    "coach": {
+      "publishReview": {
+        "title": "Publish your first review",
+        "description": "Send feedback your client can open with no account — the final step of getting set up.",
+        "button": "Write a review"
+      }
+    }
   }
 }

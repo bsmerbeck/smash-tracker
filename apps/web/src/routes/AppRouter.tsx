@@ -19,6 +19,12 @@ import { RouteTitles } from './RouteTitles';
 const DashboardPage = lazy(() =>
   import('@/pages/Dashboard/DashboardPage').then((m) => ({ default: m.DashboardPage })),
 );
+// Phase 13 (Coach-Aware Intent Onboarding, ONBD-01/ONBD-02): the one-intent-
+// question chooser HomePage's post-auth routing branch can send a new
+// account to. ProtectedRoute-gated like every other authenticated route.
+const WelcomePage = lazy(() =>
+  import('@/pages/Welcome/WelcomePage').then((m) => ({ default: m.WelcomePage })),
+);
 const ChoosePrimaryPage = lazy(() =>
   import('@/pages/CharacterSelect/ChoosePrimaryPage').then((m) => ({
     default: m.ChoosePrimaryPage,
@@ -181,6 +187,20 @@ export function AppRouter() {
             element={
               <ProtectedRoute>
                 <DashboardPage />
+              </ProtectedRoute>
+            }
+          />
+          {/* Phase 13 (Coach-Aware Intent Onboarding, ONBD-01/ONBD-02/D-01):
+              route-visible so it survives reload/deep-link/Back — HomePage's
+              post-auth routing branch sends a new account with no saved
+              intent and an ambiguous (or absent) origin here; also
+              re-enterable anytime via the dashboard next-best-action area
+              or any guided path's switch-intent link. */}
+          <Route
+            path="/welcome"
+            element={
+              <ProtectedRoute>
+                <WelcomePage />
               </ProtectedRoute>
             }
           />

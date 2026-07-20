@@ -1854,5 +1854,173 @@
       "button": "無料で始める"
     },
     "footer": "確認は、このリンクを持つ人によるリンク確認として記録されます。このリンクは取り消し可能で、期限切れになることがあります · 公開済みのバージョンを1つだけ閲覧できます · 下書き、非公開メモ、ワークスペースへのアクセスはありません · ボットやプレビューによるアクセスは「閲覧済み」としてカウントされません。"
+  },
+  "onboarding": {
+    "welcome": {
+      "title": "今日は何をしますか？",
+      "subtitle": "始めるために1つ選んでください。あとからいつでも変更できます。",
+      "skip": "今はスキップ",
+      "suggested": "おすすめ",
+      "error": "保存中に問題が発生しました。もう一度お試しください。"
+    },
+    "intent": {
+      "prepare": {
+        "title": "大会の準備をする",
+        "description": "近日開催のイベントに備えます"
+      },
+      "review_vod": {
+        "title": "VODを見直す",
+        "description": "録画したセットを視聴して注釈を付けます"
+      },
+      "track_improvement": {
+        "title": "上達を記録する",
+        "description": "対戦を記録して、傾向を確認します"
+      },
+      "scout": {
+        "title": "対戦相手を偵察する",
+        "description": "対戦する前にレポートを作成します"
+      },
+      "coach_clients": {
+        "title": "クライアントをコーチする",
+        "description": "クライアントを管理し、VODをレビューし、上達を追跡します"
+      }
+    },
+    "originChip": {
+      "fromArtifact": "{{artifact}}からアクセスしました",
+      "backToWatching": "視聴していた内容に戻る"
+    },
+    "guided": {
+      "progress": "ステップ {{current}} / {{total}}",
+      "switchIntent": "目的を変更",
+      "steps": {
+        "reviewVod": {
+          "addVod": {
+            "title": "VODを紐づける",
+            "description": "録画を対戦記録に紐づけます",
+            "button": "VODを追加"
+          },
+          "addTwoNotes": {
+            "title": "メモを2件追加",
+            "description": "覚えているうちに重要な瞬間にタイムスタンプを付けます",
+            "button": "メモを追加"
+          },
+          "tagMatch": {
+            "title": "対戦にタグを付ける",
+            "description": "後で見つけやすくします",
+            "button": "タグを追加"
+          }
+        },
+        "trackImprovement": {
+          "connectSync": {
+            "title": "start.gg または parry.gg を連携",
+            "description": "対戦を自動的に同期します",
+            "button": "連携する"
+          },
+          "logGames": {
+            "title": "対戦を5件記録",
+            "description": "手動入力でも構いません。同期は必須ではありません",
+            "button": "対戦を記録"
+          },
+          "viewTrends": {
+            "title": "傾向を確認する",
+            "description": "レーティング推移と月間パフォーマンス",
+            "button": "傾向を見る"
+          }
+        },
+        "prepare": {
+          "linkEvent": {
+            "title": "イベントを連携する",
+            "description": "start.ggからブラケットと対戦相手情報を取り込みます",
+            "button": "イベントを連携"
+          },
+          "scoutOpponent": {
+            "title": "最初の対戦相手を偵察する",
+            "description": "対戦する前にレポートを作成します",
+            "button": "偵察する"
+          },
+          "reviewMatchups": {
+            "title": "対面を確認する",
+            "description": "ステージの習熟度と対面カバレッジを確認します",
+            "button": "対面を見る"
+          }
+        },
+        "scout": {
+          "runScout": {
+            "title": "偵察を実行する",
+            "description": "レポートを作成する対戦相手を検索します",
+            "button": "対戦相手を偵察"
+          },
+          "reviewReport": {
+            "title": "レポートを確認する",
+            "description": "傾向、ステージ選択、対面メモを確認します",
+            "button": "レポートを開く"
+          }
+        },
+        "coachClients": {
+          "enableCoaching": {
+            "title": "コーチングモードが有効になりました",
+            "description": "いつでもパーソナルモードに戻せます",
+            "button": "完了"
+          },
+          "createClient": {
+            "title": "最初のクライアントを作成する",
+            "description": "既存のクライアントハブの作成ダイアログを開きます",
+            "button": "クライアントを作成"
+          },
+          "publishReview": {
+            "title": "最初のレビューを公開する",
+            "description": "アカウント不要でクライアントが開けるフィードバックを送信します",
+            "button": "レビューを書く"
+          }
+        }
+      }
+    },
+    "recovery": {
+      "syncFailed": {
+        "title": "同期が完了しませんでした",
+        "description": "対戦は手動でも記録できます。以下はすべて同じようにカウントされます。",
+        "button": "対戦を手動で記録"
+      },
+      "eventAssociationFailed": {
+        "title": "そのイベントを自動で連携できませんでした",
+        "description": "手動で連携してください。進捗は失われません。",
+        "button": "手動で連携"
+      },
+      "opponentLookupFailed": {
+        "title": "その対戦相手を自動で見つけられませんでした",
+        "description": "手動で入力して偵察を続けてください。",
+        "button": "対戦相手を手動で入力"
+      }
+    },
+    "prep": {
+      "manualAssociate": {
+        "label": "イベント名",
+        "date": "開催日",
+        "submit": "イベントを連携"
+      }
+    },
+    "dashboard": {
+      "nextBestAction": {
+        "chooseIntent": {
+          "title": "何から始めればいいかわかりませんか？",
+          "button": "ここでやることを選ぶ"
+        },
+        "createFirstClient": {
+          "title": "最初のクライアントを作成する",
+          "description": "コーチングモードが有効です。クライアントを作成して始めましょう。",
+          "button": "クライアントを作成"
+        },
+        "currentStep": {
+          "title": "続きから再開する"
+        }
+      }
+    },
+    "coach": {
+      "publishReview": {
+        "title": "最初のレビューを公開する",
+        "description": "アカウント不要でクライアントが開けるフィードバックを送信します。これがセットアップの最後のステップです。",
+        "button": "レビューを書く"
+      }
+    }
   }
 }

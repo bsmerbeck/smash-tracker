@@ -1,12 +1,26 @@
+import { useEffect } from 'react';
 import { Navigate } from 'react-router';
 import { useAuth } from '@/hooks/useAuth';
 import { useSeo } from '@/hooks/useSeo';
+import { useProfile } from '@/hooks/useProfile';
+import { resolveOnboardingRoute, useSaveOnboardingIntent } from '@/hooks/useOnboarding';
+import * as onboardingOrigin from '@/lib/onboardingOrigin';
 import { SignInCard } from './SignInCard';
 import { LandingContent } from './LandingContent';
 
 /**
  * Landing page. Hosts sign-in (legacy behavior — there is no separate
- * /signin route). Redirects to /dashboard if already signed in.
+ * /signin route).
+ *
+ * ONBD-01/D-01/D-02 (Phase 13): a signed-in visitor is no longer
+ * unconditionally sent to `/dashboard` — `resolveOnboardingRoute` (see
+ * `useOnboarding.ts`) decides between the saved-intent destination, the
+ * plain dashboard (returning accounts, or a new account with no origin
+ * context isn't forced through /welcome twice), the unambiguous-origin
+ * guided-path skip, or the ambiguous-origin `/welcome` ask with a
+ * pre-selected option. The origin stamp is read here but NOT cleared — the
+ * guided-path card (13-07) still needs its `returnPath` for the "back to
+ * <artifact>" link/chip.
  *
  * V11 SEO: this is the only route Google can index — everything past
  * sign-in is auth-gated — so the signed-out view carries real marketing
@@ -25,13 +39,40 @@ export function HomePage() {
   });
 
   const { user, loading } = useAuth();
+  const { data: profile, isLoading: profileLoading } = useProfile();
+  const saveIntent = useSaveOnboardingIntent();
+
+  // Firebase's own "is this a brand-new sign-in" heuristic: a returning
+  // account's `lastSignInTime` differs from its `creationTime` on every
+  // subsequent sign-in, while a just-provisioned account's first
+  // `onAuthStateChanged` callback carries identical timestamps.
+  const isNewAccount = user != null && user.metadata.creationTime === user.metadata.lastSignInTime;
+  const origin = user ? onboardingOrigin.read() : null;
+  const decision =
+    user && !profileLoading && profile
+      ? resolveOnboardingRoute({
+          onboardingIntent: profile.onboardingIntent,
+          isNewAccount,
+          origin,
+        })
+      : null;
+
+  useEffect(() => {
+    if (decision?.autoSaveIntent) {
+      saveIntent.mutate({ onboardingIntent: decision.autoSaveIntent, onboardingAsked: false });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [decision?.autoSaveIntent]);
 
   if (loading) {
     return null;
   }
 
   if (user) {
-    return <Navigate to="/dashboard" replace />;
+    if (profileLoading || !profile || !decision) {
+      return null;
+    }
+    return <Navigate to={decision.to} state={decision.state} replace />;
   }
 
   return (
