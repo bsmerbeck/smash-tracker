@@ -82,13 +82,19 @@ export const EVENT_CATALOG = {
   report_failed: 'B',
   share_view_loaded: 'X',
   signup_cta_clicked: 'X',
-  // Phase 11 (TEN-01/PAR-02): coaching_mode_enabled and coaching_client_selected
-  // are deliberately NOT here — mode/client selection is pure route state
-  // (TEN-07) with no durable server-side transition to hang a D event off;
-  // inventing a synthetic write just to emit one would violate MEAS-02's
-  // "emitted after a durable state transition" rule. Revisit as X-class
-  // same-origin experience events (X_EVENT_ALLOWLIST) if product wants
-  // mode/selection funnel data later.
+  // Phase 11 (TEN-01/PAR-02): coaching_client_selected is deliberately NOT
+  // here — client selection is pure route state (TEN-07) with no durable
+  // server-side transition to hang a D event off; inventing a synthetic
+  // write just to emit one would violate MEAS-02's "emitted after a durable
+  // state transition" rule. Revisit as an X-class same-origin experience
+  // event (X_EVENT_ALLOWLIST) if product wants selection funnel data later.
+  //
+  // `coaching_mode_enabled` was ALSO deliberately excluded in Phase 11 for
+  // the same reason this comment used to give — but that premise was
+  // stale: `PUT /api/users/me` setting `coachingModeEnabled` genuinely IS a
+  // durable RTDB transition. Phase 13 (ONBD-05/D-06) corrects this and adds
+  // it below as a proper D event, now emitted at that PUT handler on a
+  // genuine false->true flip.
   managed_client_created: 'D',
   client_vod_attached: 'D',
   // Phase 12 Plan 08 (D-09/D-11): the strategy catalog's phase brief calls
@@ -106,6 +112,20 @@ export const EVENT_CATALOG = {
   // shorthand. See `apps/api/src/coaching/reviewDeliveries.ts`'s
   // `setDeliveryViewed` doc comment for the full rationale.
   client_review_view_loaded: 'D',
+  // Phase 13 (Coach-Aware Intent Onboarding, ONBD-02/ONBD-04/ONBD-05): the
+  // onboarding intent-save event, the newly-wired coaching-mode-enable
+  // event (see comment above), and the four player activation events —
+  // all fired by the API after their own durable RTDB transition commits.
+  // GA4 projection (`GA4_PAYLOAD_ALLOWLIST` in
+  // apps/api/src/events/ga4Project.ts) is deliberately deferred this phase
+  // (matches the Phase 12 precedent) — the RTDB ledger is the source of
+  // truth regardless.
+  onboarding_intent_selected: 'D',
+  coaching_mode_enabled: 'D',
+  analytics_activated: 'D',
+  vod_activated: 'D',
+  tournament_prep_activated: 'D',
+  scout_activated: 'D',
 } as const;
 export type EventCatalogName = keyof typeof EVENT_CATALOG;
 export type EventClass = (typeof EVENT_CATALOG)[EventCatalogName];

@@ -1,6 +1,22 @@
 import { z } from 'zod';
 
 /**
+ * Phase 13 (Coach-Aware Intent Onboarding, ONBD-02/D-01): the five locked
+ * onboarding intents a new account can select from `/welcome`. Deliberately
+ * closed — CONTEXT.md's stop hypothesis treats the chooser as cheap to
+ * remove/simplify, and any additional intents beyond these five are
+ * explicitly deferred (see 13-CONTEXT.md's Deferred Ideas).
+ */
+export const ONBOARDING_INTENTS = [
+  'prepare',
+  'review_vod',
+  'track_improvement',
+  'scout',
+  'coach_clients',
+] as const;
+export type OnboardingIntent = (typeof ONBOARDING_INTENTS)[number];
+
+/**
  * `users/{uid}` node. Previously created by the (now-deleted) Cloud
  * Function's `onCreate` auth trigger as `{ email }`; that behavior is now
  * replaced by an idempotent `PUT /api/users/me` called by the client after
@@ -16,11 +32,16 @@ import { z } from 'zod';
  * explicit opt-in (Profile > Account) — beginners never see coaching UI by
  * default. `.nullish()` per the same conditional-spread discipline: absent
  * (never written, or explicitly cleared) means disabled.
+ *
+ * Phase 13 (ONBD-02): `onboardingIntent` mirrors `coachingModeEnabled`'s
+ * exact two-schema shape — `.nullish()` here (storage), never a literal
+ * `null` write (production-gap item 3); absent means no intent saved yet.
  */
 export const userSchema = z.object({
   email: z.string().email(),
   referredByShareId: z.string().nullish(),
   coachingModeEnabled: z.boolean().nullish(),
+  onboardingIntent: z.enum(ONBOARDING_INTENTS).nullish(),
 });
 export type User = z.infer<typeof userSchema>;
 
@@ -29,6 +50,10 @@ export type User = z.infer<typeof userSchema>;
  * for a single profile fetch. `coachingModeEnabled` is always present here
  * (defaulted `false` server-side) even though the underlying storage field
  * is nullish — callers should never need an `?? false` of their own.
+ *
+ * Phase 13 (ONBD-02): `onboardingIntent` follows the same always-present
+ * convention — the API defaults it to `null` when unset, so routing/client
+ * logic can rely on the field existing without an `?? null` of its own.
  */
 export const userProfileSchema = z.object({
   uid: z.string().min(1),
@@ -38,5 +63,6 @@ export const userProfileSchema = z.object({
     secondary: z.array(z.number().int().positive()),
   }),
   coachingModeEnabled: z.boolean(),
+  onboardingIntent: z.enum(ONBOARDING_INTENTS).nullable(),
 });
 export type UserProfile = z.infer<typeof userProfileSchema>;
