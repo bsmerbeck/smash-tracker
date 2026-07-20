@@ -76,6 +76,7 @@ describe('useProfile / useUpdateCoachingModeEnabled', () => {
             email: 'pilot@example.com',
             fighters: { primary: [], secondary: [] },
             coachingModeEnabled: false,
+            onboardingIntent: null,
           }),
       }),
     );
@@ -112,6 +113,7 @@ describe('useProfile / useUpdateCoachingModeEnabled', () => {
             email: 'pilot@example.com',
             fighters: { primary: [], secondary: [] },
             coachingModeEnabled: enabled,
+            onboardingIntent: null,
           }),
       });
     });

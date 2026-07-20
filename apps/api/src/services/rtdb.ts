@@ -36,6 +36,7 @@ import {
   type StageFavorites,
   type Match,
   type MatchRecord,
+  type OnboardingIntent,
   type OpponentAliasMap,
   type OpponentNote,
   type OpponentNoteMap,
@@ -364,15 +365,29 @@ export class RtdbService {
    * written when explicitly present in `input` (conditional-spread), so
    * every existing bodyless/referral-only caller (sign-in provisioning)
    * leaves a previously-set toggle untouched.
+   *
+   * Phase 13 (ONBD-02): `onboardingIntent` follows the identical
+   * conditional-spread discipline — written only when explicitly present in
+   * `input`; never a literal `null` (production-gap item 3). A "skip"
+   * simply never passes the field.
    */
   async upsertUser(
     uid: string,
-    input: { email: string; referralToken?: string; coachingModeEnabled?: boolean },
+    input: {
+      email: string;
+      referralToken?: string;
+      coachingModeEnabled?: boolean;
+      onboardingIntent?: OnboardingIntent;
+    },
   ): Promise<void> {
     await this.database.ref(`users/${uid}/email`).set(input.email);
 
     if (input.coachingModeEnabled !== undefined) {
       await this.database.ref(`users/${uid}/coachingModeEnabled`).set(input.coachingModeEnabled);
+    }
+
+    if (input.onboardingIntent !== undefined) {
+      await this.database.ref(`users/${uid}/onboardingIntent`).set(input.onboardingIntent);
     }
 
     if (!input.referralToken) {

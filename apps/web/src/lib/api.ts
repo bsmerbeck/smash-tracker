@@ -64,6 +64,7 @@ import {
   type FighterSelectionInput,
   type GenerateReportRequest,
   type Match,
+  type OnboardingIntent,
   type ParryggLinkRequest,
   type ParryggLoginCompleteRequest,
   type ParryggLoginSearchRequest,
@@ -353,8 +354,18 @@ export const api = {
      * `coachingModeEnabled` — the Profile > Account toggle. The response
      * stays `{ uid, email }`; callers that changed the toggle should
      * invalidate/refetch `getMe()` to observe the new value.
+     *
+     * Phase 13 (ONBD-02/D-01/D-02): also accepts `onboardingIntent` (the
+     * `/welcome` chooser's selection) and `onboardingAsked` (asked-vs-
+     * context-skipped cohort split). Same invalidate/refetch-`getMe()`
+     * convention applies for observing the saved intent.
      */
-    upsertMe: (input?: { referredByShareId?: string; coachingModeEnabled?: boolean }) =>
+    upsertMe: (input?: {
+      referredByShareId?: string;
+      coachingModeEnabled?: boolean;
+      onboardingIntent?: OnboardingIntent;
+      onboardingAsked?: boolean;
+    }) =>
       apiRequestParsed('/api/users/me', userProfileSchema.pick({ uid: true, email: true }), {
         method: 'PUT',
         body: input,

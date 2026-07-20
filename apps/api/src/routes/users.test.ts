@@ -422,7 +422,16 @@ describe('PUT /api/users/me', () => {
       expect(rows).toHaveLength(1);
     });
 
-    it('emits again when a saved intent genuinely changes', async () => {
+    // The route-level change guard (previousIntent comparison) permits a
+    // second createEvent() call on a genuine change — but `createEvent`'s
+    // OWN ledger-level dedup (`eventDedup/{eventName}/{schemaVersion}/
+    // {causationId}`, MEAS-05) is a permanent per-causationId flag, and
+    // causationId is locked to `request.uid` (RESEARCH.md Pattern 3: the
+    // mutated resource here is the user's own profile, not a per-selection
+    // resource id) — mirroring `signup_completed`'s own exactly-once-ever
+    // semantics. The net effect: onboarding_intent_selected fires on the
+    // first genuine selection only, for the lifetime of the account.
+    it('does not re-emit a second time even when the intent later genuinely changes (ledger-level causationId=uid dedup, mirrors signup_completed)', async () => {
       const { app, database } = buildTestApp();
 
       await app.inject({
@@ -443,7 +452,8 @@ describe('PUT /api/users/me', () => {
       const rows = allLedgerRows(database).filter(
         (row) => (row as { eventName?: string }).eventName === 'onboarding_intent_selected',
       );
-      expect(rows).toHaveLength(2);
+      expect(rows).toHaveLength(1);
+      expect(rows[0]).toMatchObject({ payload: { intent: 'scout' } });
     });
 
     it('emits nothing when onboardingIntent is omitted entirely', async () => {
@@ -529,7 +539,14 @@ describe('PUT /api/users/me', () => {
       expect(rows).toHaveLength(0);
     });
 
-    it('re-emits on a later false -> true flip after an explicit disable', async () => {
+    // As with onboarding_intent_selected above: the route-level flip guard
+    // would permit a second createEvent() call here, but createEvent's own
+    // ledger-level dedup is a permanent per-(eventName, causationId) flag,
+    // and causationId is locked to `request.uid` (the user's own profile
+    // is the mutated resource) — so coaching_mode_enabled, like
+    // signup_completed, fires at most once for the lifetime of the
+    // account, even across a later disable/re-enable cycle.
+    it('does not re-emit on a later false -> true flip after an explicit disable (ledger-level causationId=uid dedup)', async () => {
       const { app, database } = buildTestApp();
 
       await app.inject({
@@ -557,7 +574,7 @@ describe('PUT /api/users/me', () => {
       const rows = allLedgerRows(database).filter(
         (row) => (row as { eventName?: string }).eventName === 'coaching_mode_enabled',
       );
-      expect(rows).toHaveLength(2);
+      expect(rows).toHaveLength(1);
     });
   });
 });

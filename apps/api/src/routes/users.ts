@@ -2,6 +2,7 @@ import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import {
   fighterSelectionInputSchema,
   fighterSelectionSchema,
+  ONBOARDING_INTENTS,
   userProfileSchema,
 } from '@smash-tracker/shared';
 import { z } from 'zod';
@@ -71,10 +72,19 @@ const usersRoutes: FastifyPluginAsyncZod = async (app) => {
         // Phase 11 walkthrough fix round 1 (FB-3): `coachingModeEnabled` is
         // the Profile > Account toggle — optional so every existing
         // provisioning caller (which never sends it) is untouched.
+        //
+        // Phase 13 (ONBD-02/D-01/D-02): `onboardingIntent` is the /welcome
+        // chooser's selection; `onboardingAsked` distinguishes the
+        // asked-vs-context-skipped cohort split the roadmap gate reads from
+        // `onboarding_intent_selected`'s payload. Both optional so every
+        // existing provisioning caller (which never sends either) is
+        // untouched.
         body: z
           .object({
             referredByShareId: z.string().max(128).optional(),
             coachingModeEnabled: z.boolean().optional(),
+            onboardingIntent: z.enum(ONBOARDING_INTENTS).optional(),
+            onboardingAsked: z.boolean().optional(),
           })
           .nullish(),
         response: {
@@ -90,22 +100,72 @@ const usersRoutes: FastifyPluginAsyncZod = async (app) => {
         .get();
       const isFirstProvision = !existingEmailSnapshot.exists();
 
+      // Phase 13 (T-13-02-01): read-before-write "did this actually
+      // change" guards for both new D events, mirroring isFirstProvision
+      // above — a repeated identical PUT must never inflate the ledger.
+      const [previousIntentSnapshot, previousCoachingModeSnapshot] = await Promise.all([
+        app.firebase.database.ref(`users/${request.uid}/onboardingIntent`).get(),
+        app.firebase.database.ref(`users/${request.uid}/coachingModeEnabled`).get(),
+      ]);
+      const previousIntent = previousIntentSnapshot.val() as string | null;
+      const previousCoachingModeEnabled = previousCoachingModeSnapshot.val() === true;
+
       await rtdb.upsertUser(request.uid, {
         email,
         // Wire name is `referredByShareId` for client back-compat, but the
         // VALUE is the share-page bearer token — upsertUser resolves it.
         referralToken: request.body?.referredByShareId,
         coachingModeEnabled: request.body?.coachingModeEnabled,
+        onboardingIntent: request.body?.onboardingIntent,
       });
 
+      const sessionIdHeader = request.headers['x-session-id'];
+      const sessionId =
+        (Array.isArray(sessionIdHeader) ? sessionIdHeader[0] : sessionIdHeader) ?? 'unknown';
+
       if (isFirstProvision) {
-        const sessionIdHeader = request.headers['x-session-id'];
-        const sessionId =
-          (Array.isArray(sessionIdHeader) ? sessionIdHeader[0] : sessionIdHeader) ?? 'unknown';
         void createEvent(
           app.firebase.database,
           buildDomainEnvelope({
             eventName: 'signup_completed',
+            actorId: request.uid,
+            sessionId,
+            causationId: request.uid,
+            consentState: 'unknown',
+          }),
+        );
+      }
+
+      // Phase 13 (ONBD-02/D-01/D-02): fires once per GENUINE intent change
+      // — never on a repeat PUT with the same intent (T-13-02-01).
+      if (
+        request.body?.onboardingIntent !== undefined &&
+        request.body.onboardingIntent !== previousIntent
+      ) {
+        void createEvent(
+          app.firebase.database,
+          buildDomainEnvelope({
+            eventName: 'onboarding_intent_selected',
+            actorId: request.uid,
+            sessionId,
+            causationId: request.uid,
+            consentState: 'unknown',
+            payload: {
+              intent: request.body.onboardingIntent,
+              asked: request.body.onboardingAsked === true,
+            },
+          }),
+        );
+      }
+
+      // Phase 13 (ONBD-05/D-06, RESEARCH.md Pitfall 2): coaching_mode_enabled
+      // was never wired before this phase — this is the newly-added
+      // emission, gated on a genuine false/absent -> true flip only.
+      if (request.body?.coachingModeEnabled === true && !previousCoachingModeEnabled) {
+        void createEvent(
+          app.firebase.database,
+          buildDomainEnvelope({
+            eventName: 'coaching_mode_enabled',
             actorId: request.uid,
             sessionId,
             causationId: request.uid,
@@ -143,6 +203,7 @@ const usersRoutes: FastifyPluginAsyncZod = async (app) => {
         email: user.email,
         fighters,
         coachingModeEnabled: user.coachingModeEnabled ?? false,
+        onboardingIntent: user.onboardingIntent ?? null,
       };
     },
   );
