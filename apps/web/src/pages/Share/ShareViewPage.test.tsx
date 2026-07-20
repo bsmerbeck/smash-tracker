@@ -9,6 +9,7 @@ import { ApiError } from '@/lib/api';
 import { postCanonicalEvent } from '@/lib/canonicalEvents';
 import { logProductEvent } from '@/lib/firebase';
 import { stamp } from '@/lib/shareReferral';
+import { read as readOnboardingOrigin } from '@/lib/onboardingOrigin';
 import { ShareViewPage } from './ShareViewPage';
 
 const getPublic = vi.fn();
@@ -195,6 +196,10 @@ describe('ShareViewPage', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     resetVendorGlobals();
+    // `onboardingOrigin` (unlike `shareReferral` above) is NOT mocked in this
+    // file — it writes to the real jsdom localStorage, so it must be reset
+    // between tests to avoid a stamp leaking from one test into the next.
+    window.localStorage.clear();
     // Reset the per-test overrides `mockReturnValue`/`mockImplementation`
     // leave behind — `clearAllMocks` only clears call history, not those.
     coachSessionQuery.mockReturnValue({ data: undefined });
@@ -639,6 +644,16 @@ describe('ShareViewPage', () => {
     expect(stamp).toHaveBeenCalledExactlyOnceWith('tok123');
   });
 
+  it('ONBD-01/D-02: stamps the onboardingOrigin as kind vodShare (unambiguous "Review a VOD") for a vod-review snapshot', async () => {
+    getPublic.mockResolvedValue(baseSnapshot());
+    mountYouTubePlayer();
+
+    renderShare('/s/tok123');
+
+    await screen.findByText(/Mario vs\. Luigi/);
+    expect(readOnboardingOrigin()).toMatchObject({ kind: 'vodShare', returnPath: '/s/tok123' });
+  });
+
   it('fires share_opened (share_kind: recap) and stamps the referral bridge once a recap snapshot resolves (FUNNEL-01/02)', async () => {
     getPublic.mockResolvedValue(baseRecapSnapshot());
 
@@ -651,6 +666,15 @@ describe('ShareViewPage', () => {
     expect(stamp).toHaveBeenCalledExactlyOnceWith('tok123');
   });
 
+  it('ONBD-01/D-02: stamps the onboardingOrigin as kind recap (unambiguous "Prepare") from RecapView, not vodShare, for a recap snapshot', async () => {
+    getPublic.mockResolvedValue(baseRecapSnapshot());
+
+    renderShare('/s/tok123');
+
+    await screen.findByText('Genesis 10');
+    expect(readOnboardingOrigin()).toMatchObject({ kind: 'recap', returnPath: '/s/tok123' });
+  });
+
   it('never fires share_opened or stamps the referral for a 404 (revoked/unknown token)', async () => {
     getPublic.mockRejectedValue(new ApiError(404, 'This share is no longer available'));
 
@@ -659,6 +683,7 @@ describe('ShareViewPage', () => {
     await screen.findByText('This review is no longer available');
     expect(logProductEvent).not.toHaveBeenCalled();
     expect(stamp).not.toHaveBeenCalled();
+    expect(readOnboardingOrigin()).toBeNull();
   });
 
   // MEAS-09: share_view_loaded must be a DISTINCT trigger from share_opened

@@ -1,3 +1,4 @@
+import { useEffect, useRef } from 'react';
 import { Link } from 'react-router';
 import { useTranslation } from 'react-i18next';
 import { Download, ExternalLink } from 'lucide-react';
@@ -8,6 +9,7 @@ import { PublicLayout } from '@/layouts/PublicLayout';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
+import * as onboardingOrigin from '@/lib/onboardingOrigin';
 
 /**
  * Walkthrough amendment round 2 (07-10): one game's character matchup +
@@ -106,6 +108,20 @@ function GameDetail({ game }: { game: RecapGame }) {
  */
 export function RecapView({ snapshot, token }: { snapshot: PublicShareSnapshot; token: string }) {
   const { t } = useTranslation();
+
+  // ONBD-01/D-02: tournament-origin (recap) is the SECOND locked
+  // unambiguous origin ("Prepare") — stamped at THIS component's own mount,
+  // a SEPARATE write from `ShareViewPage.tsx`'s VOD-share stamp (Pitfall 3:
+  // `ShareViewPage` early-returns to this component before its own stamp
+  // guard would ever see a recap kind). Fires at most once per mount.
+  const hasStampedOriginRef = useRef(false);
+  useEffect(() => {
+    if (hasStampedOriginRef.current) {
+      return;
+    }
+    hasStampedOriginRef.current = true;
+    onboardingOrigin.stamp({ kind: 'recap', returnPath: `/s/${token}` });
+  }, [token]);
 
   const placement = snapshot.placement ?? null;
   const seed = snapshot.seed ?? null;

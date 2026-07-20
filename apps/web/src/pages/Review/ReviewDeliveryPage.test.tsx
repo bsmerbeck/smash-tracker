@@ -5,6 +5,10 @@ import { MemoryRouter, Route, Routes } from 'react-router';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { PublicShareSnapshot } from '@smash-tracker/shared';
 import { ApiError } from '@/lib/api';
+import {
+  ONBOARDING_ORIGIN_STORAGE_KEY,
+  read as readOnboardingOrigin,
+} from '@/lib/onboardingOrigin';
 import { ReviewDeliveryPage } from './ReviewDeliveryPage';
 
 const getDelivery = vi.fn();
@@ -237,5 +241,31 @@ describe('ReviewDeliveryPage', () => {
 
     await screen.findByText("This review doesn't cite any footage.");
     await waitFor(() => expect(markViewedDelivery).toHaveBeenCalledExactlyOnceWith('tok123'));
+  });
+
+  describe('signup CTA (ONBD-01/D-02 — a net-new element this page had none of before)', () => {
+    it('renders a signup CTA on the success path', async () => {
+      getDelivery.mockResolvedValue(baseSnapshot());
+      renderDelivery();
+
+      expect(await screen.findByRole('link', { name: 'Get started free' })).toBeInTheDocument();
+    });
+
+    it('stamps the onboardingOrigin as kind coachReview with the current /r/:token path on CTA click, distinct from shareReferral', async () => {
+      getDelivery.mockResolvedValue(baseSnapshot());
+      const user = userEvent.setup();
+      renderDelivery('/r/tok123');
+
+      const ctaLink = await screen.findByRole('link', { name: 'Get started free' });
+      await user.click(ctaLink);
+
+      expect(readOnboardingOrigin()).toMatchObject({
+        kind: 'coachReview',
+        returnPath: '/r/tok123',
+      });
+      // Never the referral bridge's own key — the two layers stay separate.
+      expect(window.localStorage.getItem(ONBOARDING_ORIGIN_STORAGE_KEY)).not.toBeNull();
+      expect(window.localStorage.getItem('smash-tracker.shareReferral')).toBeNull();
+    });
   });
 });
