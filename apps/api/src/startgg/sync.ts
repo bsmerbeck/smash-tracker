@@ -8,6 +8,7 @@ import {
 } from './client.js';
 import { startggCharacterToFighterId } from './characterMap.js';
 import { resolveStage } from './stageMap.js';
+import { reconcilePlayerActivation } from '../onboarding/activation.js';
 
 /** Hard cap on pages per sync — 40 pages x 10 sets stays well inside the 80 req/60s rate limit. */
 const MAX_PAGES = 40;
@@ -421,6 +422,13 @@ export async function importPlayerMatches(
     await database.ref(`tournamentEntries/${uid}`).update(registryUpdates);
   }
   await database.ref(`startggLinks/${uid}/lastSyncAt`).set(Date.now());
+
+  // Phase 13 (ONBD-04): fires AFTER every durable write above has committed
+  // — a sync-driven crossing of the analytics/vod/tournament_prep
+  // conditions measures the guided integration happy path, not just manual
+  // entry (matches.ts's personal-write call sites cover the manual path).
+  // Fire-and-forget; idempotent (eventDedup absorbs repeats on every sync).
+  void reconcilePlayerActivation(database, uid, 'unknown');
 
   return summary;
 }

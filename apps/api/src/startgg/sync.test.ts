@@ -932,4 +932,46 @@ describe('importPlayerMatches', () => {
       eventSlug: 'tournament/the-box-juice-box-26/event/ultimate-singles',
     });
   });
+
+  // Phase 13 (ONBD-04): the sync-driven happy path must be measured too, not
+  // just manual entry (matches.ts's personal-write call sites).
+  it('fires tournament_prep_activated once after a sync populates the registry', async () => {
+    const database = new FakeDatabase();
+    const fetchMock = async () => pageResponse([makeSet()]);
+
+    await importPlayerMatches(
+      database as never,
+      'uid-1',
+      PLAYER_ID,
+      'server-token',
+      fetchMock as typeof fetch,
+    );
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    const dump = database.dump() as { eventLedger?: Record<string, Record<string, unknown>> };
+    const rows = Object.values(dump.eventLedger ?? {}).flatMap((day) => Object.values(day)) as {
+      eventName: string;
+      actorId: string;
+    }[];
+    const fired = rows.filter((row) => row.eventName === 'tournament_prep_activated');
+    expect(fired).toHaveLength(1);
+    expect(fired[0]?.actorId).toBe('uid-1');
+
+    // A second sync must not re-fire (dedup marker already set).
+    await importPlayerMatches(
+      database as never,
+      'uid-1',
+      PLAYER_ID,
+      'server-token',
+      fetchMock as typeof fetch,
+    );
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const dumpAfter = database.dump() as { eventLedger?: Record<string, Record<string, unknown>> };
+    const rowsAfter = Object.values(dumpAfter.eventLedger ?? {}).flatMap((day) =>
+      Object.values(day),
+    ) as { eventName: string }[];
+    expect(rowsAfter.filter((row) => row.eventName === 'tournament_prep_activated')).toHaveLength(
+      1,
+    );
+  });
 });

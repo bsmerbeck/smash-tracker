@@ -4,6 +4,7 @@ import { MatchState } from '@parry-gg/client';
 import { getUserMatches, type ParryggClients, type ParryggMatchContext } from './client.js';
 import { parryggCharacterSlugToFighterId } from './characters.js';
 import { resolveParryggStage } from './stages.js';
+import { reconcilePlayerActivation } from '../onboarding/activation.js';
 
 /**
  * The Smash Ultimate `Game.slug` on parry.gg, determined empirically from
@@ -492,6 +493,11 @@ export async function importParryggMatches(
     await database.ref(`tournamentEntries/${uid}`).update(registryUpdates);
   }
   await database.ref(`parryggLinks/${uid}/lastSyncAt`).set(Date.now());
+
+  // Phase 13 (ONBD-04): fires AFTER every durable write above has committed
+  // — see startgg/sync.ts's importPlayerMatches for the identical rationale
+  // (sync-driven happy-path measurement, fire-and-forget, dedup-idempotent).
+  void reconcilePlayerActivation(database, uid, 'unknown');
 
   return summary;
 }
