@@ -112,6 +112,11 @@ const ClientAnalyticsLayout = lazy(() =>
     default: m.ClientAnalyticsLayout,
   })),
 );
+// Phase 12 (Coach Reviews & Delivery): the dedicated two-pane review
+// composer (D-01), `/coach/:clientId/reviews/:reviewId`.
+const ReviewComposerPage = lazy(() =>
+  import('@/pages/Coaching/ReviewComposerPage').then((m) => ({ default: m.ReviewComposerPage })),
+);
 
 /** Minimal route-transition fallback — matches HomePage's `loading → null` behavior in spirit without layout shift once content lands. */
 function RouteFallback() {
@@ -349,6 +354,8 @@ export function AppRouter() {
               <Route path="fighter-analysis" element={<FighterAnalysisPage />} />
               <Route path="matchups" element={<MatchupsPage />} />
             </Route>
+            {/* Phase 12 (Coach Reviews & Delivery, D-01): the review composer. */}
+            <Route path="reviews/:reviewId" element={<ReviewComposerPage />} />
             <Route path="gsp" element={<Navigate to="../overview" replace />} />
             <Route path="integrations" element={<Navigate to="../overview" replace />} />
             <Route path="reports" element={<Navigate to="../overview" replace />} />
