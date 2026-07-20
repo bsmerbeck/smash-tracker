@@ -188,6 +188,7 @@ export async function getDraft(
 
 /** Drops the coach-only `hidden` flag — used by BOTH publish and preview so they can never drift (Pitfall re: preview/publish drift). */
 function toPublishedSection(section: ReviewSection): Omit<ReviewSection, 'hidden'> {
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars -- rest-destructure-to-omit idiom; `hidden` is intentionally discarded
   const { hidden: _hidden, ...rest } = section;
   return rest;
 }
