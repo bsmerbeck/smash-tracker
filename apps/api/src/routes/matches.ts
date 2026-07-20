@@ -1,4 +1,5 @@
 import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
+import type { FastifyRequest } from 'fastify';
 import {
   createMatchInputSchema,
   errorResponseSchema,
@@ -8,6 +9,8 @@ import {
   vodTimestampSchema,
 } from '@smash-tracker/shared';
 import { z } from 'zod';
+import { buildDomainEnvelope } from '../events/envelope.js';
+import { createEvent } from '../events/ledger.js';
 import { ForbiddenError, RtdbService } from '../services/rtdb.js';
 
 const matchIdParamsSchema = z.object({
@@ -18,6 +21,13 @@ const noteParamsSchema = z.object({
   id: z.string().min(1),
   noteId: z.string().min(1),
 });
+
+/** `X-Session-Id` header, mirroring `coachingReviews.ts`'s own identically-named helper — defaults to `'unknown'` when absent (never blocks the request). */
+function sessionIdFromHeader(request: FastifyRequest): string {
+  const header = request.headers['x-session-id'];
+  const value = Array.isArray(header) ? header[0] : header;
+  return value ?? 'unknown';
+}
 
 const matchesRoutes: FastifyPluginAsyncZod = async (app) => {
   const rtdb = new RtdbService(app.firebase.database);
@@ -40,7 +50,12 @@ const matchesRoutes: FastifyPluginAsyncZod = async (app) => {
     },
   );
 
-  // POST /api/matches
+  // POST /api/matches — the create-path half of the Phase 11 carry-over
+  // (D-11): `client_vod_attached` fires when a COACH creates a match
+  // directly into a client's library (`isClientLibrary`) with a `vodUrl`
+  // already attached. Never for a personal match (`subjectId === uid`) —
+  // every write here is a "first attach" by definition, since a brand-new
+  // match has no prior state to diff against.
   app.post(
     '/matches',
     {
@@ -53,12 +68,31 @@ const matchesRoutes: FastifyPluginAsyncZod = async (app) => {
     },
     async (request, reply) => {
       const match = await rtdb.createMatch(request.subjectId, request.body);
+      const isClientLibrary = request.subjectId !== request.uid;
+      if (isClientLibrary && request.body.vodUrl !== undefined) {
+        void createEvent(
+          app.firebase.database,
+          buildDomainEnvelope({
+            eventName: 'client_vod_attached',
+            actorId: request.uid,
+            sessionId: sessionIdFromHeader(request),
+            causationId: match.id,
+            consentState: 'unknown',
+          }),
+        );
+      }
       return reply.code(201).send(match);
     },
   );
 
   // PATCH /api/matches/:id — NotFoundError from the service bubbles up to
-  // the global error handler, which maps it to a 404.
+  // the global error handler, which maps it to a 404. The update-path half
+  // of the Phase 11 carry-over (D-11): `client_vod_attached` fires ONLY on
+  // the genuine FIRST vodUrl write to a client-library match
+  // (`vodFirstAttached`, computed by `updateMatch` from its own
+  // already-fetched current/input pair — never a second read here). A
+  // second edit that merely changes/keeps an existing `vodUrl`, or any edit
+  // to a personal match, never fires it.
   app.patch(
     '/matches/:id',
     {
@@ -71,7 +105,25 @@ const matchesRoutes: FastifyPluginAsyncZod = async (app) => {
       },
     },
     async (request) => {
-      return rtdb.updateMatch(request.subjectId, request.params.id, request.body);
+      const { vodFirstAttached, ...match } = await rtdb.updateMatch(
+        request.subjectId,
+        request.params.id,
+        request.body,
+      );
+      const isClientLibrary = request.subjectId !== request.uid;
+      if (isClientLibrary && vodFirstAttached) {
+        void createEvent(
+          app.firebase.database,
+          buildDomainEnvelope({
+            eventName: 'client_vod_attached',
+            actorId: request.uid,
+            sessionId: sessionIdFromHeader(request),
+            causationId: match.id,
+            consentState: 'unknown',
+          }),
+        );
+      }
+      return match;
     },
   );
 

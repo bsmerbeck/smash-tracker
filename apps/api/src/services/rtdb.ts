@@ -504,7 +504,22 @@ export class RtdbService {
     return { id, ...record };
   }
 
-  async updateMatch(uid: string, id: string, input: UpdateMatchInput): Promise<Match> {
+  /**
+   * Phase 12 Plan 05 (D-11 carry-over): the response additionally carries
+   * `vodFirstAttached` — the inverse of the `vodRemoved` diff below
+   * (`current.vodUrl === undefined && input.vodUrl !== undefined`), computed
+   * from the SAME already-fetched `current`/`input` pair rather than a
+   * second read. `RtdbService` stays subject-agnostic (it never knows
+   * `subjectId`/`uid`, so it can't decide whether this is a client-library
+   * write) — the route layer (`matches.ts`) is the one that combines this
+   * flag with `isClientLibrary` to decide whether to fire
+   * `client_vod_attached`.
+   */
+  async updateMatch(
+    uid: string,
+    id: string,
+    input: UpdateMatchInput,
+  ): Promise<Match & { vodFirstAttached: boolean }> {
     const ref = this.database.ref(`matches/${uid}/${id}`);
     const existing = await ref.get();
     if (!existing.exists()) {
@@ -586,6 +601,7 @@ export class RtdbService {
     // like the explicit clear-VOD action does. A REPLACED or unchanged URL
     // is not a removal and leaves shares alive.
     const vodRemoved = current.vodUrl !== undefined && input.vodUrl === undefined;
+    const vodFirstAttached = current.vodUrl === undefined && input.vodUrl !== undefined;
     if (vodRemoved) {
       const activeTokens = await this.resolveActiveReviewShareTokens(uid, id);
       const revokedAt = Date.now();
@@ -612,6 +628,7 @@ export class RtdbService {
       id,
       ...record,
       ...(current.vodTimestamps !== undefined ? { vodTimestamps: current.vodTimestamps } : {}),
+      vodFirstAttached,
     };
   }
 
@@ -2146,6 +2163,41 @@ export class RtdbService {
     };
 
     return publicShareSnapshotSchema.parse(publicSnapshot);
+  }
+
+  /**
+   * Phase 12 Plan 05 (DLV-02): resolves a live token to its coachReview
+   * `{tenantId, reviewId, version}` WITHOUT building the full public
+   * snapshot (no citation-source resolution, no coach-display-name
+   * lookup) — used by the anonymous ack route (`publicReviewDeliveries.ts`),
+   * which only needs to locate the delivery record to flip `ackAt`, never
+   * render one. Re-runs the exact same shape/exists/revoked/expired checks
+   * `getShareByToken` above uses (T-12-15 no-oracle parity — re-checked
+   * fresh on every call, never cached) and returns `null` for anything that
+   * isn't a live coachReview token, including a token that resolves fine
+   * but belongs to a different share kind.
+   */
+  async resolveCoachReviewShareRef(
+    token: string,
+  ): Promise<{ tenantId: string; reviewId: string; version: number } | null> {
+    if (!SHARE_TOKEN_SHAPE.test(token)) {
+      return null;
+    }
+    const tokenSnapshot = await this.database.ref(`shareTokens/${token}`).get();
+    if (!tokenSnapshot.exists()) {
+      return null;
+    }
+    const parsedToken = shareTokenSchema.safeParse(tokenSnapshot.val());
+    if (!parsedToken.success) {
+      return null;
+    }
+    if (parsedToken.data.revokedAt != null) {
+      return null;
+    }
+    if (parsedToken.data.expiresAt != null && parsedToken.data.expiresAt < Date.now()) {
+      return null;
+    }
+    return parseReviewShareId(parsedToken.data.shareId);
   }
 
   /**

@@ -1088,6 +1088,186 @@ describe('PATCH /api/matches/:id', () => {
   });
 });
 
+/** Extracts every event row across `eventLedger`'s day shards — mirrors `coachingReviewDeliveries.test.ts`'s identically-named helper. */
+function eventRows(dump: unknown): Array<{ eventName: string; actorId: string; payload: unknown }> {
+  const typed = dump as { eventLedger?: Record<string, Record<string, unknown>> };
+  return Object.values(typed.eventLedger ?? {}).flatMap((day) => Object.values(day)) as Array<{
+    eventName: string;
+    actorId: string;
+    payload: unknown;
+  }>;
+}
+
+/** Registers a managed client (coach = TEST_UID) and returns its tenantId, for `X-Active-Subject: client:{tenantId}` coaching-mode requests. */
+async function createManagedClient(app: ReturnType<typeof buildTestApp>['app']): Promise<string> {
+  const response = await app.inject({
+    method: 'POST',
+    url: '/api/coaching/clients',
+    headers: authHeader(),
+    payload: { label: 'Alex' },
+  });
+  return response.json().clientId as string;
+}
+
+/**
+ * Phase 11 carry-over (D-11, Plan 12-05): `client_vod_attached` — cataloged
+ * in Phase 11 but never actually wired until now. Fires ONLY on the first
+ * `vodUrl` write to a CLIENT-LIBRARY match (`subjectId !== uid`), on both
+ * the create and update paths, and never for a personal match.
+ */
+describe('client_vod_attached carry-over (D-11)', () => {
+  it('fires once when a coach CREATES a match directly into a client library with a vodUrl attached', async () => {
+    const { app, database } = buildTestApp();
+    const tenantId = await createManagedClient(app);
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/matches',
+      headers: { ...authHeader(), 'x-active-subject': `client:${tenantId}` },
+      payload: { ...validCreateInput, vodUrl: 'https://youtube.com/watch?v=abc123' },
+    });
+
+    expect(response.statusCode).toBe(201);
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const rows = eventRows(database.dump());
+    const fired = rows.filter((row) => row.eventName === 'client_vod_attached');
+    expect(fired).toHaveLength(1);
+    expect(fired[0]?.actorId).toBe(TEST_UID);
+    expect(fired[0]?.payload).toEqual({});
+  });
+
+  it('does NOT fire when a coach creates a match into a client library with no vodUrl', async () => {
+    const { app, database } = buildTestApp();
+    const tenantId = await createManagedClient(app);
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/matches',
+      headers: { ...authHeader(), 'x-active-subject': `client:${tenantId}` },
+      payload: validCreateInput,
+    });
+
+    expect(response.statusCode).toBe(201);
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const rows = eventRows(database.dump());
+    expect(rows.filter((row) => row.eventName === 'client_vod_attached')).toHaveLength(0);
+  });
+
+  it('does NOT fire for a PERSONAL match creation with a vodUrl attached (subjectId === uid)', async () => {
+    const { app, database } = buildTestApp();
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/matches',
+      headers: authHeader(),
+      payload: { ...validCreateInput, vodUrl: 'https://youtube.com/watch?v=abc123' },
+    });
+
+    expect(response.statusCode).toBe(201);
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const rows = eventRows(database.dump());
+    expect(rows.filter((row) => row.eventName === 'client_vod_attached')).toHaveLength(0);
+  });
+
+  it('fires once on the FIRST vodUrl PATCH to a client-library match that never had one', async () => {
+    const { app, database } = buildTestApp();
+    const tenantId = await createManagedClient(app);
+    database.seed(`matches/${tenantId}/m1`, {
+      fighter_id: 1,
+      opponent_id: 8,
+      time: 1700000000000,
+      win: true,
+    });
+
+    const response = await app.inject({
+      method: 'PATCH',
+      url: '/api/matches/m1',
+      headers: { ...authHeader(), 'x-active-subject': `client:${tenantId}` },
+      payload: { ...validCreateInput, vodUrl: 'https://youtube.com/watch?v=abc123' },
+    });
+
+    expect(response.statusCode).toBe(200);
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const rows = eventRows(database.dump());
+    const fired = rows.filter((row) => row.eventName === 'client_vod_attached');
+    expect(fired).toHaveLength(1);
+    expect(fired[0]?.actorId).toBe(TEST_UID);
+  });
+
+  it('does NOT re-fire on a SECOND vodUrl PATCH that merely changes an already-attached URL', async () => {
+    const { app, database } = buildTestApp();
+    const tenantId = await createManagedClient(app);
+    database.seed(`matches/${tenantId}/m1`, {
+      fighter_id: 1,
+      opponent_id: 8,
+      time: 1700000000000,
+      win: true,
+      vodUrl: 'https://youtube.com/watch?v=already-attached',
+    });
+
+    const response = await app.inject({
+      method: 'PATCH',
+      url: '/api/matches/m1',
+      headers: { ...authHeader(), 'x-active-subject': `client:${tenantId}` },
+      payload: { ...validCreateInput, vodUrl: 'https://youtube.com/watch?v=abc123' },
+    });
+
+    expect(response.statusCode).toBe(200);
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const rows = eventRows(database.dump());
+    expect(rows.filter((row) => row.eventName === 'client_vod_attached')).toHaveLength(0);
+  });
+
+  it('does NOT fire on a PERSONAL match PATCH first-attaching a vodUrl (subjectId === uid)', async () => {
+    const { app, database } = buildTestApp();
+    database.seed(`matches/${TEST_UID}/m1`, {
+      fighter_id: 1,
+      opponent_id: 8,
+      time: 1700000000000,
+      win: true,
+    });
+
+    const response = await app.inject({
+      method: 'PATCH',
+      url: '/api/matches/m1',
+      headers: authHeader(),
+      payload: { ...validCreateInput, vodUrl: 'https://youtube.com/watch?v=abc123' },
+    });
+
+    expect(response.statusCode).toBe(200);
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const rows = eventRows(database.dump());
+    expect(rows.filter((row) => row.eventName === 'client_vod_attached')).toHaveLength(0);
+  });
+
+  it('never leaks vodFirstAttached onto the wire response', async () => {
+    const { app, database } = buildTestApp();
+    const tenantId = await createManagedClient(app);
+    database.seed(`matches/${tenantId}/m1`, {
+      fighter_id: 1,
+      opponent_id: 8,
+      time: 1700000000000,
+      win: true,
+    });
+
+    const response = await app.inject({
+      method: 'PATCH',
+      url: '/api/matches/m1',
+      headers: { ...authHeader(), 'x-active-subject': `client:${tenantId}` },
+      payload: { ...validCreateInput, vodUrl: 'https://youtube.com/watch?v=abc123' },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect('vodFirstAttached' in response.json()).toBe(false);
+  });
+});
+
 describe('DELETE /api/matches/:id', () => {
   it('removes an existing match', async () => {
     const { app, database } = buildTestApp();
