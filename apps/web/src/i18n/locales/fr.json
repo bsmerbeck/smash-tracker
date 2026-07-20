@@ -514,6 +514,11 @@
     "meta": {
       "edit": "Modifier les détails"
     },
+    "review": {
+      "startButton": "Démarrer une revue",
+      "continueButton": "Continuer la revue",
+      "startError": "Une erreur s'est produite lors du démarrage d'une revue pour ce VOD."
+    },
     "composer": {
       "title": "Ajouter une note"
     },
@@ -1545,7 +1550,8 @@
       "fighters": "Combattants",
       "matches": "Matchs",
       "vods": "VODs",
-      "analytics": "Analytique"
+      "analytics": "Analytique",
+      "reviews": "Revues"
     },
     "hub": {
       "title": "Centre clients",
@@ -1705,7 +1711,10 @@
         "evidence": {
           "heading_one": "Preuve ({{count}})",
           "heading_other": "Preuves ({{count}})",
-          "empty": "Cette source n'a pas encore de notes horodatées."
+          "empty": "Cette source n'a pas encore de notes horodatées.",
+          "cite": "Citer",
+          "citeCurrentMoment": "⏱ Citer le moment actuel",
+          "citedIndicator": "cité"
         },
         "tabs": {
           "clientReview": "Revue client",
@@ -1750,7 +1759,62 @@
           "empty": "(vide)",
           "seeTheirs": "Voir la leur",
           "keepMine": "Garder la mienne"
+        },
+        "citation": {
+          "jumpAria": "Aller à {{timestamp}}",
+          "jumpToSourceAria": "Aller à {{timestamp}} dans {{source}}"
+        },
+        "citeSectionPrompt": {
+          "title": "Citer dans quelle section ?",
+          "description": "Rien n'a le focus pour le moment — choisissez une section et la citation sera ajoutée à la fin.",
+          "empty": "Aucune section visible à citer pour le moment."
+        },
+        "preview": {
+          "title": "Aperçu côté client",
+          "description": "Exactement ce que le client verra une fois cette revue livrée — jamais les notes privées.",
+          "error": "Une erreur s'est produite lors du chargement de l'aperçu.",
+          "empty": "Rien à prévisualiser pour l'instant — ajoutez du contenu d'abord."
         }
+      },
+      "list": {
+        "title": "Revues",
+        "subtitle": "Le statut de la revue et le statut de livraison sont distincts — un brouillon n'est jamais \"non consulté\", une livraison n'est jamais \"un brouillon\".",
+        "newReview": "+ Nouvelle revue",
+        "createError": "Une erreur s'est produite lors du démarrage de cette revue.",
+        "empty": "Pas encore de revues. Commencez-en une ici ou depuis un VOD dans le gestionnaire de VOD.",
+        "listAria": "Revues",
+        "open": "Ouvrir",
+        "rowLabel": "Revue — démarrée le {{date}}",
+        "rowEdited": "modifiée le {{date}}",
+        "deliveryMenuAria": "Livraison et autres actions",
+        "status": {
+          "draft": "Brouillon",
+          "published": "Publiée v{{version}}",
+          "archived": "Archivée"
+        },
+        "delivery": {
+          "dash": "—",
+          "noneAria": "Aucune livraison — rien n'a encore été publié",
+          "notDelivered": "Non livrée",
+          "delivered": "Livrée",
+          "viewed": "Consultée",
+          "acknowledged": "Accusée réception",
+          "expired": "Expirée",
+          "revoked": "Révoquée",
+          "createdToast": "Lien de livraison créé et copié",
+          "createError": "Une erreur s'est produite lors de la création de ce lien de livraison.",
+          "copiedToast": "Lien copié",
+          "revokedToast": "Lien de livraison révoqué",
+          "revokeError": "Une erreur s'est produite lors de la révocation de ce lien de livraison."
+        },
+        "actions": {
+          "deliver": "Livrer",
+          "copyLink": "Copier le lien",
+          "revokeLink": "Révoquer le lien",
+          "archive": "Archiver la revue"
+        },
+        "archiveToast": "Revue archivée",
+        "archiveError": "Une erreur s'est produite lors de l'archivage de cette revue."
       }
     },
     "disabled": {

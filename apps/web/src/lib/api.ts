@@ -289,6 +289,38 @@ const addReviewSectionRequestSchema = z.object({
 });
 export type AddReviewSectionRequest = z.infer<typeof addReviewSectionRequestSchema>;
 
+/**
+ * DLV-01 (plan 04, `apps/api/src/routes/coachingReviewDeliveries.ts`):
+ * shapes duplicated here per this file's own precedent (see the doc
+ * comment above `reviewListItemResponseSchema`) rather than promoted to
+ * `@smash-tracker/shared`.
+ */
+const createReviewDeliveryRequestSchema = z.object({
+  version: z.number().int().positive(),
+  expiresAt: z.number().int().positive().optional(),
+});
+export type CreateReviewDeliveryRequest = z.infer<typeof createReviewDeliveryRequestSchema>;
+
+const deliveryCreatedResponseSchema = z.object({
+  deliveryId: z.string().min(1),
+  token: z.string().min(1),
+  url: z.string().url(),
+});
+
+const deliveryListItemResponseSchema = z.object({
+  deliveryId: z.string().min(1),
+  status: z.enum(REVIEW_DELIVERY_STATES),
+  token: z.string().min(1),
+  version: z.number().int().positive(),
+  createdAt: z.number().int().nonnegative(),
+  revokedAt: z.number().int().nonnegative().nullable(),
+  expiresAt: z.number().int().nonnegative().nullable(),
+  ackAt: z.number().int().nonnegative().nullable(),
+  viewedAt: z.number().int().nonnegative().nullable(),
+  url: z.string().url(),
+});
+export type ReviewDeliveryListItem = z.infer<typeof deliveryListItemResponseSchema>;
+
 /** Runs `apiRequest` then validates the parsed JSON against `schema`. */
 async function apiRequestParsed<TSchema extends z.ZodType>(
   path: string,
@@ -656,6 +688,36 @@ export const api = {
           `/api/coaching/clients/${encodeURIComponent(clientId)}/reviews/${encodeURIComponent(reviewId)}/archive`,
           { method: 'POST' },
         ),
+      /**
+       * DLV-01: the coach-side delivery-management routes, nested under
+       * `.../reviews/:reviewId/deliveries` (`apps/api/src/routes/
+       * coachingReviewDeliveries.ts`, plan 04 — response shapes duplicated
+       * here per this file's own `clientWorkspaceExportSchema` precedent,
+       * not exported from `@smash-tracker/shared`). The Reviews list's
+       * delivery overflow menu (D-05: a SEPARATE control from Open) is the
+       * only caller.
+       */
+      deliveries: {
+        /** POST .../deliveries — mints a revocable delivery pinned to exactly one published version. */
+        create: (clientId: string, reviewId: string, input: CreateReviewDeliveryRequest) =>
+          apiRequestParsed(
+            `/api/coaching/clients/${encodeURIComponent(clientId)}/reviews/${encodeURIComponent(reviewId)}/deliveries`,
+            deliveryCreatedResponseSchema,
+            { method: 'POST', body: createReviewDeliveryRequestSchema.parse(input) },
+          ),
+        /** GET .../deliveries — every delivery ever created for this review, most-recent-first. */
+        list: (clientId: string, reviewId: string) =>
+          apiRequestParsed(
+            `/api/coaching/clients/${encodeURIComponent(clientId)}/reviews/${encodeURIComponent(reviewId)}/deliveries`,
+            deliveryListItemResponseSchema.array(),
+          ),
+        /** POST .../deliveries/:deliveryId/revoke — idempotent soft-revoke. */
+        revoke: (clientId: string, reviewId: string, deliveryId: string) =>
+          apiRequest<void>(
+            `/api/coaching/clients/${encodeURIComponent(clientId)}/reviews/${encodeURIComponent(reviewId)}/deliveries/${encodeURIComponent(deliveryId)}/revoke`,
+            { method: 'POST' },
+          ),
+      },
     },
   },
   groups: {

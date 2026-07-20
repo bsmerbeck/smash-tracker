@@ -117,6 +117,11 @@ const ClientAnalyticsLayout = lazy(() =>
 const ReviewComposerPage = lazy(() =>
   import('@/pages/Coaching/ReviewComposerPage').then((m) => ({ default: m.ReviewComposerPage })),
 );
+// Phase 12 (Coach Reviews & Delivery, D-05): the Reviews list, the 6th
+// client-workspace nav item — `/coach/:clientId/reviews`.
+const ReviewsListPage = lazy(() =>
+  import('@/pages/Coaching/ReviewsListPage').then((m) => ({ default: m.ReviewsListPage })),
+);
 
 /** Minimal route-transition fallback — matches HomePage's `loading → null` behavior in spirit without layout shift once content lands. */
 function RouteFallback() {
@@ -354,7 +359,8 @@ export function AppRouter() {
               <Route path="fighter-analysis" element={<FighterAnalysisPage />} />
               <Route path="matchups" element={<MatchupsPage />} />
             </Route>
-            {/* Phase 12 (Coach Reviews & Delivery, D-01): the review composer. */}
+            {/* Phase 12 (Coach Reviews & Delivery, D-01/D-05): the Reviews list + the review composer. */}
+            <Route path="reviews" element={<ReviewsListPage />} />
             <Route path="reviews/:reviewId" element={<ReviewComposerPage />} />
             <Route path="gsp" element={<Navigate to="../overview" replace />} />
             <Route path="integrations" element={<Navigate to="../overview" replace />} />

@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import type { AddReviewSectionRequest } from '@/lib/api';
+import type { AddReviewSectionRequest, CreateReviewDeliveryRequest } from '@/lib/api';
 import { api } from '@/lib/api';
 import { useAuth } from './useAuth';
 
@@ -135,6 +135,59 @@ export function useArchiveCoachingReview(clientId: string) {
     mutationFn: (reviewId: string) => api.coaching.reviews.archive(clientId, reviewId),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: coachingReviewsQueryKey(clientId) });
+    },
+  });
+}
+
+/**
+ * DLV-01 (D-05): the Reviews list's delivery overflow menu — a SEPARATE
+ * control (and a separate query key) from the review-authoring hooks
+ * above, matching the two non-mixing state machines.
+ */
+export function reviewDeliveriesQueryKey(clientId: string, reviewId: string) {
+  return ['coaching-review-deliveries', clientId, reviewId] as const;
+}
+
+/** GET .../deliveries — every delivery ever created for this review, most-recent-first. Opt-in via `enabled` so a closed overflow menu never fetches. */
+export function useReviewDeliveries(
+  clientId: string,
+  reviewId: string,
+  options: { enabled?: boolean } = {},
+) {
+  const { user } = useAuth();
+  return useQuery({
+    queryKey: reviewDeliveriesQueryKey(clientId, reviewId),
+    queryFn: () => api.coaching.reviews.deliveries.list(clientId, reviewId),
+    enabled: Boolean(user) && Boolean(clientId) && Boolean(reviewId) && (options.enabled ?? true),
+  });
+}
+
+/** POST .../deliveries — mints a revocable delivery pinned to exactly one published version. */
+export function useCreateReviewDelivery(clientId: string, reviewId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (input: CreateReviewDeliveryRequest) =>
+      api.coaching.reviews.deliveries.create(clientId, reviewId, input),
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: reviewDeliveriesQueryKey(clientId, reviewId) }),
+        queryClient.invalidateQueries({ queryKey: coachingReviewsQueryKey(clientId) }),
+      ]);
+    },
+  });
+}
+
+/** POST .../deliveries/:deliveryId/revoke — idempotent soft-revoke. */
+export function useRevokeReviewDelivery(clientId: string, reviewId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (deliveryId: string) =>
+      api.coaching.reviews.deliveries.revoke(clientId, reviewId, deliveryId),
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: reviewDeliveriesQueryKey(clientId, reviewId) }),
+        queryClient.invalidateQueries({ queryKey: coachingReviewsQueryKey(clientId) }),
+      ]);
     },
   });
 }
