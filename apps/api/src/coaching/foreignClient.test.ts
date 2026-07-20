@@ -103,6 +103,25 @@ const SAME_SUBJECT_ROUTES = [
     path: `/api/coaching/clients/${TENANT_ID}/reviews/review-1/archive`,
     usesSubjectHeader: false,
   },
+  // Phase 12 Plan 04 (Coach Reviews & Delivery): every coach-side delivery
+  // route, gated the SAME way (a direct membership check on the URL's
+  // `:clientId`, no header) as the review routes above.
+  {
+    method: 'POST',
+    path: `/api/coaching/clients/${TENANT_ID}/reviews/review-1/deliveries`,
+    usesSubjectHeader: false,
+    body: { version: 1 },
+  },
+  {
+    method: 'GET',
+    path: `/api/coaching/clients/${TENANT_ID}/reviews/review-1/deliveries`,
+    usesSubjectHeader: false,
+  },
+  {
+    method: 'POST',
+    path: `/api/coaching/clients/${TENANT_ID}/reviews/review-1/deliveries/delivery-1/revoke`,
+    usesSubjectHeader: false,
+  },
 ] as const;
 
 /**
@@ -130,6 +149,8 @@ const TREE_TO_ROUTE_PATH: Record<(typeof CANONICAL_TENANT_TREES)[number], string
   reviewVersions: `/api/coaching/clients/${TENANT_ID}/reviews/review-1/publish`,
   reviewVersionIndex: `/api/coaching/clients/${TENANT_ID}/reviews/review-1/publish`,
   reviewStatus: `/api/coaching/clients/${TENANT_ID}/reviews/review-1/publish`,
+  // Phase 12 Plan 04: written by the create-delivery route.
+  reviewDeliveries: `/api/coaching/clients/${TENANT_ID}/reviews/review-1/deliveries`,
 };
 
 describe('CANONICAL_TENANT_TREES stays in lockstep with the harness route list', () => {

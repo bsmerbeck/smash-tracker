@@ -51,13 +51,14 @@ export const CANONICAL_TENANT_TREES = [
   'primaryFighters',
   'secondaryFighters',
   // Phase 12 Plan 03 (Coach Reviews & Delivery): the review-authoring trees
-  // `apps/api/src/coaching/reviews.ts` reads/writes. `reviewDeliveries` is
-  // deliberately NOT here yet — it's 12-04's tree to add alongside its own
-  // delivery routes (see 12-02-SUMMARY.md's deferral note).
+  // `apps/api/src/coaching/reviews.ts` reads/writes.
   'reviewDrafts',
   'reviewVersions',
   'reviewVersionIndex',
   'reviewStatus',
+  // Phase 12 Plan 04: the delivery tree `apps/api/src/coaching/reviewDeliveries.ts`
+  // reads/writes (deferred here from 12-02/12-03 — see their SUMMARYs' deferral notes).
+  'reviewDeliveries',
 ] as const;
 
 /**

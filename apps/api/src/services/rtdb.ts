@@ -1,7 +1,9 @@
 import type { Database } from 'firebase-admin/database';
 import { z } from 'zod';
 import {
+  clientVisibleVersionSchema,
   DEFAULT_ELITE_THRESHOLD,
+  extractCitationTokens,
   gspReadingRecordSchema,
   gspSettingsSchema,
   matchRecordSchema,
@@ -21,6 +23,7 @@ import {
   tournamentEntrySchema,
   userSchema,
   vodTimestampSchema,
+  type ClientVisibleVersion,
   type CoachAttribution,
   type CreateGspReadingInput,
   type CreateMatchInput,
@@ -54,8 +57,10 @@ import {
   type VodTimestamp,
 } from '@smash-tracker/shared';
 import { buildRecapSnapshot } from '../shares/buildRecapSnapshot.js';
+import { buildReviewSnapshot, type ReviewCitationSource } from '../shares/buildReviewSnapshot.js';
 import { buildShareSnapshot } from '../shares/buildShareSnapshot.js';
 import { generateShareToken } from '../shares/token.js';
+import { resolveDisplayName } from '../groups/groups.js';
 
 /**
  * POST/PATCH body shape for the owner (and, via the optional `coach` param,
@@ -102,6 +107,80 @@ const ENTRY_KEY_SHAPE = /^[^.#$[\]/\u0000-\u001f\u007f]{1,200}$/;
  */
 function isPathSafeMatchId(matchId: string): boolean {
   return ENTRY_KEY_SHAPE.test(matchId);
+}
+
+/**
+ * Phase 12 Plan 04 (Coach Reviews & Delivery, DLV-01): the `kind:
+ * 'coachReview'` branch's `shareTokens/{token}.shareId` does NOT address a
+ * `shareSnapshots/{shareId}` push key like the 'review'/'recap' branches —
+ * there is no frozen snapshot copy for a delivery (the live
+ * `reviewVersions/{tenantId}/{reviewId}/{version}` record IS the payload,
+ * already immutable by construction — REV-06). Instead `shareId` ENCODES the
+ * exact-one-version lookup path directly: `review:{tenantId}:{reviewId}:{version}`.
+ * `tenantId`/`reviewId` are always server-generated `randomUUID()`s and
+ * `version` is a positive integer allocated by `reserveNextVersion`
+ * (reviews.ts) — none of the three can ever legitimately contain an
+ * RTDB-illegal character — but this is still guarded BEFORE any `ref()` call
+ * (never trust stored data, mirrors `ENTRY_KEY_SHAPE`'s own guard-before-ref
+ * discipline) rather than assumed safe by provenance alone.
+ */
+const REVIEW_SHARE_ID_PREFIX = 'review:';
+
+/** A bare positive-integer string (the version segment) — stricter than `Number.isInteger` on a parsed value, which would also accept e.g. `"1.0"` or silently-tolerated leading junk. */
+const VERSION_SEGMENT_SHAPE = /^[1-9][0-9]*$/;
+
+/** Builds the `review:{tenantId}:{reviewId}:{version}` shareId encoding — the single source of truth both write paths (`createShare`'s coachReview branch, `reviewDeliveries.ts`'s own self-contained writer) and every read path (`getShareByToken`, `listSharesForUser`) must agree on. */
+export function buildReviewShareId(tenantId: string, reviewId: string, version: number): string {
+  return `${REVIEW_SHARE_ID_PREFIX}${tenantId}:${reviewId}:${version}`;
+}
+
+/**
+ * Inverse of `buildReviewShareId` — returns `null` (never throws) for
+ * anything outside the fixed grammar, so a corrupt/foreign shareId
+ * collapses to the same "not a coachReview delivery" outcome a genuinely
+ * different kind's shareId (an opaque `shareSnapshots` push key, which never
+ * starts with the literal `review:` prefix) already produces. Splits on `:`
+ * rather than a single regex embedding a second copy of the
+ * RTDB-illegal-character denylist — reuses the EXISTING `ENTRY_KEY_SHAPE`
+ * guard for the two path segments, never a possibly-drifting duplicate.
+ */
+export function parseReviewShareId(
+  shareId: string,
+): { tenantId: string; reviewId: string; version: number } | null {
+  if (!shareId.startsWith(REVIEW_SHARE_ID_PREFIX)) {
+    return null;
+  }
+  const segments = shareId.slice(REVIEW_SHARE_ID_PREFIX.length).split(':');
+  if (segments.length !== 3) {
+    return null;
+  }
+  const [tenantId, reviewId, versionRaw] = segments;
+  if (!tenantId || !reviewId || !versionRaw) {
+    return null;
+  }
+  if (!ENTRY_KEY_SHAPE.test(tenantId) || !ENTRY_KEY_SHAPE.test(reviewId)) {
+    return null;
+  }
+  if (!VERSION_SEGMENT_SHAPE.test(versionRaw)) {
+    return null;
+  }
+  return { tenantId, reviewId, version: Number(versionRaw) };
+}
+
+async function resolveCoachDisplayNameForTenant(
+  database: Database,
+  tenantId: string,
+): Promise<string> {
+  const membersSnapshot = await database.ref(`clientMembers/${tenantId}`).get();
+  if (!membersSnapshot.exists()) {
+    return 'Your coach';
+  }
+  const members = membersSnapshot.val() as Record<string, unknown>;
+  const [coachUid] = Object.keys(members).sort();
+  if (!coachUid) {
+    return 'Your coach';
+  }
+  return resolveDisplayName(database, coachUid);
 }
 
 /** Edit-tier share links expire 30 days after creation (Phase 8, COACH-01/02). */
@@ -1503,6 +1582,9 @@ export class RtdbService {
    * branches still share the same cap check, push-keyed
    * `shareSnapshots/{shareId}`, `shareTokens/{token}`, and
    * `sharesByUser/{uid}/{shareId}` write tail.
+   *
+   * Phase 12 Plan 04: a third `'coachReview'` branch returns EARLY, before
+   * the shared push/set tail above — see its own inline comment.
    */
   async createShare(
     uid: string,
@@ -1512,6 +1594,44 @@ export class RtdbService {
     const activeCount = await this.countActiveShares(uid);
     if (activeCount >= MAX_SHARES_PER_USER) {
       throw new ForbiddenError(`You can create at most ${MAX_SHARES_PER_USER} shares`);
+    }
+
+    // Phase 12 Plan 04 (Coach Reviews & Delivery, DLV-01): 'coachReview'
+    // returns EARLY — it never reaches the shareSnapshots push/set tail
+    // below (there is no frozen snapshot; `shareId` instead ENCODES the
+    // exact-one-version lookup path — see `buildReviewShareId`'s doc). Here
+    // `uid` is the CLIENT TENANT id, not a real Firebase uid (the actual
+    // coach-facing delivery routes call `uid`=tenantId via
+    // `reviewDeliveries.ts`'s own self-contained writer, which does NOT
+    // route through this method — this branch exists for share-pipeline API
+    // completeness/consistency with the 'review'/'recap' branches and is
+    // exercised directly by unit tests).
+    if (input.kind === 'coachReview') {
+      // reviewId/version guaranteed present by createShareInputSchema's refine.
+      const reviewId = input.reviewId!;
+      const version = input.version!;
+      if (!ENTRY_KEY_SHAPE.test(reviewId)) {
+        throw new NotFoundError(`Review ${reviewId} has no published version ${version}`);
+      }
+      const versionSnapshot = await this.database
+        .ref(`reviewVersions/${uid}/${reviewId}/${version}`)
+        .get();
+      if (!versionSnapshot.exists()) {
+        throw new NotFoundError(`Review ${reviewId} has no published version ${version}`);
+      }
+
+      const shareId = buildReviewShareId(uid, reviewId, version);
+      const token = generateShareToken();
+      const tokenRecord: ShareToken = {
+        shareId,
+        ownerUid: uid,
+        permissions: input.permissions,
+        createdAt: Date.now(),
+      };
+      await this.database.ref(`shareTokens/${token}`).set(shareTokenSchema.parse(tokenRecord));
+      await this.database.ref(`sharesByUser/${uid}/${shareId}`).set(token);
+
+      return { shareId, token, url: `${webBaseUrl}/r/${token}` };
     }
 
     let storedSnapshot: ShareSnapshot | RecapSnapshot;
@@ -1616,6 +1736,10 @@ export class RtdbService {
    * choosing which storage schema to `safeParse` against (recapSnapshotSchema
    * vs. shareSnapshotSchema), since a vod-review record predates `kind`
    * entirely and has no such field to disambiguate on its own.
+   *
+   * Phase 12 Plan 04: a coachReview row is detected off the TOKEN's own
+   * `shareId` (via `parseReviewShareId`) before the `shareSnapshots` hop —
+   * see the inline comment at that branch.
    */
   async listSharesForUser(uid: string, webBaseUrl: string): Promise<ShareSummary[]> {
     const indexSnapshot = await this.database.ref(`sharesByUser/${uid}`).get();
@@ -1633,19 +1757,43 @@ export class RtdbService {
           return null;
         }
 
-        const [snapshotSnapshot, tokenSnapshot] = await Promise.all([
-          this.database.ref(`shareSnapshots/${shareId}`).get(),
-          this.database.ref(`shareTokens/${tokenValue}`).get(),
-        ]);
-        if (!snapshotSnapshot.exists() || !tokenSnapshot.exists()) {
+        const tokenSnapshot = await this.database.ref(`shareTokens/${tokenValue}`).get();
+        if (!tokenSnapshot.exists()) {
           return null;
         }
-
         const parsedToken = shareTokenSchema.safeParse(tokenSnapshot.val());
         if (!parsedToken.success) {
           return null;
         }
         const token = parsedToken.data;
+
+        // Phase 12 Plan 04: a coachReview delivery has NO shareSnapshots
+        // record at all (its "snapshot" is the live, already-immutable
+        // reviewVersions record — see buildReviewShareId's doc) — detected
+        // from the token's OWN shareId (never a second RTDB read) before the
+        // shareSnapshots hop every other kind still needs below.
+        if (parseReviewShareId(token.shareId)) {
+          return {
+            shareId,
+            permissions: token.permissions,
+            createdAt: token.createdAt,
+            kind: 'coachReview',
+            status: token.revokedAt
+              ? 'revoked'
+              : RtdbService.isTokenExpired(token)
+                ? 'expired'
+                : 'active',
+            ...(token.revokedAt !== undefined && token.revokedAt !== null
+              ? { revokedAt: token.revokedAt }
+              : {}),
+            url: `${webBaseUrl}/r/${tokenValue}`,
+          };
+        }
+
+        const snapshotSnapshot = await this.database.ref(`shareSnapshots/${shareId}`).get();
+        if (!snapshotSnapshot.exists()) {
+          return null;
+        }
         const rawSnapshot = snapshotSnapshot.val();
 
         if ((rawSnapshot as { kind?: unknown } | null)?.kind === 'recap') {
@@ -1884,6 +2032,17 @@ export class RtdbService {
    * applies, then authors its own public snapshot object literal from
    * scratch either way (redaction-by-shape — never spreads the stored
    * record, T-07-03-02).
+   *
+   * Phase 12 Plan 04 (DLV-01/DLV-02/DLV-03): a THIRD kind, `'coachReview'`,
+   * is detected off the TOKEN's own `shareId` (`parseReviewShareId`) BEFORE
+   * the `shareSnapshots` hop — delegated to `getCoachReviewSnapshot`, which
+   * reads ONLY `reviewVersions/{tenantId}/{reviewId}/{version}` (never the
+   * draft, never `matches/{tenantId}` beyond resolving citation source
+   * VODs) and authors the response via `buildReviewSnapshot` (REV-03: no
+   * `coachPrivateNotes` field exists on the input to leak in the first
+   * place). The `revokedAt`/`expiresAt` re-check above is the SAME check
+   * every kind shares — a coachReview token gets no separate revocation
+   * mechanism (DLV-01: "no new token system").
    */
   async getShareByToken(token: string): Promise<PublicShareSnapshot | null> {
     if (!SHARE_TOKEN_SHAPE.test(token)) {
@@ -1905,6 +2064,15 @@ export class RtdbService {
     // against RTDB on every call, never cached, no distinguishing oracle.
     if (parsedToken.data.expiresAt != null && parsedToken.data.expiresAt < Date.now()) {
       return null;
+    }
+
+    // Phase 12 Plan 04 (DLV-01/DLV-02/DLV-03): a coachReview delivery has
+    // NO shareSnapshots record — its shareId ENCODES the exact-one-version
+    // lookup path directly (see `buildReviewShareId`'s doc). Detected before
+    // the shareSnapshots hop every other kind still needs below.
+    const reviewRef = parseReviewShareId(parsedToken.data.shareId);
+    if (reviewRef) {
+      return this.getCoachReviewSnapshot(reviewRef);
     }
 
     const snapshotSnapshot = await this.database
@@ -1978,6 +2146,93 @@ export class RtdbService {
     };
 
     return publicShareSnapshotSchema.parse(publicSnapshot);
+  }
+
+  /**
+   * Phase 12 Plan 04 (DLV-01/DLV-02/DLV-03): resolves a parsed coachReview
+   * `shareId` (tenantId/reviewId/version, already trust-boundary-guarded by
+   * `parseReviewShareId`) to the client-visible delivery snapshot. Reads
+   * ONLY `reviewVersions/{tenantId}/{reviewId}/{version}` — the write-once,
+   * immutable, coachPrivateNotes-free sealed record (REV-06) — plus
+   * `clientMembers/{tenantId}` (coach display name) and, for each DISTINCT
+   * `{{cite:...}}` source referenced in the sealed sections,
+   * `matches/{tenantId}/{sourceVodRef}` (D-04 multi-VOD citation sources —
+   * ONLY the `vodUrl` field is read/exposed, never notes/tags/opponent
+   * data). Never reads `reviewDrafts/` — a delivery can only ever point at
+   * an already-published, sealed version (D-14). Returns `null` — never
+   * throws — for a missing/corrupt version record, matching every other
+   * kind's no-oracle contract at this call site.
+   */
+  private async getCoachReviewSnapshot(reviewRef: {
+    tenantId: string;
+    reviewId: string;
+    version: number;
+  }): Promise<PublicShareSnapshot | null> {
+    const { tenantId, reviewId, version } = reviewRef;
+    const versionSnapshot = await this.database
+      .ref(`reviewVersions/${tenantId}/${reviewId}/${version}`)
+      .get();
+    if (!versionSnapshot.exists()) {
+      return null;
+    }
+    const parsedVersion = clientVisibleVersionSchema.safeParse(versionSnapshot.val());
+    if (!parsedVersion.success) {
+      return null;
+    }
+    const sealedVersion = parsedVersion.data;
+
+    const [coachDisplayName, citationSources] = await Promise.all([
+      resolveCoachDisplayNameForTenant(this.database, tenantId),
+      this.resolveReviewCitationSources(tenantId, sealedVersion.sections),
+    ]);
+
+    return buildReviewSnapshot(sealedVersion, coachDisplayName, citationSources);
+  }
+
+  /**
+   * Distinct source VODs (D-04) cited across a sealed version's sections, in
+   * first-appearance order, capped to `citationSources`'s own schema max
+   * (20) — resolved to `{ sourceVodRef, vodUrl }` via
+   * `matches/{tenantId}/{sourceVodRef}`. A citation whose source match no
+   * longer exists, or no longer carries a `vodUrl` (removed since the
+   * version was sealed), is gracefully OMITTED — never a 500, never a
+   * broken citation chip on the delivery page (VIEW-05-style graceful
+   * omission, matching `buildRecapSnapshot`'s `notableWin`/`tournamentUrl`
+   * precedent). Guard-before-`ref()` (review WR-07 discipline): a
+   * corrupt/malformed `sourceVodRef` from a citation token is skipped, never
+   * reaches `ref()`.
+   */
+  private async resolveReviewCitationSources(
+    tenantId: string,
+    sections: ClientVisibleVersion['sections'],
+  ): Promise<ReviewCitationSource[]> {
+    const distinctRefs: string[] = [];
+    for (const section of sections) {
+      for (const citation of extractCitationTokens(section.body)) {
+        if (!distinctRefs.includes(citation.sourceVodRef)) {
+          distinctRefs.push(citation.sourceVodRef);
+        }
+      }
+    }
+
+    const resolved = await Promise.all(
+      distinctRefs.slice(0, 20).map(async (matchId): Promise<ReviewCitationSource | null> => {
+        if (!isPathSafeMatchId(matchId)) {
+          return null;
+        }
+        const matchSnapshot = await this.database.ref(`matches/${tenantId}/${matchId}`).get();
+        if (!matchSnapshot.exists()) {
+          return null;
+        }
+        const parsedMatch = matchRecordSchema.safeParse(matchSnapshot.val());
+        if (!parsedMatch.success || !parsedMatch.data.vodUrl) {
+          return null;
+        }
+        return { sourceVodRef: matchId, vodUrl: parsedMatch.data.vodUrl };
+      }),
+    );
+
+    return resolved.filter((entry): entry is ReviewCitationSource => entry !== null);
   }
 
   // ---- Phase 8 Plan 3: coach edit sessions (anonymous, token-scoped) -----
