@@ -241,7 +241,15 @@ export function buildRecapSnapshot(
     entryKey: entry.entryKey!,
     createdAt: Date.now(),
     kind: 'recap',
-    source: entry.source ?? 'startgg',
+    // RecapSnapshot's `source` stays the pre-existing binary distinction
+    // (startgg vs parrygg) — mirrors buildRecapTournamentUrl/
+    // buildRecapOpponentUrl/buildRecapSetUrl's "parrygg or startgg-like"
+    // check (tournamentAggregation.ts). Phase 13 widened
+    // tournamentEntrySchema's `source` to include 'manual' (ONBD-04 D-05),
+    // but a manual entry (no synced sets) is never a meaningful recap
+    // subject — fold it (and any other future non-parrygg source) into the
+    // 'startgg' bucket rather than widening this schema too.
+    source: entry.source === 'parrygg' ? 'parrygg' : 'startgg',
     tournamentName: entry.tournamentName ?? entry.eventName,
     tournamentDate: entry.firstSetAt,
     ...(entry.placement != null ? { placement: entry.placement } : {}),
