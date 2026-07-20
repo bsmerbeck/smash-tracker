@@ -48,17 +48,24 @@ const KNOWN_ANONYMOUS_ROUTES: Array<{
 ];
 
 describe('auth boundary', () => {
-  it('every known-anonymous route accepts a request with no Authorization header', async () => {
-    const { app } = buildTestApp();
+  // Sweeps every anonymous route with a real inject; grows with each phase's new
+  // routes and runs alongside the web suite under `pnpm -r test`, so the default
+  // 5s budget flakes under load — give the sweep an explicit 30s budget.
+  it(
+    'every known-anonymous route accepts a request with no Authorization header',
+    { timeout: 30_000 },
+    async () => {
+      const { app } = buildTestApp();
 
-    for (const route of KNOWN_ANONYMOUS_ROUTES) {
-      const response = await app.inject({
-        method: route.method,
-        url: route.url.replace(':token', 'x').replace(':noteId', 'n1'),
-      });
-      expect(response.statusCode, `${route.method} ${route.url}`).not.toBe(401);
-    }
-  });
+      for (const route of KNOWN_ANONYMOUS_ROUTES) {
+        const response = await app.inject({
+          method: route.method,
+          url: route.url.replace(':token', 'x').replace(':noteId', 'n1'),
+        });
+        expect(response.statusCode, `${route.method} ${route.url}`).not.toBe(401);
+      }
+    },
+  );
 
   it('each coach route requires no auth but rejects an unknown token with the canonical 404', async () => {
     const { app } = buildTestApp();
