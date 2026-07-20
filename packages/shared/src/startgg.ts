@@ -79,7 +79,7 @@ export type EventStanding = z.infer<typeof eventStandingSchema>;
  * (not `undefined`) when the source site doesn't provide them, per the RTDB
  * undefined-rejection rule matches already follow.
  *
- * Two sources write this tree:
+ * Three sources write this tree:
  * - start.gg (`apps/api/src/startgg/sync.ts`'s `accumulateRegistry`): keyed
  *   by the numeric start.gg `eventId`, which doubles as the RTDB child key
  *   (as a string). `source` is absent on these legacy/ongoing records —
@@ -88,6 +88,13 @@ export type EventStanding = z.infer<typeof eventStandingSchema>;
  *   id equivalent, so `eventId` is OMITTED (never present) and the record is
  *   keyed by a derived, sanitized `entryKey` (`pgg-{event-slug}` or a
  *   composite fallback) instead. `source: 'parrygg'` is always present.
+ * - manual (Phase 13, ONBD-04 D-05 prep-path recovery,
+ *   `POST /api/tournaments/manual-entry` in `apps/api/src/routes/
+ *   tournaments.ts`): written directly by the signed-in user when
+ *   start.gg/parry.gg sync isn't available or fails. `eventId` is OMITTED
+ *   (no numeric id); keyed by a `manual-{sanitized-label}-{suffix}`
+ *   `entryKey`. `source: 'manual'` is always present — always explicit, never
+ *   left absent, so it's never misread as the legacy 'startgg' default.
  *
  * `entryKey` is the source-agnostic routing key the web uses to link into a
  * tournament: GET /api/tournaments always fills it from the RTDB child key
@@ -134,8 +141,12 @@ export const tournamentEntrySchema = z.object({
   eventSlug: z.string().optional(),
   /** Top finishers of the event (capped, ~8), fetched post-sync. */
   topStandings: z.array(eventStandingSchema).max(8).optional(),
-  /** Which site this entry came from. Absent means 'startgg' (every entry stored before this field existed). */
-  source: z.enum(['startgg', 'parrygg']).nullish(),
+  /**
+   * Which site (or manual entry, Phase 13 ONBD-04 D-05) this entry came
+   * from. Absent means 'startgg' (every entry stored before this field
+   * existed) — 'manual' is ALWAYS explicit, never left absent.
+   */
+  source: z.enum(['startgg', 'parrygg', 'manual']).nullish(),
   /**
    * The stable, URL-safe registry identifier the web routes on — the RTDB
    * child key this record is stored under. Always filled on read by
@@ -150,6 +161,23 @@ export type TournamentEntry = z.infer<typeof tournamentEntrySchema>;
 /** GET /api/tournaments response — the user's tournament registry, newest first. */
 export const tournamentEntryListSchema = z.array(tournamentEntrySchema);
 export type TournamentEntryList = z.infer<typeof tournamentEntryListSchema>;
+
+/**
+ * POST /api/tournaments/manual-entry request body (Phase 13, ONBD-04 D-05):
+ * the prep-path integration-failure recovery — when start.gg/parry.gg sync
+ * fails or isn't linked, the user can still record that they have an event
+ * to prepare for, reaching `tournament_prep_activated` without a sync. Only
+ * a label + optional date; every other `tournamentEntrySchema` field a
+ * synced entry carries (seed, placement, standings, slugs) has no manual
+ * equivalent and is simply omitted from the written record.
+ */
+export const manualTournamentEntryInputSchema = z.object({
+  /** Event name/label the user types, e.g. "Locals #42". */
+  eventName: z.string().trim().min(1).max(200),
+  /** Epoch ms of the event, when the user provides one; defaults server-side to now. */
+  eventDate: z.number().int().nonnegative().optional(),
+});
+export type ManualTournamentEntryInput = z.infer<typeof manualTournamentEntryInputSchema>;
 
 // ---------------------------------------------------------------------------
 // V7-A: scout any start.gg player (server-aggregated public history)

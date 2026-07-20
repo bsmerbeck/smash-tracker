@@ -14,6 +14,7 @@ import {
 } from '@smash-tracker/shared';
 import { buildDomainEnvelope } from '../events/envelope.js';
 import { createEvent } from '../events/ledger.js';
+import { onboardingCausePayload } from '../onboarding/activation.js';
 import { ConflictError, ForbiddenError, NotFoundError } from '../services/rtdb.js';
 
 /**
@@ -262,6 +263,13 @@ export async function publishReview(
   });
 
   // Fire-and-forget, AFTER the durable write above has committed (D-11).
+  //
+  // Phase 13 (ONBD-05, D-08): payload carries onboardingCause=coach_clients
+  // ONLY when the coach's saved intent is coach_clients — applies to both
+  // the v1 (coach_review_published) and v2+ (review_revision_published)
+  // branches since they share this one emission call; causationId stays
+  // reviewId (the dedup key), never repurposed (RESEARCH.md Pattern 3).
+  const payload = await onboardingCausePayload(database, options.coachUid);
   void createEvent(
     database,
     buildDomainEnvelope({
@@ -270,6 +278,7 @@ export async function publishReview(
       sessionId: options.sessionId,
       causationId: reviewId,
       consentState: 'unknown',
+      payload,
     }),
   );
 

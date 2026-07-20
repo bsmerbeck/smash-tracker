@@ -59,6 +59,38 @@ describe('createClient', () => {
     });
   });
 
+  // Phase 13 (ONBD-05, D-08): the coach-cause payload rides in `payload`,
+  // never `causationId`, and only when the coach's saved intent is
+  // coach_clients.
+  it('stamps payload.onboardingCause=coach_clients when the coach saved that intent', async () => {
+    const database = new FakeDatabase();
+    database.seed(`users/${COACH_UID}/onboardingIntent`, 'coach_clients');
+
+    const { tenantId } = await createClient(asDatabase(database), COACH_UID, 'Alex', {
+      sessionId: SESSION_ID,
+    });
+    await flushMacrotask();
+
+    const rows = allLedgerRows(database);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      eventName: 'managed_client_created',
+      causationId: tenantId,
+      payload: { onboardingCause: 'coach_clients' },
+    });
+  });
+
+  it('does not stamp onboardingCause when the coach saved a different intent', async () => {
+    const database = new FakeDatabase();
+    database.seed(`users/${COACH_UID}/onboardingIntent`, 'scout');
+
+    await createClient(asDatabase(database), COACH_UID, 'Alex', { sessionId: SESSION_ID });
+    await flushMacrotask();
+
+    const rows = allLedgerRows(database);
+    expect(rows[0]).toMatchObject({ payload: {} });
+  });
+
   it('rejects a duplicate label for the same coach with ConflictError (409)', async () => {
     const database = new FakeDatabase();
 

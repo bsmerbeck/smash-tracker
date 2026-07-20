@@ -193,3 +193,128 @@ describe('GET /api/tournaments', () => {
     expect('topStandings' in entry!).toBe(false);
   });
 });
+
+function eventRows(dump: unknown): Array<{ eventName: string; actorId: string; payload: unknown }> {
+  const typed = dump as { eventLedger?: Record<string, Record<string, unknown>> };
+  return Object.values(typed.eventLedger ?? {}).flatMap((day) => Object.values(day)) as Array<{
+    eventName: string;
+    actorId: string;
+    payload: unknown;
+  }>;
+}
+
+describe('POST /api/tournaments/manual-entry', () => {
+  it('rejects unauthenticated requests', async () => {
+    const { app } = buildTestApp();
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/tournaments/manual-entry',
+      payload: { eventName: 'Locals #42' },
+    });
+
+    expect(response.statusCode).toBe(401);
+  });
+
+  it('writes a manual entry that GET /tournaments returns without a safeParse skip', async () => {
+    const { app } = buildTestApp();
+
+    const createResponse = await app.inject({
+      method: 'POST',
+      url: '/api/tournaments/manual-entry',
+      headers: authHeader(),
+      payload: { eventName: 'Locals #42' },
+    });
+
+    expect(createResponse.statusCode).toBe(201);
+    const created = createResponse.json() as Record<string, unknown>;
+    expect(created).toMatchObject({
+      eventName: 'Locals #42',
+      source: 'manual',
+      setsPlayed: 0,
+    });
+    expect(typeof created.entryKey).toBe('string');
+    expect((created.entryKey as string).startsWith('manual-')).toBe(true);
+
+    const listResponse = await app.inject({
+      method: 'GET',
+      url: '/api/tournaments',
+      headers: authHeader(),
+    });
+
+    expect(listResponse.statusCode).toBe(200);
+    const entries = listResponse.json() as Record<string, unknown>[];
+    expect(entries).toHaveLength(1);
+    expect(entries[0]).toMatchObject({
+      eventName: 'Locals #42',
+      source: 'manual',
+      entryKey: created.entryKey,
+    });
+  });
+
+  it('honors an explicit eventDate for firstSetAt/lastSetAt, else defaults to now', async () => {
+    const { app } = buildTestApp();
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/tournaments/manual-entry',
+      headers: authHeader(),
+      payload: { eventName: 'Regional', eventDate: 1_700_000_000_000 },
+    });
+
+    const entry = response.json() as { firstSetAt: number; lastSetAt: number };
+    expect(entry.firstSetAt).toBe(1_700_000_000_000);
+    expect(entry.lastSetAt).toBe(1_700_000_000_000);
+  });
+
+  it('rejects an empty label', async () => {
+    const { app } = buildTestApp();
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/tournaments/manual-entry',
+      headers: authHeader(),
+      payload: { eventName: '' },
+    });
+
+    expect(response.statusCode).toBe(400);
+  });
+
+  it('derives unique entryKeys for two entries sharing the same label', async () => {
+    const { app } = buildTestApp();
+
+    const first = await app.inject({
+      method: 'POST',
+      url: '/api/tournaments/manual-entry',
+      headers: authHeader(),
+      payload: { eventName: 'Locals #42' },
+    });
+    const second = await app.inject({
+      method: 'POST',
+      url: '/api/tournaments/manual-entry',
+      headers: authHeader(),
+      payload: { eventName: 'Locals #42' },
+    });
+
+    const firstEntry = first.json() as { entryKey: string };
+    const secondEntry = second.json() as { entryKey: string };
+    expect(firstEntry.entryKey).not.toBe(secondEntry.entryKey);
+  });
+
+  it('fires tournament_prep_activated once on the first manual entry (dedup marker set)', async () => {
+    const { app, database } = buildTestApp();
+
+    await app.inject({
+      method: 'POST',
+      url: '/api/tournaments/manual-entry',
+      headers: authHeader(),
+      payload: { eventName: 'Locals #42' },
+    });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    const rows = eventRows(database.dump());
+    const fired = rows.filter((row) => row.eventName === 'tournament_prep_activated');
+    expect(fired).toHaveLength(1);
+    expect(fired[0]?.actorId).toBe(TEST_UID);
+  });
+});
