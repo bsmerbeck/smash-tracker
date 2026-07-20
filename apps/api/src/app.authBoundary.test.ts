@@ -45,6 +45,13 @@ const KNOWN_ANONYMOUS_ROUTES: Array<{
   { method: 'POST', url: '/api/vod-shares/:token/notes' },
   { method: 'PATCH', url: '/api/vod-shares/:token/notes/:noteId' },
   { method: 'DELETE', url: '/api/vod-shares/:token/notes/:noteId' },
+  // Phase 12 (Coach Reviews & Delivery) — DELIBERATELY anonymous recipient
+  // surface: the delivery token in the path IS the credential (no account).
+  // Both are identical-404 no-oracle, no-store, and rate-limited — see
+  // routes/publicReviewDeliveries.ts. Ack is a content-free link
+  // acknowledgement (D-09).
+  { method: 'GET', url: '/api/review-deliveries/:token' },
+  { method: 'POST', url: '/api/review-deliveries/:token/ack' },
 ];
 
 describe('auth boundary', () => {
