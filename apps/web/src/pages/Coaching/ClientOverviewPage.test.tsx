@@ -29,6 +29,7 @@ vi.mock('@/lib/firebase', async () => {
 const matchesList = vi.fn();
 const getFighters = vi.fn();
 const clientsList = vi.fn();
+const reviewsList = vi.fn();
 
 vi.mock('@/lib/api', () => ({
   api: {
@@ -36,6 +37,7 @@ vi.mock('@/lib/api', () => ({
     users: { getFighters: (...args: unknown[]) => getFighters(...args) },
     coaching: {
       clients: { list: (...args: unknown[]) => clientsList(...args) },
+      reviews: { list: (...args: unknown[]) => reviewsList(...args) },
     },
   },
 }));
@@ -51,6 +53,20 @@ function makeMatch(overrides: Partial<Match> = {}): Match {
   } as Match;
 }
 
+/** A minimal `ReviewListItem` (the shape `GET .../reviews` returns). */
+function makeReview(overrides: Partial<Record<string, unknown>> = {}) {
+  return {
+    reviewId: 'r1',
+    status: 'draft',
+    latestVersion: null,
+    revision: 0,
+    deliveryState: null,
+    createdAt: Date.now(),
+    lastAutosavedAt: Date.now(),
+    ...overrides,
+  };
+}
+
 function renderOverview(initialPath = '/coach/tetra/overview') {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
@@ -63,6 +79,7 @@ function renderOverview(initialPath = '/coach/tetra/overview') {
               <Route path="fighters" element={<div>Fighters page</div>} />
               <Route path="match-data" element={<div>Match data page</div>} />
               <Route path="vods" element={<div>Vods page</div>} />
+              <Route path="reviews" element={<div>Reviews page</div>} />
             </Route>
           </Routes>
         </AuthProvider>
@@ -77,9 +94,10 @@ describe('ClientOverviewPage', () => {
     vi.clearAllMocks();
     setMockUser(makeMockUser());
     clientsList.mockResolvedValue([{ clientId: 'tetra', label: 'TETRA', draftCount: 0 }]);
+    reviewsList.mockResolvedValue([]);
   });
 
-  it('shows the em-dash win rate and all three steps incomplete when the client has zero matches', async () => {
+  it('shows the em-dash win rate and all four steps incomplete when the client has zero matches/reviews', async () => {
     matchesList.mockResolvedValue([]);
     getFighters.mockResolvedValue({ primary: [], secondary: [] });
 
@@ -91,6 +109,7 @@ describe('ClientOverviewPage', () => {
     expect(screen.getByTestId('checklist-fighters')).toHaveAttribute('data-done', 'false');
     expect(screen.getByTestId('checklist-matches')).toHaveAttribute('data-done', 'false');
     expect(screen.getByTestId('checklist-vod')).toHaveAttribute('data-done', 'false');
+    expect(screen.getByTestId('checklist-review')).toHaveAttribute('data-done', 'false');
 
     // The first incomplete row (fighters) gets the accent Edit button.
     const editLink = screen.getByRole('link', { name: 'Edit' });
@@ -112,6 +131,7 @@ describe('ClientOverviewPage', () => {
     );
     expect(screen.getByTestId('checklist-matches')).toHaveAttribute('data-done', 'true');
     expect(screen.getByTestId('checklist-vod')).toHaveAttribute('data-done', 'false');
+    expect(screen.getByTestId('checklist-review')).toHaveAttribute('data-done', 'false');
 
     // The first incomplete row is now VOD — its button gets the accent.
     const attachLink = screen.getByRole('link', { name: 'Attach VOD' });
@@ -122,14 +142,38 @@ describe('ClientOverviewPage', () => {
     expect(screen.getByText('50%')).toBeInTheDocument();
   });
 
-  // Phase 11 fix round 3 (FB-8): once every step is done, the tutorial
-  // checklist is replaced by a compact "Quick actions" row — it never shows
-  // completed tutorial steps again.
-  it('FB-8: replaces the checklist with a Quick actions row once all three steps are done', async () => {
+  // Phase 13 (ONBD-05/D-08): the 4th step's done-state comes from the
+  // published-review query, never a draft — a client with only a draft
+  // review still shows the step incomplete.
+  it('D-08: the review step stays incomplete while the client has only a draft (unpublished) review', async () => {
     matchesList.mockResolvedValue([
       makeMatch({ id: 'm1', win: true, vodUrl: 'https://youtu.be/abc' }),
     ]);
     getFighters.mockResolvedValue({ primary: [1], secondary: [2] });
+    reviewsList.mockResolvedValue([makeReview({ status: 'draft' })]);
+
+    renderOverview();
+
+    await waitFor(() =>
+      expect(screen.getByTestId('checklist-vod')).toHaveAttribute('data-done', 'true'),
+    );
+    expect(screen.getByTestId('checklist-review')).toHaveAttribute('data-done', 'false');
+    // The first three steps are done, so the review step is the sole
+    // incomplete row and gets the accent button.
+    const writeLink = screen.getByRole('link', { name: 'Write a review' });
+    expect(writeLink.className).toContain('bg-coaching-accent');
+    expect(writeLink).toHaveAttribute('href', '/coach/tetra/reviews');
+  });
+
+  // Phase 11 fix round 3 (FB-8): once every step is done, the tutorial
+  // checklist is replaced by a compact "Quick actions" row — it never shows
+  // completed tutorial steps again.
+  it('FB-8: replaces the checklist with a Quick actions row once all four steps are done', async () => {
+    matchesList.mockResolvedValue([
+      makeMatch({ id: 'm1', win: true, vodUrl: 'https://youtu.be/abc' }),
+    ]);
+    getFighters.mockResolvedValue({ primary: [1], secondary: [2] });
+    reviewsList.mockResolvedValue([makeReview({ status: 'published', latestVersion: 1 })]);
 
     renderOverview();
 
@@ -140,6 +184,7 @@ describe('ClientOverviewPage', () => {
     expect(screen.queryByTestId('checklist-fighters')).not.toBeInTheDocument();
     expect(screen.queryByTestId('checklist-matches')).not.toBeInTheDocument();
     expect(screen.queryByTestId('checklist-vod')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('checklist-review')).not.toBeInTheDocument();
 
     expect(screen.getByRole('link', { name: 'Add match' })).toHaveAttribute(
       'href',
@@ -252,6 +297,7 @@ describe('ClientOverviewPage', () => {
     );
     expect(screen.getByTestId('checklist-matches')).toHaveAttribute('data-done', 'true');
     expect(screen.getByTestId('checklist-vod')).toHaveAttribute('data-done', 'false');
+    expect(screen.getByTestId('checklist-review')).toHaveAttribute('data-done', 'false');
     expect(screen.queryByTestId('quick-actions')).not.toBeInTheDocument();
   });
 });

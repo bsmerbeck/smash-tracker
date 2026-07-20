@@ -8,6 +8,7 @@ import { cn } from '@/lib/utils';
 import { useMatches } from '@/hooks/useMatches';
 import { useFighters } from '@/hooks/useFighters';
 import { useCoachingClients } from '@/hooks/useCoachingClients';
+import { useCoachingReviews } from '@/hooks/useCoachingReviews';
 import { getFighterById } from '@/data/sprites';
 import { getLastNMatches, getWinLossRecord } from '@/lib/stats';
 
@@ -15,7 +16,7 @@ import { getLastNMatches, getWinLossRecord } from '@/lib/stats';
 const RECENT_MATCHES_LIMIT = 5;
 
 interface ChecklistStepConfig {
-  key: 'fighters' | 'matches' | 'vod';
+  key: 'fighters' | 'matches' | 'vod' | 'review';
   done: boolean;
   href: string;
   titleKey: string;
@@ -24,13 +25,21 @@ interface ChecklistStepConfig {
 }
 
 /**
- * Phase 11 fix round 2 (D-02/D2): the `/coach/:clientId` landing page. Three
- * stat cards (Matches / VODs / Win rate — '—' when the client has zero
- * matches) followed by a three-step setup checklist whose done-state is
- * derived purely from the subject-scoped `useMatches`/`useFighters` reads
- * (PAR-04 — never a personal-only source). Exactly one row — the FIRST
- * incomplete one — gets the coaching-accent button so there is always a
- * single, unambiguous next action.
+ * Phase 11 fix round 2 (D-02/D2): the `/coach/:clientId` landing page. Stat
+ * cards (Matches / VODs / Win rate — '—' when the client has zero matches)
+ * followed by a setup checklist whose done-state is derived purely from
+ * server-backed reads (PAR-04 — never a personal-only source): the
+ * subject-scoped `useMatches`/`useFighters` reads for the first three
+ * steps, plus (Phase 13, ONBD-05/D-08) `useCoachingReviews` for a 4th
+ * "publish the first review" step now that Phase 12 shipped the review
+ * lifecycle. Exactly one row — the FIRST incomplete one — gets the
+ * coaching-accent button so there is always a single, unambiguous next
+ * action. The full four-step checklist is the visible surface of the coach
+ * activation loop (managed client + supported VOD + published review) — its
+ * `done` booleans are never fabricated/client-only counters; they are the
+ * SAME server conditions that gate the underlying D events, so the
+ * checklist can never show "complete" ahead of (or behind) the
+ * server-verified activation ledger.
  *
  * Fix round 3 (FB-7): enrichment between the stat cards and the checklist —
  * a Fighters card (primary/secondary sprites, reusing `getFighterById` from
@@ -47,6 +56,7 @@ export function ClientOverviewPage() {
 
   const { data: matchesData } = useMatches();
   const { data: fighters } = useFighters();
+  const { data: reviewsData } = useCoachingReviews(clientId);
   const matches = matchesData ?? [];
   const matchCount = matches.length;
   const vodCount = matches.filter((match) => match.vodUrl != null).length;
@@ -57,6 +67,11 @@ export function ClientOverviewPage() {
   const fightersDone = (fighters?.primary?.length ?? 0) > 0;
   const matchesDone = matchCount >= 1;
   const vodDone = vodCount >= 1;
+  // Phase 13 (D-08): "published" is the review-side state machine's own
+  // status (server-authoritative on seal, `apps/api/src/coaching/
+  // reviews.ts`'s `publishReview`) — never a draft, never a client-side flag
+  // this page flips itself.
+  const reviewDone = (reviewsData ?? []).some((review) => review.status === 'published');
 
   const primarySprites = (fighters?.primary ?? [])
     .map((id) => getFighterById(id))
@@ -93,13 +108,21 @@ export function ClientOverviewPage() {
       description: t('coaching.overview.checklist.vod.description'),
       buttonLabel: t('coaching.overview.checklist.vod.attachButton'),
     },
+    {
+      key: 'review',
+      done: reviewDone,
+      href: '../reviews',
+      titleKey: 'onboarding.coach.publishReview.title',
+      description: t('onboarding.coach.publishReview.description'),
+      buttonLabel: t('onboarding.coach.publishReview.button'),
+    },
   ];
 
   const firstIncompleteIndex = steps.findIndex((step) => !step.done);
   // Phase 11 fix round 3 (FB-8): once every step is done, the tutorial
   // checklist never shows again — it's replaced by a compact "Quick
-  // actions" row so a returning coach isn't stuck looking at three
-  // permanently-checked rows.
+  // actions" row so a returning coach isn't stuck looking at permanently-
+  // checked rows (four, since Phase 13's `review` step, D-08).
   const allStepsDone = firstIncompleteIndex === -1;
 
   return (

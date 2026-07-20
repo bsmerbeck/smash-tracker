@@ -9,6 +9,7 @@ import {
   useCoachingClients,
   useDeleteCoachingClient,
 } from '@/hooks/useCoachingClients';
+import { useProfile } from '@/hooks/useProfile';
 import { describeCoachingError } from './describeCoachingError';
 import { CreateClientDialog } from './components/CreateClientDialog';
 import { ClientHubTable } from './components/ClientHubTable';
@@ -58,6 +59,16 @@ function downloadClientExport(data: unknown, label: string): void {
  *   playlists, opponents, opponent aliases/notes, stage favorites, fighter
  *   selection) via `GET /api/coaching/clients/:id/export`. Available for
  *   both active and archived clients.
+ *
+ * Phase 13 (ONBD-05/D-07): a coach who arrived via the `/welcome` onboarding
+ * chooser (`onboardingIntent === 'coach_clients'`) and has no clients yet
+ * gets the zero-client empty state's create trigger SPOTLIGHTED — a guiding
+ * line + visual emphasis (ring) around the SAME `CreateClientDialog` already
+ * rendered here. This deliberately never lifts `CreateClientDialog`'s
+ * internal `open` state into a controlled prop (no auto-open, RESEARCH.md
+ * Assumption A5 — avoids the focus-trap/accessibility risk of an
+ * unprompted dialog) and never introduces a second create form (D-07 — one
+ * validation/conflict path only).
  */
 export function ClientHubPage() {
   const { t } = useTranslation();
@@ -67,6 +78,7 @@ export function ClientHubPage() {
   const activeClients = useCoachingClients();
   const archivedView = useCoachingClients({ includeArchived: true, enabled: showArchived });
   const visibleClients = showArchived ? archivedView : activeClients;
+  const profile = useProfile();
 
   const archiveClient = useArchiveCoachingClient();
   const deleteClient = useDeleteCoachingClient();
@@ -74,6 +86,7 @@ export function ClientHubPage() {
   const activeList = activeClients.data ?? [];
   const list = visibleClients.data ?? [];
   const isEmpty = !activeClients.isLoading && activeList.length === 0;
+  const isOnboardingSpotlight = profile.data?.onboardingIntent === 'coach_clients' && isEmpty;
 
   function handleArchiveToggle(client: ClientHubRow) {
     const archived = client.archivedAt == null;
@@ -132,7 +145,25 @@ export function ClientHubPage() {
           <Users className="size-8 text-muted-foreground" />
           <h2 className="text-lg font-semibold">{t('coaching.hub.empty.title')}</h2>
           <p className="max-w-sm text-sm text-muted-foreground">{t('coaching.hub.empty.body')}</p>
-          <CreateClientDialog triggerLabel={t('coaching.hub.createTrigger')} />
+          {isOnboardingSpotlight && (
+            <p
+              data-testid="onboarding-spotlight-hint"
+              className="max-w-sm text-sm font-medium text-coaching-accent"
+            >
+              {t('onboarding.guided.steps.coachClients.createClient.description')}
+            </p>
+          )}
+          <div
+            data-testid="onboarding-spotlight"
+            data-active={isOnboardingSpotlight}
+            className={
+              isOnboardingSpotlight
+                ? 'rounded-lg ring-2 ring-coaching-accent ring-offset-2 ring-offset-background'
+                : undefined
+            }
+          >
+            <CreateClientDialog triggerLabel={t('coaching.hub.createTrigger')} />
+          </div>
         </div>
       )}
 
