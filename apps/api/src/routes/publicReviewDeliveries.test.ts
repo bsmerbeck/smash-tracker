@@ -312,6 +312,108 @@ describe('POST /api/review-deliveries/:token/ack', () => {
   });
 });
 
+describe('POST /api/review-deliveries/:token/viewed', () => {
+  it('sets viewedAt once, advances status to viewed, fires client_review_view_loaded, and returns viewed: true', async () => {
+    const { app, database } = buildTestApp();
+    const { clientId, reviewId, deliveryId, token } = await seedDeliveredReview(app);
+
+    const response = await app.inject({
+      method: 'POST',
+      url: `/api/review-deliveries/${token}/viewed`,
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.headers['cache-control']).toBe('no-store');
+    expect(response.json()).toEqual({ viewed: true });
+
+    const record = dumpDeliveryRecord(database.dump(), clientId, reviewId, deliveryId);
+    expect(typeof record.viewedAt).toBe('number');
+    expect(record.status).toBe('viewed');
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const viewed = eventRows(database.dump()).filter(
+      (row) => row.eventName === 'client_review_view_loaded',
+    );
+    expect(viewed).toHaveLength(1);
+    expect(viewed[0]?.actorKind).toBe('anonymous');
+    expect(viewed[0]?.actorId).toBe(deliveryId);
+    expect(viewed[0]?.payload).toEqual({});
+  });
+
+  it('is idempotent — a second view does not change viewedAt or double-fire the event', async () => {
+    const { app, database } = buildTestApp();
+    const { clientId, reviewId, deliveryId, token } = await seedDeliveredReview(app);
+
+    await app.inject({ method: 'POST', url: `/api/review-deliveries/${token}/viewed` });
+    const firstRecord = dumpDeliveryRecord(database.dump(), clientId, reviewId, deliveryId);
+    const firstViewedAt = firstRecord.viewedAt;
+
+    const second = await app.inject({
+      method: 'POST',
+      url: `/api/review-deliveries/${token}/viewed`,
+    });
+    expect(second.statusCode).toBe(200);
+    expect(second.json()).toEqual({ viewed: true });
+
+    const secondRecord = dumpDeliveryRecord(database.dump(), clientId, reviewId, deliveryId);
+    expect(secondRecord.viewedAt).toBe(firstViewedAt);
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const viewed = eventRows(database.dump()).filter(
+      (row) => row.eventName === 'client_review_view_loaded',
+    );
+    expect(viewed).toHaveLength(1);
+  });
+
+  it('never regresses an already-acknowledged delivery back to viewed status, but still stamps viewedAt', async () => {
+    const { app, database } = buildTestApp();
+    const { clientId, reviewId, deliveryId, token } = await seedDeliveredReview(app);
+
+    await app.inject({ method: 'POST', url: `/api/review-deliveries/${token}/ack` });
+    await app.inject({ method: 'POST', url: `/api/review-deliveries/${token}/viewed` });
+
+    const record = dumpDeliveryRecord(database.dump(), clientId, reviewId, deliveryId);
+    expect(record.status).toBe('acknowledged');
+    expect(typeof record.viewedAt).toBe('number');
+  });
+
+  it('returns the identical unavailable body for a revoked token, and never sets viewedAt', async () => {
+    const { app, database } = buildTestApp();
+    const { clientId, reviewId, deliveryId, token } = await seedDeliveredReview(app);
+    await revokeDelivery(app, clientId, reviewId, deliveryId);
+
+    const response = await app.inject({
+      method: 'POST',
+      url: `/api/review-deliveries/${token}/viewed`,
+    });
+
+    expect(response.statusCode).toBe(404);
+    expect(response.json()).toEqual({
+      error: 'Not Found',
+      message: 'This delivery is no longer available',
+      statusCode: 404,
+    });
+    const record = dumpDeliveryRecord(database.dump(), clientId, reviewId, deliveryId);
+    expect(record.viewedAt).toBeNull();
+  });
+
+  it('returns the identical unavailable body for an unknown token', async () => {
+    const { app } = buildTestApp();
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/review-deliveries/noSuchTokenAtAll-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/viewed',
+    });
+
+    expect(response.statusCode).toBe(404);
+    expect(response.json()).toEqual({
+      error: 'Not Found',
+      message: 'This delivery is no longer available',
+      statusCode: 404,
+    });
+  });
+});
+
 /**
  * DLV-03: a delivery token grants access to EXACTLY ONE published version —
  * no draft, no coach-private content, no other version, no other review,

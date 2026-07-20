@@ -90,6 +90,11 @@ const GspCalculatorPage = lazy(() =>
 const ShareViewPage = lazy(() =>
   import('@/pages/Share/ShareViewPage').then((m) => ({ default: m.ShareViewPage })),
 );
+// Phase 12 (Coach Reviews & Delivery, D-08/DLV-02): the anonymous no-account
+// recipient page for a delivered coach review, `/r/:token`.
+const ReviewDeliveryPage = lazy(() =>
+  import('@/pages/Review/ReviewDeliveryPage').then((m) => ({ default: m.ReviewDeliveryPage })),
+);
 // Phase 11 (Coach Workspace Tenancy & Feature Parity): /coach + /coach/:clientId/*.
 const ClientHubPage = lazy(() =>
   import('@/pages/Coaching/ClientHubPage').then((m) => ({ default: m.ClientHubPage })),
@@ -166,6 +171,11 @@ export function AppRouter() {
               (apps/api/src/routes/shareMeta.ts); this route is what a REAL
               browser boots into once the SPA takes over. */}
           <Route path="/s/:token" element={<ShareViewPage />} />
+          {/* Phase 12 (Coach Reviews & Delivery, D-08/DLV-02): the anonymous
+              no-account coach review delivery link — noindex (unlisted),
+              no auth, revocable/expiring token. A SIBLING to /s/:token
+              above, never a fork. */}
+          <Route path="/r/:token" element={<ReviewDeliveryPage />} />
           <Route
             path="/dashboard"
             element={

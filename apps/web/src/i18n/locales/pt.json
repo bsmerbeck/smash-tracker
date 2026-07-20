@@ -1720,6 +1720,16 @@
           "clientReview": "Análise do cliente",
           "privateNotes": "🔒 Notas privadas"
         },
+        "mobile": {
+          "tabs": {
+            "watch": "Assistir",
+            "evidence": "Evidências",
+            "review": "Revisão"
+          },
+          "miniController": {
+            "playPauseAria": "Reproduzir ou pausar"
+          }
+        },
         "autosave": {
           "saving": "Salvando…",
           "saved": "Salvo",
@@ -1822,5 +1832,22 @@
       "body": "Ative-o em Perfil → Conta para gerenciar as partidas, VODs e análises de outros jogadores como treinador.",
       "cta": "Ir para o Perfil"
     }
+  },
+  "reviewDelivery": {
+    "seoTitle": "Revisão de {{name}} · grandfinals.gg",
+    "eyebrow": "Revisão do seu treinador · sem necessidade de conta",
+    "heading": "Revisão de {{name}}",
+    "published": "Publicada em {{date}}",
+    "nowPlaying": "Reproduzindo agora",
+    "sourceFallback": "Fonte {{index}}",
+    "noSource": "Esta revisão não cita nenhuma gravação.",
+    "sectionsEmpty": "Esta revisão ainda não tem conteúdo.",
+    "ack": {
+      "prompt": "Avise seu treinador que você leu isto.",
+      "button": "✓ Confirmar leitura",
+      "confirmedTitle": "Leitura confirmada",
+      "confirmedDetail": "{{date}} — seu treinador pode ver isso."
+    },
+    "footer": "A confirmação é registrada como uma confirmação de link (por quem tiver este link). Este link é revogável e pode expirar · concede acesso a exatamente uma versão publicada · sem rascunhos, notas privadas ou acesso ao espaço de trabalho · visitas de bots ou pré-visualizações nunca contam como \"Visualizado\"."
   }
 }

@@ -1720,6 +1720,16 @@
           "clientReview": "Reseña del cliente",
           "privateNotes": "🔒 Notas privadas"
         },
+        "mobile": {
+          "tabs": {
+            "watch": "Ver",
+            "evidence": "Evidencia",
+            "review": "Reseña"
+          },
+          "miniController": {
+            "playPauseAria": "Reproducir o pausar"
+          }
+        },
         "autosave": {
           "saving": "Guardando…",
           "saved": "Guardado",
@@ -1822,5 +1832,22 @@
       "body": "Actívalo en Perfil → Cuenta para gestionar los partidos, VODs y análisis de otros jugadores en modo Entrenamiento.",
       "cta": "Ir a Perfil"
     }
+  },
+  "reviewDelivery": {
+    "seoTitle": "Análisis de {{name}} · grandfinals.gg",
+    "eyebrow": "Análisis de tu entrenador · sin necesidad de cuenta",
+    "heading": "Análisis de {{name}}",
+    "published": "Publicado el {{date}}",
+    "nowPlaying": "Reproduciendo ahora",
+    "sourceFallback": "Fuente {{index}}",
+    "noSource": "Este análisis no cita ninguna grabación.",
+    "sectionsEmpty": "Este análisis todavía no tiene contenido.",
+    "ack": {
+      "prompt": "Avisa a tu entrenador de que lo has leído.",
+      "button": "✓ Confirmar lectura",
+      "confirmedTitle": "Lectura confirmada",
+      "confirmedDetail": "{{date}} — tu entrenador puede verlo."
+    },
+    "footer": "La confirmación se registra como una confirmación de enlace (quien tenga este enlace). Este enlace es revocable y puede caducar · da acceso a exactamente una versión publicada · sin borradores, notas privadas ni acceso al espacio de trabajo · las visitas de bots o vistas previas nunca cuentan como \"Visto\"."
   }
 }

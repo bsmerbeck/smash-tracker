@@ -3,7 +3,7 @@ import { errorResponseSchema, publicShareSnapshotSchema } from '@smash-tracker/s
 import { z } from 'zod';
 import { buildAnonymousDomainEnvelope } from '../events/envelope.js';
 import { createEvent } from '../events/ledger.js';
-import { setDeliveryAck } from '../coaching/reviewDeliveries.js';
+import { setDeliveryAck, setDeliveryViewed } from '../coaching/reviewDeliveries.js';
 import { RtdbService } from '../services/rtdb.js';
 
 const tokenParamsSchema = z.object({
@@ -23,6 +23,7 @@ const UNAVAILABLE_404_BODY = {
 } as const;
 
 const ackResponseSchema = z.object({ acknowledged: z.literal(true) });
+const viewedResponseSchema = z.object({ viewed: z.literal(true) });
 
 /**
  * Phase 12 Plan 05 (DLV-02/DLV-03, D-09): the anonymous no-account
@@ -40,10 +41,16 @@ const ackResponseSchema = z.object({ acknowledged: z.literal(true) });
  * (T-12-16), mirroring `publicVodShares.ts`.
  *
  * GET never sets `viewedAt`/derives 'Viewed' (T-12-14 / D-09 / Pitfall 4) —
- * that transition is owned exclusively by the client's post-render,
- * crawler-aware `client_review_view_loaded` X event (plan 08). A
- * crawler/unfurl fetch of this route must never produce a Viewed trust
- * signal.
+ * that transition is owned exclusively by `POST
+ * /api/review-deliveries/:token/viewed` (plan 08), called by the CLIENT only
+ * after its embedded player reports `isReady` (a usable, playable render),
+ * fire-once — never from this GET route, and never from the generic
+ * same-origin `POST /api/events` X-ingestion route (that route's envelope
+ * payload may never carry a capability token/share secret, and the delivery
+ * TOKEN is exactly that — see `setDeliveryViewed`'s doc comment). A
+ * crawler/unfurl fetch of the GET route above must never produce a Viewed
+ * trust signal; since a crawler only ever GETs, it never reaches the
+ * dedicated `/viewed` route either.
  *
  * Both routes resolve EXCLUSIVELY through `RtdbService.getShareByToken`/
  * `resolveCoachReviewShareRef`, which only ever read `reviewVersions/`
@@ -144,6 +151,60 @@ const publicReviewDeliveriesRoutes: FastifyPluginAsyncZod = async (app) => {
       }
 
       return reply.code(200).send({ acknowledged: true });
+    },
+  );
+
+  // POST /api/review-deliveries/:token/viewed — Plan 08 (D-09/D-11): the
+  // crawler-safe Delivered -> Viewed transition. Called by the recipient
+  // page's OWN client code, gated on the embedded player's `isReady` (a
+  // usable render), fire-once per view — never automatically from the GET
+  // route above (a crawler/unfurl fetch only ever GETs, so it never reaches
+  // this route). Fires `client_review_view_loaded` ONLY on the genuine
+  // first-view transition, with an empty, content-free payload — mirrors
+  // the ack route's own idempotent-transition-then-event discipline exactly.
+  app.post(
+    '/review-deliveries/:token/viewed',
+    {
+      schema: {
+        params: tokenParamsSchema,
+        response: {
+          200: viewedResponseSchema,
+          404: errorResponseSchema,
+        },
+      },
+      config: { rateLimit: { max: 60, timeWindow: '1 minute' } },
+    },
+    async (request, reply) => {
+      const ref = await rtdb.resolveCoachReviewShareRef(request.params.token);
+      if (!ref) {
+        return reply.code(404).send(UNAVAILABLE_404_BODY);
+      }
+
+      const result = await setDeliveryViewed(
+        app.firebase.database,
+        ref.tenantId,
+        ref.reviewId,
+        request.params.token,
+      );
+      if (!result) {
+        return reply.code(404).send(UNAVAILABLE_404_BODY);
+      }
+
+      if (!result.alreadyViewed) {
+        void createEvent(
+          app.firebase.database,
+          buildAnonymousDomainEnvelope({
+            eventName: 'client_review_view_loaded',
+            actorId: result.deliveryId,
+            sessionId: result.deliveryId,
+            causationId: `${ref.reviewId}:${result.deliveryId}`,
+            consentState: 'unknown',
+            payload: {},
+          }),
+        );
+      }
+
+      return reply.code(200).send({ viewed: true });
     },
   );
 };

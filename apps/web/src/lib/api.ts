@@ -852,6 +852,42 @@ export const api = {
     getPublic: (token: string) =>
       apiRequestParsed(`/api/vod-shares/${encodeURIComponent(token)}`, publicShareSnapshotSchema),
   },
+  /**
+   * Phase 12 Plan 08 (DLV-02/DLV-04, Rule 2 gap-fill): the anonymous
+   * no-account recipient surface for a coach review delivery
+   * (`apps/api/src/routes/publicReviewDeliveries.ts`, plan 05) — a SIBLING
+   * to `vodShares.getPublic` above (same unauthenticated-read posture,
+   * different route family: `/api/review-deliveries/:token`, never
+   * `/api/vod-shares/:token`). No web client existed for either route until
+   * this plan's own delivery page needed one.
+   */
+  reviewDeliveries: {
+    /** GET /api/review-deliveries/:token — the pinned published-version `kind: 'coachReview'` snapshot. */
+    get: (token: string) =>
+      apiRequestParsed(
+        `/api/review-deliveries/${encodeURIComponent(token)}`,
+        publicShareSnapshotSchema,
+      ),
+    /** POST /api/review-deliveries/:token/ack — idempotent link acknowledgement (D-09). */
+    ack: (token: string) =>
+      apiRequestParsed(
+        `/api/review-deliveries/${encodeURIComponent(token)}/ack`,
+        z.object({ acknowledged: z.literal(true) }),
+        { method: 'POST' },
+      ),
+    /**
+     * POST /api/review-deliveries/:token/viewed — the crawler-safe
+     * Delivered -> Viewed transition (D-09/D-11). Called ONLY from
+     * `ReviewDeliveryPage`'s own isReady-gated, fire-once effect — never
+     * automatically alongside `get` above.
+     */
+    markViewed: (token: string) =>
+      apiRequestParsed(
+        `/api/review-deliveries/${encodeURIComponent(token)}/viewed`,
+        z.object({ viewed: z.literal(true) }),
+        { method: 'POST' },
+      ),
+  },
 };
 
 /** Public "login with start.gg" entrypoint — a full-page navigation, not an XHR. */

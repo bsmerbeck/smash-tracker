@@ -1720,6 +1720,16 @@
           "clientReview": "Klienten-Review",
           "privateNotes": "🔒 Private Notizen"
         },
+        "mobile": {
+          "tabs": {
+            "watch": "Ansehen",
+            "evidence": "Belege",
+            "review": "Review"
+          },
+          "miniController": {
+            "playPauseAria": "Wiedergeben oder pausieren"
+          }
+        },
         "autosave": {
           "saving": "Wird gespeichert…",
           "saved": "Gespeichert",
@@ -1822,5 +1832,22 @@
       "body": "Aktiviere ihn unter Profil → Konto, um die Matches, VODs und Analysen anderer Spieler als Coach zu verwalten.",
       "cta": "Zum Profil"
     }
+  },
+  "reviewDelivery": {
+    "seoTitle": "Review von {{name}} · grandfinals.gg",
+    "eyebrow": "Review von deinem Coach · kein Konto nötig",
+    "heading": "Review von {{name}}",
+    "published": "Veröffentlicht am {{date}}",
+    "nowPlaying": "Läuft gerade",
+    "sourceFallback": "Quelle {{index}}",
+    "noSource": "Dieses Review verweist auf kein Video.",
+    "sectionsEmpty": "Dieses Review hat noch keinen Inhalt.",
+    "ack": {
+      "prompt": "Lass deinen Coach wissen, dass du das gelesen hast.",
+      "button": "✓ Bestätigen",
+      "confirmedTitle": "Bestätigt",
+      "confirmedDetail": "{{date}} — dein Coach kann das sehen."
+    },
+    "footer": "Die Bestätigung wird als Link-Bestätigung erfasst (von wem auch immer diesen Link besitzt). Dieser Link ist widerrufbar und kann ablaufen · er gewährt Zugriff auf genau eine veröffentlichte Version · keine Entwürfe, privaten Notizen oder Workspace-Zugriff · Bot- und Vorschau-Aufrufe zählen niemals als \"Angesehen\"."
   }
 }
