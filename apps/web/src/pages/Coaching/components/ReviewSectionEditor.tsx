@@ -29,6 +29,15 @@ export interface ReviewSectionEditorProps {
   onShow: (sectionId: string) => void;
   /** Fires the `.../sections` add mutation (restores a hidden suggested block in place, or appends a new section). */
   onAdd: (kind: ReviewSectionKind) => void;
+  /**
+   * D-04: registers (or unregisters, on unmount/hide) each section's live
+   * `<textarea>` element with the composer, keyed by section id — the
+   * composer's `Cite` handler reads `document.activeElement` against this
+   * map to decide "insert at the focused editor's cursor" vs. "ask which
+   * section" (never silently choose). Optional so every existing caller/
+   * test that doesn't need citation insertion is unaffected.
+   */
+  registerTextareaRef?: (sectionId: string, el: HTMLTextAreaElement | null) => void;
 }
 
 /**
@@ -47,6 +56,7 @@ export function ReviewSectionEditor({
   onHide,
   onShow,
   onAdd,
+  registerTextareaRef,
 }: ReviewSectionEditorProps) {
   const { t } = useTranslation();
 
@@ -166,6 +176,7 @@ export function ReviewSectionEditor({
           </div>
           <div className="px-3.5 py-3">
             <Textarea
+              ref={(el) => registerTextareaRef?.(section.id, el)}
               value={section.body}
               onChange={(event) => onChangeBody(section.id, event.target.value)}
               aria-label={sectionTitle(section)}
