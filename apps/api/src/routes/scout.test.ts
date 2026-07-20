@@ -1,7 +1,16 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { StartggConfig } from '../config/env.js';
-import { authHeader, buildTestApp } from '../test-support/testApp.js';
+import { authHeader, buildTestApp, TEST_UID } from '../test-support/testApp.js';
 import type { ParryggClients } from '../parrygg/client.js';
+
+/** Extracts every event row across `eventLedger`'s day shards — mirrors `matches.test.ts`'s identically-named helper. */
+function eventRows(dump: unknown): Array<{ eventName: string; actorId: string }> {
+  const typed = dump as { eventLedger?: Record<string, Record<string, unknown>> };
+  return Object.values(typed.eventLedger ?? {}).flatMap((day) => Object.values(day)) as Array<{
+    eventName: string;
+    actorId: string;
+  }>;
+}
 
 const CONFIG: StartggConfig = {
   clientId: 'client-123',
@@ -112,6 +121,32 @@ describe('POST /api/scout (configured)', () => {
       recentEvents: [],
       commonOpponents: [],
     });
+  });
+
+  it('fires scout_activated (once) on a successful report — Phase 13 ONBD-04', async () => {
+    const { app, database } = buildTestApp({ startgg: CONFIG, startggFetch: scoutFetchMock() });
+
+    const first = await app.inject({
+      method: 'POST',
+      url: '/api/scout',
+      headers: authHeader(),
+      payload: { query: 'https://start.gg/user/07dc2239' },
+    });
+    expect(first.statusCode).toBe(200);
+
+    const second = await app.inject({
+      method: 'POST',
+      url: '/api/scout',
+      headers: authHeader(),
+      payload: { query: 'https://start.gg/user/07dc2239' },
+    });
+    expect(second.statusCode).toBe(200);
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const rows = eventRows(database.dump());
+    const fired = rows.filter((row) => row.eventName === 'scout_activated');
+    expect(fired).toHaveLength(1);
+    expect(fired[0]?.actorId).toBe(TEST_UID);
   });
 
   it('resolves a bare numeric player id', async () => {

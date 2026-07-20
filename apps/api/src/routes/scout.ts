@@ -1,4 +1,5 @@
 import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
+import type { FastifyRequest } from 'fastify';
 import {
   errorResponseSchema,
   scoutQuerySchema,
@@ -10,6 +11,14 @@ import { parseScoutInput, ScoutCache, ScoutInputError, scoutPlayer } from '../st
 import { parseParryProfileUrl, ParryScoutCache, scoutParryPlayer } from '../parrygg/scout.js';
 import type { ParryggClients } from '../parrygg/client.js';
 import { resolveCombinedScout } from '../scout/combine.js';
+import { emitScoutActivated } from '../onboarding/activation.js';
+
+/** `X-Session-Id` header, mirroring `matches.ts`'s own identically-named helper — defaults to `'unknown'` when absent (never blocks the request). */
+function sessionIdFromHeader(request: FastifyRequest): string {
+  const header = request.headers['x-session-id'];
+  const value = Array.isArray(header) ? header[0] : header;
+  return value ?? 'unknown';
+}
 
 export interface ScoutRoutesOptions {
   config: StartggConfig | null;
@@ -116,6 +125,7 @@ const scoutRoutes: FastifyPluginAsyncZod<ScoutRoutesOptions> = async (app, optio
             statusCode: 404,
           });
         }
+        void emitScoutActivated(app.firebase.database, request.uid, sessionIdFromHeader(request));
         return result.report;
       }
 
@@ -140,6 +150,7 @@ const scoutRoutes: FastifyPluginAsyncZod<ScoutRoutesOptions> = async (app, optio
             statusCode: 404,
           });
         }
+        void emitScoutActivated(app.firebase.database, request.uid, sessionIdFromHeader(request));
         return report;
       }
 
@@ -174,6 +185,7 @@ const scoutRoutes: FastifyPluginAsyncZod<ScoutRoutesOptions> = async (app, optio
             statusCode: 404,
           });
         }
+        void emitScoutActivated(app.firebase.database, request.uid, sessionIdFromHeader(request));
         return report;
       } catch (err) {
         if (err instanceof StartggApiError && err.status === 429) {

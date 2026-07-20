@@ -11,6 +11,7 @@ import {
 import { z } from 'zod';
 import { buildDomainEnvelope } from '../events/envelope.js';
 import { createEvent } from '../events/ledger.js';
+import { onboardingCausePayload, reconcilePlayerActivation } from '../onboarding/activation.js';
 import { ForbiddenError, RtdbService } from '../services/rtdb.js';
 
 const matchIdParamsSchema = z.object({
@@ -56,6 +57,11 @@ const matchesRoutes: FastifyPluginAsyncZod = async (app) => {
   // already attached. Never for a personal match (`subjectId === uid`) —
   // every write here is a "first attach" by definition, since a brand-new
   // match has no prior state to diff against.
+  //
+  // Phase 13 (ONBD-04): a PERSONAL write (never client-library) also
+  // reconciles player activation (analytics_activated crossing the game
+  // count, vod_activated reaching vod+notes) — fire-and-forget, mirrors the
+  // client_vod_attached emission below.
   app.post(
     '/matches',
     {
@@ -69,7 +75,15 @@ const matchesRoutes: FastifyPluginAsyncZod = async (app) => {
     async (request, reply) => {
       const match = await rtdb.createMatch(request.subjectId, request.body);
       const isClientLibrary = request.subjectId !== request.uid;
+      if (!isClientLibrary) {
+        void reconcilePlayerActivation(
+          app.firebase.database,
+          request.uid,
+          sessionIdFromHeader(request),
+        );
+      }
       if (isClientLibrary && request.body.vodUrl !== undefined) {
+        const payload = await onboardingCausePayload(app.firebase.database, request.uid);
         void createEvent(
           app.firebase.database,
           buildDomainEnvelope({
@@ -78,6 +92,7 @@ const matchesRoutes: FastifyPluginAsyncZod = async (app) => {
             sessionId: sessionIdFromHeader(request),
             causationId: match.id,
             consentState: 'unknown',
+            payload,
           }),
         );
       }
@@ -111,7 +126,15 @@ const matchesRoutes: FastifyPluginAsyncZod = async (app) => {
         request.body,
       );
       const isClientLibrary = request.subjectId !== request.uid;
+      if (!isClientLibrary) {
+        void reconcilePlayerActivation(
+          app.firebase.database,
+          request.uid,
+          sessionIdFromHeader(request),
+        );
+      }
       if (isClientLibrary && vodFirstAttached) {
+        const payload = await onboardingCausePayload(app.firebase.database, request.uid);
         void createEvent(
           app.firebase.database,
           buildDomainEnvelope({
@@ -120,6 +143,7 @@ const matchesRoutes: FastifyPluginAsyncZod = async (app) => {
             sessionId: sessionIdFromHeader(request),
             causationId: match.id,
             consentState: 'unknown',
+            payload,
           }),
         );
       }
@@ -190,6 +214,16 @@ const matchesRoutes: FastifyPluginAsyncZod = async (app) => {
     async (request, reply) => {
       try {
         const note = await rtdb.createNote(request.subjectId, request.params.id, request.body);
+        // Phase 13 (ONBD-04): a new note on a PERSONAL match can be the
+        // second note that crosses vod_activated's threshold —
+        // fire-and-forget, never for a client-library write.
+        if (request.subjectId === request.uid) {
+          void reconcilePlayerActivation(
+            app.firebase.database,
+            request.uid,
+            sessionIdFromHeader(request),
+          );
+        }
         return reply.code(201).send(note);
       } catch (err) {
         if (err instanceof ForbiddenError) {
