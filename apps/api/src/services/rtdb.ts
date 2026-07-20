@@ -504,7 +504,22 @@ export class RtdbService {
     return { id, ...record };
   }
 
-  async updateMatch(uid: string, id: string, input: UpdateMatchInput): Promise<Match> {
+  /**
+   * Phase 12 Plan 05 (D-11 carry-over): the response additionally carries
+   * `vodFirstAttached` — the inverse of the `vodRemoved` diff below
+   * (`current.vodUrl === undefined && input.vodUrl !== undefined`), computed
+   * from the SAME already-fetched `current`/`input` pair rather than a
+   * second read. `RtdbService` stays subject-agnostic (it never knows
+   * `subjectId`/`uid`, so it can't decide whether this is a client-library
+   * write) — the route layer (`matches.ts`) is the one that combines this
+   * flag with `isClientLibrary` to decide whether to fire
+   * `client_vod_attached`.
+   */
+  async updateMatch(
+    uid: string,
+    id: string,
+    input: UpdateMatchInput,
+  ): Promise<Match & { vodFirstAttached: boolean }> {
     const ref = this.database.ref(`matches/${uid}/${id}`);
     const existing = await ref.get();
     if (!existing.exists()) {
@@ -586,6 +601,7 @@ export class RtdbService {
     // like the explicit clear-VOD action does. A REPLACED or unchanged URL
     // is not a removal and leaves shares alive.
     const vodRemoved = current.vodUrl !== undefined && input.vodUrl === undefined;
+    const vodFirstAttached = current.vodUrl === undefined && input.vodUrl !== undefined;
     if (vodRemoved) {
       const activeTokens = await this.resolveActiveReviewShareTokens(uid, id);
       const revokedAt = Date.now();
@@ -612,6 +628,7 @@ export class RtdbService {
       id,
       ...record,
       ...(current.vodTimestamps !== undefined ? { vodTimestamps: current.vodTimestamps } : {}),
+      vodFirstAttached,
     };
   }
 
