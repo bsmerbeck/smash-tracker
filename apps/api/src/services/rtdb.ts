@@ -2149,6 +2149,41 @@ export class RtdbService {
   }
 
   /**
+   * Phase 12 Plan 05 (DLV-02): resolves a live token to its coachReview
+   * `{tenantId, reviewId, version}` WITHOUT building the full public
+   * snapshot (no citation-source resolution, no coach-display-name
+   * lookup) — used by the anonymous ack route (`publicReviewDeliveries.ts`),
+   * which only needs to locate the delivery record to flip `ackAt`, never
+   * render one. Re-runs the exact same shape/exists/revoked/expired checks
+   * `getShareByToken` above uses (T-12-15 no-oracle parity — re-checked
+   * fresh on every call, never cached) and returns `null` for anything that
+   * isn't a live coachReview token, including a token that resolves fine
+   * but belongs to a different share kind.
+   */
+  async resolveCoachReviewShareRef(
+    token: string,
+  ): Promise<{ tenantId: string; reviewId: string; version: number } | null> {
+    if (!SHARE_TOKEN_SHAPE.test(token)) {
+      return null;
+    }
+    const tokenSnapshot = await this.database.ref(`shareTokens/${token}`).get();
+    if (!tokenSnapshot.exists()) {
+      return null;
+    }
+    const parsedToken = shareTokenSchema.safeParse(tokenSnapshot.val());
+    if (!parsedToken.success) {
+      return null;
+    }
+    if (parsedToken.data.revokedAt != null) {
+      return null;
+    }
+    if (parsedToken.data.expiresAt != null && parsedToken.data.expiresAt < Date.now()) {
+      return null;
+    }
+    return parseReviewShareId(parsedToken.data.shareId);
+  }
+
+  /**
    * Phase 12 Plan 04 (DLV-01/DLV-02/DLV-03): resolves a parsed coachReview
    * `shareId` (tenantId/reviewId/version, already trust-boundary-guarded by
    * `parseReviewShareId`) to the client-visible delivery snapshot. Reads

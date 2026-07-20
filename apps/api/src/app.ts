@@ -35,6 +35,7 @@ import coachingReviewsRoutes from './routes/coachingReviews.js';
 import coachingReviewDeliveriesRoutes from './routes/coachingReviewDeliveries.js';
 import vodSharesRoutes from './routes/vodShares.js';
 import publicVodSharesRoutes from './routes/publicVodShares.js';
+import publicReviewDeliveriesRoutes from './routes/publicReviewDeliveries.js';
 import coachNotesRoutes from './routes/coachNotes.js';
 import eventsRoutes from './routes/events.js';
 import internalJobsRoutes from './routes/internalJobs.js';
@@ -317,6 +318,10 @@ export function buildApp(options: BuildAppOptions) {
         ga4Fetch: options.ga4Fetch,
       });
       await api.register(publicVodSharesRoutes);
+      // Phase 12 Plan 05 (DLV-02/DLV-03): the anonymous no-account coach
+      // review delivery surface — same public/no-store/rate-limited posture
+      // as `publicVodSharesRoutes` above.
+      await api.register(publicReviewDeliveriesRoutes);
       // Phase 10 Plan 4 (Canonical Measurement): the durable, same-origin
       // X-class ingestion route — anonymous-tolerant (no `app.authenticate`,
       // same posture as `publicVodSharesRoutes` above), per-route rate

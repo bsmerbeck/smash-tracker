@@ -122,6 +122,14 @@ export async function createReviewDelivery(
     ownerUid: tenantId,
     permissions: 'view',
     createdAt: now,
+    // Plan 05 fix (Rule 2 — missing critical functionality): `getShareByToken`/
+    // `resolveCoachReviewShareRef`'s expiry re-check gates on THIS record's
+    // `expiresAt` (`shareTokens/{token}`), never the delivery record's own
+    // `expiresAt` below — without this, a delivery created with an expiry
+    // would never actually stop resolving (DLV-02's "re-checking
+    // revocation/expiry on EVERY request" must-have would silently not
+    // apply to coachReview deliveries at all).
+    ...(options.expiresAt !== undefined ? { expiresAt: options.expiresAt } : {}),
   };
   const deliveryRecord = reviewDeliveryRecordSchema.parse({
     status: 'delivered',
@@ -224,4 +232,58 @@ export async function revokeReviewDelivery(
   });
 
   return { revoked: true };
+}
+
+/**
+ * Phase 12 Plan 05 (DLV-02, D-09 link acknowledgement): idempotently sets
+ * `ackAt`/`status: 'acknowledged'` on the ONE delivery record under
+ * `reviewDeliveries/{tenantId}/{reviewId}` whose `token` matches — the
+ * anonymous ack route's write target (`publicReviewDeliveries.ts`). The
+ * caller resolves `(tenantId, reviewId)` from the token itself first (via
+ * `RtdbService.resolveCoachReviewShareRef`, the same no-oracle
+ * revoked/expired re-check `getShareByToken` uses) — this function's only
+ * job is finding and flipping the matching delivery record, never
+ * re-validating the token's liveness a second way.
+ *
+ * A second ack on an already-acked delivery is a silent no-op
+ * (`alreadyAcked: true`) — the caller only fires `client_review_acknowledged`
+ * on a genuine transition (D-11), mirroring `revokeReviewDelivery`'s
+ * idempotent-revoke discipline. Returns `null` if no delivery record under
+ * this reviewId carries the given token — defensive; should never happen
+ * for a token `resolveCoachReviewShareRef` just resolved, since both write
+ * paths always create the token and delivery record together.
+ */
+export async function setDeliveryAck(
+  database: Database,
+  tenantId: string,
+  reviewId: string,
+  token: string,
+): Promise<{ deliveryId: string; alreadyAcked: boolean } | null> {
+  const snapshot = await database.ref(`reviewDeliveries/${tenantId}/${reviewId}`).get();
+  if (!snapshot.exists()) {
+    return null;
+  }
+  const raw = snapshot.val() as Record<string, unknown>;
+  const entry = Object.entries(raw).find(([, value]) => {
+    const parsed = reviewDeliveryRecordSchema.safeParse(value);
+    return parsed.success && parsed.data.token === token;
+  });
+  if (!entry) {
+    return null;
+  }
+  const [deliveryId, rawRecord] = entry;
+  const record = reviewDeliveryRecordSchema.parse(rawRecord);
+
+  if (record.ackAt != null) {
+    return { deliveryId, alreadyAcked: true };
+  }
+
+  const ackAt = Date.now();
+  const ackedStatus: ReviewDeliveryState = 'acknowledged';
+  await database.ref().update({
+    [`reviewDeliveries/${tenantId}/${reviewId}/${deliveryId}/ackAt`]: ackAt,
+    [`reviewDeliveries/${tenantId}/${reviewId}/${deliveryId}/status`]: ackedStatus,
+  });
+
+  return { deliveryId, alreadyAcked: false };
 }
