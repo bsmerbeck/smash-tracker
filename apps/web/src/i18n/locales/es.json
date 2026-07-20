@@ -1854,5 +1854,173 @@
       "button": "Empezar gratis"
     },
     "footer": "La confirmación se registra como una confirmación de enlace (quien tenga este enlace). Este enlace es revocable y puede caducar · da acceso a exactamente una versión publicada · sin borradores, notas privadas ni acceso al espacio de trabajo · las visitas de bots o vistas previas nunca cuentan como \"Visto\"."
+  },
+  "onboarding": {
+    "welcome": {
+      "title": "¿Qué quieres hacer hoy?",
+      "subtitle": "Elige una opción para empezar — siempre podrás cambiarla después.",
+      "skip": "Omitir por ahora",
+      "suggested": "Sugerido para ti",
+      "error": "Algo salió mal al guardarlo — inténtalo de nuevo."
+    },
+    "intent": {
+      "prepare": {
+        "title": "Prepararme para un torneo",
+        "description": "Prepárate para un próximo evento"
+      },
+      "review_vod": {
+        "title": "Revisar un VOD",
+        "description": "Mira y anota un set grabado"
+      },
+      "track_improvement": {
+        "title": "Seguir mi progreso",
+        "description": "Registra tus partidas y observa tus tendencias"
+      },
+      "scout": {
+        "title": "Explorar a un rival",
+        "description": "Crea un informe antes de jugar contra ellos"
+      },
+      "coach_clients": {
+        "title": "Entrenar clientes",
+        "description": "Gestiona a tus clientes, revisa sus VODs y sigue su progreso"
+      }
+    },
+    "originChip": {
+      "fromArtifact": "Llegaste desde {{artifact}}",
+      "backToWatching": "Volver a lo que estabas viendo"
+    },
+    "guided": {
+      "progress": "Paso {{current}} de {{total}}",
+      "switchIntent": "Cambiar de objetivo",
+      "steps": {
+        "reviewVod": {
+          "addVod": {
+            "title": "Vincula un VOD",
+            "description": "Vincula una grabación a una de tus partidas",
+            "button": "Añadir un VOD"
+          },
+          "addTwoNotes": {
+            "title": "Añade dos notas",
+            "description": "Marca momentos clave mientras los recuerdas",
+            "button": "Añadir notas"
+          },
+          "tagMatch": {
+            "title": "Etiqueta la partida",
+            "description": "Facilita encontrarla más adelante",
+            "button": "Añadir etiquetas"
+          }
+        },
+        "trackImprovement": {
+          "connectSync": {
+            "title": "Conecta start.gg o parry.gg",
+            "description": "Sincroniza tus partidas automáticamente",
+            "button": "Conectar"
+          },
+          "logGames": {
+            "title": "Registra 5 partidas",
+            "description": "La entrada manual también funciona — no necesitas sincronizar",
+            "button": "Registrar una partida"
+          },
+          "viewTrends": {
+            "title": "Consulta tus tendencias",
+            "description": "Tu curva de valoración y rendimiento mensual",
+            "button": "Ver tendencias"
+          }
+        },
+        "prepare": {
+          "linkEvent": {
+            "title": "Vincula tu evento",
+            "description": "Importa el bracket y la información de rivales desde start.gg",
+            "button": "Vincular evento"
+          },
+          "scoutOpponent": {
+            "title": "Explora a tu primer rival",
+            "description": "Crea un informe antes de jugar contra él",
+            "button": "Explorar"
+          },
+          "reviewMatchups": {
+            "title": "Revisa tus enfrentamientos",
+            "description": "Comprueba tu dominio de escenarios y cobertura de enfrentamientos",
+            "button": "Ver enfrentamientos"
+          }
+        },
+        "scout": {
+          "runScout": {
+            "title": "Realiza una exploración",
+            "description": "Busca un rival para crear un informe",
+            "button": "Explorar a un rival"
+          },
+          "reviewReport": {
+            "title": "Revisa el informe",
+            "description": "Consulta tendencias, elecciones de escenario y notas de enfrentamiento",
+            "button": "Abrir informe"
+          }
+        },
+        "coachClients": {
+          "enableCoaching": {
+            "title": "Modo entrenador activado",
+            "description": "Puedes volver al modo personal cuando quieras",
+            "button": "Hecho"
+          },
+          "createClient": {
+            "title": "Crea tu primer cliente",
+            "description": "Abre el cuadro de diálogo existente del Centro de clientes",
+            "button": "Crear cliente"
+          },
+          "publishReview": {
+            "title": "Publica tu primera reseña",
+            "description": "Envía comentarios que tu cliente pueda abrir sin necesidad de cuenta",
+            "button": "Escribir una reseña"
+          }
+        }
+      }
+    },
+    "recovery": {
+      "syncFailed": {
+        "title": "La sincronización no terminó",
+        "description": "Aún puedes registrar partidas manualmente — todo lo de abajo cuenta igual.",
+        "button": "Registrar partidas manualmente"
+      },
+      "eventAssociationFailed": {
+        "title": "No se pudo vincular ese evento automáticamente",
+        "description": "Vincúlalo manualmente — no perderás tu progreso.",
+        "button": "Vincular manualmente"
+      },
+      "opponentLookupFailed": {
+        "title": "No se pudo encontrar a ese rival automáticamente",
+        "description": "Introdúcelo manualmente para seguir explorando.",
+        "button": "Introducir rival manualmente"
+      }
+    },
+    "prep": {
+      "manualAssociate": {
+        "label": "Nombre del evento",
+        "date": "Fecha del evento",
+        "submit": "Vincular evento"
+      }
+    },
+    "dashboard": {
+      "nextBestAction": {
+        "chooseIntent": {
+          "title": "¿No sabes por dónde empezar?",
+          "button": "Elegir qué hacer aquí"
+        },
+        "createFirstClient": {
+          "title": "Crea tu primer cliente",
+          "description": "El modo entrenador está activo — crea un cliente para empezar.",
+          "button": "Crear cliente"
+        },
+        "currentStep": {
+          "title": "Continúa donde lo dejaste"
+        }
+      }
+    },
+    "coach": {
+      "publishReview": {
+        "title": "Publica tu primera reseña",
+        "description": "Envía comentarios que tu cliente pueda abrir sin necesidad de cuenta — el último paso para completar la configuración.",
+        "button": "Escribir una reseña"
+      }
+    }
   }
 }

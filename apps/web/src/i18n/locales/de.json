@@ -1854,5 +1854,173 @@
       "button": "Kostenlos starten"
     },
     "footer": "Die Bestätigung wird als Link-Bestätigung erfasst (von wem auch immer diesen Link besitzt). Dieser Link ist widerrufbar und kann ablaufen · er gewährt Zugriff auf genau eine veröffentlichte Version · keine Entwürfe, privaten Notizen oder Workspace-Zugriff · Bot- und Vorschau-Aufrufe zählen niemals als \"Angesehen\"."
+  },
+  "onboarding": {
+    "welcome": {
+      "title": "Was möchtest du hier tun?",
+      "subtitle": "Wähle eine Option, um loszulegen — du kannst später jederzeit wechseln.",
+      "skip": "Vorerst überspringen",
+      "suggested": "Für dich empfohlen",
+      "error": "Beim Speichern ist etwas schiefgelaufen — bitte versuche es erneut."
+    },
+    "intent": {
+      "prepare": {
+        "title": "Für ein Turnier vorbereiten",
+        "description": "Bereite dich auf ein bevorstehendes Event vor"
+      },
+      "review_vod": {
+        "title": "Ein VOD auswerten",
+        "description": "Sieh dir einen aufgezeichneten Satz an und kommentiere ihn"
+      },
+      "track_improvement": {
+        "title": "Fortschritt verfolgen",
+        "description": "Erfasse deine Matches und verfolge deine Trends"
+      },
+      "scout": {
+        "title": "Einen Gegner scouten",
+        "description": "Erstelle einen Bericht, bevor du gegen ihn antrittst"
+      },
+      "coach_clients": {
+        "title": "Kunden coachen",
+        "description": "Verwalte deine Kunden, werte ihre VODs aus und verfolge ihren Fortschritt"
+      }
+    },
+    "originChip": {
+      "fromArtifact": "Du kommst von {{artifact}}",
+      "backToWatching": "Zurück zu dem, was du dir angesehen hast"
+    },
+    "guided": {
+      "progress": "Schritt {{current}} von {{total}}",
+      "switchIntent": "Ziel wechseln",
+      "steps": {
+        "reviewVod": {
+          "addVod": {
+            "title": "Ein VOD verknüpfen",
+            "description": "Verknüpfe eine Aufzeichnung mit einem deiner Matches",
+            "button": "VOD hinzufügen"
+          },
+          "addTwoNotes": {
+            "title": "Füge zwei Notizen hinzu",
+            "description": "Halte wichtige Momente fest, solange sie noch frisch sind",
+            "button": "Notizen hinzufügen"
+          },
+          "tagMatch": {
+            "title": "Match taggen",
+            "description": "Erleichtere dir das spätere Wiederfinden",
+            "button": "Tags hinzufügen"
+          }
+        },
+        "trackImprovement": {
+          "connectSync": {
+            "title": "start.gg oder parry.gg verbinden",
+            "description": "Synchronisiere deine Matches automatisch",
+            "button": "Verbinden"
+          },
+          "logGames": {
+            "title": "5 Matches erfassen",
+            "description": "Manuelle Eingabe funktioniert auch — Synchronisierung ist nicht erforderlich",
+            "button": "Match erfassen"
+          },
+          "viewTrends": {
+            "title": "Deine Trends ansehen",
+            "description": "Deine Ratingkurve und monatliche Leistung",
+            "button": "Trends ansehen"
+          }
+        },
+        "prepare": {
+          "linkEvent": {
+            "title": "Dein Event verknüpfen",
+            "description": "Bracket- und Gegnerinfos von start.gg importieren",
+            "button": "Event verknüpfen"
+          },
+          "scoutOpponent": {
+            "title": "Deinen ersten Gegner scouten",
+            "description": "Erstelle einen Bericht, bevor du gegen ihn antrittst",
+            "button": "Scouten"
+          },
+          "reviewMatchups": {
+            "title": "Deine Matchups überprüfen",
+            "description": "Prüfe deine Stage-Beherrschung und Matchup-Abdeckung",
+            "button": "Matchups ansehen"
+          }
+        },
+        "scout": {
+          "runScout": {
+            "title": "Ein Scouting durchführen",
+            "description": "Suche einen Gegner, um einen Bericht zu erstellen",
+            "button": "Gegner scouten"
+          },
+          "reviewReport": {
+            "title": "Bericht ansehen",
+            "description": "Sieh dir Tendenzen, Stage-Wahl und Matchup-Notizen an",
+            "button": "Bericht öffnen"
+          }
+        },
+        "coachClients": {
+          "enableCoaching": {
+            "title": "Coaching-Modus aktiviert",
+            "description": "Du kannst jederzeit zum persönlichen Modus zurückwechseln",
+            "button": "Fertig"
+          },
+          "createClient": {
+            "title": "Erstelle deinen ersten Kunden",
+            "description": "Öffnet den bestehenden Dialog des Kunden-Hubs",
+            "button": "Kunden erstellen"
+          },
+          "publishReview": {
+            "title": "Veröffentliche deine erste Auswertung",
+            "description": "Sende Feedback, das dein Kunde ohne Konto öffnen kann",
+            "button": "Auswertung schreiben"
+          }
+        }
+      }
+    },
+    "recovery": {
+      "syncFailed": {
+        "title": "Die Synchronisierung wurde nicht abgeschlossen",
+        "description": "Du kannst Matches weiterhin manuell erfassen — alles unten zählt genauso.",
+        "button": "Matches manuell erfassen"
+      },
+      "eventAssociationFailed": {
+        "title": "Dieses Event konnte nicht automatisch verknüpft werden",
+        "description": "Verknüpfe es manuell — dein Fortschritt geht nicht verloren.",
+        "button": "Manuell verknüpfen"
+      },
+      "opponentLookupFailed": {
+        "title": "Dieser Gegner konnte nicht automatisch gefunden werden",
+        "description": "Gib ihn manuell ein, um weiter zu scouten.",
+        "button": "Gegner manuell eingeben"
+      }
+    },
+    "prep": {
+      "manualAssociate": {
+        "label": "Eventname",
+        "date": "Eventdatum",
+        "submit": "Event verknüpfen"
+      }
+    },
+    "dashboard": {
+      "nextBestAction": {
+        "chooseIntent": {
+          "title": "Nicht sicher, womit du anfangen sollst?",
+          "button": "Wähle, was du hier tun möchtest"
+        },
+        "createFirstClient": {
+          "title": "Erstelle deinen ersten Kunden",
+          "description": "Der Coaching-Modus ist aktiv — erstelle einen Kunden, um loszulegen.",
+          "button": "Kunden erstellen"
+        },
+        "currentStep": {
+          "title": "Mach dort weiter, wo du aufgehört hast"
+        }
+      }
+    },
+    "coach": {
+      "publishReview": {
+        "title": "Veröffentliche deine erste Auswertung",
+        "description": "Sende Feedback, das dein Kunde ohne Konto öffnen kann — der letzte Schritt der Einrichtung.",
+        "button": "Auswertung schreiben"
+      }
+    }
   }
 }
