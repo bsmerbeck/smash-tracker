@@ -28,6 +28,7 @@ import scoutRoutes from './routes/scout.js';
 import reportsRoutes from './routes/reports.js';
 import billingRoutes, { type StripeLikeClient } from './routes/billing.js';
 import tournamentsRoutes from './routes/tournaments.js';
+import onboardingRoutes from './routes/onboarding.js';
 import groupsRoutes from './routes/groups.js';
 import playlistsRoutes from './routes/playlists.js';
 import coachingTenantsRoutes from './routes/coachingTenants.js';
@@ -305,6 +306,11 @@ export function buildApp(options: BuildAppOptions) {
       await api.register(gspLiveRoutes, { fetchImpl: options.gspLiveFetch });
       await api.register(stageFavoritesRoutes);
       await api.register(tournamentsRoutes);
+      // Phase 13 (ONBD-04, D-04): the guided-path checklist's
+      // server-derived activation done-states — personal-only (always
+      // request.uid), mirroring tournamentsRoutes' minimal
+      // authenticate-only registration shape above.
+      await api.register(onboardingRoutes);
       await api.register(groupsRoutes);
       await api.register(playlistsRoutes);
       await api.register(coachingTenantsRoutes);
