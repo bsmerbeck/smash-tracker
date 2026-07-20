@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { matchStageSchema } from './stage.js';
 import { recapSetSchema } from './recap.js';
 import { coachAttributionSchema } from './match.js';
+import { MAX_REVIEW_SECTIONS, reviewSectionSchema } from './coachingReview.js';
 
 /**
  * Phase 5 (Share Foundation & Owner Controls): privacy-controlled, revocable
@@ -226,6 +227,23 @@ export const publicShareSnapshotSchema = z
     /** Epoch ms the pinned version was published — "publication date" on the delivery page. */
     reviewPublishedAt: z.number().int().nonnegative().nullish(),
     /**
+     * Plan 04 addition (Rule 2 — missing critical functionality): the
+     * pinned version's own document body — the SAME shape
+     * `clientVisibleVersionSchema.sections` already carries (hidden
+     * sections structurally excluded, no `coachPrivateNotes` field to leak
+     * — REV-03). Without this the delivery snapshot would have coach
+     * identity/pub-date/sources but literally nothing for the recipient
+     * page (12-08) to render below the player — the phase's own D-08/DLV-02
+     * "sections below" requirement would be unimplementable. Nullish here
+     * (absent on a vod-review/recap snapshot) and REQUIRED for `'coachReview'`
+     * by the third `.refine()` below, mirroring every other coachReview-only
+     * field's gating.
+     */
+    sections: z
+      .array(reviewSectionSchema.omit({ hidden: true }))
+      .max(MAX_REVIEW_SECTIONS)
+      .nullish(),
+    /**
      * Every distinct source VOD a citation in the delivered version's body
      * refers to (D-04 multi-VOD first-class) — lets the delivery page
      * re-key `useVodPlayer` and seek when a citation from a different
@@ -273,10 +291,13 @@ export const publicShareSnapshotSchema = z
   .refine(
     (snapshot) =>
       snapshot.kind === 'coachReview'
-        ? Boolean(snapshot.coachDisplayName) && snapshot.reviewPublishedAt != null
+        ? Boolean(snapshot.coachDisplayName) &&
+          snapshot.reviewPublishedAt != null &&
+          snapshot.sections != null
         : true,
     {
-      message: 'a coachReview snapshot must carry coachDisplayName and reviewPublishedAt',
+      message:
+        'a coachReview snapshot must carry coachDisplayName, reviewPublishedAt, and sections',
       path: ['coachDisplayName'],
     },
   );

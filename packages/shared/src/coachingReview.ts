@@ -117,6 +117,9 @@ export type CitationToken = z.infer<typeof citationTokenSchema>;
  */
 const CITATION_TOKEN_PATTERN = /\{\{cite:matchId=([^;}]+);seconds=(\d+);label=([^}]*)\}\}/;
 
+/** Same grammar as `CITATION_TOKEN_PATTERN`, `g`-flagged — `extractCitationTokens` scans a WHOLE body for every embedded token, where `parseCitationToken` only ever validates ONE isolated token string. */
+const CITATION_TOKEN_PATTERN_GLOBAL = /\{\{cite:matchId=([^;}]+);seconds=(\d+);label=([^}]*)\}\}/g;
+
 /** Serializes a citation token into its inline `{{cite:...}}` grammar for insertion into a section/private-notes body. */
 export function serializeCitationToken(token: CitationToken): string {
   const parsed = citationTokenSchema.parse(token);
@@ -146,6 +149,42 @@ export function parseCitationToken(raw: string): CitationToken | null {
     label,
   });
   return result.success ? result.data : null;
+}
+
+/**
+ * Phase 12 Plan 04 (Coach Reviews & Delivery, DLV-01/D-04): scans a WHOLE
+ * section/private-notes body for every embedded `{{cite:...}}` token — used
+ * by the delivery pipeline (`buildReviewSnapshot`) to derive the multi-VOD
+ * `citationSources` list and the `reviewedMomentsCount` aggregate. A token
+ * that fails the bounded field checks (over-length label, unparseable
+ * percent-encoding) is silently skipped, never throws and never aborts the
+ * scan of the rest of the body (V5 input validation, T-12-03 — mirrors
+ * `parseCitationToken`'s own no-partial-recovery discipline, applied
+ * per-token instead of to the whole body).
+ */
+export function extractCitationTokens(raw: string): CitationToken[] {
+  const tokens: CitationToken[] = [];
+  for (const match of raw.matchAll(CITATION_TOKEN_PATTERN_GLOBAL)) {
+    const [, sourceVodRef, secondsRaw, rawLabel] = match;
+    if (sourceVodRef == null || secondsRaw == null || rawLabel == null) {
+      continue;
+    }
+    let label: string;
+    try {
+      label = decodeURIComponent(rawLabel);
+    } catch {
+      continue;
+    }
+    const result = citationTokenSchema.safeParse({
+      sourceVodRef,
+      seconds: Number(secondsRaw),
+      label,
+    });
+    if (result.success) {
+      tokens.push(result.data);
+    }
+  }
+  return tokens;
 }
 
 /**

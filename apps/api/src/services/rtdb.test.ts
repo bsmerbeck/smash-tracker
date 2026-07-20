@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { FakeDatabase } from '../test-support/fakeDatabase.js';
-import { ConflictError, RtdbService } from './rtdb.js';
+import { ConflictError, NotFoundError, RtdbService } from './rtdb.js';
 
 const UID = 'test-uid-123';
 const WEB_BASE_URL = 'https://grandfinals.gg';
@@ -1822,5 +1822,138 @@ describe('RtdbService.updateCoachNote / deleteCoachNote — sessionId ownership 
     await expect(rtdb.deleteCoachNote(EDIT_TOKEN, COACH_SESSION, 'myNote')).rejects.toThrow(
       'This share is no longer available',
     );
+  });
+});
+
+/**
+ * Phase 12 Plan 04 (Coach Reviews & Delivery, DLV-01): the `kind:
+ * 'coachReview'` branches on `createShare`/`getShareByToken`/
+ * `listSharesForUser`. The actual coach-facing delivery routes mint tokens
+ * via `reviewDeliveries.ts`'s own self-contained atomic writer (see that
+ * module's doc comment) rather than through `createShare` — these tests
+ * exercise the generic share-pipeline branches directly, proving out the
+ * `review:{tenantId}:{reviewId}:{version}` shareId encoding + no-oracle
+ * revoked/expired parity + REV-03 structural omission all independently of
+ * that other call site.
+ */
+describe('RtdbService — kind: coachReview branches (createShare / getShareByToken / listSharesForUser)', () => {
+  const TENANT_ID = 'tenant-review-1';
+
+  function seedPublishedVersion(
+    database: FakeDatabase,
+    reviewId: string,
+    version: number,
+    overrides: { sections?: unknown[]; publishedAt?: number } = {},
+  ): void {
+    database.seed(`reviewVersions/${TENANT_ID}/${reviewId}/${version}`, {
+      sections: overrides.sections ?? [
+        { id: 'summary', kind: 'summary', title: null, body: 'Solid neutral game.' },
+      ],
+      publishedAt: overrides.publishedAt ?? 1_700_000_000_000,
+    });
+  }
+
+  it('createShare mints a token whose shareId encodes review:{tenantId}:{reviewId}:{version}, url uses /r/', async () => {
+    const database = new FakeDatabase();
+    const rtdb = new RtdbService(database as never);
+    seedPublishedVersion(database, 'review-1', 1);
+
+    const result = await rtdb.createShare(
+      TENANT_ID,
+      { kind: 'coachReview', reviewId: 'review-1', version: 1, permissions: 'view' } as never,
+      WEB_BASE_URL,
+    );
+
+    expect(result.url).toBe(`${WEB_BASE_URL}/r/${result.token}`);
+    const tokenRecord = (database.dump().shareTokens as Record<string, Record<string, unknown>>)[
+      result.token
+    ]!;
+    expect(tokenRecord.shareId).toBe(`review:${TENANT_ID}:review-1:1`);
+    expect(tokenRecord.ownerUid).toBe(TENANT_ID);
+    expect(tokenRecord.permissions).toBe('view');
+  });
+
+  it('createShare throws NotFoundError when the reviewId/version has no published version', async () => {
+    const database = new FakeDatabase();
+    const rtdb = new RtdbService(database as never);
+
+    await expect(
+      rtdb.createShare(
+        TENANT_ID,
+        { kind: 'coachReview', reviewId: 'review-1', version: 1, permissions: 'view' } as never,
+        WEB_BASE_URL,
+      ),
+    ).rejects.toThrow(NotFoundError);
+  });
+
+  it('getShareByToken resolves a coachReview token to a snapshot with no coachPrivateNotes field, reading only the pinned version', async () => {
+    const database = new FakeDatabase();
+    const rtdb = new RtdbService(database as never);
+    seedPublishedVersion(database, 'review-1', 1);
+    database.seed(`clientMembers/${TENANT_ID}/coach-uid-1`, { role: 'custodian', joinedAt: 1 });
+    const created = await rtdb.createShare(
+      TENANT_ID,
+      { kind: 'coachReview', reviewId: 'review-1', version: 1, permissions: 'view' } as never,
+      WEB_BASE_URL,
+    );
+
+    const snapshot = await rtdb.getShareByToken(created.token);
+
+    expect(snapshot).not.toBeNull();
+    expect(snapshot?.kind).toBe('coachReview');
+    expect(snapshot?.sections).toEqual([
+      { id: 'summary', kind: 'summary', title: null, body: 'Solid neutral game.' },
+    ]);
+    expect(snapshot?.reviewPublishedAt).toBe(1_700_000_000_000);
+    expect(snapshot).not.toHaveProperty('coachPrivateNotes');
+    expect(typeof snapshot?.coachDisplayName).toBe('string');
+  });
+
+  it('getShareByToken returns null (no-oracle) for a revoked coachReview token', async () => {
+    const database = new FakeDatabase();
+    const rtdb = new RtdbService(database as never);
+    seedPublishedVersion(database, 'review-1', 1);
+    const created = await rtdb.createShare(
+      TENANT_ID,
+      { kind: 'coachReview', reviewId: 'review-1', version: 1, permissions: 'view' } as never,
+      WEB_BASE_URL,
+    );
+    await database.ref(`shareTokens/${created.token}`).update({ revokedAt: Date.now() });
+
+    await expect(rtdb.getShareByToken(created.token)).resolves.toBeNull();
+  });
+
+  it('getShareByToken returns null for a coachReview token whose pinned version no longer exists', async () => {
+    const database = new FakeDatabase();
+    const rtdb = new RtdbService(database as never);
+    seedPublishedVersion(database, 'review-1', 1);
+    const created = await rtdb.createShare(
+      TENANT_ID,
+      { kind: 'coachReview', reviewId: 'review-1', version: 1, permissions: 'view' } as never,
+      WEB_BASE_URL,
+    );
+    await database.ref(`reviewVersions/${TENANT_ID}/review-1/1`).remove();
+
+    await expect(rtdb.getShareByToken(created.token)).resolves.toBeNull();
+  });
+
+  it('listSharesForUser includes a coachReview row without reading shareSnapshots', async () => {
+    const database = new FakeDatabase();
+    const rtdb = new RtdbService(database as never);
+    seedPublishedVersion(database, 'review-1', 1);
+    const created = await rtdb.createShare(
+      TENANT_ID,
+      { kind: 'coachReview', reviewId: 'review-1', version: 1, permissions: 'view' } as never,
+      WEB_BASE_URL,
+    );
+
+    const rows = await rtdb.listSharesForUser(TENANT_ID, WEB_BASE_URL);
+
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      kind: 'coachReview',
+      status: 'active',
+      url: `${WEB_BASE_URL}/r/${created.token}`,
+    });
   });
 });
