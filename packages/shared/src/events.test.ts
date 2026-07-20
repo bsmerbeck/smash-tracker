@@ -73,6 +73,12 @@ describe('EVENT_CATALOG', () => {
       managed_client_created: 'D',
       client_vod_attached: 'D',
       client_review_view_loaded: 'D',
+      onboarding_intent_selected: 'D',
+      coaching_mode_enabled: 'D',
+      analytics_activated: 'D',
+      vod_activated: 'D',
+      tournament_prep_activated: 'D',
+      scout_activated: 'D',
     });
   });
 
@@ -86,8 +92,21 @@ describe('EVENT_CATALOG', () => {
     expect(EVENT_CATALOG.client_vod_attached).toBe('D');
   });
 
-  it('does not ship coaching_mode_enabled or coaching_client_selected (deferred — no durable server transition)', () => {
-    expect(EVENT_CATALOG).not.toHaveProperty('coaching_mode_enabled');
+  it('does not ship coaching_client_selected (still deferred — pure route state, no durable server transition)', () => {
     expect(EVENT_CATALOG).not.toHaveProperty('coaching_client_selected');
+  });
+
+  // Phase 13 (ONBD-02/ONBD-05, RESEARCH Pitfall 2): coaching_mode_enabled
+  // was deliberately NOT wired in Phase 11 (see the comment above this
+  // block in events.ts) — the PUT /users/me coaching-mode flip IS a durable
+  // RTDB transition, so Phase 13 adds it as a proper D event alongside the
+  // five onboarding/activation events, all newly catalogued this phase.
+  it('maps the six new Phase 13 onboarding/activation events to class D', () => {
+    expect(EVENT_CATALOG.onboarding_intent_selected).toBe('D');
+    expect(EVENT_CATALOG.coaching_mode_enabled).toBe('D');
+    expect(EVENT_CATALOG.analytics_activated).toBe('D');
+    expect(EVENT_CATALOG.vod_activated).toBe('D');
+    expect(EVENT_CATALOG.tournament_prep_activated).toBe('D');
+    expect(EVENT_CATALOG.scout_activated).toBe('D');
   });
 });

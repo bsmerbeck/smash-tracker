@@ -9,6 +9,7 @@ import {
   matchRecordSchema,
   matchSchema,
   matchTypeSchema,
+  ONBOARDING_INTENTS,
   opponentAliasMapSchema,
   opponentListSchema,
   opponentMapSchema,
@@ -65,6 +66,37 @@ describe('userSchema', () => {
   it('accepts a record with no coachingModeEnabled (absent means disabled)', () => {
     expect(userSchema.parse({ email: 'a@example.com' })).toEqual({ email: 'a@example.com' });
   });
+
+  // Phase 13 (ONBD-02/D-06): onboardingIntent mirrors coachingModeEnabled's
+  // nullish storage shape exactly — absent means "no intent saved yet".
+  it('accepts a record with a valid onboardingIntent', () => {
+    expect(userSchema.parse({ email: 'a@example.com', onboardingIntent: 'coach_clients' })).toEqual(
+      {
+        email: 'a@example.com',
+        onboardingIntent: 'coach_clients',
+      },
+    );
+  });
+
+  it('accepts a record with no onboardingIntent (absent means unset)', () => {
+    expect(userSchema.parse({ email: 'a@example.com' })).toEqual({ email: 'a@example.com' });
+  });
+
+  it('rejects an onboardingIntent outside the five-value enum', () => {
+    expect(() =>
+      userSchema.parse({ email: 'a@example.com', onboardingIntent: 'not_an_intent' }),
+    ).toThrow();
+  });
+
+  it('ONBOARDING_INTENTS carries exactly the five locked intent values', () => {
+    expect(ONBOARDING_INTENTS).toEqual([
+      'prepare',
+      'review_vod',
+      'track_improvement',
+      'scout',
+      'coach_clients',
+    ]);
+  });
 });
 
 describe('userProfileSchema', () => {
@@ -74,6 +106,7 @@ describe('userProfileSchema', () => {
       email: 'a@example.com',
       fighters: { primary: [1, 2], secondary: [] },
       coachingModeEnabled: false,
+      onboardingIntent: null,
     };
     expect(userProfileSchema.parse(profile)).toEqual(profile);
   });
@@ -85,8 +118,33 @@ describe('userProfileSchema', () => {
       uid: 'abc123',
       email: 'a@example.com',
       fighters: { primary: [1, 2], secondary: [] },
+      onboardingIntent: null,
     };
     expect(() => userProfileSchema.parse(profile)).toThrow();
+  });
+
+  // Phase 13 (ONBD-02): onboardingIntent is server-defaulted to null and
+  // always present in the response, mirroring coachingModeEnabled — a
+  // profile response must never omit it.
+  it('rejects a profile missing onboardingIntent', () => {
+    const profile = {
+      uid: 'abc123',
+      email: 'a@example.com',
+      fighters: { primary: [1, 2], secondary: [] },
+      coachingModeEnabled: false,
+    };
+    expect(() => userProfileSchema.parse(profile)).toThrow();
+  });
+
+  it('accepts a profile with a saved onboardingIntent', () => {
+    const profile = {
+      uid: 'abc123',
+      email: 'a@example.com',
+      fighters: { primary: [1, 2], secondary: [] },
+      coachingModeEnabled: false,
+      onboardingIntent: 'scout',
+    };
+    expect(userProfileSchema.parse(profile)).toEqual(profile);
   });
 });
 
