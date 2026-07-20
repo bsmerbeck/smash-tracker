@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { render, screen, waitFor, act } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
@@ -8,6 +9,8 @@ import {
   resetAuthMock,
   signInWithEmailAndPassword,
   signInWithPopup,
+  signInWithRedirect,
+  getRedirectResult,
   setMockUser,
   makeMockUser,
 } from '@/test/mockAuth';
@@ -20,6 +23,8 @@ vi.mock('firebase/auth', async () => {
     createUserWithEmailAndPassword: mock.createUserWithEmailAndPassword,
     signInWithPopup: mock.signInWithPopup,
     signInWithCustomToken: mock.signInWithCustomToken,
+    signInWithRedirect: mock.signInWithRedirect,
+    getRedirectResult: mock.getRedirectResult,
     signOut: mock.signOut,
     getAuth: mock.getAuth,
     GoogleAuthProvider: mock.GoogleAuthProvider,
@@ -218,5 +223,132 @@ describe('AuthContext.signInWithGoogle — signup_cta_clicked (MEAS-09)', () => 
     await waitFor(() => expect(signInWithPopup).toHaveBeenCalledOnce());
     expect(postCanonicalEvent).toHaveBeenCalledExactlyOnceWith('signup_cta_clicked');
     expect(callOrder).toEqual(['postCanonicalEvent', 'signInWithPopup']);
+  });
+});
+
+describe('AuthContext.signInWithGoogle — popup-blocked redirect fallback (ONBD-01)', () => {
+  beforeEach(() => {
+    resetAuthMock();
+    vi.clearAllMocks();
+    readReferral.mockReturnValue(null);
+  });
+
+  it('falls back to signInWithRedirect ONLY on auth/popup-blocked, and never calls provisionUser (upsertMe) in this same attempt', async () => {
+    signInWithPopup.mockRejectedValue(
+      Object.assign(new Error('popup blocked'), { code: 'auth/popup-blocked' }),
+    );
+    signInWithRedirect.mockResolvedValue(undefined);
+
+    const user = userEvent.setup();
+    renderWithGoogleProvider();
+
+    await user.click(screen.getByRole('button', { name: 'sign in with google' }));
+
+    await waitFor(() => expect(signInWithRedirect).toHaveBeenCalledOnce());
+    // The full-page navigation means nothing after signInWithRedirect runs
+    // for THIS attempt — provisionUser (upsertMe) is NOT called here; it's
+    // the boot-time getRedirectResult effect's job (see below).
+    expect(upsertMe).not.toHaveBeenCalled();
+  });
+
+  it('re-throws every OTHER error unchanged (e.g. a genuine user cancel), never redirecting', async () => {
+    const cancelError = Object.assign(new Error('popup closed'), {
+      code: 'auth/popup-closed-by-user',
+    });
+    signInWithPopup.mockRejectedValue(cancelError);
+
+    function ThrowingConsumer() {
+      const { signInWithGoogle } = useAuth();
+      const [caught, setCaught] = useState<string | null>(null);
+      return (
+        <button
+          type="button"
+          onClick={() =>
+            void signInWithGoogle().catch((error: unknown) =>
+              setCaught((error as { code?: string }).code ?? 'unknown'),
+            )
+          }
+        >
+          {caught ? `caught:${caught}` : 'sign in with google'}
+        </button>
+      );
+    }
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={queryClient}>
+        <AuthProvider>
+          <ThrowingConsumer />
+        </AuthProvider>
+      </QueryClientProvider>,
+    );
+
+    const user = userEvent.setup();
+    await user.click(screen.getByRole('button', { name: 'sign in with google' }));
+
+    await waitFor(() =>
+      expect(
+        screen.getByRole('button', { name: 'caught:auth/popup-closed-by-user' }),
+      ).toBeInTheDocument(),
+    );
+    expect(signInWithRedirect).not.toHaveBeenCalled();
+  });
+});
+
+describe('AuthContext — boot-time getRedirectResult completion (ONBD-01)', () => {
+  beforeEach(() => {
+    resetAuthMock();
+    vi.clearAllMocks();
+    readReferral.mockReturnValue(null);
+  });
+
+  it('calls provisionUser (upsertMe) when a redirect just completed (getRedirectResult resolves a credential)', async () => {
+    getRedirectResult.mockResolvedValue({ user: makeMockUser() });
+
+    render(
+      <QueryClientProvider
+        client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}
+      >
+        <AuthProvider>
+          <div />
+        </AuthProvider>
+      </QueryClientProvider>,
+    );
+
+    await waitFor(() => expect(upsertMe).toHaveBeenCalledTimes(1));
+  });
+
+  it('does NOT call provisionUser on an ordinary boot (getRedirectResult resolves null — the default)', async () => {
+    render(
+      <QueryClientProvider
+        client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}
+      >
+        <AuthProvider>
+          <div />
+        </AuthProvider>
+      </QueryClientProvider>,
+    );
+
+    await waitFor(() => expect(getRedirectResult).toHaveBeenCalledOnce());
+    expect(upsertMe).not.toHaveBeenCalled();
+  });
+
+  it('never throws / never blocks sign-in state when getRedirectResult rejects', async () => {
+    getRedirectResult.mockRejectedValue(new Error('redirect_uri_mismatch'));
+    const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    render(
+      <QueryClientProvider
+        client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}
+      >
+        <AuthProvider>
+          <div />
+        </AuthProvider>
+      </QueryClientProvider>,
+    );
+
+    await waitFor(() => expect(getRedirectResult).toHaveBeenCalledOnce());
+    await waitFor(() => expect(consoleErrorSpy).toHaveBeenCalled());
+    expect(upsertMe).not.toHaveBeenCalled();
+    consoleErrorSpy.mockRestore();
   });
 });

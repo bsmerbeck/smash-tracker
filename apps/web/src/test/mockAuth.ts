@@ -49,6 +49,11 @@ export const reauthenticateWithCredential = vi.fn();
 export const updatePassword = vi.fn();
 export const sendPasswordResetEmail = vi.fn();
 export const updateProfile = vi.fn();
+/** ONBD-01: popup-blocked fallback (AuthContext.signInWithGoogle). */
+export const signInWithRedirect = vi.fn();
+/** ONBD-01: boot-time redirect completion (AuthProvider mount effect). Resolves
+ * `null` by default (the ordinary, non-redirect-tail page load case). */
+export const getRedirectResult = vi.fn().mockResolvedValue(null);
 
 export class GoogleAuthProvider {}
 
@@ -83,6 +88,8 @@ export function resetAuthMock() {
   updatePassword.mockReset();
   sendPasswordResetEmail.mockReset();
   updateProfile.mockReset();
+  signInWithRedirect.mockReset();
+  getRedirectResult.mockReset().mockResolvedValue(null);
 }
 
 /**
