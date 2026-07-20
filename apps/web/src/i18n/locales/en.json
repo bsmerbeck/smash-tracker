@@ -1720,6 +1720,16 @@
           "clientReview": "Client review",
           "privateNotes": "🔒 Private notes"
         },
+        "mobile": {
+          "tabs": {
+            "watch": "Watch",
+            "evidence": "Evidence",
+            "review": "Review"
+          },
+          "miniController": {
+            "playPauseAria": "Play or pause"
+          }
+        },
         "autosave": {
           "saving": "Saving…",
           "saved": "Saved",

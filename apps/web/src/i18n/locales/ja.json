@@ -1720,6 +1720,16 @@
           "clientReview": "クライアント向けレビュー",
           "privateNotes": "🔒 非公開メモ"
         },
+        "mobile": {
+          "tabs": {
+            "watch": "視聴",
+            "evidence": "エビデンス",
+            "review": "レビュー"
+          },
+          "miniController": {
+            "playPauseAria": "再生または一時停止"
+          }
+        },
         "autosave": {
           "saving": "保存中…",
           "saved": "保存しました",

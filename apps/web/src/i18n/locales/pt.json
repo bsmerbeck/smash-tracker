@@ -1720,6 +1720,16 @@
           "clientReview": "Análise do cliente",
           "privateNotes": "🔒 Notas privadas"
         },
+        "mobile": {
+          "tabs": {
+            "watch": "Assistir",
+            "evidence": "Evidências",
+            "review": "Revisão"
+          },
+          "miniController": {
+            "playPauseAria": "Reproduzir ou pausar"
+          }
+        },
         "autosave": {
           "saving": "Salvando…",
           "saved": "Salvo",

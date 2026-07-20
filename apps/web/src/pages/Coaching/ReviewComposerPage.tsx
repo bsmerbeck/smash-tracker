@@ -2,7 +2,12 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useParams, useSearchParams } from 'react-router';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
-import type { CitationToken, ReviewDraft, ReviewSection } from '@smash-tracker/shared';
+import type {
+  CitationToken,
+  ReviewDraft,
+  ReviewSection,
+  ReviewSectionKind,
+} from '@smash-tracker/shared';
 import { serializeCitationToken } from '@smash-tracker/shared';
 import { useMatches } from '@/hooks/useMatches';
 import {
@@ -32,8 +37,42 @@ import { ReviewEvidenceList } from './components/ReviewEvidenceList';
 import { CiteSectionPrompt } from './components/CiteSectionPrompt';
 import { AutosaveConflictDialog } from './components/AutosaveConflictDialog';
 import { describeCoachingError } from './describeCoachingError';
+import { ReviewComposerMobile } from './ReviewComposerMobile';
 
 type DocTab = 'client-review' | 'private-notes';
+
+/** Tailwind's `lg` breakpoint (1024px) — matches the desktop grid's own `lg:grid-cols-[400px_1fr]` switch, so the mobile/desktop composer split lines up with the same width the CSS grid itself would otherwise silently reflow at. */
+const MOBILE_COMPOSER_QUERY = '(max-width: 1023px)';
+
+/**
+ * D-12: a plain `matchMedia`-backed breakpoint check — the SAME approach
+ * `useVodPlayer.ts` uses for feature detection (guard-before-use, default
+ * to the safe/existing behavior when the API is unavailable). Defaults to
+ * `false` (desktop) when `window.matchMedia` doesn't exist at all — jsdom
+ * (this repo's test environment) has no `matchMedia` implementation, so
+ * every EXISTING desktop-focused test in `ReviewComposerPage.test.tsx`
+ * keeps rendering the desktop grid unchanged; `ReviewComposerMobile.test.tsx`
+ * tests the mobile component directly instead of forcing this hook's
+ * branch (see that file's own doc comment).
+ */
+function useIsMobileComposer(): boolean {
+  const [isMobile, setIsMobile] = useState(() =>
+    typeof window !== 'undefined' && typeof window.matchMedia === 'function'
+      ? window.matchMedia(MOBILE_COMPOSER_QUERY).matches
+      : false,
+  );
+  useEffect(() => {
+    if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') {
+      return;
+    }
+    const mql = window.matchMedia(MOBILE_COMPOSER_QUERY);
+    const handler = () => setIsMobile(mql.matches);
+    handler();
+    mql.addEventListener('change', handler);
+    return () => mql.removeEventListener('change', handler);
+  }, []);
+  return isMobile;
+}
 
 /**
  * The composer shell (D-01): a dedicated two-pane `/coach/:clientId/reviews/
@@ -79,7 +118,12 @@ export function ReviewComposerPage() {
   const [pendingCitation, setPendingCitation] = useState<CitationToken | null>(null);
   const [previewOpen, setPreviewOpen] = useState(false);
   const playerSeekRef = useRef<((seconds: number) => void) | null>(null);
+  const playerPauseRef = useRef<(() => void) | null>(null);
   const getCurrentTimeRef = useRef<(() => number) | null>(null);
+  // D-12: renders the mobile Watch/Evidence/Review composer at narrow
+  // widths instead of the two-pane desktop grid below — see
+  // `useIsMobileComposer`'s doc comment.
+  const isMobileComposer = useIsMobileComposer();
 
   // Seed local edit-buffer state from the fetched draft exactly ONCE — a
   // background refetch of `draftQuery.data` (e.g. window refocus) must never
@@ -256,109 +300,143 @@ export function ReviewComposerPage() {
     );
   }
 
+  function handleChangeSectionBody(sectionId: string, body: string) {
+    setSections((prev) =>
+      prev.map((section) => (section.id === sectionId ? { ...section, body } : section)),
+    );
+  }
+  function handleHideSection(sectionId: string) {
+    hideSection.mutate(sectionId, { onSuccess: applySectionMutationResult });
+  }
+  function handleShowSection(sectionId: string) {
+    showSection.mutate(sectionId, { onSuccess: applySectionMutationResult });
+  }
+  function handleAddSection(kind: ReviewSectionKind) {
+    addSection.mutate({ kind }, { onSuccess: applySectionMutationResult });
+  }
+
   return (
-    <div className="grid min-h-[calc(100vh-8rem)] grid-cols-1 lg:grid-cols-[400px_1fr]">
-      {/* Left pane (D-01): source bar + player + Evidence placeholder — always visible regardless of the right pane's active tab. */}
-      <div className="flex flex-col gap-3 border-b p-4 lg:border-r lg:border-b-0">
-        <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
-          <span>
-            {t('coaching.reviews.composer.sourceBar.label')}{' '}
-            <span className="font-medium text-foreground">
-              {currentSource
-                ? t('coaching.reviews.composer.sourcesDrawer.vsOpponent', {
-                    opponent: currentSource.opponent || t('common.unknown'),
-                  })
-                : t('coaching.reviews.composer.sourceBar.none')}
-            </span>
-          </span>
-          <ReviewSourcesDrawer
-            sources={vodSources}
-            currentSourceId={currentSourceId}
-            onSelect={setCurrentSourceId}
-          />
-        </div>
-
-        {currentSource?.vodUrl ? (
-          <VodPlayer
-            vodUrl={currentSource.vodUrl}
-            startSeconds={currentSource.vodStartSeconds}
-            seekRef={playerSeekRef}
-            getCurrentTimeRef={getCurrentTimeRef}
-          />
-        ) : (
-          <div className="flex aspect-video items-center justify-center rounded-lg border bg-muted text-sm text-muted-foreground">
-            {t('coaching.reviews.composer.sourceBar.noPlayer')}
-          </div>
-        )}
-
-        <ReviewEvidenceList
-          timestamps={currentSource?.vodTimestamps ?? []}
-          sourceMatchId={currentSource?.id ?? null}
-          sections={sections}
+    <>
+      {isMobileComposer ? (
+        // D-12: the mobile Watch/Evidence/Review composer — a PRESENTATIONAL
+        // sibling of the desktop grid below, sharing this component's SAME
+        // state/handlers (one edit buffer, one autosave instance).
+        <ReviewComposerMobile
+          vodSources={vodSources}
+          currentSourceId={currentSourceId}
+          currentSource={currentSource}
+          onSelectSource={setCurrentSourceId}
+          playerSeekRef={playerSeekRef}
+          playerPauseRef={playerPauseRef}
           getCurrentTimeRef={getCurrentTimeRef}
+          sections={sections}
           onCite={handleCite}
+          coachPrivateNotes={coachPrivateNotes}
+          onChangeSectionBody={handleChangeSectionBody}
+          onChangePrivateNotes={setCoachPrivateNotes}
+          onHideSection={handleHideSection}
+          onShowSection={handleShowSection}
+          onAddSection={handleAddSection}
+          registerTextareaRef={registerSectionTextareaRef}
+          autosaveIndicator={<AutosaveStatusIndicator status={autosave.status} />}
+          onPreview={() => setPreviewOpen(true)}
+          onPublish={handlePublish}
+          isPublishing={publish.isPending}
         />
-      </div>
-
-      {/* Right pane (D-02): Client review | Private notes tabs. */}
-      <div className="flex flex-col p-4">
-        <Tabs value={docTab} onValueChange={(value) => setDocTab(value as DocTab)}>
-          <div className="flex flex-wrap items-center gap-3 border-b pb-0">
-            <TabsList>
-              <TabsTrigger value="client-review">
-                {t('coaching.reviews.composer.tabs.clientReview')}
-              </TabsTrigger>
-              <TabsTrigger
-                value="private-notes"
-                className="data-[state=active]:border-amber-500 data-[state=active]:text-amber-600 dark:data-[state=active]:text-amber-400"
-              >
-                {t('coaching.reviews.composer.tabs.privateNotes')}
-              </TabsTrigger>
-            </TabsList>
-            <div className="ml-auto flex items-center gap-3 pb-2">
-              <AutosaveStatusIndicator status={autosave.status} />
-              <Button variant="outline" size="sm" onClick={() => setPreviewOpen(true)}>
-                {t('coaching.reviews.composer.preview.title')}
-              </Button>
-              <Button
-                variant="default"
-                size="sm"
-                onClick={handlePublish}
-                disabled={publish.isPending}
-              >
-                {t('coaching.reviews.composer.publish')}
-              </Button>
+      ) : (
+        <div className="grid min-h-[calc(100vh-8rem)] grid-cols-1 lg:grid-cols-[400px_1fr]">
+          {/* Left pane (D-01): source bar + player + Evidence placeholder — always visible regardless of the right pane's active tab. */}
+          <div className="flex flex-col gap-3 border-b p-4 lg:border-r lg:border-b-0">
+            <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
+              <span>
+                {t('coaching.reviews.composer.sourceBar.label')}{' '}
+                <span className="font-medium text-foreground">
+                  {currentSource
+                    ? t('coaching.reviews.composer.sourcesDrawer.vsOpponent', {
+                        opponent: currentSource.opponent || t('common.unknown'),
+                      })
+                    : t('coaching.reviews.composer.sourceBar.none')}
+                </span>
+              </span>
+              <ReviewSourcesDrawer
+                sources={vodSources}
+                currentSourceId={currentSourceId}
+                onSelect={setCurrentSourceId}
+              />
             </div>
+
+            {currentSource?.vodUrl ? (
+              <VodPlayer
+                vodUrl={currentSource.vodUrl}
+                startSeconds={currentSource.vodStartSeconds}
+                seekRef={playerSeekRef}
+                pauseRef={playerPauseRef}
+                getCurrentTimeRef={getCurrentTimeRef}
+              />
+            ) : (
+              <div className="flex aspect-video items-center justify-center rounded-lg border bg-muted text-sm text-muted-foreground">
+                {t('coaching.reviews.composer.sourceBar.noPlayer')}
+              </div>
+            )}
+
+            <ReviewEvidenceList
+              timestamps={currentSource?.vodTimestamps ?? []}
+              sourceMatchId={currentSource?.id ?? null}
+              sections={sections}
+              getCurrentTimeRef={getCurrentTimeRef}
+              onCite={handleCite}
+            />
           </div>
 
-          <TabsContent value="client-review" className="pt-4">
-            <ReviewSectionEditor
-              sections={sections}
-              onChangeBody={(sectionId, body) =>
-                setSections((prev) =>
-                  prev.map((section) =>
-                    section.id === sectionId ? { ...section, body } : section,
-                  ),
-                )
-              }
-              onHide={(sectionId) =>
-                hideSection.mutate(sectionId, { onSuccess: applySectionMutationResult })
-              }
-              onShow={(sectionId) =>
-                showSection.mutate(sectionId, { onSuccess: applySectionMutationResult })
-              }
-              onAdd={(kind) =>
-                addSection.mutate({ kind }, { onSuccess: applySectionMutationResult })
-              }
-              registerTextareaRef={registerSectionTextareaRef}
-            />
-          </TabsContent>
+          {/* Right pane (D-02): Client review | Private notes tabs. */}
+          <div className="flex flex-col p-4">
+            <Tabs value={docTab} onValueChange={(value) => setDocTab(value as DocTab)}>
+              <div className="flex flex-wrap items-center gap-3 border-b pb-0">
+                <TabsList>
+                  <TabsTrigger value="client-review">
+                    {t('coaching.reviews.composer.tabs.clientReview')}
+                  </TabsTrigger>
+                  <TabsTrigger
+                    value="private-notes"
+                    className="data-[state=active]:border-amber-500 data-[state=active]:text-amber-600 dark:data-[state=active]:text-amber-400"
+                  >
+                    {t('coaching.reviews.composer.tabs.privateNotes')}
+                  </TabsTrigger>
+                </TabsList>
+                <div className="ml-auto flex items-center gap-3 pb-2">
+                  <AutosaveStatusIndicator status={autosave.status} />
+                  <Button variant="outline" size="sm" onClick={() => setPreviewOpen(true)}>
+                    {t('coaching.reviews.composer.preview.title')}
+                  </Button>
+                  <Button
+                    variant="default"
+                    size="sm"
+                    onClick={handlePublish}
+                    disabled={publish.isPending}
+                  >
+                    {t('coaching.reviews.composer.publish')}
+                  </Button>
+                </div>
+              </div>
 
-          <TabsContent value="private-notes" className="pt-4">
-            <ReviewPrivateNotesPane value={coachPrivateNotes} onChange={setCoachPrivateNotes} />
-          </TabsContent>
-        </Tabs>
-      </div>
+              <TabsContent value="client-review" className="pt-4">
+                <ReviewSectionEditor
+                  sections={sections}
+                  onChangeBody={handleChangeSectionBody}
+                  onHide={handleHideSection}
+                  onShow={handleShowSection}
+                  onAdd={handleAddSection}
+                  registerTextareaRef={registerSectionTextareaRef}
+                />
+              </TabsContent>
+
+              <TabsContent value="private-notes" className="pt-4">
+                <ReviewPrivateNotesPane value={coachPrivateNotes} onChange={setCoachPrivateNotes} />
+              </TabsContent>
+            </Tabs>
+          </div>
+        </div>
+      )}
 
       <AutosaveConflictDialog
         open={autosave.status === 'conflict'}
@@ -416,7 +494,7 @@ export function ReviewComposerPage() {
           )}
         </DialogContent>
       </Dialog>
-    </div>
+    </>
   );
 }
 
