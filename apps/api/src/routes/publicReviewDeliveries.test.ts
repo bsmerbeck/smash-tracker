@@ -311,3 +311,139 @@ describe('POST /api/review-deliveries/:token/ack', () => {
     });
   });
 });
+
+/**
+ * DLV-03: a delivery token grants access to EXACTLY ONE published version —
+ * no draft, no coach-private content, no other version, no other review,
+ * and no workspace/coach-side route. Named explicit test cases (per the
+ * plan's own instruction) so this gate is unambiguous.
+ */
+describe('DLV-03 boundary: a delivery token grants no other access', () => {
+  it('the GET response never carries coachPrivateNotes or any draft-only field', async () => {
+    const { app } = buildTestApp();
+    const { token } = await seedDeliveredReview(app);
+
+    const response = await app.inject({ method: 'GET', url: `/api/review-deliveries/${token}` });
+
+    const body = response.json();
+    expect('coachPrivateNotes' in body).toBe(false);
+    expect('revision' in body).toBe(false);
+    expect('lastAutosavedAt' in body).toBe(false);
+    expect(JSON.stringify(body)).not.toContain('SECRET_COACH_NOTES');
+  });
+
+  it('a token pinned to version N never returns version N-1 or N+1 content — publishing v2 leaves the v1 delivery pinned at v1', async () => {
+    const { app } = buildTestApp();
+    const clientId = await createClient(app);
+    const { reviewId, revision: rev1 } = await startReview(app, clientId);
+    await patchSummaryBody(app, clientId, reviewId, rev1, 'V1_TEXT');
+    const v1 = await publish(app, clientId, reviewId);
+    const { token: v1Token } = await createDelivery(app, clientId, reviewId, v1);
+
+    // Edit and publish a second version AFTER the v1 delivery already exists.
+    await patchSummaryBody(app, clientId, reviewId, rev1 + 1, 'V2_TEXT');
+    const v2 = await publish(app, clientId, reviewId);
+    expect(v2).toBe(v1 + 1);
+    const { token: v2Token } = await createDelivery(app, clientId, reviewId, v2);
+
+    const v1Response = await app.inject({
+      method: 'GET',
+      url: `/api/review-deliveries/${v1Token}`,
+    });
+    const v2Response = await app.inject({
+      method: 'GET',
+      url: `/api/review-deliveries/${v2Token}`,
+    });
+
+    expect(v1Response.json().sections).toEqual(
+      expect.arrayContaining([expect.objectContaining({ id: 'summary', body: 'V1_TEXT' })]),
+    );
+    expect(v2Response.json().sections).toEqual(
+      expect.arrayContaining([expect.objectContaining({ id: 'summary', body: 'V2_TEXT' })]),
+    );
+    // The v1 delivery's OWN token must still resolve to v1 content, never v2.
+    expect(JSON.stringify(v1Response.json())).not.toContain('V2_TEXT');
+    expect(JSON.stringify(v2Response.json())).not.toContain('V1_TEXT');
+  });
+
+  it('the token cannot be used to read another review, or another client tenant, at all', async () => {
+    const { app } = buildTestApp();
+    const { token: reviewAToken } = await seedDeliveredReview(app);
+
+    const clientB = await createClient(app, 'Sam');
+    const { reviewId: reviewBId, revision } = await startReview(app, clientB);
+    await patchSummaryBody(app, clientB, reviewBId, revision, 'REVIEW_B_TEXT');
+    const versionB = await publish(app, clientB, reviewBId);
+    const { token: reviewBToken } = await createDelivery(app, clientB, reviewBId, versionB);
+
+    const responseA = await app.inject({
+      method: 'GET',
+      url: `/api/review-deliveries/${reviewAToken}`,
+    });
+    const responseB = await app.inject({
+      method: 'GET',
+      url: `/api/review-deliveries/${reviewBToken}`,
+    });
+
+    expect(JSON.stringify(responseA.json())).not.toContain('REVIEW_B_TEXT');
+    expect(JSON.stringify(responseB.json())).not.toContain('V1_TEXT');
+  });
+
+  it('the token grants no access to any authenticated coach-side route (it is not a bearer auth token)', async () => {
+    const { app } = buildTestApp();
+    const { clientId, token } = await seedDeliveredReview(app);
+
+    const response = await app.inject({
+      method: 'GET',
+      url: `/api/coaching/clients/${clientId}/reviews`,
+      headers: { authorization: `Bearer ${token}` },
+    });
+
+    expect(response.statusCode).toBe(401);
+  });
+
+  it('after revoke, GET and ack both return the identical no-oracle unavailable result', async () => {
+    const { app } = buildTestApp();
+    const { clientId, reviewId, deliveryId, token } = await seedDeliveredReview(app);
+    await revokeDelivery(app, clientId, reviewId, deliveryId);
+
+    const getResponse = await app.inject({
+      method: 'GET',
+      url: `/api/review-deliveries/${token}`,
+    });
+    const ackResponse = await app.inject({
+      method: 'POST',
+      url: `/api/review-deliveries/${token}/ack`,
+    });
+
+    expect(getResponse.statusCode).toBe(404);
+    expect(ackResponse.statusCode).toBe(404);
+    expect(getResponse.json()).toEqual(ackResponse.json());
+  });
+
+  it('an expired token behaves identically to an unknown one for both GET and ack', async () => {
+    const { app } = buildTestApp();
+    const clientId = await createClient(app);
+    const { reviewId, revision } = await startReview(app, clientId);
+    await patchSummaryBody(app, clientId, reviewId, revision, 'V1_TEXT');
+    const version = await publish(app, clientId, reviewId);
+    const { token } = await createDelivery(app, clientId, reviewId, version, Date.now() - 1000);
+
+    const getResponse = await app.inject({
+      method: 'GET',
+      url: `/api/review-deliveries/${token}`,
+    });
+    const ackResponse = await app.inject({
+      method: 'POST',
+      url: `/api/review-deliveries/${token}/ack`,
+    });
+    const unknownGetResponse = await app.inject({
+      method: 'GET',
+      url: '/api/review-deliveries/noSuchTokenAtAll-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+    });
+
+    expect(getResponse.statusCode).toBe(404);
+    expect(ackResponse.statusCode).toBe(404);
+    expect(getResponse.json()).toEqual(unknownGetResponse.json());
+  });
+});
