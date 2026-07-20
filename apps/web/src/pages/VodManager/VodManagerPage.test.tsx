@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { MemoryRouter, Route, Routes } from 'react-router';
+import { MemoryRouter, Route, Routes, useLocation } from 'react-router';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { AuthProvider } from '@/context/AuthContext';
 import { AnalyticsFilterProvider } from '@/context/AnalyticsFilterContext';
@@ -47,6 +47,8 @@ const listPlaylists = vi.fn().mockResolvedValue([]);
 const createPlaylist = vi.fn();
 const updatePlaylist = vi.fn();
 const removePlaylist = vi.fn();
+const reviewsList = vi.fn().mockResolvedValue([]);
+const reviewsCreate = vi.fn();
 
 vi.mock('@/lib/api', () => ({
   api: {
@@ -70,6 +72,12 @@ vi.mock('@/lib/api', () => ({
       create: (...args: unknown[]) => createPlaylist(...args),
       update: (...args: unknown[]) => updatePlaylist(...args),
       remove: (...args: unknown[]) => removePlaylist(...args),
+    },
+    coaching: {
+      reviews: {
+        list: (...args: unknown[]) => reviewsList(...args),
+        create: (...args: unknown[]) => reviewsCreate(...args),
+      },
     },
   },
 }));
@@ -99,6 +107,12 @@ type MutableMatch = ReturnType<typeof makeMatch> & {
   vodTimestamps?: Record<string, unknown>[];
 };
 
+/** D-01 test helper: renders the resolved `pathname + search` so Start/Continue-review navigation assertions don't need to reach into router internals. */
+function ReviewComposerStub() {
+  const location = useLocation();
+  return <div data-testid="review-composer-stub">{location.pathname + location.search}</div>;
+}
+
 function renderVodManager(initialEntry: string) {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
@@ -113,6 +127,10 @@ function renderVodManager(initialEntry: string) {
                   there too (unchanged; only the Match Data surface is
                   scoped VOD-optional). */}
               <Route path="/coach/:clientId/vods" element={<VodManagerPage />} />
+              {/* D-01: Start/Continue review navigates here — a stub target
+                  so those tests can assert on the resolved destination
+                  without pulling in the real (heavy) ReviewComposerPage. */}
+              <Route path="/coach/:clientId/reviews/:reviewId" element={<ReviewComposerStub />} />
             </Routes>
           </AnalyticsFilterProvider>
         </AuthProvider>
@@ -150,6 +168,7 @@ describe('VodManagerPage', () => {
     createPlaylist.mockResolvedValue({ id: 'p1', name: 'New', createdAt: 1, matchIds: [] });
     updatePlaylist.mockResolvedValue({});
     removePlaylist.mockResolvedValue({});
+    reviewsList.mockResolvedValue([]);
   });
 
   afterEach(() => {
@@ -199,6 +218,66 @@ describe('VodManagerPage', () => {
       await within(dialog).findByText('Enter a valid VOD link (YouTube or Twitch)'),
     ).toBeInTheDocument();
     expect(createMatch).not.toHaveBeenCalled();
+  });
+
+  // D-01: the VOD Manager's one prominent Start/Continue review entry
+  // point (12-07) — opens the composer with the current VOD preloaded.
+  it('D-01: does not render Start/Continue review in personal mode', async () => {
+    listMatches.mockResolvedValue([makeMatch({ id: 'm1', vodUrl: 'https://youtu.be/abc123' })]);
+    renderVodManager('/vod?match=m1');
+
+    await screen.findByRole('button', { name: 'Select match vs rival' });
+    expect(screen.queryByRole('button', { name: /Start review|Continue review/ })).toBeNull();
+  });
+
+  it('D-01: Start review creates a fresh review and navigates with the selected VOD preloaded', async () => {
+    listMatches.mockResolvedValue([makeMatch({ id: 'm1', vodUrl: 'https://youtu.be/abc123' })]);
+    reviewsList.mockResolvedValue([]);
+    reviewsCreate.mockResolvedValue({ reviewId: 'r-new', revision: 0 });
+    const user = userEvent.setup();
+    renderVodManager('/coach/tetra/vods?match=m1');
+
+    const startButton = await screen.findByRole('button', { name: 'Start review' });
+    await user.click(startButton);
+
+    await waitFor(() => expect(reviewsCreate).toHaveBeenCalledWith('tetra'));
+    expect(await screen.findByTestId('review-composer-stub')).toHaveTextContent(
+      '/coach/tetra/reviews/r-new?source=m1',
+    );
+  });
+
+  it('D-01: Continue review navigates straight to the most-recently-autosaved open draft, without creating a new one', async () => {
+    listMatches.mockResolvedValue([makeMatch({ id: 'm1', vodUrl: 'https://youtu.be/abc123' })]);
+    reviewsList.mockResolvedValue([
+      {
+        reviewId: 'r-old',
+        status: 'draft',
+        latestVersion: null,
+        revision: 1,
+        deliveryState: null,
+        createdAt: 1,
+        lastAutosavedAt: 100,
+      },
+      {
+        reviewId: 'r-recent',
+        status: 'draft',
+        latestVersion: null,
+        revision: 2,
+        deliveryState: null,
+        createdAt: 1,
+        lastAutosavedAt: 200,
+      },
+    ]);
+    const user = userEvent.setup();
+    renderVodManager('/coach/tetra/vods?match=m1');
+
+    const continueButton = await screen.findByRole('button', { name: 'Continue review' });
+    await user.click(continueButton);
+
+    expect(await screen.findByTestId('review-composer-stub')).toHaveTextContent(
+      '/coach/tetra/reviews/r-recent?source=m1',
+    );
+    expect(reviewsCreate).not.toHaveBeenCalled();
   });
 
   it('applies the deep-linked match t= offset as the player initial start time', async () => {

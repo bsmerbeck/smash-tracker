@@ -1,13 +1,14 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { useParams } from 'react-router';
+import { useParams, useSearchParams } from 'react-router';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
-import type { ReviewDraft, ReviewSection } from '@smash-tracker/shared';
-import { formatTimestamp } from '@/lib/vod';
+import type { CitationToken, ReviewDraft, ReviewSection } from '@smash-tracker/shared';
+import { serializeCitationToken } from '@smash-tracker/shared';
 import { useMatches } from '@/hooks/useMatches';
 import {
   useAddReviewSection,
   useCoachingReviewDraft,
+  useCoachingReviewPreview,
   useHideReviewSection,
   usePublishCoachingReview,
   useShowReviewSection,
@@ -15,10 +16,20 @@ import {
 import { useReviewAutosave } from '@/hooks/useReviewAutosave';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Button } from '@/components/ui/button';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import { SafeMarkdown } from '@/lib/safeMarkdown';
 import { VodPlayer } from '@/pages/VodManager/components/VodPlayer';
 import { ReviewSourcesDrawer } from './components/ReviewSourcesDrawer';
 import { ReviewSectionEditor } from './components/ReviewSectionEditor';
 import { ReviewPrivateNotesPane } from './components/ReviewPrivateNotesPane';
+import { ReviewEvidenceList } from './components/ReviewEvidenceList';
+import { CiteSectionPrompt } from './components/CiteSectionPrompt';
 import { AutosaveConflictDialog } from './components/AutosaveConflictDialog';
 import { describeCoachingError } from './describeCoachingError';
 
@@ -40,6 +51,11 @@ type DocTab = 'client-review' | 'private-notes';
 export function ReviewComposerPage() {
   const { t } = useTranslation();
   const { clientId = '', reviewId = '' } = useParams<{ clientId: string; reviewId: string }>();
+  // D-01: VOD Manager's "Start review / Continue review" preloads a source
+  // via `?source={matchId}` — read once at seed time below, never re-read
+  // after (switching sources afterward is the Sources drawer's job).
+  const [searchParams] = useSearchParams();
+  const requestedSourceId = searchParams.get('source');
 
   const draftQuery = useCoachingReviewDraft(clientId, reviewId);
   const { data: matchesData } = useMatches();
@@ -53,6 +69,17 @@ export function ReviewComposerPage() {
   const [docTab, setDocTab] = useState<DocTab>('client-review');
   const [currentSourceId, setCurrentSourceId] = useState<string | null>(null);
   const hasInitializedRef = useRef(false);
+  // D-04: keyed by section id, populated by `ReviewSectionEditor`'s
+  // `registerTextareaRef` — read against `document.activeElement` to
+  // decide "insert at cursor" vs. "ask which section" on every Cite action.
+  const sectionTextareaRefs = useRef(new Map<string, HTMLTextAreaElement>());
+  // A citation awaiting a section pick (CiteSectionPrompt open) — `null`
+  // means the prompt is closed. Set only when NO section textarea has
+  // focus at the moment a Cite action fires (D-04: never silently choose).
+  const [pendingCitation, setPendingCitation] = useState<CitationToken | null>(null);
+  const [previewOpen, setPreviewOpen] = useState(false);
+  const playerSeekRef = useRef<((seconds: number) => void) | null>(null);
+  const getCurrentTimeRef = useRef<(() => number) | null>(null);
 
   // Seed local edit-buffer state from the fetched draft exactly ONCE — a
   // background refetch of `draftQuery.data` (e.g. window refocus) must never
@@ -74,7 +101,11 @@ export function ReviewComposerPage() {
   // setState once per empty->populated transition, since the next render
   // sees a non-null currentSourceId and the condition goes false.
   if (currentSourceId == null && vodSources.length > 0) {
-    setCurrentSourceId(vodSources[0]!.id);
+    const preferred =
+      requestedSourceId && vodSources.some((match) => match.id === requestedSourceId)
+        ? requestedSourceId
+        : vodSources[0]!.id;
+    setCurrentSourceId(preferred);
   }
 
   const autosave = useReviewAutosave(
@@ -88,8 +119,10 @@ export function ReviewComposerPage() {
   const showSection = useShowReviewSection(clientId, reviewId);
   const addSection = useAddReviewSection(clientId, reviewId);
   const publish = usePublishCoachingReview(clientId, reviewId);
+  const preview = useCoachingReviewPreview(clientId, reviewId, { enabled: previewOpen });
 
   const currentSource = vodSources.find((match) => match.id === currentSourceId) ?? null;
+  const visibleSections = sections.filter((section) => !section.hidden);
 
   function applySectionMutationResult(draft: ReviewDraft) {
     setSections(draft.sections);
@@ -112,6 +145,99 @@ export function ReviewComposerPage() {
         toast.error(describeCoachingError(error, t('coaching.reviews.composer.publishError')));
       },
     });
+  }
+
+  function registerSectionTextareaRef(sectionId: string, el: HTMLTextAreaElement | null) {
+    if (el) {
+      sectionTextareaRefs.current.set(sectionId, el);
+    } else {
+      sectionTextareaRefs.current.delete(sectionId);
+    }
+  }
+
+  /** The section id whose `<textarea>` currently has focus, or `null` if none does (D-04). */
+  function findFocusedSectionId(): string | null {
+    const active = document.activeElement;
+    for (const [sectionId, el] of sectionTextareaRefs.current) {
+      if (el === active) {
+        return sectionId;
+      }
+    }
+    return null;
+  }
+
+  /** Splices `token`'s serialized form into `sectionId`'s body at `cursorPosition` (or the end, when `null`), padding with a space only where the surrounding text needs one. */
+  function insertCitationIntoSection(
+    sectionId: string,
+    token: CitationToken,
+    cursorPosition: number | null,
+  ) {
+    const tokenText = serializeCitationToken(token);
+    setSections((prev) =>
+      prev.map((section) => {
+        if (section.id !== sectionId) {
+          return section;
+        }
+        const body = section.body;
+        const pos = cursorPosition ?? body.length;
+        const before = body.slice(0, pos);
+        const after = body.slice(pos);
+        const leadingSpace = before.length > 0 && !/\s$/.test(before) ? ' ' : '';
+        const trailingSpace = after.length > 0 && !/^\s/.test(after) ? ' ' : '';
+        return { ...section, body: `${before}${leadingSpace}${tokenText}${trailingSpace}${after}` };
+      }),
+    );
+  }
+
+  // D-04: the Evidence list's Cite / ⏱ Cite current moment actions both
+  // route through here. A focused section textarea wins (insert at its
+  // cursor); otherwise the coach is ASKED which section — never a silent
+  // choice.
+  function handleCite(token: CitationToken) {
+    const focusedSectionId = findFocusedSectionId();
+    if (focusedSectionId) {
+      const el = sectionTextareaRefs.current.get(focusedSectionId);
+      insertCitationIntoSection(focusedSectionId, token, el?.selectionStart ?? null);
+      return;
+    }
+    if (docTab !== 'client-review') {
+      setDocTab('client-review');
+    }
+    setPendingCitation(token);
+  }
+
+  function handleCiteSectionPicked(sectionId: string) {
+    if (!pendingCitation) return;
+    insertCitationIntoSection(sectionId, pendingCitation, null);
+    setPendingCitation(null);
+  }
+
+  // Preview-as-client (REV-05): clicking a citation there either seeks the
+  // already-mounted player (same source) or switches the composer's active
+  // source (cross-source) — the full "switch AND seek to the exact second"
+  // experience belongs to the plan-08 delivery page, which owns its own
+  // player lifecycle end to end.
+  function handlePreviewCitationActivate(matchId: string, seconds: number) {
+    if (matchId === currentSourceId) {
+      playerSeekRef.current?.(seconds);
+    } else {
+      setCurrentSourceId(matchId);
+    }
+  }
+
+  function resolvePreviewCitationSource(matchId: string) {
+    if (matchId === currentSourceId) {
+      return undefined;
+    }
+    const match = vodSources.find((source) => source.id === matchId);
+    if (!match) {
+      return undefined;
+    }
+    return {
+      label: t('coaching.reviews.composer.sourcesDrawer.vsOpponent', {
+        opponent: match.opponent || t('common.unknown'),
+      }),
+    };
   }
 
   if (draftQuery.isLoading) {
@@ -153,40 +279,25 @@ export function ReviewComposerPage() {
         </div>
 
         {currentSource?.vodUrl ? (
-          <VodPlayer vodUrl={currentSource.vodUrl} startSeconds={currentSource.vodStartSeconds} />
+          <VodPlayer
+            vodUrl={currentSource.vodUrl}
+            startSeconds={currentSource.vodStartSeconds}
+            seekRef={playerSeekRef}
+            getCurrentTimeRef={getCurrentTimeRef}
+          />
         ) : (
           <div className="flex aspect-video items-center justify-center rounded-lg border bg-muted text-sm text-muted-foreground">
             {t('coaching.reviews.composer.sourceBar.noPlayer')}
           </div>
         )}
 
-        <div>
-          <h2 className="mb-2 text-sm font-semibold">
-            {t('coaching.reviews.composer.evidence.heading', {
-              count: currentSource?.vodTimestamps?.length ?? 0,
-            })}
-          </h2>
-          {/* Placeholder — plan 12-07 replaces this with the real, citable ReviewEvidenceList (Cite / Cite current moment). */}
-          {currentSource?.vodTimestamps && currentSource.vodTimestamps.length > 0 ? (
-            <ul className="flex flex-col gap-1.5">
-              {currentSource.vodTimestamps.map((entry) => (
-                <li
-                  key={entry.id}
-                  className="rounded-md border bg-card px-2.5 py-1.5 text-xs text-muted-foreground"
-                >
-                  <span className="font-mono text-foreground">
-                    {formatTimestamp(entry.seconds)}
-                  </span>{' '}
-                  {entry.note}
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <p className="text-xs text-muted-foreground">
-              {t('coaching.reviews.composer.evidence.empty')}
-            </p>
-          )}
-        </div>
+        <ReviewEvidenceList
+          timestamps={currentSource?.vodTimestamps ?? []}
+          sourceMatchId={currentSource?.id ?? null}
+          sections={sections}
+          getCurrentTimeRef={getCurrentTimeRef}
+          onCite={handleCite}
+        />
       </div>
 
       {/* Right pane (D-02): Client review | Private notes tabs. */}
@@ -206,6 +317,9 @@ export function ReviewComposerPage() {
             </TabsList>
             <div className="ml-auto flex items-center gap-3 pb-2">
               <AutosaveStatusIndicator status={autosave.status} />
+              <Button variant="outline" size="sm" onClick={() => setPreviewOpen(true)}>
+                {t('coaching.reviews.composer.preview.title')}
+              </Button>
               <Button
                 variant="default"
                 size="sm"
@@ -236,6 +350,7 @@ export function ReviewComposerPage() {
               onAdd={(kind) =>
                 addSection.mutate({ kind }, { onSuccess: applySectionMutationResult })
               }
+              registerTextareaRef={registerSectionTextareaRef}
             />
           </TabsContent>
 
@@ -252,6 +367,55 @@ export function ReviewComposerPage() {
         onKeepMine={autosave.resolveKeepMine}
         onSeeTheirs={handleSeeTheirs}
       />
+
+      <CiteSectionPrompt
+        open={pendingCitation != null}
+        sections={visibleSections}
+        onPick={handleCiteSectionPicked}
+        onOpenChange={(open) => {
+          if (!open) setPendingCitation(null);
+        }}
+      />
+
+      <Dialog open={previewOpen} onOpenChange={setPreviewOpen}>
+        <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>{t('coaching.reviews.composer.preview.title')}</DialogTitle>
+            <DialogDescription>
+              {t('coaching.reviews.composer.preview.description')}
+            </DialogDescription>
+          </DialogHeader>
+          {preview.isLoading ? (
+            <p className="text-sm text-muted-foreground">{t('chrome.loading')}</p>
+          ) : preview.isError ? (
+            <p className="text-sm text-muted-foreground">
+              {t('coaching.reviews.composer.preview.error')}
+            </p>
+          ) : preview.data && preview.data.sections.length > 0 ? (
+            <div className="flex flex-col gap-4">
+              {preview.data.sections.map((section) => (
+                <div key={section.id}>
+                  <h3 className="mb-1 text-sm font-semibold">
+                    {section.kind === 'general'
+                      ? section.title?.trim() ||
+                        t('coaching.reviews.composer.sections.kinds.general')
+                      : t(`coaching.reviews.composer.sections.kinds.${section.kind}`)}
+                  </h3>
+                  <SafeMarkdown
+                    body={section.body}
+                    onActivateCitation={handlePreviewCitationActivate}
+                    resolveCitationSource={resolvePreviewCitationSource}
+                  />
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="text-sm text-muted-foreground">
+              {t('coaching.reviews.composer.preview.empty')}
+            </p>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

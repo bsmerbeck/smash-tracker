@@ -514,6 +514,11 @@
     "meta": {
       "edit": "Edit details"
     },
+    "review": {
+      "startButton": "Start review",
+      "continueButton": "Continue review",
+      "startError": "Something went wrong starting a review for this VOD."
+    },
     "composer": {
       "title": "Add a note"
     },
@@ -1545,7 +1550,8 @@
       "fighters": "Fighters",
       "matches": "Matches",
       "vods": "VODs",
-      "analytics": "Analytics"
+      "analytics": "Analytics",
+      "reviews": "Reviews"
     },
     "hub": {
       "title": "Client Hub",
@@ -1705,7 +1711,10 @@
         "evidence": {
           "heading_one": "Evidence ({{count}})",
           "heading_other": "Evidence ({{count}})",
-          "empty": "No timestamped notes on this source yet."
+          "empty": "No timestamped notes on this source yet.",
+          "cite": "Cite",
+          "citeCurrentMoment": "⏱ Cite current moment",
+          "citedIndicator": "cited"
         },
         "tabs": {
           "clientReview": "Client review",
@@ -1750,7 +1759,62 @@
           "empty": "(empty)",
           "seeTheirs": "See theirs",
           "keepMine": "Keep mine"
+        },
+        "citation": {
+          "jumpAria": "Jump to {{timestamp}}",
+          "jumpToSourceAria": "Jump to {{timestamp}} in {{source}}"
+        },
+        "citeSectionPrompt": {
+          "title": "Cite into which section?",
+          "description": "Nothing is focused right now — pick a section and the citation is added to the end of it.",
+          "empty": "No visible sections to cite into yet."
+        },
+        "preview": {
+          "title": "Preview as client",
+          "description": "Exactly what the client will see once this review is delivered — no private notes, ever.",
+          "error": "Something went wrong loading the preview.",
+          "empty": "Nothing to preview yet — add some content first."
         }
+      },
+      "list": {
+        "title": "Reviews",
+        "subtitle": "Review status and delivery status are separate — a draft is never \"unviewed\", a delivery is never \"a draft\".",
+        "newReview": "+ New review",
+        "createError": "Something went wrong starting this review.",
+        "empty": "No reviews yet. Start one from here or from a VOD in the VOD Manager.",
+        "listAria": "Reviews",
+        "open": "Open",
+        "rowLabel": "Review — started {{date}}",
+        "rowEdited": "edited {{date}}",
+        "deliveryMenuAria": "Delivery and more actions",
+        "status": {
+          "draft": "Draft",
+          "published": "Published v{{version}}",
+          "archived": "Archived"
+        },
+        "delivery": {
+          "dash": "—",
+          "noneAria": "No delivery — nothing published yet",
+          "notDelivered": "Not delivered",
+          "delivered": "Delivered",
+          "viewed": "Viewed",
+          "acknowledged": "Acknowledged",
+          "expired": "Expired",
+          "revoked": "Revoked",
+          "createdToast": "Delivery link created and copied",
+          "createError": "Something went wrong creating this delivery link.",
+          "copiedToast": "Link copied",
+          "revokedToast": "Delivery link revoked",
+          "revokeError": "Something went wrong revoking this delivery link."
+        },
+        "actions": {
+          "deliver": "Deliver",
+          "copyLink": "Copy link",
+          "revokeLink": "Revoke link",
+          "archive": "Archive review"
+        },
+        "archiveToast": "Review archived",
+        "archiveError": "Something went wrong archiving this review."
       }
     },
     "disabled": {

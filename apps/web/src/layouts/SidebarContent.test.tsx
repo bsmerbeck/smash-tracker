@@ -138,10 +138,10 @@ describe('SidebarContent coaching-hub rail (walkthrough fix round 2, D-01/D1)', 
 });
 
 /**
- * Phase 11 fix round 2 (D-01/D1, D-03/D3), fix round 3 (FB-5): the
- * client-workspace rail at /coach/:clientId/* — back link, accent-tinted
- * client header card, then exactly five items (Overview/Fighters/Matches/
- * VODs/Analytics — fix round 3 split the old "Matches & VODs" item in two).
+ * Phase 11 fix round 2 (D-01/D1, D-03/D3), fix round 3 (FB-5), Phase 12
+ * (Reviews nav item): the client-workspace rail at /coach/:clientId/* —
+ * back link, accent-tinted client header card, then six items (Overview/
+ * Fighters/Matches/VODs/Analytics/Reviews).
  */
 describe('SidebarContent client-workspace rail (walkthrough fix round 2, D-01/D1)', () => {
   beforeEach(() => {
@@ -158,7 +158,7 @@ describe('SidebarContent client-workspace rail (walkthrough fix round 2, D-01/D1
     expect(screen.queryByRole('link', { name: /Choose Primary/ })).not.toBeInTheDocument();
   });
 
-  it('renders the All Clients back link, the accent client header card, and exactly five workspace items', async () => {
+  it('renders the All Clients back link, the accent client header card, and the six workspace items', async () => {
     renderWithProviders(<SidebarContent />, '/coach/tetra/overview');
 
     const backLink = screen.getByRole('link', { name: /All Clients/ });
@@ -184,6 +184,17 @@ describe('SidebarContent client-workspace rail (walkthrough fix round 2, D-01/D1
       'href',
       '/coach/tetra/dashboard',
     );
+    expect(screen.getByRole('link', { name: 'Reviews' })).toHaveAttribute(
+      'href',
+      '/coach/tetra/reviews',
+    );
+  });
+
+  it('highlights Reviews as active on the nested composer sub-route', () => {
+    renderWithProviders(<SidebarContent />, '/coach/tetra/reviews/r1');
+
+    const reviews = screen.getByRole('link', { name: 'Reviews' });
+    expect(reviews.className).toEqual(expect.stringContaining('coaching-accent'));
   });
 
   it('highlights Analytics as active on the client-scoped fighter-analysis sub-route', () => {

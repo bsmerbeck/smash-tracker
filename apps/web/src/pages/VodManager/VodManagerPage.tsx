@@ -1,12 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { KeyboardEvent } from 'react';
-import { useSearchParams } from 'react-router';
+import { useNavigate, useSearchParams } from 'react-router';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 import {
   Check,
   ChevronLeft,
   ChevronRight,
+  FileText,
   Link2,
   Maximize2,
   Minimize2,
@@ -19,6 +20,7 @@ import {
 import { MAX_PLAYLISTS_PER_USER, type Fighter, type Match } from '@smash-tracker/shared';
 import { getFighterById } from '@/data/sprites';
 import { useActiveSubject } from '@/hooks/useActiveSubject';
+import { useCoachingReviews, useCreateCoachingReview } from '@/hooks/useCoachingReviews';
 import { useFighters } from '@/hooks/useFighters';
 import { useFilteredMatches } from '@/hooks/useFilteredMatches';
 import { useCreateNote, useDeleteNote, useUpdateNote } from '@/hooks/useVodNotes';
@@ -119,10 +121,18 @@ function videoIdentityOf(match: Match): string | null {
  */
 export function VodManagerPage() {
   const { t } = useTranslation();
+  const navigate = useNavigate();
   // PAR-04 (T-11-14): VOD shares are hidden in Coaching mode this phase
   // (CONTEXT.md) — the "My shares" entry point below renders an honest
   // unavailable state instead, never the coach's own personal share list.
-  const { mode: activeMode } = useActiveSubject();
+  const { mode: activeMode, clientId } = useActiveSubject();
+  // D-01: the "Start review / Continue review" entry point — Continue when
+  // an open draft exists for this client, Start otherwise (12-07's own
+  // Claude's Discretion: no durable "review sources" schema exists yet to
+  // check whether a draft already references THIS specific VOD, so "any
+  // open draft" is the signal, matching the plan's own action text).
+  const coachingReviewsQuery = useCoachingReviews(clientId ?? undefined);
+  const createReview = useCreateCoachingReview(clientId ?? '');
   const [searchParams, setSearchParams] = useSearchParams();
   const selectedMatchId = searchParams.get('match');
   // Sibling param to `?match=` — a playlist can be active with no match
@@ -312,6 +322,19 @@ export function VodManagerPage() {
   // committing its replacement — resolves to `null` rather than throwing;
   // the right panel falls back to the placeholder copy for that one render.
   const selectedMatch = displayedMatches.find((m) => m.id === selectedMatchId) ?? null;
+
+  // D-01: "Continue review" targets the most-recently-autosaved open draft
+  // for this client, or `null` when there is none (→ "Start review" mints
+  // a fresh one instead).
+  const openDraftReview = useMemo(() => {
+    const drafts = (coachingReviewsQuery.data ?? []).filter((review) => review.status === 'draft');
+    if (drafts.length === 0) {
+      return null;
+    }
+    return drafts.reduce((latest, review) =>
+      review.lastAutosavedAt > latest.lastAutosavedAt ? review : latest,
+    );
+  }, [coachingReviewsQuery.data]);
 
   // Populated by VodPlayer once its live player instance exists; invoking
   // it is how TimestampList's row clicks reach the LIVE player (not a URL
@@ -763,6 +786,26 @@ export function VodManagerPage() {
     playerSeekRef.current?.(seconds);
   }
 
+  // D-01: opens the composer with `selectedMatch` preloaded as a source
+  // (`?source={matchId}`, read by `ReviewComposerPage`) — Continue when an
+  // open draft exists for this client, Start (mint a fresh review) otherwise.
+  async function handleStartOrContinueReview() {
+    if (!clientId || !selectedMatch) {
+      return;
+    }
+    const sourceParam = `?source=${encodeURIComponent(selectedMatch.id)}`;
+    if (openDraftReview) {
+      navigate(`/coach/${clientId}/reviews/${openDraftReview.reviewId}${sourceParam}`);
+      return;
+    }
+    try {
+      const created = await createReview.mutateAsync();
+      navigate(`/coach/${clientId}/reviews/${created.reviewId}${sourceParam}`);
+    } catch {
+      toast.error(t('vodManager.review.startError'));
+    }
+  }
+
   // Create-note mutation wrapper (Phase 8): the composer's single new note
   // goes through the dedicated `POST /api/matches/:id/notes` endpoint —
   // never the full-match PATCH — so a note add can never stomp a concurrent
@@ -989,6 +1032,23 @@ export function VodManagerPage() {
             <Button type="button" variant="outline" size="sm" onClick={() => setMySharesOpen(true)}>
               <Link2 className="size-4" />
               {t('vodManager.shares.mySharesButton')}
+            </Button>
+          )}
+          {/* D-01: the VOD Manager's one prominent Start/Continue review
+              entry point — opens the composer with the currently-selected
+              VOD preloaded as a source. */}
+          {activeMode === 'coaching' && clientId && (
+            <Button
+              type="button"
+              variant="default"
+              size="sm"
+              disabled={!selectedMatch?.vodUrl || createReview.isPending}
+              onClick={handleStartOrContinueReview}
+            >
+              <FileText className="size-4" />
+              {openDraftReview
+                ? t('vodManager.review.continueButton')
+                : t('vodManager.review.startButton')}
             </Button>
           )}
         </div>

@@ -514,6 +514,11 @@
     "meta": {
       "edit": "Editar detalhes"
     },
+    "review": {
+      "startButton": "Iniciar revisão",
+      "continueButton": "Continuar revisão",
+      "startError": "Ocorreu um erro ao iniciar uma revisão para este VOD."
+    },
     "composer": {
       "title": "Adicionar uma nota"
     },
@@ -1545,7 +1550,8 @@
       "fighters": "Lutadores",
       "matches": "Partidas",
       "vods": "VODs",
-      "analytics": "Análises"
+      "analytics": "Análises",
+      "reviews": "Revisões"
     },
     "hub": {
       "title": "Central de clientes",
@@ -1705,7 +1711,10 @@
         "evidence": {
           "heading_one": "Evidência ({{count}})",
           "heading_other": "Evidências ({{count}})",
-          "empty": "Esta fonte ainda não tem notas com marca de tempo."
+          "empty": "Esta fonte ainda não tem notas com marca de tempo.",
+          "cite": "Citar",
+          "citeCurrentMoment": "⏱ Citar momento atual",
+          "citedIndicator": "citado"
         },
         "tabs": {
           "clientReview": "Análise do cliente",
@@ -1750,7 +1759,62 @@
           "empty": "(vazio)",
           "seeTheirs": "Ver a deles",
           "keepMine": "Manter a minha"
+        },
+        "citation": {
+          "jumpAria": "Ir para {{timestamp}}",
+          "jumpToSourceAria": "Ir para {{timestamp}} em {{source}}"
+        },
+        "citeSectionPrompt": {
+          "title": "Citar em qual seção?",
+          "description": "Nada está em foco agora — escolha uma seção e a citação será adicionada ao final dela.",
+          "empty": "Ainda não há seções visíveis para citar."
+        },
+        "preview": {
+          "title": "Pré-visualizar como cliente",
+          "description": "Exatamente o que o cliente verá quando esta análise for entregue — nunca as notas privadas.",
+          "error": "Ocorreu um erro ao carregar a pré-visualização.",
+          "empty": "Nada para pré-visualizar ainda — adicione conteúdo primeiro."
         }
+      },
+      "list": {
+        "title": "Revisões",
+        "subtitle": "O status da análise e o status da entrega são separados — um rascunho nunca é \"não visualizado\", uma entrega nunca é \"um rascunho\".",
+        "newReview": "+ Nova revisão",
+        "createError": "Ocorreu um erro ao iniciar esta revisão.",
+        "empty": "Ainda não há revisões. Comece uma por aqui ou a partir de um VOD no Gerenciador de VODs.",
+        "listAria": "Revisões",
+        "open": "Abrir",
+        "rowLabel": "Revisão — iniciada em {{date}}",
+        "rowEdited": "editada em {{date}}",
+        "deliveryMenuAria": "Entrega e mais ações",
+        "status": {
+          "draft": "Rascunho",
+          "published": "Publicada v{{version}}",
+          "archived": "Arquivada"
+        },
+        "delivery": {
+          "dash": "—",
+          "noneAria": "Sem entrega — nada publicado ainda",
+          "notDelivered": "Não entregue",
+          "delivered": "Entregue",
+          "viewed": "Visualizada",
+          "acknowledged": "Confirmada",
+          "expired": "Expirada",
+          "revoked": "Revogada",
+          "createdToast": "Link de entrega criado e copiado",
+          "createError": "Ocorreu um erro ao criar este link de entrega.",
+          "copiedToast": "Link copiado",
+          "revokedToast": "Link de entrega revogado",
+          "revokeError": "Ocorreu um erro ao revogar este link de entrega."
+        },
+        "actions": {
+          "deliver": "Entregar",
+          "copyLink": "Copiar link",
+          "revokeLink": "Revogar link",
+          "archive": "Arquivar revisão"
+        },
+        "archiveToast": "Revisão arquivada",
+        "archiveError": "Ocorreu um erro ao arquivar esta revisão."
       }
     },
     "disabled": {

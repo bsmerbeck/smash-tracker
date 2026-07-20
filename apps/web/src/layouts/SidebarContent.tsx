@@ -15,13 +15,13 @@ function initialFromEmail(email: string | null | undefined): string {
 }
 
 interface WorkspaceNavItem {
-  key: 'overview' | 'fighters' | 'matches' | 'vods' | 'analytics';
+  key: 'overview' | 'fighters' | 'matches' | 'vods' | 'analytics' | 'reviews';
   href: string;
   isActive: (pathname: string) => boolean;
 }
 
 /**
- * Phase 11 fix round 3 (FB-5): the exactly-five client-workspace items —
+ * Phase 11 fix round 3 (FB-5): the client-workspace items —
  * fix round 2's four (D-03/D3) with "Matches & VODs" split into standalone
  * Matches (`match-data`, the match editor/list) and VODs (`vods`) items, so
  * the editor has a first-class nav entry instead of being reachable only
@@ -29,6 +29,12 @@ interface WorkspaceNavItem {
  * Analytics matches its own path 1:1; Analytics also covers the
  * client-scoped fighter-analysis/matchups sub-routes, so its active state
  * is computed here rather than relying on `NavLink`'s own `to` match.
+ *
+ * Phase 12 (Coach Reviews & Delivery, 12-CONTEXT.md's "order: Overview,
+ * Fighters, Matches, VODs, Analytics, Reviews"): a 6th item, `reviews`,
+ * joins after Analytics — the composer nests under it
+ * (`/coach/:clientId/reviews/:reviewId`), so its active state uses
+ * `startsWith` rather than an exact path match.
  */
 function buildWorkspaceItems(clientId: string): WorkspaceNavItem[] {
   const base = `/coach/${clientId}`;
@@ -46,6 +52,11 @@ function buildWorkspaceItems(clientId: string): WorkspaceNavItem[] {
       href: `${base}/dashboard`,
       isActive: (p) =>
         p === `${base}/dashboard` || p === `${base}/fighter-analysis` || p === `${base}/matchups`,
+    },
+    {
+      key: 'reviews',
+      href: `${base}/reviews`,
+      isActive: (p) => p.startsWith(`${base}/reviews`),
     },
   ];
 }
@@ -96,10 +107,11 @@ function CoachingHubSidebar({ onNavigate }: { onNavigate?: () => void }) {
 }
 
 /**
- * Client-workspace rail (Phase 11 fix round 2, D-01/D1, D-03/D3): rendered
- * at `/coach/:clientId/*` — a back link to the hub, an accent-tinted client
- * header card, then exactly the four D-03 workspace items. Personal
- * `navItems` never render here either (PAR-04/TEN-05).
+ * Client-workspace rail (Phase 11 fix round 2, D-01/D1, D-03/D3; grown to
+ * six items by Phase 12's `reviews` entry): rendered at `/coach/:clientId/*`
+ * — a back link to the hub, an accent-tinted client header card, then the
+ * workspace items from `buildWorkspaceItems`. Personal `navItems` never
+ * render here either (PAR-04/TEN-05).
  */
 function ClientWorkspaceSidebar({
   clientId,

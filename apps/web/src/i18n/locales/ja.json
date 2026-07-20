@@ -514,6 +514,11 @@
     "meta": {
       "edit": "詳細を編集"
     },
+    "review": {
+      "startButton": "レビューを開始",
+      "continueButton": "レビューを続ける",
+      "startError": "このVODのレビュー開始中にエラーが発生しました。"
+    },
     "composer": {
       "title": "メモを追加"
     },
@@ -1545,7 +1550,8 @@
       "fighters": "ファイター",
       "matches": "対戦",
       "vods": "VOD",
-      "analytics": "分析"
+      "analytics": "分析",
+      "reviews": "レビュー"
     },
     "hub": {
       "title": "クライアントハブ",
@@ -1705,7 +1711,10 @@
         "evidence": {
           "heading_one": "エビデンス（{{count}}）",
           "heading_other": "エビデンス（{{count}}）",
-          "empty": "このソースにはまだタイムスタンプ付きのメモがありません。"
+          "empty": "このソースにはまだタイムスタンプ付きのメモがありません。",
+          "cite": "引用",
+          "citeCurrentMoment": "⏱ 現在の瞬間を引用",
+          "citedIndicator": "引用済み"
         },
         "tabs": {
           "clientReview": "クライアント向けレビュー",
@@ -1750,7 +1759,62 @@
           "empty": "（空）",
           "seeTheirs": "相手のバージョンを見る",
           "keepMine": "自分のバージョンを残す"
+        },
+        "citation": {
+          "jumpAria": "{{timestamp}} にジャンプ",
+          "jumpToSourceAria": "{{source}} の {{timestamp}} にジャンプ"
+        },
+        "citeSectionPrompt": {
+          "title": "どのセクションに引用しますか？",
+          "description": "現在フォーカスされている項目がありません。セクションを選ぶと、その末尾に引用が追加されます。",
+          "empty": "引用できる表示中のセクションがまだありません。"
+        },
+        "preview": {
+          "title": "クライアントとしてプレビュー",
+          "description": "このレビューが届いたときにクライアントが実際に目にする内容そのものです — 非公開メモは含まれません。",
+          "error": "プレビューの読み込み中にエラーが発生しました。",
+          "empty": "まだプレビューする内容がありません — 先に内容を追加してください。"
         }
+      },
+      "list": {
+        "title": "レビュー",
+        "subtitle": "レビューのステータスと配信のステータスは別々です — 下書きが「未読」になることはなく、配信が「下書き」になることもありません。",
+        "newReview": "＋ 新しいレビュー",
+        "createError": "このレビューの開始中にエラーが発生しました。",
+        "empty": "レビューはまだありません。ここから、またはVODマネージャーのVODから開始できます。",
+        "listAria": "レビュー",
+        "open": "開く",
+        "rowLabel": "レビュー — {{date}} に開始",
+        "rowEdited": "{{date}} に編集",
+        "deliveryMenuAria": "配信とその他の操作",
+        "status": {
+          "draft": "下書き",
+          "published": "公開済み v{{version}}",
+          "archived": "アーカイブ済み"
+        },
+        "delivery": {
+          "dash": "—",
+          "noneAria": "配信なし — まだ何も公開されていません",
+          "notDelivered": "未配信",
+          "delivered": "配信済み",
+          "viewed": "閲覧済み",
+          "acknowledged": "確認済み",
+          "expired": "期限切れ",
+          "revoked": "取り消し済み",
+          "createdToast": "配信リンクを作成してコピーしました",
+          "createError": "この配信リンクの作成中にエラーが発生しました。",
+          "copiedToast": "リンクをコピーしました",
+          "revokedToast": "配信リンクを取り消しました",
+          "revokeError": "この配信リンクの取り消し中にエラーが発生しました。"
+        },
+        "actions": {
+          "deliver": "配信する",
+          "copyLink": "リンクをコピー",
+          "revokeLink": "リンクを取り消す",
+          "archive": "レビューをアーカイブ"
+        },
+        "archiveToast": "レビューをアーカイブしました",
+        "archiveError": "このレビューのアーカイブ中にエラーが発生しました。"
       }
     },
     "disabled": {

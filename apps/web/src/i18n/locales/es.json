@@ -514,6 +514,11 @@
     "meta": {
       "edit": "Editar detalles"
     },
+    "review": {
+      "startButton": "Iniciar reseña",
+      "continueButton": "Continuar reseña",
+      "startError": "Ocurrió un error al iniciar una reseña para este VOD."
+    },
     "composer": {
       "title": "Añadir una nota"
     },
@@ -1545,7 +1550,8 @@
       "fighters": "Luchadores",
       "matches": "Partidas",
       "vods": "VODs",
-      "analytics": "Analíticas"
+      "analytics": "Analíticas",
+      "reviews": "Reseñas"
     },
     "hub": {
       "title": "Centro de clientes",
@@ -1705,7 +1711,10 @@
         "evidence": {
           "heading_one": "Evidencia ({{count}})",
           "heading_other": "Evidencia ({{count}})",
-          "empty": "Esta fuente todavía no tiene notas con marca de tiempo."
+          "empty": "Esta fuente todavía no tiene notas con marca de tiempo.",
+          "cite": "Citar",
+          "citeCurrentMoment": "⏱ Citar momento actual",
+          "citedIndicator": "citado"
         },
         "tabs": {
           "clientReview": "Reseña del cliente",
@@ -1750,7 +1759,62 @@
           "empty": "(vacío)",
           "seeTheirs": "Ver la suya",
           "keepMine": "Conservar la mía"
+        },
+        "citation": {
+          "jumpAria": "Ir a {{timestamp}}",
+          "jumpToSourceAria": "Ir a {{timestamp}} en {{source}}"
+        },
+        "citeSectionPrompt": {
+          "title": "¿En qué sección quieres citar?",
+          "description": "Nada tiene el foco ahora mismo — elige una sección y la cita se añadirá al final.",
+          "empty": "Todavía no hay secciones visibles para citar."
+        },
+        "preview": {
+          "title": "Vista previa como cliente",
+          "description": "Exactamente lo que verá el cliente una vez entregada esta reseña — nunca las notas privadas.",
+          "error": "Ocurrió un error al cargar la vista previa.",
+          "empty": "Nada que previsualizar todavía — añade contenido primero."
         }
+      },
+      "list": {
+        "title": "Reseñas",
+        "subtitle": "El estado de la reseña y el estado de la entrega son independientes — un borrador nunca está \"sin ver\", una entrega nunca es \"un borrador\".",
+        "newReview": "+ Nueva reseña",
+        "createError": "Ocurrió un error al iniciar esta reseña.",
+        "empty": "Aún no hay reseñas. Empieza una desde aquí o desde un VOD en el Gestor de VODs.",
+        "listAria": "Reseñas",
+        "open": "Abrir",
+        "rowLabel": "Reseña — iniciada el {{date}}",
+        "rowEdited": "editada el {{date}}",
+        "deliveryMenuAria": "Entrega y más acciones",
+        "status": {
+          "draft": "Borrador",
+          "published": "Publicada v{{version}}",
+          "archived": "Archivada"
+        },
+        "delivery": {
+          "dash": "—",
+          "noneAria": "Sin entrega — todavía no se ha publicado nada",
+          "notDelivered": "No entregada",
+          "delivered": "Entregada",
+          "viewed": "Vista",
+          "acknowledged": "Confirmada",
+          "expired": "Caducada",
+          "revoked": "Revocada",
+          "createdToast": "Enlace de entrega creado y copiado",
+          "createError": "Ocurrió un error al crear este enlace de entrega.",
+          "copiedToast": "Enlace copiado",
+          "revokedToast": "Enlace de entrega revocado",
+          "revokeError": "Ocurrió un error al revocar este enlace de entrega."
+        },
+        "actions": {
+          "deliver": "Entregar",
+          "copyLink": "Copiar enlace",
+          "revokeLink": "Revocar enlace",
+          "archive": "Archivar reseña"
+        },
+        "archiveToast": "Reseña archivada",
+        "archiveError": "Ocurrió un error al archivar esta reseña."
       }
     },
     "disabled": {

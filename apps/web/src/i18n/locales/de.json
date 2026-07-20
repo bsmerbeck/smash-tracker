@@ -514,6 +514,11 @@
     "meta": {
       "edit": "Details bearbeiten"
     },
+    "review": {
+      "startButton": "Bewertung starten",
+      "continueButton": "Bewertung fortsetzen",
+      "startError": "Beim Starten einer Bewertung für dieses VOD ist ein Fehler aufgetreten."
+    },
     "composer": {
       "title": "Notiz hinzufügen"
     },
@@ -1545,7 +1550,8 @@
       "fighters": "Kämpfer",
       "matches": "Matches",
       "vods": "VODs",
-      "analytics": "Analysen"
+      "analytics": "Analysen",
+      "reviews": "Bewertungen"
     },
     "hub": {
       "title": "Kunden-Hub",
@@ -1705,7 +1711,10 @@
         "evidence": {
           "heading_one": "Beweis ({{count}})",
           "heading_other": "Beweise ({{count}})",
-          "empty": "Diese Quelle hat noch keine Notizen mit Zeitstempel."
+          "empty": "Diese Quelle hat noch keine Notizen mit Zeitstempel.",
+          "cite": "Zitieren",
+          "citeCurrentMoment": "⏱ Aktuellen Moment zitieren",
+          "citedIndicator": "zitiert"
         },
         "tabs": {
           "clientReview": "Klienten-Review",
@@ -1750,7 +1759,62 @@
           "empty": "(leer)",
           "seeTheirs": "Ihre ansehen",
           "keepMine": "Meine behalten"
+        },
+        "citation": {
+          "jumpAria": "Zu {{timestamp}} springen",
+          "jumpToSourceAria": "Zu {{timestamp}} in {{source}} springen"
+        },
+        "citeSectionPrompt": {
+          "title": "In welchen Abschnitt zitieren?",
+          "description": "Gerade ist nichts fokussiert — wähle einen Abschnitt, das Zitat wird an dessen Ende eingefügt.",
+          "empty": "Noch keine sichtbaren Abschnitte zum Zitieren."
+        },
+        "preview": {
+          "title": "Vorschau als Kunde",
+          "description": "Genau das, was der Kunde sieht, sobald diese Bewertung zugestellt wird — niemals private Notizen.",
+          "error": "Beim Laden der Vorschau ist ein Fehler aufgetreten.",
+          "empty": "Noch nichts zum Anzeigen — füge zuerst Inhalte hinzu."
         }
+      },
+      "list": {
+        "title": "Bewertungen",
+        "subtitle": "Bewertungsstatus und Zustellstatus sind getrennt — ein Entwurf ist nie „ungesehen“, eine Zustellung ist nie „ein Entwurf“.",
+        "newReview": "+ Neue Bewertung",
+        "createError": "Beim Starten dieser Bewertung ist ein Fehler aufgetreten.",
+        "empty": "Noch keine Bewertungen. Starte eine hier oder von einem VOD im VOD-Manager aus.",
+        "listAria": "Bewertungen",
+        "open": "Öffnen",
+        "rowLabel": "Bewertung — gestartet am {{date}}",
+        "rowEdited": "bearbeitet am {{date}}",
+        "deliveryMenuAria": "Zustellung und weitere Aktionen",
+        "status": {
+          "draft": "Entwurf",
+          "published": "Veröffentlicht v{{version}}",
+          "archived": "Archiviert"
+        },
+        "delivery": {
+          "dash": "—",
+          "noneAria": "Keine Zustellung — noch nichts veröffentlicht",
+          "notDelivered": "Nicht zugestellt",
+          "delivered": "Zugestellt",
+          "viewed": "Angesehen",
+          "acknowledged": "Bestätigt",
+          "expired": "Abgelaufen",
+          "revoked": "Widerrufen",
+          "createdToast": "Zustelllink erstellt und kopiert",
+          "createError": "Beim Erstellen dieses Zustelllinks ist ein Fehler aufgetreten.",
+          "copiedToast": "Link kopiert",
+          "revokedToast": "Zustelllink widerrufen",
+          "revokeError": "Beim Widerrufen dieses Zustelllinks ist ein Fehler aufgetreten."
+        },
+        "actions": {
+          "deliver": "Zustellen",
+          "copyLink": "Link kopieren",
+          "revokeLink": "Link widerrufen",
+          "archive": "Bewertung archivieren"
+        },
+        "archiveToast": "Bewertung archiviert",
+        "archiveError": "Beim Archivieren dieser Bewertung ist ein Fehler aufgetreten."
       }
     },
     "disabled": {
