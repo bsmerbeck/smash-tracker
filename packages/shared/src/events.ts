@@ -91,6 +91,21 @@ export const EVENT_CATALOG = {
   // mode/selection funnel data later.
   managed_client_created: 'D',
   client_vod_attached: 'D',
+  // Phase 12 Plan 08 (D-09/D-11): the strategy catalog's phase brief calls
+  // this an "X event" in spirit (a client-experience signal, crawler-aware,
+  // fired only after a usable render) — but it is emitted via a DEDICATED
+  // `POST /api/review-deliveries/:token/viewed` route (`buildAnonymousDomainEnvelope`,
+  // mirroring `client_review_acknowledged`'s own D-class emission) rather
+  // than the generic same-origin `POST /api/events` X-ingestion route
+  // (`X_EVENT_ALLOWLIST` below), since that route's envelope payload may
+  // never carry a capability token/share secret — and the delivery TOKEN is
+  // exactly the only identifier an anonymous browser holds that could
+  // attribute a view to one delivery. Classified 'D' here to match its
+  // ACTUAL emission mechanism (an API route firing after its own durable
+  // `viewedAt` RTDB write commits), not the strategy doc's illustrative
+  // shorthand. See `apps/api/src/coaching/reviewDeliveries.ts`'s
+  // `setDeliveryViewed` doc comment for the full rationale.
+  client_review_view_loaded: 'D',
 } as const;
 export type EventCatalogName = keyof typeof EVENT_CATALOG;
 export type EventClass = (typeof EVENT_CATALOG)[EventCatalogName];

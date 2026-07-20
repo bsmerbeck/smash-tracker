@@ -72,7 +72,13 @@ describe('EVENT_CATALOG', () => {
       signup_cta_clicked: 'X',
       managed_client_created: 'D',
       client_vod_attached: 'D',
+      client_review_view_loaded: 'D',
     });
+  });
+
+  it('classifies client_review_view_loaded (Phase 12 Plan 08) as D — emitted via its own dedicated route, not the generic X-ingestion route', () => {
+    expect(EVENT_CATALOG.client_review_view_loaded).toBe('D');
+    expect(X_EVENT_ALLOWLIST).not.toContain('client_review_view_loaded');
   });
 
   it('maps the two new Phase 11 coaching-lifecycle events to class D', () => {

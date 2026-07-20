@@ -287,3 +287,69 @@ export async function setDeliveryAck(
 
   return { deliveryId, alreadyAcked: false };
 }
+
+/**
+ * Phase 12 Plan 08 (D-09/D-11, Rule 2 — missing critical functionality):
+ * idempotently sets `viewedAt`/`status: 'viewed'` on the ONE delivery
+ * record whose `token` matches — mirrors `setDeliveryAck`'s find-by-token
+ * discipline exactly, but for the Delivered -> Viewed transition.
+ *
+ * Deliberately its OWN dedicated route (`POST
+ * .../review-deliveries/:token/viewed`, `publicReviewDeliveries.ts`) rather
+ * than riding the generic same-origin `POST /api/events` X-ingestion route
+ * (`apps/api/src/routes/events.ts`) `client_review_view_loaded` conceptually
+ * belongs to per the strategy catalog: that route's envelope `payload` is a
+ * privacy-hardened allowlisted bag of primitives that explicitly may never
+ * carry "capability tokens or share secrets" (`packages/shared/src/
+ * events.ts`'s own doc comment) — and the delivery TOKEN is exactly that, the
+ * only thing the anonymous browser actually holds that could identify WHICH
+ * delivery a view belongs to. A dedicated token-in-URL route (identical
+ * shape to `/ack` above) resolves the delivery server-side the same safe way
+ * `/ack` already does, while preserving the crawler-safety property that
+ * matters (the CLIENT decides when to call this — after `isReady`, fire-once
+ * — never the GET route itself; a crawler that only ever GETs never POSTs
+ * here, so it never produces a Viewed signal, D-09/Pitfall 4).
+ *
+ * Never REGRESSES a later status backward: if the delivery is already
+ * `'acknowledged'` (or, in principle, any later terminal state), `viewedAt`
+ * still gets stamped (first time only — an honest historical record of when
+ * the recipient's player first rendered), but `status` is left untouched.
+ * Only a delivery still sitting at `'delivered'` advances to `'viewed'`.
+ */
+export async function setDeliveryViewed(
+  database: Database,
+  tenantId: string,
+  reviewId: string,
+  token: string,
+): Promise<{ deliveryId: string; alreadyViewed: boolean } | null> {
+  const snapshot = await database.ref(`reviewDeliveries/${tenantId}/${reviewId}`).get();
+  if (!snapshot.exists()) {
+    return null;
+  }
+  const raw = snapshot.val() as Record<string, unknown>;
+  const entry = Object.entries(raw).find(([, value]) => {
+    const parsed = reviewDeliveryRecordSchema.safeParse(value);
+    return parsed.success && parsed.data.token === token;
+  });
+  if (!entry) {
+    return null;
+  }
+  const [deliveryId, rawRecord] = entry;
+  const record = reviewDeliveryRecordSchema.parse(rawRecord);
+
+  if (record.viewedAt != null) {
+    return { deliveryId, alreadyViewed: true };
+  }
+
+  const viewedAt = Date.now();
+  const viewedStatus: ReviewDeliveryState = 'viewed';
+  const updates: Record<string, unknown> = {
+    [`reviewDeliveries/${tenantId}/${reviewId}/${deliveryId}/viewedAt`]: viewedAt,
+  };
+  if (record.status === 'delivered') {
+    updates[`reviewDeliveries/${tenantId}/${reviewId}/${deliveryId}/status`] = viewedStatus;
+  }
+  await database.ref().update(updates);
+
+  return { deliveryId, alreadyViewed: false };
+}

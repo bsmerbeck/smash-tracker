@@ -1822,5 +1822,22 @@
       "body": "Enable it in Profile → Account to manage other players' matches, VODs, and analytics as a coach.",
       "cta": "Go to Profile"
     }
+  },
+  "reviewDelivery": {
+    "seoTitle": "Review from {{name}} · grandfinals.gg",
+    "eyebrow": "Review from your coach · no account needed",
+    "heading": "Review from {{name}}",
+    "published": "Published {{date}}",
+    "nowPlaying": "Now playing",
+    "sourceFallback": "Source {{index}}",
+    "noSource": "This review doesn't cite any footage.",
+    "sectionsEmpty": "This review has no content yet.",
+    "ack": {
+      "prompt": "Let your coach know you've read this.",
+      "button": "✓ Acknowledge",
+      "confirmedTitle": "Acknowledged",
+      "confirmedDetail": "{{date}} — your coach can see this."
+    },
+    "footer": "Acknowledging is recorded as a link acknowledgement (whoever holds this link). This link is revocable and can expire · it grants access to exactly one published version · no drafts, private notes, or workspace access · bot and unfurl visits never count as \"Viewed\"."
   }
 }

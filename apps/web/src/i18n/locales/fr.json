@@ -1822,5 +1822,22 @@
       "body": "Activez-le dans Profil → Compte pour gérer les matchs, VODs et analyses d'autres joueurs en tant que coach.",
       "cta": "Aller au profil"
     }
+  },
+  "reviewDelivery": {
+    "seoTitle": "Analyse de {{name}} · grandfinals.gg",
+    "eyebrow": "Analyse de votre coach · sans compte",
+    "heading": "Analyse de {{name}}",
+    "published": "Publiée le {{date}}",
+    "nowPlaying": "Lecture en cours",
+    "sourceFallback": "Source {{index}}",
+    "noSource": "Cette analyse ne cite aucune vidéo.",
+    "sectionsEmpty": "Cette analyse n'a pas encore de contenu.",
+    "ack": {
+      "prompt": "Indiquez à votre coach que vous avez lu ceci.",
+      "button": "✓ Confirmer la lecture",
+      "confirmedTitle": "Lecture confirmée",
+      "confirmedDetail": "{{date}} — votre coach peut le voir."
+    },
+    "footer": "La confirmation est enregistrée comme une confirmation de lien (par quiconque détient ce lien). Ce lien est révocable et peut expirer · il donne accès à exactement une version publiée · aucun brouillon, note privée ni accès à l'espace de travail · les visites de robots ou d'aperçus ne comptent jamais comme \"Vu\"."
   }
 }
