@@ -225,9 +225,9 @@ export function ReviewsListPage() {
           {reviews.map((review) => (
             <li
               key={review.reviewId}
-              className="flex flex-wrap items-center gap-3 rounded-md border bg-card px-4 py-3"
+              className="flex flex-col gap-2 rounded-md border bg-card px-4 py-3 sm:flex-row sm:flex-wrap sm:items-center sm:gap-3"
             >
-              <div className="min-w-0 flex-1">
+              <div className="min-w-0 sm:flex-1">
                 <p className="truncate text-sm font-medium">{reviewRowLabel(t, review)}</p>
                 <p className="text-xs text-muted-foreground">
                   {t('coaching.reviews.list.rowEdited', {
@@ -235,17 +235,23 @@ export function ReviewsListPage() {
                   })}
                 </p>
               </div>
-              <ReviewStatusBadge item={review} />
-              <DeliveryStatusBadge deliveryState={review.deliveryState} />
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={() => navigate(`/coach/${clientId}/reviews/${review.reviewId}`)}
-              >
-                {t('coaching.reviews.list.open')}
-              </Button>
-              <ReviewDeliveryMenu clientId={clientId} review={review} />
+              <div className="flex items-center gap-2 sm:contents">
+                <ReviewStatusBadge item={review} />
+                <DeliveryStatusBadge deliveryState={review.deliveryState} />
+              </div>
+              <div className="flex items-center gap-2 sm:contents">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => navigate(`/coach/${clientId}/reviews/${review.reviewId}`)}
+                >
+                  {t('coaching.reviews.list.open')}
+                </Button>
+                <div className="ml-auto sm:ml-0">
+                  <ReviewDeliveryMenu clientId={clientId} review={review} />
+                </div>
+              </div>
             </li>
           ))}
         </ul>

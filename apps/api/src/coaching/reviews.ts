@@ -438,30 +438,38 @@ function latestDeliveryRecord(records: ReviewDeliveryRecord[]): ReviewDeliveryRe
 }
 
 /**
- * The most recent delivery's 6-state status for ONE review (D-14: the
- * displayed delivery state always belongs to the review's own delivery
- * lifecycle, never a stale cross-review value). Returns `null` when the
- * review has never had a delivery created — the reviews-list route treats a
- * draft-status review's `null` as "—" (D-14) and a published-status
- * review's `null` as `'not-delivered'`. NOTE: `reviewDeliveries` is written
- * by the delivery backend (12-04, not yet built) — this reads the tree
- * defensively so this route starts reflecting real data the moment 12-04
- * ships, with no code change required here.
+ * The most recent delivery's 6-state status for ONE review, optionally
+ * scoped to a single published `version` (D-14, version-scoped reading: the
+ * displayed delivery state MUST belong to the DISPLAYED version — never an
+ * older version's link). When `version` is passed, candidate records are
+ * filtered to `record.version === version` BEFORE picking the latest by
+ * `createdAt` — a version with no delivery of its own returns `null` even if
+ * an OLDER version has a real delivery. When `version` is omitted, the
+ * all-versions behavior is preserved (back-compat for the direct unit test
+ * and any future all-versions caller). Returns `null` when there is no
+ * matching delivery — the reviews-list route treats a draft-status review's
+ * `null` as "—" (D-14) and a published-status review's `null` as
+ * `'not-delivered'`. NOTE: `reviewDeliveries` is written by the delivery
+ * backend (12-04) — this reads the tree defensively so this route reflects
+ * real data with no code change required here.
  */
 export async function getLatestDeliveryState(
   database: Database,
   tenantId: string,
   reviewId: string,
+  version?: number,
 ): Promise<ReviewDeliveryState | null> {
   const snapshot = await database.ref(`reviewDeliveries/${tenantId}/${reviewId}`).get();
   if (!snapshot.exists()) {
     return null;
   }
   const raw = snapshot.val() as Record<string, unknown>;
-  const records = Object.values(raw).flatMap((value) => {
-    const parsed = reviewDeliveryRecordSchema.safeParse(value);
-    return parsed.success ? [parsed.data] : [];
-  });
+  const records = Object.values(raw)
+    .flatMap((value) => {
+      const parsed = reviewDeliveryRecordSchema.safeParse(value);
+      return parsed.success ? [parsed.data] : [];
+    })
+    .filter((record) => version === undefined || record.version === version);
   return latestDeliveryRecord(records)?.status ?? null;
 }
 
@@ -512,7 +520,10 @@ export async function listReviews(database: Database, tenantId: string): Promise
       const deliveryState =
         status.status === 'draft'
           ? null
-          : ((await getLatestDeliveryState(database, tenantId, reviewId)) ?? 'not-delivered');
+          : status.latestVersion == null
+            ? 'not-delivered'
+            : ((await getLatestDeliveryState(database, tenantId, reviewId, status.latestVersion)) ??
+              'not-delivered');
       return {
         reviewId,
         status: status.status,

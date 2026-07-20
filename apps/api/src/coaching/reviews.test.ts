@@ -424,6 +424,98 @@ describe('listReviews / countOpenDrafts / delivery-state reads', () => {
       getMostRecentDeliveryStateForTenant(asDatabase(database), TENANT_ID),
     ).resolves.toBe('acknowledged');
   });
+
+  it('getLatestDeliveryState filters to a single version when a version argument is passed, and preserves the all-versions default when omitted (D-14)', async () => {
+    const database = new FakeDatabase();
+    await autosaveDraft(asDatabase(database), TENANT_ID, 'review-1', { sections: [] }, 0);
+    database.seed(`reviewDeliveries/${TENANT_ID}/review-1/delivery-v1`, {
+      status: 'acknowledged',
+      createdAt: 200,
+      version: 1,
+    });
+    database.seed(`reviewDeliveries/${TENANT_ID}/review-1/delivery-v2`, {
+      status: 'delivered',
+      createdAt: 100,
+      version: 2,
+    });
+
+    await expect(
+      getLatestDeliveryState(asDatabase(database), TENANT_ID, 'review-1', 2),
+    ).resolves.toBe('delivered');
+    await expect(
+      getLatestDeliveryState(asDatabase(database), TENANT_ID, 'review-1', 1),
+    ).resolves.toBe('acknowledged');
+    // No version argument -> latest by createdAt across all versions (back-compat, unchanged).
+    await expect(getLatestDeliveryState(asDatabase(database), TENANT_ID, 'review-1')).resolves.toBe(
+      'acknowledged',
+    );
+  });
+
+  it('listReviews shows "not-delivered" (never a stale older link) for a Published v2 row whose only delivery pins v1 (D-14, UAT test 12)', async () => {
+    const database = new FakeDatabase();
+    const { revision } = await autosaveDraft(
+      asDatabase(database),
+      TENANT_ID,
+      'review-1',
+      { sections: [] },
+      0,
+    );
+    await publishReview(asDatabase(database), TENANT_ID, 'review-1', {
+      coachUid: COACH_UID,
+      sessionId: SESSION_ID,
+    });
+    database.seed(`reviewDeliveries/${TENANT_ID}/review-1/delivery-a`, {
+      status: 'acknowledged',
+      createdAt: 100,
+      version: 1,
+    });
+    await autosaveDraft(asDatabase(database), TENANT_ID, 'review-1', { sections: [] }, revision);
+    await publishReview(asDatabase(database), TENANT_ID, 'review-1', {
+      coachUid: COACH_UID,
+      sessionId: SESSION_ID,
+    });
+
+    const rows = await listReviews(asDatabase(database), TENANT_ID);
+
+    expect(rows[0]).toMatchObject({
+      reviewId: 'review-1',
+      latestVersion: 2,
+      deliveryState: 'not-delivered',
+    });
+  });
+
+  it('listReviews shows the real delivery state when the delivery pins the DISPLAYED (latest) version (D-14)', async () => {
+    const database = new FakeDatabase();
+    const { revision } = await autosaveDraft(
+      asDatabase(database),
+      TENANT_ID,
+      'review-1',
+      { sections: [] },
+      0,
+    );
+    await publishReview(asDatabase(database), TENANT_ID, 'review-1', {
+      coachUid: COACH_UID,
+      sessionId: SESSION_ID,
+    });
+    await autosaveDraft(asDatabase(database), TENANT_ID, 'review-1', { sections: [] }, revision);
+    await publishReview(asDatabase(database), TENANT_ID, 'review-1', {
+      coachUid: COACH_UID,
+      sessionId: SESSION_ID,
+    });
+    database.seed(`reviewDeliveries/${TENANT_ID}/review-1/delivery-v2`, {
+      status: 'delivered',
+      createdAt: 100,
+      version: 2,
+    });
+
+    const rows = await listReviews(asDatabase(database), TENANT_ID);
+
+    expect(rows[0]).toMatchObject({
+      reviewId: 'review-1',
+      latestVersion: 2,
+      deliveryState: 'delivered',
+    });
+  });
 });
 
 describe('DEFAULT_REVIEW_SECTIONS', () => {

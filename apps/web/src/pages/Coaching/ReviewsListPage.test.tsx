@@ -234,4 +234,27 @@ describe('ReviewsListPage', () => {
       ),
     ).toBeInTheDocument();
   });
+
+  it('stacks the card title above the chips row on mobile while preserving the desktop row (D-13)', async () => {
+    reviewsList.mockResolvedValue([
+      makeReview({ status: 'published', latestVersion: 2, deliveryState: 'acknowledged' }),
+    ]);
+    renderList();
+
+    const title = await screen.findByText(/Review — started/);
+    const statusChip = await screen.findByText('Published v2');
+
+    // The card root (<li>) stacks on mobile (flex-col) and becomes the
+    // existing single row at `sm` (sm:flex-row) — this directly encodes the
+    // D-13 fix (mobile-first stack, desktop row preserved).
+    const cardRoot = title.closest('li');
+    expect(cardRoot).not.toBeNull();
+    expect(cardRoot?.className).toContain('flex-col');
+    expect(cardRoot?.className).toContain('sm:flex-row');
+
+    // The title and the status chip must NOT share the same immediate
+    // parent — they live in separate stacking rows, so the title is no
+    // longer a sibling competing on the crush row with the chips.
+    expect(title.parentElement).not.toBe(statusChip.parentElement);
+  });
 });
