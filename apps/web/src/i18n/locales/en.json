@@ -1705,7 +1705,10 @@
         "evidence": {
           "heading_one": "Evidence ({{count}})",
           "heading_other": "Evidence ({{count}})",
-          "empty": "No timestamped notes on this source yet."
+          "empty": "No timestamped notes on this source yet.",
+          "cite": "Cite",
+          "citeCurrentMoment": "⏱ Cite current moment",
+          "citedIndicator": "cited"
         },
         "tabs": {
           "clientReview": "Client review",
@@ -1750,6 +1753,21 @@
           "empty": "(empty)",
           "seeTheirs": "See theirs",
           "keepMine": "Keep mine"
+        },
+        "citation": {
+          "jumpAria": "Jump to {{timestamp}}",
+          "jumpToSourceAria": "Jump to {{timestamp}} in {{source}}"
+        },
+        "citeSectionPrompt": {
+          "title": "Cite into which section?",
+          "description": "Nothing is focused right now — pick a section and the citation is added to the end of it.",
+          "empty": "No visible sections to cite into yet."
+        },
+        "preview": {
+          "title": "Preview as client",
+          "description": "Exactly what the client will see once this review is delivered — no private notes, ever.",
+          "error": "Something went wrong loading the preview.",
+          "empty": "Nothing to preview yet — add some content first."
         }
       }
     },
