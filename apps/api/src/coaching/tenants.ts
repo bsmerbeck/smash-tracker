@@ -9,6 +9,7 @@ import {
 } from '@smash-tracker/shared';
 import { buildDomainEnvelope } from '../events/envelope.js';
 import { createEvent } from '../events/ledger.js';
+import { onboardingCausePayload } from '../onboarding/activation.js';
 import { ConflictError, ForbiddenError, RtdbService } from '../services/rtdb.js';
 import { countOpenDrafts, getMostRecentDeliveryStateForTenant } from './reviews.js';
 
@@ -183,6 +184,12 @@ export async function createClient(
   // Fire-and-forget, mirrors `signup_completed`'s call site (users.ts) — the
   // durable RTDB write above has already committed, so this D event rides a
   // genuine transition (MEAS-02) rather than gating the response on it.
+  //
+  // Phase 13 (ONBD-05, D-08): payload carries onboardingCause=coach_clients
+  // ONLY when the coach's saved intent is coach_clients (mirrors matches.ts's
+  // client_vod_attached call site) — causationId stays tenantId (the dedup
+  // key), never repurposed to carry the cause (RESEARCH.md Pattern 3).
+  const payload = await onboardingCausePayload(database, coachUid);
   void createEvent(
     database,
     buildDomainEnvelope({
@@ -191,6 +198,7 @@ export async function createClient(
       sessionId: options.sessionId,
       causationId: tenantId,
       consentState: 'unknown',
+      payload,
     }),
   );
 

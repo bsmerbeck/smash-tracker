@@ -285,6 +285,35 @@ describe('publishReview / previewClientVersion', () => {
       expect((row as { payload: unknown }).payload).toEqual({});
     }
   });
+
+  // Phase 13 (ONBD-05, D-08): the coach-cause payload rides in `payload`,
+  // never `causationId`, and only when the coach's saved intent is
+  // coach_clients — applies to coach_review_published (v1) here; the v2+
+  // review_revision_published branch shares the same emission call site.
+  it('stamps payload.onboardingCause=coach_clients on coach_review_published when the coach saved that intent', async () => {
+    const database = new FakeDatabase();
+    database.seed(`users/${COACH_UID}/onboardingIntent`, 'coach_clients');
+    await autosaveDraft(
+      asDatabase(database),
+      TENANT_ID,
+      'review-1',
+      { sections: [makeSection()], coachPrivateNotes: null },
+      0,
+    );
+
+    await publishReview(asDatabase(database), TENANT_ID, 'review-1', {
+      coachUid: COACH_UID,
+      sessionId: SESSION_ID,
+    });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    const dump = database.dump() as { eventLedger?: Record<string, Record<string, unknown>> };
+    const rows = Object.values(dump.eventLedger ?? {}).flatMap((day) => Object.values(day));
+    const row = rows.find(
+      (r) => (r as { eventName: string }).eventName === 'coach_review_published',
+    );
+    expect(row).toMatchObject({ payload: { onboardingCause: 'coach_clients' } });
+  });
 });
 
 describe('section hide/add', () => {
