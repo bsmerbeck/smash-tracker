@@ -1848,6 +1848,11 @@
       "confirmedTitle": "Lectura confirmada",
       "confirmedDetail": "{{date}} — tu entrenador puede verlo."
     },
+    "cta": {
+      "title": "Analiza tus propias partidas a continuación",
+      "body": "grandfinals.gg es un tracker gratuito para Super Smash Bros. Ultimate — registra tus propias partidas y torneos, revisa tus VODs con notas de salto directo, analiza matchups y sigue tu GSP y tu rating con el tiempo. No hace falta cuenta para explorar; empezar es gratis.",
+      "button": "Empezar gratis"
+    },
     "footer": "La confirmación se registra como una confirmación de enlace (quien tenga este enlace). Este enlace es revocable y puede caducar · da acceso a exactamente una versión publicada · sin borradores, notas privadas ni acceso al espacio de trabajo · las visitas de bots o vistas previas nunca cuentan como \"Visto\"."
   }
 }

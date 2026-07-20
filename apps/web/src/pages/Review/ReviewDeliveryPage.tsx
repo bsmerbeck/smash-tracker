@@ -18,6 +18,7 @@ import { SafeMarkdown } from '@/lib/safeMarkdown';
 import { VodPlayer } from '@/pages/VodManager/components/VodPlayer';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
+import * as onboardingOrigin from '@/lib/onboardingOrigin';
 
 /**
  * D-08/DLV-02: the anonymous, no-account `/r/:token` recipient page for a
@@ -203,6 +204,14 @@ export function ReviewDeliveryPage() {
     });
   }
 
+  // ONBD-01/D-02: `/r/:token` is the AMBIGUOUS origin (a recipient might
+  // want to review their own VODs or track improvement — routes to the
+  // ASK variant in 13-06, never a claim-shaped path). This page had NO
+  // signup CTA before this phase (Pitfall 4) — net-new UI, not a retarget.
+  function handleSignupCtaClick() {
+    onboardingOrigin.stamp({ kind: 'coachReview', returnPath: `/r/${token}` });
+  }
+
   return (
     <PublicLayout>
       <div className="mx-auto flex w-full max-w-2xl flex-col gap-6 px-4 py-8">
@@ -294,6 +303,16 @@ export function ReviewDeliveryPage() {
               </Button>
             </>
           )}
+        </div>
+
+        <div className="rounded-lg border bg-muted/40 p-4 text-center">
+          <p className="font-medium">{t('reviewDelivery.cta.title')}</p>
+          <p className="mt-1 text-sm text-muted-foreground">{t('reviewDelivery.cta.body')}</p>
+          <Button asChild className="mt-3">
+            <Link to="/" onClick={handleSignupCtaClick}>
+              {t('reviewDelivery.cta.button')}
+            </Link>
+          </Button>
         </div>
 
         <p className="text-xs text-muted-foreground">{t('reviewDelivery.footer')}</p>

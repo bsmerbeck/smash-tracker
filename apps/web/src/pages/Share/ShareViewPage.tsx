@@ -35,6 +35,7 @@ import { cn } from '@/lib/utils';
 import { postCanonicalEvent } from '@/lib/canonicalEvents';
 import { logProductEvent } from '@/lib/firebase';
 import * as shareReferral from '@/lib/shareReferral';
+import * as onboardingOrigin from '@/lib/onboardingOrigin';
 import { getOrCreateSessionId, getStoredDisplayName, setDisplayName } from '@/lib/coachSession';
 import { readStoredQuickTags, persistQuickTags } from '@/pages/VodManager/lib/vodPrefs';
 import { QuickTagPanel } from '@/pages/VodManager/components/QuickTagPanel';
@@ -551,6 +552,15 @@ export function ShareViewPage() {
     logProductEvent('share_opened', { share_kind: snapshot.kind === 'recap' ? 'recap' : 'review' });
     if (token) {
       shareReferral.stamp(token);
+      // ONBD-01/D-02: VOD-share is one of the two LOCKED unambiguous
+      // origins ("Review a VOD") — stamped here, distinct from the recap
+      // kind, which `RecapView.tsx` stamps separately at its own mount
+      // (Pitfall 3: this component early-returns to `<RecapView>` for
+      // `kind === 'recap'` BEFORE its own render tree, but this effect
+      // still runs for every kind since hooks execute before that return).
+      if (snapshot.kind !== 'recap') {
+        onboardingOrigin.stamp({ kind: 'vodShare', returnPath: `/s/${token}` });
+      }
     }
   }, [snapshot, token]);
 

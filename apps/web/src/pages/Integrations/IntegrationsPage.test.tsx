@@ -14,6 +14,7 @@ vi.mock('firebase/auth', async () => {
     signInWithEmailAndPassword: mock.signInWithEmailAndPassword,
     createUserWithEmailAndPassword: mock.createUserWithEmailAndPassword,
     signInWithPopup: mock.signInWithPopup,
+    getRedirectResult: mock.getRedirectResult,
     signInWithCustomToken: mock.signInWithCustomToken,
     signOut: mock.signOut,
     getAuth: mock.getAuth,

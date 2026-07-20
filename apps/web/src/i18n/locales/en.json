@@ -1848,6 +1848,11 @@
       "confirmedTitle": "Acknowledged",
       "confirmedDetail": "{{date}} — your coach can see this."
     },
+    "cta": {
+      "title": "Review your own matches next",
+      "body": "grandfinals.gg is a free tracker for Super Smash Bros. Ultimate — log your own matches and tournaments, review VODs with click-to-seek notes, scout matchups, and follow your GSP and rating over time. No account needed to look around; free to start.",
+      "button": "Get started free"
+    },
     "footer": "Acknowledging is recorded as a link acknowledgement (whoever holds this link). This link is revocable and can expire · it grants access to exactly one published version · no drafts, private notes, or workspace access · bot and unfurl visits never count as \"Viewed\"."
   }
 }

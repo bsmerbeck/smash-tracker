@@ -1,12 +1,14 @@
 import {
   createUserWithEmailAndPassword,
   EmailAuthProvider,
+  getRedirectResult,
   onAuthStateChanged,
   reauthenticateWithCredential,
   sendPasswordResetEmail,
   signInWithCustomToken,
   signInWithEmailAndPassword,
   signInWithPopup,
+  signInWithRedirect,
   signOut as firebaseSignOut,
   updatePassword,
   updateProfile,
@@ -118,6 +120,28 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return unsubscribe;
   }, [queryClient]);
 
+  // ONBD-01/D-03, RESEARCH.md Pattern 1/Pitfall 1: completes a
+  // `signInWithRedirect` that just finished — runs once per app boot,
+  // independent of `signInWithGoogle`'s own lifecycle (which returned
+  // before reaching its own `provisionUser()` call for the redirect
+  // branch, since the browser navigated away). `getRedirectResult`
+  // resolves with `null` (a no-op) on every ordinary page load that
+  // ISN'T the tail end of a redirect, so this is safe to run
+  // unconditionally on every boot. Mirrors `provisionUser`'s own
+  // error-swallow discipline — a redirect-completion failure must never
+  // block the rest of sign-in from working.
+  useEffect(() => {
+    getRedirectResult(getFirebaseAuth())
+      .then((credential) => {
+        if (credential) {
+          void provisionUser();
+        }
+      })
+      .catch((error) => {
+        console.error('Redirect sign-in failed', error);
+      });
+  }, []);
+
   const value = useMemo<AuthContextValue>(() => {
     // Reading profileVersion here keeps it an honest dependency: its bump is
     // what refreshes this value (and every consumer) after an in-place
@@ -140,8 +164,26 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         // distinct from `signup_completed` (server-only D event, fired only
         // on successful first-ever provisioning in users.ts).
         postCanonicalEvent('signup_cta_clicked');
-        await signInWithPopup(getFirebaseAuth(), createGoogleAuthProvider());
-        await provisionUser();
+        try {
+          await signInWithPopup(getFirebaseAuth(), createGoogleAuthProvider());
+          await provisionUser();
+        } catch (error) {
+          if ((error as { code?: string }).code === 'auth/popup-blocked') {
+            // ONBD-01/D-03, RESEARCH.md Pitfall 1: `signInWithRedirect`
+            // navigates the browser AWAY immediately — nothing after this
+            // line ever runs for THIS attempt (this component instance is
+            // about to be torn down). The completion handshake
+            // (`provisionUser()` for the redirect branch) happens in a
+            // SEPARATE lifecycle: the boot-time `getRedirectResult` effect
+            // below, which survives the full-page round trip. Only the
+            // genuine popup-blocked case redirects — `auth/popup-closed-by-
+            // user` (a real user cancel) is untouched and still re-thrown
+            // to SignInCard's existing FB-02 grace-timer/toast handling.
+            await signInWithRedirect(getFirebaseAuth(), createGoogleAuthProvider());
+            return;
+          }
+          throw error;
+        }
       },
       signInWithToken: async (customToken) => {
         await signInWithCustomToken(getFirebaseAuth(), customToken);
