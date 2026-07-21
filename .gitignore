@@ -20,4 +20,11 @@ coverage
 # firebase
 .firebase/
 .firebaserc
-.claude/worktrees/
+
+# local-only tooling & planning docs (never commit — owner decision 2026-07-21)
+.claude/
+.planning/
+docs/
+.agents/
+.codex/
+AGENTS.md
