@@ -112,6 +112,20 @@ export const EVENT_CATALOG = {
   // shorthand. See `apps/api/src/coaching/reviewDeliveries.ts`'s
   // `setDeliveryViewed` doc comment for the full rationale.
   client_review_view_loaded: 'D',
+  // Phase 12 (D-09/D-11): these three were emitted server-side from the
+  // start but omitted from this catalog during Phase 12 — added now for
+  // audit/doc parity. `coach_review_published` and `review_revision_published`
+  // fire from `publishReview`'s v1-vs-vN branch (`apps/api/src/coaching/reviews.ts`)
+  // right after the new review version's durable RTDB write commits.
+  // `client_review_acknowledged` fires from the anonymous review-delivery
+  // link-ack route (`apps/api/src/routes/publicReviewDeliveries.ts`) on the
+  // genuine first-ack RTDB transition. GA4 projection
+  // (`GA4_PAYLOAD_ALLOWLIST` in apps/api/src/events/ga4Project.ts) is
+  // deliberately still deferred for all three, matching the existing
+  // coach-event precedent — the RTDB ledger remains the source of truth.
+  coach_review_published: 'D',
+  review_revision_published: 'D',
+  client_review_acknowledged: 'D',
   // Phase 13 (Coach-Aware Intent Onboarding, ONBD-02/ONBD-04/ONBD-05): the
   // onboarding intent-save event, the newly-wired coaching-mode-enable
   // event (see comment above), and the four player activation events —

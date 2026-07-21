@@ -73,6 +73,9 @@ describe('EVENT_CATALOG', () => {
       managed_client_created: 'D',
       client_vod_attached: 'D',
       client_review_view_loaded: 'D',
+      coach_review_published: 'D',
+      review_revision_published: 'D',
+      client_review_acknowledged: 'D',
       onboarding_intent_selected: 'D',
       coaching_mode_enabled: 'D',
       analytics_activated: 'D',
@@ -94,6 +97,12 @@ describe('EVENT_CATALOG', () => {
 
   it('does not ship coaching_client_selected (still deferred — pure route state, no durable server transition)', () => {
     expect(EVENT_CATALOG).not.toHaveProperty('coaching_client_selected');
+  });
+
+  it('maps the three Phase 12 coach review/delivery events to class D', () => {
+    expect(EVENT_CATALOG.coach_review_published).toBe('D');
+    expect(EVENT_CATALOG.review_revision_published).toBe('D');
+    expect(EVENT_CATALOG.client_review_acknowledged).toBe('D');
   });
 
   // Phase 13 (ONBD-02/ONBD-05, RESEARCH Pitfall 2): coaching_mode_enabled
