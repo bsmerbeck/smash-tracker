@@ -1,9 +1,15 @@
 import '@testing-library/jest-dom/vitest';
+import { configure } from '@testing-library/react';
 // i18n initialized with the bundled English resources (V15): components use
 // t() but every existing English text assertion keeps working — jsdom has no
 // navigator language worth detecting, and localStorage starts empty, so
 // tests always run under the 'en' fallback.
 import '@/i18n';
+
+// GitHub Actions runners are ~3x slower than dev hardware; heavy chart pages
+// (GspPage) can take >1s to paint async data, so testing-library's 1s default
+// for findBy*/waitFor flakes there. 5s stays well under vitest's 15s test cap.
+configure({ asyncUtilTimeout: 5_000 });
 
 /**
  * jsdom doesn't implement ResizeObserver, but cmdk (used by the shadcn
