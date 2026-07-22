@@ -8,6 +8,7 @@ import { runProjectGa4 } from '../jobs/projectGa4.js';
 import { runReconcile } from '../jobs/reconcile.js';
 import { runSweepStuckReportJobs } from '../jobs/sweepStuckReportJobs.js';
 import { runPrune } from '../jobs/prune.js';
+import { runFunnelReadout } from '../jobs/funnelReadout.js';
 
 const INTERNAL_JOBS_SECRET_HEADER = 'x-internal-jobs-secret';
 
@@ -39,6 +40,31 @@ const sweepStuckReportJobsResultSchema = z.object({
 const pruneResultSchema = z.object({
   prunedLedgerDays: z.array(z.string()),
   prunedExceptionDays: z.array(z.string()),
+});
+
+/** Quick task 260722-lxt: aggregate-only count map — keys are event/exception names, never person-derived fields. */
+const countMapSchema = z.record(z.string(), z.number().int().nonnegative());
+
+const funnelReadoutResultSchema = z.object({
+  generatedAt: z.number().int().nonnegative(),
+  days: z.array(
+    z.object({
+      day: z.string(),
+      eventCounts: countMapSchema,
+      exceptionCounts: countMapSchema,
+      pendingProjection: z.number().int().nonnegative(),
+    }),
+  ),
+  totals: z.object({
+    eventCounts: countMapSchema,
+    exceptionCounts: countMapSchema,
+    pendingProjection: z.number().int().nonnegative(),
+  }),
+});
+
+/** Hard 14-day cap enforced at the route boundary — the module clamps again as defense-in-depth. */
+const funnelReadoutQuerySchema = z.object({
+  days: z.coerce.number().int().min(1).max(14).default(7),
 });
 
 /**
@@ -163,6 +189,30 @@ const internalJobsRoutes: FastifyPluginAsyncZod<InternalJobsRoutesOptions> = asy
       // MEAS-08: whole-day-node retention pruning — never a per-record scan.
       const result = await runPrune(app.firebase.database);
       request.log.info(result, 'prune run summary');
+      return result;
+    },
+  );
+
+  // Quick task 260722-lxt: a bounded, aggregate-only operator readout for
+  // the Phase 10 two-week soak gate. One curl gets Stage-1/Stage-3 funnel
+  // evidence instead of Firebase-console spelunking:
+  //   curl -sS -H "X-Internal-Jobs-Secret: $SECRET" "$HOST/internal/jobs/funnel-readout?days=7" | jq
+  app.get(
+    '/internal/jobs/funnel-readout',
+    {
+      preHandler: requireInternalJobsSecret,
+      schema: {
+        querystring: funnelReadoutQuerySchema,
+        response: {
+          200: funnelReadoutResultSchema,
+          401: errorResponseSchema,
+        },
+      },
+    },
+    async (request) => {
+      const { days } = request.query;
+      const result = await runFunnelReadout(app.firebase.database, { days });
+      request.log.info({ days, generatedAt: result.generatedAt }, 'funnel-readout run summary');
       return result;
     },
   );
