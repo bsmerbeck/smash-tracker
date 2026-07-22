@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { InternalJobsConfig } from '../config/env.js';
 import { buildTestApp } from '../test-support/testApp.js';
+import { dayShardKey } from '../events/ledger.js';
 
 const INTERNAL_JOBS_CONFIG: InternalJobsConfig = { secret: 'test-scheduler-secret' };
 const SECRET_HEADER = 'x-internal-jobs-secret';
@@ -92,6 +93,100 @@ describe('GET /internal/jobs/sweep-stuck-jobs', () => {
     });
     expect(response.statusCode).toBe(200);
     expect(response.json()).toEqual({ swept: 0, refunded: 0 });
+  });
+});
+
+describe('GET /internal/jobs/funnel-readout', () => {
+  it('answers 401 when the secret header is missing', async () => {
+    const { app } = buildTestApp({ internalJobs: INTERNAL_JOBS_CONFIG });
+    const response = await app.inject({ method: 'GET', url: '/internal/jobs/funnel-readout' });
+    expect(response.statusCode).toBe(401);
+  });
+
+  it('answers 401 when the secret header is wrong', async () => {
+    const { app } = buildTestApp({ internalJobs: INTERNAL_JOBS_CONFIG });
+    const response = await app.inject({
+      method: 'GET',
+      url: '/internal/jobs/funnel-readout',
+      headers: { [SECRET_HEADER]: 'wrong-secret' },
+    });
+    expect(response.statusCode).toBe(401);
+  });
+
+  it('answers 400 when days is out of range or non-numeric', async () => {
+    const { app } = buildTestApp({ internalJobs: INTERNAL_JOBS_CONFIG });
+
+    const tooHigh = await app.inject({
+      method: 'GET',
+      url: '/internal/jobs/funnel-readout?days=15',
+      headers: { [SECRET_HEADER]: INTERNAL_JOBS_CONFIG.secret },
+    });
+    expect(tooHigh.statusCode).toBe(400);
+
+    const tooLow = await app.inject({
+      method: 'GET',
+      url: '/internal/jobs/funnel-readout?days=0',
+      headers: { [SECRET_HEADER]: INTERNAL_JOBS_CONFIG.secret },
+    });
+    expect(tooLow.statusCode).toBe(400);
+
+    const nonNumeric = await app.inject({
+      method: 'GET',
+      url: '/internal/jobs/funnel-readout?days=abc',
+      headers: { [SECRET_HEADER]: INTERNAL_JOBS_CONFIG.secret },
+    });
+    expect(nonNumeric.statusCode).toBe(400);
+  });
+
+  it('runs the handler and returns 200 with aggregate-only funnel data when authorized', async () => {
+    const { app, database } = buildTestApp({ internalJobs: INTERNAL_JOBS_CONFIG });
+    const today = dayShardKey(Date.now());
+
+    database.seed(`eventLedger/${today}/key1`, { eventName: 'signup_completed' });
+    database.seed(`eventLedger/${today}/key2`, { eventName: 'signup_completed' });
+    database.seed(`reconciliationExceptions/${today}/exc1`, {
+      kind: 'missing_event',
+      subjectRef: 'some-uid',
+      expected: { eventName: 'checkout_completed' },
+      actual: 'absent',
+      detectedAt: Date.now(),
+    });
+    database.seed(`outboxPending/${today}/key1`, { attempt: 0, nextRetryAt: null });
+
+    const response = await app.inject({
+      method: 'GET',
+      url: '/internal/jobs/funnel-readout?days=1',
+      headers: { [SECRET_HEADER]: INTERNAL_JOBS_CONFIG.secret },
+    });
+
+    expect(response.statusCode).toBe(200);
+    const body = response.json() as {
+      generatedAt: number;
+      days: Array<{
+        day: string;
+        eventCounts: Record<string, number>;
+        exceptionCounts: Record<string, number>;
+        pendingProjection: number;
+      }>;
+      totals: {
+        eventCounts: Record<string, number>;
+        exceptionCounts: Record<string, number>;
+        pendingProjection: number;
+      };
+    };
+
+    expect(typeof body.generatedAt).toBe('number');
+    expect(body.days).toHaveLength(1);
+    expect(body.days[0]?.day).toBe(today);
+    expect(body.totals.eventCounts).toEqual({ signup_completed: 2 });
+    expect(body.totals.exceptionCounts).toEqual({ missing_event: 1 });
+    expect(body.totals.pendingProjection).toBe(1);
+
+    const serialized = response.body;
+    expect(serialized).not.toContain('subjectRef');
+    expect(serialized).not.toContain('actorId');
+    expect(serialized).not.toContain('payload');
+    expect(serialized).not.toContain('detectedAt');
   });
 });
 
