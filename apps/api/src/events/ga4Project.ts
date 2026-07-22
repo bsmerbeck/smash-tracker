@@ -23,8 +23,12 @@ export interface Ga4ProjectedEvent {
  * Per-eventName allowlist of payload keys safe to forward to GA4. An entry
  * with an empty array still projects (client_id + event name only, no
  * params) — only an eventName ABSENT from this map has no GA4 projection at
- * all. Deliberately scoped to exactly the catalog this phase's projection
- * worker is expected to relay (`EVENT_CATALOG` in packages/shared).
+ * all. Covers the full `EVENT_CATALOG` in packages/shared, including the
+ * coaching/onboarding events wired up in quick task 260722-lh1: only
+ * enum-like keys (e.g. `onboardingCause`, `intent`) and booleans (e.g.
+ * `asked`, projected as their string form — see `String(value)` below) are
+ * ever listed; identifier-bearing events (view/ack/coaching_mode_enabled)
+ * map to an empty list.
  */
 const GA4_PAYLOAD_ALLOWLIST: Readonly<Record<string, readonly string[]>> = {
   signup_completed: [],
@@ -38,6 +42,18 @@ const GA4_PAYLOAD_ALLOWLIST: Readonly<Record<string, readonly string[]>> = {
   report_failed: [],
   share_view_loaded: ['kind'],
   signup_cta_clicked: [],
+  managed_client_created: ['onboardingCause'],
+  client_vod_attached: ['onboardingCause'],
+  client_review_view_loaded: [],
+  coach_review_published: ['onboardingCause'],
+  review_revision_published: ['onboardingCause'],
+  client_review_acknowledged: [],
+  onboarding_intent_selected: ['intent', 'asked'],
+  coaching_mode_enabled: [],
+  analytics_activated: ['onboardingCause'],
+  vod_activated: ['onboardingCause'],
+  tournament_prep_activated: ['onboardingCause'],
+  scout_activated: ['onboardingCause'],
 };
 
 function ga4ClientId(actorId: string, sessionId: string): string {
@@ -55,6 +71,8 @@ export function projectEventToGa4(envelope: EventEnvelope): Ga4ProjectedEvent | 
     const value = envelope.payload[key];
     if (typeof value === 'string' || typeof value === 'number') {
       params[key] = value;
+    } else if (typeof value === 'boolean') {
+      params[key] = String(value);
     }
   }
 

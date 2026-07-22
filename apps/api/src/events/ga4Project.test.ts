@@ -83,6 +83,172 @@ describe('projectEventToGa4', () => {
     expect(serialized).not.toContain('session-abc');
     expect(serialized).not.toContain('evt_123');
   });
+
+  it('returns null for a coaching-shaped-but-unlisted eventName', () => {
+    const projected = projectEventToGa4(baseEnvelope({ eventName: 'coaching_client_selected' }));
+    expect(projected).toBeNull();
+  });
+});
+
+describe('projectEventToGa4 — coaching/onboarding ledger-only events (quick task 260722-lh1)', () => {
+  it('projects managed_client_created with only onboardingCause', () => {
+    const projected = projectEventToGa4(
+      baseEnvelope({
+        eventName: 'managed_client_created',
+        payload: { onboardingCause: 'coach_clients' },
+      }),
+    );
+
+    expect(projected).not.toBeNull();
+    expect(projected?.params).toEqual({ onboardingCause: 'coach_clients' });
+  });
+
+  it('projects client_vod_attached with only onboardingCause', () => {
+    const projected = projectEventToGa4(
+      baseEnvelope({
+        eventName: 'client_vod_attached',
+        payload: { onboardingCause: 'coach_clients' },
+      }),
+    );
+
+    expect(projected).not.toBeNull();
+    expect(projected?.params).toEqual({ onboardingCause: 'coach_clients' });
+  });
+
+  it('projects client_review_view_loaded with empty params (no payload keys allowlisted)', () => {
+    const projected = projectEventToGa4(
+      baseEnvelope({ eventName: 'client_review_view_loaded', payload: {} }),
+    );
+
+    expect(projected).not.toBeNull();
+    expect(projected?.params).toEqual({});
+  });
+
+  it('projects coach_review_published with only onboardingCause', () => {
+    const projected = projectEventToGa4(
+      baseEnvelope({
+        eventName: 'coach_review_published',
+        payload: { onboardingCause: 'coach_clients' },
+      }),
+    );
+
+    expect(projected).not.toBeNull();
+    expect(projected?.params).toEqual({ onboardingCause: 'coach_clients' });
+  });
+
+  it('projects review_revision_published with only onboardingCause', () => {
+    const projected = projectEventToGa4(
+      baseEnvelope({
+        eventName: 'review_revision_published',
+        payload: { onboardingCause: 'coach_clients' },
+      }),
+    );
+
+    expect(projected).not.toBeNull();
+    expect(projected?.params).toEqual({ onboardingCause: 'coach_clients' });
+  });
+
+  it('projects client_review_acknowledged with empty params (no payload keys allowlisted)', () => {
+    const projected = projectEventToGa4(
+      baseEnvelope({ eventName: 'client_review_acknowledged', payload: {} }),
+    );
+
+    expect(projected).not.toBeNull();
+    expect(projected?.params).toEqual({});
+  });
+
+  it('projects onboarding_intent_selected with intent and asked coerced to a string', () => {
+    const projected = projectEventToGa4(
+      baseEnvelope({
+        eventName: 'onboarding_intent_selected',
+        payload: { intent: 'coach_clients', asked: true },
+      }),
+    );
+
+    expect(projected).not.toBeNull();
+    expect(projected?.params).toEqual({ intent: 'coach_clients', asked: 'true' });
+  });
+
+  it('coerces a false boolean payload value to the string "false"', () => {
+    const projected = projectEventToGa4(
+      baseEnvelope({
+        eventName: 'onboarding_intent_selected',
+        payload: { intent: 'coach_clients', asked: false },
+      }),
+    );
+
+    expect(projected?.params).toEqual({ intent: 'coach_clients', asked: 'false' });
+  });
+
+  it('projects coaching_mode_enabled with empty params (no payload keys allowlisted)', () => {
+    const projected = projectEventToGa4(
+      baseEnvelope({ eventName: 'coaching_mode_enabled', payload: {} }),
+    );
+
+    expect(projected).not.toBeNull();
+    expect(projected?.params).toEqual({});
+  });
+
+  it('projects analytics_activated with only onboardingCause', () => {
+    const projected = projectEventToGa4(
+      baseEnvelope({
+        eventName: 'analytics_activated',
+        payload: { onboardingCause: 'analyze_own_play' },
+      }),
+    );
+
+    expect(projected).not.toBeNull();
+    expect(projected?.params).toEqual({ onboardingCause: 'analyze_own_play' });
+  });
+
+  it('projects vod_activated with only onboardingCause', () => {
+    const projected = projectEventToGa4(
+      baseEnvelope({
+        eventName: 'vod_activated',
+        payload: { onboardingCause: 'analyze_own_play' },
+      }),
+    );
+
+    expect(projected).not.toBeNull();
+    expect(projected?.params).toEqual({ onboardingCause: 'analyze_own_play' });
+  });
+
+  it('projects tournament_prep_activated with only onboardingCause', () => {
+    const projected = projectEventToGa4(
+      baseEnvelope({
+        eventName: 'tournament_prep_activated',
+        payload: { onboardingCause: 'analyze_own_play' },
+      }),
+    );
+
+    expect(projected).not.toBeNull();
+    expect(projected?.params).toEqual({ onboardingCause: 'analyze_own_play' });
+  });
+
+  it('projects scout_activated with only onboardingCause', () => {
+    const projected = projectEventToGa4(
+      baseEnvelope({
+        eventName: 'scout_activated',
+        payload: { onboardingCause: 'analyze_own_play' },
+      }),
+    );
+
+    expect(projected).not.toBeNull();
+    expect(projected?.params).toEqual({ onboardingCause: 'analyze_own_play' });
+  });
+
+  it('drops a non-allowlisted identifier key alongside a valid onboardingCause', () => {
+    const projected = projectEventToGa4(
+      baseEnvelope({
+        eventName: 'managed_client_created',
+        payload: { onboardingCause: 'coach_clients', tenantId: 'tenant-secret-456' },
+      }),
+    );
+
+    expect(projected?.params).toEqual({ onboardingCause: 'coach_clients' });
+    expect(projected?.params).not.toHaveProperty('tenantId');
+    expect(JSON.stringify(projected)).not.toContain('tenant-secret-456');
+  });
 });
 
 /**
