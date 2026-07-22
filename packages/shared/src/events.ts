@@ -119,10 +119,9 @@ export const EVENT_CATALOG = {
   // right after the new review version's durable RTDB write commits.
   // `client_review_acknowledged` fires from the anonymous review-delivery
   // link-ack route (`apps/api/src/routes/publicReviewDeliveries.ts`) on the
-  // genuine first-ack RTDB transition. GA4 projection
-  // (`GA4_PAYLOAD_ALLOWLIST` in apps/api/src/events/ga4Project.ts) is
-  // deliberately still deferred for all three, matching the existing
-  // coach-event precedent — the RTDB ledger remains the source of truth.
+  // genuine first-ack RTDB transition. Each of these three now projects to GA4
+  // via `GA4_PAYLOAD_ALLOWLIST` in apps/api/src/events/ga4Project.ts (quick
+  // task 260722-lh1) — the RTDB ledger remains the source of truth.
   coach_review_published: 'D',
   review_revision_published: 'D',
   client_review_acknowledged: 'D',
@@ -130,10 +129,9 @@ export const EVENT_CATALOG = {
   // onboarding intent-save event, the newly-wired coaching-mode-enable
   // event (see comment above), and the four player activation events —
   // all fired by the API after their own durable RTDB transition commits.
-  // GA4 projection (`GA4_PAYLOAD_ALLOWLIST` in
-  // apps/api/src/events/ga4Project.ts) is deliberately deferred this phase
-  // (matches the Phase 12 precedent) — the RTDB ledger is the source of
-  // truth regardless.
+  // Each of these now projects to GA4 via `GA4_PAYLOAD_ALLOWLIST` in
+  // apps/api/src/events/ga4Project.ts (quick task 260722-lh1) — the RTDB ledger
+  // is the source of truth regardless.
   onboarding_intent_selected: 'D',
   coaching_mode_enabled: 'D',
   analytics_activated: 'D',
