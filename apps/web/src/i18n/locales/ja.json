@@ -1564,7 +1564,8 @@
       "matches": "対戦",
       "vods": "VOD",
       "analytics": "分析",
-      "reviews": "レビュー"
+      "reviews": "レビュー",
+      "sessions": "セッション"
     },
     "hub": {
       "title": "クライアントハブ",
@@ -1845,6 +1846,72 @@
       "title": "コーチングモードはオフです",
       "body": "プロフィール → アカウントで有効にすると、コーチとして他のプレイヤーの試合、VOD、分析を管理できます。",
       "cta": "プロフィールへ"
+    },
+    "sessions": {
+      "list": {
+        "title": "セッション",
+        "subtitle": "このクライアントのために記録されたトレーニングセッション — 宿題と配信ステータスはここで確認できます。",
+        "newSession": "＋ 新しいセッション",
+        "createError": "このセッションの開始中にエラーが発生しました。",
+        "empty": "セッションはまだありません。記録して宿題を管理し、クライアントに配信しましょう。",
+        "listAria": "セッション",
+        "open": "開く",
+        "rowLabel": "セッション — {{date}}",
+        "homeworkProgress_one": "{{done}}/{{count}} 件完了",
+        "homeworkProgress_other": "{{done}}/{{count}} 件完了",
+        "homeworkEmpty": "宿題なし",
+        "deliveryMenuAria": "配信とその他の操作",
+        "delivery": {
+          "dash": "—",
+          "noneAria": "配信なし — まだ何も配信されていません",
+          "delivered": "配信済み",
+          "revoked": "取り消し済み",
+          "createdToast": "配信リンクを作成してコピーしました",
+          "createError": "この配信リンクの作成中にエラーが発生しました。",
+          "copiedToast": "リンクをコピーしました",
+          "revokedToast": "配信リンクを取り消しました",
+          "revokeError": "この配信リンクの取り消し中にエラーが発生しました。"
+        },
+        "actions": {
+          "deliver": "配信する",
+          "copyLink": "リンクをコピー",
+          "revokeLink": "リンクを取り消す"
+        }
+      },
+      "composer": {
+        "title": "セッション",
+        "loadError": "このセッションの読み込み中にエラーが発生しました。",
+        "dateLabel": "日付",
+        "tagsLabel": "キャラクタータグ",
+        "tagsAddPlaceholder": "キャラクターを追加…",
+        "tagsCapReached": "キャラクタータグは最大{{max}}個までです。",
+        "tagRemoveAria": "{{fighter}}を削除",
+        "summaryLabel": "サマリー",
+        "summaryPlaceholder": "このセッションで取り組んだ内容は？",
+        "homework": {
+          "heading": "宿題",
+          "add": "＋ 項目を追加",
+          "itemPlaceholder": "何を練習すべきですか？",
+          "toggleAria": "「{{item}}」を完了としてマーク",
+          "remove": "宿題を削除",
+          "capReached": "宿題は最大{{max}}件までです。",
+          "empty": "宿題はまだありません。"
+        },
+        "privateNotes": {
+          "label": "🔒 非公開メモ",
+          "helper": "これはあなただけが見られます。クライアントには配信されません。",
+          "textareaAria": "このセッションのコーチ非公開メモ",
+          "placeholder": "このセッションの非公開メモ…"
+        },
+        "save": {
+          "saving": "保存中…",
+          "saved": "保存済み",
+          "error": "保存できませんでした — 接続を確認してください。"
+        },
+        "deliver": "配信する",
+        "deliverError": "この配信リンクの作成中にエラーが発生しました。",
+        "copiedToast": "配信リンクを作成してコピーしました"
+      }
     }
   },
   "reviewDelivery": {
@@ -1867,7 +1934,20 @@
       "body": "grandfinals.ggはSuper Smash Bros. Ultimateのための無料トラッカーです — あなた自身の対戦や大会を記録し、クリックで再生位置に飛べるメモ付きでVODを見返し、対戦相性を分析し、GSPやレーティングの推移を追えます。見て回るのにアカウントは不要、始めるのも無料です。",
       "button": "無料で始める"
     },
-    "footer": "確認は、このリンクを持つ人によるリンク確認として記録されます。このリンクは取り消し可能で、期限切れになることがあります · 公開済みのバージョンを1つだけ閲覧できます · 下書き、非公開メモ、ワークスペースへのアクセスはありません · ボットやプレビューによるアクセスは「閲覧済み」としてカウントされません。"
+    "footer": "確認は、このリンクを持つ人によるリンク確認として記録されます。このリンクは取り消し可能で、期限切れになることがあります · 公開済みのバージョンを1つだけ閲覧できます · 下書き、非公開メモ、ワークスペースへのアクセスはありません · ボットやプレビューによるアクセスは「閲覧済み」としてカウントされません。",
+    "session": {
+      "seoTitle": "{{name}} からのトレーニングセッション · grandfinals.gg",
+      "eyebrow": "コーチからのトレーニングセッション · アカウント不要",
+      "heading": "{{name}} からのトレーニングセッション",
+      "dateLabel": "セッション日: {{date}}",
+      "homeworkHeading": "宿題",
+      "homeworkEmpty": "このセッションに宿題はありません。",
+      "homeworkItemDoneAria": "完了: {{item}}",
+      "homeworkItemTodoAria": "未完了: {{item}}",
+      "linkedVodsHeading": "関連VOD",
+      "linkedVodsEmpty": "このセッションに関連VODはありません。",
+      "linkedVodItem": "関連VOD参照: {{ref}}"
+    }
   },
   "onboarding": {
     "welcome": {

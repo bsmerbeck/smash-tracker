@@ -1564,7 +1564,8 @@
       "matches": "Matches",
       "vods": "VODs",
       "analytics": "Analysen",
-      "reviews": "Bewertungen"
+      "reviews": "Bewertungen",
+      "sessions": "Sitzungen"
     },
     "hub": {
       "title": "Kunden-Hub",
@@ -1845,6 +1846,72 @@
       "title": "Der Coaching-Modus ist deaktiviert",
       "body": "Aktiviere ihn unter Profil → Konto, um die Matches, VODs und Analysen anderer Spieler als Coach zu verwalten.",
       "cta": "Zum Profil"
+    },
+    "sessions": {
+      "list": {
+        "title": "Sitzungen",
+        "subtitle": "Trainingssitzungen für diesen Client — Hausaufgaben und Zustellstatus stehen hier.",
+        "newSession": "+ Neue Sitzung",
+        "createError": "Beim Starten dieser Sitzung ist ein Fehler aufgetreten.",
+        "empty": "Noch keine Sitzungen. Erfasse eine, um Hausaufgaben zu verfolgen und sie an deinen Client zuzustellen.",
+        "listAria": "Sitzungen",
+        "open": "Öffnen",
+        "rowLabel": "Sitzung — {{date}}",
+        "homeworkProgress_one": "{{done}}/{{count}} Aufgabe erledigt",
+        "homeworkProgress_other": "{{done}}/{{count}} Aufgaben erledigt",
+        "homeworkEmpty": "Keine Hausaufgaben",
+        "deliveryMenuAria": "Zustellung und weitere Aktionen",
+        "delivery": {
+          "dash": "—",
+          "noneAria": "Keine Zustellung — noch nichts zugestellt",
+          "delivered": "Zugestellt",
+          "revoked": "Widerrufen",
+          "createdToast": "Zustelllink erstellt und kopiert",
+          "createError": "Beim Erstellen dieses Zustelllinks ist ein Fehler aufgetreten.",
+          "copiedToast": "Link kopiert",
+          "revokedToast": "Zustelllink widerrufen",
+          "revokeError": "Beim Widerrufen dieses Zustelllinks ist ein Fehler aufgetreten."
+        },
+        "actions": {
+          "deliver": "Zustellen",
+          "copyLink": "Link kopieren",
+          "revokeLink": "Link widerrufen"
+        }
+      },
+      "composer": {
+        "title": "Sitzung",
+        "loadError": "Beim Laden dieser Sitzung ist ein Fehler aufgetreten.",
+        "dateLabel": "Datum",
+        "tagsLabel": "Charakter-Tags",
+        "tagsAddPlaceholder": "Charakter hinzufügen…",
+        "tagsCapReached": "Bis zu {{max}} Charakter-Tags.",
+        "tagRemoveAria": "{{fighter}} entfernen",
+        "summaryLabel": "Zusammenfassung",
+        "summaryPlaceholder": "Woran habt ihr in dieser Sitzung gearbeitet?",
+        "homework": {
+          "heading": "Hausaufgaben",
+          "add": "+ Aufgabe hinzufügen",
+          "itemPlaceholder": "Was sollte geübt werden?",
+          "toggleAria": "\"{{item}}\" als erledigt markieren",
+          "remove": "Aufgabe entfernen",
+          "capReached": "Bis zu {{max}} Hausaufgaben.",
+          "empty": "Noch keine Hausaufgaben."
+        },
+        "privateNotes": {
+          "label": "🔒 Private Notizen",
+          "helper": "Nur du kannst das sehen. Wird nie an den Client zugestellt.",
+          "textareaAria": "Private Notizen des Coaches für diese Sitzung",
+          "placeholder": "Private Notizen für diese Sitzung…"
+        },
+        "save": {
+          "saving": "Speichern…",
+          "saved": "Gespeichert",
+          "error": "Konnte nicht gespeichert werden — überprüfe deine Verbindung."
+        },
+        "deliver": "Zustellen",
+        "deliverError": "Beim Erstellen dieses Zustelllinks ist ein Fehler aufgetreten.",
+        "copiedToast": "Zustelllink erstellt und kopiert"
+      }
     }
   },
   "reviewDelivery": {
@@ -1867,7 +1934,20 @@
       "body": "grandfinals.gg ist ein kostenloser Tracker für Super Smash Bros. Ultimate — erfasse deine eigenen Matches und Turniere, sieh dir VODs mit klickbaren Zeitmarken an, analysiere Matchups und verfolge deine GSP- und Rating-Entwicklung. Kein Konto nötig, um dich umzusehen; der Start ist kostenlos.",
       "button": "Kostenlos starten"
     },
-    "footer": "Die Bestätigung wird als Link-Bestätigung erfasst (von wem auch immer diesen Link besitzt). Dieser Link ist widerrufbar und kann ablaufen · er gewährt Zugriff auf genau eine veröffentlichte Version · keine Entwürfe, privaten Notizen oder Workspace-Zugriff · Bot- und Vorschau-Aufrufe zählen niemals als \"Angesehen\"."
+    "footer": "Die Bestätigung wird als Link-Bestätigung erfasst (von wem auch immer diesen Link besitzt). Dieser Link ist widerrufbar und kann ablaufen · er gewährt Zugriff auf genau eine veröffentlichte Version · keine Entwürfe, privaten Notizen oder Workspace-Zugriff · Bot- und Vorschau-Aufrufe zählen niemals als \"Angesehen\".",
+    "session": {
+      "seoTitle": "Trainingssitzung von {{name}} · grandfinals.gg",
+      "eyebrow": "Trainingssitzung von deinem Coach · kein Konto nötig",
+      "heading": "Trainingssitzung von {{name}}",
+      "dateLabel": "Sitzungsdatum: {{date}}",
+      "homeworkHeading": "Hausaufgaben",
+      "homeworkEmpty": "Keine Hausaufgaben in dieser Sitzung.",
+      "homeworkItemDoneAria": "Erledigt: {{item}}",
+      "homeworkItemTodoAria": "Noch nicht erledigt: {{item}}",
+      "linkedVodsHeading": "Verknüpfte VODs",
+      "linkedVodsEmpty": "Keine verknüpften VODs in dieser Sitzung.",
+      "linkedVodItem": "Verknüpfte VOD-Referenz: {{ref}}"
+    }
   },
   "onboarding": {
     "welcome": {

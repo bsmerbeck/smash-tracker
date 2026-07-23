@@ -1564,7 +1564,8 @@
       "matches": "Matchs",
       "vods": "VODs",
       "analytics": "Analytique",
-      "reviews": "Revues"
+      "reviews": "Revues",
+      "sessions": "Séances"
     },
     "hub": {
       "title": "Centre clients",
@@ -1845,6 +1846,72 @@
       "title": "Le mode Coaching est désactivé",
       "body": "Activez-le dans Profil → Compte pour gérer les matchs, VODs et analyses d'autres joueurs en tant que coach.",
       "cta": "Aller au profil"
+    },
+    "sessions": {
+      "list": {
+        "title": "Séances",
+        "subtitle": "Les séances d'entraînement enregistrées pour ce client — devoirs et statut de livraison sont ici.",
+        "newSession": "+ Nouvelle séance",
+        "createError": "Une erreur s'est produite lors du démarrage de cette séance.",
+        "empty": "Pas encore de séances. Enregistrez-en une pour suivre les devoirs et la livrer à votre client.",
+        "listAria": "Séances",
+        "open": "Ouvrir",
+        "rowLabel": "Séance — {{date}}",
+        "homeworkProgress_one": "{{done}}/{{count}} devoir fait",
+        "homeworkProgress_other": "{{done}}/{{count}} devoirs faits",
+        "homeworkEmpty": "Aucun devoir",
+        "deliveryMenuAria": "Livraison et autres actions",
+        "delivery": {
+          "dash": "—",
+          "noneAria": "Aucune livraison — rien n'a encore été livré",
+          "delivered": "Livrée",
+          "revoked": "Révoquée",
+          "createdToast": "Lien de livraison créé et copié",
+          "createError": "Une erreur s'est produite lors de la création de ce lien de livraison.",
+          "copiedToast": "Lien copié",
+          "revokedToast": "Lien de livraison révoqué",
+          "revokeError": "Une erreur s'est produite lors de la révocation de ce lien de livraison."
+        },
+        "actions": {
+          "deliver": "Livrer",
+          "copyLink": "Copier le lien",
+          "revokeLink": "Révoquer le lien"
+        }
+      },
+      "composer": {
+        "title": "Séance",
+        "loadError": "Une erreur s'est produite lors du chargement de cette séance.",
+        "dateLabel": "Date",
+        "tagsLabel": "Étiquettes de personnage",
+        "tagsAddPlaceholder": "Ajouter un personnage…",
+        "tagsCapReached": "Jusqu'à {{max}} étiquettes de personnage.",
+        "tagRemoveAria": "Retirer {{fighter}}",
+        "summaryLabel": "Résumé",
+        "summaryPlaceholder": "Sur quoi avez-vous travaillé pendant cette séance ?",
+        "homework": {
+          "heading": "Devoirs",
+          "add": "+ Ajouter un devoir",
+          "itemPlaceholder": "Que devrait-il/elle pratiquer ?",
+          "toggleAria": "Marquer \"{{item}}\" comme fait",
+          "remove": "Retirer ce devoir",
+          "capReached": "Jusqu'à {{max}} devoirs.",
+          "empty": "Pas encore de devoirs."
+        },
+        "privateNotes": {
+          "label": "🔒 Notes privées",
+          "helper": "Vous seul pouvez voir ceci. Jamais livré au client.",
+          "textareaAria": "Notes privées du coach pour cette séance",
+          "placeholder": "Notes privées pour cette séance…"
+        },
+        "save": {
+          "saving": "Enregistrement…",
+          "saved": "Enregistré",
+          "error": "Impossible d’enregistrer — vérifiez votre connexion."
+        },
+        "deliver": "Livrer",
+        "deliverError": "Une erreur s'est produite lors de la création de ce lien de livraison.",
+        "copiedToast": "Lien de livraison créé et copié"
+      }
     }
   },
   "reviewDelivery": {
@@ -1867,7 +1934,20 @@
       "body": "grandfinals.gg est un tracker gratuit pour Super Smash Bros. Ultimate — enregistrez vos propres matchs et tournois, analysez vos VODs avec des notes cliquables, étudiez les matchups et suivez votre GSP et votre rating dans le temps. Aucun compte n'est nécessaire pour explorer ; c'est gratuit pour commencer.",
       "button": "Commencer gratuitement"
     },
-    "footer": "La confirmation est enregistrée comme une confirmation de lien (par quiconque détient ce lien). Ce lien est révocable et peut expirer · il donne accès à exactement une version publiée · aucun brouillon, note privée ni accès à l'espace de travail · les visites de robots ou d'aperçus ne comptent jamais comme \"Vu\"."
+    "footer": "La confirmation est enregistrée comme une confirmation de lien (par quiconque détient ce lien). Ce lien est révocable et peut expirer · il donne accès à exactement une version publiée · aucun brouillon, note privée ni accès à l'espace de travail · les visites de robots ou d'aperçus ne comptent jamais comme \"Vu\".",
+    "session": {
+      "seoTitle": "Séance d'entraînement de {{name}} · grandfinals.gg",
+      "eyebrow": "Séance d'entraînement de votre coach · sans compte",
+      "heading": "Séance d'entraînement de {{name}}",
+      "dateLabel": "Date de la séance : {{date}}",
+      "homeworkHeading": "Devoirs",
+      "homeworkEmpty": "Aucun devoir pour cette séance.",
+      "homeworkItemDoneAria": "Fait : {{item}}",
+      "homeworkItemTodoAria": "Pas encore fait : {{item}}",
+      "linkedVodsHeading": "VODs liés",
+      "linkedVodsEmpty": "Aucun VOD lié à cette séance.",
+      "linkedVodItem": "Référence de VOD lié : {{ref}}"
+    }
   },
   "onboarding": {
     "welcome": {

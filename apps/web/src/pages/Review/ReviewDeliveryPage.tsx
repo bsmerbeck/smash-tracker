@@ -2,8 +2,10 @@ import { useEffect, useRef, useState } from 'react';
 import { Link, useParams } from 'react-router';
 import { useTranslation } from 'react-i18next';
 import { Check } from 'lucide-react';
+import type { PublicShareSnapshot } from '@smash-tracker/shared';
 import { PublicLayout } from '@/layouts/PublicLayout';
 import { useSeo } from '@/hooks/useSeo';
+import { useFighterNameResolver } from '@/hooks/useFighterName';
 import {
   useAcknowledgeReviewDelivery,
   useMarkReviewDeliveryViewed,
@@ -16,6 +18,7 @@ import {
 } from '@/lib/reviewDeliveryAck';
 import { SafeMarkdown } from '@/lib/safeMarkdown';
 import { VodPlayer } from '@/pages/VodManager/components/VodPlayer';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import * as onboardingOrigin from '@/lib/onboardingOrigin';
@@ -49,6 +52,14 @@ import * as onboardingOrigin from '@/lib/onboardingOrigin';
  * `ShareViewPage`'s `hasFiredShareViewLoadedRef` exactly. NEVER fired from
  * the GET query resolving — a crawler/unfurl fetch only ever GETs, so it
  * never reaches the dedicated route either.
+ *
+ * Phase 20 Plan 04 (Coaching Workflow, Training Sessions & VOD-less
+ * Reviews, SESS-01/02): an early kind-branch renders a MINIMAL
+ * `SessionDeliveryView` instead of the coachReview layout below when
+ * `snapshot.kind === 'session'` — summary + read-only homework + a linked-
+ * VOD reference list, no player embed, no viewed/ack lifecycle (deliberately
+ * out of scope this phase; Phase 21 rebuilds the recipient render richly).
+ * The coachReview branch below is otherwise UNCHANGED.
  */
 export function ReviewDeliveryPage() {
   const { t } = useTranslation();
@@ -110,7 +121,12 @@ export function ReviewDeliveryPage() {
   // never renders React, so it never reaches this effect at all.
   const hasFiredViewedRef = useRef(false);
   useEffect(() => {
-    if (!snapshot || hasFiredViewedRef.current) {
+    // Phase 20 Plan 04 (SESS-01/02): sessions deliberately have no
+    // viewed/ack lifecycle this phase — never fire the coachReview-only
+    // Delivered -> Viewed transition for a session-kind snapshot (its
+    // shareId grammar wouldn't resolve via `resolveCoachReviewShareRef`
+    // anyway, but skipping here avoids a wasted 404 round-trip).
+    if (!snapshot || hasFiredViewedRef.current || snapshot.kind === 'session') {
       return;
     }
     if (hasPlayableSource && !isPlayerReady) {
@@ -124,7 +140,9 @@ export function ReviewDeliveryPage() {
 
   useSeo({
     title: snapshot
-      ? t('reviewDelivery.seoTitle', { name: snapshot.coachDisplayName ?? '' })
+      ? snapshot.kind === 'session'
+        ? t('reviewDelivery.session.seoTitle', { name: snapshot.coachDisplayName ?? '' })
+        : t('reviewDelivery.seoTitle', { name: snapshot.coachDisplayName ?? '' })
       : unavailable
         ? t('share.unavailableTitle')
         : t('share.loadingTitle'),
@@ -154,6 +172,14 @@ export function ReviewDeliveryPage() {
         </div>
       </PublicLayout>
     );
+  }
+
+  // Phase 20 Plan 04 (SESS-01/02): a session-kind snapshot renders an
+  // entirely separate, minimal view — never the coachReview layout below
+  // (which reads coachReview-only fields like `sections`/`citationSources`
+  // that a session snapshot structurally lacks).
+  if (snapshot.kind === 'session') {
+    return <SessionDeliveryView snapshot={snapshot} />;
   }
 
   const currentSource = citationSources.find((source) => source.sourceVodRef === currentSourceRef);
@@ -316,6 +342,111 @@ export function ReviewDeliveryPage() {
         </div>
 
         <p className="text-xs text-muted-foreground">{t('reviewDelivery.footer')}</p>
+      </div>
+    </PublicLayout>
+  );
+}
+
+/**
+ * Phase 20 Plan 04 (Coaching Workflow, Training Sessions & VOD-less
+ * Reviews, SESS-01/02, T-20-15): a DELIBERATELY minimal `/r/:token` render
+ * for a `kind: 'session'` snapshot — coach identity + session date,
+ * character-tag chips, the summary via `SafeMarkdown`, a read-only homework
+ * checklist, and a linked-VOD reference list (labels only — NO player
+ * embed; Phase 21 rebuilds this richly). The snapshot's `session*` fields
+ * are the ONLY fields this component reads — there is no path to
+ * `coachPrivateNotes` (structurally absent from the frozen snapshot by
+ * shape, per `clientVisibleSessionSchema`/`sessionDeliveries.ts`).
+ * Deliberately self-contained and kept small (per this plan's own
+ * objective) so Phase 21 can replace it wholesale.
+ */
+function SessionDeliveryView({ snapshot }: { snapshot: PublicShareSnapshot }) {
+  const { t } = useTranslation();
+  const fighterName = useFighterNameResolver();
+
+  const characterTags = snapshot.sessionCharacterTags ?? [];
+  const homework = snapshot.sessionHomework ?? [];
+  const linkedVodRefs = snapshot.sessionLinkedMatchRefs ?? [];
+
+  return (
+    <PublicLayout>
+      <div className="mx-auto flex w-full max-w-2xl flex-col gap-6 px-4 py-8">
+        <div className="flex flex-col gap-1">
+          <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
+            {t('reviewDelivery.session.eyebrow')}
+          </p>
+          <h1 className="text-xl font-semibold tracking-tight">
+            {t('reviewDelivery.session.heading', { name: snapshot.coachDisplayName })}
+          </h1>
+          <p className="text-sm text-muted-foreground">
+            {t('reviewDelivery.session.dateLabel', {
+              date: snapshot.sessionDate ? new Date(snapshot.sessionDate).toLocaleDateString() : '',
+            })}
+          </p>
+        </div>
+
+        {characterTags.length > 0 && (
+          <div className="flex flex-wrap gap-1.5">
+            {characterTags.map((fighterId) => (
+              <Badge key={fighterId} variant="outline">
+                {fighterName(fighterId)}
+              </Badge>
+            ))}
+          </div>
+        )}
+
+        {snapshot.sessionSummary ? (
+          <div className="rounded-lg border bg-card px-3.5 py-3">
+            <SafeMarkdown body={snapshot.sessionSummary} />
+          </div>
+        ) : null}
+
+        <div className="flex flex-col gap-2">
+          <h2 className="text-sm font-semibold">{t('reviewDelivery.session.homeworkHeading')}</h2>
+          {homework.length === 0 ? (
+            <p className="text-sm text-muted-foreground">
+              {t('reviewDelivery.session.homeworkEmpty')}
+            </p>
+          ) : (
+            <ul className="flex flex-col gap-1.5">
+              {homework.map((item, index) => (
+                <li key={index} className="flex items-center gap-2 text-sm">
+                  <span
+                    aria-label={
+                      item.done
+                        ? t('reviewDelivery.session.homeworkItemDoneAria', { item: item.text })
+                        : t('reviewDelivery.session.homeworkItemTodoAria', { item: item.text })
+                    }
+                    className={cn(
+                      'flex size-4 shrink-0 items-center justify-center rounded-sm border',
+                      item.done && 'border-green-600 bg-green-600 text-white',
+                    )}
+                  >
+                    {item.done ? <Check className="size-3" /> : null}
+                  </span>
+                  <span className={cn(item.done && 'text-muted-foreground line-through')}>
+                    {item.text}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+
+        <div className="flex flex-col gap-2">
+          <h2 className="text-sm font-semibold">{t('reviewDelivery.session.linkedVodsHeading')}</h2>
+          {linkedVodRefs.length === 0 ? (
+            <p className="text-sm text-muted-foreground">
+              {t('reviewDelivery.session.linkedVodsEmpty')}
+            </p>
+          ) : (
+            <ul className="flex flex-col gap-1 text-sm">
+              {linkedVodRefs.map((ref) => (
+                <li key={ref}>{t('reviewDelivery.session.linkedVodItem', { ref })}</li>
+              ))}
+            </ul>
+          )}
+        </div>
       </div>
     </PublicLayout>
   );

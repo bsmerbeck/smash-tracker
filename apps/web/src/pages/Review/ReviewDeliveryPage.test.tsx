@@ -291,4 +291,59 @@ describe('ReviewDeliveryPage', () => {
       expect(window.localStorage.getItem('smash-tracker.shareReferral')).toBeNull();
     });
   });
+
+  describe('kind "session" (Phase 20 Plan 04, SESS-01/02) — a minimal kind-branch, no player/embed, no coach-private content', () => {
+    function sessionSnapshot(overrides: Partial<PublicShareSnapshot> = {}): PublicShareSnapshot {
+      return {
+        createdAt: 1_700_000_000_000,
+        kind: 'session',
+        coachDisplayName: 'Coach Brendan',
+        sessionDate: 1_700_000_000_000,
+        sessionCharacterTags: [8],
+        sessionSummary: 'Worked on neutral game and ledgetraps.',
+        sessionHomework: [
+          { text: 'Practice ledgetraps', done: true },
+          { text: 'Fix roll habit', done: false },
+        ],
+        sessionLinkedMatchRefs: ['m1'],
+        reviewedMomentsCount: 0,
+        ...overrides,
+      } as PublicShareSnapshot;
+    }
+
+    it('renders the summary, homework list, and linked-VOD list, with no player embed', async () => {
+      getDelivery.mockResolvedValue(sessionSnapshot());
+
+      renderDelivery();
+
+      expect(await screen.findByText('Training session from Coach Brendan')).toBeInTheDocument();
+      expect(screen.getByText('Worked on neutral game and ledgetraps.')).toBeInTheDocument();
+      expect(screen.getByText('Practice ledgetraps')).toBeInTheDocument();
+      expect(screen.getByText('Fix roll habit')).toBeInTheDocument();
+      expect(screen.getByText('Fox')).toBeInTheDocument();
+      expect(screen.getByText('Linked VOD reference: m1')).toBeInTheDocument();
+      expect(screen.queryByTestId('vod-player')).not.toBeInTheDocument();
+    });
+
+    it('never renders the coachReview-only Acknowledge control or fires the Viewed transition', async () => {
+      getDelivery.mockResolvedValue(sessionSnapshot());
+
+      renderDelivery();
+
+      await screen.findByText('Training session from Coach Brendan');
+      expect(screen.queryByRole('button', { name: '✓ Acknowledge' })).not.toBeInTheDocument();
+      expect(markViewedDelivery).not.toHaveBeenCalled();
+    });
+
+    it('shows the empty-homework and empty-linked-VODs copy when both are absent', async () => {
+      getDelivery.mockResolvedValue(
+        sessionSnapshot({ sessionHomework: [], sessionLinkedMatchRefs: [] }),
+      );
+
+      renderDelivery();
+
+      expect(await screen.findByText('No homework this session.')).toBeInTheDocument();
+      expect(screen.getByText('No linked VODs this session.')).toBeInTheDocument();
+    });
+  });
 });
