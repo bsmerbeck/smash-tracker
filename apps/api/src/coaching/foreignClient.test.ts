@@ -122,6 +122,38 @@ const SAME_SUBJECT_ROUTES = [
     path: `/api/coaching/clients/${TENANT_ID}/reviews/review-1/deliveries/delivery-1/revoke`,
     usesSubjectHeader: false,
   },
+  // Phase 20 Plan 02 (Coaching Workflow, SESS-01/02): every coach-side
+  // training-session route, gated the SAME way (a direct membership check
+  // on the URL's `:clientId`, no header) as the review/delivery routes
+  // above.
+  {
+    method: 'POST',
+    path: `/api/coaching/clients/${TENANT_ID}/sessions`,
+    usesSubjectHeader: false,
+    body: { date: 1000, summary: 'test session' },
+  },
+  {
+    method: 'GET',
+    path: `/api/coaching/clients/${TENANT_ID}/sessions`,
+    usesSubjectHeader: false,
+  },
+  {
+    method: 'GET',
+    path: `/api/coaching/clients/${TENANT_ID}/sessions/session-1`,
+    usesSubjectHeader: false,
+  },
+  {
+    method: 'PATCH',
+    path: `/api/coaching/clients/${TENANT_ID}/sessions/session-1`,
+    usesSubjectHeader: false,
+    body: { summary: 'updated' },
+  },
+  {
+    method: 'POST',
+    path: `/api/coaching/clients/${TENANT_ID}/sessions/session-1/homework/item-1/toggle`,
+    usesSubjectHeader: false,
+    body: { done: true },
+  },
 ] as const;
 
 /**
@@ -151,6 +183,13 @@ const TREE_TO_ROUTE_PATH: Record<(typeof CANONICAL_TENANT_TREES)[number], string
   reviewStatus: `/api/coaching/clients/${TENANT_ID}/reviews/review-1/publish`,
   // Phase 12 Plan 04: written by the create-delivery route.
   reviewDeliveries: `/api/coaching/clients/${TENANT_ID}/reviews/review-1/deliveries`,
+  // Phase 20 Plan 02: trainingSessions is written by the create-session
+  // route; sessionDeliveries is registered ahead of its writer (Phase 20
+  // Plan 03's sessionDeliveries.ts) — the same-subject route proving THIS
+  // tenant's session tree is membership-gated stands in for it here, since
+  // no session-delivery route exists yet this plan.
+  trainingSessions: `/api/coaching/clients/${TENANT_ID}/sessions`,
+  sessionDeliveries: `/api/coaching/clients/${TENANT_ID}/sessions`,
 };
 
 describe('CANONICAL_TENANT_TREES stays in lockstep with the harness route list', () => {
