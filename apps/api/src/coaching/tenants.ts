@@ -60,6 +60,15 @@ export const CANONICAL_TENANT_TREES = [
   // Phase 12 Plan 04: the delivery tree `apps/api/src/coaching/reviewDeliveries.ts`
   // reads/writes (deferred here from 12-02/12-03 — see their SUMMARYs' deferral notes).
   'reviewDeliveries',
+  // Phase 20 Plan 02 (Coaching Workflow, SESS-01/02): the training-session
+  // mutable-log tree `apps/api/src/coaching/sessions.ts` reads/writes.
+  'trainingSessions',
+  // Phase 20 Plan 02: registered here (ahead of its writer) so the
+  // hard-delete cascade + export cover it from day one — the delivery tree
+  // itself is written by `apps/api/src/coaching/sessionDeliveries.ts`
+  // (Phase 20 Plan 03). A not-yet-populated tree is a harmless no-op on the
+  // cascade's null-path delete.
+  'sessionDeliveries',
 ] as const;
 
 /**
