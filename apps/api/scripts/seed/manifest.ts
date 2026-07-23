@@ -20,6 +20,19 @@ import type { Database } from 'firebase-admin/database';
 interface DemoSeedManifest {
   seededAt: number;
   paths: string[];
+  /**
+   * Phase 15 (PAND-01/coaching-mode wipe-restore): the REAL, pre-existing
+   * value of `users/{uid}/coachingModeEnabled` at the moment the seeder
+   * flipped it on, captured so `wipeDemo` can restore the owner's genuine
+   * prior state instead of unconditionally deleting a leaf the seeder does
+   * not exclusively own. `undefined` (the field simply absent, e.g. a
+   * pre-Phase-15 manifest or a seed run that never touched coaching mode)
+   * means "leave this leaf alone on wipe" — backward compatible. `null`
+   * means the leaf did not exist before the seed ran (wipe restores
+   * absence, i.e. deletes it); a `boolean` means the owner already had that
+   * exact value and wipe restores it verbatim.
+   */
+  priorCoachingModeEnabled?: boolean | null;
 }
 
 /**
@@ -42,9 +55,26 @@ export class ManifestRecorder {
    * `{ seededAt: <epoch ms>, paths: string[] }`. `now` defaults to
    * `Date.now()` but accepts an override so tests (and the seeder's own
    * back-dated content) can pin a deterministic timestamp.
+   *
+   * `options.priorCoachingModeEnabled` (Phase 15, additive/backward
+   * compatible): included in the written manifest ONLY when the caller
+   * supplies it — a caller that omits `options` entirely (every Phase 14
+   * call site) writes the EXACT same `{ seededAt, paths }` node it always
+   * has, so this extension changes no existing behavior.
    */
-  async flush(database: Database, uid: string, now: number = Date.now()): Promise<void> {
-    const manifest: DemoSeedManifest = { seededAt: now, paths: [...this.paths] };
+  async flush(
+    database: Database,
+    uid: string,
+    now: number = Date.now(),
+    options?: { priorCoachingModeEnabled?: boolean | null },
+  ): Promise<void> {
+    const manifest: DemoSeedManifest = {
+      seededAt: now,
+      paths: [...this.paths],
+      ...(options?.priorCoachingModeEnabled !== undefined
+        ? { priorCoachingModeEnabled: options.priorCoachingModeEnabled }
+        : {}),
+    };
     await database.ref(`demoSeed/${uid}`).set(manifest);
   }
 }
@@ -63,11 +93,23 @@ export async function wipeDemo(database: Database, uid: string): Promise<void> {
   }
 
   const manifest = snapshot.val() as DemoSeedManifest;
-  const updates: Record<string, null> = {};
+  const updates: Record<string, boolean | null> = {};
   for (const path of manifest.paths) {
     updates[path] = null;
   }
   updates[`demoSeed/${uid}`] = null;
+
+  // Phase 15 (PAND-01): `coachingModeEnabled` is a REAL, pre-existing leaf on
+  // the owner's profile record, not seed-created data — a naive null-delete
+  // would incorrectly turn coaching mode OFF for an owner who had already
+  // enabled it manually before running the seeder. This leaf is intentionally
+  // NEVER added to `manifest.paths` (restore, not delete) — it gets this one
+  // special-cased line instead. A manifest without the field (pre-Phase-15,
+  // or a seed run that never touched coaching mode) leaves the leaf
+  // untouched entirely, per the field's own back-compat contract.
+  if (manifest.priorCoachingModeEnabled !== undefined) {
+    updates[`users/${uid}/coachingModeEnabled`] = manifest.priorCoachingModeEnabled;
+  }
 
   await database.ref().update(updates);
 }
