@@ -68,7 +68,7 @@ import {
 } from '../lib/matchTableFilters';
 import { persistColumnVisibility, readStoredColumnVisibility } from '../lib/columnVisibility';
 import { EditMatchForm } from '@/components/match-form/EditMatchForm';
-import { VodNotesDialog } from '@/components/vod/VodNotesDialog';
+import { AttachVodDialog } from '@/components/vod/AttachVodDialog';
 
 const PAGE_SIZE_OPTIONS = [10, 20, 30, 40, 50];
 
@@ -595,7 +595,7 @@ export function MatchTable({
       )}
 
       {vodMatch && (
-        <VodNotesDialog
+        <AttachVodDialog
           match={vodMatch}
           open={vodMatch != null}
           onOpenChange={(open) => !open && setVodMatch(null)}

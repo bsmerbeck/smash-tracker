@@ -85,6 +85,8 @@
     "vod": {
       "title": "VOD Notes",
       "description": "Attach a VOD link and timestamped notes, e.g. \"2:41 — missed punish on shield\".",
+      "attachTitle": "Attach VOD",
+      "attachDescription": "Add a link to the recording, and optionally when this match starts within it.",
       "url": "VOD URL (YouTube or Twitch)",
       "timestamps": "Timestamps",
       "noTimestamps": "No timestamp notes yet.",

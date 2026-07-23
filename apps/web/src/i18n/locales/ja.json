@@ -85,6 +85,8 @@
     "vod": {
       "title": "VODメモ",
       "description": "VODのリンクとタイムスタンプ付きメモを追加できます（例:「2:41 — ガードへの反撃ミス」）。",
+      "attachTitle": "VODを添付",
+      "attachDescription": "録画へのリンクと、任意でこの試合の開始位置を追加します。",
       "url": "VODのURL (YouTube or Twitch)",
       "timestamps": "タイムスタンプ",
       "noTimestamps": "まだタイムスタンプ付きメモがありません。",

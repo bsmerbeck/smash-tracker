@@ -85,6 +85,8 @@
     "vod": {
       "title": "Notes VOD",
       "description": "Ajoutez un lien VOD et des notes horodatées, p. ex. « 2:41 — punition ratée sur le bouclier ».",
+      "attachTitle": "Ajouter un VOD",
+      "attachDescription": "Ajoutez un lien vers l'enregistrement et, si besoin, le moment où ce match commence.",
       "url": "URL de la VOD (YouTube or Twitch)",
       "timestamps": "Horodatages",
       "noTimestamps": "Pas encore de notes horodatées.",
