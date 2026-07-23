@@ -81,12 +81,13 @@ describe('StageTiles', () => {
   });
 
   it('renders a fallback abbreviation tile for stages without art', () => {
-    const matches = [makeMatch('1', 1, true, 2, 'Big Battlefield')];
+    // id 1000 is the "(Gen. Battlefield)" synthetic sentinel — the only
+    // stages with url: '' after 19-01's art-completeness fill (every real
+    // stage now has committed art; see stageArt.test.ts).
+    const matches = [makeMatch('1', 1, true, 1000, '(Gen. Battlefield)')];
     const { container } = render(<StageTiles matches={matches} />);
-    // Big Battlefield has url: '' in the reference data, so it should fall
-    // back to the abbreviation tile instead of an <img>.
     expect(container.querySelector('img')).not.toBeInTheDocument();
-    expect(screen.getByText('BB')).toBeInTheDocument();
+    expect(screen.getByText('GB')).toBeInTheDocument();
   });
 
   it('shows the record and win rate for each tile', () => {

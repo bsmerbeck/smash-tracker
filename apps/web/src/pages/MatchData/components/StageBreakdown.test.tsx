@@ -82,14 +82,19 @@ describe('StageBreakdown', () => {
   });
 
   it('shows a fallback abbreviation tile for a stage lacking art', async () => {
+    // id 1000 is the "(Gen. Battlefield)" synthetic sentinel — the only
+    // stages with url: '' after 19-01's art-completeness fill (every real
+    // stage now has committed art; see stageArt.test.ts).
     const user = userEvent.setup();
-    render(<StageBreakdown matches={[makeMatch({ map: { id: 2, name: 'Big Battlefield' } })]} />);
+    render(
+      <StageBreakdown matches={[makeMatch({ map: { id: 1000, name: '(Gen. Battlefield)' } })]} />,
+    );
 
     await user.click(screen.getByLabelText('Select stage'));
-    const [option] = await screen.findAllByRole('option', { name: /Big Battlefield/ });
+    const [option] = await screen.findAllByRole('option', { name: /\(Gen\. Battlefield\)/ });
     await user.click(option!);
 
-    const heading = screen.getByRole('heading', { name: 'Big Battlefield' });
-    expect(within(heading.parentElement!).getByText('BB')).toBeInTheDocument();
+    const heading = screen.getByRole('heading', { name: '(Gen. Battlefield)' });
+    expect(within(heading.parentElement!).getByText('GB')).toBeInTheDocument();
   });
 });
