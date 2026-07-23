@@ -428,5 +428,83 @@ describe('AddMatchForm', () => {
       // Dialog stays open on failure — nothing gets silently discarded.
       expect(screen.getByRole('dialog')).toBeInTheDocument();
     });
+
+    it('carries matchType, tournamentName, and eventName onto every game payload of a saved Bo3', async () => {
+      const user = userEvent.setup();
+      renderForm();
+
+      await user.click(screen.getByRole('button', { name: 'Add Match' }));
+      const dialog = await screen.findByRole('dialog');
+      await user.click(within(dialog).getByRole('radio', { name: 'Set (Bo3/Bo5)' }));
+
+      await user.click(within(dialog).getByRole('radio', { name: 'Offline Tourney' }));
+
+      await user.click(within(dialog).getByRole('button', { name: 'Tournament (optional)' }));
+      await user.type(
+        within(dialog).getByPlaceholderText('e.g. The Big House 9'),
+        'The Big House 9',
+      );
+      await user.type(
+        within(dialog).getByPlaceholderText('e.g. Ultimate Singles'),
+        'Ultimate Singles',
+      );
+
+      await user.click(within(dialog).getByRole('combobox', { name: 'Opponent' }));
+      const opponentInput = await screen.findByPlaceholderText('Type a name...');
+      await user.clear(opponentInput); // pre-filled with 'unknown'
+      await user.type(opponentInput, 'powpow');
+
+      await user.click(within(dialog).getByRole('radio', { name: 'Game 1 Win' }));
+      await user.click(await within(dialog).findByRole('radio', { name: 'Game 2 Loss' }));
+      await user.click(await within(dialog).findByRole('radio', { name: 'Game 3 Win' }));
+
+      await user.click(within(dialog).getByRole('button', { name: 'Save Set' }));
+
+      await waitFor(() => expect(createMatch).toHaveBeenCalledTimes(3));
+      for (const call of createMatch.mock.calls) {
+        expect(call[0]).toMatchObject({
+          matchType: 'offline-tourney',
+          tournamentName: 'The Big House 9',
+          eventName: 'Ultimate Singles',
+        });
+      }
+    });
+
+    it('preserves the selected fighter and opponent fighter across a Single<->Set mode toggle (no Banjo & Kazooie reset)', async () => {
+      const user = userEvent.setup();
+      renderForm();
+
+      await user.click(screen.getByRole('button', { name: 'Add Match' }));
+      const dialog = await screen.findByRole('dialog');
+
+      // Single mode: pick non-default fighter/opponent-fighter selections.
+      await user.click(within(dialog).getByRole('combobox', { name: 'Your Fighter' }));
+      await user.click(await screen.findByRole('option', { name: luigi.name }));
+
+      await user.click(within(dialog).getByRole('combobox', { name: 'Opponent Fighter' }));
+      await user.click(await screen.findByRole('option', { name: mario.name }));
+
+      // Toggle to Set mode — selections should carry over, not reset to the
+      // untouched Set form's default (Banjo & Kazooie, alphabetically first).
+      await user.click(within(dialog).getByRole('radio', { name: 'Set (Bo3/Bo5)' }));
+
+      expect(within(dialog).getByRole('combobox', { name: 'Your Fighter' })).toHaveTextContent(
+        luigi.name,
+      );
+      expect(
+        within(dialog).getByRole('combobox', { name: 'Opponent Fighter (game 1)' }),
+      ).toHaveTextContent(mario.name);
+
+      // Symmetric: toggling back to Single preserves the Set-mode selections
+      // too (first-switch seeding, not two-way live sync).
+      await user.click(within(dialog).getByRole('radio', { name: 'Single game' }));
+
+      expect(within(dialog).getByRole('combobox', { name: 'Your Fighter' })).toHaveTextContent(
+        luigi.name,
+      );
+      expect(within(dialog).getByRole('combobox', { name: 'Opponent Fighter' })).toHaveTextContent(
+        mario.name,
+      );
+    });
   });
 });
