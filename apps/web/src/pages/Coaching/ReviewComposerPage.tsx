@@ -41,7 +41,7 @@ import { ReviewComposerMobile } from './ReviewComposerMobile';
 
 type DocTab = 'client-review' | 'private-notes';
 
-/** Tailwind's `lg` breakpoint (1024px) — matches the desktop grid's own `lg:grid-cols-[400px_1fr]` switch, so the mobile/desktop composer split lines up with the same width the CSS grid itself would otherwise silently reflow at. */
+/** Tailwind's `lg` breakpoint (1024px) — matches the desktop grid's own 480px-column `lg` switch, so the mobile/desktop composer split lines up with the same width the CSS grid itself would otherwise silently reflow at. */
 const MOBILE_COMPOSER_QUERY = '(max-width: 1023px)';
 
 /**
@@ -344,7 +344,7 @@ export function ReviewComposerPage() {
           isPublishing={publish.isPending}
         />
       ) : (
-        <div className="grid min-h-[calc(100vh-8rem)] grid-cols-1 lg:grid-cols-[400px_1fr]">
+        <div className="grid min-h-[calc(100vh-8rem)] grid-cols-1 lg:grid-cols-[480px_1fr]">
           {/* Left pane (D-01): source bar + player + Evidence placeholder — always visible regardless of the right pane's active tab. */}
           <div className="flex flex-col gap-3 border-b p-4 lg:border-r lg:border-b-0">
             <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">

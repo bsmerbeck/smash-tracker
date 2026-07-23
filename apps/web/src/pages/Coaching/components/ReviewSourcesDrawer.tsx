@@ -2,6 +2,8 @@ import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { Match } from '@smash-tracker/shared';
 import { tournamentLabel } from '@/pages/MatchData/lib/matchTableFilters';
+import { getFighterById } from '@/data/sprites';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
   Sheet,
@@ -38,7 +40,7 @@ export function ReviewSourcesDrawer({
   currentSourceId,
   onSelect,
 }: ReviewSourcesDrawerProps) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const [open, setOpen] = useState(false);
 
   return (
@@ -64,6 +66,8 @@ export function ReviewSourcesDrawer({
             sources.map((match) => {
               const isCurrent = match.id === currentSourceId;
               const opponent = match.opponent || t('common.unknown');
+              const fighterSprite = getFighterById(match.fighter_id);
+              const opponentSprite = getFighterById(match.opponent_id);
               return (
                 <button
                   key={match.id}
@@ -78,11 +82,34 @@ export function ReviewSourcesDrawer({
                     isCurrent && 'border-primary bg-accent text-accent-foreground',
                   )}
                 >
+                  <div className="flex w-full items-center justify-between gap-2">
+                    <div className="flex items-center gap-1">
+                      {fighterSprite && (
+                        <img
+                          src={fighterSprite.url}
+                          alt={fighterSprite.name}
+                          className="size-6 object-contain"
+                        />
+                      )}
+                      <span className="text-xs text-muted-foreground">{t('matchups.vs')}</span>
+                      {opponentSprite && (
+                        <img
+                          src={opponentSprite.url}
+                          alt={opponentSprite.name}
+                          className="size-6 object-contain"
+                        />
+                      )}
+                    </div>
+                    <Badge variant={match.win ? 'success' : 'destructive'}>
+                      {match.win ? t('common.win') : t('common.loss')}
+                    </Badge>
+                  </div>
                   <span className="font-medium">
                     {t('coaching.reviews.composer.sourcesDrawer.vsOpponent', { opponent })}
                   </span>
                   <span className="text-xs text-muted-foreground">
-                    {tournamentLabel(match)} · {new Date(match.time).toLocaleDateString()}
+                    {tournamentLabel(match)} ·{' '}
+                    {new Date(match.time).toLocaleTimeString(i18n.language)}
                   </span>
                 </button>
               );
