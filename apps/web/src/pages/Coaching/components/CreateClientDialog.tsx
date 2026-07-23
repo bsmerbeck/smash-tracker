@@ -3,6 +3,7 @@ import type { FormEvent } from 'react';
 import { useNavigate } from 'react-router';
 import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/ui/button';
+import { PendingButton } from '@/components/ui/pending-button';
 import {
   Dialog,
   DialogContent,
@@ -91,11 +92,11 @@ export function CreateClientDialog({ triggerLabel }: { triggerLabel: string }) {
             <Button type="button" variant="outline" onClick={() => handleOpenChange(false)}>
               {t('common.cancel')}
             </Button>
-            <Button type="submit" disabled={!label.trim() || createClient.isPending}>
+            <PendingButton type="submit" pending={createClient.isPending} disabled={!label.trim()}>
               {createClient.isPending
                 ? t('coaching.hub.create.pending')
                 : t('coaching.hub.create.confirm')}
-            </Button>
+            </PendingButton>
           </DialogFooter>
         </form>
       </DialogContent>

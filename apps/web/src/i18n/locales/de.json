@@ -85,6 +85,8 @@
     "vod": {
       "title": "VOD-Notizen",
       "description": "Hänge einen VOD-Link und Notizen mit Zeitstempel an, z. B. „2:41 — Punish auf Schild verpasst“.",
+      "attachTitle": "VOD anhängen",
+      "attachDescription": "Füge einen Link zur Aufnahme hinzu und optional, wann dieses Match darin beginnt.",
       "url": "VOD-URL (YouTube or Twitch)",
       "timestamps": "Zeitstempel",
       "noTimestamps": "Noch keine Zeitstempel-Notizen.",
@@ -125,6 +127,9 @@
       "minutesAgo": "vor {{count}} Min.",
       "hoursAgo": "vor {{count}} Std.",
       "daysAgo": "vor {{count}} Tagen"
+    },
+    "pending": {
+      "saving": "Wird gespeichert..."
     }
   },
   "dashboard": {

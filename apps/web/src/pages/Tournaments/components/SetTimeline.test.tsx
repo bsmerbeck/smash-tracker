@@ -316,7 +316,7 @@ describe('SetTimeline', () => {
     expect(screen.getByRole('button', { name: 'Edit VOD notes for Pools' })).toBeInTheDocument();
   });
 
-  it('opens the VOD notes dialog from the edit affordance', async () => {
+  it('opens the lean Attach VOD dialog from the edit affordance (SETFEAT-03)', async () => {
     const user = userEvent.setup();
     const matches = [
       makeMatch({
@@ -333,6 +333,8 @@ describe('SetTimeline', () => {
     await user.click(screen.getByRole('button', { name: 'Edit VOD notes for Grand Final' }));
 
     expect(await screen.findByRole('dialog')).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: 'VOD Notes' })).toBeInTheDocument();
+    // SETFEAT-03: the lean Attach VOD dialog opens here, not the full
+    // timestamped-notes editor.
+    expect(screen.getByRole('heading', { name: 'Attach VOD' })).toBeInTheDocument();
   });
 });

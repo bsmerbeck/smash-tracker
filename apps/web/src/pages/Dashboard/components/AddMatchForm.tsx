@@ -12,6 +12,7 @@ import {
   DialogTrigger,
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
+import { PendingButton } from '@/components/ui/pending-button';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { NO_SELECTION_STAGE } from '@/data/stages';
 import { useCreateMatch } from '@/hooks/useCreateMatch';
@@ -103,6 +104,11 @@ export function AddMatchForm({
   const [open, setOpen] = useState(false);
   const [mode, setMode] = useState<EntryMode>('single');
   const [games, setGames] = useState<SetGameValues[]>([]);
+  // UXFB-01: `createMatch.isPending` flickers on/off between each sequential
+  // per-game mutation in `handleSetSubmit` below, which would flicker the
+  // save button's spinner in and out mid-save. This tracks the whole
+  // multi-game submit as one stable pending window instead.
+  const [savingSet, setSavingSet] = useState(false);
 
   const form = useMatchForm(buildDefaultValues(fighter?.id ?? fighterSprites[0]?.id ?? 0), {
     requireVod,
@@ -151,6 +157,7 @@ export function AddMatchForm({
     }
 
     let savedCount = 0;
+    setSavingSet(true);
     try {
       for (const payload of payloads) {
         await createMatch.mutateAsync(payload);
@@ -175,6 +182,8 @@ export function AddMatchForm({
       } else {
         toast.error(t('dashboard.addMatch.setFailed'));
       }
+    } finally {
+      setSavingSet(false);
     }
   }
 
@@ -235,9 +244,9 @@ export function AddMatchForm({
               <Button type="button" variant="outline" onClick={() => setOpen(false)}>
                 {t('common.cancel')}
               </Button>
-              <Button type="submit" disabled={createMatch.isPending}>
+              <PendingButton type="submit" pending={createMatch.isPending}>
                 {t('common.save')}
-              </Button>
+              </PendingButton>
             </DialogFooter>
           </form>
         ) : (
@@ -252,9 +261,13 @@ export function AddMatchForm({
                 <Button type="button" variant="outline" onClick={() => setOpen(false)}>
                   {t('common.cancel')}
                 </Button>
-                <Button type="submit" disabled={createMatch.isPending}>
+                <PendingButton
+                  type="submit"
+                  pending={savingSet}
+                  pendingToastLabel={t('shared.pending.saving')}
+                >
                   {t('dashboard.addMatch.saveSet')}
-                </Button>
+                </PendingButton>
               </DialogFooter>
             }
           />

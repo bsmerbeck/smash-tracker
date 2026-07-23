@@ -85,6 +85,8 @@
     "vod": {
       "title": "Notas de VOD",
       "description": "Adjunta un enlace al VOD y notas con marca de tiempo, p. ej. «2:41 — castigo fallado al escudo».",
+      "attachTitle": "Adjuntar VOD",
+      "attachDescription": "Añade un enlace a la grabación y, opcionalmente, en qué momento empieza esta partida.",
       "url": "URL del VOD (YouTube or Twitch)",
       "timestamps": "Marcas de tiempo",
       "noTimestamps": "Aún no hay notas con marca de tiempo.",
@@ -125,6 +127,9 @@
       "minutesAgo": "hace {{count}} min",
       "hoursAgo": "hace {{count}} h",
       "daysAgo": "hace {{count}} días"
+    },
+    "pending": {
+      "saving": "Guardando..."
     }
   },
   "dashboard": {

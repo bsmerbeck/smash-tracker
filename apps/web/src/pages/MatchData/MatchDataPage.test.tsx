@@ -575,7 +575,7 @@ describe('MatchDataPage', () => {
     expect(updateMatch).not.toHaveBeenCalled();
   });
 
-  it('opens the VOD notes dialog and saves a new VOD URL and timestamp', async () => {
+  it('opens the lean Attach VOD dialog (SETFEAT-03) and saves a new VOD URL', async () => {
     const user = userEvent.setup();
     getFighters.mockResolvedValue({ primary: [mario.id], secondary: [] });
     listMatches.mockResolvedValue([
@@ -597,30 +597,24 @@ describe('MatchDataPage', () => {
     await user.click(screen.getByLabelText('Add VOD notes'));
 
     const dialog = await screen.findByRole('dialog');
-    expect(within(dialog).getByText('VOD Notes')).toBeInTheDocument();
+    // SETFEAT-03: the camera-icon path opens the lean Attach VOD dialog, not
+    // the full timestamped-notes editor — no notes UI renders here.
+    expect(within(dialog).getByText('Attach VOD')).toBeInTheDocument();
+    expect(within(dialog).queryByText('Timestamps')).not.toBeInTheDocument();
 
     await user.type(
       within(dialog).getByLabelText('VOD URL (YouTube or Twitch)'),
       'https://youtube.com/watch?v=abc123',
     );
-    await user.type(within(dialog).getByLabelText('Timestamp time'), '2:41');
-    await user.type(within(dialog).getByLabelText('Timestamp note'), 'missed punish on shield');
-    await user.click(within(dialog).getByRole('button', { name: 'Add timestamp' }));
     await user.click(within(dialog).getByRole('button', { name: 'Save' }));
 
-    // Phase 8: the vodUrl PATCH and the note creation are two separate
-    // calls — the dialog is re-pointed at the dedicated note endpoint
-    // instead of carrying `vodTimestamps` through the match PATCH.
     await waitFor(() => expect(updateMatch).toHaveBeenCalledTimes(1));
     expect(updateMatch).toHaveBeenCalledWith(
       'm1',
       expect.objectContaining({ vodUrl: 'https://youtube.com/watch?v=abc123' }),
     );
     expect(updateMatch.mock.calls[0]![1]).not.toHaveProperty('vodTimestamps');
-    expect(createNote).toHaveBeenCalledWith('m1', {
-      seconds: 161,
-      note: 'missed punish on shield',
-    });
+    expect(createNote).not.toHaveBeenCalled();
   });
 
   it('deletes a match after confirmation', async () => {

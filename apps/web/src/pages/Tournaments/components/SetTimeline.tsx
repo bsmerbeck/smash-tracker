@@ -19,7 +19,7 @@ import {
 import { buildStartggUrl } from '../lib/startggLinks';
 import { cn } from '@/lib/utils';
 import { formatTimestamp, vodDeepLink } from '@/lib/vod';
-import { VodNotesDialog } from '@/components/vod/VodNotesDialog';
+import { AttachVodDialog } from '@/components/vod/AttachVodDialog';
 
 function GameChip({ match }: { match: Match }) {
   const { t } = useTranslation();
@@ -156,7 +156,7 @@ function VodLink({ set }: { set: TournamentSet }) {
         <Video className={vodUrl ? 'size-3.5 text-primary' : 'size-3.5'} />
       </Button>
       {dialogOpen && (
-        <VodNotesDialog match={vodMatch} open={dialogOpen} onOpenChange={setDialogOpen} />
+        <AttachVodDialog match={vodMatch} open={dialogOpen} onOpenChange={setDialogOpen} />
       )}
     </div>
   );
