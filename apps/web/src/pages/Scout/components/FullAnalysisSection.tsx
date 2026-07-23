@@ -10,6 +10,7 @@ import { OpponentTable } from '@/pages/FighterAnalysis/components/OpponentTable'
 import { WhatTheyPlayTable } from '@/pages/Opponents/components/WhatTheyPlayTable';
 import { ScoutingTrendChart } from '@/pages/Opponents/components/ScoutingTrendChart';
 import { getFighterById } from '@/data/sprites';
+import { localizedFighterName } from '@/lib/fighterNames';
 import { scoutGamesToMatches } from '../lib/fullAnalysis';
 
 /**
@@ -101,7 +102,10 @@ function FullAnalysisContent({ games, gamerTag }: { games: ScoutGame[]; gamerTag
         <StageMastery
           fighterMatches={topCharacterMatches}
           title={t('scout.fullAnalysis.stageMasteryFor', {
-            name: topCharacterSprite?.name ?? t('scout.fullAnalysis.topCharacter'),
+            name:
+              topCharacterSprite && topCharacterId != null
+                ? localizedFighterName(topCharacterId, t)
+                : t('scout.fullAnalysis.topCharacter'),
           })}
         />
       )}

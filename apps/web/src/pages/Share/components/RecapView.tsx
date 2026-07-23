@@ -5,6 +5,7 @@ import { Download, ExternalLink } from 'lucide-react';
 import type { PublicShareSnapshot, RecapGame } from '@smash-tracker/shared';
 import { formatOrdinal } from '@smash-tracker/shared';
 import { getFighterById } from '@/data/sprites';
+import { localizedFighterName } from '@/lib/fighterNames';
 import { PublicLayout } from '@/layouts/PublicLayout';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -35,22 +36,22 @@ function GameDetail({ game }: { game: RecapGame }) {
         game.win === false && 'border-destructive/40 bg-destructive/5',
       )}
     >
-      {myFighter && (
+      {myFighter && game.fighterId != null && (
         <img
           src={myFighter.url}
-          alt={myFighter.name}
-          title={myFighter.name}
+          alt={localizedFighterName(game.fighterId, t)}
+          title={localizedFighterName(game.fighterId, t)}
           className="size-6 shrink-0 object-contain"
         />
       )}
       {(myFighter || opponentFighter) && (
         <span className="text-muted-foreground">{t('matchups.vs')}</span>
       )}
-      {opponentFighter && (
+      {opponentFighter && game.opponentFighterId != null && (
         <img
           src={opponentFighter.url}
-          alt={opponentFighter.name}
-          title={opponentFighter.name}
+          alt={localizedFighterName(game.opponentFighterId, t)}
+          title={localizedFighterName(game.opponentFighterId, t)}
           className="size-6 shrink-0 object-contain"
         />
       )}
@@ -202,7 +203,7 @@ export function RecapView({ snapshot, token }: { snapshot: PublicShareSnapshot; 
                 <img
                   key={fighter.id}
                   src={fighter.url}
-                  alt={fighter.name}
+                  alt={localizedFighterName(fighter.id, t)}
                   className="size-10 shrink-0 rounded"
                 />
               ))}

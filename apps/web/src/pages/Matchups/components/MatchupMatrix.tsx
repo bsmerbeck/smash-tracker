@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { getMatchupMatrix, type MatchupMatrixCell } from '@/lib/stats';
 import { getFighterById } from '@/data/sprites';
+import { localizedFighterName } from '@/lib/fighterNames';
 import { matchupCellBackground } from '../lib/matchupCellColor';
 import { useMatchupsContext } from '../MatchupsContext';
 
@@ -94,7 +95,7 @@ export function MatchupMatrix({ matches }: { matches: Match[] }) {
                             />
                           )}
                           <span className="w-16 truncate text-center text-xs text-muted-foreground">
-                            {opponent?.name ?? t('common.unknown')}
+                            {opponent ? localizedFighterName(opponentId, t) : t('common.unknown')}
                           </span>
                         </div>
                       </th>
@@ -120,16 +121,24 @@ export function MatchupMatrix({ matches }: { matches: Match[] }) {
                               loading="lazy"
                             />
                           )}
-                          <span className="truncate" title={fighter?.name ?? t('common.unknown')}>
-                            {fighter?.name ?? t('common.unknown')}
+                          <span
+                            className="truncate"
+                            title={
+                              fighter ? localizedFighterName(fighterId, t) : t('common.unknown')
+                            }
+                          >
+                            {fighter ? localizedFighterName(fighterId, t) : t('common.unknown')}
                           </span>
                         </div>
                       </th>
                       {columnIds.map((opponentId) => {
                         const cell = cellByKey.get(`${fighterId}:${opponentId}`);
-                        const opponentName =
-                          getFighterById(opponentId)?.name ?? t('common.unknown');
-                        const fighterName = fighter?.name ?? t('common.unknown');
+                        const opponentName = getFighterById(opponentId)
+                          ? localizedFighterName(opponentId, t)
+                          : t('common.unknown');
+                        const fighterName = fighter
+                          ? localizedFighterName(fighterId, t)
+                          : t('common.unknown');
                         return (
                           <td key={opponentId} className="p-1 text-center">
                             {cell ? (

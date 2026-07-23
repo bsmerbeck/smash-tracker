@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { Check, ChevronsUpDown } from 'lucide-react';
 import type { Match } from '@smash-tracker/shared';
 import { getFighterById } from '@/data/sprites';
+import { localizedFighterName } from '@/lib/fighterNames';
 import { ALL_FILTER_VALUE, tournamentLabel } from '@/pages/MatchData/lib/matchTableFilters';
 import type { VodManagerFilterState, VodSortDirection } from '../lib/vodManagerFilters';
 import { tagLabel } from '@/lib/tags';
@@ -233,7 +234,8 @@ function MatchRow({
       )}
     >
       <span className="font-medium">
-        {fighter?.name ?? t('common.unknown')} vs {opponentFighter?.name ?? t('common.unknown')}
+        {fighter ? localizedFighterName(match.fighter_id, t) : t('common.unknown')} vs{' '}
+        {opponentFighter ? localizedFighterName(match.opponent_id, t) : t('common.unknown')}
       </span>
       <span className="text-xs opacity-80">
         {opponent} · {tournamentLabel(match)} · {new Date(match.time).toLocaleDateString()}

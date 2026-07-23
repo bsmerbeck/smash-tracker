@@ -5,6 +5,7 @@ import { useTranslation } from 'react-i18next';
 import { Check, ExternalLink, Pencil, Plus, Trash2, X } from 'lucide-react';
 import type { PublicShareSnapshot } from '@smash-tracker/shared';
 import { getFighterById } from '@/data/sprites';
+import { localizedFighterName } from '@/lib/fighterNames';
 import { NO_SELECTION_STAGE } from '@/data/stages';
 import { PublicLayout } from '@/layouts/PublicLayout';
 import { useSeo } from '@/hooks/useSeo';
@@ -624,8 +625,10 @@ export function ShareViewPage() {
     title: snapshot
       ? snapshot.kind === 'recap'
         ? `${snapshot.tournamentName} — Recap · grandfinals.gg`
-        : `${getFighterById(snapshot.fighterId!)?.name ?? t('common.unknown')} vs ${
-            getFighterById(snapshot.opponentFighterId!)?.name ?? t('common.unknown')
+        : `${getFighterById(snapshot.fighterId!) ? localizedFighterName(snapshot.fighterId!, t) : t('common.unknown')} vs ${
+            getFighterById(snapshot.opponentFighterId!)
+              ? localizedFighterName(snapshot.opponentFighterId!, t)
+              : t('common.unknown')
           } — VOD review · grandfinals.gg`
       : unavailable
         ? t('share.unavailableTitle')
@@ -874,16 +877,22 @@ export function ShareViewPage() {
         <div className="flex flex-col gap-2">
           <div className="flex flex-wrap items-center gap-3">
             {fighter && (
-              <img src={fighter.url} alt={fighter.name} className="size-10 shrink-0 rounded" />
+              <img
+                src={fighter.url}
+                alt={localizedFighterName(snapshot.fighterId!, t)}
+                className="size-10 shrink-0 rounded"
+              />
             )}
             <span className="text-lg font-semibold">
-              {fighter?.name ?? t('common.unknown')} vs.{' '}
-              {opponentFighter?.name ?? t('common.unknown')}
+              {fighter ? localizedFighterName(snapshot.fighterId!, t) : t('common.unknown')} vs.{' '}
+              {opponentFighter
+                ? localizedFighterName(snapshot.opponentFighterId!, t)
+                : t('common.unknown')}
             </span>
             {opponentFighter && (
               <img
                 src={opponentFighter.url}
-                alt={opponentFighter.name}
+                alt={localizedFighterName(snapshot.opponentFighterId!, t)}
                 className="size-10 shrink-0 rounded"
               />
             )}

@@ -3,6 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import type { Match } from '@smash-tracker/shared';
 import { getFighterById } from '@/data/sprites';
+import { localizedFighterName } from '@/lib/fighterNames';
 import { stagesById } from '@/data/stages';
 
 /**
@@ -45,7 +46,7 @@ export function RecentEncounters({ matches }: { matches: Match[] }) {
                       {fighterSprite && (
                         <img
                           src={fighterSprite.url}
-                          alt={fighterSprite.name}
+                          alt={localizedFighterName(fighterSprite.id, t)}
                           className="size-6 object-contain"
                         />
                       )}
@@ -53,7 +54,7 @@ export function RecentEncounters({ matches }: { matches: Match[] }) {
                       {opponentSprite && (
                         <img
                           src={opponentSprite.url}
-                          alt={opponentSprite.name}
+                          alt={localizedFighterName(opponentSprite.id, t)}
                           className="size-6 object-contain"
                         />
                       )}

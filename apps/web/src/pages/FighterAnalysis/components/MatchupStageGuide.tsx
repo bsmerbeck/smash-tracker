@@ -21,6 +21,7 @@ import type { Match } from '@smash-tracker/shared';
 import { getMatchupStageGuide, type StageRecord } from '@/lib/stats';
 import { getFighterById } from '@/data/sprites';
 import { stagesById } from '@/data/stages';
+import { localizedFighterName } from '@/lib/fighterNames';
 
 const THRESHOLD_OPTIONS = [1, 2, 3, 5, 10];
 
@@ -96,7 +97,11 @@ export function MatchupStageGuide({ fighterMatches }: { fighterMatches: Match[] 
                           {sprite && (
                             <img src={sprite.url} alt="" className="size-6 object-contain" />
                           )}
-                          <span>{sprite?.name ?? t('common.unknown')}</span>
+                          <span>
+                            {sprite
+                              ? localizedFighterName(row.opponentFighterId, t)
+                              : t('common.unknown')}
+                          </span>
                         </div>
                       </TableCell>
                       <TableCell>

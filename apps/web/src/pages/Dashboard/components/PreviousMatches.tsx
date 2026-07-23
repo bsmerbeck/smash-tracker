@@ -24,6 +24,7 @@ import type { Match } from '@smash-tracker/shared';
 import { toast } from 'sonner';
 import { getLastNMatches } from '@/lib/stats';
 import { getFighterById } from '@/data/sprites';
+import { localizedFighterName } from '@/lib/fighterNames';
 import { useDeleteMatch } from '@/hooks/useDeleteMatch';
 import { useDashboardContext } from '../DashboardContext';
 
@@ -92,13 +93,17 @@ export function PreviousMatches({ matches }: { matches: Match[] }) {
                       {fighterSprite && (
                         <img src={fighterSprite.url} alt="" className="size-8 object-contain" />
                       )}
-                      <span className="text-xs">{fighterSprite?.name}</span>
+                      <span className="text-xs">
+                        {fighterSprite ? localizedFighterName(match.fighter_id, t) : ''}
+                      </span>
                     </div>
                     <div className="flex flex-col items-center text-center">
                       {opponentSprite && (
                         <img src={opponentSprite.url} alt="" className="size-8 object-contain" />
                       )}
-                      <span className="text-xs">{opponentSprite?.name}</span>
+                      <span className="text-xs">
+                        {opponentSprite ? localizedFighterName(match.opponent_id, t) : ''}
+                      </span>
                     </div>
                     <span
                       className={`font-medium ${match.win ? 'text-emerald-500' : 'text-destructive'}`}

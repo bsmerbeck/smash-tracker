@@ -10,6 +10,7 @@ import {
 } from '@/components/ui/table';
 import type { ScoutCharacterUsage } from '@smash-tracker/shared';
 import { getFighterById } from '@/data/sprites';
+import { localizedFighterName } from '@/lib/fighterNames';
 
 const MAX_ROWS = 8;
 
@@ -51,7 +52,9 @@ export function ScoutCharactersCard({ characters }: { characters: ScoutCharacter
                             ?
                           </span>
                         )}
-                        <span>{sprite?.name ?? t('common.unknown')}</span>
+                        <span>
+                          {sprite ? localizedFighterName(row.fighterId, t) : t('common.unknown')}
+                        </span>
                       </div>
                     </TableCell>
                     <TableCell className="text-right">{winRate}%</TableCell>

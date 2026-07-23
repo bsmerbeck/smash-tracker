@@ -2,6 +2,7 @@ import { useTranslation } from 'react-i18next';
 import { ArrowDown, ArrowUp, X } from 'lucide-react';
 import type { Match } from '@smash-tracker/shared';
 import { getFighterById } from '@/data/sprites';
+import { localizedFighterName } from '@/lib/fighterNames';
 import { tournamentLabel } from '@/pages/MatchData/lib/matchTableFilters';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
@@ -58,7 +59,8 @@ export function PlaylistRow({
         )}
       >
         <span className="font-medium">
-          {fighter?.name ?? t('common.unknown')} vs {opponentFighter?.name ?? t('common.unknown')}
+          {fighter ? localizedFighterName(match.fighter_id, t) : t('common.unknown')} vs{' '}
+          {opponentFighter ? localizedFighterName(match.opponent_id, t) : t('common.unknown')}
         </span>
         <span className="text-xs opacity-80">
           {opponent} · {tournamentLabel(match)} · {new Date(match.time).toLocaleDateString()}

@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import type { Match } from '@smash-tracker/shared';
 import { tournamentLabel } from '@/pages/MatchData/lib/matchTableFilters';
 import { getFighterById } from '@/data/sprites';
+import { localizedFighterName } from '@/lib/fighterNames';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
@@ -87,7 +88,7 @@ export function ReviewSourcesDrawer({
                       {fighterSprite && (
                         <img
                           src={fighterSprite.url}
-                          alt={fighterSprite.name}
+                          alt={localizedFighterName(match.fighter_id, t)}
                           className="size-6 object-contain"
                         />
                       )}
@@ -95,7 +96,7 @@ export function ReviewSourcesDrawer({
                       {opponentSprite && (
                         <img
                           src={opponentSprite.url}
-                          alt={opponentSprite.name}
+                          alt={localizedFighterName(match.opponent_id, t)}
                           className="size-6 object-contain"
                         />
                       )}

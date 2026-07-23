@@ -9,6 +9,7 @@ import type {
 import { rankMatchup, selectMyCandidateFighterIds, type MatchupPick } from '@smash-tracker/shared';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { getFighterById } from '@/data/sprites';
+import { useFighterName, useFighterNameResolver } from '@/hooks/useFighterName';
 import { useFighters } from '@/hooks/useFighters';
 
 const MAX_OPPONENT_ROWS = 5;
@@ -24,6 +25,7 @@ interface AdvisorRow {
 function PickChip({ pick, tone }: { pick: MatchupPick; tone: 'best' | 'worst' }) {
   const { t } = useTranslation();
   const sprite = getFighterById(pick.fighterId);
+  const localizedName = useFighterName(pick.fighterId);
   const evidenceParts: string[] = [];
   if (pick.evidence.record) {
     evidenceParts.push(t('scout.advisor.inYourSets', { record: pick.evidence.record }));
@@ -46,7 +48,7 @@ function PickChip({ pick, tone }: { pick: MatchupPick; tone: 'best' | 'worst' })
       )}
       <div className="flex flex-col leading-tight">
         <span className={`text-sm font-medium ${tone === 'worst' ? 'text-muted-foreground' : ''}`}>
-          {sprite?.name ?? t('common.unknown')}
+          {sprite ? localizedName : t('common.unknown')}
         </span>
         <span className="text-xs text-muted-foreground">{evidenceParts.join(' · ')}</span>
       </div>
@@ -75,6 +77,7 @@ export function ScoutMatchupAdvisorCard({
   matches: Match[];
 }) {
   const { t } = useTranslation();
+  const localizedName = useFighterNameResolver();
   const { data: fighters } = useFighters();
 
   const myFighterIds = useMemo(
@@ -161,7 +164,9 @@ export function ScoutMatchupAdvisorCard({
                   <div className="flex flex-col leading-tight">
                     <span className="text-sm font-medium">
                       {t('scout.advisor.vsName', {
-                        name: getFighterById(row.opponentFighterId)?.name ?? t('common.unknown'),
+                        name: getFighterById(row.opponentFighterId)
+                          ? localizedName(row.opponentFighterId)
+                          : t('common.unknown'),
                       })}
                     </span>
                     <span className="text-xs text-muted-foreground">

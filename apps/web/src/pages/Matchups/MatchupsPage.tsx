@@ -8,6 +8,7 @@ import { useFighters } from '@/hooks/useFighters';
 import { useFilteredMatches } from '@/hooks/useFilteredMatches';
 import { useSubjectPath } from '@/hooks/useSubjectPath';
 import { getFighterById } from '@/data/sprites';
+import { localizedFighterName } from '@/lib/fighterNames';
 import { FilteredEmptyNotice } from '@/components/FilteredEmptyNotice';
 import { alphaSpriteList } from '@/components/match-form/MatchForm';
 import { MatchupsContext, type MatchupsContextValue } from './MatchupsContext';
@@ -125,9 +126,9 @@ export function MatchupsPage() {
           {fighter && opponent && (
             <div className="flex items-center justify-center gap-4">
               {fighter.url && <img src={fighter.url} alt="" className="size-12 object-contain" />}
-              <span className="text-lg font-semibold">{fighter.name}</span>
+              <span className="text-lg font-semibold">{localizedFighterName(fighter.id, t)}</span>
               <span className="text-muted-foreground">{t('matchups.vs')}</span>
-              <span className="text-lg font-semibold">{opponent.name}</span>
+              <span className="text-lg font-semibold">{localizedFighterName(opponent.id, t)}</span>
               {opponent.url && <img src={opponent.url} alt="" className="size-12 object-contain" />}
             </div>
           )}

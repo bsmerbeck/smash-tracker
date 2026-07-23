@@ -7,6 +7,8 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { getFighterById } from '@/data/sprites';
+import { localizedFighterName } from '@/lib/fighterNames';
+import { useFighterNameResolver } from '@/hooks/useFighterName';
 import { stagesById } from '@/data/stages';
 import { stageAbbreviation } from '@/components/StageOption';
 import {
@@ -30,7 +32,9 @@ function GameChip({ match }: { match: Match }) {
   const userFighter = getFighterById(match.fighter_id);
   const opponentFighter = getFighterById(match.opponent_id);
   const matchup =
-    userFighter && opponentFighter ? ` · ${userFighter.name} vs ${opponentFighter.name}` : '';
+    userFighter && opponentFighter
+      ? ` · ${localizedFighterName(match.fighter_id, t)} vs ${localizedFighterName(match.opponent_id, t)}`
+      : '';
 
   return (
     <Tooltip>
@@ -53,6 +57,7 @@ function GameChip({ match }: { match: Match }) {
 }
 
 function FighterTags({ fighterIds, label }: { fighterIds: number[]; label: string }) {
+  const localizedName = useFighterNameResolver();
   return (
     <div className="flex items-center -space-x-1" aria-label={label}>
       {fighterIds.map((id) => {
@@ -61,8 +66,8 @@ function FighterTags({ fighterIds, label }: { fighterIds: number[]; label: strin
           <img
             key={id}
             src={sprite.url}
-            alt={sprite.name}
-            title={sprite.name}
+            alt={localizedName(id)}
+            title={localizedName(id)}
             className="size-7 rounded-full border border-background object-contain"
           />
         ) : null;
@@ -320,8 +325,8 @@ export function SetTimeline({
                             {userSprite && (
                               <img
                                 src={userSprite.url}
-                                alt={userSprite.name}
-                                title={userSprite.name}
+                                alt={localizedFighterName(match.fighter_id, t)}
+                                title={localizedFighterName(match.fighter_id, t)}
                                 className="size-6 object-contain"
                               />
                             )}
@@ -333,8 +338,8 @@ export function SetTimeline({
                             {opponentSprite && (
                               <img
                                 src={opponentSprite.url}
-                                alt={opponentSprite.name}
-                                title={opponentSprite.name}
+                                alt={localizedFighterName(match.opponent_id, t)}
+                                title={localizedFighterName(match.opponent_id, t)}
                                 className="size-6 object-contain"
                               />
                             )}

@@ -4,6 +4,7 @@ import type { Match } from '@smash-tracker/shared';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { getFighterById } from '@/data/sprites';
+import { localizedFighterName } from '@/lib/fighterNames';
 import { filterByFighter, rankMatchupsByEvidence, type RankedMatchup } from '@/lib/stats';
 import { useSubjectPath } from '@/hooks/useSubjectPath';
 import { useDashboardContext } from '../DashboardContext';
@@ -114,7 +115,11 @@ function MatchupList({
               <li key={entry.opponentFighterId} className="flex items-center gap-2">
                 {sprite && <img src={sprite.url} alt="" className="size-10 object-contain" />}
                 <div>
-                  <div className="font-medium">{sprite?.name ?? t('common.unknown')}</div>
+                  <div className="font-medium">
+                    {sprite
+                      ? localizedFighterName(entry.opponentFighterId, t)
+                      : t('common.unknown')}
+                  </div>
                   <div className="text-sm text-muted-foreground">
                     {entry.wins}-{entry.losses} &middot; {entry.ratio}% ({entry.totalMatches})
                   </div>

@@ -11,6 +11,7 @@ import {
   type UpdateMatchInput,
 } from '@smash-tracker/shared';
 import { getFighterById } from '@/data/sprites';
+import { localizedFighterName } from '@/lib/fighterNames';
 import { formatTimestamp } from '@/lib/vod';
 import { MATCH_PRESET_TAGS, addTagToList, removeTagFromList, tagLabel } from '@/lib/tags';
 import { addMatchToPlaylistIds } from '@/lib/playlists';
@@ -392,11 +393,15 @@ export function SelectedMatchMeta({
       <dl className="grid grid-cols-2 gap-2 text-muted-foreground">
         <div>
           <dt className="text-xs">{t('vodManager.filters.fighter')}</dt>
-          <dd className="text-foreground">{fighter?.name ?? t('common.unknown')}</dd>
+          <dd className="text-foreground">
+            {fighter ? localizedFighterName(match.fighter_id, t) : t('common.unknown')}
+          </dd>
         </div>
         <div>
           <dt className="text-xs">{t('vodManager.filters.opponentFighter')}</dt>
-          <dd className="text-foreground">{opponentFighter?.name ?? t('common.unknown')}</dd>
+          <dd className="text-foreground">
+            {opponentFighter ? localizedFighterName(match.opponent_id, t) : t('common.unknown')}
+          </dd>
         </div>
         <div>
           <dt className="text-xs">{t('vodManager.filters.stage')}</dt>

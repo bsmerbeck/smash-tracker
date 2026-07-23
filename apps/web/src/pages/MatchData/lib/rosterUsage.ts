@@ -30,6 +30,13 @@ export function winRateTone(winRate: number): WinRateTone {
  * `fighterSprites` is the user's primary+secondary selection (same source
  * FighterPieChart used) so unplayed selected fighters are simply omitted
  * rather than shown with a zero-length bar.
+ *
+ * The tie-break below intentionally uses the fighter's canonical (English)
+ * SpriteList name, not the localized display name: it's a stable sort key,
+ * never rendered, so localizing it would just reorder tied rows whenever the
+ * user switches languages (flicker with no display benefit) — same
+ * not-a-display-read rationale as the canonical-English CSV/evidence-packet
+ * exports (I18N-01).
  */
 export function buildRosterUsage(matches: Match[], fighterSprites: Fighter[]): RosterUsageRow[] {
   const totalGames = matches.length;
@@ -50,5 +57,10 @@ export function buildRosterUsage(matches: Match[], fighterSprites: Fighter[]): R
     });
   }
 
-  return rows.sort((a, b) => b.games - a.games || a.fighter.name.localeCompare(b.fighter.name));
+  return rows.sort((a, b) => {
+    if (b.games !== a.games) return b.games - a.games;
+    const { name: aSortName } = a.fighter;
+    const { name: bSortName } = b.fighter;
+    return aSortName.localeCompare(bSortName);
+  });
 }
