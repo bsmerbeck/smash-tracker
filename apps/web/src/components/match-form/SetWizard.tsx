@@ -36,6 +36,7 @@ import {
 } from '@/components/ui/command';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { cn } from '@/lib/utils';
+import { localizedFighterName } from '@/lib/fighterNames';
 import { StageSelectGroups, StageSelectValue } from '@/components/StageSelectGroups';
 import { useOpponents } from '@/hooks/useOpponents';
 import { useMatches } from '@/hooks/useMatches';
@@ -254,7 +255,7 @@ export function SetWizard({
                       {fighterSprites.map((s) => (
                         <SelectItem key={s.id} value={String(s.id)}>
                           <img src={s.url} alt="" className="size-6 object-contain" />
-                          {s.name}
+                          {localizedFighterName(s.id, t)}
                         </SelectItem>
                       ))}
                     </SelectContent>
@@ -282,7 +283,7 @@ export function SetWizard({
                       {alphaSpriteList.map((s) => (
                         <SelectItem key={s.id} value={String(s.id)}>
                           <img src={s.url} alt="" className="size-6 object-contain" />
-                          {s.name}
+                          {localizedFighterName(s.id, t)}
                         </SelectItem>
                       ))}
                     </SelectContent>

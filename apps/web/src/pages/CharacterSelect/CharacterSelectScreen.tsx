@@ -6,6 +6,8 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useFighters } from '@/hooks/useFighters';
 import { useSaveFighters } from '@/hooks/useSaveFighters';
+import { useFighterNameResolver } from '@/hooks/useFighterName';
+import { matchesFighterQuery } from '@/lib/fighterNames';
 import { SpriteList } from '@/data/sprites';
 import { cn } from '@/lib/utils';
 
@@ -41,6 +43,7 @@ export function CharacterSelectScreen({
   const navigate = useNavigate();
   const { data: fighters, isLoading } = useFighters();
   const saveFighters = useSaveFighters();
+  const localizedName = useFighterNameResolver();
 
   const [selectedIds, setSelectedIds] = useState<number[]>([]);
   const [filter, setFilter] = useState('');
@@ -67,11 +70,10 @@ export function CharacterSelectScreen({
   );
 
   const availableSprites = useMemo(() => {
-    const lowerFilter = filter.toLowerCase();
     return SpriteList.filter((s) => !otherIds.has(s.id))
       .filter((s) => !selectedIds.includes(s.id))
-      .filter((s) => lowerFilter === '' || s.name.toLowerCase().startsWith(lowerFilter));
-  }, [filter, otherIds, selectedIds]);
+      .filter((s) => matchesFighterQuery(filter, localizedName(s.id), s.name));
+  }, [filter, otherIds, selectedIds, localizedName]);
 
   function toggleSprite(id: number) {
     setSelectedIds((prev) => (prev.includes(id) ? prev.filter((s) => s !== id) : [...prev, id]));
@@ -116,6 +118,7 @@ export function CharacterSelectScreen({
               <SpriteTile
                 key={sprite.id}
                 sprite={sprite}
+                name={localizedName(sprite.id)}
                 selected
                 onClick={() => toggleSprite(sprite.id)}
               />
@@ -148,7 +151,12 @@ export function CharacterSelectScreen({
         data-testid="available-sprite-grid"
       >
         {availableSprites.map((sprite) => (
-          <SpriteTile key={sprite.id} sprite={sprite} onClick={() => toggleSprite(sprite.id)} />
+          <SpriteTile
+            key={sprite.id}
+            sprite={sprite}
+            name={localizedName(sprite.id)}
+            onClick={() => toggleSprite(sprite.id)}
+          />
         ))}
       </div>
     </div>
@@ -157,10 +165,13 @@ export function CharacterSelectScreen({
 
 function SpriteTile({
   sprite,
+  name,
   selected = false,
   onClick,
 }: {
-  sprite: { id: number; name: string; url: string };
+  sprite: { id: number; url: string };
+  /** Localized display name (resolved by the caller via `useFighterNameResolver`). */
+  name: string;
   selected?: boolean;
   onClick: () => void;
 }) {
@@ -169,14 +180,14 @@ function SpriteTile({
       type="button"
       onClick={onClick}
       aria-pressed={selected}
-      title={sprite.name}
+      title={name}
       className={cn(
         'flex flex-col items-center gap-1 rounded-md border p-2 text-center transition-colors hover:bg-accent',
         selected && 'border-primary ring-2 ring-primary ring-offset-2 ring-offset-background',
       )}
     >
-      <img src={sprite.url} alt={sprite.name} className="size-12 object-contain" />
-      <span className="line-clamp-1 text-xs">{sprite.name}</span>
+      <img src={sprite.url} alt={name} className="size-12 object-contain" />
+      <span className="line-clamp-1 text-xs">{name}</span>
     </button>
   );
 }

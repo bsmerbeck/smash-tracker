@@ -7,6 +7,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { useFighterNameResolver } from '@/hooks/useFighterName';
 
 /** Ports legacy/src/screens/FighterAnalysis/components/SelectFighter. */
 export function SelectFighter({
@@ -19,6 +20,7 @@ export function SelectFighter({
   onChange: (fighter: Fighter) => void;
 }) {
   const { t } = useTranslation();
+  const localizedName = useFighterNameResolver();
   return (
     <Select
       value={fighter ? String(fighter.id) : undefined}
@@ -36,7 +38,7 @@ export function SelectFighter({
         {fighterSprites.map((sprite) => (
           <SelectItem key={sprite.id} value={String(sprite.id)}>
             <img src={sprite.url} alt="" className="size-6 object-contain" />
-            {sprite.name}
+            {localizedName(sprite.id)}
           </SelectItem>
         ))}
       </SelectContent>

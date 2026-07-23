@@ -6,11 +6,13 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { useFighterNameResolver } from '@/hooks/useFighterName';
 import { useMatchupsContext } from '../MatchupsContext';
 
 /** Ports legacy/src/screens/Matchups/components/SelectFighter — picks "your" fighter from the user's selections. */
 export function SelectFighter() {
   const { t } = useTranslation();
+  const localizedName = useFighterNameResolver();
   const { fighter, fighterSprites, setFighter } = useMatchupsContext();
 
   return (
@@ -30,7 +32,7 @@ export function SelectFighter() {
         {fighterSprites.map((sprite) => (
           <SelectItem key={sprite.id} value={String(sprite.id)}>
             <img src={sprite.url} alt="" className="size-6 object-contain" />
-            {sprite.name}
+            {localizedName(sprite.id)}
           </SelectItem>
         ))}
       </SelectContent>
