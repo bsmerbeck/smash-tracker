@@ -220,7 +220,7 @@ describe('ReviewComposerPage', () => {
   });
 
   it('REV-01: shows a compact no-VODs notice (no Sources drawer, no empty player box) when the client library has zero VODs, and keeps Publish enabled', async () => {
-    matchesList.mockResolvedValue([makeMatch({ vodUrl: null })]);
+    matchesList.mockResolvedValue([makeMatch({ vodUrl: undefined })]);
     renderComposer();
 
     expect(
