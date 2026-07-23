@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import {
+  clientVisibleVersionSchema,
   createGspReadingInputSchema,
   createMatchInputSchema,
   createPlaylistInputSchema,
@@ -8,17 +9,25 @@ import {
   eliteThresholdGsp,
   estimateMaxGsp,
   estimateT,
+  extractCitationTokens,
+  reviewSectionSchema,
+  SAFE_MARKDOWN_DOC_MAX_LENGTH,
   upsertGspSettingsInputSchema,
   upsertOpponentNoteInputSchema,
   vodTimestampSchema,
 } from '@smash-tracker/shared';
 import {
+  CLIENT_VOD_TABLE,
   FIGHTER_PALUTENA,
   FIGHTER_ROY,
   FIGHTER_SORA,
+  FIGHTER_STEVE,
   MATCH_PRESET_TAGS,
   NOTE_PRESET_TAGS,
   VOD_TABLE,
+  buildClientMatches,
+  buildClientReviewDraft,
+  buildClientVodNotes,
   buildGspSeries,
   buildGspSettings,
   buildOpponentNotes,
@@ -243,5 +252,145 @@ describe('buildPlaylists', () => {
     const second = playlists.find((p) => p.name !== 'Roy bracket runs');
     expect(second).toBeDefined();
     expect(second!.vodMatchIndices.length).toBeGreaterThanOrEqual(3);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Phase 15 (PAND-02/PAND-03): Pandemic client-library + review-draft builders
+// ---------------------------------------------------------------------------
+
+/** Real player handles (15-CONTEXT.md coherence rule) — never a client match opponent tag. */
+const REAL_PLAYER_HANDLES = ['sonix', 'acola', 'raru', 'dabuz', 'riddles', 'onin'];
+
+describe('buildClientMatches', () => {
+  const entries = buildClientMatches(NOW);
+
+  it('returns >= 15 (target ~24) Steve matches, every input schema-valid', () => {
+    expect(entries.length).toBeGreaterThanOrEqual(15);
+    for (const entry of entries) {
+      expect(entry.input.fighter_id).toBe(FIGHTER_STEVE);
+      expect(() => createMatchInputSchema.parse(entry.input)).not.toThrow();
+    }
+  });
+
+  it('overall win rate is between 0.45 and 0.65', () => {
+    const wins = entries.filter((e) => e.input.win === true).length;
+    const rate = wins / entries.length;
+    expect(rate).toBeGreaterThanOrEqual(0.45);
+    expect(rate).toBeLessThanOrEqual(0.65);
+  });
+
+  it('never uses a real player handle as the opponent tag', () => {
+    for (const entry of entries) {
+      expect(REAL_PLAYER_HANDLES).not.toContain(entry.input.opponent);
+    }
+  });
+
+  it('has exactly 5 VOD-coherent matches, opponent_id matching CLIENT_VOD_TABLE', () => {
+    const vodEntries = entries.filter((e) => e.input.vodUrl !== undefined);
+    expect(vodEntries.length).toBe(5);
+
+    for (const entry of vodEntries) {
+      const vod = CLIENT_VOD_TABLE.find((v) => v.vodUrl === entry.input.vodUrl);
+      expect(vod).toBeDefined();
+      expect(entry.input.opponent_id).toBe(vod!.opponentFighterId);
+    }
+
+    const distinctUrls = new Set(vodEntries.map((e) => e.input.vodUrl));
+    expect(distinctUrls.size).toBe(5);
+  });
+
+  it('spans at least 50 days of back-dated timestamps', () => {
+    const min = Math.min(...entries.map((e) => e.timeMs));
+    const max = Math.max(...entries.map((e) => e.timeMs));
+    expect(max - min).toBeGreaterThanOrEqual(50 * DAY_MS);
+  });
+});
+
+describe('buildClientVodNotes', () => {
+  const notesByVod = buildClientVodNotes();
+
+  it('returns 5 arrays of 4-6 notes each, seconds in [30, 420]', () => {
+    expect(notesByVod.length).toBe(5);
+    for (const notes of notesByVod) {
+      expect(notes.length).toBeGreaterThanOrEqual(4);
+      expect(notes.length).toBeLessThanOrEqual(6);
+      for (const note of notes) {
+        expect(() => vodTimestampSchema.parse(note)).not.toThrow();
+        expect(note.seconds).toBeGreaterThanOrEqual(30);
+        expect(note.seconds).toBeLessThanOrEqual(420);
+      }
+    }
+  });
+
+  it('contains no "lorem" placeholder text', () => {
+    for (const notes of notesByVod) {
+      for (const note of notes) {
+        expect(note.note.toLowerCase()).not.toContain('lorem');
+      }
+    }
+  });
+
+  it('includes at least one custom (non-preset) tag such as "homework"/"recurring habit"', () => {
+    const allTags = notesByVod.flatMap((notes) => notes.flatMap((n) => n.tags ?? []));
+    const presetTags = new Set<string>(NOTE_PRESET_TAGS);
+    expect(allTags.some((tag) => !presetTags.has(tag))).toBe(true);
+  });
+});
+
+describe('buildClientReviewDraft', () => {
+  const clientVodMatchIds = [
+    'client-match-1',
+    'client-match-2',
+    'client-match-3',
+    'client-match-4',
+    'client-match-5',
+  ];
+  const draft = buildClientReviewDraft(clientVodMatchIds);
+
+  it('returns 6 sections with the fixed kinds, all visible, title null, schema-valid', () => {
+    expect(draft.sections.length).toBe(6);
+    expect(draft.sections.map((s) => s.kind)).toEqual([
+      'summary',
+      'strengths',
+      'priorities',
+      'matchupNotes',
+      'practicePlan',
+      'nextGoals',
+    ]);
+    for (const section of draft.sections) {
+      expect(section.hidden).toBe(false);
+      expect(section.title).toBeNull();
+      expect(() => reviewSectionSchema.parse(section)).not.toThrow();
+    }
+  });
+
+  it('coachPrivateNotes is a non-empty string within SAFE_MARKDOWN_DOC_MAX_LENGTH', () => {
+    expect(typeof draft.coachPrivateNotes).toBe('string');
+    expect(draft.coachPrivateNotes.length).toBeGreaterThan(0);
+    expect(draft.coachPrivateNotes.length).toBeLessThanOrEqual(SAFE_MARKDOWN_DOC_MAX_LENGTH);
+  });
+
+  it('embeds >= 5 citations referencing ONLY the passed match ids, across >= 2 distinct sources', () => {
+    const allBodies = draft.sections.map((s) => s.body).join('\n');
+    const tokens = extractCitationTokens(allBodies);
+    expect(tokens.length).toBeGreaterThanOrEqual(5);
+
+    for (const token of tokens) {
+      expect(clientVodMatchIds).toContain(token.sourceVodRef);
+    }
+    const distinctRefs = new Set(tokens.map((t) => t.sourceVodRef));
+    expect(distinctRefs.size).toBeGreaterThanOrEqual(2);
+  });
+
+  it('the sealed (hidden-filtered/omitted) sections validate against clientVisibleVersionSchema', () => {
+    const sealed = {
+      sections: draft.sections
+        .filter((s) => !s.hidden)
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars -- rest-destructure-to-omit idiom; `hidden` is intentionally discarded
+        .map(({ hidden: _hidden, ...rest }) => rest),
+      publishedAt: NOW,
+    };
+    expect(() => clientVisibleVersionSchema.parse(sealed)).not.toThrow();
   });
 });

@@ -5,6 +5,8 @@ import {
   eliteThresholdGsp,
   estimateMaxGsp,
   estimateT,
+  reviewSectionSchema,
+  serializeCitationToken,
   upsertGspSettingsInputSchema,
   upsertOpponentNoteInputSchema,
   vodTimestampSchema,
@@ -14,6 +16,7 @@ import type {
   CreateMatchInput,
   MatchStage,
   MatchType,
+  ReviewSection,
   UpsertGspSettingsInput,
   UpsertOpponentNoteInput,
 } from '@smash-tracker/shared';
@@ -723,4 +726,433 @@ export function buildPlaylists(): PlaylistSpec[] {
     vodMatchIndices: [2, 5, 8, 9],
   };
   return [roy, edgeguard];
+}
+
+// ---------------------------------------------------------------------------
+// Pandemic client library + review draft (Phase 15, PAND-02/PAND-03)
+// ---------------------------------------------------------------------------
+//
+// Pure content builders for the coaching-mode demo client "Pandemic" —
+// mirrors the personal-showcase builders above (same PRNG discipline, same
+// schema-validated-output discipline), extended for the coaching domain.
+// NO firebase-admin import, no RtdbService, no network fetch — the
+// orchestrator (Plan 02) is the one that writes these into the tenant's
+// subject-scoped trees via RtdbService(tenantId).
+
+/** SpriteList id for Steve — Pandemic's locked main (packages/shared/src/fighterData.ts). */
+export const FIGHTER_STEVE = 82;
+
+const CLIENT_FIGHTER_SONIC = 41;
+const CLIENT_FIGHTER_LUIGI = 10;
+const CLIENT_FIGHTER_ROSALINA_AND_LUMA = 51;
+const CLIENT_FIGHTER_TERRY = 79;
+
+/** A locked, curated real-footage VOD entry for Pandemic's client library (15-CONTEXT.md). */
+export interface ClientVodEntry {
+  vodUrl: string;
+  /** The curated opponent's fighter — VOD coherence rule pins this to the real footage. */
+  opponentFighterId: number;
+  /** Fictional stand-in for the real human opponent — never a real player's tag. */
+  opponentTagName: string;
+  /** Human-readable set label, for note-authoring context only (not written anywhere). */
+  setLabel: string;
+}
+
+/**
+ * 5 locked Steve VODs (15-CONTEXT.md "Curated Steve VOD List for Pandemic",
+ * locked decision). `vodUrl` reproduced VERBATIM from CONTEXT.md — executors
+ * have no web access to re-derive or validate it.
+ */
+export const CLIENT_VOD_TABLE: ClientVodEntry[] = [
+  {
+    vodUrl: 'https://www.youtube.com/watch?v=xKF3WE6a2Os',
+    opponentFighterId: CLIENT_FIGHTER_SONIC,
+    opponentTagName: 'tidalgear',
+    setLabel: 'GOML 2025 WF (Steve vs Sonic)',
+  },
+  {
+    vodUrl: 'https://www.youtube.com/watch?v=P0t8NdUi-Ng',
+    opponentFighterId: CLIENT_FIGHTER_LUIGI,
+    opponentTagName: 'greenpipe',
+    setLabel: 'Kagaribi 13 WF (Steve vs Luigi)',
+  },
+  {
+    vodUrl: 'https://www.youtube.com/watch?v=GOEF1L7mXR8',
+    opponentFighterId: CLIENT_FIGHTER_SONIC,
+    opponentTagName: 'loopdrive',
+    setLabel: 'Port Priority 9 WF (Steve vs Sonic)',
+  },
+  {
+    vodUrl: 'https://www.youtube.com/watch?v=o2MFLKhPXDs',
+    opponentFighterId: CLIENT_FIGHTER_ROSALINA_AND_LUMA,
+    opponentTagName: 'cometcache',
+    setLabel: 'SSC 2023 WF (Steve vs Rosalina & Luma)',
+  },
+  {
+    vodUrl: 'https://www.youtube.com/watch?v=qo5bgbCTrTk',
+    opponentFighterId: CLIENT_FIGHTER_TERRY,
+    opponentTagName: 'flamehollow',
+    setLabel: 'GOML 2022 WF (Steve vs Terry)',
+  },
+];
+
+/** Win/loss result per CLIENT_VOD_TABLE index — a believable mixed result. */
+const CLIENT_VOD_WINS: boolean[] = [true, false, true, false, true];
+
+/**
+ * Per-CLIENT_VOD_TABLE-index, 4-6 second-offsets (within [30, 420]) that
+ * `buildClientVodNotes` emits notes AT — `buildClientReviewDraft` cites a
+ * subset of these SAME values so its citations land on real annotated
+ * moments (the client-side analog of Phase 14's vodIndex coupling, per
+ * 15-RESEARCH.md/15-CONTEXT.md).
+ */
+export const CLIENT_VOD_NOTE_SECONDS: number[][] = [
+  [45, 120, 210, 305, 380],
+  [60, 140, 220, 300],
+  [50, 130, 200, 275, 340, 400],
+  [40, 115, 190, 260, 330],
+  [55, 125, 205, 290, 360],
+];
+
+/** Extra fictional opponents (matrix variety, SHOW-02-style) — never a real player's tag. */
+const CLIENT_MATRIX_OPPONENTS: OpponentTag[] = [
+  { name: 'tidalgear', fighterId: CLIENT_FIGHTER_SONIC },
+  { name: 'greenpipe', fighterId: CLIENT_FIGHTER_LUIGI },
+  { name: 'cometcache', fighterId: CLIENT_FIGHTER_ROSALINA_AND_LUMA },
+  { name: 'flamehollow', fighterId: CLIENT_FIGHTER_TERRY },
+  { name: 'duskrunner', fighterId: 8 }, // Fox
+  { name: 'ironbarrow', fighterId: 23 }, // Marth
+];
+
+/** Custom (non-preset) match/note tags per CONTEXT.md's coaching vocabulary. */
+const CLIENT_CUSTOM_MATCH_TAGS = ['homework', 'recurring habit'] as const;
+
+const CLIENT_SEED_SHAPE = 0x51ee4300;
+const CLIENT_SEED_OFFSETS = 0xdeadbeef;
+
+const CLIENT_TOTAL_MATCHES = 24;
+const CLIENT_SPAN_DAYS = 56; // ~8 weeks
+
+interface ClientMatchSlot {
+  opponentId: number;
+  opponentTagName: string;
+  vodUrl?: string;
+  win: boolean;
+  dayOffset: number;
+  matchType: MatchType;
+  tags: string[];
+}
+
+/**
+ * Builds ~24 Steve matches for Pandemic's client library (PAND-02): the
+ * first 5 are VOD-coherent (pinned to `CLIENT_VOD_TABLE`, real footage), the
+ * remaining ~19 are a Steve-vs-varied-opponent matrix (mixing
+ * `MATCH_PRESET_TAGS` + coaching customs like "homework"/"recurring habit"),
+ * overall win rate ~55%, back-dated across ~8 weeks ending at `now`.
+ */
+export function buildClientMatches(now: number): MatchEntry[] {
+  const shapeRng = mulberry32(CLIENT_SEED_SHAPE);
+  const offsetRng = mulberry32(CLIENT_SEED_OFFSETS);
+
+  const slots: ClientMatchSlot[] = [];
+
+  // 1. VOD-coherent slots (indices 0-4), fixed per CLIENT_VOD_TABLE.
+  CLIENT_VOD_TABLE.forEach((vod, index) => {
+    slots.push({
+      opponentId: vod.opponentFighterId,
+      opponentTagName: vod.opponentTagName,
+      vodUrl: vod.vodUrl,
+      win: CLIENT_VOD_WINS[index]!,
+      dayOffset: CLIENT_SPAN_DAYS - index * 10, // spread across the window, descending
+      matchType: 'offline-tourney',
+      tags: ['tournament-set'],
+    });
+  });
+
+  // 2. Matrix filler slots — Steve-vs-varied-opponent, remaining count.
+  const fillerCount = CLIENT_TOTAL_MATCHES - CLIENT_VOD_TABLE.length; // 19
+  // 10 wins out of 19 filler slots (+ 3 VOD wins = 13/24 ≈ 54.2%, inside [0.45, 0.65]).
+  const fillerWinTarget = 10;
+  const winPattern = shuffle(
+    [...Array(fillerWinTarget).fill(true), ...Array(fillerCount - fillerWinTarget).fill(false)],
+    shapeRng,
+  );
+
+  // Stratified day-offset sampling across the ~8-week window, same
+  // discipline as buildPersonalMatches — guarantees span rather than merely
+  // making it likely.
+  const binSize = CLIENT_SPAN_DAYS / fillerCount;
+  const stratifiedOffsets = Array.from({ length: fillerCount }, (_, i) => {
+    const lo = 1 + i * binSize;
+    const hi = 1 + (i + 1) * binSize;
+    return Math.round(lo + offsetRng() * (hi - lo));
+  });
+  const shuffledOffsets = shuffle(stratifiedOffsets, offsetRng);
+
+  for (let i = 0; i < fillerCount; i += 1) {
+    const opponent = pick(shapeRng, CLIENT_MATRIX_OPPONENTS);
+    const tags: string[] = [];
+    if (shapeRng() < 0.4) {
+      tags.push(pick(shapeRng, MATCH_PRESET_TAGS));
+    }
+    if (shapeRng() < 0.2) {
+      tags.push(pick(shapeRng, CLIENT_CUSTOM_MATCH_TAGS));
+    }
+    slots.push({
+      opponentId: opponent.fighterId,
+      opponentTagName: opponent.name,
+      win: winPattern[i]!,
+      dayOffset: shuffledOffsets[i]!,
+      matchType: pick(shapeRng, MATCH_TYPE_POOL),
+      tags,
+    });
+  }
+
+  // Guarantee the tag-coverage invariant deterministically (mirrors
+  // buildPersonalMatches' own discipline) rather than leaving it to chance.
+  slots[slots.length - 1]!.tags = ['practice-friendlies', 'homework'];
+
+  if (slots.length !== CLIENT_TOTAL_MATCHES) {
+    // Sanity guard: the VOD/filler slot math above must always add up to
+    // exactly CLIENT_TOTAL_MATCHES.
+    throw new Error(
+      `buildClientMatches: expected ${CLIENT_TOTAL_MATCHES} slots, built ${slots.length}`,
+    );
+  }
+
+  // 3. Materialize each slot into a validated CreateMatchInput + timeMs.
+  return slots.map((slot) => {
+    const jitter = Math.floor(offsetRng() * DAY_MS);
+    const timeMs = now - (slot.dayOffset * DAY_MS + jitter);
+    const map = pick(offsetRng, STAGES);
+    const raw = {
+      fighter_id: FIGHTER_STEVE,
+      opponent_id: slot.opponentId,
+      map,
+      opponent: slot.opponentTagName,
+      matchType: slot.matchType,
+      win: slot.win,
+      ...(slot.vodUrl !== undefined ? { vodUrl: slot.vodUrl } : {}),
+      ...(slot.tags.length > 0 ? { tags: slot.tags.slice(0, 10) } : {}),
+    };
+    return { input: createMatchInputSchema.parse(raw), timeMs };
+  });
+}
+
+/**
+ * Believable Steve-matchup coaching lines (ledge-trap reads, disadvantage
+ * habits, minecart timing), one array per `CLIENT_VOD_TABLE`/
+ * `CLIENT_VOD_NOTE_SECONDS` index — array lengths MUST match
+ * `CLIENT_VOD_NOTE_SECONDS`'s per-index length exactly.
+ */
+const CLIENT_NOTE_LINES: { text: string; tag: (typeof NOTE_PRESET_TAGS)[number] }[][] = [
+  [
+    {
+      text: 'Minecart read at the ledge forces an early jump and Steve converts straight into the edgeguard.',
+      tag: 'edgeguard',
+    },
+    {
+      text: 'Clean neutral win off a stray jab against Sonic, good spacing on the poke.',
+      tag: 'neutral',
+    },
+    {
+      text: 'Rough disadvantage stretch here — a missed DI mixup lets Sonic extend the combo further than it should.',
+      tag: 'defense',
+    },
+    {
+      text: 'TNT setup baits the roll and lands the punish for a big damage swing.',
+      tag: 'punish',
+    },
+    {
+      text: 'Kill confirm off a minecart throw near the top blast zone closes out the stock.',
+      tag: 'kill-confirm',
+    },
+  ],
+  [
+    {
+      text: 'Anvil drop covers the getup option and starts a strong frame-advantage sequence.',
+      tag: 'neutral',
+    },
+    {
+      text: 'Ledge trap with down-tilt catches the airdodge read against Luigi cleanly.',
+      tag: 'edgeguard',
+    },
+    {
+      text: 'Elytra recovery mixup gets back to the stage safely against the edgeguard attempt.',
+      tag: 'recovery',
+    },
+    {
+      text: 'Recurring habit here — panics into a roll under pressure instead of blocking, worth drilling.',
+      tag: 'mental-game',
+    },
+  ],
+  [
+    {
+      text: 'Minecart timing wins neutral again here, a textbook spacing read on Sonic.',
+      tag: 'neutral',
+    },
+    {
+      text: 'Missed the kill confirm at kill percent, needs cleanup on this exact string next set.',
+      tag: 'mistake',
+    },
+    {
+      text: 'Good matchup-specific read on the spin-dash approach covered in scouting notes.',
+      tag: 'matchup-note',
+    },
+    {
+      text: 'Highlight-reel edgeguard off a well-placed minecart closes out the stock early.',
+      tag: 'highlight',
+    },
+    { text: 'Mixes up the block placement here to open the stubborn shield.', tag: 'mixup' },
+    { text: 'Solid defensive DI escapes the combo cleanly this time.', tag: 'defense' },
+  ],
+  [
+    {
+      text: "Neutral opens with a clean jab read against Rosalina & Luma's zoning pressure.",
+      tag: 'neutral',
+    },
+    {
+      text: 'Ledge trap punishes the airdodge — a recurring habit worth drilling further.',
+      tag: 'edgeguard',
+    },
+    {
+      text: 'Disadvantage habit here — holding shield too long lets Luma extend the pressure.',
+      tag: 'defense',
+    },
+    {
+      text: 'Recovery mixup gets back safely past the gravitational-pull edgeguard attempt.',
+      tag: 'recovery',
+    },
+    {
+      text: 'Kill confirm off a well-timed minecart throw ends the stock cleanly.',
+      tag: 'kill-confirm',
+    },
+  ],
+  [
+    {
+      text: 'Minecart block setup wins the neutral exchange against Terry cleanly.',
+      tag: 'neutral',
+    },
+    {
+      text: 'Ledge trap covers the Buster Wolf option and converts the read into a stock.',
+      tag: 'edgeguard',
+    },
+    {
+      text: 'Rough disadvantage stretch — a bad DI read costs extra percent escaping the combo.',
+      tag: 'defense',
+    },
+    {
+      text: 'Good matchup-specific read on the Power Dunk mixup covered in scouting notes.',
+      tag: 'matchup-note',
+    },
+    { text: 'Punish off a whiffed Crack Shoot lands a big damage swing.', tag: 'punish' },
+  ],
+];
+
+/**
+ * Returns, per `CLIENT_VOD_TABLE` index (0-4), an ordered list of 4-6
+ * timestamped notes (PAND-02): seconds drawn from `CLIENT_VOD_NOTE_SECONDS`
+ * (so `buildClientReviewDraft`'s citations always land on a real annotated
+ * moment), en-locale coach-voice commentary specific to Steve's matchups
+ * (ledge-trap reads, disadvantage habits, minecart timing), with at least
+ * one custom (non-preset) tag ("homework"/"recurring habit") appearing
+ * across the full set.
+ */
+export function buildClientVodNotes(): VodTimestampInput[][] {
+  return CLIENT_VOD_NOTE_SECONDS.map((seconds, vodIndex) => {
+    const lines = CLIENT_NOTE_LINES[vodIndex]!;
+    return seconds.map((sec, i) => {
+      const line = lines[i]!;
+      const tags: string[] = [line.tag];
+      // Force one custom-tag appearance deterministically (mirrors
+      // buildVodNotes' own discipline) rather than leaving it to chance.
+      if (vodIndex === 0 && i === 0) {
+        tags.push('homework');
+      }
+      if (vodIndex === 3 && i === 1) {
+        tags.push('recurring habit');
+      }
+      return vodTimestampSchema.parse({ seconds: sec, note: line.text, tags });
+    });
+  });
+}
+
+/**
+ * Builds the 6 fixed-kind review sections + coach-private notes (PAND-03)
+ * for Pandemic's authored review. `clientVodMatchIds` MUST be the REAL match
+ * ids returned by the orchestrator's `rtdb.createMatch(tenantId, ...)` calls
+ * for the 5 VOD-coherent client matches, in `CLIENT_VOD_TABLE` order
+ * (Pitfall 4, 15-RESEARCH.md) — citations embed ONLY these ids via
+ * `serializeCitationToken`, with `seconds` drawn from
+ * `CLIENT_VOD_NOTE_SECONDS` so every citation lands on a real annotated
+ * moment. Pure function — no firebase-admin import, no RtdbService.
+ */
+export function buildClientReviewDraft(clientVodMatchIds: string[]): {
+  sections: ReviewSection[];
+  coachPrivateNotes: string;
+} {
+  const cite = (vodIndex: number, secondsIndex: number, label: string): string =>
+    serializeCitationToken({
+      sourceVodRef: clientVodMatchIds[vodIndex]!,
+      seconds: CLIENT_VOD_NOTE_SECONDS[vodIndex]![secondsIndex]!,
+      label,
+    });
+
+  const summaryBody =
+    `Pandemic's Steve has grown into a genuinely dangerous neutral game this stretch — the block/minecart ` +
+    `setups are landing consistently and the ledge-trap reads are converting into real damage. ` +
+    `${cite(0, 0, 'minecart edgeguard read')} shows the improved edgeguard instincts clearly.`;
+
+  const strengthsBody =
+    `Ledge trap reads are the standout strength right now — Steve is reliably converting airdodge reads ` +
+    `into stocks. ${cite(0, 4, 'minecart kill confirm')} and ${cite(2, 3, 'edgeguard off minecart')} are ` +
+    `two clean examples worth reviewing together as a pattern.`;
+
+  const prioritiesBody =
+    `Disadvantage habits are the clearest priority right now — the DI mixup against combo strings still ` +
+    `slips under pressure. ${cite(1, 3, 'mental-game slip under pressure')} is the moment to drill first; ` +
+    `the same habit shows up again in the Rosalina & Luma set.`;
+
+  const matchupNotesBody =
+    `Sonic (${cite(0, 1, 'neutral win vs Sonic')}) rewards patient minecart setups over committing early. ` +
+    `Luigi (${cite(1, 1, 'ledge trap vs Luigi')}) and Rosalina & Luma (${cite(3, 1, 'recurring ledge-trap habit vs Rosalina')}) ` +
+    `both punish Steve's telegraphed approaches — respect the neutral spacing before committing to a block placement.`;
+
+  const practicePlanBody =
+    `Homework for next block: (1) drill DI escapes out of combo strings against fast-fallers, (2) lab the ` +
+    `minecart-to-kill-confirm timing seen in ${cite(4, 4, 'punish off whiffed Crack Shoot')}, (3) review the ` +
+    `Terry set for the Power Dunk mixup reads.`;
+
+  const nextGoalsBody =
+    `Next goals: tighten up disadvantage DI to cut avoidable damage, keep building on the ledge-trap ` +
+    `conversion rate, and carry the minecart-timing improvements from ${cite(2, 0, 'minecart timing wins neutral')} ` +
+    `into bracket sets.`;
+
+  const sections: ReviewSection[] = [
+    { id: 'summary', kind: 'summary', hidden: false, title: null, body: summaryBody },
+    { id: 'strengths', kind: 'strengths', hidden: false, title: null, body: strengthsBody },
+    { id: 'priorities', kind: 'priorities', hidden: false, title: null, body: prioritiesBody },
+    {
+      id: 'matchupNotes',
+      kind: 'matchupNotes',
+      hidden: false,
+      title: null,
+      body: matchupNotesBody,
+    },
+    {
+      id: 'practicePlan',
+      kind: 'practicePlan',
+      hidden: false,
+      title: null,
+      body: practicePlanBody,
+    },
+    { id: 'nextGoals', kind: 'nextGoals', hidden: false, title: null, body: nextGoalsBody },
+  ].map((section) => reviewSectionSchema.parse(section));
+
+  const coachPrivateNotes =
+    'Private notes: Pandemic mentioned wanting to enter the next regional as a confidence check — keep the ' +
+    'practice plan achievable and lead with the wins before the priorities. Keep an eye on the DI habit; it ' +
+    'is the one thing standing between good sets and great ones right now.';
+
+  return { sections, coachPrivateNotes };
 }

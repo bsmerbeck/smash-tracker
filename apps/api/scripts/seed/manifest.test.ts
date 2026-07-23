@@ -76,6 +76,54 @@ describe('wipeDemo', () => {
     const matches = (dump.matches as Record<string, Record<string, unknown>>)['test-uid'];
     expect(matches?.match1).toEqual({ fighter_id: 28, win: true, time: 111 });
   });
+
+  // Phase 15 (PAND-01): coachingModeEnabled restore-on-wipe.
+
+  it('restores users/{uid}/coachingModeEnabled to the manifest-recorded prior value (true)', async () => {
+    const database = new FakeDatabase();
+    database.seed('users/test-uid/coachingModeEnabled', true);
+    const recorder = new ManifestRecorder();
+    recorder.record('clientTenants/tenant1');
+    await recorder.flush(database as never, 'test-uid', FIXED_NOW, {
+      priorCoachingModeEnabled: true,
+    });
+
+    await wipeDemo(database as never, 'test-uid');
+
+    const dump = database.dump() as Record<string, unknown>;
+    const user = (dump.users as Record<string, Record<string, unknown>> | undefined)?.['test-uid'];
+    expect(user?.coachingModeEnabled).toBe(true);
+  });
+
+  it('restores users/{uid}/coachingModeEnabled to absent when the manifest-recorded prior value is null', async () => {
+    const database = new FakeDatabase();
+    database.seed('users/test-uid/coachingModeEnabled', true);
+    const recorder = new ManifestRecorder();
+    recorder.record('clientTenants/tenant1');
+    await recorder.flush(database as never, 'test-uid', FIXED_NOW, {
+      priorCoachingModeEnabled: null,
+    });
+
+    await wipeDemo(database as never, 'test-uid');
+
+    const dump = database.dump() as Record<string, unknown>;
+    const user = (dump.users as Record<string, Record<string, unknown>> | undefined)?.['test-uid'];
+    expect(user?.coachingModeEnabled).toBeUndefined();
+  });
+
+  it('leaves an existing coachingModeEnabled leaf untouched when the manifest omits the option (old behavior)', async () => {
+    const database = new FakeDatabase();
+    database.seed('users/test-uid/coachingModeEnabled', true);
+    const recorder = new ManifestRecorder();
+    recorder.record('matches/test-uid/match1');
+    await recorder.flush(database as never, 'test-uid', FIXED_NOW); // no options — pre-Phase-15 call shape
+
+    await wipeDemo(database as never, 'test-uid');
+
+    const dump = database.dump() as Record<string, unknown>;
+    const user = (dump.users as Record<string, Record<string, unknown>> | undefined)?.['test-uid'];
+    expect(user?.coachingModeEnabled).toBe(true);
+  });
 });
 
 describe('backdateTime', () => {
