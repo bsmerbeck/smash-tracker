@@ -80,10 +80,15 @@ async function main(): Promise<void> {
     } else {
       const now = Date.now();
       await runSeedDemo(firebase.database, { uid, now });
+      // DOCS-01: env.WEB_BASE_URL always resolves (zod defaults it to
+      // http://localhost:5173), so read the raw override directly here —
+      // otherwise the printed delivery link is always localhost and useless
+      // to paste anywhere. An operator who explicitly sets WEB_BASE_URL still
+      // overrides this prod default.
       const { deliveryUrl } = await runSeedCoaching(firebase.database, {
         ownerUid: uid,
         now,
-        webBaseUrl: env.WEB_BASE_URL,
+        webBaseUrl: process.env.WEB_BASE_URL ?? 'https://grandfinals.gg',
       });
       console.log(`Seeded demo data for uid "${uid}"`);
       console.log(`Pandemic review delivery link (never persisted elsewhere): ${deliveryUrl}`);

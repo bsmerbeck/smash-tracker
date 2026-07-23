@@ -210,11 +210,17 @@ provides ADC automatically, and that service account needs Realtime Database acc
 gcloud run deploy smash-tracker-api \
   --source . \
   --region us-central1 \
-  --set-env-vars FIREBASE_DATABASE_URL=https://smash-tracker-f97b7-default-rtdb.firebaseio.com
+  --set-env-vars FIREBASE_DATABASE_URL=https://smash-tracker-f97b7.firebaseio.com
 ```
 
 The service name (`smash-tracker-api`) and region (`us-central1`) must match `firebase.json`'s
 `hosting.rewrites` entry for `/api/**`.
+
+**Running `scripts/` locally (e.g. the `seed:demo` seeder)** needs RTDB admin access beyond a
+plain `gcloud auth application-default login` — Application Default Credentials must be scoped for
+the Realtime Database, or you'll hit permission errors on every write. Either run
+`gcloud auth application-default login --scopes=cloud-platform,firebase.database,userinfo.email`,
+or set `GOOGLE_APPLICATION_CREDENTIALS` to a service-account key with RTDB access.
 
 **AI scouting reports (optional)**
 
@@ -229,7 +235,7 @@ gated behind two env vars, both required together:
 gcloud run deploy smash-tracker-api \
   --source . \
   --region us-central1 \
-  --set-env-vars FIREBASE_DATABASE_URL=https://smash-tracker-f97b7-default-rtdb.firebaseio.com,ANTHROPIC_API_KEY=sk-ant-...,REPORTS_ALLOWED_UIDS=uid1,uid2
+  --set-env-vars FIREBASE_DATABASE_URL=https://smash-tracker-f97b7.firebaseio.com,ANTHROPIC_API_KEY=sk-ant-...,REPORTS_ALLOWED_UIDS=uid1,uid2
 ```
 
 Until both vars are set, every `/api/reports*` route answers `503` and the web app's "Generate AI
@@ -252,7 +258,7 @@ together:
 gcloud run deploy smash-tracker-api \
   --source . \
   --region us-central1 \
-  --set-env-vars FIREBASE_DATABASE_URL=https://smash-tracker-f97b7-default-rtdb.firebaseio.com,ANTHROPIC_API_KEY=sk-ant-...,REPORTS_ALLOWED_UIDS=uid1,uid2,STRIPE_SECRET_KEY=sk_live_...,STRIPE_WEBHOOK_SECRET=whsec_...
+  --set-env-vars FIREBASE_DATABASE_URL=https://smash-tracker-f97b7.firebaseio.com,ANTHROPIC_API_KEY=sk-ant-...,REPORTS_ALLOWED_UIDS=uid1,uid2,STRIPE_SECRET_KEY=sk_live_...,STRIPE_WEBHOOK_SECRET=whsec_...
 ```
 
 Register a webhook endpoint in the Stripe dashboard (<https://dashboard.stripe.com/webhooks>)
@@ -284,7 +290,7 @@ A second tournament-site integration alongside start.gg, gated behind one env va
 gcloud run deploy smash-tracker-api \
   --source . \
   --region us-central1 \
-  --set-env-vars FIREBASE_DATABASE_URL=https://smash-tracker-f97b7-default-rtdb.firebaseio.com,PARRYGG_API_KEY=...
+  --set-env-vars FIREBASE_DATABASE_URL=https://smash-tracker-f97b7.firebaseio.com,PARRYGG_API_KEY=...
 ```
 
 Until `PARRYGG_API_KEY` is set, every `/api/integrations/parrygg/*` route answers `503` and the rest
