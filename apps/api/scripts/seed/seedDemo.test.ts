@@ -149,11 +149,20 @@ describe('runSeedDemo', () => {
     const dump = database.dump() as Dump;
     const matches = dump.matches?.[UID] ?? {};
     expect(Object.keys(matches)).toEqual(['REAL-KEEP']);
-    expect(dump.opponents?.[UID]).toBeUndefined();
-    expect(dump.opponentNotes?.[UID]).toBeUndefined();
-    expect(dump.gspReadings?.[UID]).toBeUndefined();
+    // opponents/opponentNotes/gspReadings/playlists are wiped one manifested
+    // leaf key at a time (each opponent name / reading id / playlist id is
+    // its own recorded path); FakeDatabase, unlike real RTDB, does not prune
+    // a parent node back to `undefined` once its last child key is deleted —
+    // so the correct post-wipe assertion is "no keys remain", not "the node
+    // itself is undefined".
+    expect(Object.keys(dump.opponents?.[UID] ?? {})).toEqual([]);
+    expect(Object.keys(dump.opponentNotes?.[UID] ?? {})).toEqual([]);
+    expect(Object.keys(dump.gspReadings?.[UID] ?? {})).toEqual([]);
+    expect(Object.keys(dump.playlists?.[UID] ?? {})).toEqual([]);
+    // gspSettings/{uid} and demoSeed/{uid} are each recorded/removed as a
+    // SINGLE manifested path (one key under their respective root nodes), so
+    // deleting that one key does leave the parent's `[UID]` entry undefined.
     expect(dump.gspSettings?.[UID]).toBeUndefined();
-    expect(dump.playlists?.[UID]).toBeUndefined();
     expect(dump.demoSeed?.[UID]).toBeUndefined();
   });
 
