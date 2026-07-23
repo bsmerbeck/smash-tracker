@@ -168,12 +168,22 @@ export type ShareSnapshot = z.infer<typeof shareSnapshotSchema>;
  * response. New fields are nullish (absent on every pre-Phase-12 vod-review
  * or recap snapshot) and gated by the third `.refine()` below, exactly like
  * the recap branch's `tournamentName`/`placement` fields were added.
+ *
+ * Phase 20 Plan 03 (Coaching Workflow, Training Sessions & VOD-less Reviews,
+ * SESS-01/02): extended additively a FOURTH way for `kind: 'session'` — the
+ * anonymous delivery page's session-recipient response. A session delivery
+ * embeds a FROZEN `clientVisibleSessionSchema` snapshot at creation time
+ * (D-10 immutability; see `apps/api/src/coaching/sessionDeliveries.ts`), so
+ * these fields are the session's own client-visible shape, authored
+ * FROM SCRATCH here (never `.omit()`/`.pick()`'d from `clientVisibleSessionSchema`
+ * itself — the exact same REV-03-equivalent discipline every other kind on
+ * this schema already follows) and gated by the fourth `.refine()` below.
  */
 export const publicShareSnapshotSchema = z
   .object({
     createdAt: z.number().int().nonnegative(),
     /** Absent means a vod-review snapshot (the default, backward-compatible shape). */
-    kind: z.enum(['recap', 'coachReview']).nullish(),
+    kind: z.enum(['recap', 'coachReview', 'session']).nullish(),
     /** Phase 8: the share's permission tier. Absent on pre-Phase-8 responses (treated as 'view'). */
     permissions: z.enum(['view', 'edit']).nullish(),
     // --- vod-review fields: nullish here (absent on a recap snapshot); the
@@ -259,13 +269,29 @@ export const publicShareSnapshotSchema = z
       )
       .max(20)
       .nullish(),
-    // --- shared across both kinds ---
+    // --- session-only fields (Phase 20 Plan 03, SESS-01/02): nullish here
+    // (absent on any other kind); the fourth `.refine()` below enforces the
+    // required subset for a 'session' delivery. Authored from scratch —
+    // mirrors `clientVisibleSessionSchema`'s own field shapes exactly, but
+    // named `session*` to avoid any collision with the vod-review/recap
+    // fields already on this flat schema. ---
+    /** The training session's date (epoch ms) — mirrors `clientVisibleSessionSchema.date`. */
+    sessionDate: z.number().int().nonnegative().nullish(),
+    /** 0..n SpriteList fighter ids the session is tagged with. */
+    sessionCharacterTags: z.array(z.number().int().positive()).nullish(),
+    /** The session's free-text summary. */
+    sessionSummary: z.string().nullish(),
+    /** The flat homework checklist — `{ text, done }` only, no internal id (mirrors `clientVisibleSessionSchema.homework`). */
+    sessionHomework: z.array(z.object({ text: z.string(), done: z.boolean() })).nullish(),
+    /** 0..n linked client VOD/match ids the session references. */
+    sessionLinkedMatchRefs: z.array(z.string().min(1)).nullish(),
+    // --- shared across every kind ---
     reviewedMomentsCount: z.number().int().nonnegative(),
     ownerDisplayName: z.string().trim().max(60).nullish(),
   })
   .refine(
     (snapshot) =>
-      snapshot.kind !== 'recap' && snapshot.kind !== 'coachReview'
+      snapshot.kind !== 'recap' && snapshot.kind !== 'coachReview' && snapshot.kind !== 'session'
         ? Boolean(snapshot.vodUrl) && Boolean(snapshot.redaction)
         : true,
     {
@@ -299,6 +325,21 @@ export const publicShareSnapshotSchema = z
       message:
         'a coachReview snapshot must carry coachDisplayName, reviewPublishedAt, and sections',
       path: ['coachDisplayName'],
+    },
+  )
+  .refine(
+    (snapshot) =>
+      snapshot.kind === 'session'
+        ? Boolean(snapshot.coachDisplayName) &&
+          snapshot.sessionDate != null &&
+          snapshot.sessionCharacterTags != null &&
+          snapshot.sessionSummary != null &&
+          snapshot.sessionHomework != null
+        : true,
+    {
+      message:
+        'a session snapshot must carry coachDisplayName, sessionDate, sessionCharacterTags, sessionSummary, and sessionHomework',
+      path: ['sessionDate'],
     },
   );
 export type PublicShareSnapshot = z.infer<typeof publicShareSnapshotSchema>;

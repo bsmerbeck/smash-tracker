@@ -1,6 +1,7 @@
 import type { Database } from 'firebase-admin/database';
 import { z } from 'zod';
 import {
+  clientVisibleSessionSchema,
   clientVisibleVersionSchema,
   DEFAULT_ELITE_THRESHOLD,
   extractCitationTokens,
@@ -221,6 +222,21 @@ export function parseSessionShareId(
   }
   return { tenantId, sessionId, deliveryId };
 }
+
+/**
+ * The minimal shape `getSessionSnapshot` needs out of a
+ * `sessionDeliveries/.../{deliveryId}` record — just the embedded FROZEN
+ * `clientVisibleSessionSchema` snapshot. Deliberately does NOT import
+ * `sessionDeliveries.ts`'s own `sessionDeliveryRecordSchema` (that module
+ * imports `buildSessionShareId`/`NotFoundError` FROM this file — importing
+ * back would be circular); this narrow local schema mirrors
+ * `getCoachReviewSnapshot`'s own precedent of reading the review's live tree
+ * directly via a shared-package schema rather than reaching into
+ * `reviewDeliveries.ts`.
+ */
+const sessionDeliverySnapshotFieldSchema = z.object({
+  snapshot: clientVisibleSessionSchema,
+});
 
 async function resolveCoachDisplayNameForTenant(
   database: Database,
@@ -2161,6 +2177,16 @@ export class RtdbService {
       return this.getCoachReviewSnapshot(reviewRef);
     }
 
+    // Phase 20 Plan 03 (SESS-01/02, D-10): a session delivery ALSO has NO
+    // shareSnapshots record — its shareId ENCODES the delivery-record lookup
+    // path directly (see `buildSessionShareId`'s doc). Detected as a sibling
+    // check, before the shareSnapshots hop every other kind still needs
+    // below — mirrors the coachReview branch immediately above.
+    const sessionRef = parseSessionShareId(parsedToken.data.shareId);
+    if (sessionRef) {
+      return this.getSessionSnapshot(sessionRef);
+    }
+
     const snapshotSnapshot = await this.database
       .ref(`shareSnapshots/${parsedToken.data.shareId}`)
       .get();
@@ -2308,6 +2334,75 @@ export class RtdbService {
     ]);
 
     return buildReviewSnapshot(sealedVersion, coachDisplayName, citationSources);
+  }
+
+  /**
+   * Phase 20 Plan 03 (SESS-01/02, D-10 immutability): resolves a parsed
+   * session-delivery `shareId` (tenantId/sessionId/deliveryId, already
+   * trust-boundary-guarded by `parseSessionShareId`) to the client-visible
+   * delivery snapshot. Reads ONLY the delivery record's own embedded FROZEN
+   * `snapshot` field — NEVER the live `trainingSessions/{tenantId}/{sessionId}`
+   * node (T-20-10: a live-session edit after delivery must never change what
+   * this returns) — plus `clientMembers/{tenantId}` for the coach display
+   * name, mirroring `getCoachReviewSnapshot`'s own read shape exactly. There
+   * is structurally no `coachPrivateNotes` field on `clientVisibleSessionSchema`
+   * to leak in the first place (T-20-09). Returns `null` — never throws —
+   * for a missing/revoked/corrupt delivery record, matching every other
+   * kind's no-oracle contract at this call site. Revocation itself is
+   * already re-checked above (the shared `shareTokens/{token}.revokedAt`
+   * gate) — this method's own job is purely resolving the frozen snapshot.
+   */
+  private async getSessionSnapshot(sessionRef: {
+    tenantId: string;
+    sessionId: string;
+    deliveryId: string;
+  }): Promise<PublicShareSnapshot | null> {
+    const { tenantId, sessionId, deliveryId } = sessionRef;
+    const deliverySnapshot = await this.database
+      .ref(`sessionDeliveries/${tenantId}/${sessionId}/${deliveryId}`)
+      .get();
+    if (!deliverySnapshot.exists()) {
+      return null;
+    }
+    // RTDB drops any key whose value is an empty array on write — the
+    // embedded `snapshot.characterTags`/`snapshot.homework` round-trip with
+    // NO key at all when a session had zero tags/homework at delivery time.
+    // Normalize back to `[]` before validating, mirroring
+    // `sessionDeliveries.ts`'s own `parseDeliveryRecord` discipline.
+    const rawDelivery = deliverySnapshot.val() as { snapshot?: unknown } | null;
+    const rawSnapshot = rawDelivery?.snapshot;
+    const normalizedSnapshot =
+      rawSnapshot !== null && typeof rawSnapshot === 'object'
+        ? {
+            ...(rawSnapshot as Record<string, unknown>),
+            characterTags: (rawSnapshot as { characterTags?: unknown }).characterTags ?? [],
+            homework: (rawSnapshot as { homework?: unknown }).homework ?? [],
+          }
+        : rawSnapshot;
+    const parsedDelivery = sessionDeliverySnapshotFieldSchema.safeParse({
+      ...rawDelivery,
+      snapshot: normalizedSnapshot,
+    });
+    if (!parsedDelivery.success) {
+      return null;
+    }
+    const session = parsedDelivery.data.snapshot;
+
+    const coachDisplayName = await resolveCoachDisplayNameForTenant(this.database, tenantId);
+
+    const publicSnapshot: PublicShareSnapshot = {
+      createdAt: session.date,
+      kind: 'session',
+      coachDisplayName,
+      sessionDate: session.date,
+      sessionCharacterTags: session.characterTags,
+      sessionSummary: session.summary,
+      sessionHomework: session.homework,
+      ...(session.linkedMatchIds ? { sessionLinkedMatchRefs: session.linkedMatchIds } : {}),
+      reviewedMomentsCount: 0,
+    };
+
+    return publicShareSnapshotSchema.parse(publicSnapshot);
   }
 
   /**

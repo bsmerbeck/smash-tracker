@@ -60,6 +60,39 @@ export const sessionDeliveryRecordSchema = z.object({
 export type SessionDeliveryRecord = z.infer<typeof sessionDeliveryRecordSchema>;
 
 /**
+ * RTDB drops any key whose value is an empty array on write — the embedded
+ * `snapshot.characterTags`/`snapshot.homework` round-trip with NO key at all
+ * when a session had zero tags/homework at delivery time. Every READ of a
+ * delivery record must normalize those missing keys back to `[]` before
+ * validating, mirroring `sessions.ts`'s `parseSessionRecord` discipline
+ * exactly, but one level deeper (on the embedded `snapshot` object).
+ */
+function parseDeliveryRecord(raw: unknown): SessionDeliveryRecord {
+  if (raw === null || typeof raw !== 'object') {
+    return sessionDeliveryRecordSchema.parse(raw);
+  }
+  const rawRecord = raw as Record<string, unknown>;
+  const rawSnapshot = rawRecord.snapshot;
+  const normalizedSnapshot =
+    rawSnapshot !== null && typeof rawSnapshot === 'object'
+      ? {
+          ...(rawSnapshot as Record<string, unknown>),
+          characterTags: (rawSnapshot as { characterTags?: unknown }).characterTags ?? [],
+          homework: (rawSnapshot as { homework?: unknown }).homework ?? [],
+        }
+      : rawSnapshot;
+  return sessionDeliveryRecordSchema.parse({ ...rawRecord, snapshot: normalizedSnapshot });
+}
+
+function safeParseDeliveryRecord(raw: unknown): SessionDeliveryRecord | null {
+  try {
+    return parseDeliveryRecord(raw);
+  } catch {
+    return null;
+  }
+}
+
+/**
  * One row of the coach-side delivery list (`GET .../deliveries`) — the
  * stored record plus its rebuildable share URL. `revokedAt` is narrowed to
  * `number | null` (never `undefined`) — `listSessionDeliveries` normalizes
@@ -169,16 +202,16 @@ export async function listSessionDeliveries(
   const raw = snapshot.val() as Record<string, unknown>;
 
   const rows = Object.entries(raw).flatMap(([deliveryId, value]) => {
-    const parsed = sessionDeliveryRecordSchema.safeParse(value);
-    if (!parsed.success) {
+    const parsed = safeParseDeliveryRecord(value);
+    if (!parsed) {
       return [];
     }
     return [
       {
         deliveryId,
-        ...parsed.data,
-        revokedAt: parsed.data.revokedAt ?? null,
-        url: `${webBaseUrl}/r/${parsed.data.token}`,
+        ...parsed,
+        revokedAt: parsed.revokedAt ?? null,
+        url: `${webBaseUrl}/r/${parsed.token}`,
       },
     ];
   });
@@ -206,11 +239,10 @@ export async function revokeSessionDelivery(
   if (!snapshot.exists()) {
     throw new NotFoundError(`Delivery ${deliveryId} not found`);
   }
-  const parsed = sessionDeliveryRecordSchema.safeParse(snapshot.val());
-  if (!parsed.success) {
+  const record = safeParseDeliveryRecord(snapshot.val());
+  if (!record) {
     throw new NotFoundError(`Delivery ${deliveryId} not found`);
   }
-  const record = parsed.data;
 
   if (record.revokedAt != null) {
     return { revoked: false };

@@ -266,6 +266,48 @@ describe('publicShareSnapshotSchema', () => {
     expect(parsed.sets![0]!.opponentPlacement).toBe(5);
   });
 
+  it('parses a session public snapshot (kind session, frozen client-visible fields)', () => {
+    const parsed = publicShareSnapshotSchema.parse({
+      createdAt: 1_700_000_000_000,
+      kind: 'session' as const,
+      coachDisplayName: 'Coach Alex',
+      sessionDate: 1_700_000_000_000,
+      sessionCharacterTags: [1, 5],
+      sessionSummary: 'Great session on neutral game',
+      sessionHomework: [{ text: 'Practice OOS options', done: false }],
+      sessionLinkedMatchRefs: ['match-1'],
+      reviewedMomentsCount: 0,
+    });
+    expect(parsed.kind).toBe('session');
+    expect(parsed.sessionSummary).toBe('Great session on neutral game');
+    expect(parsed.sessionHomework).toEqual([{ text: 'Practice OOS options', done: false }]);
+    expect('vodUrl' in parsed).toBe(false);
+  });
+
+  it('rejects a session snapshot missing the required session subset', () => {
+    const result = publicShareSnapshotSchema.safeParse({
+      createdAt: 1000,
+      kind: 'session' as const,
+      coachDisplayName: 'Coach Alex',
+      reviewedMomentsCount: 0,
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('coachReview/recap/vod-review snapshots remain unaffected by the session kind addition', () => {
+    const review = publicShareSnapshotSchema.safeParse({
+      createdAt: 1000,
+      result: 'win' as const,
+      fighterId: 1,
+      opponentFighterId: 2,
+      matchDate: 500,
+      vodUrl: 'https://youtube.com/watch?v=abc',
+      reviewedMomentsCount: 0,
+      redaction: { includedNotes: true, includedTags: true, showDisplayName: false },
+    });
+    expect(review.success).toBe(true);
+  });
+
   it('a view-tier response with no permissions/id/coach fields still parses (backward compatible)', () => {
     const parsed = publicShareSnapshotSchema.parse(fullyPopulatedPublicSnapshot());
     expect(parsed.permissions).toBeUndefined();

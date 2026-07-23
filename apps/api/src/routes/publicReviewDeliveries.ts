@@ -87,8 +87,11 @@ const publicReviewDeliveriesRoutes: FastifyPluginAsyncZod = async (app) => {
       // A token that resolves fine but belongs to a different share kind
       // (e.g. a vod-review or recap token accidentally posted to this
       // endpoint) is treated identically to unknown/revoked — this route
-      // only ever serves coachReview deliveries (T-12-15 no-oracle).
-      if (!snapshot || snapshot.kind !== 'coachReview') {
+      // only ever serves coachReview and session deliveries (T-12-15/T-20-08
+      // no-oracle; Phase 20 Plan 03 adds the 'session' kind alongside the
+      // pre-existing 'coachReview' one — the recipient RENDERING is minimal
+      // this phase, Phase 21 rebuilds the two-tab view).
+      if (!snapshot || (snapshot.kind !== 'coachReview' && snapshot.kind !== 'session')) {
         return reply.code(404).send(UNAVAILABLE_404_BODY);
       }
       return snapshot;
