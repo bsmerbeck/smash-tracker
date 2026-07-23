@@ -62,6 +62,9 @@ export function buildUpdateInput(
     // gsp is carried through too — omitting it here used to wipe a
     // QuickLogger match's GSP the moment VOD notes were added.
     ...(match.gsp !== undefined ? { gsp: match.gsp } : {}),
+    // vodStartSeconds is carried through too — omitting it here used to
+    // silently wipe a match's existing VOD start time on every save (SETFIX-05).
+    ...(match.vodStartSeconds !== undefined ? { vodStartSeconds: match.vodStartSeconds } : {}),
     ...(overrides.vodUrl !== undefined ? { vodUrl: overrides.vodUrl } : {}),
     // 'tags' in overrides (not just overrides.tags !== undefined) is the
     // deliberate check here: a caller that explicitly passes `tags: undefined`
