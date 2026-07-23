@@ -125,6 +125,9 @@
       "minutesAgo": "hace {{count}} min",
       "hoursAgo": "hace {{count}} h",
       "daysAgo": "hace {{count}} días"
+    },
+    "pending": {
+      "saving": "Guardando..."
     }
   },
   "dashboard": {

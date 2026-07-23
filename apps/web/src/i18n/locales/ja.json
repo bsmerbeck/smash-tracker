@@ -125,6 +125,9 @@
       "minutesAgo": "{{count}}分前",
       "hoursAgo": "{{count}}時間前",
       "daysAgo": "{{count}}日前"
+    },
+    "pending": {
+      "saving": "保存中..."
     }
   },
   "dashboard": {

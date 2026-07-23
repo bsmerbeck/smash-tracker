@@ -125,6 +125,9 @@
       "p1": "<strong>Glicko-2</strong> is the rating system used in chess and by many competitive ladders. Unlike a raw win rate, it weighs <em>who</em> you beat and how surprising the result was.",
       "p2": "The <strong>±number (RD)</strong> is uncertainty: it shrinks as you play more and grows when you're inactive — so a 1500 ±50 player is proven, a 1500 ±300 player is unknown.",
       "p3": "We use it because bracket play is bursty: Glicko-2 handles long gaps between tournaments and small samples far better than Elo or win-rate alone. Ratings here are unofficial and computed only from your synced/logged games."
+    },
+    "pending": {
+      "saving": "Saving..."
     }
   },
   "dashboard": {

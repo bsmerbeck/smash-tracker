@@ -125,6 +125,9 @@
       "minutesAgo": "vor {{count}} Min.",
       "hoursAgo": "vor {{count}} Std.",
       "daysAgo": "vor {{count}} Tagen"
+    },
+    "pending": {
+      "saving": "Wird gespeichert..."
     }
   },
   "dashboard": {
