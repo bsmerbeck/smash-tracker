@@ -1,11 +1,13 @@
 import {
   createGspReadingInputSchema,
   createMatchInputSchema,
+  createPlaylistInputSchema,
   eliteThresholdGsp,
   estimateMaxGsp,
   estimateT,
   upsertGspSettingsInputSchema,
   upsertOpponentNoteInputSchema,
+  vodTimestampSchema,
 } from '@smash-tracker/shared';
 import type {
   CreateGspReadingInput,
@@ -311,7 +313,7 @@ const VOD_WINS: boolean[] = [true, true, false, true, false, true, false, true, 
 // ---------------------------------------------------------------------------
 
 /** Reproduced locally (not imported across the apps/web boundary) — must match apps/web/src/lib/tags.ts. */
-const MATCH_PRESET_TAGS = [
+export const MATCH_PRESET_TAGS = [
   'tournament-set',
   'practice-friendlies',
   'bad-matchup',
@@ -570,4 +572,155 @@ export function buildGspSeries(now: number): Record<number, GspSeriesEntry[]> {
     result[fighterId] = entries;
   }
   return result;
+}
+
+// ---------------------------------------------------------------------------
+// buildVodNotes (SHOW-04/SHOW-07) — VOD annotations
+// ---------------------------------------------------------------------------
+
+/** Shape of `vodTimestampSchema`'s input — reproduced locally since match.ts exports the schema, not a named `VodTimestampInput` type. */
+interface VodTimestampInput {
+  seconds: number;
+  note: string;
+  tags?: string[];
+}
+
+/** Reproduced locally (not imported across the apps/web boundary) — must match apps/web/src/lib/tags.ts. */
+export const NOTE_PRESET_TAGS = [
+  'neutral',
+  'punish',
+  'edgeguard',
+  'recovery',
+  'kill-confirm',
+  'defense',
+  'mixup',
+  'matchup-note',
+  'mental-game',
+  'mistake',
+  'highlight',
+] as const;
+
+const CUSTOM_NOTE_TAG = 'lab this';
+
+/**
+ * One believable SSBU commentary line per NOTE_PRESET_TAGS entry, in the
+ * same order — every VOD's notes are built by sampling from this pool, so
+ * every generated set of notes stays thematically tied to its preset tag.
+ */
+const NOTE_TEMPLATES: { text: string; tag: (typeof NOTE_PRESET_TAGS)[number] }[] = [
+  {
+    text: 'Clean neutral win starts the exchange, good spacing off a jab poke.',
+    tag: 'neutral',
+  },
+  {
+    text: 'Nice ledge trap forces the airdodge and converts into a percent lead.',
+    tag: 'edgeguard',
+  },
+  {
+    text: 'Rough disadvantage stretch here, a bad DI read cost extra damage escaping the combo.',
+    tag: 'defense',
+  },
+  {
+    text: 'Solid recovery mixup gets back to the stage safely against the edgeguard attempt.',
+    tag: 'recovery',
+  },
+  {
+    text: 'Reads the roll and lands the punish for a big damage swing.',
+    tag: 'punish',
+  },
+  {
+    text: 'Converts the read into the kill confirm right at kill percent.',
+    tag: 'kill-confirm',
+  },
+  {
+    text: 'Mixes up the approach here to open the stubborn shield.',
+    tag: 'mixup',
+  },
+  {
+    text: 'Good matchup-specific read on the recovery mixup covered in scouting notes.',
+    tag: 'matchup-note',
+  },
+  {
+    text: 'Mental game slip here, panics into a bad option under pressure.',
+    tag: 'mental-game',
+  },
+  {
+    text: 'Missed the conversion at kill percent, needs cleanup next set.',
+    tag: 'mistake',
+  },
+  {
+    text: 'Highlight-reel edgeguard closes out the stock early.',
+    tag: 'highlight',
+  },
+];
+
+const SEED_VOD_NOTES = 0x41c64e6d;
+
+/**
+ * Returns, per VOD-match index (0-9), an ordered list of 3-6 timestamped
+ * notes (SHOW-04): seconds in [30, 420], en-locale SSBU commentary tied to
+ * NOTE_PRESET_TAGS, with at least one custom tag ("lab this") appearing
+ * somewhere across the full set (SHOW-07).
+ */
+export function buildVodNotes(): VodTimestampInput[][] {
+  const rng = mulberry32(SEED_VOD_NOTES);
+
+  return VOD_TABLE.map((_vod, vodIndex) => {
+    const noteCount = randInt(rng, 3, 6);
+    const templates = shuffle(NOTE_TEMPLATES, rng).slice(0, noteCount);
+    const seconds = shuffle(
+      Array.from({ length: 391 }, (_, i) => i + 30), // [30, 420]
+      rng,
+    )
+      .slice(0, noteCount)
+      .sort((a, b) => a - b);
+
+    return templates.map((template, i) => {
+      const tags: string[] = [template.tag];
+      // Force the very first VOD's very first note to also carry the custom
+      // tag — guarantees the note-level custom-tag coverage invariant
+      // deterministically rather than leaving it to chance.
+      if (vodIndex === 0 && i === 0) {
+        tags.push(CUSTOM_NOTE_TAG);
+      }
+      return vodTimestampSchema.parse({
+        seconds: seconds[i]!,
+        note: template.text,
+        tags,
+      });
+    });
+  });
+}
+
+// ---------------------------------------------------------------------------
+// buildPlaylists (SHOW-05)
+// ---------------------------------------------------------------------------
+
+export interface PlaylistSpec {
+  name: string;
+  /**
+   * VOD-match INDEX (0-9) into VOD_TABLE — NOT a push key. Playlist
+   * `matchIds` are RTDB push keys only known once the orchestrator (14-03)
+   * has actually written the matches; it resolves these indices to real
+   * match ids before calling `updatePlaylist`.
+   */
+  vodMatchIndices: number[];
+}
+
+/**
+ * Two playlist specs (SHOW-05), each grouping >= 3 seeded VOD-match indices
+ * for sequential playback: "Roy bracket runs" (Roy's VODs, indices 0-4) and
+ * "Edgeguard studies" (a cross-roster grouping themed around edgeguards/
+ * recoveries).
+ */
+export function buildPlaylists(): PlaylistSpec[] {
+  const roy: PlaylistSpec = {
+    name: createPlaylistInputSchema.parse({ name: 'Roy bracket runs' }).name,
+    vodMatchIndices: [0, 1, 3, 4],
+  };
+  const edgeguard: PlaylistSpec = {
+    name: createPlaylistInputSchema.parse({ name: 'Edgeguard studies' }).name,
+    vodMatchIndices: [2, 5, 8, 9],
+  };
+  return [roy, edgeguard];
 }

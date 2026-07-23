@@ -16,6 +16,8 @@ import {
   FIGHTER_PALUTENA,
   FIGHTER_ROY,
   FIGHTER_SORA,
+  MATCH_PRESET_TAGS,
+  NOTE_PRESET_TAGS,
   VOD_TABLE,
   buildGspSeries,
   buildGspSettings,
@@ -202,33 +204,15 @@ describe('buildVodNotes', () => {
 
   it('mixes preset and custom tags at note level and match level (SHOW-07)', () => {
     const allNoteTags = notesByVod.flatMap((notes) => notes.flatMap((n) => n.tags ?? []));
-    const NOTE_PRESET_TAGS = new Set([
-      'neutral',
-      'punish',
-      'edgeguard',
-      'recovery',
-      'kill-confirm',
-      'defense',
-      'mixup',
-      'matchup-note',
-      'mental-game',
-      'mistake',
-      'highlight',
-    ]);
-    expect(allNoteTags.some((tag) => NOTE_PRESET_TAGS.has(tag))).toBe(true);
+    const notePresetTags = new Set<string>(NOTE_PRESET_TAGS);
+    expect(allNoteTags.some((tag) => notePresetTags.has(tag))).toBe(true);
     expect(allNoteTags.some((tag) => tag === 'lab this')).toBe(true);
 
     // Same preset+custom coverage holds at match level (Task 1's output).
     const matches = buildPersonalMatches(NOW);
     const allMatchTags = matches.flatMap((m) => m.input.tags ?? []);
-    const MATCH_PRESET_TAGS = new Set([
-      'tournament-set',
-      'practice-friendlies',
-      'bad-matchup',
-      'good-read-highlight',
-      'to-review',
-    ]);
-    expect(allMatchTags.some((tag) => MATCH_PRESET_TAGS.has(tag))).toBe(true);
+    const matchPresetTags = new Set<string>(MATCH_PRESET_TAGS);
+    expect(allMatchTags.some((tag) => matchPresetTags.has(tag))).toBe(true);
     expect(
       allMatchTags.some((tag) => ['lab this', 'bracket run', 'money match'].includes(tag)),
     ).toBe(true);
