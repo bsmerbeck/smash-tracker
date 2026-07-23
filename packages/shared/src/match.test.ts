@@ -7,6 +7,7 @@ import {
   updateMatchInputSchema,
   vodTimestampEntrySchema,
 } from './match.js';
+import { matchStageSchema } from './stage.js';
 
 function baseRecord(overrides: Record<string, unknown> = {}) {
   return {
@@ -272,4 +273,44 @@ describe('createMatchInputSchema / updateMatchInputSchema no longer accept vodTi
     const parsed = updateMatchInputSchema.parse(validCreateInput({ vodTimestamps: [] }));
     expect('vodTimestamps' in parsed).toBe(false);
   });
+});
+
+describe('matchStageSchema.form (SETFEAT-02)', () => {
+  it('accepts each of the three valid form members', () => {
+    for (const form of ['normal', 'battlefield', 'omega'] as const) {
+      const parsed = matchStageSchema.parse({ id: 1, name: 'Battlefield', form });
+      expect(parsed.form).toBe(form);
+    }
+  });
+
+  it('parses { id, name } with no own `form` property (not `form: undefined`) when omitted', () => {
+    const parsed = matchStageSchema.parse({ id: 1, name: 'Battlefield' });
+    expect('form' in parsed).toBe(false);
+  });
+
+  it('rejects an invalid form member', () => {
+    const result = matchStageSchema.safeParse({ id: 1, name: 'Battlefield', form: 'flat' });
+    expect(result.success).toBe(false);
+  });
+
+  it('round-trips form through createMatchInputSchema.map for all three valid members', () => {
+    for (const form of ['normal', 'battlefield', 'omega'] as const) {
+      const parsed = createMatchInputSchema.parse(
+        validCreateInput({ map: { id: 1, name: 'Battlefield', form } }),
+      );
+      expect(parsed.map.form).toBe(form);
+    }
+  });
+
+  function validCreateInput(overrides: Record<string, unknown> = {}) {
+    return {
+      fighter_id: 1,
+      opponent_id: 2,
+      map: { id: 0, name: 'no selection' },
+      opponent: 'rival',
+      matchType: 'none' as const,
+      win: true,
+      ...overrides,
+    };
+  }
 });
