@@ -11,6 +11,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
+import { PendingButton } from '@/components/ui/pending-button';
 import { useUpdateMatch } from '@/hooks/useUpdateMatch';
 import {
   MatchFormFields,
@@ -133,9 +134,9 @@ export function EditMatchForm({
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
               {t('common.cancel')}
             </Button>
-            <Button type="submit" disabled={updateMatch.isPending}>
+            <PendingButton type="submit" pending={updateMatch.isPending}>
               {t('common.save')}
-            </Button>
+            </PendingButton>
           </DialogFooter>
         </form>
       </DialogContent>
