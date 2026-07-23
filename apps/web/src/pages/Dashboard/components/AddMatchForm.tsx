@@ -195,7 +195,27 @@ export function AddMatchForm({
           variant="outline"
           value={mode}
           onValueChange={(value) => {
-            if (value) setMode(value as EntryMode);
+            if (!value) return;
+            const nextMode = value as EntryMode;
+            if (nextMode === mode) return;
+            // First-switch seeding (not two-way live sync, per CONTEXT): carry
+            // the fighter/opponent-fighter/opponent-name the user actually
+            // selected in the mode they're leaving onto the mode they're
+            // entering, instead of exposing that other form's untouched
+            // default (opponentFighterId defaults to the alphabetically-first
+            // sprite, Banjo & Kazooie, in both forms).
+            if (nextMode === 'set') {
+              const { fighterId, opponentFighterId, opponentName } = form.getValues();
+              setForm.setValue('fighterId', fighterId);
+              setForm.setValue('opponentFighterId', opponentFighterId);
+              setForm.setValue('opponentName', opponentName);
+            } else {
+              const { fighterId, opponentFighterId, opponentName } = setForm.getValues();
+              form.setValue('fighterId', fighterId);
+              form.setValue('opponentFighterId', opponentFighterId);
+              form.setValue('opponentName', opponentName);
+            }
+            setMode(nextMode);
           }}
           className="mb-2"
         >
