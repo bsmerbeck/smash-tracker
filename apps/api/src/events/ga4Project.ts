@@ -54,6 +54,15 @@ const GA4_PAYLOAD_ALLOWLIST: Readonly<Record<string, readonly string[]>> = {
   vod_activated: ['onboardingCause'],
   tournament_prep_activated: ['onboardingCause'],
   scout_activated: ['onboardingCause'],
+  // Phase 20 Plan 03 (SESS-01/02, T-20-12): content-free — no summary/
+  // homework/token keys ever reach GA4. review_delivery_created/
+  // review_delivery_revoked were emitted since Phase 12 but never
+  // catalogued/projected until now (parity fix, mirroring the earlier
+  // coach_review_published/review_revision_published/
+  // client_review_acknowledged additions above).
+  session_delivery_created: [],
+  review_delivery_created: [],
+  review_delivery_revoked: [],
 };
 
 function ga4ClientId(actorId: string, sessionId: string): string {

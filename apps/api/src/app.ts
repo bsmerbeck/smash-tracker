@@ -35,6 +35,7 @@ import coachingTenantsRoutes from './routes/coachingTenants.js';
 import coachingReviewsRoutes from './routes/coachingReviews.js';
 import coachingReviewDeliveriesRoutes from './routes/coachingReviewDeliveries.js';
 import coachingSessionsRoutes from './routes/coachingSessions.js';
+import coachingSessionDeliveriesRoutes from './routes/coachingSessionDeliveries.js';
 import vodSharesRoutes from './routes/vodShares.js';
 import publicVodSharesRoutes from './routes/publicVodShares.js';
 import publicReviewDeliveriesRoutes from './routes/publicReviewDeliveries.js';
@@ -323,6 +324,12 @@ export function buildApp(options: BuildAppOptions) {
       // training-session CRUD routes, gated the same direct
       // requireMembership way as coachingReviewsRoutes above.
       await api.register(coachingSessionsRoutes);
+      // Phase 20 Plan 03 (SESS-01/02, D-10): the coach-side session
+      // delivery-management routes, mirroring coachingReviewDeliveriesRoutes'
+      // own registration shape exactly.
+      await api.register(coachingSessionDeliveriesRoutes, {
+        webBaseUrl: options.webBaseUrl ?? 'http://localhost:5173',
+      });
       await api.register(vodSharesRoutes, {
         webBaseUrl: options.webBaseUrl ?? 'http://localhost:5173',
         ga4: options.ga4 ?? null,

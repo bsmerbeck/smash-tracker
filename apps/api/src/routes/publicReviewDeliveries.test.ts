@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { authHeader, buildTestApp } from '../test-support/testApp.js';
+import { createSession } from '../coaching/sessions.js';
+import { createSessionDelivery, revokeSessionDelivery } from '../coaching/sessionDeliveries.js';
 
 /** Registers a managed client (coach = TEST_UID from `testApp.ts`) and returns its tenantId. */
 async function createClient(
@@ -547,5 +549,98 @@ describe('DLV-03 boundary: a delivery token grants no other access', () => {
     expect(getResponse.statusCode).toBe(404);
     expect(ackResponse.statusCode).toBe(404);
     expect(getResponse.json()).toEqual(unknownGetResponse.json());
+  });
+});
+
+/**
+ * Phase 20 Plan 03 (SESS-01/02, D-10): the SAME anonymous GET route also
+ * serves a session delivery's frozen snapshot (kind 'session'), resolved via
+ * `getShareByToken`'s session dispatch — never the live `trainingSessions`
+ * node. No HTTP create/revoke route exists yet this task (Task 3 adds those);
+ * a delivery is minted directly via the service to exercise the GET route in
+ * isolation.
+ */
+describe('GET /api/review-deliveries/:token — session kind (Phase 20 Plan 03)', () => {
+  it('resolves a live session-delivery token to a kind "session" frozen snapshot', async () => {
+    const { app, database } = buildTestApp();
+    const clientId = await createClient(app);
+    const { sessionId } = await createSession(database as never, clientId, {
+      date: 1_700_000_000_000,
+      characterTags: [1, 5],
+      summary: 'Great session on neutral game',
+      homework: [{ text: 'Practice OOS options', done: false }],
+      coachPrivateNotes: 'SECRET_COACH_NOTES',
+    });
+    const { token } = await createSessionDelivery(
+      database as never,
+      clientId,
+      sessionId,
+      'https://grandfinals.gg',
+    );
+
+    const response = await app.inject({ method: 'GET', url: `/api/review-deliveries/${token}` });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.headers['cache-control']).toBe('no-store');
+    const body = response.json();
+    expect(body.kind).toBe('session');
+    expect(body.coachDisplayName).toBeTruthy();
+    expect(body.sessionSummary).toBe('Great session on neutral game');
+    expect(body.sessionCharacterTags).toEqual([1, 5]);
+    expect(body.sessionHomework).toEqual([{ text: 'Practice OOS options', done: false }]);
+    expect(JSON.stringify(body)).not.toContain('SECRET_COACH_NOTES');
+  });
+
+  it('returns the identical unavailable body for a revoked session-delivery token', async () => {
+    const { app, database } = buildTestApp();
+    const clientId = await createClient(app);
+    const { sessionId } = await createSession(database as never, clientId, {
+      date: 1_700_000_000_000,
+      summary: 'Session to be revoked',
+    });
+    const { deliveryId, token } = await createSessionDelivery(
+      database as never,
+      clientId,
+      sessionId,
+      'https://grandfinals.gg',
+    );
+    await revokeSessionDelivery(database as never, clientId, sessionId, deliveryId);
+
+    const response = await app.inject({ method: 'GET', url: `/api/review-deliveries/${token}` });
+
+    expect(response.statusCode).toBe(404);
+    expect(response.json()).toEqual({
+      error: 'Not Found',
+      message: 'This delivery is no longer available',
+      statusCode: 404,
+    });
+  });
+
+  it('a coachReview token and a session token do not resolve as each other (wrong-kind collapses to 404)', async () => {
+    const { app, database } = buildTestApp();
+    const { token: reviewToken } = await seedDeliveredReview(app);
+    const clientId = await createClient(app, 'SessionClient');
+    const { sessionId } = await createSession(database as never, clientId, {
+      date: 1_700_000_000_000,
+      summary: 'A session for the wrong-kind test',
+    });
+    const { token: sessionToken } = await createSessionDelivery(
+      database as never,
+      clientId,
+      sessionId,
+      'https://grandfinals.gg',
+    );
+
+    const reviewResponse = await app.inject({
+      method: 'GET',
+      url: `/api/review-deliveries/${reviewToken}`,
+    });
+    const sessionResponse = await app.inject({
+      method: 'GET',
+      url: `/api/review-deliveries/${sessionToken}`,
+    });
+
+    expect(reviewResponse.json().kind).toBe('coachReview');
+    expect(sessionResponse.json().kind).toBe('session');
   });
 });

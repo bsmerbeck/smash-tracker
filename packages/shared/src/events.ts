@@ -138,6 +138,20 @@ export const EVENT_CATALOG = {
   vod_activated: 'D',
   tournament_prep_activated: 'D',
   scout_activated: 'D',
+  // Phase 20 Plan 03 (Coaching Workflow, Training Sessions & VOD-less
+  // Reviews, SESS-01/02): session_delivery_created is a genuinely NEW event,
+  // emitted by `coachingSessionDeliveries.ts`'s POST create route AFTER
+  // `createSessionDelivery`'s durable multi-path write commits. Content-free
+  // payload (enum/reference ids only — no summary/homework text).
+  //
+  // review_delivery_created / review_delivery_revoked were ALSO emitted
+  // since Phase 12 (`coachingReviewDeliveries.ts`) but never catalogued here
+  // — added now for parity, mirroring the same audit-gap fix this catalog
+  // already applied to coach_review_published/review_revision_published/
+  // client_review_acknowledged. Their emitters are unchanged.
+  session_delivery_created: 'D',
+  review_delivery_created: 'D',
+  review_delivery_revoked: 'D',
 } as const;
 export type EventCatalogName = keyof typeof EVENT_CATALOG;
 export type EventClass = (typeof EVENT_CATALOG)[EventCatalogName];

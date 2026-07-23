@@ -154,6 +154,25 @@ const SAME_SUBJECT_ROUTES = [
     usesSubjectHeader: false,
     body: { done: true },
   },
+  // Phase 20 Plan 03 (Coaching Workflow, Training Sessions & VOD-less
+  // Reviews, SESS-01/02): every coach-side session-delivery route, gated
+  // the SAME way (a direct membership check on the URL's `:clientId`, no
+  // header) as the review/delivery and session routes above.
+  {
+    method: 'POST',
+    path: `/api/coaching/clients/${TENANT_ID}/sessions/session-1/deliveries`,
+    usesSubjectHeader: false,
+  },
+  {
+    method: 'GET',
+    path: `/api/coaching/clients/${TENANT_ID}/sessions/session-1/deliveries`,
+    usesSubjectHeader: false,
+  },
+  {
+    method: 'POST',
+    path: `/api/coaching/clients/${TENANT_ID}/sessions/session-1/deliveries/delivery-1/revoke`,
+    usesSubjectHeader: false,
+  },
 ] as const;
 
 /**
@@ -184,12 +203,10 @@ const TREE_TO_ROUTE_PATH: Record<(typeof CANONICAL_TENANT_TREES)[number], string
   // Phase 12 Plan 04: written by the create-delivery route.
   reviewDeliveries: `/api/coaching/clients/${TENANT_ID}/reviews/review-1/deliveries`,
   // Phase 20 Plan 02: trainingSessions is written by the create-session
-  // route; sessionDeliveries is registered ahead of its writer (Phase 20
-  // Plan 03's sessionDeliveries.ts) — the same-subject route proving THIS
-  // tenant's session tree is membership-gated stands in for it here, since
-  // no session-delivery route exists yet this plan.
+  // route.
   trainingSessions: `/api/coaching/clients/${TENANT_ID}/sessions`,
-  sessionDeliveries: `/api/coaching/clients/${TENANT_ID}/sessions`,
+  // Phase 20 Plan 03: written by the create-session-delivery route.
+  sessionDeliveries: `/api/coaching/clients/${TENANT_ID}/sessions/session-1/deliveries`,
 };
 
 describe('CANONICAL_TENANT_TREES stays in lockstep with the harness route list', () => {
