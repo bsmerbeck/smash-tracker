@@ -168,6 +168,60 @@ export function parseReviewShareId(
   return { tenantId, reviewId, version: Number(versionRaw) };
 }
 
+/**
+ * Phase 20 Plan 03 (SESS-01/02, D-10 immutability): a session delivery's
+ * `shareId` grammar — `session:{tenantId}:{sessionId}:{deliveryId}` — mirrors
+ * `buildReviewShareId`'s own encoding-as-lookup-path approach exactly, but
+ * addresses a session delivery's embedded FROZEN snapshot record
+ * (`sessionDeliveries/{tenantId}/{sessionId}/{deliveryId}`) rather than a
+ * `reviewVersions` record: a training session has no version number to
+ * pin to (it's a mutable log, `sessions.ts`'s Pattern 1), so the delivery
+ * itself — not a live tree — is the exact-one-snapshot lookup target.
+ */
+const SESSION_SHARE_ID_PREFIX = 'session:';
+
+/** Builds the `session:{tenantId}:{sessionId}:{deliveryId}` shareId encoding — the single source of truth both `sessionDeliveries.ts`'s writer and this file's `getShareByToken` reader must agree on. */
+export function buildSessionShareId(
+  tenantId: string,
+  sessionId: string,
+  deliveryId: string,
+): string {
+  return `${SESSION_SHARE_ID_PREFIX}${tenantId}:${sessionId}:${deliveryId}`;
+}
+
+/**
+ * Inverse of `buildSessionShareId` — returns `null` (never throws) for
+ * anything outside the fixed grammar (T-20-08: a corrupt/foreign shareId must
+ * collapse to the same "not a session delivery" outcome a genuinely
+ * different kind's shareId already produces). Guards all three segments with
+ * the EXISTING `ENTRY_KEY_SHAPE` denylist BEFORE any `ref()` call — never a
+ * possibly-drifting duplicate charset check, mirroring
+ * `parseReviewShareId`'s own guard-before-ref discipline.
+ */
+export function parseSessionShareId(
+  shareId: string,
+): { tenantId: string; sessionId: string; deliveryId: string } | null {
+  if (!shareId.startsWith(SESSION_SHARE_ID_PREFIX)) {
+    return null;
+  }
+  const segments = shareId.slice(SESSION_SHARE_ID_PREFIX.length).split(':');
+  if (segments.length !== 3) {
+    return null;
+  }
+  const [tenantId, sessionId, deliveryId] = segments;
+  if (!tenantId || !sessionId || !deliveryId) {
+    return null;
+  }
+  if (
+    !ENTRY_KEY_SHAPE.test(tenantId) ||
+    !ENTRY_KEY_SHAPE.test(sessionId) ||
+    !ENTRY_KEY_SHAPE.test(deliveryId)
+  ) {
+    return null;
+  }
+  return { tenantId, sessionId, deliveryId };
+}
+
 async function resolveCoachDisplayNameForTenant(
   database: Database,
   tenantId: string,

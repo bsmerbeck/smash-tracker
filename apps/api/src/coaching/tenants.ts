@@ -305,6 +305,17 @@ export async function archiveClient(
  * never silently drift out of sync with the trees `resolveSubject`-covered
  * routes actually write, per RESEARCH.md Open Question 2) plus the tenant's
  * own metadata/index/membership records. Requires membership.
+ *
+ * Phase 20 Plan 03 (T-20-11, RESEARCH Pitfall 4): a session delivery mints a
+ * root-level `shareTokens/{token}` entry the `CANONICAL_TENANT_TREES` cascade
+ * above does NOT reach — nulling `sessionDeliveries/{tenantId}` deletes the
+ * delivery RECORDS, but the bearer token itself lives at RTDB's root, outside
+ * any tenant-prefixed tree. Without this extra step, a deleted client's
+ * session-delivery links would keep resolving via `getShareByToken` forever
+ * (the token record would still exist and still pass its revoked/expiry
+ * checks). Collected BEFORE the cascade update is built, then folded into the
+ * SAME atomic multi-path update below — a deleted client's delivery tokens
+ * die in the same transaction as everything else.
  */
 export async function deleteClient(
   database: Database,
@@ -313,6 +324,23 @@ export async function deleteClient(
 ): Promise<void> {
   await requireMembership(database, coachUid, tenantId);
 
+  const sessionDeliveriesSnapshot = await database.ref(`sessionDeliveries/${tenantId}`).get();
+  const deliveryTokens: string[] = [];
+  if (sessionDeliveriesSnapshot.exists()) {
+    const bySession = sessionDeliveriesSnapshot.val() as Record<
+      string,
+      Record<string, unknown> | null
+    >;
+    for (const deliveries of Object.values(bySession ?? {})) {
+      for (const value of Object.values(deliveries ?? {})) {
+        const token = (value as { token?: unknown } | null)?.token;
+        if (typeof token === 'string' && token.length > 0) {
+          deliveryTokens.push(token);
+        }
+      }
+    }
+  }
+
   const updates: Record<string, null> = {};
   for (const tree of CANONICAL_TENANT_TREES) {
     updates[`${tree}/${tenantId}`] = null;
@@ -320,6 +348,9 @@ export async function deleteClient(
   updates[`clientTenants/${tenantId}`] = null;
   updates[`coachClients/${coachUid}/${tenantId}`] = null;
   updates[`clientMembers/${tenantId}`] = null;
+  for (const token of deliveryTokens) {
+    updates[`shareTokens/${token}`] = null;
+  }
 
   // Root-level multi-path update: null values delete keys atomically
   // (mirrors `RtdbService.deleteShare`'s cascade convention).
