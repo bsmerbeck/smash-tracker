@@ -3,12 +3,14 @@ import { readFileSync } from 'node:fs';
 import {
   createGspReadingInputSchema,
   createMatchInputSchema,
+  createPlaylistInputSchema,
   DEFAULT_ELITE_THRESHOLD,
   eliteThresholdGsp,
   estimateMaxGsp,
   estimateT,
   upsertGspSettingsInputSchema,
   upsertOpponentNoteInputSchema,
+  vodTimestampSchema,
 } from '@smash-tracker/shared';
 import {
   FIGHTER_PALUTENA,
@@ -20,6 +22,8 @@ import {
   buildOpponentNotes,
   buildOpponents,
   buildPersonalMatches,
+  buildPlaylists,
+  buildVodNotes,
 } from './content.js';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -169,5 +173,91 @@ describe('buildGspSettings / buildGspSeries', () => {
       expect(avg(lastThird)).toBeGreaterThan(avg(firstThird));
       expect(avg(lastThird)).toBeGreaterThan(elite * 0.5);
     }
+  });
+});
+
+describe('buildVodNotes', () => {
+  const notesByVod = buildVodNotes();
+
+  it('returns 3-6 valid notes per VOD-match index, seconds in [30, 420]', () => {
+    expect(notesByVod.length).toBe(10);
+    for (const notes of notesByVod) {
+      expect(notes.length).toBeGreaterThanOrEqual(3);
+      expect(notes.length).toBeLessThanOrEqual(6);
+      for (const note of notes) {
+        expect(() => vodTimestampSchema.parse(note)).not.toThrow();
+        expect(note.seconds).toBeGreaterThanOrEqual(30);
+        expect(note.seconds).toBeLessThanOrEqual(420);
+      }
+    }
+  });
+
+  it('contains no "lorem" placeholder text', () => {
+    for (const notes of notesByVod) {
+      for (const note of notes) {
+        expect(note.note.toLowerCase()).not.toContain('lorem');
+      }
+    }
+  });
+
+  it('mixes preset and custom tags at note level and match level (SHOW-07)', () => {
+    const allNoteTags = notesByVod.flatMap((notes) => notes.flatMap((n) => n.tags ?? []));
+    const NOTE_PRESET_TAGS = new Set([
+      'neutral',
+      'punish',
+      'edgeguard',
+      'recovery',
+      'kill-confirm',
+      'defense',
+      'mixup',
+      'matchup-note',
+      'mental-game',
+      'mistake',
+      'highlight',
+    ]);
+    expect(allNoteTags.some((tag) => NOTE_PRESET_TAGS.has(tag))).toBe(true);
+    expect(allNoteTags.some((tag) => tag === 'lab this')).toBe(true);
+
+    // Same preset+custom coverage holds at match level (Task 1's output).
+    const matches = buildPersonalMatches(NOW);
+    const allMatchTags = matches.flatMap((m) => m.input.tags ?? []);
+    const MATCH_PRESET_TAGS = new Set([
+      'tournament-set',
+      'practice-friendlies',
+      'bad-matchup',
+      'good-read-highlight',
+      'to-review',
+    ]);
+    expect(allMatchTags.some((tag) => MATCH_PRESET_TAGS.has(tag))).toBe(true);
+    expect(
+      allMatchTags.some((tag) => ['lab this', 'bracket run', 'money match'].includes(tag)),
+    ).toBe(true);
+  });
+});
+
+describe('buildPlaylists', () => {
+  it('returns >= 2 playlist specs grouping seeded VOD-match indices', () => {
+    const playlists = buildPlaylists();
+    expect(playlists.length).toBeGreaterThanOrEqual(2);
+
+    for (const playlist of playlists) {
+      expect(() => createPlaylistInputSchema.parse({ name: playlist.name })).not.toThrow();
+      for (const index of playlist.vodMatchIndices) {
+        expect(index).toBeGreaterThanOrEqual(0);
+        expect(index).toBeLessThanOrEqual(9);
+      }
+    }
+
+    const royBracketRuns = playlists.find((p) => p.name === 'Roy bracket runs');
+    expect(royBracketRuns).toBeDefined();
+    expect(royBracketRuns!.vodMatchIndices.length).toBeGreaterThanOrEqual(3);
+    for (const index of royBracketRuns!.vodMatchIndices) {
+      expect(index).toBeGreaterThanOrEqual(0);
+      expect(index).toBeLessThanOrEqual(4);
+    }
+
+    const second = playlists.find((p) => p.name !== 'Roy bracket runs');
+    expect(second).toBeDefined();
+    expect(second!.vodMatchIndices.length).toBeGreaterThanOrEqual(3);
   });
 });
