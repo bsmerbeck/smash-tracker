@@ -2,19 +2,26 @@ import { deleteApp } from 'firebase-admin/app';
 import { loadEnv } from '../src/config/env.js';
 import { initFirebase } from '../src/firebase/admin.js';
 import { runSeedDemo } from './seed/personalDataset.js';
+import { runSeedCoaching } from './seed/coachingDataset.js';
 import { wipeDemo } from './seed/manifest.js';
 
 /**
- * Phase 14 (SEED-01): the `pnpm --filter @smash-tracker/api seed:demo --
- * --uid <uid> [--wipe]` CLI entrypoint. Thin I/O shell over the tested
- * `runSeedDemo`/`wipeDemo` (see `scripts/seed/seedDemo.test.ts`) — this file
- * is not unit-tested directly, only typecheck + lint + the orchestrator's
- * own FakeDatabase suite cover it.
+ * Phase 14/15 (SEED-01, PAND-01..05): the `pnpm --filter @smash-tracker/api
+ * seed:demo -- --uid <uid> [--wipe]` CLI entrypoint. Thin I/O shell over the
+ * tested `runSeedDemo`/`runSeedCoaching`/`wipeDemo` (see
+ * `scripts/seed/seedDemo.test.ts`/`scripts/seed/coachingDataset.test.ts`) —
+ * this file is not unit-tested directly, only typecheck + lint + the
+ * orchestrators' own FakeDatabase suites cover it. The seed branch captures
+ * ONE `now` and runs `runSeedCoaching` immediately after `runSeedDemo` so a
+ * single command seeds both the personal showcase dataset and the Pandemic
+ * coaching client; the delivery URL is printed to stdout at the end (the
+ * ONLY place it surfaces — never written to a file).
  *
  * Import surface is limited to `../src/config/env.js`,
- * `../src/firebase/admin.js`, `./seed/personalDataset.js`, `./seed/manifest.js`,
- * and `firebase-admin/app` (for teardown) — no import from `../src/events`,
- * `routes`, `jobs`, `coaching`, `billing`, or `onboarding` (SEED-06).
+ * `../src/firebase/admin.js`, `./seed/personalDataset.js`,
+ * `./seed/coachingDataset.js`, `./seed/manifest.js`, and `firebase-admin/app`
+ * (for teardown) — no import from `../src/events`, `routes`, `jobs`,
+ * `billing`, or `onboarding` (SEED-06).
  */
 
 interface CliArgs {
@@ -71,8 +78,15 @@ async function main(): Promise<void> {
       await wipeDemo(firebase.database, uid);
       console.log(`Wiped demo data for uid "${uid}"`);
     } else {
-      await runSeedDemo(firebase.database, { uid, now: Date.now() });
+      const now = Date.now();
+      await runSeedDemo(firebase.database, { uid, now });
+      const { deliveryUrl } = await runSeedCoaching(firebase.database, {
+        ownerUid: uid,
+        now,
+        webBaseUrl: env.WEB_BASE_URL,
+      });
       console.log(`Seeded demo data for uid "${uid}"`);
+      console.log(`Pandemic review delivery link (never persisted elsewhere): ${deliveryUrl}`);
     }
   } catch (err) {
     console.error(err instanceof Error ? err.message : err);
