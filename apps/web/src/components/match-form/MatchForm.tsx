@@ -44,7 +44,11 @@ import { StageSelectGroups, StageSelectValue } from '@/components/StageSelectGro
 import { useOpponents } from '@/hooks/useOpponents';
 import { useMatches } from '@/hooks/useMatches';
 import { useStageFavorites, useToggleStageFavorite } from '@/hooks/useStageFavorites';
-import { getGroupedStageOptions, stageOptions } from '@/lib/stageOptions';
+import {
+  getGroupedStageOptions,
+  stageOptions,
+  STANDARD_ONLINE_STAGE_IDS,
+} from '@/lib/stageOptions';
 import { parseGspNumber } from '@/pages/Gsp/lib/parseGspNumber';
 import { parseFlexibleTimestamp } from '@/lib/vod';
 
@@ -400,7 +404,7 @@ export function MatchFormFields({
 
   const favoriteStageIds = stageFavorites?.stageIds;
   const stageGroups = useMemo(
-    () => getGroupedStageOptions(allMatches, favoriteStageIds),
+    () => getGroupedStageOptions(allMatches, favoriteStageIds, STANDARD_ONLINE_STAGE_IDS),
     [allMatches, favoriteStageIds],
   );
 

@@ -39,7 +39,7 @@ import { StageSelectGroups, StageSelectValue } from '@/components/StageSelectGro
 import { useOpponents } from '@/hooks/useOpponents';
 import { useMatches } from '@/hooks/useMatches';
 import { useStageFavorites, useToggleStageFavorite } from '@/hooks/useStageFavorites';
-import { getGroupedStageOptions } from '@/lib/stageOptions';
+import { getGroupedStageOptions, STANDARD_ONLINE_STAGE_IDS } from '@/lib/stageOptions';
 import { alphaSpriteList, TournamentFields, matchTypeLabel } from './MatchForm';
 import {
   setFormatValues,
@@ -204,7 +204,7 @@ export function SetWizard({
   const toggleStageFavorite = useToggleStageFavorite();
   const favoriteStageIds = stageFavorites?.stageIds;
   const stageGroups = useMemo(
-    () => getGroupedStageOptions(allMatches, favoriteStageIds),
+    () => getGroupedStageOptions(allMatches, favoriteStageIds, STANDARD_ONLINE_STAGE_IDS),
     [allMatches, favoriteStageIds],
   );
 
@@ -351,6 +351,25 @@ export function SetWizard({
                         // single-game form: 'unknown' arrives pre-filled and
                         // typing should replace it.
                         onFocus={(e) => e.currentTarget.select()}
+                        // cmdk's own Enter handling only fires an item's
+                        // onSelect when a suggestion is highlighted — typing
+                        // a brand-new name (no match in the list) leaves
+                        // nothing highlighted, so Enter silently did nothing
+                        // visible even though field.value was already
+                        // correct. Explicitly commit the typed value and
+                        // close the popover on Enter so free text is never
+                        // left hanging; preventDefault covers the
+                        // (portalled, so unlikely anyway) risk of a stray
+                        // form submit. Doesn't interfere with selecting an
+                        // actual highlighted suggestion — that still runs
+                        // via cmdk's own Enter listener on the Command root,
+                        // since we don't stopPropagation.
+                        onKeyDown={(e) => {
+                          if (e.key !== 'Enter') return;
+                          e.preventDefault();
+                          field.onChange(field.value);
+                          setOpponentPopoverOpen(false);
+                        }}
                       />
                       <CommandList>
                         <CommandEmpty>{t('matchForm.opponentAddHint')}</CommandEmpty>
