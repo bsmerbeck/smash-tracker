@@ -1712,7 +1712,8 @@
         "sourceBar": {
           "label": "Source :",
           "none": "Aucune source sélectionnée",
-          "noPlayer": "Sélectionnez une source pour commencer à regarder."
+          "noPlayer": "Sélectionnez une source pour commencer à regarder.",
+          "noVods": "Ce client n'a pas encore de VOD — vous pouvez tout de même rédiger et publier cette revue."
         },
         "sourcesDrawer": {
           "trigger": "Sources ▾",

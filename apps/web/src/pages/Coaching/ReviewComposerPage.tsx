@@ -347,36 +347,48 @@ export function ReviewComposerPage() {
         <div className="grid min-h-[calc(100vh-8rem)] grid-cols-1 lg:grid-cols-[480px_1fr]">
           {/* Left pane (D-01): source bar + player + Evidence placeholder — always visible regardless of the right pane's active tab. */}
           <div className="flex flex-col gap-3 border-b p-4 lg:border-r lg:border-b-0">
-            <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
-              <span>
-                {t('coaching.reviews.composer.sourceBar.label')}{' '}
-                <span className="font-medium text-foreground">
-                  {currentSource
-                    ? t('coaching.reviews.composer.sourcesDrawer.vsOpponent', {
-                        opponent: currentSource.opponent || t('common.unknown'),
-                      })
-                    : t('coaching.reviews.composer.sourceBar.none')}
-                </span>
-              </span>
-              <ReviewSourcesDrawer
-                sources={vodSources}
-                currentSourceId={currentSourceId}
-                onSelect={setCurrentSourceId}
-              />
-            </div>
-
-            {currentSource?.vodUrl ? (
-              <VodPlayer
-                vodUrl={currentSource.vodUrl}
-                startSeconds={currentSource.vodStartSeconds}
-                seekRef={playerSeekRef}
-                pauseRef={playerPauseRef}
-                getCurrentTimeRef={getCurrentTimeRef}
-              />
+            {vodSources.length === 0 ? (
+              // REV-01: the client library has ZERO VODs — never show a
+              // Sources drawer trigger or an empty aspect-video placeholder
+              // (a "select a source" box with nothing to select). A single
+              // compact muted line instead; publish stays fully reachable.
+              <p className="text-sm text-muted-foreground">
+                {t('coaching.reviews.composer.sourceBar.noVods')}
+              </p>
             ) : (
-              <div className="flex aspect-video items-center justify-center rounded-lg border bg-muted text-sm text-muted-foreground">
-                {t('coaching.reviews.composer.sourceBar.noPlayer')}
-              </div>
+              <>
+                <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
+                  <span>
+                    {t('coaching.reviews.composer.sourceBar.label')}{' '}
+                    <span className="font-medium text-foreground">
+                      {currentSource
+                        ? t('coaching.reviews.composer.sourcesDrawer.vsOpponent', {
+                            opponent: currentSource.opponent || t('common.unknown'),
+                          })
+                        : t('coaching.reviews.composer.sourceBar.none')}
+                    </span>
+                  </span>
+                  <ReviewSourcesDrawer
+                    sources={vodSources}
+                    currentSourceId={currentSourceId}
+                    onSelect={setCurrentSourceId}
+                  />
+                </div>
+
+                {currentSource?.vodUrl ? (
+                  <VodPlayer
+                    vodUrl={currentSource.vodUrl}
+                    startSeconds={currentSource.vodStartSeconds}
+                    seekRef={playerSeekRef}
+                    pauseRef={playerPauseRef}
+                    getCurrentTimeRef={getCurrentTimeRef}
+                  />
+                ) : (
+                  <div className="flex aspect-video items-center justify-center rounded-lg border bg-muted text-sm text-muted-foreground">
+                    {t('coaching.reviews.composer.sourceBar.noPlayer')}
+                  </div>
+                )}
+              </>
             )}
 
             <ReviewEvidenceList

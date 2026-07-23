@@ -1712,7 +1712,8 @@
         "sourceBar": {
           "label": "Fonte:",
           "none": "Nenhuma fonte selecionada",
-          "noPlayer": "Selecione uma fonte para começar a assistir."
+          "noPlayer": "Selecione uma fonte para começar a assistir.",
+          "noVods": "Este cliente ainda não tem VODs — você ainda pode escrever e publicar esta análise."
         },
         "sourcesDrawer": {
           "trigger": "Fontes ▾",
