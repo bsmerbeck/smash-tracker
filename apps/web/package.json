@@ -9,6 +9,7 @@
     "preview": "vite preview",
     "prerender": "node scripts/prerender.mjs",
     "generate:og": "node scripts/generate-og-image.mjs",
+    "acquire:stages": "node scripts/acquire-stage-art.mjs",
     "lint": "eslint .",
     "typecheck": "tsc -b --noEmit",
     "test": "vitest run"
