@@ -1564,7 +1564,8 @@
       "matches": "Partidas",
       "vods": "VODs",
       "analytics": "Analíticas",
-      "reviews": "Reseñas"
+      "reviews": "Reseñas",
+      "sessions": "Sesiones"
     },
     "hub": {
       "title": "Centro de clientes",
@@ -1845,6 +1846,72 @@
       "title": "El modo Entrenamiento está desactivado",
       "body": "Actívalo en Perfil → Cuenta para gestionar los partidos, VODs y análisis de otros jugadores en modo Entrenamiento.",
       "cta": "Ir a Perfil"
+    },
+    "sessions": {
+      "list": {
+        "title": "Sesiones",
+        "subtitle": "Las sesiones de entrenamiento registradas para este cliente — las tareas y el estado de entrega están aquí.",
+        "newSession": "+ Nueva sesión",
+        "createError": "Ocurrió un error al iniciar esta sesión.",
+        "empty": "Aún no hay sesiones. Registra una para empezar a seguir las tareas y entregarla a tu cliente.",
+        "listAria": "Sesiones",
+        "open": "Abrir",
+        "rowLabel": "Sesión — {{date}}",
+        "homeworkProgress_one": "{{done}}/{{count}} tarea hecha",
+        "homeworkProgress_other": "{{done}}/{{count}} tareas hechas",
+        "homeworkEmpty": "Sin tareas",
+        "deliveryMenuAria": "Entrega y más acciones",
+        "delivery": {
+          "dash": "—",
+          "noneAria": "Sin entrega — todavía no se ha entregado nada",
+          "delivered": "Entregada",
+          "revoked": "Revocada",
+          "createdToast": "Enlace de entrega creado y copiado",
+          "createError": "Ocurrió un error al crear este enlace de entrega.",
+          "copiedToast": "Enlace copiado",
+          "revokedToast": "Enlace de entrega revocado",
+          "revokeError": "Ocurrió un error al revocar este enlace de entrega."
+        },
+        "actions": {
+          "deliver": "Entregar",
+          "copyLink": "Copiar enlace",
+          "revokeLink": "Revocar enlace"
+        }
+      },
+      "composer": {
+        "title": "Sesión",
+        "loadError": "Ocurrió un error al cargar esta sesión.",
+        "dateLabel": "Fecha",
+        "tagsLabel": "Etiquetas de personaje",
+        "tagsAddPlaceholder": "Añadir un personaje…",
+        "tagsCapReached": "Hasta {{max}} etiquetas de personaje.",
+        "tagRemoveAria": "Quitar {{fighter}}",
+        "summaryLabel": "Resumen",
+        "summaryPlaceholder": "¿En qué trabajasteis en esta sesión?",
+        "homework": {
+          "heading": "Tareas",
+          "add": "+ Añadir tarea",
+          "itemPlaceholder": "¿Qué debería practicar?",
+          "toggleAria": "Marcar \"{{item}}\" como hecha",
+          "remove": "Quitar tarea",
+          "capReached": "Hasta {{max}} tareas.",
+          "empty": "Aún no hay tareas."
+        },
+        "privateNotes": {
+          "label": "🔒 Notas privadas",
+          "helper": "Solo tú puedes ver esto. Nunca se entrega al cliente.",
+          "textareaAria": "Notas privadas del entrenador para esta sesión",
+          "placeholder": "Notas privadas para esta sesión…"
+        },
+        "save": {
+          "saving": "Guardando…",
+          "saved": "Guardado",
+          "error": "No se pudo guardar — comprueba tu conexión."
+        },
+        "deliver": "Entregar",
+        "deliverError": "Ocurrió un error al crear este enlace de entrega.",
+        "copiedToast": "Enlace de entrega creado y copiado"
+      }
     }
   },
   "reviewDelivery": {
@@ -1867,7 +1934,20 @@
       "body": "grandfinals.gg es un tracker gratuito para Super Smash Bros. Ultimate — registra tus propias partidas y torneos, revisa tus VODs con notas de salto directo, analiza matchups y sigue tu GSP y tu rating con el tiempo. No hace falta cuenta para explorar; empezar es gratis.",
       "button": "Empezar gratis"
     },
-    "footer": "La confirmación se registra como una confirmación de enlace (quien tenga este enlace). Este enlace es revocable y puede caducar · da acceso a exactamente una versión publicada · sin borradores, notas privadas ni acceso al espacio de trabajo · las visitas de bots o vistas previas nunca cuentan como \"Visto\"."
+    "footer": "La confirmación se registra como una confirmación de enlace (quien tenga este enlace). Este enlace es revocable y puede caducar · da acceso a exactamente una versión publicada · sin borradores, notas privadas ni acceso al espacio de trabajo · las visitas de bots o vistas previas nunca cuentan como \"Visto\".",
+    "session": {
+      "seoTitle": "Sesión de entrenamiento de {{name}} · grandfinals.gg",
+      "eyebrow": "Sesión de entrenamiento de tu entrenador · sin necesidad de cuenta",
+      "heading": "Sesión de entrenamiento de {{name}}",
+      "dateLabel": "Fecha de la sesión: {{date}}",
+      "homeworkHeading": "Tareas",
+      "homeworkEmpty": "Sin tareas en esta sesión.",
+      "homeworkItemDoneAria": "Hecha: {{item}}",
+      "homeworkItemTodoAria": "Aún no hecha: {{item}}",
+      "linkedVodsHeading": "VODs vinculados",
+      "linkedVodsEmpty": "Sin VODs vinculados en esta sesión.",
+      "linkedVodItem": "Referencia de VOD vinculado: {{ref}}"
+    }
   },
   "onboarding": {
     "welcome": {

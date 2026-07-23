@@ -133,6 +133,19 @@ const ReviewComposerPage = lazy(() =>
 const ReviewsListPage = lazy(() =>
   import('@/pages/Coaching/ReviewsListPage').then((m) => ({ default: m.ReviewsListPage })),
 );
+// Phase 20 (Coaching Workflow, Training Sessions & VOD-less Reviews,
+// SESS-01/02): the Sessions list (the 7th client-workspace nav item,
+// `/coach/:clientId/sessions`) and the session composer
+// (`/coach/:clientId/sessions/:sessionId`) — SIBLINGS to the reviews pair
+// above, never a fork.
+const SessionsListPage = lazy(() =>
+  import('@/pages/Coaching/SessionsListPage').then((m) => ({ default: m.SessionsListPage })),
+);
+const SessionComposerPage = lazy(() =>
+  import('@/pages/Coaching/SessionComposerPage').then((m) => ({
+    default: m.SessionComposerPage,
+  })),
+);
 
 /** Minimal route-transition fallback — matches HomePage's `loading → null` behavior in spirit without layout shift once content lands. */
 function RouteFallback() {
@@ -392,6 +405,11 @@ export function AppRouter() {
             {/* Phase 12 (Coach Reviews & Delivery, D-01/D-05): the Reviews list + the review composer. */}
             <Route path="reviews" element={<ReviewsListPage />} />
             <Route path="reviews/:reviewId" element={<ReviewComposerPage />} />
+            {/* Phase 20 (Coaching Workflow, Training Sessions & VOD-less
+                Reviews, SESS-01/02): the Sessions list + the session
+                composer — a SIBLING pair to the reviews routes above. */}
+            <Route path="sessions" element={<SessionsListPage />} />
+            <Route path="sessions/:sessionId" element={<SessionComposerPage />} />
             <Route path="gsp" element={<Navigate to="../overview" replace />} />
             <Route path="integrations" element={<Navigate to="../overview" replace />} />
             <Route path="reports" element={<Navigate to="../overview" replace />} />

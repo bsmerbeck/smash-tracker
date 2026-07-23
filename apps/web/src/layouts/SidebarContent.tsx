@@ -15,7 +15,7 @@ function initialFromEmail(email: string | null | undefined): string {
 }
 
 interface WorkspaceNavItem {
-  key: 'overview' | 'fighters' | 'matches' | 'vods' | 'analytics' | 'reviews';
+  key: 'overview' | 'fighters' | 'matches' | 'vods' | 'analytics' | 'reviews' | 'sessions';
   href: string;
   isActive: (pathname: string) => boolean;
 }
@@ -35,6 +35,11 @@ interface WorkspaceNavItem {
  * joins after Analytics — the composer nests under it
  * (`/coach/:clientId/reviews/:reviewId`), so its active state uses
  * `startsWith` rather than an exact path match.
+ *
+ * Phase 20 (Coaching Workflow, Training Sessions & VOD-less Reviews,
+ * SESS-02): a 7th item, `sessions`, joins beside `reviews` — same
+ * `startsWith` active-state convention (the composer nests under it too,
+ * `/coach/:clientId/sessions/:sessionId`).
  */
 function buildWorkspaceItems(clientId: string): WorkspaceNavItem[] {
   const base = `/coach/${clientId}`;
@@ -57,6 +62,11 @@ function buildWorkspaceItems(clientId: string): WorkspaceNavItem[] {
       key: 'reviews',
       href: `${base}/reviews`,
       isActive: (p) => p.startsWith(`${base}/reviews`),
+    },
+    {
+      key: 'sessions',
+      href: `${base}/sessions`,
+      isActive: (p) => p.startsWith(`${base}/sessions`),
     },
   ];
 }

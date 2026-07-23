@@ -1564,7 +1564,8 @@
       "matches": "Matches",
       "vods": "VODs",
       "analytics": "Analytics",
-      "reviews": "Reviews"
+      "reviews": "Reviews",
+      "sessions": "Sessions"
     },
     "hub": {
       "title": "Client Hub",
@@ -1845,6 +1846,72 @@
       "title": "Coaching mode is off",
       "body": "Enable it in Profile → Account to manage other players' matches, VODs, and analytics as a coach.",
       "cta": "Go to Profile"
+    },
+    "sessions": {
+      "list": {
+        "title": "Sessions",
+        "subtitle": "Training sessions logged for this client — homework and delivery status live here.",
+        "newSession": "+ New session",
+        "createError": "Something went wrong starting this session.",
+        "empty": "No sessions yet. Log one to start tracking homework and deliver it to your client.",
+        "listAria": "Sessions",
+        "open": "Open",
+        "rowLabel": "Session — {{date}}",
+        "homeworkProgress_one": "{{done}}/{{count}} task done",
+        "homeworkProgress_other": "{{done}}/{{count}} tasks done",
+        "homeworkEmpty": "No homework",
+        "deliveryMenuAria": "Delivery and more actions",
+        "delivery": {
+          "dash": "—",
+          "noneAria": "No delivery — nothing delivered yet",
+          "delivered": "Delivered",
+          "revoked": "Revoked",
+          "createdToast": "Delivery link created and copied",
+          "createError": "Something went wrong creating this delivery link.",
+          "copiedToast": "Link copied",
+          "revokedToast": "Delivery link revoked",
+          "revokeError": "Something went wrong revoking this delivery link."
+        },
+        "actions": {
+          "deliver": "Deliver",
+          "copyLink": "Copy link",
+          "revokeLink": "Revoke link"
+        }
+      },
+      "composer": {
+        "title": "Session",
+        "loadError": "Something went wrong loading this session.",
+        "dateLabel": "Date",
+        "tagsLabel": "Character tags",
+        "tagsAddPlaceholder": "Add a character…",
+        "tagsCapReached": "Up to {{max}} character tags.",
+        "tagRemoveAria": "Remove {{fighter}}",
+        "summaryLabel": "Summary",
+        "summaryPlaceholder": "What did you work on this session?",
+        "homework": {
+          "heading": "Homework",
+          "add": "+ Add item",
+          "itemPlaceholder": "What should they practice?",
+          "toggleAria": "Mark \"{{item}}\" as done",
+          "remove": "Remove homework item",
+          "capReached": "Up to {{max}} homework items.",
+          "empty": "No homework yet."
+        },
+        "privateNotes": {
+          "label": "🔒 Private notes",
+          "helper": "Only you can see this. Never delivered to the client.",
+          "textareaAria": "Coach-private notes for this session",
+          "placeholder": "Private notes for this session…"
+        },
+        "save": {
+          "saving": "Saving…",
+          "saved": "Saved",
+          "error": "Couldn't save — check your connection."
+        },
+        "deliver": "Deliver",
+        "deliverError": "Something went wrong creating this delivery link.",
+        "copiedToast": "Delivery link created and copied"
+      }
     }
   },
   "reviewDelivery": {
@@ -1867,7 +1934,20 @@
       "body": "grandfinals.gg is a free tracker for Super Smash Bros. Ultimate — log your own matches and tournaments, review VODs with click-to-seek notes, scout matchups, and follow your GSP and rating over time. No account needed to look around; free to start.",
       "button": "Get started free"
     },
-    "footer": "Acknowledging is recorded as a link acknowledgement (whoever holds this link). This link is revocable and can expire · it grants access to exactly one published version · no drafts, private notes, or workspace access · bot and unfurl visits never count as \"Viewed\"."
+    "footer": "Acknowledging is recorded as a link acknowledgement (whoever holds this link). This link is revocable and can expire · it grants access to exactly one published version · no drafts, private notes, or workspace access · bot and unfurl visits never count as \"Viewed\".",
+    "session": {
+      "seoTitle": "Training session from {{name}} · grandfinals.gg",
+      "eyebrow": "Training session from your coach · no account needed",
+      "heading": "Training session from {{name}}",
+      "dateLabel": "Session date: {{date}}",
+      "homeworkHeading": "Homework",
+      "homeworkEmpty": "No homework this session.",
+      "homeworkItemDoneAria": "Done: {{item}}",
+      "homeworkItemTodoAria": "Not done yet: {{item}}",
+      "linkedVodsHeading": "Linked VODs",
+      "linkedVodsEmpty": "No linked VODs this session.",
+      "linkedVodItem": "Linked VOD reference: {{ref}}"
+    }
   },
   "onboarding": {
     "welcome": {

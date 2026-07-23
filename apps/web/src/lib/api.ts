@@ -19,8 +19,13 @@ import {
   gspLiveSchema,
   gspReadingSchema,
   gspSettingsSchema,
+  homeworkItemSchema,
+  HOMEWORK_ITEM_TEXT_MAX_LENGTH,
   joinGroupRequestSchema,
   manualTournamentEntryInputSchema,
+  MAX_SESSION_CHARACTER_TAGS,
+  MAX_SESSION_HOMEWORK_ITEMS,
+  MAX_SESSION_LINKED_MATCH_IDS,
   matchSchema,
   opponentAliasMapSchema,
   opponentListSchema,
@@ -44,8 +49,10 @@ import {
   REVIEW_DELIVERY_STATES,
   REVIEW_SECTION_KINDS,
   reviewDraftSchema,
+  SAFE_MARKDOWN_DOC_MAX_LENGTH,
   scoutReportDataSchema,
   scoutReportRecordSchema,
+  sessionPatchInputSchema,
   shareCreatedResponseSchema,
   shareSummarySchema,
   stageFavoritesSchema,
@@ -76,6 +83,7 @@ import {
   type UpdatePlaylistInput,
   createShareInputSchema,
   type ScoutQuery,
+  type SessionPatchInput,
   type UpdateGspReadingInput,
   type UpdateMatchInput,
   type UpsertGspSettingsInput,
@@ -324,6 +332,72 @@ const deliveryListItemResponseSchema = z.object({
   url: z.string().url(),
 });
 export type ReviewDeliveryListItem = z.infer<typeof deliveryListItemResponseSchema>;
+
+/**
+ * Phase 20 (Coaching Workflow, Training Sessions & VOD-less Reviews,
+ * SESS-01/02): response/request shapes for the coach-side training-session
+ * routes (`apps/api/src/routes/coachingSessions.ts`) — assembled inline in
+ * that route file, not exported from `@smash-tracker/shared`, duplicated
+ * here per this file's own `reviewListItemResponseSchema` precedent above.
+ */
+const sessionHomeworkCreateItemSchema = z.object({
+  text: z.string().trim().max(HOMEWORK_ITEM_TEXT_MAX_LENGTH),
+  done: z.boolean().optional(),
+});
+
+/** POST .../sessions body — homework items arrive without an `id` (the server assigns one per item). */
+const createSessionRequestSchema = z.object({
+  date: z.number().int().nonnegative(),
+  characterTags: z.array(z.number().int().positive()).max(MAX_SESSION_CHARACTER_TAGS).optional(),
+  summary: z.string().max(SAFE_MARKDOWN_DOC_MAX_LENGTH),
+  homework: z.array(sessionHomeworkCreateItemSchema).max(MAX_SESSION_HOMEWORK_ITEMS).optional(),
+  linkedMatchIds: z.array(z.string().min(1)).max(MAX_SESSION_LINKED_MATCH_IDS).nullish(),
+  coachPrivateNotes: z.string().max(SAFE_MARKDOWN_DOC_MAX_LENGTH).nullish(),
+});
+export type CreateSessionRequest = z.input<typeof createSessionRequestSchema>;
+
+/**
+ * Wire-response shape for a session — mirrors `coachingSessions.ts`'s own
+ * `sessionResponseSchema` (`.nullable()`, never `.nullish()`, on
+ * `linkedMatchIds`/`coachPrivateNotes`).
+ */
+const sessionResponseSchema = z.object({
+  sessionId: z.string().min(1),
+  date: z.number().int().nonnegative(),
+  characterTags: z.array(z.number().int().positive()).max(MAX_SESSION_CHARACTER_TAGS),
+  summary: z.string().max(SAFE_MARKDOWN_DOC_MAX_LENGTH),
+  homework: z.array(homeworkItemSchema).max(MAX_SESSION_HOMEWORK_ITEMS),
+  linkedMatchIds: z.array(z.string().min(1)).max(MAX_SESSION_LINKED_MATCH_IDS).nullable(),
+  coachPrivateNotes: z.string().max(SAFE_MARKDOWN_DOC_MAX_LENGTH).nullable(),
+  createdAt: z.number().int().nonnegative(),
+  lastEditedAt: z.number().int().nonnegative(),
+});
+export type SessionResponse = z.infer<typeof sessionResponseSchema>;
+
+/**
+ * SESS-01 (D-10 immutability): shapes for
+ * `apps/api/src/routes/coachingSessionDeliveries.ts` — a session delivery's
+ * list-item status is only ever `'delivered' | 'revoked'` (no
+ * viewed/acknowledged/expired lifecycle, unlike a review delivery's 6-state
+ * `REVIEW_DELIVERY_STATES` — sessions deliberately have no viewed/ack
+ * lifecycle this phase, per this plan's own scope).
+ */
+const sessionDeliveryCreatedResponseSchema = z.object({
+  deliveryId: z.string().min(1),
+  token: z.string().min(1),
+  url: z.string().url(),
+});
+export type SessionDeliveryCreatedResponse = z.infer<typeof sessionDeliveryCreatedResponseSchema>;
+
+const sessionDeliveryListItemResponseSchema = z.object({
+  deliveryId: z.string().min(1),
+  status: z.enum(['delivered', 'revoked']),
+  token: z.string().min(1),
+  createdAt: z.number().int().nonnegative(),
+  revokedAt: z.number().int().nonnegative().nullable(),
+  url: z.string().url(),
+});
+export type SessionDeliveryListItem = z.infer<typeof sessionDeliveryListItemResponseSchema>;
 
 /**
  * GET /api/onboarding/progress response shape (Phase 13, ONBD-04/D-04) —
@@ -768,6 +842,77 @@ export const api = {
         revoke: (clientId: string, reviewId: string, deliveryId: string) =>
           apiRequest<void>(
             `/api/coaching/clients/${encodeURIComponent(clientId)}/reviews/${encodeURIComponent(reviewId)}/deliveries/${encodeURIComponent(deliveryId)}/revoke`,
+            { method: 'POST' },
+          ),
+      },
+    },
+    /**
+     * Phase 20 (Coaching Workflow, Training Sessions & VOD-less Reviews,
+     * SESS-01/02): coach-side training-session routes, nested under
+     * `/api/coaching/clients/:clientId/sessions` — the SAME direct
+     * `requireMembership` URL-`:clientId` gating as `coaching.reviews.*`
+     * above (`apps/api/src/routes/coachingSessions.ts`). A session is a
+     * mutable log (no draft/publish/status machinery, unlike reviews).
+     */
+    sessions: {
+      /** GET .../sessions — a client's training sessions, most-recent-first. */
+      list: (clientId: string) =>
+        apiRequestParsed(
+          `/api/coaching/clients/${encodeURIComponent(clientId)}/sessions`,
+          sessionResponseSchema.array(),
+        ),
+      /** POST .../sessions — logs a new session (SESS-01). */
+      create: (clientId: string, input: CreateSessionRequest) =>
+        apiRequestParsed(
+          `/api/coaching/clients/${encodeURIComponent(clientId)}/sessions`,
+          sessionResponseSchema,
+          { method: 'POST', body: createSessionRequestSchema.parse(input) },
+        ),
+      /** GET .../sessions/:sessionId — read one session. */
+      get: (clientId: string, sessionId: string) =>
+        apiRequestParsed(
+          `/api/coaching/clients/${encodeURIComponent(clientId)}/sessions/${encodeURIComponent(sessionId)}`,
+          sessionResponseSchema,
+        ),
+      /** PATCH .../sessions/:sessionId — in-place edit (mutable log, no version machinery). */
+      update: (clientId: string, sessionId: string, input: SessionPatchInput) =>
+        apiRequestParsed(
+          `/api/coaching/clients/${encodeURIComponent(clientId)}/sessions/${encodeURIComponent(sessionId)}`,
+          sessionResponseSchema,
+          { method: 'PATCH', body: sessionPatchInputSchema.parse(input) },
+        ),
+      /** POST .../sessions/:sessionId/homework/:itemId/toggle — flips one item's done-state in place. */
+      toggleHomework: (clientId: string, sessionId: string, itemId: string, done: boolean) =>
+        apiRequestParsed(
+          `/api/coaching/clients/${encodeURIComponent(clientId)}/sessions/${encodeURIComponent(sessionId)}/homework/${encodeURIComponent(itemId)}/toggle`,
+          sessionResponseSchema,
+          { method: 'POST', body: { done } },
+        ),
+      /**
+       * SESS-01 (D-10 immutability): the coach-side session
+       * delivery-management routes, nested under
+       * `.../sessions/:sessionId/deliveries`
+       * (`apps/api/src/routes/coachingSessionDeliveries.ts`) — a SIBLING to
+       * `coaching.reviews.deliveries` above, never a fork.
+       */
+      deliveries: {
+        /** POST .../deliveries — mints a revocable delivery embedding a FROZEN client-visible snapshot. */
+        create: (clientId: string, sessionId: string) =>
+          apiRequestParsed(
+            `/api/coaching/clients/${encodeURIComponent(clientId)}/sessions/${encodeURIComponent(sessionId)}/deliveries`,
+            sessionDeliveryCreatedResponseSchema,
+            { method: 'POST' },
+          ),
+        /** GET .../deliveries — every delivery ever created for this session, most-recent-first. */
+        list: (clientId: string, sessionId: string) =>
+          apiRequestParsed(
+            `/api/coaching/clients/${encodeURIComponent(clientId)}/sessions/${encodeURIComponent(sessionId)}/deliveries`,
+            sessionDeliveryListItemResponseSchema.array(),
+          ),
+        /** POST .../deliveries/:deliveryId/revoke — idempotent soft-revoke. */
+        revoke: (clientId: string, sessionId: string, deliveryId: string) =>
+          apiRequest<void>(
+            `/api/coaching/clients/${encodeURIComponent(clientId)}/sessions/${encodeURIComponent(sessionId)}/deliveries/${encodeURIComponent(deliveryId)}/revoke`,
             { method: 'POST' },
           ),
       },
