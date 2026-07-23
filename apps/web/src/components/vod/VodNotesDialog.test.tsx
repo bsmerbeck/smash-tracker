@@ -177,6 +177,22 @@ describe('VodNotesDialog', () => {
     expect(payload).not.toHaveProperty('vodTimestamps');
   });
 
+  it('preserves an existing vodStartSeconds when saving without touching VOD fields', async () => {
+    const user = userEvent.setup();
+    updateMatch.mockResolvedValue(baseMatch());
+    const match = baseMatch({
+      vodUrl: 'https://youtube.com/watch?v=abc123',
+      vodStartSeconds: 42,
+    });
+    renderDialog(match);
+
+    await user.click(screen.getByRole('button', { name: 'Save' }));
+
+    await waitFor(() => expect(updateMatch).toHaveBeenCalledTimes(1));
+    const payload = updateMatch.mock.calls[0]![1];
+    expect(payload).toHaveProperty('vodStartSeconds', 42);
+  });
+
   it('clears vodUrl (via update) and deletes a removed existing note (via the dedicated endpoint)', async () => {
     const user = userEvent.setup();
     updateMatch.mockResolvedValue(baseMatch());
