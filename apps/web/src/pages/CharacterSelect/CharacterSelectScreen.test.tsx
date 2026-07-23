@@ -1,8 +1,9 @@
-import { describe, expect, it, vi, beforeEach } from 'vitest';
+import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes } from 'react-router';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import i18n from '@/i18n';
 import { AuthProvider } from '@/context/AuthContext';
 import { CharacterSelectScreen } from './CharacterSelectScreen';
 import { resetAuthMock, setMockUser, makeMockUser } from '@/test/mockAuth';
@@ -80,6 +81,10 @@ describe('CharacterSelectScreen', () => {
     saveFighters.mockResolvedValue({ primary: [1], secondary: [] });
   });
 
+  afterEach(async () => {
+    await i18n.changeLanguage('en');
+  });
+
   it('toggles a fighter into the selected list when clicked, and back out when clicked again', async () => {
     const user = userEvent.setup();
     renderScreen();
@@ -109,6 +114,21 @@ describe('CharacterSelectScreen', () => {
 
     expect(screen.getByAltText('Mario')).toBeInTheDocument();
     expect(screen.queryByAltText('Luigi')).not.toBeInTheDocument();
+  });
+
+  it("filters and displays by the active locale's localized fighter name (I18N-02)", async () => {
+    const user = userEvent.setup();
+    await i18n.changeLanguage('fr');
+    renderScreen();
+
+    // Jigglypuff (id 13) renders as "Rondoudou" in fr; wait for the
+    // localized grid to hydrate before filtering.
+    await waitFor(() => expect(screen.getByAltText('Rondoudou')).toBeInTheDocument());
+
+    await user.type(screen.getByRole('textbox'), 'rond');
+
+    expect(screen.getByAltText('Rondoudou')).toBeInTheDocument();
+    expect(screen.queryByAltText('Mario')).not.toBeInTheDocument();
   });
 
   it('saves the primary selection as a number[] under the "primary" key and navigates', async () => {

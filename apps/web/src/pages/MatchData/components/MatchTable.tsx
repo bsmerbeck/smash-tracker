@@ -54,6 +54,7 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { getFighterById } from '@/data/sprites';
+import { localizedFighterName } from '@/lib/fighterNames';
 import { useDeleteMatch } from '@/hooks/useDeleteMatch';
 import { useClearVodAndNotes } from '@/hooks/useVodNotes';
 import { useSubjectPath } from '@/hooks/useSubjectPath';
@@ -191,20 +192,28 @@ export function MatchTable({
       {
         id: 'fighter',
         header: columnLabel(t, 'fighter'),
-        accessorFn: (row) => row.fighter?.name ?? t('common.unknown'),
+        accessorFn: (row) =>
+          row.fighter ? localizedFighterName(row.fighter.id, t) : t('common.unknown'),
         cell: ({ row }) => (
           <div className="flex items-center gap-2">
             {row.original.fighter && (
               <img src={row.original.fighter.url} alt="" className="size-6 object-contain" />
             )}
-            <span>{row.original.fighter?.name ?? t('common.unknown')}</span>
+            <span>
+              {row.original.fighter
+                ? localizedFighterName(row.original.fighter.id, t)
+                : t('common.unknown')}
+            </span>
           </div>
         ),
       },
       {
         id: 'opponentFighter',
         header: columnLabel(t, 'opponentFighter'),
-        accessorFn: (row) => row.opponentFighter?.name ?? t('common.unknown'),
+        accessorFn: (row) =>
+          row.opponentFighter
+            ? localizedFighterName(row.opponentFighter.id, t)
+            : t('common.unknown'),
         cell: ({ row }) => (
           <div className="flex items-center gap-2">
             {row.original.opponentFighter && (
@@ -214,7 +223,11 @@ export function MatchTable({
                 className="size-6 object-contain"
               />
             )}
-            <span>{row.original.opponentFighter?.name ?? t('common.unknown')}</span>
+            <span>
+              {row.original.opponentFighter
+                ? localizedFighterName(row.original.opponentFighter.id, t)
+                : t('common.unknown')}
+            </span>
           </div>
         ),
       },

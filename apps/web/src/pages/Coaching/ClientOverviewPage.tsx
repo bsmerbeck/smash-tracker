@@ -10,6 +10,8 @@ import { useFighters } from '@/hooks/useFighters';
 import { useCoachingClients } from '@/hooks/useCoachingClients';
 import { useCoachingReviews } from '@/hooks/useCoachingReviews';
 import { getFighterById } from '@/data/sprites';
+import { localizedFighterName } from '@/lib/fighterNames';
+import { useFighterNameResolver } from '@/hooks/useFighterName';
 import { getLastNMatches, getWinLossRecord } from '@/lib/stats';
 
 /** FB-7: the Overview's recent-matches mini-list shows the last N by date. */
@@ -213,7 +215,7 @@ export function ClientOverviewPage() {
                           {fighterSprite && (
                             <img
                               src={fighterSprite.url}
-                              alt={fighterSprite.name}
+                              alt={localizedFighterName(match.fighter_id, t)}
                               className="size-6 object-contain"
                             />
                           )}
@@ -221,7 +223,7 @@ export function ClientOverviewPage() {
                           {opponentSprite && (
                             <img
                               src={opponentSprite.url}
-                              alt={opponentSprite.name}
+                              alt={localizedFighterName(match.opponent_id, t)}
                               className="size-6 object-contain"
                             />
                           )}
@@ -308,6 +310,7 @@ function FighterSpriteGroup({
   label: string;
   sprites: NonNullable<ReturnType<typeof getFighterById>>[];
 }) {
+  const localizedName = useFighterNameResolver();
   if (sprites.length === 0) {
     return null;
   }
@@ -318,7 +321,7 @@ function FighterSpriteGroup({
         {sprites.map((sprite) => (
           <div key={sprite.id} className="flex flex-col items-center text-center">
             <img src={sprite.url} alt="" className="size-10 object-contain" />
-            <span className="text-xs">{sprite.name}</span>
+            <span className="text-xs">{localizedName(sprite.id)}</span>
           </div>
         ))}
       </div>

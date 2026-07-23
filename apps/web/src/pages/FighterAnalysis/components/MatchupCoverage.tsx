@@ -2,6 +2,7 @@ import { useTranslation } from 'react-i18next';
 import type { Match } from '@smash-tracker/shared';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { getFighterById } from '@/data/sprites';
+import { useFighterName } from '@/hooks/useFighterName';
 import { buildMatchupCoverage } from '../lib/matchupCoverage';
 import type { CoverageEntry, CoverageStatus } from '../lib/matchupCoverage';
 
@@ -57,7 +58,8 @@ export function MatchupCoverage({
 function CoverageTile({ entry }: { entry: CoverageEntry }) {
   const { t } = useTranslation();
   const sprite = getFighterById(entry.opponentFighterId);
-  const name = sprite?.name ?? t('common.unknown');
+  const localizedName = useFighterName(entry.opponentFighterId);
+  const name = sprite ? localizedName : t('common.unknown');
   const statusLabelKey = STATUS_LABEL_KEYS[entry.status];
 
   return (

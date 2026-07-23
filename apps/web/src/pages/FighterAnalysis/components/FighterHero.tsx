@@ -22,6 +22,7 @@ import {
 import { WinLossPips } from '@/components/WinLossPips';
 import { getMatchTypeRecords } from '@/lib/stats';
 import { darkChartOptions, redLineDataset } from '@/lib/chartTheme';
+import { useFighterName } from '@/hooks/useFighterName';
 import { buildFighterHero } from '../lib/fighterHero';
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Tooltip, Legend);
@@ -43,6 +44,7 @@ export function FighterHero({
   allMatches: Match[];
 }) {
   const { t } = useTranslation();
+  const localizedName = useFighterName(fighter.id);
   const { record, sharePct, streak, sparkline } = buildFighterHero(fighterMatches, allMatches);
   const typeRecords = getMatchTypeRecords(fighterMatches);
   const hasMatches = record.total > 0;
@@ -52,7 +54,7 @@ export function FighterHero({
       <CardContent className="flex flex-col gap-6 lg:flex-row lg:items-start">
         <div className="flex flex-col items-center gap-3 text-center lg:items-start lg:text-left">
           <img src={fighter.url} alt="" className="size-32 object-contain" />
-          <h2 className="text-3xl font-bold tracking-tight">{fighter.name}</h2>
+          <h2 className="text-3xl font-bold tracking-tight">{localizedName}</h2>
         </div>
 
         <div className="flex flex-1 flex-col gap-4">

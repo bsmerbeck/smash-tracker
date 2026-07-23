@@ -7,6 +7,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { alphaSpriteList } from '@/components/match-form/MatchForm';
+import { useFighterNameResolver } from '@/hooks/useFighterName';
 import { useMatchupsContext } from '../MatchupsContext';
 
 /**
@@ -16,6 +17,7 @@ import { useMatchupsContext } from '../MatchupsContext';
  */
 export function SelectOpponent() {
   const { t } = useTranslation();
+  const localizedName = useFighterNameResolver();
   const { opponent, setOpponent } = useMatchupsContext();
 
   return (
@@ -35,7 +37,7 @@ export function SelectOpponent() {
         {alphaSpriteList.map((sprite) => (
           <SelectItem key={sprite.id} value={String(sprite.id)}>
             <img src={sprite.url} alt="" className="size-6 object-contain" />
-            {sprite.name}
+            {localizedName(sprite.id)}
           </SelectItem>
         ))}
       </SelectContent>

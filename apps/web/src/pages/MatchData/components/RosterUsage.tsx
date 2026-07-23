@@ -4,6 +4,7 @@ import type { Fighter, Match } from '@smash-tracker/shared';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
+import { useFighterName } from '@/hooks/useFighterName';
 import { buildRosterUsage, winRateTone, type RosterUsageRow } from '../lib/rosterUsage';
 
 const VISIBLE_CAP = 10;
@@ -99,6 +100,7 @@ export function RosterUsage({
 function RosterUsageItem({ row, colorIndex }: { row: RosterUsageRow; colorIndex: number }) {
   const { t } = useTranslation();
   const { fighter, games, usagePercent, wins, losses, winRate } = row;
+  const localizedName = useFighterName(fighter.id);
   const tone = winRateTone(winRate);
   const barColor = BAR_COLOR_CLASSES[colorIndex % BAR_COLOR_CLASSES.length];
 
@@ -107,7 +109,7 @@ function RosterUsageItem({ row, colorIndex }: { row: RosterUsageRow; colorIndex:
       <img src={fighter.url} alt="" className="size-8 shrink-0 object-contain" />
       <div className="flex min-w-0 flex-1 flex-col gap-1">
         <div className="flex items-center justify-between gap-2">
-          <span className="truncate text-sm font-medium">{fighter.name}</span>
+          <span className="truncate text-sm font-medium">{localizedName}</span>
           <span className="shrink-0 text-xs text-muted-foreground">
             {t('common.games', { count: games })}
           </span>

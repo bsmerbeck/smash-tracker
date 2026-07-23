@@ -2,6 +2,7 @@ import { useTranslation } from 'react-i18next';
 import type { Match } from '@smash-tracker/shared';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { getFighterById } from '@/data/sprites';
+import { localizedFighterName } from '@/lib/fighterNames';
 import { buildMatchupCoverage, buildPracticeRecommendations } from '../lib/matchupCoverage';
 
 /**
@@ -22,7 +23,8 @@ export function PracticeRecommendations({
   const recs = buildPracticeRecommendations(
     fighterMatches,
     coverage,
-    (fighterId) => getFighterById(fighterId)?.name ?? t('common.unknown'),
+    (fighterId) =>
+      getFighterById(fighterId) ? localizedFighterName(fighterId, t) : t('common.unknown'),
     t,
   );
 

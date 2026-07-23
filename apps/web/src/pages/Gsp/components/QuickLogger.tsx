@@ -22,6 +22,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { alphaSpriteList } from '@/components/match-form/MatchForm';
+import { localizedFighterName } from '@/lib/fighterNames';
 import { NO_SELECTION_STAGE } from '@/data/stages';
 import {
   STANDARD_ONLINE_STAGE_IDS,
@@ -208,7 +209,7 @@ export function QuickLogger({
           {t('gsp.logger.title')}
           <span className="flex items-center gap-1.5 text-sm font-normal text-muted-foreground">
             <img src={fighter.url} alt="" className="size-5 object-contain" />
-            {fighter.name}
+            {localizedFighterName(fighter.id, t)}
           </span>
         </CardTitle>
       </CardHeader>
@@ -229,7 +230,7 @@ export function QuickLogger({
                 {alphaSpriteList.map((s) => (
                   <SelectItem key={s.id} value={String(s.id)}>
                     <img src={s.url} alt="" className="size-6 object-contain" />
-                    {s.name}
+                    {localizedFighterName(s.id, t)}
                   </SelectItem>
                 ))}
               </SelectContent>

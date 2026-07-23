@@ -5,6 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Select, SelectContent, SelectTrigger } from '@/components/ui/select';
 import { NO_SELECTION_STAGE } from '@/data/stages';
 import { getFighterById } from '@/data/sprites';
+import { localizedFighterName } from '@/lib/fighterNames';
 import { getStageRecords, getWinLossRecord } from '@/lib/stats';
 import { getGroupedStageOptions, stageOptions } from '@/lib/stageOptions';
 import { stageAbbreviation } from '@/components/StageOption';
@@ -113,7 +114,7 @@ export function StageBreakdown({
             {fighterStats.map(({ fighter, wins, losses, winRate }) => (
               <li key={fighter.id} className="flex items-center gap-3 rounded-md border p-2">
                 <img src={fighter.url} alt="" className="size-8 object-contain" />
-                <span className="flex-1 font-medium">{fighter.name}</span>
+                <span className="flex-1 font-medium">{localizedFighterName(fighter.id, t)}</span>
                 <div className="flex gap-4 text-sm text-muted-foreground">
                   <span>{winRate}%</span>
                   <span>{t('matchData.stages.winsShort', { count: wins })}</span>

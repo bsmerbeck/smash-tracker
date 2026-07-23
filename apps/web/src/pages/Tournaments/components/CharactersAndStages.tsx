@@ -4,15 +4,17 @@ import { getFighterById } from '@/data/sprites';
 import { stagesById } from '@/data/stages';
 import { getRecordsByFighter, getStageRecords, type FighterRecord } from '@/lib/stats';
 import type { Match } from '@smash-tracker/shared';
+import { useFighterName } from '@/hooks/useFighterName';
 
 function FighterRow({ record }: { record: FighterRecord }) {
   const { t } = useTranslation();
   const sprite = getFighterById(record.fighterId);
+  const localizedName = useFighterName(record.fighterId);
   return (
     <li className="flex items-center justify-between gap-2">
       <div className="flex items-center gap-2">
         {sprite && <img src={sprite.url} alt="" className="size-7 object-contain" />}
-        <span className="text-sm">{sprite?.name ?? t('common.unknown')}</span>
+        <span className="text-sm">{sprite ? localizedName : t('common.unknown')}</span>
       </div>
       <span className="shrink-0 whitespace-nowrap text-sm text-muted-foreground">
         {record.wins}-{record.losses} · {t('common.games', { count: record.total })}

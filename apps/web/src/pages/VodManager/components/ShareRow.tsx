@@ -4,6 +4,7 @@ import { toast } from 'sonner';
 import { Copy, Link2Off, Trash2 } from 'lucide-react';
 import type { ShareSummary } from '@smash-tracker/shared';
 import { getFighterById } from '@/data/sprites';
+import { localizedFighterName } from '@/lib/fighterNames';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
@@ -135,7 +136,7 @@ export function ShareRow({
           <span className="font-medium">
             {isRecap
               ? (share.tournamentName ?? t('common.unknown'))
-              : `${fighter?.name ?? t('common.unknown')} vs ${opponentFighter?.name ?? t('common.unknown')}`}
+              : `${fighter && share.fighterId != null ? localizedFighterName(share.fighterId, t) : t('common.unknown')} vs ${opponentFighter && share.opponentFighterId != null ? localizedFighterName(share.opponentFighterId, t) : t('common.unknown')}`}
           </span>
           {isRevoked && (
             <span className="text-xs font-medium text-destructive">

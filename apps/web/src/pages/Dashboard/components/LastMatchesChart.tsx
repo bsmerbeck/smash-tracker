@@ -29,6 +29,7 @@ import {
 } from '@/lib/stats';
 import { darkChartOptions, redLineDataset } from '@/lib/chartTheme';
 import { getFighterById } from '@/data/sprites';
+import { localizedFighterName } from '@/lib/fighterNames';
 import { useDashboardContext } from '../DashboardContext';
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Tooltip, Legend);
@@ -162,7 +163,9 @@ function buildOptions(series: SeriesPoint[], t: TFunction, locale: string): Char
             if (!point) return '';
             const opponent = getFighterById(point.match.opponent_id);
             return t('dashboard.formCurve.opponent', {
-              name: opponent?.name ?? t('common.unknown'),
+              name: opponent
+                ? localizedFighterName(point.match.opponent_id, t)
+                : t('common.unknown'),
             });
           },
         },

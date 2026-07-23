@@ -6,11 +6,13 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { useFighterNameResolver } from '@/hooks/useFighterName';
 import { useDashboardContext } from '../DashboardContext';
 
 /** Ports legacy/src/screens/Dashboard/components/DashboardToolbar/components/SelectFighter. */
 export function SelectFighter() {
   const { t } = useTranslation();
+  const localizedName = useFighterNameResolver();
   const { fighter, fighterSprites, setFighter } = useDashboardContext();
 
   return (
@@ -30,7 +32,7 @@ export function SelectFighter() {
         {fighterSprites.map((sprite) => (
           <SelectItem key={sprite.id} value={String(sprite.id)}>
             <img src={sprite.url} alt="" className="size-6 object-contain" />
-            {sprite.name}
+            {localizedName(sprite.id)}
           </SelectItem>
         ))}
       </SelectContent>

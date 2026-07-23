@@ -2,10 +2,12 @@ import { Link } from 'react-router';
 import { useTranslation } from 'react-i18next';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { useFighters } from '@/hooks/useFighters';
+import { useFighterNameResolver } from '@/hooks/useFighterName';
 import { SpriteList } from '@/data/sprites';
 
 function FighterSprites({ ids }: { ids: number[] }) {
   const { t } = useTranslation();
+  const localizedName = useFighterNameResolver();
   const sprites = ids.map((id) => SpriteList.find((s) => s.id === id)).filter((s) => s != null);
   if (sprites.length === 0) {
     return <span className="text-sm text-muted-foreground">{t('profile.fighters.none')}</span>;
@@ -13,9 +15,15 @@ function FighterSprites({ ids }: { ids: number[] }) {
   return (
     <div className="flex flex-wrap gap-2">
       {sprites.map((sprite) => (
-        <div key={sprite.id} className="flex flex-col items-center gap-1" title={sprite.name}>
-          <img src={sprite.url} alt={sprite.name} className="size-10 object-contain" />
-          <span className="line-clamp-1 max-w-14 text-center text-xs">{sprite.name}</span>
+        <div
+          key={sprite.id}
+          className="flex flex-col items-center gap-1"
+          title={localizedName(sprite.id)}
+        >
+          <img src={sprite.url} alt={localizedName(sprite.id)} className="size-10 object-contain" />
+          <span className="line-clamp-1 max-w-14 text-center text-xs">
+            {localizedName(sprite.id)}
+          </span>
         </div>
       ))}
     </div>

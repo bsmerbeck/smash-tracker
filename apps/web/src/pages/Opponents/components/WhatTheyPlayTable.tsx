@@ -10,6 +10,7 @@ import {
 } from '@/components/ui/table';
 import type { RankedMatchup } from '@/lib/stats';
 import { getFighterById } from '@/data/sprites';
+import { localizedFighterName } from '@/lib/fighterNames';
 
 /**
  * "What they play" — the opponent's characters against you, your record per
@@ -47,7 +48,11 @@ export function WhatTheyPlayTable({ byTheirFighter }: { byTheirFighter: RankedMa
                         {sprite && (
                           <img src={sprite.url} alt="" className="size-6 object-contain" />
                         )}
-                        <span>{sprite?.name ?? t('common.unknown')}</span>
+                        <span>
+                          {sprite
+                            ? localizedFighterName(row.opponentFighterId, t)
+                            : t('common.unknown')}
+                        </span>
                       </div>
                     </TableCell>
                     <TableCell>

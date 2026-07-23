@@ -38,6 +38,7 @@ import {
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { cn } from '@/lib/utils';
+import { localizedFighterName } from '@/lib/fighterNames';
 import { SpriteList } from '@/data/sprites';
 import { NO_SELECTION_STAGE } from '@/data/stages';
 import { StageSelectGroups, StageSelectValue } from '@/components/StageSelectGroups';
@@ -450,7 +451,7 @@ export function MatchFormFields({
                       {fighterSprites.map((s) => (
                         <SelectItem key={s.id} value={String(s.id)}>
                           <img src={s.url} alt="" className="size-6 object-contain" />
-                          {s.name}
+                          {localizedFighterName(s.id, t)}
                         </SelectItem>
                       ))}
                     </SelectContent>
@@ -478,7 +479,7 @@ export function MatchFormFields({
                       {alphaSpriteList.map((s) => (
                         <SelectItem key={s.id} value={String(s.id)}>
                           <img src={s.url} alt="" className="size-6 object-contain" />
-                          {s.name}
+                          {localizedFighterName(s.id, t)}
                         </SelectItem>
                       ))}
                     </SelectContent>

@@ -1,6 +1,7 @@
 import { useTranslation } from 'react-i18next';
 import type { Fighter } from '@smash-tracker/shared';
 import { cn } from '@/lib/utils';
+import { useFighterNameResolver } from '@/hooks/useFighterName';
 
 /**
  * Sprite row fighter selector across the top of the GSP page — every fighter
@@ -19,6 +20,7 @@ export function GspFighterSelect({
   onChange: (fighter: Fighter) => void;
 }) {
   const { t } = useTranslation();
+  const localizedName = useFighterNameResolver();
   return (
     <div
       className="flex flex-wrap items-center justify-center gap-2"
@@ -41,7 +43,9 @@ export function GspFighterSelect({
             )}
           >
             <img src={option.url} alt="" className="size-12 object-contain" />
-            <span className="max-w-16 truncate text-xs text-muted-foreground">{option.name}</span>
+            <span className="max-w-16 truncate text-xs text-muted-foreground">
+              {localizedName(option.id)}
+            </span>
           </button>
         );
       })}
