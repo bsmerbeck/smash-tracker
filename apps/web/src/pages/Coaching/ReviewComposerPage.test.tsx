@@ -219,6 +219,21 @@ describe('ReviewComposerPage', () => {
     expect(await screen.findByRole('heading', { name: 'Summary' })).toBeInTheDocument();
   });
 
+  it('REV-01: shows a compact no-VODs notice (no Sources drawer, no empty player box) when the client library has zero VODs, and keeps Publish enabled', async () => {
+    matchesList.mockResolvedValue([makeMatch({ vodUrl: null })]);
+    renderComposer();
+
+    expect(
+      await screen.findByText(
+        'This client has no VODs yet — you can still write and publish this review.',
+      ),
+    ).toBeInTheDocument();
+    expect(screen.queryByTestId('vod-player')).not.toBeInTheDocument();
+    expect(screen.queryByText('Select a source to start watching.')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Sources ▾' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Publish' })).toBeEnabled();
+  });
+
   it('debounces a section edit and autosaves via PATCH with the expected revision', async () => {
     renderComposer();
     await screen.findByTestId('vod-player');

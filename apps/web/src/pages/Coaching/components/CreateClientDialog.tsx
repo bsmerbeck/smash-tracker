@@ -52,7 +52,12 @@ export function CreateClientDialog({ triggerLabel }: { triggerLabel: string }) {
       {
         onSuccess: (client) => {
           handleOpenChange(false);
-          navigate(`/coach/${client.clientId}/vods`);
+          // Navigate to the bare client root, not a specific tab — the
+          // router's own index route (`/coach/:clientId` -> `overview`,
+          // replace) owns the landing target, so the Phase 13 activation
+          // checklist (add-fighters first) is a single source of truth
+          // rather than being duplicated here (CFLOW-01/02).
+          navigate(`/coach/${client.clientId}`);
         },
       },
     );

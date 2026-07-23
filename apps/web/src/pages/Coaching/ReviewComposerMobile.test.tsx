@@ -41,6 +41,9 @@ function Harness(props: {
   onChangeSectionBody: (sectionId: string, body: string) => void;
   onChangePrivateNotes: (value: string) => void;
   onCite: (token: CitationToken) => void;
+  vodSources?: Match[];
+  currentSourceId?: string | null;
+  currentSource?: Match | null;
 }) {
   const playerSeekRef = useRef<((seconds: number) => void) | null>(null);
   const playerPauseRef = useRef<(() => void) | null>(null);
@@ -48,9 +51,9 @@ function Harness(props: {
 
   return (
     <ReviewComposerMobile
-      vodSources={[makeMatch()]}
-      currentSourceId="m1"
-      currentSource={makeMatch()}
+      vodSources={props.vodSources ?? [makeMatch()]}
+      currentSourceId={props.currentSourceId ?? 'm1'}
+      currentSource={props.currentSource === undefined ? makeMatch() : props.currentSource}
       onSelectSource={vi.fn()}
       playerSeekRef={playerSeekRef}
       playerPauseRef={playerPauseRef}
@@ -79,6 +82,9 @@ function renderMobile(
     onChangeSectionBody?: (sectionId: string, body: string) => void;
     onChangePrivateNotes?: (value: string) => void;
     onCite?: (token: CitationToken) => void;
+    vodSources?: Match[];
+    currentSourceId?: string | null;
+    currentSource?: Match | null;
   } = {},
 ) {
   const onChangeSectionBody = overrides.onChangeSectionBody ?? vi.fn();
@@ -92,6 +98,9 @@ function renderMobile(
       onChangeSectionBody={onChangeSectionBody}
       onChangePrivateNotes={onChangePrivateNotes}
       onCite={onCite}
+      vodSources={overrides.vodSources}
+      currentSourceId={overrides.currentSourceId}
+      currentSource={overrides.currentSource}
     />,
   );
   return { ...utils, onChangeSectionBody, onChangePrivateNotes, onCite };
@@ -192,6 +201,19 @@ describe('ReviewComposerMobile', () => {
     await user.click(within(evidencePanel).getByRole('button', { name: '⏱ Cite current moment' }));
 
     expect(onCite).toHaveBeenCalledWith({ sourceVodRef: 'm1', seconds: 0, label: '' });
+  });
+
+  it('REV-01: the Watch tab shows a compact no-VODs notice (no Sources drawer, no empty player box) when the client library has zero VODs', () => {
+    renderMobile({ vodSources: [], currentSourceId: null, currentSource: null });
+
+    expect(
+      screen.getByText(
+        'This client has no VODs yet — you can still write and publish this review.',
+      ),
+    ).toBeInTheDocument();
+    expect(screen.queryByTestId('vod-player')).not.toBeInTheDocument();
+    expect(screen.queryByText('Select a source to start watching.')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Sources ▾' })).not.toBeInTheDocument();
   });
 
   it('editing a section body on the Review tab calls onChangeSectionBody (state lives in the parent, survives any tab switch)', async () => {

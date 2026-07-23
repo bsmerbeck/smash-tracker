@@ -215,6 +215,37 @@ describe('publishReview / previewClientVersion', () => {
     ).rejects.toThrow(NotFoundError);
   });
 
+  // REV-01: publishReview has no citation/source gate — a draft whose
+  // sections cite zero VODs (no `{{cite:...}}` tokens anywhere in their
+  // bodies) must publish exactly like any other draft. This locks the
+  // already-permissive behavior so a future accidental "require >=1 source"
+  // gate would fail this test.
+  it('REV-01: publishes successfully a draft whose sections carry zero citation tokens (no VOD sources)', async () => {
+    const database = new FakeDatabase();
+    await autosaveDraft(
+      asDatabase(database),
+      TENANT_ID,
+      'review-1',
+      {
+        sections: [
+          makeSection({ id: 'summary', kind: 'summary', body: 'No VODs for this client yet.' }),
+          makeSection({ id: 'strengths', kind: 'strengths', body: 'Solid neutral fundamentals.' }),
+        ],
+        coachPrivateNotes: null,
+      },
+      0,
+    );
+
+    const published = await publishReview(asDatabase(database), TENANT_ID, 'review-1', {
+      coachUid: COACH_UID,
+      sessionId: SESSION_ID,
+    });
+
+    expect(published.version).toBe(1);
+    const status = await getReviewStatus(asDatabase(database), TENANT_ID, 'review-1');
+    expect(status).toEqual({ status: 'published', latestVersion: 1 });
+  });
+
   it('editing after publish and re-publishing produces version N+1 while version N stays byte-for-byte unchanged', async () => {
     const database = new FakeDatabase();
     await autosaveDraft(

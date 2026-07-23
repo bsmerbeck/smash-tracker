@@ -243,6 +243,29 @@ describe('ReviewDeliveryPage', () => {
     await waitFor(() => expect(markViewedDelivery).toHaveBeenCalledExactlyOnceWith('tok123'));
   });
 
+  // REV-01: a review with zero VOD sources (no citations anywhere in its
+  // sections) must render cleanly on the anonymous recipient page — the
+  // noSource copy in place of the player, no empty player shell, and the
+  // sections themselves still rendering below.
+  it('REV-01: renders the noSource copy with no video/player element, while sections still render below, for a zero-citation-source delivery', async () => {
+    getDelivery.mockResolvedValue(
+      baseSnapshot({
+        citationSources: [],
+        sections: [
+          { id: 'summary', kind: 'summary', title: null, body: 'No footage cited this cycle.' },
+        ],
+      }),
+    );
+
+    renderDelivery();
+
+    expect(await screen.findByText("This review doesn't cite any footage.")).toBeInTheDocument();
+    expect(screen.queryByTestId('vod-player')).not.toBeInTheDocument();
+    expect(screen.queryByText('Now playing')).not.toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Summary' })).toBeInTheDocument();
+    expect(screen.getByText('No footage cited this cycle.')).toBeInTheDocument();
+  });
+
   describe('signup CTA (ONBD-01/D-02 — a net-new element this page had none of before)', () => {
     it('renders a signup CTA on the success path', async () => {
       getDelivery.mockResolvedValue(baseSnapshot());

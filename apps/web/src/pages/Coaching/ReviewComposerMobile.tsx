@@ -140,29 +140,40 @@ export function ReviewComposerMobile({
         </TabsList>
 
         <TabsContent value="watch" forceMount className="flex flex-col gap-3">
-          <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
-            <span>
-              {t('coaching.reviews.composer.sourceBar.label')}{' '}
-              <span className="font-medium text-foreground">{sourceLabel}</span>
-            </span>
-            <ReviewSourcesDrawer
-              sources={vodSources}
-              currentSourceId={currentSourceId}
-              onSelect={onSelectSource}
-            />
-          </div>
-          {currentSource?.vodUrl ? (
-            <VodPlayer
-              vodUrl={currentSource.vodUrl}
-              startSeconds={currentSource.vodStartSeconds}
-              seekRef={playerSeekRef}
-              pauseRef={playerPauseRef}
-              getCurrentTimeRef={getCurrentTimeRef}
-            />
+          {vodSources.length === 0 ? (
+            // REV-01: no Sources drawer trigger, no empty aspect-video
+            // placeholder when the client library has zero VODs — mirrors
+            // the desktop composer's left pane.
+            <p className="text-sm text-muted-foreground">
+              {t('coaching.reviews.composer.sourceBar.noVods')}
+            </p>
           ) : (
-            <div className="flex aspect-video items-center justify-center rounded-lg border bg-muted text-sm text-muted-foreground">
-              {t('coaching.reviews.composer.sourceBar.noPlayer')}
-            </div>
+            <>
+              <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
+                <span>
+                  {t('coaching.reviews.composer.sourceBar.label')}{' '}
+                  <span className="font-medium text-foreground">{sourceLabel}</span>
+                </span>
+                <ReviewSourcesDrawer
+                  sources={vodSources}
+                  currentSourceId={currentSourceId}
+                  onSelect={onSelectSource}
+                />
+              </div>
+              {currentSource?.vodUrl ? (
+                <VodPlayer
+                  vodUrl={currentSource.vodUrl}
+                  startSeconds={currentSource.vodStartSeconds}
+                  seekRef={playerSeekRef}
+                  pauseRef={playerPauseRef}
+                  getCurrentTimeRef={getCurrentTimeRef}
+                />
+              ) : (
+                <div className="flex aspect-video items-center justify-center rounded-lg border bg-muted text-sm text-muted-foreground">
+                  {t('coaching.reviews.composer.sourceBar.noPlayer')}
+                </div>
+              )}
+            </>
           )}
         </TabsContent>
 
