@@ -277,6 +277,12 @@
       "deleteMatch": "Supprimer le match",
       "edited": "Match modifié !",
       "saveFailed": "Échec de l'enregistrement du match. Veuillez réessayer."
+    },
+    "stageForm": {
+      "label": "Forme du stage",
+      "normal": "Normale",
+      "battlefield": "Forme Battlefield",
+      "omega": "Forme Omega"
     }
   },
   "gsp": {

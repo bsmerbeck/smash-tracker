@@ -36,6 +36,12 @@ export interface SetGameValues {
    * non-blank `vodUrl` for this same game (see `buildSetGamePayloads`).
    */
   vodStartSeconds?: string;
+  /**
+   * SETFEAT-02: which form of the stage this game was played on, if the
+   * player tracked it. Untouched toggle = `undefined` = no form recorded
+   * on that game's `map` (see `buildSetGamePayloads`'s conditional-spread).
+   */
+  stageForm?: 'normal' | 'battlefield' | 'omega';
 }
 
 /** Running win/loss tally across the games entered so far. */
@@ -104,9 +110,19 @@ export interface SetSharedValues {
   tournamentName?: string;
 }
 
-function resolveStageMap(stageId: number) {
+/**
+ * Builds a game's `map` field — `{ id, name }` plus a conditional-spread
+ * `form` key (SETFEAT-02) present only when `stageForm` is set, mirroring
+ * `matchFormValuesToInput`'s map-building convention and the RTDB
+ * null-stripping rule (never an own `form` property holding `undefined`).
+ */
+function resolveStageMap(stageId: number, stageForm?: 'normal' | 'battlefield' | 'omega') {
   const stage = stageOptions.find((s) => s.id === stageId) ?? NO_SELECTION_STAGE;
-  return { id: stage.id, name: stage.name };
+  return {
+    id: stage.id,
+    name: stage.name,
+    ...(stageForm ? { form: stageForm } : {}),
+  };
 }
 
 /**
@@ -130,7 +146,7 @@ export function buildSetGamePayloads(
     return {
       fighter_id: shared.fighterId,
       opponent_id: shared.opponentFighterId,
-      map: resolveStageMap(game.stageId),
+      map: resolveStageMap(game.stageId, game.stageForm),
       opponent: shared.opponentName,
       notes: '',
       matchType: shared.matchType,
@@ -152,5 +168,6 @@ export function buildDefaultGameValues(): SetGameValues {
     stocksLeft: undefined,
     vodUrl: undefined,
     vodStartSeconds: undefined,
+    stageForm: undefined,
   };
 }

@@ -277,6 +277,12 @@
       "deleteMatch": "Delete Match",
       "edited": "Match edited!",
       "saveFailed": "Failed to save match. Please try again."
+    },
+    "stageForm": {
+      "label": "Stage Form",
+      "normal": "Normal",
+      "battlefield": "Battlefield Form",
+      "omega": "Omega Form"
     }
   },
   "gsp": {

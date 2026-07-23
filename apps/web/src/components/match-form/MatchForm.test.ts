@@ -135,4 +135,16 @@ describe('matchFormValuesToInput', () => {
     expect('vodStartSeconds' in input).toBe(false);
     expect('vodUrl' in input).toBe(false);
   });
+
+  it('sets map.form when stageForm is one of the three valid members', () => {
+    for (const stageForm of ['normal', 'battlefield', 'omega'] as const) {
+      const input = matchFormValuesToInput(baseValues({ stageForm }));
+      expect(input.map.form).toBe(stageForm);
+    }
+  });
+
+  it('builds map with NO own `form` property when stageForm is unset', () => {
+    const input = matchFormValuesToInput(baseValues());
+    expect('form' in input.map).toBe(false);
+  });
 });

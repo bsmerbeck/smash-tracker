@@ -465,6 +465,32 @@ export function SetWizard({
                   </FormItem>
 
                   <FormItem>
+                    <FormLabel>{t('matchForm.stageForm.label')}</FormLabel>
+                    <ToggleGroup
+                      type="single"
+                      variant="outline"
+                      value={game.stageForm ?? ''}
+                      onValueChange={(value) =>
+                        updateGame(index, {
+                          stageForm: value
+                            ? (value as 'normal' | 'battlefield' | 'omega')
+                            : undefined,
+                        })
+                      }
+                    >
+                      <ToggleGroupItem value="normal">
+                        {t('matchForm.stageForm.normal')}
+                      </ToggleGroupItem>
+                      <ToggleGroupItem value="battlefield">
+                        {t('matchForm.stageForm.battlefield')}
+                      </ToggleGroupItem>
+                      <ToggleGroupItem value="omega">
+                        {t('matchForm.stageForm.omega')}
+                      </ToggleGroupItem>
+                    </ToggleGroup>
+                  </FormItem>
+
+                  <FormItem>
                     <FormLabel>{t('matchForm.stocksLeft')}</FormLabel>
                     <Select
                       value={game.stocksLeft === undefined ? 'unset' : String(game.stocksLeft)}

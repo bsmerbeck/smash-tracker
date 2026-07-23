@@ -277,6 +277,12 @@
       "deleteMatch": "Eliminar partida",
       "edited": "¡Partida editada!",
       "saveFailed": "No se pudo guardar la partida. Inténtalo de nuevo."
+    },
+    "stageForm": {
+      "label": "Forma del escenario",
+      "normal": "Normal",
+      "battlefield": "Forma Battlefield",
+      "omega": "Forma Omega"
     }
   },
   "gsp": {

@@ -116,6 +116,12 @@ export function buildMatchFormSchema(
       .positive({ message: t('matchForm.validation.chooseOpponentFighter') }),
     result: z.enum(['win', 'loss'], { message: t('matchForm.validation.chooseResult') }),
     stageId: z.number().int().nonnegative(),
+    /**
+     * SETFEAT-02: which form of the stage was played (Battlefield/Omega),
+     * if the player tracked it. Untouched toggle = `undefined` = no form
+     * recorded (see `matchFormValuesToInput`'s conditional-spread).
+     */
+    stageForm: z.enum(['normal', 'battlefield', 'omega']).optional(),
     matchType: z.enum(matchTypeValues),
     opponentName: requireOpponent
       ? z.string().min(1, t('matchForm.validation.opponentRequired'))
@@ -190,7 +196,14 @@ export function matchFormValuesToInput(values: MatchFormValues): CreateMatchInpu
   return {
     fighter_id: values.fighterId,
     opponent_id: values.opponentFighterId,
-    map: { id: stage.id, name: stage.name },
+    // SETFEAT-02: `form` is spread in only when the toggle was set — an
+    // untouched toggle must yield a `map` with no own `form` key (RTDB
+    // rejects `undefined`; see `matchStageSchema`'s doc comment).
+    map: {
+      id: stage.id,
+      name: stage.name,
+      ...(values.stageForm ? { form: values.stageForm } : {}),
+    },
     opponent: values.opponentName.toLowerCase(),
     notes: values.notes,
     matchType: values.matchType,
@@ -531,6 +544,34 @@ export function MatchFormFields({
                   </SelectContent>
                 </Select>
                 <StageArtPreview stageId={field.value} />
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+          <FormField
+            control={form.control}
+            name="stageForm"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>{t('matchForm.stageForm.label')}</FormLabel>
+                <FormControl>
+                  <ToggleGroup
+                    type="single"
+                    variant="outline"
+                    value={field.value ?? ''}
+                    onValueChange={(value) => field.onChange(value ? value : undefined)}
+                  >
+                    <ToggleGroupItem value="normal">
+                      {t('matchForm.stageForm.normal')}
+                    </ToggleGroupItem>
+                    <ToggleGroupItem value="battlefield">
+                      {t('matchForm.stageForm.battlefield')}
+                    </ToggleGroupItem>
+                    <ToggleGroupItem value="omega">
+                      {t('matchForm.stageForm.omega')}
+                    </ToggleGroupItem>
+                  </ToggleGroup>
+                </FormControl>
                 <FormMessage />
               </FormItem>
             )}

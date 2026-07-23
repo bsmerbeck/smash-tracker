@@ -277,6 +277,12 @@
       "deleteMatch": "対戦を削除",
       "edited": "対戦を編集しました！",
       "saveFailed": "対戦を保存できませんでした。もう一度お試しください。"
+    },
+    "stageForm": {
+      "label": "ステージ形態",
+      "normal": "通常",
+      "battlefield": "バトルフィールド化",
+      "omega": "オメガ化"
     }
   },
   "gsp": {
