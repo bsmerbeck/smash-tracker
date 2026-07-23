@@ -267,7 +267,9 @@
       "game": "Partida {{number}}",
       "gameWinAria": "Victoria en la partida {{number}}",
       "gameLossAria": "Derrota en la partida {{number}}",
-      "stage": "Escenario"
+      "stage": "Escenario",
+      "vodUrl": "URL del VOD",
+      "vodStartTime": "Hora de inicio en el VOD"
     },
     "edit": {
       "title": "Editar partida",

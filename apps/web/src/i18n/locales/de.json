@@ -267,7 +267,9 @@
       "game": "Spiel {{number}}",
       "gameWinAria": "Spiel {{number}} Sieg",
       "gameLossAria": "Spiel {{number}} Niederlage",
-      "stage": "Stage"
+      "stage": "Stage",
+      "vodUrl": "VOD-URL",
+      "vodStartTime": "Startzeit im VOD"
     },
     "edit": {
       "title": "Match bearbeiten",

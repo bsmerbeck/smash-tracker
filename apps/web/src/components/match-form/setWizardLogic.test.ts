@@ -171,13 +171,55 @@ describe('buildSetGamePayloads', () => {
     const payloads = buildSetGamePayloads(shared, [game('win', { stageId: 999999 })]);
     expect(payloads[0]?.map).toEqual({ id: 0, name: 'no selection' });
   });
+
+  it('includes vodUrl on a game payload only when that game has a non-blank trimmed vodUrl', () => {
+    const payloads = buildSetGamePayloads(shared, [
+      game('win', { vodUrl: '  https://youtube.com/watch?v=abc123  ' }),
+      game('win', { vodUrl: '' }),
+      game('win', { vodUrl: '   ' }),
+      game('win'),
+    ]);
+    expect(payloads[0]?.vodUrl).toBe('https://youtube.com/watch?v=abc123');
+    expect('vodUrl' in payloads[1]!).toBe(false);
+    expect('vodUrl' in payloads[2]!).toBe(false);
+    expect('vodUrl' in payloads[3]!).toBe(false);
+  });
+
+  it('includes vodStartSeconds (a number) only when the game has BOTH a non-blank vodUrl AND a parseable start-time string', () => {
+    const payloads = buildSetGamePayloads(shared, [
+      game('win', {
+        vodUrl: 'https://youtube.com/watch?v=abc123',
+        vodStartSeconds: '1:23:45',
+      }),
+      game('win', { vodUrl: 'https://youtube.com/watch?v=abc123' }),
+      game('win', { vodStartSeconds: '1:23:45' }),
+    ]);
+    expect(payloads[0]?.vodStartSeconds).toBe(5025);
+    expect('vodStartSeconds' in payloads[1]!).toBe(false);
+    expect('vodStartSeconds' in payloads[2]!).toBe(false);
+    expect('vodUrl' in payloads[2]!).toBe(false);
+  });
+
+  it('a game with a vodUrl but an unparseable start-time string yields vodUrl with NO vodStartSeconds key (never NaN, never undefined)', () => {
+    const payloads = buildSetGamePayloads(shared, [
+      game('win', {
+        vodUrl: 'https://youtube.com/watch?v=abc123',
+        vodStartSeconds: 'not-a-time',
+      }),
+    ]);
+    expect(payloads[0]?.vodUrl).toBe('https://youtube.com/watch?v=abc123');
+    expect('vodStartSeconds' in payloads[0]!).toBe(false);
+    expect(payloads[0]?.vodStartSeconds).not.toBeNaN();
+  });
 });
 
 describe('buildDefaultGameValues', () => {
-  it('defaults to the no-selection stage and no result/stocks', () => {
+  it('defaults to the no-selection stage and no result/stocks/vod fields', () => {
     const values = buildDefaultGameValues();
     expect(values.stageId).toBe(0);
     expect(values.result).toBeUndefined();
     expect(values.stocksLeft).toBeUndefined();
+    expect(values.vodUrl).toBeUndefined();
+    expect(values.vodStartSeconds).toBeUndefined();
   });
 });

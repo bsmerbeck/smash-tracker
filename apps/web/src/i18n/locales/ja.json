@@ -267,7 +267,9 @@
       "game": "{{number}}戦目",
       "gameWinAria": "{{number}}戦目 勝ち",
       "gameLossAria": "{{number}}戦目 負け",
-      "stage": "ステージ"
+      "stage": "ステージ",
+      "vodUrl": "VODのURL",
+      "vodStartTime": "VOD内の開始時間"
     },
     "edit": {
       "title": "対戦を編集",

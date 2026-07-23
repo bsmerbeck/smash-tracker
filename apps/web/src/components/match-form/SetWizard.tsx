@@ -25,6 +25,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
+import { Input } from '@/components/ui/input';
 import {
   Command,
   CommandEmpty,
@@ -486,6 +487,33 @@ export function SetWizard({
                       </SelectContent>
                     </Select>
                   </FormItem>
+
+                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                    <FormItem>
+                      <FormLabel>{t('matchForm.set.vodUrl')}</FormLabel>
+                      <FormControl>
+                        <Input
+                          type="url"
+                          value={game.vodUrl ?? ''}
+                          onChange={(e) => updateGame(index, { vodUrl: e.target.value })}
+                          placeholder={t('matchForm.vodUrlPlaceholder')}
+                        />
+                      </FormControl>
+                    </FormItem>
+
+                    <FormItem>
+                      <FormLabel>{t('matchForm.set.vodStartTime')}</FormLabel>
+                      <FormControl>
+                        <Input
+                          type="text"
+                          value={game.vodStartSeconds ?? ''}
+                          onChange={(e) => updateGame(index, { vodStartSeconds: e.target.value })}
+                          disabled={!game.vodUrl?.trim()}
+                          placeholder={t('matchForm.vodStartSeconds.placeholder')}
+                        />
+                      </FormControl>
+                    </FormItem>
+                  </div>
                 </div>
               );
             })}
