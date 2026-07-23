@@ -82,6 +82,9 @@ describe('EVENT_CATALOG', () => {
       vod_activated: 'D',
       tournament_prep_activated: 'D',
       scout_activated: 'D',
+      session_delivery_created: 'D',
+      review_delivery_created: 'D',
+      review_delivery_revoked: 'D',
     });
   });
 
@@ -117,5 +120,15 @@ describe('EVENT_CATALOG', () => {
     expect(EVENT_CATALOG.vod_activated).toBe('D');
     expect(EVENT_CATALOG.tournament_prep_activated).toBe('D');
     expect(EVENT_CATALOG.scout_activated).toBe('D');
+  });
+
+  // Phase 20 Plan 03 (Coaching Workflow, Training Sessions & VOD-less
+  // Reviews, SESS-01/02): session_delivery_created is genuinely new this
+  // phase; review_delivery_created/review_delivery_revoked were emitted
+  // since Phase 12 but never catalogued until now (audit-parity fix).
+  it('maps session_delivery_created and the two previously-uncatalogued review-delivery events to class D', () => {
+    expect(EVENT_CATALOG.session_delivery_created).toBe('D');
+    expect(EVENT_CATALOG.review_delivery_created).toBe('D');
+    expect(EVENT_CATALOG.review_delivery_revoked).toBe('D');
   });
 });

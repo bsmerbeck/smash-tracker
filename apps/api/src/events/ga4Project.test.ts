@@ -237,6 +237,33 @@ describe('projectEventToGa4 — coaching/onboarding ledger-only events (quick ta
     expect(projected?.params).toEqual({ onboardingCause: 'analyze_own_play' });
   });
 
+  it('projects session_delivery_created with empty params (no payload keys allowlisted, T-20-12)', () => {
+    const projected = projectEventToGa4(
+      baseEnvelope({ eventName: 'session_delivery_created', payload: {} }),
+    );
+
+    expect(projected).not.toBeNull();
+    expect(projected?.params).toEqual({});
+  });
+
+  it('projects review_delivery_created with empty params (no payload keys allowlisted)', () => {
+    const projected = projectEventToGa4(
+      baseEnvelope({ eventName: 'review_delivery_created', payload: {} }),
+    );
+
+    expect(projected).not.toBeNull();
+    expect(projected?.params).toEqual({});
+  });
+
+  it('projects review_delivery_revoked with empty params (no payload keys allowlisted)', () => {
+    const projected = projectEventToGa4(
+      baseEnvelope({ eventName: 'review_delivery_revoked', payload: {} }),
+    );
+
+    expect(projected).not.toBeNull();
+    expect(projected?.params).toEqual({});
+  });
+
   it('drops a non-allowlisted identifier key alongside a valid onboardingCause', () => {
     const projected = projectEventToGa4(
       baseEnvelope({
