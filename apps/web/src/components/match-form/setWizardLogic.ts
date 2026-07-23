@@ -1,6 +1,7 @@
 import type { CreateMatchInput, MatchType } from '@smash-tracker/shared';
 import { NO_SELECTION_STAGE } from '@/data/stages';
 import { stageOptions } from '@/lib/stageOptions';
+import { parseFlexibleTimestamp } from '@/lib/vod';
 
 /** The two set lengths the wizard supports — best of 3 or best of 5. */
 export const setFormatValues = ['bo3', 'bo5'] as const;
@@ -22,6 +23,25 @@ export interface SetGameValues {
   stageId: number;
   /** Winner's remaining stocks for this game, if tracked. */
   stocksLeft?: number;
+  /**
+   * SETFEAT-01: raw text VOD link for this specific game (a Bo3/Bo5 set is
+   * often recorded as separate clips per game, unlike the single-game form's
+   * one-VOD-per-match assumption). Mirrors `MatchFormValues.vodUrl` — held as
+   * raw text, parsed/validated in `buildSetGamePayloads`.
+   */
+  vodUrl?: string;
+  /**
+   * SETFEAT-01: raw text start-time offset into this game's `vodUrl`.
+   * Mirrors `MatchFormValues.vodStartSeconds` — only meaningful alongside a
+   * non-blank `vodUrl` for this same game (see `buildSetGamePayloads`).
+   */
+  vodStartSeconds?: string;
+  /**
+   * SETFEAT-02: which form of the stage this game was played on, if the
+   * player tracked it. Untouched toggle = `undefined` = no form recorded
+   * on that game's `map` (see `buildSetGamePayloads`'s conditional-spread).
+   */
+  stageForm?: 'normal' | 'battlefield' | 'omega';
 }
 
 /** Running win/loss tally across the games entered so far. */
@@ -90,9 +110,19 @@ export interface SetSharedValues {
   tournamentName?: string;
 }
 
-function resolveStageMap(stageId: number) {
+/**
+ * Builds a game's `map` field — `{ id, name }` plus a conditional-spread
+ * `form` key (SETFEAT-02) present only when `stageForm` is set, mirroring
+ * `matchFormValuesToInput`'s map-building convention and the RTDB
+ * null-stripping rule (never an own `form` property holding `undefined`).
+ */
+function resolveStageMap(stageId: number, stageForm?: 'normal' | 'battlefield' | 'omega') {
   const stage = stageOptions.find((s) => s.id === stageId) ?? NO_SELECTION_STAGE;
-  return { id: stage.id, name: stage.name };
+  return {
+    id: stage.id,
+    name: stage.name,
+    ...(stageForm ? { form: stageForm } : {}),
+  };
 }
 
 /**
@@ -105,18 +135,29 @@ export function buildSetGamePayloads(
   shared: SetSharedValues,
   games: SetGameValues[],
 ): CreateMatchInput[] {
-  return games.map((game) => ({
-    fighter_id: shared.fighterId,
-    opponent_id: shared.opponentFighterId,
-    map: resolveStageMap(game.stageId),
-    opponent: shared.opponentName,
-    notes: '',
-    matchType: shared.matchType,
-    win: game.result === 'win',
-    ...(game.stocksLeft !== undefined ? { stocksLeft: game.stocksLeft } : {}),
-    ...(shared.eventName ? { eventName: shared.eventName } : {}),
-    ...(shared.tournamentName ? { tournamentName: shared.tournamentName } : {}),
-  }));
+  return games.map((game) => {
+    // Mirrors matchFormValuesToInput's clear-on-omit convention (MatchForm.tsx):
+    // trim vodUrl, only parse/include vodStartSeconds when a vodUrl is also
+    // present on this same game, and never emit an `undefined` key.
+    const vodUrl = game.vodUrl?.trim();
+    const vodStartSecondsRaw = game.vodStartSeconds?.trim();
+    const vodStartSeconds =
+      vodUrl && vodStartSecondsRaw ? parseFlexibleTimestamp(vodStartSecondsRaw) : null;
+    return {
+      fighter_id: shared.fighterId,
+      opponent_id: shared.opponentFighterId,
+      map: resolveStageMap(game.stageId, game.stageForm),
+      opponent: shared.opponentName,
+      notes: '',
+      matchType: shared.matchType,
+      win: game.result === 'win',
+      ...(game.stocksLeft !== undefined ? { stocksLeft: game.stocksLeft } : {}),
+      ...(shared.eventName ? { eventName: shared.eventName } : {}),
+      ...(shared.tournamentName ? { tournamentName: shared.tournamentName } : {}),
+      ...(vodUrl ? { vodUrl } : {}),
+      ...(vodStartSeconds !== null ? { vodStartSeconds } : {}),
+    };
+  });
 }
 
 /** Default per-game values for a freshly-added row. */
@@ -125,5 +166,8 @@ export function buildDefaultGameValues(): SetGameValues {
     result: undefined as unknown as SetGameValues['result'],
     stageId: NO_SELECTION_STAGE.id,
     stocksLeft: undefined,
+    vodUrl: undefined,
+    vodStartSeconds: undefined,
+    stageForm: undefined,
   };
 }

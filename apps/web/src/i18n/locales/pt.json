@@ -267,7 +267,9 @@
       "game": "Game {{number}}",
       "gameWinAria": "Vitória no game {{number}}",
       "gameLossAria": "Derrota no game {{number}}",
-      "stage": "Stage"
+      "stage": "Stage",
+      "vodUrl": "URL do VOD",
+      "vodStartTime": "Horário de início no VOD"
     },
     "edit": {
       "title": "Editar partida",
@@ -275,6 +277,12 @@
       "deleteMatch": "Excluir partida",
       "edited": "Partida editada!",
       "saveFailed": "Falha ao salvar a partida. Tente novamente."
+    },
+    "stageForm": {
+      "label": "Forma do stage",
+      "normal": "Normal",
+      "battlefield": "Forma Battlefield",
+      "omega": "Forma Omega"
     }
   },
   "gsp": {

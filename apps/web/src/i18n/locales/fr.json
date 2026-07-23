@@ -267,7 +267,9 @@
       "game": "Manche {{number}}",
       "gameWinAria": "Victoire manche {{number}}",
       "gameLossAria": "Défaite manche {{number}}",
-      "stage": "Stage"
+      "stage": "Stage",
+      "vodUrl": "URL de la VOD",
+      "vodStartTime": "Heure de début dans la VOD"
     },
     "edit": {
       "title": "Modifier le match",
@@ -275,6 +277,12 @@
       "deleteMatch": "Supprimer le match",
       "edited": "Match modifié !",
       "saveFailed": "Échec de l'enregistrement du match. Veuillez réessayer."
+    },
+    "stageForm": {
+      "label": "Forme du stage",
+      "normal": "Normale",
+      "battlefield": "Forme Battlefield",
+      "omega": "Forme Omega"
     }
   },
   "gsp": {

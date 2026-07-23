@@ -267,7 +267,9 @@
       "game": "Game {{number}}",
       "gameWinAria": "Game {{number}} Win",
       "gameLossAria": "Game {{number}} Loss",
-      "stage": "Stage"
+      "stage": "Stage",
+      "vodUrl": "VOD URL",
+      "vodStartTime": "Start time in VOD"
     },
     "edit": {
       "title": "Edit Match",
@@ -275,6 +277,12 @@
       "deleteMatch": "Delete Match",
       "edited": "Match edited!",
       "saveFailed": "Failed to save match. Please try again."
+    },
+    "stageForm": {
+      "label": "Stage Form",
+      "normal": "Normal",
+      "battlefield": "Battlefield Form",
+      "omega": "Omega Form"
     }
   },
   "gsp": {

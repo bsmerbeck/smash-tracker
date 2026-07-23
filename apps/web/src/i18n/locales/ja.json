@@ -267,7 +267,9 @@
       "game": "{{number}}戦目",
       "gameWinAria": "{{number}}戦目 勝ち",
       "gameLossAria": "{{number}}戦目 負け",
-      "stage": "ステージ"
+      "stage": "ステージ",
+      "vodUrl": "VODのURL",
+      "vodStartTime": "VOD内の開始時間"
     },
     "edit": {
       "title": "対戦を編集",
@@ -275,6 +277,12 @@
       "deleteMatch": "対戦を削除",
       "edited": "対戦を編集しました！",
       "saveFailed": "対戦を保存できませんでした。もう一度お試しください。"
+    },
+    "stageForm": {
+      "label": "ステージ形態",
+      "normal": "通常",
+      "battlefield": "バトルフィールド化",
+      "omega": "オメガ化"
     }
   },
   "gsp": {

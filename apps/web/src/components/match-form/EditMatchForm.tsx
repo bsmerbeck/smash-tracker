@@ -26,6 +26,11 @@ export function matchToFormValues(match: Match): MatchFormValues {
     opponentFighterId: match.opponent_id,
     result: match.win ? 'win' : 'loss',
     stageId: match.map?.id ?? 0,
+    // SETFEAT-02: carry the stored stage form through so editing and saving
+    // without touching the toggle doesn't silently clear it (the shared
+    // matchFormValuesToInput conditional-spread treats an unset toggle as
+    // "no form recorded" — see its doc comment).
+    stageForm: match.map?.form,
     matchType: match.matchType ? match.matchType : 'none',
     opponentName: match.opponent ?? '',
     notes: match.notes ?? '',

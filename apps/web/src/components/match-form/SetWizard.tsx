@@ -25,6 +25,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
+import { Input } from '@/components/ui/input';
 import {
   Command,
   CommandEmpty,
@@ -464,6 +465,32 @@ export function SetWizard({
                   </FormItem>
 
                   <FormItem>
+                    <FormLabel>{t('matchForm.stageForm.label')}</FormLabel>
+                    <ToggleGroup
+                      type="single"
+                      variant="outline"
+                      value={game.stageForm ?? ''}
+                      onValueChange={(value) =>
+                        updateGame(index, {
+                          stageForm: value
+                            ? (value as 'normal' | 'battlefield' | 'omega')
+                            : undefined,
+                        })
+                      }
+                    >
+                      <ToggleGroupItem value="normal">
+                        {t('matchForm.stageForm.normal')}
+                      </ToggleGroupItem>
+                      <ToggleGroupItem value="battlefield">
+                        {t('matchForm.stageForm.battlefield')}
+                      </ToggleGroupItem>
+                      <ToggleGroupItem value="omega">
+                        {t('matchForm.stageForm.omega')}
+                      </ToggleGroupItem>
+                    </ToggleGroup>
+                  </FormItem>
+
+                  <FormItem>
                     <FormLabel>{t('matchForm.stocksLeft')}</FormLabel>
                     <Select
                       value={game.stocksLeft === undefined ? 'unset' : String(game.stocksLeft)}
@@ -486,6 +513,33 @@ export function SetWizard({
                       </SelectContent>
                     </Select>
                   </FormItem>
+
+                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                    <FormItem>
+                      <FormLabel>{t('matchForm.set.vodUrl')}</FormLabel>
+                      <FormControl>
+                        <Input
+                          type="url"
+                          value={game.vodUrl ?? ''}
+                          onChange={(e) => updateGame(index, { vodUrl: e.target.value })}
+                          placeholder={t('matchForm.vodUrlPlaceholder')}
+                        />
+                      </FormControl>
+                    </FormItem>
+
+                    <FormItem>
+                      <FormLabel>{t('matchForm.set.vodStartTime')}</FormLabel>
+                      <FormControl>
+                        <Input
+                          type="text"
+                          value={game.vodStartSeconds ?? ''}
+                          onChange={(e) => updateGame(index, { vodStartSeconds: e.target.value })}
+                          disabled={!game.vodUrl?.trim()}
+                          placeholder={t('matchForm.vodStartSeconds.placeholder')}
+                        />
+                      </FormControl>
+                    </FormItem>
+                  </div>
                 </div>
               );
             })}
