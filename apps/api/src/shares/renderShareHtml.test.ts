@@ -26,11 +26,21 @@ const FAKE_SHELL = `<!doctype html>
 </body>
 </html>`;
 
-function fetchOk(body: string) {
+function fetchOk(body: string, etag?: string) {
   return vi.fn().mockResolvedValue({
     ok: true,
     status: 200,
     text: () => Promise.resolve(body),
+    headers: { get: (name: string) => (name.toLowerCase() === 'etag' ? (etag ?? null) : null) },
+  } as unknown as Response);
+}
+
+function fetchNotModified() {
+  return vi.fn().mockResolvedValue({
+    ok: false,
+    status: 304,
+    text: () => Promise.resolve(''),
+    headers: { get: () => null },
   } as unknown as Response);
 }
 
@@ -325,5 +335,134 @@ describe('renderShareHtml', () => {
     // Null snapshot in the degraded path → the generic static image, never
     // a per-token card URL (VIEW-05).
     expect(html).toContain(`<meta property="og:image" content="${WEB_BASE_URL}/og-image.png">`);
+  });
+
+  describe('IN-06: ETag conditional revalidation of the shell cache', () => {
+    it('sends If-None-Match with the prior ETag and reuses the cached html on a 304', async () => {
+      const fetchImpl = vi
+        .fn()
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          text: () => Promise.resolve(FAKE_SHELL),
+          headers: {
+            get: (name: string) => (name.toLowerCase() === 'etag' ? '"v1"' : null),
+          },
+        } as unknown as Response)
+        .mockResolvedValueOnce({
+          ok: false,
+          status: 304,
+          text: () => Promise.resolve(''),
+          headers: { get: () => null },
+        } as unknown as Response);
+      const snapshot = makeSnapshot();
+      const args = {
+        token: TOKEN,
+        snapshot,
+        webBaseUrl: WEB_BASE_URL,
+        fetchImpl: fetchImpl as unknown as typeof fetch,
+      };
+
+      const first = await renderShareHtml(args);
+      const second = await renderShareHtml(args);
+
+      expect(fetchImpl).toHaveBeenCalledTimes(2);
+      const secondInit = fetchImpl.mock.calls[1]?.[1] as { headers?: Record<string, string> };
+      expect(secondInit?.headers).toEqual({ 'If-None-Match': '"v1"' });
+      expect(second).toEqual(first);
+    });
+
+    it('IN-06 regression: a fresh 200 on the next request (e.g. after a hosting deploy) is served immediately, not a stale cached bundle reference', async () => {
+      const newShell = FAKE_SHELL.replace('index-abc123.js', 'index-def456.js');
+      const fetchImpl = vi
+        .fn()
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          text: () => Promise.resolve(FAKE_SHELL),
+          headers: { get: (name: string) => (name.toLowerCase() === 'etag' ? '"v1"' : null) },
+        } as unknown as Response)
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          text: () => Promise.resolve(newShell),
+          headers: { get: (name: string) => (name.toLowerCase() === 'etag' ? '"v2"' : null) },
+        } as unknown as Response);
+      const snapshot = makeSnapshot();
+      const args = {
+        token: TOKEN,
+        snapshot,
+        webBaseUrl: WEB_BASE_URL,
+        fetchImpl: fetchImpl as unknown as typeof fetch,
+      };
+
+      const first = await renderShareHtml(args);
+      const second = await renderShareHtml(args);
+
+      expect(fetchImpl).toHaveBeenCalledTimes(2);
+      expect(first).toContain('index-abc123.js');
+      expect(second).toContain('index-def456.js');
+    });
+
+    it('serves the last-good cached shell (stale-on-error), not the fallback template, when a revalidation fetch rejects', async () => {
+      const fetchImpl = vi
+        .fn()
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          text: () => Promise.resolve(FAKE_SHELL),
+          headers: { get: (name: string) => (name.toLowerCase() === 'etag' ? '"v1"' : null) },
+        } as unknown as Response)
+        .mockRejectedValueOnce(new Error('ECONNREFUSED'));
+      const snapshot = makeSnapshot();
+      const args = {
+        token: TOKEN,
+        snapshot,
+        webBaseUrl: WEB_BASE_URL,
+        fetchImpl: fetchImpl as unknown as typeof fetch,
+      };
+
+      const first = await renderShareHtml(args);
+      const second = await renderShareHtml(args);
+
+      expect(fetchImpl).toHaveBeenCalledTimes(2);
+      expect(second).toEqual(first);
+      // The real cached shell (has a root div), never the hardcoded fallback.
+      expect(second).toContain('<div id="root">');
+      expect(second).not.toContain('Reload this page');
+    });
+
+    it('a cold-cache non-2xx status still falls back to the hardcoded safe template (no cached entry to serve stale)', async () => {
+      const fetchImpl = fetchNotModified(); // 304 with nothing cached — treated as a failure
+      const snapshot = makeSnapshot();
+
+      const html = await renderShareHtml({
+        token: TOKEN,
+        snapshot,
+        webBaseUrl: WEB_BASE_URL,
+        fetchImpl: fetchImpl as unknown as typeof fetch,
+      });
+
+      expect(fetchImpl).toHaveBeenCalledTimes(1);
+      expect(html).toContain('Reload this page');
+    });
+
+    it('works without an ETag header: the next request sends no If-None-Match and simply refetches', async () => {
+      const fetchImpl = fetchOk(FAKE_SHELL); // no etag
+      const snapshot = makeSnapshot();
+      const args = {
+        token: TOKEN,
+        snapshot,
+        webBaseUrl: WEB_BASE_URL,
+        fetchImpl: fetchImpl as unknown as typeof fetch,
+      };
+
+      await renderShareHtml(args);
+      await renderShareHtml(args);
+
+      expect(fetchImpl).toHaveBeenCalledTimes(2);
+      expect(fetchImpl.mock.calls[0]?.[1]).toBeUndefined();
+      expect(fetchImpl.mock.calls[1]?.[1]).toBeUndefined();
+    });
   });
 });
