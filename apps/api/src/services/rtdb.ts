@@ -7,7 +7,9 @@ import {
   extractCitationTokens,
   gspReadingRecordSchema,
   gspSettingsSchema,
+  includedVodSchema,
   matchRecordSchema,
+  MAX_DELIVERY_VODS,
   MAX_PLAYLISTS_PER_USER,
   MAX_SHARES_PER_USER,
   normalizeVodTimestampsNode,
@@ -28,6 +30,7 @@ import {
   type CoachAttribution,
   type CreateGspReadingInput,
   type CreateMatchInput,
+  type IncludedVod,
   type CreatePlaylistInput,
   type CreateShareInput,
   type FighterSelectionInput,
@@ -241,6 +244,29 @@ export function parseSessionShareId(
  */
 const sessionDeliverySnapshotFieldSchema = z.object({
   snapshot: clientVisibleSessionSchema,
+  /**
+   * Phase 21 (Rich Client Delivery View, DLVX-02/DLVX-04): the delivery's
+   * OWN frozen `includedVods`, read as a SIBLING of `snapshot` (mirrors
+   * `sessionDeliveryRecordSchema`'s own top-level placement). Normalized to
+   * `[]` by the caller before this schema validates (Pitfall 2).
+   */
+  includedVods: z.array(includedVodSchema).max(MAX_DELIVERY_VODS).nullish(),
+});
+
+/**
+ * The minimal shape `getCoachReviewSnapshot`'s token-match scan needs out of
+ * a `reviewDeliveries/{tenantId}/{reviewId}/{deliveryId}` record — just
+ * `token` (to find the matching delivery) and `includedVods` (the
+ * delivery-specific frozen content this resolver serves). Deliberately does
+ * NOT import `reviewDeliveries.ts`'s own `reviewDeliveryRecordSchema` (that
+ * module imports `buildReviewShareId`/`NotFoundError` FROM this file —
+ * importing back would be circular); mirrors
+ * `sessionDeliverySnapshotFieldSchema`'s own narrow-local-schema precedent
+ * immediately above.
+ */
+const reviewDeliveryIncludedVodsFieldSchema = z.object({
+  token: z.string().min(1),
+  includedVods: z.array(includedVodSchema).max(MAX_DELIVERY_VODS).nullish(),
 });
 
 async function resolveCoachDisplayNameForTenant(
@@ -2179,7 +2205,7 @@ export class RtdbService {
     // the shareSnapshots hop every other kind still needs below.
     const reviewRef = parseReviewShareId(parsedToken.data.shareId);
     if (reviewRef) {
-      return this.getCoachReviewSnapshot(reviewRef);
+      return this.getCoachReviewSnapshot(reviewRef, token);
     }
 
     // Phase 20 Plan 03 (SESS-01/02, D-10): a session delivery ALSO has NO
@@ -2314,12 +2340,32 @@ export class RtdbService {
    * an already-published, sealed version (D-14). Returns `null` — never
    * throws — for a missing/corrupt version record, matching every other
    * kind's no-oracle contract at this call site.
+   *
+   * Phase 21 (Rich Client Delivery View, DLVX-02/DLVX-04, Pitfall 1): the
+   * shareId alone only ever resolves `{tenantId, reviewId, version}` — NOT a
+   * `deliveryId` — so this method ALSO runs the SAME token-match scan
+   * `setDeliveryAck`/`setDeliveryViewed` (`reviewDeliveries.ts`) already use
+   * to locate the SPECIFIC delivery record under
+   * `reviewDeliveries/{tenantId}/{reviewId}/*` whose `.token` matches the raw
+   * `token` this method now receives, and reads THAT record's frozen
+   * `includedVods` (normalized to `[]` on a missing key — Pitfall 2/T-21-04).
+   * This is what makes `includedVods` DELIVERY-specific: two deliveries of
+   * the identical review version, with different coach-picked VOD sets,
+   * resolve to different `includedVods` here even though `sealedVersion`
+   * above is shared between them. A missing/corrupt delivery record
+   * (defensive; should not happen for a token that resolved this far) yields
+   * `[]`, never a throw. `citationSources` (below) stays fully independent —
+   * still resolved LIVE, never touched by this addition (Pitfall 3 / Open
+   * Question 2: never reuse `resolveReviewCitationSources` for `includedVods`).
    */
-  private async getCoachReviewSnapshot(reviewRef: {
-    tenantId: string;
-    reviewId: string;
-    version: number;
-  }): Promise<PublicShareSnapshot | null> {
+  private async getCoachReviewSnapshot(
+    reviewRef: {
+      tenantId: string;
+      reviewId: string;
+      version: number;
+    },
+    token: string,
+  ): Promise<PublicShareSnapshot | null> {
     const { tenantId, reviewId, version } = reviewRef;
     const versionSnapshot = await this.database
       .ref(`reviewVersions/${tenantId}/${reviewId}/${version}`)
@@ -2333,12 +2379,52 @@ export class RtdbService {
     }
     const sealedVersion = parsedVersion.data;
 
-    const [coachDisplayName, citationSources] = await Promise.all([
+    const [coachDisplayName, citationSources, includedVods] = await Promise.all([
       resolveCoachDisplayNameForTenant(this.database, tenantId),
       this.resolveReviewCitationSources(tenantId, sealedVersion.sections),
+      this.resolveReviewDeliveryIncludedVods(tenantId, reviewId, token),
     ]);
 
-    return buildReviewSnapshot(sealedVersion, coachDisplayName, citationSources);
+    return buildReviewSnapshot(sealedVersion, coachDisplayName, citationSources, includedVods);
+  }
+
+  /**
+   * Phase 21 (Rich Client Delivery View, DLVX-02/DLVX-04): the token-match
+   * scan that resolves ONE delivery's frozen `includedVods` — mirrors
+   * `setDeliveryAck`'s find-by-token discipline (`reviewDeliveries.ts`)
+   * exactly, but read-only (never flips `ackAt`/`status`). Returns `[]` for
+   * a missing tree or an unmatched token (defensive no-oracle — should not
+   * happen for a token that already resolved to a live coachReview version).
+   */
+  private async resolveReviewDeliveryIncludedVods(
+    tenantId: string,
+    reviewId: string,
+    token: string,
+  ): Promise<IncludedVod[]> {
+    const snapshot = await this.database.ref(`reviewDeliveries/${tenantId}/${reviewId}`).get();
+    if (!snapshot.exists()) {
+      return [];
+    }
+    const raw = snapshot.val() as Record<string, unknown>;
+    const entry = Object.entries(raw).find(([, value]) => {
+      if (value === null || typeof value !== 'object') {
+        return false;
+      }
+      const parsed = reviewDeliveryIncludedVodsFieldSchema.safeParse({
+        ...(value as Record<string, unknown>),
+        includedVods: (value as { includedVods?: unknown }).includedVods ?? [],
+      });
+      return parsed.success && parsed.data.token === token;
+    });
+    if (!entry) {
+      return [];
+    }
+    const [, rawRecord] = entry;
+    const parsed = reviewDeliveryIncludedVodsFieldSchema.safeParse({
+      ...(rawRecord as Record<string, unknown>),
+      includedVods: (rawRecord as { includedVods?: unknown }).includedVods ?? [],
+    });
+    return parsed.success ? (parsed.data.includedVods ?? []) : [];
   }
 
   /**
@@ -2373,8 +2459,13 @@ export class RtdbService {
     // embedded `snapshot.characterTags`/`snapshot.homework` round-trip with
     // NO key at all when a session had zero tags/homework at delivery time.
     // Normalize back to `[]` before validating, mirroring
-    // `sessionDeliveries.ts`'s own `parseDeliveryRecord` discipline.
-    const rawDelivery = deliverySnapshot.val() as { snapshot?: unknown } | null;
+    // `sessionDeliveries.ts`'s own `parseDeliveryRecord` discipline. Phase 21
+    // (DLVX-02/DLVX-04): the top-level `includedVods` field gets the SAME
+    // missing-key-to-`[]` normalization (Pitfall 2).
+    const rawDelivery = deliverySnapshot.val() as {
+      snapshot?: unknown;
+      includedVods?: unknown;
+    } | null;
     const rawSnapshot = rawDelivery?.snapshot;
     const normalizedSnapshot =
       rawSnapshot !== null && typeof rawSnapshot === 'object'
@@ -2387,11 +2478,13 @@ export class RtdbService {
     const parsedDelivery = sessionDeliverySnapshotFieldSchema.safeParse({
       ...rawDelivery,
       snapshot: normalizedSnapshot,
+      includedVods: rawDelivery?.includedVods ?? [],
     });
     if (!parsedDelivery.success) {
       return null;
     }
     const session = parsedDelivery.data.snapshot;
+    const includedVods = parsedDelivery.data.includedVods ?? [];
 
     const coachDisplayName = await resolveCoachDisplayNameForTenant(this.database, tenantId);
 
@@ -2404,6 +2497,7 @@ export class RtdbService {
       sessionSummary: session.summary,
       sessionHomework: session.homework,
       ...(session.linkedMatchIds ? { sessionLinkedMatchRefs: session.linkedMatchIds } : {}),
+      ...(includedVods.length > 0 ? { includedVods } : {}),
       reviewedMomentsCount: 0,
     };
 

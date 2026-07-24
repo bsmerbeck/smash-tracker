@@ -2,6 +2,7 @@ import {
   extractCitationTokens,
   publicShareSnapshotSchema,
   type ClientVisibleVersion,
+  type IncludedVod,
   type PublicShareSnapshot,
 } from '@smash-tracker/shared';
 
@@ -36,11 +37,21 @@ export interface ReviewCitationSource {
  * snapshot's "moments reviewed" aggregate — computed here, not passed in, so
  * the caller can never drift it out of sync with the sections actually
  * shipped in this same response.
+ *
+ * Phase 21 (Rich Client Delivery View, DLVX-02/DLVX-04): `includedVods` is a
+ * FOURTH input, resolved by the caller (`RtdbService.getCoachReviewSnapshot`
+ * — it owns the delivery-record token-match scan) and threaded through
+ * here purely as data, mirroring `citationSources`'s own caller-resolves,
+ * builder-stays-pure shape. Deliberately INDEPENDENT of `citationSources`:
+ * one is frozen at delivery-creation time (delivery-specific), the other is
+ * resolved LIVE on every request (version-specific) — never merged/deduped
+ * (Pitfall 3 / Open Question 2).
  */
 export function buildReviewSnapshot(
   version: ClientVisibleVersion,
   coachDisplayName: string,
   citationSources: ReviewCitationSource[],
+  includedVods: IncludedVod[] = [],
 ): PublicShareSnapshot {
   const reviewedMomentsCount = version.sections.reduce(
     (total, section) => total + extractCitationTokens(section.body).length,
@@ -54,6 +65,7 @@ export function buildReviewSnapshot(
     reviewPublishedAt: version.publishedAt,
     sections: version.sections,
     ...(citationSources.length > 0 ? { citationSources } : {}),
+    ...(includedVods.length > 0 ? { includedVods } : {}),
     reviewedMomentsCount,
   };
 

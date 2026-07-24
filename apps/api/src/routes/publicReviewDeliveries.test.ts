@@ -1,7 +1,26 @@
 import { describe, expect, it } from 'vitest';
+import { serializeCitationToken } from '@smash-tracker/shared';
+import type { FakeDatabase } from '../test-support/fakeDatabase.js';
 import { authHeader, buildTestApp } from '../test-support/testApp.js';
 import { createSession } from '../coaching/sessions.js';
 import { createSessionDelivery, revokeSessionDelivery } from '../coaching/sessionDeliveries.js';
+
+/** Seeds a minimal `matches/{tenantId}/{matchId}` record — a VOD-bearing match by default. */
+function seedMatch(
+  database: FakeDatabase,
+  tenantId: string,
+  matchId: string,
+  overrides: Record<string, unknown> = {},
+): void {
+  database.seed(`matches/${tenantId}/${matchId}`, {
+    fighter_id: 1,
+    opponent_id: 2,
+    time: 1_700_000_000_000,
+    win: true,
+    vodUrl: 'https://youtu.be/abc123',
+    ...overrides,
+  });
+}
 
 /** Registers a managed client (coach = TEST_UID from `testApp.ts`) and returns its tenantId. */
 async function createClient(
@@ -79,12 +98,17 @@ async function createDelivery(
   reviewId: string,
   version: number,
   expiresAt?: number,
+  includedVods?: string[],
 ): Promise<{ deliveryId: string; token: string }> {
   const response = await app.inject({
     method: 'POST',
     url: `/api/coaching/clients/${clientId}/reviews/${reviewId}/deliveries`,
     headers: authHeader(),
-    payload: { version, ...(expiresAt !== undefined ? { expiresAt } : {}) },
+    payload: {
+      version,
+      ...(expiresAt !== undefined ? { expiresAt } : {}),
+      ...(includedVods !== undefined ? { includedVods } : {}),
+    },
   });
   const body = response.json();
   return { deliveryId: body.deliveryId as string, token: body.token as string };
@@ -221,6 +245,81 @@ describe('GET /api/review-deliveries/:token', () => {
     expect(record.ackAt).toBeNull();
     expect(record.viewedAt).toBeNull();
     expect(record.status).toBe('delivered');
+  });
+});
+
+describe('GET /api/review-deliveries/:token — includedVods (Phase 21, DLVX-02/DLVX-04)', () => {
+  it("resolves the SPECIFIC delivery's frozen includedVods — two deliveries of the SAME version with different picks serve different VOD sets", async () => {
+    const { app, database } = buildTestApp();
+    const clientId = await createClient(app);
+    const { reviewId, revision } = await startReview(app, clientId);
+    await patchSummaryBody(app, clientId, reviewId, revision, 'V1_TEXT');
+    const version = await publish(app, clientId, reviewId);
+    seedMatch(database, clientId, 'match-1', { vodUrl: 'https://youtu.be/aaa111' });
+    seedMatch(database, clientId, 'match-2', { vodUrl: 'https://youtu.be/bbb222' });
+
+    const { token: tokenA } = await createDelivery(app, clientId, reviewId, version, undefined, [
+      'match-1',
+    ]);
+    const { token: tokenB } = await createDelivery(app, clientId, reviewId, version, undefined, [
+      'match-2',
+    ]);
+
+    const responseA = await app.inject({
+      method: 'GET',
+      url: `/api/review-deliveries/${tokenA}`,
+    });
+    const responseB = await app.inject({
+      method: 'GET',
+      url: `/api/review-deliveries/${tokenB}`,
+    });
+
+    expect(responseA.json().includedVods).toEqual([
+      expect.objectContaining({ matchId: 'match-1', vodUrl: 'https://youtu.be/aaa111' }),
+    ]);
+    expect(responseB.json().includedVods).toEqual([
+      expect.objectContaining({ matchId: 'match-2', vodUrl: 'https://youtu.be/bbb222' }),
+    ]);
+    // Both deliveries share the identical version content (V1_TEXT), yet
+    // serve DIFFERENT includedVods — proving delivery-specificity.
+    expect(responseA.json().sections).toEqual(responseB.json().sections);
+  });
+
+  it('a coachReview delivery with no includedVods key returns a snapshot with includedVods absent (never 404)', async () => {
+    const { app } = buildTestApp();
+    const { token } = await seedDeliveredReview(app);
+
+    const response = await app.inject({ method: 'GET', url: `/api/review-deliveries/${token}` });
+
+    expect(response.statusCode).toBe(200);
+    expect('includedVods' in response.json()).toBe(false);
+  });
+
+  it('citationSources on the coachReview snapshot are unchanged (still live-resolved) and independent of includedVods', async () => {
+    const { app, database } = buildTestApp();
+    const clientId = await createClient(app);
+    const { reviewId, revision } = await startReview(app, clientId);
+    seedMatch(database, clientId, 'cited-match', { vodUrl: 'https://youtu.be/cited123' });
+    seedMatch(database, clientId, 'picked-match', { vodUrl: 'https://youtu.be/picked456' });
+    const citeToken = serializeCitationToken({
+      sourceVodRef: 'cited-match',
+      seconds: 10,
+      label: 'missed punish',
+    });
+    await patchSummaryBody(app, clientId, reviewId, revision, `See ${citeToken} for the punish.`);
+    const version = await publish(app, clientId, reviewId);
+    const { token } = await createDelivery(app, clientId, reviewId, version, undefined, [
+      'picked-match',
+    ]);
+
+    const response = await app.inject({ method: 'GET', url: `/api/review-deliveries/${token}` });
+
+    expect(response.json().citationSources).toEqual([
+      { sourceVodRef: 'cited-match', vodUrl: 'https://youtu.be/cited123' },
+    ]);
+    expect(response.json().includedVods).toEqual([
+      expect.objectContaining({ matchId: 'picked-match', vodUrl: 'https://youtu.be/picked456' }),
+    ]);
   });
 });
 
@@ -589,6 +688,51 @@ describe('GET /api/review-deliveries/:token — session kind (Phase 20 Plan 03)'
     expect(body.sessionCharacterTags).toEqual([1, 5]);
     expect(body.sessionHomework).toEqual([{ text: 'Practice OOS options', done: false }]);
     expect(JSON.stringify(body)).not.toContain('SECRET_COACH_NOTES');
+  });
+
+  it("serves the session delivery's frozen includedVods (Phase 21, DLVX-02/DLVX-04)", async () => {
+    const { app, database } = buildTestApp();
+    const clientId = await createClient(app);
+    const { sessionId } = await createSession(database as never, clientId, {
+      date: 1_700_000_000_000,
+      summary: 'Great session on neutral game',
+    });
+    seedMatch(database, clientId, 'match-1', { vodUrl: 'https://youtu.be/session-vod' });
+    const { token } = await createSessionDelivery(
+      database as never,
+      clientId,
+      sessionId,
+      'https://grandfinals.gg',
+      { includedVodMatchIds: ['match-1'] },
+    );
+
+    const response = await app.inject({ method: 'GET', url: `/api/review-deliveries/${token}` });
+
+    expect(response.statusCode).toBe(200);
+    const body = response.json();
+    expect(body.includedVods).toEqual([
+      expect.objectContaining({ matchId: 'match-1', vodUrl: 'https://youtu.be/session-vod' }),
+    ]);
+  });
+
+  it('a session delivery with no includedVods key returns includedVods absent (never 404)', async () => {
+    const { app, database } = buildTestApp();
+    const clientId = await createClient(app);
+    const { sessionId } = await createSession(database as never, clientId, {
+      date: 1_700_000_000_000,
+      summary: 'A VOD-less session',
+    });
+    const { token } = await createSessionDelivery(
+      database as never,
+      clientId,
+      sessionId,
+      'https://grandfinals.gg',
+    );
+
+    const response = await app.inject({ method: 'GET', url: `/api/review-deliveries/${token}` });
+
+    expect(response.statusCode).toBe(200);
+    expect('includedVods' in response.json()).toBe(false);
   });
 
   it('returns the identical unavailable body for a revoked session-delivery token', async () => {
