@@ -46,11 +46,13 @@ export function PendingButton({
 
   useEffect(() => {
     if (!pending) {
-      setShowSpinner(false);
       return;
     }
     const timer = setTimeout(() => setShowSpinner(true), SPINNER_DELAY_MS);
-    return () => clearTimeout(timer);
+    return () => {
+      clearTimeout(timer);
+      setShowSpinner(false);
+    };
   }, [pending]);
 
   useEffect(() => {
