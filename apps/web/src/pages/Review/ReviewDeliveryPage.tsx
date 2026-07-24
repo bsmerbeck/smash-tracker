@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Link, useParams } from 'react-router';
 import { useTranslation } from 'react-i18next';
 import { Check } from 'lucide-react';
-import type { PublicShareSnapshot } from '@smash-tracker/shared';
+import type { IncludedVod, PublicShareSnapshot } from '@smash-tracker/shared';
 import { PublicLayout } from '@/layouts/PublicLayout';
 import { useSeo } from '@/hooks/useSeo';
 import { useFighterNameResolver } from '@/hooks/useFighterName';
@@ -18,10 +18,33 @@ import {
 } from '@/lib/reviewDeliveryAck';
 import { SafeMarkdown } from '@/lib/safeMarkdown';
 import { VodPlayer } from '@/pages/VodManager/components/VodPlayer';
+import { DeliveryVodNotesTab } from '@/pages/Review/components/DeliveryVodNotesTab';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { cn } from '@/lib/utils';
 import * as onboardingOrigin from '@/lib/onboardingOrigin';
+
+/** The two-tab shell's tab identifiers — shared between the coachReview and session renders (both share the SAME shell, Phase 21 Plan 02). */
+type DeliveryTab = 'vodNotes' | 'reviewNotes';
+
+/**
+ * Phase 21 Plan 02 (DLVX-01/02/03) back-compat fallback: for a pre-Phase-21
+ * delivery (no `includedVods` frozen at creation), the "VOD Notes" tab still
+ * shows the review's cited footage (player-only, no timestamped notes —
+ * `citationSources` never carried a per-source note list) rather than an
+ * empty tab. Maps ONLY already-public `citationSources` fields (T-21-06) —
+ * no new data source introduced.
+ */
+function citationSourcesAsIncludedVods(
+  citationSources: PublicShareSnapshot['citationSources'],
+): IncludedVod[] {
+  return (citationSources ?? []).map((source) => ({
+    matchId: source.sourceVodRef,
+    label: source.label,
+    vodUrl: source.vodUrl,
+  }));
+}
 
 /**
  * D-08/DLV-02: the anonymous, no-account `/r/:token` recipient page for a
@@ -31,17 +54,23 @@ import * as onboardingOrigin from '@/lib/onboardingOrigin';
  * (`GET /api/review-deliveries/:token`, `kind: 'coachReview'`), never a
  * workspace/draft/coach-private/other-version read (T-12-25).
  *
- * Renders: coach identity + publication date, an embedded player with the
- * current source's title above it, the delivered sections through the SAME
- * `SafeMarkdown` renderer plan 07 built (never a second implementation), and
- * a single Acknowledge button whose confirmation survives a reload.
+ * Renders: coach identity + publication date, a short explanation
+ * paragraph, and a two-tab shell (Phase 21 Plan 02, DLVX-01/02/03) — "VOD
+ * Notes" (`DeliveryVodNotesTab` over the delivery's frozen `includedVods`,
+ * click-to-seek timestamped notes with a switcher for 2+ VODs) and "Review
+ * Notes" (the delivered sections through the SAME `SafeMarkdown` renderer
+ * plan 07 built, with its own conditional citation player STILL gated on
+ * `citationSources.length > 0` — unchanged from before this restructure).
+ * Below the tabs: a single Acknowledge button whose confirmation survives a
+ * reload.
  *
- * D-04 multi-VOD citation activation: a citation chip's `onActivate` looks
- * its `matchId` up in `snapshot.citationSources` — a match against the
- * CURRENT source seeks in place; a different source re-keys `<VodPlayer>` by
- * changing its `vodUrl` prop (which itself re-keys `useVodPlayer`'s
- * identity-keyed construction effect — no manual `remountToken` needed) and
- * passes the cited second as the fresh construction's `startSeconds`.
+ * D-04 multi-VOD citation activation (Review Notes tab only): a citation
+ * chip's `onActivate` looks its `matchId` up in `snapshot.citationSources` —
+ * a match against the CURRENT source seeks in place; a different source
+ * re-keys `<VodPlayer>` by changing its `vodUrl` prop (which itself re-keys
+ * `useVodPlayer`'s identity-keyed construction effect — no manual
+ * `remountToken` needed) and passes the cited second as the fresh
+ * construction's `startSeconds`.
  *
  * D-09/T-12-24 crawler safety: `client_review_view_loaded` fires via a
  * DEDICATED `POST /api/review-deliveries/:token/viewed` call (not the
@@ -53,13 +82,11 @@ import * as onboardingOrigin from '@/lib/onboardingOrigin';
  * the GET query resolving — a crawler/unfurl fetch only ever GETs, so it
  * never reaches the dedicated route either.
  *
- * Phase 20 Plan 04 (Coaching Workflow, Training Sessions & VOD-less
- * Reviews, SESS-01/02): an early kind-branch renders a MINIMAL
- * `SessionDeliveryView` instead of the coachReview layout below when
- * `snapshot.kind === 'session'` — summary + read-only homework + a linked-
- * VOD reference list, no player embed, no viewed/ack lifecycle (deliberately
- * out of scope this phase; Phase 21 rebuilds the recipient render richly).
- * The coachReview branch below is otherwise UNCHANGED.
+ * Phase 20 Plan 04 (SESS-01/02) introduced an early kind-branch rendering a
+ * SEPARATE `SessionDeliveryView` when `snapshot.kind === 'session'` — Phase
+ * 21 Plan 02 restructures it into the SAME two-tab shell (see its own doc
+ * comment below), still with no viewed/ack lifecycle (deliberately out of
+ * scope, unchanged from Phase 20).
  */
 export function ReviewDeliveryPage() {
   const { t } = useTranslation();
@@ -75,6 +102,11 @@ export function ReviewDeliveryPage() {
   const [startSecondsOverride, setStartSecondsOverride] = useState<number | undefined>(undefined);
   const [isPlayerReady, setIsPlayerReady] = useState(false);
   const seekRef = useRef<((seconds: number) => void) | null>(null);
+
+  // Phase 21 Plan 02 (DLVX-01): which of the two-tab shell's tabs is active.
+  // Defaults to VOD Notes — the coach's timestamped annotation effort IS the
+  // delivery now, not an afterthought behind the written review.
+  const [activeTab, setActiveTab] = useState<DeliveryTab>('vodNotes');
 
   // The "already acknowledged in THIS browser" confirmation, seeded from
   // localStorage. Uses React's "adjusting state during render" pattern
@@ -184,6 +216,15 @@ export function ReviewDeliveryPage() {
 
   const currentSource = citationSources.find((source) => source.sourceVodRef === currentSourceRef);
 
+  // Phase 21 Plan 02 (DLVX-01/T-21-06): the "VOD Notes" tab's source list —
+  // the frozen, coach-picked `includedVods` when this delivery has any, else
+  // a GRACEFUL back-compat fallback derived from the already-public
+  // `citationSources` (a pre-Phase-21 delivery, or one with zero picks).
+  const vodNotesSources: IncludedVod[] =
+    snapshot.includedVods && snapshot.includedVods.length > 0
+      ? snapshot.includedVods
+      : citationSourcesAsIncludedVods(citationSources);
+
   function sourceDisplayLabel(
     source: { sourceVodRef: string; label?: string | null },
     index: number,
@@ -255,53 +296,75 @@ export function ReviewDeliveryPage() {
           </p>
         </div>
 
-        {hasPlayableSource && currentSource ? (
-          <div className="flex flex-col gap-1.5">
-            <p className="text-[10.5px] font-medium tracking-wide text-muted-foreground uppercase">
-              {t('reviewDelivery.nowPlaying')}
-            </p>
-            <p className="text-sm font-medium">
-              {sourceDisplayLabel(
-                currentSource,
-                citationSources.findIndex((source) => source.sourceVodRef === currentSourceRef),
-              )}
-            </p>
-            <VodPlayer
-              vodUrl={currentSource.vodUrl}
-              startSeconds={startSecondsOverride}
-              seekRef={seekRef}
-              onReady={() => setIsPlayerReady(true)}
-            />
-          </div>
-        ) : (
-          <p className="text-sm text-muted-foreground">{t('reviewDelivery.noSource')}</p>
-        )}
+        <p className="text-sm text-muted-foreground">{t('reviewDelivery.explanation')}</p>
 
-        {snapshot.sections && snapshot.sections.length > 0 ? (
-          <div className="flex flex-col gap-4">
-            {snapshot.sections.map((section) => (
-              <div key={section.id} className="rounded-lg border bg-card">
-                <div className="border-b px-3.5 py-2">
-                  <h2 className="text-sm font-semibold">
-                    {section.kind === 'general'
-                      ? section.title?.trim() ||
-                        t('coaching.reviews.composer.sections.kinds.general')
-                      : t(`coaching.reviews.composer.sections.kinds.${section.kind}`)}
-                  </h2>
-                </div>
-                <div className="px-3.5 py-3">
-                  <SafeMarkdown
-                    body={section.body}
-                    onActivateCitation={handleActivateCitation}
-                    resolveCitationSource={resolveCitationSource}
-                  />
-                </div>
+        <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as DeliveryTab)}>
+          <TabsList>
+            <TabsTrigger value="vodNotes">{t('reviewDelivery.tabs.vodNotes')}</TabsTrigger>
+            <TabsTrigger value="reviewNotes">{t('reviewDelivery.tabs.reviewNotes')}</TabsTrigger>
+          </TabsList>
+
+          <TabsContent value="vodNotes" className="pt-4">
+            <DeliveryVodNotesTab vods={vodNotesSources} />
+          </TabsContent>
+
+          {/* Rule 1 (auto-fixed bug): `forceMount` keeps this panel's `VodPlayer`
+              mounted even while the VOD Notes tab is showing — the D-09/T-12-24
+              crawler-safe Viewed transition below is gated on THIS player's
+              `isReady` (`hasPlayableSource && !isPlayerReady`), so without
+              `forceMount` a recipient who never clicks into Review Notes would
+              never fire Viewed at all. `TabsContent`'s own
+              `data-[state=inactive]:hidden` class still visually hides it. */}
+          <TabsContent value="reviewNotes" forceMount className="flex flex-col gap-4 pt-4">
+            {hasPlayableSource && currentSource ? (
+              <div className="flex flex-col gap-1.5">
+                <p className="text-[10.5px] font-medium tracking-wide text-muted-foreground uppercase">
+                  {t('reviewDelivery.nowPlaying')}
+                </p>
+                <p className="text-sm font-medium">
+                  {sourceDisplayLabel(
+                    currentSource,
+                    citationSources.findIndex((source) => source.sourceVodRef === currentSourceRef),
+                  )}
+                </p>
+                <VodPlayer
+                  vodUrl={currentSource.vodUrl}
+                  startSeconds={startSecondsOverride}
+                  seekRef={seekRef}
+                  onReady={() => setIsPlayerReady(true)}
+                />
               </div>
-            ))}
-          </div>
-        ) : (
-          <p className="text-sm text-muted-foreground">{t('reviewDelivery.sectionsEmpty')}</p>
-        )}
+            ) : (
+              <p className="text-sm text-muted-foreground">{t('reviewDelivery.noSource')}</p>
+            )}
+
+            {snapshot.sections && snapshot.sections.length > 0 ? (
+              <div className="flex flex-col gap-4">
+                {snapshot.sections.map((section) => (
+                  <div key={section.id} className="rounded-lg border bg-card">
+                    <div className="border-b px-3.5 py-2">
+                      <h2 className="text-sm font-semibold">
+                        {section.kind === 'general'
+                          ? section.title?.trim() ||
+                            t('coaching.reviews.composer.sections.kinds.general')
+                          : t(`coaching.reviews.composer.sections.kinds.${section.kind}`)}
+                      </h2>
+                    </div>
+                    <div className="px-3.5 py-3">
+                      <SafeMarkdown
+                        body={section.body}
+                        onActivateCitation={handleActivateCitation}
+                        resolveCitationSource={resolveCitationSource}
+                      />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="text-sm text-muted-foreground">{t('reviewDelivery.sectionsEmpty')}</p>
+            )}
+          </TabsContent>
+        </Tabs>
 
         <div
           className={cn(
@@ -349,24 +412,27 @@ export function ReviewDeliveryPage() {
 
 /**
  * Phase 20 Plan 04 (Coaching Workflow, Training Sessions & VOD-less
- * Reviews, SESS-01/02, T-20-15): a DELIBERATELY minimal `/r/:token` render
- * for a `kind: 'session'` snapshot — coach identity + session date,
- * character-tag chips, the summary via `SafeMarkdown`, a read-only homework
- * checklist, and a linked-VOD reference list (labels only — NO player
- * embed; Phase 21 rebuilds this richly). The snapshot's `session*` fields
- * are the ONLY fields this component reads — there is no path to
+ * Reviews, SESS-01/02, T-20-15) origin, RESTRUCTURED by Phase 21 Plan 02
+ * (DLVX-01) into the SAME two-tab shell the coachReview render above uses:
+ * coach identity + session date + character-tag chips + the explanation
+ * paragraph, then Tabs — "VOD Notes" (`DeliveryVodNotesTab` over the
+ * session's frozen `includedVods`) and "Review Notes" (the summary via
+ * `SafeMarkdown` + the read-only homework checklist). The labels-only
+ * linked-VOD reference list this view used to render is dropped — the rich
+ * VOD Notes tab replaces it. The snapshot's `session*`/`includedVods`
+ * fields are the ONLY fields this component reads — there is no path to
  * `coachPrivateNotes` (structurally absent from the frozen snapshot by
- * shape, per `clientVisibleSessionSchema`/`sessionDeliveries.ts`).
- * Deliberately self-contained and kept small (per this plan's own
- * objective) so Phase 21 can replace it wholesale.
+ * shape, per `clientVisibleSessionSchema`/`sessionDeliveries.ts`). Sessions
+ * still have no ack/CTA/viewed lifecycle (unchanged from Phase 20).
  */
 function SessionDeliveryView({ snapshot }: { snapshot: PublicShareSnapshot }) {
   const { t } = useTranslation();
   const fighterName = useFighterNameResolver();
+  const [activeTab, setActiveTab] = useState<DeliveryTab>('vodNotes');
 
   const characterTags = snapshot.sessionCharacterTags ?? [];
   const homework = snapshot.sessionHomework ?? [];
-  const linkedVodRefs = snapshot.sessionLinkedMatchRefs ?? [];
+  const includedVods = snapshot.includedVods ?? [];
 
   return (
     <PublicLayout>
@@ -395,58 +461,60 @@ function SessionDeliveryView({ snapshot }: { snapshot: PublicShareSnapshot }) {
           </div>
         )}
 
-        {snapshot.sessionSummary ? (
-          <div className="rounded-lg border bg-card px-3.5 py-3">
-            <SafeMarkdown body={snapshot.sessionSummary} />
-          </div>
-        ) : null}
+        <p className="text-sm text-muted-foreground">{t('reviewDelivery.explanation')}</p>
 
-        <div className="flex flex-col gap-2">
-          <h2 className="text-sm font-semibold">{t('reviewDelivery.session.homeworkHeading')}</h2>
-          {homework.length === 0 ? (
-            <p className="text-sm text-muted-foreground">
-              {t('reviewDelivery.session.homeworkEmpty')}
-            </p>
-          ) : (
-            <ul className="flex flex-col gap-1.5">
-              {homework.map((item, index) => (
-                <li key={index} className="flex items-center gap-2 text-sm">
-                  <span
-                    aria-label={
-                      item.done
-                        ? t('reviewDelivery.session.homeworkItemDoneAria', { item: item.text })
-                        : t('reviewDelivery.session.homeworkItemTodoAria', { item: item.text })
-                    }
-                    className={cn(
-                      'flex size-4 shrink-0 items-center justify-center rounded-sm border',
-                      item.done && 'border-green-600 bg-green-600 text-white',
-                    )}
-                  >
-                    {item.done ? <Check className="size-3" /> : null}
-                  </span>
-                  <span className={cn(item.done && 'text-muted-foreground line-through')}>
-                    {item.text}
-                  </span>
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
+        <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as DeliveryTab)}>
+          <TabsList>
+            <TabsTrigger value="vodNotes">{t('reviewDelivery.tabs.vodNotes')}</TabsTrigger>
+            <TabsTrigger value="reviewNotes">{t('reviewDelivery.tabs.reviewNotes')}</TabsTrigger>
+          </TabsList>
 
-        <div className="flex flex-col gap-2">
-          <h2 className="text-sm font-semibold">{t('reviewDelivery.session.linkedVodsHeading')}</h2>
-          {linkedVodRefs.length === 0 ? (
-            <p className="text-sm text-muted-foreground">
-              {t('reviewDelivery.session.linkedVodsEmpty')}
-            </p>
-          ) : (
-            <ul className="flex flex-col gap-1 text-sm">
-              {linkedVodRefs.map((ref) => (
-                <li key={ref}>{t('reviewDelivery.session.linkedVodItem', { ref })}</li>
-              ))}
-            </ul>
-          )}
-        </div>
+          <TabsContent value="vodNotes" className="pt-4">
+            <DeliveryVodNotesTab vods={includedVods} />
+          </TabsContent>
+
+          <TabsContent value="reviewNotes" className="flex flex-col gap-4 pt-4">
+            {snapshot.sessionSummary ? (
+              <div className="rounded-lg border bg-card px-3.5 py-3">
+                <SafeMarkdown body={snapshot.sessionSummary} />
+              </div>
+            ) : null}
+
+            <div className="flex flex-col gap-2">
+              <h2 className="text-sm font-semibold">
+                {t('reviewDelivery.session.homeworkHeading')}
+              </h2>
+              {homework.length === 0 ? (
+                <p className="text-sm text-muted-foreground">
+                  {t('reviewDelivery.session.homeworkEmpty')}
+                </p>
+              ) : (
+                <ul className="flex flex-col gap-1.5">
+                  {homework.map((item, index) => (
+                    <li key={index} className="flex items-center gap-2 text-sm">
+                      <span
+                        aria-label={
+                          item.done
+                            ? t('reviewDelivery.session.homeworkItemDoneAria', { item: item.text })
+                            : t('reviewDelivery.session.homeworkItemTodoAria', { item: item.text })
+                        }
+                        className={cn(
+                          'flex size-4 shrink-0 items-center justify-center rounded-sm border',
+                          item.done && 'border-green-600 bg-green-600 text-white',
+                        )}
+                      >
+                        {item.done ? <Check className="size-3" /> : null}
+                      </span>
+                      <span className={cn(item.done && 'text-muted-foreground line-through')}>
+                        {item.text}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          </TabsContent>
+        </Tabs>
       </div>
     </PublicLayout>
   );

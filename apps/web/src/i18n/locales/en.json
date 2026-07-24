@@ -1923,6 +1923,17 @@
     "sourceFallback": "Source {{index}}",
     "noSource": "This review doesn't cite any footage.",
     "sectionsEmpty": "This review has no content yet.",
+    "explanation": "Watch the referenced footage with click-to-seek notes in the VOD Notes tab, or read the full write-up in the Review Notes tab — no account needed to view this link.",
+    "tabs": {
+      "vodNotes": "VOD Notes",
+      "reviewNotes": "Review Notes"
+    },
+    "vodNotes": {
+      "empty": "No footage was included with this delivery.",
+      "notesEmpty": "No timestamped notes for this VOD.",
+      "notesHeading": "Timestamped notes",
+      "switcherAria": "Choose which VOD to watch"
+    },
     "ack": {
       "prompt": "Let your coach know you've read this.",
       "button": "✓ Acknowledge",
