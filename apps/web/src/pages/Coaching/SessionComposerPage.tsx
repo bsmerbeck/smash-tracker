@@ -3,7 +3,7 @@ import { useParams } from 'react-router';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 import { Lock, Plus, X } from 'lucide-react';
-import type { HomeworkItem } from '@smash-tracker/shared';
+import type { Fighter, HomeworkItem, Match } from '@smash-tracker/shared';
 import {
   HOMEWORK_ITEM_TEXT_MAX_LENGTH,
   MAX_SESSION_CHARACTER_TAGS,
@@ -18,13 +18,16 @@ import {
   useUpdateCoachingSession,
 } from '@/hooks/useCoachingSessions';
 import { useMatches } from '@/hooks/useMatches';
+import { useFighters } from '@/hooks/useFighters';
 import { useFighterNameResolver } from '@/hooks/useFighterName';
+import { getFighterById } from '@/data/sprites';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { PendingButton } from '@/components/ui/pending-button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
+import { AddMatchForm } from '@/pages/Dashboard/components/AddMatchForm';
 import { DeliveryVodPicker } from './components/DeliveryVodPicker';
 
 /** Matches `useReviewAutosave.ts`'s own debounce delay (12-06-PLAN.md's precedent: no new package for a fast-changing edit buffer). */
@@ -117,6 +120,18 @@ export function SessionComposerPage() {
   // used exclusively for `DeliveryVodPicker` (delivery still needs playable
   // VODs).
   const linkableMatches = useMemo(() => matchesData ?? [], [matchesData]);
+  // SESSM-02: fighter options for the embedded "+ Log a match" form — same
+  // primary+secondary sprite lookup MatchDataPage/VodManagerPage use.
+  // `useFighters()` is subject-scoped (useActiveSubject), so this correctly
+  // resolves the active CLIENT's fighter selections here (this page always
+  // renders under /coach/:clientId/...), not the coach's own.
+  const { data: fighterSelection } = useFighters();
+  const fighterSprites = useMemo<Fighter[]>(() => {
+    const ids = [...(fighterSelection?.primary ?? []), ...(fighterSelection?.secondary ?? [])];
+    return ids
+      .map((id) => getFighterById(id))
+      .filter((sprite): sprite is Fighter => sprite != null);
+  }, [fighterSelection]);
 
   const [buffer, setBuffer] = useState<SessionEditBuffer>(() => ({
     date: dateToInputValue(Date.now()),
@@ -130,6 +145,14 @@ export function SessionComposerPage() {
   const [pickerOpen, setPickerOpen] = useState(false);
   const hasInitializedRef = useRef(false);
   const lastSavedRef = useRef<string | null>(null);
+  // SESSM-02 (T-22-03): a Bo3/Bo5 set fires `onCreated` multiple times in a
+  // synchronous burst (once per game), so `handleMatchCreated` below can't
+  // rely on the `buffer` closure captured at render time — a later call in
+  // the same burst would read a stale `linkedMatchIds` and over-append past
+  // the cap. This ref mirrors `buffer.linkedMatchIds` and is updated both by
+  // the effect below (general resync) and synchronously inside
+  // `handleMatchCreated` itself (burst safety).
+  const linkedMatchIdsRef = useRef<string[]>(buffer.linkedMatchIds);
 
   // Seed the local edit buffer from the fetched session exactly ONCE — a
   // background refetch (e.g. window refocus) must never clobber in-progress
@@ -149,6 +172,10 @@ export function SessionComposerPage() {
       lastSavedRef.current = JSON.stringify(seeded);
     }
   }, [sessionQuery.data]);
+
+  useEffect(() => {
+    linkedMatchIdsRef.current = buffer.linkedMatchIds;
+  }, [buffer.linkedMatchIds]);
 
   const debouncedBuffer = useDebouncedValue(buffer, AUTOSAVE_DEBOUNCE_MS);
 
@@ -246,6 +273,34 @@ export function SessionComposerPage() {
       ...prev,
       linkedMatchIds: prev.linkedMatchIds.filter((id) => id !== matchId),
     }));
+  }
+
+  /**
+   * SESSM-02: fired by the embedded "+ Log a match" AddMatchForm once the
+   * match is persisted (once per game in set mode). Appends the id into
+   * `buffer.linkedMatchIds` — which flows into the existing debounced
+   * autosave, no direct `updateSession` call — unless it's already linked
+   * or the session is already at `MAX_SESSION_LINKED_MATCH_IDS`, in which
+   * case the match stays created but unlinked, with a toast explaining why.
+   * Reads/writes `linkedMatchIdsRef` (not `buffer` directly) so a rapid
+   * Bo3/Bo5 burst of calls sees each prior append instead of a stale value.
+   */
+  function handleMatchCreated(match: Match) {
+    const current = linkedMatchIdsRef.current;
+    if (current.includes(match.id)) {
+      return;
+    }
+    if (current.length >= MAX_SESSION_LINKED_MATCH_IDS) {
+      toast.error(
+        t('coaching.sessions.composer.logMatch.capOverflowToast', {
+          max: MAX_SESSION_LINKED_MATCH_IDS,
+        }),
+      );
+      return;
+    }
+    const next = [...current, match.id];
+    linkedMatchIdsRef.current = next;
+    setBuffer((prev) => ({ ...prev, linkedMatchIds: next }));
   }
 
   function handleDeliver() {
@@ -429,7 +484,19 @@ export function SessionComposerPage() {
       </div>
 
       <div className="flex flex-col gap-1.5">
-        <p className="text-sm font-medium">{t('coaching.sessions.composer.linkedMatches.label')}</p>
+        <div className="flex items-center justify-between gap-2">
+          <p className="text-sm font-medium">
+            {t('coaching.sessions.composer.linkedMatches.label')}
+          </p>
+          <AddMatchForm
+            fighterSprites={fighterSprites}
+            fighter={fighterSprites[0]}
+            triggerLabel={t('coaching.sessions.composer.logMatch.trigger')}
+            triggerVariant="outline"
+            triggerSize="sm"
+            onCreated={handleMatchCreated}
+          />
+        </div>
         {buffer.linkedMatchIds.length > 0 && (
           <div className="flex flex-wrap items-center gap-1.5">
             {buffer.linkedMatchIds.map((matchId) => {
