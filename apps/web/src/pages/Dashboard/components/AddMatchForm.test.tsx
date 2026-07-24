@@ -225,6 +225,38 @@ describe('AddMatchForm', () => {
     );
   });
 
+  it('onCreated fires once with the created match in single-game mode', async () => {
+    const onCreated = vi.fn();
+    const user = userEvent.setup();
+    renderForm({}, { onCreated });
+
+    await user.click(screen.getByRole('button', { name: 'Add Match' }));
+    const dialog = await screen.findByRole('dialog');
+
+    await user.click(within(dialog).getByRole('radio', { name: 'Win' }));
+    await fillOpponentName(user, dialog, 'rival');
+    await user.click(within(dialog).getByRole('button', { name: 'Save' }));
+
+    await waitFor(() => expect(createMatch).toHaveBeenCalledTimes(1));
+    expect(onCreated).toHaveBeenCalledTimes(1);
+    expect(onCreated).toHaveBeenCalledWith(expect.objectContaining({ id: 'new-match' }));
+  });
+
+  it('omitting onCreated does not throw and behaves identically (default mount)', async () => {
+    const user = userEvent.setup();
+    renderForm(); // no onCreated prop — matches all 3 existing mount-point signatures
+
+    await user.click(screen.getByRole('button', { name: 'Add Match' }));
+    const dialog = await screen.findByRole('dialog');
+
+    await user.click(within(dialog).getByRole('radio', { name: 'Win' }));
+    await fillOpponentName(user, dialog, 'rival');
+    await user.click(within(dialog).getByRole('button', { name: 'Save' }));
+
+    await waitFor(() => expect(createMatch).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+  });
+
   it('disables the trigger when the user has no fighters selected', () => {
     renderForm({ fighterSprites: [], fighter: undefined });
     expect(screen.getByRole('button', { name: 'Add Match' })).toBeDisabled();
@@ -363,6 +395,54 @@ describe('AddMatchForm', () => {
 
       expect(within(dialog).queryByRole('radio', { name: 'Game 3 Win' })).not.toBeInTheDocument();
       expect(within(dialog).getByTestId('set-score-chip')).toHaveTextContent('2-0');
+    });
+
+    it('onCreated fires once per created game in set mode (Bo3, 2 games)', async () => {
+      const onCreated = vi.fn();
+      createMatch
+        .mockResolvedValueOnce({
+          id: 'g1',
+          fighter_id: mario.id,
+          opponent_id: luigi.id,
+          time: 1,
+          map: { id: 0, name: 'no selection' },
+          opponent: 'powpow',
+          notes: '',
+          matchType: 'none',
+          win: true,
+        })
+        .mockResolvedValueOnce({
+          id: 'g2',
+          fighter_id: mario.id,
+          opponent_id: luigi.id,
+          time: 2,
+          map: { id: 0, name: 'no selection' },
+          opponent: 'powpow',
+          notes: '',
+          matchType: 'none',
+          win: true,
+        });
+      const user = userEvent.setup();
+      renderForm({}, { onCreated });
+
+      await user.click(screen.getByRole('button', { name: 'Add Match' }));
+      const dialog = await screen.findByRole('dialog');
+      await user.click(within(dialog).getByRole('radio', { name: 'Set (Bo3/Bo5)' }));
+
+      await user.click(within(dialog).getByRole('combobox', { name: 'Opponent' }));
+      const opponentInput = await screen.findByPlaceholderText('Type a name...');
+      await user.clear(opponentInput); // pre-filled with 'unknown'
+      await user.type(opponentInput, 'powpow');
+
+      await user.click(within(dialog).getByRole('radio', { name: 'Game 1 Win' }));
+      await user.click(await within(dialog).findByRole('radio', { name: 'Game 2 Win' }));
+
+      await user.click(within(dialog).getByRole('button', { name: 'Save Set' }));
+
+      await waitFor(() => expect(createMatch).toHaveBeenCalledTimes(2));
+      expect(onCreated).toHaveBeenCalledTimes(2);
+      expect(onCreated).toHaveBeenNthCalledWith(1, expect.objectContaining({ id: 'g1' }));
+      expect(onCreated).toHaveBeenNthCalledWith(2, expect.objectContaining({ id: 'g2' }));
     });
 
     it('submits one match per game and shows a single "Set recorded" toast', async () => {
