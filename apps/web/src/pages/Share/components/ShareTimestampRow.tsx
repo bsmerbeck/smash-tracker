@@ -31,12 +31,12 @@ export function ShareTimestampRow({ stamp, isSelected, onSelect }: ShareTimestam
         type="button"
         onClick={() => onSelect(stamp.seconds)}
         className={cn(
-          'flex w-full items-center gap-2 rounded-md border p-2 text-left text-sm',
+          'flex w-full min-w-0 items-start gap-2 rounded-md border p-2 text-left text-sm',
           isSelected && 'bg-accent text-accent-foreground border-l-2 border-primary',
         )}
       >
         <span className="shrink-0 font-mono">{formatTimestamp(stamp.seconds)}</span>
-        <span className="truncate">{stamp.note}</span>
+        <span className="min-w-0 flex-1 whitespace-normal break-words">{stamp.note}</span>
       </button>
       {stamp.tags && stamp.tags.length > 0 && (
         <div className="flex flex-wrap items-center gap-2 pl-2">
