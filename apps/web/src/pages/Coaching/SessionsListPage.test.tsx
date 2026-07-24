@@ -184,13 +184,13 @@ describe('SessionsListPage', () => {
     await waitFor(() => expect(deliveriesRevoke).toHaveBeenCalledWith('tetra', 's1', 'd-active'));
   });
 
-  it('+ New session creates a fresh session and navigates to its composer', async () => {
+  it('New session creates a fresh session and navigates to its composer', async () => {
     sessionsList.mockResolvedValue([]);
     sessionsCreate.mockResolvedValue(makeSession({ sessionId: 's-new' }));
     const user = userEvent.setup();
     renderList();
 
-    await user.click(await screen.findByRole('button', { name: '+ New session' }));
+    await user.click(await screen.findByRole('button', { name: 'New session' }));
 
     expect(await screen.findByTestId('session-composer-stub')).toHaveTextContent(
       '/coach/tetra/sessions/s-new',

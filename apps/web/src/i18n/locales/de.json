@@ -1814,7 +1814,7 @@
       "list": {
         "title": "Bewertungen",
         "subtitle": "Bewertungsstatus und Zustellstatus sind getrennt — ein Entwurf ist nie „ungesehen“, eine Zustellung ist nie „ein Entwurf“.",
-        "newReview": "+ Neue Bewertung",
+        "newReview": "Neue Bewertung",
         "createError": "Beim Starten dieser Bewertung ist ein Fehler aufgetreten.",
         "empty": "Noch keine Bewertungen. Starte eine hier oder von einem VOD im VOD-Manager aus.",
         "listAria": "Bewertungen",
@@ -1861,7 +1861,7 @@
       "list": {
         "title": "Sitzungen",
         "subtitle": "Trainingssitzungen für diesen Client — Hausaufgaben und Zustellstatus stehen hier.",
-        "newSession": "+ Neue Sitzung",
+        "newSession": "Neue Sitzung",
         "createError": "Beim Starten dieser Sitzung ist ein Fehler aufgetreten.",
         "empty": "Noch keine Sitzungen. Erfasse eine, um Hausaufgaben zu verfolgen und sie an deinen Client zuzustellen.",
         "listAria": "Sitzungen",
@@ -1900,7 +1900,7 @@
         "summaryPlaceholder": "Woran habt ihr in dieser Sitzung gearbeitet?",
         "homework": {
           "heading": "Hausaufgaben",
-          "add": "+ Aufgabe hinzufügen",
+          "add": "Aufgabe hinzufügen",
           "itemPlaceholder": "Was sollte geübt werden?",
           "toggleAria": "\"{{item}}\" als erledigt markieren",
           "remove": "Aufgabe entfernen",

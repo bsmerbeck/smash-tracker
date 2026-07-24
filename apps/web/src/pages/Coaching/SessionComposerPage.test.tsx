@@ -155,7 +155,7 @@ describe('SessionComposerPage', () => {
     renderComposer();
     await screen.findByDisplayValue('Practice ledgetraps');
 
-    await userEvent.setup().click(screen.getByRole('button', { name: '+ Add item' }));
+    await userEvent.setup().click(screen.getByRole('button', { name: 'Add item' }));
 
     vi.useFakeTimers();
     await act(async () => {
@@ -211,11 +211,11 @@ describe('SessionComposerPage', () => {
     );
   });
 
-  it('disables "+ Add item" and shows the cap notice at the homework cap (20)', async () => {
+  it('disables "Add item" and shows the cap notice at the homework cap (20)', async () => {
     sessionsGet.mockResolvedValue(makeSession({ homework: makeHomework(20) }));
     renderComposer();
 
-    expect(await screen.findByRole('button', { name: '+ Add item' })).toBeDisabled();
+    expect(await screen.findByRole('button', { name: 'Add item' })).toBeDisabled();
     expect(screen.getByText('Up to 20 homework items.')).toBeInTheDocument();
   });
 

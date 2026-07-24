@@ -292,13 +292,13 @@ describe('ReviewsListPage', () => {
     await waitFor(() => expect(reviewsArchive).toHaveBeenCalledWith('tetra', 'r1'));
   });
 
-  it('+ New review creates a fresh draft and navigates to its composer', async () => {
+  it('New review creates a fresh draft and navigates to its composer', async () => {
     reviewsList.mockResolvedValue([]);
     reviewsCreate.mockResolvedValue({ reviewId: 'r-new', revision: 0 });
     const user = userEvent.setup();
     renderList();
 
-    await user.click(await screen.findByRole('button', { name: '+ New review' }));
+    await user.click(await screen.findByRole('button', { name: 'New review' }));
 
     expect(await screen.findByTestId('review-composer-stub')).toHaveTextContent(
       '/coach/tetra/reviews/r-new',

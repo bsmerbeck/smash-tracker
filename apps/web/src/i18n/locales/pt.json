@@ -1814,7 +1814,7 @@
       "list": {
         "title": "Revisões",
         "subtitle": "O status da análise e o status da entrega são separados — um rascunho nunca é \"não visualizado\", uma entrega nunca é \"um rascunho\".",
-        "newReview": "+ Nova revisão",
+        "newReview": "Nova revisão",
         "createError": "Ocorreu um erro ao iniciar esta revisão.",
         "empty": "Ainda não há revisões. Comece uma por aqui ou a partir de um VOD no Gerenciador de VODs.",
         "listAria": "Revisões",
@@ -1861,7 +1861,7 @@
       "list": {
         "title": "Sessões",
         "subtitle": "Sessões de treino registradas para este cliente — tarefas e status de entrega ficam aqui.",
-        "newSession": "+ Nova sessão",
+        "newSession": "Nova sessão",
         "createError": "Ocorreu um erro ao iniciar esta sessão.",
         "empty": "Ainda não há sessões. Registre uma para acompanhar as tarefas e entregá-la ao seu cliente.",
         "listAria": "Sessões",
@@ -1900,7 +1900,7 @@
         "summaryPlaceholder": "No que vocês trabalharam nesta sessão?",
         "homework": {
           "heading": "Tarefas",
-          "add": "+ Adicionar tarefa",
+          "add": "Adicionar tarefa",
           "itemPlaceholder": "O que ele(a) deveria praticar?",
           "toggleAria": "Marcar \"{{item}}\" como concluída",
           "remove": "Remover tarefa",

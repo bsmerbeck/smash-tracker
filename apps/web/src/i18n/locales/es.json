@@ -1814,7 +1814,7 @@
       "list": {
         "title": "Reseñas",
         "subtitle": "El estado de la reseña y el estado de la entrega son independientes — un borrador nunca está \"sin ver\", una entrega nunca es \"un borrador\".",
-        "newReview": "+ Nueva reseña",
+        "newReview": "Nueva reseña",
         "createError": "Ocurrió un error al iniciar esta reseña.",
         "empty": "Aún no hay reseñas. Empieza una desde aquí o desde un VOD en el Gestor de VODs.",
         "listAria": "Reseñas",
@@ -1861,7 +1861,7 @@
       "list": {
         "title": "Sesiones",
         "subtitle": "Las sesiones de entrenamiento registradas para este cliente — las tareas y el estado de entrega están aquí.",
-        "newSession": "+ Nueva sesión",
+        "newSession": "Nueva sesión",
         "createError": "Ocurrió un error al iniciar esta sesión.",
         "empty": "Aún no hay sesiones. Registra una para empezar a seguir las tareas y entregarla a tu cliente.",
         "listAria": "Sesiones",
@@ -1900,7 +1900,7 @@
         "summaryPlaceholder": "¿En qué trabajasteis en esta sesión?",
         "homework": {
           "heading": "Tareas",
-          "add": "+ Añadir tarea",
+          "add": "Añadir tarea",
           "itemPlaceholder": "¿Qué debería practicar?",
           "toggleAria": "Marcar \"{{item}}\" como hecha",
           "remove": "Quitar tarea",

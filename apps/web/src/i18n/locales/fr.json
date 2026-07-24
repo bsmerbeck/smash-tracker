@@ -1814,7 +1814,7 @@
       "list": {
         "title": "Revues",
         "subtitle": "Le statut de la revue et le statut de livraison sont distincts — un brouillon n'est jamais \"non consulté\", une livraison n'est jamais \"un brouillon\".",
-        "newReview": "+ Nouvelle revue",
+        "newReview": "Nouvelle revue",
         "createError": "Une erreur s'est produite lors du démarrage de cette revue.",
         "empty": "Pas encore de revues. Commencez-en une ici ou depuis un VOD dans le gestionnaire de VOD.",
         "listAria": "Revues",
@@ -1861,7 +1861,7 @@
       "list": {
         "title": "Séances",
         "subtitle": "Les séances d'entraînement enregistrées pour ce client — devoirs et statut de livraison sont ici.",
-        "newSession": "+ Nouvelle séance",
+        "newSession": "Nouvelle séance",
         "createError": "Une erreur s'est produite lors du démarrage de cette séance.",
         "empty": "Pas encore de séances. Enregistrez-en une pour suivre les devoirs et la livrer à votre client.",
         "listAria": "Séances",
@@ -1900,7 +1900,7 @@
         "summaryPlaceholder": "Sur quoi avez-vous travaillé pendant cette séance ?",
         "homework": {
           "heading": "Devoirs",
-          "add": "+ Ajouter un devoir",
+          "add": "Ajouter un devoir",
           "itemPlaceholder": "Que devrait-il/elle pratiquer ?",
           "toggleAria": "Marquer \"{{item}}\" comme fait",
           "remove": "Retirer ce devoir",
