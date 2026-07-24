@@ -1704,6 +1704,16 @@
       "fighterAnalysis": "Análise de personagem",
       "matchups": "Confrontos"
     },
+    "deliveryVodPicker": {
+      "title": "Escolha os VODs a incluir",
+      "description": "Escolha até {{max}} VODs da biblioteca deste cliente para incluir nesta entrega. As notas com marcação de tempo viajam junto.",
+      "empty": "Este cliente ainda não tem VODs — você ainda pode enviar esta entrega sem nenhuma gravação.",
+      "capReached": "Até {{max}} VODs podem ser incluídos.",
+      "confirm": "Entregar",
+      "cancel": "Cancelar",
+      "selectedCount_one": "{{count}} VOD selecionado",
+      "selectedCount_other": "{{count}} VODs selecionados"
+    },
     "reviews": {
       "composer": {
         "loadError": "Algo deu errado ao carregar esta análise.",
