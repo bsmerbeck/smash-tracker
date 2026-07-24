@@ -1907,12 +1907,13 @@
           "capReached": "Up to {{max}} homework items.",
           "empty": "No homework yet."
         },
-        "linkedVods": {
-          "label": "Linked VODs",
-          "addPlaceholder": "Link a VOD…",
-          "capReached": "Up to {{max}} linked VODs.",
-          "removeAria": "Unlink {{vod}}",
-          "empty": "No VODs in this client's library yet."
+        "linkedMatches": {
+          "label": "Linked matches",
+          "addPlaceholder": "Link a match…",
+          "capReached": "Up to {{max}} linked matches.",
+          "removeAria": "Unlink {{match}}",
+          "empty": "No matches in this client's library yet.",
+          "noVodHint": "No VOD"
         },
         "privateNotes": {
           "label": "🔒 Private notes",

@@ -1907,12 +1907,13 @@
           "capReached": "Hasta {{max}} tareas.",
           "empty": "Aún no hay tareas."
         },
-        "linkedVods": {
-          "label": "VODs vinculados",
-          "addPlaceholder": "Vincular un VOD…",
-          "capReached": "Hasta {{max}} VODs vinculados.",
-          "removeAria": "Desvincular {{vod}}",
-          "empty": "Este cliente aún no tiene VODs en su biblioteca."
+        "linkedMatches": {
+          "label": "Partidas vinculadas",
+          "addPlaceholder": "Vincular una partida…",
+          "capReached": "Hasta {{max}} partidas vinculadas.",
+          "removeAria": "Desvincular {{match}}",
+          "empty": "Aún no hay partidas en la biblioteca de este cliente.",
+          "noVodHint": "Sin VOD"
         },
         "privateNotes": {
           "label": "🔒 Notas privadas",
