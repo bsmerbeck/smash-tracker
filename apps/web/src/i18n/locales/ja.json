@@ -1907,6 +1907,13 @@
           "capReached": "宿題は最大{{max}}件までです。",
           "empty": "宿題はまだありません。"
         },
+        "linkedVods": {
+          "label": "リンクされたVOD",
+          "addPlaceholder": "VODをリンク…",
+          "capReached": "リンクできるVODは最大{{max}}件までです。",
+          "removeAria": "{{vod}}のリンクを解除",
+          "empty": "このクライアントのライブラリにはまだVODがありません。"
+        },
         "privateNotes": {
           "label": "🔒 非公開メモ",
           "helper": "これはあなただけが見られます。クライアントには配信されません。",

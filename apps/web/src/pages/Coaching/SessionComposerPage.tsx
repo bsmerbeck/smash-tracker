@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useParams } from 'react-router';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
@@ -8,6 +8,7 @@ import {
   HOMEWORK_ITEM_TEXT_MAX_LENGTH,
   MAX_SESSION_CHARACTER_TAGS,
   MAX_SESSION_HOMEWORK_ITEMS,
+  MAX_SESSION_LINKED_MATCH_IDS,
   SpriteList,
 } from '@smash-tracker/shared';
 import {
@@ -16,6 +17,7 @@ import {
   useToggleHomeworkItem,
   useUpdateCoachingSession,
 } from '@/hooks/useCoachingSessions';
+import { useMatches } from '@/hooks/useMatches';
 import { useFighterNameResolver } from '@/hooks/useFighterName';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -23,6 +25,7 @@ import { PendingButton } from '@/components/ui/pending-button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
+import { DeliveryVodPicker } from './components/DeliveryVodPicker';
 
 /** Matches `useReviewAutosave.ts`'s own debounce delay (12-06-PLAN.md's precedent: no new package for a fast-changing edit buffer). */
 const AUTOSAVE_DEBOUNCE_MS = 1200;
@@ -46,6 +49,7 @@ interface SessionEditBuffer {
   characterTags: number[];
   summary: string;
   homework: HomeworkItem[];
+  linkedMatchIds: string[];
   coachPrivateNotes: string | null;
 }
 
@@ -97,15 +101,27 @@ export function SessionComposerPage() {
   const toggleHomework = useToggleHomeworkItem(clientId, sessionId);
   const createDelivery = useCreateSessionDelivery(clientId, sessionId);
   const fighterName = useFighterNameResolver();
+  // Phase 21 (DLVX-04): the Deliver picker's candidate list — every
+  // VOD-bearing match in the client's library, same `useMatches()` +
+  // `vodUrl != null` filter every other VOD-picking surface in this app
+  // uses (`ReviewComposerPage.tsx`, `DeliveryVodPicker`'s own caller in
+  // `ReviewsListPage.tsx`).
+  const { data: matchesData } = useMatches();
+  const vods = useMemo(
+    () => (matchesData ?? []).filter((match) => match.vodUrl != null),
+    [matchesData],
+  );
 
   const [buffer, setBuffer] = useState<SessionEditBuffer>(() => ({
     date: dateToInputValue(Date.now()),
     characterTags: [],
     summary: '',
     homework: [],
+    linkedMatchIds: [],
     coachPrivateNotes: null,
   }));
   const [status, setStatus] = useState<SaveStatus>('idle');
+  const [pickerOpen, setPickerOpen] = useState(false);
   const hasInitializedRef = useRef(false);
   const lastSavedRef = useRef<string | null>(null);
 
@@ -120,6 +136,7 @@ export function SessionComposerPage() {
         characterTags: sessionQuery.data.characterTags,
         summary: sessionQuery.data.summary,
         homework: sessionQuery.data.homework,
+        linkedMatchIds: sessionQuery.data.linkedMatchIds ?? [],
         coachPrivateNotes: sessionQuery.data.coachPrivateNotes,
       };
       setBuffer(seeded);
@@ -144,6 +161,7 @@ export function SessionComposerPage() {
         characterTags: debouncedBuffer.characterTags,
         summary: debouncedBuffer.summary,
         homework: debouncedBuffer.homework,
+        linkedMatchIds: debouncedBuffer.linkedMatchIds,
         coachPrivateNotes: debouncedBuffer.coachPrivateNotes,
       },
       {
@@ -162,6 +180,7 @@ export function SessionComposerPage() {
 
   const homeworkCapReached = buffer.homework.length >= MAX_SESSION_HOMEWORK_ITEMS;
   const tagsCapReached = buffer.characterTags.length >= MAX_SESSION_CHARACTER_TAGS;
+  const linkedVodsCapReached = buffer.linkedMatchIds.length >= MAX_SESSION_LINKED_MATCH_IDS;
 
   function handleAddHomeworkItem() {
     if (homeworkCapReached) {
@@ -209,11 +228,28 @@ export function SessionComposerPage() {
     }));
   }
 
-  async function handleDeliver() {
+  function handleAddLinkedVod(matchId: string) {
+    if (linkedVodsCapReached || buffer.linkedMatchIds.includes(matchId)) {
+      return;
+    }
+    setBuffer((prev) => ({ ...prev, linkedMatchIds: [...prev.linkedMatchIds, matchId] }));
+  }
+
+  function handleRemoveLinkedVod(matchId: string) {
+    setBuffer((prev) => ({
+      ...prev,
+      linkedMatchIds: prev.linkedMatchIds.filter((id) => id !== matchId),
+    }));
+  }
+
+  function handleDeliver() {
+    setPickerOpen(true);
+  }
+
+  async function handleConfirmDeliver(selectedMatchIds: string[]) {
     try {
-      // TODO(Phase 21 Plan 03, Task 3): wire this through DeliveryVodPicker
-      // instead of instant-firing — tracked as this plan's next task.
-      const result = await createDelivery.mutateAsync(undefined);
+      const result = await createDelivery.mutateAsync({ includedVods: selectedMatchIds });
+      setPickerOpen(false);
       if (typeof navigator !== 'undefined' && navigator.clipboard) {
         try {
           await navigator.clipboard.writeText(result.url);
@@ -386,6 +422,69 @@ export function SessionComposerPage() {
         )}
       </div>
 
+      <div className="flex flex-col gap-1.5">
+        <p className="text-sm font-medium">{t('coaching.sessions.composer.linkedVods.label')}</p>
+        {buffer.linkedMatchIds.length > 0 && (
+          <div className="flex flex-wrap items-center gap-1.5">
+            {buffer.linkedMatchIds.map((matchId) => {
+              const match = vods.find((candidate) => candidate.id === matchId);
+              const label = match
+                ? `${fighterName(match.fighter_id)} ${t('matchups.vs')} ${fighterName(match.opponent_id)}`
+                : matchId;
+              return (
+                <Badge key={matchId} variant="outline" className="gap-1">
+                  {label}
+                  <button
+                    type="button"
+                    onClick={() => handleRemoveLinkedVod(matchId)}
+                    aria-label={t('coaching.sessions.composer.linkedVods.removeAria', {
+                      vod: label,
+                    })}
+                  >
+                    <X className="size-3" />
+                  </button>
+                </Badge>
+              );
+            })}
+          </div>
+        )}
+        {vods.length === 0 ? (
+          <p className="text-xs text-muted-foreground">
+            {t('coaching.sessions.composer.linkedVods.empty')}
+          </p>
+        ) : (
+          <select
+            aria-label={t('coaching.sessions.composer.linkedVods.label')}
+            value=""
+            disabled={linkedVodsCapReached}
+            onChange={(event) => {
+              const matchId = event.target.value;
+              if (matchId) {
+                handleAddLinkedVod(matchId);
+              }
+            }}
+            className="h-9 w-fit rounded-md border border-input bg-transparent px-3 text-sm"
+          >
+            <option value="">{t('coaching.sessions.composer.linkedVods.addPlaceholder')}</option>
+            {vods
+              .filter((match) => !buffer.linkedMatchIds.includes(match.id))
+              .map((match) => (
+                <option key={match.id} value={match.id}>
+                  {fighterName(match.fighter_id)} {t('matchups.vs')}{' '}
+                  {fighterName(match.opponent_id)}
+                </option>
+              ))}
+          </select>
+        )}
+        {linkedVodsCapReached && (
+          <p className="text-xs text-muted-foreground">
+            {t('coaching.sessions.composer.linkedVods.capReached', {
+              max: MAX_SESSION_LINKED_MATCH_IDS,
+            })}
+          </p>
+        )}
+      </div>
+
       <div className="flex flex-col gap-3">
         <div className="flex items-center gap-2 rounded-md border border-amber-300 bg-amber-50 px-3.5 py-2.5 text-sm font-semibold text-amber-900 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-200">
           <Lock className="size-4 shrink-0" />
@@ -404,6 +503,15 @@ export function SessionComposerPage() {
           {t('coaching.sessions.composer.privateNotes.helper')}
         </p>
       </div>
+
+      <DeliveryVodPicker
+        open={pickerOpen}
+        onOpenChange={setPickerOpen}
+        vods={vods}
+        defaultSelectedMatchIds={buffer.linkedMatchIds}
+        onConfirm={handleConfirmDeliver}
+        isPending={createDelivery.isPending}
+      />
     </div>
   );
 }

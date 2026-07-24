@@ -1907,6 +1907,13 @@
           "capReached": "Up to {{max}} homework items.",
           "empty": "No homework yet."
         },
+        "linkedVods": {
+          "label": "Linked VODs",
+          "addPlaceholder": "Link a VOD…",
+          "capReached": "Up to {{max}} linked VODs.",
+          "removeAria": "Unlink {{vod}}",
+          "empty": "No VODs in this client's library yet."
+        },
         "privateNotes": {
           "label": "🔒 Private notes",
           "helper": "Only you can see this. Never delivered to the client.",

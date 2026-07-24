@@ -1907,6 +1907,13 @@
           "capReached": "Bis zu {{max}} Hausaufgaben.",
           "empty": "Noch keine Hausaufgaben."
         },
+        "linkedVods": {
+          "label": "Verknüpfte VODs",
+          "addPlaceholder": "VOD verknüpfen…",
+          "capReached": "Bis zu {{max}} verknüpfte VODs.",
+          "removeAria": "{{vod}} entfernen",
+          "empty": "Dieser Client hat noch keine VODs in seiner Bibliothek."
+        },
         "privateNotes": {
           "label": "🔒 Private Notizen",
           "helper": "Nur du kannst das sehen. Wird nie an den Client zugestellt.",

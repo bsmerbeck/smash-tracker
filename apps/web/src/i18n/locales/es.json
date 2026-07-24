@@ -1907,6 +1907,13 @@
           "capReached": "Hasta {{max}} tareas.",
           "empty": "Aún no hay tareas."
         },
+        "linkedVods": {
+          "label": "VODs vinculados",
+          "addPlaceholder": "Vincular un VOD…",
+          "capReached": "Hasta {{max}} VODs vinculados.",
+          "removeAria": "Desvincular {{vod}}",
+          "empty": "Este cliente aún no tiene VODs en su biblioteca."
+        },
         "privateNotes": {
           "label": "🔒 Notas privadas",
           "helper": "Solo tú puedes ver esto. Nunca se entrega al cliente.",

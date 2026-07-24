@@ -1,18 +1,21 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router';
 import { useTranslation } from 'react-i18next';
 import type { TFunction } from 'i18next';
 import { toast } from 'sonner';
 import { MoreHorizontal, Plus } from 'lucide-react';
+import { extractCitationTokens } from '@smash-tracker/shared';
 import type { ReviewDeliveryListItem, ReviewListItem } from '@/lib/api';
 import {
   useArchiveCoachingReview,
+  useCoachingReviewDraft,
   useCoachingReviews,
   useCreateCoachingReview,
   useCreateReviewDelivery,
   useReviewDeliveries,
   useRevokeReviewDelivery,
 } from '@/hooks/useCoachingReviews';
+import { useMatches } from '@/hooks/useMatches';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
@@ -21,6 +24,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import { DeliveryVodPicker } from './components/DeliveryVodPicker';
 
 /** D-05: `Draft / Published vN / Archived` — the review-side state machine. Never mixed with the delivery chip below. */
 function ReviewStatusBadge({ item }: { item: ReviewListItem }) {
@@ -88,10 +92,36 @@ interface ReviewDeliveryMenuProps {
 function ReviewDeliveryMenu({ clientId, review }: ReviewDeliveryMenuProps) {
   const { t } = useTranslation();
   const [open, setOpen] = useState(false);
+  const [pickerOpen, setPickerOpen] = useState(false);
   const deliveries = useReviewDeliveries(clientId, review.reviewId, { enabled: open });
   const createDelivery = useCreateReviewDelivery(clientId, review.reviewId);
   const revokeDelivery = useRevokeReviewDelivery(clientId, review.reviewId);
   const archiveReview = useArchiveCoachingReview(clientId);
+  // Phase 21 (DLVX-04): the picker's candidate list (every VOD-bearing match
+  // in the client's library, the same `useMatches()` + `vodUrl != null`
+  // filter `ReviewComposerPage.tsx` already applies) and its default
+  // selection — the review's CITED matchIds. The draft fetch is opt-in
+  // (`enabled: pickerOpen`) so a closed menu never fetches it; if the draft
+  // is unavailable for any reason, the default falls back to an empty
+  // selection (the coach can still pick manually — graceful, T-21-07).
+  const draftQuery = useCoachingReviewDraft(clientId, review.reviewId, { enabled: pickerOpen });
+  const { data: matchesData } = useMatches();
+  const vods = useMemo(
+    () => (matchesData ?? []).filter((match) => match.vodUrl != null),
+    [matchesData],
+  );
+  const citedMatchIds = useMemo(() => {
+    if (!draftQuery.data) {
+      return [];
+    }
+    const ids = new Set<string>();
+    for (const section of draftQuery.data.sections) {
+      for (const token of extractCitationTokens(section.body)) {
+        ids.add(token.sourceVodRef);
+      }
+    }
+    return Array.from(ids);
+  }, [draftQuery.data]);
 
   const activeDelivery: ReviewDeliveryListItem | null =
     deliveries.data?.find((delivery) => delivery.revokedAt == null) ?? null;
@@ -109,10 +139,19 @@ function ReviewDeliveryMenu({ clientId, review }: ReviewDeliveryMenuProps) {
     }
   }
 
-  async function handleDeliver() {
+  function handleDeliver() {
+    if (!review.latestVersion) return;
+    setPickerOpen(true);
+  }
+
+  async function handleConfirmDeliver(selectedMatchIds: string[]) {
     if (!review.latestVersion) return;
     try {
-      const result = await createDelivery.mutateAsync({ version: review.latestVersion });
+      const result = await createDelivery.mutateAsync({
+        version: review.latestVersion,
+        includedVods: selectedMatchIds,
+      });
+      setPickerOpen(false);
       await copyToClipboard(result.url);
       toast.success(t('coaching.reviews.list.delivery.createdToast'));
     } catch {
@@ -146,32 +185,47 @@ function ReviewDeliveryMenu({ clientId, review }: ReviewDeliveryMenuProps) {
   }
 
   return (
-    <DropdownMenu open={open} onOpenChange={setOpen}>
-      <DropdownMenuTrigger asChild>
-        <Button
-          type="button"
-          variant="outline"
-          size="icon-sm"
-          aria-label={t('coaching.reviews.list.deliveryMenuAria')}
-        >
-          <MoreHorizontal className="size-4" />
-        </Button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="end">
-        <DropdownMenuItem disabled={!canDeliver} onSelect={handleDeliver}>
-          {t('coaching.reviews.list.actions.deliver')}
-        </DropdownMenuItem>
-        <DropdownMenuItem disabled={!activeDelivery} onSelect={handleCopyLink}>
-          {t('coaching.reviews.list.actions.copyLink')}
-        </DropdownMenuItem>
-        <DropdownMenuItem disabled={!activeDelivery} onSelect={handleRevoke}>
-          {t('coaching.reviews.list.actions.revokeLink')}
-        </DropdownMenuItem>
-        <DropdownMenuItem variant="destructive" onSelect={handleArchive}>
-          {t('coaching.reviews.list.actions.archive')}
-        </DropdownMenuItem>
-      </DropdownMenuContent>
-    </DropdownMenu>
+    <>
+      <DropdownMenu open={open} onOpenChange={setOpen}>
+        <DropdownMenuTrigger asChild>
+          <Button
+            type="button"
+            variant="outline"
+            size="icon-sm"
+            aria-label={t('coaching.reviews.list.deliveryMenuAria')}
+          >
+            <MoreHorizontal className="size-4" />
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end">
+          <DropdownMenuItem disabled={!canDeliver} onSelect={handleDeliver}>
+            {t('coaching.reviews.list.actions.deliver')}
+          </DropdownMenuItem>
+          <DropdownMenuItem disabled={!activeDelivery} onSelect={handleCopyLink}>
+            {t('coaching.reviews.list.actions.copyLink')}
+          </DropdownMenuItem>
+          <DropdownMenuItem disabled={!activeDelivery} onSelect={handleRevoke}>
+            {t('coaching.reviews.list.actions.revokeLink')}
+          </DropdownMenuItem>
+          <DropdownMenuItem variant="destructive" onSelect={handleArchive}>
+            {t('coaching.reviews.list.actions.archive')}
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+      {/* Phase 21 (DLVX-04): rendered as a SIBLING of the DropdownMenu (never
+          nested inside it), mirroring `MatchTable.tsx`'s own established
+          Dialog/AlertDialog-outside-the-menu pattern — a Dialog nested
+          inside an open Menu can hit Radix's pointer-events-lock overlap
+          during the menu's own close animation. */}
+      <DeliveryVodPicker
+        open={pickerOpen}
+        onOpenChange={setPickerOpen}
+        vods={vods}
+        defaultSelectedMatchIds={citedMatchIds}
+        onConfirm={handleConfirmDeliver}
+        isPending={createDelivery.isPending}
+      />
+    </>
   );
 }
 

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Check } from 'lucide-react';
 import type { Match } from '@smash-tracker/shared';
@@ -54,25 +54,34 @@ export function DeliveryVodPicker({
   const fighterName = useFighterNameResolver();
 
   const [selected, setSelected] = useState<string[]>(defaultSelectedMatchIds);
-  // "Adjusting state when a prop changes" (React's own documented pattern,
-  // already established in this codebase by `DeliveryVodNotesTab`'s
-  // render-time `currentMatchId` seeding): re-seed the local selection ONLY
-  // on the closed -> open transition, tracked via a previous-open snapshot —
-  // never on every render, which would otherwise reset an in-progress
-  // selection any time `defaultSelectedMatchIds` gets a fresh array identity
-  // from the parent (e.g. an unrelated query refetch while the dialog is
-  // still open).
-  const [wasOpen, setWasOpen] = useState(open);
-  if (open !== wasOpen) {
-    setWasOpen(open);
+  // The review-cited default (`ReviewsListPage`) is resolved by a query that
+  // only becomes `enabled` once the dialog is ALREADY open (its draft fetch
+  // is opt-in — see `useCoachingReviewDraft`'s own doc comment), so
+  // `defaultSelectedMatchIds` frequently arrives as `[]` on the very render
+  // that opens this dialog and only resolves to the real cited set a tick
+  // later. `touchedRef` tracks whether the coach has manually toggled a row
+  // since the dialog opened — while it's untouched, this keeps following
+  // `defaultSelectedMatchIds` (so the late-arriving cited/linked default
+  // still lands); the moment the coach touches a row, it stops following,
+  // so an unrelated parent re-render never clobbers an in-progress pick.
+  const touchedRef = useRef(false);
+
+  useEffect(() => {
     if (open) {
+      touchedRef.current = false;
+    }
+  }, [open]);
+
+  useEffect(() => {
+    if (open && !touchedRef.current) {
       setSelected(defaultSelectedMatchIds);
     }
-  }
+  }, [open, defaultSelectedMatchIds]);
 
   const capReached = selected.length >= MAX_DELIVERY_VODS;
 
   function toggle(matchId: string) {
+    touchedRef.current = true;
     setSelected((prev) => {
       if (prev.includes(matchId)) {
         return prev.filter((id) => id !== matchId);

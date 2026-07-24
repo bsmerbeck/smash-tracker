@@ -1907,6 +1907,13 @@
           "capReached": "Jusqu'à {{max}} devoirs.",
           "empty": "Pas encore de devoirs."
         },
+        "linkedVods": {
+          "label": "VODs liés",
+          "addPlaceholder": "Lier un VOD…",
+          "capReached": "Jusqu'à {{max}} VODs liés.",
+          "removeAria": "Délier {{vod}}",
+          "empty": "Ce client n'a pas encore de VOD dans sa bibliothèque."
+        },
         "privateNotes": {
           "label": "🔒 Notes privées",
           "helper": "Vous seul pouvez voir ceci. Jamais livré au client.",

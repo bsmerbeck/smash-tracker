@@ -3,6 +3,7 @@ import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import type { Match, ReviewDraft } from '@smash-tracker/shared';
 import type { ReviewDeliveryListItem, ReviewListItem } from '@/lib/api';
 import { resetAuthMock, setMockUser, makeMockUser } from '@/test/mockAuth';
 
@@ -28,17 +29,21 @@ vi.mock('@/lib/firebase', async () => {
 const reviewsList = vi.fn();
 const reviewsCreate = vi.fn();
 const reviewsArchive = vi.fn();
+const reviewsGetDraft = vi.fn();
 const deliveriesList = vi.fn();
 const deliveriesCreate = vi.fn();
 const deliveriesRevoke = vi.fn();
+const matchesList = vi.fn();
 
 vi.mock('@/lib/api', () => ({
   api: {
+    matches: { list: (...args: unknown[]) => matchesList(...args) },
     coaching: {
       reviews: {
         list: (...args: unknown[]) => reviewsList(...args),
         create: (...args: unknown[]) => reviewsCreate(...args),
         archive: (...args: unknown[]) => reviewsArchive(...args),
+        getDraft: (...args: unknown[]) => reviewsGetDraft(...args),
         deliveries: {
           list: (...args: unknown[]) => deliveriesList(...args),
           create: (...args: unknown[]) => deliveriesCreate(...args),
@@ -83,6 +88,30 @@ function makeDelivery(overrides: Partial<ReviewDeliveryListItem> = {}): ReviewDe
   };
 }
 
+function makeMatch(overrides: Partial<Match> = {}): Match {
+  return {
+    id: 'm1',
+    fighter_id: 1,
+    opponent_id: 10,
+    opponent: 'Zain',
+    time: 1_700_000_000_000,
+    win: true,
+    vodUrl: 'https://youtu.be/abc123',
+    ...overrides,
+  } as Match;
+}
+
+function makeDraft(overrides: Partial<ReviewDraft> = {}): ReviewDraft {
+  return {
+    revision: 0,
+    sections: [],
+    coachPrivateNotes: null,
+    lastAutosavedAt: 1_700_000_000_000,
+    createdAt: 1_700_000_000_000,
+    ...overrides,
+  };
+}
+
 function ReviewComposerStub() {
   const location = useLocation();
   return <div data-testid="review-composer-stub">{location.pathname}</div>;
@@ -112,6 +141,8 @@ describe('ReviewsListPage', () => {
     vi.clearAllMocks();
     setMockUser(makeMockUser());
     deliveriesList.mockResolvedValue([]);
+    matchesList.mockResolvedValue([makeMatch()]);
+    reviewsGetDraft.mockResolvedValue(makeDraft());
   });
 
   it('shows a dash delivery chip (never "Not delivered") for a draft review', async () => {
@@ -165,10 +196,25 @@ describe('ReviewsListPage', () => {
     );
   });
 
-  it('Deliver mints a delivery for the published latestVersion', async () => {
+  it('Deliver opens the VOD picker and does not mint until confirmed', async () => {
     reviewsList.mockResolvedValue([
       makeReview({ status: 'published', latestVersion: 3, deliveryState: 'not-delivered' }),
     ]);
+    const user = userEvent.setup();
+    renderList();
+
+    await user.click(await screen.findByRole('button', { name: 'Delivery and more actions' }));
+    await user.click(await screen.findByRole('menuitem', { name: 'Deliver' }));
+
+    expect(await screen.findByText('Choose VODs to include')).toBeInTheDocument();
+    expect(deliveriesCreate).not.toHaveBeenCalled();
+  });
+
+  it('confirming the picker mints a delivery for the published latestVersion with the chosen includedVods', async () => {
+    reviewsList.mockResolvedValue([
+      makeReview({ status: 'published', latestVersion: 3, deliveryState: 'not-delivered' }),
+    ]);
+    matchesList.mockResolvedValue([makeMatch({ id: 'm1' })]);
     deliveriesCreate.mockResolvedValue({
       deliveryId: 'd1',
       token: 'tok1',
@@ -179,10 +225,44 @@ describe('ReviewsListPage', () => {
 
     await user.click(await screen.findByRole('button', { name: 'Delivery and more actions' }));
     await user.click(await screen.findByRole('menuitem', { name: 'Deliver' }));
+    await user.click(await screen.findByRole('button', { name: /Mario/ }));
+    await user.click(screen.getByRole('button', { name: 'Deliver' }));
 
     await waitFor(() =>
-      expect(deliveriesCreate).toHaveBeenCalledWith('tetra', 'r1', { version: 3 }),
+      expect(deliveriesCreate).toHaveBeenCalledWith('tetra', 'r1', {
+        version: 3,
+        includedVods: ['m1'],
+      }),
     );
+  });
+
+  it("pre-checks the picker with the review's cited matchIds", async () => {
+    reviewsList.mockResolvedValue([
+      makeReview({ status: 'published', latestVersion: 3, deliveryState: 'not-delivered' }),
+    ]);
+    matchesList.mockResolvedValue([makeMatch({ id: 'm1' }), makeMatch({ id: 'm2' })]);
+    reviewsGetDraft.mockResolvedValue(
+      makeDraft({
+        sections: [
+          {
+            id: 'summary',
+            kind: 'summary',
+            hidden: false,
+            title: null,
+            body: '{{cite:matchId=m2;seconds=42;label=moment}}',
+          },
+        ],
+      }),
+    );
+    const user = userEvent.setup();
+    renderList();
+
+    await user.click(await screen.findByRole('button', { name: 'Delivery and more actions' }));
+    await user.click(await screen.findByRole('menuitem', { name: 'Deliver' }));
+
+    const rows = await screen.findAllByRole('button', { name: /Mario/ });
+    await waitFor(() => expect(rows[1]).toHaveAttribute('aria-pressed', 'true'));
+    expect(rows[0]).toHaveAttribute('aria-pressed', 'false');
   });
 
   it('Revoke fires the revoke mutation for the active (non-revoked) delivery', async () => {

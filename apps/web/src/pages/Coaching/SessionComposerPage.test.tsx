@@ -3,7 +3,7 @@ import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes } from 'react-router';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import type { HomeworkItem } from '@smash-tracker/shared';
+import type { HomeworkItem, Match } from '@smash-tracker/shared';
 import type { SessionResponse } from '@/lib/api';
 import { resetAuthMock, setMockUser, makeMockUser } from '@/test/mockAuth';
 
@@ -30,9 +30,11 @@ const sessionsGet = vi.fn();
 const sessionsUpdate = vi.fn();
 const sessionsToggleHomework = vi.fn();
 const deliveriesCreate = vi.fn();
+const matchesList = vi.fn();
 
 vi.mock('@/lib/api', () => ({
   api: {
+    matches: { list: (...args: unknown[]) => matchesList(...args) },
     coaching: {
       sessions: {
         get: (...args: unknown[]) => sessionsGet(...args),
@@ -74,6 +76,19 @@ function makeHomework(count: number): HomeworkItem[] {
   }));
 }
 
+function makeMatch(overrides: Partial<Match> = {}): Match {
+  return {
+    id: 'm1',
+    fighter_id: 1,
+    opponent_id: 10,
+    opponent: 'Zain',
+    time: 1_700_000_000_000,
+    win: true,
+    vodUrl: 'https://youtu.be/abc123',
+    ...overrides,
+  } as Match;
+}
+
 function renderComposer(initialPath = '/coach/tetra/sessions/s1') {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
@@ -104,6 +119,7 @@ describe('SessionComposerPage', () => {
         homework: [{ id: itemId, text: 'Practice ledgetraps', done }],
       }),
     );
+    matchesList.mockResolvedValue([makeMatch()]);
   });
 
   it('renders the existing session fields — date, tags, summary, homework, and private notes', async () => {
@@ -205,7 +221,17 @@ describe('SessionComposerPage', () => {
     expect(screen.getByText('Saved')).toBeInTheDocument();
   });
 
-  it('Deliver mints a session delivery link', async () => {
+  it('Deliver opens the VOD picker and does not mint until confirmed', async () => {
+    renderComposer();
+    const user = userEvent.setup();
+
+    await user.click(await screen.findByRole('button', { name: 'Deliver' }));
+
+    expect(await screen.findByText('Choose VODs to include')).toBeInTheDocument();
+    expect(deliveriesCreate).not.toHaveBeenCalled();
+  });
+
+  it('confirming the picker mints a session delivery link with the chosen includedVods', async () => {
     deliveriesCreate.mockResolvedValue({
       deliveryId: 'd1',
       token: 'tok1',
@@ -215,7 +241,75 @@ describe('SessionComposerPage', () => {
     const user = userEvent.setup();
 
     await user.click(await screen.findByRole('button', { name: 'Deliver' }));
+    await user.click(await screen.findByRole('button', { name: /Mario/ }));
+    // The picker's own confirm button shares the "Deliver" accessible name
+    // with the composer's trigger — the trigger is hidden behind the open
+    // dialog at this point, so this resolves to the confirm button.
+    const confirmButtons = screen.getAllByRole('button', { name: 'Deliver' });
+    await user.click(confirmButtons[confirmButtons.length - 1]!);
 
-    await waitFor(() => expect(deliveriesCreate).toHaveBeenCalledWith('tetra', 's1'));
+    await waitFor(() =>
+      expect(deliveriesCreate).toHaveBeenCalledWith('tetra', 's1', { includedVods: ['m1'] }),
+    );
+  });
+
+  it("pre-checks the picker with the session's currently linked VODs", async () => {
+    sessionsGet.mockResolvedValue(makeSession({ linkedMatchIds: ['m2'] }));
+    matchesList.mockResolvedValue([makeMatch({ id: 'm1' }), makeMatch({ id: 'm2' })]);
+    renderComposer();
+    const user = userEvent.setup();
+
+    await user.click(await screen.findByRole('button', { name: 'Deliver' }));
+
+    const rows = await screen.findAllByRole('button', { name: /Mario/ });
+    expect(rows[0]).toHaveAttribute('aria-pressed', 'false');
+    expect(rows[1]).toHaveAttribute('aria-pressed', 'true');
+  });
+
+  it('linking a VOD via the multi-select debounces linkedMatchIds into the update mutation', async () => {
+    matchesList.mockResolvedValue([makeMatch({ id: 'm1' })]);
+    renderComposer();
+    await screen.findByDisplayValue('Practice ledgetraps');
+    const user = userEvent.setup();
+
+    await user.selectOptions(screen.getByLabelText('Linked VODs'), 'm1');
+
+    vi.useFakeTimers();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(2000);
+    });
+    vi.useRealTimers();
+
+    await waitFor(() =>
+      expect(sessionsUpdate).toHaveBeenCalledWith(
+        'tetra',
+        's1',
+        expect.objectContaining({ linkedMatchIds: ['m1'] }),
+      ),
+    );
+  });
+
+  it('removing a linked VOD debounces the update with it gone', async () => {
+    sessionsGet.mockResolvedValue(makeSession({ linkedMatchIds: ['m1'] }));
+    matchesList.mockResolvedValue([makeMatch({ id: 'm1' })]);
+    renderComposer();
+    await screen.findByDisplayValue('Practice ledgetraps');
+    const user = userEvent.setup();
+
+    await user.click(screen.getByRole('button', { name: /Unlink/ }));
+
+    vi.useFakeTimers();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(2000);
+    });
+    vi.useRealTimers();
+
+    await waitFor(() =>
+      expect(sessionsUpdate).toHaveBeenCalledWith(
+        'tetra',
+        's1',
+        expect.objectContaining({ linkedMatchIds: [] }),
+      ),
+    );
   });
 });
