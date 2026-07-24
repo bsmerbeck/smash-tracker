@@ -1923,6 +1923,11 @@
     "sourceFallback": "Quelle {{index}}",
     "noSource": "Dieses Review verweist auf kein Video.",
     "sectionsEmpty": "Dieses Review hat noch keinen Inhalt.",
+    "explanation": "Sieh dir die verlinkten Aufnahmen mit klickbaren Zeitmarken im Tab „VOD-Notizen” an oder lies die vollständige Analyse im Tab „Review-Notizen” — kein Konto nötig, um diesen Link anzusehen.",
+    "tabs": {
+      "vodNotes": "VOD-Notizen",
+      "reviewNotes": "Review-Notizen"
+    },
     "vodNotes": {
       "empty": "Diesem Review wurden keine Aufnahmen beigefügt.",
       "notesEmpty": "Keine Zeitmarken-Notizen für dieses VOD.",

@@ -1923,6 +1923,11 @@
     "sourceFallback": "Fuente {{index}}",
     "noSource": "Este análisis no cita ninguna grabación.",
     "sectionsEmpty": "Este análisis todavía no tiene contenido.",
+    "explanation": "Mira las grabaciones incluidas con notas de salto directo en la pestaña Notas de VOD, o lee el análisis completo en la pestaña Notas del análisis — no hace falta cuenta para ver este enlace.",
+    "tabs": {
+      "vodNotes": "Notas de VOD",
+      "reviewNotes": "Notas del análisis"
+    },
     "vodNotes": {
       "empty": "No se incluyó ninguna grabación en este envío.",
       "notesEmpty": "Sin notas con marca de tiempo para este VOD.",

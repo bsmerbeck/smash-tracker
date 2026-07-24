@@ -38,7 +38,6 @@ export function DeliveryVodNotesTab({ vods }: DeliveryVodNotesTabProps) {
   const [currentMatchId, setCurrentMatchId] = useState<string | null>(null);
   const [startSecondsOverride, setStartSecondsOverride] = useState<number | undefined>(undefined);
   const [selectedSeconds, setSelectedSeconds] = useState<number | null>(null);
-  const [isPlayerReady, setIsPlayerReady] = useState(false);
   const seekRef = useRef<((seconds: number) => void) | null>(null);
 
   // Seed the current VOD to the first entry the moment `vods` resolves —
@@ -77,7 +76,6 @@ export function DeliveryVodNotesTab({ vods }: DeliveryVodNotesTabProps) {
       return;
     }
     setStartSecondsOverride(seconds);
-    setIsPlayerReady(false);
     setCurrentMatchId(matchId);
   }
 
@@ -87,7 +85,6 @@ export function DeliveryVodNotesTab({ vods }: DeliveryVodNotesTabProps) {
     }
     setStartSecondsOverride(undefined);
     setSelectedSeconds(null);
-    setIsPlayerReady(false);
     setCurrentMatchId(matchId);
   }
 
@@ -120,7 +117,6 @@ export function DeliveryVodNotesTab({ vods }: DeliveryVodNotesTabProps) {
           vodUrl={currentVod.vodUrl}
           startSeconds={startSecondsOverride ?? currentVod.startSeconds ?? undefined}
           seekRef={seekRef}
-          onReady={() => setIsPlayerReady(true)}
         />
       </div>
 

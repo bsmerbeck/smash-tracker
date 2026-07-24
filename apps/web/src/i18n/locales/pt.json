@@ -1923,6 +1923,11 @@
     "sourceFallback": "Fonte {{index}}",
     "noSource": "Esta revisão não cita nenhuma gravação.",
     "sectionsEmpty": "Esta revisão ainda não tem conteúdo.",
+    "explanation": "Assista às gravações incluídas com notas de salto direto na aba Notas de VOD, ou leia a análise completa na aba Notas da revisão — não precisa de conta para ver este link.",
+    "tabs": {
+      "vodNotes": "Notas de VOD",
+      "reviewNotes": "Notas da revisão"
+    },
     "vodNotes": {
       "empty": "Nenhuma gravação foi incluída neste envio.",
       "notesEmpty": "Sem notas com marca de tempo para este VOD.",

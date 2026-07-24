@@ -1923,6 +1923,11 @@
     "sourceFallback": "Source {{index}}",
     "noSource": "Cette analyse ne cite aucune vidéo.",
     "sectionsEmpty": "Cette analyse n'a pas encore de contenu.",
+    "explanation": "Regardez les vidéos incluses avec des notes cliquables dans l'onglet Notes VOD, ou lisez l'analyse complète dans l'onglet Notes d'analyse — aucun compte n'est nécessaire pour voir ce lien.",
+    "tabs": {
+      "vodNotes": "Notes VOD",
+      "reviewNotes": "Notes d'analyse"
+    },
     "vodNotes": {
       "empty": "Aucune vidéo n'a été incluse dans cet envoi.",
       "notesEmpty": "Aucune note horodatée pour ce VOD.",
