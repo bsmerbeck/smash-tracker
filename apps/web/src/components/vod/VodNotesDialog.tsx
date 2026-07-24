@@ -233,7 +233,7 @@ export function VodNotesDialog({
                     key={stamp.id}
                     className="flex items-center justify-between gap-2 rounded-md border p-2 text-sm"
                   >
-                    <span className="flex min-w-0 flex-1 items-center gap-2">
+                    <span className="flex min-w-0 flex-1 items-start gap-2">
                       {url.trim() ? (
                         <a
                           href={vodDeepLink(url.trim(), stamp.seconds)}
@@ -246,7 +246,9 @@ export function VodNotesDialog({
                       ) : (
                         <span className="shrink-0 font-mono">{formatTimestamp(stamp.seconds)}</span>
                       )}
-                      <span className="truncate">{stamp.note}</span>
+                      <span className="min-w-0 flex-1 whitespace-normal break-words">
+                        {stamp.note}
+                      </span>
                     </span>
                     <Button
                       type="button"

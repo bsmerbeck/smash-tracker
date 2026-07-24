@@ -404,12 +404,12 @@ function CoachTimestampRow({
             onSelect(stamp.seconds);
           }}
           className={cn(
-            'flex flex-1 items-center gap-2 rounded-md border p-2 text-left text-sm',
+            'flex min-w-0 flex-1 items-start gap-2 rounded-md border p-2 text-left text-sm',
             isSelected && 'bg-accent text-accent-foreground border-l-2 border-primary',
           )}
         >
           <span className="shrink-0 font-mono">{formatTimestamp(stamp.seconds)}</span>
-          <span className="truncate">{stamp.note}</span>
+          <span className="min-w-0 flex-1 whitespace-normal break-words">{stamp.note}</span>
         </button>
         {isOwn && stamp.id && (
           <>
