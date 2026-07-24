@@ -1923,6 +1923,12 @@
     "sourceFallback": "Source {{index}}",
     "noSource": "Cette analyse ne cite aucune vidéo.",
     "sectionsEmpty": "Cette analyse n'a pas encore de contenu.",
+    "vodNotes": {
+      "empty": "Aucune vidéo n'a été incluse dans cet envoi.",
+      "notesEmpty": "Aucune note horodatée pour ce VOD.",
+      "notesHeading": "Notes horodatées",
+      "switcherAria": "Choisissez le VOD à regarder"
+    },
     "ack": {
       "prompt": "Indiquez à votre coach que vous avez lu ceci.",
       "button": "✓ Confirmer la lecture",

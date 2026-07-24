@@ -1923,6 +1923,12 @@
     "sourceFallback": "Fonte {{index}}",
     "noSource": "Esta revisão não cita nenhuma gravação.",
     "sectionsEmpty": "Esta revisão ainda não tem conteúdo.",
+    "vodNotes": {
+      "empty": "Nenhuma gravação foi incluída neste envio.",
+      "notesEmpty": "Sem notas com marca de tempo para este VOD.",
+      "notesHeading": "Notas com marca de tempo",
+      "switcherAria": "Escolha qual VOD assistir"
+    },
     "ack": {
       "prompt": "Avise seu treinador que você leu isto.",
       "button": "✓ Confirmar leitura",

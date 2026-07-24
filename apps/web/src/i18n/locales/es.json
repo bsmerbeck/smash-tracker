@@ -1923,6 +1923,12 @@
     "sourceFallback": "Fuente {{index}}",
     "noSource": "Este análisis no cita ninguna grabación.",
     "sectionsEmpty": "Este análisis todavía no tiene contenido.",
+    "vodNotes": {
+      "empty": "No se incluyó ninguna grabación en este envío.",
+      "notesEmpty": "Sin notas con marca de tiempo para este VOD.",
+      "notesHeading": "Notas con marca de tiempo",
+      "switcherAria": "Elige qué VOD ver"
+    },
     "ack": {
       "prompt": "Avisa a tu entrenador de que lo has leído.",
       "button": "✓ Confirmar lectura",

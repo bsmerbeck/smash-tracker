@@ -1923,6 +1923,12 @@
     "sourceFallback": "Source {{index}}",
     "noSource": "This review doesn't cite any footage.",
     "sectionsEmpty": "This review has no content yet.",
+    "vodNotes": {
+      "empty": "No footage was included with this delivery.",
+      "notesEmpty": "No timestamped notes for this VOD.",
+      "notesHeading": "Timestamped notes",
+      "switcherAria": "Choose which VOD to watch"
+    },
     "ack": {
       "prompt": "Let your coach know you've read this.",
       "button": "✓ Acknowledge",

@@ -1923,6 +1923,12 @@
     "sourceFallback": "ソース {{index}}",
     "noSource": "このレビューには参照されている動画がありません。",
     "sectionsEmpty": "このレビューにはまだ内容がありません。",
+    "vodNotes": {
+      "empty": "この配信には動画が含まれていません。",
+      "notesEmpty": "この動画にはタイムスタンプ付きのメモがありません。",
+      "notesHeading": "タイムスタンプ付きメモ",
+      "switcherAria": "視聴するVODを選択"
+    },
     "ack": {
       "prompt": "読んだことをコーチに知らせましょう。",
       "button": "✓ 確認",
