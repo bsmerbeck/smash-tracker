@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { SessionPatchInput } from '@smash-tracker/shared';
-import type { CreateSessionRequest } from '@/lib/api';
+import type { CreateSessionDeliveryRequest, CreateSessionRequest } from '@/lib/api';
 import { api } from '@/lib/api';
 import { useAuth } from './useAuth';
 
@@ -104,11 +104,20 @@ export function useSessionDeliveries(
   });
 }
 
-/** POST .../deliveries — mints a revocable delivery embedding a FROZEN client-visible snapshot. */
+/**
+ * POST .../deliveries — mints a revocable delivery embedding a FROZEN
+ * client-visible snapshot. Phase 21 (DLVX-04): the mutation's `input` is
+ * optional so `mutateAsync()` with no argument still sends the exact
+ * bodyless POST every pre-Phase-21 caller relies on; `SessionComposerPage`'s
+ * `DeliveryVodPicker` confirm now passes `{ includedVods }`.
+ */
 export function useCreateSessionDelivery(clientId: string, sessionId: string) {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: () => api.coaching.sessions.deliveries.create(clientId, sessionId),
+    mutationFn: (input?: CreateSessionDeliveryRequest) =>
+      input !== undefined
+        ? api.coaching.sessions.deliveries.create(clientId, sessionId, input)
+        : api.coaching.sessions.deliveries.create(clientId, sessionId),
     onSuccess: async () => {
       await queryClient.invalidateQueries({
         queryKey: sessionDeliveriesQueryKey(clientId, sessionId),

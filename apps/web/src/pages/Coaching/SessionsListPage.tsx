@@ -74,7 +74,14 @@ function SessionDeliveryMenu({ clientId, session }: SessionDeliveryMenuProps) {
 
   async function handleDeliver() {
     try {
-      const result = await createDelivery.mutateAsync();
+      // Phase 21 (DLVX-04): `useCreateSessionDelivery`'s mutationFn now
+      // takes an optional `includedVods` input (see `SessionComposerPage`'s
+      // VOD-picker-gated Deliver flow) — this list-row menu's own Deliver
+      // is intentionally NOT wired to that picker (out of this plan's
+      // scope, see 21-03-PLAN.md's two named flows), so it explicitly
+      // passes `undefined` to keep sending the exact bodyless POST every
+      // pre-Phase-21 caller relies on.
+      const result = await createDelivery.mutateAsync(undefined);
       await copyToClipboard(result.url);
       toast.success(t('coaching.sessions.list.delivery.createdToast'));
     } catch {

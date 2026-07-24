@@ -23,6 +23,7 @@ import {
   HOMEWORK_ITEM_TEXT_MAX_LENGTH,
   joinGroupRequestSchema,
   manualTournamentEntryInputSchema,
+  MAX_DELIVERY_VODS,
   MAX_SESSION_CHARACTER_TAGS,
   MAX_SESSION_HOMEWORK_ITEMS,
   MAX_SESSION_LINKED_MATCH_IDS,
@@ -306,10 +307,17 @@ export type AddReviewSectionRequest = z.infer<typeof addReviewSectionRequestSche
  * shapes duplicated here per this file's own precedent (see the doc
  * comment above `reviewListItemResponseSchema`) rather than promoted to
  * `@smash-tracker/shared`.
+ *
+ * Phase 21 (Rich Client Delivery View, DLVX-04): `includedVods` carries the
+ * coach-picked matchId list from `DeliveryVodPicker` — the server (Plan 01's
+ * `freezeIncludedVods`) is the sole authority that resolves/tenant-scopes/
+ * caps it at creation time; this client-side `.max()` is defense in depth,
+ * matching the route body schema's own cap.
  */
 const createReviewDeliveryRequestSchema = z.object({
   version: z.number().int().positive(),
   expiresAt: z.number().int().positive().optional(),
+  includedVods: z.array(z.string().min(1)).max(MAX_DELIVERY_VODS).optional(),
 });
 export type CreateReviewDeliveryRequest = z.infer<typeof createReviewDeliveryRequestSchema>;
 
@@ -388,6 +396,19 @@ const sessionDeliveryCreatedResponseSchema = z.object({
   url: z.string().url(),
 });
 export type SessionDeliveryCreatedResponse = z.infer<typeof sessionDeliveryCreatedResponseSchema>;
+
+/**
+ * Phase 21 (Rich Client Delivery View, DLVX-04): the session-delivery
+ * create route's optional body — mirrors `createReviewDeliveryRequestSchema`
+ * above (same `includedVods` field, same client-side cap). The route's own
+ * body schema is `.nullish()` on the whole object (Plan 01), so a caller
+ * that omits `input` entirely still sends the exact bodyless POST every
+ * pre-Phase-21 test/caller relies on — see `deliveries.create` below.
+ */
+const createSessionDeliveryRequestSchema = z.object({
+  includedVods: z.array(z.string().min(1)).max(MAX_DELIVERY_VODS).optional(),
+});
+export type CreateSessionDeliveryRequest = z.infer<typeof createSessionDeliveryRequestSchema>;
 
 const sessionDeliveryListItemResponseSchema = z.object({
   deliveryId: z.string().min(1),
@@ -896,12 +917,20 @@ export const api = {
        * `coaching.reviews.deliveries` above, never a fork.
        */
       deliveries: {
-        /** POST .../deliveries — mints a revocable delivery embedding a FROZEN client-visible snapshot. */
-        create: (clientId: string, sessionId: string) =>
+        /**
+         * POST .../deliveries — mints a revocable delivery embedding a
+         * FROZEN client-visible snapshot. `input.includedVods` (DLVX-04,
+         * Phase 21) is the coach-picked matchId list from
+         * `DeliveryVodPicker`; omitting `input` entirely sends the exact
+         * bodyless POST every pre-Phase-21 caller still relies on.
+         */
+        create: (clientId: string, sessionId: string, input?: CreateSessionDeliveryRequest) =>
           apiRequestParsed(
             `/api/coaching/clients/${encodeURIComponent(clientId)}/sessions/${encodeURIComponent(sessionId)}/deliveries`,
             sessionDeliveryCreatedResponseSchema,
-            { method: 'POST' },
+            input !== undefined
+              ? { method: 'POST', body: createSessionDeliveryRequestSchema.parse(input) }
+              : { method: 'POST' },
           ),
         /** GET .../deliveries — every delivery ever created for this session, most-recent-first. */
         list: (clientId: string, sessionId: string) =>

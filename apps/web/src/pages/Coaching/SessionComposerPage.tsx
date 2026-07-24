@@ -211,7 +211,9 @@ export function SessionComposerPage() {
 
   async function handleDeliver() {
     try {
-      const result = await createDelivery.mutateAsync();
+      // TODO(Phase 21 Plan 03, Task 3): wire this through DeliveryVodPicker
+      // instead of instant-firing — tracked as this plan's next task.
+      const result = await createDelivery.mutateAsync(undefined);
       if (typeof navigator !== 'undefined' && navigator.clipboard) {
         try {
           await navigator.clipboard.writeText(result.url);
