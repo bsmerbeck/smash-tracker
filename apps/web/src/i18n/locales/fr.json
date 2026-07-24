@@ -1704,6 +1704,16 @@
       "fighterAnalysis": "Analyse de personnage",
       "matchups": "Confrontations"
     },
+    "deliveryVodPicker": {
+      "title": "Choisir les VODs à inclure",
+      "description": "Choisissez jusqu'à {{max}} VODs dans la bibliothèque de ce client à inclure dans cette livraison. Leurs notes horodatées les accompagnent.",
+      "empty": "Ce client n'a pas encore de VOD — vous pouvez tout de même envoyer cette livraison sans aucune vidéo.",
+      "capReached": "Jusqu'à {{max}} VODs peuvent être inclus.",
+      "confirm": "Livrer",
+      "cancel": "Annuler",
+      "selectedCount_one": "{{count}} VOD sélectionné",
+      "selectedCount_other": "{{count}} VODs sélectionnés"
+    },
     "reviews": {
       "composer": {
         "loadError": "Une erreur est survenue lors du chargement de cette revue.",
@@ -1896,6 +1906,13 @@
           "remove": "Retirer ce devoir",
           "capReached": "Jusqu'à {{max}} devoirs.",
           "empty": "Pas encore de devoirs."
+        },
+        "linkedVods": {
+          "label": "VODs liés",
+          "addPlaceholder": "Lier un VOD…",
+          "capReached": "Jusqu'à {{max}} VODs liés.",
+          "removeAria": "Délier {{vod}}",
+          "empty": "Ce client n'a pas encore de VOD dans sa bibliothèque."
         },
         "privateNotes": {
           "label": "🔒 Notes privées",

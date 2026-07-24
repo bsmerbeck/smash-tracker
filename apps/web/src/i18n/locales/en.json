@@ -1704,6 +1704,16 @@
       "fighterAnalysis": "Fighter Analysis",
       "matchups": "Matchups"
     },
+    "deliveryVodPicker": {
+      "title": "Choose VODs to include",
+      "description": "Pick up to {{max}} VODs from this client's library to include with this delivery. Their timestamped notes travel with them.",
+      "empty": "This client has no VODs yet — you can still send this delivery without any footage.",
+      "capReached": "Up to {{max}} VODs can be included.",
+      "confirm": "Deliver",
+      "cancel": "Cancel",
+      "selectedCount_one": "{{count}} VOD selected",
+      "selectedCount_other": "{{count}} VODs selected"
+    },
     "reviews": {
       "composer": {
         "loadError": "Something went wrong loading this review.",
@@ -1896,6 +1906,13 @@
           "remove": "Remove homework item",
           "capReached": "Up to {{max}} homework items.",
           "empty": "No homework yet."
+        },
+        "linkedVods": {
+          "label": "Linked VODs",
+          "addPlaceholder": "Link a VOD…",
+          "capReached": "Up to {{max}} linked VODs.",
+          "removeAria": "Unlink {{vod}}",
+          "empty": "No VODs in this client's library yet."
         },
         "privateNotes": {
           "label": "🔒 Private notes",

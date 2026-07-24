@@ -1704,6 +1704,16 @@
       "fighterAnalysis": "Kämpferanalyse",
       "matchups": "Matchups"
     },
+    "deliveryVodPicker": {
+      "title": "VODs zum Einbeziehen auswählen",
+      "description": "Wähle bis zu {{max}} VODs aus der Bibliothek dieses Clients für diese Zustellung aus. Ihre zeitgestempelten Notizen werden mitgeliefert.",
+      "empty": "Dieser Client hat noch keine VODs — du kannst diese Zustellung trotzdem ohne Aufnahmen senden.",
+      "capReached": "Es können bis zu {{max}} VODs einbezogen werden.",
+      "confirm": "Zustellen",
+      "cancel": "Abbrechen",
+      "selectedCount_one": "{{count}} VOD ausgewählt",
+      "selectedCount_other": "{{count}} VODs ausgewählt"
+    },
     "reviews": {
       "composer": {
         "loadError": "Beim Laden dieser Review ist ein Fehler aufgetreten.",
@@ -1896,6 +1906,13 @@
           "remove": "Aufgabe entfernen",
           "capReached": "Bis zu {{max}} Hausaufgaben.",
           "empty": "Noch keine Hausaufgaben."
+        },
+        "linkedVods": {
+          "label": "Verknüpfte VODs",
+          "addPlaceholder": "VOD verknüpfen…",
+          "capReached": "Bis zu {{max}} verknüpfte VODs.",
+          "removeAria": "{{vod}} entfernen",
+          "empty": "Dieser Client hat noch keine VODs in seiner Bibliothek."
         },
         "privateNotes": {
           "label": "🔒 Private Notizen",

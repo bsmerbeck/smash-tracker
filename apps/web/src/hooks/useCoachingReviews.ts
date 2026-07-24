@@ -54,13 +54,24 @@ export function useCreateCoachingReview(clientId: string) {
  * GET .../reviews/:reviewId/draft — the ONLY composer-side fetch that
  * returns `coachPrivateNotes` (coach-only; REV-03). Never spread into any
  * preview/delivery component's props.
+ *
+ * Phase 21 (Rich Client Delivery View, DLVX-04): `options.enabled` is an
+ * opt-in (default `true`, mirroring `useReviewDeliveries`/
+ * `useCoachingReviewPreview`'s own pattern above) so `ReviewDeliveryMenu`'s
+ * DeliveryVodPicker can fetch the draft ONLY once the picker actually opens
+ * (deriving the review's cited-VOD default selection), never on every
+ * closed-menu render.
  */
-export function useCoachingReviewDraft(clientId: string, reviewId: string) {
+export function useCoachingReviewDraft(
+  clientId: string,
+  reviewId: string,
+  options: { enabled?: boolean } = {},
+) {
   const { user } = useAuth();
   return useQuery({
     queryKey: reviewDraftQueryKey(clientId, reviewId),
     queryFn: () => api.coaching.reviews.getDraft(clientId, reviewId),
-    enabled: Boolean(user) && Boolean(clientId) && Boolean(reviewId),
+    enabled: Boolean(user) && Boolean(clientId) && Boolean(reviewId) && (options.enabled ?? true),
   });
 }
 

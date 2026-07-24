@@ -1704,6 +1704,16 @@
       "fighterAnalysis": "キャラクター分析",
       "matchups": "相性表"
     },
+    "deliveryVodPicker": {
+      "title": "含めるVODを選択",
+      "description": "このクライアントのライブラリから最大{{max}}件のVODを選んでこの配信に含めます。タイムスタンプ付きのメモも一緒に届きます。",
+      "empty": "このクライアントにはまだVODがありません — 映像なしでもこの配信を送信できます。",
+      "capReached": "含められるVODは最大{{max}}件までです。",
+      "confirm": "配信する",
+      "cancel": "キャンセル",
+      "selectedCount_one": "{{count}}件のVODを選択中",
+      "selectedCount_other": "{{count}}件のVODを選択中"
+    },
     "reviews": {
       "composer": {
         "loadError": "このレビューの読み込み中に問題が発生しました。",
@@ -1896,6 +1906,13 @@
           "remove": "宿題を削除",
           "capReached": "宿題は最大{{max}}件までです。",
           "empty": "宿題はまだありません。"
+        },
+        "linkedVods": {
+          "label": "リンクされたVOD",
+          "addPlaceholder": "VODをリンク…",
+          "capReached": "リンクできるVODは最大{{max}}件までです。",
+          "removeAria": "{{vod}}のリンクを解除",
+          "empty": "このクライアントのライブラリにはまだVODがありません。"
         },
         "privateNotes": {
           "label": "🔒 非公開メモ",
