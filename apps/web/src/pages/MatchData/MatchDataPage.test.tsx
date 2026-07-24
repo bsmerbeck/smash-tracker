@@ -450,7 +450,7 @@ describe('MatchDataPage', () => {
     expect(screen.getAllByText('rival').length).toBeGreaterThan(0);
   });
 
-  it('shows "Add VOD notes" for a match without a vodUrl and "Watch VOD" for one with', async () => {
+  it('shows "Add VOD" for a match without a vodUrl and "Watch VOD" for one with', async () => {
     getFighters.mockResolvedValue({ primary: [mario.id], secondary: [] });
     listMatches.mockResolvedValue([
       makeMatch({ id: 'm1', opponent: 'rival' }),
@@ -463,7 +463,7 @@ describe('MatchDataPage', () => {
 
     renderMatchData();
 
-    await waitFor(() => expect(screen.getAllByLabelText('Add VOD notes')).toHaveLength(1));
+    await waitFor(() => expect(screen.getAllByLabelText('Add VOD')).toHaveLength(1));
     expect(screen.getAllByLabelText('Watch VOD')).toHaveLength(1);
   });
 
@@ -593,8 +593,8 @@ describe('MatchDataPage', () => {
 
     renderMatchData();
 
-    await waitFor(() => expect(screen.getByLabelText('Add VOD notes')).toBeInTheDocument());
-    await user.click(screen.getByLabelText('Add VOD notes'));
+    await waitFor(() => expect(screen.getByLabelText('Add VOD')).toBeInTheDocument());
+    await user.click(screen.getByLabelText('Add VOD'));
 
     const dialog = await screen.findByRole('dialog');
     // SETFEAT-03: the camera-icon path opens the lean Attach VOD dialog, not

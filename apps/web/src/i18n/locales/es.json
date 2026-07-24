@@ -462,7 +462,7 @@
         "manage": "Gestionar"
       },
       "editVod": "Editar notas de VOD",
-      "addVod": "Añadir notas de VOD",
+      "addVod": "Añadir VOD",
       "watchVod": "Ver VOD",
       "vodMenu": {
         "goToManager": "Ir al Gestor de VODs",
