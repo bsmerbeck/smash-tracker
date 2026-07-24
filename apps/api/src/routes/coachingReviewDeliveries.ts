@@ -1,7 +1,11 @@
 import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import type { FastifyRequest } from 'fastify';
 import { z } from 'zod';
-import { errorResponseSchema, REVIEW_DELIVERY_STATES } from '@smash-tracker/shared';
+import {
+  errorResponseSchema,
+  MAX_DELIVERY_VODS,
+  REVIEW_DELIVERY_STATES,
+} from '@smash-tracker/shared';
 import { buildDomainEnvelope } from '../events/envelope.js';
 import { createEvent } from '../events/ledger.js';
 import { requireMembership } from '../coaching/tenants.js';
@@ -26,6 +30,13 @@ const createDeliveryBodySchema = z.object({
   version: z.number().int().positive(),
   /** Optional custom expiry — absent means the link stays active until explicitly revoked. */
   expiresAt: z.number().int().positive().optional(),
+  /**
+   * Phase 21 (Rich Client Delivery View, DLVX-02/DLVX-04): the coach-picked
+   * client-library matchIds to FREEZE into this delivery's `includedVods`.
+   * Optional/additive — a body without this field still mints a (VOD-less)
+   * delivery, matching every pre-Phase-21 caller.
+   */
+  includedVods: z.array(z.string().min(1)).max(MAX_DELIVERY_VODS).optional(),
 });
 
 const deliveryCreatedResponseSchema = z.object({
@@ -102,7 +113,10 @@ const coachingReviewDeliveriesRoutes: FastifyPluginAsyncZod<
         request.params.reviewId,
         request.body.version,
         webBaseUrl,
-        { expiresAt: request.body.expiresAt },
+        {
+          expiresAt: request.body.expiresAt,
+          includedVodMatchIds: request.body.includedVods ?? [],
+        },
       );
 
       void createEvent(

@@ -1,7 +1,7 @@
 import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import type { FastifyRequest } from 'fastify';
 import { z } from 'zod';
-import { errorResponseSchema } from '@smash-tracker/shared';
+import { errorResponseSchema, MAX_DELIVERY_VODS } from '@smash-tracker/shared';
 import { buildDomainEnvelope } from '../events/envelope.js';
 import { createEvent } from '../events/ledger.js';
 import { requireMembership } from '../coaching/tenants.js';
@@ -26,6 +26,20 @@ const deliveryCreatedResponseSchema = z.object({
   token: z.string().min(1),
   url: z.string().url(),
 });
+
+/**
+ * Phase 21 (Rich Client Delivery View, DLVX-02/DLVX-04): the coach-picked
+ * client-library matchIds to FREEZE into this delivery's `includedVods`.
+ * `.nullish()` on the WHOLE body (mirrors `coachingReviews.ts`'s
+ * `publishBodySchema`/`coachingTenants.ts`'s `archiveClientBodySchema`
+ * convention) — a bodyless POST (every pre-Phase-21 caller) still mints a
+ * (VOD-less) delivery.
+ */
+const createSessionDeliveryBodySchema = z
+  .object({
+    includedVods: z.array(z.string().min(1)).max(MAX_DELIVERY_VODS).optional(),
+  })
+  .nullish();
 
 const deliveryListItemResponseSchema = z.object({
   deliveryId: z.string().min(1),
@@ -78,6 +92,7 @@ const coachingSessionDeliveriesRoutes: FastifyPluginAsyncZod<
     {
       schema: {
         params: sessionIdParamsSchema,
+        body: createSessionDeliveryBodySchema,
         response: {
           201: deliveryCreatedResponseSchema,
           404: errorResponseSchema,
@@ -90,6 +105,7 @@ const coachingSessionDeliveriesRoutes: FastifyPluginAsyncZod<
         request.params.clientId,
         request.params.sessionId,
         webBaseUrl,
+        { includedVodMatchIds: request.body?.includedVods ?? [] },
       );
 
       void createEvent(

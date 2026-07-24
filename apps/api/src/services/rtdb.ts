@@ -106,8 +106,13 @@ const ENTRY_KEY_SHAPE = /^[^.#$[\]/\u0000-\u001f\u007f]{1,200}$/;
  * plus `/`, which would silently address a NESTED child of the caller's own
  * subtree, control chars, and DEL). Any real push key passes; a crafted id
  * must collapse to the same not-found outcome an absent match gets.
+ *
+ * Exported (Phase 21, T-21-02) so `freezeIncludedVods`
+ * (apps/api/src/coaching/deliveryVodFreeze.ts) can reuse the SAME guard
+ * before its own `matches/{tenantId}/{matchId}` reads, rather than a
+ * possibly-drifting duplicate of the ENTRY_KEY_SHAPE denylist.
  */
-function isPathSafeMatchId(matchId: string): boolean {
+export function isPathSafeMatchId(matchId: string): boolean {
   return ENTRY_KEY_SHAPE.test(matchId);
 }
 

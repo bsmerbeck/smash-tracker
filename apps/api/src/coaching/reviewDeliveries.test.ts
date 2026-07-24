@@ -47,6 +47,23 @@ async function seedPublishedReview(database: FakeDatabase): Promise<void> {
   });
 }
 
+/** Seeds a minimal `matches/{tenantId}/{matchId}` record — a VOD-bearing match by default. */
+function seedMatch(
+  database: FakeDatabase,
+  tenantId: string,
+  matchId: string,
+  overrides: Record<string, unknown> = {},
+): void {
+  database.seed(`matches/${tenantId}/${matchId}`, {
+    fighter_id: 1,
+    opponent_id: 2,
+    time: 1_700_000_000_000,
+    win: true,
+    vodUrl: 'https://youtu.be/abc123',
+    ...overrides,
+  });
+}
+
 describe('createReviewDelivery', () => {
   it('mints a delivery pinned to a published version, writing shareTokens + reviewDeliveries atomically', async () => {
     const database = new FakeDatabase();
@@ -127,6 +144,180 @@ describe('createReviewDelivery', () => {
     await expect(getLatestDeliveryState(asDatabase(database), TENANT_ID, 'review-1')).resolves.toBe(
       'delivered',
     );
+  });
+
+  describe('includedVods freeze (Phase 21, DLVX-02/DLVX-04)', () => {
+    it('freezes an IncludedVod for each existing VOD-bearing match under the review tenant', async () => {
+      const database = new FakeDatabase();
+      await seedPublishedReview(database);
+      seedMatch(database, TENANT_ID, 'match-1', {
+        vodUrl: 'https://youtu.be/abc123',
+        vodStartSeconds: 42,
+        vodTimestamps: [{ seconds: 10, note: 'missed punish', tags: ['punish'] }],
+      });
+
+      const result = await createReviewDelivery(
+        asDatabase(database),
+        TENANT_ID,
+        'review-1',
+        1,
+        WEB_BASE_URL,
+        { includedVodMatchIds: ['match-1'] },
+      );
+
+      const deliveryRecord = dumpDeliveryRecord(database, TENANT_ID, 'review-1', result.deliveryId);
+      const includedVods = deliveryRecord.includedVods as Array<Record<string, unknown>>;
+      expect(includedVods).toHaveLength(1);
+      expect(includedVods[0]).toMatchObject({
+        matchId: 'match-1',
+        vodUrl: 'https://youtu.be/abc123',
+        startSeconds: 42,
+      });
+      expect(includedVods[0]!.timestamps).toEqual([
+        { seconds: 10, note: 'missed punish', tags: ['punish'] },
+      ]);
+    });
+
+    it('silently drops a picked matchId that does not exist under the review tenant', async () => {
+      const database = new FakeDatabase();
+      await seedPublishedReview(database);
+
+      const result = await createReviewDelivery(
+        asDatabase(database),
+        TENANT_ID,
+        'review-1',
+        1,
+        WEB_BASE_URL,
+        { includedVodMatchIds: ['no-such-match'] },
+      );
+
+      const deliveryRecord = dumpDeliveryRecord(database, TENANT_ID, 'review-1', result.deliveryId);
+      expect(deliveryRecord.includedVods).toBeUndefined();
+    });
+
+    it('silently drops a picked matchId belonging to a DIFFERENT tenant (T-21-03, never throws/leaks)', async () => {
+      const database = new FakeDatabase();
+      await seedPublishedReview(database);
+      seedMatch(database, 'other-tenant', 'match-1');
+
+      const result = await createReviewDelivery(
+        asDatabase(database),
+        TENANT_ID,
+        'review-1',
+        1,
+        WEB_BASE_URL,
+        { includedVodMatchIds: ['match-1'] },
+      );
+
+      const deliveryRecord = dumpDeliveryRecord(database, TENANT_ID, 'review-1', result.deliveryId);
+      expect(deliveryRecord.includedVods).toBeUndefined();
+    });
+
+    it('silently drops a picked matchId whose match has no vodUrl', async () => {
+      const database = new FakeDatabase();
+      await seedPublishedReview(database);
+      seedMatch(database, TENANT_ID, 'match-1', { vodUrl: undefined });
+
+      const result = await createReviewDelivery(
+        asDatabase(database),
+        TENANT_ID,
+        'review-1',
+        1,
+        WEB_BASE_URL,
+        { includedVodMatchIds: ['match-1'] },
+      );
+
+      const deliveryRecord = dumpDeliveryRecord(database, TENANT_ID, 'review-1', result.deliveryId);
+      expect(deliveryRecord.includedVods).toBeUndefined();
+    });
+
+    it('skips a malformed/path-unsafe matchId before any ref() call (review WR-07)', async () => {
+      const database = new FakeDatabase();
+      await seedPublishedReview(database);
+
+      const result = await createReviewDelivery(
+        asDatabase(database),
+        TENANT_ID,
+        'review-1',
+        1,
+        WEB_BASE_URL,
+        { includedVodMatchIds: ['../etc/passwd', 'a.b', 'a#b'] },
+      );
+
+      const deliveryRecord = dumpDeliveryRecord(database, TENANT_ID, 'review-1', result.deliveryId);
+      expect(deliveryRecord.includedVods).toBeUndefined();
+    });
+
+    it('caps the frozen includedVods at MAX_DELIVERY_VODS', async () => {
+      const database = new FakeDatabase();
+      await seedPublishedReview(database);
+      const matchIds = Array.from({ length: 15 }, (_, index) => `match-${index}`);
+      for (const matchId of matchIds) {
+        seedMatch(database, TENANT_ID, matchId);
+      }
+
+      const result = await createReviewDelivery(
+        asDatabase(database),
+        TENANT_ID,
+        'review-1',
+        1,
+        WEB_BASE_URL,
+        { includedVodMatchIds: matchIds },
+      );
+
+      const deliveryRecord = dumpDeliveryRecord(database, TENANT_ID, 'review-1', result.deliveryId);
+      expect((deliveryRecord.includedVods as unknown[]).length).toBe(10);
+    });
+
+    it('a delivery created with zero resolvable picks writes NO includedVods key and reads back as an empty array via listReviewDeliveries', async () => {
+      const database = new FakeDatabase();
+      await seedPublishedReview(database);
+
+      const result = await createReviewDelivery(
+        asDatabase(database),
+        TENANT_ID,
+        'review-1',
+        1,
+        WEB_BASE_URL,
+      );
+
+      const deliveryRecord = dumpDeliveryRecord(database, TENANT_ID, 'review-1', result.deliveryId);
+      expect(deliveryRecord.includedVods).toBeUndefined();
+
+      const rows = await listReviewDeliveries(
+        asDatabase(database),
+        TENANT_ID,
+        'review-1',
+        WEB_BASE_URL,
+      );
+      expect(rows[0]!.includedVods).toEqual([]);
+    });
+
+    it("does NOT change a delivery's frozen includedVods when the source match is edited afterward (D-10 immutability)", async () => {
+      const database = new FakeDatabase();
+      await seedPublishedReview(database);
+      seedMatch(database, TENANT_ID, 'match-1', {
+        vodTimestamps: [{ seconds: 10, note: 'original note' }],
+      });
+
+      const result = await createReviewDelivery(
+        asDatabase(database),
+        TENANT_ID,
+        'review-1',
+        1,
+        WEB_BASE_URL,
+        { includedVodMatchIds: ['match-1'] },
+      );
+
+      // Edit the source match's notes AFTER the delivery was minted.
+      seedMatch(database, TENANT_ID, 'match-1', {
+        vodTimestamps: [{ seconds: 99, note: 'edited after delivery — must never surface' }],
+      });
+
+      const deliveryRecord = dumpDeliveryRecord(database, TENANT_ID, 'review-1', result.deliveryId);
+      const includedVods = deliveryRecord.includedVods as Array<Record<string, unknown>>;
+      expect(includedVods[0]!.timestamps).toEqual([{ seconds: 10, note: 'original note' }]);
+    });
   });
 });
 

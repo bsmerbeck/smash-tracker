@@ -2,13 +2,17 @@ import type { Database } from 'firebase-admin/database';
 import { z } from 'zod';
 import {
   clientVisibleSessionSchema,
+  includedVodSchema,
+  MAX_DELIVERY_VODS,
   shareTokenSchema,
   trainingSessionSchema,
   type ClientVisibleSession,
+  type IncludedVod,
   type ShareToken,
 } from '@smash-tracker/shared';
 import { buildSessionShareId, NotFoundError } from '../services/rtdb.js';
 import { generateShareToken } from '../shares/token.js';
+import { freezeIncludedVods } from './deliveryVodFreeze.js';
 
 /**
  * Phase 20 Plan 03 (Coaching Workflow, Training Sessions & VOD-less Reviews,
@@ -56,6 +60,17 @@ export const sessionDeliveryRecordSchema = z.object({
   createdAt: z.number().int().nonnegative(),
   revokedAt: z.number().int().nonnegative().nullish(),
   snapshot: clientVisibleSessionSchema,
+  /**
+   * Phase 21 (Rich Client Delivery View, DLVX-02/DLVX-04): the coach-picked
+   * VODs, FROZEN at delivery-creation time via `freezeIncludedVods` —
+   * TOP-LEVEL, a SIBLING to `snapshot` (not nested inside
+   * `clientVisibleSessionSchema`, which is shared with coach-side session
+   * reads — this is the chosen interpretation of "extend the session record
+   * the same way as the review record": additive top-level growth, mirroring
+   * `reviewDeliveryRecordSchema`'s own `includedVods` field exactly). Absent
+   * (never `[]`) when the delivery had zero resolvable picks.
+   */
+  includedVods: z.array(includedVodSchema).max(MAX_DELIVERY_VODS).nullish(),
 });
 export type SessionDeliveryRecord = z.infer<typeof sessionDeliveryRecordSchema>;
 
@@ -66,6 +81,10 @@ export type SessionDeliveryRecord = z.infer<typeof sessionDeliveryRecordSchema>;
  * delivery record must normalize those missing keys back to `[]` before
  * validating, mirroring `sessions.ts`'s `parseSessionRecord` discipline
  * exactly, but one level deeper (on the embedded `snapshot` object).
+ *
+ * Phase 21 (DLVX-02/DLVX-04): extended to ALSO normalize the top-level
+ * `includedVods` field the same way — a delivery with zero resolvable
+ * coach-picked VODs round-trips with no `includedVods` key at all.
  */
 function parseDeliveryRecord(raw: unknown): SessionDeliveryRecord {
   if (raw === null || typeof raw !== 'object') {
@@ -81,7 +100,11 @@ function parseDeliveryRecord(raw: unknown): SessionDeliveryRecord {
           homework: (rawSnapshot as { homework?: unknown }).homework ?? [],
         }
       : rawSnapshot;
-  return sessionDeliveryRecordSchema.parse({ ...rawRecord, snapshot: normalizedSnapshot });
+  return sessionDeliveryRecordSchema.parse({
+    ...rawRecord,
+    snapshot: normalizedSnapshot,
+    includedVods: rawRecord.includedVods ?? [],
+  });
 }
 
 function safeParseDeliveryRecord(raw: unknown): SessionDeliveryRecord | null {
@@ -127,6 +150,7 @@ export async function createSessionDelivery(
   tenantId: string,
   sessionId: string,
   webBaseUrl: string,
+  options: { includedVodMatchIds?: string[] } = {},
 ): Promise<{ deliveryId: string; token: string; url: string }> {
   const sessionSnapshot = await database.ref(`trainingSessions/${tenantId}/${sessionId}`).get();
   if (!sessionSnapshot.exists()) {
@@ -153,6 +177,15 @@ export async function createSessionDelivery(
       : {}),
   } satisfies ClientVisibleSession);
 
+  // Phase 21 (DLVX-02/DLVX-04, D-10/Pitfall 3): freeze the coach-picked VODs
+  // BEFORE the atomic write below — resolved against the session's OWN
+  // tenant (T-21-03), never re-read live afterward.
+  const frozenIncludedVods: IncludedVod[] = await freezeIncludedVods(
+    database,
+    tenantId,
+    options.includedVodMatchIds ?? [],
+  );
+
   const token = generateShareToken();
   const deliveryRef = database.ref(`sessionDeliveries/${tenantId}/${sessionId}`).push();
   const deliveryId = deliveryRef.key;
@@ -173,6 +206,9 @@ export async function createSessionDelivery(
     createdAt: now,
     revokedAt: null,
     snapshot: clientVisible,
+    // Conditional-spread (CONCERNS.md null-stripping rule): a zero-pick
+    // delivery writes NO includedVods key at all, never `[]`.
+    ...(frozenIncludedVods.length > 0 ? { includedVods: frozenIncludedVods } : {}),
   } satisfies SessionDeliveryRecord);
 
   await database.ref().update({
