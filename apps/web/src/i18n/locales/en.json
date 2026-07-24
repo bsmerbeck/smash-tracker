@@ -1915,6 +1915,10 @@
           "empty": "No matches in this client's library yet.",
           "noVodHint": "No VOD"
         },
+        "logMatch": {
+          "trigger": "+ Log a match",
+          "capOverflowToast": "Match saved to the library, but this session already has the maximum {{max}} linked matches."
+        },
         "privateNotes": {
           "label": "🔒 Private notes",
           "helper": "Only you can see this. Never delivered to the client.",

@@ -1915,6 +1915,10 @@
           "empty": "Aucun match dans la bibliothèque de ce client pour l'instant.",
           "noVodHint": "Aucun VOD"
         },
+        "logMatch": {
+          "trigger": "+ Enregistrer un match",
+          "capOverflowToast": "Le match a été enregistré dans la bibliothèque, mais cette séance a déjà le maximum de {{max}} matchs liés."
+        },
         "privateNotes": {
           "label": "🔒 Notes privées",
           "helper": "Vous seul pouvez voir ceci. Jamais livré au client.",

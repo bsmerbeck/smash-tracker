@@ -1915,6 +1915,10 @@
           "empty": "Ainda não há partidas na biblioteca deste cliente.",
           "noVodHint": "Sem VOD"
         },
+        "logMatch": {
+          "trigger": "+ Registrar uma partida",
+          "capOverflowToast": "A partida foi salva na biblioteca, mas esta sessão já tem o máximo de {{max}} partidas vinculadas."
+        },
         "privateNotes": {
           "label": "🔒 Notas privadas",
           "helper": "Só você pode ver isto. Nunca é entregue ao cliente.",

@@ -1915,6 +1915,10 @@
           "empty": "Noch keine Matches in der Bibliothek dieses Clients.",
           "noVodHint": "Kein VOD"
         },
+        "logMatch": {
+          "trigger": "+ Match erfassen",
+          "capOverflowToast": "Das Match wurde in der Bibliothek gespeichert, aber diese Sitzung hat bereits die maximal {{max}} verknüpften Matches."
+        },
         "privateNotes": {
           "label": "🔒 Private Notizen",
           "helper": "Nur du kannst das sehen. Wird nie an den Client zugestellt.",

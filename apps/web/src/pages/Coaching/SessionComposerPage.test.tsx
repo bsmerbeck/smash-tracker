@@ -1,9 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes } from 'react-router';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { HomeworkItem, Match } from '@smash-tracker/shared';
+import { MAX_SESSION_LINKED_MATCH_IDS } from '@smash-tracker/shared';
 import type { SessionResponse } from '@/lib/api';
 import { resetAuthMock, setMockUser, makeMockUser } from '@/test/mockAuth';
 
@@ -31,10 +32,18 @@ const sessionsUpdate = vi.fn();
 const sessionsToggleHomework = vi.fn();
 const deliveriesCreate = vi.fn();
 const matchesList = vi.fn();
+const matchesCreate = vi.fn();
+const getFighters = vi.fn();
 
 vi.mock('@/lib/api', () => ({
   api: {
-    matches: { list: (...args: unknown[]) => matchesList(...args) },
+    matches: {
+      list: (...args: unknown[]) => matchesList(...args),
+      create: (...args: unknown[]) => matchesCreate(...args),
+    },
+    users: {
+      getFighters: (...args: unknown[]) => getFighters(...args),
+    },
     coaching: {
       sessions: {
         get: (...args: unknown[]) => sessionsGet(...args),
@@ -50,6 +59,7 @@ vi.mock('@/lib/api', () => ({
 
 vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 
+import { toast } from 'sonner';
 import { AuthProvider } from '@/context/AuthContext';
 import { SessionComposerPage } from './SessionComposerPage';
 
@@ -120,6 +130,15 @@ describe('SessionComposerPage', () => {
       }),
     );
     matchesList.mockResolvedValue([makeMatch()]);
+    getFighters.mockResolvedValue({ primary: [1], secondary: [] });
+    matchesCreate.mockResolvedValue({
+      id: 'new-match',
+      fighter_id: 1,
+      opponent_id: 10,
+      opponent: 'rival',
+      time: 1_700_000_500_000,
+      win: true,
+    });
   });
 
   it('renders the existing session fields — date, tags, summary, homework, and private notes', async () => {
@@ -335,5 +354,75 @@ describe('SessionComposerPage', () => {
         expect.objectContaining({ linkedMatchIds: [] }),
       ),
     );
+  });
+
+  it('logging a single match from the composer auto-links it to the session (SESSM-02)', async () => {
+    renderComposer();
+    await screen.findByDisplayValue('Practice ledgetraps');
+    const user = userEvent.setup();
+
+    await user.click(await screen.findByRole('button', { name: '+ Log a match' }));
+    const dialog = await screen.findByRole('dialog');
+
+    await user.click(within(dialog).getByRole('radio', { name: 'Win' }));
+    await user.click(within(dialog).getByRole('combobox', { name: 'Opponent' }));
+    const opponentInput = await screen.findByPlaceholderText('Type a name...');
+    await user.clear(opponentInput); // pre-filled with 'unknown'
+    await user.type(opponentInput, 'rival');
+    await user.click(within(dialog).getByRole('button', { name: 'Save' }));
+
+    await waitFor(() => expect(matchesCreate).toHaveBeenCalledTimes(1));
+
+    vi.useFakeTimers();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(2000);
+    });
+    vi.useRealTimers();
+
+    await waitFor(() =>
+      expect(sessionsUpdate).toHaveBeenCalledWith(
+        'tetra',
+        's1',
+        expect.objectContaining({ linkedMatchIds: ['new-match'] }),
+      ),
+    );
+  });
+
+  it('logging a match while at the linked-match cap still creates it, but does not link it and toasts (SESSM-02)', async () => {
+    const cappedIds = Array.from(
+      { length: MAX_SESSION_LINKED_MATCH_IDS },
+      (_, index) => `existing-${index}`,
+    );
+    sessionsGet.mockResolvedValue(makeSession({ linkedMatchIds: cappedIds }));
+    renderComposer();
+    await screen.findByDisplayValue('Practice ledgetraps');
+    const user = userEvent.setup();
+
+    await user.click(await screen.findByRole('button', { name: '+ Log a match' }));
+    const dialog = await screen.findByRole('dialog');
+
+    await user.click(within(dialog).getByRole('radio', { name: 'Win' }));
+    await user.click(within(dialog).getByRole('combobox', { name: 'Opponent' }));
+    const opponentInput = await screen.findByPlaceholderText('Type a name...');
+    await user.clear(opponentInput); // pre-filled with 'unknown'
+    await user.type(opponentInput, 'rival');
+    await user.click(within(dialog).getByRole('button', { name: 'Save' }));
+
+    // The match still gets created (in the client's library)...
+    await waitFor(() => expect(matchesCreate).toHaveBeenCalledTimes(1));
+    // ...but it's not linked, and a toast explains why.
+    await waitFor(() =>
+      expect(toast.error).toHaveBeenCalledWith(
+        'Match saved to the library, but this session already has the maximum 20 linked matches.',
+      ),
+    );
+
+    vi.useFakeTimers();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(2000);
+    });
+    vi.useRealTimers();
+
+    expect(sessionsUpdate).not.toHaveBeenCalled();
   });
 });
