@@ -78,4 +78,40 @@ describe('buildReviewSnapshot', () => {
     const snapshot = buildReviewSnapshot(makeVersion(), 'Coach Alex', []);
     expect(snapshot.reviewedMomentsCount).toBe(0);
   });
+
+  describe('includedVods (Phase 21, DLVX-02/DLVX-04)', () => {
+    it('omits includedVods entirely when the resolved list is empty (default, no 4th arg)', () => {
+      const snapshot = buildReviewSnapshot(makeVersion(), 'Coach Alex', []);
+      expect(snapshot).not.toHaveProperty('includedVods');
+    });
+
+    it('carries the resolved includedVods list when present', () => {
+      const snapshot = buildReviewSnapshot(
+        makeVersion(),
+        'Coach Alex',
+        [],
+        [{ matchId: 'match-1', vodUrl: 'https://youtu.be/abc123' }],
+      );
+
+      expect(snapshot.includedVods).toEqual([
+        { matchId: 'match-1', vodUrl: 'https://youtu.be/abc123' },
+      ]);
+    });
+
+    it('keeps includedVods fully independent of citationSources — both can be present at once', () => {
+      const snapshot = buildReviewSnapshot(
+        makeVersion(),
+        'Coach Alex',
+        [{ sourceVodRef: 'match-1', vodUrl: 'https://youtu.be/abc123' }],
+        [{ matchId: 'match-2', vodUrl: 'https://youtu.be/def456' }],
+      );
+
+      expect(snapshot.citationSources).toEqual([
+        { sourceVodRef: 'match-1', vodUrl: 'https://youtu.be/abc123' },
+      ]);
+      expect(snapshot.includedVods).toEqual([
+        { matchId: 'match-2', vodUrl: 'https://youtu.be/def456' },
+      ]);
+    });
+  });
 });

@@ -1,13 +1,17 @@
 import type { Database } from 'firebase-admin/database';
 import { z } from 'zod';
 import {
+  includedVodSchema,
+  MAX_DELIVERY_VODS,
   REVIEW_DELIVERY_STATES,
   shareTokenSchema,
+  type IncludedVod,
   type ReviewDeliveryState,
   type ShareToken,
 } from '@smash-tracker/shared';
 import { buildReviewShareId, NotFoundError } from '../services/rtdb.js';
 import { generateShareToken } from '../shares/token.js';
+import { freezeIncludedVods } from './deliveryVodFreeze.js';
 
 /**
  * Phase 12 Plan 04 (Coach Reviews & Delivery, DLV-01): the coach-side
@@ -59,8 +63,47 @@ export const reviewDeliveryRecordSchema = z.object({
   expiresAt: z.number().int().nonnegative().nullish(),
   ackAt: z.number().int().nonnegative().nullish(),
   viewedAt: z.number().int().nonnegative().nullish(),
+  /**
+   * Phase 21 (Rich Client Delivery View, DLVX-02/DLVX-04): the coach-picked
+   * VODs, FROZEN at delivery-creation time via `freezeIncludedVods` — a
+   * TOP-LEVEL additive field, following `expiresAt`/`ackAt`/`viewedAt`'s own
+   * precedent of growing this record additively rather than restructuring
+   * (RESEARCH Open Question 1). Absent (never `[]` — RTDB drops empty-array
+   * keys on write) when the delivery had zero resolvable picks; every READ
+   * path must normalize a missing key back to `[]` before treating it as
+   * "this delivery's VOD set" (see `parseDeliveryRecord` below).
+   */
+  includedVods: z.array(includedVodSchema).max(MAX_DELIVERY_VODS).nullish(),
 });
 export type ReviewDeliveryRecord = z.infer<typeof reviewDeliveryRecordSchema>;
+
+/**
+ * RTDB drops any key whose value is an empty array on write — a delivery
+ * created with zero resolvable `includedVods` picks round-trips with NO
+ * `includedVods` key at all. Every read of a delivery record that needs to
+ * treat `includedVods` as a real (possibly-empty) array must normalize the
+ * missing key back to `[]` before validating, mirroring
+ * `sessionDeliveries.ts`'s `parseDeliveryRecord` discipline exactly (Pitfall
+ * 2 / T-21-04's "empty pick set round-trips as an empty array, never 404").
+ */
+function parseDeliveryRecord(raw: unknown): ReviewDeliveryRecord {
+  if (raw === null || typeof raw !== 'object') {
+    return reviewDeliveryRecordSchema.parse(raw);
+  }
+  const rawRecord = raw as Record<string, unknown>;
+  return reviewDeliveryRecordSchema.parse({
+    ...rawRecord,
+    includedVods: rawRecord.includedVods ?? [],
+  });
+}
+
+function safeParseDeliveryRecord(raw: unknown): ReviewDeliveryRecord | null {
+  try {
+    return parseDeliveryRecord(raw);
+  } catch {
+    return null;
+  }
+}
 
 /**
  * One row of the coach-side delivery list (`GET .../deliveries`) — the
@@ -100,7 +143,7 @@ export async function createReviewDelivery(
   reviewId: string,
   version: number,
   webBaseUrl: string,
-  options: { expiresAt?: number } = {},
+  options: { expiresAt?: number; includedVodMatchIds?: string[] } = {},
 ): Promise<{ deliveryId: string; token: string; url: string }> {
   const versionSnapshot = await database
     .ref(`reviewVersions/${tenantId}/${reviewId}/${version}`)
@@ -108,6 +151,15 @@ export async function createReviewDelivery(
   if (!versionSnapshot.exists()) {
     throw new NotFoundError(`Review ${reviewId} has no published version ${version}`);
   }
+
+  // Phase 21 (DLVX-02/DLVX-04, D-10/Pitfall 3): freeze the coach-picked VODs
+  // BEFORE the atomic write below — resolved against the review's OWN
+  // tenant (T-21-03), never re-read live afterward.
+  const frozenIncludedVods: IncludedVod[] = await freezeIncludedVods(
+    database,
+    tenantId,
+    options.includedVodMatchIds ?? [],
+  );
 
   const token = generateShareToken();
   const deliveryRef = database.ref(`reviewDeliveries/${tenantId}/${reviewId}`).push();
@@ -140,6 +192,9 @@ export async function createReviewDelivery(
     expiresAt: options.expiresAt ?? null,
     ackAt: null,
     viewedAt: null,
+    // Conditional-spread (CONCERNS.md null-stripping rule): a zero-pick
+    // delivery writes NO includedVods key at all, never `[]`.
+    ...(frozenIncludedVods.length > 0 ? { includedVods: frozenIncludedVods } : {}),
   } satisfies ReviewDeliveryRecord);
 
   await database.ref().update({
@@ -169,22 +224,22 @@ export async function listReviewDeliveries(
   const raw = snapshot.val() as Record<string, unknown>;
 
   const rows = Object.entries(raw).flatMap(([deliveryId, value]) => {
-    const parsed = reviewDeliveryRecordSchema.safeParse(value);
-    if (!parsed.success) {
+    const parsed = safeParseDeliveryRecord(value);
+    if (!parsed) {
       return [];
     }
     return [
       {
         deliveryId,
-        ...parsed.data,
+        ...parsed,
         // Normalize nullish (never-set) to `null` — the wire response
         // schema uses `.nullable()`, not `.nullish()` (bulkShareRequestSchema's
         // documented convention: response contracts are never `undefined`).
-        revokedAt: parsed.data.revokedAt ?? null,
-        expiresAt: parsed.data.expiresAt ?? null,
-        ackAt: parsed.data.ackAt ?? null,
-        viewedAt: parsed.data.viewedAt ?? null,
-        url: `${webBaseUrl}/r/${parsed.data.token}`,
+        revokedAt: parsed.revokedAt ?? null,
+        expiresAt: parsed.expiresAt ?? null,
+        ackAt: parsed.ackAt ?? null,
+        viewedAt: parsed.viewedAt ?? null,
+        url: `${webBaseUrl}/r/${parsed.token}`,
       },
     ];
   });
@@ -213,11 +268,10 @@ export async function revokeReviewDelivery(
   if (!snapshot.exists()) {
     throw new NotFoundError(`Delivery ${deliveryId} not found`);
   }
-  const parsed = reviewDeliveryRecordSchema.safeParse(snapshot.val());
-  if (!parsed.success) {
+  const record = safeParseDeliveryRecord(snapshot.val());
+  if (!record) {
     throw new NotFoundError(`Delivery ${deliveryId} not found`);
   }
-  const record = parsed.data;
 
   if (record.revokedAt != null) {
     return { revoked: false };
@@ -265,14 +319,14 @@ export async function setDeliveryAck(
   }
   const raw = snapshot.val() as Record<string, unknown>;
   const entry = Object.entries(raw).find(([, value]) => {
-    const parsed = reviewDeliveryRecordSchema.safeParse(value);
-    return parsed.success && parsed.data.token === token;
+    const parsed = safeParseDeliveryRecord(value);
+    return parsed !== null && parsed.token === token;
   });
   if (!entry) {
     return null;
   }
   const [deliveryId, rawRecord] = entry;
-  const record = reviewDeliveryRecordSchema.parse(rawRecord);
+  const record = parseDeliveryRecord(rawRecord);
 
   if (record.ackAt != null) {
     return { deliveryId, alreadyAcked: true };
@@ -328,14 +382,14 @@ export async function setDeliveryViewed(
   }
   const raw = snapshot.val() as Record<string, unknown>;
   const entry = Object.entries(raw).find(([, value]) => {
-    const parsed = reviewDeliveryRecordSchema.safeParse(value);
-    return parsed.success && parsed.data.token === token;
+    const parsed = safeParseDeliveryRecord(value);
+    return parsed !== null && parsed.token === token;
   });
   if (!entry) {
     return null;
   }
   const [deliveryId, rawRecord] = entry;
-  const record = reviewDeliveryRecordSchema.parse(rawRecord);
+  const record = parseDeliveryRecord(rawRecord);
 
   if (record.viewedAt != null) {
     return { deliveryId, alreadyViewed: true };

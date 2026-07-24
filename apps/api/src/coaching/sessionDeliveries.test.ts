@@ -48,6 +48,23 @@ async function seedSession(database: FakeDatabase): Promise<string> {
   return sessionId;
 }
 
+/** Seeds a minimal `matches/{tenantId}/{matchId}` record — a VOD-bearing match by default. */
+function seedMatch(
+  database: FakeDatabase,
+  tenantId: string,
+  matchId: string,
+  overrides: Record<string, unknown> = {},
+): void {
+  database.seed(`matches/${tenantId}/${matchId}`, {
+    fighter_id: 1,
+    opponent_id: 2,
+    time: 1_700_000_000_000,
+    win: true,
+    vodUrl: 'https://youtu.be/abc123',
+    ...overrides,
+  });
+}
+
 describe('createSessionDelivery', () => {
   it('embeds a FROZEN client-visible snapshot and writes shareTokens + sessionDeliveries atomically', async () => {
     const database = new FakeDatabase();
@@ -111,6 +128,136 @@ describe('createSessionDelivery', () => {
     const dump = database.dump() as Record<string, unknown>;
     expect(dump.shareTokens).toBeUndefined();
     expect(dump.sessionDeliveries).toBeUndefined();
+  });
+
+  describe('includedVods freeze (Phase 21, DLVX-02/DLVX-04)', () => {
+    it('freezes includedVods the identical way as a review delivery, under the session tenant', async () => {
+      const database = new FakeDatabase();
+      const sessionId = await seedSession(database);
+      seedMatch(database, TENANT_ID, 'match-1', {
+        vodUrl: 'https://youtu.be/abc123',
+        vodStartSeconds: 42,
+        vodTimestamps: [{ seconds: 10, note: 'missed punish' }],
+      });
+
+      const { deliveryId } = await createSessionDelivery(
+        asDatabase(database),
+        TENANT_ID,
+        sessionId,
+        WEB_BASE_URL,
+        { includedVodMatchIds: ['match-1'] },
+      );
+
+      const deliveryRecord = dumpDeliveryRecord(database, TENANT_ID, sessionId, deliveryId);
+      const includedVods = deliveryRecord.includedVods as Array<Record<string, unknown>>;
+      expect(includedVods).toHaveLength(1);
+      expect(includedVods[0]).toMatchObject({
+        matchId: 'match-1',
+        vodUrl: 'https://youtu.be/abc123',
+        startSeconds: 42,
+      });
+    });
+
+    it('silently drops a picked matchId belonging to a DIFFERENT tenant (T-21-03)', async () => {
+      const database = new FakeDatabase();
+      const sessionId = await seedSession(database);
+      seedMatch(database, 'other-tenant', 'match-1');
+
+      const { deliveryId } = await createSessionDelivery(
+        asDatabase(database),
+        TENANT_ID,
+        sessionId,
+        WEB_BASE_URL,
+        { includedVodMatchIds: ['match-1'] },
+      );
+
+      const deliveryRecord = dumpDeliveryRecord(database, TENANT_ID, sessionId, deliveryId);
+      expect(deliveryRecord.includedVods).toBeUndefined();
+    });
+
+    it('silently drops a picked matchId whose match has no vodUrl', async () => {
+      const database = new FakeDatabase();
+      const sessionId = await seedSession(database);
+      seedMatch(database, TENANT_ID, 'match-1', { vodUrl: undefined });
+
+      const { deliveryId } = await createSessionDelivery(
+        asDatabase(database),
+        TENANT_ID,
+        sessionId,
+        WEB_BASE_URL,
+        { includedVodMatchIds: ['match-1'] },
+      );
+
+      const deliveryRecord = dumpDeliveryRecord(database, TENANT_ID, sessionId, deliveryId);
+      expect(deliveryRecord.includedVods).toBeUndefined();
+    });
+
+    it('a delivery created with zero resolvable picks writes NO includedVods key and reads back as an empty array via listSessionDeliveries', async () => {
+      const database = new FakeDatabase();
+      const sessionId = await seedSession(database);
+
+      const { deliveryId } = await createSessionDelivery(
+        asDatabase(database),
+        TENANT_ID,
+        sessionId,
+        WEB_BASE_URL,
+      );
+
+      const deliveryRecord = dumpDeliveryRecord(database, TENANT_ID, sessionId, deliveryId);
+      expect(deliveryRecord.includedVods).toBeUndefined();
+
+      const rows = await listSessionDeliveries(
+        asDatabase(database),
+        TENANT_ID,
+        sessionId,
+        WEB_BASE_URL,
+      );
+      expect(rows[0]!.includedVods).toEqual([]);
+    });
+
+    it('caps the frozen includedVods at MAX_DELIVERY_VODS', async () => {
+      const database = new FakeDatabase();
+      const sessionId = await seedSession(database);
+      const matchIds = Array.from({ length: 15 }, (_, index) => `match-${index}`);
+      for (const matchId of matchIds) {
+        seedMatch(database, TENANT_ID, matchId);
+      }
+
+      const { deliveryId } = await createSessionDelivery(
+        asDatabase(database),
+        TENANT_ID,
+        sessionId,
+        WEB_BASE_URL,
+        { includedVodMatchIds: matchIds },
+      );
+
+      const deliveryRecord = dumpDeliveryRecord(database, TENANT_ID, sessionId, deliveryId);
+      expect((deliveryRecord.includedVods as unknown[]).length).toBe(10);
+    });
+
+    it("does NOT change a delivery's frozen includedVods when the source match is edited afterward (D-10 immutability)", async () => {
+      const database = new FakeDatabase();
+      const sessionId = await seedSession(database);
+      seedMatch(database, TENANT_ID, 'match-1', {
+        vodTimestamps: [{ seconds: 10, note: 'original note' }],
+      });
+
+      const { deliveryId } = await createSessionDelivery(
+        asDatabase(database),
+        TENANT_ID,
+        sessionId,
+        WEB_BASE_URL,
+        { includedVodMatchIds: ['match-1'] },
+      );
+
+      seedMatch(database, TENANT_ID, 'match-1', {
+        vodTimestamps: [{ seconds: 99, note: 'edited after delivery — must never surface' }],
+      });
+
+      const deliveryRecord = dumpDeliveryRecord(database, TENANT_ID, sessionId, deliveryId);
+      const includedVods = deliveryRecord.includedVods as Array<Record<string, unknown>>;
+      expect(includedVods[0]!.timestamps).toEqual([{ seconds: 10, note: 'original note' }]);
+    });
   });
 });
 
