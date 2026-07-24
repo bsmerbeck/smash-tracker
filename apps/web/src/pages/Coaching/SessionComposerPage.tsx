@@ -111,6 +111,12 @@ export function SessionComposerPage() {
     () => (matchesData ?? []).filter((match) => match.vodUrl != null),
     [matchesData],
   );
+  // SESSM-01: the linked-matches picker offers EVERY match in the client's
+  // library — VOD-less games included, since a session log is about the
+  // games played, not just the footage. `vods` above stays VOD-only and is
+  // used exclusively for `DeliveryVodPicker` (delivery still needs playable
+  // VODs).
+  const linkableMatches = useMemo(() => matchesData ?? [], [matchesData]);
 
   const [buffer, setBuffer] = useState<SessionEditBuffer>(() => ({
     date: dateToInputValue(Date.now()),
@@ -423,22 +429,27 @@ export function SessionComposerPage() {
       </div>
 
       <div className="flex flex-col gap-1.5">
-        <p className="text-sm font-medium">{t('coaching.sessions.composer.linkedVods.label')}</p>
+        <p className="text-sm font-medium">{t('coaching.sessions.composer.linkedMatches.label')}</p>
         {buffer.linkedMatchIds.length > 0 && (
           <div className="flex flex-wrap items-center gap-1.5">
             {buffer.linkedMatchIds.map((matchId) => {
-              const match = vods.find((candidate) => candidate.id === matchId);
+              const match = linkableMatches.find((candidate) => candidate.id === matchId);
               const label = match
                 ? `${fighterName(match.fighter_id)} ${t('matchups.vs')} ${fighterName(match.opponent_id)}`
                 : matchId;
               return (
                 <Badge key={matchId} variant="outline" className="gap-1">
                   {label}
+                  {match && match.vodUrl == null && (
+                    <span className="text-[10px] uppercase tracking-wide text-muted-foreground">
+                      {t('coaching.sessions.composer.linkedMatches.noVodHint')}
+                    </span>
+                  )}
                   <button
                     type="button"
                     onClick={() => handleRemoveLinkedVod(matchId)}
-                    aria-label={t('coaching.sessions.composer.linkedVods.removeAria', {
-                      vod: label,
+                    aria-label={t('coaching.sessions.composer.linkedMatches.removeAria', {
+                      match: label,
                     })}
                   >
                     <X className="size-3" />
@@ -448,13 +459,13 @@ export function SessionComposerPage() {
             })}
           </div>
         )}
-        {vods.length === 0 ? (
+        {linkableMatches.length === 0 ? (
           <p className="text-xs text-muted-foreground">
-            {t('coaching.sessions.composer.linkedVods.empty')}
+            {t('coaching.sessions.composer.linkedMatches.empty')}
           </p>
         ) : (
           <select
-            aria-label={t('coaching.sessions.composer.linkedVods.label')}
+            aria-label={t('coaching.sessions.composer.linkedMatches.label')}
             value=""
             disabled={linkedVodsCapReached}
             onChange={(event) => {
@@ -465,8 +476,8 @@ export function SessionComposerPage() {
             }}
             className="h-9 w-fit rounded-md border border-input bg-transparent px-3 text-sm"
           >
-            <option value="">{t('coaching.sessions.composer.linkedVods.addPlaceholder')}</option>
-            {vods
+            <option value="">{t('coaching.sessions.composer.linkedMatches.addPlaceholder')}</option>
+            {linkableMatches
               .filter((match) => !buffer.linkedMatchIds.includes(match.id))
               .map((match) => (
                 <option key={match.id} value={match.id}>
@@ -478,7 +489,7 @@ export function SessionComposerPage() {
         )}
         {linkedVodsCapReached && (
           <p className="text-xs text-muted-foreground">
-            {t('coaching.sessions.composer.linkedVods.capReached', {
+            {t('coaching.sessions.composer.linkedMatches.capReached', {
               max: MAX_SESSION_LINKED_MATCH_IDS,
             })}
           </p>
