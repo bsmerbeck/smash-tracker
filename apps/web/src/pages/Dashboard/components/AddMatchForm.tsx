@@ -1,7 +1,7 @@
 import { useContext, useState, type ComponentProps } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
-import type { CreateMatchInput, Fighter } from '@smash-tracker/shared';
+import type { CreateMatchInput, Fighter, Match } from '@smash-tracker/shared';
 import {
   Dialog,
   DialogContent,
@@ -88,6 +88,7 @@ export function AddMatchForm({
   triggerSize,
   fighterSprites: fighterSpritesProp,
   fighter: fighterProp,
+  onCreated,
 }: {
   requireVod?: boolean;
   triggerLabel?: string;
@@ -95,6 +96,14 @@ export function AddMatchForm({
   triggerSize?: ComponentProps<typeof Button>['size'];
   fighterSprites?: Fighter[];
   fighter?: Fighter;
+  /**
+   * SESSM-02: optional hook fired with the resolved `Match` (incl. `id`)
+   * each time a game is successfully persisted — once in single-game mode,
+   * once per game (in order) in set mode. Purely additive: omitting it
+   * (all 3 pre-existing mount points) changes nothing about submit/toast/
+   * dialog-close behavior.
+   */
+  onCreated?: (match: Match) => void;
 } = {}) {
   const { t } = useTranslation();
   const dashboardContext = useContext(DashboardContext);
@@ -135,7 +144,8 @@ export function AddMatchForm({
   async function onSubmit(values: MatchFormValues) {
     const input: CreateMatchInput = matchFormValuesToInput(values);
     try {
-      await createMatch.mutateAsync(input);
+      const created = await createMatch.mutateAsync(input);
+      onCreated?.(created);
       toast.success(t('dashboard.addMatch.added'));
       setOpen(false);
     } catch {
@@ -160,8 +170,9 @@ export function AddMatchForm({
     setSavingSet(true);
     try {
       for (const payload of payloads) {
-        await createMatch.mutateAsync(payload);
+        const created = await createMatch.mutateAsync(payload);
         savedCount += 1;
+        onCreated?.(created);
       }
       const score = getSetScore(
         payloads.map((p) => ({ result: p.win ? 'win' : 'loss', stageId: 0 })),
