@@ -462,7 +462,7 @@
         "manage": "Gérer"
       },
       "editVod": "Modifier les notes VOD",
-      "addVod": "Ajouter des notes VOD",
+      "addVod": "Ajouter une VOD",
       "watchVod": "Regarder la VOD",
       "vodMenu": {
         "goToManager": "Aller au Gestionnaire de VODs",
@@ -505,6 +505,12 @@
   "vodManager": {
     "title": "Gestionnaire de VODs",
     "emptyState": "Aucune VOD pour l'instant",
+    "fighterSetup": {
+      "title": "Choisissez vos combattants pour commencer à enregistrer",
+      "body": "Choisissez vos combattants avant de pouvoir enregistrer des matchs ou attacher des VODs ici.",
+      "cta": "Choisir les combattants",
+      "disabledReason": "Choisissez d'abord vos combattants"
+    },
     "filters": {
       "fighter": "Combattant",
       "opponentFighter": "Personnage adverse",
@@ -1583,7 +1589,9 @@
         "labelPlaceholder": "ex. Alex « Falcon » Kim",
         "error": "Une erreur est survenue lors de la création de ce client.",
         "pending": "Création...",
-        "confirm": "Créer"
+        "confirm": "Créer",
+        "createdToast": "Client créé",
+        "setFightersAction": "Choisir les combattants"
       },
       "clients_one": "{{count}} client",
       "clients_other": "{{count}} clients",
@@ -1814,7 +1822,7 @@
       "list": {
         "title": "Revues",
         "subtitle": "Le statut de la revue et le statut de livraison sont distincts — un brouillon n'est jamais \"non consulté\", une livraison n'est jamais \"un brouillon\".",
-        "newReview": "+ Nouvelle revue",
+        "newReview": "Nouvelle revue",
         "createError": "Une erreur s'est produite lors du démarrage de cette revue.",
         "empty": "Pas encore de revues. Commencez-en une ici ou depuis un VOD dans le gestionnaire de VOD.",
         "listAria": "Revues",
@@ -1861,7 +1869,7 @@
       "list": {
         "title": "Séances",
         "subtitle": "Les séances d'entraînement enregistrées pour ce client — devoirs et statut de livraison sont ici.",
-        "newSession": "+ Nouvelle séance",
+        "newSession": "Nouvelle séance",
         "createError": "Une erreur s'est produite lors du démarrage de cette séance.",
         "empty": "Pas encore de séances. Enregistrez-en une pour suivre les devoirs et la livrer à votre client.",
         "listAria": "Séances",
@@ -1900,7 +1908,7 @@
         "summaryPlaceholder": "Sur quoi avez-vous travaillé pendant cette séance ?",
         "homework": {
           "heading": "Devoirs",
-          "add": "+ Ajouter un devoir",
+          "add": "Ajouter un devoir",
           "itemPlaceholder": "Que devrait-il/elle pratiquer ?",
           "toggleAria": "Marquer \"{{item}}\" comme fait",
           "remove": "Retirer ce devoir",

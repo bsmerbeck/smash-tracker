@@ -1,4 +1,4 @@
-import { useContext, useState, type ComponentProps } from 'react';
+import { useContext, useId, useState, type ComponentProps } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 import type { CreateMatchInput, Fighter, Match } from '@smash-tracker/shared';
@@ -89,6 +89,7 @@ export function AddMatchForm({
   fighterSprites: fighterSpritesProp,
   fighter: fighterProp,
   onCreated,
+  disabledReason,
 }: {
   requireVod?: boolean;
   triggerLabel?: string;
@@ -104,12 +105,23 @@ export function AddMatchForm({
    * dialog-close behavior.
    */
   onCreated?: (match: Match) => void;
+  /**
+   * Fighter-setup dead-end fix: when the trigger is disabled because
+   * `fighterSprites` is empty, this renders as a screen-reader-only
+   * description on the trigger button (`aria-describedby` + `title`) so the
+   * disabled state explains itself instead of dead-ending silently. Omitting
+   * it (all pre-existing mount points) is a no-op — the ENABLED trigger's
+   * accessible name is unaffected either way.
+   */
+  disabledReason?: string;
 } = {}) {
   const { t } = useTranslation();
   const dashboardContext = useContext(DashboardContext);
   const fighterSprites = fighterSpritesProp ?? dashboardContext?.fighterSprites ?? [];
   const fighter = fighterProp ?? dashboardContext?.fighter;
   const createMatch = useCreateMatch();
+  const triggerDisabled = fighterSprites.length === 0;
+  const describedById = useId();
   const [open, setOpen] = useState(false);
   const [mode, setMode] = useState<EntryMode>('single');
   const [games, setGames] = useState<SetGameValues[]>([]);
@@ -201,10 +213,21 @@ export function AddMatchForm({
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogTrigger asChild>
-        <Button disabled={fighterSprites.length === 0} variant={triggerVariant} size={triggerSize}>
+        <Button
+          disabled={triggerDisabled}
+          variant={triggerVariant}
+          size={triggerSize}
+          title={triggerDisabled && disabledReason ? disabledReason : undefined}
+          aria-describedby={triggerDisabled && disabledReason ? describedById : undefined}
+        >
           {triggerLabel ?? t('dashboard.addMatch.title')}
         </Button>
       </DialogTrigger>
+      {triggerDisabled && disabledReason && (
+        <span id={describedById} className="sr-only">
+          {disabledReason}
+        </span>
+      )}
       <DialogContent className="max-h-[90vh] max-w-2xl overflow-y-auto">
         <DialogHeader>
           <DialogTitle>{t('dashboard.addMatch.title')}</DialogTitle>

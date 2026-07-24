@@ -462,7 +462,7 @@
         "manage": "Manage"
       },
       "editVod": "Edit VOD notes",
-      "addVod": "Add VOD notes",
+      "addVod": "Add VOD",
       "watchVod": "Watch VOD",
       "vodMenu": {
         "goToManager": "Go to VOD Manager",
@@ -505,6 +505,12 @@
   "vodManager": {
     "title": "VOD Manager",
     "emptyState": "No VODs yet",
+    "fighterSetup": {
+      "title": "Set your fighters to start logging",
+      "body": "Pick your fighters before you can log matches or attach VODs here.",
+      "cta": "Set fighters",
+      "disabledReason": "Set your fighters first"
+    },
     "filters": {
       "fighter": "Fighter",
       "opponentFighter": "Opponent's Character",
@@ -1583,7 +1589,9 @@
         "labelPlaceholder": "e.g. Alex \"Falcon\" Kim",
         "error": "Something went wrong creating this client.",
         "pending": "Creating...",
-        "confirm": "Create"
+        "confirm": "Create",
+        "createdToast": "Client created",
+        "setFightersAction": "Set fighters"
       },
       "clients_one": "{{count}} client",
       "clients_other": "{{count}} clients",
@@ -1814,7 +1822,7 @@
       "list": {
         "title": "Reviews",
         "subtitle": "Review status and delivery status are separate — a draft is never \"unviewed\", a delivery is never \"a draft\".",
-        "newReview": "+ New review",
+        "newReview": "New review",
         "createError": "Something went wrong starting this review.",
         "empty": "No reviews yet. Start one from here or from a VOD in the VOD Manager.",
         "listAria": "Reviews",
@@ -1861,7 +1869,7 @@
       "list": {
         "title": "Sessions",
         "subtitle": "Training sessions logged for this client — homework and delivery status live here.",
-        "newSession": "+ New session",
+        "newSession": "New session",
         "createError": "Something went wrong starting this session.",
         "empty": "No sessions yet. Log one to start tracking homework and deliver it to your client.",
         "listAria": "Sessions",
@@ -1900,7 +1908,7 @@
         "summaryPlaceholder": "What did you work on this session?",
         "homework": {
           "heading": "Homework",
-          "add": "+ Add item",
+          "add": "Add item",
           "itemPlaceholder": "What should they practice?",
           "toggleAria": "Mark \"{{item}}\" as done",
           "remove": "Remove homework item",

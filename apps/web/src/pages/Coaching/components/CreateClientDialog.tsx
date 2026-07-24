@@ -2,6 +2,7 @@ import { useState } from 'react';
 import type { FormEvent } from 'react';
 import { useNavigate } from 'react-router';
 import { useTranslation } from 'react-i18next';
+import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { PendingButton } from '@/components/ui/pending-button';
 import {
@@ -58,6 +59,17 @@ export function CreateClientDialog({ triggerLabel }: { triggerLabel: string }) {
           // checklist (add-fighters first) is a single source of truth
           // rather than being duplicated here (CFLOW-01/02).
           navigate(`/coach/${client.clientId}`);
+          // Fighter-setup UX: additive nudge toward the activation
+          // checklist's first-incomplete step, without bypassing
+          // ClientOverviewPage's own CTA (see the comment above — jumping
+          // straight to /fighters here would duplicate that single source
+          // of truth). A success toast with a "Set fighters" action.
+          toast.success(t('coaching.hub.create.createdToast'), {
+            action: {
+              label: t('coaching.hub.create.setFightersAction'),
+              onClick: () => navigate(`/coach/${client.clientId}/fighters`),
+            },
+          });
         },
       },
     );

@@ -462,7 +462,7 @@
         "manage": "管理"
       },
       "editVod": "VODメモを編集",
-      "addVod": "VODメモを追加",
+      "addVod": "VODを追加",
       "watchVod": "VODを見る",
       "vodMenu": {
         "goToManager": "VODマネージャーへ移動",
@@ -505,6 +505,12 @@
   "vodManager": {
     "title": "VODマネージャー",
     "emptyState": "まだVODがありません",
+    "fighterSetup": {
+      "title": "記録を始めるにはファイターを設定してください",
+      "body": "ここで試合を記録したりVODを追加したりするには、まずファイターを選択してください。",
+      "cta": "ファイターを設定",
+      "disabledReason": "まずファイターを設定してください"
+    },
     "filters": {
       "fighter": "ファイター",
       "opponentFighter": "相手のキャラクター",
@@ -1583,7 +1589,9 @@
         "labelPlaceholder": "例: Alex「Falcon」Kim",
         "error": "クライアントの作成中に問題が発生しました。",
         "pending": "作成中...",
-        "confirm": "作成"
+        "confirm": "作成",
+        "createdToast": "クライアントを作成しました",
+        "setFightersAction": "ファイターを設定"
       },
       "clients_one": "{{count}}人のクライアント",
       "clients_other": "{{count}}人のクライアント",
@@ -1814,7 +1822,7 @@
       "list": {
         "title": "レビュー",
         "subtitle": "レビューのステータスと配信のステータスは別々です — 下書きが「未読」になることはなく、配信が「下書き」になることもありません。",
-        "newReview": "＋ 新しいレビュー",
+        "newReview": "新しいレビュー",
         "createError": "このレビューの開始中にエラーが発生しました。",
         "empty": "レビューはまだありません。ここから、またはVODマネージャーのVODから開始できます。",
         "listAria": "レビュー",
@@ -1861,7 +1869,7 @@
       "list": {
         "title": "セッション",
         "subtitle": "このクライアントのために記録されたトレーニングセッション — 宿題と配信ステータスはここで確認できます。",
-        "newSession": "＋ 新しいセッション",
+        "newSession": "新しいセッション",
         "createError": "このセッションの開始中にエラーが発生しました。",
         "empty": "セッションはまだありません。記録して宿題を管理し、クライアントに配信しましょう。",
         "listAria": "セッション",
@@ -1900,7 +1908,7 @@
         "summaryPlaceholder": "このセッションで取り組んだ内容は？",
         "homework": {
           "heading": "宿題",
-          "add": "＋ 項目を追加",
+          "add": "項目を追加",
           "itemPlaceholder": "何を練習すべきですか？",
           "toggleAria": "「{{item}}」を完了としてマーク",
           "remove": "宿題を削除",

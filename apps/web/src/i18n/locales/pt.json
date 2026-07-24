@@ -462,7 +462,7 @@
         "manage": "Gerenciar"
       },
       "editVod": "Editar notas de VOD",
-      "addVod": "Adicionar notas de VOD",
+      "addVod": "Adicionar VOD",
       "watchVod": "Assistir VOD",
       "vodMenu": {
         "goToManager": "Ir para o Gerenciador de VODs",
@@ -505,6 +505,12 @@
   "vodManager": {
     "title": "Gerenciador de VODs",
     "emptyState": "Ainda não há VODs",
+    "fighterSetup": {
+      "title": "Defina seus lutadores para começar a registrar",
+      "body": "Escolha seus lutadores antes de registrar partidas ou anexar VODs aqui.",
+      "cta": "Definir lutadores",
+      "disabledReason": "Defina seus lutadores primeiro"
+    },
     "filters": {
       "fighter": "Lutador",
       "opponentFighter": "Personagem do oponente",
@@ -1583,7 +1589,9 @@
         "labelPlaceholder": "ex.: Alex \"Falcon\" Kim",
         "error": "Algo deu errado ao criar esse cliente.",
         "pending": "Criando...",
-        "confirm": "Criar"
+        "confirm": "Criar",
+        "createdToast": "Cliente criado",
+        "setFightersAction": "Definir lutadores"
       },
       "clients_one": "{{count}} cliente",
       "clients_other": "{{count}} clientes",
@@ -1814,7 +1822,7 @@
       "list": {
         "title": "Revisões",
         "subtitle": "O status da análise e o status da entrega são separados — um rascunho nunca é \"não visualizado\", uma entrega nunca é \"um rascunho\".",
-        "newReview": "+ Nova revisão",
+        "newReview": "Nova revisão",
         "createError": "Ocorreu um erro ao iniciar esta revisão.",
         "empty": "Ainda não há revisões. Comece uma por aqui ou a partir de um VOD no Gerenciador de VODs.",
         "listAria": "Revisões",
@@ -1861,7 +1869,7 @@
       "list": {
         "title": "Sessões",
         "subtitle": "Sessões de treino registradas para este cliente — tarefas e status de entrega ficam aqui.",
-        "newSession": "+ Nova sessão",
+        "newSession": "Nova sessão",
         "createError": "Ocorreu um erro ao iniciar esta sessão.",
         "empty": "Ainda não há sessões. Registre uma para acompanhar as tarefas e entregá-la ao seu cliente.",
         "listAria": "Sessões",
@@ -1900,7 +1908,7 @@
         "summaryPlaceholder": "No que vocês trabalharam nesta sessão?",
         "homework": {
           "heading": "Tarefas",
-          "add": "+ Adicionar tarefa",
+          "add": "Adicionar tarefa",
           "itemPlaceholder": "O que ele(a) deveria praticar?",
           "toggleAria": "Marcar \"{{item}}\" como concluída",
           "remove": "Remover tarefa",
