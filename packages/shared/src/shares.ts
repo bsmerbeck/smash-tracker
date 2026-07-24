@@ -52,6 +52,44 @@ const shareTimestampSchema = z.object({
 export type ShareTimestamp = z.infer<typeof shareTimestampSchema>;
 
 /**
+ * Phase 21 (Rich Client Delivery View, DLVX-02/DLVX-04): the max number of
+ * coach-picked VODs a single delivery's frozen `includedVods` array may
+ * carry (owner-locked cap, 21-CONTEXT.md). Mirrors
+ * `coachingSession.ts`'s `MAX_SESSION_LINKED_MATCH_IDS` placement
+ * convention — a named constant living next to the schema it bounds.
+ */
+export const MAX_DELIVERY_VODS = 10;
+
+/**
+ * Phase 21 (Rich Client Delivery View, DLVX-02/DLVX-04): one coach-picked
+ * VOD, FROZEN into a delivery record at delivery-creation time (never a
+ * live pointer back to `matches/{tenantId}/{matchId}`) — the data
+ * foundation the recipient page's "VOD Notes" tab renders. Authored FROM
+ * SCRATCH by `freezeIncludedVods` (apps/api/src/coaching) from the source
+ * match's CLIENT-VISIBLE VOD fields only (`vodUrl`, `vodStartSeconds`,
+ * `vodTimestamps`) — never spread from the raw match record (T-21-01: no
+ * field here for the opponent's human name, opponent notes, or any other
+ * private match fact).
+ *
+ * Deliberately distinct from `citationSources` (also on
+ * `publicShareSnapshotSchema`): `citationSources` is resolved LIVE on every
+ * request from `{{cite:...}}` tokens in the review body; `includedVods` is
+ * frozen once, at creation, and is delivery-specific (two deliveries of the
+ * same review version can carry different `includedVods` — Pitfall 3/T-21-05).
+ */
+export const includedVodSchema = z.object({
+  /** The source match's id — a private lifecycle reference, kept only so the coach-side delivery UI can show which library VOD this was. Never itself a capability; the anonymous recipient never sees or uses this to reach `matches/`. */
+  matchId: z.string().min(1),
+  /** A structurally-safe descriptor ONLY (e.g. a fighter matchup) — NEVER the opponent's human name, opponent notes, or any other private match field (T-21-01). */
+  label: z.string().trim().max(120).nullish(),
+  vodUrl: z.string().url(),
+  startSeconds: z.number().int().nonnegative().nullish(),
+  /** Frozen per-VOD notes, reusing `shareTimestampSchema`'s shape/caps (never a second copy of the 200-char/5-tag limits). */
+  timestamps: z.array(shareTimestampSchema).max(20).nullish(),
+});
+export type IncludedVod = z.infer<typeof includedVodSchema>;
+
+/**
  * Phase 8 (Coaching Edit Sessions): the public, edit-session variant of
  * `shareTimestampSchema` — additive `id`/`coach`/`own` fields so the coach
  * UI can tell which notes are "mine" (edit/delete affordance) and everyone
@@ -286,6 +324,17 @@ export const publicShareSnapshotSchema = z
     /** 0..n linked client VOD/match ids the session references. */
     sessionLinkedMatchRefs: z.array(z.string().min(1)).nullish(),
     // --- shared across every kind ---
+    /**
+     * Phase 21 (Rich Client Delivery View, DLVX-02/DLVX-04): the coach-picked
+     * VODs FROZEN into THIS delivery at creation time — optional for every
+     * kind (never gated by a `.refine()` below), so a pre-Phase-21 delivery
+     * (no key) and a delivery with zero coach-picked VODs both validate
+     * unchanged. Distinct from and independent of `citationSources` above
+     * (see `includedVodSchema`'s own doc comment for the freshness-semantics
+     * split): a coachReview snapshot can carry both fields at once, resolved
+     * completely independently.
+     */
+    includedVods: z.array(includedVodSchema).max(MAX_DELIVERY_VODS).nullish(),
     reviewedMomentsCount: z.number().int().nonnegative(),
     ownerDisplayName: z.string().trim().max(60).nullish(),
   })

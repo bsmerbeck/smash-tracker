@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
   createShareInputSchema,
+  includedVodSchema,
+  MAX_DELIVERY_VODS,
   MAX_SHARES_PER_USER,
   publicShareSnapshotSchema,
   shareSnapshotSchema,
@@ -547,5 +549,148 @@ describe('createShareInputSchema', () => {
 describe('MAX_SHARES_PER_USER', () => {
   it('equals 100', () => {
     expect(MAX_SHARES_PER_USER).toBe(100);
+  });
+});
+
+describe('includedVodSchema (Phase 21, DLVX-02/DLVX-04)', () => {
+  function fullIncludedVod() {
+    return {
+      matchId: 'match-1',
+      label: 'Kazuya vs Sora',
+      vodUrl: 'https://youtu.be/abc123',
+      startSeconds: 42,
+      timestamps: [
+        { seconds: 10, note: 'missed punish', tags: ['punish'] },
+        { seconds: 90, note: 'good edgeguard' },
+      ],
+    };
+  }
+
+  it('accepts a fully-populated { matchId, vodUrl } with optional label/startSeconds/timestamps', () => {
+    const parsed = includedVodSchema.parse(fullIncludedVod());
+    expect(parsed.matchId).toBe('match-1');
+    expect(parsed.label).toBe('Kazuya vs Sora');
+    expect(parsed.startSeconds).toBe(42);
+    expect(parsed.timestamps).toHaveLength(2);
+  });
+
+  it('accepts the minimal { matchId, vodUrl } shape (label/startSeconds/timestamps all absent)', () => {
+    const parsed = includedVodSchema.parse({ matchId: 'match-1', vodUrl: 'https://youtu.be/abc' });
+    expect(parsed.label).toBeUndefined();
+    expect(parsed.startSeconds).toBeUndefined();
+    expect(parsed.timestamps).toBeUndefined();
+  });
+
+  it('rejects a missing vodUrl', () => {
+    const result = includedVodSchema.safeParse({ matchId: 'match-1' });
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects an invalid (non-URL) vodUrl', () => {
+    const result = includedVodSchema.safeParse({ matchId: 'match-1', vodUrl: 'not-a-url' });
+    expect(result.success).toBe(false);
+  });
+
+  it('timestamps is capped at 20 and reuses the { seconds, note, tags? } shape', () => {
+    const tooMany = Array.from({ length: 21 }, (_, index) => ({
+      seconds: index,
+      note: `n${index}`,
+    }));
+    const result = includedVodSchema.safeParse({
+      matchId: 'match-1',
+      vodUrl: 'https://youtu.be/abc',
+      timestamps: tooMany,
+    });
+    expect(result.success).toBe(false);
+
+    const exactlyTwenty = includedVodSchema.parse({
+      matchId: 'match-1',
+      vodUrl: 'https://youtu.be/abc',
+      timestamps: tooMany.slice(0, 20),
+    });
+    expect(exactlyTwenty.timestamps).toHaveLength(20);
+  });
+});
+
+describe('MAX_DELIVERY_VODS', () => {
+  it('equals 10', () => {
+    expect(MAX_DELIVERY_VODS).toBe(10);
+  });
+});
+
+describe('publicShareSnapshotSchema: includedVods (Phase 21, DLVX-02/DLVX-04)', () => {
+  it('accepts a coachReview snapshot carrying includedVods', () => {
+    const parsed = publicShareSnapshotSchema.parse({
+      createdAt: 1000,
+      kind: 'coachReview' as const,
+      coachDisplayName: 'Coach Alex',
+      reviewPublishedAt: 1000,
+      sections: [],
+      reviewedMomentsCount: 0,
+      includedVods: [{ matchId: 'match-1', vodUrl: 'https://youtu.be/abc123' }],
+    });
+    expect(parsed.includedVods).toHaveLength(1);
+    expect(parsed.includedVods![0]!.matchId).toBe('match-1');
+  });
+
+  it('accepts a session snapshot carrying includedVods', () => {
+    const parsed = publicShareSnapshotSchema.parse({
+      createdAt: 1000,
+      kind: 'session' as const,
+      coachDisplayName: 'Coach Alex',
+      sessionDate: 1000,
+      sessionCharacterTags: [],
+      sessionSummary: 'Great session',
+      sessionHomework: [],
+      reviewedMomentsCount: 0,
+      includedVods: [{ matchId: 'match-2', vodUrl: 'https://youtu.be/def456' }],
+    });
+    expect(parsed.includedVods).toHaveLength(1);
+    expect(parsed.includedVods![0]!.matchId).toBe('match-2');
+  });
+
+  it('accepts every existing snapshot with NO includedVods key (back-compat, no new refine gates it)', () => {
+    const review = publicShareSnapshotSchema.safeParse({
+      createdAt: 1000,
+      result: 'win' as const,
+      fighterId: 1,
+      opponentFighterId: 2,
+      matchDate: 500,
+      vodUrl: 'https://youtube.com/watch?v=abc',
+      reviewedMomentsCount: 0,
+      redaction: { includedNotes: true, includedTags: true, showDisplayName: false },
+    });
+    expect(review.success).toBe(true);
+    expect((review.success && review.data.includedVods) || undefined).toBeUndefined();
+
+    const recap = publicShareSnapshotSchema.safeParse({
+      createdAt: 1000,
+      kind: 'recap' as const,
+      recapSource: 'startgg' as const,
+      tournamentName: 'The Big House 9',
+      tournamentDate: 500,
+      setRecordWins: 2,
+      setRecordLosses: 1,
+      characterFighterIds: [1, 5],
+      reviewedMomentsCount: 0,
+    });
+    expect(recap.success).toBe(true);
+  });
+
+  it('rejects an includedVods array longer than MAX_DELIVERY_VODS', () => {
+    const tooMany = Array.from({ length: MAX_DELIVERY_VODS + 1 }, (_, index) => ({
+      matchId: `match-${index}`,
+      vodUrl: 'https://youtu.be/abc',
+    }));
+    const result = publicShareSnapshotSchema.safeParse({
+      createdAt: 1000,
+      kind: 'coachReview' as const,
+      coachDisplayName: 'Coach Alex',
+      reviewPublishedAt: 1000,
+      sections: [],
+      reviewedMomentsCount: 0,
+      includedVods: tooMany,
+    });
+    expect(result.success).toBe(false);
   });
 });
