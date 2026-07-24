@@ -2,14 +2,28 @@ import escapeHtml from 'escape-html';
 import { formatOrdinal, getFighterById, type PublicShareSnapshot } from '@smash-tracker/shared';
 import { createTtlCache } from './ttlCache.js';
 
-/** How long the fetched `spa.html` shell is cached in-memory before a re-fetch. */
+/**
+ * IN-06 fix: this no longer bounds shell freshness — every `/s/:token`
+ * request revalidates `spa.html` against the Hosting origin via a
+ * conditional GET (`If-None-Match`/ETag), so a hosting deploy is picked up
+ * on the very next request instead of waiting out a TTL. This constant now
+ * bounds only how long a last-good cached shell may keep being served
+ * stale-on-error when the Hosting origin's `spa.html` can't be reached
+ * (network error, non-2xx, or an unexpected bare 304).
+ */
 const SHELL_CACHE_TTL_MS = 5 * 60 * 1000;
 const SHELL_CACHE_KEY = 'spa-shell';
+
+/** In-memory shell cache entry: the last-fetched shell body plus its ETag (if the origin sent one), used to build the next request's `If-None-Match`. */
+interface ShellCacheEntry {
+  html: string;
+  etag?: string;
+}
 
 // Module-level: one Fastify process serves every request, so one shell cache
 // (there is only ever one shell) suffices — see ttlCache.ts's module doc for
 // why this is a plain in-memory Map, not an RTDB-backed cache.
-const shellCache = createTtlCache<string>(SHELL_CACHE_TTL_MS);
+const shellCache = createTtlCache<ShellCacheEntry>(SHELL_CACHE_TTL_MS);
 
 /**
  * Test-only seam: clears the module-level shell cache. Without it, the first
@@ -50,10 +64,10 @@ interface ShareMeta {
 
 /**
  * Phase 6 (Anonymous Share Experience & Discord Unfurls): renders the
- * always-200 `GET /s/:token` HTML response. Fetches (and in-memory caches)
- * the SPA's own pristine `spa.html` shell from the Hosting static origin —
- * NOT through `/s/:token` itself, which would recurse through the same
- * Hosting rewrite — then string-swaps ONLY the 7 head tags `useSeo.ts`
+ * always-200 `GET /s/:token` HTML response. Fetches the SPA's own pristine
+ * `spa.html` shell from the Hosting static origin — NOT through `/s/:token`
+ * itself, which would recurse through the same Hosting rewrite — then
+ * string-swaps ONLY the 7 head tags `useSeo.ts`
  * already manages client-side (og:title, twitter:title, description,
  * og:description, twitter:description, canonical, og:url), plus — for an
  * ACTIVE snapshot only — `og:image`/`twitter:image` (pointed at the
@@ -72,9 +86,16 @@ interface ShareMeta {
  * non-leaking meta — no fighter/stage/date/count detail — so meta never
  * discloses whether a token ever referred to a real share (VIEW-05).
  *
- * If the shell fetch throws or returns a non-2xx status, a hardcoded
- * minimal fallback template is returned instead, so a Hosting-origin hiccup
- * never turns into a 500 on the crawler/human path.
+ * IN-06: the shell is revalidated against the Hosting origin on EVERY
+ * request via a conditional GET (`If-None-Match` against the last-seen
+ * ETag) — a `304` reuses the cached body cheaply, a fresh `2xx` picks up a
+ * hosting deploy immediately (never a stale bundle reference), and if the
+ * origin can't be reached or errors, the last-good cached shell is served
+ * stale rather than degrading straight to the fallback template (see
+ * `getShell`). Only a COLD cache (nothing cached yet) combined with a
+ * fetch failure falls through to the hardcoded minimal fallback template
+ * below, so a Hosting-origin hiccup never turns into a 500 on the
+ * crawler/human path.
  */
 export async function renderShareHtml({
   token,
@@ -99,16 +120,61 @@ export async function renderShareHtml({
   return applyMeta(shell, meta);
 }
 
+/**
+ * IN-06: conditionally revalidates the cached shell against the Hosting
+ * origin on every call instead of trusting a TTL — a stale-deploy shell is
+ * otherwise served for up to `SHELL_CACHE_TTL_MS` after every hosting
+ * deploy, breaking every `/s/:token` page until it expires (reproduced
+ * live 2026-07-24). `SHELL_CACHE_TTL_MS` now only bounds how long a
+ * last-good cached shell may keep serving stale when the origin is
+ * unreachable/erroring.
+ */
 async function getShell(webBaseUrl: string, fetchImpl: typeof fetch): Promise<string> {
   const cached = shellCache.get(SHELL_CACHE_KEY);
-  if (cached !== undefined) return cached;
 
-  const response = await fetchImpl(`${webBaseUrl}/spa.html`);
+  let response: Response;
+  try {
+    response = await fetchImpl(
+      `${webBaseUrl}/spa.html`,
+      cached?.etag ? { headers: { 'If-None-Match': cached.etag } } : undefined,
+    );
+  } catch (err) {
+    // Fetch itself threw (e.g. network error) — serve the last-good cached
+    // shell rather than degrading all the way to the bare fallback
+    // template, but only if we have one to serve.
+    if (cached !== undefined) {
+      console.error('share HTML shell revalidation fetch failed, serving stale cached shell', err);
+      return cached.html;
+    }
+    throw err;
+  }
+
+  if (response.status === 304) {
+    if (cached !== undefined) {
+      // Refresh the TTL on the still-valid cached entry so a run of 304s
+      // keeps extending how long it may be served stale-on-error later.
+      shellCache.set(SHELL_CACHE_KEY, cached);
+      return cached.html;
+    }
+    // A bare 304 with nothing cached to revalidate against should never
+    // happen (we only send If-None-Match when a cached entry exists), but
+    // guard defensively rather than returning `undefined` as html.
+    throw new Error('spa.html fetch failed: received 304 with no cached shell to revalidate');
+  }
+
   if (!response.ok) {
+    if (cached !== undefined) {
+      console.error(
+        `share HTML shell revalidation failed (status ${response.status}), serving stale cached shell`,
+      );
+      return cached.html;
+    }
     throw new Error(`spa.html fetch failed: ${response.status}`);
   }
+
   const html = await response.text();
-  shellCache.set(SHELL_CACHE_KEY, html);
+  const etag = response.headers?.get?.('etag') ?? undefined;
+  shellCache.set(SHELL_CACHE_KEY, { html, ...(etag ? { etag } : {}) });
   return html;
 }
 
