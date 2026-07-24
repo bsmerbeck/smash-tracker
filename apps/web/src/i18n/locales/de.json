@@ -1907,12 +1907,13 @@
           "capReached": "Bis zu {{max}} Hausaufgaben.",
           "empty": "Noch keine Hausaufgaben."
         },
-        "linkedVods": {
-          "label": "Verknüpfte VODs",
-          "addPlaceholder": "VOD verknüpfen…",
-          "capReached": "Bis zu {{max}} verknüpfte VODs.",
-          "removeAria": "{{vod}} entfernen",
-          "empty": "Dieser Client hat noch keine VODs in seiner Bibliothek."
+        "linkedMatches": {
+          "label": "Verknüpfte Matches",
+          "addPlaceholder": "Match verknüpfen…",
+          "capReached": "Bis zu {{max}} verknüpfte Matches.",
+          "removeAria": "{{match}} entfernen",
+          "empty": "Noch keine Matches in der Bibliothek dieses Clients.",
+          "noVodHint": "Kein VOD"
         },
         "privateNotes": {
           "label": "🔒 Private Notizen",

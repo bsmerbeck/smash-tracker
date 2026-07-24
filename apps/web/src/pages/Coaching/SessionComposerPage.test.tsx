@@ -272,7 +272,7 @@ describe('SessionComposerPage', () => {
     await screen.findByDisplayValue('Practice ledgetraps');
     const user = userEvent.setup();
 
-    await user.selectOptions(screen.getByLabelText('Linked VODs'), 'm1');
+    await user.selectOptions(screen.getByLabelText('Linked matches'), 'm1');
 
     vi.useFakeTimers();
     await act(async () => {
@@ -287,6 +287,30 @@ describe('SessionComposerPage', () => {
         expect.objectContaining({ linkedMatchIds: ['m1'] }),
       ),
     );
+  });
+
+  it('linking a VOD-less match succeeds and shows the No VOD hint (SESSM-01)', async () => {
+    matchesList.mockResolvedValue([makeMatch({ id: 'm1', vodUrl: undefined })]);
+    renderComposer();
+    await screen.findByDisplayValue('Practice ledgetraps');
+    const user = userEvent.setup();
+
+    await user.selectOptions(screen.getByLabelText('Linked matches'), 'm1');
+
+    vi.useFakeTimers();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(2000);
+    });
+    vi.useRealTimers();
+
+    await waitFor(() =>
+      expect(sessionsUpdate).toHaveBeenCalledWith(
+        'tetra',
+        's1',
+        expect.objectContaining({ linkedMatchIds: ['m1'] }),
+      ),
+    );
+    expect(screen.getByText('No VOD')).toBeInTheDocument();
   });
 
   it('removing a linked VOD debounces the update with it gone', async () => {
