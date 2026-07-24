@@ -505,6 +505,12 @@
   "vodManager": {
     "title": "Gestor de VODs",
     "emptyState": "Aún no hay VODs",
+    "fighterSetup": {
+      "title": "Elige tus luchadores para empezar a registrar",
+      "body": "Elige tus luchadores antes de poder registrar partidas o adjuntar VODs aquí.",
+      "cta": "Elegir luchadores",
+      "disabledReason": "Elige primero tus luchadores"
+    },
     "filters": {
       "fighter": "Luchador",
       "opponentFighter": "Personaje rival",
@@ -1583,7 +1589,9 @@
         "labelPlaceholder": "p. ej. Alex \"Falcon\" Kim",
         "error": "Algo salió mal al crear este cliente.",
         "pending": "Creando...",
-        "confirm": "Crear"
+        "confirm": "Crear",
+        "createdToast": "Cliente creado",
+        "setFightersAction": "Elegir luchadores"
       },
       "clients_one": "{{count}} cliente",
       "clients_other": "{{count}} clientes",

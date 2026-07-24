@@ -505,6 +505,12 @@
   "vodManager": {
     "title": "VOD Manager",
     "emptyState": "No VODs yet",
+    "fighterSetup": {
+      "title": "Set your fighters to start logging",
+      "body": "Pick your fighters before you can log matches or attach VODs here.",
+      "cta": "Set fighters",
+      "disabledReason": "Set your fighters first"
+    },
     "filters": {
       "fighter": "Fighter",
       "opponentFighter": "Opponent's Character",
@@ -1583,7 +1589,9 @@
         "labelPlaceholder": "e.g. Alex \"Falcon\" Kim",
         "error": "Something went wrong creating this client.",
         "pending": "Creating...",
-        "confirm": "Create"
+        "confirm": "Create",
+        "createdToast": "Client created",
+        "setFightersAction": "Set fighters"
       },
       "clients_one": "{{count}} client",
       "clients_other": "{{count}} clients",

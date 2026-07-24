@@ -505,6 +505,12 @@
   "vodManager": {
     "title": "VODマネージャー",
     "emptyState": "まだVODがありません",
+    "fighterSetup": {
+      "title": "記録を始めるにはファイターを設定してください",
+      "body": "ここで試合を記録したりVODを追加したりするには、まずファイターを選択してください。",
+      "cta": "ファイターを設定",
+      "disabledReason": "まずファイターを設定してください"
+    },
     "filters": {
       "fighter": "ファイター",
       "opponentFighter": "相手のキャラクター",
@@ -1583,7 +1589,9 @@
         "labelPlaceholder": "例: Alex「Falcon」Kim",
         "error": "クライアントの作成中に問題が発生しました。",
         "pending": "作成中...",
-        "confirm": "作成"
+        "confirm": "作成",
+        "createdToast": "クライアントを作成しました",
+        "setFightersAction": "ファイターを設定"
       },
       "clients_one": "{{count}}人のクライアント",
       "clients_other": "{{count}}人のクライアント",

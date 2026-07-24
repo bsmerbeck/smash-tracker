@@ -505,6 +505,12 @@
   "vodManager": {
     "title": "VOD-Manager",
     "emptyState": "Noch keine VODs",
+    "fighterSetup": {
+      "title": "Lege deine Kämpfer fest, um mit der Aufzeichnung zu beginnen",
+      "body": "Wähle deine Kämpfer aus, bevor du hier Matches protokollieren oder VODs anhängen kannst.",
+      "cta": "Kämpfer festlegen",
+      "disabledReason": "Lege zuerst deine Kämpfer fest"
+    },
     "filters": {
       "fighter": "Kämpfer",
       "opponentFighter": "Gegner-Charakter",
@@ -1583,7 +1589,9 @@
         "labelPlaceholder": "z. B. Alex „Falcon“ Kim",
         "error": "Beim Erstellen dieses Kunden ist etwas schiefgelaufen.",
         "pending": "Wird erstellt...",
-        "confirm": "Erstellen"
+        "confirm": "Erstellen",
+        "createdToast": "Kunde erstellt",
+        "setFightersAction": "Kämpfer festlegen"
       },
       "clients_one": "{{count}} Kunde",
       "clients_other": "{{count}} Kunden",

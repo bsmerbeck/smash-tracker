@@ -43,6 +43,7 @@ import { movePlaylistItem, resolvePlaylistMatches } from '@/lib/playlists';
 import { ApiError, type VodTimestampInput } from '@/lib/api';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
+import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import {
   AlertDialog,
@@ -170,13 +171,18 @@ export function VodManagerPage() {
 
   // Fighters offered by the inline edit form's "Your Fighter" select
   // (NOTE-04) — same primary+secondary sprite lookup MatchDataPage uses.
-  const { data: fighterSelection } = useFighters();
+  const { data: fighterSelection, isLoading: fightersLoading } = useFighters();
   const fighterSprites = useMemo<Fighter[]>(() => {
     const ids = [...(fighterSelection?.primary ?? []), ...(fighterSelection?.secondary ?? [])];
     return ids
       .map((id) => getFighterById(id))
       .filter((sprite): sprite is Fighter => sprite != null);
   }, [fighterSelection]);
+  // Fighter-setup dead-end fix: same tenancy-correct branch every subject
+  // consumer uses (`clientId != null`, never `activeMode === 'coaching'` —
+  // see useActiveSubject's doc rule) so the CTA lands on the right fighter
+  // picker for a coach's client workspace vs. the signed-in user's own.
+  const fighterSetupHref = clientId ? `/coach/${clientId}/fighters` : '/choose-primary';
 
   const [filters, setFilters] = useState<VodManagerFilterState>(DEFAULT_VOD_MANAGER_FILTERS);
   const [sort, setSort] = useState<VodSortDirection>('newest');
@@ -1023,7 +1029,12 @@ export function VodManagerPage() {
               always qualifies for `vodMatches` (m.vodUrl != null) once
               useCreateMatch's existing matchesQueryKey invalidation runs —
               no extra invalidation wiring needed here. */}
-          <AddMatchForm requireVod fighterSprites={fighterSprites} triggerSize="sm" />
+          <AddMatchForm
+            requireVod
+            fighterSprites={fighterSprites}
+            triggerSize="sm"
+            disabledReason={t('vodManager.fighterSetup.disabledReason')}
+          />
           {/* D-05/D5: VOD shares are a non-parity capability — the coaching
               surface renders no button here at all (not a disabled control,
               not an "unavailable" chip), so manual "+ Add match" reads as
@@ -1055,6 +1066,20 @@ export function VodManagerPage() {
       </div>
       {activeMode !== 'coaching' && (
         <MySharesDialog open={mySharesOpen} onOpenChange={setMySharesOpen} />
+      )}
+
+      {!fightersLoading && fighterSprites.length === 0 && (
+        <Card>
+          <CardContent className="flex flex-col items-start gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex flex-col gap-1">
+              <p className="font-medium">{t('vodManager.fighterSetup.title')}</p>
+              <p className="text-sm text-muted-foreground">{t('vodManager.fighterSetup.body')}</p>
+            </div>
+            <Button type="button" onClick={() => navigate(fighterSetupHref)}>
+              {t('vodManager.fighterSetup.cta')}
+            </Button>
+          </CardContent>
+        </Card>
       )}
 
       {!isLoading && vodMatches.length === 0 ? (

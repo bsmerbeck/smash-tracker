@@ -114,6 +114,18 @@ function ReviewComposerStub() {
   return <div data-testid="review-composer-stub">{location.pathname + location.search}</div>;
 }
 
+/** Fighter-setup UX test helper: the personal fighter-picker destination. */
+function ChoosePrimaryStub() {
+  const location = useLocation();
+  return <div data-testid="choose-primary-stub">{location.pathname}</div>;
+}
+
+/** Fighter-setup UX test helper: the client-workspace fighter-picker destination. */
+function ClientFightersStub() {
+  const location = useLocation();
+  return <div data-testid="client-fighters-stub">{location.pathname}</div>;
+}
+
 function renderVodManager(initialEntry: string) {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
@@ -132,6 +144,10 @@ function renderVodManager(initialEntry: string) {
                   so those tests can assert on the resolved destination
                   without pulling in the real (heavy) ReviewComposerPage. */}
               <Route path="/coach/:clientId/reviews/:reviewId" element={<ReviewComposerStub />} />
+              {/* Fighter-setup UX: the callout's "Set fighters" CTA
+                  destinations — personal vs client-workspace context. */}
+              <Route path="/choose-primary" element={<ChoosePrimaryStub />} />
+              <Route path="/coach/:clientId/fighters" element={<ClientFightersStub />} />
             </Routes>
           </AnalyticsFilterProvider>
         </AuthProvider>
@@ -184,6 +200,47 @@ describe('VodManagerPage', () => {
     await user.click(await screen.findByRole('button', { name: 'Add Match' }));
     const dialog = await screen.findByRole('dialog');
     expect(within(dialog).getByRole('button', { name: 'Save' })).toBeInTheDocument();
+  });
+
+  // Fighter-setup UX fix: the dead-end where a coach's new client (or a
+  // fresh personal account) has no fighters set yet — a callout with a
+  // working CTA, and the Add Match trigger explains WHY it's disabled
+  // instead of dead-ending silently.
+  it('fighter-setup: shows the callout and a self-explaining disabled Add Match trigger when no fighters are set, personal mode', async () => {
+    getFighters.mockResolvedValue({ primary: [], secondary: [] });
+    listMatches.mockResolvedValue([]);
+    const user = userEvent.setup();
+    renderVodManager('/vod');
+
+    expect(await screen.findByText('Set your fighters to start logging')).toBeInTheDocument();
+    const trigger = screen.getByRole('button', { name: 'Add Match' });
+    expect(trigger).toBeDisabled();
+    expect(trigger).toHaveAccessibleDescription('Set your fighters first');
+
+    await user.click(screen.getByRole('button', { name: 'Set fighters' }));
+    expect(await screen.findByTestId('choose-primary-stub')).toHaveTextContent('/choose-primary');
+  });
+
+  it('fighter-setup: routes the callout CTA to the client fighters page in coaching mode', async () => {
+    getFighters.mockResolvedValue({ primary: [], secondary: [] });
+    listMatches.mockResolvedValue([]);
+    const user = userEvent.setup();
+    renderVodManager('/coach/tetra/vods');
+
+    await screen.findByText('Set your fighters to start logging');
+    await user.click(screen.getByRole('button', { name: 'Set fighters' }));
+
+    expect(await screen.findByTestId('client-fighters-stub')).toHaveTextContent(
+      '/coach/tetra/fighters',
+    );
+  });
+
+  it('fighter-setup: does not render the callout once fighters are set', async () => {
+    listMatches.mockResolvedValue([]);
+    renderVodManager('/vod');
+
+    await screen.findByRole('button', { name: 'Add Match' });
+    expect(screen.queryByText('Set your fighters to start logging')).not.toBeInTheDocument();
   });
 
   // Phase 11 fix round 3 (FB-9): "Only the VOD Manager page's Add Match

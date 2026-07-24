@@ -505,6 +505,12 @@
   "vodManager": {
     "title": "Gestionnaire de VODs",
     "emptyState": "Aucune VOD pour l'instant",
+    "fighterSetup": {
+      "title": "Choisissez vos combattants pour commencer à enregistrer",
+      "body": "Choisissez vos combattants avant de pouvoir enregistrer des matchs ou attacher des VODs ici.",
+      "cta": "Choisir les combattants",
+      "disabledReason": "Choisissez d'abord vos combattants"
+    },
     "filters": {
       "fighter": "Combattant",
       "opponentFighter": "Personnage adverse",
@@ -1583,7 +1589,9 @@
         "labelPlaceholder": "ex. Alex « Falcon » Kim",
         "error": "Une erreur est survenue lors de la création de ce client.",
         "pending": "Création...",
-        "confirm": "Créer"
+        "confirm": "Créer",
+        "createdToast": "Client créé",
+        "setFightersAction": "Choisir les combattants"
       },
       "clients_one": "{{count}} client",
       "clients_other": "{{count}} clients",
