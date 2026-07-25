@@ -14,6 +14,7 @@ import { describeCoachingError } from './describeCoachingError';
 import { CreateClientDialog } from './components/CreateClientDialog';
 import { ClientHubTable } from './components/ClientHubTable';
 import { DeleteClientDialog } from './components/DeleteClientDialog';
+import { IssueClaimCodeDialog } from './components/IssueClaimCodeDialog';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
@@ -83,6 +84,9 @@ export function ClientHubPage() {
   const { t } = useTranslation();
   const [showArchived, setShowArchived] = useState(false);
   const [pendingDelete, setPendingDelete] = useState<ClientHubRow | null>(null);
+  // Phase 24 (ENTRY-02): the client whose copy-once issuance dialog is open,
+  // or null to keep it unmounted — same convention as `pendingDelete` above.
+  const [issuingFor, setIssuingFor] = useState<ClientHubRow | null>(null);
 
   const activeClients = useCoachingClients();
   const archivedView = useCoachingClients({ includeArchived: true, enabled: showArchived });
@@ -228,6 +232,7 @@ export function ClientHubPage() {
             onArchiveToggle={handleArchiveToggle}
             onExport={handleExport}
             onDeleteRequest={setPendingDelete}
+            onIssueClaimCode={setIssuingFor}
           />
         </>
       )}
@@ -238,6 +243,14 @@ export function ClientHubPage() {
         onConfirm={handleDeleteConfirm}
         isPending={deleteClient.isPending}
       />
+
+      {issuingFor && (
+        <IssueClaimCodeDialog
+          client={issuingFor}
+          open
+          onOpenChange={(open) => !open && setIssuingFor(null)}
+        />
+      )}
     </div>
   );
 }

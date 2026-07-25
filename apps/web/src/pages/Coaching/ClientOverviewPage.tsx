@@ -1,6 +1,7 @@
+import { useState } from 'react';
 import { Link, useParams } from 'react-router';
 import { useTranslation } from 'react-i18next';
-import { Check } from 'lucide-react';
+import { Check, KeyRound } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -13,6 +14,7 @@ import { getFighterById } from '@/data/sprites';
 import { localizedFighterName } from '@/lib/fighterNames';
 import { useFighterNameResolver } from '@/hooks/useFighterName';
 import { getLastNMatches, getWinLossRecord } from '@/lib/stats';
+import { IssueClaimCodeDialog } from './components/IssueClaimCodeDialog';
 
 /** FB-7: the Overview's recent-matches mini-list shows the last N by date. */
 const RECENT_MATCHES_LIMIT = 5;
@@ -55,6 +57,11 @@ export function ClientOverviewPage() {
   const clients = useCoachingClients();
   const clientLabel =
     clients.data?.find((client) => client.clientId === clientId)?.label ?? clientId;
+  // Phase 24 (ENTRY-02): the same copy-once issuance dialog the Client Hub
+  // row action opens, mounted only while requested — matches ClientHubPage's
+  // `issuingFor` convention, and keeps `useClaimInvitationStatus` from
+  // firing until a coach actually opens it.
+  const [claimDialogOpen, setClaimDialogOpen] = useState(false);
 
   const { data: matchesData } = useMatches();
   const { data: fighters } = useFighters();
@@ -129,12 +136,26 @@ export function ClientOverviewPage() {
 
   return (
     <div className="flex flex-col gap-6">
-      <div>
-        <h1 className="text-2xl font-semibold tracking-tight">
-          {clientLabel} — {t('coaching.overview.title')}
-        </h1>
-        <p className="text-sm text-muted-foreground">{t('coaching.overview.subtitle')}</p>
+      <div className="flex flex-wrap items-start justify-between gap-2">
+        <div>
+          <h1 className="text-2xl font-semibold tracking-tight">
+            {clientLabel} — {t('coaching.overview.title')}
+          </h1>
+          <p className="text-sm text-muted-foreground">{t('coaching.overview.subtitle')}</p>
+        </div>
+        <Button variant="secondary" onClick={() => setClaimDialogOpen(true)}>
+          <KeyRound />
+          {t('coaching.claimCode.triggerLabel')}
+        </Button>
       </div>
+
+      {claimDialogOpen && (
+        <IssueClaimCodeDialog
+          client={{ clientId, label: clientLabel }}
+          open
+          onOpenChange={(open) => !open && setClaimDialogOpen(false)}
+        />
+      )}
 
       <div className="grid gap-3 sm:grid-cols-3">
         <Card>
