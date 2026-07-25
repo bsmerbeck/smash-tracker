@@ -1627,6 +1627,7 @@
           "nextAction": "Próxima acción",
           "draftCount": "Borradores",
           "deliveryState": "Entrega",
+          "claimStatus": "Estado de reclamo",
           "actions": "Acciones"
         },
         "noActivity": "Sin actividad todavía",
@@ -1634,6 +1635,13 @@
           "delivered": "Entregado",
           "acknowledged": "Confirmado",
           "none": "No entregado"
+        },
+        "claimStatus": {
+          "managed": "Gestionado",
+          "claimed": "Reclamado",
+          "codeActive_one": "Código de reclamo activo (caduca en {{count}} hora)",
+          "codeActive_other": "Código de reclamo activo (caduca en {{count}} horas)",
+          "codeActiveSoon": "Código de reclamo activo (caduca pronto)"
         },
         "nextAction": {
           "archived": "Archivado",
@@ -1648,6 +1656,7 @@
         "rowAria": "Abrir el espacio de trabajo de {{label}}",
         "actions": {
           "openWorkspace": "Abrir espacio de trabajo",
+          "issueClaimCode": "Generar código de reclamo",
           "export": "Exportar espacio de trabajo",
           "archive": "Archivar",
           "restore": "Restaurar",
@@ -1658,6 +1667,38 @@
         "noneFound": "No se encontraron clientes.",
         "pageOf": "Página {{page}} de {{total}}"
       }
+    },
+    "claimCode": {
+      "title": "Generar un código de reclamo",
+      "description": "Crea un código de un solo uso para que tu cliente reclame este espacio de trabajo como propio.",
+      "triggerLabel": "Generar código de reclamo",
+      "rotationWarning": "Generar un código nuevo invalida inmediatamente el pendiente — comparte solo el código que se muestra aquí.",
+      "statusOutstanding": "Ya hay un código de reclamo activo para este cliente.",
+      "statusNone": "No hay ningún código de reclamo activo para este cliente.",
+      "generateButton": "Generar código de reclamo",
+      "generatingButton": "Generando...",
+      "codeFieldLabel": "Código de reclamo",
+      "copyButton": "Copiar",
+      "copiedButton": "Copiado",
+      "copiedToast": "Código copiado al portapapeles",
+      "copyFailedToast": "No se pudo copiar — selecciona el código y cópialo manualmente.",
+      "expiresAt": "Caduca {{date}}",
+      "handoffInstructions": "Envía este código a tu cliente por el canal que prefieras — lo introducirá después de iniciar sesión en grandfinals.gg/claim.",
+      "onceWarning": "Este código se muestra una sola vez. Si cierras este diálogo, no podrás volver a verlo — tendrías que generar uno nuevo.",
+      "closeConfirmTitle": "¿Cerrar sin copiar el código?",
+      "closeConfirmBody": "Este código no volverá a mostrarse una vez que cierres este diálogo. Si aún no lo has copiado, tendrás que generar uno nuevo.",
+      "closeConfirmCancel": "Volver",
+      "closeConfirmAction": "Cerrar de todos modos",
+      "doneButton": "Listo",
+      "revokeTrigger": "Revocar código",
+      "revokeConfirmBody": "Esto invalida inmediatamente el código de reclamo pendiente. Tu cliente ya no podrá usarlo.",
+      "revokeConfirmCancel": "Cancelar",
+      "revokeConfirmAction": "Revocar",
+      "revokedToast": "Código de reclamo revocado",
+      "revokeError": "No se pudo revocar el código de reclamo. Inténtalo de nuevo.",
+      "errorGeneric": "Algo salió mal al generar el código de reclamo. Inténtalo de nuevo.",
+      "errorRateLimited": "Has alcanzado el límite diario de códigos de reclamo para este cliente. Inténtalo de nuevo mañana.",
+      "errorUnavailable": "Los códigos de reclamo no están disponibles en este momento. Inténtalo de nuevo más tarde."
     },
     "overview": {
       "title": "Resumen",
