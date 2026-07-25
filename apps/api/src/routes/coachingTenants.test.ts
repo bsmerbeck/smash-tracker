@@ -36,6 +36,8 @@ describe('/api/coaching/clients', () => {
         draftCount: 0,
         deliveryState: null,
         archivedAt: null,
+        claimedAt: null,
+        pendingInvitationExpiresAt: null,
       },
     ]);
 
