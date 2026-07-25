@@ -63,6 +63,16 @@ const GA4_PAYLOAD_ALLOWLIST: Readonly<Record<string, readonly string[]>> = {
   session_delivery_created: [],
   review_delivery_created: [],
   review_delivery_revoked: [],
+  // Phase 23 (Claim Credential & Atomic Ownership Transition, T-23-02):
+  // deliberate non-add. All six of Phase 23's claim/delegation events are
+  // catalogued in EVENT_CATALOG (packages/shared/src/events.ts) but
+  // intentionally ABSENT from this allowlist, so projectEventToGa4 returns
+  // null for every one of them and they never reach GA4. Rationale: the
+  // canonical-measurement reconciliation window is under a two-week soak
+  // (STATE.md blocker, ~2026-08-02) and these events are security-adjacent —
+  // their existence pattern alone is a signal. The RTDB eventLedger remains
+  // the source of truth regardless of projection status. Revisit only as a
+  // deliberate, separately-reviewed change.
 };
 
 function ga4ClientId(actorId: string, sessionId: string): string {

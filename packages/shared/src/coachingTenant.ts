@@ -33,17 +33,45 @@ export const clientTenantRecordSchema = z.object({
   createdAt: z.number().int().nonnegative(),
   /** Epoch ms the tenant was archived, or absent/null if active. */
   archivedAt: z.number().int().nonnegative().nullish(),
+  /**
+   * Phase 23: the claiming client's uid, or absent/null if unclaimed. Gives
+   * an O(1) claimed-vs-managed answer without scanning `clientMembers/{tenantId}`
+   * for a role, and is written ONLY inside the winning redemption's single
+   * multi-path update (never as a bare null on any other write path that
+   * touches `clientTenants`).
+   */
+  ownerUid: z.string().min(1).nullish(),
+  /**
+   * Phase 23: epoch ms the tenant was claimed, or absent/null if unclaimed.
+   * Same write-site discipline as `ownerUid` above.
+   */
+  claimedAt: z.number().int().nonnegative().nullish(),
 });
 export type ClientTenantRecord = z.infer<typeof clientTenantRecordSchema>;
 
 /**
+ * Phase 23 (Claim Credential & Atomic Ownership Transition): the widened
+ * membership role space. `custodian` is the coach-created, pre-claim state
+ * (Phase 11 default, the only value any existing stored record holds);
+ * `owner` is the client account that redeemed a claim code and now holds
+ * logical primary control of the tenant; `delegate` is the issuing coach
+ * after the claim, whose access is explicit, revocable, and no longer
+ * custodial.
+ */
+export const CLIENT_TENANT_ROLES = ['custodian', 'owner', 'delegate'] as const;
+export type ClientTenantRole = (typeof CLIENT_TENANT_ROLES)[number];
+
+/**
  * `clientMembers/{tenantId}/{coachUid}` — the swappable membership record a
- * future claim/delegation mutates. `role` is a literal today (single
- * 'custodian' role at Foundation) but modeled as an enum-of-one so a future
- * role addition (e.g. a claimed owner) doesn't require a schema migration.
+ * claim/delegation mutates. `role` was a literal-of-one ('custodian') at
+ * Foundation, deliberately modeled as an enum-of-one so a future role
+ * addition wouldn't require a schema migration — Phase 23 is that future:
+ * the widening to `CLIENT_TENANT_ROLES` is purely additive, every stored
+ * record keeps `role: 'custodian'` until claimed, and no data migration is
+ * required.
  */
 export const clientMembershipSchema = z.object({
-  role: z.literal('custodian'),
+  role: z.enum(CLIENT_TENANT_ROLES),
   /** Epoch ms this membership was established. */
   joinedAt: z.number().int().nonnegative(),
 });
@@ -60,6 +88,12 @@ export const coachClientEntrySchema = z.object({
   createdAt: z.number().int().nonnegative(),
   /** Epoch ms this entry was archived, or absent/null if active. */
   archivedAt: z.number().int().nonnegative().nullish(),
+  /**
+   * Phase 23: epoch ms the tenant was claimed, or absent/null if unclaimed.
+   * Lets Phase 24's Client Hub render claimed status without a second RTDB
+   * hop.
+   */
+  claimedAt: z.number().int().nonnegative().nullish(),
 });
 export type CoachClientEntry = z.infer<typeof coachClientEntrySchema>;
 

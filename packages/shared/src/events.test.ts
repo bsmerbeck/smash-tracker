@@ -85,6 +85,12 @@ describe('EVENT_CATALOG', () => {
       session_delivery_created: 'D',
       review_delivery_created: 'D',
       review_delivery_revoked: 'D',
+      claim_invitation_created: 'D',
+      claim_invitation_revoked: 'D',
+      claim_completed: 'D',
+      claim_conflict_detected: 'D',
+      coach_delegation_granted: 'D',
+      coach_delegation_revoked: 'D',
     });
   });
 
@@ -130,5 +136,17 @@ describe('EVENT_CATALOG', () => {
     expect(EVENT_CATALOG.session_delivery_created).toBe('D');
     expect(EVENT_CATALOG.review_delivery_created).toBe('D');
     expect(EVENT_CATALOG.review_delivery_revoked).toBe('D');
+  });
+
+  // Phase 23 (Claim Credential & Atomic Ownership Transition, EVT-01/EVT-02/
+  // EVT-03): all six claim/delegation lifecycle events are D-class,
+  // deliberately withheld from GA4 projection (see ga4Project.test.ts).
+  it('maps the six new Phase 23 claim/delegation events to class D', () => {
+    expect(EVENT_CATALOG.claim_invitation_created).toBe('D');
+    expect(EVENT_CATALOG.claim_invitation_revoked).toBe('D');
+    expect(EVENT_CATALOG.claim_completed).toBe('D');
+    expect(EVENT_CATALOG.claim_conflict_detected).toBe('D');
+    expect(EVENT_CATALOG.coach_delegation_granted).toBe('D');
+    expect(EVENT_CATALOG.coach_delegation_revoked).toBe('D');
   });
 });

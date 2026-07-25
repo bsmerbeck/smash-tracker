@@ -45,6 +45,7 @@ export * from './gspTiers.js';
 export * from './gspLive.js';
 export * from './playlist.js';
 export * from './coachingTenant.js';
+export * from './claims.js';
 export * from './coachingReview.js';
 export * from './coachingSession.js';
 export * from './shares.js';
