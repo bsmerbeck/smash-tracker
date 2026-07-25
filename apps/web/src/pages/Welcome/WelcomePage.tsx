@@ -6,6 +6,7 @@ import * as onboardingOrigin from '@/lib/onboardingOrigin';
 import { useUpdateCoachingModeEnabled } from '@/hooks/useProfile';
 import { intentDestination, useSaveOnboardingIntent } from '@/hooks/useOnboarding';
 import { IntentOptionCard } from './components/IntentOptionCard';
+import { ClaimCodeOptionCard } from './components/ClaimCodeOptionCard';
 
 const INTENT_ICONS: Record<OnboardingIntent, string> = {
   prepare: '🏆',
@@ -114,6 +115,12 @@ export function WelcomePage() {
             onSelect={handleSelect}
           />
         ))}
+        {/* Phase 24 (ENTRY-01): an ACTION, not an onboarding intent — never
+            added to ONBOARDING_INTENTS, saves nothing, navigates only. */}
+        <ClaimCodeOptionCard
+          disabled={pendingIntent !== null}
+          onSelect={() => navigate('/claim')}
+        />
       </div>
 
       <button
