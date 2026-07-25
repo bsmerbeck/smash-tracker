@@ -38,6 +38,7 @@ import coachingSessionsRoutes from './routes/coachingSessions.js';
 import coachingSessionDeliveriesRoutes from './routes/coachingSessionDeliveries.js';
 import claimInvitationsRoutes from './routes/claimInvitations.js';
 import claimsRoutes from './routes/claims.js';
+import claimDelegationsRoutes from './routes/claimDelegations.js';
 import vodSharesRoutes from './routes/vodShares.js';
 import publicVodSharesRoutes from './routes/publicVodShares.js';
 import publicReviewDeliveriesRoutes from './routes/publicReviewDeliveries.js';
@@ -333,6 +334,10 @@ export function buildApp(options: BuildAppOptions) {
       // CRED-05/CLAIM-02): the client-side claim-redemption route — the
       // sibling to claimInvitationsRoutes above, same config-null 503 gate.
       await api.register(claimsRoutes, { claimCode: options.claimCode ?? null });
+      // Phase 23 Plan 06 (CLAIM-03/CTRL-02): the client-owner-facing
+      // delegation-revoke route — registered unconditionally (no claim code
+      // is involved in revoking a delegation).
+      await api.register(claimDelegationsRoutes);
       await api.register(vodSharesRoutes, {
         webBaseUrl: options.webBaseUrl ?? 'http://localhost:5173',
         ga4: options.ga4 ?? null,

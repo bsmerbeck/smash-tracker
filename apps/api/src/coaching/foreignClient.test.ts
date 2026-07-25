@@ -192,6 +192,15 @@ const SAME_SUBJECT_ROUTES = [
     path: `/api/coaching/clients/${TENANT_ID}/claim-invitations`,
     usesSubjectHeader: false,
   },
+  // Phase 23 Plan 06 (CLAIM-03/CTRL-02): the client-owner delegation-revoke
+  // route, gated by a role-aware membership check on the URL's `:tenantId`
+  // — a foreign coach with no membership record is denied before role is
+  // even considered.
+  {
+    method: 'DELETE',
+    path: `/api/client-workspaces/${TENANT_ID}/delegations/${COACH_A_UID}`,
+    usesSubjectHeader: false,
+  },
 ] as const;
 
 /**
@@ -199,11 +208,12 @@ const SAME_SUBJECT_ROUTES = [
  * reader does not have to re-derive it: `claimInvitations` is keyed by HMAC
  * digest, not by tenantId, so it does NOT have the `{tree}/{tenantId}` shape
  * the hard-delete cascade below iterates, and is deliberately NOT a
- * canonical tenant tree — plan 06 instead adds an explicit `deleteClient`
- * step that nulls the pointed-at digest record, mirroring the existing
- * `shareTokens/{token}` extra step. `activeClaimInvitationByTenant` DOES
- * have that shape and IS added to `CANONICAL_TENANT_TREES` in plan 06,
- * together with its entry here. The plan-02 rate-limit counter trees
+ * canonical tenant tree — `deleteClient` instead has an explicit extra step
+ * (plan 06) that nulls the pointed-at digest record, mirroring the existing
+ * `shareTokens/{token}` step. `activeClaimInvitationByTenant` DOES have that
+ * shape and IS added to `CANONICAL_TENANT_TREES` (plan 06) together with its
+ * `TREE_TO_ROUTE_PATH` entry below — the conclusion recorded here is now
+ * applied, not just noted. The plan-02 rate-limit counter trees
  * (`claimRedemptionAttempts*`, `claimIssuanceAttempts`) are keyed by uid, IP
  * hash, and coachUid respectively and are not tenant trees.
  */
@@ -240,6 +250,9 @@ const TREE_TO_ROUTE_PATH: Record<(typeof CANONICAL_TENANT_TREES)[number], string
   trainingSessions: `/api/coaching/clients/${TENANT_ID}/sessions`,
   // Phase 20 Plan 03: written by the create-session-delivery route.
   sessionDeliveries: `/api/coaching/clients/${TENANT_ID}/sessions/session-1/deliveries`,
+  // Phase 23 Plan 06: the pointer is written by the coach-side
+  // claim-invitation issuance route added in plan 04.
+  activeClaimInvitationByTenant: `/api/coaching/clients/${TENANT_ID}/claim-invitations`,
 };
 
 describe('CANONICAL_TENANT_TREES stays in lockstep with the harness route list', () => {

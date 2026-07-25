@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import type { Database } from 'firebase-admin/database';
 import {
+  activeClaimInvitationPointerSchema,
   clientHubRowSchema,
   coachClientEntrySchema,
   mapDeliveryStateToHubState,
@@ -11,6 +12,7 @@ import { buildDomainEnvelope } from '../events/envelope.js';
 import { createEvent } from '../events/ledger.js';
 import { onboardingCausePayload } from '../onboarding/activation.js';
 import { ConflictError, ForbiddenError, RtdbService } from '../services/rtdb.js';
+import { requireTenantRole } from './membershipRoles.js';
 import { countOpenDrafts, getMostRecentDeliveryStateForTenant } from './reviews.js';
 
 /**
@@ -69,6 +71,15 @@ export const CANONICAL_TENANT_TREES = [
   // (Phase 20 Plan 03). A not-yet-populated tree is a harmless no-op on the
   // cascade's null-path delete.
   'sessionDeliveries',
+  // Phase 23 (Claim Credential & Atomic Ownership Transition) — the
+  // one-active-code-per-workspace pointer is keyed by tenantId and
+  // therefore has the exact `{tree}/{tenantId}` shape this cascade builds
+  // its null-path update from. The invitation RECORD it points at is keyed
+  // by HMAC digest instead, so it cannot be reached by this list and is
+  // nulled explicitly in `deleteClient` below, mirroring the
+  // `shareTokens/{token}` step already added in Phase 20 for the same class
+  // of root-level orphan.
+  'activeClaimInvitationByTenant',
 ] as const;
 
 /**
@@ -283,6 +294,27 @@ export async function listClients(
  * lookup) sees a consistent state. Restorable: the underlying data is never
  * touched, only the flag. Requires membership — a foreign coach 403s
  * identically to a nonexistent tenantId (no oracle).
+ *
+ * Phase 23 (Claim Credential & Atomic Ownership Transition, CLAIM-03):
+ * `archiveClient`, `deleteClient`, and `exportClient` (below) are the
+ * destructive/exfiltrating routes in this file — hard delete, archive, and
+ * full JSON export. After a claim the issuing coach's role is `delegate`,
+ * and a delegate must not be able to destroy, hide, or bulk-export the
+ * workspace the client now owns, so all three gate on
+ * `requireTenantRole(..., ['custodian', 'owner'])` rather than the
+ * existence-only `requireMembership`. `owner` is included because the
+ * claimed client may of course manage their own workspace; `custodian` is
+ * included so pre-claim coach behavior is byte-for-byte unchanged. Every
+ * OTHER `/api/coaching/clients/:clientId/*` route — reviews, sessions,
+ * deliveries — and every same-subject content route deliberately stays
+ * role-blind (still gated by the unchanged, exported `requireMembership`
+ * below), because a delegate coach working in the client's workspace IS the
+ * coaching relationship this milestone exists to preserve. Owner decision,
+ * Phase 23 planning; supersedes RESEARCH.md assumption A5.
+ *
+ * The parameter is still named `coachUid` at all three call sites — left
+ * unchanged to keep the diff scoped — but the caller may now legitimately
+ * be the client owner, not only the coach.
  */
 export async function archiveClient(
   database: Database,
@@ -290,7 +322,7 @@ export async function archiveClient(
   tenantId: string,
   archived = true,
 ): Promise<void> {
-  await requireMembership(database, coachUid, tenantId);
+  await requireTenantRole(database, coachUid, tenantId, ['custodian', 'owner']);
   const archivedAt = archived ? Date.now() : null;
   await database.ref().update({
     [`clientTenants/${tenantId}/archivedAt`]: archivedAt,
@@ -304,7 +336,9 @@ export async function archiveClient(
  * array — the SAME list `foreignClient.test.ts` iterates, so the cascade can
  * never silently drift out of sync with the trees `resolveSubject`-covered
  * routes actually write, per RESEARCH.md Open Question 2) plus the tenant's
- * own metadata/index/membership records. Requires membership.
+ * own metadata/index/membership records. Role-gated (see `archiveClient`'s
+ * doc comment above for the Phase 23 rationale shared by all three
+ * destructive routes).
  *
  * Phase 20 Plan 03 (T-20-11, RESEARCH Pitfall 4): a session delivery mints a
  * root-level `shareTokens/{token}` entry the `CANONICAL_TENANT_TREES` cascade
@@ -316,13 +350,25 @@ export async function archiveClient(
  * checks). Collected BEFORE the cascade update is built, then folded into the
  * SAME atomic multi-path update below — a deleted client's delivery tokens
  * die in the same transaction as everything else.
+ *
+ * Phase 23 (RESEARCH.md Pitfall 5): `activeClaimInvitationByTenant/{tenantId}`
+ * is now in `CANONICAL_TENANT_TREES` above, so the cascade already nulls the
+ * POINTER. But the invitation RECORD it points at,
+ * `claimInvitations/{digest}`, is keyed by HMAC digest, not tenantId, so it
+ * cannot be reached by that tree list. Without an explicit extra step here, a
+ * hard-deleted client's outstanding claim code would stay redeemable
+ * forever, and redeeming it would mint an `owner` membership record on a
+ * tenant that no longer has data or a coach. Resolved the SAME way as the
+ * `shareTokens/{token}` step above: read the pointer, `safeParse` it, and if
+ * it parses, fold `claimInvitations/{digest}: null` into the same atomic
+ * update.
  */
 export async function deleteClient(
   database: Database,
   coachUid: string,
   tenantId: string,
 ): Promise<void> {
-  await requireMembership(database, coachUid, tenantId);
+  await requireTenantRole(database, coachUid, tenantId, ['custodian', 'owner']);
 
   const sessionDeliveriesSnapshot = await database.ref(`sessionDeliveries/${tenantId}`).get();
   const deliveryTokens: string[] = [];
@@ -341,6 +387,13 @@ export async function deleteClient(
     }
   }
 
+  const activeInvitationSnapshot = await database
+    .ref(`activeClaimInvitationByTenant/${tenantId}`)
+    .get();
+  const activeInvitationParsed = activeClaimInvitationPointerSchema.safeParse(
+    activeInvitationSnapshot.val(),
+  );
+
   const updates: Record<string, null> = {};
   for (const tree of CANONICAL_TENANT_TREES) {
     updates[`${tree}/${tenantId}`] = null;
@@ -350,6 +403,9 @@ export async function deleteClient(
   updates[`clientMembers/${tenantId}`] = null;
   for (const token of deliveryTokens) {
     updates[`shareTokens/${token}`] = null;
+  }
+  if (activeInvitationParsed.success) {
+    updates[`claimInvitations/${activeInvitationParsed.data.digest}`] = null;
   }
 
   // Root-level multi-path update: null values delete keys atomically
@@ -377,14 +433,16 @@ export interface ClientWorkspaceExport {
  * forked `CoachRtdbService` — RESEARCH.md Anti-Patterns) called with
  * `tenantId` in place of a coachUid. Synchronous at Foundation's per-client
  * data scale (RESEARCH.md Open Question 1) — no job-lifecycle infra needed.
- * Requires membership.
+ * Role-gated (see `archiveClient`'s doc comment above for the Phase 23
+ * rationale shared by all three destructive routes — a full JSON dump is
+ * bulk exfiltration, so a demoted `delegate` coach must not reach it).
  */
 export async function exportClient(
   database: Database,
   coachUid: string,
   tenantId: string,
 ): Promise<ClientWorkspaceExport> {
-  await requireMembership(database, coachUid, tenantId);
+  await requireTenantRole(database, coachUid, tenantId, ['custodian', 'owner']);
 
   const entrySnapshot = await database.ref(`coachClients/${coachUid}/${tenantId}`).get();
   const entry = coachClientEntrySchema.parse(entrySnapshot.val());
