@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   CLIENT_TENANT_ROLES,
+  clientHubRowSchema,
   clientMembershipSchema,
   clientTenantRecordSchema,
   coachClientEntrySchema,
@@ -57,5 +58,57 @@ describe('Phase 23: widened membership role space and claimed-status fields', ()
     expect(
       coachClientEntrySchema.safeParse({ label: 'x', createdAt: 1, claimedAt: null }).success,
     ).toBe(true);
+  });
+});
+
+describe('Phase 24 (CTRL-03): clientHubRowSchema claim-status widening', () => {
+  it('parses with both new fields absent (legal, pre-existing rows)', () => {
+    expect(clientHubRowSchema.parse({ clientId: 't1', label: 'A', draftCount: 0 })).toMatchObject({
+      clientId: 't1',
+      label: 'A',
+      draftCount: 0,
+    });
+  });
+
+  it('parses with claimedAt set and pendingInvitationExpiresAt null', () => {
+    expect(
+      clientHubRowSchema.parse({
+        clientId: 't1',
+        label: 'A',
+        draftCount: 0,
+        claimedAt: 5,
+        pendingInvitationExpiresAt: null,
+      }),
+    ).toMatchObject({ claimedAt: 5, pendingInvitationExpiresAt: null });
+  });
+
+  it('parses with pendingInvitationExpiresAt set and claimedAt null', () => {
+    expect(
+      clientHubRowSchema.parse({
+        clientId: 't1',
+        label: 'A',
+        draftCount: 0,
+        claimedAt: null,
+        pendingInvitationExpiresAt: 999,
+      }),
+    ).toMatchObject({ claimedAt: null, pendingInvitationExpiresAt: 999 });
+  });
+
+  it('rejects a negative claimedAt', () => {
+    expect(
+      clientHubRowSchema.safeParse({ clientId: 't1', label: 'A', draftCount: 0, claimedAt: -1 })
+        .success,
+    ).toBe(false);
+  });
+
+  it('rejects a negative pendingInvitationExpiresAt', () => {
+    expect(
+      clientHubRowSchema.safeParse({
+        clientId: 't1',
+        label: 'A',
+        draftCount: 0,
+        pendingInvitationExpiresAt: -1,
+      }).success,
+    ).toBe(false);
   });
 });

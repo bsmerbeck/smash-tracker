@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import type { Database } from 'firebase-admin/database';
 import {
   activeClaimInvitationPointerSchema,
+  claimInvitationRecordSchema,
   clientHubRowSchema,
   coachClientEntrySchema,
   mapDeliveryStateToHubState,
@@ -226,6 +227,45 @@ export async function createClient(
 }
 
 /**
+ * Phase 24 (CTRL-03): reads whether a tenant currently has a live,
+ * redeemable claim code, returning ONLY its `expiresAt` (or `null`) — never
+ * the digest. Mirrors `apps/api/src/claims/invitations.ts`'s
+ * `getClaimInvitationStatus` liveness logic (revoked / consumed / expired
+ * all mean not-live) but deliberately performs NO membership or role check
+ * of its own: `listClients` reaches this tenant by scanning the CALLER'S OWN
+ * `coachClients` index, so a second check here would be redundant work. The
+ * digest itself is read locally and never returned, logged, or passed to a
+ * logger — this helper is module-private (not exported) with exactly one
+ * call site, inside `listClients`'s `Promise.all` below.
+ */
+async function readPendingInvitationExpiresAt(
+  database: Database,
+  tenantId: string,
+): Promise<number | null> {
+  const pointerSnapshot = await database.ref(`activeClaimInvitationByTenant/${tenantId}`).get();
+  const pointer = activeClaimInvitationPointerSchema.safeParse(pointerSnapshot.val());
+  if (!pointer.success) {
+    return null;
+  }
+
+  const recordSnapshot = await database.ref(`claimInvitations/${pointer.data.digest}`).get();
+  const record = claimInvitationRecordSchema.safeParse(recordSnapshot.val());
+  if (!record.success) {
+    return null;
+  }
+
+  if (
+    record.data.revokedAt != null ||
+    record.data.consumedAt != null ||
+    record.data.expiresAt <= Date.now()
+  ) {
+    return null;
+  }
+
+  return record.data.expiresAt;
+}
+
+/**
  * Lists a coach's clients as compact, purpose-built Client Hub rows (TEN-05,
  * TEN-03: `clientHubRowSchema` structurally omits coachUid, membership
  * internals, and any client PII beyond the label). `lastActivityAt` is
@@ -260,12 +300,22 @@ export async function listClients(
     if (!parsed.success || (!includeArchived && parsed.data.archivedAt != null)) {
       return [];
     }
-    return [{ tenantId, label: parsed.data.label, archivedAt: parsed.data.archivedAt ?? null }];
+    return [
+      {
+        tenantId,
+        label: parsed.data.label,
+        archivedAt: parsed.data.archivedAt ?? null,
+        // Phase 24 (CTRL-03): already on the parsed coachClientEntrySchema
+        // record (Phase 23's flip writes it) — no extra read required, and
+        // available on BOTH the success and degrade paths below.
+        claimedAt: parsed.data.claimedAt ?? null,
+      },
+    ];
   });
 
   const rtdb = new RtdbService(database);
   return Promise.all(
-    entries.map(async ({ tenantId, label, archivedAt }) => {
+    entries.map(async ({ tenantId, label, archivedAt, claimedAt }) => {
       // 260725-juj (defense-in-depth): one tenant's corrupt/unparseable
       // subtree must never 500 the whole Client Hub for every OTHER coach
       // client. Guards against the SAME class of read-path crash the
@@ -275,11 +325,14 @@ export async function listClients(
       // `console.error` calls), so degrade to a minimal row and log with
       // `console.warn`.
       try {
-        const [matches, draftCount, deliveryState6] = await Promise.all([
-          rtdb.listMatches(tenantId),
-          countOpenDrafts(database, tenantId),
-          getMostRecentDeliveryStateForTenant(database, tenantId),
-        ]);
+        const [matches, draftCount, deliveryState6, pendingInvitationExpiresAt] = await Promise.all(
+          [
+            rtdb.listMatches(tenantId),
+            countOpenDrafts(database, tenantId),
+            getMostRecentDeliveryStateForTenant(database, tenantId),
+            readPendingInvitationExpiresAt(database, tenantId),
+          ],
+        );
         const lastActivityAt = matches.reduce<number | null>(
           (latest, match) => (latest === null || match.time > latest ? match.time : latest),
           null,
@@ -292,6 +345,8 @@ export async function listClients(
           deliveryState:
             deliveryState6 === null ? null : mapDeliveryStateToHubState(deliveryState6),
           archivedAt,
+          claimedAt,
+          pendingInvitationExpiresAt: pendingInvitationExpiresAt ?? null,
         } satisfies ClientHubRow);
       } catch (err) {
         console.warn(`listClients: degrading tenant ${tenantId} after a read failure`, err);
@@ -302,6 +357,8 @@ export async function listClients(
           draftCount: 0,
           deliveryState: null,
           archivedAt,
+          claimedAt,
+          pendingInvitationExpiresAt: null,
         } satisfies ClientHubRow);
       }
     }),
