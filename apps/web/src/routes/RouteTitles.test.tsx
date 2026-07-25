@@ -32,6 +32,10 @@ describe('RouteTitles', () => {
     expect(titleKeyForPath('/workspace/t1/vods')).toBe('ownerWorkspace.pageTitle');
   });
 
+  it('titles /claim, which has no sidebar item', () => {
+    expect(titleKeyForPath('/claim')).toBe('claim.pageTitle');
+  });
+
   it('leaves unmapped (public/SEO) routes alone so useSeo owns them', () => {
     document.title = 'set by useSeo';
     renderAt('/gsp-calculator');

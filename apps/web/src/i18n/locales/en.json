@@ -1428,6 +1428,11 @@
       "notLinked": "Not linked",
       "manage": "Manage on Integrations"
     },
+    "claimWorkspace": {
+      "title": "Claim a coach-prepared workspace",
+      "description": "Have a code from your coach? Redeem it to take ownership of a workspace they set up for you.",
+      "action": "Enter a claim code"
+    },
     "fighters": {
       "title": "Fighters",
       "description": "Your primary and secondary Smash Ultimate fighters.",
@@ -2042,7 +2047,11 @@
       "subtitle": "Pick one to get started — you can always switch later.",
       "skip": "Skip for now",
       "suggested": "Suggested for you",
-      "error": "Something went wrong saving that — please try again."
+      "error": "Something went wrong saving that — please try again.",
+      "claimCodeCard": {
+        "title": "I have a code from my coach",
+        "description": "Redeem a claim code to take ownership of a workspace your coach prepared for you."
+      }
     },
     "intent": {
       "prepare": {
@@ -2350,6 +2359,45 @@
       "analytics": "Analytics",
       "workspaces_one": "{{count}} workspace",
       "workspaces_other": "{{count}} workspaces"
+    }
+  },
+  "claim": {
+    "pageTitle": "Claim a workspace",
+    "title": "Claim a coach-prepared workspace",
+    "subtitle": "Enter the code your coach gave you to take ownership of a workspace they set up for you.",
+    "codeLabel": "Claim code",
+    "codePlaceholder": "XXXXX-XXXXX-XXXXX-XXXXX-XXXXX-X",
+    "codeHelp": "Paste or type the code exactly as your coach sent it — spacing and case don't matter.",
+    "continueButton": "Continue",
+    "confirm": {
+      "title": "Before you continue",
+      "youGain": "You'll own this coach-prepared workspace, including its matches, VODs, and notes.",
+      "coachBecomes": "Your coach becomes a delegated collaborator you can revoke at any time.",
+      "noChangesYet": "Nothing changes until you confirm.",
+      "backButton": "Back",
+      "confirmButton": "Confirm",
+      "submittingButton": "Confirming..."
+    },
+    "collision": {
+      "title": "You already have matches of your own",
+      "description": "Choose what happens to your personal library.",
+      "keepBothLabel": "Keep both as separate workspaces (recommended)",
+      "keepBothDescription": "Your personal library and the claimed workspace stay independent — nothing is touched.",
+      "notNowLabel": "Not now",
+      "notNowDescription": "Stop here — nothing happens.",
+      "chooseFirst": "Choose an option to continue."
+    },
+    "error": {
+      "generic": "That code didn't work — check it with your coach.",
+      "rateLimited": "Too many attempts — please try again later.",
+      "unavailable": "Claim codes aren't available right now — please try again later."
+    },
+    "success": {
+      "toast": "Workspace claimed!",
+      "title": "You're all set",
+      "whatChanged": "You now own this workspace.",
+      "coachNote": "Your coach keeps delegated access, which you can revoke anytime from the workspace's Coach access card.",
+      "goToWorkspaceButton": "Go to your workspace"
     }
   }
 }

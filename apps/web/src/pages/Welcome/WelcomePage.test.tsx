@@ -32,6 +32,7 @@ function renderWelcome({
           <Route path="/dashboard" element={<div>Dashboard content</div>} />
           <Route path="/vod" element={<div>VOD Manager page</div>} />
           <Route path="/coach" element={<div>Client Hub page</div>} />
+          <Route path="/claim" element={<div>Claim page</div>} />
         </Routes>
       </MemoryRouter>
     </QueryClientProvider>,
@@ -119,5 +120,23 @@ describe('WelcomePage', () => {
     expect(
       screen.queryByRole('link', { name: 'Back to what you were watching' }),
     ).not.toBeInTheDocument();
+  });
+
+  describe('claim code card (Phase 24, ENTRY-01)', () => {
+    it('renders a sixth card alongside the five intent options', () => {
+      renderWelcome();
+
+      expect(screen.getByTestId('claim-code-option')).toBeInTheDocument();
+    });
+
+    it('clicking it navigates to /claim and saves no onboarding intent', async () => {
+      const user = userEvent.setup();
+      renderWelcome();
+
+      await user.click(screen.getByTestId('claim-code-option'));
+
+      expect(await screen.findByText('Claim page')).toBeInTheDocument();
+      expect(upsertMe).not.toHaveBeenCalled();
+    });
   });
 });

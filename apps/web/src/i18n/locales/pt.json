@@ -1428,6 +1428,11 @@
       "notLinked": "Não vinculada",
       "manage": "Gerenciar em Integrações"
     },
+    "claimWorkspace": {
+      "title": "Reivindicar um espaço de trabalho preparado pelo seu coach",
+      "description": "Tem um código do seu coach? Resgate-o para tomar posse de um espaço de trabalho que ele preparou para você.",
+      "action": "Inserir um código de reivindicação"
+    },
     "fighters": {
       "title": "Lutadores",
       "description": "Seus lutadores principais e secundários de Smash Ultimate.",
@@ -2042,7 +2047,11 @@
       "subtitle": "Escolha uma opção para começar — você pode trocar depois.",
       "skip": "Pular por enquanto",
       "suggested": "Sugerido para você",
-      "error": "Algo deu errado ao salvar isso — tente novamente."
+      "error": "Algo deu errado ao salvar isso — tente novamente.",
+      "claimCodeCard": {
+        "title": "Tenho um código do meu coach",
+        "description": "Resgate um código de reivindicação para tomar posse de um espaço de trabalho que seu coach preparou para você."
+      }
     },
     "intent": {
       "prepare": {
@@ -2350,6 +2359,45 @@
       "analytics": "Análises",
       "workspaces_one": "{{count}} espaço de trabalho",
       "workspaces_other": "{{count}} espaços de trabalho"
+    }
+  },
+  "claim": {
+    "pageTitle": "Reivindicar um espaço de trabalho",
+    "title": "Reivindicar um espaço de trabalho preparado pelo seu coach",
+    "subtitle": "Insira o código que seu coach lhe deu para tomar posse de um espaço de trabalho que ele preparou para você.",
+    "codeLabel": "Código de reivindicação",
+    "codePlaceholder": "XXXXX-XXXXX-XXXXX-XXXXX-XXXXX-X",
+    "codeHelp": "Cole ou digite o código exatamente como seu coach enviou — espaçamento e maiúsculas/minúsculas não importam.",
+    "continueButton": "Continuar",
+    "confirm": {
+      "title": "Antes de continuar",
+      "youGain": "Você passará a ser dono deste espaço de trabalho preparado pelo seu coach, incluindo suas partidas, VODs e notas.",
+      "coachBecomes": "Seu coach passa a ser um colaborador delegado que você pode revogar a qualquer momento.",
+      "noChangesYet": "Nada muda até você confirmar.",
+      "backButton": "Voltar",
+      "confirmButton": "Confirmar",
+      "submittingButton": "Confirmando..."
+    },
+    "collision": {
+      "title": "Você já tem suas próprias partidas",
+      "description": "Escolha o que acontece com sua biblioteca pessoal.",
+      "keepBothLabel": "Manter ambos como espaços de trabalho separados (recomendado)",
+      "keepBothDescription": "Sua biblioteca pessoal e o espaço de trabalho reivindicado permanecem independentes — nada é alterado.",
+      "notNowLabel": "Agora não",
+      "notNowDescription": "Pare por aqui — nada acontece.",
+      "chooseFirst": "Escolha uma opção para continuar."
+    },
+    "error": {
+      "generic": "Esse código não funcionou — verifique com seu coach.",
+      "rateLimited": "Muitas tentativas — tente novamente mais tarde.",
+      "unavailable": "Códigos de reivindicação não estão disponíveis no momento — tente novamente mais tarde."
+    },
+    "success": {
+      "toast": "Espaço de trabalho reivindicado!",
+      "title": "Tudo pronto",
+      "whatChanged": "Agora você é dono deste espaço de trabalho.",
+      "coachNote": "Seu coach mantém acesso delegado, que você pode revogar a qualquer momento no cartão de acesso do coach do espaço de trabalho.",
+      "goToWorkspaceButton": "Ir para seu espaço de trabalho"
     }
   }
 }

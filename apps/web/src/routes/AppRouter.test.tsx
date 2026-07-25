@@ -31,6 +31,7 @@ const matchesList = vi.fn();
 const clientsList = vi.fn();
 const startggStatus = vi.fn();
 const clientWorkspacesList = vi.fn();
+const claimsRedeem = vi.fn();
 
 const { MockApiError } = vi.hoisted(() => {
   class MockApiError extends Error {
@@ -58,6 +59,9 @@ vi.mock('@/lib/api', () => ({
     clientWorkspaces: {
       list: (...args: unknown[]) => clientWorkspacesList(...args),
       revokeDelegation: vi.fn(),
+    },
+    claims: {
+      redeem: (...args: unknown[]) => claimsRedeem(...args),
     },
     startgg: { status: (...args: unknown[]) => startggStatus(...args) },
   },
@@ -170,5 +174,34 @@ describe('AppRouter — client-owned workspace routes (Phase 24)', () => {
 
     expect(await screen.findByText(/My Workspace/)).toBeInTheDocument();
     expect(window.location.pathname).toBe('/workspace/t1/overview');
+  });
+});
+
+describe('AppRouter — /claim route (Phase 24, ENTRY-01)', () => {
+  beforeEach(() => {
+    resetAuthMock();
+    vi.clearAllMocks();
+    setMockUser(makeMockUser({ email: 'client@example.com' }));
+    getMe.mockResolvedValue({
+      uid: 'test-uid',
+      email: 'client@example.com',
+      fighters: { primary: [], secondary: [] },
+      coachingModeEnabled: false,
+    });
+    getFighters.mockResolvedValue({ primary: [], secondary: [] });
+    matchesList.mockResolvedValue([]);
+    clientsList.mockResolvedValue([]);
+    clientWorkspacesList.mockResolvedValue([]);
+    startggStatus.mockResolvedValue({ linked: false });
+  });
+
+  afterEach(() => {
+    window.history.pushState({}, '', '/');
+  });
+
+  it('an authenticated visit renders the claim redemption page', async () => {
+    renderAt('/claim');
+
+    expect(await screen.findByLabelText('Claim code')).toBeInTheDocument();
   });
 });

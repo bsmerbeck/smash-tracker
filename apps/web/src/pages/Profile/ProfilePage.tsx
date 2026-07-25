@@ -5,6 +5,7 @@ import { useParryggStatus } from '@/hooks/useParrygg';
 import { AccountCard } from './components/AccountCard';
 import { SecurityCard } from './components/SecurityCard';
 import { ConnectedAccountsCard } from './components/ConnectedAccountsCard';
+import { ClaimWorkspaceCard } from './components/ClaimWorkspaceCard';
 import { FightersCard } from './components/FightersCard';
 import { FavoriteStagesCard } from './components/FavoriteStagesCard';
 import { BillingCard } from './components/BillingCard';
@@ -41,6 +42,7 @@ export function ProfilePage() {
       />
       <SecurityCard user={user} />
       <ConnectedAccountsCard />
+      <ClaimWorkspaceCard />
       <FightersCard />
       <FavoriteStagesCard />
       <BillingCard />

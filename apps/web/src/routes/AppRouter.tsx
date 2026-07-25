@@ -175,6 +175,12 @@ const OwnerFightersPage = lazy(() =>
     default: m.OwnerFightersPage,
   })),
 );
+// Phase 24 (Coach Issuance & Client Claim Experience, ENTRY-01/CLAIM-01): the
+// client-facing redemption surface. Flat, authenticated, no route parameter —
+// every entry link into it is bare (see the page's own doc comment).
+const ClaimRedeemPage = lazy(() =>
+  import('@/pages/Claim/ClaimRedeemPage').then((m) => ({ default: m.ClaimRedeemPage })),
+);
 
 /** Minimal route-transition fallback — matches HomePage's `loading → null` behavior in spirit without layout shift once content lands. */
 function RouteFallback() {
@@ -371,6 +377,18 @@ export function AppRouter() {
             element={
               <ProtectedRoute>
                 <ProfilePage />
+              </ProtectedRoute>
+            }
+          />
+          {/* Phase 24 (Coach Issuance & Client Claim Experience, ENTRY-01/
+              CLAIM-01): authenticated, no path parameter — the code is only
+              ever typed after this ProtectedRoute gate. Placed beside the
+              other flat authenticated routes, not nested. */}
+          <Route
+            path="/claim"
+            element={
+              <ProtectedRoute>
+                <ClaimRedeemPage />
               </ProtectedRoute>
             }
           />

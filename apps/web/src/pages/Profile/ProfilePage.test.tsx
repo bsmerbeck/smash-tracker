@@ -105,6 +105,7 @@ function renderPage(initialEntry = '/profile') {
         <AuthProvider>
           <Routes>
             <Route path="/profile" element={<ProfilePage />} />
+            <Route path="/claim" element={<div>Claim page</div>} />
           </Routes>
         </AuthProvider>
       </MemoryRouter>
@@ -494,6 +495,29 @@ describe('ProfilePage', () => {
       expect(await screen.findByText('Pandem1c')).toBeInTheDocument();
       expect(screen.getByText('ParryPilot')).toBeInTheDocument();
       expect(screen.getByText('Verified')).toBeInTheDocument();
+    });
+  });
+
+  describe('claim workspace card (Phase 24, ENTRY-01)', () => {
+    beforeEach(() => {
+      setMockUser(makeMockUser({ email: 'pilot@example.com' }));
+    });
+
+    it('renders a title, description, and an action that navigates to the bare /claim route', async () => {
+      const user = userEvent.setup();
+      renderPage();
+
+      expect(await screen.findByText('Claim a coach-prepared workspace')).toBeInTheDocument();
+      await user.click(screen.getByRole('button', { name: 'Enter a claim code' }));
+
+      expect(await screen.findByText('Claim page')).toBeInTheDocument();
+    });
+
+    it('renders no code input on the card itself', async () => {
+      renderPage();
+
+      await screen.findByText('Claim a coach-prepared workspace');
+      expect(screen.queryByLabelText('Claim code')).not.toBeInTheDocument();
     });
   });
 
