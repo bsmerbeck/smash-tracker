@@ -73,25 +73,16 @@ describe('requireTenantRole', () => {
     const database = new FakeDatabase();
     await seedMembership(database, TENANT_ID, DELEGATE_UID, 'delegate');
 
-    let delegateMessage = '';
-    try {
-      await requireTenantRole(database as never, DELEGATE_UID, TENANT_ID, ['custodian']);
-      throw new Error('expected requireTenantRole to reject');
-    } catch (err) {
-      expect(err).toBeInstanceOf(ForbiddenError);
-      delegateMessage = (err as Error).message;
-    }
+    const delegateError = await requireTenantRole(database as never, DELEGATE_UID, TENANT_ID, [
+      'custodian',
+    ]).catch((err: unknown) => err);
+    const strangerError = await requireTenantRole(database as never, STRANGER_UID, TENANT_ID, [
+      'custodian',
+    ]).catch((err: unknown) => err);
 
-    let strangerMessage = '';
-    try {
-      await requireTenantRole(database as never, STRANGER_UID, TENANT_ID, ['custodian']);
-      throw new Error('expected requireTenantRole to reject');
-    } catch (err) {
-      expect(err).toBeInstanceOf(ForbiddenError);
-      strangerMessage = (err as Error).message;
-    }
-
-    expect(delegateMessage).toBe(strangerMessage);
+    expect(delegateError).toBeInstanceOf(ForbiddenError);
+    expect(strangerError).toBeInstanceOf(ForbiddenError);
+    expect((delegateError as Error).message).toBe((strangerError as Error).message);
   });
 
   it('throws the exact ForbiddenError class the global handler maps to 403', async () => {
