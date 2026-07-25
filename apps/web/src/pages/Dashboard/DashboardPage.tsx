@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { useFighters } from '@/hooks/useFighters';
 import { useFilteredMatches } from '@/hooks/useFilteredMatches';
+import { useSortedFighters } from '@/hooks/useFighterName';
 import { useSubjectPath } from '@/hooks/useSubjectPath';
 import { useProfile } from '@/hooks/useProfile';
 import { useOnboardingProgress } from '@/hooks/useOnboardingProgress';
@@ -151,12 +152,15 @@ export function DashboardPage() {
     filterActive,
   } = useFilteredMatches();
 
-  const fighterSprites = useMemo<Fighter[]>(() => {
+  const rawFighterSprites = useMemo<Fighter[]>(() => {
     const ids = [...(fighterSelection?.primary ?? []), ...(fighterSelection?.secondary ?? [])];
     return ids
       .map((id) => getFighterById(id))
       .filter((sprite): sprite is Fighter => sprite != null);
   }, [fighterSelection]);
+  // 260725-Q1: alphabetized by localized name, not primary+secondary save
+  // order — matches every other fighter picker in the app.
+  const fighterSprites = useSortedFighters(rawFighterSprites);
 
   // Tracks an explicit user selection only; when unset, the first available
   // fighter is used (derived below during render, mirroring legacy's

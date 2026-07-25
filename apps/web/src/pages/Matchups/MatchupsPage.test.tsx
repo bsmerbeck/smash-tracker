@@ -47,7 +47,9 @@ vi.mock('@/lib/api', () => ({
 const mario = SpriteList.find((s) => s.id === 1)!; // Mario
 const luigi = SpriteList.find((s) => s.id === 10)!; // Luigi
 // SelectOpponent defaults to the alphabetically-first sprite, matching
-// alphaSpriteList's sort in src/components/match-form/MatchForm.ts.
+// useAlphaFighters' sort (src/hooks/useFighterName.ts) — the active locale
+// in these tests is always 'en', where localized names equal SpriteList's
+// canonical `.name`, so this plain English sort matches runtime behavior.
 const alphabeticallyFirstSprite = [...SpriteList].sort((a, b) => a.name.localeCompare(b.name))[0]!;
 
 function makeMatch(overrides: Partial<Record<string, unknown>> = {}) {

@@ -21,7 +21,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { alphaSpriteList } from '@/components/match-form/MatchForm';
+import { useAlphaFighters } from '@/hooks/useFighterName';
 import { localizedFighterName } from '@/lib/fighterNames';
 import { NO_SELECTION_STAGE } from '@/data/stages';
 import {
@@ -72,6 +72,7 @@ export function QuickLogger({
   const lastGsp = lastPoint?.gsp ?? null;
   const createMatch = useCreateMatch();
   const calibration = useModelCalibration(settings);
+  const alphaFighters = useAlphaFighters();
   const { data: stageFavorites } = useStageFavorites();
   const toggleStageFavorite = useToggleStageFavorite();
   const favoriteStageIds = stageFavorites?.stageIds;
@@ -227,7 +228,7 @@ export function QuickLogger({
                 <SelectValue placeholder={t('gsp.logger.selectCharacter')} />
               </SelectTrigger>
               <SelectContent>
-                {alphaSpriteList.map((s) => (
+                {alphaFighters.map((s) => (
                   <SelectItem key={s.id} value={String(s.id)}>
                     <img src={s.url} alt="" className="size-6 object-contain" />
                     {localizedFighterName(s.id, t)}

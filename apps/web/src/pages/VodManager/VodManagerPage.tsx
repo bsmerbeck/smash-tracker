@@ -22,6 +22,7 @@ import { getFighterById } from '@/data/sprites';
 import { useActiveSubject } from '@/hooks/useActiveSubject';
 import { useCoachingReviews, useCreateCoachingReview } from '@/hooks/useCoachingReviews';
 import { useFighters } from '@/hooks/useFighters';
+import { useSortedFighters } from '@/hooks/useFighterName';
 import { useFilteredMatches } from '@/hooks/useFilteredMatches';
 import { useOwnedWorkspaceSubject } from '@/hooks/useOwnedWorkspaceSubject';
 import { useCreateNote, useDeleteNote, useUpdateNote } from '@/hooks/useVodNotes';
@@ -179,12 +180,15 @@ export function VodManagerPage() {
   // Fighters offered by the inline edit form's "Your Fighter" select
   // (NOTE-04) — same primary+secondary sprite lookup MatchDataPage uses.
   const { data: fighterSelection, isLoading: fightersLoading } = useFighters();
-  const fighterSprites = useMemo<Fighter[]>(() => {
+  const rawFighterSprites = useMemo<Fighter[]>(() => {
     const ids = [...(fighterSelection?.primary ?? []), ...(fighterSelection?.secondary ?? [])];
     return ids
       .map((id) => getFighterById(id))
       .filter((sprite): sprite is Fighter => sprite != null);
   }, [fighterSelection]);
+  // 260725-Q1: alphabetized by localized name — matches every other fighter
+  // picker in the app.
+  const fighterSprites = useSortedFighters(rawFighterSprites);
   // Fighter-setup dead-end fix: same tenancy-correct branch every subject
   // consumer uses (`clientId != null`, never `activeMode === 'coaching'` —
   // see useActiveSubject's doc rule) so the CTA lands on the right fighter

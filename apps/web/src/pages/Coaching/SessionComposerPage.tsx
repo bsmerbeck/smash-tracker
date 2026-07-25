@@ -9,7 +9,6 @@ import {
   MAX_SESSION_CHARACTER_TAGS,
   MAX_SESSION_HOMEWORK_ITEMS,
   MAX_SESSION_LINKED_MATCH_IDS,
-  SpriteList,
 } from '@smash-tracker/shared';
 import {
   useCoachingSession,
@@ -19,7 +18,11 @@ import {
 } from '@/hooks/useCoachingSessions';
 import { useMatches } from '@/hooks/useMatches';
 import { useFighters } from '@/hooks/useFighters';
-import { useFighterNameResolver } from '@/hooks/useFighterName';
+import {
+  useAlphaFighters,
+  useFighterNameResolver,
+  useSortedFighters,
+} from '@/hooks/useFighterName';
 import { getFighterById } from '@/data/sprites';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -104,6 +107,9 @@ export function SessionComposerPage() {
   const toggleHomework = useToggleHomeworkItem(clientId, sessionId);
   const createDelivery = useCreateSessionDelivery(clientId, sessionId);
   const fighterName = useFighterNameResolver();
+  // 260725-Q1: the "characters covered" tag picker offers the full roster
+  // alphabetized by localized name, not SpriteList's raw roster order.
+  const alphaFighters = useAlphaFighters();
   // Phase 21 (DLVX-04): the Deliver picker's candidate list — every
   // VOD-bearing match in the client's library, same `useMatches()` +
   // `vodUrl != null` filter every other VOD-picking surface in this app
@@ -126,12 +132,15 @@ export function SessionComposerPage() {
   // resolves the active CLIENT's fighter selections here (this page always
   // renders under /coach/:clientId/...), not the coach's own.
   const { data: fighterSelection } = useFighters();
-  const fighterSprites = useMemo<Fighter[]>(() => {
+  const rawFighterSprites = useMemo<Fighter[]>(() => {
     const ids = [...(fighterSelection?.primary ?? []), ...(fighterSelection?.secondary ?? [])];
     return ids
       .map((id) => getFighterById(id))
       .filter((sprite): sprite is Fighter => sprite != null);
   }, [fighterSelection]);
+  // 260725-Q1: alphabetized by localized name — matches every other fighter
+  // picker in the app.
+  const fighterSprites = useSortedFighters(rawFighterSprites);
 
   const [buffer, setBuffer] = useState<SessionEditBuffer>(() => ({
     date: dateToInputValue(Date.now()),
@@ -398,13 +407,13 @@ export function SessionComposerPage() {
           className="h-9 w-fit rounded-md border border-input bg-transparent px-3 text-sm"
         >
           <option value="">{t('coaching.sessions.composer.tagsAddPlaceholder')}</option>
-          {SpriteList.filter((fighter) => !buffer.characterTags.includes(fighter.id)).map(
-            (fighter) => (
+          {alphaFighters
+            .filter((fighter) => !buffer.characterTags.includes(fighter.id))
+            .map((fighter) => (
               <option key={fighter.id} value={fighter.id}>
                 {fighterName(fighter.id)}
               </option>
-            ),
-          )}
+            ))}
         </select>
         {tagsCapReached && (
           <p className="text-xs text-muted-foreground">
