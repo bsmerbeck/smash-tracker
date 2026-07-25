@@ -63,6 +63,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
 import { ShareTimestampRow } from './components/ShareTimestampRow';
 import { RecapView } from './components/RecapView';
 
@@ -301,6 +302,19 @@ function CoachTimestampRow({
     }
   }
 
+  // Mirrors `TimestampRow`'s `handleNoteKeyDown` (260725-Q2): the note field
+  // is now a multi-line textarea, so plain Enter inserts a newline instead of
+  // submitting — Cmd/Ctrl+Enter commits, Escape still discards.
+  function handleNoteKeyDown(e: KeyboardEvent<HTMLTextAreaElement>) {
+    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+      e.preventDefault();
+      commit();
+    } else if (e.key === 'Escape') {
+      e.preventDefault();
+      cancel();
+    }
+  }
+
   function confirmDelete() {
     if (stamp.id) {
       onDelete(stamp.id);
@@ -358,17 +372,6 @@ function CoachTimestampRow({
             className="w-24"
             autoFocus
           />
-          <Input
-            value={noteInput}
-            onChange={(e) => {
-              setNoteInput(e.target.value);
-              setError(null);
-            }}
-            onKeyDown={handleKeyDown}
-            aria-label={t('vodManager.notes.editNoteAria')}
-            maxLength={200}
-            className="min-w-[10rem] flex-1"
-          />
           <Button
             type="button"
             variant="outline"
@@ -388,6 +391,22 @@ function CoachTimestampRow({
             <X />
           </Button>
         </div>
+        {/* Owner feedback (260725-Q2): same multi-line textarea upgrade as
+            `TimestampRow` — Enter inserts a newline, Cmd/Ctrl+Enter commits
+            (`handleNoteKeyDown`). */}
+        <Textarea
+          value={noteInput}
+          onChange={(e) => {
+            setNoteInput(e.target.value);
+            setError(null);
+          }}
+          onKeyDown={handleNoteKeyDown}
+          aria-label={t('vodManager.notes.editNoteAria')}
+          maxLength={200}
+          rows={3}
+          className="w-full resize-y"
+        />
+        <p className="text-xs text-muted-foreground">{t('vodManager.notes.editNoteHint')}</p>
         {error && <p className="text-sm text-destructive">{error}</p>}
         {tagRow}
       </div>
