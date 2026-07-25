@@ -543,10 +543,15 @@ describe('GspPage', () => {
 
       renderGspPage();
 
-      // The computed threshold now derives from the live calibration: at
-      // ~1 minute of drift it stays within a whisker of the live value.
-      expect(await screen.findByText(nearNumberMatcher(14_813_136))).toBeInTheDocument();
-      expect(screen.getByText(/auto-updated .+ from gsptiers\.com/)).toBeInTheDocument();
+      // Await the caption, not the number: the caption appears only once
+      // /api/gsp-live resolves, while the anchor-calibrated first render
+      // drifts with the wall clock and sweeps through any fixed constant's
+      // tolerance window on some calendar day (hit 14,813,136 +/- 500 on
+      // 2026-07-25), satisfying the number matcher before live is applied.
+      expect(await screen.findByText(/auto-updated .+ from gsptiers\.com/)).toBeInTheDocument();
+      // With the live calibration applied, ~1 minute of drift keeps the
+      // computed threshold within a whisker of the live value.
+      expect(screen.getByText(nearNumberMatcher(14_813_136))).toBeInTheDocument();
     });
 
     it('uses the live max for the tier ladder boundaries', async () => {
