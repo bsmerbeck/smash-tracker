@@ -1,5 +1,6 @@
 import { buildApp } from './app.js';
 import {
+  getClaimCodeConfig,
   getGa4Config,
   getInternalJobsConfig,
   getParryggConfig,
@@ -22,6 +23,7 @@ try {
 const firebase = initFirebase(env);
 const ga4 = getGa4Config(env);
 const internalJobs = getInternalJobsConfig(env);
+const claimCode = getClaimCodeConfig(env);
 
 const app = buildApp({
   firebase,
@@ -33,6 +35,7 @@ const app = buildApp({
   webBaseUrl: env.WEB_BASE_URL,
   ga4,
   internalJobs,
+  claimCode,
 });
 
 // Phase 7 (Recap Cards & Share-Loop Analytics): a single startup-time notice
@@ -54,6 +57,17 @@ if (!ga4) {
 if (!internalJobs) {
   app.log.warn(
     'Internal jobs are not configured (INTERNAL_JOBS_SECRET unset); /internal/jobs/* will answer 503',
+  );
+}
+
+// Phase 23 (Claim Credential & Atomic Ownership Transition): a single
+// startup-time notice — never per-request — when the claim-code HMAC secret
+// isn't configured. This is an operator-visible signal so a misconfigured
+// deployment is obvious in Cloud Run logs rather than only discoverable when
+// a coach's first issuance 503s.
+if (!claimCode) {
+  app.log.warn(
+    'Claim codes are not configured (CLAIM_CODE_HMAC_SECRET unset); claim issuance and redemption will answer 503',
   );
 }
 

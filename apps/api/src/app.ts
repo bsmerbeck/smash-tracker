@@ -1,4 +1,4 @@
-import Fastify, { type FastifyBaseLogger, type FastifyError, type FastifyRequest } from 'fastify';
+import Fastify, { type FastifyBaseLogger, type FastifyError } from 'fastify';
 import cors from '@fastify/cors';
 import rateLimit from '@fastify/rate-limit';
 import {
@@ -47,6 +47,7 @@ import shareOgImageRoutes from './routes/shareOgImage.js';
 import { ConflictError, ForbiddenError, NotFoundError } from './services/rtdb.js';
 import type { FirebaseServices } from './firebase/admin.js';
 import type {
+  ClaimCodeConfig,
   Ga4Config,
   InternalJobsConfig,
   ParryggConfig,
@@ -56,6 +57,7 @@ import type {
 } from './config/env.js';
 import type { AnthropicLikeClient } from './reports/generate.js';
 import type { ParryggClients } from './parrygg/client.js';
+import { anonRateLimitKey } from './http/clientIp.js';
 
 export interface BuildAppOptions {
   firebase: FirebaseServices;
@@ -101,32 +103,15 @@ export interface BuildAppOptions {
    * makes the ENTIRE scope answer 503 (never a silently-open route).
    */
   internalJobs?: InternalJobsConfig | null;
+  /**
+   * Phase 23 (Claim Credential & Atomic Ownership Transition, CRED-02): the
+   * HMAC config for claim-code hashing. Null/omitted makes the entire claim
+   * issuance + redemption surface answer 503 (routes are registered in
+   * later plans of this phase; this option is threaded but not yet
+   * consumed by any route here).
+   */
+  claimCode?: ClaimCodeConfig | null;
   logger?: boolean | FastifyBaseLogger;
-}
-
-/**
- * Phase 6 (Anonymous Share Experience & Discord Unfurls): rate-limit key for
- * the anonymous share routes. Deliberately NOT `request.ip`: with
- * `trustProxy: true`, `request.ip` resolves to the LEFTMOST X-Forwarded-For
- * entry, which is client-supplied — Cloud Run's front end APPENDS the real
- * client address to whatever XFF the caller sent, it never strips
- * caller-supplied entries. Keying on the leftmost entry therefore lets an
- * anonymous caller mint a fresh 60/min bucket per request by rotating a
- * spoofed header (TRUST-01 bypass). The RIGHTMOST entry is the one the
- * trusted Google front end actually appended — the closest-to-us,
- * non-spoofable address — so that is the key, falling back to the raw
- * socket address when no XFF header is present (direct connection).
- */
-function anonRateLimitKey(request: FastifyRequest): string {
-  const xff = request.headers['x-forwarded-for'];
-  // Multiple header instances arrive as an array; the trusted proxy appends
-  // to the last one, so take the final entry of the final header value.
-  const headerValue = Array.isArray(xff) ? xff[xff.length - 1] : xff;
-  if (headerValue) {
-    const last = headerValue.split(',').pop()?.trim();
-    if (last) return last;
-  }
-  return request.socket.remoteAddress ?? request.ip;
 }
 
 export function buildApp(options: BuildAppOptions) {
