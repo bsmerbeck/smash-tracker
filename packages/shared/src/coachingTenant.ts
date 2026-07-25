@@ -122,6 +122,27 @@ export const clientHubRowSchema = z.object({
   deliveryState: z.enum(['none', 'delivered', 'acknowledged']).nullish(),
   /** Epoch ms the client was archived, or absent/null if active. */
   archivedAt: z.number().int().nonnegative().nullish(),
+  /**
+   * Phase 24 (CTRL-03): epoch ms the tenant's ownership flipped to the
+   * client, or absent/null while still coach-managed. Projected straight
+   * from the coach index entry's own claim-flip field (Phase 23's flip
+   * already writes it) — never re-derived from `clientTenants`.
+   */
+  claimedAt: z.number().int().nonnegative().nullish(),
+  /**
+   * Phase 24 (CTRL-03): epoch ms a currently LIVE claim invitation lapses,
+   * or absent/null when there is no live one (never issued, expired,
+   * revoked, or consumed all collapse to null/absent — no oracle on WHY).
+   *
+   * Badge contract the web side derives from these two fields (24-CONTEXT.md
+   * Area 1, owner revision): a non-null claim-flip timestamp renders
+   * Claimed; otherwise a non-null value here renders "Claim code active
+   * (expires in Nh)"; otherwise Managed. The copy must NEVER assert a code
+   * was sent to or received by anyone — the server only knows a code
+   * exists, never that it reached the client. The rejected phrasing for
+   * this badge (owner revision) must never appear in this schema's copy.
+   */
+  pendingInvitationExpiresAt: z.number().int().nonnegative().nullish(),
 });
 export type ClientHubRow = z.infer<typeof clientHubRowSchema>;
 
