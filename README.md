@@ -3,14 +3,20 @@
 **Use it live → https://grandfinals.gg**
 alternative link: https://smash-tracker-f97b7.web.app
 
-grandfinals.gg is a match-tracking app for **Super Smash Bros. Ultimate**. Sign in, pick a
-primary/secondary fighter, log wins and losses (opponent, stage, match type, notes) after each
-set, and review your results: win/loss trends, best/worst matchups, per-stage performance,
-per-opponent history, and a per-fighter GSP (Global Smash Power) tracker with an Elite Smash
-projection.
+grandfinals.gg is a free, community-driven analytics app for **Super Smash Bros. Ultimate**. Sign
+in and it covers the full competitive loop: match tracking with start.gg and parry.gg sync, GSP
+and Glicko rating tracking, matchup scouting and AI-generated scouting reports (the only paid
+feature, priced to break even), a VOD Manager for finding, watching, annotating, tagging, and
+organizing recorded matches into playlists (no video ever hosted — YouTube/Twitch embeds and
+click-to-seek timestamps only), revocable no-account share links for VOD reviews and
+post-tournament recaps, and a Coach Workspace for coaches running isolated managed-client
+libraries with structured reviews, no-account delivery links, and training sessions — including a
+full client claim and coach-delegation flow so a managed client can take ownership of their own
+workspace. Authenticated surfaces ship in six locales (en/es/fr/de/pt/ja).
 
 This repo is a full rewrite of an older Create React App + Redux + Firebase client-only app into
-a typed monorepo with a real API layer in front of Firebase, kept as a portfolio piece.
+a typed monorepo with a real API layer in front of Firebase — this rewrite is what's deployed at
+grandfinals.gg today; the legacy client-only app is retired.
 
 ### Tech stack
 
@@ -20,7 +26,7 @@ a typed monorepo with a real API layer in front of Firebase, kept as a portfolio
 - TypeScript 6, strict mode, everywhere
 - ESLint 9 (flat config) + typescript-eslint, Prettier 3
 - husky + lint-staged (pre-commit formatting)
-- Vitest across all three packages (126 tests)
+- Vitest across all three packages (roughly 3,500 tests as of v2.4)
 
 **apps/web**
 
@@ -65,11 +71,10 @@ flowchart LR
     Auth -. "ID token" .-> Browser
 ```
 
-> Note: `database.rules.json` still allows a user to read/write their own `uid`-scoped paths
-> directly, because the legacy CRA app (still the deployed production app) talks to Realtime
-> Database directly and needs those rules. Once this rewrite is cut over as the deployed app, the
-> rules can be locked down to admin-only (service-account) access, since all reads/writes would
-> then go exclusively through the API. See `firebase.json` / `database.rules.json`.
+> `database.rules.json` denies all direct client read/write access (`.read`/`.write` both
+> `false`) — every read and write goes through the Fastify API above, which authenticates via
+> Application Default Credentials and, as the Admin SDK, bypasses these rules entirely. See
+> `firebase.json` / `database.rules.json`.
 
 ### Monorepo layout
 
@@ -78,7 +83,8 @@ smash-tracker/
 ├── apps/
 │   ├── web/                 # Vite + React 19 SPA
 │   │   ├── src/
-│   │   │   ├── pages/       # Home, Dashboard, CharacterSelect, Matchups, MatchData, FighterAnalysis, NotFound
+│   │   │   ├── pages/       # Home, Dashboard, Claim, ClientWorkspace, Coaching, Review, Share,
+│   │   │   │                # Tournaments, VodManager, Welcome, ...
 │   │   │   ├── layouts/     # Main layout: Sidebar, Topbar, Footer
 │   │   │   ├── components/  # Shared UI (shadcn primitives, match-form)
 │   │   │   ├── context/     # Auth context (onAuthStateChanged)
@@ -184,9 +190,12 @@ Run from the repo root; each fans out to the relevant workspace package(s) via p
 
 Vitest across the board: `@testing-library/react` + `@testing-library/user-event` + jsdom for
 `apps/web`, Fastify's `inject()` for `apps/api`, plain unit tests for `packages/shared`.
-**126 tests** total (21 shared + 30 api + 75 web), including coverage of the critical user flows:
-submitting a new match, editing a match, saving a character (fighter) selection, and redirecting
-unauthenticated users away from protected routes.
+Roughly 3,500 tests total across the three packages as of v2.4, including coverage of the
+critical user flows: matches (manual entry, start.gg/parry.gg sync), the VOD Manager, coach
+reviews and no-account delivery, the client claim/delegation transition, and redirecting
+unauthenticated users away from protected routes. (Approximate and dated on purpose — see
+`.planning/STATE.md` for the current exact per-package counts rather than trusting a number that
+will be stale by next week.)
 
 ```bash
 pnpm test
@@ -301,6 +310,26 @@ ownership, linking is a two-step flow: `POST /link` claims a parry.gg account by
 code into their public parry.gg bio. Verification is NOT required to sync — syncing a linked
 account only reads the same public match data start.gg's sync reads with its own server token, so
 the trust bar for syncing is "you found the right profile" (enforced by the reverse-index
+uniqueness check), not "you cryptographically proved you own it".
+
+**V2.4: client claim & coach delegation (optional but recommended)**
+
+A managed client taking ownership of their coach-managed workspace needs one more env var:
+
+- `CLAIM_CODE_HMAC_SECRET` — a server-side secret that keys the HMAC-SHA-256 digest-at-rest for
+  client claim codes. Only the digest is ever persisted to Realtime Database; the raw code is
+  returned to the issuing coach exactly once, at issuance.
+
+```sh
+gcloud run deploy smash-tracker-api \
+  --source . \
+  --region us-central1 \
+  --set-env-vars FIREBASE_DATABASE_URL=https://smash-tracker-f97b7.firebaseio.com,CLAIM_CODE_HMAC_SECRET=...
+```
+
+Until `CLAIM_CODE_HMAC_SECRET` is set, every `/api/claims/*` and `/api/client-workspaces*` route
+answers `503` and the coach-issuance / client-claim UI never activates; the rest of the app
+(including personal analytics and coaching reviews) is unaffected.
 uniqueness check), not "you cryptographically proved you own it".
 
 **2. Configure `apps/web/.env.production`**
