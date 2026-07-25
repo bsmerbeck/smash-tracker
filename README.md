@@ -330,7 +330,6 @@ gcloud run deploy smash-tracker-api \
 Until `CLAIM_CODE_HMAC_SECRET` is set, every `/api/claims/*` and `/api/client-workspaces*` route
 answers `503` and the coach-issuance / client-claim UI never activates; the rest of the app
 (including personal analytics and coaching reviews) is unaffected.
-uniqueness check), not "you cryptographically proved you own it".
 
 **2. Configure `apps/web/.env.production`**
 
