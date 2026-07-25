@@ -1627,6 +1627,7 @@
           "nextAction": "Nächster Schritt",
           "draftCount": "Entwürfe",
           "deliveryState": "Zustellung",
+          "claimStatus": "Übernahmestatus",
           "actions": "Aktionen"
         },
         "noActivity": "Noch keine Aktivität",
@@ -1634,6 +1635,13 @@
           "delivered": "Zugestellt",
           "acknowledged": "Bestätigt",
           "none": "Nicht zugestellt"
+        },
+        "claimStatus": {
+          "managed": "Verwaltet",
+          "claimed": "Übernommen",
+          "codeActive_one": "Übernahmecode aktiv (läuft in {{count}} Stunde ab)",
+          "codeActive_other": "Übernahmecode aktiv (läuft in {{count}} Stunden ab)",
+          "codeActiveSoon": "Übernahmecode aktiv (läuft bald ab)"
         },
         "nextAction": {
           "archived": "Archiviert",
@@ -1648,6 +1656,7 @@
         "rowAria": "Workspace von {{label}} öffnen",
         "actions": {
           "openWorkspace": "Arbeitsbereich öffnen",
+          "issueClaimCode": "Übernahmecode generieren",
           "export": "Arbeitsbereich exportieren",
           "archive": "Archivieren",
           "restore": "Wiederherstellen",
@@ -1658,6 +1667,38 @@
         "noneFound": "Keine Kunden gefunden.",
         "pageOf": "Seite {{page}} von {{total}}"
       }
+    },
+    "claimCode": {
+      "title": "Übernahmecode generieren",
+      "description": "Erstelle einen einmaligen Code, mit dem dein Kunde diesen Arbeitsbereich als eigenen übernehmen kann.",
+      "triggerLabel": "Übernahmecode generieren",
+      "rotationWarning": "Das Generieren eines neuen Codes macht den ausstehenden sofort ungültig — gib nur den hier angezeigten Code weiter.",
+      "statusOutstanding": "Für diesen Kunden ist bereits ein Übernahmecode aktiv.",
+      "statusNone": "Für diesen Kunden ist derzeit kein Übernahmecode aktiv.",
+      "generateButton": "Übernahmecode generieren",
+      "generatingButton": "Wird generiert...",
+      "codeFieldLabel": "Übernahmecode",
+      "copyButton": "Kopieren",
+      "copiedButton": "Kopiert",
+      "copiedToast": "Code in die Zwischenablage kopiert",
+      "copyFailedToast": "Kopieren fehlgeschlagen — markiere den Code und kopiere ihn manuell.",
+      "expiresAt": "Läuft ab {{date}}",
+      "handoffInstructions": "Sende diesen Code auf einem beliebigen Weg an deinen Kunden — er gibt ihn nach der Anmeldung auf grandfinals.gg/claim ein.",
+      "onceWarning": "Dieser Code wird nur einmal angezeigt. Wenn du diesen Dialog schließt, kannst du ihn nicht erneut sehen — du müsstest einen neuen generieren.",
+      "closeConfirmTitle": "Ohne Kopieren des Codes schließen?",
+      "closeConfirmBody": "Dieser Code wird nach dem Schließen dieses Dialogs nicht erneut angezeigt. Falls du ihn noch nicht kopiert hast, musst du einen neuen generieren.",
+      "closeConfirmCancel": "Zurück",
+      "closeConfirmAction": "Trotzdem schließen",
+      "doneButton": "Fertig",
+      "revokeTrigger": "Code widerrufen",
+      "revokeConfirmBody": "Dies macht den ausstehenden Übernahmecode sofort ungültig. Dein Kunde kann ihn dann nicht mehr verwenden.",
+      "revokeConfirmCancel": "Abbrechen",
+      "revokeConfirmAction": "Widerrufen",
+      "revokedToast": "Übernahmecode widerrufen",
+      "revokeError": "Der Übernahmecode konnte nicht widerrufen werden. Versuche es erneut.",
+      "errorGeneric": "Beim Generieren des Übernahmecodes ist etwas schiefgelaufen. Versuche es erneut.",
+      "errorRateLimited": "Du hast das Tageslimit für Übernahmecodes für diesen Kunden erreicht. Versuche es morgen erneut.",
+      "errorUnavailable": "Übernahmecodes sind derzeit nicht verfügbar. Versuche es später erneut."
     },
     "overview": {
       "title": "Übersicht",

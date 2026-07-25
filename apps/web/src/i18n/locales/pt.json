@@ -1627,6 +1627,7 @@
           "nextAction": "Próxima ação",
           "draftCount": "Rascunhos",
           "deliveryState": "Entrega",
+          "claimStatus": "Status de reivindicação",
           "actions": "Ações"
         },
         "noActivity": "Ainda sem atividade",
@@ -1634,6 +1635,13 @@
           "delivered": "Entregue",
           "acknowledged": "Confirmado",
           "none": "Não entregue"
+        },
+        "claimStatus": {
+          "managed": "Gerenciado",
+          "claimed": "Reivindicado",
+          "codeActive_one": "Código de reivindicação ativo (expira em {{count}} hora)",
+          "codeActive_other": "Código de reivindicação ativo (expira em {{count}} horas)",
+          "codeActiveSoon": "Código de reivindicação ativo (expira em breve)"
         },
         "nextAction": {
           "archived": "Arquivado",
@@ -1648,6 +1656,7 @@
         "rowAria": "Abrir o espaço de trabalho de {{label}}",
         "actions": {
           "openWorkspace": "Abrir espaço de trabalho",
+          "issueClaimCode": "Gerar código de reivindicação",
           "export": "Exportar espaço de trabalho",
           "archive": "Arquivar",
           "restore": "Restaurar",
@@ -1658,6 +1667,38 @@
         "noneFound": "Nenhum cliente encontrado.",
         "pageOf": "Página {{page}} de {{total}}"
       }
+    },
+    "claimCode": {
+      "title": "Gerar um código de reivindicação",
+      "description": "Crie um código de uso único para seu cliente reivindicar este espaço de trabalho como próprio.",
+      "triggerLabel": "Gerar código de reivindicação",
+      "rotationWarning": "Gerar um novo código invalida imediatamente o pendente — compartilhe apenas o código mostrado aqui.",
+      "statusOutstanding": "Já existe um código de reivindicação ativo para este cliente.",
+      "statusNone": "Não há nenhum código de reivindicação ativo para este cliente.",
+      "generateButton": "Gerar código de reivindicação",
+      "generatingButton": "Gerando...",
+      "codeFieldLabel": "Código de reivindicação",
+      "copyButton": "Copiar",
+      "copiedButton": "Copiado",
+      "copiedToast": "Código copiado para a área de transferência",
+      "copyFailedToast": "Não foi possível copiar — selecione o código e copie manualmente.",
+      "expiresAt": "Expira {{date}}",
+      "handoffInstructions": "Envie este código ao seu cliente pelo canal que preferir — ele vai inseri-lo após entrar em grandfinals.gg/claim.",
+      "onceWarning": "Este código é exibido apenas uma vez. Se você fechar esta caixa de diálogo, não poderá vê-lo novamente — seria necessário gerar um novo.",
+      "closeConfirmTitle": "Fechar sem copiar o código?",
+      "closeConfirmBody": "Este código não será exibido novamente depois que você fechar esta caixa de diálogo. Se ainda não copiou, será necessário gerar um novo.",
+      "closeConfirmCancel": "Voltar",
+      "closeConfirmAction": "Fechar mesmo assim",
+      "doneButton": "Concluído",
+      "revokeTrigger": "Revogar código",
+      "revokeConfirmBody": "Isso invalida imediatamente o código de reivindicação pendente. Seu cliente não poderá mais usá-lo.",
+      "revokeConfirmCancel": "Cancelar",
+      "revokeConfirmAction": "Revogar",
+      "revokedToast": "Código de reivindicação revogado",
+      "revokeError": "Não foi possível revogar o código de reivindicação. Tente novamente.",
+      "errorGeneric": "Algo deu errado ao gerar o código de reivindicação. Tente novamente.",
+      "errorRateLimited": "Você atingiu o limite diário de códigos de reivindicação para este cliente. Tente novamente amanhã.",
+      "errorUnavailable": "Os códigos de reivindicação não estão disponíveis no momento. Tente novamente mais tarde."
     },
     "overview": {
       "title": "Visão geral",

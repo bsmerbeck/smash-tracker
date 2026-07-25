@@ -1627,6 +1627,7 @@
           "nextAction": "Prochaine action",
           "draftCount": "Brouillons",
           "deliveryState": "Livraison",
+          "claimStatus": "Statut de revendication",
           "actions": "Actions"
         },
         "noActivity": "Aucune activité pour l'instant",
@@ -1634,6 +1635,13 @@
           "delivered": "Livré",
           "acknowledged": "Confirmé",
           "none": "Non livré"
+        },
+        "claimStatus": {
+          "managed": "Géré",
+          "claimed": "Revendiqué",
+          "codeActive_one": "Code de revendication actif (expire dans {{count}} heure)",
+          "codeActive_other": "Code de revendication actif (expire dans {{count}} heures)",
+          "codeActiveSoon": "Code de revendication actif (expire bientôt)"
         },
         "nextAction": {
           "archived": "Archivé",
@@ -1648,6 +1656,7 @@
         "rowAria": "Ouvrir l'espace de travail de {{label}}",
         "actions": {
           "openWorkspace": "Ouvrir l'espace de travail",
+          "issueClaimCode": "Générer un code de revendication",
           "export": "Exporter l'espace de travail",
           "archive": "Archiver",
           "restore": "Restaurer",
@@ -1658,6 +1667,38 @@
         "noneFound": "Aucun client trouvé.",
         "pageOf": "Page {{page}} sur {{total}}"
       }
+    },
+    "claimCode": {
+      "title": "Générer un code de revendication",
+      "description": "Créez un code à usage unique que votre client utilisera pour revendiquer cet espace de travail.",
+      "triggerLabel": "Générer un code de revendication",
+      "rotationWarning": "Générer un nouveau code invalide immédiatement celui en cours — ne transmettez que le code affiché ici.",
+      "statusOutstanding": "Un code de revendication est déjà actif pour ce client.",
+      "statusNone": "Aucun code de revendication n'est actif pour ce client.",
+      "generateButton": "Générer un code de revendication",
+      "generatingButton": "Génération...",
+      "codeFieldLabel": "Code de revendication",
+      "copyButton": "Copier",
+      "copiedButton": "Copié",
+      "copiedToast": "Code copié dans le presse-papiers",
+      "copyFailedToast": "Impossible de copier — sélectionnez le code et copiez-le manuellement.",
+      "expiresAt": "Expire {{date}}",
+      "handoffInstructions": "Envoyez ce code à votre client par le moyen de votre choix — il le saisira après s'être connecté sur grandfinals.gg/claim.",
+      "onceWarning": "Ce code ne s'affiche qu'une seule fois. Si vous fermez cette fenêtre, vous ne pourrez plus le revoir — il faudra en générer un nouveau.",
+      "closeConfirmTitle": "Fermer sans copier le code ?",
+      "closeConfirmBody": "Ce code ne sera plus affiché une fois cette fenêtre fermée. Si vous ne l'avez pas encore copié, il faudra en générer un nouveau.",
+      "closeConfirmCancel": "Retour",
+      "closeConfirmAction": "Fermer quand même",
+      "doneButton": "Terminé",
+      "revokeTrigger": "Révoquer le code",
+      "revokeConfirmBody": "Cela invalide immédiatement le code de revendication en cours. Votre client ne pourra plus l'utiliser.",
+      "revokeConfirmCancel": "Annuler",
+      "revokeConfirmAction": "Révoquer",
+      "revokedToast": "Code de revendication révoqué",
+      "revokeError": "Impossible de révoquer le code de revendication. Réessayez.",
+      "errorGeneric": "Une erreur s'est produite lors de la génération du code de revendication. Réessayez.",
+      "errorRateLimited": "Vous avez atteint la limite quotidienne de codes de revendication pour ce client. Réessayez demain.",
+      "errorUnavailable": "Les codes de revendication ne sont pas disponibles pour le moment. Réessayez plus tard."
     },
     "overview": {
       "title": "Aperçu",

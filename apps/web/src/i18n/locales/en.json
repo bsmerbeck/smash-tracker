@@ -1627,6 +1627,7 @@
           "nextAction": "Next action",
           "draftCount": "Drafts",
           "deliveryState": "Delivery",
+          "claimStatus": "Claim status",
           "actions": "Actions"
         },
         "noActivity": "No activity yet",
@@ -1634,6 +1635,13 @@
           "delivered": "Delivered",
           "acknowledged": "Acknowledged",
           "none": "Not delivered"
+        },
+        "claimStatus": {
+          "managed": "Managed",
+          "claimed": "Claimed",
+          "codeActive_one": "Claim code active (expires in {{count}} hour)",
+          "codeActive_other": "Claim code active (expires in {{count}} hours)",
+          "codeActiveSoon": "Claim code active (expires soon)"
         },
         "nextAction": {
           "archived": "Archived",
@@ -1648,6 +1656,7 @@
         "rowAria": "Open {{label}}'s workspace",
         "actions": {
           "openWorkspace": "Open workspace",
+          "issueClaimCode": "Generate claim code",
           "export": "Export workspace",
           "archive": "Archive",
           "restore": "Restore",
@@ -1658,6 +1667,38 @@
         "noneFound": "No clients found.",
         "pageOf": "Page {{page}} of {{total}}"
       }
+    },
+    "claimCode": {
+      "title": "Generate a claim code",
+      "description": "Create a one-time code your client uses to claim this workspace as their own.",
+      "triggerLabel": "Generate claim code",
+      "rotationWarning": "Generating a new code immediately invalidates the outstanding one — hand off only the code shown here.",
+      "statusOutstanding": "A claim code is already active for this client.",
+      "statusNone": "No claim code is currently active for this client.",
+      "generateButton": "Generate claim code",
+      "generatingButton": "Generating...",
+      "codeFieldLabel": "Claim code",
+      "copyButton": "Copy",
+      "copiedButton": "Copied",
+      "copiedToast": "Code copied to clipboard",
+      "copyFailedToast": "Couldn't copy — select the code and copy it manually.",
+      "expiresAt": "Expires {{date}}",
+      "handoffInstructions": "Send this code to your client through any channel you like — they'll enter it after signing in at grandfinals.gg/claim.",
+      "onceWarning": "This code is shown once. If you close this dialog, you won't be able to view it again — you'd need to generate a new one.",
+      "closeConfirmTitle": "Close before copying the code?",
+      "closeConfirmBody": "This code won't be shown again once you close this dialog. If you haven't copied it yet, you'll need to generate a new one.",
+      "closeConfirmCancel": "Go back",
+      "closeConfirmAction": "Close anyway",
+      "doneButton": "Done",
+      "revokeTrigger": "Revoke code",
+      "revokeConfirmBody": "This immediately invalidates the outstanding claim code. Your client won't be able to use it anymore.",
+      "revokeConfirmCancel": "Cancel",
+      "revokeConfirmAction": "Revoke",
+      "revokedToast": "Claim code revoked",
+      "revokeError": "Couldn't revoke the claim code. Try again.",
+      "errorGeneric": "Something went wrong generating the claim code. Try again.",
+      "errorRateLimited": "You've hit today's claim code limit for this client. Try again tomorrow.",
+      "errorUnavailable": "Claim codes aren't available right now. Try again later."
     },
     "overview": {
       "title": "Overview",

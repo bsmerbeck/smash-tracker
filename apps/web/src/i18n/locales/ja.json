@@ -1627,6 +1627,7 @@
           "nextAction": "次のアクション",
           "draftCount": "下書き",
           "deliveryState": "配信",
+          "claimStatus": "引き継ぎステータス",
           "actions": "操作"
         },
         "noActivity": "まだアクティビティがありません",
@@ -1634,6 +1635,13 @@
           "delivered": "配信済み",
           "acknowledged": "確認済み",
           "none": "未配信"
+        },
+        "claimStatus": {
+          "managed": "管理中",
+          "claimed": "引き継ぎ済み",
+          "codeActive_one": "引き継ぎコードが有効（あと{{count}}時間で期限切れ）",
+          "codeActive_other": "引き継ぎコードが有効（あと{{count}}時間で期限切れ）",
+          "codeActiveSoon": "引き継ぎコードが有効（まもなく期限切れ）"
         },
         "nextAction": {
           "archived": "アーカイブ済み",
@@ -1648,6 +1656,7 @@
         "rowAria": "{{label}}のワークスペースを開く",
         "actions": {
           "openWorkspace": "ワークスペースを開く",
+          "issueClaimCode": "引き継ぎコードを生成",
           "export": "ワークスペースをエクスポート",
           "archive": "アーカイブ",
           "restore": "復元",
@@ -1658,6 +1667,38 @@
         "noneFound": "クライアントが見つかりません。",
         "pageOf": "{{total}}ページ中{{page}}ページ目"
       }
+    },
+    "claimCode": {
+      "title": "引き継ぎコードを生成",
+      "description": "クライアントがこのワークスペースを自分のものとして引き継ぐための、一度限りのコードを作成します。",
+      "triggerLabel": "引き継ぎコードを生成",
+      "rotationWarning": "新しいコードを生成すると、未使用のコードは即座に無効になります — ここに表示されるコードのみを共有してください。",
+      "statusOutstanding": "このクライアントには、すでに有効な引き継ぎコードがあります。",
+      "statusNone": "このクライアントに有効な引き継ぎコードはありません。",
+      "generateButton": "引き継ぎコードを生成",
+      "generatingButton": "生成中...",
+      "codeFieldLabel": "引き継ぎコード",
+      "copyButton": "コピー",
+      "copiedButton": "コピーしました",
+      "copiedToast": "コードをクリップボードにコピーしました",
+      "copyFailedToast": "コピーできませんでした — コードを選択して手動でコピーしてください。",
+      "expiresAt": "有効期限: {{date}}",
+      "handoffInstructions": "このコードを好きな方法でクライアントに伝えてください — クライアントはgrandfinals.gg/claimにサインインした後、このコードを入力します。",
+      "onceWarning": "このコードは一度しか表示されません。このダイアログを閉じると再度表示できなくなります — その場合は新しいコードを生成する必要があります。",
+      "closeConfirmTitle": "コードをコピーせずに閉じますか？",
+      "closeConfirmBody": "このダイアログを閉じると、このコードは二度と表示されません。まだコピーしていない場合は、新しいコードを生成する必要があります。",
+      "closeConfirmCancel": "戻る",
+      "closeConfirmAction": "このまま閉じる",
+      "doneButton": "完了",
+      "revokeTrigger": "コードを無効化",
+      "revokeConfirmBody": "これにより、未使用の引き継ぎコードが即座に無効になります。クライアントはこのコードを使用できなくなります。",
+      "revokeConfirmCancel": "キャンセル",
+      "revokeConfirmAction": "無効化",
+      "revokedToast": "引き継ぎコードを無効化しました",
+      "revokeError": "引き継ぎコードを無効化できませんでした。もう一度お試しください。",
+      "errorGeneric": "引き継ぎコードの生成中に問題が発生しました。もう一度お試しください。",
+      "errorRateLimited": "このクライアントの引き継ぎコードの1日の上限に達しました。明日もう一度お試しください。",
+      "errorUnavailable": "現在、引き継ぎコードは利用できません。しばらくしてからもう一度お試しください。"
     },
     "overview": {
       "title": "概要",

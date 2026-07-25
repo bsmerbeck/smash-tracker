@@ -3,7 +3,7 @@ import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes } from 'react-router';
 import type { ClientHubRow } from '@smash-tracker/shared';
-import { ClientHubTable } from './ClientHubTable';
+import { ClientHubTable, type ClientHubTableProps } from './ClientHubTable';
 
 function makeClient(overrides: Partial<ClientHubRow> = {}): ClientHubRow {
   return {
@@ -13,11 +13,13 @@ function makeClient(overrides: Partial<ClientHubRow> = {}): ClientHubRow {
     draftCount: 0,
     deliveryState: null,
     archivedAt: null,
+    claimedAt: null,
+    pendingInvitationExpiresAt: null,
     ...overrides,
   };
 }
 
-function renderTable(clients: ClientHubRow[]) {
+function renderTable(clients: ClientHubRow[], overrides: Partial<ClientHubTableProps> = {}) {
   return render(
     <MemoryRouter initialEntries={['/coach']}>
       <Routes>
@@ -29,6 +31,8 @@ function renderTable(clients: ClientHubRow[]) {
               onArchiveToggle={vi.fn()}
               onExport={vi.fn()}
               onDeleteRequest={vi.fn()}
+              onIssueClaimCode={vi.fn()}
+              {...overrides}
             />
           }
         />
@@ -85,5 +89,23 @@ describe('ClientHubTable', () => {
     await user.click(await screen.findByRole('menuitem', { name: 'Open workspace' }));
 
     expect(await screen.findByText('Client VOD Manager page')).toBeInTheDocument();
+  });
+
+  // Phase 24 (Coach Issuance & Client Claim Experience, CTRL-03/ENTRY-02): a
+  // claimStatus column header renders, and its row action invokes
+  // onIssueClaimCode with the row so the parent can open the issuance dialog.
+  it('renders a claimStatus column and invokes onIssueClaimCode from the row action', async () => {
+    const user = userEvent.setup();
+    const onIssueClaimCode = vi.fn();
+    renderTable([makeClient({ clientId: 'tetra', label: 'Tetra' })], { onIssueClaimCode });
+
+    expect(screen.getByText('Claim status')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Actions for Tetra' }));
+    await user.click(await screen.findByRole('menuitem', { name: 'Generate claim code' }));
+
+    expect(onIssueClaimCode).toHaveBeenCalledWith(
+      expect.objectContaining({ clientId: 'tetra', label: 'Tetra' }),
+    );
   });
 });
