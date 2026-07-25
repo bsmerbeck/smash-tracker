@@ -2335,6 +2335,21 @@
       "title": "Fighters",
       "subtitle": "Your mains. Your analytics are computed against these.",
       "saveButton": "Save"
+    },
+    "chrome": {
+      "chipAriaLabel": "Workspace: {{label}}",
+      "switchWorkspace": "Switch workspace",
+      "backToPersonal": "Back to Personal",
+      "currentAria": "{{label}} (current)",
+      "sectionYourWorkspace": "Your Workspace",
+      "ownedCaption": "Your workspace",
+      "overview": "Overview",
+      "fighters": "Fighters",
+      "matches": "Matches",
+      "vods": "VODs",
+      "analytics": "Analytics",
+      "workspaces_one": "{{count}} workspace",
+      "workspaces_other": "{{count}} workspaces"
     }
   }
 }

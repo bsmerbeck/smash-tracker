@@ -2335,6 +2335,21 @@
       "title": "Personajes",
       "subtitle": "Tus personajes principales. Tus estadísticas se calculan a partir de estos.",
       "saveButton": "Guardar"
+    },
+    "chrome": {
+      "chipAriaLabel": "Espacio de trabajo: {{label}}",
+      "switchWorkspace": "Cambiar espacio de trabajo",
+      "backToPersonal": "Volver a Personal",
+      "currentAria": "{{label}} (actual)",
+      "sectionYourWorkspace": "Tu espacio de trabajo",
+      "ownedCaption": "Tu espacio de trabajo",
+      "overview": "Resumen",
+      "fighters": "Luchadores",
+      "matches": "Partidas",
+      "vods": "VODs",
+      "analytics": "Analíticas",
+      "workspaces_one": "{{count}} espacio de trabajo",
+      "workspaces_other": "{{count}} espacios de trabajo"
     }
   }
 }
