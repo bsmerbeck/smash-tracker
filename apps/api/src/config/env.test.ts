@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { getInternalJobsConfig, loadEnv, parseCorsOrigins } from './env.js';
+import { getClaimCodeConfig, getInternalJobsConfig, loadEnv, parseCorsOrigins } from './env.js';
 
 const base = {
   FIREBASE_DATABASE_URL: 'https://example-default-rtdb.firebaseio.com',
@@ -68,5 +68,17 @@ describe('getInternalJobsConfig', () => {
   it('returns the secret when INTERNAL_JOBS_SECRET is set', () => {
     const env = loadEnv({ ...base, INTERNAL_JOBS_SECRET: 'shh-scheduler-secret' });
     expect(getInternalJobsConfig(env)).toEqual({ secret: 'shh-scheduler-secret' });
+  });
+});
+
+describe('getClaimCodeConfig', () => {
+  it('returns null when CLAIM_CODE_HMAC_SECRET is unset', () => {
+    const env = loadEnv(base);
+    expect(getClaimCodeConfig(env)).toBeNull();
+  });
+
+  it('returns the secret when CLAIM_CODE_HMAC_SECRET is set', () => {
+    const env = loadEnv({ ...base, CLAIM_CODE_HMAC_SECRET: 'shh-claim-secret' });
+    expect(getClaimCodeConfig(env)).toEqual({ hmacSecret: 'shh-claim-secret' });
   });
 });

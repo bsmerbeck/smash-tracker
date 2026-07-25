@@ -25,6 +25,10 @@ export function buildTestApp(
     | 'ga4'
     | 'ga4Fetch'
     | 'internalJobs'
+    | 'claimCode'
+    // Phase 23 Plan 05's raw-code isolation test installs a capturing
+    // logger to assert the raw claim code is never emitted to logs.
+    | 'logger'
   > = {},
 ) {
   const database = new FakeDatabase();

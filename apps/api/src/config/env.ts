@@ -89,6 +89,15 @@ const envSchema = z.object({
   // (RESEARCH.md Pattern 4).
   /** Shared secret Cloud Scheduler sends as the X-Internal-Jobs-Secret header. */
   INTERNAL_JOBS_SECRET: z.string().optional(),
+
+  // ---- Phase 23 (Claim Credential & Atomic Ownership Transition, CRED-02):
+  // the server-held key that HMAC-digests claim codes at rest. When unset,
+  // the ENTIRE claim issuance/redemption surface answers 503, same
+  // all-or-nothing convention as INTERNAL_JOBS_SECRET; there is no "silently
+  // degrade" mode, because minting or accepting a credential without the key
+  // is never acceptable. Rotating this secret invalidates every outstanding
+  // claim code by design.
+  CLAIM_CODE_HMAC_SECRET: z.string().optional(),
 });
 
 export type Env = z.infer<typeof envSchema>;
@@ -258,4 +267,22 @@ export function getInternalJobsConfig(env: Env): InternalJobsConfig | null {
     return null;
   }
   return { secret: env.INTERNAL_JOBS_SECRET };
+}
+
+export interface ClaimCodeConfig {
+  hmacSecret: string;
+}
+
+/**
+ * Assembles the claim-code HMAC config when present, else null — same
+ * all-or-nothing pattern as `getInternalJobsConfig`/`getStripeConfig`. When
+ * null, the ENTIRE claim issuance/redemption surface answers 503 (plans 04
+ * and 05 register those routes); there is no partial-degrade mode, since
+ * minting or accepting a credential without the key is never acceptable.
+ */
+export function getClaimCodeConfig(env: Env): ClaimCodeConfig | null {
+  if (!env.CLAIM_CODE_HMAC_SECRET) {
+    return null;
+  }
+  return { hmacSecret: env.CLAIM_CODE_HMAC_SECRET };
 }
