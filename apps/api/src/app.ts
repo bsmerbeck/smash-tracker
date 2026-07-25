@@ -117,8 +117,16 @@ export interface BuildAppOptions {
 }
 
 export function buildApp(options: BuildAppOptions) {
+  const loggerOption = options.logger ?? true;
   const app = Fastify({
-    logger: options.logger ?? true,
+    // Fastify 5 accepts a boolean or a pino CONFIG object under `logger`,
+    // but a pre-built logger INSTANCE (e.g. Plan 05's raw-code-isolation
+    // capturing logger) must go through the separate `loggerInstance`
+    // option — passing an instance object under `logger` throws
+    // "logger options only accepts a configuration object" at startup.
+    ...(typeof loggerOption === 'boolean'
+      ? { logger: loggerOption }
+      : { loggerInstance: loggerOption }),
     // Phase 6 (Anonymous Share Experience & Discord Unfurls): lets Fastify
     // parse X-Forwarded-For at all (behind a Firebase Hosting rewrite to
     // Cloud Run the raw socket peer is Google's internal proxy hop, never
