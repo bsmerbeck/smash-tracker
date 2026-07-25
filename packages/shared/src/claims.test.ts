@@ -5,6 +5,9 @@ import {
   CLAIM_CODE_LENGTH,
   CLAIM_CODE_TTL_MS,
   claimInvitationRecordSchema,
+  clientOwnedTenantEntrySchema,
+  ownedWorkspaceListSchema,
+  ownedWorkspaceSchema,
   redeemClaimRequestSchema,
 } from './claims.js';
 
@@ -92,6 +95,43 @@ describe('activeClaimInvitationPointerSchema', () => {
       digest: 'abc123',
       issuedAt: 1,
     });
+    expect(result.success).toBe(true);
+  });
+});
+
+describe('clientOwnedTenantEntrySchema', () => {
+  it('parses { label, claimedAt }', () => {
+    const result = clientOwnedTenantEntrySchema.safeParse({ label: 'Ana', claimedAt: 1 });
+    expect(result.success).toBe(true);
+  });
+
+  it('rejects an empty label', () => {
+    expect(clientOwnedTenantEntrySchema.safeParse({ label: '', claimedAt: 1 }).success).toBe(false);
+  });
+});
+
+describe('ownedWorkspaceSchema', () => {
+  it('parses with delegateCoachUid explicitly null', () => {
+    const result = ownedWorkspaceSchema.safeParse({
+      tenantId: 't1',
+      label: 'Ana',
+      claimedAt: 1,
+      delegateCoachUid: null,
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it('parses with delegateCoachUid absent (legal, per .nullish())', () => {
+    const result = ownedWorkspaceSchema.safeParse({ tenantId: 't1', label: 'Ana', claimedAt: 1 });
+    expect(result.success).toBe(true);
+  });
+});
+
+describe('ownedWorkspaceListSchema', () => {
+  it('is an array of ownedWorkspaceSchema', () => {
+    const result = ownedWorkspaceListSchema.safeParse([
+      { tenantId: 't1', label: 'Ana', claimedAt: 1, delegateCoachUid: null },
+    ]);
     expect(result.success).toBe(true);
   });
 });
