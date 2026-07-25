@@ -177,8 +177,143 @@ describe('listClients', () => {
         draftCount: 0,
         deliveryState: null,
         archivedAt: null,
+        claimedAt: null,
+        pendingInvitationExpiresAt: null,
       },
     ]);
+  });
+
+  // Phase 24 (CTRL-03): four badge states derivable from one listClients call.
+  describe('claim-status projection', () => {
+    it('reports claimedAt: null and pendingInvitationExpiresAt: null for a never-claimed, no-code client', async () => {
+      const database = new FakeDatabase();
+      const { tenantId } = await createClient(asDatabase(database), COACH_UID, 'Alex', {
+        sessionId: SESSION_ID,
+      });
+
+      const rows = await listClients(asDatabase(database), COACH_UID);
+
+      expect(rows).toHaveLength(1);
+      expect(rows[0]).toMatchObject({
+        clientId: tenantId,
+        claimedAt: null,
+        pendingInvitationExpiresAt: null,
+      });
+    });
+
+    it('reports pendingInvitationExpiresAt equal to expiresAt for a live invitation', async () => {
+      const database = new FakeDatabase();
+      const { tenantId } = await createClient(asDatabase(database), COACH_UID, 'Alex', {
+        sessionId: SESSION_ID,
+      });
+      const digest = 'digest-live';
+      const expiresAt = Date.now() + 1000 * 60 * 60;
+      database.seed(`activeClaimInvitationByTenant/${tenantId}`, {
+        digest,
+        issuedAt: Date.now(),
+      });
+      database.seed(`claimInvitations/${digest}`, {
+        tenantId,
+        issuerUid: COACH_UID,
+        createdAt: Date.now(),
+        expiresAt,
+      });
+
+      const rows = await listClients(asDatabase(database), COACH_UID);
+
+      expect(rows[0]).toMatchObject({ claimedAt: null, pendingInvitationExpiresAt: expiresAt });
+    });
+
+    it('reports pendingInvitationExpiresAt: null for an EXPIRED invitation', async () => {
+      const database = new FakeDatabase();
+      const { tenantId } = await createClient(asDatabase(database), COACH_UID, 'Alex', {
+        sessionId: SESSION_ID,
+      });
+      const digest = 'digest-expired';
+      database.seed(`activeClaimInvitationByTenant/${tenantId}`, {
+        digest,
+        issuedAt: Date.now() - 1000,
+      });
+      database.seed(`claimInvitations/${digest}`, {
+        tenantId,
+        issuerUid: COACH_UID,
+        createdAt: Date.now() - 1000,
+        expiresAt: Date.now() - 500,
+      });
+
+      const rows = await listClients(asDatabase(database), COACH_UID);
+
+      expect(rows[0]).toMatchObject({ pendingInvitationExpiresAt: null });
+    });
+
+    it('reports pendingInvitationExpiresAt: null for a REVOKED invitation', async () => {
+      const database = new FakeDatabase();
+      const { tenantId } = await createClient(asDatabase(database), COACH_UID, 'Alex', {
+        sessionId: SESSION_ID,
+      });
+      const digest = 'digest-revoked';
+      database.seed(`activeClaimInvitationByTenant/${tenantId}`, {
+        digest,
+        issuedAt: Date.now(),
+      });
+      database.seed(`claimInvitations/${digest}`, {
+        tenantId,
+        issuerUid: COACH_UID,
+        createdAt: Date.now(),
+        expiresAt: Date.now() + 1000 * 60 * 60,
+        revokedAt: Date.now(),
+      });
+
+      const rows = await listClients(asDatabase(database), COACH_UID);
+
+      expect(rows[0]).toMatchObject({ pendingInvitationExpiresAt: null });
+    });
+
+    it('reports claimedAt from the coachClients entry when claimed, with pendingInvitationExpiresAt null (pointer already nulled by the flip)', async () => {
+      const database = new FakeDatabase();
+      const { tenantId } = await createClient(asDatabase(database), COACH_UID, 'Alex', {
+        sessionId: SESSION_ID,
+      });
+      const claimedAt = Date.now();
+      database.seed(`coachClients/${COACH_UID}/${tenantId}`, {
+        label: 'Alex',
+        createdAt: Date.now(),
+        archivedAt: null,
+        claimedAt,
+      });
+
+      const rows = await listClients(asDatabase(database), COACH_UID);
+
+      expect(rows[0]).toMatchObject({ claimedAt, pendingInvitationExpiresAt: null });
+    });
+
+    it('reports pendingInvitationExpiresAt: null without throwing for a dangling pointer whose record is missing', async () => {
+      const database = new FakeDatabase();
+      const { tenantId } = await createClient(asDatabase(database), COACH_UID, 'Alex', {
+        sessionId: SESSION_ID,
+      });
+      database.seed(`activeClaimInvitationByTenant/${tenantId}`, {
+        digest: 'digest-missing',
+        issuedAt: Date.now(),
+      });
+      // No claimInvitations/{digest} record seeded — dangling pointer.
+
+      await expect(listClients(asDatabase(database), COACH_UID)).resolves.toBeDefined();
+      const rows = await listClients(asDatabase(database), COACH_UID);
+      expect(rows[0]).toMatchObject({ pendingInvitationExpiresAt: null });
+    });
+
+    it('reports pendingInvitationExpiresAt: null without throwing for an unparseable pointer', async () => {
+      const database = new FakeDatabase();
+      const { tenantId } = await createClient(asDatabase(database), COACH_UID, 'Alex', {
+        sessionId: SESSION_ID,
+      });
+      database.seed(`activeClaimInvitationByTenant/${tenantId}`, { notAPointer: true });
+
+      const rows = await listClients(asDatabase(database), COACH_UID);
+
+      expect(rows[0]).toMatchObject({ pendingInvitationExpiresAt: null });
+    });
   });
 
   it('hides archived clients from the default listing', async () => {
