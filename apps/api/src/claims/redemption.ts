@@ -151,15 +151,21 @@ export async function consumeClaimInvitation(
     return { ...record, consumedAt: Date.now(), consumedByUid: redeemerUid };
   });
 
-  if (outcome === 'fresh' && !result.committed) {
+  // Widened via `as`: `outcome` is mutated from inside the transaction's
+  // update-function closure, and TypeScript's control-flow analysis
+  // otherwise over-narrows the read below to the literal it was initialized
+  // with (assigning through an intermediate `let` does not defeat this —
+  // only an explicit type assertion does).
+  let finalOutcome = outcome as ClaimConsumeOutcome;
+  if (finalOutcome === 'fresh' && !result.committed) {
     // Lost race: another attempt won between our winning update-function run
     // and the real commit. Downgrade rather than report a phantom success.
-    outcome = 'ineligible';
+    finalOutcome = 'ineligible';
     capturedTenantId = null;
     capturedIssuerUid = null;
   }
 
-  return { outcome, tenantId: capturedTenantId, issuerUid: capturedIssuerUid };
+  return { outcome: finalOutcome, tenantId: capturedTenantId, issuerUid: capturedIssuerUid };
 }
 
 /**

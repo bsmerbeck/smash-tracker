@@ -213,7 +213,7 @@ describe('consumeClaimInvitation', () => {
       testCase.setup(database, digest);
       const { database: counted, counts } = wrapWithCounts(database);
 
-      const result = await consumeClaimInvitation(counted, digest, CLIENT_UID);
+      const result = await consumeClaimInvitation(counted as never, digest, CLIENT_UID);
       expect(result.outcome).toBe('ineligible');
       observedCounts.push({ ...counts });
     }
@@ -343,7 +343,10 @@ describe('redeemClaimCode', () => {
     });
 
     expect(result).toEqual({ status: 'ok', tenantId: TENANT_ID });
-    const dump = database.dump() as Record<string, Record<string, Record<string, unknown>>>;
+    const dump = database.dump() as Record<
+      string,
+      Record<string, Record<string, { role: string }>>
+    >;
     expect(dump.clientMembers?.[TENANT_ID]?.[CLIENT_UID]?.role).toBe('owner');
     expect(dump.clientMembers?.[TENANT_ID]?.[COACH_UID]?.role).toBe('delegate');
   });

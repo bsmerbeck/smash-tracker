@@ -37,6 +37,7 @@ import coachingReviewDeliveriesRoutes from './routes/coachingReviewDeliveries.js
 import coachingSessionsRoutes from './routes/coachingSessions.js';
 import coachingSessionDeliveriesRoutes from './routes/coachingSessionDeliveries.js';
 import claimInvitationsRoutes from './routes/claimInvitations.js';
+import claimsRoutes from './routes/claims.js';
 import vodSharesRoutes from './routes/vodShares.js';
 import publicVodSharesRoutes from './routes/publicVodShares.js';
 import publicReviewDeliveriesRoutes from './routes/publicReviewDeliveries.js';
@@ -320,6 +321,10 @@ export function buildApp(options: BuildAppOptions) {
       // CRED-01/CRED-02/CRED-03): the coach-side claim-invitation routes,
       // config-null 503-gated on CLAIM_CODE_HMAC_SECRET.
       await api.register(claimInvitationsRoutes, { claimCode: options.claimCode ?? null });
+      // Phase 23 Plan 05 (Claim Credential & Atomic Ownership Transition,
+      // CRED-05/CLAIM-02): the client-side claim-redemption route — the
+      // sibling to claimInvitationsRoutes above, same config-null 503 gate.
+      await api.register(claimsRoutes, { claimCode: options.claimCode ?? null });
       await api.register(vodSharesRoutes, {
         webBaseUrl: options.webBaseUrl ?? 'http://localhost:5173',
         ga4: options.ga4 ?? null,
