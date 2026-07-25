@@ -1428,6 +1428,11 @@
       "notLinked": "Non lié",
       "manage": "Gérer dans Intégrations"
     },
+    "claimWorkspace": {
+      "title": "Réclamer un espace de travail préparé par votre coach",
+      "description": "Vous avez un code de votre coach ? Utilisez-le pour prendre possession d'un espace de travail qu'il a préparé pour vous.",
+      "action": "Saisir un code de réclamation"
+    },
     "fighters": {
       "title": "Combattants",
       "description": "Vos combattants principaux et secondaires de Smash Ultimate.",
@@ -2042,7 +2047,11 @@
       "subtitle": "Choisissez-en une pour commencer — vous pourrez toujours changer plus tard.",
       "skip": "Ignorer pour l'instant",
       "suggested": "Suggéré pour vous",
-      "error": "Une erreur est survenue lors de l'enregistrement — veuillez réessayer."
+      "error": "Une erreur est survenue lors de l'enregistrement — veuillez réessayer.",
+      "claimCodeCard": {
+        "title": "J'ai un code de mon coach",
+        "description": "Utilisez un code de réclamation pour prendre possession d'un espace de travail que votre coach a préparé pour vous."
+      }
     },
     "intent": {
       "prepare": {
@@ -2350,6 +2359,45 @@
       "analytics": "Analytique",
       "workspaces_one": "{{count}} espace de travail",
       "workspaces_other": "{{count}} espaces de travail"
+    }
+  },
+  "claim": {
+    "pageTitle": "Réclamer un espace de travail",
+    "title": "Réclamer un espace de travail préparé par votre coach",
+    "subtitle": "Saisissez le code que votre coach vous a donné pour prendre possession d'un espace de travail qu'il a préparé pour vous.",
+    "codeLabel": "Code de réclamation",
+    "codePlaceholder": "XXXXX-XXXXX-XXXXX-XXXXX-XXXXX-X",
+    "codeHelp": "Collez ou saisissez le code exactement tel que votre coach vous l'a envoyé — l'espacement et la casse n'ont pas d'importance.",
+    "continueButton": "Continuer",
+    "confirm": {
+      "title": "Avant de continuer",
+      "youGain": "Vous deviendrez propriétaire de cet espace de travail préparé par votre coach, y compris ses matchs, VODs et notes.",
+      "coachBecomes": "Votre coach devient un collaborateur délégué que vous pouvez révoquer à tout moment.",
+      "noChangesYet": "Rien ne change tant que vous n'avez pas confirmé.",
+      "backButton": "Retour",
+      "confirmButton": "Confirmer",
+      "submittingButton": "Confirmation..."
+    },
+    "collision": {
+      "title": "Vous avez déjà vos propres matchs",
+      "description": "Choisissez ce qu'il advient de votre bibliothèque personnelle.",
+      "keepBothLabel": "Garder les deux comme espaces de travail séparés (recommandé)",
+      "keepBothDescription": "Votre bibliothèque personnelle et l'espace de travail réclamé restent indépendants — rien n'est touché.",
+      "notNowLabel": "Pas maintenant",
+      "notNowDescription": "Arrêtez-vous ici — rien ne se passe.",
+      "chooseFirst": "Choisissez une option pour continuer."
+    },
+    "error": {
+      "generic": "Ce code n'a pas fonctionné — vérifiez-le avec votre coach.",
+      "rateLimited": "Trop de tentatives — veuillez réessayer plus tard.",
+      "unavailable": "Les codes de réclamation ne sont pas disponibles pour le moment — veuillez réessayer plus tard."
+    },
+    "success": {
+      "toast": "Espace de travail réclamé !",
+      "title": "C'est prêt",
+      "whatChanged": "Vous êtes désormais propriétaire de cet espace de travail.",
+      "coachNote": "Votre coach conserve un accès délégué, que vous pouvez révoquer à tout moment depuis la carte d'accès coach de l'espace de travail.",
+      "goToWorkspaceButton": "Accéder à votre espace de travail"
     }
   }
 }

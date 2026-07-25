@@ -1428,6 +1428,11 @@
       "notLinked": "Nicht verknüpft",
       "manage": "Unter Integrationen verwalten"
     },
+    "claimWorkspace": {
+      "title": "Einen von deinem Coach vorbereiteten Arbeitsbereich beanspruchen",
+      "description": "Hast du einen Code von deinem Coach? Löse ihn ein, um einen Arbeitsbereich zu übernehmen, den er für dich vorbereitet hat.",
+      "action": "Beanspruchungscode eingeben"
+    },
     "fighters": {
       "title": "Kämpfer",
       "description": "Deine Main- und Secondary-Kämpfer in Smash Ultimate.",
@@ -2042,7 +2047,11 @@
       "subtitle": "Wähle eine Option, um loszulegen — du kannst später jederzeit wechseln.",
       "skip": "Vorerst überspringen",
       "suggested": "Für dich empfohlen",
-      "error": "Beim Speichern ist etwas schiefgelaufen — bitte versuche es erneut."
+      "error": "Beim Speichern ist etwas schiefgelaufen — bitte versuche es erneut.",
+      "claimCodeCard": {
+        "title": "Ich habe einen Code von meinem Coach",
+        "description": "Löse einen Beanspruchungscode ein, um einen Arbeitsbereich zu übernehmen, den dein Coach für dich vorbereitet hat."
+      }
     },
     "intent": {
       "prepare": {
@@ -2350,6 +2359,45 @@
       "analytics": "Analysen",
       "workspaces_one": "{{count}} Arbeitsbereich",
       "workspaces_other": "{{count}} Arbeitsbereiche"
+    }
+  },
+  "claim": {
+    "pageTitle": "Einen Arbeitsbereich beanspruchen",
+    "title": "Einen von deinem Coach vorbereiteten Arbeitsbereich beanspruchen",
+    "subtitle": "Gib den Code ein, den dir dein Coach gegeben hat, um einen Arbeitsbereich zu übernehmen, den er für dich vorbereitet hat.",
+    "codeLabel": "Beanspruchungscode",
+    "codePlaceholder": "XXXXX-XXXXX-XXXXX-XXXXX-XXXXX-X",
+    "codeHelp": "Füge den Code genau so ein oder gib ihn ein, wie dein Coach ihn dir geschickt hat — Leerzeichen und Groß-/Kleinschreibung spielen keine Rolle.",
+    "continueButton": "Weiter",
+    "confirm": {
+      "title": "Bevor du fortfährst",
+      "youGain": "Du wirst Eigentümer dieses von deinem Coach vorbereiteten Arbeitsbereichs, einschließlich seiner Matches, VODs und Notizen.",
+      "coachBecomes": "Dein Coach wird zu einem delegierten Mitarbeiter, den du jederzeit widerrufen kannst.",
+      "noChangesYet": "Nichts ändert sich, bis du bestätigst.",
+      "backButton": "Zurück",
+      "confirmButton": "Bestätigen",
+      "submittingButton": "Wird bestätigt..."
+    },
+    "collision": {
+      "title": "Du hast bereits eigene Matches",
+      "description": "Wähle, was mit deiner persönlichen Bibliothek geschieht.",
+      "keepBothLabel": "Beide als separate Arbeitsbereiche behalten (empfohlen)",
+      "keepBothDescription": "Deine persönliche Bibliothek und der beanspruchte Arbeitsbereich bleiben unabhängig — nichts wird verändert.",
+      "notNowLabel": "Nicht jetzt",
+      "notNowDescription": "Hier aufhören — es passiert nichts.",
+      "chooseFirst": "Wähle eine Option, um fortzufahren."
+    },
+    "error": {
+      "generic": "Dieser Code hat nicht funktioniert — überprüfe ihn mit deinem Coach.",
+      "rateLimited": "Zu viele Versuche — bitte versuche es später erneut.",
+      "unavailable": "Beanspruchungscodes sind derzeit nicht verfügbar — bitte versuche es später erneut."
+    },
+    "success": {
+      "toast": "Arbeitsbereich beansprucht!",
+      "title": "Alles bereit",
+      "whatChanged": "Du bist jetzt Eigentümer dieses Arbeitsbereichs.",
+      "coachNote": "Dein Coach behält delegierten Zugriff, den du jederzeit über die Coach-Zugriffskarte des Arbeitsbereichs widerrufen kannst.",
+      "goToWorkspaceButton": "Zu deinem Arbeitsbereich"
     }
   }
 }
