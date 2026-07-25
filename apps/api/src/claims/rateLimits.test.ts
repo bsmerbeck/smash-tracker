@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { FakeDatabase } from '../test-support/fakeDatabase.js';
 import {
+  checkAndIncrement,
   claimIssuancePath,
   claimRedemptionAccountPath,
   claimRedemptionIpPath,
@@ -73,5 +74,77 @@ describe('path builders are FakeDatabase-safe', () => {
     expect(() => database.ref(claimRedemptionAccountPath('uid-1', t))).not.toThrow();
     expect(() => database.ref(claimRedemptionIpPath('1.2.3.4', t))).not.toThrow();
     expect(() => database.ref(claimIssuancePath('coach-1', t))).not.toThrow();
+  });
+});
+
+describe('checkAndIncrement', () => {
+  const PATH = 'claimRedemptionAttempts/uid-1/2026072418';
+  const LIMIT = 3;
+
+  it('first attempt against an absent counter node commits 1 and returns true', async () => {
+    const database = new FakeDatabase();
+    const allowed = await checkAndIncrement(database as never, PATH, LIMIT);
+    expect(allowed).toBe(true);
+    expect((database.dump() as never as Record<string, unknown>).claimRedemptionAttempts).toEqual({
+      'uid-1': { '2026072418': 1 },
+    });
+  });
+
+  it('calls 2 through limit return true, with the stored value equal to the call index', async () => {
+    const database = new FakeDatabase();
+    for (let i = 1; i <= LIMIT; i += 1) {
+      const allowed = await checkAndIncrement(database as never, PATH, LIMIT);
+      expect(allowed).toBe(true);
+      const dump = database.dump() as never as {
+        claimRedemptionAttempts: { 'uid-1': Record<string, number> };
+      };
+      expect(dump.claimRedemptionAttempts['uid-1']['2026072418']).toBe(i);
+    }
+  });
+
+  it('call number limit + 1 returns false and leaves the stored value at exactly limit', async () => {
+    const database = new FakeDatabase();
+    for (let i = 0; i < LIMIT; i += 1) {
+      await checkAndIncrement(database as never, PATH, LIMIT);
+    }
+    const allowed = await checkAndIncrement(database as never, PATH, LIMIT);
+    expect(allowed).toBe(false);
+    const dump = database.dump() as never as {
+      claimRedemptionAttempts: { 'uid-1': Record<string, number> };
+    };
+    expect(dump.claimRedemptionAttempts['uid-1']['2026072418']).toBe(LIMIT);
+  });
+
+  it('coerces a non-number seeded value (corrupt record) to 0 and commits 1', async () => {
+    const database = new FakeDatabase();
+    database.seed(PATH, 'not-a-number');
+    const allowed = await checkAndIncrement(database as never, PATH, LIMIT);
+    expect(allowed).toBe(true);
+    const dump = database.dump() as never as {
+      claimRedemptionAttempts: { 'uid-1': Record<string, number> };
+    };
+    expect(dump.claimRedemptionAttempts['uid-1']['2026072418']).toBe(1);
+  });
+
+  it('two different hour shard keys maintain independent counts', async () => {
+    const database = new FakeDatabase();
+    const pathHourA = 'claimRedemptionAttempts/uid-1/2026072418';
+    const pathHourB = 'claimRedemptionAttempts/uid-1/2026072419';
+    database.seed(pathHourA, LIMIT);
+
+    const blockedHourA = await checkAndIncrement(database as never, pathHourA, LIMIT);
+    expect(blockedHourA).toBe(false);
+
+    const allowedHourB = await checkAndIncrement(database as never, pathHourB, LIMIT);
+    expect(allowedHourB).toBe(true);
+  });
+
+  it('never returns undefined on a null/absent observed value (would return false on the first call)', async () => {
+    const database = new FakeDatabase();
+    const allowed = await checkAndIncrement(database as never, PATH, LIMIT);
+    // This is the CR-01 regression case: an update function that aborts on
+    // the null first run (returning the unchanged input, per the incorrect
+    // research draft) would return `false` here instead of `true`.
+    expect(allowed).toBe(true);
   });
 });
