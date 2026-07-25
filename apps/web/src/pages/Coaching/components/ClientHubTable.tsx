@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router';
 import { useTranslation } from 'react-i18next';
 import type { TFunction } from 'i18next';
-import { Archive, ArchiveRestore, Download, MoreHorizontal, Trash2 } from 'lucide-react';
+import { Archive, ArchiveRestore, Download, KeyRound, MoreHorizontal, Trash2 } from 'lucide-react';
 import {
   flexRender,
   getCoreRowModel,
@@ -31,6 +31,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import { ClaimStatusBadge } from './ClaimStatusBadge';
 
 /**
  * Derives a "next action" label from the row's own bounded fields
@@ -75,6 +76,8 @@ export interface ClientHubTableProps {
   onArchiveToggle: (client: ClientHubRow) => void;
   onExport: (client: ClientHubRow) => void;
   onDeleteRequest: (client: ClientHubRow) => void;
+  /** Phase 24 (ENTRY-02): opens the copy-once claim-code issuance dialog for this client. */
+  onIssueClaimCode: (client: ClientHubRow) => void;
 }
 
 /**
@@ -84,14 +87,16 @@ export interface ClientHubTableProps {
  * `@tanstack/react-table` setup (`getFilteredRowModel`/`getSortedRowModel`/
  * `getPaginationRowModel` + `globalFilter`). Columns: label, last activity,
  * next action, draft count, delivery/acknowledgement state (nullish until
- * Phase 12 ships review delivery — renders a neutral placeholder), and a
- * per-row actions menu (open workspace, export, archive/restore, delete).
+ * Phase 12 ships review delivery — renders a neutral placeholder), claim
+ * status (Phase 24, CTRL-03), and a per-row actions menu (open workspace,
+ * generate claim code, export, archive/restore, delete).
  */
 export function ClientHubTable({
   clients,
   onArchiveToggle,
   onExport,
   onDeleteRequest,
+  onIssueClaimCode,
 }: ClientHubTableProps) {
   const { t } = useTranslation();
   const navigate = useNavigate();
@@ -137,6 +142,12 @@ export function ClientHubTable({
         cell: ({ row }) => <DeliveryStateBadge state={row.original.deliveryState} />,
       },
       {
+        id: 'claimStatus',
+        header: t('coaching.hub.table.columns.claimStatus'),
+        accessorFn: (row) => row.claimedAt ?? row.pendingInvitationExpiresAt ?? 0,
+        cell: ({ row }) => <ClaimStatusBadge client={row.original} />,
+      },
+      {
         id: 'actions',
         header: t('coaching.hub.table.columns.actions'),
         enableSorting: false,
@@ -159,6 +170,10 @@ export function ClientHubTable({
                   <DropdownMenuItem onSelect={() => navigate(`/coach/${client.clientId}/vods`)}>
                     {t('coaching.hub.table.actions.openWorkspace')}
                   </DropdownMenuItem>
+                  <DropdownMenuItem onSelect={() => onIssueClaimCode(client)}>
+                    <KeyRound />
+                    {t('coaching.hub.table.actions.issueClaimCode')}
+                  </DropdownMenuItem>
                   <DropdownMenuItem onSelect={() => onExport(client)}>
                     <Download />
                     {t('coaching.hub.table.actions.export')}
@@ -180,7 +195,7 @@ export function ClientHubTable({
         },
       },
     ],
-    [t, navigate, onArchiveToggle, onExport, onDeleteRequest],
+    [t, navigate, onArchiveToggle, onExport, onDeleteRequest, onIssueClaimCode],
   );
 
   const table = useReactTable({

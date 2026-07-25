@@ -1627,6 +1627,7 @@
           "nextAction": "Next action",
           "draftCount": "Drafts",
           "deliveryState": "Delivery",
+          "claimStatus": "Claim status",
           "actions": "Actions"
         },
         "noActivity": "No activity yet",
@@ -1634,6 +1635,13 @@
           "delivered": "Delivered",
           "acknowledged": "Acknowledged",
           "none": "Not delivered"
+        },
+        "claimStatus": {
+          "managed": "Managed",
+          "claimed": "Claimed",
+          "codeActive_one": "Claim code active (expires in {{count}} hour)",
+          "codeActive_other": "Claim code active (expires in {{count}} hours)",
+          "codeActiveSoon": "Claim code active (expires soon)"
         },
         "nextAction": {
           "archived": "Archived",
@@ -1648,6 +1656,7 @@
         "rowAria": "Open {{label}}'s workspace",
         "actions": {
           "openWorkspace": "Open workspace",
+          "issueClaimCode": "Generate claim code",
           "export": "Export workspace",
           "archive": "Archive",
           "restore": "Restore",
