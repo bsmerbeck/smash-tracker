@@ -1,8 +1,9 @@
 import { useQuery } from '@tanstack/react-query';
 import { api } from '@/lib/api';
 import { subjectScope } from '@/lib/subjectQueryKey';
-import { useActiveSubject, type ActiveSubject } from './useActiveSubject';
+import type { ActiveSubject } from './useActiveSubject';
 import { useAuth } from './useAuth';
+import { useEffectiveSubject } from './useEffectiveSubject';
 
 /**
  * TEN-04: prefixed by the active subject's scope so Personal, Client A, and
@@ -19,7 +20,7 @@ export function matchesQueryKey(subject: ActiveSubject) {
 /** GET /api/matches — all matches for the active subject. */
 export function useMatches() {
   const { user } = useAuth();
-  const subject = useActiveSubject();
+  const subject = useEffectiveSubject();
   return useQuery({
     queryKey: matchesQueryKey(subject),
     queryFn: () => api.matches.list(),
