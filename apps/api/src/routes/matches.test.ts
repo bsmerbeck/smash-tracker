@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { MAX_VOD_TIMESTAMPS_PER_MATCH } from '@smash-tracker/shared';
 import { authHeader, buildTestApp, TEST_UID } from '../test-support/testApp.js';
 
 const validCreateInput = {
@@ -1524,12 +1525,15 @@ describe('Owner note CRUD: POST/PATCH/DELETE /api/matches/:id/notes[/:noteId]', 
     expect(response.statusCode).toBe(401);
   });
 
-  it('rejects the 21st note with a 403 and leaves the stored node at exactly 20 children', async () => {
+  it('rejects the note past MAX_VOD_TIMESTAMPS_PER_MATCH with a 403 and leaves the stored node at exactly the cap', async () => {
     const { app, database } = buildTestApp();
-    const twenty = Object.fromEntries(
-      Array.from({ length: 20 }, (_, i) => [`k${i}`, { seconds: i, note: `note ${i}` }]),
+    const atCap = Object.fromEntries(
+      Array.from({ length: MAX_VOD_TIMESTAMPS_PER_MATCH }, (_, i) => [
+        `k${i}`,
+        { seconds: i, note: `note ${i}` },
+      ]),
     );
-    seedMatch(database, { vodTimestamps: twenty });
+    seedMatch(database, { vodTimestamps: atCap });
 
     const response = await app.inject({
       method: 'POST',
@@ -1544,7 +1548,7 @@ describe('Owner note CRUD: POST/PATCH/DELETE /api/matches/:id/notes[/:noteId]', 
     const matches = dump.matches as Record<string, Record<string, unknown>>;
     const vodTimestamps = (matches[TEST_UID]!.m1 as Record<string, unknown>)
       .vodTimestamps as Record<string, unknown>;
-    expect(Object.keys(vodTimestamps)).toHaveLength(20);
+    expect(Object.keys(vodTimestamps)).toHaveLength(MAX_VOD_TIMESTAMPS_PER_MATCH);
   });
 
   it('migrates a legacy-array match to keyed shape (push-style keys, not 0/1) on first note write', async () => {

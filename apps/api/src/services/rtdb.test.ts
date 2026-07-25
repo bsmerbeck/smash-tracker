@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
+import { MAX_VOD_TIMESTAMPS_PER_MATCH } from '@smash-tracker/shared';
 import { FakeDatabase } from '../test-support/fakeDatabase.js';
 import { ConflictError, NotFoundError, RtdbService } from './rtdb.js';
 
@@ -792,24 +793,27 @@ describe('RtdbService.createNote / updateNote / deleteNote — owner note CRUD (
     expect(values).toContainEqual({ seconds: 20, note: 'new note' });
   });
 
-  it('rejects the 21st note (shared cap) and leaves the stored node at exactly 20 children', async () => {
+  it('rejects the note past MAX_VOD_TIMESTAMPS_PER_MATCH (shared cap) and leaves the stored node at exactly the cap', async () => {
     const database = new FakeDatabase();
     const rtdb = new RtdbService(database as never);
-    const twenty = Object.fromEntries(
-      Array.from({ length: 20 }, (_, i) => [`k${i}`, { seconds: i, note: `note ${i}` }]),
+    const atCap = Object.fromEntries(
+      Array.from({ length: MAX_VOD_TIMESTAMPS_PER_MATCH }, (_, i) => [
+        `k${i}`,
+        { seconds: i, note: `note ${i}` },
+      ]),
     );
-    seedMatch(database, { vodTimestamps: twenty });
+    seedMatch(database, { vodTimestamps: atCap });
 
     await expect(
       rtdb.createNote(UID, 'm1', { seconds: 999, note: 'one too many' }),
-    ).rejects.toThrow(/already has 20 notes/);
+    ).rejects.toThrow(new RegExp(`already has ${MAX_VOD_TIMESTAMPS_PER_MATCH} notes`));
 
     const stored = database.dump().matches as Record<string, Record<string, unknown>>;
     const vodTimestamps = (stored[UID]!.m1 as Record<string, unknown>).vodTimestamps as Record<
       string,
       unknown
     >;
-    expect(Object.keys(vodTimestamps)).toHaveLength(20);
+    expect(Object.keys(vodTimestamps)).toHaveLength(MAX_VOD_TIMESTAMPS_PER_MATCH);
   });
 
   it('stamps coach attribution on the new note when a coach param is supplied (the 08-03 seam)', async () => {
@@ -1095,8 +1099,8 @@ describe('WR-06 regression: edit/delete migrate legacy-array nodes instead of pe
 // unparseable entry, so a naive rebuild silently and permanently destroys
 // corrupt siblings on any unrelated note write. Corrupt entries must ride
 // through every write OPAQUELY (raw value, untouched) so they stay
-// hand-repairable, count toward the shared 20-note cap, and stay invisible
-// to reads (CR-02's skip is unchanged).
+// hand-repairable, count toward the shared MAX_VOD_TIMESTAMPS_PER_MATCH cap,
+// and stay invisible to reads (CR-02's skip is unchanged).
 // ---------------------------------------------------------------------------
 describe('WR-08 regression: note writes carry unparseable sibling entries through opaquely', () => {
   // The incident-class corruption: a string-typed number field.
@@ -1188,20 +1192,23 @@ describe('WR-08 regression: note writes carry unparseable sibling entries throug
     expect(vodTimestamps).toEqual({ badNote: CORRUPT_ENTRY });
   });
 
-  it('corrupt entries COUNT toward the shared 20-note cap — 19 valid + 1 corrupt rejects a new note and writes nothing', async () => {
+  it('corrupt entries COUNT toward the shared cap — (cap - 1) valid + 1 corrupt rejects a new note and writes nothing', async () => {
     const database = new FakeDatabase();
     const rtdb = new RtdbService(database as never);
-    const nineteen = Object.fromEntries(
-      Array.from({ length: 19 }, (_, i) => [`k${i}`, { seconds: i, note: `note ${i}` }]),
+    const almostCap = Object.fromEntries(
+      Array.from({ length: MAX_VOD_TIMESTAMPS_PER_MATCH - 1 }, (_, i) => [
+        `k${i}`,
+        { seconds: i, note: `note ${i}` },
+      ]),
     );
-    seedMatch(database, { vodTimestamps: { ...nineteen, badNote: CORRUPT_ENTRY } });
+    seedMatch(database, { vodTimestamps: { ...almostCap, badNote: CORRUPT_ENTRY } });
 
     await expect(
       rtdb.createNote(UID, 'm1', { seconds: 999, note: 'one too many' }),
-    ).rejects.toThrow(/already has 20 notes/);
+    ).rejects.toThrow(new RegExp(`already has ${MAX_VOD_TIMESTAMPS_PER_MATCH} notes`));
 
     const vodTimestamps = storedNotes(database);
-    expect(Object.keys(vodTimestamps)).toHaveLength(20);
+    expect(Object.keys(vodTimestamps)).toHaveLength(MAX_VOD_TIMESTAMPS_PER_MATCH);
     expect(vodTimestamps.badNote).toEqual(CORRUPT_ENTRY);
   });
 
@@ -1538,20 +1545,23 @@ describe('RtdbService.createCoachNote — anonymous coach create (token-resolved
     ).rejects.toThrow('This share is no longer available');
   });
 
-  it('aborts at the shared 20-note cap', async () => {
+  it('aborts at the shared cap', async () => {
     const database = new FakeDatabase();
     const rtdb = new RtdbService(database as never);
-    const twenty = Object.fromEntries(
-      Array.from({ length: 20 }, (_, i) => [`k${i}`, { seconds: i, note: `note ${i}` }]),
+    const atCap = Object.fromEntries(
+      Array.from({ length: MAX_VOD_TIMESTAMPS_PER_MATCH }, (_, i) => [
+        `k${i}`,
+        { seconds: i, note: `note ${i}` },
+      ]),
     );
-    seedEditShare(database, { matchOverrides: { vodTimestamps: twenty } });
+    seedEditShare(database, { matchOverrides: { vodTimestamps: atCap } });
 
     await expect(
       rtdb.createCoachNote(EDIT_TOKEN, COACH_SESSION, 'Coach Person', {
         seconds: 999,
         note: 'one too many',
       }),
-    ).rejects.toThrow(/already has 20 notes/);
+    ).rejects.toThrow(new RegExp(`already has ${MAX_VOD_TIMESTAMPS_PER_MATCH} notes`));
   });
 });
 
