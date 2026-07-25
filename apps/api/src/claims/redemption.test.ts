@@ -46,6 +46,23 @@ function digestFor(code: string): string {
   return hashClaimCode(HMAC_SECRET, normalizeClaimCode(code));
 }
 
+/**
+ * Wraps a FakeDatabase so every `.ref(path)` call is recorded — used to
+ * prove the reverse-index label lookup never touches `coachClients` on any
+ * non-'fresh' path (Task 2's ineligible-reads-no-coachClients proof, mirrors
+ * `wrapWithCounts` above but records paths instead of counting operations).
+ */
+function wrapWithRefLog(database: FakeDatabase): { database: FakeDatabase; refPaths: string[] } {
+  const refPaths: string[] = [];
+  const wrapped = {
+    ref: (path?: string) => {
+      if (path !== undefined) refPaths.push(path);
+      return database.ref(path);
+    },
+  };
+  return { database: wrapped as unknown as FakeDatabase, refPaths };
+}
+
 function seedInvitation(
   database: FakeDatabase,
   digest: string,
@@ -240,6 +257,7 @@ describe('flipTenantOwnership', () => {
       clientUid: CLIENT_UID,
       coachUid: COACH_UID,
       now,
+      label: 'Ana',
     });
 
     const dump = database.dump() as Record<string, Record<string, Record<string, unknown>>>;
@@ -263,6 +281,29 @@ describe('flipTenantOwnership', () => {
       dump.activeClaimInvitationByTenant as unknown as Record<string, unknown> | undefined
     )?.[TENANT_ID];
     expect(activePointer == null).toBe(true);
+  });
+
+  it('writes the seventh path, clientOwnedTenants/{clientUid}/{tenantId}, with the given label and claimedAt, inside the same update()', async () => {
+    const database = new FakeDatabase();
+    database.seed(`clientMembers/${TENANT_ID}/${COACH_UID}`, {
+      role: 'custodian',
+      joinedAt: 12345,
+    });
+    const now = Date.now();
+
+    await flipTenantOwnership(database as never, {
+      tenantId: TENANT_ID,
+      clientUid: CLIENT_UID,
+      coachUid: COACH_UID,
+      now,
+      label: 'Ana',
+    });
+
+    const dump = database.dump() as Record<string, Record<string, Record<string, unknown>>>;
+    expect(dump.clientOwnedTenants?.[CLIENT_UID]?.[TENANT_ID]).toEqual({
+      label: 'Ana',
+      claimedAt: now,
+    });
   });
 
   it('leaves every content subtree byte-for-byte unchanged', async () => {
@@ -294,6 +335,7 @@ describe('flipTenantOwnership', () => {
       clientUid: CLIENT_UID,
       coachUid: COACH_UID,
       now: Date.now(),
+      label: 'Ana',
     });
 
     expect(JSON.stringify((await database.ref(`matches/${TENANT_ID}`).get()).val())).toBe(
@@ -349,6 +391,73 @@ describe('redeemClaimCode', () => {
     >;
     expect(dump.clientMembers?.[TENANT_ID]?.[CLIENT_UID]?.role).toBe('owner');
     expect(dump.clientMembers?.[TENANT_ID]?.[COACH_UID]?.role).toBe('delegate');
+  });
+
+  it('a fresh redemption writes clientOwnedTenants/{clientUid}/{tenantId} with the label copied from coachClients/{coachUid}/{tenantId}.label', async () => {
+    const database = new FakeDatabase();
+    database.seed(`clientMembers/${TENANT_ID}/${COACH_UID}`, { role: 'custodian', joinedAt: 1 });
+    database.seed(`coachClients/${COACH_UID}/${TENANT_ID}`, {
+      label: 'Ana',
+      createdAt: 1,
+    });
+    const code = 'LABELED-CODE-1';
+    const digest = digestFor(code);
+    seedInvitation(database, digest);
+
+    const result = await redeemClaimCode(database as never, {
+      code,
+      redeemerUid: CLIENT_UID,
+      clientIp: CLIENT_IP,
+      sessionId: SESSION_ID,
+      hmacSecret: HMAC_SECRET,
+    });
+
+    expect(result).toEqual({ status: 'ok', tenantId: TENANT_ID });
+    const dump = database.dump() as Record<string, Record<string, Record<string, unknown>>>;
+    expect(dump.clientOwnedTenants?.[CLIENT_UID]?.[TENANT_ID]).toMatchObject({ label: 'Ana' });
+  });
+
+  it('a fresh redemption falls back to the tenantId as the label when the coach index entry is missing', async () => {
+    const database = new FakeDatabase();
+    database.seed(`clientMembers/${TENANT_ID}/${COACH_UID}`, { role: 'custodian', joinedAt: 1 });
+    // Deliberately no coachClients/{COACH_UID}/{TENANT_ID} seed.
+    const code = 'NO-LABEL-CODE-1';
+    const digest = digestFor(code);
+    seedInvitation(database, digest);
+
+    const result = await redeemClaimCode(database as never, {
+      code,
+      redeemerUid: CLIENT_UID,
+      clientIp: CLIENT_IP,
+      sessionId: SESSION_ID,
+      hmacSecret: HMAC_SECRET,
+    });
+
+    expect(result).toEqual({ status: 'ok', tenantId: TENANT_ID });
+    const dump = database.dump() as Record<string, Record<string, Record<string, unknown>>>;
+    expect(dump.clientOwnedTenants?.[CLIENT_UID]?.[TENANT_ID]).toMatchObject({
+      label: TENANT_ID,
+    });
+  });
+
+  it('an ineligible redemption leaves clientOwnedTenants absent and reads no coachClients path', async () => {
+    const database = new FakeDatabase();
+    const code = 'NEVER-ISSUED-CODE-FOR-INDEX-TEST';
+    // never-issued: no seed at all.
+    const { database: logged, refPaths } = wrapWithRefLog(database);
+
+    const result = await redeemClaimCode(logged as never, {
+      code,
+      redeemerUid: CLIENT_UID,
+      clientIp: CLIENT_IP,
+      sessionId: SESSION_ID,
+      hmacSecret: HMAC_SECRET,
+    });
+
+    expect(result).toEqual({ status: 'invalid' });
+    const dump = database.dump() as Record<string, unknown>;
+    expect(dump.clientOwnedTenants).toBeUndefined();
+    expect(refPaths.some((path) => path.startsWith('coachClients'))).toBe(false);
   });
 
   it("returns { status: 'ok', tenantId } for a same-client replay, with consumedAt unchanged (zero additional writes to the invitation record)", async () => {

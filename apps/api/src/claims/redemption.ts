@@ -1,5 +1,5 @@
 import type { Database } from 'firebase-admin/database';
-import { claimInvitationRecordSchema } from '@smash-tracker/shared';
+import { claimInvitationRecordSchema, coachClientEntrySchema } from '@smash-tracker/shared';
 import { hashClaimCode, normalizeClaimCode } from './crypto.js';
 import {
   checkAndIncrement,
@@ -180,12 +180,22 @@ export async function consumeClaimInvitation(
  * client's own personal tree at `matches/{clientUid}` is a different subject
  * id entirely and is likewise never touched here — which is why the
  * no-merge contract (CLAIM-04) is structural, not a policy branch.
+ *
+ * Phase 24 (Coach Issuance & Client Claim Experience, CTRL-01/CTRL-02): the
+ * SEVENTH path below (the client-owner reverse index, keyed under the client's
+ * own uid) is written inside this SAME `update()` call — never a follow-up
+ * write, so a partial flip can never leave an orphaned index entry. This is
+ * the client-keyed mirror of `coachClients/{coachUid}/{tenantId}` and follows
+ * the `sharesByUser` reverse-index precedent (`services/rtdb.ts`'s
+ * `sharesByUser/{uid}/{shareId}` doc comment): a client-side index the
+ * client can enumerate without a second global-scope index or an
+ * `orderByChild` rule, so `database.rules.json` stays deny-all/unchanged.
  */
 export async function flipTenantOwnership(
   database: Database,
-  params: { tenantId: string; clientUid: string; coachUid: string; now: number },
+  params: { tenantId: string; clientUid: string; coachUid: string; now: number; label: string },
 ): Promise<void> {
-  const { tenantId, clientUid, coachUid, now } = params;
+  const { tenantId, clientUid, coachUid, now, label } = params;
   await database.ref().update({
     [`clientMembers/${tenantId}/${clientUid}`]: { role: 'owner', joinedAt: now },
     // Targeted field write, NOT a whole-record rewrite, so the coach's
@@ -197,6 +207,8 @@ export async function flipTenantOwnership(
     [`coachClients/${coachUid}/${tenantId}/claimedAt`]: now,
     // The code has been consumed — nothing is outstanding.
     [`activeClaimInvitationByTenant/${tenantId}`]: null,
+    // Phase 24 7th path — the client-owner reverse index (see doc comment above).
+    [`clientOwnedTenants/${clientUid}/${tenantId}`]: { label, claimedAt: now },
   });
 }
 
@@ -284,11 +296,24 @@ export async function redeemClaimCode(
 
     if (consumed.outcome === 'fresh') {
       const issuerUid = consumed.issuerUid as string;
+      // CRED-05 no-oracle constraint (T-24-02, binding): this read of
+      // `coachClients/{issuerUid}/{tenantId}` MUST stay strictly inside this
+      // 'fresh' branch, after `consumeClaimInvitation` has already resolved.
+      // Moving it anywhere earlier in this function — including a
+      // "resolve it once up top" refactor — would add a `coachClients` read
+      // to the five ineligible classes and reopen the closed no-oracle
+      // call-shape property the line-187 parity test in
+      // `redemption.test.ts` exists to guard.
+      const coachEntrySnapshot = await database.ref(`coachClients/${issuerUid}/${tenantId}`).get();
+      const parsedCoachEntry = coachClientEntrySchema.safeParse(coachEntrySnapshot.val());
+      const label = parsedCoachEntry.success ? parsedCoachEntry.data.label : tenantId;
+
       await flipTenantOwnership(database, {
         tenantId,
         clientUid: params.redeemerUid,
         coachUid: issuerUid,
         now,
+        label,
       });
 
       void createEvent(
