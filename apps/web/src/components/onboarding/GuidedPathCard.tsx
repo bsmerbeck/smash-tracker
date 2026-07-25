@@ -165,7 +165,7 @@ export function GuidedPathCard() {
   const { data: profile } = useProfile();
   const { data: progress } = useOnboardingProgress();
   const intent = profile?.onboardingIntent ?? null;
-  const { data: coachingClients } = useCoachingClients({ enabled: intent === 'coach_clients' });
+  const coachingClientsQuery = useCoachingClients({ enabled: intent === 'coach_clients' });
 
   // Phase 13 (ONBD-03, D-01): `/dashboard` gets its OWN, lighter-weight
   // next-best-action mirror (`DashboardPage.tsx`) — the density rule ("ONE
@@ -176,11 +176,22 @@ export function GuidedPathCard() {
     return null;
   }
 
+  // 260725-juj: an unresolved or failed clients query is UNKNOWN, and unknown
+  // must not count as zero clients — scoped to `coach_clients` ONLY, because
+  // TanStack Query v5 reports a DISABLED query as pending forever, and this
+  // query is disabled for every other intent.
+  if (
+    intent === 'coach_clients' &&
+    (coachingClientsQuery.isPending || coachingClientsQuery.isError)
+  ) {
+    return null;
+  }
+
   const steps = buildSteps(
     intent,
     progress,
     profile?.coachingModeEnabled ?? false,
-    coachingClients?.length ?? 0,
+    coachingClientsQuery.data?.length ?? 0,
   );
 
   const firstIncompleteIndex = steps.findIndex((step) => !step.done);

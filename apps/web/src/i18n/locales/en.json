@@ -1576,6 +1576,11 @@
     "hub": {
       "title": "Client Hub",
       "loading": "Loading your clients...",
+      "loadError": {
+        "title": "Something went wrong loading your clients",
+        "body": "We couldn't load your client list. Your data is safe — try again.",
+        "retry": "Retry"
+      },
       "empty": {
         "title": "No clients yet",
         "body": "Create your first client to start managing their matches, VODs, and analytics separately from your own."

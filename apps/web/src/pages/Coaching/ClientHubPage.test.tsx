@@ -1,5 +1,6 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes } from 'react-router';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { OnboardingIntent } from '@smash-tracker/shared';
@@ -127,5 +128,66 @@ describe('ClientHubPage', () => {
     // The dialog content (the label input) is not rendered until the
     // trigger is clicked — no controlled `open` prop was ever forced true.
     expect(screen.queryByLabelText('Client label')).not.toBeInTheDocument();
+  });
+
+  // 260725-juj: the outage regression — a failed clients query must render
+  // an honest, retryable error, NEVER the zero-client onboarding CTA.
+  describe('mutually-exclusive render states (260725-juj)', () => {
+    it('renders the error block with a retry control when the query rejects, and never the empty-state CTA', async () => {
+      clientsList.mockRejectedValue(new Error('network down'));
+      getMe.mockResolvedValue(defaultProfile());
+
+      renderHub();
+
+      expect(await screen.findByTestId('client-hub-load-error')).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Retry' })).toBeInTheDocument();
+      expect(screen.queryByText('No clients yet')).not.toBeInTheDocument();
+      expect(
+        screen.queryByRole('button', { name: 'Create your first client' }),
+      ).not.toBeInTheDocument();
+    });
+
+    it('retry re-invokes the clients query, and a subsequent successful resolve renders the table', async () => {
+      const user = userEvent.setup();
+      clientsList.mockRejectedValueOnce(new Error('network down'));
+      getMe.mockResolvedValue(defaultProfile());
+
+      renderHub();
+
+      await screen.findByTestId('client-hub-load-error');
+      clientsList.mockResolvedValueOnce([
+        { clientId: 'tetra', label: 'TETRA', draftCount: 0, lastActivityAt: null },
+      ]);
+
+      await user.click(screen.getByRole('button', { name: 'Retry' }));
+
+      await screen.findByText('TETRA');
+      expect(screen.queryByTestId('client-hub-load-error')).not.toBeInTheDocument();
+    });
+
+    it('shows only the loading indicator while the query is pending — no count line, table, or empty CTA', async () => {
+      let resolveList: (value: unknown[]) => void = () => {};
+      clientsList.mockReturnValue(
+        new Promise((resolve) => {
+          resolveList = resolve;
+        }),
+      );
+      getMe.mockResolvedValue(defaultProfile());
+
+      renderHub();
+
+      expect(await screen.findByText('Loading your clients...')).toBeInTheDocument();
+      expect(screen.queryByTestId('client-hub-load-error')).not.toBeInTheDocument();
+      expect(screen.queryByText('No clients yet')).not.toBeInTheDocument();
+      expect(
+        screen.queryByRole('button', { name: 'Create your first client' }),
+      ).not.toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: 'Add client' })).not.toBeInTheDocument();
+
+      resolveList([]);
+      await waitFor(() =>
+        expect(screen.queryByText('Loading your clients...')).not.toBeInTheDocument(),
+      );
+    });
   });
 });

@@ -266,23 +266,44 @@ export async function listClients(
   const rtdb = new RtdbService(database);
   return Promise.all(
     entries.map(async ({ tenantId, label, archivedAt }) => {
-      const [matches, draftCount, deliveryState6] = await Promise.all([
-        rtdb.listMatches(tenantId),
-        countOpenDrafts(database, tenantId),
-        getMostRecentDeliveryStateForTenant(database, tenantId),
-      ]);
-      const lastActivityAt = matches.reduce<number | null>(
-        (latest, match) => (latest === null || match.time > latest ? match.time : latest),
-        null,
-      );
-      return clientHubRowSchema.parse({
-        clientId: tenantId,
-        label,
-        lastActivityAt,
-        draftCount,
-        deliveryState: deliveryState6 === null ? null : mapDeliveryStateToHubState(deliveryState6),
-        archivedAt,
-      } satisfies ClientHubRow);
+      // 260725-juj (defense-in-depth): one tenant's corrupt/unparseable
+      // subtree must never 500 the whole Client Hub for every OTHER coach
+      // client. Guards against the SAME class of read-path crash the
+      // reviews.ts null-stripping fix addresses at the source — this is a
+      // backstop, not the primary fix. This module has no request logger
+      // (same rationale as `renderShareHtml.ts`'s module-level
+      // `console.error` calls), so degrade to a minimal row and log with
+      // `console.warn`.
+      try {
+        const [matches, draftCount, deliveryState6] = await Promise.all([
+          rtdb.listMatches(tenantId),
+          countOpenDrafts(database, tenantId),
+          getMostRecentDeliveryStateForTenant(database, tenantId),
+        ]);
+        const lastActivityAt = matches.reduce<number | null>(
+          (latest, match) => (latest === null || match.time > latest ? match.time : latest),
+          null,
+        );
+        return clientHubRowSchema.parse({
+          clientId: tenantId,
+          label,
+          lastActivityAt,
+          draftCount,
+          deliveryState:
+            deliveryState6 === null ? null : mapDeliveryStateToHubState(deliveryState6),
+          archivedAt,
+        } satisfies ClientHubRow);
+      } catch (err) {
+        console.warn(`listClients: degrading tenant ${tenantId} after a read failure`, err);
+        return clientHubRowSchema.parse({
+          clientId: tenantId,
+          label,
+          lastActivityAt: null,
+          draftCount: 0,
+          deliveryState: null,
+          archivedAt,
+        } satisfies ClientHubRow);
+      }
     }),
   );
 }

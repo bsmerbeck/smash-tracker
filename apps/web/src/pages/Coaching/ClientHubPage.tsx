@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
-import { Users } from 'lucide-react';
+import { CircleAlert, Users } from 'lucide-react';
 import type { ClientHubRow } from '@smash-tracker/shared';
 import { api } from '@/lib/api';
 import {
@@ -14,6 +14,7 @@ import { describeCoachingError } from './describeCoachingError';
 import { CreateClientDialog } from './components/CreateClientDialog';
 import { ClientHubTable } from './components/ClientHubTable';
 import { DeleteClientDialog } from './components/DeleteClientDialog';
+import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 
@@ -69,6 +70,14 @@ function downloadClientExport(data: unknown, label: string): void {
  * Assumption A5 — avoids the focus-trap/accessibility risk of an
  * unprompted dialog) and never introduces a second create form (D-07 — one
  * validation/conflict path only).
+ *
+ * 260725-juj incident: a poisoned `reviewStatus` record 500'd
+ * `GET /api/coaching/clients`, and this page used to treat that failed (and
+ * the momentarily pending) query the SAME as an empty one — rendering "No
+ * clients yet" over real data, plus a phantom table shell during loading.
+ * The render below is now four mutually-exclusive states (error / loading /
+ * loaded-empty / loaded-non-empty), because an unresolved or failed clients
+ * query is UNKNOWN, and unknown must never be rendered as zero.
  */
 export function ClientHubPage() {
   const { t } = useTranslation();
@@ -85,8 +94,23 @@ export function ClientHubPage() {
 
   const activeList = activeClients.data ?? [];
   const list = visibleClients.data ?? [];
-  const isEmpty = !activeClients.isLoading && activeList.length === 0;
+
+  // Four mutually-exclusive render states, precedence order: error, then
+  // loading, then loaded-empty, then loaded-non-empty. An unresolved or
+  // failed query is UNKNOWN — never treated as zero clients (260725-juj).
+  const isError = activeClients.isError || (showArchived && archivedView.isError);
+  const isLoading =
+    !isError && (activeClients.isLoading || (showArchived && archivedView.isLoading));
+  const isEmpty = !isError && !isLoading && activeList.length === 0;
+  const isNonEmpty = !isError && !isLoading && !isEmpty;
   const isOnboardingSpotlight = profile.data?.onboardingIntent === 'coach_clients' && isEmpty;
+
+  function handleRetry() {
+    void activeClients.refetch();
+    if (showArchived) {
+      void archivedView.refetch();
+    }
+  }
 
   function handleArchiveToggle(client: ClientHubRow) {
     const archived = client.archivedAt == null;
@@ -133,12 +157,26 @@ export function ClientHubPage() {
     <div className="mx-auto flex max-w-5xl flex-col gap-6">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h1 className="text-2xl font-semibold tracking-tight">{t('coaching.hub.title')}</h1>
-        {!isEmpty && <CreateClientDialog triggerLabel={t('coaching.hub.createAnotherTrigger')} />}
+        {isNonEmpty && <CreateClientDialog triggerLabel={t('coaching.hub.createAnotherTrigger')} />}
       </div>
 
-      {activeClients.isLoading && (
-        <div className="text-muted-foreground">{t('coaching.hub.loading')}</div>
+      {isError && (
+        <div
+          data-testid="client-hub-load-error"
+          className="flex flex-col items-center gap-3 rounded-lg border p-16 text-center"
+        >
+          <CircleAlert className="size-8 text-destructive" />
+          <h2 className="text-lg font-semibold">{t('coaching.hub.loadError.title')}</h2>
+          <p className="max-w-sm text-sm text-muted-foreground">
+            {t('coaching.hub.loadError.body')}
+          </p>
+          <Button variant="outline" onClick={handleRetry}>
+            {t('coaching.hub.loadError.retry')}
+          </Button>
+        </div>
       )}
+
+      {isLoading && <div className="text-muted-foreground">{t('coaching.hub.loading')}</div>}
 
       {isEmpty && (
         <div className="flex flex-col items-center gap-3 rounded-lg border border-dashed p-16 text-center">
@@ -167,7 +205,7 @@ export function ClientHubPage() {
         </div>
       )}
 
-      {!isEmpty && (
+      {isNonEmpty && (
         <>
           <div className="flex flex-wrap items-center justify-between gap-2">
             <p className="text-sm text-muted-foreground">

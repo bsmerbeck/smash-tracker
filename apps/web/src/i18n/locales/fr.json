@@ -1576,6 +1576,11 @@
     "hub": {
       "title": "Centre clients",
       "loading": "Chargement de vos clients...",
+      "loadError": {
+        "title": "Une erreur est survenue lors du chargement de vos clients",
+        "body": "Nous n'avons pas pu charger votre liste de clients. Vos données sont en sécurité — réessayez.",
+        "retry": "Réessayer"
+      },
       "empty": {
         "title": "Aucun client pour l'instant",
         "body": "Créez votre premier client pour gérer ses matchs, ses VODs et ses statistiques séparément des vôtres."

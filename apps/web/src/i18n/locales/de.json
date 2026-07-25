@@ -1576,6 +1576,11 @@
     "hub": {
       "title": "Kunden-Hub",
       "loading": "Deine Kunden werden geladen...",
+      "loadError": {
+        "title": "Beim Laden deiner Kunden ist ein Fehler aufgetreten",
+        "body": "Wir konnten deine Kundenliste nicht laden. Deine Daten sind sicher — versuche es erneut.",
+        "retry": "Erneut versuchen"
+      },
       "empty": {
         "title": "Noch keine Kunden",
         "body": "Erstelle deinen ersten Kunden, um dessen Matches, VODs und Statistiken getrennt von deinen eigenen zu verwalten."

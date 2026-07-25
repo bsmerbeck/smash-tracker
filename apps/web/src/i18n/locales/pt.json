@@ -1576,6 +1576,11 @@
     "hub": {
       "title": "Central de clientes",
       "loading": "Carregando seus clientes...",
+      "loadError": {
+        "title": "Algo deu errado ao carregar seus clientes",
+        "body": "Não conseguimos carregar sua lista de clientes. Seus dados estão seguros — tente novamente.",
+        "retry": "Tentar novamente"
+      },
       "empty": {
         "title": "Nenhum cliente ainda",
         "body": "Crie seu primeiro cliente para começar a gerenciar as partidas, VODs e estatísticas dele separadamente das suas."

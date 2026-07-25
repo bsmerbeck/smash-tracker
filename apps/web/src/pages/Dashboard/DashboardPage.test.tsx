@@ -291,5 +291,21 @@ describe('DashboardPage', () => {
         expect(screen.queryByTestId('dashboard-next-best-action')).not.toBeInTheDocument(),
       );
     });
+
+    // 260725-juj: a failed clients query is UNKNOWN, not zero — the next-
+    // best-action area must show nothing rather than resurrecting
+    // "create your first client" over a coach who may already have clients.
+    it('260725-juj: shows no next-best-action when the coach intent is saved but the clients query rejects', async () => {
+      getFighters.mockResolvedValue({ primary: [mario.id], secondary: [] });
+      listMatches.mockResolvedValue([]);
+      getMe.mockResolvedValue(defaultProfile({ onboardingIntent: 'coach_clients' }));
+      listCoachingClients.mockRejectedValue(new Error('network down'));
+
+      renderDashboard();
+
+      await screen.findAllByText('Overall Record');
+      await waitFor(() => expect(listCoachingClients).toHaveBeenCalled());
+      expect(screen.queryByTestId('dashboard-next-best-action')).not.toBeInTheDocument();
+    });
   });
 });

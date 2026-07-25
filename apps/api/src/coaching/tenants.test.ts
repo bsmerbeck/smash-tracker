@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import type { Database } from 'firebase-admin/database';
 import { FakeDatabase } from '../test-support/fakeDatabase.js';
 import { ConflictError, ForbiddenError } from '../services/rtdb.js';
@@ -204,6 +204,44 @@ describe('listClients', () => {
     const rows = await listClients(asDatabase(database), COACH_UID);
     expect(rows).toHaveLength(1);
     expect(rows[0]?.archivedAt).toBeNull();
+  });
+
+  // 260725-juj: defense-in-depth — one tenant's corrupt/unparseable
+  // reviewStatus subtree must degrade that one row, never 500 the whole hub.
+  it('260725-juj: degrades a single poisoned tenant to a minimal row instead of rejecting the whole list', async () => {
+    const database = new FakeDatabase();
+    const { tenantId: goodTenant } = await createClient(asDatabase(database), COACH_UID, 'Good', {
+      sessionId: SESSION_ID,
+    });
+    const { tenantId: badTenant } = await createClient(asDatabase(database), COACH_UID, 'Bad', {
+      sessionId: SESSION_ID,
+    });
+    // A reviewDrafts entry is required so countOpenDrafts actually reads the
+    // deliberately unparseable reviewStatus record seeded below.
+    database.seed(`reviewDrafts/${badTenant}/review-1`, {
+      revision: 1,
+      sections: [],
+      coachPrivateNotes: null,
+      createdAt: 0,
+      lastAutosavedAt: 0,
+    });
+    database.seed(`reviewStatus/${badTenant}/review-1`, { status: 'not-a-real-status' });
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+    const rows = await listClients(asDatabase(database), COACH_UID);
+
+    expect(rows).toHaveLength(2);
+    const goodRow = rows.find((row) => row.clientId === goodTenant);
+    const badRow = rows.find((row) => row.clientId === badTenant);
+    expect(goodRow).toMatchObject({ label: 'Good', draftCount: 0, deliveryState: null });
+    expect(badRow).toMatchObject({
+      label: 'Bad',
+      draftCount: 0,
+      deliveryState: null,
+      lastActivityAt: null,
+    });
+    expect(warnSpy).toHaveBeenCalled();
+    warnSpy.mockRestore();
   });
 });
 
