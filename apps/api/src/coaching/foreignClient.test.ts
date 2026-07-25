@@ -173,7 +173,40 @@ const SAME_SUBJECT_ROUTES = [
     path: `/api/coaching/clients/${TENANT_ID}/sessions/session-1/deliveries/delivery-1/revoke`,
     usesSubjectHeader: false,
   },
+  // Phase 23 Plan 04 (Claim Credential & Atomic Ownership Transition,
+  // CRED-01/CRED-03): the coach-side claim-invitation routes, gated the
+  // SAME way (a direct role-aware membership check on the URL's
+  // `:clientId`, no header) as the review/session/delivery routes above.
+  {
+    method: 'POST',
+    path: `/api/coaching/clients/${TENANT_ID}/claim-invitations`,
+    usesSubjectHeader: false,
+  },
+  {
+    method: 'DELETE',
+    path: `/api/coaching/clients/${TENANT_ID}/claim-invitations`,
+    usesSubjectHeader: false,
+  },
+  {
+    method: 'GET',
+    path: `/api/coaching/clients/${TENANT_ID}/claim-invitations`,
+    usesSubjectHeader: false,
+  },
 ] as const;
+
+/**
+ * Phase 23 conclusion (RESEARCH.md Pitfall 5), recorded here so a future
+ * reader does not have to re-derive it: `claimInvitations` is keyed by HMAC
+ * digest, not by tenantId, so it does NOT have the `{tree}/{tenantId}` shape
+ * the hard-delete cascade below iterates, and is deliberately NOT a
+ * canonical tenant tree — plan 06 instead adds an explicit `deleteClient`
+ * step that nulls the pointed-at digest record, mirroring the existing
+ * `shareTokens/{token}` extra step. `activeClaimInvitationByTenant` DOES
+ * have that shape and IS added to `CANONICAL_TENANT_TREES` in plan 06,
+ * together with its entry here. The plan-02 rate-limit counter trees
+ * (`claimRedemptionAttempts*`, `claimIssuanceAttempts`) are keyed by uid, IP
+ * hash, and coachUid respectively and are not tenant trees.
+ */
 
 /**
  * `CANONICAL_TENANT_TREES` (the delete-cascade's own source of truth,
@@ -220,7 +253,13 @@ describe('CANONICAL_TENANT_TREES stays in lockstep with the harness route list',
 
 describe.each(SAME_SUBJECT_ROUTES)('foreign-client authorization: $method $path', (route) => {
   it("returns 403 when a second coach targets the first coach's client", async () => {
-    const { app, auth, database } = buildTestApp();
+    // Phase 23 Plan 04: without a claim config the new claim-invitation
+    // routes answer 503 from the whole-scope gate, and this harness would
+    // assert 403 against a 503 — silently proving nothing. Configure it so
+    // the assertion is meaningful for every route in the table above.
+    const { app, auth, database } = buildTestApp({
+      claimCode: { hmacSecret: 'test-claim-secret' },
+    });
     auth.registerToken(COACH_A_TOKEN, { uid: COACH_A_UID, email: 'a@test.com' });
     auth.registerToken(COACH_B_TOKEN, { uid: COACH_B_UID, email: 'b@test.com' });
     database.seed(`clientTenants/${TENANT_ID}`, { createdAt: 1, archivedAt: null });
@@ -251,7 +290,12 @@ describe.each(SAME_SUBJECT_ROUTES)('foreign-client authorization: $method $path'
 
 describe('positive control: the owning coach is not blanket-blocked', () => {
   it('a subject-resolved route (GET /api/matches) returns non-403 for the member coach', async () => {
-    const { app, auth, database } = buildTestApp();
+    // Phase 23 Plan 04: build with the same claim-configured app shape as
+    // the describe.each block above, so the whole file exercises one
+    // consistently-configured app.
+    const { app, auth, database } = buildTestApp({
+      claimCode: { hmacSecret: 'test-claim-secret' },
+    });
     auth.registerToken(COACH_A_TOKEN, { uid: COACH_A_UID, email: 'a@test.com' });
     database.seed(`clientTenants/${TENANT_ID}`, { createdAt: 1, archivedAt: null });
     database.seed(`coachClients/${COACH_A_UID}/${TENANT_ID}`, {
@@ -274,7 +318,9 @@ describe('positive control: the owning coach is not blanket-blocked', () => {
   });
 
   it('a /coaching/clients/:id route (PATCH archive) returns non-403 for the owning coach', async () => {
-    const { app, auth, database } = buildTestApp();
+    const { app, auth, database } = buildTestApp({
+      claimCode: { hmacSecret: 'test-claim-secret' },
+    });
     auth.registerToken(COACH_A_TOKEN, { uid: COACH_A_UID, email: 'a@test.com' });
     database.seed(`clientTenants/${TENANT_ID}`, { createdAt: 1, archivedAt: null });
     database.seed(`coachClients/${COACH_A_UID}/${TENANT_ID}`, {

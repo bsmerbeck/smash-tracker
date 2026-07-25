@@ -36,6 +36,7 @@ import coachingReviewsRoutes from './routes/coachingReviews.js';
 import coachingReviewDeliveriesRoutes from './routes/coachingReviewDeliveries.js';
 import coachingSessionsRoutes from './routes/coachingSessions.js';
 import coachingSessionDeliveriesRoutes from './routes/coachingSessionDeliveries.js';
+import claimInvitationsRoutes from './routes/claimInvitations.js';
 import vodSharesRoutes from './routes/vodShares.js';
 import publicVodSharesRoutes from './routes/publicVodShares.js';
 import publicReviewDeliveriesRoutes from './routes/publicReviewDeliveries.js';
@@ -315,6 +316,10 @@ export function buildApp(options: BuildAppOptions) {
       await api.register(coachingSessionDeliveriesRoutes, {
         webBaseUrl: options.webBaseUrl ?? 'http://localhost:5173',
       });
+      // Phase 23 Plan 04 (Claim Credential & Atomic Ownership Transition,
+      // CRED-01/CRED-02/CRED-03): the coach-side claim-invitation routes,
+      // config-null 503-gated on CLAIM_CODE_HMAC_SECRET.
+      await api.register(claimInvitationsRoutes, { claimCode: options.claimCode ?? null });
       await api.register(vodSharesRoutes, {
         webBaseUrl: options.webBaseUrl ?? 'http://localhost:5173',
         ga4: options.ga4 ?? null,
