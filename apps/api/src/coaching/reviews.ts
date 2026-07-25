@@ -56,6 +56,38 @@ export const reviewStatusRecordSchema = z.object({
 });
 export type ReviewStatusRecord = z.infer<typeof reviewStatusRecordSchema>;
 
+/**
+ * 260725-juj (outage root cause): real RTDB drops any key whose value is
+ * `null` on write — a `reviewStatus` record archived before ever being
+ * published (`{ status: 'archived', latestVersion: null }`) round-trips with
+ * NO `latestVersion` key at all, not `null`. The exported
+ * `reviewStatusRecordSchema` above stays on `.nullable()` so the public
+ * `ReviewStatusRecord` type (`number | null`) never churns for consumers
+ * (e.g. `apps/api/scripts/seed/coachingDataset.ts`), but every READ must
+ * tolerate the key being entirely MISSING — `.nullish()` here mirrors
+ * `parseDraftRecord`'s existing read-normalization discipline for the
+ * stripped `sections` key above.
+ */
+const storedReviewStatusRecordSchema = z.object({
+  status: z.enum(REVIEW_STATUSES),
+  latestVersion: z.number().int().positive().nullish(),
+});
+
+/**
+ * Write-time counterpart (CONCERNS.md conditional-spread idiom): validates
+ * against the public `.nullable()` shape, then emits `latestVersion` in the
+ * payload ONLY when it is a number. RTDB would strip a `null` value on write
+ * anyway — writing the stored shape explicitly here keeps write and read
+ * symmetric instead of relying on silent stripping to do it implicitly.
+ */
+function buildReviewStatusPayload(record: ReviewStatusRecord): Record<string, unknown> {
+  const parsed = reviewStatusRecordSchema.parse(record);
+  return {
+    status: parsed.status,
+    ...(typeof parsed.latestVersion === 'number' ? { latestVersion: parsed.latestVersion } : {}),
+  };
+}
+
 const reviewDeliveryRecordSchema = z.object({
   status: z.enum(REVIEW_DELIVERY_STATES),
   createdAt: z.number().int().nonnegative(),
@@ -257,7 +289,7 @@ export async function publishReview(
 
   await database.ref().update({
     [`reviewVersions/${tenantId}/${reviewId}/${nextVersion}`]: publishedVersion,
-    [`reviewStatus/${tenantId}/${reviewId}`]: reviewStatusRecordSchema.parse({
+    [`reviewStatus/${tenantId}/${reviewId}`]: buildReviewStatusPayload({
       status: 'published',
       latestVersion: nextVersion,
     }),
@@ -392,7 +424,11 @@ export async function getReviewStatus(
   if (!snapshot.exists()) {
     return { status: 'draft', latestVersion: null };
   }
-  return reviewStatusRecordSchema.parse(snapshot.val());
+  // 260725-juj: parse the STORED shape (latestVersion may be entirely
+  // missing, not `null`) then normalize to the public `number | null`
+  // contract so every caller keeps receiving a real value, never `undefined`.
+  const parsed = storedReviewStatusRecordSchema.parse(snapshot.val());
+  return { status: parsed.status, latestVersion: parsed.latestVersion ?? null };
 }
 
 /**
@@ -412,7 +448,7 @@ export async function archiveReview(
   const current = await getReviewStatus(database, tenantId, reviewId);
   await database
     .ref(`reviewStatus/${tenantId}/${reviewId}`)
-    .set(reviewStatusRecordSchema.parse({ ...current, status: 'archived' }));
+    .set(buildReviewStatusPayload({ ...current, status: 'archived' }));
 }
 
 /** The set of `reviewId`s a tenant has (the draft node is created once, at start-review, and lives forever — REV-07). */

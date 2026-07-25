@@ -420,6 +420,17 @@ describe('archiveReview', () => {
 
     const status = await getReviewStatus(asDatabase(database), TENANT_ID, 'review-1');
     expect(status).toEqual({ status: 'archived', latestVersion: 1 });
+
+    // Guard against over-correction: a PUBLISHED review's numeric
+    // latestVersion must still be written, not just preserved by
+    // getReviewStatus's read-time normalization.
+    const dump = database.dump() as {
+      reviewStatus?: Record<string, Record<string, Record<string, unknown>>>;
+    };
+    expect(dump.reviewStatus?.[TENANT_ID]?.['review-1']).toEqual({
+      status: 'archived',
+      latestVersion: 1,
+    });
   });
 
   it('throws NotFoundError for a review with no draft', async () => {
@@ -427,6 +438,49 @@ describe('archiveReview', () => {
     await expect(archiveReview(asDatabase(database), TENANT_ID, 'ghost-review')).rejects.toThrow(
       NotFoundError,
     );
+  });
+
+  // 260725-juj: the outage's exact reproduction — archiving a NEVER-published
+  // draft must write a `latestVersion`-less payload (RTDB would strip a
+  // `null` key anyway; the fix writes the stored shape explicitly), never a
+  // literal `{ latestVersion: null }` that stripping alone was masking.
+  it('260725-juj: archiving a never-published draft writes a reviewStatus payload with no latestVersion key at all', async () => {
+    const database = new FakeDatabase();
+    await autosaveDraft(asDatabase(database), TENANT_ID, 'review-1', { sections: [] }, 0);
+
+    await archiveReview(asDatabase(database), TENANT_ID, 'review-1');
+
+    const dump = database.dump() as {
+      reviewStatus?: Record<string, Record<string, Record<string, unknown>>>;
+    };
+    const stored = dump.reviewStatus?.[TENANT_ID]?.['review-1'];
+    expect(stored).toBeDefined();
+    expect(Object.keys(stored as Record<string, unknown>)).toEqual(['status']);
+    expect(stored).not.toHaveProperty('latestVersion');
+  });
+});
+
+// 260725-juj: the outage regression — a `reviewStatus` record that lost its
+// `latestVersion` key on write (the real, stripped shape) must still be
+// readable, never throw a ZodError.
+describe('getReviewStatus (stored-shape read tolerance, 260725-juj)', () => {
+  it('resolves a directly-seeded stored record with no latestVersion key to { status, latestVersion: null } instead of throwing', async () => {
+    const database = new FakeDatabase();
+    database.seed(`reviewStatus/${TENANT_ID}/review-1`, { status: 'archived' });
+
+    await expect(getReviewStatus(asDatabase(database), TENANT_ID, 'review-1')).resolves.toEqual({
+      status: 'archived',
+      latestVersion: null,
+    });
+  });
+
+  it('countOpenDrafts counts a tenant correctly when one review has the stripped stored shape (the direct regression for the reported outage)', async () => {
+    const database = new FakeDatabase();
+    await autosaveDraft(asDatabase(database), TENANT_ID, 'review-1', { sections: [] }, 0);
+    database.seed(`reviewStatus/${TENANT_ID}/review-1`, { status: 'archived' });
+    await autosaveDraft(asDatabase(database), TENANT_ID, 'review-2', { sections: [] }, 0);
+
+    await expect(countOpenDrafts(asDatabase(database), TENANT_ID)).resolves.toBe(1);
   });
 });
 
