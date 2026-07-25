@@ -110,3 +110,45 @@ export const claimInvitationStatusSchema = z.object({
   expiresAt: z.number().int().nonnegative().nullish(),
 });
 export type ClaimInvitationStatus = z.infer<typeof claimInvitationStatusSchema>;
+
+/**
+ * Phase 24 (Coach Issuance & Client Claim Experience, CTRL-01/CTRL-02): the
+ * client-side mirror of the established `coachClients/{coachUid}/{tenantId}`
+ * idiom. `flipTenantOwnership` (`apps/api/src/claims/redemption.ts`) writes
+ * `clientOwnedTenants/{clientUid}/{tenantId}` as a 7th path inside the SAME
+ * atomic multi-path `update()` that performs the ownership flip — the
+ * reverse index a claimed client needs to rediscover their workspace after
+ * the one-time redemption response is gone. `label` is a SNAPSHOT of the
+ * coach's `coachClients/{coachUid}/{tenantId}.label` value taken at flip
+ * time — immutable in v2.4 because client-side renaming is deferred to
+ * backlog. No credential material (raw code, digest, or anything
+ * code-derived) is present in this record.
+ */
+export const clientOwnedTenantEntrySchema = z.object({
+  label: z.string().trim().min(1).max(40),
+  claimedAt: z.number().int().nonnegative(),
+});
+export type ClientOwnedTenantEntry = z.infer<typeof clientOwnedTenantEntrySchema>;
+
+/**
+ * `GET /api/client-workspaces` row shape. Authored by EXPLICIT field
+ * selection — never `.pick()`/`.omit()` off `clientOwnedTenantEntrySchema` or
+ * any other record schema (redaction-by-shape rule, see this module's own
+ * doc comment above). `delegateCoachUid` uses the nullish modifier, never the
+ * bare-optional one (RTDB conditional-spread + nullish write discipline, per
+ * `.planning/codebase/CONCERNS.md`) — `null` when the client has revoked the
+ * coach's delegated access and no `clientMembers/{tenantId}` child currently
+ * holds the `'delegate'` role. Carries no coach identity beyond the delegate
+ * uid the owner already has revoke authority over.
+ */
+export const ownedWorkspaceSchema = z.object({
+  tenantId: z.string().min(1),
+  label: z.string().min(1),
+  claimedAt: z.number().int().nonnegative(),
+  delegateCoachUid: z.string().min(1).nullish(),
+});
+export type OwnedWorkspace = z.infer<typeof ownedWorkspaceSchema>;
+
+/** `GET /api/client-workspaces` 200 response. */
+export const ownedWorkspaceListSchema = ownedWorkspaceSchema.array();
+export type OwnedWorkspaceList = z.infer<typeof ownedWorkspaceListSchema>;

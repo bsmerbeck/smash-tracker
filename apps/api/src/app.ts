@@ -39,6 +39,7 @@ import coachingSessionDeliveriesRoutes from './routes/coachingSessionDeliveries.
 import claimInvitationsRoutes from './routes/claimInvitations.js';
 import claimsRoutes from './routes/claims.js';
 import claimDelegationsRoutes from './routes/claimDelegations.js';
+import clientWorkspacesRoutes from './routes/clientWorkspaces.js';
 import vodSharesRoutes from './routes/vodShares.js';
 import publicVodSharesRoutes from './routes/publicVodShares.js';
 import publicReviewDeliveriesRoutes from './routes/publicReviewDeliveries.js';
@@ -338,6 +339,11 @@ export function buildApp(options: BuildAppOptions) {
       // delegation-revoke route — registered unconditionally (no claim code
       // is involved in revoking a delegation).
       await api.register(claimDelegationsRoutes);
+      // Phase 24 Plan 01 (Coach Issuance & Client Claim Experience,
+      // CTRL-01/CTRL-02): the client-owner-facing workspace-listing route —
+      // registered unconditionally, no options object (no claim code/HMAC
+      // secret is involved in listing one's own owned workspaces).
+      await api.register(clientWorkspacesRoutes);
       await api.register(vodSharesRoutes, {
         webBaseUrl: options.webBaseUrl ?? 'http://localhost:5173',
         ga4: options.ga4 ?? null,
