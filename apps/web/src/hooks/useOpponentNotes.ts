@@ -2,8 +2,9 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { UpsertOpponentNoteInput } from '@smash-tracker/shared';
 import { api } from '@/lib/api';
 import { subjectScope } from '@/lib/subjectQueryKey';
-import { useActiveSubject, type ActiveSubject } from './useActiveSubject';
+import type { ActiveSubject } from './useActiveSubject';
 import { useAuth } from './useAuth';
+import { useEffectiveSubject } from './useEffectiveSubject';
 
 /** TEN-04: subject-scoped so Personal/Client A/Client B scouting notes never share a cache entry. */
 export function opponentNotesQueryKey(subject: ActiveSubject) {
@@ -18,7 +19,7 @@ export function opponentNotesQueryKey(subject: ActiveSubject) {
  */
 export function useOpponentNotes() {
   const { user } = useAuth();
-  const subject = useActiveSubject();
+  const subject = useEffectiveSubject();
   return useQuery({
     queryKey: opponentNotesQueryKey(subject),
     queryFn: () => api.opponents.notes.list(),
@@ -29,7 +30,7 @@ export function useOpponentNotes() {
 /** PUT /api/opponent-notes/:name. Invalidates the notes map on success. */
 export function useUpsertOpponentNote() {
   const queryClient = useQueryClient();
-  const subject = useActiveSubject();
+  const subject = useEffectiveSubject();
   return useMutation({
     mutationFn: ({ name, input }: { name: string; input: UpsertOpponentNoteInput }) =>
       api.opponents.notes.upsert(name, input),
@@ -42,7 +43,7 @@ export function useUpsertOpponentNote() {
 /** DELETE /api/opponent-notes/:name. Invalidates the notes map on success. */
 export function useDeleteOpponentNote() {
   const queryClient = useQueryClient();
-  const subject = useActiveSubject();
+  const subject = useEffectiveSubject();
   return useMutation({
     mutationFn: (name: string) => api.opponents.notes.remove(name),
     onSuccess: async () => {

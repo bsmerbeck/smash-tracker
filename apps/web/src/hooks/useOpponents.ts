@@ -1,8 +1,9 @@
 import { useQuery } from '@tanstack/react-query';
 import { api } from '@/lib/api';
 import { subjectScope } from '@/lib/subjectQueryKey';
-import { useActiveSubject, type ActiveSubject } from './useActiveSubject';
+import type { ActiveSubject } from './useActiveSubject';
 import { useAuth } from './useAuth';
+import { useEffectiveSubject } from './useEffectiveSubject';
 
 /**
  * TEN-04: GET /api/opponents is one of the resolveSubject-covered routes
@@ -17,7 +18,7 @@ export function opponentsQueryKey(subject: ActiveSubject) {
 /** GET /api/opponents — known opponent names for the active subject. */
 export function useOpponents() {
   const { user } = useAuth();
-  const subject = useActiveSubject();
+  const subject = useEffectiveSubject();
   return useQuery({
     queryKey: opponentsQueryKey(subject),
     queryFn: () => api.opponents.list(),

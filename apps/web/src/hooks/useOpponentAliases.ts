@@ -2,8 +2,9 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { UpsertOpponentAliasInput } from '@smash-tracker/shared';
 import { api } from '@/lib/api';
 import { subjectScope } from '@/lib/subjectQueryKey';
-import { useActiveSubject, type ActiveSubject } from './useActiveSubject';
+import type { ActiveSubject } from './useActiveSubject';
 import { useAuth } from './useAuth';
+import { useEffectiveSubject } from './useEffectiveSubject';
 
 /** TEN-04: subject-scoped so Personal/Client A/Client B alias maps never share a cache entry. */
 export function opponentAliasesQueryKey(subject: ActiveSubject) {
@@ -19,7 +20,7 @@ export function opponentAliasesQueryKey(subject: ActiveSubject) {
  */
 export function useOpponentAliases() {
   const { user } = useAuth();
-  const subject = useActiveSubject();
+  const subject = useEffectiveSubject();
   return useQuery({
     queryKey: opponentAliasesQueryKey(subject),
     queryFn: () => api.opponents.aliases.list(),
@@ -30,7 +31,7 @@ export function useOpponentAliases() {
 /** PUT /api/opponents/aliases/:alias. Invalidates the alias map + opponents list. */
 export function useUpsertOpponentAlias() {
   const queryClient = useQueryClient();
-  const subject = useActiveSubject();
+  const subject = useEffectiveSubject();
   return useMutation({
     mutationFn: ({ alias, input }: { alias: string; input: UpsertOpponentAliasInput }) =>
       api.opponents.aliases.upsert(alias, input),
@@ -43,7 +44,7 @@ export function useUpsertOpponentAlias() {
 /** DELETE /api/opponents/aliases/:alias (un-merge). Invalidates the alias map. */
 export function useDeleteOpponentAlias() {
   const queryClient = useQueryClient();
-  const subject = useActiveSubject();
+  const subject = useEffectiveSubject();
   return useMutation({
     mutationFn: (alias: string) => api.opponents.aliases.remove(alias),
     onSuccess: async () => {

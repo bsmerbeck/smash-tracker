@@ -4,8 +4,9 @@ import { toast } from 'sonner';
 import type { StageFavorites, UpsertStageFavoritesInput } from '@smash-tracker/shared';
 import { api } from '@/lib/api';
 import { subjectScope } from '@/lib/subjectQueryKey';
-import { useActiveSubject, type ActiveSubject } from './useActiveSubject';
+import type { ActiveSubject } from './useActiveSubject';
 import { useAuth } from './useAuth';
+import { useEffectiveSubject } from './useEffectiveSubject';
 
 /** TEN-04: subject-scoped so Personal/Client A/Client B favorited stages never share a cache entry. */
 export function stageFavoritesQueryKey(subject: ActiveSubject) {
@@ -20,7 +21,7 @@ export function stageFavoritesQueryKey(subject: ActiveSubject) {
  */
 export function useStageFavorites() {
   const { user } = useAuth();
-  const subject = useActiveSubject();
+  const subject = useEffectiveSubject();
   return useQuery({
     queryKey: stageFavoritesQueryKey(subject),
     queryFn: () => api.stageFavorites.get(),
@@ -38,7 +39,7 @@ export function useStageFavorites() {
  */
 export function useUpdateStageFavorites() {
   const queryClient = useQueryClient();
-  const subject = useActiveSubject();
+  const subject = useEffectiveSubject();
   const queryKey = stageFavoritesQueryKey(subject);
   return useMutation({
     mutationFn: (input: UpsertStageFavoritesInput) => api.stageFavorites.update(input),
