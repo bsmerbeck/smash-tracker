@@ -2296,5 +2296,45 @@
     "84": "Pyra / Mythra",
     "85": "Kazuya",
     "86": "Sora"
+  },
+  "ownerWorkspace": {
+    "pageTitle": "Mon espace de travail",
+    "overviewTitle": "Aperçu",
+    "overviewSubtitle": "Vous êtes propriétaire de cet espace de travail — votre coach peut y collaborer, mais vous gardez le contrôle.",
+    "ownedBadge": "Vous êtes propriétaire",
+    "quickLinks": {
+      "matches": "Matchs",
+      "vods": "VODs",
+      "analytics": "Analytique",
+      "fighters": "Personnages"
+    },
+    "stats": {
+      "matches_one": "{{count}} match",
+      "matches_other": "{{count}} matchs",
+      "vods_one": "{{count}} VOD",
+      "vods_other": "{{count}} VODs"
+    },
+    "notAuthorized": {
+      "title": "Cet espace de travail n'est pas disponible",
+      "body": "Cet espace de travail n'est pas disponible pour votre compte.",
+      "backToDashboard": "Retour au tableau de bord"
+    },
+    "coachAccess": {
+      "title": "Accès du coach",
+      "description": "Un coach délégué peut consulter et contribuer à cet espace de travail. Il ne peut jamais le supprimer, l'archiver ou l'exporter — et l'accès prend fin immédiatement si vous le révoquez.",
+      "delegatedCoach": "Coach délégué : {{uid}}",
+      "none": "Aucun coach n'a actuellement accès à cet espace de travail.",
+      "revokeTrigger": "Révoquer l'accès",
+      "revokeConfirmBody": "Cela met fin immédiatement à l'accès du coach à cet espace de travail.",
+      "revokeConfirmCancel": "Annuler",
+      "revokeConfirmAction": "Révoquer",
+      "revokedToast": "Accès du coach révoqué",
+      "revokeError": "Impossible de révoquer l'accès du coach. Réessayez."
+    },
+    "fighters": {
+      "title": "Personnages",
+      "subtitle": "Vos personnages principaux. Vos statistiques sont calculées à partir de ceux-ci.",
+      "saveButton": "Enregistrer"
+    }
   }
 }

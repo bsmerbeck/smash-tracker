@@ -146,6 +146,35 @@ const SessionComposerPage = lazy(() =>
     default: m.SessionComposerPage,
   })),
 );
+// Phase 24 (Coach Issuance & Client Claim Experience, CTRL-01/CTRL-02): the
+// client-owned workspace family (registered below). A PARALLEL sibling of
+// `/coach/:clientId` (owner binding decision, Area 4.1) — its own gate,
+// layout, and route-derived subject, never the coach-side ones.
+const ClientOwnedWorkspaceGate = lazy(() =>
+  import('@/pages/ClientWorkspace/ClientOwnedWorkspaceGate').then((m) => ({
+    default: m.ClientOwnedWorkspaceGate,
+  })),
+);
+const ClientOwnedWorkspaceLayout = lazy(() =>
+  import('@/pages/ClientWorkspace/ClientOwnedWorkspaceLayout').then((m) => ({
+    default: m.ClientOwnedWorkspaceLayout,
+  })),
+);
+const OwnerWorkspaceOverviewPage = lazy(() =>
+  import('@/pages/ClientWorkspace/OwnerWorkspaceOverviewPage').then((m) => ({
+    default: m.OwnerWorkspaceOverviewPage,
+  })),
+);
+const OwnerAnalyticsLayout = lazy(() =>
+  import('@/pages/ClientWorkspace/OwnerAnalyticsLayout').then((m) => ({
+    default: m.OwnerAnalyticsLayout,
+  })),
+);
+const OwnerFightersPage = lazy(() =>
+  import('@/pages/ClientWorkspace/OwnerFightersPage').then((m) => ({
+    default: m.OwnerFightersPage,
+  })),
+);
 
 /** Minimal route-transition fallback — matches HomePage's `loading → null` behavior in spirit without layout shift once content lands. */
 function RouteFallback() {
@@ -410,6 +439,42 @@ export function AppRouter() {
                 composer — a SIBLING pair to the reviews routes above. */}
             <Route path="sessions" element={<SessionsListPage />} />
             <Route path="sessions/:sessionId" element={<SessionComposerPage />} />
+            <Route path="gsp" element={<Navigate to="../overview" replace />} />
+            <Route path="integrations" element={<Navigate to="../overview" replace />} />
+            <Route path="reports" element={<Navigate to="../overview" replace />} />
+          </Route>
+          {/* Phase 24 (Coach Issuance & Client Claim Experience, CTRL-01/
+              CTRL-02): the client-owned workspace family, parallel to
+              `/coach/:clientId` above by binding owner decision (Area 4.1) —
+              its own gate/layout, never CoachingModeGate/ClientWorkspaceLayout.
+              Shares only the leaf page components, which are already
+              subject-parameterized through X-Active-Subject. Reviews and
+              Sessions are deliberately omitted in v2.4 (coach-authoring
+              surfaces) and redirect to `overview` rather than render a stub,
+              matching the gsp/integrations/reports precedent above. Nothing
+              inside the `/coach` block above is touched by this addition. */}
+          <Route
+            path="/workspace/:tenantId"
+            element={
+              <ProtectedRoute>
+                <ClientOwnedWorkspaceGate>
+                  <ClientOwnedWorkspaceLayout />
+                </ClientOwnedWorkspaceGate>
+              </ProtectedRoute>
+            }
+          >
+            <Route index element={<Navigate to="overview" replace />} />
+            <Route path="overview" element={<OwnerWorkspaceOverviewPage />} />
+            <Route path="fighters" element={<OwnerFightersPage />} />
+            <Route path="vods" element={<VodManagerPage />} />
+            <Route path="match-data" element={<MatchDataPage />} />
+            <Route element={<OwnerAnalyticsLayout />}>
+              <Route path="dashboard" element={<DashboardPage />} />
+              <Route path="fighter-analysis" element={<FighterAnalysisPage />} />
+              <Route path="matchups" element={<MatchupsPage />} />
+            </Route>
+            <Route path="reviews" element={<Navigate to="../overview" replace />} />
+            <Route path="sessions" element={<Navigate to="../overview" replace />} />
             <Route path="gsp" element={<Navigate to="../overview" replace />} />
             <Route path="integrations" element={<Navigate to="../overview" replace />} />
             <Route path="reports" element={<Navigate to="../overview" replace />} />

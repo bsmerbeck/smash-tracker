@@ -2296,5 +2296,45 @@
     "84": "ホムラ / ヒカリ",
     "85": "カズヤ",
     "86": "ソラ"
+  },
+  "ownerWorkspace": {
+    "pageTitle": "マイワークスペース",
+    "overviewTitle": "概要",
+    "overviewSubtitle": "このワークスペースはあなたが所有しています — コーチは共同作業できますが、管理権はあなたにあります。",
+    "ownedBadge": "所有中",
+    "quickLinks": {
+      "matches": "対戦",
+      "vods": "VOD",
+      "analytics": "分析",
+      "fighters": "キャラクター"
+    },
+    "stats": {
+      "matches_one": "{{count}}件の対戦",
+      "matches_other": "{{count}}件の対戦",
+      "vods_one": "{{count}}件のVOD",
+      "vods_other": "{{count}}件のVOD"
+    },
+    "notAuthorized": {
+      "title": "このワークスペースは利用できません",
+      "body": "このワークスペースはあなたのアカウントでは利用できません。",
+      "backToDashboard": "ダッシュボードに戻る"
+    },
+    "coachAccess": {
+      "title": "コーチのアクセス",
+      "description": "委任されたコーチはこのワークスペースを閲覧・編集できます。削除、アーカイブ、エクスポートは一切できません — アクセスを取り消すと即座に権限を失います。",
+      "delegatedCoach": "委任中のコーチ: {{uid}}",
+      "none": "現在、このワークスペースにアクセスできるコーチはいません。",
+      "revokeTrigger": "アクセスを取り消す",
+      "revokeConfirmBody": "これにより、コーチのこのワークスペースへのアクセスが即座に終了します。",
+      "revokeConfirmCancel": "キャンセル",
+      "revokeConfirmAction": "取り消す",
+      "revokedToast": "コーチのアクセスを取り消しました",
+      "revokeError": "コーチのアクセスを取り消せませんでした。もう一度お試しください。"
+    },
+    "fighters": {
+      "title": "キャラクター",
+      "subtitle": "あなたの使用キャラクター。分析はこれらに基づいて計算されます。",
+      "saveButton": "保存"
+    }
   }
 }

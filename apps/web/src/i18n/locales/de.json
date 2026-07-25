@@ -2296,5 +2296,45 @@
     "84": "Pyra / Mythra",
     "85": "Kazuya",
     "86": "Sora"
+  },
+  "ownerWorkspace": {
+    "pageTitle": "Mein Arbeitsbereich",
+    "overviewTitle": "Übersicht",
+    "overviewSubtitle": "Dieser Arbeitsbereich gehört dir — dein Coach kann daran mitarbeiten, aber du hast die Kontrolle.",
+    "ownedBadge": "Dir gehörend",
+    "quickLinks": {
+      "matches": "Matches",
+      "vods": "VODs",
+      "analytics": "Analysen",
+      "fighters": "Kämpfer"
+    },
+    "stats": {
+      "matches_one": "{{count}} Match",
+      "matches_other": "{{count}} Matches",
+      "vods_one": "{{count}} VOD",
+      "vods_other": "{{count}} VODs"
+    },
+    "notAuthorized": {
+      "title": "Dieser Arbeitsbereich ist nicht verfügbar",
+      "body": "Dieser Arbeitsbereich ist für dein Konto nicht verfügbar.",
+      "backToDashboard": "Zurück zum Dashboard"
+    },
+    "coachAccess": {
+      "title": "Coach-Zugriff",
+      "description": "Ein delegierter Coach kann diesen Arbeitsbereich einsehen und daran mitwirken. Er kann ihn niemals löschen, archivieren oder exportieren — und der Zugriff endet sofort, wenn du ihn widerrufst.",
+      "delegatedCoach": "Delegierter Coach: {{uid}}",
+      "none": "Derzeit hat kein Coach Zugriff auf diesen Arbeitsbereich.",
+      "revokeTrigger": "Zugriff widerrufen",
+      "revokeConfirmBody": "Dies beendet sofort den Zugriff des Coaches auf diesen Arbeitsbereich.",
+      "revokeConfirmCancel": "Abbrechen",
+      "revokeConfirmAction": "Widerrufen",
+      "revokedToast": "Coach-Zugriff widerrufen",
+      "revokeError": "Coach-Zugriff konnte nicht widerrufen werden. Versuche es erneut."
+    },
+    "fighters": {
+      "title": "Kämpfer",
+      "subtitle": "Deine Hauptkämpfer. Deine Statistiken werden anhand dieser berechnet.",
+      "saveButton": "Speichern"
+    }
   }
 }

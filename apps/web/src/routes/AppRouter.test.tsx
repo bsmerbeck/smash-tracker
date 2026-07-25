@@ -30,6 +30,19 @@ const getFighters = vi.fn();
 const matchesList = vi.fn();
 const clientsList = vi.fn();
 const startggStatus = vi.fn();
+const clientWorkspacesList = vi.fn();
+
+const { MockApiError } = vi.hoisted(() => {
+  class MockApiError extends Error {
+    readonly status: number;
+    constructor(status: number, message: string) {
+      super(message);
+      this.name = 'ApiError';
+      this.status = status;
+    }
+  }
+  return { MockApiError };
+});
 
 vi.mock('@/lib/api', () => ({
   api: {
@@ -42,8 +55,13 @@ vi.mock('@/lib/api', () => ({
     coaching: {
       clients: { list: (...args: unknown[]) => clientsList(...args) },
     },
+    clientWorkspaces: {
+      list: (...args: unknown[]) => clientWorkspacesList(...args),
+      revokeDelegation: vi.fn(),
+    },
     startgg: { status: (...args: unknown[]) => startggStatus(...args) },
   },
+  ApiError: MockApiError,
 }));
 
 /**
@@ -114,5 +132,43 @@ describe('AppRouter — coaching workspace routes (fix round 2)', () => {
     expect(window.location.pathname).toBe('/coach/tetra/overview');
     // No stale "unavailable" panel ever renders — the redirect is the only surface.
     expect(screen.queryByText(/not available/i)).not.toBeInTheDocument();
+  });
+});
+
+describe('AppRouter — client-owned workspace routes (Phase 24)', () => {
+  beforeEach(() => {
+    resetAuthMock();
+    vi.clearAllMocks();
+    setMockUser(makeMockUser({ email: 'client@example.com' }));
+    getMe.mockResolvedValue({
+      uid: 'test-uid',
+      email: 'client@example.com',
+      fighters: { primary: [], secondary: [] },
+      coachingModeEnabled: false,
+    });
+    getFighters.mockResolvedValue({ primary: [], secondary: [] });
+    matchesList.mockResolvedValue([]);
+    clientsList.mockResolvedValue([]);
+    clientWorkspacesList.mockResolvedValue([
+      { tenantId: 't1', label: 'My Workspace', claimedAt: 1, delegateCoachUid: null },
+    ]);
+    startggStatus.mockResolvedValue({ linked: false });
+  });
+
+  afterEach(() => {
+    window.history.pushState({}, '', '/');
+  });
+
+  it('/workspace/t1/overview reaches the gate and renders the owned Overview', async () => {
+    renderAt('/workspace/t1/overview');
+
+    expect(await screen.findByText(/My Workspace/)).toBeInTheDocument();
+  });
+
+  it('/workspace/t1/reviews redirects to /workspace/t1/overview', async () => {
+    renderAt('/workspace/t1/reviews');
+
+    expect(await screen.findByText(/My Workspace/)).toBeInTheDocument();
+    expect(window.location.pathname).toBe('/workspace/t1/overview');
   });
 });
