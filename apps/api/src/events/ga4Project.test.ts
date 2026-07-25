@@ -279,6 +279,31 @@ describe('projectEventToGa4 — coaching/onboarding ledger-only events (quick ta
 });
 
 /**
+ * Phase 23 (Claim Credential & Atomic Ownership Transition, T-23-02): all
+ * six claim/delegation events are catalogued in EVENT_CATALOG but
+ * deliberately absent from GA4_PAYLOAD_ALLOWLIST — this locks the omission
+ * in so a future casual allowlist edit fails CI.
+ */
+describe('projectEventToGa4 — Phase 23 claim/delegation events deliberately omitted from GA4', () => {
+  it.each([
+    'claim_invitation_created',
+    'claim_invitation_revoked',
+    'claim_completed',
+    'claim_conflict_detected',
+    'coach_delegation_granted',
+    'coach_delegation_revoked',
+  ])('returns null for %s', (eventName) => {
+    const projected = projectEventToGa4(baseEnvelope({ eventName }));
+    expect(projected).toBeNull();
+  });
+
+  it('still projects an existing allowlisted event (no regression)', () => {
+    const projected = projectEventToGa4(baseEnvelope({ eventName: 'checkout_completed' }));
+    expect(projected).not.toBeNull();
+  });
+});
+
+/**
  * MEAS-06 (Claude's-discretion validation-endpoint test per RESEARCH.md
  * Pattern 7): asserts a projected payload passes GA4's own schema
  * validation via `/debug/mp/collect` — a TEST, never a runtime code path.

@@ -152,6 +152,20 @@ export const EVENT_CATALOG = {
   session_delivery_created: 'D',
   review_delivery_created: 'D',
   review_delivery_revoked: 'D',
+  // Phase 23 (Claim Credential & Atomic Ownership Transition, EVT-01/EVT-02/
+  // EVT-03): all six are D-class because each fires only AFTER its own
+  // durable RTDB write commits. Payloads are content-free (enum reason
+  // codes and nothing else — never a raw claim code, never a digest, never
+  // a label). The final delegation-revoke event below is defined and
+  // emitted-capable here even though its only UI caller lands in Phase 24,
+  // because Phase 23 owns the revoke primitive and its emitter per
+  // CONTEXT.md.
+  claim_invitation_created: 'D',
+  claim_invitation_revoked: 'D',
+  claim_completed: 'D',
+  claim_conflict_detected: 'D',
+  coach_delegation_granted: 'D',
+  coach_delegation_revoked: 'D',
 } as const;
 export type EventCatalogName = keyof typeof EVENT_CATALOG;
 export type EventClass = (typeof EVENT_CATALOG)[EventCatalogName];
