@@ -108,34 +108,45 @@ export function DeliveryVodNotesTab({ vods }: DeliveryVodNotesTabProps) {
         </Select>
       )}
 
-      <div className="flex flex-col gap-1.5">
-        <p className="text-[10.5px] font-medium tracking-wide text-muted-foreground uppercase">
-          {t('reviewDelivery.nowPlaying')}
-        </p>
-        <p className="text-sm font-medium">{vodDisplayLabel(currentVod, resolvedIndex)}</p>
-        <VodPlayer
-          vodUrl={currentVod.vodUrl}
-          startSeconds={startSecondsOverride ?? currentVod.startSeconds ?? undefined}
-          seekRef={seekRef}
-        />
-      </div>
+      {/* 260725-Q4: player left, notes right at `lg:` (mirrors
+          VodManagerPage's `grid-cols-[2fr_minmax(320px,1fr)]` compact-rail
+          convention) — mobile/narrow stays the plain stacked flex-col above.
+          `lg:items-start` keeps the notes column's height intrinsic instead
+          of grid-stretching it to the (usually taller) player column;
+          `lg:max-h-[70vh] lg:overflow-y-auto` caps a long note list so it
+          scrolls internally rather than pushing the player out of view. */}
+      <div className="flex flex-col gap-4 lg:grid lg:grid-cols-[2fr_minmax(320px,1fr)] lg:items-start lg:gap-6">
+        <div className="flex flex-col gap-1.5">
+          <p className="text-[10.5px] font-medium tracking-wide text-muted-foreground uppercase">
+            {t('reviewDelivery.nowPlaying')}
+          </p>
+          <p className="text-sm font-medium">{vodDisplayLabel(currentVod, resolvedIndex)}</p>
+          <VodPlayer
+            vodUrl={currentVod.vodUrl}
+            startSeconds={startSecondsOverride ?? currentVod.startSeconds ?? undefined}
+            seekRef={seekRef}
+          />
+        </div>
 
-      <div className="flex flex-col gap-2">
-        <h3 className="text-sm font-semibold">{t('reviewDelivery.vodNotes.notesHeading')}</h3>
-        {timestamps.length === 0 ? (
-          <p className="text-sm text-muted-foreground">{t('reviewDelivery.vodNotes.notesEmpty')}</p>
-        ) : (
-          <div className="flex flex-col gap-2">
-            {timestamps.map((stamp, index) => (
-              <ShareTimestampRow
-                key={`${currentVod.matchId}-${stamp.seconds}-${index}`}
-                stamp={stamp}
-                isSelected={selectedSeconds === stamp.seconds}
-                onSelect={(seconds) => handleActivate(currentVod.matchId, seconds)}
-              />
-            ))}
-          </div>
-        )}
+        <div className="flex flex-col gap-2 lg:max-h-[70vh] lg:overflow-y-auto">
+          <h3 className="text-sm font-semibold">{t('reviewDelivery.vodNotes.notesHeading')}</h3>
+          {timestamps.length === 0 ? (
+            <p className="text-sm text-muted-foreground">
+              {t('reviewDelivery.vodNotes.notesEmpty')}
+            </p>
+          ) : (
+            <div className="flex flex-col gap-2">
+              {timestamps.map((stamp, index) => (
+                <ShareTimestampRow
+                  key={`${currentVod.matchId}-${stamp.seconds}-${index}`}
+                  stamp={stamp}
+                  isSelected={selectedSeconds === stamp.seconds}
+                  onSelect={(seconds) => handleActivate(currentVod.matchId, seconds)}
+                />
+              ))}
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );
