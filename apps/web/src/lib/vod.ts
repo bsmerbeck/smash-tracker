@@ -6,17 +6,22 @@
  * just without a seek).
  */
 
+import { MAX_VOD_TIMESTAMPS_PER_MATCH } from '@smash-tracker/shared';
+
 const YOUTUBE_HOSTS = new Set(['youtube.com', 'www.youtube.com', 'm.youtube.com']);
 const YOUTUBE_SHORT_HOSTS = new Set(['youtu.be', 'www.youtu.be']);
 const TWITCH_HOSTS = new Set(['twitch.tv', 'www.twitch.tv', 'm.twitch.tv']);
 
 /**
- * Maximum timestamp notes allowed per match (NOTE-01). Single shared source
- * — every note-creation path (the persistent composer AND the quick-tag
- * panel capture) enforces this same constant so the cap is never able to
- * diverge between the two entry points.
+ * Maximum timestamp notes allowed per match (NOTE-01, raised 260725-Q3 from
+ * 20 to 1000). Re-exported under the historical `MAX_TIMESTAMPS` name so
+ * every existing web consumer (the persistent composer AND the quick-tag
+ * panel capture) keeps importing from `@/lib/vod` — but the numeric value
+ * now derives from `@smash-tracker/shared`'s `MAX_VOD_TIMESTAMPS_PER_MATCH`,
+ * the same constant the API's write-side cap enforces, so the cap can never
+ * diverge between client validation, server validation, and the read schema.
  */
-export const MAX_TIMESTAMPS = 20;
+export const MAX_TIMESTAMPS = MAX_VOD_TIMESTAMPS_PER_MATCH;
 
 /**
  * Discriminated union identifying which embeddable provider (if any) a VOD

@@ -21,6 +21,17 @@ export const matchTypeSchema = z.enum(matchTypeValues);
 export type MatchType = z.infer<typeof matchTypeSchema>;
 
 /**
+ * Maximum VOD timestamp notes allowed per match (NOTE-01, raised 260725-Q3
+ * from the original 20). Single shared source — `matchRecordSchema`/
+ * `matchSchema`'s `.max()` caps below, the API's write-side transaction cap
+ * (`apps/api/src/services/rtdb.ts`), and every web note-creation entry point
+ * (`apps/web/src/lib/vod.ts`'s re-exported `MAX_TIMESTAMPS`) all derive from
+ * this constant so the cap can never diverge between read/write validation
+ * and the UI.
+ */
+export const MAX_VOD_TIMESTAMPS_PER_MATCH = 1000;
+
+/**
  * A single VOD timestamp note (V7-E): `seconds` is the offset into the VOD
  * to deep-link to, `note` is the free-text callout (e.g. "missed punish on
  * shield"). Lives alongside `vodUrl` on `matchRecordSchema` — user-editable
@@ -289,7 +300,7 @@ export const matchRecordSchema = z.object({
    */
   vodTimestamps: z.preprocess(
     (raw) => (raw === null || raw === undefined ? undefined : normalizeVodTimestampsNode(raw)),
-    z.array(vodTimestampEntrySchema).max(20).optional(),
+    z.array(vodTimestampEntrySchema).max(MAX_VOD_TIMESTAMPS_PER_MATCH).optional(),
   ),
   /**
    * User-set offset (whole seconds) into the match's VOD where this match
@@ -351,7 +362,7 @@ export type MatchRecord = z.infer<typeof matchRecordSchema>;
  */
 export const matchSchema = matchRecordSchema.extend({
   id: z.string().min(1),
-  vodTimestamps: z.array(vodTimestampEntrySchema).max(20).optional(),
+  vodTimestamps: z.array(vodTimestampEntrySchema).max(MAX_VOD_TIMESTAMPS_PER_MATCH).optional(),
 });
 export type Match = z.infer<typeof matchSchema>;
 

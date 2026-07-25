@@ -12,6 +12,7 @@ import {
   MAX_DELIVERY_VODS,
   MAX_PLAYLISTS_PER_USER,
   MAX_SHARES_PER_USER,
+  MAX_VOD_TIMESTAMPS_PER_MATCH,
   normalizeVodTimestampsNode,
   opponentAliasMapSchema,
   opponentMapSchema,
@@ -297,13 +298,6 @@ const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
  * lets the global handler render `error.message` leaks nothing.
  */
 const SHARE_UNAVAILABLE_MESSAGE = 'This share is no longer available';
-
-/**
- * Shared note cap across every writer (owner + coach, Phase 8) — mirrors
- * `vodTimestampEntrySchema`'s `.max(20)` read-side cap, enforced here
- * write-side by the `createNote` transaction on the parent node (T-08-05).
- */
-const MAX_VOD_TIMESTAMPS_PER_MATCH = 20;
 
 /**
  * Review WR-08: the three note transactions (`createNote`,

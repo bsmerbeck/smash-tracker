@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { MAX_VOD_TIMESTAMPS_PER_MATCH } from '@smash-tracker/shared';
 import { buildTestApp, TEST_UID } from '../test-support/testApp.js';
 
 // Valid-SHAPE tokens (20+ base64url chars, matching SHARE_TOKEN_SHAPE) —
@@ -260,12 +261,15 @@ describe('POST /api/vod-shares/:token/notes', () => {
     expect(response.json()).toEqual(UNAVAILABLE_404);
   });
 
-  it('rejects the 21st note with a 403 (shared cap, server-enforced)', async () => {
+  it('rejects the note past MAX_VOD_TIMESTAMPS_PER_MATCH with a 403 (shared cap, server-enforced)', async () => {
     const { app, database } = buildTestApp();
-    const twenty = Object.fromEntries(
-      Array.from({ length: 20 }, (_, i) => [`k${i}`, { seconds: i, note: `note ${i}` }]),
+    const atCap = Object.fromEntries(
+      Array.from({ length: MAX_VOD_TIMESTAMPS_PER_MATCH }, (_, i) => [
+        `k${i}`,
+        { seconds: i, note: `note ${i}` },
+      ]),
     );
-    seedEditShare(database, { matchOverrides: { vodTimestamps: twenty } });
+    seedEditShare(database, { matchOverrides: { vodTimestamps: atCap } });
 
     const response = await app.inject({
       method: 'POST',
