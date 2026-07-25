@@ -20,6 +20,10 @@ function renderWithProviders(ui: ReactElement, path = '/dashboard') {
         <AuthProvider>
           <Routes>
             <Route path="/coach/:clientId/*" element={ui} />
+            {/* Phase 24 (Coach Issuance & Client Claim Experience, CTRL-01):
+                the client-owned workspace family, a sibling of the coach
+                route above. */}
+            <Route path="/workspace/:tenantId/*" element={ui} />
             <Route path="*" element={ui} />
           </Routes>
         </AuthProvider>
@@ -48,6 +52,7 @@ vi.mock('@/lib/firebase', async () => {
 });
 
 const listClients = vi.fn().mockResolvedValue([]);
+const listWorkspaces = vi.fn().mockResolvedValue([]);
 
 vi.mock('@/lib/api', () => ({
   api: {
@@ -58,6 +63,9 @@ vi.mock('@/lib/api', () => ({
       clients: {
         list: (...args: unknown[]) => listClients(...args),
       },
+    },
+    clientWorkspaces: {
+      list: (...args: unknown[]) => listWorkspaces(...args),
     },
   },
 }));
@@ -203,5 +211,78 @@ describe('SidebarContent client-workspace rail (walkthrough fix round 2, D-01/D1
 
     const analytics = screen.getByRole('link', { name: 'Analytics' });
     expect(analytics.className).toEqual(expect.stringContaining('coaching-accent'));
+  });
+});
+
+/**
+ * Phase 24 (Coach Issuance & Client Claim Experience, CTRL-01): the
+ * owned-workspace rail — checked first in `SidebarContent`'s branch order,
+ * mutually exclusive with the coach and personal rails above/below it.
+ */
+describe('SidebarContent owned-workspace rail (Phase 24, CTRL-01)', () => {
+  beforeEach(() => {
+    resetAuthMock();
+    vi.clearAllMocks();
+    setMockUser(makeMockUser({ email: 'pilot@example.com' }));
+  });
+
+  it('renders the owned-workspace rail with a back link, header card, and five nav items', async () => {
+    listWorkspaces.mockResolvedValue([
+      { tenantId: 't1', label: 'My Workspace', claimedAt: 1, delegateCoachUid: null },
+    ]);
+    renderWithProviders(<SidebarContent />, '/workspace/t1/vods');
+
+    const backLink = screen.getByRole('link', { name: /Back to personal/i });
+    expect(backLink).toHaveAttribute('href', '/dashboard');
+
+    expect(await screen.findByText('My Workspace')).toBeInTheDocument();
+    expect(screen.getByText('Your workspace')).toBeInTheDocument();
+
+    expect(screen.getByRole('link', { name: 'Overview' })).toHaveAttribute(
+      'href',
+      '/workspace/t1/overview',
+    );
+    expect(screen.getByRole('link', { name: 'Fighters' })).toHaveAttribute(
+      'href',
+      '/workspace/t1/fighters',
+    );
+    expect(screen.getByRole('link', { name: 'Matches' })).toHaveAttribute(
+      'href',
+      '/workspace/t1/match-data',
+    );
+    expect(screen.getByRole('link', { name: 'VODs' })).toHaveAttribute(
+      'href',
+      '/workspace/t1/vods',
+    );
+    expect(screen.getByRole('link', { name: 'Analytics' })).toHaveAttribute(
+      'href',
+      '/workspace/t1/dashboard',
+    );
+  });
+
+  it('does not render Reviews or Sessions items in the owned-workspace rail', async () => {
+    listWorkspaces.mockResolvedValue([
+      { tenantId: 't1', label: 'My Workspace', claimedAt: 1, delegateCoachUid: null },
+    ]);
+    renderWithProviders(<SidebarContent />, '/workspace/t1/vods');
+
+    await screen.findByText('My Workspace');
+    expect(screen.queryByRole('link', { name: /Reviews/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: /Sessions/ })).not.toBeInTheDocument();
+  });
+
+  it('still renders the coach client rail unchanged on a coach route', async () => {
+    listClients.mockResolvedValue([{ clientId: 'c1', label: 'Client One', draftCount: 0 }]);
+    renderWithProviders(<SidebarContent />, '/coach/c1/vods');
+
+    expect(await screen.findByText('Client One')).toBeInTheDocument();
+    expect(screen.getByText('Managed client')).toBeInTheDocument();
+  });
+
+  it('still renders the personal rail unchanged on a personal route', () => {
+    renderWithProviders(<SidebarContent />, '/dashboard');
+
+    const profileLink = screen.getByRole('link', { name: 'Your profile' });
+    expect(profileLink).toHaveAttribute('href', '/profile');
   });
 });

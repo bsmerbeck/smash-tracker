@@ -35,6 +35,7 @@ const getMe = vi.fn().mockResolvedValue({
 });
 
 const listClients = vi.fn().mockResolvedValue([]);
+const listWorkspaces = vi.fn().mockResolvedValue([]);
 
 vi.mock('@/lib/api', () => ({
   api: {
@@ -49,6 +50,9 @@ vi.mock('@/lib/api', () => ({
       clients: {
         list: (...args: unknown[]) => listClients(...args),
       },
+    },
+    clientWorkspaces: {
+      list: (...args: unknown[]) => listWorkspaces(...args),
     },
   },
 }));
@@ -71,6 +75,10 @@ function renderTopbarAt(path: string) {
           <AnalyticsFilterProvider>
             <Routes>
               <Route path="/coach/:clientId/*" element={<Topbar />} />
+              {/* Phase 24 (Coach Issuance & Client Claim Experience, CTRL-01):
+                  the client-owned workspace family, a sibling of the coach
+                  route above. */}
+              <Route path="/workspace/:tenantId/*" element={<Topbar />} />
               <Route path="*" element={<Topbar />} />
             </Routes>
           </AnalyticsFilterProvider>
@@ -340,5 +348,62 @@ describe('Topbar hub client picker (walkthrough fix round 3, FB-4)', () => {
     await user.click(picker);
 
     expect(await screen.findByText('No clients yet')).toBeInTheDocument();
+  });
+});
+
+/**
+ * Phase 24 (Coach Issuance & Client Claim Experience, CTRL-01): the
+ * owned-workspace chip — an additive branch, mutually exclusive with the
+ * coach-side chips above (`mode` stays `'personal'` throughout the
+ * client-owned workspace family).
+ */
+describe('Topbar owned-workspace chip (Phase 24, CTRL-01)', () => {
+  beforeEach(() => {
+    resetAuthMock();
+    vi.clearAllMocks();
+    getMe.mockResolvedValue({
+      uid: 'test-uid',
+      email: 'test@example.com',
+      fighters: { primary: [], secondary: [] },
+      coachingModeEnabled: false,
+    });
+    listWorkspaces.mockResolvedValue([
+      { tenantId: 't1', label: 'My Workspace', claimedAt: 1, delegateCoachUid: null },
+    ]);
+    setMockUser(makeMockUser({ email: 'pilot@example.com' }));
+  });
+
+  it('renders the owned-workspace chip and neither coach chip inside the owned workspace', async () => {
+    renderTopbarAt('/workspace/t1/overview');
+
+    expect(
+      await screen.findByRole('button', { name: /Workspace: My Workspace/ }),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Managing/ })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: 'Select a client to manage' }),
+    ).not.toBeInTheDocument();
+  });
+
+  it('renders the coach client chip exactly as before, and no owned-workspace chip, on a coach route', async () => {
+    listClients.mockResolvedValue([{ clientId: 'c1', label: 'Client One', draftCount: 0 }]);
+    getMe.mockResolvedValue({
+      uid: 'test-uid',
+      email: 'test@example.com',
+      fighters: { primary: [], secondary: [] },
+      coachingModeEnabled: true,
+    });
+    renderTopbarAt('/coach/c1/overview');
+
+    expect(await screen.findByRole('button', { name: /Managing Client One/ })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /^Workspace:/ })).not.toBeInTheDocument();
+  });
+
+  it('renders neither workspace chip on a personal route', async () => {
+    renderTopbarAt('/dashboard');
+
+    await screen.findByText('grandfinals.gg');
+    expect(screen.queryByRole('button', { name: /^Workspace:/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Managing/ })).not.toBeInTheDocument();
   });
 });

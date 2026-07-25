@@ -18,10 +18,12 @@ import {
 import { useAuth } from '@/hooks/useAuth';
 import { useActiveSubject } from '@/hooks/useActiveSubject';
 import { useCoachingClients } from '@/hooks/useCoachingClients';
+import { useOwnedWorkspaceSubject } from '@/hooks/useOwnedWorkspaceSubject';
 import { useProfile } from '@/hooks/useProfile';
 import { cn } from '@/lib/utils';
 import { AnalyticsFilterControls } from '@/components/AnalyticsFilterControls';
 import { LanguageSelect } from '@/components/LanguageSelect';
+import { OwnerWorkspaceChip } from './OwnerWorkspaceChip';
 import { SidebarContent } from './SidebarContent';
 
 /**
@@ -183,11 +185,17 @@ export function Topbar() {
   const navigate = useNavigate();
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const { mode, clientId } = useActiveSubject();
+  const { tenantId: ownedTenantId } = useOwnedWorkspaceSubject();
   const { data: profile } = useProfile();
   const isCoachingWithClient = mode === 'coaching' && clientId != null;
   // Phase 11 fix round 3 (FB-4): the hub itself — coaching mode, no client
   // selected yet. Mutually exclusive with `isCoachingWithClient` above.
   const isCoachingHub = mode === 'coaching' && clientId == null;
+  // Phase 24 (Coach Issuance & Client Claim Experience, CTRL-01): the owner
+  // branch is mutually exclusive with the two above — `mode` stays
+  // `'personal'` throughout the client-owned workspace family, so this is
+  // the only signal that distinguishes it from a plain personal route.
+  const isOwnerWorkspace = ownedTenantId != null;
   // Phase 11 walkthrough fix round 1 (FB-3): coaching mode is opt-in
   // (Profile > Account) — hide the switch entirely for beginners who never
   // turned it on, UNLESS they're already deep-linked under `/coach` (mode is
@@ -234,6 +242,7 @@ export function Topbar() {
         {showModeSwitch && <ModeSwitch mode={mode} className="hidden sm:flex" />}
         {isCoachingWithClient && <ClientChip clientId={clientId} />}
         {isCoachingHub && <HubClientPicker />}
+        {isOwnerWorkspace && <OwnerWorkspaceChip tenantId={ownedTenantId} />}
       </div>
 
       <div className="flex-1" />
@@ -262,6 +271,11 @@ export function Topbar() {
             {isCoachingHub && (
               <div className="sm:hidden">
                 <HubClientPicker />
+              </div>
+            )}
+            {isOwnerWorkspace && (
+              <div className="sm:hidden">
+                <OwnerWorkspaceChip tenantId={ownedTenantId} />
               </div>
             )}
             <p className="text-xs font-medium text-muted-foreground">

@@ -23,6 +23,7 @@ import { useActiveSubject } from '@/hooks/useActiveSubject';
 import { useCoachingReviews, useCreateCoachingReview } from '@/hooks/useCoachingReviews';
 import { useFighters } from '@/hooks/useFighters';
 import { useFilteredMatches } from '@/hooks/useFilteredMatches';
+import { useOwnedWorkspaceSubject } from '@/hooks/useOwnedWorkspaceSubject';
 import { useCreateNote, useDeleteNote, useUpdateNote } from '@/hooks/useVodNotes';
 import {
   useCreatePlaylist,
@@ -127,6 +128,12 @@ export function VodManagerPage() {
   // (CONTEXT.md) — the "My shares" entry point below renders an honest
   // unavailable state instead, never the coach's own personal share list.
   const { mode: activeMode, clientId } = useActiveSubject();
+  // Phase 24 (Coach Issuance & Client Claim Experience, CTRL-01): in the
+  // client-owned workspace family `useActiveSubject()` resolves
+  // personal/null by design (that hook only route-matches `/coach`), so
+  // this is the only signal that the fighter-setup CTA below needs to
+  // avoid sending the owner to their PERSONAL fighter picker.
+  const { tenantId: ownedTenantId } = useOwnedWorkspaceSubject();
   // D-01: the "Start review / Continue review" entry point — Continue when
   // an open draft exists for this client, Start otherwise (12-07's own
   // Claude's Discretion: no durable "review sources" schema exists yet to
@@ -182,7 +189,16 @@ export function VodManagerPage() {
   // consumer uses (`clientId != null`, never `activeMode === 'coaching'` —
   // see useActiveSubject's doc rule) so the CTA lands on the right fighter
   // picker for a coach's client workspace vs. the signed-in user's own.
-  const fighterSetupHref = clientId ? `/coach/${clientId}/fighters` : '/choose-primary';
+  // Phase 24 extends this to a three-way branch: a coach's client
+  // workspace wins first, then an owned (claimed) workspace — without this
+  // branch the workspace's own empty-fighters CTA would silently send the
+  // owner to their PERSONAL fighter picker and write fighters to the wrong
+  // subject — and personal is still the final fallback.
+  const fighterSetupHref = clientId
+    ? `/coach/${clientId}/fighters`
+    : ownedTenantId
+      ? `/workspace/${ownedTenantId}/fighters`
+      : '/choose-primary';
 
   const [filters, setFilters] = useState<VodManagerFilterState>(DEFAULT_VOD_MANAGER_FILTERS);
   const [sort, setSort] = useState<VodSortDirection>('newest');
