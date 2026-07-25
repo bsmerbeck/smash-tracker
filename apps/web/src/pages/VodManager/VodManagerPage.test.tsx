@@ -8,6 +8,7 @@ import { AnalyticsFilterProvider } from '@/context/AnalyticsFilterContext';
 import { VodManagerPage } from './VodManagerPage';
 import { resetAuthMock, setMockUser, makeMockUser } from '@/test/mockAuth';
 import { logProductEvent } from '@/lib/firebase';
+import { MAX_TIMESTAMPS } from '@/lib/vod';
 import { SpriteList } from '@/data/sprites';
 import type {
   TwitchPlayerConfig,
@@ -2550,7 +2551,7 @@ describe('VodManagerPage', () => {
 
   it('blocks a quick-tag capture once the match is at the MAX_TIMESTAMPS cap, via the existing cap toast', async () => {
     const user = userEvent.setup();
-    const twentyExisting = Array.from({ length: 20 }, (_, i) => ({
+    const existingAtCap = Array.from({ length: MAX_TIMESTAMPS }, (_, i) => ({
       id: `n${i}`,
       seconds: i,
       note: `note ${i}`,
@@ -2560,10 +2561,15 @@ describe('VodManagerPage', () => {
         id: 'm1',
         opponent: 'rival-one',
         vodUrl: 'https://youtube.com/watch?v=abc123',
-        vodTimestamps: twentyExisting,
+        vodTimestamps: existingAtCap,
       }),
     ]);
 
+    // Captures at a second that is NOT among the existing entries (which
+    // densely occupy 0..MAX_TIMESTAMPS-1) — this must exercise the
+    // create-a-new-row path (and get blocked by the cap), not the
+    // update-an-existing-row-at-this-second path.
+    const uncapturedSecond = MAX_TIMESTAMPS + 100;
     let capturedConfig: YouTubePlayerConfig | undefined;
     const Player = vi.fn(function (
       this: unknown,
@@ -2576,7 +2582,7 @@ describe('VodManagerPage', () => {
         playVideo: vi.fn(),
         pauseVideo: vi.fn(),
         destroy: vi.fn(),
-        getCurrentTime: vi.fn(() => 754),
+        getCurrentTime: vi.fn(() => uncapturedSecond),
       };
     });
     window.YT = { Player: Player as unknown as YTGlobal['Player'], PlayerState: { ENDED: 0 } };
@@ -2589,7 +2595,7 @@ describe('VodManagerPage', () => {
 
     await user.click(screen.getByRole('button', { name: 'Quick tag: Punish' }));
 
-    // Already at the 20-note cap — the click must not create a 21st note.
+    // Already at the MAX_TIMESTAMPS cap — the click must not create one more note.
     expect(createNote).not.toHaveBeenCalled();
     expect(updateNote).not.toHaveBeenCalled();
   });

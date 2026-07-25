@@ -3,6 +3,7 @@ import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { logProductEvent } from '@/lib/firebase';
+import { MAX_TIMESTAMPS } from '@/lib/vod';
 import { NoteComposer } from './NoteComposer';
 
 vi.mock('@/lib/firebase', () => ({
@@ -52,7 +53,7 @@ describe('NoteComposer', () => {
 
   it('does not fire vod_note_created when the timestamp cap blocks the add', async () => {
     const user = userEvent.setup();
-    const timestamps = Array.from({ length: 20 }, (_, i) => ({
+    const timestamps = Array.from({ length: MAX_TIMESTAMPS }, (_, i) => ({
       id: `n${i}`,
       seconds: i,
       note: `note ${i}`,

@@ -16,7 +16,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useUpdateMatch } from '@/hooks/useUpdateMatch';
 import { useCreateNote, useDeleteNote } from '@/hooks/useVodNotes';
-import { formatTimestamp, parseTimestamp, vodDeepLink } from '@/lib/vod';
+import { formatTimestamp, MAX_TIMESTAMPS, parseTimestamp, vodDeepLink } from '@/lib/vod';
 
 const LOCAL_ID_PREFIX = 'local-';
 
@@ -82,8 +82,6 @@ export function buildUpdateInput(
         : {}),
   };
 }
-
-const MAX_TIMESTAMPS = 20;
 
 /**
  * Dialog for attaching a VOD link and timestamped notes to a match (V7-E),
