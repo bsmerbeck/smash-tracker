@@ -166,13 +166,16 @@ describe('AppRouter — client-owned workspace routes (Phase 24)', () => {
   it('/workspace/t1/overview reaches the gate and renders the owned Overview', async () => {
     renderAt('/workspace/t1/overview');
 
-    expect(await screen.findByText(/My Workspace/)).toBeInTheDocument();
+    // 24-06's owner chrome (Topbar chip + Sidebar rail) also renders the
+    // workspace label, so the single-match query became ambiguous — assert
+    // presence, not uniqueness.
+    expect((await screen.findAllByText(/My Workspace/)).length).toBeGreaterThan(0);
   });
 
   it('/workspace/t1/reviews redirects to /workspace/t1/overview', async () => {
     renderAt('/workspace/t1/reviews');
 
-    expect(await screen.findByText(/My Workspace/)).toBeInTheDocument();
+    expect((await screen.findAllByText(/My Workspace/)).length).toBeGreaterThan(0);
     expect(window.location.pathname).toBe('/workspace/t1/overview');
   });
 });
