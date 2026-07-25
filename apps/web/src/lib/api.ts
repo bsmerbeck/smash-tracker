@@ -3,6 +3,8 @@ import {
   bulkShareResponseSchema,
   checkoutRequestSchema,
   checkoutResponseSchema,
+  claimInvitationStatusSchema,
+  claimRedeemedResponseSchema,
   clientHubListSchema,
   clientHubRowSchema,
   clientVisibleVersionSchema,
@@ -21,6 +23,7 @@ import {
   gspSettingsSchema,
   homeworkItemSchema,
   HOMEWORK_ITEM_TEXT_MAX_LENGTH,
+  issuedClaimInvitationSchema,
   joinGroupRequestSchema,
   manualTournamentEntryInputSchema,
   MAX_DELIVERY_VODS,
@@ -32,6 +35,7 @@ import {
   opponentListSchema,
   opponentNoteMapSchema,
   opponentNoteSchema,
+  ownedWorkspaceListSchema,
   parryggLinkRequestSchema,
   parryggLoginCompleteRequestSchema,
   parryggLoginCompleteResponseSchema,
@@ -946,6 +950,73 @@ export const api = {
           ),
       },
     },
+  },
+  /**
+   * Phase 24 (Coach Issuance & Client Claim Experience, ENTRY-02/CTRL-03):
+   * coach-side claim-code issue/reissue/revoke/status, nested under
+   * `/api/coaching/clients/:clientId/claim-invitations`
+   * (`apps/api/src/routes/claimInvitations.ts`). Every call takes `clientId`
+   * as an explicit argument — these routes gate directly on the URL's
+   * `:clientId` param (`request.uid`, no `X-Active-Subject` header), exactly
+   * like `coaching.reviews.*`/`coaching.sessions.*` above.
+   */
+  claims: {
+    /**
+     * POST .../claim-invitations — mints a fresh claim code for the client
+     * workspace, superseding any outstanding one. The 201 body is the ONLY
+     * place a raw claim code ever exists on the client — the caller must
+     * hold it in component state only and must never persist, log, cache,
+     * or route with it (T-24-11). Reissuing is not a separate endpoint:
+     * calling this again atomically invalidates any outstanding code
+     * (Phase 23 contract) — there is no separate method for it.
+     */
+    issue: (clientId: string) =>
+      apiRequestParsed(
+        `/api/coaching/clients/${encodeURIComponent(clientId)}/claim-invitations`,
+        issuedClaimInvitationSchema,
+        { method: 'POST' },
+      ),
+    /** DELETE .../claim-invitations — standalone revoke; idempotent when nothing is outstanding. */
+    revoke: (clientId: string) =>
+      apiRequest<void>(`/api/coaching/clients/${encodeURIComponent(clientId)}/claim-invitations`, {
+        method: 'DELETE',
+      }),
+    /** GET .../claim-invitations — outstanding status only; never the digest or the code. */
+    status: (clientId: string) =>
+      apiRequestParsed(
+        `/api/coaching/clients/${encodeURIComponent(clientId)}/claim-invitations`,
+        claimInvitationStatusSchema,
+      ),
+    /**
+     * POST /api/claims/redeem — the client-side redemption call
+     * (`apps/api/src/routes/claims.ts`). The path is a bare string literal
+     * with no interpolation and no query string, and the code travels in
+     * the POST body ONLY — that is a hard ENTRY-01/CRED-02 requirement
+     * (owner security revision, T-24-10), not a style choice.
+     */
+    redeem: (code: string) =>
+      apiRequestParsed('/api/claims/redeem', claimRedeemedResponseSchema, {
+        method: 'POST',
+        body: { code },
+      }),
+  },
+  /**
+   * Phase 24 (Coach Issuance & Client Claim Experience, CTRL-01/CTRL-02):
+   * client-owner-facing routes under `/api/client-workspaces`
+   * (`apps/api/src/routes/clientWorkspaces.ts`,
+   * `apps/api/src/routes/claimDelegations.ts`) — deliberately not under
+   * `/coaching`, which is the coach's own namespace. These are called by the
+   * CLIENT who now owns a claimed tenant.
+   */
+  clientWorkspaces: {
+    /** GET /api/client-workspaces — the signed-in user's own owned workspaces. No arguments: the endpoint takes no caller-supplied identifier by construction. */
+    list: () => apiRequestParsed('/api/client-workspaces', ownedWorkspaceListSchema),
+    /** DELETE .../delegations/:delegateUid — the client revokes their claimed workspace's delegated coach immediately. */
+    revokeDelegation: (tenantId: string, delegateUid: string) =>
+      apiRequest<void>(
+        `/api/client-workspaces/${encodeURIComponent(tenantId)}/delegations/${encodeURIComponent(delegateUid)}`,
+        { method: 'DELETE' },
+      ),
   },
   groups: {
     /** GET /api/groups — the signed-in user's groups. */
