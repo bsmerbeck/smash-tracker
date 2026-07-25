@@ -48,13 +48,20 @@ function useDashboardNextBestAction(): NextBestAction | null {
   const { data: profile } = useProfile();
   const { data: progress } = useOnboardingProgress();
   const intent = profile?.onboardingIntent ?? null;
-  const { data: coachingClients } = useCoachingClients({ enabled: intent === 'coach_clients' });
+  const coachingClientsQuery = useCoachingClients({ enabled: intent === 'coach_clients' });
 
   if (!intent) {
     return { kind: 'chooseIntent' };
   }
   if (intent === 'coach_clients') {
-    return (coachingClients?.length ?? 0) > 0 ? null : { kind: 'createFirstClient' };
+    // 260725-juj: a pending or failed clients query is UNKNOWN, not zero —
+    // showing no next-best-action here is correct until the real count is
+    // known, rather than resurrecting "create your first client" on top of
+    // a coach who may already have clients.
+    if (coachingClientsQuery.isPending || coachingClientsQuery.isError) {
+      return null;
+    }
+    return (coachingClientsQuery.data?.length ?? 0) > 0 ? null : { kind: 'createFirstClient' };
   }
   const doneByIntent: Record<Exclude<OnboardingIntent, 'coach_clients'>, boolean | undefined> = {
     review_vod: progress?.vod,

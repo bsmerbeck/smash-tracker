@@ -204,4 +204,45 @@ describe('GuidedPathCard', () => {
     await waitFor(() => expect(listCoachingClients).toHaveBeenCalled());
     await waitFor(() => expect(screen.queryByTestId('guided-path-card')).not.toBeInTheDocument());
   });
+
+  // 260725-juj: an unresolved or failed clients query is UNKNOWN, and unknown
+  // must not count as zero clients — resurrecting this card app-wide.
+  describe('coach_clients: unknown clients query never renders as zero (260725-juj)', () => {
+    it('is absent while the clients query is pending', async () => {
+      getMe.mockResolvedValue(
+        defaultProfile({ onboardingIntent: 'coach_clients', coachingModeEnabled: true }),
+      );
+      listCoachingClients.mockReturnValue(new Promise(() => {}));
+
+      renderCard('/coach');
+
+      await waitFor(() => expect(getMe).toHaveBeenCalled());
+      expect(screen.queryByTestId('guided-path-card')).not.toBeInTheDocument();
+    });
+
+    it('is absent when the clients query rejects', async () => {
+      getMe.mockResolvedValue(
+        defaultProfile({ onboardingIntent: 'coach_clients', coachingModeEnabled: true }),
+      );
+      listCoachingClients.mockRejectedValue(new Error('network down'));
+
+      renderCard('/coach');
+
+      await waitFor(() => expect(listCoachingClients).toHaveBeenCalled());
+      expect(screen.queryByTestId('guided-path-card')).not.toBeInTheDocument();
+    });
+
+    // Guard-scoping regression: the pending-check must be scoped to
+    // `coach_clients` only — TanStack Query v5 reports a DISABLED query as
+    // pending forever, so an unscoped check would blank the card for every
+    // OTHER intent too (whose clients query is disabled, never fetched).
+    it('still renders for a non-coaching intent whose (disabled) clients query is perpetually pending', async () => {
+      getMe.mockResolvedValue(defaultProfile({ onboardingIntent: 'review_vod' }));
+
+      renderCard('/vod');
+
+      expect(await screen.findByText('Attach a VOD')).toBeInTheDocument();
+      expect(listCoachingClients).not.toHaveBeenCalled();
+    });
+  });
 });
