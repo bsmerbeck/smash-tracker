@@ -16,9 +16,9 @@ import { PendingButton } from '@/components/ui/pending-button';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { NO_SELECTION_STAGE } from '@/data/stages';
 import { useCreateMatch } from '@/hooks/useCreateMatch';
+import { useAlphaFighters } from '@/hooks/useFighterName';
 import {
   MatchFormFields,
-  alphaSpriteList,
   matchFormValuesToInput,
   useMatchForm,
   type MatchFormValues,
@@ -37,10 +37,10 @@ import { DashboardContext } from '../DashboardContext';
 
 type EntryMode = 'single' | 'set';
 
-function buildDefaultValues(fighterId: number): MatchFormValues {
+function buildDefaultValues(fighterId: number, opponentFighterId: number): MatchFormValues {
   return {
     fighterId,
-    opponentFighterId: alphaSpriteList[0]?.id ?? 0,
+    opponentFighterId,
     result: undefined as unknown as MatchFormValues['result'],
     stageId: NO_SELECTION_STAGE.id,
     stageForm: undefined,
@@ -122,6 +122,8 @@ export function AddMatchForm({
   const createMatch = useCreateMatch();
   const triggerDisabled = fighterSprites.length === 0;
   const describedById = useId();
+  const alphaFighters = useAlphaFighters();
+  const defaultOpponentFighterId = alphaFighters[0]?.id ?? 0;
   const [open, setOpen] = useState(false);
   const [mode, setMode] = useState<EntryMode>('single');
   const [games, setGames] = useState<SetGameValues[]>([]);
@@ -131,17 +133,18 @@ export function AddMatchForm({
   // multi-game submit as one stable pending window instead.
   const [savingSet, setSavingSet] = useState(false);
 
-  const form = useMatchForm(buildDefaultValues(fighter?.id ?? fighterSprites[0]?.id ?? 0), {
-    requireVod,
-  });
+  const form = useMatchForm(
+    buildDefaultValues(fighter?.id ?? fighterSprites[0]?.id ?? 0, defaultOpponentFighterId),
+    { requireVod },
+  );
   const setForm = useSetSharedForm(
-    defaultSetSharedValues(fighter?.id ?? fighterSprites[0]?.id ?? 0),
+    defaultSetSharedValues(fighter?.id ?? fighterSprites[0]?.id ?? 0, defaultOpponentFighterId),
   );
 
   function resetAll() {
     const fighterId = fighter?.id ?? fighterSprites[0]?.id ?? 0;
-    form.reset(buildDefaultValues(fighterId));
-    setForm.reset(defaultSetSharedValues(fighterId));
+    form.reset(buildDefaultValues(fighterId, defaultOpponentFighterId));
+    setForm.reset(defaultSetSharedValues(fighterId, defaultOpponentFighterId));
     setGames([]);
     setMode('single');
   }
@@ -246,8 +249,9 @@ export function AddMatchForm({
             // the fighter/opponent-fighter/opponent-name the user actually
             // selected in the mode they're leaving onto the mode they're
             // entering, instead of exposing that other form's untouched
-            // default (opponentFighterId defaults to the alphabetically-first
-            // sprite, Banjo & Kazooie, in both forms).
+            // default (opponentFighterId defaults to `defaultOpponentFighterId`,
+            // the alphabetically-first sprite in the active locale, in both
+            // forms).
             if (nextMode === 'set') {
               const { fighterId, opponentFighterId, opponentName } = form.getValues();
               setForm.setValue('fighterId', fighterId);

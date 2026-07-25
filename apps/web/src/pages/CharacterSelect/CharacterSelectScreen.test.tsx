@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes } from 'react-router';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -173,5 +173,37 @@ describe('CharacterSelectScreen', () => {
 
     await waitFor(() => expect(screen.getByAltText('Mario')).toBeInTheDocument());
     expect(screen.getByRole('button', { name: 'Save and go to Dashboard' })).toBeDisabled();
+  });
+
+  // 260725-Q1: the available grid used to render in in-game roster/fighter-
+  // number order (SpriteList's raw order); it must now be alphabetized by
+  // localized display name in every locale.
+  it('renders the available grid alphabetically sorted by localized name (en)', async () => {
+    renderScreen();
+    await waitFor(() => expect(screen.getByAltText('Mario')).toBeInTheDocument());
+
+    const grid = screen.getByTestId('available-sprite-grid');
+    const names = within(grid)
+      .getAllByRole('img')
+      .map((img) => img.getAttribute('alt') ?? '');
+
+    expect(names.length).toBeGreaterThan(1);
+    expect(names).toEqual([...names].sort((a, b) => a.localeCompare(b, 'en')));
+  });
+
+  it('renders the available grid alphabetically sorted by the fr localized name (I18N-02)', async () => {
+    await i18n.changeLanguage('fr');
+    renderScreen();
+    // Jigglypuff (id 13) renders as "Rondoudou" in fr — wait for the
+    // localized grid to hydrate before asserting order.
+    await waitFor(() => expect(screen.getByAltText('Rondoudou')).toBeInTheDocument());
+
+    const grid = screen.getByTestId('available-sprite-grid');
+    const names = within(grid)
+      .getAllByRole('img')
+      .map((img) => img.getAttribute('alt') ?? '');
+
+    expect(names.length).toBeGreaterThan(1);
+    expect(names).toEqual([...names].sort((a, b) => a.localeCompare(b, 'fr')));
   });
 });

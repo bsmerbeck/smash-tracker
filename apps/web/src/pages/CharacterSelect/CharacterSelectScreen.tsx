@@ -7,7 +7,7 @@ import { Input } from '@/components/ui/input';
 import { useFighters } from '@/hooks/useFighters';
 import { useSaveFighters } from '@/hooks/useSaveFighters';
 import { useFighterNameResolver } from '@/hooks/useFighterName';
-import { matchesFighterQuery } from '@/lib/fighterNames';
+import { matchesFighterQuery, sortFightersByLocalizedName } from '@/lib/fighterNames';
 import { SpriteList } from '@/data/sprites';
 import { cn } from '@/lib/utils';
 
@@ -39,7 +39,7 @@ export function CharacterSelectScreen({
   description,
   destinations,
 }: CharacterSelectScreenProps) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const navigate = useNavigate();
   const { data: fighters, isLoading } = useFighters();
   const saveFighters = useSaveFighters();
@@ -70,10 +70,13 @@ export function CharacterSelectScreen({
   );
 
   const availableSprites = useMemo(() => {
-    return SpriteList.filter((s) => !otherIds.has(s.id))
+    const filtered = SpriteList.filter((s) => !otherIds.has(s.id))
       .filter((s) => !selectedIds.includes(s.id))
       .filter((s) => matchesFighterQuery(filter, localizedName(s.id), s.name));
-  }, [filter, otherIds, selectedIds, localizedName]);
+    // 260725-Q1: alphabetized by localized name, not roster/fighter-number
+    // order — the same sort every other fighter-selection surface uses.
+    return sortFightersByLocalizedName(filtered, localizedName, i18n.resolvedLanguage);
+  }, [filter, otherIds, selectedIds, localizedName, i18n.resolvedLanguage]);
 
   function toggleSprite(id: number) {
     setSelectedIds((prev) => (prev.includes(id) ? prev.filter((s) => s !== id) : [...prev, id]));

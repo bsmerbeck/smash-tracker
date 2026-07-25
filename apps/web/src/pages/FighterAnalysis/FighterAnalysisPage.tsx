@@ -5,6 +5,7 @@ import type { Fighter } from '@smash-tracker/shared';
 import { Button } from '@/components/ui/button';
 import { useFighters } from '@/hooks/useFighters';
 import { useFilteredMatches } from '@/hooks/useFilteredMatches';
+import { useSortedFighters } from '@/hooks/useFighterName';
 import { useSubjectPath } from '@/hooks/useSubjectPath';
 import { getFighterById } from '@/data/sprites';
 import { FilteredEmptyNotice } from '@/components/FilteredEmptyNotice';
@@ -28,12 +29,15 @@ export function FighterAnalysisPage() {
   const { data: fighterSelection, isLoading: fightersLoading } = useFighters();
   const { matches, allMatches, isLoading: matchesLoading, filterActive } = useFilteredMatches();
 
-  const fighterSprites = useMemo<Fighter[]>(() => {
+  const rawFighterSprites = useMemo<Fighter[]>(() => {
     const ids = [...(fighterSelection?.primary ?? []), ...(fighterSelection?.secondary ?? [])];
     return ids
       .map((id) => getFighterById(id))
       .filter((sprite): sprite is Fighter => sprite != null);
   }, [fighterSelection]);
+  // 260725-Q1: alphabetized by localized name — matches every other fighter
+  // picker in the app.
+  const fighterSprites = useSortedFighters(rawFighterSprites);
 
   const [selectedFighterId, setSelectedFighterId] = useState<number | undefined>(undefined);
   const fighter =

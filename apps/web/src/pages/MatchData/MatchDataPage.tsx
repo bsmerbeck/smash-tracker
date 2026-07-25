@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { useFighters } from '@/hooks/useFighters';
 import { useFilteredMatches } from '@/hooks/useFilteredMatches';
+import { useSortedFighters } from '@/hooks/useFighterName';
 import { useStageFavorites, useToggleStageFavorite } from '@/hooks/useStageFavorites';
 import { useSubjectPath } from '@/hooks/useSubjectPath';
 import { getFighterById } from '@/data/sprites';
@@ -24,12 +25,15 @@ export function MatchDataPage() {
   const { data: stageFavorites } = useStageFavorites();
   const toggleStageFavorite = useToggleStageFavorite();
 
-  const fighterSprites = useMemo<Fighter[]>(() => {
+  const rawFighterSprites = useMemo<Fighter[]>(() => {
     const ids = [...(fighterSelection?.primary ?? []), ...(fighterSelection?.secondary ?? [])];
     return ids
       .map((id) => getFighterById(id))
       .filter((sprite): sprite is Fighter => sprite != null);
   }, [fighterSelection]);
+  // 260725-Q1: alphabetized by localized name — matches every other fighter
+  // picker in the app.
+  const fighterSprites = useSortedFighters(rawFighterSprites);
 
   if (fightersLoading || matchesLoading) {
     return <div className="text-muted-foreground">{t('matchData.loading')}</div>;

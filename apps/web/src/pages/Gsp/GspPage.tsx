@@ -21,6 +21,7 @@ import { useFighters } from '@/hooks/useFighters';
 import { useGspSettings } from '@/hooks/useGspSettings';
 import { useDeleteMatch } from '@/hooks/useDeleteMatch';
 import { useDeleteGspReading, useGspReadings } from '@/hooks/useGspReadings';
+import { useFighterNameResolver, useSortedFighters } from '@/hooks/useFighterName';
 import { getFighterById } from '@/data/sprites';
 import { getGspFighterOptions } from './lib/gspFighters';
 import { GspFighterSelect } from './components/GspFighterSelect';
@@ -65,24 +66,27 @@ export function GspPage() {
   const [editingReading, setEditingReading] = useState<GspReading | null>(null);
   const [pendingDelete, setPendingDelete] = useState<GspEntry | null>(null);
 
+  const localizedName = useFighterNameResolver();
   const fighterOptions = useMemo(
     () =>
       getGspFighterOptions(
         matches,
         fighterSelection?.primary ?? [],
         fighterSelection?.secondary ?? [],
+        localizedName,
       ),
-    [matches, fighterSelection],
+    [matches, fighterSelection, localizedName],
   );
 
   // EditMatchForm's "Your Fighter" picker offers the primary+secondary
   // selections, exactly like MatchDataPage builds them.
-  const editFighterSprites = useMemo<Fighter[]>(() => {
+  const rawEditFighterSprites = useMemo<Fighter[]>(() => {
     const ids = [...(fighterSelection?.primary ?? []), ...(fighterSelection?.secondary ?? [])];
     return ids
       .map((id) => getFighterById(id))
       .filter((sprite): sprite is Fighter => sprite != null);
   }, [fighterSelection]);
+  const editFighterSprites = useSortedFighters(rawEditFighterSprites);
 
   const [selectedFighterId, setSelectedFighterId] = useState<number | undefined>(undefined);
   const fighter: Fighter | undefined =

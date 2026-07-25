@@ -41,8 +41,9 @@ import { StageSelectGroups, StageSelectValue } from '@/components/StageSelectGro
 import { useOpponents } from '@/hooks/useOpponents';
 import { useMatches } from '@/hooks/useMatches';
 import { useStageFavorites, useToggleStageFavorite } from '@/hooks/useStageFavorites';
+import { useAlphaFighters } from '@/hooks/useFighterName';
 import { getGroupedStageOptions, STANDARD_ONLINE_STAGE_IDS } from '@/lib/stageOptions';
-import { alphaSpriteList, TournamentFields, matchTypeLabel } from './MatchForm';
+import { TournamentFields, matchTypeLabel } from './MatchForm';
 import {
   setFormatValues,
   winsNeededFor,
@@ -98,10 +99,13 @@ export function useSetSharedForm(
   });
 }
 
-export function defaultSetSharedValues(fighterId: number): SetSharedFormValues {
+export function defaultSetSharedValues(
+  fighterId: number,
+  opponentFighterId: number,
+): SetSharedFormValues {
   return {
     fighterId,
-    opponentFighterId: alphaSpriteList[0]?.id ?? 0,
+    opponentFighterId,
     // Same default as the single-game form (see AddMatchForm's
     // buildDefaultValues): untouched entries land on the shared "unknown"
     // opponent instead of demanding a name for random quickplay sets.
@@ -172,6 +176,7 @@ export function SetWizard({
   const { t } = useTranslation();
   const { data: opponents = [] } = useOpponents();
   const { data: allMatches = [] } = useMatches();
+  const alphaFighters = useAlphaFighters();
   const [opponentPopoverOpen, setOpponentPopoverOpen] = useState(false);
 
   const format = form.watch('format');
@@ -280,7 +285,7 @@ export function SetWizard({
                       </SelectTrigger>
                     </FormControl>
                     <SelectContent>
-                      {alphaSpriteList.map((s) => (
+                      {alphaFighters.map((s) => (
                         <SelectItem key={s.id} value={String(s.id)}>
                           <img src={s.url} alt="" className="size-6 object-contain" />
                           {localizedFighterName(s.id, t)}

@@ -35,6 +35,25 @@ export function localizedFighterName(id: number, t: TFunction): string {
 }
 
 /**
+ * 260725-Q1: sorts fighters by localized display name (via `localeCompare`
+ * against the active locale, so `ja` etc. collate correctly) instead of the
+ * in-game roster/fighter-number order every fighter-selection surface used
+ * to render. Ties (rare — none in the current 86-fighter roster, but keeps
+ * the result stable if two localized names ever collide) fall back to id
+ * order. Returns a new array; never mutates `fighters`.
+ */
+export function sortFightersByLocalizedName<T extends { id: number }>(
+  fighters: T[],
+  localizedName: (id: number) => string,
+  locale?: string,
+): T[] {
+  return [...fighters].sort((a, b) => {
+    const cmp = localizedName(a.id).localeCompare(localizedName(b.id), locale);
+    return cmp !== 0 ? cmp : a.id - b.id;
+  });
+}
+
+/**
  * Strips combining diacritical marks via Unicode NFD decomposition, e.g.
  * `foldDiacritics('Héroe') === 'Heroe'`. Idempotent (folding an already-folded
  * string is a no-op) and safe to call before or after `.toLowerCase()`.

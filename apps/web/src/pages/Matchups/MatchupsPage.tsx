@@ -9,8 +9,8 @@ import { useFilteredMatches } from '@/hooks/useFilteredMatches';
 import { useSubjectPath } from '@/hooks/useSubjectPath';
 import { getFighterById } from '@/data/sprites';
 import { localizedFighterName } from '@/lib/fighterNames';
+import { useAlphaFighters, useSortedFighters } from '@/hooks/useFighterName';
 import { FilteredEmptyNotice } from '@/components/FilteredEmptyNotice';
-import { alphaSpriteList } from '@/components/match-form/MatchForm';
 import { MatchupsContext, type MatchupsContextValue } from './MatchupsContext';
 import { SelectFighter } from './components/SelectFighter';
 import { SelectOpponent } from './components/SelectOpponent';
@@ -36,12 +36,14 @@ export function MatchupsPage() {
   const { data: fighterSelection, isLoading: fightersLoading } = useFighters();
   const { matches, allMatches, isLoading: matchesLoading, filterActive } = useFilteredMatches();
 
-  const fighterSprites = useMemo<Fighter[]>(() => {
+  const rawFighterSprites = useMemo<Fighter[]>(() => {
     const ids = [...(fighterSelection?.primary ?? []), ...(fighterSelection?.secondary ?? [])];
     return ids
       .map((id) => getFighterById(id))
       .filter((sprite): sprite is Fighter => sprite != null);
   }, [fighterSelection]);
+  const fighterSprites = useSortedFighters(rawFighterSprites);
+  const alphaFighters = useAlphaFighters();
 
   const [selectedFighterId, setSelectedFighterId] = useState<number | undefined>(undefined);
   const [selectedOpponentId, setSelectedOpponentId] = useState<number | undefined>(undefined);
@@ -49,7 +51,7 @@ export function MatchupsPage() {
   const fighter =
     fighterSprites.find((s) => s.id === selectedFighterId) ?? fighterSprites[0] ?? undefined;
   const opponent =
-    alphaSpriteList.find((s) => s.id === selectedOpponentId) ?? alphaSpriteList[0] ?? undefined;
+    alphaFighters.find((s) => s.id === selectedOpponentId) ?? alphaFighters[0] ?? undefined;
 
   const contextValue: MatchupsContextValue = {
     fighterSprites,

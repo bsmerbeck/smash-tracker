@@ -39,12 +39,12 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { cn } from '@/lib/utils';
 import { localizedFighterName } from '@/lib/fighterNames';
-import { SpriteList } from '@/data/sprites';
 import { NO_SELECTION_STAGE } from '@/data/stages';
 import { StageSelectGroups, StageSelectValue } from '@/components/StageSelectGroups';
 import { useOpponents } from '@/hooks/useOpponents';
 import { useMatches } from '@/hooks/useMatches';
 import { useStageFavorites, useToggleStageFavorite } from '@/hooks/useStageFavorites';
+import { useAlphaFighters } from '@/hooks/useFighterName';
 import {
   getGroupedStageOptions,
   stageOptions,
@@ -52,8 +52,6 @@ import {
 } from '@/lib/stageOptions';
 import { parseGspNumber } from '@/pages/Gsp/lib/parseGspNumber';
 import { parseFlexibleTimestamp } from '@/lib/vod';
-
-export const alphaSpriteList = [...SpriteList].sort((a, b) => a.name.localeCompare(b.name));
 
 export { stageOptions };
 
@@ -412,6 +410,7 @@ export function MatchFormFields({
   const { data: allMatches = [] } = useMatches();
   const { data: stageFavorites } = useStageFavorites();
   const toggleStageFavorite = useToggleStageFavorite();
+  const alphaFighters = useAlphaFighters();
   const [opponentPopoverOpen, setOpponentPopoverOpen] = useState(false);
   const vodUrlValue = form.watch('vodUrl');
   const vodLinkPresent = vodUrlValue.trim() !== '';
@@ -476,7 +475,7 @@ export function MatchFormFields({
                       </SelectTrigger>
                     </FormControl>
                     <SelectContent>
-                      {alphaSpriteList.map((s) => (
+                      {alphaFighters.map((s) => (
                         <SelectItem key={s.id} value={String(s.id)}>
                           <img src={s.url} alt="" className="size-6 object-contain" />
                           {localizedFighterName(s.id, t)}

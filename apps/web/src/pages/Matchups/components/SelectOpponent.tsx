@@ -6,8 +6,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { alphaSpriteList } from '@/components/match-form/MatchForm';
-import { useFighterNameResolver } from '@/hooks/useFighterName';
+import { useAlphaFighters, useFighterNameResolver } from '@/hooks/useFighterName';
 import { useMatchupsContext } from '../MatchupsContext';
 
 /**
@@ -18,13 +17,14 @@ import { useMatchupsContext } from '../MatchupsContext';
 export function SelectOpponent() {
   const { t } = useTranslation();
   const localizedName = useFighterNameResolver();
+  const alphaFighters = useAlphaFighters();
   const { opponent, setOpponent } = useMatchupsContext();
 
   return (
     <Select
       value={opponent ? String(opponent.id) : undefined}
       onValueChange={(value) => {
-        const next = alphaSpriteList.find((s) => String(s.id) === value);
+        const next = alphaFighters.find((s) => String(s.id) === value);
         if (next) {
           setOpponent(next);
         }
@@ -34,7 +34,7 @@ export function SelectOpponent() {
         <SelectValue placeholder={t('matchups.selectPlaceholder')} />
       </SelectTrigger>
       <SelectContent>
-        {alphaSpriteList.map((sprite) => (
+        {alphaFighters.map((sprite) => (
           <SelectItem key={sprite.id} value={String(sprite.id)}>
             <img src={sprite.url} alt="" className="size-6 object-contain" />
             {localizedName(sprite.id)}
