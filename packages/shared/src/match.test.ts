@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   coachAttributionSchema,
   createMatchInputSchema,
+  MAX_VOD_TIMESTAMPS_PER_MATCH,
   matchRecordSchema,
   normalizeVodTimestampsNode,
   updateMatchInputSchema,
@@ -210,8 +211,21 @@ describe('matchRecordSchema.vodTimestamps dual-read', () => {
     expect(parsed.vodTimestamps).toBeUndefined();
   });
 
-  it('rejects more than 20 normalized entries (max cap still enforced after the preprocess)', () => {
-    const many = Array.from({ length: 21 }, (_, i) => ({ seconds: i, note: `n${i}` }));
+  it('accepts exactly MAX_VOD_TIMESTAMPS_PER_MATCH normalized entries (boundary)', () => {
+    const atCap = Array.from({ length: MAX_VOD_TIMESTAMPS_PER_MATCH }, (_, i) => ({
+      seconds: i,
+      note: `n${i}`,
+    }));
+    const result = matchRecordSchema.safeParse(baseRecord({ vodTimestamps: atCap }));
+    expect(result.success).toBe(true);
+    expect(result.data!.vodTimestamps).toHaveLength(MAX_VOD_TIMESTAMPS_PER_MATCH);
+  });
+
+  it('rejects more than MAX_VOD_TIMESTAMPS_PER_MATCH normalized entries (max cap still enforced after the preprocess)', () => {
+    const many = Array.from({ length: MAX_VOD_TIMESTAMPS_PER_MATCH + 1 }, (_, i) => ({
+      seconds: i,
+      note: `n${i}`,
+    }));
     const result = matchRecordSchema.safeParse(baseRecord({ vodTimestamps: many }));
     expect(result.success).toBe(false);
   });
