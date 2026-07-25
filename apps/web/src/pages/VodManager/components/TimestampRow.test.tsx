@@ -12,12 +12,12 @@ function makeStamp(overrides: Partial<VodTimestamp> = {}): VodTimestamp {
   };
 }
 
-function renderRow(stamp: VodTimestamp) {
+function renderRow(stamp: VodTimestamp, overrides: { isEditing?: boolean } = {}) {
   render(
     <TimestampRow
       stamp={stamp}
       isSelected={false}
-      isEditing={false}
+      isEditing={overrides.isEditing ?? false}
       onSeek={vi.fn()}
       onSelect={vi.fn()}
       onStartEdit={vi.fn()}
@@ -56,5 +56,17 @@ describe('TimestampRow coach attribution (COACH-05)', () => {
 
     expect(screen.getByLabelText(/Edit timestamp/)).toBeInTheDocument();
     expect(screen.getByLabelText(/Delete timestamp/)).toBeInTheDocument();
+  });
+});
+
+describe('TimestampRow edit-mode note field (260725-Q2)', () => {
+  it('renders a multi-line textarea seeded with the existing note text when entering edit mode', () => {
+    renderRow(makeStamp({ note: 'A longer note that used to feel cramped in a single line' }), {
+      isEditing: true,
+    });
+
+    const noteField = screen.getByLabelText('Edit timestamp note');
+    expect(noteField.tagName).toBe('TEXTAREA');
+    expect(noteField).toHaveValue('A longer note that used to feel cramped in a single line');
   });
 });

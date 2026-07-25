@@ -7,6 +7,7 @@ import type { VodTimestamp } from '@smash-tracker/shared';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -234,6 +235,21 @@ export function TimestampRow({
     }
   }
 
+  // The note field is a multi-line textarea (owner feedback: editing longer
+  // notes in a single-line input "feels bad"), so plain Enter must be free to
+  // insert a newline rather than submit — Cmd/Ctrl+Enter commits instead,
+  // preserving a save shortcut without hijacking normal textarea typing.
+  // Escape still discards, unchanged from the single-line input's behavior.
+  function handleNoteKeyDown(e: KeyboardEvent<HTMLTextAreaElement>) {
+    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+      e.preventDefault();
+      commit();
+    } else if (e.key === 'Escape') {
+      e.preventDefault();
+      cancel();
+    }
+  }
+
   function confirmDelete() {
     onDelete(stamp.id);
     setConfirmingDelete(false);
@@ -254,17 +270,6 @@ export function TimestampRow({
             className="w-24"
             autoFocus
           />
-          <Input
-            value={noteInput}
-            onChange={(e) => {
-              setNoteInput(e.target.value);
-              setError(null);
-            }}
-            onKeyDown={handleKeyDown}
-            aria-label={t('vodManager.notes.editNoteAria')}
-            maxLength={200}
-            className="min-w-[10rem] flex-1"
-          />
           <Button
             type="button"
             variant="outline"
@@ -284,6 +289,25 @@ export function TimestampRow({
             <X />
           </Button>
         </div>
+        {/* Owner feedback (260725-Q2): editing a longer note in a
+            single-line input felt bad — it now drops into a multi-line
+            textarea (auto-grows via `field-sizing-content`, `rows={3}`
+            floors the initial height for browsers without that support)
+            instead. Enter inserts a newline (default textarea behavior);
+            Cmd/Ctrl+Enter commits — see `handleNoteKeyDown`. */}
+        <Textarea
+          value={noteInput}
+          onChange={(e) => {
+            setNoteInput(e.target.value);
+            setError(null);
+          }}
+          onKeyDown={handleNoteKeyDown}
+          aria-label={t('vodManager.notes.editNoteAria')}
+          maxLength={200}
+          rows={3}
+          className="w-full resize-y"
+        />
+        <p className="text-xs text-muted-foreground">{t('vodManager.notes.editNoteHint')}</p>
         {error && <p className="text-sm text-destructive">{error}</p>}
         {/* Retest fix-up #3: tag chips (add/remove) stay visible and
             interactive while this row is in edit mode — previously they

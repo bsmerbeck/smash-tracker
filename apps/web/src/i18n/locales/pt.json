@@ -548,6 +548,7 @@
       "deleteConfirmTitle": "Excluir esta nota com marcação de tempo?",
       "editTimeAria": "Editar hora da marcação",
       "editNoteAria": "Editar nota da marcação",
+      "editNoteHint": "Ctrl/⌘+Enter para salvar, Esc para cancelar",
       "filterByTag": "Filtrar por tag",
       "filterByTagAria": "Filtrar notas por {{label}}",
       "filterByContributor": "Filtrar por colaborador",

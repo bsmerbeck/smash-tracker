@@ -548,6 +548,7 @@
       "deleteConfirmTitle": "Diese Zeitstempel-Notiz löschen?",
       "editTimeAria": "Zeitstempel-Zeit bearbeiten",
       "editNoteAria": "Zeitstempel-Notiz bearbeiten",
+      "editNoteHint": "Strg/⌘+Eingabe zum Speichern, Esc zum Abbrechen",
       "filterByTag": "Nach Tag filtern",
       "filterByTagAria": "Notizen nach {{label}} filtern",
       "filterByContributor": "Nach Mitwirkendem filtern",

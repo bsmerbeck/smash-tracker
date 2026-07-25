@@ -548,6 +548,7 @@
       "deleteConfirmTitle": "このタイムスタンプメモを削除しますか？",
       "editTimeAria": "タイムスタンプの時間を編集",
       "editNoteAria": "タイムスタンプのメモを編集",
+      "editNoteHint": "Ctrl/⌘+Enterで保存、Escでキャンセル",
       "filterByTag": "タグで絞り込む",
       "filterByTagAria": "{{label}}でメモを絞り込む",
       "filterByContributor": "投稿者で絞り込む",

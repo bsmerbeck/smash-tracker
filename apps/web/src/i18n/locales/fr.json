@@ -548,6 +548,7 @@
       "deleteConfirmTitle": "Supprimer cette note horodatée ?",
       "editTimeAria": "Modifier l'heure de l'horodatage",
       "editNoteAria": "Modifier la note de l'horodatage",
+      "editNoteHint": "Ctrl/⌘+Entrée pour enregistrer, Échap pour annuler",
       "filterByTag": "Filtrer par tag",
       "filterByTagAria": "Filtrer les notes par {{label}}",
       "filterByContributor": "Filtrer par contributeur",

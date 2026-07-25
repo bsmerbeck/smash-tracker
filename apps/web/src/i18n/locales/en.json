@@ -548,6 +548,7 @@
       "deleteConfirmTitle": "Delete this timestamp note?",
       "editTimeAria": "Edit timestamp time",
       "editNoteAria": "Edit timestamp note",
+      "editNoteHint": "Ctrl/⌘+Enter to save, Esc to cancel",
       "filterByTag": "Filter by tag",
       "filterByTagAria": "Filter notes by {{label}}",
       "filterByContributor": "Filter by contributor",

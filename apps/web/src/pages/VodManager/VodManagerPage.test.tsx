@@ -1263,9 +1263,10 @@ describe('VodManagerPage', () => {
     expect(noteInput).toHaveValue('note B');
 
     // Clear the note text entirely, then commit — no "note required" error,
-    // time/tags are unaffected.
+    // time/tags are unaffected. The note field is a multi-line textarea
+    // (260725-Q2), so plain Enter no longer submits — Ctrl+Enter does.
     await user.clear(noteInput);
-    await user.keyboard('{Enter}');
+    await user.keyboard('{Control>}{Enter}{/Control}');
 
     expect(screen.queryByText('Enter a note for this timestamp')).not.toBeInTheDocument();
     await waitFor(() => expect(updateNote).toHaveBeenCalledTimes(1));
@@ -2192,8 +2193,10 @@ describe('VodManagerPage', () => {
     expect(noteInput).toHaveValue('');
     expect(screen.getByLabelText('Edit timestamp time')).toHaveValue('12:34');
 
-    // (3) Typing text and pressing Enter commits it via update-by-id.
-    await user.type(noteInput, 'clean edgeguard{Enter}');
+    // (3) Typing text and pressing Ctrl+Enter commits it via update-by-id —
+    // the note field is a multi-line textarea (260725-Q2), so plain Enter
+    // inserts a newline instead of submitting.
+    await user.type(noteInput, 'clean edgeguard{Control>}{Enter}{/Control}');
     await waitFor(() => expect(updateNote).toHaveBeenCalledTimes(1));
     expect(updateNote).toHaveBeenCalledWith('m1', 'n-new', {
       seconds: 754,
@@ -3325,7 +3328,7 @@ describe('VodManagerPage', () => {
     await user.click(screen.getByLabelText('Edit timestamp 2:30'));
     const noteInput = screen.getByLabelText('Edit timestamp note');
     await user.clear(noteInput);
-    await user.type(noteInput, 'note C edited{Enter}');
+    await user.type(noteInput, 'note C edited{Control>}{Enter}{/Control}');
 
     await waitFor(() => expect(updateNote).toHaveBeenCalledTimes(1));
     expect(updateNote).toHaveBeenCalledWith('m1', 'n3', {
