@@ -28,6 +28,10 @@ describe('RouteTitles', () => {
     expect(titleKeyForPath('/tournaments/tournament-123')).toBe('nav.tournament');
   });
 
+  it('titles the client-owned workspace family, which has no sidebar item', () => {
+    expect(titleKeyForPath('/workspace/t1/vods')).toBe('ownerWorkspace.pageTitle');
+  });
+
   it('leaves unmapped (public/SEO) routes alone so useSeo owns them', () => {
     document.title = 'set by useSeo';
     renderAt('/gsp-calculator');

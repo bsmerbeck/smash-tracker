@@ -29,6 +29,11 @@ const ROUTE_TITLE_KEYS: ReadonlyArray<{ prefix: string; titleKey: string }> = [
   { prefix: '/profile', titleKey: 'nav.profile' },
   { prefix: '/tournaments/', titleKey: 'nav.tournament' },
   { prefix: '/auth/startgg', titleKey: 'nav.signingInWithStartgg' },
+  // Phase 24 (Coach Issuance & Client Claim Experience): `/workspace/:tenantId`
+  // has no sidebar item (it's reached via the switcher, not `navItems`), so
+  // without this explicit entry its document title would silently inherit
+  // whatever route was visited previously.
+  { prefix: '/workspace/', titleKey: 'ownerWorkspace.pageTitle' },
   ...navItems.map(({ href, titleKey }) => ({ prefix: href, titleKey })),
 ];
 

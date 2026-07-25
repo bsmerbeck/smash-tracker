@@ -2296,5 +2296,45 @@
     "84": "Pyra/Mythra",
     "85": "Kazuya",
     "86": "Sora"
+  },
+  "ownerWorkspace": {
+    "pageTitle": "My Workspace",
+    "overviewTitle": "Overview",
+    "overviewSubtitle": "You own this workspace — your coach can collaborate on it, but you're in control.",
+    "ownedBadge": "You own this",
+    "quickLinks": {
+      "matches": "Matches",
+      "vods": "VODs",
+      "analytics": "Analytics",
+      "fighters": "Fighters"
+    },
+    "stats": {
+      "matches_one": "{{count}} match",
+      "matches_other": "{{count}} matches",
+      "vods_one": "{{count}} VOD",
+      "vods_other": "{{count}} VODs"
+    },
+    "notAuthorized": {
+      "title": "This workspace isn't available",
+      "body": "This workspace isn't available to your account.",
+      "backToDashboard": "Back to Dashboard"
+    },
+    "coachAccess": {
+      "title": "Coach access",
+      "description": "A delegated coach can view and contribute to this workspace. They can never delete, archive, or export it — and access ends immediately if you revoke it.",
+      "delegatedCoach": "Delegated coach: {{uid}}",
+      "none": "No coach currently has access to this workspace.",
+      "revokeTrigger": "Revoke access",
+      "revokeConfirmBody": "This immediately ends the coach's access to this workspace.",
+      "revokeConfirmCancel": "Cancel",
+      "revokeConfirmAction": "Revoke",
+      "revokedToast": "Coach access revoked",
+      "revokeError": "Couldn't revoke coach access. Try again."
+    },
+    "fighters": {
+      "title": "Fighters",
+      "subtitle": "Your mains. Your analytics are computed against these.",
+      "saveButton": "Save"
+    }
   }
 }
