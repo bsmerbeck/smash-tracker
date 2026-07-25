@@ -7,7 +7,12 @@ import fr from '@/i18n/locales/fr.json';
 import de from '@/i18n/locales/de.json';
 import pt from '@/i18n/locales/pt.json';
 import ja from '@/i18n/locales/ja.json';
-import { foldDiacritics, localizedFighterName, matchesFighterQuery } from './fighterNames';
+import {
+  foldDiacritics,
+  localizedFighterName,
+  matchesFighterQuery,
+  sortFightersByLocalizedName,
+} from './fighterNames';
 
 const LOCALES = { en, es, fr, de, pt, ja } as const;
 
@@ -58,6 +63,39 @@ describe('localizedFighterName', () => {
 
   it('falls back to the canonical English name when an id is missing from a bundle', () => {
     expect(localizedFighterName(9999, fixedT('fr'))).toBe('');
+  });
+});
+
+describe('sortFightersByLocalizedName', () => {
+  const mario = { id: 1 }; // "Mario" in every locale
+  const fox = { id: 8 }; // "Fox" in every locale
+  const jigglypuff = { id: 13 }; // "Jigglypuff" (en) / "Rondoudou" (fr)
+
+  it('sorts by localized display name for the active locale (en)', () => {
+    const localizedName = (id: number) => localizedFighterName(id, fixedT('en'));
+    const sorted = sortFightersByLocalizedName([mario, fox, jigglypuff], localizedName, 'en');
+    // Fox, Jigglypuff, Mario
+    expect(sorted.map((f) => f.id)).toEqual([8, 13, 1]);
+  });
+
+  it('re-sorts per the active locale — fr Rondoudou moves after Mario (I18N-02)', () => {
+    const localizedName = (id: number) => localizedFighterName(id, fixedT('fr'));
+    const sorted = sortFightersByLocalizedName([mario, fox, jigglypuff], localizedName, 'fr');
+    // Fox, Mario, Rondoudou — a different order than the en case above,
+    // because "Rondoudou" collates after "Mario" while "Jigglypuff" doesn't.
+    expect(sorted.map((f) => f.id)).toEqual([8, 1, 13]);
+  });
+
+  it('breaks ties by ascending id when localized names collide', () => {
+    const sorted = sortFightersByLocalizedName([{ id: 5 }, { id: 2 }, { id: 9 }], () => 'Same');
+    expect(sorted.map((f) => f.id)).toEqual([2, 5, 9]);
+  });
+
+  it('returns a new array and never mutates the input', () => {
+    const input = [mario, fox, jigglypuff];
+    const originalOrder = [...input];
+    sortFightersByLocalizedName(input, (id) => localizedFighterName(id, fixedT('en')));
+    expect(input).toEqual(originalOrder);
   });
 });
 
