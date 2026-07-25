@@ -281,7 +281,13 @@ export function ReviewDeliveryPage() {
 
   return (
     <PublicLayout>
-      <div className="mx-auto flex w-full max-w-2xl flex-col gap-6 px-4 py-8">
+      {/* 260725-Q4: widened from max-w-2xl to max-w-4xl so the two-tab
+          shell's `lg:` two-column layout (player left, notes right) has
+          room to breathe on desktop — narrower content above/below the
+          tabs (heading, ack box, CTA) just centers within the wider
+          container, matching this codebase's existing single-max-width
+          page convention rather than adding a second narrower wrapper. */}
+      <div className="mx-auto flex w-full max-w-4xl flex-col gap-6 px-4 py-8">
         <div className="flex flex-col gap-1">
           <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
             {t('reviewDelivery.eyebrow')}
@@ -314,8 +320,18 @@ export function ReviewDeliveryPage() {
               `isReady` (`hasPlayableSource && !isPlayerReady`), so without
               `forceMount` a recipient who never clicks into Review Notes would
               never fire Viewed at all. `TabsContent`'s own
-              `data-[state=inactive]:hidden` class still visually hides it. */}
-          <TabsContent value="reviewNotes" forceMount className="flex flex-col gap-4 pt-4">
+              `data-[state=inactive]:hidden` class still visually hides it.
+              260725-Q4: `lg:grid lg:grid-cols-[2fr_minmax(320px,1fr)]` — the
+              same player-left/notes-right split `DeliveryVodNotesTab` uses —
+              replaces the plain stacked flex-col at `lg:`; the citation
+              player left, the written sections (scrollable past `70vh`)
+              right. When there's no citable source, the noSource copy just
+              takes the left slot's spot instead of a player. */}
+          <TabsContent
+            value="reviewNotes"
+            forceMount
+            className="flex flex-col gap-4 pt-4 lg:grid lg:grid-cols-[2fr_minmax(320px,1fr)] lg:items-start lg:gap-6"
+          >
             {hasPlayableSource && currentSource ? (
               <div className="flex flex-col gap-1.5">
                 <p className="text-[10.5px] font-medium tracking-wide text-muted-foreground uppercase">
@@ -338,9 +354,9 @@ export function ReviewDeliveryPage() {
               <p className="text-sm text-muted-foreground">{t('reviewDelivery.noSource')}</p>
             )}
 
-            {snapshot.sections && snapshot.sections.length > 0 ? (
-              <div className="flex flex-col gap-4">
-                {snapshot.sections.map((section) => (
+            <div className="flex flex-col gap-4 lg:max-h-[70vh] lg:overflow-y-auto">
+              {snapshot.sections && snapshot.sections.length > 0 ? (
+                snapshot.sections.map((section) => (
                   <div key={section.id} className="rounded-lg border bg-card">
                     <div className="border-b px-3.5 py-2">
                       <h2 className="text-sm font-semibold">
@@ -358,11 +374,11 @@ export function ReviewDeliveryPage() {
                       />
                     </div>
                   </div>
-                ))}
-              </div>
-            ) : (
-              <p className="text-sm text-muted-foreground">{t('reviewDelivery.sectionsEmpty')}</p>
-            )}
+                ))
+              ) : (
+                <p className="text-sm text-muted-foreground">{t('reviewDelivery.sectionsEmpty')}</p>
+              )}
+            </div>
           </TabsContent>
         </Tabs>
 
@@ -436,7 +452,10 @@ function SessionDeliveryView({ snapshot }: { snapshot: PublicShareSnapshot }) {
 
   return (
     <PublicLayout>
-      <div className="mx-auto flex w-full max-w-2xl flex-col gap-6 px-4 py-8">
+      {/* 260725-Q4: same max-w-4xl widening as the coachReview render above —
+          this view's VOD Notes tab reuses `DeliveryVodNotesTab`'s `lg:`
+          two-column layout and needs the same room. */}
+      <div className="mx-auto flex w-full max-w-4xl flex-col gap-6 px-4 py-8">
         <div className="flex flex-col gap-1">
           <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
             {t('reviewDelivery.session.eyebrow')}
