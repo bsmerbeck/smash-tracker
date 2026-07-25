@@ -7,7 +7,9 @@ import { cn } from '@/lib/utils';
 import { useAuth } from '@/hooks/useAuth';
 import { useActiveSubject } from '@/hooks/useActiveSubject';
 import { useCoachingClients } from '@/hooks/useCoachingClients';
+import { useOwnedWorkspaceSubject } from '@/hooks/useOwnedWorkspaceSubject';
 import { navItems } from './nav';
+import { OwnerWorkspaceSidebar } from './OwnerWorkspaceSidebar';
 import ssbuTrainingGroundsLogo from '@/assets/SSBU_TG-03.png';
 
 function initialFromEmail(email: string | null | undefined): string {
@@ -280,7 +282,16 @@ function PersonalSidebar({ onNavigate }: { onNavigate?: () => void }) {
  */
 export function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
   const { mode, clientId } = useActiveSubject();
+  const { tenantId: ownedTenantId } = useOwnedWorkspaceSubject();
 
+  // Phase 24 (Coach Issuance & Client Claim Experience, CTRL-01): checked
+  // first because `mode` stays `'personal'` throughout the client-owned
+  // workspace family — this is the only signal distinguishing it from a
+  // plain personal route, and it must win before the personal-rail
+  // fallback below.
+  if (ownedTenantId != null) {
+    return <OwnerWorkspaceSidebar tenantId={ownedTenantId} onNavigate={onNavigate} />;
+  }
   if (clientId != null) {
     return <ClientWorkspaceSidebar clientId={clientId} onNavigate={onNavigate} />;
   }

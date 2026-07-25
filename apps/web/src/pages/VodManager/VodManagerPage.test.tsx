@@ -126,6 +126,16 @@ function ClientFightersStub() {
   return <div data-testid="client-fighters-stub">{location.pathname}</div>;
 }
 
+/**
+ * Phase 24 (Coach Issuance & Client Claim Experience, CTRL-01) fighter-setup
+ * UX test helper: the owned (claimed) workspace's own fighter-picker
+ * destination.
+ */
+function OwnedWorkspaceFightersStub() {
+  const location = useLocation();
+  return <div data-testid="owned-workspace-fighters-stub">{location.pathname}</div>;
+}
+
 function renderVodManager(initialEntry: string) {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
@@ -140,14 +150,22 @@ function renderVodManager(initialEntry: string) {
                   there too (unchanged; only the Match Data surface is
                   scoped VOD-optional). */}
               <Route path="/coach/:clientId/vods" element={<VodManagerPage />} />
+              {/* Phase 24 (Coach Issuance & Client Claim Experience, CTRL-01):
+                  the client-owned workspace family, a sibling of the coach
+                  route above. */}
+              <Route path="/workspace/:tenantId/vods" element={<VodManagerPage />} />
               {/* D-01: Start/Continue review navigates here — a stub target
                   so those tests can assert on the resolved destination
                   without pulling in the real (heavy) ReviewComposerPage. */}
               <Route path="/coach/:clientId/reviews/:reviewId" element={<ReviewComposerStub />} />
               {/* Fighter-setup UX: the callout's "Set fighters" CTA
-                  destinations — personal vs client-workspace context. */}
+                  destinations — personal vs client-workspace vs owned-workspace context. */}
               <Route path="/choose-primary" element={<ChoosePrimaryStub />} />
               <Route path="/coach/:clientId/fighters" element={<ClientFightersStub />} />
+              <Route
+                path="/workspace/:tenantId/fighters"
+                element={<OwnedWorkspaceFightersStub />}
+              />
             </Routes>
           </AnalyticsFilterProvider>
         </AuthProvider>
@@ -232,6 +250,23 @@ describe('VodManagerPage', () => {
 
     expect(await screen.findByTestId('client-fighters-stub')).toHaveTextContent(
       '/coach/tetra/fighters',
+    );
+  });
+
+  // Phase 24 (Coach Issuance & Client Claim Experience, CTRL-01): the third
+  // fighter-setup CTA mode — a claimed workspace's own fighter picker, never
+  // the owner's personal one.
+  it('fighter-setup: routes the callout CTA to the owned workspace fighters page in an owned workspace', async () => {
+    getFighters.mockResolvedValue({ primary: [], secondary: [] });
+    listMatches.mockResolvedValue([]);
+    const user = userEvent.setup();
+    renderVodManager('/workspace/t1/vods');
+
+    await screen.findByText('Set your fighters to start logging');
+    await user.click(screen.getByRole('button', { name: 'Set fighters' }));
+
+    expect(await screen.findByTestId('owned-workspace-fighters-stub')).toHaveTextContent(
+      '/workspace/t1/fighters',
     );
   });
 

@@ -2335,6 +2335,21 @@
       "title": "キャラクター",
       "subtitle": "あなたの使用キャラクター。分析はこれらに基づいて計算されます。",
       "saveButton": "保存"
+    },
+    "chrome": {
+      "chipAriaLabel": "ワークスペース: {{label}}",
+      "switchWorkspace": "ワークスペースを切り替え",
+      "backToPersonal": "個人モードに戻る",
+      "currentAria": "{{label}}(現在)",
+      "sectionYourWorkspace": "あなたのワークスペース",
+      "ownedCaption": "あなたのワークスペース",
+      "overview": "概要",
+      "fighters": "ファイター",
+      "matches": "対戦",
+      "vods": "VOD",
+      "analytics": "分析",
+      "workspaces_one": "{{count}}件のワークスペース",
+      "workspaces_other": "{{count}}件のワークスペース"
     }
   }
 }

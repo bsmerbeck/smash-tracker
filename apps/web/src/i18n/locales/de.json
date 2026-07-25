@@ -2335,6 +2335,21 @@
       "title": "Kämpfer",
       "subtitle": "Deine Hauptkämpfer. Deine Statistiken werden anhand dieser berechnet.",
       "saveButton": "Speichern"
+    },
+    "chrome": {
+      "chipAriaLabel": "Arbeitsbereich: {{label}}",
+      "switchWorkspace": "Arbeitsbereich wechseln",
+      "backToPersonal": "Zurück zu Persönlich",
+      "currentAria": "{{label}} (aktuell)",
+      "sectionYourWorkspace": "Dein Arbeitsbereich",
+      "ownedCaption": "Dein Arbeitsbereich",
+      "overview": "Übersicht",
+      "fighters": "Kämpfer",
+      "matches": "Matches",
+      "vods": "VODs",
+      "analytics": "Analysen",
+      "workspaces_one": "{{count}} Arbeitsbereich",
+      "workspaces_other": "{{count}} Arbeitsbereiche"
     }
   }
 }
