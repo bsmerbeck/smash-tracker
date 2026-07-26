@@ -40,6 +40,12 @@ export const PRESENT_IDS = new Set([1, 3, 34, 56, 59, 61, 63, 83, 85, 113]);
  * the two NO-MATCH synthetic sentinels 1000/1001 are excluded — they get no
  * art by design). `resize: true` rows are 1280x720 DLC-carousel sources
  * (`stage_addition_imgN.jpg`); `resize: false` rows are already 750x421.
+ *
+ * Id 118 (Hollow Bastion) was added later (quick 260726-r3) — 19-RESEARCH.md
+ * predates the Sora DLC wave, so it's not in the original appendix. Verified
+ * by fetching `stage_addition_img11.jpg` (the next sequential DLC-carousel
+ * slot after Mishima Dojo's img10) and visually confirming it's Hollow
+ * Bastion before adding it here.
  */
 export const STAGE_ART_MAP = [
   { id: 1, name: 'Battlefield', sourceFile: 'stage_img1.jpg', resize: false },
@@ -159,6 +165,7 @@ export const STAGE_ART_MAP = [
   { id: 115, name: 'Northern Cave', sourceFile: 'stage_addition_img8.jpg', resize: true },
   { id: 116, name: 'Cloud Sea of Alrest', sourceFile: 'stage_addition_img9.jpg', resize: true },
   { id: 117, name: 'Mishima Dojo', sourceFile: 'stage_addition_img10.jpg', resize: true },
+  { id: 118, name: 'Hollow Bastion', sourceFile: 'stage_addition_img11.jpg', resize: true },
 ];
 
 /**

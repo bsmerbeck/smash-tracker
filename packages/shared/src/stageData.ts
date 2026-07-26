@@ -146,6 +146,7 @@ export const StageList: Stage[] = [
   { id: 115, name: 'Northern Cave', url: '/assets/stages/115-northern-cave.jpg' },
   { id: 116, name: 'Cloud Sea of Alrest', url: '/assets/stages/116-cloud-sea-of-alrest.jpg' },
   { id: 117, name: 'Mishima Dojo', url: '/assets/stages/117-mishima-dojo.jpg' },
+  { id: 118, name: 'Hollow Bastion', url: '/assets/stages/118-hollow-bastion.jpg' },
   { id: 1000, name: '(Gen. Battlefield)', url: '' },
   { id: 1001, name: '(Gen. Final Destination)', url: '' },
 ];
