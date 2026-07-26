@@ -286,8 +286,16 @@ export function ReviewDeliveryPage() {
           room to breathe on desktop — narrower content above/below the
           tabs (heading, ack box, CTA) just centers within the wider
           container, matching this codebase's existing single-max-width
-          page convention rather than adding a second narrower wrapper. */}
-      <div className="mx-auto flex w-full max-w-4xl flex-col gap-6 px-4 py-8">
+          page convention rather than adding a second narrower wrapper.
+          260726-r1: max-w-4xl alone is STILL a flat 896px cap regardless of
+          viewport — on a >1280px display the whole shell (including the
+          two-column grid below) sat centered with large dead margins and a
+          small player. Grows the cap with viewport at `lg`/`xl`/`2xl`
+          instead of staying flat so the grid's player column (see the
+          `reviewNotes` TabsContent below) gets meaningfully wider on wide
+          screens; narrower breakpoints are untouched (base still max-w-4xl,
+          same as before). */}
+      <div className="mx-auto flex w-full max-w-4xl flex-col gap-6 px-4 py-8 lg:max-w-6xl xl:max-w-[1440px] 2xl:max-w-[1600px]">
         <div className="flex flex-col gap-1">
           <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
             {t('reviewDelivery.eyebrow')}
@@ -326,11 +334,18 @@ export function ReviewDeliveryPage() {
               replaces the plain stacked flex-col at `lg:`; the citation
               player left, the written sections (scrollable past `70vh`)
               right. When there's no citable source, the noSource copy just
-              takes the left slot's spot instead of a player. */}
+              takes the left slot's spot instead of a player.
+              260726-r1: at `xl:` the notes rail's track switches from an
+              open-ended `minmax(320px,1fr)` (which grows 1:2 in lockstep
+              with the player) to a CAPPED `minmax(380px,420px)` — the notes
+              column stops growing past ~420px and the player's `2fr` track
+              absorbs essentially all of the extra width the wider container
+              above now provides, matching the plan's "player absorbs most
+              of the new width" direction. */}
           <TabsContent
             value="reviewNotes"
             forceMount
-            className="flex flex-col gap-4 pt-4 lg:grid lg:grid-cols-[2fr_minmax(320px,1fr)] lg:items-start lg:gap-6"
+            className="flex flex-col gap-4 pt-4 lg:grid lg:grid-cols-[2fr_minmax(320px,1fr)] lg:items-start lg:gap-6 xl:grid-cols-[2fr_minmax(380px,420px)]"
           >
             {hasPlayableSource && currentSource ? (
               <div className="flex flex-col gap-1.5">
@@ -454,8 +469,11 @@ function SessionDeliveryView({ snapshot }: { snapshot: PublicShareSnapshot }) {
     <PublicLayout>
       {/* 260725-Q4: same max-w-4xl widening as the coachReview render above —
           this view's VOD Notes tab reuses `DeliveryVodNotesTab`'s `lg:`
-          two-column layout and needs the same room. */}
-      <div className="mx-auto flex w-full max-w-4xl flex-col gap-6 px-4 py-8">
+          two-column layout and needs the same room.
+          260726-r1: same fluid `lg:`/`xl:`/`2xl:` cap growth as the
+          coachReview render above — `DeliveryVodNotesTab`'s grid picks up
+          the extra width automatically via its own matching xl override. */}
+      <div className="mx-auto flex w-full max-w-4xl flex-col gap-6 px-4 py-8 lg:max-w-6xl xl:max-w-[1440px] 2xl:max-w-[1600px]">
         <div className="flex flex-col gap-1">
           <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
             {t('reviewDelivery.session.eyebrow')}
