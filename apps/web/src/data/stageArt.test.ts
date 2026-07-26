@@ -55,9 +55,9 @@ describe('stage art coverage', () => {
     expect(failures).toEqual([]);
   });
 
-  it('covers exactly 117 distinct real stage ids (excluding synthetic sentinels)', () => {
+  it('covers exactly 118 distinct real stage ids (excluding synthetic sentinels)', () => {
     const distinctIds = new Set(realStages().map((s) => s.id));
-    expect(distinctIds.size).toBe(117);
+    expect(distinctIds.size).toBe(118);
     for (const id of distinctIds) {
       const stage = realStages().find((s) => s.id === id);
       expect(stage?.url).toBeTruthy();

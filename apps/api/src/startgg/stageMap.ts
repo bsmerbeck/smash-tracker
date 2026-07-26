@@ -47,10 +47,10 @@ export function resolveStageByName(name: string): Stage | null {
  * resolution for any id missing from this table, so an unmapped id never
  * causes a worse outcome than before this map existed.
  *
- * Note: id 513 (Hollow Bastion) was observed in probe data but has no
- * corresponding entry in this app's `StageList` (no Kingdom Hearts stage) —
- * the build loop below silently skips it, so it's a harmless no-op kept
- * here purely as a record of what start.gg returned.
+ * Note: id 513 (Hollow Bastion) was observed in probe data and originally had
+ * no corresponding entry in this app's `StageList` (Kingdom Hearts DLC stage
+ * added in quick 260726-r3) — it now resolves normally like every other
+ * curated id below.
  */
 const STARTGG_STAGE_ID_TO_NAME: Readonly<Record<number, string>> = {
   311: 'Battlefield',
