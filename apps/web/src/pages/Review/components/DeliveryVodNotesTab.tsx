@@ -114,8 +114,13 @@ export function DeliveryVodNotesTab({ vods }: DeliveryVodNotesTabProps) {
           `lg:items-start` keeps the notes column's height intrinsic instead
           of grid-stretching it to the (usually taller) player column;
           `lg:max-h-[70vh] lg:overflow-y-auto` caps a long note list so it
-          scrolls internally rather than pushing the player out of view. */}
-      <div className="flex flex-col gap-4 lg:grid lg:grid-cols-[2fr_minmax(320px,1fr)] lg:items-start lg:gap-6">
+          scrolls internally rather than pushing the player out of view.
+          260726-r1: at `xl:` the notes track switches to a CAPPED
+          `minmax(380px,420px)` (matches `ReviewDeliveryPage`'s
+          `reviewNotes` tab exactly, T-260726-r1) so the notes rail stops
+          growing past ~420px and the player's `2fr` track absorbs the rest
+          of the wider parent container's extra width. */}
+      <div className="flex flex-col gap-4 lg:grid lg:grid-cols-[2fr_minmax(320px,1fr)] lg:items-start lg:gap-6 xl:grid-cols-[2fr_minmax(380px,420px)]">
         <div className="flex flex-col gap-1.5">
           <p className="text-[10.5px] font-medium tracking-wide text-muted-foreground uppercase">
             {t('reviewDelivery.nowPlaying')}
