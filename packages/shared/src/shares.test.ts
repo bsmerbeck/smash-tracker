@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { MAX_VOD_TIMESTAMPS_PER_MATCH } from './match.js';
 import {
   createShareInputSchema,
   includedVodSchema,
@@ -111,6 +112,24 @@ describe('shareSnapshotSchema', () => {
     expect(redacted.reviewedMomentsCount).toBe(5);
     expect(redacted.timestamps).toBeUndefined();
   });
+
+  it('timestamps is capped at MAX_VOD_TIMESTAMPS_PER_MATCH, not 20 (260726-r2)', () => {
+    const tooMany = Array.from({ length: MAX_VOD_TIMESTAMPS_PER_MATCH + 1 }, (_, index) => ({
+      seconds: index,
+      note: `n${index}`,
+    }));
+    const rejected = shareSnapshotSchema.safeParse({
+      ...fullyIncludedSnapshot(),
+      timestamps: tooMany,
+    });
+    expect(rejected.success).toBe(false);
+
+    const atCap = shareSnapshotSchema.parse({
+      ...fullyIncludedSnapshot(),
+      timestamps: tooMany.slice(0, MAX_VOD_TIMESTAMPS_PER_MATCH),
+    });
+    expect(atCap.timestamps).toHaveLength(MAX_VOD_TIMESTAMPS_PER_MATCH);
+  });
 });
 
 function fullyPopulatedPublicSnapshot() {
@@ -174,6 +193,24 @@ describe('publicShareSnapshotSchema', () => {
     const shape = publicShareSnapshotSchema.shape;
     expect(shape).not.toHaveProperty('uid');
     expect(shape).not.toHaveProperty('matchId');
+  });
+
+  it('timestamps is capped at MAX_VOD_TIMESTAMPS_PER_MATCH, not 20 (260726-r2)', () => {
+    const tooMany = Array.from({ length: MAX_VOD_TIMESTAMPS_PER_MATCH + 1 }, (_, index) => ({
+      seconds: index,
+      note: `n${index}`,
+    }));
+    const rejected = publicShareSnapshotSchema.safeParse({
+      ...fullyPopulatedPublicSnapshot(),
+      timestamps: tooMany,
+    });
+    expect(rejected.success).toBe(false);
+
+    const atCap = publicShareSnapshotSchema.parse({
+      ...fullyPopulatedPublicSnapshot(),
+      timestamps: tooMany.slice(0, MAX_VOD_TIMESTAMPS_PER_MATCH),
+    });
+    expect(atCap.timestamps).toHaveLength(MAX_VOD_TIMESTAMPS_PER_MATCH);
   });
 
   it('parses a fully-redacted public object (timestamps/tags/ownerDisplayName absent)', () => {
@@ -591,8 +628,8 @@ describe('includedVodSchema (Phase 21, DLVX-02/DLVX-04)', () => {
     expect(result.success).toBe(false);
   });
 
-  it('timestamps is capped at 20 and reuses the { seconds, note, tags? } shape', () => {
-    const tooMany = Array.from({ length: 21 }, (_, index) => ({
+  it('timestamps is capped at MAX_VOD_TIMESTAMPS_PER_MATCH (260726-r2) and reuses the { seconds, note, tags? } shape', () => {
+    const tooMany = Array.from({ length: MAX_VOD_TIMESTAMPS_PER_MATCH + 1 }, (_, index) => ({
       seconds: index,
       note: `n${index}`,
     }));
@@ -603,12 +640,12 @@ describe('includedVodSchema (Phase 21, DLVX-02/DLVX-04)', () => {
     });
     expect(result.success).toBe(false);
 
-    const exactlyTwenty = includedVodSchema.parse({
+    const atCap = includedVodSchema.parse({
       matchId: 'match-1',
       vodUrl: 'https://youtu.be/abc',
-      timestamps: tooMany.slice(0, 20),
+      timestamps: tooMany.slice(0, MAX_VOD_TIMESTAMPS_PER_MATCH),
     });
-    expect(exactlyTwenty.timestamps).toHaveLength(20);
+    expect(atCap.timestamps).toHaveLength(MAX_VOD_TIMESTAMPS_PER_MATCH);
   });
 });
 
