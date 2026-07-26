@@ -670,9 +670,11 @@ export function ShareViewPage() {
   }
 
   if (isPending || !snapshot) {
+    // 260726-r1: matches the loaded container's fluid cap below so the
+    // skeleton doesn't visibly jump width once `snapshot` resolves.
     return (
       <PublicLayout>
-        <div className="mx-auto flex w-full max-w-3xl flex-col gap-4 px-4 py-12">
+        <div className="mx-auto flex w-full max-w-3xl flex-col gap-4 px-4 py-12 lg:max-w-4xl xl:max-w-5xl 2xl:max-w-6xl">
           <div className="h-8 w-64 animate-pulse rounded bg-muted" />
           <div className="aspect-video w-full animate-pulse rounded-lg bg-muted" />
         </div>
@@ -890,9 +892,20 @@ export function ShareViewPage() {
     });
   }
 
+  // 260726-r1: `/s/:token` shares the SAME narrow-fixed-container symptom
+  // 260726-r1 fixed on `/r/:token` (ReviewDeliveryPage) — a flat max-w-3xl
+  // (768px) cap on this player-forward page leaves large dead margins on a
+  // wide display. Unlike ReviewDeliveryPage this page is a SINGLE stacked
+  // column (player, then a flat list of timestamp rows — no lg: two-column
+  // grid splitting player/notes), so it doesn't get ReviewDeliveryPage's
+  // full 1440/1600px growth: that would stretch the timestamp-row list to
+  // an uncomfortably long single-column line length for no player benefit
+  // beyond a certain point (aspect-video height grows in lockstep with
+  // width). Widens on a more measured curve instead — enough to noticeably
+  // grow the player on desktop while keeping the note rows readable.
   return (
     <PublicLayout>
-      <div className="mx-auto flex w-full max-w-3xl flex-col gap-6 px-4 py-8">
+      <div className="mx-auto flex w-full max-w-3xl flex-col gap-6 px-4 py-8 lg:max-w-4xl xl:max-w-5xl 2xl:max-w-6xl">
         <div className="flex flex-col gap-2">
           <div className="flex flex-wrap items-center gap-3">
             {fighter && (
