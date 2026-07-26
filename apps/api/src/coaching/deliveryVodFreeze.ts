@@ -4,6 +4,7 @@ import {
   includedVodSchema,
   matchRecordSchema,
   MAX_DELIVERY_VODS,
+  MAX_VOD_TIMESTAMPS_PER_MATCH,
   type IncludedVod,
   type MatchRecord,
 } from '@smash-tracker/shared';
@@ -27,7 +28,8 @@ import { isPathSafeMatchId } from '../services/rtdb.js';
  * - a match with no `vodUrl` is silently dropped (nothing to freeze)
  * - otherwise authored as a NEW `IncludedVod` object literal FROM SCRATCH —
  *   `matchId`, `vodUrl`, `startSeconds` (from `vodStartSeconds`), `timestamps`
- *   (from `vodTimestamps`, capped 20, mapped to the `{ seconds, note, tags? }`
+ *   (from `vodTimestamps`, capped to the shared `MAX_VOD_TIMESTAMPS_PER_MATCH`
+ *   — 260726-r2 — mapped to the `{ seconds, note, tags? }`
  *   share shape), and a structurally-safe `label` (a public-game-data fighter
  *   matchup, e.g. "Kazuya vs Sora" — NEVER the opponent's human name,
  *   opponent notes, or any other private match field, T-21-01). The raw
@@ -72,11 +74,13 @@ export async function freezeIncludedVods(
         ...(match.vodStartSeconds != null ? { startSeconds: match.vodStartSeconds } : {}),
         ...(match.vodTimestamps && match.vodTimestamps.length > 0
           ? {
-              timestamps: match.vodTimestamps.slice(0, 20).map((entry) => ({
-                seconds: entry.seconds,
-                note: entry.note,
-                ...(entry.tags && entry.tags.length > 0 ? { tags: entry.tags } : {}),
-              })),
+              timestamps: match.vodTimestamps
+                .slice(0, MAX_VOD_TIMESTAMPS_PER_MATCH)
+                .map((entry) => ({
+                  seconds: entry.seconds,
+                  note: entry.note,
+                  ...(entry.tags && entry.tags.length > 0 ? { tags: entry.tags } : {}),
+                })),
             }
           : {}),
       };
