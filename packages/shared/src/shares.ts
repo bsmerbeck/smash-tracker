@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { matchStageSchema } from './stage.js';
 import { recapSetSchema } from './recap.js';
-import { coachAttributionSchema } from './match.js';
+import { coachAttributionSchema, MAX_VOD_TIMESTAMPS_PER_MATCH } from './match.js';
 import { MAX_REVIEW_SECTIONS, reviewSectionSchema } from './coachingReview.js';
 
 /**
@@ -84,8 +84,8 @@ export const includedVodSchema = z.object({
   label: z.string().trim().max(120).nullish(),
   vodUrl: z.string().url(),
   startSeconds: z.number().int().nonnegative().nullish(),
-  /** Frozen per-VOD notes, reusing `shareTimestampSchema`'s shape/caps (never a second copy of the 200-char/5-tag limits). */
-  timestamps: z.array(shareTimestampSchema).max(20).nullish(),
+  /** Frozen per-VOD notes, reusing `shareTimestampSchema`'s shape/caps (never a second copy of the 200-char/5-tag limits). Owner decision (260726-r2): capped to the SAME shared `MAX_VOD_TIMESTAMPS_PER_MATCH` as the source match's own `vodTimestamps` — a snapshot must never truncate notes the owner never asked to limit. */
+  timestamps: z.array(shareTimestampSchema).max(MAX_VOD_TIMESTAMPS_PER_MATCH).nullish(),
 });
 export type IncludedVod = z.infer<typeof includedVodSchema>;
 
@@ -154,7 +154,8 @@ export const shareSnapshotSchema = z.object({
    */
   reviewedMomentsCount: z.number().int().nonnegative(),
   // --- toggle-gated content: key OMITTED (never null/[]) when excluded ---
-  timestamps: z.array(shareTimestampSchema).max(20).nullish(),
+  /** Owner decision (260726-r2): capped to the shared `MAX_VOD_TIMESTAMPS_PER_MATCH`, matching `includedVodSchema.timestamps` and the source match's own write-side cap — no separate, lower snapshot limit. */
+  timestamps: z.array(shareTimestampSchema).max(MAX_VOD_TIMESTAMPS_PER_MATCH).nullish(),
   tags: z.array(z.string().trim().min(1).max(24)).max(10).nullish(),
   /** Opt-in only; absent unless `redaction.showDisplayName` was chosen AND a name was provided. */
   ownerDisplayName: z.string().trim().max(60).nullish(),
@@ -233,7 +234,8 @@ export const publicShareSnapshotSchema = z
     matchDate: z.number().int().nonnegative().nullish(),
     vodUrl: z.string().url().nullish(),
     vodStartSeconds: z.number().int().nonnegative().nullish(),
-    timestamps: z.array(publicShareTimestampSchema).max(20).nullish(),
+    /** Owner decision (260726-r2): capped to the shared `MAX_VOD_TIMESTAMPS_PER_MATCH`, matching `shareSnapshotSchema.timestamps`/`includedVodSchema.timestamps` — no separate, lower snapshot limit. */
+    timestamps: z.array(publicShareTimestampSchema).max(MAX_VOD_TIMESTAMPS_PER_MATCH).nullish(),
     tags: z.array(z.string().trim().min(1).max(24)).max(10).nullish(),
     redaction: z
       .object({
@@ -265,7 +267,15 @@ export const publicShareSnapshotSchema = z
     detail: z.enum(['summary', 'full']).nullish(),
     /** External event page on the source site — see `recapSnapshotSchema.tournamentUrl`'s doc for the derivation rule. Absent when not trustworthily derivable. */
     tournamentUrl: z.string().url().nullish(),
-    /** The full set timeline — present only when `detail === 'full'`. See `recapSnapshotSchema.sets`. */
+    /**
+     * The full set timeline — present only when `detail === 'full'`. See
+     * `recapSnapshotSchema.sets`. Deliberately LEFT AT 20 (260726-r2
+     * judgment call, not raised to `MAX_VOD_TIMESTAMPS_PER_MATCH`): a recap
+     * "set" here is a set-of-a-tournament-run entry, the same domain as
+     * `recapSnapshotSchema.sets` (a bracket run's climax sets), not a
+     * VOD-note/timestamp — the owner's "don't ever limit to 20" decision was
+     * scoped to per-VOD notes, not tournament-run set counts.
+     */
     sets: z.array(recapSetSchema).max(20).nullish(),
     // --- coachReview-only fields (Phase 12, DLV-02): nullish here (absent on
     // a vod-review or recap snapshot); the third `.refine()` below enforces
@@ -295,7 +305,13 @@ export const publicShareSnapshotSchema = z
      * Every distinct source VOD a citation in the delivered version's body
      * refers to (D-04 multi-VOD first-class) — lets the delivery page
      * re-key `useVodPlayer` and seek when a citation from a different
-     * source is clicked, without a second fetch.
+     * source is clicked, without a second fetch. Deliberately LEFT AT 20
+     * (260726-r2 judgment call, not raised to `MAX_VOD_TIMESTAMPS_PER_MATCH`):
+     * this counts DISTINCT VODS cited across a review body, not notes/
+     * timestamps within a single VOD — the same "how many VODs" domain as
+     * `MAX_DELIVERY_VODS` (10), not the per-VOD note-count domain the owner's
+     * decision targeted. `RtdbService.resolveReviewCitationSources` caps its
+     * own resolution to this same 20 — kept in lockstep, not raised either.
      */
     citationSources: z
       .array(
