@@ -473,10 +473,7 @@ describe('resolveStageByName', () => {
 describe('resolveStage', () => {
   it("resolves every start.gg stage id observed during the V6-W1b probe that exists in this app's stage list", () => {
     // id -> expected app stage name, taken verbatim from live start.gg data
-    // (player 1802316's set history + Genesis 9 Ultimate Singles). Hollow
-    // Bastion (id 513) was also observed but is intentionally excluded here
-    // — this app's stage list has no Kingdom Hearts stage, so that curated
-    // entry is a harmless no-op (see the next test).
+    // (player 1802316's set history + Genesis 9 Ultimate Singles).
     const observed: [number, string][] = [
       [311, 'Battlefield'],
       [328, 'Final Destination'],
@@ -493,8 +490,8 @@ describe('resolveStage', () => {
     }
   });
 
-  it("harmlessly no-ops for a curated id whose stage is not in this app's stage list (Hollow Bastion)", () => {
-    expect(resolveStage(513, 'Hollow Bastion')).toBeNull();
+  it("resolves Hollow Bastion (id 513), added to this app's stage list in quick 260726-r3", () => {
+    expect(resolveStage(513, 'irrelevant-mismatched-name')?.name).toBe('Hollow Bastion');
   });
 
   it('prefers the numeric id over the name when both are present', () => {
