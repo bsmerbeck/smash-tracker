@@ -4,6 +4,7 @@ import {
   activeClaimInvitationPointerSchema,
   claimInvitationRecordSchema,
   clientHubRowSchema,
+  clientMembershipSchema,
   coachClientEntrySchema,
   mapDeliveryStateToHubState,
   type ClientHubList,
@@ -440,6 +441,23 @@ export async function archiveClient(
  * `shareTokens/{token}` step above: read the pointer, `safeParse` it, and if
  * it parses, fold `claimInvitations/{digest}: null` into the same atomic
  * update.
+ *
+ * Quick 260726-r7 (P0 regression): `flipTenantOwnership`
+ * (`apps/api/src/claims/redemption.ts`) writes SEVEN paths on claim, six of
+ * which are `{tree}/{tenantId}`-shaped and therefore already covered by
+ * `CANONICAL_TENANT_TREES`/the tenant-metadata nulls below. The seventh,
+ * `clientOwnedTenants/{clientUid}/{tenantId}`, is CLIENT-keyed, not
+ * tenant-keyed — the one Phase 24 reverse index this cascade cannot reach by
+ * iterating tenant-shaped trees, which is exactly how it slipped through at
+ * Phase 24 ship time. Audited: every other Phase 24 write site
+ * (`activeClaimInvitationByTenant`, `claimInvitations/{digest}`) already has
+ * an explicit cascade step above; `clientOwnedTenants` was the only gap.
+ * Resolved by resolving the owning client's uid from
+ * `clientMembers/{tenantId}` (the member whose `role` is `'owner'`) BEFORE
+ * that node is nulled below, then folding
+ * `clientOwnedTenants/{ownerUid}/{tenantId}: null` into the SAME atomic
+ * update. An unclaimed client has no `'owner'` member — `ownerUid` stays
+ * `null` and this step becomes a normal no-op, never an error.
  */
 export async function deleteClient(
   database: Database,
@@ -472,6 +490,23 @@ export async function deleteClient(
     activeInvitationSnapshot.val(),
   );
 
+  // Quick 260726-r7: resolve the claimed owner (if any) BEFORE
+  // `clientMembers/{tenantId}` is nulled below — safeParse-and-skip per
+  // member (CONCERNS.md guardrail 3) so one corrupt membership record can
+  // never abort the whole delete.
+  const membersSnapshot = await database.ref(`clientMembers/${tenantId}`).get();
+  let ownerUid: string | null = null;
+  if (membersSnapshot.exists()) {
+    const members = membersSnapshot.val() as Record<string, unknown>;
+    for (const [memberUid, memberValue] of Object.entries(members)) {
+      const parsedMember = clientMembershipSchema.safeParse(memberValue);
+      if (parsedMember.success && parsedMember.data.role === 'owner') {
+        ownerUid = memberUid;
+        break;
+      }
+    }
+  }
+
   const updates: Record<string, null> = {};
   for (const tree of CANONICAL_TENANT_TREES) {
     updates[`${tree}/${tenantId}`] = null;
@@ -484,6 +519,12 @@ export async function deleteClient(
   }
   if (activeInvitationParsed.success) {
     updates[`claimInvitations/${activeInvitationParsed.data.digest}`] = null;
+  }
+  if (ownerUid !== null) {
+    // Quick 260726-r7: the client-owner reverse index (Phase 24's 7th
+    // `flipTenantOwnership` path) — the client-keyed gap the cascade never
+    // covered, see doc comment above.
+    updates[`clientOwnedTenants/${ownerUid}/${tenantId}`] = null;
   }
 
   // Root-level multi-path update: null values delete keys atomically
