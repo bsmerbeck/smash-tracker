@@ -1,6 +1,6 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { api, type VodTimestampInput } from '@/lib/api';
-import { useActiveSubject } from './useActiveSubject';
+import { useEffectiveSubject } from './useEffectiveSubject';
 import { matchesQueryKey } from './useMatches';
 import { vodSharesQueryKey } from './useVodShares';
 import { onboardingProgressQueryKey } from './useOnboardingProgress';
@@ -19,12 +19,16 @@ import { onboardingProgressQueryKey } from './useOnboardingProgress';
  * `useCreateNote`/`useUpdateNote` also invalidate `onboardingProgressQueryKey`
  * (Phase 13, ONBD-04/D-04): a note write can cross `vod_activated`'s "one
  * VOD + two notes" threshold server-side.
+ *
+ * Quick 260726-r8: every hook here uses `useEffectiveSubject()`, not
+ * `useActiveSubject()` — see `useCreateMatch`'s doc comment for the
+ * claimed-workspace rationale.
  */
 
 /** POST /api/matches/:id/notes. Resolves with the created, id-bearing note. */
 export function useCreateNote() {
   const queryClient = useQueryClient();
-  const subject = useActiveSubject();
+  const subject = useEffectiveSubject();
   return useMutation({
     mutationFn: ({ matchId, input }: { matchId: string; input: VodTimestampInput }) =>
       api.matches.createNote(matchId, input),
@@ -40,7 +44,7 @@ export function useCreateNote() {
 /** PATCH /api/matches/:id/notes/:noteId — full-note replace by stable note id. */
 export function useUpdateNote() {
   const queryClient = useQueryClient();
-  const subject = useActiveSubject();
+  const subject = useEffectiveSubject();
   return useMutation({
     mutationFn: ({
       matchId,
@@ -63,7 +67,7 @@ export function useUpdateNote() {
 /** DELETE /api/matches/:id/notes/:noteId — removes one note by stable note id. */
 export function useDeleteNote() {
   const queryClient = useQueryClient();
-  const subject = useActiveSubject();
+  const subject = useEffectiveSubject();
   return useMutation({
     mutationFn: ({ matchId, noteId }: { matchId: string; noteId: string }) =>
       api.matches.deleteNote(matchId, noteId),
@@ -87,7 +91,7 @@ export function useDeleteNote() {
  */
 export function useClearVodAndNotes() {
   const queryClient = useQueryClient();
-  const subject = useActiveSubject();
+  const subject = useEffectiveSubject();
   return useMutation({
     mutationFn: (matchId: string) => api.matches.clearVod(matchId),
     onSuccess: async () => {
