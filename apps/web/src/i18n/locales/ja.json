@@ -1485,6 +1485,7 @@
     "saveAndDashboard": "保存してダッシュボードへ",
     "saveAndPrimaries": "保存してメインを選ぶ",
     "loading": "ファイターを読み込み中...",
+    "loadError": "ファイターを読み込めませんでした。データは無事です — もう一度お試しください。",
     "selected_one": "選択中（{{count}}）",
     "selected_other": "選択中（{{count}}）",
     "emptySelected": "ファイターはまだ選択されていません。下のファイターをクリックして追加しましょう。",

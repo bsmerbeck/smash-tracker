@@ -1485,6 +1485,7 @@
     "saveAndDashboard": "Speichern und zum Dashboard",
     "saveAndPrimaries": "Speichern und Mains wählen",
     "loading": "Deine Kämpfer werden geladen...",
+    "loadError": "Wir konnten deine Kämpfer nicht laden. Deine Daten sind sicher — versuche es erneut.",
     "selected_one": "Ausgewählt ({{count}})",
     "selected_other": "Ausgewählt ({{count}})",
     "emptySelected": "Noch keine Kämpfer ausgewählt. Klicke unten auf einen Kämpfer, um ihn hinzuzufügen.",

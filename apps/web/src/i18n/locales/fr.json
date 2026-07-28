@@ -1485,6 +1485,7 @@
     "saveAndDashboard": "Enregistrer et aller au tableau de bord",
     "saveAndPrimaries": "Enregistrer et choisir les principaux",
     "loading": "Chargement de vos combattants...",
+    "loadError": "Nous n'avons pas pu charger vos combattants. Vos données sont en sécurité — réessayez.",
     "selected_one": "Sélectionnés ({{count}})",
     "selected_other": "Sélectionnés ({{count}})",
     "emptySelected": "Aucun combattant sélectionné pour le moment. Cliquez sur un combattant ci-dessous pour l’ajouter.",
