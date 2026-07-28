@@ -1,7 +1,7 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import type { FighterSelectionInput } from '@smash-tracker/shared';
 import { api } from '@/lib/api';
-import { useActiveSubject } from './useActiveSubject';
+import { useEffectiveSubject } from './useEffectiveSubject';
 import { fightersQueryKey } from './useFighters';
 import { profileQueryKey } from './useProfile';
 
@@ -11,10 +11,13 @@ import { profileQueryKey } from './useProfile';
  * personal) + profile (NOT subject-scoped — `profileQueryKey` is the coach's
  * own /users/me profile, which is genuinely personal and must never be
  * subject-scoped; a coaching-mode fighters save has no effect on it).
+ *
+ * Quick 260726-r8: uses `useEffectiveSubject()`, not `useActiveSubject()` —
+ * see `useCreateMatch`'s doc comment for the claimed-workspace rationale.
  */
 export function useSaveFighters() {
   const queryClient = useQueryClient();
-  const subject = useActiveSubject();
+  const subject = useEffectiveSubject();
   return useMutation({
     mutationFn: (input: FighterSelectionInput) => api.users.saveFighters(input),
     onSuccess: async () => {
