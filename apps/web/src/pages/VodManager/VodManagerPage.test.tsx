@@ -17,6 +17,19 @@ import type {
   YouTubePlayerInstance,
 } from '@/lib/useVodPlayer';
 
+// The real per-match note cap is 1000 (raised from 20 by quick 260725-Q3). The
+// cap test below has to seed a match that is AT the cap, and the VOD manager
+// renders every seeded note as a row — at the real value that is 1000 rendered
+// rows, which pushed the test past its timeout under full-suite load while
+// passing in isolation. The behavior under test is "at cap → blocked", which is
+// independent of the cap's value, so this file pins a small cap. `MAX_TIMESTAMPS`
+// is referenced by exactly one test here; every other test in this file stays
+// far below 25 notes.
+vi.mock('@/lib/vod', async () => {
+  const actual = await vi.importActual<typeof import('@/lib/vod')>('@/lib/vod');
+  return { ...actual, MAX_TIMESTAMPS: 25 };
+});
+
 vi.mock('firebase/auth', async () => {
   const mock = await import('@/test/mockAuth');
   return {
