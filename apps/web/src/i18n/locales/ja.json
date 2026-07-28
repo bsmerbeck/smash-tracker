@@ -2359,7 +2359,11 @@
       "vods": "VOD",
       "analytics": "分析",
       "workspaces_one": "{{count}}件のワークスペース",
-      "workspaces_other": "{{count}}件のワークスペース"
+      "workspaces_other": "{{count}}件のワークスペース",
+      "entryAriaLabel": "マイワークスペース: {{label}}",
+      "entryLabel": "マイワークスペース",
+      "entryMenuAriaLabel": "マイワークスペース",
+      "entryMenuLabel": "あなたのワークスペース"
     }
   },
   "claim": {

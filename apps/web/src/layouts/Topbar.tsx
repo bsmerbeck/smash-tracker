@@ -23,7 +23,7 @@ import { useProfile } from '@/hooks/useProfile';
 import { cn } from '@/lib/utils';
 import { AnalyticsFilterControls } from '@/components/AnalyticsFilterControls';
 import { LanguageSelect } from '@/components/LanguageSelect';
-import { OwnerWorkspaceChip } from './OwnerWorkspaceChip';
+import { OwnerWorkspaceChip, OwnerWorkspaceEntryChip } from './OwnerWorkspaceChip';
 import { SidebarContent } from './SidebarContent';
 
 /**
@@ -243,6 +243,11 @@ export function Topbar() {
         {isCoachingWithClient && <ClientChip clientId={clientId} />}
         {isCoachingHub && <HubClientPicker />}
         {isOwnerWorkspace && <OwnerWorkspaceChip tenantId={ownedTenantId} />}
+        {/* Quick 260726-r5 (Phase 24 gap 1): the discoverable entry point back
+            INTO an owned workspace, shown everywhere OUTSIDE the workspace
+            itself (Personal and Coaching alike) — mutually exclusive with the
+            chip above, and self-hides with zero owned workspaces. */}
+        {!isOwnerWorkspace && <OwnerWorkspaceEntryChip />}
       </div>
 
       <div className="flex-1" />
@@ -276,6 +281,11 @@ export function Topbar() {
             {isOwnerWorkspace && (
               <div className="sm:hidden">
                 <OwnerWorkspaceChip tenantId={ownedTenantId} />
+              </div>
+            )}
+            {!isOwnerWorkspace && (
+              <div className="sm:hidden">
+                <OwnerWorkspaceEntryChip />
               </div>
             )}
             <p className="text-xs font-medium text-muted-foreground">

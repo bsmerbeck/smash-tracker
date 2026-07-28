@@ -2359,7 +2359,11 @@
       "vods": "VODs",
       "analytics": "Analíticas",
       "workspaces_one": "{{count}} espacio de trabajo",
-      "workspaces_other": "{{count}} espacios de trabajo"
+      "workspaces_other": "{{count}} espacios de trabajo",
+      "entryAriaLabel": "Mi espacio de trabajo: {{label}}",
+      "entryLabel": "Mi espacio de trabajo",
+      "entryMenuAriaLabel": "Mi espacio de trabajo",
+      "entryMenuLabel": "Tus espacios de trabajo"
     }
   },
   "claim": {
