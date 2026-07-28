@@ -5,6 +5,7 @@ import { useClientWorkspaces } from '@/hooks/useClientWorkspaces';
 import { useOwnedWorkspaceSubject } from '@/hooks/useOwnedWorkspaceSubject';
 import { useMatches } from '@/hooks/useMatches';
 import { CoachAccessCard } from './CoachAccessCard';
+import { DangerZoneCard } from './DangerZoneCard';
 
 /**
  * Phase 24 (Coach Issuance & Client Claim Experience, CTRL-01): the
@@ -13,7 +14,8 @@ import { CoachAccessCard } from './CoachAccessCard';
  * the coach's own multi-step checklist page. Renders the coach-given
  * workspace label (fixed for v2.4 — editing it is deferred to backlog), a
  * compact match/VOD count line, quick links to the workspace's other
- * surfaces, and the Coach access card.
+ * surfaces, the Coach access card, and (Quick 260726-r6) the destructive
+ * "danger zone" hard-delete card below it.
  */
 export function OwnerWorkspaceOverviewPage() {
   const { t } = useTranslation();
@@ -78,6 +80,8 @@ export function OwnerWorkspaceOverviewPage() {
       </div>
 
       <CoachAccessCard workspace={workspace} />
+
+      <DangerZoneCard workspace={workspace} />
     </div>
   );
 }
