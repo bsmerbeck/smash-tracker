@@ -1580,6 +1580,9 @@
       "reviews": "Bewertungen",
       "sessions": "Sitzungen"
     },
+    "workspace": {
+      "accessEndedToast": "Dein Zugriff auf diesen Arbeitsbereich wurde beendet"
+    },
     "hub": {
       "title": "Kunden-Hub",
       "loading": "Deine Kunden werden geladen...",
@@ -2360,7 +2363,11 @@
       "vods": "VODs",
       "analytics": "Analysen",
       "workspaces_one": "{{count}} Arbeitsbereich",
-      "workspaces_other": "{{count}} Arbeitsbereiche"
+      "workspaces_other": "{{count}} Arbeitsbereiche",
+      "entryAriaLabel": "Mein Arbeitsbereich: {{label}}",
+      "entryLabel": "Mein Arbeitsbereich",
+      "entryMenuAriaLabel": "Mein Arbeitsbereich",
+      "entryMenuLabel": "Deine Arbeitsbereiche"
     }
   },
   "claim": {

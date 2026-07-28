@@ -4,6 +4,7 @@ import { toast } from 'sonner';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { SUPPORTED_LANGUAGES } from '@/i18n';
 import { useStartggAutoSync } from '@/hooks/useStartgg';
+import { useCoachAccessEjection } from '@/hooks/useCoachAccessEjection';
 import { GuidedPathCard } from '@/components/onboarding/GuidedPathCard';
 import { Sidebar } from './Sidebar';
 import { Topbar } from './Topbar';
@@ -52,6 +53,12 @@ export function MainLayout({ children }: { children: ReactNode }) {
   useLanguageDetectionNotice();
   // First-ever start.gg sync for a freshly-linked account (see the hook doc).
   useStartggAutoSync();
+  // Quick 260726-r5 (Phase 24 gap 2): boots a coach out of a client
+  // workspace the instant access is revoked mid-session (see the hook doc).
+  // A true no-op outside `/coach/:clientId/*` — mounted here, not inside
+  // any `/coach/*` route file, so it's additive to coach chrome rather than
+  // a modification of it.
+  useCoachAccessEjection();
   return (
     <TooltipProvider>
       <div className="flex min-h-svh flex-col">

@@ -1580,6 +1580,9 @@
       "reviews": "Reviews",
       "sessions": "Sessions"
     },
+    "workspace": {
+      "accessEndedToast": "Your access to this workspace has ended"
+    },
     "hub": {
       "title": "Client Hub",
       "loading": "Loading your clients...",
@@ -2360,7 +2363,11 @@
       "vods": "VODs",
       "analytics": "Analytics",
       "workspaces_one": "{{count}} workspace",
-      "workspaces_other": "{{count}} workspaces"
+      "workspaces_other": "{{count}} workspaces",
+      "entryAriaLabel": "My Workspace: {{label}}",
+      "entryLabel": "My Workspace",
+      "entryMenuAriaLabel": "My Workspace",
+      "entryMenuLabel": "Your workspaces"
     }
   },
   "claim": {

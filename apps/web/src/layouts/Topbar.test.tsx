@@ -385,7 +385,7 @@ describe('Topbar owned-workspace chip (Phase 24, CTRL-01)', () => {
     ).not.toBeInTheDocument();
   });
 
-  it('renders the coach client chip exactly as before, and no owned-workspace chip, on a coach route', async () => {
+  it('renders the coach client chip exactly as before, and no in-workspace chip, on a coach route', async () => {
     listClients.mockResolvedValue([{ clientId: 'c1', label: 'Client One', draftCount: 0 }]);
     getMe.mockResolvedValue({
       uid: 'test-uid',
@@ -399,11 +399,106 @@ describe('Topbar owned-workspace chip (Phase 24, CTRL-01)', () => {
     expect(screen.queryByRole('button', { name: /^Workspace:/ })).not.toBeInTheDocument();
   });
 
-  it('renders neither workspace chip on a personal route', async () => {
+  it('renders only the in-workspace chip (not the entry chip) inside the owned workspace itself', async () => {
+    renderTopbarAt('/workspace/t1/overview');
+
+    expect(
+      await screen.findByRole('button', { name: /Workspace: My Workspace/ }),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /^My Workspace/ })).not.toBeInTheDocument();
+  });
+});
+
+/**
+ * Quick 260726-r5 (Phase 24 gap 1): the discoverable entry point BACK into an
+ * owned workspace, shown from every route OUTSIDE `/workspace/:tenantId/*` —
+ * Personal and Coaching alike. Before this fix, a claimed client had no way
+ * back into their workspace short of the browser Back button.
+ */
+describe('Topbar owned-workspace entry chip (Quick 260726-r5, gap 1)', () => {
+  beforeEach(() => {
+    resetAuthMock();
+    vi.clearAllMocks();
+    getMe.mockResolvedValue({
+      uid: 'test-uid',
+      email: 'test@example.com',
+      fighters: { primary: [], secondary: [] },
+      coachingModeEnabled: false,
+    });
+    setMockUser(makeMockUser({ email: 'pilot@example.com' }));
+  });
+
+  it('with 0 owned workspaces: renders no entry on a personal route (no empty affordance)', async () => {
+    listWorkspaces.mockResolvedValue([]);
     renderTopbarAt('/dashboard');
 
     await screen.findByText('grandfinals.gg');
-    expect(screen.queryByRole('button', { name: /^Workspace:/ })).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: /Managing/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /^My Workspace/ })).not.toBeInTheDocument();
+  });
+
+  it('with 1 owned workspace: renders the entry labeled with the workspace label from Personal, and navigates into /workspace/:tenantId/overview', async () => {
+    const user = userEvent.setup();
+    listWorkspaces.mockResolvedValue([
+      { tenantId: 't1', label: "Tetra's Workspace", claimedAt: 1, delegateCoachUid: null },
+    ]);
+    renderTopbarAt('/dashboard');
+
+    const entry = await screen.findByRole('button', { name: "My Workspace: Tetra's Workspace" });
+    expect(entry).toHaveTextContent("Tetra's Workspace");
+    await user.click(entry);
+
+    expect(
+      await screen.findByRole('button', { name: /Workspace: Tetra's Workspace/ }),
+    ).toBeInTheDocument();
+  });
+
+  it('renders the entry from Coaching mode too (the hub, no client selected)', async () => {
+    getMe.mockResolvedValue({
+      uid: 'test-uid',
+      email: 'test@example.com',
+      fighters: { primary: [], secondary: [] },
+      coachingModeEnabled: true,
+    });
+    listWorkspaces.mockResolvedValue([
+      { tenantId: 't1', label: "Tetra's Workspace", claimedAt: 1, delegateCoachUid: null },
+    ]);
+    renderTopbarAt('/coach');
+
+    expect(
+      await screen.findByRole('button', { name: "My Workspace: Tetra's Workspace" }),
+    ).toBeInTheDocument();
+  });
+
+  it('with multiple owned workspaces: renders a "My Workspace" dropdown listing each one, and selecting one navigates', async () => {
+    const user = userEvent.setup();
+    listWorkspaces.mockResolvedValue([
+      { tenantId: 't1', label: 'Alpha Workspace', claimedAt: 1, delegateCoachUid: null },
+      { tenantId: 't2', label: 'Beta Workspace', claimedAt: 2, delegateCoachUid: null },
+    ]);
+    renderTopbarAt('/dashboard');
+
+    const trigger = await screen.findByRole('button', { name: 'My Workspace' });
+    expect(trigger).toHaveTextContent('My Workspace');
+    await user.click(trigger);
+
+    expect(await screen.findByText('Your workspaces')).toBeInTheDocument();
+    expect(screen.getByRole('menuitem', { name: 'Alpha Workspace' })).toBeInTheDocument();
+    expect(screen.getByRole('menuitem', { name: 'Beta Workspace' })).toBeInTheDocument();
+
+    await user.click(screen.getByRole('menuitem', { name: 'Beta Workspace' }));
+
+    expect(
+      await screen.findByRole('button', { name: /Workspace: Beta Workspace/ }),
+    ).toBeInTheDocument();
+  });
+
+  it('does not render the entry chip once already inside the owned workspace', async () => {
+    listWorkspaces.mockResolvedValue([
+      { tenantId: 't1', label: 'My Workspace', claimedAt: 1, delegateCoachUid: null },
+    ]);
+    renderTopbarAt('/workspace/t1/overview');
+
+    await screen.findByRole('button', { name: /Workspace: My Workspace/ });
+    expect(screen.queryByRole('button', { name: /^My Workspace/ })).not.toBeInTheDocument();
   });
 });

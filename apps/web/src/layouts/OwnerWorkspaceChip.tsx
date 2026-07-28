@@ -76,3 +76,77 @@ export function OwnerWorkspaceChip({ tenantId }: { tenantId: string }) {
     </DropdownMenu>
   );
 }
+
+/**
+ * Quick 260726-r5 (Phase 24 gap 1): the discoverable entry point INTO an
+ * owned workspace, shown from every route OUTSIDE `/workspace/:tenantId/*`
+ * (Personal and Coaching alike — Topbar renders it whenever `isOwnerWorkspace`
+ * is false). Before this fix, `OwnerWorkspaceChip` above only rendered once
+ * already inside the workspace, so a claimed client who navigated away (or
+ * landed on `/dashboard` after sign-in) had no way back in short of the
+ * browser Back button. A deliberate sibling of `OwnerWorkspaceChip` — same
+ * `useClientWorkspaces()` source (never `useCoachingClients()`), same
+ * navigation-only contract (every destination route is re-authorized
+ * server-side against the membership record; this chip grants no access by
+ * itself) — but never imported/extended from it, because the two chips are
+ * mutually exclusive by route and need different "nothing to show yet"
+ * behavior: this one renders nothing at all with zero owned workspaces
+ * (no empty affordance), where the in-workspace chip always has exactly one
+ * guaranteed entry (the current tenant).
+ *
+ * Single owned workspace: a plain button, labeled with the workspace's own
+ * label, that navigates directly — no dropdown needed for one destination.
+ * Multiple owned workspaces: a "My Workspace" dropdown trigger listing every
+ * one of them (per Phase 24 gap 1's "with multiple owned workspaces, list
+ * them" requirement).
+ */
+export function OwnerWorkspaceEntryChip() {
+  const { t } = useTranslation();
+  const navigate = useNavigate();
+  const workspaces = useClientWorkspaces();
+  const data = workspaces.data ?? [];
+
+  if (data.length === 0) {
+    return null;
+  }
+
+  if (data.length === 1) {
+    const workspace = data[0]!;
+    return (
+      <button
+        type="button"
+        aria-label={t('ownerWorkspace.chrome.entryAriaLabel', { label: workspace.label })}
+        onClick={() => navigate(`/workspace/${workspace.tenantId}/overview`)}
+        className="inline-flex items-center gap-1 rounded-full border border-muted-foreground/40 bg-muted px-2.5 py-1 text-xs font-medium text-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
+      >
+        {workspace.label}
+      </button>
+    );
+  }
+
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <button
+          type="button"
+          aria-label={t('ownerWorkspace.chrome.entryMenuAriaLabel')}
+          className="inline-flex items-center gap-1 rounded-full border border-muted-foreground/40 bg-muted px-2.5 py-1 text-xs font-medium text-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
+        >
+          {t('ownerWorkspace.chrome.entryLabel')}
+          <ChevronDown className="size-3" />
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="start">
+        <DropdownMenuLabel>{t('ownerWorkspace.chrome.entryMenuLabel')}</DropdownMenuLabel>
+        {data.map((workspace) => (
+          <DropdownMenuItem
+            key={workspace.tenantId}
+            onSelect={() => navigate(`/workspace/${workspace.tenantId}/overview`)}
+          >
+            {workspace.label}
+          </DropdownMenuItem>
+        ))}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}

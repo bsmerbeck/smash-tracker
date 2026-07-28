@@ -1580,6 +1580,9 @@
       "reviews": "Revues",
       "sessions": "Séances"
     },
+    "workspace": {
+      "accessEndedToast": "Votre accès à cet espace de travail a pris fin"
+    },
     "hub": {
       "title": "Centre clients",
       "loading": "Chargement de vos clients...",
@@ -2360,7 +2363,11 @@
       "vods": "VODs",
       "analytics": "Analytique",
       "workspaces_one": "{{count}} espace de travail",
-      "workspaces_other": "{{count}} espaces de travail"
+      "workspaces_other": "{{count}} espaces de travail",
+      "entryAriaLabel": "Mon espace de travail : {{label}}",
+      "entryLabel": "Mon espace de travail",
+      "entryMenuAriaLabel": "Mon espace de travail",
+      "entryMenuLabel": "Vos espaces de travail"
     }
   },
   "claim": {
