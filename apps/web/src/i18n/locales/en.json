@@ -1485,6 +1485,7 @@
     "saveAndDashboard": "Save and go to Dashboard",
     "saveAndPrimaries": "Save and choose Primary Fighters",
     "loading": "Loading your fighters...",
+    "loadError": "We couldn't load your fighters. Your data is safe — try again.",
     "selected_one": "Selected ({{count}})",
     "selected_other": "Selected ({{count}})",
     "emptySelected": "No fighters selected yet. Click a fighter below to add them.",

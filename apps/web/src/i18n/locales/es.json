@@ -1485,6 +1485,7 @@
     "saveAndDashboard": "Guardar e ir al Panel",
     "saveAndPrimaries": "Guardar y elegir principales",
     "loading": "Cargando tus luchadores...",
+    "loadError": "No pudimos cargar tus luchadores. Tus datos están a salvo — inténtalo de nuevo.",
     "selected_one": "Seleccionados ({{count}})",
     "selected_other": "Seleccionados ({{count}})",
     "emptySelected": "Aún no hay luchadores seleccionados. Haz clic en un luchador de abajo para añadirlo.",
