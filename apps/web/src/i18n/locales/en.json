@@ -2345,6 +2345,18 @@
       "revokedToast": "Coach access revoked",
       "revokeError": "Couldn't revoke coach access. Try again."
     },
+    "deleteWorkspace": {
+      "sectionTitle": "Danger zone",
+      "sectionDescription": "Permanently delete this workspace and everything in it. This can't be undone.",
+      "trigger": "Delete this workspace",
+      "title": "Delete this workspace?",
+      "description": "This permanently deletes {{label}} and every match, VOD reference, note, review, and training session in it. Any delivery links your coach has shared will stop working.",
+      "confirmLabel": "Type \"{{label}}\" to confirm",
+      "pending": "Deleting...",
+      "confirm": "Delete workspace",
+      "deletedToast": "{{label}} deleted",
+      "error": "Something went wrong deleting this workspace."
+    },
     "fighters": {
       "title": "Fighters",
       "subtitle": "Your mains. Your analytics are computed against these.",
