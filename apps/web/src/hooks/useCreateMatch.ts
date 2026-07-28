@@ -1,7 +1,7 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import type { CreateMatchInput } from '@smash-tracker/shared';
 import { api } from '@/lib/api';
-import { useActiveSubject } from './useActiveSubject';
+import { useEffectiveSubject } from './useEffectiveSubject';
 import { matchesQueryKey } from './useMatches';
 import { opponentsQueryKey } from './useOpponents';
 import { onboardingProgressQueryKey } from './useOnboardingProgress';
@@ -13,10 +13,15 @@ import { onboardingProgressQueryKey } from './useOnboardingProgress';
  * the `analytics_activated` (5 games) threshold server-side, and the pinned
  * `GuidedPathCard`/dashboard next-best-action must reflect that without a
  * manual refresh.
+ *
+ * Quick 260726-r8: uses `useEffectiveSubject()`, not `useActiveSubject()` —
+ * a write inside a claimed `/workspace/:tenantId/*` route must invalidate
+ * that workspace's `['client', tenantId, ...]` namespace, not `['personal']`
+ * (`useActiveSubject()` resolves to personal on that route family).
  */
 export function useCreateMatch() {
   const queryClient = useQueryClient();
-  const subject = useActiveSubject();
+  const subject = useEffectiveSubject();
   return useMutation({
     mutationFn: (input: CreateMatchInput) => api.matches.create(input),
     onSuccess: async () => {
