@@ -1017,6 +1017,22 @@ export const api = {
         `/api/client-workspaces/${encodeURIComponent(tenantId)}/delegations/${encodeURIComponent(delegateUid)}`,
         { method: 'DELETE' },
       ),
+    /**
+     * Quick 260726-r6: irreversible hard-delete of the signed-in OWNER's own
+     * claimed workspace. Deliberately calls the coach-namespaced
+     * `DELETE /api/coaching/clients/:tenantId` (`apps/api/src/routes/
+     * coachingTenants.ts`) rather than a route under `/client-workspaces` —
+     * that endpoint authenticates on `request.uid` with no coaching-mode
+     * gate, and `deleteClient` (`apps/api/src/coaching/tenants.ts`) already
+     * gates on `requireTenantRole(..., ['custodian','owner'])`, which a
+     * claimed owner passes. The route family naming reads oddly for this
+     * caller (an owner deleting via the coach's own client route) —
+     * intentional reuse of the existing cascade, not a new endpoint.
+     */
+    deleteWorkspace: (tenantId: string) =>
+      apiRequest<void>(`/api/coaching/clients/${encodeURIComponent(tenantId)}`, {
+        method: 'DELETE',
+      }),
   },
   groups: {
     /** GET /api/groups — the signed-in user's groups. */
