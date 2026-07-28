@@ -2345,6 +2345,18 @@
       "revokedToast": "Accès du coach révoqué",
       "revokeError": "Impossible de révoquer l'accès du coach. Réessayez."
     },
+    "deleteWorkspace": {
+      "sectionTitle": "Zone de danger",
+      "sectionDescription": "Supprime définitivement cet espace de travail et tout son contenu. Cette action est irréversible.",
+      "trigger": "Supprimer cet espace de travail",
+      "title": "Supprimer cet espace de travail ?",
+      "description": "Cela supprime définitivement {{label}} ainsi que tous les matchs, références VOD, notes, avis et sessions d'entraînement qu'il contient. Les liens de livraison partagés par votre coach cesseront de fonctionner.",
+      "confirmLabel": "Tapez « {{label}} » pour confirmer",
+      "pending": "Suppression...",
+      "confirm": "Supprimer l'espace de travail",
+      "deletedToast": "{{label}} supprimé",
+      "error": "Une erreur est survenue lors de la suppression de cet espace de travail."
+    },
     "fighters": {
       "title": "Personnages",
       "subtitle": "Vos personnages principaux. Vos statistiques sont calculées à partir de ceux-ci.",

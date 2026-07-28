@@ -106,6 +106,14 @@ describe('ClientOverviewPage', () => {
     expect(await screen.findByText('TETRA — Overview')).toBeInTheDocument();
     expect(screen.getByText('—')).toBeInTheDocument();
 
+    // Quick 260726-r6: the owner-only "danger zone" hard-delete affordance
+    // never renders on the COACH's own client overview page — it only ever
+    // mounts on `OwnerWorkspaceOverviewPage`, which this page is not.
+    expect(screen.queryByText('Danger zone')).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: /delete this workspace/i }),
+    ).not.toBeInTheDocument();
+
     expect(screen.getByTestId('checklist-fighters')).toHaveAttribute('data-done', 'false');
     expect(screen.getByTestId('checklist-matches')).toHaveAttribute('data-done', 'false');
     expect(screen.getByTestId('checklist-vod')).toHaveAttribute('data-done', 'false');

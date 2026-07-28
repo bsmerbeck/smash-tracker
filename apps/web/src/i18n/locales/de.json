@@ -2345,6 +2345,18 @@
       "revokedToast": "Coach-Zugriff widerrufen",
       "revokeError": "Coach-Zugriff konnte nicht widerrufen werden. Versuche es erneut."
     },
+    "deleteWorkspace": {
+      "sectionTitle": "Gefahrenzone",
+      "sectionDescription": "Löscht diesen Arbeitsbereich und alles darin dauerhaft. Dies kann nicht rückgängig gemacht werden.",
+      "trigger": "Diesen Arbeitsbereich löschen",
+      "title": "Diesen Arbeitsbereich löschen?",
+      "description": "Dadurch werden {{label}} sowie alle darin enthaltenen Matches, VOD-Verweise, Notizen, Reviews und Trainingseinheiten dauerhaft gelöscht. Von deinem Coach geteilte Freigabelinks funktionieren danach nicht mehr.",
+      "confirmLabel": "Gib „{{label}}“ ein, um zu bestätigen",
+      "pending": "Wird gelöscht...",
+      "confirm": "Arbeitsbereich löschen",
+      "deletedToast": "{{label}} gelöscht",
+      "error": "Beim Löschen dieses Arbeitsbereichs ist etwas schiefgelaufen."
+    },
     "fighters": {
       "title": "Kämpfer",
       "subtitle": "Deine Hauptkämpfer. Deine Statistiken werden anhand dieser berechnet.",

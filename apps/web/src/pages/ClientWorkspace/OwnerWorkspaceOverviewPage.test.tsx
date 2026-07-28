@@ -46,6 +46,7 @@ vi.mock('@/lib/api', () => ({
     clientWorkspaces: {
       list: (...args: unknown[]) => workspacesList(...args),
       revokeDelegation: vi.fn(),
+      deleteWorkspace: vi.fn(),
     },
     matches: {
       list: (...args: unknown[]) => matchesList(...args),
@@ -90,5 +91,21 @@ describe('OwnerWorkspaceOverviewPage', () => {
 
     expect(await screen.findByText(/My Workspace/)).toBeInTheDocument();
     expect(await screen.findByText('Coach access')).toBeInTheDocument();
+  });
+
+  // Quick 260726-r6: the owner-facing destructive "danger zone" section
+  // renders below the Coach access card for a workspace this account owns.
+  it('renders the danger zone delete-workspace affordance for an owned workspace', async () => {
+    workspacesList.mockResolvedValue([
+      { tenantId: 't1', label: 'My Workspace', claimedAt: 1, delegateCoachUid: 'coach-1' },
+    ]);
+    matchesList.mockResolvedValue([]);
+
+    renderAt('/workspace/t1/overview');
+
+    expect(await screen.findByText('Danger zone')).toBeInTheDocument();
+    expect(
+      await screen.findByRole('button', { name: /delete this workspace/i }),
+    ).toBeInTheDocument();
   });
 });
