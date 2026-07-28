@@ -426,6 +426,52 @@ describe('deleteClient', () => {
       ForbiddenError,
     );
   });
+
+  // Quick 260726-r7 (P0 regression): flipTenantOwnership's 7th path,
+  // `clientOwnedTenants/{clientUid}/{tenantId}`, is client-keyed and was
+  // never reached by CANONICAL_TENANT_TREES — this is the test that would
+  // have caught it.
+  it('removes the owner clientOwnedTenants row when deleting a claimed tenant (260726-r7 regression)', async () => {
+    const database = new FakeDatabase();
+    const { tenantId } = await createClient(asDatabase(database), COACH_UID, 'Alex', {
+      sessionId: SESSION_ID,
+    });
+    const CLIENT_UID = 'client-uid-1';
+    // Mirrors flipTenantOwnership's writes without invoking the redemption
+    // module, keeping this test scoped to the cascade's own behavior.
+    database.seed(`clientMembers/${tenantId}/${CLIENT_UID}`, { role: 'owner', joinedAt: 1 });
+    database.seed(`clientMembers/${tenantId}/${COACH_UID}`, { role: 'delegate', joinedAt: 1 });
+    database.seed(`clientTenants/${tenantId}/ownerUid`, CLIENT_UID);
+    database.seed(`clientTenants/${tenantId}/claimedAt`, 1);
+    database.seed(`coachClients/${COACH_UID}/${tenantId}/claimedAt`, 1);
+    database.seed(`clientOwnedTenants/${CLIENT_UID}/${tenantId}`, { label: 'Alex', claimedAt: 1 });
+
+    // Post-claim, only the owner (or a custodian, which no longer applies)
+    // can hard-delete — the delegate coach's role no longer qualifies.
+    await deleteClient(asDatabase(database), CLIENT_UID, tenantId);
+
+    const dump = database.dump() as Record<string, unknown>;
+    expect(
+      (dump.clientOwnedTenants as Record<string, Record<string, unknown>> | undefined)?.[
+        CLIENT_UID
+      ]?.[tenantId],
+    ).toBeUndefined();
+    expect((dump.clientMembers as Record<string, unknown> | undefined)?.[tenantId]).toBeUndefined();
+  });
+
+  it('deletes an unclaimed (never-claimed) client without error and touches no clientOwnedTenants row', async () => {
+    const database = new FakeDatabase();
+    const { tenantId } = await createClient(asDatabase(database), COACH_UID, 'Alex', {
+      sessionId: SESSION_ID,
+    });
+
+    await expect(deleteClient(asDatabase(database), COACH_UID, tenantId)).resolves.toBeUndefined();
+
+    const dump = database.dump() as Record<string, unknown>;
+    // No owner membership ever existed, so the (owner-uid-resolution) step
+    // must be a pure no-op — no clientOwnedTenants tree is created at all.
+    expect(dump.clientOwnedTenants).toBeUndefined();
+  });
 });
 
 describe('exportClient', () => {
