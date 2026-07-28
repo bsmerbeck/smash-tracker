@@ -74,6 +74,65 @@ describe('listOwnedWorkspaces', () => {
       { tenantId: TENANT_ID, label: 'Ana', claimedAt: 1, delegateCoachUid: null },
     ]);
   });
+
+  // Quick 260726-r7 (P0 self-heal): a hard-deleted tenant leaves
+  // `clientMembers/{tenantId}` gone entirely while the client-keyed
+  // `clientOwnedTenants` index row (written by a PRE-fix `deleteClient`, or
+  // production's current stuck rows) survives. This is the exact orphan
+  // shape the owner is currently stuck with.
+  it('excludes an orphan row (index present, clientMembers absent) AND prunes it', async () => {
+    const database = new FakeDatabase();
+    database.seed(`clientOwnedTenants/${CLIENT_UID}/${TENANT_ID}`, { label: 'Ana', claimedAt: 1 });
+    // Deliberately no clientMembers/{TENANT_ID} at all — the tenant is gone.
+
+    const result = await listOwnedWorkspaces(database as never, CLIENT_UID);
+
+    expect(result).toEqual([]);
+    const dump = database.dump() as Record<string, unknown>;
+    expect(
+      (dump.clientOwnedTenants as Record<string, Record<string, unknown>> | undefined)?.[
+        CLIENT_UID
+      ]?.[TENANT_ID],
+    ).toBeUndefined();
+  });
+
+  it('excludes and prunes when clientMembers/{tenantId} exists but every child fails clientMembershipSchema', async () => {
+    const database = new FakeDatabase();
+    database.seed(`clientOwnedTenants/${CLIENT_UID}/${TENANT_ID}`, { label: 'Ana', claimedAt: 1 });
+    // A corrupt-but-present node: no surviving (safeParse-passing) members.
+    database.seed(`clientMembers/${TENANT_ID}`, { [CLIENT_UID]: { role: 'not-a-real-role' } });
+
+    const result = await listOwnedWorkspaces(database as never, CLIENT_UID);
+
+    expect(result).toEqual([]);
+    const dump = database.dump() as Record<string, unknown>;
+    expect(
+      (dump.clientOwnedTenants as Record<string, Record<string, unknown>> | undefined)?.[
+        CLIENT_UID
+      ]?.[TENANT_ID],
+    ).toBeUndefined();
+  });
+
+  it('a healthy claimed workspace is still listed, with its delegate coach, and is never pruned', async () => {
+    const database = new FakeDatabase();
+    database.seed(`clientOwnedTenants/${CLIENT_UID}/${TENANT_ID}`, { label: 'Ana', claimedAt: 1 });
+    database.seed(`clientMembers/${TENANT_ID}`, {
+      [CLIENT_UID]: { role: 'owner', joinedAt: 1 },
+      [COACH_UID]: { role: 'delegate', joinedAt: 1 },
+    });
+
+    const result = await listOwnedWorkspaces(database as never, CLIENT_UID);
+
+    expect(result).toEqual([
+      { tenantId: TENANT_ID, label: 'Ana', claimedAt: 1, delegateCoachUid: COACH_UID },
+    ]);
+    const dump = database.dump() as Record<string, unknown>;
+    expect(
+      (dump.clientOwnedTenants as Record<string, Record<string, unknown>> | undefined)?.[
+        CLIENT_UID
+      ]?.[TENANT_ID],
+    ).toEqual({ label: 'Ana', claimedAt: 1 });
+  });
 });
 
 describe('GET /api/client-workspaces', () => {
@@ -82,6 +141,11 @@ describe('GET /api/client-workspaces', () => {
     const uidAToken = 'uid-a-token';
     registerUser(auth, uidAToken, { uid: CLIENT_UID, email: 'a@test.com' });
     database.seed(`clientOwnedTenants/${CLIENT_UID}/${TENANT_ID}`, { label: 'Ana', claimedAt: 1 });
+    // 260726-r7: listOwnedWorkspaces now self-heals a tenant whose
+    // clientMembers/{tenantId} is gone, so a genuinely live workspace fixture
+    // must seed the owner's membership row — exactly what flipTenantOwnership
+    // writes at claim time.
+    database.seed(`clientMembers/${TENANT_ID}/${CLIENT_UID}`, { role: 'owner', joinedAt: 1 });
 
     const response = await app.inject({
       method: 'GET',

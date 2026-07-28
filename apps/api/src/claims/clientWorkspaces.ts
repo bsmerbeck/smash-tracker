@@ -3,6 +3,7 @@ import {
   clientMembershipSchema,
   clientOwnedTenantEntrySchema,
   ownedWorkspaceSchema,
+  type OwnedWorkspace,
   type OwnedWorkspaceList,
 } from '@smash-tracker/shared';
 
@@ -21,6 +22,22 @@ import {
  * or querystring schema — there is no identifier for a caller to spoof. This
  * mirrors `apps/api/src/coaching/tenants.ts`'s `listClients`, which reads
  * `coachClients/{coachUid}` the same request.uid-direct way.
+ *
+ * Quick 260726-r7 (P0 self-heal): `deleteClient`
+ * (`apps/api/src/coaching/tenants.ts`) now nulls this index's row on hard
+ * delete going forward, but the fix cannot retroactively repair rows written
+ * by every PRIOR delete (production currently has two). Every owned entry is
+ * therefore verified live here: a claimed workspace's tenant ALWAYS still
+ * has at least the owner's own `clientMembers/{tenantId}` row while it
+ * exists (`flipTenantOwnership` writes it, and only a hard delete removes
+ * the whole `clientMembers/{tenantId}` node) — so zero SURVIVING
+ * (safeParse-passing) members means the tenant was hard-deleted out from
+ * under this index entry. Such rows are excluded from the response AND
+ * best-effort pruned so the client stops seeing dead workspaces without
+ * requiring any manual data repair. A prune failure degrades to "just
+ * exclude it, try again on the next read" rather than failing the whole
+ * list (CONCERNS.md guardrail 3's safeParse-and-skip spirit, applied to a
+ * write instead of a parse).
  */
 export async function listOwnedWorkspaces(
   database: Database,
@@ -43,21 +60,41 @@ export async function listOwnedWorkspaces(
     return [{ tenantId, label: parsed.data.label, claimedAt: parsed.data.claimedAt }];
   });
 
-  return Promise.all(
-    entries.map(async ({ tenantId, label, claimedAt }) => {
+  const rows = await Promise.all(
+    entries.map(async ({ tenantId, label, claimedAt }): Promise<OwnedWorkspace | null> => {
       const membersSnapshot = await database.ref(`clientMembers/${tenantId}`).get();
-      let delegateCoachUid: string | null = null;
-      if (membersSnapshot.exists()) {
-        const members = membersSnapshot.val() as Record<string, unknown>;
-        for (const [memberUid, memberValue] of Object.entries(members)) {
-          const parsedMember = clientMembershipSchema.safeParse(memberValue);
-          if (parsedMember.success && parsedMember.data.role === 'delegate') {
-            delegateCoachUid = memberUid;
-            break;
-          }
+      const rawMembers = membersSnapshot.exists()
+        ? (membersSnapshot.val() as Record<string, unknown>)
+        : {};
+      const survivingMembers = Object.entries(rawMembers).flatMap(([memberUid, memberValue]) => {
+        const parsedMember = clientMembershipSchema.safeParse(memberValue);
+        return parsedMember.success ? [{ uid: memberUid, ...parsedMember.data }] : [];
+      });
+
+      if (survivingMembers.length === 0) {
+        // Self-heal: the tenant no longer exists (hard-deleted). Best-effort
+        // prune — a failure here must never fail the read, it just leaves
+        // the orphan for the next read to retry.
+        try {
+          await database.ref(`clientOwnedTenants/${clientUid}/${tenantId}`).remove();
+        } catch (err) {
+          console.warn(
+            `listOwnedWorkspaces: failed to prune orphaned clientOwnedTenants row for tenant ${tenantId}`,
+            err,
+          );
         }
+        return null;
       }
-      return ownedWorkspaceSchema.parse({ tenantId, label, claimedAt, delegateCoachUid });
+
+      const delegate = survivingMembers.find((member) => member.role === 'delegate');
+      return ownedWorkspaceSchema.parse({
+        tenantId,
+        label,
+        claimedAt,
+        delegateCoachUid: delegate?.uid ?? null,
+      });
     }),
   );
+
+  return rows.filter((row): row is OwnedWorkspace => row !== null);
 }
