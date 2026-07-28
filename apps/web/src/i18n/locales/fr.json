@@ -1579,6 +1579,9 @@
       "reviews": "Revues",
       "sessions": "Séances"
     },
+    "workspace": {
+      "accessEndedToast": "Votre accès à cet espace de travail a pris fin"
+    },
     "hub": {
       "title": "Centre clients",
       "loading": "Chargement de vos clients...",

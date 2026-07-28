@@ -1579,6 +1579,9 @@
       "reviews": "レビュー",
       "sessions": "セッション"
     },
+    "workspace": {
+      "accessEndedToast": "このワークスペースへのアクセスは終了しました"
+    },
     "hub": {
       "title": "クライアントハブ",
       "loading": "クライアントを読み込み中...",

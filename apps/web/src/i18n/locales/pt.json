@@ -1579,6 +1579,9 @@
       "reviews": "Revisões",
       "sessions": "Sessões"
     },
+    "workspace": {
+      "accessEndedToast": "Seu acesso a este espaço de trabalho terminou"
+    },
     "hub": {
       "title": "Central de clientes",
       "loading": "Carregando seus clientes...",
