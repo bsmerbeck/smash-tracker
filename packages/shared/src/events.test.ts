@@ -48,11 +48,11 @@ describe('eventEnvelopeSchema', () => {
 });
 
 describe('X_EVENT_ALLOWLIST', () => {
-  it('contains exactly share_view_loaded and signup_cta_clicked', () => {
-    expect(X_EVENT_ALLOWLIST).toHaveLength(2);
+  it('contains exactly share_view_loaded, signup_cta_clicked, and prep_offer_viewed (Phase 26, catalog-only, no firing site yet)', () => {
+    expect(X_EVENT_ALLOWLIST).toHaveLength(3);
     expect(X_EVENT_ALLOWLIST).toContain('share_view_loaded');
     expect(X_EVENT_ALLOWLIST).toContain('signup_cta_clicked');
-    expect(X_EVENT_ALLOWLIST).not.toContain('prep_offer_viewed');
+    expect(X_EVENT_ALLOWLIST).toContain('prep_offer_viewed');
   });
 });
 
@@ -91,6 +91,9 @@ describe('EVENT_CATALOG', () => {
       claim_conflict_detected: 'D',
       coach_delegation_granted: 'D',
       coach_delegation_revoked: 'D',
+      prep_brief_activated: 'D',
+      prep_brief_reopened: 'D',
+      prep_offer_viewed: 'X',
     });
   });
 
@@ -148,5 +151,21 @@ describe('EVENT_CATALOG', () => {
     expect(EVENT_CATALOG.claim_conflict_detected).toBe('D');
     expect(EVENT_CATALOG.coach_delegation_granted).toBe('D');
     expect(EVENT_CATALOG.coach_delegation_revoked).toBe('D');
+  });
+
+  // Phase 26 (Free Tournament Prep Brief, EVT-04/D-07/D-08/D-09):
+  // prep_brief_activated and prep_brief_reopened are new D-class events;
+  // prep_offer_viewed is X-class (allowlisted, no firing site this phase).
+  it('maps prep_brief_activated and prep_brief_reopened to class D, and prep_offer_viewed to class X', () => {
+    expect(EVENT_CATALOG.prep_brief_activated).toBe('D');
+    expect(EVENT_CATALOG.prep_brief_reopened).toBe('D');
+    expect(EVENT_CATALOG.prep_offer_viewed).toBe('X');
+  });
+
+  // D-11: Phase 13's tournament_prep_activated row (a per-user onboarding
+  // activation marker, unrelated to the per-event prep brief above) must
+  // remain untouched by the Phase 26 catalog extension.
+  it('leaves the Phase 13 tournament_prep_activated row unchanged (D-11 non-regression)', () => {
+    expect(EVENT_CATALOG.tournament_prep_activated).toBe('D');
   });
 });
