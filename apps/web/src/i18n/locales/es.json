@@ -2420,5 +2420,64 @@
       "coachNote": "Tu coach conserva el acceso delegado, que puedes revocar en cualquier momento desde la tarjeta de acceso del coach del espacio de trabajo.",
       "goToWorkspaceButton": "Ir a tu espacio de trabajo"
     }
+  },
+  "prep": {
+    "loading": "Cargando tu resumen de preparación...",
+    "cta": {
+      "start": "Iniciar resumen de preparación",
+      "open": "Abrir resumen de preparación"
+    },
+    "dashboard": {
+      "upcoming": {
+        "title": "Tu próximo evento: {{eventName}} · {{date}}",
+        "cta": "Prepárate para este evento"
+      },
+      "addEvent": {
+        "title": "Añade tu próximo evento para empezar a prepararte",
+        "cta": "Añadir evento"
+      }
+    },
+    "manualEntry": {
+      "title": "Añadir un próximo evento",
+      "description": "Crearemos el evento y abriremos su resumen de preparación.",
+      "nameLabel": "Nombre del evento",
+      "dateLabel": "Fecha del evento",
+      "dateRequired": "Elige una fecha futura — los resúmenes de preparación son para eventos que aún no han ocurrido.",
+      "submit": "Añadir e iniciar resumen de preparación"
+    },
+    "opponents": {
+      "title": "Rivales probables",
+      "add": "Añadir rival",
+      "addPlaceholder": "Busca entre tus rivales",
+      "addEmpty": "No quedan rivales por añadir.",
+      "matchCount_one": "{{count}} partida",
+      "matchCount_other": "{{count}} partidas",
+      "remove": "Quitar a {{name}} de rivales probables",
+      "record": "{{wins}}-{{losses}} · {{ratio}}% ({{totalMatches}})",
+      "noRecord": "Aún no hay partidas registradas contra {{name}}.",
+      "noCharacters": "Aún no hay personajes registrados.",
+      "empty": {
+        "title": "Aún no tienes rivales probables",
+        "body": "Añade rivales que esperas enfrentar — incorporaremos tu historial directo y notas de scouting para cada uno."
+      },
+      "limitReached": "Puedes seguir hasta {{count}} rivales probables."
+    },
+    "checklist": {
+      "title": "Lista de preparación",
+      "progress": "{{checked}}/{{total}} completado",
+      "items": {
+        "confirmRegistration": "Confirma tu inscripción y hora de check-in",
+        "reviewRuleset": "Revisa el reglamento y la lista de escenarios",
+        "chargeGear": "Carga tu mando y lleva baterías de repuesto",
+        "reviewOpponents": "Revisa tus rivales probables abajo",
+        "warmUpSets": "Haz sets de calentamiento con tus principales",
+        "packBag": "Empaca cargadores, adaptador y cualquier equipo de repuesto",
+        "planTravel": "Planifica tu viaje y hora de llegada"
+      }
+    },
+    "error": {
+      "loadFailed": "Algo salió mal al cargar tu resumen de preparación. Inténtalo de nuevo.",
+      "addEventFailed": "Algo salió mal al añadir este evento. Inténtalo de nuevo."
+    }
   }
 }

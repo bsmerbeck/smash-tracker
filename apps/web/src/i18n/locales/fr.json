@@ -2420,5 +2420,64 @@
       "coachNote": "Votre coach conserve un accès délégué, que vous pouvez révoquer à tout moment depuis la carte d'accès coach de l'espace de travail.",
       "goToWorkspaceButton": "Accéder à votre espace de travail"
     }
+  },
+  "prep": {
+    "loading": "Chargement de votre résumé de préparation...",
+    "cta": {
+      "start": "Démarrer le résumé de préparation",
+      "open": "Ouvrir le résumé de préparation"
+    },
+    "dashboard": {
+      "upcoming": {
+        "title": "Votre prochain événement : {{eventName}} · {{date}}",
+        "cta": "Se préparer pour cet événement"
+      },
+      "addEvent": {
+        "title": "Ajoutez votre prochain événement pour commencer à vous préparer",
+        "cta": "Ajouter un événement"
+      }
+    },
+    "manualEntry": {
+      "title": "Ajouter un événement à venir",
+      "description": "Nous créerons l'événement et ouvrirons son résumé de préparation.",
+      "nameLabel": "Nom de l'événement",
+      "dateLabel": "Date de l'événement",
+      "dateRequired": "Choisissez une date future — les résumés de préparation concernent des événements qui n'ont pas encore eu lieu.",
+      "submit": "Ajouter et démarrer le résumé de préparation"
+    },
+    "opponents": {
+      "title": "Adversaires probables",
+      "add": "Ajouter un adversaire",
+      "addPlaceholder": "Rechercher parmi vos adversaires",
+      "addEmpty": "Il ne reste aucun adversaire à ajouter.",
+      "matchCount_one": "{{count}} match",
+      "matchCount_other": "{{count}} matchs",
+      "remove": "Retirer {{name}} des adversaires probables",
+      "record": "{{wins}}-{{losses}} · {{ratio}}% ({{totalMatches}})",
+      "noRecord": "Aucun match enregistré contre {{name}} pour l'instant.",
+      "noCharacters": "Aucun personnage enregistré pour l'instant.",
+      "empty": {
+        "title": "Aucun adversaire probable pour l'instant",
+        "body": "Ajoutez les adversaires que vous vous attendez à affronter — nous intégrerons votre historique face-à-face et vos notes de scouting pour chacun."
+      },
+      "limitReached": "Vous pouvez suivre jusqu'à {{count}} adversaires probables."
+    },
+    "checklist": {
+      "title": "Liste de préparation",
+      "progress": "{{checked}}/{{total}} terminé",
+      "items": {
+        "confirmRegistration": "Confirmez votre inscription et l'heure du check-in",
+        "reviewRuleset": "Consultez le règlement et la liste des stages",
+        "chargeGear": "Chargez votre manette et emportez des batteries de secours",
+        "reviewOpponents": "Consultez vos adversaires probables ci-dessous",
+        "warmUpSets": "Faites des matchs d'échauffement avec vos personnages principaux",
+        "packBag": "Emportez chargeurs, adaptateur et tout équipement de secours",
+        "planTravel": "Planifiez votre trajet et votre heure d'arrivée"
+      }
+    },
+    "error": {
+      "loadFailed": "Une erreur est survenue lors du chargement de votre résumé de préparation. Veuillez réessayer.",
+      "addEventFailed": "Une erreur est survenue lors de l'ajout de cet événement. Veuillez réessayer."
+    }
   }
 }
