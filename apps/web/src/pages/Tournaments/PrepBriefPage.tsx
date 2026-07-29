@@ -12,6 +12,7 @@ import { usePrepBrief, useActivatePrepBrief, useReopenPrepBrief } from '@/hooks/
 import { TournamentHeader } from './components/TournamentHeader';
 import { LikelyOpponentsCard } from './prep/LikelyOpponentsCard';
 import { PrepChecklistCard } from './prep/PrepChecklistCard';
+import { PrepPaidReportsCard } from './prepPaid/PrepPaidReportsCard';
 
 function NotFoundState() {
   const { t } = useTranslation();
@@ -142,6 +143,21 @@ export function PrepBriefPage() {
   const brief = briefQuery.data.brief;
   const likelyOpponents = brief?.likelyOpponents ?? {};
   const checklist = brief?.checklist ?? {};
+  const scoutBindings = brief?.scoutBindings ?? {};
+
+  // RPT-04: a strict boolean-true comparison, never a truthiness check — an
+  // absent/undefined field from an older or gate-off server, or any
+  // non-boolean value, must never render the paid card. This is the ONLY
+  // condition that decides the card's presence: deliberately no second
+  // clause such as "or this brief already has jobs", because a second
+  // condition would mean the card's mount is no longer a PURE function of
+  // the server's answer, which is exactly the structural guarantee that
+  // makes turning the gate off make the placement vanish. A mid-session
+  // flip-off therefore hides the placement while the underlying work stays
+  // untouched — refunds still complete server-side and a generated report
+  // remains reachable through the ungated report list (27-UI-SPEC.md
+  // "Structural Absence Contract").
+  const showPaidReports = briefQuery.data.paidReportsAvailable === true;
 
   return (
     <div className="flex flex-col gap-6">
@@ -155,6 +171,13 @@ export function PrepBriefPage() {
             canonicalOpponents={canonicalOpponents}
             notes={opponentNotes ?? {}}
           />
+          {showPaidReports && (
+            <PrepPaidReportsCard
+              entryKey={entryKey!}
+              likelyOpponents={likelyOpponents}
+              scoutBindings={scoutBindings}
+            />
+          )}
           <PrepChecklistCard entryKey={entryKey!} checklist={checklist} />
         </>
       )}
