@@ -98,6 +98,16 @@ const envSchema = z.object({
   // is never acceptable. Rotating this secret invalidates every outstanding
   // claim code by design.
   CLAIM_CODE_HMAC_SECRET: z.string().optional(),
+
+  // ---- Phase 27 (Contextual Paid Prep Reports Behind the Activation Gate,
+  // RPT-04): the server-side activation gate for paid prep reports/bundles.
+  // Ships UNSET in production — the owner flips it only after the
+  // ~2026-08-02 soak review passes. Deliberately a raw string compared for
+  // EXACT equality (see `getPrepPaidConfig` below), never coerced to a
+  // boolean: a half-configured deployment (a typo'd value, a stray space, an
+  // accidental `"1"`/`"yes"`/`"TRUE"`) must fail closed, not silently enable
+  // a paid, money-moving surface.
+  PREP_PAID_REPORTS_ENABLED: z.string().optional(),
 });
 
 export type Env = z.infer<typeof envSchema>;
@@ -285,4 +295,32 @@ export function getClaimCodeConfig(env: Env): ClaimCodeConfig | null {
     return null;
   }
   return { hmacSecret: env.CLAIM_CODE_HMAC_SECRET };
+}
+
+/** The single, case-sensitive value that turns paid prep reports on. */
+const PREP_PAID_REPORTS_ENABLED_VALUE = 'true';
+
+export interface PrepPaidConfig {
+  enabled: true;
+}
+
+/**
+ * Assembles the paid-prep-reports activation config (RPT-04). This is the
+ * first BOOLEAN-style config-null gate in this file — every prior
+ * `get*Config` above keys off a SECRET's presence (a value that's either
+ * configured or it isn't). This one keys off a plain flag whose value could
+ * plausibly be any of several "truthy-looking" strings, so it MUST NOT be
+ * "simplified" into a `Boolean(env.PREP_PAID_REPORTS_ENABLED)` or
+ * `!!env.PREP_PAID_REPORTS_ENABLED` truthiness check — that would enable the
+ * gate on ANY non-empty string (`"false"`, `"0"`, a stray typo), silently
+ * turning on a money-moving surface. Only the exact lowercase word `"true"`
+ * enables it; every other value (unset, `"TRUE"`, `"1"`, `"yes"`, `"on"`, or
+ * a value with surrounding whitespace) leaves it off (27-CONTEXT.md
+ * "Activation gate mechanics").
+ */
+export function getPrepPaidConfig(env: Env): PrepPaidConfig | null {
+  if (env.PREP_PAID_REPORTS_ENABLED !== PREP_PAID_REPORTS_ENABLED_VALUE) {
+    return null;
+  }
+  return { enabled: true };
 }

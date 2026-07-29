@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { getClaimCodeConfig, getInternalJobsConfig, loadEnv, parseCorsOrigins } from './env.js';
+import {
+  getClaimCodeConfig,
+  getInternalJobsConfig,
+  getPrepPaidConfig,
+  loadEnv,
+  parseCorsOrigins,
+} from './env.js';
 
 const base = {
   FIREBASE_DATABASE_URL: 'https://example-default-rtdb.firebaseio.com',
@@ -80,5 +86,42 @@ describe('getClaimCodeConfig', () => {
   it('returns the secret when CLAIM_CODE_HMAC_SECRET is set', () => {
     const env = loadEnv({ ...base, CLAIM_CODE_HMAC_SECRET: 'shh-claim-secret' });
     expect(getClaimCodeConfig(env)).toEqual({ hmacSecret: 'shh-claim-secret' });
+  });
+});
+
+describe('getPrepPaidConfig (RPT-04, exact-string activation gate)', () => {
+  it('returns null when PREP_PAID_REPORTS_ENABLED is unset', () => {
+    const env = loadEnv(base);
+    expect(getPrepPaidConfig(env)).toBeNull();
+  });
+
+  it('returns null for the uppercase spelling "TRUE"', () => {
+    const env = loadEnv({ ...base, PREP_PAID_REPORTS_ENABLED: 'TRUE' });
+    expect(getPrepPaidConfig(env)).toBeNull();
+  });
+
+  it('returns null for "1"', () => {
+    const env = loadEnv({ ...base, PREP_PAID_REPORTS_ENABLED: '1' });
+    expect(getPrepPaidConfig(env)).toBeNull();
+  });
+
+  it('returns null for "yes"', () => {
+    const env = loadEnv({ ...base, PREP_PAID_REPORTS_ENABLED: 'yes' });
+    expect(getPrepPaidConfig(env)).toBeNull();
+  });
+
+  it('returns null for "on"', () => {
+    const env = loadEnv({ ...base, PREP_PAID_REPORTS_ENABLED: 'on' });
+    expect(getPrepPaidConfig(env)).toBeNull();
+  });
+
+  it('returns null for a whitespace-padded value (" true ")', () => {
+    const env = loadEnv({ ...base, PREP_PAID_REPORTS_ENABLED: ' true ' });
+    expect(getPrepPaidConfig(env)).toBeNull();
+  });
+
+  it('returns a non-null config for the exact enabling value "true"', () => {
+    const env = loadEnv({ ...base, PREP_PAID_REPORTS_ENABLED: 'true' });
+    expect(getPrepPaidConfig(env)).toEqual({ enabled: true });
   });
 });
