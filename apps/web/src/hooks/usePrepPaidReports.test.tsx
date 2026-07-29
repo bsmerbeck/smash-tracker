@@ -288,9 +288,9 @@ describe('usePrepPaidReports', () => {
       const results = await executeBundleChildren(generateChild, jobs);
 
       expect(generateChild).toHaveBeenCalledTimes(3);
-      expect(results[0].status).toBe('fulfilled');
-      expect(results[1].status).toBe('rejected');
-      expect(results[2].status).toBe('fulfilled');
+      expect(results[0]?.status).toBe('fulfilled');
+      expect(results[1]?.status).toBe('rejected');
+      expect(results[2]?.status).toBe('fulfilled');
     });
   });
 });
