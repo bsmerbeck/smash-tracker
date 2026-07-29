@@ -2,12 +2,17 @@ import { randomUUID } from 'node:crypto';
 import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { z } from 'zod';
 import {
+  entryKeyInputSchema,
   errorResponseSchema,
   generateReportRequestSchema,
   isReportReadyBinding,
+  PREP_BUNDLE_SIZE,
+  prepBundleAcceptedResponseSchema,
+  prepReportJobsResponseSchema,
   reportJobSchema,
   reportsConfigSchema,
   scoutReportRecordSchema,
+  type PrepReportJobStatusEntry,
   type PrepReportReason,
   type ReportJob,
   type ScoutBinding,
@@ -39,7 +44,7 @@ import {
   ReportGenerationError,
   type AnthropicLikeClient,
 } from '../reports/generate.js';
-import { refundCredit, spendCredit } from '../billing/credits.js';
+import { bundleSlotRef, refundCredit, spendCredit, spendCredits } from '../billing/credits.js';
 import { createEvent, dayShardKey } from '../events/ledger.js';
 import { buildBillingEnvelope } from '../events/envelope.js';
 // Phase 27 (RPT-01, Task 3): the ONE symbol the reports layer imports from
@@ -85,18 +90,24 @@ const reportIdParamsSchema = z.object({
   id: z.string().min(1),
 });
 
+/** Phase 27 (Task 3): `GET /reports/jobs` querystring — the brief's entryKey, caller-uid-scoped. */
+const reportJobsQuerySchema = z.object({
+  entryKey: entryKeyInputSchema,
+});
+
 // ---------------------------------------------------------------------------
 // Phase 27 (Task 2): shared types for the reusable generation internal
 // ---------------------------------------------------------------------------
 
 /**
  * One `POST /reports` failure reply shape — `status`/`error`/`message` map
- * directly onto the Fastify reply the route sends. Used for BOTH a failed
- * scout resolution (404/429/503) and a failed model/storage step (429/502) —
- * one type, reused, so the route has exactly one translation site.
+ * directly onto the Fastify reply the route sends. Used for a failed scout
+ * resolution (404/429/503), a failed model/storage step (429/502), and
+ * (Phase 27 Task 2) the prep-only queued->running claim race (409) — one
+ * type, reused, so the route has exactly one translation site.
  */
 interface ReportFailureReply {
-  status: 404 | 429 | 502 | 503;
+  status: 404 | 409 | 429 | 502 | 503;
   error: string;
   message: string;
 }
@@ -343,16 +354,49 @@ const reportsRoutes: FastifyPluginAsyncZod<ReportsRoutesOptions> = async (app, o
     // transition below clears the SAME day shard this write touches.
     const runningAt = Date.now();
     const jobDay = dayShardKey(runningAt);
-    await jobRef.set(
-      reportJobSchema.parse({
-        status: 'running',
-        createdAt: jobCreatedAt,
-        updatedAt: runningAt,
-        attempt: jobAttempt,
-        creditRef,
-        ...(reason ? { reason } : {}),
-      }),
-    );
+    const runningRecord = reportJobSchema.parse({
+      status: 'running',
+      createdAt: jobCreatedAt,
+      updatedAt: runningAt,
+      attempt: jobAttempt,
+      creditRef,
+      ...(reason ? { reason } : {}),
+    });
+
+    if (reason) {
+      // Phase 27 (Task 2, T-27-38 defence in depth): for PREP-CONTEXT jobs
+      // only, claim the queued->running transition with a `.transaction()`
+      // that aborts when the stored status is ALREADY `running` within the
+      // staleness window — this narrows (without claiming to eliminate) the
+      // pre-existing read-then-write race the single-writer-per-job
+      // invariant otherwise assumes away for two near-simultaneous
+      // executions of the SAME bundle child. Legacy jobs keep the plain
+      // sequential `.set()` below, so their behavior stays byte-identical.
+      const claim = await jobRef.transaction((current) => {
+        const existing = current as { status?: string; updatedAt?: number } | null;
+        if (
+          existing &&
+          existing.status === 'running' &&
+          typeof existing.updatedAt === 'number' &&
+          Date.now() - existing.updatedAt < REPORT_JOB_STALE_MS
+        ) {
+          return undefined;
+        }
+        return runningRecord;
+      });
+      if (!claim.committed) {
+        return {
+          ok: false,
+          failure: {
+            status: 409,
+            error: 'Conflict',
+            message: 'A report generation for this job is already in progress',
+          },
+        };
+      }
+    } else {
+      await jobRef.set(runningRecord);
+    }
     await app.firebase.database.ref().update({
       [`reportJobsByStatus/running/${request.uid}/${jobId}`]: true,
       [`reportJobsByDay/${jobDay}/${jobId}`]: { uid: request.uid, status: 'running' },
@@ -538,10 +582,22 @@ const reportsRoutes: FastifyPluginAsyncZod<ReportsRoutesOptions> = async (app, o
    * the legacy single-source branches already use below, so the web app's
    * existing error handling for `POST /reports` needs no prep-specific
    * branch.
+   *
+   * Phase 27 (Task 2): `ctx.reason` is the EFFECTIVE reason (`prep_report`
+   * normally, `prep_bundle` when this request is executing a pre-paid
+   * bundle child) — never hardcoded — so a bundle child's `failJob` call
+   * writes the SAME `prep_bundle` reason its job was created with.
    */
   function buildPrepResolveScout(
     binding: ScoutBinding,
-    ctx: { uid: string; jobId: string; spent: boolean; jobCreatedAt: number; jobAttempt: number },
+    ctx: {
+      uid: string;
+      jobId: string;
+      spent: boolean;
+      jobCreatedAt: number;
+      jobAttempt: number;
+      reason: PrepReportReason;
+    },
   ): () => Promise<ScoutResolutionOutcome> {
     const failCurrentJob = (): Promise<void> =>
       failJob({
@@ -549,7 +605,7 @@ const reportsRoutes: FastifyPluginAsyncZod<ReportsRoutesOptions> = async (app, o
         jobId: ctx.jobId,
         creditRef: ctx.jobId,
         spent: ctx.spent,
-        reason: 'prep_report',
+        reason: ctx.reason,
         createdAt: ctx.jobCreatedAt,
         attempt: ctx.jobAttempt,
         day: null,
@@ -718,6 +774,9 @@ const reportsRoutes: FastifyPluginAsyncZod<ReportsRoutesOptions> = async (app, o
         body: generateReportRequestSchema,
         response: {
           200: scoutReportRecordSchema,
+          // Phase 27 (Task 1): the `reason: 'prep_bundle'` accepted body —
+          // a bundle submission never returns a generated report in-request.
+          202: prepBundleAcceptedResponseSchema,
           400: errorResponseSchema,
           402: errorResponseSchema,
           403: errorResponseSchema,
@@ -747,16 +806,146 @@ const reportsRoutes: FastifyPluginAsyncZod<ReportsRoutesOptions> = async (app, o
         });
       }
 
-      // Phase 27 (RPT-01, Task 3): prep-bundle submission — 27-08 territory,
-      // not this plan. Rejected cleanly and early (before any spend/job
-      // write/model call), same spirit as the temporary stopgap this plan
-      // replaces for `reason: 'prep_report'`.
+      // Phase 27 (RPT-02/RPT-03, Task 1): prep-bundle submission — the
+      // exactly-three-opponent purchase. This branch validates completely,
+      // charges exactly once atomically via `spendCredits`, and materializes
+      // three deterministic pre-paid child jobs — or changes nothing at all
+      // — and returns 202 (never 200; a bundle submission never generates a
+      // report in-request). It deliberately does NOT reach the single-job
+      // machinery below: the client executes each returned job id one at a
+      // time through the ordinary `reason: 'prep_report'` path (Task 2),
+      // which independently re-verifies ownership/curation/binding-
+      // readiness for that specific opponent — this branch's ONLY job is
+      // payment plus job/index bookkeeping.
       if (request.body.reason === 'prep_bundle') {
-        return reply.code(400).send({
-          error: 'Bad Request',
-          message: 'Prep bundle report requests are not yet supported on this server',
-          statusCode: 400,
+        const entryKey = request.body.entryKey!;
+        const bundleId = request.body.bundleId!;
+        const opponentNames = request.body.opponentNames!;
+
+        // Validation, in this order, ALL before any charge (owner battery
+        // item 6): a non-curated or unready opponent is rejected BEFORE the
+        // caller is charged for the bundle. The schema already guarantees
+        // exactly PREP_BUNDLE_SIZE DISTINCT names, so this is purely about
+        // curation and report-readiness.
+        const brief = await readPrepBrief(app.firebase.database, request.uid, entryKey);
+        if (brief === null) {
+          return reply.code(404).send({
+            error: 'Not Found',
+            message: 'Prep brief not found',
+            statusCode: 404,
+          });
+        }
+        for (const opponentName of opponentNames) {
+          if (!(opponentName in brief.likelyOpponents)) {
+            return reply.code(400).send({
+              error: 'Bad Request',
+              message: 'That opponent is not currently curated on this brief',
+              statusCode: 400,
+            });
+          }
+        }
+        for (const opponentName of opponentNames) {
+          const binding = brief.scoutBindings[opponentName];
+          if (!binding || !isReportReadyBinding(binding)) {
+            return reply.code(409).send({
+              error: 'Conflict',
+              message: 'This opponent has no confirmed, report-ready scout binding yet',
+              statusCode: 409,
+            });
+          }
+        }
+
+        const bundleFreeAccess = config.allowedUids.has(request.uid);
+        if (!bundleFreeAccess && !stripeConfig) {
+          return reply.code(403).send({
+            error: 'Forbidden',
+            message: 'AI reports are not enabled for this account',
+            statusCode: 403,
+          });
+        }
+
+        // Deterministic child job/slot ids — a retried submission of the
+        // SAME bundleId always maps onto the SAME three jobs. `:` is the
+        // slot separator; `#` is RTDB-path-illegal and would reach the
+        // event dedup tree as a path segment (27-CONTEXT.md line 33).
+        const buildBundleAcceptedResponse = () =>
+          prepBundleAcceptedResponseSchema.parse({
+            bundleId,
+            jobs: opponentNames.map((opponentName, index) => ({
+              opponentName,
+              jobId: bundleSlotRef(bundleId, index + 1),
+              slot: index + 1,
+            })),
+          });
+
+        if (!bundleFreeAccess) {
+          // ONE atomic three-credit debit, guarded by spendCredits' own
+          // durable `creditBundleOps` operation marker — never three
+          // sequential `spendCredit` calls (the owner-mandated rejection of
+          // that design, 27-CONTEXT.md lines 30-41: they are compensating
+          // transactions, not all-or-nothing, and `refundCredit` is not
+          // balance-idempotent).
+          const outcome = await spendCredits(
+            app.firebase.database,
+            request.uid,
+            bundleId,
+            PREP_BUNDLE_SIZE,
+          );
+          if (outcome === 'insufficient') {
+            return reply.code(402).send({
+              error: 'Payment Required',
+              message: 'You need report credits — buy a pack to continue',
+              statusCode: 402,
+            });
+          }
+          if (outcome === 'alreadyProcessed') {
+            // The credits were already taken for this bundle id — rebuild
+            // the identical 202 body from the deterministic job ids instead
+            // of creating (or charging for) anything (owner battery item 1).
+            return reply.code(202).send(buildBundleAcceptedResponse());
+          }
+          // outcome === 'debited': proceed to create the three child jobs.
+        } else {
+          // Allowlisted uids (owner battery item 9) skip `spendCredits`
+          // entirely — zero credit movement, no operation-marker debit —
+          // so there is no durable marker this branch can consult for
+          // idempotent replay. Job existence itself is the replay signal:
+          // a slot-1 job that already exists means this exact bundleId was
+          // already submitted, and the response is rebuilt without
+          // rewriting (never resetting) an already-in-flight or resolved
+          // child back to `queued`.
+          const slotOneSnapshot = await app.firebase.database
+            .ref(`reportJobs/${request.uid}/${bundleSlotRef(bundleId, 1)}`)
+            .get();
+          if (slotOneSnapshot.exists()) {
+            return reply.code(202).send(buildBundleAcceptedResponse());
+          }
+        }
+
+        const now = Date.now();
+        const bundleUpdates: Record<string, unknown> = {};
+        opponentNames.forEach((opponentName, index) => {
+          const slot = index + 1;
+          const childJobId = bundleSlotRef(bundleId, slot);
+          bundleUpdates[`reportJobs/${request.uid}/${childJobId}`] = reportJobSchema.parse({
+            status: 'queued',
+            createdAt: now,
+            updatedAt: now,
+            attempt: 0,
+            creditRef: childJobId,
+            reason: 'prep_bundle',
+          });
+          bundleUpdates[`prepReportJobIndex/${request.uid}/${entryKey}/${opponentName}`] = {
+            jobId: childJobId,
+            updatedAt: now,
+          };
         });
+        // One root-level multi-path update for the three jobs and three
+        // index pointers, so a partially-created bundle can never be
+        // observed.
+        await app.firebase.database.ref().update(bundleUpdates);
+
+        return reply.code(202).send(buildBundleAcceptedResponse());
       }
 
       // Phase 27 (RPT-01, Task 3): prep-single ownership, curation, and
@@ -849,17 +1038,51 @@ const reportsRoutes: FastifyPluginAsyncZod<ReportsRoutesOptions> = async (app, o
         });
       }
 
+      // Phase 27 (Task 2, RPT-02/RPT-03): PRE-PAID child detection — a
+      // bundle submission (Task 1) writes each child job with
+      // `reason: 'prep_bundle'`; the client executes ONE such child through
+      // this same single-report path, always carrying `reason: 'prep_report'`
+      // on the REQUEST — so `reason` on the request can never distinguish a
+      // bundle child, only the STORED job's own `reason` can. A resolved
+      // (failed/refunded) slot must never be re-runnable on a credit that
+      // was already spent-and-returned or spent-and-lost — the second face
+      // of owner battery item 4 (a replayed bundle must not obtain a free
+      // generation, mirroring D3's "a replayed bundle id charges once").
+      const preSpent = existingJob?.reason === 'prep_bundle';
+      if (preSpent && (existingJob!.status === 'failed' || existingJob!.status === 'refunded')) {
+        return reply.code(409).send({
+          error: 'Conflict',
+          message: 'This bundle report already resolved and must be purchased again',
+          statusCode: 409,
+        });
+      }
+
       const jobCreatedAt = existingJob?.createdAt ?? Date.now();
       const jobAttempt = existingJob ? existingJob.attempt + 1 : 0;
 
       let spent = false;
       let resolveScout: () => Promise<ScoutResolutionOutcome>;
       let payloadOptions: { binding?: ScoutBinding; curatedCanonicalName?: string } | undefined;
+      // Phase 27 (Task 2): the reason threaded into the job writes,
+      // `buildPrepResolveScout`'s failure path, and `runReportGeneration`'s
+      // terminal transitions/events. Starts equal to the request's own
+      // `reason` (undefined for legacy, `prep_report` for a normal
+      // prep-single request) and is overridden ONLY when this request turns
+      // out to be executing a PRE-PAID bundle child — a bundle child keeps
+      // its ORIGINAL `prep_bundle` reason across every retry/resume, never
+      // rewritten to `prep_report`, so `failJob`'s refunded-terminal
+      // transition and the report_* event payloads stay attributable to the
+      // bundle that paid for this slot.
+      let effectiveReason: PrepReportReason | undefined = request.body.reason;
 
       if (request.body.reason === 'prep_report') {
         const binding = prepBinding!;
         const entryKey = request.body.entryKey!;
         const opponentName = request.body.opponentName!;
+
+        if (preSpent) {
+          effectiveReason = 'prep_bundle';
+        }
 
         // Every check above this point (503/400/409/403) is a pure
         // request-shape or authorization rejection — nothing has been
@@ -875,7 +1098,7 @@ const reportsRoutes: FastifyPluginAsyncZod<ReportsRoutesOptions> = async (app, o
             updatedAt: Date.now(),
             attempt: jobAttempt,
             creditRef: jobId,
-            reason: 'prep_report',
+            reason: effectiveReason,
           }),
         );
 
@@ -892,9 +1115,17 @@ const reportsRoutes: FastifyPluginAsyncZod<ReportsRoutesOptions> = async (app, o
           .ref(`prepReportJobIndex/${request.uid}/${entryKey}/${opponentName}`)
           .set({ jobId, updatedAt: Date.now() });
 
-        // V7-C: non-allowlisted uids spend one credit per generation
-        // attempt, identical to the legacy branch below.
-        if (!freeAccess) {
+        if (preSpent) {
+          // Phase 27 (Task 2): the credit for this slot was already spent
+          // atomically by the bundle submission (or never spent at all, for
+          // an allowlisted uid's bundle) — never spend a second time here.
+          // `spent` is recomputed from `freeAccess` rather than trusted from
+          // the stored job, because an allowlisted uid's bundle attaches no
+          // credit to its children at all.
+          spent = !freeAccess;
+        } else if (!freeAccess) {
+          // V7-C: non-allowlisted uids spend one credit per generation
+          // attempt, identical to the legacy branch below.
           spent = await spendCredit(app.firebase.database, request.uid, jobId);
           if (!spent) {
             await failJob({
@@ -921,6 +1152,7 @@ const reportsRoutes: FastifyPluginAsyncZod<ReportsRoutesOptions> = async (app, o
           spent,
           jobCreatedAt,
           jobAttempt,
+          reason: effectiveReason as PrepReportReason,
         });
         payloadOptions = { binding, curatedCanonicalName: opponentName };
       } else {
@@ -1160,7 +1392,9 @@ const reportsRoutes: FastifyPluginAsyncZod<ReportsRoutesOptions> = async (app, o
         spent,
         jobCreatedAt,
         jobAttempt,
-        reason: request.body.reason,
+        // Phase 27 (Task 2): the EFFECTIVE reason — `prep_bundle`, not the
+        // request's own `prep_report`, when this is a pre-paid child.
+        reason: effectiveReason,
         resolveScout,
         payloadOptions,
       });
@@ -1221,6 +1455,87 @@ const reportsRoutes: FastifyPluginAsyncZod<ReportsRoutesOptions> = async (app, o
           return [parsed.data];
         })
         .sort((a, b) => b.createdAt - a.createdAt);
+    },
+  );
+
+  // GET /api/reports/jobs — Phase 27 (Task 3, RPT-03): the read-only
+  // per-brief job-status endpoint. Registered BEFORE the parameterized
+  // `/reports/:id` route below so the static `jobs` path segment is never
+  // shadowed by `:id` matching the literal string "jobs".
+  //
+  // Deliberately OUTSIDE the activation gate (`prepPaidConfig` is never
+  // consulted here): turning the gate off must never strand already-paid
+  // work — completion, refunds, status reads, and result access all keep
+  // working, and only NEW purchases are refused (27-CONTEXT.md line 24,
+  // owner battery item 8). It also stays on the ordinary same-origin API
+  // path; only generation SUBMISSIONS use the direct transport
+  // (27-CONTEXT.md line 78, `VITE_API_DIRECT_URL`).
+  app.get(
+    '/reports/jobs',
+    {
+      schema: {
+        querystring: reportJobsQuerySchema,
+        response: {
+          200: prepReportJobsResponseSchema,
+          403: errorResponseSchema,
+        },
+      },
+    },
+    async (request, reply) => {
+      if (!canReadReports(request.uid)) {
+        return reply.code(403).send({
+          error: 'Forbidden',
+          message: 'AI reports are not enabled for this account',
+          statusCode: 403,
+        });
+      }
+
+      // uid-scoped read: a foreign/nonexistent entryKey yields the SAME
+      // empty list either way — no existence signal (T-27-40).
+      const indexSnapshot = await app.firebase.database
+        .ref(`prepReportJobIndex/${request.uid}/${request.query.entryKey}`)
+        .get();
+      if (!indexSnapshot.exists()) {
+        return { jobs: [] };
+      }
+
+      const pointers = indexSnapshot.val() as Record<string, { jobId?: string }>;
+      const entries: PrepReportJobStatusEntry[] = [];
+      for (const [opponentName, pointer] of Object.entries(pointers)) {
+        const jobId = pointer?.jobId;
+        if (!jobId) {
+          continue;
+        }
+        const jobSnapshot = await app.firebase.database
+          .ref(`reportJobs/${request.uid}/${jobId}`)
+          .get();
+        if (!jobSnapshot.exists()) {
+          // The index pointer outlived its job node (should not happen
+          // under the single-writer-per-job invariant, but T-27-43: one
+          // corrupt/missing record must never 500 the caller's entire
+          // status list) — skip it, mirroring GET /reports' stated
+          // "one corrupt record must never 500 the whole library" rationale.
+          continue;
+        }
+        const parsed = reportJobSchema.safeParse(jobSnapshot.val());
+        if (!parsed.success) {
+          request.log.warn(
+            { jobId, issues: parsed.error.issues },
+            'skipping stored report job that failed schema validation',
+          );
+          continue;
+        }
+        entries.push({
+          opponentName,
+          jobId,
+          status: parsed.data.status,
+          updatedAt: parsed.data.updatedAt,
+          ...(parsed.data.resultRef ? { resultRef: parsed.data.resultRef } : {}),
+        });
+      }
+
+      entries.sort((a, b) => a.opponentName.localeCompare(b.opponentName));
+      return { jobs: entries };
     },
   );
 
