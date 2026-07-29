@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 import { useParams, Link } from 'react-router';
 import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/ui/button';
@@ -67,12 +67,6 @@ export function PrepBriefPage() {
   const { t } = useTranslation();
   const { entryKey } = useParams<{ entryKey: string }>();
 
-  // Lazy useState initialiser: exactly one call to crypto.randomUUID() per
-  // mount, never per render. This is the id that makes a transport-retried
-  // reopen request collapse into a single ledger event server-side, while a
-  // genuinely new visit (a fresh mount) produces a new one (D-08).
-  const [openId] = useState(() => crypto.randomUUID());
-
   const { data: entries, isLoading: entriesLoading } = useTournamentEntries();
   const { data: allMatches = [], isLoading: matchesLoading } = useMatches();
   const { data: aliasMap } = useOpponentAliases();
@@ -99,25 +93,35 @@ export function PrepBriefPage() {
     [allMatches, aliasMap],
   );
 
-  const hasFiredMutation = useRef(false);
+  // WR-04: keyed by entryKey itself (not a bare boolean) so the guard is
+  // entryKey-safe even if this exact component instance is ever kept
+  // mounted across an entryKey change (React Router reuses the element
+  // across param-only changes to the same route pattern — it does not
+  // remount just because `useParams().entryKey` changes). A bare
+  // `useRef(false)` would silently never fire again for a second entryKey
+  // visited on an already-mounted instance; comparing against the fired
+  // entryKey makes a genuine param change fire correctly.
+  const firedForEntryKeyRef = useRef<string | undefined>(undefined);
 
   useEffect(() => {
-    if (hasFiredMutation.current) {
-      return;
-    }
     if (!entryKey || briefQuery.isPending || briefQuery.isError) {
       return;
     }
-    hasFiredMutation.current = true;
+    if (firedForEntryKeyRef.current === entryKey) {
+      return;
+    }
+    firedForEntryKeyRef.current = entryKey;
     if (briefQuery.data.activated) {
-      reopenBrief.mutate(openId);
+      // A fresh open id per fire (not a mount-lifetime one) is what makes
+      // this entryKey-safe: each distinct entryKey's reopen gets its own
+      // id, exactly as a genuinely fresh mount would produce (D-08).
+      reopenBrief.mutate(crypto.randomUUID());
     } else {
       activateBrief.mutate();
     }
-    // Deliberately excludes `activateBrief`/`reopenBrief`/`openId` from the
+    // Deliberately excludes `activateBrief`/`reopenBrief` from the
     // dependency list — the mutation objects are new on every render and
-    // re-adding them would defeat the single-fire ref guard above; `openId`
-    // is stable for the mount's lifetime regardless.
+    // re-adding them would defeat the single-fire-per-entryKey guard above.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [entryKey, briefQuery.isPending, briefQuery.isError, briefQuery.data]);
 

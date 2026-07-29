@@ -1,6 +1,7 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { render, screen } from '@testing-library/react';
-import { MemoryRouter, Route, Routes } from 'react-router';
+import userEvent from '@testing-library/user-event';
+import { MemoryRouter, Route, Routes, useNavigate } from 'react-router';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { TournamentEntry } from '@smash-tracker/shared';
 import { AuthProvider } from '@/context/AuthContext';
@@ -119,6 +120,25 @@ function mockBriefStatus(state: {
   } as unknown as ReturnType<typeof usePrepBrief>);
 }
 
+/**
+ * WR-04 harness: a component rendered AS the Route's `element` that can
+ * navigate to a second entryKey path on the same route pattern from within
+ * an already-mounted tree, mirroring how React Router reuses the same
+ * `PrepBriefPage` instance across a param-only change (it does not remount
+ * just because `useParams().entryKey` changes).
+ */
+function ProxyPage({ to }: { to: string }) {
+  const navigate = useNavigate();
+  return (
+    <div>
+      <button type="button" onClick={() => navigate(to)}>
+        navigate-to-second-entry
+      </button>
+      <PrepBriefPage />
+    </div>
+  );
+}
+
 function renderPage(entryKey = ENTRY_KEY) {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
@@ -204,6 +224,41 @@ describe('PrepBriefPage', () => {
     await screen.findByText('Prep checklist');
     expect(activateMutateSpy).toHaveBeenCalledTimes(1);
     expect(reopenMutateSpy).not.toHaveBeenCalled();
+  });
+
+  it('fires activation again for a second entryKey when the same instance stays mounted across a param change (WR-04)', async () => {
+    const SECOND_ENTRY_KEY = 'entry-def';
+    listTournaments.mockResolvedValue([
+      makeEntry(),
+      makeEntry({ eventId: 2, entryKey: SECOND_ENTRY_KEY }),
+    ]);
+    mockBriefStatus({ activated: false });
+    const user = userEvent.setup();
+
+    render(
+      <QueryClientProvider
+        client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}
+      >
+        <MemoryRouter initialEntries={[`/tournaments/${ENTRY_KEY}/prep`]}>
+          <AuthProvider>
+            <Routes>
+              <Route
+                path="/tournaments/:entryKey/prep"
+                element={<ProxyPage to={`/tournaments/${SECOND_ENTRY_KEY}/prep`} />}
+              />
+            </Routes>
+          </AuthProvider>
+        </MemoryRouter>
+      </QueryClientProvider>,
+    );
+
+    await screen.findByText('Prep checklist');
+    expect(activateMutateSpy).toHaveBeenCalledTimes(1);
+
+    await user.click(screen.getByRole('button', { name: 'navigate-to-second-entry' }));
+
+    await screen.findByText('Prep checklist');
+    expect(activateMutateSpy).toHaveBeenCalledTimes(2);
   });
 
   it('renders the event name and both card titles', async () => {
