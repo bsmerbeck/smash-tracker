@@ -8,6 +8,8 @@ import {
   creditsStatusSchema,
   errorResponseSchema,
   CREDIT_PACKS,
+  CHECKOUT_PREP_REASON,
+  type CheckoutRequest,
 } from '@smash-tracker/shared';
 import type { ReportsConfig, StripeConfig } from '../config/env.js';
 import { fulfillCheckoutSession, getBalance } from '../billing/credits.js';
@@ -44,6 +46,46 @@ export interface BillingRoutesOptions {
   webBaseUrl: string;
   /** Overridable Stripe client (tests); a real `Stripe` instance is built when omitted. */
   stripeClient?: StripeLikeClient;
+}
+
+interface CheckoutReturnUrls {
+  successUrl: string;
+  cancelUrl: string;
+  /** `CHECKOUT_PREP_REASON` when the prep destination was used, else `null`. */
+  prepReason: typeof CHECKOUT_PREP_REASON | null;
+}
+
+/**
+ * Phase 27 (EVT-05): resolves `POST /billing/checkout`'s `success_url`/
+ * `cancel_url` from `body.returnTo` — a CLOSED enum validated by
+ * `checkoutRequestSchema` (packages/shared/src/billing.ts) — never from a
+ * client-supplied URL, path, or origin. `returnTo`/`entryKey` are never
+ * interpolated directly; the prep branch builds both URLs from a FIXED
+ * template (open-redirect prevention, 27-RESEARCH.md Pitfall 4). The
+ * `entryKey`'s character set was already validated by the shared schema's
+ * `entryKeyInputSchema`; `encodeURIComponent` here is defence in depth so it
+ * can never expand into more than one path segment (e.g. an encoded `/`).
+ *
+ * Omitting `returnTo` (or passing `'scout'`) reproduces today's `/scout`
+ * URLs byte-for-byte, and returns a `null` prep marker so callers never add
+ * the prep marker to Stripe `metadata`/canonical events for a non-prep
+ * checkout.
+ */
+function resolveCheckoutReturnUrls(webBaseUrl: string, body: CheckoutRequest): CheckoutReturnUrls {
+  if (body.returnTo === 'prep' && body.entryKey) {
+    const encodedEntryKey = encodeURIComponent(body.entryKey);
+    return {
+      successUrl: `${webBaseUrl}/tournaments/${encodedEntryKey}/prep?billing=success`,
+      cancelUrl: `${webBaseUrl}/tournaments/${encodedEntryKey}/prep?billing=cancelled`,
+      prepReason: CHECKOUT_PREP_REASON,
+    };
+  }
+
+  return {
+    successUrl: `${webBaseUrl}/scout?billing=success`,
+    cancelUrl: `${webBaseUrl}/scout?billing=cancelled`,
+    prepReason: null,
+  };
 }
 
 /**
@@ -138,6 +180,11 @@ const billingRoutes: FastifyPluginAsyncZod<BillingRoutesOptions> = async (app, o
       // else a per-request fallback UUID for un-updated clients.
       const idempotencyKey = request.body.attemptId ?? randomUUID();
 
+      const { successUrl, cancelUrl, prepReason } = resolveCheckoutReturnUrls(
+        webBaseUrl,
+        request.body,
+      );
+
       const session = await stripe.checkout.sessions.create(
         {
           mode: 'payment',
@@ -154,9 +201,16 @@ const billingRoutes: FastifyPluginAsyncZod<BillingRoutesOptions> = async (app, o
             },
           ],
           client_reference_id: request.uid,
-          metadata: { uid: request.uid, packId: pack.id },
-          success_url: `${webBaseUrl}/scout?billing=success`,
-          cancel_url: `${webBaseUrl}/scout?billing=cancelled`,
+          // EVT-05: only the enum prep marker ever crosses into Stripe
+          // metadata — never the entryKey, an opponent name, or a provider
+          // identity (27-CONTEXT.md "Placement UX").
+          metadata: {
+            uid: request.uid,
+            packId: pack.id,
+            ...(prepReason ? { prepReason } : {}),
+          },
+          success_url: successUrl,
+          cancel_url: cancelUrl,
         },
         { idempotencyKey },
       );
@@ -173,7 +227,7 @@ const billingRoutes: FastifyPluginAsyncZod<BillingRoutesOptions> = async (app, o
           sessionId: request.uid,
           causationId: session.id,
           consentState: 'unknown',
-          payload: { packId: pack.id },
+          payload: { packId: pack.id, ...(prepReason ? { prepReason } : {}) },
         }),
       );
 

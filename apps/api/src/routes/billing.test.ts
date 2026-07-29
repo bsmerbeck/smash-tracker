@@ -362,6 +362,238 @@ describe('POST /api/billing/checkout (configured)', () => {
   });
 });
 
+describe('checkout return destination (prep origin)', () => {
+  it("omitting returnTo produces exactly today's success_url/cancel_url/metadata (no regression)", async () => {
+    const create = vi.fn<StripeLikeClient['checkout']['sessions']['create']>(async () => ({
+      id: 'cs_test_default_dest',
+      url: 'https://checkout.stripe.com/session/default-dest',
+    }));
+    const { app } = buildTestApp({
+      stripe: STRIPE_CONFIG,
+      reports: REPORTS_CONFIG,
+      webBaseUrl: 'https://app.example.com',
+      stripeClient: stubStripeClient({ checkout: { sessions: { create } } }),
+    });
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/billing/checkout',
+      headers: authHeader(),
+      payload: { packId: 'pack5' },
+    });
+
+    expect(response.statusCode).toBe(200);
+    const params = create.mock.calls[0]![0];
+    // Literal expected strings — the pre-Phase-27 behavior, byte-for-byte.
+    expect(params.success_url).toBe('https://app.example.com/scout?billing=success');
+    expect(params.cancel_url).toBe('https://app.example.com/scout?billing=cancelled');
+    expect(params.metadata).toEqual({ uid: TEST_UID, packId: 'pack5' });
+  });
+
+  it('the "scout" returnTo produces the same byte-identical result as omitting returnTo', async () => {
+    const create = vi.fn<StripeLikeClient['checkout']['sessions']['create']>(async () => ({
+      id: 'cs_test_scout_dest',
+      url: 'https://checkout.stripe.com/session/scout-dest',
+    }));
+    const { app } = buildTestApp({
+      stripe: STRIPE_CONFIG,
+      reports: REPORTS_CONFIG,
+      webBaseUrl: 'https://app.example.com',
+      stripeClient: stubStripeClient({ checkout: { sessions: { create } } }),
+    });
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/billing/checkout',
+      headers: authHeader(),
+      payload: { packId: 'pack5', returnTo: 'scout' },
+    });
+
+    expect(response.statusCode).toBe(200);
+    const params = create.mock.calls[0]![0];
+    expect(params.success_url).toBe('https://app.example.com/scout?billing=success');
+    expect(params.cancel_url).toBe('https://app.example.com/scout?billing=cancelled');
+    expect(params.metadata).toEqual({ uid: TEST_UID, packId: 'pack5' });
+  });
+
+  it('a "prep" returnTo with an entryKey returns to that event\'s prep route, entry key percent-encoded, existing query values preserved', async () => {
+    const create = vi.fn<StripeLikeClient['checkout']['sessions']['create']>(async () => ({
+      id: 'cs_test_prep_dest',
+      url: 'https://checkout.stripe.com/session/prep-dest',
+    }));
+    const { app } = buildTestApp({
+      stripe: STRIPE_CONFIG,
+      reports: REPORTS_CONFIG,
+      webBaseUrl: 'https://app.example.com',
+      stripeClient: stubStripeClient({ checkout: { sessions: { create } } }),
+    });
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/billing/checkout',
+      headers: authHeader(),
+      payload: { packId: 'pack5', returnTo: 'prep', entryKey: 'tournament-42' },
+    });
+
+    expect(response.statusCode).toBe(200);
+    const params = create.mock.calls[0]![0];
+    expect(params.success_url).toBe(
+      'https://app.example.com/tournaments/tournament-42/prep?billing=success',
+    );
+    expect(params.cancel_url).toBe(
+      'https://app.example.com/tournaments/tournament-42/prep?billing=cancelled',
+    );
+  });
+
+  it('an entryKey containing an encoded slash cannot alter the URL path structure', async () => {
+    const create = vi.fn<StripeLikeClient['checkout']['sessions']['create']>(async () => ({
+      id: 'cs_test_prep_slash',
+      url: 'https://checkout.stripe.com/session/prep-slash',
+    }));
+    const { app } = buildTestApp({
+      stripe: STRIPE_CONFIG,
+      reports: REPORTS_CONFIG,
+      webBaseUrl: 'https://app.example.com',
+      stripeClient: stubStripeClient({ checkout: { sessions: { create } } }),
+    });
+
+    const plainResponse = await app.inject({
+      method: 'POST',
+      url: '/api/billing/checkout',
+      headers: authHeader(),
+      payload: { packId: 'pack5', returnTo: 'prep', entryKey: 'tournament-42' },
+    });
+    expect(plainResponse.statusCode).toBe(200);
+    const plainParams = create.mock.calls[0]![0];
+    const plainSegments = plainParams.success_url!.split('/').length;
+
+    // A raw slash is illegal in entryKeyInputSchema (RTDB-illegal char), so
+    // exercise the percent-sign-encoded-slash case ("%2F", already percent
+    // form) that IS schema-legal but would corrupt the path if the handler
+    // ever double-decoded or string-interpolated it directly.
+    const slashResponse = await app.inject({
+      method: 'POST',
+      url: '/api/billing/checkout',
+      headers: authHeader(),
+      payload: { packId: 'pack5', returnTo: 'prep', entryKey: 'tournament-42%2Fevil' },
+    });
+    expect(slashResponse.statusCode).toBe(200);
+    const slashParams = create.mock.calls[1]![0];
+    const slashSegments = slashParams.success_url!.split('/').length;
+
+    expect(slashSegments).toBe(plainSegments);
+  });
+
+  it('with the prep destination, Stripe metadata carries the enum prep marker in addition to uid/packId', async () => {
+    const create = vi.fn<StripeLikeClient['checkout']['sessions']['create']>(async () => ({
+      id: 'cs_test_prep_meta',
+      url: 'https://checkout.stripe.com/session/prep-meta',
+    }));
+    const { app } = buildTestApp({
+      stripe: STRIPE_CONFIG,
+      reports: REPORTS_CONFIG,
+      webBaseUrl: 'https://app.example.com',
+      stripeClient: stubStripeClient({ checkout: { sessions: { create } } }),
+    });
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/billing/checkout',
+      headers: authHeader(),
+      payload: { packId: 'pack5', returnTo: 'prep', entryKey: 'tournament-42' },
+    });
+
+    expect(response.statusCode).toBe(200);
+    const params = create.mock.calls[0]![0];
+    expect(params.metadata).toEqual({
+      uid: TEST_UID,
+      packId: 'pack5',
+      prepReason: 'prep_purchase',
+    });
+    // The entry key must never enter Stripe metadata.
+    expect(JSON.stringify(params.metadata)).not.toContain('tournament-42');
+  });
+
+  it('the checkout_started event payload carries the enum prep marker only when the prep destination was used, and never the entry key', async () => {
+    const create = vi.fn<StripeLikeClient['checkout']['sessions']['create']>(async () => ({
+      id: 'cs_test_prep_event',
+      url: 'https://checkout.stripe.com/session/prep-event',
+    }));
+    const { app, database } = buildTestApp({
+      stripe: STRIPE_CONFIG,
+      reports: REPORTS_CONFIG,
+      webBaseUrl: 'https://app.example.com',
+      stripeClient: stubStripeClient({ checkout: { sessions: { create } } }),
+    });
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/billing/checkout',
+      headers: authHeader(),
+      payload: { packId: 'pack5', returnTo: 'prep', entryKey: 'tournament-42' },
+    });
+    expect(response.statusCode).toBe(200);
+    await flush();
+
+    const events = eventLedgerEntries(
+      database.dump() as Record<string, unknown>,
+      'checkout_started',
+    );
+    expect(events).toHaveLength(1);
+    expect(events[0]).toMatchObject({
+      payload: { packId: 'pack5', prepReason: 'prep_purchase' },
+    });
+    expect(JSON.stringify(events[0])).not.toContain('tournament-42');
+  });
+
+  it('the checkout_started event payload for a non-prep checkout carries no prep marker', async () => {
+    const create = vi.fn<StripeLikeClient['checkout']['sessions']['create']>(async () => ({
+      id: 'cs_test_no_prep_event',
+      url: 'https://checkout.stripe.com/session/no-prep-event',
+    }));
+    const { app, database } = buildTestApp({
+      stripe: STRIPE_CONFIG,
+      reports: REPORTS_CONFIG,
+      webBaseUrl: 'https://app.example.com',
+      stripeClient: stubStripeClient({ checkout: { sessions: { create } } }),
+    });
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/billing/checkout',
+      headers: authHeader(),
+      payload: { packId: 'pack5' },
+    });
+    expect(response.statusCode).toBe(200);
+    await flush();
+
+    const events = eventLedgerEntries(
+      database.dump() as Record<string, unknown>,
+      'checkout_started',
+    );
+    expect(events).toHaveLength(1);
+    expect(events[0]).toMatchObject({ payload: { packId: 'pack5' } });
+    const payload = (events[0] as { payload: Record<string, unknown> }).payload;
+    expect(payload).not.toHaveProperty('prepReason');
+  });
+
+  it('rejects returnTo: "prep" without an entryKey with a 400 (schema cross-validation)', async () => {
+    const { app } = buildTestApp({
+      stripe: STRIPE_CONFIG,
+      reports: REPORTS_CONFIG,
+      stripeClient: stubStripeClient(),
+    });
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/billing/checkout',
+      headers: authHeader(),
+      payload: { packId: 'pack5', returnTo: 'prep' },
+    });
+    expect(response.statusCode).toBe(400);
+  });
+});
+
 describe('POST /api/billing/webhook (configured)', () => {
   it('answers 400 when the stripe-signature header is missing', async () => {
     const { app } = buildTestApp({
