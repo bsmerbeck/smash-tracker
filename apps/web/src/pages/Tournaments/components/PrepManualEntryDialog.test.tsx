@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { describe, expect, it, vi, beforeEach } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { PrepManualEntryDialog, parseLocalCalendarDate } from './PrepManualEntryDialog';
@@ -200,6 +200,60 @@ describe('PrepManualEntryDialog', () => {
       opts.onSuccess();
     });
     await user.click(screen.getByRole('button', { name: 'Add & start prep brief' }));
+
+    await waitFor(() => expect(activateMutate).toHaveBeenCalledTimes(2));
+    expect(manualEntry).toHaveBeenCalledTimes(1);
+    expect(navigate).toHaveBeenCalledWith('/tournaments/manual-locals-42-abc/prep');
+  });
+
+  it('retries activation on the same entryKey after closing and reopening the dialog following a failed activation (WR-02 residual)', async () => {
+    const user = userEvent.setup();
+    manualEntry.mockResolvedValue({
+      eventName: 'Locals #42',
+      firstSetAt: 1,
+      lastSetAt: 1,
+      setsPlayed: 0,
+      source: 'manual',
+      entryKey: 'manual-locals-42-abc',
+    });
+    activateMutate.mockImplementation((_vars: unknown, opts: { onError: () => void }) => {
+      opts.onError();
+    });
+
+    renderNode(<ControlledDialog />);
+
+    await user.type(screen.getByLabelText('Event name'), 'Locals #42');
+    await user.type(screen.getByLabelText('Event date'), futureDateString());
+    await user.click(screen.getByRole('button', { name: 'Add & start prep brief' }));
+
+    await waitFor(() => expect(activateMutate).toHaveBeenCalledTimes(1));
+    expect(manualEntry).toHaveBeenCalledTimes(1);
+    expect(
+      await screen.findByText('Something went wrong adding this event. Please try again.'),
+    ).toBeInTheDocument();
+
+    // Close the dialog (Escape) after the failed activation, then reopen it.
+    // The entry is already created server-side; closing must NOT clear the
+    // pending-activation entryKey, or reopening + submitting would call
+    // manualEntry.mutate() again and orphan the first entry.
+    await user.keyboard('{Escape}');
+    await waitFor(() => expect(screen.queryByLabelText('Event name')).not.toBeInTheDocument());
+
+    await user.click(screen.getByRole('button', { name: 'reopen' }));
+    await screen.findByLabelText('Event name');
+
+    activateMutate.mockImplementation((_vars: unknown, opts: { onSuccess: () => void }) => {
+      opts.onSuccess();
+    });
+    // A direct submit-event dispatch (rather than a synthesized click) is
+    // used here: Radix's Dialog re-mounts a fresh <form> subtree on reopen,
+    // and jsdom does not reliably run the browser's implicit
+    // click-a-submit-button-inside-a-form default action against a
+    // just-remounted node in this test harness. Dispatching `submit`
+    // directly still exercises the exact `onSubmit={handleSubmit}` handler
+    // under test.
+    const form = screen.getByRole('button', { name: 'Add & start prep brief' }).closest('form')!;
+    fireEvent.submit(form);
 
     await waitFor(() => expect(activateMutate).toHaveBeenCalledTimes(2));
     expect(manualEntry).toHaveBeenCalledTimes(1);

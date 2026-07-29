@@ -96,11 +96,19 @@ export function PrepManualEntryDialog({ open, onOpenChange }: PrepManualEntryDia
   }
 
   // Every close path (Radix-internal Escape/overlay/X, or this component's
-  // own success->navigate flow below) funnels through here, so fields/error
-  // always reset before the dialog can be reopened.
+  // own success->navigate flow below) funnels through here. WR-02 residual:
+  // deliberately does NOT clear `activatingEntryKey` — a failed activation
+  // means the tournamentEntries row already exists server-side, and clearing
+  // the only state that makes `handleSubmit` retry (instead of re-running
+  // `manualEntry.mutate()`) would orphan that row and mint a duplicate entry
+  // the next time this dialog is reopened and submitted. The name/date/error
+  // fields still reset on close; the retry path in `handleSubmit` works
+  // without them (it checks `activatingEntryKey` before `canSubmit`).
   function handleOpenChange(next: boolean) {
     if (!next) {
-      resetFields();
+      setEventName('');
+      setEventDate('');
+      setError(null);
     }
     onOpenChange(next);
   }
