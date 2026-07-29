@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { entryKeyInputSchema } from './prep.js';
 import {
   combineWithLookupSchema,
   scoutPlayerIdentitySchema,
@@ -109,23 +110,162 @@ export const scoutReportRecordSchema = z.object({
 export type ScoutReportRecord = z.infer<typeof scoutReportRecordSchema>;
 
 /**
- * POST /api/reports request body — same input semantics as POST /api/scout,
- * including the same optional `source` (V9-B Feature 4) for bare-query
- * disambiguation between start.gg and parry.gg, and the same optional
- * `combineWith` (V13) that merges a second-site scout into the report's data
- * (see `scoutQuerySchema`). `jobId` (BILL-06/Phase 10) is a client-generated
- * UUID, one per "Generate report" click, used to key the durable
- * `reportJobs/{uid}/{jobId}` state machine for idempotent retries. Optional
- * so an un-updated client (deploy-first) never 400s — the server falls back
- * to a server-generated jobId when absent, same convention as
- * `checkoutRequestSchema.attemptId`.
+ * Phase 27 (RPT-02, revised wording): "A prep bundle contains exactly three
+ * selected opponents, consumes exactly three credits for billable users,
+ * and rejects any other selection count." This constant is the ONE place
+ * that number is spelled out — `.length(PREP_BUNDLE_SIZE)` below is where
+ * the "rejects any other selection count" half is enforced at the schema
+ * layer, before any handler code runs.
  */
-export const generateReportRequestSchema = z.object({
-  query: z.string().min(1),
-  source: scoutSourceSchema.optional(),
-  combineWith: combineWithLookupSchema.optional(),
-  jobId: z.string().min(1).optional(),
-});
+export const PREP_BUNDLE_SIZE = 3;
+
+/** The two prep-context reasons a `POST /api/reports` request can carry. */
+export const prepReportReasonSchema = z.enum(['prep_report', 'prep_bundle']);
+export type PrepReportReason = z.infer<typeof prepReportReasonSchema>;
+
+/**
+ * POST /api/reports request body — a backward-compatible union (27-CONTEXT.md
+ * "Pipeline reuse"):
+ *
+ * - Legacy (reason absent): same input semantics as POST /api/scout,
+ *   including the same optional `source` (V9-B Feature 4) for bare-query
+ *   disambiguation between start.gg and parry.gg, and the same optional
+ *   `combineWith` (V13) that merges a second-site scout into the report's
+ *   data (see `scoutQuerySchema`). `query` is required on this branch —
+ *   `.optional()` at the object level exists only so the flattened shape can
+ *   also represent the prep branches below; the `.superRefine` restores the
+ *   legacy requirement.
+ * - `reason: 'prep_report'`: one curated opponent (`entryKey` + `opponentName`).
+ * - `reason: 'prep_bundle'`: exactly `PREP_BUNDLE_SIZE` DISTINCT curated
+ *   opponents (`entryKey` + `bundleId` + `opponentNames`) — a duplicate
+ *   would map two paid slots onto one opponent.
+ * - Whenever `reason` is present, `query`/`source`/`combineWith` are
+ *   FORBIDDEN outright — not silently ignored. This is a deliberate
+ *   correction to RESEARCH Pattern 5, which proposed carrying a per-opponent
+ *   `query`: 27-CONTEXT.md locks "the server reloads the stored bindings and
+ *   IGNORES client-supplied provider identities", so a caller cannot smuggle
+ *   a provider identity the server would otherwise resolve itself.
+ *
+ * `jobId` (BILL-06/Phase 10) is a client-generated UUID, one per "Generate
+ * report" click, used to key the durable `reportJobs/{uid}/{jobId}` state
+ * machine for idempotent retries. Optional so an un-updated client
+ * (deploy-first) never 400s — the server falls back to a server-generated
+ * jobId when absent, same convention as `checkoutRequestSchema.attemptId`.
+ *
+ * Schema validity is not authorization: the handler must ALSO re-check that
+ * the caller owns the brief and that every requested opponent is currently
+ * curated on it (RPT-02/RPT-03) — this schema only rejects malformed shapes.
+ */
+export const generateReportRequestSchema = z
+  .object({
+    query: z.string().min(1).optional(),
+    source: scoutSourceSchema.optional(),
+    combineWith: combineWithLookupSchema.optional(),
+    jobId: z.string().min(1).optional(),
+    reason: prepReportReasonSchema.optional(),
+    entryKey: entryKeyInputSchema.optional(),
+    opponentName: z.string().min(1).optional(),
+    bundleId: z.string().min(1).optional(),
+    opponentNames: z.array(z.string().min(1)).length(PREP_BUNDLE_SIZE).optional(),
+  })
+  .superRefine((value, ctx) => {
+    if (value.reason === undefined) {
+      if (!value.query) {
+        ctx.addIssue({ code: 'custom', message: 'query is required', path: ['query'] });
+      }
+      return;
+    }
+
+    if (value.query !== undefined) {
+      ctx.addIssue({
+        code: 'custom',
+        message: 'query is not allowed on a prep-context request',
+        path: ['query'],
+      });
+    }
+    if (value.source !== undefined) {
+      ctx.addIssue({
+        code: 'custom',
+        message: 'source is not allowed on a prep-context request',
+        path: ['source'],
+      });
+    }
+    if (value.combineWith !== undefined) {
+      ctx.addIssue({
+        code: 'custom',
+        message: 'combineWith is not allowed on a prep-context request',
+        path: ['combineWith'],
+      });
+    }
+
+    if (value.reason === 'prep_report') {
+      if (!value.entryKey) {
+        ctx.addIssue({
+          code: 'custom',
+          message: 'entryKey is required for reason: prep_report',
+          path: ['entryKey'],
+        });
+      }
+      if (!value.opponentName) {
+        ctx.addIssue({
+          code: 'custom',
+          message: 'opponentName is required for reason: prep_report',
+          path: ['opponentName'],
+        });
+      }
+      if (value.bundleId !== undefined) {
+        ctx.addIssue({
+          code: 'custom',
+          message: 'bundleId is not allowed for reason: prep_report',
+          path: ['bundleId'],
+        });
+      }
+      if (value.opponentNames !== undefined) {
+        ctx.addIssue({
+          code: 'custom',
+          message: 'opponentNames is not allowed for reason: prep_report',
+          path: ['opponentNames'],
+        });
+      }
+    }
+
+    if (value.reason === 'prep_bundle') {
+      if (!value.entryKey) {
+        ctx.addIssue({
+          code: 'custom',
+          message: 'entryKey is required for reason: prep_bundle',
+          path: ['entryKey'],
+        });
+      }
+      if (!value.bundleId) {
+        ctx.addIssue({
+          code: 'custom',
+          message: 'bundleId is required for reason: prep_bundle',
+          path: ['bundleId'],
+        });
+      }
+      if (!value.opponentNames) {
+        ctx.addIssue({
+          code: 'custom',
+          message: `opponentNames (exactly ${PREP_BUNDLE_SIZE}) is required for reason: prep_bundle`,
+          path: ['opponentNames'],
+        });
+      } else if (new Set(value.opponentNames).size !== value.opponentNames.length) {
+        ctx.addIssue({
+          code: 'custom',
+          message: 'opponentNames must be distinct',
+          path: ['opponentNames'],
+        });
+      }
+      if (value.opponentName !== undefined) {
+        ctx.addIssue({
+          code: 'custom',
+          message: 'opponentName is not allowed for reason: prep_bundle',
+          path: ['opponentName'],
+        });
+      }
+    }
+  });
 export type GenerateReportRequest = z.infer<typeof generateReportRequestSchema>;
 
 /**
@@ -166,8 +306,55 @@ export const reportJobSchema = z.object({
   creditRef: z.string(),
   /** The `scoutReports/{uid}` push key once generation succeeds; absent until then. */
   resultRef: z.string().optional(),
+  /**
+   * Phase 27 (D-14): `.nullish()` (not `.optional()`) because this is a
+   * STORED record shape and RTDB strips absent values on write/read. This
+   * is the ONLY prep context ever stored on the job node — no entryKey, no
+   * opponent name, and no provider ID ever lands here (Information
+   * Disclosure mitigation).
+   */
+  reason: prepReportReasonSchema.nullish(),
 });
 export type ReportJob = z.infer<typeof reportJobSchema>;
+
+/**
+ * GET /api/reports/jobs response entry — one row per prep child job, keyed
+ * by the curated opponent it belongs to. `resultRef` mirrors
+ * `reportJobSchema.resultRef` and is present only once `status` reaches
+ * `succeeded`.
+ */
+export const prepReportJobStatusEntrySchema = z.object({
+  opponentName: z.string().min(1),
+  jobId: z.string().min(1),
+  status: reportJobStatusSchema,
+  updatedAt: z.number(),
+  resultRef: z.string().optional(),
+});
+export type PrepReportJobStatusEntry = z.infer<typeof prepReportJobStatusEntrySchema>;
+
+/** GET /api/reports/jobs response — single-or-batch job-status read for the prep paid card's polling hook. */
+export const prepReportJobsResponseSchema = z.object({
+  jobs: z.array(prepReportJobStatusEntrySchema),
+});
+export type PrepReportJobsResponse = z.infer<typeof prepReportJobsResponseSchema>;
+
+/**
+ * The 202 body a `reason: 'prep_bundle'` submission returns. A bundle
+ * submission does NOT return reports — it returns the three pre-paid child
+ * job ids (already charged, one per `slot`) the client then executes and
+ * polls via `GET /api/reports/jobs`.
+ */
+export const prepBundleAcceptedResponseSchema = z.object({
+  bundleId: z.string().min(1),
+  jobs: z.array(
+    z.object({
+      opponentName: z.string().min(1),
+      jobId: z.string().min(1),
+      slot: z.number().int().min(1).max(PREP_BUNDLE_SIZE),
+    }),
+  ),
+});
+export type PrepBundleAcceptedResponse = z.infer<typeof prepBundleAcceptedResponseSchema>;
 
 /**
  * GET /api/reports/config response — whether the signed-in caller can

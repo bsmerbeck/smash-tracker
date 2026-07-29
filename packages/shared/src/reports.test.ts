@@ -2,6 +2,9 @@ import { describe, expect, it } from 'vitest';
 import {
   generatedScoutReportSchema,
   generateReportRequestSchema,
+  PREP_BUNDLE_SIZE,
+  prepBundleAcceptedResponseSchema,
+  prepReportJobsResponseSchema,
   reportJobSchema,
   reportJobStatusSchema,
   scoutReportRecordSchema,
@@ -206,5 +209,140 @@ describe('generateReportRequestSchema jobId (deploy-first optional)', () => {
   it('accepts a request without a jobId (un-updated client never 400s)', () => {
     const parsed = generateReportRequestSchema.safeParse({ query: 'user/07dc2239' });
     expect(parsed.success).toBe(true);
+  });
+});
+
+/**
+ * Phase 27 (RPT-01..04): the backward-compatible request union — legacy
+ * report generation stays byte-identical, prep single/bundle requests are
+ * validated at the schema layer before any handler code runs.
+ */
+describe('generateReportRequestSchema — Phase 27 prep-context union', () => {
+  it('legacy: {query} parses successfully unchanged', () => {
+    expect(generateReportRequestSchema.safeParse({ query: 'user/abc' }).success).toBe(true);
+  });
+
+  it('legacy: {} fails — query is required when reason is absent', () => {
+    expect(generateReportRequestSchema.safeParse({}).success).toBe(false);
+  });
+
+  it('prep_report: entryKey + opponentName parses', () => {
+    const result = generateReportRequestSchema.safeParse({
+      reason: 'prep_report',
+      entryKey: 'e1',
+      opponentName: 'rival',
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it('prep_report: a client-supplied query is rejected (no smuggled provider identity)', () => {
+    const result = generateReportRequestSchema.safeParse({
+      reason: 'prep_report',
+      entryKey: 'e1',
+      opponentName: 'rival',
+      query: 'user/abc',
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('prep_bundle: rejects a 2-opponent selection', () => {
+    const result = generateReportRequestSchema.safeParse({
+      reason: 'prep_bundle',
+      entryKey: 'e1',
+      bundleId: 'b1',
+      opponentNames: ['a', 'b'],
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('prep_bundle: rejects a 4-opponent selection', () => {
+    const result = generateReportRequestSchema.safeParse({
+      reason: 'prep_bundle',
+      entryKey: 'e1',
+      bundleId: 'b1',
+      opponentNames: ['a', 'b', 'c', 'd'],
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('prep_bundle: rejects a duplicate-opponent selection', () => {
+    const result = generateReportRequestSchema.safeParse({
+      reason: 'prep_bundle',
+      entryKey: 'e1',
+      bundleId: 'b1',
+      opponentNames: ['a', 'a', 'b'],
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('prep_bundle: exactly 3 distinct opponents parses', () => {
+    const result = generateReportRequestSchema.safeParse({
+      reason: 'prep_bundle',
+      entryKey: 'e1',
+      bundleId: 'b1',
+      opponentNames: ['a', 'b', 'c'],
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it('reportJobSchema still parses with reason absent', () => {
+    const parsed = reportJobSchema.safeParse({
+      status: 'queued',
+      createdAt: 1,
+      updatedAt: 1,
+      attempt: 0,
+      creditRef: 'j',
+    });
+    expect(parsed.success).toBe(true);
+  });
+});
+
+describe('PREP_BUNDLE_SIZE', () => {
+  it('is exactly 3', () => {
+    expect(PREP_BUNDLE_SIZE).toBe(3);
+  });
+});
+
+describe('prepReportJobsResponseSchema', () => {
+  it('parses an empty jobs array', () => {
+    expect(prepReportJobsResponseSchema.safeParse({ jobs: [] }).success).toBe(true);
+  });
+
+  it('parses a mix of in-flight and succeeded job entries', () => {
+    const result = prepReportJobsResponseSchema.safeParse({
+      jobs: [
+        { opponentName: 'rival', jobId: 'b1:1', status: 'queued', updatedAt: 1 },
+        {
+          opponentName: 'other',
+          jobId: 'b1:2',
+          status: 'succeeded',
+          updatedAt: 2,
+          resultRef: 'push-key',
+        },
+      ],
+    });
+    expect(result.success).toBe(true);
+  });
+});
+
+describe('prepBundleAcceptedResponseSchema', () => {
+  it('parses a 3-slot bundle-accepted body', () => {
+    const result = prepBundleAcceptedResponseSchema.safeParse({
+      bundleId: 'b1',
+      jobs: [
+        { opponentName: 'a', jobId: 'b1:1', slot: 1 },
+        { opponentName: 'b', jobId: 'b1:2', slot: 2 },
+        { opponentName: 'c', jobId: 'b1:3', slot: 3 },
+      ],
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it('rejects a slot outside 1..PREP_BUNDLE_SIZE', () => {
+    const result = prepBundleAcceptedResponseSchema.safeParse({
+      bundleId: 'b1',
+      jobs: [{ opponentName: 'a', jobId: 'b1:1', slot: 4 }],
+    });
+    expect(result.success).toBe(false);
   });
 });
