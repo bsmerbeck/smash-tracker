@@ -53,8 +53,29 @@ async function requireOwnedEntry(
   });
 }
 
+/**
+ * `entryKey` is interpolated directly into `database.ref(...)` paths
+ * (`prepBriefPath`, `requireOwnedEntry`), so it must reject the same
+ * RTDB-reserved path characters `opponentNameInputSchema` rejects for the
+ * sibling `:name` param on this same file — otherwise an illegal-character
+ * value passes Zod validation and the real firebase-admin SDK throws
+ * synchronously on `Reference.child`, surfacing as an uncaught 500 instead
+ * of a clean 400. Deliberately NOT reusing `opponentNameInputSchema`
+ * itself: that schema trims and lowercases, which would corrupt `entryKey`
+ * (a case-sensitive, already-generated key that must match the stored
+ * child key byte-for-byte) — only the illegal-character rejection applies
+ * here, so it is duplicated locally rather than imported.
+ */
+const ENTRY_KEY_ILLEGAL_CHARS = /[.#$[\]/]/;
+
 const prepParamsSchema = z.object({
-  entryKey: z.string().min(1).max(200),
+  entryKey: z
+    .string()
+    .min(1)
+    .max(200)
+    .refine((value) => !ENTRY_KEY_ILLEGAL_CHARS.test(value), {
+      message: 'entryKey cannot contain . # $ [ ] / characters',
+    }),
 });
 
 const prepChecklistParamsSchema = prepParamsSchema.extend({

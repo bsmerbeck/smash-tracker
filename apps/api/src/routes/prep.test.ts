@@ -21,6 +21,20 @@ function seedEntry(
   });
 }
 
+describe('entryKey validation', () => {
+  it('returns 400 for an entryKey containing an RTDB-illegal character (WR-01)', async () => {
+    const { app } = buildTestApp();
+
+    const response = await app.inject({
+      method: 'GET',
+      url: `/api/prep/${encodeURIComponent('a.b')}`,
+      headers: authHeader(),
+    });
+
+    expect(response.statusCode).toBe(400);
+  });
+});
+
 describe('GET /api/prep/:entryKey', () => {
   it('rejects unauthenticated requests', async () => {
     const { app } = buildTestApp();
