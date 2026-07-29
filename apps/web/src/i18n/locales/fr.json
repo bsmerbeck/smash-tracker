@@ -2479,5 +2479,76 @@
       "loadFailed": "Une erreur est survenue lors du chargement de votre résumé de préparation. Veuillez réessayer.",
       "addEventFailed": "Une erreur est survenue lors de l'ajout de cet événement. Veuillez réessayer."
     }
+  },
+  "prepPaid": {
+    "title": "Rapports de préparation IA",
+    "description": "Obtenez un rapport rédigé par IA sur un adversaire probable pour 1 crédit, ou les trois pour 3 crédits.",
+    "balance": {
+      "credits_one": "{{count}} crédit",
+      "credits_other": "{{count}} crédits",
+      "freeAccess": "Accès gratuit"
+    },
+    "opponent": {
+      "buyCta": "Obtenir le rapport — 1 crédit",
+      "bundleCheckbox": "Inclure dans le lot",
+      "bundleCheckboxAria": "Inclure {{name}} dans le lot de 3 adversaires"
+    },
+    "bundle": {
+      "progress": "{{selected}}/3 sélectionnés pour le lot",
+      "buyCta": "Obtenir les trois — 3 crédits",
+      "needMore_one": "Ajoutez {{count}} adversaire probable de plus ci-dessus pour rendre le lot de 3 adversaires disponible.",
+      "needMore_other": "Ajoutez {{count}} adversaires probables de plus ci-dessus pour rendre le lot de 3 adversaires disponible.",
+      "needConfirmed_one": "Confirmez {{count}} joueur de plus ci-dessus pour rendre le lot de 3 adversaires disponible.",
+      "needConfirmed_other": "Confirmez {{count}} joueurs de plus ci-dessus pour rendre le lot de 3 adversaires disponible."
+    },
+    "empty": {
+      "title": "Ajoutez des adversaires probables pour obtenir des rapports",
+      "body": "Ajoutez des adversaires dans la carte Adversaires probables ci-dessus, puis revenez ici pour obtenir un rapport sur l'un d'eux."
+    },
+    "jobStatus": {
+      "queued": "En attente",
+      "running": "Génération…",
+      "succeeded": "Prêt",
+      "failedPendingRefund": "Échec — remboursement de votre crédit…",
+      "refunded": "Échec — votre crédit a été remboursé.",
+      "viewReport": "Voir le rapport",
+      "hideReport": "Masquer le rapport"
+    },
+    "insufficientCredits": {
+      "body": "Vous n'avez plus de crédits.",
+      "buyCta": "Acheter des crédits",
+      "toGenerate": "pour obtenir ce rapport."
+    },
+    "billing": {
+      "paymentReceived": "Paiement reçu — votre rapport démarrera sous peu.",
+      "checkoutCancelled": "Paiement annulé."
+    },
+    "error": {
+      "submitFailed": "Une erreur est survenue lors du démarrage de ce rapport. Veuillez réessayer."
+    },
+    "binding": {
+      "unresolved": "Aucun joueur confirmé pour le moment",
+      "confirmCta": "Confirmer le joueur",
+      "changeCta": "Changer de joueur",
+      "clearCta": "Retirer le joueur confirmé",
+      "confirmedLabel": "Confirmé : {{tag}}",
+      "dialogTitle": "Qui est {{name}} ?",
+      "dialogDescription": "Choisissez le profil start.gg ou parry.gg auquel appartient cet adversaire. Confirmer un joueur ne coûte rien et ne démarre aucun rapport.",
+      "searchPlaceholder": "Recherchez dans votre historique de matchs",
+      "candidatesLabel": "Depuis vos matchs",
+      "candidatesEmpty": "Aucun profil trouvé dans votre historique de matchs pour cet adversaire.",
+      "multipleHint": "Vos matchs pointent vers plusieurs profils — choisissez le bon.",
+      "manualLabel": "Collez un lien de profil",
+      "manualPlaceholder": "URL de profil start.gg ou parry.gg",
+      "manualHint": "Un lien de profil ou un ID — un simple pseudo ne suffit pas à identifier un joueur.",
+      "matchCount_one": "{{count}} match",
+      "matchCount_other": "{{count}} matchs",
+      "confirmAction": "Confirmer",
+      "cancelAction": "Annuler",
+      "error": {
+        "notFound": "Aucun joueur trouvé pour ce profil. Vérifiez le lien et réessayez.",
+        "failed": "Une erreur est survenue lors de la confirmation de ce joueur. Veuillez réessayer."
+      }
+    }
   }
 }

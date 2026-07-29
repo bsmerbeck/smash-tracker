@@ -2479,5 +2479,76 @@
       "loadFailed": "Something went wrong loading your prep brief. Please try again.",
       "addEventFailed": "Something went wrong adding this event. Please try again."
     }
+  },
+  "prepPaid": {
+    "title": "AI prep reports",
+    "description": "Get an AI-written report on one likely opponent for 1 credit, or all three for 3 credits.",
+    "balance": {
+      "credits_one": "{{count}} credit",
+      "credits_other": "{{count}} credits",
+      "freeAccess": "Free access"
+    },
+    "opponent": {
+      "buyCta": "Get report — 1 credit",
+      "bundleCheckbox": "Include in bundle",
+      "bundleCheckboxAria": "Include {{name}} in the 3-opponent bundle"
+    },
+    "bundle": {
+      "progress": "{{selected}}/3 selected for the bundle",
+      "buyCta": "Get all three — 3 credits",
+      "needMore_one": "Add {{count}} more likely opponent above to make the 3-opponent bundle available.",
+      "needMore_other": "Add {{count}} more likely opponents above to make the 3-opponent bundle available.",
+      "needConfirmed_one": "Confirm {{count}} more player above to make the 3-opponent bundle available.",
+      "needConfirmed_other": "Confirm {{count}} more players above to make the 3-opponent bundle available."
+    },
+    "empty": {
+      "title": "Add likely opponents to get reports",
+      "body": "Add opponents in the Likely opponents card above, then come back here to get a report on any of them."
+    },
+    "jobStatus": {
+      "queued": "Queued",
+      "running": "Generating…",
+      "succeeded": "Ready",
+      "failedPendingRefund": "Failed — refunding your credit…",
+      "refunded": "Failed — your credit was refunded.",
+      "viewReport": "View report",
+      "hideReport": "Hide report"
+    },
+    "insufficientCredits": {
+      "body": "You're out of credits.",
+      "buyCta": "Buy credits",
+      "toGenerate": "to get this report."
+    },
+    "billing": {
+      "paymentReceived": "Payment received — your report will start shortly.",
+      "checkoutCancelled": "Checkout cancelled."
+    },
+    "error": {
+      "submitFailed": "Something went wrong starting this report. Please try again."
+    },
+    "binding": {
+      "unresolved": "No player confirmed yet",
+      "confirmCta": "Confirm player",
+      "changeCta": "Change player",
+      "clearCta": "Remove confirmed player",
+      "confirmedLabel": "Confirmed: {{tag}}",
+      "dialogTitle": "Which player is {{name}}?",
+      "dialogDescription": "Pick the start.gg or parry.gg profile this opponent belongs to. Confirming a player costs nothing and does not start a report.",
+      "searchPlaceholder": "Search your match history",
+      "candidatesLabel": "From your matches",
+      "candidatesEmpty": "No profiles found in your match history for this opponent.",
+      "multipleHint": "Your matches point at more than one profile — pick the right one.",
+      "manualLabel": "Paste a profile link",
+      "manualPlaceholder": "start.gg or parry.gg profile URL",
+      "manualHint": "A profile link or ID — a plain gamer tag is not enough to identify a player.",
+      "matchCount_one": "{{count}} match",
+      "matchCount_other": "{{count}} matches",
+      "confirmAction": "Confirm",
+      "cancelAction": "Cancel",
+      "error": {
+        "notFound": "No player found for that profile. Check the link and try again.",
+        "failed": "Something went wrong confirming this player. Please try again."
+      }
+    }
   }
 }

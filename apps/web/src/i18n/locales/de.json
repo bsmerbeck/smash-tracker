@@ -2479,5 +2479,76 @@
       "loadFailed": "Beim Laden deines Vorbereitungs-Briefings ist etwas schiefgelaufen. Bitte erneut versuchen.",
       "addEventFailed": "Beim Hinzufügen dieses Events ist etwas schiefgelaufen. Bitte erneut versuchen."
     }
+  },
+  "prepPaid": {
+    "title": "KI-Vorbereitungsberichte",
+    "description": "Erhalte einen von KI geschriebenen Bericht zu einem wahrscheinlichen Gegner für 1 Credit, oder alle drei für 3 Credits.",
+    "balance": {
+      "credits_one": "{{count}} Credit",
+      "credits_other": "{{count}} Credits",
+      "freeAccess": "Kostenloser Zugang"
+    },
+    "opponent": {
+      "buyCta": "Bericht holen — 1 Credit",
+      "bundleCheckbox": "Ins Paket aufnehmen",
+      "bundleCheckboxAria": "{{name}} ins 3-Gegner-Paket aufnehmen"
+    },
+    "bundle": {
+      "progress": "{{selected}}/3 für das Paket ausgewählt",
+      "buyCta": "Alle drei holen — 3 Credits",
+      "needMore_one": "Füge oben {{count}} weiteren wahrscheinlichen Gegner hinzu, damit das 3-Gegner-Paket verfügbar wird.",
+      "needMore_other": "Füge oben {{count}} weitere wahrscheinliche Gegner hinzu, damit das 3-Gegner-Paket verfügbar wird.",
+      "needConfirmed_one": "Bestätige oben {{count}} weiteren Spieler, damit das 3-Gegner-Paket verfügbar wird.",
+      "needConfirmed_other": "Bestätige oben {{count}} weitere Spieler, damit das 3-Gegner-Paket verfügbar wird."
+    },
+    "empty": {
+      "title": "Füge wahrscheinliche Gegner hinzu, um Berichte zu erhalten",
+      "body": "Füge Gegner in der Karte „Wahrscheinliche Gegner\" oben hinzu und komm dann hierher zurück, um einen Bericht zu einem von ihnen zu erhalten."
+    },
+    "jobStatus": {
+      "queued": "In Warteschlange",
+      "running": "Wird generiert…",
+      "succeeded": "Fertig",
+      "failedPendingRefund": "Fehlgeschlagen — dein Credit wird erstattet…",
+      "refunded": "Fehlgeschlagen — dein Credit wurde erstattet.",
+      "viewReport": "Bericht ansehen",
+      "hideReport": "Bericht ausblenden"
+    },
+    "insufficientCredits": {
+      "body": "Du hast keine Credits mehr.",
+      "buyCta": "Credits kaufen",
+      "toGenerate": "um diesen Bericht zu erhalten."
+    },
+    "billing": {
+      "paymentReceived": "Zahlung erhalten — dein Bericht startet in Kürze.",
+      "checkoutCancelled": "Bezahlvorgang abgebrochen."
+    },
+    "error": {
+      "submitFailed": "Beim Starten dieses Berichts ist etwas schiefgelaufen. Bitte erneut versuchen."
+    },
+    "binding": {
+      "unresolved": "Noch kein Spieler bestätigt",
+      "confirmCta": "Spieler bestätigen",
+      "changeCta": "Spieler ändern",
+      "clearCta": "Bestätigten Spieler entfernen",
+      "confirmedLabel": "Bestätigt: {{tag}}",
+      "dialogTitle": "Wer ist {{name}}?",
+      "dialogDescription": "Wähle das start.gg- oder parry.gg-Profil, zu dem dieser Gegner gehört. Einen Spieler zu bestätigen kostet nichts und startet keinen Bericht.",
+      "searchPlaceholder": "Deinen Match-Verlauf durchsuchen",
+      "candidatesLabel": "Aus deinen Matches",
+      "candidatesEmpty": "Keine Profile in deinem Match-Verlauf für diesen Gegner gefunden.",
+      "multipleHint": "Deine Matches verweisen auf mehr als ein Profil — wähle das richtige aus.",
+      "manualLabel": "Profil-Link einfügen",
+      "manualPlaceholder": "start.gg- oder parry.gg-Profil-URL",
+      "manualHint": "Ein Profil-Link oder eine ID — ein reiner Gamer-Tag reicht nicht aus, um einen Spieler zu identifizieren.",
+      "matchCount_one": "{{count}} Match",
+      "matchCount_other": "{{count}} Matches",
+      "confirmAction": "Bestätigen",
+      "cancelAction": "Abbrechen",
+      "error": {
+        "notFound": "Kein Spieler für dieses Profil gefunden. Überprüfe den Link und versuche es erneut.",
+        "failed": "Beim Bestätigen dieses Spielers ist etwas schiefgelaufen. Bitte erneut versuchen."
+      }
+    }
   }
 }
