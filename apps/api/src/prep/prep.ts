@@ -14,10 +14,11 @@ import { ConflictError, NotFoundError } from '../services/rtdb.js';
 /**
  * Phase 26 (D-22): this is the ONLY module in the API allowed to read or
  * write `prepBriefs/{uid}/{entryKey}`. It deliberately has no dependency on
- * `reports/`, `billing/`, or `@anthropic-ai` — that absence is what makes
- * PREP-02's "zero model calls, zero report jobs, zero credit movement"
- * property structurally provable by an import-graph gate
- * (`importGraph.test.ts`) rather than merely asserted in prose. Every
+ * the reports subsystem, the billing subsystem, or the Anthropic SDK —
+ * that absence is what makes PREP-02's "zero model calls, zero report
+ * jobs, zero credit movement" property structurally provable by an
+ * import-graph gate (`importGraph.test.ts`) rather than merely asserted in
+ * prose. Every
  * function below takes `database: Database` first and `uid: string`
  * second, and `uid` is always the caller's own VERIFIED uid supplied by the
  * route layer (D-12 / access control) — never read from a request body or
