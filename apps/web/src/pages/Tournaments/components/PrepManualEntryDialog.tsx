@@ -82,22 +82,31 @@ export function PrepManualEntryDialog({ open, onOpenChange }: PrepManualEntryDia
   const [activatingEntryKey, setActivatingEntryKey] = useState<string | null>(null);
 
   const activateBrief = useActivatePrepBrief(activatingEntryKey ?? '');
+  // A bare `Date.now()` call in the render body is impure (React Compiler
+  // forbids it); a lazy `useState` initializer is the sanctioned one-time
+  // read (mirrors `ClaimStatusBadge`'s house pattern). A stale "now" across
+  // re-renders is harmless for a form filled out over seconds/minutes.
+  const [now] = useState(() => Date.now());
 
-  // Reset fields/error whenever the dialog transitions to closed, regardless
-  // of whether the close was Radix-internal (Escape/overlay/X) or driven by
-  // the parent setting `open={false}` directly (e.g. after this component's
-  // own success->navigate flow below).
-  useEffect(() => {
-    if (!open) {
-      setEventName('');
-      setEventDate('');
-      setError(null);
-      setActivatingEntryKey(null);
+  function resetFields() {
+    setEventName('');
+    setEventDate('');
+    setError(null);
+    setActivatingEntryKey(null);
+  }
+
+  // Every close path (Radix-internal Escape/overlay/X, or this component's
+  // own success->navigate flow below) funnels through here, so fields/error
+  // always reset before the dialog can be reopened.
+  function handleOpenChange(next: boolean) {
+    if (!next) {
+      resetFields();
     }
-  }, [open]);
+    onOpenChange(next);
+  }
 
   const parsedDate = parseLocalCalendarDate(eventDate);
-  const isFutureDate = parsedDate !== null && parsedDate > Date.now();
+  const isFutureDate = parsedDate !== null && parsedDate > now;
   const showDateError = eventDate.trim().length > 0 && !isFutureDate;
   const trimmedName = eventName.trim();
   const canSubmit = trimmedName.length > 0 && isFutureDate;
@@ -138,6 +147,7 @@ export function PrepManualEntryDialog({ open, onOpenChange }: PrepManualEntryDia
     const entryKey = activatingEntryKey;
     activateBrief.mutate(undefined, {
       onSuccess: () => {
+        resetFields();
         onOpenChange(false);
         navigate(`/tournaments/${entryKey}/prep`);
       },
@@ -157,7 +167,7 @@ export function PrepManualEntryDialog({ open, onOpenChange }: PrepManualEntryDia
   }
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent>
         <DialogHeader>
           <DialogTitle>{t('prep.manualEntry.title')}</DialogTitle>
