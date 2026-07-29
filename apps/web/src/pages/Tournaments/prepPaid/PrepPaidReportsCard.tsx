@@ -6,17 +6,26 @@ import {
   isReportReadyBinding,
   type PrepPresenceMap,
   type ScoutBindingMap,
+  type ScoutReportRecord,
 } from '@smash-tracker/shared';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Label } from '@/components/ui/label';
+import { ApiError, api } from '@/lib/api';
 import { postCanonicalEvent } from '@/lib/canonicalEvents';
 import { useCredits } from '@/hooks/useBilling';
 import { usePrepReportJobs } from '@/hooks/usePrepReportJobs';
-import { useGeneratePrepReport, useStartPrepBundle } from '@/hooks/usePrepPaidReports';
+import {
+  executeBundleChildren,
+  useGeneratePrepReport,
+  useStartPrepBundle,
+} from '@/hooks/usePrepPaidReports';
+import { BuyCreditsDialog } from '@/components/billing/BuyCreditsDialog';
+import { ScoutAiReportCard } from '@/pages/Scout/components/ScoutAiReportCard';
 import { OpponentBindingConfirm } from './OpponentBindingConfirm';
+import { usePrepPaidCheckoutReturn } from './usePrepPaidCheckoutReturn';
 
 /**
  * `PrepPaidReportsCard` is the ONE intentionally monetized surface in the
@@ -40,6 +49,19 @@ export interface PrepPaidReportsCardProps {
   scoutBindings: ScoutBindingMap;
 }
 
+/** The purchase this card most recently attempted — drives where the insufficient-credits/submit-failed hint renders. */
+type PurchaseTarget = { kind: 'single'; name: string } | { kind: 'bundle' };
+
+function samePurchaseTarget(a: PurchaseTarget | null, b: PurchaseTarget): boolean {
+  if (!a) {
+    return false;
+  }
+  if (a.kind !== b.kind) {
+    return false;
+  }
+  return a.kind === 'single' && b.kind === 'single' ? a.name === b.name : true;
+}
+
 export function PrepPaidReportsCard({
   entryKey,
   likelyOpponents,
@@ -51,13 +73,25 @@ export function PrepPaidReportsCard({
   const generateReport = useGeneratePrepReport(entryKey);
   const startBundle = useStartPrepBundle(entryKey);
 
+  // The `?billing=` Stripe Checkout return trip — see
+  // usePrepPaidCheckoutReturn.ts for why this handling lives here rather
+  // than on PrepBriefPage.
+  usePrepPaidCheckoutReturn();
+
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [pendingSingle, setPendingSingle] = useState<string | null>(null);
   const [bundlePending, setBundlePending] = useState(false);
+  const [buyCreditsOpen, setBuyCreditsOpen] = useState(false);
+  const [insufficientCreditsFor, setInsufficientCreditsFor] = useState<PurchaseTarget | null>(null);
+  const [submitFailedFor, setSubmitFailedFor] = useState<PurchaseTarget | null>(null);
+  const [expandedOpponent, setExpandedOpponent] = useState<string | null>(null);
+  const [expandedReport, setExpandedReport] = useState<ScoutReportRecord | null>(null);
 
   const curatedNames = Object.keys(likelyOpponents).sort((a, b) => a.localeCompare(b));
   const creditsData = credits.data;
   const freeAccess = creditsData?.freeAccess ?? false;
+  const availablePacks = creditsData?.packs ?? [];
+  const canBuyCredits = !freeAccess && availablePacks.length > 0;
 
   const reportReadyCount = curatedNames.filter((name) => {
     const binding = scoutBindings[name];
@@ -79,6 +113,40 @@ export function PrepPaidReportsCard({
     postCanonicalEvent('prep_offer_viewed', {});
   }, []);
 
+  // The inline "view report" expand reuses the existing `ScoutAiReportCard`
+  // (Scout page's own report viewer) verbatim, fetched by the succeeded
+  // job's `resultRef` — no new report-rendering component is built. Plain
+  // fetch/state (not a react-query hook) since this is a one-off, on-demand
+  // lookup for whichever single row is currently expanded. No synchronous
+  // `setState` at the top of the effect body (react-hooks/set-state-in-effect):
+  // a stale report simply fails the render-time identity check below
+  // (`job.resultRef === expandedReport.id`) rather than being eagerly
+  // cleared here.
+  useEffect(() => {
+    const resultRef = expandedOpponent
+      ? jobsByOpponentName[expandedOpponent]?.resultRef
+      : undefined;
+    if (!resultRef) {
+      return;
+    }
+    let cancelled = false;
+    api.reports
+      .get(resultRef)
+      .then((record) => {
+        if (!cancelled) {
+          setExpandedReport(record);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setExpandedReport(null);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [expandedOpponent, jobsByOpponentName]);
+
   function toggleSelection(name: string, next: boolean) {
     setSelected((current) => {
       const nextSet = new Set(current);
@@ -91,11 +159,29 @@ export function PrepPaidReportsCard({
     });
   }
 
+  function toggleView(name: string) {
+    setExpandedOpponent((current) => (current === name ? null : name));
+  }
+
+  function handlePurchaseError(target: PurchaseTarget, error: unknown) {
+    if (error instanceof ApiError && error.status === 402) {
+      setInsufficientCreditsFor(target);
+      setSubmitFailedFor(null);
+      setBuyCreditsOpen(true);
+    } else {
+      setSubmitFailedFor(target);
+      setInsufficientCreditsFor(null);
+    }
+  }
+
   function handleBuySingle(name: string) {
     setPendingSingle(name);
+    setInsufficientCreditsFor(null);
+    setSubmitFailedFor(null);
     generateReport.mutate(
       { opponentName: name },
       {
+        onError: (error) => handlePurchaseError({ kind: 'single', name }, error),
         onSettled: () => setPendingSingle(null),
       },
     );
@@ -105,12 +191,19 @@ export function PrepPaidReportsCard({
     const opponentNames = Array.from(selected);
     const bundleId = crypto.randomUUID();
     setBundlePending(true);
+    setInsufficientCreditsFor(null);
+    setSubmitFailedFor(null);
     startBundle.mutate(
       { bundleId, opponentNames },
       {
-        onSuccess: () => {
+        onSuccess: (data) => {
           setSelected(new Set());
+          // Fire-and-forget: each child's own status thereafter comes from
+          // the polling hook (`usePrepReportJobs`), not from this call's
+          // own resolution.
+          void executeBundleChildren(generateReport.mutateAsync, data.jobs);
         },
+        onError: (error) => handlePurchaseError({ kind: 'bundle' }, error),
         onSettled: () => setBundlePending(false),
       },
     );
@@ -160,6 +253,15 @@ export function PrepPaidReportsCard({
               const isChecked = selected.has(name);
               const checkboxDisabled = !isChecked && selected.size >= PREP_BUNDLE_SIZE;
               const isPendingThis = pendingSingle === name;
+              const isExpanded = expandedOpponent === name;
+              const hasInsufficientCreditsHint = samePurchaseTarget(insufficientCreditsFor, {
+                kind: 'single',
+                name,
+              });
+              const hasSubmitFailedHint = samePurchaseTarget(submitFailedFor, {
+                kind: 'single',
+                name,
+              });
 
               return (
                 <div key={name} className="flex flex-col gap-2 rounded-md border p-3">
@@ -203,7 +305,19 @@ export function PrepPaidReportsCard({
                         </Badge>
                       )}
                       {job?.status === 'succeeded' && (
-                        <Badge variant="success">{t('prepPaid.jobStatus.succeeded')}</Badge>
+                        <>
+                          <Badge variant="success">{t('prepPaid.jobStatus.succeeded')}</Badge>
+                          <Button
+                            type="button"
+                            variant="link"
+                            size="sm"
+                            onClick={() => toggleView(name)}
+                          >
+                            {isExpanded
+                              ? t('prepPaid.jobStatus.hideReport')
+                              : t('prepPaid.jobStatus.viewReport')}
+                          </Button>
+                        </>
                       )}
                       {job?.status === 'failed' && (
                         <Badge variant="destructive">
@@ -214,24 +328,78 @@ export function PrepPaidReportsCard({
                   </div>
 
                   <OpponentBindingConfirm entryKey={entryKey} name={name} binding={binding} />
+
+                  {hasInsufficientCreditsHint && (
+                    <p className="text-sm text-muted-foreground">
+                      {t('prepPaid.insufficientCredits.body')}{' '}
+                      <Button
+                        type="button"
+                        variant="link"
+                        className="h-auto p-0 text-sm"
+                        onClick={() => setBuyCreditsOpen(true)}
+                      >
+                        {t('prepPaid.insufficientCredits.buyCta')}
+                      </Button>{' '}
+                      {t('prepPaid.insufficientCredits.toGenerate')}
+                    </p>
+                  )}
+                  {hasSubmitFailedHint && (
+                    <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">
+                      {t('prepPaid.error.submitFailed')}
+                    </div>
+                  )}
+
+                  {isExpanded && expandedReport && expandedReport.id === job?.resultRef && (
+                    <ScoutAiReportCard record={expandedReport} />
+                  )}
                 </div>
               );
             })}
 
-            <div className="flex items-center justify-between gap-3 rounded-md border p-3">
-              <span className="text-xs text-muted-foreground">{bundleHint}</span>
-              <Button
-                type="button"
-                disabled={selected.size !== PREP_BUNDLE_SIZE || bundlePending}
-                onClick={handleBuyBundle}
-              >
-                <Sparkles className={bundlePending ? 'animate-spin' : ''} />
-                {t('prepPaid.bundle.buyCta')}
-              </Button>
+            <div className="flex flex-col gap-2">
+              <div className="flex items-center justify-between gap-3 rounded-md border p-3">
+                <span className="text-xs text-muted-foreground">{bundleHint}</span>
+                <Button
+                  type="button"
+                  disabled={selected.size !== PREP_BUNDLE_SIZE || bundlePending}
+                  onClick={handleBuyBundle}
+                >
+                  <Sparkles className={bundlePending ? 'animate-spin' : ''} />
+                  {t('prepPaid.bundle.buyCta')}
+                </Button>
+              </div>
+              {samePurchaseTarget(insufficientCreditsFor, { kind: 'bundle' }) && (
+                <p className="text-sm text-muted-foreground">
+                  {t('prepPaid.insufficientCredits.body')}{' '}
+                  <Button
+                    type="button"
+                    variant="link"
+                    className="h-auto p-0 text-sm"
+                    onClick={() => setBuyCreditsOpen(true)}
+                  >
+                    {t('prepPaid.insufficientCredits.buyCta')}
+                  </Button>{' '}
+                  {t('prepPaid.insufficientCredits.toGenerate')}
+                </p>
+              )}
+              {samePurchaseTarget(submitFailedFor, { kind: 'bundle' }) && (
+                <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">
+                  {t('prepPaid.error.submitFailed')}
+                </div>
+              )}
             </div>
           </>
         )}
       </CardContent>
+
+      {canBuyCredits && (
+        <BuyCreditsDialog
+          open={buyCreditsOpen}
+          onOpenChange={setBuyCreditsOpen}
+          packs={availablePacks}
+          returnTo={{ returnTo: 'prep', entryKey }}
+        />
+      )}
     </Card>
   );
 }
