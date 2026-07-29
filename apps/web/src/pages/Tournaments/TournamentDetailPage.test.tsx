@@ -9,6 +9,11 @@ import { TooltipProvider } from '@/components/ui/tooltip';
 import { resetAuthMock, setMockUser, makeMockUser } from '@/test/mockAuth';
 import { TournamentDetailPage } from './TournamentDetailPage';
 import { SpriteList } from '@/data/sprites';
+import { usePrepBrief } from '@/hooks/usePrepBrief';
+
+vi.mock('@/hooks/usePrepBrief', () => ({
+  usePrepBrief: vi.fn(),
+}));
 
 vi.mock('firebase/auth', async () => {
   const mock = await import('@/test/mockAuth');
@@ -50,6 +55,16 @@ vi.mock('@/lib/api', async () => {
     },
   };
 });
+
+const mockUsePrepBrief = vi.mocked(usePrepBrief);
+
+/** Convenience wrapper matching `usePrepBrief`'s consumed shape (`isPending`/`data.activated`). */
+function mockPrepBrief(state: { isPending: boolean; activated?: boolean }) {
+  mockUsePrepBrief.mockReturnValue({
+    isPending: state.isPending,
+    data: state.isPending ? undefined : { activated: Boolean(state.activated) },
+  } as unknown as ReturnType<typeof usePrepBrief>);
+}
 
 const mario = SpriteList.find((s) => s.id === 1)!; // Mario
 const luigi = SpriteList.find((s) => s.id === 10)!; // Luigi
@@ -108,6 +123,8 @@ describe('TournamentDetailPage', () => {
     resetAuthMock();
     vi.clearAllMocks();
     setMockUser(makeMockUser());
+    // Default: resolved, no brief — individual prep-CTA tests override this.
+    mockPrepBrief({ isPending: false, activated: false });
   });
 
   it('shows a friendly not-found state for an unknown eventId', async () => {
@@ -287,5 +304,76 @@ describe('TournamentDetailPage', () => {
 
     expect(await screen.findByText('Recap link ready')).toBeInTheDocument();
     expect(screen.getByDisplayValue('https://grandfinals.gg/s/tok')).toBeInTheDocument();
+  });
+
+  describe('prep brief CTA', () => {
+    it('renders Start prep brief for an upcoming entry with no existing brief', async () => {
+      const futureEntry = makeEntry({ eventId: 42, firstSetAt: Date.now() + 86_400_000 });
+      listTournaments.mockResolvedValue([futureEntry]);
+      listMatches.mockResolvedValue([]);
+      mockPrepBrief({ isPending: false, activated: false });
+
+      renderPage('42');
+
+      const cta = await screen.findByTestId('tournament-prep-cta');
+      expect(cta).toHaveTextContent('Start prep brief');
+      expect(cta).toHaveAttribute('href', `/tournaments/${futureEntry.entryKey}/prep`);
+    });
+
+    it('renders Open prep brief once a brief is activated', async () => {
+      listTournaments.mockResolvedValue([makeEntry({ eventId: 42 })]);
+      listMatches.mockResolvedValue([]);
+      mockPrepBrief({ isPending: false, activated: true });
+
+      renderPage('42');
+
+      expect(await screen.findByTestId('tournament-prep-cta')).toHaveTextContent('Open prep brief');
+    });
+
+    it('keeps Open prep brief reachable for a past-dated entry with an activated brief (D-03)', async () => {
+      // makeEntry defaults firstSetAt to a 2021 date — already in the past.
+      listTournaments.mockResolvedValue([makeEntry({ eventId: 42 })]);
+      listMatches.mockResolvedValue([]);
+      mockPrepBrief({ isPending: false, activated: true });
+
+      renderPage('42');
+
+      expect(await screen.findByTestId('tournament-prep-cta')).toHaveTextContent('Open prep brief');
+    });
+
+    it('shows no prep action for a past-dated entry with no existing brief', async () => {
+      listTournaments.mockResolvedValue([makeEntry({ eventId: 42 })]);
+      listMatches.mockResolvedValue([]);
+      mockPrepBrief({ isPending: false, activated: false });
+
+      renderPage('42');
+
+      await screen.findByText('Set Timeline');
+      expect(screen.queryByTestId('tournament-prep-cta')).not.toBeInTheDocument();
+    });
+
+    it('shows no prep action while the prep query is still pending', async () => {
+      listTournaments.mockResolvedValue([
+        makeEntry({ eventId: 42, firstSetAt: Date.now() + 86_400_000 }),
+      ]);
+      listMatches.mockResolvedValue([]);
+      mockPrepBrief({ isPending: true });
+
+      renderPage('42');
+
+      await screen.findByText('Set Timeline');
+      expect(screen.queryByTestId('tournament-prep-cta')).not.toBeInTheDocument();
+    });
+
+    it('renders both the prep CTA and the recap button when both are eligible', async () => {
+      listTournaments.mockResolvedValue([makeEntry({ eventId: 42, setsPlayed: 3 })]);
+      listMatches.mockResolvedValue([]);
+      mockPrepBrief({ isPending: false, activated: true });
+
+      renderPage('42');
+
+      expect(await screen.findByTestId('tournament-prep-cta')).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Generate recap' })).toBeInTheDocument();
+    });
   });
 });
