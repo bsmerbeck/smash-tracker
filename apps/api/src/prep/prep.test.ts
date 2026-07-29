@@ -1,15 +1,17 @@
 import { describe, expect, it } from 'vitest';
 import type { Database } from 'firebase-admin/database';
-import { PREP_LIKELY_OPPONENTS_MAX } from '@smash-tracker/shared';
+import { PREP_LIKELY_OPPONENTS_MAX, type ScoutBinding } from '@smash-tracker/shared';
 import { FakeDatabase } from '../test-support/fakeDatabase.js';
 import { ConflictError, NotFoundError } from '../services/rtdb.js';
 import {
   activatePrepBrief,
+  clearPrepScoutBinding,
   prepBriefPath,
   readPrepBrief,
   reopenPrepBrief,
   setPrepChecklistItem,
   setPrepLikelyOpponent,
+  setPrepScoutBinding,
 } from './prep.js';
 
 /**
@@ -302,5 +304,137 @@ describe('setPrepLikelyOpponent — PREP_LIKELY_OPPONENTS_MAX enforcement', () =
       true,
     );
     expect(Object.keys(brief.likelyOpponents)).toHaveLength(PREP_LIKELY_OPPONENTS_MAX);
+  });
+});
+
+/**
+ * Phase 27 (RPT-01/RPT-02, 27-06): the scoutBinding storage contract.
+ * Bindings are always constructed here as ALREADY-resolved ScoutBinding
+ * values — this test file never performs a provider lookup, matching the
+ * module's own contract that `setPrepScoutBinding` trusts its caller for
+ * resolution.
+ */
+const STARTGG_BINDING: ScoutBinding = {
+  provider: 'startgg',
+  startggPlayerId: 1802316,
+  startggUserSlug: 'user/07dc2239',
+  displayTag: 'Pandem1c',
+  method: 'matchHistory',
+  confirmedAt: 1_700_000_500_000,
+};
+
+describe('setPrepScoutBinding / clearPrepScoutBinding — scoutBinding storage (27-06)', () => {
+  it('writes a binding for a curated opponent, and a subsequent readPrepBrief returns it normalized', async () => {
+    const database = new FakeDatabase();
+    await activatePrepBrief(asDatabase(database), TEST_UID, ENTRY_KEY, EVENT_DATE, SESSION_ID);
+    await setPrepLikelyOpponent(asDatabase(database), TEST_UID, ENTRY_KEY, 'rival', true);
+
+    await setPrepScoutBinding(asDatabase(database), TEST_UID, ENTRY_KEY, 'rival', STARTGG_BINDING);
+
+    const brief = await readPrepBrief(asDatabase(database), TEST_UID, ENTRY_KEY);
+    expect(brief?.scoutBindings.rival).toEqual(STARTGG_BINDING);
+  });
+
+  it('rejects with ConflictError and writes nothing when the name is NOT currently curated', async () => {
+    const database = new FakeDatabase();
+    await activatePrepBrief(asDatabase(database), TEST_UID, ENTRY_KEY, EVENT_DATE, SESSION_ID);
+
+    await expect(
+      setPrepScoutBinding(
+        asDatabase(database),
+        TEST_UID,
+        ENTRY_KEY,
+        'never-curated',
+        STARTGG_BINDING,
+      ),
+    ).rejects.toThrow(ConflictError);
+
+    const brief = await readPrepBrief(asDatabase(database), TEST_UID, ENTRY_KEY);
+    expect(brief?.scoutBindings).toEqual({});
+  });
+
+  it('stores an object with absent identity keys — never an explicit undefined-valued key — when optional identity fields are undefined', async () => {
+    const database = new FakeDatabase();
+    await activatePrepBrief(asDatabase(database), TEST_UID, ENTRY_KEY, EVENT_DATE, SESSION_ID);
+    await setPrepLikelyOpponent(asDatabase(database), TEST_UID, ENTRY_KEY, 'rival', true);
+
+    const parryBinding: ScoutBinding = {
+      provider: 'parrygg',
+      parryUserId: '019ce9ba-debd-7e11-84a2-77258f52644e',
+      displayTag: 'Pandem1c',
+      method: 'profileInput',
+      confirmedAt: 1_700_000_600_000,
+    };
+
+    await setPrepScoutBinding(asDatabase(database), TEST_UID, ENTRY_KEY, 'rival', parryBinding);
+
+    const stored = dumpBriefRecord(database, TEST_UID, ENTRY_KEY);
+    const scoutBindings = (stored?.scoutBindings ?? {}) as Record<string, Record<string, unknown>>;
+    const storedRival = scoutBindings.rival ?? {};
+    expect(Object.keys(storedRival)).not.toContain('startggPlayerId');
+    expect(Object.keys(storedRival)).not.toContain('startggUserSlug');
+    expect('startggPlayerId' in storedRival).toBe(false);
+  });
+
+  it('clears a binding by removing the key; clearing the last binding leaves the map reading back empty', async () => {
+    const database = new FakeDatabase();
+    await activatePrepBrief(asDatabase(database), TEST_UID, ENTRY_KEY, EVENT_DATE, SESSION_ID);
+    await setPrepLikelyOpponent(asDatabase(database), TEST_UID, ENTRY_KEY, 'rival', true);
+    await setPrepScoutBinding(asDatabase(database), TEST_UID, ENTRY_KEY, 'rival', STARTGG_BINDING);
+
+    await clearPrepScoutBinding(asDatabase(database), TEST_UID, ENTRY_KEY, 'rival');
+
+    const brief = await readPrepBrief(asDatabase(database), TEST_UID, ENTRY_KEY);
+    expect(brief?.scoutBindings).toEqual({});
+  });
+
+  it('un-curating a likely opponent removes BOTH its presence-map entry and its binding in a single write', async () => {
+    const database = new FakeDatabase();
+    await activatePrepBrief(asDatabase(database), TEST_UID, ENTRY_KEY, EVENT_DATE, SESSION_ID);
+    await setPrepLikelyOpponent(asDatabase(database), TEST_UID, ENTRY_KEY, 'rival', true);
+    await setPrepScoutBinding(asDatabase(database), TEST_UID, ENTRY_KEY, 'rival', STARTGG_BINDING);
+
+    const afterUncurate = await setPrepLikelyOpponent(
+      asDatabase(database),
+      TEST_UID,
+      ENTRY_KEY,
+      'rival',
+      false,
+    );
+
+    expect(afterUncurate.likelyOpponents).not.toHaveProperty('rival');
+    expect(afterUncurate.scoutBindings).not.toHaveProperty('rival');
+  });
+
+  it('re-curating that same opponent afterwards yields NO binding (no stale identity inherited)', async () => {
+    const database = new FakeDatabase();
+    await activatePrepBrief(asDatabase(database), TEST_UID, ENTRY_KEY, EVENT_DATE, SESSION_ID);
+    await setPrepLikelyOpponent(asDatabase(database), TEST_UID, ENTRY_KEY, 'rival', true);
+    await setPrepScoutBinding(asDatabase(database), TEST_UID, ENTRY_KEY, 'rival', STARTGG_BINDING);
+    await setPrepLikelyOpponent(asDatabase(database), TEST_UID, ENTRY_KEY, 'rival', false);
+
+    const reCurated = await setPrepLikelyOpponent(
+      asDatabase(database),
+      TEST_UID,
+      ENTRY_KEY,
+      'rival',
+      true,
+    );
+
+    expect(reCurated.likelyOpponents).toHaveProperty('rival');
+    expect(reCurated.scoutBindings).not.toHaveProperty('rival');
+  });
+
+  it('a brief with no scoutBindings node at all (Phase 26 brief) reads back with an empty bindings map', async () => {
+    const database = new FakeDatabase();
+    database.seed(prepBriefPath(TEST_UID, ENTRY_KEY), {
+      eventDate: EVENT_DATE,
+      activatedAt: EVENT_DATE,
+      lastOpenedAt: EVENT_DATE,
+      likelyOpponents: { rival: true },
+    });
+
+    const brief = await readPrepBrief(asDatabase(database), TEST_UID, ENTRY_KEY);
+    expect(brief?.scoutBindings).toEqual({});
   });
 });
