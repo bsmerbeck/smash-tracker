@@ -331,6 +331,30 @@ Until `CLAIM_CODE_HMAC_SECRET` is set, every `/api/claims/*` and `/api/client-wo
 answers `503` and the coach-issuance / client-claim UI never activates; the rest of the app
 (including personal analytics and coaching reviews) is unaffected.
 
+**Phase 27: paid prep reports activation gate (ships OFF)**
+
+Inside the free tournament prep brief, a player can spend credits on a curated-opponent report or
+an exactly-three-opponent bundle — gated behind one env var:
+
+- `PREP_PAID_REPORTS_ENABLED` — case-sensitive; only the exact value `true` enables the paid prep
+  surface. Any other value (unset, `TRUE`, `1`, `yes`, `on`, or a value with surrounding
+  whitespace) leaves it off. Ships **unset** in production; the owner flips it to `true` only
+  after the ~2026-08-02 soak review passes the funnel-readout thresholds (>=98% reconcile, <0.5%
+  dupes — see ROADMAP.md Phase 27 notes).
+
+```sh
+gcloud run deploy smash-tracker-api \
+  --source . \
+  --region us-central1 \
+  --set-env-vars FIREBASE_DATABASE_URL=https://smash-tracker-f97b7.firebaseio.com,PREP_PAID_REPORTS_ENABLED=true
+```
+
+Until `PREP_PAID_REPORTS_ENABLED=true`, `paidReportsAvailable` on `GET /api/prep/:entryKey` is
+always `false` (so the paid card never renders), and any `POST /api/reports` request carrying prep
+context answers `503` before any job, balance, ledger, or model activity — including for
+`REPORTS_ALLOWED_UIDS` accounts. Turning the flag off later blocks NEW prep purchases only; it
+never blocks Stripe fulfillment, refunds, job-status reads, or viewing already-generated reports.
+
 **2. Configure `apps/web/.env.production`**
 
 ```sh
