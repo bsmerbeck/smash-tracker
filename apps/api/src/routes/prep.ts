@@ -64,17 +64,33 @@ async function requireOwnedEntry(
  * itself: that schema trims and lowercases, which would corrupt `entryKey`
  * (a case-sensitive, already-generated key that must match the stored
  * child key byte-for-byte) — only the illegal-character rejection applies
- * here, so it is duplicated locally rather than imported.
+ * here, so it is duplicated locally rather than imported. `opponentNameInputSchema`'s
+ * own `containsRtdbIllegalChar` (packages/shared/src/opponent.ts) also rejects
+ * any code point <= 0x1f (ASCII control characters), matching the real
+ * firebase-admin `INVALID_PATH_REGEX` (controls + DEL are path-illegal, see
+ * `test-support/fakeDatabase.ts`'s parity comment) — that check is not a
+ * regex-literal concern and can't be folded into `ENTRY_KEY_ILLEGAL_CHARS`,
+ * so it's replicated as a code-point scan below (WR-01 residual).
  */
 const ENTRY_KEY_ILLEGAL_CHARS = /[.#$[\]/]/;
+
+function containsIllegalEntryKeyChar(value: string): boolean {
+  for (let i = 0; i < value.length; i += 1) {
+    const codePoint = value.codePointAt(i);
+    if (codePoint !== undefined && codePoint <= 0x1f) {
+      return true;
+    }
+  }
+  return ENTRY_KEY_ILLEGAL_CHARS.test(value);
+}
 
 const prepParamsSchema = z.object({
   entryKey: z
     .string()
     .min(1)
     .max(200)
-    .refine((value) => !ENTRY_KEY_ILLEGAL_CHARS.test(value), {
-      message: 'entryKey cannot contain . # $ [ ] / characters',
+    .refine((value) => !containsIllegalEntryKeyChar(value), {
+      message: 'entryKey cannot contain . # $ [ ] / or control characters',
     }),
 });
 
