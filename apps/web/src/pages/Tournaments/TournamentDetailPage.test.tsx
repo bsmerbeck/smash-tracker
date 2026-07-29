@@ -58,11 +58,12 @@ vi.mock('@/lib/api', async () => {
 
 const mockUsePrepBrief = vi.mocked(usePrepBrief);
 
-/** Convenience wrapper matching `usePrepBrief`'s consumed shape (`isPending`/`data.activated`). */
-function mockPrepBrief(state: { isPending: boolean; activated?: boolean }) {
+/** Convenience wrapper matching `usePrepBrief`'s consumed shape (`isPending`/`isError`/`data.activated`). */
+function mockPrepBrief(state: { isPending: boolean; isError?: boolean; activated?: boolean }) {
   mockUsePrepBrief.mockReturnValue({
     isPending: state.isPending,
-    data: state.isPending ? undefined : { activated: Boolean(state.activated) },
+    isError: Boolean(state.isError),
+    data: state.isPending || state.isError ? undefined : { activated: Boolean(state.activated) },
   } as unknown as ReturnType<typeof usePrepBrief>);
 }
 
@@ -358,6 +359,19 @@ describe('TournamentDetailPage', () => {
       ]);
       listMatches.mockResolvedValue([]);
       mockPrepBrief({ isPending: true });
+
+      renderPage('42');
+
+      await screen.findByText('Set Timeline');
+      expect(screen.queryByTestId('tournament-prep-cta')).not.toBeInTheDocument();
+    });
+
+    it('shows no prep action while the prep query has errored (WR-02, 260725-juj unknown-is-not-zero)', async () => {
+      listTournaments.mockResolvedValue([
+        makeEntry({ eventId: 42, firstSetAt: Date.now() + 86_400_000 }),
+      ]);
+      listMatches.mockResolvedValue([]);
+      mockPrepBrief({ isPending: false, isError: true });
 
       renderPage('42');
 

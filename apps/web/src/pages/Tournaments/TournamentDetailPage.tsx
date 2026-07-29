@@ -115,13 +115,18 @@ export function TournamentDetailPage() {
 
   const canGenerateRecap = entry.setsPlayed >= 1;
 
-  const prepCtaState: 'start' | 'reopen' | 'none' = prepBriefQuery.isPending
-    ? 'none'
-    : prepBriefQuery.data?.activated
-      ? 'reopen'
-      : entry.firstSetAt > now
-        ? 'start'
-        : 'none';
+  // 260725-juj: a pending or failed prep-brief query is UNKNOWN, not "no
+  // brief exists" — mirrors DashboardPrepActionSlot.tsx's isPending ||
+  // isError handling so this CTA never guesses "Start" over an already-
+  // activated brief just because the read errored.
+  const prepCtaState: 'start' | 'reopen' | 'none' =
+    prepBriefQuery.isPending || prepBriefQuery.isError
+      ? 'none'
+      : prepBriefQuery.data?.activated
+        ? 'reopen'
+        : entry.firstSetAt > now
+          ? 'start'
+          : 'none';
 
   const showActionRow = canGenerateRecap || prepCtaState !== 'none';
 
