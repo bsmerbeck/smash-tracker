@@ -11,6 +11,20 @@ import { PrepBriefPage } from './PrepBriefPage';
 
 const activateMutateSpy = vi.fn();
 const reopenMutateSpy = vi.fn();
+const postCanonicalEventSpy = vi.fn();
+
+// A stand-in for the real `PrepPaidReportsCard` (27-10, tested exhaustively
+// in its own colocated test file). It fires the SAME canonical-event poster
+// on mount that the real card fires, so this suite proves PrepBriefPage's
+// conditional composition is what structurally prevents `prep_offer_viewed`
+// from firing when the card doesn't mount — not some quirk of the real
+// card's own internal once-only guard.
+vi.mock('@/pages/Tournaments/prepPaid/PrepPaidReportsCard', () => ({
+  PrepPaidReportsCard: () => {
+    postCanonicalEventSpy('prep_offer_viewed', {});
+    return <div data-testid="prep-paid-reports-card">AI prep reports</div>;
+  },
+}));
 
 vi.mock('@/hooks/usePrepBrief', () => ({
   usePrepBrief: vi.fn(),
@@ -96,6 +110,11 @@ function mockBriefStatus(state: {
   isError?: boolean;
   activated?: boolean;
   eventDate?: number;
+  /**
+   * Left `unknown`, not `boolean`, on purpose: RPT-04's strict-check case
+   * needs to pass a non-boolean truthy value through to the real page.
+   */
+  paidReportsAvailable?: unknown;
 }) {
   const isPending = state.isPending ?? false;
   const isError = state.isError ?? false;
@@ -107,6 +126,7 @@ function mockBriefStatus(state: {
         ? undefined
         : {
             activated: Boolean(state.activated),
+            paidReportsAvailable: state.paidReportsAvailable,
             brief: state.activated
               ? {
                   eventDate: state.eventDate ?? Date.now() + 86_400_000,
@@ -114,6 +134,7 @@ function mockBriefStatus(state: {
                   lastOpenedAt: Date.now(),
                   checklist: {},
                   likelyOpponents: {},
+                  scoutBindings: {},
                 }
               : undefined,
           },
@@ -297,5 +318,121 @@ describe('PrepBriefPage', () => {
     expect(
       await screen.findByText('Something went wrong loading your prep brief. Please try again.'),
     ).toBeInTheDocument();
+  });
+});
+
+describe('paid placement structural absence (RPT-04)', () => {
+  const RESERVED_PLACEMENT_OR_HIDDEN_STYLE =
+    /data-[a-z-]*(placement|offer|promo|upsell)|display:\s*none/i;
+
+  /**
+   * The three assertions every not-rendered case must make (27-11-PLAN.md
+   * Task 1, action item 4): the card's accessible name is absent, the
+   * canonical-event poster was never called, and nothing in the rendered
+   * output carries a reserved-placement or hidden-style marker.
+   */
+  function expectNoPaidPlacement(container: HTMLElement) {
+    expect(screen.queryByText('AI prep reports')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('prep-paid-reports-card')).not.toBeInTheDocument();
+    expect(postCanonicalEventSpy).not.toHaveBeenCalled();
+    expect(container.innerHTML).not.toMatch(RESERVED_PLACEMENT_OR_HIDDEN_STYLE);
+  }
+
+  beforeEach(() => {
+    resetAuthMock();
+    vi.clearAllMocks();
+    setMockUser(makeMockUser());
+    listTournaments.mockResolvedValue([makeEntry()]);
+    listMatches.mockResolvedValue([]);
+    listAliases.mockResolvedValue({});
+    listOpponents.mockResolvedValue([]);
+    listOpponentNotes.mockResolvedValue({});
+    mockUseActivatePrepBrief.mockReturnValue({
+      mutate: activateMutateSpy,
+      isPending: false,
+    } as unknown as ReturnType<typeof useActivatePrepBrief>);
+    mockUseReopenPrepBrief.mockReturnValue({
+      mutate: reopenMutateSpy,
+      isPending: false,
+    } as unknown as ReturnType<typeof useReopenPrepBrief>);
+  });
+
+  it('renders zero paid affordance when paidReportsAvailable is absent from the brief response', async () => {
+    mockBriefStatus({ activated: true });
+
+    const { container } = renderPage();
+
+    await screen.findByText('Prep checklist');
+    expectNoPaidPlacement(container);
+  });
+
+  it('renders zero paid affordance when paidReportsAvailable is explicitly false', async () => {
+    mockBriefStatus({ activated: true, paidReportsAvailable: false });
+
+    const { container } = renderPage();
+
+    await screen.findByText('Prep checklist');
+    expectNoPaidPlacement(container);
+  });
+
+  it('renders zero paid affordance when paidReportsAvailable is a non-boolean truthy value (strict check, not truthiness)', async () => {
+    mockBriefStatus({ activated: true, paidReportsAvailable: 'true' });
+
+    const { container } = renderPage();
+
+    await screen.findByText('Prep checklist');
+    expectNoPaidPlacement(container);
+  });
+
+  it('mounts the paid card between the Likely opponents card and the Checklist card, in that DOM order, only when paidReportsAvailable is strictly true', async () => {
+    mockBriefStatus({ activated: true, paidReportsAvailable: true });
+
+    renderPage();
+
+    await screen.findByText('Prep checklist');
+    const paidCard = await screen.findByTestId('prep-paid-reports-card');
+    expect(paidCard).toBeInTheDocument();
+    expect(postCanonicalEventSpy).toHaveBeenCalledWith('prep_offer_viewed', {});
+
+    const likelyCard = screen.getByText('Likely opponents');
+    const checklistCard = screen.getByText('Prep checklist');
+
+    // Document-position comparison, not text order: proves the card sits
+    // structurally between the two Phase 26 cards rather than merely
+    // appearing somewhere after "Likely opponents" in the rendered text.
+    expect(
+      likelyCard.compareDocumentPosition(paidCard) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(
+      paidCard.compareDocumentPosition(checklistCard) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  });
+
+  it('renders zero paid affordance while the brief query is pending, regardless of any eventual paidReportsAvailable value', async () => {
+    mockBriefStatus({ isPending: true });
+
+    const { container } = renderPage();
+
+    await screen.findByText('Loading your prep brief...');
+    expectNoPaidPlacement(container);
+  });
+
+  it('renders zero paid affordance when the brief query errors', async () => {
+    mockBriefStatus({ isError: true });
+
+    const { container } = renderPage();
+
+    await screen.findByText('Something went wrong loading your prep brief. Please try again.');
+    expectNoPaidPlacement(container);
+  });
+
+  it('renders zero paid affordance on the not-found branch, even when paidReportsAvailable is strictly true', async () => {
+    listTournaments.mockResolvedValue([]);
+    mockBriefStatus({ activated: true, paidReportsAvailable: true });
+
+    const { container } = renderPage();
+
+    await screen.findByText('Tournament not found');
+    expectNoPaidPlacement(container);
   });
 });
