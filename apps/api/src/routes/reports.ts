@@ -278,6 +278,19 @@ const reportsRoutes: FastifyPluginAsyncZod<ReportsRoutesOptions> = async (app, o
       }
 
       const rawQuery = request.body.query;
+      if (rawQuery === undefined) {
+        // Phase 27 (packages/shared, wave 1): `generateReportRequestSchema`
+        // now allows `query` to be absent for a prep-context request
+        // (`reason: 'prep_report' | 'prep_bundle'`), but this route's
+        // prep-context handling ships in a later plan (27-07/27-08). Until
+        // then, reject a schema-valid prep-context request cleanly here
+        // instead of falling through with an undefined query.
+        return reply.code(400).send({
+          error: 'Bad Request',
+          message: 'Prep-context report requests are not yet supported on this server',
+          statusCode: 400,
+        });
+      }
       // Same source-resolution rule as POST /api/scout: a pasted parry.gg
       // profile URL always overrides `source` (or its default).
       const effectiveSource = parseParryProfileUrl(rawQuery)
