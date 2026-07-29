@@ -12,9 +12,109 @@ import {
   type MatchupEvidence,
   type MyCharacterRecordVsOpponent,
   type OpponentNote,
+  type ScoutBinding,
   type ScoutReportData,
 } from '@smash-tracker/shared';
 import { normalizeOpponentTag } from '../startgg/sync.js';
+
+// ---------------------------------------------------------------------------
+// Binding-aware evidence filtering (Phase 27, RPT-01 grounding)
+// ---------------------------------------------------------------------------
+
+/** The three fields `selectOpponentMatches` ever reads off a match record — kept minimal so unit tests can pass bare fixtures instead of full `MatchRecord`s. */
+interface OpponentIdentitySignals {
+  opponent?: string;
+  opponentUserSlug?: string;
+  opponentParryUserId?: string;
+}
+
+/**
+ * Selects which of the caller's own matches count as head-to-head evidence
+ * against the scouted opponent. Two modes, selected by whether `binding` is
+ * supplied:
+ *
+ * - No `binding` (every legacy/non-prep report, and the default for any
+ *   call site that omits `options`): the UNCHANGED pre-Phase-27 predicate —
+ *   a match whose stored start.gg `opponentUserSlug` equals the freshly
+ *   scouted player's own `scoutedPlayerUserSlug` is included outright
+ *   (this shortcut only ever fires for a start.gg-scouted player —
+ *   `scoutedPlayerUserSlug` is naturally absent for a parry.gg scout, so it
+ *   always falls through); every other match falls through to
+ *   canonicalized-gamerTag matching against `scoutedCanonicalName`.
+ * - With a `binding` (a prep report grounded in a confirmed scout binding,
+ *   27-CONTEXT.md "Local-match inclusion rule"): the CONFIRMED IDENTITY is
+ *   the source of truth, never the tag — see the numbered rules below. This
+ *   is also THE CORRECTION (generate.ts:153-169 pre-Phase-27): the old code
+ *   handled a start.gg slug shortcut but silently fell back to tags for
+ *   parry.gg, never reading `opponentParryUserId` at all.
+ */
+export function selectOpponentMatches<T extends OpponentIdentitySignals>(params: {
+  matches: T[];
+  canonicalOpponentName: (name: string | undefined) => string;
+  scoutedCanonicalName: string;
+  /** The freshly-scouted player's own start.gg profile slug, when known — only ever used on the no-binding path. */
+  scoutedPlayerUserSlug?: string;
+  binding?: ScoutBinding;
+  /** The curated opponent's alias-resolved canonical name this binding belongs to — required for rule 4 below whenever `binding` is supplied. */
+  curatedCanonicalName?: string;
+}): T[] {
+  const {
+    matches,
+    canonicalOpponentName,
+    scoutedCanonicalName,
+    scoutedPlayerUserSlug,
+    binding,
+    curatedCanonicalName,
+  } = params;
+
+  return matches.filter((match) => {
+    if (binding) {
+      // Rule 1 (start.gg identity): a match whose stored slug equals the
+      // binding's start.gg slug is the same person, tag or no tag.
+      if (
+        binding.startggUserSlug &&
+        match.opponentUserSlug &&
+        match.opponentUserSlug === binding.startggUserSlug
+      ) {
+        return true;
+      }
+      // Rule 2 (parry.gg identity — THE CORRECTION): a match whose stored
+      // parry user id equals the binding's parry user id is the same
+      // person. The pre-Phase-27 code had no branch for this at all.
+      if (
+        binding.parryUserId &&
+        match.opponentParryUserId &&
+        match.opponentParryUserId === binding.parryUserId
+      ) {
+        return true;
+      }
+      // Rule 3 (different-identity exclusion): a match carrying ANY
+      // provider identity that didn't satisfy rule 1 or 2 above belongs to
+      // a DIFFERENT person, even when its tag canonicalizes to the curated
+      // opponent's name — a shared tag is not a shared person.
+      if (match.opponentUserSlug || match.opponentParryUserId) {
+        return false;
+      }
+      // Rule 4 (identity-less manual matches): no provider identity at
+      // all — fall back to the alias-resolved canonical name matching the
+      // curated opponent this binding belongs to.
+      return (
+        curatedCanonicalName !== undefined &&
+        canonicalOpponentName(match.opponent) === curatedCanonicalName
+      );
+    }
+
+    // No binding: today's unchanged predicate.
+    if (
+      match.opponentUserSlug &&
+      scoutedPlayerUserSlug &&
+      match.opponentUserSlug === scoutedPlayerUserSlug
+    ) {
+      return true;
+    }
+    return canonicalOpponentName(match.opponent) === scoutedCanonicalName;
+  });
+}
 
 // ---------------------------------------------------------------------------
 // Payload assembly
@@ -105,16 +205,28 @@ const RECENT_FORM_SAMPLE_SIZE = 50;
 const MY_TOP_CHARACTERS_COUNT = 5;
 
 /**
- * Assembles the JSON payload handed to Claude: the scout data verbatim, the
- * caller's own head-to-head history against this specific player, raw-count
- * aggregates against players of similar characters, and any saved opponent
- * note. Every aggregate here is a RAW COUNT — no Wilson/statistics — the
- * model is instructed (see SYSTEM_PROMPT) to caveat small samples itself.
+ * Assembles the JSON payload handed to Claude, built from two deliberately
+ * SEPARATED evidence layers (27-CONTEXT.md "Model payload — two explicitly
+ * separated evidence layers"):
+ *
+ * - LIVE PUBLIC evidence: `scout`, the freshly-fetched `ScoutReportData` for
+ *   the confirmed stable provider identity (resolved by the caller before
+ *   this function is ever called).
+ * - PRIVATE PLAYER evidence: the caller's own stored head-to-head matches,
+ *   known characters, and saved note for the curated canonical opponent —
+ *   selected via `selectOpponentMatches` above, grounded in `options.binding`
+ *   when supplied (a prep report) or the unchanged tag-based predicate
+ *   otherwise (every legacy report).
+ *
+ * The model payload STRUCTURE itself (`ReportPayload`) is otherwise
+ * unchanged by `options` — only which matches populate `headToHead` and feed
+ * the aggregates below can differ.
  */
 export async function assembleReportPayload(
   uid: string,
   scout: ScoutReportData,
   database: Database,
+  options?: { binding?: ScoutBinding; curatedCanonicalName?: string },
 ): Promise<ReportPayload> {
   const [
     matchesSnapshot,
@@ -150,22 +262,19 @@ export async function assembleReportPayload(
 
   const scoutedCanonicalName = normalizeOpponentTag(scout.player.gamerTag);
 
-  // H2H matching: the `opponentUserSlug` shortcut only ever applies to
-  // start.gg-scouted players (`scout.player.userSlug` is a start.gg-only
-  // field — see scoutPlayerIdentitySchema). For a parry.gg-scouted player
-  // (V9-B Feature 4), `scout.player.userSlug` is simply absent, so this
-  // condition naturally short-circuits false and every match falls through
-  // to the canonicalized-gamerTag path below unchanged — no source-specific
-  // branch needed here.
-  const matchesVsScoutedPlayer = rawMatches.filter((match) => {
-    if (
-      match.opponentUserSlug &&
-      scout.player.userSlug &&
-      match.opponentUserSlug === scout.player.userSlug
-    ) {
-      return true;
-    }
-    return canonicalOpponentName(match.opponent) === scoutedCanonicalName;
+  // H2H matching: delegates to `selectOpponentMatches` above. With no
+  // `options.binding` (every legacy report), this is byte-identical to the
+  // pre-Phase-27 predicate — the `opponentUserSlug` shortcut only ever
+  // applies to start.gg-scouted players; for a parry.gg-scouted player
+  // (V9-B Feature 4), `scout.player.userSlug` is simply absent, so it
+  // naturally falls through to canonicalized-gamerTag matching.
+  const matchesVsScoutedPlayer = selectOpponentMatches({
+    matches: rawMatches,
+    canonicalOpponentName,
+    scoutedCanonicalName,
+    scoutedPlayerUserSlug: scout.player.userSlug,
+    binding: options?.binding,
+    curatedCanonicalName: options?.curatedCanonicalName,
   });
 
   const headToHead: HeadToHeadMatch[] = matchesVsScoutedPlayer

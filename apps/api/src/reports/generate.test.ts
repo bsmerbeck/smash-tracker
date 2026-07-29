@@ -1,10 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import type { ScoutReportData } from '@smash-tracker/shared';
+import type { ScoutBinding, ScoutReportData } from '@smash-tracker/shared';
 import { FakeDatabase } from '../test-support/fakeDatabase.js';
 import {
   assembleReportPayload,
   generateScoutReport,
   ReportGenerationError,
+  selectOpponentMatches,
   type AnthropicLikeClient,
 } from './generate.js';
 
@@ -350,6 +351,174 @@ describe('assembleReportPayload', () => {
       habits: 'likes to dash dance',
       updatedAt: 1_700_000_000_000,
     });
+  });
+});
+
+describe('selectOpponentMatches (binding-aware evidence filtering, RPT-01 grounding)', () => {
+  const canonicalOpponentName = (name?: string) => (name ?? '').trim().toLowerCase();
+
+  const STARTGG_BINDING: ScoutBinding = {
+    provider: 'startgg',
+    startggUserSlug: 'user/07dc2239',
+    displayTag: 'Pandem1c',
+    method: 'matchHistory',
+    confirmedAt: 1,
+  };
+  const PARRYGG_BINDING: ScoutBinding = {
+    provider: 'parrygg',
+    parryUserId: 'parry-uuid-1',
+    displayTag: 'Pandem1c',
+    method: 'matchHistory',
+    confirmedAt: 1,
+  };
+  const COMBINED_BINDING: ScoutBinding = {
+    provider: 'combined',
+    startggUserSlug: 'user/07dc2239',
+    parryUserId: 'parry-uuid-1',
+    displayTag: 'Pandem1c',
+    method: 'profileInput',
+    confirmedAt: 1,
+  };
+
+  it('no binding: behaves exactly as today (start.gg slug shortcut, then tag fallback)', () => {
+    const matches = [
+      { opponent: 'someone else', opponentUserSlug: 'user/07dc2239' },
+      { opponent: 'pandem1c' },
+      { opponent: 'unrelated' },
+    ];
+    const result = selectOpponentMatches({
+      matches,
+      canonicalOpponentName,
+      scoutedCanonicalName: 'pandem1c',
+      scoutedPlayerUserSlug: 'user/07dc2239',
+    });
+    expect(result).toEqual([matches[0], matches[1]]);
+  });
+
+  it('parry.gg binding: includes a match whose stored parry user id equals the binding’s, even with a mismatched tag', () => {
+    const matches = [{ opponent: 'totally different tag', opponentParryUserId: 'parry-uuid-1' }];
+    const result = selectOpponentMatches({
+      matches,
+      canonicalOpponentName,
+      scoutedCanonicalName: 'pandem1c',
+      binding: PARRYGG_BINDING,
+      curatedCanonicalName: 'pandem1c',
+    });
+    expect(result).toEqual(matches);
+  });
+
+  it('start.gg binding: includes a match whose stored slug equals the binding’s', () => {
+    const matches = [{ opponent: 'x', opponentUserSlug: 'user/07dc2239' }];
+    const result = selectOpponentMatches({
+      matches,
+      canonicalOpponentName,
+      scoutedCanonicalName: 'pandem1c',
+      binding: STARTGG_BINDING,
+      curatedCanonicalName: 'pandem1c',
+    });
+    expect(result).toEqual(matches);
+  });
+
+  it('combined binding: includes a match matching EITHER identity', () => {
+    const matches = [
+      { opponent: 'a', opponentUserSlug: 'user/07dc2239' },
+      { opponent: 'b', opponentParryUserId: 'parry-uuid-1' },
+    ];
+    const result = selectOpponentMatches({
+      matches,
+      canonicalOpponentName,
+      scoutedCanonicalName: 'pandem1c',
+      binding: COMBINED_BINDING,
+      curatedCanonicalName: 'pandem1c',
+    });
+    expect(result).toEqual(matches);
+  });
+
+  it('excludes a match carrying a DIFFERENT provider identity even when its tag canonicalizes to the curated name', () => {
+    const matches = [{ opponent: 'pandem1c', opponentUserSlug: 'user/some-other-player' }];
+    const result = selectOpponentMatches({
+      matches,
+      canonicalOpponentName,
+      scoutedCanonicalName: 'pandem1c',
+      binding: STARTGG_BINDING,
+      curatedCanonicalName: 'pandem1c',
+    });
+    expect(result).toEqual([]);
+  });
+
+  it('includes an identity-less manual match whose alias-resolved name equals the curated canonical name', () => {
+    const matches = [{ opponent: 'pandem1c' }];
+    const result = selectOpponentMatches({
+      matches,
+      canonicalOpponentName,
+      scoutedCanonicalName: 'pandem1c',
+      binding: STARTGG_BINDING,
+      curatedCanonicalName: 'pandem1c',
+    });
+    expect(result).toEqual(matches);
+  });
+});
+
+describe('assembleReportPayload (binding-aware evidence, RPT-01)', () => {
+  it('with no options, filters head-to-head identically to the pre-binding behavior (regression)', async () => {
+    const database = new FakeDatabase();
+    database.seed(`matches/${UID}`, {
+      m1: {
+        fighter_id: 1,
+        opponent_id: 8,
+        time: 1_700_000_000_000,
+        win: true,
+        opponent: 'pandem1c',
+      },
+    });
+
+    const payload = await assembleReportPayload(
+      UID,
+      SCOUT,
+      database as unknown as Parameters<typeof assembleReportPayload>[2],
+    );
+
+    expect(payload.headToHead).toHaveLength(1);
+    expect(payload.headToHead[0]).toMatchObject({ result: 'win' });
+  });
+
+  it('with a parry.gg binding, grounds the head-to-head list in the confirmed identity instead of tag collisions', async () => {
+    const database = new FakeDatabase();
+    database.seed(`matches/${UID}`, {
+      sameIdentity: {
+        fighter_id: 1,
+        opponent_id: 8,
+        time: 2,
+        win: true,
+        opponent: 'not the tag at all',
+        opponentParryUserId: 'parry-uuid-1',
+      },
+      differentIdentitySameTag: {
+        fighter_id: 1,
+        opponent_id: 8,
+        time: 1,
+        win: false,
+        opponent: 'pandem1c',
+        opponentUserSlug: 'user/some-other-player',
+      },
+    });
+    const binding: ScoutBinding = {
+      provider: 'parrygg',
+      parryUserId: 'parry-uuid-1',
+      displayTag: 'Pandem1c',
+      method: 'matchHistory',
+      confirmedAt: 1,
+    };
+
+    const payload = await assembleReportPayload(
+      UID,
+      SCOUT,
+      database as unknown as Parameters<typeof assembleReportPayload>[2],
+      { binding, curatedCanonicalName: 'pandem1c' },
+    );
+
+    expect(payload.headToHead).toHaveLength(1);
+    expect(payload.headToHead[0]).toMatchObject({ result: 'win' });
   });
 });
 
