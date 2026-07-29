@@ -58,10 +58,17 @@ export const CANONICAL_SCHEMA_VERSION = 1;
 /**
  * MEAS-04: the fixed allowlist for the same-origin X-ingestion route
  * (`POST /api/events`) — grows only as new X events are explicitly approved.
- * `prep_offer_viewed` is deferred: its canonical surface (a tournament-prep
- * offer) does not exist yet this phase (see RESEARCH Assumption A2).
+ * Phase 26 (D-09): `prep_offer_viewed` is allowlisted here (catalog
+ * definition) but has NO firing site in this phase — its only caller is
+ * Phase 27's gated paid placement, fired only after that placement actually
+ * renders; a gate-off render emits nothing. Same define-here/invoke-there
+ * pattern Phase 23 used for `coach_delegation_revoked`.
  */
-export const X_EVENT_ALLOWLIST = ['share_view_loaded', 'signup_cta_clicked'] as const;
+export const X_EVENT_ALLOWLIST = [
+  'share_view_loaded',
+  'signup_cta_clicked',
+  'prep_offer_viewed',
+] as const;
 export type XEventName = (typeof X_EVENT_ALLOWLIST)[number];
 
 /**
@@ -166,6 +173,25 @@ export const EVENT_CATALOG = {
   claim_conflict_detected: 'D',
   coach_delegation_granted: 'D',
   coach_delegation_revoked: 'D',
+  // Phase 26 (Free Tournament Prep Brief, EVT-04/D-07/D-08/D-09):
+  // `prep_brief_activated` fires once per (uid, entryKey), AFTER the
+  // durable prep-record create transaction commits — causation is derived
+  // from the (uid, entryKey) pair so transport retries dedupe through the
+  // existing `eventDedup` transaction. `prep_brief_reopened` fires after the
+  // `lastOpenedAt` write commits, with causation incorporating the client-
+  // generated stable open ID (D-08) so retries of one logical page opening
+  // collapse to a single event while a genuinely new mount produces a new
+  // one. `prep_offer_viewed` is X-class (allowlisted above) and catalog-only
+  // in this phase — its only firing site is Phase 27's gated placement.
+  // All three payloads are content-free (no entryKey, no event name, no
+  // opponent tag) and all three are deliberately absent from
+  // `GA4_PAYLOAD_ALLOWLIST` (apps/api/src/events/ga4Project.ts) during the
+  // reconciliation soak (D-10). Phase 13's `tournament_prep_activated` row
+  // directly above is untouched (D-11) — these are distinct event names,
+  // not a rename.
+  prep_brief_activated: 'D',
+  prep_brief_reopened: 'D',
+  prep_offer_viewed: 'X',
 } as const;
 export type EventCatalogName = keyof typeof EVENT_CATALOG;
 export type EventClass = (typeof EVENT_CATALOG)[EventCatalogName];
