@@ -22,6 +22,7 @@ import { PreviousMatches } from './components/PreviousMatches';
 import { LastMatchesChart } from './components/LastMatchesChart';
 import { HeroStats } from './components/HeroStats';
 import { StageTiles } from './components/StageTiles';
+import { DashboardPrepActionSlot } from './components/DashboardPrepActionSlot';
 
 type NextBestAction =
   | { kind: 'chooseIntent' }
@@ -204,6 +205,7 @@ export function DashboardPage() {
     <DashboardContext.Provider value={contextValue}>
       <div className="flex flex-col gap-6">
         <DashboardNextBestAction />
+        <DashboardPrepActionSlot />
         <HeroStats matches={matches} timeFilteredMatches={timeFilteredMatches} />
 
         <DashboardToolbar />
