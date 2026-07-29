@@ -4,6 +4,7 @@ import {
   getGa4Config,
   getInternalJobsConfig,
   getParryggConfig,
+  getPrepPaidConfig,
   getReportsConfig,
   getStartggConfig,
   getStripeConfig,
@@ -24,6 +25,7 @@ const firebase = initFirebase(env);
 const ga4 = getGa4Config(env);
 const internalJobs = getInternalJobsConfig(env);
 const claimCode = getClaimCodeConfig(env);
+const prepPaid = getPrepPaidConfig(env);
 
 const app = buildApp({
   firebase,
@@ -36,6 +38,7 @@ const app = buildApp({
   ga4,
   internalJobs,
   claimCode,
+  prepPaid,
 });
 
 // Phase 7 (Recap Cards & Share-Loop Analytics): a single startup-time notice
@@ -68,6 +71,18 @@ if (!internalJobs) {
 if (!claimCode) {
   app.log.warn(
     'Claim codes are not configured (CLAIM_CODE_HMAC_SECRET unset); claim issuance and redemption will answer 503',
+  );
+}
+
+// Phase 27 (Contextual Paid Prep Reports Behind the Activation Gate,
+// RPT-04): a single startup-time notice — never per-request — while the
+// paid-prep activation gate is off. This is expected in production until
+// the owner flips PREP_PAID_REPORTS_ENABLED after the soak review passes;
+// the notice exists so that state is obvious in Cloud Run logs rather than
+// only discoverable from a 503 on the first paid prep submission.
+if (!prepPaid) {
+  app.log.warn(
+    'Paid prep reports are not enabled (PREP_PAID_REPORTS_ENABLED unset); paid prep placements will render nothing and paid prep endpoints will answer 503',
   );
 }
 

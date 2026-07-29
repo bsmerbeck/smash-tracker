@@ -26,6 +26,10 @@ export function buildTestApp(
     | 'ga4Fetch'
     | 'internalJobs'
     | 'claimCode'
+    // Phase 27 (RPT-04): the paid-prep activation gate config, threaded
+    // through so gate-on/gate-off test cases can build an app with either
+    // state without hand-rolling their own `buildApp(...)` call.
+    | 'prepPaid'
     // Phase 23 Plan 05's raw-code isolation test installs a capturing
     // logger to assert the raw claim code is never emitted to logs.
     | 'logger'

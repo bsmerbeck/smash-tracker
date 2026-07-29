@@ -1,9 +1,15 @@
 import { describe, expect, it } from 'vitest';
 import { PREP_LIKELY_OPPONENTS_MAX } from '@smash-tracker/shared';
+import type { PrepPaidConfig, ReportsConfig, StripeConfig } from '../config/env.js';
 import { authHeader, buildTestApp, registerUser, TEST_UID } from '../test-support/testApp.js';
 
 const ENTRY_KEY = 'manual-locals-42-abc123';
 const FIRST_SET_AT = 1_700_000_000_000;
+
+/** Phase 27 (RPT-04): the three configs `paidReportsAvailable` requires, all present, for gate-on test cases. */
+const PREP_PAID_CONFIG: PrepPaidConfig = { enabled: true };
+const REPORTS_CONFIG: ReportsConfig = { anthropicApiKey: 'sk-test-key', allowedUids: new Set() };
+const STRIPE_CONFIG: StripeConfig = { secretKey: 'sk_test', webhookSecret: 'whsec_test' };
 
 function seedEntry(
   database: ReturnType<typeof buildTestApp>['database'],
@@ -71,7 +77,7 @@ describe('GET /api/prep/:entryKey', () => {
     const after = JSON.stringify(database.dump());
 
     expect(response.statusCode).toBe(200);
-    expect(response.json()).toEqual({ activated: false });
+    expect(response.json()).toEqual({ activated: false, paidReportsAvailable: false });
     expect(after).toEqual(before);
   });
 
@@ -94,6 +100,102 @@ describe('GET /api/prep/:entryKey', () => {
     const body = response.json() as { activated: boolean; brief?: { eventDate: number } };
     expect(body.activated).toBe(true);
     expect(body.brief?.eventDate).toBe(pastDate);
+  });
+
+  // Phase 27 (RPT-04): `paidReportsAvailable` is returned unconditionally in
+  // BOTH response shapes (not-activated and activated), reflecting whether
+  // the app was built with the prep-paid config AND the reports config AND
+  // the stripe config all present.
+  describe('paidReportsAvailable (RPT-04)', () => {
+    it('is false in the not-activated shape when the app was built without the prep-paid config', async () => {
+      const { app, database } = buildTestApp();
+      seedEntry(database, TEST_UID, ENTRY_KEY);
+
+      const response = await app.inject({
+        method: 'GET',
+        url: `/api/prep/${ENTRY_KEY}`,
+        headers: authHeader(),
+      });
+
+      expect(response.statusCode).toBe(200);
+      expect(response.json()).toMatchObject({ paidReportsAvailable: false });
+    });
+
+    it('is false in the activated shape when the app was built without the prep-paid config', async () => {
+      const { app, database } = buildTestApp();
+      database.seed(`prepBriefs/${TEST_UID}/${ENTRY_KEY}`, {
+        eventDate: FIRST_SET_AT,
+        activatedAt: FIRST_SET_AT,
+        lastOpenedAt: FIRST_SET_AT,
+      });
+
+      const response = await app.inject({
+        method: 'GET',
+        url: `/api/prep/${ENTRY_KEY}`,
+        headers: authHeader(),
+      });
+
+      expect(response.statusCode).toBe(200);
+      const body = response.json() as { activated: boolean; paidReportsAvailable: boolean };
+      expect(body.activated).toBe(true);
+      expect(body.paidReportsAvailable).toBe(false);
+    });
+
+    it('is true in the not-activated shape when the app was built with prepPaid + reports + stripe all present', async () => {
+      const { app, database } = buildTestApp({
+        prepPaid: PREP_PAID_CONFIG,
+        reports: REPORTS_CONFIG,
+        stripe: STRIPE_CONFIG,
+      });
+      seedEntry(database, TEST_UID, ENTRY_KEY);
+
+      const response = await app.inject({
+        method: 'GET',
+        url: `/api/prep/${ENTRY_KEY}`,
+        headers: authHeader(),
+      });
+
+      expect(response.statusCode).toBe(200);
+      expect(response.json()).toMatchObject({ paidReportsAvailable: true });
+    });
+
+    it('is true in the activated shape when the app was built with prepPaid + reports + stripe all present', async () => {
+      const { app, database } = buildTestApp({
+        prepPaid: PREP_PAID_CONFIG,
+        reports: REPORTS_CONFIG,
+        stripe: STRIPE_CONFIG,
+      });
+      database.seed(`prepBriefs/${TEST_UID}/${ENTRY_KEY}`, {
+        eventDate: FIRST_SET_AT,
+        activatedAt: FIRST_SET_AT,
+        lastOpenedAt: FIRST_SET_AT,
+      });
+
+      const response = await app.inject({
+        method: 'GET',
+        url: `/api/prep/${ENTRY_KEY}`,
+        headers: authHeader(),
+      });
+
+      expect(response.statusCode).toBe(200);
+      const body = response.json() as { activated: boolean; paidReportsAvailable: boolean };
+      expect(body.activated).toBe(true);
+      expect(body.paidReportsAvailable).toBe(true);
+    });
+
+    it('is false when prepPaid is present but reports/stripe are not (partial config never enables it)', async () => {
+      const { app, database } = buildTestApp({ prepPaid: PREP_PAID_CONFIG });
+      seedEntry(database, TEST_UID, ENTRY_KEY);
+
+      const response = await app.inject({
+        method: 'GET',
+        url: `/api/prep/${ENTRY_KEY}`,
+        headers: authHeader(),
+      });
+
+      expect(response.statusCode).toBe(200);
+      expect(response.json()).toMatchObject({ paidReportsAvailable: false });
+    });
   });
 });
 

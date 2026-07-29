@@ -56,6 +56,7 @@ import type {
   Ga4Config,
   InternalJobsConfig,
   ParryggConfig,
+  PrepPaidConfig,
   ReportsConfig,
   StartggConfig,
   StripeConfig,
@@ -116,6 +117,15 @@ export interface BuildAppOptions {
    * consumed by any route here).
    */
   claimCode?: ClaimCodeConfig | null;
+  /**
+   * Phase 27 (Contextual Paid Prep Reports Behind the Activation Gate,
+   * RPT-04): the server-side activation gate for paid prep reports/bundles.
+   * Null/omitted (the default) keeps `paidReportsAvailable` false and makes
+   * `POST /api/reports` answer 503 for every prep-context request, even for
+   * an allowlisted uid — gate-off never blocks legacy report generation,
+   * reads, refunds, or Stripe fulfillment.
+   */
+  prepPaid?: PrepPaidConfig | null;
   logger?: boolean | FastifyBaseLogger;
 }
 
@@ -294,6 +304,17 @@ export function buildApp(options: BuildAppOptions) {
     ga4Fetch: options.ga4Fetch,
   });
 
+  // Phase 27 (RPT-04): the single boolean derivation that crosses the prep
+  // import-graph boundary. This computation lives HERE — not inside
+  // `apps/api/src/prep/` — because that module carries a byte-scanned
+  // import-graph gate (`importGraph.test.ts`) and must never learn about the
+  // reports or billing subsystems, even at the type level (27-CONTEXT.md
+  // line 23, 27-RESEARCH.md Pattern 2). `paidReportsAvailable` is true only
+  // when the prep-paid activation flag AND the reports config AND the
+  // stripe config are all present — the same three-config "fully present or
+  // fully off" convention `getStripeConfig`/`getReportsConfig` already use.
+  const paidReportsAvailable = Boolean(options.prepPaid && options.reports && options.stripe);
+
   app.register(
     async (api) => {
       await api.register(usersRoutes);
@@ -309,7 +330,7 @@ export function buildApp(options: BuildAppOptions) {
       // Phase 26 (PREP-01..04): the event-bound free prep brief,
       // personal-only (always request.uid), mirroring tournamentsRoutes'
       // authenticate-only registration shape immediately above.
-      await api.register(prepRoutes);
+      await api.register(prepRoutes, { paidReportsAvailable });
       // Phase 13 (ONBD-04, D-04): the guided-path checklist's
       // server-derived activation done-states — personal-only (always
       // request.uid), mirroring tournamentsRoutes' minimal
@@ -412,6 +433,7 @@ export function buildApp(options: BuildAppOptions) {
         config: options.reports ?? null,
         startggConfig: options.startgg ?? null,
         stripeConfig: options.stripe ?? null,
+        prepPaidConfig: options.prepPaid ?? null,
         client: options.reportsClient,
         fetchImpl: options.startggFetch,
         parryggConfig: options.parrygg ?? null,

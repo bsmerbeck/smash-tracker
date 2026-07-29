@@ -9,7 +9,13 @@ import {
   scoutReportRecordSchema,
   type ReportJob,
 } from '@smash-tracker/shared';
-import type { ParryggConfig, ReportsConfig, StartggConfig, StripeConfig } from '../config/env.js';
+import type {
+  ParryggConfig,
+  PrepPaidConfig,
+  ReportsConfig,
+  StartggConfig,
+  StripeConfig,
+} from '../config/env.js';
 import { StartggApiError } from '../startgg/client.js';
 import { parseScoutInput, ScoutCache, ScoutInputError, scoutPlayer } from '../startgg/scout.js';
 import { parseParryProfileUrl, ParryScoutCache, scoutParryPlayer } from '../parrygg/scout.js';
@@ -49,6 +55,14 @@ export interface ReportsRoutesOptions {
   parryggConfig?: ParryggConfig | null;
   /** Overridable parry.gg gRPC-Web service clients (tests). */
   parryggClients?: ParryggClients;
+  /**
+   * Phase 27 (RPT-04): the paid-prep activation gate config. Null/omitted
+   * (the default) means every `POST /reports` request carrying `reason`
+   * (a prep-context request) answers 503 before any job, balance, ledger,
+   * or model activity — for allowlisted and billable uids alike. Legacy
+   * (non-prep) requests are completely unaffected either way.
+   */
+  prepPaidConfig: PrepPaidConfig | null;
 }
 
 const reportIdParamsSchema = z.object({
@@ -95,7 +109,7 @@ const reportIdParamsSchema = z.object({
  * STACK.md — only the STATE is durable.
  */
 const reportsRoutes: FastifyPluginAsyncZod<ReportsRoutesOptions> = async (app, options) => {
-  const { config, startggConfig, stripeConfig, parryggConfig } = options;
+  const { config, startggConfig, stripeConfig, parryggConfig, prepPaidConfig } = options;
 
   // AI reports need Claude configured, AND at least one of the two scouting
   // engines (start.gg or parry.gg) to actually source data from — same
@@ -178,6 +192,23 @@ const reportsRoutes: FastifyPluginAsyncZod<ReportsRoutesOptions> = async (app, o
       },
     },
     async (request, reply) => {
+      // Phase 27 (RPT-04): load-bearing ordering — this is the FIRST
+      // statement in the handler, above `freeAccess` and every other check.
+      // It must precede the allowlist branch immediately below, so an
+      // allowlisted uid is refused too while the gate is off (owner battery
+      // item 9), and it must precede every state-changing/billable step
+      // (the job write, the credit spend, the model/scout call) so a
+      // gate-off request writes nothing at all (27-CONTEXT.md line 21). A
+      // legacy (non-prep) request never carries `reason`, so it never hits
+      // this branch and is completely unaffected by the gate either way.
+      if (request.body.reason !== undefined && !prepPaidConfig) {
+        return reply.code(503).send({
+          error: 'Service Unavailable',
+          message: 'Paid prep reports are not enabled on this server',
+          statusCode: 503,
+        });
+      }
+
       const freeAccess = config.allowedUids.has(request.uid);
 
       if (!freeAccess && !stripeConfig) {
