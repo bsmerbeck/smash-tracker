@@ -73,6 +73,12 @@ export function TournamentDetailPage() {
   const { data: entries, isLoading: entriesLoading } = useTournamentEntries();
   const { data: allMatches = [], isLoading: matchesLoading } = useMatches();
   const [recapDialogOpen, setRecapDialogOpen] = useState(false);
+  // React Compiler forbids a bare `Date.now()` call in the render body (it's
+  // impure) — a lazy `useState` initializer is the sanctioned one-time-read
+  // escape hatch (see ClaimStatusBadge); a stale "now" across re-renders is
+  // harmless here since the upcoming/past determination only needs to be
+  // right as of the render that used it.
+  const [now] = useState(() => Date.now());
 
   const entry = useMemo(() => {
     if (!entries || !eventId) {
@@ -113,7 +119,7 @@ export function TournamentDetailPage() {
     ? 'none'
     : prepBriefQuery.data?.activated
       ? 'reopen'
-      : entry.firstSetAt > Date.now()
+      : entry.firstSetAt > now
         ? 'start'
         : 'none';
 
