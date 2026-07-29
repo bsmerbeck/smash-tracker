@@ -2479,5 +2479,76 @@
       "loadFailed": "準備ブリーフィングの読み込み中に問題が発生しました。もう一度お試しください。",
       "addEventFailed": "このイベントの追加中に問題が発生しました。もう一度お試しください。"
     }
+  },
+  "prepPaid": {
+    "title": "AI準備レポート",
+    "description": "対戦が予想される相手1人分のAI作成レポートを1クレジットで、または3人分をまとめて3クレジットで入手できます。",
+    "balance": {
+      "credits_one": "{{count}}クレジット",
+      "credits_other": "{{count}}クレジット",
+      "freeAccess": "無料アクセス"
+    },
+    "opponent": {
+      "buyCta": "レポートを入手 — 1クレジット",
+      "bundleCheckbox": "バンドルに含める",
+      "bundleCheckboxAria": "{{name}}を3人バンドルに含める"
+    },
+    "bundle": {
+      "progress": "バンドル用に{{selected}}/3人を選択中",
+      "buyCta": "3人まとめて入手 — 3クレジット",
+      "needMore_one": "3人バンドルを利用可能にするには、上で対戦が予想される相手をあと{{count}}人追加してください。",
+      "needMore_other": "3人バンドルを利用可能にするには、上で対戦が予想される相手をあと{{count}}人追加してください。",
+      "needConfirmed_one": "3人バンドルを利用可能にするには、上でプレイヤーをあと{{count}}人確認してください。",
+      "needConfirmed_other": "3人バンドルを利用可能にするには、上でプレイヤーをあと{{count}}人確認してください。"
+    },
+    "empty": {
+      "title": "レポートを入手するには対戦が予想される相手を追加してください",
+      "body": "上の「対戦が予想される相手」カードで相手を追加し、ここに戻ってその相手のレポートを入手してください。"
+    },
+    "jobStatus": {
+      "queued": "順番待ち",
+      "running": "生成中…",
+      "succeeded": "準備完了",
+      "failedPendingRefund": "失敗 — クレジットを返金しています…",
+      "refunded": "失敗 — クレジットは返金されました。",
+      "viewReport": "レポートを見る",
+      "hideReport": "レポートを隠す"
+    },
+    "insufficientCredits": {
+      "body": "クレジットがなくなりました。",
+      "buyCta": "クレジットを購入",
+      "toGenerate": "すると、このレポートを入手できます。"
+    },
+    "billing": {
+      "paymentReceived": "支払いを受け付けました — まもなくレポートの生成を開始します。",
+      "checkoutCancelled": "決済をキャンセルしました。"
+    },
+    "error": {
+      "submitFailed": "このレポートの開始中に問題が発生しました。もう一度お試しください。"
+    },
+    "binding": {
+      "unresolved": "まだプレイヤーが確認されていません",
+      "confirmCta": "プレイヤーを確認",
+      "changeCta": "プレイヤーを変更",
+      "clearCta": "確認済みプレイヤーを削除",
+      "confirmedLabel": "確認済み: {{tag}}",
+      "dialogTitle": "{{name}}は誰ですか？",
+      "dialogDescription": "この対戦相手が該当するstart.ggまたはparry.ggのプロフィールを選んでください。プレイヤーの確認は無料で、レポートは開始されません。",
+      "searchPlaceholder": "対戦履歴を検索",
+      "candidatesLabel": "あなたの対戦から",
+      "candidatesEmpty": "この対戦相手について、対戦履歴内にプロフィールが見つかりませんでした。",
+      "multipleHint": "あなたの対戦は複数のプロフィールを指しています — 正しいものを選んでください。",
+      "manualLabel": "プロフィールのリンクを貼り付け",
+      "manualPlaceholder": "start.ggまたはparry.ggのプロフィールURL",
+      "manualHint": "プロフィールのリンクまたはID — 単なるゲーマータグだけではプレイヤーを特定できません。",
+      "matchCount_one": "{{count}}試合",
+      "matchCount_other": "{{count}}試合",
+      "confirmAction": "確認",
+      "cancelAction": "キャンセル",
+      "error": {
+        "notFound": "そのプロフィールに該当するプレイヤーが見つかりませんでした。リンクを確認してもう一度お試しください。",
+        "failed": "このプレイヤーの確認中に問題が発生しました。もう一度お試しください。"
+      }
+    }
   }
 }

@@ -2479,5 +2479,76 @@
       "loadFailed": "Algo salió mal al cargar tu resumen de preparación. Inténtalo de nuevo.",
       "addEventFailed": "Algo salió mal al añadir este evento. Inténtalo de nuevo."
     }
+  },
+  "prepPaid": {
+    "title": "Informes de preparación con IA",
+    "description": "Consigue un informe escrito por IA sobre un rival probable por 1 crédito, o los tres por 3 créditos.",
+    "balance": {
+      "credits_one": "{{count}} crédito",
+      "credits_other": "{{count}} créditos",
+      "freeAccess": "Acceso gratuito"
+    },
+    "opponent": {
+      "buyCta": "Conseguir informe — 1 crédito",
+      "bundleCheckbox": "Incluir en el paquete",
+      "bundleCheckboxAria": "Incluir a {{name}} en el paquete de 3 rivales"
+    },
+    "bundle": {
+      "progress": "{{selected}}/3 seleccionados para el paquete",
+      "buyCta": "Conseguir los tres — 3 créditos",
+      "needMore_one": "Añade {{count}} rival probable más arriba para que el paquete de 3 rivales esté disponible.",
+      "needMore_other": "Añade {{count}} rivales probables más arriba para que el paquete de 3 rivales esté disponible.",
+      "needConfirmed_one": "Confirma {{count}} jugador más arriba para que el paquete de 3 rivales esté disponible.",
+      "needConfirmed_other": "Confirma {{count}} jugadores más arriba para que el paquete de 3 rivales esté disponible."
+    },
+    "empty": {
+      "title": "Añade rivales probables para conseguir informes",
+      "body": "Añade rivales en la tarjeta de Rivales probables de arriba y vuelve aquí para conseguir un informe de cualquiera de ellos."
+    },
+    "jobStatus": {
+      "queued": "En cola",
+      "running": "Generando…",
+      "succeeded": "Listo",
+      "failedPendingRefund": "Fallido — reembolsando tu crédito…",
+      "refunded": "Fallido — se reembolsó tu crédito.",
+      "viewReport": "Ver informe",
+      "hideReport": "Ocultar informe"
+    },
+    "insufficientCredits": {
+      "body": "Te has quedado sin créditos.",
+      "buyCta": "Comprar créditos",
+      "toGenerate": "para conseguir este informe."
+    },
+    "billing": {
+      "paymentReceived": "Pago recibido — tu informe empezará en breve.",
+      "checkoutCancelled": "Pago cancelado."
+    },
+    "error": {
+      "submitFailed": "Algo salió mal al iniciar este informe. Inténtalo de nuevo."
+    },
+    "binding": {
+      "unresolved": "Aún no se ha confirmado ningún jugador",
+      "confirmCta": "Confirmar jugador",
+      "changeCta": "Cambiar jugador",
+      "clearCta": "Quitar jugador confirmado",
+      "confirmedLabel": "Confirmado: {{tag}}",
+      "dialogTitle": "¿Quién es {{name}}?",
+      "dialogDescription": "Elige el perfil de start.gg o parry.gg al que pertenece este rival. Confirmar un jugador no cuesta nada y no inicia ningún informe.",
+      "searchPlaceholder": "Busca en tu historial de partidas",
+      "candidatesLabel": "De tus partidas",
+      "candidatesEmpty": "No se encontraron perfiles en tu historial de partidas para este rival.",
+      "multipleHint": "Tus partidas apuntan a más de un perfil — elige el correcto.",
+      "manualLabel": "Pega un enlace de perfil",
+      "manualPlaceholder": "URL de perfil de start.gg o parry.gg",
+      "manualHint": "Un enlace de perfil o ID — un simple gamer tag no basta para identificar a un jugador.",
+      "matchCount_one": "{{count}} partida",
+      "matchCount_other": "{{count}} partidas",
+      "confirmAction": "Confirmar",
+      "cancelAction": "Cancelar",
+      "error": {
+        "notFound": "No se encontró ningún jugador para ese perfil. Revisa el enlace e inténtalo de nuevo.",
+        "failed": "Algo salió mal al confirmar a este jugador. Inténtalo de nuevo."
+      }
+    }
   }
 }
