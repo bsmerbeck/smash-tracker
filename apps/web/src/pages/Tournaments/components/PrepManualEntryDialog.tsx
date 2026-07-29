@@ -140,11 +140,13 @@ export function PrepManualEntryDialog({ open, onOpenChange }: PrepManualEntryDia
   // already re-rendered bound to the concrete entryKey. Activation is
   // idempotent server-side, so the destination page's own mount-time read
   // safely records a reopen instead of re-activating.
-  useEffect(() => {
-    if (!activatingEntryKey) {
-      return;
-    }
-    const entryKey = activatingEntryKey;
+  //
+  // WR-03: extracted so a failed activation can be RETRIED on this same
+  // entryKey (via handleSubmit below) without re-running manualEntry.mutate()
+  // — re-running the create call would mint a second, distinct tournament
+  // entry via deriveManualEntryKey's fresh random suffix and orphan the
+  // first, already-created one.
+  function triggerActivation(entryKey: string) {
     activateBrief.mutate(undefined, {
       onSuccess: () => {
         resetFields();
@@ -155,12 +157,30 @@ export function PrepManualEntryDialog({ open, onOpenChange }: PrepManualEntryDia
         setError(t('prep.error.addEventFailed'));
       },
     });
+  }
+
+  useEffect(() => {
+    if (!activatingEntryKey) {
+      return;
+    }
+    triggerActivation(activatingEntryKey);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activatingEntryKey]);
 
   function handleSubmit(event: FormEvent) {
     event.preventDefault();
-    if (!canSubmit || manualEntry.isPending) {
+    if (manualEntry.isPending || activateBrief.isPending) {
+      return;
+    }
+    // WR-03: a previous activation attempt failed after the tournament entry
+    // was already created — retry activation on that SAME entryKey rather
+    // than calling manualEntry.mutate() again.
+    if (activatingEntryKey) {
+      setError(null);
+      triggerActivation(activatingEntryKey);
+      return;
+    }
+    if (!canSubmit) {
       return;
     }
     manualEntry.mutate();
@@ -199,7 +219,14 @@ export function PrepManualEntryDialog({ open, onOpenChange }: PrepManualEntryDia
             )}
           </div>
           <DialogFooter>
-            <Button type="submit" disabled={!canSubmit || manualEntry.isPending}>
+            <Button
+              type="submit"
+              disabled={
+                (!canSubmit && !activatingEntryKey) ||
+                manualEntry.isPending ||
+                activateBrief.isPending
+              }
+            >
               {t('prep.manualEntry.submit')}
             </Button>
           </DialogFooter>

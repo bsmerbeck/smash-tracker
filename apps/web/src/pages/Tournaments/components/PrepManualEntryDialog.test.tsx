@@ -14,7 +14,10 @@ vi.mock('@/lib/api', () => ({
 
 const activateMutate = vi.fn();
 vi.mock('@/hooks/usePrepBrief', () => ({
-  useActivatePrepBrief: () => ({ mutate: (...args: unknown[]) => activateMutate(...args) }),
+  useActivatePrepBrief: () => ({
+    mutate: (...args: unknown[]) => activateMutate(...args),
+    isPending: false,
+  }),
 }));
 
 const navigate = vi.fn();
@@ -161,6 +164,46 @@ describe('PrepManualEntryDialog', () => {
     ).toBeInTheDocument();
     expect(navigate).not.toHaveBeenCalled();
     expect(activateMutate).not.toHaveBeenCalled();
+  });
+
+  it('retries activation on the same entryKey after a failed activation, without re-creating the entry (WR-03)', async () => {
+    const user = userEvent.setup();
+    manualEntry.mockResolvedValue({
+      eventName: 'Locals #42',
+      firstSetAt: 1,
+      lastSetAt: 1,
+      setsPlayed: 0,
+      source: 'manual',
+      entryKey: 'manual-locals-42-abc',
+    });
+    activateMutate.mockImplementation((_vars: unknown, opts: { onError: () => void }) => {
+      opts.onError();
+    });
+
+    renderDialog();
+
+    await user.type(screen.getByLabelText('Event name'), 'Locals #42');
+    await user.type(screen.getByLabelText('Event date'), futureDateString());
+    await user.click(screen.getByRole('button', { name: 'Add & start prep brief' }));
+
+    await waitFor(() => expect(activateMutate).toHaveBeenCalledTimes(1));
+    expect(manualEntry).toHaveBeenCalledTimes(1);
+    expect(
+      await screen.findByText('Something went wrong adding this event. Please try again.'),
+    ).toBeInTheDocument();
+
+    // Retry: this time activation succeeds. Clicking submit again must
+    // retry activation on the SAME entryKey rather than calling
+    // manualEntry.mutate() again (which would orphan the first entry and
+    // create a second, distinct one).
+    activateMutate.mockImplementation((_vars: unknown, opts: { onSuccess: () => void }) => {
+      opts.onSuccess();
+    });
+    await user.click(screen.getByRole('button', { name: 'Add & start prep brief' }));
+
+    await waitFor(() => expect(activateMutate).toHaveBeenCalledTimes(2));
+    expect(manualEntry).toHaveBeenCalledTimes(1);
+    expect(navigate).toHaveBeenCalledWith('/tournaments/manual-locals-42-abc/prep');
   });
 
   it('resets fields and error when the dialog is closed and reopened', async () => {
