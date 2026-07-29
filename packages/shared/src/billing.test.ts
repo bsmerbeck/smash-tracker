@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { checkoutRequestSchema } from './billing.js';
+import { CHECKOUT_PREP_REASON, checkoutRequestSchema } from './billing.js';
 
 describe('checkoutRequestSchema', () => {
   it('accepts a body with only packId (attemptId optional, deploy-first client compatibility)', () => {
@@ -26,5 +26,50 @@ describe('checkoutRequestSchema', () => {
   it('rejects an unknown packId', () => {
     const result = checkoutRequestSchema.safeParse({ packId: 'pack1000' });
     expect(result.success).toBe(false);
+  });
+});
+
+/**
+ * Phase 27: the validated checkout return-destination contract
+ * (checkoutReturnToSchema/entryKey cross-validation, RESEARCH Pitfall 4).
+ */
+describe('checkoutRequestSchema — Phase 27 return destination', () => {
+  it("accepts a body with only packId — today's clients are unaffected", () => {
+    const result = checkoutRequestSchema.safeParse({ packId: 'pack5' });
+    expect(result.success).toBe(true);
+  });
+
+  it('accepts returnTo: "prep" with an entryKey', () => {
+    const result = checkoutRequestSchema.safeParse({
+      packId: 'pack5',
+      returnTo: 'prep',
+      entryKey: 'e1',
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it('rejects returnTo: "prep" without an entryKey', () => {
+    const result = checkoutRequestSchema.safeParse({ packId: 'pack5', returnTo: 'prep' });
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects an entryKey without returnTo: "prep"', () => {
+    const result = checkoutRequestSchema.safeParse({ packId: 'pack5', entryKey: 'e1' });
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects an entryKey containing an RTDB-illegal path character', () => {
+    const result = checkoutRequestSchema.safeParse({
+      packId: 'pack5',
+      returnTo: 'prep',
+      entryKey: 'a/b',
+    });
+    expect(result.success).toBe(false);
+  });
+});
+
+describe('CHECKOUT_PREP_REASON', () => {
+  it('is exactly "prep_purchase"', () => {
+    expect(CHECKOUT_PREP_REASON).toBe('prep_purchase');
   });
 });

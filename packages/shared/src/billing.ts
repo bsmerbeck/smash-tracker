@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { entryKeyInputSchema } from './prep.js';
 
 /**
  * V7-C: Stripe-powered credit packs that gate AI report generation
@@ -52,17 +53,61 @@ export const creditsStatusSchema = z.object({
 export type CreditsStatus = z.infer<typeof creditsStatusSchema>;
 
 /**
+ * Phase 27: the closed set of checkout return destinations. Omitting
+ * `returnTo` on the request preserves today's `/scout` behavior
+ * byte-for-byte; the server resolves the actual destination from this enum
+ * via a fixed template — never from a client-supplied URL (RESEARCH
+ * Pitfall 4: never interpolate a raw client value into a redirect URL).
+ */
+export const checkoutReturnToSchema = z.enum(['scout', 'prep']);
+export type CheckoutReturnTo = z.infer<typeof checkoutReturnToSchema>;
+
+/**
+ * The ONLY prep marker permitted to travel through Stripe `metadata` and
+ * the `checkout_started`/`checkout_completed` canonical event payloads
+ * (EVT-05, 27-CONTEXT.md "Placement UX"). The entryKey, opponent names, and
+ * provider identities must never appear there.
+ */
+export const CHECKOUT_PREP_REASON = 'prep_purchase' as const;
+
+/**
  * POST /api/billing/checkout request body. `attemptId` (BILL-03) is a
  * client-generated UUID, stable across retries of the SAME "buy credits"
  * click, fresh for every NEW click — passed through as the Stripe Checkout
  * Session's `idempotencyKey` so a retried create() never spawns a duplicate
  * session. Optional so an un-updated client (deploy-first) never 400s; the
  * server falls back to a per-request UUID when absent.
+ *
+ * `returnTo`/`entryKey` (Phase 27) extend the checkout flow with a
+ * validated return destination so a prep-origin purchase returns to
+ * `/tournaments/:entryKey/prep` instead of always returning to `/scout`.
+ * The two fields are cross-validated: `returnTo: 'prep'` without an
+ * `entryKey` has nowhere to return to, and an `entryKey` without
+ * `returnTo: 'prep'` is meaningless and must not be silently accepted.
  */
-export const checkoutRequestSchema = z.object({
-  packId: creditPackIdSchema,
-  attemptId: z.string().min(1).optional(),
-});
+export const checkoutRequestSchema = z
+  .object({
+    packId: creditPackIdSchema,
+    attemptId: z.string().min(1).optional(),
+    returnTo: checkoutReturnToSchema.optional(),
+    entryKey: entryKeyInputSchema.optional(),
+  })
+  .superRefine((value, ctx) => {
+    if (value.returnTo === 'prep' && !value.entryKey) {
+      ctx.addIssue({
+        code: 'custom',
+        message: 'entryKey is required when returnTo is "prep"',
+        path: ['entryKey'],
+      });
+    }
+    if (value.entryKey !== undefined && value.returnTo !== 'prep') {
+      ctx.addIssue({
+        code: 'custom',
+        message: 'entryKey requires returnTo: "prep"',
+        path: ['returnTo'],
+      });
+    }
+  });
 export type CheckoutRequest = z.infer<typeof checkoutRequestSchema>;
 
 /** POST /api/billing/checkout response — the Stripe-hosted Checkout Session URL to redirect to. */
