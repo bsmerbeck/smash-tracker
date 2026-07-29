@@ -1,10 +1,20 @@
 import { describe, expect, it, vi } from 'vitest';
 import Anthropic from '@anthropic-ai/sdk';
+import type { Database } from 'firebase-admin/database';
+import type { Auth } from 'firebase-admin/auth';
 import type { PrepPaidConfig, StartggConfig, ReportsConfig, StripeConfig } from '../config/env.js';
 import type { AnthropicLikeClient } from '../reports/generate.js';
 import type { ParryggClients } from '../parrygg/client.js';
 import type { FakeDatabase } from '../test-support/fakeDatabase.js';
-import { authHeader, buildTestApp, TEST_UID } from '../test-support/testApp.js';
+import { FakeAuth } from '../test-support/fakeAuth.js';
+import {
+  authHeader,
+  buildTestApp,
+  TEST_EMAIL,
+  TEST_TOKEN,
+  TEST_UID,
+} from '../test-support/testApp.js';
+import { buildApp } from '../app.js';
 
 const STARTGG_CONFIG: StartggConfig = {
   clientId: 'client-123',
@@ -2244,5 +2254,934 @@ describe('prep single report (RPT-01)', () => {
       expect(Object.keys(events[0]!.payload)).toEqual(['reason']);
       expect(events[0]!.payload.reason).toBe('prep_report');
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Phase 27 (Task 1/2/3): the exactly-three-opponent bundle purchase, the
+// pre-paid child execution path, and the read-only job-status endpoint.
+// ---------------------------------------------------------------------------
+
+const BUNDLE_OPPONENT_NAMES = ['rival1', 'rival2', 'rival3'];
+
+/** Seeds a prep brief with all three bundle opponents curated and report-ready. */
+function seedBundleBrief(
+  database: FakeDatabase,
+  uid: string,
+  entryKey: string,
+  opponentNames: string[] = BUNDLE_OPPONENT_NAMES,
+  bindingRecord: Record<string, unknown> = {
+    provider: 'parrygg',
+    parryUserId: '019ce9ba-debd-7e11-84a2-77258f52644e',
+    displayTag: 'Pandem1c',
+    method: 'matchHistory',
+    confirmedAt: 1,
+  },
+): void {
+  database.seed(`prepBriefs/${uid}/${entryKey}`, {
+    eventDate: 1_700_000_000_000,
+    activatedAt: 1_700_000_000_000,
+    lastOpenedAt: 1_700_000_000_000,
+    likelyOpponents: Object.fromEntries(opponentNames.map((name) => [name, true])),
+    scoutBindings: Object.fromEntries(opponentNames.map((name) => [name, bindingRecord])),
+  });
+}
+
+/** Illegal-character set built from explicit char codes (RTDB-safety check, mirroring credits.test.ts). */
+const RTDB_ILLEGAL_CHARACTER_CODES = new Set<number>([
+  0x2e /* . */, 0x23 /* # */, 0x24 /* $ */, 0x5b /* [ */, 0x5d /* ] */, 0x2f /* / */,
+  0x20 /* space */, 0x7f /* DEL */,
+]);
+for (let code = 0x00; code <= 0x1f; code += 1) {
+  RTDB_ILLEGAL_CHARACTER_CODES.add(code);
+}
+function hasRtdbIllegalCharacter(value: string): boolean {
+  return Array.from(value).some((char) => RTDB_ILLEGAL_CHARACTER_CODES.has(char.charCodeAt(0)));
+}
+
+describe('prep bundle submission (RPT-02, Task 1)', () => {
+  const PREP_PAID_CONFIG: PrepPaidConfig = { enabled: true };
+  const NON_ALLOWLIST_CONFIG: ReportsConfig = {
+    anthropicApiKey: 'sk-test-key',
+    allowedUids: new Set(['someone-else']),
+  };
+  const BILLING_STRIPE_CONFIG: StripeConfig = {
+    secretKey: 'sk-test-123',
+    webhookSecret: 'whsec-test-456',
+  };
+  const ENTRY_KEY = 'evo-2026-ult';
+  const BUNDLE_PAYLOAD = {
+    reason: 'prep_bundle' as const,
+    entryKey: ENTRY_KEY,
+    bundleId: 'bundle-abc',
+    opponentNames: BUNDLE_OPPONENT_NAMES,
+  };
+
+  function billableBundleApp(overrides: Partial<Parameters<typeof buildTestApp>[0]> = {}) {
+    return buildTestApp({
+      reports: NON_ALLOWLIST_CONFIG,
+      stripe: BILLING_STRIPE_CONFIG,
+      prepPaid: PREP_PAID_CONFIG,
+      // The plugin-level guard (`!config || (!startggConfig && !parryggConfig)`)
+      // 503s EVERY /reports* route, including the bundle branch, unless at
+      // least one scouting engine is configured — parrygg here, unused by
+      // the submission branch itself (it never calls resolveScout).
+      parrygg: { apiKey: 'parry-key' },
+      reportsClient: stubClient(async () => ({
+        stop_reason: 'end_turn',
+        parsed_output: VALID_REPORT,
+      })),
+      ...overrides,
+    });
+  }
+
+  it('answers 404 before any charge when the caller has no such brief', async () => {
+    const { app, database } = billableBundleApp();
+    database.seed(`credits/${TEST_UID}/balance`, 5);
+    const before = JSON.stringify(database.dump());
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/reports',
+      headers: authHeader(),
+      payload: BUNDLE_PAYLOAD,
+    });
+
+    expect(response.statusCode).toBe(404);
+    expect(JSON.stringify(database.dump())).toEqual(before);
+  });
+
+  it('answers 400 before any charge when an opponent is not currently curated', async () => {
+    const { app, database } = billableBundleApp();
+    seedBundleBrief(database, TEST_UID, ENTRY_KEY, ['rival1', 'rival2', 'someoneElse']);
+    database.seed(`credits/${TEST_UID}/balance`, 5);
+    const before = JSON.stringify(database.dump());
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/reports',
+      headers: authHeader(),
+      payload: BUNDLE_PAYLOAD,
+    });
+
+    expect(response.statusCode).toBe(400);
+    expect(JSON.stringify(database.dump())).toEqual(before);
+  });
+
+  it('answers 409 before any charge when an opponent has no confirmed, report-ready binding (owner battery item 6)', async () => {
+    const { app, database } = billableBundleApp();
+    database.seed(`prepBriefs/${TEST_UID}/${ENTRY_KEY}`, {
+      eventDate: 1_700_000_000_000,
+      activatedAt: 1_700_000_000_000,
+      lastOpenedAt: 1_700_000_000_000,
+      likelyOpponents: Object.fromEntries(BUNDLE_OPPONENT_NAMES.map((name) => [name, true])),
+      // rival3 has no scoutBindings entry at all.
+      scoutBindings: {
+        rival1: {
+          provider: 'parrygg',
+          parryUserId: '019ce9ba-debd-7e11-84a2-77258f52644e',
+          displayTag: 'Pandem1c',
+          method: 'matchHistory',
+          confirmedAt: 1,
+        },
+        rival2: {
+          provider: 'parrygg',
+          parryUserId: '019ce9ba-debd-7e11-84a2-77258f52644e',
+          displayTag: 'Pandem1c',
+          method: 'matchHistory',
+          confirmedAt: 1,
+        },
+      },
+    });
+    database.seed(`credits/${TEST_UID}/balance`, 5);
+    const before = JSON.stringify(database.dump());
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/reports',
+      headers: authHeader(),
+      payload: BUNDLE_PAYLOAD,
+    });
+
+    expect(response.statusCode).toBe(409);
+    expect(JSON.stringify(database.dump())).toEqual(before);
+  });
+
+  it('debits exactly three credits once, creates three deterministic queued jobs, writes three index pointers, and answers 202', async () => {
+    const { app, database } = billableBundleApp();
+    seedBundleBrief(database, TEST_UID, ENTRY_KEY);
+    database.seed(`credits/${TEST_UID}/balance`, 5);
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/reports',
+      headers: authHeader(),
+      payload: BUNDLE_PAYLOAD,
+    });
+
+    expect(response.statusCode).toBe(202);
+    const body = response.json() as {
+      bundleId: string;
+      jobs: Array<{ opponentName: string; jobId: string; slot: number }>;
+    };
+    expect(body.bundleId).toBe(BUNDLE_PAYLOAD.bundleId);
+    expect(body.jobs).toEqual([
+      { opponentName: 'rival1', jobId: `${BUNDLE_PAYLOAD.bundleId}:1`, slot: 1 },
+      { opponentName: 'rival2', jobId: `${BUNDLE_PAYLOAD.bundleId}:2`, slot: 2 },
+      { opponentName: 'rival3', jobId: `${BUNDLE_PAYLOAD.bundleId}:3`, slot: 3 },
+    ]);
+
+    const balance = await database.ref(`credits/${TEST_UID}/balance`).get();
+    expect(balance.val()).toBe(2);
+
+    for (const { opponentName, jobId } of body.jobs) {
+      const jobSnapshot = await database.ref(`reportJobs/${TEST_UID}/${jobId}`).get();
+      expect(jobSnapshot.val()).toMatchObject({
+        status: 'queued',
+        creditRef: jobId,
+        reason: 'prep_bundle',
+      });
+      expect(hasRtdbIllegalCharacter(jobId)).toBe(false);
+
+      const indexSnapshot = await database
+        .ref(`prepReportJobIndex/${TEST_UID}/${ENTRY_KEY}/${opponentName}`)
+        .get();
+      expect(indexSnapshot.val()).toMatchObject({ jobId });
+    }
+  });
+
+  it('answers 402 with zero debit/ledger/event/job/index writes when the balance is insufficient (owner battery item 2)', async () => {
+    const { app, database } = billableBundleApp();
+    seedBundleBrief(database, TEST_UID, ENTRY_KEY);
+    database.seed(`credits/${TEST_UID}/balance`, 2);
+    const before = JSON.parse(JSON.stringify(database.dump())) as Record<string, unknown>;
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/reports',
+      headers: authHeader(),
+      payload: BUNDLE_PAYLOAD,
+    });
+
+    expect(response.statusCode).toBe(402);
+
+    const after = JSON.parse(JSON.stringify(database.dump())) as Record<string, unknown>;
+    const creditBundleOps = after.creditBundleOps as
+      Record<string, Record<string, { status: string }>> | undefined;
+    expect(creditBundleOps?.[TEST_UID]?.[BUNDLE_PAYLOAD.bundleId]?.status).toBe('insufficient');
+    delete after.creditBundleOps;
+    expect(after).toEqual(before);
+
+    expect((after as { reportJobs?: unknown }).reportJobs).toBeUndefined();
+    expect((after as { prepReportJobIndex?: unknown }).prepReportJobIndex).toBeUndefined();
+    const balance = await database.ref(`credits/${TEST_UID}/balance`).get();
+    expect(balance.val()).toBe(2);
+  });
+
+  it('re-submitting the SAME bundle id answers 202 with the same three job ids and does not debit again (owner battery item 1)', async () => {
+    const { app, database } = billableBundleApp();
+    seedBundleBrief(database, TEST_UID, ENTRY_KEY);
+    database.seed(`credits/${TEST_UID}/balance`, 5);
+
+    const first = await app.inject({
+      method: 'POST',
+      url: '/api/reports',
+      headers: authHeader(),
+      payload: BUNDLE_PAYLOAD,
+    });
+    const second = await app.inject({
+      method: 'POST',
+      url: '/api/reports',
+      headers: authHeader(),
+      payload: BUNDLE_PAYLOAD,
+    });
+
+    expect(first.statusCode).toBe(202);
+    expect(second.statusCode).toBe(202);
+    expect(second.json()).toEqual(first.json());
+
+    const balance = await database.ref(`credits/${TEST_UID}/balance`).get();
+    expect(balance.val()).toBe(2);
+  });
+
+  it('two concurrent submissions of the same bundle id debit exactly three credits in total', async () => {
+    const { app, database } = billableBundleApp();
+    seedBundleBrief(database, TEST_UID, ENTRY_KEY);
+    database.seed(`credits/${TEST_UID}/balance`, 5);
+
+    const [first, second] = await Promise.all([
+      app.inject({
+        method: 'POST',
+        url: '/api/reports',
+        headers: authHeader(),
+        payload: BUNDLE_PAYLOAD,
+      }),
+      app.inject({
+        method: 'POST',
+        url: '/api/reports',
+        headers: authHeader(),
+        payload: BUNDLE_PAYLOAD,
+      }),
+    ]);
+
+    expect([first.statusCode, second.statusCode]).toEqual([202, 202]);
+    expect(first.json()).toEqual(second.json());
+
+    const balance = await database.ref(`credits/${TEST_UID}/balance`).get();
+    expect(balance.val()).toBe(2);
+  });
+
+  it('an allowlisted uid receives the same 202 with zero credit movement and no operation marker debit (owner battery item 9)', async () => {
+    const { app, database } = buildTestApp({
+      reports: REPORTS_CONFIG,
+      prepPaid: PREP_PAID_CONFIG,
+      parrygg: { apiKey: 'parry-key' },
+      reportsClient: stubClient(async () => ({
+        stop_reason: 'end_turn',
+        parsed_output: VALID_REPORT,
+      })),
+    });
+    seedBundleBrief(database, TEST_UID, ENTRY_KEY);
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/reports',
+      headers: authHeader(),
+      payload: BUNDLE_PAYLOAD,
+    });
+
+    expect(response.statusCode).toBe(202);
+    const balance = await database.ref(`credits/${TEST_UID}/balance`).get();
+    expect(balance.exists()).toBe(false);
+    const dump = database.dump() as Record<string, unknown>;
+    expect(dump.creditLedger).toBeUndefined();
+    expect(dump.creditBundleOps).toBeUndefined();
+
+    // Idempotent replay for an allowlisted uid too — resubmitting must never
+    // reset an already-created child back to `queued`.
+    const replay = await app.inject({
+      method: 'POST',
+      url: '/api/reports',
+      headers: authHeader(),
+      payload: BUNDLE_PAYLOAD,
+    });
+    expect(replay.statusCode).toBe(202);
+    expect(replay.json()).toEqual(response.json());
+  });
+});
+
+describe('bundle failure math (RPT-02/RPT-03, owner battery item 3)', () => {
+  const PREP_PAID_CONFIG: PrepPaidConfig = { enabled: true };
+  const NON_ALLOWLIST_CONFIG: ReportsConfig = {
+    anthropicApiKey: 'sk-test-key',
+    allowedUids: new Set(['someone-else']),
+  };
+  const REPORTS_ALLOWLIST_CONFIG: ReportsConfig = {
+    anthropicApiKey: 'sk-test-key',
+    allowedUids: new Set([TEST_UID]),
+  };
+  const BILLING_STRIPE_CONFIG: StripeConfig = {
+    secretKey: 'sk-test-123',
+    webhookSecret: 'whsec-test-456',
+  };
+  const ENTRY_KEY = 'evo-2026-ult';
+  const PARRY_CLIENTS = parryClients({
+    getUser: () => ({ id: PARRY_USER_ID, gamerTag: 'Pandem1c' }),
+  });
+
+  /** A model client whose Nth call fails iff N is in `failSlots` (1-indexed, matching execution order). */
+  function sequencedClient(failSlots: Set<number>) {
+    let callCount = 0;
+    const modelSpy = vi.fn(async () => {
+      callCount += 1;
+      return failSlots.has(callCount)
+        ? { stop_reason: 'refusal' as const, parsed_output: null }
+        : { stop_reason: 'end_turn' as const, parsed_output: VALID_REPORT };
+    });
+    return { client: stubClient(modelSpy), modelSpy };
+  }
+
+  async function runFailureMathCase(failureCount: number) {
+    const failSlots = new Set(Array.from({ length: failureCount }, (_, index) => index + 1));
+    const { client, modelSpy } = sequencedClient(failSlots);
+    const { app, database } = buildTestApp({
+      reports: NON_ALLOWLIST_CONFIG,
+      stripe: BILLING_STRIPE_CONFIG,
+      prepPaid: PREP_PAID_CONFIG,
+      reportsClient: client,
+      parrygg: { apiKey: 'parry-key' },
+      parryggClients: PARRY_CLIENTS,
+    });
+    seedBundleBrief(database, TEST_UID, ENTRY_KEY);
+    const START_BALANCE = 10;
+    database.seed(`credits/${TEST_UID}/balance`, START_BALANCE);
+
+    const submitResponse = await app.inject({
+      method: 'POST',
+      url: '/api/reports',
+      headers: authHeader(),
+      payload: {
+        reason: 'prep_bundle',
+        entryKey: ENTRY_KEY,
+        bundleId: `bundle-fm-${failureCount}`,
+        opponentNames: BUNDLE_OPPONENT_NAMES,
+      },
+    });
+    expect(submitResponse.statusCode).toBe(202);
+    const { jobs } = submitResponse.json() as {
+      bundleId: string;
+      jobs: Array<{ opponentName: string; jobId: string; slot: number }>;
+    };
+
+    for (const jobEntry of jobs) {
+      const response = await app.inject({
+        method: 'POST',
+        url: '/api/reports',
+        headers: authHeader(),
+        payload: {
+          reason: 'prep_report',
+          entryKey: ENTRY_KEY,
+          opponentName: jobEntry.opponentName,
+          jobId: jobEntry.jobId,
+        },
+      });
+      if (jobEntry.slot <= failureCount) {
+        expect(response.statusCode).toBe(502);
+      } else {
+        expect(response.statusCode).toBe(200);
+        expect(response.json()).toMatchObject({ report: STORED_VALID_REPORT });
+      }
+    }
+
+    const balance = await database.ref(`credits/${TEST_UID}/balance`).get();
+    expect(balance.val()).toBe(START_BALANCE - 3 + failureCount);
+
+    for (const jobEntry of jobs) {
+      const jobSnapshot = await database.ref(`reportJobs/${TEST_UID}/${jobEntry.jobId}`).get();
+      const expectedStatus = jobEntry.slot <= failureCount ? 'refunded' : 'succeeded';
+      expect(jobSnapshot.val()).toMatchObject({ status: expectedStatus, reason: 'prep_bundle' });
+    }
+
+    expect(modelSpy).toHaveBeenCalledTimes(3);
+
+    return { database, jobs };
+  }
+
+  it('zero failures: all three children succeed and the balance ends at start minus three', async () => {
+    await runFailureMathCase(0);
+  });
+
+  it('one failure: the balance ends at start minus two', async () => {
+    await runFailureMathCase(1);
+  });
+
+  it('two failures: the balance ends at start minus one', async () => {
+    await runFailureMathCase(2);
+  });
+
+  it('three failures: the balance ends exactly at the starting balance, with exactly three refund ledger entries, one per slot ref', async () => {
+    const { database, jobs } = await runFailureMathCase(3);
+
+    const dump = database.dump() as Record<string, unknown>;
+    const ledger = (dump.creditLedger as Record<string, Record<string, unknown>>)[TEST_UID]!;
+    const refundEntries = Object.values(ledger).filter(
+      (entry) => (entry as { type: string }).type === 'refund',
+    ) as Array<{ ref: string }>;
+    expect(refundEntries).toHaveLength(3);
+    const refundRefs = refundEntries.map((entry) => entry.ref).sort();
+    const expectedRefs = jobs.map((job) => job.jobId).sort();
+    expect(refundRefs).toEqual(expectedRefs);
+    expect(new Set(refundRefs).size).toBe(3);
+  });
+
+  it('a resolved (failed/refunded) child answers 409 and neither generates nor spends on re-execution — no free re-run', async () => {
+    const { client, modelSpy } = sequencedClient(new Set([1]));
+    const { app, database } = buildTestApp({
+      reports: NON_ALLOWLIST_CONFIG,
+      stripe: BILLING_STRIPE_CONFIG,
+      prepPaid: PREP_PAID_CONFIG,
+      reportsClient: client,
+      parrygg: { apiKey: 'parry-key' },
+      parryggClients: PARRY_CLIENTS,
+    });
+    seedBundleBrief(database, TEST_UID, ENTRY_KEY);
+    database.seed(`credits/${TEST_UID}/balance`, 10);
+
+    const submitResponse = await app.inject({
+      method: 'POST',
+      url: '/api/reports',
+      headers: authHeader(),
+      payload: {
+        reason: 'prep_bundle',
+        entryKey: ENTRY_KEY,
+        bundleId: 'bundle-terminal',
+        opponentNames: BUNDLE_OPPONENT_NAMES,
+      },
+    });
+    const { jobs } = submitResponse.json() as {
+      jobs: Array<{ opponentName: string; jobId: string; slot: number }>;
+    };
+    const firstChild = jobs[0]!;
+
+    const firstAttempt = await app.inject({
+      method: 'POST',
+      url: '/api/reports',
+      headers: authHeader(),
+      payload: {
+        reason: 'prep_report',
+        entryKey: ENTRY_KEY,
+        opponentName: firstChild.opponentName,
+        jobId: firstChild.jobId,
+      },
+    });
+    expect(firstAttempt.statusCode).toBe(502);
+
+    const balanceAfterFailure = await database.ref(`credits/${TEST_UID}/balance`).get();
+
+    const secondAttempt = await app.inject({
+      method: 'POST',
+      url: '/api/reports',
+      headers: authHeader(),
+      payload: {
+        reason: 'prep_report',
+        entryKey: ENTRY_KEY,
+        opponentName: firstChild.opponentName,
+        jobId: firstChild.jobId,
+      },
+    });
+
+    expect(secondAttempt.statusCode).toBe(409);
+    expect(modelSpy).toHaveBeenCalledTimes(1);
+    const balanceAfterSecondAttempt = await database.ref(`credits/${TEST_UID}/balance`).get();
+    expect(balanceAfterSecondAttempt.val()).toBe(balanceAfterFailure.val());
+  });
+
+  it('two concurrent executions of the same child id result in at most one report generation and exactly one refund on failure', async () => {
+    const { client, modelSpy } = sequencedClient(new Set([1]));
+    const { app, database } = buildTestApp({
+      reports: NON_ALLOWLIST_CONFIG,
+      stripe: BILLING_STRIPE_CONFIG,
+      prepPaid: PREP_PAID_CONFIG,
+      reportsClient: client,
+      parrygg: { apiKey: 'parry-key' },
+      parryggClients: PARRY_CLIENTS,
+    });
+    seedBundleBrief(database, TEST_UID, ENTRY_KEY);
+    database.seed(`credits/${TEST_UID}/balance`, 10);
+
+    const submitResponse = await app.inject({
+      method: 'POST',
+      url: '/api/reports',
+      headers: authHeader(),
+      payload: {
+        reason: 'prep_bundle',
+        entryKey: ENTRY_KEY,
+        bundleId: 'bundle-concurrent',
+        opponentNames: BUNDLE_OPPONENT_NAMES,
+      },
+    });
+    const { jobs } = submitResponse.json() as {
+      jobs: Array<{ opponentName: string; jobId: string; slot: number }>;
+    };
+    const firstChild = jobs[0]!;
+    const executePayload = {
+      reason: 'prep_report' as const,
+      entryKey: ENTRY_KEY,
+      opponentName: firstChild.opponentName,
+      jobId: firstChild.jobId,
+    };
+
+    const [first, second] = await Promise.all([
+      app.inject({
+        method: 'POST',
+        url: '/api/reports',
+        headers: authHeader(),
+        payload: executePayload,
+      }),
+      app.inject({
+        method: 'POST',
+        url: '/api/reports',
+        headers: authHeader(),
+        payload: executePayload,
+      }),
+    ]);
+
+    const statusCodes = [first.statusCode, second.statusCode].sort();
+    expect(statusCodes).toEqual([409, 502]);
+    expect(modelSpy).toHaveBeenCalledTimes(1);
+
+    const dump = database.dump() as Record<string, unknown>;
+    const ledger = (dump.creditLedger as Record<string, Record<string, unknown>>)[TEST_UID]!;
+    const refundEntries = Object.values(ledger).filter(
+      (entry) => (entry as { type: string }).type === 'refund',
+    );
+    expect(refundEntries).toHaveLength(1);
+  });
+
+  it("a child of an allowlisted uid's bundle that fails performs no refund", async () => {
+    const { client } = sequencedClient(new Set([1]));
+    const { app, database } = buildTestApp({
+      reports: REPORTS_ALLOWLIST_CONFIG,
+      prepPaid: PREP_PAID_CONFIG,
+      reportsClient: client,
+      parrygg: { apiKey: 'parry-key' },
+      parryggClients: PARRY_CLIENTS,
+    });
+    seedBundleBrief(database, TEST_UID, ENTRY_KEY);
+
+    const submitResponse = await app.inject({
+      method: 'POST',
+      url: '/api/reports',
+      headers: authHeader(),
+      payload: {
+        reason: 'prep_bundle',
+        entryKey: ENTRY_KEY,
+        bundleId: 'bundle-allowlisted',
+        opponentNames: BUNDLE_OPPONENT_NAMES,
+      },
+    });
+    const { jobs } = submitResponse.json() as {
+      jobs: Array<{ opponentName: string; jobId: string; slot: number }>;
+    };
+    const firstChild = jobs[0]!;
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/reports',
+      headers: authHeader(),
+      payload: {
+        reason: 'prep_report',
+        entryKey: ENTRY_KEY,
+        opponentName: firstChild.opponentName,
+        jobId: firstChild.jobId,
+      },
+    });
+
+    expect(response.statusCode).toBe(502);
+    const jobSnapshot = await database.ref(`reportJobs/${TEST_UID}/${firstChild.jobId}`).get();
+    expect(jobSnapshot.val()).toMatchObject({ status: 'failed', reason: 'prep_bundle' });
+    const dump = database.dump() as Record<string, unknown>;
+    expect(dump.creditLedger).toBeUndefined();
+    const balance = await database.ref(`credits/${TEST_UID}/balance`).get();
+    expect(balance.exists()).toBe(false);
+  });
+
+  it('a guessed bundle-shaped job id for a bundle that was never submitted falls through to the ordinary single-report path and spends a credit normally', async () => {
+    const { app, database } = buildTestApp({
+      reports: NON_ALLOWLIST_CONFIG,
+      stripe: BILLING_STRIPE_CONFIG,
+      prepPaid: PREP_PAID_CONFIG,
+      reportsClient: stubClient(async () => ({
+        stop_reason: 'end_turn',
+        parsed_output: VALID_REPORT,
+      })),
+      parrygg: { apiKey: 'parry-key' },
+      parryggClients: PARRY_CLIENTS,
+    });
+    seedBundleBrief(database, TEST_UID, ENTRY_KEY);
+    database.seed(`credits/${TEST_UID}/balance`, 5);
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/reports',
+      headers: authHeader(),
+      payload: {
+        reason: 'prep_report',
+        entryKey: ENTRY_KEY,
+        opponentName: 'rival1',
+        jobId: 'never-submitted-bundle:1',
+      },
+    });
+
+    expect(response.statusCode).toBe(200);
+    const balance = await database.ref(`credits/${TEST_UID}/balance`).get();
+    expect(balance.val()).toBe(4);
+    const jobSnapshot = await database.ref(`reportJobs/${TEST_UID}/never-submitted-bundle:1`).get();
+    expect(jobSnapshot.val()).toMatchObject({ status: 'succeeded', reason: 'prep_report' });
+  });
+});
+
+describe('prep job status endpoint (RPT-03)', () => {
+  const PREP_PAID_CONFIG: PrepPaidConfig = { enabled: true };
+  const NON_ALLOWLIST_CONFIG: ReportsConfig = {
+    anthropicApiKey: 'sk-test-key',
+    allowedUids: new Set(['someone-else']),
+  };
+  const BILLING_STRIPE_CONFIG: StripeConfig = {
+    secretKey: 'sk-test-123',
+    webhookSecret: 'whsec-test-456',
+  };
+  const ENTRY_KEY = 'evo-2026-ult';
+  const PARRY_CLIENTS = parryClients({
+    getUser: () => ({ id: PARRY_USER_ID, gamerTag: 'Pandem1c' }),
+  });
+
+  it('returns one entry per index pointer, carrying opponent name, job id, status, updatedAt, and resultRef when succeeded', async () => {
+    const { app, database } = buildTestApp({
+      reports: NON_ALLOWLIST_CONFIG,
+      stripe: BILLING_STRIPE_CONFIG,
+      prepPaid: PREP_PAID_CONFIG,
+      reportsClient: stubClient(async () => ({
+        stop_reason: 'end_turn',
+        parsed_output: VALID_REPORT,
+      })),
+      parrygg: { apiKey: 'parry-key' },
+      parryggClients: PARRY_CLIENTS,
+    });
+    seedBundleBrief(database, TEST_UID, ENTRY_KEY);
+    database.seed(`credits/${TEST_UID}/balance`, 10);
+
+    const submitResponse = await app.inject({
+      method: 'POST',
+      url: '/api/reports',
+      headers: authHeader(),
+      payload: {
+        reason: 'prep_bundle',
+        entryKey: ENTRY_KEY,
+        bundleId: 'bundle-status',
+        opponentNames: BUNDLE_OPPONENT_NAMES,
+      },
+    });
+    const { jobs } = submitResponse.json() as {
+      jobs: Array<{ opponentName: string; jobId: string; slot: number }>;
+    };
+
+    // Execute only the first child, leaving the other two `queued`.
+    await app.inject({
+      method: 'POST',
+      url: '/api/reports',
+      headers: authHeader(),
+      payload: {
+        reason: 'prep_report',
+        entryKey: ENTRY_KEY,
+        opponentName: jobs[0]!.opponentName,
+        jobId: jobs[0]!.jobId,
+      },
+    });
+
+    const response = await app.inject({
+      method: 'GET',
+      url: `/api/reports/jobs?entryKey=${encodeURIComponent(ENTRY_KEY)}`,
+      headers: authHeader(),
+    });
+
+    expect(response.statusCode).toBe(200);
+    const body = response.json() as {
+      jobs: Array<{
+        opponentName: string;
+        jobId: string;
+        status: string;
+        updatedAt: number;
+        resultRef?: string;
+      }>;
+    };
+    expect(body.jobs).toHaveLength(3);
+    expect(body.jobs.map((entry) => entry.opponentName)).toEqual(['rival1', 'rival2', 'rival3']);
+    const succeededEntry = body.jobs.find((entry) => entry.opponentName === 'rival1')!;
+    expect(succeededEntry.status).toBe('succeeded');
+    expect(typeof succeededEntry.resultRef).toBe('string');
+    const queuedEntry = body.jobs.find((entry) => entry.opponentName === 'rival2')!;
+    expect(queuedEntry.status).toBe('queued');
+    expect(queuedEntry.resultRef).toBeUndefined();
+  });
+
+  it('returns an empty list for a brief with no submitted jobs', async () => {
+    const { app, database } = buildTestApp({
+      reports: NON_ALLOWLIST_CONFIG,
+      stripe: BILLING_STRIPE_CONFIG,
+      prepPaid: PREP_PAID_CONFIG,
+      parrygg: { apiKey: 'parry-key' },
+    });
+    seedBundleBrief(database, TEST_UID, ENTRY_KEY);
+
+    const response = await app.inject({
+      method: 'GET',
+      url: `/api/reports/jobs?entryKey=${encodeURIComponent(ENTRY_KEY)}`,
+      headers: authHeader(),
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({ jobs: [] });
+  });
+
+  it('returns an empty list for an entry key the caller does not own — no existence leak', async () => {
+    const { app, database } = buildTestApp({
+      reports: NON_ALLOWLIST_CONFIG,
+      stripe: BILLING_STRIPE_CONFIG,
+      prepPaid: PREP_PAID_CONFIG,
+      parrygg: { apiKey: 'parry-key' },
+    });
+    database.seed(`prepReportJobIndex/someone-else/${ENTRY_KEY}/rival1`, {
+      jobId: 'foreign-job-1',
+      updatedAt: Date.now(),
+    });
+
+    const response = await app.inject({
+      method: 'GET',
+      url: `/api/reports/jobs?entryKey=${encodeURIComponent(ENTRY_KEY)}`,
+      headers: authHeader(),
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({ jobs: [] });
+  });
+
+  it('returns the same data whether the activation gate is on or off, and refuses a NEW purchase while off (owner battery item 8)', async () => {
+    const { database } = buildTestApp({
+      reports: NON_ALLOWLIST_CONFIG,
+      stripe: BILLING_STRIPE_CONFIG,
+      prepPaid: PREP_PAID_CONFIG,
+      parrygg: { apiKey: 'parry-key' },
+    });
+    seedBundleBrief(database, TEST_UID, ENTRY_KEY);
+    database.seed(`reportJobs/${TEST_UID}/gate-off-job`, {
+      status: 'succeeded',
+      createdAt: 1,
+      updatedAt: 2,
+      attempt: 0,
+      creditRef: 'gate-off-job',
+      reason: 'prep_report',
+      resultRef: 'some-report-id',
+    });
+    database.seed(`prepReportJobIndex/${TEST_UID}/${ENTRY_KEY}/rival1`, {
+      jobId: 'gate-off-job',
+      updatedAt: 2,
+    });
+
+    // A SECOND app instance pointed at the SAME database, built WITHOUT the
+    // paid-prep config — simulating the owner flipping the gate off after
+    // this job was already created.
+    const auth = new FakeAuth();
+    auth.registerToken(TEST_TOKEN, { uid: TEST_UID, email: TEST_EMAIL });
+    const gateOffApp = buildApp({
+      firebase: {
+        app: {} as never,
+        auth: auth as unknown as Auth,
+        database: database as unknown as Database,
+      },
+      logger: false,
+      reports: NON_ALLOWLIST_CONFIG,
+      stripe: BILLING_STRIPE_CONFIG,
+      parrygg: { apiKey: 'parry-key' },
+      // prepPaid deliberately omitted — the gate is off.
+    });
+
+    const statusResponse = await gateOffApp.inject({
+      method: 'GET',
+      url: `/api/reports/jobs?entryKey=${encodeURIComponent(ENTRY_KEY)}`,
+      headers: authHeader(),
+    });
+    expect(statusResponse.statusCode).toBe(200);
+    expect(statusResponse.json()).toEqual({
+      jobs: [
+        {
+          opponentName: 'rival1',
+          jobId: 'gate-off-job',
+          status: 'succeeded',
+          updatedAt: 2,
+          resultRef: 'some-report-id',
+        },
+      ],
+    });
+
+    const newPurchaseResponse = await gateOffApp.inject({
+      method: 'POST',
+      url: '/api/reports',
+      headers: authHeader(),
+      payload: {
+        reason: 'prep_report',
+        entryKey: ENTRY_KEY,
+        opponentName: 'rival2',
+        jobId: 'new-attempt-while-gate-off',
+      },
+    });
+    expect(newPurchaseResponse.statusCode).toBe(503);
+  });
+
+  it('skips an index pointer whose job node has disappeared, returning 200 with the remaining entries', async () => {
+    const { app, database } = buildTestApp({
+      reports: NON_ALLOWLIST_CONFIG,
+      stripe: BILLING_STRIPE_CONFIG,
+      prepPaid: PREP_PAID_CONFIG,
+      parrygg: { apiKey: 'parry-key' },
+    });
+    database.seed(`prepReportJobIndex/${TEST_UID}/${ENTRY_KEY}/rival1`, {
+      jobId: 'missing-job',
+      updatedAt: 1,
+    });
+    database.seed(`prepReportJobIndex/${TEST_UID}/${ENTRY_KEY}/rival2`, {
+      jobId: 'present-job',
+      updatedAt: 2,
+    });
+    database.seed(`reportJobs/${TEST_UID}/present-job`, {
+      status: 'queued',
+      createdAt: 1,
+      updatedAt: 2,
+      attempt: 0,
+      creditRef: 'present-job',
+      reason: 'prep_report',
+    });
+
+    const response = await app.inject({
+      method: 'GET',
+      url: `/api/reports/jobs?entryKey=${encodeURIComponent(ENTRY_KEY)}`,
+      headers: authHeader(),
+    });
+
+    expect(response.statusCode).toBe(200);
+    const body = response.json() as { jobs: Array<{ opponentName: string; jobId: string }> };
+    expect(body.jobs).toEqual([
+      { opponentName: 'rival2', jobId: 'present-job', status: 'queued', updatedAt: 2 },
+    ]);
+  });
+
+  it('performs zero writes', async () => {
+    const { app, database } = buildTestApp({
+      reports: NON_ALLOWLIST_CONFIG,
+      stripe: BILLING_STRIPE_CONFIG,
+      prepPaid: PREP_PAID_CONFIG,
+      parrygg: { apiKey: 'parry-key' },
+    });
+    seedBundleBrief(database, TEST_UID, ENTRY_KEY);
+    database.seed(`prepReportJobIndex/${TEST_UID}/${ENTRY_KEY}/rival1`, {
+      jobId: 'some-job',
+      updatedAt: 1,
+    });
+    database.seed(`reportJobs/${TEST_UID}/some-job`, {
+      status: 'queued',
+      createdAt: 1,
+      updatedAt: 1,
+      attempt: 0,
+      creditRef: 'some-job',
+      reason: 'prep_report',
+    });
+    const before = JSON.stringify(database.dump());
+
+    const response = await app.inject({
+      method: 'GET',
+      url: `/api/reports/jobs?entryKey=${encodeURIComponent(ENTRY_KEY)}`,
+      headers: authHeader(),
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(JSON.stringify(database.dump())).toEqual(before);
+  });
+
+  it('is refused for a caller who cannot read reports, using the same rule the existing read routes use', async () => {
+    const { app } = buildTestApp({
+      reports: NON_ALLOWLIST_CONFIG,
+      prepPaid: PREP_PAID_CONFIG,
+      parrygg: { apiKey: 'parry-key' },
+      // stripe deliberately omitted — canReadReports is false for a
+      // non-allowlisted uid with no billing configured.
+    });
+
+    const response = await app.inject({
+      method: 'GET',
+      url: `/api/reports/jobs?entryKey=${encodeURIComponent(ENTRY_KEY)}`,
+      headers: authHeader(),
+    });
+
+    expect(response.statusCode).toBe(403);
   });
 });
