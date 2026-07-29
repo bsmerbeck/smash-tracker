@@ -3,6 +3,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import type { PrepPaidConfig, StartggConfig, ReportsConfig, StripeConfig } from '../config/env.js';
 import type { AnthropicLikeClient } from '../reports/generate.js';
 import type { ParryggClients } from '../parrygg/client.js';
+import type { FakeDatabase } from '../test-support/fakeDatabase.js';
 import { authHeader, buildTestApp, TEST_UID } from '../test-support/testApp.js';
 
 const STARTGG_CONFIG: StartggConfig = {
@@ -1728,6 +1729,520 @@ describe('paid prep activation gate (RPT-04)', () => {
         headers: authHeader(),
       });
       expect(singleResponse.statusCode).toBe(200);
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Phase 27 (Task 2/3): job terminal states + the prep-single report branch.
+// ---------------------------------------------------------------------------
+
+/** Seeds `prepBriefs/{uid}/{entryKey}` directly, matching `prepBriefRecordSchema`'s stored shape. */
+function seedPrepBrief(
+  database: FakeDatabase,
+  uid: string,
+  entryKey: string,
+  params: {
+    likelyOpponents?: Record<string, true>;
+    scoutBindings?: Record<string, Record<string, unknown>>;
+  } = {},
+): void {
+  database.seed(`prepBriefs/${uid}/${entryKey}`, {
+    eventDate: 1_700_000_000_000,
+    activatedAt: 1_700_000_000_000,
+    lastOpenedAt: 1_700_000_000_000,
+    ...(params.likelyOpponents ? { likelyOpponents: params.likelyOpponents } : {}),
+    ...(params.scoutBindings ? { scoutBindings: params.scoutBindings } : {}),
+  });
+}
+
+/**
+ * Wraps `database.ref` to record the order writes are issued in — the
+ * refund-ordering test below is the ONE place this is needed: proving
+ * `failed` is written, then the refund transaction commits, then `refunded`
+ * is written, never any other order.
+ */
+function trackWrites(database: FakeDatabase): string[] {
+  const writes: string[] = [];
+  const originalRef = database.ref.bind(database);
+  vi.spyOn(database, 'ref').mockImplementation((path?: string) => {
+    const ref = originalRef(path);
+    return {
+      ...ref,
+      set: async (value: unknown) => {
+        const status = (value as { status?: string } | null)?.status;
+        writes.push(`set:${path ?? ''}${status ? `#${status}` : ''}`);
+        return ref.set(value);
+      },
+      update: async (values: Record<string, unknown>) => {
+        writes.push(`update:${path ?? ''}`);
+        return ref.update(values);
+      },
+      transaction: async (fn: (current: unknown) => unknown) => {
+        writes.push(`transaction:${path ?? ''}`);
+        return ref.transaction(fn);
+      },
+    };
+  });
+  return writes;
+}
+
+/** Reads every `eventLedger` row for `eventName` out of a raw database dump. */
+function findEvents(
+  database: FakeDatabase,
+  eventName: string,
+): Array<{ payload: Record<string, unknown> }> {
+  const dump = database.dump() as Record<string, unknown>;
+  const eventLedger = (dump.eventLedger ?? {}) as Record<string, Record<string, unknown>>;
+  const results: Array<{ payload: Record<string, unknown> }> = [];
+  for (const dayBucket of Object.values(eventLedger)) {
+    for (const event of Object.values(dayBucket)) {
+      const e = event as { eventName?: string; payload?: Record<string, unknown> };
+      if (e.eventName === eventName) {
+        results.push({ payload: e.payload ?? {} });
+      }
+    }
+  }
+  return results;
+}
+
+describe('report job terminal states (RPT-03)', () => {
+  const PREP_PAID_CONFIG: PrepPaidConfig = { enabled: true };
+  const NON_ALLOWLIST_CONFIG: ReportsConfig = {
+    anthropicApiKey: 'sk-test-key',
+    allowedUids: new Set(['someone-else']),
+  };
+  const BILLING_STRIPE_CONFIG: StripeConfig = {
+    secretKey: 'sk-test-123',
+    webhookSecret: 'whsec-test-456',
+  };
+  const ENTRY_KEY = 'evo-2026-ult';
+  const OPPONENT_NAME = 'rival';
+  const PARRY_BINDING_RECORD = {
+    provider: 'parrygg',
+    parryUserId: PARRY_USER_ID,
+    displayTag: 'Pandem1c',
+    method: 'matchHistory',
+    confirmedAt: 1,
+  };
+
+  it('a prep job that fails after a credit was spent transitions failed -> refund -> refunded, in that order, refunding exactly once', async () => {
+    const { app, database } = buildTestApp({
+      reports: NON_ALLOWLIST_CONFIG,
+      stripe: BILLING_STRIPE_CONFIG,
+      prepPaid: PREP_PAID_CONFIG,
+      reportsClient: stubClient(async () => ({ stop_reason: 'refusal', parsed_output: null })),
+      parrygg: { apiKey: 'parry-key' },
+      parryggClients: parryClients({
+        getUser: () => ({ id: PARRY_USER_ID, gamerTag: 'Pandem1c' }),
+      }),
+    });
+    seedPrepBrief(database, TEST_UID, ENTRY_KEY, {
+      likelyOpponents: { [OPPONENT_NAME]: true },
+      scoutBindings: { [OPPONENT_NAME]: PARRY_BINDING_RECORD },
+    });
+    database.seed(`credits/${TEST_UID}/balance`, 1);
+
+    const writes = trackWrites(database);
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/reports',
+      headers: authHeader(),
+      payload: {
+        reason: 'prep_report',
+        entryKey: ENTRY_KEY,
+        opponentName: OPPONENT_NAME,
+        jobId: 'prep-job-refund-order',
+      },
+    });
+
+    expect(response.statusCode).toBe(502);
+
+    const jobSnapshot = await database.ref(`reportJobs/${TEST_UID}/prep-job-refund-order`).get();
+    expect(jobSnapshot.val()).toMatchObject({ status: 'refunded', reason: 'prep_report' });
+
+    const balance = await database.ref(`credits/${TEST_UID}/balance`).get();
+    expect(balance.val()).toBe(1);
+
+    const ledger = (database.dump() as Record<string, unknown>).creditLedger as Record<
+      string,
+      Record<string, unknown>
+    >;
+    const refundEntries = Object.values(ledger[TEST_UID]!).filter(
+      (entry) => (entry as { type: string }).type === 'refund',
+    );
+    expect(refundEntries).toHaveLength(1);
+
+    const failedIndex = writes.indexOf(`set:reportJobs/${TEST_UID}/prep-job-refund-order#failed`);
+    const refundedIndex = writes.indexOf(
+      `set:reportJobs/${TEST_UID}/prep-job-refund-order#refunded`,
+    );
+    // The credit's balance node sees TWO transactions in this flow — the
+    // up-front spend, then the refund — so find the one that happens AFTER
+    // the failed-status write, not the first one overall (which is the
+    // spend).
+    const refundTransactionIndex = writes.findIndex(
+      (entry, index) =>
+        index > failedIndex && entry.startsWith(`transaction:credits/${TEST_UID}/balance`),
+    );
+    expect(failedIndex).toBeGreaterThan(-1);
+    expect(refundedIndex).toBeGreaterThan(-1);
+    expect(refundTransactionIndex).toBeGreaterThan(-1);
+    expect(failedIndex).toBeLessThan(refundTransactionIndex);
+    expect(refundTransactionIndex).toBeLessThan(refundedIndex);
+  });
+
+  it('a prep job that fails for a free-access (allowlisted) uid stays failed and no refund occurs', async () => {
+    const { app, database } = buildTestApp({
+      reports: REPORTS_CONFIG,
+      prepPaid: PREP_PAID_CONFIG,
+      reportsClient: stubClient(async () => ({ stop_reason: 'refusal', parsed_output: null })),
+      parrygg: { apiKey: 'parry-key' },
+      parryggClients: parryClients({
+        getUser: () => ({ id: PARRY_USER_ID, gamerTag: 'Pandem1c' }),
+      }),
+    });
+    seedPrepBrief(database, TEST_UID, ENTRY_KEY, {
+      likelyOpponents: { [OPPONENT_NAME]: true },
+      scoutBindings: { [OPPONENT_NAME]: PARRY_BINDING_RECORD },
+    });
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/reports',
+      headers: authHeader(),
+      payload: {
+        reason: 'prep_report',
+        entryKey: ENTRY_KEY,
+        opponentName: OPPONENT_NAME,
+        jobId: 'prep-job-free',
+      },
+    });
+
+    expect(response.statusCode).toBe(502);
+    const jobSnapshot = await database.ref(`reportJobs/${TEST_UID}/prep-job-free`).get();
+    expect(jobSnapshot.val()).toMatchObject({ status: 'failed', reason: 'prep_report' });
+
+    const dump = database.dump() as Record<string, unknown>;
+    expect(dump.creditLedger).toBeUndefined();
+    const balance = await database.ref(`credits/${TEST_UID}/balance`).get();
+    expect(balance.exists()).toBe(false);
+  });
+
+  it('a legacy, non-prep job that fails stays failed exactly as today — never refunded, no reason key', async () => {
+    const { app, database } = buildTestApp({
+      startgg: STARTGG_CONFIG,
+      startggFetch: scoutFetchMock(),
+      reports: NON_ALLOWLIST_CONFIG,
+      stripe: BILLING_STRIPE_CONFIG,
+      reportsClient: stubClient(async () => ({ stop_reason: 'refusal', parsed_output: null })),
+    });
+    database.seed(`credits/${TEST_UID}/balance`, 1);
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/reports',
+      headers: authHeader(),
+      payload: { query: 'user/07dc2239', jobId: 'legacy-job-terminal' },
+    });
+
+    expect(response.statusCode).toBe(502);
+    const jobSnapshot = await database.ref(`reportJobs/${TEST_UID}/legacy-job-terminal`).get();
+    const job = jobSnapshot.val() as Record<string, unknown>;
+    expect(job.status).toBe('failed');
+    expect(job).not.toHaveProperty('reason');
+
+    const balance = await database.ref(`credits/${TEST_UID}/balance`).get();
+    expect(balance.val()).toBe(1);
+  });
+
+  it('the reportJobsByDay entry for a failed prep job records the failed terminal, not refunded', async () => {
+    const { app, database } = buildTestApp({
+      reports: NON_ALLOWLIST_CONFIG,
+      stripe: BILLING_STRIPE_CONFIG,
+      prepPaid: PREP_PAID_CONFIG,
+      reportsClient: stubClient(async () => ({ stop_reason: 'refusal', parsed_output: null })),
+      parrygg: { apiKey: 'parry-key' },
+      parryggClients: parryClients({
+        getUser: () => ({ id: PARRY_USER_ID, gamerTag: 'Pandem1c' }),
+      }),
+    });
+    seedPrepBrief(database, TEST_UID, ENTRY_KEY, {
+      likelyOpponents: { [OPPONENT_NAME]: true },
+      scoutBindings: { [OPPONENT_NAME]: PARRY_BINDING_RECORD },
+    });
+    database.seed(`credits/${TEST_UID}/balance`, 1);
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/reports',
+      headers: authHeader(),
+      payload: {
+        reason: 'prep_report',
+        entryKey: ENTRY_KEY,
+        opponentName: OPPONENT_NAME,
+        jobId: 'prep-job-day-shard',
+      },
+    });
+    expect(response.statusCode).toBe(502);
+
+    const dump = database.dump() as Record<string, unknown>;
+    const byDay = dump.reportJobsByDay as Record<string, Record<string, unknown>>;
+    const entries = Object.values(byDay).flatMap((bucket) => Object.entries(bucket));
+    const jobEntry = entries.find(([jobId]) => jobId === 'prep-job-day-shard');
+    expect(jobEntry?.[1]).toMatchObject({ status: 'failed' });
+  });
+});
+
+describe('prep single report (RPT-01)', () => {
+  const PREP_PAID_CONFIG: PrepPaidConfig = { enabled: true };
+  const NON_ALLOWLIST_CONFIG: ReportsConfig = {
+    anthropicApiKey: 'sk-test-key',
+    allowedUids: new Set(['someone-else']),
+  };
+  const BILLING_STRIPE_CONFIG: StripeConfig = {
+    secretKey: 'sk-test-123',
+    webhookSecret: 'whsec-test-456',
+  };
+  const ENTRY_KEY = 'evo-2026-ult';
+  const OPPONENT_NAME = 'rival';
+  const PARRY_BINDING_RECORD = {
+    provider: 'parrygg',
+    parryUserId: PARRY_USER_ID,
+    displayTag: 'Pandem1c',
+    method: 'matchHistory',
+    confirmedAt: 1,
+  };
+  const PREP_PAYLOAD = {
+    reason: 'prep_report' as const,
+    entryKey: ENTRY_KEY,
+    opponentName: OPPONENT_NAME,
+    jobId: 'prep-single-job',
+  };
+
+  function billableApp(overrides: Partial<Parameters<typeof buildTestApp>[0]> = {}) {
+    return buildTestApp({
+      reports: NON_ALLOWLIST_CONFIG,
+      stripe: BILLING_STRIPE_CONFIG,
+      prepPaid: PREP_PAID_CONFIG,
+      reportsClient: stubClient(async () => ({
+        stop_reason: 'end_turn',
+        parsed_output: VALID_REPORT,
+      })),
+      parrygg: { apiKey: 'parry-key' },
+      parryggClients: parryClients({
+        getUser: () => ({ id: PARRY_USER_ID, gamerTag: 'Pandem1c' }),
+      }),
+      ...overrides,
+    });
+  }
+
+  it('answers 404 before any spend, job write, or model call when the caller has no such brief', async () => {
+    const modelSpy = vi.fn(async () => ({
+      stop_reason: 'end_turn' as const,
+      parsed_output: VALID_REPORT,
+    }));
+    const { app, database } = billableApp({ reportsClient: stubClient(modelSpy) });
+    database.seed(`credits/${TEST_UID}/balance`, 3);
+    const before = JSON.stringify(database.dump());
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/reports',
+      headers: authHeader(),
+      payload: PREP_PAYLOAD,
+    });
+
+    expect(response.statusCode).toBe(404);
+    expect(JSON.stringify(database.dump())).toEqual(before);
+    expect(modelSpy).not.toHaveBeenCalled();
+  });
+
+  it('answers 400 before any spend, job write, or model call when the opponent is not currently curated', async () => {
+    const modelSpy = vi.fn(async () => ({
+      stop_reason: 'end_turn' as const,
+      parsed_output: VALID_REPORT,
+    }));
+    const { app, database } = billableApp({ reportsClient: stubClient(modelSpy) });
+    seedPrepBrief(database, TEST_UID, ENTRY_KEY, { likelyOpponents: { someoneElse: true } });
+    database.seed(`credits/${TEST_UID}/balance`, 3);
+    const before = JSON.stringify(database.dump());
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/reports',
+      headers: authHeader(),
+      payload: PREP_PAYLOAD,
+    });
+
+    expect(response.statusCode).toBe(400);
+    expect(JSON.stringify(database.dump())).toEqual(before);
+    expect(modelSpy).not.toHaveBeenCalled();
+  });
+
+  it('answers 409 before any spend, job write, or model call when there is no confirmed, report-ready binding', async () => {
+    const modelSpy = vi.fn(async () => ({
+      stop_reason: 'end_turn' as const,
+      parsed_output: VALID_REPORT,
+    }));
+    const { app, database } = billableApp({ reportsClient: stubClient(modelSpy) });
+    seedPrepBrief(database, TEST_UID, ENTRY_KEY, { likelyOpponents: { [OPPONENT_NAME]: true } });
+    database.seed(`credits/${TEST_UID}/balance`, 3);
+    const before = JSON.stringify(database.dump());
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/reports',
+      headers: authHeader(),
+      payload: PREP_PAYLOAD,
+    });
+
+    expect(response.statusCode).toBe(409);
+    expect(JSON.stringify(database.dump())).toEqual(before);
+    expect(modelSpy).not.toHaveBeenCalled();
+  });
+
+  it('spends exactly one credit, creates one job carrying the prep reason, writes the index pointer, and returns the stored report', async () => {
+    const { app, database } = billableApp();
+    seedPrepBrief(database, TEST_UID, ENTRY_KEY, {
+      likelyOpponents: { [OPPONENT_NAME]: true },
+      scoutBindings: { [OPPONENT_NAME]: PARRY_BINDING_RECORD },
+    });
+    database.seed(`credits/${TEST_UID}/balance`, 3);
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/reports',
+      headers: authHeader(),
+      payload: PREP_PAYLOAD,
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({ report: STORED_VALID_REPORT });
+
+    const balance = await database.ref(`credits/${TEST_UID}/balance`).get();
+    expect(balance.val()).toBe(2);
+
+    const dump = database.dump() as Record<string, unknown>;
+    const reportJobs = dump.reportJobs as Record<string, Record<string, unknown>>;
+    expect(Object.keys(reportJobs[TEST_UID]!)).toEqual([PREP_PAYLOAD.jobId]);
+    expect(reportJobs[TEST_UID]![PREP_PAYLOAD.jobId]).toMatchObject({
+      status: 'succeeded',
+      reason: 'prep_report',
+    });
+
+    const indexSnapshot = await database
+      .ref(`prepReportJobIndex/${TEST_UID}/${ENTRY_KEY}/${OPPONENT_NAME}`)
+      .get();
+    expect(indexSnapshot.val()).toMatchObject({ jobId: PREP_PAYLOAD.jobId });
+  });
+
+  it('an allowlisted uid gets the same report with zero credit movement (owner battery item 9)', async () => {
+    const { app, database } = buildTestApp({
+      reports: REPORTS_CONFIG,
+      prepPaid: PREP_PAID_CONFIG,
+      reportsClient: stubClient(async () => ({
+        stop_reason: 'end_turn',
+        parsed_output: VALID_REPORT,
+      })),
+      parrygg: { apiKey: 'parry-key' },
+      parryggClients: parryClients({
+        getUser: () => ({ id: PARRY_USER_ID, gamerTag: 'Pandem1c' }),
+      }),
+    });
+    seedPrepBrief(database, TEST_UID, ENTRY_KEY, {
+      likelyOpponents: { [OPPONENT_NAME]: true },
+      scoutBindings: { [OPPONENT_NAME]: PARRY_BINDING_RECORD },
+    });
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/reports',
+      headers: authHeader(),
+      payload: PREP_PAYLOAD,
+    });
+
+    expect(response.statusCode).toBe(200);
+    const balance = await database.ref(`credits/${TEST_UID}/balance`).get();
+    expect(balance.exists()).toBe(false);
+    const dump = database.dump() as Record<string, unknown>;
+    expect(dump.creditLedger).toBeUndefined();
+  });
+
+  it('refunds the credit and reaches the refunded terminal when the live provider lookup fails at generation time', async () => {
+    const { app, database } = billableApp({
+      parryggClients: parryClients({ getUser: () => null }),
+    });
+    seedPrepBrief(database, TEST_UID, ENTRY_KEY, {
+      likelyOpponents: { [OPPONENT_NAME]: true },
+      scoutBindings: { [OPPONENT_NAME]: PARRY_BINDING_RECORD },
+    });
+    database.seed(`credits/${TEST_UID}/balance`, 1);
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/reports',
+      headers: authHeader(),
+      payload: PREP_PAYLOAD,
+    });
+
+    expect(response.statusCode).toBe(404);
+    const jobSnapshot = await database.ref(`reportJobs/${TEST_UID}/${PREP_PAYLOAD.jobId}`).get();
+    expect(jobSnapshot.val()).toMatchObject({ status: 'refunded', reason: 'prep_report' });
+    const balance = await database.ref(`credits/${TEST_UID}/balance`).get();
+    expect(balance.val()).toBe(1);
+  });
+
+  it('the index pointer resolves to the created job id and survives a subsequent successful re-read', async () => {
+    const { app, database } = billableApp();
+    seedPrepBrief(database, TEST_UID, ENTRY_KEY, {
+      likelyOpponents: { [OPPONENT_NAME]: true },
+      scoutBindings: { [OPPONENT_NAME]: PARRY_BINDING_RECORD },
+    });
+    database.seed(`credits/${TEST_UID}/balance`, 3);
+
+    await app.inject({
+      method: 'POST',
+      url: '/api/reports',
+      headers: authHeader(),
+      payload: PREP_PAYLOAD,
+    });
+
+    const indexSnapshotBefore = await database
+      .ref(`prepReportJobIndex/${TEST_UID}/${ENTRY_KEY}/${OPPONENT_NAME}`)
+      .get();
+    expect(indexSnapshotBefore.val()).toMatchObject({ jobId: PREP_PAYLOAD.jobId });
+
+    const jobStatus = await database.ref(`reportJobs/${TEST_UID}/${PREP_PAYLOAD.jobId}`).get();
+    expect(jobStatus.val()).toMatchObject({ status: 'succeeded' });
+
+    const indexSnapshotAfter = await database
+      .ref(`prepReportJobIndex/${TEST_UID}/${ENTRY_KEY}/${OPPONENT_NAME}`)
+      .get();
+    expect(indexSnapshotAfter.val()).toMatchObject({ jobId: PREP_PAYLOAD.jobId });
+  });
+
+  it('prep report_* event payloads carry exactly the enum reason and nothing else', async () => {
+    const { app, database } = billableApp();
+    seedPrepBrief(database, TEST_UID, ENTRY_KEY, {
+      likelyOpponents: { [OPPONENT_NAME]: true },
+      scoutBindings: { [OPPONENT_NAME]: PARRY_BINDING_RECORD },
+    });
+    database.seed(`credits/${TEST_UID}/balance`, 3);
+
+    await app.inject({
+      method: 'POST',
+      url: '/api/reports',
+      headers: authHeader(),
+      payload: PREP_PAYLOAD,
+    });
+
+    for (const eventName of ['report_started', 'report_completed']) {
+      const events = findEvents(database, eventName);
+      expect(events).toHaveLength(1);
+      expect(Object.keys(events[0]!.payload)).toEqual(['reason']);
+      expect(events[0]!.payload.reason).toBe('prep_report');
     }
   });
 });

@@ -4,10 +4,15 @@ import { z } from 'zod';
 import {
   errorResponseSchema,
   generateReportRequestSchema,
+  isReportReadyBinding,
   reportJobSchema,
   reportsConfigSchema,
   scoutReportRecordSchema,
+  type PrepReportReason,
   type ReportJob,
+  type ScoutBinding,
+  type ScoutReportData,
+  type StoredScoutReport,
 } from '@smash-tracker/shared';
 import type {
   ParryggConfig,
@@ -17,7 +22,13 @@ import type {
   StripeConfig,
 } from '../config/env.js';
 import { StartggApiError } from '../startgg/client.js';
-import { parseScoutInput, ScoutCache, ScoutInputError, scoutPlayer } from '../startgg/scout.js';
+import {
+  parseScoutInput,
+  ScoutCache,
+  ScoutInputError,
+  scoutPlayer,
+  type ScoutInput,
+} from '../startgg/scout.js';
 import { parseParryProfileUrl, ParryScoutCache, scoutParryPlayer } from '../parrygg/scout.js';
 import type { ParryggClients } from '../parrygg/client.js';
 import { resolveCombinedScout } from '../scout/combine.js';
@@ -31,6 +42,11 @@ import {
 import { refundCredit, spendCredit } from '../billing/credits.js';
 import { createEvent, dayShardKey } from '../events/ledger.js';
 import { buildBillingEnvelope } from '../events/envelope.js';
+// Phase 27 (RPT-01, Task 3): the ONE symbol the reports layer imports from
+// the prep module — a deliberately ONE-WAY dependency (27-CONTEXT.md line
+// 65). Nothing inside apps/api/src/prep/ imports back from reports, billing,
+// or Anthropic (see prep/importGraph.test.ts, byte-unchanged by this plan).
+import { readPrepBrief } from '../prep/prep.js';
 
 /**
  * BILL-06/MEAS-03 (Phase 10): a `running` report job older than this is
@@ -69,6 +85,42 @@ const reportIdParamsSchema = z.object({
   id: z.string().min(1),
 });
 
+// ---------------------------------------------------------------------------
+// Phase 27 (Task 2): shared types for the reusable generation internal
+// ---------------------------------------------------------------------------
+
+/**
+ * One `POST /reports` failure reply shape — `status`/`error`/`message` map
+ * directly onto the Fastify reply the route sends. Used for BOTH a failed
+ * scout resolution (404/429/503) and a failed model/storage step (429/502) —
+ * one type, reused, so the route has exactly one translation site.
+ */
+interface ReportFailureReply {
+  status: 404 | 429 | 502 | 503;
+  error: string;
+  message: string;
+}
+
+type ScoutResolutionOutcome =
+  { ok: true; scout: ScoutReportData } | { ok: false; failure: ReportFailureReply };
+
+interface GeneratedReportRecord {
+  id: string;
+  createdAt: number;
+  model: string;
+  player: ScoutReportData['player'];
+  report: StoredScoutReport;
+}
+
+type GenerationOutcome =
+  { ok: true; record: GeneratedReportRecord } | { ok: false; failure: ReportFailureReply };
+
+/** The minimal request surface `failJob`/`runReportGeneration` need — deliberately narrow so it's obvious neither depends on Fastify's full request type. */
+interface ReportRequestContext {
+  uid: string;
+  log: { error(obj: Record<string, unknown>, msg: string): void };
+}
+
 /**
  * /api/reports — AI-generated pre-bracket scouting reports (V7-B), layered on
  * top of the V7-A scout data layer. Requires BOTH `config` (Claude API key +
@@ -98,15 +150,27 @@ const reportIdParamsSchema = z.object({
  *
  * BILL-06/MEAS-03 (Phase 10): generation is wrapped in a durable
  * `reportJobs/{uid}/{jobId}` state machine (`queued -> running -> succeeded |
- * failed`), keyed on a client-supplied (or server-generated fallback) jobId.
- * `creditRef` is the jobId itself — no separate `reports:${uid}:` ref — so
- * `credit_spent`/`credit_refunded` ledger entries and the `report_started` /
- * `report_completed` / `report_failed` B events all correlate on the same
- * key. A retry with a jobId that already `succeeded` returns the cached
- * result without spending a credit or calling Anthropic again; a retry
- * against a `running` job within the staleness window 409s instead of
- * double-generating. Execution itself stays synchronous-in-request per
- * STACK.md — only the STATE is durable.
+ * failed | refunded`), keyed on a client-supplied (or server-generated
+ * fallback) jobId. `creditRef` is the jobId itself — no separate
+ * `reports:${uid}:` ref — so `credit_spent`/`credit_refunded` ledger entries
+ * and the `report_started` / `report_completed` / `report_failed` B events
+ * all correlate on the same key. A retry with a jobId that already
+ * `succeeded` returns the cached result without spending a credit or calling
+ * Anthropic again; a retry against a `running` job within the staleness
+ * window 409s instead of double-generating. Execution itself stays
+ * synchronous-in-request per STACK.md — only the STATE is durable.
+ *
+ * Phase 27 (RPT-01, Task 2/3): `POST /reports` is now a backward-compatible
+ * request union — a legacy request (no `reason`) is completely unchanged,
+ * and a `reason: 'prep_report'` request buys ONE curated opponent's report
+ * through the SAME generation pipeline, grounded in a server-reloaded
+ * `scoutBinding` rather than a client-supplied query. `runReportGeneration`
+ * below (27-CONTEXT.md line 47 — "refactor the existing single-report
+ * execution into a reusable internal function; do NOT duplicate its model or
+ * storage pipeline") is the ONE place both branches actually generate and
+ * store a report — a second generation path here (a copied model call, a
+ * copied storage step, or a copied job state machine) is the specific
+ * failure this extraction exists to prevent.
  */
 const reportsRoutes: FastifyPluginAsyncZod<ReportsRoutesOptions> = async (app, options) => {
   const { config, startggConfig, stripeConfig, parryggConfig, prepPaidConfig } = options;
@@ -147,6 +211,480 @@ const reportsRoutes: FastifyPluginAsyncZod<ReportsRoutesOptions> = async (app, o
     config.allowedUids.has(uid) || stripeConfig !== null;
 
   app.addHook('preHandler', app.authenticate);
+
+  /**
+   * BILL-06/MEAS-03: single failure path for every failure/refund site in
+   * the plugin, parameterized (Task 2) instead of closing over one
+   * handler's locals — so both call sites of `runReportGeneration` below
+   * and a future bundle child (27-08) can reuse it verbatim.
+   *
+   * Phase 27 (RPT-03): also writes the `refunded` terminal transition,
+   * INSIDE this function, after the refund resolves, and ONLY when a
+   * credit was actually refunded AND the job carries a prep `reason`:
+   * - It happens strictly after `refundCredit` commits, never before, so a
+   *   player never observes "refunded" while their balance is still short
+   *   (27-CONTEXT.md line 56).
+   * - It is scoped to prep jobs so legacy job behavior stays byte-identical
+   *   — a legacy job's terminal status is always `failed`, never `refunded`.
+   * - `reportJobsByDay`'s shard value keeps recording `failed`, NOT
+   *   `refunded`, so the open reconciliation soak's day-shard tallies
+   *   (STATE.md's Aug-2 blocker) are unperturbed by this addition.
+   */
+  async function failJob(params: {
+    uid: string;
+    jobId: string;
+    creditRef: string;
+    spent: boolean;
+    reason?: PrepReportReason;
+    createdAt: number;
+    attempt: number;
+    /** The day shard the running transition (if reached) already wrote to; null when the job never left `queued`. */
+    day: string | null;
+  }): Promise<void> {
+    const { uid, jobId, creditRef, spent, reason, createdAt, attempt, day } = params;
+    const jobRef = app.firebase.database.ref(`reportJobs/${uid}/${jobId}`);
+    const now = Date.now();
+    await jobRef.set(
+      reportJobSchema.parse({
+        status: 'failed',
+        createdAt,
+        updatedAt: now,
+        attempt,
+        creditRef,
+        ...(reason ? { reason } : {}),
+      }),
+    );
+    const resolvedDay = day ?? dayShardKey(now);
+    await app.firebase.database.ref().update({
+      [`reportJobsByStatus/running/${uid}/${jobId}`]: null,
+      [`reportJobsByDay/${resolvedDay}/${jobId}`]: { uid, status: 'failed' },
+    });
+    if (spent) {
+      await refundCredit(app.firebase.database, uid, creditRef);
+      if (reason) {
+        await jobRef.set(
+          reportJobSchema.parse({
+            status: 'refunded',
+            createdAt,
+            updatedAt: Date.now(),
+            attempt,
+            creditRef,
+            reason,
+          }),
+        );
+      }
+    }
+    void createEvent(
+      app.firebase.database,
+      buildBillingEnvelope({
+        eventName: 'report_failed',
+        source: 'job',
+        actorId: uid,
+        sessionId: uid,
+        causationId: `${jobId}:report_failed`,
+        consentState: 'unknown',
+        payload: reason ? { reason } : {},
+      }),
+    );
+  }
+
+  /**
+   * Phase 27 (Task 2): the ONE reusable generation internal — payload
+   * assembly through the succeeded transition — shared by the legacy branch
+   * and the prep-single branch (Task 3) of `POST /reports`. Deliberately
+   * does NOT own the queued write, the spend decision, or any request-shape
+   * pre-check — those differ per branch and stay in the handler. Returns
+   * either the stored report record, or a typed failure the route
+   * translates into the exact reply the caller already produced (each
+   * `resolveScout` implementation owns its own status/error/message so this
+   * function stays branch-agnostic).
+   */
+  async function runReportGeneration(params: {
+    request: ReportRequestContext;
+    jobId: string;
+    creditRef: string;
+    spent: boolean;
+    jobCreatedAt: number;
+    jobAttempt: number;
+    reason?: PrepReportReason;
+    resolveScout: () => Promise<ScoutResolutionOutcome>;
+    payloadOptions?: { binding?: ScoutBinding; curatedCanonicalName?: string };
+  }): Promise<GenerationOutcome> {
+    const {
+      request,
+      jobId,
+      creditRef,
+      spent,
+      jobCreatedAt,
+      jobAttempt,
+      reason,
+      resolveScout,
+      payloadOptions,
+    } = params;
+    const jobRef = app.firebase.database.ref(`reportJobs/${request.uid}/${jobId}`);
+
+    const scoutOutcome = await resolveScout();
+    if (!scoutOutcome.ok) {
+      return { ok: false, failure: scoutOutcome.failure };
+    }
+    const scout = scoutOutcome.scout;
+
+    const payload = await assembleReportPayload(
+      request.uid,
+      scout,
+      app.firebase.database,
+      payloadOptions,
+    );
+
+    // BILL-06/MEAS-03: transition to `running` immediately before the
+    // Claude call — this is the durable "generation is genuinely in-flight"
+    // marker the staleness check in the handler and the stuck-job sweep (a
+    // later plan) rely on. `jobDay` is captured so every terminal
+    // transition below clears the SAME day shard this write touches.
+    const runningAt = Date.now();
+    const jobDay = dayShardKey(runningAt);
+    await jobRef.set(
+      reportJobSchema.parse({
+        status: 'running',
+        createdAt: jobCreatedAt,
+        updatedAt: runningAt,
+        attempt: jobAttempt,
+        creditRef,
+        ...(reason ? { reason } : {}),
+      }),
+    );
+    await app.firebase.database.ref().update({
+      [`reportJobsByStatus/running/${request.uid}/${jobId}`]: true,
+      [`reportJobsByDay/${jobDay}/${jobId}`]: { uid: request.uid, status: 'running' },
+    });
+    void createEvent(
+      app.firebase.database,
+      buildBillingEnvelope({
+        eventName: 'report_started',
+        source: 'job',
+        actorId: request.uid,
+        sessionId: request.uid,
+        causationId: `${jobId}:report_started`,
+        consentState: 'unknown',
+        payload: reason ? { reason } : {},
+      }),
+    );
+
+    let report;
+    try {
+      report = await generateScoutReport(client, payload);
+    } catch (err) {
+      if (err instanceof ReportGenerationError) {
+        await failJob({
+          uid: request.uid,
+          jobId,
+          creditRef,
+          spent,
+          reason,
+          createdAt: jobCreatedAt,
+          attempt: jobAttempt,
+          day: jobDay,
+        });
+        const message =
+          err.reason === 'refusal'
+            ? 'The model declined to generate a report for this request'
+            : err.reason === 'truncated'
+              ? 'Report generation was truncated — try again'
+              : 'The model returned a response that could not be parsed — try again';
+        return { ok: false, failure: { status: 502, error: 'Bad Gateway', message } };
+      }
+      if (err instanceof Anthropic.RateLimitError) {
+        await failJob({
+          uid: request.uid,
+          jobId,
+          creditRef,
+          spent,
+          reason,
+          createdAt: jobCreatedAt,
+          attempt: jobAttempt,
+          day: jobDay,
+        });
+        return {
+          ok: false,
+          failure: {
+            status: 429,
+            error: 'Too Many Requests',
+            message: 'Claude is rate-limiting requests right now — try again shortly',
+          },
+        };
+      }
+      if (err instanceof Anthropic.APIError) {
+        await failJob({
+          uid: request.uid,
+          jobId,
+          creditRef,
+          spent,
+          reason,
+          createdAt: jobCreatedAt,
+          attempt: jobAttempt,
+          day: jobDay,
+        });
+        request.log.error({ err }, 'Claude report generation failed');
+        return {
+          ok: false,
+          failure: {
+            status: 502,
+            error: 'Bad Gateway',
+            message: 'The model provider returned an error — try again shortly',
+          },
+        };
+      }
+      await failJob({
+        uid: request.uid,
+        jobId,
+        creditRef,
+        spent,
+        reason,
+        createdAt: jobCreatedAt,
+        attempt: jobAttempt,
+        day: jobDay,
+      });
+      throw err;
+    }
+
+    // RTDB deletes null-valued keys on write, so persisting the model's
+    // `headToHead: null` (a legitimate "no head-to-head history" output)
+    // would come back with the key ABSENT and previously corrupted the
+    // stored record (see storedScoutReportSchema's doc). Strip null fields
+    // before writing — house conditional-spread convention — so records
+    // are stored in exactly the shape they'll be read back in.
+    const { headToHead, ...reportRest } = report;
+    const storedReport = {
+      ...reportRest,
+      ...(headToHead !== null ? { headToHead } : {}),
+    };
+
+    const ref = app.firebase.database.ref(`scoutReports/${request.uid}`).push();
+    const record = {
+      createdAt: Date.now(),
+      model: 'claude-opus-4-8',
+      player: scout.player,
+      report: storedReport,
+    };
+    try {
+      await ref.set(record);
+    } catch (err) {
+      await failJob({
+        uid: request.uid,
+        jobId,
+        creditRef,
+        spent,
+        reason,
+        createdAt: jobCreatedAt,
+        attempt: jobAttempt,
+        day: jobDay,
+      });
+      throw err;
+    }
+
+    const id = ref.key;
+    if (!id) {
+      // The report was generated and stored — this is a server bug (push()
+      // failing to yield a key), not a failed generation, so the spent
+      // credit is NOT refunded here. The job is deliberately left in
+      // `running` rather than transitioned here — there is no resultRef to
+      // record, and the stuck-job sweep will eventually recover it.
+      throw new Error('Failed to generate a push key for the new scout report');
+    }
+
+    // BILL-06/MEAS-03: terminal success transition. Clears the `running`
+    // index (same day shard the running write used) and emits exactly one
+    // `report_completed` B event.
+    const succeededAt = Date.now();
+    await jobRef.set(
+      reportJobSchema.parse({
+        status: 'succeeded',
+        createdAt: jobCreatedAt,
+        updatedAt: succeededAt,
+        attempt: jobAttempt,
+        creditRef,
+        resultRef: id,
+        ...(reason ? { reason } : {}),
+      }),
+    );
+    await app.firebase.database.ref().update({
+      [`reportJobsByStatus/running/${request.uid}/${jobId}`]: null,
+      [`reportJobsByDay/${jobDay}/${jobId}`]: { uid: request.uid, status: 'succeeded' },
+    });
+    void createEvent(
+      app.firebase.database,
+      buildBillingEnvelope({
+        eventName: 'report_completed',
+        source: 'job',
+        actorId: request.uid,
+        sessionId: request.uid,
+        causationId: `${jobId}:report_completed`,
+        consentState: 'unknown',
+        payload: reason ? { reason } : {},
+      }),
+    );
+
+    return { ok: true, record: { id, ...record } };
+  }
+
+  /**
+   * Phase 27 (RPT-01, Task 3): builds the `resolveScout` callback for a
+   * `reason: 'prep_report'` request. Resolution is grounded ENTIRELY in the
+   * server-reloaded `binding` — the request body carries no query, source,
+   * or combineWith at all (the shared schema forbids them outright on a
+   * prep-context request; this is the runtime half of that guarantee,
+   * 27-CONTEXT.md line 102). An unresolvable lookup, a rate limit, and an
+   * unconfigured provider all map onto the SAME status codes (404/429/503)
+   * the legacy single-source branches already use below, so the web app's
+   * existing error handling for `POST /reports` needs no prep-specific
+   * branch.
+   */
+  function buildPrepResolveScout(
+    binding: ScoutBinding,
+    ctx: { uid: string; jobId: string; spent: boolean; jobCreatedAt: number; jobAttempt: number },
+  ): () => Promise<ScoutResolutionOutcome> {
+    const failCurrentJob = (): Promise<void> =>
+      failJob({
+        uid: ctx.uid,
+        jobId: ctx.jobId,
+        creditRef: ctx.jobId,
+        spent: ctx.spent,
+        reason: 'prep_report',
+        createdAt: ctx.jobCreatedAt,
+        attempt: ctx.jobAttempt,
+        day: null,
+      });
+
+    if (binding.provider === 'startgg') {
+      return async () => {
+        if (!startggConfig) {
+          await failCurrentJob();
+          return {
+            ok: false,
+            failure: {
+              status: 503,
+              error: 'Service Unavailable',
+              message: 'start.gg integration is not configured on this server',
+            },
+          };
+        }
+        // The binding's own resolved slug or numeric id — never an ordinary
+        // gamer tag, and never anything read from the request body
+        // (27-CONTEXT.md line 93, "no silent fallback to the canonical tag").
+        const input: ScoutInput = binding.startggUserSlug
+          ? { kind: 'slug', slug: binding.startggUserSlug }
+          : { kind: 'playerId', playerId: binding.startggPlayerId! };
+        try {
+          const scout = await scoutPlayer(startggConfig.apiToken, input, fetchImpl, scoutCache);
+          if (!scout) {
+            await failCurrentJob();
+            return {
+              ok: false,
+              failure: {
+                status: 404,
+                error: 'Not Found',
+                message:
+                  'The confirmed start.gg identity could not be found — it may have been removed',
+              },
+            };
+          }
+          return { ok: true, scout };
+        } catch (err) {
+          if (err instanceof StartggApiError && err.status === 429) {
+            await failCurrentJob();
+            return {
+              ok: false,
+              failure: {
+                status: 429,
+                error: 'Too Many Requests',
+                message: 'start.gg is rate-limiting requests right now — try again shortly',
+              },
+            };
+          }
+          await failCurrentJob();
+          throw err;
+        }
+      };
+    }
+
+    if (binding.provider === 'parrygg') {
+      return async () => {
+        if (!parryggConfig) {
+          await failCurrentJob();
+          return {
+            ok: false,
+            failure: {
+              status: 503,
+              error: 'Service Unavailable',
+              message: 'parry.gg integration is not configured on this server',
+            },
+          };
+        }
+        // The binding's own resolved parry.gg user id (a UUID) is passed
+        // directly — `resolveParryScoutPlayer` resolves a UUID-shaped query
+        // straight through `getUser`, no search/tag-matching involved.
+        const scout = await scoutParryPlayer(
+          parryggConfig.apiKey,
+          binding.parryUserId!,
+          parryScoutCache,
+          options.parryggClients,
+        );
+        if (!scout) {
+          await failCurrentJob();
+          return {
+            ok: false,
+            failure: {
+              status: 404,
+              error: 'Not Found',
+              message:
+                'The confirmed parry.gg identity could not be found — it may have been removed',
+            },
+          };
+        }
+        return { ok: true, scout };
+      };
+    }
+
+    // Combined binding: both identities are resolved and merged the same
+    // way V13's combined scouting already does — see `resolveCombinedScout`.
+    return async () => {
+      const startggQuery = binding.startggUserSlug ?? String(binding.startggPlayerId);
+      const result = await resolveCombinedScout(
+        [
+          { query: startggQuery, source: 'startgg' },
+          { query: binding.parryUserId!, source: 'parrygg' },
+        ],
+        {
+          startggConfig,
+          parryggConfig: parryggConfig ?? null,
+          fetchImpl,
+          parryggClients: options.parryggClients,
+          scoutCache,
+          parryScoutCache,
+        },
+      );
+      if (!result.ok) {
+        await failCurrentJob();
+        return {
+          ok: false,
+          failure:
+            result.kind === 'rateLimited'
+              ? {
+                  status: 429,
+                  error: 'Too Many Requests',
+                  message: 'start.gg is rate-limiting requests right now — try again shortly',
+                }
+              : {
+                  status: 404,
+                  error: 'Not Found',
+                  message:
+                    'The confirmed identity could not be found on either site — it may have been removed',
+                },
+        };
+      }
+      return { ok: true, scout: result.report };
+    };
+  }
 
   // GET /api/reports/config — never 403s; tells the web app whether to show
   // the "Generate AI report" button for the signed-in user, and (V7-C)
@@ -209,6 +747,55 @@ const reportsRoutes: FastifyPluginAsyncZod<ReportsRoutesOptions> = async (app, o
         });
       }
 
+      // Phase 27 (RPT-01, Task 3): prep-bundle submission — 27-08 territory,
+      // not this plan. Rejected cleanly and early (before any spend/job
+      // write/model call), same spirit as the temporary stopgap this plan
+      // replaces for `reason: 'prep_report'`.
+      if (request.body.reason === 'prep_bundle') {
+        return reply.code(400).send({
+          error: 'Bad Request',
+          message: 'Prep bundle report requests are not yet supported on this server',
+          statusCode: 400,
+        });
+      }
+
+      // Phase 27 (RPT-01, Task 3): prep-single ownership, curation, and
+      // binding-readiness resolution — BEFORE `freeAccess`/the job
+      // machinery below, and therefore before any spend, job write, or
+      // model call (owner battery item 6, T-27-30/T-27-31). `readPrepBrief`
+      // is called with `request.uid`, so a foreign entryKey 404s
+      // indistinguishably from a missing one — implicit ownership, leaks
+      // nothing (T-27-30).
+      let prepBinding: ScoutBinding | null = null;
+      if (request.body.reason === 'prep_report') {
+        const entryKey = request.body.entryKey!;
+        const opponentName = request.body.opponentName!;
+        const brief = await readPrepBrief(app.firebase.database, request.uid, entryKey);
+        if (brief === null) {
+          return reply.code(404).send({
+            error: 'Not Found',
+            message: 'Prep brief not found',
+            statusCode: 404,
+          });
+        }
+        if (!(opponentName in brief.likelyOpponents)) {
+          return reply.code(400).send({
+            error: 'Bad Request',
+            message: 'That opponent is not currently curated on this brief',
+            statusCode: 400,
+          });
+        }
+        const binding = brief.scoutBindings[opponentName];
+        if (!binding || !isReportReadyBinding(binding)) {
+          return reply.code(409).send({
+            error: 'Conflict',
+            message: 'This opponent has no confirmed, report-ready scout binding yet',
+            statusCode: 409,
+          });
+        }
+        prepBinding = binding;
+      }
+
       const freeAccess = config.allowedUids.has(request.uid);
 
       if (!freeAccess && !stripeConfig) {
@@ -264,357 +851,329 @@ const reportsRoutes: FastifyPluginAsyncZod<ReportsRoutesOptions> = async (app, o
 
       const jobCreatedAt = existingJob?.createdAt ?? Date.now();
       const jobAttempt = existingJob ? existingJob.attempt + 1 : 0;
-      // Set once the job first reaches `running`; reused by every terminal
-      // transition so the running-index write and its clear land in the
-      // same day shard.
-      let jobDay: string | null = null;
 
-      /**
-       * BILL-06/MEAS-03: single failure path for every failure/refund site
-       * below. Transitions the job to `failed`, clears the `running` index
-       * (a no-op if the job never reached `running`), refunds the spent
-       * credit (if any), and emits exactly one `report_failed` B event.
-       */
-      async function failJob(): Promise<void> {
-        const now = Date.now();
+      let spent = false;
+      let resolveScout: () => Promise<ScoutResolutionOutcome>;
+      let payloadOptions: { binding?: ScoutBinding; curatedCanonicalName?: string } | undefined;
+
+      if (request.body.reason === 'prep_report') {
+        const binding = prepBinding!;
+        const entryKey = request.body.entryKey!;
+        const opponentName = request.body.opponentName!;
+
+        // Every check above this point (503/400/409/403) is a pure
+        // request-shape or authorization rejection — nothing has been
+        // attempted yet, so no job record is written for those. From here
+        // on, the request WILL attempt generation, so the job enters
+        // `queued`, carrying the enum `reason` — no entryKey, opponent
+        // name, gamer tag, or provider id ever lands on the job node
+        // (Information Disclosure mitigation, T-27-33).
         await jobRef.set(
           reportJobSchema.parse({
-            status: 'failed',
+            status: 'queued',
             createdAt: jobCreatedAt,
-            updatedAt: now,
+            updatedAt: Date.now(),
+            attempt: jobAttempt,
+            creditRef: jobId,
+            reason: 'prep_report',
+          }),
+        );
+
+        // Phase 27 (RPT-01, 27-RESEARCH.md Pitfall 2): a convenience
+        // pointer, not money-critical state — deliberately a plain `.set()`
+        // rather than a transaction. It exists because job ids are
+        // client-minted per click, so a reloaded page would otherwise have
+        // no way to rediscover which job belongs to which curated
+        // opponent. Bounded by the curated-opponent cap per brief, so it
+        // needs no pagination; deliberately NOT added to a pruning job this
+        // phase — a recorded discretionary follow-up, same spirit as the
+        // Phase 23 rate-limit-counter retention deferral (STATE.md).
+        await app.firebase.database
+          .ref(`prepReportJobIndex/${request.uid}/${entryKey}/${opponentName}`)
+          .set({ jobId, updatedAt: Date.now() });
+
+        // V7-C: non-allowlisted uids spend one credit per generation
+        // attempt, identical to the legacy branch below.
+        if (!freeAccess) {
+          spent = await spendCredit(app.firebase.database, request.uid, jobId);
+          if (!spent) {
+            await failJob({
+              uid: request.uid,
+              jobId,
+              creditRef: jobId,
+              spent,
+              reason: 'prep_report',
+              createdAt: jobCreatedAt,
+              attempt: jobAttempt,
+              day: null,
+            });
+            return reply.code(402).send({
+              error: 'Payment Required',
+              message: 'You need report credits — buy a pack to continue',
+              statusCode: 402,
+            });
+          }
+        }
+
+        resolveScout = buildPrepResolveScout(binding, {
+          uid: request.uid,
+          jobId,
+          spent,
+          jobCreatedAt,
+          jobAttempt,
+        });
+        payloadOptions = { binding, curatedCanonicalName: opponentName };
+      } else {
+        // Schema guarantees `query` is present here — `reason` is present
+        // only on the branches handled above, so this `else` is reached
+        // exclusively by a legacy request, and `generateReportRequestSchema`'s
+        // `superRefine` already requires `query` in that case.
+        const rawQuery = request.body.query!;
+        // Same source-resolution rule as POST /api/scout: a pasted parry.gg
+        // profile URL always overrides `source` (or its default).
+        const effectiveSource = parseParryProfileUrl(rawQuery)
+          ? 'parrygg'
+          : (request.body.source ?? 'startgg');
+
+        // V13 combined scouting: a second lookup on the OTHER site is merged
+        // into the report's data. combineWith targeting the SAME site is
+        // ignored (the UI never produces it). Combined mode deliberately
+        // SKIPS the single-source 503/400 pre-checks below: an unconfigured
+        // or malformed side is gracefully dropped by the resolver so the
+        // other side can still carry the report (locked "succeed with
+        // whatever resolves" behavior).
+        const combineWith = request.body.combineWith;
+        const combined = Boolean(combineWith) && combineWith!.source !== effectiveSource;
+
+        if (!combined && effectiveSource === 'parrygg' && !parryggConfig) {
+          return reply.code(503).send({
+            error: 'Service Unavailable',
+            message: 'parry.gg integration is not configured on this server',
+            statusCode: 503,
+          });
+        }
+        if (!combined && effectiveSource === 'startgg' && !startggConfig) {
+          return reply.code(503).send({
+            error: 'Service Unavailable',
+            message: 'start.gg integration is not configured on this server',
+            statusCode: 503,
+          });
+        }
+
+        let input: ScoutInput | undefined;
+        if (!combined && effectiveSource === 'startgg') {
+          try {
+            input = parseScoutInput(rawQuery);
+          } catch (err) {
+            if (err instanceof ScoutInputError) {
+              return reply.code(400).send({
+                error: 'Bad Request',
+                message: err.message,
+                statusCode: 400,
+              });
+            }
+            throw err;
+          }
+        }
+
+        // Every check above this point (403/503/400) is a pure request-shape
+        // rejection — nothing has been attempted yet, so no job record is
+        // written for those. From here on, the request WILL attempt
+        // generation, so the job enters `queued`.
+        await jobRef.set(
+          reportJobSchema.parse({
+            status: 'queued',
+            createdAt: jobCreatedAt,
+            updatedAt: Date.now(),
             attempt: jobAttempt,
             creditRef: jobId,
           }),
         );
-        const day = jobDay ?? dayShardKey(now);
-        await app.firebase.database.ref().update({
-          [`reportJobsByStatus/running/${request.uid}/${jobId}`]: null,
-          [`reportJobsByDay/${day}/${jobId}`]: { uid: request.uid, status: 'failed' },
-        });
-        if (spent) {
-          await refundCredit(app.firebase.database, request.uid, jobId);
-        }
-        void createEvent(
-          app.firebase.database,
-          buildBillingEnvelope({
-            eventName: 'report_failed',
-            source: 'job',
-            actorId: request.uid,
-            sessionId: request.uid,
-            causationId: `${jobId}:report_failed`,
-            consentState: 'unknown',
-            payload: {},
-          }),
-        );
-      }
 
-      const rawQuery = request.body.query;
-      if (rawQuery === undefined) {
-        // Phase 27 (packages/shared, wave 1): `generateReportRequestSchema`
-        // now allows `query` to be absent for a prep-context request
-        // (`reason: 'prep_report' | 'prep_bundle'`), but this route's
-        // prep-context handling ships in a later plan (27-07/27-08). Until
-        // then, reject a schema-valid prep-context request cleanly here
-        // instead of falling through with an undefined query.
-        return reply.code(400).send({
-          error: 'Bad Request',
-          message: 'Prep-context report requests are not yet supported on this server',
-          statusCode: 400,
-        });
-      }
-      // Same source-resolution rule as POST /api/scout: a pasted parry.gg
-      // profile URL always overrides `source` (or its default).
-      const effectiveSource = parseParryProfileUrl(rawQuery)
-        ? 'parrygg'
-        : (request.body.source ?? 'startgg');
-
-      // V13 combined scouting: a second lookup on the OTHER site is merged into
-      // the report's data. combineWith targeting the SAME site is ignored (the
-      // UI never produces it). Combined mode deliberately SKIPS the
-      // single-source 503/400 pre-checks below: an unconfigured or malformed
-      // side is gracefully dropped by the resolver so the other side can still
-      // carry the report (locked "succeed with whatever resolves" behavior).
-      const combineWith = request.body.combineWith;
-      const combined = Boolean(combineWith) && combineWith!.source !== effectiveSource;
-
-      if (!combined && effectiveSource === 'parrygg' && !parryggConfig) {
-        return reply.code(503).send({
-          error: 'Service Unavailable',
-          message: 'parry.gg integration is not configured on this server',
-          statusCode: 503,
-        });
-      }
-      if (!combined && effectiveSource === 'startgg' && !startggConfig) {
-        return reply.code(503).send({
-          error: 'Service Unavailable',
-          message: 'start.gg integration is not configured on this server',
-          statusCode: 503,
-        });
-      }
-
-      let input;
-      if (!combined && effectiveSource === 'startgg') {
-        try {
-          input = parseScoutInput(rawQuery);
-        } catch (err) {
-          if (err instanceof ScoutInputError) {
-            return reply.code(400).send({
-              error: 'Bad Request',
-              message: err.message,
-              statusCode: 400,
+        // V7-C: non-allowlisted uids spend one credit per generation attempt.
+        // Spent up front (before the start.gg/Claude calls) so a concurrent
+        // second request from the same uid can't both observe a positive
+        // balance (spendCredit uses an RTDB transaction) — refunded on any
+        // failure below. BILL-06 (Phase 10): `creditRef` is the jobId itself
+        // (a client-generated, non-PII UUID) so credit_spent, the
+        // creditLedger entry, and the report_* B events all correlate on
+        // the same key.
+        if (!freeAccess) {
+          spent = await spendCredit(app.firebase.database, request.uid, jobId);
+          if (!spent) {
+            await failJob({
+              uid: request.uid,
+              jobId,
+              creditRef: jobId,
+              spent,
+              createdAt: jobCreatedAt,
+              attempt: jobAttempt,
+              day: null,
+            });
+            return reply.code(402).send({
+              error: 'Payment Required',
+              message: 'You need report credits — buy a pack to continue',
+              statusCode: 402,
             });
           }
-          throw err;
+        }
+
+        if (combined) {
+          resolveScout = async () => {
+            const result = await resolveCombinedScout(
+              [{ query: rawQuery, source: effectiveSource }, combineWith!],
+              {
+                startggConfig,
+                parryggConfig: parryggConfig ?? null,
+                fetchImpl,
+                parryggClients: options.parryggClients,
+                scoutCache,
+                parryScoutCache,
+              },
+            );
+            if (!result.ok) {
+              await failJob({
+                uid: request.uid,
+                jobId,
+                creditRef: jobId,
+                spent,
+                createdAt: jobCreatedAt,
+                attempt: jobAttempt,
+                day: null,
+              });
+              return {
+                ok: false,
+                failure:
+                  result.kind === 'rateLimited'
+                    ? {
+                        status: 429,
+                        error: 'Too Many Requests',
+                        message: 'start.gg is rate-limiting requests right now — try again shortly',
+                      }
+                    : {
+                        status: 404,
+                        error: 'Not Found',
+                        message: 'No player found for that query on either start.gg or parry.gg',
+                      },
+              };
+            }
+            return { ok: true, scout: result.report };
+          };
+        } else if (effectiveSource === 'parrygg') {
+          resolveScout = async () => {
+            const scout = await scoutParryPlayer(
+              parryggConfig!.apiKey,
+              rawQuery,
+              parryScoutCache,
+              options.parryggClients,
+            );
+            if (!scout) {
+              await failJob({
+                uid: request.uid,
+                jobId,
+                creditRef: jobId,
+                spent,
+                createdAt: jobCreatedAt,
+                attempt: jobAttempt,
+                day: null,
+              });
+              return {
+                ok: false,
+                failure: {
+                  status: 404,
+                  error: 'Not Found',
+                  message: 'No parry.gg player found for that query',
+                },
+              };
+            }
+            return { ok: true, scout };
+          };
+        } else {
+          resolveScout = async () => {
+            try {
+              const scout = await scoutPlayer(
+                startggConfig!.apiToken,
+                input!,
+                fetchImpl,
+                scoutCache,
+              );
+              if (!scout) {
+                await failJob({
+                  uid: request.uid,
+                  jobId,
+                  creditRef: jobId,
+                  spent,
+                  createdAt: jobCreatedAt,
+                  attempt: jobAttempt,
+                  day: null,
+                });
+                return {
+                  ok: false,
+                  failure: {
+                    status: 404,
+                    error: 'Not Found',
+                    message: 'No start.gg player found for that query',
+                  },
+                };
+              }
+              return { ok: true, scout };
+            } catch (err) {
+              if (err instanceof StartggApiError && err.status === 429) {
+                await failJob({
+                  uid: request.uid,
+                  jobId,
+                  creditRef: jobId,
+                  spent,
+                  createdAt: jobCreatedAt,
+                  attempt: jobAttempt,
+                  day: null,
+                });
+                return {
+                  ok: false,
+                  failure: {
+                    status: 429,
+                    error: 'Too Many Requests',
+                    message: 'start.gg is rate-limiting requests right now — try again shortly',
+                  },
+                };
+              }
+              await failJob({
+                uid: request.uid,
+                jobId,
+                creditRef: jobId,
+                spent,
+                createdAt: jobCreatedAt,
+                attempt: jobAttempt,
+                day: null,
+              });
+              request.log.error({ err }, 'start.gg scout lookup failed during report generation');
+              throw err;
+            }
+          };
         }
       }
 
-      // Every check above this point (403/503/400) is a pure request-shape
-      // rejection — nothing has been attempted yet, so no job record is
-      // written for those. From here on, the request WILL attempt
-      // generation, so the job enters `queued`.
-      await jobRef.set(
-        reportJobSchema.parse({
-          status: 'queued',
-          createdAt: jobCreatedAt,
-          updatedAt: Date.now(),
-          attempt: jobAttempt,
-          creditRef: jobId,
-        }),
-      );
-
-      // V7-C: non-allowlisted uids spend one credit per generation attempt.
-      // Spent up front (before the start.gg/Claude calls) so a concurrent
-      // second request from the same uid can't both observe a positive
-      // balance (spendCredit uses an RTDB transaction) — refunded on any
-      // failure below. BILL-06 (Phase 10): `creditRef` is the jobId itself
-      // (a client-generated, non-PII UUID) so credit_spent, the creditLedger
-      // entry, and the report_* B events all correlate on the same key.
-      let spent = false;
-      if (!freeAccess) {
-        spent = await spendCredit(app.firebase.database, request.uid, jobId);
-        if (!spent) {
-          await failJob();
-          return reply.code(402).send({
-            error: 'Payment Required',
-            message: 'You need report credits — buy a pack to continue',
-            statusCode: 402,
-          });
-        }
-      }
-
-      let scout;
-      if (combined) {
-        const result = await resolveCombinedScout(
-          [{ query: rawQuery, source: effectiveSource }, combineWith!],
-          {
-            startggConfig,
-            parryggConfig: parryggConfig ?? null,
-            fetchImpl,
-            parryggClients: options.parryggClients,
-            scoutCache,
-            parryScoutCache,
-          },
-        );
-        if (!result.ok) {
-          await failJob();
-          if (result.kind === 'rateLimited') {
-            return reply.code(429).send({
-              error: 'Too Many Requests',
-              message: 'start.gg is rate-limiting requests right now — try again shortly',
-              statusCode: 429,
-            });
-          }
-          return reply.code(404).send({
-            error: 'Not Found',
-            message: 'No player found for that query on either start.gg or parry.gg',
-            statusCode: 404,
-          });
-        }
-        scout = result.report;
-      } else if (effectiveSource === 'parrygg') {
-        scout = await scoutParryPlayer(
-          parryggConfig!.apiKey,
-          rawQuery,
-          parryScoutCache,
-          options.parryggClients,
-        );
-        if (!scout) {
-          await failJob();
-          return reply.code(404).send({
-            error: 'Not Found',
-            message: 'No parry.gg player found for that query',
-            statusCode: 404,
-          });
-        }
-      } else {
-        try {
-          scout = await scoutPlayer(startggConfig!.apiToken, input!, fetchImpl, scoutCache);
-        } catch (err) {
-          if (err instanceof StartggApiError && err.status === 429) {
-            await failJob();
-            return reply.code(429).send({
-              error: 'Too Many Requests',
-              message: 'start.gg is rate-limiting requests right now — try again shortly',
-              statusCode: 429,
-            });
-          }
-          await failJob();
-          request.log.error({ err }, 'start.gg scout lookup failed during report generation');
-          throw err;
-        }
-
-        if (!scout) {
-          await failJob();
-          return reply.code(404).send({
-            error: 'Not Found',
-            message: 'No start.gg player found for that query',
-            statusCode: 404,
-          });
-        }
-      }
-
-      const payload = await assembleReportPayload(request.uid, scout, app.firebase.database);
-
-      // BILL-06/MEAS-03: transition to `running` immediately before the
-      // Claude call — this is the durable "generation is genuinely
-      // in-flight" marker the staleness check above and the stuck-job sweep
-      // (a later plan) rely on. `jobDay` is captured so the terminal
-      // transition below clears the SAME day shard this write touches.
-      const runningAt = Date.now();
-      jobDay = dayShardKey(runningAt);
-      await jobRef.set(
-        reportJobSchema.parse({
-          status: 'running',
-          createdAt: jobCreatedAt,
-          updatedAt: runningAt,
-          attempt: jobAttempt,
-          creditRef: jobId,
-        }),
-      );
-      await app.firebase.database.ref().update({
-        [`reportJobsByStatus/running/${request.uid}/${jobId}`]: true,
-        [`reportJobsByDay/${jobDay}/${jobId}`]: { uid: request.uid, status: 'running' },
+      const generation = await runReportGeneration({
+        request,
+        jobId,
+        creditRef: jobId,
+        spent,
+        jobCreatedAt,
+        jobAttempt,
+        reason: request.body.reason,
+        resolveScout,
+        payloadOptions,
       });
-      void createEvent(
-        app.firebase.database,
-        buildBillingEnvelope({
-          eventName: 'report_started',
-          source: 'job',
-          actorId: request.uid,
-          sessionId: request.uid,
-          causationId: `${jobId}:report_started`,
-          consentState: 'unknown',
-          payload: {},
-        }),
-      );
 
-      let report;
-      try {
-        report = await generateScoutReport(client, payload);
-      } catch (err) {
-        if (err instanceof ReportGenerationError) {
-          await failJob();
-          const message =
-            err.reason === 'refusal'
-              ? 'The model declined to generate a report for this request'
-              : err.reason === 'truncated'
-                ? 'Report generation was truncated — try again'
-                : 'The model returned a response that could not be parsed — try again';
-          return reply.code(502).send({
-            error: 'Bad Gateway',
-            message,
-            statusCode: 502,
-          });
-        }
-        if (err instanceof Anthropic.RateLimitError) {
-          await failJob();
-          return reply.code(429).send({
-            error: 'Too Many Requests',
-            message: 'Claude is rate-limiting requests right now — try again shortly',
-            statusCode: 429,
-          });
-        }
-        if (err instanceof Anthropic.APIError) {
-          await failJob();
-          request.log.error({ err }, 'Claude report generation failed');
-          return reply.code(502).send({
-            error: 'Bad Gateway',
-            message: 'The model provider returned an error — try again shortly',
-            statusCode: 502,
-          });
-        }
-        await failJob();
-        throw err;
+      if (!generation.ok) {
+        return reply.code(generation.failure.status).send({
+          error: generation.failure.error,
+          message: generation.failure.message,
+          statusCode: generation.failure.status,
+        });
       }
 
-      // RTDB deletes null-valued keys on write, so persisting the model's
-      // `headToHead: null` (a legitimate "no head-to-head history" output)
-      // would come back with the key ABSENT and previously corrupted the
-      // stored record (see storedScoutReportSchema's doc). Strip null fields
-      // before writing — house conditional-spread convention — so records
-      // are stored in exactly the shape they'll be read back in.
-      const { headToHead, ...reportRest } = report;
-      const storedReport = {
-        ...reportRest,
-        ...(headToHead !== null ? { headToHead } : {}),
-      };
-
-      const ref = app.firebase.database.ref(`scoutReports/${request.uid}`).push();
-      const record = {
-        createdAt: Date.now(),
-        model: 'claude-opus-4-8',
-        player: scout.player,
-        report: storedReport,
-      };
-      try {
-        await ref.set(record);
-      } catch (err) {
-        await failJob();
-        throw err;
-      }
-
-      const id = ref.key;
-      if (!id) {
-        // The report was generated and stored — this is a server bug (push()
-        // failing to yield a key), not a failed generation, so the spent
-        // credit is NOT refunded here. The job is deliberately left in
-        // `running` rather than transitioned here — there is no resultRef to
-        // record, and the stuck-job sweep will eventually recover it.
-        throw new Error('Failed to generate a push key for the new scout report');
-      }
-
-      // BILL-06/MEAS-03: terminal success transition. Clears the `running`
-      // index (same day shard the running write used) and emits exactly one
-      // `report_completed` B event.
-      const succeededAt = Date.now();
-      await jobRef.set(
-        reportJobSchema.parse({
-          status: 'succeeded',
-          createdAt: jobCreatedAt,
-          updatedAt: succeededAt,
-          attempt: jobAttempt,
-          creditRef: jobId,
-          resultRef: id,
-        }),
-      );
-      await app.firebase.database.ref().update({
-        [`reportJobsByStatus/running/${request.uid}/${jobId}`]: null,
-        [`reportJobsByDay/${jobDay}/${jobId}`]: { uid: request.uid, status: 'succeeded' },
-      });
-      void createEvent(
-        app.firebase.database,
-        buildBillingEnvelope({
-          eventName: 'report_completed',
-          source: 'job',
-          actorId: request.uid,
-          sessionId: request.uid,
-          causationId: `${jobId}:report_completed`,
-          consentState: 'unknown',
-          payload: {},
-        }),
-      );
-
-      return { id, ...record };
+      return generation.record;
     },
   );
 
