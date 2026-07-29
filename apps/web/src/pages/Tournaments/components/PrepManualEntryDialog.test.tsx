@@ -141,7 +141,7 @@ describe('PrepManualEntryDialog', () => {
       ]),
     );
     expect(manualEntry).toHaveBeenCalledTimes(1);
-    const [[input]] = manualEntry.mock.calls;
+    const input = manualEntry.mock.calls[0]?.[0] as { eventName: string; eventDate: unknown };
     expect(input.eventName).toBe('Locals #42');
     expect(typeof input.eventDate).toBe('number');
     expect(onOpenChange).toHaveBeenCalledWith(false);
