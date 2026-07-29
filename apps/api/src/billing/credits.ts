@@ -16,6 +16,8 @@ import { buildBillingEnvelope } from '../events/envelope.js';
  * - `creditLedgerByDay/{yyyymmdd}/{uid}/{pushKey}` -> creditLedgerEntrySchema (mirror)
  * - `processedStripeEvents/{eventId}` -> number (epoch ms, webhook idempotency guard)
  * - `processedStripeEventsByDay/{yyyymmdd}/{eventId}` -> true (mirror)
+ * - `creditBundleOps/{uid}/{bundleId}` -> { status, amount, createdAt, updatedAt } (durable
+ *   operation marker guarding `spendCredits`' N-credit bundle debits against replay/concurrency)
  *
  * BILL-01/BILL-02 (Phase 10): every mutator here is now transaction-safe.
  * `addCredits`/`refundCredit`/`spendCredit` all increment the balance node
@@ -282,4 +284,196 @@ export async function fulfillCheckoutSession(
   );
 
   return { granted: true };
+}
+
+/** Root RTDB collection for `spendCredits`' durable per-bundle operation markers. */
+export const CREDIT_BUNDLE_OPS_ROOT = 'creditBundleOps';
+
+function bundleOpRef(database: Database, uid: string, bundleId: string) {
+  return database.ref(`${CREDIT_BUNDLE_OPS_ROOT}/${uid}/${bundleId}`);
+}
+
+/**
+ * The single constructor for the per-slot ref every `spendCredits`-debited
+ * bundle child carries as its `creditLedger` `ref` and its later
+ * `refundCredit` ref. Uses `:` (not `#`) as the separator: `#` is
+ * RTDB-path-illegal and, if it ever reached a ref that becomes a
+ * `causationId`, would land as an illegal path segment under `eventDedup`
+ * (27-CONTEXT.md line 33). This is the ONE place the slot ref is built —
+ * call sites (27-08's bundle orchestration, refund handling) must never
+ * hand-concatenate `${bundleId}:${slot}` themselves.
+ */
+export function bundleSlotRef(bundleId: string, slot: number): string {
+  return `${bundleId}:${slot}`;
+}
+
+export type SpendCreditsOutcome = 'debited' | 'insufficient' | 'alreadyProcessed';
+
+interface CreditBundleOpMarker {
+  status: 'claiming' | 'insufficient' | 'debited';
+  amount: number;
+  createdAt: number;
+  updatedAt?: number;
+}
+
+/**
+ * The narrow, owner-mandated primitive for the 3-credit prep bundle: ONE
+ * atomic verify-and-subtract of `amount` credits, guarded by a durable
+ * operation marker keyed on `bundleId`, materializing `amount` existing
+ * -shaped `-1` ledger entries with RTDB-safe refs. This deliberately does
+ * NOT call `spendCredit` `amount` times — three sequential `spendCredit`
+ * calls are compensating transactions, not all-or-nothing (the process can
+ * crash between debits, concurrent requests can interleave, and
+ * `refundCredit` is not balance-idempotent — credits.ts:157-180 increments
+ * the balance on every invocation; only its canonical event is deduped).
+ * The owner rejected that design outright (27-CONTEXT.md lines 30-41).
+ *
+ * Two-phase design:
+ *
+ * **Phase 1 — claim.** A transaction on `creditBundleOps/{uid}/{bundleId}`
+ * mirrors `markStripeEventProcessed`'s polarity (credits.ts:189-202), NOT
+ * `spendCredit`'s null-handling (credits.ts:96-107): for a balance, "node
+ * does not exist" means "zero credits, do nothing"; for a claim marker it
+ * means "nobody has attempted this bundle yet, proceed and claim." Reusing
+ * `spendCredit`'s `if (current === null) return current;` branch here would
+ * make the FIRST-EVER claim for a bundle a silent permanent no-op — the
+ * exact claim-marker polarity inversion trap called out in
+ * 27-RESEARCH.md Pitfall 1. `'insufficient'` is the ONE non-terminal marker
+ * status: a prior balance failure must remain retryable after a top-up, so
+ * the guard explicitly re-opens the claim when the existing marker's status
+ * is `'insufficient'`. `'claiming'` is deliberately NEVER auto-expired:
+ * `bundleId` is client-generated per purchase click (the same convention as
+ * `jobId`), so a stranded claim costs the user nothing — their next click
+ * mints a fresh bundleId — whereas a staleness window would reopen the
+ * exact double-debit hole this primitive exists to close.
+ *
+ * **Phase 2 — the single atomic verify-and-subtract.** One
+ * `balanceRef(...).transaction()`, parameterized by `amount`, reusing
+ * `spendCredit`'s proven shape verbatim: a null/undefined current balance
+ * returns the input unchanged (CR-01 discipline — never a permanent abort,
+ * forces the hash-compare retry against the real stored balance); a
+ * numeric balance below `amount` returns `undefined` (a verified-insufficient
+ * abort — no write happens); otherwise returns `balance - amount`.
+ *
+ * On the insufficient path NOTHING else is written: no ledger entry, no
+ * event — only the marker is set to `'insufficient'` so the SAME bundleId
+ * can retry after a top-up.
+ *
+ * **Phase 3 — converged materialization.** On a debit, one root-level
+ * multi-path `database.ref().update()` (mirroring `fulfillCheckoutSession`,
+ * credits.ts:263-269) writes the terminal `'debited'` marker plus, for each
+ * slot `1..amount`, a `creditLedger/{uid}/{pushKey}` entry
+ * (`{type:'spend', amount:-1, ref: bundleSlotRef(bundleId, slot)}`).
+ * Day-shard mirrors are deliberately NOT written here: the existing
+ * `spendCredit` path does not write them either (`appendLedgerEntry`,
+ * credits.ts:43-49) — the spend side's ledger shape stays byte-identical so
+ * the open Aug-2 reconciliation window is not perturbed. One `credit_spent`
+ * B event is emitted per slot afterward, envelope-identical to
+ * `spendCredit`'s (credits.ts:132-143), so each slot's spend and its later
+ * refund correlate on the same ref. Payload carries only `amount` — no
+ * bundleId, entryKey, or opponent name (D-14).
+ */
+export async function spendCredits(
+  database: Database,
+  uid: string,
+  bundleId: string,
+  amount: number,
+): Promise<SpendCreditsOutcome> {
+  if (!Number.isInteger(amount) || amount <= 0) {
+    throw new Error('spendCredits amount must be a positive integer');
+  }
+
+  const claim = await bundleOpRef(database, uid, bundleId).transaction((current) => {
+    if (
+      current !== null &&
+      current !== undefined &&
+      (current as CreditBundleOpMarker).status !== 'insufficient'
+    ) {
+      // Already claimed (claiming or debited, not the retryable
+      // insufficient state) — abort, no write happens.
+      return undefined;
+    }
+    return {
+      status: 'claiming',
+      amount,
+      createdAt: Date.now(),
+    } satisfies CreditBundleOpMarker;
+  });
+
+  if (!claim.committed) {
+    return 'alreadyProcessed';
+  }
+
+  const claimCreatedAt = (claim.snapshot.val() as CreditBundleOpMarker).createdAt;
+
+  const result = await balanceRef(database, uid).transaction((current) => {
+    if (current === null || current === undefined) {
+      // See spendCredit's identical CR-01 comment (credits.ts:98-105): the
+      // SDK's local cache reads null on a listener-less server even when a
+      // positive balance exists server-side. Returning the input unchanged
+      // forces the hash-compare retry against the real stored value instead
+      // of permanently aborting.
+      return current;
+    }
+    const balance = typeof current === 'number' ? current : 0;
+    if (balance < amount) {
+      // Verified-insufficient balance — abort, no write happens.
+      return undefined;
+    }
+    return balance - amount;
+  });
+
+  const debited = result.committed && typeof result.snapshot.val() === 'number';
+
+  if (!debited) {
+    await bundleOpRef(database, uid, bundleId).set({
+      status: 'insufficient',
+      amount,
+      createdAt: claimCreatedAt,
+      updatedAt: Date.now(),
+    } satisfies CreditBundleOpMarker);
+    return 'insufficient';
+  }
+
+  const now = Date.now();
+  const updates: Record<string, unknown> = {
+    [`${CREDIT_BUNDLE_OPS_ROOT}/${uid}/${bundleId}`]: {
+      status: 'debited',
+      amount,
+      createdAt: claimCreatedAt,
+      updatedAt: now,
+    } satisfies CreditBundleOpMarker,
+  };
+
+  for (let slot = 1; slot <= amount; slot += 1) {
+    const key = ledgerRef(database, uid).push().key;
+    if (!key) {
+      throw new Error('Failed to allocate a creditLedger push key');
+    }
+    updates[`creditLedger/${uid}/${key}`] = creditLedgerEntrySchema.parse({
+      type: 'spend',
+      amount: -1,
+      createdAt: now,
+      ref: bundleSlotRef(bundleId, slot),
+    });
+  }
+
+  await database.ref().update(updates);
+
+  for (let slot = 1; slot <= amount; slot += 1) {
+    void createEvent(
+      database,
+      buildBillingEnvelope({
+        eventName: 'credit_spent',
+        source: 'job',
+        actorId: uid,
+        sessionId: uid,
+        causationId: `${bundleSlotRef(bundleId, slot)}:credit_spent`,
+        consentState: 'unknown',
+        payload: { amount: -1 },
+      }),
+    );
+  }
+
+  return 'debited';
 }
