@@ -49,6 +49,11 @@ import {
   parryggVerificationCompleteResponseSchema,
   parryggVerificationStartResponseSchema,
   playlistSchema,
+  prepActivateResponseSchema,
+  prepBriefResponseSchema,
+  prepBriefStatusSchema,
+  prepChecklistItemUpdateSchema,
+  prepOpenRequestSchema,
   publicShareSnapshotSchema,
   reportsConfigSchema,
   REVIEW_DELIVERY_STATES,
@@ -84,6 +89,9 @@ import {
   type ParryggLoginCompleteRequest,
   type ParryggLoginSearchRequest,
   type ParryggLoginStartRequest,
+  type PrepChecklistItemId,
+  type PrepChecklistItemUpdate,
+  type PrepOpenRequest,
   type CreatePlaylistInput,
   type UpdatePlaylistInput,
   createShareInputSchema,
@@ -683,6 +691,67 @@ export const api = {
         method: 'POST',
         body: manualTournamentEntryInputSchema.parse(input),
       }),
+  },
+  /**
+   * Phase 26 (PREP-01..04, D-12): the free deterministic tournament prep
+   * brief at `prepBriefs/{uid}/{entryKey}`. All six members ride the default
+   * `/api` base URL — the direct-to-Cloud-Run escape hatch used by the AI
+   * report pipeline has no place here, since this surface makes zero model
+   * calls.
+   */
+  prep: {
+    /**
+     * GET /api/prep/:entryKey — a pure read that never writes (D-12), so
+     * it is safe to call on every render of an entry's detail page.
+     */
+    get: (entryKey: string) =>
+      apiRequestParsed(`/api/prep/${encodeURIComponent(entryKey)}`, prepBriefStatusSchema),
+    /**
+     * POST /api/prep/:entryKey/activate — idempotent server-side (a
+     * create-once transaction): the response's `justActivated` distinguishes
+     * the one real creation from every replay.
+     */
+    activate: (entryKey: string) =>
+      apiRequestParsed(
+        `/api/prep/${encodeURIComponent(entryKey)}/activate`,
+        prepActivateResponseSchema,
+        { method: 'POST' },
+      ),
+    /**
+     * POST /api/prep/:entryKey/open — `openId` is one stable id per logical
+     * page mount, reused across transport retries so a retried request does
+     * not become a second reopen event (D-08).
+     */
+    open: (entryKey: string, input: PrepOpenRequest) =>
+      apiRequestParsed(`/api/prep/${encodeURIComponent(entryKey)}/open`, prepBriefResponseSchema, {
+        method: 'POST',
+        body: prepOpenRequestSchema.parse(input),
+      }),
+    /** PUT /api/prep/:entryKey/checklist/:itemId */
+    setChecklistItem: (
+      entryKey: string,
+      itemId: PrepChecklistItemId,
+      input: PrepChecklistItemUpdate,
+    ) =>
+      apiRequestParsed(
+        `/api/prep/${encodeURIComponent(entryKey)}/checklist/${itemId}`,
+        prepBriefResponseSchema,
+        { method: 'PUT', body: prepChecklistItemUpdateSchema.parse(input) },
+      ),
+    /** PUT /api/prep/:entryKey/opponents/:name */
+    addLikelyOpponent: (entryKey: string, name: string) =>
+      apiRequestParsed(
+        `/api/prep/${encodeURIComponent(entryKey)}/opponents/${encodeURIComponent(name)}`,
+        prepBriefResponseSchema,
+        { method: 'PUT' },
+      ),
+    /** DELETE /api/prep/:entryKey/opponents/:name */
+    removeLikelyOpponent: (entryKey: string, name: string) =>
+      apiRequestParsed(
+        `/api/prep/${encodeURIComponent(entryKey)}/opponents/${encodeURIComponent(name)}`,
+        prepBriefResponseSchema,
+        { method: 'DELETE' },
+      ),
   },
   /**
    * Phase 13 (ONBD-04, D-04): the guided-path checklist's server-derived
