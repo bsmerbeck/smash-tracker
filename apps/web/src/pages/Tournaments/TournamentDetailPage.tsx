@@ -5,6 +5,7 @@ import { matchesForEntry, buildSetTimeline } from '@smash-tracker/shared';
 import { Button } from '@/components/ui/button';
 import { useTournamentEntries } from '@/hooks/useTournamentEntries';
 import { useMatches } from '@/hooks/useMatches';
+import { usePrepBrief } from '@/hooks/usePrepBrief';
 import { TournamentHeader } from './components/TournamentHeader';
 import { EventResults } from './components/EventResults';
 import { SetTimeline } from './components/SetTimeline';
@@ -54,6 +55,17 @@ function NotFoundState() {
  * the signed-in owner (`useTournamentEntries` scopes to the caller's own
  * registry), so no separate ownership check is needed client-side; the
  * server independently enforces it (T-07-05-02).
+ *
+ * Phase 26 (PREP-01/04, D-01/D-03/D-13/D-14): a "Start prep brief"/"Open prep
+ * brief" action lives in the same action row. `usePrepBrief` is called
+ * unconditionally (it's a no-op query while `entry?.entryKey` is undefined),
+ * and its resolved `activated` flag decides the CTA: `reopen` once a brief
+ * exists — regardless of whether the event date has passed, since an
+ * existing brief is never hidden (D-03) — or `start` when none exists yet
+ * AND the event is upcoming (`firstSetAt > Date.now()`, D-01). While the
+ * query is still pending, no prep action renders at all: an unresolved
+ * activation state is not the same as "not activated" (the 260725-juj
+ * unknown-is-not-zero lesson applied to UI eligibility).
  */
 export function TournamentDetailPage() {
   const { t } = useTranslation();
@@ -85,6 +97,8 @@ export function TournamentDetailPage() {
     return buildRetrospective(allMatches, entryMatches, entry);
   }, [allMatches, entryMatches, entry]);
 
+  const prepBriefQuery = usePrepBrief(entry?.entryKey ?? undefined);
+
   if (entriesLoading || matchesLoading) {
     return <div className="text-muted-foreground">{t('tournaments.loading')}</div>;
   }
@@ -95,13 +109,37 @@ export function TournamentDetailPage() {
 
   const canGenerateRecap = entry.setsPlayed >= 1;
 
+  const prepCtaState: 'start' | 'reopen' | 'none' = prepBriefQuery.isPending
+    ? 'none'
+    : prepBriefQuery.data?.activated
+      ? 'reopen'
+      : entry.firstSetAt > Date.now()
+        ? 'start'
+        : 'none';
+
+  const showActionRow = canGenerateRecap || prepCtaState !== 'none';
+
   return (
     <div className="flex flex-col gap-6">
-      {canGenerateRecap && (
-        <div className="flex justify-end">
-          <Button type="button" onClick={() => setRecapDialogOpen(true)}>
-            {t('tournaments.recap.generateButton')}
-          </Button>
+      {showActionRow && (
+        <div className="flex justify-end gap-2">
+          {prepCtaState !== 'none' && entry.entryKey && (
+            // Plain navigation only — no onClick/mutation on this CTA. That
+            // is what lets the destination page's own mount own activation
+            // (POST /api/prep/:entryKey/activate) while this GET stays a
+            // write-free read (D-12). Adding an "activate on click" handler
+            // here would break that separation.
+            <Button asChild data-testid="tournament-prep-cta">
+              <Link to={`/tournaments/${entry.entryKey}/prep`}>
+                {t(prepCtaState === 'reopen' ? 'prep.cta.open' : 'prep.cta.start')}
+              </Link>
+            </Button>
+          )}
+          {canGenerateRecap && (
+            <Button type="button" onClick={() => setRecapDialogOpen(true)}>
+              {t('tournaments.recap.generateButton')}
+            </Button>
+          )}
         </div>
       )}
       <TournamentHeader entry={entry} />
