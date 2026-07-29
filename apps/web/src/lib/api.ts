@@ -1217,23 +1217,20 @@ export const api = {
      * THIS click; a retry of the same click never re-generates it.
      */
     /**
-     * `returnTo` (Phase 27, EVT-05) is an OPTIONAL second argument so every
+     * `options` (Phase 27, EVT-05) is an OPTIONAL second argument so every
      * existing single-argument call site keeps sending today's exact body
      * (no `returnTo`/`entryKey` keys at all) — the server resolves the
      * actual redirect URL from this closed enum via a fixed template, so
      * this value is a hint, never a client-supplied URL (27-05).
      */
-    checkout: (
-      packId: CreditPackId,
-      returnTo?: { destination: CheckoutReturnTo; entryKey?: string },
-    ) =>
+    checkout: (packId: CreditPackId, options?: { returnTo: CheckoutReturnTo; entryKey?: string }) =>
       apiRequestParsed('/api/billing/checkout', checkoutResponseSchema, {
         method: 'POST',
         body: checkoutRequestSchema.parse({
           packId,
           attemptId: crypto.randomUUID(),
-          ...(returnTo !== undefined ? { returnTo: returnTo.destination } : {}),
-          ...(returnTo?.entryKey !== undefined ? { entryKey: returnTo.entryKey } : {}),
+          ...(options?.returnTo !== undefined ? { returnTo: options.returnTo } : {}),
+          ...(options?.entryKey !== undefined ? { entryKey: options.entryKey } : {}),
         }),
       }),
   },

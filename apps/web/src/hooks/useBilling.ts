@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import type { CreditPackId } from '@smash-tracker/shared';
+import type { CheckoutReturnTo, CreditPackId } from '@smash-tracker/shared';
 import { api } from '@/lib/api';
 import { useAuth } from './useAuth';
 
@@ -28,10 +28,23 @@ export function useCredits() {
  * and redirects the browser to Stripe's hosted page on success. This is a
  * full-page navigation (not an XHR-driven UI update), matching the
  * start.gg OAuth connect flow elsewhere in the app.
+ *
+ * `returnTo` (Phase 27, EVT-05) is an OPTIONAL argument specifically so the
+ * existing `useCheckout()` (no-argument) Scout call site needs ZERO
+ * changes — omitting it sends today's exact request body. The destination
+ * is validated and resolved SERVER-side (`apps/api/src/routes/billing.ts`,
+ * 27-05); this value is a hint, never a redirect target the client
+ * constructs itself.
  */
-export function useCheckout() {
+export function useCheckout(options?: { returnTo: CheckoutReturnTo; entryKey?: string }) {
   return useMutation({
-    mutationFn: (packId: CreditPackId) => api.billing.checkout(packId),
+    // Deliberately a conditional call (not `api.billing.checkout(packId,
+    // options)` with `options` always passed, even as `undefined`) so the
+    // no-argument call site invokes `api.billing.checkout` with exactly ONE
+    // argument, byte-identical to today's call — an explicit `undefined`
+    // second argument is still an observably different call shape.
+    mutationFn: (packId: CreditPackId) =>
+      options ? api.billing.checkout(packId, options) : api.billing.checkout(packId),
     onSuccess: ({ url }) => {
       window.location.assign(url);
     },
