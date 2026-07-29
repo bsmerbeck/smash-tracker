@@ -2420,5 +2420,64 @@
       "coachNote": "Your coach keeps delegated access, which you can revoke anytime from the workspace's Coach access card.",
       "goToWorkspaceButton": "Go to your workspace"
     }
+  },
+  "prep": {
+    "loading": "Loading your prep brief...",
+    "cta": {
+      "start": "Start prep brief",
+      "open": "Open prep brief"
+    },
+    "dashboard": {
+      "upcoming": {
+        "title": "Your next event: {{eventName}} · {{date}}",
+        "cta": "Prep for this event"
+      },
+      "addEvent": {
+        "title": "Add your upcoming event to start prepping",
+        "cta": "Add event"
+      }
+    },
+    "manualEntry": {
+      "title": "Add an upcoming event",
+      "description": "We'll create the event and open its prep brief.",
+      "nameLabel": "Event name",
+      "dateLabel": "Event date",
+      "dateRequired": "Pick a date in the future — prep briefs are for events that haven't happened yet.",
+      "submit": "Add & start prep brief"
+    },
+    "opponents": {
+      "title": "Likely opponents",
+      "add": "Add opponent",
+      "addPlaceholder": "Search your opponents",
+      "addEmpty": "No opponents left to add.",
+      "matchCount_one": "{{count}} match",
+      "matchCount_other": "{{count}} matches",
+      "remove": "Remove {{name}} from likely opponents",
+      "record": "{{wins}}-{{losses}} · {{ratio}}% ({{totalMatches}})",
+      "noRecord": "No matches recorded against {{name}} yet.",
+      "noCharacters": "No characters recorded yet.",
+      "empty": {
+        "title": "No likely opponents yet",
+        "body": "Add opponents you expect to face — we'll pull in your head-to-head record and scouting notes for each."
+      },
+      "limitReached": "You can track up to {{count}} likely opponents."
+    },
+    "checklist": {
+      "title": "Prep checklist",
+      "progress": "{{checked}}/{{total}} complete",
+      "items": {
+        "confirmRegistration": "Confirm your registration and check-in time",
+        "reviewRuleset": "Review the ruleset and stage list",
+        "chargeGear": "Charge your controller and pack backup batteries",
+        "reviewOpponents": "Review your likely opponents below",
+        "warmUpSets": "Get in warm-up sets with your mains",
+        "packBag": "Pack chargers, adapter, and any backup gear",
+        "planTravel": "Plan your travel and arrival time"
+      }
+    },
+    "error": {
+      "loadFailed": "Something went wrong loading your prep brief. Please try again.",
+      "addEventFailed": "Something went wrong adding this event. Please try again."
+    }
   }
 }

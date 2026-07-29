@@ -2420,5 +2420,64 @@
       "coachNote": "Seu coach mantém acesso delegado, que você pode revogar a qualquer momento no cartão de acesso do coach do espaço de trabalho.",
       "goToWorkspaceButton": "Ir para seu espaço de trabalho"
     }
+  },
+  "prep": {
+    "loading": "Carregando seu briefing de preparação...",
+    "cta": {
+      "start": "Iniciar briefing de preparação",
+      "open": "Abrir briefing de preparação"
+    },
+    "dashboard": {
+      "upcoming": {
+        "title": "Seu próximo evento: {{eventName}} · {{date}}",
+        "cta": "Preparar-se para este evento"
+      },
+      "addEvent": {
+        "title": "Adicione seu próximo evento para começar a se preparar",
+        "cta": "Adicionar evento"
+      }
+    },
+    "manualEntry": {
+      "title": "Adicionar um evento futuro",
+      "description": "Vamos criar o evento e abrir seu briefing de preparação.",
+      "nameLabel": "Nome do evento",
+      "dateLabel": "Data do evento",
+      "dateRequired": "Escolha uma data futura — briefings de preparação são para eventos que ainda não aconteceram.",
+      "submit": "Adicionar e iniciar briefing de preparação"
+    },
+    "opponents": {
+      "title": "Adversários prováveis",
+      "add": "Adicionar adversário",
+      "addPlaceholder": "Pesquise seus adversários",
+      "addEmpty": "Não há mais adversários para adicionar.",
+      "matchCount_one": "{{count}} partida",
+      "matchCount_other": "{{count}} partidas",
+      "remove": "Remover {{name}} dos adversários prováveis",
+      "record": "{{wins}}-{{losses}} · {{ratio}}% ({{totalMatches}})",
+      "noRecord": "Nenhuma partida registrada contra {{name}} ainda.",
+      "noCharacters": "Nenhum personagem registrado ainda.",
+      "empty": {
+        "title": "Nenhum adversário provável ainda",
+        "body": "Adicione adversários que você espera enfrentar — traremos seu retrospecto direto e notas de scouting para cada um."
+      },
+      "limitReached": "Você pode acompanhar até {{count}} adversários prováveis."
+    },
+    "checklist": {
+      "title": "Checklist de preparação",
+      "progress": "{{checked}}/{{total}} concluído",
+      "items": {
+        "confirmRegistration": "Confirme sua inscrição e horário de check-in",
+        "reviewRuleset": "Revise o regulamento e a lista de estágios",
+        "chargeGear": "Carregue seu controle e leve baterias reserva",
+        "reviewOpponents": "Revise seus adversários prováveis abaixo",
+        "warmUpSets": "Faça partidas de aquecimento com seus mains",
+        "packBag": "Leve carregadores, adaptador e qualquer equipamento reserva",
+        "planTravel": "Planeje sua viagem e horário de chegada"
+      }
+    },
+    "error": {
+      "loadFailed": "Algo deu errado ao carregar seu briefing de preparação. Tente novamente.",
+      "addEventFailed": "Algo deu errado ao adicionar este evento. Tente novamente."
+    }
   }
 }

@@ -2420,5 +2420,64 @@
       "coachNote": "コーチは委任アクセスを保持しますが、ワークスペースのコーチアクセスカードからいつでも取り消せます。",
       "goToWorkspaceButton": "ワークスペースに移動"
     }
+  },
+  "prep": {
+    "loading": "準備ブリーフィングを読み込んでいます...",
+    "cta": {
+      "start": "準備ブリーフィングを開始",
+      "open": "準備ブリーフィングを開く"
+    },
+    "dashboard": {
+      "upcoming": {
+        "title": "次のイベント: {{eventName}} · {{date}}",
+        "cta": "このイベントの準備をする"
+      },
+      "addEvent": {
+        "title": "今後のイベントを追加して準備を始めましょう",
+        "cta": "イベントを追加"
+      }
+    },
+    "manualEntry": {
+      "title": "今後のイベントを追加",
+      "description": "イベントを作成し、その準備ブリーフィングを開きます。",
+      "nameLabel": "イベント名",
+      "dateLabel": "イベント日",
+      "dateRequired": "未来の日付を選んでください。準備ブリーフィングはまだ開催されていないイベント向けです。",
+      "submit": "追加して準備ブリーフィングを開始"
+    },
+    "opponents": {
+      "title": "対戦が予想される相手",
+      "add": "対戦相手を追加",
+      "addPlaceholder": "対戦相手を検索",
+      "addEmpty": "追加できる対戦相手が残っていません。",
+      "matchCount_one": "{{count}}試合",
+      "matchCount_other": "{{count}}試合",
+      "remove": "{{name}}を予想される対戦相手から削除",
+      "record": "{{wins}}-{{losses}} · {{ratio}}%（{{totalMatches}}）",
+      "noRecord": "{{name}}との対戦記録はまだありません。",
+      "noCharacters": "登録済みのキャラクターはまだありません。",
+      "empty": {
+        "title": "対戦が予想される相手はまだいません",
+        "body": "対戦が予想される相手を追加してください。それぞれの対戦成績とスカウティングメモを取り込みます。"
+      },
+      "limitReached": "対戦が予想される相手は最大{{count}}人まで追跡できます。"
+    },
+    "checklist": {
+      "title": "準備チェックリスト",
+      "progress": "{{checked}}/{{total}}完了",
+      "items": {
+        "confirmRegistration": "登録とチェックイン時間を確認する",
+        "reviewRuleset": "ルールとステージリストを確認する",
+        "chargeGear": "コントローラーを充電し、予備バッテリーを用意する",
+        "reviewOpponents": "下記の対戦が予想される相手を確認する",
+        "warmUpSets": "メインキャラクターでウォームアップの対戦をする",
+        "packBag": "充電器、アダプター、予備の道具をまとめる",
+        "planTravel": "移動と到着時間を計画する"
+      }
+    },
+    "error": {
+      "loadFailed": "準備ブリーフィングの読み込み中に問題が発生しました。もう一度お試しください。",
+      "addEventFailed": "このイベントの追加中に問題が発生しました。もう一度お試しください。"
+    }
   }
 }

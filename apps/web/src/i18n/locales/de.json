@@ -2420,5 +2420,64 @@
       "coachNote": "Dein Coach behält delegierten Zugriff, den du jederzeit über die Coach-Zugriffskarte des Arbeitsbereichs widerrufen kannst.",
       "goToWorkspaceButton": "Zu deinem Arbeitsbereich"
     }
+  },
+  "prep": {
+    "loading": "Dein Vorbereitungs-Briefing wird geladen...",
+    "cta": {
+      "start": "Vorbereitungs-Briefing starten",
+      "open": "Vorbereitungs-Briefing öffnen"
+    },
+    "dashboard": {
+      "upcoming": {
+        "title": "Dein nächstes Event: {{eventName}} · {{date}}",
+        "cta": "Für dieses Event vorbereiten"
+      },
+      "addEvent": {
+        "title": "Füge dein bevorstehendes Event hinzu, um mit der Vorbereitung zu beginnen",
+        "cta": "Event hinzufügen"
+      }
+    },
+    "manualEntry": {
+      "title": "Ein bevorstehendes Event hinzufügen",
+      "description": "Wir erstellen das Event und öffnen dessen Vorbereitungs-Briefing.",
+      "nameLabel": "Eventname",
+      "dateLabel": "Eventdatum",
+      "dateRequired": "Wähle ein Datum in der Zukunft — Vorbereitungs-Briefings sind für Events, die noch nicht stattgefunden haben.",
+      "submit": "Hinzufügen & Vorbereitungs-Briefing starten"
+    },
+    "opponents": {
+      "title": "Wahrscheinliche Gegner",
+      "add": "Gegner hinzufügen",
+      "addPlaceholder": "Deine Gegner durchsuchen",
+      "addEmpty": "Keine weiteren Gegner zum Hinzufügen.",
+      "matchCount_one": "{{count}} Match",
+      "matchCount_other": "{{count}} Matches",
+      "remove": "{{name}} aus den wahrscheinlichen Gegnern entfernen",
+      "record": "{{wins}}-{{losses}} · {{ratio}}% ({{totalMatches}})",
+      "noRecord": "Noch keine Matches gegen {{name}} erfasst.",
+      "noCharacters": "Noch keine Charaktere erfasst.",
+      "empty": {
+        "title": "Noch keine wahrscheinlichen Gegner",
+        "body": "Füge Gegner hinzu, denen du voraussichtlich begegnest — wir übernehmen deine direkte Bilanz und Scouting-Notizen für jeden."
+      },
+      "limitReached": "Du kannst bis zu {{count}} wahrscheinliche Gegner verfolgen."
+    },
+    "checklist": {
+      "title": "Vorbereitungs-Checkliste",
+      "progress": "{{checked}}/{{total}} erledigt",
+      "items": {
+        "confirmRegistration": "Bestätige deine Anmeldung und Check-in-Zeit",
+        "reviewRuleset": "Regelwerk und Stage-Liste durchsehen",
+        "chargeGear": "Lade deinen Controller auf und packe Ersatzbatterien ein",
+        "reviewOpponents": "Sieh dir deine wahrscheinlichen Gegner unten an",
+        "warmUpSets": "Spiel Aufwärm-Sets mit deinen Mains",
+        "packBag": "Packe Ladegeräte, Adapter und Ersatzausrüstung ein",
+        "planTravel": "Plane deine Anreise und Ankunftszeit"
+      }
+    },
+    "error": {
+      "loadFailed": "Beim Laden deines Vorbereitungs-Briefings ist etwas schiefgelaufen. Bitte erneut versuchen.",
+      "addEventFailed": "Beim Hinzufügen dieses Events ist etwas schiefgelaufen. Bitte erneut versuchen."
+    }
   }
 }
