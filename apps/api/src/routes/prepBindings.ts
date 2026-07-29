@@ -2,30 +2,36 @@ import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { z } from 'zod';
 import {
   entryKeyInputSchema,
+  errorResponseSchema,
   matchRecordSchema,
   opponentAliasMapSchema,
   opponentNameInputSchema,
   PREP_LIKELY_OPPONENTS_MAX,
+  prepBriefResponseSchema,
   prepScoutBindingCandidatesResponseSchema,
+  prepScoutBindingConfirmRequestSchema,
   type PrepScoutBindingCandidate,
+  type ScoutBinding,
+  type ScoutBindingProvider,
 } from '@smash-tracker/shared';
 import type { ParryggConfig, StartggConfig } from '../config/env.js';
 import type { ParryggClients } from '../parrygg/client.js';
+import { parseScoutInput, ScoutCache, ScoutInputError, scoutPlayer } from '../startgg/scout.js';
+import { ParryScoutCache, scoutParryPlayer } from '../parrygg/scout.js';
 import { normalizeOpponentTag } from '../startgg/sync.js';
-import { readPrepBrief } from '../prep/prep.js';
+import { clearPrepScoutBinding, readPrepBrief, setPrepScoutBinding } from '../prep/prep.js';
 import { NotFoundError } from '../services/rtdb.js';
 
 /**
  * `apps/api/src/routes/prepBindings.ts` is a SIBLING of `routes/prep.ts` —
  * deliberately NOT inside `apps/api/src/prep/` — because binding resolution
- * needs the start.gg and parry.gg scout resolvers (added in 27-06 Task 3),
- * and the prep module's import-graph gate plus its stated "zero model
- * calls, zero credit movement" ownership (D-22, `importGraph.test.ts`) must
- * stay narrow. Nothing in this file spends a credit, creates a report job,
- * or calls the model — Task 3 adds only read-only provider lookups
- * (start.gg GraphQL / parry.gg gRPC) and then delegates the actual storage
- * write to `setPrepScoutBinding`/`clearPrepScoutBinding` in
- * `apps/api/src/prep/prep.ts`.
+ * needs the start.gg and parry.gg scout resolvers, and the prep module's
+ * import-graph gate plus its stated "zero model calls, zero credit
+ * movement" ownership (D-22, `importGraph.test.ts`) must stay narrow.
+ * Nothing in this file spends a credit, creates a report job, or calls the
+ * model — it only performs read-only provider lookups (start.gg GraphQL /
+ * parry.gg gRPC) and then delegates the actual storage write to
+ * `setPrepScoutBinding`/`clearPrepScoutBinding` in `apps/api/src/prep/prep.ts`.
  */
 
 /** Small module cap on the candidate list — never larger than the curated-opponent ceiling itself (T-27-28). */
@@ -153,8 +159,15 @@ function groupBindingCandidates(
  * file, mirroring `routes/prep.ts`'s own rule and rationale (T-27-24) —
  * every handler reads `request.uid` directly.
  */
-const prepBindingsRoutes: FastifyPluginAsyncZod<PrepBindingsRoutesOptions> = async (app) => {
+const prepBindingsRoutes: FastifyPluginAsyncZod<PrepBindingsRoutesOptions> = async (
+  app,
+  options,
+) => {
   app.addHook('preHandler', app.authenticate);
+
+  const fetchImpl = options.fetchImpl ?? fetch;
+  const scoutCache = new ScoutCache();
+  const parryScoutCache = new ParryScoutCache();
 
   // GET /api/prep/:entryKey/opponents/:name/binding-candidates — a pure
   // read: zero writes, zero charge, zero model call (T-27-26). A name not
@@ -197,6 +210,166 @@ const prepBindingsRoutes: FastifyPluginAsyncZod<PrepBindingsRoutesOptions> = asy
         : [];
 
       return { candidates: groupBindingCandidates(rawMatches, aliasMap, name) };
+    },
+  );
+
+  // PUT /api/prep/:entryKey/opponents/:name/binding — confirm a binding.
+  // The request body carries REFERENCES (opaque provider queries), NOT
+  // identities: whatever the client sent is discarded once resolution
+  // succeeds, and only the resolver's OWN output is persisted (T-27-23).
+  // The start.gg side structurally refuses a bare gamer tag
+  // (`parseScoutInput` only accepts a profile URL, a "user/<slug>"
+  // reference, or a numeric player id) — this is the guarantee that a bare
+  // tag can never become a binding (27-CONTEXT.md line 93, T-27-27).
+  app.put(
+    '/prep/:entryKey/opponents/:name/binding',
+    {
+      schema: {
+        params: prepBindingParamsSchema,
+        body: prepScoutBindingConfirmRequestSchema,
+        response: {
+          200: prepBriefResponseSchema,
+          400: errorResponseSchema,
+          404: errorResponseSchema,
+          503: errorResponseSchema,
+        },
+      },
+    },
+    async (request, reply) => {
+      const { entryKey, name } = request.params;
+      const { startgg, parrygg } = request.body;
+
+      let startggResolved:
+        { startggPlayerId: number; startggUserSlug?: string; gamerTag: string } | undefined;
+      if (startgg) {
+        if (!options.startggConfig) {
+          return reply.code(503).send({
+            error: 'Service Unavailable',
+            message: 'start.gg integration is not configured on this server',
+            statusCode: 503,
+          });
+        }
+
+        let input;
+        try {
+          input = parseScoutInput(startgg.query);
+        } catch (err) {
+          if (err instanceof ScoutInputError) {
+            return reply.code(400).send({
+              error: 'Bad Request',
+              message: err.message,
+              statusCode: 400,
+            });
+          }
+          throw err;
+        }
+
+        const report = await scoutPlayer(
+          options.startggConfig.apiToken,
+          input,
+          fetchImpl,
+          scoutCache,
+        );
+        if (!report || report.player.id === undefined) {
+          return reply.code(404).send({
+            error: 'Not Found',
+            message: 'No start.gg player found for that query',
+            statusCode: 404,
+          });
+        }
+        startggResolved = {
+          startggPlayerId: report.player.id,
+          ...(report.player.userSlug ? { startggUserSlug: report.player.userSlug } : {}),
+          gamerTag: report.player.gamerTag,
+        };
+      }
+
+      let parryResolved: { parryUserId: string; gamerTag: string } | undefined;
+      if (parrygg) {
+        if (!options.parryggConfig) {
+          return reply.code(503).send({
+            error: 'Service Unavailable',
+            message: 'parry.gg integration is not configured on this server',
+            statusCode: 503,
+          });
+        }
+
+        const report = await scoutParryPlayer(
+          options.parryggConfig.apiKey,
+          parrygg.query,
+          parryScoutCache,
+          options.parryggClients,
+        );
+        // A resolution that produced no player, or produced one with no
+        // stable parry.gg user id, is refused — only a resolution that
+        // yields a stable provider id is accepted (T-27-27 parry.gg side).
+        if (!report || !report.player.parryUserId) {
+          return reply.code(404).send({
+            error: 'Not Found',
+            message: 'No parry.gg player found for that query',
+            statusCode: 404,
+          });
+        }
+        parryResolved = {
+          parryUserId: report.player.parryUserId,
+          gamerTag: report.player.gamerTag,
+        };
+      }
+
+      const provider: ScoutBindingProvider =
+        startggResolved && parryResolved ? 'combined' : startggResolved ? 'startgg' : 'parrygg';
+      // start.gg preferred as the display tag source when both resolved,
+      // matching the plan's stated preference.
+      const displayTag = startggResolved?.gamerTag ?? parryResolved?.gamerTag ?? '';
+
+      const binding: ScoutBinding = {
+        provider,
+        ...(startggResolved
+          ? {
+              startggPlayerId: startggResolved.startggPlayerId,
+              ...(startggResolved.startggUserSlug
+                ? { startggUserSlug: startggResolved.startggUserSlug }
+                : {}),
+            }
+          : {}),
+        ...(parryResolved ? { parryUserId: parryResolved.parryUserId } : {}),
+        displayTag,
+        // The caller always supplied an explicit reference on this route —
+        // even a pre-filled candidate is still an explicit confirmation —
+        // so `method` is always 'profileInput' here.
+        method: 'profileInput',
+        confirmedAt: Date.now(),
+      };
+
+      // ConflictError (not-currently-curated)/NotFoundError (no brief) map
+      // through the existing global handler — no local try/catch, matching
+      // `routes/prep.ts`'s stated convention.
+      const brief = await setPrepScoutBinding(
+        app.firebase.database,
+        request.uid,
+        entryKey,
+        name,
+        binding,
+      );
+      return { brief };
+    },
+  );
+
+  // DELETE /api/prep/:entryKey/opponents/:name/binding — clear a binding.
+  app.delete(
+    '/prep/:entryKey/opponents/:name/binding',
+    {
+      schema: {
+        params: prepBindingParamsSchema,
+        response: {
+          200: prepBriefResponseSchema,
+        },
+      },
+    },
+    async (request) => {
+      const { entryKey, name } = request.params;
+      const brief = await clearPrepScoutBinding(app.firebase.database, request.uid, entryKey, name);
+      return { brief };
     },
   );
 };

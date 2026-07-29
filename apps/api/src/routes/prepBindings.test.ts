@@ -1,4 +1,6 @@
 import { describe, expect, it } from 'vitest';
+import type { StartggConfig, ParryggConfig } from '../config/env.js';
+import type { ParryggClients } from '../parrygg/client.js';
 import { authHeader, buildTestApp, TEST_UID } from '../test-support/testApp.js';
 
 const ENTRY_KEY = 'manual-locals-42-abc123';
@@ -220,6 +222,330 @@ describe('GET /api/prep/:entryKey/opponents/:name/binding-candidates', () => {
     const after = JSON.stringify(database.dump());
 
     expect(response.statusCode).toBe(200);
+    expect(after).toEqual(before);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Task 3: PUT/DELETE .../binding
+// ---------------------------------------------------------------------------
+
+const STARTGG_CONFIG: StartggConfig = {
+  clientId: 'client-123',
+  clientSecret: 'secret-456',
+  redirectUri: 'http://localhost:3001/api/integrations/startgg/callback',
+  apiToken: 'server-data-token',
+  stateSecret: 'state-secret',
+  webBaseUrl: 'http://localhost:5173',
+};
+
+const PARRYGG_CONFIG: ParryggConfig = { apiKey: 'parry-key' };
+
+const RESOLVE_RESPONSE = {
+  user: { id: 1111624, slug: 'user/07dc2239', player: { id: 1802316, gamerTag: 'Pandem1c' } },
+};
+
+const EMPTY_SETS_RESPONSE = {
+  player: { sets: { pageInfo: { totalPages: 1 }, nodes: [] } },
+};
+
+function gqlResponse(data: unknown, init?: ResponseInit) {
+  return new Response(JSON.stringify({ data }), init);
+}
+
+function scoutFetchMock(): typeof fetch {
+  return (async (_url: unknown, init?: RequestInit) => {
+    const body = JSON.parse(String(init?.body)) as { query: string };
+    if (body.query.includes('ResolveBySlug') || body.query.includes('ResolveById')) {
+      return gqlResponse(RESOLVE_RESPONSE);
+    }
+    return gqlResponse(EMPTY_SETS_RESPONSE);
+  }) as typeof fetch;
+}
+
+const PARRY_USER_ID = '019ce9ba-debd-7e11-84a2-77258f52644e';
+
+function parryClients(overrides: {
+  getUser?: () => { id: string; gamerTag: string } | null;
+}): ParryggClients {
+  return {
+    users: {
+      getUser: async () => {
+        const found = overrides.getUser?.() ?? null;
+        return {
+          getUser: () => (found ? { toObject: () => ({ ...found, bioMd: '' }) } : undefined),
+        };
+      },
+      getUsers: async () => ({ getUsersList: () => [] }),
+    } as unknown as ParryggClients['users'],
+    matches: {
+      getMatches: async () => ({ getMatchesList: () => [] }),
+    } as unknown as ParryggClients['matches'],
+  };
+}
+
+/** Deep-clones the credit balance + reportJobs subtrees, used to assert money never moved. */
+function moneySnapshot(database: ReturnType<typeof buildTestApp>['database']): string {
+  const tree = database.dump() as Record<string, unknown>;
+  return JSON.stringify({
+    creditBalances: tree.creditBalances ?? null,
+    creditLedger: tree.creditLedger ?? null,
+    reportJobs: tree.reportJobs ?? null,
+  });
+}
+
+describe('PUT /api/prep/:entryKey/opponents/:name/binding', () => {
+  it('a start.gg profile reference that resolves persists a binding carrying the resolved id, slug, and gamer tag', async () => {
+    const { app, database } = buildTestApp({
+      startgg: STARTGG_CONFIG,
+      startggFetch: scoutFetchMock(),
+    });
+    seedBrief(database, { rival: true });
+
+    const response = await app.inject({
+      method: 'PUT',
+      url: `/api/prep/${ENTRY_KEY}/opponents/rival/binding`,
+      headers: authHeader(),
+      payload: { startgg: { query: 'user/07dc2239' } },
+    });
+
+    expect(response.statusCode).toBe(200);
+    const body = response.json() as {
+      brief: { scoutBindings: Record<string, Record<string, unknown>> };
+    };
+    expect(body.brief.scoutBindings.rival).toMatchObject({
+      provider: 'startgg',
+      startggPlayerId: 1802316,
+      startggUserSlug: 'user/07dc2239',
+      displayTag: 'Pandem1c',
+    });
+  });
+
+  it('a parry.gg profile reference that resolves persists a binding carrying the resolved user id', async () => {
+    const { app, database } = buildTestApp({
+      parrygg: PARRYGG_CONFIG,
+      parryggClients: parryClients({
+        getUser: () => ({ id: PARRY_USER_ID, gamerTag: 'Pandem1c' }),
+      }),
+    });
+    seedBrief(database, { rival: true });
+
+    const response = await app.inject({
+      method: 'PUT',
+      url: `/api/prep/${ENTRY_KEY}/opponents/rival/binding`,
+      headers: authHeader(),
+      payload: { parrygg: { query: `https://parry.gg/profile/${PARRY_USER_ID}` } },
+    });
+
+    expect(response.statusCode).toBe(200);
+    const body = response.json() as {
+      brief: { scoutBindings: Record<string, Record<string, unknown>> };
+    };
+    expect(body.brief.scoutBindings.rival).toMatchObject({
+      provider: 'parrygg',
+      parryUserId: PARRY_USER_ID,
+      displayTag: 'Pandem1c',
+    });
+  });
+
+  it('confirming with BOTH references, both resolving, persists a combined binding with both identities', async () => {
+    const { app, database } = buildTestApp({
+      startgg: STARTGG_CONFIG,
+      startggFetch: scoutFetchMock(),
+      parrygg: PARRYGG_CONFIG,
+      parryggClients: parryClients({
+        getUser: () => ({ id: PARRY_USER_ID, gamerTag: 'Pandem1c' }),
+      }),
+    });
+    seedBrief(database, { rival: true });
+
+    const response = await app.inject({
+      method: 'PUT',
+      url: `/api/prep/${ENTRY_KEY}/opponents/rival/binding`,
+      headers: authHeader(),
+      payload: {
+        startgg: { query: 'user/07dc2239' },
+        parrygg: { query: `https://parry.gg/profile/${PARRY_USER_ID}` },
+      },
+    });
+
+    expect(response.statusCode).toBe(200);
+    const body = response.json() as {
+      brief: { scoutBindings: Record<string, Record<string, unknown>> };
+    };
+    expect(body.brief.scoutBindings.rival).toMatchObject({
+      provider: 'combined',
+      startggPlayerId: 1802316,
+      parryUserId: PARRY_USER_ID,
+    });
+  });
+
+  it('a bare gamer tag on the start.gg side answers 400 and persists nothing', async () => {
+    const { app, database } = buildTestApp({
+      startgg: STARTGG_CONFIG,
+      startggFetch: scoutFetchMock(),
+    });
+    seedBrief(database, { rival: true });
+
+    const response = await app.inject({
+      method: 'PUT',
+      url: `/api/prep/${ENTRY_KEY}/opponents/rival/binding`,
+      headers: authHeader(),
+      payload: { startgg: { query: 'Pandem1c' } },
+    });
+
+    expect(response.statusCode).toBe(400);
+    const brief = await app.inject({
+      method: 'GET',
+      url: `/api/prep/${ENTRY_KEY}`,
+      headers: authHeader(),
+    });
+    const body = brief.json() as { brief: { scoutBindings: Record<string, unknown> } };
+    expect(body.brief.scoutBindings).toEqual({});
+  });
+
+  it('a reference that resolves to no player answers 404 and persists nothing', async () => {
+    const { app, database } = buildTestApp({
+      startgg: STARTGG_CONFIG,
+      startggFetch: (async () => gqlResponse({ user: null })) as typeof fetch,
+    });
+    seedBrief(database, { rival: true });
+
+    const response = await app.inject({
+      method: 'PUT',
+      url: `/api/prep/${ENTRY_KEY}/opponents/rival/binding`,
+      headers: authHeader(),
+      payload: { startgg: { query: 'user/nonexistent' } },
+    });
+
+    expect(response.statusCode).toBe(404);
+    const brief = await app.inject({
+      method: 'GET',
+      url: `/api/prep/${ENTRY_KEY}`,
+      headers: authHeader(),
+    });
+    const body = brief.json() as { brief: { scoutBindings: Record<string, unknown> } };
+    expect(body.brief.scoutBindings).toEqual({});
+  });
+
+  it('confirming for a non-curated opponent answers 409 and persists nothing', async () => {
+    const { app, database } = buildTestApp({
+      startgg: STARTGG_CONFIG,
+      startggFetch: scoutFetchMock(),
+    });
+    seedBrief(database, {}); // rival is NOT curated
+
+    const response = await app.inject({
+      method: 'PUT',
+      url: `/api/prep/${ENTRY_KEY}/opponents/rival/binding`,
+      headers: authHeader(),
+      payload: { startgg: { query: 'user/07dc2239' } },
+    });
+
+    expect(response.statusCode).toBe(409);
+    const brief = await app.inject({
+      method: 'GET',
+      url: `/api/prep/${ENTRY_KEY}`,
+      headers: authHeader(),
+    });
+    const body = brief.json() as { brief: { scoutBindings: Record<string, unknown> } };
+    expect(body.brief.scoutBindings).toEqual({});
+  });
+
+  it('persists ONLY resolved values, never the raw submitted reference text', async () => {
+    const { app, database } = buildTestApp({
+      startgg: STARTGG_CONFIG,
+      startggFetch: scoutFetchMock(),
+    });
+    seedBrief(database, { rival: true });
+
+    // The submitted reference text ("user/some-other-slug") differs from
+    // what the resolver actually returns (RESOLVE_RESPONSE's
+    // "user/07dc2239") — the stubbed fetch resolves ANY ResolveBySlug query
+    // to the same fixed player, so this proves the stored value is the
+    // RESOLVED slug, not the submitted one.
+    const response = await app.inject({
+      method: 'PUT',
+      url: `/api/prep/${ENTRY_KEY}/opponents/rival/binding`,
+      headers: authHeader(),
+      payload: { startgg: { query: 'user/some-other-slug' } },
+    });
+
+    expect(response.statusCode).toBe(200);
+    const body = response.json() as {
+      brief: { scoutBindings: Record<string, Record<string, unknown>> };
+    };
+    expect(body.brief.scoutBindings.rival?.startggUserSlug).toBe('user/07dc2239');
+    expect(body.brief.scoutBindings.rival?.startggUserSlug).not.toBe('user/some-other-slug');
+  });
+
+  it('every case leaves the credit balance node and reportJobs subtree absent/unchanged', async () => {
+    const { app, database } = buildTestApp({
+      startgg: STARTGG_CONFIG,
+      startggFetch: scoutFetchMock(),
+    });
+    seedBrief(database, { rival: true });
+
+    const before = moneySnapshot(database);
+    await app.inject({
+      method: 'PUT',
+      url: `/api/prep/${ENTRY_KEY}/opponents/rival/binding`,
+      headers: authHeader(),
+      payload: { startgg: { query: 'user/07dc2239' } },
+    });
+    const after = moneySnapshot(database);
+
+    expect(after).toEqual(before);
+  });
+});
+
+describe('DELETE /api/prep/:entryKey/opponents/:name/binding', () => {
+  it('clears the binding and returns the updated brief', async () => {
+    const { app, database } = buildTestApp({
+      startgg: STARTGG_CONFIG,
+      startggFetch: scoutFetchMock(),
+    });
+    seedBrief(database, { rival: true });
+
+    await app.inject({
+      method: 'PUT',
+      url: `/api/prep/${ENTRY_KEY}/opponents/rival/binding`,
+      headers: authHeader(),
+      payload: { startgg: { query: 'user/07dc2239' } },
+    });
+
+    const response = await app.inject({
+      method: 'DELETE',
+      url: `/api/prep/${ENTRY_KEY}/opponents/rival/binding`,
+      headers: authHeader(),
+    });
+
+    expect(response.statusCode).toBe(200);
+    const body = response.json() as { brief: { scoutBindings: Record<string, unknown> } };
+    expect(body.brief.scoutBindings).toEqual({});
+  });
+
+  it('neither confirm nor clear spends a credit, creates a report job, or invokes the model client', async () => {
+    const { app, database } = buildTestApp({
+      startgg: STARTGG_CONFIG,
+      startggFetch: scoutFetchMock(),
+    });
+    seedBrief(database, { rival: true });
+
+    await app.inject({
+      method: 'PUT',
+      url: `/api/prep/${ENTRY_KEY}/opponents/rival/binding`,
+      headers: authHeader(),
+      payload: { startgg: { query: 'user/07dc2239' } },
+    });
+    const before = moneySnapshot(database);
+    await app.inject({
+      method: 'DELETE',
+      url: `/api/prep/${ENTRY_KEY}/opponents/rival/binding`,
+      headers: authHeader(),
+    });
+    const after = moneySnapshot(database);
+
     expect(after).toEqual(before);
   });
 });
