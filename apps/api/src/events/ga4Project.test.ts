@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { CANONICAL_SCHEMA_VERSION, type EventEnvelope } from '@smash-tracker/shared';
+import {
+  CANONICAL_SCHEMA_VERSION,
+  CHECKOUT_PREP_REASON,
+  type EventEnvelope,
+} from '@smash-tracker/shared';
 import { projectEventToGa4 } from './ga4Project.js';
 
 function baseEnvelope(overrides: Partial<EventEnvelope> = {}): EventEnvelope {
@@ -334,6 +338,80 @@ describe('projectEventToGa4 — Phase 26 prep events deliberately omitted from G
 
     expect(projected).not.toBeNull();
     expect(projected?.params).toEqual({ onboardingCause: 'manual_entry' });
+  });
+});
+
+/**
+ * Phase 27 (EVT-05, 27-RESEARCH.md Pitfall 5): the `prepReason` enum marker
+ * added to the `checkout_started`/`checkout_completed` payloads by 27-05
+ * (`apps/api/src/routes/billing.ts`) is attribution data that belongs in
+ * the first-party RTDB `eventLedger` (the source of truth) — it is
+ * DELIBERATELY absent from the GA4 payload allowlist for the duration of
+ * the ~2026-08-02 canonical-measurement reconciliation soak (STATE.md
+ * "Blockers/Concerns"), mirroring exactly how Phase 26's prep event names
+ * were deliberately excluded from GA4 above. The activation gate (27-04)
+ * that ships this whole feature OFF is conditioned on that soak's
+ * `GET /internal/jobs/funnel-readout` showing ≥98% reconcile and <0.5%
+ * dupes — adding a new payload key to an already-allowlisted event family
+ * mid-soak would perturb exactly the measurement window the gate depends
+ * on. This is a deliberate, tested non-add, not an oversight: re-adding
+ * `prepReason` to the allowlist is a separately-reviewed decision, and this
+ * lock makes a casual future edit fail CI.
+ */
+describe('Phase 27 prep attribution stays out of GA4 during the soak', () => {
+  it('projecting a checkout_started event whose payload carries the prep marker yields no prep-marker key in the GA4 payload', () => {
+    const projected = projectEventToGa4(
+      baseEnvelope({
+        eventName: 'checkout_started',
+        payload: { packId: 'pack5', prepReason: CHECKOUT_PREP_REASON },
+      }),
+    );
+
+    expect(projected).not.toBeNull();
+    expect(projected?.params).toEqual({ packId: 'pack5' });
+    expect(projected?.params).not.toHaveProperty('prepReason');
+  });
+
+  it('projecting a checkout_completed event whose payload carries the prep marker yields no prep-marker key in the GA4 payload', () => {
+    const projected = projectEventToGa4(
+      baseEnvelope({
+        eventName: 'checkout_completed',
+        payload: { packId: 'pack15', prepReason: CHECKOUT_PREP_REASON },
+      }),
+    );
+
+    expect(projected).not.toBeNull();
+    expect(projected?.params).toEqual({ packId: 'pack15' });
+    expect(projected?.params).not.toHaveProperty('prepReason');
+  });
+
+  // A deliberate lock, not an accident: the checkout/credit event family's
+  // allowlisted params are asserted unchanged in size and content from
+  // what they hold today, so a future "helpful" addition of `prepReason`
+  // (or any other new key) to any of these five rows fails CI and has to
+  // be argued for explicitly, exactly as the Phase 23/26 locks above do.
+  it.each([
+    ['checkout_started', ['packId']],
+    ['checkout_completed', ['packId']],
+    ['credits_granted', ['packId']],
+    ['credit_spent', []],
+    ['credit_refunded', []],
+  ] as const)('the %s allowlist projects exactly %j and nothing else', (eventName, keys) => {
+    const fullPayload = {
+      packId: 'pack5',
+      prepReason: CHECKOUT_PREP_REASON,
+      reason: 'prep_bundle',
+      entryKey: 'tournament-secret-42',
+      bundleId: 'bundle-secret-1',
+    };
+    const projected = projectEventToGa4(baseEnvelope({ eventName, payload: fullPayload }));
+
+    expect(projected).not.toBeNull();
+    const expectedParams: Record<string, string> = {};
+    for (const key of keys) {
+      expectedParams[key] = fullPayload[key as keyof typeof fullPayload] as string;
+    }
+    expect(projected?.params).toEqual(expectedParams);
   });
 });
 
