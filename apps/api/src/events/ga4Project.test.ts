@@ -304,6 +304,40 @@ describe('projectEventToGa4 — Phase 23 claim/delegation events deliberately om
 });
 
 /**
+ * Phase 26 (Free Tournament Prep Brief, D-10): all three of Phase 26's prep
+ * events are catalogued in the shared EVENT_CATALOG but deliberately absent
+ * from GA4_PAYLOAD_ALLOWLIST for the duration of the canonical-measurement
+ * reconciliation soak (STATE.md release rail, ~2026-08-02) — the RTDB
+ * eventLedger remains the source of truth during the soak, and re-adding
+ * any of them to the GA4 allowlist is a separately-reviewed decision, not a
+ * casual allowlist edit. This locks the omission in so that edit fails CI.
+ * The paired case below re-asserts Phase 13's `tournament_prep_activated`
+ * still projects unchanged (with its `onboardingCause` param intact),
+ * catching an accidental edit to that existing allowlist row (D-11).
+ */
+describe('projectEventToGa4 — Phase 26 prep events deliberately omitted from GA4', () => {
+  it.each(['prep_brief_activated', 'prep_brief_reopened', 'prep_offer_viewed'])(
+    'returns null for %s',
+    (eventName) => {
+      const projected = projectEventToGa4(baseEnvelope({ eventName }));
+      expect(projected).toBeNull();
+    },
+  );
+
+  it('still projects the Phase 13 tournament_prep_activated event unchanged (no regression)', () => {
+    const projected = projectEventToGa4(
+      baseEnvelope({
+        eventName: 'tournament_prep_activated',
+        payload: { onboardingCause: 'manual_entry' },
+      }),
+    );
+
+    expect(projected).not.toBeNull();
+    expect(projected?.params).toEqual({ onboardingCause: 'manual_entry' });
+  });
+});
+
+/**
  * MEAS-06 (Claude's-discretion validation-endpoint test per RESEARCH.md
  * Pattern 7): asserts a projected payload passes GA4's own schema
  * validation via `/debug/mp/collect` — a TEST, never a runtime code path.
