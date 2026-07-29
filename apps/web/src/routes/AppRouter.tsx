@@ -75,6 +75,11 @@ const TournamentDetailPage = lazy(() =>
     default: m.TournamentDetailPage,
   })),
 );
+const PrepBriefPage = lazy(() =>
+  import('@/pages/Tournaments/PrepBriefPage').then((m) => ({
+    default: m.PrepBriefPage,
+  })),
+);
 const IntegrationsPage = lazy(() =>
   import('@/pages/Integrations/IntegrationsPage').then((m) => ({ default: m.IntegrationsPage })),
 );
@@ -353,6 +358,14 @@ export function AppRouter() {
             element={
               <ProtectedRoute>
                 <TournamentDetailPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/tournaments/:entryKey/prep"
+            element={
+              <ProtectedRoute>
+                <PrepBriefPage />
               </ProtectedRoute>
             }
           />
