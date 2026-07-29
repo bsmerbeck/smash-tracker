@@ -232,6 +232,7 @@ describe('empty checklist and opponent selection round-trip cleanly (owner test 
       lastOpenedAt: EVENT_DATE,
       checklist: {},
       likelyOpponents: {},
+      scoutBindings: {},
     });
   });
 });
