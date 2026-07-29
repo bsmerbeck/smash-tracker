@@ -2,6 +2,7 @@ import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import {
+  entryKeyInputSchema,
   opponentNameInputSchema,
   PREP_CHECKLIST_ITEM_IDS,
   prepActivateResponseSchema,
@@ -64,34 +65,16 @@ async function requireOwnedEntry(
  * itself: that schema trims and lowercases, which would corrupt `entryKey`
  * (a case-sensitive, already-generated key that must match the stored
  * child key byte-for-byte) — only the illegal-character rejection applies
- * here, so it is duplicated locally rather than imported. `opponentNameInputSchema`'s
- * own `containsRtdbIllegalChar` (packages/shared/src/opponent.ts) also rejects
- * any code point <= 0x1f (ASCII control characters), matching the real
- * firebase-admin `INVALID_PATH_REGEX` (controls + DEL are path-illegal, see
- * `test-support/fakeDatabase.ts`'s parity comment) — that check is not a
- * regex-literal concern and can't be folded into `ENTRY_KEY_ILLEGAL_CHARS`,
- * so it's replicated as a code-point scan below (WR-01 residual).
+ * here.
+ *
+ * Phase 27 (RESEARCH.md Pitfall 7): the validator itself now lives in
+ * `packages/shared/src/prep.ts` (`entryKeyInputSchema`) rather than being
+ * duplicated locally, because Phase 27 introduces three more call sites for
+ * the exact same rule (`prepBindings.ts`, `billing.ts`, `reports.ts`) — one
+ * shared definition keeps them from drifting apart.
  */
-const ENTRY_KEY_ILLEGAL_CHARS = /[.#$[\]/]/;
-
-function containsIllegalEntryKeyChar(value: string): boolean {
-  for (let i = 0; i < value.length; i += 1) {
-    const codePoint = value.codePointAt(i);
-    if (codePoint !== undefined && codePoint <= 0x1f) {
-      return true;
-    }
-  }
-  return ENTRY_KEY_ILLEGAL_CHARS.test(value);
-}
-
 const prepParamsSchema = z.object({
-  entryKey: z
-    .string()
-    .min(1)
-    .max(200)
-    .refine((value) => !containsIllegalEntryKeyChar(value), {
-      message: 'entryKey cannot contain . # $ [ ] / or control characters',
-    }),
+  entryKey: entryKeyInputSchema,
 });
 
 const prepChecklistParamsSchema = prepParamsSchema.extend({
@@ -103,6 +86,18 @@ const prepOpponentParamsSchema = prepParamsSchema.extend({
 });
 
 /**
+ * Phase 27 (RPT-04): whether the caller may see the paid prep surface.
+ * Computed one layer above this module in `apps/api/src/app.ts` — from the
+ * activation flag AND the reports config AND the stripe config — and passed
+ * in as a plain boolean so this file (and the whole `apps/api/src/prep/`
+ * tree it calls into) never needs to know ReportsConfig or StripeConfig
+ * exist (the import-graph gate this module's tests enforce).
+ */
+export interface PrepRoutesOptions {
+  paidReportsAvailable: boolean;
+}
+
+/**
  * Phase 26 (PREP-01..04, D-22): the free deterministic tournament prep
  * brief, addressed only by `request.uid` — NO `app.resolveSubject`.
  * `prepBriefs` is keyed on uid exactly like the `tournamentEntries` tree it
@@ -111,7 +106,7 @@ const prepOpponentParamsSchema = prepParamsSchema.extend({
  * session address a different uid's brief tree (RESEARCH Pitfall 5,
  * T-26-16). Every handler below reads `request.uid` directly.
  */
-const prepRoutes: FastifyPluginAsyncZod = async (app) => {
+const prepRoutes: FastifyPluginAsyncZod<PrepRoutesOptions> = async (app, options) => {
   app.addHook('preHandler', app.authenticate);
 
   // GET /api/prep/:entryKey — D-12: a pure read, no writes. An existing
@@ -136,10 +131,15 @@ const prepRoutes: FastifyPluginAsyncZod = async (app) => {
         request.uid,
         request.params.entryKey,
       );
+      // Phase 27 (RPT-04): returned unconditionally, in BOTH shapes below,
+      // by every new server — deploy-order compatibility (an old client
+      // parsing this response simply ignores the extra field). Clients must
+      // treat only a strict `true` as enabling the paid surface;
+      // `undefined`/`false` both mean "not available".
       if (brief === null) {
-        return { activated: false };
+        return { activated: false, paidReportsAvailable: options.paidReportsAvailable };
       }
-      return { activated: true, brief };
+      return { activated: true, brief, paidReportsAvailable: options.paidReportsAvailable };
     },
   );
 

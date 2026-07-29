@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import Anthropic from '@anthropic-ai/sdk';
-import type { StartggConfig, ReportsConfig } from '../config/env.js';
+import type { PrepPaidConfig, StartggConfig, ReportsConfig, StripeConfig } from '../config/env.js';
 import type { AnthropicLikeClient } from '../reports/generate.js';
 import type { ParryggClients } from '../parrygg/client.js';
 import { authHeader, buildTestApp, TEST_UID } from '../test-support/testApp.js';
@@ -1540,5 +1540,194 @@ describe('POST /api/reports — reportJobs state machine (BILL-06/MEAS-03)', () 
       payload: { query: 'user/07dc2239' },
     });
     expect(response.statusCode).toBe(200);
+  });
+});
+
+describe('paid prep activation gate (RPT-04)', () => {
+  const PREP_PAID_CONFIG: PrepPaidConfig = { enabled: true };
+  const STRIPE_CONFIG: StripeConfig = {
+    secretKey: 'sk-test-123',
+    webhookSecret: 'whsec-test-456',
+  };
+  const PREP_REQUEST_BODY = {
+    reason: 'prep_report' as const,
+    entryKey: 'evo-2026-ult',
+    opponentName: 'rival',
+  };
+
+  it('answers 503 with the house error body for a prep-context request while the gate is off', async () => {
+    const { app } = buildTestApp({
+      startgg: STARTGG_CONFIG,
+      startggFetch: scoutFetchMock(),
+      reports: REPORTS_CONFIG,
+      stripe: STRIPE_CONFIG,
+      reportsClient: stubClient(async () => ({
+        stop_reason: 'end_turn',
+        parsed_output: VALID_REPORT,
+      })),
+      // prepPaid deliberately omitted — gate off (the default).
+    });
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/reports',
+      headers: authHeader(),
+      payload: PREP_REQUEST_BODY,
+    });
+
+    expect(response.statusCode).toBe(503);
+    expect(response.json()).toMatchObject({
+      error: 'Service Unavailable',
+      statusCode: 503,
+    });
+  });
+
+  it('refuses an allowlisted uid too (owner battery item 9 — the gate precedes the allowlist branch)', async () => {
+    // TEST_UID is allowlisted on REPORTS_CONFIG (module-level const above).
+    const { app } = buildTestApp({
+      startgg: STARTGG_CONFIG,
+      startggFetch: scoutFetchMock(),
+      reports: REPORTS_CONFIG,
+      reportsClient: stubClient(async () => ({
+        stop_reason: 'end_turn',
+        parsed_output: VALID_REPORT,
+      })),
+      // prepPaid deliberately omitted — gate off. No stripe config either;
+      // an allowlisted uid would otherwise sail through the freeAccess
+      // branch below the gate, which is exactly what this test guards.
+    });
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/reports',
+      headers: authHeader(),
+      payload: PREP_REQUEST_BODY,
+    });
+
+    expect(response.statusCode).toBe(503);
+  });
+
+  it('produces zero writes and zero downstream calls while the gate is off', async () => {
+    const modelSpy = vi.fn(async () => ({
+      stop_reason: 'end_turn' as const,
+      parsed_output: VALID_REPORT,
+    }));
+    const scoutFetch = vi.fn(scoutFetchMock());
+    const { app, database } = buildTestApp({
+      startgg: STARTGG_CONFIG,
+      startggFetch: scoutFetch,
+      reports: REPORTS_CONFIG,
+      stripe: STRIPE_CONFIG,
+      reportsClient: stubClient(modelSpy),
+    });
+    database.seed(`credits/${TEST_UID}/balance`, 5);
+    const before = JSON.stringify(database.dump());
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/reports',
+      headers: authHeader(),
+      payload: PREP_REQUEST_BODY,
+    });
+
+    expect(response.statusCode).toBe(503);
+
+    const after = JSON.stringify(database.dump());
+    expect(after).toEqual(before);
+
+    const dump = database.dump() as Record<string, unknown>;
+    expect(dump.reportJobs).toBeUndefined();
+    expect(dump.creditLedger).toBeUndefined();
+    expect(dump.eventLedger).toBeUndefined();
+    const balance = await database.ref(`credits/${TEST_UID}/balance`).get();
+    expect(balance.val()).toBe(5);
+
+    expect(modelSpy).not.toHaveBeenCalled();
+    expect(scoutFetch).not.toHaveBeenCalled();
+  });
+
+  it('a request without reason behaves exactly as today whether the gate is on or off', async () => {
+    for (const prepPaid of [null, PREP_PAID_CONFIG]) {
+      const { app, database } = buildTestApp({
+        startgg: STARTGG_CONFIG,
+        startggFetch: scoutFetchMock(),
+        reports: REPORTS_CONFIG,
+        stripe: STRIPE_CONFIG,
+        ...(prepPaid ? { prepPaid } : {}),
+        reportsClient: stubClient(async () => ({
+          stop_reason: 'end_turn',
+          parsed_output: VALID_REPORT,
+        })),
+      });
+
+      const response = await app.inject({
+        method: 'POST',
+        url: '/api/reports',
+        headers: authHeader(),
+        payload: { query: 'user/07dc2239' },
+      });
+
+      expect(response.statusCode).toBe(200);
+      const dump = database.dump() as Record<string, unknown>;
+      const reportJobs = dump.reportJobs as Record<string, unknown>;
+      expect(Object.keys(reportJobs[TEST_UID] as object)).toHaveLength(1);
+    }
+  });
+
+  it('GET /api/reports/config behaves identically with the gate on and off', async () => {
+    for (const prepPaid of [null, PREP_PAID_CONFIG]) {
+      const { app } = buildTestApp({
+        startgg: STARTGG_CONFIG,
+        startggFetch: scoutFetchMock(),
+        reports: REPORTS_CONFIG,
+        stripe: STRIPE_CONFIG,
+        ...(prepPaid ? { prepPaid } : {}),
+      });
+
+      const response = await app.inject({
+        method: 'GET',
+        url: '/api/reports/config',
+        headers: authHeader(),
+      });
+
+      expect(response.statusCode).toBe(200);
+      expect(response.json()).toMatchObject({ enabled: true, freeAccess: true });
+    }
+  });
+
+  it('GET /api/reports and GET /api/reports/:id behave identically with the gate on and off', async () => {
+    for (const prepPaid of [null, PREP_PAID_CONFIG]) {
+      const { app, database } = buildTestApp({
+        startgg: STARTGG_CONFIG,
+        startggFetch: scoutFetchMock(),
+        reports: REPORTS_CONFIG,
+        stripe: STRIPE_CONFIG,
+        ...(prepPaid ? { prepPaid } : {}),
+      });
+      database.seed(`scoutReports/${TEST_UID}`, {
+        onlyReport: {
+          createdAt: Date.now(),
+          model: 'claude-opus-4-8',
+          player: { id: 1, gamerTag: 'Pandem1c' },
+          report: STORED_VALID_REPORT,
+        },
+      });
+      const id = 'onlyReport';
+
+      const listResponse = await app.inject({
+        method: 'GET',
+        url: '/api/reports',
+        headers: authHeader(),
+      });
+      expect(listResponse.statusCode).toBe(200);
+      expect(listResponse.json()).toHaveLength(1);
+
+      const singleResponse = await app.inject({
+        method: 'GET',
+        url: `/api/reports/${id}`,
+        headers: authHeader(),
+      });
+      expect(singleResponse.statusCode).toBe(200);
+    }
   });
 });
