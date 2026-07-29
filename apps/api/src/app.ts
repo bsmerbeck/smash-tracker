@@ -29,6 +29,7 @@ import reportsRoutes from './routes/reports.js';
 import billingRoutes, { type StripeLikeClient } from './routes/billing.js';
 import tournamentsRoutes from './routes/tournaments.js';
 import prepRoutes from './routes/prep.js';
+import prepBindingsRoutes from './routes/prepBindings.js';
 import onboardingRoutes from './routes/onboarding.js';
 import groupsRoutes from './routes/groups.js';
 import playlistsRoutes from './routes/playlists.js';
@@ -331,6 +332,17 @@ export function buildApp(options: BuildAppOptions) {
       // personal-only (always request.uid), mirroring tournamentsRoutes'
       // authenticate-only registration shape immediately above.
       await api.register(prepRoutes, { paidReportsAvailable });
+      // Phase 27 (RPT-01/RPT-02, 27-06): the scoutBinding candidate-list,
+      // confirm, and clear routes — a sibling of prepRoutes above rather
+      // than folded into it, because binding resolution needs the start.gg
+      // and parry.gg scout resolvers and prepRoutes/prep/ deliberately
+      // never learn about them (import-graph gate).
+      await api.register(prepBindingsRoutes, {
+        startggConfig: options.startgg ?? null,
+        parryggConfig: options.parrygg ?? null,
+        fetchImpl: options.startggFetch,
+        parryggClients: options.parryggClients,
+      });
       // Phase 13 (ONBD-04, D-04): the guided-path checklist's
       // server-derived activation done-states — personal-only (always
       // request.uid), mirroring tournamentsRoutes' minimal

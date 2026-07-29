@@ -3,9 +3,11 @@ import {
   normalizePrepBriefRecord,
   prepBriefRecordSchema,
   PREP_LIKELY_OPPONENTS_MAX,
+  scoutBindingRecordSchema,
   type PrepBrief,
   type PrepBriefRecord,
   type PrepChecklistItemId,
+  type ScoutBinding,
 } from '@smash-tracker/shared';
 import { buildDomainEnvelope } from '../events/envelope.js';
 import { createEvent } from '../events/ledger.js';
@@ -23,6 +25,16 @@ import { ConflictError, NotFoundError } from '../services/rtdb.js';
  * second, and `uid` is always the caller's own VERIFIED uid supplied by the
  * route layer (D-12 / access control) — never read from a request body or
  * query param.
+ *
+ * Phase 27 (RPT-01/RPT-02, 27-06): this module now ALSO owns
+ * `prepBriefs/{uid}/{entryKey}/scoutBindings` — the sibling map of
+ * confirmed player identities for curated opponents, never a replacement
+ * for `likelyOpponents`. This module STILL has no dependency on the
+ * reports subsystem, the billing subsystem, or the Anthropic SDK: provider
+ * resolution (the actual start.gg/parry.gg lookups) deliberately lives one
+ * layer up, in `apps/api/src/routes/prepBindings.ts`, which calls the
+ * setters below only with an ALREADY-resolved `ScoutBinding` — this module
+ * never talks to a provider itself.
  */
 
 export const PREP_BRIEF_ROOT = 'prepBriefs';
@@ -207,6 +219,20 @@ export async function setPrepChecklistItem(
  * once the map already holds the max is rejected with `ConflictError`. No
  * event is emitted — opponent selection is not a catalogued event this
  * phase.
+ *
+ * Phase 27 (27-06): un-curating (`selected === false`) clears BOTH
+ * `likelyOpponents/{canonicalName}` and `scoutBindings/{canonicalName}` in
+ * ONE root-level multi-path `update()`, so the two writes commit
+ * atomically together — never as two separate `.set()` calls that could
+ * observably land apart. This is the actual mechanism behind the
+ * scoutBinding contract's "no silent identity" guarantee: without it, a
+ * player could un-curate an opponent, have a DIFFERENT real person start
+ * using that same gamer tag, and re-curate — silently inheriting the
+ * PREVIOUS person's confirmed provider identity on the new curation. The
+ * `selected === true` branch is untouched: (re-)curating never touches
+ * `scoutBindings` itself, so a genuine re-add of the SAME opponent (no
+ * intervening un-curate) keeps any binding confirmed while they were
+ * curated the first time.
  */
 export async function setPrepLikelyOpponent(
   database: Database,
@@ -227,9 +253,98 @@ export async function setPrepLikelyOpponent(
     }
   }
 
-  await database
-    .ref(`${prepBriefPath(uid, entryKey)}/likelyOpponents/${canonicalName}`)
-    .set(selected ? true : null);
+  if (selected) {
+    await database
+      .ref(`${prepBriefPath(uid, entryKey)}/likelyOpponents/${canonicalName}`)
+      .set(true);
+  } else {
+    const briefPath = prepBriefPath(uid, entryKey);
+    await database.ref().update({
+      [`${briefPath}/likelyOpponents/${canonicalName}`]: null,
+      [`${briefPath}/scoutBindings/${canonicalName}`]: null,
+    });
+  }
+
+  const brief = await readPrepBrief(database, uid, entryKey);
+  if (brief === null) {
+    throw new NotFoundError(`Prep brief not found for entryKey ${entryKey}`);
+  }
+  return brief;
+}
+
+/**
+ * Confirms (or overwrites) one curated opponent's scout binding (RPT-01,
+ * 27-06). `binding` must already be the SERVER-RESOLVED identity — this
+ * function does no provider lookup of its own (see the module doc comment
+ * above); the caller (`routes/prepBindings.ts`) is responsible for
+ * resolving it before calling here.
+ *
+ * A binding may only exist for a currently curated opponent (T-27-25): the
+ * ConflictError below fires BEFORE any write, so a binding can never be
+ * attached to an opponent absent from `likelyOpponents`.
+ *
+ * D-20 discipline (mirroring `activatePrepBrief`'s "no empty keys at all"
+ * comment): the stored record is built via `scoutBindingRecordSchema.parse`
+ * over a conditional-spread object, so an absent optional identity field
+ * is genuinely OMITTED from what gets written — never an explicit
+ * `undefined`/`null`/`''` — and a malformed binding can never reach RTDB.
+ */
+export async function setPrepScoutBinding(
+  database: Database,
+  uid: string,
+  entryKey: string,
+  canonicalName: string,
+  binding: ScoutBinding,
+): Promise<PrepBrief> {
+  const existing = await readPrepBrief(database, uid, entryKey);
+  if (existing === null) {
+    throw new NotFoundError(`Prep brief not found for entryKey ${entryKey}`);
+  }
+
+  if (!(canonicalName in existing.likelyOpponents)) {
+    throw new ConflictError('A scout binding may only be set for a currently curated opponent');
+  }
+
+  const record = scoutBindingRecordSchema.parse({
+    provider: binding.provider,
+    ...(binding.startggPlayerId != null ? { startggPlayerId: binding.startggPlayerId } : {}),
+    ...(binding.startggUserSlug != null ? { startggUserSlug: binding.startggUserSlug } : {}),
+    ...(binding.parryUserId != null ? { parryUserId: binding.parryUserId } : {}),
+    displayTag: binding.displayTag,
+    method: binding.method,
+    confirmedAt: binding.confirmedAt,
+  });
+
+  await database.ref(`${prepBriefPath(uid, entryKey)}/scoutBindings/${canonicalName}`).set(record);
+
+  const brief = await readPrepBrief(database, uid, entryKey);
+  if (brief === null) {
+    throw new NotFoundError(`Prep brief not found for entryKey ${entryKey}`);
+  }
+  return brief;
+}
+
+/**
+ * Clears one curated opponent's scout binding, leaving `likelyOpponents`
+ * completely untouched (un-curating is `setPrepLikelyOpponent`'s job, and
+ * IT clears the binding too — see that function's doc comment). RTDB
+ * strips the parent `scoutBindings` map entirely once the last key is
+ * removed, which is exactly why `prepBriefRecordSchema.scoutBindings` is
+ * `.nullish()` (260725-juj null-strip-tolerance class) — a subsequent read
+ * normalizes back to `{}` regardless.
+ */
+export async function clearPrepScoutBinding(
+  database: Database,
+  uid: string,
+  entryKey: string,
+  canonicalName: string,
+): Promise<PrepBrief> {
+  const existing = await readPrepBrief(database, uid, entryKey);
+  if (existing === null) {
+    throw new NotFoundError(`Prep brief not found for entryKey ${entryKey}`);
+  }
+
+  await database.ref(`${prepBriefPath(uid, entryKey)}/scoutBindings/${canonicalName}`).set(null);
 
   const brief = await readPrepBrief(database, uid, entryKey);
   if (brief === null) {
