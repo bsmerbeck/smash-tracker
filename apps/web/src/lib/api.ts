@@ -52,8 +52,12 @@ import {
   prepActivateResponseSchema,
   prepBriefResponseSchema,
   prepBriefStatusSchema,
+  prepBundleAcceptedResponseSchema,
   prepChecklistItemUpdateSchema,
   prepOpenRequestSchema,
+  prepReportJobsResponseSchema,
+  prepScoutBindingCandidatesResponseSchema,
+  prepScoutBindingConfirmRequestSchema,
   publicShareSnapshotSchema,
   reportsConfigSchema,
   REVIEW_DELIVERY_STATES,
@@ -75,6 +79,7 @@ import {
   vodTimestampEntrySchema,
   vodTimestampSchema,
   type BulkShareRequest,
+  type CheckoutReturnTo,
   type CreateClientRequest,
   type CreateDraftPatchInput,
   type CreateGspReadingInput,
@@ -92,6 +97,7 @@ import {
   type PrepChecklistItemId,
   type PrepChecklistItemUpdate,
   type PrepOpenRequest,
+  type PrepScoutBindingConfirmRequest,
   type CreatePlaylistInput,
   type UpdatePlaylistInput,
   createShareInputSchema,
@@ -752,6 +758,36 @@ export const api = {
         prepBriefResponseSchema,
         { method: 'DELETE' },
       ),
+    /**
+     * GET /api/prep/:entryKey/opponents/:name/binding-candidates (Phase 27,
+     * RPT-01) — a pure read (zero writes, zero charge) of the caller's own
+     * alias-resolved match history grouped into candidate scout identities
+     * for one curated opponent's binding-confirmation flow.
+     */
+    bindingCandidates: (entryKey: string, name: string) =>
+      apiRequestParsed(
+        `/api/prep/${encodeURIComponent(entryKey)}/opponents/${encodeURIComponent(name)}/binding-candidates`,
+        prepScoutBindingCandidatesResponseSchema,
+      ),
+    /**
+     * PUT /api/prep/:entryKey/opponents/:name/binding (Phase 27, RPT-01) —
+     * carries only opaque provider QUERIES; the server resolves and persists
+     * the identity itself (27-CONTEXT.md "Resolution flow"). No charge, no
+     * model call.
+     */
+    confirmBinding: (entryKey: string, name: string, input: PrepScoutBindingConfirmRequest) =>
+      apiRequestParsed(
+        `/api/prep/${encodeURIComponent(entryKey)}/opponents/${encodeURIComponent(name)}/binding`,
+        prepBriefResponseSchema,
+        { method: 'PUT', body: prepScoutBindingConfirmRequestSchema.parse(input) },
+      ),
+    /** DELETE /api/prep/:entryKey/opponents/:name/binding (Phase 27, RPT-01) — clears a confirmed binding. */
+    clearBinding: (entryKey: string, name: string) =>
+      apiRequestParsed(
+        `/api/prep/${encodeURIComponent(entryKey)}/opponents/${encodeURIComponent(name)}/binding`,
+        prepBriefResponseSchema,
+        { method: 'DELETE' },
+      ),
   },
   /**
    * Phase 13 (ONBD-04, D-04): the guided-path checklist's server-derived
@@ -787,6 +823,47 @@ export const api = {
     /** GET /api/reports/:id — a single stored AI report. */
     get: (id: string) =>
       apiRequestParsed(`/api/reports/${encodeURIComponent(id)}`, scoutReportRecordSchema),
+    /**
+     * POST /api/reports with `reason: 'prep_report'` (Phase 27, RPT-01) — a
+     * single-opponent prep report SUBMISSION. This is a generation
+     * submission just like the legacy `generate` above, so it takes the
+     * direct-to-Cloud-Run transport for the same reason: the model call can
+     * exceed the Hosting proxy's 60s rewrite timeout (27-CONTEXT.md line 78).
+     */
+    generatePrep: (input: GenerateReportRequest) =>
+      apiRequestParsed('/api/reports', scoutReportRecordSchema, {
+        method: 'POST',
+        body: generateReportRequestSchema.parse(input),
+        baseUrl: getDirectApiBaseUrl(),
+      }),
+    /**
+     * POST /api/reports with `reason: 'prep_bundle'` (Phase 27, RPT-02) —
+     * the exactly-three-opponent bundle purchase SUBMISSION. This call
+     * itself is fast (it takes payment and creates three pre-paid child
+     * jobs; it does not generate anything in-request), but it rides the
+     * same direct transport as its sibling submission above for consistency
+     * — and because the client immediately executes the three returned
+     * child jobs over that same direct path via `generatePrep`.
+     */
+    startPrepBundle: (input: GenerateReportRequest) =>
+      apiRequestParsed('/api/reports', prepBundleAcceptedResponseSchema, {
+        method: 'POST',
+        body: generateReportRequestSchema.parse(input),
+        baseUrl: getDirectApiBaseUrl(),
+      }),
+    /**
+     * GET /api/reports/jobs (Phase 27, RPT-03) — the read-only per-brief
+     * job-status list. Deliberately on the ORDINARY same-origin path, unlike
+     * the two submissions above: a status read is a plain fast read, not a
+     * generation call, so it never needs the direct-to-Cloud-Run escape
+     * hatch (27-CONTEXT.md line 78: the direct transport is for generation
+     * SUBMISSIONS only).
+     */
+    prepJobs: (entryKey: string) =>
+      apiRequestParsed(
+        `/api/reports/jobs?entryKey=${encodeURIComponent(entryKey)}`,
+        prepReportJobsResponseSchema,
+      ),
   },
   coaching: {
     clients: {
@@ -1139,10 +1216,22 @@ export const api = {
      * `mutationFn`), that gives Stripe a stable idempotency key scoped to
      * THIS click; a retry of the same click never re-generates it.
      */
-    checkout: (packId: CreditPackId) =>
+    /**
+     * `options` (Phase 27, EVT-05) is an OPTIONAL second argument so every
+     * existing single-argument call site keeps sending today's exact body
+     * (no `returnTo`/`entryKey` keys at all) — the server resolves the
+     * actual redirect URL from this closed enum via a fixed template, so
+     * this value is a hint, never a client-supplied URL (27-05).
+     */
+    checkout: (packId: CreditPackId, options?: { returnTo: CheckoutReturnTo; entryKey?: string }) =>
       apiRequestParsed('/api/billing/checkout', checkoutResponseSchema, {
         method: 'POST',
-        body: checkoutRequestSchema.parse({ packId, attemptId: crypto.randomUUID() }),
+        body: checkoutRequestSchema.parse({
+          packId,
+          attemptId: crypto.randomUUID(),
+          ...(options?.returnTo !== undefined ? { returnTo: options.returnTo } : {}),
+          ...(options?.entryKey !== undefined ? { entryKey: options.entryKey } : {}),
+        }),
       }),
   },
   gspSettings: {

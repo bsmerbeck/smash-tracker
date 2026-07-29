@@ -2,6 +2,7 @@ import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, waitFor, fireEvent } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { ReactNode } from 'react';
+import type { CheckoutReturnTo } from '@smash-tracker/shared';
 import { useCheckout, useCredits } from './useBilling';
 import { resetAuthMock, setMockUser, makeMockUser } from '@/test/mockAuth';
 
@@ -79,6 +80,22 @@ function CheckoutProbe() {
   );
 }
 
+function PrepCheckoutProbe({
+  returnTo,
+  entryKey,
+}: {
+  returnTo: CheckoutReturnTo;
+  entryKey: string;
+}) {
+  const checkout = useCheckout({ returnTo, entryKey });
+  return (
+    <div>
+      <button onClick={() => checkout.mutate('pack5')}>checkout</button>
+      {checkout.isPending && <div>redirecting</div>}
+    </div>
+  );
+}
+
 describe('useBilling', () => {
   beforeEach(() => {
     resetAuthMock();
@@ -120,6 +137,30 @@ describe('useBilling', () => {
     await waitFor(() => expect(billingCheckout).toHaveBeenCalledWith('pack5'));
     await waitFor(() =>
       expect(assignSpy).toHaveBeenCalledWith('https://checkout.stripe.com/session/abc'),
+    );
+  });
+
+  it('useCheckout(returnTo) with a prep destination sends the destination and entryKey', async () => {
+    billingCheckout.mockResolvedValue({ url: 'https://checkout.stripe.com/session/prep' });
+    const assignSpy = vi.fn();
+    vi.stubGlobal('location', { ...window.location, assign: assignSpy });
+
+    render(
+      <Wrapper>
+        <PrepCheckoutProbe returnTo="prep" entryKey="entry-1" />
+      </Wrapper>,
+    );
+
+    fireEvent.click(screen.getByText('checkout'));
+
+    await waitFor(() =>
+      expect(billingCheckout).toHaveBeenCalledWith('pack5', {
+        returnTo: 'prep',
+        entryKey: 'entry-1',
+      }),
+    );
+    await waitFor(() =>
+      expect(assignSpy).toHaveBeenCalledWith('https://checkout.stripe.com/session/prep'),
     );
   });
 });

@@ -113,4 +113,31 @@ describe('BuyCreditsDialog', () => {
 
     expect(onOpenChange).toHaveBeenCalledWith(false);
   });
+
+  it('forwards the returnTo prop into its internal checkout call when provided', async () => {
+    const user = userEvent.setup();
+    billingCheckout.mockResolvedValue({ url: 'https://checkout.stripe.com/session/prep' });
+    vi.stubGlobal('location', { ...window.location, assign: vi.fn() });
+
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={queryClient}>
+        <BuyCreditsDialog
+          open
+          onOpenChange={vi.fn()}
+          packs={PACKS}
+          returnTo={{ returnTo: 'prep', entryKey: 'entry-1' }}
+        />
+      </QueryClientProvider>,
+    );
+
+    await user.click(screen.getByRole('button', { name: 'Continue to checkout' }));
+
+    await waitFor(() =>
+      expect(billingCheckout).toHaveBeenCalledWith('pack5', {
+        returnTo: 'prep',
+        entryKey: 'entry-1',
+      }),
+    );
+  });
 });

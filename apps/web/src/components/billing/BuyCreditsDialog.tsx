@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import type { CreditPackId, CreditsStatus } from '@smash-tracker/shared';
+import type { CheckoutReturnTo, CreditPackId, CreditsStatus } from '@smash-tracker/shared';
 import { ApiError } from '@/lib/api';
 import { useCheckout } from '@/hooks/useBilling';
 import { Button } from '@/components/ui/button';
@@ -34,19 +34,27 @@ function perReportUsd(amountCents: number, credits: number): string {
  * Controlled (`open`/`onOpenChange`) rather than owning its own trigger,
  * because it needs to open from two places on the Scout page: automatically
  * when generation returns 402, and manually via a "Buy credits" affordance.
+ *
+ * `returnTo` (Phase 27, EVT-05) is the ONE new optional prop this dialog
+ * gains — the UI-SPEC describes this dialog as "reused unmodified," and
+ * this single-prop plumbing is the minimum a per-call-site return
+ * destination requires (27-RESEARCH.md Pitfall 3). Every existing call
+ * site (Scout page) omits it and behaves exactly as it does today.
  */
 export function BuyCreditsDialog({
   open,
   onOpenChange,
   packs,
+  returnTo,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   packs: CreditsStatus['packs'];
+  returnTo?: { returnTo: CheckoutReturnTo; entryKey?: string };
 }) {
   const { t } = useTranslation();
   const [selectedPackId, setSelectedPackId] = useState<CreditPackId | null>(packs[0]?.id ?? null);
-  const checkout = useCheckout();
+  const checkout = useCheckout(returnTo);
 
   function handleOpenChange(next: boolean) {
     onOpenChange(next);
