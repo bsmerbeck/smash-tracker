@@ -43,8 +43,8 @@ function derivePrepSurfaceMode(): PrepSurfaceMode {
 /**
  * Phase 26 (PREP-01/02/04, D-03/D-08/D-12/D-13/D-15): the free deterministic
  * tournament prep brief at `/tournaments/:entryKey/prep`. The route's param
- * is honestly named `entryKey` (D-13) — unlike the legacy `/tournaments/:eventId`
- * detail route, which was left untouched.
+ * is honestly named `entryKey` (D-13) — the sibling detail route's legacy
+ * param label was left untouched.
  *
  * Mount-time activate-or-reopen (D-12, RESEARCH Assumption A2, approved):
  * once the brief-status query resolves, this page fires exactly one mutation
