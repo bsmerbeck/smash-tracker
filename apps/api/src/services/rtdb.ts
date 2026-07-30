@@ -835,10 +835,16 @@ export class RtdbService {
       fighter_id: current.fighter_id,
       opponent_id: current.opponent_id,
       time: current.time,
-      map: current.map,
-      notes: current.notes,
-      matchType: current.matchType,
       win: current.win,
+      // map/notes/matchType are .optional() on matchRecordSchema — writing
+      // them unconditionally puts an undefined own-property in the update
+      // payload whenever the stored match lacks one, and the real RTDB SDK
+      // rejects that ("contains undefined in property ...") — clear-vod
+      // 500'd on any match without notes/map/matchType (found 2026-07-30
+      // when FakeDatabase gained real-SDK undefined rejection).
+      ...(current.map !== undefined ? { map: current.map } : {}),
+      ...(current.notes !== undefined ? { notes: current.notes } : {}),
+      ...(current.matchType !== undefined ? { matchType: current.matchType } : {}),
       ...(current.opponent !== undefined ? { opponent: current.opponent } : {}),
       ...(current.stocksLeft !== undefined ? { stocksLeft: current.stocksLeft } : {}),
       ...(current.eventName !== undefined ? { eventName: current.eventName } : {}),
