@@ -254,10 +254,12 @@ export function OpponentBindingConfirm({ entryKey, name, binding }: OpponentBind
   // reference could be a start.gg OR a parry.gg profile link, and this
   // component has no way to tell which without parsing the URL itself
   // (forbidden). Rather than guess, the SAME raw reference is submitted
-  // under BOTH branches — each provider's own server-side resolver either
-  // parses it or rejects it; a link only ever matches its own provider's
-  // format, so at most one branch actually resolves. This is the literal
-  // reading of "submit the raw reference and let the server resolve it."
+  // under BOTH branches. The SERVER treats a both-branch submission as
+  // ambiguous and resolves either-provider-wins: one branch failing (bad
+  // format, provider unconfigured, provider outage) never blocks the other
+  // from resolving, and the request only fails when neither matches —
+  // fixed 2026-07-30 after the owner walkthrough found a valid parry.gg
+  // link failing behind an unavailable start.gg branch.
   function handleConfirmManual() {
     const trimmed = manualInput.trim();
     if (!trimmed) {

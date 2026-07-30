@@ -239,81 +239,172 @@ const prepBindingsRoutes: FastifyPluginAsyncZod<PrepBindingsRoutesOptions> = asy
       const { entryKey, name } = request.params;
       const { startgg, parrygg } = request.body;
 
+      // Owner walkthrough finding (2026-07-30): the client submits an
+      // ambiguous pasted reference under BOTH provider branches (client-side
+      // provider parsing is forbidden by 27-CONTEXT.md). Failing fast on the
+      // first branch made a valid parry.gg link unresolvable whenever
+      // start.gg was unconfigured or refused the input. When both branches
+      // carry the SAME opaque reference (the manual-paste shape), each
+      // provider's failure is recorded and the OTHER provider still gets its
+      // chance — the request fails only when neither resolves. Both branches
+      // with DIFFERENT references is the deliberate combined-candidate
+      // confirmation (explicit same-person identities) and keeps fail-fast
+      // errors, as do single-branch candidate confirmations.
+      const ambiguous = Boolean(startgg && parrygg && startgg.query === parrygg.query);
+      type BranchFailure = { statusCode: 400 | 404 | 503; error: string; message: string };
+      let startggFailure: BranchFailure | undefined;
+      let parryFailure: BranchFailure | undefined;
+
       let startggResolved:
         { startggPlayerId: number; startggUserSlug?: string; gamerTag: string } | undefined;
       if (startgg) {
         if (!options.startggConfig) {
-          return reply.code(503).send({
+          startggFailure = {
             error: 'Service Unavailable',
             message: 'start.gg integration is not configured on this server',
             statusCode: 503,
-          });
-        }
-
-        let input;
-        try {
-          input = parseScoutInput(startgg.query);
-        } catch (err) {
-          if (err instanceof ScoutInputError) {
-            return reply.code(400).send({
-              error: 'Bad Request',
-              message: err.message,
-              statusCode: 400,
-            });
+          };
+        } else {
+          let input;
+          try {
+            input = parseScoutInput(startgg.query);
+          } catch (err) {
+            if (err instanceof ScoutInputError) {
+              startggFailure = {
+                error: 'Bad Request',
+                message: err.message,
+                statusCode: 400,
+              };
+            } else if (ambiguous) {
+              startggFailure = {
+                error: 'Service Unavailable',
+                message: 'start.gg lookup failed',
+                statusCode: 503,
+              };
+            } else {
+              throw err;
+            }
           }
-          throw err;
-        }
 
-        const report = await scoutPlayer(
-          options.startggConfig.apiToken,
-          input,
-          fetchImpl,
-          scoutCache,
-        );
-        if (!report || report.player.id === undefined) {
-          return reply.code(404).send({
-            error: 'Not Found',
-            message: 'No start.gg player found for that query',
-            statusCode: 404,
-          });
+          if (input !== undefined) {
+            let report;
+            try {
+              report = await scoutPlayer(
+                options.startggConfig.apiToken,
+                input,
+                fetchImpl,
+                scoutCache,
+              );
+            } catch (err) {
+              // In ambiguous mode a provider outage must not block the
+              // other provider's resolution attempt.
+              if (!ambiguous) {
+                throw err;
+              }
+              startggFailure = {
+                error: 'Service Unavailable',
+                message: 'start.gg lookup failed',
+                statusCode: 503,
+              };
+            }
+            if (!startggFailure) {
+              if (!report || report.player.id === undefined) {
+                startggFailure = {
+                  error: 'Not Found',
+                  message: 'No start.gg player found for that query',
+                  statusCode: 404,
+                };
+              } else {
+                startggResolved = {
+                  startggPlayerId: report.player.id,
+                  ...(report.player.userSlug ? { startggUserSlug: report.player.userSlug } : {}),
+                  gamerTag: report.player.gamerTag,
+                };
+              }
+            }
+          }
         }
-        startggResolved = {
-          startggPlayerId: report.player.id,
-          ...(report.player.userSlug ? { startggUserSlug: report.player.userSlug } : {}),
-          gamerTag: report.player.gamerTag,
-        };
+        if (startggFailure && !ambiguous) {
+          return reply.code(startggFailure.statusCode).send(startggFailure);
+        }
       }
 
       let parryResolved: { parryUserId: string; gamerTag: string } | undefined;
       if (parrygg) {
         if (!options.parryggConfig) {
-          return reply.code(503).send({
+          parryFailure = {
             error: 'Service Unavailable',
             message: 'parry.gg integration is not configured on this server',
             statusCode: 503,
-          });
+          };
+        } else {
+          let report;
+          try {
+            report = await scoutParryPlayer(
+              options.parryggConfig.apiKey,
+              parrygg.query,
+              parryScoutCache,
+              options.parryggClients,
+            );
+          } catch (err) {
+            if (!ambiguous) {
+              throw err;
+            }
+            parryFailure = {
+              error: 'Service Unavailable',
+              message: 'parry.gg lookup failed',
+              statusCode: 503,
+            };
+          }
+          // A resolution that produced no player, or produced one with no
+          // stable parry.gg user id, is refused — only a resolution that
+          // yields a stable provider id is accepted (T-27-27 parry.gg side).
+          if (!parryFailure) {
+            if (!report || !report.player.parryUserId) {
+              parryFailure = {
+                error: 'Not Found',
+                message: 'No parry.gg player found for that query',
+                statusCode: 404,
+              };
+            } else {
+              parryResolved = {
+                parryUserId: report.player.parryUserId,
+                gamerTag: report.player.gamerTag,
+              };
+            }
+          }
         }
+        if (parryFailure && !ambiguous) {
+          return reply.code(parryFailure.statusCode).send(parryFailure);
+        }
+      }
 
-        const report = await scoutParryPlayer(
-          options.parryggConfig.apiKey,
-          parrygg.query,
-          parryScoutCache,
-          options.parryggClients,
-        );
-        // A resolution that produced no player, or produced one with no
-        // stable parry.gg user id, is refused — only a resolution that
-        // yields a stable provider id is accepted (T-27-27 parry.gg side).
-        if (!report || !report.player.parryUserId) {
-          return reply.code(404).send({
-            error: 'Not Found',
-            message: 'No parry.gg player found for that query',
-            statusCode: 404,
-          });
+      if (!startggResolved && !parryResolved) {
+        // Neither branch resolved. Both-unconfigured stays a 503; otherwise
+        // a combined 404/400 that names both outcomes so the player can fix
+        // their reference.
+        if (startggFailure?.statusCode === 503 && parryFailure?.statusCode === 503) {
+          return reply.code(503).send(startggFailure);
         }
-        parryResolved = {
-          parryUserId: report.player.parryUserId,
-          gamerTag: report.player.gamerTag,
-        };
+        const details = [startggFailure?.message, parryFailure?.message].filter(Boolean).join('; ');
+        return reply.code(404).send({
+          error: 'Not Found',
+          message: details || 'No player found for that reference on either provider',
+          statusCode: 404,
+        });
+      }
+
+      if (ambiguous && startggResolved && parryResolved) {
+        // A single pasted reference resolving on BOTH providers cannot prove
+        // the two accounts are the same person — the combined provider
+        // requires explicit same-person confirmation (27-CONTEXT.md), which
+        // means confirming each provider separately.
+        return reply.code(400).send({
+          error: 'Bad Request',
+          message:
+            'That reference matched players on both start.gg and parry.gg — confirm each provider separately',
+          statusCode: 400,
+        });
       }
 
       const provider: ScoutBindingProvider =
