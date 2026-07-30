@@ -82,6 +82,39 @@ function stripEmptyArrays(value: unknown): unknown {
   return value;
 }
 
+/**
+ * Real-SDK write validation (2026-07-30 incident): firebase-admin rejects
+ * `undefined` anywhere in a set()/update()/committed-transaction payload with
+ * `"<op> failed: <arg> argument contains undefined in property '<path>'"` —
+ * synchronously, before any network I/O. The old fake silently tolerated it
+ * (top-level undefined even deleted, like null), which let the envelope
+ * `artifactKind: undefined` bug pass 527 tests while breaking every D/B event
+ * write in production. Message shape mirrors the SDK so tests can grep it.
+ */
+function assertNoUndefinedData(
+  op: 'set' | 'update' | 'transaction',
+  arg: 'value' | 'values',
+  value: unknown,
+  pathSegments: string[],
+  relative: string[] = [],
+): void {
+  if (value === undefined) {
+    const property = [...pathSegments, ...relative].join('.');
+    throw new Error(`${op} failed: ${arg} argument contains undefined in property '${property}'`);
+  }
+  if (Array.isArray(value)) {
+    value.forEach((entry, index) =>
+      assertNoUndefinedData(op, arg, entry, pathSegments, [...relative, String(index)]),
+    );
+    return;
+  }
+  if (value !== null && typeof value === 'object') {
+    for (const [key, child] of Object.entries(value)) {
+      assertNoUndefinedData(op, arg, child, pathSegments, [...relative, key]);
+    }
+  }
+}
+
 export class FakeDatabase {
   private root: Record<string, JsonValue> = {};
 
@@ -192,9 +225,21 @@ export class FakeDatabase {
       key,
       get: async () => makeSnapshot(this.getAtPath(segments)),
       set: async (value: unknown) => {
+        // Real-SDK parity (2026-07-30 incident): firebase-admin rejects
+        // undefined ANYWHERE in a data write ("set failed: value argument
+        // contains undefined in property '...'") — it never treats it as
+        // null/delete. Emulating the rejection here turns the whole
+        // undefined-reaches-RTDB bug class into failing tests instead of
+        // production-only crashes (the artifactKind envelope bug passed
+        // 527 FakeDatabase tests while permanently swallowing every D/B
+        // event in prod).
+        assertNoUndefinedData('set', 'value', value, segments);
         this.setAtPath(segments, value);
       },
       update: async (values: Record<string, unknown>) => {
+        // Real SDK: a null value in update() deletes; an UNDEFINED value
+        // (top-level or nested) rejects the whole call.
+        assertNoUndefinedData('update', 'values', values, segments);
         this.updateAtPath(segments, values);
       },
       remove: async () => {
@@ -206,6 +251,7 @@ export class FakeDatabase {
           key: string;
         };
         if (value !== undefined) {
+          assertNoUndefinedData('set', 'value', value, [...segments, childKey]);
           void childRef.set(value);
         }
         return childRef;
@@ -222,7 +268,10 @@ export class FakeDatabase {
         }
         if (current === null) {
           // Local guess matched the server (node truly empty): the first
-          // run's return value commits directly.
+          // run's return value commits directly. A RETURNED value (as
+          // opposed to the undefined abort signal above) is data and gets
+          // the same real-SDK undefined validation as set()/update().
+          assertNoUndefinedData('transaction', 'value', firstRun, segments);
           this.setAtPath(segments, firstRun);
           return { committed: true, snapshot: makeSnapshot(this.getAtPath(segments)) };
         }
@@ -232,6 +281,7 @@ export class FakeDatabase {
         if (next === undefined) {
           return { committed: false, snapshot: makeSnapshot(current) };
         }
+        assertNoUndefinedData('transaction', 'value', next, segments);
         this.setAtPath(segments, next);
         return { committed: true, snapshot: makeSnapshot(this.getAtPath(segments)) };
       },

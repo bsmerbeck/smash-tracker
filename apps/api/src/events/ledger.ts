@@ -34,31 +34,57 @@ export function dayShardKey(occurredAt: number): string {
  * `deleteShare` multi-path pattern).
  */
 export async function createEvent(database: Database, envelope: EventEnvelope): Promise<void> {
-  const parsed = eventEnvelopeSchema.parse(envelope);
+  // An invalid envelope is a programming error and must throw loudly (tests
+  // catch it). Everything AFTER this parse is best-effort I/O — see below.
+  const raw = eventEnvelopeSchema.parse(envelope);
 
-  const dedupRef = database.ref(
-    `eventDedup/${parsed.eventName}/${parsed.schemaVersion}/${parsed.causationId}`,
-  );
-  const dedup = await dedupRef.transaction((current) => {
-    if (current === true) {
-      // Already emitted — abort, no write. NEVER `if (current === null) return;`
-      // (CR-01: null/undefined on the first run means "not yet seen," not "abort").
-      return undefined;
+  // Canonicalize to the wire format before ANY write. Zod's .optional()
+  // preserves an explicitly-undefined own property (e.g. a builder passing
+  // `artifactKind: undefined`), and the real RTDB SDK rejects undefined
+  // anywhere in an update() payload — which, with the dedup marker already
+  // committed, permanently swallowed every D/B event in production from
+  // 2026-07-19 to 2026-07-30. The JSON round-trip drops undefined own
+  // properties exactly like the wire serialization does, so no future
+  // optional field can recreate that failure class.
+  const parsed = JSON.parse(JSON.stringify(raw)) as EventEnvelope;
+
+  // Emission is best-effort AFTER the caller's durable write committed: an
+  // eventLedger I/O failure is logged loudly but never propagated. Callers
+  // fire-and-forget via `void createEvent(...)` in 30 places — a rejection
+  // there is an unhandled promise rejection, which terminates the Node
+  // process (observed 2026-07-30: a paid-report click could debit a credit
+  // and then kill the API between the debit and its refund). A telemetry
+  // failure must never fail the causing request or take the process down.
+  try {
+    const dedupRef = database.ref(
+      `eventDedup/${parsed.eventName}/${parsed.schemaVersion}/${parsed.causationId}`,
+    );
+    const dedup = await dedupRef.transaction((current) => {
+      if (current === true) {
+        // Already emitted — abort, no write. NEVER `if (current === null) return;`
+        // (CR-01: null/undefined on the first run means "not yet seen," not "abort").
+        return undefined;
+      }
+      return true;
+    });
+    if (!dedup.committed) {
+      return;
     }
-    return true;
-  });
-  if (!dedup.committed) {
-    return;
-  }
 
-  const day = dayShardKey(parsed.occurredAt);
-  const key = database.ref(`eventLedger/${day}`).push().key;
-  if (!key) {
-    throw new Error('Failed to allocate an eventLedger push key');
-  }
+    const day = dayShardKey(parsed.occurredAt);
+    const key = database.ref(`eventLedger/${day}`).push().key;
+    if (!key) {
+      throw new Error('Failed to allocate an eventLedger push key');
+    }
 
-  await database.ref().update({
-    [`eventLedger/${day}/${key}`]: parsed,
-    [`outboxPending/${day}/${key}`]: { attempt: 0, nextRetryAt: null },
-  });
+    await database.ref().update({
+      [`eventLedger/${day}/${key}`]: parsed,
+      [`outboxPending/${day}/${key}`]: { attempt: 0, nextRetryAt: null },
+    });
+  } catch (err) {
+    console.error(
+      `eventLedger write failed (best-effort emission): ${parsed.eventName}/${parsed.causationId}`,
+      err instanceof Error ? err.message : err,
+    );
+  }
 }

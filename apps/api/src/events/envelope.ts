@@ -41,7 +41,12 @@ export function buildDomainEnvelope(params: {
     actorId: params.actorId,
     sessionId: params.sessionId,
     source: 'api',
-    artifactKind: params.artifactKind,
+    // Conditional-spread, never a bare pass-through: an explicitly-undefined
+    // own property survives Zod's .optional() parse and the real RTDB SDK then
+    // rejects the whole multi-path ledger write ("contains undefined in
+    // property ...artifactKind") AFTER the dedup marker committed — permanently
+    // swallowing the event. Found 2026-07-30 (Phase 27 owner walkthrough).
+    ...(params.artifactKind !== undefined ? { artifactKind: params.artifactKind } : {}),
     causationId: params.causationId,
     consentState: params.consentState,
     payload: params.payload ?? {},
@@ -82,7 +87,12 @@ export function buildAnonymousDomainEnvelope(params: {
     actorId: params.actorId,
     sessionId: params.sessionId,
     source: 'api',
-    artifactKind: params.artifactKind,
+    // Conditional-spread, never a bare pass-through: an explicitly-undefined
+    // own property survives Zod's .optional() parse and the real RTDB SDK then
+    // rejects the whole multi-path ledger write ("contains undefined in
+    // property ...artifactKind") AFTER the dedup marker committed — permanently
+    // swallowing the event. Found 2026-07-30 (Phase 27 owner walkthrough).
+    ...(params.artifactKind !== undefined ? { artifactKind: params.artifactKind } : {}),
     causationId: params.causationId,
     consentState: params.consentState,
     payload: params.payload ?? {},
@@ -116,7 +126,12 @@ export function buildBillingEnvelope(params: {
     actorId: params.actorId,
     sessionId: params.sessionId,
     source: params.source,
-    artifactKind: params.artifactKind,
+    // Conditional-spread, never a bare pass-through: an explicitly-undefined
+    // own property survives Zod's .optional() parse and the real RTDB SDK then
+    // rejects the whole multi-path ledger write ("contains undefined in
+    // property ...artifactKind") AFTER the dedup marker committed — permanently
+    // swallowing the event. Found 2026-07-30 (Phase 27 owner walkthrough).
+    ...(params.artifactKind !== undefined ? { artifactKind: params.artifactKind } : {}),
     causationId: params.causationId,
     consentState: params.consentState,
     payload: params.payload ?? {},
