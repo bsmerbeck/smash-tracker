@@ -54,6 +54,7 @@ import {
   formatSetScore,
   buildSetGamePayloads,
   buildDefaultGameValues,
+  resolveSetFighterSelections,
   type SetFormat,
   type SetGameValues,
   type SetSharedValues,
@@ -180,12 +181,33 @@ export function SetWizard({
   const [opponentPopoverOpen, setOpponentPopoverOpen] = useState(false);
 
   const format = form.watch('format');
+  // Read live (not via the games array) so game 1's per-game defaults
+  // re-render the instant the set-level pickers change.
+  const sharedFighterId = form.watch('fighterId');
+  const sharedOpponentFighterId = form.watch('opponentFighterId');
   const score = useMemo(() => getSetScore(games), [games]);
   const decided = isSetDecided(format, score);
   const needed = winsNeededFor(format);
   const maxGames = maxGamesFor(format);
 
   const visibleGameNumbers = getVisibleGameNumbers(format, games, maxGames);
+
+  // Per-game resolved character pair (SETFEAT-03), one entry per visible
+  // game — padded so every visible row has an entry even before it has any
+  // values of its own (see `resolveSetFighterSelections`'s forward-carry
+  // doc comment for why padding with defaults is safe: an empty row never
+  // has its own fighterId/opponentFighterId, so it always inherits).
+  // Plain per-render computation (not useMemo) — mirrors `visibleGameNumbers`
+  // just above: cheap enough (≤5 games) that memoizing isn't worth it, and
+  // it sidesteps a real conflict between React Compiler's manual-memoization
+  // preservation check and `updateGame`'s array-index assignment below.
+  const resolvedGamePadded = visibleGameNumbers.map(
+    (gameNumber) => games[gameNumber - 1] ?? buildDefaultGameValues(),
+  );
+  const resolvedGameFighters = resolveSetFighterSelections(
+    { fighterId: sharedFighterId, opponentFighterId: sharedOpponentFighterId },
+    resolvedGamePadded,
+  );
 
   function updateGame(index: number, patch: Partial<SetGameValues>) {
     const next = [...games];
@@ -420,11 +442,70 @@ export function SetWizard({
             {visibleGameNumbers.map((gameNumber) => {
               const index = gameNumber - 1;
               const game = games[index] ?? buildDefaultGameValues();
+              const resolvedFighters = resolvedGameFighters[index];
               return (
                 <div key={gameNumber} className="flex flex-col gap-3 rounded-md border p-3">
                   <span className="text-sm font-semibold">
                     {t('matchForm.set.game', { number: gameNumber })}
                   </span>
+
+                  {resolvedFighters && (
+                    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                      <FormItem>
+                        <FormLabel>{t('matchForm.set.gameYourFighter')}</FormLabel>
+                        <Select
+                          value={String(resolvedFighters.fighterId)}
+                          onValueChange={(v) => updateGame(index, { fighterId: Number(v) })}
+                        >
+                          <FormControl>
+                            <SelectTrigger
+                              className="w-full"
+                              aria-label={t('matchForm.set.gameYourFighterAria', {
+                                number: gameNumber,
+                              })}
+                            >
+                              <SelectValue />
+                            </SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            {fighterSprites.map((s) => (
+                              <SelectItem key={s.id} value={String(s.id)}>
+                                <img src={s.url} alt="" className="size-6 object-contain" />
+                                {localizedFighterName(s.id, t)}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </FormItem>
+                      <FormItem>
+                        <FormLabel>{t('matchForm.set.gameOpponentFighter')}</FormLabel>
+                        <Select
+                          value={String(resolvedFighters.opponentFighterId)}
+                          onValueChange={(v) => updateGame(index, { opponentFighterId: Number(v) })}
+                        >
+                          <FormControl>
+                            <SelectTrigger
+                              className="w-full"
+                              aria-label={t('matchForm.set.gameOpponentFighterAria', {
+                                number: gameNumber,
+                              })}
+                            >
+                              <SelectValue />
+                            </SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            {alphaFighters.map((s) => (
+                              <SelectItem key={s.id} value={String(s.id)}>
+                                <img src={s.url} alt="" className="size-6 object-contain" />
+                                {localizedFighterName(s.id, t)}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </FormItem>
+                    </div>
+                  )}
+
                   <FormItem>
                     <FormLabel>{t('matchForm.result')}</FormLabel>
                     <ToggleGroup

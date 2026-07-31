@@ -586,5 +586,75 @@ describe('AddMatchForm', () => {
         mario.name,
       );
     });
+
+    it("game 1's per-game pickers default to the set-level selections and track a live set-level change", async () => {
+      const user = userEvent.setup();
+      renderForm();
+
+      await user.click(screen.getByRole('button', { name: 'Add Match' }));
+      const dialog = await screen.findByRole('dialog');
+      await user.click(within(dialog).getByRole('radio', { name: 'Set (Bo3/Bo5)' }));
+
+      expect(
+        within(dialog).getByRole('combobox', { name: 'Your fighter for game 1' }),
+      ).toHaveTextContent(mario.name);
+      expect(
+        within(dialog).getByRole('combobox', { name: "Opponent's fighter for game 1" }),
+      ).toHaveTextContent(alphabeticallyFirstSprite.name);
+
+      await user.click(within(dialog).getByRole('combobox', { name: 'Opponent Fighter (game 1)' }));
+      await user.click(await screen.findByRole('option', { name: luigi.name }));
+
+      expect(
+        within(dialog).getByRole('combobox', { name: "Opponent's fighter for game 1" }),
+      ).toHaveTextContent(luigi.name);
+    });
+
+    it("game 2's untouched opponent picker shows game 1's overridden opponent character", async () => {
+      const user = userEvent.setup();
+      renderForm();
+
+      await user.click(screen.getByRole('button', { name: 'Add Match' }));
+      const dialog = await screen.findByRole('dialog');
+      await user.click(within(dialog).getByRole('radio', { name: 'Set (Bo3/Bo5)' }));
+
+      await user.click(
+        within(dialog).getByRole('combobox', { name: "Opponent's fighter for game 1" }),
+      );
+      await user.click(await screen.findByRole('option', { name: luigi.name }));
+
+      await user.click(within(dialog).getByRole('radio', { name: 'Game 1 Win' }));
+
+      expect(
+        await within(dialog).findByRole('combobox', { name: "Opponent's fighter for game 2" }),
+      ).toHaveTextContent(luigi.name);
+    });
+
+    it("overriding game 2's own-fighter picker and saving writes game 1 with the game-1 pair and game 2 with the overridden own fighter", async () => {
+      const user = userEvent.setup();
+      renderForm();
+
+      await user.click(screen.getByRole('button', { name: 'Add Match' }));
+      const dialog = await screen.findByRole('dialog');
+      await user.click(within(dialog).getByRole('radio', { name: 'Set (Bo3/Bo5)' }));
+
+      await user.click(within(dialog).getByRole('radio', { name: 'Game 1 Win' }));
+      await user.click(await within(dialog).findByRole('radio', { name: 'Game 2 Win' }));
+
+      await user.click(within(dialog).getByRole('combobox', { name: 'Your fighter for game 2' }));
+      await user.click(await screen.findByRole('option', { name: luigi.name }));
+
+      await user.click(within(dialog).getByRole('button', { name: 'Save Set' }));
+
+      await waitFor(() => expect(createMatch).toHaveBeenCalledTimes(2));
+      expect(createMatch.mock.calls[0]![0]).toMatchObject({
+        fighter_id: mario.id,
+        opponent_id: alphabeticallyFirstSprite.id,
+      });
+      expect(createMatch.mock.calls[1]![0]).toMatchObject({
+        fighter_id: luigi.id,
+        opponent_id: alphabeticallyFirstSprite.id,
+      });
+    });
   });
 });

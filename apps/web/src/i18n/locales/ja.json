@@ -272,6 +272,10 @@
       "game": "{{number}}戦目",
       "gameWinAria": "{{number}}戦目 勝ち",
       "gameLossAria": "{{number}}戦目 負け",
+      "gameYourFighter": "自分のファイター",
+      "gameOpponentFighter": "相手のファイター",
+      "gameYourFighterAria": "{{number}}戦目の自分のファイター",
+      "gameOpponentFighterAria": "{{number}}戦目の相手のファイター",
       "stage": "ステージ",
       "vodUrl": "VODのURL",
       "vodStartTime": "VOD内の開始時間"

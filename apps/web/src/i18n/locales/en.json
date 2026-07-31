@@ -272,6 +272,10 @@
       "game": "Game {{number}}",
       "gameWinAria": "Game {{number}} Win",
       "gameLossAria": "Game {{number}} Loss",
+      "gameYourFighter": "Your fighter",
+      "gameOpponentFighter": "Opponent's fighter",
+      "gameYourFighterAria": "Your fighter for game {{number}}",
+      "gameOpponentFighterAria": "Opponent's fighter for game {{number}}",
       "stage": "Stage",
       "vodUrl": "VOD URL",
       "vodStartTime": "Start time in VOD"
