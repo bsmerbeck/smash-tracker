@@ -206,7 +206,11 @@ describe('ReviewEvidenceList', () => {
 
       await user.click(screen.getByRole('button', { name: 'Cite' }));
 
-      const call = onCite.mock.calls[0]![0] as { label: string };
+      const call = onCite.mock.calls[0]![0] as {
+        sourceVodRef: string;
+        seconds: number;
+        label: string;
+      };
       expect(call.sourceVodRef).toBe('m1');
       expect(call.seconds).toBe(90);
       expect(call.label).not.toBe(LONG_NOTE);

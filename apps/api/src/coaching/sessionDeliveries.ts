@@ -2,11 +2,16 @@ import type { Database } from 'firebase-admin/database';
 import { z } from 'zod';
 import {
   clientVisibleSessionSchema,
+  homeworkProgressKey,
+  homeworkProgressSchema,
   includedVodSchema,
   MAX_DELIVERY_VODS,
+  resolveHomeworkDoneIndexes,
   shareTokenSchema,
   trainingSessionSchema,
   type ClientVisibleSession,
+  type HomeworkProgress,
+  type HomeworkProgressResponse,
   type IncludedVod,
   type ShareToken,
 } from '@smash-tracker/shared';
@@ -71,6 +76,19 @@ export const sessionDeliveryRecordSchema = z.object({
    * (never `[]`) when the delivery had zero resolvable picks.
    */
   includedVods: z.array(includedVodSchema).max(MAX_DELIVERY_VODS).nullish(),
+  /**
+   * 260731-b1 (client-interactive session-delivery homework): the client's
+   * per-item progress + acknowledge/submit stamps against THIS delivery's
+   * frozen `snapshot.homework` — a TOP-LEVEL sibling of `snapshot`, mirroring
+   * `includedVods`'s own additive-growth placement immediately above. Absent
+   * (never `{}`) for a delivery no client has ever touched — `parseDeliveryRecord`
+   * needs no normalization for it: it is a map, not an array, so RTDB never
+   * drops a populated one (only an empty-array write is dropped), and
+   * `.nullish()` on `homeworkProgressSchema` itself covers the absent key. Do
+   * NOT add a `?? {}` fallback here — a future reader adding one would
+   * silently paper over a genuinely corrupt record instead of failing parse.
+   */
+  homeworkProgress: homeworkProgressSchema.nullish(),
 });
 export type SessionDeliveryRecord = z.infer<typeof sessionDeliveryRecordSchema>;
 
@@ -126,6 +144,18 @@ export interface SessionDeliveryListItem extends Omit<SessionDeliveryRecord, 're
   deliveryId: string;
   revokedAt: number | null;
   url: string;
+  /**
+   * 260731-b1: the four flat coach-facing homework fields, computed from the
+   * already-parsed record's `snapshot.homework` + `homeworkProgress` via
+   * `resolveHomeworkDoneIndexes` — the SAME resolution function the
+   * anonymous client snapshot uses (`RtdbService.getSessionSnapshot`), so
+   * the coach's count and the client's `doneIndexes` length can never
+   * disagree. No extra RTDB read: everything needed is already on `record`.
+   */
+  homeworkDoneCount: number;
+  homeworkTotal: number;
+  homeworkAcknowledgedAt: number | null;
+  homeworkSubmittedAt: number | null;
 }
 
 /**
@@ -242,17 +272,179 @@ export async function listSessionDeliveries(
     if (!parsed) {
       return [];
     }
+    const doneIndexes = resolveHomeworkDoneIndexes(
+      parsed.snapshot.homework,
+      parsed.homeworkProgress,
+    );
     return [
       {
         deliveryId,
         ...parsed,
         revokedAt: parsed.revokedAt ?? null,
         url: `${webBaseUrl}/r/${parsed.token}`,
+        homeworkDoneCount: doneIndexes.length,
+        homeworkTotal: parsed.snapshot.homework.length,
+        homeworkAcknowledgedAt: parsed.homeworkProgress?.acknowledgedAt ?? null,
+        homeworkSubmittedAt: parsed.homeworkProgress?.submittedAt ?? null,
       },
     ];
   });
 
   return rows.sort((a, b) => b.createdAt - a.createdAt);
+}
+
+/**
+ * 260731-b1: builds the WIRE-shaped `HomeworkProgressResponse` for a
+ * delivery record — the single place both `readHomeworkProgress` and the two
+ * mutating functions below (`setHomeworkItemDone`/`setHomeworkStatus`)
+ * derive their return value from, so all three answer with the identical
+ * shape.
+ */
+function buildHomeworkProgressResponse(record: SessionDeliveryRecord): HomeworkProgressResponse {
+  return {
+    doneIndexes: resolveHomeworkDoneIndexes(record.snapshot.homework, record.homeworkProgress),
+    acknowledgedAt: record.homeworkProgress?.acknowledgedAt ?? null,
+    submittedAt: record.homeworkProgress?.submittedAt ?? null,
+  };
+}
+
+/**
+ * Resolves a delivery record for a homework read/write — `null` for a
+ * missing, unparseable, or revoked delivery (T-B1-01/T-B1-02: the ONLY
+ * mutation surface an anonymous token holder reaches is scoped to exactly
+ * this delivery's `homeworkProgress` subtree, never the frozen `snapshot`
+ * or the live `trainingSessions` tree).
+ */
+async function loadLiveDeliveryRecord(
+  database: Database,
+  tenantId: string,
+  sessionId: string,
+  deliveryId: string,
+): Promise<SessionDeliveryRecord | null> {
+  const snapshot = await database
+    .ref(`sessionDeliveries/${tenantId}/${sessionId}/${deliveryId}`)
+    .get();
+  if (!snapshot.exists()) {
+    return null;
+  }
+  const record = safeParseDeliveryRecord(snapshot.val());
+  if (!record || record.revokedAt != null) {
+    return null;
+  }
+  return record;
+}
+
+/**
+ * 260731-b1 (F1/F3/F4): reads the current homework progress for a session
+ * delivery — `null` for a missing/unparseable/revoked delivery (never
+ * throws; the anonymous route collapses that to the shared 404 body). A
+ * delivery no client has ever touched still resolves cleanly: an empty
+ * `doneIndexes`-equivalent state and two null stamps, never a parse
+ * failure.
+ */
+export async function readHomeworkProgress(
+  database: Database,
+  tenantId: string,
+  sessionId: string,
+  deliveryId: string,
+): Promise<HomeworkProgressResponse | null> {
+  const record = await loadLiveDeliveryRecord(database, tenantId, sessionId, deliveryId);
+  if (!record) {
+    return null;
+  }
+  return buildHomeworkProgressResponse(record);
+}
+
+/**
+ * 260731-b1 (F3/F4, T-B1-02): flips ONE homework item's done-state.
+ * `null` for a missing/unparseable/revoked delivery OR an `index` outside
+ * `0 .. snapshot.homework.length - 1` (re-checked against the frozen
+ * homework length server-side — the caller's own Zod body bound is not
+ * trusted alone). Performs ONE atomic multi-path `.update()` writing the
+ * LITERAL boolean (never `null` for an uncheck — that would erase the
+ * "explicitly unchecked" distinction F4 depends on) at
+ * `.../homeworkProgress/items/{homeworkProgressKey(index)}` plus the current
+ * epoch ms at the sibling `.../homeworkProgress/updatedAt`.
+ */
+export async function setHomeworkItemDone(
+  database: Database,
+  tenantId: string,
+  sessionId: string,
+  deliveryId: string,
+  index: number,
+  done: boolean,
+): Promise<HomeworkProgressResponse | null> {
+  const record = await loadLiveDeliveryRecord(database, tenantId, sessionId, deliveryId);
+  if (!record) {
+    return null;
+  }
+  if (index < 0 || index >= record.snapshot.homework.length) {
+    return null;
+  }
+
+  const basePath = `sessionDeliveries/${tenantId}/${sessionId}/${deliveryId}/homeworkProgress`;
+  await database.ref().update({
+    [`${basePath}/items/${homeworkProgressKey(index)}`]: done,
+    [`${basePath}/updatedAt`]: Date.now(),
+  });
+
+  const existingItems: Record<string, boolean> = { ...(record.homeworkProgress?.items ?? {}) };
+  existingItems[homeworkProgressKey(index)] = done;
+  const updatedProgress: HomeworkProgress = {
+    ...record.homeworkProgress,
+    items: existingItems,
+  };
+  return buildHomeworkProgressResponse({ ...record, homeworkProgress: updatedProgress });
+}
+
+/**
+ * 260731-b1 (F6): stamps `acknowledgedAt`/`submittedAt` — idempotent,
+ * mirroring `setDeliveryAck`/`setDeliveryViewed`: only stamps a field that
+ * is currently unset. `'submitted'` ALSO back-fills `acknowledgedAt` when
+ * absent (a client who submits without an explicit prior ack is still
+ * counted as having acknowledged). Submission does NOT lock the checklist —
+ * a later `setHomeworkItemDone` call still succeeds (F6, no unlock/reopen
+ * flow needed because there is nothing to unlock).
+ */
+export async function setHomeworkStatus(
+  database: Database,
+  tenantId: string,
+  sessionId: string,
+  deliveryId: string,
+  status: 'acknowledged' | 'submitted',
+): Promise<HomeworkProgressResponse | null> {
+  const record = await loadLiveDeliveryRecord(database, tenantId, sessionId, deliveryId);
+  if (!record) {
+    return null;
+  }
+
+  const basePath = `sessionDeliveries/${tenantId}/${sessionId}/${deliveryId}/homeworkProgress`;
+  const now = Date.now();
+  const updates: Record<string, number> = {};
+  const nextProgress: HomeworkProgress = { ...record.homeworkProgress };
+
+  if (status === 'acknowledged' && record.homeworkProgress?.acknowledgedAt == null) {
+    updates[`${basePath}/acknowledgedAt`] = now;
+    nextProgress.acknowledgedAt = now;
+  }
+  if (status === 'submitted') {
+    if (record.homeworkProgress?.submittedAt == null) {
+      updates[`${basePath}/submittedAt`] = now;
+      nextProgress.submittedAt = now;
+    }
+    if (record.homeworkProgress?.acknowledgedAt == null) {
+      updates[`${basePath}/acknowledgedAt`] = now;
+      nextProgress.acknowledgedAt = now;
+    }
+  }
+
+  if (Object.keys(updates).length > 0) {
+    updates[`${basePath}/updatedAt`] = now;
+    nextProgress.updatedAt = now;
+    await database.ref().update(updates);
+  }
+
+  return buildHomeworkProgressResponse({ ...record, homeworkProgress: nextProgress });
 }
 
 /**

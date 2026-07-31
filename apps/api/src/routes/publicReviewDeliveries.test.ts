@@ -788,3 +788,222 @@ describe('GET /api/review-deliveries/:token — session kind (Phase 20 Plan 03)'
     expect(sessionResponse.json().kind).toBe('session');
   });
 });
+
+/**
+ * 260731-b1: the two anonymous homework routes — session-kind delivery only
+ * (F1). The no-oracle assertions compare response BODIES deeply, not merely
+ * status codes, across every failure class (T-B1-01). Every helper here
+ * takes the `{ app, database }` pair from a SINGLE `buildTestApp()` call
+ * (never a fresh one mid-test) so the route's own database reads always see
+ * what the test just wrote.
+ */
+describe('POST /api/review-deliveries/:token/homework/item and /homework/status', () => {
+  async function seedSessionDeliveryWithHomework(
+    app: ReturnType<typeof buildTestApp>['app'],
+    database: ReturnType<typeof buildTestApp>['database'],
+    label = `HomeworkClient-${Math.random().toString(36).slice(2)}`,
+  ) {
+    const clientId = await createClient(app, label);
+    const { sessionId } = await createSession(database as never, clientId, {
+      date: 1_700_000_000_000,
+      summary: 'Session with homework',
+      homework: [
+        { text: 'Practice OOS options', done: true },
+        { text: 'Fix roll habit', done: false },
+      ],
+    });
+    const { deliveryId, token } = await createSessionDelivery(
+      database as never,
+      clientId,
+      sessionId,
+      'https://grandfinals.gg',
+    );
+    return { clientId, sessionId, deliveryId, token };
+  }
+
+  it('POST .../homework/item with a valid token and in-range index returns 200 with recomputed progress and persists it', async () => {
+    const { app, database } = buildTestApp();
+    const { token } = await seedSessionDeliveryWithHomework(app, database);
+
+    const response = await app.inject({
+      method: 'POST',
+      url: `/api/review-deliveries/${token}/homework/item`,
+      payload: { index: 1, done: true },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.headers['cache-control']).toBe('no-store');
+    expect(response.json()).toEqual({
+      doneIndexes: [0, 1],
+      acknowledgedAt: null,
+      submittedAt: null,
+    });
+
+    // Reload to confirm persistence.
+    const reload = await app.inject({
+      method: 'POST',
+      url: `/api/review-deliveries/${token}/homework/item`,
+      payload: { index: 0, done: false },
+    });
+    expect(reload.json()).toEqual({ doneIndexes: [1], acknowledgedAt: null, submittedAt: null });
+  });
+
+  it('POST .../homework/status acknowledged stamps acknowledgedAt once; a second call is a no-op with the same stamp', async () => {
+    const { app, database } = buildTestApp();
+    const { token } = await seedSessionDeliveryWithHomework(app, database);
+
+    const first = await app.inject({
+      method: 'POST',
+      url: `/api/review-deliveries/${token}/homework/status`,
+      payload: { status: 'acknowledged' },
+    });
+    expect(first.statusCode).toBe(200);
+    const firstBody = first.json();
+    expect(typeof firstBody.acknowledgedAt).toBe('number');
+
+    const second = await app.inject({
+      method: 'POST',
+      url: `/api/review-deliveries/${token}/homework/status`,
+      payload: { status: 'acknowledged' },
+    });
+    expect(second.json().acknowledgedAt).toBe(firstBody.acknowledgedAt);
+  });
+
+  it('POST .../homework/status submitted stamps submittedAt and a later item toggle still succeeds (F6)', async () => {
+    const { app, database } = buildTestApp();
+    const { token } = await seedSessionDeliveryWithHomework(app, database);
+
+    const submitResponse = await app.inject({
+      method: 'POST',
+      url: `/api/review-deliveries/${token}/homework/status`,
+      payload: { status: 'submitted' },
+    });
+    expect(typeof submitResponse.json().submittedAt).toBe('number');
+
+    const toggleResponse = await app.inject({
+      method: 'POST',
+      url: `/api/review-deliveries/${token}/homework/item`,
+      payload: { index: 1, done: true },
+    });
+    expect(toggleResponse.statusCode).toBe(200);
+    expect(toggleResponse.json().doneIndexes).toEqual([0, 1]);
+  });
+
+  it('a delivery that has never been touched reads back cleanly via the item route, never a 404 or parse failure', async () => {
+    const { app, database } = buildTestApp();
+    const { token } = await seedSessionDeliveryWithHomework(app, database);
+
+    // A "touch" that re-affirms the frozen state still succeeds and returns
+    // the untouched-equivalent doneIndexes (index 0 was already frozen done).
+    const response = await app.inject({
+      method: 'POST',
+      url: `/api/review-deliveries/${token}/homework/item`,
+      payload: { index: 0, done: true },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({
+      doneIndexes: [0],
+      acknowledgedAt: null,
+      submittedAt: null,
+    });
+  });
+
+  it('every failure class returns the IDENTICAL 404 body — out-of-range index, unknown token, revoked token, and a coachReview-kind token', async () => {
+    const { app, database } = buildTestApp();
+    const { deliveryId, sessionId, clientId, token } = await seedSessionDeliveryWithHomework(
+      app,
+      database,
+    );
+
+    // This session's homework has only 2 items (valid indices 0-1) — index 5
+    // is within the route's own Zod body bound (0..MAX_SESSION_HOMEWORK_ITEMS
+    // - 1) but past THIS delivery's frozen homework length, exercising the
+    // server-side re-check against `snapshot.homework.length`.
+    const outOfRange = await app.inject({
+      method: 'POST',
+      url: `/api/review-deliveries/${token}/homework/item`,
+      payload: { index: 5, done: true },
+    });
+
+    const unknown = await app.inject({
+      method: 'POST',
+      url: '/api/review-deliveries/noSuchTokenAtAll-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/homework/item',
+      payload: { index: 0, done: true },
+    });
+
+    // A SEPARATE delivery (its own client), revoked, so the "revoked" case
+    // is exercised independently of the "out of range"/"unknown" cases above.
+    const {
+      clientId: revokedClientId,
+      deliveryId: revokedDeliveryId,
+      sessionId: revokedSessionId,
+      token: revokedToken,
+    } = await seedSessionDeliveryWithHomework(app, database);
+    await revokeSessionDelivery(
+      database as never,
+      revokedClientId,
+      revokedSessionId,
+      revokedDeliveryId,
+    );
+    const revoked = await app.inject({
+      method: 'POST',
+      url: `/api/review-deliveries/${revokedToken}/homework/item`,
+      payload: { index: 0, done: true },
+    });
+
+    const { token: reviewToken } = await seedDeliveredReview(app);
+    const wrongKind = await app.inject({
+      method: 'POST',
+      url: `/api/review-deliveries/${reviewToken}/homework/item`,
+      payload: { index: 0, done: true },
+    });
+
+    const expectedBody = {
+      error: 'Not Found',
+      message: 'This delivery is no longer available',
+      statusCode: 404,
+    };
+
+    for (const response of [outOfRange, unknown, revoked, wrongKind]) {
+      expect(response.statusCode).toBe(404);
+      expect(response.json()).toEqual(expectedBody);
+    }
+    // Deep-equality across all four bodies, not merely per-status assertions.
+    expect(outOfRange.json()).toEqual(unknown.json());
+    expect(unknown.json()).toEqual(revoked.json());
+    expect(revoked.json()).toEqual(wrongKind.json());
+
+    void deliveryId;
+    void sessionId;
+  });
+
+  it('the /homework/status route also collapses every failure class to the identical body', async () => {
+    const { app, database } = buildTestApp();
+    const { deliveryId, sessionId, clientId } = await seedSessionDeliveryWithHomework(
+      app,
+      database,
+    );
+    await revokeSessionDelivery(database as never, clientId, sessionId, deliveryId);
+    const revokedTokenResponse = await app.inject({
+      method: 'POST',
+      url: '/api/review-deliveries/noSuchTokenAtAll-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/homework/status',
+      payload: { status: 'acknowledged' },
+    });
+    expect(revokedTokenResponse.statusCode).toBe(404);
+    expect(revokedTokenResponse.json()).toEqual({
+      error: 'Not Found',
+      message: 'This delivery is no longer available',
+      statusCode: 404,
+    });
+
+    const { token: reviewToken } = await seedDeliveredReview(app);
+    const wrongKindResponse = await app.inject({
+      method: 'POST',
+      url: `/api/review-deliveries/${reviewToken}/homework/status`,
+      payload: { status: 'acknowledged' },
+    });
+    expect(wrongKindResponse.statusCode).toBe(404);
+    expect(wrongKindResponse.json()).toEqual(revokedTokenResponse.json());
+  });
+});

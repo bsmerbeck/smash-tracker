@@ -2,8 +2,10 @@ import { describe, expect, it } from 'vitest';
 import {
   clientVisibleSessionSchema,
   homeworkItemSchema,
+  homeworkProgressKey,
   MAX_SESSION_CHARACTER_TAGS,
   MAX_SESSION_HOMEWORK_ITEMS,
+  resolveHomeworkDoneIndexes,
   sessionPatchInputSchema,
   trainingSessionSchema,
 } from './coachingSession.js';
@@ -123,6 +125,42 @@ describe('homeworkItemSchema', () => {
 
   it('requires a non-empty id', () => {
     expect(() => homeworkItemSchema.parse(makeHomeworkItem({ id: '' }))).toThrow();
+  });
+});
+
+describe('homeworkProgressKey', () => {
+  it('prefixes the index with the letter h, so RTDB never array-coerces the map', () => {
+    expect(homeworkProgressKey(0)).toBe('h0');
+    expect(homeworkProgressKey(12)).toBe('h12');
+  });
+});
+
+describe('resolveHomeworkDoneIndexes', () => {
+  const homework = [{ done: true }, { done: false }, { done: true }];
+
+  it('with no progress, returns the indexes whose frozen done is true', () => {
+    expect(resolveHomeworkDoneIndexes(homework, null)).toEqual([0, 2]);
+    expect(resolveHomeworkDoneIndexes(homework, undefined)).toEqual([0, 2]);
+  });
+
+  it('an explicit true at h{i} marks item i done even when the frozen done is false', () => {
+    expect(resolveHomeworkDoneIndexes(homework, { items: { h1: true } })).toEqual([0, 1, 2]);
+  });
+
+  it('an explicit false at h{i} marks item i NOT done even when the frozen done is true', () => {
+    expect(resolveHomeworkDoneIndexes(homework, { items: { h0: false } })).toEqual([2]);
+  });
+
+  it('a progress key past the homework array length is ignored, never crashes', () => {
+    expect(() => resolveHomeworkDoneIndexes(homework, { items: { h99: true } })).not.toThrow();
+    expect(resolveHomeworkDoneIndexes(homework, { items: { h99: true } })).toEqual([0, 2]);
+  });
+
+  it('returns ascending, deduplicated indexes', () => {
+    const result = resolveHomeworkDoneIndexes(homework, {
+      items: { h2: true, h0: true, h1: true },
+    });
+    expect(result).toEqual([0, 1, 2]);
   });
 });
 
