@@ -128,4 +128,90 @@ describe('ReviewEvidenceList', () => {
 
     expect(screen.queryByText('cited')).not.toBeInTheDocument();
   });
+
+  describe('260731-b1: expandable notes + shortened cite label', () => {
+    const LONG_NOTE =
+      'This is a very long timestamped note describing exactly what went wrong on that punish attempt and how to fix it next time';
+
+    it('a note row is collapsed by default and expands/collapses on activation, reflected via aria-expanded', async () => {
+      const user = userEvent.setup();
+      render(
+        <ReviewEvidenceList
+          timestamps={[makeTimestamp({ note: LONG_NOTE })]}
+          sourceMatchId="m1"
+          sections={[]}
+          getCurrentTimeRef={{ current: null }}
+          onCite={vi.fn()}
+        />,
+      );
+
+      const toggle = screen.getByRole('button', { name: 'Show full note' });
+      expect(toggle).toHaveAttribute('aria-expanded', 'false');
+
+      await user.click(toggle);
+      expect(screen.getByRole('button', { name: 'Collapse note' })).toHaveAttribute(
+        'aria-expanded',
+        'true',
+      );
+
+      await user.click(screen.getByRole('button', { name: 'Collapse note' }));
+      expect(screen.getByRole('button', { name: 'Show full note' })).toHaveAttribute(
+        'aria-expanded',
+        'false',
+      );
+    });
+
+    it('expanding one row leaves the other rows collapsed', async () => {
+      const user = userEvent.setup();
+      render(
+        <ReviewEvidenceList
+          timestamps={[
+            makeTimestamp({ id: 't1', note: 'first note' }),
+            makeTimestamp({ id: 't2', note: 'second note' }),
+          ]}
+          sourceMatchId="m1"
+          sections={[]}
+          getCurrentTimeRef={{ current: null }}
+          onCite={vi.fn()}
+        />,
+      );
+
+      const toggles = screen.getAllByRole('button', { name: 'Show full note' });
+      expect(toggles).toHaveLength(2);
+      await user.click(toggles[0]!);
+
+      const afterToggle = screen.getAllByRole('button', { name: /note$/ });
+      expect(afterToggle.find((el) => el.textContent === 'first note')).toHaveAttribute(
+        'aria-expanded',
+        'true',
+      );
+      expect(screen.getByRole('button', { name: 'Show full note' })).toHaveAttribute(
+        'aria-expanded',
+        'false',
+      );
+    });
+
+    it('Cite fires onCite with the SHORTENED label for a long note, not the full note text', async () => {
+      const user = userEvent.setup();
+      const onCite = vi.fn();
+      render(
+        <ReviewEvidenceList
+          timestamps={[makeTimestamp({ seconds: 90, note: LONG_NOTE })]}
+          sourceMatchId="m1"
+          sections={[]}
+          getCurrentTimeRef={{ current: null }}
+          onCite={onCite}
+        />,
+      );
+
+      await user.click(screen.getByRole('button', { name: 'Cite' }));
+
+      const call = onCite.mock.calls[0]![0] as { label: string };
+      expect(call.sourceVodRef).toBe('m1');
+      expect(call.seconds).toBe(90);
+      expect(call.label).not.toBe(LONG_NOTE);
+      expect(call.label.length).toBeLessThanOrEqual(41);
+      expect(call.label.endsWith('…')).toBe(true);
+    });
+  });
 });

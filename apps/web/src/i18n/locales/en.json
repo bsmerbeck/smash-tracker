@@ -1803,7 +1803,9 @@
           "empty": "No timestamped notes on this source yet.",
           "cite": "Cite",
           "citeCurrentMoment": "⏱ Cite current moment",
-          "citedIndicator": "cited"
+          "citedIndicator": "cited",
+          "expandNote": "Show full note",
+          "collapseNote": "Collapse note"
         },
         "tabs": {
           "clientReview": "Client review",

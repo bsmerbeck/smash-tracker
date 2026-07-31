@@ -1803,7 +1803,9 @@
           "empty": "Cette source n'a pas encore de notes horodatées.",
           "cite": "Citer",
           "citeCurrentMoment": "⏱ Citer le moment actuel",
-          "citedIndicator": "cité"
+          "citedIndicator": "cité",
+          "expandNote": "Afficher la note complète",
+          "collapseNote": "Réduire la note"
         },
         "tabs": {
           "clientReview": "Revue client",

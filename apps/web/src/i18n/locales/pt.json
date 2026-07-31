@@ -1803,7 +1803,9 @@
           "empty": "Esta fonte ainda não tem notas com marca de tempo.",
           "cite": "Citar",
           "citeCurrentMoment": "⏱ Citar momento atual",
-          "citedIndicator": "citado"
+          "citedIndicator": "citado",
+          "expandNote": "Mostrar nota completa",
+          "collapseNote": "Recolher nota"
         },
         "tabs": {
           "clientReview": "Análise do cliente",

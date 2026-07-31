@@ -1803,7 +1803,9 @@
           "empty": "このソースにはまだタイムスタンプ付きのメモがありません。",
           "cite": "引用",
           "citeCurrentMoment": "⏱ 現在の瞬間を引用",
-          "citedIndicator": "引用済み"
+          "citedIndicator": "引用済み",
+          "expandNote": "メモ全文を表示",
+          "collapseNote": "メモを折りたたむ"
         },
         "tabs": {
           "clientReview": "クライアント向けレビュー",

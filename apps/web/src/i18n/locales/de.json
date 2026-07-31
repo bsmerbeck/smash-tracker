@@ -1803,7 +1803,9 @@
           "empty": "Diese Quelle hat noch keine Notizen mit Zeitstempel.",
           "cite": "Zitieren",
           "citeCurrentMoment": "⏱ Aktuellen Moment zitieren",
-          "citedIndicator": "zitiert"
+          "citedIndicator": "zitiert",
+          "expandNote": "Vollständige Notiz anzeigen",
+          "collapseNote": "Notiz einklappen"
         },
         "tabs": {
           "clientReview": "Klienten-Review",
