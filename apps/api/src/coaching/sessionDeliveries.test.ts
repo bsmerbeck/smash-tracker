@@ -7,7 +7,10 @@ import { deleteClient, createClient, CANONICAL_TENANT_TREES } from './tenants.js
 import {
   createSessionDelivery,
   listSessionDeliveries,
+  readHomeworkProgress,
   revokeSessionDelivery,
+  setHomeworkItemDone,
+  setHomeworkStatus,
 } from './sessionDeliveries.js';
 
 const TENANT_ID = 'tenant-1';
@@ -383,6 +386,304 @@ describe('revokeSessionDelivery', () => {
     await expect(
       revokeSessionDelivery(asDatabase(database), TENANT_ID, sessionId, 'no-such-delivery'),
     ).rejects.toThrow(NotFoundError);
+  });
+});
+
+/**
+ * 260731-b1 (client-interactive session-delivery homework): seeds a session
+ * with a THREE-item homework checklist (indexes 0/2 frozen done, index 1
+ * frozen not-done) and mints a delivery — the fixture every homework test
+ * below builds on.
+ */
+async function seedSessionWithHomework(database: FakeDatabase): Promise<{
+  sessionId: string;
+  deliveryId: string;
+  token: string;
+}> {
+  const { sessionId } = await createSession(asDatabase(database), TENANT_ID, {
+    date: 1_700_000_000_000,
+    summary: 'Session with homework',
+    homework: [
+      { text: 'Practice OOS options', done: true },
+      { text: 'Fix roll habit', done: false },
+      { text: 'Watch VOD review', done: true },
+    ],
+  });
+  const { deliveryId, token } = await createSessionDelivery(
+    asDatabase(database),
+    TENANT_ID,
+    sessionId,
+    WEB_BASE_URL,
+  );
+  return { sessionId, deliveryId, token };
+}
+
+describe('readHomeworkProgress', () => {
+  it('an untouched delivery reads back with doneIndexes from the frozen done state and null stamps', async () => {
+    const database = new FakeDatabase();
+    const { sessionId, deliveryId } = await seedSessionWithHomework(database);
+
+    const progress = await readHomeworkProgress(
+      asDatabase(database),
+      TENANT_ID,
+      sessionId,
+      deliveryId,
+    );
+
+    expect(progress).toEqual({ doneIndexes: [0, 2], acknowledgedAt: null, submittedAt: null });
+  });
+
+  it('returns null for a missing delivery, never throws', async () => {
+    const database = new FakeDatabase();
+    const sessionId = await seedSession(database);
+
+    await expect(
+      readHomeworkProgress(asDatabase(database), TENANT_ID, sessionId, 'no-such-delivery'),
+    ).resolves.toBeNull();
+  });
+
+  it('returns null for a revoked delivery', async () => {
+    const database = new FakeDatabase();
+    const { sessionId, deliveryId } = await seedSessionWithHomework(database);
+    await revokeSessionDelivery(asDatabase(database), TENANT_ID, sessionId, deliveryId);
+
+    await expect(
+      readHomeworkProgress(asDatabase(database), TENANT_ID, sessionId, deliveryId),
+    ).resolves.toBeNull();
+  });
+});
+
+describe('setHomeworkItemDone', () => {
+  it('toggling an item overrides the frozen done state and persists', async () => {
+    const database = new FakeDatabase();
+    const { sessionId, deliveryId } = await seedSessionWithHomework(database);
+
+    const result = await setHomeworkItemDone(
+      asDatabase(database),
+      TENANT_ID,
+      sessionId,
+      deliveryId,
+      1,
+      true,
+    );
+
+    expect(result).toEqual({ doneIndexes: [0, 1, 2], acknowledgedAt: null, submittedAt: null });
+    const stored = dumpDeliveryRecord(database, TENANT_ID, sessionId, deliveryId);
+    const homeworkProgress = stored.homeworkProgress as Record<string, unknown>;
+    expect(homeworkProgress.items).toEqual({ h1: true });
+    expect(typeof homeworkProgress.updatedAt).toBe('number');
+  });
+
+  it('an explicit false uncheck persists as a literal false, never a stripped null', async () => {
+    const database = new FakeDatabase();
+    const { sessionId, deliveryId } = await seedSessionWithHomework(database);
+
+    const result = await setHomeworkItemDone(
+      asDatabase(database),
+      TENANT_ID,
+      sessionId,
+      deliveryId,
+      0,
+      false,
+    );
+
+    expect(result).toEqual({ doneIndexes: [2], acknowledgedAt: null, submittedAt: null });
+    const stored = dumpDeliveryRecord(database, TENANT_ID, sessionId, deliveryId);
+    const homeworkProgress = stored.homeworkProgress as Record<string, unknown>;
+    expect((homeworkProgress.items as Record<string, unknown>).h0).toBe(false);
+  });
+
+  it('returns null for an out-of-range index, never crashes', async () => {
+    const database = new FakeDatabase();
+    const { sessionId, deliveryId } = await seedSessionWithHomework(database);
+
+    await expect(
+      setHomeworkItemDone(asDatabase(database), TENANT_ID, sessionId, deliveryId, 99, true),
+    ).resolves.toBeNull();
+    await expect(
+      setHomeworkItemDone(asDatabase(database), TENANT_ID, sessionId, deliveryId, -1, true),
+    ).resolves.toBeNull();
+  });
+
+  it('returns null for a missing or revoked delivery', async () => {
+    const database = new FakeDatabase();
+    const { sessionId, deliveryId } = await seedSessionWithHomework(database);
+    await revokeSessionDelivery(asDatabase(database), TENANT_ID, sessionId, deliveryId);
+
+    await expect(
+      setHomeworkItemDone(asDatabase(database), TENANT_ID, sessionId, deliveryId, 0, true),
+    ).resolves.toBeNull();
+    await expect(
+      setHomeworkItemDone(asDatabase(database), TENANT_ID, sessionId, 'no-such-delivery', 0, true),
+    ).resolves.toBeNull();
+  });
+
+  it('multiple toggles accumulate without clobbering earlier entries', async () => {
+    const database = new FakeDatabase();
+    const { sessionId, deliveryId } = await seedSessionWithHomework(database);
+
+    await setHomeworkItemDone(asDatabase(database), TENANT_ID, sessionId, deliveryId, 1, true);
+    const result = await setHomeworkItemDone(
+      asDatabase(database),
+      TENANT_ID,
+      sessionId,
+      deliveryId,
+      0,
+      false,
+    );
+
+    expect(result).toEqual({ doneIndexes: [1, 2], acknowledgedAt: null, submittedAt: null });
+  });
+});
+
+describe('setHomeworkStatus', () => {
+  it("'acknowledged' stamps acknowledgedAt once; a second call is a no-op that still returns the same stamp", async () => {
+    const database = new FakeDatabase();
+    const { sessionId, deliveryId } = await seedSessionWithHomework(database);
+
+    const first = await setHomeworkStatus(
+      asDatabase(database),
+      TENANT_ID,
+      sessionId,
+      deliveryId,
+      'acknowledged',
+    );
+    expect(typeof first?.acknowledgedAt).toBe('number');
+    expect(first?.submittedAt).toBeNull();
+
+    const second = await setHomeworkStatus(
+      asDatabase(database),
+      TENANT_ID,
+      sessionId,
+      deliveryId,
+      'acknowledged',
+    );
+    expect(second?.acknowledgedAt).toBe(first?.acknowledgedAt);
+  });
+
+  it("'submitted' stamps submittedAt and back-fills an absent acknowledgedAt", async () => {
+    const database = new FakeDatabase();
+    const { sessionId, deliveryId } = await seedSessionWithHomework(database);
+
+    const result = await setHomeworkStatus(
+      asDatabase(database),
+      TENANT_ID,
+      sessionId,
+      deliveryId,
+      'submitted',
+    );
+
+    expect(typeof result?.submittedAt).toBe('number');
+    expect(typeof result?.acknowledgedAt).toBe('number');
+  });
+
+  it("'submitted' after an existing 'acknowledged' preserves the original acknowledgedAt", async () => {
+    const database = new FakeDatabase();
+    const { sessionId, deliveryId } = await seedSessionWithHomework(database);
+
+    const acked = await setHomeworkStatus(
+      asDatabase(database),
+      TENANT_ID,
+      sessionId,
+      deliveryId,
+      'acknowledged',
+    );
+    const submitted = await setHomeworkStatus(
+      asDatabase(database),
+      TENANT_ID,
+      sessionId,
+      deliveryId,
+      'submitted',
+    );
+
+    expect(submitted?.acknowledgedAt).toBe(acked?.acknowledgedAt);
+  });
+
+  it('a later item toggle still succeeds after submission — submitting does not lock the list (F6)', async () => {
+    const database = new FakeDatabase();
+    const { sessionId, deliveryId } = await seedSessionWithHomework(database);
+
+    await setHomeworkStatus(asDatabase(database), TENANT_ID, sessionId, deliveryId, 'submitted');
+    const result = await setHomeworkItemDone(
+      asDatabase(database),
+      TENANT_ID,
+      sessionId,
+      deliveryId,
+      1,
+      true,
+    );
+
+    expect(result?.doneIndexes).toEqual([0, 1, 2]);
+  });
+
+  it('returns null for a missing or revoked delivery', async () => {
+    const database = new FakeDatabase();
+    const { sessionId, deliveryId } = await seedSessionWithHomework(database);
+    await revokeSessionDelivery(asDatabase(database), TENANT_ID, sessionId, deliveryId);
+
+    await expect(
+      setHomeworkStatus(asDatabase(database), TENANT_ID, sessionId, deliveryId, 'acknowledged'),
+    ).resolves.toBeNull();
+  });
+});
+
+describe('listSessionDeliveries homework fields (260731-b1)', () => {
+  it('carries homeworkDoneCount/homeworkTotal matching resolveHomeworkDoneIndexes, and null stamps for an untouched delivery', async () => {
+    const database = new FakeDatabase();
+    const { sessionId, deliveryId } = await seedSessionWithHomework(database);
+
+    const rows = await listSessionDeliveries(
+      asDatabase(database),
+      TENANT_ID,
+      sessionId,
+      WEB_BASE_URL,
+    );
+
+    const row = rows.find((r) => r.deliveryId === deliveryId)!;
+    expect(row.homeworkDoneCount).toBe(2);
+    expect(row.homeworkTotal).toBe(3);
+    expect(row.homeworkAcknowledgedAt).toBeNull();
+    expect(row.homeworkSubmittedAt).toBeNull();
+  });
+
+  it("the coach list's homeworkDoneCount matches the anonymous snapshot's doneIndexes length after a client toggle", async () => {
+    const database = new FakeDatabase();
+    const { sessionId, deliveryId } = await seedSessionWithHomework(database);
+
+    await setHomeworkItemDone(asDatabase(database), TENANT_ID, sessionId, deliveryId, 1, true);
+
+    const rows = await listSessionDeliveries(
+      asDatabase(database),
+      TENANT_ID,
+      sessionId,
+      WEB_BASE_URL,
+    );
+    const row = rows.find((r) => r.deliveryId === deliveryId)!;
+    const progress = await readHomeworkProgress(
+      asDatabase(database),
+      TENANT_ID,
+      sessionId,
+      deliveryId,
+    );
+
+    expect(row.homeworkDoneCount).toBe(progress!.doneIndexes.length);
+    expect(row.homeworkDoneCount).toBe(3);
+  });
+
+  it('carries the stamps once set', async () => {
+    const database = new FakeDatabase();
+    const { sessionId, deliveryId } = await seedSessionWithHomework(database);
+    await setHomeworkStatus(asDatabase(database), TENANT_ID, sessionId, deliveryId, 'submitted');
+
+    const rows = await listSessionDeliveries(
+      asDatabase(database),
+      TENANT_ID,
+      sessionId,
+      WEB_BASE_URL,
+    );
+    const row = rows.find((r) => r.deliveryId === deliveryId)!;
+    expect(typeof row.homeworkAcknowledgedAt).toBe('number');
+    expect(typeof row.homeworkSubmittedAt).toBe('number');
   });
 });
 

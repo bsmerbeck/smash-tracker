@@ -1808,7 +1808,9 @@
           "empty": "Esta fuente todavía no tiene notas con marca de tiempo.",
           "cite": "Citar",
           "citeCurrentMoment": "⏱ Citar momento actual",
-          "citedIndicator": "citado"
+          "citedIndicator": "citado",
+          "expandNote": "Mostrar nota completa",
+          "collapseNote": "Ocultar nota"
         },
         "tabs": {
           "clientReview": "Reseña del cliente",
@@ -1949,7 +1951,10 @@
           "createError": "Ocurrió un error al crear este enlace de entrega.",
           "copiedToast": "Enlace copiado",
           "revokedToast": "Enlace de entrega revocado",
-          "revokeError": "Ocurrió un error al revocar este enlace de entrega."
+          "revokeError": "Ocurrió un error al revocar este enlace de entrega.",
+          "homeworkStatusLabel": "{{done}} de {{total}} tareas hechas",
+          "homeworkAcknowledgedAt": "Confirmado el {{date}}",
+          "homeworkSubmittedAt": "Enviado el {{date}}"
         },
         "actions": {
           "deliver": "Entregar",
@@ -2046,6 +2051,15 @@
       "homeworkEmpty": "Sin tareas en esta sesión.",
       "homeworkItemDoneAria": "Hecha: {{item}}",
       "homeworkItemTodoAria": "Aún no hecha: {{item}}",
+      "homeworkAckPrompt": "Avisa a tu entrenador de que has visto estas tareas.",
+      "homeworkAckButton": "Confirmar tareas",
+      "homeworkAckConfirmed": "Confirmado el {{date}} — tu entrenador puede verlo.",
+      "homeworkSubmitButton": "Enviar finalización",
+      "homeworkSubmitHint": "¿Terminaste todo? Envía para avisar a tu entrenador — puedes seguir actualizando tareas después de enviar.",
+      "homeworkSubmittedTitle": "Finalización enviada",
+      "homeworkSubmittedDetail": "Enviado el {{date}} — tu entrenador puede verlo. Puedes seguir actualizando las tareas arriba.",
+      "homeworkProgressLabel": "{{done}} de {{total}} hechas",
+      "homeworkSaveError": "No se pudo guardar — comprueba tu conexión.",
       "linkedVodsHeading": "VODs vinculados",
       "linkedVodsEmpty": "Sin VODs vinculados en esta sesión.",
       "linkedVodItem": "Referencia de VOD vinculado: {{ref}}"

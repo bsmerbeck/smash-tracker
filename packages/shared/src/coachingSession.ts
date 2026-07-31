@@ -134,3 +134,81 @@ export const sessionPatchInputSchema = z.object({
   coachPrivateNotes: safeMarkdownDocSchema.nullish(),
 });
 export type SessionPatchInput = z.infer<typeof sessionPatchInputSchema>;
+
+/**
+ * 260731-b1 (client-interactive session-delivery homework, research findings
+ * F3/F4): a homework item is addressed by its ARRAY INDEX (the frozen
+ * `snapshot.homework` at delivery time has no per-item id — see
+ * `clientVisibleSessionSchema.homework` above), never by a bare numeric
+ * string key. RTDB coerces an object whose keys are ALL sequential integer
+ * strings ("0", "1", "2", ...) into a sparse JS ARRAY on read — silently
+ * changing the stored shape out from under every future reader. Prefixing
+ * with the letter `h` guarantees the key is never all-digits, closing that
+ * coercion trap by construction (mirrors Phase 26's `prepBriefs`
+ * presence-map convention).
+ */
+export function homeworkProgressKey(index: number): string {
+  return `h${index}`;
+}
+
+/**
+ * `sessionDeliveries/{tenantId}/{sessionId}/{deliveryId}/homeworkProgress` —
+ * a STORED shape, so every field is `.nullish()` (never bare `.optional()`),
+ * per CONCERNS.md's RTDB null-stripping rule (the 260725-juj outage class).
+ *
+ * `items` is a presence map keyed by `homeworkProgressKey(index)` ->
+ * boolean. F4: an ABSENT key means "the client never touched this item" (the
+ * frozen `snapshot.homework[i].done` at delivery time is still authoritative
+ * for that index); a STORED `false` is an explicit client uncheck, distinct
+ * from "untouched" — `resolveHomeworkDoneIndexes` below is the one place
+ * that distinction is resolved. Booleans are never null-stripped by RTDB (only
+ * `undefined`/`null`/`[]` are), so an explicit `false` round-trips faithfully.
+ */
+export const homeworkProgressSchema = z.object({
+  items: z.record(z.string(), z.boolean()).nullish(),
+  acknowledgedAt: z.number().int().nonnegative().nullish(),
+  submittedAt: z.number().int().nonnegative().nullish(),
+  updatedAt: z.number().int().nonnegative().nullish(),
+});
+export type HomeworkProgress = z.infer<typeof homeworkProgressSchema>;
+
+/**
+ * F3/F4: the SINGLE resolution point both the anonymous client snapshot
+ * (`sessionHomeworkProgress.doneIndexes`, `RtdbService.getSessionSnapshot`)
+ * and the coach-facing list (`homeworkDoneCount`,
+ * `sessionDeliveries.ts`'s `listSessionDeliveries`) call — so the two can
+ * never disagree. For each homework index: the stored boolean at
+ * `homeworkProgressKey(index)` when present, else the frozen `done` at
+ * delivery time. An out-of-range stored key (past `homework.length`, e.g.
+ * from a shrunk delivery — should not normally happen, defensive only) is
+ * silently ignored, never crashes. Returns ascending, deduplicated indexes.
+ */
+export function resolveHomeworkDoneIndexes(
+  homework: { done: boolean }[],
+  progress: HomeworkProgress | null | undefined,
+): number[] {
+  const items = progress?.items ?? {};
+  const result: number[] = [];
+  homework.forEach((item, index) => {
+    const stored = items[homeworkProgressKey(index)];
+    const done = stored ?? item.done;
+    if (done) {
+      result.push(index);
+    }
+  });
+  return result;
+}
+
+/**
+ * WIRE shape (never stored) for `POST /review-deliveries/:token/homework/*`
+ * responses and `RtdbService.getSessionSnapshot`'s
+ * `sessionHomeworkProgress` field — `.nullable()` not `.nullish()`, per this
+ * repo's "response contracts are never undefined" convention (mirrors
+ * `coachingReview.ts`'s WIRE-vs-STORED distinction).
+ */
+export const homeworkProgressResponseSchema = z.object({
+  doneIndexes: z.array(z.number().int().nonnegative()).max(MAX_SESSION_HOMEWORK_ITEMS),
+  acknowledgedAt: z.number().int().nonnegative().nullable(),
+  submittedAt: z.number().int().nonnegative().nullable(),
+});
+export type HomeworkProgressResponse = z.infer<typeof homeworkProgressResponseSchema>;

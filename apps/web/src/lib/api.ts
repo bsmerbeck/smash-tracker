@@ -22,6 +22,7 @@ import {
   gspReadingSchema,
   gspSettingsSchema,
   homeworkItemSchema,
+  homeworkProgressResponseSchema,
   HOMEWORK_ITEM_TEXT_MAX_LENGTH,
   issuedClaimInvitationSchema,
   joinGroupRequestSchema,
@@ -435,6 +436,11 @@ const sessionDeliveryListItemResponseSchema = z.object({
   createdAt: z.number().int().nonnegative(),
   revokedAt: z.number().int().nonnegative().nullable(),
   url: z.string().url(),
+  /** 260731-b1: the coach-visible per-item completion count plus acknowledge/submit stamps. */
+  homeworkDoneCount: z.number().int().nonnegative(),
+  homeworkTotal: z.number().int().nonnegative(),
+  homeworkAcknowledgedAt: z.number().int().nonnegative().nullable(),
+  homeworkSubmittedAt: z.number().int().nonnegative().nullable(),
 });
 export type SessionDeliveryListItem = z.infer<typeof sessionDeliveryListItemResponseSchema>;
 
@@ -1358,6 +1364,29 @@ export const api = {
         `/api/review-deliveries/${encodeURIComponent(token)}/viewed`,
         z.object({ viewed: z.literal(true) }),
         { method: 'POST' },
+      ),
+    /**
+     * 260731-b1: POST /api/review-deliveries/:token/homework/item — toggles
+     * one homework item's done-state on a session delivery. Session-kind
+     * deliveries only (a coachReview token 404s the same as any other
+     * wrong-kind token — server-side, T-B1-01).
+     */
+    setHomeworkItem: (token: string, input: { index: number; done: boolean }) =>
+      apiRequestParsed(
+        `/api/review-deliveries/${encodeURIComponent(token)}/homework/item`,
+        homeworkProgressResponseSchema,
+        { method: 'POST', body: input },
+      ),
+    /**
+     * 260731-b1: POST /api/review-deliveries/:token/homework/status —
+     * stamps acknowledged/submitted on a session delivery (idempotent per
+     * status; submitting does not lock the checklist, F6).
+     */
+    setHomeworkStatus: (token: string, input: { status: 'acknowledged' | 'submitted' }) =>
+      apiRequestParsed(
+        `/api/review-deliveries/${encodeURIComponent(token)}/homework/status`,
+        homeworkProgressResponseSchema,
+        { method: 'POST', body: input },
       ),
   },
 };

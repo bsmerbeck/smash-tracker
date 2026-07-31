@@ -1808,7 +1808,9 @@
           "empty": "Diese Quelle hat noch keine Notizen mit Zeitstempel.",
           "cite": "Zitieren",
           "citeCurrentMoment": "⏱ Aktuellen Moment zitieren",
-          "citedIndicator": "zitiert"
+          "citedIndicator": "zitiert",
+          "expandNote": "Vollständige Notiz anzeigen",
+          "collapseNote": "Notiz einklappen"
         },
         "tabs": {
           "clientReview": "Klienten-Review",
@@ -1949,7 +1951,10 @@
           "createError": "Beim Erstellen dieses Zustelllinks ist ein Fehler aufgetreten.",
           "copiedToast": "Link kopiert",
           "revokedToast": "Zustelllink widerrufen",
-          "revokeError": "Beim Widerrufen dieses Zustelllinks ist ein Fehler aufgetreten."
+          "revokeError": "Beim Widerrufen dieses Zustelllinks ist ein Fehler aufgetreten.",
+          "homeworkStatusLabel": "{{done}} von {{total}} Hausaufgaben erledigt",
+          "homeworkAcknowledgedAt": "Bestätigt am {{date}}",
+          "homeworkSubmittedAt": "Eingereicht am {{date}}"
         },
         "actions": {
           "deliver": "Zustellen",
@@ -2046,6 +2051,15 @@
       "homeworkEmpty": "Keine Hausaufgaben in dieser Sitzung.",
       "homeworkItemDoneAria": "Erledigt: {{item}}",
       "homeworkItemTodoAria": "Noch nicht erledigt: {{item}}",
+      "homeworkAckPrompt": "Lass deinen Coach wissen, dass du diese Hausaufgaben gesehen hast.",
+      "homeworkAckButton": "Hausaufgaben bestätigen",
+      "homeworkAckConfirmed": "Bestätigt am {{date}} — dein Coach kann das sehen.",
+      "homeworkSubmitButton": "Abschluss einreichen",
+      "homeworkSubmitHint": "Alles fertig? Reiche ein, um deinen Coach zu informieren — du kannst Punkte auch nach dem Einreichen noch aktualisieren.",
+      "homeworkSubmittedTitle": "Abschluss eingereicht",
+      "homeworkSubmittedDetail": "Eingereicht am {{date}} — dein Coach kann das sehen. Du kannst die Punkte oben weiterhin aktualisieren.",
+      "homeworkProgressLabel": "{{done}} von {{total}} erledigt",
+      "homeworkSaveError": "Konnte nicht gespeichert werden — überprüfe deine Verbindung.",
       "linkedVodsHeading": "Verknüpfte VODs",
       "linkedVodsEmpty": "Keine verknüpften VODs in dieser Sitzung.",
       "linkedVodItem": "Verknüpfte VOD-Referenz: {{ref}}"

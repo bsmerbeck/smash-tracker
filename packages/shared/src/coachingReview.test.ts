@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
+  buildCitationInsertLabel,
+  CITATION_INSERT_LABEL_MAX_LENGTH,
+  citationTokenSchema,
   clientVisibleVersionSchema,
   createDraftPatchInputSchema,
   MAX_REVIEW_SECTIONS,
@@ -101,6 +104,66 @@ describe('citation token grammar', () => {
 
   it('returns null (never throws) for text with no citation token at all', () => {
     expect(parseCitationToken('just plain body text')).toBeNull();
+  });
+});
+
+describe('buildCitationInsertLabel', () => {
+  it('returns an empty string for an empty note', () => {
+    expect(buildCitationInsertLabel('')).toBe('');
+  });
+
+  it('returns an empty string for a whitespace-only note', () => {
+    expect(buildCitationInsertLabel('   \n\t  ')).toBe('');
+  });
+
+  it('round-trips a short note unchanged apart from trimming', () => {
+    expect(buildCitationInsertLabel('  missed ledgetrap  ')).toBe('missed ledgetrap');
+  });
+
+  it('collapses embedded newlines/tab runs to single spaces', () => {
+    expect(buildCitationInsertLabel('missed\nledgetrap\t\tagain')).toBe('missed ledgetrap again');
+  });
+
+  it('truncates a note over the cap at the last word boundary, appending a single ellipsis', () => {
+    const note =
+      'This is a very long timestamped note describing exactly what went wrong on that punish attempt';
+    const label = buildCitationInsertLabel(note);
+    expect(label.length).toBeLessThanOrEqual(CITATION_INSERT_LABEL_MAX_LENGTH + 1);
+    expect(label.endsWith('…')).toBe(true);
+    expect(label).not.toMatch(/\s…$/);
+  });
+
+  it('hard-slices a single unbroken long word, still ending in a single ellipsis, still at most 41 chars', () => {
+    const label = buildCitationInsertLabel('x'.repeat(100));
+    expect(label.length).toBeLessThanOrEqual(CITATION_INSERT_LABEL_MAX_LENGTH + 1);
+    expect(label.endsWith('…')).toBe(true);
+  });
+
+  it('every returned value passes citationTokenSchema and round-trips serialize -> parse', () => {
+    const notes = [
+      '',
+      'short',
+      'x'.repeat(100),
+      'a fairly long note that sits right around the truncation boundary for this cap',
+    ];
+    for (const note of notes) {
+      const label = buildCitationInsertLabel(note);
+      expect(() =>
+        citationTokenSchema.parse({ sourceVodRef: 'm1', seconds: 1, label }),
+      ).not.toThrow();
+      const serialized = serializeCitationToken({ sourceVodRef: 'm1', seconds: 1, label });
+      expect(parseCitationToken(serialized)).toEqual({ sourceVodRef: 'm1', seconds: 1, label });
+    }
+  });
+
+  it('a pre-existing long-label token (over the insert cap, under the 200 storage cap) still parses unchanged — backward compatibility', () => {
+    const longLabel = 'x'.repeat(150);
+    const serialized = serializeCitationToken({ sourceVodRef: 'm1', seconds: 5, label: longLabel });
+    expect(parseCitationToken(serialized)).toEqual({
+      sourceVodRef: 'm1',
+      seconds: 5,
+      label: longLabel,
+    });
   });
 });
 

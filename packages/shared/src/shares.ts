@@ -3,6 +3,7 @@ import { matchStageSchema } from './stage.js';
 import { recapSetSchema } from './recap.js';
 import { coachAttributionSchema, MAX_VOD_TIMESTAMPS_PER_MATCH } from './match.js';
 import { MAX_REVIEW_SECTIONS, reviewSectionSchema } from './coachingReview.js';
+import { homeworkProgressResponseSchema } from './coachingSession.js';
 
 /**
  * Phase 5 (Share Foundation & Owner Controls): privacy-controlled, revocable
@@ -337,6 +338,18 @@ export const publicShareSnapshotSchema = z
     sessionSummary: z.string().nullish(),
     /** The flat homework checklist — `{ text, done }` only, no internal id (mirrors `clientVisibleSessionSchema.homework`). */
     sessionHomework: z.array(z.object({ text: z.string(), done: z.boolean() })).nullish(),
+    /**
+     * 260731-b1 (client-interactive session-delivery homework): the
+     * client-resolved per-item done state PLUS acknowledge/submit stamps —
+     * `RtdbService.getSessionSnapshot` emits this unconditionally for every
+     * session-kind snapshot (an untouched delivery reports an empty
+     * `doneIndexes` and two null stamps, never an absent field), so the
+     * client never has to distinguish "absent" from "nothing done" itself.
+     * `.nullish()` here anyway (not gated by the fourth `.refine()` below)
+     * so a pre-260731-b1 session snapshot — which never carried this field —
+     * still validates unchanged.
+     */
+    sessionHomeworkProgress: homeworkProgressResponseSchema.nullish(),
     /** 0..n linked client VOD/match ids the session references. */
     sessionLinkedMatchRefs: z.array(z.string().min(1)).nullish(),
     // --- shared across every kind ---

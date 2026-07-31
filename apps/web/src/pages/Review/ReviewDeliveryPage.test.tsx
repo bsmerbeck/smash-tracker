@@ -4,6 +4,7 @@ import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes } from 'react-router';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { PublicShareSnapshot } from '@smash-tracker/shared';
+import { toast } from 'sonner';
 import { ApiError } from '@/lib/api';
 import {
   ONBOARDING_ORIGIN_STORAGE_KEY,
@@ -11,9 +12,13 @@ import {
 } from '@/lib/onboardingOrigin';
 import { ReviewDeliveryPage } from './ReviewDeliveryPage';
 
+vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
+
 const getDelivery = vi.fn();
 const ackDelivery = vi.fn();
 const markViewedDelivery = vi.fn();
+const setHomeworkItem = vi.fn();
+const setHomeworkStatus = vi.fn();
 
 vi.mock('@/lib/api', async () => {
   const actual = await vi.importActual<typeof import('@/lib/api')>('@/lib/api');
@@ -24,6 +29,8 @@ vi.mock('@/lib/api', async () => {
         get: (...args: unknown[]) => getDelivery(...args),
         ack: (...args: unknown[]) => ackDelivery(...args),
         markViewed: (...args: unknown[]) => markViewedDelivery(...args),
+        setHomeworkItem: (...args: unknown[]) => setHomeworkItem(...args),
+        setHomeworkStatus: (...args: unknown[]) => setHomeworkStatus(...args),
       },
     },
   };
@@ -463,6 +470,136 @@ describe('ReviewDeliveryPage', () => {
 
       await user.click(screen.getByRole('tab', { name: 'Review Notes' }));
       expect(await screen.findByText('No homework this session.')).toBeInTheDocument();
+      // A zero-homework session renders no Acknowledge or Submit control.
+      expect(
+        screen.queryByRole('button', { name: 'Acknowledge homework' }),
+      ).not.toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: 'Submit completion' })).not.toBeInTheDocument();
+    });
+
+    describe('260731-b1: interactive homework checklist', () => {
+      async function openReviewNotes(user: ReturnType<typeof userEvent.setup>) {
+        renderDelivery();
+        await screen.findByText('Training session from Coach Brendan');
+        await user.click(screen.getByRole('tab', { name: 'Review Notes' }));
+      }
+
+      it('renders one checkbox per homework item, checked from sessionHomeworkProgress.doneIndexes', async () => {
+        const user = userEvent.setup();
+        getDelivery.mockResolvedValue(
+          sessionSnapshot({
+            sessionHomeworkProgress: { doneIndexes: [1], acknowledgedAt: null, submittedAt: null },
+          }),
+        );
+
+        await openReviewNotes(user);
+
+        const checkboxes = screen.getAllByRole('checkbox');
+        expect(checkboxes).toHaveLength(2);
+        // Item 0 ("Practice ledgetraps") is frozen done:true but doneIndexes
+        // here says [1] only — the server resolution wins, proving the
+        // client never falls back to the frozen `item.done`.
+        expect(checkboxes[0]).not.toBeChecked();
+        expect(checkboxes[1]).toBeChecked();
+      });
+
+      it('toggling a checkbox posts the item route and immediately reflects the server response without a full refetch', async () => {
+        const user = userEvent.setup();
+        getDelivery.mockResolvedValue(
+          sessionSnapshot({
+            sessionHomeworkProgress: { doneIndexes: [], acknowledgedAt: null, submittedAt: null },
+          }),
+        );
+        setHomeworkItem.mockResolvedValue({
+          doneIndexes: [0],
+          acknowledgedAt: null,
+          submittedAt: null,
+        });
+
+        await openReviewNotes(user);
+        const checkboxes = screen.getAllByRole('checkbox');
+        await user.click(checkboxes[0]!);
+
+        expect(setHomeworkItem).toHaveBeenCalledWith('tok123', { index: 0, done: true });
+        await waitFor(() => expect(checkboxes[0]).toBeChecked());
+        // No re-fetch of the snapshot itself — the cache was patched in place.
+        expect(getDelivery).toHaveBeenCalledTimes(1);
+      });
+
+      it('a failed toggle surfaces an error toast and leaves the checkbox at its previous state', async () => {
+        const user = userEvent.setup();
+        getDelivery.mockResolvedValue(
+          sessionSnapshot({
+            sessionHomeworkProgress: { doneIndexes: [], acknowledgedAt: null, submittedAt: null },
+          }),
+        );
+        setHomeworkItem.mockRejectedValue(new Error('network error'));
+
+        await openReviewNotes(user);
+        const checkboxes = screen.getAllByRole('checkbox');
+        await user.click(checkboxes[0]!);
+
+        await waitFor(() => expect(toast.error).toHaveBeenCalled());
+        expect(checkboxes[0]).not.toBeChecked();
+      });
+
+      it('shows an Acknowledge prompt before acknowledgement, and a confirmation carrying the date after', async () => {
+        const user = userEvent.setup();
+        getDelivery.mockResolvedValue(
+          sessionSnapshot({
+            sessionHomeworkProgress: { doneIndexes: [], acknowledgedAt: null, submittedAt: null },
+          }),
+        );
+        setHomeworkStatus.mockResolvedValue({
+          doneIndexes: [],
+          acknowledgedAt: 1_700_100_000_000,
+          submittedAt: null,
+        });
+
+        await openReviewNotes(user);
+        expect(
+          screen.getByText("Let your coach know you've seen this homework."),
+        ).toBeInTheDocument();
+        const ackButton = screen.getByRole('button', { name: 'Acknowledge homework' });
+
+        await user.click(ackButton);
+
+        expect(setHomeworkStatus).toHaveBeenCalledWith('tok123', { status: 'acknowledged' });
+        expect(
+          await screen.findByText(
+            `Acknowledged ${new Date(1_700_100_000_000).toLocaleDateString()} — your coach can see this.`,
+          ),
+        ).toBeInTheDocument();
+        expect(
+          screen.queryByRole('button', { name: 'Acknowledge homework' }),
+        ).not.toBeInTheDocument();
+      });
+
+      it('Submit is present once there is at least one homework item; after submission shows a confirmation with the date AND checkboxes remain interactive', async () => {
+        const user = userEvent.setup();
+        getDelivery.mockResolvedValue(
+          sessionSnapshot({
+            sessionHomeworkProgress: { doneIndexes: [], acknowledgedAt: null, submittedAt: null },
+          }),
+        );
+        setHomeworkStatus.mockResolvedValue({
+          doneIndexes: [],
+          acknowledgedAt: null,
+          submittedAt: 1_700_200_000_000,
+        });
+
+        await openReviewNotes(user);
+        const submitButton = screen.getByRole('button', { name: 'Submit completion' });
+        await user.click(submitButton);
+
+        expect(setHomeworkStatus).toHaveBeenCalledWith('tok123', { status: 'submitted' });
+        expect(await screen.findByText('Completion submitted')).toBeInTheDocument();
+
+        // The checklist stays interactive — no checkbox is disabled.
+        for (const checkbox of screen.getAllByRole('checkbox')) {
+          expect(checkbox).not.toBeDisabled();
+        }
+      });
     });
   });
 });

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link, useParams } from 'react-router';
 import { useTranslation } from 'react-i18next';
+import { toast } from 'sonner';
 import { Check } from 'lucide-react';
 import type { IncludedVod, PublicShareSnapshot } from '@smash-tracker/shared';
 import { PublicLayout } from '@/layouts/PublicLayout';
@@ -10,6 +11,8 @@ import {
   useAcknowledgeReviewDelivery,
   useMarkReviewDeliveryViewed,
   useReviewDeliveryPublic,
+  useSetDeliveryHomeworkItem,
+  useSetDeliveryHomeworkStatus,
 } from '@/hooks/useReviewDelivery';
 import {
   getReviewDeliveryAckedAt,
@@ -211,7 +214,7 @@ export function ReviewDeliveryPage() {
   // (which reads coachReview-only fields like `sections`/`citationSources`
   // that a session snapshot structurally lacks).
   if (snapshot.kind === 'session') {
-    return <SessionDeliveryView snapshot={snapshot} />;
+    return <SessionDeliveryView snapshot={snapshot} token={token} />;
   }
 
   const currentSource = citationSources.find((source) => source.sourceVodRef === currentSourceRef);
@@ -448,22 +451,78 @@ export function ReviewDeliveryPage() {
  * coach identity + session date + character-tag chips + the explanation
  * paragraph, then Tabs — "VOD Notes" (`DeliveryVodNotesTab` over the
  * session's frozen `includedVods`) and "Review Notes" (the summary via
- * `SafeMarkdown` + the read-only homework checklist). The labels-only
- * linked-VOD reference list this view used to render is dropped — the rich
- * VOD Notes tab replaces it. The snapshot's `session*`/`includedVods`
- * fields are the ONLY fields this component reads — there is no path to
- * `coachPrivateNotes` (structurally absent from the frozen snapshot by
- * shape, per `clientVisibleSessionSchema`/`sessionDeliveries.ts`). Sessions
- * still have no ack/CTA/viewed lifecycle (unchanged from Phase 20).
+ * `SafeMarkdown` + the interactive homework checklist, 260731-b1). The
+ * labels-only linked-VOD reference list this view used to render is
+ * dropped — the rich VOD Notes tab replaces it. The snapshot's
+ * `session*`/`includedVods` fields are the ONLY fields this component
+ * reads — there is no path to `coachPrivateNotes` (structurally absent
+ * from the frozen snapshot by shape, per
+ * `clientVisibleSessionSchema`/`sessionDeliveries.ts`). Sessions still have
+ * no crawler-safe Viewed lifecycle (unchanged from Phase 20) — the
+ * 260731-b1 acknowledge/submit additions below are a SEPARATE, homework-
+ * scoped lifecycle from the coachReview render's `ack`/`viewed` above, with
+ * its own dedicated routes and i18n keys.
+ *
+ * 260731-b1: `snapshot.sessionHomeworkProgress.doneIndexes` is what drives
+ * every checkbox's `checked` state — the server already folded the frozen
+ * `item.done` into that resolution (see `resolveHomeworkDoneIndexes`,
+ * Task 2). Do NOT re-add a client-side `item.done` fallback here — that
+ * would reintroduce the exact client/coach drift `resolveHomeworkDoneIndexes`
+ * exists to close.
  */
-function SessionDeliveryView({ snapshot }: { snapshot: PublicShareSnapshot }) {
+function SessionDeliveryView({
+  snapshot,
+  token,
+}: {
+  snapshot: PublicShareSnapshot;
+  token: string;
+}) {
   const { t } = useTranslation();
   const fighterName = useFighterNameResolver();
   const [activeTab, setActiveTab] = useState<DeliveryTab>('vodNotes');
+  const setHomeworkItem = useSetDeliveryHomeworkItem(token);
+  const setHomeworkStatus = useSetDeliveryHomeworkStatus(token);
 
   const characterTags = snapshot.sessionCharacterTags ?? [];
   const homework = snapshot.sessionHomework ?? [];
   const includedVods = snapshot.includedVods ?? [];
+  const progress = snapshot.sessionHomeworkProgress;
+  const doneIndexes = new Set(progress?.doneIndexes ?? []);
+  const acknowledgedAt = progress?.acknowledgedAt ?? null;
+  const submittedAt = progress?.submittedAt ?? null;
+
+  function handleToggleItem(index: number, nextDone: boolean) {
+    setHomeworkItem.mutate(
+      { index, done: nextDone },
+      {
+        onError: () => {
+          toast.error(t('reviewDelivery.session.homeworkSaveError'));
+        },
+      },
+    );
+  }
+
+  function handleAcknowledgeHomework() {
+    setHomeworkStatus.mutate(
+      { status: 'acknowledged' },
+      {
+        onError: () => {
+          toast.error(t('reviewDelivery.session.homeworkSaveError'));
+        },
+      },
+    );
+  }
+
+  function handleSubmitHomework() {
+    setHomeworkStatus.mutate(
+      { status: 'submitted' },
+      {
+        onError: () => {
+          toast.error(t('reviewDelivery.session.homeworkSaveError'));
+        },
+      },
+    );
+  }
 
   return (
     <PublicLayout>
@@ -517,39 +576,131 @@ function SessionDeliveryView({ snapshot }: { snapshot: PublicShareSnapshot }) {
               </div>
             ) : null}
 
+            {homework.length > 0 && (
+              <div
+                className={cn(
+                  'flex items-center gap-3 rounded-lg border p-4',
+                  acknowledgedAt != null &&
+                    'border-green-500 bg-green-50 dark:border-green-800 dark:bg-green-950',
+                )}
+              >
+                {acknowledgedAt != null ? (
+                  <div className="flex-1 text-sm">
+                    <p className="flex items-center gap-1.5 font-semibold text-green-700 dark:text-green-400">
+                      <Check className="size-4" aria-hidden="true" />
+                      {t('reviewDelivery.session.homeworkAckConfirmed', {
+                        date: new Date(acknowledgedAt).toLocaleDateString(),
+                      })}
+                    </p>
+                  </div>
+                ) : (
+                  <>
+                    <p className="flex-1 text-sm">
+                      {t('reviewDelivery.session.homeworkAckPrompt')}
+                    </p>
+                    <Button
+                      type="button"
+                      onClick={handleAcknowledgeHomework}
+                      disabled={setHomeworkStatus.isPending}
+                    >
+                      {t('reviewDelivery.session.homeworkAckButton')}
+                    </Button>
+                  </>
+                )}
+              </div>
+            )}
+
             <div className="flex flex-col gap-2">
-              <h2 className="text-sm font-semibold">
-                {t('reviewDelivery.session.homeworkHeading')}
-              </h2>
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <h2 className="text-sm font-semibold">
+                  {t('reviewDelivery.session.homeworkHeading')}
+                </h2>
+                {homework.length > 0 && (
+                  <p className="text-xs text-muted-foreground">
+                    {t('reviewDelivery.session.homeworkProgressLabel', {
+                      done: doneIndexes.size,
+                      total: homework.length,
+                    })}
+                  </p>
+                )}
+              </div>
               {homework.length === 0 ? (
                 <p className="text-sm text-muted-foreground">
                   {t('reviewDelivery.session.homeworkEmpty')}
                 </p>
               ) : (
                 <ul className="flex flex-col gap-1.5">
-                  {homework.map((item, index) => (
-                    <li key={index} className="flex items-center gap-2 text-sm">
-                      <span
-                        aria-label={
-                          item.done
-                            ? t('reviewDelivery.session.homeworkItemDoneAria', { item: item.text })
-                            : t('reviewDelivery.session.homeworkItemTodoAria', { item: item.text })
-                        }
-                        className={cn(
-                          'flex size-4 shrink-0 items-center justify-center rounded-sm border',
-                          item.done && 'border-green-600 bg-green-600 text-white',
-                        )}
-                      >
-                        {item.done ? <Check className="size-3" /> : null}
-                      </span>
-                      <span className={cn(item.done && 'text-muted-foreground line-through')}>
-                        {item.text}
-                      </span>
-                    </li>
-                  ))}
+                  {homework.map((item, index) => {
+                    const isDone = doneIndexes.has(index);
+                    // Disabled only while THIS item's own toggle is in
+                    // flight — a pending sibling toggle must never lock out
+                    // an unrelated checkbox.
+                    const isOwnMutationPending =
+                      setHomeworkItem.isPending && setHomeworkItem.variables?.index === index;
+                    return (
+                      <li key={index} className="flex items-center gap-2 text-sm">
+                        <input
+                          type="checkbox"
+                          checked={isDone}
+                          disabled={isOwnMutationPending}
+                          aria-label={
+                            isDone
+                              ? t('reviewDelivery.session.homeworkItemDoneAria', {
+                                  item: item.text,
+                                })
+                              : t('reviewDelivery.session.homeworkItemTodoAria', {
+                                  item: item.text,
+                                })
+                          }
+                          onChange={(event) => handleToggleItem(index, event.target.checked)}
+                          className="size-4 shrink-0 accent-green-600"
+                        />
+                        <span className={cn(isDone && 'text-muted-foreground line-through')}>
+                          {item.text}
+                        </span>
+                      </li>
+                    );
+                  })}
                 </ul>
               )}
             </div>
+
+            {homework.length > 0 && (
+              <div
+                className={cn(
+                  'flex items-center gap-3 rounded-lg border p-4',
+                  submittedAt != null &&
+                    'border-green-500 bg-green-50 dark:border-green-800 dark:bg-green-950',
+                )}
+              >
+                {submittedAt != null ? (
+                  <div className="flex-1 text-sm">
+                    <p className="flex items-center gap-1.5 font-semibold text-green-700 dark:text-green-400">
+                      <Check className="size-4" aria-hidden="true" />
+                      {t('reviewDelivery.session.homeworkSubmittedTitle')}
+                    </p>
+                    <p className="text-muted-foreground">
+                      {t('reviewDelivery.session.homeworkSubmittedDetail', {
+                        date: new Date(submittedAt).toLocaleDateString(),
+                      })}
+                    </p>
+                  </div>
+                ) : (
+                  <div className="flex flex-1 flex-wrap items-center justify-between gap-3">
+                    <p className="text-sm text-muted-foreground">
+                      {t('reviewDelivery.session.homeworkSubmitHint')}
+                    </p>
+                    <Button
+                      type="button"
+                      onClick={handleSubmitHomework}
+                      disabled={setHomeworkStatus.isPending}
+                    >
+                      {t('reviewDelivery.session.homeworkSubmitButton')}
+                    </Button>
+                  </div>
+                )}
+              </div>
+            )}
           </TabsContent>
         </Tabs>
       </div>

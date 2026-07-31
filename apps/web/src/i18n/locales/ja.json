@@ -1808,7 +1808,9 @@
           "empty": "このソースにはまだタイムスタンプ付きのメモがありません。",
           "cite": "引用",
           "citeCurrentMoment": "⏱ 現在の瞬間を引用",
-          "citedIndicator": "引用済み"
+          "citedIndicator": "引用済み",
+          "expandNote": "メモ全文を表示",
+          "collapseNote": "メモを折りたたむ"
         },
         "tabs": {
           "clientReview": "クライアント向けレビュー",
@@ -1949,7 +1951,10 @@
           "createError": "この配信リンクの作成中にエラーが発生しました。",
           "copiedToast": "リンクをコピーしました",
           "revokedToast": "配信リンクを取り消しました",
-          "revokeError": "この配信リンクの取り消し中にエラーが発生しました。"
+          "revokeError": "この配信リンクの取り消し中にエラーが発生しました。",
+          "homeworkStatusLabel": "宿題{{total}}件中{{done}}件完了",
+          "homeworkAcknowledgedAt": "{{date}}に確認済み",
+          "homeworkSubmittedAt": "{{date}}に送信済み"
         },
         "actions": {
           "deliver": "配信する",
@@ -2046,6 +2051,15 @@
       "homeworkEmpty": "このセッションに宿題はありません。",
       "homeworkItemDoneAria": "完了: {{item}}",
       "homeworkItemTodoAria": "未完了: {{item}}",
+      "homeworkAckPrompt": "この宿題を見たことをコーチに知らせましょう。",
+      "homeworkAckButton": "宿題を確認済みにする",
+      "homeworkAckConfirmed": "{{date}}に確認済み — コーチが確認できます。",
+      "homeworkSubmitButton": "完了を送信",
+      "homeworkSubmitHint": "すべて終わりましたか？送信してコーチに知らせましょう — 送信後も項目は更新できます。",
+      "homeworkSubmittedTitle": "完了を送信しました",
+      "homeworkSubmittedDetail": "{{date}}に送信 — コーチが確認できます。上の項目は引き続き更新できます。",
+      "homeworkProgressLabel": "{{total}}件中{{done}}件完了",
+      "homeworkSaveError": "保存できませんでした — 接続を確認してください。",
       "linkedVodsHeading": "関連VOD",
       "linkedVodsEmpty": "このセッションに関連VODはありません。",
       "linkedVodItem": "関連VOD参照: {{ref}}"

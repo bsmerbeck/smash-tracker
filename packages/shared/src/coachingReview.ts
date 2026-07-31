@@ -99,6 +99,54 @@ export type ClientVisibleVersion = z.infer<typeof clientVisibleVersionSchema>;
  * citation (D-04) is representable identically to a same-source one.
  */
 export const CITATION_LABEL_MAX_LENGTH = 200;
+
+/**
+ * 260731-b1 (owner dogfooding fix): the max length of the label INSERTED at
+ * cite time — deliberately far below `CITATION_LABEL_MAX_LENGTH` (200). Only
+ * `buildCitationInsertLabel` below reads this constant; every other citation
+ * primitive (`citationTokenSchema`, `CITATION_TOKEN_PATTERN`,
+ * `CITATION_TOKEN_PATTERN_GLOBAL`, `serializeCitationToken`,
+ * `parseCitationToken`, `extractCitationTokens`) is untouched, so an
+ * already-stored review carrying a long pre-existing label keeps parsing and
+ * rendering byte-identically (see research finding F2: renderer-side label
+ * resolution was rejected because the client delivery page's snapshot has no
+ * resolvable note text for a cited-but-not-picked VOD).
+ */
+export const CITATION_INSERT_LABEL_MAX_LENGTH = 40;
+
+/**
+ * 260731-b1: shortens a note's raw text to what gets INSERTED into a
+ * `{{cite:...}}` token's `label` field at cite time — NOT a general-purpose
+ * formatter, and NOT used anywhere the token is parsed/rendered. Trims,
+ * collapses every run of whitespace (including embedded newlines/tabs from a
+ * multi-line note) to a single space, and:
+ * - returns `''` for an empty/whitespace-only note (mirrors the empty label
+ *   `handleCiteCurrentMoment` already sends for "cite current moment");
+ * - returns the collapsed text UNCHANGED when it is at or under
+ *   `CITATION_INSERT_LABEL_MAX_LENGTH`;
+ * - otherwise cuts at the last space at or before the cap (a normal
+ *   word-boundary truncation), right-trims, and appends a single U+2026 —
+ *   or, when there is no such space (one unbroken long word), hard-slices to
+ *   the cap and appends U+2026 anyway.
+ * The result is always at most `CITATION_INSERT_LABEL_MAX_LENGTH + 1`
+ * characters (40 + the ellipsis), well under `CITATION_LABEL_MAX_LENGTH`
+ * (200), so every value this returns still passes `citationTokenSchema` and
+ * round-trips through `serializeCitationToken` -> `parseCitationToken`.
+ */
+export function buildCitationInsertLabel(note: string): string {
+  const collapsed = note.trim().replace(/\s+/g, ' ');
+  if (collapsed.length === 0) {
+    return '';
+  }
+  if (collapsed.length <= CITATION_INSERT_LABEL_MAX_LENGTH) {
+    return collapsed;
+  }
+  const withinCap = collapsed.slice(0, CITATION_INSERT_LABEL_MAX_LENGTH);
+  const lastSpace = withinCap.lastIndexOf(' ');
+  const cut = lastSpace > 0 ? withinCap.slice(0, lastSpace) : withinCap;
+  return `${cut.trimEnd()}…`;
+}
+
 export const citationTokenSchema = z.object({
   /** The source VOD's match id — the citation's `sourceVodRef`. */
   sourceVodRef: z.string().min(1),

@@ -7,6 +7,7 @@ import {
   extractCitationTokens,
   gspReadingRecordSchema,
   gspSettingsSchema,
+  homeworkProgressSchema,
   includedVodSchema,
   matchRecordSchema,
   MAX_DELIVERY_VODS,
@@ -21,6 +22,7 @@ import {
   playlistRecordSchema,
   publicShareSnapshotSchema,
   recapSnapshotSchema,
+  resolveHomeworkDoneIndexes,
   shareSnapshotSchema,
   shareTokenSchema,
   stageFavoritesSchema,
@@ -252,6 +254,13 @@ const sessionDeliverySnapshotFieldSchema = z.object({
    * `[]` by the caller before this schema validates (Pitfall 2).
    */
   includedVods: z.array(includedVodSchema).max(MAX_DELIVERY_VODS).nullish(),
+  /**
+   * 260731-b1: the client's per-item homework progress + acknowledge/submit
+   * stamps for THIS delivery — mirrors `sessionDeliveryRecordSchema`'s own
+   * top-level `homeworkProgress` field. No caller-side normalization needed
+   * (absent means "no client interaction yet", not "empty array").
+   */
+  homeworkProgress: homeworkProgressSchema.nullish(),
 });
 
 /**
@@ -2327,6 +2336,40 @@ export class RtdbService {
   }
 
   /**
+   * 260731-b1: a near-verbatim sibling of `resolveCoachReviewShareRef`
+   * immediately above — same `SHARE_TOKEN_SHAPE` guard, same
+   * `shareTokens/{token}` read, same revoked/expired re-checks on every
+   * call, never cached — ending in `parseSessionShareId` instead of
+   * `parseReviewShareId`. Used by the anonymous homework routes
+   * (`publicReviewDeliveries.ts`) to locate the SPECIFIC session delivery a
+   * token addresses without building the full public snapshot. Returns
+   * `null` for anything that is not a live session-delivery token,
+   * including a coachReview token (wrong kind — T-B1-01/T-B1-02 no-oracle).
+   */
+  async resolveSessionShareRef(
+    token: string,
+  ): Promise<{ tenantId: string; sessionId: string; deliveryId: string } | null> {
+    if (!SHARE_TOKEN_SHAPE.test(token)) {
+      return null;
+    }
+    const tokenSnapshot = await this.database.ref(`shareTokens/${token}`).get();
+    if (!tokenSnapshot.exists()) {
+      return null;
+    }
+    const parsedToken = shareTokenSchema.safeParse(tokenSnapshot.val());
+    if (!parsedToken.success) {
+      return null;
+    }
+    if (parsedToken.data.revokedAt != null) {
+      return null;
+    }
+    if (parsedToken.data.expiresAt != null && parsedToken.data.expiresAt < Date.now()) {
+      return null;
+    }
+    return parseSessionShareId(parsedToken.data.shareId);
+  }
+
+  /**
    * Phase 12 Plan 04 (DLV-01/DLV-02/DLV-03): resolves a parsed coachReview
    * `shareId` (tenantId/reviewId/version, already trust-boundary-guarded by
    * `parseReviewShareId`) to the client-visible delivery snapshot. Reads
@@ -2485,6 +2528,19 @@ export class RtdbService {
     }
     const session = parsedDelivery.data.snapshot;
     const includedVods = parsedDelivery.data.includedVods ?? [];
+    // 260731-b1: emitted UNCONDITIONALLY for the session kind (never gated
+    // by a truthiness check) — an untouched delivery still reports an empty
+    // `doneIndexes` and two null stamps, via the SAME `resolveHomeworkDoneIndexes`
+    // resolution point the coach-facing list (`listSessionDeliveries`) uses,
+    // so the client never has to distinguish "absent" from "nothing done".
+    const homeworkProgressResponse = {
+      doneIndexes: resolveHomeworkDoneIndexes(
+        session.homework,
+        parsedDelivery.data.homeworkProgress,
+      ),
+      acknowledgedAt: parsedDelivery.data.homeworkProgress?.acknowledgedAt ?? null,
+      submittedAt: parsedDelivery.data.homeworkProgress?.submittedAt ?? null,
+    };
 
     const coachDisplayName = await resolveCoachDisplayNameForTenant(this.database, tenantId);
 
@@ -2496,6 +2552,7 @@ export class RtdbService {
       sessionCharacterTags: session.characterTags,
       sessionSummary: session.summary,
       sessionHomework: session.homework,
+      sessionHomeworkProgress: homeworkProgressResponse,
       ...(session.linkedMatchIds ? { sessionLinkedMatchRefs: session.linkedMatchIds } : {}),
       ...(includedVods.length > 0 ? { includedVods } : {}),
       reviewedMomentsCount: 0,

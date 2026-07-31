@@ -1,10 +1,11 @@
-import type { RefObject } from 'react';
+import { useState, type RefObject } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Clock } from 'lucide-react';
 import type { CitationToken, ReviewSection, VodTimestamp } from '@smash-tracker/shared';
-import { extractCitationTokens } from '@smash-tracker/shared';
+import { buildCitationInsertLabel, extractCitationTokens } from '@smash-tracker/shared';
 import { formatTimestamp } from '@/lib/vod';
 import { Button } from '@/components/ui/button';
+import { cn } from '@/lib/utils';
 
 /** Whether ANY section body already carries a citation token pointing at `sourceMatchId`/`seconds` (D-04's "already-cited indicator"). */
 function isAlreadyCited(
@@ -52,6 +53,23 @@ export function ReviewEvidenceList({
 }: ReviewEvidenceListProps) {
   const { t } = useTranslation();
 
+  // 260731-b1: which evidence rows (by `VodTimestamp.id`) are currently
+  // expanded to their full text — collapsed by default, independent per
+  // row. Replaced immutably on toggle (never mutated in place).
+  const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
+
+  function toggleExpanded(id: string) {
+    setExpandedIds((current) => {
+      const next = new Set(current);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
+      return next;
+    });
+  }
+
   function handleCiteCurrentMoment() {
     if (!sourceMatchId) return;
     const seconds = getCurrentTimeRef.current?.() ?? 0;
@@ -60,7 +78,16 @@ export function ReviewEvidenceList({
 
   function handleCiteNote(note: VodTimestamp) {
     if (!sourceMatchId) return;
-    onCite({ sourceVodRef: sourceMatchId, seconds: note.seconds, label: note.note });
+    // 260731-b1: the INSERTED label is shortened to
+    // `CITATION_INSERT_LABEL_MAX_LENGTH` (~40 chars) via
+    // `buildCitationInsertLabel` — the stored/parsed citation grammar itself
+    // (`citationTokenSchema`'s 200-char `label` cap) is untouched; this is
+    // the ONLY place the inserted label is shortened (see F2).
+    onCite({
+      sourceVodRef: sourceMatchId,
+      seconds: note.seconds,
+      label: buildCitationInsertLabel(note.note),
+    });
   }
 
   return (
@@ -96,15 +123,38 @@ export function ReviewEvidenceList({
           {timestamps.map((entry) => {
             const cited =
               sourceMatchId != null && isAlreadyCited(sections, sourceMatchId, entry.seconds);
+            const isExpanded = expandedIds.has(entry.id);
             return (
               <li
                 key={entry.id}
-                className="flex items-center gap-2 rounded-md border bg-card px-2.5 py-1.5 text-xs"
+                className="flex items-start gap-2 rounded-md border bg-card px-2.5 py-1.5 text-xs"
               >
                 <span className="shrink-0 font-mono text-foreground">
                   {formatTimestamp(entry.seconds)}
                 </span>
-                <span className="min-w-0 flex-1 truncate text-muted-foreground">{entry.note}</span>
+                <button
+                  type="button"
+                  aria-expanded={isExpanded}
+                  aria-label={
+                    isExpanded
+                      ? t('coaching.reviews.composer.evidence.collapseNote')
+                      : t('coaching.reviews.composer.evidence.expandNote')
+                  }
+                  // 260731-b1: without this, expanding a note steals focus
+                  // away from a currently focused section textarea — the
+                  // coach's very next Cite would then fall out of the
+                  // cursor-insertion path into the ask-which-section dialog
+                  // (same discipline as the sibling Cite/current-moment
+                  // buttons below).
+                  onMouseDown={(event) => event.preventDefault()}
+                  onClick={() => toggleExpanded(entry.id)}
+                  className={cn(
+                    'min-w-0 flex-1 text-left text-muted-foreground',
+                    isExpanded ? 'whitespace-pre-wrap break-words' : 'truncate',
+                  )}
+                >
+                  {entry.note}
+                </button>
                 {cited && (
                   <span className="shrink-0 text-[10px] font-medium text-green-600 dark:text-green-400">
                     {t('coaching.reviews.composer.evidence.citedIndicator')}

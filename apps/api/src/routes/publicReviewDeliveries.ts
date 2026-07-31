@@ -1,13 +1,32 @@
 import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
-import { errorResponseSchema, publicShareSnapshotSchema } from '@smash-tracker/shared';
+import {
+  errorResponseSchema,
+  homeworkProgressResponseSchema,
+  MAX_SESSION_HOMEWORK_ITEMS,
+  publicShareSnapshotSchema,
+} from '@smash-tracker/shared';
 import { z } from 'zod';
 import { buildAnonymousDomainEnvelope } from '../events/envelope.js';
 import { createEvent } from '../events/ledger.js';
 import { setDeliveryAck, setDeliveryViewed } from '../coaching/reviewDeliveries.js';
+import { setHomeworkItemDone, setHomeworkStatus } from '../coaching/sessionDeliveries.js';
 import { RtdbService } from '../services/rtdb.js';
 
 const tokenParamsSchema = z.object({
   token: z.string().min(1),
+});
+
+const homeworkItemBodySchema = z.object({
+  index: z
+    .number()
+    .int()
+    .nonnegative()
+    .max(MAX_SESSION_HOMEWORK_ITEMS - 1),
+  done: z.boolean(),
+});
+
+const homeworkStatusBodySchema = z.object({
+  status: z.enum(['acknowledged', 'submitted']),
 });
 
 /**
@@ -208,6 +227,90 @@ const publicReviewDeliveriesRoutes: FastifyPluginAsyncZod = async (app) => {
       }
 
       return reply.code(200).send({ viewed: true });
+    },
+  );
+
+  /**
+   * 260731-b1: `POST .../homework/item` and `POST .../homework/status` —
+   * dedicated, token-scoped routes for the SAME reason `/viewed` is (see its
+   * own doc comment above): the generic same-origin `POST /api/events`
+   * X-ingestion envelope may never carry a capability token/share secret,
+   * and the delivery TOKEN is exactly that. Session-kind delivery ONLY —
+   * review deliveries structurally carry no homework (research finding F1),
+   * so `resolveSessionShareRef` collapses a coachReview token to the same
+   * unavailable body every other wrong-kind/unknown/revoked/expired case
+   * gets (T-B1-01 no-oracle). Deliberately fires NO canonical event here —
+   * a scope decision, not an omission (F5): homework progress is a
+   * first-party RTDB record the coach reads directly via the delivery list,
+   * and adding a `homework_*` event would require a separate
+   * EVENT_CATALOG/GA4-allowlist decision this task does not make.
+   */
+  app.post(
+    '/review-deliveries/:token/homework/item',
+    {
+      schema: {
+        params: tokenParamsSchema,
+        body: homeworkItemBodySchema,
+        response: {
+          200: homeworkProgressResponseSchema,
+          404: errorResponseSchema,
+        },
+      },
+      config: { rateLimit: { max: 60, timeWindow: '1 minute' } },
+    },
+    async (request, reply) => {
+      const ref = await rtdb.resolveSessionShareRef(request.params.token);
+      if (!ref) {
+        return reply.code(404).send(UNAVAILABLE_404_BODY);
+      }
+
+      const result = await setHomeworkItemDone(
+        app.firebase.database,
+        ref.tenantId,
+        ref.sessionId,
+        ref.deliveryId,
+        request.body.index,
+        request.body.done,
+      );
+      if (!result) {
+        return reply.code(404).send(UNAVAILABLE_404_BODY);
+      }
+
+      return reply.code(200).send(result);
+    },
+  );
+
+  app.post(
+    '/review-deliveries/:token/homework/status',
+    {
+      schema: {
+        params: tokenParamsSchema,
+        body: homeworkStatusBodySchema,
+        response: {
+          200: homeworkProgressResponseSchema,
+          404: errorResponseSchema,
+        },
+      },
+      config: { rateLimit: { max: 60, timeWindow: '1 minute' } },
+    },
+    async (request, reply) => {
+      const ref = await rtdb.resolveSessionShareRef(request.params.token);
+      if (!ref) {
+        return reply.code(404).send(UNAVAILABLE_404_BODY);
+      }
+
+      const result = await setHomeworkStatus(
+        app.firebase.database,
+        ref.tenantId,
+        ref.sessionId,
+        ref.deliveryId,
+        request.body.status,
+      );
+      if (!result) {
+        return reply.code(404).send(UNAVAILABLE_404_BODY);
+      }
+
+      return reply.code(200).send(result);
     },
   );
 };

@@ -48,6 +48,17 @@ const deliveryListItemResponseSchema = z.object({
   createdAt: z.number().int().nonnegative(),
   revokedAt: z.number().int().nonnegative().nullable(),
   url: z.string().url(),
+  /**
+   * 260731-b1: the coach-visible per-item completion count plus
+   * acknowledge/submit stamps — computed server-side via
+   * `resolveHomeworkDoneIndexes` (`listSessionDeliveries`), the SAME
+   * resolution function the anonymous client snapshot uses, so this count
+   * can never disagree with what the client sees.
+   */
+  homeworkDoneCount: z.number().int().nonnegative(),
+  homeworkTotal: z.number().int().nonnegative(),
+  homeworkAcknowledgedAt: z.number().int().nonnegative().nullable(),
+  homeworkSubmittedAt: z.number().int().nonnegative().nullable(),
 });
 
 export interface CoachingSessionDeliveriesRoutesOptions {
