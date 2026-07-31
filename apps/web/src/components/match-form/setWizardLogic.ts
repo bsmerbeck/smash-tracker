@@ -42,6 +42,20 @@ export interface SetGameValues {
    * on that game's `map` (see `buildSetGamePayloads`'s conditional-spread).
    */
   stageForm?: 'normal' | 'battlefield' | 'omega';
+  /**
+   * This game's OWN character choice — `undefined` means inherit: game 1
+   * inherits the set-level `SetSharedValues.fighterId` picker, games 2+
+   * inherit the previous game's EFFECTIVE value (see
+   * `resolveSetFighterSelections`).
+   */
+  fighterId?: number;
+  /**
+   * This game's OWN opponent-character choice — `undefined` means inherit:
+   * game 1 inherits the set-level `SetSharedValues.opponentFighterId`
+   * picker, games 2+ inherit the previous game's EFFECTIVE value (see
+   * `resolveSetFighterSelections`).
+   */
+  opponentFighterId?: number;
 }
 
 /** Running win/loss tally across the games entered so far. */
@@ -102,12 +116,63 @@ export function formatSetScore(score: SetScore): string {
 
 /** Fields entered once and shared across every game in a set. */
 export interface SetSharedValues {
+  /**
+   * The set-level DEFAULT for "your fighter" — seeds game 1's effective
+   * value (see `resolveSetFighterSelections`). No longer stamped onto every
+   * game: each game's own `SetGameValues.fighterId` can override it.
+   */
   fighterId: number;
+  /**
+   * The set-level DEFAULT for "opponent's fighter" — seeds game 1's
+   * effective value (see `resolveSetFighterSelections`). No longer stamped
+   * onto every game: each game's own `SetGameValues.opponentFighterId` can
+   * override it.
+   */
   opponentFighterId: number;
   opponentName: string;
   matchType: MatchType;
   eventName?: string;
   tournamentName?: string;
+}
+
+/** One game's resolved (never-undefined) character pair. */
+export interface ResolvedGameFighters {
+  fighterId: number;
+  opponentFighterId: number;
+}
+
+/**
+ * Resolves the EFFECTIVE character pair for every game in `games`, given the
+ * set-level defaults in `shared`. Resolution is a forward carry, per axis,
+ * independent of the other axis:
+ *  - entry 0 (game 1) uses `games[0]?.fighterId ?? shared.fighterId` (same
+ *    shape for `opponentFighterId`).
+ *  - entry `i` (i > 0) uses `games[i]?.fighterId ?? entry[i - 1].fighterId`
+ *    — an untouched game inherits the PREVIOUS game's effective value, not
+ *    the set-level default, so an earlier override "sticks" through the
+ *    rest of the set until explicitly changed again.
+ *
+ * Never mutates `games`. Resolution only ever looks at a game's OWN entry
+ * and the previously-resolved entry — it never looks ahead — so resolving
+ * over the full `games` array (what the wizard UI does, to render every
+ * visible row) and resolving over the trailing-trimmed array
+ * `buildSetGamePayloads` actually receives (only the played games) yield
+ * IDENTICAL values for every game present in both calls.
+ */
+export function resolveSetFighterSelections(
+  shared: Pick<SetSharedValues, 'fighterId' | 'opponentFighterId'>,
+  games: SetGameValues[],
+): ResolvedGameFighters[] {
+  const resolved: ResolvedGameFighters[] = [];
+  games.forEach((game, index) => {
+    const previous = resolved[index - 1];
+    resolved.push({
+      fighterId: game.fighterId ?? previous?.fighterId ?? shared.fighterId,
+      opponentFighterId:
+        game.opponentFighterId ?? previous?.opponentFighterId ?? shared.opponentFighterId,
+    });
+  });
+  return resolved;
 }
 
 /**
@@ -135,7 +200,8 @@ export function buildSetGamePayloads(
   shared: SetSharedValues,
   games: SetGameValues[],
 ): CreateMatchInput[] {
-  return games.map((game) => {
+  const resolvedFighters = resolveSetFighterSelections(shared, games);
+  return games.map((game, index) => {
     // Mirrors matchFormValuesToInput's clear-on-omit convention (MatchForm.tsx):
     // trim vodUrl, only parse/include vodStartSeconds when a vodUrl is also
     // present on this same game, and never emit an `undefined` key.
@@ -143,9 +209,10 @@ export function buildSetGamePayloads(
     const vodStartSecondsRaw = game.vodStartSeconds?.trim();
     const vodStartSeconds =
       vodUrl && vodStartSecondsRaw ? parseFlexibleTimestamp(vodStartSecondsRaw) : null;
+    const { fighterId, opponentFighterId } = resolvedFighters[index]!;
     return {
-      fighter_id: shared.fighterId,
-      opponent_id: shared.opponentFighterId,
+      fighter_id: fighterId,
+      opponent_id: opponentFighterId,
       map: resolveStageMap(game.stageId, game.stageForm),
       opponent: shared.opponentName,
       notes: '',
@@ -169,5 +236,7 @@ export function buildDefaultGameValues(): SetGameValues {
     vodUrl: undefined,
     vodStartSeconds: undefined,
     stageForm: undefined,
+    fighterId: undefined,
+    opponentFighterId: undefined,
   };
 }
