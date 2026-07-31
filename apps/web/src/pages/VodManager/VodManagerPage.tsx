@@ -65,6 +65,7 @@ import {
   type VodManagerFilterState,
   type VodSortDirection,
 } from './lib/vodManagerFilters';
+import { getDisplayedSetKey } from './lib/vodSetGrouping';
 import {
   readStoredQuickTags,
   persistQuickTags,
@@ -205,7 +206,13 @@ export function VodManagerPage() {
       : '/choose-primary';
 
   const [filters, setFilters] = useState<VodManagerFilterState>(DEFAULT_VOD_MANAGER_FILTERS);
-  const [sort, setSort] = useState<VodSortDirection>('newest');
+  // The explicit user choice, when one has been made — `null` until then.
+  // Once set, this choice wins for the rest of the page session (see the
+  // effective-sort derivation below) even if the set context later changes
+  // — a DEFAULT-only flip, never a forced override. Playlist view is
+  // unaffected either way: `displayedMatches` prefers `playlistMatches`, and
+  // the sort control itself is hidden under `isPlaylistView`.
+  const [explicitSort, setExplicitSort] = useState<VodSortDirection | null>(null);
   // Stable note id of the last-clicked timestamp note (or `null`) — keyed
   // by id, never array position (Phase 8, RESEARCH Pitfall 3): a concurrent
   // write reordering the notes array can never move the highlight (or the
@@ -300,9 +307,28 @@ export function VodManagerPage() {
   const [mySharesOpen, setMySharesOpen] = useState(false);
 
   const filterOptions = useMemo(() => getVodManagerFilterOptions(vodMatches), [vodMatches]);
-  const filtered = useMemo(() => {
-    return sortByRecency(applyVodManagerFilters(vodMatches, filters), sort);
-  }, [vodMatches, filters, sort]);
+  // Membership (which matches pass the filter dimensions) is resolved BEFORE
+  // sort, so set detection below reads what's actually displayed — not an
+  // unfiltered superset — while staying independent of sort direction
+  // itself (sortByRecency never changes which matches are present).
+  const filterMembership = useMemo(
+    () => applyVodManagerFilters(vodMatches, filters),
+    [vodMatches, filters],
+  );
+  // Set-view derivation (see vodSetGrouping.ts's doc comment): purely a
+  // DEFAULT-SORT signal, computed fresh off the currently displayed
+  // membership list — never filters, never persists, never overrides an
+  // explicit user choice.
+  const isSetScoped = useMemo(
+    () => getDisplayedSetKey(filterMembership) != null,
+    [filterMembership],
+  );
+  // Effective sort: the user's explicit choice wins once made (for the rest
+  // of the page session, even if the set context later changes); otherwise
+  // the set-scoped default ('oldest', so game 1 lands at the top) or the
+  // general library default ('newest').
+  const sort: VodSortDirection = explicitSort ?? (isSetScoped ? 'oldest' : 'newest');
+  const filtered = useMemo(() => sortByRecency(filterMembership, sort), [filterMembership, sort]);
 
   // The list the panel actually renders: a playlist's matches (in playlist
   // order, soft-orphan skipped) when one is selected, else the normal
@@ -1212,7 +1238,7 @@ export function VodManagerPage() {
               filterOptions={filterOptions}
               onFiltersChange={setFilters}
               sort={sort}
-              onSortChange={setSort}
+              onSortChange={setExplicitSort}
               selectedId={selectedMatchId}
               onSelect={handleSelect}
               isPlaylistView={selectedPlaylist != null}

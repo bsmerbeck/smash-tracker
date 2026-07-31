@@ -272,6 +272,10 @@
       "game": "Partida {{number}}",
       "gameWinAria": "Victoria en la partida {{number}}",
       "gameLossAria": "Derrota en la partida {{number}}",
+      "gameYourFighter": "Tu luchador",
+      "gameOpponentFighter": "Luchador del rival",
+      "gameYourFighterAria": "Tu luchador en la partida {{number}}",
+      "gameOpponentFighterAria": "Luchador del rival en la partida {{number}}",
       "stage": "Escenario",
       "vodUrl": "URL del VOD",
       "vodStartTime": "Hora de inicio en el VOD"
@@ -521,6 +525,7 @@
       "tagsLabel": "Etiquetas"
     },
     "sort": {
+      "label": "Orden",
       "newest": "Más recientes primero",
       "oldest": "Más antiguos primero"
     },

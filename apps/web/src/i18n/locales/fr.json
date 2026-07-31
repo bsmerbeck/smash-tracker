@@ -272,6 +272,10 @@
       "game": "Manche {{number}}",
       "gameWinAria": "Victoire manche {{number}}",
       "gameLossAria": "Défaite manche {{number}}",
+      "gameYourFighter": "Votre combattant",
+      "gameOpponentFighter": "Combattant adverse",
+      "gameYourFighterAria": "Votre combattant pour la manche {{number}}",
+      "gameOpponentFighterAria": "Combattant adverse pour la manche {{number}}",
       "stage": "Stage",
       "vodUrl": "URL de la VOD",
       "vodStartTime": "Heure de début dans la VOD"
@@ -521,6 +525,7 @@
       "tagsLabel": "Tags"
     },
     "sort": {
+      "label": "Ordre de tri",
       "newest": "Plus récent d'abord",
       "oldest": "Plus ancien d'abord"
     },

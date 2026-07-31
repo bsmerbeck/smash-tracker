@@ -6,6 +6,7 @@ import {
   getSetScore,
   isSetDecided,
   maxGamesFor,
+  resolveSetFighterSelections,
   shouldShowGame,
   winsNeededFor,
   type SetGameValues,
@@ -101,6 +102,60 @@ describe('formatSetScore', () => {
   it('formats as wins-losses', () => {
     expect(formatSetScore({ wins: 2, losses: 1 })).toBe('2-1');
     expect(formatSetScore({ wins: 0, losses: 0 })).toBe('0-0');
+  });
+});
+
+describe('resolveSetFighterSelections', () => {
+  const shared: Pick<SetSharedValues, 'fighterId' | 'opponentFighterId'> = {
+    fighterId: 1,
+    opponentFighterId: 8,
+  };
+
+  it('no per-game overrides: every game resolves to the set-level pair', () => {
+    const games = [game('win'), game('win'), game('loss')];
+    expect(resolveSetFighterSelections(shared, games)).toEqual([
+      { fighterId: 1, opponentFighterId: 8 },
+      { fighterId: 1, opponentFighterId: 8 },
+      { fighterId: 1, opponentFighterId: 8 },
+    ]);
+  });
+
+  it('override on game 2 own-fighter only: games 2 and 3 use it, game 1 keeps the set-level value, opponent axis stays set-level everywhere', () => {
+    const games = [game('win'), game('loss', { fighterId: 5 }), game('win')];
+    expect(resolveSetFighterSelections(shared, games)).toEqual([
+      { fighterId: 1, opponentFighterId: 8 },
+      { fighterId: 5, opponentFighterId: 8 },
+      { fighterId: 5, opponentFighterId: 8 },
+    ]);
+  });
+
+  it('override on game 1 (both axes): games 2+ inherit game 1s override, not the set-level value', () => {
+    const games = [game('win', { fighterId: 3, opponentFighterId: 9 }), game('loss'), game('win')];
+    expect(resolveSetFighterSelections(shared, games)).toEqual([
+      { fighterId: 3, opponentFighterId: 9 },
+      { fighterId: 3, opponentFighterId: 9 },
+      { fighterId: 3, opponentFighterId: 9 },
+    ]);
+  });
+
+  it('the two axes are independent: opponent character can change at game 2 while the users fighter carries through unchanged', () => {
+    const games = [game('win'), game('loss', { opponentFighterId: 12 }), game('win')];
+    expect(resolveSetFighterSelections(shared, games)).toEqual([
+      { fighterId: 1, opponentFighterId: 8 },
+      { fighterId: 1, opponentFighterId: 12 },
+      { fighterId: 1, opponentFighterId: 12 },
+    ]);
+  });
+
+  it('resolving over a trailing-trimmed array yields identical values for every retained game', () => {
+    const games = [
+      game('win', { fighterId: 3 }),
+      game('loss', { opponentFighterId: 12 }),
+      game('win'),
+    ];
+    const full = resolveSetFighterSelections(shared, games);
+    const trimmed = resolveSetFighterSelections(shared, games.slice(0, 2));
+    expect(trimmed).toEqual(full.slice(0, 2));
   });
 });
 
@@ -211,6 +266,17 @@ describe('buildSetGamePayloads', () => {
     expect('vodStartSeconds' in payloads[0]!).toBe(false);
     expect(payloads[0]?.vodStartSeconds).not.toBeNaN();
   });
+
+  it('emits per-game fighter_id/opponent_id for a Bo3 where the opponent counterpicks in game 2 and the user counter-counterpicks in game 3', () => {
+    const payloads = buildSetGamePayloads(shared, [
+      game('win'),
+      game('loss', { opponentFighterId: 14 }),
+      game('win', { fighterId: 6 }),
+    ]);
+    expect(payloads[0]).toMatchObject({ fighter_id: 1, opponent_id: 8 });
+    expect(payloads[1]).toMatchObject({ fighter_id: 1, opponent_id: 14 });
+    expect(payloads[2]).toMatchObject({ fighter_id: 6, opponent_id: 14 });
+  });
 });
 
 describe('buildDefaultGameValues', () => {
@@ -221,5 +287,7 @@ describe('buildDefaultGameValues', () => {
     expect(values.stocksLeft).toBeUndefined();
     expect(values.vodUrl).toBeUndefined();
     expect(values.vodStartSeconds).toBeUndefined();
+    expect(values.fighterId).toBeUndefined();
+    expect(values.opponentFighterId).toBeUndefined();
   });
 });

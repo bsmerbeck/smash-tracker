@@ -135,7 +135,7 @@ export function VodMatchList({
             onChange={(value) => setFilter('tournament', value)}
           />
           <Select value={sort} onValueChange={(value) => onSortChange(value as VodSortDirection)}>
-            <SelectTrigger className="w-full" aria-label={t('vodManager.filters.allOption')}>
+            <SelectTrigger className="w-full" aria-label={t('vodManager.sort.label')}>
               <SelectValue />
             </SelectTrigger>
             <SelectContent>

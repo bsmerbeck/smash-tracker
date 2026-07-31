@@ -98,6 +98,10 @@ vi.mock('@/lib/api', () => ({
 }));
 
 const mario = SpriteList.find((s) => s.id === 1)!;
+const donkeyKong = SpriteList.find((s) => s.id === 2)!;
+const link = SpriteList.find((s) => s.id === 3)!;
+const fox = SpriteList.find((s) => s.id === 8)!;
+const pikachu = SpriteList.find((s) => s.id === 9)!;
 const luigi = SpriteList.find((s) => s.id === 10)!;
 
 function makeMatch(overrides: Partial<Record<string, unknown>> = {}) {
@@ -3531,5 +3535,99 @@ describe('VodManagerPage', () => {
     await waitFor(() => expect(screen.getByText('owner alpha')).toBeInTheDocument());
 
     expect(screen.queryByText('Filter by contributor')).not.toBeInTheDocument();
+  });
+
+  describe('set-scoped default sort (getDisplayedSetKey)', () => {
+    function seedManualSet() {
+      listMatches.mockResolvedValue([
+        makeMatch({
+          id: 'g1',
+          opponent: 'rival',
+          time: 1_700_000_000_000,
+          vodUrl: 'https://youtube.com/watch?v=g1',
+          fighter_id: mario.id,
+          opponent_id: luigi.id,
+        }),
+        makeMatch({
+          id: 'g2',
+          opponent: 'rival',
+          time: 1_700_000_005_000,
+          vodUrl: 'https://youtube.com/watch?v=g2',
+          fighter_id: fox.id,
+          opponent_id: pikachu.id,
+        }),
+        makeMatch({
+          id: 'g3',
+          opponent: 'rival',
+          time: 1_700_000_010_000,
+          vodUrl: 'https://youtube.com/watch?v=g3',
+          fighter_id: link.id,
+          opponent_id: donkeyKong.id,
+        }),
+      ]);
+    }
+
+    it('a library list showing exactly one set renders game 1 first with "Oldest first" preselected', async () => {
+      seedManualSet();
+      renderVodManager('/vod');
+
+      const rows = await screen.findAllByRole('button', { name: 'Select match vs rival' });
+      expect(rows).toHaveLength(3);
+      expect(rows[0]).toHaveTextContent('Mario vs Luigi');
+      expect(rows[1]).toHaveTextContent('Fox vs Pikachu');
+      expect(rows[2]).toHaveTextContent('Link vs Donkey Kong');
+
+      expect(screen.getByRole('combobox', { name: 'Sort order' })).toHaveTextContent(
+        'Oldest first',
+      );
+    });
+
+    it('a general multi-set library still defaults to "Newest first", newest at top', async () => {
+      listMatches.mockResolvedValue([
+        makeMatch({
+          id: 'm1',
+          opponent: 'rival-one',
+          time: 1_700_000_000_000,
+          vodUrl: 'https://youtube.com/watch?v=m1',
+        }),
+        makeMatch({
+          id: 'm2',
+          opponent: 'rival-two',
+          time: 1_700_000_000_000 + 3 * 24 * 60 * 60 * 1000,
+          vodUrl: 'https://youtube.com/watch?v=m2',
+        }),
+      ]);
+      renderVodManager('/vod');
+
+      const rows = await screen.findAllByRole('button', { name: /^Select match vs/ });
+      expect(rows).toHaveLength(2);
+      expect(rows[0]).toHaveAccessibleName('Select match vs rival-two');
+      expect(rows[1]).toHaveAccessibleName('Select match vs rival-one');
+
+      expect(screen.getByRole('combobox', { name: 'Sort order' })).toHaveTextContent(
+        'Newest first',
+      );
+    });
+
+    it('picking "Newest first" on a set-scoped list flips the order and holds it', async () => {
+      const user = userEvent.setup();
+      seedManualSet();
+      renderVodManager('/vod');
+
+      await screen.findAllByRole('button', { name: 'Select match vs rival' });
+      expect(screen.getByRole('combobox', { name: 'Sort order' })).toHaveTextContent(
+        'Oldest first',
+      );
+
+      await user.click(screen.getByRole('combobox', { name: 'Sort order' }));
+      await user.click(await screen.findByRole('option', { name: 'Newest first' }));
+
+      expect(screen.getByRole('combobox', { name: 'Sort order' })).toHaveTextContent(
+        'Newest first',
+      );
+      const rows = screen.getAllByRole('button', { name: 'Select match vs rival' });
+      expect(rows[0]).toHaveTextContent('Link vs Donkey Kong');
+      expect(rows[2]).toHaveTextContent('Mario vs Luigi');
+    });
   });
 });
