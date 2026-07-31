@@ -525,6 +525,7 @@
       "tagsLabel": "Etiquetas"
     },
     "sort": {
+      "label": "Orden",
       "newest": "Más recientes primero",
       "oldest": "Más antiguos primero"
     },

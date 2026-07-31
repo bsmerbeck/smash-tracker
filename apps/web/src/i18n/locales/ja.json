@@ -525,6 +525,7 @@
       "tagsLabel": "タグ"
     },
     "sort": {
+      "label": "並び順",
       "newest": "新しい順",
       "oldest": "古い順"
     },

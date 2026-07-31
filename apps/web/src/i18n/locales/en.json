@@ -525,6 +525,7 @@
       "tagsLabel": "Tags"
     },
     "sort": {
+      "label": "Sort order",
       "newest": "Newest first",
       "oldest": "Oldest first"
     },
