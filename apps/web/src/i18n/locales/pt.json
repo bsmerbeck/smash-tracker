@@ -1946,7 +1946,10 @@
           "createError": "Ocorreu um erro ao criar este link de entrega.",
           "copiedToast": "Link copiado",
           "revokedToast": "Link de entrega revogado",
-          "revokeError": "Ocorreu um erro ao revogar este link de entrega."
+          "revokeError": "Ocorreu um erro ao revogar este link de entrega.",
+          "homeworkStatusLabel": "{{done}} de {{total}} tarefas concluídas",
+          "homeworkAcknowledgedAt": "Confirmado em {{date}}",
+          "homeworkSubmittedAt": "Enviado em {{date}}"
         },
         "actions": {
           "deliver": "Entregar",
@@ -2043,6 +2046,15 @@
       "homeworkEmpty": "Sem tarefas nesta sessão.",
       "homeworkItemDoneAria": "Concluída: {{item}}",
       "homeworkItemTodoAria": "Ainda não concluída: {{item}}",
+      "homeworkAckPrompt": "Avise seu treinador de que você viu estas tarefas.",
+      "homeworkAckButton": "Confirmar tarefas",
+      "homeworkAckConfirmed": "Confirmado em {{date}} — seu treinador pode ver isso.",
+      "homeworkSubmitButton": "Enviar conclusão",
+      "homeworkSubmitHint": "Terminou tudo? Envie para avisar seu treinador — você pode continuar atualizando as tarefas depois de enviar.",
+      "homeworkSubmittedTitle": "Conclusão enviada",
+      "homeworkSubmittedDetail": "Enviado em {{date}} — seu treinador pode ver isso. Você ainda pode atualizar as tarefas acima.",
+      "homeworkProgressLabel": "{{done}} de {{total}} concluídas",
+      "homeworkSaveError": "Não foi possível salvar — verifique sua conexão.",
       "linkedVodsHeading": "VODs vinculados",
       "linkedVodsEmpty": "Sem VODs vinculados nesta sessão.",
       "linkedVodItem": "Referência de VOD vinculado: {{ref}}"

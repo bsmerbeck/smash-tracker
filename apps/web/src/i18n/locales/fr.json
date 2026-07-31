@@ -1946,7 +1946,10 @@
           "createError": "Une erreur s'est produite lors de la création de ce lien de livraison.",
           "copiedToast": "Lien copié",
           "revokedToast": "Lien de livraison révoqué",
-          "revokeError": "Une erreur s'est produite lors de la révocation de ce lien de livraison."
+          "revokeError": "Une erreur s'est produite lors de la révocation de ce lien de livraison.",
+          "homeworkStatusLabel": "{{done}} sur {{total}} devoirs faits",
+          "homeworkAcknowledgedAt": "Confirmé le {{date}}",
+          "homeworkSubmittedAt": "Envoyé le {{date}}"
         },
         "actions": {
           "deliver": "Livrer",
@@ -2043,6 +2046,15 @@
       "homeworkEmpty": "Aucun devoir pour cette séance.",
       "homeworkItemDoneAria": "Fait : {{item}}",
       "homeworkItemTodoAria": "Pas encore fait : {{item}}",
+      "homeworkAckPrompt": "Informez votre coach que vous avez vu ces devoirs.",
+      "homeworkAckButton": "Confirmer les devoirs",
+      "homeworkAckConfirmed": "Confirmé le {{date}} — votre coach peut le voir.",
+      "homeworkSubmitButton": "Envoyer la fin des devoirs",
+      "homeworkSubmitHint": "Tout est fait ? Envoyez pour prévenir votre coach — vous pouvez continuer à modifier les devoirs après l'envoi.",
+      "homeworkSubmittedTitle": "Fin des devoirs envoyée",
+      "homeworkSubmittedDetail": "Envoyé le {{date}} — votre coach peut le voir. Vous pouvez toujours modifier les devoirs ci-dessus.",
+      "homeworkProgressLabel": "{{done}} sur {{total}} faits",
+      "homeworkSaveError": "Impossible d'enregistrer — vérifiez votre connexion.",
       "linkedVodsHeading": "VODs liés",
       "linkedVodsEmpty": "Aucun VOD lié à cette séance.",
       "linkedVodItem": "Référence de VOD lié : {{ref}}"

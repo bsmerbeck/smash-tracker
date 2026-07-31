@@ -75,6 +75,10 @@ function makeDelivery(overrides: Partial<SessionDeliveryListItem> = {}): Session
     createdAt: 1_700_000_000_000,
     revokedAt: null,
     url: 'https://grandfinals.gg/r/tok1',
+    homeworkDoneCount: 0,
+    homeworkTotal: 0,
+    homeworkAcknowledgedAt: null,
+    homeworkSubmittedAt: null,
     ...overrides,
   };
 }
@@ -168,6 +172,42 @@ describe('SessionsListPage', () => {
     await user.click(await screen.findByRole('menuitem', { name: 'Deliver' }));
 
     await waitFor(() => expect(deliveriesCreate).toHaveBeenCalledWith('tetra', 's1'));
+  });
+
+  it('260731-b1: shows the active delivery completion count plus acknowledged/submitted stamps', async () => {
+    sessionsList.mockResolvedValue([makeSession()]);
+    deliveriesList.mockResolvedValue([
+      makeDelivery({
+        deliveryId: 'd-active',
+        homeworkDoneCount: 1,
+        homeworkTotal: 2,
+        homeworkAcknowledgedAt: 1_700_100_000_000,
+        homeworkSubmittedAt: 1_700_200_000_000,
+      }),
+    ]);
+    const user = userEvent.setup();
+    renderList();
+
+    await user.click(await screen.findByRole('button', { name: 'Delivery and more actions' }));
+
+    expect(await screen.findByText('1 of 2 homework items done')).toBeInTheDocument();
+    expect(
+      screen.getByText(`Acknowledged ${new Date(1_700_100_000_000).toLocaleDateString()}`),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(`Submitted ${new Date(1_700_200_000_000).toLocaleDateString()}`),
+    ).toBeInTheDocument();
+  });
+
+  it('260731-b1: shows no homework completion label when there is no active delivery', async () => {
+    sessionsList.mockResolvedValue([makeSession()]);
+    deliveriesList.mockResolvedValue([]);
+    const user = userEvent.setup();
+    renderList();
+
+    await user.click(await screen.findByRole('button', { name: 'Delivery and more actions' }));
+
+    expect(screen.queryByText(/homework items done/)).not.toBeInTheDocument();
   });
 
   it('Revoke fires the revoke mutation for the active (non-revoked) delivery', async () => {

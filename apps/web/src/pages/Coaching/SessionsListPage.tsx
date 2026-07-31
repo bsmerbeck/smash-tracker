@@ -20,6 +20,8 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 
@@ -118,6 +120,34 @@ function SessionDeliveryMenu({ clientId, session }: SessionDeliveryMenuProps) {
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end">
+        {/* 260731-b1: the coach-visible surface for per-item and submitted
+            homework state — no extra fetch (the delivery list is already
+            lazily loaded above once the menu opens). */}
+        {activeDelivery && (
+          <>
+            <DropdownMenuLabel>
+              {t('coaching.sessions.list.delivery.homeworkStatusLabel', {
+                done: activeDelivery.homeworkDoneCount,
+                total: activeDelivery.homeworkTotal,
+              })}
+              {activeDelivery.homeworkAcknowledgedAt != null && (
+                <div className="font-normal text-muted-foreground">
+                  {t('coaching.sessions.list.delivery.homeworkAcknowledgedAt', {
+                    date: new Date(activeDelivery.homeworkAcknowledgedAt).toLocaleDateString(),
+                  })}
+                </div>
+              )}
+              {activeDelivery.homeworkSubmittedAt != null && (
+                <div className="font-normal text-muted-foreground">
+                  {t('coaching.sessions.list.delivery.homeworkSubmittedAt', {
+                    date: new Date(activeDelivery.homeworkSubmittedAt).toLocaleDateString(),
+                  })}
+                </div>
+              )}
+            </DropdownMenuLabel>
+            <DropdownMenuSeparator />
+          </>
+        )}
         <DropdownMenuItem onSelect={handleDeliver}>
           {t('coaching.sessions.list.actions.deliver')}
         </DropdownMenuItem>

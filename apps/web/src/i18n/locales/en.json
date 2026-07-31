@@ -1946,7 +1946,10 @@
           "createError": "Something went wrong creating this delivery link.",
           "copiedToast": "Link copied",
           "revokedToast": "Delivery link revoked",
-          "revokeError": "Something went wrong revoking this delivery link."
+          "revokeError": "Something went wrong revoking this delivery link.",
+          "homeworkStatusLabel": "{{done}} of {{total}} homework items done",
+          "homeworkAcknowledgedAt": "Acknowledged {{date}}",
+          "homeworkSubmittedAt": "Submitted {{date}}"
         },
         "actions": {
           "deliver": "Deliver",
@@ -2043,6 +2046,15 @@
       "homeworkEmpty": "No homework this session.",
       "homeworkItemDoneAria": "Done: {{item}}",
       "homeworkItemTodoAria": "Not done yet: {{item}}",
+      "homeworkAckPrompt": "Let your coach know you've seen this homework.",
+      "homeworkAckButton": "Acknowledge homework",
+      "homeworkAckConfirmed": "Acknowledged {{date}} — your coach can see this.",
+      "homeworkSubmitButton": "Submit completion",
+      "homeworkSubmitHint": "Done with everything? Submit to let your coach know — you can keep updating items after submitting.",
+      "homeworkSubmittedTitle": "Completion submitted",
+      "homeworkSubmittedDetail": "Submitted {{date}} — your coach can see this. You can still update items above.",
+      "homeworkProgressLabel": "{{done}} of {{total}} done",
+      "homeworkSaveError": "Couldn't save — check your connection.",
       "linkedVodsHeading": "Linked VODs",
       "linkedVodsEmpty": "No linked VODs this session.",
       "linkedVodItem": "Linked VOD reference: {{ref}}"

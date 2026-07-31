@@ -911,10 +911,7 @@ describe('POST /api/review-deliveries/:token/homework/item and /homework/status'
 
   it('every failure class returns the IDENTICAL 404 body — out-of-range index, unknown token, revoked token, and a coachReview-kind token', async () => {
     const { app, database } = buildTestApp();
-    const { deliveryId, sessionId, clientId, token } = await seedSessionDeliveryWithHomework(
-      app,
-      database,
-    );
+    const { deliveryId, sessionId, token } = await seedSessionDeliveryWithHomework(app, database);
 
     // This session's homework has only 2 items (valid indices 0-1) — index 5
     // is within the route's own Zod body bound (0..MAX_SESSION_HOMEWORK_ITEMS

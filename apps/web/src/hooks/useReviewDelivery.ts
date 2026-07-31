@@ -1,4 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import type { PublicShareSnapshot } from '@smash-tracker/shared';
 import { api } from '@/lib/api';
 
 /**
@@ -61,5 +62,64 @@ export function useAcknowledgeReviewDelivery(token: string) {
 export function useMarkReviewDeliveryViewed(token: string) {
   return useMutation({
     mutationFn: () => api.reviewDeliveries.markViewed(token),
+  });
+}
+
+/**
+ * 260731-b1: writes a mutation's freshly-returned `HomeworkProgressResponse`
+ * into the cached snapshot at `reviewDeliveryQueryKey(token)`, replacing
+ * ONLY `sessionHomeworkProgress` — every other field on the cached object is
+ * left untouched. Guards against a missing cache entry (defensive; the
+ * mutation can only fire once the snapshot has already loaded and rendered
+ * the checklist). Shared by both homework mutations below.
+ */
+function applyHomeworkProgress(
+  queryClient: ReturnType<typeof useQueryClient>,
+  token: string,
+  progress: { doneIndexes: number[]; acknowledgedAt: number | null; submittedAt: number | null },
+) {
+  queryClient.setQueryData<PublicShareSnapshot>(reviewDeliveryQueryKey(token), (current) => {
+    if (!current) {
+      return current;
+    }
+    return { ...current, sessionHomeworkProgress: progress };
+  });
+}
+
+/**
+ * 260731-b1: POST /api/review-deliveries/:token/homework/item — toggles one
+ * homework item's done-state. Unlike `useMarkReviewDeliveryViewed`'s
+ * fire-and-forget posture, this is a user-VISIBLE action: `ReviewDeliveryPage`
+ * handles `onError` itself (toast + revert the optimistic checkbox state).
+ * On success, writes the server's recomputed progress straight into the
+ * cache via `queryClient.setQueryData` rather than invalidating — an
+ * invalidate here would trigger a full refetch round-trip for what is
+ * fundamentally a single-field update, making every checkbox toggle feel
+ * laggy on a slow connection.
+ */
+export function useSetDeliveryHomeworkItem(token: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (input: { index: number; done: boolean }) =>
+      api.reviewDeliveries.setHomeworkItem(token, input),
+    onSuccess: (progress) => {
+      applyHomeworkProgress(queryClient, token, progress);
+    },
+  });
+}
+
+/**
+ * 260731-b1: POST /api/review-deliveries/:token/homework/status — stamps
+ * acknowledged/submitted. Same cache-write-not-invalidate posture as
+ * `useSetDeliveryHomeworkItem` above, for the identical reason.
+ */
+export function useSetDeliveryHomeworkStatus(token: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (input: { status: 'acknowledged' | 'submitted' }) =>
+      api.reviewDeliveries.setHomeworkStatus(token, input),
+    onSuccess: (progress) => {
+      applyHomeworkProgress(queryClient, token, progress);
+    },
   });
 }
