@@ -87,6 +87,28 @@ export const storedScoutReportSchema = generatedScoutReportSchema
   })
   .extend({
     headToHead: z.string().nullish(),
+    // RTDB strips EMPTY ARRAYS from stored objects exactly like it strips
+    // null values (2026-08-03 walkthrough P1: five paid reports generated
+    // with stageStrategy.bans/picks [] vanished from the library and 500'd
+    // on direct reads — the generation schema's required arrays came back
+    // ABSENT). Every array field in the stored/read shape defaults to []
+    // when the key is missing, restoring the wire round-trip. The
+    // GENERATION schema deliberately keeps them required — the model must
+    // still emit the fields; only the stored/read shape tolerates RTDB
+    // having stripped them.
+    gameplan: z.array(z.string()).default([]),
+    watchFor: z.array(z.string()).default([]),
+    characterStrategy: z
+      .object({
+        picks: z.array(z.string()).default([]),
+        reasoning: z.string(),
+      })
+      .optional(),
+    stageStrategy: z.object({
+      bans: z.array(z.string()).default([]),
+      picks: z.array(z.string()).default([]),
+      reasoning: z.string(),
+    }),
   });
 export type StoredScoutReport = z.infer<typeof storedScoutReportSchema>;
 

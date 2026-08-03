@@ -1202,6 +1202,96 @@ describe('GET /api/reports* — RTDB-stripped and corrupt stored records (V9-B f
     expect(body).toHaveLength(1);
     expect(body[0]).toMatchObject({ id: 'good' });
   });
+
+  /**
+   * 2026-08-03 walkthrough P1: RTDB strips EMPTY ARRAYS on write exactly
+   * like nulls. Five paid reports stored with stageStrategy.bans/picks []
+   * came back with those keys ABSENT, failed the then-required-array read
+   * schema, vanished from the library, and 500'd on direct reads — credits
+   * already spent. The stored/read schema now defaults every array field to
+   * [] when absent. The exact production shape: every array key missing.
+   */
+  const RTDB_EMPTY_ARRAYS_RECORD = {
+    createdAt: 3000,
+    model: 'claude-opus-4-8',
+    player: { id: 1802316, gamerTag: 'Pandem1c', userSlug: 'user/07dc2239' },
+    report: {
+      overview: 'Aggressive Peach with strong ledge traps.',
+      // gameplan: [] — stripped by RTDB, key absent
+      characterStrategy: { reasoning: 'Stick to Roy.' }, // picks [] stripped
+      stageStrategy: { reasoning: 'No sampled stage data.' }, // bans+picks [] stripped
+      // watchFor: [] — stripped
+      confidenceNotes: 'Small sample.',
+    },
+  };
+
+  it('GET /reports includes a record whose empty stage/gameplan arrays were RTDB-stripped, restoring []', async () => {
+    const { app } = appWithSeed({ emptied: RTDB_EMPTY_ARRAYS_RECORD });
+
+    const response = await app.inject({
+      method: 'GET',
+      url: '/api/reports',
+      headers: authHeader(),
+    });
+
+    expect(response.statusCode).toBe(200);
+    const body = response.json();
+    expect(body).toHaveLength(1);
+    expect(body[0].id).toBe('emptied');
+    expect(body[0].report.gameplan).toEqual([]);
+    expect(body[0].report.watchFor).toEqual([]);
+    expect(body[0].report.stageStrategy).toEqual({
+      reasoning: 'No sampled stage data.',
+      bans: [],
+      picks: [],
+    });
+    expect(body[0].report.characterStrategy).toEqual({ reasoning: 'Stick to Roy.', picks: [] });
+  });
+
+  it('GET /reports/:id answers 200 (not 500) for the empty-array-stripped shape', async () => {
+    const { app } = appWithSeed({ emptied: RTDB_EMPTY_ARRAYS_RECORD });
+
+    const response = await app.inject({
+      method: 'GET',
+      url: '/api/reports/emptied',
+      headers: authHeader(),
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json().report.stageStrategy.bans).toEqual([]);
+    expect(response.json().report.stageStrategy.picks).toEqual([]);
+  });
+
+  it('a record WRITTEN with explicit empty arrays round-trips through the RTDB drop (full write-read parity)', async () => {
+    const { app, database } = appWithSeed({});
+    // Write through the fake's set(), which emulates the real SDK's
+    // empty-array drop — this is the exact path the generation route takes.
+    await database.ref(`scoutReports/${TEST_UID}/written`).set({
+      createdAt: 4000,
+      model: 'claude-opus-4-8',
+      player: { id: 1802316, gamerTag: 'Pandem1c', userSlug: 'user/07dc2239' },
+      report: {
+        overview: 'Fresh generation with no stage data.',
+        gameplan: [],
+        characterStrategy: { picks: [], reasoning: 'Stay on main.' },
+        stageStrategy: { bans: [], picks: [], reasoning: 'No stage sample.' },
+        watchFor: [],
+        confidenceNotes: 'No stage sample available.',
+      },
+    });
+
+    const direct = await app.inject({
+      method: 'GET',
+      url: '/api/reports/written',
+      headers: authHeader(),
+    });
+    expect(direct.statusCode).toBe(200);
+    expect(direct.json().report.gameplan).toEqual([]);
+
+    const list = await app.inject({ method: 'GET', url: '/api/reports', headers: authHeader() });
+    expect(list.statusCode).toBe(200);
+    expect(list.json().map((r: { id: string }) => r.id)).toContain('written');
+  });
 });
 
 describe('GET /api/reports* — billing-enabled read access (V9-B fix)', () => {
@@ -2254,6 +2344,90 @@ describe('prep single report (RPT-01)', () => {
       expect(Object.keys(events[0]!.payload)).toEqual(['reason']);
       expect(events[0]!.payload.reason).toBe('prep_report');
     }
+  });
+
+  /**
+   * 2026-08-03 walkthrough P2: retrying a refunded opponent at balance 0
+   * returned the correct 402, but flipped the durable job from `refunded`
+   * to `failed` ("Failed — refunding your credit…" forever) and emitted a
+   * spurious extra report_failed with no matching credit_spent/refunded
+   * pair. The insufficient-credit decision must leave the prior terminal
+   * state, the ledger, and telemetry completely untouched.
+   */
+  it('a zero-credit retry of a REFUNDED job answers 402 and leaves the job, ledger, and events untouched', async () => {
+    const modelSpy = vi.fn(async () => ({
+      stop_reason: 'end_turn' as const,
+      parsed_output: VALID_REPORT,
+    }));
+    const { app, database } = billableApp({ reportsClient: stubClient(modelSpy) });
+    seedPrepBrief(database, TEST_UID, ENTRY_KEY, {
+      likelyOpponents: { [OPPONENT_NAME]: true },
+      scoutBindings: { [OPPONENT_NAME]: PARRY_BINDING_RECORD },
+    });
+    const refundedJob = {
+      status: 'refunded',
+      createdAt: 1_000,
+      updatedAt: 2_000,
+      attempt: 1,
+      creditRef: PREP_PAYLOAD.jobId,
+      reason: 'prep_report',
+    };
+    database.seed(`reportJobs/${TEST_UID}/${PREP_PAYLOAD.jobId}`, refundedJob);
+    database.seed(`credits/${TEST_UID}/balance`, 0);
+    const before = JSON.stringify(database.dump());
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/reports',
+      headers: authHeader(),
+      payload: PREP_PAYLOAD,
+    });
+
+    expect(response.statusCode).toBe(402);
+    // The prior terminal state is restored VERBATIM — not `failed`, not
+    // `queued`, and updatedAt is not advanced.
+    const jobSnapshot = await database.ref(`reportJobs/${TEST_UID}/${PREP_PAYLOAD.jobId}`).get();
+    expect(jobSnapshot.val()).toEqual(refundedJob);
+    // No spurious telemetry, no ledger movement, no index pointer, no model call.
+    expect(findEvents(database, 'report_failed')).toHaveLength(0);
+    expect(findEvents(database, 'report_started')).toHaveLength(0);
+    expect(JSON.stringify(database.dump())).toEqual(before);
+    expect(modelSpy).not.toHaveBeenCalled();
+  });
+
+  it('a zero-credit FRESH submission answers 402 with no job row, no index pointer, and no writes at all', async () => {
+    const modelSpy = vi.fn(async () => ({
+      stop_reason: 'end_turn' as const,
+      parsed_output: VALID_REPORT,
+    }));
+    const { app, database } = billableApp({ reportsClient: stubClient(modelSpy) });
+    seedPrepBrief(database, TEST_UID, ENTRY_KEY, {
+      likelyOpponents: { [OPPONENT_NAME]: true },
+      scoutBindings: { [OPPONENT_NAME]: PARRY_BINDING_RECORD },
+    });
+    database.seed(`credits/${TEST_UID}/balance`, 0);
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/reports',
+      headers: authHeader(),
+      payload: PREP_PAYLOAD,
+    });
+
+    expect(response.statusCode).toBe(402);
+    // No durable job row and no index pointer survive the 402 (the fake
+    // leaves an empty parent node behind on remove; real RTDB prunes it —
+    // the invariant is that the job path itself is gone).
+    const jobSnapshot = await database.ref(`reportJobs/${TEST_UID}/${PREP_PAYLOAD.jobId}`).get();
+    expect(jobSnapshot.exists()).toBe(false);
+    const dump = database.dump() as Record<string, unknown>;
+    expect(dump.prepReportJobIndex).toBeUndefined();
+    expect(findEvents(database, 'report_failed')).toHaveLength(0);
+    expect(findEvents(database, 'report_started')).toHaveLength(0);
+    expect(dump.creditLedger).toBeUndefined();
+    const balance = await database.ref(`credits/${TEST_UID}/balance`).get();
+    expect(balance.val()).toBe(0);
+    expect(modelSpy).not.toHaveBeenCalled();
   });
 });
 

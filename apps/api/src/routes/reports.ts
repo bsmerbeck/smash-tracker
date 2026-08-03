@@ -1102,19 +1102,6 @@ const reportsRoutes: FastifyPluginAsyncZod<ReportsRoutesOptions> = async (app, o
           }),
         );
 
-        // Phase 27 (RPT-01, 27-RESEARCH.md Pitfall 2): a convenience
-        // pointer, not money-critical state — deliberately a plain `.set()`
-        // rather than a transaction. It exists because job ids are
-        // client-minted per click, so a reloaded page would otherwise have
-        // no way to rediscover which job belongs to which curated
-        // opponent. Bounded by the curated-opponent cap per brief, so it
-        // needs no pagination; deliberately NOT added to a pruning job this
-        // phase — a recorded discretionary follow-up, same spirit as the
-        // Phase 23 rate-limit-counter retention deferral (STATE.md).
-        await app.firebase.database
-          .ref(`prepReportJobIndex/${request.uid}/${entryKey}/${opponentName}`)
-          .set({ jobId, updatedAt: Date.now() });
-
         if (preSpent) {
           // Phase 27 (Task 2): the credit for this slot was already spent
           // atomically by the bundle submission (or never spent at all, for
@@ -1128,16 +1115,21 @@ const reportsRoutes: FastifyPluginAsyncZod<ReportsRoutesOptions> = async (app, o
           // attempt, identical to the legacy branch below.
           spent = await spendCredit(app.firebase.database, request.uid, jobId);
           if (!spent) {
-            await failJob({
-              uid: request.uid,
-              jobId,
-              creditRef: jobId,
-              spent,
-              reason: 'prep_report',
-              createdAt: jobCreatedAt,
-              attempt: jobAttempt,
-              day: null,
-            });
+            // 2026-08-03 walkthrough P2: a zero-credit attempt is a
+            // REJECTED request, not a failed generation. The old failJob
+            // call here overwrote a retried job's prior `refunded` terminal
+            // with `failed` and emitted a false `report_failed` — no debit
+            // occurred, no refund was owed. Restore the pre-overwrite row
+            // verbatim (the `queued` write above already replaced it), or
+            // remove the never-attempted row entirely for a fresh jobId.
+            // No job terminal transition, no report_* event, no ledger
+            // entry — the 402 alone is the outcome, and the checkout
+            // affordance is the web app's cue.
+            if (existingJob) {
+              await jobRef.set(reportJobSchema.parse(existingJob));
+            } else {
+              await jobRef.remove();
+            }
             return reply.code(402).send({
               error: 'Payment Required',
               message: 'You need report credits — buy a pack to continue',
@@ -1145,6 +1137,22 @@ const reportsRoutes: FastifyPluginAsyncZod<ReportsRoutesOptions> = async (app, o
             });
           }
         }
+
+        // Phase 27 (RPT-01, 27-RESEARCH.md Pitfall 2): a convenience
+        // pointer, not money-critical state — deliberately a plain `.set()`
+        // rather than a transaction. It exists because job ids are
+        // client-minted per click, so a reloaded page would otherwise have
+        // no way to rediscover which job belongs to which curated
+        // opponent. Written only AFTER the spend decision (2026-08-03 P2
+        // fix) so a rejected zero-credit click can never leave the index
+        // pointing at a job row that was restored or removed. Bounded by
+        // the curated-opponent cap per brief, so it needs no pagination;
+        // deliberately NOT added to a pruning job this phase — a recorded
+        // discretionary follow-up, same spirit as the Phase 23
+        // rate-limit-counter retention deferral (STATE.md).
+        await app.firebase.database
+          .ref(`prepReportJobIndex/${request.uid}/${entryKey}/${opponentName}`)
+          .set({ jobId, updatedAt: Date.now() });
 
         resolveScout = buildPrepResolveScout(binding, {
           uid: request.uid,
