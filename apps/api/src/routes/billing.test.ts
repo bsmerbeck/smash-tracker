@@ -62,6 +62,7 @@ function makeCheckoutCompletedEvent(overrides: {
   uid?: string;
   packId?: string;
   paymentStatus?: string;
+  prepReason?: string;
 }): Stripe.Event {
   return {
     id: overrides.id ?? 'evt_test_1',
@@ -80,6 +81,7 @@ function makeCheckoutCompletedEvent(overrides: {
         metadata: {
           uid: overrides.uid ?? TEST_UID,
           packId: overrides.packId ?? 'pack5',
+          ...(overrides.prepReason !== undefined ? { prepReason: overrides.prepReason } : {}),
         },
       },
     },
@@ -887,5 +889,103 @@ describe('POST /api/billing/webhook (configured)', () => {
     );
     expect(events).toHaveLength(1);
     expect(events[0]).toMatchObject({ causationId: 'evt_completed_once:checkout_completed' });
+  });
+
+  /**
+   * 2026-08-03 walkthrough P2: a prep-origin checkout carried
+   * `prepReason: prep_purchase` in `checkout_started` and in Stripe session
+   * metadata, but the webhook's `checkout_completed` envelope dropped it —
+   * completed prep conversions were indistinguishable from Scout-origin
+   * completions. The validated enum must be copied into the completed
+   * payload; null/unknown values must be omitted (never null, never
+   * passed through raw).
+   */
+  it('checkout_completed carries the validated prep marker from session metadata (2026-08-03 P2)', async () => {
+    const event = makeCheckoutCompletedEvent({
+      id: 'evt_completed_prep',
+      uid: TEST_UID,
+      prepReason: 'prep_purchase',
+    });
+    const constructEvent = vi.fn(() => event);
+    const { app, database } = buildTestApp({
+      stripe: STRIPE_CONFIG,
+      reports: REPORTS_CONFIG,
+      stripeClient: stubStripeClient({ webhooks: { constructEvent } }),
+    });
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/billing/webhook',
+      headers: { 'stripe-signature': 'good-sig', 'content-type': 'application/json' },
+      payload: JSON.stringify({}),
+    });
+    expect(response.statusCode).toBe(200);
+    await flush();
+
+    const events = eventLedgerEntries(
+      database.dump() as Record<string, unknown>,
+      'checkout_completed',
+    );
+    expect(events).toHaveLength(1);
+    expect((events[0] as { payload: unknown }).payload).toEqual({
+      packId: 'pack5',
+      prepReason: 'prep_purchase',
+    });
+  });
+
+  it('checkout_completed omits the prep marker entirely for a Scout-origin session (no metadata key)', async () => {
+    const event = makeCheckoutCompletedEvent({ id: 'evt_completed_scout', uid: TEST_UID });
+    const constructEvent = vi.fn(() => event);
+    const { app, database } = buildTestApp({
+      stripe: STRIPE_CONFIG,
+      reports: REPORTS_CONFIG,
+      stripeClient: stubStripeClient({ webhooks: { constructEvent } }),
+    });
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/billing/webhook',
+      headers: { 'stripe-signature': 'good-sig', 'content-type': 'application/json' },
+      payload: JSON.stringify({}),
+    });
+    expect(response.statusCode).toBe(200);
+    await flush();
+
+    const events = eventLedgerEntries(
+      database.dump() as Record<string, unknown>,
+      'checkout_completed',
+    );
+    expect(events).toHaveLength(1);
+    expect((events[0] as { payload: unknown }).payload).toEqual({ packId: 'pack5' });
+  });
+
+  it('checkout_completed omits an unknown/tampered prepReason value rather than passing it through', async () => {
+    const event = makeCheckoutCompletedEvent({
+      id: 'evt_completed_tampered',
+      uid: TEST_UID,
+      prepReason: 'totally-bogus',
+    });
+    const constructEvent = vi.fn(() => event);
+    const { app, database } = buildTestApp({
+      stripe: STRIPE_CONFIG,
+      reports: REPORTS_CONFIG,
+      stripeClient: stubStripeClient({ webhooks: { constructEvent } }),
+    });
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/billing/webhook',
+      headers: { 'stripe-signature': 'good-sig', 'content-type': 'application/json' },
+      payload: JSON.stringify({}),
+    });
+    expect(response.statusCode).toBe(200);
+    await flush();
+
+    const events = eventLedgerEntries(
+      database.dump() as Record<string, unknown>,
+      'checkout_completed',
+    );
+    expect(events).toHaveLength(1);
+    expect((events[0] as { payload: unknown }).payload).toEqual({ packId: 'pack5' });
   });
 });

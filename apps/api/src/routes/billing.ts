@@ -265,6 +265,14 @@ const billingRoutes: FastifyPluginAsyncZod<BillingRoutesOptions> = async (app, o
     ) {
       const uid = session.metadata?.uid;
       const packId = session.metadata?.packId;
+      // 2026-08-03 walkthrough P2 (EVT-05): the prep marker must survive the
+      // full checkout lifecycle — `checkout_started` carried it but the
+      // webhook's `checkout_completed` dropped it, making completed prep
+      // conversions indistinguishable from Scout-origin checkouts. Only the
+      // exact validated enum passes through; anything else is omitted
+      // (conditional-spread — never an undefined own-property).
+      const sessionPrepReason = session.metadata?.prepReason;
+      const prepReason = sessionPrepReason === CHECKOUT_PREP_REASON ? sessionPrepReason : undefined;
       const pack = CREDIT_PACKS.find((candidate) => candidate.id === packId);
 
       if (!uid || !pack) {
@@ -286,7 +294,7 @@ const billingRoutes: FastifyPluginAsyncZod<BillingRoutesOptions> = async (app, o
             sessionId: uid,
             causationId: `${event.id}:checkout_completed`,
             consentState: 'unknown',
-            payload: { packId: pack.id },
+            payload: { packId: pack.id, ...(prepReason ? { prepReason } : {}) },
           }),
         );
       }
