@@ -99,6 +99,7 @@ import {
   type PrepChecklistItemUpdate,
   type PrepOpenRequest,
   type PrepScoutBindingConfirmRequest,
+  type ReviewChecklistItemId,
   type CreatePlaylistInput,
   type UpdatePlaylistInput,
   createShareInputSchema,
@@ -747,6 +748,24 @@ export const api = {
     ) =>
       apiRequestParsed(
         `/api/prep/${encodeURIComponent(entryKey)}/checklist/${itemId}`,
+        prepBriefResponseSchema,
+        { method: 'PUT', body: prepChecklistItemUpdateSchema.parse(input) },
+      ),
+    /**
+     * PUT /api/prep/:entryKey/review-checklist/:itemId (Phase 28, 28-04's
+     * route) — the post-event review checklist's twin write. Reuses
+     * `prepChecklistItemUpdateSchema`/`prepBriefResponseSchema` verbatim: the
+     * request/response shapes are byte-identical to the prep checklist's own
+     * `setChecklistItem` above, only the URL segment and the item-id type
+     * differ.
+     */
+    setReviewChecklistItem: (
+      entryKey: string,
+      itemId: ReviewChecklistItemId,
+      input: PrepChecklistItemUpdate,
+    ) =>
+      apiRequestParsed(
+        `/api/prep/${encodeURIComponent(entryKey)}/review-checklist/${itemId}`,
         prepBriefResponseSchema,
         { method: 'PUT', body: prepChecklistItemUpdateSchema.parse(input) },
       ),

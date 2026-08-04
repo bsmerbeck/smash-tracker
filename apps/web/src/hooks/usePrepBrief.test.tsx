@@ -9,6 +9,8 @@ import {
   useActivatePrepBrief,
   useReopenPrepBrief,
   useTogglePrepChecklistItem,
+  useToggleReviewChecklistItem,
+  prepBriefQueryKey,
 } from './usePrepBrief';
 
 vi.mock('firebase/auth', async () => {
@@ -35,6 +37,7 @@ const prepGet = vi.fn();
 const prepActivate = vi.fn();
 const prepOpen = vi.fn();
 const prepSetChecklistItem = vi.fn();
+const prepSetReviewChecklistItem = vi.fn();
 const prepAddLikelyOpponent = vi.fn();
 const prepRemoveLikelyOpponent = vi.fn();
 
@@ -46,6 +49,7 @@ vi.mock('@/lib/api', () => ({
       activate: (...args: unknown[]) => prepActivate(...args),
       open: (...args: unknown[]) => prepOpen(...args),
       setChecklistItem: (...args: unknown[]) => prepSetChecklistItem(...args),
+      setReviewChecklistItem: (...args: unknown[]) => prepSetReviewChecklistItem(...args),
       addLikelyOpponent: (...args: unknown[]) => prepAddLikelyOpponent(...args),
       removeLikelyOpponent: (...args: unknown[]) => prepRemoveLikelyOpponent(...args),
     },
@@ -129,6 +133,133 @@ describe('usePrepBrief', () => {
       expect(prepSetChecklistItem).toHaveBeenCalledWith('entry-1', 'confirmRegistration', {
         checked: true,
       });
+      expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['prep', 'entry-1'] });
+    });
+  });
+
+  describe('useToggleReviewChecklistItem', () => {
+    it('calls api.prep.setReviewChecklistItem with entryKey, itemId, and { checked } — the PUT /prep/:entryKey/review-checklist/:itemId body', async () => {
+      setMockUser(makeMockUser());
+      prepSetReviewChecklistItem.mockResolvedValue({
+        brief: {
+          eventDate: 1,
+          activatedAt: 1,
+          lastOpenedAt: 1,
+          checklist: {},
+          likelyOpponents: {},
+          reviewChecklist: { attachVods: true },
+        },
+      });
+      const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+
+      const { result } = renderHook(() => useToggleReviewChecklistItem('entry-1'), {
+        wrapper: makeWrapper(queryClient),
+      });
+
+      await result.current.mutateAsync({ itemId: 'attachVods', checked: true });
+
+      expect(prepSetReviewChecklistItem).toHaveBeenCalledWith('entry-1', 'attachVods', {
+        checked: true,
+      });
+    });
+
+    it('optimistically updates the ["prep", entryKey] cache before the request resolves', async () => {
+      setMockUser(makeMockUser());
+      let resolveRequest: (value: unknown) => void = () => {};
+      prepSetReviewChecklistItem.mockImplementation(
+        () =>
+          new Promise((resolve) => {
+            resolveRequest = resolve;
+          }),
+      );
+      const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+      queryClient.setQueryData(prepBriefQueryKey('entry-1'), {
+        activated: true,
+        brief: {
+          eventDate: 1,
+          activatedAt: 1,
+          lastOpenedAt: 1,
+          checklist: {},
+          likelyOpponents: {},
+          reviewChecklist: {},
+        },
+      });
+
+      const { result } = renderHook(() => useToggleReviewChecklistItem('entry-1'), {
+        wrapper: makeWrapper(queryClient),
+      });
+
+      const mutatePromise = result.current.mutateAsync({ itemId: 'attachVods', checked: true });
+
+      await waitFor(() => {
+        const cached = queryClient.getQueryData<{ brief: { reviewChecklist: object } }>(
+          prepBriefQueryKey('entry-1'),
+        );
+        expect(cached?.brief.reviewChecklist).toEqual({ attachVods: true });
+      });
+
+      resolveRequest({
+        brief: {
+          eventDate: 1,
+          activatedAt: 1,
+          lastOpenedAt: 1,
+          checklist: {},
+          likelyOpponents: {},
+          reviewChecklist: { attachVods: true },
+        },
+      });
+      await mutatePromise;
+    });
+
+    it('rolls back the ["prep", entryKey] cache to its pre-mutation snapshot when the request fails', async () => {
+      setMockUser(makeMockUser());
+      prepSetReviewChecklistItem.mockRejectedValue(new Error('network error'));
+      const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+      const initial = {
+        activated: true,
+        brief: {
+          eventDate: 1,
+          activatedAt: 1,
+          lastOpenedAt: 1,
+          checklist: {},
+          likelyOpponents: {},
+          reviewChecklist: {},
+        },
+      };
+      queryClient.setQueryData(prepBriefQueryKey('entry-1'), initial);
+
+      const { result } = renderHook(() => useToggleReviewChecklistItem('entry-1'), {
+        wrapper: makeWrapper(queryClient),
+      });
+
+      await expect(
+        result.current.mutateAsync({ itemId: 'attachVods', checked: true }),
+      ).rejects.toThrow('network error');
+
+      expect(queryClient.getQueryData(prepBriefQueryKey('entry-1'))).toEqual(initial);
+    });
+
+    it('invalidates exactly the ["prep", entryKey] cache entry once the mutation settles', async () => {
+      setMockUser(makeMockUser());
+      prepSetReviewChecklistItem.mockResolvedValue({
+        brief: {
+          eventDate: 1,
+          activatedAt: 1,
+          lastOpenedAt: 1,
+          checklist: {},
+          likelyOpponents: {},
+          reviewChecklist: { attachVods: true },
+        },
+      });
+      const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+      const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries');
+
+      const { result } = renderHook(() => useToggleReviewChecklistItem('entry-1'), {
+        wrapper: makeWrapper(queryClient),
+      });
+
+      await result.current.mutateAsync({ itemId: 'attachVods', checked: true });
+
       expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['prep', 'entry-1'] });
     });
   });
