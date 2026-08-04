@@ -126,4 +126,49 @@ describe('ManualEventAssociation', () => {
     expect(screen.getByRole('button', { name: 'Associate event' })).toBeDisabled();
     expect(manualEntry).not.toHaveBeenCalled();
   });
+
+  it('CR-03: a same-day start and end submit as the SAME local-midnight epoch (never eventEndDate < eventDate)', async () => {
+    // Regression for the UTC/local mixed-base bug: `new Date('YYYY-MM-DD')`
+    // parses UTC midnight while parseLocalCalendarDate returns LOCAL
+    // midnight, so in any UTC+ timezone a same-calendar-day entry produced
+    // end < start and the shared schema 400'd the submission. Both fields
+    // now ride parseLocalCalendarDate, so same-day means exactly equal.
+    const user = userEvent.setup();
+    manualEntry.mockResolvedValue({
+      eventName: 'Locals #42',
+      firstSetAt: 1,
+      lastSetAt: 1,
+      setsPlayed: 0,
+      source: 'manual',
+      entryKey: 'manual-locals-42-abc123',
+    });
+
+    renderForm();
+
+    await user.type(screen.getByLabelText('Event name'), 'Locals #42');
+    await user.type(screen.getByLabelText('Event date'), '2026-01-10');
+    await user.type(screen.getByLabelText('End date (optional)'), '2026-01-10');
+    await user.click(screen.getByRole('button', { name: 'Associate event' }));
+
+    await waitFor(() => expect(manualEntry).toHaveBeenCalledTimes(1));
+    const payload = manualEntry.mock.calls[0]?.[0] as {
+      eventDate: number;
+      eventEndDate: number;
+    };
+    // Local calendar midnight of the typed day — identical for both fields.
+    expect(payload.eventDate).toBe(new Date(2026, 0, 10).getTime());
+    expect(payload.eventEndDate).toBe(payload.eventDate);
+  });
+
+  it('CR-03: blocks submit when the end date is before the start date (mirrors PrepManualEntryDialog)', async () => {
+    const user = userEvent.setup();
+    renderForm();
+
+    await user.type(screen.getByLabelText('Event name'), 'Locals #42');
+    await user.type(screen.getByLabelText('Event date'), '2026-01-12');
+    await user.type(screen.getByLabelText('End date (optional)'), '2026-01-10');
+
+    expect(screen.getByRole('button', { name: 'Associate event' })).toBeDisabled();
+    expect(manualEntry).not.toHaveBeenCalled();
+  });
 });

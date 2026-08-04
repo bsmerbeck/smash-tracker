@@ -30,16 +30,27 @@ export function ManualEventAssociation({ onSuccess }: { onSuccess?: () => void }
   const [eventEndDate, setEventEndDate] = useState('');
   const [error, setError] = useState<string | null>(null);
 
+  // CR-03 (Phase 28 review): the start date MUST go through the same
+  // parseLocalCalendarDate the end date uses — `new Date('YYYY-MM-DD')`
+  // parses as UTC midnight (Phase 26 rule: never new Date('YYYY-MM-DD')),
+  // so mixing bases made a same-day entry read `end < start` in every UTC+
+  // timezone and 400 on the shared schema's refine.
+  const parsedStartDate = parseLocalCalendarDate(eventDate);
   const parsedEndDate = parseLocalCalendarDate(eventEndDate);
   // End date without a start date is blocked client-side, matching the
   // shared schema's refine ("eventEndDate requires eventDate to be present").
-  const endDateBlocked = eventEndDate.trim().length > 0 && eventDate.trim().length === 0;
+  // End before start is blocked too — the same `end >= start` rule
+  // PrepManualEntryDialog enforces, so the server's 400 is never the first
+  // place the user learns about it.
+  const endDateBlocked =
+    (eventEndDate.trim().length > 0 && eventDate.trim().length === 0) ||
+    (parsedEndDate !== null && parsedStartDate !== null && parsedEndDate < parsedStartDate);
 
   const manualEntry = useMutation({
     mutationFn: () =>
       api.tournaments.manualEntry({
         eventName: eventName.trim(),
-        eventDate: eventDate ? new Date(eventDate).getTime() : undefined,
+        eventDate: parsedStartDate ?? undefined,
         ...(parsedEndDate !== null ? { eventEndDate: parsedEndDate } : {}),
       }),
     onSuccess: async () => {
