@@ -100,6 +100,31 @@ const POST_EVENT_PAID_DIR = resolve('src/pages/Tournaments/postEventPaid');
 const GATED_DIRS = [PREP_PAID_DIR, POST_EVENT_PAID_DIR];
 
 /**
+ * DELIBERATE PHASE 28 EXTENSION (28-10, REV-03/owner invariant 6): this
+ * plan's own contribution on top of 28-09's Rule-3 widening (which
+ * introduced `POST_EVENT_PAID_DIR`/`GATED_DIRS` above out of necessity, mid
+ * Wave 2, before this plan's dedicated widening pass could land). Three
+ * gaps remained once both gated directories existed:
+ *
+ *  1. The exact-set-equality assertion below proved the matching set was
+ *     non-empty OVERALL, but not non-empty PER gated dir — a regression
+ *     that accidentally emptied `postEventPaid/` of monetization vocabulary
+ *     (e.g. a refactor that moved all its copy into `prepPaid/`) could pass
+ *     that assertion vacuously as far as the new directory is concerned.
+ *  2. The sole-composer assertion checked the COMBINED importer set across
+ *     both dirs equals `[PrepBriefPage.tsx]` — it could not, on its own,
+ *     catch a second dir gaining a second importer while the other dir's
+ *     importer set happened to still look right in aggregate.
+ *  3. The i18n cleanliness assertion covered only `bundle.prep`; the new
+ *     always-rendered `postEvent.*` namespace (28-UI-SPEC.md's free-surface
+ *     copy contract) had no machine-checked cleanliness assertion at all.
+ *
+ * This plan closes all three per-dir gaps below. As with every prior
+ * extension recorded in this file, nothing above is weakened, deleted, or
+ * relaxed — every new assertion SUPPLEMENTS the existing ones.
+ */
+
+/**
  * Recursively collects every non-test `.ts`/`.tsx` source file under `dir`,
  * skipping any directory listed in `excludeDirs` entirely.
  */
@@ -151,6 +176,15 @@ describe('deliberate Phase 27/28 extension: the whole Tournaments tree, minus th
     expect(existsSync(resolve(POST_EVENT_PAID_DIR, 'PostEventSynthesisCard.tsx'))).toBe(true);
   });
 
+  it('the postEvent/ files are discovered by the tree scan (anti-vacuous: a path rename or missing recursion must fail this suite, not silently pass)', () => {
+    const postEventDir = resolve('src/pages/Tournaments/postEvent');
+    const discoveredPostEventFiles = wideTournamentsTreeFiles.filter((file) =>
+      file.startsWith(`${postEventDir}/`),
+    );
+    expect(discoveredPostEventFiles.length).toBeGreaterThan(0);
+    expect(discoveredPostEventFiles).toContain(resolve(postEventDir, 'ResultsContextCard.tsx'));
+  });
+
   it.each(wideTournamentsTreeFiles)(
     '%s (outside the gated dirs) contains no monetization vocabulary',
     (file) => {
@@ -189,6 +223,16 @@ describe('deliberate Phase 27/28 extension: the whole Tournaments tree, minus th
     expect(matchingFiles.size).toBeGreaterThan(0);
   });
 
+  it('the matching set is non-empty in EACH gated dir individually (28-10: an overall non-empty count could still vacuously pass if one dir contributed zero matches)', () => {
+    const matchingFiles = wholeTournamentsTreeFiles.filter((file) =>
+      MONETIZATION_VOCABULARY.test(readFileSync(file, 'utf-8')),
+    );
+    for (const dir of GATED_DIRS) {
+      const matchingInThisDir = matchingFiles.filter((file) => file.startsWith(`${dir}/`));
+      expect(matchingInThisDir.length).toBeGreaterThan(0);
+    }
+  });
+
   it('no file outside the gated directories imports from prepPaid/ or postEventPaid/, except PrepBriefPage.tsx (the sole permitted composer)', () => {
     const importers = wideTournamentsTreeFiles.filter(
       (file) =>
@@ -196,5 +240,24 @@ describe('deliberate Phase 27/28 extension: the whole Tournaments tree, minus th
         /from ['"].*\/postEventPaid\//.test(readFileSync(file, 'utf-8')),
     );
     expect(importers).toEqual([resolve('src/pages/Tournaments/PrepBriefPage.tsx')]);
+  });
+
+  it('only PrepBriefPage.tsx imports from prepPaid/ (28-10: the per-dir split of the sole-composer rule — a combined-set check alone cannot catch one dir gaining a second importer while the aggregate still looks right)', () => {
+    const importers = wideTournamentsTreeFiles.filter((file) =>
+      /from ['"].*\/prepPaid\//.test(readFileSync(file, 'utf-8')),
+    );
+    expect(importers).toEqual([resolve('src/pages/Tournaments/PrepBriefPage.tsx')]);
+  });
+
+  it('only PrepBriefPage.tsx imports from postEventPaid/ (28-10: the per-dir split of the sole-composer rule)', () => {
+    const importers = wideTournamentsTreeFiles.filter((file) =>
+      /from ['"].*\/postEventPaid\//.test(readFileSync(file, 'utf-8')),
+    );
+    expect(importers).toEqual([resolve('src/pages/Tournaments/PrepBriefPage.tsx')]);
+  });
+
+  it('the postEvent i18n copy bundle contains no monetization vocabulary (28-10: postEvent.* joins prep.* on the always-rendered side; prepPaid.*/postEventPaid.* stay deliberately exempt)', () => {
+    const bundle = JSON.parse(readFileSync(resolve('src/i18n/locales/en.json'), 'utf-8'));
+    expect(JSON.stringify(bundle.postEvent)).not.toMatch(MONETIZATION_VOCABULARY);
   });
 });

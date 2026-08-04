@@ -1,7 +1,11 @@
-import { useEffect, useMemo, useRef } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useParams, Link } from 'react-router';
 import { useTranslation } from 'react-i18next';
+import { ChevronDown, ChevronRight } from 'lucide-react';
+import type { PrepBriefStatus } from '@smash-tracker/shared';
+import { selectReviewResultsContext, matchesForEntry } from '@smash-tracker/shared';
 import { Button } from '@/components/ui/button';
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { useTournamentEntries } from '@/hooks/useTournamentEntries';
 import { useMatches } from '@/hooks/useMatches';
 import { useOpponentAliases } from '@/hooks/useOpponentAliases';
@@ -13,6 +17,11 @@ import { TournamentHeader } from './components/TournamentHeader';
 import { LikelyOpponentsCard } from './prep/LikelyOpponentsCard';
 import { PrepChecklistCard } from './prep/PrepChecklistCard';
 import { PrepPaidReportsCard } from './prepPaid/PrepPaidReportsCard';
+import { ReviewModeStrip } from './postEvent/ReviewModeStrip';
+import { ResultsContextCard } from './postEvent/ResultsContextCard';
+import { ReviewChecklistCard } from './postEvent/ReviewChecklistCard';
+import { ReviewGroundingCard } from './postEvent/ReviewGroundingCard';
+import { PostEventSynthesisCard } from './postEventPaid/PostEventSynthesisCard';
 
 function NotFoundState() {
   const { t } = useTranslation();
@@ -28,17 +37,31 @@ function NotFoundState() {
 }
 
 /**
- * Phase 28 will add a `'review'` branch here once an activated brief's event
- * date has passed — the page's render is already structured as a switch on
- * this single value so that phase adds a branch instead of restructuring the
- * page (26-UI-SPEC.md "Structural Notes for Future Phases"). Only the
- * derivation point exists in this phase; no review UI is implemented,
- * stubbed, or reserved.
+ * Phase 28 (REV-01, 28-CONTEXT.md "Conversion mechanics", owner invariant
+ * 5): widens the Phase 26 single-value switch to `'prep' | 'review'`. The
+ * SOLE authority for this decision is `PrepBriefStatus.reviewAt` — the
+ * server's EFFECTIVE conversion moment (the frozen `brief.reviewAt` once the
+ * write-once transaction has committed, otherwise the server-derived
+ * candidate computed from the registry row; see `prepBriefStatusSchema`'s
+ * doc comment, 28-04's GET handler). The client NEVER re-derives review mode
+ * from raw entry dates (`entry.firstSetAt`/`lastSetAt`/`eventDate`) — doing
+ * so was the owner's REJECTED original proposal (28-CONTEXT.md "⚠ ONE
+ * CORRECTION"), because a manually-entered event's date can resolve to the
+ * start of the selected day, which would flip a tournament that is only
+ * STARTING into a "post-event" review. Reading only the server's answer is
+ * also what makes a converted surface un-flippable back to prep: once
+ * `reviewAt` is frozen server-side, a later sync that moves a synced entry's
+ * `lastSetAt` into the future can never change what this function returns,
+ * because the registry row is never consulted again once the freeze exists
+ * (the freeze itself rides the existing mount activate-or-reopen mutation,
+ * server-side, per 28-04).
  */
-type PrepSurfaceMode = 'prep';
+type PrepSurfaceMode = 'prep' | 'review';
 
-function derivePrepSurfaceMode(): PrepSurfaceMode {
-  return 'prep';
+function derivePrepSurfaceMode(status: PrepBriefStatus): PrepSurfaceMode {
+  return status.activated && status.reviewAt !== undefined && status.reviewAt <= Date.now()
+    ? 'review'
+    : 'prep';
 }
 
 /**
@@ -104,6 +127,11 @@ export function PrepBriefPage() {
   // entryKey makes a genuine param change fire correctly.
   const firedForEntryKeyRef = useRef<string | undefined>(undefined);
 
+  // Collapsed-prep section's open/closed state (28-UI-SPEC.md §1) —
+  // deliberately ephemeral component state, not persisted, and not shared
+  // with the prep-mode branch's own composition.
+  const [prepSectionOpen, setPrepSectionOpen] = useState(false);
+
   useEffect(() => {
     if (!entryKey || briefQuery.isPending || briefQuery.isError) {
       return;
@@ -126,8 +154,6 @@ export function PrepBriefPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [entryKey, briefQuery.isPending, briefQuery.isError, briefQuery.data]);
 
-  const mode: PrepSurfaceMode = derivePrepSurfaceMode();
-
   if (entriesLoading || matchesLoading || briefQuery.isPending) {
     return <div className="text-muted-foreground">{t('prep.loading')}</div>;
   }
@@ -140,10 +166,35 @@ export function PrepBriefPage() {
     return <NotFoundState />;
   }
 
+  // The mode switch reads ONLY `briefQuery.data.reviewAt` (owner invariant
+  // 5) — never `entry.eventDate`/`firstSetAt`/`lastSetAt`. It is computed
+  // here, after the pending/error guards above, so `briefQuery.data` is
+  // guaranteed present.
+  const mode: PrepSurfaceMode = derivePrepSurfaceMode(briefQuery.data);
+
   const brief = briefQuery.data.brief;
   const likelyOpponents = brief?.likelyOpponents ?? {};
   const checklist = brief?.checklist ?? {};
   const scoutBindings = brief?.scoutBindings ?? {};
+  const reviewChecklist = brief?.reviewChecklist ?? {};
+
+  // Review-mode-only derivations (REV-01/REV-02): computed only when the
+  // review branch will actually render, since `selectReviewResultsContext`/
+  // `matchesForEntry` are meaningless outside review mode and the prep
+  // branch must stay byte-identical to Phase 27.
+  const reviewResults =
+    mode === 'review'
+      ? selectReviewResultsContext(matches, entry, likelyOpponents)
+      : { synced: [], manual: [] };
+  const eventMatches = mode === 'review' ? matchesForEntry(matches, entry) : [];
+  // The client mirror of the server's 409 no-evidence precondition — the
+  // SAME "has any VOD timestamp or tag" rule `ReviewGroundingCard` uses to
+  // decide which matches count as grounded, computed once here so the page
+  // stays the single source `PostEventSynthesisCard` (28-09) reads from
+  // (that card never re-derives this count itself).
+  const annotatedEvidenceCount = eventMatches.filter(
+    (match) => (match.vodTimestamps?.length ?? 0) > 0 || (match.tags?.length ?? 0) > 0,
+  ).length;
 
   // RPT-04: a strict boolean-true comparison, never a truthiness check — an
   // absent/undefined field from an older or gate-off server, or any
@@ -179,6 +230,68 @@ export function PrepBriefPage() {
             />
           )}
           <PrepChecklistCard entryKey={entryKey!} checklist={checklist} />
+        </>
+      )}
+      {mode === 'review' && (
+        <>
+          <ReviewModeStrip />
+          <ResultsContextCard synced={reviewResults.synced} manual={reviewResults.manual} />
+          <ReviewChecklistCard entryKey={entryKey!} reviewChecklist={reviewChecklist} />
+          <ReviewGroundingCard eventMatches={eventMatches} />
+          {/*
+           * RPT-04's exact strict-true rule, reused verbatim (owner
+           * invariant 6 / REV-03): `showPaidReports` is the SAME
+           * `paidReportsAvailable === true` field the prep branch's
+           * `PrepPaidReportsCard` reads above — no second gate exists for
+           * review mode. This is the ONE monetized surface review mode
+           * mounts; `PrepPaidReportsCard` never re-renders here.
+           */}
+          {showPaidReports && (
+            <PostEventSynthesisCard
+              entryKey={entryKey!}
+              annotatedEvidenceCount={annotatedEvidenceCount}
+            />
+          )}
+          {/*
+           * Collapsed-prep section (28-UI-SPEC.md §1, settled decision):
+           * the UNCHANGED Phase 26 cards, fully functional, collapsed by
+           * default. `PrepPaidReportsCard` is DELIBERATELY excluded here —
+           * review mode's sole monetized placement is the synthesis card
+           * above, keeping exactly one paid surface per mode. Prior prep
+           * report purchases stay reachable through the existing ungated
+           * reports list (27-UI-SPEC.md's established rule); flag any
+           * desire to surface them here as a scope addition.
+           */}
+          <Collapsible open={prepSectionOpen} onOpenChange={setPrepSectionOpen}>
+            <CollapsibleTrigger asChild>
+              <button
+                type="button"
+                className="flex w-full items-center justify-between rounded-md border p-3 text-left"
+              >
+                <span className="flex items-center gap-2 text-sm font-medium">
+                  {prepSectionOpen ? (
+                    <ChevronDown className="size-4 text-muted-foreground" aria-hidden="true" />
+                  ) : (
+                    <ChevronRight className="size-4 text-muted-foreground" aria-hidden="true" />
+                  )}
+                  {t('postEvent.prepSection.trigger')}
+                </span>
+                <span className="text-xs text-muted-foreground">
+                  {t('postEvent.prepSection.hint')}
+                </span>
+              </button>
+            </CollapsibleTrigger>
+            <CollapsibleContent className="flex flex-col gap-6 pt-6">
+              <LikelyOpponentsCard
+                entryKey={entryKey!}
+                likelyOpponents={likelyOpponents}
+                matches={matches}
+                canonicalOpponents={canonicalOpponents}
+                notes={opponentNotes ?? {}}
+              />
+              <PrepChecklistCard entryKey={entryKey!} checklist={checklist} />
+            </CollapsibleContent>
+          </Collapsible>
         </>
       )}
     </div>
