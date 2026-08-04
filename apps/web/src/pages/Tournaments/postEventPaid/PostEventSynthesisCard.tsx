@@ -206,7 +206,12 @@ export function PostEventSynthesisCard({
                   <div key={`${focusArea.title}-${index}`} className="flex flex-col gap-2">
                     <SafeMarkdown
                       body={`### ${focusArea.title}\n\n${focusArea.evidence}`}
-                      onActivateCitation={(matchId) => navigate(`/vod?match=${matchId}`)}
+                      onActivateCitation={(matchId) =>
+                        // IN-04: encode — matchId is a push key today (URL-safe),
+                        // but every API-path interpolation in lib/api.ts encodes,
+                        // and stored data must never be trusted to stay URL-clean.
+                        navigate(`/vod?match=${encodeURIComponent(matchId)}`)
+                      }
                     />
                     {focusArea.drills.length > 0 && (
                       <ul className="list-disc pl-5 text-sm">

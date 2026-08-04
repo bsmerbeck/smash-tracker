@@ -243,6 +243,35 @@ describe('PostEventSynthesisCard', () => {
     expect(screen.getByText('Practice combo A')).toBeInTheDocument();
   });
 
+  it('IN-04: the citation deep-link URL-encodes the matchId (token grammar permits &/= in matchId)', async () => {
+    const user = userEvent.setup();
+    synthesisJobResult = {
+      data: {
+        job: { jobId: 'job-1', status: 'succeeded', updatedAt: 1, resultRef: 'plan-1' },
+      },
+    };
+    practicePlanResult = {
+      data: {
+        plan: makePlan({
+          focusAreas: [
+            {
+              title: 'Punish game',
+              evidence: 'Watch this {{cite:matchId=a&b=c;seconds=5;label=Odd id}}.',
+              drills: [],
+            },
+          ],
+        }),
+      },
+    };
+    renderCard({ annotatedEvidenceCount: 3 });
+
+    await user.click(screen.getByRole('button', { name: 'View plan' }));
+    await user.click(screen.getByRole('button', { name: /Odd id/ }));
+
+    // Unencoded, `&b=c` would split into a second query parameter.
+    expect(navigate).toHaveBeenCalledWith('/vod?match=a%26b%3Dc');
+  });
+
   it('renders the submit-failed message inline for a non-payment purchase failure', async () => {
     const user = userEvent.setup();
     renderCard({ annotatedEvidenceCount: 3 });
