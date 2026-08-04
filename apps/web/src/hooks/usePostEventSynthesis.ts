@@ -82,9 +82,12 @@ const SYNTHESIS_JOB_STALE_TIME_MS = 2_000;
 
 /**
  * A job keeps `useSynthesisJob` polling while its status is one of these
- * three — `failed` is NOT a stop-polling state (the async refund commits
- * after the failure write), only `succeeded`/`refunded` are terminal.
- * Mirrors `usePrepReportJobs.ts`'s `POLLING_JOB_STATUSES` exactly.
+ * three — `failed` is NOT a stop-polling state (for a billable job the
+ * async refund commits after the failure write; for a zero-spend
+ * free-access job the server writes the `refunded` terminal directly, so
+ * `failed` is transient either way — review CR-02), only
+ * `succeeded`/`refunded` are terminal. Mirrors `usePrepReportJobs.ts`'s
+ * `POLLING_JOB_STATUSES` exactly.
  */
 const POLLING_JOB_STATUSES: ReadonlySet<ReportJobStatus> = new Set(['queued', 'running', 'failed']);
 

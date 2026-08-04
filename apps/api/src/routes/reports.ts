@@ -309,18 +309,34 @@ const reportsRoutes: FastifyPluginAsyncZod<ReportsRoutesOptions> = async (app, o
     });
     if (spent) {
       await refundCredit(app.firebase.database, uid, creditRef);
-      if (reason) {
-        await jobRef.set(
-          reportJobSchema.parse({
-            status: 'refunded',
-            createdAt,
-            updatedAt: Date.now(),
-            attempt,
-            creditRef,
-            reason,
-          }),
-        );
-      }
+    }
+    // Phase 27 (RPT-03): the `refunded` terminal is written strictly AFTER
+    // `refundCredit` commits when a credit was actually spent, so a player
+    // never observes "refunded" while their balance is still short.
+    //
+    // Phase 28 (review CR-02): a ZERO-SPEND post_event_synthesis failure
+    // (free-access/allowlisted uid — there is no credit to refund) ALSO
+    // terminates at `refunded`: the synthesis arm's one-job-per-entryKey
+    // rule permits resubmission only from a `refunded` pointer, so resting
+    // at `failed` permanently bricked the entry after one flaky model call
+    // (and kept the web client polling the 4s "pending refund" state
+    // forever). No `refundCredit` call happens on this branch — `failJob`
+    // stays the sole refund path and a refund still fires exactly once,
+    // only when `spent` is true. `prep_report`/`prep_bundle`/legacy
+    // zero-spend failures keep their Phase 27 `failed` terminal
+    // byte-identically (their retry contracts mint fresh jobIds and never
+    // gate on `refunded`).
+    if (reason && (spent || reason === 'post_event_synthesis')) {
+      await jobRef.set(
+        reportJobSchema.parse({
+          status: 'refunded',
+          createdAt,
+          updatedAt: Date.now(),
+          attempt,
+          creditRef,
+          reason,
+        }),
+      );
     }
     void createEvent(
       app.firebase.database,
@@ -1274,8 +1290,9 @@ const reportsRoutes: FastifyPluginAsyncZod<ReportsRoutesOptions> = async (app, o
 
         // One job per entryKey (reports-route-owns-the-index precedent):
         // `prepSynthesisJobIndex/{uid}/{entryKey}` always names the LATEST
-        // job. An outstanding job (queued/running/failed) or a succeeded
-        // job 409s a new submission — only a REFUNDED terminal permits
+        // job. An outstanding job (queued/running/fresh-failed) or a
+        // succeeded job 409s a new submission — a REFUNDED terminal (or a
+        // stale crash-window remnant, see `synthRetryable` below) permits
         // retry, which overwrites the pointer with the new jobId (owner
         // "no purchase churn on one entry" rule).
         const indexRef = app.firebase.database.ref(
@@ -1294,7 +1311,26 @@ const reportsRoutes: FastifyPluginAsyncZod<ReportsRoutesOptions> = async (app, o
             ? reportJobSchema.parse(existingJobSnapshot.val())
             : null;
         }
-        if (existingSynthJob && existingSynthJob.status !== 'refunded') {
+        // Review CR-02 (crash-window recovery): besides the ordinary
+        // `refunded` retry terminal, a pointer at a STALE `queued` job (a
+        // crash between the queued write and the running transition — the
+        // stuck-job sweep reads only the `running` index and never recovers
+        // these) or a STALE `failed` job (a refund that crashed mid-`failJob`,
+        // or a sweep-recovered job whose sweep terminal is `failed`) must not
+        // 409 the entry forever. Within the staleness window both states
+        // still 409 — a genuinely in-flight request, or a refund that is
+        // still committing, is protected. A stranded spend behind a stale
+        // job is a bounded crash-window casualty (the same class the
+        // review's spend-first ordering accepts); retrying never
+        // double-refunds because `failJob` remains the sole refund path.
+        const synthJobIsStale =
+          existingSynthJob != null && Date.now() - existingSynthJob.updatedAt > REPORT_JOB_STALE_MS;
+        const synthRetryable =
+          existingSynthJob == null ||
+          existingSynthJob.status === 'refunded' ||
+          ((existingSynthJob.status === 'queued' || existingSynthJob.status === 'failed') &&
+            synthJobIsStale);
+        if (!synthRetryable) {
           return reply.code(409).send({
             error: 'Conflict',
             message: 'A synthesis for this event is already outstanding or complete',

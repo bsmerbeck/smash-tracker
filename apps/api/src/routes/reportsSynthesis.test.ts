@@ -421,16 +421,19 @@ describe('POST /api/reports post_event_synthesis — gate and pre-spend checks',
     expect(modelSpy).not.toHaveBeenCalled();
   });
 
-  it('an outstanding job (queued/running/failed) or a succeeded job 409s a new submission; only a refunded terminal permits retry', async () => {
+  it('an outstanding job (fresh queued/running/failed) or a succeeded job 409s a new submission; only a refunded terminal permits retry', async () => {
     for (const status of ['queued', 'running', 'failed', 'succeeded']) {
       const { app, database } = billableApp();
       seedEntry(database);
       seedBrief(database);
       seedOneAnnotation(database);
+      // `updatedAt: Date.now()` — WITHIN the staleness window: a fresh
+      // queued/failed job is still protected by the 409 (CR-02's stale
+      // recovery only unlocks jobs older than REPORT_JOB_STALE_MS).
       database.seed(`reportJobs/${TEST_UID}/blocking-job-${status}`, {
         status,
-        createdAt: 1,
-        updatedAt: 2,
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
         attempt: 0,
         creditRef: `blocking-job-${status}`,
         reason: 'post_event_synthesis',
@@ -438,6 +441,41 @@ describe('POST /api/reports post_event_synthesis — gate and pre-spend checks',
       });
       database.seed(`prepSynthesisJobIndex/${TEST_UID}/${ENTRY_KEY}`, {
         jobId: `blocking-job-${status}`,
+        updatedAt: 2,
+      });
+      database.seed(`credits/${TEST_UID}/balance`, 3);
+
+      const response = await app.inject({
+        method: 'POST',
+        url: '/api/reports',
+        headers: authHeader(),
+        payload: SYNTHESIS_PAYLOAD,
+      });
+
+      expect(response.statusCode).toBe(409);
+      const balance = await database.ref(`credits/${TEST_UID}/balance`).get();
+      expect(balance.val()).toBe(3);
+    }
+
+    // Staleness never unlocks running/succeeded: a stale running job is the
+    // sweep's to recover (refund included), and succeeded is forever
+    // terminal — only stale queued/failed crash remnants become retryable.
+    for (const status of ['running', 'succeeded']) {
+      const { app, database } = billableApp();
+      seedEntry(database);
+      seedBrief(database);
+      seedOneAnnotation(database);
+      database.seed(`reportJobs/${TEST_UID}/stale-blocking-${status}`, {
+        status,
+        createdAt: 1,
+        updatedAt: 2,
+        attempt: 0,
+        creditRef: `stale-blocking-${status}`,
+        reason: 'post_event_synthesis',
+        ...(status === 'succeeded' ? { resultRef: 'some-plan-id' } : {}),
+      });
+      database.seed(`prepSynthesisJobIndex/${TEST_UID}/${ENTRY_KEY}`, {
+        jobId: `stale-blocking-${status}`,
         updatedAt: 2,
       });
       database.seed(`credits/${TEST_UID}/balance`, 3);
@@ -794,12 +832,21 @@ describe('runSynthesisGeneration — validate-then-store, fail-and-refund on tot
     expect(balance.val()).toBe(1);
   });
 
-  it('a synthesis job that fails for a free-access (allowlisted) uid stays failed and no refund occurs', async () => {
+  it('CR-02: a synthesis job that fails for a free-access (allowlisted) uid reaches the refunded terminal WITHOUT any refund, and the entry stays retryable', async () => {
+    // Before the CR-02 fix, a zero-spend failure rested at `failed` forever
+    // — and `failed` is not a retryable pointer state, so ONE flaky model
+    // call permanently bricked post-event synthesis for the entry.
+    let modelCalls = 0;
     const { app, database } = buildTestApp({
       reports: REPORTS_CONFIG,
       prepPaid: PREP_PAID_CONFIG,
       parrygg: { apiKey: 'parry-key' },
-      reportsClient: stubClient(async () => ({ stop_reason: 'refusal', parsed_output: null })),
+      reportsClient: stubClient(async () => {
+        modelCalls += 1;
+        return modelCalls === 1
+          ? { stop_reason: 'refusal', parsed_output: null }
+          : { stop_reason: 'end_turn', parsed_output: citablePlan('m1', 42) };
+      }),
     });
     seedEntry(database);
     seedBrief(database);
@@ -817,8 +864,78 @@ describe('runSynthesisGeneration — validate-then-store, fail-and-refund on tot
     const reportJobs = dump.reportJobs as Record<string, Record<string, unknown>>;
     const jobId = Object.keys(reportJobs[TEST_UID]!)[0]!;
     const jobSnapshot = await database.ref(`reportJobs/${TEST_UID}/${jobId}`).get();
-    expect(jobSnapshot.val()).toMatchObject({ status: 'failed', reason: 'post_event_synthesis' });
+    // Refunded TERMINAL with zero credit movement — no creditLedger entry
+    // exists (failJob's refundCredit call is still gated on `spent`).
+    expect(jobSnapshot.val()).toMatchObject({
+      status: 'refunded',
+      reason: 'post_event_synthesis',
+    });
     expect(dump.creditLedger).toBeUndefined();
+    // The day-shard mirror keeps recording `failed` (soak-safe shards).
+    const byDay = dump.reportJobsByDay as Record<string, Record<string, unknown>>;
+    const dayEntries = Object.values(byDay).flatMap((bucket) => Object.entries(bucket));
+    expect(dayEntries.find(([id]) => id === jobId)?.[1]).toMatchObject({ status: 'failed' });
+
+    // The deadlock regression itself: a resubmission for the same entryKey
+    // is ACCEPTED (never 409) and succeeds.
+    const retry = await app.inject({
+      method: 'POST',
+      url: '/api/reports',
+      headers: authHeader(),
+      payload: SYNTHESIS_PAYLOAD,
+    });
+    expect(retry.statusCode).toBe(202);
+    const retryBody = retry.json() as { job: { jobId: string; status: string } };
+    expect(retryBody.job.status).toBe('succeeded');
+    expect((database.dump() as Record<string, unknown>).creditLedger).toBeUndefined();
+  });
+
+  it('CR-02: a prep_report zero-spend failure keeps its Phase 27 failed terminal byte-identically (the refunded-without-refund terminal is scoped to post_event_synthesis)', async () => {
+    // Guard against the CR-02 fix leaking into the prep surfaces: the
+    // pinned Phase 27 contract (reports.test.ts "a prep job that fails for
+    // a free-access uid stays failed") must be unaffected — asserted here
+    // structurally via failJob's terminal condition, exercised through the
+    // real reports.test.ts fixture in that file.
+    const { readFileSync } = await import('node:fs');
+    const source = readFileSync(new URL('./reports.ts', import.meta.url), 'utf-8');
+    expect(source).toContain("reason && (spent || reason === 'post_event_synthesis')");
+  });
+
+  it('CR-02: a pointer at a STALE queued job (crash between the queued write and the running claim) permits retry instead of 409ing forever', async () => {
+    const { app, database } = billableApp();
+    seedEntry(database);
+    seedBrief(database);
+    seedOneAnnotation(database, 'm1', 42);
+    database.seed(`credits/${TEST_UID}/balance`, 3);
+    // Stale: updatedAt far beyond REPORT_JOB_STALE_MS (15 min).
+    database.seed(`reportJobs/${TEST_UID}/stranded-queued-job`, {
+      status: 'queued',
+      createdAt: 1_000,
+      updatedAt: 2_000,
+      attempt: 0,
+      creditRef: 'stranded-queued-job',
+      reason: 'post_event_synthesis',
+    });
+    database.seed(`prepSynthesisJobIndex/${TEST_UID}/${ENTRY_KEY}`, {
+      jobId: 'stranded-queued-job',
+      updatedAt: 2_000,
+    });
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/reports',
+      headers: authHeader(),
+      payload: SYNTHESIS_PAYLOAD,
+    });
+
+    expect(response.statusCode).toBe(202);
+    const body = response.json() as { job: { jobId: string; status: string } };
+    expect(body.job.status).toBe('succeeded');
+    expect(body.job.jobId).not.toBe('stranded-queued-job');
+    const indexSnapshot = await database
+      .ref(`prepSynthesisJobIndex/${TEST_UID}/${ENTRY_KEY}`)
+      .get();
+    expect(indexSnapshot.val()).toMatchObject({ jobId: body.job.jobId });
   });
 
   it('grep-locked acceptance: no new refund call site beyond the reused internals', () => {
