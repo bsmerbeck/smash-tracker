@@ -709,6 +709,45 @@ describe('review mode composition (28-10)', () => {
     expect(activateMutateSpy).not.toHaveBeenCalled();
   });
 
+  it('WR-02: annotatedEvidenceCount mirrors the server rule — VOD timestamps only, over the synced+manual union', async () => {
+    listTournaments.mockResolvedValue([makeEntry({ eventName: 'Ultimate Singles' })]);
+    listMatches.mockResolvedValue([
+      // Direction (a): an event match with ONLY match-level tags — the old
+      // predicate counted it, the server's 409 rule does not.
+      makeMatch({
+        id: 'tags-only',
+        time: Date.UTC(2021, 0, 1, 2),
+        win: true,
+        eventName: 'Ultimate Singles',
+        tags: ['punish'],
+      }),
+      // Direction (b): a source-less curated-opponent row with NO eventName
+      // (inferred-manual, inside the padded window) carrying a real VOD
+      // timestamp — outside matchesForEntry, but inside the server's
+      // selectReviewResultsContext union, so it DOES count.
+      makeMatch({
+        id: 'inferred-manual',
+        time: Date.UTC(2021, 0, 1, 3),
+        win: false,
+        opponent: 'CuratedRival',
+        vodTimestamps: [{ id: 0, seconds: 42, note: 'clean punish', tags: [] }],
+      }),
+    ]);
+    mockBriefStatus({
+      activated: true,
+      reviewAt: Date.now() - 60_000,
+      paidReportsAvailable: true,
+      likelyOpponents: { CuratedRival: true },
+    });
+
+    renderPage();
+
+    await screen.findByTestId('postevent-synthesis-card');
+    expect(synthesisCardRenderSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ annotatedEvidenceCount: 1 }),
+    );
+  });
+
   it('results context feeds alias-resolved matches through selectReviewResultsContext', async () => {
     listTournaments.mockResolvedValue([makeEntry({ eventName: 'Ultimate Singles' })]);
     listAliases.mockResolvedValue({ armada_raw: 'ArmadaAlias' });

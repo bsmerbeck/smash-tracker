@@ -187,14 +187,20 @@ export function PrepBriefPage() {
       ? selectReviewResultsContext(matches, entry, likelyOpponents)
       : { synced: [], manual: [] };
   const eventMatches = mode === 'review' ? matchesForEntry(matches, entry) : [];
-  // The client mirror of the server's 409 no-evidence precondition — the
-  // SAME "has any VOD timestamp or tag" rule `ReviewGroundingCard` uses to
-  // decide which matches count as grounded, computed once here so the page
-  // stays the single source `PostEventSynthesisCard` (28-09) reads from
-  // (that card never re-derives this count itself).
-  const annotatedEvidenceCount = eventMatches.filter(
-    (match) => (match.vodTimestamps?.length ?? 0) > 0 || (match.tags?.length ?? 0) > 0,
-  ).length;
+  // The client mirror of the server's 409 no-evidence precondition (review
+  // WR-02): computed from the SAME inputs the server's
+  // `assembleSynthesisPayload` uses — VOD timestamps ONLY (match-level tags
+  // are NOT citable evidence and never satisfy the server), summed over the
+  // full `selectReviewResultsContext` union (synced + manual, which
+  // includes curated-opponent inferred-manual rows `matchesForEntry` alone
+  // would miss). Computed once here so the page stays the single source
+  // `PostEventSynthesisCard` (28-09) reads from (that card never re-derives
+  // this count itself). `ReviewGroundingCard`'s broader "timestamp or tag"
+  // display rule is a rendering concern, deliberately NOT this predicate.
+  const annotatedEvidenceCount = [...reviewResults.synced, ...reviewResults.manual].reduce(
+    (count, match) => count + (match.vodTimestamps?.length ?? 0),
+    0,
+  );
 
   // RPT-04: a strict boolean-true comparison, never a truthiness check — an
   // absent/undefined field from an older or gate-off server, or any

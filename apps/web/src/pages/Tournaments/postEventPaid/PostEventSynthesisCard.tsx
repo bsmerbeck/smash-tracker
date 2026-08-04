@@ -33,12 +33,13 @@ export interface PostEventSynthesisCardProps {
   /** The tournament entry this review belongs to — threaded through the submit/poll hooks. */
   entryKey: string;
   /**
-   * The number of the player's OWN stored annotations (VOD timestamps/tags)
-   * for this event — the client mirror of the server's 409 no-evidence
-   * precondition. Zero means the purchase button must not render at all
-   * (never a bare disabled control); the composing page (28-10) is the
-   * single source for this count, resolved from the SAME grounding data
-   * `ReviewGroundingCard` displays.
+   * The number of the player's OWN stored VOD-timestamp annotations for
+   * this event — the client mirror of the server's 409 no-evidence
+   * precondition (review WR-02: VOD timestamps only, over the full
+   * synced+manual review-results union — match-level tags never satisfy
+   * the server and do not count here). Zero means the purchase button must
+   * not render at all (never a bare disabled control); the composing page
+   * (28-10) is the single source for this count.
    */
   annotatedEvidenceCount: number;
 }
