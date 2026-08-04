@@ -44,6 +44,20 @@ export function usePostEventCheckoutReturn(): void {
   const credits = useCredits();
   const [searchParams, setSearchParams] = useSearchParams();
   const announcedRef = useRef(false);
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // IN-02 (Phase 28 review): unmount-only cleanup for the credits re-poll.
+  // Deliberately a SEPARATE empty-deps effect — the announce effect below
+  // re-runs when the params change (its own strip triggers exactly that),
+  // so a cleanup returned from it would kill the poll after zero ticks.
+  useEffect(() => {
+    return () => {
+      if (pollRef.current !== null) {
+        clearInterval(pollRef.current);
+        pollRef.current = null;
+      }
+    };
+  }, []);
 
   useEffect(() => {
     const outcome = searchParams.get('billing');
@@ -54,17 +68,22 @@ export function usePostEventCheckoutReturn(): void {
     if (outcome === 'success') {
       toast.success(t('postEventPaid.billing.paymentReceived'));
       let attempts = 0;
-      const poll = setInterval(() => {
+      pollRef.current = setInterval(() => {
         attempts += 1;
         void credits.refetch();
-        if (attempts >= POST_EVENT_PAID_CREDITS_POLL_ATTEMPTS) {
-          clearInterval(poll);
+        if (attempts >= POST_EVENT_PAID_CREDITS_POLL_ATTEMPTS && pollRef.current !== null) {
+          clearInterval(pollRef.current);
+          pollRef.current = null;
         }
       }, POST_EVENT_PAID_CREDITS_POLL_INTERVAL_MS);
     } else if (outcome === 'cancelled') {
       toast(t('postEventPaid.billing.checkoutCancelled'));
     }
-    setSearchParams({}, { replace: true });
+    // IN-02: delete ONLY the `billing` key — `setSearchParams({})` wiped
+    // every other query parameter on the URL.
+    const nextParams = new URLSearchParams(searchParams);
+    nextParams.delete('billing');
+    setSearchParams(nextParams, { replace: true });
     // eslint-disable-next-line react-hooks/exhaustive-deps -- credits.refetch is stable per render but not a dep we want to re-trigger this effect on
   }, [searchParams, setSearchParams]);
 }

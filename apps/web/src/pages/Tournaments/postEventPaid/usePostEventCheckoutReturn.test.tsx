@@ -78,4 +78,31 @@ describe('usePostEventCheckoutReturn', () => {
     expect(toastPlain).not.toHaveBeenCalled();
     expect(creditsResult.refetch).not.toHaveBeenCalled();
   });
+
+  it('IN-02: an unmount inside the 10s window stops the credits re-poll', () => {
+    vi.useFakeTimers();
+    const { unmount } = renderProbe(['/tournaments/entry-1/prep?billing=success']);
+
+    act(() => {
+      vi.advanceTimersByTime(2000 * 2);
+    });
+    expect(creditsResult.refetch).toHaveBeenCalledTimes(2);
+
+    unmount();
+    act(() => {
+      vi.advanceTimersByTime(2000 * 10);
+    });
+    // No further refetches fire after unmount — the interval is cleaned up.
+    expect(creditsResult.refetch).toHaveBeenCalledTimes(2);
+  });
+
+  it('IN-02: stripping the billing outcome preserves every OTHER query parameter', () => {
+    renderProbe(['/tournaments/entry-1/prep?tab=review&billing=cancelled&foo=bar']);
+
+    expect(toastPlain).toHaveBeenCalledWith('Checkout cancelled.');
+    const params = screen.getByTestId('search-params').textContent ?? '';
+    expect(params).not.toContain('billing');
+    expect(params).toContain('tab=review');
+    expect(params).toContain('foo=bar');
+  });
 });
