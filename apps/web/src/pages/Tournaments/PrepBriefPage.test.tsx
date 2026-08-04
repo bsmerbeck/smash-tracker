@@ -3,8 +3,9 @@ import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes, useNavigate } from 'react-router';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import type { TournamentEntry } from '@smash-tracker/shared';
+import type { Match, TournamentEntry } from '@smash-tracker/shared';
 import { AuthProvider } from '@/context/AuthContext';
+import { TooltipProvider } from '@/components/ui/tooltip';
 import { resetAuthMock, setMockUser, makeMockUser } from '@/test/mockAuth';
 import { usePrepBrief, useActivatePrepBrief, useReopenPrepBrief } from '@/hooks/usePrepBrief';
 import { PrepBriefPage } from './PrepBriefPage';
@@ -12,6 +13,8 @@ import { PrepBriefPage } from './PrepBriefPage';
 const activateMutateSpy = vi.fn();
 const reopenMutateSpy = vi.fn();
 const postCanonicalEventSpy = vi.fn();
+const reviewToggleMutateSpy = vi.fn();
+const synthesisCardRenderSpy = vi.fn();
 
 // A stand-in for the real `PrepPaidReportsCard` (27-10, tested exhaustively
 // in its own colocated test file). It fires the SAME canonical-event poster
@@ -26,6 +29,19 @@ vi.mock('@/pages/Tournaments/prepPaid/PrepPaidReportsCard', () => ({
   },
 }));
 
+// A stand-in for the real `PostEventSynthesisCard` (28-09, tested
+// exhaustively in its own colocated test file, which itself pulls in
+// `useCredits`/`useSynthesisJob`/`usePracticePlan`/`useSubmitSynthesis`/
+// `usePostEventCheckoutReturn`). This suite only needs to prove WHERE and
+// WHEN `PrepBriefPage` mounts it — the strict-true gate and the section
+// order — never its own internal states.
+vi.mock('@/pages/Tournaments/postEventPaid/PostEventSynthesisCard', () => ({
+  PostEventSynthesisCard: (props: { entryKey: string; annotatedEvidenceCount: number }) => {
+    synthesisCardRenderSpy(props);
+    return <div data-testid="postevent-synthesis-card">AI practice plan</div>;
+  },
+}));
+
 vi.mock('@/hooks/usePrepBrief', () => ({
   usePrepBrief: vi.fn(),
   useActivatePrepBrief: vi.fn(),
@@ -35,6 +51,11 @@ vi.mock('@/hooks/usePrepBrief', () => ({
   useAddLikelyOpponent: () => ({ mutate: vi.fn(), isPending: false }),
   useRemoveLikelyOpponent: () => ({ mutate: vi.fn(), isPending: false }),
   useTogglePrepChecklistItem: () => ({ mutate: vi.fn(), isPending: false, variables: undefined }),
+  useToggleReviewChecklistItem: () => ({
+    mutate: reviewToggleMutateSpy,
+    isPending: false,
+    variables: undefined,
+  }),
 }));
 
 vi.mock('firebase/auth', async () => {
@@ -111,6 +132,16 @@ function mockBriefStatus(state: {
   activated?: boolean;
   eventDate?: number;
   /**
+   * The top-level, EFFECTIVE `PrepBriefStatus.reviewAt` field (28-04/28-10)
+   * — the ONLY input `derivePrepSurfaceMode` reads. Deliberately a sibling
+   * of `eventDate` (not derived from it): INV-5 requires a fixture where
+   * `eventDate` is wildly in the past but `reviewAt` is absent to still
+   * render prep, proving the page never re-derives mode from entry dates.
+   */
+  reviewAt?: number;
+  reviewChecklist?: Record<string, true>;
+  likelyOpponents?: Record<string, true>;
+  /**
    * Left `unknown`, not `boolean`, on purpose: RPT-04's strict-check case
    * needs to pass a non-boolean truthy value through to the real page.
    */
@@ -127,14 +158,16 @@ function mockBriefStatus(state: {
         : {
             activated: Boolean(state.activated),
             paidReportsAvailable: state.paidReportsAvailable,
+            reviewAt: state.reviewAt,
             brief: state.activated
               ? {
                   eventDate: state.eventDate ?? Date.now() + 86_400_000,
                   activatedAt: Date.now(),
                   lastOpenedAt: Date.now(),
                   checklist: {},
-                  likelyOpponents: {},
+                  likelyOpponents: state.likelyOpponents ?? {},
                   scoutBindings: {},
+                  reviewChecklist: state.reviewChecklist ?? {},
                 }
               : undefined,
           },
@@ -166,13 +199,32 @@ function renderPage(entryKey = ENTRY_KEY) {
     <QueryClientProvider client={queryClient}>
       <MemoryRouter initialEntries={[`/tournaments/${entryKey}/prep`]}>
         <AuthProvider>
-          <Routes>
-            <Route path="/tournaments/:entryKey/prep" element={<PrepBriefPage />} />
-          </Routes>
+          {/* review mode's ResultsContextCard renders a Tooltip on every
+              alias-inferred manual row (INV-8) — a real `TooltipProvider`
+              ancestor is required, matching the page's real render tree
+              (`MainLayout.tsx` provides one in production). */}
+          <TooltipProvider>
+            <Routes>
+              <Route path="/tournaments/:entryKey/prep" element={<PrepBriefPage />} />
+            </Routes>
+          </TooltipProvider>
         </AuthProvider>
       </MemoryRouter>
     </QueryClientProvider>,
   );
+}
+
+/** Builds a minimal valid `Match` fixture, mirroring `ResultsContextCard.test.tsx`'s helper. */
+function makeMatch(overrides: Partial<Match> & Pick<Match, 'id' | 'time' | 'win'>): Match {
+  return {
+    fighter_id: 1,
+    opponent_id: 2,
+    map: { id: 1, name: 'Battlefield' },
+    opponent: 'Rival',
+    notes: '',
+    matchType: 'offline-tourney',
+    ...overrides,
+  };
 }
 
 describe('PrepBriefPage', () => {
@@ -227,6 +279,10 @@ describe('PrepBriefPage', () => {
     expect(activateMutateSpy).toHaveBeenCalledTimes(1);
 
     // Simulate the query object identity changing on a refetch resolution.
+    // Keeps the exact same tree SHAPE `renderPage()` produces (including the
+    // `TooltipProvider` wrapper) — a mismatched shape here would make React
+    // unmount/remount `PrepBriefPage` at the root instead of reconciling it,
+    // which would spuriously reset the single-fire guard this test proves.
     mockBriefStatus({ activated: false });
     rerender(
       <QueryClientProvider
@@ -234,9 +290,11 @@ describe('PrepBriefPage', () => {
       >
         <MemoryRouter initialEntries={[`/tournaments/${ENTRY_KEY}/prep`]}>
           <AuthProvider>
-            <Routes>
-              <Route path="/tournaments/:entryKey/prep" element={<PrepBriefPage />} />
-            </Routes>
+            <TooltipProvider>
+              <Routes>
+                <Route path="/tournaments/:entryKey/prep" element={<PrepBriefPage />} />
+              </Routes>
+            </TooltipProvider>
           </AuthProvider>
         </MemoryRouter>
       </QueryClientProvider>,
@@ -434,5 +492,245 @@ describe('paid placement structural absence (RPT-04)', () => {
 
     await screen.findByText('Tournament not found');
     expectNoPaidPlacement(container);
+  });
+});
+
+describe('review mode composition (28-10)', () => {
+  const RESERVED_PLACEMENT_OR_HIDDEN_STYLE =
+    /data-[a-z-]*(placement|offer|promo|upsell)|display:\s*none/i;
+
+  beforeEach(() => {
+    resetAuthMock();
+    vi.clearAllMocks();
+    setMockUser(makeMockUser());
+    listTournaments.mockResolvedValue([makeEntry()]);
+    listMatches.mockResolvedValue([]);
+    listAliases.mockResolvedValue({});
+    listOpponents.mockResolvedValue([]);
+    listOpponentNotes.mockResolvedValue({});
+    mockUseActivatePrepBrief.mockReturnValue({
+      mutate: activateMutateSpy,
+      isPending: false,
+    } as unknown as ReturnType<typeof useActivatePrepBrief>);
+    mockUseReopenPrepBrief.mockReturnValue({
+      mutate: reopenMutateSpy,
+      isPending: false,
+    } as unknown as ReturnType<typeof useReopenPrepBrief>);
+  });
+
+  it('INV-5: mode derives from the server reviewAt answer only', async () => {
+    // A fixture with WILDLY past entry dates but NO reviewAt still renders
+    // prep — the client must never re-derive mode from
+    // entry.firstSetAt/lastSetAt/eventDate (owner invariant 5, client half).
+    listTournaments.mockResolvedValue([
+      makeEntry({ firstSetAt: Date.UTC(2000, 0, 1), lastSetAt: Date.UTC(2000, 0, 1, 6) }),
+    ]);
+    mockBriefStatus({ activated: true, reviewAt: undefined, eventDate: Date.UTC(2000, 0, 1) });
+    const { unmount: unmountNoReviewAt } = renderPage();
+    await screen.findByText('Prep checklist');
+    expect(screen.queryByText('Post-event review')).not.toBeInTheDocument();
+    unmountNoReviewAt();
+    activateMutateSpy.mockClear();
+    reopenMutateSpy.mockClear();
+
+    // The frozen reviewAt is in the past -> review.
+    mockBriefStatus({ activated: true, reviewAt: Date.now() - 60_000 });
+    const { unmount: unmountPastReviewAt } = renderPage();
+    await screen.findByText('Post-event review');
+    expect(screen.queryByText('Prep checklist')).not.toBeInTheDocument();
+    unmountPastReviewAt();
+    activateMutateSpy.mockClear();
+    reopenMutateSpy.mockClear();
+
+    // The candidate reviewAt is still in the future -> not converted yet, prep.
+    mockBriefStatus({ activated: true, reviewAt: Date.now() + 60_000 });
+    renderPage();
+    await screen.findByText('Prep checklist');
+    expect(screen.queryByText('Post-event review')).not.toBeInTheDocument();
+  });
+
+  it('review-mode section order matches the UI-SPEC: header, mode strip, results, checklist, grounding, [gated card], collapsed prep', async () => {
+    listTournaments.mockResolvedValue([makeEntry({ eventName: 'Genesis 10' })]);
+    mockBriefStatus({
+      activated: true,
+      reviewAt: Date.now() - 60_000,
+      paidReportsAvailable: true,
+    });
+
+    renderPage();
+
+    const header = await screen.findByText('Genesis 10');
+    const modeStrip = screen.getByText('Post-event review');
+    const results = screen.getByText('Your results');
+    const checklist = screen.getByText('Review checklist');
+    const grounding = screen.getByText('Your annotations');
+    const synthesis = screen.getByTestId('postevent-synthesis-card');
+    const collapsedTrigger = screen.getByText('Your original prep brief');
+
+    const nodesInOrder = [
+      header,
+      modeStrip,
+      results,
+      checklist,
+      grounding,
+      synthesis,
+      collapsedTrigger,
+    ];
+    for (let i = 0; i < nodesInOrder.length - 1; i += 1) {
+      expect(
+        nodesInOrder[i]!.compareDocumentPosition(nodesInOrder[i + 1]!) &
+          Node.DOCUMENT_POSITION_FOLLOWING,
+      ).toBeTruthy();
+    }
+  });
+
+  it('the collapsed prep section renders LikelyOpponentsCard + PrepChecklistCard functional and collapsed by default; PrepPaidReportsCard is NOT inside it — in review mode with the gate on, the synthesis card is the SOLE monetized element', async () => {
+    mockBriefStatus({
+      activated: true,
+      reviewAt: Date.now() - 60_000,
+      paidReportsAvailable: true,
+    });
+    const user = userEvent.setup();
+
+    renderPage();
+
+    await screen.findByText('Post-event review');
+
+    const trigger = screen.getByRole('button', { name: /Your original prep brief/ });
+    expect(trigger).toHaveAttribute('aria-expanded', 'false');
+
+    await user.click(trigger);
+
+    expect(trigger).toHaveAttribute('aria-expanded', 'true');
+    expect(screen.getByText('Likely opponents')).toBeInTheDocument();
+    expect(screen.getByText('Prep checklist')).toBeInTheDocument();
+
+    // PrepPaidReportsCard never mounts inside (or anywhere in) review mode —
+    // the synthesis card is the sole monetized element.
+    expect(screen.queryByTestId('prep-paid-reports-card')).not.toBeInTheDocument();
+    expect(postCanonicalEventSpy).not.toHaveBeenCalled();
+    expect(screen.getByTestId('postevent-synthesis-card')).toBeInTheDocument();
+  });
+
+  it('INV-6: gate-off structural absence in review mode', async () => {
+    const gateOffValues: unknown[] = [undefined, false, 'true'];
+
+    for (const paidReportsAvailable of gateOffValues) {
+      mockBriefStatus({
+        activated: true,
+        reviewAt: Date.now() - 60_000,
+        paidReportsAvailable,
+      });
+      const user = userEvent.setup();
+      const { container, unmount } = renderPage();
+
+      await screen.findByText('Post-event review');
+
+      // Structurally absent, three ways: accessible name/testid absent, no
+      // postEventPaid copy anywhere, no reserved-placement/hidden-style marker.
+      expect(screen.queryByTestId('postevent-synthesis-card')).not.toBeInTheDocument();
+      expect(screen.queryByText('AI practice plan')).not.toBeInTheDocument();
+      expect(synthesisCardRenderSpy).not.toHaveBeenCalled();
+      expect(container.innerHTML).not.toMatch(RESERVED_PLACEMENT_OR_HIDDEN_STYLE);
+
+      // The free review stays fully functional in the SAME render: results,
+      // checklist toggling, and grounding are all present and interactive.
+      expect(screen.getByText('Your results')).toBeInTheDocument();
+      expect(screen.getByText('Review checklist')).toBeInTheDocument();
+      expect(screen.getByText('Your annotations')).toBeInTheDocument();
+
+      const checklistItem = screen.getByRole('checkbox', {
+        name: 'Attach VODs to your matches from this event',
+      });
+      await user.click(checklistItem);
+      expect(reviewToggleMutateSpy).toHaveBeenCalledWith({ itemId: 'attachVods', checked: true });
+
+      unmount();
+      reviewToggleMutateSpy.mockClear();
+      synthesisCardRenderSpy.mockClear();
+    }
+  });
+
+  it('strict true renders the synthesis card between grounding and collapsed prep', async () => {
+    mockBriefStatus({
+      activated: true,
+      reviewAt: Date.now() - 60_000,
+      paidReportsAvailable: true,
+    });
+
+    renderPage();
+
+    await screen.findByText('Post-event review');
+    const grounding = screen.getByText('Your annotations');
+    const synthesis = screen.getByTestId('postevent-synthesis-card');
+    const collapsedTrigger = screen.getByText('Your original prep brief');
+
+    expect(
+      grounding.compareDocumentPosition(synthesis) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(
+      synthesis.compareDocumentPosition(collapsedTrigger) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  });
+
+  it('prep mode renders byte-identically to Phase 27', async () => {
+    mockBriefStatus({ activated: true, reviewAt: undefined });
+
+    renderPage();
+
+    await screen.findByText('Prep checklist');
+    expect(screen.getByText('Likely opponents')).toBeInTheDocument();
+
+    // No review-mode surface renders in prep mode.
+    expect(screen.queryByText('Post-event review')).not.toBeInTheDocument();
+    expect(screen.queryByText('Your results')).not.toBeInTheDocument();
+    expect(screen.queryByText('Review checklist')).not.toBeInTheDocument();
+    expect(screen.queryByText('Your annotations')).not.toBeInTheDocument();
+    expect(screen.queryByText('Your original prep brief')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('postevent-synthesis-card')).not.toBeInTheDocument();
+  });
+
+  it('the mount activate-or-open mutation fires exactly once per entryKey in BOTH modes', async () => {
+    // prep mode (unactivated brief -> activate).
+    mockBriefStatus({ activated: false });
+    const { unmount: unmountPrep } = renderPage();
+    await screen.findByText('Prep checklist');
+    expect(activateMutateSpy).toHaveBeenCalledTimes(1);
+    expect(reopenMutateSpy).not.toHaveBeenCalled();
+    unmountPrep();
+    activateMutateSpy.mockClear();
+    reopenMutateSpy.mockClear();
+
+    // review mode (activated brief, reviewAt in the past -> reopen).
+    mockBriefStatus({ activated: true, reviewAt: Date.now() - 60_000 });
+    renderPage();
+    await screen.findByText('Post-event review');
+    expect(reopenMutateSpy).toHaveBeenCalledTimes(1);
+    expect(activateMutateSpy).not.toHaveBeenCalled();
+  });
+
+  it('results context feeds alias-resolved matches through selectReviewResultsContext', async () => {
+    listTournaments.mockResolvedValue([makeEntry({ eventName: 'Ultimate Singles' })]);
+    listAliases.mockResolvedValue({ armada_raw: 'ArmadaAlias' });
+    listMatches.mockResolvedValue([
+      makeMatch({
+        id: 'm1',
+        time: Date.UTC(2021, 0, 1, 3),
+        win: true,
+        opponent: 'armada_raw',
+        eventName: 'Ultimate Singles',
+      }),
+    ]);
+    mockBriefStatus({
+      activated: true,
+      reviewAt: Date.now() - 60_000,
+      likelyOpponents: { ArmadaAlias: true },
+    });
+
+    renderPage();
+
+    await screen.findByText('Post-event review');
+    expect(await screen.findByText('ArmadaAlias')).toBeInTheDocument();
+    expect(screen.getByText('Manual')).toBeInTheDocument();
   });
 });
