@@ -2616,5 +2616,40 @@
     "error": {
       "loadFailed": "Something went wrong loading your review. Please try again."
     }
+  },
+  "postEventPaid": {
+    "title": "AI practice plan",
+    "description": "Turn your annotations into a practice plan for 1 credit. Every recommendation cites your own timestamps, tags, and matches.",
+    "balance": {
+      "credits_one": "{{count}} credit",
+      "credits_other": "{{count}} credits",
+      "freeAccess": "Free access"
+    },
+    "buyCta": "Get practice plan — 1 credit",
+    "needAnnotations": {
+      "title": "Annotate your matches first",
+      "body": "The plan is built only from your own stored evidence — add at least one timestamp or tag in the VOD Manager, then come back."
+    },
+    "jobStatus": {
+      "queued": "Queued",
+      "running": "Generating…",
+      "succeeded": "Ready",
+      "failedPendingRefund": "Failed — refunding your credit…",
+      "refunded": "Failed — your credit was refunded.",
+      "viewPlan": "View plan",
+      "hidePlan": "Hide plan"
+    },
+    "insufficientCredits": {
+      "body": "You're out of credits.",
+      "buyCta": "Buy credits",
+      "toGenerate": "to get your practice plan."
+    },
+    "billing": {
+      "paymentReceived": "Payment received — your plan will start shortly.",
+      "checkoutCancelled": "Checkout cancelled."
+    },
+    "error": {
+      "submitFailed": "Something went wrong starting your plan. Please try again."
+    }
   }
 }

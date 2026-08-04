@@ -2616,5 +2616,40 @@
     "error": {
       "loadFailed": "Une erreur est survenue lors du chargement de votre revue. Veuillez réessayer."
     }
+  },
+  "postEventPaid": {
+    "title": "Plan d'entraînement IA",
+    "description": "Transformez vos annotations en plan d'entraînement pour 1 crédit. Chaque recommandation cite vos propres horodatages, tags et matchs.",
+    "balance": {
+      "credits_one": "{{count}} crédit",
+      "credits_other": "{{count}} crédits",
+      "freeAccess": "Accès gratuit"
+    },
+    "buyCta": "Obtenir le plan d'entraînement — 1 crédit",
+    "needAnnotations": {
+      "title": "Annotez d'abord vos matchs",
+      "body": "Le plan est construit uniquement à partir de vos propres preuves enregistrées — ajoutez au moins un horodatage ou un tag dans le gestionnaire de VOD, puis revenez."
+    },
+    "jobStatus": {
+      "queued": "En attente",
+      "running": "Génération…",
+      "succeeded": "Prêt",
+      "failedPendingRefund": "Échec — remboursement de votre crédit…",
+      "refunded": "Échec — votre crédit a été remboursé.",
+      "viewPlan": "Voir le plan",
+      "hidePlan": "Masquer le plan"
+    },
+    "insufficientCredits": {
+      "body": "Vous n'avez plus de crédits.",
+      "buyCta": "Acheter des crédits",
+      "toGenerate": "pour obtenir votre plan d'entraînement."
+    },
+    "billing": {
+      "paymentReceived": "Paiement reçu — votre plan démarrera sous peu.",
+      "checkoutCancelled": "Paiement annulé."
+    },
+    "error": {
+      "submitFailed": "Une erreur est survenue lors du démarrage de votre plan. Veuillez réessayer."
+    }
   }
 }

@@ -2616,5 +2616,40 @@
     "error": {
       "loadFailed": "Beim Laden deines Reviews ist etwas schiefgelaufen. Bitte erneut versuchen."
     }
+  },
+  "postEventPaid": {
+    "title": "KI-Trainingsplan",
+    "description": "Verwandle deine Anmerkungen für 1 Credit in einen Trainingsplan. Jede Empfehlung zitiert deine eigenen Zeitstempel, Tags und Matches.",
+    "balance": {
+      "credits_one": "{{count}} Credit",
+      "credits_other": "{{count}} Credits",
+      "freeAccess": "Kostenloser Zugang"
+    },
+    "buyCta": "Trainingsplan holen — 1 Credit",
+    "needAnnotations": {
+      "title": "Kommentiere zuerst deine Matches",
+      "body": "Der Plan basiert ausschließlich auf deinen eigenen gespeicherten Belegen — füge im VOD-Manager mindestens einen Zeitstempel oder Tag hinzu und komm dann zurück."
+    },
+    "jobStatus": {
+      "queued": "In Warteschlange",
+      "running": "Wird generiert…",
+      "succeeded": "Fertig",
+      "failedPendingRefund": "Fehlgeschlagen — dein Credit wird erstattet…",
+      "refunded": "Fehlgeschlagen — dein Credit wurde erstattet.",
+      "viewPlan": "Plan ansehen",
+      "hidePlan": "Plan ausblenden"
+    },
+    "insufficientCredits": {
+      "body": "Du hast keine Credits mehr.",
+      "buyCta": "Credits kaufen",
+      "toGenerate": "um deinen Trainingsplan zu erhalten."
+    },
+    "billing": {
+      "paymentReceived": "Zahlung erhalten — dein Plan startet in Kürze.",
+      "checkoutCancelled": "Bezahlvorgang abgebrochen."
+    },
+    "error": {
+      "submitFailed": "Beim Starten deines Plans ist etwas schiefgelaufen. Bitte erneut versuchen."
+    }
   }
 }

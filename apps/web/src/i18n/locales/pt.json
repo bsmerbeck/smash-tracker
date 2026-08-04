@@ -2616,5 +2616,40 @@
     "error": {
       "loadFailed": "Algo deu errado ao carregar sua revisão. Tente novamente."
     }
+  },
+  "postEventPaid": {
+    "title": "Plano de treino com IA",
+    "description": "Transforme suas anotações em um plano de treino por 1 crédito. Cada recomendação cita suas próprias marcações de tempo, tags e partidas.",
+    "balance": {
+      "credits_one": "{{count}} crédito",
+      "credits_other": "{{count}} créditos",
+      "freeAccess": "Acesso gratuito"
+    },
+    "buyCta": "Obter plano de treino — 1 crédito",
+    "needAnnotations": {
+      "title": "Anote suas partidas primeiro",
+      "body": "O plano é construído apenas a partir das suas próprias evidências armazenadas — adicione pelo menos uma marcação de tempo ou tag no Gerenciador de VODs e volte."
+    },
+    "jobStatus": {
+      "queued": "Na fila",
+      "running": "Gerando…",
+      "succeeded": "Pronto",
+      "failedPendingRefund": "Falhou — reembolsando seu crédito…",
+      "refunded": "Falhou — seu crédito foi reembolsado.",
+      "viewPlan": "Ver plano",
+      "hidePlan": "Ocultar plano"
+    },
+    "insufficientCredits": {
+      "body": "Seus créditos acabaram.",
+      "buyCta": "Comprar créditos",
+      "toGenerate": "para obter seu plano de treino."
+    },
+    "billing": {
+      "paymentReceived": "Pagamento recebido — seu plano começará em breve.",
+      "checkoutCancelled": "Pagamento cancelado."
+    },
+    "error": {
+      "submitFailed": "Algo deu errado ao iniciar seu plano. Tente novamente."
+    }
   }
 }

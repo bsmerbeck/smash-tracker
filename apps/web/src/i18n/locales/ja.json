@@ -2616,5 +2616,40 @@
     "error": {
       "loadFailed": "レビューの読み込み中に問題が発生しました。もう一度お試しください。"
     }
+  },
+  "postEventPaid": {
+    "title": "AI練習プラン",
+    "description": "あなたの注釈を1クレジットで練習プランに変換します。すべての推奨事項は、あなた自身のタイムスタンプ、タグ、対戦を引用します。",
+    "balance": {
+      "credits_one": "{{count}}クレジット",
+      "credits_other": "{{count}}クレジット",
+      "freeAccess": "無料アクセス"
+    },
+    "buyCta": "練習プランを入手 — 1クレジット",
+    "needAnnotations": {
+      "title": "まず対戦に注釈を付けてください",
+      "body": "このプランはあなた自身が保存した証拠のみから作成されます — VODマネージャーで少なくとも1つのタイムスタンプまたはタグを追加してから戻ってきてください。"
+    },
+    "jobStatus": {
+      "queued": "順番待ち",
+      "running": "生成中…",
+      "succeeded": "準備完了",
+      "failedPendingRefund": "失敗 — クレジットを返金しています…",
+      "refunded": "失敗 — クレジットは返金されました。",
+      "viewPlan": "プランを見る",
+      "hidePlan": "プランを隠す"
+    },
+    "insufficientCredits": {
+      "body": "クレジットがなくなりました。",
+      "buyCta": "クレジットを購入",
+      "toGenerate": "すると、練習プランを入手できます。"
+    },
+    "billing": {
+      "paymentReceived": "支払いを受け付けました — まもなくプランの生成を開始します。",
+      "checkoutCancelled": "決済をキャンセルしました。"
+    },
+    "error": {
+      "submitFailed": "プランの開始中に問題が発生しました。もう一度お試しください。"
+    }
   }
 }
