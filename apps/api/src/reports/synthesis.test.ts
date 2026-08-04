@@ -5,10 +5,14 @@ import {
   type GeneratedPracticePlan,
 } from '@smash-tracker/shared';
 import { FakeDatabase } from '../test-support/fakeDatabase.js';
+import { ReportGenerationError } from './generate.js';
 import {
   assembleSynthesisPayload,
+  generatePracticePlan,
   SynthesisValidationError,
   validatePracticePlanCitations,
+  type SynthesisAnthropicClient,
+  type SynthesisPayload,
 } from './synthesis.js';
 
 const UID = 'test-uid-123';
@@ -405,5 +409,111 @@ describe('validatePracticePlanCitations', () => {
 
     expect(result.plan.focusAreas).toEqual([first, third]);
     expect(result.droppedClaimCount).toBe(1);
+  });
+});
+
+describe('generatePracticePlan', () => {
+  const PAYLOAD: SynthesisPayload = {
+    entry: {
+      eventName: 'Locals #42',
+      tournamentName: null,
+      dates: {
+        firstSetAt: new Date(FIRST_SET_AT).toISOString(),
+        lastSetAt: new Date(FIRST_SET_AT).toISOString(),
+      },
+    },
+    briefContext: {
+      reviewChecklistProgress: { completed: 2, total: 5 },
+      likelyOpponents: ['opp1'],
+    },
+    results: { wins: 1, losses: 1 },
+    evidence: [
+      {
+        matchId: 'm1',
+        opponent: 'opp1',
+        result: 'win',
+        time: new Date(FIRST_SET_AT).toISOString(),
+        seconds: 30,
+        note: 'clean punish',
+        tags: ['punish'],
+        cite: serializeCitationToken({ sourceVodRef: 'm1', seconds: 30, label: 'clean punish' }),
+      },
+      {
+        matchId: 'm2',
+        opponent: 'opp1',
+        result: 'loss',
+        time: new Date(FIRST_SET_AT).toISOString(),
+        seconds: 90,
+        note: 'missed tech',
+        tags: [],
+        cite: serializeCitationToken({ sourceVodRef: 'm2', seconds: 90, label: 'missed tech' }),
+      },
+    ],
+  };
+
+  const VALID_PLAN: GeneratedPracticePlan = {
+    summary: 'Focus on punish consistency.',
+    focusAreas: [
+      {
+        title: 'Convert your punishes',
+        evidence: `Grounded in ${PAYLOAD.evidence[0]!.cite}`,
+        drills: ['20XX punish training'],
+      },
+    ],
+  };
+
+  it('a fake client returning a valid parsed plan yields the plan', async () => {
+    const client: SynthesisAnthropicClient = {
+      messages: {
+        parse: async () => ({ stop_reason: 'end_turn', parsed_output: VALID_PLAN }),
+      },
+    };
+
+    const result = await generatePracticePlan(client, PAYLOAD);
+    expect(result).toEqual(VALID_PLAN);
+  });
+
+  it('refusal / truncated / unparseable map to the same error class family generate.ts uses', async () => {
+    const refusalClient: SynthesisAnthropicClient = {
+      messages: { parse: async () => ({ stop_reason: 'refusal', parsed_output: null }) },
+    };
+    await expect(generatePracticePlan(refusalClient, PAYLOAD)).rejects.toBeInstanceOf(
+      ReportGenerationError,
+    );
+
+    const truncatedClient: SynthesisAnthropicClient = {
+      messages: { parse: async () => ({ stop_reason: 'max_tokens', parsed_output: null }) },
+    };
+    await expect(generatePracticePlan(truncatedClient, PAYLOAD)).rejects.toMatchObject({
+      reason: 'truncated',
+    });
+
+    const unparseableClient: SynthesisAnthropicClient = {
+      messages: { parse: async () => ({ stop_reason: 'end_turn', parsed_output: null }) },
+    };
+    await expect(generatePracticePlan(unparseableClient, PAYLOAD)).rejects.toMatchObject({
+      reason: 'unparseable',
+    });
+  });
+
+  it("the prompt embeds every evidence item's cite token and the copy-verbatim instruction", async () => {
+    let capturedSystem = '';
+    let capturedContent = '';
+    const client: SynthesisAnthropicClient = {
+      messages: {
+        parse: async (params) => {
+          capturedSystem = params.system;
+          capturedContent = params.messages[0]!.content;
+          return { stop_reason: 'end_turn', parsed_output: VALID_PLAN };
+        },
+      },
+    };
+
+    await generatePracticePlan(client, PAYLOAD);
+
+    for (const item of PAYLOAD.evidence) {
+      expect(capturedContent).toContain(item.cite);
+    }
+    expect(capturedSystem.toUpperCase()).toContain('VERBATIM');
   });
 });

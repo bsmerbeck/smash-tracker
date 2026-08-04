@@ -1,7 +1,9 @@
 import type { Database } from 'firebase-admin/database';
+import { zodOutputFormat } from '@anthropic-ai/sdk/helpers/zod';
 import {
   CITATION_LABEL_MAX_LENGTH,
   extractCitationTokens,
+  generatedPracticePlanSchema,
   matchRecordSchema,
   REVIEW_CHECKLIST_ITEM_IDS,
   selectReviewResultsContext,
@@ -16,6 +18,7 @@ import { normalizeOpponentTag } from '../startgg/sync.js';
 // `routes/reports.ts` precedent). Nothing in `apps/api/src/prep/` imports
 // back from `reports/` — see `prep/importGraph.test.ts`.
 import { readPrepBrief } from '../prep/prep.js';
+import { ReportGenerationError } from './generate.js';
 
 // ---------------------------------------------------------------------------
 // Payload assembly
@@ -282,4 +285,82 @@ export function validatePracticePlanCitations(
     plan: { ...plan, focusAreas: survivors },
     droppedClaimCount,
   };
+}
+
+// ---------------------------------------------------------------------------
+// Claude call
+// ---------------------------------------------------------------------------
+
+/**
+ * Minimal structural interface for the Anthropic client — mirrors
+ * `generate.ts`'s `AnthropicLikeClient` seam exactly, but typed for the
+ * practice-plan output schema (the `output_config.format` type is tied to
+ * the specific schema passed to `zodOutputFormat`, so it can't be reused
+ * verbatim across the two different generation schemas). Lets tests pass a
+ * plain stub instead of constructing a real `Anthropic` instance.
+ */
+export interface SynthesisAnthropicClient {
+  messages: {
+    parse: (params: {
+      model: string;
+      max_tokens: number;
+      thinking: { type: 'adaptive' };
+      system: string;
+      messages: Array<{ role: 'user'; content: string }>;
+      output_config: {
+        format: ReturnType<typeof zodOutputFormat<typeof generatedPracticePlanSchema>>;
+      };
+    }) => Promise<{
+      stop_reason: string | null;
+      parsed_output: GeneratedPracticePlan | null;
+    }>;
+  };
+}
+
+const SYNTHESIS_MODEL = 'claude-opus-4-8';
+const SYNTHESIS_MAX_TOKENS = 16000;
+
+const SYSTEM_PROMPT = `You are a competitive Super Smash Bros. Ultimate coach writing a post-event practice plan for "you" (the user), grounded ONLY in the user's own annotated VOD moments from the event just played.
+
+Hard rules — follow these exactly:
+- Ground every claim in the provided JSON payload ONLY. Never invent matches, opponents, timestamps, or events that are not present in the data.
+- The payload's "evidence" array is the ONLY citable universe. Every item already carries a pre-built "cite" field — a token of the exact form {{cite:matchId=...;seconds=...;label=...}}. When a focusArea makes a claim grounded in one of these moments, you MUST copy that item's "cite" value into the focusArea's "evidence" field VERBATIM — character for character, never edited, never re-typed, never constructed by hand. Copying the wrong item's token, or typing a token yourself, will cause the claim to be silently dropped by server-side validation.
+- Every focusArea MUST include at least one copied cite token in its "evidence" text; a focusArea with no citable grounding will be removed before the plan is shown to the user, so do not write claims you cannot ground in a specific evidence item.
+- Tags on an evidence item (e.g. "punish", "recovery") may be referenced in your prose, but the citation is always the moment's token — never invent a separate citation for a tag.
+- The payload's "results" field is a simple win/loss summary; "briefContext" gives orientation (checklist progress, curated likely opponents) — neither is itself citable evidence.
+- Output must conform to the provided JSON schema exactly.`;
+
+/**
+ * Calls Claude to generate a `GeneratedPracticePlan` from the assembled
+ * synthesis payload. Mirrors `generateScoutReport`'s shape (same model,
+ * same max_tokens, same `client.messages.parse` + `zodOutputFormat` call,
+ * same refusal/truncation/unparseable mapping) but reuses generate.ts's
+ * `ReportGenerationError` directly rather than re-declaring an identical
+ * error class — the route's existing catch handles both call sites
+ * identically.
+ */
+export async function generatePracticePlan(
+  client: SynthesisAnthropicClient,
+  payload: SynthesisPayload,
+): Promise<GeneratedPracticePlan> {
+  const response = await client.messages.parse({
+    model: SYNTHESIS_MODEL,
+    max_tokens: SYNTHESIS_MAX_TOKENS,
+    thinking: { type: 'adaptive' },
+    system: SYSTEM_PROMPT,
+    messages: [{ role: 'user', content: JSON.stringify(payload) }],
+    output_config: { format: zodOutputFormat(generatedPracticePlanSchema) },
+  });
+
+  if (response.stop_reason === 'refusal') {
+    throw new ReportGenerationError('refusal');
+  }
+  if (response.stop_reason === 'max_tokens') {
+    throw new ReportGenerationError('truncated');
+  }
+  if (response.parsed_output == null) {
+    throw new ReportGenerationError('unparseable');
+  }
+
+  return response.parsed_output;
 }
