@@ -235,6 +235,7 @@ describe('empty checklist and opponent selection round-trip cleanly (owner test 
       checklist: {},
       likelyOpponents: {},
       scoutBindings: {},
+      reviewChecklist: {},
     });
   });
 });
