@@ -6,12 +6,15 @@ import {
   errorResponseSchema,
   generateReportRequestSchema,
   isReportReadyBinding,
+  practicePlanResponseSchema,
   PREP_BUNDLE_SIZE,
   prepBundleAcceptedResponseSchema,
   prepReportJobsResponseSchema,
   reportJobSchema,
   reportsConfigSchema,
   scoutReportRecordSchema,
+  storedPracticePlanSchema,
+  synthesisJobStatusResponseSchema,
   type PrepReportJobStatusEntry,
   type PrepReportReason,
   type ReportJob,
@@ -44,6 +47,21 @@ import {
   ReportGenerationError,
   type AnthropicLikeClient,
 } from '../reports/generate.js';
+// Phase 28 (28-07, REV-03): the synthesis engine (28-06) — payload assembly,
+// the Claude call, and post-generation citation validation. `SynthesisAnthropicClient`
+// is a separate structural type from `AnthropicLikeClient` above (the
+// `output_config.format` generic differs per output schema); the plugin's
+// single `client` is cast at the one call site that needs it, mirroring
+// 28-06-SUMMARY.md's documented rationale for keeping the two interfaces
+// distinct rather than unifying them.
+import {
+  assembleSynthesisPayload,
+  generatePracticePlan,
+  SynthesisValidationError,
+  validatePracticePlanCitations,
+  type SynthesisAnthropicClient,
+  type SynthesisPayload,
+} from '../reports/synthesis.js';
 import { bundleSlotRef, refundCredit, spendCredit, spendCredits } from '../billing/credits.js';
 import { createEvent, dayShardKey } from '../events/ledger.js';
 import { buildBillingEnvelope } from '../events/envelope.js';
@@ -95,6 +113,15 @@ const reportJobsQuerySchema = z.object({
   entryKey: entryKeyInputSchema,
 });
 
+/**
+ * Phase 28 (28-07, REV-03): `GET /reports/practice-plans/:planId` params —
+ * uid-scoping (`practicePlans/{uid}/{planId}`) IS the ownership check, so
+ * this schema only bounds shape, never identity.
+ */
+const practicePlanParamsSchema = z.object({
+  planId: z.string().min(1).max(200),
+});
+
 // ---------------------------------------------------------------------------
 // Phase 27 (Task 2): shared types for the reusable generation internal
 // ---------------------------------------------------------------------------
@@ -125,6 +152,16 @@ interface GeneratedReportRecord {
 
 type GenerationOutcome =
   { ok: true; record: GeneratedReportRecord } | { ok: false; failure: ReportFailureReply };
+
+/**
+ * Phase 28 (28-07): `runSynthesisGeneration`'s outcome — deliberately NOT
+ * `GenerationOutcome` above (a practice plan has no scouted `player` and no
+ * `scoutReports` record shape). `jobId`/`resultRef` let the route build the
+ * 202 body without a second RTDB read of the job it just wrote.
+ */
+type SynthesisGenerationOutcome =
+  | { ok: true; jobId: string; status: 'succeeded'; updatedAt: number; resultRef: string }
+  | { ok: false; failure: ReportFailureReply };
 
 /** The minimal request surface `failJob`/`runReportGeneration` need — deliberately narrow so it's obvious neither depends on Fastify's full request type. */
 interface ReportRequestContext {
@@ -572,6 +609,240 @@ const reportsRoutes: FastifyPluginAsyncZod<ReportsRoutesOptions> = async (app, o
   }
 
   /**
+   * Phase 28 (28-07, REV-03): the `post_event_synthesis` sibling of
+   * `runReportGeneration` above — RESEARCH Q4.5's "add a sibling internal,
+   * not a fork of the job machine": the queued->running claim transaction
+   * shape, `failJob` (verbatim), and the terminal-transition +
+   * `report_started`/`report_completed`/`report_failed` event shapes are
+   * ALL reused; only the model call, the post-generation citation-validation
+   * hook (28-06's `validatePracticePlanCitations`, owner invariants 1-2),
+   * and the storage tree (`practicePlans/{uid}` instead of
+   * `scoutReports/{uid}`) are distinct, because a practice plan has no
+   * scouted player and a different output schema.
+   *
+   * `reason` is always `'post_event_synthesis'` here — a synthesis job is
+   * never a legacy job, so (unlike `runReportGeneration`) this function
+   * always takes the transaction-claim branch, never the plain `.set()`.
+   */
+  async function runSynthesisGeneration(params: {
+    request: ReportRequestContext;
+    jobId: string;
+    creditRef: string;
+    spent: boolean;
+    jobCreatedAt: number;
+    jobAttempt: number;
+    entryKey: string;
+    payload: SynthesisPayload;
+    allowedPairs: ReadonlySet<string>;
+  }): Promise<SynthesisGenerationOutcome> {
+    const {
+      request,
+      jobId,
+      creditRef,
+      spent,
+      jobCreatedAt,
+      jobAttempt,
+      entryKey,
+      payload,
+      allowedPairs,
+    } = params;
+    const reason: PrepReportReason = 'post_event_synthesis';
+    const jobRef = app.firebase.database.ref(`reportJobs/${request.uid}/${jobId}`);
+
+    const failCurrentJob = (day: string | null): Promise<void> =>
+      failJob({
+        uid: request.uid,
+        jobId,
+        creditRef,
+        spent,
+        reason,
+        createdAt: jobCreatedAt,
+        attempt: jobAttempt,
+        day,
+      });
+
+    // BILL-06/MEAS-03: transition to `running` immediately before the
+    // Claude call — mirrors `runReportGeneration`'s prep-variant claim
+    // transaction (`reason` is ALWAYS present for a synthesis job, so this
+    // is the only branch that ever applies here, T-27-38 defence in depth).
+    const runningAt = Date.now();
+    const jobDay = dayShardKey(runningAt);
+    const runningRecord = reportJobSchema.parse({
+      status: 'running',
+      createdAt: jobCreatedAt,
+      updatedAt: runningAt,
+      attempt: jobAttempt,
+      creditRef,
+      reason,
+    });
+    const claim = await jobRef.transaction((current) => {
+      const existing = current as { status?: string; updatedAt?: number } | null;
+      if (
+        existing &&
+        existing.status === 'running' &&
+        typeof existing.updatedAt === 'number' &&
+        Date.now() - existing.updatedAt < REPORT_JOB_STALE_MS
+      ) {
+        return undefined;
+      }
+      return runningRecord;
+    });
+    if (!claim.committed) {
+      return {
+        ok: false,
+        failure: {
+          status: 409,
+          error: 'Conflict',
+          message: 'A synthesis generation for this job is already in progress',
+        },
+      };
+    }
+    await app.firebase.database.ref().update({
+      [`reportJobsByStatus/running/${request.uid}/${jobId}`]: true,
+      [`reportJobsByDay/${jobDay}/${jobId}`]: { uid: request.uid, status: 'running' },
+    });
+    void createEvent(
+      app.firebase.database,
+      buildBillingEnvelope({
+        eventName: 'report_started',
+        source: 'job',
+        actorId: request.uid,
+        sessionId: request.uid,
+        causationId: `${jobId}:report_started`,
+        consentState: 'unknown',
+        payload: { reason },
+      }),
+    );
+
+    let generated;
+    try {
+      generated = await generatePracticePlan(
+        client as unknown as SynthesisAnthropicClient,
+        payload,
+      );
+    } catch (err) {
+      if (err instanceof ReportGenerationError) {
+        await failCurrentJob(jobDay);
+        const message =
+          err.reason === 'refusal'
+            ? 'The model declined to generate a practice plan for this request'
+            : err.reason === 'truncated'
+              ? 'Practice plan generation was truncated — try again'
+              : 'The model returned a response that could not be parsed — try again';
+        return { ok: false, failure: { status: 502, error: 'Bad Gateway', message } };
+      }
+      if (err instanceof Anthropic.RateLimitError) {
+        await failCurrentJob(jobDay);
+        return {
+          ok: false,
+          failure: {
+            status: 429,
+            error: 'Too Many Requests',
+            message: 'Claude is rate-limiting requests right now — try again shortly',
+          },
+        };
+      }
+      if (err instanceof Anthropic.APIError) {
+        await failCurrentJob(jobDay);
+        request.log.error({ err }, 'Claude practice-plan generation failed');
+        return {
+          ok: false,
+          failure: {
+            status: 502,
+            error: 'Bad Gateway',
+            message: 'The model provider returned an error — try again shortly',
+          },
+        };
+      }
+      await failCurrentJob(jobDay);
+      throw err;
+    }
+
+    // Owner invariants 1-2 (28-06): the hook sits BETWEEN the model call
+    // and the storage write (RESEARCH Pitfall 5) — a total citation drop
+    // must never ship an empty "Ready" plan. `SynthesisValidationError`
+    // routes through the SAME `failJob` path as a `ReportGenerationError`
+    // (refund + `refunded` terminal come free because `reason` is present
+    // and `spent` is true) — no second refund call site.
+    let validated;
+    try {
+      validated = validatePracticePlanCitations(generated, allowedPairs);
+    } catch (err) {
+      if (err instanceof SynthesisValidationError) {
+        await failCurrentJob(jobDay);
+        return { ok: false, failure: { status: 502, error: 'Bad Gateway', message: err.message } };
+      }
+      await failCurrentJob(jobDay);
+      throw err;
+    }
+
+    // RTDB empty-array strip (2026-08-03 P1 lesson, INV-7): the STORED
+    // record is written through `storedPracticePlanSchema` — every array
+    // field there defaults to `[]` on READ, so writing the generation
+    // schema's required-array shape straight through is safe either way.
+    // `droppedClaimCount` is the ONE genuinely-optional field here —
+    // conditional-spread, house convention (`routes/reports.ts:494-504`
+    // precedent), so a zero-drop plan stores with the key absent rather
+    // than `droppedClaimCount: 0`.
+    const record = storedPracticePlanSchema.parse({
+      entryKey,
+      createdAt: Date.now(),
+      summary: validated.plan.summary,
+      focusAreas: validated.plan.focusAreas,
+      ...(validated.droppedClaimCount ? { droppedClaimCount: validated.droppedClaimCount } : {}),
+    });
+
+    const ref = app.firebase.database.ref(`practicePlans/${request.uid}`).push();
+    try {
+      await ref.set(record);
+    } catch (err) {
+      await failCurrentJob(jobDay);
+      throw err;
+    }
+
+    const planId = ref.key;
+    if (!planId) {
+      // Mirrors `runReportGeneration`'s identical guard: the plan was
+      // generated and stored — this is a server bug (push() failing to
+      // yield a key), not a failed generation, so the spent credit is NOT
+      // refunded here; the job is deliberately left `running` for the
+      // stuck-job sweep to recover.
+      throw new Error('Failed to generate a push key for the new practice plan');
+    }
+
+    const succeededAt = Date.now();
+    await jobRef.set(
+      reportJobSchema.parse({
+        status: 'succeeded',
+        createdAt: jobCreatedAt,
+        updatedAt: succeededAt,
+        attempt: jobAttempt,
+        creditRef,
+        resultRef: planId,
+        reason,
+      }),
+    );
+    await app.firebase.database.ref().update({
+      [`reportJobsByStatus/running/${request.uid}/${jobId}`]: null,
+      [`reportJobsByDay/${jobDay}/${jobId}`]: { uid: request.uid, status: 'succeeded' },
+    });
+    void createEvent(
+      app.firebase.database,
+      buildBillingEnvelope({
+        eventName: 'report_completed',
+        source: 'job',
+        actorId: request.uid,
+        sessionId: request.uid,
+        causationId: `${jobId}:report_completed`,
+        consentState: 'unknown',
+        payload: { reason },
+      }),
+    );
+
+    return { ok: true, jobId, status: 'succeeded', updatedAt: succeededAt, resultRef: planId };
+  }
+
+  /**
    * Phase 27 (RPT-01, Task 3): builds the `resolveScout` callback for a
    * `reason: 'prep_report'` request. Resolution is grounded ENTIRELY in the
    * server-reloaded `binding` — the request body carries no query, source,
@@ -776,7 +1047,13 @@ const reportsRoutes: FastifyPluginAsyncZod<ReportsRoutesOptions> = async (app, o
           200: scoutReportRecordSchema,
           // Phase 27 (Task 1): the `reason: 'prep_bundle'` accepted body —
           // a bundle submission never returns a generated report in-request.
-          202: prepBundleAcceptedResponseSchema,
+          // Phase 28 (28-07): `reason: 'post_event_synthesis'` ALSO answers
+          // 202 (its generation is synchronous-in-request per STACK.md, but
+          // the wire contract mirrors the async-accepted shape the polling
+          // hooks already expect — 28-02-PLAN.md's pinned wire contract) —
+          // a union, since fastify-type-provider-zod's serializer parses
+          // the response through the ONE schema registered per status code.
+          202: z.union([prepBundleAcceptedResponseSchema, synthesisJobStatusResponseSchema]),
           400: errorResponseSchema,
           402: errorResponseSchema,
           403: errorResponseSchema,
@@ -946,6 +1223,194 @@ const reportsRoutes: FastifyPluginAsyncZod<ReportsRoutesOptions> = async (app, o
         await app.firebase.database.ref().update(bundleUpdates);
 
         return reply.code(202).send(buildBundleAcceptedResponse());
+      }
+
+      // Phase 28 (28-07, REV-03): post_event_synthesis — the post-event
+      // practice-plan purchase. A fully self-contained branch (mirrors
+      // `prep_bundle`'s shape immediately above), returning BEFORE reaching
+      // the shared `freeAccess`/prep_report/legacy machinery below, so this
+      // arm can never fall through into `scoutReports` accounting or
+      // `runReportGeneration` (RESEARCH Q4.5 — a sibling internal, not a
+      // fork of the job machine). Reuses `spendCredit` + the SAME
+      // 402-restores-prior-state shape the prep-single branch uses below
+      // (NOT `prep_bundle`'s `spendCredits` — this is a single-job, one
+      // credit purchase), and `failJob` verbatim inside
+      // `runSynthesisGeneration` — no second gate, no second refund path
+      // (owner-locked, ROADMAP.md).
+      if (request.body.reason === 'post_event_synthesis') {
+        const entryKey = request.body.entryKey!;
+
+        // Ownership/activation — implicit ownership via request.uid; a
+        // foreign or never-activated entryKey 404s indistinguishably,
+        // mirroring the prep-single precedent (T-27-30) immediately below.
+        const synthBrief = await readPrepBrief(app.firebase.database, request.uid, entryKey);
+        if (synthBrief === null) {
+          return reply.code(404).send({
+            error: 'Not Found',
+            message: 'Prep brief not found',
+            statusCode: 404,
+          });
+        }
+
+        // Synthesis exists only on the review surface (28-01/28-04): a
+        // brief that hasn't converted (no frozen `reviewAt`) has nothing to
+        // synthesize yet.
+        if (synthBrief.reviewAt == null) {
+          return reply.code(409).send({
+            error: 'Conflict',
+            message: 'This event has not converted to review mode yet',
+            statusCode: 409,
+          });
+        }
+
+        const synthFreeAccess = config.allowedUids.has(request.uid);
+        if (!synthFreeAccess && !stripeConfig) {
+          return reply.code(403).send({
+            error: 'Forbidden',
+            message: 'AI reports are not enabled for this account',
+            statusCode: 403,
+          });
+        }
+
+        // One job per entryKey (reports-route-owns-the-index precedent):
+        // `prepSynthesisJobIndex/{uid}/{entryKey}` always names the LATEST
+        // job. An outstanding job (queued/running/failed) or a succeeded
+        // job 409s a new submission — only a REFUNDED terminal permits
+        // retry, which overwrites the pointer with the new jobId (owner
+        // "no purchase churn on one entry" rule).
+        const indexRef = app.firebase.database.ref(
+          `prepSynthesisJobIndex/${request.uid}/${entryKey}`,
+        );
+        const existingIndexSnapshot = await indexRef.get();
+        const existingPointer = existingIndexSnapshot.exists()
+          ? (existingIndexSnapshot.val() as { jobId?: string } | null)
+          : null;
+        let existingSynthJob: ReportJob | null = null;
+        if (existingPointer?.jobId) {
+          const existingJobSnapshot = await app.firebase.database
+            .ref(`reportJobs/${request.uid}/${existingPointer.jobId}`)
+            .get();
+          existingSynthJob = existingJobSnapshot.exists()
+            ? reportJobSchema.parse(existingJobSnapshot.val())
+            : null;
+        }
+        if (existingSynthJob && existingSynthJob.status !== 'refunded') {
+          return reply.code(409).send({
+            error: 'Conflict',
+            message: 'A synthesis for this event is already outstanding or complete',
+            statusCode: 409,
+          });
+        }
+
+        // Evidence precondition: zero stored annotations is a GUARANTEED
+        // fail-and-refund (28-06's citation validator can never survive an
+        // empty evidence universe) — refused up front, before any spend,
+        // mirroring the UI's own no-purchase precondition
+        // (`needAnnotations`, 28-09-SUMMARY.md). The assembled payload is
+        // KEPT for the generation step below — never re-assembled.
+        const assembled = await assembleSynthesisPayload(
+          app.firebase.database,
+          request.uid,
+          entryKey,
+        );
+        if (!assembled.found) {
+          return reply.code(404).send({
+            error: 'Not Found',
+            message: 'Prep brief not found',
+            statusCode: 404,
+          });
+        }
+        if (assembled.evidenceCount === 0) {
+          return reply.code(409).send({
+            error: 'Conflict',
+            message: 'Annotate at least one VOD moment before generating a practice plan',
+            statusCode: 409,
+          });
+        }
+
+        // Every check above this point (404/409/403) is a pure
+        // request-shape/authorization/precondition rejection — nothing has
+        // been attempted yet, so no job record is written for those. From
+        // here on, the request WILL attempt generation: the job enters
+        // `queued`, carrying the enum `reason` — no entryKey or plan
+        // content ever lands on the job node (D-14, Information Disclosure
+        // mitigation).
+        const synthJobId = request.body.jobId ?? randomUUID();
+        const synthJobRef = app.firebase.database.ref(`reportJobs/${request.uid}/${synthJobId}`);
+        const synthJobCreatedAt = Date.now();
+        await synthJobRef.set(
+          reportJobSchema.parse({
+            status: 'queued',
+            createdAt: synthJobCreatedAt,
+            updatedAt: synthJobCreatedAt,
+            attempt: 0,
+            creditRef: synthJobId,
+            reason: 'post_event_synthesis',
+          }),
+        );
+        await indexRef.set({ jobId: synthJobId, updatedAt: synthJobCreatedAt });
+
+        let synthSpent = false;
+        if (!synthFreeAccess) {
+          synthSpent = await spendCredit(app.firebase.database, request.uid, synthJobId);
+          if (!synthSpent) {
+            // 2026-08-03 P2 fix class (routes/reports.ts:1121-1138
+            // precedent): a zero-credit attempt is a REJECTED request, not
+            // a failed generation — never `failJob` here, never a spurious
+            // `report_failed`, never a phantom refund. `synthJobId` is
+            // ALWAYS a freshly minted id for this request (the client never
+            // supplies one, unlike prep_report's client-generated jobId),
+            // so the job node written above has no PRIOR state to restore —
+            // removing it IS the restore. `existingSynthJob` at its OWN
+            // (untouched, still-refunded) node was only ever READ, never
+            // written, by the current-job check above, so it needs no
+            // restore either; only the INDEX POINTER was overwritten this
+            // request and must be restored to its prior value verbatim (or
+            // removed, for a fresh entryKey's first-ever submission).
+            await synthJobRef.remove();
+            if (existingPointer) {
+              await indexRef.set(existingPointer);
+            } else {
+              await indexRef.remove();
+            }
+            return reply.code(402).send({
+              error: 'Payment Required',
+              message: 'You need report credits — buy a pack to continue',
+              statusCode: 402,
+            });
+          }
+        }
+
+        const generation = await runSynthesisGeneration({
+          request,
+          jobId: synthJobId,
+          creditRef: synthJobId,
+          spent: synthSpent,
+          jobCreatedAt: synthJobCreatedAt,
+          jobAttempt: 0,
+          entryKey,
+          payload: assembled.payload,
+          allowedPairs: assembled.allowedPairs,
+        });
+
+        if (!generation.ok) {
+          return reply.code(generation.failure.status).send({
+            error: generation.failure.error,
+            message: generation.failure.message,
+            statusCode: generation.failure.status,
+          });
+        }
+
+        return reply.code(202).send(
+          synthesisJobStatusResponseSchema.parse({
+            job: {
+              jobId: generation.jobId,
+              status: generation.status,
+              updatedAt: generation.updatedAt,
+              resultRef: generation.resultRef,
+            },
+          }),
+        );
       }
 
       // Phase 27 (RPT-01, Task 3): prep-single ownership, curation, and
@@ -1544,6 +2009,125 @@ const reportsRoutes: FastifyPluginAsyncZod<ReportsRoutesOptions> = async (app, o
 
       entries.sort((a, b) => a.opponentName.localeCompare(b.opponentName));
       return { jobs: entries };
+    },
+  );
+
+  // GET /api/reports/synthesis — Phase 28 (28-07, REV-03): the read-only
+  // per-entry synthesis job-status endpoint (mirrors `GET /reports/jobs`
+  // immediately above). Registered BEFORE the parameterized `/reports/:id`
+  // route below for readability — Fastify's static-route precedence makes
+  // this correct regardless of registration order (the literal segment
+  // `synthesis` is never shadowed by `:id` matching that string).
+  //
+  // Deliberately OUTSIDE the activation gate (`prepPaidConfig` is never
+  // consulted here) — same Phase 27 rule `GET /reports/jobs` documents:
+  // turning the gate off must never strand already-paid work; only NEW
+  // purchases (the POST arm) are refused.
+  app.get(
+    '/reports/synthesis',
+    {
+      schema: {
+        querystring: reportJobsQuerySchema,
+        response: {
+          200: synthesisJobStatusResponseSchema,
+          403: errorResponseSchema,
+        },
+      },
+    },
+    async (request, reply) => {
+      if (!canReadReports(request.uid)) {
+        return reply.code(403).send({
+          error: 'Forbidden',
+          message: 'AI reports are not enabled for this account',
+          statusCode: 403,
+        });
+      }
+
+      // uid-scoped read: a foreign/nonexistent entryKey yields the SAME
+      // `{job: null}` either way — no existence signal, mirroring
+      // `GET /reports/jobs`'s T-27-40 precedent.
+      const indexSnapshot = await app.firebase.database
+        .ref(`prepSynthesisJobIndex/${request.uid}/${request.query.entryKey}`)
+        .get();
+      if (!indexSnapshot.exists()) {
+        return { job: null };
+      }
+
+      const pointer = indexSnapshot.val() as { jobId?: string } | null;
+      const jobId = pointer?.jobId;
+      if (!jobId) {
+        return { job: null };
+      }
+
+      const jobSnapshot = await app.firebase.database
+        .ref(`reportJobs/${request.uid}/${jobId}`)
+        .get();
+      if (!jobSnapshot.exists()) {
+        // The index pointer outlived its job node — should not happen
+        // under the single-writer-per-job invariant, but one corrupt
+        // pointer must never 500 the caller (T-27-43 precedent).
+        return { job: null };
+      }
+      const parsed = reportJobSchema.safeParse(jobSnapshot.val());
+      if (!parsed.success) {
+        request.log.warn(
+          { jobId, issues: parsed.error.issues },
+          'skipping stored synthesis job that failed schema validation',
+        );
+        return { job: null };
+      }
+
+      return {
+        job: {
+          jobId,
+          status: parsed.data.status,
+          updatedAt: parsed.data.updatedAt,
+          ...(parsed.data.resultRef ? { resultRef: parsed.data.resultRef } : {}),
+        },
+      };
+    },
+  );
+
+  // GET /api/reports/practice-plans/:planId — Phase 28 (28-07, REV-03): the
+  // stored practice-plan read. `practicePlans/{uid}/{planId}` is uid-scoped
+  // — that scoping IS the ownership check (no cross-uid path is
+  // constructible), so a foreign or missing planId 404s indistinguishably.
+  // Ungated (mirrors `GET /reports/synthesis` above) and parsed through the
+  // TOLERANT `storedPracticePlanSchema` (INV-7: every array defaults to
+  // `[]` on read, surviving RTDB's empty-array strip).
+  app.get(
+    '/reports/practice-plans/:planId',
+    {
+      schema: {
+        params: practicePlanParamsSchema,
+        response: {
+          200: practicePlanResponseSchema,
+          403: errorResponseSchema,
+          404: errorResponseSchema,
+        },
+      },
+    },
+    async (request, reply) => {
+      if (!canReadReports(request.uid)) {
+        return reply.code(403).send({
+          error: 'Forbidden',
+          message: 'AI reports are not enabled for this account',
+          statusCode: 403,
+        });
+      }
+
+      const snapshot = await app.firebase.database
+        .ref(`practicePlans/${request.uid}/${request.params.planId}`)
+        .get();
+      if (!snapshot.exists()) {
+        return reply.code(404).send({
+          error: 'Not Found',
+          message: `Practice plan ${request.params.planId} not found`,
+          statusCode: 404,
+        });
+      }
+
+      return { plan: storedPracticePlanSchema.parse(snapshot.val()) };
     },
   );
 
