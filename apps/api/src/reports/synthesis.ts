@@ -1,11 +1,13 @@
 import type { Database } from 'firebase-admin/database';
 import {
   CITATION_LABEL_MAX_LENGTH,
+  extractCitationTokens,
   matchRecordSchema,
   REVIEW_CHECKLIST_ITEM_IDS,
   selectReviewResultsContext,
   serializeCitationToken,
   tournamentEntrySchema,
+  type GeneratedPracticePlan,
   type Match,
 } from '@smash-tracker/shared';
 import { normalizeOpponentTag } from '../startgg/sync.js';
@@ -214,4 +216,70 @@ export async function assembleSynthesisPayload(
   };
 
   return { found: true, payload, allowedTokens, allowedPairs, evidenceCount: evidence.length };
+}
+
+// ---------------------------------------------------------------------------
+// Citation validation (owner invariants 1-2)
+// ---------------------------------------------------------------------------
+
+/**
+ * Thrown when citation validation drops EVERY focusArea — a summary alone
+ * is never a shippable practice plan (owner invariant 2). The route maps
+ * this to `failJob` (refund + `refunded` terminal), never to storing a
+ * partial/empty "Ready" plan.
+ */
+export class SynthesisValidationError extends Error {
+  readonly reason = 'uncitable' as const;
+
+  constructor() {
+    super(
+      "Practice-plan synthesis produced no claim that could be grounded in the player's own stored evidence",
+    );
+    this.name = 'SynthesisValidationError';
+  }
+}
+
+/**
+ * Post-generation citation validator (owner invariant 1): resolves every
+ * `{{cite:...}}` token embedded in a focusArea's `evidence` body by EXACT
+ * set-membership against `allowedPairs` — the stable `(matchId, seconds)`
+ * pair Phase 12 standardized, never the timestamp entry's `id` (dense-array
+ * record ids are synthesized and non-durable, RESEARCH Pitfall 3) and never
+ * display text (a token's `label` plays ZERO role in resolution).
+ *
+ * A focusArea SURVIVES iff it carries at least one extracted token AND
+ * EVERY extracted token resolves — a conservative all-tokens-must-resolve
+ * rule: one bad token taints the whole claim rather than partially trusting
+ * it. `extractCitationTokens` already skips malformed tokens without
+ * throwing (coachingReview.ts), so a body whose only tokens were malformed
+ * simply extracts to zero tokens and is dropped as uncited, never crashes
+ * this function.
+ *
+ * Zero survivors throws `SynthesisValidationError` (owner invariant 2) —
+ * the caller (28-07's route) maps this to `failJob`, which refunds the
+ * credit and writes the `refunded` terminal. Survivors keep their original
+ * order; `summary` is untouched.
+ */
+export function validatePracticePlanCitations(
+  plan: GeneratedPracticePlan,
+  allowedPairs: ReadonlySet<string>,
+): { plan: GeneratedPracticePlan; droppedClaimCount: number } {
+  const survivors = plan.focusAreas.filter((focusArea) => {
+    const tokens = extractCitationTokens(focusArea.evidence);
+    if (tokens.length === 0) {
+      return false;
+    }
+    return tokens.every((token) => allowedPairs.has(`${token.sourceVodRef}:${token.seconds}`));
+  });
+
+  if (survivors.length === 0) {
+    throw new SynthesisValidationError();
+  }
+
+  const droppedClaimCount = plan.focusAreas.length - survivors.length;
+
+  return {
+    plan: { ...plan, focusAreas: survivors },
+    droppedClaimCount,
+  };
 }

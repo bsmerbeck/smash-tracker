@@ -1,7 +1,15 @@
 import { describe, expect, it } from 'vitest';
-import { CITATION_LABEL_MAX_LENGTH, serializeCitationToken } from '@smash-tracker/shared';
+import {
+  CITATION_LABEL_MAX_LENGTH,
+  serializeCitationToken,
+  type GeneratedPracticePlan,
+} from '@smash-tracker/shared';
 import { FakeDatabase } from '../test-support/fakeDatabase.js';
-import { assembleSynthesisPayload } from './synthesis.js';
+import {
+  assembleSynthesisPayload,
+  SynthesisValidationError,
+  validatePracticePlanCitations,
+} from './synthesis.js';
 
 const UID = 'test-uid-123';
 const ENTRY_KEY = 'locals-42-abc123';
@@ -269,5 +277,133 @@ describe('assembleSynthesisPayload', () => {
 
     const result = await assemble(database);
     expect(result).toEqual({ found: false });
+  });
+});
+
+describe('validatePracticePlanCitations', () => {
+  function plan(focusAreas: GeneratedPracticePlan['focusAreas']): GeneratedPracticePlan {
+    return { summary: 'Overall plan summary', focusAreas };
+  }
+
+  function token(matchId: string, seconds: number, label = 'note'): string {
+    return serializeCitationToken({ sourceVodRef: matchId, seconds, label });
+  }
+
+  it('INV-1: citation tokens resolve to exact stored evidence IDs, not display text — a byte-identical label with a non-allowed pair is dropped; a mangled label with an allowed pair survives', () => {
+    const allowedPairs = new Set(['match-1:30']);
+    const droppedByLabelTrick = {
+      title: 'Fake grounding',
+      evidence: `Looks right: ${token('match-2', 30, 'exact label text')}`,
+      drills: ['drill'],
+    };
+    const survivesDespiteMangledLabel = {
+      title: 'Real grounding',
+      evidence: `${token('match-1', 30, 'trun...')}`,
+      drills: ['drill'],
+    };
+
+    const result = validatePracticePlanCitations(
+      plan([droppedByLabelTrick, survivesDespiteMangledLabel]),
+      allowedPairs,
+    );
+
+    expect(result.plan.focusAreas).toEqual([survivesDespiteMangledLabel]);
+    expect(result.droppedClaimCount).toBe(1);
+  });
+
+  it("INV-1: resolution is set-membership against the server-assembled universe — a pair absent from THIS payload's allowedPairs is dropped even though it names a real match", () => {
+    const allowedPairs = new Set(['match-1:30']);
+    const fromAnotherPayload = {
+      title: 'Different assembly',
+      evidence: token('match-9', 999),
+      drills: ['drill'],
+    };
+    const inThisPayload = {
+      title: 'This assembly',
+      evidence: token('match-1', 30),
+      drills: ['drill'],
+    };
+
+    const result = validatePracticePlanCitations(
+      plan([fromAnotherPayload, inThisPayload]),
+      allowedPairs,
+    );
+
+    expect(result.plan.focusAreas).toEqual([inThisPayload]);
+    expect(result.droppedClaimCount).toBe(1);
+  });
+
+  it('a focusArea with zero citation tokens is dropped', () => {
+    const allowedPairs = new Set(['match-1:30']);
+    const uncited = { title: 'No grounding', evidence: 'Just prose, no tokens.', drills: ['d'] };
+    const cited = { title: 'Grounded', evidence: token('match-1', 30), drills: ['d'] };
+
+    const result = validatePracticePlanCitations(plan([uncited, cited]), allowedPairs);
+
+    expect(result.plan.focusAreas).toEqual([cited]);
+    expect(result.droppedClaimCount).toBe(1);
+  });
+
+  it('a focusArea with one valid and one invalid token is dropped (all-tokens-must-resolve)', () => {
+    const allowedPairs = new Set(['match-1:30']);
+    const mixed = {
+      title: 'Half grounded',
+      evidence: `${token('match-1', 30)} and also ${token('match-2', 999)}`,
+      drills: ['d'],
+    };
+    const cited = { title: 'Fully grounded', evidence: token('match-1', 30), drills: ['d'] };
+
+    const result = validatePracticePlanCitations(plan([mixed, cited]), allowedPairs);
+
+    expect(result.plan.focusAreas).toEqual([cited]);
+    expect(result.droppedClaimCount).toBe(1);
+  });
+
+  it('malformed tokens are treated as invalid, never a crash', () => {
+    const allowedPairs = new Set(['match-1:30']);
+    const malformed = {
+      title: 'Broken token',
+      evidence: '{{cite:matchId=match-1;seconds=not-a-number;label=x}}',
+      drills: ['d'],
+    };
+    const cited = { title: 'Grounded', evidence: token('match-1', 30), drills: ['d'] };
+
+    expect(() =>
+      validatePracticePlanCitations(plan([malformed, cited]), allowedPairs),
+    ).not.toThrow();
+    const result = validatePracticePlanCitations(plan([malformed, cited]), allowedPairs);
+    expect(result.plan.focusAreas).toEqual([cited]);
+    expect(result.droppedClaimCount).toBe(1);
+  });
+
+  it("INV-2: zero surviving claims throws SynthesisValidationError with reason 'uncitable'", () => {
+    const allowedPairs = new Set(['match-1:30']);
+    const allDropped = [
+      { title: 'No grounding', evidence: 'no tokens here', drills: ['d'] },
+      { title: 'Bad pair', evidence: token('match-9', 999), drills: ['d'] },
+    ];
+
+    expect(() => validatePracticePlanCitations(plan(allDropped), allowedPairs)).toThrow(
+      SynthesisValidationError,
+    );
+    try {
+      validatePracticePlanCitations(plan(allDropped), allowedPairs);
+      expect.unreachable();
+    } catch (error) {
+      expect(error).toBeInstanceOf(SynthesisValidationError);
+      expect((error as SynthesisValidationError).reason).toBe('uncitable');
+    }
+  });
+
+  it('droppedClaimCount reports the number of dropped focusAreas and survivors keep their original order', () => {
+    const allowedPairs = new Set(['match-1:30']);
+    const first = { title: 'First', evidence: token('match-1', 30), drills: ['d'] };
+    const second = { title: 'Second', evidence: 'no tokens', drills: ['d'] };
+    const third = { title: 'Third', evidence: token('match-1', 30), drills: ['d'] };
+
+    const result = validatePracticePlanCitations(plan([first, second, third]), allowedPairs);
+
+    expect(result.plan.focusAreas).toEqual([first, third]);
+    expect(result.droppedClaimCount).toBe(1);
   });
 });
