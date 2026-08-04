@@ -1,11 +1,16 @@
 import { describe, expect, it } from 'vitest';
 import type { Database } from 'firebase-admin/database';
-import { PREP_LIKELY_OPPONENTS_MAX, type ScoutBinding } from '@smash-tracker/shared';
+import {
+  PREP_LIKELY_OPPONENTS_MAX,
+  type ScoutBinding,
+  type TournamentEntry,
+} from '@smash-tracker/shared';
 import { FakeDatabase } from '../test-support/fakeDatabase.js';
 import { ConflictError, NotFoundError } from '../services/rtdb.js';
 import {
   activatePrepBrief,
   clearPrepScoutBinding,
+  freezeReviewAtIfDue,
   prepBriefPath,
   readPrepBrief,
   reopenPrepBrief,
@@ -44,6 +49,17 @@ function countEnvelopesByName(database: FakeDatabase, eventName: string): number
   return allLedgerEnvelopes(database).filter(
     (envelope) => (envelope as { eventName?: string }).eventName === eventName,
   ).length;
+}
+
+/** Builds a minimal, otherwise-valid `TournamentEntry` for `deriveReviewAtCandidate`/`freezeReviewAtIfDue` tests — only the fields that function reads matter. */
+function makeEntry(overrides: Partial<TournamentEntry> = {}): TournamentEntry {
+  return {
+    eventName: 'Locals #42',
+    firstSetAt: EVENT_DATE,
+    lastSetAt: EVENT_DATE,
+    setsPlayed: 3,
+    ...overrides,
+  };
 }
 
 /** Reads the raw stored `prepBriefs/{uid}/{entryKey}` node straight out of `FakeDatabase.dump()` (bypasses the normalize-on-read helper deliberately). */
@@ -437,5 +453,147 @@ describe('setPrepScoutBinding / clearPrepScoutBinding — scoutBinding storage (
 
     const brief = await readPrepBrief(asDatabase(database), TEST_UID, ENTRY_KEY);
     expect(brief?.scoutBindings).toEqual({});
+  });
+});
+
+/**
+ * Phase 28 (28-04, Task 1): the `reviewAt` write-once conversion freeze and
+ * the `post_event_review_started` fire-once emission (owner invariants 3
+ * and 5).
+ */
+describe('freezeReviewAtIfDue — write-once conversion freeze (INV-3, INV-5)', () => {
+  it('INV-3: post_event_review_started fires once after the durable first-open write', async () => {
+    const database = new FakeDatabase();
+    await activatePrepBrief(asDatabase(database), TEST_UID, ENTRY_KEY, EVENT_DATE, SESSION_ID);
+    const entry = makeEntry({ source: 'startgg', lastSetAt: EVENT_DATE });
+
+    const first = await freezeReviewAtIfDue(
+      asDatabase(database),
+      TEST_UID,
+      ENTRY_KEY,
+      entry,
+      SESSION_ID,
+    );
+    expect(first.frozen).toBe(true);
+    expect(first.reviewAt).toBe(EVENT_DATE);
+    expect(countEnvelopesByName(database, 'post_event_review_started')).toBe(1);
+
+    const before = dumpBriefRecord(database, TEST_UID, ENTRY_KEY);
+    const second = await freezeReviewAtIfDue(
+      asDatabase(database),
+      TEST_UID,
+      ENTRY_KEY,
+      entry,
+      SESSION_ID,
+    );
+    expect(second.frozen).toBe(false);
+    expect(second.reviewAt).toBe(EVENT_DATE);
+    const after = dumpBriefRecord(database, TEST_UID, ENTRY_KEY);
+    expect(after?.reviewAt).toBe(before?.reviewAt);
+    expect(countEnvelopesByName(database, 'post_event_review_started')).toBe(1);
+  });
+
+  it('INV-5: a later sync updating set times cannot un-convert a converted surface', async () => {
+    const database = new FakeDatabase();
+    await activatePrepBrief(asDatabase(database), TEST_UID, ENTRY_KEY, EVENT_DATE, SESSION_ID);
+    const entry = makeEntry({ source: 'startgg', lastSetAt: EVENT_DATE });
+
+    const first = await freezeReviewAtIfDue(
+      asDatabase(database),
+      TEST_UID,
+      ENTRY_KEY,
+      entry,
+      SESSION_ID,
+    );
+    expect(first.reviewAt).toBe(EVENT_DATE);
+
+    // A later sync moves lastSetAt far into the future — a genuinely
+    // representable registry state, not a crafted/invalid one.
+    const futureEntry = makeEntry({
+      source: 'startgg',
+      lastSetAt: Date.now() + 1_000_000_000,
+    });
+    const second = await freezeReviewAtIfDue(
+      asDatabase(database),
+      TEST_UID,
+      ENTRY_KEY,
+      futureEntry,
+      SESSION_ID,
+    );
+    expect(second.frozen).toBe(false);
+    expect(second.reviewAt).toBe(EVENT_DATE);
+
+    const brief = await readPrepBrief(asDatabase(database), TEST_UID, ENTRY_KEY);
+    expect(brief?.reviewAt).toBe(EVENT_DATE);
+  });
+
+  it('no freeze before the candidate passes', async () => {
+    const database = new FakeDatabase();
+    await activatePrepBrief(asDatabase(database), TEST_UID, ENTRY_KEY, EVENT_DATE, SESSION_ID);
+    const futureEntry = makeEntry({
+      source: 'startgg',
+      lastSetAt: Date.now() + 1_000_000_000,
+    });
+
+    const result = await freezeReviewAtIfDue(
+      asDatabase(database),
+      TEST_UID,
+      ENTRY_KEY,
+      futureEntry,
+      SESSION_ID,
+    );
+    expect(result.frozen).toBe(false);
+    expect(result.reviewAt).toBeUndefined();
+    expect(countEnvelopesByName(database, 'post_event_review_started')).toBe(0);
+    const brief = await readPrepBrief(asDatabase(database), TEST_UID, ENTRY_KEY);
+    expect(brief?.reviewAt).toBeUndefined();
+  });
+
+  it('no brief, no freeze', async () => {
+    const database = new FakeDatabase();
+    const entry = makeEntry({ source: 'startgg', lastSetAt: EVENT_DATE });
+
+    const result = await freezeReviewAtIfDue(
+      asDatabase(database),
+      TEST_UID,
+      'never-activated-entry',
+      entry,
+      SESSION_ID,
+    );
+    expect(result.frozen).toBe(false);
+    expect(result.reviewAt).toBeUndefined();
+    expect(countEnvelopesByName(database, 'post_event_review_started')).toBe(0);
+  });
+
+  it('freeze stores the candidate, not now', async () => {
+    const database = new FakeDatabase();
+    await activatePrepBrief(asDatabase(database), TEST_UID, ENTRY_KEY, EVENT_DATE, SESSION_ID);
+    const entry = makeEntry({ source: 'startgg', lastSetAt: EVENT_DATE });
+
+    const result = await freezeReviewAtIfDue(
+      asDatabase(database),
+      TEST_UID,
+      ENTRY_KEY,
+      entry,
+      SESSION_ID,
+    );
+    expect(result.reviewAt).toBe(EVENT_DATE);
+    expect(result.reviewAt).not.toBe(Date.now());
+    expect(result.reviewAt! < Date.now()).toBe(true);
+  });
+
+  it('replay safety: a Promise.all of two concurrent freezes yields exactly one committed and one ledger row', async () => {
+    const database = new FakeDatabase();
+    await activatePrepBrief(asDatabase(database), TEST_UID, ENTRY_KEY, EVENT_DATE, SESSION_ID);
+    const entry = makeEntry({ source: 'startgg', lastSetAt: EVENT_DATE });
+
+    const [a, b] = await Promise.all([
+      freezeReviewAtIfDue(asDatabase(database), TEST_UID, ENTRY_KEY, entry, SESSION_ID),
+      freezeReviewAtIfDue(asDatabase(database), TEST_UID, ENTRY_KEY, entry, SESSION_ID),
+    ]);
+
+    const frozenCount = [a.frozen, b.frozen].filter(Boolean).length;
+    expect(frozenCount).toBe(1);
+    expect(countEnvelopesByName(database, 'post_event_review_started')).toBe(1);
   });
 });

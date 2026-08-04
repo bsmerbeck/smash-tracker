@@ -1,5 +1,6 @@
 import type { Database } from 'firebase-admin/database';
 import {
+  deriveReviewAtCandidate,
   normalizePrepBriefRecord,
   prepBriefRecordSchema,
   PREP_LIKELY_OPPONENTS_MAX,
@@ -8,6 +9,7 @@ import {
   type PrepBriefRecord,
   type PrepChecklistItemId,
   type ScoutBinding,
+  type TournamentEntry,
 } from '@smash-tracker/shared';
 import { buildDomainEnvelope } from '../events/envelope.js';
 import { createEvent } from '../events/ledger.js';
@@ -174,6 +176,87 @@ export async function reopenPrepBrief(
   );
 
   return brief;
+}
+
+/**
+ * Phase 28 (REV-01, owner invariants 3 & 5): the write-once conversion
+ * freeze. Mirrors `activatePrepBrief`'s CR-01 create-once transaction shape
+ * above (lines 88-131), but applied to a single CHILD field (`reviewAt`)
+ * rather than the whole brief record, so it can ride ALONGSIDE the
+ * activate/open mutations without re-creating the brief itself.
+ *
+ * GET must NEVER call this (D-12 read/write separation, RESEARCH — "GET
+ * never writes"). The durable first-open write that fires
+ * `post_event_review_started` (owner invariant 3) IS this commit, and it
+ * must ride the activate/open mutations only — see `routes/prep.ts` (28-04).
+ *
+ * Once `reviewAt` is present on the stored record, this function returns
+ * immediately with NO re-derivation from `entry` — the registry row
+ * (`lastSetAt`/`firstSetAt`) is consulted ONLY while `reviewAt` is still
+ * absent. This is the mechanism behind owner invariant 5 (never-flip-back):
+ * a later sync that moves `lastSetAt` into the future cannot un-convert an
+ * already-frozen brief, because the freeze commit itself is guarded by the
+ * SAME field-level write-once transaction shape that makes
+ * `activatePrepBrief` replay-proof — a second caller's `current == null`
+ * check evaluates false against the real stored value and the update
+ * function aborts (returns `undefined`), never overwriting the
+ * first-committed snapshot.
+ */
+export async function freezeReviewAtIfDue(
+  database: Database,
+  uid: string,
+  entryKey: string,
+  entry: TournamentEntry | null,
+  sessionId: string,
+): Promise<{ frozen: boolean; reviewAt?: number }> {
+  const existing = await readPrepBrief(database, uid, entryKey);
+  if (existing === null) {
+    // No activated brief → no review surface (28-CONTEXT.md).
+    return { frozen: false };
+  }
+  if (existing.reviewAt != null) {
+    // Already converted — deliberately NO re-derivation from `entry`, ever.
+    return { frozen: false, reviewAt: existing.reviewAt };
+  }
+  if (entry === null) {
+    // Registry row unreadable (e.g. removed) — no candidate to freeze.
+    return { frozen: false };
+  }
+
+  const candidate = deriveReviewAtCandidate(entry);
+  if (candidate > Date.now()) {
+    // Not due yet — no write, no event, brief unchanged.
+    return { frozen: false };
+  }
+
+  const result = await database
+    .ref(`${prepBriefPath(uid, entryKey)}/reviewAt`)
+    .transaction((current) => (current == null ? candidate : undefined));
+
+  if (result.committed !== true) {
+    // Lost the race (or a concurrent caller already froze it) — no event.
+    return { frozen: false };
+  }
+
+  // RESEARCH Pitfall 7 (same discipline as `activatePrepBrief`'s comment
+  // above): the causation value is exactly `${uid}:${entryKey}` — no
+  // timestamp, no random suffix. A per-call value would defeat
+  // createEvent's own eventDedup transaction and manufacture a phantom
+  // second `post_event_review_started` on a retried mutation. The payload
+  // is the empty object: content-free, carrying no entryKey, no event name.
+  await createEvent(
+    database,
+    buildDomainEnvelope({
+      eventName: 'post_event_review_started',
+      actorId: uid,
+      sessionId,
+      causationId: `${uid}:${entryKey}`,
+      consentState: 'unknown',
+      payload: {},
+    }),
+  );
+
+  return { frozen: true, reviewAt: candidate };
 }
 
 /**
