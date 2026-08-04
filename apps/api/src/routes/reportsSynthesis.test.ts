@@ -521,6 +521,105 @@ describe('POST /api/reports post_event_synthesis — gate and pre-spend checks',
     expect(dump.creditLedger).toBeUndefined();
   });
 
+  it('WR-01: two concurrent submissions for one entryKey spend exactly one credit — one 202, one 409', async () => {
+    const { app, database } = billableApp();
+    seedEntry(database);
+    seedBrief(database);
+    seedOneAnnotation(database, 'm1', 42);
+    database.seed(`credits/${TEST_UID}/balance`, 3);
+
+    // Both requests interleave through the same pre-read phase; the
+    // transactional pointer claim is the single serialization point, so
+    // exactly one commits and the other 409s with nothing written or spent.
+    const [first, second] = await Promise.all([
+      app.inject({
+        method: 'POST',
+        url: '/api/reports',
+        headers: authHeader(),
+        payload: SYNTHESIS_PAYLOAD,
+      }),
+      app.inject({
+        method: 'POST',
+        url: '/api/reports',
+        headers: authHeader(),
+        payload: SYNTHESIS_PAYLOAD,
+      }),
+    ]);
+
+    expect([first.statusCode, second.statusCode].sort()).toEqual([202, 409]);
+
+    // ONE credit spent, ONE job node, ONE report_started — never two.
+    const balance = await database.ref(`credits/${TEST_UID}/balance`).get();
+    expect(balance.val()).toBe(2);
+    expect(findEvents(database, 'report_started')).toHaveLength(1);
+    const dump = database.dump() as Record<string, unknown>;
+    const reportJobs = dump.reportJobs as Record<string, Record<string, unknown>>;
+    expect(Object.keys(reportJobs[TEST_UID]!)).toHaveLength(1);
+
+    // The pointer names the winner's job.
+    const winner = (first.statusCode === 202 ? first : second).json() as {
+      job: { jobId: string };
+    };
+    const indexSnapshot = await database
+      .ref(`prepSynthesisJobIndex/${TEST_UID}/${ENTRY_KEY}`)
+      .get();
+    expect(indexSnapshot.val()).toMatchObject({ jobId: winner.job.jobId });
+  });
+
+  it('WR-04: the queued job write lands only AFTER the spend commits, and a 402 leaves no job node at all', async () => {
+    // Part 1: zero credit — the reportJobs tree is NEVER created, not even
+    // transiently-then-removed (the pre-fix compensation shape).
+    {
+      const { app, database } = billableApp();
+      seedEntry(database);
+      seedBrief(database);
+      seedOneAnnotation(database, 'm1', 42);
+      database.seed(`credits/${TEST_UID}/balance`, 0);
+      const writes = trackWrites(database);
+
+      const response = await app.inject({
+        method: 'POST',
+        url: '/api/reports',
+        headers: authHeader(),
+        payload: SYNTHESIS_PAYLOAD,
+      });
+
+      expect(response.statusCode).toBe(402);
+      const dump = database.dump() as Record<string, unknown>;
+      expect(dump.reportJobs).toBeUndefined();
+      expect(writes.some((entry) => entry.startsWith(`set:reportJobs/`))).toBe(false);
+    }
+
+    // Part 2: happy path — the spend transaction strictly precedes the
+    // queued job write (owner invariant "402 before any durable job write").
+    {
+      const { app, database } = billableApp();
+      seedEntry(database);
+      seedBrief(database);
+      seedOneAnnotation(database, 'm1', 42);
+      database.seed(`credits/${TEST_UID}/balance`, 1);
+      const writes = trackWrites(database);
+
+      const response = await app.inject({
+        method: 'POST',
+        url: '/api/reports',
+        headers: authHeader(),
+        payload: SYNTHESIS_PAYLOAD,
+      });
+
+      expect(response.statusCode).toBe(202);
+      const spendIndex = writes.findIndex((entry) =>
+        entry.startsWith(`transaction:credits/${TEST_UID}/balance`),
+      );
+      const queuedIndex = writes.findIndex(
+        (entry) => entry.startsWith(`set:reportJobs/${TEST_UID}/`) && entry.endsWith('#queued'),
+      );
+      expect(spendIndex).toBeGreaterThan(-1);
+      expect(queuedIndex).toBeGreaterThan(-1);
+      expect(spendIndex).toBeLessThan(queuedIndex);
+    }
+  });
+
   it('IN-03: a corrupt job node behind the index pointer never 500s the purchase path — treated as no existing job', async () => {
     const { app, database } = billableApp();
     seedEntry(database);

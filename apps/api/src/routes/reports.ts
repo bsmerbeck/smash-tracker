@@ -1300,7 +1300,7 @@ const reportsRoutes: FastifyPluginAsyncZod<ReportsRoutesOptions> = async (app, o
         );
         const existingIndexSnapshot = await indexRef.get();
         const existingPointer = existingIndexSnapshot.exists()
-          ? (existingIndexSnapshot.val() as { jobId?: string } | null)
+          ? (existingIndexSnapshot.val() as { jobId?: string; updatedAt?: number } | null)
           : null;
         let existingSynthJob: ReportJob | null = null;
         if (existingPointer?.jobId) {
@@ -1336,13 +1336,28 @@ const reportsRoutes: FastifyPluginAsyncZod<ReportsRoutesOptions> = async (app, o
         // job is a bounded crash-window casualty (the same class the
         // review's spend-first ordering accepts); retrying never
         // double-refunds because `failJob` remains the sole refund path.
-        const synthJobIsStale =
-          existingSynthJob != null && Date.now() - existingSynthJob.updatedAt > REPORT_JOB_STALE_MS;
-        const synthRetryable =
-          existingSynthJob == null ||
-          existingSynthJob.status === 'refunded' ||
-          ((existingSynthJob.status === 'queued' || existingSynthJob.status === 'failed') &&
-            synthJobIsStale);
+        let synthRetryable: boolean;
+        if (existingPointer?.jobId == null) {
+          // No pointer (or an empty one) — a first-ever submission.
+          synthRetryable = true;
+        } else if (existingSynthJob == null) {
+          // Dangling/corrupt pointer target. Retryable only once the
+          // POINTER is stale: with the WR-04 spend-first ordering below, a
+          // FRESH dangling pointer is another request's in-flight claim
+          // whose queued write simply hasn't landed yet — treating it as
+          // retryable would reopen the concurrent double-spend WR-01's
+          // claim transaction exists to close. A stale one is a crash
+          // remnant (or the IN-03 corrupt-node case) and unblocks.
+          const pointerUpdatedAt =
+            typeof existingPointer.updatedAt === 'number' ? existingPointer.updatedAt : 0;
+          synthRetryable = Date.now() - pointerUpdatedAt > REPORT_JOB_STALE_MS;
+        } else {
+          const synthJobIsStale = Date.now() - existingSynthJob.updatedAt > REPORT_JOB_STALE_MS;
+          synthRetryable =
+            existingSynthJob.status === 'refunded' ||
+            ((existingSynthJob.status === 'queued' || existingSynthJob.status === 'failed') &&
+              synthJobIsStale);
+        }
         if (!synthRetryable) {
           return reply.code(409).send({
             error: 'Conflict',
@@ -1394,36 +1409,60 @@ const reportsRoutes: FastifyPluginAsyncZod<ReportsRoutesOptions> = async (app, o
         const synthJobId = randomUUID();
         const synthJobRef = app.firebase.database.ref(`reportJobs/${request.uid}/${synthJobId}`);
         const synthJobCreatedAt = Date.now();
-        await synthJobRef.set(
-          reportJobSchema.parse({
-            status: 'queued',
-            createdAt: synthJobCreatedAt,
-            updatedAt: synthJobCreatedAt,
-            attempt: 0,
-            creditRef: synthJobId,
-            reason: 'post_event_synthesis',
-          }),
-        );
-        await indexRef.set({ jobId: synthJobId, updatedAt: synthJobCreatedAt });
 
+        // WR-01 (Phase 28 review): claim the index pointer with a
+        // `.transaction()` BEFORE any spend or durable job write — the
+        // previous read-then-`set()` let two concurrent submissions
+        // (double-click, retry racing a slow first request) both observe a
+        // retryable pointer, both spend a credit, and both generate, with
+        // the losing plan orphaned behind a last-writer-wins pointer. The
+        // transaction commits only when the stored pointer still names the
+        // SAME job the pre-read above resolved as retryable (or is absent);
+        // exactly one concurrent claimant wins, and the loser 409s having
+        // written and spent NOTHING. Mirrors `spendCredits`' claim-marker
+        // shape (Phase 27 creditBundleOps precedent).
+        const priorJobId = existingPointer?.jobId ?? null;
+        const claimValue = { jobId: synthJobId, updatedAt: synthJobCreatedAt };
+        const claim = await indexRef.transaction((current) => {
+          const ptr = current as { jobId?: string } | null;
+          if (ptr == null) {
+            // First run always sees the SDK's null local cache (the same
+            // real-RTDB semantics `freezeReviewAtIfDue` documents): return
+            // the claim optimistically — a hash mismatch re-runs this
+            // function with the REAL stored pointer.
+            return claimValue;
+          }
+          if (ptr.jobId != null && ptr.jobId !== priorJobId) {
+            // A concurrent submission claimed the entry after our pre-read
+            // — abort; never overwrite another request's live claim.
+            return undefined;
+          }
+          return claimValue;
+        });
+        if (!claim.committed) {
+          return reply.code(409).send({
+            error: 'Conflict',
+            message: 'A synthesis for this event is already outstanding or complete',
+            statusCode: 409,
+          });
+        }
+
+        // WR-04 (owner invariant "402 before any durable job/index write"):
+        // spend BEFORE the queued job write. A zero-credit attempt restores
+        // the pointer to its prior value verbatim (or removes it, for a
+        // fresh entryKey's first-ever submission) and answers 402 with NO
+        // job node ever having been written — the crash window that could
+        // previously strand a phantom `queued` job at the pointer is gone;
+        // a crash between the claim and the restore leaves only a dangling
+        // pointer, which the staleness-gated dangling-pointer rule above
+        // self-heals. 2026-08-03 P2 fix class (routes/reports.ts
+        // prep-single precedent): a zero-credit attempt is a REJECTED
+        // request, not a failed generation — never `failJob` here, never a
+        // spurious `report_failed`, never a phantom refund.
         let synthSpent = false;
         if (!synthFreeAccess) {
           synthSpent = await spendCredit(app.firebase.database, request.uid, synthJobId);
           if (!synthSpent) {
-            // 2026-08-03 P2 fix class (routes/reports.ts:1121-1138
-            // precedent): a zero-credit attempt is a REJECTED request, not
-            // a failed generation — never `failJob` here, never a spurious
-            // `report_failed`, never a phantom refund. `synthJobId` is
-            // ALWAYS a freshly minted id for this request (the client never
-            // supplies one, unlike prep_report's client-generated jobId),
-            // so the job node written above has no PRIOR state to restore —
-            // removing it IS the restore. `existingSynthJob` at its OWN
-            // (untouched, still-refunded) node was only ever READ, never
-            // written, by the current-job check above, so it needs no
-            // restore either; only the INDEX POINTER was overwritten this
-            // request and must be restored to its prior value verbatim (or
-            // removed, for a fresh entryKey's first-ever submission).
-            await synthJobRef.remove();
             if (existingPointer) {
               await indexRef.set(existingPointer);
             } else {
@@ -1436,6 +1475,20 @@ const reportsRoutes: FastifyPluginAsyncZod<ReportsRoutesOptions> = async (app, o
             });
           }
         }
+
+        // The durable queued write lands only after the spend has succeeded
+        // (or was skipped for free access) — `failJob` covers every
+        // post-spend failure from here on.
+        await synthJobRef.set(
+          reportJobSchema.parse({
+            status: 'queued',
+            createdAt: synthJobCreatedAt,
+            updatedAt: synthJobCreatedAt,
+            attempt: 0,
+            creditRef: synthJobId,
+            reason: 'post_event_synthesis',
+          }),
+        );
 
         const generation = await runSynthesisGeneration({
           request,
