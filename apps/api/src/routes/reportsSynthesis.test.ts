@@ -521,6 +521,33 @@ describe('POST /api/reports post_event_synthesis — gate and pre-spend checks',
     expect(dump.creditLedger).toBeUndefined();
   });
 
+  it('IN-03: a corrupt job node behind the index pointer never 500s the purchase path — treated as no existing job', async () => {
+    const { app, database } = billableApp();
+    seedEntry(database);
+    seedBrief(database);
+    seedOneAnnotation(database, 'm1', 42);
+    database.seed(`credits/${TEST_UID}/balance`, 3);
+    // A pointer whose job node fails reportJobSchema (missing required
+    // fields) — the sibling GET already tolerates this (T-27-43); the POST
+    // used a throwing parse and 500'd every future submission.
+    database.seed(`reportJobs/${TEST_UID}/corrupt-job`, { status: 'notARealStatus' });
+    database.seed(`prepSynthesisJobIndex/${TEST_UID}/${ENTRY_KEY}`, {
+      jobId: 'corrupt-job',
+      updatedAt: 2_000,
+    });
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/reports',
+      headers: authHeader(),
+      payload: SYNTHESIS_PAYLOAD,
+    });
+
+    expect(response.statusCode).toBe(202);
+    const body = response.json() as { job: { jobId: string; status: string } };
+    expect(body.job.status).toBe('succeeded');
+  });
+
   it('CR-01: a client-supplied jobId is rejected with 400 and can never clobber or delete an existing job record', async () => {
     const { app, database } = billableApp();
     seedEntry(database);

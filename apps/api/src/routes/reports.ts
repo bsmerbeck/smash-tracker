@@ -1307,9 +1307,22 @@ const reportsRoutes: FastifyPluginAsyncZod<ReportsRoutesOptions> = async (app, o
           const existingJobSnapshot = await app.firebase.database
             .ref(`reportJobs/${request.uid}/${existingPointer.jobId}`)
             .get();
-          existingSynthJob = existingJobSnapshot.exists()
-            ? reportJobSchema.parse(existingJobSnapshot.val())
-            : null;
+          if (existingJobSnapshot.exists()) {
+            // Tolerant safeParse-and-warn (review IN-03, T-27-43 precedent —
+            // mirrors the sibling GET): one corrupt job node must never
+            // permanently 500 the purchase path. Unparseable is treated as
+            // "no existing job" (the same `{job: null}` answer the GET
+            // gives), so the entry stays purchasable.
+            const parsedExistingJob = reportJobSchema.safeParse(existingJobSnapshot.val());
+            if (parsedExistingJob.success) {
+              existingSynthJob = parsedExistingJob.data;
+            } else {
+              request.log.warn(
+                { jobId: existingPointer.jobId, issues: parsedExistingJob.error.issues },
+                'ignoring stored synthesis job that failed schema validation on submission',
+              );
+            }
+          }
         }
         // Review CR-02 (crash-window recovery): besides the ordinary
         // `refunded` retry terminal, a pointer at a STALE `queued` job (a
