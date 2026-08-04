@@ -1,5 +1,9 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import type { PrepChecklistItemId } from '@smash-tracker/shared';
+import type {
+  PrepBriefStatus,
+  PrepChecklistItemId,
+  ReviewChecklistItemId,
+} from '@smash-tracker/shared';
 import { api } from '@/lib/api';
 import { useAuth } from './useAuth';
 
@@ -68,6 +72,52 @@ export function useTogglePrepChecklistItem(entryKey: string) {
       api.prep.setChecklistItem(entryKey, itemId, { checked }),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: prepBriefQueryKey(entryKey) });
+    },
+  });
+}
+
+/**
+ * PUT /api/prep/:entryKey/review-checklist/:itemId (28-04's route) — the
+ * post-event review checklist's twin of `useTogglePrepChecklistItem` above,
+ * same mutation + invalidation shape against the SAME `['prep', entryKey]`
+ * cache entry (the review checklist lives on the same brief record). Unlike
+ * the prep twin, this hook also applies an optimistic `reviewChecklist`
+ * update via `onMutate` so the checkbox flips immediately instead of
+ * waiting on the round trip, with an `onError` rollback to the pre-mutation
+ * snapshot — `ReviewChecklistCard`'s per-row pending-disable is the ONLY
+ * other in-flight signal, so a slow network must not leave the row frozen
+ * in its old state.
+ */
+export function useToggleReviewChecklistItem(entryKey: string) {
+  const queryClient = useQueryClient();
+  const queryKey = prepBriefQueryKey(entryKey);
+  return useMutation({
+    mutationFn: ({ itemId, checked }: { itemId: ReviewChecklistItemId; checked: boolean }) =>
+      api.prep.setReviewChecklistItem(entryKey, itemId, { checked }),
+    onMutate: async ({ itemId, checked }) => {
+      await queryClient.cancelQueries({ queryKey });
+      const previous = queryClient.getQueryData<PrepBriefStatus>(queryKey);
+      if (previous?.brief) {
+        const nextReviewChecklist = { ...previous.brief.reviewChecklist };
+        if (checked) {
+          nextReviewChecklist[itemId] = true;
+        } else {
+          delete nextReviewChecklist[itemId];
+        }
+        queryClient.setQueryData<PrepBriefStatus>(queryKey, {
+          ...previous,
+          brief: { ...previous.brief, reviewChecklist: nextReviewChecklist },
+        });
+      }
+      return { previous };
+    },
+    onError: (_error, _variables, context) => {
+      if (context?.previous !== undefined) {
+        queryClient.setQueryData(queryKey, context.previous);
+      }
+    },
+    onSettled: async () => {
+      await queryClient.invalidateQueries({ queryKey });
     },
   });
 }
