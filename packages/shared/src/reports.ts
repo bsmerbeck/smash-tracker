@@ -141,8 +141,20 @@ export type ScoutReportRecord = z.infer<typeof scoutReportRecordSchema>;
  */
 export const PREP_BUNDLE_SIZE = 3;
 
-/** The two prep-context reasons a `POST /api/reports` request can carry. */
-export const prepReportReasonSchema = z.enum(['prep_report', 'prep_bundle']);
+/**
+ * The prep/synthesis-context reasons a `POST /api/reports` request can
+ * carry. Widened in Phase 28 (28-02) to add `post_event_synthesis` — this
+ * enum is reused verbatim by `reportJobSchema.reason`, so a stored job
+ * carrying the new literal is read by an old (pre-28) server via the
+ * jobs-GET `safeParse` (routes/reports.ts:1528-1535), which simply skips an
+ * unrecognized reason rather than 500ing. This is why the API must deploy
+ * before the web app for this feature (28-RESEARCH.md Pitfall 8, A4).
+ */
+export const prepReportReasonSchema = z.enum([
+  'prep_report',
+  'prep_bundle',
+  'post_event_synthesis',
+]);
 export type PrepReportReason = z.infer<typeof prepReportReasonSchema>;
 
 /**
@@ -161,6 +173,13 @@ export type PrepReportReason = z.infer<typeof prepReportReasonSchema>;
  * - `reason: 'prep_bundle'`: exactly `PREP_BUNDLE_SIZE` DISTINCT curated
  *   opponents (`entryKey` + `bundleId` + `opponentNames`) — a duplicate
  *   would map two paid slots onto one opponent.
+ * - `reason: 'post_event_synthesis'` (28-02): `entryKey` only. Grounding for
+ *   a synthesis is the caller's OWN stored annotations for that entry,
+ *   resolved server-side from `entryKey` alone — there is deliberately no
+ *   field on this branch through which a client could inject evidence, an
+ *   opponent identity, or a citation target. `opponentName`, `bundleId`, and
+ *   `opponentNames` are all FORBIDDEN on this branch (the synthesis arm has
+ *   no opponent concept).
  * - Whenever `reason` is present, `query`/`source`/`combineWith` are
  *   FORBIDDEN outright — not silently ignored. This is a deliberate
  *   correction to RESEARCH Pattern 5, which proposed carrying a per-opponent
@@ -284,6 +303,37 @@ export const generateReportRequestSchema = z
           code: 'custom',
           message: 'opponentName is not allowed for reason: prep_bundle',
           path: ['opponentName'],
+        });
+      }
+    }
+
+    if (value.reason === 'post_event_synthesis') {
+      if (!value.entryKey) {
+        ctx.addIssue({
+          code: 'custom',
+          message: 'entryKey is required for reason: post_event_synthesis',
+          path: ['entryKey'],
+        });
+      }
+      if (value.opponentName !== undefined) {
+        ctx.addIssue({
+          code: 'custom',
+          message: 'opponentName is not allowed for reason: post_event_synthesis',
+          path: ['opponentName'],
+        });
+      }
+      if (value.bundleId !== undefined) {
+        ctx.addIssue({
+          code: 'custom',
+          message: 'bundleId is not allowed for reason: post_event_synthesis',
+          path: ['bundleId'],
+        });
+      }
+      if (value.opponentNames !== undefined) {
+        ctx.addIssue({
+          code: 'custom',
+          message: 'opponentNames is not allowed for reason: post_event_synthesis',
+          path: ['opponentNames'],
         });
       }
     }

@@ -297,6 +297,94 @@ describe('generateReportRequestSchema — Phase 27 prep-context union', () => {
   });
 });
 
+/**
+ * Phase 28 (28-02, REV-03): the `post_event_synthesis` request-union arm.
+ * Grounding for a synthesis is the caller's OWN stored annotations,
+ * resolved server-side from `entryKey` alone — no opponent/identity field
+ * exists on this branch.
+ */
+describe('generateReportRequestSchema — Phase 28 post_event_synthesis arm', () => {
+  it('post_event_synthesis: entryKey alone parses', () => {
+    const result = generateReportRequestSchema.safeParse({
+      reason: 'post_event_synthesis',
+      entryKey: 'e1',
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it('post_event_synthesis: entryKey + jobId parses', () => {
+    const result = generateReportRequestSchema.safeParse({
+      reason: 'post_event_synthesis',
+      entryKey: 'e1',
+      jobId: 'client-generated-uuid',
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it('post_event_synthesis: missing entryKey fails', () => {
+    const result = generateReportRequestSchema.safeParse({
+      reason: 'post_event_synthesis',
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('post_event_synthesis: a client-supplied query is rejected (reason-present-forbids-identity)', () => {
+    const result = generateReportRequestSchema.safeParse({
+      reason: 'post_event_synthesis',
+      entryKey: 'e1',
+      query: 'user/abc',
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('post_event_synthesis: opponentName is rejected (no opponent concept on this arm)', () => {
+    const result = generateReportRequestSchema.safeParse({
+      reason: 'post_event_synthesis',
+      entryKey: 'e1',
+      opponentName: 'rival',
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('post_event_synthesis: bundleId is rejected', () => {
+    const result = generateReportRequestSchema.safeParse({
+      reason: 'post_event_synthesis',
+      entryKey: 'e1',
+      bundleId: 'b1',
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('post_event_synthesis: opponentNames is rejected', () => {
+    const result = generateReportRequestSchema.safeParse({
+      reason: 'post_event_synthesis',
+      entryKey: 'e1',
+      opponentNames: ['a', 'b', 'c'],
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('post_event_synthesis: a malformed entryKey fails (entryKeyInputSchema)', () => {
+    const result = generateReportRequestSchema.safeParse({
+      reason: 'post_event_synthesis',
+      entryKey: 'a/b',
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('reportJobSchema parses with reason: post_event_synthesis', () => {
+    const parsed = reportJobSchema.safeParse({
+      status: 'queued',
+      createdAt: 1,
+      updatedAt: 1,
+      attempt: 0,
+      creditRef: 'j',
+      reason: 'post_event_synthesis',
+    });
+    expect(parsed.success).toBe(true);
+  });
+});
+
 describe('PREP_BUNDLE_SIZE', () => {
   it('is exactly 3', () => {
     expect(PREP_BUNDLE_SIZE).toBe(3);
