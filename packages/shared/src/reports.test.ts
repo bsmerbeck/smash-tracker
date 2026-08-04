@@ -1,13 +1,17 @@
 import { describe, expect, it } from 'vitest';
 import {
+  generatedPracticePlanSchema,
   generatedScoutReportSchema,
   generateReportRequestSchema,
+  practicePlanResponseSchema,
   PREP_BUNDLE_SIZE,
   prepBundleAcceptedResponseSchema,
   prepReportJobsResponseSchema,
   reportJobSchema,
   reportJobStatusSchema,
   scoutReportRecordSchema,
+  storedPracticePlanSchema,
+  synthesisJobStatusResponseSchema,
 } from './reports.js';
 
 /**
@@ -432,5 +436,113 @@ describe('prepBundleAcceptedResponseSchema', () => {
       jobs: [{ opponentName: 'a', jobId: 'b1:1', slot: 4 }],
     });
     expect(result.success).toBe(false);
+  });
+});
+
+/**
+ * Phase 28 (28-02, REV-03): the practice-plan generation/stored schema
+ * split, mirroring `storedScoutReportSchema`'s P1-lesson tolerance pattern
+ * exactly, plus the two synthesis read contracts.
+ */
+const FULL_PRACTICE_PLAN = {
+  summary: 'Focus on ledge options and neutral spacing this block.',
+  focusAreas: [
+    {
+      title: 'Ledge get-up mixups',
+      evidence:
+        'Repeatedly rolled in the same direction {{cite:matchId=m1;seconds=42;label=ledge%20roll}}.',
+      drills: ['Practice all four get-up options in training mode.'],
+    },
+  ],
+};
+
+describe('generatedPracticePlanSchema', () => {
+  it('generation schema is strict: requires summary and at least one focusArea', () => {
+    expect(generatedPracticePlanSchema.safeParse(FULL_PRACTICE_PLAN).success).toBe(true);
+    expect(
+      generatedPracticePlanSchema.safeParse({ ...FULL_PRACTICE_PLAN, focusAreas: [] }).success,
+    ).toBe(false);
+  });
+
+  it('generation schema rejects a focusArea with empty drills', () => {
+    const invalid = {
+      ...FULL_PRACTICE_PLAN,
+      focusAreas: [{ ...FULL_PRACTICE_PLAN.focusAreas[0], drills: [] }],
+    };
+    expect(generatedPracticePlanSchema.safeParse(invalid).success).toBe(false);
+  });
+
+  it('generation schema rejects a focusArea missing title or evidence', () => {
+    const missingTitle = {
+      ...FULL_PRACTICE_PLAN,
+      focusAreas: [{ evidence: 'e', drills: ['d'] }],
+    };
+    expect(generatedPracticePlanSchema.safeParse(missingTitle).success).toBe(false);
+    const missingEvidence = {
+      ...FULL_PRACTICE_PLAN,
+      focusAreas: [{ title: 't', drills: ['d'] }],
+    };
+    expect(generatedPracticePlanSchema.safeParse(missingEvidence).success).toBe(false);
+  });
+});
+
+describe('storedPracticePlanSchema', () => {
+  it('INV-7: stored schema tolerates total array strip', () => {
+    const parsed = storedPracticePlanSchema.parse({
+      entryKey: 'e1',
+      createdAt: 1,
+      summary: 's',
+    });
+    expect(parsed.focusAreas).toEqual([]);
+
+    const withDroppedDrills = storedPracticePlanSchema.parse({
+      entryKey: 'e1',
+      createdAt: 1,
+      summary: 's',
+      focusAreas: [{ title: 't', evidence: 'e' }],
+    });
+    expect(withDroppedDrills.focusAreas[0]?.drills).toEqual([]);
+  });
+
+  it('stored schema tolerates explicit nulls on every .nullish() field', () => {
+    const parsed = storedPracticePlanSchema.safeParse({
+      entryKey: 'e1',
+      createdAt: 1,
+      summary: 's',
+      droppedClaimCount: null,
+    });
+    expect(parsed.success).toBe(true);
+  });
+
+  it('round-trips a full generated plan through the stored shape', () => {
+    const record = { entryKey: 'e1', createdAt: 1, ...FULL_PRACTICE_PLAN };
+    const parsed = storedPracticePlanSchema.parse(record);
+    expect(parsed.focusAreas).toHaveLength(1);
+    expect(parsed.focusAreas[0]?.drills).toEqual(FULL_PRACTICE_PLAN.focusAreas[0]?.drills);
+  });
+});
+
+describe('synthesisJobStatusResponseSchema', () => {
+  it('accepts a null job', () => {
+    expect(synthesisJobStatusResponseSchema.safeParse({ job: null }).success).toBe(true);
+  });
+
+  it('accepts a populated job', () => {
+    const result = synthesisJobStatusResponseSchema.safeParse({
+      job: { jobId: 'j1', status: 'succeeded', updatedAt: 1, resultRef: 'plan-push-key' },
+    });
+    expect(result.success).toBe(true);
+  });
+});
+
+describe('practicePlanResponseSchema', () => {
+  it('round-trips a stored plan', () => {
+    const stored = storedPracticePlanSchema.parse({
+      entryKey: 'e1',
+      createdAt: 1,
+      ...FULL_PRACTICE_PLAN,
+    });
+    const result = practicePlanResponseSchema.safeParse({ plan: stored });
+    expect(result.success).toBe(true);
   });
 });
