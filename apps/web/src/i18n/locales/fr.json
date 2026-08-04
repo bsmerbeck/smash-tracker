@@ -2215,7 +2215,8 @@
       "manualAssociate": {
         "label": "Nom de l'événement",
         "date": "Date de l'événement",
-        "submit": "Associer l'événement"
+        "submit": "Associer l'événement",
+        "endDate": "Date de fin (facultatif)"
       }
     },
     "dashboard": {
@@ -2462,7 +2463,10 @@
       "nameLabel": "Nom de l'événement",
       "dateLabel": "Date de l'événement",
       "dateRequired": "Choisissez une date future — les résumés de préparation concernent des événements qui n'ont pas encore eu lieu.",
-      "submit": "Ajouter et démarrer le résumé de préparation"
+      "submit": "Ajouter et démarrer le résumé de préparation",
+      "endDateLabel": "Date de fin (facultatif)",
+      "endDateHint": "Pour les événements sur plusieurs jours — le dernier jour où vous avez joué.",
+      "endBeforeStart": "La date de fin ne peut pas être antérieure à la date de l'événement."
     },
     "opponents": {
       "title": "Adversaires probables",
@@ -2568,6 +2572,49 @@
         "notFound": "Aucun joueur trouvé pour ce profil. Vérifiez le lien et réessayez.",
         "failed": "Une erreur est survenue lors de la confirmation de ce joueur. Veuillez réessayer."
       }
+    }
+  },
+  "postEvent": {
+    "mode": {
+      "badge": "Revue post-événement",
+      "sentence": "Cet événement est terminé — passez en revue comment ça s'est passé et annotez vos matchs pendant qu'ils sont encore frais."
+    },
+    "prepSection": {
+      "trigger": "Votre résumé de préparation original",
+      "hint": "Conservé exactement comme vous l'avez laissé"
+    },
+    "results": {
+      "title": "Vos résultats",
+      "inferredBadge": "Manuel",
+      "inferredTooltip": "Inclus depuis votre liste d'adversaires probables organisée — non synchronisé depuis cet événement.",
+      "empty": {
+        "title": "Aucun match enregistré pour cet événement pour l'instant",
+        "body": "Enregistrez les sets que vous avez joués, ou synchronisez cet événement — vos résultats apparaîtront ici."
+      }
+    },
+    "checklist": {
+      "title": "Liste de revue",
+      "progress": "{{checked}}/{{total}} terminé",
+      "items": {
+        "attachVods": "Associez des VOD à vos matchs de cet événement",
+        "addTimestamps": "Ajoutez des horodatages à vos VOD d'événement",
+        "tagTurningPoints": "Marquez les moments décisifs",
+        "reviewLosses": "Revisionnez vos défaites et notez ce qui s'est passé",
+        "updateOpponentNotes": "Mettez à jour vos notes sur les adversaires affrontés"
+      }
+    },
+    "grounding": {
+      "title": "Vos annotations",
+      "description": "Horodatages et tags des matchs de cet événement — les preuves sur lesquelles se base votre revue.",
+      "annotateLink": "Annoter dans le gestionnaire de VOD",
+      "empty": {
+        "title": "Rien d'annoté pour l'instant",
+        "body": "Ouvrez un match dans le gestionnaire de VOD pour ajouter des horodatages et marquer les moments clés — ils apparaîtront ici.",
+        "cta": "Ouvrir le gestionnaire de VOD"
+      }
+    },
+    "error": {
+      "loadFailed": "Une erreur est survenue lors du chargement de votre revue. Veuillez réessayer."
     }
   }
 }

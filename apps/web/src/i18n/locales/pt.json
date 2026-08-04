@@ -2215,7 +2215,8 @@
       "manualAssociate": {
         "label": "Nome do evento",
         "date": "Data do evento",
-        "submit": "Vincular evento"
+        "submit": "Vincular evento",
+        "endDate": "Data de término (opcional)"
       }
     },
     "dashboard": {
@@ -2462,7 +2463,10 @@
       "nameLabel": "Nome do evento",
       "dateLabel": "Data do evento",
       "dateRequired": "Escolha uma data futura — briefings de preparação são para eventos que ainda não aconteceram.",
-      "submit": "Adicionar e iniciar briefing de preparação"
+      "submit": "Adicionar e iniciar briefing de preparação",
+      "endDateLabel": "Data de término (opcional)",
+      "endDateHint": "Para eventos de vários dias — o último dia em que você jogou.",
+      "endBeforeStart": "A data de término não pode ser anterior à data do evento."
     },
     "opponents": {
       "title": "Adversários prováveis",
@@ -2568,6 +2572,49 @@
         "notFound": "Nenhum jogador encontrado para esse perfil. Verifique o link e tente novamente.",
         "failed": "Algo deu errado ao confirmar este jogador. Tente novamente."
       }
+    }
+  },
+  "postEvent": {
+    "mode": {
+      "badge": "Revisão pós-evento",
+      "sentence": "Este evento acabou — reveja como foi e anote suas partidas enquanto ainda estão frescas."
+    },
+    "prepSection": {
+      "trigger": "Seu briefing de preparação original",
+      "hint": "Mantido exatamente como você deixou"
+    },
+    "results": {
+      "title": "Seus resultados",
+      "inferredBadge": "Manual",
+      "inferredTooltip": "Incluído da sua lista de adversários prováveis selecionada — não sincronizado a partir deste evento.",
+      "empty": {
+        "title": "Nenhuma partida armazenada para este evento ainda",
+        "body": "Registre os sets que você jogou, ou sincronize este evento — seus resultados aparecerão aqui."
+      }
+    },
+    "checklist": {
+      "title": "Checklist de revisão",
+      "progress": "{{checked}}/{{total}} concluído",
+      "items": {
+        "attachVods": "Anexe VODs às suas partidas deste evento",
+        "addTimestamps": "Adicione marcações de tempo aos VODs do seu evento",
+        "tagTurningPoints": "Marque os momentos decisivos",
+        "reviewLosses": "Reassista suas derrotas e anote o que aconteceu",
+        "updateOpponentNotes": "Atualize suas notas sobre os adversários que você enfrentou"
+      }
+    },
+    "grounding": {
+      "title": "Suas anotações",
+      "description": "Marcações de tempo e tags das partidas deste evento — as evidências em que sua revisão se baseia.",
+      "annotateLink": "Anotar no Gerenciador de VODs",
+      "empty": {
+        "title": "Nada anotado ainda",
+        "body": "Abra uma partida no Gerenciador de VODs para adicionar marcações de tempo e marcar os momentos-chave — eles aparecerão aqui.",
+        "cta": "Abrir Gerenciador de VODs"
+      }
+    },
+    "error": {
+      "loadFailed": "Algo deu errado ao carregar sua revisão. Tente novamente."
     }
   }
 }

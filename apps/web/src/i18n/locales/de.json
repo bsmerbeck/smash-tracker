@@ -2215,7 +2215,8 @@
       "manualAssociate": {
         "label": "Eventname",
         "date": "Eventdatum",
-        "submit": "Event verknüpfen"
+        "submit": "Event verknüpfen",
+        "endDate": "Enddatum (optional)"
       }
     },
     "dashboard": {
@@ -2462,7 +2463,10 @@
       "nameLabel": "Eventname",
       "dateLabel": "Eventdatum",
       "dateRequired": "Wähle ein Datum in der Zukunft — Vorbereitungs-Briefings sind für Events, die noch nicht stattgefunden haben.",
-      "submit": "Hinzufügen & Vorbereitungs-Briefing starten"
+      "submit": "Hinzufügen & Vorbereitungs-Briefing starten",
+      "endDateLabel": "Enddatum (optional)",
+      "endDateHint": "Für mehrtägige Events — der letzte Tag, an dem du gespielt hast.",
+      "endBeforeStart": "Das Enddatum darf nicht vor dem Eventdatum liegen."
     },
     "opponents": {
       "title": "Wahrscheinliche Gegner",
@@ -2568,6 +2572,49 @@
         "notFound": "Kein Spieler für dieses Profil gefunden. Überprüfe den Link und versuche es erneut.",
         "failed": "Beim Bestätigen dieses Spielers ist etwas schiefgelaufen. Bitte erneut versuchen."
       }
+    }
+  },
+  "postEvent": {
+    "mode": {
+      "badge": "Post-Event-Review",
+      "sentence": "Dieses Event ist vorbei — sieh dir an, wie es gelaufen ist, und kommentiere deine Matches, solange sie noch frisch sind."
+    },
+    "prepSection": {
+      "trigger": "Dein ursprüngliches Vorbereitungs-Briefing",
+      "hint": "Genau so belassen, wie du es verlassen hast"
+    },
+    "results": {
+      "title": "Deine Ergebnisse",
+      "inferredBadge": "Manuell",
+      "inferredTooltip": "Aus deiner kuratierten Gegnerliste übernommen — nicht mit diesem Event synchronisiert.",
+      "empty": {
+        "title": "Noch keine Matches für dieses Event gespeichert",
+        "body": "Erfasse die gespielten Sets, oder synchronisiere dieses Event — deine Ergebnisse erscheinen dann hier."
+      }
+    },
+    "checklist": {
+      "title": "Review-Checkliste",
+      "progress": "{{checked}}/{{total}} erledigt",
+      "items": {
+        "attachVods": "Verknüpfe VODs mit deinen Matches aus diesem Event",
+        "addTimestamps": "Füge Zeitstempel zu deinen Event-VODs hinzu",
+        "tagTurningPoints": "Markiere die entscheidenden Wendepunkte",
+        "reviewLosses": "Sieh dir deine Niederlagen erneut an und notiere, was passiert ist",
+        "updateOpponentNotes": "Aktualisiere deine Notizen zu den Gegnern, gegen die du gespielt hast"
+      }
+    },
+    "grounding": {
+      "title": "Deine Anmerkungen",
+      "description": "Zeitstempel und Tags aus den Matches dieses Events — die Grundlage, auf der dein Review aufbaut.",
+      "annotateLink": "Im VOD-Manager kommentieren",
+      "empty": {
+        "title": "Noch nichts kommentiert",
+        "body": "Öffne ein Match im VOD-Manager, um Zeitstempel hinzuzufügen und die wichtigsten Momente zu markieren — sie erscheinen dann hier.",
+        "cta": "VOD-Manager öffnen"
+      }
+    },
+    "error": {
+      "loadFailed": "Beim Laden deines Reviews ist etwas schiefgelaufen. Bitte erneut versuchen."
     }
   }
 }

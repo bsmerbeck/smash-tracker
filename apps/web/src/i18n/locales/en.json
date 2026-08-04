@@ -2215,7 +2215,8 @@
       "manualAssociate": {
         "label": "Event name",
         "date": "Event date",
-        "submit": "Associate event"
+        "submit": "Associate event",
+        "endDate": "End date (optional)"
       }
     },
     "dashboard": {
@@ -2462,7 +2463,10 @@
       "nameLabel": "Event name",
       "dateLabel": "Event date",
       "dateRequired": "Pick a date in the future — prep briefs are for events that haven't happened yet.",
-      "submit": "Add & start prep brief"
+      "submit": "Add & start prep brief",
+      "endDateLabel": "End date (optional)",
+      "endDateHint": "For multi-day events — the last day you played.",
+      "endBeforeStart": "The end date can't be before the event date."
     },
     "opponents": {
       "title": "Likely opponents",
@@ -2568,6 +2572,49 @@
         "notFound": "No player found for that profile. Check the link and try again.",
         "failed": "Something went wrong confirming this player. Please try again."
       }
+    }
+  },
+  "postEvent": {
+    "mode": {
+      "badge": "Post-event review",
+      "sentence": "This event is over — review how it went and annotate your matches while they're fresh."
+    },
+    "prepSection": {
+      "trigger": "Your original prep brief",
+      "hint": "Kept exactly as you left it"
+    },
+    "results": {
+      "title": "Your results",
+      "inferredBadge": "Manual",
+      "inferredTooltip": "Included from your curated opponent list — not synced from this event.",
+      "empty": {
+        "title": "No matches stored for this event yet",
+        "body": "Log the sets you played, or sync this event — your results will show up here."
+      }
+    },
+    "checklist": {
+      "title": "Review checklist",
+      "progress": "{{checked}}/{{total}} complete",
+      "items": {
+        "attachVods": "Attach VODs to your matches from this event",
+        "addTimestamps": "Add timestamps to your event VODs",
+        "tagTurningPoints": "Tag the turning-point moments",
+        "reviewLosses": "Rewatch your losses and note what happened",
+        "updateOpponentNotes": "Update your notes on the opponents you played"
+      }
+    },
+    "grounding": {
+      "title": "Your annotations",
+      "description": "Timestamps and tags from this event's matches — the evidence your review is built from.",
+      "annotateLink": "Annotate in VOD Manager",
+      "empty": {
+        "title": "Nothing annotated yet",
+        "body": "Open a match in the VOD Manager to add timestamps and tag the key moments — they'll appear here.",
+        "cta": "Open VOD Manager"
+      }
+    },
+    "error": {
+      "loadFailed": "Something went wrong loading your review. Please try again."
     }
   }
 }
