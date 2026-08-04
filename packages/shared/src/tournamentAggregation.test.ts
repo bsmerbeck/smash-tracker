@@ -10,6 +10,7 @@ import {
   matchesForEntry,
   ordinalSuffix,
   parseExternalId,
+  selectReviewResultsContext,
 } from './tournamentAggregation.js';
 
 function makeEntry(overrides: Partial<TournamentEntry> = {}): TournamentEntry {
@@ -134,6 +135,126 @@ describe('matchesForEntry', () => {
   it('returns an empty array when no matches qualify', () => {
     const entry = makeEntry();
     expect(matchesForEntry([], entry)).toEqual([]);
+  });
+});
+
+// Phase 28 (REV-01/REV-02, INV-8): selectReviewResultsContext classification.
+describe('selectReviewResultsContext', () => {
+  const DAY_MS = 24 * 60 * 60 * 1000;
+
+  it('INV-8: synced rows are attributed by entryKey and carry no manual flag', () => {
+    const entry = makeEntry();
+    const startggMatch = makeMatch({
+      id: 'm1',
+      time: 1_500_000,
+      eventName: 'Ultimate Singles',
+      source: 'startgg',
+    });
+    const parryggMatch = makeMatch({
+      id: 'm2',
+      time: 1_600_000,
+      eventName: 'Ultimate Singles',
+      source: 'parrygg',
+    });
+    const result = selectReviewResultsContext([startggMatch, parryggMatch], entry, {});
+    expect(result.synced).toEqual([startggMatch, parryggMatch]);
+    expect(result.manual).toEqual([]);
+  });
+
+  it('INV-8: an event-name-associated manual match lands in manual (labeled)', () => {
+    const entry = makeEntry();
+    const manualMatch = makeMatch({
+      id: 'm1',
+      time: 1_500_000,
+      eventName: 'Ultimate Singles',
+    });
+    const result = selectReviewResultsContext([manualMatch], entry, {});
+    expect(result.synced).toEqual([]);
+    expect(result.manual).toEqual([manualMatch]);
+  });
+
+  it('INV-8: an alias-inferred manual match inside the event window lands in manual', () => {
+    const entry = makeEntry({ firstSetAt: 1_000_000, lastSetAt: 2_000_000 });
+    const inferredMatch = makeMatch({
+      id: 'm1',
+      time: 1_000_000 - DAY_MS + 1, // inside padded window
+      eventName: 'Some Other Bracket', // does NOT match entry.eventName
+      opponent: 'rival',
+    });
+    const result = selectReviewResultsContext([inferredMatch], entry, { rival: true });
+    expect(result.synced).toEqual([]);
+    expect(result.manual).toEqual([inferredMatch]);
+  });
+
+  it('an alias-inferred manual match OUTSIDE the event window is excluded', () => {
+    const entry = makeEntry({ firstSetAt: 1_000_000, lastSetAt: 2_000_000 });
+    const outsideMatch = makeMatch({
+      id: 'm1',
+      time: 1_000_000 - DAY_MS * 30,
+      eventName: 'Some Other Bracket',
+      opponent: 'rival',
+    });
+    const result = selectReviewResultsContext([outsideMatch], entry, { rival: true });
+    expect(result.manual).toEqual([]);
+  });
+
+  it('a synced match of an uncurated opponent from a different event is excluded', () => {
+    const entry = makeEntry();
+    const unrelatedSynced = makeMatch({
+      id: 'm1',
+      time: 1_500_000,
+      eventName: 'Doubles',
+      source: 'startgg',
+      opponent: 'someoneElse',
+    });
+    const result = selectReviewResultsContext([unrelatedSynced], entry, {});
+    expect(result.synced).toEqual([]);
+    expect(result.manual).toEqual([]);
+  });
+
+  it('a match that is both event-associated and alias-inferred appears exactly once', () => {
+    const entry = makeEntry({ firstSetAt: 1_000_000, lastSetAt: 2_000_000 });
+    const dualMatch = makeMatch({
+      id: 'm1',
+      time: 1_500_000,
+      eventName: 'Ultimate Singles', // matches entry AND is in-window
+      opponent: 'rival',
+    });
+    const result = selectReviewResultsContext([dualMatch], entry, { rival: true });
+    expect(result.manual).toEqual([dualMatch]);
+  });
+
+  it('both lists are sorted chronologically by match time', () => {
+    const entry = makeEntry({ firstSetAt: 1_000_000, lastSetAt: 2_000_000 });
+    const syncedLate = makeMatch({
+      id: 's2',
+      time: 1_900_000,
+      eventName: 'Ultimate Singles',
+      source: 'startgg',
+    });
+    const syncedEarly = makeMatch({
+      id: 's1',
+      time: 1_100_000,
+      eventName: 'Ultimate Singles',
+      source: 'startgg',
+    });
+    const manualLate = makeMatch({
+      id: 'm2',
+      time: 1_800_000,
+      eventName: 'Ultimate Singles',
+    });
+    const manualEarly = makeMatch({
+      id: 'm1',
+      time: 1_200_000,
+      eventName: 'Ultimate Singles',
+    });
+    const result = selectReviewResultsContext(
+      [syncedLate, syncedEarly, manualLate, manualEarly],
+      entry,
+      {},
+    );
+    expect(result.synced).toEqual([syncedEarly, syncedLate]);
+    expect(result.manual).toEqual([manualEarly, manualLate]);
   });
 });
 

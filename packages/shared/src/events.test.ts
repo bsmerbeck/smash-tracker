@@ -94,6 +94,8 @@ describe('EVENT_CATALOG', () => {
       prep_brief_activated: 'D',
       prep_brief_reopened: 'D',
       prep_offer_viewed: 'X',
+      post_event_review_started: 'D',
+      post_event_review_completed: 'D',
     });
   });
 
@@ -167,5 +169,13 @@ describe('EVENT_CATALOG', () => {
   // remain untouched by the Phase 26 catalog extension.
   it('leaves the Phase 13 tournament_prep_activated row unchanged (D-11 non-regression)', () => {
     expect(EVENT_CATALOG.tournament_prep_activated).toBe('D');
+  });
+
+  // Phase 28 (Post-Event Review & Cited Practice Plan, EVT-06): both new
+  // review lifecycle events are D-class, content-free, deliberately withheld
+  // from GA4 projection during the soak.
+  it('maps post_event_review_started and post_event_review_completed to class D', () => {
+    expect(EVENT_CATALOG.post_event_review_started).toBe('D');
+    expect(EVENT_CATALOG.post_event_review_completed).toBe('D');
   });
 });
