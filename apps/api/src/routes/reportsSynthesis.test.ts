@@ -1,4 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
+import type { Auth } from 'firebase-admin/auth';
+import type { Database } from 'firebase-admin/database';
 import {
   serializeCitationToken,
   storedPracticePlanSchema,
@@ -8,7 +10,15 @@ import {
 import type { PrepPaidConfig, ReportsConfig, StripeConfig } from '../config/env.js';
 import type { AnthropicLikeClient } from '../reports/generate.js';
 import type { FakeDatabase } from '../test-support/fakeDatabase.js';
-import { authHeader, buildTestApp, TEST_UID } from '../test-support/testApp.js';
+import { FakeAuth } from '../test-support/fakeAuth.js';
+import {
+  authHeader,
+  buildTestApp,
+  TEST_EMAIL,
+  TEST_TOKEN,
+  TEST_UID,
+} from '../test-support/testApp.js';
+import { buildApp } from '../app.js';
 
 /**
  * Phase 28 (28-07, REV-03): route-level tests for the `post_event_synthesis`
@@ -782,3 +792,231 @@ describe('runSynthesisGeneration — validate-then-store, fail-and-refund on tot
     expect(true).toBe(true);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Task 3: ungated reads — synthesis job status and practice-plan fetch
+// ---------------------------------------------------------------------------
+
+describe('GET /api/reports/synthesis and GET /api/reports/practice-plans/:planId', () => {
+  it('GET /reports/synthesis returns the latest job for the entry; no pointer -> {job: null}; pointer to a missing/corrupt job row -> {job: null}', async () => {
+    const { app, database } = billableApp();
+    seedEntry(database);
+    seedBrief(database);
+    seedOneAnnotation(database, 'm1', 42);
+    database.seed(`credits/${TEST_UID}/balance`, 3);
+
+    // No pointer at all.
+    const noneResponse = await app.inject({
+      method: 'GET',
+      url: `/api/reports/synthesis?entryKey=${encodeURIComponent(ENTRY_KEY)}`,
+      headers: authHeader(),
+    });
+    expect(noneResponse.statusCode).toBe(200);
+    expect(noneResponse.json()).toEqual({ job: null });
+
+    // Pointer to a missing job row.
+    database.seed(`prepSynthesisJobIndex/${TEST_UID}/${ENTRY_KEY}`, {
+      jobId: 'missing-job',
+      updatedAt: 1,
+    });
+    const missingResponse = await app.inject({
+      method: 'GET',
+      url: `/api/reports/synthesis?entryKey=${encodeURIComponent(ENTRY_KEY)}`,
+      headers: authHeader(),
+    });
+    expect(missingResponse.statusCode).toBe(200);
+    expect(missingResponse.json()).toEqual({ job: null });
+
+    // Pointer to a corrupt job row.
+    database.seed(`prepSynthesisJobIndex/${TEST_UID}/${ENTRY_KEY}`, {
+      jobId: 'corrupt-job',
+      updatedAt: 1,
+    });
+    database.seed(`reportJobs/${TEST_UID}/corrupt-job`, { status: 'not-a-real-status' });
+    const corruptResponse = await app.inject({
+      method: 'GET',
+      url: `/api/reports/synthesis?entryKey=${encodeURIComponent(ENTRY_KEY)}`,
+      headers: authHeader(),
+    });
+    expect(corruptResponse.statusCode).toBe(200);
+    expect(corruptResponse.json()).toEqual({ job: null });
+
+    // Clear the corrupt pointer before submitting for real — the POST
+    // handler's OWN current-job check (unlike this GET) parses the pointed
+    // job via `reportJobSchema.parse` (matching the prep_report precedent,
+    // routes/reports.ts:1004-1007), so a corrupt row left in place would
+    // throw there rather than exercising the real happy-path this test
+    // asserts next.
+    database.seed(`prepSynthesisJobIndex/${TEST_UID}/${ENTRY_KEY}`, null);
+
+    // A real, resolved job returns its status.
+    const submitResponse = await app.inject({
+      method: 'POST',
+      url: '/api/reports',
+      headers: authHeader(),
+      payload: SYNTHESIS_PAYLOAD,
+    });
+    expect(submitResponse.statusCode).toBe(202);
+    const { job: submittedJob } = submitResponse.json() as { job: { jobId: string } };
+
+    const realResponse = await app.inject({
+      method: 'GET',
+      url: `/api/reports/synthesis?entryKey=${encodeURIComponent(ENTRY_KEY)}`,
+      headers: authHeader(),
+    });
+    expect(realResponse.statusCode).toBe(200);
+    const body = realResponse.json() as { job: { jobId: string; status: string } };
+    expect(body.job.jobId).toBe(submittedJob.jobId);
+    expect(body.job.status).toBe('succeeded');
+  });
+
+  it('both GETs work with the gate OFF — status polling and plan viewing survive a mid-session flip-off', async () => {
+    const { database } = billableApp();
+    seedEntry(database);
+    seedBrief(database);
+    seedOneAnnotation(database, 'm1', 42);
+    database.seed(`practicePlans/${TEST_UID}/plan-1`, {
+      entryKey: ENTRY_KEY,
+      createdAt: FIRST_SET_AT,
+      summary: 'A strong showing overall.',
+      focusAreas: [{ title: 'Neutral game', evidence: 'text', drills: ['drill'] }],
+    });
+    database.seed(`prepSynthesisJobIndex/${TEST_UID}/${ENTRY_KEY}`, {
+      jobId: 'gate-off-job',
+      updatedAt: 1,
+    });
+    database.seed(`reportJobs/${TEST_UID}/gate-off-job`, {
+      status: 'succeeded',
+      createdAt: 1,
+      updatedAt: 2,
+      attempt: 0,
+      creditRef: 'gate-off-job',
+      reason: 'post_event_synthesis',
+      resultRef: 'plan-1',
+    });
+
+    // A SECOND app instance pointed at the SAME database, built WITHOUT the
+    // paid-prep config — simulating the owner flipping the gate off after
+    // this job already resolved (mirrors `reports.test.ts`'s own
+    // gate-off-after-purchase precedent for `GET /reports/jobs`).
+    const gateOffApp = buildAppSharingDatabase(database, {
+      reports: NON_ALLOWLIST_CONFIG,
+      stripe: STRIPE_CONFIG,
+      parrygg: { apiKey: 'parry-key' },
+      // prepPaid deliberately omitted — the gate is off.
+    });
+
+    const statusResponse = await gateOffApp.inject({
+      method: 'GET',
+      url: `/api/reports/synthesis?entryKey=${encodeURIComponent(ENTRY_KEY)}`,
+      headers: authHeader(),
+    });
+    expect(statusResponse.statusCode).toBe(200);
+    expect(statusResponse.json()).toMatchObject({
+      job: { jobId: 'gate-off-job', status: 'succeeded', resultRef: 'plan-1' },
+    });
+
+    const planResponse = await gateOffApp.inject({
+      method: 'GET',
+      url: '/api/reports/practice-plans/plan-1',
+      headers: authHeader(),
+    });
+    expect(planResponse.statusCode).toBe(200);
+    expect((planResponse.json() as { plan: StoredPracticePlan }).plan.entryKey).toBe(ENTRY_KEY);
+  });
+
+  it('GET /reports/practice-plans/:planId returns the stored plan for the owner; a foreign uid planId 404s indistinguishably from a missing one', async () => {
+    const { app, database } = billableApp();
+    const SHARED_PLAN_ID = 'shared-plan-id';
+
+    // Same planId string queried once when it doesn't exist ANYWHERE, and
+    // once after seeding it under a FOREIGN uid — the message echoes only
+    // the caller's own requested id, never server-derived existence data,
+    // so querying the identical id both times is what actually proves
+    // "indistinguishable" (both responses byte-equal).
+    const missingResponse = await app.inject({
+      method: 'GET',
+      url: `/api/reports/practice-plans/${SHARED_PLAN_ID}`,
+      headers: authHeader(),
+    });
+    expect(missingResponse.statusCode).toBe(404);
+
+    database.seed(`practicePlans/someone-else/${SHARED_PLAN_ID}`, {
+      entryKey: 'their-entry',
+      createdAt: FIRST_SET_AT,
+      summary: 'Not yours.',
+      focusAreas: [{ title: 'x', evidence: 'y', drills: ['z'] }],
+    });
+
+    const foreignResponse = await app.inject({
+      method: 'GET',
+      url: `/api/reports/practice-plans/${SHARED_PLAN_ID}`,
+      headers: authHeader(),
+    });
+    expect(foreignResponse.statusCode).toBe(404);
+    expect(foreignResponse.json()).toEqual(missingResponse.json());
+
+    // Sanity: the owner CAN read their own plan under the same id.
+    const ownRef = database.ref(`practicePlans/${TEST_UID}/${SHARED_PLAN_ID}`);
+    await ownRef.set({
+      entryKey: ENTRY_KEY,
+      createdAt: FIRST_SET_AT,
+      summary: 'Mine.',
+      focusAreas: [{ title: 'x', evidence: 'y', drills: ['z'] }],
+    });
+    const ownResponse = await app.inject({
+      method: 'GET',
+      url: `/api/reports/practice-plans/${SHARED_PLAN_ID}`,
+      headers: authHeader(),
+    });
+    expect(ownResponse.statusCode).toBe(200);
+    expect((ownResponse.json() as { plan: StoredPracticePlan }).plan.summary).toBe('Mine.');
+  });
+
+  it('GET /reports/:id still works — no route-shadowing regression from the new static-prefixed paths', async () => {
+    const { app, database } = billableApp();
+    database.seed(`scoutReports/${TEST_UID}/report-1`, {
+      createdAt: Date.now(),
+      model: 'claude-opus-4-8',
+      player: { id: 1, gamerTag: 'Pandem1c' },
+      report: {
+        overview: 'x',
+        gameplan: ['x'],
+        characterStrategy: { picks: ['Mario'], reasoning: 'x' },
+        stageStrategy: { bans: ['x'], picks: ['x'], reasoning: 'x' },
+        watchFor: ['x'],
+        confidenceNotes: 'x',
+      },
+    });
+
+    const response = await app.inject({
+      method: 'GET',
+      url: '/api/reports/report-1',
+      headers: authHeader(),
+    });
+    expect(response.statusCode).toBe(200);
+  });
+});
+
+/**
+ * Builds a second app instance sharing an EXISTING `FakeDatabase` — mirrors
+ * `reports.test.ts`'s own `gateOffApp` construction (a second `buildApp`
+ * call pointed at the same in-memory database, simulating the owner
+ * flipping the activation gate off mid-session without losing prior data).
+ */
+function buildAppSharingDatabase(
+  database: FakeDatabase,
+  options: Partial<Parameters<typeof buildApp>[0]>,
+): ReturnType<typeof buildApp> {
+  const auth = new FakeAuth();
+  auth.registerToken(TEST_TOKEN, { uid: TEST_UID, email: TEST_EMAIL });
+  return buildApp({
+    firebase: {
+      app: {} as never,
+      auth: auth as unknown as Auth,
+      database: database as unknown as Database,
+    },
+    logger: false,
+    ...options,
+  });
+}

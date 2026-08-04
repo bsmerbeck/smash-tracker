@@ -6,6 +6,7 @@ import {
   errorResponseSchema,
   generateReportRequestSchema,
   isReportReadyBinding,
+  practicePlanResponseSchema,
   PREP_BUNDLE_SIZE,
   prepBundleAcceptedResponseSchema,
   prepReportJobsResponseSchema,
@@ -110,6 +111,15 @@ const reportIdParamsSchema = z.object({
 /** Phase 27 (Task 3): `GET /reports/jobs` querystring — the brief's entryKey, caller-uid-scoped. */
 const reportJobsQuerySchema = z.object({
   entryKey: entryKeyInputSchema,
+});
+
+/**
+ * Phase 28 (28-07, REV-03): `GET /reports/practice-plans/:planId` params —
+ * uid-scoping (`practicePlans/{uid}/{planId}`) IS the ownership check, so
+ * this schema only bounds shape, never identity.
+ */
+const practicePlanParamsSchema = z.object({
+  planId: z.string().min(1).max(200),
 });
 
 // ---------------------------------------------------------------------------
@@ -1999,6 +2009,125 @@ const reportsRoutes: FastifyPluginAsyncZod<ReportsRoutesOptions> = async (app, o
 
       entries.sort((a, b) => a.opponentName.localeCompare(b.opponentName));
       return { jobs: entries };
+    },
+  );
+
+  // GET /api/reports/synthesis — Phase 28 (28-07, REV-03): the read-only
+  // per-entry synthesis job-status endpoint (mirrors `GET /reports/jobs`
+  // immediately above). Registered BEFORE the parameterized `/reports/:id`
+  // route below for readability — Fastify's static-route precedence makes
+  // this correct regardless of registration order (the literal segment
+  // `synthesis` is never shadowed by `:id` matching that string).
+  //
+  // Deliberately OUTSIDE the activation gate (`prepPaidConfig` is never
+  // consulted here) — same Phase 27 rule `GET /reports/jobs` documents:
+  // turning the gate off must never strand already-paid work; only NEW
+  // purchases (the POST arm) are refused.
+  app.get(
+    '/reports/synthesis',
+    {
+      schema: {
+        querystring: reportJobsQuerySchema,
+        response: {
+          200: synthesisJobStatusResponseSchema,
+          403: errorResponseSchema,
+        },
+      },
+    },
+    async (request, reply) => {
+      if (!canReadReports(request.uid)) {
+        return reply.code(403).send({
+          error: 'Forbidden',
+          message: 'AI reports are not enabled for this account',
+          statusCode: 403,
+        });
+      }
+
+      // uid-scoped read: a foreign/nonexistent entryKey yields the SAME
+      // `{job: null}` either way — no existence signal, mirroring
+      // `GET /reports/jobs`'s T-27-40 precedent.
+      const indexSnapshot = await app.firebase.database
+        .ref(`prepSynthesisJobIndex/${request.uid}/${request.query.entryKey}`)
+        .get();
+      if (!indexSnapshot.exists()) {
+        return { job: null };
+      }
+
+      const pointer = indexSnapshot.val() as { jobId?: string } | null;
+      const jobId = pointer?.jobId;
+      if (!jobId) {
+        return { job: null };
+      }
+
+      const jobSnapshot = await app.firebase.database
+        .ref(`reportJobs/${request.uid}/${jobId}`)
+        .get();
+      if (!jobSnapshot.exists()) {
+        // The index pointer outlived its job node — should not happen
+        // under the single-writer-per-job invariant, but one corrupt
+        // pointer must never 500 the caller (T-27-43 precedent).
+        return { job: null };
+      }
+      const parsed = reportJobSchema.safeParse(jobSnapshot.val());
+      if (!parsed.success) {
+        request.log.warn(
+          { jobId, issues: parsed.error.issues },
+          'skipping stored synthesis job that failed schema validation',
+        );
+        return { job: null };
+      }
+
+      return {
+        job: {
+          jobId,
+          status: parsed.data.status,
+          updatedAt: parsed.data.updatedAt,
+          ...(parsed.data.resultRef ? { resultRef: parsed.data.resultRef } : {}),
+        },
+      };
+    },
+  );
+
+  // GET /api/reports/practice-plans/:planId — Phase 28 (28-07, REV-03): the
+  // stored practice-plan read. `practicePlans/{uid}/{planId}` is uid-scoped
+  // — that scoping IS the ownership check (no cross-uid path is
+  // constructible), so a foreign or missing planId 404s indistinguishably.
+  // Ungated (mirrors `GET /reports/synthesis` above) and parsed through the
+  // TOLERANT `storedPracticePlanSchema` (INV-7: every array defaults to
+  // `[]` on read, surviving RTDB's empty-array strip).
+  app.get(
+    '/reports/practice-plans/:planId',
+    {
+      schema: {
+        params: practicePlanParamsSchema,
+        response: {
+          200: practicePlanResponseSchema,
+          403: errorResponseSchema,
+          404: errorResponseSchema,
+        },
+      },
+    },
+    async (request, reply) => {
+      if (!canReadReports(request.uid)) {
+        return reply.code(403).send({
+          error: 'Forbidden',
+          message: 'AI reports are not enabled for this account',
+          statusCode: 403,
+        });
+      }
+
+      const snapshot = await app.firebase.database
+        .ref(`practicePlans/${request.uid}/${request.params.planId}`)
+        .get();
+      if (!snapshot.exists()) {
+        return reply.code(404).send({
+          error: 'Not Found',
+          message: `Practice plan ${request.params.planId} not found`,
+          statusCode: 404,
+        });
+      }
+
+      return { plan: storedPracticePlanSchema.parse(snapshot.val()) };
     },
   );
 
