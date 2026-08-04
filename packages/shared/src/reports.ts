@@ -141,8 +141,20 @@ export type ScoutReportRecord = z.infer<typeof scoutReportRecordSchema>;
  */
 export const PREP_BUNDLE_SIZE = 3;
 
-/** The two prep-context reasons a `POST /api/reports` request can carry. */
-export const prepReportReasonSchema = z.enum(['prep_report', 'prep_bundle']);
+/**
+ * The prep/synthesis-context reasons a `POST /api/reports` request can
+ * carry. Widened in Phase 28 (28-02) to add `post_event_synthesis` — this
+ * enum is reused verbatim by `reportJobSchema.reason`, so a stored job
+ * carrying the new literal is read by an old (pre-28) server via the
+ * jobs-GET `safeParse` (routes/reports.ts:1528-1535), which simply skips an
+ * unrecognized reason rather than 500ing. This is why the API must deploy
+ * before the web app for this feature (28-RESEARCH.md Pitfall 8, A4).
+ */
+export const prepReportReasonSchema = z.enum([
+  'prep_report',
+  'prep_bundle',
+  'post_event_synthesis',
+]);
 export type PrepReportReason = z.infer<typeof prepReportReasonSchema>;
 
 /**
@@ -161,6 +173,13 @@ export type PrepReportReason = z.infer<typeof prepReportReasonSchema>;
  * - `reason: 'prep_bundle'`: exactly `PREP_BUNDLE_SIZE` DISTINCT curated
  *   opponents (`entryKey` + `bundleId` + `opponentNames`) — a duplicate
  *   would map two paid slots onto one opponent.
+ * - `reason: 'post_event_synthesis'` (28-02): `entryKey` only. Grounding for
+ *   a synthesis is the caller's OWN stored annotations for that entry,
+ *   resolved server-side from `entryKey` alone — there is deliberately no
+ *   field on this branch through which a client could inject evidence, an
+ *   opponent identity, or a citation target. `opponentName`, `bundleId`, and
+ *   `opponentNames` are all FORBIDDEN on this branch (the synthesis arm has
+ *   no opponent concept).
  * - Whenever `reason` is present, `query`/`source`/`combineWith` are
  *   FORBIDDEN outright — not silently ignored. This is a deliberate
  *   correction to RESEARCH Pattern 5, which proposed carrying a per-opponent
@@ -287,6 +306,37 @@ export const generateReportRequestSchema = z
         });
       }
     }
+
+    if (value.reason === 'post_event_synthesis') {
+      if (!value.entryKey) {
+        ctx.addIssue({
+          code: 'custom',
+          message: 'entryKey is required for reason: post_event_synthesis',
+          path: ['entryKey'],
+        });
+      }
+      if (value.opponentName !== undefined) {
+        ctx.addIssue({
+          code: 'custom',
+          message: 'opponentName is not allowed for reason: post_event_synthesis',
+          path: ['opponentName'],
+        });
+      }
+      if (value.bundleId !== undefined) {
+        ctx.addIssue({
+          code: 'custom',
+          message: 'bundleId is not allowed for reason: post_event_synthesis',
+          path: ['bundleId'],
+        });
+      }
+      if (value.opponentNames !== undefined) {
+        ctx.addIssue({
+          code: 'custom',
+          message: 'opponentNames is not allowed for reason: post_event_synthesis',
+          path: ['opponentNames'],
+        });
+      }
+    }
   });
 export type GenerateReportRequest = z.infer<typeof generateReportRequestSchema>;
 
@@ -377,6 +427,93 @@ export const prepBundleAcceptedResponseSchema = z.object({
   ),
 });
 export type PrepBundleAcceptedResponse = z.infer<typeof prepBundleAcceptedResponseSchema>;
+
+/**
+ * Phase 28 (28-02, REV-03): the post-event practice-plan generation shape —
+ * the STRICT model-output schema used with `zodOutputFormat` (28-06).
+ * Grounded entirely in the caller's OWN stored annotations for the entry
+ * (resolved server-side from `entryKey`), never in opponent data — a
+ * synthesis has no opponent concept.
+ *
+ * `evidence` is markdown carrying `{{cite:matchId=...;seconds=...;label=...}}`
+ * tokens (the citation grammar defined in `coachingReview.ts`) — schemas
+ * here store BODIES containing tokens, never parsed token objects
+ * (self-contained snapshot stance, mirroring `storedScoutReportSchema`).
+ * A `focusArea` is a SUBSTANTIVE CLAIM: post-generation validation (28-06)
+ * drops any focusArea that lacks at least one citation token resolving by
+ * set-membership to the server-assembled evidence, and a plan whose every
+ * focusArea is dropped fails the job and refunds (owner invariants 1-2).
+ */
+export const generatedPracticePlanSchema = z.object({
+  /** Overview prose for the whole plan; citations welcome but not required. */
+  summary: z.string().min(1),
+  focusAreas: z
+    .array(
+      z.object({
+        title: z.string().min(1),
+        /** Markdown carrying `{{cite:...}}` tokens grounding this claim. */
+        evidence: z.string().min(1),
+        drills: z.array(z.string().min(1)).min(1),
+      }),
+    )
+    .min(1),
+});
+export type GeneratedPracticePlan = z.infer<typeof generatedPracticePlanSchema>;
+
+/**
+ * Stored/read variant of `generatedPracticePlanSchema` — mirrors the
+ * `storedScoutReportSchema` split exactly (2026-08-03 P1 lesson): RTDB
+ * strips EMPTY ARRAYS from stored objects exactly like it strips null
+ * values, so EVERY array field here defaults to an empty array when the
+ * key is missing, and every optional stored field is `.nullish()`. The
+ * GENERATION schema deliberately keeps its arrays required/min-length —
+ * the model must still emit them; only the stored/read shape tolerates
+ * RTDB having stripped them (INV-7).
+ */
+export const storedPracticePlanSchema = z.object({
+  entryKey: z.string().min(1),
+  /** Epoch ms when the plan was generated. Server-set. */
+  createdAt: z.number().int().nonnegative(),
+  summary: z.string().min(1),
+  focusAreas: z
+    .array(
+      z.object({
+        title: z.string().min(1),
+        evidence: z.string().min(1),
+        drills: z.array(z.string().min(1)).default([]),
+      }),
+    )
+    .default([]),
+  /** Count of focusAreas dropped by 28-06's citation validation, if any. */
+  droppedClaimCount: z.number().int().nonnegative().nullish(),
+});
+export type StoredPracticePlan = z.infer<typeof storedPracticePlanSchema>;
+
+/**
+ * GET /api/reports/synthesis?entryKey=... response — the job-status contract
+ * for a `post_event_synthesis` submission. `job: null` means no synthesis
+ * has ever been submitted for this entry (or the pointer was pruned). One
+ * job per entryKey: `prepSynthesisJobIndex/{uid}/{entryKey}` always names
+ * the LATEST job — a retry-after-refund overwrites it, so the UI always
+ * resolves to exactly one current job for a given entry.
+ */
+export const synthesisJobStatusResponseSchema = z.object({
+  job: z
+    .object({
+      jobId: z.string().min(1),
+      status: reportJobStatusSchema,
+      updatedAt: z.number(),
+      resultRef: z.string().optional(),
+    })
+    .nullable(),
+});
+export type SynthesisJobStatusResponse = z.infer<typeof synthesisJobStatusResponseSchema>;
+
+/** GET /api/reports/practice-plans/:planId response — a stored practice plan read. */
+export const practicePlanResponseSchema = z.object({
+  plan: storedPracticePlanSchema,
+});
+export type PracticePlanResponse = z.infer<typeof practicePlanResponseSchema>;
 
 /**
  * GET /api/reports/config response — whether the signed-in caller can

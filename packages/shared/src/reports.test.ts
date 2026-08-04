@@ -1,13 +1,17 @@
 import { describe, expect, it } from 'vitest';
 import {
+  generatedPracticePlanSchema,
   generatedScoutReportSchema,
   generateReportRequestSchema,
+  practicePlanResponseSchema,
   PREP_BUNDLE_SIZE,
   prepBundleAcceptedResponseSchema,
   prepReportJobsResponseSchema,
   reportJobSchema,
   reportJobStatusSchema,
   scoutReportRecordSchema,
+  storedPracticePlanSchema,
+  synthesisJobStatusResponseSchema,
 } from './reports.js';
 
 /**
@@ -297,6 +301,94 @@ describe('generateReportRequestSchema — Phase 27 prep-context union', () => {
   });
 });
 
+/**
+ * Phase 28 (28-02, REV-03): the `post_event_synthesis` request-union arm.
+ * Grounding for a synthesis is the caller's OWN stored annotations,
+ * resolved server-side from `entryKey` alone — no opponent/identity field
+ * exists on this branch.
+ */
+describe('generateReportRequestSchema — Phase 28 post_event_synthesis arm', () => {
+  it('post_event_synthesis: entryKey alone parses', () => {
+    const result = generateReportRequestSchema.safeParse({
+      reason: 'post_event_synthesis',
+      entryKey: 'e1',
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it('post_event_synthesis: entryKey + jobId parses', () => {
+    const result = generateReportRequestSchema.safeParse({
+      reason: 'post_event_synthesis',
+      entryKey: 'e1',
+      jobId: 'client-generated-uuid',
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it('post_event_synthesis: missing entryKey fails', () => {
+    const result = generateReportRequestSchema.safeParse({
+      reason: 'post_event_synthesis',
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('post_event_synthesis: a client-supplied query is rejected (reason-present-forbids-identity)', () => {
+    const result = generateReportRequestSchema.safeParse({
+      reason: 'post_event_synthesis',
+      entryKey: 'e1',
+      query: 'user/abc',
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('post_event_synthesis: opponentName is rejected (no opponent concept on this arm)', () => {
+    const result = generateReportRequestSchema.safeParse({
+      reason: 'post_event_synthesis',
+      entryKey: 'e1',
+      opponentName: 'rival',
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('post_event_synthesis: bundleId is rejected', () => {
+    const result = generateReportRequestSchema.safeParse({
+      reason: 'post_event_synthesis',
+      entryKey: 'e1',
+      bundleId: 'b1',
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('post_event_synthesis: opponentNames is rejected', () => {
+    const result = generateReportRequestSchema.safeParse({
+      reason: 'post_event_synthesis',
+      entryKey: 'e1',
+      opponentNames: ['a', 'b', 'c'],
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('post_event_synthesis: a malformed entryKey fails (entryKeyInputSchema)', () => {
+    const result = generateReportRequestSchema.safeParse({
+      reason: 'post_event_synthesis',
+      entryKey: 'a/b',
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('reportJobSchema parses with reason: post_event_synthesis', () => {
+    const parsed = reportJobSchema.safeParse({
+      status: 'queued',
+      createdAt: 1,
+      updatedAt: 1,
+      attempt: 0,
+      creditRef: 'j',
+      reason: 'post_event_synthesis',
+    });
+    expect(parsed.success).toBe(true);
+  });
+});
+
 describe('PREP_BUNDLE_SIZE', () => {
   it('is exactly 3', () => {
     expect(PREP_BUNDLE_SIZE).toBe(3);
@@ -344,5 +436,113 @@ describe('prepBundleAcceptedResponseSchema', () => {
       jobs: [{ opponentName: 'a', jobId: 'b1:1', slot: 4 }],
     });
     expect(result.success).toBe(false);
+  });
+});
+
+/**
+ * Phase 28 (28-02, REV-03): the practice-plan generation/stored schema
+ * split, mirroring `storedScoutReportSchema`'s P1-lesson tolerance pattern
+ * exactly, plus the two synthesis read contracts.
+ */
+const FULL_PRACTICE_PLAN = {
+  summary: 'Focus on ledge options and neutral spacing this block.',
+  focusAreas: [
+    {
+      title: 'Ledge get-up mixups',
+      evidence:
+        'Repeatedly rolled in the same direction {{cite:matchId=m1;seconds=42;label=ledge%20roll}}.',
+      drills: ['Practice all four get-up options in training mode.'],
+    },
+  ],
+};
+
+describe('generatedPracticePlanSchema', () => {
+  it('generation schema is strict: requires summary and at least one focusArea', () => {
+    expect(generatedPracticePlanSchema.safeParse(FULL_PRACTICE_PLAN).success).toBe(true);
+    expect(
+      generatedPracticePlanSchema.safeParse({ ...FULL_PRACTICE_PLAN, focusAreas: [] }).success,
+    ).toBe(false);
+  });
+
+  it('generation schema rejects a focusArea with empty drills', () => {
+    const invalid = {
+      ...FULL_PRACTICE_PLAN,
+      focusAreas: [{ ...FULL_PRACTICE_PLAN.focusAreas[0], drills: [] }],
+    };
+    expect(generatedPracticePlanSchema.safeParse(invalid).success).toBe(false);
+  });
+
+  it('generation schema rejects a focusArea missing title or evidence', () => {
+    const missingTitle = {
+      ...FULL_PRACTICE_PLAN,
+      focusAreas: [{ evidence: 'e', drills: ['d'] }],
+    };
+    expect(generatedPracticePlanSchema.safeParse(missingTitle).success).toBe(false);
+    const missingEvidence = {
+      ...FULL_PRACTICE_PLAN,
+      focusAreas: [{ title: 't', drills: ['d'] }],
+    };
+    expect(generatedPracticePlanSchema.safeParse(missingEvidence).success).toBe(false);
+  });
+});
+
+describe('storedPracticePlanSchema', () => {
+  it('INV-7: stored schema tolerates total array strip', () => {
+    const parsed = storedPracticePlanSchema.parse({
+      entryKey: 'e1',
+      createdAt: 1,
+      summary: 's',
+    });
+    expect(parsed.focusAreas).toEqual([]);
+
+    const withDroppedDrills = storedPracticePlanSchema.parse({
+      entryKey: 'e1',
+      createdAt: 1,
+      summary: 's',
+      focusAreas: [{ title: 't', evidence: 'e' }],
+    });
+    expect(withDroppedDrills.focusAreas[0]?.drills).toEqual([]);
+  });
+
+  it('stored schema tolerates explicit nulls on every .nullish() field', () => {
+    const parsed = storedPracticePlanSchema.safeParse({
+      entryKey: 'e1',
+      createdAt: 1,
+      summary: 's',
+      droppedClaimCount: null,
+    });
+    expect(parsed.success).toBe(true);
+  });
+
+  it('round-trips a full generated plan through the stored shape', () => {
+    const record = { entryKey: 'e1', createdAt: 1, ...FULL_PRACTICE_PLAN };
+    const parsed = storedPracticePlanSchema.parse(record);
+    expect(parsed.focusAreas).toHaveLength(1);
+    expect(parsed.focusAreas[0]?.drills).toEqual(FULL_PRACTICE_PLAN.focusAreas[0]?.drills);
+  });
+});
+
+describe('synthesisJobStatusResponseSchema', () => {
+  it('accepts a null job', () => {
+    expect(synthesisJobStatusResponseSchema.safeParse({ job: null }).success).toBe(true);
+  });
+
+  it('accepts a populated job', () => {
+    const result = synthesisJobStatusResponseSchema.safeParse({
+      job: { jobId: 'j1', status: 'succeeded', updatedAt: 1, resultRef: 'plan-push-key' },
+    });
+    expect(result.success).toBe(true);
+  });
+});
+
+describe('practicePlanResponseSchema', () => {
+  it('round-trips a stored plan', () => {
+    const stored = storedPracticePlanSchema.parse({
+      entryKey: 'e1',
+      createdAt: 1,
+      ...FULL_PRACTICE_PLAN,
+    });
+    const result = practicePlanResponseSchema.safeParse({ plan: stored });
+    expect(result.success).toBe(true);
   });
 });
