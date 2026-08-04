@@ -171,12 +171,45 @@ export type TournamentEntryList = z.infer<typeof tournamentEntryListSchema>;
  * synced entry carries (seed, placement, standings, slugs) has no manual
  * equivalent and is simply omitted from the written record.
  */
-export const manualTournamentEntryInputSchema = z.object({
-  /** Event name/label the user types, e.g. "Locals #42". */
-  eventName: z.string().trim().min(1).max(200),
-  /** Epoch ms of the event, when the user provides one; defaults server-side to now. */
-  eventDate: z.number().int().nonnegative().optional(),
-});
+export const manualTournamentEntryInputSchema = z
+  .object({
+    /** Event name/label the user types, e.g. "Locals #42". */
+    eventName: z.string().trim().min(1).max(200),
+    /** Epoch ms of the event, when the user provides one; defaults server-side to now. */
+    eventDate: z.number().int().nonnegative().optional(),
+    /**
+     * Phase 28 (REV-01, 28-CONTEXT.md decision 1 — "ship the explicit end
+     * field if it's cheap"): epoch ms local-calendar-midnight of the event's
+     * LAST day (multi-day events), parsed client-side by the same
+     * `parseLocalCalendarDate` rule as `eventDate`. When present, the API
+     * stores `lastSetAt = eventEndDate` (28-05) so Phase 28's
+     * `deriveReviewAtCandidate` (manual branch, `+24h`) converts after the
+     * event's FINAL day, not its first — one derivation rule then covers
+     * both single- and multi-day manual events. Optional and back-compat:
+     * every pre-Phase-28 client that never sends this field is unaffected.
+     */
+    eventEndDate: z.number().int().nonnegative().optional(),
+  })
+  .superRefine((value, ctx) => {
+    if (value.eventEndDate === undefined) {
+      return;
+    }
+    if (value.eventDate === undefined) {
+      ctx.addIssue({
+        code: 'custom',
+        message: 'eventEndDate requires eventDate to be present',
+        path: ['eventEndDate'],
+      });
+      return;
+    }
+    if (value.eventEndDate < value.eventDate) {
+      ctx.addIssue({
+        code: 'custom',
+        message: 'eventEndDate cannot be before eventDate',
+        path: ['eventEndDate'],
+      });
+    }
+  });
 export type ManualTournamentEntryInput = z.infer<typeof manualTournamentEntryInputSchema>;
 
 // ---------------------------------------------------------------------------
