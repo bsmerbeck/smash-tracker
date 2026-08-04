@@ -116,10 +116,15 @@ const reportJobsQuerySchema = z.object({
 /**
  * Phase 28 (28-07, REV-03): `GET /reports/practice-plans/:planId` params —
  * uid-scoping (`practicePlans/{uid}/{planId}`) IS the ownership check, so
- * this schema only bounds shape, never identity.
+ * this schema only bounds shape, never identity. `entryKeyInputSchema`
+ * (review WR-06): the value is interpolated straight into
+ * `database.ref(...)`, so RTDB-reserved characters must 400 at the
+ * boundary rather than throw synchronously inside the SDK as a 500 —
+ * the exact failure mode that validator exists to prevent; RTDB push keys
+ * always satisfy it.
  */
 const practicePlanParamsSchema = z.object({
-  planId: z.string().min(1).max(200),
+  planId: entryKeyInputSchema,
 });
 
 // ---------------------------------------------------------------------------

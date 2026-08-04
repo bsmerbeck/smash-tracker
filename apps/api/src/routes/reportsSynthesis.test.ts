@@ -1253,6 +1253,19 @@ describe('GET /api/reports/synthesis and GET /api/reports/practice-plans/:planId
     expect((ownResponse.json() as { plan: StoredPracticePlan }).plan.summary).toBe('Mine.');
   });
 
+  it('WR-06: a planId with an RTDB-illegal character answers 400, never a 500 from database.ref()', async () => {
+    const { app } = billableApp();
+
+    for (const planId of ['a.b', 'a#b', 'a$b', 'a[b', 'a]b', 'a\x01b']) {
+      const response = await app.inject({
+        method: 'GET',
+        url: `/api/reports/practice-plans/${encodeURIComponent(planId)}`,
+        headers: authHeader(),
+      });
+      expect(response.statusCode).toBe(400);
+    }
+  });
+
   it('GET /reports/:id still works — no route-shadowing regression from the new static-prefixed paths', async () => {
     const { app, database } = billableApp();
     database.seed(`scoutReports/${TEST_UID}/report-1`, {
