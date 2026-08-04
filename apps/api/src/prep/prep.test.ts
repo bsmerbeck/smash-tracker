@@ -2,11 +2,13 @@ import { describe, expect, it } from 'vitest';
 import type { Database } from 'firebase-admin/database';
 import {
   PREP_LIKELY_OPPONENTS_MAX,
+  REVIEW_CHECKLIST_ITEM_IDS,
+  type ReviewChecklistItemId,
   type ScoutBinding,
   type TournamentEntry,
 } from '@smash-tracker/shared';
 import { FakeDatabase } from '../test-support/fakeDatabase.js';
-import { ConflictError, NotFoundError } from '../services/rtdb.js';
+import { ConflictError, NotFoundError, ValidationError } from '../services/rtdb.js';
 import {
   activatePrepBrief,
   clearPrepScoutBinding,
@@ -16,6 +18,7 @@ import {
   reopenPrepBrief,
   setPrepChecklistItem,
   setPrepLikelyOpponent,
+  setPrepReviewChecklistItem,
   setPrepScoutBinding,
 } from './prep.js';
 
@@ -595,5 +598,222 @@ describe('freezeReviewAtIfDue — write-once conversion freeze (INV-3, INV-5)', 
     const frozenCount = [a.frozen, b.frozen].filter(Boolean).length;
     expect(frozenCount).toBe(1);
     expect(countEnvelopesByName(database, 'post_event_review_started')).toBe(1);
+  });
+});
+
+/**
+ * Phase 28 (28-04, Task 2): the review checklist presence map and the
+ * fire-once `post_event_review_completed` emission (owner invariant 4).
+ */
+describe('setPrepReviewChecklistItem — review checklist + fire-once completion (INV-4)', () => {
+  it('INV-4: post_event_review_completed fires once on the first incomplete-to-complete transition', async () => {
+    const database = new FakeDatabase();
+    await activatePrepBrief(asDatabase(database), TEST_UID, ENTRY_KEY, EVENT_DATE, SESSION_ID);
+
+    const ids = [...REVIEW_CHECKLIST_ITEM_IDS];
+    const lastId = ids[ids.length - 1];
+    const firstFourIds = ids.slice(0, -1);
+    for (const id of firstFourIds) {
+      const brief = await setPrepReviewChecklistItem(
+        asDatabase(database),
+        TEST_UID,
+        ENTRY_KEY,
+        id,
+        true,
+        SESSION_ID,
+      );
+      expect(brief.reviewCompletedAt).toBeUndefined();
+    }
+    expect(countEnvelopesByName(database, 'post_event_review_completed')).toBe(0);
+
+    const completed = await setPrepReviewChecklistItem(
+      asDatabase(database),
+      TEST_UID,
+      ENTRY_KEY,
+      lastId!,
+      true,
+      SESSION_ID,
+    );
+    expect(typeof completed.reviewCompletedAt).toBe('number');
+    expect(countEnvelopesByName(database, 'post_event_review_completed')).toBe(1);
+  });
+
+  it('INV-4: unchecking later never erases or re-emits', async () => {
+    const database = new FakeDatabase();
+    await activatePrepBrief(asDatabase(database), TEST_UID, ENTRY_KEY, EVENT_DATE, SESSION_ID);
+    for (const id of REVIEW_CHECKLIST_ITEM_IDS) {
+      await setPrepReviewChecklistItem(
+        asDatabase(database),
+        TEST_UID,
+        ENTRY_KEY,
+        id,
+        true,
+        SESSION_ID,
+      );
+    }
+    expect(countEnvelopesByName(database, 'post_event_review_completed')).toBe(1);
+    const completedAtFirst = (await readPrepBrief(asDatabase(database), TEST_UID, ENTRY_KEY))
+      ?.reviewCompletedAt;
+    expect(typeof completedAtFirst).toBe('number');
+
+    const toggleId = REVIEW_CHECKLIST_ITEM_IDS[0];
+    const afterUncheck = await setPrepReviewChecklistItem(
+      asDatabase(database),
+      TEST_UID,
+      ENTRY_KEY,
+      toggleId,
+      false,
+      SESSION_ID,
+    );
+    expect(afterUncheck.reviewCompletedAt).toBe(completedAtFirst);
+    expect(countEnvelopesByName(database, 'post_event_review_completed')).toBe(1);
+
+    const reChecked = await setPrepReviewChecklistItem(
+      asDatabase(database),
+      TEST_UID,
+      ENTRY_KEY,
+      toggleId,
+      true,
+      SESSION_ID,
+    );
+    expect(reChecked.reviewCompletedAt).toBe(completedAtFirst);
+    expect(countEnvelopesByName(database, 'post_event_review_completed')).toBe(1);
+  });
+
+  it('the completed ledger row count stays exactly 1 across complete → uncheck → re-complete → uncheck → re-complete', async () => {
+    const database = new FakeDatabase();
+    await activatePrepBrief(asDatabase(database), TEST_UID, ENTRY_KEY, EVENT_DATE, SESSION_ID);
+    const [toggleId, ...restIds] = REVIEW_CHECKLIST_ITEM_IDS;
+
+    for (const id of restIds) {
+      await setPrepReviewChecklistItem(
+        asDatabase(database),
+        TEST_UID,
+        ENTRY_KEY,
+        id,
+        true,
+        SESSION_ID,
+      );
+    }
+    for (const checked of [true, false, true, false, true]) {
+      await setPrepReviewChecklistItem(
+        asDatabase(database),
+        TEST_UID,
+        ENTRY_KEY,
+        toggleId,
+        checked,
+        SESSION_ID,
+      );
+    }
+
+    expect(countEnvelopesByName(database, 'post_event_review_completed')).toBe(1);
+  });
+
+  it('read-back observes incomplete → no emission that request; the NEXT completing toggle emits', async () => {
+    const database = new FakeDatabase();
+    await activatePrepBrief(asDatabase(database), TEST_UID, ENTRY_KEY, EVENT_DATE, SESSION_ID);
+    const [first, second, ...rest] = REVIEW_CHECKLIST_ITEM_IDS;
+
+    for (const id of rest) {
+      await setPrepReviewChecklistItem(
+        asDatabase(database),
+        TEST_UID,
+        ENTRY_KEY,
+        id,
+        true,
+        SESSION_ID,
+      );
+    }
+    const stillIncomplete = await setPrepReviewChecklistItem(
+      asDatabase(database),
+      TEST_UID,
+      ENTRY_KEY,
+      first,
+      false,
+      SESSION_ID,
+    );
+    expect(stillIncomplete.reviewCompletedAt).toBeUndefined();
+    expect(countEnvelopesByName(database, 'post_event_review_completed')).toBe(0);
+
+    await setPrepReviewChecklistItem(
+      asDatabase(database),
+      TEST_UID,
+      ENTRY_KEY,
+      first,
+      true,
+      SESSION_ID,
+    );
+    const nowComplete = await setPrepReviewChecklistItem(
+      asDatabase(database),
+      TEST_UID,
+      ENTRY_KEY,
+      second,
+      true,
+      SESSION_ID,
+    );
+    expect(typeof nowComplete.reviewCompletedAt).toBe('number');
+    expect(countEnvelopesByName(database, 'post_event_review_completed')).toBe(1);
+  });
+
+  it('rejects an unknown item id before any write', async () => {
+    const database = new FakeDatabase();
+    await activatePrepBrief(asDatabase(database), TEST_UID, ENTRY_KEY, EVENT_DATE, SESSION_ID);
+
+    await expect(
+      setPrepReviewChecklistItem(
+        asDatabase(database),
+        TEST_UID,
+        ENTRY_KEY,
+        'notARealItem' as ReviewChecklistItemId,
+        true,
+        SESSION_ID,
+      ),
+    ).rejects.toThrow(ValidationError);
+
+    const stored = dumpBriefRecord(database, TEST_UID, ENTRY_KEY);
+    expect(stored?.reviewChecklist).toBeUndefined();
+  });
+
+  it('toggling review items never touches the prep checklist map, and vice versa', async () => {
+    const database = new FakeDatabase();
+    await activatePrepBrief(asDatabase(database), TEST_UID, ENTRY_KEY, EVENT_DATE, SESSION_ID);
+    await setPrepChecklistItem(
+      asDatabase(database),
+      TEST_UID,
+      ENTRY_KEY,
+      'confirmRegistration',
+      true,
+    );
+
+    const afterReviewToggle = await setPrepReviewChecklistItem(
+      asDatabase(database),
+      TEST_UID,
+      ENTRY_KEY,
+      REVIEW_CHECKLIST_ITEM_IDS[0],
+      true,
+      SESSION_ID,
+    );
+    expect(afterReviewToggle.checklist).toEqual({ confirmRegistration: true });
+    expect(afterReviewToggle.reviewChecklist).toEqual({
+      [REVIEW_CHECKLIST_ITEM_IDS[0]]: true,
+    });
+  });
+
+  it('missing brief → NotFoundError, no write', async () => {
+    const database = new FakeDatabase();
+
+    await expect(
+      setPrepReviewChecklistItem(
+        asDatabase(database),
+        TEST_UID,
+        'never-activated-entry',
+        REVIEW_CHECKLIST_ITEM_IDS[0],
+        true,
+        SESSION_ID,
+      ),
+    ).rejects.toThrow(NotFoundError);
+
+    const dump = database.dump() as Record<string, unknown>;
+    expect(dump.prepBriefs).toBeUndefined();
   });
 });

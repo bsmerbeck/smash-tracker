@@ -4,16 +4,18 @@ import {
   normalizePrepBriefRecord,
   prepBriefRecordSchema,
   PREP_LIKELY_OPPONENTS_MAX,
+  REVIEW_CHECKLIST_ITEM_IDS,
   scoutBindingRecordSchema,
   type PrepBrief,
   type PrepBriefRecord,
   type PrepChecklistItemId,
+  type ReviewChecklistItemId,
   type ScoutBinding,
   type TournamentEntry,
 } from '@smash-tracker/shared';
 import { buildDomainEnvelope } from '../events/envelope.js';
 import { createEvent } from '../events/ledger.js';
-import { ConflictError, NotFoundError } from '../services/rtdb.js';
+import { ConflictError, NotFoundError, ValidationError } from '../services/rtdb.js';
 
 /**
  * Phase 26 (D-22): this is the ONLY module in the API allowed to read or
@@ -291,6 +293,94 @@ export async function setPrepChecklistItem(
     throw new NotFoundError(`Prep brief not found for entryKey ${entryKey}`);
   }
   return brief;
+}
+
+/**
+ * Phase 28 (REV-01/REV-02, owner invariant 4): the review checklist toggle
+ * — mirrors `setPrepChecklistItem` above (single-child presence-map write,
+ * `.nullish()` stored read) but on the SIBLING `reviewChecklist` map, and
+ * additionally guards the ONE-TIME `reviewCompletedAt` completion marker.
+ *
+ * `itemId` is validated against `REVIEW_CHECKLIST_ITEM_IDS` here even
+ * though the route layer (28-04's `PUT .../review-checklist/:itemId`)
+ * already constrains it with `z.enum(...)` before this function is ever
+ * reached — defence in depth, mirroring `PrepChecklistItemId`'s route-level
+ * guard (Pitfall 4) so this module never trusts an un-typed caller.
+ *
+ * On the FIRST toggle whose read-back shows every `REVIEW_CHECKLIST_ITEM_IDS`
+ * entry present, a field-level write-once transaction (the same CR-01 shape
+ * as `activatePrepBrief`/`freezeReviewAtIfDue` above) commits
+ * `reviewCompletedAt` and emits `post_event_review_completed` — ONLY on
+ * that transaction's `committed === true`. Unchecking an item later never
+ * deletes `reviewCompletedAt` (it is a historical fact, not a live state
+ * mirror — see the stored-schema doc comment in `packages/shared/src/prep.ts`),
+ * so re-completing the checklist afterward finds the marker already present
+ * and the write-once transaction aborts silently — no second event, ever
+ * (owner invariant 4, verbatim: "unchecking something later does not erase
+ * or re-emit that historical event"). Belt-and-suspenders: even if two
+ * concurrent completing toggles both observed "complete" in their own
+ * read-back, `createEvent`'s own `eventDedup` transaction on the stable
+ * `${uid}:${entryKey}` causationId collapses any such race to one ledger row.
+ */
+export async function setPrepReviewChecklistItem(
+  database: Database,
+  uid: string,
+  entryKey: string,
+  itemId: ReviewChecklistItemId,
+  checked: boolean,
+  sessionId: string,
+): Promise<PrepBrief> {
+  if (!REVIEW_CHECKLIST_ITEM_IDS.includes(itemId)) {
+    throw new ValidationError(`Unknown review checklist item id: ${itemId}`);
+  }
+
+  const existing = await readPrepBrief(database, uid, entryKey);
+  if (existing === null) {
+    throw new NotFoundError(`Prep brief not found for entryKey ${entryKey}`);
+  }
+
+  await database
+    .ref(`${prepBriefPath(uid, entryKey)}/reviewChecklist/${itemId}`)
+    .set(checked ? true : null);
+
+  const brief = await readPrepBrief(database, uid, entryKey);
+  if (brief === null) {
+    throw new NotFoundError(`Prep brief not found for entryKey ${entryKey}`);
+  }
+
+  const isNowComplete =
+    checked && REVIEW_CHECKLIST_ITEM_IDS.every((id) => brief.reviewChecklist[id] === true);
+
+  if (!isNowComplete) {
+    return brief;
+  }
+
+  const result = await database
+    .ref(`${prepBriefPath(uid, entryKey)}/reviewCompletedAt`)
+    .transaction((current) => (current == null ? Date.now() : undefined));
+
+  if (result.committed !== true) {
+    // Marker already present (a prior completion) — silent, no event, ever.
+    return brief;
+  }
+
+  await createEvent(
+    database,
+    buildDomainEnvelope({
+      eventName: 'post_event_review_completed',
+      actorId: uid,
+      sessionId,
+      causationId: `${uid}:${entryKey}`,
+      consentState: 'unknown',
+      payload: {},
+    }),
+  );
+
+  const updated = await readPrepBrief(database, uid, entryKey);
+  if (updated === null) {
+    throw new NotFoundError(`Prep brief not found for entryKey ${entryKey}`);
+  }
+  return updated;
 }
 
 /**
