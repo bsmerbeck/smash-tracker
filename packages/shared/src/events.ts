@@ -192,6 +192,23 @@ export const EVENT_CATALOG = {
   prep_brief_activated: 'D',
   prep_brief_reopened: 'D',
   prep_offer_viewed: 'X',
+  // Phase 28 (Post-Event Review & Cited Practice Plan, REV-01/EVT-06):
+  // `post_event_review_started` fires once per (uid, entryKey), AFTER the
+  // durable first-open write commit (the `reviewAt` freeze, or a sibling
+  // write-once field, 28-04) — mirrors `prep_brief_activated`'s
+  // create-once-transaction-gated emission shape directly above.
+  // `post_event_review_completed` fires once on the FIRST incomplete->complete
+  // review-checklist transition (owner invariant 4) — NOT on synthesis
+  // purchase, and unchecking an item later never re-emits it (the eventDedup
+  // marker persists forever, same fire-once mechanism as every other event in
+  // this catalog). Both use causationId `${uid}:${entryKey}` (no timestamp,
+  // no random suffix — a per-call value would defeat createEvent's own
+  // eventDedup transaction, RESEARCH Pitfall 7) and both are content-free
+  // empty payloads. Both are deliberately absent from `GA4_PAYLOAD_ALLOWLIST`
+  // (apps/api/src/events/ga4Project.ts) during the soak, same as the three
+  // Phase 26 rows above.
+  post_event_review_started: 'D',
+  post_event_review_completed: 'D',
 } as const;
 export type EventCatalogName = keyof typeof EVENT_CATALOG;
 export type EventClass = (typeof EVENT_CATALOG)[EventCatalogName];

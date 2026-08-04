@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { EVENT_CATALOG, X_EVENT_ALLOWLIST } from './events.js';
 import {
+  deriveReviewAtCandidate,
   entryKeyInputSchema,
   isReportReadyBinding,
   normalizePrepBriefRecord,
@@ -10,6 +11,7 @@ import {
   prepBriefStatusSchema,
   prepOpenRequestSchema,
   prepScoutBindingConfirmRequestSchema,
+  REVIEW_CHECKLIST_ITEM_IDS,
   scoutBindingMapRecordSchema,
   scoutBindingRecordSchema,
   type PrepBriefRecord,
@@ -268,5 +270,135 @@ describe('prepScoutBindingConfirmRequestSchema', () => {
       parrygg: { query: 'Pandem1c' },
     });
     expect(result.success).toBe(true);
+  });
+});
+
+// Phase 28 (REV-01/REV-02): review conversion contract — reviewAt/
+// reviewCompletedAt/reviewChecklist on the stored brief, the review
+// checklist tuple, and deriveReviewAtCandidate (the owner's corrected
+// trigger). RESEARCH Pitfall 2: a numeric default on reviewAt would
+// instantly convert every legacy brief — these tests lock the `.nullish()`
+// no-default tolerance the same way the 260725-juj tests above lock it for
+// `checklist`/`likelyOpponents`.
+describe('prepBriefRecordSchema.review fields (Phase 28, 260725-juj null-strip tolerance)', () => {
+  it('parses a stored record with reviewAt/reviewCompletedAt/reviewChecklist all absent', () => {
+    const parsed = prepBriefRecordSchema.parse(makeStoredRecord());
+    expect(parsed.reviewAt).toBeUndefined();
+    expect(parsed.reviewCompletedAt).toBeUndefined();
+    expect(parsed.reviewChecklist).toBeUndefined();
+  });
+
+  it('parses a stored record with reviewAt/reviewCompletedAt/reviewChecklist all explicitly null', () => {
+    const result = prepBriefRecordSchema.safeParse(
+      makeStoredRecord({ reviewAt: null, reviewCompletedAt: null, reviewChecklist: null }),
+    );
+    expect(result.success).toBe(true);
+  });
+
+  it('parses a stored record with reviewAt/reviewCompletedAt/reviewChecklist all present', () => {
+    const parsed = prepBriefRecordSchema.parse(
+      makeStoredRecord({
+        reviewAt: 1_700_000_000_000,
+        reviewCompletedAt: 1_700_100_000_000,
+        reviewChecklist: { attachVods: true },
+      }),
+    );
+    expect(parsed.reviewAt).toBe(1_700_000_000_000);
+    expect(parsed.reviewCompletedAt).toBe(1_700_100_000_000);
+    expect(parsed.reviewChecklist).toEqual({ attachVods: true });
+  });
+
+  it('normalizePrepBriefRecord({..., reviewAt: null}) yields an object with NO reviewAt own-property (envelope wire-safety)', () => {
+    const parsed = prepBriefRecordSchema.parse({
+      eventDate: 1,
+      activatedAt: 1,
+      lastOpenedAt: 1,
+      reviewAt: null,
+    });
+    const normalized = normalizePrepBriefRecord(parsed);
+    expect('reviewAt' in normalized).toBe(false);
+  });
+
+  it('normalizePrepBriefRecord yields no reviewAt/reviewCompletedAt own-property when absent, and {} for reviewChecklist', () => {
+    const parsed = prepBriefRecordSchema.parse(makeStoredRecord());
+    const normalized = normalizePrepBriefRecord(parsed);
+    expect('reviewAt' in normalized).toBe(false);
+    expect('reviewCompletedAt' in normalized).toBe(false);
+    expect(normalized.reviewChecklist).toEqual({});
+  });
+
+  it('normalizePrepBriefRecord carries reviewAt/reviewCompletedAt through when present', () => {
+    const parsed = prepBriefRecordSchema.parse(
+      makeStoredRecord({ reviewAt: 5, reviewCompletedAt: 6 }),
+    );
+    const normalized = normalizePrepBriefRecord(parsed);
+    expect(normalized.reviewAt).toBe(5);
+    expect(normalized.reviewCompletedAt).toBe(6);
+  });
+});
+
+describe('REVIEW_CHECKLIST_ITEM_IDS', () => {
+  it('is the fixed five-item tuple, in exact order', () => {
+    expect(REVIEW_CHECKLIST_ITEM_IDS).toEqual([
+      'attachVods',
+      'addTimestamps',
+      'tagTurningPoints',
+      'reviewLosses',
+      'updateOpponentNotes',
+    ]);
+  });
+});
+
+describe('deriveReviewAtCandidate (Phase 28, REV-01 owner-corrected trigger)', () => {
+  it('synced entries (source: startgg) use lastSetAt exactly', () => {
+    expect(
+      deriveReviewAtCandidate({ source: 'startgg', firstSetAt: 1, lastSetAt: 1_700_000_000_000 }),
+    ).toBe(1_700_000_000_000);
+  });
+
+  it('synced entries with source ABSENT (legacy startgg row) use lastSetAt exactly', () => {
+    expect(
+      deriveReviewAtCandidate({ source: undefined, firstSetAt: 1, lastSetAt: 1_700_000_000_000 }),
+    ).toBe(1_700_000_000_000);
+  });
+
+  it('synced entries (source: parrygg) use lastSetAt exactly', () => {
+    expect(
+      deriveReviewAtCandidate({ source: 'parrygg', firstSetAt: 1, lastSetAt: 1_700_000_000_000 }),
+    ).toBe(1_700_000_000_000);
+  });
+
+  it('manual entries use lastSetAt + 24h', () => {
+    expect(
+      deriveReviewAtCandidate({ source: 'manual', firstSetAt: 1, lastSetAt: 1_700_000_000_000 }),
+    ).toBe(1_700_000_000_000 + 86_400_000);
+  });
+
+  it('degenerate lastSetAt 0 falls back to firstSetAt', () => {
+    expect(
+      deriveReviewAtCandidate({ source: 'startgg', firstSetAt: 1_600_000_000_000, lastSetAt: 0 }),
+    ).toBe(1_600_000_000_000);
+  });
+
+  it('degenerate lastSetAt 0 with firstSetAt also 0 converts immediately (accepted, documented)', () => {
+    expect(deriveReviewAtCandidate({ source: 'startgg', firstSetAt: 0, lastSetAt: 0 })).toBe(0);
+  });
+});
+
+describe('prepBriefStatusSchema.reviewAt (Phase 28 deploy-order compatibility)', () => {
+  it('accepts reviewAt absent', () => {
+    const result = prepBriefStatusSchema.safeParse({ activated: false });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.reviewAt).toBeUndefined();
+    }
+  });
+
+  it('accepts reviewAt present', () => {
+    const result = prepBriefStatusSchema.safeParse({ activated: true, reviewAt: 123 });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.reviewAt).toBe(123);
+    }
   });
 });

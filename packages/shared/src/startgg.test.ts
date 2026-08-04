@@ -3,6 +3,7 @@ import {
   isCombinedIdentity,
   isParryggIdentity,
   isStartggIdentity,
+  manualTournamentEntryInputSchema,
   scoutGameSchema,
   scoutIdentityKey,
   scoutPlayerIdentitySchema,
@@ -202,5 +203,69 @@ describe('scoutReportDataSchema — V9-D `games` back-compat', () => {
     expect(parsed.stageId).toBeUndefined();
     expect(parsed.stageName).toBeUndefined();
     expect(parsed.eventName).toBeUndefined();
+  });
+});
+
+// Phase 28 (REV-01, 28-CONTEXT.md decision 1): the explicit manual-entry
+// event-end field. Both dates optional so every pre-Phase-28 client is
+// unaffected; end-before-start and end-without-start are unrepresentable.
+describe('manualTournamentEntryInputSchema.eventEndDate (Phase 28)', () => {
+  const DAY_MS = 86_400_000;
+
+  it("still parses with only eventName (both dates optional — today's clients unaffected)", () => {
+    const result = manualTournamentEntryInputSchema.safeParse({ eventName: 'Locals #42' });
+    expect(result.success).toBe(true);
+  });
+
+  it('still parses with eventName + eventDate only', () => {
+    const result = manualTournamentEntryInputSchema.safeParse({
+      eventName: 'x',
+      eventDate: 1_700_000_000_000,
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it('parses eventEndDate == eventDate (single-day event, end == start)', () => {
+    const D = 1_700_000_000_000;
+    const result = manualTournamentEntryInputSchema.safeParse({
+      eventName: 'x',
+      eventDate: D,
+      eventEndDate: D,
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it('parses eventEndDate > eventDate (multi-day event)', () => {
+    const D = 1_700_000_000_000;
+    const result = manualTournamentEntryInputSchema.safeParse({
+      eventName: 'x',
+      eventDate: D,
+      eventEndDate: D + 2 * DAY_MS,
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it('rejects eventEndDate before eventDate, naming the end-before-start rule', () => {
+    const D = 1_700_000_000_000;
+    const result = manualTournamentEntryInputSchema.safeParse({
+      eventName: 'x',
+      eventDate: D,
+      eventEndDate: D - 1,
+    });
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error.issues[0]?.message).toMatch(/before eventDate/);
+    }
+  });
+
+  it('rejects eventEndDate without eventDate, naming the end-without-start rule', () => {
+    const result = manualTournamentEntryInputSchema.safeParse({
+      eventName: 'x',
+      eventEndDate: 1_700_000_000_000,
+    });
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error.issues[0]?.message).toMatch(/requires eventDate/);
+    }
   });
 });

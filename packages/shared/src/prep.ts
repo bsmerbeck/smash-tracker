@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import type { TournamentEntry } from './startgg.js';
 
 /**
  * Phase 26 (PREP-01..04, D-18..D-21): the free deterministic tournament prep
@@ -29,6 +30,22 @@ export const PREP_CHECKLIST_ITEM_IDS = [
   'planTravel',
 ] as const;
 export type PrepChecklistItemId = (typeof PREP_CHECKLIST_ITEM_IDS)[number];
+
+/**
+ * Phase 28 (REV-01/REV-02): the fixed curated post-event review checklist (5
+ * items, no custom items) — same machine-id-doubles-as-i18n-leaf-key-doubles-
+ * as-RTDB-presence-map-key convention as `PREP_CHECKLIST_ITEM_IDS` above. i18n
+ * leaf keys live under `postEvent.checklist.items.*`. Fixed and curated
+ * (owner-locked, 28-CONTEXT.md decision 2) — no free-form items.
+ */
+export const REVIEW_CHECKLIST_ITEM_IDS = [
+  'attachVods',
+  'addTimestamps',
+  'tagTurningPoints',
+  'reviewLosses',
+  'updateOpponentNotes',
+] as const;
+export type ReviewChecklistItemId = (typeof REVIEW_CHECKLIST_ITEM_IDS)[number];
 
 /** Server-enforced cap on the number of curated likely-opponent selections a brief may hold. */
 export const PREP_LIKELY_OPPONENTS_MAX = 12;
@@ -210,6 +227,41 @@ export const prepBriefRecordSchema = z.object({
   likelyOpponents: prepPresenceMapSchema.nullish(),
   /** Confirmed scout bindings keyed by canonical opponent name — absent/null tolerated. */
   scoutBindings: scoutBindingMapRecordSchema.nullish(),
+  /**
+   * Phase 28 (REV-01, 28-CONTEXT.md "Conversion mechanics"): the IMMUTABLE
+   * conversion snapshot, written EXACTLY ONCE by a field-level write-once
+   * transaction (mirrors `activatePrepBrief`'s create-once shape, applied to
+   * a single field — see `apps/api/src/prep/prep.ts`, 28-04). Absent means
+   * "not yet frozen" — the caller must derive a PROVISIONAL candidate via
+   * `deriveReviewAtCandidate` and never treat absence as "prep mode forever".
+   * `.nullish()` (never a numeric default): a `0` default would read as
+   * `0 < now` and instantly convert every legacy brief the moment this field
+   * ships (RESEARCH Pitfall 2) — there is no safe default value for a field
+   * whose entire meaning is "has this been decided yet". Once present, the
+   * stored value is authoritative forever: the registry row (`lastSetAt`,
+   * `firstSetAt`) is NEVER re-consulted for mode once `reviewAt` exists, so a
+   * later sync that moves `lastSetAt` into the future cannot un-convert a
+   * brief that has already flipped to review mode (the owner's
+   * never-flip-back invariant).
+   */
+  reviewAt: z.number().int().nonnegative().nullish(),
+  /**
+   * Phase 28 (owner invariant 4, 28-CONTEXT.md): write-once completion
+   * marker for the review checklist, set on the FIRST incomplete→complete
+   * transition (28-04's `setPrepReviewChecklistItem` completeness check) and
+   * never cleared again — persists forever even if every review checklist
+   * item is later unchecked. `.nullish()` for the same null-strip-tolerance
+   * reason as every other stored-optional field in this shape.
+   */
+  reviewCompletedAt: z.number().int().nonnegative().nullish(),
+  /**
+   * Phase 28: the review checklist's presence map, a sibling of `checklist`
+   * above under the same `prepBriefs/{uid}/{entryKey}` node — same
+   * 260725-juj null-strip-tolerance rationale (a fully-unchecked review
+   * checklist deletes the map node entirely; RTDB then returns the key
+   * absent or explicitly `null`, and only `.nullish()` tolerates both).
+   */
+  reviewChecklist: prepPresenceMapSchema.nullish(),
 });
 export type PrepBriefRecord = z.infer<typeof prepBriefRecordSchema>;
 
@@ -226,6 +278,12 @@ export const prepBriefSchema = z.object({
   checklist: prepPresenceMapSchema,
   likelyOpponents: prepPresenceMapSchema,
   scoutBindings: scoutBindingMapSchema,
+  /** Phase 28: present only once the conversion snapshot has been frozen (see `prepBriefRecordSchema.reviewAt`). */
+  reviewAt: z.number().int().nonnegative().optional(),
+  /** Phase 28: present only once the review checklist has first reached completion. */
+  reviewCompletedAt: z.number().int().nonnegative().optional(),
+  /** Phase 28: always present (defaults to `{}`), mirrors `checklist`. */
+  reviewChecklist: prepPresenceMapSchema,
 });
 export type PrepBrief = z.infer<typeof prepBriefSchema>;
 
@@ -248,6 +306,9 @@ export function normalizePrepBriefRecord(record: PrepBriefRecord): PrepBrief {
     checklist: record.checklist ?? {},
     likelyOpponents: record.likelyOpponents ?? {},
     scoutBindings,
+    reviewChecklist: record.reviewChecklist ?? {},
+    ...(record.reviewAt != null ? { reviewAt: record.reviewAt } : {}),
+    ...(record.reviewCompletedAt != null ? { reviewCompletedAt: record.reviewCompletedAt } : {}),
   };
 }
 
@@ -267,6 +328,18 @@ export const prepBriefStatusSchema = z.object({
   activated: z.boolean(),
   brief: prepBriefSchema.optional(),
   paidReportsAvailable: z.boolean().optional(),
+  /**
+   * Phase 28 (REV-01): the EFFECTIVE conversion moment the client renders
+   * mode from — the frozen `brief.reviewAt` when present, otherwise the
+   * server-derived candidate (28-04's GET handler computes this from the
+   * registry row when no frozen value exists yet). Optional for deploy-order
+   * compatibility (mirrors `paidReportsAvailable`'s rationale above): an old
+   * client deployed before this field ships must not break parsing this
+   * response when it's absent. The client must never re-derive review mode
+   * from raw entry dates itself (UI-SPEC mode-source rule) — this field (or
+   * its absence) is the sole authoritative input.
+   */
+  reviewAt: z.number().int().nonnegative().optional(),
 });
 export type PrepBriefStatus = z.infer<typeof prepBriefStatusSchema>;
 
@@ -304,6 +377,50 @@ export const prepChecklistItemUpdateSchema = z.object({
   checked: z.boolean(),
 });
 export type PrepChecklistItemUpdate = z.infer<typeof prepChecklistItemUpdateSchema>;
+
+/** Phase 28: one day in epoch ms — the manual-entry `reviewAt` offset (see `deriveReviewAtCandidate`). */
+export const DAY_MS = 86_400_000;
+
+/**
+ * Phase 28 (REV-01, the owner's corrected conversion trigger, 28-CONTEXT.md
+ * "Conversion mechanics"):
+ *
+ * (a) The owner REJECTED `prepBrief.eventDate < now` as the conversion
+ *     trigger — verbatim: "That field comes from `firstSetAt`, and manually
+ *     entered events can resolve to the beginning of the selected day. The
+ *     page could therefore become a 'post-event' review when the tournament
+ *     is only starting." This function is the locked replacement.
+ * (b) Synced entries (`source` is `'startgg'`/`'parrygg'`, or absent —
+ *     legacy startgg rows) convert on `lastSetAt` EXACTLY — the owner's
+ *     literal words, "convert immediately, no grace period". Manual entries
+ *     (`source === 'manual'`, always explicit, never left absent — see
+ *     `tournamentEntrySchema`'s doc comment in `startgg.ts`) convert on the
+ *     next local-day boundary, approximated server-side (the server has no
+ *     stored timezone) as `lastSetAt + DAY_MS`; RESEARCH A1 accepts up to
+ *     ±1h of DST drift against the player's true local midnight as
+ *     negligible against the start-of-day-vs-end-of-day bug this replaces.
+ * (c) `source` absence means startgg (every entry stored before the field
+ *     existed) — ONLY the literal string `'manual'` takes the `+DAY_MS`
+ *     branch; every other value (including absence) takes the exact-
+ *     `lastSetAt` branch.
+ * (d) The degenerate `lastSetAt: 0` start.gg case (`startgg/sync.ts:260`
+ *     initializes `lastSetAt: completedAt ?? 0` for a set with no
+ *     `completedAt`) falls back to `firstSetAt` — accepted and tested; if
+ *     `firstSetAt` is ALSO `0`, the entry converts immediately (accepted,
+ *     documented, RESEARCH Pitfall 1).
+ *
+ * Pure function of stored registry fields only (T-28-01: no client-supplied
+ * timestamp parameter exists, so a crafted request can never choose the
+ * conversion moment). The caller (28-04's freeze mutation and GET candidate
+ * derivation) is solely responsible for comparing the result against `now`
+ * and for the write-once freeze that makes conversion one-way.
+ */
+export function deriveReviewAtCandidate(
+  entry: Pick<TournamentEntry, 'source' | 'firstSetAt' | 'lastSetAt'>,
+): number {
+  const base = entry.lastSetAt > 0 ? entry.lastSetAt : entry.firstSetAt;
+  return entry.source === 'manual' ? base + DAY_MS : base;
+}
 
 /**
  * One candidate identity offered for a curated opponent's scout binding

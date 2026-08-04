@@ -41,6 +41,77 @@ export function matchesForEntry(matches: Match[], entry: TournamentEntry): Match
 }
 
 /**
+ * Phase 28 (REV-01/REV-02, INV-8, 28-CONTEXT.md "Review content & annotation
+ * checklist"): classifies a user's own stored matches into the post-event
+ * review's two result tiers — `synced` (attributed by entryKey, provider-
+ * identity-bearing, never labeled) and `manual` (source-less, MUST be
+ * rendered with an inferred/manual label). This is the ONE classification
+ * rule the results-context card (28-08) and the synthesis payload assembler
+ * (28-06) both use — keeping it here means the two tiers can never drift.
+ *
+ * PRECONDITION (caller responsibility, this function never resolves
+ * aliases itself): `matches` must already be ALIAS-RESOLVED — web callers
+ * pass `applyOpponentAliases` output (`useFilteredMatches.ts:66-76`); API
+ * callers use the same single-hop alias map precedent
+ * (`reports/generate.ts:245-260`). `likelyOpponents` is the brief's curated
+ * presence map of canonical opponent names (`PrepBrief.likelyOpponents`).
+ *
+ * - `synced`: `matchesForEntry(matches, entry)` rows whose `source` is
+ *   present (start.gg/parry.gg identity-bearing) — unlabeled.
+ * - `manual`: the dedupe-by-`id` union of (a) `matchesForEntry` rows with
+ *   `source` absent, and (b) source-less rows whose `opponent` is a curated
+ *   `likelyOpponents` key AND whose `time` falls inside the SAME padded
+ *   `[firstSetAt - 24h, lastSetAt + 24h]` window `matchesForEntry` uses (the
+ *   exact `WINDOW_PAD_MS` constant, so the two windows can never drift) —
+ *   this event-window scoping keeps "results context" from pulling in
+ *   all-time head-to-head history (settled decision 5, 28-01-PLAN.md).
+ *   EVERY `manual` row MUST be rendered with the inferred/manual label
+ *   (owner guardrail, verbatim): "manually associated matches found through
+ *   curated opponent aliases should be visibly identified as
+ *   inferred/manual context. Never silently pull matches using broad name
+ *   or date similarity." No name/date-similarity heuristic exists anywhere
+ *   in this function — the deferral stands.
+ *
+ * Both lists are sorted ascending by `time`.
+ */
+export function selectReviewResultsContext(
+  matches: Match[],
+  entry: TournamentEntry,
+  likelyOpponents: Record<string, true>,
+): { synced: Match[]; manual: Match[] } {
+  const windowStart = entry.firstSetAt - WINDOW_PAD_MS;
+  const windowEnd = entry.lastSetAt + WINDOW_PAD_MS;
+
+  const eventAssociated = matchesForEntry(matches, entry);
+
+  const synced = eventAssociated
+    .filter((match) => match.source != null)
+    .sort((a, b) => a.time - b.time);
+
+  const manualById = new Map<string, Match>();
+  for (const match of eventAssociated) {
+    if (match.source == null) {
+      manualById.set(match.id, match);
+    }
+  }
+  for (const match of matches) {
+    if (match.source != null) {
+      continue;
+    }
+    if (!match.opponent || !likelyOpponents[match.opponent]) {
+      continue;
+    }
+    if (match.time < windowStart || match.time > windowEnd) {
+      continue;
+    }
+    manualById.set(match.id, match);
+  }
+  const manual = [...manualById.values()].sort((a, b) => a.time - b.time);
+
+  return { synced, manual };
+}
+
+/**
  * Parses either of the two externalId conventions this codebase writes:
  *  - start.gg: `sgg:{setId}:g{n}` (see apps/api/src/startgg/sync.ts `gamesFromSet`)
  *  - parry.gg: `pgg-{matchId}-g{n}` (see apps/api/src/parrygg/sync.ts
