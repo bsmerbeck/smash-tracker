@@ -95,6 +95,38 @@ describe('envelope builders emit no undefined own-properties (incident root caus
     });
     expect(env.artifactKind).toBe('review');
   });
+
+  /**
+   * Phase 28 (28-04): both new post-event-review envelopes carry empty
+   * payloads and no `artifactKind` — the same shape as
+   * `prep_brief_activated` above — so this is a direct regression case for
+   * the exact incident class this file guards.
+   */
+  it('post_event_review_started emits no undefined own-properties', () => {
+    const env = buildDomainEnvelope({
+      eventName: 'post_event_review_started',
+      actorId: 'uid-1',
+      sessionId: 'sess-1',
+      causationId: 'uid-1:entry-1',
+      consentState: 'unknown',
+      payload: {},
+    });
+    expect(Object.prototype.hasOwnProperty.call(env, 'artifactKind')).toBe(false);
+    expect(deepFindUndefined(env)).toEqual([]);
+  });
+
+  it('post_event_review_completed emits no undefined own-properties', () => {
+    const env = buildDomainEnvelope({
+      eventName: 'post_event_review_completed',
+      actorId: 'uid-1',
+      sessionId: 'sess-1',
+      causationId: 'uid-1:entry-1',
+      consentState: 'unknown',
+      payload: {},
+    });
+    expect(Object.prototype.hasOwnProperty.call(env, 'artifactKind')).toBe(false);
+    expect(deepFindUndefined(env)).toEqual([]);
+  });
 });
 
 describe('FakeDatabase rejects undefined like the real SDK (test-double parity)', () => {

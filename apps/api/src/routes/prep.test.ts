@@ -1,10 +1,29 @@
 import { describe, expect, it } from 'vitest';
-import { PREP_LIKELY_OPPONENTS_MAX } from '@smash-tracker/shared';
+import { PREP_LIKELY_OPPONENTS_MAX, REVIEW_CHECKLIST_ITEM_IDS } from '@smash-tracker/shared';
 import type { PrepPaidConfig, ReportsConfig, StripeConfig } from '../config/env.js';
 import { authHeader, buildTestApp, registerUser, TEST_UID } from '../test-support/testApp.js';
 
 const ENTRY_KEY = 'manual-locals-42-abc123';
 const FIRST_SET_AT = 1_700_000_000_000;
+
+/** Walks every `eventLedger/{day}/{pushKey}` envelope currently in the fake tree — mirrors `prep.test.ts`'s helper. */
+function allLedgerEnvelopes(
+  database: ReturnType<typeof buildTestApp>['database'],
+): Array<{ eventName?: string }> {
+  const tree = database.dump() as Record<string, unknown>;
+  const ledgerByDay = (tree.eventLedger ?? {}) as Record<
+    string,
+    Record<string, { eventName?: string }>
+  >;
+  return Object.values(ledgerByDay).flatMap((day) => Object.values(day));
+}
+
+function countEnvelopesByName(
+  database: ReturnType<typeof buildTestApp>['database'],
+  eventName: string,
+): number {
+  return allLedgerEnvelopes(database).filter((envelope) => envelope.eventName === eventName).length;
+}
 
 /** Phase 27 (RPT-04): the three configs `paidReportsAvailable` requires, all present, for gate-on test cases. */
 const PREP_PAID_CONFIG: PrepPaidConfig = { enabled: true };
@@ -436,5 +455,272 @@ describe('PUT/DELETE /api/prep/:entryKey/opponents/:name', () => {
     expect(removed.statusCode).toBe(200);
     const removedBody = removed.json() as { brief: { likelyOpponents: Record<string, boolean> } };
     expect(removedBody.brief.likelyOpponents).toEqual({});
+  });
+});
+
+describe('PUT /api/prep/:entryKey/review-checklist/:itemId', () => {
+  it('rejects unauthenticated requests', async () => {
+    const { app } = buildTestApp();
+
+    const response = await app.inject({
+      method: 'PUT',
+      url: `/api/prep/${ENTRY_KEY}/review-checklist/attachVods`,
+      payload: { checked: true },
+    });
+
+    expect(response.statusCode).toBe(401);
+  });
+
+  it('returns 400 and writes no reviewChecklist node for an unknown item id', async () => {
+    const { app, database } = buildTestApp();
+    seedEntry(database, TEST_UID, ENTRY_KEY);
+    await app.inject({
+      method: 'POST',
+      url: `/api/prep/${ENTRY_KEY}/activate`,
+      headers: authHeader(),
+    });
+
+    const response = await app.inject({
+      method: 'PUT',
+      url: `/api/prep/${ENTRY_KEY}/review-checklist/notARealItem`,
+      headers: authHeader(),
+      payload: { checked: true },
+    });
+
+    expect(response.statusCode).toBe(400);
+    const briefNode = database.dump() as {
+      prepBriefs?: Record<string, Record<string, { reviewChecklist?: unknown }>>;
+    };
+    expect(briefNode.prepBriefs?.[TEST_UID]?.[ENTRY_KEY]?.reviewChecklist).toBeUndefined();
+  });
+
+  it('toggles and returns the brief', async () => {
+    const { app, database } = buildTestApp();
+    seedEntry(database, TEST_UID, ENTRY_KEY);
+    await app.inject({
+      method: 'POST',
+      url: `/api/prep/${ENTRY_KEY}/activate`,
+      headers: authHeader(),
+    });
+
+    const checkedOn = await app.inject({
+      method: 'PUT',
+      url: `/api/prep/${ENTRY_KEY}/review-checklist/attachVods`,
+      headers: authHeader(),
+      payload: { checked: true },
+    });
+
+    expect(checkedOn.statusCode).toBe(200);
+    const onBody = checkedOn.json() as { brief: { reviewChecklist: Record<string, boolean> } };
+    expect(onBody.brief.reviewChecklist).toEqual({ attachVods: true });
+
+    const checkedOff = await app.inject({
+      method: 'PUT',
+      url: `/api/prep/${ENTRY_KEY}/review-checklist/attachVods`,
+      headers: authHeader(),
+      payload: { checked: false },
+    });
+
+    expect(checkedOff.statusCode).toBe(200);
+    const offBody = checkedOff.json() as { brief: { reviewChecklist: Record<string, boolean> } };
+    expect(offBody.brief.reviewChecklist).toEqual({});
+  });
+
+  it('completing every review checklist item emits post_event_review_completed exactly once', async () => {
+    const { app, database } = buildTestApp();
+    seedEntry(database, TEST_UID, ENTRY_KEY);
+    await app.inject({
+      method: 'POST',
+      url: `/api/prep/${ENTRY_KEY}/activate`,
+      headers: authHeader(),
+    });
+
+    for (const itemId of REVIEW_CHECKLIST_ITEM_IDS) {
+      const response = await app.inject({
+        method: 'PUT',
+        url: `/api/prep/${ENTRY_KEY}/review-checklist/${itemId}`,
+        headers: authHeader(),
+        payload: { checked: true },
+      });
+      expect(response.statusCode).toBe(200);
+    }
+
+    expect(countEnvelopesByName(database, 'post_event_review_completed')).toBe(1);
+  });
+});
+
+/**
+ * Phase 28 (28-04, Task 3): the write-once `reviewAt` freeze rides the
+ * activate/open mutations — never GET (owner invariants 3 and 5).
+ */
+describe('reviewAt freeze wiring on activate/open (28-04)', () => {
+  it('activate handler freezes when the event already passed (archival/backfill converts on first visit)', async () => {
+    const { app, database } = buildTestApp();
+    seedEntry(database, TEST_UID, ENTRY_KEY, { source: 'startgg', lastSetAt: FIRST_SET_AT });
+
+    const response = await app.inject({
+      method: 'POST',
+      url: `/api/prep/${ENTRY_KEY}/activate`,
+      headers: authHeader(),
+    });
+
+    expect(response.statusCode).toBe(200);
+    const body = response.json() as { brief: { reviewAt?: number } };
+    expect(body.brief.reviewAt).toBe(FIRST_SET_AT);
+    expect(countEnvelopesByName(database, 'post_event_review_started')).toBe(1);
+  });
+
+  it('activate handler leaves reviewAt unset for a genuinely future event', async () => {
+    const { app, database } = buildTestApp();
+    const futureLastSetAt = Date.now() + 1_000_000_000;
+    seedEntry(database, TEST_UID, ENTRY_KEY, {
+      source: 'startgg',
+      firstSetAt: futureLastSetAt,
+      lastSetAt: futureLastSetAt,
+    });
+
+    const response = await app.inject({
+      method: 'POST',
+      url: `/api/prep/${ENTRY_KEY}/activate`,
+      headers: authHeader(),
+    });
+
+    expect(response.statusCode).toBe(200);
+    const body = response.json() as { brief: { reviewAt?: number } };
+    expect(body.brief.reviewAt).toBeUndefined();
+    expect(countEnvelopesByName(database, 'post_event_review_started')).toBe(0);
+  });
+
+  it('open handler freezes existing pre-Phase-28 briefs whose entry has already passed', async () => {
+    const { app, database } = buildTestApp();
+    seedEntry(database, TEST_UID, ENTRY_KEY, { source: 'startgg', lastSetAt: FIRST_SET_AT });
+    // A brief created without any Phase 28 review fields at all — simulates
+    // a brief activated before this phase shipped.
+    database.seed(`prepBriefs/${TEST_UID}/${ENTRY_KEY}`, {
+      eventDate: FIRST_SET_AT,
+      activatedAt: FIRST_SET_AT,
+      lastOpenedAt: FIRST_SET_AT,
+    });
+
+    const response = await app.inject({
+      method: 'POST',
+      url: `/api/prep/${ENTRY_KEY}/open`,
+      headers: authHeader(),
+      payload: { openId: 'open-1' },
+    });
+
+    expect(response.statusCode).toBe(200);
+    const body = response.json() as { brief: { reviewAt?: number } };
+    expect(body.brief.reviewAt).toBe(FIRST_SET_AT);
+    expect(countEnvelopesByName(database, 'post_event_review_started')).toBe(1);
+  });
+
+  it('open handler tolerates a missing registry row (no candidate, no throw)', async () => {
+    const { app, database } = buildTestApp();
+    database.seed(`prepBriefs/${TEST_UID}/${ENTRY_KEY}`, {
+      eventDate: FIRST_SET_AT,
+      activatedAt: FIRST_SET_AT,
+      lastOpenedAt: FIRST_SET_AT,
+    });
+
+    const response = await app.inject({
+      method: 'POST',
+      url: `/api/prep/${ENTRY_KEY}/open`,
+      headers: authHeader(),
+      payload: { openId: 'open-1' },
+    });
+
+    expect(response.statusCode).toBe(200);
+    const body = response.json() as { brief: { reviewAt?: number } };
+    expect(body.brief.reviewAt).toBeUndefined();
+  });
+});
+
+/**
+ * Phase 28 (28-04, Task 3): GET's effective `reviewAt` and the GET-never-
+ * writes proof.
+ */
+describe('GET /api/prep/:entryKey — effective reviewAt (28-04)', () => {
+  it('returns the frozen reviewAt when present', async () => {
+    const { app, database } = buildTestApp();
+    seedEntry(database, TEST_UID, ENTRY_KEY, { source: 'startgg', lastSetAt: FIRST_SET_AT });
+    database.seed(`prepBriefs/${TEST_UID}/${ENTRY_KEY}`, {
+      eventDate: FIRST_SET_AT,
+      activatedAt: FIRST_SET_AT,
+      lastOpenedAt: FIRST_SET_AT,
+      reviewAt: FIRST_SET_AT,
+    });
+
+    const response = await app.inject({
+      method: 'GET',
+      url: `/api/prep/${ENTRY_KEY}`,
+      headers: authHeader(),
+    });
+
+    expect(response.statusCode).toBe(200);
+    const body = response.json() as { reviewAt?: number };
+    expect(body.reviewAt).toBe(FIRST_SET_AT);
+  });
+
+  it('returns a server-derived candidate when no frozen reviewAt exists yet', async () => {
+    const { app, database } = buildTestApp();
+    seedEntry(database, TEST_UID, ENTRY_KEY, { source: 'startgg', lastSetAt: FIRST_SET_AT });
+    database.seed(`prepBriefs/${TEST_UID}/${ENTRY_KEY}`, {
+      eventDate: FIRST_SET_AT,
+      activatedAt: FIRST_SET_AT,
+      lastOpenedAt: FIRST_SET_AT,
+    });
+
+    const response = await app.inject({
+      method: 'GET',
+      url: `/api/prep/${ENTRY_KEY}`,
+      headers: authHeader(),
+    });
+
+    expect(response.statusCode).toBe(200);
+    const body = response.json() as { reviewAt?: number };
+    expect(body.reviewAt).toBe(FIRST_SET_AT);
+  });
+
+  it('returns nothing extra when the brief is not activated', async () => {
+    const { app, database } = buildTestApp();
+    seedEntry(database, TEST_UID, ENTRY_KEY);
+
+    const response = await app.inject({
+      method: 'GET',
+      url: `/api/prep/${ENTRY_KEY}`,
+      headers: authHeader(),
+    });
+
+    expect(response.statusCode).toBe(200);
+    const body = response.json() as { activated: boolean; reviewAt?: number };
+    expect(body.activated).toBe(false);
+    expect(body.reviewAt).toBeUndefined();
+  });
+
+  it('performs no writes even when the candidate is already past (the freeze waits for a mutation)', async () => {
+    const { app, database } = buildTestApp();
+    seedEntry(database, TEST_UID, ENTRY_KEY, { source: 'startgg', lastSetAt: FIRST_SET_AT });
+    database.seed(`prepBriefs/${TEST_UID}/${ENTRY_KEY}`, {
+      eventDate: FIRST_SET_AT,
+      activatedAt: FIRST_SET_AT,
+      lastOpenedAt: FIRST_SET_AT,
+    });
+
+    const before = JSON.stringify(database.dump());
+
+    const response = await app.inject({
+      method: 'GET',
+      url: `/api/prep/${ENTRY_KEY}`,
+      headers: authHeader(),
+    });
+
+    const after = JSON.stringify(database.dump());
+
+    expect(response.statusCode).toBe(200);
+    const body = response.json() as { reviewAt?: number };
+    expect(body.reviewAt).toBe(FIRST_SET_AT);
+    expect(after).toEqual(before);
+    expect(countEnvelopesByName(database, 'post_event_review_started')).toBe(0);
   });
 });

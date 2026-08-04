@@ -342,6 +342,25 @@ describe('projectEventToGa4 — Phase 26 prep events deliberately omitted from G
 });
 
 /**
+ * Phase 28 (28-04, EVT-06): `post_event_review_started` and
+ * `post_event_review_completed` are catalogued in the shared EVENT_CATALOG
+ * (D-class) but deliberately absent from GA4_PAYLOAD_ALLOWLIST for the
+ * duration of the canonical-measurement reconciliation soak — the RTDB
+ * eventLedger remains the source of truth during the soak, and re-adding
+ * either to the GA4 allowlist is a separately-reviewed decision, not a
+ * casual allowlist edit. This locks the omission in so that edit fails CI.
+ */
+describe('projectEventToGa4 — Phase 28 post-event review events deliberately omitted from GA4', () => {
+  it.each(['post_event_review_started', 'post_event_review_completed'])(
+    'returns null for %s',
+    (eventName) => {
+      const projected = projectEventToGa4(baseEnvelope({ eventName }));
+      expect(projected).toBeNull();
+    },
+  );
+});
+
+/**
  * Phase 27 (EVT-05, 27-RESEARCH.md Pitfall 5): the `prepReason` enum marker
  * added to the `checkout_started`/`checkout_completed` payloads by 27-05
  * (`apps/api/src/routes/billing.ts`) is attribution data that belongs in
