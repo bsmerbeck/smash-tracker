@@ -316,13 +316,16 @@ describe('generateReportRequestSchema — Phase 28 post_event_synthesis arm', ()
     expect(result.success).toBe(true);
   });
 
-  it('post_event_synthesis: entryKey + jobId parses', () => {
+  it('post_event_synthesis: a client-supplied jobId is rejected (CR-01 — synthesis jobIds are always server-minted)', () => {
     const result = generateReportRequestSchema.safeParse({
       reason: 'post_event_synthesis',
       entryKey: 'e1',
       jobId: 'client-generated-uuid',
     });
-    expect(result.success).toBe(true);
+    expect(result.success).toBe(false);
+    expect(
+      result.success ? [] : result.error.issues.map((issue) => issue.path.join('.')),
+    ).toContain('jobId');
   });
 
   it('post_event_synthesis: missing entryKey fails', () => {

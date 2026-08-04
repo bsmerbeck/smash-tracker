@@ -483,6 +483,43 @@ describe('POST /api/reports post_event_synthesis — gate and pre-spend checks',
     expect(dump.creditLedger).toBeUndefined();
   });
 
+  it('CR-01: a client-supplied jobId is rejected with 400 and can never clobber or delete an existing job record', async () => {
+    const { app, database } = billableApp();
+    seedEntry(database);
+    seedBrief(database);
+    seedOneAnnotation(database);
+    database.seed(`credits/${TEST_UID}/balance`, 3);
+    // A pre-existing SUCCEEDED prep job — the exact durable record a
+    // client-supplied jobId equal to its id used to overwrite (queued reset),
+    // and then DELETE outright on the zero-credit path.
+    const priorJob = {
+      status: 'succeeded',
+      createdAt: 1_000,
+      updatedAt: 2_000,
+      attempt: 0,
+      creditRef: 'existing-prep-job',
+      reason: 'prep_report',
+      resultRef: 'stored-report-id',
+    };
+    database.seed(`reportJobs/${TEST_UID}/existing-prep-job`, priorJob);
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/reports',
+      headers: authHeader(),
+      payload: { ...SYNTHESIS_PAYLOAD, jobId: 'existing-prep-job' },
+    });
+
+    expect(response.statusCode).toBe(400);
+    // The pre-existing job record is byte-unchanged — never overwritten,
+    // never removed (P2a class, fd600f9 precedent).
+    const jobSnapshot = await database.ref(`reportJobs/${TEST_UID}/existing-prep-job`).get();
+    expect(jobSnapshot.val()).toEqual(priorJob);
+    const balance = await database.ref(`credits/${TEST_UID}/balance`).get();
+    expect(balance.val()).toBe(3);
+    expect(findEvents(database, 'report_started')).toHaveLength(0);
+  });
+
   it('git diff of routes/reports.ts touches zero lines inside the gate-check region — inherited, not modified', () => {
     // Proven structurally by the OTHER tests in this file (a gate-off
     // synthesis request 503s with zero writes, same as every other

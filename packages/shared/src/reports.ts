@@ -315,6 +315,18 @@ export const generateReportRequestSchema = z
           path: ['entryKey'],
         });
       }
+      // CR-01 (Phase 28 review): unlike `prep_report` (whose retry contract
+      // is BUILT on a client-generated jobId), a synthesis jobId is ALWAYS
+      // server-minted — the route's 402-restore assumes the freshly minted
+      // id can never name a pre-existing job node, so a client-supplied one
+      // must be rejected at the schema boundary, never silently accepted.
+      if (value.jobId !== undefined) {
+        ctx.addIssue({
+          code: 'custom',
+          message: 'jobId is not allowed for reason: post_event_synthesis',
+          path: ['jobId'],
+        });
+      }
       if (value.opponentName !== undefined) {
         ctx.addIssue({
           code: 'custom',

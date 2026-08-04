@@ -1335,7 +1335,14 @@ const reportsRoutes: FastifyPluginAsyncZod<ReportsRoutesOptions> = async (app, o
         // `queued`, carrying the enum `reason` — no entryKey or plan
         // content ever lands on the job node (D-14, Information Disclosure
         // mitigation).
-        const synthJobId = request.body.jobId ?? randomUUID();
+        // CR-01 (Phase 28 review): ALWAYS server-minted — the shared schema
+        // forbids `jobId` outright for this reason (reports.ts superRefine),
+        // and this line must never fall back to a client value: the
+        // 402-restore below is only correct because this id can never name a
+        // pre-existing job node (a client-supplied id could clobber, then
+        // delete, a succeeded prep job's durable record and collide its
+        // `creditRef`/causation ids in the billing ledger).
+        const synthJobId = randomUUID();
         const synthJobRef = app.firebase.database.ref(`reportJobs/${request.uid}/${synthJobId}`);
         const synthJobCreatedAt = Date.now();
         await synthJobRef.set(
