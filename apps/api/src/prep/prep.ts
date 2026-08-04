@@ -339,6 +339,18 @@ export async function setPrepReviewChecklistItem(
     throw new NotFoundError(`Prep brief not found for entryKey ${entryKey}`);
   }
 
+  // Review WR-03 (conversion gate): the review checklist exists only on the
+  // review surface — a brief that has not converted (no frozen `reviewAt`)
+  // must reject this write, exactly as the synthesis POST arm does. Without
+  // this gate a direct API call could check all five items pre-event,
+  // committing the write-once `reviewCompletedAt` and emitting
+  // `post_event_review_completed` for an event that hasn't happened — and,
+  // because the marker is permanent, the genuine completion later could
+  // never emit (`completed` with no preceding `started` in the funnel).
+  if (existing.reviewAt == null) {
+    throw new ConflictError('Review checklist is only writable after conversion to review mode');
+  }
+
   await database
     .ref(`${prepBriefPath(uid, entryKey)}/reviewChecklist/${itemId}`)
     .set(checked ? true : null);

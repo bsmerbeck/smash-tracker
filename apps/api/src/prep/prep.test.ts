@@ -606,9 +606,40 @@ describe('freezeReviewAtIfDue — write-once conversion freeze (INV-3, INV-5)', 
  * fire-once `post_event_review_completed` emission (owner invariant 4).
  */
 describe('setPrepReviewChecklistItem — review checklist + fire-once completion (INV-4)', () => {
+  /**
+   * WR-03 (Phase 28 review): the review checklist is gated on conversion —
+   * freeze `reviewAt` directly on the stored record, committing exactly the
+   * field `freezeReviewAtIfDue`'s write-once transaction would.
+   */
+  async function convertBrief(database: FakeDatabase): Promise<void> {
+    await asDatabase(database).ref(`prepBriefs/${TEST_UID}/${ENTRY_KEY}/reviewAt`).set(EVENT_DATE);
+  }
+
+  it('WR-03: rejects the toggle with ConflictError on an unconverted brief — no write, no marker, no event', async () => {
+    const database = new FakeDatabase();
+    await activatePrepBrief(asDatabase(database), TEST_UID, ENTRY_KEY, EVENT_DATE, SESSION_ID);
+
+    await expect(
+      setPrepReviewChecklistItem(
+        asDatabase(database),
+        TEST_UID,
+        ENTRY_KEY,
+        REVIEW_CHECKLIST_ITEM_IDS[0],
+        true,
+        SESSION_ID,
+      ),
+    ).rejects.toThrow(ConflictError);
+
+    const stored = dumpBriefRecord(database, TEST_UID, ENTRY_KEY);
+    expect(stored?.reviewChecklist).toBeUndefined();
+    expect(stored?.reviewCompletedAt).toBeUndefined();
+    expect(countEnvelopesByName(database, 'post_event_review_completed')).toBe(0);
+  });
+
   it('INV-4: post_event_review_completed fires once on the first incomplete-to-complete transition', async () => {
     const database = new FakeDatabase();
     await activatePrepBrief(asDatabase(database), TEST_UID, ENTRY_KEY, EVENT_DATE, SESSION_ID);
+    await convertBrief(database);
 
     const ids = [...REVIEW_CHECKLIST_ITEM_IDS];
     const lastId = ids[ids.length - 1];
@@ -641,6 +672,7 @@ describe('setPrepReviewChecklistItem — review checklist + fire-once completion
   it('INV-4: unchecking later never erases or re-emits', async () => {
     const database = new FakeDatabase();
     await activatePrepBrief(asDatabase(database), TEST_UID, ENTRY_KEY, EVENT_DATE, SESSION_ID);
+    await convertBrief(database);
     for (const id of REVIEW_CHECKLIST_ITEM_IDS) {
       await setPrepReviewChecklistItem(
         asDatabase(database),
@@ -683,6 +715,7 @@ describe('setPrepReviewChecklistItem — review checklist + fire-once completion
   it('the completed ledger row count stays exactly 1 across complete → uncheck → re-complete → uncheck → re-complete', async () => {
     const database = new FakeDatabase();
     await activatePrepBrief(asDatabase(database), TEST_UID, ENTRY_KEY, EVENT_DATE, SESSION_ID);
+    await convertBrief(database);
     const [toggleId, ...restIds] = REVIEW_CHECKLIST_ITEM_IDS;
 
     for (const id of restIds) {
@@ -712,6 +745,7 @@ describe('setPrepReviewChecklistItem — review checklist + fire-once completion
   it('read-back observes incomplete → no emission that request; the NEXT completing toggle emits', async () => {
     const database = new FakeDatabase();
     await activatePrepBrief(asDatabase(database), TEST_UID, ENTRY_KEY, EVENT_DATE, SESSION_ID);
+    await convertBrief(database);
     const [first, second, ...rest] = REVIEW_CHECKLIST_ITEM_IDS;
 
     for (const id of rest) {
@@ -777,6 +811,7 @@ describe('setPrepReviewChecklistItem — review checklist + fire-once completion
   it('toggling review items never touches the prep checklist map, and vice versa', async () => {
     const database = new FakeDatabase();
     await activatePrepBrief(asDatabase(database), TEST_UID, ENTRY_KEY, EVENT_DATE, SESSION_ID);
+    await convertBrief(database);
     await setPrepChecklistItem(
       asDatabase(database),
       TEST_UID,

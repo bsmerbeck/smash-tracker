@@ -526,6 +526,46 @@ describe('PUT /api/prep/:entryKey/review-checklist/:itemId', () => {
     expect(offBody.brief.reviewChecklist).toEqual({});
   });
 
+  it('WR-03: rejects the toggle with 409 on an unconverted brief — no write, no completed event, and the write-once marker stays uncommitted', async () => {
+    const { app, database } = buildTestApp();
+    // A genuinely FUTURE event: activation does not freeze reviewAt, so the
+    // brief is still in prep mode when the review-checklist PUT arrives.
+    const futureAt = Date.now() + 1_000_000_000;
+    seedEntry(database, TEST_UID, ENTRY_KEY, {
+      source: 'startgg',
+      firstSetAt: futureAt,
+      lastSetAt: futureAt,
+    });
+    await app.inject({
+      method: 'POST',
+      url: `/api/prep/${ENTRY_KEY}/activate`,
+      headers: authHeader(),
+    });
+
+    for (const itemId of REVIEW_CHECKLIST_ITEM_IDS) {
+      const response = await app.inject({
+        method: 'PUT',
+        url: `/api/prep/${ENTRY_KEY}/review-checklist/${itemId}`,
+        headers: authHeader(),
+        payload: { checked: true },
+      });
+      expect(response.statusCode).toBe(409);
+    }
+
+    const tree = database.dump() as {
+      prepBriefs?: Record<
+        string,
+        Record<string, { reviewChecklist?: unknown; reviewCompletedAt?: unknown }>
+      >;
+    };
+    expect(tree.prepBriefs?.[TEST_UID]?.[ENTRY_KEY]?.reviewChecklist).toBeUndefined();
+    expect(tree.prepBriefs?.[TEST_UID]?.[ENTRY_KEY]?.reviewCompletedAt).toBeUndefined();
+    expect(countEnvelopesByName(database, 'post_event_review_completed')).toBe(0);
+    // The funnel invariant WR-03 protects: `completed` can never precede
+    // `started` (which only fires from freezeReviewAtIfDue on conversion).
+    expect(countEnvelopesByName(database, 'post_event_review_started')).toBe(0);
+  });
+
   it('completing every review checklist item emits post_event_review_completed exactly once', async () => {
     const { app, database } = buildTestApp();
     seedEntry(database, TEST_UID, ENTRY_KEY);
