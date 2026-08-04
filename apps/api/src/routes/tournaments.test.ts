@@ -267,6 +267,97 @@ describe('POST /api/tournaments/manual-entry', () => {
     expect(entry.lastSetAt).toBe(1_700_000_000_000);
   });
 
+  it('stores lastSetAt = eventEndDate and firstSetAt = eventDate when eventEndDate is provided', async () => {
+    const { app } = buildTestApp();
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/tournaments/manual-entry',
+      headers: authHeader(),
+      payload: {
+        eventName: 'Multi-Day Major',
+        eventDate: 1_700_000_000_000,
+        eventEndDate: 1_700_200_000_000,
+      },
+    });
+
+    expect(response.statusCode).toBe(201);
+    const entry = response.json() as { firstSetAt: number; lastSetAt: number };
+    expect(entry.firstSetAt).toBe(1_700_000_000_000);
+    expect(entry.lastSetAt).toBe(1_700_200_000_000);
+  });
+
+  it('is byte-identical to the no-eventEndDate path when eventEndDate is omitted', async () => {
+    const { app } = buildTestApp();
+
+    const withDate = await app.inject({
+      method: 'POST',
+      url: '/api/tournaments/manual-entry',
+      headers: authHeader(),
+      payload: { eventName: 'Regional', eventDate: 1_700_000_000_000 },
+    });
+    const withDateEntry = withDate.json() as { firstSetAt: number; lastSetAt: number };
+    expect(withDateEntry.firstSetAt).toBe(1_700_000_000_000);
+    expect(withDateEntry.lastSetAt).toBe(1_700_000_000_000);
+
+    const withoutAnyDate = await app.inject({
+      method: 'POST',
+      url: '/api/tournaments/manual-entry',
+      headers: authHeader(),
+      payload: { eventName: 'No Date Event' },
+    });
+    const noDateEntry = withoutAnyDate.json() as { firstSetAt: number; lastSetAt: number };
+    expect(noDateEntry.firstSetAt).toBe(noDateEntry.lastSetAt);
+    expect(typeof noDateEntry.firstSetAt).toBe('number');
+  });
+
+  it('rejects end before start with a 400 (route-level proof the shared refine gates the handler)', async () => {
+    const { app } = buildTestApp();
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/tournaments/manual-entry',
+      headers: authHeader(),
+      payload: {
+        eventName: 'Backwards Dates',
+        eventDate: 1_700_000_000_000,
+        eventEndDate: 1_699_000_000_000,
+      },
+    });
+
+    expect(response.statusCode).toBe(400);
+  });
+
+  it('sorts a multi-day manual entry into the registry by its end date (lastSetAt desc)', async () => {
+    const { app } = buildTestApp();
+
+    await app.inject({
+      method: 'POST',
+      url: '/api/tournaments/manual-entry',
+      headers: authHeader(),
+      payload: { eventName: 'Single Day Weekly', eventDate: 1_700_050_000_000 },
+    });
+    await app.inject({
+      method: 'POST',
+      url: '/api/tournaments/manual-entry',
+      headers: authHeader(),
+      payload: {
+        eventName: 'Multi-Day Major',
+        eventDate: 1_700_000_000_000,
+        eventEndDate: 1_700_300_000_000,
+      },
+    });
+
+    const response = await app.inject({
+      method: 'GET',
+      url: '/api/tournaments',
+      headers: authHeader(),
+    });
+
+    const entries = response.json() as { eventName: string }[];
+    expect(entries.map((e) => e.eventName)).toEqual(['Multi-Day Major', 'Single Day Weekly']);
+  });
+
   it('rejects an empty label', async () => {
     const { app } = buildTestApp();
 

@@ -111,10 +111,18 @@ const tournamentsRoutes: FastifyPluginAsyncZod = async (app) => {
     async (request, reply) => {
       const eventDate = request.body.eventDate ?? Date.now();
       const entryKey = deriveManualEntryKey(request.body.eventName);
+      // Phase 28 (REV-01, 28-05): `eventEndDate` is local-calendar-midnight
+      // of the event's LAST day (multi-day events). `lastSetAt` is what
+      // `deriveReviewAtCandidate`'s manual branch (+24h) and
+      // `matchesForEntry`'s window read, so storing it here — instead of
+      // `eventDate` alone — makes a multi-day event convert to review after
+      // its FINAL day and widens its ±24h match window to cover every day.
+      // No-end-date path is unchanged: `eventDate` (a single value) still
+      // flows into both `firstSetAt` and `lastSetAt`.
       const entry: TournamentEntry = {
         eventName: request.body.eventName,
         firstSetAt: eventDate,
-        lastSetAt: eventDate,
+        lastSetAt: request.body.eventEndDate ?? eventDate,
         setsPlayed: 0,
         source: 'manual',
         entryKey,
