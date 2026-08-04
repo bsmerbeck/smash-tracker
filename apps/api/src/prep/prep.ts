@@ -431,7 +431,11 @@ export async function setPrepLikelyOpponent(
     throw new NotFoundError(`Prep brief not found for entryKey ${entryKey}`);
   }
 
-  if (selected && !(canonicalName in existing.likelyOpponents)) {
+  // `Object.hasOwn`, never the `in` operator (review WR-05 adjunct): `in`
+  // walks the prototype chain, so a canonical name colliding with an
+  // `Object.prototype` member (e.g. "constructor") would read as already
+  // curated and dodge the cap check.
+  if (selected && !Object.hasOwn(existing.likelyOpponents, canonicalName)) {
     const currentSize = Object.keys(existing.likelyOpponents).length;
     if (currentSize >= PREP_LIKELY_OPPONENTS_MAX) {
       throw new ConflictError(`Likely opponent limit reached (${PREP_LIKELY_OPPONENTS_MAX})`);
@@ -486,7 +490,10 @@ export async function setPrepScoutBinding(
     throw new NotFoundError(`Prep brief not found for entryKey ${entryKey}`);
   }
 
-  if (!(canonicalName in existing.likelyOpponents)) {
+  // `Object.hasOwn`, never `in` (review WR-05 adjunct): a prototype-chain
+  // hit (name === "constructor" etc.) would let a binding attach to an
+  // opponent that was never actually curated.
+  if (!Object.hasOwn(existing.likelyOpponents, canonicalName)) {
     throw new ConflictError('A scout binding may only be set for a currently curated opponent');
   }
 

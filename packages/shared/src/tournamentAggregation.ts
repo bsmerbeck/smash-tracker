@@ -98,7 +98,14 @@ export function selectReviewResultsContext(
     if (match.source != null) {
       continue;
     }
-    if (!match.opponent || !likelyOpponents[match.opponent]) {
+    // `Object.hasOwn`, never bare-index truthiness (review WR-05):
+    // `likelyOpponents` is a plain prototype-bearing object, so an opponent
+    // whose canonical name collides with an `Object.prototype` member
+    // (e.g. the perfectly plausible gamer tag "constructor") would resolve
+    // truthy through the prototype chain and silently pull that opponent's
+    // source-less matches into the manual tier — exactly the "silently
+    // pull matches" class the owner guardrail above forbids.
+    if (!match.opponent || !Object.hasOwn(likelyOpponents, match.opponent)) {
       continue;
     }
     if (match.time < windowStart || match.time > windowEnd) {

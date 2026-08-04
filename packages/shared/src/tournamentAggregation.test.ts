@@ -198,6 +198,27 @@ describe('selectReviewResultsContext', () => {
     expect(result.manual).toEqual([]);
   });
 
+  it('WR-05: an opponent named after an Object.prototype member is NOT pulled in unless genuinely curated', () => {
+    const entry = makeEntry({ firstSetAt: 1_000_000, lastSetAt: 2_000_000 });
+    const prototypeNamedMatch = makeMatch({
+      id: 'm1',
+      time: 1_500_000,
+      eventName: 'Some Other Bracket', // only reachable via the curated-alias tier
+      opponent: 'constructor', // survives lowercasing; collides with Object.prototype
+    });
+
+    // NOT curated: bare-index truthiness resolved `{}['constructor']` to the
+    // Object constructor (truthy) and silently pulled the match in.
+    const uncurated = selectReviewResultsContext([prototypeNamedMatch], entry, {});
+    expect(uncurated.manual).toEqual([]);
+
+    // Genuinely curated: still included, own-property semantics preserved.
+    const curated = selectReviewResultsContext([prototypeNamedMatch], entry, {
+      constructor: true,
+    } as Record<string, true>);
+    expect(curated.manual).toEqual([prototypeNamedMatch]);
+  });
+
   it('a synced match of an uncurated opponent from a different event is excluded', () => {
     const entry = makeEntry();
     const unrelatedSynced = makeMatch({

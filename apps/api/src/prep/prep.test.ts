@@ -355,6 +355,27 @@ describe('setPrepScoutBinding / clearPrepScoutBinding — scoutBinding storage (
     expect(brief?.scoutBindings.rival).toEqual(STARTGG_BINDING);
   });
 
+  it('WR-05: rejects a binding for an uncurated opponent whose name collides with an Object.prototype member', async () => {
+    const database = new FakeDatabase();
+    await activatePrepBrief(asDatabase(database), TEST_UID, ENTRY_KEY, EVENT_DATE, SESSION_ID);
+
+    // "constructor" is a plausible lowercase gamer tag; the previous `in`
+    // check walked the prototype chain and let this binding attach to an
+    // opponent that was never curated.
+    await expect(
+      setPrepScoutBinding(asDatabase(database), TEST_UID, ENTRY_KEY, 'constructor', {
+        provider: 'startgg',
+        startggPlayerId: 123,
+        displayTag: 'constructor',
+        method: 'profileInput',
+        confirmedAt: EVENT_DATE,
+      }),
+    ).rejects.toThrow(ConflictError);
+
+    const stored = dumpBriefRecord(database, TEST_UID, ENTRY_KEY);
+    expect(stored?.scoutBindings).toBeUndefined();
+  });
+
   it('rejects with ConflictError and writes nothing when the name is NOT currently curated', async () => {
     const database = new FakeDatabase();
     await activatePrepBrief(asDatabase(database), TEST_UID, ENTRY_KEY, EVENT_DATE, SESSION_ID);
