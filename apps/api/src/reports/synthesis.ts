@@ -78,7 +78,15 @@ export type AssembleSynthesisResult =
   | {
       found: true;
       payload: SynthesisPayload;
-      /** Exactly `new Set(evidence.map((item) => item.cite))` — the server-pre-serialized token universe the model was shown. */
+      /**
+       * Exactly `new Set(evidence.map((item) => item.cite))` — the
+       * server-pre-serialized token universe the model was shown.
+       * TESTS-ONLY (review IN-01): no production code path consumes this —
+       * the route resolves citations against `allowedPairs` exclusively
+       * (set-membership on `(matchId, seconds)`, owner invariant 1); no
+       * token-level (label-bearing) validation happens anywhere. It exists
+       * so `synthesis.test.ts` can pin the payload's token set.
+       */
       allowedTokens: Set<string>;
       /** Exactly `new Set(evidence.map((item) => \`${item.matchId}:${item.seconds}\`))` — the set-membership universe `validatePracticePlanCitations` resolves against (owner invariant 1). */
       allowedPairs: Set<string>;
