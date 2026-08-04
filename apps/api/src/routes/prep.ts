@@ -2,6 +2,7 @@ import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import {
+  deriveReviewAtCandidate,
   entryKeyInputSchema,
   opponentNameInputSchema,
   PREP_CHECKLIST_ITEM_IDS,
@@ -10,15 +11,18 @@ import {
   prepBriefStatusSchema,
   prepChecklistItemUpdateSchema,
   prepOpenRequestSchema,
+  REVIEW_CHECKLIST_ITEM_IDS,
   tournamentEntrySchema,
   type TournamentEntry,
 } from '@smash-tracker/shared';
 import {
   activatePrepBrief,
+  freezeReviewAtIfDue,
   readPrepBrief,
   reopenPrepBrief,
   setPrepChecklistItem,
   setPrepLikelyOpponent,
+  setPrepReviewChecklistItem,
 } from '../prep/prep.js';
 import { NotFoundError } from '../services/rtdb.js';
 
@@ -31,27 +35,48 @@ function sessionIdFromHeader(request: FastifyRequest): string {
 
 /**
  * Reads `tournamentEntries/{uid}/{entryKey}`, stamping `entryKey` from the
- * child key exactly as `GET /tournaments` does, and throws `NotFoundError`
- * when the row is absent. This is an EXISTENCE/OWNERSHIP check, not
- * character sanitization: an `entryKey` that names a real RTDB child key is
- * by construction free of RTDB-illegal characters, because the write that
- * created it would otherwise have been rejected (RESEARCH Pitfall 2).
- * Re-scrubbing it here would be theatre; refusing an entryKey the caller
- * does not own is the actual control (T-26-15).
+ * child key exactly as `GET /tournaments` does — a TOLERANT read: an absent
+ * row returns `null` rather than throwing. Phase 28 (28-04): both the GET
+ * handler's effective-`reviewAt` derivation and the open handler's freeze
+ * wiring need the registry row WITHOUT 404ing when it's missing (D-03: a
+ * brief must stay reachable even if its registry row is later removed).
+ * `requireOwnedEntry` below is the throwing wrapper every existing call site
+ * (activate) keeps using unchanged.
+ */
+async function tryReadOwnedEntry(
+  app: FastifyInstance,
+  uid: string,
+  entryKey: string,
+): Promise<TournamentEntry | null> {
+  const snapshot = await app.firebase.database.ref(`tournamentEntries/${uid}/${entryKey}`).get();
+  if (!snapshot.exists()) {
+    return null;
+  }
+  return tournamentEntrySchema.parse({
+    ...(snapshot.val() as object),
+    entryKey,
+  });
+}
+
+/**
+ * Throws `NotFoundError` when the row is absent. This is an
+ * EXISTENCE/OWNERSHIP check, not character sanitization: an `entryKey` that
+ * names a real RTDB child key is by construction free of RTDB-illegal
+ * characters, because the write that created it would otherwise have been
+ * rejected (RESEARCH Pitfall 2). Re-scrubbing it here would be theatre;
+ * refusing an entryKey the caller does not own is the actual control
+ * (T-26-15).
  */
 async function requireOwnedEntry(
   app: FastifyInstance,
   uid: string,
   entryKey: string,
 ): Promise<TournamentEntry> {
-  const snapshot = await app.firebase.database.ref(`tournamentEntries/${uid}/${entryKey}`).get();
-  if (!snapshot.exists()) {
+  const entry = await tryReadOwnedEntry(app, uid, entryKey);
+  if (entry === null) {
     throw new NotFoundError(`Tournament entry not found for entryKey ${entryKey}`);
   }
-  return tournamentEntrySchema.parse({
-    ...(snapshot.val() as object),
-    entryKey,
-  });
+  return entry;
 }
 
 /**
@@ -79,6 +104,11 @@ const prepParamsSchema = z.object({
 
 const prepChecklistParamsSchema = prepParamsSchema.extend({
   itemId: z.enum(PREP_CHECKLIST_ITEM_IDS),
+});
+
+/** Phase 28 (28-04): the review checklist's own closed itemId enum — a SIBLING param schema, never sharing the prep checklist's `PREP_CHECKLIST_ITEM_IDS`. */
+const prepReviewChecklistParamsSchema = prepParamsSchema.extend({
+  itemId: z.enum(REVIEW_CHECKLIST_ITEM_IDS),
 });
 
 const prepOpponentParamsSchema = prepParamsSchema.extend({
@@ -139,7 +169,24 @@ const prepRoutes: FastifyPluginAsyncZod<PrepRoutesOptions> = async (app, options
       if (brief === null) {
         return { activated: false, paidReportsAvailable: options.paidReportsAvailable };
       }
-      return { activated: true, brief, paidReportsAvailable: options.paidReportsAvailable };
+      // Phase 28 (REV-01): the EFFECTIVE reviewAt the client renders mode
+      // from — the frozen value when present, otherwise a server-derived
+      // PROVISIONAL candidate from a tolerant registry read. This function
+      // performs NO write of any kind (D-12 stays intact): the durable
+      // freeze rides the activate/open mutations only, never this GET.
+      let reviewAt = brief.reviewAt;
+      if (reviewAt == null) {
+        const entry = await tryReadOwnedEntry(app, request.uid, request.params.entryKey);
+        if (entry !== null) {
+          reviewAt = deriveReviewAtCandidate(entry);
+        }
+      }
+      return {
+        activated: true,
+        brief,
+        paidReportsAvailable: options.paidReportsAvailable,
+        ...(reviewAt != null ? { reviewAt } : {}),
+      };
     },
   );
 
@@ -158,18 +205,41 @@ const prepRoutes: FastifyPluginAsyncZod<PrepRoutesOptions> = async (app, options
     },
     async (request) => {
       const entry = await requireOwnedEntry(app, request.uid, request.params.entryKey);
+      const sessionId = sessionIdFromHeader(request);
       // The eventDate argument is the registry row's firstSetAt — the
       // immutable snapshot D-02 requires. The service's create-once
       // transaction guarantees a replay never overwrites it, so a later
       // start.gg sync that changes the registry row cannot silently rebind
       // an existing brief (D-06).
-      return activatePrepBrief(
+      const result = await activatePrepBrief(
         app.firebase.database,
         request.uid,
         request.params.entryKey,
         entry.firstSetAt,
-        sessionIdFromHeader(request),
+        sessionId,
       );
+      // Phase 28 (REV-01, owner invariant 3): activating a brief for an
+      // event whose reviewAt candidate is already past (the archival/
+      // backfill case) converts on first visit — freezeReviewAtIfDue is a
+      // no-op unless the candidate is due, so a genuinely future event is
+      // untouched. Re-read AFTER the freeze so the response's
+      // `brief.reviewAt` reflects it.
+      await freezeReviewAtIfDue(
+        app.firebase.database,
+        request.uid,
+        request.params.entryKey,
+        entry,
+        sessionId,
+      );
+      const brief = await readPrepBrief(
+        app.firebase.database,
+        request.uid,
+        request.params.entryKey,
+      );
+      if (brief === null) {
+        throw new NotFoundError(`Prep brief not found for entryKey ${request.params.entryKey}`);
+      }
+      return { justActivated: result.justActivated, brief };
     },
   );
 
@@ -189,13 +259,34 @@ const prepRoutes: FastifyPluginAsyncZod<PrepRoutesOptions> = async (app, options
       },
     },
     async (request) => {
-      const brief = await reopenPrepBrief(
+      const sessionId = sessionIdFromHeader(request);
+      await reopenPrepBrief(
         app.firebase.database,
         request.uid,
         request.params.entryKey,
         request.body.openId,
-        sessionIdFromHeader(request),
+        sessionId,
       );
+      // Phase 28 (REV-01, owner invariant 3): "existing briefs whose events
+      // passed before Phase 28 ships convert too" — a tolerant registry
+      // read (absent row = no candidate, NOT a 404: D-03 reachability for a
+      // past-dated event must survive a removed registry row).
+      const entry = await tryReadOwnedEntry(app, request.uid, request.params.entryKey);
+      await freezeReviewAtIfDue(
+        app.firebase.database,
+        request.uid,
+        request.params.entryKey,
+        entry,
+        sessionId,
+      );
+      const brief = await readPrepBrief(
+        app.firebase.database,
+        request.uid,
+        request.params.entryKey,
+      );
+      if (brief === null) {
+        throw new NotFoundError(`Prep brief not found for entryKey ${request.params.entryKey}`);
+      }
       return { brief };
     },
   );
@@ -223,6 +314,36 @@ const prepRoutes: FastifyPluginAsyncZod<PrepRoutesOptions> = async (app, options
         request.params.entryKey,
         request.params.itemId,
         request.body.checked,
+      );
+      return { brief };
+    },
+  );
+
+  // PUT /api/prep/:entryKey/review-checklist/:itemId — Phase 28 (28-04):
+  // the review checklist's own closed itemId enum (prepReviewChecklistParamsSchema
+  // above) mirrors the prep checklist PUT's defence in Pitfall 4 — an unknown
+  // item id fails Zod validation and returns 400 before any RTDB path string
+  // is built. `setPrepReviewChecklistItem` owns the fire-once
+  // `post_event_review_completed` emission (owner invariant 4).
+  app.put(
+    '/prep/:entryKey/review-checklist/:itemId',
+    {
+      schema: {
+        params: prepReviewChecklistParamsSchema,
+        body: prepChecklistItemUpdateSchema,
+        response: {
+          200: prepBriefResponseSchema,
+        },
+      },
+    },
+    async (request) => {
+      const brief = await setPrepReviewChecklistItem(
+        app.firebase.database,
+        request.uid,
+        request.params.entryKey,
+        request.params.itemId,
+        request.body.checked,
+        sessionIdFromHeader(request),
       );
       return { brief };
     },

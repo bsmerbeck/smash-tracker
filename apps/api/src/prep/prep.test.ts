@@ -1,16 +1,24 @@
 import { describe, expect, it } from 'vitest';
 import type { Database } from 'firebase-admin/database';
-import { PREP_LIKELY_OPPONENTS_MAX, type ScoutBinding } from '@smash-tracker/shared';
+import {
+  PREP_LIKELY_OPPONENTS_MAX,
+  REVIEW_CHECKLIST_ITEM_IDS,
+  type ReviewChecklistItemId,
+  type ScoutBinding,
+  type TournamentEntry,
+} from '@smash-tracker/shared';
 import { FakeDatabase } from '../test-support/fakeDatabase.js';
-import { ConflictError, NotFoundError } from '../services/rtdb.js';
+import { ConflictError, NotFoundError, ValidationError } from '../services/rtdb.js';
 import {
   activatePrepBrief,
   clearPrepScoutBinding,
+  freezeReviewAtIfDue,
   prepBriefPath,
   readPrepBrief,
   reopenPrepBrief,
   setPrepChecklistItem,
   setPrepLikelyOpponent,
+  setPrepReviewChecklistItem,
   setPrepScoutBinding,
 } from './prep.js';
 
@@ -44,6 +52,17 @@ function countEnvelopesByName(database: FakeDatabase, eventName: string): number
   return allLedgerEnvelopes(database).filter(
     (envelope) => (envelope as { eventName?: string }).eventName === eventName,
   ).length;
+}
+
+/** Builds a minimal, otherwise-valid `TournamentEntry` for `deriveReviewAtCandidate`/`freezeReviewAtIfDue` tests — only the fields that function reads matter. */
+function makeEntry(overrides: Partial<TournamentEntry> = {}): TournamentEntry {
+  return {
+    eventName: 'Locals #42',
+    firstSetAt: EVENT_DATE,
+    lastSetAt: EVENT_DATE,
+    setsPlayed: 3,
+    ...overrides,
+  };
 }
 
 /** Reads the raw stored `prepBriefs/{uid}/{entryKey}` node straight out of `FakeDatabase.dump()` (bypasses the normalize-on-read helper deliberately). */
@@ -437,5 +456,364 @@ describe('setPrepScoutBinding / clearPrepScoutBinding — scoutBinding storage (
 
     const brief = await readPrepBrief(asDatabase(database), TEST_UID, ENTRY_KEY);
     expect(brief?.scoutBindings).toEqual({});
+  });
+});
+
+/**
+ * Phase 28 (28-04, Task 1): the `reviewAt` write-once conversion freeze and
+ * the `post_event_review_started` fire-once emission (owner invariants 3
+ * and 5).
+ */
+describe('freezeReviewAtIfDue — write-once conversion freeze (INV-3, INV-5)', () => {
+  it('INV-3: post_event_review_started fires once after the durable first-open write', async () => {
+    const database = new FakeDatabase();
+    await activatePrepBrief(asDatabase(database), TEST_UID, ENTRY_KEY, EVENT_DATE, SESSION_ID);
+    const entry = makeEntry({ source: 'startgg', lastSetAt: EVENT_DATE });
+
+    const first = await freezeReviewAtIfDue(
+      asDatabase(database),
+      TEST_UID,
+      ENTRY_KEY,
+      entry,
+      SESSION_ID,
+    );
+    expect(first.frozen).toBe(true);
+    expect(first.reviewAt).toBe(EVENT_DATE);
+    expect(countEnvelopesByName(database, 'post_event_review_started')).toBe(1);
+
+    const before = dumpBriefRecord(database, TEST_UID, ENTRY_KEY);
+    const second = await freezeReviewAtIfDue(
+      asDatabase(database),
+      TEST_UID,
+      ENTRY_KEY,
+      entry,
+      SESSION_ID,
+    );
+    expect(second.frozen).toBe(false);
+    expect(second.reviewAt).toBe(EVENT_DATE);
+    const after = dumpBriefRecord(database, TEST_UID, ENTRY_KEY);
+    expect(after?.reviewAt).toBe(before?.reviewAt);
+    expect(countEnvelopesByName(database, 'post_event_review_started')).toBe(1);
+  });
+
+  it('INV-5: a later sync updating set times cannot un-convert a converted surface', async () => {
+    const database = new FakeDatabase();
+    await activatePrepBrief(asDatabase(database), TEST_UID, ENTRY_KEY, EVENT_DATE, SESSION_ID);
+    const entry = makeEntry({ source: 'startgg', lastSetAt: EVENT_DATE });
+
+    const first = await freezeReviewAtIfDue(
+      asDatabase(database),
+      TEST_UID,
+      ENTRY_KEY,
+      entry,
+      SESSION_ID,
+    );
+    expect(first.reviewAt).toBe(EVENT_DATE);
+
+    // A later sync moves lastSetAt far into the future — a genuinely
+    // representable registry state, not a crafted/invalid one.
+    const futureEntry = makeEntry({
+      source: 'startgg',
+      lastSetAt: Date.now() + 1_000_000_000,
+    });
+    const second = await freezeReviewAtIfDue(
+      asDatabase(database),
+      TEST_UID,
+      ENTRY_KEY,
+      futureEntry,
+      SESSION_ID,
+    );
+    expect(second.frozen).toBe(false);
+    expect(second.reviewAt).toBe(EVENT_DATE);
+
+    const brief = await readPrepBrief(asDatabase(database), TEST_UID, ENTRY_KEY);
+    expect(brief?.reviewAt).toBe(EVENT_DATE);
+  });
+
+  it('no freeze before the candidate passes', async () => {
+    const database = new FakeDatabase();
+    await activatePrepBrief(asDatabase(database), TEST_UID, ENTRY_KEY, EVENT_DATE, SESSION_ID);
+    const futureEntry = makeEntry({
+      source: 'startgg',
+      lastSetAt: Date.now() + 1_000_000_000,
+    });
+
+    const result = await freezeReviewAtIfDue(
+      asDatabase(database),
+      TEST_UID,
+      ENTRY_KEY,
+      futureEntry,
+      SESSION_ID,
+    );
+    expect(result.frozen).toBe(false);
+    expect(result.reviewAt).toBeUndefined();
+    expect(countEnvelopesByName(database, 'post_event_review_started')).toBe(0);
+    const brief = await readPrepBrief(asDatabase(database), TEST_UID, ENTRY_KEY);
+    expect(brief?.reviewAt).toBeUndefined();
+  });
+
+  it('no brief, no freeze', async () => {
+    const database = new FakeDatabase();
+    const entry = makeEntry({ source: 'startgg', lastSetAt: EVENT_DATE });
+
+    const result = await freezeReviewAtIfDue(
+      asDatabase(database),
+      TEST_UID,
+      'never-activated-entry',
+      entry,
+      SESSION_ID,
+    );
+    expect(result.frozen).toBe(false);
+    expect(result.reviewAt).toBeUndefined();
+    expect(countEnvelopesByName(database, 'post_event_review_started')).toBe(0);
+  });
+
+  it('freeze stores the candidate, not now', async () => {
+    const database = new FakeDatabase();
+    await activatePrepBrief(asDatabase(database), TEST_UID, ENTRY_KEY, EVENT_DATE, SESSION_ID);
+    const entry = makeEntry({ source: 'startgg', lastSetAt: EVENT_DATE });
+
+    const result = await freezeReviewAtIfDue(
+      asDatabase(database),
+      TEST_UID,
+      ENTRY_KEY,
+      entry,
+      SESSION_ID,
+    );
+    expect(result.reviewAt).toBe(EVENT_DATE);
+    expect(result.reviewAt).not.toBe(Date.now());
+    expect(result.reviewAt! < Date.now()).toBe(true);
+  });
+
+  it('replay safety: a Promise.all of two concurrent freezes yields exactly one committed and one ledger row', async () => {
+    const database = new FakeDatabase();
+    await activatePrepBrief(asDatabase(database), TEST_UID, ENTRY_KEY, EVENT_DATE, SESSION_ID);
+    const entry = makeEntry({ source: 'startgg', lastSetAt: EVENT_DATE });
+
+    const [a, b] = await Promise.all([
+      freezeReviewAtIfDue(asDatabase(database), TEST_UID, ENTRY_KEY, entry, SESSION_ID),
+      freezeReviewAtIfDue(asDatabase(database), TEST_UID, ENTRY_KEY, entry, SESSION_ID),
+    ]);
+
+    const frozenCount = [a.frozen, b.frozen].filter(Boolean).length;
+    expect(frozenCount).toBe(1);
+    expect(countEnvelopesByName(database, 'post_event_review_started')).toBe(1);
+  });
+});
+
+/**
+ * Phase 28 (28-04, Task 2): the review checklist presence map and the
+ * fire-once `post_event_review_completed` emission (owner invariant 4).
+ */
+describe('setPrepReviewChecklistItem — review checklist + fire-once completion (INV-4)', () => {
+  it('INV-4: post_event_review_completed fires once on the first incomplete-to-complete transition', async () => {
+    const database = new FakeDatabase();
+    await activatePrepBrief(asDatabase(database), TEST_UID, ENTRY_KEY, EVENT_DATE, SESSION_ID);
+
+    const ids = [...REVIEW_CHECKLIST_ITEM_IDS];
+    const lastId = ids[ids.length - 1];
+    const firstFourIds = ids.slice(0, -1);
+    for (const id of firstFourIds) {
+      const brief = await setPrepReviewChecklistItem(
+        asDatabase(database),
+        TEST_UID,
+        ENTRY_KEY,
+        id,
+        true,
+        SESSION_ID,
+      );
+      expect(brief.reviewCompletedAt).toBeUndefined();
+    }
+    expect(countEnvelopesByName(database, 'post_event_review_completed')).toBe(0);
+
+    const completed = await setPrepReviewChecklistItem(
+      asDatabase(database),
+      TEST_UID,
+      ENTRY_KEY,
+      lastId!,
+      true,
+      SESSION_ID,
+    );
+    expect(typeof completed.reviewCompletedAt).toBe('number');
+    expect(countEnvelopesByName(database, 'post_event_review_completed')).toBe(1);
+  });
+
+  it('INV-4: unchecking later never erases or re-emits', async () => {
+    const database = new FakeDatabase();
+    await activatePrepBrief(asDatabase(database), TEST_UID, ENTRY_KEY, EVENT_DATE, SESSION_ID);
+    for (const id of REVIEW_CHECKLIST_ITEM_IDS) {
+      await setPrepReviewChecklistItem(
+        asDatabase(database),
+        TEST_UID,
+        ENTRY_KEY,
+        id,
+        true,
+        SESSION_ID,
+      );
+    }
+    expect(countEnvelopesByName(database, 'post_event_review_completed')).toBe(1);
+    const completedAtFirst = (await readPrepBrief(asDatabase(database), TEST_UID, ENTRY_KEY))
+      ?.reviewCompletedAt;
+    expect(typeof completedAtFirst).toBe('number');
+
+    const toggleId = REVIEW_CHECKLIST_ITEM_IDS[0];
+    const afterUncheck = await setPrepReviewChecklistItem(
+      asDatabase(database),
+      TEST_UID,
+      ENTRY_KEY,
+      toggleId,
+      false,
+      SESSION_ID,
+    );
+    expect(afterUncheck.reviewCompletedAt).toBe(completedAtFirst);
+    expect(countEnvelopesByName(database, 'post_event_review_completed')).toBe(1);
+
+    const reChecked = await setPrepReviewChecklistItem(
+      asDatabase(database),
+      TEST_UID,
+      ENTRY_KEY,
+      toggleId,
+      true,
+      SESSION_ID,
+    );
+    expect(reChecked.reviewCompletedAt).toBe(completedAtFirst);
+    expect(countEnvelopesByName(database, 'post_event_review_completed')).toBe(1);
+  });
+
+  it('the completed ledger row count stays exactly 1 across complete → uncheck → re-complete → uncheck → re-complete', async () => {
+    const database = new FakeDatabase();
+    await activatePrepBrief(asDatabase(database), TEST_UID, ENTRY_KEY, EVENT_DATE, SESSION_ID);
+    const [toggleId, ...restIds] = REVIEW_CHECKLIST_ITEM_IDS;
+
+    for (const id of restIds) {
+      await setPrepReviewChecklistItem(
+        asDatabase(database),
+        TEST_UID,
+        ENTRY_KEY,
+        id,
+        true,
+        SESSION_ID,
+      );
+    }
+    for (const checked of [true, false, true, false, true]) {
+      await setPrepReviewChecklistItem(
+        asDatabase(database),
+        TEST_UID,
+        ENTRY_KEY,
+        toggleId,
+        checked,
+        SESSION_ID,
+      );
+    }
+
+    expect(countEnvelopesByName(database, 'post_event_review_completed')).toBe(1);
+  });
+
+  it('read-back observes incomplete → no emission that request; the NEXT completing toggle emits', async () => {
+    const database = new FakeDatabase();
+    await activatePrepBrief(asDatabase(database), TEST_UID, ENTRY_KEY, EVENT_DATE, SESSION_ID);
+    const [first, second, ...rest] = REVIEW_CHECKLIST_ITEM_IDS;
+
+    for (const id of rest) {
+      await setPrepReviewChecklistItem(
+        asDatabase(database),
+        TEST_UID,
+        ENTRY_KEY,
+        id,
+        true,
+        SESSION_ID,
+      );
+    }
+    const stillIncomplete = await setPrepReviewChecklistItem(
+      asDatabase(database),
+      TEST_UID,
+      ENTRY_KEY,
+      first,
+      false,
+      SESSION_ID,
+    );
+    expect(stillIncomplete.reviewCompletedAt).toBeUndefined();
+    expect(countEnvelopesByName(database, 'post_event_review_completed')).toBe(0);
+
+    await setPrepReviewChecklistItem(
+      asDatabase(database),
+      TEST_UID,
+      ENTRY_KEY,
+      first,
+      true,
+      SESSION_ID,
+    );
+    const nowComplete = await setPrepReviewChecklistItem(
+      asDatabase(database),
+      TEST_UID,
+      ENTRY_KEY,
+      second,
+      true,
+      SESSION_ID,
+    );
+    expect(typeof nowComplete.reviewCompletedAt).toBe('number');
+    expect(countEnvelopesByName(database, 'post_event_review_completed')).toBe(1);
+  });
+
+  it('rejects an unknown item id before any write', async () => {
+    const database = new FakeDatabase();
+    await activatePrepBrief(asDatabase(database), TEST_UID, ENTRY_KEY, EVENT_DATE, SESSION_ID);
+
+    await expect(
+      setPrepReviewChecklistItem(
+        asDatabase(database),
+        TEST_UID,
+        ENTRY_KEY,
+        'notARealItem' as ReviewChecklistItemId,
+        true,
+        SESSION_ID,
+      ),
+    ).rejects.toThrow(ValidationError);
+
+    const stored = dumpBriefRecord(database, TEST_UID, ENTRY_KEY);
+    expect(stored?.reviewChecklist).toBeUndefined();
+  });
+
+  it('toggling review items never touches the prep checklist map, and vice versa', async () => {
+    const database = new FakeDatabase();
+    await activatePrepBrief(asDatabase(database), TEST_UID, ENTRY_KEY, EVENT_DATE, SESSION_ID);
+    await setPrepChecklistItem(
+      asDatabase(database),
+      TEST_UID,
+      ENTRY_KEY,
+      'confirmRegistration',
+      true,
+    );
+
+    const afterReviewToggle = await setPrepReviewChecklistItem(
+      asDatabase(database),
+      TEST_UID,
+      ENTRY_KEY,
+      REVIEW_CHECKLIST_ITEM_IDS[0],
+      true,
+      SESSION_ID,
+    );
+    expect(afterReviewToggle.checklist).toEqual({ confirmRegistration: true });
+    expect(afterReviewToggle.reviewChecklist).toEqual({
+      [REVIEW_CHECKLIST_ITEM_IDS[0]]: true,
+    });
+  });
+
+  it('missing brief → NotFoundError, no write', async () => {
+    const database = new FakeDatabase();
+
+    await expect(
+      setPrepReviewChecklistItem(
+        asDatabase(database),
+        TEST_UID,
+        'never-activated-entry',
+        REVIEW_CHECKLIST_ITEM_IDS[0],
+        true,
+        SESSION_ID,
+      ),
+    ).rejects.toThrow(NotFoundError);
+
+    const dump = database.dump() as Record<string, unknown>;
+    expect(dump.prepBriefs).toBeUndefined();
   });
 });
