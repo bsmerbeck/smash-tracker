@@ -7,6 +7,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { tournamentEntriesQueryKey } from '@/hooks/useTournamentEntries';
 import { onboardingProgressQueryKey } from '@/hooks/useOnboardingProgress';
+import { parseLocalCalendarDate } from './PrepManualEntryDialog';
 
 /**
  * Phase 13 (ONBD-04, D-05): the prep-path integration-failure recovery — a
@@ -26,17 +27,25 @@ export function ManualEventAssociation({ onSuccess }: { onSuccess?: () => void }
   const queryClient = useQueryClient();
   const [eventName, setEventName] = useState('');
   const [eventDate, setEventDate] = useState('');
+  const [eventEndDate, setEventEndDate] = useState('');
   const [error, setError] = useState<string | null>(null);
+
+  const parsedEndDate = parseLocalCalendarDate(eventEndDate);
+  // End date without a start date is blocked client-side, matching the
+  // shared schema's refine ("eventEndDate requires eventDate to be present").
+  const endDateBlocked = eventEndDate.trim().length > 0 && eventDate.trim().length === 0;
 
   const manualEntry = useMutation({
     mutationFn: () =>
       api.tournaments.manualEntry({
         eventName: eventName.trim(),
         eventDate: eventDate ? new Date(eventDate).getTime() : undefined,
+        ...(parsedEndDate !== null ? { eventEndDate: parsedEndDate } : {}),
       }),
     onSuccess: async () => {
       setEventName('');
       setEventDate('');
+      setEventEndDate('');
       setError(null);
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: tournamentEntriesQueryKey }),
@@ -52,7 +61,7 @@ export function ManualEventAssociation({ onSuccess }: { onSuccess?: () => void }
   function handleSubmit(event: FormEvent) {
     event.preventDefault();
     const trimmed = eventName.trim();
-    if (!trimmed) {
+    if (!trimmed || endDateBlocked) {
       return;
     }
     manualEntry.mutate();
@@ -88,10 +97,21 @@ export function ManualEventAssociation({ onSuccess }: { onSuccess?: () => void }
           onChange={(event) => setEventDate(event.target.value)}
         />
       </div>
+      <div className="flex flex-col gap-1">
+        <Label htmlFor="manual-event-end-date" className="text-xs">
+          {t('onboarding.prep.manualAssociate.endDate')}
+        </Label>
+        <Input
+          id="manual-event-end-date"
+          type="date"
+          value={eventEndDate}
+          onChange={(event) => setEventEndDate(event.target.value)}
+        />
+      </div>
       <Button
         type="submit"
         size="sm"
-        disabled={manualEntry.isPending || eventName.trim().length === 0}
+        disabled={manualEntry.isPending || eventName.trim().length === 0 || endDateBlocked}
       >
         {t('onboarding.prep.manualAssociate.submit')}
       </Button>

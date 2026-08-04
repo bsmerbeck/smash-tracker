@@ -260,6 +260,79 @@ describe('PrepManualEntryDialog', () => {
     expect(navigate).toHaveBeenCalledWith('/tournaments/manual-locals-42-abc/prep');
   });
 
+  it('renders the end-date label and hint from the i18n keys', () => {
+    renderDialog();
+    expect(screen.getByLabelText('End date (optional)')).toBeInTheDocument();
+    expect(screen.getByText('For multi-day events — the last day you played.')).toBeInTheDocument();
+  });
+
+  it('submits eventEndDate when an end date is typed', async () => {
+    const user = userEvent.setup();
+    manualEntry.mockResolvedValue({
+      eventName: 'Locals #42',
+      firstSetAt: 1,
+      lastSetAt: 1,
+      setsPlayed: 0,
+      source: 'manual',
+      entryKey: 'manual-locals-42-abc',
+    });
+    activateMutate.mockImplementation((_vars: unknown, opts: { onSuccess: () => void }) => {
+      opts.onSuccess();
+    });
+    renderDialog();
+
+    await user.type(screen.getByLabelText('Event name'), 'Locals #42');
+    await user.type(screen.getByLabelText('Event date'), futureDateString());
+    await user.type(screen.getByLabelText('End date (optional)'), futureDateString(31));
+    await user.click(screen.getByRole('button', { name: 'Add & start prep brief' }));
+
+    await waitFor(() => expect(manualEntry).toHaveBeenCalledTimes(1));
+    const input = manualEntry.mock.calls[0]?.[0] as {
+      eventDate: unknown;
+      eventEndDate: unknown;
+    };
+    expect(typeof input.eventDate).toBe('number');
+    expect(typeof input.eventEndDate).toBe('number');
+    expect(input.eventEndDate as number).toBeGreaterThan(input.eventDate as number);
+  });
+
+  it("omits eventEndDate when the end input is empty (today's shape)", async () => {
+    const user = userEvent.setup();
+    manualEntry.mockResolvedValue({
+      eventName: 'Locals #42',
+      firstSetAt: 1,
+      lastSetAt: 1,
+      setsPlayed: 0,
+      source: 'manual',
+      entryKey: 'manual-locals-42-abc',
+    });
+    activateMutate.mockImplementation((_vars: unknown, opts: { onSuccess: () => void }) => {
+      opts.onSuccess();
+    });
+    renderDialog();
+
+    await user.type(screen.getByLabelText('Event name'), 'Locals #42');
+    await user.type(screen.getByLabelText('Event date'), futureDateString());
+    await user.click(screen.getByRole('button', { name: 'Add & start prep brief' }));
+
+    await waitFor(() => expect(manualEntry).toHaveBeenCalledTimes(1));
+    const input = manualEntry.mock.calls[0]?.[0] as object;
+    expect('eventEndDate' in input).toBe(false);
+  });
+
+  it('shows the endBeforeStart error and blocks submit when the end date precedes the start date', async () => {
+    const user = userEvent.setup();
+    renderDialog();
+
+    await user.type(screen.getByLabelText('Event name'), 'Locals #42');
+    await user.type(screen.getByLabelText('Event date'), futureDateString(30));
+    await user.type(screen.getByLabelText('End date (optional)'), futureDateString(10));
+
+    expect(screen.getByText("The end date can't be before the event date.")).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Add & start prep brief' })).toBeDisabled();
+    expect(manualEntry).not.toHaveBeenCalled();
+  });
+
   it('resets fields and error when the dialog is closed and reopened', async () => {
     const user = userEvent.setup();
     renderNode(<ControlledDialog />);

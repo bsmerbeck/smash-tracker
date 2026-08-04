@@ -76,6 +76,7 @@ export function PrepManualEntryDialog({ open, onOpenChange }: PrepManualEntryDia
   const queryClient = useQueryClient();
   const [eventName, setEventName] = useState('');
   const [eventDate, setEventDate] = useState('');
+  const [eventEndDate, setEventEndDate] = useState('');
   const [error, setError] = useState<string | null>(null);
   // Set once manual-entry succeeds, so `useActivatePrepBrief` below re-binds
   // to the concrete server-derived entryKey before the effect fires.
@@ -91,6 +92,7 @@ export function PrepManualEntryDialog({ open, onOpenChange }: PrepManualEntryDia
   function resetFields() {
     setEventName('');
     setEventDate('');
+    setEventEndDate('');
     setError(null);
     setActivatingEntryKey(null);
   }
@@ -108,6 +110,7 @@ export function PrepManualEntryDialog({ open, onOpenChange }: PrepManualEntryDia
     if (!next) {
       setEventName('');
       setEventDate('');
+      setEventEndDate('');
       setError(null);
     }
     onOpenChange(next);
@@ -116,14 +119,21 @@ export function PrepManualEntryDialog({ open, onOpenChange }: PrepManualEntryDia
   const parsedDate = parseLocalCalendarDate(eventDate);
   const isFutureDate = parsedDate !== null && parsedDate > now;
   const showDateError = eventDate.trim().length > 0 && !isFutureDate;
+  const parsedEndDate = parseLocalCalendarDate(eventEndDate);
+  // The end date needs only end >= start (the start date already keeps its
+  // own strictly-future rule above) — matches the shared schema's refine.
+  const isEndDateValid =
+    parsedEndDate === null || (parsedDate !== null && parsedEndDate >= parsedDate);
+  const showEndDateError = eventEndDate.trim().length > 0 && !isEndDateValid;
   const trimmedName = eventName.trim();
-  const canSubmit = trimmedName.length > 0 && isFutureDate;
+  const canSubmit = trimmedName.length > 0 && isFutureDate && isEndDateValid;
 
   const manualEntry = useMutation({
     mutationFn: () =>
       api.tournaments.manualEntry({
         eventName: trimmedName,
         eventDate: parsedDate ?? undefined,
+        ...(parsedEndDate !== null ? { eventEndDate: parsedEndDate } : {}),
       }),
     onSuccess: async (entry) => {
       await Promise.all([
@@ -224,6 +234,20 @@ export function PrepManualEntryDialog({ open, onOpenChange }: PrepManualEntryDia
             />
             {showDateError && (
               <p className="text-xs text-destructive">{t('prep.manualEntry.dateRequired')}</p>
+            )}
+          </div>
+          <div className="flex flex-col gap-1">
+            <Label htmlFor="prep-manual-entry-end-date">{t('prep.manualEntry.endDateLabel')}</Label>
+            <Input
+              id="prep-manual-entry-end-date"
+              type="date"
+              value={eventEndDate}
+              onChange={(event) => setEventEndDate(event.target.value)}
+            />
+            {showEndDateError ? (
+              <p className="text-xs text-destructive">{t('prep.manualEntry.endBeforeStart')}</p>
+            ) : (
+              <p className="text-xs text-muted-foreground">{t('prep.manualEntry.endDateHint')}</p>
             )}
           </div>
           <DialogFooter>

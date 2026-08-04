@@ -79,4 +79,51 @@ describe('ManualEventAssociation', () => {
     renderForm();
     expect(screen.getByRole('button', { name: 'Associate event' })).toBeDisabled();
   });
+
+  it('renders the end-date label from the i18n key', () => {
+    renderForm();
+    expect(screen.getByLabelText('End date (optional)')).toBeInTheDocument();
+  });
+
+  it('submits eventEndDate when provided and omits it when the end input is empty', async () => {
+    const user = userEvent.setup();
+    manualEntry.mockResolvedValue({
+      eventName: 'Locals #42',
+      firstSetAt: 1,
+      lastSetAt: 1,
+      setsPlayed: 0,
+      source: 'manual',
+      entryKey: 'manual-locals-42-abc123',
+    });
+
+    renderForm();
+
+    await user.type(screen.getByLabelText('Event name'), 'Locals #42');
+    await user.type(screen.getByLabelText('Event date'), '2026-01-10');
+    await user.type(screen.getByLabelText('End date (optional)'), '2026-01-12');
+    await user.click(screen.getByRole('button', { name: 'Associate event' }));
+
+    await waitFor(() => expect(manualEntry).toHaveBeenCalledTimes(1));
+    const withEnd = manualEntry.mock.calls[0]?.[0] as { eventEndDate: unknown };
+    expect(typeof withEnd.eventEndDate).toBe('number');
+
+    manualEntry.mockClear();
+    await user.type(screen.getByLabelText('Event name'), 'No End Locals');
+    await user.click(screen.getByRole('button', { name: 'Associate event' }));
+
+    await waitFor(() => expect(manualEntry).toHaveBeenCalledTimes(1));
+    const withoutEnd = manualEntry.mock.calls[0]?.[0] as object;
+    expect('eventEndDate' in withoutEnd).toBe(false);
+  });
+
+  it('blocks submit when an end date is entered without a start date', async () => {
+    const user = userEvent.setup();
+    renderForm();
+
+    await user.type(screen.getByLabelText('Event name'), 'Locals #42');
+    await user.type(screen.getByLabelText('End date (optional)'), '2026-01-12');
+
+    expect(screen.getByRole('button', { name: 'Associate event' })).toBeDisabled();
+    expect(manualEntry).not.toHaveBeenCalled();
+  });
 });
