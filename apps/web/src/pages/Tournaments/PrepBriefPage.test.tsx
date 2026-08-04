@@ -730,7 +730,7 @@ describe('review mode composition (28-10)', () => {
         time: Date.UTC(2021, 0, 1, 3),
         win: false,
         opponent: 'CuratedRival',
-        vodTimestamps: [{ id: 0, seconds: 42, note: 'clean punish', tags: [] }],
+        vodTimestamps: [{ id: 'ts-0', seconds: 42, note: 'clean punish', tags: [] }],
       }),
     ]);
     mockBriefStatus({
