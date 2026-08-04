@@ -16,8 +16,26 @@ vi.mock('react-router', async (importOriginal) => {
   return { ...actual, useNavigate: () => navigate };
 });
 
-let creditsResult: { data: CreditsStatus | undefined; refetch: () => void } = {
-  data: { freeAccess: false, balance: 5, packs: [] },
+vi.mock('sonner', () => ({
+  toast: Object.assign(vi.fn(), { success: vi.fn() }),
+}));
+
+vi.mock('@/components/billing/BuyCreditsDialog', () => ({
+  BuyCreditsDialog: ({ open, returnTo }: { open: boolean; returnTo?: unknown }) =>
+    open ? (
+      <div data-testid="buy-credits-dialog" data-return-to={JSON.stringify(returnTo)} />
+    ) : null,
+}));
+
+let creditsResult: {
+  data: CreditsStatus | undefined;
+  refetch: () => void;
+} = {
+  data: {
+    freeAccess: false,
+    balance: 5,
+    packs: [{ id: 'pack5', credits: 5, amountCents: 800, label: '5 reports' }],
+  },
   refetch: vi.fn(),
 };
 vi.mock('@/hooks/useBilling', () => ({
@@ -72,7 +90,14 @@ function renderCard(props: { entryKey?: string; annotatedEvidenceCount?: number 
 
 beforeEach(() => {
   vi.clearAllMocks();
-  creditsResult = { data: { freeAccess: false, balance: 5, packs: [] }, refetch: vi.fn() };
+  creditsResult = {
+    data: {
+      freeAccess: false,
+      balance: 5,
+      packs: [{ id: 'pack5', credits: 5, amountCents: 800, label: '5 reports' }],
+    },
+    refetch: vi.fn(),
+  };
   synthesisJobResult = { data: { job: null } };
   practicePlanResult = { data: undefined };
 });
@@ -233,7 +258,7 @@ describe('PostEventSynthesisCard', () => {
     ).toBeInTheDocument();
   });
 
-  it('does NOT render the submit-failed message for a 402 rejection (handled in Task 3)', async () => {
+  it('does NOT render the submit-failed message for a 402 rejection — it opens the buy dialog instead', async () => {
     const user = userEvent.setup();
     renderCard({ annotatedEvidenceCount: 3 });
 
@@ -248,5 +273,45 @@ describe('PostEventSynthesisCard', () => {
     expect(
       screen.queryByText('Something went wrong starting your plan. Please try again.'),
     ).not.toBeInTheDocument();
+  });
+
+  it('a 402 submit auto-opens BuyCreditsDialog with returnTo {returnTo:"prep", entryKey}', async () => {
+    const user = userEvent.setup();
+    renderCard({ entryKey: 'entry-1', annotatedEvidenceCount: 3 });
+
+    await user.click(screen.getByRole('button', { name: /Get practice plan — 1 credit/ }));
+    const [, callOptions] = submitMutateSpy.mock.calls[0]!;
+    act(() => {
+      (callOptions as { onError: (error: unknown) => void }).onError(
+        new ApiError(402, 'payment required'),
+      );
+    });
+
+    const dialog = screen.getByTestId('buy-credits-dialog');
+    expect(dialog).toBeInTheDocument();
+    expect(JSON.parse(dialog.getAttribute('data-return-to') ?? '{}')).toEqual({
+      returnTo: 'prep',
+      entryKey: 'entry-1',
+    });
+  });
+
+  it('after a 402, the persistent three-part insufficient-credits hint renders (body + link-variant buyCta + toGenerate)', async () => {
+    const user = userEvent.setup();
+    renderCard({ annotatedEvidenceCount: 3 });
+
+    await user.click(screen.getByRole('button', { name: /Get practice plan — 1 credit/ }));
+    const [, callOptions] = submitMutateSpy.mock.calls[0]!;
+    act(() => {
+      (callOptions as { onError: (error: unknown) => void }).onError(
+        new ApiError(402, 'payment required'),
+      );
+    });
+
+    expect(
+      screen.getByText(
+        (_, element) =>
+          element?.textContent === "You're out of credits. Buy credits to get your practice plan.",
+      ),
+    ).toBeInTheDocument();
   });
 });

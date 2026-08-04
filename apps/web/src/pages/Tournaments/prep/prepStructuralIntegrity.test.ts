@@ -86,6 +86,18 @@ describe('prep structural integrity (no paid affordance, RPT-04)', () => {
 
 const TOURNAMENTS_ROOT = resolve('src/pages/Tournaments');
 const PREP_PAID_DIR = resolve('src/pages/Tournaments/prepPaid');
+/**
+ * Phase 28 (28-09, REV-03) extension: `postEventPaid/` is the SECOND
+ * (and, per 28-UI-SPEC.md §5, final-for-this-milestone) deliberately-
+ * exempted monetization directory — the exact `prepPaid/` precedent
+ * applied to the post-event review mode's gated synthesis card. Every
+ * assertion below that referenced only `PREP_PAID_DIR` now treats
+ * `{PREP_PAID_DIR, POST_EVENT_PAID_DIR}` as the permitted set, so the
+ * "exact set equality" checks stay meaningful for BOTH gated surfaces
+ * rather than silently re-widening to "contains" checks.
+ */
+const POST_EVENT_PAID_DIR = resolve('src/pages/Tournaments/postEventPaid');
+const GATED_DIRS = [PREP_PAID_DIR, POST_EVENT_PAID_DIR];
 
 /**
  * Recursively collects every non-test `.ts`/`.tsx` source file under `dir`,
@@ -110,34 +122,37 @@ function collectSourceFiles(dir: string, excludeDirs: string[] = []): string[] {
 }
 
 /**
- * The WIDENED set (27-11): every non-test source file anywhere under
- * `Tournaments/`, EXCLUDING the deliberately-exempted `prepPaid/`
- * directory. This SUPPLEMENTS `scannedFiles` above — it does not replace
- * it — so a future refactor that moves a file out of `prep/` cannot
- * quietly escape the original, hand-maintained gate; both gates must pass.
+ * The WIDENED set (27-11, extended 28-09): every non-test source file
+ * anywhere under `Tournaments/`, EXCLUDING both deliberately-exempted
+ * gated directories (`GATED_DIRS`). This SUPPLEMENTS `scannedFiles` above
+ * — it does not replace it — so a future refactor that moves a file out of
+ * `prep/` cannot quietly escape the original, hand-maintained gate; both
+ * gates must pass.
  */
-const wideTournamentsTreeFiles = collectSourceFiles(TOURNAMENTS_ROOT, [PREP_PAID_DIR]);
+const wideTournamentsTreeFiles = collectSourceFiles(TOURNAMENTS_ROOT, GATED_DIRS);
 
-/** Every non-test source file inside the deliberately-exempted directory. */
-const gatedDirFiles = collectSourceFiles(PREP_PAID_DIR);
+/** Every non-test source file inside EITHER deliberately-exempted directory. */
+const gatedDirFiles = GATED_DIRS.flatMap((dir) => collectSourceFiles(dir));
 
 /**
- * Every non-test source file anywhere under `Tournaments/`, INCLUDING
- * `prepPaid/` — used only by the sole-paid-surface equality check below.
+ * Every non-test source file anywhere under `Tournaments/`, INCLUDING both
+ * gated directories — used only by the sole-paid-surface equality check
+ * below.
  */
 const wholeTournamentsTreeFiles = [...wideTournamentsTreeFiles, ...gatedDirFiles];
 
-describe('deliberate Phase 27 extension: the whole Tournaments tree, minus the gated prepPaid/ directory (RPT-04)', () => {
+describe('deliberate Phase 27/28 extension: the whole Tournaments tree, minus the gated prepPaid/ and postEventPaid/ directories (RPT-04, REV-03)', () => {
   it('discovers strictly more source files than the original hand-maintained scanned list (anti-vacuous-pass guard for the widened set)', () => {
     expect(wideTournamentsTreeFiles.length).toBeGreaterThan(scannedFiles.length);
   });
 
-  it('the paid card file exists in the gated directory (a rename or deletion must fail this suite, not silently pass)', () => {
+  it('the paid card file exists in each gated directory (a rename or deletion must fail this suite, not silently pass)', () => {
     expect(existsSync(resolve(PREP_PAID_DIR, 'PrepPaidReportsCard.tsx'))).toBe(true);
+    expect(existsSync(resolve(POST_EVENT_PAID_DIR, 'PostEventSynthesisCard.tsx'))).toBe(true);
   });
 
   it.each(wideTournamentsTreeFiles)(
-    '%s (outside prepPaid/) contains no monetization vocabulary',
+    '%s (outside the gated dirs) contains no monetization vocabulary',
     (file) => {
       const source = readFileSync(file, 'utf-8');
       expect(source).not.toMatch(MONETIZATION_VOCABULARY);
@@ -145,38 +160,40 @@ describe('deliberate Phase 27 extension: the whole Tournaments tree, minus the g
   );
 
   it.each(wideTournamentsTreeFiles)(
-    '%s (outside prepPaid/) contains no reserved paid-placement marker',
+    '%s (outside the gated dirs) contains no reserved paid-placement marker',
     (file) => {
       const source = readFileSync(file, 'utf-8');
       expect(source).not.toMatch(RESERVED_PLACEMENT_MARKER);
     },
   );
 
-  it('PrepPaidReportsCard.tsx (and its prepPaid/ siblings) are the SOLE files in the whole Tournaments tree matching the monetization-vocabulary regex — exact set equality, not a "contains" check', () => {
+  it('the gated-directory files are the SOLE files in the whole Tournaments tree matching the monetization-vocabulary regex — exact set equality, not a "contains" check', () => {
     const matchingFiles = new Set(
       wholeTournamentsTreeFiles.filter((file) =>
         MONETIZATION_VOCABULARY.test(readFileSync(file, 'utf-8')),
       ),
     );
-    const matchingFilesInsideGatedDir = new Set(
-      [...matchingFiles].filter((file) => file.startsWith(`${PREP_PAID_DIR}/`)),
+    const matchingFilesInsideGatedDirs = new Set(
+      [...matchingFiles].filter((file) => GATED_DIRS.some((dir) => file.startsWith(`${dir}/`))),
     );
     // A `.some()`/`.includes()` "contains" check could pass even if a file
-    // OUTSIDE prepPaid/ also matched, as long as one gated-dir file
+    // OUTSIDE the gated dirs also matched, as long as one gated-dir file
     // matched too. Comparing the FULL matching set (computed across the
-    // whole tree) against its own gated-dir-only subset via `toEqual`
+    // whole tree) against its own gated-dirs-only subset via `toEqual`
     // cannot: it fails the instant any element of `matchingFiles` sits
-    // outside `matchingFilesInsideGatedDir` — i.e. the instant any file
-    // outside prepPaid/ carries monetization vocabulary.
-    expect(matchingFiles).toEqual(matchingFilesInsideGatedDir);
+    // outside `matchingFilesInsideGatedDirs` — i.e. the instant any file
+    // outside the gated dirs carries monetization vocabulary.
+    expect(matchingFiles).toEqual(matchingFilesInsideGatedDirs);
     // Non-empty, so this isn't a vacuous pass where nothing matches
     // anywhere (which would trivially satisfy the equality above too).
     expect(matchingFiles.size).toBeGreaterThan(0);
   });
 
-  it('no file outside the gated directory imports from prepPaid/, except PrepBriefPage.tsx (the sole permitted composer)', () => {
-    const importers = wideTournamentsTreeFiles.filter((file) =>
-      /from ['"].*\/prepPaid\//.test(readFileSync(file, 'utf-8')),
+  it('no file outside the gated directories imports from prepPaid/ or postEventPaid/, except PrepBriefPage.tsx (the sole permitted composer)', () => {
+    const importers = wideTournamentsTreeFiles.filter(
+      (file) =>
+        /from ['"].*\/prepPaid\//.test(readFileSync(file, 'utf-8')) ||
+        /from ['"].*\/postEventPaid\//.test(readFileSync(file, 'utf-8')),
     );
     expect(importers).toEqual([resolve('src/pages/Tournaments/PrepBriefPage.tsx')]);
   });

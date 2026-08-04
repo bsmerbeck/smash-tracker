@@ -13,6 +13,8 @@ import {
   usePracticePlan,
 } from '@/hooks/usePostEventSynthesis';
 import { SafeMarkdown } from '@/lib/safeMarkdown';
+import { BuyCreditsDialog } from '@/components/billing/BuyCreditsDialog';
+import { usePostEventCheckoutReturn } from './usePostEventCheckoutReturn';
 
 /**
  * `PostEventSynthesisCard` is the ONE intentionally monetized surface on
@@ -51,8 +53,15 @@ export function PostEventSynthesisCard({
   const { data: jobData } = useSynthesisJob(entryKey);
   const submitSynthesis = useSubmitSynthesis(entryKey);
 
+  // The `?billing=` Stripe Checkout return trip — see
+  // usePostEventCheckoutReturn.ts for why this handling lives here rather
+  // than on PrepBriefPage.
+  usePostEventCheckoutReturn();
+
   const [submitPending, setSubmitPending] = useState(false);
   const [submitFailed, setSubmitFailed] = useState(false);
+  const [insufficientCredits, setInsufficientCredits] = useState(false);
+  const [buyCreditsOpen, setBuyCreditsOpen] = useState(false);
   const [isExpanded, setIsExpanded] = useState(false);
 
   const job = jobData?.job ?? null;
@@ -62,6 +71,8 @@ export function PostEventSynthesisCard({
 
   const creditsData = credits.data;
   const freeAccess = creditsData?.freeAccess ?? false;
+  const availablePacks = creditsData?.packs ?? [];
+  const canBuyCredits = !freeAccess && availablePacks.length > 0;
 
   // Every purchase-path state below is mutually exclusive — exactly one
   // renders. The needAnnotations/buyCta split (both apply only with no
@@ -72,16 +83,19 @@ export function PostEventSynthesisCard({
 
   function handleSubmitError(error: unknown) {
     if (error instanceof ApiError && error.status === 402) {
-      // 402 handling is wired in 28-09 Task 3 (usePostEventCheckoutReturn +
-      // BuyCreditsDialog) — deliberately left to that task's own commit.
+      setInsufficientCredits(true);
+      setSubmitFailed(false);
+      setBuyCreditsOpen(true);
       return;
     }
     setSubmitFailed(true);
+    setInsufficientCredits(false);
   }
 
   function handleBuy() {
     setSubmitPending(true);
     setSubmitFailed(false);
+    setInsufficientCredits(false);
     submitSynthesis.mutate(undefined, {
       onError: handleSubmitError,
       onSettled: () => setSubmitPending(false),
@@ -131,6 +145,20 @@ export function PostEventSynthesisCard({
                 {t('postEventPaid.buyCta')}
               </Button>
             </div>
+            {insufficientCredits && (
+              <p className="text-sm text-muted-foreground">
+                {t('postEventPaid.insufficientCredits.body')}{' '}
+                <Button
+                  type="button"
+                  variant="link"
+                  className="h-auto p-0 text-sm"
+                  onClick={() => setBuyCreditsOpen(true)}
+                >
+                  {t('postEventPaid.insufficientCredits.buyCta')}
+                </Button>{' '}
+                {t('postEventPaid.insufficientCredits.toGenerate')}
+              </p>
+            )}
             {submitFailed && (
               <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">
                 {t('postEventPaid.error.submitFailed')}
@@ -193,6 +221,15 @@ export function PostEventSynthesisCard({
           </div>
         )}
       </CardContent>
+
+      {canBuyCredits && (
+        <BuyCreditsDialog
+          open={buyCreditsOpen}
+          onOpenChange={setBuyCreditsOpen}
+          packs={availablePacks}
+          returnTo={{ returnTo: 'prep', entryKey }}
+        />
+      )}
     </Card>
   );
 }
