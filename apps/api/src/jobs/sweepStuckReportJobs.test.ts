@@ -169,4 +169,56 @@ describe('runSweepStuckReportJobs', () => {
     const runningIndex = await database.ref('reportJobsByStatus/running/uid-1/job-done').get();
     expect(runningIndex.exists()).toBe(false);
   });
+
+  // 260806-hzx: the sweep's terminal write used to rebuild the job record
+  // from scratch, dropping every stored field it didn't explicitly re-list
+  // — including `reason`, the only prep/bundle/synthesis context the job
+  // node carries. Downstream money decisions in `routes/reports.ts` (the
+  // `preSpent` bundle-slot gate, the synthesis retry window) key on it, so
+  // a swept job coming back reason-less looked exactly like a legacy job to
+  // both.
+  it.each([['prep_report'], ['prep_bundle'], ['post_event_synthesis']] as const)(
+    'preserves a stored reason of %s across the sweep',
+    async (reason) => {
+      const database = new FakeDatabase();
+      database.seed('credits/uid-1/balance', 0);
+      seedRunningJob(database, 'uid-1', 'job-1', runningJob({ reason }));
+
+      const result = await runSweepStuckReportJobs(database as never, {
+        now: FIXED_NOW,
+        staleMs: STALE_MS,
+      });
+
+      expect(result).toEqual({ swept: 1, refunded: 1 });
+
+      const jobSnapshot = await database.ref('reportJobs/uid-1/job-1').get();
+      expect(jobSnapshot.val()).toMatchObject({ status: 'failed', reason });
+
+      const reportFailedEvents = eventsNamed(database, 'report_failed');
+      expect(reportFailedEvents).toHaveLength(1);
+      expect(reportFailedEvents[0]).toMatchObject({ payload: { reason } });
+    },
+  );
+
+  it('sweeps a legacy reason-free job with no `reason` key on the terminal record, and does not throw', async () => {
+    const database = new FakeDatabase();
+    database.seed('credits/uid-1/balance', 0);
+    seedRunningJob(database, 'uid-1', 'job-1', runningJob());
+
+    const result = await runSweepStuckReportJobs(database as never, {
+      now: FIXED_NOW,
+      staleMs: STALE_MS,
+    });
+
+    expect(result).toEqual({ swept: 1, refunded: 1 });
+
+    const jobSnapshot = await database.ref('reportJobs/uid-1/job-1').get();
+    const val = jobSnapshot.val() as Record<string, unknown>;
+    expect(val.status).toBe('failed');
+    expect(Object.keys(val)).not.toContain('reason');
+
+    const reportFailedEvents = eventsNamed(database, 'report_failed');
+    expect(reportFailedEvents).toHaveLength(1);
+    expect(reportFailedEvents[0]).toMatchObject({ payload: {} });
+  });
 });
