@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import {
   getClaimCodeConfig,
@@ -10,6 +11,16 @@ import {
 const base = {
   FIREBASE_DATABASE_URL: 'https://example-default-rtdb.firebaseio.com',
 };
+
+describe('API development startup', () => {
+  it('loads the workspace-local env file before starting the watch entry point', () => {
+    const packageJson = JSON.parse(
+      readFileSync(new URL('../../package.json', import.meta.url), 'utf8'),
+    ) as { scripts: { dev: string } };
+
+    expect(packageJson.scripts.dev).toBe('tsx watch --env-file=.env src/index.ts');
+  });
+});
 
 describe('loadEnv', () => {
   it('applies defaults for optional vars', () => {

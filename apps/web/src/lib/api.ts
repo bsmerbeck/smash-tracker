@@ -185,10 +185,16 @@ export function getApiBaseUrl(): string {
  * the model call alone can run past a minute. `VITE_API_DIRECT_URL` holds
  * the Cloud Run service URL so those calls hit the API origin directly
  * (CORS-allowed via the API's CORS_ORIGIN env var) and get Cloud Run's own
- * 300-second window instead. Falls back to the regular base when unset
- * (local dev and tests, where there is no proxy in the middle).
+ * 300-second window instead. Development always uses the regular API base,
+ * even if a deployed direct URL is present in the Vite environment; outside
+ * development the helper falls back to the regular base when the direct URL
+ * is unset or blank.
  */
 export function getDirectApiBaseUrl(): string {
+  if (import.meta.env.DEV) {
+    return getApiBaseUrl();
+  }
+
   const configured = import.meta.env.VITE_API_DIRECT_URL;
   if (typeof configured === 'string' && configured.trim() !== '') {
     return configured.replace(/\/+$/, '');

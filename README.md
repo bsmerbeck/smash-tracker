@@ -149,6 +149,8 @@ cp apps/api/.env.example apps/api/.env
   (`GOOGLE_APPLICATION_CREDENTIALS` or RTDB emulator vars), and `CORS_ORIGIN`.
 
 `.env` files are gitignored; only the `.env.example` templates are committed.
+Service-account JSON and every populated env file are local, gitignored secrets: never paste their
+contents into logs, commit them, or copy them into documentation.
 
 #### 3. Run the dev servers
 
@@ -157,8 +159,25 @@ pnpm dev
 ```
 
 Runs `apps/web` (Vite, default `http://localhost:5173`) and `apps/api` (Fastify with `tsx watch`,
-default `http://localhost:3001`) in parallel. Or run one at a time with
+default `http://localhost:3001`) in parallel. The API dev command automatically loads the existing
+`apps/api/.env` from its workspace, so no separate export or `source` command is required. Or run
+one at a time with
 `pnpm --filter @smash-tracker/web dev` / `pnpm --filter @smash-tracker/api dev`.
+
+For authenticated local development, Vite uses the Firebase Web SDK configuration you supplied to
+sign in a dedicated production test account and obtain its Firebase ID token. Browser API calls
+send that token to the local Fastify server at `http://localhost:3001`.
+
+> **Production-data warning:** If `apps/api/.env` targets the production Realtime Database and the
+> API process uses production ADC or service-account credentials, local API writes are real
+> production writes. Use only dedicated test accounts and test records for this mode. Keep
+> `FIREBASE_DATABASE_EMULATOR_HOST` absent when intentionally exercising the production-backed
+> test-account path; for isolated work, use the RTDB emulator instead.
+
+During Vite development, report submissions ignore `VITE_API_DIRECT_URL` and use
+`VITE_API_BASE_URL` (or the `http://localhost:3001` fallback), keeping paid and long-running work on
+the local API. Production still uses `VITE_API_DIRECT_URL` for requests that can outlive Firebase
+Hosting's 60-second rewrite limit.
 
 #### Optional: Realtime Database emulator
 
