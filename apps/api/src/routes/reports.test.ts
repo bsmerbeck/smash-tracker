@@ -2203,6 +2203,20 @@ describe('prep single report (RPT-01)', () => {
     expect(modelSpy).not.toHaveBeenCalled();
   });
 
+  it('a jobId with an RTDB-illegal character answers 400, never a 500 from database.ref() (28-review CR-01 item 4 follow-up)', async () => {
+    const { app } = billableApp();
+
+    for (const jobId of ['a.b', 'a#b', 'a$b', 'a[b', 'a]b', 'a/b', 'a\x01b']) {
+      const response = await app.inject({
+        method: 'POST',
+        url: '/api/reports',
+        headers: authHeader(),
+        payload: { ...PREP_PAYLOAD, jobId },
+      });
+      expect(response.statusCode).toBe(400);
+    }
+  });
+
   it('spends exactly one credit, creates one job carrying the prep reason, writes the index pointer, and returns the stored report', async () => {
     const { app, database } = billableApp();
     seedPrepBrief(database, TEST_UID, ENTRY_KEY, {
@@ -2539,6 +2553,24 @@ describe('prep bundle submission (RPT-02, Task 1)', () => {
     });
 
     expect(response.statusCode).toBe(400);
+    expect(JSON.stringify(database.dump())).toEqual(before);
+  });
+
+  it('a bundleId with an RTDB-illegal character answers 400 before any charge, never a 500 from database.ref() (28-review CR-01 item 4 follow-up)', async () => {
+    const { app, database } = billableBundleApp();
+    seedBundleBrief(database, TEST_UID, ENTRY_KEY, [...BUNDLE_OPPONENT_NAMES]);
+    database.seed(`credits/${TEST_UID}/balance`, 5);
+    const before = JSON.stringify(database.dump());
+
+    for (const bundleId of ['a.b', 'a#b', 'a$b', 'a[b', 'a]b', 'a/b', 'a\x01b']) {
+      const response = await app.inject({
+        method: 'POST',
+        url: '/api/reports',
+        headers: authHeader(),
+        payload: { ...BUNDLE_PAYLOAD, bundleId },
+      });
+      expect(response.statusCode).toBe(400);
+    }
     expect(JSON.stringify(database.dump())).toEqual(before);
   });
 
