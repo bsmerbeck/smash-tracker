@@ -31,6 +31,19 @@ import { buildBillingEnvelope } from '../events/envelope.js';
  * the bounded-index discipline this sweep is built on), so it always calls
  * `refundCredit()` — a harmless no-op-adjacent credit for a free-access uid,
  * matching the research-authored design exactly.
+ *
+ * Field preservation (260806-hzx): the terminal write carries the stored
+ * job's identity fields forward rather than reconstructing a minimal
+ * record. `reason` is the load-bearing one — `routes/reports.ts`'s
+ * `preSpent` bundle-slot gate and its synthesis retry window both branch on
+ * it, so a swept job that lost it looked exactly like a legacy job to every
+ * downstream money decision. `resultRef` is carried defensively only; a
+ * `running` job never actually has one under the current writes. Both
+ * spreads MUST stay conditional on truthiness (not `!== undefined`) —
+ * `reason` is `.nullish()`, so a stored `null` must also produce no key,
+ * and an explicit `undefined` own-property survives Zod's optional parse
+ * but is rejected by the real RTDB SDK at write time (the 2026-07-30
+ * envelope failure class). Mirrors `failJob()` in `routes/reports.ts`.
  */
 
 export interface SweepStuckReportJobsResult {
@@ -104,6 +117,8 @@ export async function runSweepStuckReportJobs(
           updatedAt: failedAt,
           attempt: job.attempt,
           creditRef: job.creditRef,
+          ...(job.reason ? { reason: job.reason } : {}),
+          ...(job.resultRef ? { resultRef: job.resultRef } : {}),
         }),
       );
 
@@ -125,7 +140,7 @@ export async function runSweepStuckReportJobs(
           sessionId: uid,
           causationId: `${jobId}:report_failed:sweep`,
           consentState: 'unknown',
-          payload: {},
+          payload: job.reason ? { reason: job.reason } : {},
         }),
       );
 

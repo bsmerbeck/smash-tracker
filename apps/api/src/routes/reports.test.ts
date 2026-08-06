@@ -15,6 +15,7 @@ import {
   TEST_UID,
 } from '../test-support/testApp.js';
 import { buildApp } from '../app.js';
+import { runSweepStuckReportJobs } from '../jobs/sweepStuckReportJobs.js';
 
 const STARTGG_CONFIG: StartggConfig = {
   clientId: 'client-123',
@@ -3104,6 +3105,88 @@ describe('bundle failure math (RPT-02/RPT-03, owner battery item 3)', () => {
     expect(balance.val()).toBe(4);
     const jobSnapshot = await database.ref(`reportJobs/${TEST_UID}/never-submitted-bundle:1`).get();
     expect(jobSnapshot.val()).toMatchObject({ status: 'succeeded', reason: 'prep_report' });
+  });
+
+  it('a bundle child swept by the stuck-job sweep keeps its `reason` and still 409s a replayed slot instead of spending/generating again (260806-hzx) — without the sweep fix this would spend a fourth credit and generate on an already-refunded slot', async () => {
+    const { client, modelSpy } = sequencedClient(new Set());
+    const { app, database } = buildTestApp({
+      reports: NON_ALLOWLIST_CONFIG,
+      stripe: BILLING_STRIPE_CONFIG,
+      prepPaid: PREP_PAID_CONFIG,
+      reportsClient: client,
+      parrygg: { apiKey: 'parry-key' },
+      parryggClients: PARRY_CLIENTS,
+    });
+    seedBundleBrief(database, TEST_UID, ENTRY_KEY);
+    database.seed(`credits/${TEST_UID}/balance`, 10);
+
+    const submitResponse = await app.inject({
+      method: 'POST',
+      url: '/api/reports',
+      headers: authHeader(),
+      payload: {
+        reason: 'prep_bundle',
+        entryKey: ENTRY_KEY,
+        bundleId: 'bundle-swept',
+        opponentNames: BUNDLE_OPPONENT_NAMES,
+      },
+    });
+    expect(submitResponse.statusCode).toBe(202);
+    const { jobs } = submitResponse.json() as {
+      jobs: Array<{ opponentName: string; jobId: string; slot: number }>;
+    };
+    const firstChild = jobs[0]!;
+
+    const balanceAfterSubmit = await database.ref(`credits/${TEST_UID}/balance`).get();
+    expect(balanceAfterSubmit.val()).toBe(7);
+
+    // Force the first child into a stale `running` state — as if a request
+    // crashed mid-generation — well past the sweep's 15-minute staleness
+    // window, so this case does not depend on wall-clock timing.
+    const now = Date.now();
+    database.seed(`reportJobs/${TEST_UID}/${firstChild.jobId}`, {
+      status: 'running',
+      reason: 'prep_bundle',
+      createdAt: now - 40 * 60 * 1000,
+      updatedAt: now - 40 * 60 * 1000,
+      attempt: 0,
+      creditRef: firstChild.jobId,
+    });
+    database.seed(`reportJobsByStatus/running/${TEST_UID}/${firstChild.jobId}`, true);
+
+    const sweepResult = await runSweepStuckReportJobs(database as never, { now });
+    expect(sweepResult).toEqual({ swept: 1, refunded: 1 });
+
+    const sweptJob = await database.ref(`reportJobs/${TEST_UID}/${firstChild.jobId}`).get();
+    expect(sweptJob.val()).toMatchObject({ status: 'failed', reason: 'prep_bundle' });
+
+    const balanceAfterSweep = await database.ref(`credits/${TEST_UID}/balance`).get();
+    expect(balanceAfterSweep.val()).toBe(8);
+
+    // The 409 below is reachable ONLY because `reason` survived the sweep
+    // — without Task 1's fix, `existingJob.reason` reads back undefined,
+    // `preSpent` is false, and this retry spends a fourth credit and
+    // generates a fresh report on a slot the bundle already paid for and
+    // was refunded.
+    const retryResponse = await app.inject({
+      method: 'POST',
+      url: '/api/reports',
+      headers: authHeader(),
+      payload: {
+        reason: 'prep_report',
+        entryKey: ENTRY_KEY,
+        opponentName: firstChild.opponentName,
+        jobId: firstChild.jobId,
+      },
+    });
+    expect(retryResponse.statusCode).toBe(409);
+    expect(retryResponse.json()).toMatchObject({
+      message: 'This bundle report already resolved and must be purchased again',
+    });
+
+    const balanceAfterRetry = await database.ref(`credits/${TEST_UID}/balance`).get();
+    expect(balanceAfterRetry.val()).toBe(8);
+    expect(modelSpy).toHaveBeenCalledTimes(0);
   });
 });
 
