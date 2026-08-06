@@ -214,6 +214,16 @@ describe('generateReportRequestSchema jobId (deploy-first optional)', () => {
     const parsed = generateReportRequestSchema.safeParse({ query: 'user/07dc2239' });
     expect(parsed.success).toBe(true);
   });
+
+  it('a bundleSlotRef-shaped jobId ({bundleId}:{slot}) parses — the prep retry contract survives the illegal-char validation', () => {
+    const parsed = generateReportRequestSchema.safeParse({
+      reason: 'prep_report',
+      entryKey: 'e1',
+      opponentName: 'rival',
+      jobId: 'bundle-abc:2',
+    });
+    expect(parsed.success).toBe(true);
+  });
 });
 
 /**
@@ -287,6 +297,36 @@ describe('generateReportRequestSchema — Phase 27 prep-context union', () => {
       opponentNames: ['a', 'b', 'c'],
     });
     expect(result.success).toBe(true);
+  });
+
+  it('prep_report: a jobId with an RTDB-illegal character fails at parse time with path [jobId] (28-review CR-01 item 4 follow-up)', () => {
+    for (const jobId of ['a.b', 'a#b', 'a$b', 'a[b', 'a]b', 'a/b', 'a\x01b']) {
+      const result = generateReportRequestSchema.safeParse({
+        reason: 'prep_report',
+        entryKey: 'e1',
+        opponentName: 'rival',
+        jobId,
+      });
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        expect(result.error.issues.some((issue) => issue.path[0] === 'jobId')).toBe(true);
+      }
+    }
+  });
+
+  it('prep_bundle: a bundleId with an RTDB-illegal character fails at parse time with path [bundleId] (28-review CR-01 item 4 follow-up)', () => {
+    for (const bundleId of ['a.b', 'a#b', 'a$b', 'a[b', 'a]b', 'a/b', 'a\x01b']) {
+      const result = generateReportRequestSchema.safeParse({
+        reason: 'prep_bundle',
+        entryKey: 'e1',
+        bundleId,
+        opponentNames: ['a', 'b', 'c'],
+      });
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        expect(result.error.issues.some((issue) => issue.path[0] === 'bundleId')).toBe(true);
+      }
+    }
   });
 
   it('reportJobSchema still parses with reason absent', () => {

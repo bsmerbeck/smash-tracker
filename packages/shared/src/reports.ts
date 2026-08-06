@@ -192,6 +192,22 @@ export type PrepReportReason = z.infer<typeof prepReportReasonSchema>;
  * machine for idempotent retries. Optional so an un-updated client
  * (deploy-first) never 400s — the server falls back to a server-generated
  * jobId when absent, same convention as `checkoutRequestSchema.attemptId`.
+ * `entryKeyInputSchema` on `jobId` and `bundleId` (28-review CR-01 item 4,
+ * WR-06 template): both values are interpolated straight into
+ * `database.ref(...)` paths — `reportJobs/{uid}/{jobId}`,
+ * `creditBundleOps/{uid}/{bundleId}`, and the bundle children
+ * `reportJobs/{uid}/{bundleId}:{slot}` — so RTDB-reserved characters
+ * (`. # $ [ ] /` and control chars) must 400 at the schema boundary rather
+ * than throw synchronously inside the SDK as a 500. Client UUIDs and
+ * bundleSlotRef ids always satisfy the validator (`:` is RTDB-legal). The
+ * validation is deliberately FIELD-level, not per-reason in superRefine:
+ * the legacy (no-reason) arm writes `reportJobs/{uid}/{jobId}` too
+ * (`request.body.jobId ?? randomUUID()`), the identical 500 vector. The
+ * post_event_synthesis arm still 400s on any client jobId — a field-level
+ * failure just reports the character message instead of the "not allowed"
+ * one. The implicit max(200) bound (previously unbounded here) is
+ * intentional: real clients mint 36-char UUIDs, and it matches entryKey's
+ * own bound.
  *
  * Schema validity is not authorization: the handler must ALSO re-check that
  * the caller owns the brief and that every requested opponent is currently
@@ -202,11 +218,11 @@ export const generateReportRequestSchema = z
     query: z.string().min(1).optional(),
     source: scoutSourceSchema.optional(),
     combineWith: combineWithLookupSchema.optional(),
-    jobId: z.string().min(1).optional(),
+    jobId: entryKeyInputSchema.optional(),
     reason: prepReportReasonSchema.optional(),
     entryKey: entryKeyInputSchema.optional(),
     opponentName: z.string().min(1).optional(),
-    bundleId: z.string().min(1).optional(),
+    bundleId: entryKeyInputSchema.optional(),
     opponentNames: z.array(z.string().min(1)).length(PREP_BUNDLE_SIZE).optional(),
   })
   .superRefine((value, ctx) => {
