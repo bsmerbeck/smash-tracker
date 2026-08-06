@@ -56,6 +56,6 @@ describe('getDirectApiBaseUrl', () => {
 
 describe('source Content Security Policy', () => {
   it('allows the exact local API loopback origin', () => {
-    expect(sourceIndexHtml).toMatch(/connect-src[^;]*http:\/\/localhost:3001(?:[\s;\"])/);
+    expect(sourceIndexHtml).toMatch(/connect-src[^;]*http:\/\/localhost:3001(?:[\s;"])/);
   });
 });
