@@ -219,6 +219,12 @@ export function ReviewDeliveryPage() {
 
   const currentSource = citationSources.find((source) => source.sourceVodRef === currentSourceRef);
 
+  // 260807-cty: the citation rail only ever renders when there is a
+  // resolved, playable source to show it for — gates BOTH the panel's
+  // desktop grid track allocation and the rail's own render so the layout
+  // can never open a second column with nothing in it.
+  const hasCitationRail = hasPlayableSource && currentSource != null;
+
   // Phase 21 Plan 02 (DLVX-01/T-21-06): the "VOD Notes" tab's source list —
   // the frozen, coach-picked `includedVods` when this delivery has any, else
   // a GRACEFUL back-compat fallback derived from the already-public
@@ -325,33 +331,61 @@ export function ReviewDeliveryPage() {
             <DeliveryVodNotesTab vods={vodNotesSources} />
           </TabsContent>
 
-          {/* Rule 1 (auto-fixed bug): `forceMount` keeps this panel's `VodPlayer`
-              mounted even while the VOD Notes tab is showing — the D-09/T-12-24
-              crawler-safe Viewed transition below is gated on THIS player's
-              `isReady` (`hasPlayableSource && !isPlayerReady`), so without
-              `forceMount` a recipient who never clicks into Review Notes would
-              never fire Viewed at all. `TabsContent`'s own
-              `data-[state=inactive]:hidden` class still visually hides it.
-              260725-Q4: `lg:grid lg:grid-cols-[2fr_minmax(320px,1fr)]` — the
-              same player-left/notes-right split `DeliveryVodNotesTab` uses —
-              replaces the plain stacked flex-col at `lg:`; the citation
-              player left, the written sections (scrollable past `70vh`)
-              right. When there's no citable source, the noSource copy just
-              takes the left slot's spot instead of a player.
-              260726-r1: at `xl:` the notes rail's track switches from an
-              open-ended `minmax(320px,1fr)` (which grows 1:2 in lockstep
-              with the player) to a CAPPED `minmax(380px,420px)` — the notes
-              column stops growing past ~420px and the player's `2fr` track
-              absorbs essentially all of the extra width the wider container
-              above now provides, matching the plan's "player absorbs most
-              of the new width" direction. */}
+          {/* Kept mounted no matter which tab is showing — the D-09/T-12-24
+              crawler-safe Viewed transition below is gated on THIS panel's
+              `VodPlayer` reporting `isReady` (`hasPlayableSource &&
+              !isPlayerReady`), so a recipient who never clicks into Review
+              Notes still needs it mounted to ever fire Viewed at all.
+              `TabsContent`'s own `data-[state=inactive]:hidden` class still
+              visually hides it while inactive.
+              260807-cty: the coach's written sections are the delivered
+              product, so they lead as the wide main column (same headed-card
+              hierarchy as the coach's own section editor) and scroll with
+              the rest of the page as one document. The citation player is
+              demoted to a narrower, sticky secondary rail that stays
+              reachable while the recipient reads — and disappears entirely,
+              with no leftover empty track, for a delivery that cites no
+              footage. */}
           <TabsContent
             value="reviewNotes"
             forceMount
-            className="flex flex-col gap-4 pt-4 lg:grid lg:grid-cols-[2fr_minmax(320px,1fr)] lg:items-start lg:gap-6 xl:grid-cols-[2fr_minmax(380px,420px)]"
+            className={cn(
+              'flex flex-col gap-4 pt-4 lg:items-start lg:gap-6',
+              hasCitationRail &&
+                'lg:grid lg:grid-cols-[minmax(0,1fr)_minmax(300px,380px)] xl:grid-cols-[minmax(0,1fr)_minmax(340px,440px)]',
+            )}
           >
-            {hasPlayableSource && currentSource ? (
-              <div className="flex flex-col gap-1.5">
+            <div className="flex min-w-0 flex-col gap-4">
+              {snapshot.sections && snapshot.sections.length > 0 ? (
+                snapshot.sections.map((section) => (
+                  <div key={section.id} className="rounded-lg border bg-card">
+                    <div className="border-b px-4 py-2.5">
+                      <h2 className="text-sm font-semibold">
+                        {section.kind === 'general'
+                          ? section.title?.trim() ||
+                            t('coaching.reviews.composer.sections.kinds.general')
+                          : t(`coaching.reviews.composer.sections.kinds.${section.kind}`)}
+                      </h2>
+                    </div>
+                    <div className="px-4 py-3.5">
+                      <SafeMarkdown
+                        body={section.body}
+                        onActivateCitation={handleActivateCitation}
+                        resolveCitationSource={resolveCitationSource}
+                      />
+                    </div>
+                  </div>
+                ))
+              ) : (
+                <p className="text-sm text-muted-foreground">{t('reviewDelivery.sectionsEmpty')}</p>
+              )}
+              {!hasCitationRail && (
+                <p className="text-xs text-muted-foreground">{t('reviewDelivery.noSource')}</p>
+              )}
+            </div>
+
+            {hasCitationRail && currentSource && (
+              <aside className="order-first flex flex-col gap-1.5 lg:sticky lg:top-4 lg:order-none">
                 <p className="text-[10.5px] font-medium tracking-wide text-muted-foreground uppercase">
                   {t('reviewDelivery.nowPlaying')}
                 </p>
@@ -367,36 +401,8 @@ export function ReviewDeliveryPage() {
                   seekRef={seekRef}
                   onReady={() => setIsPlayerReady(true)}
                 />
-              </div>
-            ) : (
-              <p className="text-sm text-muted-foreground">{t('reviewDelivery.noSource')}</p>
+              </aside>
             )}
-
-            <div className="flex flex-col gap-4 lg:max-h-[70vh] lg:overflow-y-auto">
-              {snapshot.sections && snapshot.sections.length > 0 ? (
-                snapshot.sections.map((section) => (
-                  <div key={section.id} className="rounded-lg border bg-card">
-                    <div className="border-b px-3.5 py-2">
-                      <h2 className="text-sm font-semibold">
-                        {section.kind === 'general'
-                          ? section.title?.trim() ||
-                            t('coaching.reviews.composer.sections.kinds.general')
-                          : t(`coaching.reviews.composer.sections.kinds.${section.kind}`)}
-                      </h2>
-                    </div>
-                    <div className="px-3.5 py-3">
-                      <SafeMarkdown
-                        body={section.body}
-                        onActivateCitation={handleActivateCitation}
-                        resolveCitationSource={resolveCitationSource}
-                      />
-                    </div>
-                  </div>
-                ))
-              ) : (
-                <p className="text-sm text-muted-foreground">{t('reviewDelivery.sectionsEmpty')}</p>
-              )}
-            </div>
           </TabsContent>
         </Tabs>
 
