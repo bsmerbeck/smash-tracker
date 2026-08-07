@@ -1251,232 +1251,235 @@ export function VodManagerPage() {
           <div
             className={cn(
               'flex flex-col gap-4',
-              // Compact-mode desktop "combination rail" (fix-up #7): on lg+
-              // viewports ONLY while compact, the detail panel becomes a
-              // two-column grid — player+controls on the left, quick tags +
-              // timestamp notes stacked in a rail on the right. Fill mode
-              // and small screens ALWAYS stay the plain stacked flex-col
-              // above (unaffected by these `lg:` classes, which never apply
-              // outside compact). Every child below gets its OWN `lg:col-
-              // start-*`/`lg:row-start-*` placement (CSS Grid visually
-              // reorders WITHOUT moving DOM nodes) rather than being
-              // regrouped into nested wrapper divs, so the plain-stacked
-              // DOM order — and therefore the VodPlayer element's position
-              // in the tree — is IDENTICAL in both layouts. Combined with
-              // the existing className-only (never remount-triggering)
-              // compact/fill toggle below, this preserves the "VodPlayer
-              // never remounts on a layout/size change" invariant.
+              // Compact-mode desktop "combination rail": on lg+ viewports
+              // ONLY while compact, the detail panel becomes a two-item
+              // grid — the primary column (player, autoplay notice,
+              // controls, details card, all in normal flow inside ONE flex
+              // wrapper) on the left, and the quick-tags/notes rail on the
+              // right. Fill mode and small screens ALWAYS stay the plain
+              // stacked flex-col above (unaffected by these `lg:` classes,
+              // which never apply outside compact). Because the primary
+              // column is a single unconditional wrapper rather than
+              // several individually-placed grid items, a tall rail can
+              // only make the row track tall — it can no longer inflate
+              // the space between the player, the controls and the
+              // details card below them, so the details card always sits
+              // one gap under the player regardless of rail height. The
+              // wrapper renders in every state (VOD, no-VOD, compact,
+              // fill), so the compact/fill toggle remains a pure
+              // className swap and the VodPlayer element's position in
+              // the tree never changes — it is never remounted.
               playerSize === 'compact' &&
                 'lg:grid lg:grid-cols-[2fr_minmax(320px,1fr)] lg:items-start lg:gap-6',
             )}
           >
-            {selectedMatch?.vodUrl != null ? (
-              <>
-                {/* Compact/fill size toggle (Task 3) is a PURE className
-                    swap on this wrapper — the VodPlayer element stays at
-                    exactly one unconditional JSX position below, never
-                    remounted, never given a size-dependent key, and
-                    playerSize is never threaded into useVodPlayer's
-                    options/identity. Compact's own cap is bumped (720px,
-                    was 560px) below `lg`, and removed entirely at `lg`
-                    where the grid column (`2fr`) governs width instead —
-                    letting compact run noticeably larger on desktop. */}
-                <div
-                  className={cn(
-                    'relative',
-                    playerSize === 'compact' &&
-                      'mx-auto w-full md:max-w-[720px] lg:col-start-1 lg:row-start-1 lg:mx-0 lg:max-w-none',
-                  )}
-                >
-                  <VodPlayer
-                    vodUrl={selectedMatch.vodUrl}
-                    startSeconds={resolveMatchStartSeconds(selectedMatch)}
-                    seekRef={playerSeekRef}
-                    pauseRef={playerPauseRef}
-                    pauseAtEndRef={playerPauseAtEndRef}
-                    getCurrentTimeRef={getCurrentTimeRef}
-                    onEnded={handleEnded}
-                    onEndGuard={handleEndGuard}
-                    onAutoplayBlocked={handleAutoplayBlocked}
-                    autoplayOnConstructRef={autoplayNextRef}
-                    remountToken={remountToken}
-                  />
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="icon-sm"
-                    className="absolute top-2 right-2 z-10"
-                    aria-label={
-                      playerSize === 'compact'
-                        ? t('vodManager.player.fillAria')
-                        : t('vodManager.player.compactAria')
-                    }
-                    onClick={handleTogglePlayerSize}
-                  >
-                    {playerSize === 'compact' ? <Maximize2 /> : <Minimize2 />}
-                  </Button>
-                </div>
-                {autoplayBlocked && (
-                  <p
+            <div
+              data-testid="vod-primary-column"
+              className={cn(
+                'flex min-w-0 flex-col gap-4',
+                playerSize === 'compact' && 'lg:col-start-1 lg:row-start-1',
+              )}
+            >
+              {selectedMatch?.vodUrl != null ? (
+                <>
+                  {/* Compact/fill size toggle (Task 3) is a PURE className
+                      swap on this wrapper — the VodPlayer element stays at
+                      exactly one unconditional JSX position below, never
+                      remounted, never given a size-dependent key, and
+                      playerSize is never threaded into useVodPlayer's
+                      options/identity. Compact's own cap is bumped (720px,
+                      was 560px) below `lg`, and removed entirely at `lg`
+                      where the grid column (`2fr`) governs width instead —
+                      letting compact run noticeably larger on desktop. */}
+                  <div
                     className={cn(
-                      'text-sm text-muted-foreground',
-                      playerSize === 'compact' && 'lg:col-start-1 lg:row-start-2',
+                      'relative',
+                      playerSize === 'compact' &&
+                        'mx-auto w-full md:max-w-[720px] lg:mx-0 lg:max-w-none',
                     )}
                   >
-                    {t('vodManager.playback.autoplayBlocked')}
-                  </p>
-                )}
-                {/* Playback controls (LIST-04 playlist Prev/Next + Task 3
-                    timestamp Prev/Next), grouped together below the player.
-                    Playlist Prev/Next only renders while a playlist is
-                    active; clicking it never sets autoplayNextRef (manual
-                    navigation must never surprise-autoplay). Timestamp
-                    Prev/Next always renders (disabled with zero notes) —
-                    playlist-agnostic, works in Library view too. */}
-                <div
-                  className={cn(
-                    'flex flex-wrap items-center justify-center gap-4',
-                    playerSize === 'compact' && 'lg:col-start-1 lg:row-start-3',
+                    <VodPlayer
+                      vodUrl={selectedMatch.vodUrl}
+                      startSeconds={resolveMatchStartSeconds(selectedMatch)}
+                      seekRef={playerSeekRef}
+                      pauseRef={playerPauseRef}
+                      pauseAtEndRef={playerPauseAtEndRef}
+                      getCurrentTimeRef={getCurrentTimeRef}
+                      onEnded={handleEnded}
+                      onEndGuard={handleEndGuard}
+                      onAutoplayBlocked={handleAutoplayBlocked}
+                      autoplayOnConstructRef={autoplayNextRef}
+                      remountToken={remountToken}
+                    />
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="icon-sm"
+                      className="absolute top-2 right-2 z-10"
+                      aria-label={
+                        playerSize === 'compact'
+                          ? t('vodManager.player.fillAria')
+                          : t('vodManager.player.compactAria')
+                      }
+                      onClick={handleTogglePlayerSize}
+                    >
+                      {playerSize === 'compact' ? <Maximize2 /> : <Minimize2 />}
+                    </Button>
+                  </div>
+                  {autoplayBlocked && (
+                    <p className="text-sm text-muted-foreground">
+                      {t('vodManager.playback.autoplayBlocked')}
+                    </p>
                   )}
-                >
-                  {selectedPlaylist && playlistMatches && playlistMatches.length > 0 && (
-                    <div className="flex items-center gap-3">
+                  {/* Playback controls (LIST-04 playlist Prev/Next + Task 3
+                      timestamp Prev/Next), grouped together below the player.
+                      Playlist Prev/Next only renders while a playlist is
+                      active; clicking it never sets autoplayNextRef (manual
+                      navigation must never surprise-autoplay). Timestamp
+                      Prev/Next always renders (disabled with zero notes) —
+                      playlist-agnostic, works in Library view too. */}
+                  <div className="flex flex-wrap items-center justify-center gap-4">
+                    {selectedPlaylist && playlistMatches && playlistMatches.length > 0 && (
+                      <div className="flex items-center gap-3">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="icon-sm"
+                          aria-label={t('vodManager.playback.prev')}
+                          disabled={playlistMatchIndex <= 0}
+                          onClick={handlePrevMatch}
+                        >
+                          <SkipBack />
+                        </Button>
+                        <span className="text-sm text-muted-foreground">
+                          {t('vodManager.playback.position', {
+                            current: playlistMatchIndex + 1,
+                            total: playlistMatches.length,
+                          })}
+                        </span>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="icon-sm"
+                          aria-label={t('vodManager.playback.next')}
+                          disabled={
+                            playlistMatchIndex === -1 ||
+                            playlistMatchIndex >= playlistMatches.length - 1
+                          }
+                          onClick={handleNextMatch}
+                        >
+                          <SkipForward />
+                        </Button>
+                      </div>
+                    )}
+                    <div className="flex items-center gap-2">
                       <Button
                         type="button"
                         variant="outline"
                         size="icon-sm"
-                        aria-label={t('vodManager.playback.prev')}
-                        disabled={playlistMatchIndex <= 0}
-                        onClick={handlePrevMatch}
+                        aria-label={t('vodManager.capture.prevTimestamp')}
+                        disabled={visibleTimestamps.length === 0}
+                        onClick={handlePrevTimestamp}
                       >
-                        <SkipBack />
+                        <ChevronLeft />
                       </Button>
-                      <span className="text-sm text-muted-foreground">
-                        {t('vodManager.playback.position', {
-                          current: playlistMatchIndex + 1,
-                          total: playlistMatches.length,
-                        })}
-                      </span>
                       <Button
                         type="button"
                         variant="outline"
                         size="icon-sm"
-                        aria-label={t('vodManager.playback.next')}
-                        disabled={
-                          playlistMatchIndex === -1 ||
-                          playlistMatchIndex >= playlistMatches.length - 1
-                        }
-                        onClick={handleNextMatch}
+                        aria-label={t('vodManager.capture.nextTimestamp')}
+                        disabled={visibleTimestamps.length === 0}
+                        onClick={handleNextTimestamp}
                       >
-                        <SkipForward />
+                        <ChevronRight />
                       </Button>
                     </div>
-                  )}
-                  <div className="flex items-center gap-2">
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="icon-sm"
-                      aria-label={t('vodManager.capture.prevTimestamp')}
-                      disabled={visibleTimestamps.length === 0}
-                      onClick={handlePrevTimestamp}
-                    >
-                      <ChevronLeft />
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="icon-sm"
-                      aria-label={t('vodManager.capture.nextTimestamp')}
-                      disabled={visibleTimestamps.length === 0}
-                      onClick={handleNextTimestamp}
-                    >
-                      <ChevronRight />
-                    </Button>
                   </div>
+                </>
+              ) : (
+                <div className="aspect-video rounded-lg border bg-muted flex items-center justify-center text-sm text-muted-foreground">
+                  {t('vodManager.playerPlaceholder')}
                 </div>
-                {/* Right rail (lg+ compact only, retest fix-up #7): quick
-                    tags and notes are now ONE flex column spanning all
-                    three left-column row tracks (`lg:row-span-3
-                    lg:self-stretch`) instead of being separately-placed
-                    grid items. Previously the notes rail started at
-                    `row-start-2` — which only begins once the (much
-                    taller) video row finishes — leaving a dead gap between
-                    the bottom of the short quick-tags panel and the top of
-                    the notes rail below it (the reported screenshot bug).
-                    Sharing one flex column lets notes (`lg:flex-1
-                    lg:min-h-0`) fill exactly the space quick tags doesn't
-                    use, with no gap either way. */}
+              )}
+
+              {selectedMatch && (
+                <div data-testid="vod-match-meta">
+                  <SelectedMatchMeta
+                    match={selectedMatch}
+                    fighterSprites={fighterSprites}
+                    getCurrentTimeRef={getCurrentTimeRef}
+                    tagVocabulary={tagVocabulary}
+                    playlists={playlists}
+                    onOpenMyShares={() => setMySharesOpen(true)}
+                  />
+                </div>
+              )}
+            </div>
+
+            {/* Right rail (lg+ compact only): quick tags and notes share
+                ONE flex column. With the primary column now a single
+                normal-flow wrapper (see the panel comment above), the
+                rail occupies exactly one row track instead of spanning
+                the primary column's internal rows — a rail taller than
+                the primary column just makes that one row tall, and can
+                no longer inject space between the primary column's own
+                children. Notes (`lg:flex-1 lg:min-h-0`) fill exactly the
+                space quick tags don't use, with no gap either way. */}
+            {selectedMatch?.vodUrl != null && (
+              <div
+                data-testid="vod-rail"
+                className={cn(
+                  playerSize === 'compact' &&
+                    'lg:col-start-2 lg:row-start-1 lg:flex lg:flex-col lg:gap-4 lg:self-stretch',
+                )}
+              >
+                {/* Quick tags panel (Task 2) — directly below the player
+                    in the stacked layout; the TOP of the right rail in
+                    the compact+lg combination-rail layout. */}
                 <div
-                  data-testid="vod-rail"
+                  data-testid="vod-quicktag-rail"
+                  className={cn(playerSize === 'compact' && 'lg:shrink-0')}
+                >
+                  <QuickTagPanel
+                    quickTags={quickTags}
+                    onQuickTag={handleQuickTag}
+                    onQuickTagsChange={handleQuickTagsChange}
+                    tagVocabulary={tagVocabulary}
+                  />
+                </div>
+                {/* Notes (fix-up #7): fills whatever height remains below
+                    quick tags in compact+lg (`lg:flex-1 lg:min-h-0`),
+                    scrolling internally once its content overflows
+                    rather than growing the page — `TimestampList`'s own
+                    sticky composer (fix-up #6) stays pinned to the top
+                    of THIS scrolling container as the note rows below it
+                    scroll. */}
+                <div
+                  data-testid="vod-timestamp-rail"
                   className={cn(
-                    playerSize === 'compact' &&
-                      'lg:col-start-2 lg:row-start-1 lg:row-span-3 lg:flex lg:flex-col lg:gap-4 lg:self-stretch',
+                    playerSize === 'compact' && 'lg:min-h-0 lg:flex-1 lg:overflow-y-auto',
                   )}
                 >
-                  {/* Quick tags panel (Task 2) — directly below the player
-                      in the stacked layout; the TOP of the right rail in
-                      the compact+lg combination-rail layout. */}
-                  <div
-                    data-testid="vod-quicktag-rail"
-                    className={cn(playerSize === 'compact' && 'lg:shrink-0')}
-                  >
-                    <QuickTagPanel
-                      quickTags={quickTags}
-                      onQuickTag={handleQuickTag}
-                      onQuickTagsChange={handleQuickTagsChange}
-                      tagVocabulary={tagVocabulary}
-                    />
-                  </div>
-                  {/* Notes (fix-up #7): fills whatever height remains below
-                      quick tags in compact+lg (`lg:flex-1 lg:min-h-0`),
-                      scrolling internally once its content overflows
-                      rather than growing the page — `TimestampList`'s own
-                      sticky composer (fix-up #6) stays pinned to the top
-                      of THIS scrolling container as the note rows below it
-                      scroll. */}
-                  <div
-                    data-testid="vod-timestamp-rail"
-                    className={cn(
-                      playerSize === 'compact' && 'lg:min-h-0 lg:flex-1 lg:overflow-y-auto',
-                    )}
-                  >
-                    <TimestampList
-                      timestamps={selectedMatch.vodTimestamps ?? []}
-                      selectedNoteId={selectedNoteId}
-                      onSelect={setSelectedNoteId}
-                      onSeek={handleSeek}
-                      getCurrentTimeRef={getCurrentTimeRef}
-                      onCreateNote={handleCreateNote}
-                      onCommitEdit={handleCommitNoteEdit}
-                      onDelete={handleDeleteNote}
-                      onUpdateTags={handleUpdateNoteTags}
-                      tagVocabulary={tagVocabulary}
-                      editingNoteId={editingNoteId}
-                      onEditingNoteIdChange={setEditingNoteId}
-                      noteTagFilter={noteTagFilter}
-                      onNoteTagFilterChange={setNoteTagFilter}
-                      contributorFilter={contributorFilter}
-                      onContributorFilterChange={setContributorFilter}
-                    />
-                  </div>
+                  <TimestampList
+                    timestamps={selectedMatch.vodTimestamps ?? []}
+                    selectedNoteId={selectedNoteId}
+                    onSelect={setSelectedNoteId}
+                    onSeek={handleSeek}
+                    getCurrentTimeRef={getCurrentTimeRef}
+                    onCreateNote={handleCreateNote}
+                    onCommitEdit={handleCommitNoteEdit}
+                    onDelete={handleDeleteNote}
+                    onUpdateTags={handleUpdateNoteTags}
+                    tagVocabulary={tagVocabulary}
+                    editingNoteId={editingNoteId}
+                    onEditingNoteIdChange={setEditingNoteId}
+                    noteTagFilter={noteTagFilter}
+                    onNoteTagFilterChange={setNoteTagFilter}
+                    contributorFilter={contributorFilter}
+                    onContributorFilterChange={setContributorFilter}
+                  />
                 </div>
-              </>
-            ) : (
-              <div className="aspect-video rounded-lg border bg-muted flex items-center justify-center text-sm text-muted-foreground">
-                {t('vodManager.playerPlaceholder')}
               </div>
-            )}
-
-            {selectedMatch && (
-              <SelectedMatchMeta
-                match={selectedMatch}
-                fighterSprites={fighterSprites}
-                getCurrentTimeRef={getCurrentTimeRef}
-                tagVocabulary={tagVocabulary}
-                playlists={playlists}
-                onOpenMyShares={() => setMySharesOpen(true)}
-              />
             )}
           </div>
         </div>
