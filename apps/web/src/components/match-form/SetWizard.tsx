@@ -6,7 +6,7 @@ import { useTranslation } from 'react-i18next';
 import type { TFunction } from 'i18next';
 import { Check, ChevronsUpDown } from 'lucide-react';
 import type { Fighter } from '@smash-tracker/shared';
-import { matchTypeValues } from '@smash-tracker/shared';
+import { matchTypeValues, TOURNAMENT_LEGAL_STAGE_IDS } from '@smash-tracker/shared';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import {
@@ -42,7 +42,7 @@ import { useOpponents } from '@/hooks/useOpponents';
 import { useMatches } from '@/hooks/useMatches';
 import { useStageFavorites, useToggleStageFavorite } from '@/hooks/useStageFavorites';
 import { useAlphaFighters } from '@/hooks/useFighterName';
-import { getGroupedStageOptions, STANDARD_ONLINE_STAGE_IDS } from '@/lib/stageOptions';
+import { getGroupedStageOptions } from '@/lib/stageOptions';
 import { TournamentFields, matchTypeLabel } from './MatchForm';
 import {
   setFormatValues,
@@ -233,7 +233,7 @@ export function SetWizard({
   const toggleStageFavorite = useToggleStageFavorite();
   const favoriteStageIds = stageFavorites?.stageIds;
   const stageGroups = useMemo(
-    () => getGroupedStageOptions(allMatches, favoriteStageIds, STANDARD_ONLINE_STAGE_IDS),
+    () => getGroupedStageOptions(allMatches, favoriteStageIds, TOURNAMENT_LEGAL_STAGE_IDS),
     [allMatches, favoriteStageIds],
   );
 

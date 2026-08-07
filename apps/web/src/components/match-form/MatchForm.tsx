@@ -6,7 +6,11 @@ import { useTranslation } from 'react-i18next';
 import type { TFunction } from 'i18next';
 import { Check, ChevronDown, ChevronsUpDown } from 'lucide-react';
 import type { Fighter } from '@smash-tracker/shared';
-import { matchTypeValues, type CreateMatchInput } from '@smash-tracker/shared';
+import {
+  matchTypeValues,
+  TOURNAMENT_LEGAL_STAGE_IDS,
+  type CreateMatchInput,
+} from '@smash-tracker/shared';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
@@ -45,11 +49,7 @@ import { useOpponents } from '@/hooks/useOpponents';
 import { useMatches } from '@/hooks/useMatches';
 import { useStageFavorites, useToggleStageFavorite } from '@/hooks/useStageFavorites';
 import { useAlphaFighters } from '@/hooks/useFighterName';
-import {
-  getGroupedStageOptions,
-  stageOptions,
-  STANDARD_ONLINE_STAGE_IDS,
-} from '@/lib/stageOptions';
+import { getGroupedStageOptions, stageOptions } from '@/lib/stageOptions';
 import { parseGspNumber } from '@/pages/Gsp/lib/parseGspNumber';
 import { parseFlexibleTimestamp } from '@/lib/vod';
 
@@ -417,7 +417,7 @@ export function MatchFormFields({
 
   const favoriteStageIds = stageFavorites?.stageIds;
   const stageGroups = useMemo(
-    () => getGroupedStageOptions(allMatches, favoriteStageIds, STANDARD_ONLINE_STAGE_IDS),
+    () => getGroupedStageOptions(allMatches, favoriteStageIds, TOURNAMENT_LEGAL_STAGE_IDS),
     [allMatches, favoriteStageIds],
   );
 
