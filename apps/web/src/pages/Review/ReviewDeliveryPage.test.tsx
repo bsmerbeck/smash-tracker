@@ -313,6 +313,80 @@ describe('ReviewDeliveryPage', () => {
     });
   });
 
+  // 260807-cty: these three assertions intentionally reach for structural
+  // DOM position and CSS layout classes rather than user-facing text — the
+  // defect being locked out here (sections crammed into a narrow rail while
+  // the player owned the wide main column) is purely a column-width/
+  // priority regression with no other observable surface to assert on.
+  describe('Review Notes tab layout (client readability — sections are the main column)', () => {
+    it('sections lead the panel as the main column; the player follows as a secondary rail', async () => {
+      getDelivery.mockResolvedValue(baseSnapshot());
+      const user = userEvent.setup();
+      renderDelivery();
+
+      await switchToReviewNotesTab(user);
+      const panel = reviewNotesPanel();
+      const firstChild = panel.firstElementChild as HTMLElement;
+      const secondChild = panel.children[1] as HTMLElement;
+
+      expect(within(firstChild).getByRole('heading', { name: 'Summary' })).toBeInTheDocument();
+      expect(within(firstChild).queryByTestId('vod-player')).not.toBeInTheDocument();
+
+      expect(within(secondChild).getByTestId('vod-player')).toBeInTheDocument();
+      expect(within(secondChild).getByText('Now playing')).toBeInTheDocument();
+
+      expect(panel.className).toContain('lg:grid-cols-[minmax(0,1fr)_minmax(300px,380px)]');
+    });
+
+    it('no citations means no rail — sections own the full width', async () => {
+      getDelivery.mockResolvedValue(
+        baseSnapshot({
+          citationSources: [],
+          sections: [
+            { id: 'summary', kind: 'summary', title: null, body: 'No footage cited this cycle.' },
+          ],
+        }),
+      );
+      const user = userEvent.setup();
+      renderDelivery();
+
+      await switchToReviewNotesTab(user);
+      const panel = reviewNotesPanel();
+
+      expect(panel.className).not.toContain('lg:grid-cols-');
+      expect(panel.children).toHaveLength(1);
+
+      const onlyChild = panel.firstElementChild as HTMLElement;
+      expect(within(onlyChild).getByRole('heading', { name: 'Summary' })).toBeInTheDocument();
+      expect(within(onlyChild).getByText('No footage cited this cycle.')).toBeInTheDocument();
+      expect(
+        within(onlyChild).getByText("This review doesn't cite any footage."),
+      ).toBeInTheDocument();
+      expect(within(panel).queryByTestId('vod-player')).not.toBeInTheDocument();
+    });
+
+    it('with citations, the footage affordances still work from the new layout', async () => {
+      getDelivery.mockResolvedValue(baseSnapshot());
+      const user = userEvent.setup();
+      renderDelivery();
+
+      await switchToReviewNotesTab(user);
+      const panel = reviewNotesPanel();
+      const crossSourceChip = await within(panel).findByRole('button', {
+        name: 'Jump to 0:10 in Source 2: roll habit',
+      });
+      await user.click(crossSourceChip);
+
+      await waitFor(() =>
+        expect(within(panel).getByTestId('vod-player')).toHaveAttribute(
+          'data-vod-url',
+          'https://youtu.be/bbb222',
+        ),
+      );
+      expect(within(panel).getByTestId('vod-player')).toHaveAttribute('data-start-seconds', '10');
+    });
+  });
+
   it('Acknowledge posts the ack and shows a persistent confirmation', async () => {
     getDelivery.mockResolvedValue(baseSnapshot());
     const user = userEvent.setup();
