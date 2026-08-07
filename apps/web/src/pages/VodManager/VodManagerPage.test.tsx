@@ -3630,4 +3630,135 @@ describe('VodManagerPage', () => {
       expect(rows[2]).toHaveTextContent('Mario vs Luigi');
     });
   });
+
+  // Quick 260807-jyt: locks the "details card stays snug under the player"
+  // fix. The defect being regression-tested is CSS-only (grid row/column
+  // placement) with no other observable surface in jsdom, and it was
+  // reported from a session where the embed never became ready — so these
+  // assertions deliberately reach for DOM position and layout classes
+  // rather than user-visible text, and the loading-state tests never fire
+  // `onReady`.
+  describe('VOD detail panel layout (details card stays snug under the player)', () => {
+    function installYouTubeMock() {
+      window.YT = {
+        Player: vi.fn(function (this: unknown) {
+          return {
+            seekTo: vi.fn(),
+            playVideo: vi.fn(),
+            pauseVideo: vi.fn(),
+            destroy: vi.fn(),
+            getCurrentTime: vi.fn(() => 0),
+          };
+        }) as unknown as YTGlobal['Player'],
+        PlayerState: { ENDED: 0 },
+      };
+    }
+
+    it("loading player, coach client workspace: the details card is the primary column's last child, with only the playback controls between it and the player", async () => {
+      listMatches.mockResolvedValue([
+        makeMatch({
+          id: 'm1',
+          opponent: 'rival-one',
+          vodUrl: 'https://youtube.com/watch?v=abc123',
+        }),
+      ]);
+      installYouTubeMock();
+
+      renderVodManager('/coach/client-1/vods?match=m1');
+
+      // Never fire `events.onReady` — the player stays in the reserved
+      // skeleton state, matching the owner's reported session. `vod-
+      // primary-column` renders unconditionally from first paint (even
+      // before the match list resolves), so wait on `vod-player-box`
+      // instead — it only appears once the seeded match has loaded and
+      // been auto-selected via the `?match=m1` query param.
+      const playerBox = await screen.findByTestId('vod-player-box');
+      const primaryColumn = screen.getByTestId('vod-primary-column');
+      const metaWrapper = screen.getByTestId('vod-match-meta');
+      const rail = screen.getByTestId('vod-rail');
+
+      expect(metaWrapper).toBe(primaryColumn.lastElementChild);
+      expect(primaryColumn.contains(playerBox)).toBe(true);
+
+      const controlsWrapper = metaWrapper.previousElementSibling as HTMLElement;
+      expect(controlsWrapper).not.toBeNull();
+      expect(
+        within(controlsWrapper).getByRole('button', { name: 'Next note' }),
+      ).toBeInTheDocument();
+
+      // Exactly two grid items in the panel — the primary column and the
+      // rail — and the rail is not nested inside the primary column.
+      expect(primaryColumn.contains(rail)).toBe(false);
+      expect(rail.parentElement).toBe(primaryColumn.parentElement);
+
+      expect(primaryColumn.className).toContain('lg:col-start-1');
+      expect(primaryColumn.className).toContain('lg:row-start-1');
+      // The row-span is exactly what inflated the tracks and pushed the
+      // details card down — it must not come back.
+      expect(rail.className).not.toMatch(/row-span/);
+    });
+
+    it('the reserved player box is aspect-correct and skeletoned while not ready', async () => {
+      listMatches.mockResolvedValue([
+        makeMatch({
+          id: 'm1',
+          opponent: 'rival-one',
+          vodUrl: 'https://youtube.com/watch?v=abc123',
+        }),
+      ]);
+      installYouTubeMock();
+
+      renderVodManager('/coach/client-1/vods?match=m1');
+
+      const playerBox = await screen.findByTestId('vod-player-box');
+      expect(playerBox.className).toContain('aspect-video');
+      expect(playerBox.className).toContain('min-h-[300px]');
+      expect(playerBox.querySelector('.animate-pulse')).not.toBeNull();
+    });
+
+    it('permanent embed failure keeps the identical primary-column shape', async () => {
+      listMatches.mockResolvedValue([
+        makeMatch({
+          id: 'm1',
+          opponent: 'rival-one',
+          vodUrl: 'https://videos.example.com/set-1',
+        }),
+      ]);
+
+      renderVodManager('/coach/client-1/vods?match=m1');
+
+      const playerBox = await screen.findByTestId('vod-player-box');
+      const primaryColumn = screen.getByTestId('vod-primary-column');
+      const metaWrapper = screen.getByTestId('vod-match-meta');
+
+      expect(primaryColumn.contains(playerBox)).toBe(true);
+      expect(playerBox.className).toContain('aspect-video');
+      expect(playerBox.className).toContain('min-h-[300px]');
+      expect(metaWrapper).toBe(primaryColumn.lastElementChild);
+    });
+
+    it("personal route parity: the details card stays the primary column's last child, including after the compact/fill toggle, without remounting the player", async () => {
+      const user = userEvent.setup();
+      listMatches.mockResolvedValue([
+        makeMatch({
+          id: 'm1',
+          opponent: 'rival-one',
+          vodUrl: 'https://youtube.com/watch?v=abc123',
+        }),
+      ]);
+      installYouTubeMock();
+
+      renderVodManager('/vod?match=m1');
+
+      await screen.findByTestId('vod-player-box');
+      const primaryColumn = screen.getByTestId('vod-primary-column');
+      expect(screen.getByTestId('vod-match-meta')).toBe(primaryColumn.lastElementChild);
+
+      const toggle = await screen.findByRole('button', { name: 'Switch to full-size player' });
+      await user.click(toggle);
+
+      expect(screen.getByTestId('vod-match-meta')).toBe(primaryColumn.lastElementChild);
+      expect(window.YT!.Player).toHaveBeenCalledTimes(1);
+    });
+  });
 });
