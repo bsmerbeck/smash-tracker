@@ -174,3 +174,31 @@ export const UNKNOWN_STAGE = { id: 0, name: 'unknown' } as const;
 export function getStageById(id: number): Stage | undefined {
   return stagesById.get(id);
 }
+
+/**
+ * The current SSBU tournament-legal starter + counterpick stage set, ordered
+ * alphabetically by stage name to match how players read a stage list.
+ *
+ * Ids are validated against `StageList` by `stageData.test.ts` (every id must
+ * resolve to its exact expected stage name). Consumers pin this array as the
+ * picker's "Standard" group so these common counterpicks are reachable
+ * without scrolling the ~120-entry alphabetical list.
+ *
+ * Deliberately typed as `number[]` (not `readonly number[]` / `as const`) —
+ * it is passed as the `standardStageIds` argument to `getGroupedStageOptions`,
+ * which expects a mutable `number[]`.
+ *
+ * id -> name mapping (for audit without cross-referencing `StageList`):
+ *   1   -> Battlefield
+ *   3   -> Final Destination
+ *   118 -> Hollow Bastion
+ *   63  -> Kalos Pokémon League
+ *   56  -> Lylat Cruise
+ *   115 -> Northern Cave
+ *   59  -> Pokémon Stadium 2
+ *   113 -> Small Battlefield
+ *   83  -> Smashville
+ *   85  -> Town and City
+ *   34  -> Yoshi's Story
+ */
+export const TOURNAMENT_LEGAL_STAGE_IDS: number[] = [1, 3, 118, 63, 56, 115, 59, 113, 83, 85, 34];
