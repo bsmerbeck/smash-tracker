@@ -125,7 +125,10 @@ export function VodPlayer({
 
   if (error === 'unsupported') {
     return (
-      <div className="aspect-video min-h-[300px] rounded-lg border bg-muted flex items-center justify-center p-4 text-center">
+      <div
+        data-testid="vod-player-box"
+        className="aspect-video min-h-[300px] rounded-lg border bg-muted flex items-center justify-center p-4 text-center"
+      >
         <a
           href={vodUrl}
           target="_blank"
@@ -141,14 +144,20 @@ export function VodPlayer({
 
   if (error === 'unavailable') {
     return (
-      <div className="aspect-video min-h-[300px] rounded-lg border bg-muted flex items-center justify-center p-4 text-center">
+      <div
+        data-testid="vod-player-box"
+        className="aspect-video min-h-[300px] rounded-lg border bg-muted flex items-center justify-center p-4 text-center"
+      >
         <p className="text-sm text-muted-foreground">{t('vodManager.playerUnavailable')}</p>
       </div>
     );
   }
 
   return (
-    <div className="relative aspect-video min-h-[300px] overflow-hidden rounded-lg border">
+    <div
+      data-testid="vod-player-box"
+      className="relative aspect-video min-h-[300px] overflow-hidden rounded-lg border"
+    >
       <div ref={containerRef} className="absolute inset-0 size-full" />
       {!isReady && <div className="absolute inset-0 bg-muted animate-pulse" />}
     </div>
