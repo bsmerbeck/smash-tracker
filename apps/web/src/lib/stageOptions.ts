@@ -17,14 +17,17 @@ const MOST_PLAYED_LIMIT = 8;
  * resolves to (Battlefield, Small Battlefield, Final Destination), in game
  * order. Alphabetical sorting strands Small Battlefield deep in the S's while
  * its two siblings sit near the top — pinning the trio as a "Standard" group
- * fixes the every-match scroll in online-focused pickers (GSP quick logger).
+ * fixes the every-match scroll. Has exactly one consumer today, the GSP quick
+ * logger, since online quickplay preferred rules only ever resolve to these
+ * three stages. Match-entry pickers instead pin `TOURNAMENT_LEGAL_STAGE_IDS`
+ * from `@smash-tracker/shared`.
  */
 export const STANDARD_ONLINE_STAGE_IDS = [1, 113, 3];
 
 export interface GroupedStageOptions {
   /** The user's favorited stages, in the order they favorited them — pinned above everything else. */
   favorites: Stage[];
-  /** The standard online trio (see `STANDARD_ONLINE_STAGE_IDS`), favorites excluded — they're already pinned. Empty unless the picker asks for it. */
+  /** Whichever pinned set the caller passed as `standardStageIds` (the tournament-legal set for match entry, the online trio for the GSP logger), favorites excluded — they're already pinned. Empty unless the picker asks for it. */
   standard: Stage[];
   /** Top stages by usage (count > 0, favorites excluded — they're already pinned), most-used first, capped at `MOST_PLAYED_LIMIT`. */
   mostPlayed: Stage[];
