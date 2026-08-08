@@ -3474,3 +3474,254 @@ describe('prep job status endpoint (RPT-03)', () => {
     expect(response.statusCode).toBe(403);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Phase 29 (RTEN-05A/RTEN-04, plan 29-11): the research-subject refusal.
+// ---------------------------------------------------------------------------
+
+describe('research-subject report refusal (RTEN-05A/RTEN-04, plan 29-11)', () => {
+  const PREP_PAID_CONFIG: PrepPaidConfig = { enabled: true };
+  const ALLOWLIST_CONFIG: ReportsConfig = {
+    anthropicApiKey: 'sk-test-key',
+    allowedUids: new Set([TEST_UID]),
+  };
+  const NON_ALLOWLIST_CONFIG: ReportsConfig = {
+    anthropicApiKey: 'sk-test-key',
+    allowedUids: new Set(['someone-else']),
+  };
+  const STRIPE_CONFIG: StripeConfig = {
+    secretKey: 'sk-test-123',
+    webhookSecret: 'whsec-test-456',
+  };
+  const RESEARCH_TENANT_ID = 'research-tenant-29-11';
+  const ORDINARY_TENANT_ID = 'ordinary-tenant-29-11';
+  const PREP_REQUEST_BODY = {
+    reason: 'prep_report' as const,
+    entryKey: 'evo-2026-ult',
+    opponentName: 'rival',
+  };
+
+  function seedResearchTenant(database: FakeDatabase, tenantId: string): void {
+    database.seed(`clientTenants/${tenantId}`, {
+      createdAt: 1,
+      archivedAt: null,
+      kind: 'research',
+    });
+  }
+
+  function seedOrdinaryTenant(database: FakeDatabase, tenantId: string): void {
+    database.seed(`clientTenants/${tenantId}`, {
+      createdAt: 1,
+      archivedAt: null,
+      kind: 'coaching',
+    });
+  }
+
+  function seedMembership(database: FakeDatabase, tenantId: string, uid: string): void {
+    database.seed(`clientMembers/${tenantId}/${uid}`, { role: 'custodian', joinedAt: 1 });
+  }
+
+  /** B-event emission (`void createEvent(...)`) is fire-and-forget — flush before asserting on telemetry trees. Mirrors `billing/credits.test.ts`'s own `flush()`. */
+  async function flush(): Promise<void> {
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  }
+
+  /** Makes the membership read at `clientMembers/{tenantId}/{TEST_UID}` throw, delegating every other path to the real FakeDatabase — simulates a genuine infrastructure failure, distinct from a well-formed id with no membership record. */
+  function makeMembershipReadThrow(database: FakeDatabase, tenantId: string): void {
+    const originalRef = database.ref.bind(database);
+    vi.spyOn(database, 'ref').mockImplementation((path?: string) => {
+      if (path === `clientMembers/${tenantId}/${TEST_UID}`) {
+        return {
+          ...originalRef(path),
+          get: async () => {
+            throw new Error('simulated membership read failure');
+          },
+        };
+      }
+      return originalRef(path);
+    });
+  }
+
+  it("answers the activation gate's 503 for a research-subject request while the gate is off, with nothing written", async () => {
+    const { app, database } = buildTestApp({
+      startgg: STARTGG_CONFIG,
+      startggFetch: scoutFetchMock(),
+      reports: ALLOWLIST_CONFIG,
+      stripe: STRIPE_CONFIG,
+      reportsClient: stubClient(async () => ({
+        stop_reason: 'end_turn',
+        parsed_output: VALID_REPORT,
+      })),
+      // prepPaid deliberately omitted — gate off.
+    });
+    seedResearchTenant(database, RESEARCH_TENANT_ID);
+    seedMembership(database, RESEARCH_TENANT_ID, TEST_UID);
+    const before = JSON.stringify(database.dump());
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/reports',
+      headers: { ...authHeader(), 'x-active-subject': `client:${RESEARCH_TENANT_ID}` },
+      payload: PREP_REQUEST_BODY,
+    });
+
+    expect(response.statusCode).toBe(503);
+    expect(JSON.stringify(database.dump())).toEqual(before);
+  });
+
+  it('refuses a research-classified request with zero database residue and zero rows across all three telemetry trees, queue drained', async () => {
+    const { app, database } = buildTestApp({
+      startgg: STARTGG_CONFIG,
+      startggFetch: scoutFetchMock(),
+      reports: ALLOWLIST_CONFIG,
+      stripe: STRIPE_CONFIG,
+      prepPaid: PREP_PAID_CONFIG,
+      reportsClient: stubClient(async () => ({
+        stop_reason: 'end_turn',
+        parsed_output: VALID_REPORT,
+      })),
+    });
+    seedResearchTenant(database, RESEARCH_TENANT_ID);
+    seedMembership(database, RESEARCH_TENANT_ID, TEST_UID);
+    database.seed(`credits/${TEST_UID}/balance`, 5);
+    const before = JSON.stringify(database.dump());
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/reports',
+      headers: { ...authHeader(), 'x-active-subject': `client:${RESEARCH_TENANT_ID}` },
+      payload: PREP_REQUEST_BODY,
+    });
+    await flush();
+
+    expect(response.statusCode).toBe(403);
+    expect(JSON.stringify(database.dump())).toEqual(before);
+    const dump = database.dump() as Record<string, unknown>;
+    expect(dump.reportJobs).toBeUndefined();
+    expect(dump.creditLedger).toBeUndefined();
+    expect(dump.eventLedger).toBeUndefined();
+    expect(dump.eventDedup).toBeUndefined();
+    expect(dump.outboxPending).toBeUndefined();
+    const balance = await database.ref(`credits/${TEST_UID}/balance`).get();
+    expect(balance.val()).toBe(5);
+  });
+
+  it('refuses an indeterminate-classified request identically (a rejecting membership read never becomes a charge or a free ride)', async () => {
+    const { app, database } = buildTestApp({
+      startgg: STARTGG_CONFIG,
+      startggFetch: scoutFetchMock(),
+      reports: ALLOWLIST_CONFIG,
+      stripe: STRIPE_CONFIG,
+      prepPaid: PREP_PAID_CONFIG,
+      reportsClient: stubClient(async () => ({
+        stop_reason: 'end_turn',
+        parsed_output: VALID_REPORT,
+      })),
+    });
+    database.seed(`credits/${TEST_UID}/balance`, 5);
+    makeMembershipReadThrow(database, RESEARCH_TENANT_ID);
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/reports',
+      headers: { ...authHeader(), 'x-active-subject': `client:${RESEARCH_TENANT_ID}` },
+      payload: PREP_REQUEST_BODY,
+    });
+    await flush();
+
+    expect(response.statusCode).toBe(403);
+    const dump = database.dump() as Record<string, unknown>;
+    expect(dump.reportJobs).toBeUndefined();
+    expect(dump.eventLedger).toBeUndefined();
+    const balance = await database.ref(`credits/${TEST_UID}/balance`).get();
+    expect(balance.val()).toBe(5);
+  });
+
+  it('behaves byte-identically for a coach generating a report while a member of an ORDINARY client tenant — spends and emits like today', async () => {
+    const { app, database } = buildTestApp({
+      startgg: STARTGG_CONFIG,
+      startggFetch: scoutFetchMock(),
+      reports: NON_ALLOWLIST_CONFIG,
+      stripe: STRIPE_CONFIG,
+      reportsClient: stubClient(async () => ({
+        stop_reason: 'end_turn',
+        parsed_output: VALID_REPORT,
+      })),
+    });
+    seedOrdinaryTenant(database, ORDINARY_TENANT_ID);
+    seedMembership(database, ORDINARY_TENANT_ID, TEST_UID);
+    database.seed(`credits/${TEST_UID}/balance`, 5);
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/reports',
+      headers: { ...authHeader(), 'x-active-subject': `client:${ORDINARY_TENANT_ID}` },
+      payload: { query: 'user/07dc2239' },
+    });
+    await flush();
+
+    expect(response.statusCode).toBe(200);
+    const balance = await database.ref(`credits/${TEST_UID}/balance`).get();
+    expect(balance.val()).toBe(4);
+    const dump = database.dump() as Record<string, unknown>;
+    const ledger = (dump.eventLedger ?? {}) as Record<string, Record<string, unknown>>;
+    const creditSpentEvents = Object.values(ledger).flatMap((dayBucket) =>
+      Object.values(dayBucket).filter(
+        (entry) => (entry as { eventName?: string }).eventName === 'credit_spent',
+      ),
+    );
+    expect(creditSpentEvents).toHaveLength(1);
+  });
+
+  it("a non-member naming a real research tenant gets today's behavior, not the refusal (no-oracle)", async () => {
+    const { app, database } = buildTestApp({
+      startgg: STARTGG_CONFIG,
+      startggFetch: scoutFetchMock(),
+      reports: ALLOWLIST_CONFIG,
+      stripe: STRIPE_CONFIG,
+      reportsClient: stubClient(async () => ({
+        stop_reason: 'end_turn',
+        parsed_output: VALID_REPORT,
+      })),
+    });
+    seedResearchTenant(database, RESEARCH_TENANT_ID);
+    // Deliberately no membership record for TEST_UID.
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/reports',
+      headers: { ...authHeader(), 'x-active-subject': `client:${RESEARCH_TENANT_ID}` },
+      payload: { query: 'user/07dc2239' },
+    });
+
+    expect(response.statusCode).toBe(200);
+  });
+
+  it('positive control: an ordinary request (no header) spends and emits — proves the zero-event assertions above are not vacuous', async () => {
+    const { app, database } = buildTestApp({
+      startgg: STARTGG_CONFIG,
+      startggFetch: scoutFetchMock(),
+      reports: NON_ALLOWLIST_CONFIG,
+      stripe: STRIPE_CONFIG,
+      reportsClient: stubClient(async () => ({
+        stop_reason: 'end_turn',
+        parsed_output: VALID_REPORT,
+      })),
+    });
+    database.seed(`credits/${TEST_UID}/balance`, 5);
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/reports',
+      headers: authHeader(),
+      payload: { query: 'user/07dc2239' },
+    });
+    await flush();
+
+    expect(response.statusCode).toBe(200);
+    const balance = await database.ref(`credits/${TEST_UID}/balance`).get();
+    expect(balance.val()).toBe(4);
+    const dump = database.dump() as Record<string, unknown>;
+    expect(dump.eventLedger).toBeDefined();
+  });
+});

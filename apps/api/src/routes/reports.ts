@@ -70,6 +70,11 @@ import { buildBillingEnvelope } from '../events/envelope.js';
 // 65). Nothing inside apps/api/src/prep/ imports back from reports, billing,
 // or Anthropic (see prep/importGraph.test.ts, byte-unchanged by this plan).
 import { readPrepBrief } from '../prep/prep.js';
+// Phase 29 (RTEN-05A/RTEN-04, plan 29-11): the total, never-throwing
+// research-subject classifier — see the refusal at the top of `POST
+// /api/reports` below, and `apps/api/src/research/reportSubject.ts`'s
+// module header for the full ordering/no-oracle rationale.
+import { classifyReportSubject } from '../research/reportSubject.js';
 
 /**
  * BILL-06/MEAS-03 (Phase 10): a `running` report job older than this is
@@ -1101,6 +1106,43 @@ const reportsRoutes: FastifyPluginAsyncZod<ReportsRoutesOptions> = async (app, o
           error: 'Service Unavailable',
           message: 'Paid prep reports are not enabled on this server',
           statusCode: 503,
+        });
+      }
+
+      // Phase 29 (RTEN-05A/RTEN-04, plan 29-11, D-10): the research-subject
+      // refusal — inserted STRICTLY AFTER the activation-gate block above
+      // and BEFORE every other branch (prep_bundle/post_event_synthesis/
+      // prep_report/legacy), so it applies uniformly regardless of
+      // `reason`. The gate block above MUST remain the first statement in
+      // this handler; inserting anything above it would break the gate-off
+      // 503 contract the locked "paid prep activation gate" test protects.
+      //
+      // This route's evidence (readPrepBrief), payload
+      // (assembleReportPayload), and results (scoutReports/{request.uid})
+      // are ALL keyed by the caller's own uid — a report generated here is
+      // never ABOUT the tenant named by the header, so waiving a charge on
+      // that basis would subsidize a report built from the admin's OWN
+      // personal data. Rather than ship that, a research-subject (or an
+      // unresolvable-subject) request is refused fail-closed here, before
+      // any evidence read, payload assembly, job creation, spend, or
+      // emission. See this plan's re-scope block and plan 29-02's
+      // assumption-register row for the full RTEN-05A/RTEN-05B split —
+      // Phase 32 (RTEN-05B) is where the waiver is actually wired, onto a
+      // generalized subject model this route does not yet have.
+      const activeSubjectHeaderRaw = request.headers['x-active-subject'];
+      const activeSubjectHeader = Array.isArray(activeSubjectHeaderRaw)
+        ? activeSubjectHeaderRaw[0]
+        : activeSubjectHeaderRaw;
+      const reportSubjectClassification = await classifyReportSubject({
+        database: app.firebase.database,
+        uid: request.uid,
+        header: activeSubjectHeader,
+      });
+      if (reportSubjectClassification !== 'not-applicable') {
+        return reply.code(403).send({
+          error: 'Forbidden',
+          message: 'AI reports are not available for this workspace',
+          statusCode: 403,
         });
       }
 
