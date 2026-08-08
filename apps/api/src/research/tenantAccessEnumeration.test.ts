@@ -312,6 +312,13 @@ const MEMBERSHIP_READER_CLASSIFICATION: MembershipReaderEntry[] = [
     reason:
       "Writes the creating admin's membership through the telemetry-silent creation core as part of the research tenant lifecycle, and listResearchTenants reads membership rows to enumerate only tenants the caller belongs to — the same claim-ready lifecycle pattern coaching/tenants.ts is classified under (plan 29-05; classified post-merge in wave 2).",
   },
+  {
+    file: 'src/research/reportSubject.ts',
+    symbol: 'classifyReportSubject',
+    disposition: 'research-module',
+    reason:
+      "The membership read (checked strictly BEFORE the clientTenants kind read — no-oracle ordering) IS the access decision for the report route's research-subject refusal (plan 29-11): a non-member gets today's behavior, a member's kind then determines research/indeterminate/not-applicable.",
+  },
 ];
 
 const classifiedMembershipReaderFiles = MEMBERSHIP_READER_CLASSIFICATION.map(
