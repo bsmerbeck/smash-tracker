@@ -352,3 +352,41 @@ describe('positive control: the owning coach is not blanket-blocked', () => {
     expect(response.statusCode).toBe(204);
   });
 });
+
+/**
+ * Phase 29 (Research Tenancy, Isolation & Governance Gate, T-29-05-08): a
+ * SIBLING enumeration, deliberately NOT folded into `SAME_SUBJECT_ROUTES`
+ * above — these are admin-gated COLLECTION routes (no tenant id in the URL,
+ * no `X-Active-Subject` header), not same-subject content routes gated by
+ * membership on a URL param. There is no tenant to target on a collection
+ * route, so "foreign" here means "an authenticated caller who is NOT in
+ * `RESEARCH_ADMIN_UIDS`", not "a second coach targeting a peer's tenant".
+ * Extended in lockstep with this harness's own stated purpose (module
+ * comment above `SAME_SUBJECT_ROUTES`): a research route missing from this
+ * list would have no proof of coverage.
+ */
+const RESEARCH_ADMIN_COLLECTION_ROUTES = [
+  { method: 'POST', path: '/api/research/tenants', body: { label: 'Test tenant' } },
+  { method: 'GET', path: '/api/research/tenants' },
+] as const;
+
+describe.each(RESEARCH_ADMIN_COLLECTION_ROUTES)(
+  'research route family authorization: $method $path',
+  (route) => {
+    it('returns the family uniform rejection for an authenticated caller not in RESEARCH_ADMIN_UIDS', async () => {
+      const { app, auth } = buildTestApp({
+        research: { adminUids: new Set(['some-other-admin']) },
+      });
+      auth.registerToken(COACH_B_TOKEN, { uid: COACH_B_UID, email: 'b@test.com' });
+
+      const response = await app.inject({
+        method: route.method,
+        url: route.path,
+        headers: { authorization: `Bearer ${COACH_B_TOKEN}` },
+        payload: 'body' in route ? route.body : undefined,
+      });
+
+      expect(response.statusCode).toBe(404);
+    });
+  },
+);
