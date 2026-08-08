@@ -2023,6 +2023,62 @@
         "title": "Dieser Arbeitsbereich konnte nicht überprüft werden",
         "body": "Wir konnten nicht bestätigen, um welche Art von Arbeitsbereich es sich handelt. Deine Daten sind sicher — versuche es erneut.",
         "retry": "Erneut versuchen"
+      },
+      "coverage": {
+        "title": "Datenabdeckung",
+        "asOf": "Stand {{date}}",
+        "noCompletedRun": "Es ist noch kein Backfill abgeschlossen, daher gibt es noch keine Zählwerte anzuzeigen.",
+        "activeRunInProgress": "Ein Backfill für start.gg-Spieler {{playerId}} läuft gerade.",
+        "loadError": "Der Datenabdeckungsbericht konnte nicht geladen werden. Deine Daten sind sicher — versuche es erneut.",
+        "totals": {
+          "title": "Gesamt für den Arbeitsbereich (alle bestätigten Spieler)",
+          "explanation": "Diese Gesamtsumme fasst alle bestätigten start.gg-Spieler-IDs in diesem Arbeitsbereich zusammen. Jedes Set wird nur einmal gezählt, selbst wenn zwei bestätigte Spieler-IDs es beide auflisten — deshalb kann diese Summe kleiner sein als die Summe der Abschnitte unten, das ist korrekt, kein Fehler."
+        },
+        "players": {
+          "title": "Abdeckung pro Spieler",
+          "playerLabel": "start.gg-Spieler {{playerId}}",
+          "asOf": "Stand {{date}}",
+          "neverRun": "hat noch keinen abgeschlossenen Backfill."
+        },
+        "counts": {
+          "discoveredAllGames": "Gefunden (alle Spiele)",
+          "discoveredEligible": "Gefunden (zulässig)",
+          "imported": "Importiert",
+          "skipped": "Übersprungen",
+          "unresolved": "Ungeklärt",
+          "corrected": "Korrigiert"
+        },
+        "excluded": {
+          "title": "Von der Sieg-Quote-Berechnung ausgeschlossen",
+          "explanation": "Disqualifikationen, Byes, Walkover und Sets ohne Spiel-Detail werden erfasst, aber von der Sieg-Quote-Berechnung ausgeschlossen.",
+          "dq": "Disqualifikation",
+          "bye": "Freilos (Bye)",
+          "walkover": "Walkover (kampflos)",
+          "noGameDetail": "Kein Spiel-Detail (start.gg meldete dieses Set als abgeschlossen, aber ohne Spielzeilen — kein Walkover)"
+        },
+        "dateCoverage": {
+          "label": "Abgedeckter Zeitraum",
+          "unknown": "unbekannt"
+        },
+        "gaps": {
+          "title": "Benannte Lücken",
+          "none": "Keine Lücken erfasst.",
+          "unknownCharacter": "Unbekannter Charakter",
+          "unknownStage": "Unbekannte Stage",
+          "missingGameDetail": "Fehlendes Spiel-Detail",
+          "missingCompletedAt": "Fehlende Abschlusszeit",
+          "unknownOnlineContext": "Unbekannter Online-/Offline-Kontext",
+          "unknownVideogame": "Unbekanntes Spiel (start.gg hat nicht gemeldet, zu welchem Spiel dieses Set gehört)",
+          "unsafeProviderKey": "Unsicherer Provider-Schlüssel"
+        },
+        "identity": {
+          "unresolvedCandidates_one": "{{count}} ungeklärter Identitätskandidat",
+          "unresolvedCandidates_other": "{{count}} ungeklärte Identitätskandidaten",
+          "neverBackfilled": "nur zur Überprüfung angezeigt — nie in diesen Arbeitsbereich übernommen und nie per Backfill nachgetragen."
+        },
+        "vodUrl": {
+          "note": "Ein von Hand eingegebener VOD-Link an einem Forschungs-Set wird genau so übernommen, wie er eingegeben wurde, und niemals durch den von start.gg ersetzt — er kann daher veraltet sein."
+        }
       }
     }
   },

@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { useActiveSubject } from '@/hooks/useActiveSubject';
 import { useResearchSubject } from '@/hooks/useResearchSubject';
 import { setActiveSubject } from '@/lib/subjectQueryKey';
+import { DataCoveragePanel } from './components/DataCoveragePanel';
 import { ResearchSnapshotBanner } from './components/ResearchSnapshotBanner';
 
 /**
@@ -43,6 +44,12 @@ import { ResearchSnapshotBanner } from './components/ResearchSnapshotBanner';
  * `MainLayout` outside and around this component's own subtree — is
  * handled separately (`Topbar.tsx`/`SidebarContent.tsx`) because this
  * layout structurally cannot reach it.
+ *
+ * Plan 30-06 (D-14): `<DataCoveragePanel />` is mounted immediately after
+ * `<ResearchSnapshotBanner />`, for the same reason the banner is mounted
+ * here rather than per page — the admin-only completeness report must
+ * appear on every research workspace surface without any page opting in,
+ * and it renders nothing of its own accord on an ordinary workspace.
  */
 export function ClientWorkspaceLayout() {
   const subject = useActiveSubject();
@@ -57,6 +64,7 @@ export function ClientWorkspaceLayout() {
   return (
     <>
       <ResearchSnapshotBanner />
+      <DataCoveragePanel />
       {isPending && <div className="text-muted-foreground">{t('chrome.loading')}</div>}
       {isError && (
         <div

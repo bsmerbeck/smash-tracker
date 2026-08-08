@@ -62,6 +62,7 @@ import {
   prepScoutBindingConfirmRequestSchema,
   publicShareSnapshotSchema,
   reportsConfigSchema,
+  researchCoverageResponseSchema,
   REVIEW_DELIVERY_STATES,
   REVIEW_SECTION_KINDS,
   reviewDraftSchema,
@@ -1148,6 +1149,27 @@ export const api = {
           ),
       },
     },
+  },
+  research: {
+    /**
+     * GET /api/research/tenants/:tenantId/coverage — the last COMPLETED
+     * run's snapshot plus live identity counts (Phase 30, ING-05, D-14/D-15,
+     * plan 30-06). Three facts every caller must hold: (1) the route answers
+     * the research family's uniform 404 for any caller who is not an
+     * allowlisted admin AND a member of the tenant, so a 404 here means "not
+     * for you" and must NEVER be rendered as a failure — see
+     * `useDataCoverage`'s `isForbidden` mapping; (2) the response's
+     * `coverage` member is `null` until a backfill run has actually
+     * completed, which is a first-class state (`hasCompletedRun: false`), not
+     * an empty result; (3) this method takes the tenant id as an explicit
+     * argument, following the `coaching.clients` param convention rather
+     * than the `X-Active-Subject` header family further up this file.
+     */
+    coverage: (tenantId: string) =>
+      apiRequestParsed(
+        `/api/research/tenants/${encodeURIComponent(tenantId)}/coverage`,
+        researchCoverageResponseSchema,
+      ),
   },
   /**
    * Phase 24 (Coach Issuance & Client Claim Experience, ENTRY-02/CTRL-03):

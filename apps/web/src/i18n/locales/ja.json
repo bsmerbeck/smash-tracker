@@ -2023,6 +2023,62 @@
         "title": "ワークスペースを確認できませんでした",
         "body": "このワークスペースの種類を確認できませんでした。データは安全です。もう一度お試しください。",
         "retry": "再試行"
+      },
+      "coverage": {
+        "title": "データカバレッジ",
+        "asOf": "{{date}} 時点",
+        "noCompletedRun": "まだ完了したバックフィルがないため、表示できる集計がありません。",
+        "activeRunInProgress": "start.gg 選手 {{playerId}} のバックフィルが進行中です。",
+        "loadError": "データカバレッジレポートを読み込めませんでした。データは安全です。もう一度お試しください。",
+        "totals": {
+          "title": "ワークスペース合計(確認済みの全選手)",
+          "explanation": "この合計は、このワークスペース内の確認済み start.gg 選手 ID すべてを集計した値です。2つの確認済み選手 ID が同じセットを含んでいても、そのセットは1回だけ数えられるため、この合計は下のセクションの合計より小さくなることがあります — これは不具合ではなく正しい挙動です。"
+        },
+        "players": {
+          "title": "選手別カバレッジ",
+          "playerLabel": "start.gg 選手 {{playerId}}",
+          "asOf": "{{date}} 時点",
+          "neverRun": "はまだ完了したバックフィルがありません。"
+        },
+        "counts": {
+          "discoveredAllGames": "検出(全ゲーム)",
+          "discoveredEligible": "検出(対象)",
+          "imported": "取り込み済み",
+          "skipped": "スキップ",
+          "unresolved": "未解決",
+          "corrected": "修正済み"
+        },
+        "excluded": {
+          "title": "勝率の分母から除外",
+          "explanation": "失格、bye、ウォークオーバー、ゲーム詳細のないセットは記録されますが、勝率の分母からは除外されます。",
+          "dq": "失格",
+          "bye": "バイ(Bye)",
+          "walkover": "ウォークオーバー",
+          "noGameDetail": "ゲーム詳細なし(start.gg はこのセットを完了として報告しましたが、ゲーム行がありません — ウォークオーバーではありません)"
+        },
+        "dateCoverage": {
+          "label": "対象期間",
+          "unknown": "不明"
+        },
+        "gaps": {
+          "title": "特定された欠落",
+          "none": "欠落は記録されていません。",
+          "unknownCharacter": "不明なキャラクター",
+          "unknownStage": "不明なステージ",
+          "missingGameDetail": "ゲーム詳細の欠落",
+          "missingCompletedAt": "完了時刻の欠落",
+          "unknownOnlineContext": "オンライン/オフラインの状況が不明",
+          "unknownVideogame": "不明なゲーム(start.gg がこのセットのゲームを報告していません)",
+          "unsafeProviderKey": "安全でないプロバイダーキー"
+        },
+        "identity": {
+          "unresolvedCandidates_one": "未解決の識別候補が {{count}} 件",
+          "unresolvedCandidates_other": "未解決の識別候補が {{count}} 件",
+          "neverBackfilled": "確認用に表示されているのみで、このワークスペースに統合されることも、バックフィルされることもありません。"
+        },
+        "vodUrl": {
+          "note": "リサーチ用のセットに手動で入力された VOD リンクは、入力されたとおりに保持され、start.gg のものに置き換えられることはありません — そのため情報が古くなっている可能性があります。"
+        }
       }
     }
   },

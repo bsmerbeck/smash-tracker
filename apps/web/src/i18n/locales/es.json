@@ -2023,6 +2023,62 @@
         "title": "No se pudo verificar este espacio de trabajo",
         "body": "No pudimos confirmar qué tipo de espacio de trabajo es este. Tus datos están seguros — inténtalo de nuevo.",
         "retry": "Reintentar"
+      },
+      "coverage": {
+        "title": "Cobertura de datos",
+        "asOf": "Actualizado el {{date}}",
+        "noCompletedRun": "Todavía no se ha completado ningún backfill, así que no hay conteos que mostrar.",
+        "activeRunInProgress": "Hay un backfill en curso para el jugador de start.gg {{playerId}}.",
+        "loadError": "No pudimos cargar el informe de cobertura de datos. Tus datos están seguros — inténtalo de nuevo.",
+        "totals": {
+          "title": "Total del espacio de trabajo (todos los jugadores confirmados)",
+          "explanation": "Este total es una agregación de todos los ID de jugador de start.gg confirmados en este espacio de trabajo. Cada set se cuenta una sola vez aunque dos ID de jugador confirmados lo incluyan, así que este total puede ser menor que la suma de las secciones de abajo — eso es correcto, no un error."
+        },
+        "players": {
+          "title": "Cobertura por jugador",
+          "playerLabel": "Jugador de start.gg {{playerId}}",
+          "asOf": "Actualizado el {{date}}",
+          "neverRun": "no tiene ningún backfill completado todavía."
+        },
+        "counts": {
+          "discoveredAllGames": "Descubiertos (todos los juegos)",
+          "discoveredEligible": "Descubiertos (elegibles)",
+          "imported": "Importados",
+          "skipped": "Omitidos",
+          "unresolved": "Sin resolver",
+          "corrected": "Corregidos"
+        },
+        "excluded": {
+          "title": "Excluidos de los denominadores de porcentaje de victorias",
+          "explanation": "Las descalificaciones, byes, walkovers y sets sin detalle por partida se registran pero se excluyen de los denominadores de porcentaje de victorias.",
+          "dq": "Descalificación",
+          "bye": "Pase directo (bye)",
+          "walkover": "Victoria por incomparecencia",
+          "noGameDetail": "Sin detalle por partida (start.gg reportó este set como completado pero sin filas de partida — no es un walkover)"
+        },
+        "dateCoverage": {
+          "label": "Rango de fechas cubierto",
+          "unknown": "desconocido"
+        },
+        "gaps": {
+          "title": "Vacíos identificados",
+          "none": "No se registraron vacíos.",
+          "unknownCharacter": "Personaje desconocido",
+          "unknownStage": "Escenario desconocido",
+          "missingGameDetail": "Falta detalle de la partida",
+          "missingCompletedAt": "Falta la hora de finalización",
+          "unknownOnlineContext": "Contexto en línea/presencial desconocido",
+          "unknownVideogame": "Juego desconocido (start.gg no reportó a qué juego pertenece este set)",
+          "unsafeProviderKey": "Clave del proveedor no segura"
+        },
+        "identity": {
+          "unresolvedCandidates_one": "{{count}} candidato de identidad sin resolver",
+          "unresolvedCandidates_other": "{{count}} candidatos de identidad sin resolver",
+          "neverBackfilled": "mostrados solo para revisión — nunca se fusionan en este espacio de trabajo ni se procesan con backfill."
+        },
+        "vodUrl": {
+          "note": "Un enlace de VOD ingresado manualmente en un set de investigación se conserva exactamente como se ingresó y nunca se reemplaza por el de start.gg — puede estar desactualizado."
+        }
       }
     }
   },
