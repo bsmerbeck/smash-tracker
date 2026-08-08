@@ -81,6 +81,63 @@ type AnalyticsContext = {
 
 let analyticsInit: Promise<AnalyticsContext | null> | null = null;
 
+/**
+ * Module-level, SYNCHRONOUS desired-collection-state flag. Defaults to
+ * enabled. This is deliberately a plain boolean, not something derived from
+ * a promise — the whole point of `setAnalyticsCollectionEnabled` below is
+ * that a caller can disable collection with zero async delay, before
+ * `initAnalytics` has ever run.
+ */
+let collectionEnabled = true;
+
+/**
+ * Phase 29 (Research Tenancy, Isolation & Governance Gate, RTEN-04, D-06,
+ * review finding 29-08 HIGH — the stop-ship analytics finding): the control
+ * for SDK auto-collected engagement events that explicit call-site gating
+ * (Task 2's per-caller checks) cannot reach. Driven by
+ * `ResearchTelemetrySuppression`'s consumption of the research-subject
+ * signal (`useResearchSubject`) — NOT a user preference, and not something
+ * any other caller should invoke directly.
+ *
+ * The review's prior design resolved `initAnalytics` first, in order to
+ * disable collection on the resolved instance — but the SDK fires its
+ * initial gtag configuration hit AS PART of that resolution, so a "resolve
+ * then disable" setter would let a research-workspace cold load report to
+ * GA4 before collection could ever be turned off. This setter is built the
+ * opposite way, specifically to avoid that:
+ *
+ * 1. It assigns the module-level flag SYNCHRONOUSLY, first, before doing
+ *    anything else — the load-bearing step. It takes effect on the very
+ *    next logger call, with no promise in between.
+ * 2. It calls through to the SDK's own `setAnalyticsCollectionEnabled` ONLY
+ *    IF `analyticsInit` is already non-null, i.e. only if some earlier
+ *    logger call already started the lazy initializer. It NEVER starts
+ *    initialization itself — disabling collection is never a reason to
+ *    initialize analytics that hasn't run yet.
+ *
+ * Because `logAnalyticsPageView` and `logProductEvent` (below) are the ONLY
+ * two callers of `initAnalytics`, and both now check this flag synchronously
+ * before calling it, a session that starts disabled (e.g. a cold load
+ * straight into a research workspace) never imports `firebase/analytics`,
+ * never calls the SDK's initializer, and therefore never produces the
+ * configuration hit the review flagged. Fire-and-forget and never throws,
+ * matching its sibling functions' contract — including when no
+ * `measurementId` is configured, the browser is automated, or analytics is
+ * unsupported, all of which simply resolve `analyticsInit` to `null`.
+ */
+export function setAnalyticsCollectionEnabled(enabled: boolean): void {
+  collectionEnabled = enabled;
+  if (analyticsInit) {
+    void analyticsInit
+      .then((ctx) => {
+        if (ctx) {
+          ctx.mod.setAnalyticsCollectionEnabled(ctx.analytics, enabled);
+        }
+      })
+      .catch(() => {});
+  }
+}
+
 function initAnalytics(): Promise<AnalyticsContext | null> {
   analyticsInit ??= (async () => {
     const config = readFirebaseConfig();
@@ -121,6 +178,10 @@ function initAnalytics(): Promise<AnalyticsContext | null> {
  * analytics must never break the app. No-op without a measurementId.
  */
 export function logAnalyticsPageView(pagePath: string): void {
+  // Synchronous, checked BEFORE the lazy initializer is ever called — see
+  // setAnalyticsCollectionEnabled's doc comment. This is what makes a
+  // disabled cold load never initialize analytics at all.
+  if (!collectionEnabled) return;
   void initAnalytics().then((ctx) => {
     if (ctx) {
       // document.title is read here — after initAnalytics' promise resolves,
@@ -144,6 +205,9 @@ export function logAnalyticsPageView(pagePath: string): void {
  * shape. Fire-and-forget: callers never await this and it never rejects.
  */
 export function logProductEvent(name: string, params?: Record<string, string | number>): void {
+  // Synchronous, checked BEFORE the lazy initializer is ever called — see
+  // setAnalyticsCollectionEnabled's doc comment.
+  if (!collectionEnabled) return;
   void initAnalytics().then((ctx) => {
     if (ctx) {
       ctx.mod.logEvent(ctx.analytics, name, params);

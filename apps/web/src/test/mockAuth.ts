@@ -124,5 +124,10 @@ export function firebaseLibMock() {
     createGoogleAuthProvider: vi.fn(() => new GoogleAuthProvider()),
     logAnalyticsPageView: vi.fn(),
     logProductEvent: vi.fn(),
+    // Phase 29 (RTEN-04): the synchronous collection-flag setter
+    // `ResearchTelemetrySuppression` calls — a mock entry here keeps every
+    // pre-existing consumer of this mock working once that component (and
+    // any test rendering the router root) imports it.
+    setAnalyticsCollectionEnabled: vi.fn(),
   };
 }
