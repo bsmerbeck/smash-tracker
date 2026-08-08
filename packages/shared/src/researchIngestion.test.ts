@@ -287,6 +287,7 @@ describe('researchSourceSetRecordSchema', () => {
   });
 
   it('round-trips a record built by conditional spread (absent members simply not present)', () => {
+    const includeVodUrl = false;
     const spread: Record<string, unknown> = {
       providerSetId: 'set-2',
       classification: 'dq',
@@ -295,7 +296,7 @@ describe('researchSourceSetRecordSchema', () => {
       ingestionRunId: 'run-2',
       fetchedAtMs: 2_000,
       lastObservedAtMs: 2_000,
-      ...(false ? { vodUrl: 'https://example.com/vod' } : {}),
+      ...(includeVodUrl ? { vodUrl: 'https://example.com/vod' } : {}),
     };
     const first = researchSourceSetRecordSchema.parse(spread);
     const second = researchSourceSetRecordSchema.parse(JSON.parse(JSON.stringify(first)));
