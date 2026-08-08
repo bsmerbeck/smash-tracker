@@ -10,6 +10,19 @@ vi.mock('@/hooks/useResearchSubject', () => ({
   useResearchSubject: () => useResearchSubject(),
 }));
 
+/**
+ * Plan 30-06: `ClientWorkspaceLayout` now also mounts `DataCoveragePanel`.
+ * This suite's own scope is the banner/pending/error affordances and the
+ * outlet-withholding gate — `DataCoveragePanel`'s own content is covered by
+ * `DataCoveragePanel.test.tsx` — so the panel is mocked to render nothing,
+ * exactly as it would on an `isResearch: false` resolution, keeping this
+ * file's pre-existing assertions unaffected and avoiding a `QueryClientProvider`
+ * dependency this file has no other reason to carry.
+ */
+vi.mock('./components/DataCoveragePanel', () => ({
+  DataCoveragePanel: () => null,
+}));
+
 function renderLayout() {
   return render(
     <MemoryRouter initialEntries={['/coach/tetra/overview']}>

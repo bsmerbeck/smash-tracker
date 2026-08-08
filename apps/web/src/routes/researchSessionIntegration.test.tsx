@@ -73,31 +73,51 @@ const startggStatus = vi.fn();
 const clientWorkspacesList = vi.fn();
 const claimsRedeem = vi.fn();
 const clientsKind = vi.fn();
+/**
+ * Plan 30-06: `ClientWorkspaceLayout` now also mounts `DataCoveragePanel`,
+ * which calls `useDataCoverage` -> `api.research.coverage` whenever the
+ * resolved workspace is research. Never resolved (stays pending forever) —
+ * this suite's own assertions are about the banner/suppression/analytics
+ * composition, not the coverage panel's content, so a hung query is the
+ * correct inert stand-in rather than a resolved fixture this file has no
+ * use for.
+ */
+const researchCoverage = vi.fn((...args: unknown[]) => {
+  void args;
+  return new Promise(() => {});
+});
 
-vi.mock('@/lib/api', () => ({
-  api: {
-    users: {
-      getMe: (...args: unknown[]) => getMe(...args),
-      upsertMe: vi.fn().mockResolvedValue({ uid: 'test-uid', email: 'test@example.com' }),
-      getFighters: (...args: unknown[]) => getFighters(...args),
-    },
-    matches: { list: (...args: unknown[]) => matchesList(...args) },
-    coaching: {
-      clients: {
-        list: (...args: unknown[]) => clientsList(...args),
-        kind: (...args: unknown[]) => clientsKind(...args),
+vi.mock('@/lib/api', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/lib/api')>();
+  return {
+    ApiError: actual.ApiError,
+    api: {
+      users: {
+        getMe: (...args: unknown[]) => getMe(...args),
+        upsertMe: vi.fn().mockResolvedValue({ uid: 'test-uid', email: 'test@example.com' }),
+        getFighters: (...args: unknown[]) => getFighters(...args),
+      },
+      matches: { list: (...args: unknown[]) => matchesList(...args) },
+      coaching: {
+        clients: {
+          list: (...args: unknown[]) => clientsList(...args),
+          kind: (...args: unknown[]) => clientsKind(...args),
+        },
+      },
+      clientWorkspaces: {
+        list: (...args: unknown[]) => clientWorkspacesList(...args),
+        revokeDelegation: vi.fn(),
+      },
+      claims: {
+        redeem: (...args: unknown[]) => claimsRedeem(...args),
+      },
+      startgg: { status: (...args: unknown[]) => startggStatus(...args) },
+      research: {
+        coverage: (...args: unknown[]) => researchCoverage(...args),
       },
     },
-    clientWorkspaces: {
-      list: (...args: unknown[]) => clientWorkspacesList(...args),
-      revokeDelegation: vi.fn(),
-    },
-    claims: {
-      redeem: (...args: unknown[]) => claimsRedeem(...args),
-    },
-    startgg: { status: (...args: unknown[]) => startggStatus(...args) },
-  },
-}));
+  };
+});
 
 /** Mirrors `AppRouter.test.tsx`'s own real-`BrowserRouter` navigation discipline. */
 function renderAt(path: string) {
