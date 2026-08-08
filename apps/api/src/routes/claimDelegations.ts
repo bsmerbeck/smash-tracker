@@ -51,6 +51,7 @@ const claimDelegationsRoutes: FastifyPluginAsyncZod = async (app) => {
         request.params.tenantId,
         request.params.delegateUid,
         { sessionId },
+        app.researchConfig,
       );
       return reply.code(204).send();
     },

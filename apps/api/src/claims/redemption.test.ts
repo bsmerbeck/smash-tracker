@@ -382,6 +382,7 @@ describe('redeemClaimCode', () => {
       clientIp: CLIENT_IP,
       sessionId: SESSION_ID,
       hmacSecret: HMAC_SECRET,
+      researchConfig: null,
     });
 
     expect(result).toEqual({ status: 'ok', tenantId: TENANT_ID });
@@ -391,6 +392,83 @@ describe('redeemClaimCode', () => {
     >;
     expect(dump.clientMembers?.[TENANT_ID]?.[CLIENT_UID]?.role).toBe('owner');
     expect(dump.clientMembers?.[TENANT_ID]?.[COACH_UID]?.role).toBe('delegate');
+  });
+
+  // Phase 29 (Research Tenancy, Isolation & Governance Gate, review
+  // consensus finding 2, cycle-2 finding C2-HIGH-7): a code that resolves
+  // to a research tenant is refused with the SAME 'invalid' outcome an
+  // unknown code returns, and the residue assertion is scoped to the
+  // ownership/membership/telemetry trees rather than the whole database —
+  // the invitation record IS burned and the rate-limit counters DO
+  // increment, exactly as they do for an unknown code (the positive
+  // no-oracle control: a refusal that left these untouched would itself be
+  // a distinguishable oracle).
+  it('refuses a code naming a research tenant with the SAME invalid outcome an unknown code returns, leaving ownership/membership/telemetry unchanged but burning the invitation and incrementing counters', async () => {
+    const database = new FakeDatabase();
+    database.seed(`clientMembers/${TENANT_ID}/${COACH_UID}`, { role: 'custodian', joinedAt: 1 });
+    database.seed(`clientTenants/${TENANT_ID}`, {
+      createdAt: 1,
+      archivedAt: null,
+      kind: 'research',
+    });
+    const code = 'RESEARCH-CODE-1';
+    const digest = digestFor(code);
+    seedInvitation(database, digest);
+
+    const researchResult = await redeemClaimCode(database as never, {
+      code,
+      redeemerUid: CLIENT_UID,
+      clientIp: CLIENT_IP,
+      sessionId: SESSION_ID,
+      hmacSecret: HMAC_SECRET,
+      researchConfig: null,
+    });
+
+    const unknownCodeDatabase = new FakeDatabase();
+    const unknownResult = await redeemClaimCode(unknownCodeDatabase as never, {
+      code: 'NEVER-ISSUED-CODE-1',
+      redeemerUid: CLIENT_UID,
+      clientIp: CLIENT_IP,
+      sessionId: SESSION_ID,
+      hmacSecret: HMAC_SECRET,
+      researchConfig: null,
+    });
+
+    expect(researchResult).toEqual({ status: 'invalid' });
+    expect(researchResult).toEqual(unknownResult);
+
+    const dump = database.dump() as Record<string, Record<string, Record<string, unknown>>>;
+
+    // Ownership trees byte-unchanged: no flip happened.
+    expect(dump.clientOwnedTenants).toBeUndefined();
+    expect(dump.clientTenants?.[TENANT_ID]).not.toHaveProperty('ownerUid');
+    expect(dump.clientTenants?.[TENANT_ID]).not.toHaveProperty('claimedAt');
+
+    // Membership tree byte-unchanged: still exactly the seeded custodian.
+    expect(dump.clientMembers?.[TENANT_ID]).toEqual({
+      [COACH_UID]: { role: 'custodian', joinedAt: 1 },
+    });
+
+    // Telemetry byte-unchanged: no events for this attempt.
+    await flush();
+    expect(eventLedgerEntries(database, 'claim_completed')).toHaveLength(0);
+    expect(eventLedgerEntries(database, 'coach_delegation_granted')).toHaveLength(0);
+
+    // No-oracle positive control: the invitation WAS consumed and the
+    // rate-limit counters DID increment — identically to the unknown-code
+    // path — proving the refusal is not itself a distinguishable oracle.
+    const claimInvitations = dump.claimInvitations as unknown as Record<
+      string,
+      { consumedAt?: number; consumedByUid?: string }
+    >;
+    expect(claimInvitations[digest]?.consumedAt).toBeTypeOf('number');
+    expect(claimInvitations[digest]?.consumedByUid).toBe(CLIENT_UID);
+
+    const now = Date.now();
+    const accountCount = (
+      await database.ref(claimRedemptionAccountPath(CLIENT_UID, now)).get()
+    ).val() as number;
+    expect(accountCount).toBe(1);
   });
 
   it('a fresh redemption writes clientOwnedTenants/{clientUid}/{tenantId} with the label copied from coachClients/{coachUid}/{tenantId}.label', async () => {
@@ -410,6 +488,7 @@ describe('redeemClaimCode', () => {
       clientIp: CLIENT_IP,
       sessionId: SESSION_ID,
       hmacSecret: HMAC_SECRET,
+      researchConfig: null,
     });
 
     expect(result).toEqual({ status: 'ok', tenantId: TENANT_ID });
@@ -431,6 +510,7 @@ describe('redeemClaimCode', () => {
       clientIp: CLIENT_IP,
       sessionId: SESSION_ID,
       hmacSecret: HMAC_SECRET,
+      researchConfig: null,
     });
 
     expect(result).toEqual({ status: 'ok', tenantId: TENANT_ID });
@@ -452,6 +532,7 @@ describe('redeemClaimCode', () => {
       clientIp: CLIENT_IP,
       sessionId: SESSION_ID,
       hmacSecret: HMAC_SECRET,
+      researchConfig: null,
     });
 
     expect(result).toEqual({ status: 'invalid' });
@@ -473,6 +554,7 @@ describe('redeemClaimCode', () => {
       clientIp: CLIENT_IP,
       sessionId: SESSION_ID,
       hmacSecret: HMAC_SECRET,
+      researchConfig: null,
     });
     const consumedAtAfterFirst = (
       (await database.ref(`claimInvitations/${digest}`).get()).val() as Record<string, unknown>
@@ -484,6 +566,7 @@ describe('redeemClaimCode', () => {
       clientIp: CLIENT_IP,
       sessionId: SESSION_ID,
       hmacSecret: HMAC_SECRET,
+      researchConfig: null,
     });
     const consumedAtAfterSecond = (
       (await database.ref(`claimInvitations/${digest}`).get()).val() as Record<string, unknown>
@@ -516,6 +599,7 @@ describe('redeemClaimCode', () => {
         clientIp: CLIENT_IP,
         sessionId: SESSION_ID,
         hmacSecret: HMAC_SECRET,
+        researchConfig: null,
       });
 
       expect(result).toEqual({ status: 'invalid' });
@@ -542,6 +626,7 @@ describe('redeemClaimCode', () => {
       clientIp: CLIENT_IP,
       sessionId: SESSION_ID,
       hmacSecret: HMAC_SECRET,
+      researchConfig: null,
     });
 
     expect(result).toEqual({ status: 'rate_limited' });
@@ -563,6 +648,7 @@ describe('redeemClaimCode', () => {
       clientIp: CLIENT_IP,
       sessionId: SESSION_ID,
       hmacSecret: HMAC_SECRET,
+      researchConfig: null,
     });
 
     const accountCount = (
@@ -592,6 +678,7 @@ describe('redeemClaimCode', () => {
         clientIp: CLIENT_IP,
         sessionId: SESSION_ID,
         hmacSecret: HMAC_SECRET,
+        researchConfig: null,
       },
       logger,
     );
@@ -614,6 +701,7 @@ describe('redeemClaimCode', () => {
       clientIp: CLIENT_IP,
       sessionId: SESSION_ID,
       hmacSecret: HMAC_SECRET,
+      researchConfig: null,
     });
     await flush();
 
@@ -638,6 +726,7 @@ describe('redeemClaimCode', () => {
       clientIp: CLIENT_IP,
       sessionId: SESSION_ID,
       hmacSecret: HMAC_SECRET,
+      researchConfig: null,
     });
     await flush();
 
@@ -658,6 +747,7 @@ describe('redeemClaimCode', () => {
       clientIp: CLIENT_IP,
       sessionId: SESSION_ID,
       hmacSecret: HMAC_SECRET,
+      researchConfig: null,
     });
     await flush();
     const completedAfterFirst = eventLedgerEntries(database, 'claim_completed').length;
@@ -669,6 +759,7 @@ describe('redeemClaimCode', () => {
       clientIp: CLIENT_IP,
       sessionId: SESSION_ID,
       hmacSecret: HMAC_SECRET,
+      researchConfig: null,
     });
     await flush();
 

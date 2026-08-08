@@ -55,9 +55,16 @@ describe('revokeCoachDelegation', () => {
     });
     database.seed(`matches/${TENANT_ID}/m1`, { seeded: true });
 
-    await revokeCoachDelegation(database as never, OWNER_UID, TENANT_ID, DELEGATE_UID, {
-      sessionId: SESSION_ID,
-    });
+    await revokeCoachDelegation(
+      database as never,
+      OWNER_UID,
+      TENANT_ID,
+      DELEGATE_UID,
+      {
+        sessionId: SESSION_ID,
+      },
+      null,
+    );
 
     const dump = database.dump() as Record<string, unknown>;
     expect((dump.clientMembers as Record<string, unknown>)[TENANT_ID]).not.toHaveProperty(
@@ -87,6 +94,7 @@ describe('revokeCoachDelegation', () => {
       TENANT_ID,
       DELEGATE_UID,
       { sessionId: SESSION_ID },
+      null,
     ).catch((err: unknown) => err);
     const delegateError = await revokeCoachDelegation(
       database as never,
@@ -94,6 +102,7 @@ describe('revokeCoachDelegation', () => {
       TENANT_ID,
       DELEGATE_UID,
       { sessionId: SESSION_ID },
+      null,
     ).catch((err: unknown) => err);
     const strangerError = await revokeCoachDelegation(
       database as never,
@@ -101,6 +110,7 @@ describe('revokeCoachDelegation', () => {
       TENANT_ID,
       DELEGATE_UID,
       { sessionId: SESSION_ID },
+      null,
     ).catch((err: unknown) => err);
 
     expect(custodianError).toBeInstanceOf(ForbiddenError);
@@ -116,9 +126,16 @@ describe('revokeCoachDelegation', () => {
     seedMembership(database, TENANT_ID, CUSTODIAN_UID, 'custodian');
 
     await expect(
-      revokeCoachDelegation(database as never, OWNER_UID, TENANT_ID, CUSTODIAN_UID, {
-        sessionId: SESSION_ID,
-      }),
+      revokeCoachDelegation(
+        database as never,
+        OWNER_UID,
+        TENANT_ID,
+        CUSTODIAN_UID,
+        {
+          sessionId: SESSION_ID,
+        },
+        null,
+      ),
     ).rejects.toBeInstanceOf(ForbiddenError);
   });
 
@@ -127,9 +144,16 @@ describe('revokeCoachDelegation', () => {
     seedMembership(database, TENANT_ID, OWNER_UID, 'owner');
 
     await expect(
-      revokeCoachDelegation(database as never, OWNER_UID, TENANT_ID, STRANGER_UID, {
-        sessionId: SESSION_ID,
-      }),
+      revokeCoachDelegation(
+        database as never,
+        OWNER_UID,
+        TENANT_ID,
+        STRANGER_UID,
+        {
+          sessionId: SESSION_ID,
+        },
+        null,
+      ),
     ).rejects.toBeInstanceOf(ForbiddenError);
   });
 
@@ -138,9 +162,16 @@ describe('revokeCoachDelegation', () => {
     seedMembership(database, TENANT_ID, OWNER_UID, 'owner');
 
     await expect(
-      revokeCoachDelegation(database as never, OWNER_UID, TENANT_ID, OWNER_UID, {
-        sessionId: SESSION_ID,
-      }),
+      revokeCoachDelegation(
+        database as never,
+        OWNER_UID,
+        TENANT_ID,
+        OWNER_UID,
+        {
+          sessionId: SESSION_ID,
+        },
+        null,
+      ),
     ).rejects.toBeInstanceOf(ForbiddenError);
   });
 
@@ -149,9 +180,16 @@ describe('revokeCoachDelegation', () => {
     seedMembership(database, TENANT_ID, OWNER_UID, 'owner');
     seedMembership(database, TENANT_ID, DELEGATE_UID, 'delegate');
 
-    await revokeCoachDelegation(database as never, OWNER_UID, TENANT_ID, DELEGATE_UID, {
-      sessionId: SESSION_ID,
-    });
+    await revokeCoachDelegation(
+      database as never,
+      OWNER_UID,
+      TENANT_ID,
+      DELEGATE_UID,
+      {
+        sessionId: SESSION_ID,
+      },
+      null,
+    );
     await flush();
 
     const rows = eventLedgerEntries(database, 'coach_delegation_revoked');
@@ -164,6 +202,32 @@ describe('revokeCoachDelegation', () => {
       payload: { reason: 'client_initiated' },
     });
     expect(JSON.stringify(rows[0])).not.toMatch(/label|Alex/i);
+  });
+
+  // Phase 29 (Research Tenancy, Isolation & Governance Gate, review
+  // consensus finding 2): revoke is refused for a research tenant even for
+  // an allowlisted admin holding an (in-practice-unreachable) owner role —
+  // defense in depth, since a research tenant cannot be claimed at all.
+  it('refuses revocation for a research tenant', async () => {
+    const database = new FakeDatabase();
+    seedMembership(database, TENANT_ID, OWNER_UID, 'owner');
+    seedMembership(database, TENANT_ID, DELEGATE_UID, 'delegate');
+    database.seed(`clientTenants/${TENANT_ID}`, {
+      createdAt: 1,
+      archivedAt: null,
+      kind: 'research',
+    });
+
+    await expect(
+      revokeCoachDelegation(
+        database as never,
+        OWNER_UID,
+        TENANT_ID,
+        DELEGATE_UID,
+        { sessionId: SESSION_ID },
+        { adminUids: new Set([OWNER_UID]) },
+      ),
+    ).rejects.toBeInstanceOf(ForbiddenError);
   });
 });
 

@@ -43,10 +43,16 @@ describe('issueClaimInvitation', () => {
     seedMembership(database, TENANT_ID, COACH_UID, 'custodian');
 
     const before = Date.now();
-    const result = await issueClaimInvitation(database as never, COACH_UID, TENANT_ID, {
-      sessionId: SESSION_ID,
-      hmacSecret: HMAC_SECRET,
-    });
+    const result = await issueClaimInvitation(
+      database as never,
+      COACH_UID,
+      TENANT_ID,
+      {
+        sessionId: SESSION_ID,
+        hmacSecret: HMAC_SECRET,
+      },
+      null,
+    );
 
     expect(result.code).toMatch(
       /^[0-9A-Z]{5}-[0-9A-Z]{5}-[0-9A-Z]{5}-[0-9A-Z]{5}-[0-9A-Z]{5}-[0-9A-Z]{1}$/,
@@ -60,10 +66,16 @@ describe('issueClaimInvitation', () => {
     const database = new FakeDatabase();
     seedMembership(database, TENANT_ID, COACH_UID, 'custodian');
 
-    const result = await issueClaimInvitation(database as never, COACH_UID, TENANT_ID, {
-      sessionId: SESSION_ID,
-      hmacSecret: HMAC_SECRET,
-    });
+    const result = await issueClaimInvitation(
+      database as never,
+      COACH_UID,
+      TENANT_ID,
+      {
+        sessionId: SESSION_ID,
+        hmacSecret: HMAC_SECRET,
+      },
+      null,
+    );
 
     const digest = hashClaimCode(HMAC_SECRET, normalizeClaimCode(result.code));
     const dump = database.dump() as Record<string, unknown>;
@@ -88,10 +100,16 @@ describe('issueClaimInvitation', () => {
     const database = new FakeDatabase();
     seedMembership(database, TENANT_ID, COACH_UID, 'custodian');
 
-    const result = await issueClaimInvitation(database as never, COACH_UID, TENANT_ID, {
-      sessionId: SESSION_ID,
-      hmacSecret: HMAC_SECRET,
-    });
+    const result = await issueClaimInvitation(
+      database as never,
+      COACH_UID,
+      TENANT_ID,
+      {
+        sessionId: SESSION_ID,
+        hmacSecret: HMAC_SECRET,
+      },
+      null,
+    );
 
     const dumped = JSON.stringify(database.dump());
     expect(dumped).not.toContain(result.code);
@@ -104,16 +122,28 @@ describe('issueClaimInvitation', () => {
     const database = new FakeDatabase();
     seedMembership(database, TENANT_ID, COACH_UID, 'custodian');
 
-    const first = await issueClaimInvitation(database as never, COACH_UID, TENANT_ID, {
-      sessionId: SESSION_ID,
-      hmacSecret: HMAC_SECRET,
-    });
+    const first = await issueClaimInvitation(
+      database as never,
+      COACH_UID,
+      TENANT_ID,
+      {
+        sessionId: SESSION_ID,
+        hmacSecret: HMAC_SECRET,
+      },
+      null,
+    );
     const firstDigest = hashClaimCode(HMAC_SECRET, normalizeClaimCode(first.code));
 
-    const second = await issueClaimInvitation(database as never, COACH_UID, TENANT_ID, {
-      sessionId: SESSION_ID,
-      hmacSecret: HMAC_SECRET,
-    });
+    const second = await issueClaimInvitation(
+      database as never,
+      COACH_UID,
+      TENANT_ID,
+      {
+        sessionId: SESSION_ID,
+        hmacSecret: HMAC_SECRET,
+      },
+      null,
+    );
     const secondDigest = hashClaimCode(HMAC_SECRET, normalizeClaimCode(second.code));
 
     const dump = database.dump() as Record<string, unknown>;
@@ -134,15 +164,22 @@ describe('issueClaimInvitation', () => {
       seedMembership(database, TENANT_ID, COACH_UID, role);
 
       const strangerDatabase = new FakeDatabase();
-      const roleError = await issueClaimInvitation(database as never, COACH_UID, TENANT_ID, {
-        sessionId: SESSION_ID,
-        hmacSecret: HMAC_SECRET,
-      }).catch((err: Error) => err);
+      const roleError = await issueClaimInvitation(
+        database as never,
+        COACH_UID,
+        TENANT_ID,
+        {
+          sessionId: SESSION_ID,
+          hmacSecret: HMAC_SECRET,
+        },
+        null,
+      ).catch((err: Error) => err);
       const strangerError = await issueClaimInvitation(
         strangerDatabase as never,
         'stranger-uid',
         TENANT_ID,
         { sessionId: SESSION_ID, hmacSecret: HMAC_SECRET },
+        null,
       ).catch((err: Error) => err);
 
       expect(roleError).toBeInstanceOf(Error);
@@ -157,10 +194,16 @@ describe('issueClaimInvitation', () => {
     seedMembership(database, TENANT_ID, COACH_UID, 'custodian');
 
     for (let i = 0; i < MAX_CLAIM_ISSUANCES_PER_DAY; i += 1) {
-      await issueClaimInvitation(database as never, COACH_UID, TENANT_ID, {
-        sessionId: SESSION_ID,
-        hmacSecret: HMAC_SECRET,
-      });
+      await issueClaimInvitation(
+        database as never,
+        COACH_UID,
+        TENANT_ID,
+        {
+          sessionId: SESSION_ID,
+          hmacSecret: HMAC_SECRET,
+        },
+        null,
+      );
     }
 
     const dumpBefore = database.dump() as Record<string, unknown>;
@@ -169,10 +212,16 @@ describe('issueClaimInvitation', () => {
     ).length;
 
     await expect(
-      issueClaimInvitation(database as never, COACH_UID, TENANT_ID, {
-        sessionId: SESSION_ID,
-        hmacSecret: HMAC_SECRET,
-      }),
+      issueClaimInvitation(
+        database as never,
+        COACH_UID,
+        TENANT_ID,
+        {
+          sessionId: SESSION_ID,
+          hmacSecret: HMAC_SECRET,
+        },
+        null,
+      ),
     ).rejects.toBeInstanceOf(ClaimIssuanceRateLimitError);
 
     const dumpAfter = database.dump() as Record<string, unknown>;
@@ -188,10 +237,16 @@ describe('issueClaimInvitation', () => {
     const database = new FakeDatabase();
     seedMembership(database, TENANT_ID, COACH_UID, 'custodian');
 
-    const result = await issueClaimInvitation(database as never, COACH_UID, TENANT_ID, {
-      sessionId: SESSION_ID,
-      hmacSecret: HMAC_SECRET,
-    });
+    const result = await issueClaimInvitation(
+      database as never,
+      COACH_UID,
+      TENANT_ID,
+      {
+        sessionId: SESSION_ID,
+        hmacSecret: HMAC_SECRET,
+      },
+      null,
+    );
     await flush();
 
     const digest = hashClaimCode(HMAC_SECRET, normalizeClaimCode(result.code));
@@ -206,18 +261,30 @@ describe('issueClaimInvitation', () => {
     const database = new FakeDatabase();
     seedMembership(database, TENANT_ID, COACH_UID, 'custodian');
 
-    await issueClaimInvitation(database as never, COACH_UID, TENANT_ID, {
-      sessionId: SESSION_ID,
-      hmacSecret: HMAC_SECRET,
-    });
+    await issueClaimInvitation(
+      database as never,
+      COACH_UID,
+      TENANT_ID,
+      {
+        sessionId: SESSION_ID,
+        hmacSecret: HMAC_SECRET,
+      },
+      null,
+    );
     await flush();
     expect(eventLedgerEntries(database, 'claim_invitation_created')).toHaveLength(1);
     expect(eventLedgerEntries(database, 'claim_invitation_revoked')).toHaveLength(0);
 
-    await issueClaimInvitation(database as never, COACH_UID, TENANT_ID, {
-      sessionId: SESSION_ID,
-      hmacSecret: HMAC_SECRET,
-    });
+    await issueClaimInvitation(
+      database as never,
+      COACH_UID,
+      TENANT_ID,
+      {
+        sessionId: SESSION_ID,
+        hmacSecret: HMAC_SECRET,
+      },
+      null,
+    );
     await flush();
     expect(eventLedgerEntries(database, 'claim_invitation_created')).toHaveLength(2);
     const revokedEvents = eventLedgerEntries(database, 'claim_invitation_revoked');
@@ -252,10 +319,16 @@ describe('issueClaimInvitation', () => {
     };
     database.seed(`claimInvitations/${digestA}`, preExisting);
 
-    const result = await issueClaimInvitation(database as never, COACH_UID, TENANT_ID, {
-      sessionId: SESSION_ID,
-      hmacSecret: HMAC_SECRET,
-    });
+    const result = await issueClaimInvitation(
+      database as never,
+      COACH_UID,
+      TENANT_ID,
+      {
+        sessionId: SESSION_ID,
+        hmacSecret: HMAC_SECRET,
+      },
+      null,
+    );
 
     expect(result.code).toBe(formatClaimCode(codeB));
     const dump = database.dump() as Record<string, unknown>;
@@ -264,6 +337,41 @@ describe('issueClaimInvitation', () => {
 
     vi.doUnmock('./crypto.js');
     vi.resetModules();
+  });
+
+  // Phase 29 (Research Tenancy, Isolation & Governance Gate, review
+  // consensus finding 2): a research tenant must not be claimable at ALL
+  // before Phase 34 — even by its own allowlisted admin — so issuance is
+  // refused BEFORE any code generation, digest computation, transaction, or
+  // write. Asserted via whole-database before/after equality since the
+  // guard sits strictly above every write.
+  it('refuses issuance for a research tenant, leaving the WHOLE database byte-unchanged and producing no invitation record', async () => {
+    const { issueClaimInvitation } = await import('./invitations.js');
+    const database = new FakeDatabase();
+    seedMembership(database, TENANT_ID, COACH_UID, 'custodian');
+    database.seed(`clientTenants/${TENANT_ID}`, {
+      createdAt: 1,
+      archivedAt: null,
+      kind: 'research',
+    });
+    const before = database.dump();
+
+    // Message equality, not `.rejects.toThrow(ForbiddenError)` — this
+    // test's dynamic `await import('./invitations.js')` may run against a
+    // module registry reset by an earlier `vi.resetModules()` in this file,
+    // yielding a structurally-identical but distinct ForbiddenError class
+    // than the one statically imported at the top of this file.
+    await expect(
+      issueClaimInvitation(
+        database as never,
+        COACH_UID,
+        TENANT_ID,
+        { sessionId: SESSION_ID, hmacSecret: HMAC_SECRET },
+        { adminUids: new Set([COACH_UID]) },
+      ),
+    ).rejects.toThrow('Not a member of this client tenant');
+
+    expect(database.dump()).toEqual(before);
   });
 });
 
@@ -274,15 +382,27 @@ describe('revokeClaimInvitation', () => {
     const database = new FakeDatabase();
     seedMembership(database, TENANT_ID, COACH_UID, 'custodian');
 
-    const issued = await issueClaimInvitation(database as never, COACH_UID, TENANT_ID, {
-      sessionId: SESSION_ID,
-      hmacSecret: HMAC_SECRET,
-    });
+    const issued = await issueClaimInvitation(
+      database as never,
+      COACH_UID,
+      TENANT_ID,
+      {
+        sessionId: SESSION_ID,
+        hmacSecret: HMAC_SECRET,
+      },
+      null,
+    );
     const digest = hashClaimCode(HMAC_SECRET, normalizeClaimCode(issued.code));
 
-    await revokeClaimInvitation(database as never, COACH_UID, TENANT_ID, {
-      sessionId: SESSION_ID,
-    });
+    await revokeClaimInvitation(
+      database as never,
+      COACH_UID,
+      TENANT_ID,
+      {
+        sessionId: SESSION_ID,
+      },
+      null,
+    );
 
     const dump = database.dump() as Record<string, unknown>;
     const claimInvitations = dump.claimInvitations as Record<string, Record<string, unknown>>;
@@ -299,7 +419,13 @@ describe('revokeClaimInvitation', () => {
     seedMembership(database, TENANT_ID, COACH_UID, 'custodian');
 
     await expect(
-      revokeClaimInvitation(database as never, COACH_UID, TENANT_ID, { sessionId: SESSION_ID }),
+      revokeClaimInvitation(
+        database as never,
+        COACH_UID,
+        TENANT_ID,
+        { sessionId: SESSION_ID },
+        null,
+      ),
     ).resolves.toBeUndefined();
 
     const dump = database.dump() as Record<string, unknown>;
@@ -312,15 +438,27 @@ describe('revokeClaimInvitation', () => {
     const database = new FakeDatabase();
     seedMembership(database, TENANT_ID, COACH_UID, 'custodian');
 
-    await issueClaimInvitation(database as never, COACH_UID, TENANT_ID, {
-      sessionId: SESSION_ID,
-      hmacSecret: HMAC_SECRET,
-    });
+    await issueClaimInvitation(
+      database as never,
+      COACH_UID,
+      TENANT_ID,
+      {
+        sessionId: SESSION_ID,
+        hmacSecret: HMAC_SECRET,
+      },
+      null,
+    );
     await flush();
 
-    await revokeClaimInvitation(database as never, COACH_UID, TENANT_ID, {
-      sessionId: SESSION_ID,
-    });
+    await revokeClaimInvitation(
+      database as never,
+      COACH_UID,
+      TENANT_ID,
+      {
+        sessionId: SESSION_ID,
+      },
+      null,
+    );
     await flush();
 
     const revokedEvents = eventLedgerEntries(database, 'claim_invitation_revoked');
@@ -328,6 +466,33 @@ describe('revokeClaimInvitation', () => {
     expect((revokedEvents[0] as { payload: { reason: string } }).payload.reason).toBe(
       'coach_revoked',
     );
+  });
+
+  // Phase 29 (review consensus finding 2): revocation is refused for a
+  // research tenant the same way issuance is, leaving the WHOLE database
+  // byte-unchanged.
+  it('refuses revocation for a research tenant, leaving the database byte-unchanged', async () => {
+    const { revokeClaimInvitation } = await import('./invitations.js');
+    const database = new FakeDatabase();
+    seedMembership(database, TENANT_ID, COACH_UID, 'custodian');
+    database.seed(`clientTenants/${TENANT_ID}`, {
+      createdAt: 1,
+      archivedAt: null,
+      kind: 'research',
+    });
+    const before = database.dump();
+
+    await expect(
+      revokeClaimInvitation(
+        database as never,
+        COACH_UID,
+        TENANT_ID,
+        { sessionId: SESSION_ID },
+        { adminUids: new Set([COACH_UID]) },
+      ),
+    ).rejects.toThrow('Not a member of this client tenant');
+
+    expect(database.dump()).toEqual(before);
   });
 });
 
@@ -337,7 +502,7 @@ describe('getClaimInvitationStatus', () => {
     const database = new FakeDatabase();
     seedMembership(database, TENANT_ID, COACH_UID, 'custodian');
 
-    const status = await getClaimInvitationStatus(database as never, COACH_UID, TENANT_ID);
+    const status = await getClaimInvitationStatus(database as never, COACH_UID, TENANT_ID, null);
     expect(status).toEqual({ outstanding: false, expiresAt: null });
   });
 
@@ -346,12 +511,18 @@ describe('getClaimInvitationStatus', () => {
     const database = new FakeDatabase();
     seedMembership(database, TENANT_ID, COACH_UID, 'custodian');
 
-    const issued = await issueClaimInvitation(database as never, COACH_UID, TENANT_ID, {
-      sessionId: SESSION_ID,
-      hmacSecret: HMAC_SECRET,
-    });
+    const issued = await issueClaimInvitation(
+      database as never,
+      COACH_UID,
+      TENANT_ID,
+      {
+        sessionId: SESSION_ID,
+        hmacSecret: HMAC_SECRET,
+      },
+      null,
+    );
 
-    const status = await getClaimInvitationStatus(database as never, COACH_UID, TENANT_ID);
+    const status = await getClaimInvitationStatus(database as never, COACH_UID, TENANT_ID, null);
     expect(status).toEqual({ outstanding: true, expiresAt: issued.expiresAt });
   });
 
@@ -375,7 +546,7 @@ describe('getClaimInvitationStatus', () => {
       });
       database.seed(`activeClaimInvitationByTenant/${TENANT_ID}`, { digest, issuedAt: 1 });
 
-      const status = await getClaimInvitationStatus(database as never, COACH_UID, TENANT_ID);
+      const status = await getClaimInvitationStatus(database as never, COACH_UID, TENANT_ID, null);
       expect(status).toEqual({ outstanding: false, expiresAt: null });
     }
   });
@@ -385,12 +556,18 @@ describe('getClaimInvitationStatus', () => {
     const database = new FakeDatabase();
     seedMembership(database, TENANT_ID, COACH_UID, 'custodian');
 
-    await issueClaimInvitation(database as never, COACH_UID, TENANT_ID, {
-      sessionId: SESSION_ID,
-      hmacSecret: HMAC_SECRET,
-    });
+    await issueClaimInvitation(
+      database as never,
+      COACH_UID,
+      TENANT_ID,
+      {
+        sessionId: SESSION_ID,
+        hmacSecret: HMAC_SECRET,
+      },
+      null,
+    );
 
-    const status = await getClaimInvitationStatus(database as never, COACH_UID, TENANT_ID);
+    const status = await getClaimInvitationStatus(database as never, COACH_UID, TENANT_ID, null);
     expect(Object.keys(status)).toEqual(['outstanding', 'expiresAt']);
   });
 });

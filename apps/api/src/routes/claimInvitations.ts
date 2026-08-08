@@ -83,6 +83,7 @@ const claimInvitationsRoutes: FastifyPluginAsyncZod<ClaimInvitationRoutesOptions
           request.uid,
           request.params.clientId,
           { sessionId, hmacSecret: claimCode.hmacSecret },
+          app.researchConfig,
         );
         return reply.code(201).send(issued);
       } catch (err) {
@@ -114,9 +115,13 @@ const claimInvitationsRoutes: FastifyPluginAsyncZod<ClaimInvitationRoutesOptions
     },
     async (request, reply) => {
       const sessionId = readSessionId(request.headers['x-session-id']);
-      await revokeClaimInvitation(app.firebase.database, request.uid, request.params.clientId, {
-        sessionId,
-      });
+      await revokeClaimInvitation(
+        app.firebase.database,
+        request.uid,
+        request.params.clientId,
+        { sessionId },
+        app.researchConfig,
+      );
       return reply.code(204).send();
     },
   );
@@ -136,7 +141,12 @@ const claimInvitationsRoutes: FastifyPluginAsyncZod<ClaimInvitationRoutesOptions
       },
     },
     async (request) => {
-      return getClaimInvitationStatus(app.firebase.database, request.uid, request.params.clientId);
+      return getClaimInvitationStatus(
+        app.firebase.database,
+        request.uid,
+        request.params.clientId,
+        app.researchConfig,
+      );
     },
   );
 };
