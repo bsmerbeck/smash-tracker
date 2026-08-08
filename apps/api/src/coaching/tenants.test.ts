@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import type { Database } from 'firebase-admin/database';
 import { FakeDatabase } from '../test-support/fakeDatabase.js';
 import { ConflictError, ForbiddenError } from '../services/rtdb.js';
+import { grantEntitlement } from '../research/entitlements.js';
 import {
   archiveClient,
   CANONICAL_TENANT_TREES,
@@ -11,6 +12,7 @@ import {
   exportClient,
   listClients,
   MAX_ACTIVE_CLIENTS_PER_COACH,
+  TENANT_DELETION_TREES,
 } from './tenants.js';
 
 const COACH_UID = 'coach-uid-1';
@@ -605,6 +607,52 @@ describe('deleteClient', () => {
     await expect(
       deleteClient(asDatabase(database), 'foreign-coach', tenantId, null),
     ).rejects.toThrow(ForbiddenError);
+  });
+
+  // Phase 29 Plan 10 (RTEN-05A, production-gap item 10): the cascade iterates
+  // TENANT_DELETION_TREES (a superset of CANONICAL_TENANT_TREES), which is
+  // what keeps the admin-only `researchEntitlements` tree from outliving a
+  // hard-deleted tenant — a tree the same-subject cascade test above cannot
+  // exercise, since it seeds only CANONICAL_TENANT_TREES.
+  it('leaves no orphaned entitlement record after a hard delete (TENANT_DELETION_TREES coverage)', async () => {
+    const database = new FakeDatabase();
+    // createClientCore with the research kind already writes the tenant
+    // record, the custodian membership, and the coachClients index entry —
+    // no extra seeding needed (mirrors createResearchTenant's own call
+    // shape, apps/api/src/research/tenants.ts).
+    const { tenantId } = await createClientCore(
+      asDatabase(database),
+      COACH_UID,
+      'Hbox snapshot',
+      'research',
+    );
+    await grantEntitlement(asDatabase(database), tenantId, COACH_UID, 'idem-key-1');
+
+    expect(
+      (
+        (database.dump() as Record<string, unknown>).researchEntitlements as
+          Record<string, unknown> | undefined
+      )?.[tenantId],
+    ).toBeDefined();
+    // Sanity: the entitlement tree is in the deletion manifest but NOT the
+    // content manifest — this is the split the containment test in
+    // foreignClient.test.ts proves generally; here it just documents the
+    // precondition for this specific regression test.
+    expect(TENANT_DELETION_TREES).toContain('researchEntitlements');
+    expect(CANONICAL_TENANT_TREES as readonly string[]).not.toContain('researchEntitlements');
+
+    // deleteClient's own role gate re-verifies research access
+    // (requireTenantRole -> assertTenantAccess) for a research-kind tenant,
+    // so the caller must be allowlisted here too — mirrors every other
+    // Phase 29 call site's researchConfig threading.
+    await deleteClient(asDatabase(database), COACH_UID, tenantId, {
+      adminUids: new Set([COACH_UID]),
+    });
+
+    const dump = database.dump() as Record<string, unknown>;
+    expect(
+      (dump.researchEntitlements as Record<string, unknown> | undefined)?.[tenantId],
+    ).toBeUndefined();
   });
 
   // Quick 260726-r7 (P0 regression): flipTenantOwnership's 7th path,
