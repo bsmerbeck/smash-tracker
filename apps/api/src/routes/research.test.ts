@@ -242,3 +242,204 @@ describe('research route family: malformed body is not an oracle', () => {
     expect(nonAllowlistedResponse.json()).toEqual(nullConfigResponse.json());
   });
 });
+
+/**
+ * Phase 29 Plan 10 (RTEN-05A): the family's FIRST tenant-addressed routes —
+ * entitlement grant/revoke on `/api/research/tenants/:tenantId/entitlement/*`.
+ * Reuses `requireResearchTenantAdmin` (plan 29-05), so every negative
+ * outcome collapses to the SAME `RESEARCH_FAMILY_REJECTION` this file's
+ * other describe blocks already assert against.
+ */
+describe('entitlement grant/revoke: tenant-addressed authorization', () => {
+  async function createResearchTenant(): Promise<{
+    app: ReturnType<typeof buildTestApp>['app'];
+    auth: ReturnType<typeof buildTestApp>['auth'];
+    tenantId: string;
+  }> {
+    const { app, auth } = buildTestApp({ research: RESEARCH_CONFIG });
+    auth.registerToken(ADMIN_TOKEN, { uid: ADMIN_UID, email: 'admin@test.com' });
+
+    const createResponse = await app.inject({
+      method: 'POST',
+      url: '/api/research/tenants',
+      headers: { authorization: `Bearer ${ADMIN_TOKEN}` },
+      payload: { label: 'Hbox snapshot' },
+    });
+    const tenantId = createResponse.json().tenantId as string;
+    return { app, auth, tenantId };
+  }
+
+  it('allows an allowlisted admin who is a member to grant an entitlement', async () => {
+    const { app, tenantId } = await createResearchTenant();
+
+    const response = await app.inject({
+      method: 'POST',
+      url: `/api/research/tenants/${tenantId}/entitlement/grant`,
+      headers: { authorization: `Bearer ${ADMIN_TOKEN}` },
+      payload: { idempotencyKey: 'idem-key-001' },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({ idempotencyKey: 'idem-key-001' });
+    expect(typeof response.json().grantId).toBe('string');
+  });
+
+  it('is idempotent: the same idempotency key returns the same grant identifier', async () => {
+    const { app, tenantId } = await createResearchTenant();
+
+    const first = await app.inject({
+      method: 'POST',
+      url: `/api/research/tenants/${tenantId}/entitlement/grant`,
+      headers: { authorization: `Bearer ${ADMIN_TOKEN}` },
+      payload: { idempotencyKey: 'idem-key-001' },
+    });
+    const second = await app.inject({
+      method: 'POST',
+      url: `/api/research/tenants/${tenantId}/entitlement/grant`,
+      headers: { authorization: `Bearer ${ADMIN_TOKEN}` },
+      payload: { idempotencyKey: 'idem-key-001' },
+    });
+
+    expect(second.json().grantId).toBe(first.json().grantId);
+  });
+
+  it('allows the owning admin to revoke, returning { ok: true }', async () => {
+    const { app, tenantId } = await createResearchTenant();
+
+    const grantResponse = await app.inject({
+      method: 'POST',
+      url: `/api/research/tenants/${tenantId}/entitlement/grant`,
+      headers: { authorization: `Bearer ${ADMIN_TOKEN}` },
+      payload: { idempotencyKey: 'idem-key-001' },
+    });
+    const { grantId } = grantResponse.json();
+
+    const revokeResponse = await app.inject({
+      method: 'POST',
+      url: `/api/research/tenants/${tenantId}/entitlement/revoke`,
+      headers: { authorization: `Bearer ${ADMIN_TOKEN}` },
+      payload: { expectedGrantId: grantId },
+    });
+
+    expect(revokeResponse.statusCode).toBe(200);
+    expect(revokeResponse.json()).toEqual({ ok: true });
+  });
+
+  it('a repeated revoke is a no-op returning the same response', async () => {
+    const { app, tenantId } = await createResearchTenant();
+    const grantResponse = await app.inject({
+      method: 'POST',
+      url: `/api/research/tenants/${tenantId}/entitlement/grant`,
+      headers: { authorization: `Bearer ${ADMIN_TOKEN}` },
+      payload: { idempotencyKey: 'idem-key-001' },
+    });
+    const { grantId } = grantResponse.json();
+
+    const firstRevoke = await app.inject({
+      method: 'POST',
+      url: `/api/research/tenants/${tenantId}/entitlement/revoke`,
+      headers: { authorization: `Bearer ${ADMIN_TOKEN}` },
+      payload: { expectedGrantId: grantId },
+    });
+    const secondRevoke = await app.inject({
+      method: 'POST',
+      url: `/api/research/tenants/${tenantId}/entitlement/revoke`,
+      headers: { authorization: `Bearer ${ADMIN_TOKEN}` },
+      payload: { expectedGrantId: grantId },
+    });
+
+    expect(secondRevoke.json()).toEqual(firstRevoke.json());
+  });
+
+  it('rejects a non-allowlisted caller on grant with the family uniform rejection', async () => {
+    const { app, auth, tenantId } = await createResearchTenant();
+    auth.registerToken(OTHER_TOKEN, { uid: OTHER_UID, email: 'other@test.com' });
+
+    const response = await app.inject({
+      method: 'POST',
+      url: `/api/research/tenants/${tenantId}/entitlement/grant`,
+      headers: { authorization: `Bearer ${OTHER_TOKEN}` },
+      payload: { idempotencyKey: 'idem-key-001' },
+    });
+
+    expect(response.statusCode).toBe(RESEARCH_FAMILY_REJECTION.statusCode);
+    expect(response.json()).toEqual(RESEARCH_FAMILY_REJECTION.body);
+  });
+
+  it('rejects an allowlisted admin who is NOT a member of this tenant, on both grant and revoke', async () => {
+    const { app, auth, tenantId } = await createResearchTenant();
+    const SECOND_ADMIN_UID = 'admin-2';
+    const SECOND_ADMIN_TOKEN = 'admin-2-token';
+    const secondResearchConfig = { adminUids: new Set([ADMIN_UID, SECOND_ADMIN_UID]) };
+    // Rebuild the app with BOTH admins allowlisted, but the second admin
+    // was never made a member of `tenantId` (createResearchTenant() above
+    // only wrote membership for ADMIN_UID).
+    const { app: sharedApp, auth: sharedAuth } = buildTestApp({ research: secondResearchConfig });
+    void app; // the first app/tenant is discarded; only tenantId is reused.
+    void auth;
+    sharedAuth.registerToken(SECOND_ADMIN_TOKEN, {
+      uid: SECOND_ADMIN_UID,
+      email: 'admin2@test.com',
+    });
+
+    const grantResponse = await sharedApp.inject({
+      method: 'POST',
+      url: `/api/research/tenants/${tenantId}/entitlement/grant`,
+      headers: { authorization: `Bearer ${SECOND_ADMIN_TOKEN}` },
+      payload: { idempotencyKey: 'idem-key-001' },
+    });
+    expect(grantResponse.statusCode).toBe(RESEARCH_FAMILY_REJECTION.statusCode);
+    expect(grantResponse.json()).toEqual(RESEARCH_FAMILY_REJECTION.body);
+
+    const revokeResponse = await sharedApp.inject({
+      method: 'POST',
+      url: `/api/research/tenants/${tenantId}/entitlement/revoke`,
+      headers: { authorization: `Bearer ${SECOND_ADMIN_TOKEN}` },
+      payload: { expectedGrantId: 'whatever' },
+    });
+    expect(revokeResponse.statusCode).toBe(RESEARCH_FAMILY_REJECTION.statusCode);
+    expect(revokeResponse.json()).toEqual(RESEARCH_FAMILY_REJECTION.body);
+  });
+
+  it('rejects every well-formed grant/revoke request with the family uniform rejection when the research config is null', async () => {
+    const { tenantId } = await createResearchTenant();
+    const { app: nullConfigApp, auth: nullConfigAuth } = buildTestApp({ research: null });
+    nullConfigAuth.registerToken(ADMIN_TOKEN, { uid: ADMIN_UID, email: 'admin@test.com' });
+
+    const grantResponse = await nullConfigApp.inject({
+      method: 'POST',
+      url: `/api/research/tenants/${tenantId}/entitlement/grant`,
+      headers: { authorization: `Bearer ${ADMIN_TOKEN}` },
+      payload: { idempotencyKey: 'idem-key-001' },
+    });
+    expect(grantResponse.statusCode).toBe(RESEARCH_FAMILY_REJECTION.statusCode);
+    expect(grantResponse.json()).toEqual(RESEARCH_FAMILY_REJECTION.body);
+  });
+
+  it('rejects a path-illegal tenantId with the family uniform rejection, not a 500', async () => {
+    const { app } = await createResearchTenant();
+
+    const response = await app.inject({
+      method: 'POST',
+      url: `/api/research/tenants/${encodeURIComponent('tenant.illegal')}/entitlement/grant`,
+      headers: { authorization: `Bearer ${ADMIN_TOKEN}` },
+      payload: { idempotencyKey: 'idem-key-001' },
+    });
+
+    expect(response.statusCode).toBe(RESEARCH_FAMILY_REJECTION.statusCode);
+    expect(response.json()).toEqual(RESEARCH_FAMILY_REJECTION.body);
+  });
+
+  it('rejects a malformed idempotency key at the schema boundary (400), never reaching the store', async () => {
+    const { app, tenantId } = await createResearchTenant();
+
+    const response = await app.inject({
+      method: 'POST',
+      url: `/api/research/tenants/${tenantId}/entitlement/grant`,
+      headers: { authorization: `Bearer ${ADMIN_TOKEN}` },
+      payload: { idempotencyKey: 'ab' },
+    });
+
+    expect(response.statusCode).toBe(400);
+  });
+});

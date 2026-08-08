@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { buildTestApp } from '../test-support/testApp.js';
-import { CANONICAL_TENANT_TREES } from './tenants.js';
+import { CANONICAL_TENANT_TREES, TENANT_DELETION_TREES } from './tenants.js';
 
 const TENANT_ID = 'tenant-1';
 const COACH_A_TOKEN = 'coach-a-token';
@@ -260,6 +260,46 @@ describe('CANONICAL_TENANT_TREES stays in lockstep with the harness route list',
     for (const tree of CANONICAL_TENANT_TREES) {
       const expectedPath = TREE_TO_ROUTE_PATH[tree];
       expect(SAME_SUBJECT_ROUTES.some((route) => route.path === expectedPath)).toBe(true);
+    }
+  });
+});
+
+/**
+ * Phase 29 Plan 10 (RTEN-05A, cycle-2 finding C2-HIGH-10): ONE additive
+ * block proving `TENANT_DELETION_TREES` (the hard-delete cascade's actual
+ * manifest, `apps/api/src/coaching/tenants.ts`) is a documented superset of
+ * `CANONICAL_TENANT_TREES` above — the two blocks above (`TREE_TO_ROUTE_PATH`
+ * and its lockstep `it`) stay byte-unchanged; this is intentionally a
+ * SEPARATE describe block, not folded into them, so a future admin-only
+ * tree can be added here without ever being asked to also produce a
+ * same-subject route it structurally cannot have.
+ */
+const DELETION_TREES_WITHOUT_A_SAME_SUBJECT_ROUTE: Record<string, string> = {
+  researchEntitlements:
+    'apps/api/src/research/entitlements.ts grant/revoke routes are admin-only ' +
+    "and answer the research family's uniform 404 (RESEARCH_FAMILY_REJECTION) " +
+    'by design — they can never satisfy a covered same-subject 403 route.',
+};
+
+describe('TENANT_DELETION_TREES is a documented superset of CANONICAL_TENANT_TREES', () => {
+  it('contains every member of CANONICAL_TENANT_TREES', () => {
+    for (const tree of CANONICAL_TENANT_TREES) {
+      expect((TENANT_DELETION_TREES as readonly string[]).includes(tree)).toBe(true);
+    }
+  });
+
+  it('every extra member (present in the deletion manifest but absent from the content manifest) carries a written, non-empty reason', () => {
+    const contentTrees = new Set<string>(CANONICAL_TENANT_TREES);
+    const extraTrees = TENANT_DELETION_TREES.filter((tree) => !contentTrees.has(tree));
+
+    expect(extraTrees.length).toBeGreaterThan(0);
+    for (const tree of extraTrees) {
+      const reason = DELETION_TREES_WITHOUT_A_SAME_SUBJECT_ROUTE[tree] ?? '';
+      expect(
+        reason,
+        `TENANT_DELETION_TREES member "${tree}" has no exceptions-table reason`,
+      ).toBeTruthy();
+      expect(reason.length).toBeGreaterThan(0);
     }
   });
 });

@@ -90,6 +90,45 @@ export const CANONICAL_TENANT_TREES = [
 ] as const;
 
 /**
+ * Phase 29 Plan 10 (Research Tenancy, Isolation & Governance Gate, RTEN-05A,
+ * production-gap item 10, cycle-2 finding C2-HIGH-10): the HARD-DELETE
+ * manifest `deleteClient`'s cascade below actually iterates — a documented
+ * SUPERSET of `CANONICAL_TENANT_TREES` above, which stays BYTE-UNCHANGED by
+ * this plan.
+ *
+ * The two manifests answer different questions and must not be merged:
+ *
+ * - `CANONICAL_TENANT_TREES` is the SAME-SUBJECT CONTENT manifest — trees a
+ *   tenant's own content occupies, each reachable through a
+ *   membership-gated same-subject route. It is what
+ *   `apps/api/src/coaching/foreignClient.test.ts`'s `TREE_TO_ROUTE_PATH`
+ *   proves 403 coverage over (an EXHAUSTIVE `Record` requiring every member
+ *   to have a covered same-subject route) and what plan 29-07's
+ *   content-tree aggregation lock scans.
+ * - `TENANT_DELETION_TREES` is the HARD-DELETE manifest — everything keyed
+ *   by tenant id that must not survive its tenant. It is a strict superset
+ *   of the content manifest, and every extra member carries a written
+ *   reason (in the exceptions table `foreignClient.test.ts` checks) stating
+ *   why it has no same-subject route.
+ *
+ * `researchEntitlements` is the first (and, at this plan, only) extra
+ * member: `apps/api/src/research/entitlements.ts`'s grant/revoke routes are
+ * ADMIN-ONLY and answer the research family's uniform 404
+ * (`RESEARCH_FAMILY_REJECTION`) by design — they can never satisfy
+ * `TREE_TO_ROUTE_PATH`'s "covered same-subject 403 route" requirement, so
+ * registering this tree in `CANONICAL_TENANT_TREES` would have broken that
+ * harness outright. Splitting the manifests, rather than reshaping the
+ * harness, is what resolves cycle-2 finding C2-HIGH-10.
+ */
+export const TENANT_DELETION_TREES = [
+  ...CANONICAL_TENANT_TREES,
+  // Phase 29 Plan 10 (RTEN-05A): admin-only, no same-subject route — see
+  // the header comment above for why this cannot live in
+  // CANONICAL_TENANT_TREES instead.
+  'researchEntitlements',
+] as const;
+
+/**
  * Replicates the existing Phase 8 coach-display-name-collision algorithm
  * (`apps/api/src/services/rtdb.ts`), renamed to avoid that feature's naming
  * collision (RESEARCH.md Pitfall 2) — trims, collapses inner whitespace to a
@@ -528,12 +567,15 @@ export async function archiveClient(
 
 /**
  * Hard-delete: an irreversible multi-path `null`-delete cascade covering
- * EXACTLY the tenant's data (built from the exported `CANONICAL_TENANT_TREES`
- * array — the SAME list `foreignClient.test.ts` iterates, so the cascade can
- * never silently drift out of sync with the trees `resolveSubject`-covered
- * routes actually write, per RESEARCH.md Open Question 2) plus the tenant's
- * own metadata/index/membership records. Role-gated (see `archiveClient`'s
- * doc comment above for the Phase 23 rationale shared by all three
+ * EXACTLY the tenant's data (built from the exported `TENANT_DELETION_TREES`
+ * array — a documented superset of `CANONICAL_TENANT_TREES`, the SAME list
+ * `foreignClient.test.ts` iterates for same-subject route coverage, so the
+ * two manifests can never silently drift apart either — see
+ * `TENANT_DELETION_TREES`'s header comment above for the Phase 29 Plan 10
+ * split, and RESEARCH.md Open Question 2 for the original single-manifest
+ * rationale) plus the tenant's own metadata/index/membership records.
+ * Role-gated (see `archiveClient`'s doc comment above for the Phase 23
+ * rationale shared by all three
  * destructive routes).
  *
  * Phase 20 Plan 03 (T-20-11, RESEARCH Pitfall 4): a session delivery mints a
@@ -626,7 +668,13 @@ export async function deleteClient(
   }
 
   const updates: Record<string, null> = {};
-  for (const tree of CANONICAL_TENANT_TREES) {
+  // Phase 29 Plan 10: iterates TENANT_DELETION_TREES (a documented superset
+  // of CANONICAL_TENANT_TREES, see that constant's header comment above),
+  // not CANONICAL_TENANT_TREES directly — this is what keeps
+  // apps/api/src/research/entitlements.ts's tree from outliving a deleted
+  // tenant (production-gap item 10) without registering an admin-only tree
+  // in the same-subject content manifest the foreign-client harness scans.
+  for (const tree of TENANT_DELETION_TREES) {
     updates[`${tree}/${tenantId}`] = null;
   }
   updates[`clientTenants/${tenantId}`] = null;
