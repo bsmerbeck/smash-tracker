@@ -165,6 +165,11 @@ const CONTENT_TREE_READER_ALLOWLIST: ContentReaderEntry[] = [
       'Reads matches/opponentAliases at request.uid — same personal, request.uid-only reasoning as reports/generate.ts.',
   },
   {
+    file: 'src/research/ingestion/projection.ts',
+    reason:
+      "Phase 30 Plan 03 (ING-03/ING-06): writes matches/{tenantId}/{key} through a per-row .transaction() scoped to the tenantId the caller (30-07's batch executor, itself gated by requireResearchTenantAdmin) passed in — never a foreign/cross-user id. The transaction reads the existing row only to merge user-owned annotations forward (mergePreservedMatchMembers); it makes no aggregation decision across tenants, mirroring startgg/sync.ts's and parrygg/sync.ts's own-tenant-only classification above.",
+  },
+  {
     file: 'src/routes/prepBindings.ts',
     reason:
       "Reads matches/opponentAliases at request.uid — the personal tournament-prep feature, confirmed request.uid-only (no coaching-mode surface) in this plan's serverEmitterAudit.test.ts classification of src/prep/prep.ts.",
