@@ -1,6 +1,8 @@
+import type { Database } from 'firebase-admin/database';
 import { describe, expect, it } from 'vitest';
 import { buildTestApp } from '../test-support/testApp.js';
 import { RESEARCH_FAMILY_REJECTION } from '../research/routeGuards.js';
+import { confirmIdentityPlayers } from '../research/ingestion/identity.js';
 
 const ADMIN_UID = 'admin-1';
 const ADMIN_TOKEN = 'admin-token';
@@ -416,7 +418,15 @@ describe('entitlement grant/revoke: tenant-addressed authorization', () => {
     expect(grantResponse.json()).toEqual(RESEARCH_FAMILY_REJECTION.body);
   });
 
-  it('rejects a path-illegal tenantId with the family uniform rejection, not a 500', async () => {
+  it('rejects a path-illegal tenantId as a schema validation error, not a 500 (review C2-A6)', async () => {
+    // Phase 30 Plan 07 extends the family-wide path-safety mandate (review
+    // C2-A6) to `:tenantId` itself via the shared `pathSafeTenantIdSchema`
+    // referenced by every route's `params` schema — including this
+    // pre-existing Phase 29 route. An illegal tenantId now fails Fastify's
+    // OWN schema validation before the handler (and therefore
+    // `requireResearchTenantAdmin`) ever runs, so the response is a 400
+    // validation error rather than the family's 404 uniform rejection. Both
+    // are non-500, non-oracle outcomes; this test asserts the NEW one.
     const { app } = await createResearchTenant();
 
     const response = await app.inject({
@@ -426,8 +436,8 @@ describe('entitlement grant/revoke: tenant-addressed authorization', () => {
       payload: { idempotencyKey: 'idem-key-001' },
     });
 
-    expect(response.statusCode).toBe(RESEARCH_FAMILY_REJECTION.statusCode);
-    expect(response.json()).toEqual(RESEARCH_FAMILY_REJECTION.body);
+    expect(response.statusCode).toBe(400);
+    expect(response.statusCode).not.toBe(500);
   });
 
   it('rejects a malformed idempotency key at the schema boundary (400), never reaching the store', async () => {
@@ -441,5 +451,586 @@ describe('entitlement grant/revoke: tenant-addressed authorization', () => {
     });
 
     expect(response.statusCode).toBe(400);
+  });
+});
+
+/**
+ * Phase 30 Plan 07 (ING-01/ING-02/ING-05): the eleven identity/backfill/
+ * coverage/supplement routes. All eleven reuse `requireResearchTenantAdmin`
+ * verbatim as the first statement of every handler, so every negative
+ * authorization outcome collapses to the SAME `RESEARCH_FAMILY_REJECTION`
+ * this file's other describe blocks already assert against.
+ */
+function asDatabase(database: unknown): Database {
+  return database as Database;
+}
+
+const PLAYER_ID = '100';
+
+async function createConfirmedResearchTenant(): Promise<{
+  app: ReturnType<typeof buildTestApp>['app'];
+  auth: ReturnType<typeof buildTestApp>['auth'];
+  database: ReturnType<typeof buildTestApp>['database'];
+  tenantId: string;
+}> {
+  const { app, auth, database } = buildTestApp({
+    research: RESEARCH_CONFIG,
+    startgg: {
+      clientId: 'client',
+      clientSecret: 'secret',
+      redirectUri: 'https://example.com/cb',
+      apiToken: 'server-token',
+      stateSecret: 'state-secret',
+      webBaseUrl: 'https://example.com',
+    },
+    // A stub with no real network I/O — every call this route table's tests
+    // make (identity/resolve, backfill/trigger's immediate batch) must never
+    // reach the real `fetch` global.
+    startggFetch: makeStartggFetch({
+      slugResolvesTo: Number(PLAYER_ID),
+      pages: { 1: { totalPages: 1, sets: [] } },
+    }),
+  });
+  auth.registerToken(ADMIN_TOKEN, { uid: ADMIN_UID, email: 'admin@test.com' });
+
+  const createResponse = await app.inject({
+    method: 'POST',
+    url: '/api/research/tenants',
+    headers: { authorization: `Bearer ${ADMIN_TOKEN}` },
+    payload: { label: 'Hbox snapshot' },
+  });
+  const tenantId = createResponse.json().tenantId as string;
+
+  await confirmIdentityPlayers(asDatabase(database), tenantId, ADMIN_UID, [
+    { playerId: PLAYER_ID, gamerTag: 'Subject' },
+  ]);
+
+  return { app, auth, database, tenantId };
+}
+
+/** A scripted start.gg fetch: resolves the slug query and the research-sets-page query, both from ONE inspectable request body. */
+function makeStartggFetch(
+  opts: {
+    slugResolvesTo?: number | null;
+    pages?: Record<number, { totalPages: number; sets: unknown[] }>;
+  } = {},
+): typeof fetch {
+  return (async (_url: Parameters<typeof fetch>[0], init?: RequestInit) => {
+    const body = JSON.parse(String(init?.body)) as {
+      query: string;
+      variables: Record<string, unknown>;
+    };
+    if (body.query.includes('ResolveBySlug')) {
+      const resolvedId = opts.slugResolvesTo;
+      return new Response(
+        JSON.stringify({
+          data: {
+            user:
+              resolvedId != null
+                ? { id: 1, slug: 'user/resolved', player: { id: resolvedId, gamerTag: 'Resolved' } }
+                : null,
+          },
+        }),
+      );
+    }
+    if (body.query.includes('ResearchPlayerSets')) {
+      const page = body.variables.page as number;
+      const entry = opts.pages?.[page] ?? { totalPages: 1, sets: [] };
+      return new Response(
+        JSON.stringify({
+          data: {
+            player: { sets: { pageInfo: { totalPages: entry.totalPages }, nodes: entry.sets } },
+          },
+        }),
+      );
+    }
+    return new Response(JSON.stringify({ data: null }));
+  }) as unknown as typeof fetch;
+}
+
+interface RouteTableEntry {
+  method: 'GET' | 'POST' | 'DELETE';
+  urlFor: (tenantId: string) => string;
+  body?: Record<string, unknown>;
+}
+
+const NEW_ROUTE_TABLE: RouteTableEntry[] = [
+  {
+    method: 'POST',
+    urlFor: (t) => `/api/research/tenants/${t}/identity/resolve`,
+    body: { slug: 'user/whoever' },
+  },
+  {
+    method: 'POST',
+    urlFor: (t) => `/api/research/tenants/${t}/identity/confirm`,
+    body: { players: [{ playerId: PLAYER_ID }] },
+  },
+  { method: 'GET', urlFor: (t) => `/api/research/tenants/${t}/identity` },
+  { method: 'DELETE', urlFor: (t) => `/api/research/tenants/${t}/identity/${PLAYER_ID}` },
+  {
+    method: 'POST',
+    urlFor: (t) => `/api/research/tenants/${t}/backfill/trigger`,
+    body: { mode: 'full' },
+  },
+  {
+    method: 'POST',
+    urlFor: (t) => `/api/research/tenants/${t}/backfill/advance`,
+    body: { runId: 'some-run-id' },
+  },
+  { method: 'GET', urlFor: (t) => `/api/research/tenants/${t}/backfill/status` },
+  { method: 'GET', urlFor: (t) => `/api/research/tenants/${t}/coverage` },
+  {
+    method: 'POST',
+    urlFor: (t) => `/api/research/tenants/${t}/supplements`,
+    body: { targetSetId: '1', field: 'note', value: 'x', sourceKind: 'manual' },
+  },
+  {
+    method: 'DELETE',
+    urlFor: (t) => `/api/research/tenants/${t}/supplements/1/manual-note`,
+  },
+  { method: 'GET', urlFor: (t) => `/api/research/tenants/${t}/supplements/1` },
+];
+
+describe.each(NEW_ROUTE_TABLE)(
+  '$method $urlFor(":tenantId") — five negative authorization classes',
+  (entry) => {
+    it('allows an allowlisted admin who is a member', async () => {
+      const { app, tenantId } = await createConfirmedResearchTenant();
+      const response = await app.inject({
+        method: entry.method,
+        url: entry.urlFor(tenantId),
+        headers: { authorization: `Bearer ${ADMIN_TOKEN}` },
+        payload: entry.body,
+      });
+      expect(response.statusCode).not.toBe(RESEARCH_FAMILY_REJECTION.statusCode);
+      expect(response.statusCode).toBeLessThan(500);
+    });
+
+    it('rejects a non-allowlisted caller with the family uniform rejection', async () => {
+      const { app, auth, tenantId } = await createConfirmedResearchTenant();
+      auth.registerToken(OTHER_TOKEN, { uid: OTHER_UID, email: 'other@test.com' });
+      const response = await app.inject({
+        method: entry.method,
+        url: entry.urlFor(tenantId),
+        headers: { authorization: `Bearer ${OTHER_TOKEN}` },
+        payload: entry.body,
+      });
+      expect(response.statusCode).toBe(RESEARCH_FAMILY_REJECTION.statusCode);
+      expect(response.json()).toEqual(RESEARCH_FAMILY_REJECTION.body);
+    });
+
+    it('rejects every well-formed request with the family uniform rejection when the research config is null', async () => {
+      const { tenantId } = await createConfirmedResearchTenant();
+      const { app: nullConfigApp, auth: nullConfigAuth } = buildTestApp({ research: null });
+      nullConfigAuth.registerToken(ADMIN_TOKEN, { uid: ADMIN_UID, email: 'admin@test.com' });
+      const response = await nullConfigApp.inject({
+        method: entry.method,
+        url: entry.urlFor(tenantId),
+        headers: { authorization: `Bearer ${ADMIN_TOKEN}` },
+        payload: entry.body,
+      });
+      expect(response.statusCode).toBe(RESEARCH_FAMILY_REJECTION.statusCode);
+      expect(response.json()).toEqual(RESEARCH_FAMILY_REJECTION.body);
+    });
+
+    it('rejects an allowlisted admin who is NOT a member of this tenant', async () => {
+      const { tenantId } = await createConfirmedResearchTenant();
+      const SECOND_ADMIN_UID = 'admin-2';
+      const SECOND_ADMIN_TOKEN = 'admin-2-token';
+      const { app: sharedApp, auth: sharedAuth } = buildTestApp({
+        research: { adminUids: new Set([ADMIN_UID, SECOND_ADMIN_UID]) },
+      });
+      sharedAuth.registerToken(SECOND_ADMIN_TOKEN, {
+        uid: SECOND_ADMIN_UID,
+        email: 'admin2@test.com',
+      });
+      const response = await sharedApp.inject({
+        method: entry.method,
+        url: entry.urlFor(tenantId),
+        headers: { authorization: `Bearer ${SECOND_ADMIN_TOKEN}` },
+        payload: entry.body,
+      });
+      expect(response.statusCode).toBe(RESEARCH_FAMILY_REJECTION.statusCode);
+      expect(response.json()).toEqual(RESEARCH_FAMILY_REJECTION.body);
+    });
+
+    it('rejects a coaching-tenant (non-research) member with the family uniform rejection', async () => {
+      const { app, auth, database } = await createConfirmedResearchTenant();
+      // A coaching (non-research) tenant the SAME admin is a member of.
+      const coachingTenantId = 'coaching-tenant-1';
+      database.seed(`clientTenants/${coachingTenantId}`, { kind: 'coaching' });
+      database.seed(`clientMembers/${coachingTenantId}/${ADMIN_UID}`, true);
+      void auth;
+      const response = await app.inject({
+        method: entry.method,
+        url: entry.urlFor(coachingTenantId),
+        headers: { authorization: `Bearer ${ADMIN_TOKEN}` },
+        payload: entry.body,
+      });
+      expect(response.statusCode).toBe(RESEARCH_FAMILY_REJECTION.statusCode);
+      expect(response.json()).toEqual(RESEARCH_FAMILY_REJECTION.body);
+    });
+  },
+);
+
+describe('backfill trigger: identity resolution and validate-then-create', () => {
+  it('refuses an unconfirmed workspace with 409 and zero fetch calls', async () => {
+    let fetchCalls = 0;
+    const fetchImpl = (async () => {
+      fetchCalls += 1;
+      return new Response(JSON.stringify({ data: null }));
+    }) as unknown as typeof fetch;
+    const { app, auth } = buildTestApp({
+      research: RESEARCH_CONFIG,
+      startgg: {
+        clientId: 'c',
+        clientSecret: 's',
+        redirectUri: 'https://example.com/cb',
+        apiToken: 'server-token',
+        stateSecret: 'ss',
+        webBaseUrl: 'https://example.com',
+      },
+      startggFetch: fetchImpl,
+    });
+    auth.registerToken(ADMIN_TOKEN, { uid: ADMIN_UID, email: 'admin@test.com' });
+    const createResponse = await app.inject({
+      method: 'POST',
+      url: '/api/research/tenants',
+      headers: { authorization: `Bearer ${ADMIN_TOKEN}` },
+      payload: { label: 'Unconfirmed' },
+    });
+    const tenantId = createResponse.json().tenantId as string;
+
+    const response = await app.inject({
+      method: 'POST',
+      url: `/api/research/tenants/${tenantId}/backfill/trigger`,
+      headers: { authorization: `Bearer ${ADMIN_TOKEN}` },
+      payload: { mode: 'full' },
+    });
+
+    expect(response.statusCode).toBe(409);
+    expect(fetchCalls).toBe(0);
+  });
+
+  it('refuses a playerId that is not in the confirmed set with 409', async () => {
+    const { app, tenantId } = await createConfirmedResearchTenant();
+    const response = await app.inject({
+      method: 'POST',
+      url: `/api/research/tenants/${tenantId}/backfill/trigger`,
+      headers: { authorization: `Bearer ${ADMIN_TOKEN}` },
+      payload: { mode: 'full', playerId: '999999' },
+    });
+    expect(response.statusCode).toBe(409);
+  });
+
+  it('a slug that resolves to a CONFIRMED id starts the run against that id (review C-H9c)', async () => {
+    // Built once, from the start, with the scripted fetch AND the confirmed
+    // identity in place — `createConfirmedResearchTenant()`'s own app
+    // instance has no fetch override, so a fresh instance is built here
+    // instead of trying to swap options onto an existing app.
+    const built = buildTestApp({
+      research: RESEARCH_CONFIG,
+      startgg: {
+        clientId: 'c',
+        clientSecret: 's',
+        redirectUri: 'https://example.com/cb',
+        apiToken: 'server-token',
+        stateSecret: 'ss',
+        webBaseUrl: 'https://example.com',
+      },
+      startggFetch: makeStartggFetch({ slugResolvesTo: Number(PLAYER_ID) }),
+    });
+    built.auth.registerToken(ADMIN_TOKEN, { uid: ADMIN_UID, email: 'admin@test.com' });
+    const createResponse = await built.app.inject({
+      method: 'POST',
+      url: '/api/research/tenants',
+      headers: { authorization: `Bearer ${ADMIN_TOKEN}` },
+      payload: { label: 'Slug test' },
+    });
+    const slugTenantId = createResponse.json().tenantId as string;
+    await confirmIdentityPlayers(asDatabase(built.database), slugTenantId, ADMIN_UID, [
+      { playerId: PLAYER_ID },
+    ]);
+
+    const response = await built.app.inject({
+      method: 'POST',
+      url: `/api/research/tenants/${slugTenantId}/backfill/trigger`,
+      headers: { authorization: `Bearer ${ADMIN_TOKEN}` },
+      payload: { mode: 'full', slug: 'user/whoever' },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json().batch.runId).toBeTruthy();
+  });
+
+  it('a slug that resolves to an UNCONFIRMED id answers 409', async () => {
+    const built = buildTestApp({
+      research: RESEARCH_CONFIG,
+      startgg: {
+        clientId: 'c',
+        clientSecret: 's',
+        redirectUri: 'https://example.com/cb',
+        apiToken: 'server-token',
+        stateSecret: 'ss',
+        webBaseUrl: 'https://example.com',
+      },
+      startggFetch: makeStartggFetch({ slugResolvesTo: 999999 }),
+    });
+    built.auth.registerToken(ADMIN_TOKEN, { uid: ADMIN_UID, email: 'admin@test.com' });
+    const createResponse = await built.app.inject({
+      method: 'POST',
+      url: '/api/research/tenants',
+      headers: { authorization: `Bearer ${ADMIN_TOKEN}` },
+      payload: { label: 'Slug unconfirmed test' },
+    });
+    const tenantId = createResponse.json().tenantId as string;
+    await confirmIdentityPlayers(asDatabase(built.database), tenantId, ADMIN_UID, [
+      { playerId: PLAYER_ID },
+    ]);
+
+    const response = await built.app.inject({
+      method: 'POST',
+      url: `/api/research/tenants/${tenantId}/backfill/trigger`,
+      headers: { authorization: `Bearer ${ADMIN_TOKEN}` },
+      payload: { mode: 'full', slug: 'user/whoever' },
+    });
+
+    expect(response.statusCode).toBe(409);
+  });
+
+  it('a slug that resolves to nothing answers 404', async () => {
+    const built = buildTestApp({
+      research: RESEARCH_CONFIG,
+      startgg: {
+        clientId: 'c',
+        clientSecret: 's',
+        redirectUri: 'https://example.com/cb',
+        apiToken: 'server-token',
+        stateSecret: 'ss',
+        webBaseUrl: 'https://example.com',
+      },
+      startggFetch: makeStartggFetch({ slugResolvesTo: null }),
+    });
+    built.auth.registerToken(ADMIN_TOKEN, { uid: ADMIN_UID, email: 'admin@test.com' });
+    const createResponse = await built.app.inject({
+      method: 'POST',
+      url: '/api/research/tenants',
+      headers: { authorization: `Bearer ${ADMIN_TOKEN}` },
+      payload: { label: 'Slug not found test' },
+    });
+    const tenantId = createResponse.json().tenantId as string;
+    await confirmIdentityPlayers(asDatabase(built.database), tenantId, ADMIN_UID, [
+      { playerId: PLAYER_ID },
+    ]);
+
+    const response = await built.app.inject({
+      method: 'POST',
+      url: `/api/research/tenants/${tenantId}/backfill/trigger`,
+      headers: { authorization: `Bearer ${ADMIN_TOKEN}` },
+      payload: { mode: 'full', slug: 'user/whoever' },
+    });
+
+    expect(response.statusCode).toBe(404);
+  });
+
+  it("neither id nor slug supplied targets selectPrimaryConfirmedPlayerId's result", async () => {
+    const { app, database, tenantId } = await createConfirmedResearchTenant();
+    const response = await app.inject({
+      method: 'POST',
+      url: `/api/research/tenants/${tenantId}/backfill/trigger`,
+      headers: { authorization: `Bearer ${ADMIN_TOKEN}` },
+      payload: { mode: 'full' },
+    });
+    expect(response.statusCode).toBe(200);
+    const { runId } = response.json() as { runId: string };
+    const { readBackfillRun } = await import('../research/ingestion/backfillRun.js');
+    const run = await readBackfillRun(asDatabase(database), tenantId, runId);
+    expect(run?.playerId).toBe(PLAYER_ID);
+  });
+
+  it('a trigger requesting 20 pages fetches at most TRIGGER_MAX_PAGES_PER_REQUEST pages synchronously (review C-M7)', async () => {
+    let pagesFetched = 0;
+    const built = buildTestApp({
+      research: RESEARCH_CONFIG,
+      startgg: {
+        clientId: 'c',
+        clientSecret: 's',
+        redirectUri: 'https://example.com/cb',
+        apiToken: 'server-token',
+        stateSecret: 'ss',
+        webBaseUrl: 'https://example.com',
+      },
+      startggFetch: (async () => {
+        pagesFetched += 1;
+        return new Response(
+          JSON.stringify({
+            data: { player: { sets: { pageInfo: { totalPages: 20 }, nodes: [] } } },
+          }),
+        );
+      }) as unknown as typeof fetch,
+    });
+    built.auth.registerToken(ADMIN_TOKEN, { uid: ADMIN_UID, email: 'admin@test.com' });
+    const createResponse = await built.app.inject({
+      method: 'POST',
+      url: '/api/research/tenants',
+      headers: { authorization: `Bearer ${ADMIN_TOKEN}` },
+      payload: { label: 'Page cap test' },
+    });
+    const tenantId = createResponse.json().tenantId as string;
+    await confirmIdentityPlayers(asDatabase(built.database), tenantId, ADMIN_UID, [
+      { playerId: PLAYER_ID },
+    ]);
+
+    await built.app.inject({
+      method: 'POST',
+      url: `/api/research/tenants/${tenantId}/backfill/trigger`,
+      headers: { authorization: `Bearer ${ADMIN_TOKEN}` },
+      payload: { mode: 'full', maxPages: 20 },
+    });
+
+    expect(pagesFetched).toBeLessThanOrEqual(3);
+  });
+
+  it("a trigger for a second confirmed player while another player's run is active returns 409 naming the active player (review C2-H3)", async () => {
+    const built = buildTestApp({
+      research: RESEARCH_CONFIG,
+      startgg: {
+        clientId: 'c',
+        clientSecret: 's',
+        redirectUri: 'https://example.com/cb',
+        apiToken: 'server-token',
+        stateSecret: 'ss',
+        webBaseUrl: 'https://example.com',
+      },
+      startggFetch: (async () =>
+        new Response(
+          JSON.stringify({
+            data: { player: { sets: { pageInfo: { totalPages: 1 }, nodes: [] } } },
+          }),
+        )) as unknown as typeof fetch,
+    });
+    built.auth.registerToken(ADMIN_TOKEN, { uid: ADMIN_UID, email: 'admin@test.com' });
+    const createResponse = await built.app.inject({
+      method: 'POST',
+      url: '/api/research/tenants',
+      headers: { authorization: `Bearer ${ADMIN_TOKEN}` },
+      payload: { label: 'Busy test' },
+    });
+    const tenantId = createResponse.json().tenantId as string;
+    const SECOND_PLAYER_ID = '200';
+    await confirmIdentityPlayers(asDatabase(built.database), tenantId, ADMIN_UID, [
+      { playerId: PLAYER_ID },
+      { playerId: SECOND_PLAYER_ID },
+    ]);
+
+    // Manually create an ACTIVE (never-completing) run for the first player
+    // via the run-state module directly, bypassing the trigger route so no
+    // batch executes and the run stays running.
+    const { createOrResumeBackfillRun } = await import('../research/ingestion/backfillRun.js');
+    await createOrResumeBackfillRun(asDatabase(built.database), {
+      tenantId,
+      playerId: PLAYER_ID,
+      requestedByUid: ADMIN_UID,
+      mode: 'full',
+    });
+
+    const response = await built.app.inject({
+      method: 'POST',
+      url: `/api/research/tenants/${tenantId}/backfill/trigger`,
+      headers: { authorization: `Bearer ${ADMIN_TOKEN}` },
+      payload: { mode: 'full', playerId: SECOND_PLAYER_ID },
+    });
+
+    expect(response.statusCode).toBe(409);
+    expect(response.json().activePlayerId).toBe(PLAYER_ID);
+  });
+
+  it('answers 503 when the start.gg config is null', async () => {
+    const { app, auth, database } = buildTestApp({ research: RESEARCH_CONFIG });
+    auth.registerToken(ADMIN_TOKEN, { uid: ADMIN_UID, email: 'admin@test.com' });
+    const createResponse = await app.inject({
+      method: 'POST',
+      url: '/api/research/tenants',
+      headers: { authorization: `Bearer ${ADMIN_TOKEN}` },
+      payload: { label: 'No startgg' },
+    });
+    const tenantId = createResponse.json().tenantId as string;
+    await confirmIdentityPlayers(asDatabase(database), tenantId, ADMIN_UID, [
+      { playerId: PLAYER_ID },
+    ]);
+
+    const response = await app.inject({
+      method: 'POST',
+      url: `/api/research/tenants/${tenantId}/backfill/trigger`,
+      headers: { authorization: `Bearer ${ADMIN_TOKEN}` },
+      payload: { mode: 'full' },
+    });
+
+    expect(response.statusCode).toBe(503);
+  });
+});
+
+describe('research route family: path-safe segments across every parameter (review C2-A6)', () => {
+  const UNSAFE_SEGMENT_ROUTES: { name: string; urlFor: (unsafe: string) => string }[] = [
+    { name: ':tenantId', urlFor: (unsafe) => `/api/research/tenants/${unsafe}/identity` },
+    {
+      name: ':playerId',
+      urlFor: (unsafe) => `/api/research/tenants/valid-tenant/identity/${unsafe}`,
+    },
+    {
+      name: ':targetSetId',
+      urlFor: (unsafe) => `/api/research/tenants/valid-tenant/supplements/${unsafe}`,
+    },
+    {
+      name: ':supplementId',
+      urlFor: (unsafe) => `/api/research/tenants/valid-tenant/supplements/1/${unsafe}`,
+    },
+  ];
+
+  describe.each(UNSAFE_SEGMENT_ROUTES)('$name', ({ urlFor }) => {
+    it.each(['.', '#'])(
+      'a "%s"-bearing value asserts a 400-class response, never a 500',
+      async (unsafeChar) => {
+        const { app, auth } = buildTestApp({ research: RESEARCH_CONFIG });
+        auth.registerToken(ADMIN_TOKEN, { uid: ADMIN_UID, email: 'admin@test.com' });
+        const response = await app.inject({
+          method: 'GET',
+          url: urlFor(encodeURIComponent(`bad${unsafeChar}value`)),
+          headers: { authorization: `Bearer ${ADMIN_TOKEN}` },
+        });
+        expect(response.statusCode).toBeGreaterThanOrEqual(400);
+        expect(response.statusCode).toBeLessThan(500);
+      },
+    );
+  });
+});
+
+describe('supplement authorship (review: attributedToUid is never client-supplied)', () => {
+  it('a supplement POST whose body attempts to set an author uid stores the caller uid instead', async () => {
+    const { app, tenantId } = await createConfirmedResearchTenant();
+
+    const response = await app.inject({
+      method: 'POST',
+      url: `/api/research/tenants/${tenantId}/supplements`,
+      headers: { authorization: `Bearer ${ADMIN_TOKEN}` },
+      payload: {
+        targetSetId: '1',
+        field: 'note',
+        value: 'attempted spoof',
+        sourceKind: 'manual',
+        attributedToUid: 'someone-else',
+      },
+    });
+
+    expect(response.statusCode).toBe(200);
+
+    const listResponse = await app.inject({
+      method: 'GET',
+      url: `/api/research/tenants/${tenantId}/supplements/1`,
+      headers: { authorization: `Bearer ${ADMIN_TOKEN}` },
+    });
+    const supplements = listResponse.json() as Array<{ attributedToUid: string }>;
+    expect(supplements).toHaveLength(1);
+    expect(supplements[0]?.attributedToUid).toBe(ADMIN_UID);
   });
 });
