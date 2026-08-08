@@ -6,13 +6,16 @@ import {
   clientHubRowSchema,
   clientMembershipSchema,
   coachClientEntrySchema,
+  isResearchKind,
   mapDeliveryStateToHubState,
   type ClientHubList,
   type ClientHubRow,
+  type ClientTenantKind,
 } from '@smash-tracker/shared';
 import { buildDomainEnvelope } from '../events/envelope.js';
 import { createEvent } from '../events/ledger.js';
 import { onboardingCausePayload } from '../onboarding/activation.js';
+import { readSubjectKind } from '../research/subjectKind.js';
 import { ConflictError, ForbiddenError, RtdbService } from '../services/rtdb.js';
 import { requireTenantRole } from './membershipRoles.js';
 import { countOpenDrafts, getMostRecentDeliveryStateForTenant } from './reviews.js';
@@ -119,15 +122,24 @@ export async function requireMembership(
 }
 
 /**
- * Creates a managed-client tenant: a fresh, coach-independent `tenantId`
- * (never derived from `coachUid` — claim-readiness, RESEARCH.md Pitfall/
- * Anti-Pattern "Deriving tenantId from coachUid") plus three sibling
- * records — `coachClients/{coachUid}/{tenantId}` (written INSIDE the
- * uniqueness/cap transaction below, mirroring `createNote`'s
- * abort-without-writing convention verbatim), `clientTenants/{tenantId}`,
- * and `clientMembers/{tenantId}/{coachUid}` (written together in one
- * multi-path update once the transaction has committed — safe because a
- * freshly minted `randomUUID()` tenantId can never collide, so only the
+ * Phase 29 (Research Tenancy, Isolation & Governance Gate, D-02, RTEN-04):
+ * the telemetry-silent creation core — performs the uniqueness/cap
+ * transaction and the tenant/membership/index writes, returns `{ tenantId
+ * }`, and calls `createEvent` NOWHERE in this function body. Exported so
+ * plan 29-05's `apps/api/src/research/tenants.ts` can create a research
+ * tenant that structurally CANNOT emit `managed_client_created` — exclusion
+ * by construction, not a branch guard (the anti-pattern
+ * `packages/shared/src/researchKind.ts`'s `isResearchKind` doc comment
+ * warns against for the ledger's sole writer).
+ *
+ * A fresh, coach-independent `tenantId` (never derived from `ownerUid` —
+ * claim-readiness) plus three sibling records —
+ * `coachClients/{ownerUid}/{tenantId}` (written INSIDE the uniqueness/cap
+ * transaction below, mirroring `createNote`'s abort-without-writing
+ * convention verbatim), `clientTenants/{tenantId}`, and
+ * `clientMembers/{tenantId}/{ownerUid}` (written together in one multi-path
+ * update once the transaction has committed — safe because a freshly
+ * minted `randomUUID()` tenantId can never collide, so only the
  * `coachClients` write needs transactional collision/cap protection).
  *
  * Per-coach case-insensitive label uniqueness and the
@@ -138,15 +150,17 @@ export async function requireMembership(
  * coach can never both commit a colliding label or push the coach over the
  * cap via a lost-update race.
  *
- * Emits `managed_client_created` (a D event, MEAS-02) after the durable
- * writes commit — `actorId` is the COACH's uid, `causationId` is the new
- * `tenantId`, and the payload carries no label/PII (reference ids only).
+ * D-01: the discriminator is applied ONLY via conditional spread on
+ * `clientTenants/{tenantId}` — the coaching branch's write stays EXACTLY
+ * `{ createdAt, archivedAt: null }`, no additional key. The coaching member
+ * is NEVER written explicitly onto any record; only the research member is
+ * ever actually stamped, and only through this one spread site.
  */
-export async function createClient(
+export async function createClientCore(
   database: Database,
-  coachUid: string,
+  ownerUid: string,
   label: string,
-  options: { sessionId: string },
+  kind: ClientTenantKind,
 ): Promise<{ tenantId: string }> {
   const tenantId = randomUUID();
   const now = Date.now();
@@ -154,7 +168,7 @@ export async function createClient(
 
   let nameConflict = false;
   let capExceeded = false;
-  const coachClientsRef = database.ref(`coachClients/${coachUid}`);
+  const coachClientsRef = database.ref(`coachClients/${ownerUid}`);
   const result = await coachClientsRef.transaction((raw) => {
     // Reset per run (CR-01): a flag captured during a DISCARDED
     // (hash-mismatch) run must never leak into the final outcome.
@@ -199,9 +213,38 @@ export async function createClient(
   }
 
   await database.ref().update({
-    [`clientTenants/${tenantId}`]: { createdAt: now, archivedAt: null },
-    [`clientMembers/${tenantId}/${coachUid}`]: { role: 'custodian', joinedAt: now },
+    [`clientTenants/${tenantId}`]: {
+      createdAt: now,
+      archivedAt: null,
+      // D-01: conditional spread ONLY — the coaching member is never
+      // written explicitly onto any record.
+      ...(isResearchKind(kind) ? { kind } : {}),
+    },
+    [`clientMembers/${tenantId}/${ownerUid}`]: { role: 'custodian', joinedAt: now },
   });
+
+  return { tenantId };
+}
+
+/**
+ * Thin coaching wrapper over `createClientCore` — UNCHANGED signature and
+ * behavior for every existing caller (Phase 29, D-02). Calls the core with
+ * the coaching kind, then runs the SAME `managed_client_created` emission
+ * block verbatim (same event name, same actor/session/causation/consent
+ * fields, same conditional-spread envelope discipline) — byte-identical to
+ * the pre-Phase-29 behavior.
+ *
+ * Emits `managed_client_created` (a D event, MEAS-02) after the durable
+ * writes commit — `actorId` is the COACH's uid, `causationId` is the new
+ * `tenantId`, and the payload carries no label/PII (reference ids only).
+ */
+export async function createClient(
+  database: Database,
+  coachUid: string,
+  label: string,
+  options: { sessionId: string },
+): Promise<{ tenantId: string }> {
+  const result = await createClientCore(database, coachUid, label, 'coaching');
 
   // Fire-and-forget, mirrors `signup_completed`'s call site (users.ts) — the
   // durable RTDB write above has already committed, so this D event rides a
@@ -218,13 +261,13 @@ export async function createClient(
       eventName: 'managed_client_created',
       actorId: coachUid,
       sessionId: options.sessionId,
-      causationId: tenantId,
+      causationId: result.tenantId,
       consentState: 'unknown',
       payload,
     }),
   );
 
-  return { tenantId };
+  return result;
 }
 
 /**
@@ -317,6 +360,14 @@ export async function listClients(
   const rtdb = new RtdbService(database);
   return Promise.all(
     entries.map(async ({ tenantId, label, archivedAt, claimedAt }) => {
+      // Phase 29 (review finding 29-01 HIGH): the tri-state kind read runs
+      // in its OWN step, OUTSIDE the enrichment `try`/`catch` below — an
+      // enrichment-read failure must never also decide the row's kind. A
+      // row must never be constructed with a hard-coded ordinary
+      // resolution; both the success path and the degrade path below read
+      // this SAME value.
+      const kind = await readSubjectKind(database, tenantId);
+
       // 260725-juj (defense-in-depth): one tenant's corrupt/unparseable
       // subtree must never 500 the whole Client Hub for every OTHER coach
       // client. Guards against the SAME class of read-path crash the
@@ -348,9 +399,14 @@ export async function listClients(
           archivedAt,
           claimedAt,
           pendingInvitationExpiresAt: pendingInvitationExpiresAt ?? null,
+          kind,
         } satisfies ClientHubRow);
       } catch (err) {
         console.warn(`listClients: degrading tenant ${tenantId} after a read failure`, err);
+        // Phase 29: the enrichment degrade deliberately does NOT degrade
+        // the kind — `kind` was already resolved above, OUTSIDE this try,
+        // so an enrichment failure on a research tenant still reports
+        // research (never silently downgraded to ordinary or unresolved).
         return clientHubRowSchema.parse({
           clientId: tenantId,
           label,
@@ -360,6 +416,7 @@ export async function listClients(
           archivedAt,
           claimedAt,
           pendingInvitationExpiresAt: null,
+          kind,
         } satisfies ClientHubRow);
       }
     }),

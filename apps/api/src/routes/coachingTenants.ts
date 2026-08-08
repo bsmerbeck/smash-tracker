@@ -11,6 +11,7 @@ import {
   opponentNoteMapSchema,
   playlistSchema,
   stageFavoritesSchema,
+  SUBJECT_KIND_RESOLUTIONS,
 } from '@smash-tracker/shared';
 import {
   archiveClient,
@@ -31,6 +32,17 @@ const listClientsQuerySchema = z.object({
   /** `?includeArchived=true` also returns soft-archived rows (TEN-06 restore path). */
   includeArchived: z.enum(['true', 'false']).optional(),
 });
+
+/**
+ * Phase 29 (RTEN-01, cycle-2 finding C2-HIGH-2): the first member of the
+ * shared resolution tuple is the ordinary resolution. A freshly created
+ * coaching tenant (this route only ever calls the coaching `createClient`
+ * wrapper) is ordinary by construction — it was written with no research
+ * discriminator — so the 201 body stamps this value directly with NO
+ * additional database read. Never inline a literal resolution string in the
+ * handler below; the shared tuple is the only source.
+ */
+const [ORDINARY_SUBJECT_KIND_RESOLUTION] = SUBJECT_KIND_RESOLUTIONS;
 
 const clientWorkspaceExportSchema = z.object({
   clientId: z.string(),
@@ -92,6 +104,7 @@ const coachingTenantsRoutes: FastifyPluginAsyncZod = async (app) => {
           draftCount: 0,
           deliveryState: null,
           archivedAt: null,
+          kind: ORDINARY_SUBJECT_KIND_RESOLUTION,
         });
       } catch (err) {
         if (err instanceof ConflictError) {

@@ -6,6 +6,7 @@ import {
   getParryggConfig,
   getPrepPaidConfig,
   getReportsConfig,
+  getResearchConfig,
   getStartggConfig,
   getStripeConfig,
   loadEnv,
@@ -26,6 +27,7 @@ const ga4 = getGa4Config(env);
 const internalJobs = getInternalJobsConfig(env);
 const claimCode = getClaimCodeConfig(env);
 const prepPaid = getPrepPaidConfig(env);
+const research = getResearchConfig(env);
 
 const app = buildApp({
   firebase,
@@ -39,6 +41,7 @@ const app = buildApp({
   internalJobs,
   claimCode,
   prepPaid,
+  research,
 });
 
 // Phase 7 (Recap Cards & Share-Loop Analytics): a single startup-time notice
@@ -83,6 +86,16 @@ if (!claimCode) {
 if (!prepPaid) {
   app.log.warn(
     'Paid prep reports are not enabled (PREP_PAID_REPORTS_ENABLED unset); paid prep placements will render nothing and paid prep endpoints will answer 503',
+  );
+}
+
+// Phase 29 (Research Tenancy, Isolation & Governance Gate, D-04): a single
+// startup-time notice — never per-request — when no research-admin
+// allowlist is configured. Operator-visible signal, same convention as the
+// other config-null gates above.
+if (!research) {
+  app.log.warn(
+    'Research tenant administration is not configured (RESEARCH_ADMIN_UIDS unset); research-tenant administration capabilities are disabled',
   );
 }
 

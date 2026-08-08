@@ -6,6 +6,7 @@ import {
   archiveClient,
   CANONICAL_TENANT_TREES,
   createClient,
+  createClientCore,
   deleteClient,
   exportClient,
   listClients,
@@ -47,6 +48,10 @@ describe('createClient', () => {
       coachClients: { [COACH_UID]: { [tenantId]: { label: 'Alex', archivedAt: null } } },
       clientMembers: { [tenantId]: { [COACH_UID]: { role: 'custodian' } } },
     });
+    // Phase 29 (D-01): the coaching path's tenant record write carries NO
+    // discriminator key at all — byte-identical to pre-Phase-29 shape.
+    const clientTenants = dump.clientTenants as Record<string, Record<string, unknown>>;
+    expect(clientTenants[tenantId]).not.toHaveProperty('kind');
 
     const rows = allLedgerRows(database);
     expect(rows).toHaveLength(1);
@@ -136,6 +141,45 @@ describe('createClient', () => {
   });
 });
 
+describe('createClientCore (Phase 29, D-02/RTEN-04: telemetry-silent creation core)', () => {
+  it('creating a research-kind tenant through the core writes the discriminator and emits ZERO telemetry rows', async () => {
+    const database = new FakeDatabase();
+
+    const { tenantId } = await createClientCore(
+      asDatabase(database),
+      COACH_UID,
+      'Alex',
+      'research',
+    );
+    await flushMacrotask();
+
+    const dump = database.dump() as Record<string, unknown>;
+    const clientTenants = dump.clientTenants as Record<string, Record<string, unknown>>;
+    expect(clientTenants[tenantId]).toMatchObject({ kind: 'research' });
+
+    // Zero entries across all three telemetry trees — asserted by reading
+    // the FakeDatabase state after the call, not by spying on a mock.
+    expect(dump.eventLedger ?? {}).toEqual({});
+    expect(dump.eventDedup ?? {}).toEqual({});
+    expect(dump.outboxPending ?? {}).toEqual({});
+  });
+
+  it('creating a coaching-kind tenant through the core writes no discriminator key', async () => {
+    const database = new FakeDatabase();
+
+    const { tenantId } = await createClientCore(
+      asDatabase(database),
+      COACH_UID,
+      'Alex',
+      'coaching',
+    );
+
+    const dump = database.dump() as Record<string, unknown>;
+    const clientTenants = dump.clientTenants as Record<string, Record<string, unknown>>;
+    expect(clientTenants[tenantId]).not.toHaveProperty('kind');
+  });
+});
+
 describe('listClients', () => {
   it('returns an empty list for a coach with no clients', async () => {
     const database = new FakeDatabase();
@@ -179,6 +223,7 @@ describe('listClients', () => {
         archivedAt: null,
         claimedAt: null,
         pendingInvitationExpiresAt: null,
+        kind: 'ordinary',
       },
     ]);
   });
@@ -375,6 +420,36 @@ describe('listClients', () => {
       deliveryState: null,
       lastActivityAt: null,
     });
+    expect(warnSpy).toHaveBeenCalled();
+    warnSpy.mockRestore();
+  });
+
+  // Phase 29 (review finding 29-01 HIGH): the kind resolution must survive
+  // the SAME enrichment-failure degrade path 260725-juj exercises above —
+  // an enrichment read failing on a research tenant must not silently
+  // downgrade its reported kind to ordinary.
+  it('reports the research resolution for a row whose enrichment reads all fail', async () => {
+    const database = new FakeDatabase();
+    const { tenantId } = await createClientCore(
+      asDatabase(database),
+      COACH_UID,
+      'Research',
+      'research',
+    );
+    database.seed(`reviewDrafts/${tenantId}/review-1`, {
+      revision: 1,
+      sections: [],
+      coachPrivateNotes: null,
+      createdAt: 0,
+      lastAutosavedAt: 0,
+    });
+    database.seed(`reviewStatus/${tenantId}/review-1`, { status: 'not-a-real-status' });
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+    const rows = await listClients(asDatabase(database), COACH_UID);
+
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ clientId: tenantId, kind: 'research' });
     expect(warnSpy).toHaveBeenCalled();
     warnSpy.mockRestore();
   });

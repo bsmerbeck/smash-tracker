@@ -8,6 +8,11 @@ import {
   mapDeliveryStateToHubState,
 } from './coachingTenant.js';
 
+/** Minimal valid base for `clientHubRowSchema.parse`/`safeParse` calls below — every field the schema requires except `kind`, which each test supplies explicitly (the field is required, not defaulted). */
+function baseHubRow() {
+  return { clientId: 't1', label: 'A', draftCount: 0 };
+}
+
 describe('mapDeliveryStateToHubState (D-05 6-state -> 3-value Hub projection)', () => {
   it('maps acknowledged to acknowledged', () => {
     expect(mapDeliveryStateToHubState('acknowledged')).toBe('acknowledged');
@@ -62,22 +67,22 @@ describe('Phase 23: widened membership role space and claimed-status fields', ()
 });
 
 describe('Phase 24 (CTRL-03): clientHubRowSchema claim-status widening', () => {
-  it('parses with both new fields absent (legal, pre-existing rows)', () => {
-    expect(clientHubRowSchema.parse({ clientId: 't1', label: 'A', draftCount: 0 })).toMatchObject({
+  it('parses with both new fields absent (legal, pre-existing rows) — kind still required', () => {
+    expect(clientHubRowSchema.parse({ ...baseHubRow(), kind: 'ordinary' })).toMatchObject({
       clientId: 't1',
       label: 'A',
       draftCount: 0,
+      kind: 'ordinary',
     });
   });
 
   it('parses with claimedAt set and pendingInvitationExpiresAt null', () => {
     expect(
       clientHubRowSchema.parse({
-        clientId: 't1',
-        label: 'A',
-        draftCount: 0,
+        ...baseHubRow(),
         claimedAt: 5,
         pendingInvitationExpiresAt: null,
+        kind: 'ordinary',
       }),
     ).toMatchObject({ claimedAt: 5, pendingInvitationExpiresAt: null });
   });
@@ -85,30 +90,76 @@ describe('Phase 24 (CTRL-03): clientHubRowSchema claim-status widening', () => {
   it('parses with pendingInvitationExpiresAt set and claimedAt null', () => {
     expect(
       clientHubRowSchema.parse({
-        clientId: 't1',
-        label: 'A',
-        draftCount: 0,
+        ...baseHubRow(),
         claimedAt: null,
         pendingInvitationExpiresAt: 999,
+        kind: 'ordinary',
       }),
     ).toMatchObject({ claimedAt: null, pendingInvitationExpiresAt: 999 });
   });
 
   it('rejects a negative claimedAt', () => {
     expect(
-      clientHubRowSchema.safeParse({ clientId: 't1', label: 'A', draftCount: 0, claimedAt: -1 })
-        .success,
+      clientHubRowSchema.safeParse({ ...baseHubRow(), claimedAt: -1, kind: 'ordinary' }).success,
     ).toBe(false);
   });
 
   it('rejects a negative pendingInvitationExpiresAt', () => {
     expect(
       clientHubRowSchema.safeParse({
-        clientId: 't1',
-        label: 'A',
-        draftCount: 0,
+        ...baseHubRow(),
         pendingInvitationExpiresAt: -1,
+        kind: 'ordinary',
       }).success,
     ).toBe(false);
+  });
+});
+
+describe('Phase 29 (Research Tenancy, Isolation & Governance Gate, D-01): clientTenantRecordSchema.kind', () => {
+  it('parses with kind absent (no migration, legacy coaching state)', () => {
+    expect(clientTenantRecordSchema.safeParse({ createdAt: 1 }).success).toBe(true);
+  });
+
+  it('parses with kind explicitly null (RTDB null-stripping tolerance)', () => {
+    expect(clientTenantRecordSchema.safeParse({ createdAt: 1, kind: null }).success).toBe(true);
+  });
+
+  it('parses with kind set to the research member and round-trips it', () => {
+    const parsed = clientTenantRecordSchema.parse({ createdAt: 1, kind: 'research' });
+    expect(parsed.kind).toBe('research');
+  });
+
+  it('parses with kind set to the coaching member', () => {
+    expect(clientTenantRecordSchema.safeParse({ createdAt: 1, kind: 'coaching' }).success).toBe(
+      true,
+    );
+  });
+
+  it('rejects an unrecognized kind value', () => {
+    expect(clientTenantRecordSchema.safeParse({ createdAt: 1, kind: 'bogus' }).success).toBe(false);
+  });
+});
+
+describe('Phase 29 (review finding 29-01 HIGH, cycle-2 C2-HIGH-2): clientHubRowSchema.kind tri-state', () => {
+  it('rejects a row that OMITS kind (required, not nullish)', () => {
+    expect(clientHubRowSchema.safeParse(baseHubRow()).success).toBe(false);
+  });
+
+  it('accepts the ordinary resolution', () => {
+    expect(clientHubRowSchema.safeParse({ ...baseHubRow(), kind: 'ordinary' }).success).toBe(true);
+  });
+
+  it('accepts the research resolution', () => {
+    expect(clientHubRowSchema.safeParse({ ...baseHubRow(), kind: 'research' }).success).toBe(true);
+  });
+
+  it('accepts the unresolved resolution', () => {
+    expect(clientHubRowSchema.safeParse({ ...baseHubRow(), kind: 'unresolved' }).success).toBe(
+      true,
+    );
+  });
+
+  it('rejects a fourth, arbitrary string', () => {
+    expect(clientHubRowSchema.safeParse({ ...baseHubRow(), kind: 'bogus' }).success).toBe(false);
   });
 });

@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { CLIENT_TENANT_KINDS, SUBJECT_KIND_RESOLUTIONS } from './researchKind.js';
 
 /**
  * Phase 11 (Coach Workspace Tenancy & Feature Parity): the wire contract for
@@ -46,6 +47,16 @@ export const clientTenantRecordSchema = z.object({
    * Same write-site discipline as `ownerUid` above.
    */
   claimedAt: z.number().int().nonnegative().nullish(),
+  /**
+   * Phase 29 (Research Tenancy, Isolation & Governance Gate, D-01): the
+   * cross-tier discriminator (`packages/shared/src/researchKind.ts`).
+   * Absent/undefined means the pre-existing legacy 'coaching' state — every
+   * record written before this field existed stays valid, unread, and
+   * unmigrated forever. Written ONLY via conditional spread
+   * (`apps/api/src/coaching/tenants.ts`'s `createClientCore`); the
+   * 'coaching' member itself is NEVER written explicitly onto any record.
+   */
+  kind: z.enum(CLIENT_TENANT_KINDS).nullish(),
 });
 export type ClientTenantRecord = z.infer<typeof clientTenantRecordSchema>;
 
@@ -143,6 +154,24 @@ export const clientHubRowSchema = z.object({
    * this badge (owner revision) must never appear in this schema's copy.
    */
   pendingInvitationExpiresAt: z.number().int().nonnegative().nullish(),
+  /**
+   * Phase 29 (Research Tenancy, Isolation & Governance Gate, review finding
+   * 29-01 HIGH, cycle-2 finding C2-HIGH-2): a REQUIRED (not nullish)
+   * server-authored resolution — deliberately NOT a raw projection of the
+   * stored `ClientTenantRecord.kind` value. `'ordinary'` means the
+   * authoritative tenant read succeeded and carried no research
+   * discriminator; `'research'` means it carried one; `'unresolved'` means
+   * the authoritative read (`apps/api/src/research/subjectKind.ts`'s
+   * `readSubjectKind`) did NOT succeed — a consumer MUST treat `'unresolved'`
+   * as fail-closed and must NEVER render it as an ordinary workspace.
+   *
+   * Required rather than nullish on purpose: a nullish field would let a
+   * consumer read absence as ordinary, which is exactly the fail-open this
+   * tri-state exists to prevent (see `apps/api/src/coaching/tenants.ts`'s
+   * `listClients` degrade path, which resolves this value OUTSIDE its own
+   * enrichment-failure `try`/`catch` for exactly this reason).
+   */
+  kind: z.enum(SUBJECT_KIND_RESOLUTIONS),
 });
 export type ClientHubRow = z.infer<typeof clientHubRowSchema>;
 

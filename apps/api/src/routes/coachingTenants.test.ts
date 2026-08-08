@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { clientHubRowSchema } from '@smash-tracker/shared';
 import { authHeader, buildTestApp, TEST_UID } from '../test-support/testApp.js';
 
 describe('/api/coaching/clients', () => {
@@ -19,7 +20,13 @@ describe('/api/coaching/clients', () => {
       draftCount: 0,
       deliveryState: null,
       archivedAt: null,
+      kind: 'ordinary',
     });
+    // Phase 29 (RTEN-01): the 201 body must parse against the hub row
+    // schema and carry the ordinary resolution for a freshly created
+    // coaching tenant.
+    const parsedCreated = clientHubRowSchema.safeParse(created);
+    expect(parsedCreated.success).toBe(true);
     const clientId = created.clientId as string;
 
     const listResponse = await app.inject({
@@ -38,6 +45,7 @@ describe('/api/coaching/clients', () => {
         archivedAt: null,
         claimedAt: null,
         pendingInvitationExpiresAt: null,
+        kind: 'ordinary',
       },
     ]);
 

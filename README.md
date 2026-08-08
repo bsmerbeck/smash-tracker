@@ -374,6 +374,22 @@ context answers `503` before any job, balance, ledger, or model activity — inc
 `REPORTS_ALLOWED_UIDS` accounts. Turning the flag off later blocks NEW prep purchases only; it
 never blocks Stripe fulfillment, refunds, job-status reads, or viewing already-generated reports.
 
+**Phase 29: research-tenant administration allowlist (ships unset)**
+
+- `RESEARCH_ADMIN_UIDS` — a comma-separated list of Firebase uids permitted to create/administer
+  research tenants (private, admin-owned analytics workspaces — see PROJECT.md's v3.0 milestone).
+  Leaving it unset keeps the whole research-tenant administration capability off. It is unrelated
+  to report billing: a uid in `REPORTS_ALLOWED_UIDS` gains no research-admin rights from that
+  membership, and a uid in `RESEARCH_ADMIN_UIDS` gains no report-billing waiver from this one — the
+  two allowlists are never unioned or substituted for each other.
+
+```sh
+gcloud run deploy smash-tracker-api \
+  --source . \
+  --region us-central1 \
+  --set-env-vars FIREBASE_DATABASE_URL=https://smash-tracker-f97b7.firebaseio.com,RESEARCH_ADMIN_UIDS=uid1
+```
+
 **2. Configure `apps/web/.env.production`**
 
 ```sh

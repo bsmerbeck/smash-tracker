@@ -59,12 +59,28 @@ import type {
   ParryggConfig,
   PrepPaidConfig,
   ReportsConfig,
+  ResearchConfig,
   StartggConfig,
   StripeConfig,
 } from './config/env.js';
 import type { AnthropicLikeClient } from './reports/generate.js';
 import type { ParryggClients } from './parrygg/client.js';
 import { anonRateLimitKey } from './http/clientIp.js';
+
+declare module 'fastify' {
+  interface FastifyInstance {
+    /**
+     * Phase 29 (Research Tenancy, Isolation & Governance Gate, D-04): the
+     * research-admin allowlist config, decorated directly (never routed
+     * through a route-registration options object) so every route file
+     * reads ONE server-authoritative value via `app.researchConfig`. Always
+     * present as a decoration — holds null when the `research` build
+     * option is omitted or explicitly null, matching every other
+     * config-null gate's fail-closed contract in this file.
+     */
+    researchConfig: ResearchConfig | null;
+  }
+}
 
 export interface BuildAppOptions {
   firebase: FirebaseServices;
@@ -127,6 +143,15 @@ export interface BuildAppOptions {
    * reads, refunds, or Stripe fulfillment.
    */
   prepPaid?: PrepPaidConfig | null;
+  /**
+   * Phase 29 (Research Tenancy, Isolation & Governance Gate, D-04): the
+   * research-tenant administration allowlist. Optional AND nullable —
+   * review finding 29-01 MEDIUM — so every existing construction site
+   * (including tests that build the app directly) keeps compiling and
+   * receives the fail-closed null. Decorated onto the app instance as
+   * `researchConfig`; see the `declare module 'fastify'` block above.
+   */
+  research?: ResearchConfig | null;
   logger?: boolean | FastifyBaseLogger;
 }
 
@@ -177,6 +202,13 @@ export function buildApp(options: BuildAppOptions) {
   // apps/api/src/plugins/resolveSubject.ts for why per-file opt-in (not
   // global registration) is the correct boundary.
   app.register(resolveSubjectPlugin);
+
+  // Phase 29 (Research Tenancy, Isolation & Governance Gate, D-04): decorate
+  // directly rather than via a plugin — this is a single config-null value,
+  // not a service with its own lifecycle. Always present as a decoration
+  // (never undefined); holds null when the option is omitted or explicit
+  // null, so every route file can read `app.researchConfig` unconditionally.
+  app.decorate('researchConfig', options.research ?? null);
 
   app.setErrorHandler<FastifyError>((error, request, reply) => {
     if (hasZodFastifySchemaValidationErrors(error)) {
