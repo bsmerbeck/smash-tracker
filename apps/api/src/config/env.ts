@@ -54,6 +54,19 @@ const envSchema = z.object({
   /** Comma-separated list of Firebase uids allowed to generate AI reports. */
   REPORTS_ALLOWED_UIDS: z.string().optional(),
 
+  // ---- Phase 29 (Research Tenancy, Isolation & Governance Gate) ----------
+  /**
+   * Phase 29 (Research Tenancy, Isolation & Governance Gate, D-04): the
+   * research-tenant administration allowlist. Comma-separated Firebase uids
+   * permitted to create/administer research tenants. Structurally
+   * INDEPENDENT of REPORTS_ALLOWED_UIDS above — this allowlist authorizes
+   * research-tenant administration ONLY and confers no billing waiver, and
+   * REPORTS_ALLOWED_UIDS confers no research administration; the two are
+   * NEVER unioned, substituted, or layered. Fail-closed when unset, same
+   * all-or-nothing convention as REPORTS_ALLOWED_UIDS/getReportsConfig.
+   */
+  RESEARCH_ADMIN_UIDS: z.string().optional(),
+
   // ---- V7-C: Stripe-powered credit packs (all optional — when incomplete,
   // /api/billing routes answer 503 and non-allowlisted uids get the exact
   // pre-V7-C 403 on report generation, i.e. no behavior change) -------------
@@ -196,6 +209,42 @@ export function getReportsConfig(env: Env): ReportsConfig | null {
     anthropicApiKey: env.ANTHROPIC_API_KEY,
     allowedUids,
   };
+}
+
+export interface ResearchConfig {
+  /** Firebase uids allowed to create/administer research tenants. */
+  adminUids: Set<string>;
+}
+
+/**
+ * Assembles the research-admin allowlist config (Phase 29, D-04). Mirrors
+ * `getReportsConfig` above exactly: returns null when the raw value is
+ * absent, empty, or contains only separators/whitespace; splits on comma;
+ * trims each entry; filters empty entries. Never coerced through
+ * `Boolean(...)`/`!!` truthiness — same explicit warning as
+ * `getPrepPaidConfig` below: a stray non-empty string (`"false"`, `"0"`, a
+ * typo) must not silently enable research-tenant administration, since this
+ * allowlist is itself a plain string presence check, not a boolean flag.
+ *
+ * This allowlist authorizes research-tenant administration ONLY and confers
+ * no billing waiver; `REPORTS_ALLOWED_UIDS`/`getReportsConfig` confers no
+ * research administration — the two Sets are NEVER unioned, substituted, or
+ * layered (D-04). With `RESEARCH_ADMIN_UIDS` unset, this resolves to null
+ * and nothing downstream can grant research-admin rights.
+ */
+export function getResearchConfig(env: Env): ResearchConfig | null {
+  if (!env.RESEARCH_ADMIN_UIDS) {
+    return null;
+  }
+  const adminUids = new Set(
+    env.RESEARCH_ADMIN_UIDS.split(',')
+      .map((uid) => uid.trim())
+      .filter((uid) => uid.length > 0),
+  );
+  if (adminUids.size === 0) {
+    return null;
+  }
+  return { adminUids };
 }
 
 export interface StripeConfig {

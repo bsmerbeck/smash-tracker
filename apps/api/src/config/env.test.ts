@@ -4,6 +4,8 @@ import {
   getClaimCodeConfig,
   getInternalJobsConfig,
   getPrepPaidConfig,
+  getReportsConfig,
+  getResearchConfig,
   loadEnv,
   parseCorsOrigins,
 } from './env.js';
@@ -134,5 +136,51 @@ describe('getPrepPaidConfig (RPT-04, exact-string activation gate)', () => {
   it('returns a non-null config for the exact enabling value "true"', () => {
     const env = loadEnv({ ...base, PREP_PAID_REPORTS_ENABLED: 'true' });
     expect(getPrepPaidConfig(env)).toEqual({ enabled: true });
+  });
+});
+
+describe('getResearchConfig (Phase 29, D-04, research-admin allowlist)', () => {
+  it('returns null when RESEARCH_ADMIN_UIDS is unset', () => {
+    const env = loadEnv(base);
+    expect(getResearchConfig(env)).toBeNull();
+  });
+
+  it('returns null for an empty string', () => {
+    const env = loadEnv({ ...base, RESEARCH_ADMIN_UIDS: '' });
+    expect(getResearchConfig(env)).toBeNull();
+  });
+
+  it('returns null for a whitespace/separators-only value', () => {
+    const env = loadEnv({ ...base, RESEARCH_ADMIN_UIDS: ' , , ,  ' });
+    expect(getResearchConfig(env)).toBeNull();
+  });
+
+  it('returns trimmed, non-empty uids for a comma-separated value', () => {
+    const env = loadEnv({ ...base, RESEARCH_ADMIN_UIDS: ' uid-a , uid-b ,uid-c' });
+    expect(getResearchConfig(env)).toEqual({ adminUids: new Set(['uid-a', 'uid-b', 'uid-c']) });
+  });
+
+  it('treats the string "false" as a uid, never coerced through a boolean', () => {
+    const env = loadEnv({ ...base, RESEARCH_ADMIN_UIDS: 'false' });
+    expect(getResearchConfig(env)).toEqual({ adminUids: new Set(['false']) });
+  });
+
+  it('treats the string "0" as a uid, never coerced through a boolean', () => {
+    const env = loadEnv({ ...base, RESEARCH_ADMIN_UIDS: '0' });
+    expect(getResearchConfig(env)).toEqual({ adminUids: new Set(['0']) });
+  });
+
+  it('does not include a uid present only in REPORTS_ALLOWED_UIDS (the two allowlists are independent, D-04)', () => {
+    const env = loadEnv({
+      ...base,
+      ANTHROPIC_API_KEY: 'key',
+      REPORTS_ALLOWED_UIDS: 'uid-reports-only',
+      RESEARCH_ADMIN_UIDS: 'uid-research-only',
+    });
+    const reports = getReportsConfig(env);
+    const research = getResearchConfig(env);
+    expect(reports?.allowedUids.has('uid-research-only')).toBe(false);
+    expect(research?.adminUids.has('uid-reports-only')).toBe(false);
+    expect(research?.adminUids.has('uid-research-only')).toBe(true);
   });
 });

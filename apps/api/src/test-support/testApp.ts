@@ -30,6 +30,10 @@ export function buildTestApp(
     // through so gate-on/gate-off test cases can build an app with either
     // state without hand-rolling their own `buildApp(...)` call.
     | 'prepPaid'
+    // Phase 29 (Research Tenancy, Isolation & Governance Gate, D-04): the
+    // research-admin allowlist config, threaded through so tests can build
+    // an app with a configured (or omitted/null) research allowlist.
+    | 'research'
     // Phase 23 Plan 05's raw-code isolation test installs a capturing
     // logger to assert the raw claim code is never emitted to logs.
     | 'logger'
