@@ -177,6 +177,12 @@ const AUTHORIZATION_CLASSIFICATION: AuthorizationClassificationEntry[] = [
     reason:
       'Thin route wrapper forwarding app.researchConfig into delegation.ts, which refuses outright.',
   },
+  {
+    file: 'src/research/routeGuards.ts',
+    disposition: 'gated-by-primitive',
+    reason:
+      "requireResearchTenantAdmin validates the tenant id shape, applies the family's admin allowlist, reads membership, then delegates the kind decision to assertTenantAccess — the shared primitive makes the final access decision, and every negative outcome maps to the single exported RESEARCH_FAMILY_REJECTION (plan 29-05; classified post-merge in wave 2).",
+  },
 ];
 
 const classifiedAuthorizationFiles = AUTHORIZATION_CLASSIFICATION.map((entry) => entry.file).sort();
@@ -291,6 +297,20 @@ const MEMBERSHIP_READER_CLASSIFICATION: MembershipReaderEntry[] = [
     disposition: 'non-authorization-reader',
     reason:
       "Reads clientMembers/{tenantId} to assemble the caller's OWN workspace listing (the caller's uid is never taken from a path/body/query) and to self-heal orphaned index rows — makes NO access decision, raises no rejection.",
+  },
+  {
+    file: 'src/research/routeGuards.ts',
+    symbol: 'requireResearchTenantAdmin',
+    disposition: 'research-module',
+    reason:
+      "Reads clientMembers/{tenantId}/{callerUid} as the research family's membership gate BEFORE delegating the kind decision to assertTenantAccess; every negative outcome — including missing membership — raises the single uniform RESEARCH_FAMILY_REJECTION, so the read is part of the research family's own dual-gate access decision (plan 29-05; classified post-merge in wave 2).",
+  },
+  {
+    file: 'src/research/tenants.ts',
+    symbol: 'createResearchTenant',
+    disposition: 'research-module',
+    reason:
+      "Writes the creating admin's membership through the telemetry-silent creation core as part of the research tenant lifecycle, and listResearchTenants reads membership rows to enumerate only tenants the caller belongs to — the same claim-ready lifecycle pattern coaching/tenants.ts is classified under (plan 29-05; classified post-merge in wave 2).",
   },
 ];
 
