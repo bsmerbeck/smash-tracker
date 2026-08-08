@@ -111,14 +111,13 @@ export const CANONICAL_TENANT_TREES = [
  *   reason (in the exceptions table `foreignClient.test.ts` checks) stating
  *   why it has no same-subject route.
  *
- * `researchEntitlements` is the first (and, at this plan, only) extra
- * member: `apps/api/src/research/entitlements.ts`'s grant/revoke routes are
- * ADMIN-ONLY and answer the research family's uniform 404
- * (`RESEARCH_FAMILY_REJECTION`) by design — they can never satisfy
- * `TREE_TO_ROUTE_PATH`'s "covered same-subject 403 route" requirement, so
- * registering this tree in `CANONICAL_TENANT_TREES` would have broken that
- * harness outright. Splitting the manifests, rather than reshaping the
- * harness, is what resolves cycle-2 finding C2-HIGH-10.
+ * `researchEntitlements` was the first extra member; Phase 30 Plan 01
+ * (ING-02/ING-03/ING-05/ING-07/ING-08, D-02) adds five more research trees
+ * ahead of any writer — the extra-member set is now SIX trees, all admin-only
+ * and all reached through the same uniform-404 research route family, so the
+ * same reasoning applies to each: registering them in `CANONICAL_TENANT_TREES`
+ * instead would have broken `TREE_TO_ROUTE_PATH`'s exhaustive-record
+ * requirement outright.
  */
 export const TENANT_DELETION_TREES = [
   ...CANONICAL_TENANT_TREES,
@@ -126,6 +125,22 @@ export const TENANT_DELETION_TREES = [
   // the header comment above for why this cannot live in
   // CANONICAL_TENANT_TREES instead.
   'researchEntitlements',
+  // Phase 30 Plan 01 (ING-03): the lossless provider-set tier
+  // (`researchSource/{tenantId}/sets/{providerSetId}`) — admin-only,
+  // reached only through the research route family's uniform 404.
+  'researchSource',
+  // Phase 30 Plan 01 (ING-08): the manual/VOD supplement overlay tier
+  // (`researchSupplements/{tenantId}/{targetSetId}/{supplementId}`).
+  'researchSupplements',
+  // Phase 30 Plan 01 (ING-07): the admin-confirmed player-ID identity
+  // mapping (`researchIdentity/{tenantId}`).
+  'researchIdentity',
+  // Phase 30 Plan 01 (ING-02): backfill run state and staged counters
+  // (`researchIngestionRuns/{tenantId}`).
+  'researchIngestionRuns',
+  // Phase 30 Plan 01 (ING-05): the published completeness snapshot
+  // (`researchCoverage/{tenantId}`).
+  'researchCoverage',
 ] as const;
 
 /**
