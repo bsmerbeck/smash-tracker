@@ -9,10 +9,37 @@ const STARTGG_GQL_URL = 'https://api.start.gg/gql/alpha';
 
 export const SSBU_VIDEOGAME_ID = 1386;
 
+/**
+ * Cap on the non-2xx response body excerpt captured onto
+ * `StartggApiError.responseBody`. start.gg signals both its rate-limit
+ * rejection and its query-complexity rejection with a documented JSON body,
+ * and the two demand opposite responses — wait and retry versus fail
+ * immediately and shrink the query. Discarding the body made those two
+ * indistinguishable at the transport boundary (review C-H10). Capped so an
+ * unexpected HTML error page can never bloat a log line or an error object.
+ */
+export const STARTGG_ERROR_BODY_EXCERPT_MAX = 1000;
+
 export class StartggApiError extends Error {
   constructor(
     message: string,
     readonly status?: number,
+    /**
+     * The raw `Retry-After` response header when start.gg sent one —
+     * start.gg's published rate-limit documentation does not promise this
+     * header, so every consumer must treat it as opportunistic and have a
+     * header-independent fallback (see `30-RESEARCH.md` Pitfall 4).
+     */
+    readonly retryAfter?: string,
+    /**
+     * A bounded excerpt (see `STARTGG_ERROR_BODY_EXCERPT_MAX`) of the
+     * non-2xx response body. start.gg signals BOTH its rate-limit rejection
+     * and its query-complexity rejection with a documented body, and the two
+     * demand opposite responses — wait and retry versus fail immediately and
+     * shrink the query. Discarding the body made those two indistinguishable
+     * at the transport boundary (review C-H10).
+     */
+    readonly responseBody?: string,
   ) {
     super(message);
     this.name = 'StartggApiError';
@@ -35,7 +62,27 @@ async function gql<T>(
     body: JSON.stringify({ query, variables }),
   });
   if (!response.ok) {
-    throw new StartggApiError(`start.gg API returned ${response.status}`, response.status);
+    // Read the body defensively — a rejecting `text()` (e.g. a body already
+    // consumed, or a transport-level read failure) must never turn a
+    // provider error into a different error; it degrades to `undefined`.
+    let excerpt: string | undefined;
+    try {
+      const text = await response.text();
+      excerpt = text.slice(0, STARTGG_ERROR_BODY_EXCERPT_MAX);
+    } catch {
+      excerpt = undefined;
+    }
+    // The message text is the ONLY thing existing callers and existing
+    // tests observe on this path — it MUST stay byte-identical to the
+    // pre-existing status-only format, or this becomes a behavior change to
+    // the legacy personal-sync path this phase otherwise locks against
+    // drift (researchQueryLock.test.ts).
+    throw new StartggApiError(
+      `start.gg API returned ${response.status}`,
+      response.status,
+      response.headers.get('retry-after') ?? undefined,
+      excerpt,
+    );
   }
   const body = (await response.json()) as { data?: unknown; errors?: { message: string }[] };
   if (body.errors?.length) {
@@ -324,6 +371,321 @@ export async function fetchPlayerSetsPage(
     SETS_QUERY,
     { playerId, page, perPage },
     setsPageSchema,
+    fetchImpl,
+  );
+  const sets = data.player?.sets;
+  return { totalPages: sets?.pageInfo.totalPages ?? 0, sets: sets?.nodes ?? [] };
+}
+
+// ---- research sets (lossless backfill, public data, server token) ----------
+// Phase 30 (ING-01/04/06): a NEW query variant, not a fork of the client
+// above and not a rewrite of SETS_QUERY/fetchPlayerSetsPage — those stay
+// byte-unchanged for the legacy bounded personal sync (see
+// researchQueryLock.test.ts). This section adds the lossless shape the
+// research backfill needs: bye slots, DQ booleans, set state, and a
+// high-water `updatedAfter` filter for correction re-reads.
+
+const researchSetsPageSchema = z.object({
+  player: z
+    .object({
+      sets: z
+        .object({
+          pageInfo: z.object({ totalPages: z.number().int().nonnegative() }),
+          nodes: z.array(
+            z.object({
+              id: z.union([z.number(), z.string()]),
+              /**
+               * Undocumented integer state code (30-RESEARCH.md Open
+               * Question 1 / Assumption A2) — a SECONDARY signal behind
+               * `completedAt`/`games`/`isDisqualified` until the live probe
+               * (Task 3) records the observed vocabulary.
+               */
+              state: z.number().int().nullish(),
+              completedAt: z.number().int().nullish(),
+              createdAt: z.number().int().nullish(),
+              updatedAt: z.number().int().nullish(),
+              fullRoundText: z.string().nullish(),
+              round: z.number().int().nullish(),
+              displayScore: z.string().nullish(),
+              totalGames: z.number().int().nullish(),
+              vodUrl: z.string().nullish(),
+              /** Provider set identifier string, distinct from `id` — a gap-detection aid. */
+              identifier: z.string().nullish(),
+              event: z
+                .object({
+                  id: z.number().nullish(),
+                  name: z.string().nullish(),
+                  slug: z.string().nullish(),
+                  isOnline: z.boolean().nullish(),
+                  numEntrants: z.number().int().nullish(),
+                  /** Undocumented event-type integer (30-RESEARCH.md Tertiary source) — not relied on for eligibility. */
+                  type: z.number().int().nullish(),
+                  videogame: z.object({ id: z.number() }).nullish(),
+                  tournament: z
+                    .object({
+                      id: z.number().nullish(),
+                      name: z.string().nullish(),
+                      slug: z.string().nullish(),
+                    })
+                    .nullish(),
+                })
+                .nullish(),
+              slots: z
+                .array(
+                  z
+                    .object({
+                      // A bye slot arrives with a null/absent entrant — this
+                      // must survive parsing, not be rejected (ING-04).
+                      entrant: z
+                        .object({
+                          id: z.number(),
+                          name: z.string().nullish(),
+                          /** Structural DQ signal (30-RESEARCH.md Pitfall 3) — primary over `displayScore`. */
+                          isDisqualified: z.boolean().nullish(),
+                          initialSeedNum: z.number().int().nullish(),
+                          participants: z
+                            .array(
+                              z
+                                .object({
+                                  player: z
+                                    .object({ id: z.number(), gamerTag: z.string().nullish() })
+                                    .nullish(),
+                                  user: z.object({ slug: z.string().nullish() }).nullish(),
+                                })
+                                .nullish(),
+                            )
+                            .nullish(),
+                          seeds: z
+                            .array(z.object({ seedNum: z.number().int().nullish() }).nullish())
+                            .nullish(),
+                          standing: z.object({ placement: z.number().int().nullish() }).nullish(),
+                        })
+                        .nullish(),
+                    })
+                    .nullish(),
+                )
+                .nullish(),
+              games: z
+                .array(
+                  z.object({
+                    id: z.union([z.number(), z.string()]).nullish(),
+                    winnerId: z.number().nullish(),
+                    stage: z
+                      .object({ id: z.union([z.number(), z.string()]).nullish(), name: z.string() })
+                      .nullish(),
+                    selections: z
+                      .array(
+                        z.object({
+                          character: z.object({ id: z.number() }).nullish(),
+                          entrant: z.object({ id: z.number() }).nullish(),
+                        }),
+                      )
+                      .nullish(),
+                    entrant1Score: z.number().int().nullish(),
+                    entrant2Score: z.number().int().nullish(),
+                  }),
+                )
+                .nullish(),
+            }),
+          ),
+        })
+        .nullish(),
+    })
+    .nullish(),
+});
+export type StartggResearchSetsPage = z.infer<typeof researchSetsPageSchema>;
+export type StartggResearchSet = NonNullable<
+  NonNullable<StartggResearchSetsPage['player']>['sets']
+>['nodes'][number];
+
+/**
+ * Filters accepted by the research backfill's `player.sets` fetch.
+ * `showByes` is documented purely so a future caller cannot assume the
+ * provider's default matches ours — the query text below hard-codes
+ * `showByes: true` unconditionally (a bye-blind backfill silently
+ * undercounts discovered sets, per 30-RESEARCH.md), so this member is
+ * never actually plumbed as a variable. `updatedAfter` is ING-06's
+ * high-water reread mechanism — the only overlap primitive the provider
+ * exposes on this query.
+ *
+ * Deliberately has NO entrant-size member: singles/doubles eligibility is
+ * decided client-side by 30-03's classifier (30-RESEARCH.md Pitfall 1/2),
+ * and the only entrant-size REQUEST this codebase can issue is the
+ * probe-only variant below (review C2-A1) — `RESEARCH_SETS_QUERY` cannot
+ * express it, by design.
+ */
+export interface ResearchSetsFilters {
+  showByes?: boolean;
+  updatedAfter?: number;
+}
+
+// Complexity budget: this shape adds `isDisqualified`/`initialSeedNum` per
+// entrant, `state`/`createdAt`/`updatedAt`/`identifier` per set, fuller
+// event/tournament identity, and `game.id` on top of the legacy SETS_QUERY's
+// already-budgeted ~200 objects/page at `perPage: 10` — still comfortably
+// under the 1000-object-per-request cap by rough estimate, but
+// RESEARCH_SETS_PER_PAGE stays at the legacy proven-safe value of 10 until
+// the live probe (Task 3 / Open Question 2) empirically confirms headroom
+// for a larger page size; a rejected request wastes the whole page's work.
+// `SetFilters` exposes no videogame filter (30-RESEARCH.md Anti-Pattern), so
+// SSBU eligibility is decided client-side by 30-03's classifier — this query
+// deliberately returns the player's full cross-game history.
+const RESEARCH_SETS_QUERY = `query ResearchPlayerSets($playerId: ID!, $page: Int!, $perPage: Int!, $updatedAfter: Timestamp) {
+  player(id: $playerId) {
+    sets(perPage: $perPage, page: $page, filters: { showByes: true, updatedAfter: $updatedAfter }) {
+      pageInfo { totalPages }
+      nodes {
+        id
+        state
+        completedAt
+        createdAt
+        updatedAt
+        fullRoundText
+        round
+        displayScore
+        totalGames
+        vodUrl
+        identifier
+        event {
+          id name slug isOnline numEntrants type
+          videogame { id }
+          tournament { id name slug }
+        }
+        slots {
+          entrant {
+            id
+            name
+            isDisqualified
+            initialSeedNum
+            participants { player { id gamerTag } user { slug } }
+            seeds { seedNum }
+            standing { placement }
+          }
+        }
+        games {
+          id
+          winnerId
+          stage { id name }
+          selections { character { id } entrant { id } }
+          entrant1Score
+          entrant2Score
+        }
+      }
+    }
+  }
+}`;
+
+/** Legacy proven-safe page size (matches `fetchPlayerSetsPage`'s default) — see the complexity-budget comment above. */
+export const RESEARCH_SETS_PER_PAGE = 10;
+
+/**
+ * The single validated crossing between the run record's STRING `playerId`
+ * (an RTDB key) and the numeric `playerId` the existing client's
+ * `fetchPlayerSetsPage`/`resolvePlayerById` require (review C-H9b). Accepts
+ * a digits-only shape of at most 20 characters and returns it as a finite
+ * positive integer; returns null for anything else — empty, non-numeric,
+ * negative, fractional, or beyond `Number.isSafeInteger`'s range. No caller
+ * should write an ad-hoc `Number(...)` here: that turns a malformed id into
+ * `NaN` and then into a provider request for player `null`.
+ */
+export function normalizeStartggPlayerId(value: string | number): number | null {
+  const asString = typeof value === 'number' ? String(value) : value;
+  if (!/^[0-9]{1,20}$/.test(asString)) {
+    return null;
+  }
+  const parsed = Number(asString);
+  return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : null;
+}
+
+/**
+ * One page of a player's SSBU-and-cross-game set history, lossless (bye
+ * slots and DQ flags included, `updatedAfter` honored) for the research
+ * backfill. Unlike `fetchPlayerSetsPage`, `playerId` accepts `string |
+ * number` — the GraphQL `ID!` scalar accepts either — and is normalized to
+ * its canonical string form for the outgoing variable, so a caller passing
+ * the stored string id and a caller passing the equivalent number produce
+ * byte-identical request bodies; this function does NOT perform
+ * `normalizeStartggPlayerId`'s digit-only validation/rejection — a caller
+ * that needs a validated number for a sibling function (e.g.
+ * `resolvePlayerById`) calls `normalizeStartggPlayerId` itself first, then
+ * passes either form straight through here.
+ */
+export async function fetchResearchSetsPage(
+  serverToken: string,
+  playerId: string | number,
+  page: number,
+  perPage = RESEARCH_SETS_PER_PAGE,
+  filters: ResearchSetsFilters = {},
+  fetchImpl: typeof fetch = fetch,
+): Promise<{ totalPages: number; sets: StartggResearchSet[] }> {
+  const data = await gql(
+    serverToken,
+    RESEARCH_SETS_QUERY,
+    { playerId: String(playerId), page, perPage, updatedAfter: filters.updatedAfter ?? null },
+    researchSetsPageSchema,
+    fetchImpl,
+  );
+  const sets = data.player?.sets;
+  return { totalPages: sets?.pageInfo.totalPages ?? 0, sets: sets?.nodes ?? [] };
+}
+
+const probeSetsPageSchema = z.object({
+  player: z
+    .object({
+      sets: z
+        .object({
+          pageInfo: z.object({ totalPages: z.number().int().nonnegative() }),
+          nodes: z.array(z.object({ id: z.union([z.number(), z.string()]) })),
+        })
+        .nullish(),
+    })
+    .nullish(),
+});
+
+/**
+ * A SECOND, separate template literal — deliberately not a parameterization
+ * of `RESEARCH_SETS_QUERY`. `SetFilters.entrantSize` is an UNVERIFIED
+ * provider field (30-RESEARCH.md A5 / Open Question 3); GraphQL fails the
+ * WHOLE request on an unknown argument, so putting it in the executor's
+ * query — even behind a null variable — would risk breaking every backfill
+ * page to answer a research question. Isolating it here means the worst
+ * case is one failed PROBE request whose failure IS the answer (review
+ * C2-A1). Selects only `pageInfo.totalPages` and each node's `id` — the
+ * entrant-size comparison needs set identity and nothing else, so this
+ * probe's extra request costs a fraction of a real page.
+ */
+const RESEARCH_SETS_ENTRANT_SIZE_PROBE_QUERY = `query ResearchPlayerSetsEntrantSizeProbe($playerId: ID!, $page: Int!, $perPage: Int!, $entrantSize: Int) {
+  player(id: $playerId) {
+    sets(perPage: $perPage, page: $page, filters: { showByes: true, entrantSize: $entrantSize }) {
+      pageInfo { totalPages }
+      nodes { id }
+    }
+  }
+}`;
+
+/**
+ * PROBE-ONLY: `apps/api/scripts/probeResearchSetsSchema.ts` is this
+ * function's only caller. The batch executor (plan 30-07) must never call
+ * it, and `researchQueryLock.test.ts` asserts `RESEARCH_SETS_QUERY`'s
+ * captured request body carries no entrant-size argument while this
+ * function's does. A `StartggApiError` naming an unknown argument is the
+ * EXPECTED negative outcome here — the caller converts it to the
+ * `filter-unavailable` verdict (`researchProbe.ts`'s
+ * `compareEntrantSizeProbe`) rather than treating it as a failure.
+ */
+export async function fetchResearchSetsProbePage(
+  serverToken: string,
+  playerId: string | number,
+  page: number,
+  perPage: number,
+  entrantSize: number,
+  fetchImpl: typeof fetch = fetch,
+): Promise<{ totalPages: number; sets: StartggResearchSet[] }> {
+  const data = await gql(
+    serverToken,
+    RESEARCH_SETS_ENTRANT_SIZE_PROBE_QUERY,
+    { playerId: String(playerId), page, perPage, entrantSize },
+    probeSetsPageSchema,
     fetchImpl,
   );
   const sets = data.player?.sets;
