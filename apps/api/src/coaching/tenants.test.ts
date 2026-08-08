@@ -184,7 +184,7 @@ describe('listClients', () => {
   it('returns an empty list for a coach with no clients', async () => {
     const database = new FakeDatabase();
 
-    await expect(listClients(asDatabase(database), COACH_UID)).resolves.toEqual([]);
+    await expect(listClients(asDatabase(database), COACH_UID, null)).resolves.toEqual([]);
   });
 
   it('lists active clients as Client Hub rows, deriving lastActivityAt from the client match tree', async () => {
@@ -211,7 +211,7 @@ describe('listClients', () => {
       win: false,
     });
 
-    const rows = await listClients(asDatabase(database), COACH_UID);
+    const rows = await listClients(asDatabase(database), COACH_UID, null);
 
     expect(rows).toEqual([
       {
@@ -236,7 +236,7 @@ describe('listClients', () => {
         sessionId: SESSION_ID,
       });
 
-      const rows = await listClients(asDatabase(database), COACH_UID);
+      const rows = await listClients(asDatabase(database), COACH_UID, null);
 
       expect(rows).toHaveLength(1);
       expect(rows[0]).toMatchObject({
@@ -264,7 +264,7 @@ describe('listClients', () => {
         expiresAt,
       });
 
-      const rows = await listClients(asDatabase(database), COACH_UID);
+      const rows = await listClients(asDatabase(database), COACH_UID, null);
 
       expect(rows[0]).toMatchObject({ claimedAt: null, pendingInvitationExpiresAt: expiresAt });
     });
@@ -286,7 +286,7 @@ describe('listClients', () => {
         expiresAt: Date.now() - 500,
       });
 
-      const rows = await listClients(asDatabase(database), COACH_UID);
+      const rows = await listClients(asDatabase(database), COACH_UID, null);
 
       expect(rows[0]).toMatchObject({ pendingInvitationExpiresAt: null });
     });
@@ -309,7 +309,7 @@ describe('listClients', () => {
         revokedAt: Date.now(),
       });
 
-      const rows = await listClients(asDatabase(database), COACH_UID);
+      const rows = await listClients(asDatabase(database), COACH_UID, null);
 
       expect(rows[0]).toMatchObject({ pendingInvitationExpiresAt: null });
     });
@@ -327,7 +327,7 @@ describe('listClients', () => {
         claimedAt,
       });
 
-      const rows = await listClients(asDatabase(database), COACH_UID);
+      const rows = await listClients(asDatabase(database), COACH_UID, null);
 
       expect(rows[0]).toMatchObject({ claimedAt, pendingInvitationExpiresAt: null });
     });
@@ -343,8 +343,8 @@ describe('listClients', () => {
       });
       // No claimInvitations/{digest} record seeded — dangling pointer.
 
-      await expect(listClients(asDatabase(database), COACH_UID)).resolves.toBeDefined();
-      const rows = await listClients(asDatabase(database), COACH_UID);
+      await expect(listClients(asDatabase(database), COACH_UID, null)).resolves.toBeDefined();
+      const rows = await listClients(asDatabase(database), COACH_UID, null);
       expect(rows[0]).toMatchObject({ pendingInvitationExpiresAt: null });
     });
 
@@ -355,7 +355,7 @@ describe('listClients', () => {
       });
       database.seed(`activeClaimInvitationByTenant/${tenantId}`, { notAPointer: true });
 
-      const rows = await listClients(asDatabase(database), COACH_UID);
+      const rows = await listClients(asDatabase(database), COACH_UID, null);
 
       expect(rows[0]).toMatchObject({ pendingInvitationExpiresAt: null });
     });
@@ -367,9 +367,9 @@ describe('listClients', () => {
       sessionId: SESSION_ID,
     });
 
-    await archiveClient(asDatabase(database), COACH_UID, tenantId);
+    await archiveClient(asDatabase(database), COACH_UID, tenantId, true, null);
 
-    await expect(listClients(asDatabase(database), COACH_UID)).resolves.toEqual([]);
+    await expect(listClients(asDatabase(database), COACH_UID, null)).resolves.toEqual([]);
   });
 
   it('restores an archived client back into the default listing when archived=false', async () => {
@@ -377,11 +377,11 @@ describe('listClients', () => {
     const { tenantId } = await createClient(asDatabase(database), COACH_UID, 'Alex', {
       sessionId: SESSION_ID,
     });
-    await archiveClient(asDatabase(database), COACH_UID, tenantId);
+    await archiveClient(asDatabase(database), COACH_UID, tenantId, true, null);
 
-    await archiveClient(asDatabase(database), COACH_UID, tenantId, false);
+    await archiveClient(asDatabase(database), COACH_UID, tenantId, false, null);
 
-    const rows = await listClients(asDatabase(database), COACH_UID);
+    const rows = await listClients(asDatabase(database), COACH_UID, null);
     expect(rows).toHaveLength(1);
     expect(rows[0]?.archivedAt).toBeNull();
   });
@@ -408,7 +408,7 @@ describe('listClients', () => {
     database.seed(`reviewStatus/${badTenant}/review-1`, { status: 'not-a-real-status' });
     const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
 
-    const rows = await listClients(asDatabase(database), COACH_UID);
+    const rows = await listClients(asDatabase(database), COACH_UID, null);
 
     expect(rows).toHaveLength(2);
     const goodRow = rows.find((row) => row.clientId === goodTenant);
@@ -427,8 +427,11 @@ describe('listClients', () => {
   // Phase 29 (review finding 29-01 HIGH): the kind resolution must survive
   // the SAME enrichment-failure degrade path 260725-juj exercises above —
   // an enrichment read failing on a research tenant must not silently
-  // downgrade its reported kind to ordinary.
-  it('reports the research resolution for a row whose enrichment reads all fail', async () => {
+  // downgrade its reported kind to ordinary. Requires an ALLOWLISTED caller
+  // (Task 2, review consensus finding 1): a non-allowlisted caller never
+  // sees a research row at all, so this degrade-path assertion is only
+  // meaningful for the research admin who IS authorized to see it.
+  it('reports the research resolution for a row whose enrichment reads all fail (allowlisted caller)', async () => {
     const database = new FakeDatabase();
     const { tenantId } = await createClientCore(
       asDatabase(database),
@@ -446,12 +449,114 @@ describe('listClients', () => {
     database.seed(`reviewStatus/${tenantId}/review-1`, { status: 'not-a-real-status' });
     const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
 
-    const rows = await listClients(asDatabase(database), COACH_UID);
+    const rows = await listClients(asDatabase(database), COACH_UID, {
+      adminUids: new Set([COACH_UID]),
+    });
 
     expect(rows).toHaveLength(1);
     expect(rows[0]).toMatchObject({ clientId: tenantId, kind: 'research' });
     expect(warnSpy).toHaveBeenCalled();
     warnSpy.mockRestore();
+  });
+
+  // Phase 29 (review consensus finding 1): a research row is dropped
+  // ENTIRELY for a caller who is NOT in the research allowlist — the row's
+  // existence itself must not be revealed.
+  it('hides a research row entirely from a non-allowlisted caller', async () => {
+    const database = new FakeDatabase();
+    await createClientCore(asDatabase(database), COACH_UID, 'Research', 'research');
+
+    const rows = await listClients(asDatabase(database), COACH_UID, null);
+
+    expect(rows).toEqual([]);
+  });
+
+  // Phase 29 (cycle-2 finding C2-HIGH-3): an unresolved-kind row survives
+  // for an ordinary (non-allowlisted) coach, but every derived field is
+  // withheld and the four enrichment reads are skipped entirely — proven by
+  // seeding data that WOULD otherwise produce non-empty values.
+  it('withholds every derived field and skips enrichment reads for an unresolved row seen by a non-allowlisted caller', async () => {
+    const database = new FakeDatabase();
+    const { tenantId } = await createClient(asDatabase(database), COACH_UID, 'Mystery', {
+      sessionId: SESSION_ID,
+    });
+    // Corrupt the stored kind so readSubjectKind resolves 'unresolved'.
+    database.seed(`clientTenants/${tenantId}/kind`, 'not-a-real-kind');
+    // Seed data that WOULD produce non-empty enrichment values if read.
+    database.seed(`matches/${tenantId}/m1`, {
+      fighter_id: 1,
+      opponent_id: 2,
+      time: 999,
+      map: { id: 1, name: 'Battlefield' },
+      notes: '',
+      matchType: 'online-friendly',
+      win: true,
+    });
+    database.seed(`reviewDrafts/${tenantId}/review-1`, {
+      revision: 1,
+      sections: [],
+      coachPrivateNotes: null,
+      createdAt: 0,
+      lastAutosavedAt: 0,
+    });
+
+    let listMatchesCalled = false;
+    const spiedDatabase = {
+      ref: (path?: string) => {
+        if (typeof path === 'string' && path.startsWith(`matches/${tenantId}`)) {
+          listMatchesCalled = true;
+        }
+        return database.ref(path);
+      },
+    } as unknown as Database;
+
+    const rows = await listClients(spiedDatabase, COACH_UID, null);
+
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toEqual({
+      clientId: tenantId,
+      label: 'Mystery',
+      lastActivityAt: null,
+      draftCount: 0,
+      deliveryState: null,
+      archivedAt: null,
+      claimedAt: null,
+      pendingInvitationExpiresAt: null,
+      kind: 'unresolved',
+    });
+    expect(listMatchesCalled).toBe(false);
+  });
+
+  // Phase 29 (cycle-2 finding C2-HIGH-3): the SAME unresolved row is
+  // enriched normally for an ALLOWLISTED research admin — withholding costs
+  // them diagnosis and protects nothing, since they are already authorized
+  // for every research tenant.
+  it('fully enriches an unresolved row for an allowlisted caller', async () => {
+    const database = new FakeDatabase();
+    const { tenantId } = await createClient(asDatabase(database), COACH_UID, 'Mystery', {
+      sessionId: SESSION_ID,
+    });
+    database.seed(`clientTenants/${tenantId}/kind`, 'not-a-real-kind');
+    database.seed(`matches/${tenantId}/m1`, {
+      fighter_id: 1,
+      opponent_id: 2,
+      time: 999,
+      map: { id: 1, name: 'Battlefield' },
+      notes: '',
+      matchType: 'online-friendly',
+      win: true,
+    });
+
+    const rows = await listClients(asDatabase(database), COACH_UID, {
+      adminUids: new Set([COACH_UID]),
+    });
+
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      clientId: tenantId,
+      kind: 'unresolved',
+      lastActivityAt: 999,
+    });
   });
 });
 
@@ -462,9 +567,9 @@ describe('archiveClient', () => {
       sessionId: SESSION_ID,
     });
 
-    await expect(archiveClient(asDatabase(database), 'foreign-coach', tenantId)).rejects.toThrow(
-      ForbiddenError,
-    );
+    await expect(
+      archiveClient(asDatabase(database), 'foreign-coach', tenantId, true, null),
+    ).rejects.toThrow(ForbiddenError);
   });
 });
 
@@ -478,7 +583,7 @@ describe('deleteClient', () => {
       database.seed(`${tree}/${tenantId}`, { seeded: true });
     }
 
-    await deleteClient(asDatabase(database), COACH_UID, tenantId);
+    await deleteClient(asDatabase(database), COACH_UID, tenantId, null);
 
     const dump = database.dump() as Record<string, unknown>;
     for (const tree of CANONICAL_TENANT_TREES) {
@@ -497,9 +602,9 @@ describe('deleteClient', () => {
       sessionId: SESSION_ID,
     });
 
-    await expect(deleteClient(asDatabase(database), 'foreign-coach', tenantId)).rejects.toThrow(
-      ForbiddenError,
-    );
+    await expect(
+      deleteClient(asDatabase(database), 'foreign-coach', tenantId, null),
+    ).rejects.toThrow(ForbiddenError);
   });
 
   // Quick 260726-r7 (P0 regression): flipTenantOwnership's 7th path,
@@ -523,7 +628,7 @@ describe('deleteClient', () => {
 
     // Post-claim, only the owner (or a custodian, which no longer applies)
     // can hard-delete — the delegate coach's role no longer qualifies.
-    await deleteClient(asDatabase(database), CLIENT_UID, tenantId);
+    await deleteClient(asDatabase(database), CLIENT_UID, tenantId, null);
 
     const dump = database.dump() as Record<string, unknown>;
     expect(
@@ -540,7 +645,9 @@ describe('deleteClient', () => {
       sessionId: SESSION_ID,
     });
 
-    await expect(deleteClient(asDatabase(database), COACH_UID, tenantId)).resolves.toBeUndefined();
+    await expect(
+      deleteClient(asDatabase(database), COACH_UID, tenantId, null),
+    ).resolves.toBeUndefined();
 
     const dump = database.dump() as Record<string, unknown>;
     // No owner membership ever existed, so the (owner-uid-resolution) step
@@ -565,7 +672,7 @@ describe('exportClient', () => {
       win: true,
     });
 
-    const dump = await exportClient(asDatabase(database), COACH_UID, tenantId);
+    const dump = await exportClient(asDatabase(database), COACH_UID, tenantId, null);
 
     expect(dump.clientId).toBe(tenantId);
     expect(dump.label).toBe('Alex');
@@ -585,8 +692,27 @@ describe('exportClient', () => {
       sessionId: SESSION_ID,
     });
 
-    await expect(exportClient(asDatabase(database), 'foreign-coach', tenantId)).rejects.toThrow(
-      ForbiddenError,
+    await expect(
+      exportClient(asDatabase(database), 'foreign-coach', tenantId, null),
+    ).rejects.toThrow(ForbiddenError);
+  });
+
+  // Phase 29 (RTEN-03): export refuses a research tenant OUTRIGHT, even for
+  // an allowlisted custodian — a full JSON dump is exactly the
+  // bulk-exfiltration artifact this requirement exists to prevent.
+  it('refuses a research tenant for an allowlisted custodian', async () => {
+    const database = new FakeDatabase();
+    const { tenantId } = await createClientCore(
+      asDatabase(database),
+      COACH_UID,
+      'Research',
+      'research',
     );
+
+    await expect(
+      exportClient(asDatabase(database), COACH_UID, tenantId, {
+        adminUids: new Set([COACH_UID]),
+      }),
+    ).rejects.toThrow(ForbiddenError);
   });
 });

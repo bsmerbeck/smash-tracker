@@ -12,9 +12,11 @@ import {
   type ClientHubRow,
   type ClientTenantKind,
 } from '@smash-tracker/shared';
+import type { ResearchConfig } from '../config/env.js';
 import { buildDomainEnvelope } from '../events/envelope.js';
 import { createEvent } from '../events/ledger.js';
 import { onboardingCausePayload } from '../onboarding/activation.js';
+import { assertTenantAccess } from '../research/access.js';
 import { readSubjectKind } from '../research/subjectKind.js';
 import { ConflictError, ForbiddenError, RtdbService } from '../services/rtdb.js';
 import { requireTenantRole } from './membershipRoles.js';
@@ -107,11 +109,22 @@ export function normalizeClientLabel(label: string): string {
  * `X-Active-Subject` header/`resolveSubject` mechanism (that pair is for
  * header-driven same-subject routes like `/api/matches`, not this
  * URL-param-driven `/coaching/clients/:clientId/*` family).
+ *
+ * Phase 29 (Research Tenancy, Isolation & Governance Gate, review consensus
+ * finding 1): the pre-existing existence check runs FIRST, unchanged, and
+ * ONLY THEN does this function call `assertTenantAccess` — the ONE shared
+ * research-authorization decision site. `researchConfig` is a REQUIRED
+ * trailing parameter (never optional-with-a-default — see
+ * `requireTenantRole`'s doc comment in `membershipRoles.ts` for why).
+ * Removing this second check is exactly what would make removing a uid from
+ * `RESEARCH_ADMIN_UIDS` stop revoking access on every route this function
+ * guards.
  */
 export async function requireMembership(
   database: Database,
   coachUid: string,
   tenantId: string,
+  researchConfig: ResearchConfig | null,
 ): Promise<void> {
   const membership = await database.ref(`clientMembers/${tenantId}/${coachUid}`).get();
   if (!membership.exists()) {
@@ -119,6 +132,9 @@ export async function requireMembership(
     // genuinely nonexistent tenantId must be indistinguishable — both 403.
     throw new ForbiddenError('Not a member of this client tenant');
   }
+  // Research gate — throws the SAME rejection above for `denied` and
+  // `indeterminate` alike (no-oracle).
+  await assertTenantAccess({ database, researchConfig, uid: coachUid, tenantId });
 }
 
 /**
@@ -330,9 +346,12 @@ async function readPendingInvitationExpiresAt(
 export async function listClients(
   database: Database,
   coachUid: string,
+  researchConfig: ResearchConfig | null,
   options: { includeArchived?: boolean } = {},
 ): Promise<ClientHubList> {
   const includeArchived = options.includeArchived ?? false;
+  const callerIsResearchAllowlisted =
+    researchConfig !== null && researchConfig.adminUids.has(coachUid);
   const snapshot = await database.ref(`coachClients/${coachUid}`).get();
   if (!snapshot.exists()) {
     return [];
@@ -358,69 +377,109 @@ export async function listClients(
   });
 
   const rtdb = new RtdbService(database);
-  return Promise.all(
-    entries.map(async ({ tenantId, label, archivedAt, claimedAt }) => {
-      // Phase 29 (review finding 29-01 HIGH): the tri-state kind read runs
-      // in its OWN step, OUTSIDE the enrichment `try`/`catch` below — an
-      // enrichment-read failure must never also decide the row's kind. A
-      // row must never be constructed with a hard-coded ordinary
-      // resolution; both the success path and the degrade path below read
-      // this SAME value.
-      const kind = await readSubjectKind(database, tenantId);
+  const rows = await Promise.all(
+    entries.map(
+      async ({ tenantId, label, archivedAt, claimedAt }): Promise<ClientHubRow | null> => {
+        // Phase 29 (review finding 29-01 HIGH): the tri-state kind read runs
+        // in its OWN step, OUTSIDE the enrichment `try`/`catch` below — an
+        // enrichment-read failure must never also decide the row's kind. A
+        // row must never be constructed with a hard-coded ordinary
+        // resolution; both the success path and the degrade path below read
+        // this SAME value.
+        const kind = await readSubjectKind(database, tenantId);
 
-      // 260725-juj (defense-in-depth): one tenant's corrupt/unparseable
-      // subtree must never 500 the whole Client Hub for every OTHER coach
-      // client. Guards against the SAME class of read-path crash the
-      // reviews.ts null-stripping fix addresses at the source — this is a
-      // backstop, not the primary fix. This module has no request logger
-      // (same rationale as `renderShareHtml.ts`'s module-level
-      // `console.error` calls), so degrade to a minimal row and log with
-      // `console.warn`.
-      try {
-        const [matches, draftCount, deliveryState6, pendingInvitationExpiresAt] = await Promise.all(
-          [
-            rtdb.listMatches(tenantId),
-            countOpenDrafts(database, tenantId),
-            getMostRecentDeliveryStateForTenant(database, tenantId),
-            readPendingInvitationExpiresAt(database, tenantId),
-          ],
-        );
-        const lastActivityAt = matches.reduce<number | null>(
-          (latest, match) => (latest === null || match.time > latest ? match.time : latest),
-          null,
-        );
-        return clientHubRowSchema.parse({
-          clientId: tenantId,
-          label,
-          lastActivityAt,
-          draftCount,
-          deliveryState:
-            deliveryState6 === null ? null : mapDeliveryStateToHubState(deliveryState6),
-          archivedAt,
-          claimedAt,
-          pendingInvitationExpiresAt: pendingInvitationExpiresAt ?? null,
-          kind,
-        } satisfies ClientHubRow);
-      } catch (err) {
-        console.warn(`listClients: degrading tenant ${tenantId} after a read failure`, err);
-        // Phase 29: the enrichment degrade deliberately does NOT degrade
-        // the kind — `kind` was already resolved above, OUTSIDE this try,
-        // so an enrichment failure on a research tenant still reports
-        // research (never silently downgraded to ordinary or unresolved).
-        return clientHubRowSchema.parse({
-          clientId: tenantId,
-          label,
-          lastActivityAt: null,
-          draftCount: 0,
-          deliveryState: null,
-          archivedAt,
-          claimedAt,
-          pendingInvitationExpiresAt: null,
-          kind,
-        } satisfies ClientHubRow);
-      }
-    }),
+        // Phase 29 (review consensus finding 1): a research row is dropped
+        // ENTIRELY from a non-allowlisted caller's listing — the Client Hub
+        // must never even reveal the row's existence to a demoted admin or an
+        // ordinary coach. `isResearchKind` is the one predicate permitted to
+        // compare against the research member (packages/shared/src/researchKind.ts).
+        if (isResearchKind(kind) && !callerIsResearchAllowlisted) {
+          return null;
+        }
+
+        // Phase 29 (cycle-2 finding C2-HIGH-3): an UNRESOLVED row is kept
+        // visible (a transient read failure must not look like a deleted
+        // client to an ordinary coach) but, for a caller who is NOT a
+        // research admin, every derived field is WITHHELD and the four
+        // enrichment reads that would produce them are SKIPPED entirely —
+        // built from the caller's own coachClients index entry alone. This
+        // is what keeps a demoted research admin (whose coachClients index
+        // and clientMembers membership both persist forever) from reading a
+        // research workspace's activity metadata through a failed kind read.
+        // A research admin IS already authorized for every research tenant,
+        // so withholding costs them diagnosis and protects nothing — their
+        // unresolved rows are enriched normally below.
+        if (kind === 'unresolved' && !callerIsResearchAllowlisted) {
+          return clientHubRowSchema.parse({
+            clientId: tenantId,
+            label,
+            lastActivityAt: null,
+            draftCount: 0,
+            deliveryState: null,
+            archivedAt,
+            claimedAt,
+            pendingInvitationExpiresAt: null,
+            kind,
+          } satisfies ClientHubRow);
+        }
+
+        // 260725-juj (defense-in-depth): one tenant's corrupt/unparseable
+        // subtree must never 500 the whole Client Hub for every OTHER coach
+        // client. Guards against the SAME class of read-path crash the
+        // reviews.ts null-stripping fix addresses at the source — this is a
+        // backstop, not the primary fix. This module has no request logger
+        // (same rationale as `renderShareHtml.ts`'s module-level
+        // `console.error` calls), so degrade to a minimal row and log with
+        // `console.warn`.
+        try {
+          const [matches, draftCount, deliveryState6, pendingInvitationExpiresAt] =
+            await Promise.all([
+              rtdb.listMatches(tenantId),
+              countOpenDrafts(database, tenantId),
+              getMostRecentDeliveryStateForTenant(database, tenantId),
+              readPendingInvitationExpiresAt(database, tenantId),
+            ]);
+          const lastActivityAt = matches.reduce<number | null>(
+            (latest, match) => (latest === null || match.time > latest ? match.time : latest),
+            null,
+          );
+          return clientHubRowSchema.parse({
+            clientId: tenantId,
+            label,
+            lastActivityAt,
+            draftCount,
+            deliveryState:
+              deliveryState6 === null ? null : mapDeliveryStateToHubState(deliveryState6),
+            archivedAt,
+            claimedAt,
+            pendingInvitationExpiresAt: pendingInvitationExpiresAt ?? null,
+            kind,
+          } satisfies ClientHubRow);
+        } catch (err) {
+          console.warn(`listClients: degrading tenant ${tenantId} after a read failure`, err);
+          // Phase 29: the enrichment degrade deliberately does NOT degrade
+          // the kind — `kind` was already resolved above, OUTSIDE this try,
+          // so an enrichment failure on a research tenant still reports
+          // research (never silently downgraded to ordinary or unresolved).
+          return clientHubRowSchema.parse({
+            clientId: tenantId,
+            label,
+            lastActivityAt: null,
+            draftCount: 0,
+            deliveryState: null,
+            archivedAt,
+            claimedAt,
+            pendingInvitationExpiresAt: null,
+            kind,
+          } satisfies ClientHubRow);
+        }
+      },
+    ),
   );
+
+  // Drop the null placeholders left by research rows filtered out above for
+  // a non-allowlisted caller.
+  return rows.filter((row): row is ClientHubRow => row !== null);
 }
 
 /**
@@ -456,9 +515,10 @@ export async function archiveClient(
   database: Database,
   coachUid: string,
   tenantId: string,
-  archived = true,
+  archived: boolean,
+  researchConfig: ResearchConfig | null,
 ): Promise<void> {
-  await requireTenantRole(database, coachUid, tenantId, ['custodian', 'owner']);
+  await requireTenantRole(database, coachUid, tenantId, ['custodian', 'owner'], researchConfig);
   const archivedAt = archived ? Date.now() : null;
   await database.ref().update({
     [`clientTenants/${tenantId}/archivedAt`]: archivedAt,
@@ -520,8 +580,9 @@ export async function deleteClient(
   database: Database,
   coachUid: string,
   tenantId: string,
+  researchConfig: ResearchConfig | null,
 ): Promise<void> {
-  await requireTenantRole(database, coachUid, tenantId, ['custodian', 'owner']);
+  await requireTenantRole(database, coachUid, tenantId, ['custodian', 'owner'], researchConfig);
 
   const sessionDeliveriesSnapshot = await database.ref(`sessionDeliveries/${tenantId}`).get();
   const deliveryTokens: string[] = [];
@@ -612,13 +673,28 @@ export interface ClientWorkspaceExport {
  * Role-gated (see `archiveClient`'s doc comment above for the Phase 23
  * rationale shared by all three destructive routes — a full JSON dump is
  * bulk exfiltration, so a demoted `delegate` coach must not reach it).
+ *
+ * Phase 29 (RTEN-03): refused OUTRIGHT for a research tenant — for EVERY
+ * caller, including an allowlisted research admin who is a custodian. This
+ * is deliberate and unconditional, not an authorization check: a full JSON
+ * dump is precisely the bulk-exfiltration artifact RTEN-03 exists to
+ * prevent, so passing the role/allowlist gate above does not make export
+ * reachable for a research tenant. Reuses the SAME rejection the role gate
+ * above already raises, so a research admin's refusal is not a new
+ * observable shape.
  */
 export async function exportClient(
   database: Database,
   coachUid: string,
   tenantId: string,
+  researchConfig: ResearchConfig | null,
 ): Promise<ClientWorkspaceExport> {
-  await requireTenantRole(database, coachUid, tenantId, ['custodian', 'owner']);
+  await requireTenantRole(database, coachUid, tenantId, ['custodian', 'owner'], researchConfig);
+
+  const kind = await readSubjectKind(database, tenantId);
+  if (isResearchKind(kind)) {
+    throw new ForbiddenError('Not a member of this client tenant');
+  }
 
   const entrySnapshot = await database.ref(`coachClients/${coachUid}/${tenantId}`).get();
   const entry = coachClientEntrySchema.parse(entrySnapshot.val());

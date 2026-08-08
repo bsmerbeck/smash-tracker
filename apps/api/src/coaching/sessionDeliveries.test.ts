@@ -705,7 +705,7 @@ describe('deleteClient session-delivery shareTokens cascade (T-20-11)', () => {
     );
     expect(dumpTokenRecord(database, token)).toBeDefined();
 
-    await deleteClient(asDatabase(database), 'coach-1', tenantId);
+    await deleteClient(asDatabase(database), 'coach-1', tenantId, null);
 
     const dump = database.dump() as Record<string, unknown>;
     const shareTokens = dump.shareTokens as Record<string, unknown> | undefined;
@@ -721,6 +721,8 @@ describe('deleteClient session-delivery shareTokens cascade (T-20-11)', () => {
       sessionId: 'session-x',
     });
 
-    await expect(deleteClient(asDatabase(database), 'coach-1', tenantId)).resolves.not.toThrow();
+    await expect(
+      deleteClient(asDatabase(database), 'coach-1', tenantId, null),
+    ).resolves.not.toThrow();
   });
 });

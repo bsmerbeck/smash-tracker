@@ -1,5 +1,7 @@
 import type { Database } from 'firebase-admin/database';
 import { clientMembershipSchema, type ClientTenantRole } from '@smash-tracker/shared';
+import type { ResearchConfig } from '../config/env.js';
+import { assertTenantAccess } from '../research/access.js';
 import { ForbiddenError } from '../services/rtdb.js';
 
 /**
@@ -51,16 +53,30 @@ export async function readMembershipRole(
  * membership record, a small but real information leak, and the same
  * no-oracle reasoning `requireMembership`'s own comment already applies to
  * foreign versus nonexistent tenants.
+ *
+ * Phase 29 (Research Tenancy, Isolation & Governance Gate, review consensus
+ * finding 1): the pre-existing role check runs FIRST, unchanged, and ONLY
+ * THEN does this function call `assertTenantAccess` — the ONE shared
+ * research-authorization decision site — before returning. `researchConfig`
+ * is a REQUIRED trailing parameter (not optional-with-a-default): a required
+ * parameter is what makes the compiler enumerate every call site; a default
+ * of `null` would silently make every research tenant unreachable rather
+ * than correctly gated. Removing this second check breaks allowlist
+ * revocation for every destructive/URL-param route this function guards.
  */
 export async function requireTenantRole(
   database: Database,
   uid: string,
   tenantId: string,
   allowed: readonly ClientTenantRole[],
+  researchConfig: ResearchConfig | null,
 ): Promise<ClientTenantRole> {
   const role = await readMembershipRole(database, uid, tenantId);
   if (!role || !allowed.includes(role)) {
     throw new ForbiddenError('Not a member of this client tenant');
   }
+  // Research gate — throws the SAME rejection above for `denied` and
+  // `indeterminate` alike (no-oracle).
+  await assertTenantAccess({ database, researchConfig, uid, tenantId });
   return role;
 }

@@ -101,7 +101,7 @@ const coachingReviewsRoutes: FastifyPluginAsyncZod = async (app) => {
   app.addHook('preHandler', async (request) => {
     const { clientId } = request.params as { clientId?: string };
     if (clientId) {
-      await requireMembership(app.firebase.database, request.uid, clientId);
+      await requireMembership(app.firebase.database, request.uid, clientId, app.researchConfig);
     }
   });
 

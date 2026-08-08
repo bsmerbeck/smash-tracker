@@ -215,7 +215,7 @@ describe('assertTenantAccess', () => {
     const membershipDb = new FakeDatabase();
     let membershipError: unknown;
     try {
-      await requireMembership(asDatabase(membershipDb), UID, 'nonexistent-tenant');
+      await requireMembership(asDatabase(membershipDb), UID, 'nonexistent-tenant', null);
     } catch (err) {
       membershipError = err;
     }
