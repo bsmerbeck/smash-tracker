@@ -2008,6 +2008,22 @@
         "deliverError": "Something went wrong creating this delivery link.",
         "copiedToast": "Delivery link created and copied"
       }
+    },
+    "research": {
+      "banner": "Public-data research snapshot — unverified, not player-owned or endorsed.",
+      "badge": {
+        "research": "Research",
+        "unresolved": "Unresolved"
+      },
+      "chromeIndicator": {
+        "research": "Research",
+        "unresolved": "Unverified"
+      },
+      "error": {
+        "title": "Couldn't verify this workspace",
+        "body": "We couldn't confirm what kind of workspace this is. Your data is safe — try again.",
+        "retry": "Retry"
+      }
     }
   },
   "reviewDelivery": {

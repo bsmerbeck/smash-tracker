@@ -32,6 +32,12 @@ const clientsList = vi.fn();
 const startggStatus = vi.fn();
 const clientWorkspacesList = vi.fn();
 const claimsRedeem = vi.fn();
+// Phase 29 (Research Tenancy, Isolation & Governance Gate): backs
+// `useResearchSubject`'s query, which `ClientWorkspaceLayout` now gates its
+// outlet on. Defaults to the ordinary resolution so every pre-existing test
+// below (all pre-dating Phase 29) keeps rendering its workspace content
+// exactly as before.
+const clientsKind = vi.fn();
 
 const { MockApiError } = vi.hoisted(() => {
   class MockApiError extends Error {
@@ -54,7 +60,10 @@ vi.mock('@/lib/api', () => ({
     },
     matches: { list: (...args: unknown[]) => matchesList(...args) },
     coaching: {
-      clients: { list: (...args: unknown[]) => clientsList(...args) },
+      clients: {
+        list: (...args: unknown[]) => clientsList(...args),
+        kind: (...args: unknown[]) => clientsKind(...args),
+      },
     },
     clientWorkspaces: {
       list: (...args: unknown[]) => clientWorkspacesList(...args),
@@ -104,6 +113,7 @@ describe('AppRouter — coaching workspace routes (fix round 2)', () => {
     matchesList.mockResolvedValue([]);
     clientsList.mockResolvedValue([{ clientId: 'tetra', label: 'TETRA', draftCount: 0 }]);
     startggStatus.mockResolvedValue({ linked: false });
+    clientsKind.mockResolvedValue({ kind: 'ordinary' });
   });
 
   afterEach(() => {

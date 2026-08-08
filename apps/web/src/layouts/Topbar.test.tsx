@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes } from 'react-router';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -36,6 +36,12 @@ const getMe = vi.fn().mockResolvedValue({
 
 const listClients = vi.fn().mockResolvedValue([]);
 const listWorkspaces = vi.fn().mockResolvedValue([]);
+// Phase 29 (Research Tenancy, Isolation & Governance Gate): backs
+// `useResearchSubject`'s query — every existing test in this file that
+// navigates inside `/coach/:clientId/*` now also triggers this call, so it
+// defaults to the ordinary resolution (matching prior, pre-Phase-29
+// behavior) and is overridden per test in the new describe block below.
+const getKind = vi.fn().mockResolvedValue({ kind: 'ordinary' });
 
 vi.mock('@/lib/api', () => ({
   api: {
@@ -49,6 +55,7 @@ vi.mock('@/lib/api', () => ({
     coaching: {
       clients: {
         list: (...args: unknown[]) => listClients(...args),
+        kind: (...args: unknown[]) => getKind(...args),
       },
     },
     clientWorkspaces: {
@@ -500,5 +507,59 @@ describe('Topbar owned-workspace entry chip (Quick 260726-r5, gap 1)', () => {
 
     await screen.findByRole('button', { name: /Workspace: My Workspace/ });
     expect(screen.queryByRole('button', { name: /^My Workspace/ })).not.toBeInTheDocument();
+  });
+});
+
+/**
+ * Phase 29 (Research Tenancy, Isolation & Governance Gate, RTEN-02, review
+ * finding 29-07 HIGH): the client chip is research-aware — it renders
+ * ABOVE `ClientWorkspaceLayout`'s gated outlet (`MainLayout` renders the
+ * Topbar before the nested route tree), so a research workspace's name
+ * must never appear here with no discriminator.
+ */
+describe('Topbar client chip research indicator (Phase 29, RTEN-02)', () => {
+  beforeEach(() => {
+    resetAuthMock();
+    vi.clearAllMocks();
+    getMe.mockResolvedValue({
+      uid: 'test-uid',
+      email: 'test@example.com',
+      fighters: { primary: [], secondary: [] },
+      coachingModeEnabled: true,
+    });
+    listClients.mockResolvedValue([{ clientId: 'tetra', label: 'Tetra', draftCount: 0 }]);
+    setMockUser(makeMockUser({ email: 'pilot@example.com' }));
+  });
+
+  it('renders the research indicator for a research workspace', async () => {
+    getKind.mockResolvedValue({ kind: 'research' });
+    renderTopbarAt('/coach/tetra/overview');
+
+    await screen.findByRole('button', { name: /Managing Tetra/ });
+    expect(await screen.findByTestId('client-chip-research-indicator')).toHaveTextContent(
+      'Research',
+    );
+    expect(screen.queryByTestId('client-chip-unresolved-indicator')).not.toBeInTheDocument();
+  });
+
+  it('renders the unresolved indicator on a failed kind lookup, not the research indicator', async () => {
+    getKind.mockRejectedValue(new Error('network error'));
+    renderTopbarAt('/coach/tetra/overview');
+
+    await screen.findByRole('button', { name: /Managing Tetra/ });
+    expect(await screen.findByTestId('client-chip-unresolved-indicator')).toHaveTextContent(
+      'Unverified',
+    );
+    expect(screen.queryByTestId('client-chip-research-indicator')).not.toBeInTheDocument();
+  });
+
+  it('renders neither indicator for an ordinary workspace', async () => {
+    getKind.mockResolvedValue({ kind: 'ordinary' });
+    renderTopbarAt('/coach/tetra/overview');
+
+    await screen.findByRole('button', { name: /Managing Tetra/ });
+    await waitFor(() => expect(getKind).toHaveBeenCalled());
+    expect(screen.queryByTestId('client-chip-research-indicator')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('client-chip-unresolved-indicator')).not.toBeInTheDocument();
   });
 });

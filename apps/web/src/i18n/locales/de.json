@@ -2008,6 +2008,22 @@
         "deliverError": "Beim Erstellen dieses Zustelllinks ist ein Fehler aufgetreten.",
         "copiedToast": "Zustelllink erstellt und kopiert"
       }
+    },
+    "research": {
+      "banner": "Forschungs-Snapshot aus öffentlichen Daten — unverifiziert, nicht im Besitz des Spielers und nicht von ihm unterstützt.",
+      "badge": {
+        "research": "Forschung",
+        "unresolved": "Ungeklärt"
+      },
+      "chromeIndicator": {
+        "research": "Forschung",
+        "unresolved": "Nicht verifiziert"
+      },
+      "error": {
+        "title": "Dieser Arbeitsbereich konnte nicht überprüft werden",
+        "body": "Wir konnten nicht bestätigen, um welche Art von Arbeitsbereich es sich handelt. Deine Daten sind sicher — versuche es erneut.",
+        "retry": "Erneut versuchen"
+      }
     }
   },
   "reviewDelivery": {

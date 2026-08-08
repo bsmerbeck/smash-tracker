@@ -8,6 +8,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { useActiveSubject } from '@/hooks/useActiveSubject';
 import { useCoachingClients } from '@/hooks/useCoachingClients';
 import { useOwnedWorkspaceSubject } from '@/hooks/useOwnedWorkspaceSubject';
+import { useResearchSubject } from '@/hooks/useResearchSubject';
 import { navItems } from './nav';
 import { OwnerWorkspaceSidebar } from './OwnerWorkspaceSidebar';
 import ssbuTrainingGroundsLogo from '@/assets/SSBU_TG-03.png';
@@ -124,6 +125,16 @@ function CoachingHubSidebar({ onNavigate }: { onNavigate?: () => void }) {
  * — a back link to the hub, an accent-tinted client header card, then the
  * workspace items from `buildWorkspaceItems`. Personal `navItems` never
  * render here either (PAR-04/TEN-05).
+ *
+ * Phase 29 (Research Tenancy, Isolation & Governance Gate, RTEN-02, review
+ * finding 29-07 HIGH, cycle-2 finding C2-HIGH-9): research-aware — this
+ * identity block renders OUTSIDE `ClientWorkspaceLayout`'s gated outlet
+ * exactly like the Topbar's `ClientChip` (`MainLayout` renders the Sidebar
+ * around the nested children, not through it), so it independently swaps
+ * its caption using the SAME `coaching.research.chromeIndicator.*` strings
+ * the chip uses — no sibling keys. Only the caption line changes: the
+ * label, back link, and workspace nav items below are untouched in every
+ * state.
  */
 function ClientWorkspaceSidebar({
   clientId,
@@ -135,9 +146,15 @@ function ClientWorkspaceSidebar({
   const { t } = useTranslation();
   const location = useLocation();
   const clients = useCoachingClients();
+  const { isResearch, isPending, isError } = useResearchSubject();
   const clientLabel =
     clients.data?.find((client) => client.clientId === clientId)?.label ?? clientId;
   const workspaceItems = buildWorkspaceItems(clientId);
+  const caption = isResearch
+    ? t('coaching.research.chromeIndicator.research')
+    : isPending || isError
+      ? t('coaching.research.chromeIndicator.unresolved')
+      : t('coaching.sidebar.managedClient');
 
   return (
     <div className="flex h-full flex-col gap-2 p-4">
@@ -152,7 +169,9 @@ function ClientWorkspaceSidebar({
 
       <div className="rounded-md border border-coaching-accent bg-coaching-accent/10 px-3 py-2">
         <p className="truncate text-sm font-semibold">{clientLabel}</p>
-        <p className="text-xs text-coaching-accent">{t('coaching.sidebar.managedClient')}</p>
+        <p data-testid="client-workspace-sidebar-caption" className="text-xs text-coaching-accent">
+          {caption}
+        </p>
       </div>
 
       <nav className="flex flex-col gap-1 py-0.5" aria-label={t('chrome.mainNavigation')}>
