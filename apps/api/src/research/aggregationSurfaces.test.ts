@@ -268,6 +268,11 @@ const METADATA_READER_ALLOWLIST: MetadataReaderEntry[] = [
       "requireMembership's clientMembers read IS the access decision; the tenant lifecycle (create/list/archive/delete/export) reads/writes clientTenants/clientMembers/coachClients as the tenant metadata/membership/index owner.",
   },
   {
+    file: 'src/research/reportSubject.ts',
+    reason:
+      "classifyReportSubject's clientMembers read IS the access decision (checked BEFORE clientTenants' kind read, deliberately — no-oracle ordering, plan 29-11) for the report route's research-subject refusal; never used for cross-user aggregation.",
+  },
+  {
     file: 'src/research/routeGuards.ts',
     reason:
       "requireResearchTenantAdmin reads clientMembers/{tenantId}/{callerUid} as the research family's own membership gate before delegating the kind decision to assertTenantAccess (plan 29-05).",

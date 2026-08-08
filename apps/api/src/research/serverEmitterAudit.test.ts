@@ -2,11 +2,15 @@ import { readFileSync, readdirSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { X_EVENT_ALLOWLIST } from '@smash-tracker/shared';
+import type { ReportsConfig, StartggConfig, StripeConfig } from '../config/env.js';
+import type { AnthropicLikeClient } from '../reports/generate.js';
 import { FakeDatabase } from '../test-support/fakeDatabase.js';
+import { authHeader, buildTestApp, TEST_UID } from '../test-support/testApp.js';
 import { issueClaimInvitation, revokeClaimInvitation } from '../claims/invitations.js';
 import { redeemClaimCode } from '../claims/redemption.js';
 import { revokeCoachDelegation } from '../claims/delegation.js';
 import { hashClaimCode, normalizeClaimCode } from '../claims/crypto.js';
+import { runSweepStuckReportJobs } from '../jobs/sweepStuckReportJobs.js';
 
 /**
  * Phase 29 Plan 07 (RTEN-04, D-06, review finding 29-06 MEDIUM/DIVERGENT
@@ -227,9 +231,9 @@ const CLASSIFICATION_TABLE: ClassificationEntry[] = [
   },
   {
     file: 'src/jobs/sweepStuckReportJobs.ts',
-    disposition: 'owned-by-plan-29-11',
+    disposition: 'unreachable-by-construction',
     reason:
-      "The stale-job sweep, explicitly named in this disposition per this plan's own instructions — plan 29-11 closes the report/prep-report surface end to end.",
+      "Reclassified by plan 29-11's Task 2 refusal: this sweep reads ONLY the bounded `reportJobsByStatus/running` index, which a research-subject request can never populate — the refusal in routes/reports.ts sits above every job write (request.uid-keyed evidence/payload/results), so a research-subject submission is refused before a job record (and therefore before a `running` index entry) can ever exist for the sweep to find. Proven behaviorally below: a refused submission leaves the sweep with nothing to sweep and nothing to emit.",
   },
   {
     file: 'src/onboarding/activation.ts',
@@ -281,9 +285,9 @@ const CLASSIFICATION_TABLE: ClassificationEntry[] = [
   },
   {
     file: 'src/routes/reports.ts',
-    disposition: 'owned-by-plan-29-11',
+    disposition: 'unreachable-by-construction',
     reason:
-      "The report route's emissions, explicitly named in this disposition per this plan's own instructions and this plan's house_constraints (this file is forbidden from this plan's diff) — plan 29-11 closes it end to end.",
+      "Reclassified by plan 29-11's Task 2 refusal: classifyReportSubject is called immediately after the activation-gate block and BEFORE every arm (prep_bundle/post_event_synthesis/prep_report/legacy) — a research or indeterminate classification returns before any evidence read, payload assembly, job write, spend, or createEvent call. This route's evidence/payload/results are all keyed by request.uid, so once refused, no research-subject job can ever reach the `report_completed`/`report_failed` emission sites below. Proven behaviorally below (zero rows across all three telemetry trees, with an ordinary-subject positive control in the same harness).",
   },
   {
     file: 'src/routes/users.ts',
@@ -630,6 +634,138 @@ describe('serverEmitterAudit: claim-family emitters produce zero telemetry for a
     );
     await flush();
     expect(eventLedgerEntries(ordinaryDb, 'coach_delegation_revoked')).toHaveLength(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Behavioral proof of the report-route/stale-sweep reclassification (plan
+// 29-11, Task 3): a research-subject submission is refused before any job
+// record exists, so the report route's completion/failure emissions and the
+// sweep's stale-job emission are unreachable-by-construction, not merely
+// unreachable-by-instruction.
+// ---------------------------------------------------------------------------
+
+const REPORT_AUDIT_TENANT_ID = 'audit-report-research-tenant-1';
+
+const REPORT_AUDIT_STARTGG_CONFIG: StartggConfig = {
+  clientId: 'client-123',
+  clientSecret: 'secret-456',
+  redirectUri: 'http://localhost:3001/api/integrations/startgg/callback',
+  apiToken: 'server-data-token',
+  stateSecret: 'state-secret',
+  webBaseUrl: 'http://localhost:5173',
+};
+
+const REPORT_AUDIT_REPORTS_CONFIG: ReportsConfig = {
+  anthropicApiKey: 'sk-test-key',
+  allowedUids: new Set([TEST_UID]),
+};
+
+const REPORT_AUDIT_STRIPE_CONFIG: StripeConfig = {
+  secretKey: 'sk-test-123',
+  webhookSecret: 'whsec-test-456',
+};
+
+const REPORT_AUDIT_RESOLVE_RESPONSE = {
+  user: { id: 1111624, slug: 'user/07dc2239', player: { id: 1802316, gamerTag: 'Pandem1c' } },
+};
+const REPORT_AUDIT_EMPTY_SETS_RESPONSE = {
+  player: { sets: { pageInfo: { totalPages: 1 }, nodes: [] } },
+};
+
+function reportAuditGqlResponse(data: unknown, init?: ResponseInit) {
+  return new Response(JSON.stringify({ data }), init);
+}
+
+function reportAuditScoutFetchMock(): typeof fetch {
+  return (async (_url: unknown, init?: RequestInit) => {
+    const body = JSON.parse(String(init?.body)) as { query: string };
+    if (body.query.includes('ResolveBySlug') || body.query.includes('ResolveById')) {
+      return reportAuditGqlResponse(REPORT_AUDIT_RESOLVE_RESPONSE);
+    }
+    return reportAuditGqlResponse(REPORT_AUDIT_EMPTY_SETS_RESPONSE);
+  }) as typeof fetch;
+}
+
+const REPORT_AUDIT_VALID_REPORT = {
+  overview: 'A fast-falling Fox/Falco player.',
+  gameplan: ['Punish landing lag.'],
+  characterStrategy: {
+    picks: ['Mario'],
+    reasoning: 'Game 1: Mario; if they swap to Falco, keep Mario.',
+  },
+  stageStrategy: {
+    bans: ['Final Destination'],
+    picks: ['Battlefield'],
+    reasoning: 'Flat stages favor us.',
+  },
+  headToHead: null,
+  watchFor: ['Shine spikes off stage.'],
+  confidenceNotes: 'No sampled sets — treat this as a cold read.',
+};
+
+function reportAuditStubClient(
+  impl: (params: unknown) => Promise<{ stop_reason: string | null; parsed_output: unknown }>,
+): AnthropicLikeClient {
+  return { messages: { parse: impl as AnthropicLikeClient['messages']['parse'] } };
+}
+
+function seedReportAuditResearchTenant(database: FakeDatabase, tenantId: string): void {
+  database.seed(`clientTenants/${tenantId}`, { createdAt: 1, archivedAt: null, kind: 'research' });
+}
+
+function seedReportAuditMembership(database: FakeDatabase, tenantId: string, uid: string): void {
+  database.seed(`clientMembers/${tenantId}/${uid}`, { role: 'custodian', joinedAt: 1 });
+}
+
+describe('serverEmitterAudit: report route + stale-job sweep produce zero telemetry for a refused research-subject submission (behavioral proof, plan 29-11)', () => {
+  it('a research-subject submission creates no job record and emits nothing; a subsequent sweep finds nothing and emits nothing; an ordinary-subject positive control in the SAME harness observes a job and its events', async () => {
+    const { app, database } = buildTestApp({
+      startgg: REPORT_AUDIT_STARTGG_CONFIG,
+      startggFetch: reportAuditScoutFetchMock(),
+      reports: REPORT_AUDIT_REPORTS_CONFIG,
+      stripe: REPORT_AUDIT_STRIPE_CONFIG,
+      reportsClient: reportAuditStubClient(async () => ({
+        stop_reason: 'end_turn',
+        parsed_output: REPORT_AUDIT_VALID_REPORT,
+      })),
+    });
+    seedReportAuditResearchTenant(database, REPORT_AUDIT_TENANT_ID);
+    seedReportAuditMembership(database, REPORT_AUDIT_TENANT_ID, TEST_UID);
+
+    const refusedResponse = await app.inject({
+      method: 'POST',
+      url: '/api/reports',
+      headers: { ...authHeader(), 'x-active-subject': `client:${REPORT_AUDIT_TENANT_ID}` },
+      payload: { query: 'user/07dc2239' },
+    });
+    await flush();
+
+    expect(refusedResponse.statusCode).toBe(403);
+    expect((database.dump() as Record<string, unknown>).reportJobs).toBeUndefined();
+    expect(eventLedgerEntries(database, 'report_completed')).toHaveLength(0);
+    expect(eventLedgerEntries(database, 'report_failed')).toHaveLength(0);
+
+    // The sweep reads only `reportJobsByStatus/running` — nothing to find,
+    // nothing to refund, nothing to emit.
+    const sweepResult = await runSweepStuckReportJobs(database as never);
+    expect(sweepResult).toEqual({ swept: 0, refunded: 0 });
+    await flush();
+    expect(eventLedgerEntries(database, 'report_failed')).toHaveLength(0);
+
+    // Positive control, SAME harness: an ordinary (no-header) submission
+    // DOES create a job and DOES emit report_completed — the zero
+    // assertions above are not vacuous.
+    const ordinaryResponse = await app.inject({
+      method: 'POST',
+      url: '/api/reports',
+      headers: authHeader(),
+      payload: { query: 'user/07dc2239' },
+    });
+    await flush();
+
+    expect(ordinaryResponse.statusCode).toBe(200);
+    expect(eventLedgerEntries(database, 'report_completed')).toHaveLength(1);
   });
 });
 
