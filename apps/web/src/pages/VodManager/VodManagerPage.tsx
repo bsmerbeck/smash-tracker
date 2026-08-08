@@ -21,6 +21,7 @@ import { MAX_PLAYLISTS_PER_USER, type Fighter, type Match } from '@smash-tracker
 import { getFighterById } from '@/data/sprites';
 import { useActiveSubject } from '@/hooks/useActiveSubject';
 import { useCoachingReviews, useCreateCoachingReview } from '@/hooks/useCoachingReviews';
+import { useResearchSubject } from '@/hooks/useResearchSubject';
 import { useFighters } from '@/hooks/useFighters';
 import { useSortedFighters } from '@/hooks/useFighterName';
 import { useFilteredMatches } from '@/hooks/useFilteredMatches';
@@ -136,6 +137,14 @@ export function VodManagerPage() {
   // this is the only signal that the fighter-setup CTA below needs to
   // avoid sending the owner to their PERSONAL fighter picker.
   const { tenantId: ownedTenantId } = useOwnedWorkspaceSubject();
+  // Phase 29 (RTEN-04, D-06): gates the quick-tag-capture note-created
+  // product event below, never the note creation itself — a
+  // research/pending/errored workspace still creates the note.
+  const {
+    isResearch: isResearchWorkspace,
+    isPending: isResearchPending,
+    isError: isResearchError,
+  } = useResearchSubject();
   // D-01: the "Start review / Continue review" entry point — Continue when
   // an open draft exists for this client, Start otherwise (12-07's own
   // Claude's Discretion: no durable "review sources" schema exists yet to
@@ -989,7 +998,11 @@ export function VodManagerPage() {
     // quick-tag capture — the sibling branch above adds a tag to an EXISTING
     // note and must never fire this (RESEARCH.md Pitfall 3). Fired before
     // the create resolves, mirroring NoteComposer's dispatch-time event.
-    logProductEvent('vod_note_created');
+    // Phase 29 (RTEN-04): suppressed for a research/pending/errored
+    // workspace (fail-closed) — the note is still created either way.
+    if (!isResearchWorkspace && !isResearchPending && !isResearchError) {
+      logProductEvent('vod_note_created');
+    }
     try {
       const created = await createNote.mutateAsync({
         matchId: selectedMatch.id,

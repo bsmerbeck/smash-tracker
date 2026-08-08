@@ -5,6 +5,7 @@ import { HomePage } from '@/pages/Home/HomePage';
 import { CoachingModeGate } from '@/pages/Coaching/CoachingModeGate';
 import { ActiveSubjectSync } from './ActiveSubjectSync';
 import { ProtectedRoute } from './ProtectedRoute';
+import { ResearchTelemetrySuppression } from './ResearchTelemetrySuppression';
 import { RouteAnalytics } from './RouteAnalytics';
 import { RouteTitles } from './RouteTitles';
 
@@ -211,8 +212,15 @@ export function AppRouter() {
     <BrowserRouter>
       {/* Order matters: RouteTitles' effect runs before RouteAnalytics reads
           document.title (the async analytics init resolves after the whole
-          effect flush), and page-level useSeo effects run before both. */}
+          effect flush), and page-level useSeo effects run before both.
+          Phase 29 (RTEN-04, review finding 29-08 HIGH): ResearchTelemetrySuppression
+          mounts BEFORE RouteAnalytics so its effect disables collection on
+          the initial commit before the page-view reporter's effect can ever
+          fire a research-workspace page view — see that component's own
+          doc comment for why suppression must PRECEDE initialization, not
+          merely co-occur with it. */}
       <RouteTitles />
+      <ResearchTelemetrySuppression />
       <RouteAnalytics />
       {/* Phase 11 TEN-04/TEN-07: keeps api.ts's X-Active-Subject header in
           sync with the route on every navigation, coaching or personal —

@@ -64,6 +64,12 @@ const updatePlaylist = vi.fn();
 const removePlaylist = vi.fn();
 const reviewsList = vi.fn().mockResolvedValue([]);
 const reviewsCreate = vi.fn();
+// Phase 29 (RTEN-04): backs `useResearchSubject` for every `/coach/:clientId/*`
+// and `/workspace/:tenantId/*` render in this file — a default `'ordinary'`
+// resolution (set in the shared `beforeEach` below) keeps every pre-existing
+// coaching-route assertion in this file passing unmodified (Rule 3, mirrors
+// plan 29-08's `AppRouter.test.tsx` fixup for the same underlying gate).
+const clientsKind = vi.fn();
 
 vi.mock('@/lib/api', () => ({
   api: {
@@ -92,6 +98,9 @@ vi.mock('@/lib/api', () => ({
       reviews: {
         list: (...args: unknown[]) => reviewsList(...args),
         create: (...args: unknown[]) => reviewsCreate(...args),
+      },
+      clients: {
+        kind: (...args: unknown[]) => clientsKind(...args),
       },
     },
   },
@@ -222,6 +231,7 @@ describe('VodManagerPage', () => {
     updatePlaylist.mockResolvedValue({});
     removePlaylist.mockResolvedValue({});
     reviewsList.mockResolvedValue([]);
+    clientsKind.mockResolvedValue({ kind: 'ordinary' });
   });
 
   afterEach(() => {
@@ -2564,6 +2574,53 @@ describe('VodManagerPage', () => {
 
     await waitFor(() => expect(createNote).toHaveBeenCalledTimes(1));
     expect(logProductEvent).toHaveBeenCalledExactlyOnceWith('vod_note_created');
+  });
+
+  // -------------------------------------------------------------------
+  // Phase 29 (RTEN-04, D-06): research-subject gate on the quick-tag
+  // note-created product event — telemetry-only, never a functional
+  // change to note creation.
+  // -------------------------------------------------------------------
+
+  it('RTEN-04: fires zero product-event calls for a quick-tag capture that creates a new row in a research workspace, but the note is still created', async () => {
+    clientsKind.mockResolvedValue({ kind: 'research' });
+    const user = userEvent.setup();
+    const currentMatch = makeMatch({
+      id: 'm1',
+      opponent: 'rival-one',
+      vodUrl: 'https://youtube.com/watch?v=abc123',
+      vodTimestamps: [{ id: 'n1', seconds: 900, note: 'existing note' }],
+    });
+    listMatches.mockImplementation(() => Promise.resolve([currentMatch]));
+    createNote.mockResolvedValue({ id: 'n-new', seconds: 754, note: '', tags: ['punish'] });
+
+    let capturedConfig: YouTubePlayerConfig | undefined;
+    const Player = vi.fn(function (
+      this: unknown,
+      _el: HTMLElement,
+      config: YouTubePlayerConfig,
+    ): YouTubePlayerInstance {
+      capturedConfig = config;
+      return {
+        seekTo: vi.fn(),
+        playVideo: vi.fn(),
+        pauseVideo: vi.fn(),
+        destroy: vi.fn(),
+        getCurrentTime: vi.fn(() => 754),
+      };
+    });
+    window.YT = { Player: Player as unknown as YTGlobal['Player'], PlayerState: { ENDED: 0 } };
+
+    renderVodManager('/coach/tetra/vods?match=m1');
+    await waitFor(() => expect(Player).toHaveBeenCalledTimes(1));
+    act(() => {
+      capturedConfig?.events?.onReady?.();
+    });
+
+    await user.click(screen.getByRole('button', { name: 'Quick tag: Punish' }));
+
+    await waitFor(() => expect(createNote).toHaveBeenCalledTimes(1));
+    expect(logProductEvent).not.toHaveBeenCalled();
   });
 
   it('blocks a quick-tag capture once the match is at the MAX_TIMESTAMPS cap, via the existing cap toast', async () => {
