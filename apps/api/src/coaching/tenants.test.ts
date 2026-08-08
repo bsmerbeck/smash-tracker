@@ -655,6 +655,34 @@ describe('deleteClient', () => {
     ).toBeUndefined();
   });
 
+  // Phase 30 Plan 01 (ING-02/ING-03/ING-05/ING-07/ING-08, D-02): the five
+  // new research trees registered ahead of any writer — proves the cascade
+  // removes them behaviorally, not only by manifest membership.
+  it('leaves no orphaned research-ingestion tree after a hard delete (TENANT_DELETION_TREES coverage, plan 30-01)', async () => {
+    const database = new FakeDatabase();
+    const { tenantId } = await createClient(asDatabase(database), COACH_UID, 'Alex', {
+      sessionId: SESSION_ID,
+    });
+    const NEW_RESEARCH_TREES = [
+      'researchSource',
+      'researchSupplements',
+      'researchIdentity',
+      'researchIngestionRuns',
+      'researchCoverage',
+    ] as const;
+    for (const tree of NEW_RESEARCH_TREES) {
+      database.seed(`${tree}/${tenantId}`, { seeded: true });
+      expect(TENANT_DELETION_TREES).toContain(tree);
+    }
+
+    await deleteClient(asDatabase(database), COACH_UID, tenantId, null);
+
+    const dump = database.dump() as Record<string, unknown>;
+    for (const tree of NEW_RESEARCH_TREES) {
+      expect((dump[tree] as Record<string, unknown> | undefined)?.[tenantId]).toBeUndefined();
+    }
+  });
+
   // Quick 260726-r7 (P0 regression): flipTenantOwnership's 7th path,
   // `clientOwnedTenants/{clientUid}/{tenantId}`, is client-keyed and was
   // never reached by CANONICAL_TENANT_TREES — this is the test that would

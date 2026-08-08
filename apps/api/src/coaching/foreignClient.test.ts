@@ -279,6 +279,36 @@ const DELETION_TREES_WITHOUT_A_SAME_SUBJECT_ROUTE: Record<string, string> = {
     'apps/api/src/research/entitlements.ts grant/revoke routes are admin-only ' +
     "and answer the research family's uniform 404 (RESEARCH_FAMILY_REJECTION) " +
     'by design — they can never satisfy a covered same-subject 403 route.',
+  // Phase 30 Plan 01 (ING-03/ING-05/ING-07/ING-08, D-02): five new
+  // tenant-keyed research trees, registered ahead of any writer. Every one
+  // is reached only through the admin-only research route family
+  // (Phase 29's dual gate), which answers the same uniform 404
+  // (RESEARCH_FAMILY_REJECTION) as researchEntitlements above — none can
+  // ever satisfy a covered same-subject 403 route.
+  researchSource:
+    'the lossless provider-set tier (ING-03) is reached only through the admin-only ' +
+    "research backfill routes (plan 30-07), which answer the research family's " +
+    'uniform 404 by design — it can never satisfy a covered same-subject 403 route.',
+  researchSupplements:
+    'the manual/VOD supplement overlay tier (ING-08) is reached only through the ' +
+    'admin-only research supplement routes (plan 30-07), which answer the research ' +
+    "family's uniform 404 by design — it can never satisfy a covered same-subject " +
+    '403 route.',
+  researchIdentity:
+    'the admin-confirmed player-ID identity mapping (ING-07) is reached only through ' +
+    'the admin-only research identity routes (plan 30-07), which answer the research ' +
+    "family's uniform 404 by design — it can never satisfy a covered same-subject " +
+    '403 route.',
+  researchIngestionRuns:
+    'backfill run state and staged counters (ING-02) are reached only through the ' +
+    'admin-only research backfill trigger/advance/status routes (plan 30-07), which ' +
+    "answer the research family's uniform 404 by design — they can never satisfy a " +
+    'covered same-subject 403 route.',
+  researchCoverage:
+    'the published completeness snapshot (ING-05) is reached only through the ' +
+    'admin-only research coverage route (plan 30-07), which answers the research ' +
+    "family's uniform 404 by design — it can never satisfy a covered same-subject " +
+    '403 route.',
 };
 
 describe('TENANT_DELETION_TREES is a documented superset of CANONICAL_TENANT_TREES', () => {
