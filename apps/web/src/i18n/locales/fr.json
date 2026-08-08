@@ -2023,6 +2023,62 @@
         "title": "Impossible de vérifier cet espace de travail",
         "body": "Nous n'avons pas pu confirmer le type de cet espace de travail. Vos données sont en sécurité — réessayez.",
         "retry": "Réessayer"
+      },
+      "coverage": {
+        "title": "Couverture des données",
+        "asOf": "Mis à jour le {{date}}",
+        "noCompletedRun": "Aucun backfill n'est encore terminé, il n'y a donc aucun compteur à afficher.",
+        "activeRunInProgress": "Un backfill est en cours pour le joueur start.gg {{playerId}}.",
+        "loadError": "Impossible de charger le rapport de couverture des données. Vos données sont en sécurité — réessayez.",
+        "totals": {
+          "title": "Total de l'espace de travail (tous les joueurs confirmés)",
+          "explanation": "Ce total agrège tous les identifiants de joueur start.gg confirmés dans cet espace de travail. Chaque set n'est compté qu'une seule fois même s'il figure sous deux identifiants confirmés, donc ce total peut être inférieur à la somme des sections ci-dessous — c'est normal, pas une erreur."
+        },
+        "players": {
+          "title": "Couverture par joueur",
+          "playerLabel": "Joueur start.gg {{playerId}}",
+          "asOf": "Mis à jour le {{date}}",
+          "neverRun": "n'a encore aucun backfill terminé."
+        },
+        "counts": {
+          "discoveredAllGames": "Découverts (tous jeux)",
+          "discoveredEligible": "Découverts (éligibles)",
+          "imported": "Importés",
+          "skipped": "Ignorés",
+          "unresolved": "Non résolus",
+          "corrected": "Corrigés"
+        },
+        "excluded": {
+          "title": "Exclus des dénominateurs de taux de victoire",
+          "explanation": "Les disqualifications, byes, walkovers et sets sans détail de partie sont enregistrés mais exclus des dénominateurs de taux de victoire.",
+          "dq": "Disqualification (DQ)",
+          "bye": "Exempt (bye)",
+          "walkover": "Walkover (forfait adverse)",
+          "noGameDetail": "Aucun détail de partie (start.gg a signalé ce set comme terminé mais sans lignes de partie — ce n'est pas un walkover)"
+        },
+        "dateCoverage": {
+          "label": "Période couverte",
+          "unknown": "inconnue"
+        },
+        "gaps": {
+          "title": "Lacunes identifiées",
+          "none": "Aucune lacune enregistrée.",
+          "unknownCharacter": "Personnage inconnu",
+          "unknownStage": "Stage inconnu",
+          "missingGameDetail": "Détail de partie manquant",
+          "missingCompletedAt": "Heure de fin manquante",
+          "unknownOnlineContext": "Contexte en ligne/hors ligne inconnu",
+          "unknownVideogame": "Jeu inconnu (start.gg n'a pas indiqué à quel jeu appartient ce set)",
+          "unsafeProviderKey": "Clé du fournisseur non sûre"
+        },
+        "identity": {
+          "unresolvedCandidates_one": "{{count}} candidat d'identité non résolu",
+          "unresolvedCandidates_other": "{{count}} candidats d'identité non résolus",
+          "neverBackfilled": "affichés pour révision uniquement — jamais fusionnés dans cet espace de travail et jamais rétro-remplis."
+        },
+        "vodUrl": {
+          "note": "Un lien VOD saisi manuellement sur un set de recherche est conservé exactement comme saisi et n'est jamais remplacé par celui de start.gg — il peut donc être obsolète."
+        }
       }
     }
   },

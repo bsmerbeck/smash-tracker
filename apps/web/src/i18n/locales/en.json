@@ -2023,6 +2023,62 @@
         "title": "Couldn't verify this workspace",
         "body": "We couldn't confirm what kind of workspace this is. Your data is safe — try again.",
         "retry": "Retry"
+      },
+      "coverage": {
+        "title": "Data Coverage",
+        "asOf": "As of {{date}}",
+        "noCompletedRun": "No backfill has finished yet, so there are no counts to show.",
+        "activeRunInProgress": "A backfill for start.gg player {{playerId}} is in progress.",
+        "loadError": "We couldn't load the data coverage report. Your data is safe — try again.",
+        "totals": {
+          "title": "Workspace total (all confirmed players)",
+          "explanation": "This total is a rollup across every confirmed start.gg player ID in this workspace. Each set is counted once even when two confirmed player IDs both list it, so this total can be smaller than the sum of the sections below — that's correct, not a bug."
+        },
+        "players": {
+          "title": "Per-player coverage",
+          "playerLabel": "start.gg player {{playerId}}",
+          "asOf": "As of {{date}}",
+          "neverRun": "has no completed backfill yet."
+        },
+        "counts": {
+          "discoveredAllGames": "Discovered (all games)",
+          "discoveredEligible": "Discovered (eligible)",
+          "imported": "Imported",
+          "skipped": "Skipped",
+          "unresolved": "Unresolved",
+          "corrected": "Corrected"
+        },
+        "excluded": {
+          "title": "Excluded from win-rate denominators",
+          "explanation": "Disqualifications, byes, walkovers, and sets with no per-game detail are recorded but excluded from win-rate denominators.",
+          "dq": "Disqualification",
+          "bye": "Bye",
+          "walkover": "Walkover",
+          "noGameDetail": "No per-game detail (start.gg reported this set as completed but returned no game rows — not a walkover)"
+        },
+        "dateCoverage": {
+          "label": "Date range covered",
+          "unknown": "unknown"
+        },
+        "gaps": {
+          "title": "Named gaps",
+          "none": "No gaps recorded.",
+          "unknownCharacter": "Unknown character",
+          "unknownStage": "Unknown stage",
+          "missingGameDetail": "Missing game detail",
+          "missingCompletedAt": "Missing completion time",
+          "unknownOnlineContext": "Unknown online/offline context",
+          "unknownVideogame": "Unknown game (start.gg did not report which game this set was)",
+          "unsafeProviderKey": "Unsafe provider key"
+        },
+        "identity": {
+          "unresolvedCandidates_one": "{{count}} unresolved identity candidate",
+          "unresolvedCandidates_other": "{{count}} unresolved identity candidates",
+          "neverBackfilled": "shown for review only — never merged into this workspace and never backfilled."
+        },
+        "vodUrl": {
+          "note": "A VOD link entered by hand on a research match is kept exactly as entered and is never replaced by start.gg's — it may be out of date."
+        }
       }
     }
   },
