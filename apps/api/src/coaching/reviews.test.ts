@@ -1,7 +1,7 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import type { Database } from 'firebase-admin/database';
 import type { ReviewSection } from '@smash-tracker/shared';
-import { FakeDatabase } from '../test-support/fakeDatabase.js';
+import { FakeDatabase, type FakeReference } from '../test-support/fakeDatabase.js';
 import { NotFoundError } from '../services/rtdb.js';
 import {
   addSection,
@@ -344,6 +344,225 @@ describe('publishReview / previewClientVersion', () => {
       (r) => (r as { eventName: string }).eventName === 'coach_review_published',
     );
     expect(row).toMatchObject({ payload: { onboardingCause: 'coach_clients' } });
+  });
+});
+
+/**
+ * B-event emission (`void createEvent(...)`) is intentionally fire-and-forget
+ * — callers never await it. Flush the microtask/macrotask queue before
+ * asserting on the telemetry trees so these tests aren't racing the
+ * emission. Copied from `apps/api/src/billing/credits.test.ts`'s identically
+ * named helper per this plan's own instruction, rather than reinvented.
+ */
+async function flush(): Promise<void> {
+  await new Promise((resolve) => setTimeout(resolve, 0));
+}
+
+/** Zero rows across all three telemetry trees the sole writer touches (RTEN-04). */
+function expectZeroTelemetry(database: FakeDatabase): void {
+  const dump = database.dump() as Record<string, unknown>;
+  expect(dump).not.toHaveProperty('eventLedger');
+  expect(dump).not.toHaveProperty('eventDedup');
+  expect(dump).not.toHaveProperty('outboxPending');
+}
+
+function publishedEventRows(database: FakeDatabase): Array<Record<string, unknown>> {
+  const dump = database.dump() as { eventLedger?: Record<string, Record<string, unknown>> };
+  return Object.values(dump.eventLedger ?? {}).flatMap((day) => Object.values(day)) as Array<
+    Record<string, unknown>
+  >;
+}
+
+/**
+ * Records the ORDER (not just the occurrence) of every `.ref(path)` access
+ * against `database`, tagged with the operation performed — proves the
+ * subject-kind read precedes the mutation it guards (review finding 29-06
+ * MEDIUM). Mirrors `rtdb.test.ts`'s `countRootUpdates` spy-wrapping
+ * convention.
+ */
+function recordAccessOrder(database: FakeDatabase): { log: Array<{ path: string; op: string }> } {
+  const log: Array<{ path: string; op: string }> = [];
+  const originalRef = database.ref.bind(database);
+  vi.spyOn(database, 'ref').mockImplementation((path?: string) => {
+    const ref = originalRef(path);
+    const tag = path ?? '(root)';
+    const wrapped: FakeReference = {
+      ...ref,
+      get: async () => {
+        log.push({ path: tag, op: 'get' });
+        return ref.get();
+      },
+      set: async (value: unknown) => {
+        log.push({ path: tag, op: 'set' });
+        return ref.set(value);
+      },
+      update: async (values: Record<string, unknown>) => {
+        log.push({ path: tag, op: 'update' });
+        return ref.update(values);
+      },
+      transaction: async (updateFn: (current: unknown) => unknown) => {
+        log.push({ path: tag, op: 'transaction' });
+        return ref.transaction(updateFn);
+      },
+    };
+    return wrapped;
+  });
+  return { log };
+}
+
+/**
+ * RTEN-04 (D-06, review finding 29-06 MEDIUM, cycle-2 finding C2-HIGH-8):
+ * `publishReview` is the ONE gated call site this plan owns that is a plain
+ * exported function rather than a Fastify route handler — it is reachable
+ * directly, without the coaching route's `requireMembership` preHandler (a
+ * DIFFERENT plan's gate, 29-04) already fail-closing on an unresolved kind
+ * before any handler runs. That makes this the one file in this plan's
+ * scope where the full "write still succeeds for BOTH a research AND an
+ * unresolvable-kind subject" contract is directly exercisable end to end —
+ * see `29-07-SUMMARY.md`'s reachability note for the other four gated
+ * call sites in this plan (matches.ts, coachingReviews.ts,
+ * coachingReviewDeliveries.ts, coachingSessionDeliveries.ts), each of which
+ * sits behind an upstream authorization preHandler that already refuses an
+ * unresolved-kind tenant before this plan's own guard ever runs.
+ */
+describe('publishReview RTEN-04 (D-06): research/unresolved-subject telemetry suppression', () => {
+  it('a research tenant: zero rows across ledger/dedup/outbox, and the seal/status write still succeeds', async () => {
+    const database = new FakeDatabase();
+    database.seed(`clientTenants/${TENANT_ID}/kind`, 'research');
+    await autosaveDraft(
+      asDatabase(database),
+      TENANT_ID,
+      'review-1',
+      { sections: [makeSection()], coachPrivateNotes: null },
+      0,
+    );
+
+    const published = await publishReview(asDatabase(database), TENANT_ID, 'review-1', {
+      coachUid: COACH_UID,
+      sessionId: SESSION_ID,
+    });
+    await flush();
+
+    expect(published.version).toBe(1);
+    const status = await getReviewStatus(asDatabase(database), TENANT_ID, 'review-1');
+    expect(status).toEqual({ status: 'published', latestVersion: 1 });
+    expectZeroTelemetry(database);
+  });
+
+  it('an unresolvable-kind tenant (unrecognized stored discriminator): zero rows, and the write still succeeds', async () => {
+    const database = new FakeDatabase();
+    // readSubjectKind maps an unparseable/unrecognized stored value to the
+    // unresolved resolution — never attempting to make the total lookup
+    // throw (cycle-2 finding C2-HIGH-8).
+    database.seed(`clientTenants/${TENANT_ID}/kind`, 'not-a-real-kind');
+    await autosaveDraft(
+      asDatabase(database),
+      TENANT_ID,
+      'review-1',
+      { sections: [makeSection()], coachPrivateNotes: null },
+      0,
+    );
+
+    const published = await publishReview(asDatabase(database), TENANT_ID, 'review-1', {
+      coachUid: COACH_UID,
+      sessionId: SESSION_ID,
+    });
+    await flush();
+
+    expect(published.version).toBe(1);
+    const status = await getReviewStatus(asDatabase(database), TENANT_ID, 'review-1');
+    expect(status).toEqual({ status: 'published', latestVersion: 1 });
+    expectZeroTelemetry(database);
+  });
+
+  it('positive control: a coaching-kind tenant emits the byte-identical envelope (field by field) the pre-change behavior produced', async () => {
+    const database = new FakeDatabase();
+    database.seed(`clientTenants/${TENANT_ID}/kind`, 'coaching');
+    await autosaveDraft(
+      asDatabase(database),
+      TENANT_ID,
+      'review-1',
+      { sections: [makeSection()], coachPrivateNotes: null },
+      0,
+    );
+
+    await publishReview(asDatabase(database), TENANT_ID, 'review-1', {
+      coachUid: COACH_UID,
+      sessionId: SESSION_ID,
+    });
+    await flush();
+
+    const rows = publishedEventRows(database);
+    expect(rows).toHaveLength(1);
+    const row = rows[0] as {
+      eventName: string;
+      schemaVersion: number;
+      actorKind: string;
+      actorId: string;
+      sessionId: string;
+      source: string;
+      causationId: string;
+      consentState: string;
+      payload: unknown;
+    };
+    expect(row.eventName).toBe('coach_review_published');
+    expect(row.actorKind).toBe('authenticated');
+    expect(row.actorId).toBe(COACH_UID);
+    expect(row.sessionId).toBe(SESSION_ID);
+    expect(row.source).toBe('api');
+    expect(row.causationId).toBe('review-1');
+    expect(row.consentState).toBe('unknown');
+    expect(row.payload).toEqual({});
+    expect(typeof row.schemaVersion).toBe('number');
+  });
+
+  it('positive control: a legacy tenant with NO stored kind record (pre-Phase-29 coaching tenant) still emits — never silently ordinary-turned-unresolved', async () => {
+    const database = new FakeDatabase();
+    await autosaveDraft(
+      asDatabase(database),
+      TENANT_ID,
+      'review-1',
+      { sections: [makeSection()], coachPrivateNotes: null },
+      0,
+    );
+
+    await publishReview(asDatabase(database), TENANT_ID, 'review-1', {
+      coachUid: COACH_UID,
+      sessionId: SESSION_ID,
+    });
+    await flush();
+
+    expect(
+      publishedEventRows(database).filter((row) => row.eventName === 'coach_review_published'),
+    ).toHaveLength(1);
+  });
+
+  it('resolves the subject kind BEFORE the seal/status mutation (review finding 29-06 MEDIUM): the kind read precedes the first reviewVersions write', async () => {
+    const database = new FakeDatabase();
+    database.seed(`clientTenants/${TENANT_ID}/kind`, 'coaching');
+    await autosaveDraft(
+      asDatabase(database),
+      TENANT_ID,
+      'review-1',
+      { sections: [makeSection()], coachPrivateNotes: null },
+      0,
+    );
+
+    const { log } = recordAccessOrder(database);
+    await publishReview(asDatabase(database), TENANT_ID, 'review-1', {
+      coachUid: COACH_UID,
+      sessionId: SESSION_ID,
+    });
+
+    const kindReadIndex = log.findIndex(
+      (entry) => entry.path === `clientTenants/${TENANT_ID}/kind` && entry.op === 'get',
+    );
+    const firstMutationIndex = log.findIndex(
+      (entry) => entry.path === '(root)' && entry.op === 'update',
+    );
+    expect(kindReadIndex).toBeGreaterThanOrEqual(0);
+    expect(firstMutationIndex).toBeGreaterThanOrEqual(0);
+    expect(kindReadIndex).toBeLessThan(firstMutationIndex);
   });
 });
 

@@ -15,6 +15,7 @@ import {
 import { buildDomainEnvelope } from '../events/envelope.js';
 import { createEvent } from '../events/ledger.js';
 import { onboardingCausePayload } from '../onboarding/activation.js';
+import { readSubjectKind } from '../research/subjectKind.js';
 import { ConflictError, ForbiddenError, NotFoundError } from '../services/rtdb.js';
 
 /**
@@ -279,6 +280,13 @@ export async function publishReview(
   reviewId: string,
   options: { coachUid: string; sessionId: string },
 ): Promise<{ version: number }> {
+  // RTEN-04 (D-06, review finding 29-06 MEDIUM): resolved from the SAME
+  // `tenantId` the coaching route's `requireMembership` preHandler already
+  // checked, at the TOP of this function, before the seal/status mutation
+  // below — never after. A post-write lookup failure must never return a
+  // server error for a write that already succeeded.
+  const subjectKindResolution = await readSubjectKind(database, tenantId);
+
   const draftSnapshot = await database.ref(`reviewDrafts/${tenantId}/${reviewId}`).get();
   if (!draftSnapshot.exists()) {
     throw new NotFoundError(`Review ${reviewId} not found`);
@@ -302,18 +310,23 @@ export async function publishReview(
   // the v1 (coach_review_published) and v2+ (review_revision_published)
   // branches since they share this one emission call; causationId stays
   // reviewId (the dedup key), never repurposed (RESEARCH.md Pattern 3).
-  const payload = await onboardingCausePayload(database, options.coachUid);
-  void createEvent(
-    database,
-    buildDomainEnvelope({
-      eventName: nextVersion === 1 ? 'coach_review_published' : 'review_revision_published',
-      actorId: options.coachUid,
-      sessionId: options.sessionId,
-      causationId: reviewId,
-      consentState: 'unknown',
-      payload,
-    }),
-  );
+  //
+  // RTEN-04 (D-06): a research or unresolved subject never emits — the
+  // seal/status write above already committed either way.
+  if (subjectKindResolution === 'ordinary') {
+    const payload = await onboardingCausePayload(database, options.coachUid);
+    void createEvent(
+      database,
+      buildDomainEnvelope({
+        eventName: nextVersion === 1 ? 'coach_review_published' : 'review_revision_published',
+        actorId: options.coachUid,
+        sessionId: options.sessionId,
+        causationId: reviewId,
+        consentState: 'unknown',
+        payload,
+      }),
+    );
+  }
 
   return { version: nextVersion };
 }

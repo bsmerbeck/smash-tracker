@@ -10,6 +10,7 @@ import {
   listSessionDeliveries,
   revokeSessionDelivery,
 } from '../coaching/sessionDeliveries.js';
+import { readSubjectKind } from '../research/subjectKind.js';
 
 const sessionIdParamsSchema = z.object({
   clientId: z.string().min(1),
@@ -111,6 +112,14 @@ const coachingSessionDeliveriesRoutes: FastifyPluginAsyncZod<
       },
     },
     async (request, reply) => {
+      // RTEN-04 (D-06, review finding 29-06 MEDIUM): resolved from the SAME
+      // `:clientId` the `requireMembership` preHandler already checked, at
+      // the TOP of the handler, before the mint mutation below.
+      const subjectKindResolution = await readSubjectKind(
+        app.firebase.database,
+        request.params.clientId,
+      );
+
       const result = await createSessionDelivery(
         app.firebase.database,
         request.params.clientId,
@@ -119,16 +128,20 @@ const coachingSessionDeliveriesRoutes: FastifyPluginAsyncZod<
         { includedVodMatchIds: request.body?.includedVods ?? [] },
       );
 
-      void createEvent(
-        app.firebase.database,
-        buildDomainEnvelope({
-          eventName: 'session_delivery_created',
-          actorId: request.uid,
-          sessionId: sessionIdFromHeader(request),
-          causationId: `${request.params.sessionId}:${result.deliveryId}`,
-          consentState: 'unknown',
-        }),
-      );
+      // Suppression is telemetry-only — the mint write above already
+      // succeeded either way.
+      if (subjectKindResolution === 'ordinary') {
+        void createEvent(
+          app.firebase.database,
+          buildDomainEnvelope({
+            eventName: 'session_delivery_created',
+            actorId: request.uid,
+            sessionId: sessionIdFromHeader(request),
+            causationId: `${request.params.sessionId}:${result.deliveryId}`,
+            consentState: 'unknown',
+          }),
+        );
+      }
 
       return reply.code(201).send(result);
     },

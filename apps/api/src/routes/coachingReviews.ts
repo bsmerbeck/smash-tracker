@@ -13,6 +13,7 @@ import {
 import { buildDomainEnvelope } from '../events/envelope.js';
 import { createEvent } from '../events/ledger.js';
 import { requireMembership } from '../coaching/tenants.js';
+import { readSubjectKind } from '../research/subjectKind.js';
 import {
   addSection,
   archiveReview,
@@ -131,6 +132,14 @@ const coachingReviewsRoutes: FastifyPluginAsyncZod = async (app) => {
       },
     },
     async (request, reply) => {
+      // RTEN-04 (D-06, review finding 29-06 MEDIUM): resolved from the SAME
+      // `:clientId` the `requireMembership` preHandler already checked, at
+      // the TOP of the handler, before the autosave mutation below.
+      const subjectKindResolution = await readSubjectKind(
+        app.firebase.database,
+        request.params.clientId,
+      );
+
       const reviewId = randomUUID();
       const { revision } = await autosaveDraft(
         app.firebase.database,
@@ -140,16 +149,21 @@ const coachingReviewsRoutes: FastifyPluginAsyncZod = async (app) => {
         0,
       );
 
-      void createEvent(
-        app.firebase.database,
-        buildDomainEnvelope({
-          eventName: 'coach_review_draft_started',
-          actorId: request.uid,
-          sessionId: sessionIdFromHeader(request),
-          causationId: reviewId,
-          consentState: 'unknown',
-        }),
-      );
+      // Suppression is telemetry-only — the autosave write above already
+      // succeeded either way; only a research or unresolved subject skips
+      // the emission.
+      if (subjectKindResolution === 'ordinary') {
+        void createEvent(
+          app.firebase.database,
+          buildDomainEnvelope({
+            eventName: 'coach_review_draft_started',
+            actorId: request.uid,
+            sessionId: sessionIdFromHeader(request),
+            causationId: reviewId,
+            consentState: 'unknown',
+          }),
+        );
+      }
 
       return reply.code(201).send({ reviewId, revision });
     },

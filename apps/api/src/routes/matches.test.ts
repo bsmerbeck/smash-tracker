@@ -1,6 +1,7 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { MAX_VOD_TIMESTAMPS_PER_MATCH } from '@smash-tracker/shared';
 import { authHeader, buildTestApp, TEST_UID } from '../test-support/testApp.js';
+import type { FakeDatabase } from '../test-support/fakeDatabase.js';
 
 const validCreateInput = {
   fighter_id: 1,
@@ -1266,6 +1267,99 @@ describe('client_vod_attached carry-over (D-11)', () => {
 
     expect(response.statusCode).toBe(200);
     expect('vodFirstAttached' in response.json()).toBe(false);
+  });
+});
+
+/** Records the ORDER of every `.ref(path)` call against `database`, without disturbing behavior. */
+function recordRefCalls(database: FakeDatabase): { paths: string[] } {
+  const paths: string[] = [];
+  const originalRef = database.ref.bind(database);
+  vi.spyOn(database, 'ref').mockImplementation((path?: string) => {
+    paths.push(path ?? '(root)');
+    return originalRef(path);
+  });
+  return { paths };
+}
+
+/**
+ * RTEN-04 (D-06): `request.subjectKind` is populated by the `resolveSubject`
+ * preHandler (plan 29-04) BEFORE this route's handler body runs at all —
+ * for the header-driven `client:{tenantId}` path, `assertTenantAccess`
+ * (invoked inside that SAME preHandler) already fails closed (403, no
+ * handler invocation, no write) on an unresolvable-kind tenant, proven
+ * directly by `apps/api/src/coaching/subject.test.ts`'s own
+ * `resolveSubject` coverage. That makes the "unresolvable-kind subject,
+ * write still succeeds" scenario structurally unreachable via this route
+ * (see `29-07-SUMMARY.md`'s reachability note) — the reachable states this
+ * guard must be proven correct for are `research` (below) and `ordinary`
+ * (the pre-existing `client_vod_attached carry-over` describe above, which
+ * this guard leaves byte-unchanged).
+ */
+describe('client_vod_attached RTEN-04 (D-06): research-subject telemetry suppression', () => {
+  it('an allowlisted research admin creating a match with a vodUrl into a research tenant: zero client_vod_attached rows, and the match write still succeeds', async () => {
+    const { app, database } = buildTestApp({ research: { adminUids: new Set([TEST_UID]) } });
+    const tenantId = await createManagedClient(app);
+    database.seed(`clientTenants/${tenantId}/kind`, 'research');
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/matches',
+      headers: { ...authHeader(), 'x-active-subject': `client:${tenantId}` },
+      payload: { ...validCreateInput, vodUrl: 'https://youtube.com/watch?v=abc123' },
+    });
+
+    expect(response.statusCode).toBe(201);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const rows = eventRows(database.dump());
+    expect(rows.filter((row) => row.eventName === 'client_vod_attached')).toHaveLength(0);
+
+    const dump = database.dump() as { matches?: Record<string, Record<string, unknown>> };
+    expect(Object.keys(dump.matches?.[tenantId] ?? {})).toHaveLength(1);
+  });
+
+  it('an allowlisted research admin PATCHing the first vodUrl onto a research-tenant match: zero client_vod_attached rows, and the write still succeeds', async () => {
+    const { app, database } = buildTestApp({ research: { adminUids: new Set([TEST_UID]) } });
+    const tenantId = await createManagedClient(app);
+    database.seed(`clientTenants/${tenantId}/kind`, 'research');
+    database.seed(`matches/${tenantId}/m1`, {
+      fighter_id: 1,
+      opponent_id: 8,
+      time: 1700000000000,
+      win: true,
+    });
+
+    const response = await app.inject({
+      method: 'PATCH',
+      url: '/api/matches/m1',
+      headers: { ...authHeader(), 'x-active-subject': `client:${tenantId}` },
+      payload: { ...validCreateInput, vodUrl: 'https://youtube.com/watch?v=abc123' },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json().vodUrl).toBe('https://youtube.com/watch?v=abc123');
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const rows = eventRows(database.dump());
+    expect(rows.filter((row) => row.eventName === 'client_vod_attached')).toHaveLength(0);
+  });
+
+  it('resolves the subject kind (preHandler) BEFORE the match write runs — review finding 29-06 MEDIUM', async () => {
+    const { app, database } = buildTestApp();
+    const tenantId = await createManagedClient(app);
+
+    const { paths } = recordRefCalls(database);
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/matches',
+      headers: { ...authHeader(), 'x-active-subject': `client:${tenantId}` },
+      payload: { ...validCreateInput, vodUrl: 'https://youtube.com/watch?v=abc123' },
+    });
+    expect(response.statusCode).toBe(201);
+
+    const kindReadIndex = paths.indexOf(`clientTenants/${tenantId}/kind`);
+    const matchWriteIndex = paths.indexOf(`matches/${tenantId}`);
+    expect(kindReadIndex).toBeGreaterThanOrEqual(0);
+    expect(matchWriteIndex).toBeGreaterThanOrEqual(0);
+    expect(kindReadIndex).toBeLessThan(matchWriteIndex);
   });
 });
 

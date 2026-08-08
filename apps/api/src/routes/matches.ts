@@ -82,7 +82,18 @@ const matchesRoutes: FastifyPluginAsyncZod = async (app) => {
           sessionIdFromHeader(request),
         );
       }
-      if (isClientLibrary && request.body.vodUrl !== undefined) {
+      // RTEN-04 (D-06): `request.subjectKind` is already resolved by the
+      // `app.resolveSubject` preHandler above, BEFORE this mutation ran — a
+      // research or unresolved subject never emits `client_vod_attached`.
+      // Suppression is telemetry-only: the write above already succeeded
+      // and stays untouched either way. Suppressing costs an analytics row;
+      // refusing costs a user their work — this guard wraps ONLY the
+      // emission, never the write.
+      if (
+        isClientLibrary &&
+        request.body.vodUrl !== undefined &&
+        request.subjectKind === 'ordinary'
+      ) {
         const payload = await onboardingCausePayload(app.firebase.database, request.uid);
         void createEvent(
           app.firebase.database,
@@ -133,7 +144,10 @@ const matchesRoutes: FastifyPluginAsyncZod = async (app) => {
           sessionIdFromHeader(request),
         );
       }
-      if (isClientLibrary && vodFirstAttached) {
+      // RTEN-04 (D-06): see the POST handler above — same guard, same
+      // contract. `request.subjectKind` is resolved by the preHandler
+      // BEFORE `rtdb.updateMatch` ran.
+      if (isClientLibrary && vodFirstAttached && request.subjectKind === 'ordinary') {
         const payload = await onboardingCausePayload(app.firebase.database, request.uid);
         void createEvent(
           app.firebase.database,

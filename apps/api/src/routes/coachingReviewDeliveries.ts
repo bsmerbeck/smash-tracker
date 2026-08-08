@@ -14,6 +14,7 @@ import {
   listReviewDeliveries,
   revokeReviewDelivery,
 } from '../coaching/reviewDeliveries.js';
+import { readSubjectKind } from '../research/subjectKind.js';
 
 const reviewIdParamsSchema = z.object({
   clientId: z.string().min(1),
@@ -107,6 +108,14 @@ const coachingReviewDeliveriesRoutes: FastifyPluginAsyncZod<
       },
     },
     async (request, reply) => {
+      // RTEN-04 (D-06, review finding 29-06 MEDIUM): resolved from the SAME
+      // `:clientId` the `requireMembership` preHandler already checked, at
+      // the TOP of the handler, before the mint mutation below.
+      const subjectKindResolution = await readSubjectKind(
+        app.firebase.database,
+        request.params.clientId,
+      );
+
       const result = await createReviewDelivery(
         app.firebase.database,
         request.params.clientId,
@@ -119,16 +128,20 @@ const coachingReviewDeliveriesRoutes: FastifyPluginAsyncZod<
         },
       );
 
-      void createEvent(
-        app.firebase.database,
-        buildDomainEnvelope({
-          eventName: 'review_delivery_created',
-          actorId: request.uid,
-          sessionId: sessionIdFromHeader(request),
-          causationId: `${request.params.reviewId}:${result.deliveryId}`,
-          consentState: 'unknown',
-        }),
-      );
+      // Suppression is telemetry-only — the mint write above already
+      // succeeded either way.
+      if (subjectKindResolution === 'ordinary') {
+        void createEvent(
+          app.firebase.database,
+          buildDomainEnvelope({
+            eventName: 'review_delivery_created',
+            actorId: request.uid,
+            sessionId: sessionIdFromHeader(request),
+            causationId: `${request.params.reviewId}:${result.deliveryId}`,
+            consentState: 'unknown',
+          }),
+        );
+      }
 
       return reply.code(201).send(result);
     },
@@ -169,6 +182,14 @@ const coachingReviewDeliveriesRoutes: FastifyPluginAsyncZod<
       },
     },
     async (request, reply) => {
+      // RTEN-04 (D-06, review finding 29-06 MEDIUM): resolved from the SAME
+      // `:clientId` the `requireMembership` preHandler already checked, at
+      // the TOP of the handler, before the revoke mutation below.
+      const subjectKindResolution = await readSubjectKind(
+        app.firebase.database,
+        request.params.clientId,
+      );
+
       const { revoked } = await revokeReviewDelivery(
         app.firebase.database,
         request.params.clientId,
@@ -176,7 +197,9 @@ const coachingReviewDeliveriesRoutes: FastifyPluginAsyncZod<
         request.params.deliveryId,
       );
 
-      if (revoked) {
+      // Suppression is telemetry-only — the revoke write above already
+      // happened (or didn't, per its own idempotency) either way.
+      if (revoked && subjectKindResolution === 'ordinary') {
         void createEvent(
           app.firebase.database,
           buildDomainEnvelope({
