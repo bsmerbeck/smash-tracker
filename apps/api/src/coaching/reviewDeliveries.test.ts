@@ -117,6 +117,55 @@ describe('createReviewDelivery', () => {
     ).rejects.toThrow(NotFoundError);
   });
 
+  /**
+   * Phase 29 Plan 06 (RTEN-03, D-05, T-29-06-01/05/07): ONE of exactly
+   * three independent mint writers this plan gates — see
+   * `apps/api/src/services/rtdb.ts`'s `createShare` and
+   * `sessionDeliveries.test.ts` for the other two. Refuses BEFORE the
+   * multi-path update, leaving zero database residue — proven via a
+   * before/after `FakeDatabase.dump()` equality check, never only that a
+   * throw occurred.
+   */
+  it('RTEN-03: refuses to mint for a research tenant, leaving the database byte-unchanged', async () => {
+    const database = new FakeDatabase();
+    const RESEARCH_TENANT = 'research-tenant-1';
+    await seedPublishedReview(database);
+    // seedPublishedReview writes under TENANT_ID — publish the SAME
+    // reviewId/version under the research tenant so a permitted mint would
+    // otherwise succeed, isolating the refusal to the kind check alone.
+    await autosaveDraft(asDatabase(database), RESEARCH_TENANT, 'review-1', { sections: [] }, 0);
+    await publishReview(asDatabase(database), RESEARCH_TENANT, 'review-1', {
+      coachUid: COACH_UID,
+      sessionId: SESSION_ID,
+    });
+    database.seed(`clientTenants/${RESEARCH_TENANT}`, { createdAt: 1, kind: 'research' });
+    const before = database.dump();
+
+    await expect(
+      createReviewDelivery(asDatabase(database), RESEARCH_TENANT, 'review-1', 1, WEB_BASE_URL),
+    ).rejects.toThrow(NotFoundError);
+
+    expect(database.dump()).toEqual(before);
+  });
+
+  it('RTEN-03: refuses to mint when the subject kind cannot be resolved (fail closed)', async () => {
+    const database = new FakeDatabase();
+    const UNRESOLVABLE_TENANT = 'unresolvable-tenant-1';
+    await autosaveDraft(asDatabase(database), UNRESOLVABLE_TENANT, 'review-1', { sections: [] }, 0);
+    await publishReview(asDatabase(database), UNRESOLVABLE_TENANT, 'review-1', {
+      coachUid: COACH_UID,
+      sessionId: SESSION_ID,
+    });
+    database.seed(`clientTenants/${UNRESOLVABLE_TENANT}/kind`, 'not-a-real-kind');
+    const before = database.dump();
+
+    await expect(
+      createReviewDelivery(asDatabase(database), UNRESOLVABLE_TENANT, 'review-1', 1, WEB_BASE_URL),
+    ).rejects.toThrow(NotFoundError);
+
+    expect(database.dump()).toEqual(before);
+  });
+
   it('honors an optional expiresAt', async () => {
     const database = new FakeDatabase();
     await seedPublishedReview(database);

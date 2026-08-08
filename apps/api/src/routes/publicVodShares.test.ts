@@ -214,6 +214,32 @@ describe('GET /api/vod-shares/:token', () => {
     expect(revokedResponse.json()).toEqual(unknownResponse.json());
   });
 
+  /**
+   * Phase 29 Plan 06 (RTEN-03, D-05, T-29-06-04): this route is a thin
+   * caller of `RtdbService.getShareByToken` (no authorization logic of its
+   * own) — a research-subject token must answer with the IDENTICAL body an
+   * unknown token gets, proven with the SAME fixed token value across two
+   * fixtures so a token-shape difference can never explain away a real
+   * divergence.
+   */
+  it('returns the IDENTICAL 404 body for a research-subject token as for an unknown token (RTEN-03, no oracle)', async () => {
+    const { app, database } = buildTestApp();
+    seedActiveShare(database);
+    database.seed('clientTenants/owner-uid', { createdAt: 1, kind: 'research' });
+
+    const researchResponse = await app.inject({
+      method: 'GET',
+      url: `/api/vod-shares/${TOKEN}`,
+    });
+    const unknownResponse = await app.inject({
+      method: 'GET',
+      url: `/api/vod-shares/${UNKNOWN_TOKEN}`,
+    });
+
+    expect(researchResponse.statusCode).toBe(404);
+    expect(researchResponse.json()).toEqual(unknownResponse.json());
+  });
+
   it('returns the identical 404 (never a 500) for a malformed token with RTDB-illegal path characters', async () => {
     const { app } = buildTestApp();
 

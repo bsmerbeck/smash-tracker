@@ -12,6 +12,7 @@ import {
 import { buildReviewShareId, NotFoundError } from '../services/rtdb.js';
 import { generateShareToken } from '../shares/token.js';
 import { freezeIncludedVods } from './deliveryVodFreeze.js';
+import { readSubjectKind } from '../research/subjectKind.js';
 
 /**
  * Phase 12 Plan 04 (Coach Reviews & Delivery, DLV-01): the coach-side
@@ -145,6 +146,21 @@ export async function createReviewDelivery(
   webBaseUrl: string,
   options: { expiresAt?: number; includedVodMatchIds?: string[] } = {},
 ): Promise<{ deliveryId: string; token: string; url: string }> {
+  // Phase 29 Plan 06 (RTEN-03, D-05): ONE of exactly THREE independent mint
+  // writers for a bearer-delivery token — the other two are
+  // `RtdbService.createShare` and `createSessionDelivery` (this directory).
+  // Refuses BEFORE the multi-path update below, so a refused mint leaves
+  // the database byte-unchanged. Resolution-side gating (the four
+  // resolvers in `apps/api/src/services/rtdb.ts`) does NOT substitute for
+  // this: a token minted before this phase would still resolve without it.
+  const mintKindResolution = await readSubjectKind(database, tenantId);
+  if (mintKindResolution !== 'ordinary') {
+    // Reuses the SAME class + message this function already throws for
+    // input it will not serve — no new error class, nothing that names the
+    // discriminator or reveals why (D-05 no-oracle).
+    throw new NotFoundError(`Review ${reviewId} has no published version ${version}`);
+  }
+
   const versionSnapshot = await database
     .ref(`reviewVersions/${tenantId}/${reviewId}/${version}`)
     .get();

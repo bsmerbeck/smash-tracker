@@ -133,6 +133,53 @@ describe('createSessionDelivery', () => {
     expect(dump.sessionDeliveries).toBeUndefined();
   });
 
+  /**
+   * Phase 29 Plan 06 (RTEN-03, D-05, T-29-06-01/05/07): ONE of exactly
+   * three independent mint writers this plan gates — see
+   * `apps/api/src/services/rtdb.ts`'s `createShare` and
+   * `reviewDeliveries.test.ts` for the other two. Refuses BEFORE the
+   * multi-path update, leaving zero database residue — proven via a
+   * before/after `FakeDatabase.dump()` equality check, never only that a
+   * throw occurred.
+   */
+  it('RTEN-03: refuses to mint for a research tenant, leaving the database byte-unchanged', async () => {
+    const database = new FakeDatabase();
+    const RESEARCH_TENANT = 'research-tenant-1';
+    const { sessionId } = await createSession(asDatabase(database), RESEARCH_TENANT, {
+      date: 1_700_000_000_000,
+      characterTags: [1],
+      summary: 'Research tenant session',
+      homework: [],
+    });
+    database.seed(`clientTenants/${RESEARCH_TENANT}`, { createdAt: 1, kind: 'research' });
+    const before = database.dump();
+
+    await expect(
+      createSessionDelivery(asDatabase(database), RESEARCH_TENANT, sessionId, WEB_BASE_URL),
+    ).rejects.toThrow(NotFoundError);
+
+    expect(database.dump()).toEqual(before);
+  });
+
+  it('RTEN-03: refuses to mint when the subject kind cannot be resolved (fail closed)', async () => {
+    const database = new FakeDatabase();
+    const UNRESOLVABLE_TENANT = 'unresolvable-tenant-1';
+    const { sessionId } = await createSession(asDatabase(database), UNRESOLVABLE_TENANT, {
+      date: 1_700_000_000_000,
+      characterTags: [1],
+      summary: 'Unresolvable tenant session',
+      homework: [],
+    });
+    database.seed(`clientTenants/${UNRESOLVABLE_TENANT}/kind`, 'not-a-real-kind');
+    const before = database.dump();
+
+    await expect(
+      createSessionDelivery(asDatabase(database), UNRESOLVABLE_TENANT, sessionId, WEB_BASE_URL),
+    ).rejects.toThrow(NotFoundError);
+
+    expect(database.dump()).toEqual(before);
+  });
+
   describe('includedVods freeze (Phase 21, DLVX-02/DLVX-04)', () => {
     it('freezes includedVods the identical way as a review delivery, under the session tenant', async () => {
       const database = new FakeDatabase();
