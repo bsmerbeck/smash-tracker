@@ -69,6 +69,7 @@ import { buildReviewSnapshot, type ReviewCitationSource } from '../shares/buildR
 import { buildShareSnapshot } from '../shares/buildShareSnapshot.js';
 import { generateShareToken } from '../shares/token.js';
 import { resolveDisplayName } from '../groups/groups.js';
+import { readSubjectKind } from '../research/subjectKind.js';
 
 /**
  * POST/PATCH body shape for the owner (and, via the optional `coach` param,
@@ -1733,6 +1734,29 @@ export class RtdbService {
     input: CreateShareInput,
     webBaseUrl: string,
   ): Promise<ShareCreatedResponse> {
+    // Phase 29 Plan 06 (RTEN-03, D-05): ONE of exactly THREE independent
+    // mint writers for a bearer-delivery token — the other two are
+    // `createReviewDelivery`/`createSessionDelivery`
+    // (`apps/api/src/coaching/`). `uid` is the SUBJECT id for every one of
+    // this method's branches (a personal uid for 'review'/'recap', the
+    // CLIENT TENANT id for 'coachReview' — see that branch's own comment
+    // below), so this ONE check at the very top covers all three branches
+    // — and any future fourth — without a second gate per branch. A
+    // personal uid has no `clientTenants` record at all, so this costs one
+    // direct-path read and resolves to the ordinary value; existing
+    // personal/coaching-tenant behavior is unchanged. Resolution-side
+    // gating (the four resolvers this method's siblings gate) does NOT
+    // substitute for this: a token minted before this phase would still
+    // resolve without it.
+    const mintKindResolution = await readSubjectKind(this.database, uid);
+    if (mintKindResolution !== 'ordinary') {
+      // Reuses the SAME class + message the cap check three lines below
+      // already throws for input this method will not serve — no new
+      // error class, no distinct status, nothing that names the
+      // discriminator or reveals why (D-05 no-oracle).
+      throw new ForbiddenError(`You can create at most ${MAX_SHARES_PER_USER} shares`);
+    }
+
     const activeCount = await this.countActiveShares(uid);
     if (activeCount >= MAX_SHARES_PER_USER) {
       throw new ForbiddenError(`You can create at most ${MAX_SHARES_PER_USER} shares`);
