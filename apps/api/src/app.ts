@@ -50,6 +50,7 @@ import eventsRoutes from './routes/events.js';
 import internalJobsRoutes from './routes/internalJobs.js';
 import shareMetaRoutes from './routes/shareMeta.js';
 import shareOgImageRoutes from './routes/shareOgImage.js';
+import researchTenantsRoutes from './routes/research.js';
 import { ConflictError, ForbiddenError, NotFoundError } from './services/rtdb.js';
 import type { FirebaseServices } from './firebase/admin.js';
 import type {
@@ -414,6 +415,13 @@ export function buildApp(options: BuildAppOptions) {
       // registered unconditionally, no options object (no claim code/HMAC
       // secret is involved in listing one's own owned workspaces).
       await api.register(clientWorkspacesRoutes);
+      // Phase 29 (Research Tenancy, Isolation & Governance Gate, RTEN-01,
+      // D-04): the admin-only research tenant collection routes.
+      // Registered UNCONDITIONALLY — no config-null 503 gate here, since
+      // route PRESENCE itself must leak nothing; the config-null check
+      // lives inside the route handlers via `requireResearchAdmin`
+      // instead (see `apps/api/src/routes/research.ts`'s module comment).
+      await api.register(researchTenantsRoutes);
       await api.register(vodSharesRoutes, {
         webBaseUrl: options.webBaseUrl ?? 'http://localhost:5173',
         ga4: options.ga4 ?? null,
