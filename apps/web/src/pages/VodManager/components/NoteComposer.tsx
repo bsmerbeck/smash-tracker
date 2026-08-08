@@ -8,6 +8,7 @@ import { Input } from '@/components/ui/input';
 import type { VodTimestampInput } from '@/lib/api';
 import { MAX_TIMESTAMPS, formatTimestamp, parseFlexibleTimestamp } from '@/lib/vod';
 import { logProductEvent } from '@/lib/firebase';
+import { useResearchSubject } from '@/hooks/useResearchSubject';
 
 export interface NoteComposerProps {
   /** The selected match's current timestamp notes — used only to enforce
@@ -38,6 +39,10 @@ export interface NoteComposerProps {
  */
 export function NoteComposer({ timestamps, getCurrentTimeRef, onCreateNote }: NoteComposerProps) {
   const { t } = useTranslation();
+  // Phase 29 (RTEN-04, D-06): gates the note-created product event below,
+  // never the note creation itself — a research/pending/errored workspace
+  // still creates the note, it just never reports telemetry for it.
+  const { isResearch, isPending, isError } = useResearchSubject();
   const [timeInput, setTimeInput] = useState('');
   const [noteInput, setNoteInput] = useState('');
   const [timeError, setTimeError] = useState<string | null>(null);
@@ -69,8 +74,12 @@ export function NoteComposer({ timestamps, getCurrentTimeRef, onCreateNote }: No
     onCreateNote({ seconds, note });
     // FUNNEL-01: fired here (a genuine note CREATION), never inside any
     // shared handler that edit/delete flows also pass through —
-    // RESEARCH.md Pitfall 3.
-    logProductEvent('vod_note_created');
+    // RESEARCH.md Pitfall 3. Phase 29 (RTEN-04): suppressed for a
+    // research/pending/errored workspace (fail-closed) — the note above is
+    // still created either way.
+    if (!isResearch && !isPending && !isError) {
+      logProductEvent('vod_note_created');
+    }
     setTimeInput('');
     setNoteInput('');
     setTimeError(null);
