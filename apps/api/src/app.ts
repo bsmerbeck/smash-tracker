@@ -336,6 +336,11 @@ export function buildApp(options: BuildAppOptions) {
     internalJobs: options.internalJobs ?? null,
     ga4: options.ga4 ?? null,
     ga4Fetch: options.ga4Fetch,
+    // Phase 30 Plan 07: the research-backfill internal job needs the
+    // start.gg server token; a null config makes exactly that route answer
+    // 503 while every sibling job keeps its existing behavior.
+    startgg: options.startgg ?? null,
+    startggFetch: options.startggFetch,
   });
 
   // Phase 27 (RPT-04): the single boolean derivation that crosses the prep
