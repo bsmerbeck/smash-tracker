@@ -336,6 +336,11 @@ export function buildApp(options: BuildAppOptions) {
     internalJobs: options.internalJobs ?? null,
     ga4: options.ga4 ?? null,
     ga4Fetch: options.ga4Fetch,
+    // Phase 30 Plan 07: the research-backfill internal job needs the
+    // start.gg server token; a null config makes exactly that route answer
+    // 503 while every sibling job keeps its existing behavior.
+    startgg: options.startgg ?? null,
+    startggFetch: options.startggFetch,
   });
 
   // Phase 27 (RPT-04): the single boolean derivation that crosses the prep
@@ -416,12 +421,19 @@ export function buildApp(options: BuildAppOptions) {
       // secret is involved in listing one's own owned workspaces).
       await api.register(clientWorkspacesRoutes);
       // Phase 29 (Research Tenancy, Isolation & Governance Gate, RTEN-01,
-      // D-04): the admin-only research tenant collection routes.
-      // Registered UNCONDITIONALLY — no config-null 503 gate here, since
-      // route PRESENCE itself must leak nothing; the config-null check
-      // lives inside the route handlers via `requireResearchAdmin`
-      // instead (see `apps/api/src/routes/research.ts`'s module comment).
-      await api.register(researchTenantsRoutes);
+      // D-04): the admin-only research tenant collection routes. Phase 30
+      // Plan 07 extends this SAME registration with the start.gg server
+      // token the backfill routes need — a null config makes exactly those
+      // routes answer 503 while the tenant and entitlement routes keep
+      // their existing unconditional behavior. Registered UNCONDITIONALLY
+      // — no research-config-null 503 gate here, since route PRESENCE
+      // itself must leak nothing; that config-null check lives inside the
+      // route handlers via `requireResearchAdmin` instead (see
+      // `apps/api/src/routes/research.ts`'s module comment).
+      await api.register(researchTenantsRoutes, {
+        startgg: options.startgg ?? null,
+        startggFetch: options.startggFetch,
+      });
       await api.register(vodSharesRoutes, {
         webBaseUrl: options.webBaseUrl ?? 'http://localhost:5173',
         ga4: options.ga4 ?? null,

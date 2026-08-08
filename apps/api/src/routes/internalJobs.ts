@@ -1,14 +1,24 @@
 import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
-import { errorResponseSchema } from '@smash-tracker/shared';
-import type { Ga4Config, InternalJobsConfig } from '../config/env.js';
+import {
+  errorResponseSchema,
+  isPathSafeProviderId,
+  RESEARCH_INGESTION_RUN_STATUSES,
+} from '@smash-tracker/shared';
+import type { Ga4Config, InternalJobsConfig, StartggConfig } from '../config/env.js';
 import { checkInternalJobSecret } from '../plugins/internalJobAuth.js';
 import { runProjectGa4 } from '../jobs/projectGa4.js';
 import { runReconcile } from '../jobs/reconcile.js';
 import { runSweepStuckReportJobs } from '../jobs/sweepStuckReportJobs.js';
 import { runPrune } from '../jobs/prune.js';
 import { runFunnelReadout } from '../jobs/funnelReadout.js';
+import {
+  DEFAULT_MAX_PAGES_PER_INVOCATION,
+  INTERNAL_JOB_MAX_SYNC_BACKOFF_MS,
+  runResearchBackfillBatch,
+} from '../jobs/researchBackfillBatch.js';
+import { isPathSafeTenantId } from '../research/subjectKind.js';
 
 const INTERNAL_JOBS_SECRET_HEADER = 'x-internal-jobs-secret';
 
@@ -17,6 +27,10 @@ export interface InternalJobsRoutesOptions {
   ga4: Ga4Config | null;
   /** Overridable fetch for the GA4 Measurement Protocol POST (tests). */
   ga4Fetch?: typeof fetch;
+  /** Phase 30 Plan 07: start.gg config the research-backfill job needs; null answers 503 for that route only. */
+  startgg: StartggConfig | null;
+  /** Overridable fetch for the start.gg GraphQL calls the backfill batch makes (tests). */
+  startggFetch?: typeof fetch;
 }
 
 const projectGa4ResultSchema = z.object({
@@ -68,6 +82,58 @@ const funnelReadoutQuerySchema = z.object({
 });
 
 /**
+ * Phase 30 Plan 07 (ING-01/ING-02): the two refinements below are not
+ * decoration (review C-H13). A length-only schema lets a `.`- or
+ * `#`-bearing id through to the executor, whose FIRST action is a
+ * `readBackfillRun` that constructs a reference from it — and both the real
+ * Admin SDK and `FakeDatabase` (`apps/api/src/test-support/fakeDatabase.ts:141`)
+ * reject illegal key characters SYNCHRONOUSLY at `ref()` construction. That
+ * is a thrown 500 from a handler whose executor contract is explicitly
+ * never-throws. Validating at the route boundary turns it into an ordinary
+ * validation response and keeps the contract true.
+ */
+const researchBackfillJobQuerySchema = z.object({
+  tenantId: z
+    .string()
+    .min(1)
+    .max(200)
+    .refine(isPathSafeTenantId, 'tenantId is not a path-safe key'),
+  runId: z.string().min(1).max(200).refine(isPathSafeProviderId, 'runId is not a path-safe key'),
+  maxPages: z.coerce.number().int().min(1).max(50).default(DEFAULT_MAX_PAGES_PER_INVOCATION),
+});
+
+const researchBackfillStopReasonSchema = z.enum([
+  'completed',
+  'page-budget',
+  'lease-held',
+  'lease-lost',
+  'retryable-write',
+  'backoff-pending',
+  'infra-error',
+  'failed',
+  'noop-terminal',
+]);
+
+/** Mirrors `ResearchBackfillBatchResult` (`apps/api/src/jobs/researchBackfillBatch.ts`). */
+const researchBackfillJobResultSchema = z.object({
+  runId: z.string(),
+  status: z.enum(RESEARCH_INGESTION_RUN_STATUSES),
+  completed: z.boolean(),
+  stopReason: researchBackfillStopReasonSchema,
+  retryable: z.boolean(),
+  pagesProcessed: z.number().int().nonnegative(),
+  setsObserved: z.number().int().nonnegative(),
+  cursorPage: z.number().int().nonnegative(),
+  totalPages: z.number().int().nullable(),
+  throttledMs: z.number().int().nonnegative(),
+  backoffEvents: z.number().int().nonnegative(),
+  writeRetries: z.number().int().nonnegative(),
+  staleWritesSkipped: z.number().int().nonnegative(),
+  retryAfterObserved: z.boolean(),
+  reason: z.string().nullable(),
+});
+
+/**
  * Phase 10 Plan 5 (Canonical Measurement & Money Safety): the
  * Cloud-Scheduler-facing internal job routes. Root-scoped (registered
  * OUTSIDE `/api` in app.ts) so the literal path `/internal/jobs/*` matches
@@ -89,7 +155,7 @@ const internalJobsRoutes: FastifyPluginAsyncZod<InternalJobsRoutesOptions> = asy
   app,
   options,
 ) => {
-  const { internalJobs, ga4, ga4Fetch } = options;
+  const { internalJobs, ga4, ga4Fetch, startgg, startggFetch } = options;
 
   if (!internalJobs) {
     app.all('/internal/jobs*', async (_request, reply) => {
@@ -216,6 +282,78 @@ const internalJobsRoutes: FastifyPluginAsyncZod<InternalJobsRoutesOptions> = asy
       return result;
     },
   );
+
+  // Phase 30 Plan 07 (ING-01/ING-02): lets a scheduler or an operator
+  // advance a research backfill with one secret-gated request, on the
+  // established internal-jobs pattern. Takes NO research-admin gate
+  // (documented below) — this scope's authorization model is the shared
+  // secret, identical to every sibling job above.
+  app.get(
+    '/internal/jobs/research-backfill',
+    {
+      preHandler: requireInternalJobsSecret,
+      schema: {
+        querystring: researchBackfillJobQuerySchema,
+        response: {
+          200: researchBackfillJobResultSchema,
+          401: errorResponseSchema,
+          503: errorResponseSchema,
+        },
+      },
+    },
+    async (request, reply) => {
+      if (!startgg) {
+        return reply.code(503).send({
+          error: 'Service Unavailable',
+          message: 'start.gg integration is not configured on this server',
+          statusCode: 503,
+        });
+      }
+
+      const { tenantId, runId, maxPages } = request.query;
+      const result = await runResearchBackfillBatch(
+        app.firebase.database,
+        startgg.apiToken,
+        tenantId,
+        runId,
+        {
+          maxPagesPerInvocation: maxPages,
+          // The admin routes pass `TRIGGER_MAX_SYNC_BACKOFF_MS` because they
+          // are reached through the Hosting rewrite and its ~60-second
+          // window; this endpoint is reachable only via the direct Cloud Run
+          // URL, where the request timeout is minutes rather than seconds,
+          // so it gets the larger `INTERNAL_JOB_MAX_SYNC_BACKOFF_MS`. Both
+          // are bounded, and neither is unbounded — a scheduler tick that
+          // never returns is its own outage.
+          maxSyncBackoffMs: INTERNAL_JOB_MAX_SYNC_BACKOFF_MS,
+          fetchImpl: startggFetch,
+        },
+      );
+      // A `backoff-pending` or `infra-error` result is a normal 200 here,
+      // not an error status: the result object carries `retryable`, and a
+      // scheduler that reads it simply ticks again. Returning a 5xx would
+      // make an ordinary rate-limit pause look like a server fault in the
+      // scheduler's own alerting.
+      request.log.info(result, 'research-backfill run summary');
+      return result;
+    },
+  );
+
+  // Documented here rather than at the route above so the reasoning stays
+  // attached to the decision, not just the code: this scope's authorization
+  // model is the shared secret, identical to every sibling job in this
+  // file, and layering the research allowlist on top would require a uid
+  // this request does not have. The tenant scoping is supplied by the
+  // caller's `tenantId`, which the executor guards with the path-safe
+  // predicate before touching a reference, and the executor's own
+  // identity-confirmation check is what stops an unconfirmed workspace from
+  // being backfilled through this door.
+  //
+  // Operational note (production-gap checklist): `firebase.json` rewrites
+  // only the api and share scopes, so `/internal/jobs/research-backfill` is
+  // reachable in production only through the direct Cloud Run URL or a
+  // newly provisioned rewrite — the same standing caveat the internal-jobs
+  // scope already carries for Cloud Scheduler generally.
 };
 
 export default internalJobsRoutes;

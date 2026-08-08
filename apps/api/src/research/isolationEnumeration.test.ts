@@ -138,13 +138,31 @@ function extractRegisteredRoutes(): { method: string; path: string }[] {
 const RESEARCH_ROUTE_FAMILY = extractRegisteredRoutes();
 
 describe('the research route array is derived from the registered plugin (D-08)', () => {
-  it('discovers exactly the 4 routes the plugin registers, not a hand-typed sample', () => {
+  it('discovers exactly the 15 routes the plugin registers, not a hand-typed sample', () => {
+    // Phase 30 Plan 07 extends the family from 4 routes to 15: the two
+    // collection routes and two entitlement routes Phase 29 shipped, plus
+    // the eleven identity/backfill/coverage/supplement routes this plan
+    // adds, all reusing `requireResearchTenantAdmin` verbatim.
     expect(RESEARCH_ROUTE_FAMILY.length).toBeGreaterThan(0);
     expect(RESEARCH_ROUTE_FAMILY).toEqual([
       { method: 'POST', path: '/api/research/tenants' },
       { method: 'GET', path: '/api/research/tenants' },
       { method: 'POST', path: '/api/research/tenants/:tenantId/entitlement/grant' },
       { method: 'POST', path: '/api/research/tenants/:tenantId/entitlement/revoke' },
+      { method: 'POST', path: '/api/research/tenants/:tenantId/identity/resolve' },
+      { method: 'POST', path: '/api/research/tenants/:tenantId/identity/confirm' },
+      { method: 'GET', path: '/api/research/tenants/:tenantId/identity' },
+      { method: 'DELETE', path: '/api/research/tenants/:tenantId/identity/:playerId' },
+      { method: 'POST', path: '/api/research/tenants/:tenantId/backfill/trigger' },
+      { method: 'POST', path: '/api/research/tenants/:tenantId/backfill/advance' },
+      { method: 'GET', path: '/api/research/tenants/:tenantId/backfill/status' },
+      { method: 'GET', path: '/api/research/tenants/:tenantId/coverage' },
+      { method: 'POST', path: '/api/research/tenants/:tenantId/supplements' },
+      {
+        method: 'DELETE',
+        path: '/api/research/tenants/:tenantId/supplements/:targetSetId/:supplementId',
+      },
+      { method: 'GET', path: '/api/research/tenants/:tenantId/supplements/:targetSetId' },
     ]);
   });
 });
@@ -493,6 +511,16 @@ describe('the partitioned route matrix (four feasible classes, review findings 2
   describe('class 1: unauthenticated', () => {
     it('every route in the family receives the authentication failure, equal across routes, and NOT equal to the uniform rejection', async () => {
       const { app } = buildResearchRouteApp(ADMIN_UID);
+      // Every path segment (not only :tenantId) needs a schema-valid
+      // placeholder — Phase 30 Plan 07 extends the family with
+      // :playerId/:targetSetId/:supplementId segments too.
+      function urlFor(path: string): string {
+        return path
+          .replace(':tenantId', 'placeholder-tenant')
+          .replace(':playerId', '100')
+          .replace(':targetSetId', '1')
+          .replace(':supplementId', 'manual-note');
+      }
       // Each route's own valid-body shape — a body-schema 400 must never
       // masquerade as the authentication-failure class this test proves.
       function payloadFor(path: string): Record<string, unknown> | undefined {
@@ -505,13 +533,28 @@ describe('the partitioned route matrix (four feasible classes, review findings 2
         if (path === '/api/research/tenants') {
           return { label: 'Unauth class check' };
         }
+        if (path.endsWith('/identity/resolve')) {
+          return { slug: 'user/unauth-class-check' };
+        }
+        if (path.endsWith('/identity/confirm')) {
+          return { players: [{ playerId: '100' }] };
+        }
+        if (path.endsWith('/backfill/trigger')) {
+          return { mode: 'full' };
+        }
+        if (path.endsWith('/backfill/advance')) {
+          return { runId: 'unauth-class-check-run' };
+        }
+        if (path.endsWith('/supplements')) {
+          return { targetSetId: '1', field: 'note', value: 'x', sourceKind: 'manual' };
+        }
         return undefined;
       }
       const responses = await Promise.all(
         RESEARCH_ROUTE_FAMILY.map((route) =>
           app.inject({
-            method: route.method as 'GET' | 'POST',
-            url: route.path.replace(':tenantId', 'placeholder-tenant'),
+            method: route.method as 'GET' | 'POST' | 'DELETE',
+            url: urlFor(route.path),
             payload: route.method === 'POST' ? payloadFor(route.path) : undefined,
           }),
         ),
