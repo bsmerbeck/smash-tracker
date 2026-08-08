@@ -16,6 +16,10 @@ function makeClient(overrides: Partial<ClientHubRow> = {}): ClientHubRow {
     archivedAt: null,
     claimedAt: null,
     pendingInvitationExpiresAt: null,
+    // Phase 29 (Research Tenancy, Isolation & Governance Gate): tri-state
+    // resolution field, required on ClientHubRow — ordinary default,
+    // overridable per test.
+    kind: 'ordinary',
     ...overrides,
   };
 }
