@@ -138,3 +138,150 @@ describe('/api/coaching/clients', () => {
     expect(response.statusCode).toBe(401);
   });
 });
+
+describe('GET /api/coaching/clients/:clientId/kind (Phase 29, RTEN-01/D-07)', () => {
+  it('returns the ordinary resolution for a member of an ordinary tenant', async () => {
+    const { app, database } = buildTestApp();
+    database.seed('clientTenants/tenant-1', { createdAt: 1, archivedAt: null });
+    database.seed(`clientMembers/tenant-1/${TEST_UID}`, { role: 'custodian', joinedAt: 1 });
+
+    const response = await app.inject({
+      method: 'GET',
+      url: '/api/coaching/clients/tenant-1/kind',
+      headers: authHeader(),
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({ kind: 'ordinary' });
+  });
+
+  it('returns the research resolution for an ALLOWLISTED member of an ARCHIVED research tenant', async () => {
+    const { app, database } = buildTestApp({ research: { adminUids: new Set([TEST_UID]) } });
+    database.seed('clientTenants/tenant-1', {
+      createdAt: 1,
+      archivedAt: Date.now(),
+      kind: 'research',
+    });
+    database.seed(`clientMembers/tenant-1/${TEST_UID}`, { role: 'custodian', joinedAt: 1 });
+
+    const response = await app.inject({
+      method: 'GET',
+      url: '/api/coaching/clients/tenant-1/kind',
+      headers: authHeader(),
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({ kind: 'research' });
+  });
+
+  it('returns the existing membership rejection, deep-equal to a genuine non-member, for a non-allowlisted member of a research tenant', async () => {
+    const { app, database } = buildTestApp();
+    database.seed('clientTenants/tenant-1', { createdAt: 1, archivedAt: null, kind: 'research' });
+    database.seed(`clientMembers/tenant-1/${TEST_UID}`, { role: 'custodian', joinedAt: 1 });
+    database.seed('clientTenants/tenant-2', { createdAt: 1, archivedAt: null });
+    // Deliberately no clientMembers/tenant-2/{TEST_UID} — genuine non-member.
+
+    const deniedResponse = await app.inject({
+      method: 'GET',
+      url: '/api/coaching/clients/tenant-1/kind',
+      headers: authHeader(),
+    });
+    const nonMemberResponse = await app.inject({
+      method: 'GET',
+      url: '/api/coaching/clients/tenant-2/kind',
+      headers: authHeader(),
+    });
+
+    expect(deniedResponse.statusCode).toBe(403);
+    expect(nonMemberResponse.statusCode).toBe(403);
+    expect(deniedResponse.body).toBe(nonMemberResponse.body);
+  });
+
+  it('rejects a path-illegal clientId with the same rejection as a non-member, never a 500', async () => {
+    const { app } = buildTestApp();
+
+    const response = await app.inject({
+      method: 'GET',
+      url: `/api/coaching/clients/${encodeURIComponent('tenant.illegal')}/kind`,
+      headers: authHeader(),
+    });
+
+    expect(response.statusCode).toBe(403);
+  });
+
+  it('answers a server error (not 200, not 403) when the caller IS a member but the kind cannot be resolved', async () => {
+    const { app, database } = buildTestApp();
+    database.seed(`clientMembers/tenant-1/${TEST_UID}`, { role: 'custodian', joinedAt: 1 });
+    // Corrupt/unparseable stored kind -> readSubjectKind resolves 'unresolved'.
+    database.seed('clientTenants/tenant-1', { createdAt: 1, archivedAt: null, kind: 'bogus' });
+
+    const response = await app.inject({
+      method: 'GET',
+      url: '/api/coaching/clients/tenant-1/kind',
+      headers: authHeader(),
+    });
+
+    expect(response.statusCode).toBe(500);
+  });
+
+  it('rejects a non-member with 403 (no membership record at all)', async () => {
+    const { app, database } = buildTestApp();
+    database.seed('clientTenants/tenant-1', { createdAt: 1, archivedAt: null });
+
+    const response = await app.inject({
+      method: 'GET',
+      url: '/api/coaching/clients/tenant-1/kind',
+      headers: authHeader(),
+    });
+
+    expect(response.statusCode).toBe(403);
+  });
+});
+
+describe('GET /api/coaching/clients — research row filtering (Phase 29, review consensus finding 1)', () => {
+  it('hides a research row from a non-allowlisted caller and shows it to an allowlisted one', async () => {
+    const { app, database } = buildTestApp({ research: { adminUids: new Set([TEST_UID]) } });
+    database.seed(`coachClients/${TEST_UID}/tenant-research`, {
+      label: 'Research Client',
+      createdAt: 1,
+      archivedAt: null,
+    });
+    database.seed('clientTenants/tenant-research', {
+      createdAt: 1,
+      archivedAt: null,
+      kind: 'research',
+    });
+    database.seed(`clientMembers/tenant-research/${TEST_UID}`, { role: 'custodian', joinedAt: 1 });
+
+    const allowlistedResponse = await app.inject({
+      method: 'GET',
+      url: '/api/coaching/clients',
+      headers: authHeader(),
+    });
+    expect(allowlistedResponse.json()).toHaveLength(1);
+    expect(allowlistedResponse.json()[0]).toMatchObject({ kind: 'research' });
+
+    const { app: nonAdminApp, database: nonAdminDatabase } = buildTestApp();
+    nonAdminDatabase.seed(`coachClients/${TEST_UID}/tenant-research`, {
+      label: 'Research Client',
+      createdAt: 1,
+      archivedAt: null,
+    });
+    nonAdminDatabase.seed('clientTenants/tenant-research', {
+      createdAt: 1,
+      archivedAt: null,
+      kind: 'research',
+    });
+    nonAdminDatabase.seed(`clientMembers/tenant-research/${TEST_UID}`, {
+      role: 'custodian',
+      joinedAt: 1,
+    });
+
+    const nonAdminResponse = await nonAdminApp.inject({
+      method: 'GET',
+      url: '/api/coaching/clients',
+      headers: authHeader(),
+    });
+    expect(nonAdminResponse.json()).toEqual([]);
+  });
+});

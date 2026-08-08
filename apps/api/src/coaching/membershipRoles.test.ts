@@ -51,7 +51,7 @@ describe('requireTenantRole', () => {
     await seedMembership(database, TENANT_ID, CUSTODIAN_UID, 'custodian');
 
     await expect(
-      requireTenantRole(database as never, CUSTODIAN_UID, TENANT_ID, ['custodian']),
+      requireTenantRole(database as never, CUSTODIAN_UID, TENANT_ID, ['custodian'], null),
     ).resolves.toBe('custodian');
   });
 
@@ -62,10 +62,10 @@ describe('requireTenantRole', () => {
     await seedMembership(database, TENANT_ID, ownerUid, 'owner');
 
     await expect(
-      requireTenantRole(database as never, CUSTODIAN_UID, TENANT_ID, ['custodian', 'owner']),
+      requireTenantRole(database as never, CUSTODIAN_UID, TENANT_ID, ['custodian', 'owner'], null),
     ).resolves.toBe('custodian');
     await expect(
-      requireTenantRole(database as never, ownerUid, TENANT_ID, ['custodian', 'owner']),
+      requireTenantRole(database as never, ownerUid, TENANT_ID, ['custodian', 'owner'], null),
     ).resolves.toBe('owner');
   });
 
@@ -73,12 +73,20 @@ describe('requireTenantRole', () => {
     const database = new FakeDatabase();
     await seedMembership(database, TENANT_ID, DELEGATE_UID, 'delegate');
 
-    const delegateError = await requireTenantRole(database as never, DELEGATE_UID, TENANT_ID, [
-      'custodian',
-    ]).catch((err: unknown) => err);
-    const strangerError = await requireTenantRole(database as never, STRANGER_UID, TENANT_ID, [
-      'custodian',
-    ]).catch((err: unknown) => err);
+    const delegateError = await requireTenantRole(
+      database as never,
+      DELEGATE_UID,
+      TENANT_ID,
+      ['custodian'],
+      null,
+    ).catch((err: unknown) => err);
+    const strangerError = await requireTenantRole(
+      database as never,
+      STRANGER_UID,
+      TENANT_ID,
+      ['custodian'],
+      null,
+    ).catch((err: unknown) => err);
 
     expect(delegateError).toBeInstanceOf(ForbiddenError);
     expect(strangerError).toBeInstanceOf(ForbiddenError);
@@ -89,7 +97,51 @@ describe('requireTenantRole', () => {
     const database = new FakeDatabase();
 
     await expect(
-      requireTenantRole(database as never, STRANGER_UID, TENANT_ID, ['custodian']),
+      requireTenantRole(database as never, STRANGER_UID, TENANT_ID, ['custodian'], null),
     ).rejects.toBeInstanceOf(ForbiddenError);
+  });
+
+  it('denies a research tenant to a non-allowlisted custodian with a rejection deep-equal to its non-member rejection', async () => {
+    const database = new FakeDatabase();
+    await seedMembership(database, TENANT_ID, CUSTODIAN_UID, 'custodian');
+    database.seed(`clientTenants/${TENANT_ID}`, {
+      createdAt: 1,
+      archivedAt: null,
+      kind: 'research',
+    });
+
+    const researchDeniedError = await requireTenantRole(
+      database as never,
+      CUSTODIAN_UID,
+      TENANT_ID,
+      ['custodian'],
+      null,
+    ).catch((err: unknown) => err);
+    const nonMemberError = await requireTenantRole(
+      database as never,
+      STRANGER_UID,
+      'nonexistent-tenant',
+      ['custodian'],
+      null,
+    ).catch((err: unknown) => err);
+
+    expect(researchDeniedError).toBeInstanceOf(ForbiddenError);
+    expect(researchDeniedError).toEqual(nonMemberError);
+  });
+
+  it('permits a research tenant for an allowlisted custodian', async () => {
+    const database = new FakeDatabase();
+    await seedMembership(database, TENANT_ID, CUSTODIAN_UID, 'custodian');
+    database.seed(`clientTenants/${TENANT_ID}`, {
+      createdAt: 1,
+      archivedAt: null,
+      kind: 'research',
+    });
+
+    await expect(
+      requireTenantRole(database as never, CUSTODIAN_UID, TENANT_ID, ['custodian'], {
+        adminUids: new Set([CUSTODIAN_UID]),
+      }),
+    ).resolves.toBe('custodian');
   });
 });

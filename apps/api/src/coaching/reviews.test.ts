@@ -656,7 +656,7 @@ describe('listClients() draftCount/deliveryState wiring (Task 3, Pitfall 5)', ()
     });
     await autosaveDraft(asDatabase(database), tenantId, 'review-1', { sections: [] }, 0);
 
-    const rows = await listClients(asDatabase(database), COACH_UID);
+    const rows = await listClients(asDatabase(database), COACH_UID, null);
 
     expect(rows).toHaveLength(1);
     expect(rows[0]?.draftCount).toBeGreaterThanOrEqual(1);
@@ -678,7 +678,7 @@ describe('listClients() draftCount/deliveryState wiring (Task 3, Pitfall 5)', ()
       version: 1,
     });
 
-    const rows = await listClients(asDatabase(database), COACH_UID);
+    const rows = await listClients(asDatabase(database), COACH_UID, null);
 
     expect(rows[0]?.deliveryState).toBe('acknowledged');
   });
@@ -687,7 +687,7 @@ describe('listClients() draftCount/deliveryState wiring (Task 3, Pitfall 5)', ()
     const database = new FakeDatabase();
     await createClient(asDatabase(database), COACH_UID, 'Alex', { sessionId: SESSION_ID });
 
-    const rows = await listClients(asDatabase(database), COACH_UID);
+    const rows = await listClients(asDatabase(database), COACH_UID, null);
 
     expect(rows[0]).toMatchObject({ draftCount: 0, deliveryState: null });
   });

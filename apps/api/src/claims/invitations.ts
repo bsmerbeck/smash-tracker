@@ -2,9 +2,11 @@ import type { Database } from 'firebase-admin/database';
 import {
   activeClaimInvitationPointerSchema,
   claimInvitationRecordSchema,
+  isResearchKind,
   type ClaimInvitationStatus,
   type IssuedClaimInvitation,
 } from '@smash-tracker/shared';
+import type { ResearchConfig } from '../config/env.js';
 import {
   claimCodeExpiresAt,
   formatClaimCode,
@@ -16,6 +18,8 @@ import { checkAndIncrement, claimIssuancePath, MAX_CLAIM_ISSUANCES_PER_DAY } fro
 import { requireTenantRole } from '../coaching/membershipRoles.js';
 import { buildDomainEnvelope } from '../events/envelope.js';
 import { createEvent } from '../events/ledger.js';
+import { readSubjectKind } from '../research/subjectKind.js';
+import { ForbiddenError } from '../services/rtdb.js';
 
 /**
  * Phase 23 (Claim Credential & Atomic Ownership Transition, CRED-01/CRED-02/
@@ -72,14 +76,28 @@ export const CLAIM_CODE_COLLISION_RETRIES = 5;
  *    commit.
  * 7. Return the formatted code and its expiry — the only moment the raw
  *    code is observable.
+ *
+ * Phase 29 (Research Tenancy, Isolation & Governance Gate, review consensus
+ * finding 2): a research tenant is refused OUTRIGHT here — not merely
+ * gated by the allowlist `requireTenantRole` now also checks — because a
+ * research tenant must not be claimable at ALL before Phase 34, even by its
+ * own allowlisted admin. The refusal sits strictly BEFORE any code
+ * generation, HMAC digest computation, transaction, or write (step 2
+ * below), so a refused issuance leaves the database byte-unchanged.
  */
 export async function issueClaimInvitation(
   database: Database,
   coachUid: string,
   tenantId: string,
   options: { sessionId: string; hmacSecret: string },
+  researchConfig: ResearchConfig | null,
 ): Promise<IssuedClaimInvitation> {
-  await requireTenantRole(database, coachUid, tenantId, ['custodian']);
+  await requireTenantRole(database, coachUid, tenantId, ['custodian'], researchConfig);
+
+  const kind = await readSubjectKind(database, tenantId);
+  if (isResearchKind(kind)) {
+    throw new ForbiddenError('Not a member of this client tenant');
+  }
 
   const now = Date.now();
   const withinLimit = await checkAndIncrement(
@@ -189,14 +207,28 @@ export async function issueClaimInvitation(
 /**
  * Revokes the tenant's outstanding claim code, if any. Idempotent: when
  * nothing is outstanding, resolves without throwing and writes nothing.
+ *
+ * Phase 29 (review consensus finding 2): refuses a research tenant the same
+ * way issuance does, before any write. Revocation is naturally a defensive
+ * no-op for a research tenant in practice (issuance already refuses to mint
+ * a code for one), but the guard is unconditional here too, so a
+ * pre-Phase-29 invitation somehow outstanding on a tenant later marked
+ * research cannot be revoked (or, symmetrically, redeemed) through this
+ * path either.
  */
 export async function revokeClaimInvitation(
   database: Database,
   coachUid: string,
   tenantId: string,
   options: { sessionId: string },
+  researchConfig: ResearchConfig | null,
 ): Promise<void> {
-  await requireTenantRole(database, coachUid, tenantId, ['custodian']);
+  await requireTenantRole(database, coachUid, tenantId, ['custodian'], researchConfig);
+
+  const kind = await readSubjectKind(database, tenantId);
+  if (isResearchKind(kind)) {
+    throw new ForbiddenError('Not a member of this client tenant');
+  }
 
   const pointerSnapshot = await database.ref(`activeClaimInvitationByTenant/${tenantId}`).get();
   const pointer = activeClaimInvitationPointerSchema.safeParse(pointerSnapshot.val());
@@ -233,8 +265,9 @@ export async function getClaimInvitationStatus(
   database: Database,
   coachUid: string,
   tenantId: string,
+  researchConfig: ResearchConfig | null,
 ): Promise<ClaimInvitationStatus> {
-  await requireTenantRole(database, coachUid, tenantId, ['custodian']);
+  await requireTenantRole(database, coachUid, tenantId, ['custodian'], researchConfig);
 
   const pointerSnapshot = await database.ref(`activeClaimInvitationByTenant/${tenantId}`).get();
   const pointer = activeClaimInvitationPointerSchema.safeParse(pointerSnapshot.val());

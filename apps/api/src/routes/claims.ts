@@ -90,6 +90,7 @@ const claimsRoutes: FastifyPluginAsyncZod<ClaimRoutesOptions> = async (app, opti
           clientIp,
           sessionId,
           hmacSecret: claimCode.hmacSecret,
+          researchConfig: app.researchConfig,
         },
         request.log,
       );

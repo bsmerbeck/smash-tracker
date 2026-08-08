@@ -1,5 +1,8 @@
 import type { Database } from 'firebase-admin/database';
+import { isResearchKind } from '@smash-tracker/shared';
 import { readMembershipRole, requireTenantRole } from '../coaching/membershipRoles.js';
+import type { ResearchConfig } from '../config/env.js';
+import { readSubjectKind } from '../research/subjectKind.js';
 import { ForbiddenError } from '../services/rtdb.js';
 import { buildDomainEnvelope } from '../events/envelope.js';
 import { createEvent } from '../events/ledger.js';
@@ -24,6 +27,14 @@ import { createEvent } from '../events/ledger.js';
  * only by the tenant's `owner`. Removes `clientMembers/{tenantId}/{delegateUid}`
  * and `coachClients/{delegateUid}/{tenantId}` in one root-level update — the
  * owner's own membership record and every content subtree are untouched.
+ *
+ * Phase 29 (review consensus finding 2): refused for a research tenant
+ * UNCONDITIONALLY — even for an allowlisted admin who happens to hold the
+ * `owner` role, which `requireTenantRole`'s allowlist gate alone would
+ * permit. A research tenant cannot be claimed at all (see
+ * `apps/api/src/claims/redemption.ts`/`invitations.ts`), so there is no
+ * legitimate `owner` role to revoke a delegation from in the first place;
+ * this explicit refusal is defense in depth, not a new capability.
  */
 export async function revokeCoachDelegation(
   database: Database,
@@ -31,6 +42,7 @@ export async function revokeCoachDelegation(
   tenantId: string,
   delegateUid: string,
   options: { sessionId: string },
+  researchConfig: ResearchConfig | null,
 ): Promise<void> {
   // A self-revoke is nonsensical (an owner cannot revoke their own
   // membership through this path) and must be rejected before any role
@@ -40,7 +52,12 @@ export async function revokeCoachDelegation(
     throw new ForbiddenError('Not a member of this client tenant');
   }
 
-  await requireTenantRole(database, ownerUid, tenantId, ['owner']);
+  await requireTenantRole(database, ownerUid, tenantId, ['owner'], researchConfig);
+
+  const kind = await readSubjectKind(database, tenantId);
+  if (isResearchKind(kind)) {
+    throw new ForbiddenError('Not a member of this client tenant');
+  }
 
   // A `custodian` is not a delegation and an absent member is nothing at
   // all; both must be indistinguishable from a wrong-role denial, for the

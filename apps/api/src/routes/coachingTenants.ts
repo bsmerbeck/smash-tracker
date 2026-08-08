@@ -3,6 +3,7 @@ import { z } from 'zod';
 import {
   clientHubListSchema,
   clientHubRowSchema,
+  clientKindResponseSchema,
   createClientRequestSchema,
   errorResponseSchema,
   fighterSelectionSchema,
@@ -20,6 +21,8 @@ import {
   exportClient,
   listClients,
 } from '../coaching/tenants.js';
+import { resolveTenantAccess } from '../research/access.js';
+import { isPathSafeTenantId } from '../research/subjectKind.js';
 import { ConflictError, ForbiddenError, NotFoundError } from '../services/rtdb.js';
 
 const clientIdParamsSchema = z.object({
@@ -133,7 +136,7 @@ const coachingTenantsRoutes: FastifyPluginAsyncZod = async (app) => {
       },
     },
     async (request) => {
-      return listClients(app.firebase.database, request.uid, {
+      return listClients(app.firebase.database, request.uid, app.researchConfig, {
         includeArchived: request.query.includeArchived === 'true',
       });
     },
@@ -156,7 +159,13 @@ const coachingTenantsRoutes: FastifyPluginAsyncZod = async (app) => {
     async (request, reply) => {
       try {
         const archived = request.body?.archived ?? true;
-        await archiveClient(app.firebase.database, request.uid, request.params.clientId, archived);
+        await archiveClient(
+          app.firebase.database,
+          request.uid,
+          request.params.clientId,
+          archived,
+          app.researchConfig,
+        );
         return reply.code(204).send();
       } catch (err) {
         if (err instanceof ForbiddenError) {
@@ -183,7 +192,12 @@ const coachingTenantsRoutes: FastifyPluginAsyncZod = async (app) => {
     },
     async (request, reply) => {
       try {
-        await deleteClient(app.firebase.database, request.uid, request.params.clientId);
+        await deleteClient(
+          app.firebase.database,
+          request.uid,
+          request.params.clientId,
+          app.researchConfig,
+        );
         return reply.code(204).send();
       } catch (err) {
         if (err instanceof ForbiddenError) {
@@ -211,7 +225,12 @@ const coachingTenantsRoutes: FastifyPluginAsyncZod = async (app) => {
     },
     async (request, reply) => {
       try {
-        return await exportClient(app.firebase.database, request.uid, request.params.clientId);
+        return await exportClient(
+          app.firebase.database,
+          request.uid,
+          request.params.clientId,
+          app.researchConfig,
+        );
       } catch (err) {
         if (err instanceof ForbiddenError) {
           return reply
@@ -225,6 +244,85 @@ const coachingTenantsRoutes: FastifyPluginAsyncZod = async (app) => {
         }
         throw err;
       }
+    },
+  );
+
+  // GET /api/coaching/clients/:clientId/kind — Phase 29 (RTEN-01, D-07,
+  // review consensus finding 6): the ONE authoritative per-tenant kind
+  // source the browser can trust. The hub listing (`GET /coaching/clients`)
+  // excludes archived tenants by default and degrades an unresolved row to
+  // an empty-metadata shape for a non-allowlisted caller, so it cannot be
+  // the browser's authoritative source — this route works for an archived
+  // tenant and never silently degrades.
+  //
+  // Written against the TOTAL `resolveTenantAccess` (never the throwing
+  // `assertTenantAccess`) because this is the ONE call site in the whole
+  // phase that must distinguish an unresolvable read from a denial.
+  // Ordered explicitly, matching this plan's own key-shape-first criterion:
+  //
+  //   1. Validate `:clientId` with `isPathSafeTenantId` BEFORE any
+  //      membership reference is constructed — a path-illegal id raises the
+  //      existing membership rejection, never a 500.
+  //   2. Check `clientMembers/{clientId}/{callerUid}` membership exactly as
+  //      `requireMembership` does today. Doing membership FIRST is what
+  //      keeps the server-error branch below from being an existence
+  //      oracle — a non-member can never reach it.
+  //   3. Branch on the four-member outcome: `ordinary`/`research` -> 200;
+  //      `denied` -> the existing membership rejection, deep-equal to step
+  //      2's; `indeterminate` -> a server error (never a 200, never a 403).
+  //
+  // This is deliberately the ONLY place the `indeterminate` outcome is
+  // observable anywhere in this phase — every OTHER tenant-addressed site
+  // uses the throwing `assertTenantAccess` instead.
+  app.get(
+    '/coaching/clients/:clientId/kind',
+    {
+      schema: {
+        params: clientIdParamsSchema,
+        response: {
+          200: clientKindResponseSchema,
+          403: errorResponseSchema,
+        },
+      },
+    },
+    async (request) => {
+      const { clientId } = request.params;
+
+      // Step 1: key-shape validation before any reference is constructed.
+      if (!isPathSafeTenantId(clientId)) {
+        throw new ForbiddenError('Not a member of this client tenant');
+      }
+
+      // Step 2: membership exactly as requireMembership does today.
+      const membership = await app.firebase.database
+        .ref(`clientMembers/${clientId}/${request.uid}`)
+        .get();
+      if (!membership.exists()) {
+        throw new ForbiddenError('Not a member of this client tenant');
+      }
+
+      // Step 3: the total resolver — membership above already excludes
+      // every non-member, so the `indeterminate` branch here is never an
+      // existence oracle.
+      const outcome = await resolveTenantAccess({
+        database: app.firebase.database,
+        researchConfig: app.researchConfig,
+        uid: request.uid,
+        tenantId: clientId,
+      });
+
+      if (outcome.kind === 'denied') {
+        throw new ForbiddenError('Not a member of this client tenant');
+      }
+      if (outcome.kind === 'indeterminate') {
+        // Deliberately NOT a ForbiddenError — an operator-facing
+        // infrastructure failure, distinct from both a 200 and a 403. The
+        // global error handler maps an un-typed Error to a generic 500 with
+        // no message leak (apps/api/src/app.ts).
+        throw new Error('Unable to resolve tenant kind');
+      }
+
+      return { kind: outcome.kind };
     },
   );
 };

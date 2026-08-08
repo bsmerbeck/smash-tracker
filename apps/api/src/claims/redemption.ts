@@ -1,5 +1,11 @@
 import type { Database } from 'firebase-admin/database';
-import { claimInvitationRecordSchema, coachClientEntrySchema } from '@smash-tracker/shared';
+import {
+  claimInvitationRecordSchema,
+  coachClientEntrySchema,
+  isResearchKind,
+} from '@smash-tracker/shared';
+import type { ResearchConfig } from '../config/env.js';
+import { readSubjectKind } from '../research/subjectKind.js';
 import { hashClaimCode, normalizeClaimCode } from './crypto.js';
 import {
   checkAndIncrement,
@@ -218,6 +224,18 @@ export interface RedeemClaimCodeParams {
   clientIp: string;
   sessionId: string;
   hmacSecret: string;
+  /**
+   * Phase 29 (Research Tenancy, Isolation & Governance Gate, cycle-2 finding
+   * C2-HIGH-6): threaded through from `apps/api/src/routes/claims.ts` for
+   * signature consistency with the other two claim modules
+   * (`invitations.ts`/`delegation.ts`, both allowlist-gated via
+   * `requireTenantRole`). The research refusal below is UNCONDITIONAL —
+   * `isResearchKind(kind) || kind === 'unresolved'` — for every redeemer
+   * including an allowlisted research admin, so this field is deliberately
+   * not read to gate anything; a research tenant is not claimable by
+   * ANYONE before Phase 34.
+   */
+  researchConfig: ResearchConfig | null;
 }
 
 export type RedeemClaimCodeResult =
@@ -293,6 +311,25 @@ export async function redeemClaimCode(
     }
 
     const tenantId = consumed.tenantId as string;
+
+    // Phase 29 (Research Tenancy, Isolation & Governance Gate, review
+    // consensus finding 2): a code that resolves to a research tenant (or
+    // whose kind cannot be resolved) is refused with the SAME 'invalid'
+    // outcome every other ineligible class already returns — the invitation
+    // has ALREADY been consumed by `consumeClaimInvitation` above (the code
+    // is correctly burned, not retried) and the rate-limit counters have
+    // ALREADY been incremented, but NO ownership transition and NO
+    // membership write happen below. Resolved for BOTH 'fresh' and
+    // 'replay-same-client' outcomes — a same-redeemer replay against a
+    // digest a 'fresh' attempt already refused here must never complete a
+    // flip that never actually happened. This read is deliberately placed
+    // AFTER `consumeClaimInvitation` has resolved (tenantId is now known),
+    // so it adds no read to the five ineligible classes above and does not
+    // reopen the closed no-oracle call-shape property those classes share.
+    const kind = await readSubjectKind(database, tenantId);
+    if (isResearchKind(kind) || kind === 'unresolved') {
+      return { status: 'invalid' };
+    }
 
     if (consumed.outcome === 'fresh') {
       const issuerUid = consumed.issuerUid as string;

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   CLIENT_TENANT_ROLES,
   clientHubRowSchema,
+  clientKindResponseSchema,
   clientMembershipSchema,
   clientTenantRecordSchema,
   coachClientEntrySchema,
@@ -161,5 +162,23 @@ describe('Phase 29 (review finding 29-01 HIGH, cycle-2 C2-HIGH-2): clientHubRowS
 
   it('rejects a fourth, arbitrary string', () => {
     expect(clientHubRowSchema.safeParse({ ...baseHubRow(), kind: 'bogus' }).success).toBe(false);
+  });
+});
+
+describe('Phase 29 (D-07, review consensus finding 6): clientKindResponseSchema', () => {
+  it('accepts the ordinary resolution', () => {
+    expect(clientKindResponseSchema.safeParse({ kind: 'ordinary' }).success).toBe(true);
+  });
+
+  it('accepts the research resolution', () => {
+    expect(clientKindResponseSchema.safeParse({ kind: 'research' }).success).toBe(true);
+  });
+
+  it('rejects a missing kind', () => {
+    expect(clientKindResponseSchema.safeParse({}).success).toBe(false);
+  });
+
+  it('rejects an arbitrary string', () => {
+    expect(clientKindResponseSchema.safeParse({ kind: 'bogus' }).success).toBe(false);
   });
 });

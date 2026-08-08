@@ -180,6 +180,21 @@ export const clientHubListSchema = clientHubRowSchema.array();
 export type ClientHubList = z.infer<typeof clientHubListSchema>;
 
 /**
+ * Phase 29 (Research Tenancy, Isolation & Governance Gate, D-07, review
+ * consensus finding 6): `GET /api/coaching/clients/:clientId/kind` response
+ * — the authoritative per-tenant kind source
+ * (`apps/api/src/routes/coachingTenants.ts`) that works for an archived
+ * tenant and never silently degrades, unlike the hub listing above. Reuses
+ * `SUBJECT_KIND_RESOLUTIONS` rather than re-declaring the members — the
+ * route only ever sends `'ordinary'`/`'research'` (200); an unresolvable
+ * read answers a server error instead of a 200 carrying `'unresolved'`.
+ */
+export const clientKindResponseSchema = z.object({
+  kind: z.enum(SUBJECT_KIND_RESOLUTIONS),
+});
+export type ClientKindResponse = z.infer<typeof clientKindResponseSchema>;
+
+/**
  * Phase 12 (Coach Reviews & Delivery, D-05): review status and delivery
  * status are SEPARATE state machines — this is the delivery one. Review
  * status (`Draft / Published v1..vN / Archived`) lives elsewhere (review
