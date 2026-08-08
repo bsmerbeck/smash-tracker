@@ -20,6 +20,7 @@ import { useActiveSubject } from '@/hooks/useActiveSubject';
 import { useCoachingClients } from '@/hooks/useCoachingClients';
 import { useOwnedWorkspaceSubject } from '@/hooks/useOwnedWorkspaceSubject';
 import { useProfile } from '@/hooks/useProfile';
+import { useResearchSubject } from '@/hooks/useResearchSubject';
 import { cn } from '@/lib/utils';
 import { AnalyticsFilterControls } from '@/components/AnalyticsFilterControls';
 import { LanguageSelect } from '@/components/LanguageSelect';
@@ -70,11 +71,21 @@ function ModeSwitch({ mode, className }: { mode: 'personal' | 'coaching'; classN
  * workspace (D-04/D4). A radix dropdown-menu (not a bare badge): opening it
  * shows every client the coach manages (the active one checked), then
  * "All clients" (back to the hub) and "Exit coaching" (back to personal).
+ *
+ * Phase 29 (Research Tenancy, Isolation & Governance Gate, RTEN-02, review
+ * finding 29-07 HIGH): research-aware — a research workspace's chip carries
+ * the research indicator, and a pending-or-failed kind lookup carries a
+ * neutral unresolved indicator, so the chrome ABOVE `ClientWorkspaceLayout`'s
+ * gated outlet (this chip renders regardless of that gate — see
+ * `MainLayout.tsx`) never shows a research client's name with no
+ * discriminator at all. An ordinary workspace renders nothing extra —
+ * unchanged from before this phase.
  */
 function ClientChip({ clientId }: { clientId: string }) {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const clients = useCoachingClients();
+  const { isResearch, isPending, isError } = useResearchSubject();
   const activeLabel =
     clients.data?.find((client) => client.clientId === clientId)?.label ?? clientId;
 
@@ -87,6 +98,22 @@ function ClientChip({ clientId }: { clientId: string }) {
           className="inline-flex items-center gap-1 rounded-full border border-coaching-accent bg-coaching-accent/10 px-2.5 py-1 text-xs font-medium text-coaching-accent transition-colors hover:bg-coaching-accent/20"
         >
           {activeLabel}
+          {isResearch && (
+            <span
+              data-testid="client-chip-research-indicator"
+              className="rounded-full bg-amber-500/20 px-1.5 py-0.5 text-[10px] font-semibold text-amber-800 dark:bg-amber-400/20 dark:text-amber-300"
+            >
+              {t('coaching.research.chromeIndicator.research')}
+            </span>
+          )}
+          {(isPending || isError) && (
+            <span
+              data-testid="client-chip-unresolved-indicator"
+              className="rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-semibold text-muted-foreground"
+            >
+              {t('coaching.research.chromeIndicator.unresolved')}
+            </span>
+          )}
           <ChevronDown className="size-3" />
         </button>
       </DropdownMenuTrigger>

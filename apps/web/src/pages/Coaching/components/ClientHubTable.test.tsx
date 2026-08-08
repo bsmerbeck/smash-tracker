@@ -113,3 +113,71 @@ describe('ClientHubTable', () => {
     );
   });
 });
+
+/**
+ * Phase 29 (Research Tenancy, Isolation & Governance Gate, review finding
+ * 29-07 HIGH): the research badge renders per row's tri-state kind, and
+ * claim-issuance/export row actions are hidden for research and unresolved
+ * rows (a UI affordance only — plan 29-04's server-side refusal is the real
+ * boundary).
+ */
+describe('ClientHubTable research badge and fail-closed row actions (Phase 29, RTEN-01/RTEN-02)', () => {
+  it('renders the research badge for a research row', () => {
+    renderTable([makeClient({ clientId: 'tetra', label: 'Tetra', kind: 'research' })]);
+
+    expect(screen.getByText('Research')).toBeInTheDocument();
+  });
+
+  it('renders the unresolved badge for an unresolved row', () => {
+    renderTable([makeClient({ clientId: 'tetra', label: 'Tetra', kind: 'unresolved' })]);
+
+    expect(screen.getByText('Unresolved')).toBeInTheDocument();
+  });
+
+  it('renders neither badge for a coaching (ordinary) row', () => {
+    renderTable([makeClient({ clientId: 'tetra', label: 'Tetra', kind: 'ordinary' })]);
+
+    expect(screen.queryByText('Research')).not.toBeInTheDocument();
+    expect(screen.queryByText('Unresolved')).not.toBeInTheDocument();
+  });
+
+  it('hides claim-issuance and export actions for a research row', async () => {
+    const user = userEvent.setup();
+    renderTable([makeClient({ clientId: 'tetra', label: 'Tetra', kind: 'research' })]);
+
+    await user.click(screen.getByRole('button', { name: 'Actions for Tetra' }));
+    const menu = await screen.findByRole('menu');
+    expect(
+      within(menu).queryByRole('menuitem', { name: 'Generate claim code' }),
+    ).not.toBeInTheDocument();
+    expect(
+      within(menu).queryByRole('menuitem', { name: 'Export workspace' }),
+    ).not.toBeInTheDocument();
+    // The workspace/archive/delete actions are unaffected.
+    expect(within(menu).getByRole('menuitem', { name: 'Open workspace' })).toBeInTheDocument();
+  });
+
+  it('hides claim-issuance and export actions for an unresolved row', async () => {
+    const user = userEvent.setup();
+    renderTable([makeClient({ clientId: 'tetra', label: 'Tetra', kind: 'unresolved' })]);
+
+    await user.click(screen.getByRole('button', { name: 'Actions for Tetra' }));
+    const menu = await screen.findByRole('menu');
+    expect(
+      within(menu).queryByRole('menuitem', { name: 'Generate claim code' }),
+    ).not.toBeInTheDocument();
+    expect(
+      within(menu).queryByRole('menuitem', { name: 'Export workspace' }),
+    ).not.toBeInTheDocument();
+  });
+
+  it('keeps claim-issuance and export actions present for a coaching (ordinary) row', async () => {
+    const user = userEvent.setup();
+    renderTable([makeClient({ clientId: 'tetra', label: 'Tetra', kind: 'ordinary' })]);
+
+    await user.click(screen.getByRole('button', { name: 'Actions for Tetra' }));
+    const menu = await screen.findByRole('menu');
+    expect(within(menu).getByRole('menuitem', { name: 'Generate claim code' })).toBeInTheDocument();
+    expect(within(menu).getByRole('menuitem', { name: 'Export workspace' })).toBeInTheDocument();
+  });
+});

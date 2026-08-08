@@ -14,6 +14,7 @@ import {
   type SortingState,
 } from '@tanstack/react-table';
 import type { ClientHubRow } from '@smash-tracker/shared';
+import { isResearchKind } from '@smash-tracker/shared';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
@@ -32,6 +33,22 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { ClaimStatusBadge } from './ClaimStatusBadge';
+import { ResearchBadge } from './ResearchBadge';
+
+/**
+ * Phase 29 (Research Tenancy, Isolation & Governance Gate, review finding
+ * 29-07 HIGH): a row whose kind is the research resolution OR the
+ * unresolved resolution must not offer claim-issuance or export from this
+ * menu — fail closed on "we don't know" exactly like "we know it's
+ * research." This is a UI affordance ONLY, not access control: plan 29-04's
+ * server-side `assertTenantAccess`/unconditional research refusal is the
+ * real boundary (`apps/api/src/coaching/tenants.ts`'s `issueClaimInvitation`/
+ * `exportClient`) — a hidden menu item cannot substitute for it, it only
+ * keeps the coach from being offered an action the server would refuse.
+ */
+function isKindGatedFromRowActions(kind: ClientHubRow['kind']): boolean {
+  return isResearchKind(kind) || kind === 'unresolved';
+}
 
 /**
  * Derives a "next action" label from the row's own bounded fields
@@ -145,7 +162,12 @@ export function ClientHubTable({
         id: 'claimStatus',
         header: t('coaching.hub.table.columns.claimStatus'),
         accessorFn: (row) => row.claimedAt ?? row.pendingInvitationExpiresAt ?? 0,
-        cell: ({ row }) => <ClaimStatusBadge client={row.original} />,
+        cell: ({ row }) => (
+          <div className="flex flex-wrap items-center gap-1">
+            <ClaimStatusBadge client={row.original} />
+            <ResearchBadge client={row.original} />
+          </div>
+        ),
       },
       {
         id: 'actions',
@@ -154,6 +176,7 @@ export function ClientHubTable({
         cell: ({ row }) => {
           const client = row.original;
           const isArchived = client.archivedAt != null;
+          const actionsGated = isKindGatedFromRowActions(client.kind);
           return (
             <div className="flex justify-end">
               <DropdownMenu>
@@ -170,14 +193,18 @@ export function ClientHubTable({
                   <DropdownMenuItem onSelect={() => navigate(`/coach/${client.clientId}/vods`)}>
                     {t('coaching.hub.table.actions.openWorkspace')}
                   </DropdownMenuItem>
-                  <DropdownMenuItem onSelect={() => onIssueClaimCode(client)}>
-                    <KeyRound />
-                    {t('coaching.hub.table.actions.issueClaimCode')}
-                  </DropdownMenuItem>
-                  <DropdownMenuItem onSelect={() => onExport(client)}>
-                    <Download />
-                    {t('coaching.hub.table.actions.export')}
-                  </DropdownMenuItem>
+                  {!actionsGated && (
+                    <DropdownMenuItem onSelect={() => onIssueClaimCode(client)}>
+                      <KeyRound />
+                      {t('coaching.hub.table.actions.issueClaimCode')}
+                    </DropdownMenuItem>
+                  )}
+                  {!actionsGated && (
+                    <DropdownMenuItem onSelect={() => onExport(client)}>
+                      <Download />
+                      {t('coaching.hub.table.actions.export')}
+                    </DropdownMenuItem>
+                  )}
                   <DropdownMenuItem onSelect={() => onArchiveToggle(client)}>
                     {isArchived ? <ArchiveRestore /> : <Archive />}
                     {isArchived

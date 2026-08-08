@@ -53,6 +53,12 @@ vi.mock('@/lib/firebase', async () => {
 
 const listClients = vi.fn().mockResolvedValue([]);
 const listWorkspaces = vi.fn().mockResolvedValue([]);
+// Phase 29 (Research Tenancy, Isolation & Governance Gate): backs
+// `useResearchSubject`'s query, consumed by `ClientWorkspaceSidebar`'s
+// caption. Defaults to the ordinary resolution (matching prior, pre-
+// Phase-29 behavior) and is overridden per test in the dedicated describe
+// block below.
+const getKind = vi.fn().mockResolvedValue({ kind: 'ordinary' });
 
 vi.mock('@/lib/api', () => ({
   api: {
@@ -62,6 +68,7 @@ vi.mock('@/lib/api', () => ({
     coaching: {
       clients: {
         list: (...args: unknown[]) => listClients(...args),
+        kind: (...args: unknown[]) => getKind(...args),
       },
     },
     clientWorkspaces: {
@@ -174,7 +181,7 @@ describe('SidebarContent client-workspace rail (walkthrough fix round 2, D-01/D1
     expect(backLink).toHaveAttribute('href', '/coach');
 
     expect(await screen.findByText('Tetra')).toBeInTheDocument();
-    expect(screen.getByText('Managed client')).toBeInTheDocument();
+    expect(await screen.findByText('Managed client')).toBeInTheDocument();
 
     expect(screen.getByRole('link', { name: 'Overview' })).toHaveAttribute(
       'href',
@@ -276,7 +283,7 @@ describe('SidebarContent owned-workspace rail (Phase 24, CTRL-01)', () => {
     renderWithProviders(<SidebarContent />, '/coach/c1/vods');
 
     expect(await screen.findByText('Client One')).toBeInTheDocument();
-    expect(screen.getByText('Managed client')).toBeInTheDocument();
+    expect(await screen.findByText('Managed client')).toBeInTheDocument();
   });
 
   it('still renders the personal rail unchanged on a personal route', () => {
@@ -284,5 +291,66 @@ describe('SidebarContent owned-workspace rail (Phase 24, CTRL-01)', () => {
 
     const profileLink = screen.getByRole('link', { name: 'Your profile' });
     expect(profileLink).toHaveAttribute('href', '/profile');
+  });
+});
+
+/**
+ * Phase 29 (Research Tenancy, Isolation & Governance Gate, RTEN-02, review
+ * finding 29-07 HIGH, cycle-2 finding C2-HIGH-9): the client identity
+ * block's caption is research-aware — it renders ABOVE
+ * `ClientWorkspaceLayout`'s gated outlet (`MainLayout` renders the Sidebar
+ * around, not through, the nested route tree), so a research workspace's
+ * name must never appear here captioned as an ordinary managed client. The
+ * label, back link, and workspace nav items stay unchanged in every state —
+ * only the caption line swaps.
+ */
+describe('SidebarContent client-workspace rail research caption (Phase 29, RTEN-02)', () => {
+  beforeEach(() => {
+    resetAuthMock();
+    vi.clearAllMocks();
+    listClients.mockResolvedValue([{ clientId: 'tetra', label: 'Tetra', draftCount: 0 }]);
+    setMockUser(makeMockUser({ email: 'pilot@example.com' }));
+  });
+
+  it('renders the research indicator caption for a research workspace', async () => {
+    getKind.mockResolvedValue({ kind: 'research' });
+    renderWithProviders(<SidebarContent />, '/coach/tetra/overview');
+
+    expect(await screen.findByText('Tetra')).toBeInTheDocument();
+    expect(await screen.findByTestId('client-workspace-sidebar-caption')).toHaveTextContent(
+      'Research',
+    );
+    expect(screen.queryByText('Managed client')).not.toBeInTheDocument();
+  });
+
+  it('renders the unresolved indicator caption while pending', () => {
+    getKind.mockImplementation(() => new Promise(() => {}));
+    renderWithProviders(<SidebarContent />, '/coach/tetra/overview');
+
+    expect(screen.getByTestId('client-workspace-sidebar-caption')).toHaveTextContent('Unverified');
+  });
+
+  it('renders the unresolved indicator caption on a failed kind lookup', async () => {
+    getKind.mockRejectedValue(new Error('network error'));
+    renderWithProviders(<SidebarContent />, '/coach/tetra/overview');
+
+    expect(await screen.findByTestId('client-workspace-sidebar-caption')).toHaveTextContent(
+      'Unverified',
+    );
+  });
+
+  it('keeps the existing "Managed client" caption, label, back link, and nav items unchanged for an ordinary workspace', async () => {
+    getKind.mockResolvedValue({ kind: 'ordinary' });
+    renderWithProviders(<SidebarContent />, '/coach/tetra/overview');
+
+    expect(await screen.findByText('Tetra')).toBeInTheDocument();
+    expect(await screen.findByTestId('client-workspace-sidebar-caption')).toHaveTextContent(
+      'Managed client',
+    );
+    expect(screen.getByRole('link', { name: /All Clients/ })).toHaveAttribute('href', '/coach');
+    expect(screen.getByRole('link', { name: 'Overview' })).toHaveAttribute(
+      'href',
+      '/coach/tetra/overview',
+    );
   });
 });
