@@ -140,6 +140,34 @@ describe('GET /s/:token', () => {
     }
   });
 
+  /**
+   * Phase 29 Plan 06 (RTEN-03, D-05, T-29-06-04): thin caller of
+   * `RtdbService.getShareByToken` — a research-subject token must render
+   * the IDENTICAL generic non-leaking meta a never-issued token gets. Uses
+   * the SAME fixed token value across two app fixtures (one where the
+   * token resolves to a research subject, one where it was never issued at
+   * all) so the URL/token echoed into `canonical`/`og:url` can never
+   * explain away a real divergence — comparing two DIFFERENT token values
+   * would let that echo mask a genuine leak (review suggestion).
+   */
+  it('returns 200 with the IDENTICAL generic non-leaking meta for a research-subject token as for a never-issued token (RTEN-03, no oracle)', async () => {
+    const fetchImpl = fetchRouter();
+    const { app: researchApp, database } = buildTestApp({
+      shareFetch: fetchImpl as unknown as typeof fetch,
+    });
+    seedActiveShare(database, { token: TOKEN });
+    database.seed('clientTenants/owner-uid', { createdAt: 1, kind: 'research' });
+    const { app: neverIssuedApp } = buildTestApp({
+      shareFetch: fetchRouter() as unknown as typeof fetch,
+    });
+
+    const researchResponse = await researchApp.inject({ method: 'GET', url: `/s/${TOKEN}` });
+    const neverIssuedResponse = await neverIssuedApp.inject({ method: 'GET', url: `/s/${TOKEN}` });
+
+    expect(researchResponse.statusCode).toBe(200);
+    expect(researchResponse.body).toBe(neverIssuedResponse.body);
+  });
+
   it('returns 200 generic HTML (never a 500) for a malformed token with RTDB-illegal path characters', async () => {
     const fetchImpl = fetchRouter();
     const { app } = buildTestApp({ shareFetch: fetchImpl as unknown as typeof fetch });

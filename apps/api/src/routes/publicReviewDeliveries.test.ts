@@ -4,6 +4,8 @@ import type { FakeDatabase } from '../test-support/fakeDatabase.js';
 import { authHeader, buildTestApp } from '../test-support/testApp.js';
 import { createSession } from '../coaching/sessions.js';
 import { createSessionDelivery, revokeSessionDelivery } from '../coaching/sessionDeliveries.js';
+import { autosaveDraft, publishReview } from '../coaching/reviews.js';
+import { createReviewDelivery } from '../coaching/reviewDeliveries.js';
 
 /** Seeds a minimal `matches/{tenantId}/{matchId}` record — a VOD-bearing match by default. */
 function seedMatch(
@@ -1002,5 +1004,184 @@ describe('POST /api/review-deliveries/:token/homework/item and /homework/status'
     });
     expect(wrongKindResponse.statusCode).toBe(404);
     expect(wrongKindResponse.json()).toEqual(revokedTokenResponse.json());
+  });
+});
+
+/**
+ * Phase 29 Plan 06 (RTEN-03, D-05, T-29-06-04): every route in this file is
+ * a thin caller of `RtdbService.getShareByToken`/`resolveCoachReviewShareRef`/
+ * `resolveSessionShareRef` — no authorization logic of its own. These tests
+ * mint a delivery directly against a tenant id BEFORE seeding a `research`
+ * discriminator on it — exactly the threat scenario the resolution-side
+ * gate (Task 2) exists for, independent of the mint-side gate (Task 1): "a
+ * token minted before this phase would still resolve without it." Every
+ * assertion is the SAME static unavailable body every other failure class
+ * in this file already produces (no token-specific content to leak).
+ */
+describe('RTEN-03 (D-05): every route in this file refuses a token whose subject is later marked research', () => {
+  const UNAVAILABLE_BODY = {
+    error: 'Not Found',
+    message: 'This delivery is no longer available',
+    statusCode: 404,
+  };
+
+  it('GET /api/review-deliveries/:token (coachReview kind) returns the identical unavailable body', async () => {
+    const { app, database } = buildTestApp();
+    const RESEARCH_TENANT = 'research-tenant-rd-1';
+    await autosaveDraft(database as never, RESEARCH_TENANT, 'review-1', { sections: [] }, 0);
+    await publishReview(database as never, RESEARCH_TENANT, 'review-1', {
+      coachUid: 'coach-1',
+      sessionId: 'session-1',
+    });
+    const { token } = await createReviewDelivery(
+      database as never,
+      RESEARCH_TENANT,
+      'review-1',
+      1,
+      'https://grandfinals.gg',
+    );
+    // The token was minted while the tenant looked ordinary — mark it
+    // research AFTER minting, mirroring a token that predates this phase.
+    database.seed(`clientTenants/${RESEARCH_TENANT}`, { createdAt: 1, kind: 'research' });
+
+    const response = await app.inject({ method: 'GET', url: `/api/review-deliveries/${token}` });
+
+    expect(response.statusCode).toBe(404);
+    expect(response.json()).toEqual(UNAVAILABLE_BODY);
+  });
+
+  it('POST /api/review-deliveries/:token/ack (coachReview kind) returns the identical unavailable body and never sets ackAt', async () => {
+    const { app, database } = buildTestApp();
+    const RESEARCH_TENANT = 'research-tenant-rd-2';
+    await autosaveDraft(database as never, RESEARCH_TENANT, 'review-1', { sections: [] }, 0);
+    await publishReview(database as never, RESEARCH_TENANT, 'review-1', {
+      coachUid: 'coach-1',
+      sessionId: 'session-1',
+    });
+    const { deliveryId, token } = await createReviewDelivery(
+      database as never,
+      RESEARCH_TENANT,
+      'review-1',
+      1,
+      'https://grandfinals.gg',
+    );
+    database.seed(`clientTenants/${RESEARCH_TENANT}`, { createdAt: 1, kind: 'research' });
+
+    const response = await app.inject({
+      method: 'POST',
+      url: `/api/review-deliveries/${token}/ack`,
+    });
+
+    expect(response.statusCode).toBe(404);
+    expect(response.json()).toEqual(UNAVAILABLE_BODY);
+    const record = dumpDeliveryRecord(database.dump(), RESEARCH_TENANT, 'review-1', deliveryId);
+    expect(record.ackAt).toBeNull();
+  });
+
+  it('POST /api/review-deliveries/:token/viewed (coachReview kind) returns the identical unavailable body and never sets viewedAt', async () => {
+    const { app, database } = buildTestApp();
+    const RESEARCH_TENANT = 'research-tenant-rd-3';
+    await autosaveDraft(database as never, RESEARCH_TENANT, 'review-1', { sections: [] }, 0);
+    await publishReview(database as never, RESEARCH_TENANT, 'review-1', {
+      coachUid: 'coach-1',
+      sessionId: 'session-1',
+    });
+    const { deliveryId, token } = await createReviewDelivery(
+      database as never,
+      RESEARCH_TENANT,
+      'review-1',
+      1,
+      'https://grandfinals.gg',
+    );
+    database.seed(`clientTenants/${RESEARCH_TENANT}`, { createdAt: 1, kind: 'research' });
+
+    const response = await app.inject({
+      method: 'POST',
+      url: `/api/review-deliveries/${token}/viewed`,
+    });
+
+    expect(response.statusCode).toBe(404);
+    expect(response.json()).toEqual(UNAVAILABLE_BODY);
+    const record = dumpDeliveryRecord(database.dump(), RESEARCH_TENANT, 'review-1', deliveryId);
+    expect(record.viewedAt).toBeNull();
+  });
+
+  it('GET /api/review-deliveries/:token (session kind) returns the identical unavailable body', async () => {
+    const { app, database } = buildTestApp();
+    const RESEARCH_TENANT = 'research-tenant-rd-4';
+    const { sessionId } = await createSession(database as never, RESEARCH_TENANT, {
+      date: 1_700_000_000_000,
+      summary: 'Research tenant session',
+      homework: [],
+    });
+    const { token } = await createSessionDelivery(
+      database as never,
+      RESEARCH_TENANT,
+      sessionId,
+      'https://grandfinals.gg',
+    );
+    database.seed(`clientTenants/${RESEARCH_TENANT}`, { createdAt: 1, kind: 'research' });
+
+    const response = await app.inject({ method: 'GET', url: `/api/review-deliveries/${token}` });
+
+    expect(response.statusCode).toBe(404);
+    expect(response.json()).toEqual(UNAVAILABLE_BODY);
+  });
+
+  it('POST .../homework/item (session kind) returns the identical unavailable body and never writes homeworkProgress', async () => {
+    const { app, database } = buildTestApp();
+    const RESEARCH_TENANT = 'research-tenant-rd-5';
+    const { sessionId } = await createSession(database as never, RESEARCH_TENANT, {
+      date: 1_700_000_000_000,
+      summary: 'Research tenant session with homework',
+      homework: [{ text: 'Practice OOS options', done: false }],
+    });
+    const { deliveryId, token } = await createSessionDelivery(
+      database as never,
+      RESEARCH_TENANT,
+      sessionId,
+      'https://grandfinals.gg',
+    );
+    database.seed(`clientTenants/${RESEARCH_TENANT}`, { createdAt: 1, kind: 'research' });
+
+    const response = await app.inject({
+      method: 'POST',
+      url: `/api/review-deliveries/${token}/homework/item`,
+      payload: { index: 0, done: true },
+    });
+
+    expect(response.statusCode).toBe(404);
+    expect(response.json()).toEqual(UNAVAILABLE_BODY);
+    const dump = database.dump() as {
+      sessionDeliveries?: Record<string, Record<string, Record<string, Record<string, unknown>>>>;
+    };
+    const record = dump.sessionDeliveries![RESEARCH_TENANT]![sessionId]![deliveryId]!;
+    expect(record).not.toHaveProperty('homeworkProgress');
+  });
+
+  it('POST .../homework/status (session kind) returns the identical unavailable body and never writes homeworkProgress', async () => {
+    const { app, database } = buildTestApp();
+    const RESEARCH_TENANT = 'research-tenant-rd-6';
+    const { sessionId } = await createSession(database as never, RESEARCH_TENANT, {
+      date: 1_700_000_000_000,
+      summary: 'Research tenant session with homework',
+      homework: [{ text: 'Practice OOS options', done: false }],
+    });
+    const { token } = await createSessionDelivery(
+      database as never,
+      RESEARCH_TENANT,
+      sessionId,
+      'https://grandfinals.gg',
+    );
+    database.seed(`clientTenants/${RESEARCH_TENANT}`, { createdAt: 1, kind: 'research' });
+
+    const response = await app.inject({
+      method: 'POST',
+      url: `/api/review-deliveries/${token}/homework/status`,
+      payload: { status: 'acknowledged' },
+    });
+
+    expect(response.statusCode).toBe(404);
+    expect(response.json()).toEqual(UNAVAILABLE_BODY);
   });
 });

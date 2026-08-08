@@ -2222,6 +2222,29 @@ export class RtdbService {
     if (!parsedToken.success) {
       return null;
     }
+    // Phase 29 Plan 06 (RTEN-03, D-05): ONE of exactly FOUR independent
+    // resolution chokepoints this plan gates (the other three are
+    // `resolveCoachReviewShareRef`, `resolveSessionShareRef`, and
+    // `resolveEditSession` below). `ownerUid` is the subject id for EVERY
+    // kind this method serves — a personal uid for 'review'/'recap', the
+    // client tenant id for 'coachReview'/'session' (both mint writers stamp
+    // `ownerUid` to the subject id, never anything else) — so this ONE
+    // check, positioned immediately after the token record parses and
+    // BEFORE any of the branches below reads a subject-scoped tree
+    // (`shareSnapshots`, `reviewVersions`, `sessionDeliveries`), covers
+    // every branch. Returns the SAME `null` the surrounding chain already
+    // returns for an unknown token — no throw, no distinct value, nothing
+    // logged (D-05 no-oracle). Every anonymous public route is a thin
+    // caller of this method; mint-side gating (the three writers) does NOT
+    // substitute for this — a token minted before this phase would still
+    // resolve without it.
+    const resolutionKindResolution = await readSubjectKind(
+      this.database,
+      parsedToken.data.ownerUid,
+    );
+    if (resolutionKindResolution !== 'ordinary') {
+      return null;
+    }
     if (parsedToken.data.revokedAt != null) {
       return null;
     }
@@ -2350,6 +2373,18 @@ export class RtdbService {
     if (!parsedToken.success) {
       return null;
     }
+    // Phase 29 Plan 06 (RTEN-03, D-05): ONE of exactly FOUR independent
+    // resolution chokepoints this plan gates (see `getShareByToken`'s own
+    // comment above for the full rationale). `ownerUid` is the client
+    // tenant id for every token this method ever resolves. Mint-side
+    // gating does NOT substitute for this.
+    const resolutionKindResolution = await readSubjectKind(
+      this.database,
+      parsedToken.data.ownerUid,
+    );
+    if (resolutionKindResolution !== 'ordinary') {
+      return null;
+    }
     if (parsedToken.data.revokedAt != null) {
       return null;
     }
@@ -2382,6 +2417,18 @@ export class RtdbService {
     }
     const parsedToken = shareTokenSchema.safeParse(tokenSnapshot.val());
     if (!parsedToken.success) {
+      return null;
+    }
+    // Phase 29 Plan 06 (RTEN-03, D-05): ONE of exactly FOUR independent
+    // resolution chokepoints this plan gates (see `getShareByToken`'s own
+    // comment for the full rationale). `ownerUid` is the client tenant id
+    // for every token this method ever resolves. Mint-side gating does NOT
+    // substitute for this.
+    const resolutionKindResolution = await readSubjectKind(
+      this.database,
+      parsedToken.data.ownerUid,
+    );
+    if (resolutionKindResolution !== 'ordinary') {
       return null;
     }
     if (parsedToken.data.revokedAt != null) {
@@ -2658,6 +2705,25 @@ export class RtdbService {
     }
     const parsedToken = shareTokenSchema.safeParse(tokenSnapshot.val());
     if (!parsedToken.success) {
+      return null;
+    }
+    // Phase 29 Plan 06 (RTEN-03, D-05, T-29-06-02): ONE of exactly FOUR
+    // independent resolution chokepoints this plan gates — and the ONLY
+    // one whose callers (`getEditSessionByToken`/`createCoachNote`/
+    // `updateCoachNote`/`deleteCoachNote`) both READ and WRITE
+    // `matches/{ownerUid}` (T-08-08's one deliberate anonymous-mutation
+    // exception). Placed here, immediately after the token record yields
+    // `ownerUid`, and strictly BEFORE the `shareSnapshots` read below (and
+    // therefore strictly before every caller's later `matches/{ownerUid}`
+    // read/write) — an ungated version would let an anonymous bearer-token
+    // holder both read AND MUTATE a researched person's match records. The
+    // mint-side gate (Task 1) is NOT a substitute: a token minted before
+    // this phase would still resolve here without this check.
+    const resolutionKindResolution = await readSubjectKind(
+      this.database,
+      parsedToken.data.ownerUid,
+    );
+    if (resolutionKindResolution !== 'ordinary') {
       return null;
     }
     if (parsedToken.data.revokedAt != null) {

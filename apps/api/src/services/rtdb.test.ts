@@ -1,7 +1,14 @@
 import { describe, expect, it, vi } from 'vitest';
 import { MAX_VOD_TIMESTAMPS_PER_MATCH } from '@smash-tracker/shared';
 import { FakeDatabase } from '../test-support/fakeDatabase.js';
-import { ConflictError, NotFoundError, RtdbService } from './rtdb.js';
+import {
+  buildReviewShareId,
+  buildSessionShareId,
+  ConflictError,
+  ForbiddenError,
+  NotFoundError,
+  RtdbService,
+} from './rtdb.js';
 
 const UID = 'test-uid-123';
 const WEB_BASE_URL = 'https://grandfinals.gg';
@@ -1964,6 +1971,510 @@ describe('RtdbService — kind: coachReview branches (createShare / getShareByTo
       kind: 'coachReview',
       status: 'active',
       url: `${WEB_BASE_URL}/r/${created.token}`,
+    });
+  });
+});
+
+/**
+ * Phase 29 Plan 06 (RTEN-03, D-05, T-29-06-01/05/07): `createShare`'s mint
+ * refusal — ONE of exactly three independent mint writers this plan gates
+ * (the other two, `createReviewDelivery`/`createSessionDelivery`, have
+ * their own dedicated suites in `apps/api/src/coaching/`). Covers all
+ * three of `createShare`'s branches independently (D-08 enumeration, not
+ * sampling) plus the unresolved-kind fail-closed case, and proves zero
+ * database residue on every refusal via a before/after `FakeDatabase.dump()`
+ * equality check — never only that a throw occurred.
+ */
+describe('RTEN-03 (D-05): createShare refuses to mint for a research or unresolvable subject', () => {
+  const RESEARCH_TENANT = 'research-tenant-1';
+
+  function seedRecapFixture(database: FakeDatabase, uid: string): void {
+    database.seed(`tournamentEntries/${uid}/entry1`, {
+      eventName: 'Ultimate Singles',
+      tournamentName: 'The Big House 9',
+      seed: 8,
+      placement: 3,
+      firstSetAt: 1000,
+      lastSetAt: 5000,
+      setsPlayed: 1,
+    });
+    database.seed(`matches/${uid}`, {
+      m1: {
+        fighter_id: 1,
+        opponent_id: 2,
+        time: 1000,
+        win: true,
+        eventName: 'Ultimate Singles',
+        tournamentName: 'The Big House 9',
+        externalId: 'sgg:set-1:g1',
+      },
+    });
+  }
+
+  it("'review' branch: refuses a research subject, leaving the database byte-unchanged", async () => {
+    const database = new FakeDatabase();
+    const rtdb = new RtdbService(database as never);
+    database.seed(`matches/${RESEARCH_TENANT}/m1`, {
+      fighter_id: 1,
+      opponent_id: 8,
+      time: 1700000000000,
+      win: true,
+      vodUrl: 'https://youtube.com/watch?v=abc123',
+    });
+    database.seed(`clientTenants/${RESEARCH_TENANT}`, { createdAt: 1, kind: 'research' });
+    const before = database.dump();
+
+    await expect(
+      rtdb.createShare(
+        RESEARCH_TENANT,
+        {
+          kind: 'review',
+          matchId: 'm1',
+          redaction: { includeNotes: true, includeTags: true, showDisplayName: false },
+          permissions: 'view',
+        } as never,
+        WEB_BASE_URL,
+      ),
+    ).rejects.toThrow(ForbiddenError);
+
+    expect(database.dump()).toEqual(before);
+  });
+
+  it("'recap' branch: refuses a research subject, leaving the database byte-unchanged", async () => {
+    const database = new FakeDatabase();
+    const rtdb = new RtdbService(database as never);
+    seedRecapFixture(database, RESEARCH_TENANT);
+    database.seed(`clientTenants/${RESEARCH_TENANT}`, { createdAt: 1, kind: 'research' });
+    const before = database.dump();
+
+    await expect(
+      rtdb.createShare(
+        RESEARCH_TENANT,
+        { kind: 'recap', entryKey: 'entry1', permissions: 'view' } as never,
+        WEB_BASE_URL,
+      ),
+    ).rejects.toThrow(ForbiddenError);
+
+    expect(database.dump()).toEqual(before);
+  });
+
+  it("'coachReview' branch: refuses a research subject, leaving the database byte-unchanged", async () => {
+    const database = new FakeDatabase();
+    const rtdb = new RtdbService(database as never);
+    database.seed(`reviewVersions/${RESEARCH_TENANT}/review-1/1`, {
+      sections: [{ id: 'summary', kind: 'summary', title: null, body: 'Solid neutral game.' }],
+      publishedAt: 1_700_000_000_000,
+    });
+    database.seed(`clientTenants/${RESEARCH_TENANT}`, { createdAt: 1, kind: 'research' });
+    const before = database.dump();
+
+    await expect(
+      rtdb.createShare(
+        RESEARCH_TENANT,
+        { kind: 'coachReview', reviewId: 'review-1', version: 1, permissions: 'view' } as never,
+        WEB_BASE_URL,
+      ),
+    ).rejects.toThrow(ForbiddenError);
+
+    expect(database.dump()).toEqual(before);
+  });
+
+  it('refuses when the subject kind cannot be resolved (fail closed — never silently treated as ordinary)', async () => {
+    const database = new FakeDatabase();
+    const rtdb = new RtdbService(database as never);
+    database.seed(`matches/${RESEARCH_TENANT}/m1`, {
+      fighter_id: 1,
+      opponent_id: 8,
+      time: 1700000000000,
+      win: true,
+      vodUrl: 'https://youtube.com/watch?v=abc123',
+    });
+    // An unparseable stored kind value resolves to 'unresolved', not
+    // 'ordinary' — mirrors research/subjectKind.test.ts's own fixture.
+    database.seed(`clientTenants/${RESEARCH_TENANT}/kind`, 'not-a-real-kind');
+    const before = database.dump();
+
+    await expect(
+      rtdb.createShare(
+        RESEARCH_TENANT,
+        {
+          kind: 'review',
+          matchId: 'm1',
+          redaction: { includeNotes: true, includeTags: true, showDisplayName: false },
+          permissions: 'view',
+        } as never,
+        WEB_BASE_URL,
+      ),
+    ).rejects.toThrow(ForbiddenError);
+
+    expect(database.dump()).toEqual(before);
+  });
+
+  it('an ordinary personal uid (no clientTenants record) is unaffected — mints normally', async () => {
+    const database = new FakeDatabase();
+    const rtdb = new RtdbService(database as never);
+    database.seed(`matches/${UID}/m1`, {
+      fighter_id: 1,
+      opponent_id: 8,
+      time: 1700000000000,
+      win: true,
+      vodUrl: 'https://youtube.com/watch?v=abc123',
+    });
+
+    const result = await rtdb.createShare(
+      UID,
+      {
+        kind: 'review',
+        matchId: 'm1',
+        redaction: { includeNotes: true, includeTags: true, showDisplayName: false },
+        permissions: 'view',
+      } as never,
+      WEB_BASE_URL,
+    );
+
+    expect(result.shareId).toBeTruthy();
+  });
+
+  it('an explicit legacy `coaching` discriminator (not just absence) still resolves to ordinary — mints normally', async () => {
+    const database = new FakeDatabase();
+    const rtdb = new RtdbService(database as never);
+    const COACHING_TENANT = 'coaching-tenant-1';
+    database.seed(`clientTenants/${COACHING_TENANT}`, { createdAt: 1, kind: 'coaching' });
+    database.seed(`reviewVersions/${COACHING_TENANT}/review-1/1`, {
+      sections: [{ id: 'summary', kind: 'summary', title: null, body: 'Solid neutral game.' }],
+      publishedAt: 1_700_000_000_000,
+    });
+
+    const result = await rtdb.createShare(
+      COACHING_TENANT,
+      { kind: 'coachReview', reviewId: 'review-1', version: 1, permissions: 'view' } as never,
+      WEB_BASE_URL,
+    );
+
+    expect(result.shareId).toBeTruthy();
+  });
+});
+
+/**
+ * Phase 29 Plan 06 (RTEN-03, D-05, T-29-06-02/03/04/05/06): resolution-side
+ * refusal at all FOUR independent chokepoints — `getShareByToken` (every
+ * decoding branch), `resolveCoachReviewShareRef`, `resolveSessionShareRef`,
+ * and `resolveEditSession` (tested through its public callers, since it is
+ * private). Per the review's suggestion, every assertion uses the SAME
+ * fixed token value across TWO database fixtures — one where that token
+ * resolves to a research/unresolvable subject, one where the token was
+ * NEVER issued — so a token-shape difference can never explain away a real
+ * divergence (T-29-06-04 no-oracle).
+ */
+describe('RTEN-03 (D-05): resolution refusal at all four independent chokepoints', () => {
+  const RESEARCH_TENANT = 'research-tenant-2';
+  const UNRESOLVABLE_TENANT = 'unresolvable-tenant-2';
+  const SAME_TOKEN = 'aFixedTokenAAAAABBBBBCCCCCDDDDDEEEEEFFFFF';
+
+  function seedResearchTenant(database: FakeDatabase, tenantId: string): void {
+    database.seed(`clientTenants/${tenantId}`, { createdAt: 1, kind: 'research' });
+  }
+
+  function seedUnresolvableTenant(database: FakeDatabase, tenantId: string): void {
+    database.seed(`clientTenants/${tenantId}/kind`, 'not-a-real-kind');
+  }
+
+  describe('getShareByToken — per-branch coverage (D-08 enumeration)', () => {
+    it("'review' branch: a research-subject token resolves to the SAME null a never-issued token does", async () => {
+      const researchDb = new FakeDatabase();
+      seedResearchTenant(researchDb, RESEARCH_TENANT);
+      researchDb.seed(`shareTokens/${SAME_TOKEN}`, {
+        shareId: 'share-review-1',
+        ownerUid: RESEARCH_TENANT,
+        permissions: 'view',
+        createdAt: 1,
+      });
+      researchDb.seed('shareSnapshots/share-review-1', {
+        uid: RESEARCH_TENANT,
+        matchId: 'm1',
+        createdAt: 1,
+        result: 'win',
+        fighterId: 1,
+        opponentFighterId: 8,
+        matchDate: 1,
+        vodUrl: 'https://youtube.com/watch?v=abc123',
+        reviewedMomentsCount: 0,
+        redaction: { includedNotes: true, includedTags: true, showDisplayName: false },
+      });
+      const researchRtdb = new RtdbService(researchDb as never);
+      const neverIssuedRtdb = new RtdbService(new FakeDatabase() as never);
+
+      const researchResult = await researchRtdb.getShareByToken(SAME_TOKEN);
+      const neverIssuedResult = await neverIssuedRtdb.getShareByToken(SAME_TOKEN);
+
+      expect(researchResult).toBeNull();
+      expect(researchResult).toEqual(neverIssuedResult);
+    });
+
+    it("'recap' branch: a research-subject token resolves to the SAME null a never-issued token does", async () => {
+      const researchDb = new FakeDatabase();
+      seedResearchTenant(researchDb, RESEARCH_TENANT);
+      researchDb.seed(`shareTokens/${SAME_TOKEN}`, {
+        shareId: 'share-recap-1',
+        ownerUid: RESEARCH_TENANT,
+        permissions: 'view',
+        createdAt: 1,
+      });
+      researchDb.seed('shareSnapshots/share-recap-1', {
+        kind: 'recap',
+        uid: RESEARCH_TENANT,
+        createdAt: 1,
+        tournamentName: 'Test Tournament',
+        tournamentDate: 1,
+        setRecordWins: 3,
+        setRecordLosses: 1,
+        characterFighterIds: [1],
+        reviewedMomentsCount: 0,
+      });
+      const researchRtdb = new RtdbService(researchDb as never);
+      const neverIssuedRtdb = new RtdbService(new FakeDatabase() as never);
+
+      const researchResult = await researchRtdb.getShareByToken(SAME_TOKEN);
+      const neverIssuedResult = await neverIssuedRtdb.getShareByToken(SAME_TOKEN);
+
+      expect(researchResult).toBeNull();
+      expect(researchResult).toEqual(neverIssuedResult);
+    });
+
+    it("'coachReview' branch: a research-subject token resolves to the SAME null a never-issued token does", async () => {
+      const researchDb = new FakeDatabase();
+      seedResearchTenant(researchDb, RESEARCH_TENANT);
+      researchDb.seed(`shareTokens/${SAME_TOKEN}`, {
+        shareId: buildReviewShareId(RESEARCH_TENANT, 'review-1', 1),
+        ownerUid: RESEARCH_TENANT,
+        permissions: 'view',
+        createdAt: 1,
+      });
+      researchDb.seed(`reviewVersions/${RESEARCH_TENANT}/review-1/1`, {
+        sections: [{ id: 'summary', kind: 'summary', title: null, body: 'Solid neutral game.' }],
+        publishedAt: 1,
+      });
+      const researchRtdb = new RtdbService(researchDb as never);
+      const neverIssuedRtdb = new RtdbService(new FakeDatabase() as never);
+
+      const researchResult = await researchRtdb.getShareByToken(SAME_TOKEN);
+      const neverIssuedResult = await neverIssuedRtdb.getShareByToken(SAME_TOKEN);
+
+      expect(researchResult).toBeNull();
+      expect(researchResult).toEqual(neverIssuedResult);
+    });
+
+    it("'session' branch: a research-subject token resolves to the SAME null a never-issued token does", async () => {
+      const researchDb = new FakeDatabase();
+      seedResearchTenant(researchDb, RESEARCH_TENANT);
+      researchDb.seed(`shareTokens/${SAME_TOKEN}`, {
+        shareId: buildSessionShareId(RESEARCH_TENANT, 'session-1', 'delivery-1'),
+        ownerUid: RESEARCH_TENANT,
+        permissions: 'view',
+        createdAt: 1,
+      });
+      const researchRtdb = new RtdbService(researchDb as never);
+      const neverIssuedRtdb = new RtdbService(new FakeDatabase() as never);
+
+      const researchResult = await researchRtdb.getShareByToken(SAME_TOKEN);
+      const neverIssuedResult = await neverIssuedRtdb.getShareByToken(SAME_TOKEN);
+
+      expect(researchResult).toBeNull();
+      expect(researchResult).toEqual(neverIssuedResult);
+    });
+
+    it('an unresolvable-kind subject token resolves to the SAME null a never-issued token does (fail closed)', async () => {
+      const unresolvableDb = new FakeDatabase();
+      seedUnresolvableTenant(unresolvableDb, UNRESOLVABLE_TENANT);
+      unresolvableDb.seed(`shareTokens/${SAME_TOKEN}`, {
+        shareId: 'share-unresolvable-1',
+        ownerUid: UNRESOLVABLE_TENANT,
+        permissions: 'view',
+        createdAt: 1,
+      });
+      unresolvableDb.seed('shareSnapshots/share-unresolvable-1', {
+        uid: UNRESOLVABLE_TENANT,
+        matchId: 'm1',
+        createdAt: 1,
+        result: 'win',
+        fighterId: 1,
+        opponentFighterId: 8,
+        matchDate: 1,
+        vodUrl: 'https://youtube.com/watch?v=abc123',
+        reviewedMomentsCount: 0,
+        redaction: { includedNotes: true, includedTags: true, showDisplayName: false },
+      });
+      const unresolvableRtdb = new RtdbService(unresolvableDb as never);
+      const neverIssuedRtdb = new RtdbService(new FakeDatabase() as never);
+
+      const unresolvableResult = await unresolvableRtdb.getShareByToken(SAME_TOKEN);
+      const neverIssuedResult = await neverIssuedRtdb.getShareByToken(SAME_TOKEN);
+
+      expect(unresolvableResult).toBeNull();
+      expect(unresolvableResult).toEqual(neverIssuedResult);
+    });
+  });
+
+  describe('resolveCoachReviewShareRef', () => {
+    it('a research-subject token resolves to the SAME null a never-issued token does', async () => {
+      const researchDb = new FakeDatabase();
+      seedResearchTenant(researchDb, RESEARCH_TENANT);
+      researchDb.seed(`shareTokens/${SAME_TOKEN}`, {
+        shareId: buildReviewShareId(RESEARCH_TENANT, 'review-1', 1),
+        ownerUid: RESEARCH_TENANT,
+        permissions: 'view',
+        createdAt: 1,
+      });
+      const researchRtdb = new RtdbService(researchDb as never);
+      const neverIssuedRtdb = new RtdbService(new FakeDatabase() as never);
+
+      const researchResult = await researchRtdb.resolveCoachReviewShareRef(SAME_TOKEN);
+      const neverIssuedResult = await neverIssuedRtdb.resolveCoachReviewShareRef(SAME_TOKEN);
+
+      expect(researchResult).toBeNull();
+      expect(researchResult).toEqual(neverIssuedResult);
+    });
+
+    it('an unresolvable-kind subject token resolves to the SAME null a never-issued token does (fail closed)', async () => {
+      const unresolvableDb = new FakeDatabase();
+      seedUnresolvableTenant(unresolvableDb, UNRESOLVABLE_TENANT);
+      unresolvableDb.seed(`shareTokens/${SAME_TOKEN}`, {
+        shareId: buildReviewShareId(UNRESOLVABLE_TENANT, 'review-1', 1),
+        ownerUid: UNRESOLVABLE_TENANT,
+        permissions: 'view',
+        createdAt: 1,
+      });
+      const unresolvableRtdb = new RtdbService(unresolvableDb as never);
+      const neverIssuedRtdb = new RtdbService(new FakeDatabase() as never);
+
+      const unresolvableResult = await unresolvableRtdb.resolveCoachReviewShareRef(SAME_TOKEN);
+      const neverIssuedResult = await neverIssuedRtdb.resolveCoachReviewShareRef(SAME_TOKEN);
+
+      expect(unresolvableResult).toBeNull();
+      expect(unresolvableResult).toEqual(neverIssuedResult);
+    });
+  });
+
+  describe('resolveSessionShareRef', () => {
+    it('a research-subject token resolves to the SAME null a never-issued token does', async () => {
+      const researchDb = new FakeDatabase();
+      seedResearchTenant(researchDb, RESEARCH_TENANT);
+      researchDb.seed(`shareTokens/${SAME_TOKEN}`, {
+        shareId: buildSessionShareId(RESEARCH_TENANT, 'session-1', 'delivery-1'),
+        ownerUid: RESEARCH_TENANT,
+        permissions: 'view',
+        createdAt: 1,
+      });
+      const researchRtdb = new RtdbService(researchDb as never);
+      const neverIssuedRtdb = new RtdbService(new FakeDatabase() as never);
+
+      const researchResult = await researchRtdb.resolveSessionShareRef(SAME_TOKEN);
+      const neverIssuedResult = await neverIssuedRtdb.resolveSessionShareRef(SAME_TOKEN);
+
+      expect(researchResult).toBeNull();
+      expect(researchResult).toEqual(neverIssuedResult);
+    });
+
+    it('an unresolvable-kind subject token resolves to the SAME null a never-issued token does (fail closed)', async () => {
+      const unresolvableDb = new FakeDatabase();
+      seedUnresolvableTenant(unresolvableDb, UNRESOLVABLE_TENANT);
+      unresolvableDb.seed(`shareTokens/${SAME_TOKEN}`, {
+        shareId: buildSessionShareId(UNRESOLVABLE_TENANT, 'session-1', 'delivery-1'),
+        ownerUid: UNRESOLVABLE_TENANT,
+        permissions: 'view',
+        createdAt: 1,
+      });
+      const unresolvableRtdb = new RtdbService(unresolvableDb as never);
+      const neverIssuedRtdb = new RtdbService(new FakeDatabase() as never);
+
+      const unresolvableResult = await unresolvableRtdb.resolveSessionShareRef(SAME_TOKEN);
+      const neverIssuedResult = await neverIssuedRtdb.resolveSessionShareRef(SAME_TOKEN);
+
+      expect(unresolvableResult).toBeNull();
+      expect(unresolvableResult).toEqual(neverIssuedResult);
+    });
+  });
+
+  /**
+   * `resolveEditSession` is private — tested exclusively through its four
+   * public callers (T-29-06-02): `getEditSessionByToken` (read) and
+   * `createCoachNote` (the anonymous WRITE path — the highest-severity
+   * finding this plan resolves, since this is the ONE anonymous path that
+   * mutates `matches/{ownerUid}`).
+   */
+  describe('resolveEditSession (via getEditSessionByToken / createCoachNote)', () => {
+    function seedEditShareForTenant(database: FakeDatabase, tenantId: string, token: string): void {
+      database.seed(`matches/${tenantId}/m1`, {
+        fighter_id: 1,
+        opponent_id: 8,
+        time: 1700000000000,
+        win: true,
+        vodUrl: 'https://youtube.com/watch?v=abc123',
+      });
+      database.seed('shareSnapshots/share-edit-1', {
+        uid: tenantId,
+        matchId: 'm1',
+        createdAt: 1700000100000,
+        result: 'win',
+        fighterId: 1,
+        opponentFighterId: 8,
+        matchDate: 1700000000000,
+        vodUrl: 'https://youtube.com/watch?v=abc123',
+        reviewedMomentsCount: 0,
+        redaction: { includedNotes: true, includedTags: true, showDisplayName: false },
+      });
+      database.seed(`shareTokens/${token}`, {
+        shareId: 'share-edit-1',
+        ownerUid: tenantId,
+        permissions: 'edit',
+        createdAt: 1700000100000,
+      });
+    }
+
+    it('getEditSessionByToken: a research-subject token resolves to the SAME null a never-issued token does', async () => {
+      const researchDb = new FakeDatabase();
+      seedResearchTenant(researchDb, RESEARCH_TENANT);
+      seedEditShareForTenant(researchDb, RESEARCH_TENANT, SAME_TOKEN);
+      const researchRtdb = new RtdbService(researchDb as never);
+      const neverIssuedRtdb = new RtdbService(new FakeDatabase() as never);
+
+      const researchResult = await researchRtdb.getEditSessionByToken(SAME_TOKEN);
+      const neverIssuedResult = await neverIssuedRtdb.getEditSessionByToken(SAME_TOKEN);
+
+      expect(researchResult).toBeNull();
+      expect(researchResult).toEqual(neverIssuedResult);
+    });
+
+    it('getEditSessionByToken: an unresolvable-kind subject token resolves to the SAME null a never-issued token does (fail closed)', async () => {
+      const unresolvableDb = new FakeDatabase();
+      seedUnresolvableTenant(unresolvableDb, UNRESOLVABLE_TENANT);
+      seedEditShareForTenant(unresolvableDb, UNRESOLVABLE_TENANT, SAME_TOKEN);
+      const unresolvableRtdb = new RtdbService(unresolvableDb as never);
+      const neverIssuedRtdb = new RtdbService(new FakeDatabase() as never);
+
+      const unresolvableResult = await unresolvableRtdb.getEditSessionByToken(SAME_TOKEN);
+      const neverIssuedResult = await neverIssuedRtdb.getEditSessionByToken(SAME_TOKEN);
+
+      expect(unresolvableResult).toBeNull();
+      expect(unresolvableResult).toEqual(neverIssuedResult);
+    });
+
+    it('createCoachNote: refuses an anonymous WRITE attempt against a research subject, and matches/{ownerUid} is byte-unchanged before and after (T-29-06-02)', async () => {
+      const database = new FakeDatabase();
+      seedResearchTenant(database, RESEARCH_TENANT);
+      seedEditShareForTenant(database, RESEARCH_TENANT, SAME_TOKEN);
+      const rtdb = new RtdbService(database as never);
+      const beforeMatches = (database.dump() as Record<string, unknown>).matches;
+
+      await expect(
+        rtdb.createCoachNote(SAME_TOKEN, COACH_SESSION, 'Coach Person', {
+          seconds: 1,
+          note: 'attempted anonymous write against a research subject',
+        }),
+      ).rejects.toThrow('This share is no longer available');
+
+      const afterMatches = (database.dump() as Record<string, unknown>).matches;
+      expect(afterMatches).toEqual(beforeMatches);
     });
   });
 });

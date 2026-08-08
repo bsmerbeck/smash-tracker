@@ -969,3 +969,52 @@ describe('POST /api/vod-shares — review_shared GA4 event (Phase 7)', () => {
     expect(ga4Fetch).not.toHaveBeenCalled();
   });
 });
+
+/**
+ * Phase 29 Plan 06 (RTEN-03, D-05): `POST /api/vod-shares` is a thin caller
+ * of `RtdbService.createShare` — its own mint-side refusal (Task 1) is unit
+ * tested directly in `apps/api/src/services/rtdb.test.ts`. This is the
+ * defense-in-depth regression proof at the AUTHENTICATED HTTP layer: if the
+ * caller's own uid is ever classified as a research tenant, the route
+ * inherits the SAME 403 an ordinary at-cap caller gets — no distinguishing
+ * status, message, or shape. The paired test proves the mint gate does NOT
+ * regress the ordinary personal-uid path this route serves every day.
+ */
+describe('POST /api/vod-shares — RTEN-03 mint refusal propagates through the authenticated route', () => {
+  it("returns the SAME 403 an at-cap caller gets when the caller's own uid is classified research", async () => {
+    const { app, database } = buildTestApp();
+    seedMatch(database);
+    database.seed(`clientTenants/${TEST_UID}`, { createdAt: 1, kind: 'research' });
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/vod-shares',
+      headers: authHeader(),
+      payload: { matchId: 'm1', redaction: REDACTION_ALL_ON },
+    });
+
+    expect(response.statusCode).toBe(403);
+    expect(response.json()).toEqual({
+      error: 'Forbidden',
+      message: 'You can create at most 100 shares',
+      statusCode: 403,
+    });
+  });
+
+  it('an ordinary personal uid (no clientTenants record) is unaffected — still creates a share normally', async () => {
+    const { app, database } = buildTestApp();
+    seedMatch(database);
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/vod-shares',
+      headers: authHeader(),
+      payload: { matchId: 'm1', redaction: REDACTION_ALL_ON },
+    });
+
+    expect(response.statusCode).toBe(201);
+    const body = response.json();
+    expect(body.shareId).toEqual(expect.any(String));
+    expect(body.token).toEqual(expect.any(String));
+  });
+});

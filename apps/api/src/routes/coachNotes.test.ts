@@ -595,3 +595,109 @@ describe('coach write rate limits (per-token 20/min + per-IP floor)', () => {
     expect(hundredFirst.statusCode).toBe(429);
   });
 });
+
+/**
+ * Phase 29 Plan 06 (RTEN-03, D-05, T-29-06-02): this file is the ANONYMOUS
+ * write exception the review's highest-severity finding concerns —
+ * `resolveEditSession` (private, exercised only through these four routes)
+ * is the ONE anonymous path that both reads AND MUTATES `matches/{uid}`.
+ * Every route here is a thin caller with no authorization logic of its
+ * own. These tests seed a token for a research subject directly (the same
+ * "token minted before this phase" scenario `publicReviewDeliveries.test.ts`
+ * exercises) and prove every route collapses to the IDENTICAL 404 body —
+ * and, for the write route, that `matches` is byte-unchanged before and
+ * after the refused attempt.
+ */
+describe('RTEN-03 (D-05): every anonymous coach route refuses a research-subject token', () => {
+  const RESEARCH_TOKEN = 'researchTenantTokenAAAAABBBBB';
+
+  function seedEditShareForResearchTenant(
+    database: ReturnType<typeof buildTestApp>['database'],
+    tenantId: string,
+  ): void {
+    database.seed(`matches/${tenantId}/m1`, {
+      fighter_id: 1,
+      opponent_id: 8,
+      time: 1700000000000,
+      win: true,
+      vodUrl: 'https://youtube.com/watch?v=abc123',
+    });
+    database.seed('shareSnapshots/research-share1', {
+      uid: tenantId,
+      matchId: 'm1',
+      createdAt: 1700000100000,
+      result: 'win',
+      fighterId: 1,
+      opponentFighterId: 8,
+      matchDate: 1700000000000,
+      vodUrl: 'https://youtube.com/watch?v=abc123',
+      reviewedMomentsCount: 0,
+      redaction: { includedNotes: true, includedTags: true, showDisplayName: false },
+    });
+    database.seed(`shareTokens/${RESEARCH_TOKEN}`, {
+      shareId: 'research-share1',
+      ownerUid: tenantId,
+      permissions: 'edit',
+      createdAt: 1700000100000,
+      expiresAt: Date.now() + 24 * 60 * 60 * 1000,
+    });
+    database.seed(`clientTenants/${tenantId}`, { createdAt: 1, kind: 'research' });
+  }
+
+  it('GET /api/vod-shares/:token/session returns the identical 404 for a research-subject token', async () => {
+    const { app, database } = buildTestApp();
+    seedEditShareForResearchTenant(database, 'research-tenant-cn-1');
+
+    const response = await app.inject({
+      method: 'GET',
+      url: `/api/vod-shares/${RESEARCH_TOKEN}/session`,
+    });
+
+    expect(response.statusCode).toBe(404);
+    expect(response.json()).toEqual(UNAVAILABLE_404);
+  });
+
+  it('POST /api/vod-shares/:token/notes refuses the anonymous WRITE attempt against a research subject, and matches is byte-unchanged before and after', async () => {
+    const { app, database } = buildTestApp();
+    seedEditShareForResearchTenant(database, 'research-tenant-cn-2');
+    const beforeMatches = (database.dump() as Record<string, unknown>).matches;
+
+    const response = await app.inject({
+      method: 'POST',
+      url: `/api/vod-shares/${RESEARCH_TOKEN}/notes`,
+      payload: { ...COACH, seconds: 5, note: 'attempted anonymous write' },
+    });
+
+    expect(response.statusCode).toBe(404);
+    expect(response.json()).toEqual(UNAVAILABLE_404);
+    const afterMatches = (database.dump() as Record<string, unknown>).matches;
+    expect(afterMatches).toEqual(beforeMatches);
+  });
+
+  it('PATCH /api/vod-shares/:token/notes/:noteId returns the identical 404 for a research-subject token', async () => {
+    const { app, database } = buildTestApp();
+    seedEditShareForResearchTenant(database, 'research-tenant-cn-3');
+
+    const response = await app.inject({
+      method: 'PATCH',
+      url: `/api/vod-shares/${RESEARCH_TOKEN}/notes/myNote`,
+      payload: { sessionId: COACH_SESSION, note: 'edited' },
+    });
+
+    expect(response.statusCode).toBe(404);
+    expect(response.json()).toEqual(UNAVAILABLE_404);
+  });
+
+  it('DELETE /api/vod-shares/:token/notes/:noteId returns the identical 404 for a research-subject token', async () => {
+    const { app, database } = buildTestApp();
+    seedEditShareForResearchTenant(database, 'research-tenant-cn-4');
+
+    const response = await app.inject({
+      method: 'DELETE',
+      url: `/api/vod-shares/${RESEARCH_TOKEN}/notes/myNote?sessionId=${COACH_SESSION}`,
+    });
+
+    expect(response.statusCode).toBe(404);
+    expect(response.json()).toEqual(UNAVAILABLE_404);
+  });
+});
