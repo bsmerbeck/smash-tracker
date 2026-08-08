@@ -2008,6 +2008,22 @@
         "deliverError": "Ocurrió un error al crear este enlace de entrega.",
         "copiedToast": "Enlace de entrega creado y copiado"
       }
+    },
+    "research": {
+      "banner": "Instantánea de investigación con datos públicos — no verificada, no es propiedad del jugador ni cuenta con su respaldo.",
+      "badge": {
+        "research": "Investigación",
+        "unresolved": "Sin resolver"
+      },
+      "chromeIndicator": {
+        "research": "Investigación",
+        "unresolved": "Sin verificar"
+      },
+      "error": {
+        "title": "No se pudo verificar este espacio de trabajo",
+        "body": "No pudimos confirmar qué tipo de espacio de trabajo es este. Tus datos están seguros — inténtalo de nuevo.",
+        "retry": "Reintentar"
+      }
     }
   },
   "reviewDelivery": {

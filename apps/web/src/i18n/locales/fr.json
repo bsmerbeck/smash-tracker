@@ -2008,6 +2008,22 @@
         "deliverError": "Une erreur s'est produite lors de la création de ce lien de livraison.",
         "copiedToast": "Lien de livraison créé et copié"
       }
+    },
+    "research": {
+      "banner": "Instantané de recherche à partir de données publiques — non vérifié, ni détenu ni approuvé par le joueur.",
+      "badge": {
+        "research": "Recherche",
+        "unresolved": "Non résolu"
+      },
+      "chromeIndicator": {
+        "research": "Recherche",
+        "unresolved": "Non vérifié"
+      },
+      "error": {
+        "title": "Impossible de vérifier cet espace de travail",
+        "body": "Nous n'avons pas pu confirmer le type de cet espace de travail. Vos données sont en sécurité — réessayez.",
+        "retry": "Réessayer"
+      }
     }
   },
   "reviewDelivery": {

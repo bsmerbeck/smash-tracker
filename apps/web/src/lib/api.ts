@@ -7,6 +7,7 @@ import {
   claimRedeemedResponseSchema,
   clientHubListSchema,
   clientHubRowSchema,
+  clientKindResponseSchema,
   clientVisibleVersionSchema,
   createClientRequestSchema,
   createDraftPatchInputSchema,
@@ -930,6 +931,26 @@ export const api = {
         apiRequestParsed(
           `/api/coaching/clients/${encodeURIComponent(clientId)}/export`,
           clientWorkspaceExportSchema,
+        ),
+      /**
+       * GET /api/coaching/clients/:id/kind — Phase 29 (Research Tenancy,
+       * Isolation & Governance Gate, RTEN-01/RTEN-02/RTEN-06): the
+       * authoritative per-tenant kind source `useResearchSubject` consumes.
+       * Follows this object's own `:clientId`-param convention (no
+       * `X-Active-Subject` header dependency), NOT the subject-header
+       * family further down this file. Works for an archived tenant, unlike
+       * `list()` above, which excludes archived tenants by default and
+       * degrades an unresolved row's metadata for a non-allowlisted caller
+       * — this route never silently degrades: a 200 always carries
+       * `'ordinary'` or `'research'`, and an unresolvable server-side read
+       * answers a non-2xx status instead, which `apiRequestParsed` turns
+       * into a thrown `ApiError` rather than a value a caller could
+       * mistake for an ordinary workspace.
+       */
+      kind: (clientId: string) =>
+        apiRequestParsed(
+          `/api/coaching/clients/${encodeURIComponent(clientId)}/kind`,
+          clientKindResponseSchema,
         ),
     },
     /**
