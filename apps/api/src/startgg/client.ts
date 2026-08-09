@@ -658,6 +658,84 @@ export async function fetchResearchSetsPage(
   return { totalPages, sets: nodes };
 }
 
+const researchSetsIdProbeSchema = z.object({
+  player: z
+    .object({
+      sets: z
+        .object({
+          pageInfo: z.object({
+            total: z.number().int().nonnegative().nullish(),
+            totalPages: z.number().int().nonnegative().nullish(),
+          }),
+          nodes: z.array(z.object({ id: z.union([z.number(), z.string()]) })),
+        })
+        .nullish(),
+    })
+    .nullish(),
+});
+
+/**
+ * A THIRD, separate template literal — deliberately not a parameterization
+ * of `RESEARCH_SETS_QUERY` (30-CONTEXT.md "Provider-dead-page carve-out",
+ * decided by Codex advisor as product-owner proxy, 2026-08-08). Live
+ * evidence: start.gg deterministically returns an EMPTY connection
+ * (`total=0`, `totalPages=0`) for specific row ranges of a player's set
+ * history (observed: Hungrybox rows 16-30), regardless of page size,
+ * selection, or filters — a provider-side fault, not client behavior. The
+ * SAME zero/zero shape is also what a fully clipped page produces
+ * (`RESEARCH_SETS_QUERY`'s own collapsed-pagination case), so this query
+ * exists to distinguish the two: it asks the identical `player.sets`
+ * connection (same `perPage`/`page`/`showByes`/`updatedAfter` filters, so
+ * it addresses the SAME page) but selects ONLY `pageInfo { total totalPages
+ * }` and each node's `id` — a fraction of the heavy query's object cost, so
+ * re-asking it to confirm a suspected dead page never risks tripping the
+ * complexity budget itself. If this lightweight probe finds nodes or a
+ * nonzero total where the heavy query found none, the heavy query was
+ * clipped, not the provider dead — the hard truncation failure stands.
+ */
+const RESEARCH_SETS_ID_PROBE_QUERY = `query ResearchPlayerSetsIdProbe($playerId: ID!, $page: Int!, $perPage: Int!, $updatedAfter: Timestamp) {
+  player(id: $playerId) {
+    sets(perPage: $perPage, page: $page, filters: { showByes: true, updatedAfter: $updatedAfter }) {
+      pageInfo { total totalPages }
+      nodes { id }
+    }
+  }
+}`;
+
+/**
+ * The provider-dead-page confirmation probe. Deliberately carries NO
+ * truncation guard (unlike `fetchResearchSetsPage`) — its entire purpose is
+ * to inspect a fault shape the heavy query cannot see through, so refusing
+ * a short/empty response here would defeat the function before it can
+ * answer anything. The batch executor (`apps/api/src/jobs/
+ * researchBackfillBatch.ts`) is this function's only production caller,
+ * called ONLY when the heavy query returned an EMPTY page (zero nodes)
+ * while the run's prior pagination knowledge said more pages remain — never
+ * for a short NON-EMPTY page, which stays an unconditional hard failure.
+ */
+export async function fetchResearchSetsIdProbe(
+  serverToken: string,
+  playerId: string | number,
+  page: number,
+  perPage: number,
+  filters: ResearchSetsFilters = {},
+  fetchImpl: typeof fetch = fetch,
+): Promise<{ total: number; totalPages: number; nodeCount: number }> {
+  const data = await gql(
+    serverToken,
+    RESEARCH_SETS_ID_PROBE_QUERY,
+    { playerId: String(playerId), page, perPage, updatedAfter: filters.updatedAfter ?? null },
+    researchSetsIdProbeSchema,
+    fetchImpl,
+  );
+  const sets = data.player?.sets;
+  return {
+    total: sets?.pageInfo.total ?? 0,
+    totalPages: sets?.pageInfo.totalPages ?? 0,
+    nodeCount: sets?.nodes.length ?? 0,
+  };
+}
+
 const probeSetsPageSchema = z.object({
   player: z
     .object({

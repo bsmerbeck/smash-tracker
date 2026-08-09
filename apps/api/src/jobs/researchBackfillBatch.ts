@@ -39,6 +39,7 @@ import {
   recordIdentityCandidates,
 } from '../research/ingestion/identity.js';
 import {
+  fetchResearchSetsIdProbe,
   fetchResearchSetsPage,
   normalizeStartggPlayerId,
   RESEARCH_SETS_PER_PAGE,
@@ -97,6 +98,16 @@ export const DEFAULT_MAX_WRITE_RETRIES_PER_PAGE = 3;
 export const TRIGGER_MAX_PAGES_PER_REQUEST = 3;
 export const TRIGGER_MAX_SYNC_BACKOFF_MS = 10_000;
 export const INTERNAL_JOB_MAX_SYNC_BACKOFF_MS = 240_000;
+/**
+ * Provider-dead-page carve-out (30-CONTEXT.md, decided by Codex advisor as
+ * product-owner proxy, 2026-08-08): a CONSECUTIVE confirmed-dead-page cap.
+ * Any healthy processed page (a page that is NOT a confirmed dead page)
+ * resets the counter to zero, so this bounds a RUN of dead pages, never a
+ * run's lifetime total. Exceeding it fails the run rather than silently
+ * ingesting an unbounded stretch of "provider unavailable" gaps that could
+ * just as easily be a broken confirmation probe.
+ */
+export const RESEARCH_MAX_CONSECUTIVE_DEAD_PAGES = 25;
 
 export interface ResearchBackfillLogger {
   warn: (obj: unknown, msg?: string) => void;
@@ -168,13 +179,19 @@ export interface ResearchBackfillBatchResult {
  * structured result: `infra-error` at the invocation level, or a page
  * abandonment where the operation is page-scoped.
  *
- * Wrapped boundaries — SIXTEEN, listed here so a future addition is
+ * Wrapped boundaries — SEVENTEEN, listed here so a future addition is
  * visibly missing from this list: `readBackfillRun`, `publishCoverageSnapshot`,
  * `markCoveragePublished`, `readIdentityMapping`, `acquireRunLease`,
  * `renewRunLease`, `releaseRunLease`, `throttle.acquire`,
- * `fetchResearchSetsPage`, `upsertResearchSourceSet`, `readResearchSourceSet`,
- * `applyLegacyProjection`, `stageBatchProgress`, `recordIdentityCandidates`,
- * `completeBackfillRun`, `failBackfillRun`.
+ * `fetchResearchSetsPage`, `fetchResearchSetsIdProbe`, `upsertResearchSourceSet`,
+ * `readResearchSourceSet`, `applyLegacyProjection`, `stageBatchProgress`,
+ * `recordIdentityCandidates`, `completeBackfillRun`, `failBackfillRun`.
+ * `fetchResearchSetsIdProbe` is the provider-dead-page carve-out's
+ * confirmation probe (30-CONTEXT.md, decided by Codex advisor as
+ * product-owner proxy) — called ONLY when the heavy fetch returned an EMPTY
+ * page against prior pagination knowledge, THROTTLED like any provider
+ * call, never for a short NON-EMPTY page (that stays an unconditional hard
+ * failure).
  */
 export const RESEARCH_BACKFILL_INFRA_BOUNDARIES = [
   'readBackfillRun',
@@ -186,6 +203,7 @@ export const RESEARCH_BACKFILL_INFRA_BOUNDARIES = [
   'releaseRunLease',
   'throttle.acquire',
   'fetchResearchSetsPage',
+  'fetchResearchSetsIdProbe',
   'upsertResearchSourceSet',
   'readResearchSourceSet',
   'applyLegacyProjection',
@@ -213,6 +231,8 @@ interface NumericCounters {
   skipped: number;
   unresolved: number;
   corrected: number;
+  providerUnavailablePages: number;
+  providerUnavailableRowEstimate: number;
 }
 
 /** Plain-number named-gaps accumulator — same rationale as `NumericCounters`. */
@@ -246,6 +266,8 @@ function createEmptyCounters(): NumericCounters {
     skipped: 0,
     unresolved: 0,
     corrected: 0,
+    providerUnavailablePages: 0,
+    providerUnavailableRowEstimate: 0,
   };
 }
 
@@ -373,6 +395,17 @@ export async function runResearchBackfillBatch(
   let cursorPage = 1;
   let knownTotalPages: number | null = null;
   let statusForResult: ResearchIngestionRunStatus = 'running';
+  /**
+   * Provider-dead-page carve-out (30-CONTEXT.md, decided by Codex advisor
+   * as product-owner proxy): a run of CONSECUTIVE confirmed-dead pages,
+   * invocation-scoped like `backoffEvents`/`writeRetries` — every one of
+   * this cap's runs the design contract exercises stays well inside
+   * `maxPagesPerInvocation`'s own bound, and `providerUnavailablePages`
+   * (staged and published) is the durable, cross-invocation record of how
+   * many dead pages a tenant's history actually carries. Any healthy
+   * processed page resets this to zero.
+   */
+  let consecutiveDeadPages = 0;
 
   function buildResult(
     partial: Partial<ResearchBackfillBatchResult> & {
@@ -787,12 +820,87 @@ export async function runResearchBackfillBatch(
       // knownTotalPages with the collapsed value would let the loop-top
       // completion check close the run with a tiny fraction of the career
       // ingested (ING-01) — fail loudly instead, cursor preserved.
+      //
+      // PROVIDER-DEAD-PAGE CARVE-OUT (30-CONTEXT.md, decided by Codex
+      // advisor as product-owner proxy, 2026-08-08): live evidence showed
+      // start.gg deterministically returning an EMPTY connection for
+      // specific row ranges (Hungrybox rows 16-30), a provider-side fault
+      // rather than clipping. A short NON-EMPTY page stays unconditionally
+      // fatal (clipping, unchanged below). An EMPTY page (zero nodes) with
+      // prior pagination knowledge is only a NAMED GAP once a same-page,
+      // lightweight ID-only confirmation probe ALSO returns zero nodes/zero
+      // total — the zero/zero shape alone is not unique, since a fully
+      // clipped page produces the identical shape; a probe that finds nodes
+      // or a nonzero total means the heavy query was clipped, and the hard
+      // failure below still stands.
+      let isConfirmedDeadPage = false;
       if (page.sets.length < perPage && knownTotalPages != null && knownTotalPages > cursor.page) {
-        return await doFail(
-          `provider-truncated-page: ${page.sets.length}/${perPage} nodes at page ${cursor.page} with prior totalPages=${knownTotalPages} (response reported ${page.totalPages}) — start.gg clipped the response to fit its object budget; lower perPage`,
+        if (page.sets.length > 0) {
+          return await doFail(
+            `provider-truncated-page: ${page.sets.length}/${perPage} nodes at page ${cursor.page} with prior totalPages=${knownTotalPages} (response reported ${page.totalPages}) — start.gg clipped the response to fit its object budget; lower perPage`,
+          );
+        }
+
+        const probeThrottleOutcome = await runInfraStep('throttle.acquire', () =>
+          throttle.acquire(maxSyncBackoffMs - totalSleptMs),
         );
+        if (!probeThrottleOutcome.ok) {
+          await doRelease();
+          return buildResult({
+            stopReason: 'infra-error',
+            retryable: true,
+            completed: false,
+            reason: describeError(probeThrottleOutcome.error),
+          });
+        }
+        totalSleptMs += probeThrottleOutcome.value.sleptMs;
+        if (!probeThrottleOutcome.value.acquired) {
+          await doRelease();
+          return buildResult({ stopReason: 'backoff-pending', retryable: true, completed: false });
+        }
+
+        const probeOutcome = await runInfraStep('fetchResearchSetsIdProbe', () =>
+          fetchResearchSetsIdProbe(
+            serverToken,
+            numericPlayerId,
+            cursor.page,
+            perPage,
+            { updatedAfter: cursor.updatedAfterSeconds ?? undefined },
+            fetchImpl,
+          ),
+        );
+        if (!probeOutcome.ok) {
+          await doRelease();
+          return buildResult({
+            stopReason: 'infra-error',
+            retryable: true,
+            completed: false,
+            reason: describeError(probeOutcome.error),
+          });
+        }
+        const probe = probeOutcome.value;
+        if (probe.nodeCount > 0 || probe.total > 0) {
+          // The confirmation probe found rows the heavy query did not —
+          // the heavy query was clipped, the provider is not dead.
+          return await doFail(
+            `provider-truncated-page: 0/${perPage} nodes at page ${cursor.page} with prior totalPages=${knownTotalPages} (response reported ${page.totalPages}) — confirmation probe found nodeCount=${probe.nodeCount} total=${probe.total}, so the heavy query was clipped; lower perPage`,
+          );
+        }
+
+        // CONFIRMED dead page: zero nodes AND zero total on BOTH the heavy
+        // query and the lightweight probe. Named-gap, not a failure —
+        // knownTotalPages is intentionally left unchanged below (never
+        // overwritten by the collapsed 0).
+        consecutiveDeadPages += 1;
+        if (consecutiveDeadPages > RESEARCH_MAX_CONSECUTIVE_DEAD_PAGES) {
+          return await doFail(
+            `dead-page cap exceeded: ${consecutiveDeadPages} consecutive confirmed dead pages ending at page ${cursor.page} (cap ${RESEARCH_MAX_CONSECUTIVE_DEAD_PAGES})`,
+          );
+        }
+        isConfirmedDeadPage = true;
+      } else {
+        knownTotalPages = page.totalPages;
       }
-      knownTotalPages = page.totalPages;
       // Captured ONCE per page attempt, right when the fetch resolves — the
       // comparator 30-03's stale-write guard reads (review C3-H5).
       const fetchedSnapshotAtMs = now();
@@ -819,6 +927,16 @@ export async function runResearchBackfillBatch(
       const acc = createPageAccumulator();
       let abandoned = false;
       let abandonMessage: string | null = null;
+
+      if (isConfirmedDeadPage) {
+        // A confirmed dead page carries a zero-contribution receipt PLUS
+        // the provider-unavailable counters — no set to classify, so the
+        // per-set loop below is a no-op (`page.sets` is empty).
+        acc.counters.providerUnavailablePages = 1;
+        acc.counters.providerUnavailableRowEstimate = perPage;
+        acc.uniqueCounters.providerUnavailablePages = 1;
+        acc.uniqueCounters.providerUnavailableRowEstimate = perPage;
+      }
 
       for (const set of page.sets) {
         setsObserved += 1;
@@ -1002,13 +1120,20 @@ export async function runResearchBackfillBatch(
         continue;
       }
 
+      // A healthy processed page resets the dead-page run (provider-dead-
+      // page carve-out) — only a confirmed dead page increments it.
+      if (!isConfirmedDeadPage) {
+        consecutiveDeadPages = 0;
+      }
+
       // Step 6d-ii: stage the page's FULL contribution and advance the
       // cursor to the next page with `pageAttempt` reset to 0 — one
       // transaction carrying both, durable BEFORE the next iteration
-      // (D-09).
+      // (D-09). A confirmed dead page's collapsed `page.totalPages` (0)
+      // must never overwrite the prior pagination knowledge (ING-01).
       const nextCursor: ResearchIngestionCursor = {
         page: cursor.page + 1,
-        totalPages: page.totalPages,
+        totalPages: isConfirmedDeadPage ? (knownTotalPages ?? page.totalPages) : page.totalPages,
         ...(cursor.updatedAfterSeconds != null
           ? { updatedAfterSeconds: cursor.updatedAfterSeconds }
           : {}),
@@ -1030,7 +1155,8 @@ export async function runResearchBackfillBatch(
       }
 
       pagesProcessed += 1;
-      knownTotalPages = staged.totalPages ?? page.totalPages;
+      knownTotalPages =
+        staged.totalPages ?? (isConfirmedDeadPage ? knownTotalPages : page.totalPages);
       cursor = nextCursor;
       pageAttempt = 0;
     }
