@@ -2069,7 +2069,9 @@
           "missingCompletedAt": "Horário de conclusão ausente",
           "unknownOnlineContext": "Contexto online/offline desconhecido",
           "unknownVideogame": "Jogo desconhecido (a start.gg não reportou a qual jogo este set pertence)",
-          "unsafeProviderKey": "Chave do provedor não segura"
+          "unsafeProviderKey": "Chave do provedor não segura",
+          "providerUnavailablePages": "Páginas que a start.gg reportou como indisponíveis (confirmado, não recortado)",
+          "providerUnavailableRowEstimate": "Linhas estimadas em páginas indisponíveis"
         },
         "identity": {
           "unresolvedCandidates_one": "{{count}} candidato de identidade não resolvido",

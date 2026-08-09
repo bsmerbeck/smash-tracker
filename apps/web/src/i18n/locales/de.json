@@ -2069,7 +2069,9 @@
           "missingCompletedAt": "Fehlende Abschlusszeit",
           "unknownOnlineContext": "Unbekannter Online-/Offline-Kontext",
           "unknownVideogame": "Unbekanntes Spiel (start.gg hat nicht gemeldet, zu welchem Spiel dieses Set gehört)",
-          "unsafeProviderKey": "Unsicherer Provider-Schlüssel"
+          "unsafeProviderKey": "Unsicherer Provider-Schlüssel",
+          "providerUnavailablePages": "Von start.gg als nicht verfügbar gemeldete Seiten (bestätigt, nicht abgeschnitten)",
+          "providerUnavailableRowEstimate": "Geschätzte Zeilen in nicht verfügbaren Seiten"
         },
         "identity": {
           "unresolvedCandidates_one": "{{count}} ungeklärter Identitätskandidat",

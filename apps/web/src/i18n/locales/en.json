@@ -2069,7 +2069,9 @@
           "missingCompletedAt": "Missing completion time",
           "unknownOnlineContext": "Unknown online/offline context",
           "unknownVideogame": "Unknown game (start.gg did not report which game this set was)",
-          "unsafeProviderKey": "Unsafe provider key"
+          "unsafeProviderKey": "Unsafe provider key",
+          "providerUnavailablePages": "Pages start.gg reported as unavailable (confirmed, not clipped)",
+          "providerUnavailableRowEstimate": "Estimated rows in unavailable pages"
         },
         "identity": {
           "unresolvedCandidates_one": "{{count}} unresolved identity candidate",

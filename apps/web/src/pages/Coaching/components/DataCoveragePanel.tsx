@@ -34,6 +34,21 @@ const GAP_FIELDS = [
   'unsafeProviderKey',
 ] as const;
 
+/**
+ * Provider-dead-page carve-out (30-CONTEXT.md, decided by Codex advisor as
+ * product-owner proxy): these two live on `ResearchCounters` (they fold
+ * into `totals` exactly like every other counter — see
+ * `packages/shared/src/researchIngestion.ts`), but the panel renders them
+ * as NAMED-GAP rows, in the same `coaching.research.coverage.gaps.*` key
+ * family as `GAP_FIELDS` above, because that is what they mean to a
+ * reader: start.gg confirmed it has no more data for this page range, not
+ * a defect in what this system captured.
+ */
+const PROVIDER_UNAVAILABLE_FIELDS = [
+  'providerUnavailablePages',
+  'providerUnavailableRowEstimate',
+] as const;
+
 /** Maps a `RESEARCH_EXCLUDED_OUTCOME_CLASSIFICATIONS` member to its i18n key — `no-game-detail` cannot be a JSON object key itself, so this is the one translation site. */
 const EXCLUDED_LABEL_KEYS: Record<ResearchExcludedOutcomeClassification, string> = {
   dq: 'excluded.dq',
@@ -110,19 +125,27 @@ function DateSpanRow({
 
 function GapsSection({
   gaps,
+  counters,
   t,
   testid,
 }: {
   gaps: ResearchNamedGaps;
+  /** Provider-dead-page carve-out (30-CONTEXT.md): the source of `PROVIDER_UNAVAILABLE_FIELDS`'s rows. Optional so a caller with no counters in hand renders the ordinary gap rows unchanged. */
+  counters?: ResearchCounters;
   t: TFunction;
   testid: string;
 }) {
   const normalized = normalizeResearchNamedGaps(gaps);
+  const normalizedCounters = normalizeResearchCounters(counters);
   const nonZero = GAP_FIELDS.filter((field) => (normalized[field] ?? 0) > 0);
+  const nonZeroProviderUnavailable = PROVIDER_UNAVAILABLE_FIELDS.filter(
+    (field) => (normalizedCounters[field] ?? 0) > 0,
+  );
+  const hasAnyGap = nonZero.length > 0 || nonZeroProviderUnavailable.length > 0;
   return (
     <div data-testid={testid} className="text-sm">
       <h4 className="font-semibold">{t('coaching.research.coverage.gaps.title')}</h4>
-      {nonZero.length === 0 ? (
+      {!hasAnyGap ? (
         <p className="text-muted-foreground">{t('coaching.research.coverage.gaps.none')}</p>
       ) : (
         <ul>
@@ -132,6 +155,18 @@ function GapsSection({
                 {t(`coaching.research.coverage.gaps.${field}`)}
               </span>
               <span className="font-medium">{normalized[field]}</span>
+            </li>
+          ))}
+          {nonZeroProviderUnavailable.map((field) => (
+            <li
+              key={field}
+              data-testid={`${testid}-${field}`}
+              className="flex justify-between gap-2"
+            >
+              <span className="text-muted-foreground">
+                {t(`coaching.research.coverage.gaps.${field}`)}
+              </span>
+              <span className="font-medium">{normalizedCounters[field]}</span>
             </li>
           ))}
         </ul>
@@ -203,7 +238,12 @@ function PlayerSection({
         language={language}
         testid={`${testidPrefix}-span`}
       />
-      <GapsSection gaps={section.namedGaps} t={t} testid={`${testidPrefix}-gaps`} />
+      <GapsSection
+        gaps={section.namedGaps}
+        counters={section.counters}
+        t={t}
+        testid={`${testidPrefix}-gaps`}
+      />
     </div>
   );
 }
@@ -321,7 +361,12 @@ export function DataCoveragePanel() {
                 language={language}
                 testid="data-coverage-span"
               />
-              <GapsSection gaps={snapshot.totals.namedGaps} t={t} testid="data-coverage-gaps" />
+              <GapsSection
+                gaps={snapshot.totals.namedGaps}
+                counters={snapshot.totals.counters}
+                t={t}
+                testid="data-coverage-gaps"
+              />
             </div>
 
             <div className="flex flex-col gap-3">

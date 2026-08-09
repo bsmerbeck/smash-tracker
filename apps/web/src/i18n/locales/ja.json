@@ -2069,7 +2069,9 @@
           "missingCompletedAt": "完了時刻の欠落",
           "unknownOnlineContext": "オンライン/オフラインの状況が不明",
           "unknownVideogame": "不明なゲーム(start.gg がこのセットのゲームを報告していません)",
-          "unsafeProviderKey": "安全でないプロバイダーキー"
+          "unsafeProviderKey": "安全でないプロバイダーキー",
+          "providerUnavailablePages": "start.gg が利用不可と報告したページ(確認済み、切り捨てではない)",
+          "providerUnavailableRowEstimate": "利用不可ページの推定行数"
         },
         "identity": {
           "unresolvedCandidates_one": "未解決の識別候補が {{count}} 件",
