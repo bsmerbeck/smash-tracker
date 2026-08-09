@@ -14,6 +14,7 @@ import {
   researchCoverageSnapshotSchema,
   researchIdentityConfirmedPlayerSchema,
   researchIdentityMappingSchema,
+  researchIngestionCursorSchema,
   researchIngestionRunSchema,
   researchPageReceiptSchema,
   researchSourceSetRecordSchema,
@@ -409,6 +410,39 @@ describe('researchIngestionRunSchema', () => {
     expect(parsed.stagedUniqueCounters).toEqual({ imported: 1 });
     expect(parsed.stagedUniqueNamedGaps).toEqual({ unknownStage: 1 });
     expect(parsed.stagedUniqueClassificationCounts).toEqual({ complete: 1 });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// researchIngestionCursorSchema (Dead-PREFIX extension, decided by Codex
+// advisor as product-owner proxy, 2026-08-08 — the durable streak safeguard)
+// ---------------------------------------------------------------------------
+
+describe('researchIngestionCursorSchema', () => {
+  it('accepts a cursor with consecutiveUnavailablePages absent (house convention: absent means zero)', () => {
+    const parsed = researchIngestionCursorSchema.parse({ page: 1 });
+    expect(parsed.consecutiveUnavailablePages).toBeUndefined();
+  });
+
+  it('accepts a nonnegative integer consecutiveUnavailablePages', () => {
+    const parsed = researchIngestionCursorSchema.parse({
+      page: 5,
+      consecutiveUnavailablePages: 12,
+    });
+    expect(parsed.consecutiveUnavailablePages).toBe(12);
+  });
+
+  it('rejects a negative consecutiveUnavailablePages', () => {
+    expect(
+      researchIngestionCursorSchema.safeParse({ page: 1, consecutiveUnavailablePages: -1 }).success,
+    ).toBe(false);
+  });
+
+  it('rejects a non-integer consecutiveUnavailablePages', () => {
+    expect(
+      researchIngestionCursorSchema.safeParse({ page: 1, consecutiveUnavailablePages: 1.5 })
+        .success,
+    ).toBe(false);
   });
 });
 

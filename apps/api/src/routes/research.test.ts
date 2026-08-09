@@ -888,7 +888,13 @@ describe('backfill trigger: identity resolution and validate-then-create', () =>
       payload: { mode: 'full', maxPages: 20 },
     });
 
-    expect(pagesFetched).toBeLessThanOrEqual(3);
+    // Every page this mock returns is an empty (0-node) page against a
+    // real, non-collapsed totalPages of 20 — the Dead-PREFIX extension's
+    // shared same-page ID-only confirmation probe now runs for EVERY such
+    // page (empty or short-non-empty), so each of the
+    // TRIGGER_MAX_PAGES_PER_REQUEST pages can cost up to two fetches (the
+    // heavy query plus its confirmation probe) instead of one.
+    expect(pagesFetched).toBeLessThanOrEqual(3 * 2);
   });
 
   it("a trigger for a second confirmed player while another player's run is active returns 409 naming the active player (review C2-H3)", async () => {

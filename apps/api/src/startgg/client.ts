@@ -621,6 +621,23 @@ export function normalizeStartggPlayerId(value: string | number): number | null 
  * that needs a validated number for a sibling function (e.g.
  * `resolvePlayerById`) calls `normalizeStartggPlayerId` itself first, then
  * passes either form straight through here.
+ *
+ * Deliberately carries NO truncation guard of its own (review-equivalent of
+ * the Dead-PREFIX extension, 30-CONTEXT.md "Dead-PREFIX extension", decided
+ * by Codex advisor as product-owner proxy, 2026-08-08 — this function
+ * previously threw here on a short-non-final page). A live probe
+ * (2026-08-08) established that a dead zone's LEADING EDGE presents with
+ * this EXACT shape — a short, non-empty page whose OWN reported
+ * `totalPages` stays intact/uncollapsed — indistinguishable at this layer
+ * from genuine query-complexity clipping (30-CONTEXT.md "Provider-dead-page
+ * carve-out"'s original finding, which is the SAME shape a fully clipped
+ * page produces). Disambiguating the two requires the same-page ID-only
+ * confirmation probe (`fetchResearchSetsIdProbe`) this function has no
+ * access to, so the decision moved ENTIRELY to the batch executor
+ * (`apps/api/src/jobs/researchBackfillBatch.ts`), which already carries the
+ * cursor's prior pagination knowledge the executor's collapsed-pagination
+ * case always needed. This function now always returns the raw page —
+ * short, empty, or full — never throwing on shape alone.
  */
 export async function fetchResearchSetsPage(
   serverToken: string,
@@ -640,21 +657,6 @@ export async function fetchResearchSetsPage(
   const sets = data.player?.sets;
   const totalPages = sets?.pageInfo.totalPages ?? 0;
   const nodes = sets?.nodes ?? [];
-  // PROVIDER-TRUNCATION GUARD (live probe, 2026-08-08): when a page's
-  // response would exceed start.gg's object budget, the API silently clips
-  // the node list (never returning its documented over-budget rejection).
-  // A short page while the SAME response says more pages exist is that
-  // clipping — the missing rows cannot be recovered at the next page
-  // offset, so surfacing a loud error here is the only lossless option
-  // (ING-01). A short FINAL page (totalPages <= page) is legitimate. The
-  // fully-clipped variant (zero nodes AND totalPages collapsed to 0) is
-  // invisible in-response; the batch executor catches it against the
-  // cursor's prior pagination knowledge.
-  if (nodes.length < perPage && totalPages > page) {
-    throw new StartggApiError(
-      `provider-truncated-page: ${nodes.length}/${perPage} nodes at page ${page} with totalPages=${totalPages} — start.gg silently clipped the response to fit its object budget; lower perPage (truncated rows are unrecoverable at the next offset)`,
-    );
-  }
   return { totalPages, sets: nodes };
 }
 
@@ -709,9 +711,17 @@ const RESEARCH_SETS_ID_PROBE_QUERY = `query ResearchPlayerSetsIdProbe($playerId:
  * a short/empty response here would defeat the function before it can
  * answer anything. The batch executor (`apps/api/src/jobs/
  * researchBackfillBatch.ts`) is this function's only production caller,
- * called ONLY when the heavy query returned an EMPTY page (zero nodes)
- * while the run's prior pagination knowledge said more pages remain — never
- * for a short NON-EMPTY page, which stays an unconditional hard failure.
+ * called for BOTH shapes the dead-page carve-out family confirms: an EMPTY
+ * page (zero nodes) while the run's prior pagination knowledge said more
+ * pages remain, and — per the dead-PREFIX extension (30-CONTEXT.md
+ * "Dead-PREFIX extension", decided by Codex advisor as product-owner
+ * proxy, 2026-08-08) — a SHORT NON-EMPTY page under the same prior-knowledge
+ * condition. `nodeIds` (each provider set id coerced to its stable string
+ * form via `String(...)`, matching every other provider-id crossing in this
+ * file) is what lets the batch executor compare the probe's observed id set
+ * against the heavy query's returned ids EXACTLY — the discriminator the
+ * dead-PREFIX extension's first safeguard requires. `total`/`totalPages`
+ * remain for the pre-existing empty-page carve-out's zero/zero check.
  */
 export async function fetchResearchSetsIdProbe(
   serverToken: string,
@@ -720,7 +730,7 @@ export async function fetchResearchSetsIdProbe(
   perPage: number,
   filters: ResearchSetsFilters = {},
   fetchImpl: typeof fetch = fetch,
-): Promise<{ total: number; totalPages: number; nodeCount: number }> {
+): Promise<{ total: number; totalPages: number; nodeCount: number; nodeIds: string[] }> {
   const data = await gql(
     serverToken,
     RESEARCH_SETS_ID_PROBE_QUERY,
@@ -729,10 +739,12 @@ export async function fetchResearchSetsIdProbe(
     fetchImpl,
   );
   const sets = data.player?.sets;
+  const nodes = sets?.nodes ?? [];
   return {
     total: sets?.pageInfo.total ?? 0,
     totalPages: sets?.pageInfo.totalPages ?? 0,
-    nodeCount: sets?.nodes.length ?? 0,
+    nodeCount: nodes.length,
+    nodeIds: nodes.map((node) => String(node.id)),
   };
 }
 
