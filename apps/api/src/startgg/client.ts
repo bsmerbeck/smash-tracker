@@ -530,11 +530,15 @@ export interface ResearchSetsFilters {
 // (10 -> 5 -> 0 across consecutive pages, with totalPages collapsing to 0
 // on a fully clipped page) instead of returning its documented over-budget
 // rejection. Clipped rows are unrecoverable at the next page offset.
-// perPage 5 returned full pages everywhere, including the page that clipped
-// at 10 and a deep page (200); perPage 3 likewise. RESEARCH_SETS_PER_PAGE
-// is therefore pinned at 5, and fetchResearchSetsPage refuses short
-// non-final pages (see the guard below) so a future shape/budget shift can
-// never silently under-ingest again.
+// perPage 5 initially looked safe — but the first LIVE backfill run
+// (2026-08-08, same player) was clipped at page 4 (0/5 nodes, totalPages
+// collapsed), because older SSBU sets carry full Bo5 game rows with
+// selections and cost far more per node than the probe's recent no-game
+// sets. perPage 3 returned full pages at every depth tested (including
+// offset 200). RESEARCH_SETS_PER_PAGE is therefore pinned at 3, and
+// fetchResearchSetsPage refuses short non-final pages (see the guard
+// below) so a future shape/budget shift can never silently under-ingest —
+// the guard's first live firing is what caught the perPage-5 clip.
 // `SetFilters` exposes no videogame filter (30-RESEARCH.md Anti-Pattern), so
 // SSBU eligibility is decided client-side by 30-03's classifier — this query
 // deliberately returns the player's full cross-game history.
@@ -583,8 +587,8 @@ const RESEARCH_SETS_QUERY = `query ResearchPlayerSets($playerId: ID!, $page: Int
   }
 }`;
 
-/** Empirically-safe page size for the research selection shape (live probe 2026-08-08) — see the budget comment above; 10 silently clips. */
-export const RESEARCH_SETS_PER_PAGE = 5;
+/** Empirically-safe page size for the research selection shape (live probe + first live backfill, 2026-08-08) — see the budget comment above; 10 and 5 both silently clip on game-heavy pages. */
+export const RESEARCH_SETS_PER_PAGE = 3;
 
 /**
  * The single validated crossing between the run record's STRING `playerId`
