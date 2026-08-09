@@ -442,6 +442,27 @@ export const researchCountersSchema = z.object({
   skipped: z.number().int().nonnegative().nullish(),
   unresolved: z.number().int().nonnegative().nullish(),
   corrected: z.number().int().nonnegative().nullish(),
+  /**
+   * Provider-dead-page carve-out (30-CONTEXT.md "Provider-dead-page
+   * carve-out", decided by Codex advisor as product-owner proxy,
+   * 2026-08-08): live evidence showed start.gg deterministically returning
+   * an EMPTY connection (`total=0`, `totalPages=0`) for specific row ranges
+   * of a player's set history (observed: Hungrybox rows 16-30), a
+   * provider-side fault rather than genuine clipping. The executor may only
+   * count a page here after a same-page, ID-only confirmation probe (see
+   * `fetchResearchSetsIdProbe` in `apps/api/src/startgg/client.ts`) ALSO
+   * returns zero nodes/zero total — the zero/zero shape alone is not
+   * unique, because a fully clipped page produces the identical shape.
+   * `providerUnavailablePages` counts confirmed-dead PAGES (never
+   * clipped-but-unconfirmed ones, which stay a hard truncation failure);
+   * `providerUnavailableRowEstimate` is this system's OWN page-size
+   * ESTIMATE of the rows that page could have held — never a real observed
+   * row count, since the provider returned none. Both roll into `totals`
+   * exactly like every other member of this schema (`apps/api/src/research/
+   * ingestion/rollup.ts`'s `computeTotals`).
+   */
+  providerUnavailablePages: z.number().int().nonnegative().nullish(),
+  providerUnavailableRowEstimate: z.number().int().nonnegative().nullish(),
 });
 export type ResearchCounters = z.infer<typeof researchCountersSchema>;
 
@@ -866,6 +887,8 @@ export function normalizeResearchCounters(
     skipped: counters?.skipped ?? 0,
     unresolved: counters?.unresolved ?? 0,
     corrected: counters?.corrected ?? 0,
+    providerUnavailablePages: counters?.providerUnavailablePages ?? 0,
+    providerUnavailableRowEstimate: counters?.providerUnavailableRowEstimate ?? 0,
   };
 }
 
