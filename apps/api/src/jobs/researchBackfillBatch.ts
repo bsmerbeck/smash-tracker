@@ -779,6 +779,19 @@ export async function runResearchBackfillBatch(
       }
 
       const page = fetchOutcome.value;
+      // COLLAPSED-PAGINATION TRUNCATION (live probe, 2026-08-08): a fully
+      // clipped page reports totalPages 0 alongside zero nodes, so
+      // fetchResearchSetsPage's in-response guard cannot see it — but the
+      // cursor's prior pagination knowledge can: pages remain beyond the
+      // current one, yet the provider returned a short page. Overwriting
+      // knownTotalPages with the collapsed value would let the loop-top
+      // completion check close the run with a tiny fraction of the career
+      // ingested (ING-01) — fail loudly instead, cursor preserved.
+      if (page.sets.length < perPage && knownTotalPages != null && knownTotalPages > cursor.page) {
+        return await doFail(
+          `provider-truncated-page: ${page.sets.length}/${perPage} nodes at page ${cursor.page} with prior totalPages=${knownTotalPages} (response reported ${page.totalPages}) — start.gg clipped the response to fit its object budget; lower perPage`,
+        );
+      }
       knownTotalPages = page.totalPages;
       // Captured ONCE per page attempt, right when the fetch resolves — the
       // comparator 30-03's stale-write guard reads (review C3-H5).

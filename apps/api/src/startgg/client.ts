@@ -523,10 +523,18 @@ export interface ResearchSetsFilters {
 // entrant, `state`/`createdAt`/`updatedAt`/`identifier` per set, fuller
 // event/tournament identity, and `game.id` on top of the legacy SETS_QUERY's
 // already-budgeted ~200 objects/page at `perPage: 10` — still comfortably
-// under the 1000-object-per-request cap by rough estimate, but
-// RESEARCH_SETS_PER_PAGE stays at the legacy proven-safe value of 10 until
-// the live probe (Task 3 / Open Question 2) empirically confirms headroom
-// for a larger page size; a rejected request wastes the whole page's work.
+// under the 1000-object-per-request cap by rough estimate — but the live
+// probe (2026-08-08, player 1004/Hungrybox, 15,590 sets) answered Open
+// Question 2 the hard way: at perPage 10 this shape sits ON the budget
+// cliff, and start.gg enforces the budget by SILENTLY CLIPPING node lists
+// (10 -> 5 -> 0 across consecutive pages, with totalPages collapsing to 0
+// on a fully clipped page) instead of returning its documented over-budget
+// rejection. Clipped rows are unrecoverable at the next page offset.
+// perPage 5 returned full pages everywhere, including the page that clipped
+// at 10 and a deep page (200); perPage 3 likewise. RESEARCH_SETS_PER_PAGE
+// is therefore pinned at 5, and fetchResearchSetsPage refuses short
+// non-final pages (see the guard below) so a future shape/budget shift can
+// never silently under-ingest again.
 // `SetFilters` exposes no videogame filter (30-RESEARCH.md Anti-Pattern), so
 // SSBU eligibility is decided client-side by 30-03's classifier — this query
 // deliberately returns the player's full cross-game history.
@@ -575,8 +583,8 @@ const RESEARCH_SETS_QUERY = `query ResearchPlayerSets($playerId: ID!, $page: Int
   }
 }`;
 
-/** Legacy proven-safe page size (matches `fetchPlayerSetsPage`'s default) — see the complexity-budget comment above. */
-export const RESEARCH_SETS_PER_PAGE = 10;
+/** Empirically-safe page size for the research selection shape (live probe 2026-08-08) — see the budget comment above; 10 silently clips. */
+export const RESEARCH_SETS_PER_PAGE = 5;
 
 /**
  * The single validated crossing between the run record's STRING `playerId`
@@ -626,7 +634,24 @@ export async function fetchResearchSetsPage(
     fetchImpl,
   );
   const sets = data.player?.sets;
-  return { totalPages: sets?.pageInfo.totalPages ?? 0, sets: sets?.nodes ?? [] };
+  const totalPages = sets?.pageInfo.totalPages ?? 0;
+  const nodes = sets?.nodes ?? [];
+  // PROVIDER-TRUNCATION GUARD (live probe, 2026-08-08): when a page's
+  // response would exceed start.gg's object budget, the API silently clips
+  // the node list (never returning its documented over-budget rejection).
+  // A short page while the SAME response says more pages exist is that
+  // clipping — the missing rows cannot be recovered at the next page
+  // offset, so surfacing a loud error here is the only lossless option
+  // (ING-01). A short FINAL page (totalPages <= page) is legitimate. The
+  // fully-clipped variant (zero nodes AND totalPages collapsed to 0) is
+  // invisible in-response; the batch executor catches it against the
+  // cursor's prior pagination knowledge.
+  if (nodes.length < perPage && totalPages > page) {
+    throw new StartggApiError(
+      `provider-truncated-page: ${nodes.length}/${perPage} nodes at page ${page} with totalPages=${totalPages} — start.gg silently clipped the response to fit its object budget; lower perPage (truncated rows are unrecoverable at the next offset)`,
+    );
+  }
+  return { totalPages, sets: nodes };
 }
 
 const probeSetsPageSchema = z.object({

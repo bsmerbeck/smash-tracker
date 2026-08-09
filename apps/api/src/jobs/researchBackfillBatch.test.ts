@@ -218,6 +218,10 @@ async function run(
 ) {
   return runResearchBackfillBatch(asDatabase(database), 'server-token', tenantId, runId, {
     ownerId: 'invocation-1',
+    // Fixture pages script 1 set per page; the provider-truncation guard
+    // treats a short non-final page as clipped, so the requested page size
+    // must match the fixture shape (tests exercising the guard override).
+    perPage: 1,
     ...opts,
   });
 }
@@ -1231,4 +1235,69 @@ describe('runResearchBackfillBatch: never-throw infrastructure boundary', () => 
       expect(typeof boundaryName).toBe('string');
     },
   );
+});
+
+// ---------------------------------------------------------------------------
+// Provider-truncation guard (live probe 2026-08-08: start.gg silently clips
+// node lists to fit its object budget instead of returning its documented
+// over-budget rejection; a fully clipped page reports totalPages 0)
+// ---------------------------------------------------------------------------
+
+describe('runResearchBackfillBatch: provider-truncation guard', () => {
+  it('fails the run when a short non-final page arrives (in-response clipping)', async () => {
+    const database = new FakeDatabase();
+    await confirmPlayer(database);
+    const runId = await createRun(database);
+    // perPage 2, one node returned, totalPages says 1559 more pages exist —
+    // the exact shape the live probe observed at the budget cliff.
+    const { fetchImpl } = makeScriptedFetch({
+      1: [{ kind: 'ok', totalPages: 1559, sets: [makeSet({ id: 1 })] }],
+    });
+
+    const result = await run(database, runId, { fetchImpl, perPage: 2 });
+
+    expect(result.stopReason).toBe('failed');
+    expect(result.reason).toContain('provider-truncated-page');
+    // Nothing from the clipped page may land: a partial page is lost rows.
+    expect(Object.keys(sourceTree(database))).toHaveLength(0);
+  });
+
+  it('fails the run when a later page collapses to zero nodes and totalPages 0 despite prior pagination knowledge', async () => {
+    const database = new FakeDatabase();
+    await confirmPlayer(database);
+    const runId = await createRun(database);
+    // Page 1 is full (1/1) and establishes totalPages 3; page 2 arrives
+    // fully clipped (0 nodes, totalPages collapsed to 0) — in-response
+    // detection cannot see this, the executor's prior-knowledge check must.
+    const { fetchImpl } = makeScriptedFetch({
+      1: [{ kind: 'ok', totalPages: 3, sets: [makeSet({ id: 1 })] }],
+      2: [{ kind: 'ok', totalPages: 0, sets: [] }],
+    });
+
+    const result = await run(database, runId, { fetchImpl });
+
+    expect(result.stopReason).toBe('failed');
+    expect(result.reason).toContain('provider-truncated-page');
+    expect(result.reason).toContain('prior totalPages=3');
+    // Page 1's full contents survive; the run is restartable after the fix.
+    expect(Object.keys(sourceTree(database))).toHaveLength(1);
+  });
+
+  it('still completes on a legitimately short (empty) final page', async () => {
+    const database = new FakeDatabase();
+    await confirmPlayer(database);
+    const runId = await createRun(database);
+    // Provider count drift: totalPages 2 but page 2 is empty. totalPages is
+    // NOT beyond the current page, so this is a legitimate final page shape
+    // — the guard must not overfire and the run must complete.
+    const { fetchImpl } = makeScriptedFetch({
+      1: [{ kind: 'ok', totalPages: 2, sets: [makeSet({ id: 1 })] }],
+      2: [{ kind: 'ok', totalPages: 2, sets: [] }],
+    });
+
+    const result = await run(database, runId, { fetchImpl });
+
+    expect(result.completed).toBe(true);
+    expect(Object.keys(sourceTree(database))).toHaveLength(1);
+  });
 });

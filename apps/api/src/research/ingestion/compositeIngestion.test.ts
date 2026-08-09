@@ -238,6 +238,10 @@ async function runOnce(
 ): Promise<ResearchBackfillBatchResult> {
   return runResearchBackfillBatch(asDatabase(database), 'server-token', tenantId, runId, {
     ownerId: 'invocation-1',
+    // Fixture pages script one set per page; the provider-truncation guard
+    // rejects short non-final pages, so the requested page size must match
+    // the fixture shape (multi-set pages are LONGER than 1 — guard-exempt).
+    perPage: 1,
     ...opts,
   });
 }
@@ -254,6 +258,8 @@ async function runToCompletion(
   for (let i = 0; i < invocationCap; i += 1) {
     result = await runResearchBackfillBatch(asDatabase(database), 'server-token', tenantId, runId, {
       ownerId: `invocation-${i}`,
+      // Same fixture-shape alignment as runOnce (provider-truncation guard).
+      perPage: 1,
       ...opts,
     });
     if (result.completed || result.status === 'failed') {
