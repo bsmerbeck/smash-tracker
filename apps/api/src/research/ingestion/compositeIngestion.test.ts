@@ -1761,16 +1761,17 @@ describe('composite: infrastructure failures never escape (review C2-H6, C3-A7)'
   ];
   const DEDICATED_BOUNDARIES = [
     'fetchResearchSetsPage',
+    'fetchResearchSetsIdProbe',
     'upsertResearchSourceSet',
     'readResearchSourceSet',
     'applyLegacyProjection',
   ];
 
-  it('the twelve table-driven boundary names plus the four dedicated names equal the executor declared wrap list of sixteen (review C3-A7)', () => {
+  it('the twelve table-driven boundary names plus the five dedicated names equal the executor declared wrap list of seventeen (review C3-A7)', () => {
     expect(new Set([...TABLE_BOUNDARIES, ...DEDICATED_BOUNDARIES])).toEqual(
       new Set(RESEARCH_BACKFILL_INFRA_BOUNDARIES),
     );
-    expect(RESEARCH_BACKFILL_INFRA_BOUNDARIES).toHaveLength(16);
+    expect(RESEARCH_BACKFILL_INFRA_BOUNDARIES).toHaveLength(17);
   });
 
   it.each(TABLE_BOUNDARIES)(

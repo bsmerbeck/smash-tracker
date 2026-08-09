@@ -78,6 +78,8 @@ describe('foldCounters / foldNamedGaps / foldClassificationCounts', () => {
       skipped: 0,
       unresolved: 0,
       corrected: 0,
+      providerUnavailablePages: 0,
+      providerUnavailableRowEstimate: 0,
     });
   });
 

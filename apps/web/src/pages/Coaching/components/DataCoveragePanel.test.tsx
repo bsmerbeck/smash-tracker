@@ -244,6 +244,35 @@ describe('DataCoveragePanel', () => {
       expect(screen.getByTestId('data-coverage-gaps')).toHaveTextContent('No gaps recorded.');
     });
 
+    it('renders provider-unavailable rows in the gaps section when non-zero (provider-dead-page carve-out)', () => {
+      useDataCoverage.mockReturnValue({
+        ...BASE_STATUS,
+        hasCompletedRun: true,
+        data: {
+          ...ONE_PLAYER_SNAPSHOT,
+          coverage: {
+            ...ONE_PLAYER_SNAPSHOT.coverage,
+            totals: {
+              ...ONE_PLAYER_SNAPSHOT.coverage.totals,
+              counters: counters({
+                providerUnavailablePages: 2,
+                providerUnavailableRowEstimate: 6,
+              }),
+            },
+          },
+        },
+      });
+      render(<DataCoveragePanel />);
+      const gaps = screen.getByTestId('data-coverage-gaps');
+      expect(gaps).not.toHaveTextContent('No gaps recorded.');
+      expect(screen.getByTestId('data-coverage-gaps-providerUnavailablePages')).toHaveTextContent(
+        '2',
+      );
+      expect(
+        screen.getByTestId('data-coverage-gaps-providerUnavailableRowEstimate'),
+      ).toHaveTextContent('6');
+    });
+
     it('renders every excluded-outcome classification with an explicit zero rather than omitting the section', () => {
       useDataCoverage.mockReturnValue({
         ...BASE_STATUS,

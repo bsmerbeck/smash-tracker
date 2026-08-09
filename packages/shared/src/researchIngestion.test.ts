@@ -675,6 +675,8 @@ describe('normalizeResearchCounters', () => {
       skipped: 0,
       unresolved: 0,
       corrected: 0,
+      providerUnavailablePages: 0,
+      providerUnavailableRowEstimate: 0,
     });
   });
 
@@ -686,6 +688,26 @@ describe('normalizeResearchCounters', () => {
       skipped: 0,
       unresolved: 0,
       corrected: 0,
+      providerUnavailablePages: 0,
+      providerUnavailableRowEstimate: 0,
+    });
+  });
+
+  it('returns providerUnavailablePages/providerUnavailableRowEstimate with the rest 0 (provider-dead-page carve-out)', () => {
+    expect(
+      normalizeResearchCounters({
+        providerUnavailablePages: 1,
+        providerUnavailableRowEstimate: 3,
+      }),
+    ).toEqual({
+      discoveredAllGames: 0,
+      discoveredEligible: 0,
+      imported: 0,
+      skipped: 0,
+      unresolved: 0,
+      corrected: 0,
+      providerUnavailablePages: 1,
+      providerUnavailableRowEstimate: 3,
     });
   });
 });

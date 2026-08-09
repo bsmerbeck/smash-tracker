@@ -46,6 +46,16 @@ import { advanceRunState, type RunLeaseHolder, type RunWriteResult } from './bac
  * authorizes, and owns exactly one node (`researchCoverage/{tenantId}`);
  * the run node belongs to `backfillRun.ts`, which this module calls rather
  * than duplicates.
+ *
+ * `providerUnavailablePages`/`providerUnavailableRowEstimate` (the
+ * provider-dead-page carve-out, 30-CONTEXT.md, decided by Codex advisor as
+ * product-owner proxy) are ordinary members of `researchCountersSchema` —
+ * every fold/negate/total helper below is generic over that schema's own
+ * keys (`Object.keys(normalizeResearchCounters(...))`), so the two new
+ * counters fold through `foldPageReceipt`/`stageBatchProgress`/
+ * `publishCoverageSnapshot`/`computeTotals` automatically, exactly like
+ * `discoveredAllGames` and every sibling counter — no dedicated handling
+ * required here.
  */
 
 // ---------------------------------------------------------------------------
