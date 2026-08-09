@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   fetchEventDetails,
+  fetchResearchSetsIdProbe,
   fetchResearchSetsPage,
   fetchResearchSetsProbePage,
   normalizeStartggPlayerId,
@@ -467,6 +468,51 @@ describe('fetchResearchSetsProbePage', () => {
     await expect(
       fetchResearchSetsProbePage('server-token', 1, 1, 10, 1, fetchMock as typeof fetch),
     ).rejects.toBeInstanceOf(StartggApiError);
+  });
+});
+
+describe('fetchResearchSetsIdProbe', () => {
+  it('returns nodeIds as the string form of every observed provider set id, alongside total/totalPages/nodeCount', async () => {
+    const fetchMock = async () =>
+      gqlResponse({
+        player: {
+          sets: {
+            pageInfo: { total: 2, totalPages: 5 },
+            nodes: [{ id: 111 }, { id: '222' }],
+          },
+        },
+      });
+
+    const probe = await fetchResearchSetsIdProbe(
+      'server-token',
+      1,
+      3,
+      2,
+      {},
+      fetchMock as typeof fetch,
+    );
+
+    expect(probe).toEqual({
+      total: 2,
+      totalPages: 5,
+      nodeCount: 2,
+      nodeIds: ['111', '222'],
+    });
+  });
+
+  it('returns an empty nodeIds array (and zeroed total/totalPages/nodeCount) for a fully nullish response', async () => {
+    const fetchMock = async () => gqlResponse({ player: null });
+
+    const probe = await fetchResearchSetsIdProbe(
+      'server-token',
+      1,
+      1,
+      2,
+      {},
+      fetchMock as typeof fetch,
+    );
+
+    expect(probe).toEqual({ total: 0, totalPages: 0, nodeCount: 0, nodeIds: [] });
   });
 });
 

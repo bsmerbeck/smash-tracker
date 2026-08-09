@@ -425,6 +425,19 @@ export const researchIngestionCursorSchema = z.object({
   attempt: z.number().int().nullish(),
   /** The current page's durable-write retry count, used by 30-07's all-or-retry page semantics. */
   pageAttempt: z.number().int().nullish(),
+  /**
+   * Dead-PREFIX extension (30-CONTEXT.md "Dead-PREFIX extension", decided
+   * by Codex advisor as product-owner proxy, 2026-08-08): the SECOND
+   * safeguard the extension requires. An invocation-scoped counter can
+   * never reach `RESEARCH_MAX_CONSECUTIVE_DEAD_PAGES` under the 20-page
+   * invocation budget, so the consecutive-confirmed-dead-page streak (empty
+   * OR dead-prefix pages) lives here instead — durable across invocation
+   * boundaries. Absent means zero (house convention). The executor
+   * increments it by one on every confirmed dead page (empty or prefix) and
+   * omits the member entirely (never writes zero) the moment a FULL healthy
+   * page resolves — never decremented, never reset by anything else.
+   */
+  consecutiveUnavailablePages: z.number().int().nonnegative().nullish(),
 });
 export type ResearchIngestionCursor = z.infer<typeof researchIngestionCursorSchema>;
 

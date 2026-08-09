@@ -1248,14 +1248,22 @@ describe('runResearchBackfillBatch: never-throw infrastructure boundary', () => 
 // ---------------------------------------------------------------------------
 
 describe('runResearchBackfillBatch: provider-truncation guard', () => {
-  it('fails the run when a short non-final page arrives (in-response clipping)', async () => {
+  it('fails the run when a short non-final page arrives at page 1 (in-response clipping, no prior knowledge yet)', async () => {
     const database = new FakeDatabase();
     await confirmPlayer(database);
     const runId = await createRun(database);
     // perPage 2, one node returned, totalPages says 1559 more pages exist —
-    // the exact shape the live probe observed at the budget cliff.
+    // the exact shape the live probe observed at the budget cliff. This is
+    // page 1 (no prior pagination knowledge exists yet), so "pages remain"
+    // is decided from the RESPONSE's own totalPages — `fetchResearchSetsPage`
+    // itself no longer guards against this shape (Dead-PREFIX extension);
+    // the confirmation probe finding a SECOND id the heavy query never
+    // returned is what confirms this is clipping, not a dead prefix.
     const { fetchImpl } = makeScriptedFetch({
-      1: [{ kind: 'ok', totalPages: 1559, sets: [makeSet({ id: 1 })] }],
+      1: [
+        { kind: 'ok', totalPages: 1559, sets: [makeSet({ id: 1 })] }, // main fetch: 1/2
+        { kind: 'ok', totalPages: 1559, sets: [makeSet({ id: 1 }), makeSet({ id: 2 })] }, // probe: finds an EXTRA id
+      ],
     });
 
     const result = await run(database, runId, { fetchImpl, perPage: 2 });
@@ -1288,7 +1296,7 @@ describe('runResearchBackfillBatch: provider-truncation guard', () => {
 
     expect(result.stopReason).toBe('failed');
     expect(result.reason).toContain('provider-truncated-page');
-    expect(result.reason).toContain('prior totalPages=3');
+    expect(result.reason).toContain('totalPages=3');
     // Page 1's full contents survive; the run is restartable after the fix.
     expect(Object.keys(sourceTree(database))).toHaveLength(1);
   });
@@ -1380,7 +1388,7 @@ describe('runResearchBackfillBatch: provider-dead-page carve-out', () => {
     });
 
     expect(result.stopReason).toBe('failed');
-    expect(result.reason).toMatch(/dead-page cap exceeded/);
+    expect(result.reason).toMatch(/provider-unavailable streak exceeded/);
     expect(result.reason).toContain(String(RESEARCH_MAX_CONSECUTIVE_DEAD_PAGES + 1));
     // Only page 1 ever wrote a source record; the cap trips before any of
     // the dead pages could be mistaken for real ones.
@@ -1423,5 +1431,235 @@ describe('runResearchBackfillBatch: provider-dead-page carve-out', () => {
     expect(result.stopReason).toBe('completed');
     const stored = await readBackfillRun(asDatabase(database), TENANT_ID, runId);
     expect(stored?.stagedCounters?.providerUnavailablePages).toBe(27);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Dead-PREFIX extension (30-CONTEXT.md "Dead-PREFIX extension", decided by
+// Codex advisor as product-owner proxy, 2026-08-08): a dead zone's LEADING
+// EDGE presents as a SHORT-BUT-NONZERO page with intact totalPages — the
+// provider returns the page's living prefix and silently drops rows from
+// the first dead row on. Safeguard 1: the same-page ID-only confirmation
+// probe must find the EXACT same id set as the heavy query's returned
+// nodes (any mismatch retains the hard clipping failure). Safeguard 2: the
+// consecutive-unavailable streak is DURABLE (persisted on the cursor),
+// never invocation-scoped.
+// ---------------------------------------------------------------------------
+
+describe('runResearchBackfillBatch: dead-PREFIX extension', () => {
+  it('a confirmed dead-PREFIX page (heavy 2/3, probe returns the identical 2 ids) ingests the living rows normally and stages the provider-unavailable counters on the same receipt', async () => {
+    const database = new FakeDatabase();
+    await confirmPlayer(database);
+    const runId = await createRun(database);
+    // Page 1 is a FULL page (3/3, perPage 3) establishing totalPages 3 —
+    // full, so it never enters the short-page detection at all. Page 2 is
+    // a dead PREFIX: the heavy query returns 2/3 living rows and the
+    // confirmation probe returns the SAME 2 ids — CONFIRMED dead prefix,
+    // not clipping. Page 3 is the real final page.
+    const { fetchImpl } = makeScriptedFetch({
+      1: [
+        {
+          kind: 'ok',
+          totalPages: 3,
+          sets: [makeSet({ id: 1 }), makeSet({ id: 2 }), makeSet({ id: 3 })],
+        },
+      ],
+      2: [
+        { kind: 'ok', totalPages: 3, sets: [makeSet({ id: 4 }), makeSet({ id: 5 })] }, // main fetch: 2/3
+        { kind: 'ok', totalPages: 3, sets: [makeSet({ id: 4 }), makeSet({ id: 5 })] }, // probe: identical ids
+      ],
+      3: [{ kind: 'ok', totalPages: 3, sets: [makeSet({ id: 9 })] }],
+    });
+
+    const result = await run(database, runId, { fetchImpl, perPage: 3 });
+
+    expect(result.completed).toBe(true);
+    expect(result.stopReason).toBe('completed');
+    // Page 2's two LIVING rows were ingested normally (unlike the
+    // empty-page carve-out, which has nothing to ingest): 3 (page 1) + 2
+    // (page 2's living prefix) + 1 (page 3) = 6 source records.
+    expect(Object.keys(sourceTree(database))).toHaveLength(6);
+    expect(sourceTree(database)['4']).toBeDefined();
+    expect(sourceTree(database)['5']).toBeDefined();
+
+    const stored = await readBackfillRun(asDatabase(database), TENANT_ID, runId);
+    expect(stored?.stagedCounters?.providerUnavailablePages).toBe(1);
+    // perPage 3 - 2 living rows = 1 estimated dead row on page 2.
+    expect(stored?.stagedCounters?.providerUnavailableRowEstimate).toBe(1);
+
+    const coverage = await readCoverageSnapshot(asDatabase(database), TENANT_ID);
+    expect(coverage?.players[PLAYER_ID]?.counters.providerUnavailablePages).toBe(1);
+    expect(coverage?.players[PLAYER_ID]?.counters.providerUnavailableRowEstimate).toBe(1);
+    expect(coverage?.totals.counters.providerUnavailablePages).toBe(1);
+  });
+
+  it('fails the run as provider-truncated when the confirmation probe finds an EXTRA id beyond the heavy query’s returned rows', async () => {
+    const database = new FakeDatabase();
+    await confirmPlayer(database);
+    const runId = await createRun(database);
+    const { fetchImpl } = makeScriptedFetch({
+      1: [
+        {
+          kind: 'ok',
+          totalPages: 3,
+          sets: [makeSet({ id: 1 }), makeSet({ id: 2 }), makeSet({ id: 3 })],
+        },
+      ],
+      2: [
+        { kind: 'ok', totalPages: 3, sets: [makeSet({ id: 4 }), makeSet({ id: 5 })] }, // main: 2/3
+        {
+          kind: 'ok',
+          totalPages: 3,
+          sets: [makeSet({ id: 4 }), makeSet({ id: 5 }), makeSet({ id: 6 })], // probe: 3 ids, a superset
+        },
+      ],
+    });
+
+    const result = await run(database, runId, { fetchImpl, perPage: 3 });
+
+    expect(result.stopReason).toBe('failed');
+    expect(result.reason).toContain('provider-truncated-page');
+    // Nothing from page 2 lands — only page 1's three records survive.
+    expect(Object.keys(sourceTree(database))).toHaveLength(3);
+  });
+
+  it('fails the run as provider-truncated when the confirmation probe returns a DIFFERENT id set of the same size', async () => {
+    const database = new FakeDatabase();
+    await confirmPlayer(database);
+    const runId = await createRun(database);
+    const { fetchImpl } = makeScriptedFetch({
+      1: [
+        {
+          kind: 'ok',
+          totalPages: 3,
+          sets: [makeSet({ id: 1 }), makeSet({ id: 2 }), makeSet({ id: 3 })],
+        },
+      ],
+      2: [
+        { kind: 'ok', totalPages: 3, sets: [makeSet({ id: 4 }), makeSet({ id: 5 })] }, // main: 2/3
+        { kind: 'ok', totalPages: 3, sets: [makeSet({ id: 4 }), makeSet({ id: 777 })] }, // probe: id 777 instead of 5
+      ],
+    });
+
+    const result = await run(database, runId, { fetchImpl, perPage: 3 });
+
+    expect(result.stopReason).toBe('failed');
+    expect(result.reason).toContain('provider-truncated-page');
+    expect(Object.keys(sourceTree(database))).toHaveLength(3);
+  });
+
+  it('a durable consecutive-dead-page streak spread across multiple invocations still fails at the cap (persisted via the cursor, never an invocation-scoped counter)', async () => {
+    const database = new FakeDatabase();
+    await confirmPlayer(database);
+    const runId = await createRun(database);
+
+    // Page 1 is a full, healthy 2/2 page (perPage 2) establishing totalPages
+    // 100. Pages 2 through 27 (26 pages) are each a confirmed dead PREFIX
+    // (1/2 living rows, probe confirms the same single id) — one MORE than
+    // the cap, so the run must fail exactly once the streak reaches 26,
+    // no matter how many separate invocations it takes to get there.
+    const script: Record<number, PageScriptEntry[]> = {
+      1: [{ kind: 'ok', totalPages: 100, sets: [makeSet({ id: 1 }), makeSet({ id: 2 })] }],
+    };
+    for (let page = 2; page <= 27; page += 1) {
+      const setId = 1000 + page;
+      script[page] = [
+        { kind: 'ok', totalPages: 100, sets: [makeSet({ id: setId })] }, // main: 1/2
+        { kind: 'ok', totalPages: 100, sets: [makeSet({ id: setId })] }, // probe: identical id
+      ];
+    }
+    const { fetchImpl } = makeScriptedFetch(script);
+
+    // A shared manual clock across every invocation — the real throttle's
+    // token-bucket pacing would otherwise force real (slow) waits across
+    // ~50+ scripted requests and blow the test timeout.
+    let clock = 0;
+    const sleep = async (ms: number) => {
+      clock += ms;
+    };
+
+    let result = await run(database, runId, {
+      fetchImpl,
+      perPage: 2,
+      maxPagesPerInvocation: 10,
+      maxSyncBackoffMs: 300_000,
+      sleep,
+      now: () => clock,
+      ownerId: 'invocation-1',
+    });
+    let invocationCount = 1;
+    while (result.stopReason === 'page-budget') {
+      invocationCount += 1;
+      result = await run(database, runId, {
+        fetchImpl,
+        perPage: 2,
+        maxPagesPerInvocation: 10,
+        maxSyncBackoffMs: 300_000,
+        sleep,
+        now: () => clock,
+        ownerId: `invocation-${invocationCount}`,
+      });
+    }
+
+    // Proves persistence: the cap could not have been reached from a single
+    // invocation's own budget (10 pages), so multiple invocations' worth of
+    // durably-staged cursor state had to accumulate to trip it.
+    expect(invocationCount).toBeGreaterThan(1);
+    expect(result.stopReason).toBe('failed');
+    expect(result.reason).toMatch(/provider-unavailable streak exceeded/);
+    expect(result.reason).toContain(String(RESEARCH_MAX_CONSECUTIVE_DEAD_PAGES + 1));
+    const stored = await readBackfillRun(asDatabase(database), TENANT_ID, runId);
+    expect(stored?.status).toBe('failed');
+  });
+
+  it('a full healthy page mid-stream resets the durable streak, so 30 dead-PREFIX pages split 15/15 around it never trip the cap', async () => {
+    const database = new FakeDatabase();
+    await confirmPlayer(database);
+    const runId = await createRun(database);
+
+    // Page 1 (healthy, establishes totalPages 33) + pages 2-16 (15 dead
+    // prefixes) + page 17 (healthy full page — resets the streak) + pages
+    // 18-32 (15 more dead prefixes) + page 33 (the real final page).
+    // Combined, 15 + 15 = 30 consecutive dead pages would exceed the cap of
+    // 25 without the reset at page 17 — the healthy page must reset the
+    // streak so neither block individually approaches the cap.
+    const script: Record<number, PageScriptEntry[]> = {
+      1: [{ kind: 'ok', totalPages: 33, sets: [makeSet({ id: 1 }), makeSet({ id: 2 })] }],
+      17: [{ kind: 'ok', totalPages: 33, sets: [makeSet({ id: 900 }), makeSet({ id: 901 })] }],
+      33: [{ kind: 'ok', totalPages: 33, sets: [makeSet({ id: 999 })] }],
+    };
+    for (const page of [...Array(15).keys()].map((i) => i + 2)) {
+      const setId = 2000 + page;
+      script[page] = [
+        { kind: 'ok', totalPages: 33, sets: [makeSet({ id: setId })] },
+        { kind: 'ok', totalPages: 33, sets: [makeSet({ id: setId })] },
+      ];
+    }
+    for (const page of [...Array(15).keys()].map((i) => i + 18)) {
+      const setId = 3000 + page;
+      script[page] = [
+        { kind: 'ok', totalPages: 33, sets: [makeSet({ id: setId })] },
+        { kind: 'ok', totalPages: 33, sets: [makeSet({ id: setId })] },
+      ];
+    }
+    const { fetchImpl } = makeScriptedFetch(script);
+
+    let clock = 0;
+    const sleep = async (ms: number) => {
+      clock += ms;
+    };
+    const result = await run(database, runId, {
+      fetchImpl,
+      perPage: 2,
+      maxPagesPerInvocation: 40,
+      maxSyncBackoffMs: 300_000,
+      sleep,
+      now: () => clock,
+    });
+
+    expect(result.completed).toBe(true);
+    expect(result.stopReason).toBe('completed');
+    const stored = await readBackfillRun(asDatabase(database), TENANT_ID, runId);
+    expect(stored?.stagedCounters?.providerUnavailablePages).toBe(30);
   });
 });
