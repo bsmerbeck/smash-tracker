@@ -360,9 +360,11 @@ describe('MatchDataPage', () => {
 
   // Interaction-heavy test sits near the 5s default on slow CI runners
   // (same class as the Quick Logger flake fixed in #159) — explicit timeout.
+  // 2026-08-10: 10s still flaked on a runner whose suite-wide environment
+  // setup alone took 215s; 30s keeps headroom without masking a real hang.
   it(
     'never sends vodTimestamps when the VOD link is edited (not cleared) — the server preserves notes automatically',
-    { timeout: 10_000 },
+    { timeout: 30_000 },
     async () => {
       const user = userEvent.setup();
       getFighters.mockResolvedValue({ primary: [mario.id], secondary: [] });
