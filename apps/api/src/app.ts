@@ -55,6 +55,7 @@ import { ConflictError, ForbiddenError, NotFoundError } from './services/rtdb.js
 import type { FirebaseServices } from './firebase/admin.js';
 import type {
   ClaimCodeConfig,
+  DemoAccountConfig,
   Ga4Config,
   InternalJobsConfig,
   ParryggConfig,
@@ -80,6 +81,19 @@ declare module 'fastify' {
      * config-null gate's fail-closed contract in this file.
      */
     researchConfig: ResearchConfig | null;
+    /**
+     * Phase 30.1 (Demo Account Topology & Migration, RTEN-03 re-scope): the
+     * demo-account allowlist config, decorated directly (mirrors
+     * `researchConfig` immediately above) so every route file that mints
+     * or resolves a bearer-delivery token reads ONE server-authoritative
+     * value via `app.demoAccountConfig`. Always present as a decoration
+     * (never undefined); holds null when the `demo` build option is
+     * omitted or explicitly null — null means demo enforcement is
+     * INACTIVE (see `DemoAccountConfig`'s own doc comment in
+     * `./config/env.ts` for the honest framing), not "fail-closed" in the
+     * sense the other config-null gates in this file use that word.
+     */
+    demoAccountConfig: DemoAccountConfig | null;
   }
 }
 
@@ -153,6 +167,15 @@ export interface BuildAppOptions {
    * `researchConfig`; see the `declare module 'fastify'` block above.
    */
   research?: ResearchConfig | null;
+  /**
+   * Phase 30.1 (Demo Account Topology & Migration, RTEN-03 re-scope): the
+   * demo-account allowlist. Optional AND nullable — same "every existing
+   * construction site keeps compiling and receives the fail-closed-when-
+   * configured null" convention as `research` above. Decorated onto the
+   * app instance as `demoAccountConfig`; see the `declare module
+   * 'fastify'` block above.
+   */
+  demo?: DemoAccountConfig | null;
   logger?: boolean | FastifyBaseLogger;
 }
 
@@ -210,6 +233,10 @@ export function buildApp(options: BuildAppOptions) {
   // (never undefined); holds null when the option is omitted or explicit
   // null, so every route file can read `app.researchConfig` unconditionally.
   app.decorate('researchConfig', options.research ?? null);
+
+  // Phase 30.1 (Demo Account Topology & Migration, RTEN-03 re-scope):
+  // decorate directly, mirroring `researchConfig` immediately above.
+  app.decorate('demoAccountConfig', options.demo ?? null);
 
   app.setErrorHandler<FastifyError>((error, request, reply) => {
     if (hasZodFastifySchemaValidationErrors(error)) {

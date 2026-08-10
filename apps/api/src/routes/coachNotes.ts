@@ -85,7 +85,7 @@ const UNAVAILABLE_404_BODY = {
  * 20/min + per-IP floor), NOT per-route here — see the registration block.
  */
 const coachNotesRoutes: FastifyPluginAsyncZod = async (app) => {
-  const rtdb = new RtdbService(app.firebase.database);
+  const rtdb = new RtdbService(app.firebase.database, app.demoAccountConfig);
 
   // One hook, every response (200s, 404s, 429s alike): no-store, always.
   app.addHook('onSend', async (_request, reply) => {

@@ -49,7 +49,7 @@ export interface ShareMetaRoutesOptions {
  * `global: false` registration (TRUST-01).
  */
 const shareMetaRoutes: FastifyPluginAsyncZod<ShareMetaRoutesOptions> = async (app, options) => {
-  const rtdb = new RtdbService(app.firebase.database);
+  const rtdb = new RtdbService(app.firebase.database, app.demoAccountConfig);
   const { webBaseUrl, fetchImpl } = options;
 
   app.get(

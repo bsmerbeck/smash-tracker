@@ -19,6 +19,8 @@ import { buildSessionShareId, NotFoundError } from '../services/rtdb.js';
 import { generateShareToken } from '../shares/token.js';
 import { freezeIncludedVods } from './deliveryVodFreeze.js';
 import { readSubjectKind } from '../research/subjectKind.js';
+import { isDemoAccountSubject } from '../research/demoAccount.js';
+import type { DemoAccountConfig } from '../config/env.js';
 
 /**
  * Phase 20 Plan 03 (Coaching Workflow, Training Sessions & VOD-less Reviews,
@@ -182,6 +184,11 @@ export async function createSessionDelivery(
   sessionId: string,
   webBaseUrl: string,
   options: { includedVodMatchIds?: string[] } = {},
+  // Phase 30.1 (Demo Account Topology & Migration, RTEN-03 re-scope,
+  // review H4): trailing, defaulted to `null` (enforcement inactive) so
+  // every existing call site keeps compiling unchanged. This writer does
+  // NOT receive `researchConfig` — do not conflate the two allowlists.
+  demoConfig: DemoAccountConfig | null = null,
 ): Promise<{ deliveryId: string; token: string; url: string }> {
   // Phase 29 Plan 06 (RTEN-03, D-05): ONE of exactly THREE independent mint
   // writers for a bearer-delivery token — the other two are
@@ -195,6 +202,12 @@ export async function createSessionDelivery(
     // Reuses the SAME class + message this function already throws for
     // input it will not serve — no new error class, nothing that names the
     // discriminator or reveals why (D-05 no-oracle).
+    throw new NotFoundError(`Training session ${sessionId} not found`);
+  }
+  // Phase 30.1 (RTEN-03 re-scope, review H4): the SAME subject id
+  // (`tenantId`) is checked against the demo allowlist, refusing with the
+  // SAME NotFoundError this function already throws (D-05 no-oracle).
+  if (isDemoAccountSubject(demoConfig, tenantId)) {
     throw new NotFoundError(`Training session ${sessionId} not found`);
   }
 

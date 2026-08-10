@@ -62,7 +62,7 @@ export interface VodSharesRoutesOptions {
  * inside the existing `createShareInputSchema` body.
  */
 const vodSharesRoutes: FastifyPluginAsyncZod<VodSharesRoutesOptions> = async (app, options) => {
-  const rtdb = new RtdbService(app.firebase.database);
+  const rtdb = new RtdbService(app.firebase.database, app.demoAccountConfig);
   const { webBaseUrl, ga4Fetch } = options;
   const ga4 = options.ga4 ?? null;
 

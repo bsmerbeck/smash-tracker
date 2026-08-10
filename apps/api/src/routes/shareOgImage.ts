@@ -75,7 +75,7 @@ const shareOgImageRoutes: FastifyPluginAsyncZod<ShareOgImageRoutesOptions> = asy
   app,
   options,
 ) => {
-  const rtdb = new RtdbService(app.firebase.database);
+  const rtdb = new RtdbService(app.firebase.database, app.demoAccountConfig);
   const { webBaseUrl, fetchImpl = fetch } = options;
 
   app.get(
