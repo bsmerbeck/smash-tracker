@@ -4,6 +4,7 @@ import {
   RESEARCH_LEASE_TTL_MS,
   RESEARCH_RUN_HISTORY_LIMIT,
   isPathSafeProviderId,
+  normalizeResearchClassificationCounts,
   researchTenantIngestionStateSchema,
   type ResearchIngestionCursor,
   type ResearchIngestionMode,
@@ -49,10 +50,61 @@ function runStateRef(database: Database, tenantId: string) {
   return database.ref(`researchIngestionRuns/${tenantId}`);
 }
 
-/** Safe-parse to an empty state on failure — never throws inside a transaction callback (CR-01). */
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
+/**
+ * Compatibility repair for the one lossless shape RTDB can create from a
+ * valid stored receipt: sparse `{}` classification maps are removed as empty
+ * object children. A missing map therefore means all-zero; any nonzero map
+ * would have survived. No other missing/invalid receipt member is repaired.
+ */
+function repairStrippedReceiptClassificationMaps(raw: unknown): unknown {
+  if (!isRecord(raw) || !isRecord(raw.runs)) {
+    return raw;
+  }
+
+  let repairedRuns: Record<string, unknown> | null = null;
+  for (const [runId, candidate] of Object.entries(raw.runs)) {
+    if (!isRecord(candidate) || !isRecord(candidate.pendingPageReceipt)) {
+      continue;
+    }
+    const receipt = candidate.pendingPageReceipt;
+    const classificationCountsMissing = !Object.hasOwn(receipt, 'classificationCounts');
+    const uniqueClassificationCountsMissing = !Object.hasOwn(receipt, 'uniqueClassificationCounts');
+    if (!classificationCountsMissing && !uniqueClassificationCountsMissing) {
+      continue;
+    }
+
+    repairedRuns ??= { ...raw.runs };
+    repairedRuns[runId] = {
+      ...candidate,
+      pendingPageReceipt: {
+        ...receipt,
+        ...(classificationCountsMissing
+          ? { classificationCounts: normalizeResearchClassificationCounts(undefined) }
+          : {}),
+        ...(uniqueClassificationCountsMissing
+          ? { uniqueClassificationCounts: normalizeResearchClassificationCounts(undefined) }
+          : {}),
+      },
+    };
+  }
+
+  return repairedRuns ? { ...raw, runs: repairedRuns } : raw;
+}
+
+/**
+ * Parse strictly so malformed persisted state aborts the transaction instead
+ * of being mistaken for an empty tenant and committed as a destructive
+ * replacement. `null` is still the valid empty-state value seen by the Admin
+ * SDK's first local-cache transaction attempt (CR-01).
+ */
 function parseState(raw: unknown): ResearchTenantIngestionState {
-  const parsed = researchTenantIngestionStateSchema.safeParse(raw ?? {});
-  return parsed.success ? parsed.data : {};
+  return researchTenantIngestionStateSchema.parse(
+    repairStrippedReceiptClassificationMaps(raw ?? {}),
+  );
 }
 
 /**
@@ -78,7 +130,9 @@ function buildStoredRun(run: ResearchIngestionRun): Record<string, unknown> {
     ...(run.cursor != null ? { cursor: run.cursor } : {}),
     ...(run.lease != null ? { lease: run.lease } : {}),
     ...(run.leaseFenceCounter != null ? { leaseFenceCounter: run.leaseFenceCounter } : {}),
-    ...(run.pendingPageReceipt != null ? { pendingPageReceipt: run.pendingPageReceipt } : {}),
+    ...(run.pendingPageReceipt != null
+      ? { pendingPageReceipt: buildStoredPageReceipt(run.pendingPageReceipt) }
+      : {}),
     ...(run.stagedCounters != null ? { stagedCounters: run.stagedCounters } : {}),
     ...(run.stagedNamedGaps != null ? { stagedNamedGaps: run.stagedNamedGaps } : {}),
     ...(run.stagedDateCoverage != null ? { stagedDateCoverage: run.stagedDateCoverage } : {}),
@@ -98,6 +152,27 @@ function buildStoredRun(run: ResearchIngestionRun): Record<string, unknown> {
     ...(run.backoffEvents != null ? { backoffEvents: run.backoffEvents } : {}),
     ...(run.retryAfterObserved != null ? { retryAfterObserved: run.retryAfterObserved } : {}),
     ...(run.lastRetryAfterValue != null ? { lastRetryAfterValue: run.lastRetryAfterValue } : {}),
+  };
+}
+
+function buildStoredPageReceipt(receipt: ResearchPageReceipt): Record<string, unknown> {
+  return {
+    page: receipt.page,
+    attempt: receipt.attempt,
+    stagedAtMs: receipt.stagedAtMs,
+    counters: receipt.counters,
+    namedGaps: receipt.namedGaps,
+    classificationCounts: normalizeResearchClassificationCounts(receipt.classificationCounts),
+    uniqueCounters: receipt.uniqueCounters,
+    uniqueNamedGaps: receipt.uniqueNamedGaps,
+    uniqueClassificationCounts: normalizeResearchClassificationCounts(
+      receipt.uniqueClassificationCounts,
+    ),
+    ...(receipt.earliestSetAtMs != null ? { earliestSetAtMs: receipt.earliestSetAtMs } : {}),
+    ...(receipt.latestSetAtMs != null ? { latestSetAtMs: receipt.latestSetAtMs } : {}),
+    ...(receipt.observedMaxUpdatedAtSeconds != null
+      ? { observedMaxUpdatedAtSeconds: receipt.observedMaxUpdatedAtSeconds }
+      : {}),
   };
 }
 
@@ -121,10 +196,17 @@ function buildStoredState(state: {
 }): Record<string, unknown> {
   const storedRuns = buildStoredRuns(state.runs);
   const hasRuns = storedRuns != null && Object.keys(storedRuns).length > 0;
-  return {
+  const stored = {
     ...(state.activeRunId != null ? { activeRunId: state.activeRunId } : {}),
     ...(hasRuns ? { runs: storedRuns } : {}),
   };
+
+  // Types alone cannot protect this boundary: cursor/receipt values originate
+  // in provider data at runtime. Validate before handing the replacement value
+  // to RTDB so an invalid next state rejects the transaction while the last
+  // valid state remains durable.
+  researchTenantIngestionStateSchema.parse(stored);
+  return stored;
 }
 
 /** Keeps the active run always, then the most recent terminal runs by completedAt/failedAt/startedAt, up to `limit`. */

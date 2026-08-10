@@ -1,8 +1,8 @@
 import { randomUUID } from 'node:crypto';
 import type { Database } from 'firebase-admin/database';
 import {
+  normalizeResearchClassificationCounts,
   providerSecondsToMs,
-  type ResearchClassificationCounts,
   type ResearchIngestionCursor,
   type ResearchIngestionRunStatus,
   type ResearchPageReceipt,
@@ -350,10 +350,12 @@ function buildReceipt(
     stagedAtMs,
     counters: acc.counters,
     namedGaps: acc.namedGaps,
-    classificationCounts: acc.classificationCounts as ResearchClassificationCounts,
+    classificationCounts: normalizeResearchClassificationCounts(acc.classificationCounts),
     uniqueCounters: acc.uniqueCounters,
     uniqueNamedGaps: acc.uniqueNamedGaps,
-    uniqueClassificationCounts: acc.uniqueClassificationCounts as ResearchClassificationCounts,
+    uniqueClassificationCounts: normalizeResearchClassificationCounts(
+      acc.uniqueClassificationCounts,
+    ),
     ...(acc.earliestSetAtMs != null ? { earliestSetAtMs: acc.earliestSetAtMs } : {}),
     ...(acc.latestSetAtMs != null ? { latestSetAtMs: acc.latestSetAtMs } : {}),
     ...(acc.observedMaxUpdatedAtSeconds != null

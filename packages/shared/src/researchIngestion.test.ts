@@ -303,6 +303,28 @@ describe('researchSourceSetRecordSchema', () => {
     const second = researchSourceSetRecordSchema.parse(JSON.parse(JSON.stringify(first)));
     expect(second).toEqual(first);
   });
+
+  it('accepts a provider crew-battle record with ten participants per entrant', () => {
+    const participants = Array.from({ length: 10 }, (_, index) => ({
+      playerId: String(index + 1),
+      gamerTag: `Player ${index + 1}`,
+    }));
+    expect(
+      researchSourceSetRecordSchema.safeParse(
+        makeMinimalSourceSet({
+          classification: 'non-ssbu',
+          entrants: [
+            { entrantId: 'team-1', participants },
+            { entrantId: 'team-2', participants },
+          ],
+          apiIds: {
+            setId: 'crew-battle',
+            playerIds: Array.from({ length: 20 }, (_, index) => String(index + 1)),
+          },
+        }),
+      ).success,
+    ).toBe(true);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -322,6 +344,15 @@ describe('researchApiIdsSchema', () => {
         entrantIds: Array.from({ length: 17 }, (_, i) => String(i)),
       }).success,
     ).toBe(false);
+  });
+
+  it('accepts the player-id fanout of a provider crew battle', () => {
+    expect(
+      researchApiIdsSchema.safeParse({
+        setId: 'crew-battle',
+        playerIds: Array.from({ length: 20 }, (_, index) => String(index + 1)),
+      }).success,
+    ).toBe(true);
   });
 });
 

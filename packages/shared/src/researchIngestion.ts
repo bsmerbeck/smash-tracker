@@ -200,6 +200,8 @@ export const RESEARCH_REFRESH_OVERLAP_SECONDS = 86_400;
 export const RESEARCH_MAX_CONFIRMED_PLAYER_IDS = 50;
 export const RESEARCH_MAX_IDENTITY_CANDIDATES = 500;
 export const RESEARCH_MAX_ENTRANTS_PER_SET = 8;
+export const RESEARCH_MAX_PARTICIPANTS_PER_ENTRANT = 128;
+export const RESEARCH_MAX_PLAYER_IDS_PER_SET = 256;
 export const RESEARCH_MAX_GAMES_PER_SET = 200;
 export const RESEARCH_MAX_PROJECTED_MATCH_KEYS = 200;
 export const RESEARCH_MAX_PROVIDER_TEXT = 500;
@@ -227,7 +229,7 @@ export const researchApiIdsSchema = z.object({
   tournamentId: z.string().max(200).nullish(),
   phaseGroupId: z.string().max(200).nullish(),
   entrantIds: z.array(z.string().max(200)).max(16).nullish(),
-  playerIds: z.array(z.string().max(200)).max(16).nullish(),
+  playerIds: z.array(z.string().max(200)).max(RESEARCH_MAX_PLAYER_IDS_PER_SET).nullish(),
 });
 export type ResearchApiIds = z.infer<typeof researchApiIdsSchema>;
 
@@ -271,7 +273,7 @@ export const researchSourceEntrantSchema = z.object({
   placement: z.number().int().nullish(),
   participants: z
     .array(researchSourceParticipantSchema)
-    .max(RESEARCH_MAX_ENTRANTS_PER_SET)
+    .max(RESEARCH_MAX_PARTICIPANTS_PER_ENTRANT)
     .nullish(),
 });
 export type ResearchSourceEntrant = z.infer<typeof researchSourceEntrantSchema>;

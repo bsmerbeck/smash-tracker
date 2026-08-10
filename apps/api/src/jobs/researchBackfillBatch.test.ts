@@ -1,4 +1,8 @@
 import type { Database } from 'firebase-admin/database';
+import {
+  normalizeResearchClassificationCounts,
+  researchTenantIngestionStateSchema,
+} from '@smash-tracker/shared';
 import { describe, expect, it } from 'vitest';
 import { FakeDatabase } from '../test-support/fakeDatabase.js';
 import {
@@ -209,6 +213,30 @@ interface RawDump {
 
 function rawDump(database: FakeDatabase): RawDump {
   return database.dump() as unknown as RawDump;
+}
+
+/** Simulates RTDB's removal of empty object children during a write/read round trip. */
+function stripEmptyObjectsLikeRtdb(value: unknown): unknown {
+  if (Array.isArray(value)) {
+    return value.map(stripEmptyObjectsLikeRtdb);
+  }
+  if (value !== null && typeof value === 'object') {
+    const result: Record<string, unknown> = {};
+    for (const [key, child] of Object.entries(value)) {
+      const stripped = stripEmptyObjectsLikeRtdb(child);
+      if (
+        stripped !== null &&
+        typeof stripped === 'object' &&
+        !Array.isArray(stripped) &&
+        Object.keys(stripped).length === 0
+      ) {
+        continue;
+      }
+      result[key] = stripped;
+    }
+    return result;
+  }
+  return value;
 }
 
 async function run(
@@ -1331,6 +1359,49 @@ describe('runResearchBackfillBatch: provider-truncation guard', () => {
 // ---------------------------------------------------------------------------
 
 describe('runResearchBackfillBatch: provider-dead-page carve-out', () => {
+  it('materializes zero classification maps so a dead-page receipt survives an RTDB empty-object round trip', async () => {
+    const database = new FakeDatabase();
+    await confirmPlayer(database);
+    const runId = await createRun(database);
+    const { fetchImpl } = makeScriptedFetch({
+      1: [{ kind: 'ok', totalPages: 3, sets: [makeSet({ id: 1 })] }],
+      2: [
+        { kind: 'ok', totalPages: 0, sets: [] },
+        { kind: 'ok', totalPages: 0, sets: [] },
+      ],
+      3: [{ kind: 'ok', totalPages: 3, sets: [makeSet({ id: 2 })] }],
+    });
+
+    await run(database, runId, { fetchImpl, maxPagesPerInvocation: 1 });
+    const second = await run(database, runId, {
+      fetchImpl,
+      maxPagesPerInvocation: 1,
+      ownerId: 'invocation-2',
+    });
+    expect(second.stopReason).toBe('page-budget');
+    expect(second.cursorPage).toBe(3);
+
+    const rawState = rawDump(database).researchIngestionRuns?.[TENANT_ID] as unknown as {
+      runs: Record<string, { pendingPageReceipt: Record<string, unknown> }>;
+    };
+    const rawReceipt = rawState.runs[runId]!.pendingPageReceipt;
+    const expectedZeros = normalizeResearchClassificationCounts(undefined);
+    expect(rawReceipt.classificationCounts).toEqual(expectedZeros);
+    expect(rawReceipt.uniqueClassificationCounts).toEqual(expectedZeros);
+
+    const roundTripped = stripEmptyObjectsLikeRtdb(rawState);
+    const parsed = researchTenantIngestionStateSchema.safeParse(roundTripped);
+    expect(parsed.success).toBe(true);
+    if (parsed.success) {
+      expect(parsed.data.runs?.[runId]?.pendingPageReceipt?.classificationCounts).toEqual(
+        expectedZeros,
+      );
+      expect(parsed.data.runs?.[runId]?.pendingPageReceipt?.uniqueClassificationCounts).toEqual(
+        expectedZeros,
+      );
+    }
+  });
+
   it('an empty+collapsed page whose confirmation probe ALSO returns zero stages a named-gap receipt, advances the cursor, and the run completes with the counters published', async () => {
     const database = new FakeDatabase();
     await confirmPlayer(database);

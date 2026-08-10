@@ -1,4 +1,5 @@
 import type { Database } from 'firebase-admin/database';
+import { normalizeResearchClassificationCounts } from '@smash-tracker/shared';
 import { describe, expect, it } from 'vitest';
 import { FakeDatabase } from '../../test-support/fakeDatabase.js';
 import { ConflictingTransactionDatabase } from '../../test-support/conflictingTransactionDatabase.js';
@@ -157,12 +158,13 @@ describe('createOrResumeBackfillRun', () => {
     expect(run?.cursor?.updatedAfterSeconds).toBe(12_345);
   });
 
-  it('degrades a malformed stored state to empty and creates a fresh run rather than throwing', async () => {
+  it('fails closed on malformed stored state without replacing or deleting it', async () => {
     const database = new FakeDatabase();
     database.seed(`researchIngestionRuns/${TENANT_ID}`, { activeRunId: 42, runs: 'not-a-map' });
+    const before = JSON.parse(JSON.stringify(database.dump()));
 
-    const result = await createRunningRun(database);
-    expect(result.outcome).toBe('created');
+    await expect(createRunningRun(database)).rejects.toThrow();
+    expect(database.dump()).toEqual(before);
   });
 
   it('resolves a concurrent create to a single run id reported identically by both callers (ConflictingTransactionDatabase)', async () => {
@@ -200,6 +202,31 @@ describe('createOrResumeBackfillRun', () => {
 });
 
 describe('advanceRunState', () => {
+  it('rejects a schema-invalid next state before commit and preserves the valid stored run', async () => {
+    const database = new FakeDatabase();
+    const created = await createRunningRun(database);
+    const acquired = await acquireRunLease(
+      asDatabase(database),
+      TENANT_ID,
+      created.runId!,
+      'owner-a',
+    );
+    const before = JSON.parse(JSON.stringify(database.dump()));
+
+    await expect(
+      advanceRunState(
+        asDatabase(database),
+        TENANT_ID,
+        created.runId!,
+        acquired.holder!,
+        { cursor: { page: 0 } },
+        5_000,
+      ),
+    ).rejects.toThrow();
+
+    expect(database.dump()).toEqual(before);
+  });
+
   it('leaves every other run member intact when writing a new cursor page', async () => {
     const database = new FakeDatabase();
     const created = await createRunningRun(database);
@@ -267,6 +294,118 @@ describe('advanceRunState', () => {
 });
 
 describe('acquireRunLease / renewRunLease / releaseRunLease', () => {
+  it('repairs only RTDB-stripped classification maps on a pending receipt and persists the healed shape', async () => {
+    const database = new FakeDatabase();
+    const runId = 'run-with-stripped-classifications';
+    database.seed(`researchIngestionRuns/${TENANT_ID}`, {
+      activeRunId: runId,
+      runs: {
+        [runId]: {
+          status: 'running',
+          mode: 'full',
+          playerId: PLAYER_ID,
+          requestedByUid: UID,
+          startedAtMs: 1_000,
+          cursor: { page: 112 },
+          pendingPageReceipt: {
+            page: 111,
+            attempt: 0,
+            stagedAtMs: 2_000,
+            counters: { providerUnavailablePages: 1, providerUnavailableRowEstimate: 15 },
+            namedGaps: {},
+            uniqueCounters: { providerUnavailablePages: 1, providerUnavailableRowEstimate: 15 },
+            uniqueNamedGaps: {},
+          },
+        },
+      },
+    });
+
+    const expectedZeros = normalizeResearchClassificationCounts(undefined);
+    const read = await readBackfillRun(asDatabase(database), TENANT_ID, runId);
+    expect(read?.pendingPageReceipt?.classificationCounts).toEqual(expectedZeros);
+    expect(read?.pendingPageReceipt?.uniqueClassificationCounts).toEqual(expectedZeros);
+
+    const acquired = await acquireRunLease(
+      asDatabase(database),
+      TENANT_ID,
+      runId,
+      'owner-a',
+      3_000,
+    );
+    expect(acquired.acquired).toBe(true);
+
+    const rawRun = (
+      database.dump() as unknown as {
+        researchIngestionRuns: {
+          [TENANT_ID]: { runs: Record<string, { pendingPageReceipt: Record<string, unknown> }> };
+        };
+      }
+    ).researchIngestionRuns[TENANT_ID].runs[runId]!;
+    expect(rawRun.pendingPageReceipt.classificationCounts).toEqual(expectedZeros);
+    expect(rawRun.pendingPageReceipt.uniqueClassificationCounts).toEqual(expectedZeros);
+  });
+
+  it('keeps every other required pending-receipt member strict during compatibility repair', async () => {
+    const database = new FakeDatabase();
+    const runId = 'run-missing-required-receipt-member';
+    const zeros = normalizeResearchClassificationCounts(undefined);
+    database.seed(`researchIngestionRuns/${TENANT_ID}`, {
+      activeRunId: runId,
+      runs: {
+        [runId]: {
+          status: 'running',
+          mode: 'full',
+          playerId: PLAYER_ID,
+          requestedByUid: UID,
+          startedAtMs: 1_000,
+          pendingPageReceipt: {
+            page: 111,
+            attempt: 0,
+            stagedAtMs: 2_000,
+            namedGaps: {},
+            classificationCounts: zeros,
+            uniqueCounters: {},
+            uniqueNamedGaps: {},
+            uniqueClassificationCounts: zeros,
+          },
+        },
+      },
+    });
+    const before = JSON.parse(JSON.stringify(database.dump()));
+
+    await expect(readBackfillRun(asDatabase(database), TENANT_ID, runId)).rejects.toThrow(
+      /counters/,
+    );
+    expect(database.dump()).toEqual(before);
+  });
+
+  it('does not erase a schema-invalid run when lease release parses the stored state', async () => {
+    const database = new FakeDatabase();
+    const runId = 'run-with-invalid-cursor';
+    database.seed(`researchIngestionRuns/${TENANT_ID}`, {
+      activeRunId: runId,
+      runs: {
+        [runId]: {
+          status: 'running',
+          mode: 'full',
+          playerId: PLAYER_ID,
+          requestedByUid: UID,
+          startedAtMs: 1_000,
+          cursor: { page: 0 },
+          lease: { ownerId: 'owner-a', acquiredAtMs: 1_000, expiresAtMs: 2_000, fence: 1 },
+          leaseFenceCounter: 1,
+        },
+      },
+    });
+    const before = JSON.parse(JSON.stringify(database.dump()));
+
+    await expect(
+      releaseRunLease(asDatabase(database), TENANT_ID, runId, { ownerId: 'owner-a', fence: 1 }),
+    ).rejects.toThrow();
+
+    expect(database.dump()).toEqual(before);
+  });
+
   it('grants a lease with no prior lease, stores fence 1, and an expiry derived from now + TTL', async () => {
     const database = new FakeDatabase();
     const created = await createRunningRun(database);
