@@ -8,6 +8,7 @@ import {
   type ResearchClassificationCounts,
   type ResearchCounters,
   type ResearchCoveragePlayerSection,
+  type ResearchCoverageResponse,
   type ResearchDateCoverage,
   type ResearchExcludedOutcomeClassification,
   type ResearchNamedGaps,
@@ -263,56 +264,29 @@ function NeverRunRow({ playerId, t }: { playerId: string; t: TFunction }) {
 }
 
 /**
- * Phase 30 (start.gg Lossless Ingestion & Four-Player Coverage Audit,
- * ING-04/ING-05/WKSP-01A, D-14/D-15, plan 30-06): the admin-only completeness
- * surface, mounted directly under `ResearchSnapshotBanner` in
- * `ClientWorkspaceLayout`. Takes NO props and consumes `useDataCoverage()`
- * itself, mirroring `ResearchSnapshotBanner`'s self-contained shape — a page
- * can never opt out by forgetting to render it, because no page renders it
- * directly.
+ * Phase 30.1 Plan 05 (WKSP-01A, review H5/C2-H2): the presentational body
+ * shared by BOTH the admin-only research-tenant panel (`DataCoveragePanel`
+ * below, via `useDataCoverage`) and the self-only in-account panel
+ * (`SelfDataCoveragePanel`, via `useSelfDataCoverage`) — one render, two
+ * data sources, so the two surfaces can never drift. Extracted verbatim
+ * from the former `DataCoveragePanel` body; every `coaching.research.
+ * coverage.*` i18n key and every `data-coverage-*` test id is unchanged.
  *
- * Renders nothing on an ordinary workspace, while the kind lookup or the
- * coverage query is pending, or when the server answers the research
- * family's uniform 404 (`isForbidden`) — that 404 means "not for you" and
- * must never be rendered as a failure (T-30-06-01). A REAL failure (any
- * other error) renders a localized inline affordance rather than a blank
- * panel.
- *
- * A research workspace holds MULTIPLE confirmed start.gg player IDs — the
- * entire MkLeo/Sparg0 pattern this milestone exists to cover — and a
- * backfill run covers exactly one of them at a time. A single flat count
- * block would make one player's coverage look like the workspace's, which
- * is the same misreading the server-side whole-node snapshot used to make
- * literally true (review C2-H3). Rendering the workspace ROLLUP and the
- * per-player sections together, plus a not-yet-backfilled row for every
- * confirmed id with no section yet, is what makes "which player is this
- * number about" unambiguous.
+ * Takes the raw `ResearchCoverageResponse | null` plus the caller's
+ * already-computed `hasCompletedRun` (both callers derive this the same
+ * way: `data?.coverage != null`) rather than re-deriving it here, so a
+ * caller with a different "has this ever run" rule (there is none today,
+ * but the signature does not assume one) stays free to pass its own.
  */
-export function DataCoveragePanel() {
+export function DataCoveragePanelView({
+  data,
+  hasCompletedRun,
+}: {
+  data: ResearchCoverageResponse | null;
+  hasCompletedRun: boolean;
+}) {
   const { t, i18n } = useTranslation();
-  const { isResearch, isPending, isError, isForbidden, hasCompletedRun, data } = useDataCoverage();
-
-  if (!isResearch || isPending || isForbidden) {
-    return null;
-  }
-
   const title = t('coaching.research.coverage.title');
-
-  if (isError) {
-    return (
-      <Card role="region" aria-label={title} data-testid="data-coverage-panel" className="mb-4">
-        <CardHeader>
-          <CardTitle>{title}</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <p data-testid="data-coverage-load-error" className="text-sm text-destructive">
-            {t('coaching.research.coverage.loadError')}
-          </p>
-        </CardContent>
-      </Card>
-    );
-  }
-
   const language = i18n.language;
   const snapshot = data?.coverage ?? null;
   const confirmedPlayerIds = data?.confirmedPlayerIds ?? [];
@@ -411,4 +385,61 @@ export function DataCoveragePanel() {
       </CardContent>
     </Card>
   );
+}
+
+/**
+ * Phase 30 (start.gg Lossless Ingestion & Four-Player Coverage Audit,
+ * ING-04/ING-05/WKSP-01A, D-14/D-15, plan 30-06): the admin-only completeness
+ * surface, mounted directly under `ResearchSnapshotBanner` in
+ * `ClientWorkspaceLayout`. Takes NO props and consumes `useDataCoverage()`
+ * itself, mirroring `ResearchSnapshotBanner`'s self-contained shape — a page
+ * can never opt out by forgetting to render it, because no page renders it
+ * directly.
+ *
+ * Renders nothing on an ordinary workspace, while the kind lookup or the
+ * coverage query is pending, or when the server answers the research
+ * family's uniform 404 (`isForbidden`) — that 404 means "not for you" and
+ * must never be rendered as a failure (T-30-06-01). A REAL failure (any
+ * other error) renders a localized inline affordance rather than a blank
+ * panel.
+ *
+ * A research workspace holds MULTIPLE confirmed start.gg player IDs — the
+ * entire MkLeo/Sparg0 pattern this milestone exists to cover — and a
+ * backfill run covers exactly one of them at a time. A single flat count
+ * block would make one player's coverage look like the workspace's, which
+ * is the same misreading the server-side whole-node snapshot used to make
+ * literally true (review C2-H3). Rendering the workspace ROLLUP and the
+ * per-player sections together, plus a not-yet-backfilled row for every
+ * confirmed id with no section yet, is what makes "which player is this
+ * number about" unambiguous.
+ *
+ * Phase 30.1 Plan 05: the render body now lives in the shared
+ * `DataCoveragePanelView` above — this wrapper's own job is unchanged
+ * (research-scoped gating + error handling via `useDataCoverage`).
+ */
+export function DataCoveragePanel() {
+  const { t } = useTranslation();
+  const { isResearch, isPending, isError, isForbidden, hasCompletedRun, data } = useDataCoverage();
+
+  if (!isResearch || isPending || isForbidden) {
+    return null;
+  }
+
+  if (isError) {
+    const title = t('coaching.research.coverage.title');
+    return (
+      <Card role="region" aria-label={title} data-testid="data-coverage-panel" className="mb-4">
+        <CardHeader>
+          <CardTitle>{title}</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <p data-testid="data-coverage-load-error" className="text-sm text-destructive">
+            {t('coaching.research.coverage.loadError')}
+          </p>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  return <DataCoveragePanelView data={data} hasCompletedRun={hasCompletedRun} />;
 }

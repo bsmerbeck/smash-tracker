@@ -3,12 +3,14 @@ import {
   fighterSelectionInputSchema,
   fighterSelectionSchema,
   ONBOARDING_INTENTS,
+  researchCoverageResponseSchema,
   userProfileSchema,
 } from '@smash-tracker/shared';
 import { z } from 'zod';
 import { buildDomainEnvelope } from '../events/envelope.js';
 import { createEvent } from '../events/ledger.js';
 import { NotFoundError, RtdbService } from '../services/rtdb.js';
+import { composeCoverageResponse } from '../research/coverageResponse.js';
 
 /**
  * Phase 11 (Coach Workspace Tenancy & Feature Parity, PAR-04): route
@@ -20,14 +22,17 @@ import { NotFoundError, RtdbService } from '../services/rtdb.js';
  * read/write a client's fighter selection through these two routes.
  *
  * PERSONAL-ONLY (never subject-resolved, always `request.uid`): `PUT
- * /users/me` (profile/email upsert + `signup_completed` emission) and `GET
+ * /users/me` (profile/email upsert + `signup_completed` emission), `GET
  * /users/me` (profile response, including its inline
  * `getFighterSelection(request.uid)` call — that call shapes the COACH's
  * OWN profile response, not a client-scoped read, and must stay on
  * `request.uid` even though it calls the identically-named RtdbService
- * method the fighters sub-scope below also calls). A coaching-mode request
- * can never overwrite or read the coach's own profile through a tenant
- * header.
+ * method the fighters sub-scope below also calls), and `GET
+ * /users/me/coverage` (Phase 30.1 Plan 05, WKSP-01A/T-30.1-12: the
+ * self-only research-coverage read — it accepts no subject parameter and
+ * resolves ONLY `request.uid`, so a caller can never read another uid's
+ * coverage). A coaching-mode request can never overwrite or read the
+ * coach's own profile — or coverage — through a tenant header.
  */
 const usersRoutes: FastifyPluginAsyncZod = async (app) => {
   const rtdb = new RtdbService(app.firebase.database);
@@ -206,6 +211,28 @@ const usersRoutes: FastifyPluginAsyncZod = async (app) => {
         onboardingIntent: user.onboardingIntent ?? null,
       };
     },
+  );
+
+  // GET /api/users/me/coverage — Phase 30.1 Plan 05 (WKSP-01A, review
+  // H5/C2-H2): the self-only research-coverage read a logged-in demo (or
+  // ordinary) account uses to see its OWN migrated completeness report.
+  // Deliberately kept in this PERSONAL-ONLY block (not the `resolveSubject`
+  // fighters sub-scope below) — the route accepts no
+  // route/query/body parameter of any kind, so it is structurally
+  // impossible to target another uid's coverage: `composeCoverageResponse`
+  // is called with `request.uid` and nothing else (T-30.1-12). An ordinary
+  // account with no migrated research data simply gets the benign empty
+  // shape (`coverage: null`).
+  app.get(
+    '/users/me/coverage',
+    {
+      schema: {
+        response: {
+          200: researchCoverageResponseSchema,
+        },
+      },
+    },
+    async (request) => composeCoverageResponse(app.firebase.database, request.uid),
   );
 
   // Phase 11 (PAR-03/PAR-04): the fighters sub-routes are the ONLY part of

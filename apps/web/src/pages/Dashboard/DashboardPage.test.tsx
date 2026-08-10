@@ -37,6 +37,11 @@ const upsertMe = vi.fn().mockResolvedValue({ uid: 'test-uid', email: 'test@examp
 const getMe = vi.fn();
 const getOnboardingProgress = vi.fn();
 const listCoachingClients = vi.fn();
+// Phase 30.1 Plan 05 (WKSP-01A): DashboardPage now transitively calls
+// `api.users.coverage()` via `useSelfDataCoverage` (mounted through
+// `<SelfDataCoveragePanel />`) — mocked here so every existing Dashboard
+// test keeps passing with the benign empty default.
+const coverage = vi.fn();
 
 vi.mock('@/lib/api', () => ({
   api: {
@@ -44,6 +49,7 @@ vi.mock('@/lib/api', () => ({
       upsertMe: (...args: unknown[]) => upsertMe(...args),
       getFighters: (...args: unknown[]) => getFighters(...args),
       getMe: (...args: unknown[]) => getMe(...args),
+      coverage: (...args: unknown[]) => coverage(...args),
     },
     matches: {
       list: (...args: unknown[]) => listMatches(...args),
@@ -117,6 +123,12 @@ describe('DashboardPage', () => {
       scout: false,
     });
     listCoachingClients.mockResolvedValue([]);
+    coverage.mockResolvedValue({
+      coverage: null,
+      confirmedPlayerIds: [],
+      confirmedPlayerIdCount: 0,
+      unresolvedCandidateCount: 0,
+    });
     setMockUser(makeMockUser());
   });
 
@@ -135,6 +147,54 @@ describe('DashboardPage', () => {
       'href',
       '/choose-secondary',
     );
+  });
+
+  // Phase 30.1 Plan 05 (WKSP-01A, review C2-H2): a fresh, fighterless demo
+  // account (Plan 01 asserts zero primary/secondary fighters for every
+  // fresh account) always hits the no-fighters early-return branch above —
+  // this proves the self coverage completeness report is reachable there
+  // too, not only after fighter selection.
+  it('C2-H2: shows the self coverage completeness report even with zero fighters selected', async () => {
+    getFighters.mockResolvedValue({ primary: [], secondary: [] });
+    listMatches.mockResolvedValue([]);
+    coverage.mockResolvedValue({
+      coverage: {
+        asOfMs: 1_770_000_000_000,
+        players: {
+          mkleo: {
+            playerId: 'mkleo',
+            runId: 'run-1',
+            runCompletedAtMs: 1_770_000_000_000,
+            asOfMs: 1_770_000_000_000,
+            counters: { imported: 5, skipped: 2 },
+            namedGaps: {},
+            dateCoverage: {},
+            classificationCounts: {},
+            uniqueCounters: {},
+            uniqueNamedGaps: {},
+            uniqueClassificationCounts: {},
+          },
+        },
+        totals: {
+          counters: { imported: 5, skipped: 2 },
+          namedGaps: {},
+          dateCoverage: {},
+          classificationCounts: {},
+        },
+      },
+      confirmedPlayerIds: ['mkleo'],
+      confirmedPlayerIdCount: 1,
+      unresolvedCandidateCount: 0,
+      activeRun: null,
+    });
+
+    renderDashboard();
+
+    // Still fighterless — the no-fighters prompt renders alongside it.
+    expect(await screen.findByText("You haven't picked any fighters yet!")).toBeInTheDocument();
+    expect(await screen.findByTestId('data-coverage-panel')).toBeInTheDocument();
+    expect(screen.getByTestId('data-coverage-totals')).toBeInTheDocument();
+    expect(screen.getByTestId('data-coverage-player-mkleo')).toBeInTheDocument();
   });
 
   it('renders the dashboard widgets once the user has selected fighters', async () => {

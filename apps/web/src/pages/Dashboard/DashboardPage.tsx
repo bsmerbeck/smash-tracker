@@ -23,6 +23,7 @@ import { LastMatchesChart } from './components/LastMatchesChart';
 import { HeroStats } from './components/HeroStats';
 import { StageTiles } from './components/StageTiles';
 import { DashboardPrepActionSlot } from './components/DashboardPrepActionSlot';
+import { SelfDataCoveragePanel } from '@/pages/Coaching/components/SelfDataCoveragePanel';
 
 type NextBestAction =
   | { kind: 'chooseIntent' }
@@ -182,20 +183,34 @@ export function DashboardPage() {
     return <div className="text-muted-foreground">{t('dashboard.loading')}</div>;
   }
 
+  // Phase 30.1 Plan 05 (WKSP-01A, review C2-H2): `<SelfDataCoveragePanel />`
+  // is hoisted ABOVE the `fighterSprites.length === 0` gate so it renders
+  // in BOTH the no-fighters early-return branch below AND the normal
+  // content tree — a fresh, fighterless demo account (Plan 01 asserts
+  // empty primary/secondary fighter selections for every fresh account)
+  // ALWAYS hits the no-fighters branch and would otherwise never see its
+  // migrated completeness report. It self-hides (renders nothing) when the
+  // account has no migrated coverage, so this is safe for every ordinary
+  // fighterless account too.
   if (fighterSprites.length === 0) {
     return (
-      <div className="flex flex-col items-center gap-4 py-16 text-center">
-        <h1 className="text-2xl font-semibold tracking-tight">{t('shared.noFighters.title')}</h1>
-        <p className="max-w-md text-muted-foreground">{t('shared.noFighters.subtitle')}</p>
-        <div className="flex flex-wrap justify-center gap-2">
-          <Button asChild>
-            <Link to={subjectPath('/choose-primary')}>{t('shared.noFighters.choosePrimary')}</Link>
-          </Button>
-          <Button asChild variant="outline">
-            <Link to={subjectPath('/choose-secondary')}>
-              {t('shared.noFighters.chooseSecondary')}
-            </Link>
-          </Button>
+      <div className="flex flex-col gap-6">
+        <SelfDataCoveragePanel />
+        <div className="flex flex-col items-center gap-4 py-16 text-center">
+          <h1 className="text-2xl font-semibold tracking-tight">{t('shared.noFighters.title')}</h1>
+          <p className="max-w-md text-muted-foreground">{t('shared.noFighters.subtitle')}</p>
+          <div className="flex flex-wrap justify-center gap-2">
+            <Button asChild>
+              <Link to={subjectPath('/choose-primary')}>
+                {t('shared.noFighters.choosePrimary')}
+              </Link>
+            </Button>
+            <Button asChild variant="outline">
+              <Link to={subjectPath('/choose-secondary')}>
+                {t('shared.noFighters.chooseSecondary')}
+              </Link>
+            </Button>
+          </div>
         </div>
       </div>
     );
@@ -204,6 +219,7 @@ export function DashboardPage() {
   return (
     <DashboardContext.Provider value={contextValue}>
       <div className="flex flex-col gap-6">
+        <SelfDataCoveragePanel />
         <DashboardNextBestAction />
         <DashboardPrepActionSlot />
         <HeroStats matches={matches} timeFilteredMatches={timeFilteredMatches} />
