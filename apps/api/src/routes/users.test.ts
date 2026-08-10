@@ -695,6 +695,131 @@ describe('GET /api/users/me', () => {
   });
 });
 
+// Phase 30.1 Plan 05 (WKSP-01A, review C3-L1, T-30.1-12): the self-only
+// coverage read — REQUIRED HTTP-layer proof that the route accepts no
+// subject parameter of any kind and resolves ONLY `request.uid`. A
+// composer-only test (see `research/selfCoverage.test.ts`) cannot prove
+// this route-layer boundary.
+describe('GET /api/users/me/coverage', () => {
+  const OTHER_UID = 'other-uid-999';
+
+  function seedSnapshot(
+    database: ReturnType<typeof buildTestApp>['database'],
+    uid: string,
+    playerId: string,
+  ) {
+    database.seed(`researchCoverage/${uid}`, {
+      asOfMs: 1_000,
+      players: {
+        [playerId]: {
+          playerId,
+          runId: 'run-1',
+          runCompletedAtMs: 1_000,
+          asOfMs: 1_000,
+          counters: {},
+          namedGaps: {},
+          dateCoverage: {},
+          classificationCounts: {},
+          uniqueCounters: {},
+          uniqueNamedGaps: {},
+          uniqueClassificationCounts: {},
+        },
+      },
+      totals: { counters: {}, namedGaps: {}, dateCoverage: {}, classificationCounts: {} },
+    });
+    database.seed(`researchIdentity/${uid}`, {
+      confirmedPlayerIds: {
+        [playerId]: {
+          playerId,
+          primary: true,
+          confirmedByUid: uid,
+          confirmedAtMs: 1_000,
+        },
+      },
+    });
+  }
+
+  it('rejects unauthenticated requests (401)', async () => {
+    const { app } = buildTestApp();
+
+    const response = await app.inject({ method: 'GET', url: '/api/users/me/coverage' });
+
+    expect(response.statusCode).toBe(401);
+  });
+
+  it('returns the benign empty shape when the caller has no migrated research data', async () => {
+    const { app } = buildTestApp();
+
+    const response = await app.inject({
+      method: 'GET',
+      url: '/api/users/me/coverage',
+      headers: authHeader(),
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({
+      coverage: null,
+      confirmedPlayerIds: [],
+      confirmedPlayerIdCount: 0,
+      unresolvedCandidateCount: 0,
+    });
+  });
+
+  it('resolves request.uid — an authenticated caller with migrated data gets its OWN coverage', async () => {
+    const { app, database } = buildTestApp();
+    seedSnapshot(database, TEST_UID, 'player-self');
+
+    const response = await app.inject({
+      method: 'GET',
+      url: '/api/users/me/coverage',
+      headers: authHeader(),
+    });
+
+    expect(response.statusCode).toBe(200);
+    const body = response.json();
+    expect(body.confirmedPlayerIds).toEqual(['player-self']);
+    expect(body.coverage.players).toHaveProperty('player-self');
+  });
+
+  it('NEVER returns a second uid seeded coverage for the TEST_UID caller (cross-uid isolation)', async () => {
+    const { app, database } = buildTestApp();
+    seedSnapshot(database, OTHER_UID, 'player-other');
+
+    const response = await app.inject({
+      method: 'GET',
+      url: '/api/users/me/coverage',
+      headers: authHeader(),
+    });
+
+    expect(response.statusCode).toBe(200);
+    // TEST_UID has no coverage of its own — the other uid's is never leaked.
+    expect(response.json()).toEqual({
+      coverage: null,
+      confirmedPlayerIds: [],
+      confirmedPlayerIdCount: 0,
+      unresolvedCandidateCount: 0,
+    });
+  });
+
+  it('NEVER returns another uid coverage even when the caller also has its own (cross-uid isolation with data on both sides)', async () => {
+    const { app, database } = buildTestApp();
+    seedSnapshot(database, TEST_UID, 'player-self');
+    seedSnapshot(database, OTHER_UID, 'player-other');
+
+    const response = await app.inject({
+      method: 'GET',
+      url: '/api/users/me/coverage',
+      headers: authHeader(),
+    });
+
+    expect(response.statusCode).toBe(200);
+    const body = response.json();
+    expect(body.confirmedPlayerIds).toEqual(['player-self']);
+    expect(JSON.stringify(body)).not.toContain('player-other');
+    expect(JSON.stringify(body)).not.toContain(OTHER_UID);
+  });
+});
+
 describe('GET/PUT /api/users/me/fighters', () => {
   it('returns empty arrays when nothing has been set', async () => {
     const { app } = buildTestApp();

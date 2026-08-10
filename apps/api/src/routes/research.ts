@@ -34,26 +34,21 @@ import {
 } from '../research/ingestion/identity.js';
 import {
   createOrResumeBackfillRun,
-  readActiveBackfillRun,
   readTenantIngestionState,
 } from '../research/ingestion/backfillRun.js';
-import {
-  buildCoverageResponse,
-  deriveRefreshUpdatedAfterSeconds,
-  readCoverageSnapshot,
-} from '../research/ingestion/rollup.js';
+import { deriveRefreshUpdatedAfterSeconds } from '../research/ingestion/rollup.js';
 import {
   deleteSupplement,
   listSupplementsForSet,
   upsertSupplement,
 } from '../research/ingestion/supplements.js';
+import { composeCoverageResponse } from '../research/coverageResponse.js';
 import {
   runResearchBackfillBatch,
   TRIGGER_MAX_PAGES_PER_REQUEST,
   TRIGGER_MAX_SYNC_BACKOFF_MS,
 } from '../jobs/researchBackfillBatch.js';
 import { normalizeStartggPlayerId } from '../startgg/client.js';
-import type { Database } from 'firebase-admin/database';
 import type { StartggConfig } from '../config/env.js';
 
 /**
@@ -343,22 +338,6 @@ const researchTenantsRoutes: FastifyPluginAsyncZod<ResearchRoutesOptions> = asyn
       activePlayerId: active.activePlayerId,
       activeMode: active.activeMode,
     };
-  }
-
-  async function composeCoverageResponse(database: Database, tenantId: string) {
-    const [coverage, mapping, activeRun] = await Promise.all([
-      readCoverageSnapshot(database, tenantId),
-      readIdentityMapping(database, tenantId),
-      readActiveBackfillRun(database, tenantId),
-    ]);
-    const confirmedPlayerIds = Object.keys(mapping.confirmedPlayerIds ?? {}).sort();
-    const unresolvedCandidateCount = Object.keys(mapping.candidates ?? {}).length;
-    return buildCoverageResponse({
-      coverage,
-      confirmedPlayerIds,
-      unresolvedCandidateCount,
-      activeRun,
-    });
   }
 
   // POST /api/research/tenants
