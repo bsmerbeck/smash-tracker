@@ -70,6 +70,8 @@ import { buildShareSnapshot } from '../shares/buildShareSnapshot.js';
 import { generateShareToken } from '../shares/token.js';
 import { resolveDisplayName } from '../groups/groups.js';
 import { readSubjectKind } from '../research/subjectKind.js';
+import { isDemoAccountSubject } from '../research/demoAccount.js';
+import type { DemoAccountConfig } from '../config/env.js';
 
 /**
  * POST/PATCH body shape for the owner (and, via the optional `coach` param,
@@ -437,7 +439,22 @@ function changesSyncOwnedFields(existing: MatchRecord, input: UpdateMatchInput):
  * raw `database.ref(...)` calls and centralizes the exact path shapes.
  */
 export class RtdbService {
-  constructor(private readonly database: Database) {}
+  /**
+   * Phase 30.1 (Demo Account Topology & Migration, RTEN-03 re-scope,
+   * review H4): `demoConfig` defaults to `null` so all ~140 existing
+   * `new RtdbService(db)` call sites — including every locked Phase-29
+   * contract test — keep compiling and behave byte-unchanged (null = demo
+   * enforcement inactive, see `DemoAccountConfig`'s doc comment in
+   * `../config/env.ts`). Consulted by `createShare` and by all four
+   * resolution chokepoints below (`getShareByToken`,
+   * `resolveCoachReviewShareRef`, `resolveSessionShareRef`,
+   * `resolveEditSession`) at the SAME position as each site's existing
+   * `readSubjectKind(...) !== 'ordinary'` gate.
+   */
+  constructor(
+    private readonly database: Database,
+    private readonly demoConfig: DemoAccountConfig | null = null,
+  ) {}
 
   // ---- users/{uid} ----------------------------------------------------
 
@@ -1756,6 +1773,16 @@ export class RtdbService {
       // discriminator or reveals why (D-05 no-oracle).
       throw new ForbiddenError(`You can create at most ${MAX_SHARES_PER_USER} shares`);
     }
+    // Phase 30.1 (Demo Account Topology & Migration, RTEN-03 re-scope,
+    // review H4): an allowlisted demo-account uid is refused the SAME way
+    // a non-ordinary subject is above — this uid already resolved
+    // 'ordinary' via readSubjectKind (a demo account is a real login-
+    // bearing account with no clientTenants record), so this is a SEPARATE
+    // check, not a branch of the one above. No new error class/status/
+    // message (D-05 no-oracle).
+    if (isDemoAccountSubject(this.demoConfig, uid)) {
+      throw new ForbiddenError(`You can create at most ${MAX_SHARES_PER_USER} shares`);
+    }
 
     const activeCount = await this.countActiveShares(uid);
     if (activeCount >= MAX_SHARES_PER_USER) {
@@ -2245,6 +2272,14 @@ export class RtdbService {
     if (resolutionKindResolution !== 'ordinary') {
       return null;
     }
+    // Phase 30.1 (Demo Account Topology & Migration, RTEN-03 re-scope,
+    // review H4): a directly-seeded/pre-existing token whose ownerUid is
+    // an allowlisted demo uid fails closed HERE, at resolution — mint-side
+    // gating (createShare) does NOT substitute for this. Same `null`
+    // outcome as the non-ordinary check above (D-05 no-oracle).
+    if (isDemoAccountSubject(this.demoConfig, parsedToken.data.ownerUid)) {
+      return null;
+    }
     if (parsedToken.data.revokedAt != null) {
       return null;
     }
@@ -2385,6 +2420,13 @@ export class RtdbService {
     if (resolutionKindResolution !== 'ordinary') {
       return null;
     }
+    // Phase 30.1 (Demo Account Topology & Migration, RTEN-03 re-scope,
+    // review H4): mirrors getShareByToken's demo check above — a
+    // directly-seeded/pre-existing token whose ownerUid is an allowlisted
+    // demo uid fails closed here (D-05 no-oracle).
+    if (isDemoAccountSubject(this.demoConfig, parsedToken.data.ownerUid)) {
+      return null;
+    }
     if (parsedToken.data.revokedAt != null) {
       return null;
     }
@@ -2429,6 +2471,13 @@ export class RtdbService {
       parsedToken.data.ownerUid,
     );
     if (resolutionKindResolution !== 'ordinary') {
+      return null;
+    }
+    // Phase 30.1 (Demo Account Topology & Migration, RTEN-03 re-scope,
+    // review H4): mirrors getShareByToken's demo check above — a
+    // directly-seeded/pre-existing token whose ownerUid is an allowlisted
+    // demo uid fails closed here (D-05 no-oracle).
+    if (isDemoAccountSubject(this.demoConfig, parsedToken.data.ownerUid)) {
       return null;
     }
     if (parsedToken.data.revokedAt != null) {
@@ -2724,6 +2773,14 @@ export class RtdbService {
       parsedToken.data.ownerUid,
     );
     if (resolutionKindResolution !== 'ordinary') {
+      return null;
+    }
+    // Phase 30.1 (Demo Account Topology & Migration, RTEN-03 re-scope,
+    // review H4): mirrors getShareByToken's demo check above — a
+    // directly-seeded/pre-existing token whose ownerUid is an allowlisted
+    // demo uid fails closed here, strictly before the
+    // matches/{ownerUid}-touching read/write below (D-05 no-oracle).
+    if (isDemoAccountSubject(this.demoConfig, parsedToken.data.ownerUid)) {
       return null;
     }
     if (parsedToken.data.revokedAt != null) {
