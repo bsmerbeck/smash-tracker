@@ -142,6 +142,12 @@ const AUTHORIZATION_CLASSIFICATION: AuthorizationClassificationEntry[] = [
       "The five existing routes forward app.researchConfig into the tenants.ts service functions. The new GET .../kind route checks membership directly then branches on resolveTenantAccess's total outcome (D-07) — the ONE call site in the phase permitted to observe the indeterminate outcome, because membership is checked FIRST.",
   },
   {
+    file: 'src/research/migration/manifest.ts',
+    disposition: 'gated-by-primitive',
+    reason:
+      "Phase 30.1 Plan 01 (ACCT-02): archiveSources is a thin loop over the EXISTING archiveClient (coaching/tenants.ts), forwarding the caller-supplied researchConfig through unchanged — no new authorization logic. archiveClient's own requireTenantRole->assertTenantAccess gate is what actually decides access; this file adds no bypass and is fixture-tested only (never called with a real Database outside Plan 04's owner-run CLI).",
+  },
+  {
     file: 'src/claims/invitations.ts',
     disposition: 'refuses-research-outright',
     reason:
