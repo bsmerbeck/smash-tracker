@@ -161,6 +161,28 @@ describe('HomePage', () => {
     ).not.toBeInTheDocument();
   });
 
+  it('post-signup black screen fix: shows the loading chrome (never a blank page) while the profile query is still pending', async () => {
+    getMe.mockReturnValue(new Promise(() => {})); // never resolves
+    setMockUser(makeNewAccountUser());
+    renderHome();
+
+    expect(await screen.findByText('Loading…')).toBeInTheDocument();
+    expect(
+      screen.queryByRole('heading', { level: 1, name: 'grandfinals.gg' }),
+    ).not.toBeInTheDocument();
+  });
+
+  it('post-signup black screen fix: shows the loading chrome (never a blank page) when the profile fetch rejects outright', async () => {
+    getMe.mockRejectedValue(new Error('profile not found'));
+    setMockUser(makeNewAccountUser());
+    renderHome();
+
+    expect(await screen.findByText('Loading…')).toBeInTheDocument();
+    expect(
+      screen.queryByRole('heading', { level: 1, name: 'grandfinals.gg' }),
+    ).not.toBeInTheDocument();
+  });
+
   it('ONBD-01/D-01: routes a brand-new account with no saved intent and no origin to /welcome', async () => {
     setMockUser(makeNewAccountUser());
     renderHome();
