@@ -530,6 +530,17 @@ export const api = {
         method: 'PUT',
         body: input,
       }),
+    /**
+     * GET /api/users/me/coverage — Phase 30.1 Plan 05 (WKSP-01A, T-30.1-12):
+     * the self-only research-coverage read. Takes NO subject argument — it
+     * always resolves the caller's own `request.uid` server-side, so it can
+     * never be pointed at another uid's coverage. Mirrors
+     * `api.research.coverage(tenantId)`'s response shape (same
+     * `researchCoverageResponseSchema`) but has no tenant-membership gate:
+     * an ordinary account with no migrated research data simply gets the
+     * benign empty shape (`coverage: null`).
+     */
+    coverage: () => apiRequestParsed('/api/users/me/coverage', researchCoverageResponseSchema),
   },
   matches: {
     /** GET /api/matches */
