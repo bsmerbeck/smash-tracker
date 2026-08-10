@@ -80,7 +80,7 @@ const viewedResponseSchema = z.object({ viewed: z.literal(true) });
  * re-checked fresh on every call, never cached).
  */
 const publicReviewDeliveriesRoutes: FastifyPluginAsyncZod = async (app) => {
-  const rtdb = new RtdbService(app.firebase.database);
+  const rtdb = new RtdbService(app.firebase.database, app.demoAccountConfig);
 
   // One hook, every response (200s and 404s alike): no-store, always.
   app.addHook('onSend', async (_request, reply) => {

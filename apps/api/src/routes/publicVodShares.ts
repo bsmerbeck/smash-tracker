@@ -36,7 +36,7 @@ const tokenParamsSchema = z.object({
  * `@fastify/rate-limit` registration in `app.ts` (TRUST-01, T-06-06).
  */
 const publicVodSharesRoutes: FastifyPluginAsyncZod = async (app) => {
-  const rtdb = new RtdbService(app.firebase.database);
+  const rtdb = new RtdbService(app.firebase.database, app.demoAccountConfig);
 
   app.get(
     '/vod-shares/:token',

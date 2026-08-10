@@ -126,6 +126,7 @@ const coachingReviewDeliveriesRoutes: FastifyPluginAsyncZod<
           expiresAt: request.body.expiresAt,
           includedVodMatchIds: request.body.includedVods ?? [],
         },
+        app.demoAccountConfig,
       );
 
       // Suppression is telemetry-only — the mint write above already
