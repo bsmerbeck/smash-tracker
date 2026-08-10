@@ -5,11 +5,14 @@ import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { AuthProvider } from './AuthContext';
 import { useAuth } from '@/hooks/useAuth';
+import { useProfile, profileQueryKey } from '@/hooks/useProfile';
 import {
   resetAuthMock,
   signInWithEmailAndPassword,
+  createUserWithEmailAndPassword,
   signInWithPopup,
   signInWithRedirect,
+  signInWithCustomToken,
   getRedirectResult,
   setMockUser,
   makeMockUser,
@@ -42,11 +45,13 @@ vi.mock('@/lib/firebase', async () => {
 });
 
 const upsertMe = vi.fn().mockResolvedValue({ uid: 'test-uid', email: 'test@example.com' });
+const getMe = vi.fn();
 
 vi.mock('@/lib/api', () => ({
   api: {
     users: {
       upsertMe: (...args: unknown[]) => upsertMe(...args),
+      getMe: (...args: unknown[]) => getMe(...args),
     },
   },
 }));
@@ -101,13 +106,66 @@ function GoogleTestConsumer() {
 
 function renderWithGoogleProvider() {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  return render(
+  const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries');
+  render(
     <QueryClientProvider client={queryClient}>
       <AuthProvider>
         <GoogleTestConsumer />
       </AuthProvider>
     </QueryClientProvider>,
   );
+  return { queryClient, invalidateSpy };
+}
+
+type ProvisioningAction =
+  'signInWithEmail' | 'signUpWithEmail' | 'signInWithGoogle' | 'signInWithToken';
+
+/** Mounts both `useAuth()` (to trigger a sign-in action) and `useProfile()`
+ * (to observe the profile query's own resolved state) — the post-signup
+ * profile-refresh tests below need to see the query actually unstick, not
+ * just that `upsertMe` was called. */
+function ProfileConsumer({ action }: { action: ProvisioningAction }) {
+  const auth = useAuth();
+  const { data: profile } = useProfile();
+  const trigger = () => {
+    switch (action) {
+      case 'signInWithEmail':
+        void auth.signInWithEmail('test@example.com', 'password123');
+        return;
+      case 'signUpWithEmail':
+        void auth.signUpWithEmail('test@example.com', 'password123');
+        return;
+      case 'signInWithGoogle':
+        void auth.signInWithGoogle();
+        return;
+      case 'signInWithToken':
+        void auth.signInWithToken('mock-custom-token');
+        return;
+    }
+  };
+  return (
+    <>
+      <button type="button" onClick={trigger}>
+        trigger
+      </button>
+      <div>{profile ? profile.email : 'no-profile'}</div>
+    </>
+  );
+}
+
+function renderWithProfileConsumer(action: ProvisioningAction) {
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries');
+  const clearSpy = vi.spyOn(queryClient, 'clear');
+  const cancelQueriesSpy = vi.spyOn(queryClient, 'cancelQueries');
+  render(
+    <QueryClientProvider client={queryClient}>
+      <AuthProvider>
+        <ProfileConsumer action={action} />
+      </AuthProvider>
+    </QueryClientProvider>,
+  );
+  return { queryClient, invalidateSpy, clearSpy, cancelQueriesSpy };
 }
 
 describe('AuthContext.provisionUser — referral attribution (FUNNEL-02)', () => {
@@ -240,15 +298,19 @@ describe('AuthContext.signInWithGoogle — popup-blocked redirect fallback (ONBD
     signInWithRedirect.mockResolvedValue(undefined);
 
     const user = userEvent.setup();
-    renderWithGoogleProvider();
+    const { invalidateSpy } = renderWithGoogleProvider();
 
     await user.click(screen.getByRole('button', { name: 'sign in with google' }));
 
     await waitFor(() => expect(signInWithRedirect).toHaveBeenCalledOnce());
     // The full-page navigation means nothing after signInWithRedirect runs
     // for THIS attempt — provisionUser (upsertMe) is NOT called here; it's
-    // the boot-time getRedirectResult effect's job (see below).
+    // the boot-time getRedirectResult effect's job (see below). No profile
+    // invalidation happens on this attempt either.
     expect(upsertMe).not.toHaveBeenCalled();
+    expect(invalidateSpy).not.toHaveBeenCalledWith(
+      expect.objectContaining({ queryKey: profileQueryKey }),
+    );
   });
 
   it('re-throws every OTHER error unchanged (e.g. a genuine user cancel), never redirecting', async () => {
@@ -350,5 +412,148 @@ describe('AuthContext — boot-time getRedirectResult completion (ONBD-01)', () 
     await waitFor(() => expect(consoleErrorSpy).toHaveBeenCalled());
     expect(upsertMe).not.toHaveBeenCalled();
     consoleErrorSpy.mockRestore();
+  });
+});
+
+describe('AuthContext — post-signup profile refresh (fixes the post-signup black screen)', () => {
+  beforeEach(() => {
+    resetAuthMock();
+    vi.clearAllMocks();
+    readReferral.mockReturnValue(null);
+    getMe.mockReset();
+    // A prior test in this describe (the race-reproduction test below)
+    // replaces `upsertMe`'s implementation with a manually-resolved deferred
+    // promise; `vi.clearAllMocks()` clears call history but NOT mock
+    // implementations, so every test needs its own explicit reset back to
+    // the ordinary resolved-immediately baseline.
+    upsertMe.mockReset().mockResolvedValue({ uid: 'test-uid', email: 'test@example.com' });
+  });
+
+  it('refetches the profile after a successful sign-up provision, unsticking a query parked on its earlier 404 (race reproduction)', async () => {
+    // The signed-in uid is already stable across this render (set on the
+    // FIRST onAuthStateChanged callback, which the FB-01 guard never clears
+    // the cache for) so the profile query's 404->success transition below is
+    // driven purely by the provision-then-invalidate fix under test, not
+    // entangled with the FB-01 cache-clear race (that ordering is covered
+    // separately below).
+    setMockUser(makeMockUser());
+    getMe.mockRejectedValueOnce(new Error('profile not found'));
+    getMe.mockResolvedValue({ uid: 'test-uid', email: 'fresh@example.com' });
+    createUserWithEmailAndPassword.mockResolvedValue(undefined);
+
+    let resolveUpsert!: (value: { uid: string; email: string }) => void;
+    upsertMe.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveUpsert = resolve;
+        }),
+    );
+
+    const user = userEvent.setup();
+    const { queryClient } = renderWithProfileConsumer('signUpWithEmail');
+
+    await waitFor(() => expect(getMe).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(queryClient.getQueryState(profileQueryKey)?.status).toBe('error'));
+    expect(screen.getByText('no-profile')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'trigger' }));
+    await waitFor(() => expect(upsertMe).toHaveBeenCalledTimes(1));
+
+    // Before the fix, nothing would ever tell the query it's now
+    // satisfiable — the deferred upsertMe resolving here is what confirms
+    // the fix (not just a passage of time) drives the refetch.
+    resolveUpsert({ uid: 'test-uid', email: 'fresh@example.com' });
+
+    await waitFor(() => expect(screen.getByText('fresh@example.com')).toBeInTheDocument());
+    expect(getMe).toHaveBeenCalledTimes(2);
+  });
+
+  it.each<[ProvisioningAction, () => void]>([
+    ['signInWithEmail', () => signInWithEmailAndPassword.mockResolvedValue(undefined)],
+    ['signUpWithEmail', () => createUserWithEmailAndPassword.mockResolvedValue(undefined)],
+    ['signInWithGoogle', () => signInWithPopup.mockResolvedValue(undefined)],
+    ['signInWithToken', () => signInWithCustomToken.mockResolvedValue(undefined)],
+  ])('refreshes the profile query after a successful %s', async (action, arrangeAuthMock) => {
+    arrangeAuthMock();
+    getMe.mockResolvedValue({ uid: 'test-uid', email: 'test@example.com' });
+
+    const user = userEvent.setup();
+    const { invalidateSpy } = renderWithProfileConsumer(action);
+
+    await user.click(screen.getByRole('button', { name: 'trigger' }));
+
+    await waitFor(() =>
+      expect(invalidateSpy).toHaveBeenCalledWith(
+        expect.objectContaining({ queryKey: profileQueryKey }),
+      ),
+    );
+  });
+
+  it('refreshes the profile query after the boot-time getRedirectResult credential branch provisions successfully', async () => {
+    getRedirectResult.mockResolvedValue({ user: makeMockUser() });
+    getMe.mockResolvedValue({ uid: 'test-uid', email: 'test@example.com' });
+
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries');
+    render(
+      <QueryClientProvider client={queryClient}>
+        <AuthProvider>
+          <div />
+        </AuthProvider>
+      </QueryClientProvider>,
+    );
+
+    await waitFor(() => expect(upsertMe).toHaveBeenCalledTimes(1));
+    await waitFor(() =>
+      expect(invalidateSpy).toHaveBeenCalledWith(
+        expect.objectContaining({ queryKey: profileQueryKey }),
+      ),
+    );
+  });
+
+  it('never invalidates the profile query when the provision fails, but sign-in still resolves and the failure is logged', async () => {
+    signInWithEmailAndPassword.mockResolvedValue(undefined);
+    upsertMe.mockRejectedValueOnce(new Error('write failed'));
+    const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    const user = userEvent.setup();
+    const { invalidateSpy } = renderWithProfileConsumer('signInWithEmail');
+
+    await user.click(screen.getByRole('button', { name: 'trigger' }));
+
+    await waitFor(() => expect(consoleErrorSpy).toHaveBeenCalled());
+    expect(invalidateSpy).not.toHaveBeenCalledWith(
+      expect.objectContaining({ queryKey: profileQueryKey }),
+    );
+    consoleErrorSpy.mockRestore();
+  });
+
+  it('orders the profile invalidation after the FB-01 cache clear when a flow both transitions uid and provisions', async () => {
+    signInWithEmailAndPassword.mockImplementation(async () => {
+      setMockUser(makeMockUser());
+    });
+    getMe.mockResolvedValue({ uid: 'test-uid', email: 'test@example.com' });
+
+    const user = userEvent.setup();
+    const { invalidateSpy, clearSpy } = renderWithProfileConsumer('signInWithEmail');
+
+    await user.click(screen.getByRole('button', { name: 'trigger' }));
+
+    await waitFor(() =>
+      expect(invalidateSpy).toHaveBeenCalledWith(
+        expect.objectContaining({ queryKey: profileQueryKey }),
+      ),
+    );
+    expect(clearSpy).toHaveBeenCalledTimes(1);
+
+    const invalidateCallIndex = invalidateSpy.mock.calls.findIndex(([arg]) => {
+      const queryKey = (arg as { queryKey?: unknown })?.queryKey;
+      return (
+        Array.isArray(queryKey) && JSON.stringify(queryKey) === JSON.stringify(profileQueryKey)
+      );
+    });
+    const clearOrder = clearSpy.mock.invocationCallOrder[0]!;
+    const invalidateOrder = invalidateSpy.mock.invocationCallOrder[invalidateCallIndex]!;
+    expect(clearOrder).toBeLessThan(invalidateOrder);
   });
 });

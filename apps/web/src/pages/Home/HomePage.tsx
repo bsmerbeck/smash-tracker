@@ -1,5 +1,6 @@
 import { useEffect } from 'react';
 import { Navigate } from 'react-router';
+import { useTranslation } from 'react-i18next';
 import { useAuth } from '@/hooks/useAuth';
 import { useSeo } from '@/hooks/useSeo';
 import { useProfile } from '@/hooks/useProfile';
@@ -38,6 +39,7 @@ export function HomePage() {
     canonicalPath: '/',
   });
 
+  const { t } = useTranslation();
   const { user, loading } = useAuth();
   const { data: profile, isLoading: profileLoading } = useProfile();
   const saveIntent = useSaveOnboardingIntent();
@@ -70,7 +72,16 @@ export function HomePage() {
 
   if (user) {
     if (profileLoading || !profile || !decision) {
-      return null;
+      // Not `null`: the profile normally arrives within one refetch now
+      // that AuthContext invalidates the profile query after a successful
+      // provision, but a genuinely failed provision (or an API outage)
+      // would otherwise leave a signed-in user staring at the dark body
+      // with no signal at all.
+      return (
+        <div className="flex min-h-svh items-center justify-center text-sm text-muted-foreground">
+          {t('chrome.loading')}
+        </div>
+      );
     }
     return <Navigate to={decision.to} state={decision.state} replace />;
   }
