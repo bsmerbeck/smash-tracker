@@ -1,6 +1,7 @@
 import { buildApp } from './app.js';
 import {
   getClaimCodeConfig,
+  getDemoAccountConfig,
   getGa4Config,
   getInternalJobsConfig,
   getParryggConfig,
@@ -28,6 +29,7 @@ const internalJobs = getInternalJobsConfig(env);
 const claimCode = getClaimCodeConfig(env);
 const prepPaid = getPrepPaidConfig(env);
 const research = getResearchConfig(env);
+const demo = getDemoAccountConfig(env);
 
 const app = buildApp({
   firebase,
@@ -42,6 +44,7 @@ const app = buildApp({
   claimCode,
   prepPaid,
   research,
+  demo,
 });
 
 // Phase 7 (Recap Cards & Share-Loop Analytics): a single startup-time notice

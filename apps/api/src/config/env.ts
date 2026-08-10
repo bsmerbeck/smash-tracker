@@ -67,6 +67,19 @@ const envSchema = z.object({
    */
   RESEARCH_ADMIN_UIDS: z.string().optional(),
 
+  // ---- Phase 30.1 (Demo Account Topology & Migration, RTEN-03 re-scope):
+  // the demo-account allowlist. Comma-separated Firebase uids of the four
+  // ordinary, login-bearing demo accounts (Hungrybox/MkLeo/Sparg0/IzAw).
+  // UNSET means demo enforcement is INACTIVE (no behavior change for the
+  // general product) — NOT "fail-closed" in the sense the other
+  // config-null gates above use that word, since there is no dedicated
+  // demo route family to 503. When SET, a resolved demo subject fails
+  // closed at every mint/resolution chokepoint that consults it (see
+  // `getDemoAccountConfig`/`isDemoAccountSubject` below). Mirrors
+  // `RESEARCH_ADMIN_UIDS`'s config-null shape exactly; structurally
+  // INDEPENDENT of it — the two allowlists are never unioned or layered.
+  DEMO_ACCOUNT_UIDS: z.string().optional(),
+
   // ---- V7-C: Stripe-powered credit packs (all optional — when incomplete,
   // /api/billing routes answer 503 and non-allowlisted uids get the exact
   // pre-V7-C 403 on report generation, i.e. no behavior change) -------------
@@ -245,6 +258,43 @@ export function getResearchConfig(env: Env): ResearchConfig | null {
     return null;
   }
   return { adminUids };
+}
+
+export interface DemoAccountConfig {
+  /** Firebase uids of the four ordinary, login-bearing demo accounts. */
+  demoUids: Set<string>;
+}
+
+/**
+ * Assembles the demo-account allowlist config (Phase 30.1, RTEN-03
+ * re-scope). Mirrors `getResearchConfig` above exactly: returns null when
+ * the raw value is absent, empty, or contains only separators/whitespace;
+ * splits on comma; trims each entry; filters empty entries.
+ *
+ * IMPORTANT — this is honestly "enforcement inactive when null", NOT
+ * "fail-closed when null": unlike `getStripeConfig`/`getStartggConfig`,
+ * there is no dedicated demo route family that 503s when this is unset.
+ * A null config simply means the demo fail-closed checks at every
+ * mint/resolution chokepoint (see `isDemoAccountSubject` in
+ * `../research/demoAccount.js`) never fire — general-product behavior for
+ * every ordinary (non-demo) subject is completely unchanged either way.
+ * The fail-closed guarantee applies ONLY when this allowlist is configured
+ * AND a subject resolves into it (review H4 framing correction — cycle-1
+ * inaccurately called a null config "fail-closed").
+ */
+export function getDemoAccountConfig(env: Env): DemoAccountConfig | null {
+  if (!env.DEMO_ACCOUNT_UIDS) {
+    return null;
+  }
+  const demoUids = new Set(
+    env.DEMO_ACCOUNT_UIDS.split(',')
+      .map((uid) => uid.trim())
+      .filter((uid) => uid.length > 0),
+  );
+  if (demoUids.size === 0) {
+    return null;
+  }
+  return { demoUids };
 }
 
 export interface StripeConfig {
