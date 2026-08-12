@@ -46,6 +46,30 @@ import type { Database } from 'firebase-admin/database';
  * synchronously-resolving `sleep`, so the whole suite — which proves over a
  * minute of enforced spacing — finishes in well under two REAL seconds. CI
  * never sleeps on a wall clock for this module.
+ *
+ * ACCEPTED RISK — SINGLE-PROCESS WALL CLOCK (Codex checkpoint-3 risk,
+ * accepted for this phase; stated here so nobody has to rediscover it).
+ * What the durable budget guarantees unconditionally is SERIALISATION: the
+ * `lastGrantedAtMs` timestamp lives on one RTDB node and every grant moves
+ * it through a `.transaction()`, so two concurrent processes can never both
+ * believe they hold the same grant. What it does NOT guarantee is that the
+ * REAL-TIME SPACING between two grants issued by two DIFFERENT processes is
+ * at least the published interval, because each process compares that
+ * shared timestamp against its OWN `now()`. A machine whose clock runs
+ * ahead of its peer's by more than the skew between them can therefore see
+ * an interval as already elapsed when, by the peer's clock, it has not.
+ *
+ * This is out of contract for wave 9 by construction, not by hope: the
+ * enrichment fetch path runs from ONE process — the wave-9 CLI — so there
+ * is exactly one clock, and the published term is enforced per-client
+ * against it. The moment a second concurrent fetcher is introduced (a
+ * scheduled job alongside the CLI, or a horizontally-scaled service), this
+ * assumption is void and the fix is a SERVER-RELATIVE clock: derive the
+ * comparison instant from the database's own time (an RTDB server-timestamp
+ * write read back, or an explicit offset measured against it) instead of
+ * each process's local `Date.now`, so all participants compare against one
+ * authority. Adopting that is the named follow-up; until then, do not add a
+ * second concurrent Liquipedia fetcher.
  */
 
 export const LIQUIPEDIA_GENERAL_MIN_INTERVAL_MS = 2000;

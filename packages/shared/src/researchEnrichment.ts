@@ -721,23 +721,68 @@ export type ResearchEnrichmentConfirmRequest = z.infer<
 // ---------------------------------------------------------------------------
 
 /**
- * One match key's attribution, present only for a key that carries a
- * stored enrichment witness. `sourcePageTitle`/`sourcePageUrl` are read
- * from the witness's referenced observation (the witness itself stores
- * only an observation id, revision id and parser version — not the page
- * identity), so both are `.nullish()`: a witness whose referenced
- * observation has since been removed still reports its revision id, raw
- * stage text and stage form without a page link, rather than being
- * omitted entirely.
+ * The page identity of ONE observation, as reported for ONE field.
+ * `sourcePageTitle`/`sourcePageUrl` are read from the witness's referenced
+ * observation (the witness itself stores only an observation id, revision id
+ * and parser version — not the page identity), so both are `.nullish()`: a
+ * half whose referenced observation has since been removed still reports its
+ * revision id rather than disappearing entirely.
  */
-export const researchEnrichmentAttributionEntrySchema = z.object({
-  matchKey: z.string().min(1).max(200),
+export const researchEnrichmentAttributionSourceSchema = z.object({
   sourcePageTitle: z.string().max(300).nullish(),
   sourcePageUrl: z.string().max(500).nullish(),
   sourceRevisionId: z.number().int().nullish(),
-  /** Untrusted third-party source text — never dropped (mirrors the observation record's own `rawStage`). */
-  rawStage: z.string().max(RESEARCH_ENRICHMENT_MAX_RAW_TEXT).nullish(),
-  stageForm: z.enum(RESEARCH_LIQUIPEDIA_STAGE_FORMS).nullish(),
+});
+export type ResearchEnrichmentAttributionSource = z.infer<
+  typeof researchEnrichmentAttributionSourceSchema
+>;
+
+/** The STAGE half — page identity plus the stage-only members. */
+export const researchEnrichmentStageAttributionSchema =
+  researchEnrichmentAttributionSourceSchema.extend({
+    /** Untrusted third-party source text — never dropped (mirrors the observation record's own `rawStage`). */
+    rawStage: z.string().max(RESEARCH_ENRICHMENT_MAX_RAW_TEXT).nullish(),
+    stageForm: z.enum(RESEARCH_LIQUIPEDIA_STAGE_FORMS).nullish(),
+  });
+export type ResearchEnrichmentStageAttribution = z.infer<
+  typeof researchEnrichmentStageAttributionSchema
+>;
+
+/** The VOD half — page identity only; `rawStage`/`stageForm` are stage-only concepts and are structurally absent here. */
+export const researchEnrichmentVodAttributionSchema = researchEnrichmentAttributionSourceSchema;
+export type ResearchEnrichmentVodAttribution = z.infer<
+  typeof researchEnrichmentVodAttributionSchema
+>;
+
+/**
+ * One match key's attribution, present only for a key that carries a stored
+ * enrichment witness — split into TWO INDEPENDENT HALVES (30.2 gap-closure
+ * BLOCKER 2).
+ *
+ * An earlier shape reported ONE flat set of members per match key, built
+ * from `stageObservationId ?? vodObservationId`. That single-slot shape was
+ * wrong in two directions at once, and both were user-visible:
+ *
+ *   1. A STAGE-ONLY witness produced an entry, and every VOD surface
+ *      (the attach-VOD dialog's prefilled hint, the VOD manager badge, the
+ *      match table's VOD menu) treats "an entry exists" as "this row's
+ *      vodUrl came from Liquipedia" — so a USER-ENTERED VOD on a
+ *      stage-enriched row was labelled as source-derived. Mislabelling a
+ *      user's own data as third-party-derived is an ENR-09 accuracy failure.
+ *   2. When BOTH fields were enriched, the single `sourcePageUrl` was
+ *      whichever page the STAGE observation named, so the VOD badge linked
+ *      to the wrong source page.
+ *
+ * Each half is therefore built ONLY from its own witness members — the stage
+ * half from `stageObservationId`/`stage*`, the VOD half from
+ * `vodObservationId`/`vod*`/`projectedVodUrl` — and a half is ABSENT (never
+ * an empty object) when that field carries no source claim. A consumer must
+ * read the half for the field it is describing and no other.
+ */
+export const researchEnrichmentAttributionEntrySchema = z.object({
+  matchKey: z.string().min(1).max(200),
+  stage: researchEnrichmentStageAttributionSchema.nullish(),
+  vod: researchEnrichmentVodAttributionSchema.nullish(),
 });
 export type ResearchEnrichmentAttributionEntry = z.infer<
   typeof researchEnrichmentAttributionEntrySchema

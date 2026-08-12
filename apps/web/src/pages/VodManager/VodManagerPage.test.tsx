@@ -3834,13 +3834,60 @@ describe('VodManagerPage', () => {
     it('shows the attribution beside the player for a Liquipedia-sourced VOD, and the licence line once in the page footer', async () => {
       listMatches.mockResolvedValue([makeMatch({ id: 'm1', vodUrl: 'https://youtu.be/abc123' })]);
       enrichmentAttribution.mockResolvedValue({
-        attributions: [{ matchKey: 'm1', sourcePageUrl: 'https://liquipedia.net/smash/Some_Page' }],
+        attributions: [
+          { matchKey: 'm1', vod: { sourcePageUrl: 'https://liquipedia.net/smash/Some_Page' } },
+        ],
       });
       renderVodManager('/vod?match=m1');
 
       await screen.findByTestId('vod-match-meta');
       expect(await screen.findByTestId('liquipedia-attribution-badge')).toBeInTheDocument();
       expect(screen.getByTestId('liquipedia-license-note')).toBeInTheDocument();
+    });
+
+    // 30.2 gap-closure BLOCKER 2 -------------------------------------------
+
+    it('renders NO badge beside the player for a stage-only-enriched match (its VOD is the user’s own)', async () => {
+      listMatches.mockResolvedValue([makeMatch({ id: 'm1', vodUrl: 'https://youtu.be/user' })]);
+      enrichmentAttribution.mockResolvedValue({
+        attributions: [
+          {
+            matchKey: 'm1',
+            stage: {
+              sourcePageUrl: 'https://liquipedia.net/smash/Bracket_Page',
+              rawStage: 'Battlefield',
+              stageForm: 'normal',
+            },
+          },
+        ],
+      });
+      renderVodManager('/vod?match=m1');
+
+      await screen.findByTestId('vod-match-meta');
+      await waitFor(() => expect(enrichmentAttribution).toHaveBeenCalled());
+      expect(screen.queryByTestId('liquipedia-attribution-badge')).not.toBeInTheDocument();
+    });
+
+    it("the VOD badge's href is EXACTLY the VOD observation's page when both fields were enriched from different pages", async () => {
+      listMatches.mockResolvedValue([makeMatch({ id: 'm1', vodUrl: 'https://youtu.be/abc123' })]);
+      enrichmentAttribution.mockResolvedValue({
+        attributions: [
+          {
+            matchKey: 'm1',
+            stage: {
+              sourcePageUrl: 'https://liquipedia.net/smash/Bracket_Page',
+              rawStage: 'Battlefield',
+              stageForm: 'normal',
+            },
+            vod: { sourcePageUrl: 'https://liquipedia.net/smash/Vod_Page' },
+          },
+        ],
+      });
+      renderVodManager('/vod?match=m1');
+
+      await screen.findByTestId('vod-match-meta');
+      const anchor = await screen.findByTestId('liquipedia-attribution-link');
+      expect(anchor).toHaveAttribute('href', 'https://liquipedia.net/smash/Vod_Page');
     });
 
     it('renders no attribution and no licence line for an un-enriched account, byte-identical to today', async () => {

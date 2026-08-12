@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes } from 'react-router';
@@ -22,6 +22,33 @@ vi.mock('@/hooks/useResearchSubject', () => ({
 vi.mock('./components/DataCoveragePanel', () => ({
   DataCoveragePanel: () => null,
 }));
+
+/**
+ * 30.2 gap-closure: `EnrichmentReviewPanel` is mounted by this layout too,
+ * and — unlike the coverage panel — is rendered here FOR REAL so the mount
+ * itself is under test. Only its data hooks are mocked, exactly as
+ * `EnrichmentReviewPanel.test.tsx` does, so this file needs no
+ * `QueryClientProvider`.
+ */
+const useEnrichmentReview = vi.fn();
+
+vi.mock('@/hooks/useEnrichmentReview', () => ({
+  useEnrichmentReview: () => useEnrichmentReview(),
+  useConfirmEnrichmentCandidate: () => ({ mutate: vi.fn(), isPending: false }),
+}));
+
+const REVIEW_STATUS_HIDDEN = {
+  isResearch: false,
+  isPending: false,
+  isError: false,
+  isForbidden: false,
+  data: null,
+  retry: vi.fn(),
+};
+
+beforeEach(() => {
+  useEnrichmentReview.mockReturnValue(REVIEW_STATUS_HIDDEN);
+});
 
 function renderLayout() {
   return render(
@@ -109,5 +136,64 @@ describe('ClientWorkspaceLayout', () => {
 
     await user.click(screen.getByRole('button', { name: 'Retry' }));
     expect(retry).toHaveBeenCalledTimes(1);
+  });
+
+  // 30.2 gap-closure: the enrichment review queue's mount ------------------
+
+  describe('EnrichmentReviewPanel mount', () => {
+    function resolveResearchSubject() {
+      useResearchSubject.mockReturnValue({
+        isResearch: true,
+        isPending: false,
+        isError: false,
+        retry: vi.fn(),
+      });
+    }
+
+    it('mounts the review panel for an admin-shaped queue response', () => {
+      resolveResearchSubject();
+      useEnrichmentReview.mockReturnValue({
+        ...REVIEW_STATUS_HIDDEN,
+        isResearch: true,
+        data: {
+          observations: [],
+          counts: { ambiguous: 0, conflicting: 0, unmatched: 0, total: 0 },
+        },
+      });
+
+      renderLayout();
+
+      expect(screen.getByTestId('enrichment-review-panel')).toBeInTheDocument();
+      expect(screen.getByText('workspace content')).toBeInTheDocument();
+    });
+
+    it('renders no review chrome when the server rejects the queue read (the research family’s uniform not-for-you rejection)', () => {
+      resolveResearchSubject();
+      useEnrichmentReview.mockReturnValue({
+        ...REVIEW_STATUS_HIDDEN,
+        isResearch: true,
+        isForbidden: true,
+      });
+
+      renderLayout();
+
+      expect(screen.queryByTestId('enrichment-review-panel')).not.toBeInTheDocument();
+      // The rest of the workspace is untouched — hiding the panel is never a
+      // page-level failure.
+      expect(screen.getByText('workspace content')).toBeInTheDocument();
+    });
+
+    it('renders no review chrome at all on an ordinary (non-research) workspace', () => {
+      useResearchSubject.mockReturnValue({
+        isResearch: false,
+        isPending: false,
+        isError: false,
+        retry: vi.fn(),
+      });
+
+      renderLayout();
+
+      expect(screen.queryByTestId('enrichment-review-panel')).not.toBeInTheDocument();
+    });
   });
 });

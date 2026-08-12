@@ -5,10 +5,12 @@ import {
   researchEnrichmentProjectionStateRecordSchema,
   resolveEnrichedMatchMembers,
   UNKNOWN_STAGE,
+  type EnrichedMatchMembersResult,
   type EnrichmentOwnershipWitness,
   type EnrichmentStageWitnessCommitAction,
   type EnrichmentStageWitnessPreWriteAction,
   type EnrichmentVodOutcome,
+  type EnrichmentVodSourceInput,
   type EnrichmentStageOutcome,
   type EnrichmentVodWitnessCommitAction,
   type EnrichmentVodWitnessPreWriteAction,
@@ -51,6 +53,40 @@ import { listAttachmentsForSet, readEnrichmentObservation } from './store.js';
  *   Phase C — witness COMMIT. One multi-path update promoting each
  *   pending value into the committed half and CLEARING the pending half
  *   (absent members, never nulls, per the house null-stripping rule).
+ *
+ * WRITE-TIME OWNERSHIP RESOLUTION (30.2 gap-closure BLOCKER 1). The
+ * planning pass below is a PLAN, never a decision. An earlier draft
+ * resolved ownership ONCE against the pre-read row and then had phase B's
+ * transaction destructure the transaction-current `vodUrl`/`map` away and
+ * write the plan-time result — so a user edit landing between the plan read
+ * (or phase A's pre-write) and that row's transaction was silently
+ * overwritten, violating ENR-08/D-21's absolute rule that a user-entered
+ * URL may NEVER be overwritten. The transaction callback therefore
+ * RE-RESOLVES: it calls the same pure `resolveEnrichedMatchMembers` against
+ * the TRANSACTION-CURRENT row (`current ?? cachedRow`), with the same
+ * overlay and the same plan-time witness. The resolver is pure and total,
+ * so re-running it on every retry attempt is safe by construction.
+ *
+ * ...AND THE COMMITTED ATTEMPT IS THE ONE THAT COUNTS. A transaction
+ * callback may run several times (the real SDK's local-cache-first run, then
+ * one re-run per hash mismatch); only ONE of those attempts is the one RTDB
+ * actually commits. Reading the resolution back out of a closure variable
+ * the callback assigned would therefore report whatever the LAST attempt
+ * computed, committed or not. Instead every attempt is APPENDED to a list,
+ * and `selectCommittedResolution` picks the attempt whose resolved
+ * `vodUrl`/`map` match the transaction's own COMMITTED snapshot — so the
+ * per-row outcome, the counters and the phase C witness commit all describe
+ * what is genuinely stored. An uncommitted transaction resolves to
+ * `voidedResolution`: no witness commit at all, which (paired with the
+ * PLAN-TIME pre-write action below) still CLEARS the pending half, so a
+ * pending witness whose fill never committed vouches for nothing. That
+ * pairing is deliberate and is the one place the two resolutions are mixed:
+ * phase C's commit action comes from the COMMITTED resolution, while its
+ * pre-write action comes from the PLAN-TIME resolution, because phase A
+ * wrote the plan-time pending half and only that half needs clearing.
+ * `isSourceOwnedVodValue`'s value-comparison contract is what makes any
+ * residue harmless: a witness whose recorded value does not match the row
+ * vouches for nothing.
  *
  * This DELIBERATELY INVERTS the shipped `applyLegacyProjection` order (rows
  * first, index update second). In the shipped path the second write is a
@@ -105,6 +141,25 @@ export interface EnrichedStage {
 
 export interface EnrichmentOverlay {
   enrichedVodUrlByKey: Record<string, string>;
+  /**
+   * The provenance of each `enrichedVodUrlByKey` entry — the observation
+   * that supplied the URL, its revision and its parser version.
+   *
+   * OPTIONAL, and separate from the URL map rather than folded into it,
+   * because `resolveEnrichedMatchMembers` explicitly documents that a
+   * caller with less provenance than it would like still gets a correct
+   * fill/correct/remove decision and simply stamps a thinner witness. Every
+   * pre-existing caller that builds a bare `Record<string, string>` URL map
+   * therefore keeps working unchanged.
+   *
+   * 30.2 gap-closure BLOCKER 2: without this, the witness's VOD half never
+   * receives a `vodObservationId`, and the field-scoped attribution response
+   * built from it could never carry a VOD source page — the VOD half of
+   * ENR-09 attribution would be structurally dead, and the only way a VOD
+   * surface could show a source link would be to borrow the STAGE
+   * observation's page, which is exactly the mislabelling BLOCKER 2 removes.
+   */
+  enrichedVodSourceByKey?: Record<string, EnrichmentVodSourceInput>;
   enrichedStageByKey: Record<string, EnrichedStage>;
 }
 
@@ -147,6 +202,7 @@ export function deriveEnrichmentMatchRowKey(targetSetId: string, gameOrdinal: nu
  */
 export function buildEnrichmentOverlay(input: BuildEnrichmentOverlayInput): EnrichmentOverlay {
   const enrichedVodUrlByKey: Record<string, string> = {};
+  const enrichedVodSourceByKey: Record<string, EnrichmentVodSourceInput> = {};
   const enrichedStageByKey: Record<string, EnrichedStage> = {};
 
   for (const attachment of input.attachments) {
@@ -164,8 +220,16 @@ export function buildEnrichmentOverlay(input: BuildEnrichmentOverlayInput): Enri
 
     if (record.vodUrl) {
       for (let ordinal = 1; ordinal <= maxOrdinal; ordinal += 1) {
-        enrichedVodUrlByKey[deriveEnrichmentMatchRowKey(input.targetSetId, ordinal)] =
-          record.vodUrl;
+        const rowKey = deriveEnrichmentMatchRowKey(input.targetSetId, ordinal);
+        enrichedVodUrlByKey[rowKey] = record.vodUrl;
+        // The VOD's OWN provenance — the observation that carried the URL,
+        // never the stage observation for the same row (30.2 gap-closure
+        // BLOCKER 2: the two are independent and may be different pages).
+        enrichedVodSourceByKey[rowKey] = {
+          observationId: record.observationId,
+          sourceRevisionId: record.sourceRevisionId,
+          parserVersion: record.parserVersion,
+        };
       }
     }
 
@@ -184,7 +248,7 @@ export function buildEnrichmentOverlay(input: BuildEnrichmentOverlayInput): Enri
     }
   }
 
-  return { enrichedVodUrlByKey, enrichedStageByKey };
+  return { enrichedVodUrlByKey, enrichedVodSourceByKey, enrichedStageByKey };
 }
 
 // ---------------------------------------------------------------------------
@@ -244,6 +308,90 @@ function extractExistingStage(row: Record<string, unknown> | null): MatchStage {
     return map as MatchStage;
   }
   return UNKNOWN_STAGE;
+}
+
+/**
+ * The ONE place this module builds a resolver input — called from the
+ * planning pass AND from inside every phase B transaction attempt, so the
+ * plan and the write can never disagree about anything except the row state
+ * they were handed (30.2 gap-closure BLOCKER 1).
+ */
+function resolveForRow(
+  overlay: EnrichmentOverlay,
+  key: string,
+  row: Record<string, unknown>,
+  witness: EnrichmentOwnershipWitness | null,
+): EnrichedMatchMembersResult {
+  const vodSource = overlay.enrichedVodSourceByKey?.[key];
+  return resolveEnrichedMatchMembers({
+    existingVodUrl: extractExistingVodUrl(row),
+    enrichmentVodUrl: overlay.enrichedVodUrlByKey[key],
+    ...(vodSource !== undefined ? { enrichmentVodSource: vodSource } : {}),
+    providerStage: extractExistingStage(row),
+    enrichmentStage: overlay.enrichedStageByKey[key],
+    witness,
+  });
+}
+
+function stagesEqual(left: MatchStage, right: MatchStage): boolean {
+  return left.id === right.id && left.name === right.name;
+}
+
+/**
+ * Picks, out of every attempt a transaction callback made, the one whose
+ * resolved members match the transaction's COMMITTED snapshot — the attempt
+ * that genuinely landed. Compares only the two members this module writes
+ * (`vodUrl` and `map`) rather than the whole row, because RTDB normalises
+ * unrelated members on write (empty arrays are dropped) and a whole-row
+ * comparison would spuriously fail for reasons that have nothing to do with
+ * ownership. Searches from the LAST attempt backwards, so when two attempts
+ * happen to resolve to the same stored members the later (committing) one
+ * wins. Returns `null` when the transaction did not commit, or when no
+ * attempt explains the committed value (a foreign writer won) — both cases
+ * mean this run wrote nothing it may claim ownership of.
+ */
+function selectCommittedResolution(
+  committed: boolean,
+  committedRow: Record<string, unknown> | null,
+  attempts: EnrichedMatchMembersResult[],
+): EnrichedMatchMembersResult | null {
+  if (!committed || committedRow === null) {
+    return null;
+  }
+  const storedVodUrl = extractExistingVodUrl(committedRow);
+  const storedStage = extractExistingStage(committedRow);
+  for (let index = attempts.length - 1; index >= 0; index -= 1) {
+    const attempt = attempts[index]!;
+    if (attempt.vodUrl === storedVodUrl && stagesEqual(attempt.stage, storedStage)) {
+      return attempt;
+    }
+  }
+  return null;
+}
+
+/**
+ * The resolution to record when NOTHING this run computed was committed:
+ * every witness commit action becomes `none`, so phase C promotes no value
+ * into the committed half. Paired with the PLAN-TIME pre-write action at the
+ * phase C call site, `buildCommitPatch`'s pre-write-driven fallback branch
+ * still clears the pending half — the invariant that a pending witness whose
+ * fill did not commit is voided rather than left dangling.
+ */
+function voidedResolution(planTime: EnrichedMatchMembersResult): EnrichedMatchMembersResult {
+  return {
+    vodOutcome: 'unchanged',
+    stage: planTime.stage,
+    // A provider-resolved stage needed no write at all, so its outcome is
+    // unaffected by a failed commit; anything else did not get enriched.
+    stageOutcome:
+      planTime.stageOutcome === 'provider-authoritative' ? planTime.stageOutcome : 'unknown',
+    witnessPatch: {
+      vodPreWrite: { kind: 'none' },
+      vodCommit: { kind: 'none' },
+      stagePreWrite: { kind: 'none' },
+      stageCommit: { kind: 'none' },
+    },
+  };
 }
 
 /** Builds the phase A (pending-half) witness patch fragment for one key, or `{}` when nothing needs pre-writing. */
@@ -417,6 +565,23 @@ export async function applyEnrichmentProjection(
   // candidate set with any key this tenant's witness tree already
   // attributes to THIS target set, so a removal is discovered rather than
   // silently ignored.
+  //
+  // ACCEPTED RISK — WHOLE-WITNESS-TREE READ PER TARGET SET (Codex
+  // checkpoint-3 risk, accepted for this phase). This reads the tenant's
+  // ENTIRE `researchEnrichmentProjection` subtree and filters it in memory
+  // by `targetSetId`, once per target set applied. The read is bounded and
+  // cheap at the scale this phase actually serves — the four demo research
+  // accounts and wave 9's target list — where the whole subtree is small
+  // and the per-set filter costs less than the round trips an index would
+  // add. It is NOT bounded by the number of sets being applied: cost grows
+  // as (sets applied x tenant witness count), so a tenant with a large
+  // witness tree processed set-by-set degrades quadratically.
+  //
+  // The named follow-up, before any larger-scale use: a TARGET-SET INDEX
+  // (`researchEnrichmentProjectionByTargetSet/{tenantId}/{targetSetId}/{matchKey}`,
+  // maintained by the same phase A/C witness patches that already stamp
+  // `targetSetId` here) so this becomes a single scoped read. Do not widen
+  // this module past the four-account scale without it.
   const witnessSnapshotForSet = await database
     .ref(`researchEnrichmentProjection/${tenantId}`)
     .get();
@@ -450,11 +615,16 @@ export async function applyEnrichmentProjection(
   const outcome = emptyOutcome();
 
   // Planning pass: one read of the row and one read of the witness per key,
-  // deciding existence and the resolved outcome up front.
+  // deciding existence and the PLANNED outcome up front. The plan drives
+  // phase A's pending pre-write only — phase B re-resolves against the row
+  // RTDB holds at commit time (see WRITE-TIME OWNERSHIP RESOLUTION above).
   interface PlannedRow {
     key: string;
     cachedRow: Record<string, unknown>;
-    result: ReturnType<typeof resolveEnrichedMatchMembers>;
+    witness: EnrichmentOwnershipWitness | null;
+    planned: EnrichedMatchMembersResult;
+    /** The resolution the phase B transaction actually COMMITTED. */
+    applied: EnrichedMatchMembersResult;
   }
   const planned: PlannedRow[] = [];
 
@@ -471,30 +641,32 @@ export async function applyEnrichmentProjection(
       .get();
     const witness = readWitnessFromValue(witnessSnapshot.exists() ? witnessSnapshot.val() : null);
 
-    const result = resolveEnrichedMatchMembers({
-      existingVodUrl: extractExistingVodUrl(row),
-      enrichmentVodUrl: overlay.enrichedVodUrlByKey[key],
-      providerStage: extractExistingStage(row),
-      enrichmentStage: overlay.enrichedStageByKey[key],
-      witness,
-    });
+    const planTimeResult = resolveForRow(overlay, key, row, witness);
 
-    planned.push({ key, cachedRow: row, result });
+    planned.push({
+      key,
+      cachedRow: row,
+      witness,
+      planned: planTimeResult,
+      // Replaced in phase B; the plan-time value is only a placeholder that
+      // keeps the record total for TypeScript.
+      applied: planTimeResult,
+    });
   }
 
   if (planned.length === 0) {
     return outcome;
   }
 
-  // Phase A — witness PRE-WRITE (one multi-path update).
+  // Phase A — witness PRE-WRITE (one multi-path update), from the PLAN.
   const preWritePatch: Record<string, unknown> = {};
-  for (const { key, result } of planned) {
+  for (const { key, planned: planTimeResult } of planned) {
     Object.assign(
       preWritePatch,
       buildPreWritePatch(
         `researchEnrichmentProjection/${tenantId}/${key}`,
-        result.witnessPatch.vodPreWrite,
-        result.witnessPatch.stagePreWrite,
+        planTimeResult.witnessPatch.vodPreWrite,
+        planTimeResult.witnessPatch.stagePreWrite,
         targetSetId,
         key,
         nowMs,
@@ -505,49 +677,69 @@ export async function applyEnrichmentProjection(
     await database.ref().update(preWritePatch);
   }
 
-  // Phase B — per-row transactions.
-  for (const { key, cachedRow, result } of planned) {
-    await database.ref(`matches/${tenantId}/${key}`).transaction((current) => {
-      const effective = (current ?? cachedRow) as Record<string, unknown>;
-      // eslint-disable-next-line @typescript-eslint/no-unused-vars -- rest-destructure-to-omit idiom; `vodUrl`/`map` are intentionally discarded (replaced below)
-      const { vodUrl: _ignoredVodUrl, map: _ignoredMap, ...rest } = effective;
-      return {
-        ...rest,
-        map: result.stage,
-        ...(result.vodUrl !== undefined ? { vodUrl: result.vodUrl } : {}),
-      };
-    });
+  // Phase B — per-row transactions, each RE-RESOLVING against the row RTDB
+  // holds at commit time.
+  for (const plan of planned) {
+    const attempts: EnrichedMatchMembersResult[] = [];
+    const transactionResult = await database
+      .ref(`matches/${tenantId}/${plan.key}`)
+      .transaction((current) => {
+        const effective = (current ?? plan.cachedRow) as Record<string, unknown>;
+        const live = resolveForRow(overlay, plan.key, effective, plan.witness);
+        // APPEND, never assign: a retried callback must not be able to
+        // overwrite the record of an earlier attempt, because which attempt
+        // committed is decided below from the committed snapshot.
+        attempts.push(live);
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars -- rest-destructure-to-omit idiom; `vodUrl`/`map` are intentionally discarded (replaced below)
+        const { vodUrl: _ignoredVodUrl, map: _ignoredMap, ...rest } = effective;
+        return {
+          ...rest,
+          map: live.stage,
+          ...(live.vodUrl !== undefined ? { vodUrl: live.vodUrl } : {}),
+        };
+      });
 
+    const committedRow = transactionResult.snapshot.exists()
+      ? (transactionResult.snapshot.val() as Record<string, unknown>)
+      : null;
+    plan.applied =
+      selectCommittedResolution(transactionResult.committed, committedRow, attempts) ??
+      voidedResolution(plan.planned);
+
+    const applied = plan.applied;
     outcome.rows.push({
-      matchKey: key,
-      vodOutcome: result.vodOutcome,
-      stageOutcome: result.stageOutcome,
+      matchKey: plan.key,
+      vodOutcome: applied.vodOutcome,
+      stageOutcome: applied.stageOutcome,
     });
-    if (result.vodOutcome === 'filled-empty') {
+    if (applied.vodOutcome === 'filled-empty') {
       outcome.counts.vodFilledEmpty += 1;
     }
-    if (result.vodOutcome === 'skipped-user-owned') {
+    if (applied.vodOutcome === 'skipped-user-owned') {
       outcome.counts.vodSkippedUserOwned += 1;
     }
-    if (result.stageOutcome === 'enriched') {
+    if (applied.stageOutcome === 'enriched') {
       outcome.counts.stageEnriched += 1;
     }
-    if (result.stageOutcome === 'unknown') {
+    if (applied.stageOutcome === 'unknown') {
       outcome.counts.unknownStageAfterEnrichment += 1;
     }
   }
 
-  // Phase C — witness COMMIT (one multi-path update).
+  // Phase C — witness COMMIT (one multi-path update). The COMMIT action
+  // comes from what phase B actually committed; the PRE-WRITE action comes
+  // from the plan, because that is what phase A wrote and therefore what
+  // needs clearing.
   const commitPatch: Record<string, unknown> = {};
-  for (const { key, result } of planned) {
+  for (const { key, planned: planTimeResult, applied } of planned) {
     Object.assign(
       commitPatch,
       buildCommitPatch(
         `researchEnrichmentProjection/${tenantId}/${key}`,
-        result.witnessPatch.vodCommit,
-        result.witnessPatch.vodPreWrite,
-        result.witnessPatch.stageCommit,
-        result.witnessPatch.stagePreWrite,
+        applied.witnessPatch.vodCommit,
+        planTimeResult.witnessPatch.vodPreWrite,
+        applied.witnessPatch.stageCommit,
+        planTimeResult.witnessPatch.stagePreWrite,
         targetSetId,
         key,
         nowMs,
@@ -567,6 +759,8 @@ export async function applyEnrichmentProjection(
 
 export interface EnrichmentRowOverlay {
   enrichmentVodUrl?: string;
+  /** The VOD's OWN provenance — never the stage observation's (BLOCKER 2). */
+  enrichmentVodSource?: EnrichmentVodSourceInput;
   enrichmentStage?: EnrichedStage;
   witness: EnrichmentOwnershipWitness | null;
 }
@@ -584,13 +778,16 @@ async function readWitness(
 
 function toRowOverlay(
   key: string,
-  enrichedVodUrlByKey: Record<string, string>,
-  enrichedStageByKey: Record<string, EnrichedStage>,
+  overlay: EnrichmentOverlay,
   witness: EnrichmentOwnershipWitness | null,
 ): EnrichmentRowOverlay {
+  const { enrichedVodUrlByKey, enrichedVodSourceByKey, enrichedStageByKey } = overlay;
   return {
     ...(enrichedVodUrlByKey[key] !== undefined
       ? { enrichmentVodUrl: enrichedVodUrlByKey[key] }
+      : {}),
+    ...(enrichedVodSourceByKey?.[key] !== undefined
+      ? { enrichmentVodSource: enrichedVodSourceByKey[key] }
       : {}),
     ...(enrichedStageByKey[key] !== undefined ? { enrichmentStage: enrichedStageByKey[key] } : {}),
     witness,
@@ -627,20 +824,23 @@ export async function readEnrichmentOverlayForSet(
     }
   }
 
-  const { enrichedVodUrlByKey, enrichedStageByKey } = buildEnrichmentOverlay({
+  const setOverlay = buildEnrichmentOverlay({
     targetSetId: storageKey,
     attachments,
     observations: observationsById,
   });
 
-  const keys = new Set([...Object.keys(enrichedVodUrlByKey), ...Object.keys(enrichedStageByKey)]);
+  const keys = new Set([
+    ...Object.keys(setOverlay.enrichedVodUrlByKey),
+    ...Object.keys(setOverlay.enrichedStageByKey),
+  ]);
   const result: EnrichmentOverlayForSet = {};
   for (const key of keys) {
     if (!isPathSafeProviderId(key)) {
       continue;
     }
     const witness = await readWitness(database, tenantId, key);
-    result[key] = toRowOverlay(key, enrichedVodUrlByKey, enrichedStageByKey, witness);
+    result[key] = toRowOverlay(key, setOverlay, witness);
   }
   return result;
 }
@@ -741,20 +941,20 @@ export async function readEnrichmentOverlayForTenant(
     if (!isPathSafeProviderId(targetSetId)) {
       continue;
     }
-    const { enrichedVodUrlByKey, enrichedStageByKey } = buildEnrichmentOverlay({
+    const setOverlay = buildEnrichmentOverlay({
       targetSetId,
       attachments,
       observations: observationsById,
     });
-    const keys = new Set([...Object.keys(enrichedVodUrlByKey), ...Object.keys(enrichedStageByKey)]);
+    const keys = new Set([
+      ...Object.keys(setOverlay.enrichedVodUrlByKey),
+      ...Object.keys(setOverlay.enrichedStageByKey),
+    ]);
     for (const key of keys) {
       if (!isPathSafeProviderId(key)) {
         continue;
       }
-      result.set(
-        key,
-        toRowOverlay(key, enrichedVodUrlByKey, enrichedStageByKey, witnessByKey[key] ?? null),
-      );
+      result.set(key, toRowOverlay(key, setOverlay, witnessByKey[key] ?? null));
     }
   }
   return result;

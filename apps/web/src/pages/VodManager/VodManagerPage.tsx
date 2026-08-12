@@ -1428,8 +1428,12 @@ export function VodManagerPage() {
 
               {selectedMatch && (
                 <div data-testid="vod-match-meta">
+                  {/* 30.2 gap-closure BLOCKER 2: the VOD half only — a
+                      stage-only-enriched match must render no VOD badge
+                      here, and a both-enriched one must link to the VOD
+                      observation's page, not the stage observation's. */}
                   <LiquipediaAttributionBadge
-                    attribution={enrichmentAttribution[selectedMatch.id]}
+                    attribution={enrichmentAttribution[selectedMatch.id]?.vod}
                     variant="vod"
                   />
                   <SelectedMatchMeta

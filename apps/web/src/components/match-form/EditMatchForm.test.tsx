@@ -130,7 +130,9 @@ describe('EditMatchForm', () => {
   describe('Liquipedia attribution (Phase 30.2 Plan 11, ENR-09)', () => {
     it("shows a note under the VOD input when the current value is source-owned, stating that saving makes it the user's own", async () => {
       enrichmentAttribution.mockResolvedValue({
-        attributions: [{ matchKey: 'm1', sourcePageUrl: 'https://liquipedia.net/smash/Some_Page' }],
+        attributions: [
+          { matchKey: 'm1', vod: { sourcePageUrl: 'https://liquipedia.net/smash/Some_Page' } },
+        ],
       });
       renderEditMatchForm(makeMatch({ vodUrl: 'https://youtube.com/watch?v=abc123' }));
 
@@ -139,6 +141,26 @@ describe('EditMatchForm', () => {
 
     it('renders no note for a user-entered value (no attribution record)', async () => {
       renderEditMatchForm(makeMatch({ vodUrl: 'https://youtube.com/watch?v=abc123' }));
+
+      await waitFor(() => expect(enrichmentAttribution).toHaveBeenCalled());
+      expect(screen.queryByTestId('edit-match-vod-source-owned-note')).not.toBeInTheDocument();
+    });
+
+    // 30.2 gap-closure BLOCKER 2.
+    it('renders no note when only the STAGE was enriched — the VOD is still the user’s own', async () => {
+      enrichmentAttribution.mockResolvedValue({
+        attributions: [
+          {
+            matchKey: 'm1',
+            stage: {
+              sourcePageUrl: 'https://liquipedia.net/smash/Bracket_Page',
+              rawStage: 'Battlefield',
+              stageForm: 'normal',
+            },
+          },
+        ],
+      });
+      renderEditMatchForm(makeMatch({ vodUrl: 'https://youtube.com/watch?v=user-typed' }));
 
       await waitFor(() => expect(enrichmentAttribution).toHaveBeenCalled());
       expect(screen.queryByTestId('edit-match-vod-source-owned-note')).not.toBeInTheDocument();

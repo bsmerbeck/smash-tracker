@@ -1,11 +1,14 @@
 import type { Database } from 'firebase-admin/database';
 import { describe, expect, it } from 'vitest';
-import type {
-  MatchRecord,
-  ResearchEnrichmentAttachmentRecord,
-  ResearchEnrichmentObservationRecord,
+import {
+  isSourceOwnedVodValue,
+  type EnrichmentOwnershipWitness,
+  type MatchRecord,
+  type ResearchEnrichmentAttachmentRecord,
+  type ResearchEnrichmentObservationRecord,
 } from '@smash-tracker/shared';
 import { FakeDatabase } from '../../test-support/fakeDatabase.js';
+import { ConcurrentEditDatabase } from '../../test-support/concurrentEditDatabase.js';
 import {
   FaultInjectingDatabase,
   FaultInjectedError,
@@ -22,8 +25,28 @@ import {
 
 const TENANT_ID = 'tenant-1';
 
-function asDatabase(database: FakeDatabase | FaultInjectingDatabase): Database {
+function asDatabase(
+  database: FakeDatabase | FaultInjectingDatabase | ConcurrentEditDatabase,
+): Database {
   return database as unknown as Database;
+}
+
+function readRow(database: FakeDatabase, key: string): MatchRecord {
+  return (
+    (database.dump().matches as Record<string, unknown>)[TENANT_ID] as Record<string, unknown>
+  )[key] as MatchRecord;
+}
+
+function readWitnessRecord(
+  database: FakeDatabase,
+  key: string,
+): (EnrichmentOwnershipWitness & Record<string, unknown>) | undefined {
+  const tree = database.dump().researchEnrichmentProjection as Record<string, unknown> | undefined;
+  if (tree === undefined) {
+    return undefined;
+  }
+  return (tree[TENANT_ID] as Record<string, unknown>)[key] as
+    (EnrichmentOwnershipWitness & Record<string, unknown>) | undefined;
 }
 
 function seedMatch(database: FakeDatabase, key: string, record: Partial<MatchRecord>): void {
@@ -184,6 +207,39 @@ describe('buildEnrichmentOverlay', () => {
     for (const key of gfKeys) {
       expect(resetKeys.has(key)).toBe(false);
     }
+  });
+
+  it("records each VOD entry's OWN provenance, taken from the observation that carried the URL", () => {
+    const targetSetId = 'startgg-set-vod-provenance';
+    const observation = makeObservation({
+      observationId: 'obs-vod-provenance',
+      sourceRevisionId: 777,
+      parserVersion: 'liquipedia-vodlist@2',
+      vodUrl: 'https://youtube.example/set',
+      games: [{ ordinal: 1 }, { ordinal: 2 }],
+    });
+    const overlay = buildEnrichmentOverlay({
+      targetSetId,
+      attachments: [
+        {
+          observationId: 'obs-vod-provenance',
+          targetSetId,
+          attachmentSource: 'admin',
+          attachedAtMs: 1,
+          sourceRevisionId: 777,
+          sourceContentHash: 'a'.repeat(64),
+          parserVersion: 'liquipedia-vodlist@2',
+          confirmedByUid: 'admin-1',
+          confirmedAtMs: 1,
+        },
+      ],
+      observations: { 'obs-vod-provenance': observation },
+    });
+    expect(overlay.enrichedVodSourceByKey?.[deriveEnrichmentMatchRowKey(targetSetId, 2)]).toEqual({
+      observationId: 'obs-vod-provenance',
+      sourceRevisionId: 777,
+      parserVersion: 'liquipedia-vodlist@2',
+    });
   });
 
   it('an unattached observation produces no candidate key at all', () => {
@@ -411,6 +467,191 @@ describe('applyEnrichmentProjection', () => {
       unknown
     >;
     expect((row[key] as MatchRecord).vodUrl).toBeUndefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Write-time ownership resolution (30.2 gap-closure BLOCKER 1)
+//
+// Every test here injects a FOREIGN write (a user editing their own match
+// row) that lands AFTER the planning reads and AFTER phase A's witness
+// pre-write, but BEFORE that row's phase B transaction. A plan-time-only
+// resolver overwrites the user's value in every one of them; a write-time
+// resolver preserves it.
+// ---------------------------------------------------------------------------
+
+describe('applyEnrichmentProjection — write-time ownership resolution', () => {
+  const USER_URL = 'https://user-typed.example/their-own-clip';
+  const LIQUIPEDIA_URL = 'https://liquipedia/vod';
+
+  it('a user VOD edit landing between the witness pre-write and the row transaction is PRESERVED, and no witness vouches for it', async () => {
+    const database = new FakeDatabase();
+    const targetSetId = 'startgg-set-interleave-vod';
+    const key = deriveEnrichmentMatchRowKey(targetSetId, 1);
+    // Empty at PLAN time — the plan therefore decides "fill-empty".
+    seedMatch(database, key, {});
+
+    const overlay: EnrichmentOverlay = {
+      enrichedVodUrlByKey: { [key]: LIQUIPEDIA_URL },
+      enrichedStageByKey: {},
+    };
+    const interleaved = new ConcurrentEditDatabase(database, {
+      path: `matches/${TENANT_ID}/${key}`,
+      edit: () => seedMatch(database, key, { vodUrl: USER_URL }),
+    });
+
+    const outcome = await applyEnrichmentProjection(
+      asDatabase(interleaved),
+      TENANT_ID,
+      targetSetId,
+      overlay,
+      1000,
+    );
+
+    expect(interleaved.editApplied).toBe(true);
+    // ENR-08/D-21: a user-entered URL may NEVER be overwritten.
+    expect(readRow(database, key).vodUrl).toBe(USER_URL);
+    expect(outcome.rows).toEqual([
+      { matchKey: key, vodOutcome: 'skipped-user-owned', stageOutcome: 'unknown' },
+    ]);
+    expect(outcome.counts.vodFilledEmpty).toBe(0);
+    expect(outcome.counts.vodSkippedUserOwned).toBe(1);
+
+    // The pending witness written in phase A was VOIDED, not promoted.
+    const witness = readWitnessRecord(database, key);
+    expect(witness?.projectedVodUrl).toBeUndefined();
+    expect(witness?.pendingVodUrl).toBeUndefined();
+    expect(isSourceOwnedVodValue(USER_URL, witness ?? null)).toBe(false);
+  });
+
+  it('a user stage edit landing in the same window wins over the enrichment stage that the plan had chosen for the unknown sentinel', async () => {
+    const database = new FakeDatabase();
+    const targetSetId = 'startgg-set-interleave-stage';
+    const key = deriveEnrichmentMatchRowKey(targetSetId, 1);
+    // No `map` member at all — the provider slot is the unknown sentinel, so
+    // the plan decides "enriched" with the Liquipedia stage.
+    seedMatch(database, key, {});
+
+    const overlay: EnrichmentOverlay = {
+      enrichedVodUrlByKey: {},
+      enrichedStageByKey: {
+        [key]: {
+          canonicalStageId: 3,
+          raw: 'FD',
+          observationId: 'obs-stage',
+          sourceRevisionId: 500,
+          parserVersion: 'p@1',
+        },
+      },
+    };
+    const userStage = { id: 1, name: 'Battlefield' };
+    const interleaved = new ConcurrentEditDatabase(database, {
+      path: `matches/${TENANT_ID}/${key}`,
+      edit: () => seedMatch(database, key, { map: userStage }),
+    });
+
+    const outcome = await applyEnrichmentProjection(
+      asDatabase(interleaved),
+      TENANT_ID,
+      targetSetId,
+      overlay,
+      1000,
+    );
+
+    expect(interleaved.editApplied).toBe(true);
+    expect(readRow(database, key).map).toEqual(userStage);
+    expect(outcome.rows[0]?.stageOutcome).toBe('provider-authoritative');
+    expect(outcome.counts.stageEnriched).toBe(0);
+
+    const witness = readWitnessRecord(database, key);
+    expect(witness?.projectedStageId).toBeUndefined();
+    expect(witness?.projectedStageRaw).toBeUndefined();
+    expect(witness?.pendingStageId).toBeUndefined();
+    expect(witness?.pendingStageRaw).toBeUndefined();
+  });
+
+  it('when the plan-time and write-time resolutions differ, the COMMITTED snapshot decides the outcome, the counters and the witness', async () => {
+    const database = new FakeDatabase();
+    const targetSetId = 'startgg-set-committed-wins';
+    const key = deriveEnrichmentMatchRowKey(targetSetId, 1);
+    const sourceOldUrl = 'https://liquipedia/old';
+    const sourceNewUrl = 'https://liquipedia/new';
+
+    // At PLAN time the row holds a SOURCE-owned value the witness vouches
+    // for, and the overlay supplies a different one — the plan therefore
+    // decides "source-corrected" and pre-writes a pending witness for the
+    // new URL. The user then replaces the value before the transaction runs.
+    seedMatch(database, key, { vodUrl: sourceOldUrl });
+    database.seed(`researchEnrichmentProjection/${TENANT_ID}/${key}`, {
+      matchKey: key,
+      targetSetId,
+      projectedVodUrl: sourceOldUrl,
+    });
+
+    const overlay: EnrichmentOverlay = {
+      enrichedVodUrlByKey: { [key]: sourceNewUrl },
+      enrichedStageByKey: {},
+    };
+    const interleaved = new ConcurrentEditDatabase(database, {
+      path: `matches/${TENANT_ID}/${key}`,
+      edit: () => seedMatch(database, key, { vodUrl: USER_URL }),
+    });
+
+    const outcome = await applyEnrichmentProjection(
+      asDatabase(interleaved),
+      TENANT_ID,
+      targetSetId,
+      overlay,
+      2000,
+    );
+
+    expect(readRow(database, key).vodUrl).toBe(USER_URL);
+    // The PLAN said 'source-corrected'; only the committed write counts.
+    expect(outcome.rows[0]?.vodOutcome).toBe('skipped-user-owned');
+    expect(outcome.counts.vodSkippedUserOwned).toBe(1);
+
+    const witness = readWitnessRecord(database, key);
+    // The pending half for the never-written correction is cleared.
+    expect(witness?.pendingVodUrl).toBeUndefined();
+    // The committed half is untouched — it still names the OLD source value,
+    // which is no longer on the row and therefore vouches for nothing. That
+    // is the whole point of `isSourceOwnedVodValue`'s value comparison: a
+    // residual witness can never launder a user value into a source-owned one.
+    expect(witness?.projectedVodUrl).toBe(sourceOldUrl);
+    expect(isSourceOwnedVodValue(USER_URL, witness ?? null)).toBe(false);
+  });
+
+  it('with no interleaving, the committed-snapshot selection reproduces the ordinary fill and stamps the VOD half of the witness from the VOD observation', async () => {
+    const database = new FakeDatabase();
+    const targetSetId = 'startgg-set-committed-fill';
+    const key = deriveEnrichmentMatchRowKey(targetSetId, 1);
+    seedMatch(database, key, {});
+
+    const overlay: EnrichmentOverlay = {
+      enrichedVodUrlByKey: { [key]: LIQUIPEDIA_URL },
+      enrichedVodSourceByKey: {
+        [key]: { observationId: 'obs-vod', sourceRevisionId: 700, parserVersion: 'vod@1' },
+      },
+      enrichedStageByKey: {},
+    };
+
+    const outcome = await applyEnrichmentProjection(
+      asDatabase(database),
+      TENANT_ID,
+      targetSetId,
+      overlay,
+      1000,
+    );
+
+    expect(outcome.counts.vodFilledEmpty).toBe(1);
+    expect(readRow(database, key).vodUrl).toBe(LIQUIPEDIA_URL);
+
+    const witness = readWitnessRecord(database, key);
+    expect(witness?.projectedVodUrl).toBe(LIQUIPEDIA_URL);
+    expect(witness?.vodObservationId).toBe('obs-vod');
+    expect(witness?.vodSourceRevisionId).toBe(700);
+    expect(witness?.vodParserVersion).toBe('vod@1');
+    expect(isSourceOwnedVodValue(LIQUIPEDIA_URL, witness ?? null)).toBe(true);
   });
 });
 

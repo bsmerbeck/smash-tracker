@@ -144,9 +144,11 @@ describe('MatchTable — Liquipedia attribution (Phase 30.2 Plan 11, ENR-09)', (
       attributions: [
         {
           matchKey: 'm1',
-          sourcePageUrl: 'https://liquipedia.net/smash/Some_Page',
-          rawStage: 'Battlefield',
-          stageForm: 'normal',
+          stage: {
+            sourcePageUrl: 'https://liquipedia.net/smash/Some_Page',
+            rawStage: 'Battlefield',
+            stageForm: 'normal',
+          },
         },
       ],
     });
@@ -157,9 +159,11 @@ describe('MatchTable — Liquipedia attribution (Phase 30.2 Plan 11, ENR-09)', (
     expect(screen.getByText('Stage data from Liquipedia')).toBeInTheDocument();
   });
 
-  it('renders no badge for a row whose stage came from start.gg (no rawStage on the attribution entry)', async () => {
+  it('renders no badge for a row whose stage came from start.gg (a VOD-only entry has no stage half)', async () => {
     enrichmentAttribution.mockResolvedValue({
-      attributions: [{ matchKey: 'm1', sourcePageUrl: 'https://liquipedia.net/smash/Some_Page' }],
+      attributions: [
+        { matchKey: 'm1', vod: { sourcePageUrl: 'https://liquipedia.net/smash/Some_Page' } },
+      ],
     });
     renderTable([makeMatch({ id: 'm1' })]);
 
@@ -175,7 +179,9 @@ describe('MatchTable — Liquipedia attribution (Phase 30.2 Plan 11, ENR-09)', (
 
   it('shows a source-link item in the VOD menu alongside the existing items when the VOD came from Liquipedia, and the existing items are unchanged', async () => {
     enrichmentAttribution.mockResolvedValue({
-      attributions: [{ matchKey: 'm1', sourcePageUrl: 'https://liquipedia.net/smash/Some_Page' }],
+      attributions: [
+        { matchKey: 'm1', vod: { sourcePageUrl: 'https://liquipedia.net/smash/Some_Page' } },
+      ],
     });
     renderTable([makeMatch({ id: 'm1', vodUrl: 'https://youtu.be/abc123' })]);
     await settleEnrichmentAttribution();
@@ -185,5 +191,49 @@ describe('MatchTable — Liquipedia attribution (Phase 30.2 Plan 11, ENR-09)', (
     expect(within(menu).getByText('Edit VOD link')).toBeInTheDocument();
     expect(within(menu).getByText('Remove VOD link')).toBeInTheDocument();
     expect(within(menu).getByText('View source')).toBeInTheDocument();
+  });
+
+  // 30.2 gap-closure BLOCKER 2 --------------------------------------------
+
+  it('shows NO source-link item in the VOD menu for a STAGE-only-enriched row whose VOD the user typed themselves', async () => {
+    enrichmentAttribution.mockResolvedValue({
+      attributions: [
+        {
+          matchKey: 'm1',
+          stage: {
+            sourcePageUrl: 'https://liquipedia.net/smash/Bracket_Page',
+            rawStage: 'Battlefield',
+            stageForm: 'normal',
+          },
+        },
+      ],
+    });
+    renderTable([makeMatch({ id: 'm1', vodUrl: 'https://youtu.be/user-typed' })]);
+    await settleEnrichmentAttribution();
+
+    const menu = await openDropdownMenu('Watch VOD');
+    expect(within(menu).queryByText('View source')).not.toBeInTheDocument();
+    // The stage badge still renders — the two halves are independent.
+    expect(screen.getByTestId('liquipedia-attribution-badge')).toBeInTheDocument();
+  });
+
+  it("the stage badge's href is the STAGE page even when the row's VOD came from a different page", async () => {
+    enrichmentAttribution.mockResolvedValue({
+      attributions: [
+        {
+          matchKey: 'm1',
+          stage: {
+            sourcePageUrl: 'https://liquipedia.net/smash/Bracket_Page',
+            rawStage: 'Battlefield',
+            stageForm: 'normal',
+          },
+          vod: { sourcePageUrl: 'https://liquipedia.net/smash/Vod_Page' },
+        },
+      ],
+    });
+    renderTable([makeMatch({ id: 'm1', vodUrl: 'https://youtu.be/abc123' })]);
+
+    const anchor = await screen.findByTestId('liquipedia-attribution-link');
+    expect(anchor).toHaveAttribute('href', 'https://liquipedia.net/smash/Bracket_Page');
   });
 });

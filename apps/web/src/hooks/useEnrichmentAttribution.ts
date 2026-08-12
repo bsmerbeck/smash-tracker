@@ -41,6 +41,15 @@ export function enrichmentAttributionQueryKey(keys: string[]) {
  * `query.data` (never `query.error`) means a failed chunk contributes
  * nothing rather than surfacing an error state to the caller.
  *
+ * RETURNS THE TWO HALVES, UNMERGED (30.2 gap-closure BLOCKER 2). Each entry
+ * carries an independent `stage` and `vod` half, and a consumer must read
+ * ONLY the half for the field it is describing: a VOD surface reads
+ * `entry.vod`, a stage rendering reads `entry.stage`. This hook deliberately
+ * offers no "is this match attributed at all" convenience — that question is
+ * exactly the one whose answer was wrong before (an entry's mere existence
+ * was read as "this row's vodUrl came from Liquipedia", mislabelling a
+ * user-entered VOD on a stage-only-enriched row).
+ *
  * Folds the per-chunk results via `useQueries`' own `combine` option rather
  * than a hand-rolled `useMemo` over `queries.map(q => q.data)`: the number
  * of chunks (and therefore the length of that mapped array) varies with

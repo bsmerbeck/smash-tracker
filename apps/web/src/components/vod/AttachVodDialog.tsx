@@ -60,9 +60,13 @@ export function AttachVodDialog({
   // value (a Liquipedia URL never overwrites a blank field silently — this
   // hint is about an EXISTING prefilled value, not a suggestion), and the
   // field stays fully editable either way.
+  //
+  // 30.2 gap-closure BLOCKER 2: reads the VOD HALF ONLY. Under the previous
+  // single-slot shape a STAGE-only witness produced an entry, and this hint
+  // then told the user their OWN typed URL had come from Liquipedia.
   const matchKeys = useMemo(() => [match.id], [match.id]);
   const attribution = useEnrichmentAttribution(matchKeys);
-  const showPrefilledHint = match.vodUrl != null && attribution[match.id] != null;
+  const showPrefilledHint = match.vodUrl != null && attribution[match.id]?.vod != null;
 
   function handleOpenChange(next: boolean) {
     onOpenChange(next);

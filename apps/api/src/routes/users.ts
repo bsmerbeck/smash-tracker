@@ -79,14 +79,30 @@ async function readEnrichmentWitnessForKey(
 }
 
 /**
- * Builds ONE attribution entry for a match key that carries a witness.
- * Prefers the STAGE half of the witness (source page identity, raw stage
- * text, stage form) and falls back to the VOD half's observation/revision
- * only when no stage half exists — `rawStage`/`stageForm` are stage-only
- * concepts and are never populated from a VOD-only witness. Reads the
- * referenced observation ONLY for `sourcePageTitle`/`sourcePageUrl` — the
- * witness itself stores neither, only an observation id, a revision id and
- * a parser version (`researchEnrichmentProjection.ts`'s own doc comment).
+ * Builds ONE attribution entry for a match key that carries a witness, as
+ * TWO INDEPENDENT HALVES (30.2 gap-closure BLOCKER 2).
+ *
+ * The previous single-slot build used `stageObservationId ??
+ * vodObservationId` and emitted one flat set of members. That collapsed two
+ * genuinely independent facts into one, and both directions of the collapse
+ * were user-visible: a STAGE-ONLY witness made every VOD surface claim the
+ * row's `vodUrl` was source-filled (mislabelling a user-entered VOD as
+ * Liquipedia-derived), and a row enriched on BOTH fields reported the STAGE
+ * observation's page as the one and only `sourcePageUrl`, so the VOD badge
+ * linked to the wrong page.
+ *
+ * Each half is now built ONLY from its own witness members, and reads ONLY
+ * its own observation for the page identity the witness does not store
+ * (`researchEnrichmentProjection.ts`'s own doc comment). When both halves
+ * name the SAME observation the read is done once and shared; when they name
+ * different observations both are read. A half with no source claim on that
+ * field is ABSENT, never an empty object — that absence is exactly the
+ * signal a field's surface uses to render nothing.
+ *
+ * The VOD half's presence deliberately also admits `projectedVodUrl`
+ * alone: `resolveEnrichedMatchMembers` documents that a caller with less
+ * provenance still stamps a thinner witness, and such a row IS source-owned
+ * even though no page can be linked for it.
  */
 async function buildEnrichmentAttributionEntry(
   database: Database,
@@ -94,21 +110,65 @@ async function buildEnrichmentAttributionEntry(
   matchKey: string,
   witness: ResearchEnrichmentProjectionStateRecord,
 ): Promise<ResearchEnrichmentAttributionResponse['attributions'][number]> {
-  const observationId = witness.stageObservationId ?? witness.vodObservationId ?? null;
-  const observation = observationId
-    ? await readEnrichmentObservation(database, tenantId, observationId)
-    : null;
-  const sourceRevisionId = witness.stageSourceRevisionId ?? witness.vodSourceRevisionId ?? null;
+  const hasStageClaim =
+    witness.stageObservationId != null ||
+    witness.stageSourceRevisionId != null ||
+    witness.projectedStageId != null ||
+    witness.projectedStageRaw != null ||
+    witness.projectedStageForm != null;
+  const hasVodClaim =
+    witness.vodObservationId != null ||
+    witness.vodSourceRevisionId != null ||
+    witness.projectedVodUrl != null;
+
+  const stageObservation =
+    hasStageClaim && witness.stageObservationId != null
+      ? await readEnrichmentObservation(database, tenantId, witness.stageObservationId)
+      : null;
+  let vodObservation: Awaited<ReturnType<typeof readEnrichmentObservation>> = null;
+  if (hasVodClaim && witness.vodObservationId != null) {
+    vodObservation =
+      witness.vodObservationId === witness.stageObservationId
+        ? stageObservation
+        : await readEnrichmentObservation(database, tenantId, witness.vodObservationId);
+  }
 
   return {
     matchKey,
-    ...(observation?.sourcePageTitle != null
-      ? { sourcePageTitle: observation.sourcePageTitle }
+    ...(hasStageClaim
+      ? {
+          stage: {
+            ...(stageObservation?.sourcePageTitle != null
+              ? { sourcePageTitle: stageObservation.sourcePageTitle }
+              : {}),
+            ...(stageObservation?.sourcePageUrl != null
+              ? { sourcePageUrl: stageObservation.sourcePageUrl }
+              : {}),
+            ...(witness.stageSourceRevisionId != null
+              ? { sourceRevisionId: witness.stageSourceRevisionId }
+              : {}),
+            ...(witness.projectedStageRaw != null ? { rawStage: witness.projectedStageRaw } : {}),
+            ...(witness.projectedStageForm != null
+              ? { stageForm: witness.projectedStageForm }
+              : {}),
+          },
+        }
       : {}),
-    ...(observation?.sourcePageUrl != null ? { sourcePageUrl: observation.sourcePageUrl } : {}),
-    ...(sourceRevisionId != null ? { sourceRevisionId } : {}),
-    ...(witness.projectedStageRaw != null ? { rawStage: witness.projectedStageRaw } : {}),
-    ...(witness.projectedStageForm != null ? { stageForm: witness.projectedStageForm } : {}),
+    ...(hasVodClaim
+      ? {
+          vod: {
+            ...(vodObservation?.sourcePageTitle != null
+              ? { sourcePageTitle: vodObservation.sourcePageTitle }
+              : {}),
+            ...(vodObservation?.sourcePageUrl != null
+              ? { sourcePageUrl: vodObservation.sourcePageUrl }
+              : {}),
+            ...(witness.vodSourceRevisionId != null
+              ? { sourceRevisionId: witness.vodSourceRevisionId }
+              : {}),
+          },
+        }
+      : {}),
   };
 }
 
@@ -357,9 +417,16 @@ const usersRoutes: FastifyPluginAsyncZod = async (app) => {
         if (!witness) {
           continue;
         }
-        attributions.push(
-          await buildEnrichmentAttributionEntry(database, request.uid, key, witness),
-        );
+        const entry = await buildEnrichmentAttributionEntry(database, request.uid, key, witness);
+        // A witness record can survive with NEITHER half claimed (every
+        // pending member cleared without a commit — see the enrichment
+        // applier's `voidedResolution`). Such a record attributes nothing,
+        // so it is omitted rather than shipped as a bare `{ matchKey }` a
+        // consumer might mistake for a source claim.
+        if (entry.stage == null && entry.vod == null) {
+          continue;
+        }
+        attributions.push(entry);
       }
 
       return reply.code(200).send({ attributions });

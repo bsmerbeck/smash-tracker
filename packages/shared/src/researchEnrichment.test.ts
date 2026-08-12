@@ -557,35 +557,70 @@ describe('researchEnrichmentConfirmRequestSchema', () => {
 });
 
 describe('researchEnrichmentAttributionResponseSchema', () => {
-  it('accepts an attribution entry with only witness-derived fields (no observation lookup available)', () => {
+  it('accepts a stage half with only witness-derived fields (no observation lookup available)', () => {
     expect(
       researchEnrichmentAttributionResponseSchema.safeParse({
         attributions: [
           {
             matchKey: 'set-1-1',
-            rawStage: 'Battlefield',
-            stageForm: 'normal',
+            stage: { rawStage: 'Battlefield', stageForm: 'normal' },
           },
         ],
       }).success,
     ).toBe(true);
   });
 
-  it('accepts an attribution entry carrying the full source-page identity', () => {
-    expect(
-      researchEnrichmentAttributionResponseSchema.safeParse({
-        attributions: [
-          {
-            matchKey: 'set-1-1',
-            sourcePageTitle: 'Supernova/2026',
-            sourcePageUrl: 'https://liquipedia.net/smash/Supernova/2026',
+  it('accepts an entry carrying the full source-page identity on both halves independently', () => {
+    const parsed = researchEnrichmentAttributionResponseSchema.safeParse({
+      attributions: [
+        {
+          matchKey: 'set-1-1',
+          stage: {
+            sourcePageTitle: 'Supernova/2026 Bracket',
+            sourcePageUrl: 'https://liquipedia.net/smash/Supernova/2026_Bracket',
             sourceRevisionId: 12345,
             rawStage: 'Battlefield',
             stageForm: 'normal',
           },
-        ],
-      }).success,
-    ).toBe(true);
+          vod: {
+            sourcePageTitle: 'Supernova/2026 VODs',
+            sourcePageUrl: 'https://liquipedia.net/smash/Supernova/2026_VODs',
+            sourceRevisionId: 999,
+          },
+        },
+      ],
+    });
+    expect(parsed.success).toBe(true);
+    // 30.2 gap-closure BLOCKER 2: the two halves are INDEPENDENT — the VOD
+    // half never inherits the stage observation's page.
+    expect(parsed.data?.attributions[0]?.vod?.sourcePageUrl).toBe(
+      'https://liquipedia.net/smash/Supernova/2026_VODs',
+    );
+    expect(parsed.data?.attributions[0]?.stage?.sourcePageUrl).toBe(
+      'https://liquipedia.net/smash/Supernova/2026_Bracket',
+    );
+  });
+
+  it('accepts a VOD-only entry, and its half carries no stage-only members', () => {
+    const parsed = researchEnrichmentAttributionResponseSchema.safeParse({
+      attributions: [
+        {
+          matchKey: 'set-1-1',
+          vod: { sourcePageUrl: 'https://liquipedia.net/smash/Supernova/2026_VODs' },
+        },
+      ],
+    });
+    expect(parsed.success).toBe(true);
+    expect(parsed.data?.attributions[0]?.stage).toBeUndefined();
+    // `rawStage` is not a member of the VOD half's schema at all — an
+    // attempt to smuggle one through is stripped, never surfaced.
+    const smuggled = researchEnrichmentAttributionResponseSchema.safeParse({
+      attributions: [{ matchKey: 'set-1-1', vod: { rawStage: 'Battlefield' } }],
+    });
+    expect(smuggled.success).toBe(true);
+    expect(
+      Object.prototype.hasOwnProperty.call(smuggled.data?.attributions[0]?.vod ?? {}, 'rawStage'),
+    ).toBe(false);
   });
 
   it('rejects a response with more than 200 attribution entries', () => {

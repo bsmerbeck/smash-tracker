@@ -371,6 +371,9 @@ export function mergePreservedMatchMembers(
       existingVodUrl,
       providerVodUrl,
       enrichmentVodUrl: enrichmentOverlay.enrichmentVodUrl,
+      ...(enrichmentOverlay.enrichmentVodSource !== undefined
+        ? { enrichmentVodSource: enrichmentOverlay.enrichmentVodSource }
+        : {}),
       providerStage: next.map ?? UNKNOWN_STAGE,
       enrichmentStage: enrichmentOverlay.enrichmentStage,
       witness: enrichmentOverlay.witness ?? null,

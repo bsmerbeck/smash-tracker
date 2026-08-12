@@ -249,20 +249,17 @@ export function MatchTable({
         header: columnLabel(t, 'stage'),
         accessorFn: (row) => row.stage,
         cell: ({ row }) => {
-          // Phase 30.2 Plan 11 (ENR-09): `rawStage`/`stageForm` are STAGE-only
-          // members of the attribution entry (never populated from a
-          // VOD-only witness, `apps/api/src/routes/users.ts`'s own doc
-          // comment) — this is the precise signal that distinguishes "this
-          // row's STAGE came from Liquipedia" from a match enriched only on
-          // its VOD field, so a start.gg-sourced stage never renders the
-          // badge even when the row also carries a VOD attribution.
-          const record = attribution[row.original.match.id];
-          const isStageAttributed = record?.rawStage != null;
+          // Phase 30.2 Plan 11 (ENR-09), 30.2 gap-closure BLOCKER 2: the
+          // STAGE HALF's mere presence is now the precise signal that this
+          // row's stage came from Liquipedia — it is built only from the
+          // witness's stage members, so a match enriched solely on its VOD
+          // field produces no stage half and no badge here.
+          const stageHalf = attribution[row.original.match.id]?.stage;
           return (
             <div className="flex flex-col gap-0.5">
               <span>{row.original.stage}</span>
-              {isStageAttributed && (
-                <LiquipediaAttributionBadge attribution={record ?? null} variant="stage" />
+              {stageHalf != null && (
+                <LiquipediaAttributionBadge attribution={stageHalf} variant="stage" />
               )}
             </div>
           );
@@ -306,13 +303,13 @@ export function MatchTable({
         cell: ({ row }) => {
           const hasVod = row.original.match.vodUrl != null;
           const source = row.original.match.source;
-          // Phase 30.2 Plan 11 (ENR-09): no VOD-specific signal exists in the
-          // attribution schema distinct from a stage-half signal (see the
-          // doc comment on the 'stage' column's cell above) — any attribution
-          // record present for a VOD-bearing row is treated as covering that
-          // row's VOD for this menu item's purposes, matching this row's
-          // sibling surfaces (the attach dialog hint, the edit form note).
-          const vodAttribution = attribution[row.original.match.id];
+          // Phase 30.2 Plan 11 (ENR-09), 30.2 gap-closure BLOCKER 2: the VOD
+          // HALF, and only it. Its `sourcePageUrl` is the VOD observation's
+          // own page — under the previous single-slot shape this menu item
+          // opened the STAGE observation's page whenever both fields were
+          // enriched, and appeared at all for stage-only-enriched rows whose
+          // VOD the user had typed themselves.
+          const vodAttribution = attribution[row.original.match.id]?.vod;
           return (
             <div className="flex items-center justify-end gap-2">
               {hasVod ? (
