@@ -169,6 +169,18 @@ describe('resolveEnrichedMatchMembers - VOD', () => {
     expect(result.witnessPatch.vodCommit).toEqual({ kind: 'none' });
   });
 
+  it('fills an empty existing VOD from an enrichment URL with no per-row provenance metadata (buildEnrichmentOverlay returns a plain string map)', () => {
+    const result = resolveEnrichedMatchMembers(
+      baseInput({ enrichmentVodUrl: 'https://liquipedia/vod' }),
+    );
+    expect(result.vodUrl).toBe('https://liquipedia/vod');
+    expect(result.vodOutcome).toBe('filled-empty');
+    expect(result.witnessPatch.vodPreWrite).toEqual({
+      kind: 'set',
+      write: { url: 'https://liquipedia/vod' },
+    });
+  });
+
   it('a provider VOD winning over a STALE enrichment witness claim releases it', () => {
     const witness: EnrichmentOwnershipWitness = { projectedVodUrl: 'https://liquipedia/stale' };
     const result = resolveEnrichedMatchMembers(

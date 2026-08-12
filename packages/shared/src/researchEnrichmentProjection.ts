@@ -148,10 +148,18 @@ export type EnrichmentOwnershipWitness = Omit<
   'matchKey' | 'targetSetId'
 >;
 
+/**
+ * All members are individually optional (not just the whole object) because
+ * `apps/api/src/research/enrichment/projection.ts`'s `buildEnrichmentOverlay`
+ * deliberately returns `enrichedVodUrlByKey` as a plain `Record<string,
+ * string>` — a set-level VOD URL with no per-row provenance breakdown. A
+ * caller with less provenance than it would like still gets a correct
+ * fill/correct/remove decision; it just stamps a thinner witness record.
+ */
 export interface EnrichmentVodSourceInput {
-  observationId: string;
-  sourceRevisionId: number;
-  parserVersion: string;
+  observationId?: string;
+  sourceRevisionId?: number;
+  parserVersion?: string;
 }
 
 export interface EnrichmentStageSourceInput {
@@ -261,12 +269,12 @@ function resolveVod(input: EnrichedMatchMembersInput): VodResolution {
           : { kind: 'none' },
       };
     }
-    if (!isEmptyString(enrichmentVodUrl) && enrichmentVodSource) {
+    if (!isEmptyString(enrichmentVodUrl)) {
       const write: EnrichmentVodWitnessWrite = {
         url: enrichmentVodUrl!,
-        observationId: enrichmentVodSource.observationId,
-        sourceRevisionId: enrichmentVodSource.sourceRevisionId,
-        parserVersion: enrichmentVodSource.parserVersion,
+        observationId: enrichmentVodSource?.observationId,
+        sourceRevisionId: enrichmentVodSource?.sourceRevisionId,
+        parserVersion: enrichmentVodSource?.parserVersion,
       };
       return {
         url: enrichmentVodUrl,
@@ -318,12 +326,12 @@ function resolveVod(input: EnrichedMatchMembersInput): VodResolution {
     };
   }
 
-  if (!isEmptyString(enrichmentVodUrl) && enrichmentVodSource) {
+  if (!isEmptyString(enrichmentVodUrl)) {
     const write: EnrichmentVodWitnessWrite = {
       url: enrichmentVodUrl!,
-      observationId: enrichmentVodSource.observationId,
-      sourceRevisionId: enrichmentVodSource.sourceRevisionId,
-      parserVersion: enrichmentVodSource.parserVersion,
+      observationId: enrichmentVodSource?.observationId,
+      sourceRevisionId: enrichmentVodSource?.sourceRevisionId,
+      parserVersion: enrichmentVodSource?.parserVersion,
     };
     if (enrichmentVodUrl === existingVodUrl) {
       // Already the target value. Promote a pending half if one exists;
