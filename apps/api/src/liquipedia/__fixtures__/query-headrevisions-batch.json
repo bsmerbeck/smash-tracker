@@ -1,0 +1,21 @@
+{
+  "batchcomplete": true,
+  "query": {
+    "pages": [
+      {
+        "pageid": 66550,
+        "ns": 0,
+        "title": "Supernova/2026/Ultimate/Singles Bracket",
+        "revisions": [
+          {
+            "revid": 535578,
+            "parentid": 535576,
+            "timestamp": "2026-08-10T18:49:22Z",
+            "size": 19364,
+            "sha1": "54d1f9ba7e2fe97079448f3c04646ed5076fb1e3"
+          }
+        ]
+      }
+    ]
+  }
+}

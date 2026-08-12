@@ -1,0 +1,20 @@
+{
+  "batchcomplete": true,
+  "query": {
+    "general": {
+      "sitename": "Liquipedia Smash Wiki",
+      "base": "https://liquipedia.net/smash/Main_Page",
+      "generator": "MediaWiki 1.43.9",
+      "phpversion": "8.2.33",
+      "articlepath": "/smash/$1",
+      "scriptpath": "/smash",
+      "script": "/smash/index.php",
+      "server": "https://liquipedia.net",
+      "wikiid": "liquipedia-wikismash_",
+      "timezone": "UTC",
+      "timeoffset": 0,
+      "maxarticlesize": 4194304,
+      "misermode": false
+    }
+  }
+}
