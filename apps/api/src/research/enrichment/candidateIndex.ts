@@ -6,6 +6,7 @@ import {
 } from '@smash-tracker/shared';
 import { isPathSafeTenantId } from '../subjectKind.js';
 import { normalizeOpponentTag } from '../../startgg/sync.js';
+import { normalizeStartggSlugValue } from '../../liquipedia/eventContext.js';
 
 /**
  * Phase 30.2 Plan 07 (ENR-05/ENR-06): a once-per-run, READ-ONLY index over
@@ -229,7 +230,13 @@ export async function buildCandidateIndex(
       byTargetSetId.set(entry.targetSetId, entry);
 
       if (entry.tournamentSlug !== null) {
-        pushToMap(byTournamentSlug, entry.tournamentSlug, entry);
+        const canonicalTournamentSlug = normalizeStartggSlugValue(entry.tournamentSlug);
+        if (canonicalTournamentSlug.length > 0) {
+          pushToMap(byTournamentSlug, canonicalTournamentSlug, entry);
+        }
+        if (canonicalTournamentSlug !== entry.tournamentSlug) {
+          pushToMap(byTournamentSlug, entry.tournamentSlug, entry);
+        }
       }
       if (entry.normalizedCompetitorPair.length === 2) {
         const pairKey = buildCompetitorPairKey(

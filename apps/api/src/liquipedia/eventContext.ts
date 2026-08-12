@@ -115,7 +115,7 @@ function decodeDisplayString(raw: string): string {
  * the identical normalized slug (`supernova-2026`) regardless of which key
  * supplied the raw value (RESEARCH section 6.1).
  */
-function normalizeStartggSlugValue(raw: string): string {
+export function normalizeStartggSlugValue(raw: string): string {
   const parts = raw
     .split('/')
     .map((part) => part.trim())

@@ -1,4 +1,5 @@
 import type { Database } from 'firebase-admin/database';
+import type { ResearchEnrichmentObservationRecord } from '@smash-tracker/shared';
 import { describe, expect, it } from 'vitest';
 import { FakeDatabase, type FakeReference } from '../../test-support/fakeDatabase.js';
 import {
@@ -6,6 +7,7 @@ import {
   buildCompetitorPairKey,
   normalizeCompetitorTag,
 } from './candidateIndex.js';
+import { resolveObservation } from './resolution.js';
 
 const TENANT_ID = 'tenant-1';
 
@@ -170,6 +172,94 @@ describe('buildCandidateIndex', () => {
     const entries = index.byCompetitorPair.get(pairKey)!;
     expect(entries).toHaveLength(2);
     expect(new Set(entries.map((e) => e.targetSetId))).toEqual(new Set(['set-1', 'set-2']));
+  });
+
+  it('resolves bare Liquipedia slugs against namespaced start.gg provider slugs', async () => {
+    const database = new FakeDatabase();
+    const event = {
+      name: 'Ultimate Singles',
+      tournamentSlug: 'tournament/supernova-2026',
+      tournamentName: 'Supernova 2026',
+    };
+    seedProviderSet(database, 'set-1', { event, identifier: 'r3m1' });
+    seedProviderSet(database, 'set-2', {
+      event,
+      identifier: 'r3m2',
+      games: [
+        { gameId: 1, winnerEntrantId: 'e1' },
+        { gameId: 2, winnerEntrantId: 'e2' },
+        { gameId: 3, winnerEntrantId: 'e1' },
+        { gameId: 4, winnerEntrantId: 'e2' },
+        { gameId: 5, winnerEntrantId: 'e1' },
+      ],
+      totalGames: 5,
+    });
+
+    const index = await buildCandidateIndex(asDatabase(database), TENANT_ID);
+    const makeObservation = (input: {
+      observationId: string;
+      scores: [number, number];
+      totalGames: number;
+      tournamentStartggSlug?: string;
+    }): ResearchEnrichmentObservationRecord => ({
+      observationId: input.observationId,
+      sourceProvider: 'liquipedia',
+      sourceWiki: 'smash',
+      contentType: 'stage-observation',
+      sourcePageTitle: 'Supernova/2026/Ultimate/Singles Bracket',
+      sourcePageUrl: 'https://liquipedia.net/smash/Supernova/2026/Ultimate/Singles_Bracket',
+      sourceRevisionId: 100,
+      sourceContentHash: 'a'.repeat(64),
+      parserVersion: 'liquipedia-bracket-legacy@1',
+      templateFamily: 'legacy',
+      fetchedAtMs: 1000,
+      observedAtMs: 1000,
+      matchingStatus: 'unmatched',
+      tournamentStartggSlug: input.tournamentStartggSlug ?? 'supernova-2026',
+      game: 'ultimate',
+      date: '2025-08-10',
+      scores: input.scores,
+      players: [{ rawTag: 'Sparg0' }, { rawTag: 'Tweek' }],
+      games: Array.from({ length: input.totalGames }, (_, index) => ({ ordinal: index + 1 })),
+    });
+
+    const namespacedGrandFinalOutcome = resolveObservation(
+      makeObservation({
+        observationId: 'obs-gf-control',
+        scores: [2, 1],
+        totalGames: 3,
+        tournamentStartggSlug: 'tournament/supernova-2026',
+      }),
+      index,
+    );
+    const namespacedResetOutcome = resolveObservation(
+      makeObservation({
+        observationId: 'obs-reset-control',
+        scores: [3, 2],
+        totalGames: 5,
+        tournamentStartggSlug: 'tournament/supernova-2026',
+      }),
+      index,
+    );
+    expect([namespacedGrandFinalOutcome.type, namespacedResetOutcome.type]).toEqual([
+      'matched',
+      'matched',
+    ]);
+
+    const grandFinalOutcome = resolveObservation(
+      makeObservation({ observationId: 'obs-gf', scores: [2, 1], totalGames: 3 }),
+      index,
+    );
+    const resetOutcome = resolveObservation(
+      makeObservation({ observationId: 'obs-reset', scores: [3, 2], totalGames: 5 }),
+      index,
+    );
+
+    expect([grandFinalOutcome.type, resetOutcome.type]).toEqual(['matched', 'matched']);
+    if (grandFinalOutcome.type === 'matched' && resetOutcome.type === 'matched') {
+      expect(grandFinalOutcome.targetSetId).toBe('set-1');
+      expect(resetOutcome.targetSetId).toBe('set-2');
+    }
   });
 
   it('skips one malformed record independently rather than aborting the whole build', async () => {
