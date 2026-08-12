@@ -287,6 +287,77 @@ function emptyOutcome(): EnrichmentProjectionOutcome {
   };
 }
 
+/**
+ * Read-only counterpart to {@link applyEnrichmentProjection}. It evaluates
+ * the exact shared ownership resolver against the current rows and witnesses
+ * but performs no transaction or update. The operator dry-run manifest uses
+ * this function so its VOD fill/skip and stage figures describe the current
+ * production state without relying on a second, approximate implementation.
+ */
+export async function previewEnrichmentProjection(
+  database: Database,
+  tenantId: string,
+  targetSetId: string,
+  overlay: EnrichmentOverlay,
+): Promise<EnrichmentProjectionOutcome> {
+  if (!isPathSafeTenantId(tenantId) || !isPathSafeProviderId(targetSetId)) {
+    return emptyOutcome();
+  }
+
+  const witnessTree = await database.ref(`researchEnrichmentProjection/${tenantId}`).get();
+  const previouslyWitnessedKeys: string[] = [];
+  if (witnessTree.exists()) {
+    for (const [key, value] of Object.entries(witnessTree.val() as Record<string, unknown>)) {
+      const parsed = readWitnessFromValue(value);
+      if (
+        parsed?.targetSetId === targetSetId &&
+        (parsed.projectedVodUrl != null || parsed.pendingVodUrl != null)
+      ) {
+        previouslyWitnessedKeys.push(key);
+      }
+    }
+  }
+  const touchedKeys = Array.from(
+    new Set([
+      ...Object.keys(overlay.enrichedVodUrlByKey),
+      ...Object.keys(overlay.enrichedStageByKey),
+      ...previouslyWitnessedKeys,
+    ]),
+  ).filter((key) => isPathSafeProviderId(key));
+  const outcome = emptyOutcome();
+
+  for (const key of touchedKeys) {
+    const [rowSnapshot, witnessSnapshot] = await Promise.all([
+      database.ref(`matches/${tenantId}/${key}`).get(),
+      database.ref(`researchEnrichmentProjection/${tenantId}/${key}`).get(),
+    ]);
+    if (!rowSnapshot.exists()) {
+      outcome.counts.attachedNoProjectableRows += 1;
+      continue;
+    }
+    const row = rowSnapshot.val() as Record<string, unknown>;
+    const witness = readWitnessFromValue(witnessSnapshot.exists() ? witnessSnapshot.val() : null);
+    const resolved = resolveForRow(overlay, key, row, witness);
+    outcome.rows.push({
+      matchKey: key,
+      vodOutcome: resolved.vodOutcome,
+      stageOutcome: resolved.stageOutcome,
+    });
+    if (resolved.vodOutcome === 'filled-empty') {
+      outcome.counts.vodFilledEmpty += 1;
+    } else if (resolved.vodOutcome === 'skipped-user-owned') {
+      outcome.counts.vodSkippedUserOwned += 1;
+    }
+    if (resolved.stageOutcome === 'enriched') {
+      outcome.counts.stageEnriched += 1;
+    } else if (resolved.stageOutcome === 'unknown') {
+      outcome.counts.unknownStageAfterEnrichment += 1;
+    }
+  }
+
+  return outcome;
+}
+
 /** Returns the FULL stored record (including `matchKey`/`targetSetId`) — structurally a superset of `EnrichmentOwnershipWitness`, so it may be passed anywhere that narrower type is expected. */
 function readWitnessFromValue(value: unknown): ResearchEnrichmentProjectionStateRecord | null {
   if (value === null || value === undefined) {

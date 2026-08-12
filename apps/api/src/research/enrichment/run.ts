@@ -4,6 +4,7 @@ import {
   LIQUIPEDIA_PARSER_VERSION_VOD_LIST,
   buildEnrichmentObservationId,
   type EnrichmentStageOutcome,
+  type ResearchEnrichmentAttachmentRecord,
   type ResearchEnrichmentObservationRecord,
 } from '@smash-tracker/shared';
 import {
@@ -39,6 +40,7 @@ import {
 import {
   applyEnrichmentProjection,
   buildEnrichmentOverlay,
+  previewEnrichmentProjection,
   type EnrichmentProjectionCounts,
 } from './projection.js';
 import {
@@ -177,6 +179,7 @@ export interface EnrichmentBatchCounts {
   vodPageProbeRequests: number;
   parseClassRequestsIssued: number;
   generatedCacheHits: number;
+  pagesFetched: number;
   vodRowsExtracted: number;
   tournamentPagesDiscovered: number;
   factPagesEnumerated: number;
@@ -207,6 +210,7 @@ function emptyCounts(): EnrichmentBatchCounts {
     vodPageProbeRequests: 0,
     parseClassRequestsIssued: 0,
     generatedCacheHits: 0,
+    pagesFetched: 0,
     vodRowsExtracted: 0,
     tournamentPagesDiscovered: 0,
     factPagesEnumerated: 0,
@@ -236,6 +240,53 @@ export interface EnrichmentBatchResult {
   /** `true` when this invocation found the gather phase already complete (a prior invocation's persisted `cursor.stage === 'projection'`) and issued NO fetch of any kind. */
   resumedAtProjection: boolean;
   counts: EnrichmentBatchCounts;
+  /** Review evidence emitted only from the structurally read-only path. */
+  dryRunDetails?: EnrichmentDryRunDetails;
+}
+
+export interface EnrichmentDryRunCandidate {
+  observationId: string;
+  sourcePageTitle: string;
+  outcome: 'ambiguous' | 'conflicting';
+  candidateTargetSetIds: string[];
+  evidence: string[];
+  reasons: string[];
+}
+
+export interface EnrichmentDryRunSourceRevision {
+  sourcePageTitle: string;
+  sourcePageUrl: string;
+  sourceRevisionId: number;
+  fetchedAtMs: number;
+  parserVersion: string;
+}
+
+export interface EnrichmentDryRunDetails {
+  gamesWithCanonicalStage: number;
+  gamesWithStageForm: number;
+  gamesWithoutCanonicalStage: number;
+  vodWouldFillEmpty: number;
+  vodWouldSkipUserOwned: number;
+  stageWouldEnrich: number;
+  sourceRevisions: EnrichmentDryRunSourceRevision[];
+  extractorVersions: string[];
+  reviewCandidates: EnrichmentDryRunCandidate[];
+  missingSourcePages: Array<{ playerLabel: string; pageTitle: string; reason: string }>;
+}
+
+function emptyDryRunDetails(): EnrichmentDryRunDetails {
+  return {
+    gamesWithCanonicalStage: 0,
+    gamesWithStageForm: 0,
+    gamesWithoutCanonicalStage: 0,
+    vodWouldFillEmpty: 0,
+    vodWouldSkipUserOwned: 0,
+    stageWouldEnrich: 0,
+    sourceRevisions: [],
+    extractorVersions: [],
+    reviewCandidates: [],
+    missingSourcePages: [],
+  };
 }
 
 export interface RunEnrichmentBatchInput {
@@ -343,6 +394,7 @@ export async function runEnrichmentBatch(
   const earliestYear = input.sliceFilter?.earliestYear;
 
   const counts = emptyCounts();
+  const dryRunDetails = dryRun ? emptyDryRunDetails() : undefined;
   counts.playersRequested = playerLabels.length;
 
   let runId: string | null = null;
@@ -383,6 +435,7 @@ export async function runEnrichmentBatch(
         dryRun,
         counts,
         gatheredObservations,
+        dryRunDetails,
       });
 
       if (!dryRun && runId && holder) {
@@ -400,6 +453,7 @@ export async function runEnrichmentBatch(
       dryRun,
       counts,
       gatheredObservations,
+      dryRunDetails,
     });
 
     if (!dryRun && runId && holder) {
@@ -433,7 +487,13 @@ export async function runEnrichmentBatch(
     throw error;
   }
 
-  return { runId, dryRun, resumedAtProjection, counts };
+  return {
+    runId,
+    dryRun,
+    resumedAtProjection,
+    counts,
+    ...(dryRunDetails ? { dryRunDetails } : {}),
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -453,6 +513,7 @@ interface GatherPhaseInput {
   dryRun: boolean;
   counts: EnrichmentBatchCounts;
   gatheredObservations: ResearchEnrichmentObservationRecord[];
+  dryRunDetails: EnrichmentDryRunDetails | undefined;
 }
 
 async function gatherPhase(input: GatherPhaseInput): Promise<void> {
@@ -469,6 +530,7 @@ async function gatherPhase(input: GatherPhaseInput): Promise<void> {
     dryRun,
     counts,
     gatheredObservations,
+    dryRunDetails,
   } = input;
 
   // --- Discovery: resolve player VOD pages, dedupe, fetch + extract -------
@@ -479,6 +541,11 @@ async function gatherPhase(input: GatherPhaseInput): Promise<void> {
   for (const entry of resolved.resolved) {
     if (!entry.present) {
       counts.vodPagesMissing += 1;
+      dryRunDetails?.missingSourcePages.push({
+        playerLabel: entry.label,
+        pageTitle: entry.vodPageTitle,
+        reason: 'Liquipedia player VOD page is missing',
+      });
       continue;
     }
     if (!presentByTitle.has(entry.vodPageTitle)) {
@@ -495,6 +562,7 @@ async function gatherPhase(input: GatherPhaseInput): Promise<void> {
     // check.
     const generated = await callWithRetry(() => client.getGeneratedVodPage(vodPageTitle), counts);
     counts.parseClassRequestsIssued += 1;
+    counts.pagesFetched += 1;
 
     const shape = generated.mode === 'parse' ? ('rendered' as const) : ('expanded' as const);
     const extraction = extractVodListRows({
@@ -654,6 +722,7 @@ async function gatherPhase(input: GatherPhaseInput): Promise<void> {
       if (!page.present || page.content == null) {
         continue;
       }
+      counts.pagesFetched += 1;
       const contentHash = hashWikitext(page.content, hashHex);
       const cacheKey = cacheKeyFor(page.title, hashHex);
 
@@ -806,6 +875,7 @@ interface ResolveAndProjectPhaseInput {
   dryRun: boolean;
   counts: EnrichmentBatchCounts;
   gatheredObservations: ResearchEnrichmentObservationRecord[];
+  dryRunDetails: EnrichmentDryRunDetails | undefined;
 }
 
 /**
@@ -825,7 +895,37 @@ const STAGE_OUTCOME_TO_COHORT: Record<EnrichmentStageOutcome, keyof EnrichmentCo
 };
 
 async function resolveAndProjectPhase(input: ResolveAndProjectPhaseInput): Promise<void> {
-  const { database, tenantId, runId, nowMs, dryRun, counts, gatheredObservations } = input;
+  const { database, tenantId, runId, nowMs, dryRun, counts, gatheredObservations, dryRunDetails } =
+    input;
+
+  if (dryRunDetails) {
+    const revisions = new Map<string, EnrichmentDryRunSourceRevision>();
+    const versions = new Set<string>();
+    for (const observation of gatheredObservations) {
+      versions.add(observation.parserVersion);
+      revisions.set(`${observation.sourcePageTitle}:${observation.sourceRevisionId}`, {
+        sourcePageTitle: observation.sourcePageTitle,
+        sourcePageUrl: observation.sourcePageUrl,
+        sourceRevisionId: observation.sourceRevisionId,
+        fetchedAtMs: observation.fetchedAtMs,
+        parserVersion: observation.parserVersion,
+      });
+      for (const game of observation.games ?? []) {
+        if (game.canonicalStageId != null) {
+          dryRunDetails.gamesWithCanonicalStage += 1;
+        } else {
+          dryRunDetails.gamesWithoutCanonicalStage += 1;
+        }
+        if (game.stageForm != null) {
+          dryRunDetails.gamesWithStageForm += 1;
+        }
+      }
+    }
+    dryRunDetails.sourceRevisions = Array.from(revisions.values()).sort((a, b) =>
+      a.sourcePageTitle.localeCompare(b.sourcePageTitle),
+    );
+    dryRunDetails.extractorVersions = Array.from(versions).sort();
+  }
 
   const candidateIndex = await buildCandidateIndex(database, tenantId);
   counts.candidateIndexBuildCount = 1;
@@ -840,16 +940,33 @@ async function resolveAndProjectPhase(input: ResolveAndProjectPhaseInput): Promi
 
   const matchedBracketVodUrls = new Map<string, string>();
   const newlyAttachedTargetSetIds = new Set<string>();
+  const dryRunAttachments = new Map<string, ResearchEnrichmentAttachmentRecord[]>();
 
   async function resolveOne(observation: ResearchEnrichmentObservationRecord): Promise<void> {
     const outcome = resolveObservation(observation, candidateIndex, { matchedBracketVodUrls });
 
     if (outcome.type === 'ambiguous') {
       counts.resolvedAmbiguous += 1;
+      dryRunDetails?.reviewCandidates.push({
+        observationId: observation.observationId,
+        sourcePageTitle: observation.sourcePageTitle,
+        outcome: 'ambiguous',
+        candidateTargetSetIds: outcome.candidateTargetSetIds,
+        evidence: outcome.evidence,
+        reasons: outcome.reasons,
+      });
       return;
     }
     if (outcome.type === 'conflicting') {
       counts.resolvedConflicting += 1;
+      dryRunDetails?.reviewCandidates.push({
+        observationId: observation.observationId,
+        sourcePageTitle: observation.sourcePageTitle,
+        outcome: 'conflicting',
+        candidateTargetSetIds: [outcome.targetSetId],
+        evidence: [],
+        reasons: outcome.conflicts,
+      });
       return;
     }
     if (outcome.type === 'unmatched') {
@@ -870,6 +987,20 @@ async function resolveAndProjectPhase(input: ResolveAndProjectPhaseInput): Promi
     }
 
     if (dryRun) {
+      const attachment: ResearchEnrichmentAttachmentRecord = {
+        observationId: observation.observationId,
+        targetSetId: outcome.targetSetId,
+        attachmentSource: 'resolver',
+        attachedAtMs: nowMs,
+        sourceRevisionId: observation.sourceRevisionId,
+        sourceContentHash: observation.sourceContentHash,
+        parserVersion: observation.parserVersion,
+        receiptId: `dry-run:${observation.observationId}`,
+        matchEvidence: outcome.evidence,
+      };
+      const existing = dryRunAttachments.get(outcome.targetSetId) ?? [];
+      existing.push(attachment);
+      dryRunAttachments.set(outcome.targetSetId, existing);
       return;
     }
 
@@ -916,6 +1047,22 @@ async function resolveAndProjectPhase(input: ResolveAndProjectPhaseInput): Promi
   }
 
   if (dryRun) {
+    for (const [targetSetId, attachments] of dryRunAttachments) {
+      const observationsById = Object.fromEntries(
+        gatheredObservations.map((observation) => [observation.observationId, observation]),
+      );
+      const overlay = buildEnrichmentOverlay({
+        targetSetId,
+        attachments,
+        observations: observationsById,
+      });
+      const preview = await previewEnrichmentProjection(database, tenantId, targetSetId, overlay);
+      if (dryRunDetails) {
+        dryRunDetails.vodWouldFillEmpty += preview.counts.vodFilledEmpty;
+        dryRunDetails.vodWouldSkipUserOwned += preview.counts.vodSkippedUserOwned;
+        dryRunDetails.stageWouldEnrich += preview.counts.stageEnriched;
+      }
+    }
     return;
   }
 
