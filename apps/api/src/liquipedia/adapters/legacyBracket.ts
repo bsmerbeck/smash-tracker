@@ -547,7 +547,7 @@ export function extractLegacyBracketObservations(
         tournamentPageUrl: buildLiquipediaPageUrl(input.eventContext.tournamentPageTitle),
         tournamentDisplayName: input.eventContext.tournamentDisplayName,
         tournamentStartggSlug: input.eventContext.startggSlug,
-        sectionHeading,
+        ...(sectionHeading != null ? { sectionHeading } : {}),
         derivedRoundLabel,
         players: [
           { rawTag: resolved.p1, flag: resolved.p1Flag ?? null },

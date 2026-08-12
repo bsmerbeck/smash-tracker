@@ -77,7 +77,7 @@ export function isAssertEmptyDescriptor(
  * its attachment, never left behind.
  */
 export const TREE_DESCRIPTORS: readonly TreeDescriptor[] = [
-  // -- copy (13): owner-locked data trees + Liquipedia enrichment trees -----
+  // -- copy (14): owner-locked data trees + Liquipedia enrichment trees -----
   { tree: 'matches', disposition: 'copy', shape: 'flat' },
   { tree: 'opponents', disposition: 'copy', shape: 'flat' },
   { tree: 'researchSource', disposition: 'copy', shape: 'nested-sets' },
@@ -91,6 +91,12 @@ export const TREE_DESCRIPTORS: readonly TreeDescriptor[] = [
   { tree: 'researchEnrichmentProjection', disposition: 'copy', shape: 'flat' },
   { tree: 'researchEnrichmentCoverage', disposition: 'copy', shape: 'singleton' },
   { tree: 'researchEnrichmentRuns', disposition: 'copy', shape: 'singleton' },
+  // Phase 30.2 Plan 09 (ENR-10, cycle-1 review MEDIUM 8): the shrink-guard
+  // review-entry log — diagnostic, but naming the previous/next observation
+  // counts a held refresh refused to overwrite is exactly the kind of
+  // enrichment provenance ENR-11's minimum coverage list expects to survive
+  // migration alongside the rest of this family.
+  { tree: 'researchEnrichmentShrinkReviews', disposition: 'copy', shape: 'flat' },
   // -- assert-empty (15): authorization + claim + coaching-content ----------
   // Authorization-bearing — OUTSIDE the owner-locked migration list. A live
   // grant refuses the run and escalates a separate revoke/disposition

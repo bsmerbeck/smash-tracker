@@ -581,8 +581,30 @@ const researchEnrichmentRunLeaseSchema = z.object({
   fence: z.number().int().min(1),
 });
 
-/** Mirrors the run-cursor schema in the Phase 30 provider-ingestion schema module, trimmed to what a page-title-driven Liquipedia walk needs rather than a numbered result-page walk. */
+/**
+ * Added by plan 09 (Rule 2 — the module this schema mirrors is
+ * indexed-page-driven; this phase's walk is ordered-STAGE-driven, and the
+ * schema had nowhere to record which stage a run had reached): the
+ * resumable ordered work list Task 1 defines — discovery (player VOD pages)
+ * -> expansion (tournament subpage enumeration) -> probe (batched head
+ * revisions) -> extraction (per fact page) -> projection (per target set).
+ * `run.ts` advances `stage` exactly once, to `'projection'`, as the single
+ * crash-safe checkpoint between "everything has been gathered" and
+ * "resolve/attach/project what was gathered" — an invocation that finds
+ * `stage === 'projection'` already stored skips every fetch.
+ */
+export const RESEARCH_ENRICHMENT_RUN_STAGES = [
+  'discovery',
+  'expansion',
+  'probe',
+  'extraction',
+  'projection',
+] as const;
+export type ResearchEnrichmentRunStage = (typeof RESEARCH_ENRICHMENT_RUN_STAGES)[number];
+
+/** Mirrors the run-cursor schema in the Phase 30 provider-ingestion schema module, trimmed to what a page-title-driven Liquipedia walk needs rather than a numbered result-page walk. `stage` is a plan-09 addition (Rule 2, see above). */
 const researchEnrichmentRunCursorSchema = z.object({
+  stage: z.enum(RESEARCH_ENRICHMENT_RUN_STAGES).nullish(),
   pageTitle: z.string().max(300).nullish(),
   attempt: z.number().int().nullish(),
 });
@@ -590,9 +612,12 @@ const researchEnrichmentRunCursorSchema = z.object({
 /**
  * `researchEnrichmentRuns/{tenantId}` — reuses the Phase-30 lease/fence
  * member NAMES from the sibling provider-ingestion run schema (`status`,
- * `startedAtMs`, `completedAtMs`, `coveragePublishedAtMs`, `lease`,
- * `leaseFenceCounter`, `cursor`) so plan 09 can copy `backfillRun.ts`'s
- * fence machinery member-for-member. `runId` is an ENRICHMENT-ONLY required
+ * `startedAtMs`, `completedAtMs`, `failedAtMs`, `reason`,
+ * `coveragePublishedAtMs`, `lease`, `leaseFenceCounter`, `cursor`) so plan 09
+ * can copy `backfillRun.ts`'s fence machinery member-for-member.
+ * `failedAtMs`/`reason` were added by plan 09 itself (Rule 2) — the status
+ * enum below already declared `'failed'` with nothing to say when or why.
+ * `runId` is an ENRICHMENT-ONLY required
  * member: the sibling provider-ingestion run schema has no `runId` (verified
  * — its members are `status`, `mode`, `playerId`, `requestedByUid`,
  * `startedAtMs`, `updatedAtMs`, `completedAtMs`, `failedAtMs`,
@@ -609,6 +634,15 @@ export const researchEnrichmentRunRecordSchema = z.object({
   status: z.enum(RESEARCH_ENRICHMENT_RUN_STATUSES),
   startedAtMs: z.number().int(),
   completedAtMs: z.number().int().nullish(),
+  /**
+   * Added by plan 09 (Rule 2 — the status enum already declared `'failed'`
+   * but this schema had no member to record when or why): mirrors the
+   * sibling provider-ingestion run schema's `failedAtMs`/`reason` pair so a
+   * failed enrichment run is diagnosable the same way a failed backfill run
+   * is.
+   */
+  failedAtMs: z.number().int().nullish(),
+  reason: z.string().max(500).nullish(),
   coveragePublishedAtMs: z.number().int().nullish(),
   lease: researchEnrichmentRunLeaseSchema.nullish(),
   leaseFenceCounter: z.number().int().nonnegative().nullish(),

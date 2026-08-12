@@ -64,11 +64,20 @@ export const LIQUIPEDIA_VOD_LIST_MIN_BYTES_FOR_GUARD = 102_400;
  */
 const LIQUIPEDIA_VOD_LIST_MAX_MARKERS = 20_000;
 
-/** Every extracted VOD-list row is attached with this stated reason (T-30.2-28, the discovery-index / mirror-vs-rematch protection). */
+/**
+ * Every extracted VOD-list row is attached with this stated reason
+ * (T-30.2-28, the discovery-index / mirror-vs-rematch protection).
+ *
+ * Plan 09 (Rule 1 — bug): kept at or under the shared schema's
+ * `resolutionReasons` `.max(200)` cap (`researchEnrichmentObservationRecordSchema`
+ * in `packages/shared/src/researchEnrichment.ts`) — the original wording was
+ * 213 characters and failed that schema's own validation the first time any
+ * caller actually persisted a VOD-list observation through it end-to-end
+ * (`writeEnrichmentObservation`). Meaning preserved, wording shortened.
+ */
 export const LIQUIPEDIA_VOD_LIST_RESOLUTION_REASON =
-  'player VOD-list row: a discovery-index entry that requires bracket corroboration before it may ' +
-  'be treated as a fact — this page class carries no round, date or score, so a row can never be ' +
-  'auto-attached on its own';
+  'player VOD-list row: a discovery-index entry needing bracket corroboration before use as fact — ' +
+  'this page class carries no round, date or score, so it can never auto-attach alone';
 
 // ---------------------------------------------------------------------------
 // Public shapes
@@ -476,6 +485,18 @@ export interface ToVodObservationRecordsContext {
  * `'matched'`. `date`/`rawDate`/`scores`/`rawScores`/`setWinnerSeat` are all
  * omitted (never set), mirroring `LiquipediaVodRow`'s own structural
  * absence of those fields.
+ *
+ * Every optional member is CONDITIONAL-SPREAD, never assigned `?? undefined`
+ * inline (plan 09, Rule 1 — bug): an explicit `key: undefined` property
+ * survives a `.nullish()` zod parse as a present key whose value is
+ * `undefined`, which both `FakeDatabase` and the real RTDB client reject on
+ * write — the house "conditional-spread-write" convention
+ * (`CONCERNS.md`/`CLAUDE.md`) exists precisely to prevent this, and every
+ * other record-builder in this phase (`legacyBracket.ts`, `match2Bracket.ts`)
+ * already follows it. This function did not, and the gap was invisible until
+ * `research/enrichment/run.ts` (plan 09) became the first caller to actually
+ * persist a VOD-list-derived record end-to-end through
+ * `writeEnrichmentObservation`.
  */
 export function toVodObservationRecords(
   rows: LiquipediaVodRow[],
@@ -506,17 +527,21 @@ export function toVodObservationRecords(
       fetchedAtMs: context.fetchedAtMs,
       observedAtMs: context.observedAtMs,
       matchingStatus: 'unmatched',
-      game: row.game ?? undefined,
+      ...(row.game != null ? { game: row.game } : {}),
       tournamentPageTitle: row.tournamentPageTitle,
-      tournamentDisplayName: row.tournamentDisplayName ?? undefined,
+      ...(row.tournamentDisplayName != null
+        ? { tournamentDisplayName: row.tournamentDisplayName }
+        : {}),
       rawVodUrl: row.rawVodUrl,
-      vodUrl: row.vodUrl ?? undefined,
+      ...(row.vodUrl != null ? { vodUrl: row.vodUrl } : {}),
       players: [
         { rawTag: context.subjectPlayerLabel },
         {
           rawTag: row.opponentRawTag ?? row.opponentCanonicalPage ?? 'unknown',
-          canonicalPage: row.opponentCanonicalPage ?? undefined,
-          flag: row.opponentCountry ?? undefined,
+          ...(row.opponentCanonicalPage != null
+            ? { canonicalPage: row.opponentCanonicalPage }
+            : {}),
+          ...(row.opponentCountry != null ? { flag: row.opponentCountry } : {}),
         },
       ],
       resolutionReasons: [row.resolutionReason],

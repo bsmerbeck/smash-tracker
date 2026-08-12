@@ -163,6 +163,11 @@ export const TENANT_DELETION_TREES = [
   // Phase 30.2 Plan 01 (ENR-10): enrichment backfill run state
   // (`researchEnrichmentRuns/{tenantId}`).
   'researchEnrichmentRuns',
+  // Phase 30.2 Plan 09 (ENR-10, cycle-1 review MEDIUM 8): the shrink-guard
+  // review-entry log a held refresh writes, naming the previous/next
+  // observation counts it refused to silently overwrite
+  // (`researchEnrichmentShrinkReviews/{tenantId}/{entryId}`).
+  'researchEnrichmentShrinkReviews',
 ] as const;
 
 /**
