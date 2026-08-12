@@ -40,6 +40,18 @@ export function enrichmentAttributionQueryKey(keys: string[]) {
  * render, mirroring `useSelfDataCoverage`'s degrade posture: reading
  * `query.data` (never `query.error`) means a failed chunk contributes
  * nothing rather than surfacing an error state to the caller.
+ *
+ * Folds the per-chunk results via `useQueries`' own `combine` option rather
+ * than a hand-rolled `useMemo` over `queries.map(q => q.data)`: the number
+ * of chunks (and therefore the length of that mapped array) varies with
+ * `matchKeys.length` across renders — zero chunks while `matchKeys` is
+ * empty, growing as it fills in — and React's `useMemo` dependency-array
+ * comparison assumes a STABLE deps length across renders (its documented
+ * contract). A deps array whose length changes silently breaks the
+ * comparison and can freeze the memo at a stale value forever. `combine` is
+ * `useQueries`' own built-in fold step, invoked by the library itself on
+ * every relevant data change regardless of how many queries are in flight,
+ * so it has no such length-stability assumption to violate.
  */
 export function useEnrichmentAttribution(
   matchKeys: string[],
@@ -53,23 +65,21 @@ export function useEnrichmentAttribution(
     [sortedKeys],
   );
 
-  const queries = useQueries({
+  return useQueries({
     queries: chunks.map((chunkKeys) => ({
       queryKey: enrichmentAttributionQueryKey(chunkKeys),
       queryFn: () => api.users.enrichmentAttribution(chunkKeys),
       enabled: enabled && chunkKeys.length > 0,
       retry: false,
     })),
-  });
-
-  return useMemo(() => {
-    const map: Record<string, ResearchEnrichmentAttributionEntry> = {};
-    for (const query of queries) {
-      for (const entry of query.data?.attributions ?? []) {
-        map[entry.matchKey] = entry;
+    combine: (results) => {
+      const map: Record<string, ResearchEnrichmentAttributionEntry> = {};
+      for (const result of results) {
+        for (const entry of result.data?.attributions ?? []) {
+          map[entry.matchKey] = entry;
+        }
       }
-    }
-    return map;
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- `queries` is a fresh array every render (useQueries' own contract); spreading each query's `.data` as its OWN deps-array element (rather than passing the freshly-mapped array itself as one element) is what lets React's per-element Object.is comparison actually skip recompute when TanStack Query hasn't changed any chunk's data.
-  }, [...queries.map((q) => q.data)]);
+      return map;
+    },
+  });
 }

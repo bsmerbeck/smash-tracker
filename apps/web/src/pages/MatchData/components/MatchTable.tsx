@@ -58,6 +58,8 @@ import { localizedFighterName } from '@/lib/fighterNames';
 import { useDeleteMatch } from '@/hooks/useDeleteMatch';
 import { useClearVodAndNotes } from '@/hooks/useVodNotes';
 import { useSubjectPath } from '@/hooks/useSubjectPath';
+import { useEnrichmentAttribution } from '@/hooks/useEnrichmentAttribution';
+import { LiquipediaAttributionBadge } from '@/components/enrichment/LiquipediaAttributionBadge';
 import { buildMatchCsv, matchCsvFilename } from '../lib/matchCsv';
 import {
   applyMatchTableFilters,
@@ -168,6 +170,12 @@ export function MatchTable({
   const [pendingRemoveVod, setPendingRemoveVod] = useState<Match | null>(null);
   const deleteMatch = useDeleteMatch();
   const clearVodAndNotes = useClearVodAndNotes();
+  // Phase 30.2 Plan 11 (ENR-09): the witness lives OFF the match row — this
+  // is the only way the stage cell / VOD menu learn whether a value came
+  // from Liquipedia. Keyed by every match id currently in the (unpaginated)
+  // dataset, never by the match record itself.
+  const matchIds = useMemo(() => matches.map((m) => m.id), [matches]);
+  const attribution = useEnrichmentAttribution(matchIds);
 
   useEffect(() => {
     persistColumnVisibility(columnVisibility);
@@ -240,6 +248,25 @@ export function MatchTable({
         id: 'stage',
         header: columnLabel(t, 'stage'),
         accessorFn: (row) => row.stage,
+        cell: ({ row }) => {
+          // Phase 30.2 Plan 11 (ENR-09): `rawStage`/`stageForm` are STAGE-only
+          // members of the attribution entry (never populated from a
+          // VOD-only witness, `apps/api/src/routes/users.ts`'s own doc
+          // comment) — this is the precise signal that distinguishes "this
+          // row's STAGE came from Liquipedia" from a match enriched only on
+          // its VOD field, so a start.gg-sourced stage never renders the
+          // badge even when the row also carries a VOD attribution.
+          const record = attribution[row.original.match.id];
+          const isStageAttributed = record?.rawStage != null;
+          return (
+            <div className="flex flex-col gap-0.5">
+              <span>{row.original.stage}</span>
+              {isStageAttributed && (
+                <LiquipediaAttributionBadge attribution={record ?? null} variant="stage" />
+              )}
+            </div>
+          );
+        },
       },
       {
         id: 'matchType',
@@ -279,6 +306,13 @@ export function MatchTable({
         cell: ({ row }) => {
           const hasVod = row.original.match.vodUrl != null;
           const source = row.original.match.source;
+          // Phase 30.2 Plan 11 (ENR-09): no VOD-specific signal exists in the
+          // attribution schema distinct from a stage-half signal (see the
+          // doc comment on the 'stage' column's cell above) — any attribution
+          // record present for a VOD-bearing row is treated as covering that
+          // row's VOD for this menu item's purposes, matching this row's
+          // sibling surfaces (the attach dialog hint, the edit form note).
+          const vodAttribution = attribution[row.original.match.id];
           return (
             <div className="flex items-center justify-end gap-2">
               {hasVod ? (
@@ -302,6 +336,18 @@ export function MatchTable({
                     <DropdownMenuItem onSelect={() => setEditingMatch(row.original.match)}>
                       {t('matchData.table.vodMenu.editLink')}
                     </DropdownMenuItem>
+                    {vodAttribution?.sourcePageUrl != null && (
+                      <DropdownMenuItem
+                        onSelect={() => {
+                          const sourcePageUrl = vodAttribution.sourcePageUrl;
+                          if (sourcePageUrl != null) {
+                            window.open(sourcePageUrl, '_blank', 'noopener,noreferrer');
+                          }
+                        }}
+                      >
+                        {t('enrichment.attribution.sourceLink')}
+                      </DropdownMenuItem>
+                    )}
                     <DropdownMenuItem
                       variant="destructive"
                       onSelect={() => setPendingRemoveVod(row.original.match)}
@@ -357,7 +403,7 @@ export function MatchTable({
         },
       },
     ],
-    [t, navigate, subjectPath],
+    [t, navigate, subjectPath, attribution],
   );
 
   const table = useReactTable({

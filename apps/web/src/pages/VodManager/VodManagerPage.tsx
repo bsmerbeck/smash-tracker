@@ -45,6 +45,11 @@ import { filterContributorIndices } from '@/lib/contributors';
 import { movePlaylistItem, resolvePlaylistMatches } from '@/lib/playlists';
 import { ApiError, type VodTimestampInput } from '@/lib/api';
 import { cn } from '@/lib/utils';
+import { useEnrichmentAttribution } from '@/hooks/useEnrichmentAttribution';
+import {
+  LiquipediaAttributionBadge,
+  LiquipediaLicenseNote,
+} from '@/components/enrichment/LiquipediaAttributionBadge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -161,6 +166,12 @@ export function VodManagerPage() {
 
   const { matches, isLoading } = useFilteredMatches();
   const vodMatches = useMemo(() => matches.filter((m) => m.vodUrl != null), [matches]);
+  // Phase 30.2 Plan 11 (ENR-09): the witness lives OFF the match row — this
+  // is the only way the page learns whether a VOD-bearing match's link came
+  // from Liquipedia. Keyed by every VOD-bearing match's id.
+  const vodMatchIds = useMemo(() => vodMatches.map((m) => m.id), [vodMatches]);
+  const enrichmentAttribution = useEnrichmentAttribution(vodMatchIds);
+  const hasAnyEnrichmentAttribution = Object.keys(enrichmentAttribution).length > 0;
 
   const { data: playlists = [] } = usePlaylists();
   const createPlaylist = useCreatePlaylist();
@@ -1417,6 +1428,10 @@ export function VodManagerPage() {
 
               {selectedMatch && (
                 <div data-testid="vod-match-meta">
+                  <LiquipediaAttributionBadge
+                    attribution={enrichmentAttribution[selectedMatch.id]}
+                    variant="vod"
+                  />
                   <SelectedMatchMeta
                     match={selectedMatch}
                     fighterSprites={fighterSprites}
@@ -1497,6 +1512,7 @@ export function VodManagerPage() {
           </div>
         </div>
       )}
+      {hasAnyEnrichmentAttribution && <LiquipediaLicenseNote />}
     </div>
   );
 }

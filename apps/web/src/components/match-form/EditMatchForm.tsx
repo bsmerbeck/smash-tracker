@@ -1,3 +1,4 @@
+import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 import type { Fighter, Match, UpdateMatchInput } from '@smash-tracker/shared';
@@ -13,6 +14,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { PendingButton } from '@/components/ui/pending-button';
 import { useUpdateMatch } from '@/hooks/useUpdateMatch';
+import { useEnrichmentAttribution } from '@/hooks/useEnrichmentAttribution';
 import {
   MatchFormFields,
   matchFormValuesToInput,
@@ -83,6 +85,16 @@ export function EditMatchForm({
   // `opponent: ''` (anonymous quickplay randoms) and must stay editable
   // without inventing a name; blank PATCHes through as "still anonymous".
   const form = useMatchForm(matchToFormValues(match), { requireOpponent: false });
+  // Phase 30.2 Plan 11 (ENR-09): the witness lives OFF the match row — the
+  // only way this form learns the CURRENT vodUrl value is source-owned. The
+  // note appears only for a value that is both present and source-owned; a
+  // user-entered value (no attribution record) renders no note. Saving is
+  // still a full overwrite (module doc comment above `onSubmit`), which is
+  // exactly the honest consequence the note states — the form does not
+  // special-case the write path for a source-owned value.
+  const matchKeys = useMemo(() => [match.id], [match.id]);
+  const attribution = useEnrichmentAttribution(matchKeys);
+  const vodIsSourceOwned = match.vodUrl != null && attribution[match.id] != null;
 
   function handleOpenChange(next: boolean) {
     onOpenChange(next);
@@ -120,6 +132,14 @@ export function EditMatchForm({
         </DialogHeader>
         <form onSubmit={form.handleSubmit(onSubmit)} noValidate>
           <MatchFormFields form={form} fighterSprites={fighterSprites} />
+          {vodIsSourceOwned && (
+            <p
+              data-testid="edit-match-vod-source-owned-note"
+              className="mt-1 text-xs text-muted-foreground"
+            >
+              {t('enrichment.editForm.sourceOwnedNote')}
+            </p>
+          )}
           <DialogFooter className="mt-4">
             {onDelete && (
               <Button

@@ -36,12 +36,15 @@ const listOpponents = vi.fn().mockResolvedValue([]);
 const stageFavoritesGet = vi.fn().mockResolvedValue({ stageIds: [], updatedAt: 0 });
 const upsertMe = vi.fn().mockResolvedValue({ uid: 'test-uid', email: 'test@example.com' });
 const getFighters = vi.fn().mockResolvedValue({ primary: [], secondary: [] });
+/** Phase 30.2 Plan 11 (ENR-09): backs `useEnrichmentAttribution`, which the form now consumes for its "source-owned VOD" note. */
+const enrichmentAttribution = vi.fn().mockResolvedValue({ attributions: [] });
 
 vi.mock('@/lib/api', () => ({
   api: {
     users: {
       upsertMe: (...args: unknown[]) => upsertMe(...args),
       getFighters: (...args: unknown[]) => getFighters(...args),
+      enrichmentAttribution: (...args: unknown[]) => enrichmentAttribution(...args),
     },
     matches: {
       list: (...args: unknown[]) => listMatches(...args),
@@ -102,6 +105,7 @@ describe('EditMatchForm', () => {
     stageFavoritesGet.mockResolvedValue({ stageIds: [], updatedAt: 0 });
     upsertMe.mockResolvedValue({ uid: 'test-uid', email: 'test@example.com' });
     getFighters.mockResolvedValue({ primary: [mario.id], secondary: [] });
+    enrichmentAttribution.mockResolvedValue({ attributions: [] });
     setMockUser(makeMockUser());
   });
 
@@ -121,5 +125,23 @@ describe('EditMatchForm', () => {
     const [, input] = updateMatch.mock.calls[0] as [string, UpdateMatchInput];
     expect(input.map?.form).toBe('battlefield');
     expect(input.map?.id).toBe(2);
+  });
+
+  describe('Liquipedia attribution (Phase 30.2 Plan 11, ENR-09)', () => {
+    it("shows a note under the VOD input when the current value is source-owned, stating that saving makes it the user's own", async () => {
+      enrichmentAttribution.mockResolvedValue({
+        attributions: [{ matchKey: 'm1', sourcePageUrl: 'https://liquipedia.net/smash/Some_Page' }],
+      });
+      renderEditMatchForm(makeMatch({ vodUrl: 'https://youtube.com/watch?v=abc123' }));
+
+      expect(await screen.findByTestId('edit-match-vod-source-owned-note')).toBeInTheDocument();
+    });
+
+    it('renders no note for a user-entered value (no attribution record)', async () => {
+      renderEditMatchForm(makeMatch({ vodUrl: 'https://youtube.com/watch?v=abc123' }));
+
+      await waitFor(() => expect(enrichmentAttribution).toHaveBeenCalled());
+      expect(screen.queryByTestId('edit-match-vod-source-owned-note')).not.toBeInTheDocument();
+    });
   });
 });
