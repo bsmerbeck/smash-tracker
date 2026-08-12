@@ -1,16 +1,24 @@
 import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
+import type { Database } from 'firebase-admin/database';
 import {
+  errorResponseSchema,
   fighterSelectionInputSchema,
   fighterSelectionSchema,
+  isPathSafeProviderId,
   ONBOARDING_INTENTS,
   researchCoverageResponseSchema,
+  researchEnrichmentAttributionResponseSchema,
+  researchEnrichmentProjectionStateRecordSchema,
   userProfileSchema,
+  type ResearchEnrichmentAttributionResponse,
+  type ResearchEnrichmentProjectionStateRecord,
 } from '@smash-tracker/shared';
 import { z } from 'zod';
 import { buildDomainEnvelope } from '../events/envelope.js';
 import { createEvent } from '../events/ledger.js';
 import { NotFoundError, RtdbService } from '../services/rtdb.js';
 import { composeCoverageResponse } from '../research/coverageResponse.js';
+import { readEnrichmentObservation } from '../research/enrichment/store.js';
 
 /**
  * Phase 11 (Coach Workspace Tenancy & Feature Parity, PAR-04): route
@@ -34,6 +42,76 @@ import { composeCoverageResponse } from '../research/coverageResponse.js';
  * coverage). A coaching-mode request can never overwrite or read the
  * coach's own profile — or coverage — through a tenant header.
  */
+/**
+ * Phase 30.2 Plan 10 (ENR-09): the bounded cap on `GET
+ * /users/me/enrichment/attribution`'s comma-separated match-key list — a
+ * caller-controlled list has no natural upper bound otherwise, and each
+ * accepted key costs at least one database read.
+ */
+export const USERS_ENRICHMENT_ATTRIBUTION_MAX_KEYS = 200;
+
+const enrichmentAttributionQuerySchema = z.object({
+  // Raw comma-separated key list; a generous character bound (well above
+  // 200 keys at the shared package's own per-id length cap) so this schema
+  // never rejects a legitimate request before the key-COUNT cap below gets
+  // a chance to — that count check is what the acceptance behavior names.
+  keys: z.string().min(1).max(50_000),
+});
+
+/**
+ * Reads the stored ownership witness for ONE match key, mirroring
+ * `research/enrichment/projection.ts`'s private `readWitness` — duplicated
+ * here (rather than imported) because that function is not exported and
+ * this task's scope does not touch `projection.ts`. Returns `null` (never
+ * throws) for an absent or unparseable record.
+ */
+async function readEnrichmentWitnessForKey(
+  database: Database,
+  tenantId: string,
+  matchKey: string,
+): Promise<ResearchEnrichmentProjectionStateRecord | null> {
+  const snapshot = await database.ref(`researchEnrichmentProjection/${tenantId}/${matchKey}`).get();
+  if (!snapshot.exists()) {
+    return null;
+  }
+  const parsed = researchEnrichmentProjectionStateRecordSchema.safeParse(snapshot.val());
+  return parsed.success ? parsed.data : null;
+}
+
+/**
+ * Builds ONE attribution entry for a match key that carries a witness.
+ * Prefers the STAGE half of the witness (source page identity, raw stage
+ * text, stage form) and falls back to the VOD half's observation/revision
+ * only when no stage half exists — `rawStage`/`stageForm` are stage-only
+ * concepts and are never populated from a VOD-only witness. Reads the
+ * referenced observation ONLY for `sourcePageTitle`/`sourcePageUrl` — the
+ * witness itself stores neither, only an observation id, a revision id and
+ * a parser version (`researchEnrichmentProjection.ts`'s own doc comment).
+ */
+async function buildEnrichmentAttributionEntry(
+  database: Database,
+  tenantId: string,
+  matchKey: string,
+  witness: ResearchEnrichmentProjectionStateRecord,
+): Promise<ResearchEnrichmentAttributionResponse['attributions'][number]> {
+  const observationId = witness.stageObservationId ?? witness.vodObservationId ?? null;
+  const observation = observationId
+    ? await readEnrichmentObservation(database, tenantId, observationId)
+    : null;
+  const sourceRevisionId = witness.stageSourceRevisionId ?? witness.vodSourceRevisionId ?? null;
+
+  return {
+    matchKey,
+    ...(observation?.sourcePageTitle != null
+      ? { sourcePageTitle: observation.sourcePageTitle }
+      : {}),
+    ...(observation?.sourcePageUrl != null ? { sourcePageUrl: observation.sourcePageUrl } : {}),
+    ...(sourceRevisionId != null ? { sourceRevisionId } : {}),
+    ...(witness.projectedStageRaw != null ? { rawStage: witness.projectedStageRaw } : {}),
+    ...(witness.projectedStageForm != null ? { stageForm: witness.projectedStageForm } : {}),
+  };
+}
+
 const usersRoutes: FastifyPluginAsyncZod = async (app) => {
   const rtdb = new RtdbService(app.firebase.database);
 
@@ -233,6 +311,59 @@ const usersRoutes: FastifyPluginAsyncZod = async (app) => {
       },
     },
     async (request) => composeCoverageResponse(app.firebase.database, request.uid),
+  );
+
+  // GET /api/users/me/enrichment/attribution — Phase 30.2 Plan 10 (ENR-09):
+  // the self-scoped attribution lookup for a bounded, caller-supplied list
+  // of match keys. Kept in this SAME personal-only block as the coverage
+  // route above, for the identical reason: the handler passes only
+  // `request.uid` and accepts no subject parameter of any kind, so it is
+  // structurally impossible to target another subject's witnesses. A key
+  // with no stored witness, or an unsafe key, is silently OMITTED from the
+  // response rather than erroring the whole request; only the key-COUNT
+  // cap (`USERS_ENRICHMENT_ATTRIBUTION_MAX_KEYS`) is a hard 400.
+  app.get(
+    '/users/me/enrichment/attribution',
+    {
+      schema: {
+        querystring: enrichmentAttributionQuerySchema,
+        response: {
+          200: researchEnrichmentAttributionResponseSchema,
+          400: errorResponseSchema,
+        },
+      },
+    },
+    async (request, reply) => {
+      const keys = request.query.keys
+        .split(',')
+        .map((key) => key.trim())
+        .filter((key) => key.length > 0);
+
+      if (keys.length > USERS_ENRICHMENT_ATTRIBUTION_MAX_KEYS) {
+        return reply.code(400).send({
+          error: 'Bad Request',
+          message: `at most ${USERS_ENRICHMENT_ATTRIBUTION_MAX_KEYS} keys may be requested`,
+          statusCode: 400,
+        });
+      }
+
+      const database = app.firebase.database;
+      const attributions: ResearchEnrichmentAttributionResponse['attributions'] = [];
+      for (const key of keys) {
+        if (!isPathSafeProviderId(key)) {
+          continue;
+        }
+        const witness = await readEnrichmentWitnessForKey(database, request.uid, key);
+        if (!witness) {
+          continue;
+        }
+        attributions.push(
+          await buildEnrichmentAttributionEntry(database, request.uid, key, witness),
+        );
+      }
+
+      return reply.code(200).send({ attributions });
+    },
   );
 
   // Phase 11 (PAR-03/PAR-04): the fighters sub-routes are the ONLY part of

@@ -672,6 +672,97 @@ export const researchEnrichmentRunRecordSchema = z.object({
 export type ResearchEnrichmentRunRecord = z.infer<typeof researchEnrichmentRunRecordSchema>;
 
 // ---------------------------------------------------------------------------
+// Admin review-queue / confirm HTTP contract (Phase 30.2 Plan 10, ENR-06)
+//
+// Declared here (not locally in `apps/api/src/routes/research.ts`) so the
+// web client and the API share ONE contract, mirroring
+// `researchEnrichmentCoverageResponseSchema` above.
+// ---------------------------------------------------------------------------
+
+/**
+ * The tenant-wide tallies over exactly what the review queue itself
+ * contains — NEVER the tenant's full coverage counters, which include
+ * already-attached observations this queue never lists. `total` is the
+ * queue's own length, so a caller can render "N items need review" without
+ * summing the three matching-status counts (a matched-but-unattached
+ * observation — the adversarial forged-status case `store.ts`'s
+ * `listEnrichmentReviewQueue` still surfaces — would otherwise be silently
+ * dropped from a naive sum).
+ */
+export const researchEnrichmentReviewQueueCountsSchema = z.object({
+  ambiguous: z.number().int().nonnegative(),
+  conflicting: z.number().int().nonnegative(),
+  unmatched: z.number().int().nonnegative(),
+  total: z.number().int().nonnegative(),
+});
+export type ResearchEnrichmentReviewQueueCounts = z.infer<
+  typeof researchEnrichmentReviewQueueCountsSchema
+>;
+
+/** `GET .../enrichment/review` — the queue itself (never an attached observation, `store.ts`'s own contract) plus its counts, in the route's deterministic sort order. */
+export const researchEnrichmentReviewQueueResponseSchema = z.object({
+  observations: z.array(researchEnrichmentObservationRecordSchema).max(500),
+  counts: researchEnrichmentReviewQueueCountsSchema,
+});
+export type ResearchEnrichmentReviewQueueResponse = z.infer<
+  typeof researchEnrichmentReviewQueueResponseSchema
+>;
+
+/** `POST .../enrichment/review/:observationId/confirm` request body — the ONLY input this route accepts: the admin's chosen candidate. Everything else the store's `confirmEnrichmentObservationByAdmin` needs (the stored observation, its candidate list, the confirming uid, the clock) is server-derived, never client-supplied. */
+export const researchEnrichmentConfirmRequestSchema = z.object({
+  targetSetId: z.string().min(1).max(200),
+});
+export type ResearchEnrichmentConfirmRequest = z.infer<
+  typeof researchEnrichmentConfirmRequestSchema
+>;
+
+// ---------------------------------------------------------------------------
+// Self-scoped attribution HTTP contract (Phase 30.2 Plan 10, ENR-09)
+// ---------------------------------------------------------------------------
+
+/**
+ * One match key's attribution, present only for a key that carries a
+ * stored enrichment witness. `sourcePageTitle`/`sourcePageUrl` are read
+ * from the witness's referenced observation (the witness itself stores
+ * only an observation id, revision id and parser version — not the page
+ * identity), so both are `.nullish()`: a witness whose referenced
+ * observation has since been removed still reports its revision id, raw
+ * stage text and stage form without a page link, rather than being
+ * omitted entirely.
+ */
+export const researchEnrichmentAttributionEntrySchema = z.object({
+  matchKey: z.string().min(1).max(200),
+  sourcePageTitle: z.string().max(300).nullish(),
+  sourcePageUrl: z.string().max(500).nullish(),
+  sourceRevisionId: z.number().int().nullish(),
+  /** Untrusted third-party source text — never dropped (mirrors the observation record's own `rawStage`). */
+  rawStage: z.string().max(RESEARCH_ENRICHMENT_MAX_RAW_TEXT).nullish(),
+  stageForm: z.enum(RESEARCH_LIQUIPEDIA_STAGE_FORMS).nullish(),
+});
+export type ResearchEnrichmentAttributionEntry = z.infer<
+  typeof researchEnrichmentAttributionEntrySchema
+>;
+
+/**
+ * `GET /api/users/me/enrichment/attribution` response — ONLY the keys from
+ * the caller's request that carry a stored witness for the CALLER'S OWN
+ * subject are present; a key with no witness, or one belonging to another
+ * subject, is silently absent rather than reported as an error (the route
+ * accepts no subject parameter of any kind, so it is structurally
+ * impossible to observe another subject's witness through this shape).
+ * Capped at 200 to mirror `USERS_ENRICHMENT_ATTRIBUTION_MAX_KEYS`
+ * (`apps/api/src/routes/users.ts`) — duplicated locally rather than
+ * imported, since an API-only constant cannot be imported by this
+ * platform-agnostic shared module.
+ */
+export const researchEnrichmentAttributionResponseSchema = z.object({
+  attributions: z.array(researchEnrichmentAttributionEntrySchema).max(200),
+});
+export type ResearchEnrichmentAttributionResponse = z.infer<
+  typeof researchEnrichmentAttributionResponseSchema
+>;
+
+// ---------------------------------------------------------------------------
 // Observation id
 // ---------------------------------------------------------------------------
 

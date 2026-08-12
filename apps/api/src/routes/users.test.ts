@@ -868,6 +868,106 @@ describe('GET /api/users/me/coverage', () => {
   });
 });
 
+// Phase 30.2 Plan 10 (ENR-09): the self-scoped attribution lookup — a
+// bounded, caller-supplied match-key list resolved ONLY against the
+// caller's own uid, exactly like the coverage route above.
+describe('GET /api/users/me/enrichment/attribution', () => {
+  it('rejects unauthenticated requests (401)', async () => {
+    const { app } = buildTestApp();
+
+    const response = await app.inject({
+      method: 'GET',
+      url: '/api/users/me/enrichment/attribution?keys=match-1',
+    });
+
+    expect(response.statusCode).toBe(401);
+  });
+
+  it('returns attribution for the caller-own stored witness, including source page identity, revision id, raw stage text and stage form', async () => {
+    const { app, database } = buildTestApp();
+    database.seed(`researchEnrichmentProjection/${TEST_UID}/match-1`, {
+      matchKey: 'match-1',
+      targetSetId: 'set-1',
+      projectedStageId: 3,
+      projectedStageName: 'Battlefield',
+      projectedStageRaw: 'BF',
+      projectedStageForm: 'normal',
+      stageObservationId: 'obs-1',
+      stageSourceRevisionId: 42,
+      stageParserVersion: 'liquipedia-bracket-match2@1',
+      stageProjectedAtMs: 1_000,
+    });
+    database.seed(`researchEnrichmentObservations/${TEST_UID}/obs-1`, {
+      observationId: 'obs-1',
+      sourceProvider: 'liquipedia',
+      sourceWiki: 'smash',
+      contentType: 'stage-observation',
+      sourcePageTitle: 'Supernova/2026',
+      sourcePageUrl: 'https://liquipedia.net/smash/Supernova/2026',
+      sourceRevisionId: 42,
+      sourceContentHash: 'a'.repeat(64),
+      parserVersion: 'liquipedia-bracket-match2@1',
+      templateFamily: 'match2',
+      fetchedAtMs: 1_000,
+      observedAtMs: 1_000,
+      matchingStatus: 'matched',
+    });
+
+    const response = await app.inject({
+      method: 'GET',
+      // A second, never-witnessed key stays silently absent from the
+      // response — not an error, per the plan's stated behavior.
+      url: '/api/users/me/enrichment/attribution?keys=match-1,match-2',
+      headers: authHeader(),
+    });
+
+    expect(response.statusCode).toBe(200);
+    const body = response.json();
+    expect(body.attributions).toEqual([
+      {
+        matchKey: 'match-1',
+        sourcePageTitle: 'Supernova/2026',
+        sourcePageUrl: 'https://liquipedia.net/smash/Supernova/2026',
+        sourceRevisionId: 42,
+        rawStage: 'BF',
+        stageForm: 'normal',
+      },
+    ]);
+  });
+
+  it('returns an empty result for a match key whose witness belongs to another subject (cross-uid isolation)', async () => {
+    const { app, database } = buildTestApp();
+    const OTHER_UID = 'other-uid-attribution';
+    database.seed(`researchEnrichmentProjection/${OTHER_UID}/match-1`, {
+      matchKey: 'match-1',
+      targetSetId: 'set-1',
+      projectedStageRaw: 'BF',
+    });
+
+    const response = await app.inject({
+      method: 'GET',
+      url: '/api/users/me/enrichment/attribution?keys=match-1',
+      headers: authHeader(),
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({ attributions: [] });
+  });
+
+  it('rejects a key list longer than USERS_ENRICHMENT_ATTRIBUTION_MAX_KEYS with a client error', async () => {
+    const { app } = buildTestApp();
+    const tooMany = Array.from({ length: 201 }, (_, i) => `match-${i}`).join(',');
+
+    const response = await app.inject({
+      method: 'GET',
+      url: `/api/users/me/enrichment/attribution?keys=${tooMany}`,
+      headers: authHeader(),
+    });
+
+    expect(response.statusCode).toBe(400);
+  });
+});
+
 describe('GET/PUT /api/users/me/fighters', () => {
   it('returns empty arrays when nothing has been set', async () => {
     const { app } = buildTestApp();

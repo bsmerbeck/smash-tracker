@@ -338,7 +338,9 @@ function snapshotContentEqual(
   a: ResearchEnrichmentCoverageSnapshot,
   b: ResearchEnrichmentCoverageSnapshot,
 ): boolean {
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars -- rest-destructure-to-omit idiom; `asOfMs` is intentionally discarded
   const { asOfMs: _asOfMsA, ...restA } = a;
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars -- rest-destructure-to-omit idiom; `asOfMs` is intentionally discarded
   const { asOfMs: _asOfMsB, ...restB } = b;
   return JSON.stringify(canonicalize(restA)) === JSON.stringify(canonicalize(restB));
 }

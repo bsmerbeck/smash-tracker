@@ -6,11 +6,14 @@ import {
   RESEARCH_ENRICHMENT_MATCH_STATUSES,
   RESEARCH_LIQUIPEDIA_STAGE_FORMS,
   researchEnrichmentAttachmentRecordSchema,
+  researchEnrichmentAttributionResponseSchema,
   researchEnrichmentCohortCountsSchema,
+  researchEnrichmentConfirmRequestSchema,
   researchEnrichmentCountsSchema,
   researchEnrichmentCoverageResponseSchema,
   researchEnrichmentCoverageSnapshotSchema,
   researchEnrichmentObservationRecordSchema,
+  researchEnrichmentReviewQueueResponseSchema,
   researchEnrichmentProjectionStateRecordSchema,
   researchEnrichmentResolutionReceiptRecordSchema,
 } from './researchEnrichment.js';
@@ -517,6 +520,80 @@ describe('researchEnrichmentCohortCountsSchema / normalizeResearchEnrichmentCoho
       liquipediaSupplemented: 0,
       missing: 0,
     });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Admin review-queue / confirm / self-attribution HTTP contracts
+// ---------------------------------------------------------------------------
+
+describe('researchEnrichmentReviewQueueResponseSchema', () => {
+  it('parses an empty queue with all-zero counts', () => {
+    expect(
+      researchEnrichmentReviewQueueResponseSchema.safeParse({
+        observations: [],
+        counts: { ambiguous: 0, conflicting: 0, unmatched: 0, total: 0 },
+      }).success,
+    ).toBe(true);
+  });
+
+  it('rejects a response whose counts member is absent', () => {
+    expect(
+      researchEnrichmentReviewQueueResponseSchema.safeParse({ observations: [] }).success,
+    ).toBe(false);
+  });
+});
+
+describe('researchEnrichmentConfirmRequestSchema', () => {
+  it('accepts a request naming a targetSetId', () => {
+    expect(researchEnrichmentConfirmRequestSchema.safeParse({ targetSetId: 'set-1' }).success).toBe(
+      true,
+    );
+  });
+
+  it('rejects a request with no targetSetId', () => {
+    expect(researchEnrichmentConfirmRequestSchema.safeParse({}).success).toBe(false);
+  });
+});
+
+describe('researchEnrichmentAttributionResponseSchema', () => {
+  it('accepts an attribution entry with only witness-derived fields (no observation lookup available)', () => {
+    expect(
+      researchEnrichmentAttributionResponseSchema.safeParse({
+        attributions: [
+          {
+            matchKey: 'set-1-1',
+            rawStage: 'Battlefield',
+            stageForm: 'normal',
+          },
+        ],
+      }).success,
+    ).toBe(true);
+  });
+
+  it('accepts an attribution entry carrying the full source-page identity', () => {
+    expect(
+      researchEnrichmentAttributionResponseSchema.safeParse({
+        attributions: [
+          {
+            matchKey: 'set-1-1',
+            sourcePageTitle: 'Supernova/2026',
+            sourcePageUrl: 'https://liquipedia.net/smash/Supernova/2026',
+            sourceRevisionId: 12345,
+            rawStage: 'Battlefield',
+            stageForm: 'normal',
+          },
+        ],
+      }).success,
+    ).toBe(true);
+  });
+
+  it('rejects a response with more than 200 attribution entries', () => {
+    expect(
+      researchEnrichmentAttributionResponseSchema.safeParse({
+        attributions: Array.from({ length: 201 }, (_, i) => ({ matchKey: `set-${i}-1` })),
+      }).success,
+    ).toBe(false);
   });
 });
 
