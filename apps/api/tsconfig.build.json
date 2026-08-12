@@ -5,5 +5,12 @@
     "rootDir": "src",
     "noEmit": false
   },
-  "exclude": ["**/*.test.ts", "dist", "node_modules", "scripts"]
+  "exclude": [
+    "**/*.test.ts",
+    "**/__fixtures__/**",
+    "src/test-support/**",
+    "dist",
+    "node_modules",
+    "scripts"
+  ]
 }
