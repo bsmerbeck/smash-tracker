@@ -125,6 +125,17 @@ describe('researchEnrichmentObservationRecordSchema', () => {
     expect(parsed).toEqual(input);
   });
 
+  it('accepts a full-country-name player flag (live Liquipedia pages exceed 2-letter codes)', () => {
+    const input = makeFullObservation({
+      players: [
+        { rawTag: 'Sparg0', canonicalPage: 'Sparg0', flag: 'Mexico' },
+        { rawTag: 'Sonix', canonicalPage: 'Sonix', flag: 'Dominican Republic' },
+      ],
+    });
+    const parsed = researchEnrichmentObservationRecordSchema.parse(input);
+    expect(parsed).toEqual(input);
+  });
+
   it('parses a record missing an optional member, leaving that member absent (never null)', () => {
     const parsed = researchEnrichmentObservationRecordSchema.parse(makeMinimalObservation());
     expect('bracketTemplate' in parsed).toBe(false);

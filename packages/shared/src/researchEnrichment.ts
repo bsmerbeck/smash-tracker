@@ -193,7 +193,8 @@ export const LIQUIPEDIA_ATTRIBUTION_LICENSE_URL = 'https://creativecommons.org/l
 const researchEnrichmentPlayerEntrySchema = z.object({
   rawTag: z.string().min(1).max(RESEARCH_ENRICHMENT_MAX_RAW_TEXT),
   canonicalPage: z.string().max(300).nullish(),
-  flag: z.string().max(10).nullish(),
+  /** Untrusted third-party string: usually a 2-letter code, but live pages carry full country names ("Dominican Republic"). */
+  flag: z.string().max(RESEARCH_ENRICHMENT_MAX_RAW_TEXT).nullish(),
 });
 
 const researchEnrichmentGameEntrySchema = z.object({
