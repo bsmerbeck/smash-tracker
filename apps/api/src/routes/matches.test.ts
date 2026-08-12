@@ -1879,3 +1879,58 @@ describe('player activation reconciliation (ONBD-04)', () => {
     expect(fired[0]?.actorId).toBe(TEST_UID);
   });
 });
+
+/**
+ * P1 2026-08-12: GET /api/matches shipped 3.67MB of identity-encoded JSON in
+ * production. These lock in the @fastify/compress registration: clients that
+ * advertise gzip get a compressed body that round-trips to the same JSON,
+ * and clients with no Accept-Encoding (every other inject test in the API)
+ * keep identity responses.
+ */
+describe('response compression (GET /api/matches)', () => {
+  const seedLargeLibrary = (database: FakeDatabase) => {
+    const rows: Record<string, unknown> = {};
+    for (let i = 0; i < 100; i += 1) {
+      rows[`pushKey${i}`] = {
+        fighter_id: 1,
+        opponent_id: 8,
+        time: 1700000000000 + i,
+        win: i % 2 === 0,
+        notes: `repetitive tournament metadata row ${i} `.repeat(5),
+      };
+    }
+    database.seed(`matches/${TEST_UID}`, rows);
+  };
+
+  it('compresses with gzip when the client advertises it, round-tripping the payload', async () => {
+    const { app, database } = buildTestApp();
+    seedLargeLibrary(database);
+
+    const response = await app.inject({
+      method: 'GET',
+      url: '/api/matches',
+      headers: { ...authHeader(), 'accept-encoding': 'gzip' },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.headers['content-encoding']).toBe('gzip');
+    const { gunzipSync } = await import('node:zlib');
+    const body = JSON.parse(gunzipSync(response.rawPayload).toString('utf8')) as unknown[];
+    expect(body).toHaveLength(100);
+  });
+
+  it('leaves responses identity-encoded when no Accept-Encoding is sent', async () => {
+    const { app, database } = buildTestApp();
+    seedLargeLibrary(database);
+
+    const response = await app.inject({
+      method: 'GET',
+      url: '/api/matches',
+      headers: authHeader(),
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.headers['content-encoding']).toBeUndefined();
+    expect(response.json()).toHaveLength(100);
+  });
+});

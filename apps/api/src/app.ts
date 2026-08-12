@@ -1,4 +1,6 @@
+import zlib from 'node:zlib';
 import Fastify, { type FastifyBaseLogger, type FastifyError } from 'fastify';
+import compress from '@fastify/compress';
 import cors from '@fastify/cors';
 import rateLimit from '@fastify/rate-limit';
 import {
@@ -205,6 +207,22 @@ export function buildApp(options: BuildAppOptions) {
 
   app.register(cors, {
     origin: options.corsOrigin ?? 'http://localhost:5173',
+  });
+
+  // P1 2026-08-12: GET /api/matches shipped 3.67MB of identity-encoded JSON
+  // through the Firebase Hosting -> Cloud Run rewrite, which passes origin
+  // bodies through untouched — compression must happen here. Registered
+  // before every route scope so the onSend hook is inherited everywhere;
+  // it runs after fastify-type-provider-zod's serialization, so the zod
+  // serializer and its error path are unaffected. Clients that send no
+  // Accept-Encoding (every app.inject test) keep identity responses.
+  // Brotli quality is pinned: the default adaptive mode is fine today, but
+  // an explicit 4 keeps CPU per multi-MB payload deterministic on Cloud Run.
+  app.register(compress, {
+    global: true,
+    encodings: ['br', 'gzip'],
+    threshold: 1024,
+    brotliOptions: { params: { [zlib.constants.BROTLI_PARAM_QUALITY]: 4 } },
   });
 
   // Registered top-level with global:false so every existing (authenticated)
