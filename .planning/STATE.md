@@ -5,10 +5,10 @@ milestone_name: Pro-Readiness — Evidence-First Stats & Research Workspaces
 current_phase: 30.2
 current_phase_name: Liquipedia Stage & VOD Enrichment
 status: executing
-stopped_at: "2026-08-12: Phase 30.2 Plan 13 B4-B6 complete. Final hash-verified zero-write manifest records 57 MkLeo + 68 Sparg0 matched observations; ambiguous/conflicting abstain; 13 user VODs preserved. Awaiting explicit owner B7 production-apply approval."
-last_updated: "2026-08-12T17:15:00.000Z"
+stopped_at: "2026-08-12: B7 APPROVED by owner. First apply attempt: preflight matched all four write-set hashes, then aborted during Hungrybox observation persistence — live pages carry full-country-name flag params exceeding the 10-char schema cap. ZERO of the 125 attachments written (loop died on account 1 of 4); only idempotent hbox observation records + a resumable run record landed. Cap widened to the 120-char raw-text bound (b3ee394f, RED→GREEN, shared 811 + api 3101 green). Owner must rerun apply (same command, same manifest — flags are not hashed so the reviewed artifact stays valid), then compare."
+last_updated: "2026-08-12T20:45:00.000Z"
 last_activity: 2026-08-12
-last_activity_desc: "Built and pushed gated enrichment operator; debugged production slug mismatch RED→GREEN; final read-only manifest `apps/api/enrichment-manifest.final.json` hash `55ea0d…d49d70`; Codex checkpoint 4 recommends bounded apply."
+last_activity_desc: "B7 apply attempt 1 aborted safely on the flag-cap defect; fix committed b3ee394f; awaiting owner rerun of apply + compare."
 progress:
   total_phases: 8
   completed_phases: 3
@@ -143,6 +143,7 @@ Phase 30 detail (2026-08-08): 8/8 plans executed and merged (30-08 stopped 3/5 t
 
 | # | Description | Date | Commit | Directory |
 |---|-------------|------|--------|-----------|
+| 260812-qit | **P1 login boot stall fixed** (ultracode; owner-declared priority 1): HAR proved five statically-imported entry chunks hung 26-103s on a post-deploy cold CDN edge and boot hard-blocked — NOT the API (3.67MB /api/matches took 2.5s). Cut the entry graph 62→27 modulepreloads (lazy MainLayout+SignInCard with warm-up imports, en locale inlined via base-code loader map), added retryableLazy (timeout/retry/cooldown-reload) on all 40 routes, ChunkErrorBoundary (6 locales), inline boot spinner + 15s watchdog, hardened prerender gate on the sign-in card, `pnpm warm:cdn` post-deploy smoke/warm script, and @fastify/compress (br/gzip) on the API. Adversarial review workflow: 19 confirmed findings all addressed (incl. critical pt-BR→English i18n regression and an infinite-reload-loop guard defect). Web 2316/api 3103/typechecks/lint/prerender green. NOT yet deployed — ships with the step-6 deploy of the 30.1 owner order | 2026-08-12 | 9e3f812d,72e09750,b1c72fc9 | [260812-qit-cold-cdn-boot-stall](./quick/260812-qit-cold-cdn-boot-stall/) |
 | 260810-cif | (gsd-fast) De-flaked CI: MatchDataPage VOD-edit interaction test timeout 10s→30s (#159 flake class; failed on a runner with 215s environment setup, passes ~2s locally; test file untouched since July so no regression). Test-only | 2026-08-10 | 2a0c69f | — |
 | 260810-fbp | (gsd-fast) Read-only `freezeBaselineProbe.ts` for Phase 30.1 Task 2.6: per-tree counts for all 7 copy trees via the migration module's own `enumerateRecords` (byte-comparable to the later copy manifest), activeRunId + coverage asOf per tenant, assert-empty existence checks; exits non-zero on any active run/missing coverage/violation. Owner-run, zero writes; typecheck+lint+prettier clean | 2026-08-10 | 1b58327 | — |
 | 260810-iw5 | Fixed post-signup black screen (profile 404 race, found by owner creating demo account #1): `provisionUser` now returns a success boolean and new `provisionAndRefreshProfile` invalidates `['profile']` only on success, awaiting the FB-01 uid-transition cache-clear chain first (all 5 provisioning call sites); HomePage's signed-in-no-profile branch renders existing `chrome.loading` instead of null (signed-out/prerender branches byte-unchanged, zero new i18n). Deterministic deferred-mock race regression test; web 2253 green, typecheck + lint clean. NOT yet deployed — ships with the step-6 deploy of the 30.1 owner order | 2026-08-10 | e6b5e5a,90c88a5 | [260810-iw5-fix-post-signup-black-screen-invalidate-](./quick/260810-iw5-fix-post-signup-black-screen-invalidate-/) |
