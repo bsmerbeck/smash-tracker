@@ -46,6 +46,8 @@ export * from './gspLive.js';
 export * from './playlist.js';
 export * from './researchKind.js';
 export * from './researchEntitlement.js';
+export * from './researchProvenance.js';
+export * from './researchEnrichment.js';
 export * from './researchIngestion.js';
 export * from './coachingTenant.js';
 export * from './claims.js';
