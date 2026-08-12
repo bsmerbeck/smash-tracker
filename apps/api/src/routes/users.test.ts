@@ -818,6 +818,54 @@ describe('GET /api/users/me/coverage', () => {
     expect(JSON.stringify(body)).not.toContain('player-other');
     expect(JSON.stringify(body)).not.toContain(OTHER_UID);
   });
+
+  // Phase 30.2 Plan 10 (ENR-06/ENR-09): the additive `enrichment` member —
+  // present when `researchEnrichmentCoverage/{uid}` exists, ABSENT (never
+  // `null`) when it does not. Neither case touches any assertion above.
+  it('omits the enrichment member when no researchEnrichmentCoverage node exists', async () => {
+    const { app } = buildTestApp();
+
+    const response = await app.inject({
+      method: 'GET',
+      url: '/api/users/me/coverage',
+      headers: authHeader(),
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect('enrichment' in response.json()).toBe(false);
+  });
+
+  it('returns the enrichment member when researchEnrichmentCoverage/{uid} exists', async () => {
+    const { app, database } = buildTestApp();
+    database.seed(`researchEnrichmentCoverage/${TEST_UID}`, {
+      asOfMs: 1_000,
+      runId: 'run-1',
+      counts: { matched: 2 },
+      cohortCounts: { startggOnly: 1, liquipediaSupplemented: 1 },
+      perSourcePage: {
+        'Supernova/2026': {
+          sourcePageUrl: 'https://liquipedia.net/smash/Supernova/2026',
+          revisionId: 1,
+          contentHash: 'a'.repeat(64),
+          fetchedAtMs: 1_000,
+          observationCount: 5,
+        },
+      },
+    });
+
+    const response = await app.inject({
+      method: 'GET',
+      url: '/api/users/me/coverage',
+      headers: authHeader(),
+    });
+
+    expect(response.statusCode).toBe(200);
+    const body = response.json();
+    expect(body.enrichment.counts.matched).toBe(2);
+    expect(body.enrichment.perSourcePage['Supernova/2026'].sourcePageUrl).toBe(
+      'https://liquipedia.net/smash/Supernova/2026',
+    );
+  });
 });
 
 describe('GET/PUT /api/users/me/fighters', () => {

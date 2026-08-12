@@ -8,6 +8,7 @@ import {
   researchEnrichmentAttachmentRecordSchema,
   researchEnrichmentCohortCountsSchema,
   researchEnrichmentCountsSchema,
+  researchEnrichmentCoverageResponseSchema,
   researchEnrichmentCoverageSnapshotSchema,
   researchEnrichmentObservationRecordSchema,
   researchEnrichmentProjectionStateRecordSchema,
@@ -432,6 +433,50 @@ describe('researchEnrichmentCoverageSnapshotSchema', () => {
   it('rejects a perSourcePage entry missing sourcePageUrl (cycle-1 review HIGH 5)', () => {
     expect(
       researchEnrichmentCoverageSnapshotSchema.safeParse(
+        makeCoverageSnapshot({
+          perSourcePage: {
+            'Supernova/2026': {
+              revisionId: 1,
+              contentHash: 'a'.repeat(64),
+              fetchedAtMs: 1_000,
+              observationCount: 5,
+            },
+          },
+        }),
+      ).success,
+    ).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// researchEnrichmentCoverageResponseSchema
+// ---------------------------------------------------------------------------
+
+describe('researchEnrichmentCoverageResponseSchema', () => {
+  it('parses a response carrying counts, cohort counts, freshness and notes', () => {
+    expect(
+      researchEnrichmentCoverageResponseSchema.safeParse(
+        makeCoverageSnapshot({
+          counts: { matched: 3, stageEnriched: 2 },
+          cohortCounts: { startggOnly: 1, liquipediaSupplemented: 2, missing: 0 },
+          perSourcePage: {
+            'Supernova/2026': {
+              sourcePageUrl: 'https://liquipedia.net/smash/Supernova/2026',
+              revisionId: 1,
+              contentHash: 'a'.repeat(64),
+              fetchedAtMs: 1_000,
+              observationCount: 5,
+            },
+          },
+          notes: ['izaw: no Liquipedia VOD page found'],
+        }),
+      ).success,
+    ).toBe(true);
+  });
+
+  it('rejects a perSourcePage entry missing sourcePageUrl, same as the stored snapshot schema (cycle-1 review HIGH 5)', () => {
+    expect(
+      researchEnrichmentCoverageResponseSchema.safeParse(
         makeCoverageSnapshot({
           perSourcePage: {
             'Supernova/2026': {

@@ -565,6 +565,27 @@ export type ResearchEnrichmentCoverageSnapshot = z.infer<
   typeof researchEnrichmentCoverageSnapshotSchema
 >;
 
+/**
+ * Phase 30.2 Plan 10 (ENR-06/ENR-09): the HTTP-facing shape of the
+ * additive `enrichment` member the Phase 30 provider-ingestion schema
+ * module's coverage-response schema adds — the value a caller of `GET
+ * /api/users/me/coverage` or `GET /research/tenants/:tenantId/coverage`
+ * actually receives. Declared as its OWN named export, not inlined as a
+ * bare reference to `researchEnrichmentCoverageSnapshotSchema` at the call
+ * site, so the response CONTRACT can diverge from the STORED shape later
+ * (e.g. a presentational-only member neither read nor written by
+ * `research/enrichment/rollup.ts`) without moving the stored schema. Today
+ * the members are identical to the stored snapshot — the as-of timestamp,
+ * the run id, the counts, the cohort counts, the per-source-page freshness
+ * map (whose value REQUIRES `sourcePageUrl`, cycle-1 review HIGH 5) and the
+ * notes array — so this is presently a same-shape alias rather than a
+ * hand-duplicated copy that could silently drift from it.
+ */
+export const researchEnrichmentCoverageResponseSchema = researchEnrichmentCoverageSnapshotSchema;
+export type ResearchEnrichmentCoverageResponse = z.infer<
+  typeof researchEnrichmentCoverageResponseSchema
+>;
+
 // ---------------------------------------------------------------------------
 // Run record
 // ---------------------------------------------------------------------------
