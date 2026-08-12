@@ -82,6 +82,19 @@ export interface UpsertSupplementInput {
   now?: number;
 }
 
+/**
+ * ENR-13 (Phase 30.2): the single place the `sourceKind` -> `contentType`
+ * mapping lives on the WRITE side (its read-side twin is
+ * `deriveSupplementProvenance` in `@smash-tracker/shared`) — never an inline
+ * conditional at the `upsertSupplement` call site, so there is exactly one
+ * definition of the mapping per direction.
+ */
+function deriveSupplementContentType(
+  sourceKind: ResearchSupplementSourceKind,
+): 'note' | 'vod-reference' {
+  return sourceKind === 'manual' ? 'note' : 'vod-reference';
+}
+
 export type UpsertSupplementOutcome =
   'created' | 'replaced' | 'rejected-key' | 'rejected-field' | 'rejected-cap';
 
@@ -143,6 +156,12 @@ export async function upsertSupplement(
     value: input.value,
     attributedToUid: input.attributedToUid,
     recordedAtMs: now,
+    // ENR-13: every NEW record this writer produces carries both provenance
+    // dimensions EXPLICITLY, so it is never indistinguishable from a legacy
+    // record — a schema that merely PERMITS the two dimensions is not the
+    // ENR-13 outcome on its own (cycle-1 review MEDIUM 6).
+    sourceOrigin: 'manual',
+    contentType: deriveSupplementContentType(input.sourceKind),
     ...(input.note != null ? { note: input.note } : {}),
     ...(input.vodUrl != null ? { vodUrl: input.vodUrl } : {}),
     ...(input.vodTimestampSeconds != null

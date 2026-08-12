@@ -309,6 +309,41 @@ const DELETION_TREES_WITHOUT_A_SAME_SUBJECT_ROUTE: Record<string, string> = {
     'admin-only research coverage route (plan 30-07), which answers the research ' +
     "family's uniform 404 by design — it can never satisfy a covered same-subject " +
     '403 route.',
+  // Phase 30.2 Plan 01 (ENR-04/ENR-05/ENR-06/ENR-08/ENR-10/ENR-12): six new
+  // tenant-keyed Liquipedia enrichment trees, registered ahead of any
+  // writer. Every one is reached only through the admin-only research
+  // enrichment route family (the same Phase 29 dual gate), which answers
+  // the same uniform 404 (RESEARCH_FAMILY_REJECTION) as researchEntitlements
+  // above — none can ever satisfy a covered same-subject 403 route.
+  researchEnrichmentObservations:
+    'one row per extracted Liquipedia fact (ENR-04) is reached only through the ' +
+    'admin-only research enrichment routes (Phase 30.2), which answer the research ' +
+    "family's uniform 404 by design — it can never satisfy a covered same-subject " +
+    '403 route.',
+  researchEnrichmentReceipts:
+    'the persisted resolver receipt an automatic attachment is checked against ' +
+    '(ENR-05) is reached only through the admin-only research enrichment routes ' +
+    "(Phase 30.2), which answer the research family's uniform 404 by design — it " +
+    'can never satisfy a covered same-subject 403 route.',
+  researchEnrichmentAttachments:
+    'the authorization record that lets an observation reach projection (ENR-06) ' +
+    'is reached only through the admin-only research enrichment routes (Phase 30.2), ' +
+    "which answer the research family's uniform 404 by design — it can never " +
+    'satisfy a covered same-subject 403 route.',
+  researchEnrichmentProjection:
+    'the stage/VOD ownership witness (ENR-08), stored outside the match row, is ' +
+    'reached only through the admin-only research enrichment routes (Phase 30.2), ' +
+    "which answer the research family's uniform 404 by design — it can never " +
+    'satisfy a covered same-subject 403 route.',
+  researchEnrichmentCoverage:
+    'the published enrichment coverage snapshot (ENR-12) is reached only through ' +
+    'the admin-only research enrichment routes (Phase 30.2), which answer the ' +
+    "research family's uniform 404 by design — it can never satisfy a covered " +
+    'same-subject 403 route.',
+  researchEnrichmentRuns:
+    'enrichment backfill run state (ENR-10) is reached only through the admin-only ' +
+    "research enrichment routes (Phase 30.2), which answer the research family's " +
+    'uniform 404 by design — it can never satisfy a covered same-subject 403 route.',
 };
 
 describe('TENANT_DELETION_TREES is a documented superset of CANONICAL_TENANT_TREES', () => {

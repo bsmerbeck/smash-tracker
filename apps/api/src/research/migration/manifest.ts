@@ -65,9 +65,19 @@ export function isAssertEmptyDescriptor(
  * the authorization-bearing `researchEntitlements`, the claim pointer, and
  * every coaching-content tree — is `assert-empty` and forces `runMigration`
  * to refuse if non-empty for the source.
+ *
+ * Phase 30.2 Plan 01 (ENR-04/ENR-05/ENR-06/ENR-08/ENR-10/ENR-12) adds the six
+ * Liquipedia enrichment trees, all `copy`: an `assert-empty` disposition
+ * would make any future migration of an already-enriched workspace refuse to
+ * run outright, and enrichment attribution must survive migration per
+ * ENR-11's minimum coverage list. `researchEnrichmentReceipts` specifically:
+ * an attachment that survived migration without its authorising receipt
+ * would be un-auditable at the destination and could not be re-verified by
+ * the attachment writer's revalidation path — so the receipt travels with
+ * its attachment, never left behind.
  */
 export const TREE_DESCRIPTORS: readonly TreeDescriptor[] = [
-  // -- copy (7): owner-locked data trees only --------------------------------
+  // -- copy (13): owner-locked data trees + Liquipedia enrichment trees -----
   { tree: 'matches', disposition: 'copy', shape: 'flat' },
   { tree: 'opponents', disposition: 'copy', shape: 'flat' },
   { tree: 'researchSource', disposition: 'copy', shape: 'nested-sets' },
@@ -75,6 +85,12 @@ export const TREE_DESCRIPTORS: readonly TreeDescriptor[] = [
   { tree: 'researchIdentity', disposition: 'copy', shape: 'singleton' },
   { tree: 'researchIngestionRuns', disposition: 'copy', shape: 'singleton' },
   { tree: 'researchCoverage', disposition: 'copy', shape: 'singleton' },
+  { tree: 'researchEnrichmentObservations', disposition: 'copy', shape: 'flat' },
+  { tree: 'researchEnrichmentReceipts', disposition: 'copy', shape: 'flat' },
+  { tree: 'researchEnrichmentAttachments', disposition: 'copy', shape: 'nested-two-level' },
+  { tree: 'researchEnrichmentProjection', disposition: 'copy', shape: 'flat' },
+  { tree: 'researchEnrichmentCoverage', disposition: 'copy', shape: 'singleton' },
+  { tree: 'researchEnrichmentRuns', disposition: 'copy', shape: 'singleton' },
   // -- assert-empty (15): authorization + claim + coaching-content ----------
   // Authorization-bearing — OUTSIDE the owner-locked migration list. A live
   // grant refuses the run and escalates a separate revoke/disposition

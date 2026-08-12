@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  deriveSupplementProvenance,
   isPathSafeProviderId,
   isValidSupplementField,
   normalizeResearchClassificationCounts,
@@ -619,6 +620,9 @@ describe('researchSupplementRecordSchema', () => {
     };
   }
 
+  // Deliberately RETAINED under the ENR-13 corrected model (Phase 30.2): the
+  // enum still has no provider member — a Liquipedia observation lives on
+  // `researchEnrichmentObservationRecordSchema` instead, never here.
   it('rejects sourceKind: startgg', () => {
     expect(
       researchSupplementRecordSchema.safeParse(makeSupplement({ sourceKind: 'startgg' })).success,
@@ -649,6 +653,91 @@ describe('researchSupplementRecordSchema', () => {
       researchSupplementRecordSchema.safeParse(makeSupplement({ vodUrl: 'javascript:alert(1)' }))
         .success,
     ).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// ENR-13 (Phase 30.2): supplement provenance/content-type correction —
+// existing records preserved byte-for-byte at their existing keys, new
+// members additive-only, no re-keying.
+// ---------------------------------------------------------------------------
+
+describe('ENR-13: supplement provenance/content-type correction', () => {
+  /** The EXACT shape the shipped writer produces today — no sourceOrigin, no contentType, no rawValue, no canonicalValue, no observedAtMs. */
+  function makeLegacySupplement(overrides: Record<string, unknown> = {}) {
+    return {
+      sourceKind: 'manual',
+      targetSetId: 'set-1',
+      field: 'notes',
+      value: 'played it safe on stage 2',
+      attributedToUid: 'admin-1',
+      recordedAtMs: 1_000,
+      ...overrides,
+    };
+  }
+
+  it('parses a legacy manual record exactly as shipped, and deriveSupplementProvenance derives origin manual / contentType note / explicit false', () => {
+    const parsed = researchSupplementRecordSchema.parse(makeLegacySupplement());
+    expect(deriveSupplementProvenance(parsed)).toEqual({
+      origin: 'manual',
+      contentType: 'note',
+      explicit: false,
+    });
+  });
+
+  it('parses a legacy vod record exactly as shipped, and deriveSupplementProvenance derives origin manual / contentType vod-reference / explicit false', () => {
+    const parsed = researchSupplementRecordSchema.parse(
+      makeLegacySupplement({
+        sourceKind: 'vod',
+        field: 'vodUrl',
+        value: 'https://youtu.be/abc',
+      }),
+    );
+    expect(deriveSupplementProvenance(parsed)).toEqual({
+      origin: 'manual',
+      contentType: 'vod-reference',
+      explicit: false,
+    });
+  });
+
+  it('returns the explicit dimensions with explicit: true for a record that writes them itself', () => {
+    const parsed = researchSupplementRecordSchema.parse(
+      makeLegacySupplement({ sourceOrigin: 'manual', contentType: 'note' }),
+    );
+    expect(deriveSupplementProvenance(parsed)).toEqual({
+      origin: 'manual',
+      contentType: 'note',
+      explicit: true,
+    });
+  });
+
+  it('rejects an explicit contentType that disagrees with the value implied by sourceKind', () => {
+    expect(
+      researchSupplementRecordSchema.safeParse(
+        makeLegacySupplement({ sourceKind: 'manual', contentType: 'vod-reference' }),
+      ).success,
+    ).toBe(false);
+    expect(
+      researchSupplementRecordSchema.safeParse(
+        makeLegacySupplement({ sourceKind: 'vod', field: 'vodUrl', contentType: 'note' }),
+      ).success,
+    ).toBe(false);
+  });
+
+  it('rejects liquipedia as a sourceOrigin value — this tree cannot claim provider authorship', () => {
+    expect(
+      researchSupplementRecordSchema.safeParse(makeLegacySupplement({ sourceOrigin: 'liquipedia' }))
+        .success,
+    ).toBe(false);
+  });
+
+  it('parses a record carrying rawValue and canonicalValue, both absent-tolerant', () => {
+    expect(
+      researchSupplementRecordSchema.safeParse(
+        makeLegacySupplement({ rawValue: 'raw text', canonicalValue: 'canonical text' }),
+      ).success,
+    ).toBe(true);
+    expect(researchSupplementRecordSchema.safeParse(makeLegacySupplement()).success).toBe(true);
   });
 });
 
