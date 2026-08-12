@@ -4,17 +4,23 @@ import {
   RESEARCH_EXCLUDED_OUTCOME_CLASSIFICATIONS,
   normalizeResearchClassificationCounts,
   normalizeResearchCounters,
+  normalizeResearchEnrichmentCohortCounts,
+  normalizeResearchEnrichmentCounts,
   normalizeResearchNamedGaps,
   type ResearchClassificationCounts,
   type ResearchCounters,
   type ResearchCoveragePlayerSection,
   type ResearchCoverageResponse,
   type ResearchDateCoverage,
+  type ResearchEnrichmentCohortCounts,
+  type ResearchEnrichmentCoverageResponse,
+  type ResearchEnrichmentCounts,
   type ResearchExcludedOutcomeClassification,
   type ResearchNamedGaps,
 } from '@smash-tracker/shared';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { useDataCoverage } from '@/hooks/useDataCoverage';
+import { LiquipediaLicenseNote } from '@/components/enrichment/LiquipediaAttributionBadge';
 
 const COUNT_FIELDS = [
   'discoveredAllGames',
@@ -24,6 +30,18 @@ const COUNT_FIELDS = [
   'unresolved',
   'corrected',
 ] as const;
+
+/** Phase 30.2 Plan 11 (ENR-09): the six enrichment counters this plan's `<behavior>` names — a deliberate SUBSET of `ResearchEnrichmentCounts`'s wider member list, not every stored counter. */
+const ENRICHMENT_COUNT_FIELDS = [
+  'matched',
+  'ambiguous',
+  'unmatched',
+  'conflicting',
+  'stageEnriched',
+  'vodEnriched',
+] as const;
+
+const ENRICHMENT_COHORT_FIELDS = ['startggOnly', 'liquipediaSupplemented', 'missing'] as const;
 
 const GAP_FIELDS = [
   'unknownCharacter',
@@ -264,6 +282,181 @@ function NeverRunRow({ playerId, t }: { playerId: string; t: TFunction }) {
 }
 
 /**
+ * Phase 30.2 Plan 11 (ENR-09): the enrichment counters row block —
+ * `normalizeResearchEnrichmentCounts` maps the `.nullish()` stored shape to
+ * an all-numeric object so a zero renders as the digit `0` rather than an
+ * absent node, mirroring `CountRows`' own convention above.
+ */
+function EnrichmentCountRows({ counts, t }: { counts: ResearchEnrichmentCounts; t: TFunction }) {
+  const normalized = normalizeResearchEnrichmentCounts(counts);
+  return (
+    <dl className="grid grid-cols-2 gap-x-4 gap-y-1 text-sm">
+      {ENRICHMENT_COUNT_FIELDS.map((field) => (
+        <div
+          key={field}
+          data-testid={`data-coverage-enrichment-count-${field}`}
+          className="flex items-center justify-between gap-2"
+        >
+          <dt className="text-muted-foreground">{t(`enrichment.coverage.counts.${field}`)}</dt>
+          <dd className="font-medium">{normalized[field]}</dd>
+        </div>
+      ))}
+    </dl>
+  );
+}
+
+/** The three-cohort split (ENR-11), each with its own explanation of what the cohort means. */
+function EnrichmentCohortSection({
+  cohortCounts,
+  t,
+}: {
+  cohortCounts: ResearchEnrichmentCohortCounts;
+  t: TFunction;
+}) {
+  const normalized = normalizeResearchEnrichmentCohortCounts(cohortCounts);
+  return (
+    <div data-testid="data-coverage-enrichment-cohorts" className="text-sm">
+      <h4 className="font-semibold">{t('enrichment.coverage.cohorts.title')}</h4>
+      <ul>
+        {ENRICHMENT_COHORT_FIELDS.map((field) => (
+          <li
+            key={field}
+            data-testid={`data-coverage-enrichment-cohort-${field}`}
+            className="flex flex-col gap-0.5 py-0.5"
+          >
+            <div className="flex justify-between gap-2">
+              <span className="text-muted-foreground">
+                {t(`enrichment.coverage.cohorts.${field}`)}
+              </span>
+              <span className="font-medium">{normalized[field]}</span>
+            </div>
+            <span className="text-xs text-muted-foreground">
+              {t(`enrichment.coverage.cohorts.${field}Explanation`)}
+            </span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+/**
+ * The recorded notes verbatim — e.g. the IzAw honest-zero reason (no source
+ * page exists). Rendered as a stated fact (`text-muted-foreground`), never
+ * as a warning or an error affordance.
+ */
+function EnrichmentNotesSection({ notes, t }: { notes?: string[] | null; t: TFunction }) {
+  if (!notes || notes.length === 0) {
+    return null;
+  }
+  return (
+    <div data-testid="data-coverage-enrichment-notes" className="text-sm">
+      <h4 className="font-semibold">{t('enrichment.coverage.notes.title')}</h4>
+      <ul>
+        {notes.map((note, index) => (
+          <li
+            key={index}
+            data-testid={`data-coverage-enrichment-note-${index}`}
+            className="text-muted-foreground"
+          >
+            {note}
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+/**
+ * The per-source-page freshness list. `sourcePageUrl` is read STRAIGHT from
+ * the coverage response's stored `perSourcePage` entry and passed through
+ * to the anchor UNMODIFIED — never built from the page title, never
+ * interpolated against a base URL. Cycle-1 review HIGH 5: a render-time-
+ * derived attribution link is untestable against the actual source of the
+ * data and silently drifts from what was fetched, which is why plan 01
+ * made the stored URL a required member of every freshness entry rather
+ * than leaving this component to reconstruct one. A defensive absent-URL
+ * check still renders the row — WITHOUT an anchor, never a derived one —
+ * in case a malformed response somehow omits the required member.
+ */
+function EnrichmentFreshnessSection({
+  perSourcePage,
+  t,
+  language,
+}: {
+  perSourcePage?: ResearchEnrichmentCoverageResponse['perSourcePage'];
+  t: TFunction;
+  language: string;
+}) {
+  const entries = Object.entries(perSourcePage ?? {});
+  if (entries.length === 0) {
+    return null;
+  }
+  return (
+    <div data-testid="data-coverage-enrichment-freshness" className="text-sm">
+      <h4 className="font-semibold">{t('enrichment.coverage.freshness.title')}</h4>
+      <ul className="flex flex-col gap-1">
+        {entries.map(([pageTitle, entry]) => (
+          <li key={pageTitle} data-testid={`data-coverage-enrichment-freshness-${pageTitle}`}>
+            {entry.sourcePageUrl != null ? (
+              <a
+                href={entry.sourcePageUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="underline"
+              >
+                {pageTitle}
+              </a>
+            ) : (
+              <span>{pageTitle}</span>
+            )}
+            <span className="ml-2 text-xs text-muted-foreground">
+              {t('enrichment.coverage.freshness.detail', {
+                revisionId: entry.revisionId,
+                date: formatEpochMs(entry.fetchedAtMs, language),
+              })}
+            </span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+/**
+ * The full enrichment section — rendered only when the coverage response
+ * carries the `enrichment` member at all, so an un-enriched account's panel
+ * is unchanged (the caller gates on `data?.enrichment != null`, this
+ * component itself assumes a present snapshot).
+ */
+function EnrichmentSection({
+  enrichment,
+  t,
+  language,
+}: {
+  enrichment: ResearchEnrichmentCoverageResponse;
+  t: TFunction;
+  language: string;
+}) {
+  return (
+    <div data-testid="data-coverage-enrichment" className="rounded-md border p-3">
+      <h3 className="text-sm font-semibold">{t('enrichment.coverage.title')}</h3>
+      <EnrichmentCountRows counts={enrichment.counts} t={t} />
+      <EnrichmentCohortSection cohortCounts={enrichment.cohortCounts} t={t} />
+      <EnrichmentNotesSection notes={enrichment.notes} t={t} />
+      <EnrichmentFreshnessSection
+        perSourcePage={enrichment.perSourcePage}
+        t={t}
+        language={language}
+      />
+      <div className="mt-2">
+        <LiquipediaLicenseNote />
+      </div>
+    </div>
+  );
+}
+
+/**
  * Phase 30.1 Plan 05 (WKSP-01A, review H5/C2-H2): the presentational body
  * shared by BOTH the admin-only research-tenant panel (`DataCoveragePanel`
  * below, via `useDataCoverage`) and the self-only in-account panel
@@ -381,6 +574,18 @@ export function DataCoveragePanelView({
               {t('coaching.research.coverage.vodUrl.note')}
             </p>
           </>
+        )}
+        {/* Phase 30.2 Plan 11 (ENR-09): a SIBLING to the ingestion snapshot
+            above, not nested inside its `hasCompletedRun`/`snapshot` gate —
+            the enrichment rollup publishes to its own node
+            (`researchEnrichmentCoverage/{tenantId}`) independent of whether
+            an INGESTION backfill has ever completed for this tenant, so an
+            account can have enrichment data with no ingestion snapshot at
+            all. Renders nothing when the coverage response carries no
+            `enrichment` member — an un-enriched account's panel is
+            unchanged, exactly like every other conditional block here. */}
+        {data?.enrichment != null && (
+          <EnrichmentSection enrichment={data.enrichment} t={t} language={language} />
         )}
       </CardContent>
     </Card>
