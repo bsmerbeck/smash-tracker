@@ -565,6 +565,23 @@ export async function applyEnrichmentProjection(
   // candidate set with any key this tenant's witness tree already
   // attributes to THIS target set, so a removal is discovered rather than
   // silently ignored.
+  //
+  // ACCEPTED RISK — WHOLE-WITNESS-TREE READ PER TARGET SET (Codex
+  // checkpoint-3 risk, accepted for this phase). This reads the tenant's
+  // ENTIRE `researchEnrichmentProjection` subtree and filters it in memory
+  // by `targetSetId`, once per target set applied. The read is bounded and
+  // cheap at the scale this phase actually serves — the four demo research
+  // accounts and wave 9's target list — where the whole subtree is small
+  // and the per-set filter costs less than the round trips an index would
+  // add. It is NOT bounded by the number of sets being applied: cost grows
+  // as (sets applied x tenant witness count), so a tenant with a large
+  // witness tree processed set-by-set degrades quadratically.
+  //
+  // The named follow-up, before any larger-scale use: a TARGET-SET INDEX
+  // (`researchEnrichmentProjectionByTargetSet/{tenantId}/{targetSetId}/{matchKey}`,
+  // maintained by the same phase A/C witness patches that already stamp
+  // `targetSetId` here) so this becomes a single scoped read. Do not widen
+  // this module past the four-account scale without it.
   const witnessSnapshotForSet = await database
     .ref(`researchEnrichmentProjection/${tenantId}`)
     .get();
