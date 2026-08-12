@@ -5,13 +5,40 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter } from 'react-router';
 import type { Match } from '@smash-tracker/shared';
 import { AttachVodDialog } from './AttachVodDialog';
+import { resetAuthMock, setMockUser, makeMockUser } from '@/test/mockAuth';
+
+vi.mock('firebase/auth', async () => {
+  const mock = await import('@/test/mockAuth');
+  return {
+    onAuthStateChanged: mock.onAuthStateChanged,
+    signInWithEmailAndPassword: mock.signInWithEmailAndPassword,
+    createUserWithEmailAndPassword: mock.createUserWithEmailAndPassword,
+    signInWithPopup: mock.signInWithPopup,
+    getRedirectResult: mock.getRedirectResult,
+    signOut: mock.signOut,
+    getAuth: mock.getAuth,
+    GoogleAuthProvider: mock.GoogleAuthProvider,
+  };
+});
+
+vi.mock('@/lib/firebase', async () => {
+  const mock = await import('@/test/mockAuth');
+  return mock.firebaseLibMock();
+});
+
+import { AuthProvider } from '@/context/AuthContext';
 
 const updateMatch = vi.fn();
+/** Phase 30.2 Plan 11 (ENR-09): backs `useEnrichmentAttribution`, which the dialog now consumes for its "prefilled from source" hint. */
+const enrichmentAttribution = vi.fn();
 
 vi.mock('@/lib/api', () => ({
   api: {
     matches: {
       update: (...args: unknown[]) => updateMatch(...args),
+    },
+    users: {
+      enrichmentAttribution: (...args: unknown[]) => enrichmentAttribution(...args),
     },
   },
 }));
@@ -36,7 +63,9 @@ function renderDialog(match: Match, onOpenChange = vi.fn()) {
   render(
     <MemoryRouter>
       <QueryClientProvider client={queryClient}>
-        <AttachVodDialog match={match} open onOpenChange={onOpenChange} />
+        <AuthProvider>
+          <AttachVodDialog match={match} open onOpenChange={onOpenChange} />
+        </AuthProvider>
       </QueryClientProvider>
     </MemoryRouter>,
   );
@@ -45,7 +74,10 @@ function renderDialog(match: Match, onOpenChange = vi.fn()) {
 
 describe('AttachVodDialog', () => {
   beforeEach(() => {
+    resetAuthMock();
     vi.clearAllMocks();
+    setMockUser(makeMockUser());
+    enrichmentAttribution.mockResolvedValue({ attributions: [] });
   });
 
   it('renders no timestamped-notes editor — only URL + start-time fields', () => {
@@ -153,5 +185,35 @@ describe('AttachVodDialog', () => {
     await user.click(screen.getByRole('button', { name: 'Save' }));
 
     await waitFor(() => expect(onOpenChange).toHaveBeenCalledWith(false));
+  });
+
+  describe('Liquipedia attribution (Phase 30.2 Plan 11, ENR-09)', () => {
+    it('shows a hint that the VOD field was filled from the source, with the field still fully editable', async () => {
+      enrichmentAttribution.mockResolvedValue({
+        attributions: [
+          { matchKey: 'match-1', sourcePageUrl: 'https://liquipedia.net/smash/Some_Page' },
+        ],
+      });
+      renderDialog(baseMatch({ vodUrl: 'https://youtube.com/watch?v=abc123' }));
+
+      await waitFor(() =>
+        expect(screen.getByTestId('attach-vod-prefilled-hint')).toBeInTheDocument(),
+      );
+      const urlField = screen.getByLabelText('VOD URL (YouTube or Twitch)');
+      expect(urlField).not.toBeDisabled();
+    });
+
+    it('renders no hint for an un-enriched account, byte-identical to today', async () => {
+      renderDialog(baseMatch({ vodUrl: 'https://youtube.com/watch?v=abc123' }));
+
+      await waitFor(() => expect(enrichmentAttribution).toHaveBeenCalled());
+      expect(screen.queryByTestId('attach-vod-prefilled-hint')).not.toBeInTheDocument();
+    });
+
+    it('renders no hint when the field is blank, even with an attribution record present', () => {
+      renderDialog(baseMatch({ vodUrl: undefined }));
+
+      expect(screen.queryByTestId('attach-vod-prefilled-hint')).not.toBeInTheDocument();
+    });
   });
 });

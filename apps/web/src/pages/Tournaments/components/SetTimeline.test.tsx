@@ -7,13 +7,40 @@ import { buildSetTimeline, type Match, type TournamentEntry } from '@smash-track
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { SetTimeline } from './SetTimeline';
 import { SpriteList } from '@/data/sprites';
+import { resetAuthMock, setMockUser, makeMockUser } from '@/test/mockAuth';
+
+vi.mock('firebase/auth', async () => {
+  const mock = await import('@/test/mockAuth');
+  return {
+    onAuthStateChanged: mock.onAuthStateChanged,
+    signInWithEmailAndPassword: mock.signInWithEmailAndPassword,
+    createUserWithEmailAndPassword: mock.createUserWithEmailAndPassword,
+    signInWithPopup: mock.signInWithPopup,
+    getRedirectResult: mock.getRedirectResult,
+    signOut: mock.signOut,
+    getAuth: mock.getAuth,
+    GoogleAuthProvider: mock.GoogleAuthProvider,
+  };
+});
+
+vi.mock('@/lib/firebase', async () => {
+  const mock = await import('@/test/mockAuth');
+  return mock.firebaseLibMock();
+});
+
+import { AuthProvider } from '@/context/AuthContext';
 
 const updateMatch = vi.fn();
+/** Phase 30.2 Plan 11 (ENR-09) fix (Rule 1): `AttachVodDialog` (rendered from SetTimeline's edit affordance) now consumes `useEnrichmentAttribution`, which requires both an `AuthProvider` ancestor and this API method. */
+const enrichmentAttribution = vi.fn().mockResolvedValue({ attributions: [] });
 
 vi.mock('@/lib/api', () => ({
   api: {
     matches: {
       update: (...args: unknown[]) => updateMatch(...args),
+    },
+    users: {
+      enrichmentAttribution: (...args: unknown[]) => enrichmentAttribution(...args),
     },
   },
 }));
@@ -50,9 +77,11 @@ function renderTimeline(matches: Match[], entry: TournamentEntry = makeEntry()) 
   return render(
     <MemoryRouter>
       <QueryClientProvider client={queryClient}>
-        <TooltipProvider>
-          <SetTimeline entry={entry} sets={sets} otherMatches={otherMatches} />
-        </TooltipProvider>
+        <AuthProvider>
+          <TooltipProvider>
+            <SetTimeline entry={entry} sets={sets} otherMatches={otherMatches} />
+          </TooltipProvider>
+        </AuthProvider>
       </QueryClientProvider>
     </MemoryRouter>,
   );
@@ -60,7 +89,10 @@ function renderTimeline(matches: Match[], entry: TournamentEntry = makeEntry()) 
 
 describe('SetTimeline', () => {
   beforeEach(() => {
+    resetAuthMock();
     vi.clearAllMocks();
+    setMockUser(makeMockUser());
+    enrichmentAttribution.mockResolvedValue({ attributions: [] });
   });
 
   it('shows an empty state when there are no matches', () => {

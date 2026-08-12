@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 import { z } from 'zod';
@@ -16,6 +16,7 @@ import { PendingButton } from '@/components/ui/pending-button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useUpdateMatch } from '@/hooks/useUpdateMatch';
+import { useEnrichmentAttribution } from '@/hooks/useEnrichmentAttribution';
 import { formatTimestamp, parseFlexibleTimestamp } from '@/lib/vod';
 import { buildUpdateInput } from './VodNotesDialog';
 
@@ -53,6 +54,15 @@ export function AttachVodDialog({
   const [urlError, setUrlError] = useState<string | null>(null);
   const [timeError, setTimeError] = useState<string | null>(null);
   const vodLinkPresent = url.trim() !== '';
+  // Phase 30.2 Plan 11 (ENR-09): the witness lives OFF the match row — this
+  // is the only way the dialog learns whether the CURRENT vodUrl value was
+  // filled in from a source. Shown only when the field already carries a
+  // value (a Liquipedia URL never overwrites a blank field silently — this
+  // hint is about an EXISTING prefilled value, not a suggestion), and the
+  // field stays fully editable either way.
+  const matchKeys = useMemo(() => [match.id], [match.id]);
+  const attribution = useEnrichmentAttribution(matchKeys);
+  const showPrefilledHint = match.vodUrl != null && attribution[match.id] != null;
 
   function handleOpenChange(next: boolean) {
     onOpenChange(next);
@@ -130,6 +140,11 @@ export function AttachVodDialog({
               placeholder={t('matchForm.vodUrlPlaceholder')}
             />
             {urlError && <p className="text-sm text-destructive">{urlError}</p>}
+            {showPrefilledHint && (
+              <p data-testid="attach-vod-prefilled-hint" className="text-xs text-muted-foreground">
+                {t('enrichment.attachVod.prefilledHint')}
+              </p>
+            )}
           </div>
 
           <div className="flex flex-col gap-1.5">

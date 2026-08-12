@@ -448,4 +448,185 @@ describe('DataCoveragePanel', () => {
       }
     },
   );
+
+  describe('Liquipedia enrichment (Phase 30.2 Plan 11, ENR-09)', () => {
+    const DISTINCTIVE_URL = 'https://liquipedia.net/smash/Zzz_Distinctive_Test_Fixture_Page';
+
+    const ENRICHMENT_SNAPSHOT = {
+      asOfMs: TWENTY_TWENTY_SIX_MS_A,
+      runId: 'enrichment-run-1',
+      counts: {
+        matched: 4,
+        ambiguous: 1,
+        unmatched: 0,
+        conflicting: 0,
+        stageEnriched: 3,
+        vodEnriched: 2,
+      },
+      cohortCounts: {
+        startggOnly: 6,
+        liquipediaSupplemented: 4,
+        missing: 0,
+      },
+      perSourcePage: {
+        'Supernova/2026/Ultimate/Singles Bracket': {
+          sourcePageUrl: DISTINCTIVE_URL,
+          revisionId: 535578,
+          contentHash: 'a'.repeat(64),
+          fetchedAtMs: TWENTY_TWENTY_SIX_MS_A,
+          observationCount: 8,
+        },
+      },
+      notes: ['IzAw: 0 VOD rows (no Liquipedia VOD page exists)'],
+    };
+
+    it('renders nothing when the coverage response omits the enrichment member, and the rest of the panel is unchanged', () => {
+      useDataCoverage.mockReturnValue({
+        ...BASE_STATUS,
+        hasCompletedRun: true,
+        data: ONE_PLAYER_SNAPSHOT,
+      });
+      render(<DataCoveragePanel />);
+
+      expect(screen.queryByTestId('data-coverage-enrichment')).not.toBeInTheDocument();
+      expect(screen.getByTestId('data-coverage-totals')).toBeInTheDocument();
+      expect(screen.getByTestId('data-coverage-player-mkleo')).toBeInTheDocument();
+    });
+
+    it('renders every enrichment counter with a localized label, including a zero count as the digit 0', () => {
+      useDataCoverage.mockReturnValue({
+        ...BASE_STATUS,
+        hasCompletedRun: true,
+        data: { ...ONE_PLAYER_SNAPSHOT, enrichment: ENRICHMENT_SNAPSHOT },
+      });
+      render(<DataCoveragePanel />);
+
+      expect(screen.getByTestId('data-coverage-enrichment-count-matched')).toHaveTextContent('4');
+      expect(screen.getByTestId('data-coverage-enrichment-count-ambiguous')).toHaveTextContent('1');
+      expect(screen.getByTestId('data-coverage-enrichment-count-unmatched')).toHaveTextContent('0');
+      expect(screen.getByTestId('data-coverage-enrichment-count-conflicting')).toHaveTextContent(
+        '0',
+      );
+      expect(screen.getByTestId('data-coverage-enrichment-count-stageEnriched')).toHaveTextContent(
+        '3',
+      );
+      expect(screen.getByTestId('data-coverage-enrichment-count-vodEnriched')).toHaveTextContent(
+        '2',
+      );
+    });
+
+    it('renders the three-cohort split with its own labels and explanations', () => {
+      useDataCoverage.mockReturnValue({
+        ...BASE_STATUS,
+        hasCompletedRun: true,
+        data: { ...ONE_PLAYER_SNAPSHOT, enrichment: ENRICHMENT_SNAPSHOT },
+      });
+      render(<DataCoveragePanel />);
+
+      const cohorts = screen.getByTestId('data-coverage-enrichment-cohorts');
+      expect(
+        within(cohorts).getByTestId('data-coverage-enrichment-cohort-startggOnly'),
+      ).toHaveTextContent('6');
+      expect(
+        within(cohorts).getByTestId('data-coverage-enrichment-cohort-liquipediaSupplemented'),
+      ).toHaveTextContent('4');
+      expect(
+        within(cohorts).getByTestId('data-coverage-enrichment-cohort-missing'),
+      ).toHaveTextContent('0');
+      expect(cohorts.textContent).toContain('start.gg only');
+      expect(cohorts.textContent).toContain('Supplemented by Liquipedia');
+    });
+
+    it('renders a recorded note verbatim, as a stated reason (not a warning or an error affordance)', () => {
+      useDataCoverage.mockReturnValue({
+        ...BASE_STATUS,
+        hasCompletedRun: true,
+        data: { ...ONE_PLAYER_SNAPSHOT, enrichment: ENRICHMENT_SNAPSHOT },
+      });
+      render(<DataCoveragePanel />);
+
+      const note = screen.getByTestId('data-coverage-enrichment-note-0');
+      expect(note).toHaveTextContent('IzAw: 0 VOD rows (no Liquipedia VOD page exists)');
+      expect(note.className).not.toContain('destructive');
+    });
+
+    it("renders each freshness row's anchor href as EXACTLY the stored sourcePageUrl, with revision and fetch time, opening in a new tab with no-opener no-referrer", () => {
+      useDataCoverage.mockReturnValue({
+        ...BASE_STATUS,
+        hasCompletedRun: true,
+        data: { ...ONE_PLAYER_SNAPSHOT, enrichment: ENRICHMENT_SNAPSHOT },
+      });
+      render(<DataCoveragePanel />);
+
+      const row = screen.getByTestId(
+        'data-coverage-enrichment-freshness-Supernova/2026/Ultimate/Singles Bracket',
+      );
+      const link = within(row).getByRole('link');
+      expect(link).toHaveAttribute('href', DISTINCTIVE_URL);
+      expect(link).toHaveAttribute('target', '_blank');
+      const rel = link.getAttribute('rel') ?? '';
+      expect(rel).toContain('noopener');
+      expect(rel).toContain('noreferrer');
+      expect(row.textContent).toContain('535578');
+    });
+
+    it('renders a freshness entry with no stored URL WITHOUT an anchor, never a derived one', () => {
+      useDataCoverage.mockReturnValue({
+        ...BASE_STATUS,
+        hasCompletedRun: true,
+        data: {
+          ...ONE_PLAYER_SNAPSHOT,
+          enrichment: {
+            ...ENRICHMENT_SNAPSHOT,
+            perSourcePage: {
+              'No URL Page': {
+                revisionId: 1,
+                contentHash: 'b'.repeat(64),
+                fetchedAtMs: TWENTY_TWENTY_SIX_MS_A,
+                observationCount: 1,
+              },
+            },
+          },
+        },
+      });
+      render(<DataCoveragePanel />);
+
+      const row = screen.getByTestId('data-coverage-enrichment-freshness-No URL Page');
+      expect(within(row).queryByRole('link')).not.toBeInTheDocument();
+      expect(row.textContent).toContain('No URL Page');
+    });
+
+    it('renders the licence line once, linking to the CC BY-SA deed', () => {
+      useDataCoverage.mockReturnValue({
+        ...BASE_STATUS,
+        hasCompletedRun: true,
+        data: { ...ONE_PLAYER_SNAPSHOT, enrichment: ENRICHMENT_SNAPSHOT },
+      });
+      render(<DataCoveragePanel />);
+
+      const notes = screen.getAllByTestId('liquipedia-license-note');
+      expect(notes).toHaveLength(1);
+      expect(within(notes[0]!).getByRole('link')).toHaveAttribute(
+        'href',
+        'https://creativecommons.org/licenses/by-sa/3.0/',
+      );
+    });
+
+    it('renders no dangerouslySetInnerHTML-produced markup for wiki-sourced note text', () => {
+      useDataCoverage.mockReturnValue({
+        ...BASE_STATUS,
+        hasCompletedRun: true,
+        data: {
+          ...ONE_PLAYER_SNAPSHOT,
+          enrichment: { ...ENRICHMENT_SNAPSHOT, notes: ['<img src=x onerror=alert(1)>'] },
+        },
+      });
+      render(<DataCoveragePanel />);
+
+      expect(document.querySelector('img')).not.toBeInTheDocument();
+      expect(screen.getByTestId('data-coverage-enrichment-note-0').textContent).toContain(
+        '<img src=x onerror=alert(1)>',
+      );
+    });
+  });
 });

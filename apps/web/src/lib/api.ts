@@ -63,6 +63,8 @@ import {
   publicShareSnapshotSchema,
   reportsConfigSchema,
   researchCoverageResponseSchema,
+  researchEnrichmentAttributionResponseSchema,
+  researchEnrichmentReviewQueueResponseSchema,
   REVIEW_DELIVERY_STATES,
   REVIEW_SECTION_KINDS,
   reviewDraftSchema,
@@ -101,6 +103,7 @@ import {
   type PrepChecklistItemUpdate,
   type PrepOpenRequest,
   type PrepScoutBindingConfirmRequest,
+  type ResearchEnrichmentConfirmRequest,
   type ReviewChecklistItemId,
   type CreatePlaylistInput,
   type UpdatePlaylistInput,
@@ -304,6 +307,17 @@ const clientWorkspaceExportSchema = z.object({
  * `apps/api/src/coaching/reviews.ts` (an API-internal module this package
  * cannot import).
  */
+/**
+ * Phase 30.2 Plan 11 (ENR-06): mirrors `apps/api/src/routes/research.ts`'s
+ * inline `enrichmentConfirmResponseSchema` — duplicated locally per this
+ * file's own precedent (see the doc comment above `reviewListItemResponseSchema`
+ * below) rather than promoted to `@smash-tracker/shared`, since the store's
+ * wider outcome union this narrows is API-internal.
+ */
+const enrichmentConfirmResponseSchema = z.object({
+  outcome: z.enum(['created', 'replaced']),
+});
+
 const REVIEW_STATUSES = ['draft', 'published', 'archived'] as const;
 
 const reviewListItemResponseSchema = z.object({
@@ -541,6 +555,19 @@ export const api = {
      * benign empty shape (`coverage: null`).
      */
     coverage: () => apiRequestParsed('/api/users/me/coverage', researchCoverageResponseSchema),
+    /**
+     * GET /api/users/me/enrichment/attribution — Phase 30.2 Plan 11 (ENR-09):
+     * the self-scoped attribution lookup consumed by `useEnrichmentAttribution`.
+     * Takes NO subject argument (the route resolves ONLY `request.uid`
+     * server-side) — `keys` is a bounded, caller-supplied list of match ids,
+     * comma-joined as the API's querystring contract requires
+     * (`apps/api/src/routes/users.ts`'s `enrichmentAttributionQuerySchema`).
+     */
+    enrichmentAttribution: (keys: string[]) =>
+      apiRequestParsed(
+        `/api/users/me/enrichment/attribution?keys=${encodeURIComponent(keys.join(','))}`,
+        researchEnrichmentAttributionResponseSchema,
+      ),
   },
   matches: {
     /** GET /api/matches */
@@ -1180,6 +1207,34 @@ export const api = {
       apiRequestParsed(
         `/api/research/tenants/${encodeURIComponent(tenantId)}/coverage`,
         researchCoverageResponseSchema,
+      ),
+    /**
+     * GET /api/research/tenants/:tenantId/enrichment/review — Phase 30.2
+     * Plan 11 (ENR-06): the admin review queue for ambiguous/conflicting/
+     * unmatched Liquipedia observations, consumed by `useEnrichmentReview`.
+     */
+    enrichmentReview: (tenantId: string) =>
+      apiRequestParsed(
+        `/api/research/tenants/${encodeURIComponent(tenantId)}/enrichment/review`,
+        researchEnrichmentReviewQueueResponseSchema,
+      ),
+    /**
+     * POST .../enrichment/review/:observationId/confirm — the admin's chosen
+     * candidate. The 200 response is narrowed to the two 200-eligible
+     * outcomes (`apps/api/src/routes/research.ts`'s
+     * `enrichmentConfirmResponseSchema` — the store's wider outcome union is
+     * API-internal, not part of `@smash-tracker/shared`, mirroring this
+     * file's own `reviewListItemResponseSchema` precedent of duplicating a
+     * route-inline schema locally rather than promoting it to shared).
+     */
+    confirmEnrichmentCandidate: (tenantId: string, observationId: string, targetSetId: string) =>
+      apiRequestParsed(
+        `/api/research/tenants/${encodeURIComponent(tenantId)}/enrichment/review/${encodeURIComponent(observationId)}/confirm`,
+        enrichmentConfirmResponseSchema,
+        {
+          method: 'POST',
+          body: { targetSetId } satisfies ResearchEnrichmentConfirmRequest,
+        },
       ),
   },
   /**

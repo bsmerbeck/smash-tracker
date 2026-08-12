@@ -70,12 +70,22 @@ const reviewsCreate = vi.fn();
 // coaching-route assertion in this file passing unmodified (Rule 3, mirrors
 // plan 29-08's `AppRouter.test.tsx` fixup for the same underlying gate).
 const clientsKind = vi.fn();
+/**
+ * Phase 30.2 Plan 11 (ENR-09): backs `useEnrichmentAttribution`, consumed by
+ * the new attribution wiring beside the selected player and in the page
+ * footer's licence line. Defaults to the benign empty-attributions shape
+ * (set in the shared `beforeEach` below) so every pre-existing assertion in
+ * this file — which predates any Liquipedia enrichment — keeps observing a
+ * byte-identical, unattributed render.
+ */
+const enrichmentAttribution = vi.fn();
 
 vi.mock('@/lib/api', () => ({
   api: {
     users: {
       upsertMe: (...args: unknown[]) => upsertMe(...args),
       getFighters: (...args: unknown[]) => getFighters(...args),
+      enrichmentAttribution: (...args: unknown[]) => enrichmentAttribution(...args),
     },
     matches: {
       list: (...args: unknown[]) => listMatches(...args),
@@ -232,6 +242,7 @@ describe('VodManagerPage', () => {
     removePlaylist.mockResolvedValue({});
     reviewsList.mockResolvedValue([]);
     clientsKind.mockResolvedValue({ kind: 'ordinary' });
+    enrichmentAttribution.mockResolvedValue({ attributions: [] });
   });
 
   afterEach(() => {
@@ -3816,6 +3827,30 @@ describe('VodManagerPage', () => {
 
       expect(screen.getByTestId('vod-match-meta')).toBe(primaryColumn.lastElementChild);
       expect(window.YT!.Player).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('Liquipedia attribution (Phase 30.2 Plan 11, ENR-09)', () => {
+    it('shows the attribution beside the player for a Liquipedia-sourced VOD, and the licence line once in the page footer', async () => {
+      listMatches.mockResolvedValue([makeMatch({ id: 'm1', vodUrl: 'https://youtu.be/abc123' })]);
+      enrichmentAttribution.mockResolvedValue({
+        attributions: [{ matchKey: 'm1', sourcePageUrl: 'https://liquipedia.net/smash/Some_Page' }],
+      });
+      renderVodManager('/vod?match=m1');
+
+      await screen.findByTestId('vod-match-meta');
+      expect(await screen.findByTestId('liquipedia-attribution-badge')).toBeInTheDocument();
+      expect(screen.getByTestId('liquipedia-license-note')).toBeInTheDocument();
+    });
+
+    it('renders no attribution and no licence line for an un-enriched account, byte-identical to today', async () => {
+      listMatches.mockResolvedValue([makeMatch({ id: 'm1', vodUrl: 'https://youtu.be/abc123' })]);
+      renderVodManager('/vod?match=m1');
+
+      await screen.findByRole('button', { name: 'Select match vs rival' });
+      await waitFor(() => expect(enrichmentAttribution).toHaveBeenCalled());
+      expect(screen.queryByTestId('liquipedia-attribution-badge')).not.toBeInTheDocument();
+      expect(screen.queryByTestId('liquipedia-license-note')).not.toBeInTheDocument();
     });
   });
 });
