@@ -1,7 +1,8 @@
 import { useTranslation } from 'react-i18next';
 import {
   LIQUIPEDIA_ATTRIBUTION_LICENSE_URL,
-  type ResearchEnrichmentAttributionEntry,
+  type ResearchEnrichmentStageAttribution,
+  type ResearchEnrichmentVodAttribution,
 } from '@smash-tracker/shared';
 
 /**
@@ -10,18 +11,20 @@ import {
  * modelled on `apps/web/src/pages/Coaching/components/ResearchBadge.tsx`'s
  * take-the-record-as-a-prop-and-render shape.
  *
- * The `variant` prop names WHICH field the calling surface is attributing
- * (stage vs. VOD) — it is never derived from the record itself, because
- * `researchEnrichmentAttributionEntrySchema` stores at most ONE observation's
- * page identity per match key (the API route's `buildEnrichmentAttributionEntry`
- * prefers the stage half of the witness when both exist), so the record alone
- * cannot always distinguish "this is a stage fact" from "this is a VOD fact"
- * for a match enriched on both fields. The calling surface (the stage cell,
- * the VOD dropdown, the attach dialog, the edit form, the VOD manager) knows
- * which field it is describing and passes that context explicitly.
+ * TAKES ONE FIELD'S HALF, NEVER THE WHOLE ENTRY (30.2 gap-closure BLOCKER
+ * 2). `researchEnrichmentAttributionEntrySchema` now reports two
+ * INDEPENDENT halves per match key — `entry.stage` and `entry.vod`, each
+ * built from its own witness members and its own observation. A caller
+ * passes the half for the field it is describing (`entry.stage` for a stage
+ * rendering, `entry.vod` for a VOD one) and the `variant` that names it.
+ * Passing the wrong half is what the previous single-slot shape did
+ * implicitly, and it produced two user-visible errors: a user-entered VOD
+ * labelled as Liquipedia-derived on a stage-only-enriched row, and a VOD
+ * badge linking to the STAGE observation's page. The `href` below therefore
+ * always comes from the half it was handed and no other.
  *
  * Renders NOTHING when `attribution` is `null`/`undefined` — every call site
- * is a `record && <LiquipediaAttributionBadge .../>` guard, never an
+ * is a `half && <LiquipediaAttributionBadge .../>` guard, never an
  * unconditional render, so an un-enriched account's UI stays byte-identical.
  *
  * Never uses React's raw-HTML injection escape hatch: `rawStage` is
@@ -31,11 +34,15 @@ import {
  */
 export type LiquipediaAttributionVariant = 'stage' | 'vod';
 
+/** Either half of an attribution entry — the VOD half structurally has no stage-only members. */
+export type LiquipediaAttributionHalf =
+  ResearchEnrichmentStageAttribution | ResearchEnrichmentVodAttribution;
+
 export function LiquipediaAttributionBadge({
   attribution,
   variant,
 }: {
-  attribution: ResearchEnrichmentAttributionEntry | null | undefined;
+  attribution: LiquipediaAttributionHalf | null | undefined;
   variant: LiquipediaAttributionVariant;
 }) {
   const { t } = useTranslation();
@@ -47,15 +54,17 @@ export function LiquipediaAttributionBadge({
   const labelKey =
     variant === 'stage' ? 'enrichment.attribution.stage' : 'enrichment.attribution.vod';
 
+  // The stage-only members exist on the STAGE half only — the VOD half's
+  // schema has no such keys at all, so this narrowing is total.
+  const rawStage = 'rawStage' in attribution ? attribution.rawStage : null;
+  const stageForm = 'stageForm' in attribution ? attribution.stageForm : null;
+
   // RESEARCH section 4.3: `stageForm` is `'normal'` for the UNSTATED common
   // case (never an assertion of "hazards on") and is otherwise `'hazardless'
   // | 'omega' | 'battlefield' | 'unknown'` — a qualifier renders for every
   // STATED form, never for the unstated normal form, so the source's marker
   // survives into the UI rather than being silently stripped.
-  const showQualifier =
-    attribution.stageForm != null &&
-    attribution.stageForm !== 'normal' &&
-    attribution.rawStage != null;
+  const showQualifier = stageForm != null && stageForm !== 'normal' && rawStage != null;
 
   return (
     <span
@@ -66,8 +75,8 @@ export function LiquipediaAttributionBadge({
       {showQualifier && (
         <span data-testid="liquipedia-attribution-qualifier">
           {t('enrichment.attribution.stageFormQualifier', {
-            raw: attribution.rawStage,
-            form: t(`enrichment.attribution.stageForm.${attribution.stageForm}`),
+            raw: rawStage,
+            form: t(`enrichment.attribution.stageForm.${stageForm}`),
           })}
         </span>
       )}

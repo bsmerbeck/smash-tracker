@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import type { FakeDatabase } from '../test-support/fakeDatabase.js';
 import { authHeader, buildTestApp, TEST_EMAIL, TEST_UID } from '../test-support/testApp.js';
 
 /**
@@ -883,7 +884,31 @@ describe('GET /api/users/me/enrichment/attribution', () => {
     expect(response.statusCode).toBe(401);
   });
 
-  it('returns attribution for the caller-own stored witness, including source page identity, revision id, raw stage text and stage form', async () => {
+  function seedObservation(
+    database: FakeDatabase,
+    observationId: string,
+    sourcePageTitle: string,
+    sourcePageUrl: string,
+    sourceRevisionId: number,
+  ): void {
+    database.seed(`researchEnrichmentObservations/${TEST_UID}/${observationId}`, {
+      observationId,
+      sourceProvider: 'liquipedia',
+      sourceWiki: 'smash',
+      contentType: 'stage-observation',
+      sourcePageTitle,
+      sourcePageUrl,
+      sourceRevisionId,
+      sourceContentHash: 'a'.repeat(64),
+      parserVersion: 'liquipedia-bracket-match2@1',
+      templateFamily: 'match2',
+      fetchedAtMs: 1_000,
+      observedAtMs: 1_000,
+      matchingStatus: 'matched',
+    });
+  }
+
+  it('returns the STAGE half for a stage witness, including source page identity, revision id, raw stage text and stage form — and NO vod half', async () => {
     const { app, database } = buildTestApp();
     database.seed(`researchEnrichmentProjection/${TEST_UID}/match-1`, {
       matchKey: 'match-1',
@@ -897,21 +922,13 @@ describe('GET /api/users/me/enrichment/attribution', () => {
       stageParserVersion: 'liquipedia-bracket-match2@1',
       stageProjectedAtMs: 1_000,
     });
-    database.seed(`researchEnrichmentObservations/${TEST_UID}/obs-1`, {
-      observationId: 'obs-1',
-      sourceProvider: 'liquipedia',
-      sourceWiki: 'smash',
-      contentType: 'stage-observation',
-      sourcePageTitle: 'Supernova/2026',
-      sourcePageUrl: 'https://liquipedia.net/smash/Supernova/2026',
-      sourceRevisionId: 42,
-      sourceContentHash: 'a'.repeat(64),
-      parserVersion: 'liquipedia-bracket-match2@1',
-      templateFamily: 'match2',
-      fetchedAtMs: 1_000,
-      observedAtMs: 1_000,
-      matchingStatus: 'matched',
-    });
+    seedObservation(
+      database,
+      'obs-1',
+      'Supernova/2026',
+      'https://liquipedia.net/smash/Supernova/2026',
+      42,
+    );
 
     const response = await app.inject({
       method: 'GET',
@@ -926,13 +943,114 @@ describe('GET /api/users/me/enrichment/attribution', () => {
     expect(body.attributions).toEqual([
       {
         matchKey: 'match-1',
-        sourcePageTitle: 'Supernova/2026',
-        sourcePageUrl: 'https://liquipedia.net/smash/Supernova/2026',
-        sourceRevisionId: 42,
-        rawStage: 'BF',
-        stageForm: 'normal',
+        stage: {
+          sourcePageTitle: 'Supernova/2026',
+          sourcePageUrl: 'https://liquipedia.net/smash/Supernova/2026',
+          sourceRevisionId: 42,
+          rawStage: 'BF',
+          stageForm: 'normal',
+        },
       },
     ]);
+    // 30.2 gap-closure BLOCKER 2: a stage-only witness must NOT produce a
+    // VOD half — that is what made every VOD surface mislabel a
+    // user-entered VOD as Liquipedia-derived.
+    expect(body.attributions[0].vod).toBeUndefined();
+  });
+
+  it('builds each half from its OWN observation when the two fields were enriched from different source pages', async () => {
+    const { app, database } = buildTestApp();
+    database.seed(`researchEnrichmentProjection/${TEST_UID}/match-1`, {
+      matchKey: 'match-1',
+      targetSetId: 'set-1',
+      projectedStageId: 3,
+      projectedStageName: 'Battlefield',
+      projectedStageRaw: 'BF',
+      projectedStageForm: 'normal',
+      stageObservationId: 'obs-stage',
+      stageSourceRevisionId: 42,
+      projectedVodUrl: 'https://youtube.example/set',
+      vodObservationId: 'obs-vod',
+      vodSourceRevisionId: 99,
+    });
+    seedObservation(
+      database,
+      'obs-stage',
+      'Supernova/2026 Bracket',
+      'https://liquipedia.net/smash/Supernova/2026_Bracket',
+      42,
+    );
+    seedObservation(
+      database,
+      'obs-vod',
+      'Supernova/2026 VODs',
+      'https://liquipedia.net/smash/Supernova/2026_VODs',
+      99,
+    );
+
+    const response = await app.inject({
+      method: 'GET',
+      url: '/api/users/me/enrichment/attribution?keys=match-1',
+      headers: authHeader(),
+    });
+
+    expect(response.statusCode).toBe(200);
+    const entry = response.json().attributions[0];
+    // The VOD half links to the VOD observation's page — NOT the stage
+    // observation's, which is what the single-slot shape reported.
+    expect(entry.vod).toEqual({
+      sourcePageTitle: 'Supernova/2026 VODs',
+      sourcePageUrl: 'https://liquipedia.net/smash/Supernova/2026_VODs',
+      sourceRevisionId: 99,
+    });
+    expect(entry.stage.sourcePageUrl).toBe('https://liquipedia.net/smash/Supernova/2026_Bracket');
+    expect(entry.stage.sourceRevisionId).toBe(42);
+  });
+
+  it('returns only the VOD half for a vod-only witness, with no stage-only members anywhere', async () => {
+    const { app, database } = buildTestApp();
+    database.seed(`researchEnrichmentProjection/${TEST_UID}/match-1`, {
+      matchKey: 'match-1',
+      targetSetId: 'set-1',
+      projectedVodUrl: 'https://youtube.example/set',
+      vodObservationId: 'obs-vod',
+      vodSourceRevisionId: 99,
+    });
+    seedObservation(
+      database,
+      'obs-vod',
+      'Supernova/2026 VODs',
+      'https://liquipedia.net/smash/Supernova/2026_VODs',
+      99,
+    );
+
+    const response = await app.inject({
+      method: 'GET',
+      url: '/api/users/me/enrichment/attribution?keys=match-1',
+      headers: authHeader(),
+    });
+
+    expect(response.statusCode).toBe(200);
+    const entry = response.json().attributions[0];
+    expect(entry.stage).toBeUndefined();
+    expect(entry.vod.sourcePageUrl).toBe('https://liquipedia.net/smash/Supernova/2026_VODs');
+  });
+
+  it('omits a witness that claims NEITHER field (every pending member cleared without a commit)', async () => {
+    const { app, database } = buildTestApp();
+    database.seed(`researchEnrichmentProjection/${TEST_UID}/match-1`, {
+      matchKey: 'match-1',
+      targetSetId: 'set-1',
+    });
+
+    const response = await app.inject({
+      method: 'GET',
+      url: '/api/users/me/enrichment/attribution?keys=match-1',
+      headers: authHeader(),
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({ attributions: [] });
   });
 
   it('returns an empty result for a match key whose witness belongs to another subject (cross-uid isolation)', async () => {

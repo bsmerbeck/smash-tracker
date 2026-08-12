@@ -65,8 +65,8 @@ describe('useEnrichmentAttribution', () => {
   it('requests only the given match keys and returns a map keyed by matchKey', async () => {
     enrichmentAttribution.mockResolvedValue({
       attributions: [
-        { matchKey: 'match-1', sourcePageUrl: 'https://liquipedia.net/smash/Page_One' },
-        { matchKey: 'match-2', sourcePageUrl: 'https://liquipedia.net/smash/Page_Two' },
+        { matchKey: 'match-1', stage: { sourcePageUrl: 'https://liquipedia.net/smash/Page_One' } },
+        { matchKey: 'match-2', vod: { sourcePageUrl: 'https://liquipedia.net/smash/Page_Two' } },
       ],
     });
 
@@ -78,8 +78,44 @@ describe('useEnrichmentAttribution', () => {
 
     expect(enrichmentAttribution).toHaveBeenCalledTimes(1);
     expect(enrichmentAttribution).toHaveBeenCalledWith(['match-1', 'match-2']);
-    expect(result.current['match-1']?.sourcePageUrl).toBe('https://liquipedia.net/smash/Page_One');
-    expect(result.current['match-2']?.sourcePageUrl).toBe('https://liquipedia.net/smash/Page_Two');
+    expect(result.current['match-1']?.stage?.sourcePageUrl).toBe(
+      'https://liquipedia.net/smash/Page_One',
+    );
+    expect(result.current['match-2']?.vod?.sourcePageUrl).toBe(
+      'https://liquipedia.net/smash/Page_Two',
+    );
+  });
+
+  // 30.2 gap-closure BLOCKER 2: the hook hands back the two halves UNMERGED,
+  // so a consumer cannot accidentally read a stage claim as a VOD one.
+  it('keeps the stage and vod halves independent, including when only one is present', async () => {
+    enrichmentAttribution.mockResolvedValue({
+      attributions: [
+        {
+          matchKey: 'match-1',
+          stage: { sourcePageUrl: 'https://liquipedia.net/smash/Bracket_Page' },
+        },
+        {
+          matchKey: 'match-2',
+          stage: { sourcePageUrl: 'https://liquipedia.net/smash/Bracket_Page' },
+          vod: { sourcePageUrl: 'https://liquipedia.net/smash/Vod_Page' },
+        },
+      ],
+    });
+
+    const { result } = renderHook(() => useEnrichmentAttribution(['match-1', 'match-2']), {
+      wrapper: ({ children }) => <Wrapper queryClient={newQueryClient()}>{children}</Wrapper>,
+    });
+
+    await waitFor(() => expect(Object.keys(result.current)).toHaveLength(2));
+
+    expect(result.current['match-1']?.vod).toBeUndefined();
+    expect(result.current['match-2']?.vod?.sourcePageUrl).toBe(
+      'https://liquipedia.net/smash/Vod_Page',
+    );
+    expect(result.current['match-2']?.stage?.sourcePageUrl).toBe(
+      'https://liquipedia.net/smash/Bracket_Page',
+    );
   });
 
   it('deduplicates repeated keys before requesting', async () => {

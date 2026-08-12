@@ -191,7 +191,7 @@ describe('AttachVodDialog', () => {
     it('shows a hint that the VOD field was filled from the source, with the field still fully editable', async () => {
       enrichmentAttribution.mockResolvedValue({
         attributions: [
-          { matchKey: 'match-1', sourcePageUrl: 'https://liquipedia.net/smash/Some_Page' },
+          { matchKey: 'match-1', vod: { sourcePageUrl: 'https://liquipedia.net/smash/Some_Page' } },
         ],
       });
       renderDialog(baseMatch({ vodUrl: 'https://youtube.com/watch?v=abc123' }));
@@ -201,6 +201,27 @@ describe('AttachVodDialog', () => {
       );
       const urlField = screen.getByLabelText('VOD URL (YouTube or Twitch)');
       expect(urlField).not.toBeDisabled();
+    });
+
+    // 30.2 gap-closure BLOCKER 2: a STAGE-only witness must never make this
+    // dialog claim the user's own typed URL was filled in from Liquipedia.
+    it('renders NO prefilled hint for a stage-only-enriched match whose VOD the user typed', async () => {
+      enrichmentAttribution.mockResolvedValue({
+        attributions: [
+          {
+            matchKey: 'match-1',
+            stage: {
+              sourcePageUrl: 'https://liquipedia.net/smash/Bracket_Page',
+              rawStage: 'Battlefield',
+              stageForm: 'normal',
+            },
+          },
+        ],
+      });
+      renderDialog(baseMatch({ vodUrl: 'https://youtube.com/watch?v=user-typed' }));
+
+      await waitFor(() => expect(enrichmentAttribution).toHaveBeenCalled());
+      expect(screen.queryByTestId('attach-vod-prefilled-hint')).not.toBeInTheDocument();
     });
 
     it('renders no hint for an un-enriched account, byte-identical to today', async () => {

@@ -1,13 +1,16 @@
 import { describe, expect, it } from 'vitest';
 import { render, screen } from '@testing-library/react';
-import type { ResearchEnrichmentAttributionEntry } from '@smash-tracker/shared';
+import type {
+  ResearchEnrichmentStageAttribution,
+  ResearchEnrichmentVodAttribution,
+} from '@smash-tracker/shared';
 import { LiquipediaAttributionBadge, LiquipediaLicenseNote } from './LiquipediaAttributionBadge';
 
+/** One HALF of an attribution entry — the badge never takes the whole entry (BLOCKER 2). */
 function makeAttribution(
-  overrides: Partial<ResearchEnrichmentAttributionEntry> = {},
-): ResearchEnrichmentAttributionEntry {
+  overrides: Partial<ResearchEnrichmentStageAttribution> = {},
+): ResearchEnrichmentStageAttribution {
   return {
-    matchKey: 'match-1',
     sourcePageTitle: 'Supernova/2026/Ultimate/Singles Bracket',
     sourcePageUrl: 'https://liquipedia.net/smash/Supernova/2026/Ultimate/Singles_Bracket',
     sourceRevisionId: 535578,
@@ -29,6 +32,22 @@ describe('LiquipediaAttributionBadge', () => {
   it('renders a distinct label for a VOD source', () => {
     render(<LiquipediaAttributionBadge attribution={makeAttribution()} variant="vod" />);
     expect(screen.getByText('VOD from Liquipedia')).toBeInTheDocument();
+  });
+
+  // 30.2 gap-closure BLOCKER 2: the href is always the half's OWN page.
+  it("uses the VOD half's own source page for a VOD badge, never a stage page", () => {
+    const vodHalf: ResearchEnrichmentVodAttribution = {
+      sourcePageTitle: 'Supernova/2026 VODs',
+      sourcePageUrl: 'https://liquipedia.net/smash/Supernova/2026_VODs',
+      sourceRevisionId: 999,
+    };
+    render(<LiquipediaAttributionBadge attribution={vodHalf} variant="vod" />);
+    expect(screen.getByTestId('liquipedia-attribution-link')).toHaveAttribute(
+      'href',
+      'https://liquipedia.net/smash/Supernova/2026_VODs',
+    );
+    // The VOD half has no stage-only members, so no qualifier can render.
+    expect(screen.queryByTestId('liquipedia-attribution-qualifier')).not.toBeInTheDocument();
   });
 
   it('renders an anchor whose href is EXACTLY the stored source page URL and opens in a new tab with no-opener no-referrer', () => {

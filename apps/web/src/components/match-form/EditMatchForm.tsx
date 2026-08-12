@@ -92,9 +92,13 @@ export function EditMatchForm({
   // still a full overwrite (module doc comment above `onSubmit`), which is
   // exactly the honest consequence the note states — the form does not
   // special-case the write path for a source-owned value.
+  //
+  // 30.2 gap-closure BLOCKER 2: reads the VOD HALF ONLY — a stage-only
+  // witness must never make this form describe the user's own VOD as
+  // source-owned.
   const matchKeys = useMemo(() => [match.id], [match.id]);
   const attribution = useEnrichmentAttribution(matchKeys);
-  const vodIsSourceOwned = match.vodUrl != null && attribution[match.id] != null;
+  const vodIsSourceOwned = match.vodUrl != null && attribution[match.id]?.vod != null;
 
   function handleOpenChange(next: boolean) {
     onOpenChange(next);
