@@ -344,6 +344,11 @@ const DELETION_TREES_WITHOUT_A_SAME_SUBJECT_ROUTE: Record<string, string> = {
     'enrichment backfill run state (ENR-10) is reached only through the admin-only ' +
     "research enrichment routes (Phase 30.2), which answer the research family's " +
     'uniform 404 by design — it can never satisfy a covered same-subject 403 route.',
+  researchEnrichmentShrinkReviews:
+    'the shrink-guard review-entry log (Phase 30.2 Plan 09, ENR-10) is reached only ' +
+    'through the admin-only research enrichment routes, which answer the research ' +
+    "family's uniform 404 by design — it can never satisfy a covered same-subject " +
+    '403 route.',
 };
 
 describe('TENANT_DELETION_TREES is a documented superset of CANONICAL_TENANT_TREES', () => {

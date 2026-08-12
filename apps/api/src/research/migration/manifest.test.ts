@@ -43,10 +43,10 @@ const DEST_UID = 'demo-account-uid-1';
 // ---------------------------------------------------------------------------
 
 describe('TREE_DESCRIPTORS lock', () => {
-  it('the real registry exact-set-locks against TENANT_DELETION_TREES (28 members, 13 copy + 15 assert-empty)', () => {
+  it('the real registry exact-set-locks against TENANT_DELETION_TREES (29 members, 14 copy + 15 assert-empty)', () => {
     expect(TREE_DESCRIPTOR_LOCK.ok).toBe(true);
-    expect(TREE_DESCRIPTORS).toHaveLength(28);
-    expect(TREE_DESCRIPTORS.filter(isCopyDescriptor)).toHaveLength(13);
+    expect(TREE_DESCRIPTORS).toHaveLength(29);
+    expect(TREE_DESCRIPTORS.filter(isCopyDescriptor)).toHaveLength(14);
     expect(TREE_DESCRIPTORS.filter((d) => d.disposition === 'assert-empty')).toHaveLength(15);
   });
 
@@ -397,11 +397,12 @@ describe('runMigration', () => {
 
     expect(manifest.ok).toBe(true);
     expect(manifest.assertEmptyViolations).toEqual([]);
-    // 13 copy descriptors post-30.2 (the 7 Phase-30 trees plus the 6
-    // Liquipedia enrichment trees) — every copy descriptor produces a
-    // CopyResult/CompareResult even for a tree with no seeded records.
-    expect(manifest.copies).toHaveLength(13);
-    expect(manifest.trees).toHaveLength(13);
+    // 14 copy descriptors post-30.2-09 (the 7 Phase-30 trees plus the 7
+    // Liquipedia enrichment trees, including plan 09's shrink-review log) —
+    // every copy descriptor produces a CopyResult/CompareResult even for a
+    // tree with no seeded records.
+    expect(manifest.copies).toHaveLength(14);
+    expect(manifest.trees).toHaveLength(14);
     expect(manifest.trees.every((t) => t.match)).toBe(true);
   });
 
