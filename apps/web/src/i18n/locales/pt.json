@@ -31,6 +31,8 @@
     "trainingGrounds": "Training Grounds",
     "donate": "Doar",
     "loading": "Carregando…",
+    "chunkLoadError": "Uma parte da página não pôde ser carregada. Verifique sua conexão e tente novamente.",
+    "retry": "Tentar novamente",
     "language": "Idioma",
     "languageChanged": "Idioma definido para {{language}} — mude quando quiser na barra superior."
   },

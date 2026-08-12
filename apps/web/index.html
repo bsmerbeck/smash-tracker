@@ -76,9 +76,125 @@
         }
       }
     </script>
+
+    <!--
+      P1 2026-08-12 boot resilience. During a stalled entry-chunk fetch
+      (cold CDN edge served boot chunks in 26-103s) NO bundled code can run,
+      so the only possible loading UI and recovery live inline here.
+      - The <style> keeps the stall window dark (the app stylesheet is
+        itself a hashed asset that can stall) and draws a CSS-only spinner.
+      - The watchdog script waits 15s for main.tsx to set window.__appBooted.
+        If boot hasn't finished it auto-reloads, rate-limited by the same
+        sessionStorage cooldown stamp retryableLazy.ts uses (key + 5-minute
+        window deliberately duplicated here — an inline script cannot
+        import; keep the three sites in sync). Outside the cooldown budget
+        it shows a retry message instead. It arms on prerendered pages too
+        (their static content renders, but nothing is interactive until the
+        module graph lands — the original incident WAS the prerendered `/`);
+        with no #boot node there it injects an overlay only when it fires.
+      - Strings resolve from the app's own persisted language choice
+        (localStorage i18nextLng, written by the language bar) or
+        navigator.language, from an inline 6-locale map — the i18next
+        runtime itself cannot exist before the app loads.
+    -->
+    <style>
+      html {
+        background: #18181b;
+        color-scheme: dark;
+      }
+      #boot {
+        position: fixed;
+        inset: 0;
+        background: #18181b;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 16px;
+        color: #a1a1aa;
+        font-family: system-ui, sans-serif;
+        font-size: 14px;
+      }
+      #boot .spin {
+        width: 28px;
+        height: 28px;
+        border: 3px solid #3f3f46;
+        border-top-color: #a1a1aa;
+        border-radius: 50%;
+        animation: bootspin 0.8s linear infinite;
+      }
+      @keyframes bootspin {
+        to {
+          transform: rotate(360deg);
+        }
+      }
+      #boot button {
+        border: 1px solid #3f3f46;
+        background: transparent;
+        color: #e4e4e7;
+        border-radius: 8px;
+        padding: 8px 20px;
+        font-size: 14px;
+        cursor: pointer;
+      }
+    </style>
   </head>
   <body>
-    <div id="root"></div>
+    <div id="root">
+      <div id="boot" aria-busy="true"><div class="spin"></div></div>
+    </div>
+    <script>
+      (function () {
+        var KEY = 'smash-tracker.chunkReloadAt';
+        var COOLDOWN_MS = 5 * 60000;
+        var STRINGS = {
+          en: ['Still loading — the network is slow.', 'Retry'],
+          es: ['Sigue cargando — la red va lenta.', 'Reintentar'],
+          fr: ['Chargement en cours — le réseau est lent.', 'Réessayer'],
+          de: ['Lädt noch — das Netzwerk ist langsam.', 'Erneut versuchen'],
+          pt: ['Ainda carregando — a rede está lenta.', 'Tentar novamente'],
+          ja: ['読み込み中です — ネットワークが不安定です。', '再試行'],
+        };
+        setTimeout(function () {
+          if (window.__appBooted) return;
+          var onCooldown = true;
+          try {
+            var stamp = Number(window.sessionStorage.getItem(KEY));
+            onCooldown = stamp > 0 && Date.now() - stamp < COOLDOWN_MS;
+          } catch (e) {
+            /* storage unavailable: stay on cooldown, never auto-reload */
+          }
+          if (!onCooldown) {
+            try {
+              window.sessionStorage.setItem(KEY, String(Date.now()));
+            } catch (e) {
+              /* ignore */
+            }
+            window.location.reload();
+            return;
+          }
+          var lang = '';
+          try {
+            lang = window.localStorage.getItem('i18nextLng') || navigator.language || 'en';
+          } catch (e) {
+            lang = navigator.language || 'en';
+          }
+          var t = STRINGS[lang.split('-')[0]] || STRINGS.en;
+          var boot = document.getElementById('boot');
+          if (!boot) {
+            boot = document.createElement('div');
+            boot.id = 'boot';
+            document.body.appendChild(boot);
+          }
+          boot.innerHTML = '<p></p><button></button>';
+          boot.firstChild.textContent = t[0];
+          boot.lastChild.textContent = t[1];
+          boot.lastChild.onclick = function () {
+            window.location.reload();
+          };
+        }, 15000);
+      })();
+    </script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

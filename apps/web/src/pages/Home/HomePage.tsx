@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { Suspense, useEffect } from 'react';
 import { Navigate } from 'react-router';
 import { useTranslation } from 'react-i18next';
 import { useAuth } from '@/hooks/useAuth';
@@ -6,8 +6,37 @@ import { useSeo } from '@/hooks/useSeo';
 import { useProfile } from '@/hooks/useProfile';
 import { resolveOnboardingRoute, useSaveOnboardingIntent } from '@/hooks/useOnboarding';
 import * as onboardingOrigin from '@/lib/onboardingOrigin';
-import { SignInCard } from './SignInCard';
+import { retryableLazy } from '@/lib/retryableLazy';
 import { LandingContent } from './LandingContent';
+
+/**
+ * P1 2026-08-12: SignInCard is lazy because it is the only non-lazy importer
+ * of react-hook-form + @hookform/resolvers (the form-* chunk) — a boot-path
+ * chunk that stalled 60s on a cold CDN edge and blanked the whole landing.
+ * It gets its OWN Suspense below (not AppRouter's route boundary, which
+ * would swap the entire landing — LandingContent included — for the route
+ * fallback while the chunk loads). Prerender still captures the fully
+ * rendered card: scripts/prerender.mjs waits for networkidle2 before
+ * snapshotting.
+ */
+// Warm the chunk from boot (non-blocking) so the card is usually ready by
+// first paint; failures are swallowed — the retryableLazy factory re-imports
+// with full retry handling.
+void import('./SignInCard').catch(() => {});
+
+const SignInCard = retryableLazy(() =>
+  import('./SignInCard').then((m) => ({ default: m.SignInCard })),
+);
+
+/**
+ * Card-shaped placeholder pinned to the real SignInCard's rendered frame
+ * (measured 462×384px in sign-in mode) so the swap causes no layout shift
+ * of LandingContent below it — `/` is the only Google-indexed route, so a
+ * shift here lands directly in CrUX CLS.
+ */
+function SignInCardFallback() {
+  return <div aria-hidden className="min-h-[462px] w-full max-w-sm rounded-xl border bg-card" />;
+}
 
 /**
  * Landing page. Hosts sign-in (legacy behavior — there is no separate
@@ -100,7 +129,9 @@ export function HomePage() {
             scouting, all free.
           </p>
         </div>
-        <SignInCard />
+        <Suspense fallback={<SignInCardFallback />}>
+          <SignInCard />
+        </Suspense>
       </div>
       <LandingContent />
     </div>

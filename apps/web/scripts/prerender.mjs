@@ -33,8 +33,15 @@ const ROUTES = [
   {
     path: '/',
     out: 'index.html',
-    readySelector: '#features-heading',
-    mustInclude: 'Everything a competitive Smash Ultimate player needs',
+    // P1 2026-08-12: SignInCard is lazy — the submit button only exists once
+    // its chunk has actually mounted, so gating on it makes "the snapshot
+    // contains the sign-in card" a hard deploy invariant instead of a
+    // networkidle2 timing accident.
+    readySelector: 'form button[type="submit"]',
+    mustInclude: [
+      'Everything a competitive Smash Ultimate player needs',
+      'Sign in to track your Smash matches.',
+    ],
     expectTitle: 'grandfinals.gg — Free Super Smash Bros. Ultimate Analytics & GSP Tracker',
   },
   {
@@ -79,8 +86,10 @@ async function main() {
         throw new Error(`${route.path}: title "${title}" != expected "${route.expectTitle}"`);
       }
       const html = `<!doctype html>\n${await page.evaluate(() => document.documentElement.outerHTML)}`;
-      if (!html.includes(route.mustInclude)) {
-        throw new Error(`${route.path}: snapshot missing expected content "${route.mustInclude}"`);
+      for (const needle of [route.mustInclude].flat()) {
+        if (!html.includes(needle)) {
+          throw new Error(`${route.path}: snapshot missing expected content "${needle}"`);
+        }
       }
       const canonical = await page.evaluate(
         () => document.querySelector('link[rel="canonical"]')?.getAttribute('href') ?? null,

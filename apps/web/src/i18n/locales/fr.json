@@ -31,6 +31,8 @@
     "trainingGrounds": "Training Grounds",
     "donate": "Faire un don",
     "loading": "Chargement…",
+    "chunkLoadError": "Une partie de la page n'a pas pu se charger. Vérifiez votre connexion et réessayez.",
+    "retry": "Réessayer",
     "language": "Langue",
     "languageChanged": "Langue définie sur {{language}} — modifiable à tout moment dans la barre supérieure."
   },

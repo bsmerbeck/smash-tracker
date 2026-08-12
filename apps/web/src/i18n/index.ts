@@ -8,7 +8,7 @@ import en from './locales/en.json';
  * V15 localization. Languages follow the GA country breakdown (US/CA/UK
  * first, then the combined Spanish-speaking audience, France+Canada,
  * Germany, Brazil+Portugal, Japan) — adding another language is one JSON
- * file in ./locales plus an entry here.
+ * file in ./locales, an entry here, and a loader-map entry below.
  */
 export const SUPPORTED_LANGUAGES = [
   { code: 'en', label: 'English' },
@@ -22,22 +22,47 @@ export const SUPPORTED_LANGUAGES = [
 export type SupportedLanguage = (typeof SUPPORTED_LANGUAGES)[number]['code'];
 
 /**
- * English ships in the entry bundle (it's the fallback — no async flash for
- * the default experience); every other locale loads on demand as its own
- * chunk via the dynamic import below, so 5 extra languages cost the initial
- * load nothing.
+ * Non-English locales load on demand, each as its own chunk. This is an
+ * explicit loader map — NOT a `import(`./locales/${language}.json`)`
+ * template literal — because Vite globs a variable dynamic import over ALL
+ * of ./locales/*.json including en.json, which forces en into its own
+ * chunk even though the entry also imports it statically. That chunk was
+ * one of the five that stalled 26–103s on a cold CDN edge in the P1
+ * 2026-08-12 login incident. With en excluded here, its only importer is
+ * the static import above and Rollup inlines it into the entry bundle:
+ * same bytes, one fewer request, one fewer cold-edge stall opportunity.
+ * Adding a language is one JSON file, one SUPPORTED_LANGUAGES entry, and
+ * one loader-map entry below.
  *
  * Detection order: an explicit choice (localStorage, written by the language
  * bar) always wins; otherwise the browser's language — a better signal than
  * IP geolocation (a German speaker visiting the US still reads German) and
  * it needs no external service.
  */
+const lazyLocaleLoaders: Record<string, () => Promise<{ default: object }>> = {
+  es: () => import('./locales/es.json'),
+  fr: () => import('./locales/fr.json'),
+  de: () => import('./locales/de.json'),
+  pt: () => import('./locales/pt.json'),
+  ja: () => import('./locales/ja.json'),
+};
+
 i18n
   .use(LanguageDetector)
   .use(
-    resourcesToBackend((language: string) =>
-      language === 'en' ? Promise.resolve(en) : import(`./locales/${language}.json`),
-    ),
+    resourcesToBackend((language: string) => {
+      // i18next requests every step of the resolution hierarchy — a
+      // Brazilian browser asks for 'pt-BR', then 'pt', then 'en' — so the
+      // lookup must key on the BASE code. For a code with no bundled base
+      // this must REJECT (never resolve English): resolving would register
+      // the English bundle under e.g. 'pt-BR', which wins resolution over
+      // the correctly-loaded 'pt' bundle and silently renders the whole
+      // app in English for every regional-variant browser.
+      const base = language.split('-')[0] ?? language;
+      if (base === 'en') return Promise.resolve(en);
+      const load = lazyLocaleLoaders[base];
+      return load ? load() : Promise.reject(new Error(`no bundled locale for ${language}`));
+    }),
   )
   .use(initReactI18next)
   .init({

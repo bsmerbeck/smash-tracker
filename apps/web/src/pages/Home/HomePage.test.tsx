@@ -122,7 +122,8 @@ describe('HomePage', () => {
     ).toBeInTheDocument();
 
     // Sign-in card is still present and prominent.
-    expect(screen.getByText('Sign in to track your Smash matches.')).toBeInTheDocument();
+    // SignInCard is lazy since the P1 2026-08-12 boot fix — await its chunk.
+    expect(await screen.findByText('Sign in to track your Smash matches.')).toBeInTheDocument();
 
     // Every feature block renders as a heading with its description.
     for (const feature of featureEntries) {

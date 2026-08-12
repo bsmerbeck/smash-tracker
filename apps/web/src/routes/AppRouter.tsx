@@ -1,13 +1,15 @@
-import { lazy, Suspense } from 'react';
+import { Suspense } from 'react';
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router';
 import { useTranslation } from 'react-i18next';
 import { HomePage } from '@/pages/Home/HomePage';
 import { CoachingModeGate } from '@/pages/Coaching/CoachingModeGate';
 import { ActiveSubjectSync } from './ActiveSubjectSync';
+import { ChunkErrorBoundary } from './ChunkErrorBoundary';
 import { ProtectedRoute } from './ProtectedRoute';
 import { ResearchTelemetrySuppression } from './ResearchTelemetrySuppression';
 import { RouteAnalytics } from './RouteAnalytics';
 import { RouteTitles } from './RouteTitles';
+import { retryableLazy } from '@/lib/retryableLazy';
 
 /**
  * V12 SEO: every page except HomePage is lazy-loaded so the entry chunk stays
@@ -15,128 +17,134 @@ import { RouteTitles } from './RouteTitles';
  * grown past 1.2 MB). HomePage stays eager: it's the prerendered landing +
  * sign-in surface, and a lazy flash there would show up in the first
  * impression search visitors get. Pages use named exports, hence the
- * `.then(m => ({ default: ... }))` shims.
+ * `.then(m => ({ default: ... }))` shims. P1 2026-08-12: chunk loads go
+ * through retryableLazy (timeout + retry + one-shot reload) after cold-edge
+ * chunk stalls froze boot for 103s.
  */
-const DashboardPage = lazy(() =>
+const DashboardPage = retryableLazy(() =>
   import('@/pages/Dashboard/DashboardPage').then((m) => ({ default: m.DashboardPage })),
 );
 // Phase 13 (Coach-Aware Intent Onboarding, ONBD-01/ONBD-02): the one-intent-
 // question chooser HomePage's post-auth routing branch can send a new
 // account to. ProtectedRoute-gated like every other authenticated route.
-const WelcomePage = lazy(() =>
+const WelcomePage = retryableLazy(() =>
   import('@/pages/Welcome/WelcomePage').then((m) => ({ default: m.WelcomePage })),
 );
-const ChoosePrimaryPage = lazy(() =>
+const ChoosePrimaryPage = retryableLazy(() =>
   import('@/pages/CharacterSelect/ChoosePrimaryPage').then((m) => ({
     default: m.ChoosePrimaryPage,
   })),
 );
-const ChooseSecondaryPage = lazy(() =>
+const ChooseSecondaryPage = retryableLazy(() =>
   import('@/pages/CharacterSelect/ChooseSecondaryPage').then((m) => ({
     default: m.ChooseSecondaryPage,
   })),
 );
-const FighterAnalysisPage = lazy(() =>
+const FighterAnalysisPage = retryableLazy(() =>
   import('@/pages/FighterAnalysis/FighterAnalysisPage').then((m) => ({
     default: m.FighterAnalysisPage,
   })),
 );
-const MatchupsPage = lazy(() =>
+const MatchupsPage = retryableLazy(() =>
   import('@/pages/Matchups/MatchupsPage').then((m) => ({ default: m.MatchupsPage })),
 );
-const OpponentsPage = lazy(() =>
+const OpponentsPage = retryableLazy(() =>
   import('@/pages/Opponents/OpponentsPage').then((m) => ({ default: m.OpponentsPage })),
 );
-const ScoutPage = lazy(() =>
+const ScoutPage = retryableLazy(() =>
   import('@/pages/Scout/ScoutPage').then((m) => ({ default: m.ScoutPage })),
 );
-const ReportsPage = lazy(() =>
+const ReportsPage = retryableLazy(() =>
   import('@/pages/Reports/ReportsPage').then((m) => ({ default: m.ReportsPage })),
 );
-const MatchDataPage = lazy(() =>
+const MatchDataPage = retryableLazy(() =>
   import('@/pages/MatchData/MatchDataPage').then((m) => ({ default: m.MatchDataPage })),
 );
-const VodManagerPage = lazy(() =>
+const VodManagerPage = retryableLazy(() =>
   import('@/pages/VodManager/VodManagerPage').then((m) => ({ default: m.VodManagerPage })),
 );
-const TrendsPage = lazy(() =>
+const TrendsPage = retryableLazy(() =>
   import('@/pages/Trends/TrendsPage').then((m) => ({ default: m.TrendsPage })),
 );
-const GspPage = lazy(() => import('@/pages/Gsp/GspPage').then((m) => ({ default: m.GspPage })));
-const GroupsPage = lazy(() =>
+const GspPage = retryableLazy(() =>
+  import('@/pages/Gsp/GspPage').then((m) => ({ default: m.GspPage })),
+);
+const GroupsPage = retryableLazy(() =>
   import('@/pages/Groups/GroupsPage').then((m) => ({ default: m.GroupsPage })),
 );
-const TournamentsPage = lazy(() =>
+const TournamentsPage = retryableLazy(() =>
   import('@/pages/Tournaments/TournamentsPage').then((m) => ({
     default: m.TournamentsPage,
   })),
 );
-const TournamentDetailPage = lazy(() =>
+const TournamentDetailPage = retryableLazy(() =>
   import('@/pages/Tournaments/TournamentDetailPage').then((m) => ({
     default: m.TournamentDetailPage,
   })),
 );
-const PrepBriefPage = lazy(() =>
+const PrepBriefPage = retryableLazy(() =>
   import('@/pages/Tournaments/PrepBriefPage').then((m) => ({
     default: m.PrepBriefPage,
   })),
 );
-const IntegrationsPage = lazy(() =>
+const IntegrationsPage = retryableLazy(() =>
   import('@/pages/Integrations/IntegrationsPage').then((m) => ({ default: m.IntegrationsPage })),
 );
-const ProfilePage = lazy(() =>
+const ProfilePage = retryableLazy(() =>
   import('@/pages/Profile/ProfilePage').then((m) => ({ default: m.ProfilePage })),
 );
-const StartggAuthPage = lazy(() =>
+const StartggAuthPage = retryableLazy(() =>
   import('@/pages/StartggAuth/StartggAuthPage').then((m) => ({ default: m.StartggAuthPage })),
 );
-const NotFoundPage = lazy(() =>
+const NotFoundPage = retryableLazy(() =>
   import('@/pages/NotFound/NotFoundPage').then((m) => ({ default: m.NotFoundPage })),
 );
-const FaqPage = lazy(() => import('@/pages/Faq/FaqPage').then((m) => ({ default: m.FaqPage })));
-const GspCalculatorPage = lazy(() =>
+const FaqPage = retryableLazy(() =>
+  import('@/pages/Faq/FaqPage').then((m) => ({ default: m.FaqPage })),
+);
+const GspCalculatorPage = retryableLazy(() =>
   import('@/pages/GspCalculator/GspCalculatorPage').then((m) => ({
     default: m.GspCalculatorPage,
   })),
 );
-const ShareViewPage = lazy(() =>
+const ShareViewPage = retryableLazy(() =>
   import('@/pages/Share/ShareViewPage').then((m) => ({ default: m.ShareViewPage })),
 );
 // Phase 12 (Coach Reviews & Delivery, D-08/DLV-02): the anonymous no-account
 // recipient page for a delivered coach review, `/r/:token`.
-const ReviewDeliveryPage = lazy(() =>
+const ReviewDeliveryPage = retryableLazy(() =>
   import('@/pages/Review/ReviewDeliveryPage').then((m) => ({ default: m.ReviewDeliveryPage })),
 );
 // Phase 11 (Coach Workspace Tenancy & Feature Parity): /coach + /coach/:clientId/*.
-const ClientHubPage = lazy(() =>
+const ClientHubPage = retryableLazy(() =>
   import('@/pages/Coaching/ClientHubPage').then((m) => ({ default: m.ClientHubPage })),
 );
-const ClientWorkspaceLayout = lazy(() =>
+const ClientWorkspaceLayout = retryableLazy(() =>
   import('@/pages/Coaching/ClientWorkspaceLayout').then((m) => ({
     default: m.ClientWorkspaceLayout,
   })),
 );
 // Phase 11 fix round 2 (D-02/D2, D-03/D3): the client workspace's own pages
 // (Overview landing, Fighters, and the Analytics sub-nav grouping wrapper).
-const ClientOverviewPage = lazy(() =>
+const ClientOverviewPage = retryableLazy(() =>
   import('@/pages/Coaching/ClientOverviewPage').then((m) => ({ default: m.ClientOverviewPage })),
 );
-const ClientFightersPage = lazy(() =>
+const ClientFightersPage = retryableLazy(() =>
   import('@/pages/Coaching/ClientFightersPage').then((m) => ({ default: m.ClientFightersPage })),
 );
-const ClientAnalyticsLayout = lazy(() =>
+const ClientAnalyticsLayout = retryableLazy(() =>
   import('@/pages/Coaching/ClientAnalyticsLayout').then((m) => ({
     default: m.ClientAnalyticsLayout,
   })),
 );
 // Phase 12 (Coach Reviews & Delivery): the dedicated two-pane review
 // composer (D-01), `/coach/:clientId/reviews/:reviewId`.
-const ReviewComposerPage = lazy(() =>
+const ReviewComposerPage = retryableLazy(() =>
   import('@/pages/Coaching/ReviewComposerPage').then((m) => ({ default: m.ReviewComposerPage })),
 );
 // Phase 12 (Coach Reviews & Delivery, D-05): the Reviews list, the 6th
 // client-workspace nav item — `/coach/:clientId/reviews`.
-const ReviewsListPage = lazy(() =>
+const ReviewsListPage = retryableLazy(() =>
   import('@/pages/Coaching/ReviewsListPage').then((m) => ({ default: m.ReviewsListPage })),
 );
 // Phase 20 (Coaching Workflow, Training Sessions & VOD-less Reviews,
@@ -144,10 +152,10 @@ const ReviewsListPage = lazy(() =>
 // `/coach/:clientId/sessions`) and the session composer
 // (`/coach/:clientId/sessions/:sessionId`) — SIBLINGS to the reviews pair
 // above, never a fork.
-const SessionsListPage = lazy(() =>
+const SessionsListPage = retryableLazy(() =>
   import('@/pages/Coaching/SessionsListPage').then((m) => ({ default: m.SessionsListPage })),
 );
-const SessionComposerPage = lazy(() =>
+const SessionComposerPage = retryableLazy(() =>
   import('@/pages/Coaching/SessionComposerPage').then((m) => ({
     default: m.SessionComposerPage,
   })),
@@ -156,27 +164,27 @@ const SessionComposerPage = lazy(() =>
 // client-owned workspace family (registered below). A PARALLEL sibling of
 // `/coach/:clientId` (owner binding decision, Area 4.1) — its own gate,
 // layout, and route-derived subject, never the coach-side ones.
-const ClientOwnedWorkspaceGate = lazy(() =>
+const ClientOwnedWorkspaceGate = retryableLazy(() =>
   import('@/pages/ClientWorkspace/ClientOwnedWorkspaceGate').then((m) => ({
     default: m.ClientOwnedWorkspaceGate,
   })),
 );
-const ClientOwnedWorkspaceLayout = lazy(() =>
+const ClientOwnedWorkspaceLayout = retryableLazy(() =>
   import('@/pages/ClientWorkspace/ClientOwnedWorkspaceLayout').then((m) => ({
     default: m.ClientOwnedWorkspaceLayout,
   })),
 );
-const OwnerWorkspaceOverviewPage = lazy(() =>
+const OwnerWorkspaceOverviewPage = retryableLazy(() =>
   import('@/pages/ClientWorkspace/OwnerWorkspaceOverviewPage').then((m) => ({
     default: m.OwnerWorkspaceOverviewPage,
   })),
 );
-const OwnerAnalyticsLayout = lazy(() =>
+const OwnerAnalyticsLayout = retryableLazy(() =>
   import('@/pages/ClientWorkspace/OwnerAnalyticsLayout').then((m) => ({
     default: m.OwnerAnalyticsLayout,
   })),
 );
-const OwnerFightersPage = lazy(() =>
+const OwnerFightersPage = retryableLazy(() =>
   import('@/pages/ClientWorkspace/OwnerFightersPage').then((m) => ({
     default: m.OwnerFightersPage,
   })),
@@ -184,7 +192,7 @@ const OwnerFightersPage = lazy(() =>
 // Phase 24 (Coach Issuance & Client Claim Experience, ENTRY-01/CLAIM-01): the
 // client-facing redemption surface. Flat, authenticated, no route parameter —
 // every entry link into it is bare (see the page's own doc comment).
-const ClaimRedeemPage = lazy(() =>
+const ClaimRedeemPage = retryableLazy(() =>
   import('@/pages/Claim/ClaimRedeemPage').then((m) => ({ default: m.ClaimRedeemPage })),
 );
 
@@ -226,209 +234,210 @@ export function AppRouter() {
           sync with the route on every navigation, coaching or personal —
           see ActiveSubjectSync's own doc comment. */}
       <ActiveSubjectSync />
-      <Suspense fallback={<RouteFallback />}>
-        <Routes>
-          <Route path="/" element={<HomePage />} />
-          {/* Public, crawlable (V12 SEO). */}
-          <Route path="/faq" element={<FaqPage />} />
-          <Route path="/gsp-calculator" element={<GspCalculatorPage />} />
-          {/* Public, anonymous VOD review share links — noindex (unlisted, per
+      <ChunkErrorBoundary>
+        <Suspense fallback={<RouteFallback />}>
+          <Routes>
+            <Route path="/" element={<HomePage />} />
+            {/* Public, crawlable (V12 SEO). */}
+            <Route path="/faq" element={<FaqPage />} />
+            <Route path="/gsp-calculator" element={<GspCalculatorPage />} />
+            {/* Public, anonymous VOD review share links — noindex (unlisted, per
               CONTEXT.md), no auth. GET /s/:token also serves a server-rendered
               HTML shell with per-token OG meta for crawlers/unfurl bots
               (apps/api/src/routes/shareMeta.ts); this route is what a REAL
               browser boots into once the SPA takes over. */}
-          <Route path="/s/:token" element={<ShareViewPage />} />
-          {/* Phase 12 (Coach Reviews & Delivery, D-08/DLV-02): the anonymous
+            <Route path="/s/:token" element={<ShareViewPage />} />
+            {/* Phase 12 (Coach Reviews & Delivery, D-08/DLV-02): the anonymous
               no-account coach review delivery link — noindex (unlisted),
               no auth, revocable/expiring token. A SIBLING to /s/:token
               above, never a fork. */}
-          <Route path="/r/:token" element={<ReviewDeliveryPage />} />
-          <Route
-            path="/dashboard"
-            element={
-              <ProtectedRoute>
-                <DashboardPage />
-              </ProtectedRoute>
-            }
-          />
-          {/* Phase 13 (Coach-Aware Intent Onboarding, ONBD-01/ONBD-02/D-01):
+            <Route path="/r/:token" element={<ReviewDeliveryPage />} />
+            <Route
+              path="/dashboard"
+              element={
+                <ProtectedRoute>
+                  <DashboardPage />
+                </ProtectedRoute>
+              }
+            />
+            {/* Phase 13 (Coach-Aware Intent Onboarding, ONBD-01/ONBD-02/D-01):
               route-visible so it survives reload/deep-link/Back — HomePage's
               post-auth routing branch sends a new account with no saved
               intent and an ambiguous (or absent) origin here; also
               re-enterable anytime via the dashboard next-best-action area
               or any guided path's switch-intent link. */}
-          <Route
-            path="/welcome"
-            element={
-              <ProtectedRoute>
-                <WelcomePage />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/choose-primary"
-            element={
-              <ProtectedRoute>
-                <ChoosePrimaryPage />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/choose-secondary"
-            element={
-              <ProtectedRoute>
-                <ChooseSecondaryPage />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/fighter-analysis"
-            element={
-              <ProtectedRoute>
-                <FighterAnalysisPage />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/matchups"
-            element={
-              <ProtectedRoute>
-                <MatchupsPage />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/opponents"
-            element={
-              <ProtectedRoute>
-                <OpponentsPage />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/scout"
-            element={
-              <ProtectedRoute>
-                <ScoutPage />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/reports"
-            element={
-              <ProtectedRoute>
-                <ReportsPage />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/match-data"
-            element={
-              <ProtectedRoute>
-                <MatchDataPage />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/vod"
-            element={
-              <ProtectedRoute>
-                <VodManagerPage />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/trends"
-            element={
-              <ProtectedRoute>
-                <TrendsPage />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/gsp"
-            element={
-              <ProtectedRoute>
-                <GspPage />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/tournaments"
-            element={
-              <ProtectedRoute>
-                <TournamentsPage />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/tournaments/:eventId"
-            element={
-              <ProtectedRoute>
-                <TournamentDetailPage />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/tournaments/:entryKey/prep"
-            element={
-              <ProtectedRoute>
-                <PrepBriefPage />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/groups"
-            element={
-              <ProtectedRoute>
-                <GroupsPage />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/settings/integrations"
-            element={
-              <ProtectedRoute>
-                <IntegrationsPage />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/profile"
-            element={
-              <ProtectedRoute>
-                <ProfilePage />
-              </ProtectedRoute>
-            }
-          />
-          {/* Phase 24 (Coach Issuance & Client Claim Experience, ENTRY-01/
+            <Route
+              path="/welcome"
+              element={
+                <ProtectedRoute>
+                  <WelcomePage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/choose-primary"
+              element={
+                <ProtectedRoute>
+                  <ChoosePrimaryPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/choose-secondary"
+              element={
+                <ProtectedRoute>
+                  <ChooseSecondaryPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/fighter-analysis"
+              element={
+                <ProtectedRoute>
+                  <FighterAnalysisPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/matchups"
+              element={
+                <ProtectedRoute>
+                  <MatchupsPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/opponents"
+              element={
+                <ProtectedRoute>
+                  <OpponentsPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/scout"
+              element={
+                <ProtectedRoute>
+                  <ScoutPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/reports"
+              element={
+                <ProtectedRoute>
+                  <ReportsPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/match-data"
+              element={
+                <ProtectedRoute>
+                  <MatchDataPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/vod"
+              element={
+                <ProtectedRoute>
+                  <VodManagerPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/trends"
+              element={
+                <ProtectedRoute>
+                  <TrendsPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/gsp"
+              element={
+                <ProtectedRoute>
+                  <GspPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/tournaments"
+              element={
+                <ProtectedRoute>
+                  <TournamentsPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/tournaments/:eventId"
+              element={
+                <ProtectedRoute>
+                  <TournamentDetailPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/tournaments/:entryKey/prep"
+              element={
+                <ProtectedRoute>
+                  <PrepBriefPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/groups"
+              element={
+                <ProtectedRoute>
+                  <GroupsPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/settings/integrations"
+              element={
+                <ProtectedRoute>
+                  <IntegrationsPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/profile"
+              element={
+                <ProtectedRoute>
+                  <ProfilePage />
+                </ProtectedRoute>
+              }
+            />
+            {/* Phase 24 (Coach Issuance & Client Claim Experience, ENTRY-01/
               CLAIM-01): authenticated, no path parameter — the code is only
               ever typed after this ProtectedRoute gate. Placed beside the
               other flat authenticated routes, not nested. */}
-          <Route
-            path="/claim"
-            element={
-              <ProtectedRoute>
-                <ClaimRedeemPage />
-              </ProtectedRoute>
-            }
-          />
-          {/* Phase 11 (Coach Workspace Tenancy & Feature Parity, TEN-07): the
+            <Route
+              path="/claim"
+              element={
+                <ProtectedRoute>
+                  <ClaimRedeemPage />
+                </ProtectedRoute>
+              }
+            />
+            {/* Phase 11 (Coach Workspace Tenancy & Feature Parity, TEN-07): the
               Client Hub landing shell. Walkthrough fix round 1 (FB-3):
               coaching mode is opt-in — CoachingModeGate renders the
               friendly "enable it in Profile" state instead of the hub
               until the user turns the toggle on. */}
-          <Route
-            path="/coach"
-            element={
-              <ProtectedRoute>
-                <CoachingModeGate>
-                  <ClientHubPage />
-                </CoachingModeGate>
-              </ProtectedRoute>
-            }
-          />
-          {/* A single ProtectedRoute gates the whole workspace layout — its
+            <Route
+              path="/coach"
+              element={
+                <ProtectedRoute>
+                  <CoachingModeGate>
+                    <ClientHubPage />
+                  </CoachingModeGate>
+                </ProtectedRoute>
+              }
+            />
+            {/* A single ProtectedRoute gates the whole workspace layout — its
               nested children below are NOT individually wrapped, matching
               the plan's "one nested Route whose children are the existing
               pages" shape. ClientWorkspaceLayout renders <Outlet /> for
@@ -450,39 +459,39 @@ export function AppRouter() {
               the whole workspace too, so a direct `/coach/:clientId/...`
               deep-link with coaching mode off gets the same friendly gate
               instead of a client's data. */}
-          <Route
-            path="/coach/:clientId"
-            element={
-              <ProtectedRoute>
-                <CoachingModeGate>
-                  <ClientWorkspaceLayout />
-                </CoachingModeGate>
-              </ProtectedRoute>
-            }
-          >
-            <Route index element={<Navigate to="overview" replace />} />
-            <Route path="overview" element={<ClientOverviewPage />} />
-            <Route path="fighters" element={<ClientFightersPage />} />
-            <Route path="vods" element={<VodManagerPage />} />
-            <Route path="match-data" element={<MatchDataPage />} />
-            <Route element={<ClientAnalyticsLayout />}>
-              <Route path="dashboard" element={<DashboardPage />} />
-              <Route path="fighter-analysis" element={<FighterAnalysisPage />} />
-              <Route path="matchups" element={<MatchupsPage />} />
-            </Route>
-            {/* Phase 12 (Coach Reviews & Delivery, D-01/D-05): the Reviews list + the review composer. */}
-            <Route path="reviews" element={<ReviewsListPage />} />
-            <Route path="reviews/:reviewId" element={<ReviewComposerPage />} />
-            {/* Phase 20 (Coaching Workflow, Training Sessions & VOD-less
+            <Route
+              path="/coach/:clientId"
+              element={
+                <ProtectedRoute>
+                  <CoachingModeGate>
+                    <ClientWorkspaceLayout />
+                  </CoachingModeGate>
+                </ProtectedRoute>
+              }
+            >
+              <Route index element={<Navigate to="overview" replace />} />
+              <Route path="overview" element={<ClientOverviewPage />} />
+              <Route path="fighters" element={<ClientFightersPage />} />
+              <Route path="vods" element={<VodManagerPage />} />
+              <Route path="match-data" element={<MatchDataPage />} />
+              <Route element={<ClientAnalyticsLayout />}>
+                <Route path="dashboard" element={<DashboardPage />} />
+                <Route path="fighter-analysis" element={<FighterAnalysisPage />} />
+                <Route path="matchups" element={<MatchupsPage />} />
+              </Route>
+              {/* Phase 12 (Coach Reviews & Delivery, D-01/D-05): the Reviews list + the review composer. */}
+              <Route path="reviews" element={<ReviewsListPage />} />
+              <Route path="reviews/:reviewId" element={<ReviewComposerPage />} />
+              {/* Phase 20 (Coaching Workflow, Training Sessions & VOD-less
                 Reviews, SESS-01/02): the Sessions list + the session
                 composer — a SIBLING pair to the reviews routes above. */}
-            <Route path="sessions" element={<SessionsListPage />} />
-            <Route path="sessions/:sessionId" element={<SessionComposerPage />} />
-            <Route path="gsp" element={<Navigate to="../overview" replace />} />
-            <Route path="integrations" element={<Navigate to="../overview" replace />} />
-            <Route path="reports" element={<Navigate to="../overview" replace />} />
-          </Route>
-          {/* Phase 24 (Coach Issuance & Client Claim Experience, CTRL-01/
+              <Route path="sessions" element={<SessionsListPage />} />
+              <Route path="sessions/:sessionId" element={<SessionComposerPage />} />
+              <Route path="gsp" element={<Navigate to="../overview" replace />} />
+              <Route path="integrations" element={<Navigate to="../overview" replace />} />
+              <Route path="reports" element={<Navigate to="../overview" replace />} />
+            </Route>
+            {/* Phase 24 (Coach Issuance & Client Claim Experience, CTRL-01/
               CTRL-02): the client-owned workspace family, parallel to
               `/coach/:clientId` above by binding owner decision (Area 4.1) —
               its own gate/layout, never CoachingModeGate/ClientWorkspaceLayout.
@@ -492,38 +501,39 @@ export function AppRouter() {
               surfaces) and redirect to `overview` rather than render a stub,
               matching the gsp/integrations/reports precedent above. Nothing
               inside the `/coach` block above is touched by this addition. */}
-          <Route
-            path="/workspace/:tenantId"
-            element={
-              <ProtectedRoute>
-                <ClientOwnedWorkspaceGate>
-                  <ClientOwnedWorkspaceLayout />
-                </ClientOwnedWorkspaceGate>
-              </ProtectedRoute>
-            }
-          >
-            <Route index element={<Navigate to="overview" replace />} />
-            <Route path="overview" element={<OwnerWorkspaceOverviewPage />} />
-            <Route path="fighters" element={<OwnerFightersPage />} />
-            <Route path="vods" element={<VodManagerPage />} />
-            <Route path="match-data" element={<MatchDataPage />} />
-            <Route element={<OwnerAnalyticsLayout />}>
-              <Route path="dashboard" element={<DashboardPage />} />
-              <Route path="fighter-analysis" element={<FighterAnalysisPage />} />
-              <Route path="matchups" element={<MatchupsPage />} />
+            <Route
+              path="/workspace/:tenantId"
+              element={
+                <ProtectedRoute>
+                  <ClientOwnedWorkspaceGate>
+                    <ClientOwnedWorkspaceLayout />
+                  </ClientOwnedWorkspaceGate>
+                </ProtectedRoute>
+              }
+            >
+              <Route index element={<Navigate to="overview" replace />} />
+              <Route path="overview" element={<OwnerWorkspaceOverviewPage />} />
+              <Route path="fighters" element={<OwnerFightersPage />} />
+              <Route path="vods" element={<VodManagerPage />} />
+              <Route path="match-data" element={<MatchDataPage />} />
+              <Route element={<OwnerAnalyticsLayout />}>
+                <Route path="dashboard" element={<DashboardPage />} />
+                <Route path="fighter-analysis" element={<FighterAnalysisPage />} />
+                <Route path="matchups" element={<MatchupsPage />} />
+              </Route>
+              <Route path="reviews" element={<Navigate to="../overview" replace />} />
+              <Route path="sessions" element={<Navigate to="../overview" replace />} />
+              <Route path="gsp" element={<Navigate to="../overview" replace />} />
+              <Route path="integrations" element={<Navigate to="../overview" replace />} />
+              <Route path="reports" element={<Navigate to="../overview" replace />} />
             </Route>
-            <Route path="reviews" element={<Navigate to="../overview" replace />} />
-            <Route path="sessions" element={<Navigate to="../overview" replace />} />
-            <Route path="gsp" element={<Navigate to="../overview" replace />} />
-            <Route path="integrations" element={<Navigate to="../overview" replace />} />
-            <Route path="reports" element={<Navigate to="../overview" replace />} />
-          </Route>
-          {/* Public: receives the custom token from the "login with start.gg" flow. */}
-          <Route path="/auth/startgg" element={<StartggAuthPage />} />
-          <Route path="/not-found" element={<NotFoundPage />} />
-          <Route path="*" element={<Navigate to="/not-found" replace />} />
-        </Routes>
-      </Suspense>
+            {/* Public: receives the custom token from the "login with start.gg" flow. */}
+            <Route path="/auth/startgg" element={<StartggAuthPage />} />
+            <Route path="/not-found" element={<NotFoundPage />} />
+            <Route path="*" element={<Navigate to="/not-found" replace />} />
+          </Routes>
+        </Suspense>
+      </ChunkErrorBoundary>
     </BrowserRouter>
   );
 }

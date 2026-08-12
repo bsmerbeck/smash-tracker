@@ -72,6 +72,24 @@ describe('i18n', () => {
     await i18n.changeLanguage('xx');
     expect(i18n.t('nav.dashboard')).toBe('Dashboard');
   });
+
+  /**
+   * P1 2026-08-12 regression lock: real browsers report regional variants
+   * ('pt-BR', 'es-419'), and i18next requests every hierarchy step from the
+   * backend ('pt-BR' → 'pt' → 'en'). The locale loader must serve the BASE
+   * bundle for a variant request and REJECT for codes it has no bundle for —
+   * a fallback that resolved English registered the English bundle UNDER
+   * 'pt-BR', which won resolution over the correctly-loaded 'pt' bundle and
+   * silently rendered the entire app in English for variant browsers.
+   */
+  it('regional variants render their base language, not English', async () => {
+    await i18n.changeLanguage('pt-BR');
+    expect(i18n.t('nav.dashboard')).toBe(getByPath(pt, 'nav.dashboard'));
+    expect(i18n.t('nav.dashboard')).not.toBe('Dashboard');
+
+    await i18n.changeLanguage('es-419');
+    expect(i18n.t('nav.dashboard')).toBe(getByPath(es, 'nav.dashboard'));
+  });
 });
 
 /**
