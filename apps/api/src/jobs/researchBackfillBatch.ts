@@ -33,6 +33,10 @@ import {
 } from '../research/ingestion/sourceLayer.js';
 import { applyLegacyProjection, deriveLegacyProjection } from '../research/ingestion/projection.js';
 import {
+  readEnrichmentOverlayForTenant,
+  type EnrichmentRowOverlay,
+} from '../research/enrichment/projection.js';
+import {
   confirmedPlayerIdSet,
   mineIdentityCandidates,
   readIdentityMapping,
@@ -180,6 +184,13 @@ export interface ResearchBackfillBatchResult {
    */
   staleWritesSkipped: number;
   retryAfterObserved: boolean;
+  /**
+   * Phase 30.2 Plan 08 (ENR-07/ENR-08): true when reading the tenant's
+   * enrichment overlay failed and this invocation degraded to no overlay —
+   * the refresh still ran, but any enrichment stage on this pass reverts to
+   * the provider's own projection until the next enrichment run.
+   */
+  enrichmentOverlayDegraded: boolean;
   reason: string | null;
 }
 
@@ -414,6 +425,12 @@ export async function runResearchBackfillBatch(
   let cursorPage = 1;
   let knownTotalPages: number | null = null;
   let statusForResult: ResearchIngestionRunStatus = 'running';
+  // Declared here (not at its Step 4b read site) so `buildResult` — defined
+  // immediately below and reachable from early-return paths BEFORE Step 4b
+  // ever runs — never references a `let` binding still in its temporal dead
+  // zone.
+  let enrichmentOverlay: Map<string, EnrichmentRowOverlay> | undefined;
+  let enrichmentOverlayDegraded = false;
 
   function buildResult(
     partial: Partial<ResearchBackfillBatchResult> & {
@@ -437,6 +454,7 @@ export async function runResearchBackfillBatch(
       writeRetries,
       staleWritesSkipped,
       retryAfterObserved,
+      enrichmentOverlayDegraded: partial.enrichmentOverlayDegraded ?? enrichmentOverlayDegraded,
       reason: partial.reason ?? null,
     };
   }
@@ -601,6 +619,34 @@ export async function runResearchBackfillBatch(
     const confirmedPlayerIds = confirmedPlayerIdSet(identityOutcome.value);
     if (confirmedPlayerIds.size === 0) {
       return await doFail('identity-not-confirmed');
+    }
+
+    // Step 4b (Phase 30.2 Plan 08, ENR-07/ENR-08, cycle-1 review HIGH 2): read
+    // the tenant's enrichment overlay ONCE per invocation, before the per-set
+    // loop — never once per set, because the overlay is a bounded per-tenant
+    // read and a per-set read would multiply RTDB round trips by the batch
+    // size for no additional correctness. `applyLegacyProjection` emits the
+    // stage member unconditionally, including the `{ id: 0, name: 'unknown' }`
+    // sentinel, on EVERY projected row (`research/ingestion/projection.ts:275-277`).
+    // Leaving the downstream call at four arguments would mean the FIRST
+    // production start.gg refresh silently reverts every enrichment stage in
+    // the workspace — the parameter being optional is what makes wiring it
+    // here safe, not what makes wiring it unnecessary. Deliberately NOT one
+    // of the `RESEARCH_BACKFILL_INFRA_BOUNDARIES`: unlike those seventeen, a
+    // failure reading the overlay must NOT fail the batch — an enrichment
+    // read is an enhancement to a provider refresh, and a refresh that
+    // refuses to run is strictly worse than a refresh that runs without the
+    // enhancement. The accepted, disclosed consequence: under that
+    // degradation the refresh behaves exactly as it does today, and any
+    // enrichment stage on this pass is reverted, to be reapplied by the next
+    // enrichment run.
+    const overlayOutcome = await runInfraStep('readEnrichmentOverlayForTenant', () =>
+      readEnrichmentOverlayForTenant(database, tenantId),
+    );
+    if (overlayOutcome.ok) {
+      enrichmentOverlay = overlayOutcome.value ?? undefined;
+    } else {
+      enrichmentOverlayDegraded = true;
     }
 
     // Step 5: the DURABLE, token-wide throttle (review C-H7c) — never the
@@ -1099,8 +1145,9 @@ export async function runResearchBackfillBatch(
         }
 
         const projected = deriveLegacyProjection(readOutcome.value);
-        const applyOutcome = await runInfraStep('applyLegacyProjection', () =>
-          applyLegacyProjection(database, tenantId, storageKey, projected),
+        const applyOutcome = await runInfraStep(
+          'applyLegacyProjection',
+          () => applyLegacyProjection(database, tenantId, storageKey, projected, enrichmentOverlay), // enrichment overlay (ENR-07/ENR-08)
         );
         if (!applyOutcome.ok) {
           abandoned = true;

@@ -2,6 +2,8 @@ import type { Database } from 'firebase-admin/database';
 import {
   isPathSafeProviderId,
   RESEARCH_PROJECTED_CLASSIFICATIONS,
+  resolveEnrichedMatchMembers,
+  UNKNOWN_STAGE,
   type MatchRecord,
   type ResearchSourceEntrant,
   type ResearchSourceSetRecord,
@@ -11,6 +13,7 @@ import { startggCharacterToFighterId } from '../../startgg/characterMap.js';
 import { resolveStage } from '../../startgg/stageMap.js';
 import { isPathSafeTenantId } from '../subjectKind.js';
 import { ResearchIngestionWriteError } from './sourceLayer.js';
+import type { EnrichmentRowOverlay } from '../enrichment/projection.js';
 
 /**
  * Phase 30 Plan 03 (ING-03/ING-06, review C-H5/C-H6/C2-H5/C3-H2/C3-H3): the
@@ -332,11 +335,26 @@ type PreservedMember = (typeof PRESERVED_MATCH_MEMBERS)[number];
  * node into a flat, id-bearing array, so carrying a parsed copy would
  * silently flatten a keyed push-key subtree and destroy the note ids the
  * coaching note-cap transaction depends on.
+ *
+ * Phase 30.2 Plan 08 (ENR-07/ENR-08, cycle-1 review HIGH 2): the optional
+ * fourth parameter, `enrichmentOverlay`, is ADDITIVE. Phase 30 is not
+ * reopened — this ingestion module remains authoritative for start.gg
+ * facts (30.2-CONTEXT.md's untouchable clause) — and an enrichment-aware
+ * refresh is the only way a Liquipedia-projected value can survive a
+ * SUBSEQUENT start.gg refresh without the enrichment being reapplied out
+ * of band by a separate run. When `enrichmentOverlay` is absent, this
+ * function's behavior reduces to EXACTLY today's: the branch below is
+ * never entered, and every line of the original fill-empty-only logic
+ * runs unchanged. Both the VOD and stage decisions are delegated to the
+ * shared, pure `resolveEnrichedMatchMembers` — never reimplemented here —
+ * so this module and the enrichment applier
+ * (`apps/api/src/research/enrichment/projection.ts`) cannot disagree.
  */
 export function mergePreservedMatchMembers(
   existingRaw: unknown,
   next: MatchRecord,
   providerVodUrl?: string,
+  enrichmentOverlay?: EnrichmentRowOverlay,
 ): MatchRecord {
   const existing =
     existingRaw !== null && existingRaw !== undefined && typeof existingRaw === 'object'
@@ -347,6 +365,46 @@ export function mergePreservedMatchMembers(
     existing && typeof existing.vodUrl === 'string' && existing.vodUrl.length > 0
       ? existing.vodUrl
       : undefined;
+
+  if (enrichmentOverlay) {
+    const resolved = resolveEnrichedMatchMembers({
+      existingVodUrl,
+      providerVodUrl,
+      enrichmentVodUrl: enrichmentOverlay.enrichmentVodUrl,
+      providerStage: next.map ?? UNKNOWN_STAGE,
+      enrichmentStage: enrichmentOverlay.enrichmentStage,
+      witness: enrichmentOverlay.witness ?? null,
+    });
+
+    const preservedEntries: Partial<Record<PreservedMember, unknown>> = {};
+    if (existing) {
+      if (existing.vodStartSeconds !== undefined) {
+        preservedEntries.vodStartSeconds = existing.vodStartSeconds;
+      }
+      if (existing.vodTimestamps !== undefined) {
+        preservedEntries.vodTimestamps = existing.vodTimestamps;
+      }
+      if (existing.gsp !== undefined) {
+        preservedEntries.gsp = existing.gsp;
+      }
+      if (existing.tags !== undefined) {
+        preservedEntries.tags = existing.tags;
+      }
+      if (existing.notes !== undefined) {
+        preservedEntries.notes = existing.notes;
+      }
+    }
+    if (resolved.vodUrl !== undefined) {
+      preservedEntries.vodUrl = resolved.vodUrl;
+    }
+
+    return {
+      ...next,
+      map: resolved.stage,
+      ...(preservedEntries as Partial<MatchRecord>),
+    };
+  }
+
   // FILL-EMPTY-ONLY (review C3-H3, D-21): an existing non-empty value always
   // wins over a provider change OR a provider absence; the provider only
   // ever fills a member that is empty on both sides.
@@ -412,11 +470,68 @@ export function mergePreservedMatchMembers(
  * writer for the index exists: it has exactly one writer, and it is the
  * multi-path update below.
  */
+
+/** Clears a stale stage-witness claim (both halves) on a provider-stage-win — the witness-clear writer named in `applyLegacyProjection`'s doc comment below. */
+async function clearStaleStageWitness(
+  database: Database,
+  tenantId: string,
+  targetSetId: string,
+  matchKey: string,
+): Promise<void> {
+  const base = `researchEnrichmentProjection/${tenantId}/${matchKey}`;
+  await database.ref().update({
+    [`${base}/matchKey`]: matchKey,
+    [`${base}/targetSetId`]: targetSetId,
+    [`${base}/projectedStageId`]: null,
+    [`${base}/projectedStageName`]: null,
+    [`${base}/projectedStageRaw`]: null,
+    [`${base}/projectedStageForm`]: null,
+    [`${base}/stageObservationId`]: null,
+    [`${base}/stageSourceRevisionId`]: null,
+    [`${base}/stageParserVersion`]: null,
+    [`${base}/pendingStageId`]: null,
+    [`${base}/pendingStageName`]: null,
+    [`${base}/pendingStageRaw`]: null,
+    [`${base}/pendingStageForm`]: null,
+    [`${base}/pendingStageObservationId`]: null,
+  });
+}
+
+/**
+ * Phase 30.2 Plan 08 (ENR-07/ENR-08, cycle-1 review HIGH 2, cycle-2 review
+ * HIGH 2): the optional fifth parameter, `overlayByKey`, is ADDITIVE — when
+ * absent, every write this function issues is IDENTICAL in content and
+ * order to today's. `apps/api/src/research/ingestion/projection.ts:275-277`
+ * (this file) emits the stage member UNCONDITIONALLY on every projected
+ * row, including the `{ id: 0, name: 'unknown' }` sentinel — so without
+ * this parameter, the FIRST production start.gg refresh after an
+ * enrichment run would silently revert every enrichment stage in the
+ * workspace (cycle-1 review HIGH 2). `apps/api/src/jobs/researchBackfillBatch.ts`
+ * is the ONLY production caller of this function and is wired, in this
+ * same plan, to supply the overlay.
+ *
+ * THE WITNESS-CLEAR WRITER on provider-stage-wins (cycle-2 review HIGH 2):
+ * `resolveEnrichedMatchMembers` (delegated to from `mergePreservedMatchMembers`
+ * above) returns, alongside the resolved members, a witness patch naming
+ * which `researchEnrichmentProjection/{tenantId}/{matchKey}` stage-witness
+ * members are now stale because the provider resolved a real stage for
+ * that game. THIS function — never the batch executor, which stays a pure
+ * overlay READER — applies that patch, ordered AFTER the row write within
+ * the SAME per-row step below. The crash-window analysis is the mirror
+ * image of the enrichment applier's fill case, and is benign in this
+ * direction: a crash after the row write but before the witness clear
+ * leaves a stale witness vouching for a value that no longer exists on the
+ * row, but `isSourceOwnedVodValue`-style witness comparison already treats
+ * a witness whose recorded value does not match the row as void — it
+ * vouches for nothing a reader would act on — so no value is misclassified,
+ * and the next refresh pass (or the next enrichment pass) clears it.
+ */
 export async function applyLegacyProjection(
   database: Database,
   tenantId: string,
   storageKey: string,
   result: LegacyProjectionResult,
+  overlayByKey?: Map<string, EnrichmentRowOverlay>,
 ): Promise<void> {
   if (!isPathSafeTenantId(tenantId) || !isPathSafeProviderId(storageKey)) {
     return;
@@ -449,11 +564,28 @@ export async function applyLegacyProjection(
     // being CREATED or UPDATED go through the per-row transaction below.
     for (const [key, value] of rowWrites) {
       const providerVodUrl = result.providerVodUrlByKey[key];
+      const overlay = overlayByKey?.get(key);
       await database
         .ref(`matches/${tenantId}/${key}`)
         .transaction((existingRaw) =>
-          mergePreservedMatchMembers(existingRaw, value, providerVodUrl),
+          mergePreservedMatchMembers(existingRaw, value, providerVodUrl, overlay),
         );
+
+      if (overlay) {
+        // The witness-clear writer (cycle-2 review HIGH 2) — see this
+        // function's doc comment. `value.map` is the PROVIDER's own stage
+        // for this row (`next`, before any merge), which is exactly what
+        // `resolveEnrichedMatchMembers` needs to decide whether a prior
+        // stage witness is now stale.
+        const stageDecision = resolveEnrichedMatchMembers({
+          providerStage: value.map ?? UNKNOWN_STAGE,
+          enrichmentStage: overlay.enrichmentStage,
+          witness: overlay.witness ?? null,
+        });
+        if (stageDecision.witnessPatch.stageCommit.kind === 'clear') {
+          await clearStaleStageWitness(database, tenantId, storageKey, key);
+        }
+      }
     }
   } catch (cause) {
     throw new ResearchIngestionWriteError(
