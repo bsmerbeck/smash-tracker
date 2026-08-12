@@ -1,4 +1,4 @@
-import { readFileSync, readdirSync } from 'node:fs';
+import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { buildTestApp } from '../../test-support/testApp.js';
@@ -16,10 +16,17 @@ import type { InternalJobsConfig, StartggConfig } from '../../config/env.js';
  * pairing for its own surfaces (`serverEmitterAudit.test.ts`,
  * `isolationEnumeration.test.ts`); this file re-proves it for a subsystem
  * that writes tens of thousands of records.
+ *
+ * Phase 30.2 Plan 02 (ENR-11, RTEN-04 inheritance): the scan is
+ * DIRECTORY-SCOPED — a new enrichment directory that is not listed below is
+ * not covered by this lock, silently. `SCANNED_DIRS` must therefore be
+ * extended in the SAME commit that creates any new enrichment source
+ * directory. `apps/api/src/liquipedia` is added here; a later plan in this
+ * phase is expected to add `apps/api/src/research/enrichment` the same way.
  */
 
 const API_SRC = resolve('src');
-const INGESTION_DIR = resolve(API_SRC, 'research/ingestion');
+const SCANNED_DIRS = [resolve(API_SRC, 'research/ingestion'), resolve(API_SRC, 'liquipedia')];
 const LEDGER_MODULE_PATH = resolve(API_SRC, 'events/ledger.ts');
 const ENVELOPE_MODULE_PATH = resolve(API_SRC, 'events/envelope.ts');
 const GA4_PROJECTION_MODULE_RELATIVE = 'jobs/projectGa4';
@@ -42,13 +49,14 @@ function collectSourceFiles(dir: string): string[] {
 }
 
 /**
- * The scanned surface: every non-test source file directly under
- * `research/ingestion/`, discovered by directory read (so a file added
- * later is scanned automatically), PLUS the batch executor that composes
- * them — the one ingestion source file that lives outside that directory.
+ * The scanned surface: every non-test source file directly under each
+ * directory in `SCANNED_DIRS`, discovered by directory read (so a file
+ * added later is scanned automatically), PLUS the batch executor that
+ * composes the ingestion family — the one ingestion source file that lives
+ * outside `research/ingestion/`.
  */
 const INGESTION_SOURCE_FILES = [
-  ...collectSourceFiles(INGESTION_DIR),
+  ...SCANNED_DIRS.flatMap((dir) => collectSourceFiles(dir)),
   resolve(API_SRC, 'jobs/researchBackfillBatch.ts'),
 ];
 
@@ -113,11 +121,17 @@ function importsEventsOrGa4Module(commentStrippedSource: string): boolean {
 // Anti-vacuous-pass guards.
 // ---------------------------------------------------------------------------
 
-/** Recorded when this lock was written: 9 ingestion source files plus the batch executor (10 total). A discovery glob returning fewer means the scan broke, not that the surface shrank. */
-const BASELINE_INGESTION_FILE_COUNT = 10;
+/**
+ * Recorded when this lock was written: 9 `research/ingestion` source files +
+ * the batch executor (10 total). Phase 30.2 Plan 02 added `apps/api/src/
+ * liquipedia/__fixtures__/loadFixture.ts` (1 non-test file), bringing the
+ * baseline to 11. A discovery glob returning fewer means the scan broke,
+ * not that the surface shrank.
+ */
+const BASELINE_INGESTION_FILE_COUNT = 11;
 
 describe('telemetrySilence: anti-vacuous-pass guards', () => {
-  it('discovers at least the recorded baseline of ingestion source files (a broken discovery glob must fail here, not pass with nothing to scan)', () => {
+  it('discovers at least the recorded baseline of ingestion source files across research/ingestion and liquipedia (a broken discovery glob must fail here, not pass with nothing to scan)', () => {
     expect(INGESTION_SOURCE_FILES.length).toBeGreaterThanOrEqual(BASELINE_INGESTION_FILE_COUNT);
   });
 
@@ -125,13 +139,20 @@ describe('telemetrySilence: anti-vacuous-pass guards', () => {
     expect(discoverExportedFunctionNames(LEDGER_MODULE_PATH).length).toBeGreaterThan(0);
     expect(discoverExportedFunctionNames(ENVELOPE_MODULE_PATH).length).toBeGreaterThan(0);
   });
+
+  it('SCANNED_DIRS has at least 2 entries and every entry resolves to an existing directory (a renamed directory must fail loudly, never silently un-cover itself)', () => {
+    expect(SCANNED_DIRS.length).toBeGreaterThanOrEqual(2);
+    for (const dir of SCANNED_DIRS) {
+      expect(statSync(dir).isDirectory()).toBe(true);
+    }
+  });
 });
 
 // ---------------------------------------------------------------------------
-// Proof one — a call-site scan over the ingestion surface.
+// Proof one — a call-site scan over research/ingestion and liquipedia.
 // ---------------------------------------------------------------------------
 
-describe('telemetrySilence: proof one — call-site scan over the ingestion surface', () => {
+describe('telemetrySilence: proof one — call-site scan over research/ingestion and liquipedia', () => {
   it.each(INGESTION_SOURCE_FILES.map((f) => [relPath(f), f] as const))(
     '%s calls no canonical emission helper and imports no events/GA4 module',
     (_relLabel, file) => {
