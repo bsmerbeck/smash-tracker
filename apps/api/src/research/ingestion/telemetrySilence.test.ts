@@ -21,12 +21,17 @@ import type { InternalJobsConfig, StartggConfig } from '../../config/env.js';
  * DIRECTORY-SCOPED — a new enrichment directory that is not listed below is
  * not covered by this lock, silently. `SCANNED_DIRS` must therefore be
  * extended in the SAME commit that creates any new enrichment source
- * directory. `apps/api/src/liquipedia` is added here; a later plan in this
- * phase is expected to add `apps/api/src/research/enrichment` the same way.
+ * directory. `apps/api/src/liquipedia` is added here; Phase 30.2 Plan 07
+ * adds `apps/api/src/research/enrichment` the same way, in the same commit
+ * that creates it.
  */
 
 const API_SRC = resolve('src');
-const SCANNED_DIRS = [resolve(API_SRC, 'research/ingestion'), resolve(API_SRC, 'liquipedia')];
+const SCANNED_DIRS = [
+  resolve(API_SRC, 'research/ingestion'),
+  resolve(API_SRC, 'liquipedia'),
+  resolve(API_SRC, 'research/enrichment'),
+];
 const LEDGER_MODULE_PATH = resolve(API_SRC, 'events/ledger.ts');
 const ENVELOPE_MODULE_PATH = resolve(API_SRC, 'events/envelope.ts');
 const GA4_PROJECTION_MODULE_RELATIVE = 'jobs/projectGa4';
