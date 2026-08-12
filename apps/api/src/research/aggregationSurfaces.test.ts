@@ -165,6 +165,11 @@ const CONTENT_TREE_READER_ALLOWLIST: ContentReaderEntry[] = [
       'Reads matches/opponentAliases at request.uid — same personal, request.uid-only reasoning as reports/generate.ts.',
   },
   {
+    file: 'src/research/enrichment/projection.ts',
+    reason:
+      "Phase 30.2 Plan 08 (ENR-07/ENR-08): applyEnrichmentProjection reads and writes matches/{tenantId}/{key} through a per-row .transaction(), scoped to the tenantId a caller (a future enrichment run entry point, gated the same way the ingestion batch executor is) passes in and this file validates via isPathSafeTenantId — never a foreign/cross-user id. The row read/transaction only merges the Liquipedia stage/VOD members forward through the shared resolveEnrichedMatchMembers rules; it makes no aggregation decision across tenants, mirroring research/ingestion/projection.ts's own-tenant-only classification immediately below.",
+  },
+  {
     file: 'src/research/ingestion/projection.ts',
     reason:
       "Phase 30 Plan 03 (ING-03/ING-06): writes matches/{tenantId}/{key} through a per-row .transaction() scoped to the tenantId the caller (30-07's batch executor, itself gated by requireResearchTenantAdmin) passed in — never a foreign/cross-user id. The transaction reads the existing row only to merge user-owned annotations forward (mergePreservedMatchMembers); it makes no aggregation decision across tenants, mirroring startgg/sync.ts's and parrygg/sync.ts's own-tenant-only classification above.",
