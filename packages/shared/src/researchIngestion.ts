@@ -4,6 +4,20 @@ import {
   type ResearchProvenanceContentType,
   type ResearchProvenanceOrigin,
 } from './researchProvenance.js';
+// Phase 30.2 Plan 10 (cycle-1 review HIGH 1): the ONLY edge between this
+// module and `./researchEnrichment.js`, and it runs in exactly ONE
+// direction — this module imports FROM the enrichment schema module, never
+// the reverse. Cycle-1 review found the reverse edge (enrichment importing
+// this module's provenance vocabulary) closed a runtime ESM cycle between
+// two modules whose exports are Zod VALUES: under a cycle, whichever side
+// loads second observes `undefined` at schema-construction time. The
+// shared provenance vocabulary now lives in the neutral
+// `researchProvenance.ts`, which imports neither this module nor the
+// enrichment module, so this one-way edge cannot become part of a cycle.
+// Do NOT add an import from `researchEnrichment.ts` back to this module —
+// not even a type-only one, because a later refactor can silently turn a
+// type import into a value import and reintroduce the cycle.
+import { researchEnrichmentCoverageResponseSchema } from './researchEnrichment.js';
 
 /**
  * Phase 30 (start.gg Lossless Ingestion & Four-Player Coverage Audit,
@@ -973,6 +987,18 @@ export const researchCoverageResponseSchema = z.object({
       totalPages: z.number().int().nullish(),
     })
     .nullish(),
+  /**
+   * Phase 30.2 Plan 10 (ENR-06/ENR-09): ADDITIVE and `.nullish()`, never
+   * required — every already-published snapshot and every account with no
+   * enrichment data must continue to parse and render, and the panel must
+   * be able to distinguish "never enriched" (this member absent) from
+   * "enriched with zero counts" (this member present with all-zero
+   * counters). Composed by `apps/api/src/research/coverageResponse.ts`
+   * from `researchEnrichmentCoverage/{tenantId}`, a node the enrichment
+   * rollup owns entirely — this schema module performs no enrichment
+   * reads or writes of its own.
+   */
+  enrichment: researchEnrichmentCoverageResponseSchema.nullish(),
 });
 export type ResearchCoverageResponse = z.infer<typeof researchCoverageResponseSchema>;
 

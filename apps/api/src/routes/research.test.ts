@@ -1,8 +1,10 @@
 import type { Database } from 'firebase-admin/database';
 import { describe, expect, it } from 'vitest';
+import type { ResearchEnrichmentObservationRecord } from '@smash-tracker/shared';
 import { buildTestApp } from '../test-support/testApp.js';
 import { RESEARCH_FAMILY_REJECTION } from '../research/routeGuards.js';
 import { confirmIdentityPlayers } from '../research/ingestion/identity.js';
+import { writeEnrichmentObservation } from '../research/enrichment/store.js';
 
 const ADMIN_UID = 'admin-1';
 const ADMIN_TOKEN = 'admin-token';
@@ -1038,5 +1040,274 @@ describe('supplement authorship (review: attributedToUid is never client-supplie
     const supplements = listResponse.json() as Array<{ attributedToUid: string }>;
     expect(supplements).toHaveLength(1);
     expect(supplements[0]?.attributedToUid).toBe(ADMIN_UID);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Enrichment admin routes (Phase 30.2 Plan 10, ENR-06)
+// ---------------------------------------------------------------------------
+
+function makeEnrichmentObservationRecord(
+  overrides: Partial<ResearchEnrichmentObservationRecord> = {},
+): ResearchEnrichmentObservationRecord {
+  return {
+    observationId: 'obs-1',
+    sourceProvider: 'liquipedia',
+    sourceWiki: 'smash',
+    contentType: 'stage-observation',
+    sourcePageTitle: 'Supernova/2026/Ultimate/Singles Bracket',
+    sourcePageUrl: 'https://liquipedia.net/smash/Supernova/2026/Ultimate/Singles_Bracket',
+    sourceRevisionId: 100,
+    sourceContentHash: 'a'.repeat(64),
+    parserVersion: 'liquipedia-bracket-legacy@1',
+    templateFamily: 'legacy',
+    fetchedAtMs: 1_000,
+    observedAtMs: 1_000,
+    matchingStatus: 'ambiguous',
+    candidateTargetSetIds: ['set-1', 'set-2'],
+    ...overrides,
+  };
+}
+
+const ENRICHMENT_ROUTE_TABLE: RouteTableEntry[] = [
+  { method: 'GET', urlFor: (t) => `/api/research/tenants/${t}/enrichment/review` },
+  {
+    method: 'POST',
+    urlFor: (t) => `/api/research/tenants/${t}/enrichment/review/obs-1/confirm`,
+    body: { targetSetId: 'set-1' },
+  },
+  {
+    method: 'DELETE',
+    urlFor: (t) => `/api/research/tenants/${t}/enrichment/attachments/set-1/obs-1`,
+  },
+  { method: 'GET', urlFor: (t) => `/api/research/tenants/${t}/enrichment/coverage` },
+];
+
+describe.each(ENRICHMENT_ROUTE_TABLE)(
+  '$method $urlFor(":tenantId") — enrichment admin routes: non-admin/unauthenticated rejection',
+  (entry) => {
+    it('rejects a non-allowlisted caller with the family uniform rejection', async () => {
+      const { app, auth, tenantId } = await createConfirmedResearchTenant();
+      auth.registerToken(OTHER_TOKEN, { uid: OTHER_UID, email: 'other@test.com' });
+      const response = await app.inject({
+        method: entry.method,
+        url: entry.urlFor(tenantId),
+        headers: { authorization: `Bearer ${OTHER_TOKEN}` },
+        payload: entry.body,
+      });
+      expect(response.statusCode).toBe(RESEARCH_FAMILY_REJECTION.statusCode);
+      expect(response.json()).toEqual(RESEARCH_FAMILY_REJECTION.body);
+    });
+
+    it('rejects an unauthenticated request before any handler runs', async () => {
+      const { app, tenantId } = await createConfirmedResearchTenant();
+      const response = await app.inject({
+        method: entry.method,
+        url: entry.urlFor(tenantId),
+        payload: entry.body,
+      });
+      expect(response.statusCode).toBe(401);
+    });
+  },
+);
+
+describe('GET /api/research/tenants/:tenantId/enrichment/review', () => {
+  it('returns ambiguous/conflicting observations with candidate evidence, sorted deterministically (status, then source page title), and never an attached observation', async () => {
+    const { app, database, tenantId } = await createConfirmedResearchTenant();
+
+    await writeEnrichmentObservation(
+      asDatabase(database),
+      tenantId,
+      makeEnrichmentObservationRecord({
+        observationId: 'obs-b',
+        matchingStatus: 'ambiguous',
+        sourcePageTitle: 'B/Page',
+        bracketKey: 'R1M2',
+        candidateTargetSetIds: ['set-1', 'set-2'],
+      }),
+    );
+    await writeEnrichmentObservation(
+      asDatabase(database),
+      tenantId,
+      makeEnrichmentObservationRecord({
+        observationId: 'obs-a',
+        matchingStatus: 'ambiguous',
+        sourcePageTitle: 'A/Page',
+        bracketKey: 'R1M1',
+        candidateTargetSetIds: ['set-1', 'set-3'],
+      }),
+    );
+    await writeEnrichmentObservation(
+      asDatabase(database),
+      tenantId,
+      makeEnrichmentObservationRecord({
+        observationId: 'obs-conflicting',
+        matchingStatus: 'conflicting',
+        sourcePageTitle: 'C/Page',
+        candidateTargetSetIds: ['set-4'],
+      }),
+    );
+    // Gets ATTACHED via the admin confirm route below — must never appear
+    // in the review queue afterward.
+    await writeEnrichmentObservation(
+      asDatabase(database),
+      tenantId,
+      makeEnrichmentObservationRecord({
+        observationId: 'obs-attached',
+        matchingStatus: 'unmatched',
+        candidateTargetSetIds: ['set-5'],
+      }),
+    );
+    const confirmResponse = await app.inject({
+      method: 'POST',
+      url: `/api/research/tenants/${tenantId}/enrichment/review/obs-attached/confirm`,
+      headers: { authorization: `Bearer ${ADMIN_TOKEN}` },
+      payload: { targetSetId: 'set-5' },
+    });
+    expect(confirmResponse.statusCode).toBe(200);
+
+    const response = await app.inject({
+      method: 'GET',
+      url: `/api/research/tenants/${tenantId}/enrichment/review`,
+      headers: { authorization: `Bearer ${ADMIN_TOKEN}` },
+    });
+
+    expect(response.statusCode).toBe(200);
+    const body = response.json() as {
+      observations: { observationId: string; candidateTargetSetIds: string[] }[];
+      counts: { ambiguous: number; conflicting: number; unmatched: number; total: number };
+    };
+    expect(body.observations.map((o) => o.observationId)).toEqual([
+      'obs-a',
+      'obs-b',
+      'obs-conflicting',
+    ]);
+    expect(body.observations.map((o) => o.observationId)).not.toContain('obs-attached');
+    expect(body.observations[0]?.candidateTargetSetIds).toEqual(['set-1', 'set-3']);
+    expect(body.counts).toEqual({ ambiguous: 2, conflicting: 1, unmatched: 0, total: 3 });
+  });
+});
+
+describe('POST /api/research/tenants/:tenantId/enrichment/review/:observationId/confirm', () => {
+  it('attaches exactly the named candidate and records the confirming uid and timestamp', async () => {
+    const { app, database, tenantId } = await createConfirmedResearchTenant();
+    await writeEnrichmentObservation(
+      asDatabase(database),
+      tenantId,
+      makeEnrichmentObservationRecord({ observationId: 'obs-1', candidateTargetSetIds: ['set-1'] }),
+    );
+
+    const response = await app.inject({
+      method: 'POST',
+      url: `/api/research/tenants/${tenantId}/enrichment/review/obs-1/confirm`,
+      headers: { authorization: `Bearer ${ADMIN_TOKEN}` },
+      payload: { targetSetId: 'set-1' },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({ outcome: 'created' });
+    const attachment = (
+      database.dump().researchEnrichmentAttachments as Record<
+        string,
+        Record<string, Record<string, { confirmedByUid?: string; confirmedAtMs?: number }>>
+      >
+    )[tenantId]?.['set-1']?.['obs-1'];
+    expect(attachment?.confirmedByUid).toBe(ADMIN_UID);
+    expect(attachment?.confirmedAtMs).toBeGreaterThan(0);
+  });
+
+  it('refuses a target set id outside the observation’s recorded candidates with a client error and writes nothing', async () => {
+    const { app, database, tenantId } = await createConfirmedResearchTenant();
+    await writeEnrichmentObservation(
+      asDatabase(database),
+      tenantId,
+      makeEnrichmentObservationRecord({ observationId: 'obs-1', candidateTargetSetIds: ['set-1'] }),
+    );
+
+    const response = await app.inject({
+      method: 'POST',
+      url: `/api/research/tenants/${tenantId}/enrichment/review/obs-1/confirm`,
+      headers: { authorization: `Bearer ${ADMIN_TOKEN}` },
+      payload: { targetSetId: 'set-not-a-candidate' },
+    });
+
+    expect(response.statusCode).toBe(400);
+    expect(database.dump().researchEnrichmentAttachments).toBeUndefined();
+  });
+});
+
+describe('DELETE /api/research/tenants/:tenantId/enrichment/attachments/:targetSetId/:observationId', () => {
+  it('detaches without deleting the observation, and the observation reappears in the review queue', async () => {
+    const { app, database, tenantId } = await createConfirmedResearchTenant();
+    await writeEnrichmentObservation(
+      asDatabase(database),
+      tenantId,
+      makeEnrichmentObservationRecord({ observationId: 'obs-1', candidateTargetSetIds: ['set-1'] }),
+    );
+    await app.inject({
+      method: 'POST',
+      url: `/api/research/tenants/${tenantId}/enrichment/review/obs-1/confirm`,
+      headers: { authorization: `Bearer ${ADMIN_TOKEN}` },
+      payload: { targetSetId: 'set-1' },
+    });
+    const beforeDetach = await app.inject({
+      method: 'GET',
+      url: `/api/research/tenants/${tenantId}/enrichment/review`,
+      headers: { authorization: `Bearer ${ADMIN_TOKEN}` },
+    });
+    expect((beforeDetach.json() as { observations: unknown[] }).observations).toHaveLength(0);
+
+    const detachResponse = await app.inject({
+      method: 'DELETE',
+      url: `/api/research/tenants/${tenantId}/enrichment/attachments/set-1/obs-1`,
+      headers: { authorization: `Bearer ${ADMIN_TOKEN}` },
+    });
+    expect(detachResponse.statusCode).toBe(200);
+    expect(detachResponse.json()).toEqual({ ok: true });
+
+    const afterDetach = await app.inject({
+      method: 'GET',
+      url: `/api/research/tenants/${tenantId}/enrichment/review`,
+      headers: { authorization: `Bearer ${ADMIN_TOKEN}` },
+    });
+    const ids = (
+      afterDetach.json() as { observations: { observationId: string }[] }
+    ).observations.map((o) => o.observationId);
+    expect(ids).toContain('obs-1');
+
+    const stored = database.dump().researchEnrichmentObservations as Record<
+      string,
+      Record<string, unknown>
+    >;
+    expect(stored[tenantId]).toHaveProperty('obs-1');
+  });
+});
+
+describe('GET /api/research/tenants/:tenantId/enrichment/coverage', () => {
+  it('returns null when the tenant has no enrichment run yet, and the published snapshot once one exists', async () => {
+    const { app, database, tenantId } = await createConfirmedResearchTenant();
+
+    const beforeResponse = await app.inject({
+      method: 'GET',
+      url: `/api/research/tenants/${tenantId}/enrichment/coverage`,
+      headers: { authorization: `Bearer ${ADMIN_TOKEN}` },
+    });
+    expect(beforeResponse.statusCode).toBe(200);
+    expect(beforeResponse.json()).toBeNull();
+
+    database.seed(`researchEnrichmentCoverage/${tenantId}`, {
+      asOfMs: 1_000,
+      runId: 'run-1',
+      counts: { matched: 3 },
+      cohortCounts: { startggOnly: 1 },
+    });
+
+    const afterResponse = await app.inject({
+      method: 'GET',
+      url: `/api/research/tenants/${tenantId}/enrichment/coverage`,
+      headers: { authorization: `Bearer ${ADMIN_TOKEN}` },
+    });
+    expect(afterResponse.statusCode).toBe(200);
+    expect((afterResponse.json() as { counts: { matched: number } }).counts.matched).toBe(3);
   });
 });

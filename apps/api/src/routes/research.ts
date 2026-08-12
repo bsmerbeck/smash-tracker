@@ -11,6 +11,9 @@ import {
   RESEARCH_MAX_PROVIDER_TEXT,
   RESEARCH_SUPPLEMENT_SOURCE_KINDS,
   researchCoverageResponseSchema,
+  researchEnrichmentConfirmRequestSchema,
+  researchEnrichmentCoverageResponseSchema,
+  researchEnrichmentReviewQueueResponseSchema,
   researchIdentityCandidateSchema,
   researchIdentityConfirmedPlayerSchema,
   researchSupplementRecordSchema,
@@ -43,6 +46,12 @@ import {
   upsertSupplement,
 } from '../research/ingestion/supplements.js';
 import { composeCoverageResponse } from '../research/coverageResponse.js';
+import {
+  confirmEnrichmentObservationByAdmin,
+  deleteEnrichmentAttachment,
+  listEnrichmentReviewQueue,
+} from '../research/enrichment/store.js';
+import { readEnrichmentCoverage } from '../research/enrichment/rollup.js';
 import {
   runResearchBackfillBatch,
   TRIGGER_MAX_PAGES_PER_REQUEST,
@@ -119,6 +128,35 @@ const supplementItemParamsSchema = z.object({
   targetSetId: pathSafeProviderIdSchema,
   supplementId: pathSafeProviderIdSchema,
 });
+
+// ---------------------------------------------------------------------------
+// Enrichment review queue / confirm / detach / coverage (Phase 30.2 Plan 10)
+// ---------------------------------------------------------------------------
+
+const enrichmentObservationParamsSchema = z.object({
+  tenantId: pathSafeTenantIdSchema,
+  observationId: pathSafeProviderIdSchema,
+});
+
+const enrichmentAttachmentParamsSchema = z.object({
+  tenantId: pathSafeTenantIdSchema,
+  targetSetId: pathSafeProviderIdSchema,
+  observationId: pathSafeProviderIdSchema,
+});
+
+/**
+ * The only two 200-eligible members of `EnrichmentStoreOutcome`
+ * (`research/enrichment/store.ts`) — every other member of that wider
+ * union routes to a 400/404 below rather than reaching this schema, so the
+ * response contract cannot silently widen if the store's internal outcome
+ * union grows a member this route never intended to expose as a success
+ * (the store type is not part of the shared package; it is API-internal).
+ */
+const enrichmentConfirmResponseSchema = z.object({
+  outcome: z.enum(['created', 'replaced']),
+});
+
+const enrichmentDetachResponseSchema = z.object({ ok: z.literal(true) });
 
 const grantEntitlementRequestSchema = z.object({
   idempotencyKey: idempotencyKeySchema,
@@ -931,6 +969,198 @@ const researchTenantsRoutes: FastifyPluginAsyncZod<ResearchRoutesOptions> = asyn
       return reply.code(200).send(list);
     },
   );
+
+  // ---- enrichment (Phase 30.2 Plan 10, ENR-06) -----------------------------
+
+  // GET /api/research/tenants/:tenantId/enrichment/review — the admin
+  // review queue: every observation `listEnrichmentReviewQueue` selects by
+  // attachment ABSENCE (never by the observation's own stored
+  // `matchingStatus`, `store.ts`'s own contract), sorted deterministically
+  // so the surface is reviewable across sessions — a stable order is what
+  // lets an admin resume a review pass without re-scanning items already
+  // seen (T-30.2 review queue, plan 10 action).
+  app.get(
+    '/research/tenants/:tenantId/enrichment/review',
+    {
+      schema: {
+        params: tenantParamsSchema,
+        response: {
+          200: researchEnrichmentReviewQueueResponseSchema,
+          404: errorResponseSchema,
+        },
+      },
+    },
+    async (request, reply) => {
+      const rejection = await requireResearchTenantAdmin(request, request.params.tenantId);
+      if (rejection) {
+        return reply.code(rejection.statusCode).send(rejection.body);
+      }
+
+      const queue = await listEnrichmentReviewQueue(app.firebase.database, request.params.tenantId);
+      const sorted = sortEnrichmentReviewQueue(queue);
+      return reply.code(200).send({
+        observations: sorted,
+        counts: countEnrichmentReviewQueue(sorted),
+      });
+    },
+  );
+
+  // POST /api/research/tenants/:tenantId/enrichment/review/:observationId/confirm
+  // — the SECOND and only other authorization door onto projection
+  // (`store.ts`'s `confirmEnrichmentObservationByAdmin`): the caller names
+  // exactly one candidate already recorded on the observation itself; the
+  // store refuses (`rejected-candidate`, no write) a target set id outside
+  // that recorded list.
+  app.post(
+    '/research/tenants/:tenantId/enrichment/review/:observationId/confirm',
+    {
+      schema: {
+        params: enrichmentObservationParamsSchema,
+        body: researchEnrichmentConfirmRequestSchema,
+        response: {
+          200: enrichmentConfirmResponseSchema,
+          400: errorResponseSchema,
+          404: errorResponseSchema,
+        },
+      },
+    },
+    async (request, reply) => {
+      const rejection = await requireResearchTenantAdmin(request, request.params.tenantId);
+      if (rejection) {
+        return reply.code(rejection.statusCode).send(rejection.body);
+      }
+
+      const result = await confirmEnrichmentObservationByAdmin(
+        app.firebase.database,
+        request.params.tenantId,
+        request.params.observationId,
+        request.body.targetSetId,
+        request.uid,
+        Date.now(),
+      );
+
+      if (result.outcome === 'created' || result.outcome === 'replaced') {
+        return reply.code(200).send({ outcome: result.outcome });
+      }
+      if (result.outcome === 'rejected-candidate') {
+        return reply.code(400).send({
+          error: 'Bad Request',
+          message: 'targetSetId is not among the observation’s recorded candidates',
+          statusCode: 400,
+        });
+      }
+      // 'rejected-key' / 'rejected-not-attachable', or any defensive future
+      // member of the store's outcome union this route never intentionally
+      // returns — treated as "not found", never a 500.
+      return reply.code(404).send({
+        error: 'Not Found',
+        message: 'observation not found',
+        statusCode: 404,
+      });
+    },
+  );
+
+  // DELETE /api/research/tenants/:tenantId/enrichment/attachments/:targetSetId/:observationId
+  // — detaches without deleting the observation itself; idempotent, and the
+  // observation reappears in the review queue on the very next read
+  // (`store.ts`'s `deleteEnrichmentAttachment` doc comment).
+  app.delete(
+    '/research/tenants/:tenantId/enrichment/attachments/:targetSetId/:observationId',
+    {
+      schema: {
+        params: enrichmentAttachmentParamsSchema,
+        response: {
+          200: enrichmentDetachResponseSchema,
+          404: errorResponseSchema,
+        },
+      },
+    },
+    async (request, reply) => {
+      const rejection = await requireResearchTenantAdmin(request, request.params.tenantId);
+      if (rejection) {
+        return reply.code(rejection.statusCode).send(rejection.body);
+      }
+
+      const result = await deleteEnrichmentAttachment(
+        app.firebase.database,
+        request.params.tenantId,
+        request.params.targetSetId,
+        request.params.observationId,
+      );
+      return reply.code(200).send(result);
+    },
+  );
+
+  // GET /api/research/tenants/:tenantId/enrichment/coverage — the published
+  // enrichment snapshot (`research/enrichment/rollup.ts`'s
+  // `researchEnrichmentCoverage/{tenantId}` node), `null` when the tenant
+  // has no enrichment run yet.
+  app.get(
+    '/research/tenants/:tenantId/enrichment/coverage',
+    {
+      schema: {
+        params: tenantParamsSchema,
+        response: {
+          200: researchEnrichmentCoverageResponseSchema.nullable(),
+          404: errorResponseSchema,
+        },
+      },
+    },
+    async (request, reply) => {
+      const rejection = await requireResearchTenantAdmin(request, request.params.tenantId);
+      if (rejection) {
+        return reply.code(rejection.statusCode).send(rejection.body);
+      }
+
+      const coverage = await readEnrichmentCoverage(app.firebase.database, request.params.tenantId);
+      return reply.code(200).send(coverage);
+    },
+  );
 };
+
+/**
+ * Sorts the review queue deterministically by matching status, then source
+ * page title, then bracket key, then observation id — a stable order is
+ * what makes the admin surface reviewable across sessions (plan 10
+ * action). `matchingStatus`/`bracketKey` compare on their raw string value;
+ * an absent `bracketKey` sorts as the empty string, always first within its
+ * matching-status/page group rather than throwing on `undefined`.
+ */
+function sortEnrichmentReviewQueue<
+  T extends {
+    matchingStatus: string;
+    sourcePageTitle: string;
+    bracketKey?: string | null;
+    observationId: string;
+  },
+>(queue: T[]): T[] {
+  return [...queue].sort((a, b) => {
+    return (
+      a.matchingStatus.localeCompare(b.matchingStatus) ||
+      a.sourcePageTitle.localeCompare(b.sourcePageTitle) ||
+      (a.bracketKey ?? '').localeCompare(b.bracketKey ?? '') ||
+      a.observationId.localeCompare(b.observationId)
+    );
+  });
+}
+
+/** Tenant-wide tallies over exactly what the queue itself contains (never the tenant's full coverage counters). */
+function countEnrichmentReviewQueue<T extends { matchingStatus: string }>(
+  queue: T[],
+): { ambiguous: number; conflicting: number; unmatched: number; total: number } {
+  let ambiguous = 0;
+  let conflicting = 0;
+  let unmatched = 0;
+  for (const observation of queue) {
+    if (observation.matchingStatus === 'ambiguous') {
+      ambiguous += 1;
+    } else if (observation.matchingStatus === 'conflicting') {
+      conflicting += 1;
+    } else if (observation.matchingStatus === 'unmatched') {
+      unmatched += 1;
+    }
+  }
+  return { ambiguous, conflicting, unmatched, total: queue.length };
+}
 
 export default researchTenantsRoutes;

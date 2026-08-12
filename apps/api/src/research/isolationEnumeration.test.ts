@@ -138,11 +138,13 @@ function extractRegisteredRoutes(): { method: string; path: string }[] {
 const RESEARCH_ROUTE_FAMILY = extractRegisteredRoutes();
 
 describe('the research route array is derived from the registered plugin (D-08)', () => {
-  it('discovers exactly the 15 routes the plugin registers, not a hand-typed sample', () => {
-    // Phase 30 Plan 07 extends the family from 4 routes to 15: the two
+  it('discovers exactly the 19 routes the plugin registers, not a hand-typed sample', () => {
+    // Phase 30 Plan 07 extended the family from 4 routes to 15: the two
     // collection routes and two entitlement routes Phase 29 shipped, plus
-    // the eleven identity/backfill/coverage/supplement routes this plan
-    // adds, all reusing `requireResearchTenantAdmin` verbatim.
+    // the eleven identity/backfill/coverage/supplement routes that plan
+    // adds. Phase 30.2 Plan 10 (ENR-06) adds 4 more: the enrichment review
+    // listing, confirm, detach and coverage routes — all reusing
+    // `requireResearchTenantAdmin` verbatim, bringing the family to 19.
     expect(RESEARCH_ROUTE_FAMILY.length).toBeGreaterThan(0);
     expect(RESEARCH_ROUTE_FAMILY).toEqual([
       { method: 'POST', path: '/api/research/tenants' },
@@ -163,6 +165,16 @@ describe('the research route array is derived from the registered plugin (D-08)'
         path: '/api/research/tenants/:tenantId/supplements/:targetSetId/:supplementId',
       },
       { method: 'GET', path: '/api/research/tenants/:tenantId/supplements/:targetSetId' },
+      { method: 'GET', path: '/api/research/tenants/:tenantId/enrichment/review' },
+      {
+        method: 'POST',
+        path: '/api/research/tenants/:tenantId/enrichment/review/:observationId/confirm',
+      },
+      {
+        method: 'DELETE',
+        path: '/api/research/tenants/:tenantId/enrichment/attachments/:targetSetId/:observationId',
+      },
+      { method: 'GET', path: '/api/research/tenants/:tenantId/enrichment/coverage' },
     ]);
   });
 });
@@ -513,13 +525,15 @@ describe('the partitioned route matrix (four feasible classes, review findings 2
       const { app } = buildResearchRouteApp(ADMIN_UID);
       // Every path segment (not only :tenantId) needs a schema-valid
       // placeholder — Phase 30 Plan 07 extends the family with
-      // :playerId/:targetSetId/:supplementId segments too.
+      // :playerId/:targetSetId/:supplementId segments too. Phase 30.2 Plan
+      // 10 (ENR-06) adds :observationId.
       function urlFor(path: string): string {
         return path
           .replace(':tenantId', 'placeholder-tenant')
           .replace(':playerId', '100')
           .replace(':targetSetId', '1')
-          .replace(':supplementId', 'manual-note');
+          .replace(':supplementId', 'manual-note')
+          .replace(':observationId', 'obs-1');
       }
       // Each route's own valid-body shape — a body-schema 400 must never
       // masquerade as the authentication-failure class this test proves.
@@ -547,6 +561,9 @@ describe('the partitioned route matrix (four feasible classes, review findings 2
         }
         if (path.endsWith('/supplements')) {
           return { targetSetId: '1', field: 'note', value: 'x', sourceKind: 'manual' };
+        }
+        if (path.endsWith('/confirm')) {
+          return { targetSetId: 'unauth-class-check-set' };
         }
         return undefined;
       }

@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
   deriveSupplementProvenance,
   isPathSafeProviderId,
@@ -12,6 +12,7 @@ import {
   RESEARCH_SET_CLASSIFICATIONS,
   researchApiIdsSchema,
   researchCoveragePlayerSectionSchema,
+  researchCoverageResponseSchema,
   researchCoverageSnapshotSchema,
   researchIdentityConfirmedPlayerSchema,
   researchIdentityMappingSchema,
@@ -813,6 +814,79 @@ describe('researchCoverageSnapshotSchema', () => {
         players: { p1: makeMinimalCoverageSection({ playerId: 'p1' }) },
       }).success,
     ).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// researchCoverageResponseSchema — Phase 30.2 Plan 10's additive
+// `enrichment` member (cycle-1 review HIGH 1)
+// ---------------------------------------------------------------------------
+
+function makeMinimalCoverageResponse(overrides: Record<string, unknown> = {}) {
+  return {
+    coverage: null,
+    confirmedPlayerIds: [],
+    confirmedPlayerIdCount: 0,
+    unresolvedCandidateCount: 0,
+    ...overrides,
+  };
+}
+
+describe('researchCoverageResponseSchema', () => {
+  it('parses with the enrichment member absent (not null) when omitted', () => {
+    const parsed = researchCoverageResponseSchema.parse(makeMinimalCoverageResponse());
+    expect('enrichment' in parsed).toBe(false);
+  });
+
+  it('parses with the enrichment member present, freshness entries carrying their stored sourcePageUrl unchanged', () => {
+    const parsed = researchCoverageResponseSchema.parse(
+      makeMinimalCoverageResponse({
+        enrichment: {
+          asOfMs: 1_000,
+          runId: 'run-1',
+          counts: { matched: 2 },
+          cohortCounts: { startggOnly: 1, liquipediaSupplemented: 1 },
+          perSourcePage: {
+            'Supernova/2026': {
+              sourcePageUrl: 'https://liquipedia.net/smash/Supernova/2026',
+              revisionId: 1,
+              contentHash: 'a'.repeat(64),
+              fetchedAtMs: 1_000,
+              observationCount: 5,
+            },
+          },
+        },
+      }),
+    );
+    expect(parsed.enrichment?.perSourcePage?.['Supernova/2026']?.sourcePageUrl).toBe(
+      'https://liquipedia.net/smash/Supernova/2026',
+    );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Module load order (cycle-1 review HIGH 1) — the mirror of
+// `researchEnrichment.test.ts`'s enrichment-first proof: this module is the
+// SIDE that imports across the one permitted edge, so it must ALSO fully
+// initialize when it is the first module of a fresh graph to be evaluated.
+// ---------------------------------------------------------------------------
+
+describe('module load order (cycle-1 review HIGH 1)', () => {
+  it('fully initializes researchCoverageResponseSchema when researchIngestion.js is imported first in a fresh module graph', async () => {
+    vi.resetModules();
+    const mod = await import('./researchIngestion.js');
+    expect(mod.researchCoverageResponseSchema).toBeDefined();
+    const parsed = mod.researchCoverageResponseSchema.safeParse(
+      makeMinimalCoverageResponse({
+        enrichment: {
+          asOfMs: 1_000,
+          runId: 'run-1',
+          counts: {},
+          cohortCounts: {},
+        },
+      }),
+    );
+    expect(parsed.success).toBe(true);
   });
 });
 
