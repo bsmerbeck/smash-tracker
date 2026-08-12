@@ -8,6 +8,7 @@
     "build": "tsc -b --noEmit && vite build && cp dist/index.html dist/spa.html",
     "preview": "vite preview",
     "prerender": "node scripts/prerender.mjs",
+    "warm:cdn": "node scripts/warm-cdn.mjs",
     "generate:og": "node scripts/generate-og-image.mjs",
     "acquire:stages": "node scripts/acquire-stage-art.mjs",
     "lint": "eslint .",
