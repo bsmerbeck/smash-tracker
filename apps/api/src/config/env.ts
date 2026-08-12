@@ -125,6 +125,17 @@ const envSchema = z.object({
   // claim code by design.
   CLAIM_CODE_HMAC_SECRET: z.string().optional(),
 
+  // ---- Phase 30.2 (Liquipedia Stage & VOD Enrichment, ENR-01): the contact
+  // identifier the published Liquipedia MediaWiki API terms of use require
+  // in the User-Agent of every request. Optional here (mirroring every
+  // other integration's config-null convention above); `getLiquipediaConfig`
+  // returns null when unset, and `createLiquipediaClient` in
+  // `apps/api/src/liquipedia/client.ts` throws BEFORE any request is
+  // attempted when constructed with a null config — a null config means
+  // this subsystem is UNAVAILABLE, never "unrestricted", because the
+  // published terms require an identifying contact on every call.
+  LIQUIPEDIA_CONTACT: z.string().optional(),
+
   // ---- Phase 27 (Contextual Paid Prep Reports Behind the Activation Gate,
   // RPT-04): the server-side activation gate for paid prep reports/bundles.
   // Ships UNSET in production — the owner flips it only after the
@@ -394,6 +405,28 @@ export function getClaimCodeConfig(env: Env): ClaimCodeConfig | null {
     return null;
   }
   return { hmacSecret: env.CLAIM_CODE_HMAC_SECRET };
+}
+
+export interface LiquipediaConfig {
+  /** The contact identifier interpolated into every request's User-Agent. */
+  contact: string;
+}
+
+/**
+ * Assembles the Liquipedia integration config when present, else null — same
+ * all-or-nothing pattern as `getParryggConfig`/`getInternalJobsConfig`. When
+ * null, `apps/api/src/liquipedia/client.ts`'s `createLiquipediaClient` throws
+ * at construction time, BEFORE any request is attempted: the published
+ * Liquipedia API terms of use require an identifying contact on every
+ * request, so a null config here means the subsystem is UNAVAILABLE, not
+ * "unrestricted" — the opposite of what a silently-permissive null would
+ * imply.
+ */
+export function getLiquipediaConfig(env: Env): LiquipediaConfig | null {
+  if (!env.LIQUIPEDIA_CONTACT) {
+    return null;
+  }
+  return { contact: env.LIQUIPEDIA_CONTACT };
 }
 
 /** The single, case-sensitive value that turns paid prep reports on. */
