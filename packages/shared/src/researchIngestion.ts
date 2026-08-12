@@ -1,4 +1,9 @@
 import { z } from 'zod';
+import {
+  RESEARCH_PROVENANCE_CONTENT_TYPES,
+  type ResearchProvenanceContentType,
+  type ResearchProvenanceOrigin,
+} from './researchProvenance.js';
 
 /**
  * Phase 30 (start.gg Lossless Ingestion & Four-Player Coverage Audit,
@@ -750,8 +755,35 @@ export function selectPrimaryConfirmedPlayerId(
  * provider authorship. `attributedToUid`/`recordedAtMs` are REQUIRED, never
  * nullish (T-30-01-03) — a supplement must always be traceable to the admin
  * who wrote it.
+ *
+ * ENR-13 correction (Phase 30.2): the RTDB child key is LITERALLY
+ * `${sourceKind}-${field}` (see `buildSupplementId` in
+ * `apps/api/src/research/ingestion/supplements.ts`), so this correction
+ * deliberately did NOT re-key or rename anything — a rename would orphan
+ * every existing record under a new name while the old node kept consuming
+ * the per-set cap, and `listSupplementsForSet`'s independent per-child
+ * safe-parse would make every legacy record silently invisible if a new
+ * member were made REQUIRED. `sourceKind` therefore stays exactly as
+ * shipped, and `sourceOrigin`/`contentType` are ADDITIVE `.nullish()`
+ * members carrying the separated two-dimension shape: `sourceOrigin` is
+ * restricted to the single literal `manual` (the enum still has NO provider
+ * member — a Liquipedia observation lives on
+ * `researchEnrichmentObservationRecordSchema` instead, never here), and
+ * `contentType` is checked against `sourceKind` by the `superRefine` below
+ * so the two dimensions can never drift apart. A legacy record (no
+ * `sourceOrigin`/`contentType` present) is read through
+ * `deriveSupplementProvenance` below, which derives the same two dimensions
+ * from `sourceKind` alone.
  */
-export const researchSupplementRecordSchema = z.object({
+// Declared as a plain (unrefined) base schema, kept separate from the
+// `.superRefine()` wrapper below on purpose: chaining `.superRefine()`
+// directly onto this `z.object({...})` call forces Prettier to reformat the
+// WHOLE object literal onto a `z\n  .object({...})\n  .superRefine(...)`
+// chain, which would rewrite every existing field's indentation and make an
+// unrelated diff look like every original member was touched. Splitting the
+// refinement into its own statement keeps every pre-existing field line
+// byte-identical to what shipped.
+const researchSupplementRecordSchemaBase = z.object({
   sourceKind: z.enum(RESEARCH_SUPPLEMENT_SOURCE_KINDS),
   targetSetId: z.string().min(1).max(200),
   field: z
@@ -771,8 +803,65 @@ export const researchSupplementRecordSchema = z.object({
   vodTimestampSeconds: z.number().int().min(0).max(2_592_000).nullish(),
   attributedToUid: z.string().min(1).max(200),
   recordedAtMs: z.number().int(),
+  /**
+   * ENR-13: restricted to the single literal `manual` — this tree
+   * structurally cannot hold a provider-sourced record. A Liquipedia
+   * observation lives on `researchEnrichmentObservationRecordSchema`
+   * instead, never here.
+   */
+  sourceOrigin: z.literal('manual').nullish(),
+  contentType: z.enum(RESEARCH_PROVENANCE_CONTENT_TYPES).nullish(),
+  rawValue: z.string().max(RESEARCH_MAX_SUPPLEMENT_TEXT).nullish(),
+  canonicalValue: z.string().max(RESEARCH_MAX_SUPPLEMENT_TEXT).nullish(),
+  observedAtMs: z.number().int().nullish(),
 });
+
+/** ENR-13: rejects an explicit `contentType` that disagrees with the value implied by `sourceKind` (manual implies note, vod implies vod-reference), so the two dimensions can never drift apart. */
+export const researchSupplementRecordSchema = researchSupplementRecordSchemaBase.superRefine(
+  (value, ctx) => {
+    if (value.contentType != null) {
+      const impliedContentType = value.sourceKind === 'manual' ? 'note' : 'vod-reference';
+      if (value.contentType !== impliedContentType) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message:
+            'contentType must match sourceKind (manual implies note, vod implies vod-reference)',
+          path: ['contentType'],
+        });
+      }
+    }
+  },
+);
 export type ResearchSupplementRecord = z.infer<typeof researchSupplementRecordSchema>;
+
+/**
+ * Derives the two-dimension provenance shape (origin, content type) for a
+ * supplement record, whether or not it carries the explicit ENR-13 members.
+ * A legacy record (written before this correction) carries neither
+ * `sourceOrigin` nor `contentType` — its provenance is DERIVED from
+ * `sourceKind` alone: `manual` implies origin `manual` / contentType `note`;
+ * `vod` implies origin `manual` / contentType `vod-reference` (a legacy
+ * `sourceKind: 'vod'` record is a MANUAL-origin record whose content type is
+ * a VOD reference — the conflation ENR-13 corrects is content type
+ * masquerading as provenance, and the shipped tree has exactly one origin
+ * because it has exactly one writer, the research-tenant admin). A record
+ * written by the corrected `upsertSupplement` carries both members
+ * explicitly, and this function returns them with `explicit: true`.
+ */
+export function deriveSupplementProvenance(record: ResearchSupplementRecord): {
+  origin: ResearchProvenanceOrigin;
+  contentType: ResearchProvenanceContentType;
+  explicit: boolean;
+} {
+  if (record.sourceOrigin != null && record.contentType != null) {
+    return { origin: record.sourceOrigin, contentType: record.contentType, explicit: true };
+  }
+  return {
+    origin: 'manual',
+    contentType: record.sourceKind === 'manual' ? 'note' : 'vod-reference',
+    explicit: false,
+  };
+}
 
 // ---------------------------------------------------------------------------
 // Coverage snapshot (D-15, D-16)

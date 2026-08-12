@@ -1,5 +1,6 @@
 import type { Database } from 'firebase-admin/database';
 import { describe, expect, it } from 'vitest';
+import { deriveSupplementProvenance } from '@smash-tracker/shared';
 import type { ResearchSourceSetRecord, ResearchSupplementRecord } from '@smash-tracker/shared';
 import { FakeDatabase } from '../../test-support/fakeDatabase.js';
 import {
@@ -408,5 +409,107 @@ describe('overlaySupplements', () => {
     expect(overlay.supplemented.notes).toEqual(
       expect.objectContaining({ sourceKind: 'vod', attributedToUid: 'uid-2', recordedAtMs: 555 }),
     );
+  });
+});
+
+interface SupplementDumpTree {
+  researchSupplements?: Record<string, Record<string, Record<string, Record<string, unknown>>>>;
+}
+
+function dumpSupplementSet(
+  database: FakeDatabase,
+  tenantId: string,
+  targetSetId: string,
+): Record<string, Record<string, unknown>> {
+  const dump = database.dump() as unknown as SupplementDumpTree;
+  return dump.researchSupplements?.[tenantId]?.[targetSetId] ?? {};
+}
+
+describe('ENR-13 end-to-end: legacy children -> reader -> new writer (Phase 30.2)', () => {
+  it('reads real legacy children shaped exactly as shipped today, derives their provenance, writes a new supplement, and leaves the legacy children unchanged under their original keys', async () => {
+    const database = new FakeDatabase();
+
+    // Seed REAL legacy children in the exact shape the shipped writer
+    // produces today — no sourceOrigin, no contentType, no rawValue, no
+    // canonicalValue, no observedAtMs.
+    database.seed(`researchSupplements/${TENANT_ID}/${TARGET_SET_ID}`, {
+      'manual-notes': {
+        sourceKind: 'manual',
+        targetSetId: TARGET_SET_ID,
+        field: 'notes',
+        value: 'legacy manual note',
+        attributedToUid: ADMIN_UID,
+        recordedAtMs: 1_000,
+      },
+      'vod-vodUrl': {
+        sourceKind: 'vod',
+        targetSetId: TARGET_SET_ID,
+        field: 'vodUrl',
+        value: 'https://youtu.be/legacy',
+        attributedToUid: ADMIN_UID,
+        recordedAtMs: 2_000,
+      },
+    });
+
+    const legacyDump = dumpSupplementSet(database, TENANT_ID, TARGET_SET_ID);
+    // Exact child-key set BEFORE the new write.
+    expect(Object.keys(legacyDump).sort()).toEqual(['manual-notes', 'vod-vodUrl']);
+
+    const records = await listSupplementsForSet(asDatabase(database), TENANT_ID, TARGET_SET_ID);
+    expect(records).toHaveLength(2);
+    const derivedByField: Record<
+      string,
+      ReturnType<typeof deriveSupplementProvenance>
+    > = Object.fromEntries(
+      records.map((record) => [
+        `${record.sourceKind}-${record.field}`,
+        deriveSupplementProvenance(record),
+      ]),
+    );
+    expect(derivedByField['manual-notes']).toEqual({
+      origin: 'manual',
+      contentType: 'note',
+      explicit: false,
+    });
+    expect(derivedByField['vod-vodUrl']).toEqual({
+      origin: 'manual',
+      contentType: 'vod-reference',
+      explicit: false,
+    });
+
+    const written = await upsertSupplement(asDatabase(database), TENANT_ID, {
+      targetSetId: TARGET_SET_ID,
+      field: 'stage_note',
+      value: 'a brand new note',
+      sourceKind: 'manual',
+      attributedToUid: ADMIN_UID,
+      now: 3_000,
+    });
+    expect(written.outcome).toBe('created');
+    expect(written.supplementId).toBe(
+      buildSupplementId({ field: 'stage_note', sourceKind: 'manual' }),
+    );
+
+    const afterDump = dumpSupplementSet(database, TENANT_ID, TARGET_SET_ID);
+    // Exact child-key set AFTER the new write: both legacy children still
+    // present, still under their original keys, plus exactly one new child —
+    // no duplicate record created.
+    expect(Object.keys(afterDump).sort()).toEqual([
+      'manual-notes',
+      'manual-stage_note',
+      'vod-vodUrl',
+    ]);
+
+    // The legacy children are still present, still parseable, and still
+    // byte-identical to what was seeded.
+    expect(afterDump['manual-notes']).toEqual(legacyDump['manual-notes']);
+    expect(afterDump['vod-vodUrl']).toEqual(legacyDump['vod-vodUrl']);
+
+    // The newly written child carries both explicit dimensions because the
+    // shipped writer now emits them.
+    expect(afterDump['manual-stage_note']).toMatchObject({
+      sourceOrigin: 'manual',
+      contentType: 'note',
+    });
   });
 });
