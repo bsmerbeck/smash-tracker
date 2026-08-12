@@ -2,9 +2,15 @@ import type { Database } from 'firebase-admin/database';
 import {
   normalizeResearchClassificationCounts,
   researchTenantIngestionStateSchema,
+  type ResearchEnrichmentObservationRecord,
 } from '@smash-tracker/shared';
 import { describe, expect, it } from 'vitest';
 import { FakeDatabase } from '../test-support/fakeDatabase.js';
+import type { FakeReference } from '../test-support/fakeDatabase.js';
+import {
+  writeEnrichmentObservation,
+  confirmEnrichmentObservationByAdmin,
+} from '../research/enrichment/store.js';
 import {
   acquireRunLease,
   createOrResumeBackfillRun,
@@ -1732,5 +1738,214 @@ describe('runResearchBackfillBatch: dead-PREFIX extension', () => {
     expect(result.stopReason).toBe('completed');
     const stored = await readBackfillRun(asDatabase(database), TENANT_ID, runId);
     expect(stored?.stagedCounters?.providerUnavailablePages).toBe(30);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Phase 30.2 Plan 08 (ENR-07/ENR-08, cycle-1 review HIGH 2): the enrichment
+// overlay wired through THIS job's own entry point, `runResearchBackfillBatch`
+// — never through `applyLegacyProjection` directly, per this plan's decisive
+// requirement.
+// ---------------------------------------------------------------------------
+
+describe('runResearchBackfillBatch: enrichment overlay (Phase 30.2 Plan 08, ENR-07/ENR-08)', () => {
+  const UNRESOLVED_STAGE_GAME: StartggResearchSet['games'] = [
+    {
+      id: 1,
+      winnerId: 10,
+      stage: { id: 999_999, name: 'Nonexistent Stage' },
+      selections: [
+        { character: { id: CHAR_A }, entrant: { id: 10 } },
+        { character: { id: CHAR_B }, entrant: { id: 20 } },
+      ],
+      entrant1Score: 2,
+      entrant2Score: 1,
+    },
+  ];
+
+  async function attachEnrichment(database: FakeDatabase, targetSetId: string): Promise<void> {
+    const record: ResearchEnrichmentObservationRecord = {
+      observationId: 'obs-enrich-1',
+      sourceProvider: 'liquipedia',
+      sourceWiki: 'smash',
+      contentType: 'stage-observation',
+      sourcePageTitle: 'Test/Bracket',
+      sourcePageUrl: 'https://liquipedia.net/smash/Test/Bracket',
+      sourceRevisionId: 500,
+      sourceContentHash: 'a'.repeat(64),
+      parserVersion: 'liquipedia-bracket-legacy@1',
+      templateFamily: 'legacy',
+      fetchedAtMs: 1000,
+      observedAtMs: 1000,
+      matchingStatus: 'unmatched',
+      vodUrl: 'https://liquipedia/vod',
+      games: [{ ordinal: 1, canonicalStageId: 1, rawStage: 'BF' }],
+      candidateTargetSetIds: [targetSetId],
+    };
+    await writeEnrichmentObservation(asDatabase(database), TENANT_ID, record);
+    const attached = await confirmEnrichmentObservationByAdmin(
+      asDatabase(database),
+      TENANT_ID,
+      record.observationId,
+      targetSetId,
+      'enrichment-admin-1',
+      1000,
+    );
+    expect(attached.outcome).toBe('created');
+  }
+
+  it('an enrichment stage AND an enrichment VOD both survive a full researchBackfillBatch refresh (job path, not applyLegacyProjection directly)', async () => {
+    const database = new FakeDatabase();
+    await confirmPlayer(database);
+    const firstRunId = await createRun(database);
+    const { fetchImpl } = makeScriptedFetch({
+      1: [
+        {
+          kind: 'ok',
+          totalPages: 1,
+          sets: [makeSet({ id: 1, games: UNRESOLVED_STAGE_GAME })],
+        },
+      ],
+    });
+
+    const first = await run(database, firstRunId, { fetchImpl });
+    expect(first.completed).toBe(true);
+
+    const storageKey = Object.keys(sourceTree(database))[0]!;
+    await attachEnrichment(database, storageKey);
+
+    const key = `sgg-${storageKey}-g1`;
+    // Simulate a prior enrichment applier run (task 2, a separate module)
+    // having already filled the row and written its witness.
+    database.seed(`matches/${TENANT_ID}/${key}/vodUrl`, 'https://liquipedia/vod');
+    database.seed(`matches/${TENANT_ID}/${key}/map`, { id: 1, name: 'Battlefield' });
+    database.seed(`researchEnrichmentProjection/${TENANT_ID}/${key}`, {
+      matchKey: key,
+      targetSetId: storageKey,
+      projectedVodUrl: 'https://liquipedia/vod',
+      vodObservationId: 'obs-enrich-1',
+      projectedStageId: 1,
+      projectedStageName: 'Battlefield',
+      stageObservationId: 'obs-enrich-1',
+    });
+
+    const secondRunId = await createRun(database);
+    const second = await run(database, secondRunId, { fetchImpl, ownerId: 'invocation-2' });
+    expect(second.completed).toBe(true);
+    expect(second.enrichmentOverlayDegraded).toBe(false);
+
+    const row = matchesTree(database)[key] as {
+      vodUrl?: string;
+      map?: { id: number; name: string };
+    };
+    expect(row.vodUrl).toBe('https://liquipedia/vod');
+    expect(row.map).toEqual({ id: 1, name: 'Battlefield' });
+  });
+
+  it('a tenant with NO enrichment tree produces a normal, unaffected refresh — enrichmentOverlayDegraded stays false and the row carries no enrichment influence', async () => {
+    const database = new FakeDatabase();
+    await confirmPlayer(database);
+    const runId = await createRun(database);
+    const { fetchImpl } = makeScriptedFetch({
+      1: [{ kind: 'ok', totalPages: 1, sets: [makeSet({ id: 1 })] }],
+    });
+
+    const result = await run(database, runId, { fetchImpl });
+    expect(result.completed).toBe(true);
+    expect(result.enrichmentOverlayDegraded).toBe(false);
+
+    const storageKey = Object.keys(sourceTree(database))[0]!;
+    const key = `sgg-${storageKey}-g1`;
+    const row = matchesTree(database)[key] as Record<string, unknown>;
+    expect(row).not.toHaveProperty('vodUrl');
+    expect(row.map).toEqual({ id: 1, name: 'Battlefield' });
+    expect(database.dump()).not.toHaveProperty('researchEnrichmentProjection');
+  });
+
+  it('reads the enrichment overlay exactly ONCE for a batch covering multiple sets', async () => {
+    const database = new FakeDatabase();
+    await confirmPlayer(database);
+    const runId = await createRun(database);
+    const { fetchImpl } = makeScriptedFetch({
+      1: [{ kind: 'ok', totalPages: 2, sets: [makeSet({ id: 1 })] }],
+      2: [{ kind: 'ok', totalPages: 2, sets: [makeSet({ id: 2 })] }],
+    });
+
+    let attachmentTreeReads = 0;
+    const targetPath = `researchEnrichmentAttachments/${TENANT_ID}`;
+    const baseRef = database.ref.bind(database);
+    (database as unknown as { ref: typeof database.ref }).ref = (path?: string): FakeReference => {
+      const ref = baseRef(path);
+      if (path === targetPath) {
+        return {
+          ...ref,
+          get: async () => {
+            attachmentTreeReads += 1;
+            return ref.get();
+          },
+        };
+      }
+      return ref;
+    };
+
+    const result = await run(database, runId, { fetchImpl });
+    expect(result.completed).toBe(true);
+    expect(attachmentTreeReads).toBe(1);
+  });
+
+  it('an overlay read failure leaves the batch successful with the degradation recorded, rather than failing the refresh', async () => {
+    const database = new FakeDatabase();
+    await confirmPlayer(database);
+    const runId = await createRun(database);
+    const { fetchImpl } = makeScriptedFetch({
+      1: [{ kind: 'ok', totalPages: 1, sets: [makeSet({ id: 1 })] }],
+    });
+
+    const targetPath = `researchEnrichmentAttachments/${TENANT_ID}`;
+    const baseRef = database.ref.bind(database);
+    (database as unknown as { ref: typeof database.ref }).ref = (path?: string): FakeReference => {
+      const ref = baseRef(path);
+      if (path === targetPath) {
+        return {
+          ...ref,
+          get: async () => {
+            throw new Error('simulated readEnrichmentOverlayForTenant rejection');
+          },
+        };
+      }
+      return ref;
+    };
+
+    const result = await run(database, runId, { fetchImpl });
+    expect(result.completed).toBe(true);
+    expect(result.stopReason).toBe('completed');
+    expect(result.enrichmentOverlayDegraded).toBe(true);
+    expect(Object.keys(sourceTree(database))).toHaveLength(1);
+  });
+
+  it('a user-entered VOD survives a provider refresh both with and without the overlay', async () => {
+    const database = new FakeDatabase();
+    await confirmPlayer(database);
+    const firstRunId = await createRun(database);
+    const { fetchImpl } = makeScriptedFetch({
+      1: [{ kind: 'ok', totalPages: 1, sets: [makeSet({ id: 1 })] }],
+    });
+    await run(database, firstRunId, { fetchImpl });
+
+    const storageKey = Object.keys(sourceTree(database))[0]!;
+    const key = `sgg-${storageKey}-g1`;
+    const userUrl = 'https://user-typed.example/clip';
+    database.seed(`matches/${TENANT_ID}/${key}/vodUrl`, userUrl);
+
+    // Without an overlay (no enrichment tree yet).
+    const secondRunId = await createRun(database);
+    await run(database, secondRunId, { fetchImpl, ownerId: 'invocation-2' });
+    expect((matchesTree(database)[key] as { vodUrl?: string }).vodUrl).toBe(userUrl);
+
+    // With an overlay present (an unrelated enrichment attached to the same set).
+    await attachEnrichment(database, storageKey);
+    const thirdRunId = await createRun(database);
+    await run(database, thirdRunId, { fetchImpl, ownerId: 'invocation-3' });
+    expect((matchesTree(database)[key] as { vodUrl?: string }).vodUrl).toBe(userUrl);
   });
 });

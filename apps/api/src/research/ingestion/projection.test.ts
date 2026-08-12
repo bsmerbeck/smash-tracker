@@ -12,6 +12,7 @@ import {
   type LegacyProjectionResult,
 } from './projection.js';
 import { ResearchIngestionWriteError } from './sourceLayer.js';
+import type { EnrichmentRowOverlay } from '../enrichment/projection.js';
 
 function asDatabase(
   database: FakeDatabase | ConflictingTransactionDatabase | ThrowingOnPathDatabase,
@@ -675,5 +676,260 @@ describe('applyLegacyProjection', () => {
 
     expect(updateCalls).toBe(1);
     expect(transactionCalls).toBe(1); // one written match key (sgg-set-1-g1)
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Phase 30.2 Plan 08 (ENR-07/ENR-08, cycle-1 review HIGH 2): the additive
+// enrichment overlay parameter. Every assertion above this point in the
+// file is UNCHANGED — the no-overlay path reduces to exactly the shipped
+// Phase 30 behavior.
+// ---------------------------------------------------------------------------
+
+describe('mergePreservedMatchMembers — no-overlay regression pin (task 3 ENR-07/ENR-08)', () => {
+  it('the no-overlay merge result is deeply equal to the documented pre-change output for a representative record', () => {
+    const next = {
+      fighter_id: 1,
+      opponent_id: 2,
+      time: 2_000,
+      map: { id: 311, name: 'Battlefield' },
+      opponent: 'opponent',
+      matchType: 'offline-tourney' as const,
+      win: true,
+      source: 'startgg' as const,
+      externalId: 'sgg:set-1:g1',
+      eventName: 'New Event',
+    };
+    const existing = {
+      vodTimestamps: { pushkey1: { seconds: 10, note: 'hi' } },
+      tags: ['practice'],
+      gsp: 1_500,
+      vodStartSeconds: 5,
+      notes: 'great set',
+      vodUrl: 'https://youtube.com/watch?v=existing',
+    };
+    const merged = mergePreservedMatchMembers(existing, next, 'https://youtube.com/provider');
+    expect(merged).toEqual({
+      fighter_id: 1,
+      opponent_id: 2,
+      time: 2_000,
+      map: { id: 311, name: 'Battlefield' },
+      opponent: 'opponent',
+      matchType: 'offline-tourney',
+      win: true,
+      source: 'startgg',
+      externalId: 'sgg:set-1:g1',
+      eventName: 'New Event',
+      vodTimestamps: existing.vodTimestamps,
+      tags: existing.tags,
+      gsp: existing.gsp,
+      vodStartSeconds: existing.vodStartSeconds,
+      notes: existing.notes,
+      vodUrl: existing.vodUrl,
+    });
+  });
+});
+
+describe('mergePreservedMatchMembers — additive enrichment overlay (task 3)', () => {
+  const baseNext = {
+    fighter_id: 1,
+    opponent_id: 2,
+    time: 2_000,
+    map: { id: 0, name: 'unknown' },
+    opponent: 'opponent',
+    matchType: 'offline-tourney' as const,
+    win: true,
+    source: 'startgg' as const,
+    externalId: 'sgg:set-1:g1',
+  };
+
+  const resolvedNext = { ...baseNext, map: { id: 311, name: 'Battlefield' } };
+
+  it('does NOT revert an enrichment-owned VOD: a stored value the witness vouches for survives the refresh', () => {
+    const overlay: EnrichmentRowOverlay = {
+      enrichmentVodUrl: 'https://liquipedia/vod',
+      witness: { projectedVodUrl: 'https://liquipedia/vod' },
+    };
+    const merged = mergePreservedMatchMembers(
+      { vodUrl: 'https://liquipedia/vod' },
+      resolvedNext,
+      undefined,
+      overlay,
+    );
+    expect(merged.vodUrl).toBe('https://liquipedia/vod');
+  });
+
+  it('corrects an enrichment-owned VOD when the enrichment source itself supplies a new value', () => {
+    const overlay: EnrichmentRowOverlay = {
+      enrichmentVodUrl: 'https://liquipedia/new',
+      witness: { projectedVodUrl: 'https://liquipedia/old' },
+    };
+    const merged = mergePreservedMatchMembers(
+      { vodUrl: 'https://liquipedia/old' },
+      resolvedNext,
+      undefined,
+      overlay,
+    );
+    expect(merged.vodUrl).toBe('https://liquipedia/new');
+  });
+
+  it('does NOT revert an enrichment stage that occupies a slot the provider still resolves as unknown', () => {
+    // Canonical stage id 3 (Final Destination) per packages/shared/src/stageData.ts's StageList —
+    // the enrichment applier's canonicalStageId lives in this shared canonical id space, distinct
+    // from a raw start.gg stage id (which resolveStage maps by NAME, not id).
+    const overlay: EnrichmentRowOverlay = {
+      enrichmentStage: {
+        canonicalStageId: 3,
+        observationId: 'obs-1',
+        sourceRevisionId: 5,
+        parserVersion: 'liquipedia-bracket-legacy@1',
+      },
+      witness: { projectedStageId: 3, projectedStageName: 'Final Destination' },
+    };
+    const merged = mergePreservedMatchMembers(undefined, baseNext, undefined, overlay);
+    expect(merged.map).toEqual({ id: 3, name: 'Final Destination' });
+  });
+
+  it('a provider-resolved stage wins over an enrichment stage even when an overlay is supplied', () => {
+    const overlay: EnrichmentRowOverlay = {
+      enrichmentStage: {
+        canonicalStageId: 328,
+        observationId: 'obs-1',
+        sourceRevisionId: 5,
+        parserVersion: 'liquipedia-bracket-legacy@1',
+      },
+      witness: null,
+    };
+    const merged = mergePreservedMatchMembers(undefined, resolvedNext, undefined, overlay);
+    expect(merged.map).toEqual({ id: 311, name: 'Battlefield' });
+  });
+
+  it('a user-entered VOD is preserved through a refresh both with and without the overlay', () => {
+    const userUrl = 'https://user-typed.example/clip';
+    const overlay: EnrichmentRowOverlay = {
+      enrichmentVodUrl: 'https://liquipedia/vod',
+      witness: { projectedVodUrl: 'https://liquipedia/other' },
+    };
+    const withOverlay = mergePreservedMatchMembers(
+      { vodUrl: userUrl },
+      resolvedNext,
+      undefined,
+      overlay,
+    );
+    expect(withOverlay.vodUrl).toBe(userUrl);
+
+    const withoutOverlay = mergePreservedMatchMembers({ vodUrl: userUrl }, resolvedNext, undefined);
+    expect(withoutOverlay.vodUrl).toBe(userUrl);
+  });
+});
+
+describe('applyLegacyProjection — additive enrichment overlay (task 3)', () => {
+  function projectionResultFor(record: ResearchSourceSetRecord): LegacyProjectionResult {
+    return deriveLegacyProjection(record);
+  }
+
+  it('a JOB-LEVEL-STYLE run: an enrichment stage and VOD both survive when the provider still resolves unknown, driven through applyLegacyProjection itself', async () => {
+    const database = new FakeDatabase();
+    const record = makeRecord({
+      games: [
+        {
+          gameId: 1,
+          winnerEntrantId: '10',
+          stageId: 999_999,
+          stageName: 'Unrecognized Stage Text',
+          selections: [
+            { entrantId: '10', characterId: 1271 },
+            { entrantId: '20', characterId: 1286 },
+          ],
+          entrant1Score: 2,
+          entrant2Score: 1,
+        },
+      ],
+    });
+    const result = projectionResultFor(record);
+
+    const overlay: Map<string, EnrichmentRowOverlay> = new Map([
+      [
+        'sgg-set-1-g1',
+        {
+          enrichmentVodUrl: 'https://liquipedia/vod',
+          enrichmentStage: {
+            canonicalStageId: 3, // Final Destination, packages/shared StageList canonical id
+            observationId: 'obs-1',
+            sourceRevisionId: 7,
+            parserVersion: 'liquipedia-bracket-legacy@1',
+          },
+          witness: null,
+        },
+      ],
+    ]);
+
+    await applyLegacyProjection(asDatabase(database), TENANT_ID, 'set-1', result, overlay);
+
+    const matches = (database.dump().matches as Record<string, unknown>)[TENANT_ID] as Record<
+      string,
+      unknown
+    >;
+    const row = matches['sgg-set-1-g1'] as { vodUrl?: string; map?: { id: number; name: string } };
+    expect(row.vodUrl).toBe('https://liquipedia/vod');
+    expect(row.map).toEqual({ id: 3, name: 'Final Destination' });
+  });
+
+  it('the no-overlay call path issues the identical database write it issued before this parameter existed', async () => {
+    const withoutOverlayDb = new FakeDatabase();
+    const record = makeRecord();
+    const result = projectionResultFor(record);
+    await applyLegacyProjection(asDatabase(withoutOverlayDb), TENANT_ID, 'set-1', result);
+
+    const withUndefinedOverlayDb = new FakeDatabase();
+    await applyLegacyProjection(
+      asDatabase(withUndefinedOverlayDb),
+      TENANT_ID,
+      'set-1',
+      result,
+      undefined,
+    );
+
+    expect(withUndefinedOverlayDb.dump()).toEqual(withoutOverlayDb.dump());
+  });
+
+  it('THE WITNESS-CLEAR WRITER: a provider-resolved stage wins over a prior enrichment stage, and the stage-witness members for that game are cleared (cycle-2 review HIGH 2)', async () => {
+    const database = new FakeDatabase();
+    database.seed(`researchEnrichmentProjection/${TENANT_ID}/sgg-set-1-g1`, {
+      matchKey: 'sgg-set-1-g1',
+      targetSetId: 'set-1',
+      projectedStageId: 328,
+      projectedStageName: 'Final Destination',
+    });
+
+    // The provider record resolves a REAL stage (makeRecord()'s default game
+    // resolves by NAME to the canonical StageList's Battlefield, id 1).
+    const record = makeRecord();
+    const result = projectionResultFor(record);
+
+    const overlay: Map<string, EnrichmentRowOverlay> = new Map([
+      [
+        'sgg-set-1-g1',
+        {
+          witness: { projectedStageId: 328, projectedStageName: 'Final Destination' },
+        },
+      ],
+    ]);
+
+    await applyLegacyProjection(asDatabase(database), TENANT_ID, 'set-1', result, overlay);
+
+    const matches = (database.dump().matches as Record<string, unknown>)[TENANT_ID] as Record<
+      string,
+      unknown
+    >;
+    const row = matches['sgg-set-1-g1'] as { map?: { id: number; name: string } };
+    expect(row.map).toEqual({ id: 1, name: 'Battlefield' });
+
+    const witnessTree = (database.dump().researchEnrichmentProjection as Record<string, unknown>)[
+      TENANT_ID
+    ] as Record<string, unknown>;
+    const witness = witnessTree['sgg-set-1-g1'] as Record<string, unknown>;
+    expect(witness.projectedStageId).toBeUndefined();
+    expect(witness.projectedStageName).toBeUndefined();
   });
 });
