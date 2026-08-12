@@ -3,6 +3,7 @@ import type { Database } from 'firebase-admin/database';
 import {
   LIQUIPEDIA_PARSER_VERSION_VOD_LIST,
   buildEnrichmentObservationId,
+  type EnrichmentStageOutcome,
   type ResearchEnrichmentObservationRecord,
 } from '@smash-tracker/shared';
 import {
@@ -35,7 +36,17 @@ import {
   writeEnrichmentObservation,
   writeResolutionReceipt,
 } from './store.js';
-import { applyEnrichmentProjection, buildEnrichmentOverlay } from './projection.js';
+import {
+  applyEnrichmentProjection,
+  buildEnrichmentOverlay,
+  type EnrichmentProjectionCounts,
+} from './projection.js';
+import {
+  publishEnrichmentCoverage,
+  stageEnrichmentProgress,
+  type EnrichmentCohortCountsDelta,
+  type EnrichmentCountsDelta,
+} from './rollup.js';
 import {
   acquireEnrichmentRunLease,
   advanceEnrichmentRunState,
@@ -384,6 +395,7 @@ export async function runEnrichmentBatch(
     await resolveAndProjectPhase({
       database,
       tenantId,
+      runId,
       nowMs,
       dryRun,
       counts,
@@ -392,6 +404,20 @@ export async function runEnrichmentBatch(
 
     if (!dryRun && runId && holder) {
       await completeEnrichmentRun(database, tenantId, runId, holder, nowMs);
+      // THE COVERAGE-PUBLICATION SEAM (Rule 1 — the known gap plan 30.2-10's
+      // executor flagged: `rollup.ts`'s stage/publish pair landed in wave 7,
+      // one wave after this driver, and nothing wired them together until
+      // now). `publishEnrichmentCoverage` is called ONLY after
+      // `completeEnrichmentRun` commits, mirroring `rollup.ts`'s own
+      // documented ordering contract (a publish is a one-time side effect
+      // that also stamps `coveragePublishedAtMs` via
+      // `markEnrichmentCoveragePublished`, which is a no-op unless the run
+      // is already `completed`). The counter/cohort DELTAS themselves are
+      // staged earlier, inside `resolveAndProjectPhase`, through
+      // `stageEnrichmentProgress` — staging happens per-run-invocation
+      // (every invocation's own delta), publication happens once per
+      // invocation after completion.
+      await publishEnrichmentCoverage(database, { tenantId, runId, now: nowMs });
     }
   } catch (error) {
     if (!dryRun && runId && holder) {
@@ -774,14 +800,32 @@ async function gatherPhase(input: GatherPhaseInput): Promise<void> {
 interface ResolveAndProjectPhaseInput {
   database: Database;
   tenantId: string;
+  /** `null` for a dry run (no run is ever created for one — see the module header's dry-run-gate note); a real run's id otherwise, threaded through so this phase can stage its own counter delta. */
+  runId: string | null;
   nowMs: number;
   dryRun: boolean;
   counts: EnrichmentBatchCounts;
   gatheredObservations: ResearchEnrichmentObservationRecord[];
 }
 
+/**
+ * `EnrichmentStageOutcome` (`@smash-tracker/shared`'s
+ * `researchEnrichmentProjection.ts`) IS the three-cohort split ENR-11
+ * requires — `resolveEnrichedMatchMembers`'s own stage decision already
+ * answers "is this row start.gg-only, Liquipedia-supplemented, or still
+ * missing" for the row it just touched, so this map is a RESTATEMENT of
+ * `rollup.ts`'s `classifyStageCohort` in terms of the outcome this run's own
+ * `applyEnrichmentProjection` call already computed, never a second,
+ * independently-derived classification that could disagree with it.
+ */
+const STAGE_OUTCOME_TO_COHORT: Record<EnrichmentStageOutcome, keyof EnrichmentCohortCountsDelta> = {
+  'provider-authoritative': 'startggOnly',
+  enriched: 'liquipediaSupplemented',
+  unknown: 'missing',
+};
+
 async function resolveAndProjectPhase(input: ResolveAndProjectPhaseInput): Promise<void> {
-  const { database, tenantId, nowMs, dryRun, counts, gatheredObservations } = input;
+  const { database, tenantId, runId, nowMs, dryRun, counts, gatheredObservations } = input;
 
   const candidateIndex = await buildCandidateIndex(database, tenantId);
   counts.candidateIndexBuildCount = 1;
@@ -875,6 +919,22 @@ async function resolveAndProjectPhase(input: ResolveAndProjectPhaseInput): Promi
     return;
   }
 
+  // Accumulated across every touched target set THIS invocation — the exact
+  // delta `stageEnrichmentProgress` folds below. `cohortCountsDelta` is
+  // built from each row's OWN `stageOutcome`
+  // (`STAGE_OUTCOME_TO_COHORT`) rather than a second read of the row —
+  // `applyEnrichmentProjection` already decided that outcome via the shared
+  // `resolveEnrichedMatchMembers`, so this is a restatement, never a second
+  // classification that could disagree.
+  const projectionCountsTotal: EnrichmentProjectionCounts = {
+    stageEnriched: 0,
+    vodFilledEmpty: 0,
+    vodSkippedUserOwned: 0,
+    unknownStageAfterEnrichment: 0,
+    attachedNoProjectableRows: 0,
+  };
+  const cohortCountsDelta: EnrichmentCohortCountsDelta = {};
+
   for (const targetSetId of newlyAttachedTargetSetIds) {
     const attachments = await listAttachmentsForSet(database, tenantId, targetSetId);
     const observationsById: Record<string, ResearchEnrichmentObservationRecord> = {};
@@ -889,8 +949,58 @@ async function resolveAndProjectPhase(input: ResolveAndProjectPhaseInput): Promi
       attachments,
       observations: observationsById,
     });
-    await applyEnrichmentProjection(database, tenantId, targetSetId, overlay, nowMs);
+    const projectionOutcome = await applyEnrichmentProjection(
+      database,
+      tenantId,
+      targetSetId,
+      overlay,
+      nowMs,
+    );
     counts.projectionsApplied += 1;
+
+    for (const key of Object.keys(projectionCountsTotal) as (keyof EnrichmentProjectionCounts)[]) {
+      projectionCountsTotal[key] += projectionOutcome.counts[key];
+    }
+    for (const row of projectionOutcome.rows) {
+      const cohort = STAGE_OUTCOME_TO_COHORT[row.stageOutcome];
+      cohortCountsDelta[cohort] = (cohortCountsDelta[cohort] ?? 0) + 1;
+    }
+  }
+
+  // THE ROLLUP-STAGING SEAM (Rule 1 — the known gap this run driver left
+  // unwired between plan 09 (this file) and plan 10 (`rollup.ts`): the two
+  // landed in different waves and nothing called `stageEnrichmentProgress`
+  // until now). Staged here, inside this phase, rather than by the caller —
+  // this is the ONE place every counter this invocation moved (resolution
+  // outcomes AND projection outcomes) is already in scope. `runId` is
+  // non-null exactly when `!dryRun` (the caller only reaches this phase with
+  // a real run id, or not at all for a dry run — see the module header's
+  // dry-run-gate note), so this guard is equivalent to `!dryRun` but reads
+  // directly off the value the fold actually needs.
+  if (runId) {
+    const countsDelta: EnrichmentCountsDelta = {
+      matched: counts.resolvedMatched,
+      ambiguous: counts.resolvedAmbiguous,
+      unmatched: counts.resolvedUnmatched,
+      conflicting: counts.resolvedConflicting,
+      stageEnriched: projectionCountsTotal.stageEnriched,
+      vodEnriched: projectionCountsTotal.vodFilledEmpty,
+      vodFilledEmpty: projectionCountsTotal.vodFilledEmpty,
+      vodSkippedUserOwned: projectionCountsTotal.vodSkippedUserOwned,
+      unknownStageAfterEnrichment: projectionCountsTotal.unknownStageAfterEnrichment,
+      attachedNoProjectableRows: projectionCountsTotal.attachedNoProjectableRows,
+      observationsExtracted: counts.observationsExtracted,
+      vodRowsDeclared: counts.vodPagesPresent,
+      vodRowsExtracted: counts.vodRowsExtracted,
+      sourcePagesMissing: counts.vodPagesMissing,
+    };
+    await stageEnrichmentProgress(database, {
+      tenantId,
+      runId,
+      countsDelta,
+      cohortCountsDelta,
+      now: nowMs,
+    });
   }
 }
 

@@ -17,6 +17,7 @@ import {
   type EnrichmentRunLeaseHolder,
 } from './runState.js';
 import { readEnrichmentObservation, writeEnrichmentObservation } from './store.js';
+import { readEnrichmentCoverage } from './rollup.js';
 import { runEnrichmentBatch } from './run.js';
 
 function asDatabase(database: FakeDatabase): Database {
@@ -687,6 +688,29 @@ describe('runEnrichmentBatch', () => {
       'preseeded-observation-1',
     );
     expect(stored).not.toBeNull();
+  });
+
+  it('30.2-12 known-gap fix: stages a non-zero counts/cohort delta and publishes the coverage snapshot for the run this invocation created (rollup.ts wiring)', async () => {
+    const database = new FakeDatabase();
+    const { result } = await runHappyPath(database, 1_000);
+    expect(result.runId).not.toBeNull();
+
+    const snapshot = await readEnrichmentCoverage(asDatabase(database), TENANT_ID);
+    expect(snapshot).not.toBeNull();
+    expect(snapshot?.runId).toBe(result.runId);
+    expect(snapshot?.counts.matched).toBeGreaterThanOrEqual(1);
+    expect(snapshot?.counts.stageEnriched).toBeGreaterThanOrEqual(1);
+    expect(snapshot?.counts.vodEnriched).toBeGreaterThanOrEqual(1);
+    // Every classified row lands in exactly one cohort — no row double-
+    // counted, none omitted (ENR-11's "sum to the classified total" clause).
+    const cohortTotal =
+      (snapshot?.cohortCounts.startggOnly ?? 0) +
+      (snapshot?.cohortCounts.liquipediaSupplemented ?? 0) +
+      (snapshot?.cohortCounts.missing ?? 0);
+    expect(cohortTotal).toBeGreaterThanOrEqual(1);
+
+    const runRecord = await readEnrichmentRun(asDatabase(database), TENANT_ID);
+    expect(runRecord?.coveragePublishedAtMs).toBeDefined();
   });
 
   it('exactly one invocation can advance a run at a time (a stale lease holder can never revalidate) — proven by runState.ts, exercised here via the fenced create/lease/complete sequence', async () => {
