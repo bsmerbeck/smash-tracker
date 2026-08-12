@@ -253,6 +253,13 @@ export interface EnrichmentDryRunCandidate {
   reasons: string[];
 }
 
+export interface EnrichmentDryRunMatch {
+  observationId: string;
+  sourcePageTitle: string;
+  targetSetId: string;
+  evidence: string[];
+}
+
 export interface EnrichmentDryRunSourceRevision {
   sourcePageTitle: string;
   sourcePageUrl: string;
@@ -270,6 +277,7 @@ export interface EnrichmentDryRunDetails {
   stageWouldEnrich: number;
   sourceRevisions: EnrichmentDryRunSourceRevision[];
   extractorVersions: string[];
+  matchedCandidates: EnrichmentDryRunMatch[];
   reviewCandidates: EnrichmentDryRunCandidate[];
   missingSourcePages: Array<{ playerLabel: string; pageTitle: string; reason: string }>;
 }
@@ -284,6 +292,7 @@ function emptyDryRunDetails(): EnrichmentDryRunDetails {
     stageWouldEnrich: 0,
     sourceRevisions: [],
     extractorVersions: [],
+    matchedCandidates: [],
     reviewCandidates: [],
     missingSourcePages: [],
   };
@@ -975,6 +984,12 @@ async function resolveAndProjectPhase(input: ResolveAndProjectPhaseInput): Promi
     }
 
     counts.resolvedMatched += 1;
+    dryRunDetails?.matchedCandidates.push({
+      observationId: observation.observationId,
+      sourcePageTitle: observation.sourcePageTitle,
+      targetSetId: outcome.targetSetId,
+      evidence: outcome.evidence,
+    });
     if (
       observation.contentType !== 'vod-reference' &&
       observation.vodUrl &&

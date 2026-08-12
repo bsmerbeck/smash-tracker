@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { previewEnrichmentProjection } from '../src/research/enrichment/projection.js';
 import {
   buildEnrichmentComparison,
+  computeAccountWriteSetHash,
   computeEnrichmentManifestHash,
   createEnrichmentManifest,
   validateEnrichmentManifest,
@@ -35,7 +36,7 @@ function coverage(): EnrichmentCoverageMetrics {
 }
 
 function account(label: string, uid: string): EnrichmentAccountManifest {
-  return {
+  const accountWithoutHash: Omit<EnrichmentAccountManifest, 'writeSetHash'> = {
     label,
     uid,
     pagesFetched: 2,
@@ -63,9 +64,21 @@ function account(label: string, uid: string): EnrichmentAccountManifest {
       },
     ],
     extractorVersions: ['test@1'],
+    matchedCandidates: [
+      {
+        observationId: 'observation-1',
+        sourcePageTitle: `${label}/VODs`,
+        targetSetId: 'set-1',
+        evidence: ['unique-score-and-pair'],
+      },
+    ],
     reviewCandidates: [],
     missingSourcePages: [],
     beforeCoverage: coverage(),
+  };
+  return {
+    ...accountWithoutHash,
+    writeSetHash: computeAccountWriteSetHash(accountWithoutHash),
   };
 }
 
@@ -101,6 +114,20 @@ describe('enrichment manifest artifact', () => {
     expect(() =>
       validateEnrichmentManifest({ ...manifest, sinceYear: 2025 }, uids, nowMs + 1, 10_000),
     ).toThrow('content hash mismatch');
+  });
+
+  it('rejects a rehashed outer artifact whose reviewed write set was altered', () => {
+    const manifest = createEnrichmentManifest(body());
+    manifest.accounts.hbox.matchedCandidates[0]!.targetSetId = 'different-set';
+    const { contentHash: _ignored, ...changedBody } = manifest;
+    void _ignored;
+    const outerRehashed = {
+      ...changedBody,
+      contentHash: computeEnrichmentManifestHash(changedBody),
+    };
+    expect(() => validateEnrichmentManifest(outerRehashed, uids, nowMs + 1, 10_000)).toThrow(
+      'write-set hash mismatch',
+    );
   });
 
   it('rejects a different target map and an account-level mismatch', () => {

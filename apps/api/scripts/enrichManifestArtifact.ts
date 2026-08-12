@@ -34,6 +34,13 @@ const reviewCandidateSchema = z.object({
   reasons: z.array(z.string()),
 });
 
+const matchedCandidateSchema = z.object({
+  observationId: z.string(),
+  sourcePageTitle: z.string(),
+  targetSetId: z.string(),
+  evidence: z.array(z.string()),
+});
+
 export const enrichmentAccountManifestSchema = z.object({
   label: z.string(),
   uid: uidSchema,
@@ -54,6 +61,7 @@ export const enrichmentAccountManifestSchema = z.object({
   vodWouldSkipUserOwned: z.number().int().nonnegative(),
   sourceRevisions: z.array(sourceRevisionSchema),
   extractorVersions: z.array(z.string()),
+  matchedCandidates: z.array(matchedCandidateSchema),
   reviewCandidates: z.array(reviewCandidateSchema),
   missingSourcePages: z.array(
     z.object({ playerLabel: z.string(), pageTitle: z.string(), reason: z.string() }),
@@ -69,6 +77,7 @@ export const enrichmentAccountManifestSchema = z.object({
     vodSkippedUserOwned: z.number().int().nonnegative(),
     sourceRevisionCount: z.number().int().nonnegative(),
   }),
+  writeSetHash: z.string().regex(/^[a-f0-9]{64}$/),
 });
 export type EnrichmentAccountManifest = z.infer<typeof enrichmentAccountManifestSchema>;
 export type EnrichmentCoverageMetrics = EnrichmentAccountManifest['beforeCoverage'];
@@ -94,6 +103,56 @@ export const enrichmentManifestSchema = manifestBodySchema.extend({
   contentHash: z.string().regex(/^[a-f0-9]{64}$/),
 });
 export type EnrichmentManifest = z.infer<typeof enrichmentManifestSchema>;
+
+export function computeAccountWriteSetHash(
+  account: Omit<EnrichmentAccountManifest, 'writeSetHash'>,
+): string {
+  const sourceRevisions = account.sourceRevisions
+    .map(({ sourcePageTitle, sourcePageUrl, sourceRevisionId, parserVersion }) => ({
+      sourcePageTitle,
+      sourcePageUrl,
+      sourceRevisionId,
+      parserVersion,
+    }))
+    .sort((a, b) =>
+      `${a.sourcePageTitle}:${a.sourceRevisionId}`.localeCompare(
+        `${b.sourcePageTitle}:${b.sourceRevisionId}`,
+      ),
+    );
+  const matchedCandidates = [...account.matchedCandidates].sort((a, b) =>
+    a.observationId.localeCompare(b.observationId),
+  );
+  const reviewCandidates = [...account.reviewCandidates].sort((a, b) =>
+    a.observationId.localeCompare(b.observationId),
+  );
+  const missingSourcePages = [...account.missingSourcePages].sort((a, b) =>
+    `${a.playerLabel}:${a.pageTitle}`.localeCompare(`${b.playerLabel}:${b.pageTitle}`),
+  );
+  return createHash('sha256')
+    .update(
+      canonicalize({
+        uid: account.uid,
+        sinceIndependentCounts: {
+          matched: account.matched,
+          ambiguous: account.ambiguous,
+          unmatched: account.unmatched,
+          conflicting: account.conflicting,
+          gamesWithCanonicalStage: account.gamesWithCanonicalStage,
+          gamesWithStageForm: account.gamesWithStageForm,
+          gamesWithoutCanonicalStage: account.gamesWithoutCanonicalStage,
+          stageWouldEnrich: account.stageWouldEnrich,
+          vodWouldFillEmpty: account.vodWouldFillEmpty,
+          vodWouldSkipUserOwned: account.vodWouldSkipUserOwned,
+        },
+        sourceRevisions,
+        extractorVersions: [...account.extractorVersions].sort(),
+        matchedCandidates,
+        reviewCandidates,
+        missingSourcePages,
+      }),
+    )
+    .digest('hex');
+}
 
 function canonicalize(value: unknown): string {
   if (Array.isArray(value)) {
@@ -147,6 +206,19 @@ export function validateEnrichmentManifest(
   for (const key of demoWorkspaceKeys) {
     if (manifest.accounts[key].uid !== expected[key]) {
       throw new Error(`Manifest account UID mismatch for ${key}`);
+    }
+    const { writeSetHash, ...account } = manifest.accounts[key];
+    if (computeAccountWriteSetHash(account) !== writeSetHash) {
+      throw new Error(`Manifest write-set hash mismatch for ${key}`);
+    }
+    if (manifest.accounts[key].matchedCandidates.length !== manifest.accounts[key].matched) {
+      throw new Error(`Manifest matched candidate count mismatch for ${key}`);
+    }
+    if (
+      manifest.accounts[key].reviewCandidates.length !==
+      manifest.accounts[key].ambiguous + manifest.accounts[key].conflicting
+    ) {
+      throw new Error(`Manifest review candidate count mismatch for ${key}`);
     }
   }
   return manifest;

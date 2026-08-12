@@ -18,6 +18,7 @@ import { readEnrichmentCoverage } from '../src/research/enrichment/rollup.js';
 import { runEnrichmentBatch } from '../src/research/enrichment/run.js';
 import {
   buildEnrichmentComparison,
+  computeAccountWriteSetHash,
   createEnrichmentManifest,
   demoWorkspaceKeys,
   validateEnrichmentManifest,
@@ -155,6 +156,47 @@ function requestCount(counts: Awaited<ReturnType<typeof runEnrichmentBatch>>['co
   );
 }
 
+function buildAccountManifest(
+  workspace: DemoWorkspaceKey,
+  uid: string,
+  result: Awaited<ReturnType<typeof runEnrichmentBatch>>,
+  beforeCoverage: EnrichmentCoverageMetrics,
+): EnrichmentAccountManifest {
+  const details = result.dryRunDetails;
+  if (!details) {
+    throw new Error(`Dry-run evidence was not returned for ${workspace}`);
+  }
+  const accountWithoutHash: Omit<EnrichmentAccountManifest, 'writeSetHash'> = {
+    label: labels[workspace],
+    uid,
+    pagesFetched: result.counts.pagesFetched,
+    pagesFromCache: result.counts.generatedCacheHits + result.counts.wikitextCacheHits,
+    networkRequestsOperationalOnly: requestCount(result.counts),
+    observationsExtracted: result.counts.observationsExtracted,
+    vodPageRows: result.counts.vodRowsExtracted,
+    matched: result.counts.resolvedMatched,
+    ambiguous: result.counts.resolvedAmbiguous,
+    unmatched: result.counts.resolvedUnmatched,
+    conflicting: result.counts.resolvedConflicting,
+    gamesWithCanonicalStage: details.gamesWithCanonicalStage,
+    gamesWithStageForm: details.gamesWithStageForm,
+    gamesWithoutCanonicalStage: details.gamesWithoutCanonicalStage,
+    stageWouldEnrich: details.stageWouldEnrich,
+    vodWouldFillEmpty: details.vodWouldFillEmpty,
+    vodWouldSkipUserOwned: details.vodWouldSkipUserOwned,
+    sourceRevisions: details.sourceRevisions,
+    extractorVersions: details.extractorVersions,
+    matchedCandidates: details.matchedCandidates,
+    reviewCandidates: details.reviewCandidates,
+    missingSourcePages: details.missingSourcePages,
+    beforeCoverage,
+  };
+  return {
+    ...accountWithoutHash,
+    writeSetHash: computeAccountWriteSetHash(accountWithoutHash),
+  };
+}
+
 async function runOne(
   database: ReturnType<typeof initFirebase>['database'],
   client: ReturnType<typeof createLiquipediaClient>,
@@ -189,34 +231,7 @@ async function dryRun(
   for (const workspace of demoWorkspaceKeys) {
     const beforeCoverage = await readCoverageMetrics(database, uids[workspace]);
     const result = await runOne(database, client, workspace, uids[workspace], sinceYear, true);
-    const details = result.dryRunDetails;
-    if (!details) {
-      throw new Error(`Dry-run evidence was not returned for ${workspace}`);
-    }
-    accounts[workspace] = {
-      label: labels[workspace],
-      uid: uids[workspace],
-      pagesFetched: result.counts.pagesFetched,
-      pagesFromCache: result.counts.generatedCacheHits + result.counts.wikitextCacheHits,
-      networkRequestsOperationalOnly: requestCount(result.counts),
-      observationsExtracted: result.counts.observationsExtracted,
-      vodPageRows: result.counts.vodRowsExtracted,
-      matched: result.counts.resolvedMatched,
-      ambiguous: result.counts.resolvedAmbiguous,
-      unmatched: result.counts.resolvedUnmatched,
-      conflicting: result.counts.resolvedConflicting,
-      gamesWithCanonicalStage: details.gamesWithCanonicalStage,
-      gamesWithStageForm: details.gamesWithStageForm,
-      gamesWithoutCanonicalStage: details.gamesWithoutCanonicalStage,
-      stageWouldEnrich: details.stageWouldEnrich,
-      vodWouldFillEmpty: details.vodWouldFillEmpty,
-      vodWouldSkipUserOwned: details.vodWouldSkipUserOwned,
-      sourceRevisions: details.sourceRevisions,
-      extractorVersions: details.extractorVersions,
-      reviewCandidates: details.reviewCandidates,
-      missingSourcePages: details.missingSourcePages,
-      beforeCoverage,
-    };
+    accounts[workspace] = buildAccountManifest(workspace, uids[workspace], result, beforeCoverage);
   }
   const manifest = createEnrichmentManifest({
     formatVersion: 1,
@@ -264,6 +279,26 @@ async function apply(
   uids: DemoUidMap,
   manifest: EnrichmentManifest,
 ): Promise<void> {
+  const preflightClient = buildClient(config, createReadOnlyLimiter());
+  for (const workspace of demoWorkspaceKeys) {
+    const beforeCoverage = await readCoverageMetrics(database, uids[workspace]);
+    const result = await runOne(
+      database,
+      preflightClient,
+      workspace,
+      uids[workspace],
+      manifest.sinceYear,
+      true,
+    );
+    const current = buildAccountManifest(workspace, uids[workspace], result, beforeCoverage);
+    if (current.writeSetHash !== manifest.accounts[workspace].writeSetHash) {
+      throw new Error(
+        `Apply refused: current read-only write set differs from reviewed manifest for ${workspace}`,
+      );
+    }
+  }
+  console.log('Read-only preflight matches every reviewed account write-set hash.');
+
   const client = buildClient(config, createLiquipediaLimiter(database));
   for (const workspace of demoWorkspaceKeys) {
     const result = await runOne(
