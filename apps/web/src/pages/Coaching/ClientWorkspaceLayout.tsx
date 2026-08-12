@@ -7,6 +7,7 @@ import { useActiveSubject } from '@/hooks/useActiveSubject';
 import { useResearchSubject } from '@/hooks/useResearchSubject';
 import { setActiveSubject } from '@/lib/subjectQueryKey';
 import { DataCoveragePanel } from './components/DataCoveragePanel';
+import { EnrichmentReviewPanel } from './components/EnrichmentReviewPanel';
 import { ResearchSnapshotBanner } from './components/ResearchSnapshotBanner';
 
 /**
@@ -50,6 +51,21 @@ import { ResearchSnapshotBanner } from './components/ResearchSnapshotBanner';
  * here rather than per page — the admin-only completeness report must
  * appear on every research workspace surface without any page opting in,
  * and it renders nothing of its own accord on an ordinary workspace.
+ *
+ * 30.2 gap-closure (Codex checkpoint-3 recommendation, accepted):
+ * `<EnrichmentReviewPanel />` is mounted immediately after the coverage
+ * panel — the SAME minimal host, for the same reason. It is the only place
+ * a `RESEARCH_ADMIN_UIDS`-gated admin can reach the review-and-act queue,
+ * and it is deliberately NOT a route of its own: the queue is a property of
+ * the research workspace it belongs to, and a standalone route would need
+ * its own tenant resolution and its own kind gate to say anything at all.
+ *
+ * NO DEAD CHROME FOR AN ORDINARY USER. Both panels self-gate on the query
+ * rather than being conditionally mounted here: each renders `null` while
+ * pending, on a non-research subject, and on the research family's uniform
+ * 404 rejection (`isForbidden`) — so an ordinary account's workspace stays
+ * byte-identical, and the panels' own data routes remain the enforcement
+ * boundary rather than this render decision.
  */
 export function ClientWorkspaceLayout() {
   const subject = useActiveSubject();
@@ -65,6 +81,7 @@ export function ClientWorkspaceLayout() {
     <>
       <ResearchSnapshotBanner />
       <DataCoveragePanel />
+      <EnrichmentReviewPanel />
       {isPending && <div className="text-muted-foreground">{t('chrome.loading')}</div>}
       {isError && (
         <div
