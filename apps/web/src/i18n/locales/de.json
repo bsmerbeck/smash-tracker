@@ -2725,5 +2725,69 @@
     "error": {
       "submitFailed": "Beim Starten deines Plans ist etwas schiefgelaufen. Bitte erneut versuchen."
     }
+  },
+  "enrichment": {
+    "attribution": {
+      "stage": "Bühnendaten von Liquipedia",
+      "vod": "VOD von Liquipedia",
+      "sourceLink": "Quelle ansehen",
+      "license": "Von Liquipedia stammende Inhalte auf dieser Seite stehen unter der Lizenz",
+      "licenseLinkText": "CC BY-SA 3.0",
+      "stageFormQualifier": "Quelltext: {{raw}} ({{form}})",
+      "stageForm": {
+        "hazardless": "ohne Gefahren",
+        "omega": "Omega-Form",
+        "battlefield": "Battlefield-Form",
+        "unknown": "unbekannte Formmarkierung"
+      },
+      "unknownStage": "Bühne nicht identifiziert"
+    },
+    "attachVod": {
+      "prefilledHint": "Dieser Link wurde von Liquipedia vorausgefüllt. Du kannst ihn weiterhin bearbeiten."
+    },
+    "editForm": {
+      "sourceOwnedNote": "Dieser Wert stammt von Liquipedia. Beim Speichern wird er zu deiner eigenen Bearbeitung."
+    },
+    "coverage": {
+      "title": "Liquipedia-Anreicherung",
+      "counts": {
+        "matched": "Zugeordnet",
+        "ambiguous": "Mehrdeutig",
+        "unmatched": "Nicht zugeordnet",
+        "conflicting": "Widersprüchlich",
+        "stageEnriched": "Bühnendaten hinzugefügt",
+        "vodEnriched": "VOD-Links hinzugefügt"
+      },
+      "cohorts": {
+        "title": "Abdeckung nach Quelle",
+        "startggOnly": "Nur start.gg",
+        "startggOnlyExplanation": "Die Daten dieses Sets stammen nur von start.gg; Liquipedia hat nichts hinzugefügt.",
+        "liquipediaSupplemented": "Durch Liquipedia ergänzt",
+        "liquipediaSupplementedExplanation": "Die start.gg-Daten wurden durch eine Bühnen- oder VOD-Tatsache von Liquipedia ergänzt.",
+        "missing": "Fehlt noch",
+        "missingExplanation": "Weder start.gg noch Liquipedia haben diese Daten bisher."
+      },
+      "freshness": {
+        "title": "Quellseiten",
+        "detail": "Revision {{revisionId}} · abgerufen {{date}}"
+      },
+      "notes": {
+        "title": "Notizen"
+      }
+    },
+    "review": {
+      "title": "Liquipedia-Prüfwarteschlange",
+      "empty": "Derzeit gibt es nichts zu prüfen.",
+      "loadError": "Die Prüfwarteschlange konnte nicht geladen werden. Deine Daten sind sicher — versuche es erneut.",
+      "sourceLink": "Quelle ansehen",
+      "noCandidates": "Keine Kandidaten-Übereinstimmungen erfasst.",
+      "confirmButton": "Übereinstimmung bestätigen",
+      "derivedRoundExplanationOnly": "Abgeleitete Runde: {{label}} (nur Erklärung — kein Zuordnungssignal)",
+      "status": {
+        "ambiguous": "Mehrdeutig",
+        "conflicting": "Widersprüchlich",
+        "unmatched": "Nicht zugeordnet"
+      }
+    }
   }
 }

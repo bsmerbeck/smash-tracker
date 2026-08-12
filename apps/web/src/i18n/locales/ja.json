@@ -2725,5 +2725,69 @@
     "error": {
       "submitFailed": "プランの開始中に問題が発生しました。もう一度お試しください。"
     }
+  },
+  "enrichment": {
+    "attribution": {
+      "stage": "Liquipediaのステージデータ",
+      "vod": "LiquipediaのVOD",
+      "sourceLink": "ソースを見る",
+      "license": "このページのLiquipedia由来のコンテンツは次のライセンスの下で提供されています",
+      "licenseLinkText": "CC BY-SA 3.0",
+      "stageFormQualifier": "元テキスト: {{raw}} ({{form}})",
+      "stageForm": {
+        "hazardless": "ハザードなし",
+        "omega": "オメガ形態",
+        "battlefield": "戦場形態",
+        "unknown": "認識できない形態マーカー"
+      },
+      "unknownStage": "ステージ未特定"
+    },
+    "attachVod": {
+      "prefilledHint": "このリンクはLiquipediaから自動入力されました。編集は引き続き可能です。"
+    },
+    "editForm": {
+      "sourceOwnedNote": "この値はLiquipedia由来です。保存すると自分自身の編集になります。"
+    },
+    "coverage": {
+      "title": "Liquipediaエンリッチメント",
+      "counts": {
+        "matched": "一致",
+        "ambiguous": "曖昧",
+        "unmatched": "未一致",
+        "conflicting": "競合",
+        "stageEnriched": "追加されたステージデータ",
+        "vodEnriched": "追加されたVODリンク"
+      },
+      "cohorts": {
+        "title": "ソース別カバレッジ",
+        "startggOnly": "start.ggのみ",
+        "startggOnlyExplanation": "このセットのデータはstart.ggのみに由来し、Liquipediaは何も追加していません。",
+        "liquipediaSupplemented": "Liquipediaで補完",
+        "liquipediaSupplementedExplanation": "start.ggのデータはLiquipediaのステージまたはVODの事実で補完されました。",
+        "missing": "まだ不足",
+        "missingExplanation": "start.ggもLiquipediaもまだこのデータを持っていません。"
+      },
+      "freshness": {
+        "title": "ソースページ",
+        "detail": "リビジョン {{revisionId}} ・取得日時 {{date}}"
+      },
+      "notes": {
+        "title": "メモ"
+      }
+    },
+    "review": {
+      "title": "Liquipediaレビューキュー",
+      "empty": "現在レビューが必要な項目はありません。",
+      "loadError": "レビューキューを読み込めませんでした。データは安全です — もう一度お試しください。",
+      "sourceLink": "ソースを見る",
+      "noCandidates": "記録された候補一致はありません。",
+      "confirmButton": "一致を確認",
+      "derivedRoundExplanationOnly": "推定ラウンド: {{label}}（説明のみ — 一致の根拠ではありません）",
+      "status": {
+        "ambiguous": "曖昧",
+        "conflicting": "競合",
+        "unmatched": "未一致"
+      }
+    }
   }
 }

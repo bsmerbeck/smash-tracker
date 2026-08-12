@@ -2725,5 +2725,69 @@
     "error": {
       "submitFailed": "Une erreur est survenue lors du démarrage de votre plan. Veuillez réessayer."
     }
+  },
+  "enrichment": {
+    "attribution": {
+      "stage": "Données de terrain provenant de Liquipedia",
+      "vod": "VOD provenant de Liquipedia",
+      "sourceLink": "Voir la source",
+      "license": "Le contenu dérivé de Liquipedia sur cette page est sous licence",
+      "licenseLinkText": "CC BY-SA 3.0",
+      "stageFormQualifier": "Texte source : {{raw}} ({{form}})",
+      "stageForm": {
+        "hazardless": "sans dangers",
+        "omega": "forme Omega",
+        "battlefield": "forme Battlefield",
+        "unknown": "marqueur de forme non reconnu"
+      },
+      "unknownStage": "Terrain non identifié"
+    },
+    "attachVod": {
+      "prefilledHint": "Ce lien a été prérempli depuis Liquipedia. Vous pouvez toujours le modifier."
+    },
+    "editForm": {
+      "sourceOwnedNote": "Cette valeur provient de Liquipedia. L'enregistrer en fera votre propre modification."
+    },
+    "coverage": {
+      "title": "Enrichissement Liquipedia",
+      "counts": {
+        "matched": "Correspondances",
+        "ambiguous": "Ambigus",
+        "unmatched": "Sans correspondance",
+        "conflicting": "En conflit",
+        "stageEnriched": "Données de terrain ajoutées",
+        "vodEnriched": "Liens VOD ajoutés"
+      },
+      "cohorts": {
+        "title": "Couverture par source",
+        "startggOnly": "start.gg uniquement",
+        "startggOnlyExplanation": "Les données de ce set proviennent uniquement de start.gg ; Liquipedia n'a rien ajouté.",
+        "liquipediaSupplemented": "Complété par Liquipedia",
+        "liquipediaSupplementedExplanation": "Les données de start.gg ont été complétées par un fait de terrain ou de VOD provenant de Liquipedia.",
+        "missing": "Toujours manquant",
+        "missingExplanation": "Ni start.gg ni Liquipedia n'ont ces données pour l'instant."
+      },
+      "freshness": {
+        "title": "Pages sources",
+        "detail": "Révision {{revisionId}} · récupéré {{date}}"
+      },
+      "notes": {
+        "title": "Notes"
+      }
+    },
+    "review": {
+      "title": "File de révision Liquipedia",
+      "empty": "Rien à examiner pour le moment.",
+      "loadError": "Impossible de charger la file de révision. Vos données sont en sécurité — réessayez.",
+      "sourceLink": "Voir la source",
+      "noCandidates": "Aucune correspondance candidate enregistrée.",
+      "confirmButton": "Confirmer la correspondance",
+      "derivedRoundExplanationOnly": "Round dérivé : {{label}} (explication uniquement — pas un signal de correspondance)",
+      "status": {
+        "ambiguous": "Ambigu",
+        "conflicting": "En conflit",
+        "unmatched": "Sans correspondance"
+      }
+    }
   }
 }

@@ -2725,5 +2725,69 @@
     "error": {
       "submitFailed": "Algo deu errado ao iniciar seu plano. Tente novamente."
     }
+  },
+  "enrichment": {
+    "attribution": {
+      "stage": "Dados de cenário do Liquipedia",
+      "vod": "VOD do Liquipedia",
+      "sourceLink": "Ver fonte",
+      "license": "O conteúdo derivado do Liquipedia nesta página está licenciado sob",
+      "licenseLinkText": "CC BY-SA 3.0",
+      "stageFormQualifier": "Texto de origem: {{raw}} ({{form}})",
+      "stageForm": {
+        "hazardless": "sem perigos",
+        "omega": "forma Omega",
+        "battlefield": "forma Battlefield",
+        "unknown": "marcador de forma não reconhecido"
+      },
+      "unknownStage": "Cenário não identificado"
+    },
+    "attachVod": {
+      "prefilledHint": "Este link foi preenchido a partir do Liquipedia. Você ainda pode editá-lo."
+    },
+    "editForm": {
+      "sourceOwnedNote": "Este valor veio do Liquipedia. Salvar o tornará sua própria edição."
+    },
+    "coverage": {
+      "title": "Enriquecimento do Liquipedia",
+      "counts": {
+        "matched": "Correspondidos",
+        "ambiguous": "Ambíguos",
+        "unmatched": "Sem correspondência",
+        "conflicting": "Conflitantes",
+        "stageEnriched": "Dados de cenário adicionados",
+        "vodEnriched": "Links de VOD adicionados"
+      },
+      "cohorts": {
+        "title": "Cobertura por fonte",
+        "startggOnly": "Somente start.gg",
+        "startggOnlyExplanation": "Os dados deste set vêm apenas do start.gg; o Liquipedia não adicionou nada.",
+        "liquipediaSupplemented": "Complementado pelo Liquipedia",
+        "liquipediaSupplementedExplanation": "Os dados do start.gg foram complementados com um fato de cenário ou VOD do Liquipedia.",
+        "missing": "Ainda faltando",
+        "missingExplanation": "Nem o start.gg nem o Liquipedia têm esses dados ainda."
+      },
+      "freshness": {
+        "title": "Páginas de origem",
+        "detail": "Revisão {{revisionId}} · obtido {{date}}"
+      },
+      "notes": {
+        "title": "Notas"
+      }
+    },
+    "review": {
+      "title": "Fila de revisão do Liquipedia",
+      "empty": "Nada para revisar no momento.",
+      "loadError": "Não foi possível carregar a fila de revisão. Seus dados estão seguros — tente novamente.",
+      "sourceLink": "Ver fonte",
+      "noCandidates": "Nenhuma correspondência candidata registrada.",
+      "confirmButton": "Confirmar correspondência",
+      "derivedRoundExplanationOnly": "Rodada derivada: {{label}} (apenas explicação — não é um sinal de correspondência)",
+      "status": {
+        "ambiguous": "Ambíguo",
+        "conflicting": "Conflitante",
+        "unmatched": "Sem correspondência"
+      }
+    }
   }
 }

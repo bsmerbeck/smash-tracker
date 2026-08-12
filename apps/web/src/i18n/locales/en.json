@@ -2725,5 +2725,69 @@
     "error": {
       "submitFailed": "Something went wrong starting your plan. Please try again."
     }
+  },
+  "enrichment": {
+    "attribution": {
+      "stage": "Stage data from Liquipedia",
+      "vod": "VOD from Liquipedia",
+      "sourceLink": "View source",
+      "license": "Liquipedia-derived content on this page is licensed under",
+      "licenseLinkText": "CC BY-SA 3.0",
+      "stageFormQualifier": "Source text: {{raw}} ({{form}})",
+      "stageForm": {
+        "hazardless": "hazardless",
+        "omega": "Omega form",
+        "battlefield": "Battlefield form",
+        "unknown": "unrecognized form marker"
+      },
+      "unknownStage": "Stage not identified"
+    },
+    "attachVod": {
+      "prefilledHint": "This link was filled in from Liquipedia. You can still edit it."
+    },
+    "editForm": {
+      "sourceOwnedNote": "This value came from Liquipedia. Saving will make it your own edit."
+    },
+    "coverage": {
+      "title": "Liquipedia enrichment",
+      "counts": {
+        "matched": "Matched",
+        "ambiguous": "Ambiguous",
+        "unmatched": "Unmatched",
+        "conflicting": "Conflicting",
+        "stageEnriched": "Stage data added",
+        "vodEnriched": "VOD links added"
+      },
+      "cohorts": {
+        "title": "Coverage by source",
+        "startggOnly": "start.gg only",
+        "startggOnlyExplanation": "This set's data comes only from start.gg; Liquipedia added nothing.",
+        "liquipediaSupplemented": "Supplemented by Liquipedia",
+        "liquipediaSupplementedExplanation": "start.gg data was supplemented with a Liquipedia stage or VOD fact.",
+        "missing": "Still missing",
+        "missingExplanation": "Neither start.gg nor Liquipedia has this data yet."
+      },
+      "freshness": {
+        "title": "Source pages",
+        "detail": "Revision {{revisionId}} · fetched {{date}}"
+      },
+      "notes": {
+        "title": "Notes"
+      }
+    },
+    "review": {
+      "title": "Liquipedia review queue",
+      "empty": "Nothing needs review right now.",
+      "loadError": "We couldn't load the review queue. Your data is safe — try again.",
+      "sourceLink": "View source",
+      "noCandidates": "No candidate matches recorded.",
+      "confirmButton": "Confirm match",
+      "derivedRoundExplanationOnly": "Derived round: {{label}} (explanation only — not a matching signal)",
+      "status": {
+        "ambiguous": "Ambiguous",
+        "conflicting": "Conflicting",
+        "unmatched": "Unmatched"
+      }
+    }
   }
 }
