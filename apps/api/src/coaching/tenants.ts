@@ -112,10 +112,12 @@ export const CANONICAL_TENANT_TREES = [
  *   why it has no same-subject route.
  *
  * `researchEntitlements` was the first extra member; Phase 30 Plan 01
- * (ING-02/ING-03/ING-05/ING-07/ING-08, D-02) adds five more research trees
- * ahead of any writer — the extra-member set is now SIX trees, all admin-only
- * and all reached through the same uniform-404 research route family, so the
- * same reasoning applies to each: registering them in `CANONICAL_TENANT_TREES`
+ * (ING-02/ING-03/ING-05/ING-07/ING-08, D-02) added five more research trees
+ * ahead of any writer, and Phase 30.2 Plan 01 (ENR-04/ENR-05/ENR-06/ENR-08/
+ * ENR-10/ENR-12) adds SIX more Liquipedia enrichment trees ahead of any
+ * writer — the extra-member set is now TWELVE trees, all admin-only and all
+ * reached through the same uniform-404 research route family, so the same
+ * reasoning applies to each: registering them in `CANONICAL_TENANT_TREES`
  * instead would have broken `TREE_TO_ROUTE_PATH`'s exhaustive-record
  * requirement outright.
  */
@@ -141,7 +143,38 @@ export const TENANT_DELETION_TREES = [
   // Phase 30 Plan 01 (ING-05): the published completeness snapshot
   // (`researchCoverage/{tenantId}`).
   'researchCoverage',
+  // Phase 30.2 Plan 01 (ENR-04): one row per extracted Liquipedia fact
+  // (`researchEnrichmentObservations/{tenantId}/{observationId}`).
+  'researchEnrichmentObservations',
+  // Phase 30.2 Plan 01 (ENR-05): the persisted resolver receipt an automatic
+  // attachment is checked against
+  // (`researchEnrichmentReceipts/{tenantId}/{observationId}`).
+  'researchEnrichmentReceipts',
+  // Phase 30.2 Plan 01 (ENR-06): the authorization record that lets an
+  // observation reach projection
+  // (`researchEnrichmentAttachments/{tenantId}/{targetSetId}/{observationId}`).
+  'researchEnrichmentAttachments',
+  // Phase 30.2 Plan 01 (ENR-08): the stage/VOD ownership witness, stored
+  // outside the match row (`researchEnrichmentProjection/{tenantId}/{matchKey}`).
+  'researchEnrichmentProjection',
+  // Phase 30.2 Plan 01 (ENR-12): the published enrichment coverage snapshot
+  // (`researchEnrichmentCoverage/{tenantId}`).
+  'researchEnrichmentCoverage',
+  // Phase 30.2 Plan 01 (ENR-10): enrichment backfill run state
+  // (`researchEnrichmentRuns/{tenantId}`).
+  'researchEnrichmentRuns',
 ] as const;
+
+/**
+ * Phase 30.2 Plan 01: the global (non-tenant-keyed) Liquipedia rate-limit
+ * and page-cache nodes — `researchRateBudget/liquipedia`,
+ * `researchRateBudget/liquipediaParse`, and `liquipediaPageCache/{pageId}` —
+ * are DELIBERATELY NOT registered above. Each describes a shared resource
+ * (a global request budget, a revision-keyed page cache), not a tenant, and
+ * stores no tenant-scoped data; the identical reasoning is already written
+ * for the start.gg budget node at `apps/api/src/research/ingestion/throttle.ts`
+ * ("Why the node is NOT tenant-keyed").
+ */
 
 /**
  * Replicates the existing Phase 8 coach-display-name-collision algorithm
