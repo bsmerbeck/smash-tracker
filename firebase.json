@@ -4,6 +4,7 @@
   },
   "hosting": {
     "public": "apps/web/dist",
+    "postdeploy": ["pnpm --filter @smash-tracker/web warm:cdn"],
     "ignore": ["firebase.json", "**/.*", "**/node_modules/**"],
     "trailingSlash": false,
     "rewrites": [

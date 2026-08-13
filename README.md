@@ -423,6 +423,23 @@ before deploying. `firebase.json` points `hosting.public` at `apps/web/dist` and
 `/api/**` to the `smash-tracker-api` Cloud Run service before falling back to `/spa.html` (the
 un-prerendered SPA shell, emitted by the build) for client-side routing on auth-gated paths.
 
+`firebase.json` also declares a `hosting.postdeploy` hook that runs `pnpm --filter
+@smash-tracker/web warm:cdn` automatically once the upload finishes — no separate command to
+remember, and it covers deploys triggered by scripts as well as by hand. The script fetches every
+freshly-hashed asset through the public edge in both `Accept-Encoding` variants, which does two
+things: it warms the nearest edge PoP, and it smoke-tests that every asset actually deployed.
+Because the `**` → `spa.html` rewrite turns a _missing_ asset into a `200` with an HTML body, the
+script checks `content-type` rather than status — that check is what catches a broken deploy.
+
+**A failing hook does not mean the deploy failed.** The upload has already completed by the time
+the hook runs; a non-zero exit means one or more assets did not come back correctly, so read the
+`FAIL` lines before assuming the worst. A lone failure on a ~200-request run is more likely a
+transient network blip than a bad deploy — re-run `pnpm --filter @smash-tracker/web warm:cdn` to
+confirm before rolling anything back. Two caveats worth knowing: warming only reaches the PoP
+nearest the deploying machine, so visitors routed elsewhere can still hit a cold `MISS`; and the
+script targets `https://grandfinals.gg` unless you pass an origin argument, so a deploy aimed at
+any other site warms the wrong host.
+
 **4. Lock down the Realtime Database rules**
 
 `database.rules.json` denies all direct client read/write access (`{"rules": {".read": false,
