@@ -455,6 +455,28 @@ export const researchEnrichmentProjectionStateRecordSchema = z.object({
   stageSourceRevisionId: z.number().int().nullish(),
   stageParserVersion: z.string().max(64).nullish(),
   stageProjectedAtMs: z.number().int().nullish(),
+  // -- Character/stock evidence halves (30.3 Gate 5) ------------------------
+  // Committed only after the seat orientation is PROVEN (the source's seat 1/2
+  // mapped onto subject/opponent through the row's own provider-authored
+  // opponent tag) — `projectedSubjectSeat` records that proof. A raw member
+  // present WITHOUT its fighter-id sibling is the flagged-unmapped state: the
+  // source text is preserved, never guessed into the app vocabulary.
+  projectedSubjectSeat: z.union([z.literal(1), z.literal(2)]).nullish(),
+  projectedSubjectCharRaw: z.string().max(RESEARCH_ENRICHMENT_MAX_RAW_TEXT).nullish(),
+  projectedSubjectFighterId: z.number().int().nullish(),
+  projectedOpponentCharRaw: z.string().max(RESEARCH_ENRICHMENT_MAX_RAW_TEXT).nullish(),
+  projectedOpponentFighterId: z.number().int().nullish(),
+  charsObservationId: z.string().max(200).nullish(),
+  charsSourceRevisionId: z.number().int().nullish(),
+  charsParserVersion: z.string().max(64).nullish(),
+  charsProjectedAtMs: z.number().int().nullish(),
+  // The stocks half writes a real match-row member (`stocksLeft`), so it gets
+  // the same committed+pending two-value accepted set the VOD half has.
+  projectedStocksLeft: z.number().int().min(0).max(3).nullish(),
+  stocksObservationId: z.string().max(200).nullish(),
+  stocksSourceRevisionId: z.number().int().nullish(),
+  stocksParserVersion: z.string().max(64).nullish(),
+  stocksProjectedAtMs: z.number().int().nullish(),
   // Pending half — a write that began but did not (yet) commit.
   pendingVodUrl: z.string().max(RESEARCH_ENRICHMENT_MAX_URL).nullish(),
   pendingVodObservationId: z.string().max(200).nullish(),
@@ -465,6 +487,8 @@ export const researchEnrichmentProjectionStateRecordSchema = z.object({
   pendingStageRaw: z.string().max(120).nullish(),
   pendingStageForm: z.enum(RESEARCH_LIQUIPEDIA_STAGE_FORMS).nullish(),
   pendingStageObservationId: z.string().max(200).nullish(),
+  pendingStocksLeft: z.number().int().min(0).max(3).nullish(),
+  pendingStocksObservationId: z.string().max(200).nullish(),
   pendingWriteStartedAtMs: z.number().int().nullish(),
 });
 export type ResearchEnrichmentProjectionStateRecord = z.infer<
@@ -496,6 +520,15 @@ export const researchEnrichmentCountsSchema = z.object({
   vodRowsExtracted: z.number().int().nonnegative().nullish(),
   attachedNoProjectableRows: z.number().int().nonnegative().nullish(),
   adminConfirmed: z.number().int().nonnegative().nullish(),
+  // -- 30.3 Gate 5: character/stock evidence + VOD candidate counters -------
+  charactersEnriched: z.number().int().nonnegative().nullish(),
+  charactersUnmapped: z.number().int().nonnegative().nullish(),
+  charactersAbstained: z.number().int().nonnegative().nullish(),
+  stocksFilledEmpty: z.number().int().nonnegative().nullish(),
+  stocksSkippedOwned: z.number().int().nonnegative().nullish(),
+  stocksAbstained: z.number().int().nonnegative().nullish(),
+  vodCandidatesProposed: z.number().int().nonnegative().nullish(),
+  vodCandidatesConfirmed: z.number().int().nonnegative().nullish(),
 });
 export type ResearchEnrichmentCounts = z.infer<typeof researchEnrichmentCountsSchema>;
 
@@ -532,6 +565,14 @@ export function normalizeResearchEnrichmentCounts(
     vodRowsExtracted: counts?.vodRowsExtracted ?? 0,
     attachedNoProjectableRows: counts?.attachedNoProjectableRows ?? 0,
     adminConfirmed: counts?.adminConfirmed ?? 0,
+    charactersEnriched: counts?.charactersEnriched ?? 0,
+    charactersUnmapped: counts?.charactersUnmapped ?? 0,
+    charactersAbstained: counts?.charactersAbstained ?? 0,
+    stocksFilledEmpty: counts?.stocksFilledEmpty ?? 0,
+    stocksSkippedOwned: counts?.stocksSkippedOwned ?? 0,
+    stocksAbstained: counts?.stocksAbstained ?? 0,
+    vodCandidatesProposed: counts?.vodCandidatesProposed ?? 0,
+    vodCandidatesConfirmed: counts?.vodCandidatesConfirmed ?? 0,
   };
 }
 

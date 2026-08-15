@@ -882,6 +882,233 @@ describe('applyEnrichmentProjection — write-time ownership resolution', () => 
 });
 
 // ---------------------------------------------------------------------------
+// 30.3 Gate 5 — character/stock evidence projection (end to end)
+// ---------------------------------------------------------------------------
+
+describe('applyEnrichmentProjection — character/stock evidence', () => {
+  function evidenceObservation(
+    overrides: Partial<ResearchEnrichmentObservationRecord> = {},
+  ): ResearchEnrichmentObservationRecord {
+    return makeObservation({
+      observationId: 'obs-evidence',
+      game: 'ultimate',
+      players: [{ rawTag: 'Sparg0' }, { rawTag: 'MkLeo' }],
+      games: [
+        {
+          ordinal: 1,
+          rawChars: ['cloud', 'joker'],
+          stocks: [2, 0],
+          winnerSeat: 1,
+        },
+      ],
+      ...overrides,
+    });
+  }
+
+  async function buildOverlayFor(
+    database: FakeDatabase,
+    targetSetId: string,
+    record: ResearchEnrichmentObservationRecord,
+  ): Promise<EnrichmentOverlay> {
+    await seedAdminAttachedObservation(database, targetSetId, record, 500);
+    const attachments = (
+      (database.dump().researchEnrichmentAttachments as Record<string, unknown>)[
+        TENANT_ID
+      ] as Record<string, Record<string, unknown>>
+    )[targetSetId]!;
+    return buildEnrichmentOverlay({
+      targetSetId,
+      attachments: Object.values(attachments) as ResearchEnrichmentAttachmentRecord[],
+      observations: { [record.observationId]: record },
+    });
+  }
+
+  it('projects oriented characters onto the witness and fills stocksLeft when the winner-seat evidence agrees, and the re-apply is a witness-preserving no-op', async () => {
+    const database = new FakeDatabase();
+    const targetSetId = 'startgg-set-evidence';
+    const key = deriveEnrichmentMatchRowKey(targetSetId, 1);
+    // The subject WON this game (win: true) and the opponent tag matches the
+    // observation's seat-2 player -> subject is seat 1, winner seat 1 agrees.
+    seedMatch(database, key, { opponent: 'mkleo', win: true } as Partial<MatchRecord>);
+
+    const overlay = await buildOverlayFor(database, targetSetId, evidenceObservation());
+    const outcome = await applyEnrichmentProjection(
+      asDatabase(database),
+      TENANT_ID,
+      targetSetId,
+      overlay,
+      1000,
+    );
+
+    expect(outcome.rows[0]?.charsOutcome).toBe('enriched');
+    expect(outcome.rows[0]?.stocksOutcome).toBe('filled-empty');
+    expect(outcome.evidenceCounts.charactersEnriched).toBe(1);
+    expect(outcome.evidenceCounts.stocksFilledEmpty).toBe(1);
+
+    expect(readRow(database, key).stocksLeft).toBe(2);
+    const witness = readWitnessRecord(database, key);
+    expect(witness?.projectedSubjectSeat).toBe(1);
+    expect(witness?.projectedSubjectCharRaw).toBe('cloud');
+    expect(witness?.projectedSubjectFighterId).toBe(65);
+    expect(witness?.projectedOpponentCharRaw).toBe('joker');
+    expect(witness?.projectedOpponentFighterId).toBe(76);
+    expect(witness?.charsObservationId).toBe('obs-evidence');
+    expect(witness?.projectedStocksLeft).toBe(2);
+    expect(witness?.stocksObservationId).toBe('obs-evidence');
+    expect(Object.prototype.hasOwnProperty.call(witness ?? {}, 'pendingStocksLeft')).toBe(false);
+
+    // Idempotent re-apply: zero value-changing writes, later clock.
+    const dumpAfterFirst = JSON.stringify(database.dump());
+    await applyEnrichmentProjection(asDatabase(database), TENANT_ID, targetSetId, overlay, 2000);
+    expect(JSON.stringify(database.dump())).toBe(dumpAfterFirst);
+  });
+
+  it('REFUSES Melee-scoped evidence end to end (the Hungrybox guard): no chars witness, no stocksLeft', async () => {
+    const database = new FakeDatabase();
+    const targetSetId = 'startgg-set-melee';
+    const key = deriveEnrichmentMatchRowKey(targetSetId, 1);
+    seedMatch(database, key, { opponent: 'mkleo', win: true } as Partial<MatchRecord>);
+
+    const overlay = await buildOverlayFor(
+      database,
+      targetSetId,
+      evidenceObservation({ observationId: 'obs-melee', game: 'melee' }),
+    );
+    const outcome = await applyEnrichmentProjection(
+      asDatabase(database),
+      TENANT_ID,
+      targetSetId,
+      overlay,
+      1000,
+    );
+
+    expect(outcome.rows[0]?.charsOutcome).toBe('abstained-game-scope');
+    expect(outcome.rows[0]?.stocksOutcome).toBe('abstained-game-scope');
+    expect(outcome.evidenceCounts.charactersAbstained).toBe(1);
+    expect(outcome.evidenceCounts.stocksAbstained).toBe(1);
+    expect(readRow(database, key).stocksLeft).toBeUndefined();
+    const witness = readWitnessRecord(database, key);
+    expect(witness?.projectedSubjectSeat).toBeUndefined();
+    expect(witness?.projectedStocksLeft).toBeUndefined();
+  });
+
+  it('abstains from characters and stocks when the seat orientation cannot be proven against the row opponent', async () => {
+    const database = new FakeDatabase();
+    const targetSetId = 'startgg-set-unoriented';
+    const key = deriveEnrichmentMatchRowKey(targetSetId, 1);
+    // The row's opponent matches NEITHER observed seat tag.
+    seedMatch(database, key, { opponent: 'tweek', win: true } as Partial<MatchRecord>);
+
+    const overlay = await buildOverlayFor(
+      database,
+      targetSetId,
+      evidenceObservation({ observationId: 'obs-unoriented' }),
+    );
+    const outcome = await applyEnrichmentProjection(
+      asDatabase(database),
+      TENANT_ID,
+      targetSetId,
+      overlay,
+      1000,
+    );
+
+    expect(outcome.rows[0]?.charsOutcome).toBe('abstained-orientation');
+    expect(outcome.rows[0]?.stocksOutcome).toBe('abstained-orientation');
+    expect(readRow(database, key).stocksLeft).toBeUndefined();
+    expect(readWitnessRecord(database, key)?.projectedSubjectSeat).toBeUndefined();
+  });
+
+  it('never overwrites a provider-authored stocksLeft (weaker evidence loses)', async () => {
+    const database = new FakeDatabase();
+    const targetSetId = 'startgg-set-stocks-owned';
+    const key = deriveEnrichmentMatchRowKey(targetSetId, 1);
+    seedMatch(database, key, {
+      opponent: 'mkleo',
+      win: true,
+      stocksLeft: 3,
+    } as Partial<MatchRecord>);
+
+    const overlay = await buildOverlayFor(
+      database,
+      targetSetId,
+      evidenceObservation({ observationId: 'obs-owned' }),
+    );
+    const outcome = await applyEnrichmentProjection(
+      asDatabase(database),
+      TENANT_ID,
+      targetSetId,
+      overlay,
+      1000,
+    );
+
+    expect(outcome.rows[0]?.stocksOutcome).toBe('skipped-owned');
+    expect(outcome.evidenceCounts.stocksSkippedOwned).toBe(1);
+    expect(readRow(database, key).stocksLeft).toBe(3);
+    expect(readWitnessRecord(database, key)?.projectedStocksLeft).toBeUndefined();
+  });
+
+  it('refuses stocks when the source winner seat contradicts the row result, while characters still project', async () => {
+    const database = new FakeDatabase();
+    const targetSetId = 'startgg-set-winner-conflict';
+    const key = deriveEnrichmentMatchRowKey(targetSetId, 1);
+    // Row says the subject LOST; the observation says the subject's seat won.
+    seedMatch(database, key, { opponent: 'mkleo', win: false } as Partial<MatchRecord>);
+
+    const overlay = await buildOverlayFor(
+      database,
+      targetSetId,
+      evidenceObservation({ observationId: 'obs-conflict' }),
+    );
+    const outcome = await applyEnrichmentProjection(
+      asDatabase(database),
+      TENANT_ID,
+      targetSetId,
+      overlay,
+      1000,
+    );
+
+    expect(outcome.rows[0]?.charsOutcome).toBe('enriched');
+    expect(outcome.rows[0]?.stocksOutcome).toBe('abstained-winner-disagreement');
+    expect(readRow(database, key).stocksLeft).toBeUndefined();
+    const witness = readWitnessRecord(database, key);
+    expect(witness?.projectedSubjectFighterId).toBe(65);
+    expect(witness?.projectedStocksLeft).toBeUndefined();
+  });
+
+  it('an unmapped raw character stays raw and flagged on the witness', async () => {
+    const database = new FakeDatabase();
+    const targetSetId = 'startgg-set-unmapped-char';
+    const key = deriveEnrichmentMatchRowKey(targetSetId, 1);
+    seedMatch(database, key, { opponent: 'mkleo', win: true } as Partial<MatchRecord>);
+
+    const overlay = await buildOverlayFor(
+      database,
+      targetSetId,
+      evidenceObservation({
+        observationId: 'obs-unmapped',
+        games: [
+          { ordinal: 1, rawChars: ['someunreviewedname', 'joker'], stocks: [2, 0], winnerSeat: 1 },
+        ],
+      }),
+    );
+    const outcome = await applyEnrichmentProjection(
+      asDatabase(database),
+      TENANT_ID,
+      targetSetId,
+      overlay,
+      1000,
+    );
+
+    expect(outcome.rows[0]?.charsOutcome).toBe('partial-unmapped');
+    expect(outcome.evidenceCounts.charactersUnmapped).toBe(1);
+    const witness = readWitnessRecord(database, key);
+    expect(witness?.projectedSubjectCharRaw).toBe('someunreviewedname');
+    expect(witness?.projectedSubjectFighterId).toBeUndefined();
+    expect(witness?.projectedOpponentFighterId).toBe(76);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Fault injection — the crash-safe three-phase protocol
 // ---------------------------------------------------------------------------
 

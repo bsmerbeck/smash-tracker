@@ -7,9 +7,15 @@ import {
   resolveEnrichedMatchMembers,
   UNKNOWN_STAGE,
   type EnrichedMatchMembersResult,
+  type EnrichmentCharsOutcome,
+  type EnrichmentCharsWitnessCommitAction,
+  type EnrichmentGameEvidenceInput,
   type EnrichmentOwnershipWitness,
   type EnrichmentStageWitnessCommitAction,
   type EnrichmentStageWitnessPreWriteAction,
+  type EnrichmentStocksOutcome,
+  type EnrichmentStocksWitnessCommitAction,
+  type EnrichmentStocksWitnessPreWriteAction,
   type EnrichmentVodOutcome,
   type EnrichmentVodSourceInput,
   type EnrichmentStageOutcome,
@@ -21,6 +27,7 @@ import {
   type ResearchEnrichmentProjectionStateRecord,
   type ResearchLiquipediaStageForm,
 } from '@smash-tracker/shared';
+import { normalizeOpponentTag } from '../../startgg/sync.js';
 import { isPathSafeTenantId } from '../subjectKind.js';
 import { listAttachmentsForSet, readEnrichmentObservation } from './store.js';
 
@@ -140,6 +147,26 @@ export interface EnrichedStage {
   parserVersion: string;
 }
 
+/**
+ * 30.3 Gate 5: one row's raw character/stock evidence, exactly as the
+ * attached observation stated it — source-seat-keyed tuples plus the
+ * observation's game scope and set-level player tags. Everything here is
+ * RAW: seat tags are NOT normalized (the applier normalizes at resolution
+ * time with the same `normalizeOpponentTag` the ingestion projection used
+ * to author the row's `opponent` member), characters are the wiki's own
+ * strings, and no orientation has been decided.
+ */
+export interface EnrichedGameEvidence {
+  game?: string;
+  seatTags?: [string | null, string | null];
+  rawChars?: [string | null, string | null];
+  stocks?: [number | null, number | null];
+  winnerSeat?: 1 | 2;
+  observationId: string;
+  sourceRevisionId: number;
+  parserVersion: string;
+}
+
 export interface EnrichmentOverlay {
   enrichedVodUrlByKey: Record<string, string>;
   /**
@@ -162,6 +189,8 @@ export interface EnrichmentOverlay {
    */
   enrichedVodSourceByKey?: Record<string, EnrichmentVodSourceInput>;
   enrichedStageByKey: Record<string, EnrichedStage>;
+  /** OPTIONAL (30.3 Gate 5) so every pre-existing overlay literal keeps compiling; absent means "no character/stock evidence for any row". */
+  enrichedGameEvidenceByKey?: Record<string, EnrichedGameEvidence>;
 }
 
 export interface BuildEnrichmentOverlayInput {
@@ -205,6 +234,7 @@ export function buildEnrichmentOverlay(input: BuildEnrichmentOverlayInput): Enri
   const enrichedVodUrlByKey: Record<string, string> = {};
   const enrichedVodSourceByKey: Record<string, EnrichmentVodSourceInput> = {};
   const enrichedStageByKey: Record<string, EnrichedStage> = {};
+  const enrichedGameEvidenceByKey: Record<string, EnrichedGameEvidence> = {};
 
   for (const attachment of input.attachments) {
     const record = input.observations[attachment.observationId];
@@ -235,21 +265,50 @@ export function buildEnrichmentOverlay(input: BuildEnrichmentOverlayInput): Enri
     }
 
     for (const game of games) {
-      if (game.canonicalStageId == null && game.rawStage == null) {
-        continue;
+      if (game.canonicalStageId != null || game.rawStage != null) {
+        enrichedStageByKey[deriveEnrichmentMatchRowKey(input.targetSetId, game.ordinal)] = {
+          ...(game.rawStage != null ? { raw: game.rawStage } : {}),
+          ...(game.stageForm != null ? { form: game.stageForm } : {}),
+          ...(game.canonicalStageId != null ? { canonicalStageId: game.canonicalStageId } : {}),
+          observationId: record.observationId,
+          sourceRevisionId: record.sourceRevisionId,
+          parserVersion: record.parserVersion,
+        };
       }
-      enrichedStageByKey[deriveEnrichmentMatchRowKey(input.targetSetId, game.ordinal)] = {
-        ...(game.rawStage != null ? { raw: game.rawStage } : {}),
-        ...(game.stageForm != null ? { form: game.stageForm } : {}),
-        ...(game.canonicalStageId != null ? { canonicalStageId: game.canonicalStageId } : {}),
-        observationId: record.observationId,
-        sourceRevisionId: record.sourceRevisionId,
-        parserVersion: record.parserVersion,
-      };
+
+      // 30.3 Gate 5: character/stock evidence — carried RAW, source-seat
+      // keyed, with the observation's set-level player tags and game scope
+      // alongside, so the applier can prove (or abstain from) the
+      // seat->subject orientation at resolution time. A game with neither
+      // characters nor stocks contributes no evidence entry at all.
+      const hasCharEvidence =
+        game.rawChars != null && (game.rawChars[0] != null || game.rawChars[1] != null);
+      const hasStockEvidence =
+        game.stocks != null && (game.stocks[0] != null || game.stocks[1] != null);
+      if (hasCharEvidence || hasStockEvidence) {
+        const seatTags: [string | null, string | null] | undefined = record.players
+          ? [record.players[0]?.rawTag ?? null, record.players[1]?.rawTag ?? null]
+          : undefined;
+        enrichedGameEvidenceByKey[deriveEnrichmentMatchRowKey(input.targetSetId, game.ordinal)] = {
+          ...(record.game != null ? { game: record.game } : {}),
+          ...(seatTags !== undefined ? { seatTags } : {}),
+          ...(game.rawChars != null ? { rawChars: game.rawChars } : {}),
+          ...(game.stocks != null ? { stocks: game.stocks } : {}),
+          ...(game.winnerSeat != null ? { winnerSeat: game.winnerSeat } : {}),
+          observationId: record.observationId,
+          sourceRevisionId: record.sourceRevisionId,
+          parserVersion: record.parserVersion,
+        };
+      }
     }
   }
 
-  return { enrichedVodUrlByKey, enrichedVodSourceByKey, enrichedStageByKey };
+  return {
+    enrichedVodUrlByKey,
+    enrichedVodSourceByKey,
+    enrichedStageByKey,
+    enrichedGameEvidenceByKey,
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -260,6 +319,9 @@ export interface EnrichmentProjectionRowOutcome {
   matchKey: string;
   vodOutcome: EnrichmentVodOutcome;
   stageOutcome: EnrichmentStageOutcome;
+  /** 30.3 Gate 5 — OPTIONAL so every pre-existing consumer of the row list keeps compiling; absent only on rows resolved before the evidence half existed (never emitted by this module today). */
+  charsOutcome?: EnrichmentCharsOutcome;
+  stocksOutcome?: EnrichmentStocksOutcome;
 }
 
 export interface EnrichmentProjectionCounts {
@@ -270,9 +332,28 @@ export interface EnrichmentProjectionCounts {
   attachedNoProjectableRows: number;
 }
 
+/**
+ * 30.3 Gate 5: the character/stock evidence tallies, kept as a SEPARATE
+ * sibling of `EnrichmentProjectionCounts` rather than new members on it —
+ * `run.ts`'s fold builds an `EnrichmentProjectionCounts` literal and
+ * iterates its keys with `+=`; growing that interface (even optionally)
+ * would break its typecheck without touching that file, which this gate's
+ * ownership boundary forbids. The run-level staging of these counters into
+ * the coverage node is therefore a named follow-up for the run driver.
+ */
+export interface EnrichmentEvidenceCounts {
+  charactersEnriched: number;
+  charactersUnmapped: number;
+  charactersAbstained: number;
+  stocksFilledEmpty: number;
+  stocksSkippedOwned: number;
+  stocksAbstained: number;
+}
+
 export interface EnrichmentProjectionOutcome {
   rows: EnrichmentProjectionRowOutcome[];
   counts: EnrichmentProjectionCounts;
+  evidenceCounts: EnrichmentEvidenceCounts;
 }
 
 function emptyOutcome(): EnrichmentProjectionOutcome {
@@ -285,6 +366,73 @@ function emptyOutcome(): EnrichmentProjectionOutcome {
       unknownStageAfterEnrichment: 0,
       attachedNoProjectableRows: 0,
     },
+    evidenceCounts: {
+      charactersEnriched: 0,
+      charactersUnmapped: 0,
+      charactersAbstained: 0,
+      stocksFilledEmpty: 0,
+      stocksSkippedOwned: 0,
+      stocksAbstained: 0,
+    },
+  };
+}
+
+/** Folds one resolved row into the outcome's counters — ONE tally definition shared by the preview and the applier so the two can never disagree. */
+function tallyResolvedRow(
+  outcome: EnrichmentProjectionOutcome,
+  resolved: EnrichedMatchMembersResult,
+): void {
+  if (resolved.vodOutcome === 'filled-empty') {
+    outcome.counts.vodFilledEmpty += 1;
+  }
+  if (resolved.vodOutcome === 'skipped-user-owned') {
+    outcome.counts.vodSkippedUserOwned += 1;
+  }
+  if (resolved.stageOutcome === 'enriched') {
+    outcome.counts.stageEnriched += 1;
+  }
+  if (resolved.stageOutcome === 'unknown') {
+    outcome.counts.unknownStageAfterEnrichment += 1;
+  }
+  if (resolved.charsOutcome === 'enriched') {
+    outcome.evidenceCounts.charactersEnriched += 1;
+  }
+  if (resolved.charsOutcome === 'partial-unmapped') {
+    outcome.evidenceCounts.charactersUnmapped += 1;
+  }
+  if (
+    resolved.charsOutcome === 'abstained-orientation' ||
+    resolved.charsOutcome === 'abstained-game-scope'
+  ) {
+    outcome.evidenceCounts.charactersAbstained += 1;
+  }
+  if (resolved.stocksOutcome === 'filled-empty') {
+    outcome.evidenceCounts.stocksFilledEmpty += 1;
+  }
+  if (resolved.stocksOutcome === 'skipped-owned') {
+    outcome.evidenceCounts.stocksSkippedOwned += 1;
+  }
+  if (
+    resolved.stocksOutcome === 'abstained-orientation' ||
+    resolved.stocksOutcome === 'abstained-game-scope' ||
+    resolved.stocksOutcome === 'abstained-winner-disagreement' ||
+    resolved.stocksOutcome === 'abstained-value'
+  ) {
+    outcome.evidenceCounts.stocksAbstained += 1;
+  }
+}
+
+/** Builds one row-outcome entry from a resolution — again ONE definition for both the preview and the applier. The evidence outcomes are OMITTED when `'none'` (no evidence in play), so rows untouched by the evidence half keep their exact pre-30.3 shape. */
+function toRowOutcome(
+  matchKey: string,
+  resolved: EnrichedMatchMembersResult,
+): EnrichmentProjectionRowOutcome {
+  return {
+    matchKey,
+    vodOutcome: resolved.vodOutcome,
+    stageOutcome: resolved.stageOutcome,
+    ...(resolved.charsOutcome !== 'none' ? { charsOutcome: resolved.charsOutcome } : {}),
+    ...(resolved.stocksOutcome !== 'none' ? { stocksOutcome: resolved.stocksOutcome } : {}),
   };
 }
 
@@ -319,6 +467,7 @@ export async function previewEnrichmentProjection(
     new Set([
       ...Object.keys(overlay.enrichedVodUrlByKey),
       ...Object.keys(overlay.enrichedStageByKey),
+      ...Object.keys(overlay.enrichedGameEvidenceByKey ?? {}),
       ...previouslyWitnessedKeys,
     ]),
   ).filter((key) => isPathSafeProviderId(key));
@@ -336,21 +485,8 @@ export async function previewEnrichmentProjection(
     const row = rowSnapshot.val() as Record<string, unknown>;
     const witness = readWitnessFromValue(witnessSnapshot.exists() ? witnessSnapshot.val() : null);
     const resolved = resolveForRow(overlay, key, row, witness);
-    outcome.rows.push({
-      matchKey: key,
-      vodOutcome: resolved.vodOutcome,
-      stageOutcome: resolved.stageOutcome,
-    });
-    if (resolved.vodOutcome === 'filled-empty') {
-      outcome.counts.vodFilledEmpty += 1;
-    } else if (resolved.vodOutcome === 'skipped-user-owned') {
-      outcome.counts.vodSkippedUserOwned += 1;
-    }
-    if (resolved.stageOutcome === 'enriched') {
-      outcome.counts.stageEnriched += 1;
-    } else if (resolved.stageOutcome === 'unknown') {
-      outcome.counts.unknownStageAfterEnrichment += 1;
-    }
+    outcome.rows.push(toRowOutcome(key, resolved));
+    tallyResolvedRow(outcome, resolved);
   }
 
   return outcome;
@@ -401,6 +537,10 @@ function extractExistingStage(row: Record<string, unknown> | null): MatchStage {
   return UNKNOWN_STAGE;
 }
 
+function extractExistingStocksLeft(row: Record<string, unknown> | null): number | undefined {
+  return row && typeof row.stocksLeft === 'number' ? (row.stocksLeft as number) : undefined;
+}
+
 /**
  * The ONE place this module builds a resolver input — called from the
  * planning pass AND from inside every phase B transaction attempt, so the
@@ -428,6 +568,35 @@ function resolveForRow(
   // replay into a witness-preserving no-op.
   const storedStage = extractExistingStage(row);
   const stageIsOwnProjection = isSourceOwnedStageValue(storedStage, witness);
+  // 30.3 Gate 5: the character/stock evidence context. The seat tags and the
+  // row's opponent member go through the SAME normalizer the ingestion
+  // projection used to AUTHOR that member (`normalizeOpponentTag`), so the
+  // shared resolver's exact-equality orientation proof compares like with
+  // like. `normalizeOpponentTag`'s empty-input sentinel ('unknown') is
+  // withheld — a sentinel matching a sentinel would fabricate a proof.
+  const evidence = overlay.enrichedGameEvidenceByKey?.[key];
+  const gameEvidence: EnrichmentGameEvidenceInput | undefined = evidence
+    ? {
+        ...(evidence.game !== undefined ? { game: evidence.game } : {}),
+        ...(evidence.seatTags !== undefined
+          ? {
+              seatTags: [
+                evidence.seatTags[0] != null ? normalizeOpponentTag(evidence.seatTags[0]) : null,
+                evidence.seatTags[1] != null ? normalizeOpponentTag(evidence.seatTags[1]) : null,
+              ] as [string | null, string | null],
+            }
+          : {}),
+        ...(evidence.rawChars !== undefined ? { rawChars: evidence.rawChars } : {}),
+        ...(evidence.stocks !== undefined ? { stocks: evidence.stocks } : {}),
+        ...(evidence.winnerSeat !== undefined ? { winnerSeat: evidence.winnerSeat } : {}),
+        observationId: evidence.observationId,
+        sourceRevisionId: evidence.sourceRevisionId,
+        parserVersion: evidence.parserVersion,
+      }
+    : undefined;
+  const rowOpponent =
+    typeof row.opponent === 'string' ? normalizeOpponentTag(row.opponent) : undefined;
+  const existingStocksLeft = extractExistingStocksLeft(row);
   const resolved = resolveEnrichedMatchMembers({
     existingVodUrl: extractExistingVodUrl(row),
     enrichmentVodUrl: overlay.enrichedVodUrlByKey[key],
@@ -435,6 +604,13 @@ function resolveForRow(
     providerStage: stageIsOwnProjection ? UNKNOWN_STAGE : storedStage,
     enrichmentStage: overlay.enrichedStageByKey[key],
     witness,
+    enrichmentEvidenceConsulted: true,
+    ...(gameEvidence !== undefined ? { enrichmentGameEvidence: gameEvidence } : {}),
+    ...(rowOpponent !== undefined && rowOpponent !== 'unknown'
+      ? { rowOpponentTag: rowOpponent }
+      : {}),
+    ...(typeof row.win === 'boolean' ? { rowWin: row.win } : {}),
+    ...(existingStocksLeft !== undefined ? { existingStocksLeft } : {}),
   });
   if (
     stageIsOwnProjection &&
@@ -482,9 +658,14 @@ function selectCommittedResolution(
   }
   const storedVodUrl = extractExistingVodUrl(committedRow);
   const storedStage = extractExistingStage(committedRow);
+  const storedStocksLeft = extractExistingStocksLeft(committedRow);
   for (let index = attempts.length - 1; index >= 0; index -= 1) {
     const attempt = attempts[index]!;
-    if (attempt.vodUrl === storedVodUrl && stagesEqual(attempt.stage, storedStage)) {
+    if (
+      attempt.vodUrl === storedVodUrl &&
+      stagesEqual(attempt.stage, storedStage) &&
+      attempt.stocksLeft === storedStocksLeft
+    ) {
       return attempt;
     }
   }
@@ -507,11 +688,19 @@ function voidedResolution(planTime: EnrichedMatchMembersResult): EnrichedMatchMe
     // unaffected by a failed commit; anything else did not get enriched.
     stageOutcome:
       planTime.stageOutcome === 'provider-authoritative' ? planTime.stageOutcome : 'unknown',
+    // The evidence halves of an uncommitted transaction claim nothing: no
+    // chars/stocks outcome is reported enriched, and no witness commit
+    // promotes a value the row never received.
+    stocksOutcome: 'none',
+    charsOutcome: 'none',
     witnessPatch: {
       vodPreWrite: { kind: 'none' },
       vodCommit: { kind: 'none' },
       stagePreWrite: { kind: 'none' },
       stageCommit: { kind: 'none' },
+      charsCommit: { kind: 'none' },
+      stocksPreWrite: { kind: 'none' },
+      stocksCommit: { kind: 'none' },
     },
   };
 }
@@ -521,12 +710,20 @@ function buildPreWritePatch(
   witnessBasePath: string,
   vodPreWrite: EnrichmentVodWitnessPreWriteAction,
   stagePreWrite: EnrichmentStageWitnessPreWriteAction,
+  stocksPreWrite: EnrichmentStocksWitnessPreWriteAction,
   targetSetId: string,
   matchKey: string,
   nowMs: number,
 ): Record<string, unknown> {
   const patch: Record<string, unknown> = {};
   let touched = false;
+
+  if (stocksPreWrite.kind === 'set') {
+    touched = true;
+    patch[`${witnessBasePath}/pendingStocksLeft`] = stocksPreWrite.write.stocksLeft;
+    patch[`${witnessBasePath}/pendingStocksObservationId`] =
+      stocksPreWrite.write.observationId ?? null;
+  }
 
   if (vodPreWrite.kind === 'set') {
     touched = true;
@@ -577,12 +774,67 @@ function buildCommitPatch(
   vodPreWrite: EnrichmentVodWitnessPreWriteAction,
   stageCommit: EnrichmentStageWitnessCommitAction,
   stagePreWrite: EnrichmentStageWitnessPreWriteAction,
+  charsCommit: EnrichmentCharsWitnessCommitAction,
+  stocksCommit: EnrichmentStocksWitnessCommitAction,
+  stocksPreWrite: EnrichmentStocksWitnessPreWriteAction,
   targetSetId: string,
   matchKey: string,
   nowMs: number,
 ): Record<string, unknown> {
   const patch: Record<string, unknown> = {};
   let touched = false;
+
+  if (charsCommit.kind === 'set') {
+    touched = true;
+    patch[`${witnessBasePath}/projectedSubjectSeat`] = charsCommit.write.subjectSeat;
+    patch[`${witnessBasePath}/projectedSubjectCharRaw`] = charsCommit.write.subjectCharRaw ?? null;
+    patch[`${witnessBasePath}/projectedSubjectFighterId`] =
+      charsCommit.write.subjectFighterId ?? null;
+    patch[`${witnessBasePath}/projectedOpponentCharRaw`] =
+      charsCommit.write.opponentCharRaw ?? null;
+    patch[`${witnessBasePath}/projectedOpponentFighterId`] =
+      charsCommit.write.opponentFighterId ?? null;
+    patch[`${witnessBasePath}/charsObservationId`] = charsCommit.write.observationId;
+    patch[`${witnessBasePath}/charsSourceRevisionId`] = charsCommit.write.sourceRevisionId ?? null;
+    patch[`${witnessBasePath}/charsParserVersion`] = charsCommit.write.parserVersion ?? null;
+    patch[`${witnessBasePath}/charsProjectedAtMs`] = nowMs;
+  } else if (charsCommit.kind === 'clear') {
+    touched = true;
+    patch[`${witnessBasePath}/projectedSubjectSeat`] = null;
+    patch[`${witnessBasePath}/projectedSubjectCharRaw`] = null;
+    patch[`${witnessBasePath}/projectedSubjectFighterId`] = null;
+    patch[`${witnessBasePath}/projectedOpponentCharRaw`] = null;
+    patch[`${witnessBasePath}/projectedOpponentFighterId`] = null;
+    patch[`${witnessBasePath}/charsObservationId`] = null;
+    patch[`${witnessBasePath}/charsSourceRevisionId`] = null;
+    patch[`${witnessBasePath}/charsParserVersion`] = null;
+    patch[`${witnessBasePath}/charsProjectedAtMs`] = null;
+  }
+
+  if (stocksCommit.kind === 'set') {
+    touched = true;
+    patch[`${witnessBasePath}/projectedStocksLeft`] = stocksCommit.write.stocksLeft;
+    patch[`${witnessBasePath}/stocksObservationId`] = stocksCommit.write.observationId;
+    patch[`${witnessBasePath}/stocksSourceRevisionId`] =
+      stocksCommit.write.sourceRevisionId ?? null;
+    patch[`${witnessBasePath}/stocksParserVersion`] = stocksCommit.write.parserVersion ?? null;
+    patch[`${witnessBasePath}/stocksProjectedAtMs`] = nowMs;
+    patch[`${witnessBasePath}/pendingStocksLeft`] = null;
+    patch[`${witnessBasePath}/pendingStocksObservationId`] = null;
+  } else if (stocksCommit.kind === 'clear') {
+    touched = true;
+    patch[`${witnessBasePath}/projectedStocksLeft`] = null;
+    patch[`${witnessBasePath}/stocksObservationId`] = null;
+    patch[`${witnessBasePath}/stocksSourceRevisionId`] = null;
+    patch[`${witnessBasePath}/stocksParserVersion`] = null;
+    patch[`${witnessBasePath}/stocksProjectedAtMs`] = null;
+    patch[`${witnessBasePath}/pendingStocksLeft`] = null;
+    patch[`${witnessBasePath}/pendingStocksObservationId`] = null;
+  } else if (stocksPreWrite.kind !== 'none') {
+    touched = true;
+    patch[`${witnessBasePath}/pendingStocksLeft`] = null;
+    patch[`${witnessBasePath}/pendingStocksObservationId`] = null;
+  }
 
   if (vodCommit.kind === 'set') {
     touched = true;
@@ -729,6 +981,7 @@ export async function applyEnrichmentProjection(
     new Set([
       ...Object.keys(overlay.enrichedVodUrlByKey),
       ...Object.keys(overlay.enrichedStageByKey),
+      ...Object.keys(overlay.enrichedGameEvidenceByKey ?? {}),
       ...previouslyWitnessedKeys,
     ]),
   ).filter((key) => isPathSafeProviderId(key));
@@ -792,6 +1045,7 @@ export async function applyEnrichmentProjection(
         `researchEnrichmentProjection/${tenantId}/${key}`,
         planTimeResult.witnessPatch.vodPreWrite,
         planTimeResult.witnessPatch.stagePreWrite,
+        planTimeResult.witnessPatch.stocksPreWrite,
         targetSetId,
         key,
         nowMs,
@@ -815,12 +1069,18 @@ export async function applyEnrichmentProjection(
         // overwrite the record of an earlier attempt, because which attempt
         // committed is decided below from the committed snapshot.
         attempts.push(live);
-        // eslint-disable-next-line @typescript-eslint/no-unused-vars -- rest-destructure-to-omit idiom; `vodUrl`/`map` are intentionally discarded (replaced below)
-        const { vodUrl: _ignoredVodUrl, map: _ignoredMap, ...rest } = effective;
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars -- rest-destructure-to-omit idiom; `vodUrl`/`map`/`stocksLeft` are intentionally discarded (replaced below)
+        const {
+          vodUrl: _ignoredVodUrl,
+          map: _ignoredMap,
+          stocksLeft: _ignoredStocks,
+          ...rest
+        } = effective;
         return {
           ...rest,
           map: live.stage,
           ...(live.vodUrl !== undefined ? { vodUrl: live.vodUrl } : {}),
+          ...(live.stocksLeft !== undefined ? { stocksLeft: live.stocksLeft } : {}),
         };
       });
 
@@ -832,23 +1092,8 @@ export async function applyEnrichmentProjection(
       voidedResolution(plan.planned);
 
     const applied = plan.applied;
-    outcome.rows.push({
-      matchKey: plan.key,
-      vodOutcome: applied.vodOutcome,
-      stageOutcome: applied.stageOutcome,
-    });
-    if (applied.vodOutcome === 'filled-empty') {
-      outcome.counts.vodFilledEmpty += 1;
-    }
-    if (applied.vodOutcome === 'skipped-user-owned') {
-      outcome.counts.vodSkippedUserOwned += 1;
-    }
-    if (applied.stageOutcome === 'enriched') {
-      outcome.counts.stageEnriched += 1;
-    }
-    if (applied.stageOutcome === 'unknown') {
-      outcome.counts.unknownStageAfterEnrichment += 1;
-    }
+    outcome.rows.push(toRowOutcome(plan.key, applied));
+    tallyResolvedRow(outcome, applied);
   }
 
   // Phase C — witness COMMIT (one multi-path update). The COMMIT action
@@ -865,6 +1110,9 @@ export async function applyEnrichmentProjection(
         planTimeResult.witnessPatch.vodPreWrite,
         applied.witnessPatch.stageCommit,
         planTimeResult.witnessPatch.stagePreWrite,
+        applied.witnessPatch.charsCommit,
+        applied.witnessPatch.stocksCommit,
+        planTimeResult.witnessPatch.stocksPreWrite,
         targetSetId,
         key,
         nowMs,
@@ -887,6 +1135,8 @@ export interface EnrichmentRowOverlay {
   /** The VOD's OWN provenance — never the stage observation's (BLOCKER 2). */
   enrichmentVodSource?: EnrichmentVodSourceInput;
   enrichmentStage?: EnrichedStage;
+  /** 30.3 Gate 5 — carried for completeness; the ingestion merge deliberately ignores it (character/stock evidence acts only through the applier's consulted path). */
+  enrichmentGameEvidence?: EnrichedGameEvidence;
   witness: EnrichmentOwnershipWitness | null;
 }
 
@@ -906,7 +1156,12 @@ function toRowOverlay(
   overlay: EnrichmentOverlay,
   witness: EnrichmentOwnershipWitness | null,
 ): EnrichmentRowOverlay {
-  const { enrichedVodUrlByKey, enrichedVodSourceByKey, enrichedStageByKey } = overlay;
+  const {
+    enrichedVodUrlByKey,
+    enrichedVodSourceByKey,
+    enrichedStageByKey,
+    enrichedGameEvidenceByKey,
+  } = overlay;
   return {
     ...(enrichedVodUrlByKey[key] !== undefined
       ? { enrichmentVodUrl: enrichedVodUrlByKey[key] }
@@ -915,6 +1170,9 @@ function toRowOverlay(
       ? { enrichmentVodSource: enrichedVodSourceByKey[key] }
       : {}),
     ...(enrichedStageByKey[key] !== undefined ? { enrichmentStage: enrichedStageByKey[key] } : {}),
+    ...(enrichedGameEvidenceByKey?.[key] !== undefined
+      ? { enrichmentGameEvidence: enrichedGameEvidenceByKey[key] }
+      : {}),
     witness,
   };
 }
@@ -958,6 +1216,7 @@ export async function readEnrichmentOverlayForSet(
   const keys = new Set([
     ...Object.keys(setOverlay.enrichedVodUrlByKey),
     ...Object.keys(setOverlay.enrichedStageByKey),
+    ...Object.keys(setOverlay.enrichedGameEvidenceByKey ?? {}),
   ]);
   const result: EnrichmentOverlayForSet = {};
   for (const key of keys) {
@@ -1074,6 +1333,7 @@ export async function readEnrichmentOverlayForTenant(
     const keys = new Set([
       ...Object.keys(setOverlay.enrichedVodUrlByKey),
       ...Object.keys(setOverlay.enrichedStageByKey),
+      ...Object.keys(setOverlay.enrichedGameEvidenceByKey ?? {}),
     ]);
     for (const key of keys) {
       if (!isPathSafeProviderId(key)) {
