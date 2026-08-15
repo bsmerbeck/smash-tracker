@@ -132,6 +132,14 @@
     },
     "pending": {
       "saving": "Enregistrement..."
+    },
+    "analyzeOpponent": {
+      "label": "Analyser l'adversaire",
+      "aria": "Analyser l'adversaire {{name}}"
+    },
+    "inferredFighters": {
+      "title": "Combattants issus de votre historique de matchs",
+      "body": "Vous n'avez pas encore enregistré de combattants favoris, cette page utilise donc les combattants observés dans vos matchs enregistrés. Choisir des favoris est facultatif et ne fait que personnaliser ces pages."
     }
   },
   "dashboard": {
@@ -953,7 +961,9 @@
       "watchVodAria": "Voir la VOD de {{set}}",
       "editVodAria": "Modifier les notes VOD de {{set}}",
       "viewSetAria": "Voir {{set}} sur start.gg",
-      "otherMatches": "Autres matchs pendant cet évènement"
+      "otherMatches": "Autres matchs pendant cet évènement",
+      "stocksLeft_one": "{{count}} stock restant",
+      "stocksLeft_other": "{{count}} stocks restants"
     },
     "charStages": {
       "yourCharacters": "Vos personnages",
@@ -1002,7 +1012,19 @@
       "doneButton": "Terminé"
     },
     "listLoading": "Chargement des tournois...",
-    "noMatches": "Aucun tournoi pour le moment : synchronisez vos matchs start.gg ou parry.gg puis revenez ici."
+    "noMatches": "Aucun tournoi pour le moment : synchronisez vos matchs start.gg ou parry.gg puis revenez ici.",
+    "imported": {
+      "badge": "Importé",
+      "noticeTitle": "Instantané d'événement importé",
+      "noticeBody": "L'historique de cet événement a été importé depuis les données publiques de {{provider}}. C'est un instantané, pas une inscription synchronisée en direct — ce que les données publiques n'ont pas enregistré est affiché comme manquant, jamais estimé.",
+      "sourceLine": "Source : {{provider}} (données publiques)",
+      "importedAt": "Importé le {{date}}",
+      "asOf": "Données au {{date}}",
+      "dqExcluded_one": "{{count}} DQ exclu",
+      "dqExcluded_other": "{{count}} DQ exclus",
+      "resultsNotRecorded": "Le classement final n'a pas été enregistré dans cette importation.",
+      "listFootnote": "Les lignes « Importé » sont des instantanés de données publiques de tournois, pas des inscriptions synchronisées en direct."
+    }
   },
   "billing": {
     "title": "Acheter des crédits de rapport",

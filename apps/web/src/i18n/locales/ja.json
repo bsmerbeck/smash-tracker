@@ -132,6 +132,14 @@
     },
     "pending": {
       "saving": "保存中..."
+    },
+    "analyzeOpponent": {
+      "label": "対戦相手を分析",
+      "aria": "{{name}}を分析"
+    },
+    "inferredFighters": {
+      "title": "対戦履歴から検出したファイターを表示中",
+      "body": "お気に入りのファイターがまだ保存されていないため、このページでは記録された対戦で使用されたファイターを表示しています。お気に入りの選択は任意で、これらのページをパーソナライズするだけです。"
     }
   },
   "dashboard": {
@@ -953,7 +961,9 @@
       "watchVodAria": "{{set}}のVODを見る",
       "editVodAria": "{{set}}のVODメモを編集",
       "viewSetAria": "{{set}}をstart.ggで見る",
-      "otherMatches": "この大会中のその他の対戦"
+      "otherMatches": "この大会中のその他の対戦",
+      "stocksLeft_one": "残りストック{{count}}",
+      "stocksLeft_other": "残りストック{{count}}"
     },
     "charStages": {
       "yourCharacters": "自分の使用キャラ",
@@ -1002,7 +1012,19 @@
       "doneButton": "完了"
     },
     "listLoading": "大会を読み込み中...",
-    "noMatches": "まだ大会がありません。start.ggまたはparry.ggの対戦を同期してから、ここで確認しましょう！"
+    "noMatches": "まだ大会がありません。start.ggまたはparry.ggの対戦を同期してから、ここで確認しましょう！",
+    "imported": {
+      "badge": "インポート済み",
+      "noticeTitle": "インポートされたイベントのスナップショット",
+      "noticeBody": "このイベントの履歴は{{provider}}の公開データからインポートされたものです。ライブ同期された登録ではなくスナップショットであり、公開データに記録されていない情報は推定せず「未記録」として表示されます。",
+      "sourceLine": "ソース: {{provider}}（公開データ）",
+      "importedAt": "インポート日: {{date}}",
+      "asOf": "データ基準日: {{date}}",
+      "dqExcluded_one": "{{count}}件のDQを除外",
+      "dqExcluded_other": "{{count}}件のDQを除外",
+      "resultsNotRecorded": "このインポートには上位順位が記録されていません。",
+      "listFootnote": "「インポート済み」の行は公開トーナメントデータのスナップショットであり、ライブ同期された登録ではありません。"
+    }
   },
   "billing": {
     "title": "レポートクレジットを購入",

@@ -132,6 +132,14 @@
     },
     "pending": {
       "saving": "Saving..."
+    },
+    "analyzeOpponent": {
+      "label": "Analyze opponent",
+      "aria": "Analyze opponent {{name}}"
+    },
+    "inferredFighters": {
+      "title": "Showing fighters from your match history",
+      "body": "You haven't saved favorite fighters yet, so this page uses the fighters seen in your recorded matches. Choosing favorites is optional and just personalizes these pages."
     }
   },
   "dashboard": {
@@ -953,7 +961,9 @@
       "watchVodAria": "Watch VOD for {{set}}",
       "editVodAria": "Edit VOD notes for {{set}}",
       "viewSetAria": "View {{set}} on start.gg",
-      "otherMatches": "Other matches during this event"
+      "otherMatches": "Other matches during this event",
+      "stocksLeft_one": "{{count}} stock left",
+      "stocksLeft_other": "{{count}} stocks left"
     },
     "charStages": {
       "yourCharacters": "Your Characters",
@@ -1002,7 +1012,19 @@
       "doneButton": "Done"
     },
     "listLoading": "Loading tournaments...",
-    "noMatches": "No tournaments yet — sync your start.gg or parry.gg matches and check back here!"
+    "noMatches": "No tournaments yet — sync your start.gg or parry.gg matches and check back here!",
+    "imported": {
+      "badge": "Imported",
+      "noticeTitle": "Imported event snapshot",
+      "noticeBody": "This event history was imported from public {{provider}} data. It's a snapshot, not a live-synced registration — anything the public data didn't record is shown as missing, never estimated.",
+      "sourceLine": "Source: {{provider}} (public data)",
+      "importedAt": "Imported {{date}}",
+      "asOf": "Data as of {{date}}",
+      "dqExcluded_one": "{{count}} DQ excluded",
+      "dqExcluded_other": "{{count}} DQs excluded",
+      "resultsNotRecorded": "Top standings weren't recorded in this import.",
+      "listFootnote": "\"Imported\" rows are snapshots of public tournament data, not live-synced registrations."
+    }
   },
   "billing": {
     "title": "Buy report credits",
