@@ -67,6 +67,7 @@ describe('tournamentRegistryRowSchema', () => {
   });
 
   it('rejects a row without the origin discriminator', () => {
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars -- rest-destructure-to-omit idiom; `origin` is intentionally discarded
     const { origin: _origin, ...rest } = makeRow();
     expect(tournamentRegistryRowSchema.safeParse(rest).success).toBe(false);
   });
@@ -185,6 +186,7 @@ describe('isTournamentRegistryOwnedRow', () => {
   });
 
   it('never owns a row whose origin is absent even when a witness is present', () => {
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars -- rest-destructure-to-omit idiom; `origin` is intentionally discarded
     const { origin: _origin, ...rest } = makeRow();
     expect(isTournamentRegistryOwnedRow(rest)).toBe(false);
   });
