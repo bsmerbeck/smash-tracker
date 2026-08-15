@@ -26,10 +26,17 @@ import path from 'node:path';
 const origin = process.argv[2] ?? 'https://grandfinals.gg';
 const distDir = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'dist');
 
-const assetFiles = await readdir(path.join(distDir, 'assets'), { recursive: true });
-const assets = assetFiles
-  .filter((f) => !f.endsWith(path.sep))
-  .map((f) => `/assets/${f.split(path.sep).join('/')}`);
+// withFileTypes + isFile(): recursive readdir also returns directory entries
+// (as bare names, no trailing separator), and a directory URL falls through
+// the **->spa.html rewrite as text/html — a guaranteed false FAIL.
+const assetsDir = path.join(distDir, 'assets');
+const dirents = await readdir(assetsDir, { recursive: true, withFileTypes: true });
+const assets = dirents
+  .filter((d) => d.isFile())
+  .map((d) => {
+    const rel = path.relative(assetsDir, path.join(d.parentPath, d.name));
+    return `/assets/${rel.split(path.sep).join('/')}`;
+  });
 // Slash-less page paths: firebase.json sets trailingSlash: false, and a
 // trailing-slash request only reaches the canonical URL via a 301 hop.
 const pages = ['/', '/faq', '/gsp-calculator', '/spa.html'];
