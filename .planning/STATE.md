@@ -131,7 +131,7 @@ Phase 30 detail (2026-08-08): 8/8 plans executed and merged (30-08 stopped 3/5 t
 
 - **30.2 Gate 2 apply (OWNER, critical path — corrective directive).** ALL prior manifests (`55ea0d…`, `0bcaf1de…`, every `enrichment-manifest*.json`) are SUPERSEDED and must NOT be applied — Gate 1 changes parser/validation versions and apply rejects older-version manifests. Only path: after Gate 1 lands + CI green + Codex pre-apply gate, generate a FRESH schema-parsed manifest, compare to reference expectations (MkLeo 57 / Sparg0 68 / hbox+izaw 0, deltas explained by source/parser revisions only), then serialized per-account apply (hbox verified as completed no-op; MkLeo → audit; Sparg0 → audit; IzAw honest zero). See 30.2-CORRECTIVE-DIRECTIVE.md Gate 2.
 - **30.1 step 10 soft-archive sign-off (OWNER, independent).** Steps 1-9 done (manifest `ce09412e…d6dbb`). Never delete source tenants.
-- **CI run 31901367187 on `ac6f5cf6` was in_progress at handover** — confirm green before treating master as fully validated.
+- ~~CI run 31901367187 on `ac6f5cf6` in_progress~~ **RESOLVED 2026-08-15 (audit F-03)**: confirmed `completed`/`success` via gh (warm-cdn subdirectory fix run); master through `ac6f5cf6` is CI-green.
 - **Deferred (Codex-advisor scoping): /api/matches payload follow-up** — verify br/gzip end-to-end through Hosting in a signed-in HAR; scope pagination/field-trimming for 8k+ match accounts as its own task.
 - **Stray untracked file `f057e55a3b53a45fa58d48e106dabcd234af2e64`** at repo root (plus `.VSCodeCounter/`, `discussion-context/`) — inspect/remove when convenient; other untracked files may belong to concurrent sessions.
 
