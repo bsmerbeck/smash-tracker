@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
+import { researchEnrichmentObservationRecordSchema } from '@smash-tracker/shared';
 import { loadLiquipediaFixture } from '../__fixtures__/loadFixture.js';
 import {
   LIQUIPEDIA_VOD_LIST_MIN_BYTES_FOR_GUARD,
@@ -275,5 +276,78 @@ describe('toVodObservationRecords', () => {
 
     const observationIds = new Set(records.map((record) => record.observationId));
     expect(observationIds.size).toBe(records.length);
+  });
+
+  // 30.2 reliability gate: an unusable opponent slot (empty display tag and
+  // no canonical page) omits `players` entirely with a stated reason — the
+  // previous behavior fabricated an 'unknown' pseudo-player, and an
+  // empty-string display tag leaked `rawTag: ""` through `'' ?? fallback`.
+  it('omits players (never rawTag "" and never a fabricated tag) for a row whose opponent identity is unusable, keeping the row a valid discovery-index entry', () => {
+    const rows = [
+      {
+        rawVodUrl: 'https://www.youtube.com/watch?v=abc',
+        vodUrl: 'https://www.youtube.com/watch?v=abc',
+        vodHost: 'youtube.com',
+        vodRejectedReason: null,
+        opponentRawTag: '',
+        opponentCanonicalPage: null,
+        opponentCountry: null,
+        tournamentPageTitle: 'TestCup/2026',
+        tournamentDisplayName: 'Test Cup 2026',
+        game: 'Ultimate',
+        year: '2026',
+        resolutionReason: LIQUIPEDIA_VOD_LIST_RESOLUTION_REASON,
+      },
+    ];
+    const records = toVodObservationRecords(rows, {
+      sourcePageTitle: 'Sparg0/VODs',
+      sourcePageUrl: 'https://liquipedia.net/smash/Sparg0/VODs',
+      sourceRevisionId: 1,
+      sourceContentHash: 'a'.repeat(64),
+      fetchedAtMs: 1_700_000_000_000,
+      observedAtMs: 1_700_000_000_000,
+      hashHex: sha256Hex,
+      subjectPlayerLabel: 'Sparg0',
+    });
+    expect(records).toHaveLength(1);
+    const record = records[0]!;
+    expect(record.players).toBeUndefined();
+    expect(record.resolutionReasons?.[0]).toBe(LIQUIPEDIA_VOD_LIST_RESOLUTION_REASON);
+    expect(record.resolutionReasons?.join(' ')).toContain('players omitted');
+    expect(researchEnrichmentObservationRecordSchema.safeParse(record).success).toBe(true);
+  });
+
+  it('falls back to the opponent canonical page when the display tag is empty, and trims usable tags', () => {
+    const rows = [
+      {
+        rawVodUrl: 'https://www.youtube.com/watch?v=abc',
+        vodUrl: 'https://www.youtube.com/watch?v=abc',
+        vodHost: 'youtube.com',
+        vodRejectedReason: null,
+        opponentRawTag: '  ',
+        opponentCanonicalPage: 'Tweek',
+        opponentCountry: 'us',
+        tournamentPageTitle: 'TestCup/2026',
+        tournamentDisplayName: 'Test Cup 2026',
+        game: 'Ultimate',
+        year: '2026',
+        resolutionReason: LIQUIPEDIA_VOD_LIST_RESOLUTION_REASON,
+      },
+    ];
+    const records = toVodObservationRecords(rows, {
+      sourcePageTitle: 'Sparg0/VODs',
+      sourcePageUrl: 'https://liquipedia.net/smash/Sparg0/VODs',
+      sourceRevisionId: 1,
+      sourceContentHash: 'a'.repeat(64),
+      fetchedAtMs: 1_700_000_000_000,
+      observedAtMs: 1_700_000_000_000,
+      hashHex: sha256Hex,
+      subjectPlayerLabel: ' Sparg0 ',
+    });
+    expect(records[0]!.players).toEqual([
+      { rawTag: 'Sparg0' },
+      { rawTag: 'Tweek', canonicalPage: 'Tweek', flag: 'us' },
+    ]);
+    expect(researchEnrichmentObservationRecordSchema.safeParse(records[0]).success).toBe(true);
   });
 });

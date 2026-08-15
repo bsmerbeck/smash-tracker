@@ -18,7 +18,7 @@ import {
 } from './runState.js';
 import { readEnrichmentObservation, writeEnrichmentObservation } from './store.js';
 import { readEnrichmentCoverage } from './rollup.js';
-import { runEnrichmentBatch } from './run.js';
+import { EnrichmentRunLeaseLostError, runEnrichmentBatch } from './run.js';
 
 function asDatabase(database: FakeDatabase): Database {
   return database as unknown as Database;
@@ -721,5 +721,339 @@ describe('runEnrichmentBatch', () => {
     // through the normal completion path rather than left open.
     const runRecord = await readEnrichmentRun(asDatabase(database), TENANT_ID);
     expect(runRecord?.status).toBe('completed');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 30.2 reliability gate — crash-window convergence, lease renewal/loss, and
+// work-unit progress. The commit sequence under test is run.ts/store.ts/
+// projection.ts's: receipt -> attachment -> match-row projection (phase B)
+// -> witness commit (phase C).
+// ---------------------------------------------------------------------------
+
+type WriteOp = 'set' | 'update' | 'transaction' | 'remove';
+
+/**
+ * Path/payload-targeted fault injection: throws (simulating a process crash
+ * before the write lands) whenever `shouldThrow` matches; every other
+ * operation passes through to the SAME underlying FakeDatabase, so a
+ * follow-up run over the plain database resumes from exactly the state the
+ * crash left.
+ */
+function wrapFaultOnWrite(
+  database: FakeDatabase,
+  shouldThrow: (op: WriteOp, path: string, payload?: unknown) => boolean,
+): Database {
+  const real = database as unknown as {
+    ref: (path?: string) => {
+      set: (value: unknown) => Promise<void>;
+      update: (values: Record<string, unknown>) => Promise<void>;
+      remove: () => Promise<void>;
+      transaction: (fn: (current: unknown) => unknown) => Promise<unknown>;
+      get: () => Promise<unknown>;
+    };
+  };
+  return {
+    ref: (path = '') => {
+      // FakeDatabase (like the real SDK) rejects an empty-string path — the
+      // root ref must be requested with no argument.
+      const ref = path === '' ? real.ref() : real.ref(path);
+      return {
+        ...ref,
+        set: async (value: unknown) => {
+          if (shouldThrow('set', path, value)) {
+            throw new Error(`injected-crash: set ${path}`);
+          }
+          return ref.set(value);
+        },
+        update: async (values: Record<string, unknown>) => {
+          if (shouldThrow('update', path, values)) {
+            throw new Error(`injected-crash: update ${path}`);
+          }
+          return ref.update(values);
+        },
+        remove: async () => {
+          if (shouldThrow('remove', path)) {
+            throw new Error(`injected-crash: remove ${path}`);
+          }
+          return ref.remove();
+        },
+        transaction: async (fn: (current: unknown) => unknown) => {
+          if (shouldThrow('transaction', path)) {
+            throw new Error(`injected-crash: transaction ${path}`);
+          }
+          return ref.transaction(fn);
+        },
+      };
+    },
+  } as unknown as Database;
+}
+
+describe('runEnrichmentBatch crash-window convergence (30.2 reliability gate)', () => {
+  it('a crash between the receipt write and the attachment is an abstention this run; the next run attaches and projects the same observation', async () => {
+    const database = new FakeDatabase();
+    await seedProviderSet(database);
+    const { client } = buildHappyPathClient();
+    const faulted = wrapFaultOnWrite(
+      database,
+      (op, path) => op === 'set' && path.startsWith(`researchEnrichmentAttachments/${TENANT_ID}/`),
+    );
+
+    const first = await runEnrichmentBatch({
+      database: faulted,
+      client,
+      tenantId: TENANT_ID,
+      playerLabels: ['TestPlayer'],
+      targetGame: 'ultimate',
+      nowMs: 1_000,
+      hashHex: sha256Hex,
+      dryRun: false,
+    });
+    expect(first.counts.receiptsWritten).toBeGreaterThanOrEqual(1);
+    expect(first.counts.attachmentsCreated).toBe(0);
+    expect(first.counts.attachmentsAbstained).toBeGreaterThanOrEqual(1);
+    const rowAfterFirst = await database.ref(`matches/${TENANT_ID}/sgg-set-1-g1`).get();
+    expect((rowAfterFirst.val() as { vodUrl?: string }).vodUrl).toBeUndefined();
+
+    const { client: secondClient } = buildHappyPathClient();
+    const second = await runEnrichmentBatch({
+      database: asDatabase(database),
+      client: secondClient,
+      tenantId: TENANT_ID,
+      playerLabels: ['TestPlayer'],
+      targetGame: 'ultimate',
+      nowMs: 2_000,
+      hashHex: sha256Hex,
+      dryRun: false,
+    });
+    expect(second.counts.attachmentsCreated).toBeGreaterThanOrEqual(1);
+    const row = await database.ref(`matches/${TENANT_ID}/sgg-set-1-g1`).get();
+    expect((row.val() as { vodUrl?: string }).vodUrl).toBe(VOD_URL);
+  });
+
+  it('a crash between the attachment and the match projection strands the set for the review queue forever — the next run finds it through the reconciliation pass and projects it', async () => {
+    const database = new FakeDatabase();
+    await seedProviderSet(database);
+    const { client } = buildHappyPathClient();
+    // Phase A of the applier is a ROOT multi-path update whose patch keys
+    // carry witness paths — crash on the first such update, i.e. after the
+    // attachment landed but before any projection write.
+    const faulted = wrapFaultOnWrite(database, (op, path, payload) => {
+      if (op !== 'update' || path !== '') {
+        return false;
+      }
+      return Object.keys(payload as Record<string, unknown>).some((key) =>
+        key.startsWith(`researchEnrichmentProjection/${TENANT_ID}/`),
+      );
+    });
+
+    await expect(
+      runEnrichmentBatch({
+        database: faulted,
+        client,
+        tenantId: TENANT_ID,
+        playerLabels: ['TestPlayer'],
+        targetGame: 'ultimate',
+        nowMs: 1_000,
+        hashHex: sha256Hex,
+        dryRun: false,
+      }),
+    ).rejects.toThrow('injected-crash');
+
+    const attachment = await database.ref(`researchEnrichmentAttachments/${TENANT_ID}/set-1`).get();
+    expect(attachment.exists()).toBe(true);
+    const rowAfterCrash = await database.ref(`matches/${TENANT_ID}/sgg-set-1-g1`).get();
+    expect((rowAfterCrash.val() as { vodUrl?: string }).vodUrl).toBeUndefined();
+
+    const { client: secondClient } = buildHappyPathClient();
+    const second = await runEnrichmentBatch({
+      database: asDatabase(database),
+      client: secondClient,
+      tenantId: TENANT_ID,
+      playerLabels: ['TestPlayer'],
+      targetGame: 'ultimate',
+      nowMs: 2_000,
+      hashHex: sha256Hex,
+      dryRun: false,
+    });
+    expect(second.counts.projectionsReconciled).toBe(1);
+    const row = await database.ref(`matches/${TENANT_ID}/sgg-set-1-g1`).get();
+    expect((row.val() as { vodUrl?: string }).vodUrl).toBe(VOD_URL);
+  });
+
+  it('a crash between the match-row write (phase B) and the witness commit (phase C) leaves the row source-owned via the pending witness half; the next run completes cleanly without destroying it', async () => {
+    const database = new FakeDatabase();
+    await seedProviderSet(database);
+    const { client } = buildHappyPathClient();
+    let witnessUpdates = 0;
+    const faulted = wrapFaultOnWrite(database, (op, path, payload) => {
+      if (op !== 'update' || path !== '') {
+        return false;
+      }
+      const touchesWitness = Object.keys(payload as Record<string, unknown>).some((key) =>
+        key.startsWith(`researchEnrichmentProjection/${TENANT_ID}/`),
+      );
+      if (!touchesWitness) {
+        return false;
+      }
+      witnessUpdates += 1;
+      // First witness update is phase A (pre-write) — let it pass; the
+      // second is phase C (commit) — crash there.
+      return witnessUpdates === 2;
+    });
+
+    await expect(
+      runEnrichmentBatch({
+        database: faulted,
+        client,
+        tenantId: TENANT_ID,
+        playerLabels: ['TestPlayer'],
+        targetGame: 'ultimate',
+        nowMs: 1_000,
+        hashHex: sha256Hex,
+        dryRun: false,
+      }),
+    ).rejects.toThrow('injected-crash');
+
+    const rowAfterCrash = await database.ref(`matches/${TENANT_ID}/sgg-set-1-g1`).get();
+    expect((rowAfterCrash.val() as { vodUrl?: string }).vodUrl).toBe(VOD_URL);
+    const witnessAfterCrash = await database
+      .ref(`researchEnrichmentProjection/${TENANT_ID}/sgg-set-1-g1`)
+      .get();
+    expect(witnessAfterCrash.exists()).toBe(true);
+    expect((witnessAfterCrash.val() as { pendingVodUrl?: string }).pendingVodUrl).toBe(VOD_URL);
+
+    const { client: secondClient } = buildHappyPathClient();
+    const second = await runEnrichmentBatch({
+      database: asDatabase(database),
+      client: secondClient,
+      tenantId: TENANT_ID,
+      playerLabels: ['TestPlayer'],
+      targetGame: 'ultimate',
+      nowMs: 2_000,
+      hashHex: sha256Hex,
+      dryRun: false,
+    });
+    // The pending witness half already vouches for the stored value (the
+    // projection module's documented benign window), so the second run has
+    // no stranded fill to reconcile and must not destroy the row's value.
+    expect(second.runId).not.toBeNull();
+    const row = await database.ref(`matches/${TENANT_ID}/sgg-set-1-g1`).get();
+    expect((row.val() as { vodUrl?: string }).vodUrl).toBe(VOD_URL);
+  });
+});
+
+describe('runEnrichmentBatch lease renewal and progress (30.2 reliability gate)', () => {
+  it('renews the run lease at work-unit boundaries and aborts immediately with EnrichmentRunLeaseLostError when another owner has taken it', async () => {
+    const database = new FakeDatabase();
+    await seedProviderSet(database);
+
+    let clock = 1_000;
+    const { client, calls } = buildHappyPathClient();
+    const stealingClient: LiquipediaClient = {
+      ...client,
+      async listSubpages(prefix, options) {
+        // Mid-gather: another operator steals the lease (the stored one has
+        // "expired" from its point of view), then the clock jumps past the
+        // renewal interval so the run's next boundary attempts a renewal.
+        const active = await readEnrichmentRun(asDatabase(database), TENANT_ID);
+        const stolen = await acquireEnrichmentRunLease(
+          asDatabase(database),
+          TENANT_ID,
+          active!.runId,
+          'thief-owner',
+          clock + 500_000,
+        );
+        expect(stolen.acquired).toBe(true);
+        clock += 500_000;
+        return client.listSubpages(prefix, options);
+      },
+    };
+
+    await expect(
+      runEnrichmentBatch({
+        database: asDatabase(database),
+        client: stealingClient,
+        tenantId: TENANT_ID,
+        playerLabels: ['TestPlayer'],
+        targetGame: 'ultimate',
+        nowMs: 1_000,
+        hashHex: sha256Hex,
+        dryRun: false,
+        now: () => clock,
+      }),
+    ).rejects.toThrow(EnrichmentRunLeaseLostError);
+    expect(calls.getWikitext.length).toBe(0);
+  });
+
+  it('emits work-unit progress events across every stage, carrying the live counters', async () => {
+    const database = new FakeDatabase();
+    await seedProviderSet(database);
+    const { client } = buildHappyPathClient();
+    const events: { stage: string; unit?: string }[] = [];
+
+    const result = await runEnrichmentBatch({
+      database: asDatabase(database),
+      client,
+      tenantId: TENANT_ID,
+      playerLabels: ['TestPlayer'],
+      targetGame: 'ultimate',
+      nowMs: 1_000,
+      hashHex: sha256Hex,
+      dryRun: false,
+      onProgress: (event) => {
+        events.push({ stage: event.stage, ...(event.unit != null ? { unit: event.unit } : {}) });
+      },
+    });
+
+    expect(result.counts.resolvedMatched).toBeGreaterThanOrEqual(1);
+    const stages = new Set(events.map((event) => event.stage));
+    for (const stage of [
+      'discovery',
+      'expansion',
+      'probe',
+      'extraction',
+      'resolution',
+      'projection',
+    ]) {
+      expect(stages.has(stage), `missing progress stage ${stage}`).toBe(true);
+    }
+    expect(events.find((event) => event.stage === 'discovery')?.unit).toBe(VOD_PAGE_TITLE);
+  });
+
+  it('advances the durable cursor at real work-unit boundaries during the gather phase', async () => {
+    const database = new FakeDatabase();
+    await seedProviderSet(database);
+    const { client } = buildHappyPathClient();
+    const cursorStagesObserved: (string | null | undefined)[] = [];
+    const observingClient: LiquipediaClient = {
+      ...client,
+      async listSubpages(prefix, options) {
+        const run = await readEnrichmentRun(asDatabase(database), TENANT_ID);
+        cursorStagesObserved.push(run?.cursor?.stage);
+        return client.listSubpages(prefix, options);
+      },
+      async getWikitext(titles) {
+        const run = await readEnrichmentRun(asDatabase(database), TENANT_ID);
+        cursorStagesObserved.push(run?.cursor?.stage);
+        return client.getWikitext(titles);
+      },
+    };
+
+    await runEnrichmentBatch({
+      database: asDatabase(database),
+      client: observingClient,
+      tenantId: TENANT_ID,
+      playerLabels: ['TestPlayer'],
+      targetGame: 'ultimate',
+      nowMs: 1_000,
+      hashHex: sha256Hex,
+      dryRun: false,
+    });
+
+    // By expansion time the discovery stage was durably recorded; by content
+    // fetch time the probe stage was durably recorded.
+    expect(cursorStagesObserved[0]).toBe('discovery');
+    expect(cursorStagesObserved[1]).toBe('probe');
   });
 });

@@ -5,6 +5,16 @@ import {
 } from '@smash-tracker/shared';
 import { decodeWikiEntities, stripWikiMarkup } from '../wikitext.js';
 import { normalizeLiquipediaVodUrl } from '../vodUrl.js';
+import {
+  MAX_GAME_SCOPE_TEXT,
+  MAX_PAGE_TITLE_TEXT,
+  MAX_VOD_URL_TEXT,
+  RESEARCH_ENRICHMENT_MAX_RAW_TEXT,
+  clampReason,
+  clampUntrustedText,
+  normalizeOptionalUntrustedText,
+} from './observationBounds.js';
+import { classifyPlayerTag } from './playerSlot.js';
 
 /**
  * Phase 30.2 Plan 06 (ENR-03): the player VOD-LIST-PAGE row extractor —
@@ -63,6 +73,9 @@ export const LIQUIPEDIA_VOD_LIST_MIN_BYTES_FOR_GUARD = 102_400;
  * observed fixture (Hungrybox: 325 cards) so no real page is ever truncated.
  */
 const LIQUIPEDIA_VOD_LIST_MAX_MARKERS = 20_000;
+
+/** Matches the persistence schema's `resolutionReasons` list cap (`.max(10)`). */
+const MAX_RESOLUTION_REASONS = 10;
 
 /**
  * Every extracted VOD-list row is attached with this stated reason
@@ -513,6 +526,50 @@ export function toVodObservationRecords(
       context.hashHex,
     );
 
+    // 30.2 reliability gate: classify both would-be player slots. The
+    // subject is the page's own label; the opponent is the row's display
+    // tag, falling back to its canonical page name. A slot that is missing,
+    // empty, whitespace-only, or a TBD/bye placeholder makes the row's
+    // `players` member ABSENT — never `rawTag: ""` and never the previous
+    // fabricated `'unknown'` tag. The row itself stays a usable discovery-
+    // index entry either way: the VOD-page resolution branch corroborates by
+    // tournament + URL and never reads `players`.
+    const subjectSlot = classifyPlayerTag(context.subjectPlayerLabel);
+    const opponentSlot = classifyPlayerTag(
+      row.opponentRawTag?.trim() ? row.opponentRawTag : (row.opponentCanonicalPage ?? undefined),
+    );
+    const reasons: string[] = [row.resolutionReason];
+    if (!subjectSlot.usable || !opponentSlot.usable) {
+      const detail = !subjectSlot.usable ? subjectSlot.detail : '';
+      const opponentDetail = !opponentSlot.usable ? opponentSlot.detail : '';
+      reasons.push(
+        `vod-list row: players omitted rather than fabricated — ${[detail, opponentDetail]
+          .filter(Boolean)
+          .join('; ')}`,
+      );
+    }
+    const canonicalPage = normalizeOptionalUntrustedText(
+      row.opponentCanonicalPage,
+      MAX_PAGE_TITLE_TEXT,
+    );
+    const flag = normalizeOptionalUntrustedText(
+      row.opponentCountry,
+      RESEARCH_ENRICHMENT_MAX_RAW_TEXT,
+    );
+    const playersMember =
+      subjectSlot.usable && opponentSlot.usable
+        ? {
+            players: [
+              { rawTag: subjectSlot.tag },
+              {
+                rawTag: opponentSlot.tag,
+                ...(canonicalPage != null ? { canonicalPage } : {}),
+                ...(flag != null ? { flag } : {}),
+              },
+            ] as NonNullable<ResearchEnrichmentObservationRecord['players']>,
+          }
+        : {};
+
     return {
       observationId,
       sourceProvider: 'liquipedia',
@@ -527,24 +584,22 @@ export function toVodObservationRecords(
       fetchedAtMs: context.fetchedAtMs,
       observedAtMs: context.observedAtMs,
       matchingStatus: 'unmatched',
-      ...(row.game != null ? { game: row.game } : {}),
-      tournamentPageTitle: row.tournamentPageTitle,
+      ...(row.game != null ? { game: clampUntrustedText(row.game, MAX_GAME_SCOPE_TEXT) } : {}),
+      tournamentPageTitle: clampUntrustedText(row.tournamentPageTitle, MAX_PAGE_TITLE_TEXT),
       ...(row.tournamentDisplayName != null
-        ? { tournamentDisplayName: row.tournamentDisplayName }
+        ? {
+            tournamentDisplayName: clampUntrustedText(
+              row.tournamentDisplayName,
+              MAX_PAGE_TITLE_TEXT,
+            ),
+          }
         : {}),
-      rawVodUrl: row.rawVodUrl,
-      ...(row.vodUrl != null ? { vodUrl: row.vodUrl } : {}),
-      players: [
-        { rawTag: context.subjectPlayerLabel },
-        {
-          rawTag: row.opponentRawTag ?? row.opponentCanonicalPage ?? 'unknown',
-          ...(row.opponentCanonicalPage != null
-            ? { canonicalPage: row.opponentCanonicalPage }
-            : {}),
-          ...(row.opponentCountry != null ? { flag: row.opponentCountry } : {}),
-        },
-      ],
-      resolutionReasons: [row.resolutionReason],
+      rawVodUrl: clampUntrustedText(row.rawVodUrl, MAX_VOD_URL_TEXT),
+      ...(row.vodUrl != null && row.vodUrl.length <= MAX_VOD_URL_TEXT
+        ? { vodUrl: row.vodUrl }
+        : {}),
+      ...playersMember,
+      resolutionReasons: reasons.slice(0, MAX_RESOLUTION_REASONS).map(clampReason),
     };
   });
 }

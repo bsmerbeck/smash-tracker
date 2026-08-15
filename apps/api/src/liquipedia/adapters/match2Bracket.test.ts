@@ -311,3 +311,89 @@ describe('extractMatch2BracketObservations', () => {
     }
   });
 });
+
+// ---------------------------------------------------------------------------
+// 30.2 reliability gate — the write-boundary player-slot defect class,
+// match2 equivalents of the legacy adapter's regression suite: missing,
+// empty, whitespace-only, partially filled and TBD/bye opponents must never
+// persist `rawTag: ""` and never fabricate a player — each becomes an
+// extraction-failure record WITHOUT `players` that still passes the exact
+// persistence schema.
+// ---------------------------------------------------------------------------
+
+describe('extractMatch2BracketObservations player-slot classification', () => {
+  function extractHandBuilt(matchBody: string) {
+    const wikitext = `{{Bracket|Bracket/test|id=TestId
+
+|R1M1={{Match
+${matchBody}
+}}
+}}`;
+    const eventContext = meleeEventContext();
+    return extractMatch2BracketObservations({
+      wikitext,
+      pageTitle: 'Test/PlayerSlots',
+      revisionId: 1,
+      sha1: null,
+      eventContext,
+      targetGame: 'ultimate',
+      nowMs: NOW_MS,
+      hashHex: sha256Hex,
+    });
+  }
+
+  function expectFailureWithoutPlayers(
+    observations: ReturnType<typeof extractMatch2BracketObservations>['observations'],
+  ) {
+    expect(observations.length).toBe(1);
+    const observation = observations[0]!;
+    expect(observation.extractionFailed).toBe(true);
+    expect(observation.players).toBeUndefined();
+    expect(observation.resolutionReasons?.length).toBeGreaterThan(0);
+    expect(researchEnrichmentObservationRecordSchema.safeParse(observation).success).toBe(true);
+  }
+
+  it('both opponents present but empty never persist rawTag ""', () => {
+    const { observations } = extractHandBuilt(
+      '|opponent1={{SoloOpponent||score=3}}\n|opponent2={{SoloOpponent||score=1}}',
+    );
+    expectFailureWithoutPlayers(observations);
+  });
+
+  it('one empty and one populated opponent is a partially-filled pair: extraction failure', () => {
+    const { observations } = extractHandBuilt(
+      '|opponent1={{SoloOpponent|moky|score=3}}\n|opponent2={{SoloOpponent||score=0}}',
+    );
+    expectFailureWithoutPlayers(observations);
+  });
+
+  it('a whitespace-only opponent tag is classified as empty', () => {
+    const { observations } = extractHandBuilt(
+      '|opponent1={{SoloOpponent|   |score=3}}\n|opponent2={{SoloOpponent|Salt|score=0}}',
+    );
+    expectFailureWithoutPlayers(observations);
+  });
+
+  it.each(['TBD', 'Bye'])('a %s placeholder opponent never persists as a player', (placeholder) => {
+    const { observations } = extractHandBuilt(
+      `|opponent1={{SoloOpponent|moky|score=3}}\n|opponent2={{SoloOpponent|${placeholder}|score=0}}`,
+    );
+    expectFailureWithoutPlayers(observations);
+    expect(observations[0]!.resolutionReasons?.join(' ')).toContain('placeholder');
+  });
+
+  it('a missing opponent2 parameter is an extraction failure, never a one-player set', () => {
+    const { observations } = extractHandBuilt('|opponent1={{SoloOpponent|moky|score=3}}');
+    expectFailureWithoutPlayers(observations);
+  });
+
+  it('usable opponents keep their trimmed tags and conditional-spread flags', () => {
+    const { observations } = extractHandBuilt(
+      '|opponent1={{SoloOpponent|moky|flag=ca|score=3}}\n|opponent2={{SoloOpponent|Salt|score=0}}',
+    );
+    expect(observations.length).toBe(1);
+    const observation = observations[0]!;
+    expect(observation.players).toEqual([{ rawTag: 'moky', flag: 'ca' }, { rawTag: 'Salt' }]);
+    expect(researchEnrichmentObservationRecordSchema.safeParse(observation).success).toBe(true);
+  });
+});

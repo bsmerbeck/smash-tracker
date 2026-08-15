@@ -2,6 +2,16 @@ import { createHash } from 'node:crypto';
 import { z } from 'zod';
 
 export const demoWorkspaceKeys = ['hbox', 'mkleo', 'sparg0', 'izaw'] as const;
+
+/**
+ * 30.2 reliability gate: bumped 1 -> 2 when the per-account
+ * `observationPersistenceHash` (the canonical digest over every schema-
+ * parsed observation, `prepareObservation.ts`) became part of the reviewed
+ * write set. A manifest produced by the older parser/validation version has
+ * no such digest and MUST be refused by apply — `validateEnrichmentManifest`
+ * rejects any other version by name rather than by an opaque parse error.
+ */
+export const ENRICHMENT_MANIFEST_FORMAT_VERSION = 2;
 export type DemoWorkspaceKey = (typeof demoWorkspaceKeys)[number];
 export type DemoUidMap = Record<DemoWorkspaceKey, string>;
 
@@ -61,6 +71,10 @@ export const enrichmentAccountManifestSchema = z.object({
   vodWouldSkipUserOwned: z.number().int().nonnegative(),
   sourceRevisions: z.array(sourceRevisionSchema),
   extractorVersions: z.array(z.string()),
+  /** The canonical digest over every schema-parsed observation this account's dry run gathered (`computeObservationPersistenceHash`). */
+  observationPersistenceHash: z.string().regex(/^[a-f0-9]{64}$/),
+  /** How many schema-parsed records `observationPersistenceHash` covers. */
+  observationsValidated: z.number().int().nonnegative(),
   matchedCandidates: z.array(matchedCandidateSchema),
   reviewCandidates: z.array(reviewCandidateSchema),
   missingSourcePages: z.array(
@@ -83,7 +97,7 @@ export type EnrichmentAccountManifest = z.infer<typeof enrichmentAccountManifest
 export type EnrichmentCoverageMetrics = EnrichmentAccountManifest['beforeCoverage'];
 
 const manifestBodySchema = z.object({
-  formatVersion: z.literal(1),
+  formatVersion: z.literal(ENRICHMENT_MANIFEST_FORMAT_VERSION),
   generatedAtMs: z.number().int().nonnegative(),
   databaseHost: z.string().min(1),
   sinceYear: z.number().int().min(2000).max(2100),
@@ -146,6 +160,10 @@ export function computeAccountWriteSetHash(
         },
         sourceRevisions,
         extractorVersions: [...account.extractorVersions].sort(),
+        // 30.2 reliability gate: the reviewed write set covers the EXACT
+        // schema-parsed observation records, not merely their counts.
+        observationPersistenceHash: account.observationPersistenceHash,
+        observationsValidated: account.observationsValidated,
         matchedCandidates,
         reviewCandidates,
         missingSourcePages,
@@ -187,6 +205,20 @@ export function validateEnrichmentManifest(
 ): EnrichmentManifest {
   if (!Number.isFinite(maxAgeMs) || maxAgeMs <= 0) {
     throw new Error('Manifest max age must be a positive finite number');
+  }
+  // 30.2 reliability gate: refuse a manifest produced by an older parser/
+  // validation version BY NAME, before the schema parse turns it into an
+  // opaque literal-mismatch error.
+  const declaredVersion =
+    raw !== null && typeof raw === 'object'
+      ? (raw as { formatVersion?: unknown }).formatVersion
+      : undefined;
+  if (declaredVersion !== ENRICHMENT_MANIFEST_FORMAT_VERSION) {
+    throw new Error(
+      `Manifest formatVersion ${String(declaredVersion)} was produced by an older ` +
+        `parser/validation version (current: ${ENRICHMENT_MANIFEST_FORMAT_VERSION}); ` +
+        'regenerate the manifest with dry-run before applying',
+    );
   }
   const manifest = enrichmentManifestSchema.parse(raw);
   const { contentHash, ...body } = manifest;

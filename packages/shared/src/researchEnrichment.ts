@@ -163,11 +163,20 @@ if (
  * in the Phase 30 provider-ingestion schema module is the constant this
  * mirrors, at a tighter bound because these strings are wiki-editable prose
  * fragments, not provider API fields.
+ *
+ * EXPORTED (30.2 reliability gate): the Liquipedia adapters bound every
+ * untrusted raw-evidence string to these caps at extraction time, so a
+ * record that reaches the persistence schema can never fail its length
+ * bounds at the write boundary. Exporting the constant keeps the adapter
+ * clamp and the schema bound one definition, never two numbers that drift.
  */
-const RESEARCH_ENRICHMENT_MAX_RAW_TEXT = 120;
+export const RESEARCH_ENRICHMENT_MAX_RAW_TEXT = 120;
 
-/** Mirrors the URL-length bound constant in the Phase 30 provider-ingestion schema module — duplicated locally so this file has no sibling import besides `researchProvenance.ts`. */
-const RESEARCH_ENRICHMENT_MAX_URL = 2048;
+/** Mirrors the URL-length bound constant in the Phase 30 provider-ingestion schema module — duplicated locally so this file has no sibling import besides `researchProvenance.ts`. Exported for the same adapter-clamp reason as `RESEARCH_ENRICHMENT_MAX_RAW_TEXT`. */
+export const RESEARCH_ENRICHMENT_MAX_URL = 2048;
+
+/** The schema's per-reason cap on `resolutionReasons` entries — exported so adapters can clamp stated reasons (which interpolate untrusted source text) at extraction time. */
+export const RESEARCH_ENRICHMENT_MAX_REASON_TEXT = 200;
 
 const RESEARCH_ENRICHMENT_MAX_PER_SOURCE_PAGE_ENTRIES = 400;
 
@@ -191,7 +200,24 @@ export const LIQUIPEDIA_ATTRIBUTION_LICENSE_URL = 'https://creativecommons.org/l
 // ---------------------------------------------------------------------------
 
 const researchEnrichmentPlayerEntrySchema = z.object({
-  rawTag: z.string().min(1).max(RESEARCH_ENRICHMENT_MAX_RAW_TEXT),
+  /**
+   * 30.2 reliability gate (owner corrective directive, Gate 1): `.min(1)`
+   * alone admitted a whitespace-only tag, and the production MkLeo apply
+   * abort proved an adapter could emit a present-but-empty player slot all
+   * the way to the write boundary. The trim refinement TIGHTENS the bound
+   * (additive, never a relaxation — the earlier "relax min(1)" advisory is
+   * superseded): a player entry either carries a real, non-whitespace tag or
+   * the observation must be stored WITHOUT `players` (which is `.nullish()`
+   * below) as an explicit extraction failure. Adapters classify; this bound
+   * makes the empty-tag shape structurally unpersistable.
+   */
+  rawTag: z
+    .string()
+    .min(1)
+    .max(RESEARCH_ENRICHMENT_MAX_RAW_TEXT)
+    .refine((value) => value.trim().length > 0, {
+      message: 'rawTag must contain at least one non-whitespace character',
+    }),
   canonicalPage: z.string().max(300).nullish(),
   /** Untrusted third-party string: usually a 2-letter code, but live pages carry full country names ("Dominican Republic"). */
   flag: z.string().max(RESEARCH_ENRICHMENT_MAX_RAW_TEXT).nullish(),
@@ -283,7 +309,7 @@ export const researchEnrichmentObservationRecordSchema = z.object({
     .nullish(),
   games: z.array(researchEnrichmentGameEntrySchema).max(15).nullish(),
   candidateTargetSetIds: z.array(z.string().max(200)).max(20).nullish(),
-  resolutionReasons: z.array(z.string().max(200)).max(10).nullish(),
+  resolutionReasons: z.array(z.string().max(RESEARCH_ENRICHMENT_MAX_REASON_TEXT)).max(10).nullish(),
   sourcePageMissing: z.boolean().nullish(),
   extractionFailed: z.boolean().nullish(),
 });
