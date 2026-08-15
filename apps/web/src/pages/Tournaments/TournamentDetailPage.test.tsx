@@ -390,4 +390,87 @@ describe('TournamentDetailPage', () => {
       expect(screen.getByRole('button', { name: 'Generate recap' })).toBeInTheDocument();
     });
   });
+
+  /** Phase 30.3 (Gate 4): admin-imported historical snapshots. */
+  describe('admin-imported historical entries', () => {
+    function makeImportedEntry(overrides: Record<string, unknown> = {}): TournamentEntry {
+      return makeEntry({
+        origin: 'admin-imported',
+        provider: 'startgg',
+        ...overrides,
+      } as Partial<TournamentEntry>);
+    }
+
+    it('renders the imported snapshot notice with source and freshness', async () => {
+      listTournaments.mockResolvedValue([
+        makeImportedEntry({
+          provenance: {
+            source: 'research-import',
+            importedAtMs: Date.UTC(2026, 7, 1, 12),
+            asOfMs: Date.UTC(2026, 6, 15, 12),
+          },
+        }),
+      ]);
+      listMatches.mockResolvedValue([]);
+
+      renderPage('42');
+
+      expect(await screen.findByTestId('imported-snapshot-notice')).toBeInTheDocument();
+      expect(screen.getByText('Imported event snapshot')).toBeInTheDocument();
+      expect(screen.getByText(/Source: start\.gg \(public data\)/)).toBeInTheDocument();
+      expect(screen.getByText(/Data as of Jul 15, 2026/)).toBeInTheDocument();
+    });
+
+    it('NEVER shows the prep CTA for an imported entry, even future-dated with a startable brief', async () => {
+      // Under the non-imported rules this exact setup renders "Start prep
+      // brief" (see the prep brief CTA describe above) — the owner directive
+      // says imported events must never surface registration/seeded/live
+      // prep controls, so the origin discriminator must win over the dates.
+      listTournaments.mockResolvedValue([
+        makeImportedEntry({ firstSetAt: Date.now() + 86_400_000 }),
+      ]);
+      listMatches.mockResolvedValue([]);
+      mockPrepBrief({ isPending: false, activated: false });
+
+      renderPage('42');
+
+      await screen.findByText('Set Timeline');
+      expect(screen.queryByTestId('tournament-prep-cta')).not.toBeInTheDocument();
+    });
+
+    it('suppresses even the reopen CTA for an imported entry with an activated brief', async () => {
+      listTournaments.mockResolvedValue([makeImportedEntry()]);
+      listMatches.mockResolvedValue([]);
+      mockPrepBrief({ isPending: false, activated: true });
+
+      renderPage('42');
+
+      await screen.findByText('Set Timeline');
+      expect(screen.queryByTestId('tournament-prep-cta')).not.toBeInTheDocument();
+    });
+
+    it("says standings weren't recorded instead of promising a future sync", async () => {
+      listTournaments.mockResolvedValue([makeImportedEntry({ topStandings: undefined })]);
+      listMatches.mockResolvedValue([]);
+
+      renderPage('42');
+
+      await screen.findByText('Event Results');
+      expect(
+        screen.getByText("Top standings weren't recorded in this import."),
+      ).toBeInTheDocument();
+      expect(
+        screen.queryByText('Full results attach on your next start.gg sync.'),
+      ).not.toBeInTheDocument();
+    });
+
+    it('keeps the Generate recap action — a recap is not a prep control', async () => {
+      listTournaments.mockResolvedValue([makeImportedEntry({ setsPlayed: 3 })]);
+      listMatches.mockResolvedValue([]);
+
+      renderPage('42');
+
+      expect(await screen.findByRole('button', { name: 'Generate recap' })).toBeInTheDocument();
+    });
+  });
 });

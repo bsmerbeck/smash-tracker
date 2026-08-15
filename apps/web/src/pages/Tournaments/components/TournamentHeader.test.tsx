@@ -130,3 +130,57 @@ describe('TournamentHeader', () => {
     expect(screen.queryByRole('link', { name: /View .* on start\.gg/ })).not.toBeInTheDocument();
   });
 });
+
+/** Phase 30.3 (Gate 4): admin-imported historical snapshot rendering. */
+describe('TournamentHeader (admin-imported entries)', () => {
+  function makeImportedEntry(overrides: Record<string, unknown> = {}): TournamentEntry {
+    return makeEntry({
+      origin: 'admin-imported',
+      provider: 'startgg',
+      ...overrides,
+    } as Partial<TournamentEntry>);
+  }
+
+  it('badges the header as Imported', () => {
+    render(<TournamentHeader entry={makeImportedEntry()} />);
+    expect(screen.getByText('Imported')).toBeInTheDocument();
+  });
+
+  it('does not badge manual/linked entries as Imported', () => {
+    render(<TournamentHeader entry={makeEntry()} />);
+    expect(screen.queryByText('Imported')).not.toBeInTheDocument();
+  });
+
+  it("prefers the import's own event dates over the observed set window", () => {
+    render(
+      <TournamentHeader
+        entry={makeImportedEntry({
+          startAtMs: Date.UTC(2024, 5, 10, 12),
+          endAtMs: Date.UTC(2024, 5, 10, 12),
+        })}
+      />,
+    );
+    expect(screen.getByText('Jun 10, 2024')).toBeInTheDocument();
+  });
+
+  it('renders an em-dash — never an epoch-zero date — when no dates were recorded', () => {
+    render(<TournamentHeader entry={makeImportedEntry({ firstSetAt: 0, lastSetAt: 0 })} />);
+    expect(screen.getByText('—')).toBeInTheDocument();
+    expect(screen.queryByText(/1970/)).not.toBeInTheDocument();
+  });
+
+  it('counts sets from the DQ-excluded playedSetCount and notes the excluded DQs', () => {
+    render(
+      <TournamentHeader
+        entry={makeImportedEntry({ setsPlayed: 8, playedSetCount: 6, dqCount: 2 })}
+      />,
+    );
+    expect(screen.getByText(/6 sets played · 2 DQs excluded/)).toBeInTheDocument();
+  });
+
+  it('stays silent about DQs when the import recorded none', () => {
+    render(<TournamentHeader entry={makeImportedEntry({ playedSetCount: 6 })} />);
+    expect(screen.getByText('6 sets played')).toBeInTheDocument();
+    expect(screen.queryByText(/DQ/)).not.toBeInTheDocument();
+  });
+});

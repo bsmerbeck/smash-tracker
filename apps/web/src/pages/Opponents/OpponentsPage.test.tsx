@@ -86,11 +86,11 @@ function makeMatch(overrides: Partial<Record<string, unknown>> = {}) {
   };
 }
 
-function renderOpponents() {
+function renderOpponents(initialEntry = '/opponents') {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
     <QueryClientProvider client={queryClient}>
-      <MemoryRouter initialEntries={['/opponents']}>
+      <MemoryRouter initialEntries={[initialEntry]}>
         <AuthProvider>
           <AnalyticsFilterProvider>
             <Routes>
@@ -236,6 +236,74 @@ describe('OpponentsPage', () => {
       // zeta's record is 1-0, shown in the report header (scoped by the
       // "Last 10" pips section landmark that only renders once selected).
       expect(await screen.findByText('Last 10 (newest first)')).toBeInTheDocument();
+    });
+
+    /**
+     * Phase 30.3 (Gate 4): "Analyze opponent" deep links preselect the
+     * opponent via query params instead of defaulting to most-played.
+     */
+    it('preselects the opponent named by an ?opponent= tag deep link', async () => {
+      renderOpponents('/opponents?opponent=zeta');
+
+      // Without the param, most-played "rival" would win — the deep link
+      // must override the default.
+      await waitFor(() =>
+        expect(screen.getByRole('button', { name: /zeta/, pressed: true })).toBeInTheDocument(),
+      );
+      expect(await screen.findByText('Last 10 (newest first)')).toBeInTheDocument();
+    });
+
+    it('preselects via the provider player id, preferred over the tag', async () => {
+      listMatches.mockResolvedValue([
+        makeMatch({ id: 'm1', time: 1, opponent: 'rival', win: true }),
+        makeMatch({ id: 'm2', time: 2, opponent: 'rival', win: true }),
+        makeMatch({
+          id: 'm3',
+          time: 3,
+          opponent: 'zeta',
+          win: true,
+          opponentUserSlug: 'user/9fb774ae',
+        }),
+      ]);
+
+      // The tag param carries a stale name — the provider id must win.
+      renderOpponents('/opponents?player=sgg%3Auser%2F9fb774ae&opponent=stale-name');
+
+      await waitFor(() =>
+        expect(screen.getByRole('button', { name: /zeta/, pressed: true })).toBeInTheDocument(),
+      );
+    });
+
+    it('resolves an aliased tag deep link to its canonical opponent', async () => {
+      listAliases.mockResolvedValue({ 'old zeta': 'zeta' });
+
+      renderOpponents('/opponents?opponent=old+zeta');
+
+      await waitFor(() =>
+        expect(screen.getByRole('button', { name: /zeta/, pressed: true })).toBeInTheDocument(),
+      );
+    });
+
+    it('falls back to most-played when the deep-linked opponent matches nothing', async () => {
+      renderOpponents('/opponents?opponent=nobody-known');
+
+      await waitFor(() =>
+        expect(screen.getByRole('button', { name: /rival/, pressed: true })).toBeInTheDocument(),
+      );
+    });
+
+    it('an explicit click still overrides a deep-linked preselection', async () => {
+      const user = userEvent.setup();
+      renderOpponents('/opponents?opponent=zeta');
+
+      await waitFor(() =>
+        expect(screen.getByRole('button', { name: /zeta/, pressed: true })).toBeInTheDocument(),
+      );
+      await user.click(screen.getByRole('button', { name: /rival/, pressed: false }));
+
+      await waitFor(() =>
+        expect(screen.getByRole('button', { name: /rival/, pressed: true })).toBeInTheDocument(),
+      );
     });
   });
 

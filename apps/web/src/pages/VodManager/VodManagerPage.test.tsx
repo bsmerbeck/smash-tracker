@@ -1971,6 +1971,39 @@ describe('VodManagerPage', () => {
     await waitFor(() => expect(updatePlaylist).toHaveBeenCalledWith('p1', { matchIds: ['m1'] }));
   });
 
+  it('Phase 30.3 (Gate 4): the metadata card offers an Analyze opponent deep link, provider id preferred', async () => {
+    listMatches.mockResolvedValue([
+      makeMatch({
+        id: 'm1',
+        opponent: 'rival-one',
+        opponentUserSlug: 'user/9fb774ae',
+        vodUrl: 'https://youtube.com/watch?v=abc123',
+      }),
+    ]);
+
+    window.YT = {
+      Player: vi.fn(function (this: unknown) {
+        return {
+          seekTo: vi.fn(),
+          playVideo: vi.fn(),
+          pauseVideo: vi.fn(),
+          destroy: vi.fn(),
+          getCurrentTime: vi.fn(() => 0),
+        };
+      }) as unknown as YTGlobal['Player'],
+      PlayerState: { ENDED: 0 },
+    };
+
+    renderVodManager('/vod?match=m1');
+    await waitFor(() => expect(screen.getByText('vs. rival-one')).toBeInTheDocument());
+
+    const analyzeLink = screen.getByRole('link', { name: 'Analyze opponent rival-one' });
+    expect(analyzeLink).toHaveAttribute(
+      'href',
+      '/opponents?player=sgg%3Auser%2F9fb774ae&opponent=rival-one',
+    );
+  });
+
   it('renders match tag chips and adds a preset tag via the combobox, carrying other fields through', async () => {
     const user = userEvent.setup();
     listMatches.mockResolvedValue([

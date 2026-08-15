@@ -122,6 +122,45 @@ describe('MatchupsPage', () => {
     );
   });
 
+  /**
+   * Phase 30.3 (Gate 4, fighter-preference fallback): matches exist but no
+   * saved favorites — the page runs on fighters inferred from the observed
+   * match history, with "choose favorites" as a non-blocking prompt, never
+   * the blocking gate.
+   */
+  it('renders matchup analytics from inferred fighters when preferences are empty but matches exist', async () => {
+    getFighters.mockResolvedValue({ primary: [], secondary: [] });
+    listMatches.mockResolvedValue([
+      makeMatch({
+        id: 'm1',
+        fighter_id: mario.id,
+        opponent_id: alphabeticallyFirstSprite.id,
+        win: true,
+      }),
+    ]);
+
+    renderMatchups();
+
+    // The real analytics render, defaulting to the inferred (only) fighter.
+    await waitFor(() => expect(screen.getByText('Matchup Results')).toBeInTheDocument());
+    const winsStat = screen.getByText('Wins').closest('div');
+    expect(winsStat).not.toBeNull();
+    expect(within(winsStat!).getByText('1')).toBeInTheDocument();
+    // Non-blocking prompt, not the gate.
+    expect(screen.getByTestId('choose-favorites-prompt')).toBeInTheDocument();
+    expect(screen.queryByText("You haven't picked any fighters yet!")).not.toBeInTheDocument();
+  });
+
+  it('still gates on choose-fighters when there is neither a selection nor a match to infer from', async () => {
+    getFighters.mockResolvedValue({ primary: [], secondary: [] });
+    listMatches.mockResolvedValue([]);
+
+    renderMatchups();
+
+    expect(await screen.findByText("You haven't picked any fighters yet!")).toBeInTheDocument();
+    expect(screen.queryByTestId('choose-favorites-prompt')).not.toBeInTheDocument();
+  });
+
   it('filters matches to the selected fighter/opponent pairing by default', async () => {
     getFighters.mockResolvedValue({ primary: [mario.id], secondary: [] });
     listMatches.mockResolvedValue([

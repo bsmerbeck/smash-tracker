@@ -155,6 +155,65 @@ describe('MatchDataPage', () => {
     ).toBeInTheDocument();
   });
 
+  /**
+   * Phase 30.3 (Gate 4, fighter-preference fallback): matches exist but no
+   * saved favorites — the page must run on fighters inferred from the
+   * matches, with "choose favorites" as a non-blocking prompt, never a gate.
+   */
+  it('renders match data from inferred fighters when preferences are empty but matches exist', async () => {
+    getFighters.mockResolvedValue({ primary: [], secondary: [] });
+    listMatches.mockResolvedValue([
+      makeMatch({ id: 'm1', fighter_id: mario.id }),
+      makeMatch({ id: 'm2', fighter_id: mario.id, win: false }),
+    ]);
+
+    renderMatchData();
+
+    // The real page content renders — table title and rows.
+    expect(await screen.findByText('Match History')).toBeInTheDocument();
+    expect(screen.getAllByText('rival').length).toBeGreaterThan(0);
+    // The non-blocking prompt renders instead of the blocking gate.
+    expect(screen.getByTestId('choose-favorites-prompt')).toBeInTheDocument();
+    expect(screen.queryByText("You haven't picked any fighters yet!")).not.toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Choose Primary Fighters' })).toHaveAttribute(
+      'href',
+      '/choose-primary',
+    );
+  });
+
+  it('still gates on choose-fighters when there is neither a selection nor a match to infer from', async () => {
+    getFighters.mockResolvedValue({ primary: [], secondary: [] });
+    listMatches.mockResolvedValue([]);
+
+    renderMatchData();
+
+    expect(await screen.findByText("You haven't picked any fighters yet!")).toBeInTheDocument();
+    expect(screen.queryByTestId('choose-favorites-prompt')).not.toBeInTheDocument();
+  });
+
+  /** Phase 30.3 (Gate 4): opponent cells deep-link into /opponents. */
+  it('renders an Analyze opponent link in the opponent cell, preferring the provider player id', async () => {
+    getFighters.mockResolvedValue({ primary: [mario.id], secondary: [] });
+    listMatches.mockResolvedValue([
+      makeMatch({ id: 'm1', opponent: 'rival', opponentUserSlug: 'user/9fb774ae' }),
+    ]);
+
+    renderMatchData();
+
+    const link = await screen.findByRole('link', { name: 'Analyze opponent rival' });
+    expect(link).toHaveAttribute('href', '/opponents?player=sgg%3Auser%2F9fb774ae&opponent=rival');
+  });
+
+  it('omits the Analyze opponent link inside a client workspace (no /opponents there)', async () => {
+    getFighters.mockResolvedValue({ primary: [mario.id], secondary: [] });
+    listMatches.mockResolvedValue([makeMatch({ id: 'm1', opponent: 'rival' })]);
+
+    renderMatchData('/coach/client-1/match-data');
+
+    await screen.findByText('Match History');
+    expect(screen.queryByRole('link', { name: /Analyze opponent/ })).not.toBeInTheDocument();
+  });
+
   it('renders rows from mocked matches', async () => {
     getFighters.mockResolvedValue({ primary: [mario.id], secondary: [] });
     listMatches.mockResolvedValue([
