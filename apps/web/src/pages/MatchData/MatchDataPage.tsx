@@ -10,13 +10,25 @@ import { useSortedFighters } from '@/hooks/useFighterName';
 import { useStageFavorites, useToggleStageFavorite } from '@/hooks/useStageFavorites';
 import { useSubjectPath } from '@/hooks/useSubjectPath';
 import { getFighterById } from '@/data/sprites';
+import { ChooseFavoritesPrompt } from '@/components/ChooseFavoritesPrompt';
 import { FilteredEmptyNotice } from '@/components/FilteredEmptyNotice';
+import { inferFighterIdsFromMatches } from '@/lib/inferredFighters';
 import { AddMatchForm } from '@/pages/Dashboard/components/AddMatchForm';
 import { MatchTable } from './components/MatchTable';
 import { RosterUsage } from './components/RosterUsage';
 import { StageBreakdown } from './components/StageBreakdown';
 
-/** Ports legacy/src/screens/MatchData; the source/time filter is now global (see the topbar's AnalyticsFilterControls), not a per-page control. */
+/**
+ * Ports legacy/src/screens/MatchData; the source/time filter is now global (see the topbar's AnalyticsFilterControls), not a per-page control.
+ *
+ * Phase 30.3 (Gate 4, fighter-preference fallback): when the subject has
+ * matches but NO saved primary/secondary favorites (imported demo
+ * histories), the page infers a read-only fighter list from the fighters
+ * observed in those matches instead of dead-ending on the choose-fighters
+ * gate — which now only renders when there is neither a saved selection nor
+ * a match to infer from. "Choose favorites" stays available as a
+ * non-blocking prompt banner above the real content.
+ */
 export function MatchDataPage() {
   const { t } = useTranslation();
   const subjectPath = useSubjectPath();
@@ -25,12 +37,17 @@ export function MatchDataPage() {
   const { data: stageFavorites } = useStageFavorites();
   const toggleStageFavorite = useToggleStageFavorite();
 
+  const savedFighterIds = useMemo(
+    () => [...(fighterSelection?.primary ?? []), ...(fighterSelection?.secondary ?? [])],
+    [fighterSelection],
+  );
+  const usingInferredFighters = savedFighterIds.length === 0 && allMatches.length > 0;
   const rawFighterSprites = useMemo<Fighter[]>(() => {
-    const ids = [...(fighterSelection?.primary ?? []), ...(fighterSelection?.secondary ?? [])];
+    const ids = usingInferredFighters ? inferFighterIdsFromMatches(allMatches) : savedFighterIds;
     return ids
       .map((id) => getFighterById(id))
       .filter((sprite): sprite is Fighter => sprite != null);
-  }, [fighterSelection]);
+  }, [usingInferredFighters, allMatches, savedFighterIds]);
   // 260725-Q1: alphabetized by localized name — matches every other fighter
   // picker in the app.
   const fighterSprites = useSortedFighters(rawFighterSprites);
@@ -74,6 +91,7 @@ export function MatchDataPage() {
 
   return (
     <div className="flex flex-col gap-6">
+      {usingInferredFighters && <ChooseFavoritesPrompt />}
       {filterActive && matches.length === 0 && <FilteredEmptyNotice />}
 
       <Card>
