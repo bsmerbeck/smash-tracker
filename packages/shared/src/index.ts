@@ -56,6 +56,7 @@ export * from './coachingReview.js';
 export * from './coachingSession.js';
 export * from './shares.js';
 export * from './tournamentAggregation.js';
+export * from './tournamentRegistry.js';
 export * from './recap.js';
 export * from './events.js';
 export * from './prep.js';
