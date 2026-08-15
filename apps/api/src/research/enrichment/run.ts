@@ -27,6 +27,10 @@ import { extractEventContext, type LiquipediaEventContext } from '../../liquiped
 import { extractLegacyBracketObservations } from '../../liquipedia/adapters/legacyBracket.js';
 import { extractMatch2BracketObservations } from '../../liquipedia/adapters/match2Bracket.js';
 import { buildCandidateIndex } from './candidateIndex.js';
+import {
+  computeObservationPersistenceHash,
+  prepareAndValidateObservation,
+} from './prepareObservation.js';
 import { buildResolutionReceipt, resolveObservation } from './resolution.js';
 import {
   attachResolvedObservation,
@@ -280,6 +284,15 @@ export interface EnrichmentDryRunDetails {
   matchedCandidates: EnrichmentDryRunMatch[];
   reviewCandidates: EnrichmentDryRunCandidate[];
   missingSourcePages: Array<{ playerLabel: string; pageTitle: string; reason: string }>;
+  /**
+   * 30.2 reliability gate: the canonical digest over EVERY schema-parsed
+   * observation this dry run gathered — the exact records apply would
+   * persist, not merely their counts (see
+   * `prepareObservation.ts`'s `computeObservationPersistenceHash`).
+   */
+  observationPersistenceHash: string;
+  /** The number of records `observationPersistenceHash` covers. */
+  observationsValidated: number;
 }
 
 function emptyDryRunDetails(): EnrichmentDryRunDetails {
@@ -295,6 +308,8 @@ function emptyDryRunDetails(): EnrichmentDryRunDetails {
     matchedCandidates: [],
     reviewCandidates: [],
     missingSourcePages: [],
+    observationPersistenceHash: computeObservationPersistenceHash([]),
+    observationsValidated: 0,
   };
 }
 
@@ -626,12 +641,16 @@ async function gatherPhase(input: GatherPhaseInput): Promise<void> {
     });
 
     for (const record of records) {
-      gatheredObservations.push(record);
-      if (record.tournamentPageTitle) {
-        tournamentPageTitles.add(record.tournamentPageTitle);
+      // THE PARITY GATE (30.2 reliability): every gathered record passes the
+      // exact persistence schema HERE, identically on dry-run and apply —
+      // never only at the write boundary.
+      const prepared = prepareAndValidateObservation(record);
+      gatheredObservations.push(prepared);
+      if (prepared.tournamentPageTitle) {
+        tournamentPageTitles.add(prepared.tournamentPageTitle);
       }
       if (!dryRun) {
-        await writeEnrichmentObservation(database, tenantId, record);
+        await writeEnrichmentObservation(database, tenantId, prepared);
       }
     }
 
@@ -797,9 +816,10 @@ async function gatherPhase(input: GatherPhaseInput): Promise<void> {
         matchingStatus: 'unmatched',
         extractionFailed: true,
       };
-      gatheredObservations.push(unmatched);
+      const preparedUnmatched = prepareAndValidateObservation(unmatched);
+      gatheredObservations.push(preparedUnmatched);
       if (!dryRun) {
-        await writeEnrichmentObservation(database, tenantId, unmatched);
+        await writeEnrichmentObservation(database, tenantId, preparedUnmatched);
         await writeLiquipediaPageCache(database, {
           pageId: cacheKey,
           title: page.title,
@@ -850,9 +870,11 @@ async function gatherPhase(input: GatherPhaseInput): Promise<void> {
     counts.observationsExtracted += extracted.observations.length;
 
     for (const observation of extracted.observations) {
-      gatheredObservations.push(observation);
+      // THE PARITY GATE (30.2 reliability): see the VOD-record loop above.
+      const prepared = prepareAndValidateObservation(observation);
+      gatheredObservations.push(prepared);
       if (!dryRun) {
-        await writeEnrichmentObservation(database, tenantId, observation);
+        await writeEnrichmentObservation(database, tenantId, prepared);
       }
     }
 
@@ -908,6 +930,12 @@ async function resolveAndProjectPhase(input: ResolveAndProjectPhaseInput): Promi
     input;
 
   if (dryRunDetails) {
+    // Every member of `gatheredObservations` has already passed the parity
+    // gate, so this digest covers exactly the schema-parsed records apply
+    // would persist.
+    dryRunDetails.observationPersistenceHash =
+      computeObservationPersistenceHash(gatheredObservations);
+    dryRunDetails.observationsValidated = gatheredObservations.length;
     const revisions = new Map<string, EnrichmentDryRunSourceRevision>();
     const versions = new Set<string>();
     for (const observation of gatheredObservations) {

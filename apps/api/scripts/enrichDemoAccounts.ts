@@ -17,6 +17,7 @@ import {
 import { readEnrichmentCoverage } from '../src/research/enrichment/rollup.js';
 import { runEnrichmentBatch } from '../src/research/enrichment/run.js';
 import {
+  ENRICHMENT_MANIFEST_FORMAT_VERSION,
   buildEnrichmentComparison,
   computeAccountWriteSetHash,
   createEnrichmentManifest,
@@ -186,6 +187,8 @@ function buildAccountManifest(
     vodWouldSkipUserOwned: details.vodWouldSkipUserOwned,
     sourceRevisions: details.sourceRevisions,
     extractorVersions: details.extractorVersions,
+    observationPersistenceHash: details.observationPersistenceHash,
+    observationsValidated: details.observationsValidated,
     matchedCandidates: details.matchedCandidates,
     reviewCandidates: details.reviewCandidates,
     missingSourcePages: details.missingSourcePages,
@@ -234,7 +237,7 @@ async function dryRun(
     accounts[workspace] = buildAccountManifest(workspace, uids[workspace], result, beforeCoverage);
   }
   const manifest = createEnrichmentManifest({
-    formatVersion: 1,
+    formatVersion: ENRICHMENT_MANIFEST_FORMAT_VERSION,
     generatedAtMs: Date.now(),
     databaseHost,
     sinceYear,

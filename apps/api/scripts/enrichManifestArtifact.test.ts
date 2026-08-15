@@ -2,6 +2,7 @@ import type { Database } from 'firebase-admin/database';
 import { describe, expect, it } from 'vitest';
 import { previewEnrichmentProjection } from '../src/research/enrichment/projection.js';
 import {
+  ENRICHMENT_MANIFEST_FORMAT_VERSION,
   buildEnrichmentComparison,
   computeAccountWriteSetHash,
   computeEnrichmentManifestHash,
@@ -64,6 +65,8 @@ function account(label: string, uid: string): EnrichmentAccountManifest {
       },
     ],
     extractorVersions: ['test@1'],
+    observationPersistenceHash: 'd'.repeat(64),
+    observationsValidated: 1,
     matchedCandidates: [
       {
         observationId: 'observation-1',
@@ -84,7 +87,7 @@ function account(label: string, uid: string): EnrichmentAccountManifest {
 
 function body(): EnrichmentManifestBody {
   return {
-    formatVersion: 1,
+    formatVersion: ENRICHMENT_MANIFEST_FORMAT_VERSION,
     generatedAtMs: nowMs,
     databaseHost: 'example.firebaseio.com',
     sinceYear: 2024,
@@ -114,6 +117,35 @@ describe('enrichment manifest artifact', () => {
     expect(() =>
       validateEnrichmentManifest({ ...manifest, sinceYear: 2025 }, uids, nowMs + 1, 10_000),
     ).toThrow('content hash mismatch');
+  });
+
+  it('rejects a manifest produced by an older parser/validation version by name', () => {
+    const manifest = createEnrichmentManifest(body());
+    expect(() =>
+      validateEnrichmentManifest({ ...manifest, formatVersion: 1 }, uids, nowMs + 1, 10_000),
+    ).toThrow('older parser/validation version');
+    expect(() =>
+      validateEnrichmentManifest(
+        { ...manifest, formatVersion: undefined },
+        uids,
+        nowMs + 1,
+        10_000,
+      ),
+    ).toThrow('older parser/validation version');
+  });
+
+  it('a tampered observationPersistenceHash fails the reviewed write-set hash even when the outer artifact is rehashed', () => {
+    const manifest = createEnrichmentManifest(body());
+    manifest.accounts.hbox.observationPersistenceHash = 'e'.repeat(64);
+    const { contentHash: _ignored, ...changedBody } = manifest;
+    void _ignored;
+    const outerRehashed = {
+      ...changedBody,
+      contentHash: computeEnrichmentManifestHash(changedBody),
+    };
+    expect(() => validateEnrichmentManifest(outerRehashed, uids, nowMs + 1, 10_000)).toThrow(
+      'write-set hash mismatch',
+    );
   });
 
   it('rejects a rehashed outer artifact whose reviewed write set was altered', () => {
