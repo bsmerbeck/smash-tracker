@@ -192,6 +192,152 @@ describe('GET /api/tournaments', () => {
     expect('eventSlug' in entry!).toBe(false);
     expect('topStandings' in entry!).toBe(false);
   });
+
+  // Phase 30.3: admin-imported historical registry rows (written only by
+  // the research-registry projector) are served through the SAME list,
+  // discriminated by `origin` — legacy entries keep their exact shape.
+  describe('admin-imported registry rows (Phase 30.3)', () => {
+    const REGISTRY_ROW = {
+      entryId: 'histimport:100001',
+      origin: 'admin-imported',
+      provider: 'startgg',
+      startggEventId: '100001',
+      tournamentName: 'The Big House 9',
+      eventName: 'Ultimate Singles',
+      tournamentSlug: 'tournament/the-big-house-9',
+      eventSlug: 'tournament/the-big-house-9/event/ultimate-singles',
+      startAtMs: 1_699_000_000_000,
+      endAtMs: 1_699_000_500_000,
+      numEntrants: 512,
+      seed: 3,
+      placement: 2,
+      playedSetCount: 8,
+      dqCount: 1,
+      provenance: {
+        source: 'research-import',
+        importedAtMs: 1_755_000_000_000,
+        asOfMs: 1_754_000_000_000,
+      },
+      registryWitness: 'research-import:v1:100001',
+      firstSetAt: 1_699_000_000_000,
+      lastSetAt: 1_699_000_500_000,
+      setsPlayed: 8,
+      slug: 'tournament/the-big-house-9',
+    };
+
+    it('serves a registry row with its origin/provenance members intact and entryKey stamped', async () => {
+      const { app, database } = buildTestApp();
+      database.seed(`tournamentEntries/${TEST_UID}`, {
+        'histimport:100001': REGISTRY_ROW,
+      });
+
+      const response = await app.inject({
+        method: 'GET',
+        url: '/api/tournaments',
+        headers: authHeader(),
+      });
+
+      expect(response.statusCode).toBe(200);
+      const [entry] = response.json() as Record<string, unknown>[];
+      expect(entry).toMatchObject({
+        ...REGISTRY_ROW,
+        entryKey: 'histimport:100001',
+      });
+    });
+
+    it('sorts registry rows into the mixed list by lastSetAt and leaves legacy shapes untouched', async () => {
+      const { app, database } = buildTestApp();
+      database.seed(`tournamentEntries/${TEST_UID}`, {
+        'histimport:100001': REGISTRY_ROW, // lastSetAt 1_699_000_500_000
+        '987': {
+          eventId: 987,
+          eventName: 'Ultimate Singles',
+          firstSetAt: 1_700_000_000_000,
+          lastSetAt: 1_700_000_500_000,
+          setsPlayed: 5,
+        },
+        'manual-locals-42-abc': {
+          eventName: 'Locals #42',
+          firstSetAt: 1_690_000_000_000,
+          lastSetAt: 1_690_000_000_000,
+          setsPlayed: 0,
+          source: 'manual',
+        },
+      });
+
+      const response = await app.inject({
+        method: 'GET',
+        url: '/api/tournaments',
+        headers: authHeader(),
+      });
+
+      const entries = response.json() as Record<string, unknown>[];
+      expect(entries.map((entry) => entry.entryKey)).toEqual([
+        '987',
+        'histimport:100001',
+        'manual-locals-42-abc',
+      ]);
+      // Legacy rows never grow an origin member — the discriminator is
+      // exclusive to admin-imported rows.
+      expect('origin' in entries[0]!).toBe(false);
+      expect('origin' in entries[2]!).toBe(false);
+      expect(entries[1]).toMatchObject({ origin: 'admin-imported', provider: 'startgg' });
+    });
+
+    it('registry rows are past events: firstSetAt is historical, so the prep upcoming-gate can never fire', async () => {
+      const { app, database } = buildTestApp();
+      database.seed(`tournamentEntries/${TEST_UID}`, {
+        'histimport:100001': REGISTRY_ROW,
+      });
+
+      const response = await app.inject({
+        method: 'GET',
+        url: '/api/tournaments',
+        headers: authHeader(),
+      });
+
+      const [entry] = response.json() as { firstSetAt: number }[];
+      expect(entry!.firstSetAt).toBeLessThan(Date.now());
+    });
+
+    it('skips a corrupt registry row (never a 500, never a fallback to the legacy shape)', async () => {
+      const { app, database } = buildTestApp();
+      database.seed(`tournamentEntries/${TEST_UID}`, {
+        // origin present but the required registryWitness is missing — the
+        // registry parser must reject it, and the legacy parser must NOT
+        // be consulted as a fallback (that would serve a half-shaped row).
+        'histimport:9': {
+          entryId: 'histimport:9',
+          origin: 'admin-imported',
+          provider: 'startgg',
+          startggEventId: '9',
+          eventName: 'Broken Import',
+          playedSetCount: 1,
+          firstSetAt: 1_699_000_000_000,
+          lastSetAt: 1_699_000_000_000,
+          setsPlayed: 1,
+        },
+        '987': {
+          eventId: 987,
+          eventName: 'Ultimate Singles',
+          firstSetAt: 1_700_000_000_000,
+          lastSetAt: 1_700_000_500_000,
+          setsPlayed: 5,
+        },
+      });
+
+      const response = await app.inject({
+        method: 'GET',
+        url: '/api/tournaments',
+        headers: authHeader(),
+      });
+
+      expect(response.statusCode).toBe(200);
+      const entries = response.json() as Record<string, unknown>[];
+      expect(entries).toHaveLength(1);
+      expect(entries[0]).toMatchObject({ eventId: 987, entryKey: '987' });
+    });
+  });
 });
 
 function eventRows(dump: unknown): Array<{ eventName: string; actorId: string; payload: unknown }> {

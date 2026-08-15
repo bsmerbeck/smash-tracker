@@ -3,9 +3,12 @@ import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import type { FastifyRequest } from 'fastify';
 import {
   manualTournamentEntryInputSchema,
-  tournamentEntryListSchema,
+  TOURNAMENT_REGISTRY_ORIGIN,
   tournamentEntrySchema,
+  tournamentRegistryListSchema,
+  tournamentRegistryRowSchema,
   type TournamentEntry,
+  type TournamentRegistryListEntry,
 } from '@smash-tracker/shared';
 import { reconcilePlayerActivation } from '../onboarding/activation.js';
 
@@ -36,10 +39,23 @@ function deriveManualEntryKey(eventName: string): string {
  * GET /api/tournaments — the signed-in user's tournament registry, serving
  * start.gg (accumulated by startgg/sync.ts's `accumulateRegistry`),
  * parry.gg (accumulated by parrygg/sync.ts's `accumulateParryggRegistry`),
- * and manual (Phase 13, `POST /tournaments/manual-entry` below) entries,
- * each keyed by `entryKey`. Sync entries are written exclusively by the two
+ * manual (Phase 13, `POST /tournaments/manual-entry` below), and — Phase
+ * 30.3 — admin-imported historical rows (written only by the
+ * research-registry projector, `apps/api/src/research/registry/`), each
+ * keyed by `entryKey`. Sync entries are written exclusively by the two
  * sync services; manual entries are written directly by this route, all
  * under tournamentEntries/{uid}/{entryKey}.
+ *
+ * Phase 30.3 response extension is BACKWARDS-COMPATIBLE by construction:
+ * legacy entries keep their exact shape, and an admin-imported row is a
+ * strict superset of `tournamentEntrySchema` (it carries the legacy
+ * required members), so an old client parsing the list with the legacy
+ * schema still succeeds — the registry-only members are simply stripped.
+ * New clients discriminate on `origin === 'admin-imported'`; those rows
+ * are always PAST events (their `firstSetAt` is historical or 0), so the
+ * shipped upcoming-event prep gate (`firstSetAt > now`) never offers
+ * registration/seeded/live prep controls for one, and the explicit origin
+ * field lets the web separate them from linked-sync entries outright.
  */
 const tournamentsRoutes: FastifyPluginAsyncZod = async (app) => {
   app.addHook('preHandler', app.authenticate);
@@ -49,7 +65,7 @@ const tournamentsRoutes: FastifyPluginAsyncZod = async (app) => {
     {
       schema: {
         response: {
-          200: tournamentEntryListSchema,
+          200: tournamentRegistryListSchema,
         },
       },
     },
@@ -69,21 +85,33 @@ const tournamentsRoutes: FastifyPluginAsyncZod = async (app) => {
       // and the recap entry point for that user. Skips log the child key +
       // failing field paths (never values, never uid) so corrupt data stays
       // discoverable in Cloud Run logs.
-      const entries = Object.entries(raw).flatMap(([childKey, entry]) => {
-        const parsed = tournamentEntrySchema.safeParse({
-          ...(entry as object),
-          entryKey: childKey,
-        });
-        if (!parsed.success) {
-          request.log.warn(
-            `tournaments: skipping corrupt entry ${childKey}: ${parsed.error.issues
-              .map((issue) => `${issue.path.join('.') || '(root)'}: ${issue.code}`)
-              .join('; ')}`,
-          );
-          return [];
-        }
-        return [parsed.data];
-      });
+      const entries = Object.entries(raw).flatMap<TournamentRegistryListEntry>(
+        ([childKey, entry]) => {
+          // Phase 30.3: discriminate on the stored origin member BEFORE
+          // choosing a parser — a registry row would also pass the legacy
+          // schema (which would strip origin/provenance), so the raw
+          // discriminator, not schema fallback order, picks the shape.
+          const isRegistryRow =
+            entry !== null &&
+            typeof entry === 'object' &&
+            (entry as Record<string, unknown>).origin === TOURNAMENT_REGISTRY_ORIGIN;
+          const parsed = (
+            isRegistryRow ? tournamentRegistryRowSchema : tournamentEntrySchema
+          ).safeParse({
+            ...(entry as object),
+            entryKey: childKey,
+          });
+          if (!parsed.success) {
+            request.log.warn(
+              `tournaments: skipping corrupt entry ${childKey}: ${parsed.error.issues
+                .map((issue) => `${issue.path.join('.') || '(root)'}: ${issue.code}`)
+                .join('; ')}`,
+            );
+            return [];
+          }
+          return [parsed.data];
+        },
+      );
       entries.sort((a, b) => b.lastSetAt - a.lastSetAt);
       return entries;
     },
