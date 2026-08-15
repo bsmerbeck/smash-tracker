@@ -34,6 +34,7 @@ import {
 import { buildResolutionReceipt, resolveObservation } from './resolution.js';
 import {
   attachResolvedObservation,
+  listAttachedTargetSetIds,
   listAttachmentsForSet,
   listEnrichmentObservations,
   listEnrichmentReviewQueue,
@@ -54,12 +55,15 @@ import {
   type EnrichmentCountsDelta,
 } from './rollup.js';
 import {
+  ENRICHMENT_LEASE_TTL_MS,
   acquireEnrichmentRunLease,
   advanceEnrichmentRunState,
   completeEnrichmentRun,
   createOrResumeEnrichmentRun,
   failEnrichmentRun,
   readActiveEnrichmentRun,
+  renewEnrichmentRunLease,
+  type EnrichmentRunCursor,
   type EnrichmentRunLeaseHolder,
 } from './runState.js';
 
@@ -176,6 +180,37 @@ function chunk<T>(items: T[], size: number): T[][] {
 // Counters / result shape
 // ---------------------------------------------------------------------------
 
+/** Thrown the moment a fenced write (or an explicit renewal) reports the run lease is no longer this invocation's — the run aborts IMMEDIATELY rather than continuing to work without authority (30.2 reliability gate). */
+export class EnrichmentRunLeaseLostError extends Error {
+  constructor(tenantId: string, runId: string) {
+    super(`enrichment run ${runId} for tenant ${tenantId} lost its lease; aborting immediately`);
+    this.name = 'EnrichmentRunLeaseLostError';
+  }
+}
+
+/** Renew when a third of the lease TTL has elapsed — early enough that one missed boundary never lets the lease lapse mid-work. */
+const ENRICHMENT_LEASE_RENEW_INTERVAL_MS = Math.floor(ENRICHMENT_LEASE_TTL_MS / 3);
+
+/**
+ * One work-unit boundary notification (30.2 reliability gate) — the seam the
+ * operator's heartbeat/stall watchdog observes. Emitted at real work-unit
+ * boundaries (a page, a probe chunk, an observation, a target set), never on
+ * a timer of this module's own.
+ */
+export interface EnrichmentRunProgressEvent {
+  stage:
+    | 'discovery'
+    | 'expansion'
+    | 'probe'
+    | 'extraction'
+    | 'resolution'
+    | 'projection'
+    | 'reconciliation';
+  /** The unit just completed — a page title, an observation id, a target set id. */
+  unit?: string;
+  counts: EnrichmentBatchCounts;
+}
+
 export interface EnrichmentBatchCounts {
   playersRequested: number;
   vodPagesPresent: number;
@@ -203,6 +238,8 @@ export interface EnrichmentBatchCounts {
   attachmentsCreated: number;
   attachmentsAbstained: number;
   projectionsApplied: number;
+  /** Attached sets reprojected by the resume-reconciliation pass because their overlay keys lacked a witness (or held a pending half) — see `reconcileAttachedSets`. */
+  projectionsReconciled: number;
   backoffEvents: number;
 }
 
@@ -234,6 +271,7 @@ function emptyCounts(): EnrichmentBatchCounts {
     attachmentsCreated: 0,
     attachmentsAbstained: 0,
     projectionsApplied: 0,
+    projectionsReconciled: 0,
     backoffEvents: 0,
   };
 }
@@ -324,6 +362,16 @@ export interface RunEnrichmentBatchInput {
   nowMs: number;
   hashHex: (value: string) => string;
   dryRun: boolean;
+  /**
+   * REAL clock, used ONLY for lease-renewal timing (30.2 reliability gate) —
+   * never for any persisted timestamp, which all stay pinned to the `nowMs`
+   * snapshot for dry-run/apply hash determinism. Defaults to the frozen
+   * snapshot, which disables time-based renewal (tests keep their
+   * deterministic single-snapshot behavior).
+   */
+  now?: () => number;
+  /** Work-unit boundary observer — the operator's heartbeat/stall-watchdog seam. Never awaited; must not throw. */
+  onProgress?: (event: EnrichmentRunProgressEvent) => void;
 }
 
 // ---------------------------------------------------------------------------
@@ -437,6 +485,44 @@ export async function runEnrichmentBatch(
     resumedAtProjection = active?.cursor?.stage === 'projection';
   }
 
+  // 30.2 reliability gate: the work-unit boundary ticker. Every phase calls
+  // `tick` after completing one real unit of work; it (a) notifies the
+  // caller's progress observer (the operator's heartbeat/stall watchdog),
+  // and (b) RENEWS the run lease when a third of its TTL has elapsed on the
+  // REAL clock, aborting immediately (EnrichmentRunLeaseLostError) if the
+  // renewal reports the lease is no longer this invocation's. A dry run has
+  // no lease, so only (a) applies.
+  const realNow = input.now ?? (() => nowMs);
+  let lastRenewedAtMs = realNow();
+  const tick = async (stage: EnrichmentRunProgressEvent['stage'], unit?: string): Promise<void> => {
+    input.onProgress?.({ stage, ...(unit != null ? { unit } : {}), counts });
+    if (dryRun || !runId || !holder) {
+      return;
+    }
+    if (realNow() - lastRenewedAtMs < ENRICHMENT_LEASE_RENEW_INTERVAL_MS) {
+      return;
+    }
+    const renewed = await renewEnrichmentRunLease(database, tenantId, runId, holder, realNow());
+    if (!renewed) {
+      throw new EnrichmentRunLeaseLostError(tenantId, runId);
+    }
+    lastRenewedAtMs = realNow();
+  };
+
+  // Durable-cursor advancement at real work-unit boundaries (real runs
+  // only). A `lease-lost` outcome aborts immediately; `absent`/`terminal`
+  // cannot legitimately occur mid-run and abort the same way rather than
+  // silently continuing without a run to advance.
+  const advanceCursor = async (cursor: EnrichmentRunCursor): Promise<void> => {
+    if (dryRun || !runId || !holder) {
+      return;
+    }
+    const result = await advanceEnrichmentRunState(database, tenantId, runId, holder, { cursor });
+    if (result.outcome !== 'applied') {
+      throw new EnrichmentRunLeaseLostError(tenantId, runId);
+    }
+  };
+
   // Every observation this INVOCATION gathers, in memory — the dry-run
   // resolution/projection pass reads from here (there is nothing persisted
   // to read back); a real run instead re-reads from the database below, so
@@ -460,6 +546,8 @@ export async function runEnrichmentBatch(
         counts,
         gatheredObservations,
         dryRunDetails,
+        tick,
+        advanceCursor,
       });
 
       if (!dryRun && runId && holder) {
@@ -478,6 +566,7 @@ export async function runEnrichmentBatch(
       counts,
       gatheredObservations,
       dryRunDetails,
+      tick,
     });
 
     if (!dryRun && runId && holder) {
@@ -538,6 +627,8 @@ interface GatherPhaseInput {
   counts: EnrichmentBatchCounts;
   gatheredObservations: ResearchEnrichmentObservationRecord[];
   dryRunDetails: EnrichmentDryRunDetails | undefined;
+  tick: (stage: EnrichmentRunProgressEvent['stage'], unit?: string) => Promise<void>;
+  advanceCursor: (cursor: EnrichmentRunCursor) => Promise<void>;
 }
 
 async function gatherPhase(input: GatherPhaseInput): Promise<void> {
@@ -555,6 +646,8 @@ async function gatherPhase(input: GatherPhaseInput): Promise<void> {
     counts,
     gatheredObservations,
     dryRunDetails,
+    tick,
+    advanceCursor,
   } = input;
 
   // --- Discovery: resolve player VOD pages, dedupe, fetch + extract -------
@@ -617,6 +710,8 @@ async function gatherPhase(input: GatherPhaseInput): Promise<void> {
           tournamentPageTitles.add(row.tournamentPageTitle);
         }
       }
+      await tick('discovery', vodPageTitle);
+      await advanceCursor({ stage: 'discovery', pageTitle: vodPageTitle });
       continue;
     }
 
@@ -665,6 +760,10 @@ async function gatherPhase(input: GatherPhaseInput): Promise<void> {
         observationCount: records.length,
       });
     }
+    // A VOD page whose records are all persisted (and whose page cache is
+    // written) is a completed, durable work unit.
+    await tick('discovery', vodPageTitle);
+    await advanceCursor({ stage: 'discovery', pageTitle: vodPageTitle });
   }
 
   // --- Expansion: enumerate child fact pages by prefix, continuation-looped, bounded ---
@@ -685,8 +784,10 @@ async function gatherPhase(input: GatherPhaseInput): Promise<void> {
     // (it starts with its own prefix); guarantee it explicitly in case a
     // fixture/live corpus omits the self-match.
     factPageTitles.add(tournamentPageTitle);
+    await tick('expansion', tournamentPageTitle);
   }
   counts.factPagesEnumerated = factPageTitles.size;
+  await advanceCursor({ stage: 'expansion' });
 
   const boundedFactPageTitles =
     maxPages != null ? Array.from(factPageTitles).slice(0, maxPages) : Array.from(factPageTitles);
@@ -706,7 +807,9 @@ async function gatherPhase(input: GatherPhaseInput): Promise<void> {
         sha1: page.present ? page.sha1 : undefined,
       });
     }
+    await tick('probe');
   }
+  await advanceCursor({ stage: 'probe' });
 
   // --- Decide the changed subset (WIKITEXT skip-before-fetch) -------------
   const changedTitles: string[] = [];
@@ -785,6 +888,7 @@ async function gatherPhase(input: GatherPhaseInput): Promise<void> {
         contentHash,
       });
     }
+    await tick('extraction');
   }
 
   for (const page of pendingBracketPages) {
@@ -831,6 +935,8 @@ async function gatherPhase(input: GatherPhaseInput): Promise<void> {
           contentHash: page.contentHash,
         });
       }
+      await tick('extraction', page.title);
+      await advanceCursor({ stage: 'extraction', pageTitle: page.title });
       continue;
     }
 
@@ -890,6 +996,10 @@ async function gatherPhase(input: GatherPhaseInput): Promise<void> {
         contentHash: page.contentHash,
       });
     }
+    // A bracket page whose observations are all persisted (and whose page
+    // cache is written) is a completed, durable work unit.
+    await tick('extraction', page.title);
+    await advanceCursor({ stage: 'extraction', pageTitle: page.title });
   }
 }
 
@@ -907,6 +1017,7 @@ interface ResolveAndProjectPhaseInput {
   counts: EnrichmentBatchCounts;
   gatheredObservations: ResearchEnrichmentObservationRecord[];
   dryRunDetails: EnrichmentDryRunDetails | undefined;
+  tick: (stage: EnrichmentRunProgressEvent['stage'], unit?: string) => Promise<void>;
 }
 
 /**
@@ -926,8 +1037,17 @@ const STAGE_OUTCOME_TO_COHORT: Record<EnrichmentStageOutcome, keyof EnrichmentCo
 };
 
 async function resolveAndProjectPhase(input: ResolveAndProjectPhaseInput): Promise<void> {
-  const { database, tenantId, runId, nowMs, dryRun, counts, gatheredObservations, dryRunDetails } =
-    input;
+  const {
+    database,
+    tenantId,
+    runId,
+    nowMs,
+    dryRun,
+    counts,
+    gatheredObservations,
+    dryRunDetails,
+    tick,
+  } = input;
 
   if (dryRunDetails) {
     // Every member of `gatheredObservations` has already passed the parity
@@ -1084,9 +1204,11 @@ async function resolveAndProjectPhase(input: ResolveAndProjectPhaseInput): Promi
 
   for (const observation of nonVodRows) {
     await resolveOne(observation);
+    await tick('resolution', observation.observationId);
   }
   for (const observation of vodRows) {
     await resolveOne(observation);
+    await tick('resolution', observation.observationId);
   }
 
   if (dryRun) {
@@ -1125,7 +1247,7 @@ async function resolveAndProjectPhase(input: ResolveAndProjectPhaseInput): Promi
   };
   const cohortCountsDelta: EnrichmentCohortCountsDelta = {};
 
-  for (const targetSetId of newlyAttachedTargetSetIds) {
+  async function projectOneSet(targetSetId: string): Promise<void> {
     const attachments = await listAttachmentsForSet(database, tenantId, targetSetId);
     const observationsById: Record<string, ResearchEnrichmentObservationRecord> = {};
     for (const attachment of attachments) {
@@ -1155,6 +1277,59 @@ async function resolveAndProjectPhase(input: ResolveAndProjectPhaseInput): Promi
       const cohort = STAGE_OUTCOME_TO_COHORT[row.stageOutcome];
       cohortCountsDelta[cohort] = (cohortCountsDelta[cohort] ?? 0) + 1;
     }
+  }
+
+  for (const targetSetId of newlyAttachedTargetSetIds) {
+    await projectOneSet(targetSetId);
+    await tick('projection', targetSetId);
+  }
+
+  // THE RESUME-RECONCILIATION PASS (30.2 reliability gate, requirement D): a
+  // crash between "attachment written" and "projection/witness committed"
+  // strands a set that no later run would ever touch again — the attached
+  // observation is no longer in the review queue, so `newlyAttached` never
+  // re-includes it. Every real run therefore sweeps the FULL attached-set
+  // universe and reprojects exactly the sets whose READ-ONLY preview reports
+  // an outstanding fill (`vodOutcome: 'filled-empty'` or
+  // `stageOutcome: 'enriched'` against the current rows/witnesses). The
+  // preview is the trigger — never a bare witness-presence check — because
+  // (a) a healthy apply legitimately leaves pending-half residue (the
+  // projection module's documented, benign crash window), and (b) re-running
+  // the applier over an ALREADY-projected set is not witness-idempotent: the
+  // shared resolver treats the row's now-resolved stage as
+  // provider-authoritative and would CLEAR the stage witness, silently
+  // destroying attribution. A healthy set previews as
+  // unchanged/provider-authoritative and is skipped, so a completed
+  // account's rerun stays a no-op; only a genuinely stranded fill triggers
+  // an apply, which then converges by the projection module's own
+  // crash-safety contract.
+  for (const targetSetId of await listAttachedTargetSetIds(database, tenantId)) {
+    if (newlyAttachedTargetSetIds.has(targetSetId)) {
+      continue;
+    }
+    const attachments = await listAttachmentsForSet(database, tenantId, targetSetId);
+    const observationsById: Record<string, ResearchEnrichmentObservationRecord> = {};
+    for (const attachment of attachments) {
+      const record = await readEnrichmentObservation(database, tenantId, attachment.observationId);
+      if (record) {
+        observationsById[attachment.observationId] = record;
+      }
+    }
+    const overlay = buildEnrichmentOverlay({
+      targetSetId,
+      attachments,
+      observations: observationsById,
+    });
+    const preview = await previewEnrichmentProjection(database, tenantId, targetSetId, overlay);
+    const hasStrandedFill = preview.rows.some(
+      (row) => row.vodOutcome === 'filled-empty' || row.stageOutcome === 'enriched',
+    );
+    if (!hasStrandedFill) {
+      continue;
+    }
+    await projectOneSet(targetSetId);
+    counts.projectionsReconciled += 1;
+    await tick('reconciliation', targetSetId);
   }
 
   // THE ROLLUP-STAGING SEAM (Rule 1 — the known gap this run driver left

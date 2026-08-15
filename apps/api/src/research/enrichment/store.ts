@@ -490,6 +490,42 @@ async function collectAttachedObservationIds(
 }
 
 /**
+ * Every target set id that currently has AT LEAST ONE parseable attachment —
+ * the reconciliation universe for a resumed run (30.2 reliability gate): a
+ * crash between "attachment written" and "projection applied" leaves a set
+ * in this list with no witness for its overlay keys, and ONLY a reader of
+ * this list can find it again (the review queue can't — the observation is
+ * attached and therefore no longer queued). One read of the whole tenant
+ * attachment tree, same walk as `collectAttachedObservationIds`.
+ */
+export async function listAttachedTargetSetIds(
+  database: Database,
+  tenantId: string,
+): Promise<string[]> {
+  if (!isPathSafeTenantId(tenantId)) {
+    return [];
+  }
+  const snapshot = await attachmentsTreeRef(database, tenantId).get();
+  const raw = snapshot.val() as Record<string, Record<string, unknown>> | null;
+  if (raw === null || typeof raw !== 'object') {
+    return [];
+  }
+  const targetSetIds: string[] = [];
+  for (const [targetSetId, children] of Object.entries(raw)) {
+    if (children === null || typeof children !== 'object') {
+      continue;
+    }
+    const hasParseableAttachment = Object.values(children).some(
+      (value) => researchEnrichmentAttachmentRecordSchema.safeParse(value).success,
+    );
+    if (hasParseableAttachment) {
+      targetSetIds.push(targetSetId);
+    }
+  }
+  return targetSetIds.sort((a, b) => a.localeCompare(b));
+}
+
+/**
  * Returns every observation that does NOT currently have an attachment, in
  * DETERMINISTIC order (sorted by `observationId` — RTDB child iteration
  * order is not a contract). Selection is by attachment ABSENCE alone, never
