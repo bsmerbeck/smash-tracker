@@ -6,8 +6,10 @@ import { Button } from '@/components/ui/button';
 import { useTournamentEntries } from '@/hooks/useTournamentEntries';
 import { useMatches } from '@/hooks/useMatches';
 import { usePrepBrief } from '@/hooks/usePrepBrief';
+import { isAdminImportedEntry } from '@/lib/historicalTournament';
 import { TournamentHeader } from './components/TournamentHeader';
 import { EventResults } from './components/EventResults';
+import { ImportedSnapshotNotice } from './components/ImportedSnapshotNotice';
 import { SetTimeline } from './components/SetTimeline';
 import { CharactersAndStages } from './components/CharactersAndStages';
 import { AdvisorRetrospective } from './components/AdvisorRetrospective';
@@ -115,12 +117,20 @@ export function TournamentDetailPage() {
 
   const canGenerateRecap = entry.setsPlayed >= 1;
 
+  // Phase 30.3 (Gate 4, owner directive): an admin-imported historical
+  // snapshot is a PAST public-data record — registration/seeded/live prep
+  // controls must NEVER render for it, regardless of what its imported
+  // timestamps look like (a mis-recorded future startAtMs/firstSetAt must
+  // not resurrect the "Start prep brief" CTA).
+  const isImported = isAdminImportedEntry(entry);
+
   // 260725-juj: a pending or failed prep-brief query is UNKNOWN, not "no
   // brief exists" — mirrors DashboardPrepActionSlot.tsx's isPending ||
   // isError handling so this CTA never guesses "Start" over an already-
   // activated brief just because the read errored.
-  const prepCtaState: 'start' | 'reopen' | 'none' =
-    prepBriefQuery.isPending || prepBriefQuery.isError
+  const prepCtaState: 'start' | 'reopen' | 'none' = isImported
+    ? 'none'
+    : prepBriefQuery.isPending || prepBriefQuery.isError
       ? 'none'
       : prepBriefQuery.data?.activated
         ? 'reopen'
@@ -153,6 +163,7 @@ export function TournamentDetailPage() {
           )}
         </div>
       )}
+      <ImportedSnapshotNotice entry={entry} />
       <TournamentHeader entry={entry} />
       <EventResults entry={entry} entryMatches={entryMatches} />
       <SetTimeline entry={entry} sets={timeline.sets} otherMatches={timeline.otherMatches} />

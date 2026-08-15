@@ -5,6 +5,11 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { buildRecapTournamentUrl, type TournamentEntry } from '@smash-tracker/shared';
+import {
+  entryDisplayDateRange,
+  entryDisplaySetsPlayed,
+  getHistoricalFields,
+} from '@/lib/historicalTournament';
 import { buildEventStartggUrl } from '../lib/startggLinks';
 
 function formatDate(time: number, locale: string): string {
@@ -15,9 +20,18 @@ function formatDate(time: number, locale: string): string {
   });
 }
 
+/**
+ * Phase 30.3 (Gate 4): dates come from `entryDisplayDateRange` — imported
+ * entries prefer the public data's event dates, and an entry with no
+ * recorded dates renders the '—' missing marker, never an epoch-zero date.
+ */
 function formatDateRange(entry: TournamentEntry, locale: string): string {
-  const start = formatDate(entry.firstSetAt, locale);
-  const end = formatDate(entry.lastSetAt, locale);
+  const range = entryDisplayDateRange(entry);
+  if (range == null) {
+    return '—';
+  }
+  const start = formatDate(range.startMs, locale);
+  const end = formatDate(range.endMs, locale);
   return start === end ? start : `${start} – ${end}`;
 }
 
@@ -70,6 +84,11 @@ export function TournamentHeader({ entry }: { entry: TournamentEntry }) {
   const badge = buildSeedPlacementBadge(entry, t);
   const startggUrl = buildEventStartggUrl(entry);
   const tournamentUrl = buildRecapTournamentUrl(entry);
+  // Phase 30.3 (Gate 4): admin-imported snapshots badge as such, count sets
+  // from the import's DQ-excluded playedSetCount when recorded, and note the
+  // excluded DQs — but only when the import actually recorded a nonzero
+  // count (missing dqCount stays silent, never rendered as a zero).
+  const historical = getHistoricalFields(entry);
 
   return (
     <Card>
@@ -102,6 +121,7 @@ export function TournamentHeader({ entry }: { entry: TournamentEntry }) {
           </p>
         </div>
         <div className="flex flex-col items-end gap-2 text-right">
+          {historical != null && <Badge variant="outline">{t('tournaments.imported.badge')}</Badge>}
           {entry.numEntrants != null && (
             <p className="text-sm text-muted-foreground">
               {t('tournaments.header.entrants', { count: entry.numEntrants })}
@@ -124,7 +144,10 @@ export function TournamentHeader({ entry }: { entry: TournamentEntry }) {
       </CardHeader>
       <CardContent>
         <p className="text-sm text-muted-foreground">
-          {t('tournaments.header.setsPlayed', { count: entry.setsPlayed })}
+          {t('tournaments.header.setsPlayed', { count: entryDisplaySetsPlayed(entry) })}
+          {historical?.dqCount != null && historical.dqCount > 0 && (
+            <> · {t('tournaments.imported.dqExcluded', { count: historical.dqCount })}</>
+          )}
         </p>
       </CardContent>
     </Card>

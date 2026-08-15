@@ -12,6 +12,7 @@ import {
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
 import type { Match, TournamentEntry } from '@smash-tracker/shared';
+import { isAdminImportedEntry } from '@/lib/historicalTournament';
 import { buildEventResultRows, type EventResultRow } from '../lib/eventResults';
 
 function ProfileLink({ row }: { row: EventResultRow }) {
@@ -96,7 +97,14 @@ export function EventResults({
       </CardHeader>
       <CardContent className="flex flex-col gap-4">
         {rows.length === 0 ? (
-          <p className="text-sm text-muted-foreground">{t('tournaments.results.resync')}</p>
+          // Phase 30.3 (Gate 4): an admin-imported snapshot never live-syncs,
+          // so the "attach on your next sync" hint would be untruthful there —
+          // absent standings on an imported entry are simply not recorded.
+          <p className="text-sm text-muted-foreground">
+            {isAdminImportedEntry(entry)
+              ? t('tournaments.imported.resultsNotRecorded')
+              : t('tournaments.results.resync')}
+          </p>
         ) : (
           <>
             {winner && (
