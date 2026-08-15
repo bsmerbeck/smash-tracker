@@ -163,11 +163,20 @@ if (
  * in the Phase 30 provider-ingestion schema module is the constant this
  * mirrors, at a tighter bound because these strings are wiki-editable prose
  * fragments, not provider API fields.
+ *
+ * EXPORTED (30.2 reliability gate): the Liquipedia adapters bound every
+ * untrusted raw-evidence string to these caps at extraction time, so a
+ * record that reaches the persistence schema can never fail its length
+ * bounds at the write boundary. Exporting the constant keeps the adapter
+ * clamp and the schema bound one definition, never two numbers that drift.
  */
-const RESEARCH_ENRICHMENT_MAX_RAW_TEXT = 120;
+export const RESEARCH_ENRICHMENT_MAX_RAW_TEXT = 120;
 
-/** Mirrors the URL-length bound constant in the Phase 30 provider-ingestion schema module — duplicated locally so this file has no sibling import besides `researchProvenance.ts`. */
-const RESEARCH_ENRICHMENT_MAX_URL = 2048;
+/** Mirrors the URL-length bound constant in the Phase 30 provider-ingestion schema module — duplicated locally so this file has no sibling import besides `researchProvenance.ts`. Exported for the same adapter-clamp reason as `RESEARCH_ENRICHMENT_MAX_RAW_TEXT`. */
+export const RESEARCH_ENRICHMENT_MAX_URL = 2048;
+
+/** The schema's per-reason cap on `resolutionReasons` entries — exported so adapters can clamp stated reasons (which interpolate untrusted source text) at extraction time. */
+export const RESEARCH_ENRICHMENT_MAX_REASON_TEXT = 200;
 
 const RESEARCH_ENRICHMENT_MAX_PER_SOURCE_PAGE_ENTRIES = 400;
 
@@ -300,7 +309,7 @@ export const researchEnrichmentObservationRecordSchema = z.object({
     .nullish(),
   games: z.array(researchEnrichmentGameEntrySchema).max(15).nullish(),
   candidateTargetSetIds: z.array(z.string().max(200)).max(20).nullish(),
-  resolutionReasons: z.array(z.string().max(200)).max(10).nullish(),
+  resolutionReasons: z.array(z.string().max(RESEARCH_ENRICHMENT_MAX_REASON_TEXT)).max(10).nullish(),
   sourcePageMissing: z.boolean().nullish(),
   extractionFailed: z.boolean().nullish(),
 });

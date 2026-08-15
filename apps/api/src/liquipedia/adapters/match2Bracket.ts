@@ -13,6 +13,19 @@ import {
   splitTopLevelTemplates,
   stripWikiComments,
 } from '../wikitext.js';
+import {
+  MAX_GAME_SCOPE_TEXT,
+  MAX_KEY_TEXT,
+  MAX_PAGE_TITLE_TEXT,
+  MAX_RAW_DATE_TEXT,
+  MAX_VOD_URL_TEXT,
+  RESEARCH_ENRICHMENT_MAX_RAW_TEXT,
+  clampNullableUntrustedText,
+  clampReason,
+  clampUntrustedText,
+  normalizeOptionalUntrustedText,
+} from './observationBounds.js';
+import { classifyPlayerTag } from './playerSlot.js';
 
 /**
  * Phase 30.2 Plan 05 (ENR-02, Task 3): the modern nested (`match2`) bracket
@@ -365,13 +378,13 @@ export function extractMatch2BracketObservations(
         observedAtMs: input.nowMs,
         matchingStatus: 'unmatched',
         sourceSha1: input.sha1,
-        bracketTemplate: layoutName,
-        bracketKey,
-        game: input.eventContext.game,
+        bracketTemplate: clampUntrustedText(layoutName, MAX_KEY_TEXT),
+        bracketKey: clampUntrustedText(bracketKey, MAX_KEY_TEXT),
+        game: clampNullableUntrustedText(input.eventContext.game, MAX_GAME_SCOPE_TEXT),
         extractionFailed: true,
         resolutionReasons: [
           `match block ${matchKey}: no {{Match}} template found in this block; unclassified construct`,
-        ],
+        ].map(clampReason),
       });
       continue;
     }
@@ -380,7 +393,28 @@ export function extractMatch2BracketObservations(
     const opponent1 = parseSoloOpponent(matchParams.get('opponent1'));
     const opponent2 = parseSoloOpponent(matchParams.get('opponent2'));
 
-    if (!opponent1 || !opponent2) {
+    // 30.2 reliability gate: a parsed opponent whose tag is a TBD/bye
+    // placeholder is as unusable as an unparseable one — it must become a
+    // stated extraction failure WITHOUT `players`, never a stored
+    // placeholder pretending to be a player and never an empty tag.
+    const slot1 = opponent1 ? classifyPlayerTag(opponent1.tag) : null;
+    const slot2 = opponent2 ? classifyPlayerTag(opponent2.tag) : null;
+
+    if (!opponent1 || !opponent2 || !slot1?.usable || !slot2?.usable) {
+      const failureReasons: string[] = [];
+      if (!opponent1 || !opponent2) {
+        failureReasons.push(
+          `match block ${matchKey}: opponent1/opponent2 could not be parsed as a {{SoloOpponent}} template; unclassified construct`,
+        );
+      }
+      for (const [seat, slot] of [
+        [1, slot1],
+        [2, slot2],
+      ] as const) {
+        if (slot && !slot.usable) {
+          failureReasons.push(`match block ${matchKey} seat ${seat}: ${slot.detail}`);
+        }
+      }
       observations.push({
         observationId,
         sourceProvider: 'liquipedia',
@@ -396,13 +430,11 @@ export function extractMatch2BracketObservations(
         observedAtMs: input.nowMs,
         matchingStatus: 'unmatched',
         sourceSha1: input.sha1,
-        bracketTemplate: layoutName,
-        bracketKey,
-        game: input.eventContext.game,
+        bracketTemplate: clampUntrustedText(layoutName, MAX_KEY_TEXT),
+        bracketKey: clampUntrustedText(bracketKey, MAX_KEY_TEXT),
+        game: clampNullableUntrustedText(input.eventContext.game, MAX_GAME_SCOPE_TEXT),
         extractionFailed: true,
-        resolutionReasons: [
-          `match block ${matchKey}: opponent1/opponent2 could not be parsed as a {{SoloOpponent}} template; unclassified construct`,
-        ],
+        resolutionReasons: failureReasons.slice(0, MAX_RESOLUTION_REASONS).map(clampReason),
       });
       continue;
     }
@@ -425,7 +457,7 @@ export function extractMatch2BracketObservations(
           sourceGame: input.eventContext.game,
           targetGame: input.targetGame,
         });
-        entry.rawStage = canonical.rawStage;
+        entry.rawStage = clampUntrustedText(canonical.rawStage, RESEARCH_ENRICHMENT_MAX_RAW_TEXT);
         entry.stageForm = canonical.stageForm;
         entry.canonicalStageId = canonical.canonicalStageId;
         if (canonical.canonicalStageId === null && canonical.reason) {
@@ -433,7 +465,16 @@ export function extractMatch2BracketObservations(
         }
       }
       if (parsedMap.o1c || parsedMap.o2c) {
-        entry.rawChars = [parsedMap.o1c?.char ?? null, parsedMap.o2c?.char ?? null];
+        entry.rawChars = [
+          clampNullableUntrustedText(
+            parsedMap.o1c?.char ?? null,
+            RESEARCH_ENRICHMENT_MAX_RAW_TEXT,
+          ) ?? null,
+          clampNullableUntrustedText(
+            parsedMap.o2c?.char ?? null,
+            RESEARCH_ENRICHMENT_MAX_RAW_TEXT,
+          ) ?? null,
+        ];
       }
       if (parsedMap.o1c || parsedMap.o2c) {
         entry.stocks = [parsedMap.o1c?.stock ?? null, parsedMap.o2c?.stock ?? null];
@@ -487,6 +528,8 @@ export function extractMatch2BracketObservations(
     const date = rawDate ? parseLiquipediaProseDate(rawDate) : null;
 
     const derivedRoundLabel = `Round ${roundNum} Match ${matchNum}`;
+    const flag1 = normalizeOptionalUntrustedText(opponent1.flag, RESEARCH_ENRICHMENT_MAX_RAW_TEXT);
+    const flag2 = normalizeOptionalUntrustedText(opponent2.flag, RESEARCH_ENRICHMENT_MAX_RAW_TEXT);
 
     const observation: ResearchEnrichmentObservationRecord = {
       observationId,
@@ -503,29 +546,46 @@ export function extractMatch2BracketObservations(
       observedAtMs: input.nowMs,
       matchingStatus: 'unmatched',
       sourceSha1: input.sha1,
-      bracketTemplate: layoutName,
-      bracketKey,
-      game: input.eventContext.game,
-      tournamentPageTitle: input.eventContext.tournamentPageTitle,
-      tournamentPageUrl: buildLiquipediaPageUrl(input.eventContext.tournamentPageTitle),
-      tournamentDisplayName: input.eventContext.tournamentDisplayName,
-      tournamentStartggSlug: input.eventContext.startggSlug,
-      derivedRoundLabel,
+      bracketTemplate: clampUntrustedText(layoutName, MAX_KEY_TEXT),
+      bracketKey: clampUntrustedText(bracketKey, MAX_KEY_TEXT),
+      game: clampNullableUntrustedText(input.eventContext.game, MAX_GAME_SCOPE_TEXT),
+      tournamentPageTitle: clampUntrustedText(
+        input.eventContext.tournamentPageTitle,
+        MAX_PAGE_TITLE_TEXT,
+      ),
+      tournamentPageUrl: buildLiquipediaPageUrl(
+        clampUntrustedText(input.eventContext.tournamentPageTitle, MAX_PAGE_TITLE_TEXT),
+      ),
+      tournamentDisplayName: clampNullableUntrustedText(
+        input.eventContext.tournamentDisplayName,
+        MAX_PAGE_TITLE_TEXT,
+      ),
+      tournamentStartggSlug: clampNullableUntrustedText(
+        input.eventContext.startggSlug,
+        MAX_KEY_TEXT,
+      ),
+      derivedRoundLabel: clampUntrustedText(derivedRoundLabel, MAX_KEY_TEXT),
+      // The classified slots carry the trimmed, bound-clamped tags; flags are
+      // conditional-spread (house constraint 1) and bound-clamped, with an
+      // effectively-empty flag left absent rather than stored as "".
       players: [
-        { rawTag: opponent1.tag, flag: opponent1.flag },
-        { rawTag: opponent2.tag, flag: opponent2.flag },
+        { rawTag: slot1.tag, ...(flag1 != null ? { flag: flag1 } : {}) },
+        { rawTag: slot2.tag, ...(flag2 != null ? { flag: flag2 } : {}) },
       ],
       games,
     };
 
     if (rawDate) {
-      observation.rawDate = rawDate;
+      observation.rawDate = clampUntrustedText(rawDate, MAX_RAW_DATE_TEXT);
     }
     if (date) {
       observation.date = date;
     }
     if (rawScores) {
-      observation.rawScores = rawScores;
+      observation.rawScores = [
+        clampUntrustedText(rawScores[0], RESEARCH_ENRICHMENT_MAX_RAW_TEXT),
+        clampUntrustedText(rawScores[1], RESEARCH_ENRICHMENT_MAX_RAW_TEXT),
+      ];
     }
     if (scores) {
       observation.scores = scores;
@@ -535,13 +595,23 @@ export function extractMatch2BracketObservations(
       observation.setWinnerDerived = setWinnerDerived;
     }
     if (rawVodUrl) {
-      observation.rawVodUrl = rawVodUrl;
+      observation.rawVodUrl = clampUntrustedText(rawVodUrl, MAX_VOD_URL_TEXT);
     }
     if (vodUrl) {
-      observation.vodUrl = vodUrl;
+      // An overlength URL cannot be truncated (a truncated URL is a
+      // fabricated one) — it is dropped with a stated reason instead.
+      if (vodUrl.length <= MAX_VOD_URL_TEXT) {
+        observation.vodUrl = vodUrl;
+      } else {
+        resolutionReasons.push(
+          `VOD URL rejected: exceeds the ${MAX_VOD_URL_TEXT}-character storage bound`,
+        );
+      }
     }
     if (resolutionReasons.length > 0) {
-      observation.resolutionReasons = resolutionReasons.slice(0, MAX_RESOLUTION_REASONS);
+      observation.resolutionReasons = resolutionReasons
+        .slice(0, MAX_RESOLUTION_REASONS)
+        .map(clampReason);
     }
 
     observations.push(observation);

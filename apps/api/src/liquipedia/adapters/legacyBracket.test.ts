@@ -366,9 +366,14 @@ describe('extractLegacyBracketObservations', () => {
     expect(twoDigit).toBeDefined();
     expect(twoDigit!.players!.map((p) => p.rawTag)).toContain('Tremendo Dude');
 
+    // 30.2 reliability gate: a bye slot is a placeholder, not a player — the
+    // set is preserved as an explicit extraction failure WITHOUT `players`
+    // (auditable in coverage), never a stored "Bye" pseudo-player.
     const byeSet = observations.find((o) => o.bracketKey === '32DEWBracketA r1m1');
     expect(byeSet).toBeDefined();
-    expect(byeSet!.players!.map((p) => p.rawTag)).toContain('Bye');
+    expect(byeSet!.players).toBeUndefined();
+    expect(byeSet!.extractionFailed).toBe(true);
+    expect(byeSet!.resolutionReasons?.join(' ')).toContain('placeholder');
   });
 
   it('carries source page title, source page URL, revision id, sha1, content hash, parser version, template family, bracket template and bracket key on every emitted record', () => {
@@ -420,5 +425,109 @@ describe('extractLegacyBracketObservations', () => {
     for (const observation of observations) {
       expect(observation.matchingStatus).toBe('unmatched');
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 30.2 reliability gate — the write-boundary player-slot defect class. The
+// production MkLeo apply aborted because a bracket group with BOTH player
+// params present but empty persisted `rawTag: ""`. Every case below must
+// yield either a fully-usable pair of trimmed tags, or an extraction-failure
+// record WITHOUT `players` — and every emitted record must pass the exact
+// persistence schema.
+// ---------------------------------------------------------------------------
+
+describe('extractLegacyBracketObservations player-slot classification', () => {
+  function extractHandBuilt(
+    setParams: string,
+  ): ReturnType<typeof extractLegacyBracketObservations> {
+    const wikitext = `{{TournamentInfo
+|game=ultimate
+}}
+{{8DEWBracketA
+${setParams}
+}}`;
+    const eventContext = extractEventContext({
+      wikitext,
+      pageTitle: 'Test/PlayerSlots',
+      revisionId: 1,
+      sha1: null,
+    });
+    return extractLegacyBracketObservations({
+      wikitext,
+      pageTitle: 'Test/PlayerSlots',
+      revisionId: 1,
+      sha1: null,
+      eventContext,
+      targetGame: 'ultimate',
+      nowMs: NOW_MS,
+      hashHex: sha256Hex,
+    });
+  }
+
+  function expectFailureWithoutPlayers(
+    observations: ReturnType<typeof extractLegacyBracketObservations>['observations'],
+  ) {
+    expect(observations.length).toBe(1);
+    const observation = observations[0]!;
+    expect(observation.extractionFailed).toBe(true);
+    expect(observation.players).toBeUndefined();
+    expect(observation.resolutionReasons?.length).toBeGreaterThan(0);
+    expect(researchEnrichmentObservationRecordSchema.safeParse(observation).success).toBe(true);
+  }
+
+  it('both player params present but empty (the production MkLeo case) never persists rawTag "" — an extraction-failure record without players is emitted', () => {
+    const { observations } = extractHandBuilt('|r1m1p1= |r1m1p2= |r1m1p1score=3 |r1m1p2score=1');
+    expectFailureWithoutPlayers(observations);
+    expect(observations[0]!.resolutionReasons?.join(' ')).toContain('empty or whitespace-only');
+  });
+
+  it('one empty and one populated slot is a partially-filled pair: extraction failure, never a half-fabricated pairing', () => {
+    const { observations } = extractHandBuilt(
+      '|r1m1p1=MkLeo |r1m1p2= |r1m1p1score=3 |r1m1p2score=0',
+    );
+    expectFailureWithoutPlayers(observations);
+    expect(observations[0]!.resolutionReasons?.join(' ')).toContain('seat 2');
+  });
+
+  it('one missing and one populated slot is also a partially-filled pair — sibling inheritance never fires for it', () => {
+    const { observations } = extractHandBuilt('|r1m1p1=MkLeo |r1m1p1score=3 |r1m1p2score=0');
+    expectFailureWithoutPlayers(observations);
+  });
+
+  it('whitespace-only slots are classified as empty', () => {
+    const { observations } = extractHandBuilt('|r1m1p1=   |r1m1p2=  |r1m1p1score=2 |r1m1p2score=1');
+    expectFailureWithoutPlayers(observations);
+  });
+
+  it.each(['TBD', 'tbd', 'Bye', 'BYE'])(
+    'a %s placeholder slot never persists as a player',
+    (placeholder) => {
+      const { observations } = extractHandBuilt(
+        `|r1m1p1=MkLeo |r1m1p2=${placeholder} |r1m1p1score=2 |r1m1p2score=0`,
+      );
+      expectFailureWithoutPlayers(observations);
+      expect(observations[0]!.resolutionReasons?.join(' ')).toContain('placeholder');
+    },
+  );
+
+  it('trims surrounding whitespace off usable tags', () => {
+    // parseTemplateParameters already trims pipe-delimited values; the
+    // classifier trims again defensively — assert the stored tag is clean.
+    const { observations } = extractHandBuilt(
+      '|r1m1p1=MkLeo |r1m1p2=Sparg0 |r1m1p1score=3 |r1m1p2score=2',
+    );
+    expect(observations[0]!.players).toEqual([{ rawTag: 'MkLeo' }, { rawTag: 'Sparg0' }]);
+  });
+
+  it('a reset group inherits only from a sibling whose own slots are usable; an unusable sibling yields an extraction failure naming the sibling', () => {
+    const { observations } = extractHandBuilt(
+      '|r1m1p1=TBD |r1m1p2=TBD |r1m1p1score=3 |r1m1p2score=1\n|r1m2p1score=3 |r1m2p2score=2',
+    );
+    const reset = observations.find((o) => o.bracketKey === '8DEWBracketA r1m2');
+    expect(reset).toBeDefined();
+    expect(reset!.extractionFailed).toBe(true);
+    expect(reset!.players).toBeUndefined();
+    expect(reset!.resolutionReasons?.join(' ')).toContain('inheritance sibling');
   });
 });

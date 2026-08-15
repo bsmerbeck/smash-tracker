@@ -8,6 +8,19 @@ import type { LiquipediaEventContext } from '../eventContext.js';
 import { canonicalizeLiquipediaStage, type LiquipediaStageForm } from '../stage.js';
 import { normalizeLiquipediaVodUrl } from '../vodUrl.js';
 import {
+  MAX_GAME_SCOPE_TEXT,
+  MAX_KEY_TEXT,
+  MAX_PAGE_TITLE_TEXT,
+  MAX_RAW_DATE_TEXT,
+  MAX_VOD_URL_TEXT,
+  RESEARCH_ENRICHMENT_MAX_RAW_TEXT,
+  clampNullableUntrustedText,
+  clampReason,
+  clampUntrustedText,
+  normalizeOptionalUntrustedText,
+} from './observationBounds.js';
+import { classifyPlayerTag, type ClassifiedPlayerSlot } from './playerSlot.js';
+import {
   getGameParam,
   getSetParam,
   hashWikitext,
@@ -286,7 +299,7 @@ function collectGames(
         sourceGame: eventContext.game,
         targetGame,
       });
-      entry.rawStage = canonical.rawStage;
+      entry.rawStage = clampUntrustedText(canonical.rawStage, RESEARCH_ENRICHMENT_MAX_RAW_TEXT);
       entry.stageForm = canonical.stageForm;
       entry.canonicalStageId = canonical.canonicalStageId;
       if (canonical.canonicalStageId === null && canonical.reason) {
@@ -294,7 +307,10 @@ function collectGames(
       }
     }
     if (p1char !== undefined || p2char !== undefined) {
-      entry.rawChars = [p1char ?? null, p2char ?? null];
+      entry.rawChars = [
+        clampNullableUntrustedText(p1char ?? null, RESEARCH_ENRICHMENT_MAX_RAW_TEXT) ?? null,
+        clampNullableUntrustedText(p2char ?? null, RESEARCH_ENRICHMENT_MAX_RAW_TEXT) ?? null,
+      ];
     }
     if (p1stockRaw !== undefined || p2stockRaw !== undefined) {
       entry.stocks = [parseIntOrNull(p1stockRaw), parseIntOrNull(p2stockRaw)];
@@ -316,6 +332,29 @@ interface ResolvedPlayers {
   rawDate: string | undefined;
   detailsRaw: string | undefined;
   inheritedFromKey: string | null;
+}
+
+/** Bounds the wiki-declared game scope to the schema's `game` cap while preserving a `null` (unstated) value byte-unchanged. */
+function clampNullableGame(game: string | null): string | null {
+  return game === null ? null : clampUntrustedText(game, MAX_GAME_SCOPE_TEXT);
+}
+
+/**
+ * States, per seat, why a classified player slot is unusable — the reasons an
+ * extraction-failure record carries so coverage stays auditable (30.2
+ * reliability gate). Only unusable seats produce an entry.
+ */
+function describeUnusableSlots(
+  slots: readonly [ClassifiedPlayerSlot, ClassifiedPlayerSlot],
+  groupLabel: string,
+): string[] {
+  const reasons: string[] = [];
+  slots.forEach((slot, seatIndex) => {
+    if (!slot.usable) {
+      reasons.push(`group ${groupLabel} seat ${seatIndex + 1}: ${slot.detail}`);
+    }
+  });
+  return reasons;
 }
 
 export function extractLegacyBracketObservations(
@@ -360,39 +399,75 @@ export function extractLegacyBracketObservations(
       const ownP2 = getSetParam(params, side, round, match, 'p2');
 
       let resolved: ResolvedPlayers | null = null;
+      // Populated only when a slot was PRESENT but unusable (empty,
+      // whitespace-only, or a TBD/bye placeholder) — the write-boundary
+      // defect class the 30.2 reliability gate closes: these must become
+      // stated extraction failures, never `rawTag: ""` and never an
+      // inherited/fabricated player.
+      let playerFailureReasons: string[] = [];
 
-      if (ownP1 !== undefined && ownP2 !== undefined) {
+      const ownSlots: [ClassifiedPlayerSlot, ClassifiedPlayerSlot] = [
+        classifyPlayerTag(ownP1),
+        classifyPlayerTag(ownP2),
+      ];
+
+      if (ownSlots[0].usable && ownSlots[1].usable) {
         resolved = {
-          p1: ownP1,
-          p1Flag: getSetParam(params, side, round, match, 'p1flag'),
-          p2: ownP2,
-          p2Flag: getSetParam(params, side, round, match, 'p2flag'),
+          p1: ownSlots[0].tag,
+          p1Flag: normalizeOptionalUntrustedText(
+            getSetParam(params, side, round, match, 'p1flag'),
+            RESEARCH_ENRICHMENT_MAX_RAW_TEXT,
+          ),
+          p2: ownSlots[1].tag,
+          p2Flag: normalizeOptionalUntrustedText(
+            getSetParam(params, side, round, match, 'p2flag'),
+            RESEARCH_ENRICHMENT_MAX_RAW_TEXT,
+          ),
           rawDate: getSetParam(params, side, round, match, 'date'),
           detailsRaw: getSetParam(params, side, round, match, 'details'),
           inheritedFromKey: null,
         };
-      } else {
-        // Playerless group: attempt reset inheritance from the sibling with
-        // the SAME side and round and the immediately lower match index
-        // (this module's header) — never any other match index.
+      } else if (ownP1 === undefined && ownP2 === undefined) {
+        // FULLY playerless group: attempt reset inheritance from the sibling
+        // with the SAME side and round and the immediately lower match index
+        // (this module's header) — never any other match index. Inheritance
+        // applies ONLY when both own slots are entirely absent: a partially
+        // filled pair is a stated extraction failure below, never a merge of
+        // one real tag with a sibling's (that would fabricate a pairing).
         const siblingMatch = match - 1;
-        const siblingP1 =
-          siblingMatch >= 1 ? getSetParam(params, side, round, siblingMatch, 'p1') : undefined;
-        const siblingP2 =
-          siblingMatch >= 1 ? getSetParam(params, side, round, siblingMatch, 'p2') : undefined;
+        const siblingSlots: [ClassifiedPlayerSlot, ClassifiedPlayerSlot] | null =
+          siblingMatch >= 1
+            ? [
+                classifyPlayerTag(getSetParam(params, side, round, siblingMatch, 'p1')),
+                classifyPlayerTag(getSetParam(params, side, round, siblingMatch, 'p2')),
+              ]
+            : null;
 
-        if (siblingMatch >= 1 && siblingP1 !== undefined && siblingP2 !== undefined) {
+        if (siblingSlots && siblingSlots[0].usable && siblingSlots[1].usable) {
           const siblingBracketKey = `${template.name} ${side}${round}m${siblingMatch}`;
           resolved = {
-            p1: siblingP1,
-            p1Flag: getSetParam(params, side, round, siblingMatch, 'p1flag'),
-            p2: siblingP2,
-            p2Flag: getSetParam(params, side, round, siblingMatch, 'p2flag'),
+            p1: siblingSlots[0].tag,
+            p1Flag: normalizeOptionalUntrustedText(
+              getSetParam(params, side, round, siblingMatch, 'p1flag'),
+              RESEARCH_ENRICHMENT_MAX_RAW_TEXT,
+            ),
+            p2: siblingSlots[1].tag,
+            p2Flag: normalizeOptionalUntrustedText(
+              getSetParam(params, side, round, siblingMatch, 'p2flag'),
+              RESEARCH_ENRICHMENT_MAX_RAW_TEXT,
+            ),
             rawDate: getSetParam(params, side, round, siblingMatch, 'date'),
             detailsRaw: getSetParam(params, side, round, siblingMatch, 'details'),
             inheritedFromKey: siblingBracketKey,
           };
+        } else if (siblingSlots) {
+          playerFailureReasons = describeUnusableSlots(
+            siblingSlots,
+            `${side}${round}m${siblingMatch} (inheritance sibling of ${bracketKeyRaw})`,
+          );
         }
+      } else {
+        playerFailureReasons = describeUnusableSlots(ownSlots, bracketKeyRaw);
       }
 
       const observationId = buildEnrichmentObservationId(
@@ -405,9 +480,18 @@ export function extractLegacyBracketObservations(
       );
 
       if (!resolved) {
-        // No eligible sibling to inherit from: emit an extraction-failure
-        // record rather than a playerless set (this module's header,
-        // T-30.2-22). Never guessed at.
+        // Unusable player slots (present-but-empty/whitespace/TBD/bye/
+        // partially filled), or no eligible sibling to inherit from: emit an
+        // extraction-failure record WITHOUT `players` rather than a
+        // playerless set or an empty tag (this module's header, T-30.2-22,
+        // 30.2 reliability gate). Never guessed at, never fabricated.
+        const failureReasons =
+          playerFailureReasons.length > 0
+            ? playerFailureReasons
+            : [
+                `group ${bracketKeyRaw} has score/game parameters but no player tags and no eligible sibling ` +
+                  `at ${side}${round}m${match - 1} to inherit from; emitted as an extraction failure rather than a playerless set`,
+              ];
         observations.push({
           observationId,
           sourceProvider: 'liquipedia',
@@ -423,14 +507,11 @@ export function extractLegacyBracketObservations(
           observedAtMs: input.nowMs,
           matchingStatus: 'unmatched',
           sourceSha1: input.sha1,
-          bracketTemplate: template.name,
-          bracketKey,
-          game: input.eventContext.game,
+          bracketTemplate: clampUntrustedText(template.name, MAX_KEY_TEXT),
+          bracketKey: clampUntrustedText(bracketKey, MAX_KEY_TEXT),
+          game: clampNullableGame(input.eventContext.game),
           extractionFailed: true,
-          resolutionReasons: [
-            `group ${bracketKeyRaw} has score/game parameters but no player tags and no eligible sibling ` +
-              `at ${side}${round}m${match - 1} to inherit from; emitted as an extraction failure rather than a playerless set`,
-          ],
+          resolutionReasons: failureReasons.slice(0, MAX_RESOLUTION_REASONS).map(clampReason),
         });
         continue;
       }
@@ -540,30 +621,48 @@ export function extractLegacyBracketObservations(
         observedAtMs: input.nowMs,
         matchingStatus: 'unmatched',
         sourceSha1: input.sha1,
-        bracketTemplate: template.name,
-        bracketKey,
-        game: input.eventContext.game,
-        tournamentPageTitle: input.eventContext.tournamentPageTitle,
-        tournamentPageUrl: buildLiquipediaPageUrl(input.eventContext.tournamentPageTitle),
-        tournamentDisplayName: input.eventContext.tournamentDisplayName,
-        tournamentStartggSlug: input.eventContext.startggSlug,
-        ...(sectionHeading != null ? { sectionHeading } : {}),
-        derivedRoundLabel,
+        bracketTemplate: clampUntrustedText(template.name, MAX_KEY_TEXT),
+        bracketKey: clampUntrustedText(bracketKey, MAX_KEY_TEXT),
+        game: clampNullableGame(input.eventContext.game),
+        tournamentPageTitle: clampUntrustedText(
+          input.eventContext.tournamentPageTitle,
+          MAX_PAGE_TITLE_TEXT,
+        ),
+        tournamentPageUrl: buildLiquipediaPageUrl(
+          clampUntrustedText(input.eventContext.tournamentPageTitle, MAX_PAGE_TITLE_TEXT),
+        ),
+        tournamentDisplayName: clampNullableUntrustedText(
+          input.eventContext.tournamentDisplayName,
+          MAX_PAGE_TITLE_TEXT,
+        ),
+        tournamentStartggSlug: clampNullableUntrustedText(
+          input.eventContext.startggSlug,
+          MAX_KEY_TEXT,
+        ),
+        ...(sectionHeading != null
+          ? { sectionHeading: clampUntrustedText(sectionHeading, MAX_PAGE_TITLE_TEXT) }
+          : {}),
+        derivedRoundLabel: clampUntrustedText(derivedRoundLabel, MAX_KEY_TEXT),
+        // Flags are conditional-spread (house constraint 1): an absent flag
+        // stays absent, never a stored null or an empty string.
         players: [
-          { rawTag: resolved.p1, flag: resolved.p1Flag ?? null },
-          { rawTag: resolved.p2, flag: resolved.p2Flag ?? null },
+          { rawTag: resolved.p1, ...(resolved.p1Flag != null ? { flag: resolved.p1Flag } : {}) },
+          { rawTag: resolved.p2, ...(resolved.p2Flag != null ? { flag: resolved.p2Flag } : {}) },
         ],
         games,
       };
 
       if (rawDate) {
-        observation.rawDate = rawDate;
+        observation.rawDate = clampUntrustedText(rawDate, MAX_RAW_DATE_TEXT);
       }
       if (date) {
         observation.date = date;
       }
       if (rawScores) {
-        observation.rawScores = rawScores;
+        observation.rawScores = [
+          clampUntrustedText(rawScores[0], RESEARCH_ENRICHMENT_MAX_RAW_TEXT),
+          clampUntrustedText(rawScores[1], RESEARCH_ENRICHMENT_MAX_RAW_TEXT),
+        ];
       }
       if (scores) {
         observation.scores = scores;
@@ -574,16 +673,29 @@ export function extractLegacyBracketObservations(
       }
       if (resolved.inheritedFromKey) {
         observation.isBracketReset = true;
-        observation.vodInheritedFromBracketKey = resolved.inheritedFromKey;
+        observation.vodInheritedFromBracketKey = clampUntrustedText(
+          resolved.inheritedFromKey,
+          MAX_KEY_TEXT,
+        );
       }
       if (rawVodUrl) {
-        observation.rawVodUrl = rawVodUrl;
+        observation.rawVodUrl = clampUntrustedText(rawVodUrl, MAX_VOD_URL_TEXT);
       }
       if (vodUrl) {
-        observation.vodUrl = vodUrl;
+        // An overlength URL cannot be truncated (a truncated URL is a
+        // fabricated one) — it is dropped with a stated reason instead.
+        if (vodUrl.length <= MAX_VOD_URL_TEXT) {
+          observation.vodUrl = vodUrl;
+        } else {
+          resolutionReasons.push(
+            `VOD URL rejected: exceeds the ${MAX_VOD_URL_TEXT}-character storage bound`,
+          );
+        }
       }
       if (resolutionReasons.length > 0) {
-        observation.resolutionReasons = resolutionReasons.slice(0, MAX_RESOLUTION_REASONS);
+        observation.resolutionReasons = resolutionReasons
+          .slice(0, MAX_RESOLUTION_REASONS)
+          .map(clampReason);
       }
 
       observations.push(observation);
