@@ -1,7 +1,8 @@
 import { useMemo, useState } from 'react';
-import { Link } from 'react-router';
+import { Link, useSearchParams } from 'react-router';
 import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/ui/button';
+import { resolveAnalyzeOpponentPreselection } from '@/lib/analyzeOpponent';
 import { getOpponentSources, useFilteredMatches } from '@/hooks/useFilteredMatches';
 import { useTournamentEntries } from '@/hooks/useTournamentEntries';
 import { useOpponentAliases } from '@/hooks/useOpponentAliases';
@@ -51,14 +52,28 @@ export function OpponentsPage() {
   // needed to seed state from data that just loaded.
   const [selectedOpponent, setSelectedOpponent] = useState<string | null>(null);
 
+  // Phase 30.3 (Gate 4): "Analyze opponent" deep links land here with
+  // ?player=sgg:<slug>|pgg:<id> (provider identity, preferred) and/or
+  // ?opponent=<tag> (alias-aware fallback). Resolved against the SAME
+  // alias-canonicalized, filter-applied match set the page's aggregates and
+  // drill-downs use, so a preselected profile can never disagree with what
+  // the list would show for a manual click. Purely a render-time derivation
+  // — an explicit click always wins over the URL, and a preselection that
+  // isn't in the current filtered records falls back to most-played exactly
+  // like a stale explicit selection does.
+  const [searchParams] = useSearchParams();
+  const preselected = useMemo(
+    () => resolveAnalyzeOpponentPreselection(searchParams, matches, aliasMap ?? {}),
+    [searchParams, matches, aliasMap],
+  );
+
   // The opponent name currently open in the "Merge into..." dialog, or null
   // when the dialog is closed.
   const [mergeCandidate, setMergeCandidate] = useState<string | null>(null);
 
+  const requested = selectedOpponent ?? preselected;
   const selected =
-    selectedOpponent && opponentRecords.some((o) => o.opponent === selectedOpponent)
-      ? selectedOpponent
-      : mostPlayed;
+    requested && opponentRecords.some((o) => o.opponent === requested) ? requested : mostPlayed;
 
   const profile = useMemo(() => {
     if (!selected) {

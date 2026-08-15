@@ -70,6 +70,7 @@ import {
   type MatchTableFilterState,
 } from '../lib/matchTableFilters';
 import { persistColumnVisibility, readStoredColumnVisibility } from '../lib/columnVisibility';
+import { AnalyzeOpponentLink } from '@/components/AnalyzeOpponentLink';
 import { EditMatchForm } from '@/components/match-form/EditMatchForm';
 import { AttachVodDialog } from '@/components/vod/AttachVodDialog';
 
@@ -243,6 +244,29 @@ export function MatchTable({
         id: 'opponentName',
         header: columnLabel(t, 'opponentName'),
         accessorFn: (row) => row.opponentName,
+        cell: ({ row }) => {
+          // Phase 30.3 (Gate 4): every named opponent cell carries an
+          // "Analyze opponent" deep link into the existing /opponents
+          // scouting surface (provider player ID first, alias-aware tag
+          // fallback). AnalyzeOpponentLink renders nothing for unnamed
+          // rows or non-personal subjects.
+          const match = row.original.match;
+          if (row.original.opponentName === '') {
+            return null;
+          }
+          return (
+            <span className="inline-flex items-center gap-1.5">
+              {row.original.opponentName}
+              <AnalyzeOpponentLink
+                identity={{
+                  opponentUserSlug: match.opponentUserSlug,
+                  opponentParryUserId: match.opponentParryUserId,
+                  opponent: match.opponent,
+                }}
+              />
+            </span>
+          );
+        },
       },
       {
         id: 'stage',

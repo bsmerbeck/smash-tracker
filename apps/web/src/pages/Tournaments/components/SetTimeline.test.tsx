@@ -215,7 +215,9 @@ describe('SetTimeline', () => {
       makeMatch({ id: 'g1', time: 100, win: true, externalId: 'sgg:1:g1', opponent: 'rival' }),
     ];
     renderTimeline(matches);
-    expect(screen.queryByRole('link')).not.toBeInTheDocument();
+    // Phase 30.3: the internal "Analyze opponent" link may still render off
+    // the tag alone — only the OUTBOUND start.gg profile link must be absent.
+    expect(screen.queryByRole('link', { name: 'View rival on start.gg' })).not.toBeInTheDocument();
   });
 
   it('links the set round label to its start.gg set page when the entry has an eventSlug', () => {
