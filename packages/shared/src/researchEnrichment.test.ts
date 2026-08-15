@@ -212,6 +212,49 @@ describe('researchEnrichmentObservationRecordSchema', () => {
     expect(parsed.games?.[0]?.rawStage).toBe('Φ');
     expect('canonicalStageId' in (parsed.games?.[0] ?? {})).toBe(false);
   });
+
+  // 30.2 reliability gate: the write-boundary defect class — a player entry
+  // whose rawTag is empty or whitespace-only must be unpersistable, while an
+  // extraction-failure record WITHOUT players stays fully persistable so
+  // coverage remains auditable.
+  it('rejects a player entry whose rawTag is the empty string', () => {
+    expect(
+      researchEnrichmentObservationRecordSchema.safeParse(
+        makeMinimalObservation({ players: [{ rawTag: '' }, { rawTag: 'Tweek' }] }),
+      ).success,
+    ).toBe(false);
+  });
+
+  it.each([' ', '   ', '\t', ' '])(
+    'rejects a player entry whose rawTag is whitespace-only (%j)',
+    (rawTag) => {
+      expect(
+        researchEnrichmentObservationRecordSchema.safeParse(
+          makeMinimalObservation({ players: [{ rawTag }, { rawTag: 'Tweek' }] }),
+        ).success,
+      ).toBe(false);
+    },
+  );
+
+  it('rejects a players tuple in which only one slot is empty (partially filled slots never persist)', () => {
+    expect(
+      researchEnrichmentObservationRecordSchema.safeParse(
+        makeMinimalObservation({ players: [{ rawTag: 'MkLeo' }, { rawTag: '' }] }),
+      ).success,
+    ).toBe(false);
+  });
+
+  it('accepts an extraction-failure record without players (the auditable unmatchable shape)', () => {
+    const parsed = researchEnrichmentObservationRecordSchema.parse(
+      makeMinimalObservation({
+        contentType: 'stage-observation',
+        extractionFailed: true,
+        resolutionReasons: ['both player slots were empty; emitted without players'],
+      }),
+    );
+    expect('players' in parsed).toBe(false);
+    expect(parsed.extractionFailed).toBe(true);
+  });
 });
 
 // ---------------------------------------------------------------------------

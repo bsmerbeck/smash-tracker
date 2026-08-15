@@ -191,7 +191,24 @@ export const LIQUIPEDIA_ATTRIBUTION_LICENSE_URL = 'https://creativecommons.org/l
 // ---------------------------------------------------------------------------
 
 const researchEnrichmentPlayerEntrySchema = z.object({
-  rawTag: z.string().min(1).max(RESEARCH_ENRICHMENT_MAX_RAW_TEXT),
+  /**
+   * 30.2 reliability gate (owner corrective directive, Gate 1): `.min(1)`
+   * alone admitted a whitespace-only tag, and the production MkLeo apply
+   * abort proved an adapter could emit a present-but-empty player slot all
+   * the way to the write boundary. The trim refinement TIGHTENS the bound
+   * (additive, never a relaxation — the earlier "relax min(1)" advisory is
+   * superseded): a player entry either carries a real, non-whitespace tag or
+   * the observation must be stored WITHOUT `players` (which is `.nullish()`
+   * below) as an explicit extraction failure. Adapters classify; this bound
+   * makes the empty-tag shape structurally unpersistable.
+   */
+  rawTag: z
+    .string()
+    .min(1)
+    .max(RESEARCH_ENRICHMENT_MAX_RAW_TEXT)
+    .refine((value) => value.trim().length > 0, {
+      message: 'rawTag must contain at least one non-whitespace character',
+    }),
   canonicalPage: z.string().max(300).nullish(),
   /** Untrusted third-party string: usually a 2-letter code, but live pages carry full country names ("Dominican Republic"). */
   flag: z.string().max(RESEARCH_ENRICHMENT_MAX_RAW_TEXT).nullish(),
