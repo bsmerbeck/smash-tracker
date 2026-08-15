@@ -31,7 +31,8 @@ describe('historicalTournamentEntryListSchema', () => {
       makeEntry({
         origin: 'admin-imported',
         provider: 'startgg',
-        startggEventId: 987654,
+        // A STRING on the wire — the shared registry contract's stable provider id.
+        startggEventId: '987654',
         tournamentName: 'The Big House 9',
         tournamentSlug: 'tournament/the-big-house-9',
         eventSlug: 'tournament/the-big-house-9/event/ultimate-singles',

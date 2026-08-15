@@ -14,6 +14,7 @@
  *   pnpm exec tsx scripts/gate0ForensicsProbe.ts \
  *     --hbox-uid ... --mkleo-uid ... --sparg0-uid ... --izaw-uid ...
  */
+import { deleteApp } from 'firebase-admin/app';
 import { loadEnv } from '../src/config/env.js';
 import { initFirebase } from '../src/firebase/admin.js';
 
@@ -82,7 +83,7 @@ async function main(): Promise<void> {
     }
   } finally {
     database.goOffline();
-    await app.delete();
+    await deleteApp(app);
   }
 }
 

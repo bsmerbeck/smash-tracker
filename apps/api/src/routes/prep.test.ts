@@ -258,6 +258,41 @@ describe('POST /api/prep/:entryKey/activate', () => {
     expect(response.statusCode).toBe(404);
   });
 
+  it('returns 409 and creates no prepBriefs node for an admin-imported historical registry row (Phase 30.3), even with future timestamps', async () => {
+    const { app, database } = buildTestApp();
+    const entryKey = 'histimport:987654';
+    // Deliberately future first/lastSetAt: the server refusal must hold on
+    // the origin discriminator alone, not on the timestamps the web gate
+    // happens to use (a mis-recorded future date must not resurrect prep).
+    const futureMs = Date.now() + 7 * 24 * 60 * 60 * 1000;
+    // Seeded directly (not via seedEntry): registry rows carry no legacy
+    // `source` member, and FakeDatabase rejects undefined own-properties
+    // exactly like the real SDK, so the override-spread path can't drop it.
+    database.seed(`tournamentEntries/${TEST_UID}/${entryKey}`, {
+      entryId: entryKey,
+      origin: 'admin-imported',
+      provider: 'startgg',
+      startggEventId: '987654',
+      eventName: 'Imported Historical Open',
+      registryWitness: 'research-import:v1:987654',
+      provenance: { source: 'research-import', importedAtMs: FIRST_SET_AT },
+      playedSetCount: 0,
+      firstSetAt: futureMs,
+      lastSetAt: futureMs,
+      setsPlayed: 0,
+    });
+
+    const response = await app.inject({
+      method: 'POST',
+      url: `/api/prep/${encodeURIComponent(entryKey)}/activate`,
+      headers: authHeader(),
+    });
+
+    expect(response.statusCode).toBe(409);
+    const dump = database.dump() as Record<string, unknown>;
+    expect(dump.prepBriefs).toBeUndefined();
+  });
+
   it('first activate returns justActivated: true with eventDate from the registry firstSetAt; second returns false with the same eventDate', async () => {
     const { app, database } = buildTestApp();
     seedEntry(database, TEST_UID, ENTRY_KEY);

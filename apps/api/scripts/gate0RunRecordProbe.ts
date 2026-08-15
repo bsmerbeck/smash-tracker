@@ -4,6 +4,7 @@
  * terminal states (completed / failed+reason) are preserved in planning
  * artifacts. Zero writes; prompt termination.
  */
+import { deleteApp } from 'firebase-admin/app';
 import { loadEnv } from '../src/config/env.js';
 import { initFirebase } from '../src/firebase/admin.js';
 
@@ -29,7 +30,7 @@ async function main(): Promise<void> {
     }
   } finally {
     database.goOffline();
-    await app.delete();
+    await deleteApp(app);
   }
 }
 

@@ -4,6 +4,7 @@ import { z } from 'zod';
 import {
   deriveReviewAtCandidate,
   entryKeyInputSchema,
+  isTournamentRegistryOwnedRow,
   opponentNameInputSchema,
   PREP_CHECKLIST_ITEM_IDS,
   prepActivateResponseSchema,
@@ -24,7 +25,7 @@ import {
   setPrepLikelyOpponent,
   setPrepReviewChecklistItem,
 } from '../prep/prep.js';
-import { NotFoundError } from '../services/rtdb.js';
+import { ConflictError, NotFoundError } from '../services/rtdb.js';
 
 /** `X-Session-Id` header, copied verbatim from `tournaments.ts` — defaults to `'unknown'`, never blocks the request. */
 function sessionIdFromHeader(request: FastifyRequest): string {
@@ -40,8 +41,8 @@ function sessionIdFromHeader(request: FastifyRequest): string {
  * handler's effective-`reviewAt` derivation and the open handler's freeze
  * wiring need the registry row WITHOUT 404ing when it's missing (D-03: a
  * brief must stay reachable even if its registry row is later removed).
- * `requireOwnedEntry` below is the throwing wrapper every existing call site
- * (activate) keeps using unchanged.
+ * `requireActivatableEntry` below is the throwing wrapper the activate call
+ * site uses.
  */
 async function tryReadOwnedEntry(
   app: FastifyInstance,
@@ -59,24 +60,41 @@ async function tryReadOwnedEntry(
 }
 
 /**
- * Throws `NotFoundError` when the row is absent. This is an
- * EXISTENCE/OWNERSHIP check, not character sanitization: an `entryKey` that
- * names a real RTDB child key is by construction free of RTDB-illegal
- * characters, because the write that created it would otherwise have been
- * rejected (RESEARCH Pitfall 2). Re-scrubbing it here would be theatre;
- * refusing an entryKey the caller does not own is the actual control
- * (T-26-15).
+ * Throws `NotFoundError` when the row is absent — an EXISTENCE/OWNERSHIP
+ * check, not character sanitization: an `entryKey` that names a real RTDB
+ * child key is by construction free of RTDB-illegal characters, because the
+ * write that created it would otherwise have been rejected (RESEARCH
+ * Pitfall 2); refusing an entryKey the caller does not own is the actual
+ * control (T-26-15).
+ *
+ * Phase 30.3 (owner corrective directive, Gate 3 separation rule): an
+ * admin-imported historical registry row is a PAST public-data snapshot —
+ * prep activation on one is refused server-side with 409, regardless of
+ * what its imported timestamps look like. The check runs
+ * against the RAW stored value because `tournamentEntrySchema.parse` strips
+ * the `origin`/`registryWitness` discriminators. Defense in depth: the web
+ * already hides the prep CTA for these rows and their `firstSetAt` is
+ * historical, but a hand-crafted request must hit the same wall.
  */
-async function requireOwnedEntry(
+async function requireActivatableEntry(
   app: FastifyInstance,
   uid: string,
   entryKey: string,
 ): Promise<TournamentEntry> {
-  const entry = await tryReadOwnedEntry(app, uid, entryKey);
-  if (entry === null) {
+  const snapshot = await app.firebase.database.ref(`tournamentEntries/${uid}/${entryKey}`).get();
+  if (!snapshot.exists()) {
     throw new NotFoundError(`Tournament entry not found for entryKey ${entryKey}`);
   }
-  return entry;
+  const raw = snapshot.val();
+  if (isTournamentRegistryOwnedRow(raw)) {
+    throw new ConflictError(
+      'Prep cannot be activated for an admin-imported historical tournament snapshot',
+    );
+  }
+  return tournamentEntrySchema.parse({
+    ...(raw as object),
+    entryKey,
+  });
 }
 
 /**
@@ -191,8 +209,10 @@ const prepRoutes: FastifyPluginAsyncZod<PrepRoutesOptions> = async (app, options
   );
 
   // POST /api/prep/:entryKey/activate — create-once activation (D-02/D-07).
-  // requireOwnedEntry runs FIRST: an entryKey absent from the caller's own
-  // registry is refused with 404 before any prepBriefs path is touched.
+  // requireActivatableEntry runs FIRST: an entryKey absent from the caller's
+  // own registry is refused with 404, and an admin-imported historical
+  // snapshot is refused with 409 (Phase 30.3), before any prepBriefs path is
+  // touched.
   app.post(
     '/prep/:entryKey/activate',
     {
@@ -204,7 +224,7 @@ const prepRoutes: FastifyPluginAsyncZod<PrepRoutesOptions> = async (app, options
       },
     },
     async (request) => {
-      const entry = await requireOwnedEntry(app, request.uid, request.params.entryKey);
+      const entry = await requireActivatableEntry(app, request.uid, request.params.entryKey);
       const sessionId = sessionIdFromHeader(request);
       // The eventDate argument is the registry row's firstSetAt — the
       // immutable snapshot D-02 requires. The service's create-once

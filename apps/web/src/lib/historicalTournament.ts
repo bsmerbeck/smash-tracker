@@ -27,8 +27,15 @@ export const historicalTournamentEntrySchema = tournamentEntrySchema.extend({
   origin: z.string().min(1).nullish(),
   /** Source site of the imported public data — 'startgg' for this drive. */
   provider: z.string().min(1).nullish(),
-  /** start.gg event id as carried by the import (parallel to the legacy `eventId`). */
-  startggEventId: z.number().int().positive().nullish(),
+  /**
+   * start.gg event id as carried by the import (parallel to the legacy
+   * `eventId`). A STRING on the wire — the shared registry contract
+   * (`tournamentRegistryRowSchema`) stores it as the stable provider id
+   * string; typing it as a number here made every real registry row fail the
+   * whole-list parse (caught at Gate 4 integration review, pinned by
+   * `historicalTournamentContract.test.ts`).
+   */
+  startggEventId: z.string().min(1).nullish(),
   /** Tournament-level path slug as carried by the import (parallel to the legacy `slug`). */
   tournamentSlug: z.string().min(1).nullish(),
   /** Event start, epoch ms, when the public data recorded one. */
