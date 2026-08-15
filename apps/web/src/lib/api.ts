@@ -78,7 +78,6 @@ import {
   startggAuthorizeResponseSchema,
   startggStatusSchema,
   startggSyncSummarySchema,
-  tournamentEntryListSchema,
   tournamentEntrySchema,
   userProfileSchema,
   vodTimestampEntrySchema,
@@ -118,6 +117,7 @@ import {
   type UpsertStageFavoritesInput,
 } from '@smash-tracker/shared';
 import { getFirebaseAuth } from './firebase';
+import { historicalTournamentEntryListSchema } from './historicalTournament';
 import { getActiveSubjectHeader } from './subjectQueryKey';
 
 /**
@@ -736,8 +736,15 @@ export const api = {
     },
   },
   tournaments: {
-    /** GET /api/tournaments */
-    list: () => apiRequestParsed('/api/tournaments', tournamentEntryListSchema),
+    /**
+     * GET /api/tournaments. Parsed with the WEB-LOCAL historical extension
+     * (Phase 30.3 Gate 4) rather than the shared `tournamentEntryListSchema`:
+     * Zod objects strip unknown keys, so parsing with the base schema would
+     * silently drop the admin-imported rows' `origin`/`provenance`/date
+     * fields before any component could render them. Swap back to the shared
+     * schema once the server-side contract lands there.
+     */
+    list: () => apiRequestParsed('/api/tournaments', historicalTournamentEntryListSchema),
     /**
      * POST /api/tournaments/manual-entry (Phase 13, ONBD-04 D-05): the
      * prep-path integration-failure recovery — records an event to prepare

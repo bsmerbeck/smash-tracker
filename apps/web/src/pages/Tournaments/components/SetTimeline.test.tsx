@@ -215,7 +215,61 @@ describe('SetTimeline', () => {
       makeMatch({ id: 'g1', time: 100, win: true, externalId: 'sgg:1:g1', opponent: 'rival' }),
     ];
     renderTimeline(matches);
-    expect(screen.queryByRole('link')).not.toBeInTheDocument();
+    // Phase 30.3: the internal "Analyze opponent" link may still render off
+    // the tag alone — only the OUTBOUND start.gg profile link must be absent.
+    expect(screen.queryByRole('link', { name: 'View rival on start.gg' })).not.toBeInTheDocument();
+  });
+
+  /** Phase 30.3 (Gate 4): Analyze-opponent deep links + stocks-left detail. */
+  it('deep-links "Analyze opponent" preferring the start.gg player id', () => {
+    const matches = [
+      makeMatch({
+        id: 'g1',
+        time: 100,
+        win: true,
+        externalId: 'sgg:1:g1',
+        opponent: 'rival',
+        opponentUserSlug: 'user/9fb774ae',
+      }),
+    ];
+    renderTimeline(matches);
+    const link = screen.getByRole('link', { name: 'Analyze opponent rival' });
+    expect(link).toHaveAttribute('href', '/opponents?player=sgg%3Auser%2F9fb774ae&opponent=rival');
+  });
+
+  it('falls back to the alias-aware tag when the set has no provider player id', () => {
+    const matches = [
+      makeMatch({ id: 'g1', time: 100, win: true, externalId: 'sgg:1:g1', opponent: 'rival' }),
+    ];
+    renderTimeline(matches);
+    const link = screen.getByRole('link', { name: 'Analyze opponent rival' });
+    expect(link).toHaveAttribute('href', '/opponents?opponent=rival');
+  });
+
+  it('shows stocks left in a game chip tooltip when recorded', async () => {
+    const user = userEvent.setup();
+    const matches = [
+      makeMatch({ id: 'g1', time: 100, win: true, externalId: 'sgg:1:g1', stocksLeft: 2 }),
+    ];
+    renderTimeline(matches);
+
+    await user.hover(screen.getByText('BAT'));
+    // Radix renders the tooltip content twice (visible + a11y copy).
+    const tips = await screen.findAllByText(/2 stocks left/);
+    expect(tips.length).toBeGreaterThan(0);
+  });
+
+  it('leaves the tooltip silent about stocks when none were recorded', async () => {
+    const user = userEvent.setup();
+    const matches = [makeMatch({ id: 'g1', time: 100, win: true, externalId: 'sgg:1:g1' })];
+    renderTimeline(matches);
+
+    await user.hover(screen.getByText('BAT'));
+    // Tooltip is open once its matchup line is findable — and says nothing
+    // about stocks, since none were recorded (missing stays missing).
+    const tips = await screen.findAllByText(/Mario vs Luigi/);
+    expect(tips.length).toBeGreaterThan(0);
+    expect(screen.queryByText(/stock/)).not.toBeInTheDocument();
   });
 
   it('links the set round label to its start.gg set page when the entry has an eventSlug', () => {

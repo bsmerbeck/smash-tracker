@@ -11,8 +11,10 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
+import { Badge } from '@/components/ui/badge';
 import { getWinLossRecord, type WinLossRecord } from '@/lib/stats';
 import { useTournamentEntries } from '@/hooks/useTournamentEntries';
+import { entryDisplayDateRange, isAdminImportedEntry } from '@/lib/historicalTournament';
 import { buildStartggUrl } from '@/pages/Tournaments/lib/startggLinks';
 
 export interface TournamentEntryRow {
@@ -49,9 +51,18 @@ function formatDate(time: number, locale: string): string {
   });
 }
 
+/**
+ * Phase 30.3 (Gate 4): dates render from `entryDisplayDateRange` — imported
+ * rows prefer the public data's own event dates, and an entry with nothing
+ * recorded renders the '—' missing marker rather than an epoch-zero date.
+ */
 function formatDateRange(entry: TournamentEntry, locale: string): string {
-  const start = formatDate(entry.firstSetAt, locale);
-  const end = formatDate(entry.lastSetAt, locale);
+  const range = entryDisplayDateRange(entry);
+  if (range == null) {
+    return '—';
+  }
+  const start = formatDate(range.startMs, locale);
+  const end = formatDate(range.endMs, locale);
   return start === end ? start : `${start} – ${end}`;
 }
 
@@ -110,6 +121,12 @@ export function Tournaments({ matches }: { matches: Match[] }) {
             <TableBody>
               {rows.map(({ entry, record }) => {
                 const startggUrl = buildStartggUrl(entry.slug);
+                const imported = isAdminImportedEntry(entry);
+                // Phase 30.3 (Gate 4): an imported snapshot with no locally
+                // linked match rows has NO observed games — 0-0/0%/0 would
+                // fabricate a zero record out of missing data, so those
+                // cells render the '—' missing marker instead.
+                const recordUnknown = imported && record.total === 0;
                 return (
                   <TableRow key={entry.entryKey ?? entry.eventId}>
                     <TableCell className="font-medium">
@@ -120,6 +137,11 @@ export function Tournaments({ matches }: { matches: Match[] }) {
                         >
                           {entry.tournamentName ?? entry.eventName}
                         </Link>
+                        {imported && (
+                          <Badge variant="outline" title={t('tournaments.imported.listFootnote')}>
+                            {t('tournaments.imported.badge')}
+                          </Badge>
+                        )}
                         {startggUrl && (
                           <a
                             href={startggUrl}
@@ -136,16 +158,19 @@ export function Tournaments({ matches }: { matches: Match[] }) {
                     </TableCell>
                     <TableCell className="whitespace-normal">{entry.eventName}</TableCell>
                     <TableCell>{formatDateRange(entry, i18n.language)}</TableCell>
-                    <TableCell>
-                      {record.wins}-{record.losses}
-                    </TableCell>
-                    <TableCell>{record.winRate}%</TableCell>
-                    <TableCell>{record.total}</TableCell>
+                    <TableCell>{recordUnknown ? '—' : `${record.wins}-${record.losses}`}</TableCell>
+                    <TableCell>{recordUnknown ? '—' : `${record.winRate}%`}</TableCell>
+                    <TableCell>{recordUnknown ? '—' : record.total}</TableCell>
                   </TableRow>
                 );
               })}
             </TableBody>
           </Table>
+        )}
+        {rows.some(({ entry }) => isAdminImportedEntry(entry)) && (
+          <p className="mt-3 text-xs text-muted-foreground">
+            {t('tournaments.imported.listFootnote')}
+          </p>
         )}
       </CardContent>
     </Card>

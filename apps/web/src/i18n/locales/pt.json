@@ -132,6 +132,14 @@
     },
     "pending": {
       "saving": "Salvando..."
+    },
+    "analyzeOpponent": {
+      "label": "Analisar oponente",
+      "aria": "Analisar o oponente {{name}}"
+    },
+    "inferredFighters": {
+      "title": "Mostrando lutadores do seu histórico de partidas",
+      "body": "Você ainda não salvou lutadores favoritos, então esta página usa os lutadores vistos nas suas partidas registradas. Escolher favoritos é opcional e apenas personaliza estas páginas."
     }
   },
   "dashboard": {
@@ -953,7 +961,9 @@
       "watchVodAria": "Assistir VOD de {{set}}",
       "editVodAria": "Editar notas de VOD de {{set}}",
       "viewSetAria": "Ver {{set}} no start.gg",
-      "otherMatches": "Outras partidas durante este evento"
+      "otherMatches": "Outras partidas durante este evento",
+      "stocksLeft_one": "{{count}} stock restante",
+      "stocksLeft_other": "{{count}} stocks restantes"
     },
     "charStages": {
       "yourCharacters": "Seus personagens",
@@ -1002,7 +1012,19 @@
       "doneButton": "Concluído"
     },
     "listLoading": "Carregando torneios...",
-    "noMatches": "Ainda não há torneios; sincronize suas partidas de start.gg ou parry.gg e volte aqui!"
+    "noMatches": "Ainda não há torneios; sincronize suas partidas de start.gg ou parry.gg e volte aqui!",
+    "imported": {
+      "badge": "Importado",
+      "noticeTitle": "Instantâneo de evento importado",
+      "noticeBody": "O histórico deste evento foi importado de dados públicos do {{provider}}. É um instantâneo, não uma inscrição sincronizada ao vivo — o que os dados públicos não registraram aparece como ausente, nunca estimado.",
+      "sourceLine": "Fonte: {{provider}} (dados públicos)",
+      "importedAt": "Importado em {{date}}",
+      "asOf": "Dados de {{date}}",
+      "dqExcluded_one": "{{count}} DQ excluído",
+      "dqExcluded_other": "{{count}} DQs excluídos",
+      "resultsNotRecorded": "As primeiras colocações não foram registradas nesta importação.",
+      "listFootnote": "Linhas \"Importado\" são instantâneos de dados públicos de torneios, não inscrições sincronizadas ao vivo."
+    }
   },
   "billing": {
     "title": "Comprar créditos de relatório",

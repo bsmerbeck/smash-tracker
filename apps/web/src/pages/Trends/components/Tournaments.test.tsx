@@ -196,4 +196,87 @@ describe('Tournaments component', () => {
     expect(link).toHaveAttribute('href', '/tournaments/pgg-the-big-house-9');
     expect(screen.queryByRole('link', { name: 'View on start.gg' })).not.toBeInTheDocument();
   });
+
+  /** Phase 30.3 (Gate 4): admin-imported historical rows. */
+  describe('admin-imported rows', () => {
+    function makeImportedEntry(overrides: Record<string, unknown> = {}): TournamentEntry {
+      return makeEntry({
+        origin: 'admin-imported',
+        provider: 'startgg',
+        ...overrides,
+      } as Partial<TournamentEntry>);
+    }
+
+    it('badges imported rows and renders the public-data footnote', async () => {
+      listTournaments.mockResolvedValue([
+        makeImportedEntry({ eventId: 42, tournamentName: 'The Big House 9' }),
+      ]);
+      renderTournaments([]);
+
+      await screen.findByRole('link', { name: 'The Big House 9' });
+      expect(screen.getByText('Imported')).toBeInTheDocument();
+      expect(
+        screen.getByText(/"Imported" rows are snapshots of public tournament data/),
+      ).toBeInTheDocument();
+    });
+
+    it('does not badge manual/linked rows or render the footnote without imported rows', async () => {
+      listTournaments.mockResolvedValue([makeEntry({ eventId: 42 })]);
+      renderTournaments([]);
+
+      await screen.findByRole('link', { name: 'Ultimate Singles' });
+      expect(screen.queryByText('Imported')).not.toBeInTheDocument();
+      expect(
+        screen.queryByText(/"Imported" rows are snapshots of public tournament data/),
+      ).not.toBeInTheDocument();
+    });
+
+    it("renders the import's own event dates when recorded", async () => {
+      listTournaments.mockResolvedValue([
+        makeImportedEntry({
+          eventId: 42,
+          startAtMs: Date.UTC(2024, 5, 10, 12),
+          endAtMs: Date.UTC(2024, 5, 11, 12),
+        }),
+      ]);
+      renderTournaments([]);
+
+      expect(await screen.findByText('Jun 10, 2024 – Jun 11, 2024')).toBeInTheDocument();
+    });
+
+    it('renders em-dash record cells — not a fabricated 0-0 — when no local matches link', async () => {
+      listTournaments.mockResolvedValue([makeImportedEntry({ eventId: 42 })]);
+      renderTournaments([]);
+
+      await screen.findByRole('link', { name: 'Ultimate Singles' });
+      // W/L, Rate, and Games all render the missing marker.
+      expect(screen.getAllByText('—')).toHaveLength(3);
+      expect(screen.queryByText('0-0')).not.toBeInTheDocument();
+      expect(screen.queryByText('0%')).not.toBeInTheDocument();
+    });
+
+    it('still derives a real record from the same matchesForEntry dataset when matches exist', async () => {
+      listTournaments.mockResolvedValue([makeImportedEntry({ eventId: 42 })]);
+      const matches = [
+        makeMatch({
+          id: 'm1',
+          time: Date.UTC(2021, 0, 2),
+          win: true,
+          eventName: 'Ultimate Singles',
+        }),
+        makeMatch({
+          id: 'm2',
+          time: Date.UTC(2021, 0, 2),
+          win: false,
+          eventName: 'Ultimate Singles',
+        }),
+      ];
+      renderTournaments(matches);
+
+      await screen.findByRole('link', { name: 'Ultimate Singles' });
+      expect(screen.getByText('1-1')).toBeInTheDocument();
+      expect(screen.getByText('50%')).toBeInTheDocument();
+      expect(screen.queryByText('—')).not.toBeInTheDocument();
+    });
+  });
 });

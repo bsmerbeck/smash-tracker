@@ -22,6 +22,7 @@ import { buildStartggUrl } from '../lib/startggLinks';
 import { cn } from '@/lib/utils';
 import { formatTimestamp, vodDeepLink } from '@/lib/vod';
 import { AttachVodDialog } from '@/components/vod/AttachVodDialog';
+import { AnalyzeOpponentLink } from '@/components/AnalyzeOpponentLink';
 
 function GameChip({ match }: { match: Match }) {
   const { t } = useTranslation();
@@ -34,6 +35,12 @@ function GameChip({ match }: { match: Match }) {
   const matchup =
     userFighter && opponentFighter
       ? ` · ${localizedFighterName(match.fighter_id, t)} vs ${localizedFighterName(match.opponent_id, t)}`
+      : '';
+  // Phase 30.3 (Gate 4): stocks left surfaces WHEN RECORDED on the game —
+  // absent stocksLeft renders nothing here, never an inferred zero.
+  const stocks =
+    match.stocksLeft != null
+      ? ` · ${t('tournaments.timeline.stocksLeft', { count: match.stocksLeft })}`
       : '';
 
   return (
@@ -51,6 +58,7 @@ function GameChip({ match }: { match: Match }) {
       <TooltipContent>
         {stageName} — {match.win ? t('common.win') : t('common.loss')}
         {matchup}
+        {stocks}
       </TooltipContent>
     </Tooltip>
   );
@@ -193,6 +201,16 @@ function OpponentLabel({ set }: { set: TournamentSet }) {
             <ExternalLink className="size-3.5" />
           </a>
         )}
+        {/* Phase 30.3 (Gate 4): deep link into the EXISTING /opponents
+            scouting surface with this human preselected — provider player ID
+            first, alias-aware tag fallback (see AnalyzeOpponentLink). */}
+        <AnalyzeOpponentLink
+          identity={{
+            opponentUserSlug: set.opponentUserSlug,
+            opponentParryUserId: set.opponentParryUserId,
+            opponent: set.opponentName,
+          }}
+        />
       </span>
       {context && <span className="text-xs">({context})</span>}
     </span>

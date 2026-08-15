@@ -132,6 +132,14 @@
     },
     "pending": {
       "saving": "Wird gespeichert..."
+    },
+    "analyzeOpponent": {
+      "label": "Gegner analysieren",
+      "aria": "Gegner {{name}} analysieren"
+    },
+    "inferredFighters": {
+      "title": "Kämpfer aus deinem Match-Verlauf",
+      "body": "Du hast noch keine Lieblingskämpfer gespeichert, daher nutzt diese Seite die in deinen erfassten Matches beobachteten Kämpfer. Favoriten zu wählen ist optional und personalisiert diese Seiten nur."
     }
   },
   "dashboard": {
@@ -953,7 +961,9 @@
       "watchVodAria": "VOD zu {{set}} ansehen",
       "editVodAria": "VOD-Notizen zu {{set}} bearbeiten",
       "viewSetAria": "{{set}} auf start.gg ansehen",
-      "otherMatches": "Weitere Matches während dieses Events"
+      "otherMatches": "Weitere Matches während dieses Events",
+      "stocksLeft_one": "{{count}} Stock übrig",
+      "stocksLeft_other": "{{count}} Stocks übrig"
     },
     "charStages": {
       "yourCharacters": "Deine Charaktere",
@@ -1002,7 +1012,19 @@
       "doneButton": "Fertig"
     },
     "listLoading": "Turniere werden geladen...",
-    "noMatches": "Noch keine Turniere — synchronisiere deine start.gg- oder parry.gg-Matches und schau hier wieder vorbei!"
+    "noMatches": "Noch keine Turniere — synchronisiere deine start.gg- oder parry.gg-Matches und schau hier wieder vorbei!",
+    "imported": {
+      "badge": "Importiert",
+      "noticeTitle": "Importierter Event-Schnappschuss",
+      "noticeBody": "Der Verlauf dieses Events wurde aus öffentlichen {{provider}}-Daten importiert. Es ist ein Schnappschuss, keine live synchronisierte Anmeldung — was die öffentlichen Daten nicht erfasst haben, wird als fehlend angezeigt, nie geschätzt.",
+      "sourceLine": "Quelle: {{provider}} (öffentliche Daten)",
+      "importedAt": "Importiert am {{date}}",
+      "asOf": "Datenstand: {{date}}",
+      "dqExcluded_one": "{{count}} DQ ausgeschlossen",
+      "dqExcluded_other": "{{count}} DQs ausgeschlossen",
+      "resultsNotRecorded": "Die Top-Platzierungen wurden bei diesem Import nicht erfasst.",
+      "listFootnote": "\"Importiert\"-Zeilen sind Schnappschüsse öffentlicher Turnierdaten, keine live synchronisierten Anmeldungen."
+    }
   },
   "billing": {
     "title": "Berichts-Credits kaufen",

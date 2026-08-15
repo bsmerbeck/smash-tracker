@@ -9,7 +9,9 @@ import { useFilteredMatches } from '@/hooks/useFilteredMatches';
 import { useSubjectPath } from '@/hooks/useSubjectPath';
 import { getFighterById } from '@/data/sprites';
 import { localizedFighterName } from '@/lib/fighterNames';
+import { inferFighterIdsFromMatches } from '@/lib/inferredFighters';
 import { useAlphaFighters, useSortedFighters } from '@/hooks/useFighterName';
+import { ChooseFavoritesPrompt } from '@/components/ChooseFavoritesPrompt';
 import { FilteredEmptyNotice } from '@/components/FilteredEmptyNotice';
 import { MatchupsContext, type MatchupsContextValue } from './MatchupsContext';
 import { SelectFighter } from './components/SelectFighter';
@@ -29,6 +31,13 @@ import { PairingOpponentSplit } from './components/PairingOpponentSplit';
  * 85) filters matches down to that exact fighter_id/opponent_id pairing —
  * see legacy Matchups.js `updateMatchups`, which does
  * `.filter(m => m.fighter_id === fighter.id).filter(m => m.opponent_id === opponent.id)`.
+ *
+ * Phase 30.3 (Gate 4, fighter-preference fallback): with matches but no
+ * saved favorites (imported demo histories), "your fighter" options are
+ * inferred read-only from the fighters observed in the match history — the
+ * choose-fighters gate only renders when there is neither a saved selection
+ * nor a match to infer from, and a non-blocking prompt replaces it above the
+ * real content.
  */
 export function MatchupsPage() {
   const { t } = useTranslation();
@@ -36,12 +45,17 @@ export function MatchupsPage() {
   const { data: fighterSelection, isLoading: fightersLoading } = useFighters();
   const { matches, allMatches, isLoading: matchesLoading, filterActive } = useFilteredMatches();
 
+  const savedFighterIds = useMemo(
+    () => [...(fighterSelection?.primary ?? []), ...(fighterSelection?.secondary ?? [])],
+    [fighterSelection],
+  );
+  const usingInferredFighters = savedFighterIds.length === 0 && allMatches.length > 0;
   const rawFighterSprites = useMemo<Fighter[]>(() => {
-    const ids = [...(fighterSelection?.primary ?? []), ...(fighterSelection?.secondary ?? [])];
+    const ids = usingInferredFighters ? inferFighterIdsFromMatches(allMatches) : savedFighterIds;
     return ids
       .map((id) => getFighterById(id))
       .filter((sprite): sprite is Fighter => sprite != null);
-  }, [fighterSelection]);
+  }, [usingInferredFighters, allMatches, savedFighterIds]);
   const fighterSprites = useSortedFighters(rawFighterSprites);
   const alphaFighters = useAlphaFighters();
 
@@ -104,6 +118,7 @@ export function MatchupsPage() {
   return (
     <MatchupsContext.Provider value={contextValue}>
       <div className="flex flex-col gap-6">
+        {usingInferredFighters && <ChooseFavoritesPrompt />}
         {filterActive && matches.length === 0 && <FilteredEmptyNotice />}
 
         <Card>
