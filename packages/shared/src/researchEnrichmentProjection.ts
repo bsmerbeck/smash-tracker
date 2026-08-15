@@ -219,6 +219,42 @@ export function isSourceOwnedVodValue(
   return storedValue === witness.projectedVodUrl || storedValue === witness.pendingVodUrl;
 }
 
+/**
+ * The STAGE analog of {@link isSourceOwnedVodValue} (30.3 Gate 5 commit 1 —
+ * the latent stage-witness hazard): decides whether a stored row stage is the
+ * enrichment applier's OWN earlier projection, against the SAME two-member
+ * accepted set (committed ∪ pending). The enrichment applier consults this
+ * BEFORE building its resolver input: a stored stage this function vouches
+ * for is not evidence of a provider-resolved stage — it is the applier's own
+ * write echoed back — so the applier passes the unknown sentinel as
+ * `providerStage` instead, and a re-apply becomes witness-preserving rather
+ * than witness-clearing. The ingestion projection never needs this predicate:
+ * its `providerStage` input comes from genuine provider data, never from the
+ * stored row.
+ */
+export function isSourceOwnedStageValue(
+  storedStage: MatchStage,
+  witness:
+    | Pick<
+        EnrichmentOwnershipWitness,
+        'projectedStageId' | 'projectedStageName' | 'pendingStageId' | 'pendingStageName'
+      >
+    | null
+    | undefined,
+): boolean {
+  if (!witness) {
+    return false;
+  }
+  if (isUnknownStage(storedStage)) {
+    return false;
+  }
+  const committedMatch =
+    witness.projectedStageId === storedStage.id && witness.projectedStageName === storedStage.name;
+  const pendingMatch =
+    witness.pendingStageId === storedStage.id && witness.pendingStageName === storedStage.name;
+  return committedMatch || pendingMatch;
+}
+
 function isEmptyString(value: string | null | undefined): boolean {
   return value == null || value.length === 0;
 }
@@ -449,11 +485,19 @@ function resolveStageMember(input: EnrichedMatchMembersInput): StageResolution {
     };
   }
 
+  // No enrichment stage data at all. When a witness still carries a stage
+  // claim, the source has STOPPED supplying the stage it once projected —
+  // the stage mirror of the VOD half's source-removed case (30.3 Gate 5
+  // commit 1). Clearing the witness here is what lets a removal converge:
+  // the caller writes the unknown sentinel this branch returns, and a claim
+  // for a value that is no longer supplied does not linger to vouch for
+  // nothing. A witness with no stage claim resolves to a true no-op, exactly
+  // as before.
   return {
     stage: providerStage,
     outcome: 'unknown',
     preWrite: { kind: 'none' },
-    commit: { kind: 'none' },
+    commit: hasAnyStageWitnessClaim(witness) ? { kind: 'clear' } : { kind: 'none' },
   };
 }
 

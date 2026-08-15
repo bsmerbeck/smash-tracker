@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  isSourceOwnedStageValue,
   isSourceOwnedVodValue,
   resolveEnrichedMatchMembers,
   type EnrichedMatchMembersInput,
@@ -43,6 +44,64 @@ describe('isSourceOwnedVodValue', () => {
       isSourceOwnedVodValue('https://a', {
         projectedVodUrl: 'https://b',
         pendingVodUrl: 'https://c',
+      }),
+    ).toBe(false);
+  });
+});
+
+describe('isSourceOwnedStageValue (30.3 Gate 5 commit 1)', () => {
+  it('is false for the unknown sentinel, even when the witness claims it', () => {
+    expect(
+      isSourceOwnedStageValue(UNKNOWN_STAGE, {
+        projectedStageId: 0,
+        projectedStageName: 'unknown',
+      }),
+    ).toBe(false);
+  });
+
+  it('is false when the witness is null/undefined', () => {
+    expect(isSourceOwnedStageValue(CANONICAL_STAGE, null)).toBe(false);
+    expect(isSourceOwnedStageValue(CANONICAL_STAGE, undefined)).toBe(false);
+  });
+
+  it('is true when the stored stage matches the committed witness claim (id AND name)', () => {
+    expect(
+      isSourceOwnedStageValue(CANONICAL_STAGE, {
+        projectedStageId: CANONICAL_STAGE.id,
+        projectedStageName: CANONICAL_STAGE.name,
+      }),
+    ).toBe(true);
+  });
+
+  it('is true when the stored stage matches the pending witness claim', () => {
+    expect(
+      isSourceOwnedStageValue(CANONICAL_STAGE, {
+        pendingStageId: CANONICAL_STAGE.id,
+        pendingStageName: CANONICAL_STAGE.name,
+      }),
+    ).toBe(true);
+  });
+
+  it('is false when the id matches but the name does not (and vice versa)', () => {
+    expect(
+      isSourceOwnedStageValue(CANONICAL_STAGE, {
+        projectedStageId: CANONICAL_STAGE.id,
+        projectedStageName: 'Battlefield',
+      }),
+    ).toBe(false);
+    expect(
+      isSourceOwnedStageValue(CANONICAL_STAGE, {
+        projectedStageId: 1,
+        projectedStageName: CANONICAL_STAGE.name,
+      }),
+    ).toBe(false);
+  });
+
+  it('is false when the stored stage matches neither claim', () => {
+    expect(
+      isSourceOwnedStageValue(RESOLVED_PROVIDER_STAGE, {
+        projectedStageId: CANONICAL_STAGE.id,
+        projectedStageName: CANONICAL_STAGE.name,
       }),
     ).toBe(false);
   });
@@ -289,6 +348,21 @@ describe('resolveEnrichedMatchMembers - stage', () => {
     expect(result.stageOutcome).toBe('unknown');
     expect(result.witnessPatch.stagePreWrite).toEqual({ kind: 'none' });
     expect(result.witnessPatch.stageCommit).toEqual({ kind: 'none' });
+  });
+
+  it('a source that STOPS supplying a stage it once projected clears the stage witness (stage source-removed, 30.3 Gate 5 commit 1)', () => {
+    const witness: EnrichmentOwnershipWitness = {
+      projectedStageId: CANONICAL_STAGE.id,
+      projectedStageName: CANONICAL_STAGE.name,
+      projectedStageRaw: 'FD',
+    };
+    const result = resolveEnrichedMatchMembers(
+      baseInput({ providerStage: UNKNOWN_STAGE, witness }),
+    );
+    expect(result.stage).toEqual(UNKNOWN_STAGE);
+    expect(result.stageOutcome).toBe('unknown');
+    expect(result.witnessPatch.stagePreWrite).toEqual({ kind: 'none' });
+    expect(result.witnessPatch.stageCommit).toEqual({ kind: 'clear' });
   });
 
   it('an identical replay of an already-enriched stage is a no-op (no witness write)', () => {

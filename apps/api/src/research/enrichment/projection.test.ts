@@ -18,6 +18,7 @@ import {
   applyEnrichmentProjection,
   buildEnrichmentOverlay,
   deriveEnrichmentMatchRowKey,
+  previewEnrichmentProjection,
   readEnrichmentOverlayForSet,
   readEnrichmentOverlayForTenant,
   type EnrichmentOverlay,
@@ -467,6 +468,231 @@ describe('applyEnrichmentProjection', () => {
       unknown
     >;
     expect((row[key] as MatchRecord).vodUrl).toBeUndefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Idempotent re-apply over the applier's OWN prior projection (30.3 Gate 5,
+// commit 1 — the latent stage-witness hazard). Before this fix,
+// `resolveForRow` handed the STORED row stage to the shared resolver as
+// `providerStage`; on a re-apply the stored stage IS the applier's own
+// earlier projection, the resolver called it provider-authoritative, and the
+// stage witness was CLEARED — silently converting an enrichment-owned stage
+// into an uncorrectable, unattributable one.
+// ---------------------------------------------------------------------------
+
+describe('applyEnrichmentProjection — re-apply over its own prior projection', () => {
+  const REAPPLY_VOD = 'https://liquipedia/vod';
+
+  function stageAndVodOverlay(key: string): EnrichmentOverlay {
+    return {
+      enrichedVodUrlByKey: { [key]: REAPPLY_VOD },
+      enrichedStageByKey: {
+        [key]: {
+          canonicalStageId: 3,
+          raw: 'FD',
+          observationId: 'obs-stage-1',
+          sourceRevisionId: 500,
+          parserVersion: 'p@1',
+        },
+      },
+    };
+  }
+
+  it('REGRESSION: a second apply of the identical overlay preserves the stage witness and performs zero value-changing writes', async () => {
+    const database = new FakeDatabase();
+    const targetSetId = 'startgg-set-stage-reapply';
+    const key = deriveEnrichmentMatchRowKey(targetSetId, 1);
+    seedMatch(database, key, {});
+
+    await applyEnrichmentProjection(
+      asDatabase(database),
+      TENANT_ID,
+      targetSetId,
+      stageAndVodOverlay(key),
+      1000,
+    );
+    const witnessAfterFirst = readWitnessRecord(database, key);
+    expect(witnessAfterFirst?.projectedStageId).toBe(3);
+    expect(witnessAfterFirst?.projectedStageName).toBe('Final Destination');
+    expect(witnessAfterFirst?.projectedStageRaw).toBe('FD');
+    const dumpAfterFirst = JSON.stringify(database.dump());
+
+    // Re-apply the SAME overlay with a LATER clock: any witness write at all
+    // (including a clear, or a re-stamp of a timestamp member) changes the
+    // dump and fails this assertion.
+    const outcome = await applyEnrichmentProjection(
+      asDatabase(database),
+      TENANT_ID,
+      targetSetId,
+      stageAndVodOverlay(key),
+      2000,
+    );
+    expect(JSON.stringify(database.dump())).toBe(dumpAfterFirst);
+
+    const witness = readWitnessRecord(database, key);
+    expect(witness?.projectedStageId).toBe(3);
+    expect(witness?.projectedStageName).toBe('Final Destination');
+    expect(witness?.projectedStageRaw).toBe('FD');
+    expect(witness?.stageObservationId).toBe('obs-stage-1');
+
+    // The replay row reports the settled outcomes run.ts's reconciliation
+    // trigger expects for a healthy set — never a fresh 'enriched' (which
+    // would make every rerun reproject every healthy set forever).
+    expect(outcome.rows).toEqual([
+      { matchKey: key, vodOutcome: 'unchanged', stageOutcome: 'provider-authoritative' },
+    ]);
+    expect(outcome.counts.stageEnriched).toBe(0);
+  });
+
+  it('preview over an already-applied set reports the stage settled (provider-authoritative), so the run-level reconciliation trigger still skips healthy sets', async () => {
+    const database = new FakeDatabase();
+    const targetSetId = 'startgg-set-stage-preview';
+    const key = deriveEnrichmentMatchRowKey(targetSetId, 1);
+    seedMatch(database, key, {});
+    const overlay = stageAndVodOverlay(key);
+    await applyEnrichmentProjection(asDatabase(database), TENANT_ID, targetSetId, overlay, 1000);
+
+    const preview = await previewEnrichmentProjection(
+      asDatabase(database),
+      TENANT_ID,
+      targetSetId,
+      overlay,
+    );
+    expect(preview.rows).toEqual([
+      { matchKey: key, vodOutcome: 'unchanged', stageOutcome: 'provider-authoritative' },
+    ]);
+    expect(preview.counts.stageEnriched).toBe(0);
+  });
+
+  it('a source-corrected stage on a witness-owned row is REWRITTEN (the witness is what makes its own projection correctable)', async () => {
+    const database = new FakeDatabase();
+    const targetSetId = 'startgg-set-stage-correct';
+    const key = deriveEnrichmentMatchRowKey(targetSetId, 1);
+    seedMatch(database, key, {});
+    await applyEnrichmentProjection(
+      asDatabase(database),
+      TENANT_ID,
+      targetSetId,
+      stageAndVodOverlay(key),
+      1000,
+    );
+
+    const corrected: EnrichmentOverlay = {
+      enrichedVodUrlByKey: { [key]: REAPPLY_VOD },
+      enrichedStageByKey: {
+        [key]: {
+          canonicalStageId: 1,
+          raw: 'BF',
+          observationId: 'obs-stage-2',
+          sourceRevisionId: 600,
+          parserVersion: 'p@1',
+        },
+      },
+    };
+    const outcome = await applyEnrichmentProjection(
+      asDatabase(database),
+      TENANT_ID,
+      targetSetId,
+      corrected,
+      2000,
+    );
+    expect(outcome.rows[0]?.stageOutcome).toBe('enriched');
+    expect(readRow(database, key).map).toEqual({ id: 1, name: 'Battlefield' });
+    const witness = readWitnessRecord(database, key);
+    expect(witness?.projectedStageId).toBe(1);
+    expect(witness?.projectedStageRaw).toBe('BF');
+    expect(witness?.stageObservationId).toBe('obs-stage-2');
+  });
+
+  it('a source that stops supplying a stage REMOVES a witness-owned stage (reverts to unknown) and clears the stage witness, while the VOD half is untouched', async () => {
+    const database = new FakeDatabase();
+    const targetSetId = 'startgg-set-stage-remove';
+    const key = deriveEnrichmentMatchRowKey(targetSetId, 1);
+    seedMatch(database, key, {});
+    await applyEnrichmentProjection(
+      asDatabase(database),
+      TENANT_ID,
+      targetSetId,
+      stageAndVodOverlay(key),
+      1000,
+    );
+
+    const withoutStage: EnrichmentOverlay = {
+      enrichedVodUrlByKey: { [key]: REAPPLY_VOD },
+      enrichedStageByKey: {},
+    };
+    await applyEnrichmentProjection(
+      asDatabase(database),
+      TENANT_ID,
+      targetSetId,
+      withoutStage,
+      2000,
+    );
+    expect(readRow(database, key).map).toEqual({ id: 0, name: 'unknown' });
+    expect(readRow(database, key).vodUrl).toBe(REAPPLY_VOD);
+    const witness = readWitnessRecord(database, key);
+    expect(witness?.projectedStageId).toBeUndefined();
+    expect(witness?.projectedStageName).toBeUndefined();
+    expect(witness?.projectedStageRaw).toBeUndefined();
+    expect(witness?.projectedVodUrl).toBe(REAPPLY_VOD);
+  });
+
+  it('a stage-only witness key with NO overlay entry at all is still discovered (widened candidate set) and its removal converges', async () => {
+    const database = new FakeDatabase();
+    const targetSetId = 'startgg-set-stage-only-detach';
+    const key = deriveEnrichmentMatchRowKey(targetSetId, 1);
+    seedMatch(database, key, { map: { id: 3, name: 'Final Destination' } });
+    database.seed(`researchEnrichmentProjection/${TENANT_ID}/${key}`, {
+      matchKey: key,
+      targetSetId,
+      projectedStageId: 3,
+      projectedStageName: 'Final Destination',
+      projectedStageRaw: 'FD',
+    });
+
+    const outcome = await applyEnrichmentProjection(
+      asDatabase(database),
+      TENANT_ID,
+      targetSetId,
+      { enrichedVodUrlByKey: {}, enrichedStageByKey: {} },
+      2000,
+    );
+    expect(outcome.rows).toHaveLength(1);
+    expect(readRow(database, key).map).toEqual({ id: 0, name: 'unknown' });
+    const witness = readWitnessRecord(database, key);
+    expect(witness?.projectedStageId).toBeUndefined();
+    expect(witness?.projectedStageRaw).toBeUndefined();
+  });
+
+  it('a GENUINE provider-resolved stage that the witness does not vouch for still wins and still clears the stale witness', async () => {
+    const database = new FakeDatabase();
+    const targetSetId = 'startgg-set-stage-provider-wins';
+    const key = deriveEnrichmentMatchRowKey(targetSetId, 1);
+    // The row's stage does NOT match the witness claim — a provider refresh
+    // resolved a different stage after our projection.
+    seedMatch(database, key, { map: { id: 1, name: 'Battlefield' } });
+    database.seed(`researchEnrichmentProjection/${TENANT_ID}/${key}`, {
+      matchKey: key,
+      targetSetId,
+      projectedStageId: 3,
+      projectedStageName: 'Final Destination',
+      projectedVodUrl: REAPPLY_VOD,
+    });
+    seedMatch(database, key, { map: { id: 1, name: 'Battlefield' }, vodUrl: REAPPLY_VOD });
+
+    const outcome = await applyEnrichmentProjection(
+      asDatabase(database),
+      TENANT_ID,
+      targetSetId,
+      stageAndVodOverlay(key),
+      2000,
+    );
+    expect(outcome.rows[0]?.stageOutcome).toBe('provider-authoritative');
+    expect(readRow(database, key).map).toEqual({ id: 1, name: 'Battlefield' });
+    const witness = readWitnessRecord(database, key);
+    expect(witness?.projectedStageId).toBeUndefined();
+    expect(witness?.projectedStageName).toBeUndefined();
   });
 });
 

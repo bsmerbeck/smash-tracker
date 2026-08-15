@@ -1,6 +1,7 @@
 import type { Database } from 'firebase-admin/database';
 import {
   isPathSafeProviderId,
+  isSourceOwnedStageValue,
   researchEnrichmentAttachmentRecordSchema,
   researchEnrichmentProjectionStateRecordSchema,
   resolveEnrichedMatchMembers,
@@ -309,10 +310,7 @@ export async function previewEnrichmentProjection(
   if (witnessTree.exists()) {
     for (const [key, value] of Object.entries(witnessTree.val() as Record<string, unknown>)) {
       const parsed = readWitnessFromValue(value);
-      if (
-        parsed?.targetSetId === targetSetId &&
-        (parsed.projectedVodUrl != null || parsed.pendingVodUrl != null)
-      ) {
+      if (parsed?.targetSetId === targetSetId && witnessCarriesAnyClaim(parsed)) {
         previouslyWitnessedKeys.push(key);
       }
     }
@@ -358,6 +356,28 @@ export async function previewEnrichmentProjection(
   return outcome;
 }
 
+/**
+ * A witness that carries ANY claim — VOD or stage, committed or pending —
+ * makes its key a candidate for this run even when the current overlay no
+ * longer mentions it: that is exactly how a removal (the source stopped
+ * supplying a value it once projected) is discovered. 30.3 Gate 5 commit 1
+ * WIDENED this from the VOD halves alone to the stage halves too, so a
+ * stage-only witness whose observation was detached is found and its
+ * projected stage removed, instead of surviving as an unattributable
+ * orphan.
+ */
+function witnessCarriesAnyClaim(parsed: ResearchEnrichmentProjectionStateRecord): boolean {
+  return (
+    parsed.projectedVodUrl != null ||
+    parsed.pendingVodUrl != null ||
+    parsed.pendingVodRemoval === true ||
+    parsed.projectedStageId != null ||
+    parsed.projectedStageRaw != null ||
+    parsed.pendingStageId != null ||
+    parsed.pendingStageRaw != null
+  );
+}
+
 /** Returns the FULL stored record (including `matchKey`/`targetSetId`) — structurally a superset of `EnrichmentOwnershipWitness`, so it may be passed anywhere that narrower type is expected. */
 function readWitnessFromValue(value: unknown): ResearchEnrichmentProjectionStateRecord | null {
   if (value === null || value === undefined) {
@@ -394,14 +414,45 @@ function resolveForRow(
   witness: EnrichmentOwnershipWitness | null,
 ): EnrichedMatchMembersResult {
   const vodSource = overlay.enrichedVodSourceByKey?.[key];
-  return resolveEnrichedMatchMembers({
+  // 30.3 Gate 5 commit 1 — THE STAGE-WITNESS IDEMPOTENCY FIX. The shared
+  // resolver's `providerStage` input means "a stage the PROVIDER vouches
+  // for", but this applier only has the STORED row — and on a re-apply the
+  // stored stage may be this module's OWN earlier projection echoed back.
+  // Handing that echo to the resolver as a provider stage made re-applying
+  // over an already-projected set CLEAR the stage witness (the resolver's
+  // provider-wins branch), silently converting an enrichment-owned stage
+  // into an uncorrectable, unattributable one. The witness is the
+  // disambiguator: a stored stage `isSourceOwnedStageValue` vouches for is
+  // passed as the unknown sentinel instead — the enrichment slot is still
+  // open — and the resolver's own committed-identical branch turns the
+  // replay into a witness-preserving no-op.
+  const storedStage = extractExistingStage(row);
+  const stageIsOwnProjection = isSourceOwnedStageValue(storedStage, witness);
+  const resolved = resolveEnrichedMatchMembers({
     existingVodUrl: extractExistingVodUrl(row),
     enrichmentVodUrl: overlay.enrichedVodUrlByKey[key],
     ...(vodSource !== undefined ? { enrichmentVodSource: vodSource } : {}),
-    providerStage: extractExistingStage(row),
+    providerStage: stageIsOwnProjection ? UNKNOWN_STAGE : storedStage,
     enrichmentStage: overlay.enrichedStageByKey[key],
     witness,
   });
+  if (
+    stageIsOwnProjection &&
+    resolved.stageOutcome === 'enriched' &&
+    stagesEqual(resolved.stage, storedStage) &&
+    resolved.witnessPatch.stagePreWrite.kind === 'none' &&
+    resolved.witnessPatch.stageCommit.kind === 'none'
+  ) {
+    // An identical replay is reported as SETTLED ('provider-authoritative'),
+    // never as a fresh 'enriched': run.ts's resume-reconciliation pass
+    // treats a previewed 'enriched' as a stranded fill and would otherwise
+    // reproject every healthy set on every run (and restate its cohort
+    // delta each time). This relabel changes only the REPORTED outcome of a
+    // no-op row — the resolved members and the (empty) witness patch are
+    // untouched, so unlike the pre-fix behavior the witness survives.
+    return { ...resolved, stageOutcome: 'provider-authoritative' };
+  }
+  return resolved;
 }
 
 function stagesEqual(left: MatchStage, right: MatchStage): boolean {
@@ -570,6 +621,13 @@ function buildCommitPatch(
     if (stageCommit.kind === 'set') {
       patch[`${witnessBasePath}/projectedStageId`] = stageCommit.write.stageId;
       patch[`${witnessBasePath}/projectedStageName`] = stageCommit.write.stageName;
+    } else {
+      // A raw-only commit means the CURRENT source state has no canonical
+      // mapping — a stale canonical claim from an earlier revision must not
+      // survive alongside the new raw text, or the witness would vouch for
+      // a stage the source no longer states (30.3 Gate 5 commit 1).
+      patch[`${witnessBasePath}/projectedStageId`] = null;
+      patch[`${witnessBasePath}/projectedStageName`] = null;
     }
     patch[`${witnessBasePath}/projectedStageRaw`] = stageCommit.write.raw ?? null;
     patch[`${witnessBasePath}/projectedStageForm`] = stageCommit.write.form ?? null;
@@ -661,11 +719,7 @@ export async function applyEnrichmentProjection(
     const raw = witnessSnapshotForSet.val() as Record<string, unknown>;
     for (const [key, value] of Object.entries(raw)) {
       const parsed = readWitnessFromValue(value);
-      if (
-        parsed &&
-        parsed.targetSetId === targetSetId &&
-        (parsed.projectedVodUrl != null || parsed.pendingVodUrl != null)
-      ) {
+      if (parsed && parsed.targetSetId === targetSetId && witnessCarriesAnyClaim(parsed)) {
         previouslyWitnessedKeys.push(key);
       }
     }
