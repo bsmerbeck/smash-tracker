@@ -50,11 +50,93 @@ describe('normalizeLiquipediaVodUrl — YouTube', () => {
     expect(result.vodUrl).toBe('https://www.youtube.com/watch?v=j_UZf2urPn4');
   });
 
-  it('a long-form watch URL with extra tracking query params drops everything but v=', () => {
+  it('a long-form watch URL keeps its validated t offset and drops the tracking params', () => {
     const result = normalizeLiquipediaVodUrl(
       'https://www.youtube.com/watch?v=oXoBi4DOq6I&t=42s&feature=share',
     );
-    expect(result.vodUrl).toBe('https://www.youtube.com/watch?v=oXoBi4DOq6I');
+    expect(result.vodUrl).toBe('https://www.youtube.com/watch?v=oXoBi4DOq6I&t=42s');
+  });
+
+  it('a playlist-context watch URL (list/index) drops the playlist params and, with no offset, reduces to the bare watch form', () => {
+    const result = normalizeLiquipediaVodUrl(
+      'https://www.youtube.com/watch?v=B1A_3d_-jRY&list=PLcMdMmtHkPpT1ZiF46rUkNbOW6tSRW4Eu&index=8',
+    );
+    expect(result.vodUrl).toBe('https://www.youtube.com/watch?v=B1A_3d_-jRY');
+  });
+});
+
+describe('normalizeLiquipediaVodUrl — start offsets (30.3 Gate 5, known loss fixed)', () => {
+  it('a short link with a bare-seconds t offset canonicalizes to the watch form with t=<seconds>s', () => {
+    const result = normalizeLiquipediaVodUrl('https://youtu.be/6Mage6l0a4w?t=13540');
+    expect(result.rejected).toBe(false);
+    expect(result.vodUrl).toBe('https://www.youtube.com/watch?v=6Mage6l0a4w&t=13540s');
+  });
+
+  it('a short link carrying BOTH a tracking si and a t offset keeps the offset and drops the tracking param', () => {
+    const result = normalizeLiquipediaVodUrl(
+      'https://youtu.be/-cnZFKAfujo?si=g2fkckTPwW1bYOGx&t=17011',
+    );
+    expect(result.vodUrl).toBe('https://www.youtube.com/watch?v=-cnZFKAfujo&t=17011s');
+    expect(result.vodUrl).not.toContain('si=');
+  });
+
+  it('a start= query param is treated as a validated offset source', () => {
+    const result = normalizeLiquipediaVodUrl(
+      'https://www.youtube.com/watch?v=oXoBi4DOq6I&start=90',
+    );
+    expect(result.vodUrl).toBe('https://www.youtube.com/watch?v=oXoBi4DOq6I&t=90s');
+  });
+
+  it('a legacy #t=11m38s fragment offset is validated, converted to seconds, and preserved', () => {
+    const result = normalizeLiquipediaVodUrl(
+      'https://www.youtube.com/watch?v=s8lEQWBm96o#t=11m38s',
+    );
+    expect(result.vodUrl).toBe('https://www.youtube.com/watch?v=s8lEQWBm96o&t=698s');
+  });
+
+  it('an INVALID offset value is dropped from the canonical form rather than passed through or guessed at', () => {
+    const result = normalizeLiquipediaVodUrl('https://youtu.be/6Mage6l0a4w?t=whenever');
+    expect(result.rejected).toBe(false);
+    expect(result.vodUrl).toBe('https://www.youtube.com/watch?v=6Mage6l0a4w');
+  });
+
+  it('a zero offset is equivalent to no offset', () => {
+    const result = normalizeLiquipediaVodUrl('https://youtu.be/6Mage6l0a4w?t=0');
+    expect(result.vodUrl).toBe('https://www.youtube.com/watch?v=6Mage6l0a4w');
+  });
+
+  it('the same video with two DIFFERENT offsets stays two DISTINCT canonical forms — and therefore two distinct dedupe keys even for the same target set', () => {
+    const first = normalizeLiquipediaVodUrl('https://youtu.be/sD9RX78rUDw?t=2203');
+    const second = normalizeLiquipediaVodUrl('https://youtu.be/sD9RX78rUDw?t=5764');
+    expect(first.vodUrl).not.toBe(second.vodUrl);
+    expect(buildVodDedupeKey(first.vodUrl!, 'set-x')).not.toBe(
+      buildVodDedupeKey(second.vodUrl!, 'set-x'),
+    );
+  });
+
+  it('a Twitch t offset is validated and normalized to the duration form the web deep-link writer uses', () => {
+    const seconds = normalizeLiquipediaVodUrl('https://www.twitch.tv/videos/949316125?t=1847s');
+    expect(seconds.vodUrl).toBe('https://www.twitch.tv/videos/949316125?t=30m47s');
+    const minutes = normalizeLiquipediaVodUrl('https://www.twitch.tv/videos/131225487?t=9m');
+    expect(minutes.vodUrl).toBe('https://www.twitch.tv/videos/131225487?t=9m0s');
+  });
+});
+
+describe('normalizeLiquipediaVodUrl — /live/ links (30.3 Gate 5, known loss fixed)', () => {
+  it('a /live/<id> URL canonicalizes to the ordinary watch form for the same video', () => {
+    const result = normalizeLiquipediaVodUrl('https://www.youtube.com/live/68Yek0_jlOU');
+    expect(result.rejected).toBe(false);
+    expect(result.vodUrl).toBe('https://www.youtube.com/watch?v=68Yek0_jlOU');
+  });
+
+  it('a /live/<id>?t=NNNN URL keeps its validated offset on the canonical watch form', () => {
+    const result = normalizeLiquipediaVodUrl('https://www.youtube.com/live/PrrjJPxCsZw?t=26190');
+    expect(result.vodUrl).toBe('https://www.youtube.com/watch?v=PrrjJPxCsZw&t=26190s');
+  });
+
+  it('a /live/ URL with an empty or nested id is still rejected with a stated reason', () => {
+    expect(normalizeLiquipediaVodUrl('https://www.youtube.com/live/').rejected).toBe(true);
+    expect(normalizeLiquipediaVodUrl('https://www.youtube.com/live/a/b').rejected).toBe(true);
   });
 });
 
@@ -126,13 +208,20 @@ describe('buildVodDedupeKey', () => {
 });
 
 // ---------------------------------------------------------------------------
-// Data-driven: every VOD URL extracted from the Sparg0 VOD-page fixture
-// either normalizes onto an allowlisted host or is rejected with a stated
-// reason — never silently dropped.
+// Data-driven: every VOD URL extracted from the committed player VOD-page
+// fixtures either normalizes onto an allowlisted host or is rejected with a
+// stated reason — never silently dropped — and (30.3 Gate 5) every KNOWN
+// timestamped row keeps its offset while every `/live/` link is accepted.
 // ---------------------------------------------------------------------------
 
-function extractSparg0VodUrls(): string[] {
-  const compressed = readFileSync(resolve(LIQUIPEDIA_FIXTURE_DIR, 'parse-sparg0-vods.json.gz'));
+const VOD_PAGE_FIXTURES = [
+  'parse-sparg0-vods.json.gz',
+  'parse-mkleo-vods.json.gz',
+  'parse-hungrybox-vods.json.gz',
+] as const;
+
+function extractVodUrls(fixtureName: string): string[] {
+  const compressed = readFileSync(resolve(LIQUIPEDIA_FIXTURE_DIR, fixtureName));
   const text = gunzipSync(compressed).toString('utf8');
   const parsed = JSON.parse(text) as { parse: { text: string } };
   const html = parsed.parse.text;
@@ -140,10 +229,99 @@ function extractSparg0VodUrls(): string[] {
   const urls: string[] = [];
   let match: RegExpExecArray | null;
   while ((match = re.exec(html))) {
-    urls.push(match[1]!);
+    // The parse HTML entity-escapes `&`; decode so query params parse.
+    urls.push(match[1]!.replace(/&amp;/g, '&'));
   }
   return urls;
 }
+
+function extractSparg0VodUrls(): string[] {
+  return extractVodUrls('parse-sparg0-vods.json.gz');
+}
+
+/** Mirrors the module-private offset grammar, for computing EXPECTED values in the fixture sweep. */
+function expectedOffsetSeconds(raw: string): number | null {
+  if (/^\d+$/.test(raw)) {
+    return Number(raw);
+  }
+  const match = /^(?:(\d+)h)?(?:(\d+)m)?(?:(\d+)s)?$/i.exec(raw);
+  if (match && (match[1] !== undefined || match[2] !== undefined || match[3] !== undefined)) {
+    return Number(match[1] ?? 0) * 3600 + Number(match[2] ?? 0) * 60 + Number(match[3] ?? 0);
+  }
+  return null;
+}
+
+/** Reads the raw offset value a fixture URL carries (t/start query param, or the legacy #t= fragment). */
+function rawOffsetValue(url: URL): string | null {
+  const query = url.searchParams.get('t') ?? url.searchParams.get('start');
+  if (query != null && query.length > 0) {
+    return query;
+  }
+  if (url.hash.startsWith('#t=')) {
+    return url.hash.slice('#t='.length);
+  }
+  return null;
+}
+
+describe.each(VOD_PAGE_FIXTURES.map((name) => [name] as const))(
+  'data-driven over %s: timestamped rows and /live/ links',
+  (fixtureName) => {
+    const urls = extractVodUrls(fixtureName);
+
+    it('every timestamped row on an allowlisted host normalizes WITH its offset preserved in whole seconds', () => {
+      let timestamped = 0;
+      for (const raw of urls) {
+        let parsed: URL;
+        try {
+          parsed = new URL(raw);
+        } catch {
+          continue;
+        }
+        if (!LIQUIPEDIA_VOD_ALLOWED_HOSTS.has(parsed.hostname.toLowerCase())) {
+          continue;
+        }
+        const rawOffset = rawOffsetValue(parsed);
+        if (rawOffset == null) {
+          continue;
+        }
+        timestamped += 1;
+
+        const result = normalizeLiquipediaVodUrl(raw);
+        expect(result.rejected, `unexpected rejection for ${raw}: ${result.reason}`).toBe(false);
+
+        const expected = expectedOffsetSeconds(rawOffset);
+        const canonical = new URL(result.vodUrl!);
+        const canonicalOffset = canonical.searchParams.get('t');
+        if (expected !== null && expected > 0) {
+          expect(canonicalOffset, `offset lost for ${raw}`).not.toBeNull();
+          expect(expectedOffsetSeconds(canonicalOffset!), `offset value drifted for ${raw}`).toBe(
+            expected,
+          );
+        } else {
+          expect(canonicalOffset).toBeNull();
+        }
+      }
+      // Every committed player VOD fixture is known to carry timestamped
+      // rows — a zero count means the extraction regex broke, not that the
+      // fixture changed.
+      expect(timestamped).toBeGreaterThan(0);
+    });
+
+    it('every /live/ link is accepted and canonicalized to the ordinary watch form', () => {
+      const liveUrls = urls.filter((url) => url.includes('/live/'));
+      for (const raw of liveUrls) {
+        const result = normalizeLiquipediaVodUrl(raw);
+        expect(result.rejected, `live link rejected: ${raw} (${result.reason})`).toBe(false);
+        expect(result.vodUrl).toContain('https://www.youtube.com/watch?v=');
+      }
+      if (fixtureName !== 'parse-hungrybox-vods.json.gz') {
+        // Sparg0 and MkLeo's committed pages each carry at least one
+        // /live/ permalink — the exact rows the pre-fix normalizer lost.
+        expect(liveUrls.length).toBeGreaterThan(0);
+      }
+    });
+  },
+);
 
 describe('data-driven: every extracted Sparg0 VOD URL is accounted for', () => {
   it('accepted count plus rejected-with-reason count equals the total row count, zero unaccounted', () => {
