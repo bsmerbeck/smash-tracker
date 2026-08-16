@@ -3,7 +3,6 @@ import type { Database } from 'firebase-admin/database';
 import { z } from 'zod';
 import {
   isSourceOwnedVodValue,
-  isTournamentRegistryOwnedRow,
   researchEnrichmentAttachmentRecordSchema,
   researchEnrichmentObservationRecordSchema,
   researchEnrichmentProjectionStateRecordSchema,
@@ -11,6 +10,13 @@ import {
   researchEnrichmentRunRecordSchema,
   researchTenantIngestionStateSchema,
 } from '@smash-tracker/shared';
+import {
+  computeForeignRowDigest,
+  describeForeignRowDigestDelta,
+  foreignRowDigestsMatch,
+  type ForeignRowDigest,
+} from '../src/research/registry/foreignDigest.js';
+import { foreignRowDigestSchema } from '../src/research/registry/receipt.js';
 import { isPathSafeTenantId } from '../src/research/subjectKind.js';
 
 /**
@@ -238,6 +244,26 @@ export interface Gate6WorkspaceObservation {
   ingestionRunStatuses: string[];
 }
 
+/**
+ * THE LOCAL DIGEST LAW — used by assertion 7 (Sparg0 user-owned VODs) and
+ * NOWHERE ELSE.
+ *
+ * TWO DIGEST LAWS LIVE IN THIS FILE AND THEY ARE NOT INTERCHANGEABLE. Do not
+ * "unify" them on the assumption that a digest is a digest:
+ *
+ * - Assertion 8 (registry preservation) uses the SHARED registry law —
+ *   `computeForeignRowDigest` in `apps/api/src/research/registry/
+ *   foreignDigest.ts`, hashing through `canonicalJson`/`canonicalDigest`.
+ *   That law is shared because the registry OPERATOR seals the same digest
+ *   into its per-account receipts, and this audit must recompute it from the
+ *   same code rather than from a re-description of it. It also binds the UID
+ *   INTO the hash, so two accounts can never compare equal by accident.
+ * - Assertion 7 keeps THIS local law, because there is no shared equivalent
+ *   for the user-owned-VOD population and it is a different contract
+ *   entirely: its membership is decided by `isSourceOwnedVodValue` against
+ *   each row's projection witness, it is scoped to one account by
+ *   construction, and no other tool produces or consumes it.
+ */
 export interface Gate6DigestEntry {
   count: number;
   digest: string;
@@ -245,12 +271,21 @@ export interface Gate6DigestEntry {
 }
 
 export interface Gate6Baseline {
-  baselineVersion: 1;
+  /**
+   * Bumped 1 -> 2 when `registryForeign` changed from the local
+   * `Gate6DigestEntry` shape to the shared `ForeignRowDigest` (which adds
+   * `version` and `uid`). A v1 baseline holds digests computed under a
+   * DIFFERENT hashing law, so comparing against one would be meaningless —
+   * `parseGate6Baseline` refuses it outright rather than mis-parsing it.
+   */
+  baselineVersion: 2;
   expectationTableVersion: string;
   recordedAtMs: number;
   targetUids: Gate6UidMap;
+  /** Local law — see {@link Gate6DigestEntry}. */
   sparg0UserOwnedVod: Gate6DigestEntry;
-  registryForeign: Record<Gate6WorkspaceKey, Gate6DigestEntry>;
+  /** SHARED law — `ForeignRowDigest` from the registry module. */
+  registryForeign: Record<Gate6WorkspaceKey, ForeignRowDigest>;
 }
 
 export interface Gate6AuditReceipt {
@@ -276,14 +311,20 @@ export interface Gate6AuditOptions {
   strictWitnessObservationRefs?: boolean;
 }
 
+/** The LOCAL law's persisted shape (assertion 7 only). */
 const digestEntrySchema = z.object({
   count: z.number().int().nonnegative(),
   digest: z.string().regex(/^[0-9a-f]{64}$/),
   keys: z.array(z.string()),
 });
 
+/**
+ * The SHARED law's persisted shape, imported from the registry module rather
+ * than restated — a local restatement could drift from the producer and would
+ * silently accept a digest this audit can no longer verify.
+ */
 const gate6BaselineSchema = z.object({
-  baselineVersion: z.literal(1),
+  baselineVersion: z.literal(2),
   expectationTableVersion: z.string().min(1),
   recordedAtMs: z.number().int(),
   targetUids: z.object({
@@ -294,10 +335,10 @@ const gate6BaselineSchema = z.object({
   }),
   sparg0UserOwnedVod: digestEntrySchema,
   registryForeign: z.object({
-    hbox: digestEntrySchema,
-    mkleo: digestEntrySchema,
-    sparg0: digestEntrySchema,
-    izaw: digestEntrySchema,
+    hbox: foreignRowDigestSchema,
+    mkleo: foreignRowDigestSchema,
+    sparg0: foreignRowDigestSchema,
+    izaw: foreignRowDigestSchema,
   }),
 });
 
@@ -306,6 +347,17 @@ const gate6BaselineSchema = z.object({
  * being coerced or skipped: silently degrading to record mode is the exact
  * false-green ("no baseline, so nothing to compare, so pass") this oracle
  * exists to remove.
+ *
+ * A v1 baseline is REFUSED here by the `baselineVersion` literal, not
+ * migrated. Its `registryForeign` entries were computed under this file's old
+ * local digest law, which produced a different hash over the same content and
+ * carried no `version`/`uid` members; a lenient parse would compare two
+ * incomparable hashes and report drift on an untouched corpus. Note the
+ * refusal is anchored on `baselineVersion` and NOT on
+ * `GATE6_EXPECTATION_TABLE_VERSION`: the expectation table pins the corpus's
+ * expected COUNTS, while this pins the baseline file's SHAPE, and bumping the
+ * table for a shape change would falsely signal that the owner-supplied
+ * figures moved.
  */
 export function parseGate6Baseline(value: unknown): Gate6Baseline {
   const parsed = gate6BaselineSchema.safeParse(value);
@@ -1061,6 +1113,11 @@ function collectUserOwnedVodRows(corpus: WorkspaceCorpus): { key: string; vodUrl
   return rows.sort((left, right) => left.key.localeCompare(right.key));
 }
 
+/**
+ * The LOCAL digest law (assertion 7 only — see {@link Gate6DigestEntry}). The
+ * registry population deliberately does NOT come through here; it goes
+ * through the shared `computeForeignRowDigest`.
+ */
 function digestOf(entries: { key: string; payload: unknown }[]): Gate6DigestEntry {
   const sorted = [...entries].sort((left, right) => left.key.localeCompare(right.key));
   return {
@@ -1070,6 +1127,7 @@ function digestOf(entries: { key: string; payload: unknown }[]): Gate6DigestEntr
   };
 }
 
+/** Comparison for the LOCAL law. The shared law compares through `foreignRowDigestsMatch`. */
 function compareDigest(
   findings: Gate6Finding[],
   workspace: Gate6WorkspaceKey | null,
@@ -1140,34 +1198,77 @@ function assertSparg0VodPreservation(
 }
 
 /**
- * Assertion 8 — registry preservation.
+ * Assertion 8 — registry preservation, THROUGH THE SHARED REGISTRY LAW.
  *
  * `preservedForeignCount` alone is explicitly insufficient (a swap of one
  * foreign row for another keeps the count identical), so this compares a
- * canonical digest over the FULL stored value of every non-witness-owned
- * `tournamentEntries` child — the manual, start.gg-synced and parry.gg-synced
- * rows the projector must never touch. Ownership is decided by the shared
- * `isTournamentRegistryOwnedRow`, the same predicate the projector itself
- * uses, so the two can never disagree about what "foreign" means.
+ * content digest over every non-registry-owned `tournamentEntries` child —
+ * the manual, start.gg-synced and parry.gg-synced rows the projector must
+ * never touch.
+ *
+ * THE DIGEST IS NOT COMPUTED HERE. It comes from `computeForeignRowDigest` in
+ * `apps/api/src/research/registry/foreignDigest.ts`, hashed through that
+ * module's `canonicalJson`/`canonicalDigest`. That module is also what the
+ * registry OPERATOR seals into each per-account receipt, and its own header
+ * states the reason plainly: "the Gate-6 audit tooling must be able to
+ * recompute the SAME digest from the SAME code, not from a re-description of
+ * it." An earlier revision of this file hashed the same population with a
+ * local `digestOf`; that local law was strictly weaker (it did not bind the
+ * uid into the hash, so two accounts with identical foreign content produced
+ * identical digests and could compare equal by accident), and it was a second
+ * canonicalizer that could drift from the producer. It is deleted for this
+ * population.
+ *
+ * The comparison and the human-readable delta are the shared module's too —
+ * `foreignRowDigestsMatch` and `describeForeignRowDigestDelta`, the latter
+ * being what names the identical-key-set CONTENT change that a count can
+ * never see.
  */
 function assertRegistryPreservation(
-  observed: Record<Gate6WorkspaceKey, Gate6DigestEntry>,
+  observed: Record<Gate6WorkspaceKey, ForeignRowDigest>,
   baseline: Gate6Baseline | null,
 ): AssertionDraft {
   const findings: Gate6Finding[] = [];
   let inspected = 0;
   for (const workspace of GATE6_WORKSPACE_KEYS) {
-    const entry = observed[workspace];
-    inspected += entry.count;
-    if (baseline !== null) {
-      compareDigest(
-        findings,
-        workspace,
-        `${GATE6_EXPECTATIONS[workspace].label} foreign tournamentEntries`,
-        baseline.registryForeign[workspace],
-        entry,
-      );
+    const actual = observed[workspace];
+    inspected += actual.count;
+    if (baseline === null) {
+      continue;
     }
+    const expected = baseline.registryForeign[workspace];
+    const label = `${GATE6_EXPECTATIONS[workspace].label} foreign tournamentEntries`;
+    if (expected === undefined) {
+      findings.push({
+        code: 'baseline-entry-missing',
+        workspace,
+        detail: `${label}: the supplied baseline has no entry to compare against`,
+      });
+      continue;
+    }
+    // A digest-rule version change alters the hash by design, so a mismatch
+    // there is reported as its own condition rather than surfacing as an
+    // unexplained content drift.
+    if (expected.version !== actual.version) {
+      findings.push({
+        code: 'foreign-digest-version-mismatch',
+        workspace,
+        detail: `${label}: baseline digest-rule version ${expected.version} != current ${actual.version}; re-record the baseline`,
+        expected: expected.version,
+        actual: actual.version,
+      });
+      continue;
+    }
+    if (foreignRowDigestsMatch(expected, actual)) {
+      continue;
+    }
+    findings.push({
+      code: 'digest-drift',
+      workspace,
+      detail: `${label}: ${describeForeignRowDigestDelta(expected, actual)}`,
+      expected: expected.digest,
+      actual: actual.digest,
+    });
   }
   return {
     id: 'registry-preservation',
@@ -1455,22 +1556,24 @@ export async function runGate6Audit(
   const byWorkspace = new Map(corpora.map((corpus) => [corpus.workspace, corpus]));
   const sparg0 = byWorkspace.get('sparg0')!;
 
+  // Assertion 7's population: the LOCAL law (no shared equivalent exists).
   const sparg0Vod = digestOf(
     collectUserOwnedVodRows(sparg0).map((row) => ({ key: row.key, payload: row.vodUrl })),
   );
+  // Assertion 8's population: the SHARED registry law. `computeForeignRowDigest`
+  // applies `isTournamentRegistryOwnedRow` itself, so this audit never restates
+  // the ownership predicate either — it hands over the already-read snapshot
+  // (one read, so counts and digest describe the same moment) and takes the
+  // producer's answer.
   const registryForeign = Object.fromEntries(
     corpora.map((corpus) => [
       corpus.workspace,
-      digestOf(
-        corpus.tournamentEntries
-          .filter(([, value]) => !isTournamentRegistryOwnedRow(value))
-          .map(([entryId, value]) => ({ key: entryId, payload: value })),
-      ),
+      computeForeignRowDigest(corpus.uid, Object.fromEntries(corpus.tournamentEntries)),
     ]),
-  ) as Record<Gate6WorkspaceKey, Gate6DigestEntry>;
+  ) as Record<Gate6WorkspaceKey, ForeignRowDigest>;
 
   const observedBaseline: Gate6Baseline = {
-    baselineVersion: 1,
+    baselineVersion: 2,
     expectationTableVersion: GATE6_EXPECTATION_TABLE_VERSION,
     recordedAtMs: options.nowMs,
     targetUids: { ...options.uids },

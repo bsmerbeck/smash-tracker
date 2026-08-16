@@ -5,6 +5,10 @@ import {
   TOURNAMENT_REGISTRY_ORIGIN,
   TOURNAMENT_REGISTRY_WITNESS_PREFIX,
 } from '@smash-tracker/shared';
+import {
+  computeForeignRowDigest,
+  REGISTRY_FOREIGN_DIGEST_VERSION,
+} from '../src/research/registry/foreignDigest.js';
 import { FakeDatabase } from '../src/test-support/fakeDatabase.js';
 import {
   GATE6_ASSERTION_IDS,
@@ -506,7 +510,28 @@ describe('a fully-correct tree passes', () => {
       ]);
     }
     expect(receipt.observed.map((row) => row.workspace)).toEqual([...GATE6_WORKSPACE_KEYS]);
-    expect(receipt.baseline.baselineVersion).toBe(1);
+    expect(receipt.baseline.baselineVersion).toBe(2);
+    // The two digest laws are visibly distinguishable in the receipt: the
+    // registry half carries the shared law's `version`/`uid`; the VOD half
+    // (the local law) carries neither.
+    for (const workspace of GATE6_WORKSPACE_KEYS) {
+      expect(Object.keys(receipt.baseline.registryForeign[workspace]).sort()).toEqual([
+        'count',
+        'digest',
+        'keys',
+        'uid',
+        'version',
+      ]);
+      expect(receipt.baseline.registryForeign[workspace].uid).toBe(UIDS[workspace]);
+      expect(receipt.baseline.registryForeign[workspace].version).toBe(
+        REGISTRY_FOREIGN_DIGEST_VERSION,
+      );
+    }
+    expect(Object.keys(receipt.baseline.sparg0UserOwnedVod).sort()).toEqual([
+      'count',
+      'digest',
+      'keys',
+    ]);
     // The receipt is JSON — no undefined, no cycles, round-trips byte-stably.
     expect(JSON.parse(JSON.stringify(receipt))).toEqual(receipt);
   });
@@ -983,8 +1008,10 @@ describe('assertion 8: registry-preservation', () => {
     database.seed(`tournamentEntries/${UIDS.hbox}/manual-hbox-a/setsPlayed`, 99);
     const receipt = await audit(database, { baseline: recorded.baseline });
     expectPerturbed(receipt, 'registry-preservation', 'digest-drift');
+    // The wording is the SHARED helper's `describeForeignRowDigestDelta`, not
+    // a local restatement of it.
     expect(assertionOf(receipt, 'registry-preservation').findings[0]!.detail).toContain(
-      'a stored value changed',
+      'their CONTENT changed',
     );
   });
 
@@ -1035,8 +1062,95 @@ describe('assertion 8: registry-preservation', () => {
   });
 
   it('parseGate6Baseline throws rather than silently degrading to record mode', () => {
-    expect(() => parseGate6Baseline({ baselineVersion: 2 })).toThrow(/Invalid Gate 6 baseline/);
+    expect(() => parseGate6Baseline({ baselineVersion: 3 })).toThrow(/Invalid Gate 6 baseline/);
     expect(() => parseGate6Baseline(null)).toThrow(/Invalid Gate 6 baseline/);
+  });
+
+  it('REFUSES a baseline recorded under the OLD v1 registryForeign shape rather than degrading it', async () => {
+    const recorded = await audit(makeDatabase());
+    // Exactly what a pre-unification baseline file looked like: v1, and
+    // registryForeign entries in the old local `{count,digest,keys}` shape —
+    // digests computed under a different hashing law, with no `version`/`uid`.
+    const legacyBaseline = {
+      ...recorded.baseline,
+      baselineVersion: 1,
+      registryForeign: Object.fromEntries(
+        GATE6_WORKSPACE_KEYS.map((workspace) => {
+          const { count, digest, keys } = recorded.baseline.registryForeign[workspace];
+          return [workspace, { count, digest, keys }];
+        }),
+      ),
+    };
+    expect(() => parseGate6Baseline(legacyBaseline)).toThrow(/Invalid Gate 6 baseline/);
+
+    // And the shape alone is refused even if someone hand-edits the version
+    // up: the entries still lack the shared law's `version`/`uid` members.
+    expect(() => parseGate6Baseline({ ...legacyBaseline, baselineVersion: 2 })).toThrow(
+      /Invalid Gate 6 baseline/,
+    );
+  });
+
+  it('reports a digest-rule version change as its own condition, never as unexplained content drift', async () => {
+    const recorded = await audit(makeDatabase());
+    const receipt = await audit(makeDatabase(), {
+      baseline: {
+        ...recorded.baseline,
+        registryForeign: {
+          ...recorded.baseline.registryForeign,
+          hbox: { ...recorded.baseline.registryForeign.hbox, version: 99 },
+        },
+      },
+    });
+    expect(codesOf(receipt, 'registry-preservation')).toContain('foreign-digest-version-mismatch');
+    expect(codesOf(receipt, 'registry-preservation')).not.toContain('digest-drift');
+    expect(receipt.ok).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The unified digest law — assertion 8 must be the SHARED registry helper,
+// and assertion 7 must NOT be.
+// ---------------------------------------------------------------------------
+
+describe('the two digest laws are the right ones and stay distinct', () => {
+  it("assertion 8's digest is byte-identical to computeForeignRowDigest over the same snapshot", async () => {
+    const receipt = await audit(makeDatabase());
+    const database = makeDatabase();
+    for (const workspace of GATE6_WORKSPACE_KEYS) {
+      const entries = (
+        database.dump().tournamentEntries as Record<string, Record<string, unknown>>
+      )[UIDS[workspace]]!;
+      // Recomputed independently through the shared producer — if the audit
+      // ever re-derives this law locally again, this equality breaks.
+      expect(receipt.baseline.registryForeign[workspace]).toEqual(
+        computeForeignRowDigest(UIDS[workspace], entries),
+      );
+    }
+  });
+
+  it('binds the uid INTO the registry hash, so identical foreign content on two accounts does not compare equal', async () => {
+    const receipt = await audit(makeDatabase());
+    // hbox and mkleo hold structurally parallel foreign rows; only the row
+    // NAMES differ in the fixture, so make them literally identical first.
+    const identical = {
+      'manual-x': foreignRegistryRow('same'),
+      'pgg-y': foreignRegistryRow('same too'),
+    };
+    const left = computeForeignRowDigest(UIDS.hbox, identical);
+    const right = computeForeignRowDigest(UIDS.mkleo, identical);
+    expect(left.keys).toEqual(right.keys);
+    expect(left.count).toBe(right.count);
+    expect(left.digest).not.toBe(right.digest);
+    // The audit stores that uid-bound digest, not a uid-blind one.
+    expect(receipt.baseline.registryForeign.hbox.uid).toBe(UIDS.hbox);
+  });
+
+  it('keeps assertion 7 on the local law: the VOD digest carries no uid and is not a ForeignRowDigest', async () => {
+    const receipt = await audit(makeDatabase());
+    expect(receipt.baseline.sparg0UserOwnedVod).not.toHaveProperty('uid');
+    expect(receipt.baseline.sparg0UserOwnedVod).not.toHaveProperty('version');
+    // Still a real, comparable digest — the VOD drift tests above depend on it.
+    expect(receipt.baseline.sparg0UserOwnedVod.digest).toMatch(/^[0-9a-f]{64}$/);
   });
 });
 
