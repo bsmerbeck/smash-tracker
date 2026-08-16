@@ -44,6 +44,10 @@ export function buildTestApp(
     // route, threaded through so tests can build an app with either state.
     | 'youtube'
     | 'youtubeFetch'
+    // Phase 30.3 (Gate 6 capture-evidence hardening, item 3): this API's own
+    // deployment identity, threaded through so tests can build an app that
+    // does — or pointedly does NOT — know who it is.
+    | 'deployment'
     // Phase 23 Plan 05's raw-code isolation test installs a capturing
     // logger to assert the raw claim code is never emitted to logs.
     | 'logger'

@@ -57,6 +57,21 @@ FROM node:24-slim AS runtime
 ENV NODE_ENV=production
 WORKDIR /app
 
+# Phase 30.3 (Gate 6 capture-evidence hardening, item 3): the git SHA this
+# image was built from. Nothing Cloud Run injects at runtime carries it, so it
+# has to be baked in here:
+#
+#   docker build --build-arg API_RELEASE_SHA="$(git rev-parse HEAD)" .
+#
+# Deliberately NO default. Unset, the build arg stays empty, `loadEnv` leaves
+# `API_RELEASE_SHA` undefined, and `GET /api/deployment-identity` reports
+# `releaseSha: null` — an honest "this image cannot name its source" that the
+# Gate-6 capture operator can act on. A placeholder default ("unknown",
+# "dev", the empty string treated as valid) would look like an answer and is
+# precisely what must not happen.
+ARG API_RELEASE_SHA
+ENV API_RELEASE_SHA=${API_RELEASE_SHA}
+
 COPY --from=build /repo/deploy/dist ./dist
 COPY --from=build /repo/deploy/node_modules ./node_modules
 COPY --from=build /repo/deploy/package.json ./package.json

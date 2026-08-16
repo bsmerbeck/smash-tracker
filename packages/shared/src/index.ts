@@ -26,6 +26,7 @@ export * from './user.js';
 export * from './match.js';
 export * from './opponent.js';
 export * from './error.js';
+export * from './deployment.js';
 export * from './startgg.js';
 export * from './scoutMerge.js';
 export * from './parrygg.js';

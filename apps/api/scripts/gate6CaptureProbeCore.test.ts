@@ -288,6 +288,36 @@ describe('the refusal must be PROVEN before anything is sealed', () => {
   });
 });
 
+describe('RED EVIDENCE — the generic-403 hole exists in the CURRENT code', () => {
+  it('seals a probe from a generic JSON 403 carrying NO application code', async () => {
+    const harness = makeHarness({
+      operation: {
+        status: 403,
+        bodyText: JSON.stringify({ error: 'Forbidden', message: 'nope', statusCode: 403 }),
+      },
+    });
+    expect(await runGate6ProbeCapture(baseArgs(), harness.deps)).toBe(0);
+    expect(harness.files.size).toBe(1);
+  });
+
+  it('seals a probe from an HTML/CDN 403 that never reached the application at all', async () => {
+    const harness = makeHarness({
+      operation: {
+        status: 403,
+        bodyText: '<html><head><title>403 Forbidden</title></head><body>cloudfront</body></html>',
+      },
+    });
+    expect(await runGate6ProbeCapture(baseArgs(), harness.deps)).toBe(0);
+    expect(harness.files.size).toBe(1);
+  });
+
+  it('seals a probe from a 403 with an empty body', async () => {
+    const harness = makeHarness({ operation: { status: 403, bodyText: '' } });
+    expect(await runGate6ProbeCapture(baseArgs(), harness.deps)).toBe(0);
+    expect(harness.files.size).toBe(1);
+  });
+});
+
 describe('the identity pre-check', () => {
   it('ABORTS when the credential cannot be resolved, without attempting the operation', async () => {
     const harness = makeHarness({ identity: { status: 401, bodyText: '{}' } });
