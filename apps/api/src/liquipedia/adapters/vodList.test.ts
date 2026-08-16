@@ -317,6 +317,50 @@ describe('toVodObservationRecords', () => {
     expect(researchEnrichmentObservationRecordSchema.safeParse(record).success).toBe(true);
   });
 
+  // 30.3 verifier closure 6: the dedupe property `buildVodDedupeKey` used to
+  // describe now lives where dedupe actually happens — the observation-id
+  // discriminator rides the canonical URL along with tournament, opponent
+  // and row index, so distinct rows can never collapse to one stored id.
+  // (Per-target-set separation — one VOD across the GF and its reset, two
+  // attachments — is carried by the attachment tree keys and proven
+  // end-to-end by the Supernova acceptance suite.)
+  it('observation ids ride the URL with tournament/opponent/index: same canonical URL in two rows never collapses to one id, and conversion is deterministic', () => {
+    const sharedUrl = 'https://www.youtube.com/watch?v=pncEm1PfAJU';
+    const makeRow = (tournamentPageTitle: string, opponent: string) => ({
+      rawVodUrl: sharedUrl,
+      vodUrl: sharedUrl,
+      vodHost: 'youtube.com',
+      vodRejectedReason: null,
+      opponentRawTag: opponent,
+      opponentCanonicalPage: opponent,
+      opponentCountry: null,
+      tournamentPageTitle,
+      tournamentDisplayName: tournamentPageTitle,
+      game: 'Ultimate',
+      year: '2026',
+      resolutionReason: LIQUIPEDIA_VOD_LIST_RESOLUTION_REASON,
+    });
+    const context = {
+      sourcePageTitle: 'Sparg0/VODs',
+      sourcePageUrl: 'https://liquipedia.net/smash/Sparg0/VODs',
+      sourceRevisionId: 1,
+      sourceContentHash: 'a'.repeat(64),
+      fetchedAtMs: 1_700_000_000_000,
+      observedAtMs: 1_700_000_000_000,
+      hashHex: sha256Hex,
+      subjectPlayerLabel: 'Sparg0',
+    };
+    const rows = [makeRow('TestCup/2026', 'Tweek'), makeRow('OtherCup/2026', 'MkLeo')];
+    const records = toVodObservationRecords(rows, context);
+    expect(records).toHaveLength(2);
+    expect(records[0]!.observationId).not.toBe(records[1]!.observationId);
+    // Deterministic: converting the identical rows again yields identical ids.
+    const replay = toVodObservationRecords(rows, context);
+    expect(replay.map((record) => record.observationId)).toEqual(
+      records.map((record) => record.observationId),
+    );
+  });
+
   it('falls back to the opponent canonical page when the display tag is empty, and trims usable tags', () => {
     const rows = [
       {

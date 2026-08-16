@@ -19,6 +19,7 @@ import {
   writeEnrichmentObservation,
 } from './store.js';
 import { applyEnrichmentProjection, buildEnrichmentOverlay } from './projection.js';
+import { prepareAndValidateObservation } from './prepareObservation.js';
 
 /**
  * Phase 30.2 Plan 09 (ENR-10, cycle-1 review MEDIUM 8): refresh and
@@ -396,7 +397,17 @@ export async function applyPageRefresh(
       unchanged += 1;
       continue;
     }
-    await writeEnrichmentObservation(database, tenantId, observation);
+    // THE PARITY GATE (30.3 verifier closure 1): this is the only
+    // observation-write site outside run.ts's gather, and it must hold the
+    // same guarantee — a record the persistence schema would reject fails
+    // HERE, loudly, never at a later read (the write boundary itself
+    // parses, but the gate's named error and its extraction-time contract
+    // are the reliability seam).
+    await writeEnrichmentObservation(
+      database,
+      tenantId,
+      prepareAndValidateObservation(observation),
+    );
     written += 1;
 
     const targetSetId = attachmentIndex.get(observation.observationId);

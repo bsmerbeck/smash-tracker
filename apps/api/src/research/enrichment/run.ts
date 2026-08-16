@@ -1526,12 +1526,17 @@ async function resolveAndProjectPhase(input: ResolveAndProjectPhaseInput): Promi
       observations: observationsById,
     });
     const preview = await previewEnrichmentProjection(database, tenantId, targetSetId, overlay);
-    // Row-change-aware trigger (30.2 defect-C composition): the outcome
-    // labels alone can no longer distinguish "row already holds our
-    // projection" from "row is missing its fill" (the own-projection stage
-    // guard reports both as `enriched`), so the trigger is the preview's
-    // explicit would-this-apply-change-the-row signal.
-    const hasStrandedFill = preview.rows.some((row) => row.wouldChangeRow === true);
+    // Change-aware trigger, both halves: `wouldChangeRow` (30.2 defect-C
+    // composition — a row value is missing its fill) OR `wouldChangeWitness`
+    // (30.3 verifier B2 — witness-only evidence such as CHARACTERS would be
+    // stamped, promoted, or cleared even though no row value moves; without
+    // it, already-projected production sets could never gain character
+    // evidence: attached+receipted observations enter neither the review
+    // queue nor the receipt-less union). Both signals are convergent, so a
+    // fully-stamped set previews all-quiet and the replay stays a no-op.
+    const hasStrandedFill = preview.rows.some(
+      (row) => row.wouldChangeRow === true || row.wouldChangeWitness === true,
+    );
     if (!hasStrandedFill) {
       continue;
     }

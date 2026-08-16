@@ -352,6 +352,22 @@ describe('anti-vacuous-pass: ground truth re-derived from the committed fixture 
     expect(hazardlessCount).toBe(EXPECTED_HAZARDLESS_COUNT);
     expect(stageMatches.length - hazardlessCount).toBe(EXPECTED_NORMAL_COUNT);
   });
+
+  it('the real captured bracket content carries the exact GF character and stock sequence the evidence regression asserts against (30.3 verifier closure 2)', () => {
+    const content = readEnvelopeContent(loadSupernovaBracketEnvelope());
+    const gfChars = Array.from(content.matchAll(/\|r3m1p([12])char(\d)=([^|\n}]*)/g)).map((m) => ({
+      seat: Number(m[1]),
+      ordinal: Number(m[2]),
+      char: m[3]!.trim(),
+    }));
+    expect(gfChars).toHaveLength(EXPECTED_GF_GAME_COUNT * 2);
+    expect(gfChars.filter((c) => c.seat === 1).every((c) => c.char === 'diddy')).toBe(true);
+    expect(gfChars.filter((c) => c.seat === 2).every((c) => c.char === 'cloud')).toBe(true);
+    const gfSeat2Stocks = Array.from(content.matchAll(/\|r3m1p2stock(\d)=([^|\n}]*)/g))
+      .sort((a, b) => Number(a[1]) - Number(b[1]))
+      .map((m) => Number(m[2]!.trim()));
+    expect(gfSeat2Stocks).toEqual([3, 2, 1]);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -500,6 +516,53 @@ describe('Supernova 2026 mandatory regression (ENR-11)', () => {
     expect(snapshot?.counts.matched).toBe(2);
     expect(snapshot?.counts.stageEnriched).toBe(EXPECTED_GF_GAME_COUNT + EXPECTED_RESET_GAME_COUNT);
     expect(snapshot?.counts.vodEnriched).toBe(EXPECTED_GF_GAME_COUNT + EXPECTED_RESET_GAME_COUNT);
+  });
+
+  it('30.3 verifier closure 2: the real fixture carries per-game characters and stocks, and the pipeline projects seat-proven witness evidence for the grand final (subject Sparg0 = seat 2 on cloud vs Tweek on diddy, stocks 3/2/1)', async () => {
+    const database = new FakeDatabase();
+    await seedSupernovaProviderSets(database);
+    // Orientation needs the row's provider-authored opponent tag (and the
+    // stocks half needs the subject-won member) — patched onto this test's
+    // own rows rather than widening the shared seed under every other test.
+    // Ground truth (fixture bytes, re-derived in the anti-vacuous suite):
+    // r3m1 seat 1 = Tweek on "diddy" (0 stocks left each game), seat 2 =
+    // Sparg0 on "cloud", winning every game with 3/2/1 stocks left.
+    for (let ordinal = 1; ordinal <= EXPECTED_GF_GAME_COUNT; ordinal += 1) {
+      await database
+        .ref(`matches/${TENANT_ID}/${deriveEnrichmentMatchRowKey(GF_SET_ID, ordinal)}`)
+        .update({ opponent: 'Tweek', win: true });
+    }
+    await runSupernova(database, 1_000);
+
+    const expectedSubjectStocks = [3, 2, 1] as const;
+    for (let ordinal = 1; ordinal <= EXPECTED_GF_GAME_COUNT; ordinal += 1) {
+      const key = deriveEnrichmentMatchRowKey(GF_SET_ID, ordinal);
+      const witnessSnapshot = await database
+        .ref(`researchEnrichmentProjection/${TENANT_ID}/${key}`)
+        .get();
+      expect(witnessSnapshot.exists(), `missing witness for ${key}`).toBe(true);
+      const witness = witnessSnapshot.val() as {
+        projectedSubjectSeat?: number;
+        projectedSubjectCharRaw?: string;
+        projectedSubjectFighterId?: number;
+        projectedOpponentCharRaw?: string;
+        projectedOpponentFighterId?: number;
+        projectedStocksLeft?: number;
+      };
+      // Seat-proven character evidence, straight from the captured bytes.
+      expect(witness.projectedSubjectSeat).toBe(2);
+      expect(witness.projectedSubjectCharRaw).toBe('cloud');
+      expect(witness.projectedOpponentCharRaw).toBe('diddy');
+      expect(witness.projectedSubjectFighterId).toBeDefined();
+      expect(witness.projectedOpponentFighterId).toBeDefined();
+      // The subject won every GF game; the stocks half fills the row and
+      // stamps the witness with the subject's remaining stocks.
+      expect(witness.projectedStocksLeft).toBe(expectedSubjectStocks[ordinal - 1]);
+      const row = await database.ref(`matches/${TENANT_ID}/${key}`).get();
+      expect((row.val() as { stocksLeft?: number }).stocksLeft).toBe(
+        expectedSubjectStocks[ordinal - 1],
+      );
+    }
   });
 
   it('running the same pipeline a second time over the identical fixture performs zero value-changing writes to the domain trees', async () => {

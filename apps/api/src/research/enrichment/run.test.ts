@@ -1692,6 +1692,126 @@ describe('runEnrichmentBatch cross-tenant and cross-version freshness (30.2 defe
     expect(third.counts.receiptsWritten).toBe(0);
   });
 
+  it('30.3 verifier B2: an already-attached, receipted, row-converged set whose observation carries provable characters gains the character witness members on a later skip-heavy run; the run after is a strict no-op', async () => {
+    const database = new FakeDatabase();
+    await seedProviderSet(database);
+    // Orientation proof needs the row's provider-authored opponent tag.
+    await database.ref(`matches/${TENANT_ID}/sgg-set-1-g1`).update({
+      opponent: 'OppTag',
+      win: true,
+    });
+    // Characters WITHOUT stock params: stage+vod converge on run 1 and
+    // stocksLeft is never fillable — the verifier's exact production shape,
+    // where the pre-B2 trigger (row values only) could never fire again.
+    const charsOnlyBracketWikitext =
+      '{{TournamentInfo|game=ultimate|tourneylink=TestCup/2026}}\n' +
+      '{{LegacyBracket|r1m1p1=TestPlayer|r1m1p2=OppTag|r1m1p1score=3|r1m1p2score=1|' +
+      'r1m1date=January 1, 2026|r1m1details={{BracketMatchDetails|vod=' +
+      VOD_URL +
+      '}}|r1m1p1char1=Fox|r1m1p2char1=Falco|r1m1stage1=Battlefield|r1m1win1=1}}';
+    const buildCharsClient = () =>
+      buildFixtureClient({
+        vodPagePresence: new Map([[VOD_PAGE_TITLE, true]]),
+        vodPageRevisionId: new Map([[VOD_PAGE_TITLE, 500]]),
+        generatedContent: new Map([
+          [VOD_PAGE_TITLE, { content: buildVodPageBody(), mode: 'expandtemplates' }],
+        ]),
+        wikitextPages: new Map([
+          [
+            TOURNAMENT_TITLE,
+            { revisionId: 10, sha1: 'sha-tournament-v1', content: buildTournamentWikitext() },
+          ],
+          [
+            BRACKET_TITLE,
+            { revisionId: 20, sha1: 'sha-bracket-chars-v1', content: charsOnlyBracketWikitext },
+          ],
+        ]),
+        subpagesByPrefix: new Map([
+          [
+            TOURNAMENT_TITLE,
+            [
+              { title: TOURNAMENT_TITLE, pageId: 1 },
+              { title: BRACKET_TITLE, pageId: 2 },
+            ],
+          ],
+        ]),
+      });
+
+    const first = await runEnrichmentBatch({
+      database: asDatabase(database),
+      client: buildCharsClient().client,
+      tenantId: TENANT_ID,
+      playerLabels: ['TestPlayer'],
+      targetGame: 'ultimate',
+      nowMs: 1_000,
+      hashHex: sha256Hex,
+      dryRun: false,
+    });
+    expect(first.counts.attachmentsCreated).toBeGreaterThanOrEqual(1);
+
+    // Simulate the production 57+68: witnesses written BEFORE Gate 5 carry
+    // no character members. Strip them off the otherwise-converged witness.
+    const witnessPath = `researchEnrichmentProjection/${TENANT_ID}/sgg-set-1-g1`;
+    for (const member of [
+      'projectedSubjectSeat',
+      'projectedSubjectCharRaw',
+      'projectedSubjectFighterId',
+      'projectedOpponentCharRaw',
+      'projectedOpponentFighterId',
+      'charsObservationId',
+      'charsSourceRevisionId',
+      'charsParserVersion',
+      'charsProjectedAtMs',
+    ]) {
+      await database.ref(`${witnessPath}/${member}`).remove();
+    }
+    const stripped = await database.ref(witnessPath).get();
+    expect(
+      (stripped.val() as { projectedSubjectSeat?: number }).projectedSubjectSeat,
+    ).toBeUndefined();
+
+    // Skip-heavy later run: the observation is attached+receipted (neither
+    // the review queue nor the receipt-less union sees it), every row value
+    // is converged — ONLY the witness-delta signal can find the set.
+    const { client: secondClient, calls: secondCalls } = buildCharsClient();
+    const second = await runEnrichmentBatch({
+      database: asDatabase(database),
+      client: secondClient,
+      tenantId: TENANT_ID,
+      playerLabels: ['TestPlayer'],
+      targetGame: 'ultimate',
+      nowMs: 2_000,
+      hashHex: sha256Hex,
+      dryRun: false,
+    });
+    expect(secondCalls.getWikitext.length).toBe(0);
+    expect(second.counts.projectionsReconciled).toBeGreaterThanOrEqual(1);
+    const regained = await database.ref(witnessPath).get();
+    const witness = regained.val() as {
+      projectedSubjectSeat?: number;
+      projectedSubjectFighterId?: number;
+      projectedOpponentFighterId?: number;
+    };
+    expect(witness.projectedSubjectSeat).toBe(1);
+    expect(witness.projectedSubjectFighterId).toBeDefined();
+    expect(witness.projectedOpponentFighterId).toBeDefined();
+    const row = await database.ref(`matches/${TENANT_ID}/sgg-set-1-g1`).get();
+    expect((row.val() as { vodUrl?: string }).vodUrl).toBe(VOD_URL);
+
+    // Convergence: the run after finds every signal quiet.
+    const third = await runEnrichmentBatch({
+      database: asDatabase(database),
+      client: buildCharsClient().client,
+      tenantId: TENANT_ID,
+      playerLabels: ['TestPlayer'],
+      targetGame: 'ultimate',
+      nowMs: 3_000,
+      hashHex: sha256Hex,
+      dryRun: false,
+    });
+    expect(third.counts.projectionsReconciled).toBe(0);
+  });
+
   it('a dry run never sweeps', async () => {
     const database = new FakeDatabase();
     await seedProviderSet(database);

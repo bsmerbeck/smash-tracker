@@ -282,18 +282,15 @@ export function normalizeLiquipediaVodUrl(raw: string): NormalizeLiquipediaVodUr
   return accepted(raw, canonical.vodUrl, canonical.host);
 }
 
-/**
- * Builds the dedupe key this module exposes: the PAIR of canonical URL and
- * target set id, never the URL alone. This exists because the mandatory
- * Supernova fixture has ONE VOD covering both the grand final and its
- * reset (RESEARCH section 2.6) — projecting that single URL onto two
- * different target sets is CORRECT behaviour, not a duplicate. A caller
- * that deduped on the URL alone would incorrectly collapse the reset's VOD
- * projection into the grand final's, losing one of the two legitimate
- * attachments. Two different videos, by construction, never normalize to
- * the same canonical form (their video identifiers differ), so the pair
- * key is also never accidentally satisfied by two distinct real videos.
- */
-export function buildVodDedupeKey(canonicalUrl: string, targetSetId: string): string {
-  return `${canonicalUrl}::${targetSetId}`;
-}
+// NOTE (30.3 verifier closure 6): a `buildVodDedupeKey(canonicalUrl,
+// targetSetId)` helper used to live here but was DEAD production code —
+// nothing in the pipeline ever called it. The property it described (the
+// mandatory Supernova fixture has ONE VOD covering both the grand final and
+// its reset, and deduping on the URL alone would collapse the two legitimate
+// attachments — RESEARCH section 2.6) is carried by the REAL mechanisms
+// instead: the vod-list observation-id discriminator
+// (`vodList.ts`'s `toVodObservationRecords`, which rides the URL along with
+// tournament/opponent/index) and the per-target-set attachment tree keys
+// (`researchEnrichmentAttachments/{tenantId}/{targetSetId}/{observationId}`).
+// Its property assertions moved to `vodList.test.ts` and the Supernova
+// acceptance suite, which proves the GF/reset non-collapse end-to-end.

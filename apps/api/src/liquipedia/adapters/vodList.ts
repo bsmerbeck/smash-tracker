@@ -417,7 +417,7 @@ function buildDuplicatePairs(rows: LiquipediaVodRow[]): LiquipediaVodDuplicatePa
     if (!row.opponentCanonicalPage) {
       return;
     }
-    const key = `${row.tournamentPageTitle} ${row.opponentCanonicalPage}`;
+    const key = `${row.tournamentPageTitle}\u0000${row.opponentCanonicalPage}`;
     const existing = groups.get(key);
     if (existing) {
       existing.rowIndexes.push(index);
@@ -456,7 +456,7 @@ function buildCanonicalHashInput(rows: LiquipediaVodRow[]): string {
   return sorted
     .map(
       (row) =>
-        `${row.tournamentPageTitle} ${row.opponentCanonicalPage ?? ''} ${row.vodUrl ?? row.rawVodUrl}`,
+        `${row.tournamentPageTitle}\u0000${row.opponentCanonicalPage ?? ''}\u0000${row.vodUrl ?? row.rawVodUrl}`,
     )
     .join('\n');
 }

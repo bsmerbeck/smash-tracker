@@ -14,6 +14,7 @@ import {
   FaultInjectedError,
 } from '../../test-support/faultInjectingDatabase.js';
 import { writeEnrichmentObservation, confirmEnrichmentObservationByAdmin } from './store.js';
+import { confirmVodCandidateByAdmin, writeVodCandidate } from './vodDiscovery.js';
 import {
   applyEnrichmentProjection,
   buildEnrichmentOverlay,
@@ -152,6 +153,57 @@ describe('buildEnrichmentOverlay', () => {
       canonicalStageId: 3,
       raw: 'FD',
     });
+  });
+
+  // 30.3 verifier closure 3: when a bracket observation and a vod-list row
+  // both supply the same key's URL, the URL was always safe (corroborated
+  // identical) but the last-iterated attachment named the source page —
+  // truncated-hash order, so `enrichedVodSourceByKey` could point at the
+  // vod-list page. Bracket provenance must win DETERMINISTICALLY.
+  it('bracket-sourced VOD provenance outranks a vod-list row for the same key, in either attachment order', () => {
+    const targetSetId = 'startgg-set-rank';
+    const key = deriveEnrichmentMatchRowKey(targetSetId, 1);
+    const url = 'https://www.youtube.com/watch?v=ranked';
+    const bracketObservation = makeObservation({
+      observationId: 'zz-bracket-obs',
+      contentType: 'stage-observation',
+      sourcePageTitle: 'TestCup/2026/Bracket',
+      vodUrl: url,
+      games: [{ ordinal: 1 }],
+    });
+    const vodListObservation = makeObservation({
+      observationId: 'aa-vodlist-obs',
+      contentType: 'vod-reference',
+      sourcePageTitle: 'TestPlayer/VODs',
+      vodUrl: url,
+    });
+    const makeAttachment = (observationId: string): ResearchEnrichmentAttachmentRecord => ({
+      observationId,
+      targetSetId,
+      attachmentSource: 'admin',
+      attachedAtMs: 1,
+      sourceRevisionId: 500,
+      sourceContentHash: 'a'.repeat(64),
+      parserVersion: 'liquipedia-bracket-legacy@2',
+      confirmedByUid: 'admin-1',
+      confirmedAtMs: 1,
+    });
+    const observations = {
+      'zz-bracket-obs': bracketObservation,
+      'aa-vodlist-obs': vodListObservation,
+    };
+
+    for (const attachments of [
+      [makeAttachment('zz-bracket-obs'), makeAttachment('aa-vodlist-obs')],
+      [makeAttachment('aa-vodlist-obs'), makeAttachment('zz-bracket-obs')],
+    ]) {
+      const overlay = buildEnrichmentOverlay({ targetSetId, attachments, observations });
+      expect(overlay.enrichedVodUrlByKey[key]).toBe(url);
+      // The bracket page is the named source in BOTH iteration orders —
+      // never the discovery-index page, even though its id sorts first and
+      // it can iterate last.
+      expect(overlay.enrichedVodSourceByKey?.[key]?.observationId).toBe('zz-bracket-obs');
+    }
   });
 
   it('the grand final (3 rows) and its reset (5 rows) both receive the shared URL as two sets of distinct keys', () => {
@@ -562,13 +614,16 @@ describe('applyEnrichmentProjection — re-apply over its own prior projection',
     // Both halves of the merged dual fix, asserted together: the label says
     // settled (never a fresh 'enriched'), and the value-derived trigger
     // signal says no write would happen — so run.ts's reconciliation pass
-    // skips the healthy set whichever signal it consults.
+    // skips the healthy set whichever signal it consults. The witness-delta
+    // half (30.3 verifier B2) must ALSO read quiet on a converged set, or
+    // reconciliation would reproject every healthy set every run.
     expect(preview.rows).toEqual([
       {
         matchKey: key,
         vodOutcome: 'unchanged',
         stageOutcome: 'provider-authoritative',
         wouldChangeRow: false,
+        wouldChangeWitness: false,
       },
     ]);
     expect(preview.counts.stageEnriched).toBe(0);
@@ -1356,5 +1411,69 @@ describe('readEnrichmentOverlayForSet / readEnrichmentOverlayForTenant', () => {
 
     const perTenant = await readEnrichmentOverlayForTenant(asDatabase(database), TENANT_ID);
     expect(perTenant?.get(key)?.enrichmentVodUrl).toBe('https://liquipedia/vod');
+  });
+
+  // 30.3 verifier B3: the ingestion-side overlay readers must see a set's
+  // admin-CONFIRMED YouTube candidate exactly as the applier and preview do.
+  // Without the widening, a stage-only-attached set with a
+  // candidate-projected VOD hands the ingestion re-projection a witness-
+  // owned URL with NO enrichment URL — and the shared resolver's
+  // source-removed branch strips the confirmed candidate's URL.
+  it('readEnrichmentOverlayForTenant widens with the confirmed candidate so ingestion re-projection preserves a candidate-projected VOD on a stage-only-attached set', async () => {
+    const database = new FakeDatabase();
+    const targetSetId = 'startgg-set-cand-b3';
+    const key = deriveEnrichmentMatchRowKey(targetSetId, 1);
+    const candidateUrl = 'https://www.youtube.com/watch?v=cand-b3';
+
+    // Stage-ONLY observation (no vodUrl anywhere in the enrichment overlay).
+    await seedAdminAttachedObservation(
+      database,
+      targetSetId,
+      makeObservation({
+        observationId: 'obs-stage-only-b3',
+        games: [{ ordinal: 1, canonicalStageId: 3, rawStage: 'FD' }],
+      }),
+      1000,
+    );
+    // The candidate-projected production state: row exists and carries the
+    // candidate's URL, the witness owns it.
+    await database.ref(`matches/${TENANT_ID}/${key}`).set({ vodUrl: candidateUrl });
+    await database.ref(`researchEnrichmentProjection/${TENANT_ID}/${key}`).set({
+      matchKey: key,
+      targetSetId,
+      projectedVodUrl: candidateUrl,
+      vodProjectedAtMs: 1000,
+    });
+    await writeVodCandidate(asDatabase(database), TENANT_ID, {
+      candidateId: 'yt-cand-b3',
+      targetSetId,
+      provider: 'youtube-data-api',
+      query: 'test query',
+      videoId: 'cand-b3',
+      videoUrl: candidateUrl,
+      title: 'Test Set VOD',
+      fetchedAtMs: 900,
+      score: 4,
+      status: 'proposed',
+    });
+    await confirmVodCandidateByAdmin(
+      asDatabase(database),
+      TENANT_ID,
+      targetSetId,
+      'yt-cand-b3',
+      'admin-1',
+      1000,
+    );
+
+    const perTenant = await readEnrichmentOverlayForTenant(asDatabase(database), TENANT_ID);
+    const rowOverlay = perTenant?.get(key);
+    expect(rowOverlay).toBeDefined();
+    // The widened overlay carries the candidate URL, so the resolver sees a
+    // matching enrichment URL ('unchanged'), never the source-removed branch.
+    expect(rowOverlay?.enrichmentVodUrl).toBe(candidateUrl);
+    expect(rowOverlay?.enrichmentStage?.canonicalStageId).toBe(3);
+
+    const perSet = await readEnrichmentOverlayForSet(asDatabase(database), TENANT_ID, targetSetId);
+    expect(perSet?.[key]?.enrichmentVodUrl).toBe(candidateUrl);
   });
 });
