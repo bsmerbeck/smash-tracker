@@ -597,16 +597,34 @@ describe('demoMoneyGuards: the anonymous crawler surfaces refuse a demo-owned to
 });
 
 // ---------------------------------------------------------------------------
-// Block 4 (requirement 4): the server-side export/download surface is EMPTY,
-// locked.
+// Block 4 (requirement 4): the server-side export/download surface is
+// INVENTORIED and every member of it is demo-gated, locked.
 //
-// CSV export is entirely client-side today (`apps/web/src/pages/MatchData/
-// lib/matchCsv.ts` builds a Blob from already-fetched matches) — there is no
-// server endpoint that serves an export/download/print payload, so there is
-// nothing to refuse. That is a fact about the current tree, not a permanent
-// guarantee, so it is machine-checked here: the day someone adds a
-// `text/csv` or `Content-Disposition: attachment` responder to the API, this
-// lock fails and forces them to demo-gate it.
+// CORRECTION (Phase 30.3 Gate 6 corrective, defect A4). This block used to
+// claim the server-side export surface was EMPTY, and machine-checked that
+// claim by scanning for `text/csv`, `Content-Disposition`, and spreadsheet
+// MIME types. The claim was false and the scan was the reason it looked
+// true: `GET /api/coaching/clients/:clientId/export` has existed since Phase
+// 11 and dumps an entire client workspace — matches, playlists, opponents,
+// aliases, notes, stage favorites, fighter selection. It sets none of those
+// headers, because it is a plain `application/json` response body that the
+// BROWSER turns into a download (`ClientHubPage`'s `downloadClientExport`
+// builds the Blob client-side). A header/MIME scan structurally cannot see
+// an export shaped like that, so the lock passed while the surface was
+// wide open to a demo coach.
+//
+// The scan is therefore expanded from "no download HEADERS anywhere" to a
+// two-part inventory that a JSON export cannot slip past:
+//
+//   4a. HEADER/MIME scan — unchanged, still asserts no CSV/attachment/
+//       spreadsheet responder exists.
+//   4b. ROUTE-PATH scan — discovers every registered route whose path
+//       contains `export` or `download`, regardless of content type, and
+//       requires the discovered set to equal an explicit allowlist in which
+//       every entry is demo-gated on the ACTOR (`request.uid`). A new export
+//       endpoint fails this lock until it is both gated and listed.
+//
+// 4c then proves the gate behaviorally for the one allowlisted route.
 //
 // The ONE binary payload the API does serve — `GET /s/:token/og.png` — is
 // already demo-gated at its single resolution chokepoint (Block 3).
@@ -663,6 +681,49 @@ function discoverDownloadResponders(): { file: string; matched: string }[] {
   return hits;
 }
 
+/**
+ * 4b. Route registrations, discovered by PATH rather than by content type —
+ * the blind spot that let a plain `application/json` workspace dump pass
+ * this block. Matches `app.get('/…/export'…)` and friends in any source
+ * file.
+ */
+const ROUTE_REGISTRATION = /\bapp\.(?:get|post|put|patch|delete)\(\s*['"`]([^'"`]+)['"`]/g;
+const EXPORT_PATH_SHAPE = /(?:^|\/)(?:export|download)(?:$|[/.])/i;
+
+interface ExportRoute {
+  /** Package-relative, matching `relPath`'s output. */
+  file: string;
+  path: string;
+}
+
+/**
+ * Every export/download route the API is allowed to serve. An entry here is
+ * an assertion that the route is demo-gated on the ACTOR; `gateMarker` is the
+ * exact source text that must appear in its file, so deleting the gate fails
+ * this lock even if the route keeps working for ordinary callers.
+ */
+const ALLOWED_EXPORT_ROUTES: (ExportRoute & { gateMarker: string })[] = [
+  {
+    file: 'src/routes/coachingTenants.ts',
+    path: '/coaching/clients/:clientId/export',
+    gateMarker: 'isDemoAccountSubject(app.demoAccountConfig, request.uid)',
+  },
+];
+
+function discoverExportRoutes(): ExportRoute[] {
+  const found: ExportRoute[] = [];
+  for (const file of ALL_API_SOURCE_FILES) {
+    const source = stripComments(readFileSync(file, 'utf-8'));
+    for (const match of source.matchAll(ROUTE_REGISTRATION)) {
+      const path = match[1]!;
+      if (EXPORT_PATH_SHAPE.test(path)) {
+        found.push({ file: relPath(file), path });
+      }
+    }
+  }
+  return found.sort((a, b) => `${a.file}${a.path}`.localeCompare(`${b.file}${b.path}`));
+}
+
 describe('demoMoneyGuards: the API serves no export/download/print payload (locked, requirement 4)', () => {
   it('discovers a non-trivial number of API source files (anti-vacuous-pass guard)', () => {
     expect(ALL_API_SOURCE_FILES.length).toBeGreaterThan(100);
@@ -693,5 +754,99 @@ describe('demoMoneyGuards: the API serves no export/download/print payload (lock
       pattern.test(stripComments(fixture)),
     );
     expect(matched).toEqual([]);
+  });
+});
+
+describe('demoMoneyGuards: every export/download ROUTE is inventoried and demo-gated (locked, requirement 4b)', () => {
+  it('anti-vacuous guard: the header scan alone cannot see the JSON export that already exists', () => {
+    // The precise reason this block was added. `coachingTenants.ts` serves a
+    // full workspace export and matches NONE of the header/MIME patterns —
+    // so 4a passing says nothing at all about it.
+    const exportRouteSource = stripComments(
+      readFileSync(resolve('src/routes/coachingTenants.ts'), 'utf-8'),
+    );
+    expect(exportRouteSource).toContain("'/coaching/clients/:clientId/export'");
+    for (const { pattern } of DOWNLOAD_PAYLOAD_PATTERNS) {
+      expect(pattern.test(exportRouteSource)).toBe(false);
+    }
+  });
+
+  it('the discovered export/download route set equals the demo-gated allowlist', () => {
+    // A new entry here is NOT a licence to extend the allowlist: add the
+    // actor-scoped refusal FIRST, with its own paired refusal + positive
+    // control, and only then list the route.
+    expect(discoverExportRoutes()).toEqual(
+      ALLOWED_EXPORT_ROUTES.map(({ file, path }) => ({ file, path })),
+    );
+  });
+
+  it.each(ALLOWED_EXPORT_ROUTES)(
+    'the allowlisted export route $path still carries its actor-scoped demo gate',
+    ({ file, gateMarker }) => {
+      const source = stripComments(readFileSync(resolve(file), 'utf-8'));
+      expect(source).toContain(gateMarker);
+    },
+  );
+
+  it.each([
+    `app.get('/coaching/clients/:clientId/export', {`,
+    `app.get('/matches/export', {`,
+    `app.post('/reports/:reportId/download', {`,
+    `app.get('/matches/export.csv', {`,
+  ])('FIXTURE: a plain JSON export route IS detected by the path scan — %s', (fixture) => {
+    const paths = [...stripComments(fixture).matchAll(ROUTE_REGISTRATION)].map((m) => m[1]!);
+    expect(paths.some((path) => EXPORT_PATH_SHAPE.test(path))).toBe(true);
+  });
+
+  it.each([
+    `app.get('/coaching/clients/:clientId/kind', {`,
+    `app.post('/billing/checkout', {`,
+    // A path that merely CONTAINS the substring inside a larger word.
+    `app.get('/reports/exporters-guide', {`,
+  ])('FIXTURE: an ordinary route is NOT flagged as an export surface — %s', (fixture) => {
+    const paths = [...stripComments(fixture).matchAll(ROUTE_REGISTRATION)].map((m) => m[1]!);
+    expect(paths.some((path) => EXPORT_PATH_SHAPE.test(path))).toBe(false);
+  });
+});
+
+describe('demoMoneyGuards: Client Hub export refuses a demo account (locked, requirement 4c)', () => {
+  it('a demo coach is refused 403 with no workspace payload', async () => {
+    const { app } = buildMoneyApp();
+    const created = await app.inject({
+      method: 'POST',
+      url: '/api/coaching/clients',
+      headers: authHeader(DEMO_TOKEN),
+      payload: { label: 'Fictional Client' },
+    });
+    const clientId = created.json().clientId as string;
+
+    const response = await app.inject({
+      method: 'GET',
+      url: `/api/coaching/clients/${clientId}/export`,
+      headers: authHeader(DEMO_TOKEN),
+    });
+
+    expect(response.statusCode).toBe(403);
+    expect(response.json()).not.toHaveProperty('matches');
+  });
+
+  it('positive control: the ordinary fifth account exports normally', async () => {
+    const { app } = buildMoneyApp();
+    const created = await app.inject({
+      method: 'POST',
+      url: '/api/coaching/clients',
+      headers: authHeader(ORDINARY_TOKEN),
+      payload: { label: 'Fictional Client' },
+    });
+    const clientId = created.json().clientId as string;
+
+    const response = await app.inject({
+      method: 'GET',
+      url: `/api/coaching/clients/${clientId}/export`,
+      headers: authHeader(ORDINARY_TOKEN),
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({ clientId, matches: [] });
   });
 });
