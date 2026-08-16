@@ -72,13 +72,16 @@ vi.mock('@/lib/api', () => ({
 const mario = SpriteList.find((s) => s.id === 1)!;
 
 /** Phase 13 (ONBD-03): the always-present `GET /api/users/me` profile shape. */
-function defaultProfile(overrides: { onboardingIntent?: OnboardingIntent | null } = {}) {
+function defaultProfile(
+  overrides: { onboardingIntent?: OnboardingIntent | null; isDemoAccount?: boolean } = {},
+) {
   return {
     uid: 'test-uid',
     email: 'test@example.com',
     fighters: { primary: [], secondary: [] },
     coachingModeEnabled: false,
     onboardingIntent: overrides.onboardingIntent ?? null,
+    ...(overrides.isDemoAccount !== undefined ? { isDemoAccount: overrides.isDemoAccount } : {}),
   };
 }
 
@@ -367,5 +370,66 @@ describe('DashboardPage', () => {
       await waitFor(() => expect(listCoachingClients).toHaveBeenCalled());
       expect(screen.queryByTestId('dashboard-next-best-action')).not.toBeInTheDocument();
     });
+  });
+});
+
+// Phase 30.3 (Gate 6, owner/Codex hard gate): the persistent demo-account
+// label on the Dashboard surface — one of the seven required surfaces.
+// Covers both the fighterless early-return branch and the populated branch,
+// mirroring the coverage-panel precedent this same page already sets.
+describe('DashboardPage — demo account banner', () => {
+  beforeEach(() => {
+    resetAuthMock();
+    vi.clearAllMocks();
+    window.localStorage.clear();
+    upsertMe.mockResolvedValue({ uid: 'test-uid', email: 'test@example.com' });
+    listOpponents.mockResolvedValue([]);
+    getOnboardingProgress.mockResolvedValue({
+      analytics: false,
+      vod: false,
+      tournamentPrep: false,
+      scout: false,
+    });
+    listCoachingClients.mockResolvedValue([]);
+    coverage.mockResolvedValue({
+      coverage: null,
+      confirmedPlayerIds: [],
+      confirmedPlayerIdCount: 0,
+      unresolvedCandidateCount: 0,
+    });
+    setMockUser(makeMockUser());
+  });
+
+  it('shows the demo-account banner even in the fighterless early-return branch', async () => {
+    getFighters.mockResolvedValue({ primary: [], secondary: [] });
+    listMatches.mockResolvedValue([]);
+    getMe.mockResolvedValue(defaultProfile({ isDemoAccount: true }));
+
+    renderDashboard();
+
+    expect(await screen.findByText("You haven't picked any fighters yet!")).toBeInTheDocument();
+    expect(screen.getByTestId('demo-account-banner')).toBeInTheDocument();
+  });
+
+  it('shows the demo-account banner on the populated dashboard', async () => {
+    getFighters.mockResolvedValue({ primary: [mario.id], secondary: [] });
+    listMatches.mockResolvedValue([]);
+    getMe.mockResolvedValue(defaultProfile({ isDemoAccount: true }));
+
+    renderDashboard();
+
+    await screen.findAllByText('Overall Record');
+    expect(screen.getByTestId('demo-account-banner')).toBeInTheDocument();
+  });
+
+  it('positive control: shows no demo-account banner for an ordinary account', async () => {
+    getFighters.mockResolvedValue({ primary: [mario.id], secondary: [] });
+    listMatches.mockResolvedValue([]);
+    getMe.mockResolvedValue(defaultProfile({ isDemoAccount: false }));
+
+    renderDashboard();
+
+    await screen.findAllByText('Overall Record');
+    expect(screen.queryByTestId('demo-account-banner')).not.toBeInTheDocument();
   });
 });

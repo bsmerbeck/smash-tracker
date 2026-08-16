@@ -56,6 +56,7 @@ import {
 import { getFighterById } from '@/data/sprites';
 import { localizedFighterName } from '@/lib/fighterNames';
 import { useDeleteMatch } from '@/hooks/useDeleteMatch';
+import { useIsDemoAccount } from '@/hooks/useIsDemoAccount';
 import { useClearVodAndNotes } from '@/hooks/useVodNotes';
 import { useSubjectPath } from '@/hooks/useSubjectPath';
 import { useEnrichmentAttribution } from '@/hooks/useEnrichmentAttribution';
@@ -158,6 +159,12 @@ export function MatchTable({
   const { t } = useTranslation();
   const navigate = useNavigate();
   const subjectPath = useSubjectPath();
+  // Phase 30.3 (Gate 6): CSV export is one of the affordances a demo/
+  // research account must never see enabled (owner/Codex hard gate) — the
+  // API refuses the underlying export server-side; this is the affordance
+  // half, disable-with-explanation rather than a silent removal so the
+  // control's absence is never mistaken for a bug.
+  const isDemoAccount = useIsDemoAccount();
   const [sorting, setSorting] = useState<SortingState>([{ id: 'date', desc: true }]);
   const [globalFilter, setGlobalFilter] = useState('');
   const [columnFilters, setColumnFilters] = useState<MatchTableFilterState>(
@@ -566,7 +573,13 @@ export function MatchTable({
             </DropdownMenuContent>
           </DropdownMenu>
 
-          <Button variant="outline" size="sm" onClick={handleExportCsv}>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleExportCsv}
+            disabled={isDemoAccount}
+            title={isDemoAccount ? t('demo.disabledReason') : undefined}
+          >
             <Download />
             {t('matchData.table.exportCsv')}
           </Button>

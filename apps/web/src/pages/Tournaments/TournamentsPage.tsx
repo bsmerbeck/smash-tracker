@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/ui/button';
 import { useFilteredMatches } from '@/hooks/useFilteredMatches';
 import { useTournamentEntries } from '@/hooks/useTournamentEntries';
+import { DemoAccountBanner } from '@/components/DemoAccountBanner';
 import { FilteredEmptyNotice } from '@/components/FilteredEmptyNotice';
 import { Tournaments } from '@/pages/Trends/components/Tournaments';
 
@@ -25,22 +26,31 @@ export function TournamentsPage() {
   const { data: entries, isLoading: entriesLoading } = useTournamentEntries();
 
   if (isLoading || entriesLoading) {
-    return <div className="text-muted-foreground">{t('tournaments.listLoading')}</div>;
+    return (
+      <div className="flex flex-col gap-6">
+        <DemoAccountBanner />
+        <div className="text-muted-foreground">{t('tournaments.listLoading')}</div>
+      </div>
+    );
   }
 
   if (allMatches.length === 0 && (entries ?? []).length === 0) {
     return (
-      <div className="flex flex-col items-center gap-2 py-16 text-center">
-        <h2 className="text-xl font-semibold tracking-tight">{t('tournaments.noMatches')}</h2>
-        <Button asChild className="mt-2">
-          <Link to="/dashboard">{t('common.goToDashboard')}</Link>
-        </Button>
+      <div className="flex flex-col gap-6">
+        <DemoAccountBanner />
+        <div className="flex flex-col items-center gap-2 py-16 text-center">
+          <h2 className="text-xl font-semibold tracking-tight">{t('tournaments.noMatches')}</h2>
+          <Button asChild className="mt-2">
+            <Link to="/dashboard">{t('common.goToDashboard')}</Link>
+          </Button>
+        </div>
       </div>
     );
   }
 
   return (
     <div className="flex flex-col gap-6">
+      <DemoAccountBanner />
       {filterActive && matches.length === 0 && <FilteredEmptyNotice />}
       <Tournaments matches={matches} />
     </div>
