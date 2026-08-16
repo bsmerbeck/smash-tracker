@@ -24,6 +24,33 @@ const UIDS = {
 const HOST = 'smash-tracker-test.firebaseio.com';
 const MANIFEST_PATH = '/work/registry-manifest.json';
 const RECEIPT_DIR = '/work/receipts';
+const EXCEPTIONS_PATH = '/work/reviewed-exceptions.json';
+
+/**
+ * Hard gate #4, B8: the fixtures seed two source records, so every plan here
+ * deviates from the owner-frozen `sourceSetCount` (8413 for hbox) and is
+ * refused PRE-WRITE unless the reviewed manifest authorizes that exact count.
+ * The apply/compare fixtures therefore generate their manifest with a reviewed
+ * exception — which also means the exception path is exercised by every apply
+ * test rather than by one bespoke case.
+ */
+function exceptionsFile(
+  overrides: {
+    acceptedSourceSetCount?: number | null;
+    acceptedCorruptSourceRecords?: number;
+    acceptedCollisions?: string[];
+  } = {},
+): string {
+  return JSON.stringify({
+    hbox: {
+      reason: 'synthetic two-record fixture census, reviewed for the operator unit suite',
+      reviewedAtMs: 1_755_000_000_000,
+      acceptedSourceSetCount: overrides.acceptedSourceSetCount ?? 2,
+      acceptedCorruptSourceRecords: overrides.acceptedCorruptSourceRecords ?? 0,
+      acceptedCollisions: overrides.acceptedCollisions ?? [],
+    },
+  });
+}
 
 const MANUAL_ENTRY = {
   eventName: 'Locals #42',
@@ -155,6 +182,16 @@ async function dryRun(harness: Harness, extra: string[] = []): Promise<number> {
   );
 }
 
+/** A dry-run whose manifest carries the reviewed exception the fixture census needs. */
+async function dryRunExcepted(
+  harness: Harness,
+  extra: string[] = [],
+  exceptions = exceptionsFile(),
+): Promise<number> {
+  harness.files.set(EXCEPTIONS_PATH, exceptions);
+  return dryRun(harness, ['--exceptions-in', EXCEPTIONS_PATH, ...extra]);
+}
+
 async function apply(harness: Harness, extra: string[] = []): Promise<number> {
   return runRegistryOperator(
     ['apply', ...uidFlags(), '--manifest-in', MANIFEST_PATH, ...extra],
@@ -277,7 +314,7 @@ describe('apply', () => {
     seedHbox(harness.fake);
     harness.fake.seed(`tournamentEntries/${UIDS.hbox}/manual-1`, MANUAL_ENTRY);
     harness.fake.seed(`tournamentEntries/${UIDS.hbox}/987`, LEGACY_STARTGG_ENTRY);
-    await dryRun(harness, ['--account', 'hbox']);
+    await dryRunExcepted(harness, ['--account', 'hbox']);
     return harness;
   }
 
@@ -478,12 +515,192 @@ describe('apply', () => {
   });
 });
 
+// ---------------------------------------------------------------------------
+// Hard gate #4, B9 — `--account` is mandatory for apply.
+// ---------------------------------------------------------------------------
+
+describe('apply is account-scoped by construction (B9)', () => {
+  it('REFUSES an apply with no --account, naming the correct per-account form', async () => {
+    const harness = makeHarness();
+    seedHbox(harness.fake);
+    harness.fake.seed(`tournamentEntries/${UIDS.hbox}/manual-1`, MANUAL_ENTRY);
+    await dryRunExcepted(harness, ['--account', 'hbox']);
+
+    await expect(apply(harness)).rejects.toThrow(
+      /apply requires --account <hbox\|mkleo\|sparg0\|izaw>/,
+    );
+    // The message has to be actionable, not merely correct.
+    await expect(apply(harness)).rejects.toThrow(/apply --account hbox/);
+    // Nothing was written, and no receipt claims otherwise.
+    expect(entriesOf(harness.fake, UIDS.hbox)).toEqual({ 'manual-1': MANUAL_ENTRY });
+    expect(receipts(harness).some((receipt) => receipt.command === 'apply')).toBe(false);
+  });
+
+  it('still allows the all-accounts form for the two read-only subcommands', async () => {
+    const harness = makeHarness();
+    seedHbox(harness.fake);
+    expect(await dryRun(harness)).toBe(0);
+    // compare over all four accounts: nonzero (nothing applied) but not a
+    // usage refusal — it planned, compared and wrote four receipts.
+    expect(await compare(harness)).toBe(1);
+    expect(receipts(harness).filter((receipt) => receipt.command === 'compare')).toHaveLength(4);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Hard gate #4, B8 — the source census freeze at the operator boundary.
+// ---------------------------------------------------------------------------
+
+describe('the source census freeze (B8)', () => {
+  it('REFUSES a pre-write whose sourceSetCount is not the owner-frozen figure', async () => {
+    const harness = makeHarness();
+    seedHbox(harness.fake);
+    // No --exceptions-in: the manifest carries no authorization for the
+    // fixture's two-record census.
+    await dryRun(harness, ['--account', 'hbox']);
+
+    expect(await apply(harness, ['--account', 'hbox'])).toBe(1);
+    const log = harness.logs.join('\n');
+    expect(log).toMatch(/owner-frozen census for this account is 8413/);
+    expect(log).toMatch(/Apply refused. NOTHING was written/);
+    expect(entriesOf(harness.fake, UIDS.hbox)).toEqual({});
+    const receipt = receiptFor(harness, 'apply', 'hbox');
+    expect(receipt.status).toBe('refused');
+    expect(receipt.failedInvariants[0]).toMatch(/^frozen-source-set-drift:/);
+    expect(receipt.writes).toBeNull();
+  });
+
+  it('warns about the pre-write gate at DRY-RUN time rather than only at apply', async () => {
+    const harness = makeHarness();
+    seedHbox(harness.fake);
+    expect(await dryRun(harness, ['--account', 'hbox'])).toBe(0);
+    expect(harness.logs.join('\n')).toMatch(
+      /\[pre-write-gate\] frozen-source-set-drift: .*owner-frozen census/,
+    );
+  });
+
+  it('REFUSES a pre-write on corrupt source records unless the manifest excepts that exact count', async () => {
+    const harness = makeHarness();
+    seedHbox(harness.fake);
+    // One stored source child that no longer parses: skipped by the
+    // projector, so it is invisible to every derived row.
+    harness.fake.seed(`researchSource/${UIDS.hbox}/sets/broken`, { notASetRecord: true });
+
+    await dryRunExcepted(
+      harness,
+      ['--account', 'hbox'],
+      exceptionsFile({ acceptedSourceSetCount: 3 }),
+    );
+    expect(await apply(harness, ['--account', 'hbox'])).toBe(1);
+    expect(harness.logs.join('\n')).toMatch(
+      /1 stored source record\(s\) failed the source-record schema/,
+    );
+    expect(receiptFor(harness, 'apply', 'hbox').failedInvariants[0]).toMatch(
+      /^corrupt-source-records:/,
+    );
+    expect(entriesOf(harness.fake, UIDS.hbox)).toEqual({});
+
+    // Now with the exact reviewed exception the corruption becomes applyable.
+    const excepted = makeHarness();
+    seedHbox(excepted.fake);
+    excepted.fake.seed(`researchSource/${UIDS.hbox}/sets/broken`, { notASetRecord: true });
+    await dryRunExcepted(
+      excepted,
+      ['--account', 'hbox'],
+      exceptionsFile({ acceptedSourceSetCount: 3, acceptedCorruptSourceRecords: 1 }),
+    );
+    expect(await apply(excepted, ['--account', 'hbox'])).toBe(0);
+    expect(Object.keys(entriesOf(excepted.fake, UIDS.hbox)).sort()).toEqual([
+      'histimport:100',
+      'histimport:200',
+    ]);
+  });
+
+  it('REFUSES a pre-write on a collision unless the manifest excepts that exact key set', async () => {
+    const harness = makeHarness();
+    seedHbox(harness.fake);
+    // A foreign value squatting on a derived histimport: key.
+    harness.fake.seed(`tournamentEntries/${UIDS.hbox}/histimport:100`, MANUAL_ENTRY);
+
+    await dryRunExcepted(harness, ['--account', 'hbox']);
+    expect(await apply(harness, ['--account', 'hbox'])).toBe(1);
+    expect(harness.logs.join('\n')).toMatch(
+      /collide with a FOREIGN value on their histimport: key/,
+    );
+    expect(receiptFor(harness, 'apply', 'hbox').failedInvariants[0]).toMatch(/^collisions:/);
+    // The squatter is untouched.
+    expect(entriesOf(harness.fake, UIDS.hbox)['histimport:100']).toEqual(MANUAL_ENTRY);
+  });
+
+  it('REFUSES an apply when the census moved even though the derived rows did not', async () => {
+    const harness = makeHarness();
+    seedHbox(harness.fake);
+    await dryRunExcepted(harness, ['--account', 'hbox']);
+
+    // A corrupt source record appears AFTER the review. It derives nothing, so
+    // the row set — and therefore `rowSetHash` — is untouched. This is the
+    // exact hole B8 closes.
+    harness.fake.seed(`researchSource/${UIDS.hbox}/sets/broken`, { notASetRecord: true });
+
+    expect(await apply(harness, ['--account', 'hbox'])).toBe(1);
+    const log = harness.logs.join('\n');
+    expect(log).toMatch(/the SOURCE CENSUS moved since the dry-run/);
+    expect(log).toMatch(/sourceSetCount 2 -> 3/);
+    expect(log).toMatch(/corruptSourceRecords 0 -> 1/);
+    expect(receiptFor(harness, 'apply', 'hbox').failedInvariants[0]).toMatch(/^census-drift:/);
+    expect(entriesOf(harness.fake, UIDS.hbox)).toEqual({});
+  });
+
+  it('FAILS a compare when the census moved after an otherwise settled apply', async () => {
+    const harness = makeHarness();
+    seedHbox(harness.fake);
+    await dryRunExcepted(harness, ['--account', 'hbox']);
+    expect(await apply(harness, ['--account', 'hbox'])).toBe(0);
+    // Registry is settled; only the source census moves.
+    harness.fake.seed(`researchSource/${UIDS.hbox}/sets/broken`, { notASetRecord: true });
+
+    expect(await compare(harness, ['--account', 'hbox'])).toBe(1);
+    const receipt = receipts(harness).find(
+      (candidate) => candidate.command === 'compare' && candidate.status === 'failed',
+    )!;
+    expect(receipt.failedInvariants.join(' ')).toMatch(/censusMatches=false/);
+    expect(receipt.failedInvariants.join(' ')).toMatch(/pendingCreates=0/);
+    expect(receipt.failedInvariants.join(' ')).toMatch(/corruptSourceRecords 0 -> 1/);
+  });
+
+  it('refuses a dry-run whose reviewed exception does not describe the observed plan', async () => {
+    const harness = makeHarness();
+    seedHbox(harness.fake);
+    // Claims 5 corrupt records; the plan has none.
+    expect(
+      await dryRunExcepted(
+        harness,
+        ['--account', 'hbox'],
+        exceptionsFile({ acceptedCorruptSourceRecords: 5 }),
+      ),
+    ).toBe(1);
+    expect(harness.logs.join('\n')).toMatch(
+      /accepts 5 corrupt source record\(s\) but the plan has 0/,
+    );
+    expect(harness.files.has(MANIFEST_PATH)).toBe(false);
+  });
+
+  it('rejects a structurally invalid exceptions file rather than ignoring it', async () => {
+    const harness = makeHarness();
+    seedHbox(harness.fake);
+    harness.files.set(EXCEPTIONS_PATH, JSON.stringify({ hbox: { reason: 'too short' } }));
+    await expect(
+      dryRun(harness, ['--account', 'hbox', '--exceptions-in', EXCEPTIONS_PATH]),
+    ).rejects.toThrow();
+  });
+});
+
 describe('compare', () => {
   it('reports an exact match after a successful apply and exits 0', async () => {
     const harness = makeHarness();
     seedHbox(harness.fake);
     harness.fake.seed(`tournamentEntries/${UIDS.hbox}/manual-1`, MANUAL_ENTRY);
-    await dryRun(harness, ['--account', 'hbox']);
+    await dryRunExcepted(harness, ['--account', 'hbox']);
     await apply(harness, ['--account', 'hbox']);
 
     expect(await compare(harness, ['--account', 'hbox'])).toBe(0);
@@ -508,7 +725,7 @@ describe('compare', () => {
     const harness = makeHarness();
     seedHbox(harness.fake);
     harness.fake.seed(`tournamentEntries/${UIDS.hbox}/manual-1`, MANUAL_ENTRY);
-    await dryRun(harness, ['--account', 'hbox']);
+    await dryRunExcepted(harness, ['--account', 'hbox']);
     await apply(harness, ['--account', 'hbox']);
     harness.fake.seed(`tournamentEntries/${UIDS.hbox}/manual-1`, {
       ...MANUAL_ENTRY,

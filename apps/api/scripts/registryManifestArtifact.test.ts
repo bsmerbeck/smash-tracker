@@ -3,17 +3,23 @@ import type { TournamentRegistryRow } from '@smash-tracker/shared';
 import { computeForeignRowDigest } from '../src/research/registry/foreignDigest.js';
 import type { TournamentRegistryPlan } from '../src/research/registry/reconcile.js';
 import {
+  assessRegistryPreWriteGate,
   buildRegistryAccountManifest,
   buildRegistryComparisonRow,
   canonicalScope,
   classifyRegistryDrift,
   computeRegistryRowSetHash,
   createRegistryManifest,
+  describeSourceCensusDelta,
   manifestScopedAccounts,
+  parseSealedRegistryManifest,
+  REGISTRY_FROZEN_SOURCE_SET_COUNTS,
   REGISTRY_MANIFEST_FORMAT_VERSION,
   registryWorkspaceKeys,
+  sourceCensusOf,
   validateRegistryManifest,
   type RegistryManifestBody,
+  type RegistryReviewedException,
   type RegistryUidMap,
 } from './registryManifestArtifact.js';
 
@@ -83,6 +89,26 @@ function makePlan(
     skippedUnsafeEventId: 0,
     skippedExcludedClassification: 0,
     derivedRows: rows,
+  };
+}
+
+/**
+ * A reviewed exception that exactly covers `makePlan`'s synthetic census.
+ * The fixtures derive one or two rows, so their `sourceSetCount` is nowhere
+ * near the owner-frozen production figure — which is precisely the condition
+ * the pre-write gate refuses, and precisely what a reviewed exception exists
+ * to authorize.
+ */
+function exceptionFor(
+  overrides: Partial<RegistryReviewedException> = {},
+): RegistryReviewedException {
+  return {
+    reason: 'synthetic fixture census, reviewed for the unit suite',
+    reviewedAtMs: NOW_MS - 120_000,
+    acceptedSourceSetCount: null,
+    acceptedCorruptSourceRecords: 0,
+    acceptedCollisions: [],
+    ...overrides,
   };
 }
 
@@ -389,22 +415,253 @@ describe('classifyRegistryDrift', () => {
   });
 
   it('reports destination drift when buckets changed without any row being already applied', () => {
-    const collided: TournamentRegistryPlan = {
+    // A pure create -> update reclassification: no census member moves, no
+    // planned row is already stored, so neither `census-drift` nor
+    // `partially-applied` applies and the residual bucket change is the
+    // finding.
+    const reclassified: TournamentRegistryPlan = {
       ...makePlan(UIDS.hbox, rows),
-      writes: { [rows[0]!.entryId]: rows[0]! },
-      creates: ['histimport:100'],
-      collisions: ['histimport:200'],
+      creates: [],
+      updates: ['histimport:100', 'histimport:200'],
     };
-    const verdict = classifyRegistryDrift('hbox', reviewed, freshFrom(collided));
+    const verdict = classifyRegistryDrift('hbox', reviewed, freshFrom(reclassified));
     expect(verdict.kind).toBe('destination-drift');
     expect(verdict.alreadyApplied).toEqual([]);
+  });
+
+  // -------------------------------------------------------------------------
+  // Hard gate #4, B8 — the census freeze. The hole these close: every one of
+  // these perturbations leaves `rowSetHash` IDENTICAL, and every one of them
+  // used to classify as `none` and apply.
+  // -------------------------------------------------------------------------
+
+  it.each([
+    ['corruptSourceRecords', { corruptSourceRecords: 7 }, /corruptSourceRecords 0 -> 7/],
+    ['sourceSetCount', { sourceSetCount: 99 }, /sourceSetCount 4 -> 99/],
+    ['skippedNoEventId', { skippedNoEventId: 3 }, /skippedNoEventId 0 -> 3/],
+    ['skippedUnsafeEventId', { skippedUnsafeEventId: 2 }, /skippedUnsafeEventId 0 -> 2/],
+    [
+      'skippedExcludedClassification',
+      { skippedExcludedClassification: 41 },
+      /skippedExcludedClassification 0 -> 41/,
+    ],
+    ['collisions', { collisions: ['histimport:999'] }, /collisions \[\] -> \[histimport:999\]/],
+    [
+      'orphanRemovals',
+      { orphanRemovals: ['histimport:orphan'] },
+      /orphanRemovals \[\] -> \[histimport:orphan\]/,
+    ],
+  ])(
+    'refuses CENSUS drift in %s even though the derived-row hash is unchanged',
+    (_member, patch, expected) => {
+      const drifted: TournamentRegistryPlan = { ...makePlan(UIDS.hbox, rows), ...patch };
+      const fresh = freshFrom(drifted);
+      // The precondition that makes this a real hole and not a tautology.
+      expect(fresh.rowSetHash).toBe(reviewed.rowSetHash);
+      expect(fresh.foreignDigest).toBe(reviewed.foreignDigest);
+
+      const verdict = classifyRegistryDrift('hbox', reviewed, fresh);
+      expect(verdict.kind).toBe('census-drift');
+      expect(verdict.safeToApply).toBe(false);
+      expect(verdict.message).toMatch(expected);
+    },
+  );
+
+  it('ranks census drift below foreign and source drift, and above a partial apply', () => {
+    const both: TournamentRegistryPlan = {
+      ...makePlan(UIDS.hbox, rows),
+      corruptSourceRecords: 5,
+      creates: ['histimport:200'],
+      unchanged: ['histimport:100'],
+    };
+    // A partially-applied signature AND a census move: the census is reported.
+    expect(classifyRegistryDrift('hbox', reviewed, freshFrom(both)).kind).toBe('census-drift');
+
+    const withForeign = buildRegistryAccountManifest(
+      'Hungrybox',
+      makePlan(UIDS.hbox, rows, { 'manual-1': MANUAL_ENTRY }),
+    );
+    expect(
+      classifyRegistryDrift('hbox', reviewed, {
+        ...withForeign,
+        corruptSourceRecords: 5,
+      }).kind,
+    ).toBe('foreign-drift');
+  });
+});
+
+describe('the source census (hard gate #4, B8)', () => {
+  it('pins the owner-frozen sourceSetCount figures in committed source', () => {
+    expect(REGISTRY_FROZEN_SOURCE_SET_COUNTS).toEqual({
+      hbox: 8413,
+      mkleo: 5314,
+      sparg0: 6187,
+      izaw: 640,
+    });
+  });
+
+  it('normalizes array members so key ORDER is never mistaken for a census change', () => {
+    const left = sourceCensusOf({
+      ...makePlan(UIDS.hbox, []),
+      collisions: ['b', 'a'],
+      orphanRemovals: ['d', 'c'],
+    });
+    const right = sourceCensusOf({
+      ...makePlan(UIDS.hbox, []),
+      collisions: ['a', 'b'],
+      orphanRemovals: ['c', 'd'],
+    });
+    expect(describeSourceCensusDelta(left, right)).toEqual([]);
+  });
+});
+
+describe('assessRegistryPreWriteGate (hard gate #4, B8)', () => {
+  const rows = [makeRow('100')];
+  const clean = makePlan(UIDS.hbox, rows);
+  /** The one census that satisfies the frozen contract without any exception. */
+  const frozenCensus = { ...clean, sourceSetCount: REGISTRY_FROZEN_SOURCE_SET_COUNTS.hbox };
+
+  it('passes a plan that matches the frozen census with no corruption and no collisions', () => {
+    const reviewed = buildRegistryAccountManifest('Hungrybox', frozenCensus);
+    expect(
+      assessRegistryPreWriteGate('hbox', reviewed, sourceCensusOf(frozenCensus)),
+    ).toMatchObject({ ok: true, kind: 'none' });
+  });
+
+  it('REFUSES a sourceSetCount that is not the owner-frozen figure', () => {
+    const reviewed = buildRegistryAccountManifest('Hungrybox', clean);
+    const verdict = assessRegistryPreWriteGate('hbox', reviewed, sourceCensusOf(clean));
+    expect(verdict).toMatchObject({ ok: false, kind: 'frozen-source-set-drift' });
+    expect(verdict.message).toMatch(/owner-frozen census for this account is 8413/);
+    expect(verdict.message).toMatch(/--exceptions-in/);
+  });
+
+  it('REFUSES corrupt source records, and accepts them only under an EXACT reviewed exception', () => {
+    const corrupt = { ...frozenCensus, corruptSourceRecords: 4 };
+    const bare = buildRegistryAccountManifest('Hungrybox', corrupt);
+    expect(assessRegistryPreWriteGate('hbox', bare, sourceCensusOf(corrupt))).toMatchObject({
+      ok: false,
+      kind: 'corrupt-source-records',
+    });
+
+    const excepted = buildRegistryAccountManifest(
+      'Hungrybox',
+      corrupt,
+      exceptionFor({ acceptedCorruptSourceRecords: 4 }),
+    );
+    expect(assessRegistryPreWriteGate('hbox', excepted, sourceCensusOf(corrupt))).toMatchObject({
+      ok: true,
+      kind: 'none',
+    });
+
+    // One MORE corrupt record than the owner reviewed: the exception no
+    // longer describes the condition, so the refusal stands.
+    expect(
+      assessRegistryPreWriteGate('hbox', excepted, {
+        ...sourceCensusOf(corrupt),
+        corruptSourceRecords: 5,
+      }),
+    ).toMatchObject({ ok: false, kind: 'corrupt-source-records' });
+  });
+
+  it('REFUSES collisions, and accepts only the EXACT reviewed collision set', () => {
+    const collided = { ...frozenCensus, collisions: ['histimport:100'] };
+    const bare = buildRegistryAccountManifest('Hungrybox', collided);
+    expect(assessRegistryPreWriteGate('hbox', bare, sourceCensusOf(collided))).toMatchObject({
+      ok: false,
+      kind: 'collisions',
+    });
+
+    const excepted = buildRegistryAccountManifest(
+      'Hungrybox',
+      collided,
+      exceptionFor({ acceptedCollisions: ['histimport:100'] }),
+    );
+    expect(assessRegistryPreWriteGate('hbox', excepted, sourceCensusOf(collided))).toMatchObject({
+      ok: true,
+      kind: 'none',
+    });
+    expect(
+      assessRegistryPreWriteGate('hbox', excepted, {
+        ...sourceCensusOf(collided),
+        collisions: ['histimport:100', 'histimport:200'],
+      }),
+    ).toMatchObject({ ok: false, kind: 'collisions' });
+  });
+
+  it('refuses to BUILD a manifest whose reviewed exception does not describe its own plan', () => {
+    expect(() =>
+      buildRegistryAccountManifest(
+        'Hungrybox',
+        { ...frozenCensus, corruptSourceRecords: 4 },
+        exceptionFor({ acceptedCorruptSourceRecords: 9 }),
+      ),
+    ).toThrow(/accepts 9 corrupt source record\(s\) but the plan has 4/);
+    expect(() =>
+      buildRegistryAccountManifest(
+        'Hungrybox',
+        frozenCensus,
+        exceptionFor({ acceptedSourceSetCount: 77 }),
+      ),
+    ).toThrow(/accepts sourceSetCount 77 but the plan has 8413/);
+  });
+
+  it('refuses to VALIDATE a manifest whose reviewed exception was hand-edited after sealing', () => {
+    const account = buildRegistryAccountManifest(
+      'Hungrybox',
+      { ...frozenCensus, corruptSourceRecords: 4 },
+      exceptionFor({ acceptedCorruptSourceRecords: 4 }),
+    );
+    const tampered = createRegistryManifest({
+      formatVersion: REGISTRY_MANIFEST_FORMAT_VERSION,
+      generatedAtMs: NOW_MS - 60_000,
+      databaseHost: 'smash-tracker-test.firebaseio.com',
+      targetUids: UIDS,
+      scope: ['hbox'],
+      writesPerformed: 0,
+      accounts: {
+        hbox: {
+          ...account,
+          reviewedExceptions: { ...account.reviewedExceptions!, acceptedCorruptSourceRecords: 40 },
+        },
+      },
+    });
+    // Re-sealed, so the content hash is honest — but the exception no longer
+    // covers the figures in its own manifest.
+    expect(() => validateRegistryManifest(tampered, UIDS, NOW_MS, MAX_AGE_MS)).toThrow(
+      /accepts 40 corrupt source record\(s\) but the plan has 4/,
+    );
+  });
+});
+
+describe('parseSealedRegistryManifest', () => {
+  it('accepts a sealed manifest of ANY age — the audit needs identity, not freshness', () => {
+    const manifest = createRegistryManifest(makeScopedBody());
+    expect(parseSealedRegistryManifest(manifest).contentHash).toBe(manifest.contentHash);
+    // validateRegistryManifest would refuse this same artifact for staleness.
+    expect(() =>
+      validateRegistryManifest(manifest, UIDS, NOW_MS + MAX_AGE_MS * 10, MAX_AGE_MS),
+    ).toThrow(/stale/);
+  });
+
+  it('still refuses a broken seal', () => {
+    const manifest = createRegistryManifest(makeScopedBody());
+    expect(() =>
+      parseSealedRegistryManifest({ ...manifest, generatedAtMs: manifest.generatedAtMs + 1 }),
+    ).toThrow(/content hash mismatch/);
   });
 });
 
 describe('buildRegistryComparisonRow', () => {
   it('reports exactMatch only when the row set matches and nothing is pending', () => {
     const rows = [makeRow('100')];
-    const reviewed = buildRegistryAccountManifest('Hungrybox', makePlan(UIDS.hbox, rows));
+    const reviewed = buildRegistryAccountManifest(
+      'Hungrybox',
+      makePlan(UIDS.hbox, rows),
+      // The fixture census is synthetic, so the frozen-contract clause of
+      // `exactMatch` needs the same reviewed exception a real deviation would.
+      exceptionFor({ acceptedSourceSetCount: 2 }),
+    );
 
     // Post-apply state: same rows, all unchanged, nothing pending.
     const settled: TournamentRegistryPlan = {
@@ -455,6 +712,53 @@ describe('buildRegistryComparisonRow', () => {
       rowSetMatches: true,
       pendingCreates: 0,
       foreignDigestMatches: false,
+      exactMatch: false,
+    });
+  });
+
+  it('fails exactMatch on CENSUS drift alone — a settled registry is not a settled account (B8)', () => {
+    const rows = [makeRow('100')];
+    const reviewed = buildRegistryAccountManifest(
+      'Hungrybox',
+      makePlan(UIDS.hbox, rows),
+      exceptionFor({ acceptedSourceSetCount: 2 }),
+    );
+    const settledButCorrupted: TournamentRegistryPlan = {
+      ...makePlan(UIDS.hbox, rows),
+      writes: {},
+      creates: [],
+      unchanged: rows.map((row) => row.entryId),
+      corruptSourceRecords: 12,
+    };
+    const row = buildRegistryComparisonRow('hbox', reviewed, settledButCorrupted);
+    expect(row).toMatchObject({
+      rowSetMatches: true,
+      foreignDigestMatches: true,
+      pendingCreates: 0,
+      pendingUpdates: 0,
+      pendingRemovals: 0,
+      collisions: 0,
+      censusMatches: false,
+      exactMatch: false,
+    });
+    expect(row.censusDelta).toEqual(['corruptSourceRecords 0 -> 12']);
+  });
+
+  it('fails exactMatch when the live census no longer satisfies the frozen contract', () => {
+    const rows = [makeRow('100')];
+    // No reviewed exception at all: the fixture census cannot satisfy the
+    // frozen figure, so even a perfectly settled registry is not an exact
+    // match.
+    const reviewed = buildRegistryAccountManifest('Hungrybox', makePlan(UIDS.hbox, rows));
+    const settled: TournamentRegistryPlan = {
+      ...makePlan(UIDS.hbox, rows),
+      writes: {},
+      creates: [],
+      unchanged: rows.map((row) => row.entryId),
+    };
+    expect(buildRegistryComparisonRow('hbox', reviewed, settled)).toMatchObject({
+      censusMatches: true,
+      frozenCensusOk: false,
       exactMatch: false,
     });
   });

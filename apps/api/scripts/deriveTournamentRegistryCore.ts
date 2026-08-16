@@ -30,6 +30,7 @@ import {
   type RegistryWorkspaceKey,
 } from '../src/research/registry/workspaces.js';
 import {
+  assessRegistryPreWriteGate,
   buildRegistryAccountManifest,
   buildRegistryComparisonRow,
   canonicalScope,
@@ -37,10 +38,14 @@ import {
   computeRegistryRowSetHash,
   createRegistryManifest,
   manifestScopedAccounts,
+  REGISTRY_FROZEN_SOURCE_SET_COUNTS,
   REGISTRY_MANIFEST_FORMAT_VERSION,
+  registryReviewedExceptionFileSchema,
+  sourceCensusOf,
   validateRegistryManifest,
   type RegistryAccountManifest,
   type RegistryManifest,
+  type RegistryReviewedException,
 } from './registryManifestArtifact.js';
 
 /**
@@ -58,10 +63,19 @@ import {
  * termination guarantee.
  *
  * What the hardening consists of:
- * - ACCOUNT SCOPING (`--account <hbox|mkleo|sparg0|izaw>`) on all three
- *   subcommands, so a production apply happens and is verified ONE ACCOUNT
- *   AT A TIME. All-accounts remains available and is simply the unscoped
- *   default.
+ * - ACCOUNT SCOPING (`--account <hbox|mkleo|sparg0|izaw>`). MANDATORY for
+ *   `apply` (owner/Codex hard gate #4, B9): no production apply may mutate
+ *   more than one account in a single invocation, so the unscoped form is
+ *   refused outright with the correct per-account command in the message.
+ *   `dry-run` and `compare` write nothing to the destination and keep the
+ *   all-accounts form.
+ * - THE SOURCE CENSUS FREEZE (hard gate #4, B8): preflight and compare carry
+ *   the COMPLETE census — `sourceSetCount`, `corruptSourceRecords`, the three
+ *   `skipped*` figures, collisions and orphan removals — and a change in any
+ *   of them refuses/fails even when the derived-row hash is untouched. Corrupt
+ *   records, collisions and a deviation from the owner-frozen `sourceSetCount`
+ *   are PRE-WRITE refusals, liftable only by a reviewed exception embedded in
+ *   the manifest (`dry-run --exceptions-in`), never by a flag on `apply`.
  * - A HEARTBEAT at least every `--heartbeat-ms` (default 30s) naming the
  *   account, stage, work unit and counters.
  * - A no-progress WATCHDOG (`--max-stall-ms`, default 5 min) that aborts.
@@ -160,14 +174,31 @@ function positiveInteger(flags: Map<string, string>, name: string, fallback: num
 }
 
 /**
- * The account this invocation targets. `--account` is the FIRST-CLASS path:
- * the owner applies and verifies one account at a time. Omitting it keeps
- * the all-accounts behaviour (bounded, for apply/compare, by the reviewed
- * manifest's own scope).
+ * The account this invocation targets.
+ *
+ * `--account` is MANDATORY for `apply` (owner/Codex hard gate #4, B9). The
+ * blast radius of a registry apply is one account's `tournamentEntries`
+ * subtree, and the whole receipt/verify loop is built around inspecting that
+ * one account's outcome before the next is touched; an unscoped apply
+ * silently reinstates the "mutate everything in one go" posture that loop
+ * exists to prevent. `dry-run` and `compare` write nothing to the
+ * destination, so they keep the all-accounts form.
  */
-function requestedWorkspace(flags: Map<string, string>): RegistryWorkspaceKey | null {
+function requestedWorkspace(
+  flags: Map<string, string>,
+  command: RegistryOperatorCommand,
+): RegistryWorkspaceKey | null {
   const account = flags.get('--account');
   if (account == null) {
+    if (command === 'apply') {
+      throw new Error(
+        'apply requires --account <hbox|mkleo|sparg0|izaw>: no production apply may mutate more than ' +
+          'one account in a single invocation. Run it once per account, e.g.\n' +
+          '  tsx scripts/deriveTournamentRegistry.ts apply --account hbox ' +
+          '--hbox-uid <uid> --mkleo-uid <uid> --sparg0-uid <uid> --izaw-uid <uid> ' +
+          '--manifest-in ./registry-manifest.hbox.json --receipt-dir ./receipts',
+      );
+    }
     return null;
   }
   const key = asRegistryWorkspaceKey(account);
@@ -175,6 +206,22 @@ function requestedWorkspace(flags: Map<string, string>): RegistryWorkspaceKey | 
     throw new Error(`--account must be one of ${registryWorkspaceKeys.join(', ')}`);
   }
   return key;
+}
+
+/**
+ * The reviewed exceptions file, read ONLY by `dry-run`. Its contents are
+ * embedded into (and sealed with) the manifest it produces — see
+ * `registryReviewedExceptionSchema`. `apply` never reads this flag; the
+ * authorization has to be in the artifact the owner reviewed.
+ */
+async function readReviewedExceptions(
+  deps: RegistryOperatorDeps,
+  path: string | undefined,
+): Promise<Partial<Record<RegistryWorkspaceKey, RegistryReviewedException>>> {
+  if (path == null) {
+    return {};
+  }
+  return registryReviewedExceptionFileSchema.parse(JSON.parse(await deps.readFileText(path)));
 }
 
 // ---------------------------------------------------------------------------
@@ -420,6 +467,7 @@ async function dryRunCommand(
   context: RunContext,
   workspaces: RegistryWorkspaceKey[],
   manifestPath: string,
+  exceptions: Partial<Record<RegistryWorkspaceKey, RegistryReviewedException>>,
 ): Promise<number> {
   const { deps } = context;
   const generatedAtMs = deps.now();
@@ -432,8 +480,19 @@ async function dryRunCommand(
     const startedAtMs = deps.now();
     try {
       const plan = await planFor(context, workspace);
-      const account = buildRegistryAccountManifest(registryWorkspaceLabels[workspace], plan);
+      const account = buildRegistryAccountManifest(
+        registryWorkspaceLabels[workspace],
+        plan,
+        exceptions[workspace],
+      );
       accounts[workspace] = account;
+      // Report the pre-write gate NOW, while the owner is reviewing, rather
+      // than letting them discover the refusal at apply time. dry-run writes
+      // nothing, so this is a warning and not a failure.
+      const gate = assessRegistryPreWriteGate(workspace, account, sourceCensusOf(plan));
+      if (!gate.ok) {
+        deps.log(`[pre-write-gate] ${gate.kind}: ${gate.message}`);
+      }
       const snapshot = snapshotFromPlan(plan);
       await writeReceipt(context.deps, context.receiptDir, {
         command: 'dry-run',
@@ -458,6 +517,7 @@ async function dryRunCommand(
       summary.push({
         workspace,
         sourceSets: plan.sourceSetCount,
+        frozenSourceSets: REGISTRY_FROZEN_SOURCE_SET_COUNTS[workspace],
         derivedRows: plan.derivedRows.length,
         creates: plan.creates.length,
         updates: plan.updates.length,
@@ -467,6 +527,10 @@ async function dryRunCommand(
         foreignPreserved: plan.preservedForeignCount,
         foreignDigest: plan.foreignDigest.digest.slice(0, 12),
         corruptSourceRecords: plan.corruptSourceRecords,
+        skippedNoEventId: plan.skippedNoEventId,
+        skippedUnsafeEventId: plan.skippedUnsafeEventId,
+        skippedExcludedClassification: plan.skippedExcludedClassification,
+        preWriteGate: gate.kind,
       });
     } catch (error) {
       failures += 1;
@@ -531,8 +595,20 @@ interface PreflightEntry {
 /**
  * Read-only preflight over EVERY scoped account before any write happens, so
  * a drift on the last account can never leave the earlier ones half-applied.
- * When the run is `--account`-scoped this is a single account, which is the
- * posture the owner directive asks for.
+ * Since B9 an apply is always exactly one account, which is the posture the
+ * owner directive asks for.
+ *
+ * TWO independent gates, both of which must pass:
+ *  1. `classifyRegistryDrift` — does the fresh plan still match the manifest
+ *     the owner reviewed (foreign rows, derived rows, THE FULL CENSUS, and
+ *     the action buckets)?
+ *  2. `assessRegistryPreWriteGate` — is the fresh census something this
+ *     operator is allowed to apply AT ALL (frozen `sourceSetCount`, corrupt
+ *     source records, collisions), or does it need a reviewed exception?
+ *
+ * They are separate because they answer different questions. A run can match
+ * its manifest perfectly and still be unapplyable — that is exactly the case
+ * where the dry-run and the apply both see the same 412 corrupt records.
  */
 async function preflight(
   context: RunContext,
@@ -543,8 +619,16 @@ async function preflight(
     const startedAtMs = context.deps.now();
     try {
       const plan = await planFor(context, workspace);
+      // Built WITHOUT the reviewed exception on purpose: `fresh` is the
+      // unvarnished observation the drift check compares against, and the
+      // exception is an authorization, not an observation. The gate below is
+      // where the reviewed exception gets its say.
       const fresh = buildRegistryAccountManifest(registryWorkspaceLabels[workspace], plan);
-      const verdict = classifyRegistryDrift(workspace, account, fresh);
+      const drift = classifyRegistryDrift(workspace, account, fresh);
+      const gate = assessRegistryPreWriteGate(workspace, account, sourceCensusOf(plan));
+      const verdict = drift.safeToApply
+        ? { kind: gate.kind, safeToApply: gate.ok, message: gate.message }
+        : drift;
       entries.push({
         workspace,
         reviewed: account,
@@ -761,9 +845,11 @@ async function compareCommand(
         ? []
         : [
             `compare mismatch for ${workspace}: rowSetMatches=${row.rowSetMatches} ` +
-              `foreignDigestMatches=${row.foreignDigestMatches} pendingCreates=${row.pendingCreates} ` +
+              `foreignDigestMatches=${row.foreignDigestMatches} censusMatches=${row.censusMatches} ` +
+              `frozenCensusOk=${row.frozenCensusOk} pendingCreates=${row.pendingCreates} ` +
               `pendingUpdates=${row.pendingUpdates} pendingRemovals=${row.pendingRemovals} ` +
-              `collisions=${row.collisions}`,
+              `collisions=${row.collisions}` +
+              (row.censusDelta.length > 0 ? ` censusDelta=[${row.censusDelta.join('; ')}]` : ''),
           ];
       if (failedInvariants.length > 0) {
         mismatches += 1;
@@ -832,7 +918,7 @@ export async function runRegistryOperator(
 ): Promise<number> {
   const { command, flags } = parseRegistryArgs(argv);
   const uids = readUids(flags);
-  const account = requestedWorkspace(flags);
+  const account = requestedWorkspace(flags, command);
   const maxAgeMs = positiveInteger(flags, '--max-age-ms', DEFAULT_MAX_AGE_MS);
   const maxStallMs = positiveInteger(flags, '--max-stall-ms', DEFAULT_MAX_STALL_MS);
   const requestTimeoutMs = positiveInteger(
@@ -860,7 +946,14 @@ export async function runRegistryOperator(
     if (command === 'dry-run') {
       const workspaces = account ? [account] : [...registryWorkspaceKeys];
       deps.log(`Target UIDs: ${workspaces.map((key) => uids[key]).join(', ')}`);
-      return await dryRunCommand(context, workspaces, required(flags, '--manifest-out'));
+      monitor.mark(account, 'read-exceptions', flags.get('--exceptions-in') ?? '<none>');
+      const exceptions = await readReviewedExceptions(deps, flags.get('--exceptions-in'));
+      return await dryRunCommand(
+        context,
+        workspaces,
+        required(flags, '--manifest-out'),
+        exceptions,
+      );
     }
 
     monitor.mark(account, 'read-manifest', required(flags, '--manifest-in'));

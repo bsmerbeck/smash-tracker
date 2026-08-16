@@ -47,6 +47,20 @@ import type { TournamentRegistryPlan } from '../src/research/registry/reconcile.
  * apply ONE ACCOUNT AT A TIME. `targetUids` still carries all four uids
  * (that is what makes the uniqueness cross-check meaningful), but
  * `accounts` holds exactly the scoped subset.
+ *
+ * FORMAT VERSION 3 (owner/Codex hard gate #4, B8 — the SOURCE CENSUS FREEZE):
+ * the apply gate's MEANING changed, so the artifact version had to move with
+ * it. Under v2 an apply was authorized by the derived-row hash and the action
+ * buckets alone, which left a real hole: the source census could move
+ * underneath a manifest — hundreds of newly corrupt source records, a swing
+ * in `skippedExcludedClassification`, a different `sourceSetCount` — and the
+ * apply would still pass because the surviving derived rows happened to hash
+ * the same. v3 closes it by making the WHOLE census a first-class part of
+ * both the drift classification and the compare verdict, and by adding
+ * `reviewedExceptions`: the ONLY way a corrupt-record or collision condition
+ * can be applied over. A v2 manifest was reviewed against the weaker gate and
+ * therefore cannot authorize an apply under this one; it is refused by the
+ * `formatVersion` literal rather than migrated.
  */
 
 // ---------------------------------------------------------------------------
@@ -61,7 +75,30 @@ export {
   type RegistryWorkspaceKey,
 };
 
-export const REGISTRY_MANIFEST_FORMAT_VERSION = 2;
+export const REGISTRY_MANIFEST_FORMAT_VERSION = 3;
+
+/**
+ * THE OWNER-FROZEN SOURCE CENSUS (hard gate #4, B8).
+ *
+ * `sourceSetCount` is the number of children stored under
+ * `researchSource/{uid}/sets` — the entire input population the projector
+ * derives from. The owner froze these four figures against the 2026-08-16
+ * read-only production audit, and they live in COMMITTED SOURCE for the same
+ * reason the Gate-6 expectation table does: a census whose expected value
+ * arrives as a CLI parameter proves only that the operator typed a number
+ * matching the database.
+ *
+ * A fresh plan whose `sourceSetCount` differs from the frozen figure means
+ * the input population moved. That is never a thing to apply over silently;
+ * it is refused PRE-WRITE unless the reviewed manifest carries a
+ * `reviewedExceptions` entry naming the exact observed count.
+ */
+export const REGISTRY_FROZEN_SOURCE_SET_COUNTS: Record<RegistryWorkspaceKey, number> = {
+  hbox: 8413,
+  mkleo: 5314,
+  sparg0: 6187,
+  izaw: 640,
+};
 
 const uidSchema = z
   .string()
@@ -113,6 +150,57 @@ export function computeRegistryRowSetHash(uid: string, rows: TournamentRegistryR
 
 const hashHexSchema = z.string().regex(/^[a-f0-9]{64}$/);
 
+/**
+ * THE REVIEWED EXCEPTION (hard gate #4, B8) — the ONLY thing that can
+ * authorize an apply over a corrupt-source-record, collision, or
+ * frozen-census condition.
+ *
+ * WHY IT IS MANIFEST CONTENT AND NOT A CLI FLAG. A flag is typed by whoever
+ * is running the command, at the moment they are trying to get past a
+ * refusal — which is the worst possible moment to be granting one. This field
+ * lives INSIDE the per-account manifest, is therefore covered by the
+ * manifest's `contentHash`, and is written by `dry-run` from a reviewed
+ * exceptions file BEFORE the plan is inspected. The owner reads the sealed
+ * manifest with the exception and the observed figures side by side and then
+ * applies it; `apply` itself has no override of any kind.
+ *
+ * IT MUST COVER THE CONDITION EXACTLY. `acceptedCorruptSourceRecords` and
+ * `acceptedCollisions` are exact values, not ceilings, and
+ * `acceptedSourceSetCount` names one specific count (or `null` — "I am not
+ * excepting the frozen census"). An exception written for 3 corrupt records
+ * does not authorize an apply that now faces 4: the deviation the owner
+ * reviewed is not the deviation in front of the operator, so the refusal
+ * stands. Both `buildRegistryAccountManifest` (dry-run) and
+ * `validateRegistryManifest` (apply/compare) enforce that coverage, so a
+ * hand-authored exception that does not describe its own manifest fails
+ * loudly at both ends.
+ */
+export const registryReviewedExceptionSchema = z
+  .object({
+    /** The owner's written justification. Long enough that it cannot be a shrug. */
+    reason: z.string().min(20),
+    reviewedAtMs: z.number().int().nonnegative(),
+    /** The exact `sourceSetCount` accepted in place of the frozen figure, or `null` to except nothing. */
+    acceptedSourceSetCount: z.number().int().nonnegative().nullable(),
+    /** The exact number of corrupt source records accepted. */
+    acceptedCorruptSourceRecords: z.number().int().nonnegative(),
+    /** The exact set of colliding entry ids accepted, sorted. */
+    acceptedCollisions: z.array(z.string()),
+  })
+  .strict();
+export type RegistryReviewedException = z.infer<typeof registryReviewedExceptionSchema>;
+
+/** One exceptions file: at most one reviewed exception per workspace. */
+export const registryReviewedExceptionFileSchema = z
+  .object({
+    hbox: registryReviewedExceptionSchema.optional(),
+    mkleo: registryReviewedExceptionSchema.optional(),
+    sparg0: registryReviewedExceptionSchema.optional(),
+    izaw: registryReviewedExceptionSchema.optional(),
+  })
+  .strict();
+export type RegistryReviewedExceptionFile = z.infer<typeof registryReviewedExceptionFileSchema>;
+
 export const registryAccountManifestSchema = z
   .object({
     label: z.string().min(1),
@@ -136,6 +224,8 @@ export const registryAccountManifestSchema = z
     /** The full derived rows — the reviewable payload apply would write. */
     rows: z.array(tournamentRegistryRowSchema),
     rowSetHash: hashHexSchema,
+    /** Absent on every ordinary manifest — see {@link registryReviewedExceptionSchema}. */
+    reviewedExceptions: registryReviewedExceptionSchema.optional(),
   })
   .strict();
 export type RegistryAccountManifest = z.infer<typeof registryAccountManifestSchema>;
@@ -185,11 +275,20 @@ export function canonicalScope(
  * Distills one read-only plan into the reviewable per-account manifest —
  * the SAME function the CLI uses at dry-run time and at apply-preflight
  * time, so the drift check compares like with like.
+ *
+ * `exception`, when supplied (only `dry-run` supplies one, from the reviewed
+ * `--exceptions-in` file), is checked against THIS plan before it is embedded:
+ * an exception that does not exactly describe the condition it claims to
+ * authorize is a dry-run failure, not something to discover at apply time.
  */
 export function buildRegistryAccountManifest(
   label: string,
   plan: TournamentRegistryPlan,
+  exception?: RegistryReviewedException,
 ): RegistryAccountManifest {
+  if (exception !== undefined) {
+    assertExceptionIsGrounded(label, exception, sourceCensusOf(plan));
+  }
   return registryAccountManifestSchema.parse({
     label,
     uid: plan.uid,
@@ -209,7 +308,216 @@ export function buildRegistryAccountManifest(
     foreignDigest: plan.foreignDigest.digest,
     rows: plan.derivedRows,
     rowSetHash: computeRegistryRowSetHash(plan.uid, plan.derivedRows),
+    // Conditional spread, per the house RTDB rule: an absent exception must
+    // be an ABSENT member, never an explicit `undefined`. `canonicalJson`
+    // treats the two identically, but the artifact is also written to disk
+    // and read by humans.
+    ...(exception !== undefined ? { reviewedExceptions: exception } : {}),
   });
+}
+
+// ---------------------------------------------------------------------------
+// The source census (hard gate #4, B8)
+// ---------------------------------------------------------------------------
+
+/**
+ * THE COMPLETE SOURCE CENSUS — every figure that describes what the projector
+ * read and what it decided to ignore, plus the two destination-side outcomes
+ * a derived-row hash cannot express.
+ *
+ * The hole this closes: `rowSetHash` covers the rows that SURVIVED derivation.
+ * Everything that did not survive — a source record that failed its schema, a
+ * set with no event id, a set whose event id is not path-safe, a set whose
+ * classification excludes it — is invisible to that hash, and so is a
+ * collision (a derived row that exists but is NOT written) and an orphan
+ * removal (a stored row that would be deleted). Two runs can therefore agree
+ * on every derived row while disagreeing about hundreds of source records, and
+ * under the pre-B8 gate the second one applied cleanly.
+ */
+export interface RegistrySourceCensus {
+  sourceSetCount: number;
+  corruptSourceRecords: number;
+  skippedNoEventId: number;
+  skippedUnsafeEventId: number;
+  skippedExcludedClassification: number;
+  collisions: string[];
+  orphanRemovals: string[];
+}
+
+/** Normalizes any census-bearing value (a plan or a reviewed account) to the comparable shape. */
+export function sourceCensusOf(source: RegistrySourceCensus): RegistrySourceCensus {
+  return {
+    sourceSetCount: source.sourceSetCount,
+    corruptSourceRecords: source.corruptSourceRecords,
+    skippedNoEventId: source.skippedNoEventId,
+    skippedUnsafeEventId: source.skippedUnsafeEventId,
+    skippedExcludedClassification: source.skippedExcludedClassification,
+    collisions: [...source.collisions].sort(),
+    orphanRemovals: [...source.orphanRemovals].sort(),
+  };
+}
+
+/**
+ * Field-by-field census delta, empty when the two agree. Naming the exact
+ * members that moved is the point: "census changed" is not an actionable
+ * refusal, "corruptSourceRecords 0 -> 412" is.
+ */
+export function describeSourceCensusDelta(
+  reviewed: RegistrySourceCensus,
+  fresh: RegistrySourceCensus,
+): string[] {
+  const left = sourceCensusOf(reviewed);
+  const right = sourceCensusOf(fresh);
+  const deltas: string[] = [];
+  for (const field of [
+    'sourceSetCount',
+    'corruptSourceRecords',
+    'skippedNoEventId',
+    'skippedUnsafeEventId',
+    'skippedExcludedClassification',
+  ] as const) {
+    if (left[field] !== right[field]) {
+      deltas.push(`${field} ${left[field]} -> ${right[field]}`);
+    }
+  }
+  for (const field of ['collisions', 'orphanRemovals'] as const) {
+    if (canonicalJson(left[field]) !== canonicalJson(right[field])) {
+      deltas.push(`${field} [${left[field].join(',')}] -> [${right[field].join(',')}]`);
+    }
+  }
+  return deltas;
+}
+
+/**
+ * GROUNDING, not authorization. An exception may accept LESS than the plan
+ * shows (it then simply fails to authorize, and the pre-write gate refuses);
+ * it may never accept a condition the plan does not exhibit, because such an
+ * exception describes a corpus that does not exist and could only ever
+ * pre-authorize a future deviation. The exact-match requirement that turns a
+ * grounded exception into an authorization lives in
+ * {@link assessRegistryPreWriteGate}, deliberately separate: the two answer
+ * "is this text about this manifest?" and "does it let the apply through?",
+ * and conflating them made it impossible to author an exception that covers
+ * one census condition without also covering the others.
+ */
+function assertExceptionIsGrounded(
+  label: string,
+  exception: RegistryReviewedException,
+  census: RegistrySourceCensus,
+): void {
+  if (exception.acceptedCorruptSourceRecords > census.corruptSourceRecords) {
+    throw new Error(
+      `Reviewed exception for ${label} accepts ${exception.acceptedCorruptSourceRecords} corrupt source ` +
+        `record(s) but the plan has ${census.corruptSourceRecords}`,
+    );
+  }
+  const present = new Set(census.collisions);
+  const ungrounded = [...exception.acceptedCollisions].filter((entryId) => !present.has(entryId));
+  if (ungrounded.length > 0) {
+    throw new Error(
+      `Reviewed exception for ${label} accepts collision(s) [${ungrounded.sort().join(',')}] that the ` +
+        `plan does not have (its collisions are [${census.collisions.join(',')}])`,
+    );
+  }
+  if (
+    exception.acceptedSourceSetCount !== null &&
+    exception.acceptedSourceSetCount !== census.sourceSetCount
+  ) {
+    throw new Error(
+      `Reviewed exception for ${label} accepts sourceSetCount ${exception.acceptedSourceSetCount} ` +
+        `but the plan has ${census.sourceSetCount}`,
+    );
+  }
+}
+
+/** Why a fresh plan may not be applied even though it matches its reviewed manifest. */
+export const registryPreWriteGateKinds = [
+  'none',
+  'frozen-source-set-drift',
+  'corrupt-source-records',
+  'collisions',
+] as const;
+export type RegistryPreWriteGateKind = (typeof registryPreWriteGateKinds)[number];
+
+export interface RegistryPreWriteGateVerdict {
+  workspace: RegistryWorkspaceKey;
+  kind: RegistryPreWriteGateKind;
+  /** True only for `kind === 'none'`. Apply proceeds on nothing else. */
+  ok: boolean;
+  message: string;
+}
+
+/**
+ * THE PRE-WRITE CENSUS GATE. Evaluated against the FRESH plan (what apply
+ * would actually face), authorized only by the reviewed manifest's own
+ * `reviewedExceptions`.
+ *
+ * Three refusals, in order of how badly they mean "the input is not what was
+ * frozen":
+ *  1. `frozen-source-set-drift` — the source population is not the
+ *     owner-frozen figure for this account.
+ *  2. `corrupt-source-records`  — at least one stored source record no longer
+ *     parses. Those records are SKIPPED by the projector, so their content is
+ *     silently missing from the derived rows; applying over that is applying a
+ *     knowingly incomplete registry.
+ *  3. `collisions`             — a derived row's `histimport:` key is occupied
+ *     by a foreign value. Nothing is clobbered (the projector never writes
+ *     one), but the apply cannot deliver the reviewed row set.
+ */
+export function assessRegistryPreWriteGate(
+  workspace: RegistryWorkspaceKey,
+  reviewed: RegistryAccountManifest,
+  fresh: RegistrySourceCensus,
+): RegistryPreWriteGateVerdict {
+  const census = sourceCensusOf(fresh);
+  const exception = reviewed.reviewedExceptions;
+  const verdict = (
+    kind: RegistryPreWriteGateKind,
+    message: string,
+  ): RegistryPreWriteGateVerdict => ({ workspace, kind, ok: kind === 'none', message });
+  const authorize =
+    'Authorize it by regenerating the manifest with a reviewed exception ' +
+    '(`dry-run --exceptions-in <file>`) that names this exact condition, and reviewing that manifest.';
+
+  const frozen = REGISTRY_FROZEN_SOURCE_SET_COUNTS[workspace];
+  if (
+    census.sourceSetCount !== frozen &&
+    exception?.acceptedSourceSetCount !== census.sourceSetCount
+  ) {
+    return verdict(
+      'frozen-source-set-drift',
+      `Apply refused for ${workspace}: sourceSetCount is ${census.sourceSetCount}, but the owner-frozen ` +
+        `census for this account is ${frozen}. The input population moved. ${authorize}`,
+    );
+  }
+
+  if (
+    census.corruptSourceRecords > 0 &&
+    exception?.acceptedCorruptSourceRecords !== census.corruptSourceRecords
+  ) {
+    return verdict(
+      'corrupt-source-records',
+      `Apply refused for ${workspace}: ${census.corruptSourceRecords} stored source record(s) failed the ` +
+        'source-record schema and were SKIPPED, so the derived row set is knowingly incomplete. ' +
+        authorize,
+    );
+  }
+
+  if (
+    census.collisions.length > 0 &&
+    canonicalJson([...(exception?.acceptedCollisions ?? [])].sort()) !==
+      canonicalJson(census.collisions)
+  ) {
+    return verdict(
+      'collisions',
+      `Apply refused for ${workspace}: ${census.collisions.length} derived row(s) collide with a FOREIGN ` +
+        `value on their histimport: key (${census.collisions.slice(0, 5).join(', ')}${
+          census.collisions.length > 5 ? ', …' : ''
+        }) and can never be written. ${authorize}`,
+    );
+  }
+
+  return verdict('none', `${workspace}: source census matches the frozen contract.`);
 }
 
 export function computeRegistryManifestHash(body: RegistryManifestBody): string {
@@ -307,6 +615,33 @@ export function validateRegistryManifest(
     if (partitioned !== account.rows.length) {
       throw new Error(`Manifest action-bucket partition mismatch for ${workspace}`);
     }
+    // A reviewed exception must describe ITS OWN manifest. A hand-authored
+    // one that accepts a condition the manifest does not record is not an
+    // authorization for anything — refuse the whole artifact rather than let
+    // it reach the pre-write gate and quietly fail to apply there.
+    if (account.reviewedExceptions !== undefined) {
+      assertExceptionIsGrounded(workspace, account.reviewedExceptions, sourceCensusOf(account));
+    }
+  }
+  return manifest;
+}
+
+/**
+ * Schema + seal ONLY, with no clock, uid-map or staleness binding.
+ *
+ * The Gate-6 audit needs the manifest's IDENTITY (its `contentHash` and the
+ * per-account figures a receipt claims to have been authorized by), not a
+ * fresh-enough manifest to apply — by audit time the reviewed manifest is
+ * hours old ON PURPOSE. Using {@link validateRegistryManifest} there would
+ * refuse every honest artifact for staleness; restating the schema in the
+ * audit would let the two drift. This is the third option: one parse, one
+ * seal check, no policy.
+ */
+export function parseSealedRegistryManifest(raw: unknown): RegistryManifest {
+  const manifest = registryManifestSchema.parse(raw);
+  const { contentHash, ...body } = manifest;
+  if (computeRegistryManifestHash(body) !== contentHash) {
+    throw new Error('Manifest content hash mismatch');
   }
   return manifest;
 }
@@ -331,6 +666,7 @@ export const registryDriftKinds = [
   'none',
   'foreign-drift',
   'source-drift',
+  'census-drift',
   'partially-applied',
   'destination-drift',
 ] as const;
@@ -357,8 +693,13 @@ function bucketsEqual(a: readonly string[], b: readonly string[]): boolean {
  *
  * Priority order is deliberate — the most alarming cause is reported first:
  * a foreign row changing (something else is writing to this account) beats
- * source drift, which beats a partial apply, which beats any other
- * destination change.
+ * source drift, which beats CENSUS drift, which beats a partial apply, which
+ * beats any other destination change.
+ *
+ * `census-drift` is checked BEFORE the bucket comparison because that is
+ * where the pre-B8 hole was: a census change that leaves every derived row
+ * identical also leaves every action bucket identical, so the old
+ * `sameBuckets` early-return classified it `none` and applied.
  */
 export function classifyRegistryDrift(
   workspace: RegistryWorkspaceKey,
@@ -410,6 +751,16 @@ export function classifyRegistryDrift(
     );
   }
 
+  const censusDelta = describeSourceCensusDelta(sourceCensusOf(reviewed), sourceCensusOf(fresh));
+  if (censusDelta.length > 0) {
+    return verdict(
+      'census-drift',
+      `Apply refused for ${workspace}: the SOURCE CENSUS moved since the dry-run even though the derived ` +
+        `rows may not have (${censusDelta.join('; ')}). The reviewed manifest describes a different input ` +
+        'population than the one apply would read. Re-run dry-run and review the new manifest.',
+    );
+  }
+
   const sameBuckets =
     bucketsEqual(fresh.creates, reviewed.creates) &&
     bucketsEqual(fresh.updates, reviewed.updates) &&
@@ -458,6 +809,12 @@ export interface RegistryComparisonRow {
   collisions: number;
   /** The non-registry rows still hash to the reviewed digest — nothing foreign was touched. */
   foreignDigestMatches: boolean;
+  /** The FULL source census still equals the reviewed one (hard gate #4, B8). */
+  censusMatches: boolean;
+  /** Named census members that moved; empty when `censusMatches`. */
+  censusDelta: string[];
+  /** The live census still satisfies the frozen contract (or its reviewed exception). */
+  frozenCensusOk: boolean;
   exactMatch: boolean;
 }
 
@@ -465,8 +822,13 @@ export interface RegistryComparisonRow {
  * One compare verdict per workspace, from a FRESH read-only plan taken
  * after apply: `exactMatch` requires the current derivation to hash to the
  * reviewed row set, the destination to need zero further writes — i.e. the
- * live registry holds exactly the reviewed rows — AND the foreign rows to
- * still digest to their reviewed value.
+ * live registry holds exactly the reviewed rows — the foreign rows to still
+ * digest to their reviewed value, AND (hard gate #4, B8) the complete source
+ * census to still equal the reviewed one and satisfy the frozen contract.
+ *
+ * The census clauses are load-bearing, not decorative: without them a compare
+ * passes on an account whose source population has since gained hundreds of
+ * corrupt records, because the surviving derived rows still hash the same.
  */
 export function buildRegistryComparisonRow(
   workspace: RegistryWorkspaceKey,
@@ -480,6 +842,15 @@ export function buildRegistryComparisonRow(
   const pendingRemovals = currentPlan.orphanRemovals.length;
   const collisions = currentPlan.collisions.length;
   const foreignDigestMatches = currentPlan.foreignDigest.digest === reviewed.foreignDigest;
+  const censusDelta = describeSourceCensusDelta(
+    sourceCensusOf(reviewed),
+    sourceCensusOf(currentPlan),
+  );
+  const frozenCensusOk = assessRegistryPreWriteGate(
+    workspace,
+    reviewed,
+    sourceCensusOf(currentPlan),
+  ).ok;
   return {
     workspace,
     label: reviewed.label,
@@ -491,9 +862,14 @@ export function buildRegistryComparisonRow(
     pendingRemovals,
     collisions,
     foreignDigestMatches,
+    censusMatches: censusDelta.length === 0,
+    censusDelta,
+    frozenCensusOk,
     exactMatch:
       rowSetMatches &&
       foreignDigestMatches &&
+      censusDelta.length === 0 &&
+      frozenCensusOk &&
       pendingCreates === 0 &&
       pendingUpdates === 0 &&
       pendingRemovals === 0 &&

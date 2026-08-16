@@ -4,6 +4,8 @@ import { beforeAll, describe, expect, it } from 'vitest';
 import {
   TOURNAMENT_REGISTRY_ORIGIN,
   TOURNAMENT_REGISTRY_WITNESS_PREFIX,
+  tournamentRegistryRowSchema,
+  type TournamentRegistryRow,
 } from '@smash-tracker/shared';
 import {
   computeForeignRowDigest,
@@ -18,17 +20,32 @@ import {
 } from '../src/research/registry/receipt.js';
 import { FakeDatabase } from '../src/test-support/fakeDatabase.js';
 import {
+  createRegistryManifest,
+  computeRegistryRowSetHash,
+  REGISTRY_MANIFEST_FORMAT_VERSION,
+  type RegistryManifest,
+} from './registryManifestArtifact.js';
+import {
+  captureGate6TraceSnapshot,
+  createGate6RejectedOperationProbe,
+  gate6WindowDayShards,
   GATE6_ASSERTION_IDS,
   GATE6_EXPECTATION_TABLE_VERSION,
   GATE6_EXPECTATIONS,
   GATE6_SPARG0_USER_OWNED_VOD_ROWS,
+  GATE6_TRACE_SNAPSHOT_VERSION,
+  GATE6_UID_TRACE_SURFACES,
   GATE6_WORKSPACE_KEYS,
   parseGate6Baseline,
   runGate6Audit,
   type Gate6AssertionId,
   type Gate6AuditReceipt,
   type Gate6Baseline,
+  type Gate6RegistryManifestInput,
   type Gate6RegistryReceiptInput,
+  type Gate6RejectedOperationProbeBody,
+  type Gate6RejectedOperationProbeInput,
+  type Gate6TraceSnapshot,
   type Gate6UidMap,
   type Gate6WorkspaceKey,
 } from './gate6AuditCore.js';
@@ -49,11 +66,13 @@ import {
  * satisfy fails the anti-vacuity checks in the first describe block.
  */
 
+// At least 20 characters each: the registry manifest's own `uidSchema`
+// enforces that bound, and assertion 12 now parses a real sealed manifest.
 const UIDS: Gate6UidMap = {
-  hbox: 'gate6-hbox-uid',
-  mkleo: 'gate6-mkleo-uid',
-  sparg0: 'gate6-sparg0-uid',
-  izaw: 'gate6-izaw-uid',
+  hbox: 'gate6-hbox-uid-000001',
+  mkleo: 'gate6-mkleo-uid-00001',
+  sparg0: 'gate6-sparg0-uid-0001',
+  izaw: 'gate6-izaw-uid-000001',
 };
 const NOW_MS = 1_800_000_000_000;
 const UNRELATED_UID = 'gate6-unrelated-uid';
@@ -122,14 +141,26 @@ function attachmentRecord(
   };
 }
 
+/**
+ * A generated registry row. It must be a FULLY VALID
+ * `tournamentRegistryRowSchema` value, because assertion 12 now recomputes
+ * `computeRegistryRowSetHash` over the live rows — a fixture that only looked
+ * owned would exercise the unparseable branch instead of the attestation.
+ */
 function ownedRegistryRow(eventId: string): Record<string, unknown> {
   return {
+    entryId: `histimport:${eventId}`,
     origin: TOURNAMENT_REGISTRY_ORIGIN,
+    provider: 'startgg',
     registryWitness: `${TOURNAMENT_REGISTRY_WITNESS_PREFIX}${eventId}`,
     startggEventId: eventId,
     eventName: 'Ultimate Singles',
     playedSetCount: 4,
-    provenance: { source: 'research-import', importedAtMs: NOW_MS - 100_000 },
+    provenance: {
+      source: 'research-import',
+      importedAtMs: NOW_MS - 100_000,
+      asOfMs: NOW_MS - 90_000,
+    },
     firstSetAt: 1,
     lastSetAt: 2,
     setsPlayed: 4,
@@ -148,6 +179,35 @@ function enrichmentRunRecord(status: 'completed' | 'running'): Record<string, un
     startedAtMs: NOW_MS - 600_000,
     ...(status === 'completed' ? { completedAtMs: NOW_MS - 60_000 } : {}),
     leaseFenceCounter: 7,
+  };
+}
+
+/**
+ * The UTC day shard the fixture's telemetry lives in — derived from `NOW_MS`
+ * through the SAME helper the audit uses, so the probe windows below address
+ * the shard the fixture actually wrote to.
+ */
+const DEMO_TELEMETRY_DAY = gate6WindowDayShards(NOW_MS, NOW_MS)[0]!;
+
+/** One canonical `eventLedger` envelope, as `events/ledger.ts` would have written it. */
+function ledgerRow(
+  actorId: string,
+  eventName: string,
+  causationId: string,
+): Record<string, unknown> {
+  return {
+    eventId: `evt-${causationId}`,
+    eventName,
+    schemaVersion: 1,
+    occurredAt: NOW_MS - 10_000,
+    receivedAt: NOW_MS - 10_000,
+    actorKind: 'user',
+    actorId,
+    sessionId: 's1',
+    source: 'api',
+    causationId,
+    consentState: 'granted',
+    payload: {},
   };
 }
 
@@ -324,33 +384,39 @@ function buildCorrectTree(): Record<string, unknown> {
       [UIDS.izaw]: { [IZAW_TENANT]: { label: 'IzAw client', createdAt: 1 } },
       [OTHER_COACH_UID]: { [OTHER_COACH_TENANT]: { label: 'Other client', createdAt: 1 } },
     },
-    // Zero-trace POSITIVE CONTROL: unrelated rows in every scanned tree, so
-    // the zero-trace assertion is proven to be scanning a non-empty
-    // population rather than passing on emptiness.
+    // THE HEALTHY-SYSTEM CONTROL (hard gate #4, B5). Every row below is
+    // LEGITIMATE and every one of them would have FAILED the old lifetime-
+    // absence assertion:
+    //  - `signup_completed` for a demo uid: RTEN-04 suppresses research-context
+    //    telemetry, not an account's ordinary product events.
+    //  - a SUCCEEDED `reportJobs` record for a demo uid: a free demo report is
+    //    supposed to leave exactly that.
+    // The unrelated-uid rows sit alongside them so the operation-scoped
+    // attribution is exercised against a non-empty population of other
+    // people's traffic rather than against an empty tree.
     eventLedger: {
-      '2026-01-01': {
-        evt1: {
-          eventId: 'e1',
-          eventName: 'signup_completed',
-          schemaVersion: 1,
-          occurredAt: 1,
-          receivedAt: 1,
-          actorKind: 'user',
-          actorId: UNRELATED_UID,
-          sessionId: 's1',
-          source: 'api',
-          causationId: `${UNRELATED_UID}:c1`,
-          consentState: 'granted',
-          payload: {},
-        },
+      [DEMO_TELEMETRY_DAY]: {
+        evtDemo: ledgerRow(UIDS.hbox, 'signup_completed', `${UIDS.hbox}:signup`),
+        evtOther: ledgerRow(UNRELATED_UID, 'signup_completed', `${UNRELATED_UID}:c1`),
       },
     },
-    outboxPending: { '2026-01-01': { evt1: { attempt: 0 } } },
-    eventDedup: { signup_completed: { 1: { [`${UNRELATED_UID}:c1`]: true } } },
+    outboxPending: {
+      [DEMO_TELEMETRY_DAY]: { evtDemo: { attempt: 0 }, evtOther: { attempt: 0 } },
+    },
+    eventDedup: {
+      signup_completed: {
+        1: { [`${UIDS.hbox}:signup`]: true, [`${UNRELATED_UID}:c1`]: true },
+      },
+    },
     shareTokens: { tok1: { shareId: 's1', ownerUid: UNRELATED_UID, permissions: 'view' } },
+    sharesByUser: { [UNRELATED_UID]: { share1: true } },
     creditLedger: { [UNRELATED_UID]: { l1: { delta: -1 } } },
-    credits: { [UNRELATED_UID]: { balance: 5 } },
-    reportJobs: { [UNRELATED_UID]: { j1: { status: 'complete' } } },
+    credits: { [UNRELATED_UID]: { balance: 5 }, [UIDS.mkleo]: { balance: 0 } },
+    reportJobs: {
+      [UNRELATED_UID]: { j1: { status: 'complete' } },
+      // The intentional artifact of a SUCCESSFUL free demo report.
+      [UIDS.sparg0]: { demoJob: { status: 'succeeded', reportKind: 'demo' } },
+    },
     reportJobsByStatus: { running: { [UNRELATED_UID]: { j1: true } } },
   };
 
@@ -396,17 +462,27 @@ async function audit(
     baseline?: Gate6Baseline | null;
     strict?: boolean;
     registryReceipts?: Gate6RegistryReceiptInput[] | null;
+    registryManifests?: Gate6RegistryManifestInput[] | null;
     requireRegistryReceipts?: boolean;
+    rejectedOperationProbes?: Gate6RejectedOperationProbeInput[] | null;
+    requireRejectedOperationProbes?: boolean;
     expectedDatabaseHost?: string | null;
+    nowMs?: number;
   } = {},
 ): Promise<Gate6AuditReceipt> {
   return runGate6Audit(asDatabase(database), {
     uids: UIDS,
-    nowMs: NOW_MS,
+    nowMs: overrides.nowMs ?? NOW_MS,
     baseline: overrides.baseline ?? null,
     strictWitnessObservationRefs: overrides.strict === true,
     registryReceipts: overrides.registryReceipts ?? null,
+    // A receipt is only attestable against the manifest it names, so the
+    // default supplies the matching manifests whenever receipts are supplied.
+    registryManifests:
+      overrides.registryManifests ?? (overrides.registryReceipts ? allManifestInputs() : null),
     requireRegistryReceipts: overrides.requireRegistryReceipts === true,
+    rejectedOperationProbes: overrides.rejectedOperationProbes ?? null,
+    requireRejectedOperationProbes: overrides.requireRejectedOperationProbes === true,
     // Default to the host the receipt fixtures seal against, so the
     // host cross-check is EXERCISED in the pass case rather than skipped.
     expectedDatabaseHost:
@@ -454,12 +530,16 @@ function expectPerturbed(
 }
 
 // ---------------------------------------------------------------------------
-// Registry-operator receipt fixtures (assertion 12).
+// Registry attestation fixtures (assertion 12).
 // ---------------------------------------------------------------------------
 
 const LIVE_DATABASE_HOST = 'gate6-test-db.firebaseio.com';
+const MANIFEST_GENERATED_AT_MS = NOW_MS - 1_000_000;
 
-function countSnapshot(foreignRows: number): RegistryCountSnapshot {
+function countSnapshot(
+  foreignRows: number,
+  overrides: Partial<RegistryCountSnapshot> = {},
+): RegistryCountSnapshot {
   return {
     entryChildren: foreignRows + 2,
     registryOwnedRows: 2,
@@ -472,6 +552,7 @@ function countSnapshot(foreignRows: number): RegistryCountSnapshot {
     unchanged: 2,
     collisions: 0,
     orphanRemovals: 0,
+    ...overrides,
   };
 }
 
@@ -484,27 +565,119 @@ function liveForeignDigest(workspace: Gate6WorkspaceKey): ForeignRowDigest {
 }
 
 /**
+ * The LIVE generated-row hash for a workspace, recomputed from the fixture
+ * exactly the way assertion 12 recomputes it from the database. This is what
+ * makes the attestation tests meaningful: perturb a `histimport:` row and the
+ * receipt's sealed hash no longer describes live state.
+ */
+function liveRegistryRowSetHash(workspace: Gate6WorkspaceKey): string {
+  const entries = (CORRECT_TREE.tournamentEntries as Record<string, Record<string, unknown>>)[
+    UIDS[workspace]
+  ]!;
+  const rows: TournamentRegistryRow[] = [];
+  for (const value of Object.values(entries)) {
+    const parsed = tournamentRegistryRowSchema.safeParse(value);
+    if (parsed.success) {
+      rows.push(parsed.data);
+    }
+  }
+  return computeRegistryRowSetHash(UIDS[workspace], rows);
+}
+
+/**
+ * A reviewed manifest for one workspace, sealed for real. Its per-account
+ * `rowSetHash` is the LIVE hash, which is what a settled account's reviewed
+ * manifest necessarily carries.
+ */
+function sealedManifest(
+  workspace: Gate6WorkspaceKey,
+  overrides: { generatedAtMs?: number; databaseHost?: string; rowSetHash?: string } = {},
+): RegistryManifest {
+  const entries = (CORRECT_TREE.tournamentEntries as Record<string, Record<string, unknown>>)[
+    UIDS[workspace]
+  ]!;
+  const rows: TournamentRegistryRow[] = [];
+  for (const value of Object.values(entries)) {
+    const parsed = tournamentRegistryRowSchema.safeParse(value);
+    if (parsed.success) {
+      rows.push(parsed.data);
+    }
+  }
+  const foreign = liveForeignDigest(workspace);
+  const rowSetHash = overrides.rowSetHash ?? computeRegistryRowSetHash(UIDS[workspace], rows);
+  return createRegistryManifest({
+    formatVersion: REGISTRY_MANIFEST_FORMAT_VERSION,
+    generatedAtMs: overrides.generatedAtMs ?? MANIFEST_GENERATED_AT_MS,
+    databaseHost: overrides.databaseHost ?? LIVE_DATABASE_HOST,
+    targetUids: UIDS,
+    scope: [workspace],
+    writesPerformed: 0,
+    accounts: {
+      [workspace]: {
+        label: GATE6_EXPECTATIONS[workspace].label,
+        uid: UIDS[workspace],
+        sourceSetCount: 10,
+        corruptSourceRecords: 0,
+        skippedNoEventId: 0,
+        skippedUnsafeEventId: 0,
+        skippedExcludedClassification: 0,
+        derivedRowCount: rows.length,
+        creates: [],
+        updates: [],
+        unchanged: rows.map((row) => row.entryId).sort(),
+        collisions: [],
+        orphanRemovals: [],
+        preservedForeignCount: foreign.count,
+        preservedForeignKeys: foreign.keys,
+        foreignDigest: foreign.digest,
+        rows,
+        rowSetHash,
+      },
+    },
+  });
+}
+
+function manifestInput(
+  workspace: Gate6WorkspaceKey,
+  overrides: Parameters<typeof sealedManifest>[1] = {},
+): Gate6RegistryManifestInput {
+  return {
+    path: `./registry-manifest.${workspace}.json`,
+    raw: sealedManifest(workspace, overrides),
+  };
+}
+
+function allManifestInputs(): Gate6RegistryManifestInput[] {
+  return GATE6_WORKSPACE_KEYS.map((workspace) => manifestInput(workspace));
+}
+
+/**
  * A genuinely sealed operator receipt — built through `createRegistryReceipt`
  * so its `contentHash` is real. Perturbation tests override members and
  * either re-seal (to test a semantic refusal) or tamper post-seal (to test the
  * hash check itself).
+ *
+ * It is a COMPARE receipt: since hard gate #4 an apply receipt no longer
+ * satisfies the final attestation, because an apply observes its own
+ * post-state while compare is an independent later read.
  */
 function sealedReceipt(
   workspace: Gate6WorkspaceKey,
   overrides: Partial<RegistryReceiptBody> = {},
 ): RegistryReceipt {
   const digest = liveForeignDigest(workspace);
+  const rowSetHash = liveRegistryRowSetHash(workspace);
   const body: RegistryReceiptBody = {
     formatVersion: 1,
-    command: 'apply',
+    command: 'compare',
     workspace,
     label: GATE6_EXPECTATIONS[workspace].label,
     databaseHost: LIVE_DATABASE_HOST,
     uid: UIDS[workspace],
-    manifestContentHash: contentHash(`manifest-${workspace}`),
-    manifestGeneratedAtMs: NOW_MS - 1_000_000,
-    reviewedRowSetHash: contentHash(`rowset-${workspace}`),
-    observedRowSetHash: contentHash(`rowset-${workspace}`),
+    manifestContentHash: sealedManifest(workspace).contentHash,
+    manifestGeneratedAtMs: MANIFEST_GENERATED_AT_MS,
+    reviewedRowSetHash: rowSetHash,
+    observedRowSetHash: rowSetHash,
     startedAtMs: NOW_MS - 500_000,
     finishedAtMs: NOW_MS - 400_000,
     status: 'ok',
@@ -514,7 +687,7 @@ function sealedReceipt(
     foreignDigestBefore: digest,
     foreignDigestAfter: digest,
     foreignDigestStable: true,
-    writes: { written: [], removed: [], abortedForeign: [], writesPerformed: 0 },
+    writes: null,
     ...overrides,
   };
   return createRegistryReceipt(body);
@@ -550,9 +723,18 @@ describe('the correct fixture actually realizes the expectation table', () => {
     }
   });
 
-  it('gives the zero-trace scan a non-empty unrelated population to walk past', async () => {
-    const receipt = await audit(makeDatabase());
-    expect(assertionOf(receipt, 'zero-trace-trees').inspected).toBeGreaterThanOrEqual(20);
+  it('carries the LEGITIMATE demo telemetry the old lifetime-absence assertion would have failed', async () => {
+    const tree = makeDatabase().dump() as Record<string, Record<string, unknown>>;
+    // Ordinary product telemetry for a demo uid (permitted: RTEN-04 suppresses
+    // research-context events, not these) …
+    expect(
+      (tree.eventLedger as Record<string, Record<string, unknown>>)[DEMO_TELEMETRY_DAY]!.evtDemo,
+    ).toBeDefined();
+    expect((tree.eventDedup as Record<string, Record<string, unknown>>).signup_completed).toEqual(
+      expect.objectContaining({ 1: expect.objectContaining({ [`${UIDS.hbox}:signup`]: true }) }),
+    );
+    // … and the intentional artifact of a SUCCESSFUL free demo report.
+    expect((tree.reportJobs as Record<string, unknown>)[UIDS.sparg0]).toBeDefined();
   });
 
   it('exercises the user-owned/source-owned VOD discriminator on Sparg0 rather than counting every VOD row', async () => {
@@ -571,7 +753,11 @@ describe('the correct fixture actually realizes the expectation table', () => {
 
 describe('a fully-correct tree passes', () => {
   it('reports ok with zero findings across every assertion', async () => {
-    const receipt = await audit(makeDatabase(), { registryReceipts: allReceipts() });
+    const database = makeDatabase();
+    const receipt = await audit(database, {
+      registryReceipts: allReceipts(),
+      rejectedOperationProbes: await allProbes(database),
+    });
     expect(receipt.findingCount).toBe(0);
     expect(receipt.ok).toBe(true);
     expect(receipt.skippedCount).toBe(0);
@@ -584,7 +770,11 @@ describe('a fully-correct tree passes', () => {
   });
 
   it('emits a stable receipt shape: fixed top-level keys, every assertion id, in order', async () => {
-    const receipt = await audit(makeDatabase(), { registryReceipts: allReceipts() });
+    const database = makeDatabase();
+    const receipt = await audit(database, {
+      registryReceipts: allReceipts(),
+      rejectedOperationProbes: await allProbes(database),
+    });
     expect(Object.keys(receipt).sort()).toEqual(
       [
         'assertions',
@@ -596,14 +786,17 @@ describe('a fully-correct tree passes', () => {
         'observed',
         'ok',
         'receiptVersion',
+        'registryManifests',
         'registryReceipts',
+        'rejectedOperationProbes',
         'requireRegistryReceipts',
+        'requireRejectedOperationProbes',
         'skippedCount',
         'strictWitnessObservationRefs',
         'targetUids',
       ].sort(),
     );
-    expect(receipt.receiptVersion).toBe(2);
+    expect(receipt.receiptVersion).toBe(3);
     expect(receipt.expectationTableVersion).toBe(GATE6_EXPECTATION_TABLE_VERSION);
     expect(receipt.baselineMode).toBe('record');
     expect(receipt.assertions.map((assertion) => assertion.id)).toEqual([...GATE6_ASSERTION_IDS]);
@@ -1308,66 +1501,430 @@ describe('assertion 9: izaw-coaching-root', () => {
 });
 
 // ---------------------------------------------------------------------------
-// Assertion 10 — zero-trace trees.
+// Assertion 10 — the rejected-operation trace probe (hard gate #4, B5).
+//
+// The defect this replaces: the old assertion asserted LIFETIME ABSENCE of the
+// analytics/ledger/credit/job/token trees for demo uids, which contradicts
+// RTEN-04 (ordinary product telemetry is permitted) and the free demo report
+// (which intentionally leaves a succeeded `reportJobs` record). The fixture
+// tree now CONTAINS both of those, so the first test below is the false-RED
+// regression guard: a healthy system must go green.
 // ---------------------------------------------------------------------------
 
-describe('assertion 10: zero-trace-trees', () => {
+/** Captures a real snapshot through the same code the audit verifies against. */
+async function snapshotOf(
+  database: FakeDatabase,
+  uid: string,
+  capturedAtMs: number,
+): Promise<Gate6TraceSnapshot> {
+  return captureGate6TraceSnapshot(asDatabase(database), uid, {
+    startedAtMs: NOW_MS - 5_000,
+    finishedAtMs: NOW_MS - 1_000,
+    capturedAtMs,
+  });
+}
+
+/**
+ * A sealed probe of one refused operation. `mutate` runs BETWEEN the two
+ * snapshots — an honest refusal mutates nothing, and a perturbation writes the
+ * row the refusal was supposed to prevent.
+ */
+async function sealedProbe(
+  database: FakeDatabase,
+  workspace: Gate6WorkspaceKey,
+  options: {
+    mutate?: (database: FakeDatabase) => void;
+    body?: Partial<Gate6RejectedOperationProbeBody>;
+  } = {},
+): Promise<Gate6RejectedOperationProbeInput> {
+  const uid = UIDS[workspace];
+  const before = await snapshotOf(database, uid, NOW_MS - 6_000);
+  options.mutate?.(database);
+  const after = await snapshotOf(database, uid, NOW_MS - 500);
+  const body: Gate6RejectedOperationProbeBody = {
+    formatVersion: 1,
+    workspace,
+    uid,
+    databaseHost: LIVE_DATABASE_HOST,
+    operation: 'POST /api/reports (paid report on a demo account)',
+    refusal: '403 demo accounts may not purchase reports',
+    startedAtMs: NOW_MS - 5_000,
+    finishedAtMs: NOW_MS - 1_000,
+    before,
+    after,
+    ...options.body,
+  };
+  return { path: `./probe-${workspace}.json`, raw: createGate6RejectedOperationProbe(body) };
+}
+
+async function allProbes(database: FakeDatabase): Promise<Gate6RejectedOperationProbeInput[]> {
+  const probes: Gate6RejectedOperationProbeInput[] = [];
+  for (const workspace of GATE6_WORKSPACE_KEYS) {
+    probes.push(await sealedProbe(database, workspace));
+  }
+  return probes;
+}
+
+/** The unsealed body of a probe — the reseal helpers below edit this, not the sealed value. */
+function probeBodyOf(input: Gate6RejectedOperationProbeInput): Gate6RejectedOperationProbeBody {
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars -- rest-destructure-to-omit idiom; the seal is intentionally discarded before resealing
+  const { contentHash, ...body } = input.raw as Record<string, unknown>;
+  return body as unknown as Gate6RejectedOperationProbeBody;
+}
+
+describe('assertion 10: rejected-operation-no-trace', () => {
+  it('PASSES a healthy system whose demo accounts carry legitimate telemetry and a succeeded free report', async () => {
+    const database = makeDatabase();
+    // The precondition that makes this a regression guard and not a tautology:
+    // the corpus really does hold the rows the old assertion called violations.
+    const tree = database.dump() as Record<string, Record<string, unknown>>;
+    expect((tree.reportJobs as Record<string, unknown>)[UIDS.sparg0]).toBeDefined();
+    expect(
+      (tree.eventLedger as Record<string, Record<string, unknown>>)[DEMO_TELEMETRY_DAY]!.evtDemo,
+    ).toBeDefined();
+
+    const receipt = await audit(database, { rejectedOperationProbes: await allProbes(database) });
+    expect(assertionOf(receipt, 'rejected-operation-no-trace')).toMatchObject({
+      ok: true,
+      status: 'passed',
+    });
+    expect(receipt.rejectedOperationProbes.every((row) => row.wroteNothing)).toBe(true);
+  });
+
+  it('inspects a non-empty surface population per probe — never passes on emptiness', async () => {
+    const database = makeDatabase();
+    const receipt = await audit(database, { rejectedOperationProbes: await allProbes(database) });
+    // Five mandatory uid-keyed surfaces, plus the day-sharded pair, plus one
+    // dedup address for the demo uid that has telemetry.
+    expect(assertionOf(receipt, 'rejected-operation-no-trace').inspected).toBeGreaterThanOrEqual(
+      GATE6_UID_TRACE_SURFACES.length * GATE6_WORKSPACE_KEYS.length,
+    );
+    for (const row of receipt.rejectedOperationProbes) {
+      expect(row.surfacesCompared).toBeGreaterThanOrEqual(GATE6_UID_TRACE_SURFACES.length);
+    }
+  });
+
   it.each([
-    ['creditLedger', (uid: string) => `creditLedger/${uid}/entry-1`, { delta: -1 }],
-    ['credits', (uid: string) => `credits/${uid}/balance`, 5],
-    ['reportJobs', (uid: string) => `reportJobs/${uid}/job-1`, { status: 'running' }],
-    ['reportJobsByStatus', (uid: string) => `reportJobsByStatus/running/${uid}/job-1`, true],
-  ])('fails on a %s row for a demo uid', async (_tree, pathFor, value) => {
+    [
+      'creditLedger',
+      (database: FakeDatabase) => database.seed(`creditLedger/${UIDS.hbox}/entry-1`, { delta: -1 }),
+    ],
+    ['credits', (database: FakeDatabase) => database.seed(`credits/${UIDS.hbox}`, { balance: 3 })],
+    [
+      'reportJobs',
+      (database: FakeDatabase) =>
+        database.seed(`reportJobs/${UIDS.hbox}/job-1`, { status: 'running' }),
+    ],
+    [
+      'reportJobsByStatus/running',
+      (database: FakeDatabase) =>
+        database.seed(`reportJobsByStatus/running/${UIDS.hbox}/job-1`, true),
+    ],
+    [
+      'sharesByUser',
+      (database: FakeDatabase) => database.seed(`sharesByUser/${UIDS.hbox}/share-1`, true),
+    ],
+  ])('FAILS when the refused operation wrote to %s', async (surface, mutate) => {
     const database = makeDatabase();
-    database.seed((pathFor as (uid: string) => string)(UIDS.hbox), value);
-    expectPerturbed(await audit(database), 'zero-trace-trees', 'zero-trace-violation');
+    const probe = await sealedProbe(database, 'hbox', { mutate });
+    const receipt = await audit(database, { rejectedOperationProbes: [probe] });
+    expectPerturbed(receipt, 'rejected-operation-no-trace', 'rejected-operation-trace-written');
+    expect(
+      assertionOf(receipt, 'rejected-operation-no-trace').findings.some((finding) =>
+        finding.path?.startsWith(surface),
+      ),
+    ).toBe(true);
+    expect(receipt.rejectedOperationProbes[0]!.wroteNothing).toBe(false);
   });
 
-  it('fails on a bearer token minted for a demo uid', async () => {
+  it('FAILS when the refused operation emitted an eventLedger row and its paired outbox entry', async () => {
     const database = makeDatabase();
-    database.seed('shareTokens/demo-token', {
-      shareId: 's2',
-      ownerUid: UIDS.sparg0,
-      permissions: 'view',
+    const probe = await sealedProbe(database, 'mkleo', {
+      mutate: (db) => {
+        db.seed(
+          `eventLedger/${DEMO_TELEMETRY_DAY}/leaked`,
+          ledgerRow(UIDS.mkleo, 'report_started', `${UIDS.mkleo}:leak`),
+        );
+        db.seed(`outboxPending/${DEMO_TELEMETRY_DAY}/leaked`, { attempt: 0 });
+      },
     });
-    const receipt = await audit(database);
-    expectPerturbed(receipt, 'zero-trace-trees', 'zero-trace-violation');
-    expect(assertionOf(receipt, 'zero-trace-trees').findings[0]!.workspace).toBe('sparg0');
+    const receipt = await audit(database, { rejectedOperationProbes: [probe] });
+    expectPerturbed(receipt, 'rejected-operation-no-trace', 'rejected-operation-trace-written');
+    const paths = assertionOf(receipt, 'rejected-operation-no-trace').findings.map(
+      (finding) => finding.path,
+    );
+    expect(paths).toContain(`eventLedger/${DEMO_TELEMETRY_DAY}`);
+    expect(paths).toContain(`outboxPending/${DEMO_TELEMETRY_DAY}`);
   });
 
-  it('fails on an eventLedger row referencing a demo uid, and on its paired outbox entry', async () => {
+  it('FAILS on a dedup marker the refused operation created, addressed exactly rather than guessed', async () => {
     const database = makeDatabase();
-    database.seed('eventLedger/2026-01-02/evt9', {
-      eventId: 'e9',
-      eventName: 'coaching_mode_enabled',
-      schemaVersion: 1,
-      occurredAt: 1,
-      receivedAt: 1,
-      actorKind: 'user',
-      actorId: UIDS.izaw,
-      sessionId: 's9',
-      source: 'api',
-      causationId: 'c9',
-      consentState: 'granted',
-      payload: {},
+    // The refused call emitted a full event: its ledger row names the exact
+    // dedup address, so the dedup surface appears in the AFTER snapshot only.
+    const probe = await sealedProbe(database, 'izaw', {
+      mutate: (db) => {
+        db.seed(
+          `eventLedger/${DEMO_TELEMETRY_DAY}/izawLeak`,
+          ledgerRow(UIDS.izaw, 'report_started', `${UIDS.izaw}:leak`),
+        );
+        db.seed(`eventDedup/report_started/1/${UIDS.izaw}:leak`, true);
+      },
     });
-    database.seed('outboxPending/2026-01-02/evt9', { attempt: 0 });
-    const receipt = await audit(database);
-    expectPerturbed(receipt, 'zero-trace-trees', 'zero-trace-violation');
-    const paths = assertionOf(receipt, 'zero-trace-trees').findings.map((f) => f.path);
-    expect(paths).toContain('eventLedger/2026-01-02/evt9');
-    expect(paths).toContain('outboxPending/2026-01-02/evt9');
+    const receipt = await audit(database, { rejectedOperationProbes: [probe] });
+    expectPerturbed(receipt, 'rejected-operation-no-trace', 'rejected-operation-trace-written');
+    expect(
+      assertionOf(receipt, 'rejected-operation-no-trace').findings.some(
+        (finding) => finding.path === `eventDedup/report_started/1/${UIDS.izaw}:leak`,
+      ),
+    ).toBe(true);
   });
 
-  it('fails on an eventDedup causation id carrying a demo uid', async () => {
+  it('does NOT fire on another account gaining telemetry during the window', async () => {
     const database = makeDatabase();
-    database.seed(`eventDedup/prep_brief_activated/1/${UIDS.mkleo}:entry-7`, true);
-    expectPerturbed(await audit(database), 'zero-trace-trees', 'zero-trace-violation');
+    const probe = await sealedProbe(database, 'hbox', {
+      mutate: (db) => {
+        // Somebody else's traffic lands in the same day shard. The snapshot is
+        // uid-attributed, so it must not move.
+        db.seed(
+          `eventLedger/${DEMO_TELEMETRY_DAY}/unrelated2`,
+          ledgerRow(UNRELATED_UID, 'signup_completed', `${UNRELATED_UID}:c2`),
+        );
+        db.seed(`credits/${UNRELATED_UID}`, { balance: 99 });
+      },
+    });
+    const receipt = await audit(database, { rejectedOperationProbes: [probe] });
+    expect(assertionOf(receipt, 'rejected-operation-no-trace').ok).toBe(true);
   });
 
-  it('leaves the unrelated-uid positive-control rows alone', async () => {
+  it('is SKIPPED — visibly, not silently green — when no probe is supplied', async () => {
     const receipt = await audit(makeDatabase());
-    expect(assertionOf(receipt, 'zero-trace-trees').ok).toBe(true);
+    const assertion = assertionOf(receipt, 'rejected-operation-no-trace');
+    expect(assertion.status).toBe('skipped');
+    expect(assertion.ok).toBe(true);
+    expect(assertion.inspected).toBe(0);
+    expect(assertion.skipReason).toMatch(/--rejected-operation-probe/);
+    expect(receipt.skippedCount).toBeGreaterThanOrEqual(1);
+  });
+
+  it('FAILS on the same absent evidence under --require-rejected-operation-probe', async () => {
+    const receipt = await audit(makeDatabase(), { requireRejectedOperationProbes: true });
+    expectPerturbed(
+      receipt,
+      'rejected-operation-no-trace',
+      'rejected-operation-probe-missing',
+      // The receipt attestation is skipped in this run, not red.
+      [],
+    );
+  });
+
+  it('FAILS on partial coverage under --require-rejected-operation-probe, naming each uncovered account', async () => {
+    const database = makeDatabase();
+    const receipt = await audit(database, {
+      rejectedOperationProbes: [await sealedProbe(database, 'hbox')],
+      requireRejectedOperationProbes: true,
+    });
+    expectPerturbed(receipt, 'rejected-operation-no-trace', 'rejected-operation-probe-missing');
+    const uncovered = assertionOf(receipt, 'rejected-operation-no-trace')
+      .findings.filter((finding) => finding.code === 'rejected-operation-probe-missing')
+      .map((finding) => finding.workspace);
+    expect(uncovered.sort()).toEqual(['izaw', 'mkleo', 'sparg0']);
+  });
+
+  it('FAILS a probe whose seal was tampered with', async () => {
+    const database = makeDatabase();
+    const probe = await sealedProbe(database, 'hbox');
+    const tampered = {
+      ...(probe.raw as Record<string, unknown>),
+      operation: 'something else entirely',
+    };
+    const receipt = await audit(database, {
+      rejectedOperationProbes: [{ path: probe.path, raw: tampered }],
+    });
+    expectPerturbed(receipt, 'rejected-operation-no-trace', 'rejected-operation-probe-invalid');
+  });
+
+  it('FAILS a probe that is not JSON at all (the CLI hands on a null raw rather than crashing)', async () => {
+    const receipt = await audit(makeDatabase(), {
+      rejectedOperationProbes: [{ path: './broken.json', raw: null }],
+    });
+    expectPerturbed(receipt, 'rejected-operation-no-trace', 'rejected-operation-probe-invalid');
+  });
+
+  it('FAILS a probe sealed for a different account', async () => {
+    const database = makeDatabase();
+    const probe = await sealedProbe(database, 'hbox', {
+      body: { workspace: 'mkleo' },
+    });
+    const receipt = await audit(database, { rejectedOperationProbes: [probe] });
+    expectPerturbed(
+      receipt,
+      'rejected-operation-no-trace',
+      'rejected-operation-probe-uid-mismatch',
+    );
+  });
+
+  it('FAILS a probe sealed against a different database host', async () => {
+    const database = makeDatabase();
+    const probe = await sealedProbe(database, 'hbox', {
+      body: { databaseHost: 'staging-db.firebaseio.com' },
+    });
+    const receipt = await audit(database, { rejectedOperationProbes: [probe] });
+    expectPerturbed(
+      receipt,
+      'rejected-operation-no-trace',
+      'rejected-operation-probe-host-mismatch',
+    );
+  });
+
+  it('FAILS — never silently passes — when no expected host was supplied to check against', async () => {
+    const database = makeDatabase();
+    const probe = await sealedProbe(database, 'hbox');
+    const receipt = await audit(database, {
+      rejectedOperationProbes: [probe],
+      expectedDatabaseHost: null,
+    });
+    expectPerturbed(
+      receipt,
+      'rejected-operation-no-trace',
+      'rejected-operation-probe-host-unchecked',
+    );
+  });
+
+  it('FAILS a STALE probe: yesterday’s refusal is not evidence about now', async () => {
+    const database = makeDatabase();
+    const probe = await sealedProbe(database, 'hbox');
+    const receipt = await audit(database, {
+      rejectedOperationProbes: [probe],
+      // Two days later, past the 24h default freshness bound.
+      nowMs: NOW_MS + 2 * 24 * 60 * 60 * 1000,
+    });
+    expectPerturbed(receipt, 'rejected-operation-no-trace', 'rejected-operation-probe-stale', [
+      // A future-dated audit clock also expires the receipt fixtures, but none
+      // are supplied in this run.
+    ]);
+  });
+
+  it('FAILS a probe whose snapshots do not bracket the operation it claims to describe', async () => {
+    const database = makeDatabase();
+    const probe = await sealedProbe(database, 'hbox');
+    const body = probeBodyOf(probe);
+    const resealed = createGate6RejectedOperationProbe({
+      ...body,
+      // The "before" snapshot was taken AFTER the operation started, so it
+      // cannot witness the pre-state.
+      before: { ...body.before, capturedAtMs: body.startedAtMs + 1 },
+    });
+    const receipt = await audit(database, {
+      rejectedOperationProbes: [{ path: probe.path, raw: resealed }],
+    });
+    expectPerturbed(
+      receipt,
+      'rejected-operation-no-trace',
+      'rejected-operation-probe-window-invalid',
+    );
+  });
+
+  it('FAILS a probe whose claimed day shards do not follow from its own window', async () => {
+    const database = makeDatabase();
+    const probe = await sealedProbe(database, 'hbox');
+    const body = probeBodyOf(probe);
+    const resealed = createGate6RejectedOperationProbe({
+      ...body,
+      before: { ...body.before, dayShards: ['19700101'] },
+      after: { ...body.after, dayShards: ['19700101'] },
+    });
+    const receipt = await audit(database, {
+      rejectedOperationProbes: [{ path: probe.path, raw: resealed }],
+    });
+    expectPerturbed(
+      receipt,
+      'rejected-operation-no-trace',
+      'rejected-operation-probe-window-invalid',
+    );
+  });
+
+  it('FAILS a probe captured under a different snapshot rule version', async () => {
+    const database = makeDatabase();
+    const probe = await sealedProbe(database, 'hbox');
+    const body = probeBodyOf(probe);
+    const resealed = createGate6RejectedOperationProbe({
+      ...body,
+      before: { ...body.before, version: GATE6_TRACE_SNAPSHOT_VERSION + 1 },
+    });
+    const receipt = await audit(database, {
+      rejectedOperationProbes: [{ path: probe.path, raw: resealed }],
+    });
+    expectPerturbed(
+      receipt,
+      'rejected-operation-no-trace',
+      'rejected-operation-probe-version-mismatch',
+    );
+  });
+
+  it('FAILS an EMPTY probe rather than passing on two vacuously equal snapshots', async () => {
+    const database = makeDatabase();
+    const probe = await sealedProbe(database, 'hbox');
+    const body = probeBodyOf(probe);
+    const hollow = createGate6RejectedOperationProbe({
+      ...body,
+      before: { ...body.before, surfaces: [] },
+      after: { ...body.after, surfaces: [] },
+    });
+    const receipt = await audit(database, {
+      rejectedOperationProbes: [{ path: probe.path, raw: hollow }],
+    });
+    expectPerturbed(receipt, 'rejected-operation-no-trace', 'rejected-operation-probe-incomplete');
+  });
+});
+
+describe('captureGate6TraceSnapshot', () => {
+  it('reads only bounded, uid-addressed paths — never a whole ledger/dedup/outbox root', async () => {
+    const database = makeDatabase();
+    const read: string[] = [];
+    const spy = new Proxy(database, {
+      get(target, property, receiver) {
+        if (property === 'ref') {
+          return (path?: string) => {
+            read.push(path ?? '');
+            return target.ref(path);
+          };
+        }
+        return Reflect.get(target, property, receiver) as unknown;
+      },
+    });
+    await captureGate6TraceSnapshot(spy as unknown as Database, UIDS.hbox, {
+      startedAtMs: NOW_MS - 5_000,
+      finishedAtMs: NOW_MS - 1_000,
+      capturedAtMs: NOW_MS,
+    });
+    // The whole point of B5: no bare root read of any of these trees.
+    expect(read).not.toContain('eventLedger');
+    expect(read).not.toContain('eventDedup');
+    expect(read).not.toContain('outboxPending');
+    expect(read).not.toContain('shareTokens');
+    for (const tree of GATE6_UID_TRACE_SURFACES) {
+      expect(read).toContain(`${tree}/${UIDS.hbox}`);
+    }
+    expect(read).toContain(`eventLedger/${DEMO_TELEMETRY_DAY}`);
+  });
+
+  it('names every UTC shard a window straddling midnight could have touched', () => {
+    const midnight = Date.UTC(2026, 0, 2, 0, 0, 0);
+    expect(gate6WindowDayShards(midnight - 1_000, midnight + 1_000)).toEqual([
+      '20260101',
+      '20260102',
+    ]);
+    expect(gate6WindowDayShards(midnight, midnight)).toEqual(['20260102']);
+  });
+
+  it('refuses an unsafe uid rather than building a path from it', async () => {
+    await expect(
+      captureGate6TraceSnapshot(asDatabase(makeDatabase()), 'bad/uid', {
+        startedAtMs: NOW_MS,
+        finishedAtMs: NOW_MS,
+        capturedAtMs: NOW_MS,
+      }),
+    ).rejects.toThrow(/unsafe uid/);
   });
 });
 
@@ -1411,142 +1968,111 @@ describe('assertion 11: witness-observation-references', () => {
 });
 
 // ---------------------------------------------------------------------------
-// Assertion 12 — registry-operator receipt attestation.
+// Assertion 12 — registry attestation over LIVE generated content
+// (rebuilt under hard gate #4, B7).
+//
+// The defect this closes: the old assertion only checked the FOREIGN digest,
+// so a sealed receipt stayed green after every generated `histimport:` row was
+// edited or deleted. The "stale seal" tests below are the regression proof.
 // ---------------------------------------------------------------------------
 
 describe('assertion 12: registry-receipt-attestation', () => {
-  it('passes when all four sealed receipts are authentic and agree with live foreign content', async () => {
+  it('passes when all four sealed COMPARE receipts agree with live generated and foreign content', async () => {
     const receipt = await audit(makeDatabase(), { registryReceipts: allReceipts() });
-    const assertion = assertionOf(receipt, 'registry-receipt-attestation');
-    expect(assertion.status).toBe('passed');
-    expect(assertion.inspected).toBe(4);
+    expect(assertionOf(receipt, 'registry-receipt-attestation')).toMatchObject({
+      ok: true,
+      status: 'passed',
+      inspected: 4,
+    });
     expect(receipt.registryReceipts).toHaveLength(4);
-    expect(receipt.registryReceipts.every((row) => row.valid)).toBe(true);
-    expect(receipt.registryReceipts.every((row) => row.databaseHostChecked)).toBe(true);
-    expect(receipt.ok).toBe(true);
+    expect(receipt.registryReceipts.every((row) => row.command === 'compare')).toBe(true);
+    expect(receipt.registryManifests.every((row) => row.valid)).toBe(true);
   });
 
-  it('is SKIPPED — visibly, not silently green — when no receipt is supplied', async () => {
-    const receipt = await audit(makeDatabase());
-    const assertion = assertionOf(receipt, 'registry-receipt-attestation');
-    expect(assertion.status).toBe('skipped');
-    expect(assertion.skipReason).toMatch(/--registry-receipt/);
-    expect(assertion.inspected).toBe(0);
-    expect(assertion.findings).toEqual([]);
-    // Skipped does not fail the audit...
-    expect(assertion.ok).toBe(true);
-    expect(receipt.ok).toBe(true);
-    // ...but it is COUNTED, so "green" and "incompletely evidenced" are
-    // distinguishable from the receipt header alone.
-    expect(receipt.skippedCount).toBe(1);
-    expect(receipt.registryReceipts).toEqual([]);
-    // Every OTHER assertion really was checked.
-    for (const other of receipt.assertions) {
-      if (other.id !== 'registry-receipt-attestation') {
-        expect(other.status).toBe('passed');
-      }
+  // -------------------------------------------------------------------------
+  // B7's headline requirement: an OLD sealed receipt must FAIL after any
+  // generated row is changed or deleted.
+  // -------------------------------------------------------------------------
+
+  it('FAILS a still-valid sealed receipt after a generated row is CHANGED', async () => {
+    const database = makeDatabase();
+    const receipts = allReceipts();
+    // Nothing about the receipt is touched; the account's generated content is.
+    database.seed(`tournamentEntries/${UIDS.hbox}/histimport:hbox-1/playedSetCount`, 99);
+    const receipt = await audit(database, { registryReceipts: receipts });
+    expectPerturbed(
+      receipt,
+      'registry-receipt-attestation',
+      'registry-live-row-set-mismatch',
+      // Assertion 8 stays green: the row that moved is registry-OWNED, which
+      // is exactly the population that assertion deliberately ignores.
+      [],
+    );
+    expect(assertionOf(receipt, 'registry-preservation').ok).toBe(true);
+    expect(assertionOf(receipt, 'registry-receipt-attestation').findings[0]!.detail).toMatch(
+      /the attestation is stale/,
+    );
+  });
+
+  it('FAILS a still-valid sealed receipt after a generated row is DELETED', async () => {
+    const database = makeDatabase();
+    const receipts = allReceipts();
+    database.seed(`tournamentEntries/${UIDS.sparg0}/histimport:sparg0-2`, null);
+    const receipt = await audit(database, { registryReceipts: receipts });
+    expectPerturbed(receipt, 'registry-receipt-attestation', 'registry-live-row-set-mismatch');
+    expect(assertionOf(receipt, 'registry-preservation').ok).toBe(true);
+  });
+
+  it('FAILS after a generated row is ADDED that the reviewed manifest never authorized', async () => {
+    const database = makeDatabase();
+    const receipts = allReceipts();
+    database.seed(
+      `tournamentEntries/${UIDS.mkleo}/histimport:mkleo-9`,
+      ownedRegistryRow('mkleo-9'),
+    );
+    const receipt = await audit(database, { registryReceipts: receipts });
+    expectPerturbed(receipt, 'registry-receipt-attestation', 'registry-live-row-set-mismatch');
+  });
+
+  it('FAILS when a live registry-owned child no longer parses as a registry row', async () => {
+    const database = makeDatabase();
+    const receipts = allReceipts();
+    // Structurally owned (origin + witness survive) but no longer a valid row.
+    database.seed(`tournamentEntries/${UIDS.izaw}/histimport:izaw-1/playedSetCount`, 'four');
+    const receipt = await audit(database, { registryReceipts: receipts });
+    expect(receipt.ok).toBe(false);
+    expect(codesOf(receipt, 'registry-receipt-attestation')).toContain(
+      'registry-live-row-unparseable',
+    );
+  });
+
+  it('reports the live generated population in the receipt, so the figure is reviewable', async () => {
+    const receipt = await audit(makeDatabase(), { registryReceipts: allReceipts() });
+    for (const row of receipt.observed) {
+      expect(row.registryOwnedRows).toBe(2);
+      expect(row.registryRowSetHash).toBe(liveRegistryRowSetHash(row.workspace));
     }
   });
 
-  it('FAILS on the same absent evidence under --require-registry-receipt', async () => {
-    const receipt = await audit(makeDatabase(), { requireRegistryReceipts: true });
-    expectPerturbed(receipt, 'registry-receipt-attestation', 'registry-receipt-missing');
-    expect(assertionOf(receipt, 'registry-receipt-attestation').skipReason).toBeNull();
-    expect(receipt.skippedCount).toBe(0);
-    expect(receipt.requireRegistryReceipts).toBe(true);
-  });
+  // -------------------------------------------------------------------------
+  // Command, settledness, manifest identity, freshness, host.
+  // -------------------------------------------------------------------------
 
-  it('FAILS on partial coverage under --require-registry-receipt, naming each uncovered account', async () => {
-    const receipt = await audit(makeDatabase(), {
-      registryReceipts: [receiptInput('hbox')],
-      requireRegistryReceipts: true,
+  it('REFUSES an apply receipt: the attestation must rest on an independent later read', async () => {
+    const database = makeDatabase();
+    const receipt = await audit(database, {
+      registryReceipts: [receiptInput('hbox', { command: 'apply', writes: null })],
     });
-    expectPerturbed(receipt, 'registry-receipt-attestation', 'registry-receipt-missing');
-    const missing = assertionOf(receipt, 'registry-receipt-attestation')
-      .findings.filter((finding) => finding.code === 'registry-receipt-missing')
-      .map((finding) => finding.workspace);
-    expect(missing.sort()).toEqual(['izaw', 'mkleo', 'sparg0']);
+    expectPerturbed(receipt, 'registry-receipt-attestation', 'registry-receipt-not-post-state');
+    expect(assertionOf(receipt, 'registry-receipt-attestation').findings[0]!.detail).toMatch(
+      /independent, later, read-only compare run/,
+    );
   });
 
-  it('accepts partial coverage WITHOUT the require flag — opt-in evidence is still checked strictly', async () => {
-    const receipt = await audit(makeDatabase(), { registryReceipts: [receiptInput('mkleo')] });
-    const assertion = assertionOf(receipt, 'registry-receipt-attestation');
-    expect(assertion.status).toBe('passed');
-    expect(assertion.inspected).toBe(1);
-    expect(receipt.ok).toBe(true);
-  });
-
-  it('FAILS a receipt whose contentHash seal was tampered with', async () => {
-    const tampered = sealedReceipt('sparg0');
+  it('REFUSES a dry-run receipt: planning is not evidence of a completed apply', async () => {
     const receipt = await audit(makeDatabase(), {
       registryReceipts: [
-        // The body is untouched; only the seal is wrong — the exact shape of
-        // a hand-edited receipt whose editor forgot to re-hash.
-        { path: './tampered.json', raw: { ...tampered, contentHash: contentHash('forged') } },
-      ],
-    });
-    expectPerturbed(receipt, 'registry-receipt-attestation', 'registry-receipt-invalid');
-    expect(receipt.registryReceipts[0]!.valid).toBe(false);
-    expect(receipt.registryReceipts[0]!.workspace).toBeNull();
-  });
-
-  it('FAILS a receipt whose BODY was edited (the seal no longer matches the content)', async () => {
-    const sealed = sealedReceipt('mkleo');
-    const receipt = await audit(makeDatabase(), {
-      registryReceipts: [
-        { path: './edited.json', raw: { ...sealed, status: 'ok', failedInvariants: [] } },
-      ],
-    });
-    // Re-stating the same values changes nothing, so this one must PASS —
-    // the control that proves the next assertion is about content, not luck.
-    expect(assertionOf(receipt, 'registry-receipt-attestation').status).toBe('passed');
-
-    const edited = await audit(makeDatabase(), {
-      registryReceipts: [
-        { path: './edited.json', raw: { ...sealed, finishedAtMs: sealed.finishedAtMs + 1 } },
-      ],
-    });
-    expectPerturbed(edited, 'registry-receipt-attestation', 'registry-receipt-invalid');
-  });
-
-  it('FAILS a receipt that is not JSON at all (the CLI hands on a null raw rather than crashing)', async () => {
-    const receipt = await audit(makeDatabase(), {
-      registryReceipts: [{ path: './unreadable.json', raw: null }],
-    });
-    expectPerturbed(receipt, 'registry-receipt-attestation', 'registry-receipt-invalid');
-  });
-
-  it('FAILS a receipt sealed for a different account', async () => {
-    const receipt = await audit(makeDatabase(), {
-      registryReceipts: [receiptInput('hbox', { uid: 'some-other-account-uid' })],
-    });
-    expectPerturbed(receipt, 'registry-receipt-attestation', 'registry-receipt-uid-mismatch');
-    const finding = assertionOf(receipt, 'registry-receipt-attestation').findings[0]!;
-    expect(finding.expected).toBe(UIDS.hbox);
-    expect(finding.actual).toBe('some-other-account-uid');
-    // A wrong-account receipt stops there — no cascade of derivative findings.
-    expect(assertionOf(receipt, 'registry-receipt-attestation').findings).toHaveLength(1);
-  });
-
-  it('FAILS a receipt sealed as refused or failed — an authentic record of a BAD run is not evidence of a good one', async () => {
-    for (const status of ['refused', 'failed'] as const) {
-      const receipt = await audit(makeDatabase(), {
-        registryReceipts: [
-          receiptInput('sparg0', {
-            status,
-            failedInvariants: ['foreign rows were modified'],
-          }),
-        ],
-      });
-      expectPerturbed(receipt, 'registry-receipt-attestation', 'registry-receipt-not-ok');
-      expect(assertionOf(receipt, 'registry-receipt-attestation').findings[0]!.actual).toBe(status);
-    }
-  });
-
-  it('FAILS a dry-run receipt: planning is not evidence of a completed apply', async () => {
-    const receipt = await audit(makeDatabase(), {
-      registryReceipts: [
-        receiptInput('izaw', {
+        receiptInput('hbox', {
           command: 'dry-run',
           manifestContentHash: null,
           manifestGeneratedAtMs: null,
@@ -1558,79 +2084,236 @@ describe('assertion 12: registry-receipt-attestation', () => {
     expectPerturbed(receipt, 'registry-receipt-attestation', 'registry-receipt-not-post-state');
   });
 
-  it('accepts a compare receipt: it observes post-state without writing', async () => {
+  it('REFUSES a receipt whose sealed post-state still has pending work', async () => {
+    const digest = liveForeignDigest('hbox');
     const receipt = await audit(makeDatabase(), {
-      registryReceipts: [receiptInput('izaw', { command: 'compare', writes: null })],
+      registryReceipts: [
+        receiptInput('hbox', { after: countSnapshot(digest.count, { creates: 1, unchanged: 1 }) }),
+      ],
     });
+    expectPerturbed(receipt, 'registry-receipt-attestation', 'registry-receipt-not-settled');
+  });
+
+  it('REFUSES a receipt when no reviewed manifest was supplied to check its authorization against', async () => {
+    const receipt = await audit(makeDatabase(), {
+      registryReceipts: [receiptInput('hbox')],
+      registryManifests: [],
+    });
+    expectPerturbed(receipt, 'registry-receipt-attestation', 'registry-manifest-missing');
+  });
+
+  it('REFUSES a receipt authorized by a DIFFERENT manifest than the one under review', async () => {
+    const receipt = await audit(makeDatabase(), {
+      registryReceipts: [receiptInput('hbox')],
+      // Same account, different generation stamp -> different content hash.
+      registryManifests: [manifestInput('hbox', { generatedAtMs: MANIFEST_GENERATED_AT_MS - 1 })],
+    });
+    expectPerturbed(receipt, 'registry-receipt-attestation', 'registry-receipt-manifest-mismatch');
+  });
+
+  it('REFUSES a manifest generated against a different database', async () => {
+    const receipt = await audit(makeDatabase(), {
+      registryReceipts: [receiptInput('hbox')],
+      registryManifests: [manifestInput('hbox', { databaseHost: 'staging-db.firebaseio.com' })],
+    });
+    expect(receipt.ok).toBe(false);
+    // The receipt names a manifest hash that this (differently-sealed)
+    // manifest cannot have, so the identity check is what reports first.
+    expect(codesOf(receipt, 'registry-receipt-attestation')[0]).toMatch(
+      /registry-(manifest-host-mismatch|receipt-manifest-mismatch)/,
+    );
+  });
+
+  it('REFUSES a manifest whose seal was broken', async () => {
+    const manifest = sealedManifest('hbox') as unknown as Record<string, unknown>;
+    const receipt = await audit(makeDatabase(), {
+      registryReceipts: [receiptInput('hbox')],
+      registryManifests: [
+        { path: './bad-manifest.json', raw: { ...manifest, generatedAtMs: NOW_MS } },
+      ],
+    });
+    expect(receipt.ok).toBe(false);
+    expect(codesOf(receipt, 'registry-receipt-attestation')).toContain('registry-manifest-invalid');
+  });
+
+  it('REFUSES two manifests scoping the same workspace — ambiguous review is not review', async () => {
+    const receipt = await audit(makeDatabase(), {
+      registryReceipts: [receiptInput('hbox')],
+      registryManifests: [manifestInput('hbox'), manifestInput('hbox')],
+    });
+    expect(receipt.ok).toBe(false);
+    expect(codesOf(receipt, 'registry-receipt-attestation')).toContain(
+      'registry-manifest-duplicate',
+    );
+  });
+
+  it('REFUSES a STALE receipt: a compare from last week is not evidence about now', async () => {
+    const receipt = await audit(makeDatabase(), {
+      registryReceipts: [receiptInput('hbox')],
+      nowMs: NOW_MS + 7 * 24 * 60 * 60 * 1000,
+    });
+    expect(receipt.ok).toBe(false);
+    expect(codesOf(receipt, 'registry-receipt-attestation')).toContain('registry-receipt-stale');
+  });
+
+  it('REFUSES a receipt dated in the future', async () => {
+    const receipt = await audit(makeDatabase(), {
+      registryReceipts: [
+        receiptInput('hbox', { startedAtMs: NOW_MS + 1_000, finishedAtMs: NOW_MS + 10_000 }),
+      ],
+    });
+    expect(receipt.ok).toBe(false);
+    expect(codesOf(receipt, 'registry-receipt-attestation')).toContain('registry-receipt-stale');
+  });
+
+  it('FAILS — never silently passes — when no expected host was supplied to check against', async () => {
+    const receipt = await audit(makeDatabase(), {
+      registryReceipts: [receiptInput('hbox')],
+      expectedDatabaseHost: null,
+    });
+    expect(receipt.ok).toBe(false);
+    expect(codesOf(receipt, 'registry-receipt-attestation')).toContain(
+      'registry-receipt-host-unchecked',
+    );
+    expect(receipt.registryReceipts[0]!.databaseHostChecked).toBe(false);
+  });
+
+  // -------------------------------------------------------------------------
+  // Pre-existing contract, preserved.
+  // -------------------------------------------------------------------------
+
+  it('is SKIPPED — visibly, not silently green — when no receipt is supplied', async () => {
+    const receipt = await audit(makeDatabase());
+    const assertion = assertionOf(receipt, 'registry-receipt-attestation');
+    expect(assertion.status).toBe('skipped');
+    expect(assertion.ok).toBe(true);
+    expect(assertion.inspected).toBe(0);
+    expect(assertion.skipReason).toMatch(/--registry-receipt/);
+    expect(receipt.registryReceipts).toEqual([]);
+  });
+
+  it('FAILS on the same absent evidence under --require-registry-receipt', async () => {
+    const receipt = await audit(makeDatabase(), { requireRegistryReceipts: true });
+    expectPerturbed(receipt, 'registry-receipt-attestation', 'registry-receipt-missing');
+  });
+
+  it('FAILS on partial coverage under --require-registry-receipt, naming each uncovered account', async () => {
+    const receipt = await audit(makeDatabase(), {
+      registryReceipts: [receiptInput('hbox'), receiptInput('mkleo')],
+      requireRegistryReceipts: true,
+    });
+    expectPerturbed(receipt, 'registry-receipt-attestation', 'registry-receipt-missing');
+    const uncovered = assertionOf(receipt, 'registry-receipt-attestation')
+      .findings.filter((finding) => finding.code === 'registry-receipt-missing')
+      .map((finding) => finding.workspace);
+    expect(uncovered.sort()).toEqual(['izaw', 'sparg0']);
+  });
+
+  it('accepts partial coverage WITHOUT the require flag — opt-in evidence is still checked strictly', async () => {
+    const receipt = await audit(makeDatabase(), { registryReceipts: [receiptInput('hbox')] });
     expect(assertionOf(receipt, 'registry-receipt-attestation').status).toBe('passed');
+    expect(receipt.ok).toBe(true);
+  });
+
+  it('FAILS a receipt whose contentHash seal was tampered with', async () => {
+    const sealed = sealedReceipt('hbox');
+    const receipt = await audit(makeDatabase(), {
+      registryReceipts: [
+        { path: './receipt-hbox.json', raw: { ...sealed, contentHash: contentHash('forged') } },
+      ],
+    });
+    expectPerturbed(receipt, 'registry-receipt-attestation', 'registry-receipt-invalid');
+  });
+
+  it('FAILS a receipt whose BODY was edited (the seal no longer matches the content)', async () => {
+    const sealed = sealedReceipt('hbox');
+    const receipt = await audit(makeDatabase(), {
+      registryReceipts: [
+        { path: './receipt-hbox.json', raw: { ...sealed, label: 'Someone Else' } },
+      ],
+    });
+    expectPerturbed(receipt, 'registry-receipt-attestation', 'registry-receipt-invalid');
+  });
+
+  it('FAILS a receipt that is not JSON at all (the CLI hands on a null raw rather than crashing)', async () => {
+    const receipt = await audit(makeDatabase(), {
+      registryReceipts: [{ path: './broken.json', raw: null }],
+    });
+    expectPerturbed(receipt, 'registry-receipt-attestation', 'registry-receipt-invalid');
+  });
+
+  it('FAILS a receipt sealed for a different account', async () => {
+    const foreignUid = 'gate6-someone-else-uid';
+    const receipt = await audit(makeDatabase(), {
+      registryReceipts: [receiptInput('hbox', { uid: foreignUid })],
+    });
+    expectPerturbed(receipt, 'registry-receipt-attestation', 'registry-receipt-uid-mismatch');
+  });
+
+  it('FAILS a receipt sealed as refused or failed — an authentic record of a BAD run is not evidence of a good one', async () => {
+    for (const status of ['refused', 'failed'] as const) {
+      const receipt = await audit(makeDatabase(), {
+        registryReceipts: [
+          receiptInput('hbox', {
+            status,
+            failedInvariants: ['foreign-row-digest changed across the apply'],
+          }),
+        ],
+      });
+      expectPerturbed(receipt, 'registry-receipt-attestation', 'registry-receipt-not-ok');
+    }
   });
 
   it('FAILS a receipt sealed against a different database host', async () => {
     const receipt = await audit(makeDatabase(), {
-      registryReceipts: [receiptInput('mkleo', { databaseHost: 'staging-db.firebaseio.com' })],
+      registryReceipts: [receiptInput('hbox', { databaseHost: 'staging-db.firebaseio.com' })],
     });
     expectPerturbed(receipt, 'registry-receipt-attestation', 'registry-receipt-host-mismatch');
   });
 
-  it('records databaseHostChecked:false when no expected host was supplied, never a silent pass', async () => {
-    const receipt = await audit(makeDatabase(), {
-      registryReceipts: [receiptInput('mkleo', { databaseHost: 'staging-db.firebaseio.com' })],
-      expectedDatabaseHost: null,
-    });
-    // The host sub-check did not run, so it must not fail...
-    expect(codesOf(receipt, 'registry-receipt-attestation')).not.toContain(
-      'registry-receipt-host-mismatch',
-    );
-    // ...and the receipt says so explicitly.
-    expect(receipt.registryReceipts[0]!.databaseHostChecked).toBe(false);
-    expect(receipt.registryReceipts[0]!.databaseHost).toBe('staging-db.firebaseio.com');
-  });
-
-  it('FAILS when the sealed post-apply digest no longer matches live foreign content', async () => {
+  it('FAILS when the sealed post-apply FOREIGN digest no longer matches live content', async () => {
     const database = makeDatabase();
-    // A foreign row mutated AFTER the operator sealed its receipt — the exact
-    // drift neither tool can see alone.
-    database.seed(`tournamentEntries/${UIDS.sparg0}/manual-sparg0-a/setsPlayed`, 77);
-    const receipt = await audit(database, { registryReceipts: allReceipts() });
-    expectPerturbed(receipt, 'registry-receipt-attestation', 'registry-receipt-digest-mismatch');
-    expect(assertionOf(receipt, 'registry-receipt-attestation').findings[0]!.detail).toContain(
-      'their CONTENT changed',
+    const receipts = allReceipts();
+    database.seed(`tournamentEntries/${UIDS.hbox}/manual-hbox-a/setsPlayed`, 42);
+    const receipt = await audit(database, { registryReceipts: receipts });
+    expect(receipt.ok).toBe(false);
+    expect(codesOf(receipt, 'registry-receipt-attestation')).toContain(
+      'registry-receipt-digest-mismatch',
     );
+    // Assertion 8 is the independent witness for the same population.
+    expect(assertionOf(receipt, 'registry-preservation').inspected).toBeGreaterThan(0);
   });
 
   it('FAILS when a foreign row was ADDED after sealing, naming the added key', async () => {
     const database = makeDatabase();
-    database.seed(
-      `tournamentEntries/${UIDS.hbox}/manual-added-after-seal`,
-      foreignRegistryRow('snuck in'),
+    const receipts = allReceipts();
+    database.seed(`tournamentEntries/${UIDS.hbox}/manual-hbox-new`, foreignRegistryRow('new'));
+    const receipt = await audit(database, { registryReceipts: receipts });
+    expect(codesOf(receipt, 'registry-receipt-attestation')).toContain(
+      'registry-receipt-digest-mismatch',
     );
-    const receipt = await audit(database, { registryReceipts: allReceipts() });
-    expectPerturbed(receipt, 'registry-receipt-attestation', 'registry-receipt-digest-mismatch');
-    expect(assertionOf(receipt, 'registry-receipt-attestation').findings[0]!.detail).toContain(
-      'manual-added-after-seal',
-    );
+    expect(
+      assertionOf(receipt, 'registry-receipt-attestation').findings.some((finding) =>
+        finding.detail.includes('manual-hbox-new'),
+      ),
+    ).toBe(true);
   });
 
   it('FAILS two receipts claiming the same workspace — ambiguous evidence is not evidence', async () => {
     const receipt = await audit(makeDatabase(), {
-      registryReceipts: [
-        { path: './a.json', raw: sealedReceipt('hbox') },
-        { path: './b.json', raw: sealedReceipt('hbox') },
-      ],
+      registryReceipts: [receiptInput('hbox'), receiptInput('hbox')],
     });
     expectPerturbed(receipt, 'registry-receipt-attestation', 'registry-receipt-duplicate');
   });
 
   it('is independent of assertion 8: a receipt failure leaves registry-preservation green', async () => {
-    const recorded = await audit(makeDatabase(), { registryReceipts: allReceipts() });
+    const recorded = await audit(makeDatabase());
     const receipt = await audit(makeDatabase(), {
       baseline: recorded.baseline,
-      registryReceipts: [receiptInput('hbox', { status: 'failed', failedInvariants: ['x'] })],
+      registryReceipts: [receiptInput('hbox', { command: 'apply' })],
     });
-    // Live content is untouched, so preservation holds...
-    expect(assertionOf(receipt, 'registry-preservation').status).toBe('passed');
-    // ...while the attestation of a bad run does not.
     expect(assertionOf(receipt, 'registry-receipt-attestation').status).toBe('failed');
+    expect(assertionOf(receipt, 'registry-preservation').status).toBe('passed');
   });
 
   it('is independent in the other direction: assertion 8 can fail while no receipt is supplied at all', async () => {
