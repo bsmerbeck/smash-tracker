@@ -34,6 +34,7 @@ vi.mock('@/lib/firebase', async () => {
 const listMatches = vi.fn();
 const listTournaments = vi.fn();
 const upsertMe = vi.fn().mockResolvedValue({ uid: 'test-uid', email: 'test@example.com' });
+const getMe = vi.fn();
 const listAliases = vi.fn();
 const upsertAlias = vi.fn();
 const removeAlias = vi.fn();
@@ -41,10 +42,23 @@ const listNotes = vi.fn();
 const upsertNote = vi.fn();
 const removeNote = vi.fn();
 
+/** Phase 30.3 (Gate 6): the always-present `GET /api/users/me` profile shape. */
+function defaultProfile(overrides: { isDemoAccount?: boolean } = {}) {
+  return {
+    uid: 'test-uid',
+    email: 'test@example.com',
+    fighters: { primary: [], secondary: [] },
+    coachingModeEnabled: false,
+    onboardingIntent: null,
+    ...overrides,
+  };
+}
+
 vi.mock('@/lib/api', () => ({
   api: {
     users: {
       upsertMe: (...args: unknown[]) => upsertMe(...args),
+      getMe: (...args: unknown[]) => getMe(...args),
     },
     matches: {
       list: (...args: unknown[]) => listMatches(...args),
@@ -112,6 +126,7 @@ describe('OpponentsPage', () => {
     vi.clearAllMocks();
     window.localStorage.clear();
     upsertMe.mockResolvedValue({ uid: 'test-uid', email: 'test@example.com' });
+    getMe.mockResolvedValue(defaultProfile());
     listTournaments.mockResolvedValue([]);
     listAliases.mockResolvedValue({});
     upsertAlias.mockResolvedValue({});
@@ -891,5 +906,65 @@ describe('OpponentsPage', () => {
       expect(copiedText).toContain('rival');
       expect(await screen.findByRole('button', { name: /Copied!/ })).toBeInTheDocument();
     });
+
+    // Phase 30.3 (Gate 6, owner/Codex hard gate): print/copy disabled for a
+    // demo/research account, with a positive control proving an ordinary
+    // account keeps both.
+    it('disables Export H2H (print) and Copy as text with an explanation for a demo account', async () => {
+      getMe.mockResolvedValue(defaultProfile({ isDemoAccount: true }));
+      renderOpponents();
+
+      await waitFor(() => expect(screen.getByText('Last 10 (newest first)')).toBeInTheDocument());
+      const printButton = screen.getByRole('button', { name: /Export H2H/ });
+      const copyButton = screen.getByRole('button', { name: /Copy as text/ });
+      expect(printButton).toBeDisabled();
+      expect(copyButton).toBeDisabled();
+      expect(printButton).toHaveAttribute('title', 'Disabled for public-data research accounts.');
+      expect(copyButton).toHaveAttribute('title', 'Disabled for public-data research accounts.');
+    });
+
+    it('positive control: keeps Export H2H (print) and Copy as text enabled for an ordinary account', async () => {
+      getMe.mockResolvedValue(defaultProfile({ isDemoAccount: false }));
+      renderOpponents();
+
+      await waitFor(() => expect(screen.getByText('Last 10 (newest first)')).toBeInTheDocument());
+      expect(screen.getByRole('button', { name: /Export H2H/ })).toBeEnabled();
+      expect(screen.getByRole('button', { name: /Copy as text/ })).toBeEnabled();
+    });
+  });
+});
+
+// Phase 30.3 (Gate 6, owner/Codex hard gate): the persistent demo-account
+// label on the Opponents surface — one of the seven required surfaces.
+describe('OpponentsPage — demo account banner', () => {
+  beforeEach(() => {
+    resetAuthMock();
+    vi.clearAllMocks();
+    window.localStorage.clear();
+    upsertMe.mockResolvedValue({ uid: 'test-uid', email: 'test@example.com' });
+    listTournaments.mockResolvedValue([]);
+    listAliases.mockResolvedValue({});
+    listNotes.mockResolvedValue({});
+    setMockUser(makeMockUser());
+  });
+
+  it('shows the demo-account banner even on the no-matches hero empty state', async () => {
+    listMatches.mockResolvedValue([]);
+    getMe.mockResolvedValue(defaultProfile({ isDemoAccount: true }));
+
+    renderOpponents();
+
+    expect(await screen.findByText('No matches to scout yet!')).toBeInTheDocument();
+    expect(screen.getByTestId('demo-account-banner')).toBeInTheDocument();
+  });
+
+  it('positive control: shows no demo-account banner for an ordinary account', async () => {
+    listMatches.mockResolvedValue([]);
+    getMe.mockResolvedValue(defaultProfile({ isDemoAccount: false }));
+
+    renderOpponents();
+
+    await screen.findByText('No matches to scout yet!');
+    expect(screen.queryByTestId('demo-account-banner')).not.toBeInTheDocument();
   });
 });

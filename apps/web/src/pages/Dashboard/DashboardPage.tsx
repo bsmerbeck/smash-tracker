@@ -13,6 +13,7 @@ import { useOnboardingProgress } from '@/hooks/useOnboardingProgress';
 import { useCoachingClients } from '@/hooks/useCoachingClients';
 import { intentDestination } from '@/hooks/useOnboarding';
 import { getFighterById } from '@/data/sprites';
+import { DemoAccountBanner } from '@/components/DemoAccountBanner';
 import { FilteredEmptyNotice } from '@/components/FilteredEmptyNotice';
 import { DashboardContext, type DashboardContextValue } from './DashboardContext';
 import { DashboardToolbar } from './components/DashboardToolbar';
@@ -180,7 +181,12 @@ export function DashboardPage() {
   };
 
   if (fightersLoading || matchesLoading) {
-    return <div className="text-muted-foreground">{t('dashboard.loading')}</div>;
+    return (
+      <div className="flex flex-col gap-6">
+        <DemoAccountBanner />
+        <div className="text-muted-foreground">{t('dashboard.loading')}</div>
+      </div>
+    );
   }
 
   // Phase 30.1 Plan 05 (WKSP-01A, review C2-H2): `<SelfDataCoveragePanel />`
@@ -195,6 +201,7 @@ export function DashboardPage() {
   if (fighterSprites.length === 0) {
     return (
       <div className="flex flex-col gap-6">
+        <DemoAccountBanner />
         <SelfDataCoveragePanel />
         <div className="flex flex-col items-center gap-4 py-16 text-center">
           <h1 className="text-2xl font-semibold tracking-tight">{t('shared.noFighters.title')}</h1>
@@ -219,6 +226,7 @@ export function DashboardPage() {
   return (
     <DashboardContext.Provider value={contextValue}>
       <div className="flex flex-col gap-6">
+        <DemoAccountBanner />
         <SelfDataCoveragePanel />
         <DashboardNextBestAction />
         <DashboardPrepActionSlot />

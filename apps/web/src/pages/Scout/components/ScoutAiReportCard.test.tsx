@@ -4,6 +4,14 @@ import userEvent from '@testing-library/user-event';
 import type { ScoutReportRecord } from '@smash-tracker/shared';
 import { ScoutAiReportCard } from './ScoutAiReportCard';
 
+// Isolated component render (no AuthProvider ancestor) — mirrors
+// `DashboardPrepActionSlot.test.tsx`'s established pattern of mocking the
+// profile-derived hook directly rather than wiring up the whole auth stack.
+const useIsDemoAccount = vi.fn(() => false);
+vi.mock('@/hooks/useIsDemoAccount', () => ({
+  useIsDemoAccount: () => useIsDemoAccount(),
+}));
+
 const RECORD: ScoutReportRecord = {
   id: 'r1',
   createdAt: Date.now() - 60 * 1000,
@@ -26,6 +34,10 @@ const RECORD: ScoutReportRecord = {
     confidenceNotes: 'Only 20 games sampled — treat character splits as light samples.',
   },
 };
+
+beforeEach(() => {
+  useIsDemoAccount.mockReturnValue(false);
+});
 
 describe('ScoutAiReportCard', () => {
   it('renders the overview, gameplan, stage strategy, watch-for, and confidence notes', () => {
@@ -126,5 +138,30 @@ describe('ScoutAiReportCard — print', () => {
 
     expect(printSpy).toHaveBeenCalledTimes(1);
     printSpy.mockRestore();
+  });
+});
+
+// Phase 30.3 (Gate 6, owner/Codex hard gate): Download/Print are disabled
+// for a demo/research account, and a positive control proves an ordinary
+// account keeps both fully functional.
+describe('ScoutAiReportCard — demo account gating', () => {
+  it('disables Download and Print with an explanation for a demo account', () => {
+    useIsDemoAccount.mockReturnValue(true);
+    render(<ScoutAiReportCard record={RECORD} />);
+
+    const downloadButton = screen.getByRole('button', { name: /Download \(\.md\)/ });
+    const printButton = screen.getByRole('button', { name: /Print \/ Save as PDF/ });
+    expect(downloadButton).toBeDisabled();
+    expect(printButton).toBeDisabled();
+    expect(downloadButton).toHaveAttribute('title', 'Disabled for public-data research accounts.');
+    expect(printButton).toHaveAttribute('title', 'Disabled for public-data research accounts.');
+  });
+
+  it('positive control: an ordinary account keeps Download and Print enabled', () => {
+    useIsDemoAccount.mockReturnValue(false);
+    render(<ScoutAiReportCard record={RECORD} />);
+
+    expect(screen.getByRole('button', { name: /Download \(\.md\)/ })).toBeEnabled();
+    expect(screen.getByRole('button', { name: /Print \/ Save as PDF/ })).toBeEnabled();
   });
 });

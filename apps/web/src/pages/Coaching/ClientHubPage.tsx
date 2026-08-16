@@ -10,6 +10,7 @@ import {
   useDeleteCoachingClient,
 } from '@/hooks/useCoachingClients';
 import { useProfile } from '@/hooks/useProfile';
+import { DemoAccountBanner } from '@/components/DemoAccountBanner';
 import { describeCoachingError } from './describeCoachingError';
 import { CreateClientDialog } from './components/CreateClientDialog';
 import { ClientHubTable } from './components/ClientHubTable';
@@ -159,6 +160,7 @@ export function ClientHubPage() {
 
   return (
     <div className="mx-auto flex max-w-5xl flex-col gap-6">
+      <DemoAccountBanner />
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h1 className="text-2xl font-semibold tracking-tight">{t('coaching.hub.title')}</h1>
         {isNonEmpty && <CreateClientDialog triggerLabel={t('coaching.hub.createAnotherTrigger')} />}

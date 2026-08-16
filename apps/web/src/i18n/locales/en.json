@@ -2601,6 +2601,11 @@
     "error": {
       "loadFailed": "Something went wrong loading your prep brief. Please try again.",
       "addEventFailed": "Something went wrong adding this event. Please try again."
+    },
+    "importedBlocked": {
+      "title": "Prep isn't available for this event",
+      "body": "This is an imported historical record of public data — tournament prep only applies to your own upcoming events.",
+      "back": "Back to tournament"
     }
   },
   "prepPaid": {
@@ -2835,5 +2840,9 @@
         "unmatched": "Unmatched"
       }
     }
+  },
+  "demo": {
+    "accountBanner": "Public-data research snapshot — unverified, not player-owned or endorsed.",
+    "disabledReason": "Disabled for public-data research accounts."
   }
 }

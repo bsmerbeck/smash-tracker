@@ -34,6 +34,19 @@ const deliveriesCreate = vi.fn();
 const matchesList = vi.fn();
 const matchesCreate = vi.fn();
 const getFighters = vi.fn();
+const getMe = vi.fn();
+
+/** Phase 30.3 (Gate 6): the always-present `GET /api/users/me` profile shape. */
+function defaultProfile(overrides: { isDemoAccount?: boolean } = {}) {
+  return {
+    uid: 'test-uid',
+    email: 'test@example.com',
+    fighters: { primary: [], secondary: [] },
+    coachingModeEnabled: true,
+    onboardingIntent: null,
+    ...overrides,
+  };
+}
 
 vi.mock('@/lib/api', () => ({
   api: {
@@ -43,6 +56,7 @@ vi.mock('@/lib/api', () => ({
     },
     users: {
       getFighters: (...args: unknown[]) => getFighters(...args),
+      getMe: (...args: unknown[]) => getMe(...args),
     },
     coaching: {
       sessions: {
@@ -131,6 +145,7 @@ describe('SessionComposerPage', () => {
     );
     matchesList.mockResolvedValue([makeMatch()]);
     getFighters.mockResolvedValue({ primary: [1], secondary: [] });
+    getMe.mockResolvedValue(defaultProfile());
     matchesCreate.mockResolvedValue({
       id: 'new-match',
       fighter_id: 1,
@@ -238,6 +253,24 @@ describe('SessionComposerPage', () => {
       ),
     );
     expect(screen.getByText('Saved')).toBeInTheDocument();
+  });
+
+  // Phase 30.3 (Gate 6, owner/Codex hard gate): delivery-link creation
+  // disabled for a demo/research account, with a positive control.
+  it('disables Deliver with an explanation for a demo account', async () => {
+    getMe.mockResolvedValue(defaultProfile({ isDemoAccount: true }));
+    renderComposer();
+
+    const deliverButton = await screen.findByRole('button', { name: 'Deliver' });
+    expect(deliverButton).toBeDisabled();
+    expect(deliverButton).toHaveAttribute('title', 'Disabled for public-data research accounts.');
+  });
+
+  it('positive control: keeps Deliver enabled for an ordinary account', async () => {
+    getMe.mockResolvedValue(defaultProfile({ isDemoAccount: false }));
+    renderComposer();
+
+    expect(await screen.findByRole('button', { name: 'Deliver' })).toBeEnabled();
   });
 
   it('Deliver opens the VOD picker and does not mint until confirmed', async () => {

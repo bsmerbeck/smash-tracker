@@ -31,12 +31,26 @@ vi.mock('@/lib/firebase', async () => {
 const getFighters = vi.fn();
 const listMatches = vi.fn();
 const upsertMe = vi.fn().mockResolvedValue({ uid: 'test-uid', email: 'test@example.com' });
+const getMe = vi.fn();
+
+/** Phase 30.3 (Gate 6): the always-present `GET /api/users/me` profile shape. */
+function defaultProfile(overrides: { isDemoAccount?: boolean } = {}) {
+  return {
+    uid: 'test-uid',
+    email: 'test@example.com',
+    fighters: { primary: [], secondary: [] },
+    coachingModeEnabled: false,
+    onboardingIntent: null,
+    ...overrides,
+  };
+}
 
 vi.mock('@/lib/api', () => ({
   api: {
     users: {
       upsertMe: (...args: unknown[]) => upsertMe(...args),
       getFighters: (...args: unknown[]) => getFighters(...args),
+      getMe: (...args: unknown[]) => getMe(...args),
     },
     matches: {
       list: (...args: unknown[]) => listMatches(...args),
@@ -93,6 +107,7 @@ describe('MatchupsPage', () => {
     vi.clearAllMocks();
     window.localStorage.clear();
     upsertMe.mockResolvedValue({ uid: 'test-uid', email: 'test@example.com' });
+    getMe.mockResolvedValue(defaultProfile());
     setMockUser(makeMockUser());
   });
 
@@ -328,5 +343,39 @@ describe('MatchupsPage', () => {
     expect(await screen.findByText('Counterpick Advisor')).toBeInTheDocument();
     expect(screen.getByText('By Opponent')).toBeInTheDocument();
     expect(screen.getByText('alice')).toBeInTheDocument();
+  });
+});
+
+// Phase 30.3 (Gate 6, owner/Codex hard gate): the persistent demo-account
+// label on the Matchups surface — one of the seven required surfaces.
+describe('MatchupsPage — demo account banner', () => {
+  beforeEach(() => {
+    resetAuthMock();
+    vi.clearAllMocks();
+    window.localStorage.clear();
+    upsertMe.mockResolvedValue({ uid: 'test-uid', email: 'test@example.com' });
+    setMockUser(makeMockUser());
+  });
+
+  it('shows the demo-account banner even on the fighterless empty state', async () => {
+    getFighters.mockResolvedValue({ primary: [], secondary: [] });
+    listMatches.mockResolvedValue([]);
+    getMe.mockResolvedValue(defaultProfile({ isDemoAccount: true }));
+
+    renderMatchups();
+
+    expect(await screen.findByText("You haven't picked any fighters yet!")).toBeInTheDocument();
+    expect(screen.getByTestId('demo-account-banner')).toBeInTheDocument();
+  });
+
+  it('positive control: shows no demo-account banner for an ordinary account', async () => {
+    getFighters.mockResolvedValue({ primary: [], secondary: [] });
+    listMatches.mockResolvedValue([]);
+    getMe.mockResolvedValue(defaultProfile({ isDemoAccount: false }));
+
+    renderMatchups();
+
+    await screen.findByText("You haven't picked any fighters yet!");
+    expect(screen.queryByTestId('demo-account-banner')).not.toBeInTheDocument();
   });
 });

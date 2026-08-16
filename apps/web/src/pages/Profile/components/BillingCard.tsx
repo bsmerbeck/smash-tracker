@@ -6,6 +6,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { BuyCreditsDialog } from '@/components/billing/BuyCreditsDialog';
 import { useCredits } from '@/hooks/useBilling';
 import { useReportsConfig } from '@/hooks/useScoutReports';
+import { useIsDemoAccount } from '@/hooks/useIsDemoAccount';
 
 function formatUsd(amountCents: number, locale: string): string {
   return (amountCents / 100).toLocaleString(locale, { style: 'currency', currency: 'USD' });
@@ -22,6 +23,9 @@ export function BillingCard() {
   const reportsConfig = useReportsConfig();
   const credits = useCredits();
   const [buyCreditsOpen, setBuyCreditsOpen] = useState(false);
+  // Phase 30.3 (Gate 6): no Buy Credits control anywhere it renders, for a
+  // demo/research account (owner/Codex hard gate).
+  const isDemoAccount = useIsDemoAccount();
 
   if (!reportsConfig.data?.enabled) {
     return null;
@@ -30,7 +34,7 @@ export function BillingCard() {
   const creditsData = credits.data;
   const freeAccess = creditsData?.freeAccess ?? reportsConfig.data?.freeAccess ?? false;
   const packs = creditsData?.packs ?? [];
-  const canBuyCredits = !freeAccess && packs.length > 0;
+  const canBuyCredits = !freeAccess && packs.length > 0 && !isDemoAccount;
   const cheapestPack = packs[0];
 
   return (

@@ -773,3 +773,113 @@ describe('review mode composition (28-10)', () => {
     expect(screen.getByText('Manual')).toBeInTheDocument();
   });
 });
+
+/**
+ * Phase 30.3 (Gate 6, prep-bypass closure, explicit owner instruction): a
+ * direct/deep-linked navigation to `/tournaments/:entryKey/prep` for an
+ * admin-imported entry must expose NO prep activation, mirroring
+ * `TournamentDetailPage.tsx`'s existing CTA guard (which this exact route
+ * bypasses entirely) and `DashboardPrepActionSlot.tsx`'s own origin guard
+ * (which only stops the row from being OFFERED as a link). Every fixture
+ * here is deliberately FUTURE-DATED (`firstSetAt`/`lastSetAt` ahead of
+ * `Date.now()`) so the protection cannot pass by accident just because real
+ * imported events happen to be historical — only an explicit
+ * `origin === 'admin-imported'` check can prove the fix.
+ */
+describe('PrepBriefPage — admin-imported entry (prep-bypass closure)', () => {
+  beforeEach(() => {
+    resetAuthMock();
+    vi.clearAllMocks();
+    setMockUser(makeMockUser());
+    listMatches.mockResolvedValue([]);
+    listAliases.mockResolvedValue({});
+    listOpponents.mockResolvedValue([]);
+    listOpponentNotes.mockResolvedValue({});
+    mockUseActivatePrepBrief.mockReturnValue({
+      mutate: activateMutateSpy,
+      isPending: false,
+    } as unknown as ReturnType<typeof useActivatePrepBrief>);
+    mockUseReopenPrepBrief.mockReturnValue({
+      mutate: reopenMutateSpy,
+      isPending: false,
+    } as unknown as ReturnType<typeof useReopenPrepBrief>);
+    mockBriefStatus({ activated: false });
+  });
+
+  function makeFutureImportedEntry(overrides: Partial<TournamentEntry> = {}): TournamentEntry {
+    const now = Date.now();
+    return makeEntry({
+      firstSetAt: now + 86_400_000,
+      lastSetAt: now + 86_400_000 + 3_600_000,
+      ...overrides,
+      // origin is a web-local extension (`historicalTournament.ts`), not on
+      // the shared `TournamentEntry` type — cast at the call site, matching
+      // `TournamentDetailPage.test.tsx`'s own established fixture pattern.
+    } as Partial<TournamentEntry>) as TournamentEntry;
+  }
+
+  it('never fires activate or reopen for a future-dated admin-imported entry', async () => {
+    listTournaments.mockResolvedValue([
+      { ...makeFutureImportedEntry(), origin: 'admin-imported', provider: 'startgg' },
+    ]);
+
+    renderPage();
+
+    expect(await screen.findByTestId('prep-imported-blocked')).toBeInTheDocument();
+    expect(activateMutateSpy).not.toHaveBeenCalled();
+    expect(reopenMutateSpy).not.toHaveBeenCalled();
+  });
+
+  it('renders the imported-snapshot notice and a blocked explanation instead of the prep UI', async () => {
+    listTournaments.mockResolvedValue([
+      { ...makeFutureImportedEntry(), origin: 'admin-imported', provider: 'startgg' },
+    ]);
+
+    renderPage();
+
+    expect(await screen.findByTestId('imported-snapshot-notice')).toBeInTheDocument();
+    expect(screen.getByText("Prep isn't available for this event")).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        'This is an imported historical record of public data — tournament prep only applies to your own upcoming events.',
+      ),
+    ).toBeInTheDocument();
+    expect(screen.queryByText('Prep checklist')).not.toBeInTheDocument();
+    expect(screen.queryByText('Likely opponents')).not.toBeInTheDocument();
+  });
+
+  it('the blocked state links back to the tournament detail page, never dead-ending', async () => {
+    listTournaments.mockResolvedValue([
+      { ...makeFutureImportedEntry(), origin: 'admin-imported', provider: 'startgg' },
+    ]);
+
+    renderPage();
+
+    const backLink = await screen.findByRole('link', { name: 'Back to tournament' });
+    expect(backLink).toHaveAttribute('href', `/tournaments/${ENTRY_KEY}`);
+  });
+
+  it('positive control: a future-dated NON-imported entry still activates normally', async () => {
+    listTournaments.mockResolvedValue([makeFutureImportedEntry()]);
+
+    renderPage();
+
+    await screen.findByText('Prep checklist');
+    expect(activateMutateSpy).toHaveBeenCalledTimes(1);
+    expect(reopenMutateSpy).not.toHaveBeenCalled();
+    expect(screen.queryByTestId('prep-imported-blocked')).not.toBeInTheDocument();
+  });
+
+  it('still never activates even once an already-activated brief exists for the imported entryKey (reopen also blocked)', async () => {
+    listTournaments.mockResolvedValue([
+      { ...makeFutureImportedEntry(), origin: 'admin-imported', provider: 'startgg' },
+    ]);
+    mockBriefStatus({ activated: true });
+
+    renderPage();
+
+    expect(await screen.findByTestId('prep-imported-blocked')).toBeInTheDocument();
+    expect(activateMutateSpy).not.toHaveBeenCalled();
+    expect(reopenMutateSpy).not.toHaveBeenCalled();
+  });
+});

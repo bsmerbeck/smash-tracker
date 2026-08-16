@@ -41,13 +41,27 @@ const createNote = vi.fn();
 const updateNote = vi.fn();
 const deleteNote = vi.fn();
 const upsertMe = vi.fn().mockResolvedValue({ uid: 'test-uid', email: 'test@example.com' });
+const getMe = vi.fn();
 const getStageFavorites = vi.fn().mockResolvedValue({ stageIds: [], updatedAt: 0 });
+
+/** Phase 30.3 (Gate 6): the always-present `GET /api/users/me` profile shape. */
+function defaultProfile(overrides: { isDemoAccount?: boolean } = {}) {
+  return {
+    uid: 'test-uid',
+    email: 'test@example.com',
+    fighters: { primary: [], secondary: [] },
+    coachingModeEnabled: false,
+    onboardingIntent: null,
+    ...overrides,
+  };
+}
 
 vi.mock('@/lib/api', () => ({
   api: {
     users: {
       upsertMe: (...args: unknown[]) => upsertMe(...args),
       getFighters: (...args: unknown[]) => getFighters(...args),
+      getMe: (...args: unknown[]) => getMe(...args),
     },
     matches: {
       list: (...args: unknown[]) => listMatches(...args),
@@ -123,6 +137,7 @@ describe('MatchDataPage', () => {
     vi.clearAllMocks();
     window.localStorage.clear();
     upsertMe.mockResolvedValue({ uid: 'test-uid', email: 'test@example.com' });
+    getMe.mockResolvedValue(defaultProfile());
     setMockUser(makeMockUser());
     listOpponents.mockResolvedValue(['rival', 'other']);
     updateMatch.mockResolvedValue(makeMatch());
@@ -811,5 +826,68 @@ describe('MatchDataPage', () => {
     expect(clickSpy).toHaveBeenCalledTimes(1);
 
     clickSpy.mockRestore();
+  });
+});
+
+// Phase 30.3 (Gate 6, owner/Codex hard gate): the persistent demo-account
+// label on the Match Data surface — one of the seven required surfaces.
+describe('MatchDataPage — demo account banner', () => {
+  beforeEach(() => {
+    resetAuthMock();
+    vi.clearAllMocks();
+    window.localStorage.clear();
+    upsertMe.mockResolvedValue({ uid: 'test-uid', email: 'test@example.com' });
+    listOpponents.mockResolvedValue(['rival']);
+    getFighters.mockResolvedValue({ primary: [mario.id], secondary: [] });
+    listMatches.mockResolvedValue([makeMatch({ id: 'm1', opponent: 'rival' })]);
+    setMockUser(makeMockUser());
+  });
+
+  it('shows the demo-account banner when the profile is a demo account', async () => {
+    getMe.mockResolvedValue(defaultProfile({ isDemoAccount: true }));
+    renderMatchData();
+
+    expect(await screen.findByTestId('demo-account-banner')).toBeInTheDocument();
+  });
+
+  it('positive control: shows no demo-account banner for an ordinary account', async () => {
+    getMe.mockResolvedValue(defaultProfile({ isDemoAccount: false }));
+    renderMatchData();
+
+    await waitFor(() => expect(screen.getAllByText('rival')).not.toHaveLength(0));
+    expect(screen.queryByTestId('demo-account-banner')).not.toBeInTheDocument();
+  });
+});
+
+// Phase 30.3 (Gate 6): CSV export disabled-with-explanation for a demo
+// account, plus the positive control.
+describe('MatchDataPage — CSV export demo gating', () => {
+  beforeEach(() => {
+    resetAuthMock();
+    vi.clearAllMocks();
+    window.localStorage.clear();
+    upsertMe.mockResolvedValue({ uid: 'test-uid', email: 'test@example.com' });
+    listOpponents.mockResolvedValue(['rival']);
+    getFighters.mockResolvedValue({ primary: [mario.id], secondary: [] });
+    listMatches.mockResolvedValue([makeMatch({ id: 'm1', opponent: 'rival' })]);
+    setMockUser(makeMockUser());
+  });
+
+  it('disables Export CSV with an explanation for a demo account', async () => {
+    getMe.mockResolvedValue(defaultProfile({ isDemoAccount: true }));
+    renderMatchData();
+
+    await waitFor(() => expect(screen.getAllByText('rival')).not.toHaveLength(0));
+    const exportButton = await screen.findByRole('button', { name: 'Export CSV' });
+    expect(exportButton).toBeDisabled();
+    expect(exportButton).toHaveAttribute('title', 'Disabled for public-data research accounts.');
+  });
+
+  it('positive control: keeps Export CSV enabled for an ordinary account', async () => {
+    getMe.mockResolvedValue(defaultProfile({ isDemoAccount: false }));
+    renderMatchData();
+
+    await waitFor(() => expect(screen.getAllByText('rival')).not.toHaveLength(0));
+    expect(await screen.findByRole('button', { name: 'Export CSV' })).toBeEnabled();
   });
 });

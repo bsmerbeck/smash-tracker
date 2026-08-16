@@ -42,6 +42,14 @@ vi.mock('@/hooks/useBilling', () => ({
   useCredits: () => creditsResult,
 }));
 
+// Isolated component render (no AuthProvider ancestor) — mirrors
+// `DashboardPrepActionSlot.test.tsx`'s established pattern of mocking the
+// profile-derived hook directly.
+const useIsDemoAccount = vi.fn(() => false);
+vi.mock('@/hooks/useIsDemoAccount', () => ({
+  useIsDemoAccount: () => useIsDemoAccount(),
+}));
+
 let synthesisJobResult: { data: SynthesisJobStatusResponse | undefined } = {
   data: { job: null },
 };
@@ -100,6 +108,7 @@ beforeEach(() => {
   };
   synthesisJobResult = { data: { job: null } };
   practicePlanResult = { data: undefined };
+  useIsDemoAccount.mockReturnValue(false);
 });
 
 /** Text markers unique to each of the five mutually exclusive states. */
@@ -342,5 +351,44 @@ describe('PostEventSynthesisCard', () => {
           element?.textContent === "You're out of credits. Buy credits to get your practice plan.",
       ),
     ).toBeInTheDocument();
+  });
+});
+
+// Phase 30.3 (Gate 6, owner/Codex hard gate): no Buy Credits control
+// anywhere it renders, for a demo/research account — the dialog mount and
+// the inline insufficient-credits "Buy credits" link both gate on
+// `canBuyCredits`, which folds in `!isDemoAccount`.
+describe('PostEventSynthesisCard — demo account gating', () => {
+  it('never renders BuyCreditsDialog for a demo account, even after a 402', async () => {
+    useIsDemoAccount.mockReturnValue(true);
+    const user = userEvent.setup();
+    renderCard({ annotatedEvidenceCount: 3 });
+
+    await user.click(screen.getByRole('button', { name: /Get practice plan — 1 credit/ }));
+    const [, callOptions] = submitMutateSpy.mock.calls[0]!;
+    act(() => {
+      (callOptions as { onError: (error: unknown) => void }).onError(
+        new ApiError(402, 'payment required'),
+      );
+    });
+
+    expect(screen.queryByTestId('buy-credits-dialog')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Buy credits/ })).not.toBeInTheDocument();
+  });
+
+  it('positive control: an ordinary account still gets the Buy Credits dialog after a 402', async () => {
+    useIsDemoAccount.mockReturnValue(false);
+    const user = userEvent.setup();
+    renderCard({ annotatedEvidenceCount: 3 });
+
+    await user.click(screen.getByRole('button', { name: /Get practice plan — 1 credit/ }));
+    const [, callOptions] = submitMutateSpy.mock.calls[0]!;
+    act(() => {
+      (callOptions as { onError: (error: unknown) => void }).onError(
+        new ApiError(402, 'payment required'),
+      );
+    });
+
+    expect(screen.getByTestId('buy-credits-dialog')).toBeInTheDocument();
   });
 });

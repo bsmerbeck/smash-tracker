@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { ApiError } from '@/lib/api';
 import { useCredits } from '@/hooks/useBilling';
+import { useIsDemoAccount } from '@/hooks/useIsDemoAccount';
 import {
   useSubmitSynthesis,
   useSynthesisJob,
@@ -51,6 +52,9 @@ export function PostEventSynthesisCard({
   const { t } = useTranslation();
   const navigate = useNavigate();
   const credits = useCredits();
+  // Phase 30.3 (Gate 6): no Buy Credits control anywhere it renders, for a
+  // demo/research account (owner/Codex hard gate).
+  const isDemoAccount = useIsDemoAccount();
   const { data: jobData } = useSynthesisJob(entryKey);
   const submitSynthesis = useSubmitSynthesis(entryKey);
 
@@ -73,7 +77,7 @@ export function PostEventSynthesisCard({
   const creditsData = credits.data;
   const freeAccess = creditsData?.freeAccess ?? false;
   const availablePacks = creditsData?.packs ?? [];
-  const canBuyCredits = !freeAccess && availablePacks.length > 0;
+  const canBuyCredits = !freeAccess && availablePacks.length > 0 && !isDemoAccount;
 
   // Every purchase-path state below is mutually exclusive — exactly one
   // renders. The needAnnotations/buyCta split (both apply only with no
@@ -146,7 +150,11 @@ export function PostEventSynthesisCard({
                 {t('postEventPaid.buyCta')}
               </Button>
             </div>
-            {insufficientCredits && (
+            {/* Phase 30.3 (Gate 6): also gated on `canBuyCredits` (which
+                already folds in `!isDemoAccount`) — no Buy Credits control
+                anywhere it renders, including this inline insufficient-
+                credits hint. */}
+            {insufficientCredits && canBuyCredits && (
               <p className="text-sm text-muted-foreground">
                 {t('postEventPaid.insufficientCredits.body')}{' '}
                 <Button

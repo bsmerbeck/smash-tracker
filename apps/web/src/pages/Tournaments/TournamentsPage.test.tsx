@@ -29,12 +29,26 @@ vi.mock('@/lib/firebase', async () => {
 const listMatches = vi.fn();
 const listTournaments = vi.fn();
 const upsertMe = vi.fn().mockResolvedValue({ uid: 'test-uid', email: 'test@example.com' });
+const getMe = vi.fn();
 const listAliases = vi.fn();
+
+/** Phase 30.3 (Gate 6): the always-present `GET /api/users/me` profile shape. */
+function defaultProfile(overrides: { isDemoAccount?: boolean } = {}) {
+  return {
+    uid: 'test-uid',
+    email: 'test@example.com',
+    fighters: { primary: [], secondary: [] },
+    coachingModeEnabled: false,
+    onboardingIntent: null,
+    ...overrides,
+  };
+}
 
 vi.mock('@/lib/api', () => ({
   api: {
     users: {
       upsertMe: (...args: unknown[]) => upsertMe(...args),
+      getMe: (...args: unknown[]) => getMe(...args),
     },
     matches: {
       list: (...args: unknown[]) => listMatches(...args),
@@ -75,6 +89,7 @@ describe('TournamentsPage', () => {
     vi.clearAllMocks();
     window.localStorage.clear();
     upsertMe.mockResolvedValue({ uid: 'test-uid', email: 'test@example.com' });
+    getMe.mockResolvedValue(defaultProfile());
     listAliases.mockResolvedValue({});
     setMockUser(makeMockUser());
   });
@@ -128,5 +143,42 @@ describe('TournamentsPage', () => {
         'No tournaments yet — sync your start.gg or parry.gg matches and check back here!',
       ),
     ).not.toBeInTheDocument();
+  });
+});
+
+// Phase 30.3 (Gate 6, owner/Codex hard gate): the persistent demo-account
+// label on the Tournaments surface — one of the seven required surfaces.
+describe('TournamentsPage — demo account banner', () => {
+  beforeEach(() => {
+    resetAuthMock();
+    vi.clearAllMocks();
+    window.localStorage.clear();
+    upsertMe.mockResolvedValue({ uid: 'test-uid', email: 'test@example.com' });
+    listAliases.mockResolvedValue({});
+    listMatches.mockResolvedValue([]);
+    listTournaments.mockResolvedValue([]);
+    setMockUser(makeMockUser());
+  });
+
+  it('shows the demo-account banner even on the no-tournaments empty state', async () => {
+    getMe.mockResolvedValue(defaultProfile({ isDemoAccount: true }));
+    renderPage();
+
+    expect(
+      await screen.findByText(
+        'No tournaments yet — sync your start.gg or parry.gg matches and check back here!',
+      ),
+    ).toBeInTheDocument();
+    expect(screen.getByTestId('demo-account-banner')).toBeInTheDocument();
+  });
+
+  it('positive control: shows no demo-account banner for an ordinary account', async () => {
+    getMe.mockResolvedValue(defaultProfile({ isDemoAccount: false }));
+    renderPage();
+
+    await screen.findByText(
+      'No tournaments yet — sync your start.gg or parry.gg matches and check back here!',
+    );
+    expect(screen.queryByTestId('demo-account-banner')).not.toBeInTheDocument();
   });
 });

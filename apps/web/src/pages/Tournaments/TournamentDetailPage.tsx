@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { useTournamentEntries } from '@/hooks/useTournamentEntries';
 import { useMatches } from '@/hooks/useMatches';
 import { usePrepBrief } from '@/hooks/usePrepBrief';
+import { useIsDemoAccount } from '@/hooks/useIsDemoAccount';
 import { isAdminImportedEntry } from '@/lib/historicalTournament';
 import { TournamentHeader } from './components/TournamentHeader';
 import { EventResults } from './components/EventResults';
@@ -74,6 +75,12 @@ export function TournamentDetailPage() {
   const { eventId } = useParams<{ eventId: string }>();
   const { data: entries, isLoading: entriesLoading } = useTournamentEntries();
   const { data: allMatches = [], isLoading: matchesLoading } = useMatches();
+  // Phase 30.3 (Gate 6): recap creation (`GenerateRecapDialog`, which mints
+  // a bearer-token share) is disabled-with-explanation for a demo/research
+  // account (owner/Codex hard gate) — independent of this page's existing
+  // admin-imported origin guard on the PREP cta below, which is a different
+  // concern (historical-event ineligibility, not account-level policy).
+  const isDemoAccount = useIsDemoAccount();
   const [recapDialogOpen, setRecapDialogOpen] = useState(false);
   // React Compiler forbids a bare `Date.now()` call in the render body (it's
   // impure) — a lazy `useState` initializer is the sanctioned one-time-read
@@ -157,7 +164,12 @@ export function TournamentDetailPage() {
             </Button>
           )}
           {canGenerateRecap && (
-            <Button type="button" onClick={() => setRecapDialogOpen(true)}>
+            <Button
+              type="button"
+              onClick={() => setRecapDialogOpen(true)}
+              disabled={isDemoAccount}
+              title={isDemoAccount ? t('demo.disabledReason') : undefined}
+            >
               {t('tournaments.recap.generateButton')}
             </Button>
           )}

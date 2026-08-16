@@ -30,9 +30,23 @@ const sessionsCreate = vi.fn();
 const deliveriesList = vi.fn();
 const deliveriesCreate = vi.fn();
 const deliveriesRevoke = vi.fn();
+const getMe = vi.fn();
+
+/** Phase 30.3 (Gate 6): the always-present `GET /api/users/me` profile shape. */
+function defaultProfile(overrides: { isDemoAccount?: boolean } = {}) {
+  return {
+    uid: 'test-uid',
+    email: 'test@example.com',
+    fighters: { primary: [], secondary: [] },
+    coachingModeEnabled: true,
+    onboardingIntent: null,
+    ...overrides,
+  };
+}
 
 vi.mock('@/lib/api', () => ({
   api: {
+    users: { getMe: (...args: unknown[]) => getMe(...args) },
     coaching: {
       sessions: {
         list: (...args: unknown[]) => sessionsList(...args),
@@ -112,6 +126,7 @@ describe('SessionsListPage', () => {
     vi.clearAllMocks();
     setMockUser(makeMockUser());
     deliveriesList.mockResolvedValue([]);
+    getMe.mockResolvedValue(defaultProfile());
   });
 
   it('shows the row date, character tags, and homework progress', async () => {
@@ -170,6 +185,43 @@ describe('SessionsListPage', () => {
 
     await user.click(await screen.findByRole('button', { name: 'Delivery and more actions' }));
     await user.click(await screen.findByRole('menuitem', { name: 'Deliver' }));
+
+    await waitFor(() => expect(deliveriesCreate).toHaveBeenCalledWith('tetra', 's1'));
+  });
+
+  // Phase 30.3 (Gate 6, owner/Codex hard gate): delivery-link creation
+  // disabled for a demo/research account, with a positive control.
+  it('disables Deliver for a demo account', async () => {
+    sessionsList.mockResolvedValue([makeSession()]);
+    getMe.mockResolvedValue(defaultProfile({ isDemoAccount: true }));
+    const user = userEvent.setup();
+    renderList();
+
+    await user.click(await screen.findByRole('button', { name: 'Delivery and more actions' }));
+
+    expect(await screen.findByRole('menuitem', { name: 'Deliver' })).toHaveAttribute(
+      'aria-disabled',
+      'true',
+    );
+    await user.click(screen.getByRole('menuitem', { name: 'Deliver' }));
+    expect(deliveriesCreate).not.toHaveBeenCalled();
+  });
+
+  it('positive control: keeps Deliver enabled and functional for an ordinary account', async () => {
+    sessionsList.mockResolvedValue([makeSession()]);
+    getMe.mockResolvedValue(defaultProfile({ isDemoAccount: false }));
+    deliveriesCreate.mockResolvedValue({
+      deliveryId: 'd1',
+      token: 'tok1',
+      url: 'https://x/r/tok1',
+    });
+    const user = userEvent.setup();
+    renderList();
+
+    await user.click(await screen.findByRole('button', { name: 'Delivery and more actions' }));
+    const deliverItem = await screen.findByRole('menuitem', { name: 'Deliver' });
+    expect(deliverItem).not.toHaveAttribute('aria-disabled', 'true');
+    await user.click(deliverItem);
 
     await waitFor(() => expect(deliveriesCreate).toHaveBeenCalledWith('tetra', 's1'));
   });

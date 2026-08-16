@@ -22,6 +22,7 @@ import { LiquipediaAttributionBadge } from '@/components/enrichment/LiquipediaAt
 import { MATCH_PRESET_TAGS, addTagToList, removeTagFromList, tagLabel } from '@/lib/tags';
 import { addMatchToPlaylistIds } from '@/lib/playlists';
 import { useActiveSubject } from '@/hooks/useActiveSubject';
+import { useIsDemoAccount } from '@/hooks/useIsDemoAccount';
 import { useUpdateMatch } from '@/hooks/useUpdateMatch';
 import { useCreatePlaylist, useUpdatePlaylist } from '@/hooks/usePlaylists';
 import { useVodShares } from '@/hooks/useVodShares';
@@ -236,6 +237,10 @@ export function SelectedMatchMeta({
   // unavailable state on the Share entry point below, never the coach's own
   // personal share list.
   const { mode: coachingMode } = useActiveSubject();
+  // Phase 30.3 (Gate 6): bearer-token share creation is disabled-with-
+  // explanation for a demo/research account (owner/Codex hard gate) — the
+  // API refuses the mint server-side; this is the affordance half.
+  const isDemoAccount = useIsDemoAccount();
 
   // "Shared" indicator (SHARE-05) — client-side soft-orphan join against the
   // owner's full share list, mirroring `resolvePlaylistMatches`'s pattern:
@@ -401,8 +406,14 @@ export function SelectedMatchMeta({
               type="button"
               variant="outline"
               size="sm"
-              disabled={!match.vodUrl}
-              title={!match.vodUrl ? t('vodManager.shares.requiresVod') : undefined}
+              disabled={!match.vodUrl || isDemoAccount}
+              title={
+                isDemoAccount
+                  ? t('demo.disabledReason')
+                  : !match.vodUrl
+                    ? t('vodManager.shares.requiresVod')
+                    : undefined
+              }
               aria-label={t('vodManager.shares.shareButtonAria')}
               onClick={() => setShareDialogOpen(true)}
             >

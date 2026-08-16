@@ -11,6 +11,7 @@ import { useStageFavorites, useToggleStageFavorite } from '@/hooks/useStageFavor
 import { useSubjectPath } from '@/hooks/useSubjectPath';
 import { getFighterById } from '@/data/sprites';
 import { ChooseFavoritesPrompt } from '@/components/ChooseFavoritesPrompt';
+import { DemoAccountBanner } from '@/components/DemoAccountBanner';
 import { FilteredEmptyNotice } from '@/components/FilteredEmptyNotice';
 import { inferFighterIdsFromMatches } from '@/lib/inferredFighters';
 import { AddMatchForm } from '@/pages/Dashboard/components/AddMatchForm';
@@ -53,23 +54,33 @@ export function MatchDataPage() {
   const fighterSprites = useSortedFighters(rawFighterSprites);
 
   if (fightersLoading || matchesLoading) {
-    return <div className="text-muted-foreground">{t('matchData.loading')}</div>;
+    return (
+      <div className="flex flex-col gap-6">
+        <DemoAccountBanner />
+        <div className="text-muted-foreground">{t('matchData.loading')}</div>
+      </div>
+    );
   }
 
   if (fighterSprites.length === 0) {
     return (
-      <div className="flex flex-col items-center gap-4 py-16 text-center">
-        <h1 className="text-2xl font-semibold tracking-tight">{t('shared.noFighters.title')}</h1>
-        <p className="max-w-md text-muted-foreground">{t('shared.noFighters.subtitle')}</p>
-        <div className="flex flex-wrap justify-center gap-2">
-          <Button asChild>
-            <Link to={subjectPath('/choose-primary')}>{t('shared.noFighters.choosePrimary')}</Link>
-          </Button>
-          <Button asChild variant="outline">
-            <Link to={subjectPath('/choose-secondary')}>
-              {t('shared.noFighters.chooseSecondary')}
-            </Link>
-          </Button>
+      <div className="flex flex-col gap-6">
+        <DemoAccountBanner />
+        <div className="flex flex-col items-center gap-4 py-16 text-center">
+          <h1 className="text-2xl font-semibold tracking-tight">{t('shared.noFighters.title')}</h1>
+          <p className="max-w-md text-muted-foreground">{t('shared.noFighters.subtitle')}</p>
+          <div className="flex flex-wrap justify-center gap-2">
+            <Button asChild>
+              <Link to={subjectPath('/choose-primary')}>
+                {t('shared.noFighters.choosePrimary')}
+              </Link>
+            </Button>
+            <Button asChild variant="outline">
+              <Link to={subjectPath('/choose-secondary')}>
+                {t('shared.noFighters.chooseSecondary')}
+              </Link>
+            </Button>
+          </div>
         </div>
       </div>
     );
@@ -77,13 +88,16 @@ export function MatchDataPage() {
 
   if (allMatches.length === 0) {
     return (
-      <div className="flex flex-col items-center gap-2 py-16 text-center">
-        <h2 className="text-xl font-semibold tracking-tight">{t('matchData.noMatches')}</h2>
-        <div className="mt-2 flex flex-wrap justify-center gap-2">
-          <AddMatchForm fighterSprites={fighterSprites} fighter={fighterSprites[0]} />
-          <Button asChild variant="outline">
-            <Link to={subjectPath('/dashboard')}>{t('common.goToDashboard')}</Link>
-          </Button>
+      <div className="flex flex-col gap-6">
+        <DemoAccountBanner />
+        <div className="flex flex-col items-center gap-2 py-16 text-center">
+          <h2 className="text-xl font-semibold tracking-tight">{t('matchData.noMatches')}</h2>
+          <div className="mt-2 flex flex-wrap justify-center gap-2">
+            <AddMatchForm fighterSprites={fighterSprites} fighter={fighterSprites[0]} />
+            <Button asChild variant="outline">
+              <Link to={subjectPath('/dashboard')}>{t('common.goToDashboard')}</Link>
+            </Button>
+          </div>
         </div>
       </div>
     );
@@ -91,6 +105,7 @@ export function MatchDataPage() {
 
   return (
     <div className="flex flex-col gap-6">
+      <DemoAccountBanner />
       {usingInferredFighters && <ChooseFavoritesPrompt />}
       {filterActive && matches.length === 0 && <FilteredEmptyNotice />}
 

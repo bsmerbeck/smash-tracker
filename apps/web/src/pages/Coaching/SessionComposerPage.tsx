@@ -18,6 +18,7 @@ import {
 } from '@/hooks/useCoachingSessions';
 import { useMatches } from '@/hooks/useMatches';
 import { useFighters } from '@/hooks/useFighters';
+import { useIsDemoAccount } from '@/hooks/useIsDemoAccount';
 import {
   useAlphaFighters,
   useFighterNameResolver,
@@ -106,6 +107,9 @@ export function SessionComposerPage() {
   const updateSession = useUpdateCoachingSession(clientId, sessionId);
   const toggleHomework = useToggleHomeworkItem(clientId, sessionId);
   const createDelivery = useCreateSessionDelivery(clientId, sessionId);
+  // Phase 30.3 (Gate 6): delivery-LINK CREATION is disabled-with-explanation
+  // for a demo/research account (owner/Codex hard gate).
+  const isDemoAccount = useIsDemoAccount();
   const fighterName = useFighterNameResolver();
   // 260725-Q1: the "characters covered" tag picker offers the full roster
   // alphabetized by localized name, not SpriteList's raw roster order.
@@ -357,7 +361,13 @@ export function SessionComposerPage() {
         </h1>
         <div className="flex items-center gap-3">
           <SaveStatusIndicator status={status} />
-          <PendingButton type="button" onClick={handleDeliver} pending={createDelivery.isPending}>
+          <PendingButton
+            type="button"
+            onClick={handleDeliver}
+            pending={createDelivery.isPending}
+            disabled={isDemoAccount}
+            title={isDemoAccount ? t('demo.disabledReason') : undefined}
+          >
             {t('coaching.sessions.composer.deliver')}
           </PendingButton>
         </div>

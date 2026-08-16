@@ -115,6 +115,7 @@ import {
   type UpsertOpponentNoteInput,
   type UpsertStageFavoritesInput,
 } from '@smash-tracker/shared';
+import { webUserProfileSchema } from './demoAccount';
 import { webEnrichmentAttributionResponseSchema } from './enrichmentEvidence';
 import { getFirebaseAuth } from './firebase';
 import { historicalTournamentEntryListSchema } from './historicalTournament';
@@ -534,8 +535,14 @@ export const api = {
         method: 'PUT',
         body: input,
       }),
-    /** GET /api/users/me */
-    getMe: () => apiRequestParsed('/api/users/me', userProfileSchema),
+    /**
+     * GET /api/users/me — parses with the web-side EXTENDED schema
+     * (`isDemoAccount`, additive over the shared response shape), not the
+     * narrower shared schema directly. See `demoAccount.ts`'s module doc
+     * comment (Phase 30.3 Gate 6) for why, and the exact API field this is
+     * forward-compatible with before it exists.
+     */
+    getMe: () => apiRequestParsed('/api/users/me', webUserProfileSchema),
     /** GET /api/users/me/fighters */
     getFighters: () => apiRequestParsed('/api/users/me/fighters', fighterSelectionSchema),
     /** PUT /api/users/me/fighters */

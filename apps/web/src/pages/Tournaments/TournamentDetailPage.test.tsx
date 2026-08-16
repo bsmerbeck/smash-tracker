@@ -37,12 +37,28 @@ vi.mock('@/lib/firebase', async () => {
 const listMatches = vi.fn();
 const listTournaments = vi.fn();
 const createVodShare = vi.fn();
+const getMe = vi.fn();
+
+/** Phase 30.3 (Gate 6): the always-present `GET /api/users/me` profile shape. */
+function defaultProfile(overrides: { isDemoAccount?: boolean } = {}) {
+  return {
+    uid: 'test-uid',
+    email: 'test@example.com',
+    fighters: { primary: [], secondary: [] },
+    coachingModeEnabled: false,
+    onboardingIntent: null,
+    ...overrides,
+  };
+}
 
 vi.mock('@/lib/api', async () => {
   const actual = await vi.importActual<typeof import('@/lib/api')>('@/lib/api');
   return {
     ...actual,
     api: {
+      users: {
+        getMe: (...args: unknown[]) => getMe(...args),
+      },
       matches: {
         list: (...args: unknown[]) => listMatches(...args),
       },
@@ -124,6 +140,7 @@ describe('TournamentDetailPage', () => {
     resetAuthMock();
     vi.clearAllMocks();
     setMockUser(makeMockUser());
+    getMe.mockResolvedValue(defaultProfile());
     // Default: resolved, no brief — individual prep-CTA tests override this.
     mockPrepBrief({ isPending: false, activated: false });
   });
@@ -305,6 +322,30 @@ describe('TournamentDetailPage', () => {
 
     expect(await screen.findByText('Recap link ready')).toBeInTheDocument();
     expect(screen.getByDisplayValue('https://grandfinals.gg/s/tok')).toBeInTheDocument();
+  });
+
+  // Phase 30.3 (Gate 6, owner/Codex hard gate): recap creation disabled for
+  // a demo/research account, with a positive control.
+  it('disables Generate recap with an explanation for a demo account', async () => {
+    listTournaments.mockResolvedValue([makeEntry({ eventId: 42, setsPlayed: 3 })]);
+    listMatches.mockResolvedValue([]);
+    getMe.mockResolvedValue(defaultProfile({ isDemoAccount: true }));
+
+    renderPage('42');
+
+    const generateButton = await screen.findByRole('button', { name: 'Generate recap' });
+    expect(generateButton).toBeDisabled();
+    expect(generateButton).toHaveAttribute('title', 'Disabled for public-data research accounts.');
+  });
+
+  it('positive control: keeps Generate recap enabled for an ordinary account', async () => {
+    listTournaments.mockResolvedValue([makeEntry({ eventId: 42, setsPlayed: 3 })]);
+    listMatches.mockResolvedValue([]);
+    getMe.mockResolvedValue(defaultProfile({ isDemoAccount: false }));
+
+    renderPage('42');
+
+    expect(await screen.findByRole('button', { name: 'Generate recap' })).toBeEnabled();
   });
 
   describe('prep brief CTA', () => {

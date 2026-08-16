@@ -4,6 +4,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import type { ScoutReportRecord } from '@smash-tracker/shared';
+import { useIsDemoAccount } from '@/hooks/useIsDemoAccount';
 import { formatRelativeDate } from '@/lib/relativeDate';
 import { reportMarkdownFilename, reportToMarkdown } from '../reportMarkdown';
 
@@ -36,10 +37,16 @@ function downloadMarkdown(record: ScoutReportRecord) {
  * - A `characterStrategy` section, co-equal with stage strategy. Optional on
  *   the stored-record schema (pre-V7-B.1 reports lack it) — omitted here
  *   when absent rather than rendering an empty section.
+ *
+ * Phase 30.3 (Gate 6): Download/Print disabled-with-explanation for a demo/
+ * research account (owner/Codex hard gate) — the same download/print class
+ * of affordance gated on `/opponents`' H2H export and `/match-data`'s CSV
+ * export.
  */
 export function ScoutAiReportCard({ record }: { record: ScoutReportRecord }) {
   const { t } = useTranslation();
   const { report } = record;
+  const isDemoAccount = useIsDemoAccount();
 
   return (
     <>
@@ -61,11 +68,20 @@ export function ScoutAiReportCard({ record }: { record: ScoutReportRecord }) {
               variant="outline"
               size="sm"
               onClick={() => downloadMarkdown(record)}
+              disabled={isDemoAccount}
+              title={isDemoAccount ? t('demo.disabledReason') : undefined}
             >
               <Download />
               {t('scout.aiReport.download')}
             </Button>
-            <Button type="button" variant="outline" size="sm" onClick={() => window.print()}>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => window.print()}
+              disabled={isDemoAccount}
+              title={isDemoAccount ? t('demo.disabledReason') : undefined}
+            >
               <Printer />
               {t('scout.aiReport.print')}
             </Button>

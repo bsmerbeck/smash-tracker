@@ -16,6 +16,7 @@ import {
   useRevokeReviewDelivery,
 } from '@/hooks/useCoachingReviews';
 import { useMatches } from '@/hooks/useMatches';
+import { useIsDemoAccount } from '@/hooks/useIsDemoAccount';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
@@ -125,7 +126,12 @@ function ReviewDeliveryMenu({ clientId, review }: ReviewDeliveryMenuProps) {
 
   const activeDelivery: ReviewDeliveryListItem | null =
     deliveries.data?.find((delivery) => delivery.revokedAt == null) ?? null;
-  const canDeliver = review.status === 'published' && review.latestVersion != null;
+  // Phase 30.3 (Gate 6): delivery-LINK CREATION is disabled-with-explanation
+  // for a demo/research account (owner/Codex hard gate) — copy-link/revoke/
+  // archive stay enabled, only minting a fresh delivery is gated.
+  const isDemoAccount = useIsDemoAccount();
+  const canDeliver =
+    review.status === 'published' && review.latestVersion != null && !isDemoAccount;
 
   async function copyToClipboard(url: string) {
     if (typeof navigator === 'undefined' || !navigator.clipboard) {
