@@ -1156,6 +1156,165 @@ describe('runEnrichmentBatch cross-tenant and cross-version freshness (30.2 defe
     expect(WIKITEXT_PAGE_CACHE_FRESHNESS_VERSION).toContain(WIKITEXT_PROBE_PARSER_VERSION);
   });
 
+  it('DEFECT C: a page with two same-template brackets persists BOTH matches under distinct observation ids', async () => {
+    const database = new FakeDatabase();
+    await seedProviderSet(database);
+    const multiBracketWikitext =
+      '{{TournamentInfo|game=ultimate|tourneylink=TestCup/2026}}\n' +
+      '==Pool A==\n' +
+      '{{8DEWBracketA|r1m1p1=Alice|r1m1p2=Bob|r1m1p1score=3|r1m1p2score=1}}\n' +
+      '==Pool B==\n' +
+      '{{8DEWBracketA|r1m1p1=Carol|r1m1p2=Dave|r1m1p1score=3|r1m1p2score=2}}';
+    const { client } = buildFixtureClient({
+      vodPagePresence: new Map([[VOD_PAGE_TITLE, true]]),
+      vodPageRevisionId: new Map([[VOD_PAGE_TITLE, 500]]),
+      generatedContent: new Map([
+        [VOD_PAGE_TITLE, { content: buildVodPageBody(), mode: 'expandtemplates' }],
+      ]),
+      wikitextPages: new Map([
+        [
+          TOURNAMENT_TITLE,
+          { revisionId: 10, sha1: 'sha-tournament-v1', content: buildTournamentWikitext() },
+        ],
+        [
+          BRACKET_TITLE,
+          { revisionId: 20, sha1: 'sha-multibracket-v1', content: multiBracketWikitext },
+        ],
+      ]),
+      subpagesByPrefix: new Map([
+        [
+          TOURNAMENT_TITLE,
+          [
+            { title: TOURNAMENT_TITLE, pageId: 1 },
+            { title: BRACKET_TITLE, pageId: 2 },
+          ],
+        ],
+      ]),
+    });
+
+    const result = await runEnrichmentBatch({
+      database: asDatabase(database),
+      client,
+      tenantId: TENANT_ID,
+      playerLabels: ['TestPlayer'],
+      targetGame: 'ultimate',
+      nowMs: 1_000,
+      hashHex: sha256Hex,
+      dryRun: false,
+    });
+
+    expect(result.counts.observationsExtracted).toBe(2);
+    const stored = await database.ref(`researchEnrichmentObservations/${TENANT_ID}`).get();
+    const records = Object.values(
+      stored.val() as Record<string, { templateFamily: string; players?: { rawTag: string }[] }>,
+    ).filter((record) => record.templateFamily === 'legacy');
+    // Pre-fix behavior: the second bracket's r1m1 OVERWROTE the first's
+    // (upsert by colliding id) and only one legacy record survived.
+    expect(records).toHaveLength(2);
+    const tags = records.flatMap((record) => (record.players ?? []).map((p) => p.rawTag)).sort();
+    expect(tags).toEqual(['Alice', 'Bob', 'Carol', 'Dave']);
+  });
+
+  it('DEFECT C re-key reconciliation: a re-extracted page supersedes its old-parser-version records, cascading receipt and attachments, without touching current-version records', async () => {
+    const database = new FakeDatabase();
+    const { result: firstResult } = await runHappyPath(database, 1_000);
+    expect(firstResult.counts.attachmentsCreated).toBeGreaterThanOrEqual(1);
+
+    // Seed the production shape: records left behind by the PREVIOUS parser
+    // generation (old ids, old version) for the same bracket page, with
+    // their derived receipt and attachment.
+    const staleId = 'stale-old-parser-obs-1';
+    await database.ref(`researchEnrichmentObservations/${TENANT_ID}/${staleId}`).set({
+      observationId: staleId,
+      sourceProvider: 'liquipedia',
+      sourceWiki: 'smash',
+      contentType: 'stage-observation',
+      sourcePageTitle: BRACKET_TITLE,
+      sourcePageUrl: 'https://liquipedia.net/smash/TestCup/2026/Bracket',
+      sourceRevisionId: 20,
+      sourceContentHash: sha256Hex('old-parser-content'),
+      parserVersion: 'liquipedia-bracket-legacy@1',
+      templateFamily: 'legacy',
+      fetchedAtMs: 500,
+      observedAtMs: 500,
+      matchingStatus: 'unmatched',
+      players: [{ rawTag: 'TestPlayer' }, { rawTag: 'OppTag' }],
+    });
+    await database.ref(`researchEnrichmentReceipts/${TENANT_ID}/${staleId}`).set({
+      receiptId: 'stale-receipt',
+      observationId: staleId,
+      targetSetId: 'set-1',
+      confidence: 'high',
+      resolvedAtMs: 500,
+      resolverVersion: 'liquipedia-resolver@1',
+      sourceRevisionId: 20,
+      sourceContentHash: sha256Hex('old-parser-content'),
+      parserVersion: 'liquipedia-bracket-legacy@1',
+      candidateTargetSetIds: ['set-1'],
+    });
+    await database.ref(`researchEnrichmentAttachments/${TENANT_ID}/set-1/${staleId}`).set({
+      observationId: staleId,
+      targetSetId: 'set-1',
+      attachmentSource: 'resolver',
+      attachedAtMs: 500,
+      sourceRevisionId: 20,
+      sourceContentHash: sha256Hex('old-parser-content'),
+      parserVersion: 'liquipedia-bracket-legacy@1',
+      receiptId: 'stale-receipt',
+    });
+
+    // Force the wikitext pages to re-extract (the old-parser production
+    // state: cache entries written under the previous composed version).
+    const cacheSnapshot = await database.ref('liquipediaPageCache').get();
+    for (const [key, entry] of Object.entries(
+      cacheSnapshot.val() as Record<string, { pageClass: string }>,
+    )) {
+      if (entry.pageClass === 'wikitext') {
+        await database
+          .ref(`liquipediaPageCache/${key}/parserVersion`)
+          .set('stale-composed-version@old');
+      }
+    }
+
+    const { client: secondClient } = buildHappyPathClient();
+    const second = await runEnrichmentBatch({
+      database: asDatabase(database),
+      client: secondClient,
+      tenantId: TENANT_ID,
+      playerLabels: ['TestPlayer'],
+      targetGame: 'ultimate',
+      nowMs: 2_000,
+      hashHex: sha256Hex,
+      dryRun: false,
+    });
+
+    expect(second.counts.observationsSuperseded).toBe(1);
+    const staleObservation = await database
+      .ref(`researchEnrichmentObservations/${TENANT_ID}/${staleId}`)
+      .get();
+    expect(staleObservation.exists()).toBe(false);
+    const staleReceipt = await database
+      .ref(`researchEnrichmentReceipts/${TENANT_ID}/${staleId}`)
+      .get();
+    expect(staleReceipt.exists()).toBe(false);
+    const staleAttachment = await database
+      .ref(`researchEnrichmentAttachments/${TENANT_ID}/set-1/${staleId}`)
+      .get();
+    expect(staleAttachment.exists()).toBe(false);
+
+    // The CURRENT-version records and their projection are untouched: no
+    // old+new twins anywhere, and the row keeps its value.
+    const observations = await database.ref(`researchEnrichmentObservations/${TENANT_ID}`).get();
+    const parserVersions = new Set(
+      Object.values(observations.val() as Record<string, { parserVersion: string }>).map(
+        (record) => record.parserVersion,
+      ),
+    );
+    expect(parserVersions.has('liquipedia-bracket-legacy@1')).toBe(false);
+    const row = await database.ref(`matches/${TENANT_ID}/sgg-set-1-g1`).get();
+    expect((row.val() as { vodUrl?: string }).vodUrl).toBe(VOD_URL);
+  });
+
   it('DEFECT B: cache entries written under an older adapter version are treated as stale — the page re-fetches and its observations re-persist', async () => {
     const database = new FakeDatabase();
     const { result: firstResult } = await runHappyPath(database, 1_000);

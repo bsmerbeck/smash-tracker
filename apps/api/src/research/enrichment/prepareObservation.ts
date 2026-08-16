@@ -39,6 +39,54 @@ export class EnrichmentObservationInvalidError extends Error {
 }
 
 /**
+ * 30.2 production defect C, parity half: two gathered observations sharing
+ * one `observationId` can only ever persist as ONE record (the store
+ * upserts by id), so a duplicate id inside a single gather is an
+ * UNDER-KEYED DISCRIMINATOR — a structural failure that must abort the
+ * dry-run/apply at extraction time, never shrink production silently. The
+ * original defect hashed 9,367 records into the reviewed manifest while
+ * persistence could only ever hold 9,225 distinct ids.
+ */
+export class EnrichmentObservationCollisionError extends Error {
+  constructor(
+    readonly observationId: string,
+    readonly firstSourcePageTitle: string,
+    readonly secondSourcePageTitle: string,
+  ) {
+    super(
+      `enrichment observation id collision: ${observationId} was produced twice in one gather ` +
+        `(pages "${firstSourcePageTitle}" and "${secondSourcePageTitle}") — the id discriminator is ` +
+        'under-keyed; persistence upserts by id and would silently drop one record. Stop-ship parity defect.',
+    );
+    this.name = 'EnrichmentObservationCollisionError';
+  }
+}
+
+/**
+ * A stateful per-gather guard: `register` every prepared observation the
+ * moment it is gathered; a repeated id throws
+ * `EnrichmentObservationCollisionError` naming both source pages, so any
+ * future under-keying aborts at extraction time on BOTH the dry-run and the
+ * apply path (same code path, same failure).
+ */
+export function createObservationIdCollisionGuard(): (
+  record: ResearchEnrichmentObservationRecord,
+) => void {
+  const firstPageByObservationId = new Map<string, string>();
+  return (record) => {
+    const firstPage = firstPageByObservationId.get(record.observationId);
+    if (firstPage !== undefined) {
+      throw new EnrichmentObservationCollisionError(
+        record.observationId,
+        firstPage,
+        record.sourcePageTitle,
+      );
+    }
+    firstPageByObservationId.set(record.observationId, record.sourcePageTitle);
+  };
+}
+
+/**
  * Parses one adapter-built observation through the exact persistence schema.
  * Returns the SCHEMA-PARSED record (the byte-identical value
  * `writeEnrichmentObservation` would persist); throws
@@ -102,6 +150,23 @@ function canonicalize(value: unknown): string {
 export function computeObservationPersistenceHash(
   records: readonly ResearchEnrichmentObservationRecord[],
 ): string {
+  // COLLISION-LOUD (30.2 defect C): a duplicate id in the hashed list means
+  // the manifest would cover MORE records than persistence can ever hold
+  // (the store upserts by id) — the exact silent-shrink shape the parity
+  // seam exists to make impossible. Refuse to hash it.
+  const firstPageByObservationId = new Map<string, string>();
+  for (const record of records) {
+    const firstPage = firstPageByObservationId.get(record.observationId);
+    if (firstPage !== undefined) {
+      throw new EnrichmentObservationCollisionError(
+        record.observationId,
+        firstPage,
+        record.sourcePageTitle,
+      );
+    }
+    firstPageByObservationId.set(record.observationId, record.sourcePageTitle);
+  }
+
   const canonicalRecords = records
     .map((record) => {
       // eslint-disable-next-line @typescript-eslint/no-unused-vars -- rest-destructure-to-omit idiom; the two clock stamps are intentionally discarded

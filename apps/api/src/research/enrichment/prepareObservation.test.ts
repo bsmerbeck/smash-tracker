@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import type { ResearchEnrichmentObservationRecord } from '@smash-tracker/shared';
 import {
+  EnrichmentObservationCollisionError,
   EnrichmentObservationInvalidError,
   computeObservationPersistenceHash,
+  createObservationIdCollisionGuard,
   prepareAndValidateObservation,
 } from './prepareObservation.js';
 
@@ -82,5 +84,38 @@ describe('computeObservationPersistenceHash', () => {
     expect(computeObservationPersistenceHash([{ ...a, vodUrl: 'https://youtu.be/x' }, b])).not.toBe(
       baseline,
     );
+  });
+
+  // 30.2 defect C: the parity seam must make an under-keyed discriminator
+  // impossible to miss — a duplicate id means persistence can only ever hold
+  // FEWER records than the manifest claims to cover.
+  it('refuses to hash a list containing a duplicate observationId, naming both source pages', () => {
+    const a = makeObservation({ observationId: 'obs-colliding' });
+    const twin = makeObservation({
+      observationId: 'obs-colliding',
+      sourcePageTitle: 'OtherCup/2026/Bracket',
+    });
+    let caught: unknown;
+    try {
+      computeObservationPersistenceHash([a, twin]);
+    } catch (error) {
+      caught = error;
+    }
+    expect(caught).toBeInstanceOf(EnrichmentObservationCollisionError);
+    const err = caught as EnrichmentObservationCollisionError;
+    expect(err.observationId).toBe('obs-colliding');
+    expect(err.firstSourcePageTitle).toBe('TestCup/2026/Bracket');
+    expect(err.secondSourcePageTitle).toBe('OtherCup/2026/Bracket');
+  });
+});
+
+describe('createObservationIdCollisionGuard', () => {
+  it('accepts distinct ids and throws on the second sighting of an id — dry-run and apply share this gather-time guard', () => {
+    const guard = createObservationIdCollisionGuard();
+    guard(makeObservation({ observationId: 'obs-1' }));
+    guard(makeObservation({ observationId: 'obs-2' }));
+    expect(() =>
+      guard(makeObservation({ observationId: 'obs-1', sourcePageTitle: 'Twin/Page' })),
+    ).toThrow(EnrichmentObservationCollisionError);
   });
 });

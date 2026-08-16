@@ -31,6 +31,7 @@ import { extractMatch2BracketObservations } from '../../liquipedia/adapters/matc
 import { buildCandidateIndex } from './candidateIndex.js';
 import {
   computeObservationPersistenceHash,
+  createObservationIdCollisionGuard,
   prepareAndValidateObservation,
 } from './prepareObservation.js';
 import { buildResolutionReceipt, resolveObservation } from './resolution.js';
@@ -41,6 +42,7 @@ import {
   listEnrichmentObservations,
   listEnrichmentReviewQueue,
   readEnrichmentObservation,
+  removeSupersededObservations,
   writeEnrichmentObservation,
   writeResolutionReceipt,
 } from './store.js';
@@ -279,6 +281,8 @@ export interface EnrichmentBatchCounts {
   projectionsApplied: number;
   /** Attached sets reprojected by the resume-reconciliation pass because their overlay keys lacked a witness (or held a pending half) — see `reconcileAttachedSets`. */
   projectionsReconciled: number;
+  /** Stored observations removed by the per-page stale-parser supersede pass (30.2 defect-C re-key reconciliation) — old-version records for a page this run re-extracted, cascaded with their receipts and attachments. */
+  observationsSuperseded: number;
   backoffEvents: number;
 }
 
@@ -311,6 +315,7 @@ function emptyCounts(): EnrichmentBatchCounts {
     attachmentsAbstained: 0,
     projectionsApplied: 0,
     projectionsReconciled: 0,
+    observationsSuperseded: 0,
     backoffEvents: 0,
   };
 }
@@ -569,7 +574,36 @@ export async function runEnrichmentBatch(
   // a PRIOR invocation persisted.
   const gatheredObservations: ResearchEnrichmentObservationRecord[] = [];
 
+  // COLLISION-LOUD parity (30.2 defect C): every gathered observation
+  // registers its id here; a duplicate within one gather aborts the run at
+  // extraction time — dry-run and apply alike — instead of letting the
+  // store's upsert-by-id silently drop a record.
+  const registerObservationId = createObservationIdCollisionGuard();
+
+  // The stale-parser supersede index (30.2 defect-C re-key reconciliation):
+  // a snapshot of the tenant's PRE-RUN observations, grouped by source page.
+  // After a page is re-extracted this run, any indexed record for that page
+  // whose parserVersion differs from the version this extraction used is
+  // provably a prior parser generation's record — its new-id twin has just
+  // been written — and is removed (with its receipt and attachments) so
+  // coverage and the review queue never hold old+new twins. Records at the
+  // CURRENT version are never touched (a same-version shrink is refresh.ts's
+  // shrink-guard jurisdiction). Read ONCE at run start — records written
+  // during this run all carry the current versions and never enter it.
+  const staleObservationIndex: Map<
+    string,
+    { observationId: string; parserVersion: string }[]
+  > | null = !dryRun && !resumedAtProjection ? new Map() : null;
+
   try {
+    if (staleObservationIndex) {
+      for (const record of await listEnrichmentObservations(database, tenantId)) {
+        const entries = staleObservationIndex.get(record.sourcePageTitle) ?? [];
+        entries.push({ observationId: record.observationId, parserVersion: record.parserVersion });
+        staleObservationIndex.set(record.sourcePageTitle, entries);
+      }
+    }
+
     if (!resumedAtProjection) {
       await gatherPhase({
         database,
@@ -587,6 +621,8 @@ export async function runEnrichmentBatch(
         dryRunDetails,
         tick,
         advanceCursor,
+        registerObservationId,
+        staleObservationIndex,
       });
 
       if (!dryRun && runId && holder) {
@@ -668,6 +704,10 @@ interface GatherPhaseInput {
   dryRunDetails: EnrichmentDryRunDetails | undefined;
   tick: (stage: EnrichmentRunProgressEvent['stage'], unit?: string) => Promise<void>;
   advanceCursor: (cursor: EnrichmentRunCursor) => Promise<void>;
+  /** The per-gather duplicate-id guard (30.2 defect C) — throws on the second sighting of an id. */
+  registerObservationId: (record: ResearchEnrichmentObservationRecord) => void;
+  /** Pre-run observation snapshot by source page for the stale-parser supersede pass; `null` on dry runs and projection resumes. */
+  staleObservationIndex: Map<string, { observationId: string; parserVersion: string }[]> | null;
 }
 
 async function gatherPhase(input: GatherPhaseInput): Promise<void> {
@@ -687,7 +727,31 @@ async function gatherPhase(input: GatherPhaseInput): Promise<void> {
     dryRunDetails,
     tick,
     advanceCursor,
+    registerObservationId,
+    staleObservationIndex,
   } = input;
+
+  /** Removes the re-extracted page's prior-parser-generation records (with receipts/attachments) — see the index's doc comment in `runEnrichmentBatch`. */
+  async function supersedeStaleForPage(
+    sourcePageTitle: string,
+    currentParserVersion: string,
+  ): Promise<void> {
+    if (!staleObservationIndex) {
+      return;
+    }
+    const staleIds = (staleObservationIndex.get(sourcePageTitle) ?? [])
+      .filter((entry) => entry.parserVersion !== currentParserVersion)
+      .map((entry) => entry.observationId);
+    if (staleIds.length === 0) {
+      return;
+    }
+    const { removedObservationIds } = await removeSupersededObservations(
+      database,
+      tenantId,
+      staleIds,
+    );
+    counts.observationsSuperseded += removedObservationIds.length;
+  }
 
   // --- Discovery: resolve player VOD pages, dedupe, fetch + extract -------
   const resolved = await callWithRetry(() => resolvePlayerVodPages(client, playerLabels), counts);
@@ -777,8 +841,10 @@ async function gatherPhase(input: GatherPhaseInput): Promise<void> {
     for (const record of records) {
       // THE PARITY GATE (30.2 reliability): every gathered record passes the
       // exact persistence schema HERE, identically on dry-run and apply —
-      // never only at the write boundary.
+      // never only at the write boundary. The collision guard makes a
+      // duplicate id equally loud (30.2 defect C).
       const prepared = prepareAndValidateObservation(record);
+      registerObservationId(prepared);
       gatheredObservations.push(prepared);
       if (prepared.tournamentPageTitle) {
         tournamentPageTitles.add(prepared.tournamentPageTitle);
@@ -798,6 +864,7 @@ async function gatherPhase(input: GatherPhaseInput): Promise<void> {
         contentHash: extraction.contentHash,
         observationCount: records.length,
       });
+      await supersedeStaleForPage(vodPageTitle, LIQUIPEDIA_PARSER_VERSION_VOD_LIST);
     }
     // A VOD page whose records are all persisted (and whose page cache is
     // written) is a completed, durable work unit.
@@ -960,6 +1027,7 @@ async function gatherPhase(input: GatherPhaseInput): Promise<void> {
         extractionFailed: true,
       };
       const preparedUnmatched = prepareAndValidateObservation(unmatched);
+      registerObservationId(preparedUnmatched);
       gatheredObservations.push(preparedUnmatched);
       if (!dryRun) {
         await writeEnrichmentObservation(database, tenantId, preparedUnmatched);
@@ -973,6 +1041,7 @@ async function gatherPhase(input: GatherPhaseInput): Promise<void> {
           sha1: page.sha1,
           contentHash: page.contentHash,
         });
+        await supersedeStaleForPage(page.title, WIKITEXT_PROBE_PARSER_VERSION);
       }
       await tick('extraction', page.title);
       await advanceCursor({ stage: 'extraction', pageTitle: page.title });
@@ -1017,6 +1086,7 @@ async function gatherPhase(input: GatherPhaseInput): Promise<void> {
     for (const observation of extracted.observations) {
       // THE PARITY GATE (30.2 reliability): see the VOD-record loop above.
       const prepared = prepareAndValidateObservation(observation);
+      registerObservationId(prepared);
       gatheredObservations.push(prepared);
       if (!dryRun) {
         await writeEnrichmentObservation(database, tenantId, prepared);
@@ -1034,6 +1104,12 @@ async function gatherPhase(input: GatherPhaseInput): Promise<void> {
         sha1: page.sha1,
         contentHash: page.contentHash,
       });
+      await supersedeStaleForPage(
+        page.title,
+        detected.family === 'legacy'
+          ? LIQUIPEDIA_PARSER_VERSION_BRACKET_LEGACY
+          : LIQUIPEDIA_PARSER_VERSION_BRACKET_MATCH2,
+      );
     }
     // A bracket page whose observations are all persisted (and whose page
     // cache is written) is a completed, durable work unit.
@@ -1360,9 +1436,12 @@ async function resolveAndProjectPhase(input: ResolveAndProjectPhaseInput): Promi
       observations: observationsById,
     });
     const preview = await previewEnrichmentProjection(database, tenantId, targetSetId, overlay);
-    const hasStrandedFill = preview.rows.some(
-      (row) => row.vodOutcome === 'filled-empty' || row.stageOutcome === 'enriched',
-    );
+    // Row-change-aware trigger (30.2 defect-C composition): the outcome
+    // labels alone can no longer distinguish "row already holds our
+    // projection" from "row is missing its fill" (the own-projection stage
+    // guard reports both as `enriched`), so the trigger is the preview's
+    // explicit would-this-apply-change-the-row signal.
+    const hasStrandedFill = preview.rows.some((row) => row.wouldChangeRow === true);
     if (!hasStrandedFill) {
       continue;
     }
