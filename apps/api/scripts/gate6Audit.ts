@@ -10,8 +10,13 @@
  *   pnpm --filter @smash-tracker/api exec tsx scripts/gate6Audit.ts \
  *     --hbox-uid <uid> --mkleo-uid <uid> --sparg0-uid <uid> --izaw-uid <uid> \
  *     [--baseline ./gate6-baseline.json] [--out ./gate6-receipt.json] \
- *     [--registry-receipt ./receipt-hbox.json]... [--require-registry-receipt] \
- *     [--require-baseline] [--strict-witness-observation-refs] [--quiet]
+ *     [--registry-receipt ./receipt-hbox.json]... \
+ *     [--registry-manifest ./registry-manifest.hbox.json]... \
+ *     [--rejected-operation-probe ./probe-hbox.json]... \
+ *     [--require-registry-receipt] [--require-rejected-operation-probe] \
+ *     [--require-baseline] [--strict-witness-observation-refs] [--quiet] \
+ *     [--request-timeout-ms 30000] [--max-stall-ms 300000] [--heartbeat-ms 30000] \
+ *     [--max-receipt-age-ms 86400000] [--max-probe-age-ms 86400000]
  *
  * EXIT CODE IS THE VERDICT: `0` only when every assertion holds; `1` on ANY
  * mismatch, on a malformed baseline, and on any unexpected error. The JSON
@@ -28,16 +33,36 @@
  *   run should always pass it, so an accidentally-missing baseline file can
  *   never turn the preservation assertions into a silent no-op.
  *
- * REGISTRY RECEIPT ATTESTATION (assertion 12), the cross-tool seam:
+ * REGISTRY ATTESTATION (assertion 12), the cross-tool seam:
  * - `--registry-receipt <path>` is REPEATABLE — one per account. Each file is
  *   matched to its workspace by its OWN sealed `workspace` member, so the
  *   flags need no per-account variants and a mislabelled file is caught by
- *   the uid cross-check rather than silently accepted.
- * - Supplying none SKIPS the assertion: `status: 'skipped'` with a
+ *   the uid cross-check rather than silently accepted. Since hard gate #4 the
+ *   attestation requires a COMPARE receipt: an apply observes its own
+ *   post-state, whereas compare is an independent later read.
+ * - `--registry-manifest <path>` is REPEATABLE and now REQUIRED alongside the
+ *   receipts: the audit checks that each receipt names the exact manifest the
+ *   owner is reviewing, and that the LIVE generated rows still hash to it.
+ * - Supplying no receipt SKIPS the assertion: `status: 'skipped'` with a
  *   `skipReason`, visible in the JSON and in the terminal, and counted in the
  *   receipt's `skippedCount`. Skipped is never rendered as passed.
  * - `--require-registry-receipt` turns absence — and partial coverage of the
  *   four accounts — into findings, mirroring `--require-baseline`.
+ *
+ * REJECTED-OPERATION PROBES (assertion 10):
+ * - `--rejected-operation-probe <path>` is REPEATABLE. Each sealed probe
+ *   records one REFUSED operation and the bounded trace snapshots taken
+ *   immediately before and after it; the audit requires them to be identical.
+ *   See the assertion-10 contract in `gate6AuditCore.ts` for why this replaced
+ *   the old lifetime-absence scan, which failed a healthy system.
+ * - `--require-rejected-operation-probe` mirrors the receipt flag.
+ *
+ * BOUNDED EXECUTION. Every RTDB read carries `--request-timeout-ms`, a
+ * heartbeat prints progress every `--heartbeat-ms`, and a no-progress
+ * watchdog aborts after `--max-stall-ms`. A hung read therefore reaches a
+ * terminal result instead of hanging the gate — which is also what arms
+ * `runWithLifecycle`'s hard-exit backstop, since that only starts once the run
+ * settles.
  *
  * This script performs READS ONLY — it constructs no write of any kind.
  */
@@ -47,14 +72,21 @@ import { loadEnv } from '../src/config/env.js';
 import { initFirebase } from '../src/firebase/admin.js';
 import { runWithLifecycle } from './enrichLifecycle.js';
 import {
+  GATE6_DEFAULT_HEARTBEAT_INTERVAL_MS,
+  GATE6_DEFAULT_MAX_PROBE_AGE_MS,
+  GATE6_DEFAULT_MAX_RECEIPT_AGE_MS,
+  GATE6_DEFAULT_MAX_STALL_MS,
   GATE6_WORKSPACE_KEYS,
   parseGate6Baseline,
   runGate6Audit,
   type Gate6AuditReceipt,
   type Gate6Baseline,
+  type Gate6RegistryManifestInput,
   type Gate6RegistryReceiptInput,
+  type Gate6RejectedOperationProbeInput,
   type Gate6UidMap,
 } from './gate6AuditCore.js';
+import { DEFAULT_REGISTRY_REQUEST_TIMEOUT_MS } from '../src/research/registry/deadline.js';
 
 interface ParsedArgs {
   uids: Gate6UidMap;
@@ -62,21 +94,36 @@ interface ParsedArgs {
   outPath: string | null;
   /** Repeatable: one registry-operator receipt file per account. */
   registryReceiptPaths: string[];
+  /** Repeatable: the reviewed manifests those receipts must name. */
+  registryManifestPaths: string[];
+  /** Repeatable: one sealed rejected-operation probe per refused call. */
+  rejectedOperationProbePaths: string[];
   requireBaseline: boolean;
   requireRegistryReceipts: boolean;
+  requireRejectedOperationProbes: boolean;
   strictWitnessObservationRefs: boolean;
   quiet: boolean;
+  requestTimeoutMs: number;
+  maxStallMs: number;
+  heartbeatIntervalMs: number;
+  maxReceiptAgeMs: number;
+  maxProbeAgeMs: number;
 }
 
 const BOOLEAN_FLAGS = new Set([
   '--require-baseline',
   '--require-registry-receipt',
+  '--require-rejected-operation-probe',
   '--strict-witness-observation-refs',
   '--quiet',
 ]);
 
 /** Flags that may appear more than once; every occurrence is kept. */
-const REPEATABLE_FLAGS = new Set(['--registry-receipt']);
+const REPEATABLE_FLAGS = new Set([
+  '--registry-receipt',
+  '--registry-manifest',
+  '--rejected-operation-probe',
+]);
 
 function parseArgs(argv: string[]): ParsedArgs {
   const flags = new Map<string, string>();
@@ -118,10 +165,30 @@ function parseArgs(argv: string[]): ParsedArgs {
     baselinePath: flags.get('--baseline') ?? null,
     outPath: flags.get('--out') ?? null,
     registryReceiptPaths: repeated.get('--registry-receipt') ?? [],
+    registryManifestPaths: repeated.get('--registry-manifest') ?? [],
+    rejectedOperationProbePaths: repeated.get('--rejected-operation-probe') ?? [],
     requireBaseline: switches.has('--require-baseline'),
     requireRegistryReceipts: switches.has('--require-registry-receipt'),
+    requireRejectedOperationProbes: switches.has('--require-rejected-operation-probe'),
     strictWitnessObservationRefs: switches.has('--strict-witness-observation-refs'),
     quiet: switches.has('--quiet'),
+    requestTimeoutMs: positiveInteger(
+      flags,
+      '--request-timeout-ms',
+      DEFAULT_REGISTRY_REQUEST_TIMEOUT_MS,
+    ),
+    maxStallMs: positiveInteger(flags, '--max-stall-ms', GATE6_DEFAULT_MAX_STALL_MS),
+    heartbeatIntervalMs: positiveInteger(
+      flags,
+      '--heartbeat-ms',
+      GATE6_DEFAULT_HEARTBEAT_INTERVAL_MS,
+    ),
+    maxReceiptAgeMs: positiveInteger(
+      flags,
+      '--max-receipt-age-ms',
+      GATE6_DEFAULT_MAX_RECEIPT_AGE_MS,
+    ),
+    maxProbeAgeMs: positiveInteger(flags, '--max-probe-age-ms', GATE6_DEFAULT_MAX_PROBE_AGE_MS),
   };
 }
 
@@ -129,6 +196,15 @@ function required(flags: Map<string, string>, name: string): string {
   const value = flags.get(name);
   if (!value) {
     throw new Error(`Missing required flag ${name}`);
+  }
+  return value;
+}
+
+function positiveInteger(flags: Map<string, string>, name: string, fallback: number): number {
+  const raw = flags.get(name);
+  const value = raw == null ? fallback : Number(raw);
+  if (!Number.isInteger(value) || value <= 0) {
+    throw new Error(`${name} must be a positive integer`);
   }
   return value;
 }
@@ -151,20 +227,23 @@ async function loadBaseline(path: string | null): Promise<Gate6Baseline | null> 
 }
 
 /**
- * Reads each receipt file as raw JSON. Validation is the CORE's job (a
+ * Reads each evidence file as raw JSON. Validation is the CORE's job (a
  * tampered seal must be a FINDING in the audit output, not a shell crash), so
  * this only surfaces I/O and JSON-syntax problems — and even those are handed
  * on as an unparseable `raw` rather than thrown, so one bad file cannot hide
- * the other eleven assertions.
+ * the other assertions.
  */
-async function loadRegistryReceipts(paths: string[]): Promise<Gate6RegistryReceiptInput[]> {
-  const inputs: Gate6RegistryReceiptInput[] = [];
+async function loadEvidence(
+  kind: string,
+  paths: string[],
+): Promise<{ path: string; raw: unknown }[]> {
+  const inputs: { path: string; raw: unknown }[] = [];
   for (const path of paths) {
     try {
       inputs.push({ path, raw: JSON.parse(await readFile(path, 'utf8')) });
     } catch (error) {
       console.error(
-        `registry receipt ${path} could not be read as JSON: ${error instanceof Error ? error.message : String(error)}`,
+        `${kind} ${path} could not be read as JSON: ${error instanceof Error ? error.message : String(error)}`,
       );
       inputs.push({ path, raw: null });
     }
@@ -182,6 +261,7 @@ function summarize(receipt: Gate6AuditReceipt): void {
       attachments: row.attachments,
       charWitnesses: row.characterWitnesses,
       stockWitnesses: row.stockWitnesses,
+      registryRows: row.registryOwnedRows,
       run: row.enrichmentRunStatus ?? '-',
     })),
   );
@@ -202,6 +282,28 @@ function summarize(receipt: Gate6AuditReceipt): void {
         command: row.command ?? '-',
         status: row.status ?? '-',
         hostChecked: row.databaseHostChecked,
+      })),
+    );
+  }
+  if (receipt.registryManifests.length > 0) {
+    console.table(
+      receipt.registryManifests.map((row) => ({
+        path: row.path,
+        valid: row.valid,
+        scope: row.scope.join(',') || '-',
+        contentHash: row.contentHash?.slice(0, 12) ?? '-',
+      })),
+    );
+  }
+  if (receipt.rejectedOperationProbes.length > 0) {
+    console.table(
+      receipt.rejectedOperationProbes.map((row) => ({
+        path: row.path,
+        valid: row.valid,
+        workspace: row.workspace ?? '-',
+        operation: row.operation ?? '-',
+        surfaces: row.surfacesCompared,
+        wroteNothing: row.wroteNothing,
       })),
     );
   }
@@ -238,18 +340,34 @@ async function main(): Promise<void> {
     );
   }
 
-  const registryReceipts = await loadRegistryReceipts(args.registryReceiptPaths);
+  const registryReceipts: Gate6RegistryReceiptInput[] = await loadEvidence(
+    'registry receipt',
+    args.registryReceiptPaths,
+  );
+  const registryManifests: Gate6RegistryManifestInput[] = await loadEvidence(
+    'registry manifest',
+    args.registryManifestPaths,
+  );
+  const rejectedOperationProbes: Gate6RejectedOperationProbeInput[] = await loadEvidence(
+    'rejected-operation probe',
+    args.rejectedOperationProbePaths,
+  );
 
   const env = loadEnv();
   const firebase = initFirebase(env);
   const databaseHost = new URL(env.FIREBASE_DATABASE_URL).host;
 
   await runWithLifecycle({
-    run: async () => {
+    run: async (signal) => {
       console.log(`Database host: ${databaseHost}`);
       console.log(`Baseline mode: ${baseline === null ? 'record' : 'compare'}`);
       console.log(
-        `Registry receipts: ${registryReceipts.length === 0 ? 'none supplied (attestation will be SKIPPED)' : registryReceipts.length}`,
+        `Bounds: requestTimeoutMs=${args.requestTimeoutMs} maxStallMs=${args.maxStallMs} heartbeatMs=${args.heartbeatIntervalMs}`,
+      );
+      console.log(
+        `Registry receipts: ${registryReceipts.length === 0 ? 'none supplied (attestation will be SKIPPED)' : registryReceipts.length}` +
+          ` · manifests: ${registryManifests.length}` +
+          ` · rejected-operation probes: ${rejectedOperationProbes.length === 0 ? 'none supplied (assertion will be SKIPPED)' : rejectedOperationProbes.length}`,
       );
 
       const receipt = await runGate6Audit(firebase.database, {
@@ -258,11 +376,23 @@ async function main(): Promise<void> {
         baseline,
         strictWitnessObservationRefs: args.strictWitnessObservationRefs,
         registryReceipts,
+        registryManifests,
         requireRegistryReceipts: args.requireRegistryReceipts,
+        rejectedOperationProbes,
+        requireRejectedOperationProbes: args.requireRejectedOperationProbes,
         // The receipt's `databaseHost` is cross-checked against the database
         // this audit is actually pointed at — a receipt sealed on staging is
         // not evidence about production.
         expectedDatabaseHost: databaseHost,
+        maxReceiptAgeMs: args.maxReceiptAgeMs,
+        maxProbeAgeMs: args.maxProbeAgeMs,
+        // Bounded execution: the lifecycle wrapper's signal reaches every RTDB
+        // read, so an interrupt stops the audit at the next read boundary
+        // instead of after it eventually returns.
+        requestTimeoutMs: args.requestTimeoutMs,
+        maxStallMs: args.maxStallMs,
+        heartbeatIntervalMs: args.heartbeatIntervalMs,
+        signal,
       });
 
       if (args.outPath !== null) {
@@ -303,4 +433,8 @@ async function main(): Promise<void> {
 void main().catch((error: unknown) => {
   console.error(error instanceof Error ? (error.stack ?? error.message) : String(error));
   process.exitCode = 1;
+  // The failure happened BEFORE the lifecycle wrapper could own termination
+  // (env/config/Firebase init), or the audit itself threw an execution
+  // condition. Arm the same unref'd backstop so neither path can zombie.
+  setTimeout(() => process.exit(process.exitCode ?? 1), 10_000).unref();
 });

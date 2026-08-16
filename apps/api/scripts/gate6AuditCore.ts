@@ -3,13 +3,21 @@ import type { Database } from 'firebase-admin/database';
 import { z } from 'zod';
 import {
   isSourceOwnedVodValue,
+  isTournamentRegistryOwnedRow,
   researchEnrichmentAttachmentRecordSchema,
   researchEnrichmentObservationRecordSchema,
   researchEnrichmentProjectionStateRecordSchema,
   researchEnrichmentResolutionReceiptRecordSchema,
   researchEnrichmentRunRecordSchema,
   researchTenantIngestionStateSchema,
+  tournamentRegistryRowSchema,
+  type TournamentRegistryRow,
 } from '@smash-tracker/shared';
+import { canonicalDigest } from '../src/research/registry/canonical.js';
+import {
+  DEFAULT_REGISTRY_REQUEST_TIMEOUT_MS,
+  withRegistryDeadline,
+} from '../src/research/registry/deadline.js';
 import {
   computeForeignRowDigest,
   describeForeignRowDigestDelta,
@@ -22,6 +30,12 @@ import {
 } from '../src/research/registry/receipt.js';
 import { registryWorkspaceKeys } from '../src/research/registry/workspaces.js';
 import { isPathSafeTenantId } from '../src/research/subjectKind.js';
+import { dayShardKey } from '../src/events/ledger.js';
+import {
+  computeRegistryRowSetHash,
+  parseSealedRegistryManifest,
+  type RegistryManifest,
+} from './registryManifestArtifact.js';
 
 /**
  * Phase 30.3 Gate 6: the COMMITTED acceptance oracle for the demo-account
@@ -186,22 +200,43 @@ export const GATE6_EXPECTATIONS: Record<Gate6WorkspaceKey, Gate6Expectation> = {
 export const GATE6_SPARG0_USER_OWNED_VOD_ROWS = 13;
 
 /**
- * The zero-trace trees. The five CANONICAL names come from the shipped proof
- * in `apps/api/src/research/isolationEnumeration.test.ts` (which pins each to
- * its owning module by grep rather than to any manifest); `credits`,
- * `reportJobs` and `reportJobsByStatus` are the credit/job trees named by the
- * Gate-6 brief and are marked non-canonical so the provenance stays honest.
+ * THE UID-KEYED TRACE SURFACES a refused operation could have written.
+ *
+ * Read at exactly `${path}/${uid}` — never scanned. Each is a tree the
+ * enrichment/report/share paths write into, addressed by the acting uid, so
+ * one direct read per surface bounds the whole check.
  */
-export const GATE6_ZERO_TRACE_TREES = [
-  { tree: 'eventLedger', shape: 'day-sharded', canonical: true },
-  { tree: 'eventDedup', shape: 'causation-keyed', canonical: true },
-  { tree: 'outboxPending', shape: 'day-sharded', canonical: true },
-  { tree: 'shareTokens', shape: 'owner-member', canonical: true },
-  { tree: 'creditLedger', shape: 'uid-keyed', canonical: true },
-  { tree: 'credits', shape: 'uid-keyed', canonical: false },
-  { tree: 'reportJobs', shape: 'uid-keyed', canonical: false },
-  { tree: 'reportJobsByStatus', shape: 'status-then-uid', canonical: false },
+export const GATE6_UID_TRACE_SURFACES = [
+  'creditLedger',
+  'credits',
+  'reportJobs',
+  // The job-status index has exactly one status vocabulary member in this
+  // codebase (`reportJobsByStatus/running/{uid}/{jobId}` — see
+  // `routes/reports.ts` and `jobs/sweepStuckReportJobs.ts`), so it is
+  // addressed directly rather than by enumerating the status level.
+  'reportJobsByStatus/running',
+  // The OWNER index for bearer tokens. `shareTokens` itself is keyed by an
+  // opaque token and has no uid in its address; `sharesByUser/{uid}` is the
+  // uid-addressable half the share writers maintain alongside it, so a token
+  // minted for a demo account is visible here without scanning a root.
+  'sharesByUser',
 ] as const;
+
+/**
+ * The day-sharded pair. Scoped to the day shards the REFUSED OPERATION'S OWN
+ * WINDOW covers (`dayShardKey(occurredAt)`, the same key `events/ledger.ts`
+ * writes under) — never the whole root.
+ */
+export const GATE6_DAY_SHARDED_TRACE_TREES = ['eventLedger', 'outboxPending'] as const;
+
+/** Bumped whenever the surface list or the digest rule below changes. */
+export const GATE6_TRACE_SNAPSHOT_VERSION = 1;
+
+/** How stale a rejected-operation probe may be before it stops being evidence about now. */
+export const GATE6_DEFAULT_MAX_PROBE_AGE_MS = 24 * 60 * 60 * 1000;
+
+/** How stale a registry-operator receipt may be before it stops being evidence about now. */
+export const GATE6_DEFAULT_MAX_RECEIPT_AGE_MS = 24 * 60 * 60 * 1000;
 
 // ---------------------------------------------------------------------------
 // Receipt shape
@@ -217,7 +252,7 @@ export const GATE6_ASSERTION_IDS = [
   'sparg0-vod-preservation',
   'registry-preservation',
   'izaw-coaching-root',
-  'zero-trace-trees',
+  'rejected-operation-no-trace',
   'witness-observation-references',
   'registry-receipt-attestation',
 ] as const;
@@ -285,6 +320,10 @@ export interface Gate6WorkspaceObservation {
   stockWitnesses: number;
   tournamentEntries: number;
   tournamentEntriesForeign: number;
+  /** Of those, children carrying this projector's ownership witness — the LIVE generated population. */
+  registryOwnedRows: number;
+  /** `computeRegistryRowSetHash` over those rows, recomputed live (assertion 12). */
+  registryRowSetHash: string;
   enrichmentRunStatus: string | null;
   ingestionRunStatuses: string[];
 }
@@ -345,6 +384,90 @@ export interface Gate6RegistryReceiptInput {
   raw: unknown;
 }
 
+/** One reviewed registry manifest offered as the identity a receipt must name. */
+export interface Gate6RegistryManifestInput {
+  path: string;
+  raw: unknown;
+}
+
+/** What the audit observed about each supplied manifest, valid or not. */
+export interface Gate6RegistryManifestObservation {
+  path: string;
+  valid: boolean;
+  contentHash: string | null;
+  generatedAtMs: number | null;
+  scope: string[];
+}
+
+// ---------------------------------------------------------------------------
+// The rejected-operation trace probe (assertion 10)
+// ---------------------------------------------------------------------------
+
+/** One bounded surface, digested. `path` is the exact RTDB path that was read. */
+export interface Gate6TraceSurface {
+  path: string;
+  /** Children observed at that path (0 for an absent node, 1 for a scalar). */
+  count: number;
+  /** sha256 over the canonical JSON of `{version, uid, path, value}`. */
+  digest: string;
+}
+
+/**
+ * A point-in-time reading of everything one refused operation could have
+ * written, for ONE account, bounded by ONE wall-clock window.
+ */
+export interface Gate6TraceSnapshot {
+  version: number;
+  uid: string;
+  capturedAtMs: number;
+  /** The UTC `yyyymmdd` shards the operation window covers, ascending. */
+  dayShards: string[];
+  /** Sorted by `path`, so two snapshots are directly zippable. */
+  surfaces: Gate6TraceSurface[];
+}
+
+/** The sealed body of one rejected-operation probe. */
+export interface Gate6RejectedOperationProbeBody {
+  formatVersion: 1;
+  workspace: Gate6WorkspaceKey;
+  uid: string;
+  /** The database the probe was taken against — a probe from staging is not evidence about production. */
+  databaseHost: string;
+  /** What was attempted, in the operator's words. */
+  operation: string;
+  /** The refusal that was actually observed. A probe of an operation that SUCCEEDED is not evidence. */
+  refusal: string;
+  startedAtMs: number;
+  finishedAtMs: number;
+  /** Captured immediately BEFORE the refused call. */
+  before: Gate6TraceSnapshot;
+  /** Captured immediately AFTER it returned its refusal. */
+  after: Gate6TraceSnapshot;
+}
+
+export interface Gate6RejectedOperationProbe extends Gate6RejectedOperationProbeBody {
+  contentHash: string;
+}
+
+/** One probe file offered to the audit. Validation is the core's job. */
+export interface Gate6RejectedOperationProbeInput {
+  path: string;
+  raw: unknown;
+}
+
+/** What the audit observed about each supplied probe, valid or not. */
+export interface Gate6RejectedOperationProbeObservation {
+  path: string;
+  valid: boolean;
+  workspace: Gate6WorkspaceKey | null;
+  operation: string | null;
+  refusal: string | null;
+  /** Surfaces compared for this probe — the anti-vacuity figure per probe. */
+  surfacesCompared: number;
+  /** `true` only when every compared surface was byte-identical before and after. */
+  wroteNothing: boolean;
+}
+
 /** What the audit observed about each supplied receipt, valid or not. */
 export interface Gate6RegistryReceiptObservation {
   path: string;
@@ -360,14 +483,21 @@ export interface Gate6RegistryReceiptObservation {
 }
 
 export interface Gate6AuditReceipt {
-  /** Bumped 1 -> 2: assertions gained `status`/`skipReason`, and the receipt gained `skippedCount`/`registryReceipts`. */
-  receiptVersion: 2;
+  /**
+   * Bumped 1 -> 2: assertions gained `status`/`skipReason`, and the receipt
+   * gained `skippedCount`/`registryReceipts`.
+   * Bumped 2 -> 3 (hard gate #4): assertion 10 became the operation-scoped
+   * `rejected-operation-no-trace`, and the receipt gained
+   * `rejectedOperationProbes`/`registryManifests`.
+   */
+  receiptVersion: 3;
   expectationTableVersion: string;
   generatedAtMs: number;
   targetUids: Gate6UidMap;
   baselineMode: 'record' | 'compare';
   strictWitnessObservationRefs: boolean;
   requireRegistryReceipts: boolean;
+  requireRejectedOperationProbes: boolean;
   ok: boolean;
   findingCount: number;
   /** How many assertions were NOT checked. A non-zero value with `ok: true` means "green, but incompletely evidenced". */
@@ -375,6 +505,8 @@ export interface Gate6AuditReceipt {
   assertions: Gate6AssertionResult[];
   observed: Gate6WorkspaceObservation[];
   registryReceipts: Gate6RegistryReceiptObservation[];
+  registryManifests: Gate6RegistryManifestObservation[];
+  rejectedOperationProbes: Gate6RejectedOperationProbeObservation[];
   /** The digests OBSERVED this run — written out as the baseline in record mode. */
   baseline: Gate6Baseline;
 }
@@ -387,15 +519,43 @@ export interface Gate6AuditOptions {
   strictWitnessObservationRefs?: boolean;
   /** Registry-operator receipts offered as evidence. Empty/absent -> the attestation assertion is SKIPPED. */
   registryReceipts?: Gate6RegistryReceiptInput[] | null;
+  /** The reviewed manifests those receipts must name. Absent -> the manifest-identity sub-check FAILS the receipt. */
+  registryManifests?: Gate6RegistryManifestInput[] | null;
   /** When true, an absent or incomplete receipt set FAILS instead of skipping. */
   requireRegistryReceipts?: boolean;
+  /** Rejected-operation probes. Empty/absent -> assertion 10 is SKIPPED. */
+  rejectedOperationProbes?: Gate6RejectedOperationProbeInput[] | null;
+  /** When true, an absent or incomplete probe set FAILS instead of skipping. */
+  requireRejectedOperationProbes?: boolean;
   /**
    * The host of the database being audited, for the receipt's `databaseHost`
-   * cross-check. `null`/absent leaves that one sub-check unperformed and
-   * records `databaseHostChecked: false` — never a silent pass.
+   * cross-check. `null`/absent no longer passes silently: it is a FINDING on
+   * every supplied receipt and probe, because a sealed artifact whose database
+   * identity was never checked is not evidence about this database.
    */
   expectedDatabaseHost?: string | null;
+  /** Receipt freshness ceiling. Default {@link GATE6_DEFAULT_MAX_RECEIPT_AGE_MS}. */
+  maxReceiptAgeMs?: number;
+  /** Probe freshness ceiling. Default {@link GATE6_DEFAULT_MAX_PROBE_AGE_MS}. */
+  maxProbeAgeMs?: number;
+
+  // --- Bounded execution (hard gate #4, B6) -------------------------------
+  /** Per-RTDB-read ceiling. Default {@link DEFAULT_REGISTRY_REQUEST_TIMEOUT_MS}. `0` disables. */
+  requestTimeoutMs?: number;
+  /** The caller's shutdown signal. An abort stops the audit at the next read boundary and THROWS. */
+  signal?: AbortSignal;
+  /** No-progress watchdog. Default {@link GATE6_DEFAULT_MAX_STALL_MS}. */
+  maxStallMs?: number;
+  /** Heartbeat cadence. Default {@link GATE6_DEFAULT_HEARTBEAT_INTERVAL_MS}. */
+  heartbeatIntervalMs?: number;
+  /** Where the heartbeat/watchdog lines go. Defaults to `console.error`. */
+  log?: (line: string) => void;
+  /** Monotonic-ish clock for the heartbeat/watchdog. Defaults to `Date.now`. Distinct from `nowMs`, which stamps the receipt. */
+  clock?: () => number;
 }
+
+export const GATE6_DEFAULT_MAX_STALL_MS = 5 * 60 * 1000;
+export const GATE6_DEFAULT_HEARTBEAT_INTERVAL_MS = 30_000;
 
 /** The LOCAL law's persisted shape (assertion 7 only). */
 const digestEntrySchema = z.object({
@@ -456,22 +616,139 @@ export function parseGate6Baseline(value: unknown): Gate6Baseline {
 }
 
 // ---------------------------------------------------------------------------
-// Raw-read helpers — deliberately schema-blind
+// Raw-read helpers — deliberately schema-blind, and BOUNDED
 // ---------------------------------------------------------------------------
 
 function isPlainRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
 
-async function readRaw(database: Database, path: string): Promise<unknown> {
-  const snapshot = await database.ref(path).get();
-  return snapshot.exists() ? snapshot.val() : null;
+/**
+ * THE ONLY WAY THIS MODULE TOUCHES THE DATABASE (hard gate #4, B6).
+ *
+ * Every read goes through `withRegistryDeadline`, so an unreachable RTDB
+ * produces a `RegistryOperationTimeoutError` instead of a promise that never
+ * settles. Before this existed the audit had no per-request deadline, no
+ * heartbeat and no watchdog, and — worse — the lifecycle wrapper's hard-exit
+ * backstop only arms AFTER the run settles, so a single hung read left the
+ * whole gate hanging indefinitely while looking healthy. Bounding the reads is
+ * what lets the run REACH a terminal result, which is what arms the backstop.
+ *
+ * `onRead` feeds the heartbeat/watchdog: a reader that reported nothing would
+ * be indistinguishable from a hung one, which is the same lesson the registry
+ * projector's progress events encode.
+ */
+interface Gate6Reader {
+  raw(path: string): Promise<unknown>;
+  children(path: string): Promise<[string, unknown][]>;
 }
 
-/** One level of children as `[key, value]` pairs; a missing or non-object node is an empty list. */
-async function readChildren(database: Database, path: string): Promise<[string, unknown][]> {
-  const raw = await readRaw(database, path);
-  return isPlainRecord(raw) ? Object.entries(raw) : [];
+interface Gate6ReaderOptions {
+  requestTimeoutMs?: number;
+  signal?: AbortSignal;
+  onRead?: (path: string) => void;
+}
+
+export function createGate6Reader(
+  database: Database,
+  options: Gate6ReaderOptions = {},
+): Gate6Reader {
+  const raw = async (path: string): Promise<unknown> => {
+    options.onRead?.(path);
+    const snapshot = await withRegistryDeadline(
+      `gate6 read ${path}`,
+      () => database.ref(path).get(),
+      { requestTimeoutMs: options.requestTimeoutMs, signal: options.signal },
+    );
+    return snapshot.exists() ? snapshot.val() : null;
+  };
+  return {
+    raw,
+    /** One level of children as `[key, value]` pairs; a missing or non-object node is an empty list. */
+    children: async (path: string) => {
+      const value = await raw(path);
+      return isPlainRecord(value) ? Object.entries(value) : [];
+    },
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Progress monitor — heartbeat + no-progress watchdog (hard gate #4, B6)
+// ---------------------------------------------------------------------------
+
+interface AuditMonitor {
+  onRead: (path: string) => void;
+  /** Aborts when the watchdog trips OR the caller's signal fires. */
+  signal: AbortSignal;
+  /** Rejects when the watchdog trips — raced against the audit so a stall fails it even with nothing abortable in flight. */
+  stallPromise: Promise<never>;
+  dispose: () => void;
+}
+
+function createAuditMonitor(options: Gate6AuditOptions): AuditMonitor {
+  const clock = options.clock ?? Date.now;
+  const log = options.log ?? ((line: string) => console.error(line));
+  const heartbeatIntervalMs = options.heartbeatIntervalMs ?? GATE6_DEFAULT_HEARTBEAT_INTERVAL_MS;
+  const maxStallMs = options.maxStallMs ?? GATE6_DEFAULT_MAX_STALL_MS;
+
+  const controller = new AbortController();
+  if (options.signal) {
+    if (options.signal.aborted) {
+      controller.abort(options.signal.reason);
+    } else {
+      options.signal.addEventListener('abort', () => controller.abort(options.signal?.reason), {
+        once: true,
+      });
+    }
+  }
+
+  let reads = 0;
+  let lastPath = '<starting>';
+  let lastAtMs = clock();
+  let stalled = false;
+  let rejectStall: ((error: Error) => void) | null = null;
+  const stallPromise = new Promise<never>((_resolve, reject) => {
+    rejectStall = reject;
+  });
+  // A stall can trip while nothing is racing against it; pre-attach a swallow
+  // handler so the rejection is never "unhandled".
+  void stallPromise.catch(() => undefined);
+
+  const heartbeat = setInterval(() => {
+    log(
+      `[heartbeat] gate6 reads=${reads} path=${lastPath} lastProgressMsAgo=${clock() - lastAtMs}`,
+    );
+  }, heartbeatIntervalMs);
+  heartbeat.unref?.();
+
+  const watchdog = setInterval(
+    () => {
+      const idleMs = clock() - lastAtMs;
+      if (idleMs > maxStallMs && !stalled) {
+        stalled = true;
+        const reason = `no progress for ${idleMs}ms (limit ${maxStallMs}ms); aborting the audit`;
+        log(`[watchdog] ${reason}`);
+        controller.abort(new Error(reason));
+        rejectStall?.(new Error(reason));
+      }
+    },
+    Math.max(50, Math.min(heartbeatIntervalMs, Math.floor(maxStallMs / 4))),
+  );
+  watchdog.unref?.();
+
+  return {
+    onRead: (path) => {
+      reads += 1;
+      lastPath = path;
+      lastAtMs = clock();
+    },
+    signal: controller.signal,
+    stallPromise,
+    dispose: () => {
+      clearInterval(heartbeat);
+      clearInterval(watchdog);
+    },
+  };
 }
 
 function rawString(record: Record<string, unknown>, member: string): string | null {
@@ -537,12 +814,12 @@ interface WorkspaceCorpus {
 }
 
 async function loadWorkspaceCorpus(
-  database: Database,
+  reader: Gate6Reader,
   workspace: Gate6WorkspaceKey,
   uid: string,
 ): Promise<WorkspaceCorpus> {
-  const matchEntries = await readChildren(database, `matches/${uid}`);
-  const attachmentTree = await readRaw(database, `researchEnrichmentAttachments/${uid}`);
+  const matchEntries = await reader.children(`matches/${uid}`);
+  const attachmentTree = await reader.raw(`researchEnrichmentAttachments/${uid}`);
   const attachments: WorkspaceCorpus['attachments'] = [];
   if (isPlainRecord(attachmentTree)) {
     for (const [targetSetId, children] of Object.entries(attachmentTree)) {
@@ -560,14 +837,14 @@ async function loadWorkspaceCorpus(
     uid,
     matchKeys: matchEntries.map(([key]) => key),
     matchRows: new Map(matchEntries),
-    observations: await readChildren(database, `researchEnrichmentObservations/${uid}`),
-    receipts: await readChildren(database, `researchEnrichmentReceipts/${uid}`),
+    observations: await reader.children(`researchEnrichmentObservations/${uid}`),
+    receipts: await reader.children(`researchEnrichmentReceipts/${uid}`),
     attachments,
-    witnesses: await readChildren(database, `researchEnrichmentProjection/${uid}`),
-    tournamentEntries: await readChildren(database, `tournamentEntries/${uid}`),
-    enrichmentRunRaw: await readRaw(database, `researchEnrichmentRuns/${uid}`),
-    ingestionRunRaw: await readRaw(database, `researchIngestionRuns/${uid}`),
-    startggLinkRaw: await readRaw(database, `startggLinks/${uid}`),
+    witnesses: await reader.children(`researchEnrichmentProjection/${uid}`),
+    tournamentEntries: await reader.children(`tournamentEntries/${uid}`),
+    enrichmentRunRaw: await reader.raw(`researchEnrichmentRuns/${uid}`),
+    ingestionRunRaw: await reader.raw(`researchIngestionRuns/${uid}`),
+    startggLinkRaw: await reader.raw(`startggLinks/${uid}`),
   };
 }
 
@@ -1378,68 +1655,168 @@ function assertRegistryPreservation(
   };
 }
 
+// ---------------------------------------------------------------------------
+// Assertion 12 — registry attestation over LIVE generated content
+// ---------------------------------------------------------------------------
+
 /**
- * Assertion 12 — registry-operator receipt attestation.
+ * The live registry-owned population for one account: the `histimport:` rows
+ * this projector owns, recomputed from the stored `tournamentEntries/{uid}`
+ * children rather than read out of anybody's receipt.
+ */
+interface LiveRegistryRows {
+  rows: TournamentRegistryRow[];
+  /** Structurally-owned children that no longer parse as a registry row. */
+  unparseable: string[];
+  /** `computeRegistryRowSetHash` over `rows` — the operator's own law, not a restatement. */
+  rowSetHash: string;
+}
+
+function collectLiveRegistryRows(corpus: WorkspaceCorpus): LiveRegistryRows {
+  const rows: TournamentRegistryRow[] = [];
+  const unparseable: string[] = [];
+  for (const [childKey, value] of corpus.tournamentEntries) {
+    if (value === null || value === undefined || !isTournamentRegistryOwnedRow(value)) {
+      continue;
+    }
+    const parsed = tournamentRegistryRowSchema.safeParse(value);
+    if (parsed.success) {
+      rows.push(parsed.data);
+    } else {
+      unparseable.push(childKey);
+    }
+  }
+  return {
+    rows,
+    unparseable: unparseable.sort(),
+    rowSetHash: computeRegistryRowSetHash(corpus.uid, rows),
+  };
+}
+
+/**
+ * Assertion 12 — the registry attestation, REBUILT under owner/Codex hard
+ * gate #4 (B7).
  *
- * WHY THIS IS A SEPARATE ASSERTION AND NOT PART OF ASSERTION 8. Assertion 8's
- * contract is "live foreign content equals the pre-state I recorded", and it
- * must hold whether or not a registry apply ever happened. This assertion's
- * contract is "the registry operator's sealed claim is authentic and agrees
- * with live state", which only has meaning when an apply/compare actually
- * ran. Folding the second into the first would force one of two bad
- * outcomes — assertion 8 becomes unrunnable without a receipt file, or it
- * silently weakens when one is absent — and the second is exactly the
- * record-mode false-green shape this oracle already had to close once.
+ * WHAT IT USED TO PROVE, AND WHY THAT WAS NOT ENOUGH. The previous version
+ * checked one thing about live state: that the receipt's `foreignDigestAfter`
+ * still matched the live foreign rows. That is a preservation claim about the
+ * rows the projector must NOT touch, and it says nothing whatsoever about the
+ * rows it DID generate. An operator could seal a perfect receipt, someone
+ * could then edit or delete every `histimport:` row on the account, and this
+ * assertion would stay green — the seal was still valid, so the audit accepted
+ * a stale attestation as a statement about now.
  *
- * SKIPPED-WHEN-ABSENT, STRICT-WHEN-PRESENT. No receipts supplied ->
- * `status: 'skipped'` with a `skipReason`, `ok: true`, and a bump to the
- * receipt's own `skippedCount`, so a reader can tell this was not checked.
- * `--require-registry-receipt` converts absence (and incomplete coverage)
- * into findings, mirroring `--require-baseline`.
+ * WHAT IT PROVES NOW. Five things, all recomputed LIVE at audit time:
+ *  1. LIVE GENERATED CONTENT. The registry-owned children are re-read, parsed,
+ *     and hashed through `computeRegistryRowSetHash` — the operator's own law.
+ *     That hash must equal the receipt's `observedRowSetHash`. Change or delete
+ *     ANY generated row and this fails, which is the whole point.
+ *  2. SETTLED BUCKETS. The receipt's post-state census must show zero pending
+ *     creates, updates, orphan removals and collisions. A receipt that observed
+ *     outstanding work is not an attestation that the work is done.
+ *  3. EXACT CURRENT MANIFEST IDENTITY. A reviewed manifest must be supplied and
+ *     must cover this workspace, and the receipt must name it exactly —
+ *     `manifestContentHash`, `manifestGeneratedAtMs`, and the per-account
+ *     `reviewedRowSetHash`. A receipt authorized by some other manifest is not
+ *     evidence about the one under review.
+ *  4. FRESHNESS AND DATABASE IDENTITY. `finishedAtMs` must be within
+ *     `maxReceiptAgeMs` of now and not in the future, and `databaseHost` must
+ *     equal the audited host. An UNSUPPLIED expected host is now a FINDING, not
+ *     a `databaseHostChecked: false` note: an artifact whose database identity
+ *     was never checked cannot attest to this database.
+ *  5. FOREIGN-ROW DIGEST PRESERVATION. As before — the non-registry rows still
+ *     hash to what the operator sealed.
  *
- * Per supplied receipt, in order:
- *  1. `validateRegistryReceipt` — schema AND the `contentHash` seal. A
- *     hand-edited receipt fails here rather than being read as evidence.
- *  2. The receipt's own `workspace` must name one of the four, and its `uid`
- *     must equal the uid this audit was given for that workspace. A receipt
- *     for a different account proves nothing about this one.
- *  3. `command` must be `apply` or `compare`. A `dry-run` receipt is REFUSED
- *     as evidence: it writes nothing, so its `foreignDigestAfter` describes a
- *     pre-apply observation, and accepting it would let "we planned it" pass
- *     as "we did it and nothing foreign moved".
- *  4. `status` must be `ok` with an empty `failedInvariants`. A receipt sealed
- *     as `refused`/`failed` is an authentic record of a BAD run; it must never
- *     be accepted as evidence of a good one.
- *  5. `databaseHost` must equal the host actually being audited — when one was
- *     supplied. When it was not, `databaseHostChecked: false` is recorded so
- *     an unperformed check is never read as a performed one.
- *  6. `foreignDigestAfter` must equal the LIVE `computeForeignRowDigest` for
- *     that uid. Both sides hash through `canonical.ts`, so this is a direct
- *     comparison with no adapter — which is the whole reason the digest
- *     helper was hoisted out of the operator in the first place.
+ * COMPARE RECEIPTS ONLY. `apply` no longer satisfies this assertion, and that
+ * is a deliberate tightening rather than an oversight. An apply receipt's
+ * post-state is observed by the applying process, in the same breath as the
+ * write; `compare` is a separate, later, read-only run whose entire job is to
+ * observe the settled destination and hash it. Requiring the latter means the
+ * attestation always rests on an INDEPENDENT observation of post-state. A
+ * `dry-run` receipt remains refused for the original reason: it writes nothing,
+ * so its digests describe a pre-apply observation.
+ *
+ * SKIPPED-WHEN-ABSENT, STRICT-WHEN-PRESENT — unchanged. No receipts supplied ->
+ * `status: 'skipped'` with a `skipReason`; `--require-registry-receipt`
+ * converts absence and partial coverage into findings.
  */
 function assertRegistryReceiptAttestation(
   observedForeign: Record<Gate6WorkspaceKey, ForeignRowDigest>,
+  liveRegistryRows: Record<Gate6WorkspaceKey, LiveRegistryRows>,
   uids: Gate6UidMap,
   inputs: Gate6RegistryReceiptInput[],
+  manifestInputs: Gate6RegistryManifestInput[],
   requireReceipts: boolean,
   expectedDatabaseHost: string | null,
-): { draft: AssertionDraft; observations: Gate6RegistryReceiptObservation[] } {
+  nowMs: number,
+  maxReceiptAgeMs: number,
+): {
+  draft: AssertionDraft;
+  observations: Gate6RegistryReceiptObservation[];
+  manifestObservations: Gate6RegistryManifestObservation[];
+} {
   const findings: Gate6Finding[] = [];
   const observations: Gate6RegistryReceiptObservation[] = [];
+  const manifestObservations: Gate6RegistryManifestObservation[] = [];
+  const title = 'Registry receipts attest to the LIVE generated rows, under the reviewed manifest';
+
+  // Manifests are parsed up front so a bad one is reported once, not once per
+  // receipt that happens to reference it.
+  const manifestByWorkspace = new Map<Gate6WorkspaceKey, RegistryManifest>();
+  for (const input of manifestInputs) {
+    let manifest: RegistryManifest;
+    try {
+      manifest = parseSealedRegistryManifest(input.raw);
+    } catch (error) {
+      manifestObservations.push({
+        path: input.path,
+        valid: false,
+        contentHash: null,
+        generatedAtMs: null,
+        scope: [],
+      });
+      findings.push({
+        code: 'registry-manifest-invalid',
+        workspace: null,
+        detail: `${input.path}: ${error instanceof Error ? error.message : String(error)}`,
+        path: input.path,
+      });
+      continue;
+    }
+    manifestObservations.push({
+      path: input.path,
+      valid: true,
+      contentHash: manifest.contentHash,
+      generatedAtMs: manifest.generatedAtMs,
+      scope: [...manifest.scope],
+    });
+    for (const workspace of manifest.scope) {
+      if (manifestByWorkspace.has(workspace)) {
+        findings.push({
+          code: 'registry-manifest-duplicate',
+          workspace,
+          detail: `${input.path}: a second manifest scopes ${workspace}; the reviewed identity is ambiguous`,
+          path: input.path,
+        });
+        continue;
+      }
+      manifestByWorkspace.set(workspace, manifest);
+    }
+  }
 
   if (inputs.length === 0) {
     if (!requireReceipts) {
       return {
         draft: {
           id: 'registry-receipt-attestation',
-          title: 'Registry-operator receipts are authentic and agree with live foreign content',
+          title,
           skipReason:
             'no --registry-receipt was supplied; pass --require-registry-receipt to make this mandatory',
           inspected: 0,
           findings: [],
         },
         observations,
+        manifestObservations,
       };
     }
     findings.push({
@@ -1518,12 +1895,17 @@ function assertRegistryReceiptAttestation(
       continue;
     }
 
-    if (receipt.command === 'dry-run') {
+    if (receipt.command !== 'compare') {
       findings.push({
         code: 'registry-receipt-not-post-state',
         workspace,
-        detail: `${input.path}: a dry-run receipt writes nothing, so its foreignDigestAfter is not evidence of a completed apply`,
-        expected: 'apply|compare',
+        detail:
+          `${input.path}: a "${receipt.command}" receipt cannot carry the final attestation. ` +
+          (receipt.command === 'dry-run'
+            ? 'A dry-run writes nothing, so its digests describe a pre-apply observation.'
+            : 'An apply observes its own post-state in the same breath as the write; the attestation ' +
+              'must rest on an independent, later, read-only compare run.'),
+        expected: 'compare',
         actual: receipt.command,
         path: input.path,
       });
@@ -1546,7 +1928,16 @@ function assertRegistryReceiptAttestation(
       continue;
     }
 
-    if (expectedDatabaseHost !== null && receipt.databaseHost !== expectedDatabaseHost) {
+    if (expectedDatabaseHost === null) {
+      findings.push({
+        code: 'registry-receipt-host-unchecked',
+        workspace,
+        detail: `${input.path}: no expected database host was supplied, so this receipt cannot be tied to the database being audited`,
+        path: input.path,
+      });
+      continue;
+    }
+    if (receipt.databaseHost !== expectedDatabaseHost) {
       findings.push({
         code: 'registry-receipt-host-mismatch',
         workspace,
@@ -1558,25 +1949,166 @@ function assertRegistryReceiptAttestation(
       continue;
     }
 
-    const live = observedForeign[workspace];
-    if (receipt.foreignDigestAfter.version !== live.version) {
+    if (receipt.finishedAtMs > nowMs || nowMs - receipt.finishedAtMs > maxReceiptAgeMs) {
+      findings.push({
+        code: 'registry-receipt-stale',
+        workspace,
+        detail: `${input.path}: sealed at ${receipt.finishedAtMs}, which is in the future or older than the ${maxReceiptAgeMs}ms freshness bound; re-run compare`,
+        expected: `<= ${maxReceiptAgeMs}ms old`,
+        actual: nowMs - receipt.finishedAtMs,
+        path: input.path,
+      });
+      continue;
+    }
+
+    // --- 2. Settled buckets --------------------------------------------------
+    const after = receipt.after;
+    if (
+      after.creates > 0 ||
+      after.updates > 0 ||
+      after.orphanRemovals > 0 ||
+      after.collisions > 0
+    ) {
+      findings.push({
+        code: 'registry-receipt-not-settled',
+        workspace,
+        detail:
+          `${input.path}: the sealed post-state is not settled ` +
+          `(creates=${after.creates} updates=${after.updates} removals=${after.orphanRemovals} collisions=${after.collisions})`,
+        expected: 0,
+        actual: after.creates + after.updates + after.orphanRemovals + after.collisions,
+        path: input.path,
+      });
+      continue;
+    }
+
+    // --- 3. Exact current manifest identity ----------------------------------
+    const manifest = manifestByWorkspace.get(workspace);
+    if (manifest === undefined) {
+      findings.push({
+        code: 'registry-manifest-missing',
+        workspace,
+        detail: `${input.path}: no --registry-manifest scoping ${workspace} was supplied, so the receipt's claimed authorization cannot be checked`,
+        path: input.path,
+      });
+      continue;
+    }
+    const manifestAccount = manifest.accounts[workspace];
+    if (manifestAccount === undefined) {
+      findings.push({
+        code: 'registry-manifest-missing',
+        workspace,
+        detail: `${input.path}: the supplied manifest scopes ${workspace} but carries no account for it`,
+        path: input.path,
+      });
+      continue;
+    }
+    if (manifest.databaseHost !== expectedDatabaseHost) {
+      findings.push({
+        code: 'registry-manifest-host-mismatch',
+        workspace,
+        detail: `${input.path}: the reviewed manifest was generated against ${manifest.databaseHost}, not the audited ${expectedDatabaseHost}`,
+        expected: expectedDatabaseHost,
+        actual: manifest.databaseHost,
+        path: input.path,
+      });
+      continue;
+    }
+    if (manifestAccount.uid !== uids[workspace]) {
+      findings.push({
+        code: 'registry-manifest-uid-mismatch',
+        workspace,
+        detail: `${input.path}: the reviewed manifest targets a different uid for ${workspace}`,
+        expected: uids[workspace],
+        actual: manifestAccount.uid,
+        path: input.path,
+      });
+      continue;
+    }
+    if (
+      receipt.manifestContentHash !== manifest.contentHash ||
+      receipt.manifestGeneratedAtMs !== manifest.generatedAtMs
+    ) {
+      findings.push({
+        code: 'registry-receipt-manifest-mismatch',
+        workspace,
+        detail: `${input.path}: the receipt was authorized by a DIFFERENT manifest than the one supplied for review`,
+        expected: manifest.contentHash,
+        actual: receipt.manifestContentHash,
+        path: input.path,
+      });
+      continue;
+    }
+    if (receipt.reviewedRowSetHash !== manifestAccount.rowSetHash) {
+      findings.push({
+        code: 'registry-receipt-manifest-mismatch',
+        workspace,
+        detail: `${input.path}: the receipt's reviewed row-set hash is not the one in the supplied manifest`,
+        expected: manifestAccount.rowSetHash,
+        actual: receipt.reviewedRowSetHash,
+        path: input.path,
+      });
+      continue;
+    }
+
+    // --- 1. LIVE generated content -------------------------------------------
+    const live = liveRegistryRows[workspace];
+    if (live.unparseable.length > 0) {
+      findings.push({
+        code: 'registry-live-row-unparseable',
+        workspace,
+        detail: `${input.path}: ${live.unparseable.length} live registry-owned child(ren) no longer parse as a registry row (${live.unparseable.slice(0, 5).join(', ')})`,
+        path: `tournamentEntries/${uids[workspace]}`,
+      });
+      // Fall through: the hash below is computed over the rows that DID parse
+      // and will also differ, which is the finding an operator acts on.
+    }
+    if (live.rowSetHash !== receipt.observedRowSetHash) {
+      findings.push({
+        code: 'registry-live-row-set-mismatch',
+        workspace,
+        detail:
+          `${input.path}: the LIVE generated rows no longer hash to the sealed post-state ` +
+          `(${live.rows.length} live registry-owned row(s)). A generated row was changed, removed or added ` +
+          'since the compare receipt was sealed; the attestation is stale.',
+        expected: receipt.observedRowSetHash,
+        actual: live.rowSetHash,
+        path: `tournamentEntries/${uids[workspace]}`,
+      });
+      continue;
+    }
+    if (live.rowSetHash !== manifestAccount.rowSetHash) {
+      findings.push({
+        code: 'registry-live-row-set-mismatch',
+        workspace,
+        detail: `${input.path}: the LIVE generated rows do not hash to the REVIEWED manifest row set`,
+        expected: manifestAccount.rowSetHash,
+        actual: live.rowSetHash,
+        path: `tournamentEntries/${uids[workspace]}`,
+      });
+      continue;
+    }
+
+    // --- 5. Foreign-row digest preservation ----------------------------------
+    const liveForeign = observedForeign[workspace];
+    if (receipt.foreignDigestAfter.version !== liveForeign.version) {
       findings.push({
         code: 'foreign-digest-version-mismatch',
         workspace,
-        detail: `${input.path}: receipt digest-rule version ${receipt.foreignDigestAfter.version} != current ${live.version}`,
-        expected: live.version,
+        detail: `${input.path}: receipt digest-rule version ${receipt.foreignDigestAfter.version} != current ${liveForeign.version}`,
+        expected: liveForeign.version,
         actual: receipt.foreignDigestAfter.version,
         path: input.path,
       });
       continue;
     }
-    if (!foreignRowDigestsMatch(receipt.foreignDigestAfter, live)) {
+    if (!foreignRowDigestsMatch(receipt.foreignDigestAfter, liveForeign)) {
       findings.push({
         code: 'registry-receipt-digest-mismatch',
         workspace,
-        detail: `${input.path}: sealed post-apply foreign content no longer matches live — ${describeForeignRowDigestDelta(receipt.foreignDigestAfter, live)}`,
+        detail: `${input.path}: sealed post-apply foreign content no longer matches live — ${describeForeignRowDigestDelta(receipt.foreignDigestAfter, liveForeign)}`,
         expected: receipt.foreignDigestAfter.digest,
-        actual: live.digest,
+        actual: liveForeign.digest,
         path: input.path,
       });
     }
@@ -1597,11 +2129,12 @@ function assertRegistryReceiptAttestation(
   return {
     draft: {
       id: 'registry-receipt-attestation',
-      title: 'Registry-operator receipts are authentic and agree with live foreign content',
+      title,
       inspected: inputs.length,
       findings,
     },
     observations,
+    manifestObservations,
   };
 }
 
@@ -1616,11 +2149,11 @@ function assertRegistryReceiptAttestation(
  * asserted against the stored tree instead of a fresh call.
  */
 async function assertIzawCoachingRoot(
-  database: Database,
+  reader: Gate6Reader,
   izawUid: string,
 ): Promise<AssertionDraft> {
   const findings: Gate6Finding[] = [];
-  const memberTrees = await readChildren(database, 'clientMembers');
+  const memberTrees = await reader.children('clientMembers');
   const izawTenants: string[] = [];
   for (const [tenantId, members] of memberTrees) {
     if (!isPlainRecord(members)) {
@@ -1632,9 +2165,9 @@ async function assertIzawCoachingRoot(
     }
   }
 
-  const coachClients = await readChildren(database, 'coachClients');
+  const coachClients = await reader.children('coachClients');
   for (const tenantId of izawTenants) {
-    const ownRoot = await readRaw(database, `coachClients/${izawUid}/${tenantId}`);
+    const ownRoot = await reader.raw(`coachClients/${izawUid}/${tenantId}`);
     if (ownRoot === null) {
       findings.push({
         code: 'coaching-root-missing',
@@ -1668,158 +2201,451 @@ async function assertIzawCoachingRoot(
   };
 }
 
+// ---------------------------------------------------------------------------
+// Assertion 10 — the rejected-operation trace probe
+// ---------------------------------------------------------------------------
+
 /**
- * Assertion 10 — rejected operations left no analytics, ledger, credit, job
- * or token trace.
+ * THE CONTRACT (rewritten under owner/Codex hard gate #4, B5).
  *
- * The uid-keyed trees are read directly. The day-sharded and causation-keyed
- * trees do not key on uid at all, so they are scanned: an `eventLedger` record
- * is attributable when the demo uid appears as ANY string value anywhere
- * inside it (`actorId` is the usual carrier, but a payload member would be a
- * trace too), an `eventDedup` causation key is attributable when it contains
- * the uid as a substring (causation ids are built as `${uid}:${...}`), and an
- * `outboxPending` entry is attributable when it sits at the same `{day}/{key}`
- * as an attributable ledger row — the two are written in one multi-path
- * update, so that pairing is exact.
+ * WHAT THIS USED TO ASSERT, AND WHY THAT WAS WRONG. The previous assertion
+ * claimed LIFETIME ABSENCE: no `eventLedger`, `eventDedup`, `outboxPending`,
+ * `shareTokens`, `creditLedger`, `credits`, `reportJobs` or
+ * `reportJobsByStatus` row may reference a demo uid, ever. That is not the
+ * system's contract, and it FAILS A HEALTHY SYSTEM — a false RED, which is
+ * worse for a gate than a missing check, because it trains the operator to
+ * discount the oracle.
+ *
+ * Two shipped behaviours contradict it outright:
+ *  - RTEN-04 suppresses telemetry for RESEARCH-CONTEXT activity. It does not
+ *    suppress an account's ordinary product events. A demo account that signs
+ *    up and uses the app SHOULD emit `signup_completed` and its friends into
+ *    `eventLedger`/`eventDedup`/`outboxPending`; those rows are correct
+ *    operation, not a leak.
+ *  - A successful FREE demo report INTENTIONALLY creates a succeeded
+ *    `reportJobs` record. The old assertion called that a violation.
+ *
+ * It was also expensive and imprecise in a way the correct check is not: it
+ * walked whole day-sharded and causation-keyed ROOTS hunting for a uid
+ * substring — unbounded work whose cost grows with every other user's traffic,
+ * and which mis-attributes on any causation id that is not uid-prefixed (most
+ * are job- or tenant-prefixed).
+ *
+ * WHAT IT ASSERTS NOW. The property that actually matters is per-OPERATION,
+ * not per-account: *this refused call wrote nothing*. The evidence is a sealed
+ * {@link Gate6RejectedOperationProbe} — a refused operation, its wall-clock
+ * window, and a {@link Gate6TraceSnapshot} captured immediately BEFORE and
+ * immediately AFTER it. The audit requires every compared surface to be
+ * byte-identical across that pair. Pre-existing legitimate telemetry appears in
+ * BOTH snapshots and therefore passes; a row the refused call created appears
+ * in only the second and therefore fails.
+ *
+ * WHAT IS COMPARED, AND HOW IT STAYS BOUNDED.
+ *  - {@link GATE6_UID_TRACE_SURFACES}: one direct read at `${tree}/${uid}`.
+ *  - {@link GATE6_DAY_SHARDED_TRACE_TREES}: only the `yyyymmdd` shards the
+ *    operation's OWN window covers, and within them only the rows attributable
+ *    to this uid. One refused call spans one or two shards, never a root.
+ *  - `eventDedup`: addressed EXACTLY, at
+ *    `{eventName}/{schemaVersion}/{causationId}` taken from each attributable
+ *    ledger row — the pairing `events/ledger.ts` writes in one multi-path
+ *    update. No causation-id substring guessing survives.
+ *
+ * THE LIMIT, STATED RATHER THAN PAPERED OVER. The audit VERIFIES a probe; it
+ * does not re-execute the refused operation, and it cannot, because by gate
+ * time the surfaces have legitimately moved on. What makes the probe evidence
+ * rather than assertion is the discipline the registry receipts already get:
+ * it is sealed under `canonicalDigest` (a hand-edited probe fails validation),
+ * bound to a uid AND a database host, refused when stale, and refused when the
+ * day shards it claims do not follow from the window it claims. A dedup marker
+ * written WITHOUT its ledger row (an emission interrupted between the two
+ * writes) falls outside the addressed set and would not be seen; that is a real
+ * gap, and it is named here rather than hidden.
+ *
+ * ABSENT PROBES ARE `skipped`, never a silent pass, and
+ * `--require-rejected-operation-probe` turns absence into findings — the same
+ * shape as `--require-baseline` and `--require-registry-receipt`.
  */
-async function assertZeroTraceTrees(
+
+const traceSurfaceSchema = z
+  .object({
+    path: z.string().min(1),
+    count: z.number().int().nonnegative(),
+    digest: z.string().regex(/^[0-9a-f]{64}$/),
+  })
+  .strict();
+
+const traceSnapshotSchema = z
+  .object({
+    version: z.number().int().positive(),
+    uid: z.string().min(1),
+    capturedAtMs: z.number().int().nonnegative(),
+    dayShards: z.array(z.string().regex(/^\d{8}$/)),
+    surfaces: z.array(traceSurfaceSchema),
+  })
+  .strict();
+
+const rejectedOperationProbeBodySchema = z
+  .object({
+    formatVersion: z.literal(1),
+    workspace: z.enum(GATE6_WORKSPACE_KEYS),
+    uid: z.string().min(1),
+    databaseHost: z.string().min(1),
+    operation: z.string().min(1),
+    refusal: z.string().min(1),
+    startedAtMs: z.number().int().nonnegative(),
+    finishedAtMs: z.number().int().nonnegative(),
+    before: traceSnapshotSchema,
+    after: traceSnapshotSchema,
+  })
+  .strict();
+
+const rejectedOperationProbeSchema = rejectedOperationProbeBodySchema.extend({
+  contentHash: z.string().regex(/^[0-9a-f]{64}$/),
+});
+
+/** Seals a probe body under the shared registry canonicalization law. */
+export function createGate6RejectedOperationProbe(
+  body: Gate6RejectedOperationProbeBody,
+): Gate6RejectedOperationProbe {
+  const parsed = rejectedOperationProbeBodySchema.parse(body);
+  return { ...parsed, contentHash: canonicalDigest(parsed) };
+}
+
+/** Parses and integrity-checks a probe file's contents. Throws on the first violation. */
+export function validateGate6RejectedOperationProbe(raw: unknown): Gate6RejectedOperationProbe {
+  const probe = rejectedOperationProbeSchema.parse(raw);
+  const { contentHash, ...body } = probe;
+  if (canonicalDigest(body) !== contentHash) {
+    throw new Error('Rejected-operation probe content hash mismatch');
+  }
+  return probe;
+}
+
+/**
+ * The UTC day shards a `[startedAtMs, finishedAtMs]` window covers, ascending.
+ * Derived with the SAME `dayShardKey` the ledger writer addresses shards by,
+ * so the audit can never look in a shard the writer would not have used.
+ */
+export function gate6WindowDayShards(startedAtMs: number, finishedAtMs: number): string[] {
+  const oneDayMs = 24 * 60 * 60 * 1000;
+  const start = new Date(startedAtMs);
+  // Walk from the start of the first UTC day, so a window that straddles
+  // midnight (or several) names every shard it could possibly have touched.
+  let cursor = Date.UTC(start.getUTCFullYear(), start.getUTCMonth(), start.getUTCDate());
+  const shards: string[] = [];
+  while (cursor <= finishedAtMs) {
+    shards.push(dayShardKey(cursor));
+    cursor += oneDayMs;
+  }
+  return shards;
+}
+
+function traceDigest(uid: string, path: string, value: unknown): string {
+  return canonicalDigest({ version: GATE6_TRACE_SNAPSHOT_VERSION, uid, path, value });
+}
+
+function childCount(value: unknown): number {
+  if (value === null || value === undefined) {
+    return 0;
+  }
+  return isPlainRecord(value) ? Object.keys(value).length : 1;
+}
+
+/**
+ * Reads the bounded trace surfaces for one account over one operation window.
+ * READS ONLY.
+ *
+ * Exported so a probe harness captures the pre-state through the SAME code the
+ * audit verifies against, rather than a re-description of it — the reason
+ * `computeForeignRowDigest` was hoisted out of the registry operator, applied
+ * to this population.
+ */
+export async function captureGate6TraceSnapshot(
   database: Database,
-  uids: Gate6UidMap,
-): Promise<AssertionDraft> {
-  const findings: Gate6Finding[] = [];
-  let inspected = 0;
-  const uidByValue = new Map<string, Gate6WorkspaceKey>();
-  for (const workspace of GATE6_WORKSPACE_KEYS) {
-    uidByValue.set(uids[workspace], workspace);
+  uid: string,
+  window: { startedAtMs: number; finishedAtMs: number; capturedAtMs: number },
+  options: Gate6ReaderOptions = {},
+): Promise<Gate6TraceSnapshot> {
+  if (!isPathSafeTenantId(uid)) {
+    throw new Error(`captureGate6TraceSnapshot: unsafe uid ${uid}`);
+  }
+  const reader = createGate6Reader(database, options);
+  const dayShards = gate6WindowDayShards(window.startedAtMs, window.finishedAtMs);
+  const surfaces: Gate6TraceSurface[] = [];
+
+  for (const tree of GATE6_UID_TRACE_SURFACES) {
+    const path = `${tree}/${uid}`;
+    const value = await reader.raw(path);
+    surfaces.push({ path, count: childCount(value), digest: traceDigest(uid, path, value) });
   }
 
-  for (const workspace of GATE6_WORKSPACE_KEYS) {
-    const uid = uids[workspace];
-    for (const tree of ['creditLedger', 'credits', 'reportJobs'] as const) {
-      inspected += 1;
-      if ((await readRaw(database, `${tree}/${uid}`)) !== null) {
-        findings.push({
-          code: 'zero-trace-violation',
-          workspace,
-          detail: `${tree}/${uid} holds data; a rejected research operation must leave none`,
-          expected: 'absent',
-          actual: 'present',
-          path: `${tree}/${uid}`,
-        });
+  for (const day of dayShards) {
+    const ledgerRows = await reader.children(`eventLedger/${day}`);
+    const attributable: Record<string, unknown> = {};
+    const dedupPaths: string[] = [];
+    for (const [key, record] of ledgerRows) {
+      const strings: string[] = [];
+      collectStrings(record, strings);
+      if (!strings.includes(uid)) {
+        continue;
+      }
+      attributable[key] = record;
+      if (isPlainRecord(record)) {
+        const eventName = rawString(record, 'eventName');
+        const causationId = rawString(record, 'causationId');
+        const schemaVersion = record.schemaVersion;
+        if (eventName !== null && causationId !== null && typeof schemaVersion === 'number') {
+          dedupPaths.push(`eventDedup/${eventName}/${schemaVersion}/${causationId}`);
+        }
       }
     }
-    for (const [status, byUid] of await readChildren(database, 'reportJobsByStatus')) {
-      inspected += 1;
-      if (isPlainRecord(byUid) && byUid[uid] !== undefined) {
-        findings.push({
-          code: 'zero-trace-violation',
-          workspace,
-          detail: `reportJobsByStatus/${status}/${uid} holds data`,
-          expected: 'absent',
-          actual: 'present',
-          path: `reportJobsByStatus/${status}/${uid}`,
-        });
-      }
-    }
-  }
+    const ledgerPath = `eventLedger/${day}`;
+    surfaces.push({
+      path: ledgerPath,
+      count: Object.keys(attributable).length,
+      digest: traceDigest(uid, ledgerPath, attributable),
+    });
 
-  for (const [token, value] of await readChildren(database, 'shareTokens')) {
-    inspected += 1;
-    if (!isPlainRecord(value)) {
-      continue;
+    // The outbox row is written in the SAME multi-path update as its ledger
+    // row and under the same `{day}/{key}`, so the attributable set transfers
+    // exactly — no second attribution rule to get wrong.
+    const outboxRows = await reader.children(`outboxPending/${day}`);
+    const outboxAttributable: Record<string, unknown> = {};
+    for (const [key, value] of outboxRows) {
+      if (attributable[key] !== undefined) {
+        outboxAttributable[key] = value;
+      }
     }
-    const ownerUid = rawString(value, 'ownerUid');
-    const workspace = ownerUid === null ? undefined : uidByValue.get(ownerUid);
-    if (workspace !== undefined) {
-      findings.push({
-        code: 'zero-trace-violation',
-        workspace,
-        detail: `shareTokens/${token} is owned by a demo uid; no bearer token may ever be minted for one`,
-        expected: 'absent',
-        actual: 'present',
-        path: `shareTokens/${token}`,
+    const outboxPath = `outboxPending/${day}`;
+    surfaces.push({
+      path: outboxPath,
+      count: Object.keys(outboxAttributable).length,
+      digest: traceDigest(uid, outboxPath, outboxAttributable),
+    });
+
+    for (const dedupPath of [...new Set(dedupPaths)].sort()) {
+      const value = await reader.raw(dedupPath);
+      surfaces.push({
+        path: dedupPath,
+        count: childCount(value),
+        digest: traceDigest(uid, dedupPath, value),
       });
     }
   }
 
-  const attributableLedgerPaths = new Set<string>();
-  for (const [day, rows] of await readChildren(database, 'eventLedger')) {
-    if (!isPlainRecord(rows)) {
-      continue;
-    }
-    for (const [key, record] of Object.entries(rows)) {
-      inspected += 1;
-      const strings: string[] = [];
-      collectStrings(record, strings);
-      for (const candidate of strings) {
-        const workspace = uidByValue.get(candidate);
-        if (workspace !== undefined) {
-          attributableLedgerPaths.add(`${day}/${key}`);
-          findings.push({
-            code: 'zero-trace-violation',
-            workspace,
-            detail: `eventLedger/${day}/${key} references a demo uid`,
-            expected: 'absent',
-            actual: 'present',
-            path: `eventLedger/${day}/${key}`,
-          });
-          break;
-        }
-      }
-    }
+  return {
+    version: GATE6_TRACE_SNAPSHOT_VERSION,
+    uid,
+    capturedAtMs: window.capturedAtMs,
+    dayShards,
+    surfaces: surfaces.sort((left, right) => left.path.localeCompare(right.path)),
+  };
+}
+
+function assertRejectedOperationNoTrace(
+  uids: Gate6UidMap,
+  inputs: Gate6RejectedOperationProbeInput[],
+  requireProbes: boolean,
+  expectedDatabaseHost: string | null,
+  nowMs: number,
+  maxProbeAgeMs: number,
+): { draft: AssertionDraft; observations: Gate6RejectedOperationProbeObservation[] } {
+  const title = 'Every REFUSED operation wrote nothing to any trace surface it could have touched';
+  const findings: Gate6Finding[] = [];
+  const observations: Gate6RejectedOperationProbeObservation[] = [];
+
+  if (inputs.length === 0 && !requireProbes) {
+    return {
+      draft: {
+        id: 'rejected-operation-no-trace',
+        title,
+        skipReason:
+          'no --rejected-operation-probe was supplied; pass --require-rejected-operation-probe to make this mandatory',
+        inspected: 0,
+        findings: [],
+      },
+      observations,
+    };
+  }
+  if (inputs.length === 0) {
+    findings.push({
+      code: 'rejected-operation-probe-missing',
+      workspace: null,
+      detail:
+        '--require-rejected-operation-probe was set but no probe was supplied for any workspace',
+    });
   }
 
-  for (const [day, rows] of await readChildren(database, 'outboxPending')) {
-    if (!isPlainRecord(rows)) {
+  const covered = new Set<Gate6WorkspaceKey>();
+  let inspected = 0;
+
+  for (const input of inputs) {
+    let probe: Gate6RejectedOperationProbe;
+    try {
+      probe = validateGate6RejectedOperationProbe(input.raw);
+    } catch (error) {
+      observations.push({
+        path: input.path,
+        valid: false,
+        workspace: null,
+        operation: null,
+        refusal: null,
+        surfacesCompared: 0,
+        wroteNothing: false,
+      });
+      findings.push({
+        code: 'rejected-operation-probe-invalid',
+        workspace: null,
+        detail: `${input.path}: ${error instanceof Error ? error.message : String(error)}`,
+        path: input.path,
+      });
       continue;
     }
-    for (const key of Object.keys(rows)) {
+
+    const workspace = probe.workspace;
+    const findingsBefore = findings.length;
+    const fail = (code: string, detail: string): void => {
+      findings.push({ code, workspace, detail: `${input.path}: ${detail}`, path: input.path });
+    };
+
+    if (
+      probe.uid !== uids[workspace] ||
+      probe.before.uid !== probe.uid ||
+      probe.after.uid !== probe.uid
+    ) {
+      fail(
+        'rejected-operation-probe-uid-mismatch',
+        `probe is for a different account than the one audited (probe ${probe.uid}, before ${probe.before.uid}, after ${probe.after.uid}, audited ${uids[workspace]})`,
+      );
+    }
+    if (
+      probe.before.version !== GATE6_TRACE_SNAPSHOT_VERSION ||
+      probe.after.version !== GATE6_TRACE_SNAPSHOT_VERSION
+    ) {
+      fail(
+        'rejected-operation-probe-version-mismatch',
+        `snapshot rule version ${probe.before.version}/${probe.after.version} != current ${GATE6_TRACE_SNAPSHOT_VERSION}; re-capture the probe`,
+      );
+    }
+    if (expectedDatabaseHost === null) {
+      fail(
+        'rejected-operation-probe-host-unchecked',
+        'no expected database host was supplied, so this probe cannot be tied to the database being audited',
+      );
+    } else if (probe.databaseHost !== expectedDatabaseHost) {
+      fail(
+        'rejected-operation-probe-host-mismatch',
+        `sealed against ${probe.databaseHost}, not the audited ${expectedDatabaseHost}`,
+      );
+    }
+    if (
+      probe.startedAtMs > probe.finishedAtMs ||
+      probe.before.capturedAtMs > probe.startedAtMs ||
+      probe.after.capturedAtMs < probe.finishedAtMs
+    ) {
+      fail(
+        'rejected-operation-probe-window-invalid',
+        `the snapshots do not bracket the operation (before ${probe.before.capturedAtMs} <= started ${probe.startedAtMs} <= finished ${probe.finishedAtMs} <= after ${probe.after.capturedAtMs} does not hold)`,
+      );
+    }
+    const expectedShards = gate6WindowDayShards(probe.startedAtMs, probe.finishedAtMs);
+    for (const [label, snapshot] of [
+      ['before', probe.before],
+      ['after', probe.after],
+    ] as const) {
+      if (canonicalize(snapshot.dayShards) !== canonicalize(expectedShards)) {
+        fail(
+          'rejected-operation-probe-window-invalid',
+          `${label} snapshot claims day shards [${snapshot.dayShards.join(',')}] but its own window covers [${expectedShards.join(',')}]`,
+        );
+      }
+    }
+    if (probe.finishedAtMs > nowMs || nowMs - probe.finishedAtMs > maxProbeAgeMs) {
+      fail(
+        'rejected-operation-probe-stale',
+        `finished at ${probe.finishedAtMs}, which is in the future or older than the ${maxProbeAgeMs}ms freshness bound`,
+      );
+    }
+
+    const beforeByPath = new Map(probe.before.surfaces.map((surface) => [surface.path, surface]));
+    const afterByPath = new Map(probe.after.surfaces.map((surface) => [surface.path, surface]));
+    // ANTI-VACUITY: two empty snapshots compare equal, so the mandatory
+    // uid-keyed surfaces must actually be present in both.
+    for (const tree of GATE6_UID_TRACE_SURFACES) {
+      const required = `${tree}/${probe.uid}`;
+      if (!beforeByPath.has(required) || !afterByPath.has(required)) {
+        fail(
+          'rejected-operation-probe-incomplete',
+          `the snapshots do not both cover the mandatory surface ${required}`,
+        );
+      }
+    }
+
+    let wroteNothing = true;
+    const allPaths = [...new Set([...beforeByPath.keys(), ...afterByPath.keys()])].sort();
+    for (const path of allPaths) {
       inspected += 1;
-      if (attributableLedgerPaths.has(`${day}/${key}`)) {
+      const left = beforeByPath.get(path);
+      const right = afterByPath.get(path);
+      if (left === undefined || right === undefined) {
+        wroteNothing = false;
+        // `path` here is the SURFACE, not the probe file: an operator acting on
+        // this finding needs the RTDB address that moved.
         findings.push({
-          code: 'zero-trace-violation',
-          workspace: null,
-          detail: `outboxPending/${day}/${key} pairs with a demo-attributable eventLedger row`,
-          expected: 'absent',
-          actual: 'present',
-          path: `outboxPending/${day}/${key}`,
+          code: 'rejected-operation-trace-written',
+          workspace,
+          detail:
+            `${input.path}: the REFUSED operation "${probe.operation}" changed the surface SET — ` +
+            `${path} appears in only the ${left === undefined ? 'AFTER' : 'BEFORE'} snapshot`,
+          expected: left === undefined ? 'absent' : 'present',
+          actual: left === undefined ? 'present' : 'absent',
+          path,
         });
-      }
-    }
-  }
-
-  for (const [eventName, byVersion] of await readChildren(database, 'eventDedup')) {
-    if (!isPlainRecord(byVersion)) {
-      continue;
-    }
-    for (const [version, byCausation] of Object.entries(byVersion)) {
-      if (!isPlainRecord(byCausation)) {
         continue;
       }
-      for (const causationId of Object.keys(byCausation)) {
-        inspected += 1;
-        for (const workspace of GATE6_WORKSPACE_KEYS) {
-          if (causationId.includes(uids[workspace])) {
-            findings.push({
-              code: 'zero-trace-violation',
-              workspace,
-              detail: `eventDedup/${eventName}/${version}/${causationId} carries a demo uid in its causation id`,
-              expected: 'absent',
-              actual: 'present',
-              path: `eventDedup/${eventName}/${version}/${causationId}`,
-            });
-            break;
-          }
-        }
+      if (left.digest === right.digest && left.count === right.count) {
+        continue;
+      }
+      wroteNothing = false;
+      findings.push({
+        code: 'rejected-operation-trace-written',
+        workspace,
+        detail: `${input.path}: the REFUSED operation "${probe.operation}" wrote to ${path} (count ${left.count} -> ${right.count})`,
+        expected: left.digest,
+        actual: right.digest,
+        path,
+      });
+    }
+
+    observations.push({
+      path: input.path,
+      valid: true,
+      workspace,
+      operation: probe.operation,
+      refusal: probe.refusal,
+      surfacesCompared: allPaths.length,
+      wroteNothing,
+    });
+    if (findings.length === findingsBefore) {
+      covered.add(workspace);
+    }
+  }
+
+  if (requireProbes) {
+    for (const workspace of GATE6_WORKSPACE_KEYS) {
+      if (!covered.has(workspace)) {
+        findings.push({
+          code: 'rejected-operation-probe-missing',
+          workspace,
+          detail: `--require-rejected-operation-probe was set but no valid probe covers ${GATE6_EXPECTATIONS[workspace].label}`,
+        });
       }
     }
   }
 
   return {
-    id: 'zero-trace-trees',
-    title: 'No analytics, ledger, credit, job or bearer-token row exists for any demo uid',
-    inspected,
-    findings,
+    draft: { id: 'rejected-operation-no-trace', title, inspected, findings },
+    observations,
   };
 }
 
@@ -1854,10 +2680,22 @@ function assertBaselineApplies(baseline: Gate6Baseline, uids: Gate6UidMap): Gate
 }
 
 /**
- * Runs every Gate-6 assertion and returns the machine-readable receipt. Never
- * throws for a data condition — a data problem is a FINDING, so the caller
- * always gets a full receipt rather than a stack trace that hides the other
- * nine assertions. Only a programming/usage error (an unsafe uid) throws.
+ * Runs every Gate-6 assertion and returns the machine-readable receipt.
+ *
+ * NEVER THROWS FOR A DATA CONDITION — a data problem is a FINDING, so the
+ * caller always gets a full receipt rather than a stack trace that hides the
+ * other eleven assertions.
+ *
+ * IT DOES THROW FOR AN EXECUTION CONDITION (hard gate #4, B6): a per-read
+ * deadline expiring, the no-progress watchdog tripping, or the caller's
+ * shutdown signal firing. That distinction is load-bearing. A hung RTDB read
+ * is not evidence about the corpus, so it must not be reported as one; and the
+ * lifecycle wrapper's hard-exit backstop only arms once `run` reaches a
+ * terminal result, so an audit that quietly waited forever would keep the
+ * whole gate hanging while looking healthy. Throwing is what makes the run
+ * terminate, which is what arms the backstop.
+ *
+ * A programming/usage error (an unsafe or duplicated uid) also throws.
  */
 export async function runGate6Audit(
   database: Database,
@@ -1873,15 +2711,40 @@ export async function runGate6Audit(
     throw new Error('runGate6Audit: every demo account UID must be unique');
   }
 
+  const monitor = createAuditMonitor(options);
+  const reader = createGate6Reader(database, {
+    requestTimeoutMs: options.requestTimeoutMs ?? DEFAULT_REGISTRY_REQUEST_TIMEOUT_MS,
+    signal: monitor.signal,
+    onRead: monitor.onRead,
+  });
+  try {
+    // Raced against the stall watchdog so a stall fails the audit even when
+    // nothing abortable is in flight — the same shape the registry operator
+    // uses, and for the same reason.
+    return await Promise.race([runAuditWithReader(reader, options), monitor.stallPromise]);
+  } finally {
+    monitor.dispose();
+  }
+}
+
+async function runAuditWithReader(
+  reader: Gate6Reader,
+  options: Gate6AuditOptions,
+): Promise<Gate6AuditReceipt> {
   const strict = options.strictWitnessObservationRefs === true;
   const baseline = options.baseline ?? null;
   const registryReceiptInputs = options.registryReceipts ?? [];
+  const registryManifestInputs = options.registryManifests ?? [];
   const requireRegistryReceipts = options.requireRegistryReceipts === true;
+  const probeInputs = options.rejectedOperationProbes ?? [];
+  const requireProbes = options.requireRejectedOperationProbes === true;
   const expectedDatabaseHost = options.expectedDatabaseHost ?? null;
+  const maxReceiptAgeMs = options.maxReceiptAgeMs ?? GATE6_DEFAULT_MAX_RECEIPT_AGE_MS;
+  const maxProbeAgeMs = options.maxProbeAgeMs ?? GATE6_DEFAULT_MAX_PROBE_AGE_MS;
 
   const corpora: WorkspaceCorpus[] = [];
   for (const workspace of GATE6_WORKSPACE_KEYS) {
-    corpora.push(await loadWorkspaceCorpus(database, workspace, options.uids[workspace]));
+    corpora.push(await loadWorkspaceCorpus(reader, workspace, options.uids[workspace]));
   }
   const byWorkspace = new Map(corpora.map((corpus) => [corpus.workspace, corpus]));
   const sparg0 = byWorkspace.get('sparg0')!;
@@ -1901,6 +2764,11 @@ export async function runGate6Audit(
       computeForeignRowDigest(corpus.uid, Object.fromEntries(corpus.tournamentEntries)),
     ]),
   ) as Record<Gate6WorkspaceKey, ForeignRowDigest>;
+  // Assertion 12's population: the COMPLEMENT of the above — the rows the
+  // projector generated, recomputed live from the same one snapshot.
+  const liveRegistryRows = Object.fromEntries(
+    corpora.map((corpus) => [corpus.workspace, collectLiveRegistryRows(corpus)]),
+  ) as Record<Gate6WorkspaceKey, LiveRegistryRows>;
 
   const observedBaseline: Gate6Baseline = {
     baselineVersion: 2,
@@ -1913,10 +2781,22 @@ export async function runGate6Audit(
 
   const attestation = assertRegistryReceiptAttestation(
     registryForeign,
+    liveRegistryRows,
     options.uids,
     registryReceiptInputs,
+    registryManifestInputs,
     requireRegistryReceipts,
     expectedDatabaseHost,
+    options.nowMs,
+    maxReceiptAgeMs,
+  );
+  const rejectedOperations = assertRejectedOperationNoTrace(
+    options.uids,
+    probeInputs,
+    requireProbes,
+    expectedDatabaseHost,
+    options.nowMs,
+    maxProbeAgeMs,
   );
 
   const drafts: AssertionDraft[] = [
@@ -1928,8 +2808,8 @@ export async function runGate6Audit(
     assertNoStartggLinks(corpora),
     assertSparg0VodPreservation(sparg0, sparg0Vod, baseline),
     assertRegistryPreservation(registryForeign, baseline),
-    await assertIzawCoachingRoot(database, options.uids.izaw),
-    await assertZeroTraceTrees(database, options.uids),
+    await assertIzawCoachingRoot(reader, options.uids.izaw),
+    rejectedOperations.draft,
     assertWitnessObservationReferences(corpora),
     attestation.draft,
   ];
@@ -1971,6 +2851,8 @@ export async function runGate6Audit(
       stockWitnesses: corpus.witnesses.filter(([, value]) => isStockWitness(value)).length,
       tournamentEntries: corpus.tournamentEntries.length,
       tournamentEntriesForeign: registryForeign[corpus.workspace].count,
+      registryOwnedRows: liveRegistryRows[corpus.workspace].rows.length,
+      registryRowSetHash: liveRegistryRows[corpus.workspace].rowSetHash,
       enrichmentRunStatus: enrichmentRun.success ? enrichmentRun.data.status : null,
       ingestionRunStatuses: ingestion.success
         ? Object.values(ingestion.data.runs ?? {})
@@ -1981,19 +2863,22 @@ export async function runGate6Audit(
   });
 
   return {
-    receiptVersion: 2,
+    receiptVersion: 3,
     expectationTableVersion: GATE6_EXPECTATION_TABLE_VERSION,
     generatedAtMs: options.nowMs,
     targetUids: { ...options.uids },
     baselineMode: baseline === null ? 'record' : 'compare',
     strictWitnessObservationRefs: strict,
     requireRegistryReceipts,
+    requireRejectedOperationProbes: requireProbes,
     ok: assertions.every((assertion) => assertion.ok),
     findingCount,
     skippedCount: assertions.filter((assertion) => assertion.status === 'skipped').length,
     assertions,
     observed,
     registryReceipts: attestation.observations,
+    registryManifests: attestation.manifestObservations,
+    rejectedOperationProbes: rejectedOperations.observations,
     baseline: observedBaseline,
   };
 }
