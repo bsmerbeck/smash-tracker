@@ -75,6 +75,11 @@ import { readPrepBrief } from '../prep/prep.js';
 // /api/reports` below, and `apps/api/src/research/reportSubject.ts`'s
 // module header for the full ordering/no-oracle rationale.
 import { classifyReportSubject } from '../research/reportSubject.js';
+// Phase 30.3 (demo-account money safety, Gate 6): the SAME allowlist
+// predicate the bearer-delivery chokepoints consult. Used ONLY to widen the
+// existing free-access branch (`hasFreeReportAccess` below) — never to add a
+// new spend, refusal, or ordering constraint of its own.
+import { isDemoAccountSubject } from '../research/demoAccount.js';
 
 /**
  * BILL-06/MEAS-03 (Phase 10): a `running` report job older than this is
@@ -256,6 +261,23 @@ const reportsRoutes: FastifyPluginAsyncZod<ReportsRoutesOptions> = async (app, o
     options.client ?? new Anthropic({ apiKey: config.anthropicApiKey });
 
   /**
+   * Phase 30.3 (Gate 6): the ONE free-access predicate every branch in this
+   * plugin consults — the pre-existing `REPORTS_ALLOWED_UIDS` allowlist,
+   * widened by the demo-account allowlist. A demo account is an ordinary,
+   * login-bearing account whose walkthrough must exercise report generation
+   * without a purchase, so it is granted an ENTITLEMENT (the spend branch
+   * is skipped entirely) rather than a credit grant — no `spendCredit`, no
+   * `creditLedger` row, no `credits/{uid}/balance` mutation, no ledger
+   * churn to reconcile afterwards.
+   *
+   * `isDemoAccountSubject` returns false whenever the allowlist is
+   * unconfigured OR the uid is absent from it, so every non-demo subject's
+   * behavior here is byte-identical to before this phase.
+   */
+  const hasFreeReportAccess = (uid: string): boolean =>
+    config.allowedUids.has(uid) || isDemoAccountSubject(app.demoAccountConfig, uid);
+
+  /**
    * Access rule for the READ routes (GET /reports, GET /reports/:id) — must
    * match POST's: allowlisted uids OR anyone when Stripe billing is
    * configured (V7-C). Since V7-C, a billing-enabled non-allowlisted uid can
@@ -266,7 +288,7 @@ const reportsRoutes: FastifyPluginAsyncZod<ReportsRoutesOptions> = async (app, o
    * is unchanged.
    */
   const canReadReports = (uid: string): boolean =>
-    config.allowedUids.has(uid) || stripeConfig !== null;
+    hasFreeReportAccess(uid) || stripeConfig !== null;
 
   app.addHook('preHandler', app.authenticate);
 
@@ -1053,7 +1075,7 @@ const reportsRoutes: FastifyPluginAsyncZod<ReportsRoutesOptions> = async (app, o
       },
     },
     async (request) => {
-      const freeAccess = config.allowedUids.has(request.uid);
+      const freeAccess = hasFreeReportAccess(request.uid);
       const billingEnabled = stripeConfig !== null;
       return {
         enabled: freeAccess || billingEnabled,
@@ -1195,7 +1217,7 @@ const reportsRoutes: FastifyPluginAsyncZod<ReportsRoutesOptions> = async (app, o
           }
         }
 
-        const bundleFreeAccess = config.allowedUids.has(request.uid);
+        const bundleFreeAccess = hasFreeReportAccess(request.uid);
         if (!bundleFreeAccess && !stripeConfig) {
           return reply.code(403).send({
             error: 'Forbidden',
@@ -1326,7 +1348,7 @@ const reportsRoutes: FastifyPluginAsyncZod<ReportsRoutesOptions> = async (app, o
           });
         }
 
-        const synthFreeAccess = config.allowedUids.has(request.uid);
+        const synthFreeAccess = hasFreeReportAccess(request.uid);
         if (!synthFreeAccess && !stripeConfig) {
           return reply.code(403).send({
             error: 'Forbidden',
@@ -1606,7 +1628,7 @@ const reportsRoutes: FastifyPluginAsyncZod<ReportsRoutesOptions> = async (app, o
         prepBinding = binding;
       }
 
-      const freeAccess = config.allowedUids.has(request.uid);
+      const freeAccess = hasFreeReportAccess(request.uid);
 
       if (!freeAccess && !stripeConfig) {
         return reply.code(403).send({
