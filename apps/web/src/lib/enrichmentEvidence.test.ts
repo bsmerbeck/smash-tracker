@@ -101,11 +101,13 @@ describe('enrichmentEvidence — cross-package contract (Phase 30.3 Gate 5)', ()
       expect(parsed.attributions[0]!.vod?.sourcePageUrl).toBe(shared.vod?.sourcePageUrl);
     });
 
-    // The defect this test class exists to catch, demonstrated directly: the
-    // NARROW shared schema strips an unknown member on parse (ordinary zod
-    // behaviour), while the web-extended schema — the one `api.ts` actually
-    // parses live responses with — does not.
-    it('demonstrates the strip this schema exists to avoid: the narrow shared schema drops characters/stocks that the web schema preserves', () => {
+    // Written while the API-side schema extension was still in a parallel
+    // worktree, this test originally demonstrated the strip the web extension
+    // guards against. The shared schema NOW carries the characters/stocks
+    // halves natively (30.3 integration), so the contract strengthened: BOTH
+    // schemas must preserve the halves identically — a divergence in either
+    // direction fails here.
+    it('shared and web schemas both preserve characters/stocks identically (post-integration contract)', () => {
       const withEvidence = {
         ...sharedBuiltAttributionEntry(),
         characters: {
@@ -121,8 +123,8 @@ describe('enrichmentEvidence — cross-package contract (Phase 30.3 Gate 5)', ()
         characters?: unknown;
         stocks?: unknown;
       };
-      expect(throughSharedSchema.characters).toBeUndefined();
-      expect(throughSharedSchema.stocks).toBeUndefined();
+      expect(throughSharedSchema.characters).toEqual(withEvidence.characters);
+      expect(throughSharedSchema.stocks).toEqual(withEvidence.stocks);
 
       const throughWebSchema = webEnrichmentAttributionEntrySchema.parse(withEvidence);
       expect(throughWebSchema.characters?.subjectRaw).toBe('Mario');
