@@ -13,6 +13,7 @@ import {
   useSessionDeliveries,
 } from '@/hooks/useCoachingSessions';
 import { useFighterNameResolver } from '@/hooks/useFighterName';
+import { useIsDemoAccount } from '@/hooks/useIsDemoAccount';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { PendingButton } from '@/components/ui/pending-button';
@@ -58,6 +59,10 @@ function SessionDeliveryMenu({ clientId, session }: SessionDeliveryMenuProps) {
   const deliveries = useSessionDeliveries(clientId, session.sessionId, { enabled: open });
   const createDelivery = useCreateSessionDelivery(clientId, session.sessionId);
   const revokeDelivery = useRevokeSessionDelivery(clientId, session.sessionId);
+  // Phase 30.3 (Gate 6): delivery-LINK CREATION is disabled-with-explanation
+  // for a demo/research account (owner/Codex hard gate) — copy-link/revoke
+  // stay enabled, only minting a fresh delivery is gated.
+  const isDemoAccount = useIsDemoAccount();
 
   const activeDelivery: SessionDeliveryListItem | null =
     deliveries.data?.find((delivery) => delivery.revokedAt == null) ?? null;
@@ -148,7 +153,7 @@ function SessionDeliveryMenu({ clientId, session }: SessionDeliveryMenuProps) {
             <DropdownMenuSeparator />
           </>
         )}
-        <DropdownMenuItem onSelect={handleDeliver}>
+        <DropdownMenuItem disabled={isDemoAccount} onSelect={handleDeliver}>
           {t('coaching.sessions.list.actions.deliver')}
         </DropdownMenuItem>
         <DropdownMenuItem disabled={!activeDelivery} onSelect={handleCopyLink}>

@@ -14,6 +14,7 @@ import { useScoutPlayer } from '@/hooks/useScoutPlayer';
 import { useMatches } from '@/hooks/useMatches';
 import { useGenerateReport, useReportsConfig, useScoutReportsList } from '@/hooks/useScoutReports';
 import { useCredits } from '@/hooks/useBilling';
+import { useIsDemoAccount } from '@/hooks/useIsDemoAccount';
 import { useParryggStatus } from '@/hooks/useParrygg';
 import { getOpponentProfile } from '@/lib/stats';
 import { Button } from '@/components/ui/button';
@@ -100,6 +101,9 @@ export function ScoutPage() {
   const generateReport = useGenerateReport();
   const pastReports = useScoutReportsList();
   const credits = useCredits();
+  // Phase 30.3 (Gate 6): no Buy Credits control anywhere it renders, for a
+  // demo/research account (owner/Codex hard gate).
+  const isDemoAccount = useIsDemoAccount();
   const parryggStatus = useParryggStatus();
   // parry.gg toggle is hidden entirely when the integration isn't configured
   // on this deployment (V9-B Feature 4) — an unconfigured server answers 503
@@ -130,7 +134,7 @@ export function ScoutPage() {
   const creditsData = credits.data;
   const freeAccess = creditsData?.freeAccess ?? reportsConfig.data?.freeAccess ?? false;
   const availablePacks = creditsData?.packs ?? [];
-  const canBuyCredits = !freeAccess && availablePacks.length > 0;
+  const canBuyCredits = !freeAccess && availablePacks.length > 0 && !isDemoAccount;
   const lastGenerateWas402 =
     generateReport.error instanceof ApiError && generateReport.error.status === 402;
 

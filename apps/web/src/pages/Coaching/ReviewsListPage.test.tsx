@@ -34,9 +34,23 @@ const deliveriesList = vi.fn();
 const deliveriesCreate = vi.fn();
 const deliveriesRevoke = vi.fn();
 const matchesList = vi.fn();
+const getMe = vi.fn();
+
+/** Phase 30.3 (Gate 6): the always-present `GET /api/users/me` profile shape. */
+function defaultProfile(overrides: { isDemoAccount?: boolean } = {}) {
+  return {
+    uid: 'test-uid',
+    email: 'test@example.com',
+    fighters: { primary: [], secondary: [] },
+    coachingModeEnabled: true,
+    onboardingIntent: null,
+    ...overrides,
+  };
+}
 
 vi.mock('@/lib/api', () => ({
   api: {
+    users: { getMe: (...args: unknown[]) => getMe(...args) },
     matches: { list: (...args: unknown[]) => matchesList(...args) },
     coaching: {
       reviews: {
@@ -143,6 +157,7 @@ describe('ReviewsListPage', () => {
     deliveriesList.mockResolvedValue([]);
     matchesList.mockResolvedValue([makeMatch()]);
     reviewsGetDraft.mockResolvedValue(makeDraft());
+    getMe.mockResolvedValue(defaultProfile());
   });
 
   it('shows a dash delivery chip (never "Not delivered") for a draft review', async () => {
@@ -194,6 +209,38 @@ describe('ReviewsListPage', () => {
       'aria-disabled',
       'true',
     );
+  });
+
+  // Phase 30.3 (Gate 6, owner/Codex hard gate): delivery-link creation
+  // disabled for a demo/research account, with a positive control.
+  it('disables Deliver for a demo account even when the review is published', async () => {
+    reviewsList.mockResolvedValue([
+      makeReview({ status: 'published', latestVersion: 3, deliveryState: 'not-delivered' }),
+    ]);
+    getMe.mockResolvedValue(defaultProfile({ isDemoAccount: true }));
+    const user = userEvent.setup();
+    renderList();
+
+    await user.click(await screen.findByRole('button', { name: 'Delivery and more actions' }));
+
+    expect(await screen.findByRole('menuitem', { name: 'Deliver' })).toHaveAttribute(
+      'aria-disabled',
+      'true',
+    );
+  });
+
+  it('positive control: keeps Deliver enabled for a published review on an ordinary account', async () => {
+    reviewsList.mockResolvedValue([
+      makeReview({ status: 'published', latestVersion: 3, deliveryState: 'not-delivered' }),
+    ]);
+    getMe.mockResolvedValue(defaultProfile({ isDemoAccount: false }));
+    const user = userEvent.setup();
+    renderList();
+
+    await user.click(await screen.findByRole('button', { name: 'Delivery and more actions' }));
+
+    const deliverItem = await screen.findByRole('menuitem', { name: 'Deliver' });
+    expect(deliverItem).not.toHaveAttribute('aria-disabled', 'true');
   });
 
   it('Deliver opens the VOD picker and does not mint until confirmed', async () => {

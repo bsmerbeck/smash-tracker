@@ -51,6 +51,19 @@ const reportsGenerate = vi.fn();
 const reportsList = vi.fn().mockResolvedValue([]);
 const billingCredits = vi.fn().mockResolvedValue({ freeAccess: false, balance: 0, packs: [] });
 const billingCheckout = vi.fn();
+const getMe = vi.fn();
+
+/** Phase 30.3 (Gate 6): the always-present `GET /api/users/me` profile shape. */
+function defaultProfile(overrides: { isDemoAccount?: boolean } = {}) {
+  return {
+    uid: 'test-uid',
+    email: 'test@example.com',
+    fighters: { primary: [], secondary: [] },
+    coachingModeEnabled: false,
+    onboardingIntent: null,
+    ...overrides,
+  };
+}
 
 vi.mock('@/lib/api', () => {
   class MockApiError extends Error {
@@ -65,7 +78,10 @@ vi.mock('@/lib/api', () => {
     api: {
       scout: { lookup: (...args: unknown[]) => scoutLookup(...args) },
       matches: { list: (...args: unknown[]) => matchesList(...args) },
-      users: { upsertMe: (...args: unknown[]) => upsertMe(...args) },
+      users: {
+        upsertMe: (...args: unknown[]) => upsertMe(...args),
+        getMe: (...args: unknown[]) => getMe(...args),
+      },
       reports: {
         config: (...args: unknown[]) => reportsConfig(...args),
         generate: (...args: unknown[]) => reportsGenerate(...args),
@@ -121,6 +137,7 @@ describe('ScoutPage', () => {
     reportsConfig.mockResolvedValue({ enabled: false });
     reportsList.mockResolvedValue([]);
     billingCredits.mockResolvedValue({ freeAccess: false, balance: 0, packs: [] });
+    getMe.mockResolvedValue(defaultProfile());
     setMockUser(makeMockUser());
   });
 
@@ -704,6 +721,7 @@ describe('ScoutPage — V7-C billing (paid, non-allowlisted)', () => {
         { id: 'pack15', credits: 15, amountCents: 2000, label: '15 reports' },
       ],
     });
+    getMe.mockResolvedValue(defaultProfile());
     setMockUser(makeMockUser());
   });
 
@@ -788,6 +806,50 @@ describe('ScoutPage — V7-C billing (paid, non-allowlisted)', () => {
 
     expect(await screen.findByText('3 credits')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Buy credits' })).toBeInTheDocument();
+  });
+});
+
+// Phase 30.3 (Gate 6, owner/Codex hard gate): no Buy Credits control
+// anywhere it renders, for a demo/research account, with a positive control.
+describe('ScoutPage — demo account gating', () => {
+  beforeEach(() => {
+    resetAuthMock();
+    vi.clearAllMocks();
+    matchesList.mockResolvedValue([]);
+    reportsConfig.mockResolvedValue({ enabled: true, freeAccess: false, billingEnabled: true });
+    reportsList.mockResolvedValue([]);
+    billingCredits.mockResolvedValue({
+      freeAccess: false,
+      balance: 3,
+      packs: [{ id: 'pack5', credits: 5, amountCents: 800, label: '5 reports' }],
+    });
+    setMockUser(makeMockUser());
+  });
+
+  it('hides the Buy Credits control for a demo account', async () => {
+    getMe.mockResolvedValue(defaultProfile({ isDemoAccount: true }));
+    const user = userEvent.setup();
+    scoutLookup.mockResolvedValue(REPORT);
+
+    renderPage();
+    await user.type(screen.getByLabelText(/start\.gg profile URL/), 'user/07dc2239');
+    await user.click(screen.getByRole('button', { name: 'Scout' }));
+    await screen.findByText('Pandem1c');
+
+    expect(screen.queryByRole('button', { name: 'Buy credits' })).not.toBeInTheDocument();
+  });
+
+  it('positive control: shows the Buy Credits control for an ordinary account', async () => {
+    getMe.mockResolvedValue(defaultProfile({ isDemoAccount: false }));
+    const user = userEvent.setup();
+    scoutLookup.mockResolvedValue(REPORT);
+
+    renderPage();
+    await user.type(screen.getByLabelText(/start\.gg profile URL/), 'user/07dc2239');
+    await user.click(screen.getByRole('button', { name: 'Scout' }));
+    await screen.findByText('Pandem1c');
+
+    expect(await screen.findByRole('button', { name: 'Buy credits' })).toBeInTheDocument();
   });
 });
 

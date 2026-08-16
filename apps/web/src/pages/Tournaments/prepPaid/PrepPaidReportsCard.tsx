@@ -16,6 +16,7 @@ import { Label } from '@/components/ui/label';
 import { ApiError, api } from '@/lib/api';
 import { postCanonicalEvent } from '@/lib/canonicalEvents';
 import { useCredits } from '@/hooks/useBilling';
+import { useIsDemoAccount } from '@/hooks/useIsDemoAccount';
 import { usePrepReportJobs } from '@/hooks/usePrepReportJobs';
 import {
   executeBundleChildren,
@@ -69,6 +70,9 @@ export function PrepPaidReportsCard({
 }: PrepPaidReportsCardProps) {
   const { t } = useTranslation();
   const credits = useCredits();
+  // Phase 30.3 (Gate 6): no Buy Credits control anywhere it renders, for a
+  // demo/research account (owner/Codex hard gate).
+  const isDemoAccount = useIsDemoAccount();
   const { jobsByOpponentName } = usePrepReportJobs(entryKey);
   const generateReport = useGeneratePrepReport(entryKey);
   const startBundle = useStartPrepBundle(entryKey);
@@ -91,7 +95,7 @@ export function PrepPaidReportsCard({
   const creditsData = credits.data;
   const freeAccess = creditsData?.freeAccess ?? false;
   const availablePacks = creditsData?.packs ?? [];
-  const canBuyCredits = !freeAccess && availablePacks.length > 0;
+  const canBuyCredits = !freeAccess && availablePacks.length > 0 && !isDemoAccount;
 
   const reportReadyCount = curatedNames.filter((name) => {
     const binding = scoutBindings[name];
@@ -329,7 +333,10 @@ export function PrepPaidReportsCard({
 
                   <OpponentBindingConfirm entryKey={entryKey} name={name} binding={binding} />
 
-                  {hasInsufficientCreditsHint && (
+                  {/* Phase 30.3 (Gate 6): also gated on `canBuyCredits`
+                      (which already folds in `!isDemoAccount`) — no Buy
+                      Credits control anywhere it renders. */}
+                  {hasInsufficientCreditsHint && canBuyCredits && (
                     <p className="text-sm text-muted-foreground">
                       {t('prepPaid.insufficientCredits.body')}{' '}
                       <Button
@@ -368,7 +375,7 @@ export function PrepPaidReportsCard({
                   {t('prepPaid.bundle.buyCta')}
                 </Button>
               </div>
-              {samePurchaseTarget(insufficientCreditsFor, { kind: 'bundle' }) && (
+              {samePurchaseTarget(insufficientCreditsFor, { kind: 'bundle' }) && canBuyCredits && (
                 <p className="text-sm text-muted-foreground">
                   {t('prepPaid.insufficientCredits.body')}{' '}
                   <Button
