@@ -1366,6 +1366,145 @@ describe('runEnrichmentBatch cross-tenant and cross-version freshness (30.2 defe
     expect((row.val() as { vodUrl?: string }).vodUrl).toBe(VOD_URL);
   });
 
+  it('the end-of-run sweep fires on a SKIP-HEAVY run and removes a schema-INVALID old-generation straggler (raw selection)', async () => {
+    const database = new FakeDatabase();
+    // Run 1 populates every page cache, so run 2 is fully freshness-skipped —
+    // the production shape in which the stragglers survived.
+    await runHappyPath(database, 1_000);
+    await database.ref(`researchEnrichmentObservations/${TENANT_ID}/old-shape-straggler`).set({
+      observationId: 'old-shape-straggler',
+      sourceProvider: 'liquipedia',
+      sourceWiki: 'smash',
+      contentType: 'stage-observation',
+      sourcePageTitle: 'OldCup/2020/Bracket',
+      sourcePageUrl: 'https://liquipedia.net/smash/OldCup/2020/Bracket',
+      sourceRevisionId: 5,
+      sourceContentHash: sha256Hex('old-shape'),
+      parserVersion: 'liquipedia-bracket-legacy@1',
+      // Old-shape stocks member: FAILS the current schema, so a
+      // schema-validating selection cannot even see it.
+      templateFamily: 'legacy',
+      fetchedAtMs: 100,
+      observedAtMs: 100,
+      matchingStatus: 'unmatched',
+      games: [{ ordinal: 1, stocks: [3] }],
+    });
+
+    const { client: secondClient, calls } = buildHappyPathClient();
+    const second = await runEnrichmentBatch({
+      database: asDatabase(database),
+      client: secondClient,
+      tenantId: TENANT_ID,
+      playerLabels: ['TestPlayer'],
+      targetGame: 'ultimate',
+      nowMs: 2_000,
+      hashHex: sha256Hex,
+      dryRun: false,
+    });
+
+    // Fully skip-heavy: no content requests, no new gather output — and the
+    // sweep still fired and still saw the raw straggler.
+    expect(calls.getWikitext.length).toBe(0);
+    expect(second.counts.outdatedFamilyRecordsSwept).toBe(1);
+    const gone = await database
+      .ref(`researchEnrichmentObservations/${TENANT_ID}/old-shape-straggler`)
+      .get();
+    expect(gone.exists()).toBe(false);
+  });
+
+  it('DEFECT 2: a stored, current-version, receipt-less observation is re-resolved and re-receipted by a fully freshness-skipped run; the following run is a no-op', async () => {
+    const database = new FakeDatabase();
+    const { result: firstResult } = await runHappyPath(database, 1_000);
+    expect(firstResult.counts.attachmentsCreated).toBeGreaterThanOrEqual(1);
+
+    // The production race shape: the RECEIPT was lost while the observation
+    // (current-version, uniquely matched) and its attachment survived. Such
+    // a record appears in NEITHER the gather output of a skip-heavy run NOR
+    // the attachment-absence review queue.
+    const attachments = await database
+      .ref(`researchEnrichmentAttachments/${TENANT_ID}/set-1`)
+      .get();
+    const attachedObservationIds = Object.keys(attachments.val() as Record<string, unknown>);
+    expect(attachedObservationIds.length).toBeGreaterThanOrEqual(1);
+    for (const observationId of attachedObservationIds) {
+      await database.ref(`researchEnrichmentReceipts/${TENANT_ID}/${observationId}`).remove();
+    }
+
+    const { client: secondClient, calls: secondCalls } = buildHappyPathClient();
+    const second = await runEnrichmentBatch({
+      database: asDatabase(database),
+      client: secondClient,
+      tenantId: TENANT_ID,
+      playerLabels: ['TestPlayer'],
+      targetGame: 'ultimate',
+      nowMs: 2_000,
+      hashHex: sha256Hex,
+      dryRun: false,
+    });
+
+    // Fully skip-heavy (no content fetch), yet the stored receipt-less
+    // observation re-resolved, its receipt was rebuilt, and the attachment
+    // was revalidated against it.
+    expect(secondCalls.getWikitext.length).toBe(0);
+    expect(second.counts.resolvedMatched).toBeGreaterThanOrEqual(1);
+    expect(second.counts.receiptsWritten).toBeGreaterThanOrEqual(1);
+    expect(second.counts.attachmentsCreated).toBeGreaterThanOrEqual(1);
+    for (const observationId of attachedObservationIds) {
+      const receipt = await database
+        .ref(`researchEnrichmentReceipts/${TENANT_ID}/${observationId}`)
+        .get();
+      expect(receipt.exists()).toBe(true);
+    }
+    const row = await database.ref(`matches/${TENANT_ID}/sgg-set-1-g1`).get();
+    expect((row.val() as { vodUrl?: string }).vodUrl).toBe(VOD_URL);
+
+    // Third run: everything receipted and attached again — a strict no-op.
+    const { client: thirdClient } = buildHappyPathClient();
+    const third = await runEnrichmentBatch({
+      database: asDatabase(database),
+      client: thirdClient,
+      tenantId: TENANT_ID,
+      playerLabels: ['TestPlayer'],
+      targetGame: 'ultimate',
+      nowMs: 3_000,
+      hashHex: sha256Hex,
+      dryRun: false,
+    });
+    expect(third.counts.resolvedMatched).toBe(0);
+    expect(third.counts.receiptsWritten).toBe(0);
+  });
+
+  it('DEFECT 2 variant: an observation missing BOTH receipt and attachment is likewise recovered by a skip-heavy run', async () => {
+    const database = new FakeDatabase();
+    await runHappyPath(database, 1_000);
+    const attachments = await database
+      .ref(`researchEnrichmentAttachments/${TENANT_ID}/set-1`)
+      .get();
+    const attachedObservationIds = Object.keys(attachments.val() as Record<string, unknown>);
+    for (const observationId of attachedObservationIds) {
+      await database.ref(`researchEnrichmentReceipts/${TENANT_ID}/${observationId}`).remove();
+      await database
+        .ref(`researchEnrichmentAttachments/${TENANT_ID}/set-1/${observationId}`)
+        .remove();
+    }
+
+    const { client: secondClient } = buildHappyPathClient();
+    const second = await runEnrichmentBatch({
+      database: asDatabase(database),
+      client: secondClient,
+      tenantId: TENANT_ID,
+      playerLabels: ['TestPlayer'],
+      targetGame: 'ultimate',
+      nowMs: 2_000,
+      hashHex: sha256Hex,
+      dryRun: false,
+    });
+    expect(second.counts.resolvedMatched).toBeGreaterThanOrEqual(1);
+    expect(second.counts.attachmentsCreated).toBeGreaterThanOrEqual(1);
+    const attachment = await database.ref(`researchEnrichmentAttachments/${TENANT_ID}/set-1`).get();
+    expect(attachment.exists()).toBe(true);
+  });
+
   it('a dry run never sweeps', async () => {
     const database = new FakeDatabase();
     await seedProviderSet(database);

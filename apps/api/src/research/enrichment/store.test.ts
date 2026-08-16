@@ -747,4 +747,82 @@ describe('sweepOutdatedFamilyObservations', () => {
     expect(result.removedAttachmentCount).toBe(0);
     expect(result.removedReceiptCount).toBe(0);
   });
+
+  // 30.2 schema-blind-hygiene defect: old-generation records are MALFORMED
+  // BY DEFINITION once the schema has evolved past them (production: all
+  // 616+95 legacy@1 stragglers failed the current schema on the evolved
+  // `games[].stocks` shape) — a schema-validating selection saw zero
+  // candidates. The sweep must select from the RAW tree.
+  it('sweeps a schema-INVALID old-generation record (old-shape stocks) that the schema-validating reader cannot even see', async () => {
+    const database = new FakeDatabase();
+    // Raw-seeded: fails the CURRENT schema (stocks tuple requires exactly
+    // two members) so writeEnrichmentObservation could never produce it —
+    // exactly the shape a prior schema generation left behind.
+    await database.ref(`researchEnrichmentObservations/${TENANT_ID}/old-shape-1`).set({
+      observationId: 'old-shape-1',
+      sourceProvider: 'liquipedia',
+      sourceWiki: 'smash',
+      contentType: 'stage-observation',
+      sourcePageTitle: 'OldCup/2020/Bracket',
+      sourcePageUrl: 'https://liquipedia.net/smash/OldCup/2020/Bracket',
+      sourceRevisionId: 5,
+      sourceContentHash: 'a'.repeat(64),
+      parserVersion: 'liquipedia-bracket-legacy@1',
+      templateFamily: 'legacy',
+      fetchedAtMs: 100,
+      observedAtMs: 100,
+      matchingStatus: 'unmatched',
+      games: [{ ordinal: 1, stocks: [3] }],
+    });
+
+    // Proof of the defect mechanism: the schema-validating reader skips it.
+    const schemaVisible = await listEnrichmentObservations(asDatabase(database), TENANT_ID);
+    expect(schemaVisible.find((record) => record.observationId === 'old-shape-1')).toBeUndefined();
+
+    const result = await sweepOutdatedFamilyObservations(asDatabase(database), TENANT_ID);
+    expect(result.removedObservationIds).toEqual(['old-shape-1']);
+    const gone = await database
+      .ref(`researchEnrichmentObservations/${TENANT_ID}/old-shape-1`)
+      .get();
+    expect(gone.exists()).toBe(false);
+  });
+
+  it('leaves the SAME malformed shape untouched at the CURRENT family version — version, never validity, is the trigger', async () => {
+    const database = new FakeDatabase();
+    await database.ref(`researchEnrichmentObservations/${TENANT_ID}/current-but-malformed`).set({
+      observationId: 'current-but-malformed',
+      sourceProvider: 'liquipedia',
+      sourceWiki: 'smash',
+      contentType: 'stage-observation',
+      sourcePageTitle: 'OldCup/2020/Bracket',
+      sourcePageUrl: 'https://liquipedia.net/smash/OldCup/2020/Bracket',
+      sourceRevisionId: 5,
+      sourceContentHash: 'a'.repeat(64),
+      parserVersion: LIQUIPEDIA_PARSER_VERSION_BRACKET_LEGACY,
+      templateFamily: 'legacy',
+      fetchedAtMs: 100,
+      observedAtMs: 100,
+      matchingStatus: 'unmatched',
+      games: [{ ordinal: 1, stocks: [3] }],
+    });
+    const result = await sweepOutdatedFamilyObservations(asDatabase(database), TENANT_ID);
+    expect(result.removedObservationIds).toEqual([]);
+    const kept = await database
+      .ref(`researchEnrichmentObservations/${TENANT_ID}/current-but-malformed`)
+      .get();
+    expect(kept.exists()).toBe(true);
+  });
+
+  it('a raw child with missing/non-string family or version members matches neither predicate and is left alone', async () => {
+    const database = new FakeDatabase();
+    await database
+      .ref(`researchEnrichmentObservations/${TENANT_ID}/no-version-members`)
+      .set({ someUnrelatedShape: true });
+    await database.ref(`researchEnrichmentObservations/${TENANT_ID}/numeric-version`).set({
+      templateFamily: 'legacy',
+      parserVersion: 42,
+    });
+    const result = await sweepOutdatedFamilyObservations(asDatabase(database), TENANT_ID);
+    expect(result.removedObservationIds).toEqual([]);
+  });
 });
