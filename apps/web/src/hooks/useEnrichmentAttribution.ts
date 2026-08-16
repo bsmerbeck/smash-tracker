@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
 import { useQueries } from '@tanstack/react-query';
-import type { ResearchEnrichmentAttributionEntry } from '@smash-tracker/shared';
+import type { WebEnrichmentAttributionEntry } from '@/lib/enrichmentEvidence';
 import { api } from '@/lib/api';
 import { useAuth } from './useAuth';
 
@@ -50,6 +50,13 @@ export function enrichmentAttributionQueryKey(keys: string[]) {
  * was read as "this row's vodUrl came from Liquipedia", mislabelling a
  * user-entered VOD on a stage-only-enriched row).
  *
+ * Phase 30.3 Gate 5: each entry MAY additionally carry `characters`/`stocks`
+ * halves (`WebEnrichmentAttributionEntry`, `apps/web/src/lib/
+ * enrichmentEvidence.ts`) — the same absence-means-abstained contract as
+ * `stage`/`vod` applies. `api.users.enrichmentAttribution` parses with the
+ * web-side EXTENDED schema so these two halves survive once the API starts
+ * sending them, rather than being silently stripped.
+ *
  * Folds the per-chunk results via `useQueries`' own `combine` option rather
  * than a hand-rolled `useMemo` over `queries.map(q => q.data)`: the number
  * of chunks (and therefore the length of that mapped array) varies with
@@ -64,7 +71,7 @@ export function enrichmentAttributionQueryKey(keys: string[]) {
  */
 export function useEnrichmentAttribution(
   matchKeys: string[],
-): Record<string, ResearchEnrichmentAttributionEntry> {
+): Record<string, WebEnrichmentAttributionEntry> {
   const { user } = useAuth();
   const enabled = user != null;
 
@@ -82,7 +89,7 @@ export function useEnrichmentAttribution(
       retry: false,
     })),
     combine: (results) => {
-      const map: Record<string, ResearchEnrichmentAttributionEntry> = {};
+      const map: Record<string, WebEnrichmentAttributionEntry> = {};
       for (const result of results) {
         for (const entry of result.data?.attributions ?? []) {
           map[entry.matchKey] = entry;

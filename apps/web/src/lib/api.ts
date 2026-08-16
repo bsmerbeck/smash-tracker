@@ -63,7 +63,6 @@ import {
   publicShareSnapshotSchema,
   reportsConfigSchema,
   researchCoverageResponseSchema,
-  researchEnrichmentAttributionResponseSchema,
   researchEnrichmentReviewQueueResponseSchema,
   REVIEW_DELIVERY_STATES,
   REVIEW_SECTION_KINDS,
@@ -116,6 +115,7 @@ import {
   type UpsertOpponentNoteInput,
   type UpsertStageFavoritesInput,
 } from '@smash-tracker/shared';
+import { webEnrichmentAttributionResponseSchema } from './enrichmentEvidence';
 import { getFirebaseAuth } from './firebase';
 import { historicalTournamentEntryListSchema } from './historicalTournament';
 import { getActiveSubjectHeader } from './subjectQueryKey';
@@ -566,7 +566,12 @@ export const api = {
     enrichmentAttribution: (keys: string[]) =>
       apiRequestParsed(
         `/api/users/me/enrichment/attribution?keys=${encodeURIComponent(keys.join(','))}`,
-        researchEnrichmentAttributionResponseSchema,
+        // Phase 30.3 Gate 5 (web evidence-surfaces worker): parses with the
+        // web-side EXTENDED schema (`characters`/`stocks` halves additive
+        // over the shared entry shape), not the narrower shared schema
+        // directly — see `enrichmentEvidence.ts`'s module doc comment for
+        // why, and why this is safe before the API sends the new fields.
+        webEnrichmentAttributionResponseSchema,
       ),
   },
   matches: {
