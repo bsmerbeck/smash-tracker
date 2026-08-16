@@ -302,6 +302,12 @@ function summarize(receipt: Gate6AuditReceipt): void {
         valid: row.valid,
         workspace: row.workspace ?? '-',
         operation: row.operation ?? '-',
+        // The two capture-evidence proofs, surfaced in the terminal: WHICH
+        // application guard refused, and against WHICH deployment.
+        refusalCode: row.refusalCode ?? '-',
+        apiEnv: row.apiEnvironment ?? '-',
+        apiBuild: row.apiRevision ?? '-',
+        bound: row.environmentBound,
         surfaces: row.surfacesCompared,
         wroteNothing: row.wroteNothing,
       })),

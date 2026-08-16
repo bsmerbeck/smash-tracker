@@ -1,5 +1,10 @@
 import type { Database } from 'firebase-admin/database';
 import {
+  DEMO_ACCOUNT_CHECKOUT_FORBIDDEN_CODE,
+  deploymentIdentitySchema,
+  type DeploymentIdentity,
+} from '@smash-tracker/shared';
+import {
   DEFAULT_REGISTRY_REQUEST_TIMEOUT_MS,
   withRegistryDeadline,
 } from '../src/research/registry/deadline.js';
@@ -11,7 +16,10 @@ import {
   gate6WindowDayShards,
   GATE6_DEFAULT_HEARTBEAT_INTERVAL_MS,
   GATE6_DEFAULT_MAX_STALL_MS,
+  GATE6_REJECTED_OPERATION_PROBE_FORMAT_VERSION,
   GATE6_WORKSPACE_KEYS,
+  type Gate6ProbeEnvironment,
+  type Gate6RefusalEnvelope,
   type Gate6UidMap,
   type Gate6WorkspaceKey,
 } from './gate6AuditCore.js';
@@ -30,13 +38,17 @@ import {
  * no production execution path. This module is that path.
  *
  * WHAT IT DOES, in order:
- *  1. Proves the supplied credential authenticates AS the demo account being
+ *  1. BINDS the API to the database: asks the deployed API who it is, and
+ *     refuses unless its environment, build, and RTDB match what this
+ *     operator was told to require and what it is about to snapshot.
+ *  2. Proves the supplied credential authenticates AS the demo account being
  *     probed, and that the SERVER agrees it is a demo account.
- *  2. Captures the pre-state trace snapshot.
- *  3. Performs ONE genuinely refused operation against the DEPLOYED API.
- *  4. PROVES the refusal — exact status match — before anything is sealed.
- *  5. Captures the post-state snapshot.
- *  6. Seals and writes the probe.
+ *  3. Captures the pre-state trace snapshot.
+ *  4. Performs ONE genuinely refused operation against the DEPLOYED API.
+ *  5. PROVES the refusal — status, content type, AND the parsed application
+ *     error code — before anything is sealed.
+ *  6. Captures the post-state snapshot.
+ *  7. Seals and writes the probe.
  *
  * WHY THE REFUSAL PROOF IS THE WHOLE DESIGN. A probe built around an operation
  * that silently SUCCEEDED is the worst possible artifact this system could
@@ -48,6 +60,26 @@ import {
  * here, loudly, before sealing:
  *  - any 2xx  -> `refused-operation-succeeded`, the loudest failure in the file;
  *  - any status other than the expected one -> `refused-operation-unexpected-status`.
+ *
+ * AND WHY STATUS ALONE WAS NOT ENOUGH (Phase 30.3 capture-evidence item 2).
+ * The original proof stopped at the status code and ignored the body
+ * entirely. Every 403 that never reaches the application — a CDN, a reverse
+ * proxy, a WAF rule, an unrelated authorization failure — also leaves every
+ * RTDB snapshot untouched, so it sealed a probe that was vacuously true. A
+ * refusal now has to IDENTIFY itself: JSON content type, a parseable body,
+ * and the demo checkout guard's own stable `code`. A human message would not
+ * do, since it can be reworded in any release without ceremony.
+ *
+ * AND WHY THE API HAD TO BE BOUND TO THE DATABASE (item 3). This operator
+ * drives a DEPLOYED API but snapshots the RTDB named by its OWN local `.env`.
+ * Nothing connected the two: it sealed a `databaseHost` read from that same
+ * local file, so the value agreed with itself by construction. Point it at an
+ * API backed by a different database — one with compatible Firebase Auth and
+ * a compatible demo allowlist, which is exactly what a staging deployment is
+ * — and every check still passed while the refusal and the snapshots
+ * described two different systems. Step 1 closes that: the API states its own
+ * environment, build, and database host, and every disagreement aborts before
+ * anything is sealed.
  *
  * READ-ONLY WITH RESPECT TO RTDB. The only database access is
  * `captureGate6TraceSnapshot`, which reads. The refused operation is an
@@ -107,11 +139,21 @@ export const GATE6_REFUSED_OPERATION = {
   body: { packId: 'pack5' } as const,
   /** Exact match required. Anything else aborts before sealing. */
   expectedStatus: 403,
+  /**
+   * The stable application error code the refusal MUST carry, imported from
+   * the shared module the handler itself sends. Not a copy: if the constant
+   * ever changes, this operator and that handler change together, and a probe
+   * sealed under the old value is refused by the audit's own re-check.
+   */
+  expectedCode: DEMO_ACCOUNT_CHECKOUT_FORBIDDEN_CODE,
   description: 'POST /billing/checkout (credit purchase on a demo account)',
 } as const;
 
 /** The identity pre-check endpoint. */
 export const GATE6_IDENTITY_PATH = '/users/me';
+
+/** The deployment-identity endpoint that binds this API to a database. */
+export const GATE6_DEPLOYMENT_IDENTITY_PATH = '/deployment-identity';
 
 // ---------------------------------------------------------------------------
 // Injected transport
@@ -127,13 +169,35 @@ export interface Gate6HttpRequest {
 
 export interface Gate6HttpResponse {
   status: number;
+  /**
+   * Response headers, lower-cased. REQUIRED rather than optional: the refusal
+   * proof needs `content-type` to tell an application refusal from an
+   * HTML/CDN error page, and an optional field would let a transport that
+   * forgot to supply them pass the check by omission.
+   */
+  headers: Record<string, string>;
   bodyText: string;
 }
 
 export interface Gate6CaptureDeps {
   database: Database;
-  /** Database IDENTITY, sealed into the probe. */
+  /**
+   * The LOCALLY observed database identity — the host of this operator's own
+   * `FIREBASE_DATABASE_URL`, i.e. the database it is about to snapshot. It is
+   * compared against what the deployed API says IT uses; on its own it proves
+   * nothing, which was the v1 defect.
+   */
   databaseHost: string;
+  /**
+   * The locally observed Firebase project id, when the environment states
+   * one. Best-effort and nullable: a developer machine often has none, so an
+   * absent value marks the project axis UNCHECKED in the sealed artifact
+   * rather than silently passing. The load-bearing binding is `databaseHost`,
+   * which is always present on both sides.
+   */
+  databaseProjectId: string | null;
+  /** The locally configured RTDB emulator host, when set. Part of the database identity. */
+  databaseEmulatorHost: string | null;
   now: () => number;
   log: (line: string) => void;
   writeFileText: (path: string, content: string) => Promise<void>;
@@ -272,7 +336,183 @@ function requestedWorkspace(flags: Map<string, string>): Gate6WorkspaceKey {
 }
 
 /**
- * Step 1 — the IDENTITY PRE-CHECK.
+ * The environment the operator was told to REQUIRE of the API.
+ *
+ * Both are mandatory flags with no default. Omitting either is an explicit
+ * refusal, never a silent skip: a "check the revision if you happened to say
+ * which one" rule is not a check, it is an invitation to forget, and the
+ * forgotten case is exactly the one that produces a probe captured against
+ * something other than the reviewed build.
+ */
+interface Gate6ExpectedDeployment {
+  revision: string;
+  environment: string;
+}
+
+/** The environments an API may legitimately claim (`NODE_ENV`). */
+const GATE6_ALLOWED_API_ENVIRONMENTS = ['production', 'development', 'test'] as const;
+
+function readExpectedDeployment(flags: Map<string, string>): Gate6ExpectedDeployment {
+  const revision = flags.get('--expected-api-revision');
+  if (!revision) {
+    throw new Gate6CaptureRefusal(
+      'expected-api-revision-missing',
+      '--expected-api-revision is REQUIRED. It is the immutable Cloud Run revision (or, off ' +
+        'Cloud Run, the release SHA) of the build the owner reviewed, and without it this ' +
+        'capture cannot tell the reviewed deployment from any other deployment that happens to ' +
+        'answer. Read it from the deployment record, not from the API — asking the API which ' +
+        'build it is and then accepting whatever it says proves nothing. Nothing has been sealed.',
+    );
+  }
+  const environment = flags.get('--expected-api-environment');
+  if (!environment) {
+    throw new Gate6CaptureRefusal(
+      'expected-api-environment-missing',
+      `--expected-api-environment is REQUIRED (one of ${GATE6_ALLOWED_API_ENVIRONMENTS.join(', ')}). ` +
+        'Nothing has been sealed.',
+    );
+  }
+  if (!GATE6_ALLOWED_API_ENVIRONMENTS.some((candidate) => candidate === environment)) {
+    throw new Gate6CaptureRefusal(
+      'expected-api-environment-invalid',
+      `--expected-api-environment must be one of ${GATE6_ALLOWED_API_ENVIRONMENTS.join(', ')} ` +
+        `(got ${environment})`,
+    );
+  }
+  return { revision, environment };
+}
+
+/**
+ * Step 1 — BIND THE API TO THE DATABASE.
+ *
+ * This is the check the whole artifact's meaning rests on, and it was missing
+ * entirely. The operator drives a DEPLOYED API and snapshots the RTDB from its
+ * OWN environment; if those are not the same system, the refusal is real, the
+ * snapshots are real, and the conclusion drawn from putting them side by side
+ * is worthless. Because the pairing is invisible — both halves look healthy —
+ * it can only be caught by making the API state its own identity and
+ * comparing.
+ *
+ * Every disagreement aborts BEFORE the pre-state snapshot, so a mis-pointed
+ * run costs one HTTP request and seals nothing.
+ */
+async function assertDeploymentBinding(
+  deps: Gate6CaptureDeps,
+  apiBaseUrl: string,
+  expected: Gate6ExpectedDeployment,
+  signal: AbortSignal,
+): Promise<Gate6ProbeEnvironment> {
+  const response = await deps.httpRequest(
+    {
+      method: 'GET',
+      url: `${apiBaseUrl}${GATE6_DEPLOYMENT_IDENTITY_PATH}`,
+      headers: { authorization: `Bearer ${deps.idToken}`, accept: 'application/json' },
+    },
+    { signal },
+  );
+  if (response.status !== 200) {
+    throw new Gate6CaptureRefusal(
+      'api-identity-unavailable',
+      `GET ${GATE6_DEPLOYMENT_IDENTITY_PATH} returned ${response.status}, not 200, so the API ` +
+        'cannot be tied to the database this operator is about to snapshot. A 503 means the ' +
+        'server was deployed without a deployment identity; a 404 means it predates this ' +
+        'endpoint and must be redeployed before a probe from it is worth anything. Nothing has ' +
+        'been sealed.',
+    );
+  }
+  let identity: DeploymentIdentity;
+  try {
+    identity = deploymentIdentitySchema.parse(JSON.parse(response.bodyText));
+  } catch (error) {
+    throw new Gate6CaptureRefusal(
+      'api-identity-unavailable',
+      `GET ${GATE6_DEPLOYMENT_IDENTITY_PATH} did not return a valid deployment identity ` +
+        `(${error instanceof Error ? error.message : String(error)}). Nothing has been sealed.`,
+    );
+  }
+
+  if (identity.environment !== expected.environment) {
+    throw new Gate6CaptureRefusal(
+      'api-environment-unexpected',
+      `the API reports environment "${identity.environment}" but this capture requires ` +
+        `"${expected.environment}". Nothing has been sealed.`,
+    );
+  }
+
+  // The immutable Cloud Run revision is authoritative when present; off Cloud
+  // Run the release SHA is the only build coordinate that exists.
+  const observedBuild = identity.revision ?? identity.releaseSha;
+  if (observedBuild === null) {
+    throw new Gate6CaptureRefusal(
+      'api-identity-incomplete',
+      'the API named neither a deployment revision (K_REVISION) nor a release SHA ' +
+        '(API_RELEASE_SHA), so this probe could not be tied to the build the owner reviewed. ' +
+        'Rebuild the image with the API_RELEASE_SHA build arg, or deploy it somewhere that ' +
+        'injects a revision. Nothing has been sealed.',
+    );
+  }
+  if (observedBuild !== expected.revision) {
+    throw new Gate6CaptureRefusal(
+      'api-revision-unexpected',
+      `the API is running build "${observedBuild}", not the reviewed "${expected.revision}". ` +
+        'A probe captured against an unreviewed build is evidence about code nobody signed off ' +
+        'on. Nothing has been sealed.',
+    );
+  }
+
+  if (identity.databaseHost !== deps.databaseHost) {
+    throw new Gate6CaptureRefusal(
+      'api-database-mismatch',
+      `the API says it uses ${identity.databaseHost} but this operator is snapshotting ` +
+        `${deps.databaseHost}. The refusal and the snapshots would be about two different ` +
+        'systems, so "the refused call wrote nothing" would be true and meaningless. This is ' +
+        'the exact pairing the binding check exists to catch. Nothing has been sealed.',
+    );
+  }
+  if (identity.databaseEmulatorHost !== deps.databaseEmulatorHost) {
+    throw new Gate6CaptureRefusal(
+      'api-database-mismatch',
+      `emulator mismatch: the API reports ${identity.databaseEmulatorHost ?? 'no emulator'} and ` +
+        `this operator ${deps.databaseEmulatorHost ?? 'no emulator'}. An API pointed at an ` +
+        'emulator is a different database environment even when the host string matches. ' +
+        'Nothing has been sealed.',
+    );
+  }
+
+  // Project id is best-effort on BOTH sides — a runtime need not publish one.
+  // When either side is silent the axis is recorded as UNCHECKED rather than
+  // quietly counted as agreement; the host equality above is the binding that
+  // carries the weight, and it is never skippable.
+  const projectIdChecked = identity.firebaseProjectId !== null && deps.databaseProjectId !== null;
+  if (projectIdChecked && identity.firebaseProjectId !== deps.databaseProjectId) {
+    throw new Gate6CaptureRefusal(
+      'api-database-mismatch',
+      `Firebase project mismatch: the API reports ${identity.firebaseProjectId} and this ` +
+        `operator ${deps.databaseProjectId}. Nothing has been sealed.`,
+    );
+  }
+
+  return {
+    apiBaseUrl,
+    apiEnvironment: identity.environment,
+    apiService: identity.service,
+    apiRevision: identity.revision,
+    apiReleaseSha: identity.releaseSha,
+    apiFirebaseProjectId: identity.firebaseProjectId,
+    apiDatabaseHost: identity.databaseHost,
+    apiDatabaseEmulatorHost: identity.databaseEmulatorHost,
+    localDatabaseHost: deps.databaseHost,
+    localFirebaseProjectId: deps.databaseProjectId,
+    localDatabaseEmulatorHost: deps.databaseEmulatorHost,
+    expectedApiRevision: expected.revision,
+    expectedApiEnvironment: expected.environment,
+    projectIdChecked,
+    bound: true,
+  };
+}
+
+/**
+ * Step 2 — the IDENTITY PRE-CHECK.
  *
  * Without it, a 403 proves far less than it appears to. The token might belong
  * to a different account entirely (so the refusal is about someone else), or
@@ -333,16 +573,33 @@ async function assertDemoIdentity(
 }
 
 /**
- * Step 3+4 — perform the operation and PROVE it was refused.
+ * Step 4+5 — perform the operation and PROVE it was refused BY THE
+ * APPLICATION.
  *
- * The two abort conditions are deliberately distinct findings, because they
- * mean opposite things and demand opposite responses.
+ * The abort conditions are deliberately distinct findings, because they mean
+ * different things and demand different responses.
+ *
+ * THE PROOF IS THE BODY, NOT THE STATUS. The original version stopped at
+ * `status === 403` and never looked at `bodyText`. Everything on the path
+ * between this process and the handler can produce a 403 — a CDN edge rule, a
+ * reverse proxy, a WAF, an unrelated authorization failure — and every one of
+ * them leaves the RTDB untouched, so the probe's central claim came out
+ * vacuously true. Four things must now hold, in order:
+ *
+ *  1. status is exactly the expected one;
+ *  2. the response is `application/json` — an HTML error page is an edge
+ *     refusal, and no amount of body-sniffing makes it the application's;
+ *  3. the body parses and carries the envelope's required members;
+ *  4. `code` is the demo checkout guard's own stable identifier.
+ *
+ * A body that parses but carries a DIFFERENT code fails (4): it is some other
+ * refusal, and evidence about the wrong guard is not evidence.
  */
 async function performAndProveRefusal(
   deps: Gate6CaptureDeps,
   apiBaseUrl: string,
   signal: AbortSignal,
-): Promise<{ status: number; refusal: string }> {
+): Promise<{ refusal: string; envelope: Gate6RefusalEnvelope }> {
   const response = await deps.httpRequest(
     {
       method: GATE6_REFUSED_OPERATION.method,
@@ -375,9 +632,86 @@ async function performAndProveRefusal(
         '"nothing was written" would be true but vacuous. Nothing has been sealed.',
     );
   }
+
+  const contentType = response.headers['content-type'] ?? '';
+  if (!/^application\/json\b/i.test(contentType.trim())) {
+    throw new Gate6CaptureRefusal(
+      'refused-operation-not-json',
+      `${GATE6_REFUSED_OPERATION.description} returned ${response.status} with content type ` +
+        `"${contentType || '(absent)'}", not application/json. This is an EDGE refusal — a CDN, ` +
+        'reverse proxy, or WAF error page — not the application demo guard. It writes nothing to ' +
+        'RTDB either, which is precisely why it would have sealed a vacuously-passing probe. ' +
+        'Nothing has been sealed.',
+    );
+  }
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(response.bodyText);
+  } catch {
+    throw new Gate6CaptureRefusal(
+      'refused-operation-body-unparseable',
+      `${GATE6_REFUSED_OPERATION.description} returned ${response.status} with a body that is not ` +
+        'parseable JSON, so the refusal cannot be attributed to the application. Nothing has ' +
+        'been sealed.',
+    );
+  }
+  if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    throw new Gate6CaptureRefusal(
+      'refused-operation-body-unparseable',
+      `${GATE6_REFUSED_OPERATION.description} returned ${response.status} with a JSON body that is ` +
+        'not an error envelope object. Nothing has been sealed.',
+    );
+  }
+  const body = parsed as Record<string, unknown>;
+
+  if (body.code === undefined || body.code === null) {
+    throw new Gate6CaptureRefusal(
+      'refused-operation-code-missing',
+      `${GATE6_REFUSED_OPERATION.description} returned a generic ${response.status} JSON envelope ` +
+        `with no application error code. The demo checkout guard sends ` +
+        `"${GATE6_REFUSED_OPERATION.expectedCode}"; a 403 without it may have come from anywhere ` +
+        'on the path and proves nothing about the guard. Most likely the deployed API predates ' +
+        'the code and must be redeployed. Nothing has been sealed.',
+    );
+  }
+  if (body.code !== GATE6_REFUSED_OPERATION.expectedCode) {
+    throw new Gate6CaptureRefusal(
+      'refused-operation-code-unexpected',
+      `${GATE6_REFUSED_OPERATION.description} was refused with application code ` +
+        `"${String(body.code)}", not the demo checkout guard's ` +
+        `"${GATE6_REFUSED_OPERATION.expectedCode}". Some OTHER rule refused this call, so a probe ` +
+        'built on it would be evidence about the wrong guard. Nothing has been sealed.',
+    );
+  }
+  if (typeof body.error !== 'string' || typeof body.message !== 'string') {
+    throw new Gate6CaptureRefusal(
+      'refused-operation-body-unparseable',
+      `${GATE6_REFUSED_OPERATION.description} returned an envelope missing its error/message ` +
+        'members. Nothing has been sealed.',
+    );
+  }
+  if (body.statusCode !== response.status) {
+    throw new Gate6CaptureRefusal(
+      'refused-operation-body-unparseable',
+      `${GATE6_REFUSED_OPERATION.description} returned HTTP ${response.status} but an envelope ` +
+        `claiming statusCode ${String(body.statusCode)}; something between the guard and this ` +
+        'operator re-wrapped the response. Nothing has been sealed.',
+    );
+  }
+
   return {
-    status: response.status,
-    refusal: `${response.status} from ${GATE6_REFUSED_OPERATION.method} ${GATE6_REFUSED_OPERATION.path}`,
+    refusal:
+      `${response.status} ${GATE6_REFUSED_OPERATION.expectedCode} from ` +
+      `${GATE6_REFUSED_OPERATION.method} ${GATE6_REFUSED_OPERATION.path}`,
+    envelope: {
+      status: response.status,
+      contentType: contentType.trim(),
+      code: GATE6_REFUSED_OPERATION.expectedCode,
+      error: body.error,
+      message: body.message,
+      statusCode: response.status,
+    },
   };
 }
 
@@ -394,6 +728,7 @@ export async function runGate6ProbeCapture(
   const workspace = requestedWorkspace(flags);
   const uid = uids[workspace];
   const apiBaseUrl = resolveApiBaseUrl(required(flags, '--api-base-url'));
+  const expectedDeployment = readExpectedDeployment(flags);
   const outPath = required(flags, '--out');
   const requestTimeoutMs = positiveInteger(
     flags,
@@ -414,10 +749,16 @@ export async function runGate6ProbeCapture(
     );
   }
 
-  deps.log(`Database host: ${deps.databaseHost}`);
+  deps.log(`Database host (local): ${deps.databaseHost}`);
   deps.log(`API base URL: ${apiBaseUrl}`);
+  deps.log(
+    `Required API deployment: environment=${expectedDeployment.environment} build=${expectedDeployment.revision}`,
+  );
   deps.log(`Account: ${workspace} (${uid})`);
-  deps.log(`Refused operation: ${GATE6_REFUSED_OPERATION.description}`);
+  deps.log(
+    `Refused operation: ${GATE6_REFUSED_OPERATION.description}, proven by application code ` +
+      `"${GATE6_REFUSED_OPERATION.expectedCode}"`,
+  );
   deps.log(
     `Bounds: requestTimeoutMs=${requestTimeoutMs} maxStallMs=${maxStallMs} heartbeatMs=${heartbeatIntervalMs}`,
   );
@@ -446,7 +787,21 @@ export async function runGate6ProbeCapture(
   };
 
   try {
-    // 1 — identity.
+    // 1 — BIND the API to the database, before anything else. A mis-pointed
+    // run costs one request and seals nothing.
+    const environment = await bounded('deployment-binding', () =>
+      assertDeploymentBinding(deps, apiBaseUrl, expectedDeployment, monitor.signal),
+    );
+    deps.log(
+      `API bound: ${environment.apiService ?? 'unnamed service'} @ ` +
+        `${environment.apiRevision ?? environment.apiReleaseSha} (${environment.apiEnvironment}) ` +
+        `uses ${environment.apiDatabaseHost}, which is the database being snapshotted` +
+        (environment.projectIdChecked
+          ? `; Firebase project ${environment.apiFirebaseProjectId} agrees`
+          : '; Firebase project id UNCHECKED (one side did not state one)'),
+    );
+
+    // 2 — identity.
     await bounded('identity-check', () =>
       assertDemoIdentity(deps, apiBaseUrl, uid, monitor.signal),
     );
@@ -454,7 +809,7 @@ export async function runGate6ProbeCapture(
       `Identity confirmed: the credential is ${uid} and the server calls it a demo account.`,
     );
 
-    // 2 — pre-state. `startedAtMs` is taken FIRST and reused as the
+    // 3 — pre-state. `startedAtMs` is taken FIRST and reused as the
     // pre-snapshot's `capturedAtMs`, so the audit's bracket invariant
     // (`before.capturedAtMs <= startedAtMs`) holds by construction rather than
     // by luck.
@@ -469,7 +824,9 @@ export async function runGate6ProbeCapture(
     );
     deps.log(`Pre-state captured: ${before.surfaces.length} surface(s).`);
 
-    // 3 + 4 — the refused operation, proven refused before anything is sealed.
+    // 4 + 5 — the refused operation, proven refused BY THE APPLICATION
+    // (status, content type, and the stable error code) before anything is
+    // sealed.
     const outcome = await bounded('refused-operation', () =>
       performAndProveRefusal(deps, apiBaseUrl, monitor.signal),
     );
@@ -493,7 +850,7 @@ export async function runGate6ProbeCapture(
       );
     }
 
-    // 5 — post-state, over the SAME window, so the two snapshots are zippable.
+    // 6 — post-state, over the SAME window, so the two snapshots are zippable.
     const after = await bounded('post-snapshot', () =>
       captureGate6TraceSnapshot(
         deps.database,
@@ -504,14 +861,19 @@ export async function runGate6ProbeCapture(
     );
     deps.log(`Post-state captured: ${after.surfaces.length} surface(s).`);
 
-    // 6 — seal.
+    // 7 — seal. `refusalEnvelope` and `environment` are the two proofs a v1
+    // probe lacked; the audit re-derives both rather than trusting them, but
+    // they must be IN the artifact for that re-derivation to be possible at
+    // all.
     const probe = createGate6RejectedOperationProbe({
-      formatVersion: 1,
+      formatVersion: GATE6_REJECTED_OPERATION_PROBE_FORMAT_VERSION,
       workspace,
       uid,
       databaseHost: deps.databaseHost,
       operation: `${GATE6_REFUSED_OPERATION.description} [${GATE6_REFUSED_OPERATION.id}]`,
       refusal: outcome.refusal,
+      refusalEnvelope: outcome.envelope,
+      environment,
       startedAtMs,
       finishedAtMs,
       before,
