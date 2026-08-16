@@ -21,6 +21,7 @@ import {
   type EnrichmentStageOutcome,
   type EnrichmentVodWitnessCommitAction,
   type EnrichmentVodWitnessPreWriteAction,
+  type EnrichmentWitnessPatch,
   type MatchStage,
   type ResearchEnrichmentAttachmentRecord,
   type ResearchEnrichmentObservationRecord,
@@ -267,6 +268,14 @@ export function buildEnrichmentOverlay(input: BuildEnrichmentOverlayInput): Enri
   const enrichedVodSourceByKey: Record<string, EnrichmentVodSourceInput> = {};
   const enrichedStageByKey: Record<string, EnrichedStage> = {};
   const enrichedGameEvidenceByKey: Record<string, EnrichedGameEvidence> = {};
+  // 30.3 verifier closure 3: per-key provenance rank for the VOD map. A
+  // BRACKET observation (the authoritative fact source) outranks a
+  // VOD-LIST row (a discovery-index entry); previously the winner was
+  // whichever attachment happened to iterate LAST — truncated-hash key
+  // order — so the URL was right but `enrichedVodSourceByKey` could name
+  // the wrong source page. Ties break on the smaller observationId, so the
+  // merge is deterministic regardless of attachment iteration order.
+  const vodProvenanceRankByKey: Record<string, number> = {};
 
   for (const attachment of input.attachments) {
     const record = input.observations[attachment.observationId];
@@ -282,8 +291,22 @@ export function buildEnrichmentOverlay(input: BuildEnrichmentOverlayInput): Enri
       declaredOrdinals.length > 0 ? Math.max(...declaredOrdinals) : record.vodUrl ? 1 : 0;
 
     if (record.vodUrl) {
+      const provenanceRank = record.contentType === 'vod-reference' ? 1 : 2;
       for (let ordinal = 1; ordinal <= maxOrdinal; ordinal += 1) {
         const rowKey = deriveEnrichmentMatchRowKey(input.targetSetId, ordinal);
+        const existingRank = vodProvenanceRankByKey[rowKey] ?? 0;
+        if (existingRank > provenanceRank) {
+          continue;
+        }
+        if (existingRank === provenanceRank) {
+          const existingSource = enrichedVodSourceByKey[rowKey];
+          if (
+            existingSource?.observationId != null &&
+            record.observationId > existingSource.observationId
+          ) {
+            continue;
+          }
+        }
         enrichedVodUrlByKey[rowKey] = record.vodUrl;
         // The VOD's OWN provenance — the observation that carried the URL,
         // never the stage observation for the same row (30.2 gap-closure
@@ -293,6 +316,7 @@ export function buildEnrichmentOverlay(input: BuildEnrichmentOverlayInput): Enri
           sourceRevisionId: record.sourceRevisionId,
           parserVersion: record.parserVersion,
         };
+        vodProvenanceRankByKey[rowKey] = provenanceRank;
       }
     }
 
@@ -366,6 +390,20 @@ export interface EnrichmentProjectionRowOutcome {
    * boolean derived from the resolved members is robust to both labelings.
    */
   wouldChangeRow?: boolean;
+  /**
+   * PREVIEW-ONLY (30.3 verifier B2): `true` when applying would change the
+   * WITNESS even though no row value moves — any witness-patch action other
+   * than `none` (a character/stock evidence stamp, a pending-half
+   * promotion, a stale-claim clear). Characters are witness-only (no
+   * match-row member), so without this signal already-projected production
+   * sets — attached, receipted, row-converged — could NEVER receive
+   * character evidence: they enter neither the review queue nor the
+   * receipt-less union, and `wouldChangeRow` compares row members alone.
+   * The resolver's already-committed-identical checks make the signal
+   * convergent: one reprojection stamps the evidence, after which every
+   * action is `none` again.
+   */
+  wouldChangeWitness?: boolean;
 }
 
 export interface EnrichmentProjectionCounts {
@@ -540,11 +578,27 @@ export async function previewEnrichmentProjection(
       (resolved.vodUrl ?? undefined) !== extractExistingVodUrl(row) ||
       !stagesEqual(resolved.stage, extractExistingStage(row)) ||
       (resolved.stocksLeft ?? undefined) !== extractExistingStocksLeft(row);
-    outcome.rows.push({ ...toRowOutcome(key, resolved), wouldChangeRow });
+    // The witness-change signal (30.3 verifier B2): character evidence has
+    // no row member, so a row-value comparison alone can never see it.
+    const wouldChangeWitness = witnessPatchWouldWrite(resolved.witnessPatch);
+    outcome.rows.push({ ...toRowOutcome(key, resolved), wouldChangeRow, wouldChangeWitness });
     tallyResolvedRow(outcome, resolved);
   }
 
   return outcome;
+}
+
+/** `true` when ANY witness-patch action would write — the preview-side witness-delta signal (30.3 verifier B2). Convergent by the resolver's already-committed-identical checks: a fully-stamped witness yields all-`none`. */
+function witnessPatchWouldWrite(patch: EnrichmentWitnessPatch): boolean {
+  return (
+    patch.vodPreWrite.kind !== 'none' ||
+    patch.vodCommit.kind !== 'none' ||
+    patch.stagePreWrite.kind !== 'none' ||
+    patch.stageCommit.kind !== 'none' ||
+    patch.charsCommit.kind !== 'none' ||
+    patch.stocksPreWrite.kind !== 'none' ||
+    patch.stocksCommit.kind !== 'none'
+  );
 }
 
 /**
@@ -1318,9 +1372,6 @@ export async function readEnrichmentOverlayForSet(
   }
 
   const attachments = await listAttachmentsForSet(database, tenantId, storageKey);
-  if (attachments.length === 0) {
-    return {};
-  }
 
   const observationsById: Record<string, ResearchEnrichmentObservationRecord> = {};
   for (const attachment of attachments) {
@@ -1330,11 +1381,19 @@ export async function readEnrichmentOverlayForSet(
     }
   }
 
-  const setOverlay = buildEnrichmentOverlay({
-    targetSetId: storageKey,
-    attachments,
-    observations: observationsById,
-  });
+  // 30.3 verifier B3 (symmetry with the tenant reader below): widened with
+  // the set's confirmed candidate so a candidate-projected URL is never
+  // misread as source-removed by an ingestion-side consumer.
+  const setOverlay = await widenOverlayWithConfirmedCandidate(
+    database,
+    tenantId,
+    storageKey,
+    buildEnrichmentOverlay({
+      targetSetId: storageKey,
+      attachments,
+      observations: observationsById,
+    }),
+  );
 
   const keys = new Set([
     ...Object.keys(setOverlay.enrichedVodUrlByKey),
@@ -1448,11 +1507,25 @@ export async function readEnrichmentOverlayForTenant(
     if (!isPathSafeProviderId(targetSetId)) {
       continue;
     }
-    const setOverlay = buildEnrichmentOverlay({
+    // 30.3 verifier B3: widen with the set's admin-CONFIRMED YouTube
+    // candidate EXACTLY as the applier (~apply) and the preview do. Without
+    // this, a stage-only-attached set whose VOD was candidate-projected
+    // hands the ingestion re-projection an overlay with a witness-owned URL
+    // and NO enrichment URL — the shared resolver's source-removed branch
+    // then strips the confirmed candidate's URL from the row. The widening
+    // also adds the candidate-covered keys to the key set below, so a set
+    // with no observation-derived VOD/stage/evidence key still surfaces its
+    // candidate-projected rows to the ingestion overlay.
+    const setOverlay = await widenOverlayWithConfirmedCandidate(
+      database,
+      tenantId,
       targetSetId,
-      attachments,
-      observations: observationsById,
-    });
+      buildEnrichmentOverlay({
+        targetSetId,
+        attachments,
+        observations: observationsById,
+      }),
+    );
     const keys = new Set([
       ...Object.keys(setOverlay.enrichedVodUrlByKey),
       ...Object.keys(setOverlay.enrichedStageByKey),

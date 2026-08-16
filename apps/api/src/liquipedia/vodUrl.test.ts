@@ -3,11 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { LIQUIPEDIA_FIXTURE_DIR } from './__fixtures__/loadFixture.js';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import {
-  buildVodDedupeKey,
-  LIQUIPEDIA_VOD_ALLOWED_HOSTS,
-  normalizeLiquipediaVodUrl,
-} from './vodUrl.js';
+import { LIQUIPEDIA_VOD_ALLOWED_HOSTS, normalizeLiquipediaVodUrl } from './vodUrl.js';
 
 // The shipped host-recognition vocabulary this module's allowlist must
 // agree with, read as LITERALS (not imported — apps/api cannot import from
@@ -105,13 +101,10 @@ describe('normalizeLiquipediaVodUrl — start offsets (30.3 Gate 5, known loss f
     expect(result.vodUrl).toBe('https://www.youtube.com/watch?v=6Mage6l0a4w');
   });
 
-  it('the same video with two DIFFERENT offsets stays two DISTINCT canonical forms — and therefore two distinct dedupe keys even for the same target set', () => {
+  it('the same video with two DIFFERENT offsets stays two DISTINCT canonical forms — the property every downstream dedupe key inherits', () => {
     const first = normalizeLiquipediaVodUrl('https://youtu.be/sD9RX78rUDw?t=2203');
     const second = normalizeLiquipediaVodUrl('https://youtu.be/sD9RX78rUDw?t=5764');
     expect(first.vodUrl).not.toBe(second.vodUrl);
-    expect(buildVodDedupeKey(first.vodUrl!, 'set-x')).not.toBe(
-      buildVodDedupeKey(second.vodUrl!, 'set-x'),
-    );
   });
 
   it('a Twitch t offset is validated and normalized to the duration form the web deep-link writer uses', () => {
@@ -192,20 +185,12 @@ describe('normalizeLiquipediaVodUrl — dedupe integrity', () => {
   });
 });
 
-describe('buildVodDedupeKey', () => {
-  it('exposes the pair of canonical URL and target set id, never the URL alone', () => {
-    const canonical = normalizeLiquipediaVodUrl(
-      'https://www.youtube.com/watch?v=pncEm1PfAJU',
-    ).vodUrl!;
-    const grandFinalsKey = buildVodDedupeKey(canonical, 'set-r3m1');
-    const resetKey = buildVodDedupeKey(canonical, 'set-r3m2');
-    // Same VOD, two different target sets (the GF and its reset) -> two
-    // DISTINCT dedupe keys, so both attachments are representable.
-    expect(grandFinalsKey).not.toBe(resetKey);
-    expect(grandFinalsKey).toContain(canonical);
-    expect(grandFinalsKey).toContain('set-r3m1');
-  });
-});
+// (30.3 verifier closure 6) `buildVodDedupeKey` was dead production code and
+// was removed; the URL-plus-set pairing property now lives where dedupe
+// actually happens — the vod-list observation-id ride-along
+// (`vodList.test.ts`) and the per-target-set attachment keys the Supernova
+// acceptance suite proves end-to-end (one VOD across the GF and its reset,
+// two attachments, never collapsed).
 
 // ---------------------------------------------------------------------------
 // Data-driven: every VOD URL extracted from the committed player VOD-page

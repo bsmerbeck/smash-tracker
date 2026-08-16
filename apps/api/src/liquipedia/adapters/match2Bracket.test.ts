@@ -353,38 +353,58 @@ ${matchBody}
     expect(researchEnrichmentObservationRecordSchema.safeParse(observation).success).toBe(true);
   }
 
-  it('both opponents present but empty never persist rawTag ""', () => {
+  // 30.3 verifier closure 4: these three inputs are rejected by
+  // `parseSoloOpponent` ITSELF (an empty/whitespace-only first positional
+  // segment yields a null parse) — the classifier never runs for them. The
+  // labels state the path that actually fires; the OUTCOME contract (an
+  // extraction failure without `players`, never `rawTag: ""`) is identical
+  // either way, which is exactly what these lock in.
+  it('both opponents present but empty are rejected by the SoloOpponent parse (null opponents) — an extraction failure, never rawTag ""', () => {
     const { observations } = extractHandBuilt(
       '|opponent1={{SoloOpponent||score=3}}\n|opponent2={{SoloOpponent||score=1}}',
     );
     expectFailureWithoutPlayers(observations);
+    expect(observations[0]!.resolutionReasons?.join(' ')).toContain('could not be parsed');
   });
 
-  it('one empty and one populated opponent is a partially-filled pair: extraction failure', () => {
+  it('one empty and one populated opponent: the empty side fails the SoloOpponent parse — extraction failure, never a half-fabricated pairing', () => {
     const { observations } = extractHandBuilt(
       '|opponent1={{SoloOpponent|moky|score=3}}\n|opponent2={{SoloOpponent||score=0}}',
     );
     expectFailureWithoutPlayers(observations);
+    expect(observations[0]!.resolutionReasons?.join(' ')).toContain('could not be parsed');
   });
 
-  it('a whitespace-only opponent tag is classified as empty', () => {
+  it('a whitespace-only opponent tag fails the SoloOpponent parse (trimmed to empty) — extraction failure', () => {
     const { observations } = extractHandBuilt(
       '|opponent1={{SoloOpponent|   |score=3}}\n|opponent2={{SoloOpponent|Salt|score=0}}',
     );
     expectFailureWithoutPlayers(observations);
+    expect(observations[0]!.resolutionReasons?.join(' ')).toContain('could not be parsed');
   });
 
-  it.each(['TBD', 'Bye'])('a %s placeholder opponent never persists as a player', (placeholder) => {
-    const { observations } = extractHandBuilt(
-      `|opponent1={{SoloOpponent|moky|score=3}}\n|opponent2={{SoloOpponent|${placeholder}|score=0}}`,
-    );
-    expectFailureWithoutPlayers(observations);
-    expect(observations[0]!.resolutionReasons?.join(' ')).toContain('placeholder');
-  });
+  // The CLASSIFIER path (a parseable tag that is a placeholder) — the same
+  // case variants the legacy suite covers.
+  it.each(['TBD', 'tbd', 'Bye', 'BYE'])(
+    'a %s placeholder opponent never persists as a player (classifier path)',
+    (placeholder) => {
+      const { observations } = extractHandBuilt(
+        `|opponent1={{SoloOpponent|moky|score=3}}\n|opponent2={{SoloOpponent|${placeholder}|score=0}}`,
+      );
+      expectFailureWithoutPlayers(observations);
+      expect(observations[0]!.resolutionReasons?.join(' ')).toContain('placeholder');
+    },
+  );
 
   it('a missing opponent2 parameter is an extraction failure, never a one-player set', () => {
     const { observations } = extractHandBuilt('|opponent1={{SoloOpponent|moky|score=3}}');
     expectFailureWithoutPlayers(observations);
+  });
+
+  it('BOTH opponent parameters missing entirely is an extraction failure, never a playerless set', () => {
+    const { observations } = extractHandBuilt('|date=May 18, 2025');
+    expectFailureWithoutPlayers(observations);
+    expect(observations[0]!.resolutionReasons?.join(' ')).toContain('could not be parsed');
   });
 
   it('usable opponents keep their trimmed tags and conditional-spread flags', () => {
