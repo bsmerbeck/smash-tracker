@@ -178,13 +178,43 @@ export const TENANT_DELETION_TREES = [
 
 /**
  * Phase 30.2 Plan 01: the global (non-tenant-keyed) Liquipedia rate-limit
- * and page-cache nodes — `researchRateBudget/liquipedia`,
- * `researchRateBudget/liquipediaParse`, and `liquipediaPageCache/{pageId}` —
- * are DELIBERATELY NOT registered above. Each describes a shared resource
- * (a global request budget, a revision-keyed page cache), not a tenant, and
- * stores no tenant-scoped data; the identical reasoning is already written
- * for the start.gg budget node at `apps/api/src/research/ingestion/throttle.ts`
- * ("Why the node is NOT tenant-keyed").
+ * nodes — `researchRateBudget/liquipedia` and
+ * `researchRateBudget/liquipediaParse` — are DELIBERATELY NOT registered
+ * above. Each describes a shared resource (a global request budget), not a
+ * tenant, and stores no tenant-scoped data; the identical reasoning is
+ * already written for the start.gg budget node at
+ * `apps/api/src/research/ingestion/throttle.ts` ("Why the node is NOT
+ * tenant-keyed").
+ *
+ * `liquipediaPageCache/{pageId}` is ALSO deliberately excluded, but NOT for
+ * the same reason as the rate-budget nodes above — restated here so a
+ * future reader does not assume "stores no tenant-scoped data" still covers
+ * it too (30.2 production defect A's corrective changed the facts this
+ * exclusion originally rested on). Every key has been TENANT-SALTED since
+ * that corrective — `hashHex(`${tenantId}\n${title}`).slice(0, 48)`
+ * (`research/enrichment/run.ts`'s `cacheKeyFor`) — so a tenant's deletion
+ * genuinely DOES orphan that tenant's own cache entries; this node is not
+ * tenant-less the way the rate-budget nodes are. It stays excluded from
+ * this registry anyway, for three reasons taken together:
+ *
+ *   1. The tree is FLAT (digest keys keyed by `hashHex(tenantId + title)`,
+ *      with no `{tenantId}/...` path prefix a registry-based per-tenant
+ *      deletion could ever target) — a registry entry here would name a
+ *      deletion this module has no way to perform.
+ *   2. Every orphaned entry is HARMLESS: it holds only public wiki metadata
+ *      (page title, revision id, content hash — never anything about the
+ *      deleted tenant), the same class of information the Liquipedia page
+ *      itself already publishes.
+ *   3. Every orphaned entry SELF-INVALIDATES: the next time ANY tenant
+ *      re-caches that page, the freshness check compares against the
+ *      current composed parser version (`isLiquipediaPageFresh`), so a
+ *      stale orphan is never read as if it vouches for anything current —
+ *      it simply ages out rather than lingering as a stale claim a reader
+ *      could mistakenly trust.
+ *
+ * A registry entry that can never be honoured would be a broken promise,
+ * not a correctness gap this exclusion leaves open — so it is left out on
+ * purpose.
  */
 
 /**
