@@ -68,3 +68,35 @@ export const deploymentIdentitySchema = z.object({
 });
 
 export type DeploymentIdentity = z.infer<typeof deploymentIdentitySchema>;
+
+/**
+ * Phase 30.3 (deployment-binding hardening, item 3): the per-RESPONSE origin
+ * headers.
+ *
+ * WHY A HEADER AND NOT JUST THE IDENTITY ENDPOINT. The Gate-6 capture operator
+ * makes THREE separate HTTP requests — the deployment identity, `GET
+ * /users/me`, and the refused `POST /billing/checkout`. Only the first was
+ * revision-bound. Under Cloud Run split traffic, or a deploy that lands
+ * mid-capture, those three can be served by DIFFERENT revisions, so the
+ * operator could bind its evidence to revision A while the refusal it sealed
+ * actually came from revision B. Nothing in the sealed artifact would show it.
+ *
+ * The alternative considered and rejected was a revision-tagged Cloud Run URL
+ * for every request. That depends entirely on operator discipline (the tag has
+ * to be minted at deploy time and pasted correctly, and forgetting it silently
+ * restores the hole), and it bypasses the Firebase Hosting rewrite that real
+ * traffic goes through — so the probe would become evidence about a path no
+ * user takes. Headers are SELF-ENFORCING instead: every response states its own
+ * origin, the operator compares all three, and a mismatch aborts before
+ * anything is sealed.
+ *
+ * NON-SECRET BY CONSTRUCTION. Only the two build coordinates — never the
+ * service name, the project, or the database host, all of which stay behind the
+ * authenticated `GET /api/deployment-identity`. The API emits them only on
+ * responses to AUTHENTICATED requests, so no anonymous or public-bearer surface
+ * changes by a single byte.
+ */
+export const API_REVISION_HEADER = 'x-gf-api-revision';
+
+/** Companion of {@link API_REVISION_HEADER} — the build's git SHA. */
+export const API_RELEASE_SHA_HEADER = 'x-gf-api-release-sha';
