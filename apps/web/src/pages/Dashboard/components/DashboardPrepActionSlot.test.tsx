@@ -134,4 +134,68 @@ describe('DashboardPrepActionSlot', () => {
     renderSlot();
     expect(screen.queryAllByTestId('dashboard-prep-action-slot')).toHaveLength(0);
   });
+
+  // Phase 30.3 (Gate 6, prep-bypass closure, explicit owner instruction): a
+  // FUTURE-DATED admin-imported fixture — the protection must reject it on
+  // ORIGIN alone, never merely because real imported events happen to be
+  // historical. A date-only guard would pass this by accident; only an
+  // explicit origin check can prove the fix.
+  it('excludes a future-dated admin-imported entry even though it qualifies on date alone', () => {
+    const now = Date.now();
+    const importedFuture = makeEntry({
+      entryKey: 'imported-future',
+      eventName: 'Mis-recorded Imported Snapshot',
+      firstSetAt: now + 1000 * 60 * 60,
+      origin: 'admin-imported',
+    } as Partial<TournamentEntry> & { entryKey: string; origin: string });
+    useTournamentEntries.mockReturnValue({
+      data: [importedFuture],
+      isPending: false,
+      isError: false,
+    });
+    useProfile.mockReturnValue({
+      data: { onboardingIntent: null },
+      isPending: false,
+      isError: false,
+    });
+
+    renderSlot();
+
+    expect(screen.queryByTestId('dashboard-prep-action-slot')).not.toBeInTheDocument();
+  });
+
+  it('a genuine future entry wins over a future-dated admin-imported one, which is excluded outright', () => {
+    const now = Date.now();
+    const importedFuture = makeEntry({
+      entryKey: 'imported-future',
+      eventName: 'Mis-recorded Imported Snapshot',
+      firstSetAt: now + 1000 * 60, // nearer in time than the genuine entry below
+      origin: 'admin-imported',
+    } as Partial<TournamentEntry> & { entryKey: string; origin: string });
+    const genuineFuture = makeEntry({
+      entryKey: 'genuine-future',
+      eventName: 'Real Upcoming Regional',
+      firstSetAt: now + 1000 * 60 * 60,
+    });
+    useTournamentEntries.mockReturnValue({
+      data: [importedFuture, genuineFuture],
+      isPending: false,
+      isError: false,
+    });
+    useProfile.mockReturnValue({
+      data: { onboardingIntent: null },
+      isPending: false,
+      isError: false,
+    });
+
+    renderSlot();
+
+    const slot = screen.getByTestId('dashboard-prep-action-slot');
+    expect(slot).toHaveTextContent('Real Upcoming Regional');
+    expect(slot).not.toHaveTextContent('Mis-recorded Imported Snapshot');
+    expect(screen.getByRole('link', { name: 'Prep for this event' })).toHaveAttribute(
+      'href',
+      '/tournaments/genuine-future/prep',
+    );
+  });
 });

@@ -6,6 +6,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { useTournamentEntries } from '@/hooks/useTournamentEntries';
 import { useProfile } from '@/hooks/useProfile';
+import { isAdminImportedEntry } from '@/lib/historicalTournament';
 import { PrepManualEntryDialog } from '@/pages/Tournaments/components/PrepManualEntryDialog';
 
 /** Matches `TournamentHeader.tsx`'s exact locale-aware date-formatting call shape. */
@@ -22,6 +23,15 @@ function formatDate(time: number, locale: string): string {
  * greater than `now`, restricted to entries a routable `entryKey` (the
  * registry always fills it on read, so this only guards defensively
  * against a malformed/legacy record).
+ *
+ * Phase 30.3 (Gate 6, prep-bypass closure): also excludes every
+ * admin-imported historical row (`isAdminImportedEntry`), mirroring
+ * `TournamentDetailPage.tsx`'s existing prep-CTA guard — an imported
+ * snapshot is a PAST public-data record, so it must never surface here as
+ * an "upcoming event" and link into `/tournaments/:entryKey/prep`, even if
+ * its imported `firstSetAt` is (mistakenly, or adversarially) recorded in
+ * the future. Checked BEFORE the date comparison so a future-dated
+ * imported fixture is excluded on the origin alone, never on timing.
  */
 function findNearestUpcomingEntry(
   entries: TournamentEntry[],
@@ -29,7 +39,7 @@ function findNearestUpcomingEntry(
 ): (TournamentEntry & { entryKey: string }) | null {
   let nearest: (TournamentEntry & { entryKey: string }) | null = null;
   for (const entry of entries) {
-    if (!entry.entryKey || entry.firstSetAt <= now) {
+    if (!entry.entryKey || isAdminImportedEntry(entry) || entry.firstSetAt <= now) {
       continue;
     }
     if (nearest === null || entry.firstSetAt < nearest.firstSetAt) {

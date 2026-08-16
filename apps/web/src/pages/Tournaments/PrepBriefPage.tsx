@@ -13,7 +13,9 @@ import { useOpponents } from '@/hooks/useOpponents';
 import { useOpponentNotes } from '@/hooks/useOpponentNotes';
 import { applyOpponentAliases } from '@/hooks/useFilteredMatches';
 import { usePrepBrief, useActivatePrepBrief, useReopenPrepBrief } from '@/hooks/usePrepBrief';
+import { isAdminImportedEntry } from '@/lib/historicalTournament';
 import { TournamentHeader } from './components/TournamentHeader';
+import { ImportedSnapshotNotice } from './components/ImportedSnapshotNotice';
 import { LikelyOpponentsCard } from './prep/LikelyOpponentsCard';
 import { PrepChecklistCard } from './prep/PrepChecklistCard';
 import { PrepPaidReportsCard } from './prepPaid/PrepPaidReportsCard';
@@ -108,6 +110,22 @@ export function PrepBriefPage() {
     return entries.find((e) => e.entryKey === entryKey);
   }, [entries, entryKey]);
 
+  // Phase 30.3 (Gate 6, prep-bypass closure): an admin-imported historical
+  // snapshot must never activate/reopen a prep brief, regardless of how the
+  // route was reached — `TournamentDetailPage.tsx` already refuses to
+  // render the CTA that would normally lead here (`isImported ? 'none' :
+  // ...`), but a direct/deep-linked navigation to THIS URL bypasses that
+  // guard entirely, and `DashboardPrepActionSlot.tsx`'s own imported guard
+  // (see its doc comment) only stops an imported row from being OFFERED as
+  // a link — neither stops a caller who already has the URL. Computed
+  // unconditionally right after `entry` resolves (`entry != null` — never
+  // `Boolean(entry)`, so an empty-but-truthy `TournamentEntry` object is
+  // never mistaken for "no entry") so it's available to BOTH the mount-time
+  // activation effect below (which must never fire for an imported entry)
+  // and the render branch (which shows an explanatory blocked state instead
+  // of activating anything).
+  const isImported = entry != null && isAdminImportedEntry(entry);
+
   // All-time, all-source, alias-resolved match set — deliberately NOT
   // useFilteredMatches(), which would apply whatever source/time-range
   // filter the user last left active on the Dashboard, silently shrinking a
@@ -133,7 +151,21 @@ export function PrepBriefPage() {
   const [prepSectionOpen, setPrepSectionOpen] = useState(false);
 
   useEffect(() => {
-    if (!entryKey || briefQuery.isPending || briefQuery.isError) {
+    // Phase 30.3 (Gate 6, prep-bypass closure): also waits for `entries` to
+    // actually be populated — `isImported` can only be trusted once the
+    // registry itself has resolved. `entriesLoading` (`useQuery`'s
+    // `isLoading`) is NOT a safe proxy for this: it is `isPending &&
+    // isFetching`, so it reads `false` both once loaded AND before the
+    // query is even `enabled` (this hook's `enabled: Boolean(user)` is
+    // false on the very first render, before `AuthProvider`'s
+    // `onAuthStateChanged` effect resolves) — a window where `entries` is
+    // still `undefined` (so `entry`/`isImported` default to "not
+    // imported") but `entriesLoading` already reads `false`. Gating on
+    // `entries == null` directly closes that window: it stays truthy for
+    // both "disabled, not started yet" and "genuinely fetching", and only
+    // becomes `false` once the registry array (even an empty one) has
+    // actually landed.
+    if (!entryKey || entries == null || briefQuery.isPending || briefQuery.isError || isImported) {
       return;
     }
     if (firedForEntryKeyRef.current === entryKey) {
@@ -152,7 +184,7 @@ export function PrepBriefPage() {
     // dependency list — the mutation objects are new on every render and
     // re-adding them would defeat the single-fire-per-entryKey guard above.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [entryKey, briefQuery.isPending, briefQuery.isError, briefQuery.data]);
+  }, [entryKey, entries, briefQuery.isPending, briefQuery.isError, briefQuery.data, isImported]);
 
   if (entriesLoading || matchesLoading || briefQuery.isPending) {
     return <div className="text-muted-foreground">{t('prep.loading')}</div>;
@@ -164,6 +196,34 @@ export function PrepBriefPage() {
 
   if (!entry) {
     return <NotFoundState />;
+  }
+
+  // Phase 30.3 (Gate 6, prep-bypass closure): renders instead of any
+  // prep/review UI for an admin-imported entry — no activation/reopen
+  // mutation was fired above, and nothing below this branch (which reads
+  // `briefQuery.data.brief`/`reviewAt`) is meaningful for a snapshot that
+  // was never, and can never be, activated. `ImportedSnapshotNotice`
+  // (reused verbatim from `TournamentDetailPage.tsx`) explains WHY, and the
+  // link routes back to the detail page rather than dead-ending.
+  if (isImported) {
+    return (
+      <div className="flex flex-col gap-6">
+        <TournamentHeader entry={entry} />
+        <ImportedSnapshotNotice entry={entry} />
+        <div
+          className="flex flex-col items-center gap-4 py-16 text-center"
+          data-testid="prep-imported-blocked"
+        >
+          <h1 className="text-2xl font-semibold tracking-tight">
+            {t('prep.importedBlocked.title')}
+          </h1>
+          <p className="max-w-md text-muted-foreground">{t('prep.importedBlocked.body')}</p>
+          <Button asChild>
+            <Link to={`/tournaments/${entryKey}`}>{t('prep.importedBlocked.back')}</Link>
+          </Button>
+        </div>
+      </div>
+    );
   }
 
   // The mode switch reads ONLY `briefQuery.data.reviewAt` (owner invariant
