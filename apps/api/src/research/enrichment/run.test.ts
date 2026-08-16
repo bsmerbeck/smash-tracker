@@ -725,6 +725,86 @@ describe('runEnrichmentBatch', () => {
     expect(runRecord?.coveragePublishedAtMs).toBeDefined();
   });
 
+  it('30.3 integration follow-up: a run with character AND stock fills publishes charactersEnriched/stocksFilledEmpty on the coverage counts', async () => {
+    const database = new FakeDatabase();
+    await seedProviderSet(database);
+    // The chars/stocks evidence half additionally requires the row's OWN
+    // `opponent`/`win` members (30.3 Gate 5's orientation proof against the
+    // row's provider-authored opponent tag) — `seedProviderSet`'s minimal
+    // `{ note: 'seed' }` stub carries neither, since no other test in this
+    // file exercises the evidence half. Patched in here rather than
+    // widening the shared seed every other test in this describe block
+    // also uses.
+    await database.ref(`matches/${TENANT_ID}/sgg-set-1-g1`).update({
+      opponent: 'OppTag',
+      win: true,
+    });
+    // The happy-path bracket wikitext plus `p1stock1`/`p2stock1` — the ONLY
+    // delta from `buildBracketWikitext()`. `r1m1p1char1=Fox|r1m1p2char1=Falco`
+    // proves orientation against the row's patched-in opponent tag above and
+    // fully maps to canonical fighter ids, so this fixture exercises BOTH
+    // evidence halves through the real gather -> extract -> resolve ->
+    // project -> stage -> publish pipeline, never a hand-seeded witness.
+    const evidenceBracketWikitext =
+      '{{TournamentInfo|game=ultimate|tourneylink=TestCup/2026}}\n' +
+      '{{LegacyBracket|r1m1p1=TestPlayer|r1m1p2=OppTag|r1m1p1score=3|r1m1p2score=1|' +
+      'r1m1date=January 1, 2026|r1m1details={{BracketMatchDetails|vod=' +
+      VOD_URL +
+      '}}|r1m1p1char1=Fox|r1m1p2char1=Falco|r1m1stage1=Battlefield|r1m1win1=1|' +
+      'r1m1p1stock1=2|r1m1p2stock1=0}}';
+    const { client } = buildFixtureClient({
+      vodPagePresence: new Map([[VOD_PAGE_TITLE, true]]),
+      vodPageRevisionId: new Map([[VOD_PAGE_TITLE, 500]]),
+      generatedContent: new Map([
+        [VOD_PAGE_TITLE, { content: buildVodPageBody(), mode: 'expandtemplates' }],
+      ]),
+      wikitextPages: new Map([
+        [
+          TOURNAMENT_TITLE,
+          { revisionId: 10, sha1: 'sha-tournament-v1', content: buildTournamentWikitext() },
+        ],
+        [
+          BRACKET_TITLE,
+          { revisionId: 20, sha1: 'sha-bracket-evidence-v1', content: evidenceBracketWikitext },
+        ],
+        [
+          UNKNOWN_FAMILY_TITLE,
+          { revisionId: 30, sha1: 'sha-unknown-v1', content: buildUnknownFamilyWikitext() },
+        ],
+      ]),
+      subpagesByPrefix: new Map([
+        [
+          TOURNAMENT_TITLE,
+          [
+            { title: TOURNAMENT_TITLE, pageId: 1 },
+            { title: BRACKET_TITLE, pageId: 2 },
+            { title: UNKNOWN_FAMILY_TITLE, pageId: 3 },
+          ],
+        ],
+      ]),
+    });
+
+    const result = await runEnrichmentBatch({
+      database: asDatabase(database),
+      client,
+      tenantId: TENANT_ID,
+      playerLabels: ['TestPlayer'],
+      targetGame: 'ultimate',
+      nowMs: 1_000,
+      hashHex: sha256Hex,
+      dryRun: false,
+    });
+    expect(result.runId).not.toBeNull();
+
+    const row = await database.ref(`matches/${TENANT_ID}/sgg-set-1-g1`).get();
+    expect((row.val() as { stocksLeft?: number }).stocksLeft).toBe(2);
+
+    const snapshot = await readEnrichmentCoverage(asDatabase(database), TENANT_ID);
+    expect(snapshot).not.toBeNull();
+    expect(snapshot?.counts.charactersEnriched).toBeGreaterThanOrEqual(1);
+    expect(snapshot?.counts.stocksFilledEmpty).toBeGreaterThanOrEqual(1);
+  });
+
   it('exactly one invocation can advance a run at a time (a stale lease holder can never revalidate) — proven by runState.ts, exercised here via the fenced create/lease/complete sequence', async () => {
     const database = new FakeDatabase();
     await runHappyPath(database, 1_000);

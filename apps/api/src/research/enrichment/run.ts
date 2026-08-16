@@ -53,6 +53,7 @@ import {
   applyEnrichmentProjection,
   buildEnrichmentOverlay,
   previewEnrichmentProjection,
+  type EnrichmentEvidenceCounts,
   type EnrichmentProjectionCounts,
 } from './projection.js';
 import {
@@ -1422,6 +1423,21 @@ async function resolveAndProjectPhase(input: ResolveAndProjectPhaseInput): Promi
     unknownStageAfterEnrichment: 0,
     attachedNoProjectableRows: 0,
   };
+  // 30.3 integration follow-up: the applier's character/stock evidence
+  // tallies, accumulated the SAME way as `projectionCountsTotal` above —
+  // `projection.ts`'s own doc comment names this run-level staging as the
+  // one thing its ownership boundary left for this file to wire (the
+  // applier could not grow `EnrichmentProjectionCounts` itself without
+  // breaking this file's `for...of Object.keys(projectionCountsTotal)`
+  // fold).
+  const evidenceCountsTotal: EnrichmentEvidenceCounts = {
+    charactersEnriched: 0,
+    charactersUnmapped: 0,
+    charactersAbstained: 0,
+    stocksFilledEmpty: 0,
+    stocksSkippedOwned: 0,
+    stocksAbstained: 0,
+  };
   const cohortCountsDelta: EnrichmentCohortCountsDelta = {};
 
   async function projectOneSet(targetSetId: string): Promise<void> {
@@ -1450,6 +1466,9 @@ async function resolveAndProjectPhase(input: ResolveAndProjectPhaseInput): Promi
     for (const key of Object.keys(projectionCountsTotal) as (keyof EnrichmentProjectionCounts)[]) {
       projectionCountsTotal[key] += projectionOutcome.counts[key];
     }
+    for (const key of Object.keys(evidenceCountsTotal) as (keyof EnrichmentEvidenceCounts)[]) {
+      evidenceCountsTotal[key] += projectionOutcome.evidenceCounts[key];
+    }
     for (const row of projectionOutcome.rows) {
       const cohort = STAGE_OUTCOME_TO_COHORT[row.stageOutcome];
       cohortCountsDelta[cohort] = (cohortCountsDelta[cohort] ?? 0) + 1;
@@ -1467,18 +1486,27 @@ async function resolveAndProjectPhase(input: ResolveAndProjectPhaseInput): Promi
   // observation is no longer in the review queue, so `newlyAttached` never
   // re-includes it. Every real run therefore sweeps the FULL attached-set
   // universe and reprojects exactly the sets whose READ-ONLY preview reports
-  // an outstanding fill (`vodOutcome: 'filled-empty'` or
-  // `stageOutcome: 'enriched'` against the current rows/witnesses). The
-  // preview is the trigger — never a bare witness-presence check — because
-  // (a) a healthy apply legitimately leaves pending-half residue (the
-  // projection module's documented, benign crash window), and (b) re-running
-  // the applier over an ALREADY-projected set is not witness-idempotent: the
-  // shared resolver treats the row's now-resolved stage as
-  // provider-authoritative and would CLEAR the stage witness, silently
-  // destroying attribution. A healthy set previews as
-  // unchanged/provider-authoritative and is skipped, so a completed
-  // account's rerun stays a no-op; only a genuinely stranded fill triggers
-  // an apply, which then converges by the projection module's own
+  // an outstanding fill — `wouldChangeRow: true`, a VALUE comparison over
+  // vodUrl, map, AND stocksLeft against the current rows/witnesses, never an
+  // outcome-label check (30.2 defect-C composition). The preview is the
+  // trigger — never a bare witness-presence check — because a healthy apply
+  // legitimately leaves pending-half residue (the projection module's
+  // documented, benign crash window).
+  //
+  // THE MERGED STAGE-IDEMPOTENCY DESIGN makes re-running the applier over an
+  // ALREADY-projected set witness-PRESERVING (30.3 Gate 5 commit 1, fused
+  // with this gate's own defect-C fix at merge time — see `projection.ts`'s
+  // module header for the full account this restates only briefly): a
+  // stored stage the witness already vouches for (committed ∪ pending) is
+  // presented to the shared resolver as the unknown sentinel rather than as
+  // a provider stage, so the resolver's committed-identical branch turns a
+  // healthy replay into a no-op that leaves the stage witness untouched —
+  // relabelled `provider-authoritative` for every outcome-label consumer,
+  // never a fresh `enriched`, and never a witness clear. A healthy set
+  // therefore previews with `wouldChangeRow: false` and is skipped, so a
+  // completed account's rerun stays a genuine no-op; only a set whose row is
+  // actually missing its fill (a real stranded crash residue) triggers an
+  // apply, which then converges by the projection module's own
   // crash-safety contract.
   for (const targetSetId of await listAttachedTargetSetIds(database, tenantId)) {
     if (newlyAttachedTargetSetIds.has(targetSetId)) {
@@ -1538,6 +1566,18 @@ async function resolveAndProjectPhase(input: ResolveAndProjectPhaseInput): Promi
       vodRowsDeclared: counts.vodPagesPresent,
       vodRowsExtracted: counts.vodRowsExtracted,
       sourcePagesMissing: counts.vodPagesMissing,
+      // 30.3 integration follow-up: the character/stock evidence counters
+      // `projection.ts`'s `EnrichmentEvidenceCounts` reports on its outcome
+      // — staged into the SAME published coverage node the stage/VOD
+      // counters above already reach, through the SAME
+      // `stageEnrichmentProgress` fold, so a published run's coverage
+      // reflects the evidence half exactly like every other counter family.
+      charactersEnriched: evidenceCountsTotal.charactersEnriched,
+      charactersUnmapped: evidenceCountsTotal.charactersUnmapped,
+      charactersAbstained: evidenceCountsTotal.charactersAbstained,
+      stocksFilledEmpty: evidenceCountsTotal.stocksFilledEmpty,
+      stocksSkippedOwned: evidenceCountsTotal.stocksSkippedOwned,
+      stocksAbstained: evidenceCountsTotal.stocksAbstained,
     };
     await stageEnrichmentProgress(database, {
       tenantId,
