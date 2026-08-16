@@ -16,9 +16,18 @@ import {
   releaseEnrichmentRunLease,
   type EnrichmentRunLeaseHolder,
 } from './runState.js';
+import {
+  LIQUIPEDIA_PARSER_VERSION_BRACKET_LEGACY,
+  LIQUIPEDIA_PARSER_VERSION_BRACKET_MATCH2,
+} from '@smash-tracker/shared';
 import { readEnrichmentObservation, writeEnrichmentObservation } from './store.js';
 import { readEnrichmentCoverage } from './rollup.js';
-import { EnrichmentRunLeaseLostError, runEnrichmentBatch } from './run.js';
+import {
+  EnrichmentRunLeaseLostError,
+  WIKITEXT_PAGE_CACHE_FRESHNESS_VERSION,
+  WIKITEXT_PROBE_PARSER_VERSION,
+  runEnrichmentBatch,
+} from './run.js';
 
 function asDatabase(database: FakeDatabase): Database {
   return database as unknown as Database;
@@ -282,9 +291,9 @@ function buildUnknownFamilyWikitext(): string {
   return '{{StatisticsPage|note=nothing bracket-shaped here}}';
 }
 
-async function seedProviderSet(database: FakeDatabase): Promise<void> {
+async function seedProviderSet(database: FakeDatabase, tenantId = TENANT_ID): Promise<void> {
   const completedAtSeconds = Math.floor(Date.UTC(2026, 0, 1) / 1000);
-  await database.ref(`researchSource/${TENANT_ID}/sets/set-1`).set({
+  await database.ref(`researchSource/${tenantId}/sets/set-1`).set({
     providerSetId: 'set-1',
     storageKey: 'set-1',
     classification: 'complete',
@@ -311,7 +320,7 @@ async function seedProviderSet(database: FakeDatabase): Promise<void> {
     fetchedAtMs: 1,
     lastObservedAtMs: 1,
   });
-  await database.ref(`matches/${TENANT_ID}/sgg-set-1-g1`).set({ note: 'seed' });
+  await database.ref(`matches/${tenantId}/sgg-set-1-g1`).set({ note: 'seed' });
 }
 
 function buildHappyPathClient(): { client: LiquipediaClient; calls: FixtureClientCalls } {
@@ -1055,5 +1064,141 @@ describe('runEnrichmentBatch lease renewal and progress (30.2 reliability gate)'
     // fetch time the probe stage was durably recorded.
     expect(cursorStagesObserved[0]).toBe('discovery');
     expect(cursorStagesObserved[1]).toBe('probe');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 30.2 production defects A + B (verified forensics from the first serialized
+// production applies): the tenant-less page-cache key let one account's run
+// mark shared event pages fresh and a later account's run silently skip
+// persisting its own observations (Sparg0: 2,471 of 10,335 stored); the
+// hand-bumped page-cache parser version let stale old-adapter cache entries
+// survive an adapter change (MkLeo: −39 pages, −142 observations, match2
+// zeros).
+// ---------------------------------------------------------------------------
+
+describe('runEnrichmentBatch cross-tenant and cross-version freshness (30.2 defects A/B)', () => {
+  const SECOND_TENANT_ID = 'tenant-run-2';
+
+  it('DEFECT A: two tenants over the SAME shared pages, serialized real runs — the second tenant re-fetches, re-extracts and stores its OWN observations', async () => {
+    const database = new FakeDatabase();
+    await seedProviderSet(database, TENANT_ID);
+    await seedProviderSet(database, SECOND_TENANT_ID);
+
+    const first = await runHappyPath(database, 1_000);
+    expect(first.result.counts.observationsExtracted).toBeGreaterThanOrEqual(1);
+
+    // The SECOND account's run, 40 minutes later, over the identical shared
+    // corpus (the production Sparg0 scenario). Its freshness state must be
+    // its own: every shared wikitext page re-fetches and re-extracts.
+    const { client: secondClient, calls: secondCalls } = buildHappyPathClient();
+    const second = await runEnrichmentBatch({
+      database: asDatabase(database),
+      client: secondClient,
+      tenantId: SECOND_TENANT_ID,
+      playerLabels: ['TestPlayer'],
+      targetGame: 'ultimate',
+      nowMs: 1_000 + 40 * 60 * 1000,
+      hashHex: sha256Hex,
+      dryRun: false,
+    });
+
+    // No cross-tenant skip: the shared bracket/tournament pages were fetched
+    // for THIS tenant (the pre-fix behavior was zero getWikitext calls and
+    // zero stored observations).
+    expect(secondCalls.getWikitext.length).toBeGreaterThanOrEqual(1);
+    expect(second.counts.wikitextCacheHits).toBe(0);
+    expect(second.counts.observationsExtracted).toBeGreaterThanOrEqual(1);
+    expect(second.counts.resolvedMatched).toBeGreaterThanOrEqual(1);
+
+    const secondObservations = await database
+      .ref(`researchEnrichmentObservations/${SECOND_TENANT_ID}`)
+      .get();
+    expect(secondObservations.exists()).toBe(true);
+    const secondRecords = Object.values(
+      secondObservations.val() as Record<string, { templateFamily: string }>,
+    );
+    expect(secondRecords.some((record) => record.templateFamily === 'legacy')).toBe(true);
+    const secondRow = await database.ref(`matches/${SECOND_TENANT_ID}/sgg-set-1-g1`).get();
+    expect((secondRow.val() as { vodUrl?: string }).vodUrl).toBe(VOD_URL);
+
+    // ...and the FIRST tenant's stored state is untouched by the second run.
+    const firstRow = await database.ref(`matches/${TENANT_ID}/sgg-set-1-g1`).get();
+    expect((firstRow.val() as { vodUrl?: string }).vodUrl).toBe(VOD_URL);
+
+    // The SAME tenant re-running stays a cache-hit no-op — tenant scoping
+    // must not have weakened per-tenant freshness.
+    const { client: replayClient, calls: replayCalls } = buildHappyPathClient();
+    const replay = await runEnrichmentBatch({
+      database: asDatabase(database),
+      client: replayClient,
+      tenantId: SECOND_TENANT_ID,
+      playerLabels: ['TestPlayer'],
+      targetGame: 'ultimate',
+      nowMs: 1_000 + 80 * 60 * 1000,
+      hashHex: sha256Hex,
+      dryRun: false,
+    });
+    expect(replayCalls.getWikitext.length).toBe(0);
+    expect(replay.counts.wikitextCacheHits).toBeGreaterThanOrEqual(2);
+  });
+
+  it('DEFECT B: the page-cache freshness version is derived structurally from every wikitext family parser version', () => {
+    // ANY bump to a family constant changes the composed cache version, so
+    // previously-fresh pages auto-invalidate with no human discipline left
+    // to remember (the defect was exactly a forgotten manual bump).
+    expect(WIKITEXT_PAGE_CACHE_FRESHNESS_VERSION).toContain(
+      LIQUIPEDIA_PARSER_VERSION_BRACKET_LEGACY,
+    );
+    expect(WIKITEXT_PAGE_CACHE_FRESHNESS_VERSION).toContain(
+      LIQUIPEDIA_PARSER_VERSION_BRACKET_MATCH2,
+    );
+    expect(WIKITEXT_PAGE_CACHE_FRESHNESS_VERSION).toContain(WIKITEXT_PROBE_PARSER_VERSION);
+  });
+
+  it('DEFECT B: cache entries written under an older adapter version are treated as stale — the page re-fetches and its observations re-persist', async () => {
+    const database = new FakeDatabase();
+    const { result: firstResult } = await runHappyPath(database, 1_000);
+    expect(firstResult.counts.observationsExtracted).toBeGreaterThanOrEqual(1);
+
+    // Simulate the production state: the cache was written by a run whose
+    // ADAPTERS predate the current ones (the composed version string was
+    // different then). Rewrite every wikitext-class entry's parserVersion to
+    // that older composition.
+    const cacheSnapshot = await database.ref('liquipediaPageCache').get();
+    const entries = cacheSnapshot.val() as Record<
+      string,
+      { pageClass: string; parserVersion: string }
+    >;
+    let rewritten = 0;
+    for (const [key, entry] of Object.entries(entries)) {
+      if (entry.pageClass === 'wikitext') {
+        await database
+          .ref(`liquipediaPageCache/${key}/parserVersion`)
+          .set(
+            'liquipedia-wikitext-probe@1|liquipedia-bracket-legacy@0|liquipedia-bracket-match2@0',
+          );
+        rewritten += 1;
+      }
+    }
+    expect(rewritten).toBeGreaterThanOrEqual(2);
+
+    const { client: secondClient, calls: secondCalls } = buildHappyPathClient();
+    const second = await runEnrichmentBatch({
+      database: asDatabase(database),
+      client: secondClient,
+      tenantId: TENANT_ID,
+      playerLabels: ['TestPlayer'],
+      targetGame: 'ultimate',
+      nowMs: 2_000,
+      hashHex: sha256Hex,
+      dryRun: false,
+    });
+
+    // Pre-fix behavior: wikitextCacheHits for every page and zero content
+    // requests, leaving the OLD-extraction observations in place forever.
+    expect(second.counts.wikitextCacheHits).toBe(0);
+    expect(secondCalls.getWikitext.length).toBeGreaterThanOrEqual(1);
+    expect(second.counts.observationsExtracted).toBeGreaterThanOrEqual(1);
   });
 });
