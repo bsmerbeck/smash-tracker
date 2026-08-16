@@ -66,6 +66,7 @@ import type {
   ResearchConfig,
   StartggConfig,
   StripeConfig,
+  YoutubeConfig,
 } from './config/env.js';
 import type { AnthropicLikeClient } from './reports/generate.js';
 import type { ParryggClients } from './parrygg/client.js';
@@ -178,6 +179,27 @@ export interface BuildAppOptions {
    * 'fastify'` block above.
    */
   demo?: DemoAccountConfig | null;
+  /**
+   * Phase 30.3 Gate 5 (30.3-integration follow-up): the YouTube Data API
+   * config for the bounded VOD-candidate discovery route. Optional AND
+   * nullable, same fail-closed-when-omitted convention as `research`/`demo`
+   * above — null/omitted keeps `POST /api/research/tenants/:tenantId/
+   * enrichment/vod-candidates/discover` answering 503 while every other
+   * enrichment route (candidates list/confirm/dismiss) is unaffected.
+   * Threaded straight through to `researchTenantsRoutes` (`routes/
+   * research.ts`'s `ResearchRoutesOptions.youtube`) — never re-derived here.
+   */
+  youtube?: YoutubeConfig | null;
+  /**
+   * Overridable fetch for the YouTube Data API search call (tests). Unlike
+   * `gspLiveFetch`/`shareFetch`/`ga4Fetch` above, `routes/research.ts` has
+   * NO internal default-fetch path for this one (mirrors the Liquipedia
+   * client's compile-time gate) — omitted here, the registration below
+   * falls back to the global `fetch`, so a production deployment that sets
+   * only `youtube` still gets a working discovery route without index.ts
+   * needing to thread a fetch of its own.
+   */
+  youtubeFetch?: typeof fetch;
   logger?: boolean | FastifyBaseLogger;
 }
 
@@ -478,6 +500,15 @@ export function buildApp(options: BuildAppOptions) {
       await api.register(researchTenantsRoutes, {
         startgg: options.startgg ?? null,
         startggFetch: options.startggFetch,
+        // 30.3 integration follow-up: production VOD-candidate discovery
+        // wiring — previously unset here, so the discover route answered
+        // 503 unconditionally regardless of YOUTUBE_API_KEY (routes/
+        // research.ts's own module comment named this exact gap). A null
+        // `youtube` config keeps the 503; `youtubeFetch` defaults to the
+        // global `fetch` since this route has no internal default-fetch
+        // path of its own to fall back on.
+        youtube: options.youtube ?? null,
+        youtubeFetch: options.youtubeFetch ?? fetch,
       });
       await api.register(vodSharesRoutes, {
         webBaseUrl: options.webBaseUrl ?? 'http://localhost:5173',

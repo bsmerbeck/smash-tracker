@@ -1026,9 +1026,39 @@ export type ResearchEnrichmentVodAttribution = z.infer<
 >;
 
 /**
+ * The CHARACTERS half (30.3 integration follow-up, Gate 5 evidence
+ * extension) — carries NO page identity of its own, unlike the stage/VOD
+ * halves above: character/stock evidence is witness-only
+ * (`researchEnrichmentProjectionStateRecordSchema`'s own doc comment —
+ * characters write no match-row member, so there is no row-derived source
+ * page to attribute back to). Every member is individually optional the
+ * same way the stage half's are: `subjectFighterId`/`opponentFighterId`
+ * absent alongside a present raw sibling is the flagged-unmapped state (the
+ * source text is preserved, never guessed).
+ */
+export const researchEnrichmentCharactersAttributionSchema = z.object({
+  subjectRaw: z.string().max(RESEARCH_ENRICHMENT_MAX_RAW_TEXT).nullish(),
+  opponentRaw: z.string().max(RESEARCH_ENRICHMENT_MAX_RAW_TEXT).nullish(),
+  subjectFighterId: z.number().int().nullish(),
+  opponentFighterId: z.number().int().nullish(),
+});
+export type ResearchEnrichmentCharactersAttribution = z.infer<
+  typeof researchEnrichmentCharactersAttributionSchema
+>;
+
+/** The STOCKS half — the committed `stocksLeft` value alone, mirroring the witness's own `projectedStocksLeft` bound. */
+export const researchEnrichmentStocksAttributionSchema = z.object({
+  stocksLeft: z.number().int().min(0).max(3),
+});
+export type ResearchEnrichmentStocksAttribution = z.infer<
+  typeof researchEnrichmentStocksAttributionSchema
+>;
+
+/**
  * One match key's attribution, present only for a key that carries a stored
- * enrichment witness — split into TWO INDEPENDENT HALVES (30.2 gap-closure
- * BLOCKER 2).
+ * enrichment witness — split into INDEPENDENT HALVES (30.2 gap-closure
+ * BLOCKER 2, extended by the 30.3 integration follow-up with the
+ * character/stock evidence halves).
  *
  * An earlier shape reported ONE flat set of members per match key, built
  * from `stageObservationId ?? vodObservationId`. That single-slot shape was
@@ -1049,11 +1079,21 @@ export type ResearchEnrichmentVodAttribution = z.infer<
  * `vodObservationId`/`vod*`/`projectedVodUrl` — and a half is ABSENT (never
  * an empty object) when that field carries no source claim. A consumer must
  * read the half for the field it is describing and no other.
+ *
+ * `characters`/`stocks` (30.3 integration follow-up): populated ONLY when
+ * the witness proves seat orientation (`projectedSubjectSeat` present) —
+ * absent orientation omits BOTH halves entirely, the same
+ * abstention-renders-as-absence contract every other half here already
+ * follows. `stocks` is additionally omitted (even with orientation proven)
+ * when the stocks half itself carries no committed value, since its sole
+ * member is required, never nullish.
  */
 export const researchEnrichmentAttributionEntrySchema = z.object({
   matchKey: z.string().min(1).max(200),
   stage: researchEnrichmentStageAttributionSchema.nullish(),
   vod: researchEnrichmentVodAttributionSchema.nullish(),
+  characters: researchEnrichmentCharactersAttributionSchema.nullish(),
+  stocks: researchEnrichmentStocksAttributionSchema.nullish(),
 });
 export type ResearchEnrichmentAttributionEntry = z.infer<
   typeof researchEnrichmentAttributionEntrySchema

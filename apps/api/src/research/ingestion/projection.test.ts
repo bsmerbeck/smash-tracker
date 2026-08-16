@@ -821,6 +821,33 @@ describe('mergePreservedMatchMembers — additive enrichment overlay (task 3)', 
     const withoutOverlay = mergePreservedMatchMembers({ vodUrl: userUrl }, resolvedNext, undefined);
     expect(withoutOverlay.vodUrl).toBe(userUrl);
   });
+
+  it('30.3 integration follow-up: preserves an enrichment-owned stocksLeft when the provider is silent this pass', () => {
+    const overlay: EnrichmentRowOverlay = {
+      witness: { projectedStocksLeft: 2 },
+    };
+    // `baseNext` carries no `stocksLeft` of its own — the provider-silent case.
+    const merged = mergePreservedMatchMembers({ stocksLeft: 2 }, baseNext, undefined, overlay);
+    expect(merged.stocksLeft).toBe(2);
+  });
+
+  it('30.3 integration follow-up: a provider-authored stocksLeft always wins over an enrichment-owned witness value', () => {
+    const overlay: EnrichmentRowOverlay = {
+      witness: { projectedStocksLeft: 2 },
+    };
+    const providerNext = { ...baseNext, stocksLeft: 3 };
+    const merged = mergePreservedMatchMembers({ stocksLeft: 2 }, providerNext, undefined, overlay);
+    expect(merged.stocksLeft).toBe(3);
+  });
+
+  it('30.3 integration follow-up: drops a non-witness-owned stocksLeft when the provider goes silent (no ownership claim to preserve)', () => {
+    const overlay: EnrichmentRowOverlay = { witness: null };
+    // The existing row's stocksLeft of 2 matches no witness — a user- or
+    // stale-provider-authored value, never enrichment's — so the base
+    // PROVIDER-OWNED absent->removed rule applies unchanged.
+    const merged = mergePreservedMatchMembers({ stocksLeft: 2 }, baseNext, undefined, overlay);
+    expect(merged.stocksLeft).toBeUndefined();
+  });
 });
 
 describe('applyLegacyProjection — additive enrichment overlay (task 3)', () => {
@@ -931,5 +958,100 @@ describe('applyLegacyProjection — additive enrichment overlay (task 3)', () =>
     const witness = witnessTree['sgg-set-1-g1'] as Record<string, unknown>;
     expect(witness.projectedStageId).toBeUndefined();
     expect(witness.projectedStageName).toBeUndefined();
+  });
+
+  it('30.3 integration follow-up: a provider re-projection over a row with a witness-owned stocksLeft keeps it when the provider itself is silent this pass, driven through applyLegacyProjection itself', async () => {
+    const database = new FakeDatabase();
+    await database.ref(`matches/${TENANT_ID}/sgg-set-1-g1`).set({
+      fighter_id: 1,
+      opponent_id: 2,
+      stocksLeft: 2,
+    });
+    database.seed(`researchEnrichmentProjection/${TENANT_ID}/sgg-set-1-g1`, {
+      matchKey: 'sgg-set-1-g1',
+      targetSetId: 'set-1',
+      projectedStocksLeft: 2,
+    });
+
+    // No `entrant1Score`/`entrant2Score` on the winning game — the provider
+    // is SILENT on stocksLeft this pass (`deriveLegacyProjection`'s
+    // `winnerScore` is `undefined`, so the emitted record carries no
+    // `stocksLeft` member of its own).
+    const record = makeRecord({
+      games: [
+        {
+          gameId: 1,
+          winnerEntrantId: '10',
+          stageId: 311,
+          stageName: 'Battlefield',
+          selections: [
+            { entrantId: '10', characterId: 1271 },
+            { entrantId: '20', characterId: 1286 },
+          ],
+        },
+      ],
+    });
+    const result = projectionResultFor(record);
+    expect(result.matchUpdates['sgg-set-1-g1']?.stocksLeft).toBeUndefined();
+
+    const overlay: Map<string, EnrichmentRowOverlay> = new Map([
+      ['sgg-set-1-g1', { witness: { projectedStocksLeft: 2 } }],
+    ]);
+    await applyLegacyProjection(asDatabase(database), TENANT_ID, 'set-1', result, overlay);
+
+    const matches = (database.dump().matches as Record<string, unknown>)[TENANT_ID] as Record<
+      string,
+      unknown
+    >;
+    const row = matches['sgg-set-1-g1'] as { stocksLeft?: number };
+    expect(row.stocksLeft).toBe(2);
+  });
+
+  it('30.3 integration follow-up: a provider-authored stocksLeft still wins over an enrichment-owned witness value, driven through applyLegacyProjection itself', async () => {
+    const database = new FakeDatabase();
+    await database.ref(`matches/${TENANT_ID}/sgg-set-1-g1`).set({
+      fighter_id: 1,
+      opponent_id: 2,
+      stocksLeft: 2,
+    });
+    database.seed(`researchEnrichmentProjection/${TENANT_ID}/sgg-set-1-g1`, {
+      matchKey: 'sgg-set-1-g1',
+      targetSetId: 'set-1',
+      projectedStocksLeft: 2,
+    });
+
+    // The provider has a genuine opinion this pass — DISTINCT from the
+    // witness-owned value (2) above, so a survival would prove the
+    // witness-preservation path fired instead of the provider's own write.
+    const record = makeRecord({
+      games: [
+        {
+          gameId: 1,
+          winnerEntrantId: '10',
+          stageId: 311,
+          stageName: 'Battlefield',
+          selections: [
+            { entrantId: '10', characterId: 1271 },
+            { entrantId: '20', characterId: 1286 },
+          ],
+          entrant1Score: 3,
+          entrant2Score: 1,
+        },
+      ],
+    });
+    const result = projectionResultFor(record);
+    expect(result.matchUpdates['sgg-set-1-g1']?.stocksLeft).toBe(3);
+
+    const overlay: Map<string, EnrichmentRowOverlay> = new Map([
+      ['sgg-set-1-g1', { witness: { projectedStocksLeft: 2 } }],
+    ]);
+    await applyLegacyProjection(asDatabase(database), TENANT_ID, 'set-1', result, overlay);
+
+    const matches = (database.dump().matches as Record<string, unknown>)[TENANT_ID] as Record<
+      string,
+      unknown
+    >;
+    const row = matches['sgg-set-1-g1'] as { stocksLeft?: number };
+    expect(row.stocksLeft).toBe(3);
   });
 });

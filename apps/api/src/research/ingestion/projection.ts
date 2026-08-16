@@ -1,6 +1,7 @@
 import type { Database } from 'firebase-admin/database';
 import {
   isPathSafeProviderId,
+  isSourceOwnedStocksValue,
   RESEARCH_PROJECTED_CLASSIFICATIONS,
   resolveEnrichedMatchMembers,
   UNKNOWN_STAGE,
@@ -84,6 +85,15 @@ export const PRESERVED_MATCH_MEMBERS = [
  * `vodUrl` is not one of them. `source`/`externalId` are provider-owned the
  * same way, but are always set by the projection itself (this row IS
  * provider-derived) so they need no entry here.
+ *
+ * `stocksLeft` (30.3 integration follow-up): this list's ABSENT->REMOVED
+ * rule holds exactly as stated whenever `mergePreservedMatchMembers` runs
+ * WITHOUT an `enrichmentOverlay` (today's unchanged behavior). WITH an
+ * overlay, the merge additionally preserves an existing `stocksLeft` the
+ * enrichment witness owns when the provider is silent this pass (`next`
+ * carries no `stocksLeft` of its own) — the SAME ownership discipline the
+ * stage/VOD halves already use (`isSourceOwnedStocksValue`, never a second,
+ * independently-derived rule). A provider-authored value still always wins.
  */
 export const PROVIDER_REPLACED_MATCH_MEMBERS = [
   'eventName',
@@ -379,7 +389,7 @@ export function mergePreservedMatchMembers(
       witness: enrichmentOverlay.witness ?? null,
     });
 
-    const preservedEntries: Partial<Record<PreservedMember, unknown>> = {};
+    const preservedEntries: Partial<Record<PreservedMember | 'stocksLeft', unknown>> = {};
     if (existing) {
       if (existing.vodStartSeconds !== undefined) {
         preservedEntries.vodStartSeconds = existing.vodStartSeconds;
@@ -399,6 +409,32 @@ export function mergePreservedMatchMembers(
     }
     if (resolved.vodUrl !== undefined) {
       preservedEntries.vodUrl = resolved.vodUrl;
+    }
+
+    // 30.3 integration follow-up: preserve an enrichment-owned `stocksLeft`
+    // the provider is SILENT about this pass — the SAME ownership
+    // discipline the stage/VOD halves above use (a pure, shared predicate
+    // over the committed ∪ pending witness accepted set), never a second,
+    // independently-derived rule. A provider-authored value
+    // (`next.stocksLeft !== undefined`) always wins regardless of witness
+    // ownership — this pipeline stays authoritative for start.gg facts
+    // (30.2-CONTEXT.md's untouchable clause); only a provider absence this
+    // pass leaves room for the witness-owned value to survive instead of
+    // being silently dropped by this list's normal absent->removed rule.
+    // This module never sets `enrichmentEvidenceConsulted` — the full
+    // resolver's own stocks branch is therefore inert here by design (see
+    // `EnrichedMatchMembersInput.enrichmentEvidenceConsulted`'s doc
+    // comment), so the ownership check is done directly against the
+    // existing row rather than through `resolved`.
+    const existingStocksLeft =
+      existing && typeof existing.stocksLeft === 'number'
+        ? (existing.stocksLeft as number)
+        : undefined;
+    if (
+      next.stocksLeft === undefined &&
+      isSourceOwnedStocksValue(existingStocksLeft, enrichmentOverlay.witness)
+    ) {
+      preservedEntries.stocksLeft = existingStocksLeft;
     }
 
     return {

@@ -103,6 +103,19 @@ async function readEnrichmentWitnessForKey(
  * alone: `resolveEnrichedMatchMembers` documents that a caller with less
  * provenance still stamps a thinner witness, and such a row IS source-owned
  * even though no page can be linked for it.
+ *
+ * `characters`/`stocks` (30.3 integration follow-up, Gate 5 evidence
+ * extension): built from the witness's OWN character/stock members
+ * (`projectedSubjectSeat`/`projectedSubjectCharRaw`/`projectedSubjectFighterId`/
+ * `projectedOpponentCharRaw`/`projectedOpponentFighterId`/
+ * `projectedStocksLeft`) — never a second read of an observation, since
+ * (unlike the stage/VOD halves) these halves carry no page identity to look
+ * up. Gated on `projectedSubjectSeat` being present: that member is the
+ * PROVEN-orientation witness (`resolveSeatOrientation`'s output, committed
+ * only after the source's seat 1/2 mapped onto subject/opponent), so its
+ * absence means the evidence half never got past abstention for this row —
+ * an abstention renders as absence, matching the stage/VOD halves' own
+ * no-claim-means-absent contract, never a guessed or partial claim.
  */
 async function buildEnrichmentAttributionEntry(
   database: Database,
@@ -167,6 +180,31 @@ async function buildEnrichmentAttributionEntry(
               ? { sourceRevisionId: witness.vodSourceRevisionId }
               : {}),
           },
+        }
+      : {}),
+    // 30.3 integration follow-up: the character/stock evidence halves,
+    // gated on the witness's PROVEN seat orientation — an orientation
+    // abstention omits BOTH halves entirely (see this function's doc
+    // comment).
+    ...(witness.projectedSubjectSeat != null
+      ? {
+          characters: {
+            ...(witness.projectedSubjectCharRaw != null
+              ? { subjectRaw: witness.projectedSubjectCharRaw }
+              : {}),
+            ...(witness.projectedOpponentCharRaw != null
+              ? { opponentRaw: witness.projectedOpponentCharRaw }
+              : {}),
+            ...(witness.projectedSubjectFighterId != null
+              ? { subjectFighterId: witness.projectedSubjectFighterId }
+              : {}),
+            ...(witness.projectedOpponentFighterId != null
+              ? { opponentFighterId: witness.projectedOpponentFighterId }
+              : {}),
+          },
+          ...(witness.projectedStocksLeft != null
+            ? { stocks: { stocksLeft: witness.projectedStocksLeft } }
+            : {}),
         }
       : {}),
   };
@@ -418,12 +456,16 @@ const usersRoutes: FastifyPluginAsyncZod = async (app) => {
           continue;
         }
         const entry = await buildEnrichmentAttributionEntry(database, request.uid, key, witness);
-        // A witness record can survive with NEITHER half claimed (every
+        // A witness record can survive with NO half claimed at all (every
         // pending member cleared without a commit — see the enrichment
         // applier's `voidedResolution`). Such a record attributes nothing,
         // so it is omitted rather than shipped as a bare `{ matchKey }` a
-        // consumer might mistake for a source claim.
-        if (entry.stage == null && entry.vod == null) {
+        // consumer might mistake for a source claim. 30.3 integration
+        // follow-up: `characters`/`stocks` count the same way stage/vod
+        // already do — a witness carrying ONLY proven seat orientation (no
+        // stage, no VOD) still attributes something and must not be
+        // dropped here.
+        if (entry.stage == null && entry.vod == null && entry.characters == null) {
           continue;
         }
         attributions.push(entry);
