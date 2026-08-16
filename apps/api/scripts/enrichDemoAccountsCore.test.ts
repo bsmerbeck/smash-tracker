@@ -288,6 +288,70 @@ describe('runEnrichmentOperator', () => {
     expect(driftedHarness.logs.join('\n')).toContain('Apply refused');
   });
 
+  it('apply treats a completed account as a stated no-op by default (the Hungrybox contract holds for apply too)', async () => {
+    const database = new FakeDatabase();
+    await seedRun(database, uids.hbox, 'completed');
+    const harness = buildHarness(database);
+
+    await runEnrichmentOperator(
+      ['dry-run', ...uidFlags(), '--manifest-out', 'manifest.json'],
+      harness.deps,
+    );
+    const applyCode = await runEnrichmentOperator(
+      ['apply', ...uidFlags(), '--manifest-in', 'manifest.json'],
+      harness.deps,
+    );
+    expect(applyCode).toBe(0);
+
+    const realRuns = harness.batchCalls.filter((call) => !call.dryRun).map((call) => call.tenantId);
+    expect(realRuns).not.toContain(uids.hbox);
+    expect(realRuns).toContain(uids.mkleo);
+    const applyTable = harness.tables.at(-1) as Array<{ workspace: string; detail: string }>;
+    expect(applyTable.find((row) => row.workspace === 'hbox')?.detail).toContain('--reapply');
+  });
+
+  it('apply --reapply is the explicit sanctioned door: a completed account re-runs, preflight discipline unchanged', async () => {
+    const database = new FakeDatabase();
+    await seedRun(database, uids.mkleo, 'completed');
+    const harness = buildHarness(database);
+
+    await runEnrichmentOperator(
+      ['dry-run', ...uidFlags(), '--manifest-out', 'manifest.json'],
+      harness.deps,
+    );
+    const dryCallsBefore = harness.batchCalls.length;
+    const applyCode = await runEnrichmentOperator(
+      ['apply', ...uidFlags(), '--manifest-in', 'manifest.json', '--account', 'mkleo', '--reapply'],
+      harness.deps,
+    );
+    expect(applyCode).toBe(0);
+
+    const afterApply = harness.batchCalls.slice(dryCallsBefore);
+    // Preflight (dry) FIRST, then the real re-run — both scoped to mkleo only.
+    expect(afterApply).toEqual([
+      { tenantId: uids.mkleo, dryRun: true },
+      { tenantId: uids.mkleo, dryRun: false },
+    ]);
+  });
+
+  it('apply with every scoped account complete and no --reapply exits 0 without running anything', async () => {
+    const database = new FakeDatabase();
+    await seedRun(database, uids.sparg0, 'completed');
+    const harness = buildHarness(database);
+    await runEnrichmentOperator(
+      ['dry-run', ...uidFlags(), '--manifest-out', 'manifest.json'],
+      harness.deps,
+    );
+    const before = harness.batchCalls.length;
+    const code = await runEnrichmentOperator(
+      ['apply', ...uidFlags(), '--manifest-in', 'manifest.json', '--account', 'sparg0'],
+      harness.deps,
+    );
+    expect(code).toBe(0);
+    expect(harness.batchCalls.length).toBe(before);
+    expect(harness.logs.join('\n')).toContain('pass --reapply');
+  });
+
   it('resume skips a completed account as a stated no-op and re-runs only the incomplete ones', async () => {
     const database = new FakeDatabase();
     await seedRun(database, uids.hbox, 'completed');

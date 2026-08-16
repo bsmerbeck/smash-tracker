@@ -1,6 +1,8 @@
 import { randomUUID } from 'node:crypto';
 import type { Database } from 'firebase-admin/database';
 import {
+  LIQUIPEDIA_PARSER_VERSION_BRACKET_LEGACY,
+  LIQUIPEDIA_PARSER_VERSION_BRACKET_MATCH2,
   LIQUIPEDIA_PARSER_VERSION_VOD_LIST,
   buildEnrichmentObservationId,
   type EnrichmentStageOutcome,
@@ -134,33 +136,70 @@ import {
  * `liquipediaPageCache/{pageId}` keys must be RTDB-path-safe
  * (`isPathSafeProviderId` forbids `/`), and a Liquipedia page title routinely
  * contains one (`Sparg0/VODs`, `Supernova/2026/Ultimate/Singles Bracket`).
- * Every page this module caches is therefore keyed by a stable digest of its
- * title rather than by title or by the wiki's own numeric `pageid` — the
- * latter is unavailable for a `getGeneratedVodPage` call made in the default
+ * Every page this module caches is therefore keyed by a stable digest rather
+ * than by title or by the wiki's own numeric `pageid` — the latter is
+ * unavailable for a `getGeneratedVodPage` call made in the default
  * `expandtemplates` mode (`client.ts`'s `LiquipediaGeneratedPageResult` has
  * no `pageId` member for that mode), so a title-derived key is the only one
  * available uniformly across both page classes.
+ *
+ * THE KEY IS TENANT-SCOPED (30.2 production defect A, verified forensics):
+ * a freshness skip's implicit contract is "this page's observations are
+ * already PERSISTED" — and observation persistence is PER-TENANT
+ * (`researchEnrichmentObservations/{tenantId}/...`), so the contract is only
+ * valid per-tenant. The original tenant-less key let MkLeo's real run mark
+ * every shared event page fresh; Sparg0's serialized run 40 minutes later
+ * skip-before-fetched those pages and silently never stored its own
+ * observations from them (2,471 of 10,335 stored). Salting the digest with
+ * the tenant id makes the skip decision and the persistence guarantee share
+ * one scope by construction. The cost is a per-tenant content re-fetch of
+ * shared pages (the batched wikitext content requests) — a correct skip
+ * without re-fetching would require storing page CONTENT, which this cache
+ * deliberately does not do.
  */
-function cacheKeyFor(title: string, hashHex: (value: string) => string): string {
-  return hashHex(title).slice(0, 48);
+function cacheKeyFor(tenantId: string, title: string, hashHex: (value: string) => string): string {
+  return hashHex(`${tenantId}\n${title}`).slice(0, 48);
 }
 
 /**
- * The page-CACHE-level parser version for the WIKITEXT class, deliberately
- * DISTINCT from the per-observation `parserVersion` the legacy/match2
- * extractors stamp on their own output records
- * (`LIQUIPEDIA_PARSER_VERSION_BRACKET_LEGACY`/`_MATCH2`). Which FAMILY a
- * wikitext page belongs to is only knowable AFTER its content has been
- * fetched and `detectTemplateFamily` has run — but the whole point of the
- * wikitext freshness gate is to decide whether to fetch content AT ALL. This
- * constant versions "the wikitext probe/family-detection pipeline as a
- * whole" for the page-cache freshness check; bumping it invalidates every
- * cached wikitext page regardless of which family it turns out to be, and a
- * bump to a per-family extractor version continues to invalidate that
- * family's OWN observation records the same way `refresh.ts` (Task 3)
- * documents.
+ * The OBSERVATION-level parser version for the wikitext probe pipeline —
+ * stamped on unknown-family observation records and used in their
+ * deterministic observation-id derivation, deliberately DISTINCT from the
+ * per-observation `parserVersion` the legacy/match2 extractors stamp on
+ * their own output records
+ * (`LIQUIPEDIA_PARSER_VERSION_BRACKET_LEGACY`/`_MATCH2`). Kept short and
+ * stable (the observation schema caps `parserVersion` at 64 and the id
+ * derivation must not churn); the page-CACHE freshness version below is the
+ * one that composes every family version structurally.
  */
 export const WIKITEXT_PROBE_PARSER_VERSION = 'liquipedia-wikitext-probe@1';
+
+/**
+ * The page-CACHE-level freshness version for the WIKITEXT class — DERIVED
+ * STRUCTURALLY from every family extractor version plus the probe pipeline's
+ * own version (30.2 production defect B, verified forensics): the original
+ * standalone constant relied on a HUMAN remembering to bump it whenever an
+ * adapter changed its extraction output. Nobody did for the Gate 1 adapter
+ * changes, so pages cached by the morning old-adapter run were treated as
+ * fresh by the evening runs and ~39 of MkLeo's pages silently kept
+ * OLD-extraction observations (the match2 zeros and the −142).
+ *
+ * Composing the family constants makes the bump structural: ANY change to
+ * `LIQUIPEDIA_PARSER_VERSION_BRACKET_LEGACY`,
+ * `LIQUIPEDIA_PARSER_VERSION_BRACKET_MATCH2`, or the probe pipeline version
+ * changes THIS string, which `isLiquipediaPageFresh` compares verbatim —
+ * every previously cached wikitext page re-extracts automatically, with no
+ * discipline left to remember. (Which FAMILY a wikitext page belongs to is
+ * only knowable AFTER fetching, so the cache version must cover ALL wikitext
+ * families at once.) The GENERATED class needs no equivalent: its cache
+ * freshness is already keyed directly at `LIQUIPEDIA_PARSER_VERSION_VOD_LIST`,
+ * so a vodlist adapter bump auto-invalidates it today.
+ */
+export const WIKITEXT_PAGE_CACHE_FRESHNESS_VERSION = [
+  WIKITEXT_PROBE_PARSER_VERSION,
+  LIQUIPEDIA_PARSER_VERSION_BRACKET_LEGACY,
+  LIQUIPEDIA_PARSER_VERSION_BRACKET_MATCH2,
+].join('|');
 
 /** Bounds `listSubpages`'s continuation walk per tournament prefix (RESEARCH section 8.7) — no traversal in this module ever loops without a caller-visible ceiling. */
 const DEFAULT_MAX_SUBPAGE_CONTINUATIONS = 10;
@@ -691,7 +730,7 @@ async function gatherPhase(input: GatherPhaseInput): Promise<void> {
       hashHex,
     });
 
-    const cacheKey = cacheKeyFor(vodPageTitle, hashHex);
+    const cacheKey = cacheKeyFor(tenantId, vodPageTitle, hashHex);
     const cached = dryRun ? null : await readLiquipediaPageCache(database, cacheKey);
     const fresh = isLiquipediaPageFresh(
       cached,
@@ -818,12 +857,12 @@ async function gatherPhase(input: GatherPhaseInput): Promise<void> {
     if (!probe || !probe.present) {
       continue;
     }
-    const cacheKey = cacheKeyFor(title, hashHex);
+    const cacheKey = cacheKeyFor(tenantId, title, hashHex);
     const cached = dryRun ? null : await readLiquipediaPageCache(database, cacheKey);
     const fresh = isLiquipediaPageFresh(
       cached,
       { pageClass: 'wikitext', revisionId: probe.revisionId, sha1: probe.sha1 },
-      WIKITEXT_PROBE_PARSER_VERSION,
+      WIKITEXT_PAGE_CACHE_FRESHNESS_VERSION,
     );
     if (fresh) {
       counts.wikitextCacheHits += 1;
@@ -855,7 +894,7 @@ async function gatherPhase(input: GatherPhaseInput): Promise<void> {
       }
       counts.pagesFetched += 1;
       const contentHash = hashWikitext(page.content, hashHex);
-      const cacheKey = cacheKeyFor(page.title, hashHex);
+      const cacheKey = cacheKeyFor(tenantId, page.title, hashHex);
 
       if (tournamentPageTitles.has(page.title)) {
         const ctx = extractEventContext({
@@ -870,7 +909,7 @@ async function gatherPhase(input: GatherPhaseInput): Promise<void> {
             pageId: cacheKey,
             title: page.title,
             pageClass: 'wikitext',
-            parserVersion: WIKITEXT_PROBE_PARSER_VERSION,
+            parserVersion: WIKITEXT_PAGE_CACHE_FRESHNESS_VERSION,
             fetchedAtMs: nowMs,
             revisionId: page.revisionId,
             sha1: page.sha1,
@@ -893,7 +932,7 @@ async function gatherPhase(input: GatherPhaseInput): Promise<void> {
 
   for (const page of pendingBracketPages) {
     const detected = detectTemplateFamily(page.content);
-    const cacheKey = cacheKeyFor(page.title, hashHex);
+    const cacheKey = cacheKeyFor(tenantId, page.title, hashHex);
 
     if (detected.family === 'unknown') {
       counts.familyUnknown += 1;
@@ -928,7 +967,7 @@ async function gatherPhase(input: GatherPhaseInput): Promise<void> {
           pageId: cacheKey,
           title: page.title,
           pageClass: 'wikitext',
-          parserVersion: WIKITEXT_PROBE_PARSER_VERSION,
+          parserVersion: WIKITEXT_PAGE_CACHE_FRESHNESS_VERSION,
           fetchedAtMs: nowMs,
           revisionId: page.revisionId,
           sha1: page.sha1,
@@ -989,7 +1028,7 @@ async function gatherPhase(input: GatherPhaseInput): Promise<void> {
         pageId: cacheKey,
         title: page.title,
         pageClass: 'wikitext',
-        parserVersion: WIKITEXT_PROBE_PARSER_VERSION,
+        parserVersion: WIKITEXT_PAGE_CACHE_FRESHNESS_VERSION,
         fetchedAtMs: nowMs,
         revisionId: page.revisionId,
         sha1: page.sha1,

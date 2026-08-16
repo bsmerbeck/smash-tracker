@@ -7,10 +7,18 @@ import { isPathSafeProviderId } from '@smash-tracker/shared';
  * that makes "an unchanged page is never refetched" a structural property
  * rather than a hope.
  *
- * Storage layout: `liquipediaPageCache/{pageId}` — a GLOBAL, non-tenant-keyed
- * node (like the limiter's budget nodes in `limiter.ts`), because a
- * Liquipedia page's freshness is a property of the SHARED wiki, not of any
- * research tenant.
+ * Storage layout: `liquipediaPageCache/{pageId}` — one flat node whose keys
+ * are supplied by the caller. NOTE (30.2 production defect A): although a
+ * Liquipedia page's freshness LOOKS like a property of the shared wiki, the
+ * enrichment run's skip decision built on it carries an implicit
+ * "this page's observations are already persisted" contract, and observation
+ * persistence is PER-TENANT — so `run.ts` now salts every `pageId` it passes
+ * here with the tenant id (`cacheKeyFor`). An earlier tenant-less key let one
+ * account's run mark shared event pages fresh and a later account's run
+ * silently skip persisting its own observations from them. This module
+ * itself stays key-agnostic; the tenant scoping is the caller's contract.
+ * (Genuinely global wiki-level state — the limiter's budget nodes in
+ * `limiter.ts` — remains global by design.)
  *
  * This module stores freshness METADATA, never response bytes: RTDB is not
  * a blob store, and the largest legitimate Liquipedia response observed

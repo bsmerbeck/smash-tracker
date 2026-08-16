@@ -36,7 +36,13 @@ import {
  *                  manifest's per-account write-set hashes; PASS/FAIL each.
  * - `apply`      — preflight, then the real per-account runs, with strict
  *                  PER-ACCOUNT FAILURE ISOLATION: one account's failure
- *                  never restarts, invalidates, or blocks the others.
+ *                  never restarts, invalidates, or blocks the others. An
+ *                  account whose stored run is already COMPLETED is a
+ *                  stated no-op unless `--reapply` is passed (30.2
+ *                  sanctioned re-apply): the completed-account default
+ *                  stays strong, and the explicit flag is the only door to
+ *                  re-running one — preflight discipline unchanged, and the
+ *                  store's idempotent upserts make the top-up safe.
  * - `resume`     — re-runs only accounts whose stored run is not completed;
  *                  a completed account (e.g. Hungrybox) is reported and
  *                  skipped — a structural no-op.
@@ -102,19 +108,32 @@ export interface ParsedOperatorArgs {
   flags: Map<string, string>;
 }
 
+/** Flags that take no value — present means `'true'`. */
+const BOOLEAN_FLAGS: ReadonlySet<string> = new Set(['--reapply']);
+
 export function parseOperatorArgs(argv: string[]): ParsedOperatorArgs {
   const [command, ...rest] = argv;
   if (!command || !(ENRICHMENT_OPERATOR_COMMANDS as readonly string[]).includes(command)) {
     throw new Error(`Expected subcommand: ${ENRICHMENT_OPERATOR_COMMANDS.join(', ')}`);
   }
   const flags = new Map<string, string>();
-  for (let index = 0; index < rest.length; index += 2) {
+  let index = 0;
+  while (index < rest.length) {
     const name = rest[index];
-    const value = rest[index + 1];
-    if (!name?.startsWith('--') || value == null || value.startsWith('--')) {
+    if (!name?.startsWith('--')) {
       throw new Error(`Invalid flag near ${name ?? '<end>'}`);
     }
+    if (BOOLEAN_FLAGS.has(name)) {
+      flags.set(name, 'true');
+      index += 1;
+      continue;
+    }
+    const value = rest[index + 1];
+    if (value == null || value.startsWith('--')) {
+      throw new Error(`Invalid flag near ${name}`);
+    }
     flags.set(name, value);
+    index += 2;
   }
   return { command: command as EnrichmentOperatorCommand, flags };
 }
@@ -584,15 +603,47 @@ async function applyCommand(
   uids: DemoUidMap,
   manifest: EnrichmentManifest,
   workspaces: DemoWorkspaceKey[],
+  reapply: boolean,
 ): Promise<number> {
-  const preflight = await preflightAccounts(deps, monitor, uids, manifest, workspaces);
+  // 30.2 sanctioned re-apply: a COMPLETED account is a stated no-op by
+  // default — only the explicit `--reapply` flag opens the door to
+  // re-running it (e.g. the mkleo/sparg0 top-up after the tenant-scoped
+  // cache fix). The default protects a healthy completed account (the
+  // Hungrybox contract) from an accidental re-run; the flagged path keeps
+  // the full preflight discipline and relies on the store's idempotent
+  // upserts, so a re-apply can only top up, never fork or duplicate.
+  const toApply: DemoWorkspaceKey[] = [];
+  const skipped: ApplyOutcome[] = [];
+  for (const workspace of workspaces) {
+    const run = await readEnrichmentRun(deps.database, uids[workspace]);
+    if (run?.status === 'completed' && !reapply) {
+      skipped.push({
+        workspace,
+        ok: true,
+        detail: `already complete (run=${run.runId}); apply is a no-op — pass --reapply to re-run this account`,
+      });
+      continue;
+    }
+    toApply.push(workspace);
+  }
+
+  if (toApply.length === 0) {
+    reportApply(deps, skipped);
+    deps.log('Every scoped account is already complete; pass --reapply to re-run.');
+    return 0;
+  }
+
+  const preflight = await preflightAccounts(deps, monitor, uids, manifest, toApply);
   const preflightCode = reportPreflight(deps, preflight);
   if (preflightCode !== 0) {
     deps.log('Apply refused: at least one account failed preflight. No write was performed.');
     return preflightCode;
   }
   deps.log('Read-only preflight matches every reviewed account write-set hash.');
-  return reportApply(deps, await applyAccounts(deps, monitor, uids, manifest, workspaces));
+  return reportApply(deps, [
+    ...skipped,
+    ...(await applyAccounts(deps, monitor, uids, manifest, toApply)),
+  ]);
 }
 
 async function resumeCommand(
@@ -709,7 +760,14 @@ export async function runEnrichmentOperator(
       );
     }
     if (command === 'apply') {
-      return await applyCommand(deps, monitor, uids, manifest, workspaces);
+      return await applyCommand(
+        deps,
+        monitor,
+        uids,
+        manifest,
+        workspaces,
+        flags.get('--reapply') === 'true',
+      );
     }
     if (command === 'resume') {
       return await resumeCommand(deps, monitor, uids, manifest, workspaces);
