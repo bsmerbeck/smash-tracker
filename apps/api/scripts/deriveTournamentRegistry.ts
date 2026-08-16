@@ -33,10 +33,19 @@
  *     --hbox-uid <uid> --mkleo-uid <uid> --sparg0-uid <uid> --izaw-uid <uid> \
  *     --manifest-in ./registry-manifest.hbox.json --receipt-dir ./receipts
  *
- * Omitting `--account` keeps the all-accounts behaviour. Optional bounds:
- * `--max-age-ms` (manifest staleness, default 6h), `--max-stall-ms`
- * (no-progress watchdog, default 5m), `--request-timeout-ms` (per RTDB
- * operation, default 30s), `--heartbeat-ms` (default 30s).
+ * `--account` is MANDATORY for `apply` — an unscoped apply is refused with a
+ * nonzero exit. `dry-run` and `compare` write nothing to the destination and
+ * still accept the all-accounts form.
+ *
+ * `dry-run --exceptions-in <file>` embeds reviewed exceptions (corrupt source
+ * records, collisions, a deviation from the owner-frozen `sourceSetCount`)
+ * into the sealed manifest. That is the ONLY way an apply can proceed over
+ * one of those conditions; `apply` itself has no override flag.
+ *
+ * Optional bounds: `--max-age-ms` (manifest staleness, default 6h),
+ * `--max-stall-ms` (no-progress watchdog, default 5m),
+ * `--request-timeout-ms` (per RTDB operation, default 30s), `--heartbeat-ms`
+ * (default 30s).
  *
  * Recovery after an interruption: NEVER re-run a manifest whose apply was
  * interrupted. The operator detects a partially applied manifest and refuses
