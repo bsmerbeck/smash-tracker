@@ -752,7 +752,14 @@ describe('assertion 5: attachment-integrity', () => {
       database.dump().researchEnrichmentReceipts as Record<string, Record<string, unknown>>
     )[UIDS.sparg0]!;
     delete receipts['obs-sparg0-0'];
-    expectPerturbed(await audit(database), 'attachment-integrity', 'attachment-dangling-receipt');
+    // `expected-counts` is an ALLOWED second red here: once the owner supplied
+    // the MkLeo/Sparg0 receipt totals (table 30.3-gate6.2), a missing receipt
+    // is caught twice — by the reference walk AND by the pinned count. Two
+    // independent detections of one fact is the oracle getting stricter, not
+    // a leak; the named finding below is still the assertion under test.
+    expectPerturbed(await audit(database), 'attachment-integrity', 'attachment-dangling-receipt', [
+      'expected-counts',
+    ]);
   });
 
   it('fails when the stored receipt names a different target set', async () => {
@@ -834,7 +841,11 @@ describe('assertion 5: attachment-integrity', () => {
       `researchEnrichmentReceipts/${UIDS.sparg0}/obs-ghost`,
       receiptRecord('obs-ghost', 'set-sparg0-1', 1234),
     );
-    expectPerturbed(await audit(database), 'attachment-integrity', 'receipt-dangling-observation');
+    // Second allowed red for the same reason as the missing-receipt case: the
+    // pinned receipt total (table 30.3-gate6.2) now also notices the extra row.
+    expectPerturbed(await audit(database), 'attachment-integrity', 'receipt-dangling-observation', [
+      'expected-counts',
+    ]);
   });
 
   it('fails when a claim-carrying witness has no attachment for its target set', async () => {
@@ -1182,7 +1193,7 @@ describe('the expectation table is the contract', () => {
         label: 'MkLeo',
         matches: 4568,
         observations: 9367,
-        receipts: null,
+        receipts: 57,
         attachments: 57,
         characterWitnesses: 120,
         stockWitnesses: 70,
@@ -1191,7 +1202,7 @@ describe('the expectation table is the contract', () => {
         label: 'Sparg0',
         matches: 8378,
         observations: 10335,
-        receipts: null,
+        receipts: 68,
         attachments: 68,
         characterWitnesses: 130,
         stockWitnesses: 76,

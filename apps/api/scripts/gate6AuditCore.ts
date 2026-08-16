@@ -78,7 +78,7 @@ export type Gate6UidMap = Record<Gate6WorkspaceKey, string>;
  * different table version is refused rather than silently compared, because
  * the two describe different corpora.
  */
-export const GATE6_EXPECTATION_TABLE_VERSION = '30.3-gate6.1';
+export const GATE6_EXPECTATION_TABLE_VERSION = '30.3-gate6.2';
 
 export interface Gate6Expectation {
   label: string;
@@ -118,7 +118,11 @@ export const GATE6_EXPECTATIONS: Record<Gate6WorkspaceKey, Gate6Expectation> = {
     label: 'MkLeo',
     matches: 4568,
     observations: 9367,
-    receipts: null,
+    // One receipt per attachment: every attachment is receipt-gated, so these
+    // two figures must move together. Pinned from the 2026-08-16 read-only
+    // production audit (30.2-GATE2-AUDIT.md, "GATE 2 CLOSURE"), which is also
+    // where the attachment/witness figures come from.
+    receipts: 57,
     attachments: 57,
     characterWitnesses: 120,
     stockWitnesses: 70,
@@ -127,7 +131,7 @@ export const GATE6_EXPECTATIONS: Record<Gate6WorkspaceKey, Gate6Expectation> = {
     label: 'Sparg0',
     matches: 8378,
     observations: 10335,
-    receipts: null,
+    receipts: 68,
     attachments: 68,
     characterWitnesses: 130,
     stockWitnesses: 76,
