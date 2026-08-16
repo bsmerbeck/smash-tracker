@@ -9,6 +9,8 @@ import {
 import { isPathSafeTenantId } from '../subjectKind.js';
 import { recordsDeepEqual } from '../migration/manifest.js';
 import { deriveTournamentRegistryFromResearchSource } from './derive.js';
+import { withRegistryDeadline, type RegistryDeadlineOptions } from './deadline.js';
+import { computeForeignRowDigest, type ForeignRowDigest } from './foreignDigest.js';
 
 /**
  * Phase 30.3 (Tournament Registry Backfill): the DESTINATION-ONLY
@@ -42,6 +44,60 @@ import { deriveTournamentRegistryFromResearchSource } from './derive.js';
  */
 
 // ---------------------------------------------------------------------------
+// Observability + bounded operations
+// ---------------------------------------------------------------------------
+
+/**
+ * 30.3 operator hardening: work-unit progress, emitted at every stage
+ * boundary and once per written/removed child. The operator's heartbeat
+ * prints the latest event and its no-progress watchdog measures the gap
+ * between them — a projector that emitted nothing would be
+ * indistinguishable from a hung one.
+ */
+export interface RegistryProgressCounts {
+  sourceRecords: number;
+  derivedRows: number;
+  plannedWrites: number;
+  plannedRemovals: number;
+  written: number;
+  removed: number;
+  abortedForeign: number;
+}
+
+export type RegistryProgressStage =
+  'read-source' | 'derive' | 'read-entries' | 'diff' | 'write' | 'remove';
+
+export interface RegistryProgressEvent {
+  stage: RegistryProgressStage;
+  /** The record/child key currently being handled, when the stage is per-unit. */
+  unit: string | null;
+  counts: RegistryProgressCounts;
+}
+
+export interface RegistryOperationOptions extends RegistryDeadlineOptions {
+  onProgress?: (event: RegistryProgressEvent) => void;
+}
+
+const EMPTY_PROGRESS_COUNTS: RegistryProgressCounts = {
+  sourceRecords: 0,
+  derivedRows: 0,
+  plannedWrites: 0,
+  plannedRemovals: 0,
+  written: 0,
+  removed: 0,
+  abortedForeign: 0,
+};
+
+function emit(
+  options: RegistryOperationOptions,
+  stage: RegistryProgressStage,
+  unit: string | null,
+  counts: Partial<RegistryProgressCounts>,
+): void {
+  options.onProgress?.({ stage, unit, counts: { ...EMPTY_PROGRESS_COUNTS, ...counts } });
+}
+
+// ---------------------------------------------------------------------------
 // Plan
 // ---------------------------------------------------------------------------
 
@@ -59,6 +115,16 @@ export interface TournamentRegistryPlan {
   orphanRemovals: string[];
   /** Children that are not witness-owned — never touched in any way. */
   preservedForeignCount: number;
+  /**
+   * Content witness over those preserved children (30.3 Gate-6 directive).
+   * A count cannot see a foreign row being MUTATED; this digest can, and the
+   * operator fails the run when it changes across an apply.
+   */
+  foreignDigest: ForeignRowDigest;
+  /** Total children stored under `tournamentEntries/{uid}` at plan time. */
+  entryChildCount: number;
+  /** Of those, children carrying this projector's ownership witness. */
+  ownedRowCount: number;
   /** Stored source children that failed the source-record schema (skipped, counted). */
   corruptSourceRecords: number;
   sourceSetCount: number;
@@ -84,12 +150,18 @@ export async function planTournamentRegistry(
   database: Database,
   uid: string,
   nowMs: number,
+  options: RegistryOperationOptions = {},
 ): Promise<TournamentRegistryPlan> {
   if (!isPathSafeTenantId(uid)) {
     throw new Error(`Unsafe uid: ${uid}`);
   }
 
-  const sourceSnapshot = await database.ref(`researchSource/${uid}/sets`).get();
+  emit(options, 'read-source', `researchSource/${uid}/sets`, {});
+  const sourceSnapshot = await withRegistryDeadline(
+    `read researchSource/${uid}/sets`,
+    () => database.ref(`researchSource/${uid}/sets`).get(),
+    options,
+  );
   const rawSets = (sourceSnapshot.val() ?? {}) as Record<string, unknown>;
 
   let corruptSourceRecords = 0;
@@ -105,11 +177,20 @@ export async function planTournamentRegistry(
     return [parsed.data];
   });
 
+  emit(options, 'derive', null, { sourceRecords: records.length });
   const derivation = deriveTournamentRegistryFromResearchSource(records, {
     importedAtMs: nowMs,
   });
 
-  const entriesSnapshot = await database.ref(`tournamentEntries/${uid}`).get();
+  emit(options, 'read-entries', `tournamentEntries/${uid}`, {
+    sourceRecords: records.length,
+    derivedRows: derivation.rows.length,
+  });
+  const entriesSnapshot = await withRegistryDeadline(
+    `read tournamentEntries/${uid}`,
+    () => database.ref(`tournamentEntries/${uid}`).get(),
+    options,
+  );
   const rawEntries = (entriesSnapshot.val() ?? {}) as Record<string, unknown>;
 
   const writes: Record<string, TournamentRegistryRow> = {};
@@ -165,6 +246,21 @@ export async function planTournamentRegistry(
   }
   orphanRemovals.sort();
 
+  // Derived from the SAME snapshot as `preservedForeignCount` above — one
+  // read, one moment, so the receipt's count and digest can never describe
+  // different states of the account.
+  const foreignDigest = computeForeignRowDigest(uid, rawEntries);
+  const entryChildCount = Object.values(rawEntries).filter(
+    (value) => value !== null && value !== undefined,
+  ).length;
+
+  emit(options, 'diff', null, {
+    sourceRecords: records.length,
+    derivedRows: derivedRows.length,
+    plannedWrites: Object.keys(writes).length,
+    plannedRemovals: orphanRemovals.length,
+  });
+
   return {
     uid,
     writes,
@@ -174,6 +270,9 @@ export async function planTournamentRegistry(
     collisions: collisions.sort(),
     orphanRemovals,
     preservedForeignCount,
+    foreignDigest,
+    entryChildCount,
+    ownedRowCount: entryChildCount - preservedForeignCount,
     corruptSourceRecords,
     sourceSetCount: Object.keys(rawSets).length,
     skippedNoEventId: derivation.skippedNoEventId,
@@ -208,6 +307,7 @@ export interface TournamentRegistryApplyResult {
 export async function applyTournamentRegistryPlan(
   database: Database,
   plan: TournamentRegistryPlan,
+  options: RegistryOperationOptions = {},
 ): Promise<TournamentRegistryApplyResult> {
   const { uid } = plan;
   if (!isPathSafeTenantId(uid)) {
@@ -217,6 +317,17 @@ export async function applyTournamentRegistryPlan(
   const written: string[] = [];
   const removed: string[] = [];
   const abortedForeign: string[] = [];
+  const plannedWrites = Object.keys(plan.writes).length;
+  const plannedRemovals = plan.orphanRemovals.length;
+  const progress = (stage: RegistryProgressStage, unit: string): void =>
+    emit(options, stage, unit, {
+      derivedRows: plan.derivedRows.length,
+      plannedWrites,
+      plannedRemovals,
+      written: written.length,
+      removed: removed.length,
+      abortedForeign: abortedForeign.length,
+    });
 
   for (const [entryId, row] of Object.entries(plan.writes)) {
     if (!entryId.startsWith(TOURNAMENT_REGISTRY_ENTRY_ID_PREFIX)) {
@@ -224,22 +335,26 @@ export async function applyTournamentRegistryPlan(
       // foreign key here is a programming bug, not a data condition.
       throw new Error(`Refusing to write a non-registry entry key: ${entryId}`);
     }
-    const result = await database
-      .ref(`tournamentEntries/${uid}/${entryId}`)
-      .transaction((current) => {
-        if (current === null || current === undefined) {
-          return row; // absent — create
-        }
-        if (!isTournamentRegistryOwnedRow(current)) {
-          return undefined; // foreign — abort, never clobber
-        }
-        // Owned — replace, but preserve the stored first-import stamp the
-        // plan may not have seen (a concurrent first write is still ours).
-        const storedImportedAtMs = readOwnedImportedAtMs(current);
-        return storedImportedAtMs !== null
-          ? { ...row, provenance: { ...row.provenance, importedAtMs: storedImportedAtMs } }
-          : row;
-      });
+    progress('write', entryId);
+    const result = await withRegistryDeadline(
+      `write tournamentEntries/${uid}/${entryId}`,
+      () =>
+        database.ref(`tournamentEntries/${uid}/${entryId}`).transaction((current) => {
+          if (current === null || current === undefined) {
+            return row; // absent — create
+          }
+          if (!isTournamentRegistryOwnedRow(current)) {
+            return undefined; // foreign — abort, never clobber
+          }
+          // Owned — replace, but preserve the stored first-import stamp the
+          // plan may not have seen (a concurrent first write is still ours).
+          const storedImportedAtMs = readOwnedImportedAtMs(current);
+          return storedImportedAtMs !== null
+            ? { ...row, provenance: { ...row.provenance, importedAtMs: storedImportedAtMs } }
+            : row;
+        }),
+      options,
+    );
     if (result.committed) {
       written.push(entryId);
     } else {
@@ -248,14 +363,18 @@ export async function applyTournamentRegistryPlan(
   }
 
   for (const entryId of plan.orphanRemovals) {
-    const result = await database
-      .ref(`tournamentEntries/${uid}/${entryId}`)
-      .transaction((current) => {
-        if (current === null || current === undefined) {
-          return null; // already absent — a harmless no-op delete
-        }
-        return isTournamentRegistryOwnedRow(current) ? null : undefined;
-      });
+    progress('remove', entryId);
+    const result = await withRegistryDeadline(
+      `remove tournamentEntries/${uid}/${entryId}`,
+      () =>
+        database.ref(`tournamentEntries/${uid}/${entryId}`).transaction((current) => {
+          if (current === null || current === undefined) {
+            return null; // already absent — a harmless no-op delete
+          }
+          return isTournamentRegistryOwnedRow(current) ? null : undefined;
+        }),
+      options,
+    );
     if (result.committed) {
       removed.push(entryId);
     } else {
@@ -286,8 +405,9 @@ export async function projectTournamentRegistry(
   database: Database,
   uid: string,
   nowMs: number,
+  options: RegistryOperationOptions = {},
 ): Promise<TournamentRegistryProjectionResult> {
-  const plan = await planTournamentRegistry(database, uid, nowMs);
-  const apply = await applyTournamentRegistryPlan(database, plan);
+  const plan = await planTournamentRegistry(database, uid, nowMs, options);
+  const apply = await applyTournamentRegistryPlan(database, plan, options);
   return { plan, apply };
 }
