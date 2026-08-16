@@ -21,6 +21,10 @@ import {
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { useDataCoverage } from '@/hooks/useDataCoverage';
 import { LiquipediaLicenseNote } from '@/components/enrichment/LiquipediaAttributionBadge';
+import {
+  ENRICHMENT_FIELD_COVERAGE_FIELDS,
+  selectFieldCoverageCell,
+} from '@/lib/enrichmentFieldCoverage';
 
 const COUNT_FIELDS = [
   'discoveredAllGames',
@@ -424,6 +428,98 @@ function EnrichmentFreshnessSection({
 }
 
 /**
+ * Phase 30.3 Gate 5: the per-field present/missing/ambiguous rollup
+ * (`ResearchEnrichmentFieldCoverage`, `packages/shared/src/
+ * researchEnrichment.ts`) for the four fields the enrichment layer projects
+ * — stages, characters, stocks, VODs. Renders nothing when the coverage
+ * response carries no `fieldCoverage` member (a `.nullish()` READ-TIME
+ * addition — see the schema's own doc comment), so a coverage response from
+ * an API build that hasn't started publishing it yet renders this section
+ * byte-identically to how the rest of `EnrichmentSection` already handles an
+ * absent `enrichment` member.
+ *
+ * Every field's `missing` count renders even when 0 — mirroring
+ * `EnrichmentCountRows`' own "a zero renders as the digit 0" convention —
+ * and a field with NO evidence at all is never hidden: "missing rendered as
+ * missing" is the literal requirement this section exists to meet.
+ */
+function EnrichmentFieldCoverageSection({
+  fieldCoverage,
+  t,
+  language,
+}: {
+  fieldCoverage: NonNullable<ResearchEnrichmentCoverageResponse['fieldCoverage']>;
+  t: TFunction;
+  language: string;
+}) {
+  return (
+    <div data-testid="data-coverage-enrichment-field-coverage" className="text-sm">
+      <div className="flex items-center justify-between gap-2">
+        <h4 className="font-semibold">{t('enrichment.coverage.fieldCoverage.title')}</h4>
+        <span
+          data-testid="data-coverage-enrichment-field-coverage-as-of"
+          className="text-xs text-muted-foreground"
+        >
+          {t('enrichment.coverage.fieldCoverage.asOf', {
+            date: formatEpochMs(fieldCoverage.asOfMs, language),
+          })}
+        </span>
+      </div>
+      <p className="text-xs text-muted-foreground">
+        {t('enrichment.coverage.fieldCoverage.witnessedRows', {
+          count: fieldCoverage.witnessedRows,
+        })}
+      </p>
+      <ul className="mt-1 flex flex-col gap-1.5">
+        {ENRICHMENT_FIELD_COVERAGE_FIELDS.map((field) => {
+          const cell = selectFieldCoverageCell(fieldCoverage, field);
+          return (
+            <li
+              key={field}
+              data-testid={`data-coverage-enrichment-field-coverage-${field}`}
+              className="rounded border p-2"
+            >
+              <div className="flex items-center justify-between gap-2">
+                <span className="font-medium">
+                  {t(`enrichment.coverage.fieldCoverage.fields.${field}`)}
+                </span>
+                {cell.latestSourceRevisionId != null && (
+                  <span className="text-xs text-muted-foreground">
+                    {t('enrichment.coverage.fieldCoverage.revision', {
+                      revisionId: cell.latestSourceRevisionId,
+                    })}
+                  </span>
+                )}
+              </div>
+              <dl className="mt-1 grid grid-cols-3 gap-x-2 text-xs">
+                <div>
+                  <dt className="text-muted-foreground">
+                    {t('enrichment.coverage.fieldCoverage.present')}
+                  </dt>
+                  <dd className="font-medium">{cell.present}</dd>
+                </div>
+                <div>
+                  <dt className="text-muted-foreground">
+                    {t('enrichment.coverage.fieldCoverage.missing')}
+                  </dt>
+                  <dd className="font-medium">{cell.missing}</dd>
+                </div>
+                <div>
+                  <dt className="text-muted-foreground">
+                    {t('enrichment.coverage.fieldCoverage.ambiguous')}
+                  </dt>
+                  <dd className="font-medium">{cell.ambiguous}</dd>
+                </div>
+              </dl>
+            </li>
+          );
+        })}
+      </ul>
+    </div>
+  );
+}
+
+/**
  * The full enrichment section — rendered only when the coverage response
  * carries the `enrichment` member at all, so an un-enriched account's panel
  * is unchanged (the caller gates on `data?.enrichment != null`, this
@@ -449,6 +545,13 @@ function EnrichmentSection({
         t={t}
         language={language}
       />
+      {enrichment.fieldCoverage != null && (
+        <EnrichmentFieldCoverageSection
+          fieldCoverage={enrichment.fieldCoverage}
+          t={t}
+          language={language}
+        />
+      )}
       <div className="mt-2">
         <LiquipediaLicenseNote />
       </div>

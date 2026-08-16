@@ -628,5 +628,101 @@ describe('DataCoveragePanel', () => {
         '<img src=x onerror=alert(1)>',
       );
     });
+
+    describe('field coverage (Phase 30.3 Gate 5)', () => {
+      const FIELD_COVERAGE = {
+        asOfMs: TWENTY_TWENTY_SIX_MS_A,
+        witnessedRows: 40,
+        stages: { present: 10, missing: 2, ambiguous: 1 },
+        characters: {
+          present: 8,
+          missing: 3,
+          ambiguous: 2,
+          latestSourceRevisionId: 909090,
+          latestProjectedAtMs: TWENTY_TWENTY_SIX_MS_A,
+        },
+        stocks: { present: 0, missing: 40, ambiguous: 0 },
+        vods: { present: 9, missing: 1, ambiguous: 0 },
+      };
+
+      it('renders nothing for the field-coverage section when the response omits it, and the rest of the enrichment section is unchanged', () => {
+        useDataCoverage.mockReturnValue({
+          ...BASE_STATUS,
+          hasCompletedRun: true,
+          data: { ...ONE_PLAYER_SNAPSHOT, enrichment: ENRICHMENT_SNAPSHOT },
+        });
+        render(<DataCoveragePanel />);
+
+        expect(
+          screen.queryByTestId('data-coverage-enrichment-field-coverage'),
+        ).not.toBeInTheDocument();
+        expect(screen.getByTestId('data-coverage-enrichment')).toBeInTheDocument();
+      });
+
+      it('renders every field with its present/missing/ambiguous counts, including an honest all-missing field', () => {
+        useDataCoverage.mockReturnValue({
+          ...BASE_STATUS,
+          hasCompletedRun: true,
+          data: {
+            ...ONE_PLAYER_SNAPSHOT,
+            enrichment: { ...ENRICHMENT_SNAPSHOT, fieldCoverage: FIELD_COVERAGE },
+          },
+        });
+        render(<DataCoveragePanel />);
+
+        const stages = screen.getByTestId('data-coverage-enrichment-field-coverage-stages');
+        expect(stages.textContent).toContain('Stages');
+        expect(within(stages).getByText('10')).toBeInTheDocument();
+
+        const characters = screen.getByTestId('data-coverage-enrichment-field-coverage-characters');
+        expect(characters.textContent).toContain('Characters');
+        expect(within(characters).getByText('8')).toBeInTheDocument();
+        expect(within(characters).getByText('3')).toBeInTheDocument();
+        expect(within(characters).getByText('2')).toBeInTheDocument();
+        expect(characters.textContent).toContain('909090');
+
+        // Stocks: nothing enriched yet — missing renders as missing, never
+        // hidden and never a euphemism.
+        const stocks = screen.getByTestId('data-coverage-enrichment-field-coverage-stocks');
+        expect(within(stocks).getByText('40')).toBeInTheDocument();
+
+        const vods = screen.getByTestId('data-coverage-enrichment-field-coverage-vods');
+        expect(vods.textContent).toContain('VODs');
+      });
+
+      it('shows the overall as-of date and the witnessed-row count', () => {
+        useDataCoverage.mockReturnValue({
+          ...BASE_STATUS,
+          hasCompletedRun: true,
+          data: {
+            ...ONE_PLAYER_SNAPSHOT,
+            enrichment: { ...ENRICHMENT_SNAPSHOT, fieldCoverage: FIELD_COVERAGE },
+          },
+        });
+        render(<DataCoveragePanel />);
+
+        expect(
+          screen.getByTestId('data-coverage-enrichment-field-coverage-as-of'),
+        ).toBeInTheDocument();
+        expect(screen.getByTestId('data-coverage-enrichment-field-coverage')).toHaveTextContent(
+          '40',
+        );
+      });
+
+      it('renders no revision detail for a field with no latestSourceRevisionId', () => {
+        useDataCoverage.mockReturnValue({
+          ...BASE_STATUS,
+          hasCompletedRun: true,
+          data: {
+            ...ONE_PLAYER_SNAPSHOT,
+            enrichment: { ...ENRICHMENT_SNAPSHOT, fieldCoverage: FIELD_COVERAGE },
+          },
+        });
+        render(<DataCoveragePanel />);
+
+        const stages = screen.getByTestId('data-coverage-enrichment-field-coverage-stages');
+        expect(stages.textContent).not.toContain('rev');
+      });
+    });
   });
 });
