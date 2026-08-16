@@ -1,6 +1,10 @@
 import type { Database } from 'firebase-admin/database';
 import { describe, expect, it } from 'vitest';
-import type { ResearchEnrichmentObservationRecord } from '@smash-tracker/shared';
+import {
+  LIQUIPEDIA_PARSER_VERSION_BRACKET_LEGACY,
+  LIQUIPEDIA_PARSER_VERSION_BRACKET_MATCH2,
+  type ResearchEnrichmentObservationRecord,
+} from '@smash-tracker/shared';
 import { FakeDatabase } from '../../test-support/fakeDatabase.js';
 import { buildResolutionReceipt, deriveReceiptId, type ResolutionOutcome } from './resolution.js';
 import {
@@ -13,6 +17,7 @@ import {
   overlayEnrichment,
   readEnrichmentObservation,
   readResolutionReceipt,
+  sweepOutdatedFamilyObservations,
   writeEnrichmentObservation,
   writeResolutionReceipt,
 } from './store.js';
@@ -629,5 +634,243 @@ describe('overlayEnrichment', () => {
     expect(overlay.enriched).toHaveLength(1);
     expect(overlay.enriched[0]!.observationId).toBe('obs-1');
     expect(overlay.enriched[0]!.record).toBe(record);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 30.2 version-wide stale-record sweep — the page-scoped supersede pass can
+// never reach outdated records on pages the current expansion no longer
+// visits; this sweep removes exactly the bracket-family records whose
+// parserVersion differs from the current family constant, and nothing else.
+// ---------------------------------------------------------------------------
+
+describe('sweepOutdatedFamilyObservations', () => {
+  async function seedRecord(
+    database: FakeDatabase,
+    overrides: Partial<ResearchEnrichmentObservationRecord>,
+  ): Promise<void> {
+    await writeEnrichmentObservation(
+      asDatabase(database),
+      TENANT_ID,
+      makeObservationRecord(overrides),
+    );
+  }
+
+  it('removes ONLY outdated bracket-family records — current-version, vodlist and wikitext-probe records are untouched', async () => {
+    const database = new FakeDatabase();
+    await seedRecord(database, {
+      observationId: 'legacy-old',
+      templateFamily: 'legacy',
+      parserVersion: 'liquipedia-bracket-legacy@1',
+    });
+    await seedRecord(database, {
+      observationId: 'legacy-current',
+      templateFamily: 'legacy',
+      parserVersion: LIQUIPEDIA_PARSER_VERSION_BRACKET_LEGACY,
+    });
+    await seedRecord(database, {
+      observationId: 'match2-old',
+      templateFamily: 'match2',
+      parserVersion: 'liquipedia-bracket-match2@1',
+    });
+    await seedRecord(database, {
+      observationId: 'match2-current',
+      templateFamily: 'match2',
+      parserVersion: LIQUIPEDIA_PARSER_VERSION_BRACKET_MATCH2,
+    });
+    await seedRecord(database, {
+      observationId: 'vodlist-v1',
+      templateFamily: 'vodlist',
+      contentType: 'vod-reference',
+      parserVersion: 'liquipedia-vodlist@1',
+    });
+    await seedRecord(database, {
+      observationId: 'probe-v1',
+      templateFamily: 'unknown',
+      parserVersion: 'liquipedia-wikitext-probe@1',
+      extractionFailed: true,
+    });
+
+    const result = await sweepOutdatedFamilyObservations(asDatabase(database), TENANT_ID);
+
+    expect(result.removedObservationIds.sort()).toEqual(['legacy-old', 'match2-old']);
+    expect(result.removedAttachmentCount).toBe(0);
+    expect(result.removedReceiptCount).toBe(0);
+    const survivors = (await listEnrichmentObservations(asDatabase(database), TENANT_ID))
+      .map((record) => record.observationId)
+      .sort();
+    expect(survivors).toEqual(['legacy-current', 'match2-current', 'probe-v1', 'vodlist-v1']);
+  });
+
+  it('cascades and COUNTS a stale record still wired into an attachment and a receipt', async () => {
+    const database = new FakeDatabase();
+    await seedRecord(database, {
+      observationId: 'legacy-old-wired',
+      templateFamily: 'legacy',
+      parserVersion: 'liquipedia-bracket-legacy@1',
+    });
+    await database
+      .ref(`researchEnrichmentReceipts/${TENANT_ID}/legacy-old-wired`)
+      .set({ receiptId: 'stale-receipt', observationId: 'legacy-old-wired' });
+    await database
+      .ref(`researchEnrichmentAttachments/${TENANT_ID}/${TARGET_SET_ID}/legacy-old-wired`)
+      .set({
+        observationId: 'legacy-old-wired',
+        targetSetId: TARGET_SET_ID,
+        attachmentSource: 'resolver',
+        attachedAtMs: 1,
+        sourceRevisionId: 100,
+        sourceContentHash: 'a'.repeat(64),
+        parserVersion: 'liquipedia-bracket-legacy@1',
+        receiptId: 'stale-receipt',
+      });
+
+    const result = await sweepOutdatedFamilyObservations(asDatabase(database), TENANT_ID);
+
+    expect(result.removedObservationIds).toEqual(['legacy-old-wired']);
+    expect(result.removedAttachmentCount).toBe(1);
+    expect(result.removedReceiptCount).toBe(1);
+    const attachment = await database
+      .ref(`researchEnrichmentAttachments/${TENANT_ID}/${TARGET_SET_ID}/legacy-old-wired`)
+      .get();
+    expect(attachment.exists()).toBe(false);
+    const receipt = await database
+      .ref(`researchEnrichmentReceipts/${TENANT_ID}/legacy-old-wired`)
+      .get();
+    expect(receipt.exists()).toBe(false);
+  });
+
+  it('is a no-op on an empty tenant', async () => {
+    const database = new FakeDatabase();
+    const result = await sweepOutdatedFamilyObservations(asDatabase(database), TENANT_ID);
+    expect(result.removedObservationIds).toEqual([]);
+    expect(result.removedAttachmentCount).toBe(0);
+    expect(result.removedReceiptCount).toBe(0);
+  });
+
+  // 30.2 schema-blind-hygiene defect: old-generation records are MALFORMED
+  // BY DEFINITION once the schema has evolved past them (production: all
+  // 616+95 legacy@1 stragglers failed the current schema on the evolved
+  // `games[].stocks` shape) — a schema-validating selection saw zero
+  // candidates. The sweep must select from the RAW tree.
+  it('sweeps a schema-INVALID old-generation record (old-shape stocks) that the schema-validating reader cannot even see', async () => {
+    const database = new FakeDatabase();
+    // Raw-seeded: fails the CURRENT schema even after the read-side
+    // two-seat normalization (a wrong-typed seat, which no normalization
+    // may repair) — exactly the class a prior schema generation leaves
+    // behind, and one writeEnrichmentObservation could never produce.
+    await database.ref(`researchEnrichmentObservations/${TENANT_ID}/old-shape-1`).set({
+      observationId: 'old-shape-1',
+      sourceProvider: 'liquipedia',
+      sourceWiki: 'smash',
+      contentType: 'stage-observation',
+      sourcePageTitle: 'OldCup/2020/Bracket',
+      sourcePageUrl: 'https://liquipedia.net/smash/OldCup/2020/Bracket',
+      sourceRevisionId: 5,
+      sourceContentHash: 'a'.repeat(64),
+      parserVersion: 'liquipedia-bracket-legacy@1',
+      templateFamily: 'legacy',
+      fetchedAtMs: 100,
+      observedAtMs: 100,
+      matchingStatus: 'unmatched',
+      games: [{ ordinal: 1, stocks: [3, 'not-a-number'] }],
+    });
+
+    // Proof of the defect mechanism: the schema-validating reader skips it.
+    const schemaVisible = await listEnrichmentObservations(asDatabase(database), TENANT_ID);
+    expect(schemaVisible.find((record) => record.observationId === 'old-shape-1')).toBeUndefined();
+
+    const result = await sweepOutdatedFamilyObservations(asDatabase(database), TENANT_ID);
+    expect(result.removedObservationIds).toEqual(['old-shape-1']);
+    const gone = await database
+      .ref(`researchEnrichmentObservations/${TENANT_ID}/old-shape-1`)
+      .get();
+    expect(gone.exists()).toBe(false);
+  });
+
+  it('leaves the SAME malformed shape untouched at the CURRENT family version — version, never validity, is the trigger', async () => {
+    const database = new FakeDatabase();
+    await database.ref(`researchEnrichmentObservations/${TENANT_ID}/current-but-malformed`).set({
+      observationId: 'current-but-malformed',
+      sourceProvider: 'liquipedia',
+      sourceWiki: 'smash',
+      contentType: 'stage-observation',
+      sourcePageTitle: 'OldCup/2020/Bracket',
+      sourcePageUrl: 'https://liquipedia.net/smash/OldCup/2020/Bracket',
+      sourceRevisionId: 5,
+      sourceContentHash: 'a'.repeat(64),
+      parserVersion: LIQUIPEDIA_PARSER_VERSION_BRACKET_LEGACY,
+      templateFamily: 'legacy',
+      fetchedAtMs: 100,
+      observedAtMs: 100,
+      matchingStatus: 'unmatched',
+      games: [{ ordinal: 1, stocks: [3, 'not-a-number'] }],
+    });
+    const result = await sweepOutdatedFamilyObservations(asDatabase(database), TENANT_ID);
+    expect(result.removedObservationIds).toEqual([]);
+    const kept = await database
+      .ref(`researchEnrichmentObservations/${TENANT_ID}/current-but-malformed`)
+      .get();
+    expect(kept.exists()).toBe(true);
+  });
+
+  // 30.2 RTDB array-null-strip fix: the write side stores two-seat nullable
+  // members in forms that survive an RTDB round trip byte-stably, and the
+  // read side rebuilds the canonical tuples — the invariant is
+  // parse(write(x)) deep-equals parse(read-back-of-write(x)). FakeDatabase
+  // mirrors RTDB's array null-strip, so this round trip is the real shape.
+  it('round-trips two-seat nullable members through RTDB-parity storage byte-stably', async () => {
+    const database = new FakeDatabase();
+    const record = makeObservationRecord({
+      observationId: 'round-trip-1',
+      scores: [null, 3],
+      games: [
+        { ordinal: 1, stocks: [null, 0], rawChars: ['Cloud', null] },
+        { ordinal: 2, stocks: [null, null] },
+      ],
+    });
+    await writeEnrichmentObservation(asDatabase(database), TENANT_ID, record);
+
+    const readBack = await readEnrichmentObservation(
+      asDatabase(database),
+      TENANT_ID,
+      'round-trip-1',
+    );
+    expect(readBack).not.toBeNull();
+    // The canonical parsed shape: null seats explicit, and the all-null
+    // member OMITTED (all-unknown is semantically the absent member — the
+    // documented normalization contract).
+    expect(readBack!.scores).toEqual([null, 3]);
+    expect(readBack!.games?.[0]?.stocks).toEqual([null, 0]);
+    expect(readBack!.games?.[0]?.rawChars).toEqual(['Cloud', null]);
+    expect(readBack!.games?.[1]?.stocks).toBeUndefined();
+
+    // BYTE-STABILITY: the stored bytes contain no raw array nulls (the
+    // one-null-seat members are the explicit numeric-keyed object form), so
+    // re-writing the read-back record reproduces the identical bytes — the
+    // corpus can never degrade again through this writer.
+    const storedOnce = JSON.stringify(
+      (database.dump().researchEnrichmentObservations as Record<string, unknown>)[TENANT_ID],
+    );
+    expect(storedOnce).toContain('{"1":3}');
+    expect(storedOnce).not.toContain('null');
+    await writeEnrichmentObservation(asDatabase(database), TENANT_ID, readBack!);
+    const storedTwice = JSON.stringify(
+      (database.dump().researchEnrichmentObservations as Record<string, unknown>)[TENANT_ID],
+    );
+    expect(storedTwice).toBe(storedOnce);
+  });
+
+  it('a raw child with missing/non-string family or version members matches neither predicate and is left alone', async () => {
+    const database = new FakeDatabase();
+    await database
+      .ref(`researchEnrichmentObservations/${TENANT_ID}/no-version-members`)
+      .set({ someUnrelatedShape: true });
+    await database.ref(`researchEnrichmentObservations/${TENANT_ID}/numeric-version`).set({
+      templateFamily: 'legacy',
+      parserVersion: 42,
+    });
+    const result = await sweepOutdatedFamilyObservations(asDatabase(database), TENANT_ID);
+    expect(result.removedObservationIds).toEqual([]);
   });
 });

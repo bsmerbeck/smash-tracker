@@ -374,6 +374,20 @@ export function extractLegacyBracketObservations(
 
   const observations: ResearchEnrichmentObservationRecord[] = [];
 
+  // 30.2 production defect C (verified forensics): the per-page ordinal of
+  // each SET-BEARING template call, in document order. A page hosting
+  // multiple brackets rendered by the SAME template (pools sections,
+  // multi-event pages) produces identical `(template.name, rNmM)`
+  // coordinates in every one of them; a discriminator built from those two
+  // alone collided, and `writeEnrichmentObservation`'s upsert-by-id silently
+  // overwrote 142 of MkLeo's records with their same-coordinate twins. The
+  // ordinal is part of the observation-id discriminator below so two REAL
+  // distinct matches on one page can never share an id. (Inserting a new
+  // bracket ABOVE an existing one re-keys the ones after it — acceptable:
+  // re-extraction rewrites the whole page and the stale-parser/stale-id
+  // supersede pass in run.ts reconciles.)
+  let bracketInstanceOrdinal = 0;
+
   for (const template of templates) {
     const params = parseTemplateParameters(template.body);
     const hasSetLikeParam = Array.from(params.keys()).some((key) =>
@@ -382,6 +396,7 @@ export function extractLegacyBracketObservations(
     if (!hasSetLikeParam) {
       continue;
     }
+    bracketInstanceOrdinal += 1;
 
     const triples = discoverTriples(params);
     const sectionHeading = findSectionHeading(stripped, template.start, headings);
@@ -470,11 +485,16 @@ export function extractLegacyBracketObservations(
         playerFailureReasons = describeUnusableSlots(ownSlots, bracketKeyRaw);
       }
 
+      // Defect C fix: the discriminator carries the per-page bracket
+      // INSTANCE ordinal (and the section heading as a human-auditable
+      // anchor) alongside the template name and match coordinates —
+      // `8DEWBracketA#2` under "Pool B" can never collide with
+      // `8DEWBracketA#1` under "Pool A" even when both declare `r1m1`.
       const observationId = buildEnrichmentObservationId(
         {
           sourcePageTitle: input.pageTitle,
           parserVersion: LIQUIPEDIA_PARSER_VERSION_BRACKET_LEGACY,
-          discriminator: `${template.name}:${bracketKeyRaw}`,
+          discriminator: `${template.name}#${bracketInstanceOrdinal}:${sectionHeading ?? ''}:${bracketKeyRaw}`,
         },
         input.hashHex,
       );

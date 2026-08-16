@@ -559,10 +559,33 @@ describe('applyEnrichmentProjection — re-apply over its own prior projection',
       targetSetId,
       overlay,
     );
+    // Both halves of the merged dual fix, asserted together: the label says
+    // settled (never a fresh 'enriched'), and the value-derived trigger
+    // signal says no write would happen — so run.ts's reconciliation pass
+    // skips the healthy set whichever signal it consults.
     expect(preview.rows).toEqual([
-      { matchKey: key, vodOutcome: 'unchanged', stageOutcome: 'provider-authoritative' },
+      {
+        matchKey: key,
+        vodOutcome: 'unchanged',
+        stageOutcome: 'provider-authoritative',
+        wouldChangeRow: false,
+      },
     ]);
     expect(preview.counts.stageEnriched).toBe(0);
+  });
+
+  it('preview reports wouldChangeRow=true for a genuinely stranded fill — the other direction of the merged trigger', async () => {
+    const database = new FakeDatabase();
+    const targetSetId = 'startgg-set-stranded-preview';
+    const key = deriveEnrichmentMatchRowKey(targetSetId, 1);
+    seedMatch(database, key, {});
+    const preview = await previewEnrichmentProjection(
+      asDatabase(database),
+      TENANT_ID,
+      targetSetId,
+      stageAndVodOverlay(key),
+    );
+    expect(preview.rows[0]?.wouldChangeRow).toBe(true);
   });
 
   it('a source-corrected stage on a witness-owned row is REWRITTEN (the witness is what makes its own projection correctable)', async () => {

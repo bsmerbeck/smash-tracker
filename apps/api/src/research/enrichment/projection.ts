@@ -134,6 +134,34 @@ import {
  * decided ONCE, by a plain read, before any row's transaction is even
  * attempted; a row absent at that point is counted
  * (`attachedNoProjectableRows`) and never touched again this run.
+ *
+ * THE MERGED STAGE-IDEMPOTENCY DESIGN (30.3 Gate 5 commit 1 fused with
+ * 30.2's defect-C composition fix — two independent fixes for the same
+ * hazard, reconciled at merge time into one design). The hazard: this
+ * applier's only stage input is the STORED row, and on a re-apply the
+ * stored stage is its own earlier projection echoed back; presenting that
+ * echo to the shared resolver as `providerStage` tripped provider-wins and
+ * CLEARED the stage witness. The surviving design has three parts:
+ *
+ *   1. OWNERSHIP TEST — the shared `isSourceOwnedStageValue` (committed ∪
+ *      PENDING accepted set) decides whether the stored stage is this
+ *      pipeline's own projection. The pending half is load-bearing: a crash
+ *      between the row write (phase B) and the witness commit (phase C)
+ *      leaves a row stage only the pending half vouches for, and a
+ *      committed-only test would clear that witness on the recovery pass.
+ *   2. PRESENTATION — an own-projection stage is presented to the resolver
+ *      as the unknown sentinel (the enrichment slot is still open); the
+ *      resolver's committed-identical branch makes a healthy replay a
+ *      witness-preserving no-op, and `resolveForRow` relabels it
+ *      'provider-authoritative' so every label consumer (the run driver's
+ *      cohort restatement, the stageEnriched counters, dry-run details)
+ *      sees exactly the pre-fix healthy-set semantics.
+ *   3. TRIGGER — `previewEnrichmentProjection` emits a value-derived
+ *      `wouldChangeRow` per row (vodUrl, map, AND stocksLeft compared
+ *      against the resolved members); the run driver's
+ *      resume-reconciliation pass keys on that boolean, never on outcome
+ *      labels, so it reprojects exactly the sets whose rows are missing a
+ *      fill and skips every healthy set.
  */
 
 // ---------------------------------------------------------------------------
@@ -323,9 +351,21 @@ export interface EnrichmentProjectionRowOutcome {
   matchKey: string;
   vodOutcome: EnrichmentVodOutcome;
   stageOutcome: EnrichmentStageOutcome;
-  /** 30.3 Gate 5 — OPTIONAL so every pre-existing consumer of the row list keeps compiling; absent only on rows resolved before the evidence half existed (never emitted by this module today). */
+  /** 30.3 Gate 5 — OPTIONAL so every pre-existing consumer of the row list keeps compiling; omitted when the evidence half was not in play for the row. */
   charsOutcome?: EnrichmentCharsOutcome;
   stocksOutcome?: EnrichmentStocksOutcome;
+  /**
+   * PREVIEW-ONLY (set by `previewEnrichmentProjection`, absent on apply):
+   * `true` when applying would actually change the stored row's `vodUrl`,
+   * `map`, or `stocksLeft` — the signal the run driver's
+   * resume-reconciliation trigger keys on (30.2 defect-C composition).
+   * Outcome labels alone cannot carry this: under the merged own-projection
+   * guard an identical replay is relabeled `provider-authoritative` (30.3
+   * Gate 5) while a witness-vouched row missing its fill reports
+   * `enriched` — the trigger needs the VALUE comparison either way, and a
+   * boolean derived from the resolved members is robust to both labelings.
+   */
+  wouldChangeRow?: boolean;
 }
 
 export interface EnrichmentProjectionCounts {
@@ -491,7 +531,16 @@ export async function previewEnrichmentProjection(
     const row = rowSnapshot.val() as Record<string, unknown>;
     const witness = readWitnessFromValue(witnessSnapshot.exists() ? witnessSnapshot.val() : null);
     const resolved = resolveForRow(overlay, key, row, witness);
-    outcome.rows.push(toRowOutcome(key, resolved));
+    // The row-change-aware trigger signal (30.2 defect-C composition,
+    // master's half of the dual fix): a VALUE comparison over every member
+    // this module writes — vodUrl, map, and (30.3 Gate 5) stocksLeft — so
+    // the run driver's reconciliation pass keys on "would a write happen",
+    // never on outcome labels.
+    const wouldChangeRow =
+      (resolved.vodUrl ?? undefined) !== extractExistingVodUrl(row) ||
+      !stagesEqual(resolved.stage, extractExistingStage(row)) ||
+      (resolved.stocksLeft ?? undefined) !== extractExistingStocksLeft(row);
+    outcome.rows.push({ ...toRowOutcome(key, resolved), wouldChangeRow });
     tallyResolvedRow(outcome, resolved);
   }
 
@@ -601,18 +650,27 @@ function resolveForRow(
   witness: EnrichmentOwnershipWitness | null,
 ): EnrichedMatchMembersResult {
   const vodSource = overlay.enrichedVodSourceByKey?.[key];
-  // 30.3 Gate 5 commit 1 — THE STAGE-WITNESS IDEMPOTENCY FIX. The shared
+  // THE STAGE-WITNESS IDEMPOTENCY FIX — the MERGED design of two
+  // independent fixes for the same hazard (30.3 Gate 5 commit 1 and 30.2's
+  // defect-C composition fix; see this module's header). The shared
   // resolver's `providerStage` input means "a stage the PROVIDER vouches
   // for", but this applier only has the STORED row — and on a re-apply the
-  // stored stage may be this module's OWN earlier projection echoed back.
-  // Handing that echo to the resolver as a provider stage made re-applying
-  // over an already-projected set CLEAR the stage witness (the resolver's
-  // provider-wins branch), silently converting an enrichment-owned stage
-  // into an uncorrectable, unattributable one. The witness is the
-  // disambiguator: a stored stage `isSourceOwnedStageValue` vouches for is
-  // passed as the unknown sentinel instead — the enrichment slot is still
-  // open — and the resolver's own committed-identical branch turns the
-  // replay into a witness-preserving no-op.
+  // stored stage may be this module's OWN earlier projection echoed back
+  // (which the parser-version re-key forces for every previously-matched
+  // set, via supersede -> re-attach -> re-project). Handing that echo to
+  // the resolver as a provider stage tripped "a provider-resolved stage
+  // always wins" and CLEARED the stage witness — silently converting an
+  // enrichment-owned stage into an uncorrectable, unattributable one. The
+  // witness is the disambiguator: a stored stage `isSourceOwnedStageValue`
+  // vouches for is passed as the unknown sentinel instead — the enrichment
+  // slot is still open — and the resolver's committed-identical branch
+  // turns the replay into a witness-preserving no-op. The SHARED predicate
+  // survives (over master's inline committed-only check) because its
+  // accepted set is committed ∪ PENDING: a crash between the row write
+  // (phase B) and the witness commit (phase C) leaves a row stage only the
+  // pending half vouches for, and a committed-only guard would clear that
+  // witness on the recovery pass. A GENUINE provider-resolved stage (one
+  // no witness half vouches for) still wins unconditionally.
   const storedStage = extractExistingStage(row);
   const stageIsOwnProjection = isSourceOwnedStageValue(storedStage, witness);
   // 30.3 Gate 5: the character/stock evidence context. The seat tags and the
@@ -667,12 +725,16 @@ function resolveForRow(
     resolved.witnessPatch.stageCommit.kind === 'none'
   ) {
     // An identical replay is reported as SETTLED ('provider-authoritative'),
-    // never as a fresh 'enriched': run.ts's resume-reconciliation pass
-    // treats a previewed 'enriched' as a stranded fill and would otherwise
-    // reproject every healthy set on every run (and restate its cohort
-    // delta each time). This relabel changes only the REPORTED outcome of a
-    // no-op row — the resolved members and the (empty) witness patch are
-    // untouched, so unlike the pre-fix behavior the witness survives.
+    // never as a fresh 'enriched'. run.ts's resume-reconciliation TRIGGER no
+    // longer depends on this label (it keys on the preview's value-derived
+    // `wouldChangeRow` — the master half of the merged design), but the
+    // relabel still matters for everything else that reads outcome labels:
+    // the cohort restatement (`STAGE_OUTCOME_TO_COHORT`) and the dry-run/
+    // apply `stageEnriched` counters see exactly the pre-fix healthy-set
+    // labels, so a replay restates nothing as freshly enriched. The relabel
+    // changes only the REPORTED outcome of a no-op row — the resolved
+    // members and the (empty) witness patch are untouched, so unlike the
+    // pre-fix behavior the witness survives.
     return { ...resolved, stageOutcome: 'provider-authoritative' };
   }
   return resolved;

@@ -255,6 +255,77 @@ describe('researchEnrichmentObservationRecordSchema', () => {
     expect('players' in parsed).toBe(false);
     expect(parsed.extractionFailed).toBe(true);
   });
+
+  // -------------------------------------------------------------------------
+  // 30.2 RTDB array-null-strip trap: two-seat positional nullable arrays are
+  // valid going in and — without read normalization — unparseable coming
+  // back (1,196 production records). Every storage-degraded form must parse
+  // to the canonical two-seat tuple; structurally foreign shapes must still
+  // be rejected.
+  // -------------------------------------------------------------------------
+
+  it('parses a sparse stocks array (RTDB-stripped leading null reads back as a hole) to the canonical [null, n] tuple', () => {
+    // `[, 0]` is a length-2 sparse array whose index 0 is a HOLE — exactly
+    // what the SDK reads back for stored `{"1": 0}`.
+    // eslint-disable-next-line no-sparse-arrays -- deliberately modelling the SDK's sparse read-back
+    const sparse = [, 0];
+    const parsed = researchEnrichmentObservationRecordSchema.parse(
+      makeMinimalObservation({ games: [{ ordinal: 1, stocks: sparse }] }),
+    );
+    expect(parsed.games?.[0]?.stocks).toEqual([null, 0]);
+  });
+
+  it('parses a tail-shortened rawChars array (stripped trailing null shortens the read-back) to the canonical [x, null] tuple', () => {
+    const parsed = researchEnrichmentObservationRecordSchema.parse(
+      makeMinimalObservation({ games: [{ ordinal: 1, rawChars: ['Cloud'] }] }),
+    );
+    expect(parsed.games?.[0]?.rawChars).toEqual(['Cloud', null]);
+  });
+
+  it('parses the numeric-keyed object form of a sparse array ({"1": n}) to the canonical [null, n] tuple', () => {
+    const parsed = researchEnrichmentObservationRecordSchema.parse(
+      makeMinimalObservation({
+        scores: { '1': 3 },
+        games: [{ ordinal: 1, stocks: { '0': 2 } }],
+      }),
+    );
+    expect(parsed.scores).toEqual([null, 3]);
+    expect(parsed.games?.[0]?.stocks).toEqual([2, null]);
+  });
+
+  it('parses a tail-shortened scores array to the canonical [n, null] tuple', () => {
+    const parsed = researchEnrichmentObservationRecordSchema.parse(
+      makeMinimalObservation({ scores: [3] }),
+    );
+    expect(parsed.scores).toEqual([3, null]);
+  });
+
+  it('still rejects structurally foreign two-seat values — normalization never weakens the bound', () => {
+    for (const bad of [
+      { scores: [] },
+      { scores: [1, 2, 3] },
+      { scores: ['x', 1] },
+      { games: [{ ordinal: 1, stocks: [3, 'not-a-number'] }] },
+      { games: [{ ordinal: 1, stocks: { '2': 1 } }] },
+    ]) {
+      expect(
+        researchEnrichmentObservationRecordSchema.safeParse(makeMinimalObservation(bad)).success,
+        `expected rejection for ${JSON.stringify(bad)}`,
+      ).toBe(false);
+    }
+  });
+
+  it('leaves dense two-seat values byte-identical through the normalization', () => {
+    const parsed = researchEnrichmentObservationRecordSchema.parse(
+      makeMinimalObservation({
+        scores: [3, 1],
+        games: [{ ordinal: 1, stocks: [2, 0], rawChars: ['Cloud', 'Wolf'] }],
+      }),
+    );
+    expect(parsed.scores).toEqual([3, 1]);
+    expect(parsed.games?.[0]?.stocks).toEqual([2, 0]);
+    expect(parsed.games?.[0]?.rawChars).toEqual(['Cloud', 'Wolf']);
+  });
 });
 
 // ---------------------------------------------------------------------------

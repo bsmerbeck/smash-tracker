@@ -2,6 +2,7 @@ import type { Database } from 'firebase-admin/database';
 import type { LiquipediaClient } from '../src/liquipedia/client.js';
 import { readEnrichmentCoverage } from '../src/research/enrichment/rollup.js';
 import { readEnrichmentRun } from '../src/research/enrichment/runState.js';
+import { sweepOutdatedFamilyObservations } from '../src/research/enrichment/store.js';
 import {
   runEnrichmentBatch,
   type EnrichmentRunProgressEvent,
@@ -36,10 +37,21 @@ import {
  *                  manifest's per-account write-set hashes; PASS/FAIL each.
  * - `apply`      — preflight, then the real per-account runs, with strict
  *                  PER-ACCOUNT FAILURE ISOLATION: one account's failure
- *                  never restarts, invalidates, or blocks the others.
+ *                  never restarts, invalidates, or blocks the others. An
+ *                  account whose stored run is already COMPLETED is a
+ *                  stated no-op unless `--reapply` is passed (30.2
+ *                  sanctioned re-apply): the completed-account default
+ *                  stays strong, and the explicit flag is the only door to
+ *                  re-running one — preflight discipline unchanged, and the
+ *                  store's idempotent upserts make the top-up safe.
  * - `resume`     — re-runs only accounts whose stored run is not completed;
  *                  a completed account (e.g. Hungrybox) is reported and
  *                  skipped — a structural no-op.
+ * - `sweep`      — version-wide stale-record sweep: removes bracket-family
+ *                  records whose parserVersion is outdated (pages the
+ *                  current expansion no longer visits, unreachable by the
+ *                  page-scoped supersede pass). Zero Liquipedia network;
+ *                  refuses any account holding a LIVE run lease.
  * - `compare`    — before/after coverage table against the manifest.
  *
  * Observability: a heartbeat line at least every `heartbeatIntervalMs`
@@ -67,6 +79,7 @@ export const ENRICHMENT_OPERATOR_COMMANDS = [
   'preflight',
   'apply',
   'resume',
+  'sweep',
   'compare',
 ] as const;
 export type EnrichmentOperatorCommand = (typeof ENRICHMENT_OPERATOR_COMMANDS)[number];
@@ -102,19 +115,32 @@ export interface ParsedOperatorArgs {
   flags: Map<string, string>;
 }
 
+/** Flags that take no value — present means `'true'`. */
+const BOOLEAN_FLAGS: ReadonlySet<string> = new Set(['--reapply']);
+
 export function parseOperatorArgs(argv: string[]): ParsedOperatorArgs {
   const [command, ...rest] = argv;
   if (!command || !(ENRICHMENT_OPERATOR_COMMANDS as readonly string[]).includes(command)) {
     throw new Error(`Expected subcommand: ${ENRICHMENT_OPERATOR_COMMANDS.join(', ')}`);
   }
   const flags = new Map<string, string>();
-  for (let index = 0; index < rest.length; index += 2) {
+  let index = 0;
+  while (index < rest.length) {
     const name = rest[index];
-    const value = rest[index + 1];
-    if (!name?.startsWith('--') || value == null || value.startsWith('--')) {
+    if (!name?.startsWith('--')) {
       throw new Error(`Invalid flag near ${name ?? '<end>'}`);
     }
+    if (BOOLEAN_FLAGS.has(name)) {
+      flags.set(name, 'true');
+      index += 1;
+      continue;
+    }
+    const value = rest[index + 1];
+    if (value == null || value.startsWith('--')) {
+      throw new Error(`Invalid flag near ${name}`);
+    }
     flags.set(name, value);
+    index += 2;
   }
   return { command: command as EnrichmentOperatorCommand, flags };
 }
@@ -391,6 +417,58 @@ async function statusCommand(
   return 0;
 }
 
+/**
+ * The version-wide stale-record sweep (30.2 follow-up). Zero Liquipedia
+ * network — a pure read/remove pass over the tenant's own observation tree
+ * via `sweepOutdatedFamilyObservations` (only bracket-family records at an
+ * OUTDATED parser version; current-version, vodlist and wikitext-probe
+ * records are structurally untouchable there). An account holding a LIVE
+ * run lease is refused: a concurrent run's page-scoped supersede and this
+ * sweep must never race over the same records.
+ */
+async function sweepCommand(
+  deps: EnrichmentOperatorDeps,
+  uids: DemoUidMap,
+  workspaces: DemoWorkspaceKey[],
+): Promise<number> {
+  const rows: object[] = [];
+  let refused = 0;
+  for (const workspace of workspaces) {
+    const uid = uids[workspace];
+    const run = await readEnrichmentRun(deps.database, uid);
+    const liveLease =
+      run?.status === 'running' && run.lease != null && run.lease.expiresAtMs > deps.now();
+    if (liveLease) {
+      refused += 1;
+      rows.push({
+        workspace,
+        sweep: 'REFUSED',
+        detail: `a live run lease exists (run=${run.runId}, expires in ${run.lease!.expiresAtMs - deps.now()}ms); retry after it completes or expires`,
+      });
+      continue;
+    }
+    const result = await sweepOutdatedFamilyObservations(deps.database, uid);
+    if (result.removedAttachmentCount > 0 || result.removedReceiptCount > 0) {
+      // Stale records are expected to be inert (unmatched, unattached) — a
+      // cascaded attachment/receipt means an OLD-generation record was still
+      // wired into projection authorization and deserves a loud report.
+      deps.log(
+        `[sweep] ${workspace}: cascaded ${result.removedAttachmentCount} attachment(s) and ` +
+          `${result.removedReceiptCount} receipt(s) off outdated records — these were NOT inert; review before trusting prior coverage`,
+      );
+    }
+    rows.push({
+      workspace,
+      sweep: 'OK',
+      removed: result.removedObservationIds.length,
+      cascadedAttachments: result.removedAttachmentCount,
+      cascadedReceipts: result.removedReceiptCount,
+    });
+  }
+  deps.table(rows);
+  return refused > 0 ? 1 : 0;
+}
+
 async function dryRunCommand(
   deps: EnrichmentOperatorDeps,
   monitor: ProgressMonitor,
@@ -584,15 +662,47 @@ async function applyCommand(
   uids: DemoUidMap,
   manifest: EnrichmentManifest,
   workspaces: DemoWorkspaceKey[],
+  reapply: boolean,
 ): Promise<number> {
-  const preflight = await preflightAccounts(deps, monitor, uids, manifest, workspaces);
+  // 30.2 sanctioned re-apply: a COMPLETED account is a stated no-op by
+  // default — only the explicit `--reapply` flag opens the door to
+  // re-running it (e.g. the mkleo/sparg0 top-up after the tenant-scoped
+  // cache fix). The default protects a healthy completed account (the
+  // Hungrybox contract) from an accidental re-run; the flagged path keeps
+  // the full preflight discipline and relies on the store's idempotent
+  // upserts, so a re-apply can only top up, never fork or duplicate.
+  const toApply: DemoWorkspaceKey[] = [];
+  const skipped: ApplyOutcome[] = [];
+  for (const workspace of workspaces) {
+    const run = await readEnrichmentRun(deps.database, uids[workspace]);
+    if (run?.status === 'completed' && !reapply) {
+      skipped.push({
+        workspace,
+        ok: true,
+        detail: `already complete (run=${run.runId}); apply is a no-op — pass --reapply to re-run this account`,
+      });
+      continue;
+    }
+    toApply.push(workspace);
+  }
+
+  if (toApply.length === 0) {
+    reportApply(deps, skipped);
+    deps.log('Every scoped account is already complete; pass --reapply to re-run.');
+    return 0;
+  }
+
+  const preflight = await preflightAccounts(deps, monitor, uids, manifest, toApply);
   const preflightCode = reportPreflight(deps, preflight);
   if (preflightCode !== 0) {
     deps.log('Apply refused: at least one account failed preflight. No write was performed.');
     return preflightCode;
   }
   deps.log('Read-only preflight matches every reviewed account write-set hash.');
-  return reportApply(deps, await applyAccounts(deps, monitor, uids, manifest, workspaces));
+  return reportApply(deps, [
+    ...skipped,
+    ...(await applyAccounts(deps, monitor, uids, manifest, toApply)),
+  ]);
 }
 
 async function resumeCommand(
@@ -679,6 +789,11 @@ export async function runEnrichmentOperator(
   if (command === 'status') {
     return statusCommand(deps, uids, workspaces);
   }
+  if (command === 'sweep') {
+    // Zero network, no heartbeat/watchdog needed — a bounded read/remove
+    // pass; prompt termination is the lifecycle wrapper's contract.
+    return sweepCommand(deps, uids, workspaces);
+  }
 
   const monitor = createProgressMonitor(deps, maxStallMs);
   try {
@@ -709,7 +824,14 @@ export async function runEnrichmentOperator(
       );
     }
     if (command === 'apply') {
-      return await applyCommand(deps, monitor, uids, manifest, workspaces);
+      return await applyCommand(
+        deps,
+        monitor,
+        uids,
+        manifest,
+        workspaces,
+        flags.get('--reapply') === 'true',
+      );
     }
     if (command === 'resume') {
       return await resumeCommand(deps, monitor, uids, manifest, workspaces);

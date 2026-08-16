@@ -1,6 +1,8 @@
 import type { Database } from 'firebase-admin/database';
 import {
   isPathSafeProviderId,
+  LIQUIPEDIA_PARSER_VERSION_BRACKET_LEGACY,
+  LIQUIPEDIA_PARSER_VERSION_BRACKET_MATCH2,
   researchEnrichmentAttachmentRecordSchema,
   researchEnrichmentObservationRecordSchema,
   researchEnrichmentResolutionReceiptRecordSchema,
@@ -103,6 +105,68 @@ export interface WriteEnrichmentObservationResult {
 }
 
 /**
+ * 30.2 RTDB array-null-strip fix, WRITE side: encodes one two-seat
+ * positional nullable member into a representation that survives an RTDB
+ * round trip BYTE-STABLY, so the corpus stops degrading:
+ *
+ * - both seats present  -> the plain dense array (no nulls, nothing strips);
+ * - one seat null       -> the numeric-keyed object form of the sparse
+ *                          array (`[null, 0]` -> `{'1': 0}`) — the exact
+ *                          shape RTDB would have degraded the array to,
+ *                          written EXPLICITLY so what is stored equals what
+ *                          is read back;
+ * - both seats null     -> `undefined` (the member is OMITTED): under the
+ *                          schema's own vocabulary a null seat means
+ *                          "unknown at this seat", so all-unknown is
+ *                          semantically the absent member — and RTDB would
+ *                          have collapsed the array to nothing anyway.
+ *
+ * The read side (`normalizeTwoSeatNullableArray` in the shared schema)
+ * rebuilds every one of these forms into the canonical two-seat tuple, so
+ * the invariant `parse(encoded) deep-equals parse(read-back-of-encoded)`
+ * holds for every input — proven by the FakeDatabase round-trip test (the
+ * fake mirrors RTDB's array null-strip on write).
+ */
+function encodeTwoSeatForStorage(
+  seats: readonly [unknown, unknown] | null | undefined,
+): unknown | undefined {
+  if (seats === null || seats === undefined) {
+    return undefined;
+  }
+  const [seatOne, seatTwo] = seats;
+  if (seatOne !== null && seatTwo !== null) {
+    return [seatOne, seatTwo];
+  }
+  if (seatOne === null && seatTwo === null) {
+    return undefined;
+  }
+  return seatOne === null ? { '1': seatTwo } : { '0': seatOne };
+}
+
+/** Applies `encodeTwoSeatForStorage` to every two-seat nullable member of a schema-parsed observation (`scores`, and each game's `stocks`/`rawChars`), conditional-spreading so an omitted encoding never writes a key. */
+function encodeObservationForStorage(
+  parsed: ResearchEnrichmentObservationRecord,
+): Record<string, unknown> {
+  const { scores, games, ...rest } = parsed;
+  const encodedScores = encodeTwoSeatForStorage(scores);
+  const encodedGames = games?.map((game) => {
+    const { stocks, rawChars, ...gameRest } = game;
+    const encodedStocks = encodeTwoSeatForStorage(stocks);
+    const encodedRawChars = encodeTwoSeatForStorage(rawChars);
+    return {
+      ...gameRest,
+      ...(encodedRawChars !== undefined ? { rawChars: encodedRawChars } : {}),
+      ...(encodedStocks !== undefined ? { stocks: encodedStocks } : {}),
+    };
+  });
+  return {
+    ...rest,
+    ...(encodedScores !== undefined ? { scores: encodedScores } : {}),
+    ...(encodedGames !== undefined ? { games: encodedGames } : {}),
+  };
+}
+
+/**
  * Writes one observation at its own key. Guards every path segment before
  * constructing a reference (rejected-key, no write). Rejects a provider
  * other than the Liquipedia literal (rejected-provenance, no write) — a
@@ -128,7 +192,9 @@ export async function writeEnrichmentObservation(
   const isNew = !existing.exists();
 
   const parsed = researchEnrichmentObservationRecordSchema.parse(record);
-  await ref.set(parsed);
+  // Storage encoding (30.2 array-null-strip fix): never persist raw nulls
+  // inside arrays — see `encodeTwoSeatForStorage`.
+  await ref.set(encodeObservationForStorage(parsed));
 
   return { outcome: isNew ? 'created' : 'replaced' };
 }
@@ -487,6 +553,221 @@ async function collectAttachedObservationIds(
     }
   }
   return attached;
+}
+
+export interface RemoveSupersededObservationsResult {
+  removedObservationIds: string[];
+  /** How many attachment entries the cascade removed — normally 0 for inert stale records; a non-zero value is worth reporting loudly. */
+  removedAttachmentCount: number;
+  /** How many receipts the cascade removed (existence-checked, never blind-counted). */
+  removedReceiptCount: number;
+}
+
+/**
+ * 30.2 defect-C re-key reconciliation: removes a caller-identified set of
+ * SUPERSEDED observations, cascading each one's derived state — its
+ * attachments (found by one read of the tenant attachment tree) and its
+ * resolution receipt — before the observation record itself.
+ *
+ * THE PROVABLY-OURS CONTRACT: the caller (the run driver's per-page
+ * supersede pass) may name ONLY observations it has just re-extracted past —
+ * records under this tenant's own observation tree, for a page this run
+ * re-extracted, whose stored `parserVersion` differs from the version the
+ * current extraction used. A record at the CURRENT parser version is never
+ * eligible (a same-version count shrink is `refresh.ts`'s shrink-guard
+ * jurisdiction, never silently deleted here). Projection WITNESSES that
+ * reference a removed observation id are deliberately left in place: the
+ * attribution schema tolerates a missing referenced observation, and the
+ * witness's value-comparison ownership rule keeps a dangling reference
+ * inert.
+ */
+export async function removeSupersededObservations(
+  database: Database,
+  tenantId: string,
+  observationIds: string[],
+): Promise<RemoveSupersededObservationsResult> {
+  const emptyResult: RemoveSupersededObservationsResult = {
+    removedObservationIds: [],
+    removedAttachmentCount: 0,
+    removedReceiptCount: 0,
+  };
+  if (!isPathSafeTenantId(tenantId) || observationIds.length === 0) {
+    return emptyResult;
+  }
+  const staleIds = observationIds.filter((observationId) => isPathSafeProviderId(observationId));
+  if (staleIds.length === 0) {
+    return emptyResult;
+  }
+
+  const attachmentsSnapshot = await attachmentsTreeRef(database, tenantId).get();
+  const targetSetIdsByObservationId = new Map<string, string[]>();
+  const rawAttachments = attachmentsSnapshot.val() as Record<
+    string,
+    Record<string, unknown>
+  > | null;
+  if (rawAttachments !== null && typeof rawAttachments === 'object') {
+    for (const [targetSetId, children] of Object.entries(rawAttachments)) {
+      if (children === null || typeof children !== 'object') {
+        continue;
+      }
+      for (const observationId of Object.keys(children)) {
+        const sets = targetSetIdsByObservationId.get(observationId) ?? [];
+        sets.push(targetSetId);
+        targetSetIdsByObservationId.set(observationId, sets);
+      }
+    }
+  }
+
+  const removedObservationIds: string[] = [];
+  let removedAttachmentCount = 0;
+  let removedReceiptCount = 0;
+  for (const observationId of staleIds) {
+    for (const targetSetId of targetSetIdsByObservationId.get(observationId) ?? []) {
+      if (isPathSafeProviderId(targetSetId)) {
+        await attachmentRef(database, tenantId, targetSetId, observationId).remove();
+        removedAttachmentCount += 1;
+      }
+    }
+    const receiptSnapshot = await receiptRef(database, tenantId, observationId).get();
+    if (receiptSnapshot.exists()) {
+      await receiptRef(database, tenantId, observationId).remove();
+      removedReceiptCount += 1;
+    }
+    await observationRef(database, tenantId, observationId).remove();
+    removedObservationIds.push(observationId);
+  }
+  return { removedObservationIds, removedAttachmentCount, removedReceiptCount };
+}
+
+/**
+ * 30.2 version-wide stale-record sweep: the page-scoped supersede pass above
+ * only fires for pages the CURRENT run re-extracts, so old-generation
+ * records on pages the current expansion no longer visits survive it
+ * (production: 616 legacy@1 records across 98 stale pages on MkLeo, 95 on
+ * Sparg0 — all inert, but they inflate the observation tree and every exact-
+ * total audit). This sweep removes every stored BRACKET-FAMILY record whose
+ * `parserVersion` differs from that family's CURRENT constant, with the same
+ * cascade discipline (attachments, then receipt, then observation).
+ *
+ * SAFETY BOUNDS, structural:
+ * - a record at the current family version is NEVER touched;
+ * - `vodlist` and `unknown` (wikitext-probe) records are NEVER touched —
+ *   their `@1` versions ARE current, and their currency is governed by their
+ *   own constants, not the bracket families';
+ * - selection is by the record's own declared `templateFamily` + stored
+ *   `parserVersion`, both written by this pipeline — provably ours.
+ */
+/**
+ * One raw observation-tree child, read WITHOUT schema validation — only the
+ * three members hygiene passes need, each extracted defensively (string
+ * checks, never a parse). The observation id is the CHILD KEY, never the
+ * record's own claimed member: the key is what the cascade removes by.
+ */
+export interface RawObservationVersionEntry {
+  observationId: string;
+  sourcePageTitle: string | null;
+  templateFamily: string | null;
+  parserVersion: string | null;
+}
+
+function extractRawString(record: Record<string, unknown>, member: string): string | null {
+  const value = record[member];
+  return typeof value === 'string' && value.length > 0 ? value : null;
+}
+
+/**
+ * 30.2 production defect (schema-blind hygiene): `listEnrichmentObservations`
+ * safeParse-SKIPS malformed children — and old-generation records are
+ * MALFORMED BY DEFINITION whenever the schema has evolved past them
+ * (production: all 616+95 legacy@1 stragglers failed the current schema on
+ * `games[].stocks`, so the schema-validating sweep saw ZERO candidates and
+ * removed nothing). Hygiene passes therefore read the RAW tree: every child
+ * is inspected as an unknown record, with only the version-identity members
+ * extracted defensively. Schema validity is a property of records the
+ * PIPELINE consumes; it must never be a precondition for records the
+ * pipeline CLEANS UP — schema-invalid old-generation records are exactly a
+ * sweep's highest-value targets.
+ */
+export async function listRawObservationVersionIndex(
+  database: Database,
+  tenantId: string,
+): Promise<RawObservationVersionEntry[]> {
+  if (!isPathSafeTenantId(tenantId)) {
+    return [];
+  }
+  const snapshot = await observationsRef(database, tenantId).get();
+  if (!snapshot.exists()) {
+    return [];
+  }
+  const raw = snapshot.val() as Record<string, unknown>;
+  const entries: RawObservationVersionEntry[] = [];
+  for (const [observationId, value] of Object.entries(raw)) {
+    if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+      continue;
+    }
+    const record = value as Record<string, unknown>;
+    entries.push({
+      observationId,
+      sourcePageTitle: extractRawString(record, 'sourcePageTitle'),
+      templateFamily: extractRawString(record, 'templateFamily'),
+      parserVersion: extractRawString(record, 'parserVersion'),
+    });
+  }
+  return entries;
+}
+
+export async function sweepOutdatedFamilyObservations(
+  database: Database,
+  tenantId: string,
+): Promise<RemoveSupersededObservationsResult> {
+  // RAW selection (see `listRawObservationVersionIndex`'s doc comment): a
+  // hygiene sweep must never require schema validity of its own targets.
+  // The safety bounds are unchanged — only the two bracket families, and
+  // only versions that differ from the CURRENT family constant; a child
+  // whose family or version members are missing/non-string matches neither
+  // predicate and is left alone (never guessed at).
+  const entries = await listRawObservationVersionIndex(database, tenantId);
+  const outdatedIds = entries
+    .filter(
+      (entry) =>
+        (entry.templateFamily === 'legacy' &&
+          entry.parserVersion !== null &&
+          entry.parserVersion !== LIQUIPEDIA_PARSER_VERSION_BRACKET_LEGACY) ||
+        (entry.templateFamily === 'match2' &&
+          entry.parserVersion !== null &&
+          entry.parserVersion !== LIQUIPEDIA_PARSER_VERSION_BRACKET_MATCH2),
+    )
+    .map((entry) => entry.observationId);
+  return removeSupersededObservations(database, tenantId, outdatedIds);
+}
+
+/**
+ * Every observation id that currently has a PARSEABLE stored receipt — the
+ * "already has evidence" set the run driver subtracts when assembling its
+ * re-resolution input (30.2 skip-heavy defect). A malformed receipt is
+ * deliberately NOT counted: `attachResolvedObservation` could never accept
+ * it (`readResolutionReceipt` safeParses to null), so its observation
+ * genuinely needs re-resolution to rebuild a valid one.
+ */
+export async function listReceiptedObservationIds(
+  database: Database,
+  tenantId: string,
+): Promise<Set<string>> {
+  const receipted = new Set<string>();
+  if (!isPathSafeTenantId(tenantId)) {
+    return receipted;
+  }
+  const snapshot = await database.ref(`researchEnrichmentReceipts/${tenantId}`).get();
+  if (!snapshot.exists()) {
+    return receipted;
+  }
+  const raw = snapshot.val() as Record<string, unknown>;
+  for (const [observationId, value] of Object.entries(raw)) {
+    if (researchEnrichmentResolutionReceiptRecordSchema.safeParse(value).success) {
+      receipted.add(observationId);
+    }
+  }
+  return receipted;
 }
 
 /**

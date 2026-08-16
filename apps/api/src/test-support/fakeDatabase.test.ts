@@ -76,3 +76,45 @@ describe('FakeDatabase.transaction — null-local-cache first-run emulation', ()
     expect(database.dump().node).toBe('existing');
   });
 });
+
+// ---------------------------------------------------------------------------
+// 30.2 RTDB array-null-strip parity: real RTDB strips null array members on
+// storage and reads back SPARSE arrays (holes are undefined) with stripped
+// tails SHORTENED. The fake must degrade writes the same way, or records
+// that are valid going in and unparseable coming back pass every test while
+// failing in production (1,196 records did).
+// ---------------------------------------------------------------------------
+
+describe('RTDB array null-strip parity', () => {
+  it('a leading null becomes a hole (reads back undefined) with the length preserved', async () => {
+    const database = new FakeDatabase();
+    await database.ref('node').set({ stocks: [null, 0] });
+    const snapshot = await database.ref('node/stocks').get();
+    const stored = snapshot.val() as unknown[];
+    expect(stored.length).toBe(2);
+    expect(0 in stored).toBe(false);
+    expect(stored[0]).toBeUndefined();
+    expect(stored[1]).toBe(0);
+  });
+
+  it('a trailing null is stripped and SHORTENS the array', async () => {
+    const database = new FakeDatabase();
+    await database.ref('node').set({ rawChars: ['Cloud', null] });
+    const snapshot = await database.ref('node/rawChars').get();
+    expect(snapshot.val()).toEqual(['Cloud']);
+  });
+
+  it('an all-null array collapses to nothing and its member key is dropped', async () => {
+    const database = new FakeDatabase();
+    await database.ref('node').set({ stocks: [null, null], keep: 1 });
+    const snapshot = await database.ref('node').get();
+    expect(snapshot.val()).toEqual({ keep: 1 });
+  });
+
+  it('dense arrays are stored byte-identically', async () => {
+    const database = new FakeDatabase();
+    await database.ref('node').set({ scores: [3, 1] });
+    const snapshot = await database.ref('node/scores').get();
+    expect(snapshot.val()).toEqual([3, 1]);
+  });
+});

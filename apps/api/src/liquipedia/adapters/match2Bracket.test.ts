@@ -397,3 +397,50 @@ ${matchBody}
     expect(researchEnrichmentObservationRecordSchema.safeParse(observation).success).toBe(true);
   });
 });
+
+// ---------------------------------------------------------------------------
+// 30.2 production defect C, match2 half: a page hosting MULTIPLE
+// `{{Bracket}}` calls previously extracted only the FIRST (silent drop),
+// and a shared layout name + shared R1M1 coordinates would have collided
+// ids had they been processed. Every instance must extract, with distinct
+// ids per instance.
+// ---------------------------------------------------------------------------
+
+describe('extractMatch2BracketObservations multi-bracket pages', () => {
+  it('extracts EVERY {{Bracket}} instance on a page, with distinct observation ids for same-layout same-coordinate matches', () => {
+    const wikitext = `{{Bracket|Bracket/test|id=PoolA
+
+|R1M1={{Match
+|opponent1={{SoloOpponent|Alice|score=3}}
+|opponent2={{SoloOpponent|Bob|score=1}}
+}}
+}}
+{{Bracket|Bracket/test|id=PoolB
+
+|R1M1={{Match
+|opponent1={{SoloOpponent|Carol|score=3}}
+|opponent2={{SoloOpponent|Dave|score=2}}
+}}
+}}`;
+    const eventContext = meleeEventContext();
+    const { observations } = extractMatch2BracketObservations({
+      wikitext,
+      pageTitle: 'Test/MultiBracket',
+      revisionId: 1,
+      sha1: null,
+      eventContext,
+      targetGame: 'ultimate',
+      nowMs: NOW_MS,
+      hashHex: sha256Hex,
+    });
+
+    expect(observations).toHaveLength(2);
+    const [poolA, poolB] = observations;
+    expect(poolA!.observationId).not.toBe(poolB!.observationId);
+    expect(poolA!.players!.map((p) => p.rawTag)).toEqual(['Alice', 'Bob']);
+    expect(poolB!.players!.map((p) => p.rawTag)).toEqual(['Carol', 'Dave']);
+    for (const observation of observations) {
+      expect(researchEnrichmentObservationRecordSchema.safeParse(observation).success).toBe(true);
+    }
+  });
+});
