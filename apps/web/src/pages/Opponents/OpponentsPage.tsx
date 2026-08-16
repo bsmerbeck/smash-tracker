@@ -8,6 +8,7 @@ import { useTournamentEntries } from '@/hooks/useTournamentEntries';
 import { useOpponentAliases } from '@/hooks/useOpponentAliases';
 import { useOpponentNotes } from '@/hooks/useOpponentNotes';
 import { useAuth } from '@/hooks/useAuth';
+import { DemoAccountBanner } from '@/components/DemoAccountBanner';
 import { FilteredEmptyNotice } from '@/components/FilteredEmptyNotice';
 import { getOpponentProfile, getOpponentRecords } from '@/lib/stats';
 import { OpponentList } from './components/OpponentList';
@@ -113,21 +114,29 @@ export function OpponentsPage() {
   }, [profile, tournamentBlocks, user]);
 
   if (isLoading) {
-    return <div className="text-muted-foreground">{t('opponents.loading')}</div>;
+    return (
+      <div className="flex flex-col gap-6">
+        <DemoAccountBanner />
+        <div className="text-muted-foreground">{t('opponents.loading')}</div>
+      </div>
+    );
   }
 
   if (allMatches.length === 0) {
     return (
-      <div className="flex flex-col items-center gap-4 py-16 text-center">
-        <h1 className="text-2xl font-semibold tracking-tight">{t('opponents.empty.title')}</h1>
-        <p className="max-w-md text-muted-foreground">{t('opponents.empty.body')}</p>
-        <div className="flex flex-wrap justify-center gap-2">
-          <Button asChild>
-            <Link to="/dashboard">{t('common.goToDashboard')}</Link>
-          </Button>
-          <Button asChild variant="outline">
-            <Link to="/settings/integrations">{t('opponents.empty.connectStartgg')}</Link>
-          </Button>
+      <div className="flex flex-col gap-6">
+        <DemoAccountBanner />
+        <div className="flex flex-col items-center gap-4 py-16 text-center">
+          <h1 className="text-2xl font-semibold tracking-tight">{t('opponents.empty.title')}</h1>
+          <p className="max-w-md text-muted-foreground">{t('opponents.empty.body')}</p>
+          <div className="flex flex-wrap justify-center gap-2">
+            <Button asChild>
+              <Link to="/dashboard">{t('common.goToDashboard')}</Link>
+            </Button>
+            <Button asChild variant="outline">
+              <Link to="/settings/integrations">{t('opponents.empty.connectStartgg')}</Link>
+            </Button>
+          </div>
         </div>
       </div>
     );
@@ -136,18 +145,22 @@ export function OpponentsPage() {
   const allOpponentsNamed = getOpponentRecords(allMatches);
   if (allOpponentsNamed.length === 0) {
     return (
-      <div className="flex flex-col items-center gap-2 py-16 text-center">
-        <h2 className="text-xl font-semibold tracking-tight">{t('opponents.noTags.title')}</h2>
-        <p className="max-w-md text-muted-foreground">{t('opponents.noTags.body')}</p>
-        <Button asChild className="mt-2">
-          <Link to="/dashboard">{t('common.goToDashboard')}</Link>
-        </Button>
+      <div className="flex flex-col gap-6">
+        <DemoAccountBanner />
+        <div className="flex flex-col items-center gap-2 py-16 text-center">
+          <h2 className="text-xl font-semibold tracking-tight">{t('opponents.noTags.title')}</h2>
+          <p className="max-w-md text-muted-foreground">{t('opponents.noTags.body')}</p>
+          <Button asChild className="mt-2">
+            <Link to="/dashboard">{t('common.goToDashboard')}</Link>
+          </Button>
+        </div>
       </div>
     );
   }
 
   return (
     <div className="flex flex-col gap-6">
+      <DemoAccountBanner />
       {filterActive && matches.length === 0 && <FilteredEmptyNotice />}
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-[320px_1fr]">

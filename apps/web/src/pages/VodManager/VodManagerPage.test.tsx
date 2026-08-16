@@ -79,13 +79,31 @@ const clientsKind = vi.fn();
  * byte-identical, unattributed render.
  */
 const enrichmentAttribution = vi.fn();
+const getMe = vi.fn();
+const listVodShares = vi.fn().mockResolvedValue([]);
+
+/** Phase 30.3 (Gate 6): the always-present `GET /api/users/me` profile shape. */
+function defaultProfile(overrides: { isDemoAccount?: boolean } = {}) {
+  return {
+    uid: 'test-uid',
+    email: 'test@example.com',
+    fighters: { primary: [], secondary: [] },
+    coachingModeEnabled: false,
+    onboardingIntent: null,
+    ...overrides,
+  };
+}
 
 vi.mock('@/lib/api', () => ({
   api: {
     users: {
       upsertMe: (...args: unknown[]) => upsertMe(...args),
       getFighters: (...args: unknown[]) => getFighters(...args),
+      getMe: (...args: unknown[]) => getMe(...args),
       enrichmentAttribution: (...args: unknown[]) => enrichmentAttribution(...args),
+    },
+    vodShares: {
+      list: (...args: unknown[]) => listVodShares(...args),
     },
     matches: {
       list: (...args: unknown[]) => listMatches(...args),
@@ -229,6 +247,8 @@ describe('VodManagerPage', () => {
     window.localStorage.clear();
     resetVendorGlobals();
     upsertMe.mockResolvedValue({ uid: 'test-uid', email: 'test@example.com' });
+    getMe.mockResolvedValue(defaultProfile());
+    listVodShares.mockResolvedValue([]);
     setMockUser(makeMockUser());
     getFighters.mockResolvedValue({ primary: [mario.id], secondary: [] });
     listOpponents.mockResolvedValue(['rival-one', 'rival-two']);
@@ -3987,5 +4007,68 @@ describe('VodManagerPage', () => {
       expect(screen.queryByTestId('liquipedia-character-evidence')).not.toBeInTheDocument();
       expect(screen.queryByText(/stock/i)).not.toBeInTheDocument();
     });
+  });
+});
+
+// Phase 30.3 (Gate 6, owner/Codex hard gate): the persistent demo-account
+// label on the VOD Manager surface (one of the seven required surfaces),
+// plus disabling bearer-token share creation (the "Share" button) with a
+// positive control.
+describe('VodManagerPage — demo account gating', () => {
+  beforeEach(() => {
+    resetAuthMock();
+    vi.clearAllMocks();
+    window.localStorage.clear();
+    resetVendorGlobals();
+    upsertMe.mockResolvedValue({ uid: 'test-uid', email: 'test@example.com' });
+    listVodShares.mockResolvedValue([]);
+    setMockUser(makeMockUser());
+    getFighters.mockResolvedValue({ primary: [mario.id], secondary: [] });
+    listOpponents.mockResolvedValue(['rival-one', 'rival-two']);
+    listPlaylists.mockResolvedValue([]);
+    reviewsList.mockResolvedValue([]);
+    clientsKind.mockResolvedValue({ kind: 'ordinary' });
+    enrichmentAttribution.mockResolvedValue({ attributions: [] });
+  });
+
+  afterEach(() => {
+    resetVendorGlobals();
+  });
+
+  it('shows the demo-account banner', async () => {
+    listMatches.mockResolvedValue([makeMatch({ id: 'm1', vodUrl: 'https://youtu.be/abc123' })]);
+    getMe.mockResolvedValue(defaultProfile({ isDemoAccount: true }));
+    renderVodManager('/vod?match=m1');
+
+    expect(await screen.findByTestId('demo-account-banner')).toBeInTheDocument();
+  });
+
+  it('positive control: shows no demo-account banner for an ordinary account', async () => {
+    listMatches.mockResolvedValue([makeMatch({ id: 'm1', vodUrl: 'https://youtu.be/abc123' })]);
+    getMe.mockResolvedValue(defaultProfile({ isDemoAccount: false }));
+    renderVodManager('/vod?match=m1');
+
+    await screen.findByRole('button', { name: 'Select match vs rival' });
+    expect(screen.queryByTestId('demo-account-banner')).not.toBeInTheDocument();
+  });
+
+  it('disables the Share button with an explanation for a demo account', async () => {
+    listMatches.mockResolvedValue([makeMatch({ id: 'm1', vodUrl: 'https://youtu.be/abc123' })]);
+    getMe.mockResolvedValue(defaultProfile({ isDemoAccount: true }));
+    renderVodManager('/vod?match=m1');
+
+    await screen.findByRole('button', { name: 'Select match vs rival' });
+    const shareButton = await screen.findByRole('button', { name: 'Share this match' });
+    expect(shareButton).toBeDisabled();
+    expect(shareButton).toHaveAttribute('title', 'Disabled for public-data research accounts.');
+  });
+
+  it('positive control: keeps the Share button enabled for an ordinary account', async () => {
+    listMatches.mockResolvedValue([makeMatch({ id: 'm1', vodUrl: 'https://youtu.be/abc123' })]);
+    getMe.mockResolvedValue(defaultProfile({ isDemoAccount: false }));
+    renderVodManager('/vod?match=m1');
+
+    await screen.findByRole('button', { name: 'Select match vs rival' });
+    expect(await screen.findByRole('button', { name: 'Share this match' })).toBeEnabled();
   });
 });

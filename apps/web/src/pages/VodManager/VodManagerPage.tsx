@@ -19,6 +19,7 @@ import {
 } from 'lucide-react';
 import { MAX_PLAYLISTS_PER_USER, type Fighter, type Match } from '@smash-tracker/shared';
 import { getFighterById } from '@/data/sprites';
+import { DemoAccountBanner } from '@/components/DemoAccountBanner';
 import { useActiveSubject } from '@/hooks/useActiveSubject';
 import { useCoachingReviews, useCreateCoachingReview } from '@/hooks/useCoachingReviews';
 import { useResearchSubject } from '@/hooks/useResearchSubject';
@@ -1092,6 +1093,7 @@ export function VodManagerPage() {
 
   return (
     <div className="flex flex-col gap-6">
+      <DemoAccountBanner />
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h1 className="text-2xl font-semibold tracking-tight">{t('vodManager.title')}</h1>
         <div className="flex items-center gap-2">
