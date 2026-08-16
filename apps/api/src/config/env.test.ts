@@ -6,6 +6,7 @@ import {
   getPrepPaidConfig,
   getReportsConfig,
   getResearchConfig,
+  getYoutubeConfig,
   loadEnv,
   parseCorsOrigins,
 } from './env.js';
@@ -182,5 +183,22 @@ describe('getResearchConfig (Phase 29, D-04, research-admin allowlist)', () => {
     expect(reports?.allowedUids.has('uid-research-only')).toBe(false);
     expect(research?.adminUids.has('uid-reports-only')).toBe(false);
     expect(research?.adminUids.has('uid-research-only')).toBe(true);
+  });
+});
+
+describe('getYoutubeConfig (30.3 Gate 5, bounded VOD candidate discovery)', () => {
+  it('returns null when YOUTUBE_API_KEY is unset — discovery is disabled, nothing else is affected', () => {
+    const env = loadEnv(base);
+    expect(getYoutubeConfig(env)).toBeNull();
+  });
+
+  it('returns null for an empty string', () => {
+    const env = loadEnv({ ...base, YOUTUBE_API_KEY: '' });
+    expect(getYoutubeConfig(env)).toBeNull();
+  });
+
+  it('returns the api key when set', () => {
+    const env = loadEnv({ ...base, YOUTUBE_API_KEY: 'yt-key-123' });
+    expect(getYoutubeConfig(env)).toEqual({ apiKey: 'yt-key-123' });
   });
 });

@@ -5,6 +5,8 @@ import { buildTestApp } from '../test-support/testApp.js';
 import { RESEARCH_FAMILY_REJECTION } from '../research/routeGuards.js';
 import { confirmIdentityPlayers } from '../research/ingestion/identity.js';
 import { writeEnrichmentObservation } from '../research/enrichment/store.js';
+import { deriveEnrichmentMatchRowKey } from '../research/enrichment/projection.js';
+import { writeVodCandidate } from '../research/enrichment/vodDiscovery.js';
 
 const ADMIN_UID = 'admin-1';
 const ADMIN_TOKEN = 'admin-token';
@@ -591,6 +593,18 @@ const NEW_ROUTE_TABLE: RouteTableEntry[] = [
     urlFor: (t) => `/api/research/tenants/${t}/supplements/1/manual-note`,
   },
   { method: 'GET', urlFor: (t) => `/api/research/tenants/${t}/supplements/1` },
+  // 30.3 Gate 5: the VOD candidates surface joins the same family-uniform
+  // negative-authorization battery. The CONFIRM route is not in this table
+  // (a missing candidate legitimately answers 404 for an authorized admin,
+  // which the allow-case's not-the-family-status assertion cannot express),
+  // and neither is the DISCOVER route (503 for an admin with no YouTube
+  // config threadable through buildTestApp) — both get their own describe
+  // below covering the family rejection alongside their success paths.
+  { method: 'GET', urlFor: (t) => `/api/research/tenants/${t}/enrichment/vod-candidates` },
+  {
+    method: 'DELETE',
+    urlFor: (t) => `/api/research/tenants/${t}/enrichment/vod-candidates/set-1/yt-abc`,
+  },
 ];
 
 describe.each(NEW_ROUTE_TABLE)(
@@ -1309,5 +1323,133 @@ describe('GET /api/research/tenants/:tenantId/enrichment/coverage', () => {
     });
     expect(afterResponse.statusCode).toBe(200);
     expect((afterResponse.json() as { counts: { matched: number } }).counts.matched).toBe(3);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 30.3 Gate 5 — the VOD candidates surface
+// ---------------------------------------------------------------------------
+
+describe('enrichment VOD candidates (30.3 Gate 5)', () => {
+  async function seedCandidateScenario() {
+    const scenario = await createConfirmedResearchTenant();
+    const { database, tenantId } = scenario;
+    const targetSetId = 'set-cand';
+    const key = deriveEnrichmentMatchRowKey(targetSetId, 1);
+    database.seed(`matches/${tenantId}/${key}`, {
+      fighter_id: 1,
+      opponent_id: 2,
+      time: 1000,
+      win: true,
+      source: 'startgg',
+      opponent: 'mkleo',
+    });
+    await writeVodCandidate(asDatabase(database), tenantId, {
+      candidateId: 'yt-route1',
+      targetSetId,
+      provider: 'youtube-data-api',
+      query: 'Supernova 2026 Sparg0 vs MkLeo',
+      videoId: 'route1',
+      videoUrl: 'https://www.youtube.com/watch?v=route1',
+      title: 'Sparg0 vs MkLeo - Supernova 2026',
+      fetchedAtMs: 1000,
+      score: 4,
+      status: 'proposed',
+    });
+    return { ...scenario, targetSetId, key };
+  }
+
+  it('lists candidates with per-status counts', async () => {
+    const { app, tenantId } = await seedCandidateScenario();
+    const response = await app.inject({
+      method: 'GET',
+      url: `/api/research/tenants/${tenantId}/enrichment/vod-candidates`,
+      headers: { authorization: `Bearer ${ADMIN_TOKEN}` },
+    });
+    expect(response.statusCode).toBe(200);
+    const body = response.json() as {
+      candidates: { candidateId: string; status: string; query: string }[];
+      counts: { proposed: number; confirmed: number; dismissed: number; total: number };
+    };
+    expect(body.candidates.map((c) => c.candidateId)).toEqual(['yt-route1']);
+    expect(body.candidates[0]?.query).toBe('Supernova 2026 Sparg0 vs MkLeo');
+    expect(body.counts).toEqual({ proposed: 1, confirmed: 0, dismissed: 0, total: 1 });
+  });
+
+  it('confirm stamps the candidate and IMMEDIATELY projects its URL onto the empty row through the witness discipline; dismiss then removes it', async () => {
+    const { app, database, tenantId, targetSetId, key } = await seedCandidateScenario();
+
+    const confirmResponse = await app.inject({
+      method: 'POST',
+      url: `/api/research/tenants/${tenantId}/enrichment/vod-candidates/${targetSetId}/yt-route1/confirm`,
+      headers: { authorization: `Bearer ${ADMIN_TOKEN}` },
+    });
+    expect(confirmResponse.statusCode).toBe(200);
+    expect(confirmResponse.json()).toEqual({ outcome: 'confirmed' });
+
+    const row = (await asDatabase(database).ref(`matches/${tenantId}/${key}`).get()).val() as {
+      vodUrl?: string;
+    };
+    expect(row.vodUrl).toBe('https://www.youtube.com/watch?v=route1');
+    const witness = (
+      await asDatabase(database).ref(`researchEnrichmentProjection/${tenantId}/${key}`).get()
+    ).val() as { projectedVodUrl?: string; vodCandidateId?: string };
+    expect(witness.projectedVodUrl).toBe('https://www.youtube.com/watch?v=route1');
+    expect(witness.vodCandidateId).toBe('yt-route1');
+
+    const dismissResponse = await app.inject({
+      method: 'DELETE',
+      url: `/api/research/tenants/${tenantId}/enrichment/vod-candidates/${targetSetId}/yt-route1`,
+      headers: { authorization: `Bearer ${ADMIN_TOKEN}` },
+    });
+    expect(dismissResponse.statusCode).toBe(200);
+    expect(dismissResponse.json()).toEqual({ ok: true });
+    const rowAfter = (await asDatabase(database).ref(`matches/${tenantId}/${key}`).get()).val() as {
+      vodUrl?: string;
+    } | null;
+    expect(rowAfter?.vodUrl).toBeUndefined();
+  });
+
+  it('confirm of an unknown candidate answers 404 and writes nothing', async () => {
+    const { app, tenantId } = await createConfirmedResearchTenant();
+    const response = await app.inject({
+      method: 'POST',
+      url: `/api/research/tenants/${tenantId}/enrichment/vod-candidates/set-x/yt-none/confirm`,
+      headers: { authorization: `Bearer ${ADMIN_TOKEN}` },
+    });
+    expect(response.statusCode).toBe(404);
+  });
+
+  it('confirm answers the family uniform rejection for a non-allowlisted caller', async () => {
+    const { app, auth, tenantId, targetSetId } = await seedCandidateScenario();
+    auth.registerToken(OTHER_TOKEN, { uid: OTHER_UID, email: 'other@test.com' });
+    const response = await app.inject({
+      method: 'POST',
+      url: `/api/research/tenants/${tenantId}/enrichment/vod-candidates/${targetSetId}/yt-route1/confirm`,
+      headers: { authorization: `Bearer ${OTHER_TOKEN}` },
+    });
+    expect(response.statusCode).toBe(RESEARCH_FAMILY_REJECTION.statusCode);
+    expect(response.json()).toEqual(RESEARCH_FAMILY_REJECTION.body);
+  });
+
+  it('discover answers 503 when the YouTube Data API is not configured, and the family uniform rejection for a non-admin', async () => {
+    const { app, auth, tenantId } = await createConfirmedResearchTenant();
+
+    const adminResponse = await app.inject({
+      method: 'POST',
+      url: `/api/research/tenants/${tenantId}/enrichment/vod-candidates/discover`,
+      headers: { authorization: `Bearer ${ADMIN_TOKEN}` },
+    });
+    expect(adminResponse.statusCode).toBe(503);
+    expect(adminResponse.json().message).toContain('not configured');
+
+    auth.registerToken(OTHER_TOKEN, { uid: OTHER_UID, email: 'other@test.com' });
+    const foreignResponse = await app.inject({
+      method: 'POST',
+      url: `/api/research/tenants/${tenantId}/enrichment/vod-candidates/discover`,
+      headers: { authorization: `Bearer ${OTHER_TOKEN}` },
+    });
+    expect(foreignResponse.statusCode).toBe(RESEARCH_FAMILY_REJECTION.statusCode);
+    expect(foreignResponse.json()).toEqual(RESEARCH_FAMILY_REJECTION.body);
   });
 });

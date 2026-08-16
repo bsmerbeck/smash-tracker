@@ -124,6 +124,8 @@ export type EnrichmentStocksOutcome =
 export interface EnrichmentVodWitnessWrite {
   url: string;
   observationId?: string;
+  /** 30.3 Gate 5: set instead of `observationId` when the URL came from an admin-confirmed YouTube candidate (priority 5). */
+  candidateId?: string;
   sourceRevisionId?: number;
   parserVersion?: string;
 }
@@ -232,6 +234,8 @@ export type EnrichmentOwnershipWitness = Omit<
  */
 export interface EnrichmentVodSourceInput {
   observationId?: string;
+  /** 30.3 Gate 5: the admin-confirmed YouTube candidate that supplied the URL (priority 5) — mutually exclusive with `observationId` in practice. */
+  candidateId?: string;
   sourceRevisionId?: number;
   parserVersion?: string;
 }
@@ -440,6 +444,7 @@ function resolveVod(input: EnrichedMatchMembersInput): VodResolution {
       const write: EnrichmentVodWitnessWrite = {
         url: enrichmentVodUrl!,
         observationId: enrichmentVodSource?.observationId,
+        candidateId: enrichmentVodSource?.candidateId,
         sourceRevisionId: enrichmentVodSource?.sourceRevisionId,
         parserVersion: enrichmentVodSource?.parserVersion,
       };
@@ -456,6 +461,7 @@ function resolveVod(input: EnrichedMatchMembersInput): VodResolution {
       const write: EnrichmentVodWitnessWrite = {
         url: pendingVal!,
         observationId: witness?.pendingVodObservationId ?? undefined,
+        candidateId: witness?.pendingVodCandidateId ?? undefined,
         sourceRevisionId: witness?.pendingVodSourceRevisionId ?? undefined,
       };
       return {
@@ -497,6 +503,7 @@ function resolveVod(input: EnrichedMatchMembersInput): VodResolution {
     const write: EnrichmentVodWitnessWrite = {
       url: enrichmentVodUrl!,
       observationId: enrichmentVodSource?.observationId,
+      candidateId: enrichmentVodSource?.candidateId,
       sourceRevisionId: enrichmentVodSource?.sourceRevisionId,
       parserVersion: enrichmentVodSource?.parserVersion,
     };

@@ -14,6 +14,7 @@ import {
   researchEnrichmentConfirmRequestSchema,
   researchEnrichmentCoverageResponseSchema,
   researchEnrichmentReviewQueueResponseSchema,
+  researchEnrichmentVodCandidateListResponseSchema,
   researchIdentityCandidateSchema,
   researchIdentityConfirmedPlayerSchema,
   researchSupplementRecordSchema,
@@ -49,16 +50,29 @@ import { composeCoverageResponse } from '../research/coverageResponse.js';
 import {
   confirmEnrichmentObservationByAdmin,
   deleteEnrichmentAttachment,
+  listAttachmentsForSet,
   listEnrichmentReviewQueue,
+  readEnrichmentObservation,
 } from '../research/enrichment/store.js';
 import { readEnrichmentCoverage } from '../research/enrichment/rollup.js';
+import {
+  applyEnrichmentProjection,
+  buildEnrichmentOverlay,
+} from '../research/enrichment/projection.js';
+import {
+  confirmVodCandidateByAdmin,
+  dismissVodCandidateByAdmin,
+  listVodCandidatesForTenant,
+  runVodCandidateDiscovery,
+  VOD_DISCOVERY_MAX_SETS_PER_RUN,
+} from '../research/enrichment/vodDiscovery.js';
 import {
   runResearchBackfillBatch,
   TRIGGER_MAX_PAGES_PER_REQUEST,
   TRIGGER_MAX_SYNC_BACKOFF_MS,
 } from '../jobs/researchBackfillBatch.js';
 import { normalizeStartggPlayerId } from '../startgg/client.js';
-import type { StartggConfig } from '../config/env.js';
+import type { StartggConfig, YoutubeConfig } from '../config/env.js';
 
 /**
  * `/api/research/tenants` — Phase 29 (Research Tenancy, Isolation &
@@ -157,6 +171,31 @@ const enrichmentConfirmResponseSchema = z.object({
 });
 
 const enrichmentDetachResponseSchema = z.object({ ok: z.literal(true) });
+
+// ---------------------------------------------------------------------------
+// VOD candidates (30.3 Gate 5) — the admin-only candidates surface
+// ---------------------------------------------------------------------------
+
+const vodCandidateParamsSchema = z.object({
+  tenantId: pathSafeTenantIdSchema,
+  targetSetId: pathSafeProviderIdSchema,
+  candidateId: pathSafeProviderIdSchema,
+});
+
+const vodCandidateConfirmResponseSchema = z.object({
+  outcome: z.enum(['confirmed', 'already-confirmed']),
+});
+
+const vodCandidateDismissResponseSchema = z.object({ ok: z.literal(true) });
+
+const vodDiscoverResponseSchema = z.object({
+  bound: z.number().int().positive(),
+  consideredSets: z.number().int().nonnegative(),
+  queriedSets: z.number().int().nonnegative(),
+  candidatesWritten: z.number().int().nonnegative(),
+  candidatesSkippedExisting: z.number().int().nonnegative(),
+  queryFailures: z.number().int().nonnegative(),
+});
 
 const grantEntitlementRequestSchema = z.object({
   idempotencyKey: idempotencyKeySchema,
@@ -319,13 +358,26 @@ export interface ResearchRoutesOptions {
   startgg: StartggConfig | null;
   /** Overridable fetch for the start.gg identity-resolution and batch calls (tests). */
   startggFetch?: typeof fetch;
+  /**
+   * 30.3 Gate 5: the YouTube Data API config for bounded VOD candidate
+   * discovery. OPTIONAL and nullable so every existing registration site
+   * keeps compiling; when absent (today's production registration in
+   * `app.ts` does not pass it yet — see the gate report's wiring note) the
+   * discover route answers 503 while the candidates list/confirm/dismiss
+   * routes keep working. Both members must be present for discovery: the
+   * fetch is injected alongside the key because the discovery module has NO
+   * default-fetch path (mirroring the Liquipedia client's compile-time
+   * gate).
+   */
+  youtube?: YoutubeConfig | null;
+  youtubeFetch?: typeof fetch;
 }
 
 const researchTenantsRoutes: FastifyPluginAsyncZod<ResearchRoutesOptions> = async (
   app,
   options,
 ) => {
-  const { startgg, startggFetch } = options;
+  const { startgg, startggFetch, youtube, youtubeFetch } = options;
 
   app.addHook('preHandler', app.authenticate);
 
@@ -1088,6 +1140,199 @@ const researchTenantsRoutes: FastifyPluginAsyncZod<ResearchRoutesOptions> = asyn
         request.params.observationId,
       );
       return reply.code(200).send(result);
+    },
+  );
+
+  // ---- VOD candidates (30.3 Gate 5) ---------------------------------------
+
+  /** Rebuilds the set's overlay from its stored attachments and re-applies the projection — the one re-projection helper the confirm/dismiss routes share, so a candidate decision takes effect immediately through the ordinary witness discipline (the applier's own priority-5 merge reads the candidate tree). */
+  async function reprojectSetAfterCandidateDecision(
+    tenantId: string,
+    targetSetId: string,
+  ): Promise<void> {
+    const attachments = await listAttachmentsForSet(app.firebase.database, tenantId, targetSetId);
+    const observationsById: Record<
+      string,
+      NonNullable<Awaited<ReturnType<typeof readEnrichmentObservation>>>
+    > = {};
+    for (const attachment of attachments) {
+      const record = await readEnrichmentObservation(
+        app.firebase.database,
+        tenantId,
+        attachment.observationId,
+      );
+      if (record) {
+        observationsById[attachment.observationId] = record;
+      }
+    }
+    const overlay = buildEnrichmentOverlay({
+      targetSetId,
+      attachments,
+      observations: observationsById,
+    });
+    await applyEnrichmentProjection(
+      app.firebase.database,
+      tenantId,
+      targetSetId,
+      overlay,
+      Date.now(),
+    );
+  }
+
+  // GET /api/research/tenants/:tenantId/enrichment/vod-candidates — every
+  // persisted candidate for the tenant (all statuses), deterministically
+  // ordered, plus per-status tallies over exactly what the list contains.
+  app.get(
+    '/research/tenants/:tenantId/enrichment/vod-candidates',
+    {
+      schema: {
+        params: tenantParamsSchema,
+        response: {
+          200: researchEnrichmentVodCandidateListResponseSchema,
+          404: errorResponseSchema,
+        },
+      },
+    },
+    async (request, reply) => {
+      const rejection = await requireResearchTenantAdmin(request, request.params.tenantId);
+      if (rejection) {
+        return reply.code(rejection.statusCode).send(rejection.body);
+      }
+      const candidates = await listVodCandidatesForTenant(
+        app.firebase.database,
+        request.params.tenantId,
+      );
+      let proposed = 0;
+      let confirmed = 0;
+      let dismissed = 0;
+      for (const candidate of candidates) {
+        if (candidate.status === 'proposed') proposed += 1;
+        else if (candidate.status === 'confirmed') confirmed += 1;
+        else dismissed += 1;
+      }
+      return reply.code(200).send({
+        candidates,
+        counts: { proposed, confirmed, dismissed, total: candidates.length },
+      });
+    },
+  );
+
+  // POST /api/research/tenants/:tenantId/enrichment/vod-candidates/:targetSetId/:candidateId/confirm
+  // — the explicit human door onto candidate projection: identifiers only,
+  // the stored candidate is reloaded and stamped
+  // (`confirmVodCandidateByAdmin`), and the set is immediately re-projected
+  // so the confirmation takes effect through the ordinary witness
+  // discipline — the candidate URL fills ONLY rows no stronger source
+  // covers (priorities 1–4 all outrank it).
+  app.post(
+    '/research/tenants/:tenantId/enrichment/vod-candidates/:targetSetId/:candidateId/confirm',
+    {
+      schema: {
+        params: vodCandidateParamsSchema,
+        response: {
+          200: vodCandidateConfirmResponseSchema,
+          404: errorResponseSchema,
+        },
+      },
+    },
+    async (request, reply) => {
+      const rejection = await requireResearchTenantAdmin(request, request.params.tenantId);
+      if (rejection) {
+        return reply.code(rejection.statusCode).send(rejection.body);
+      }
+      const result = await confirmVodCandidateByAdmin(
+        app.firebase.database,
+        request.params.tenantId,
+        request.params.targetSetId,
+        request.params.candidateId,
+        request.uid,
+        Date.now(),
+      );
+      if (result.outcome === 'confirmed' || result.outcome === 'already-confirmed') {
+        await reprojectSetAfterCandidateDecision(
+          request.params.tenantId,
+          request.params.targetSetId,
+        );
+        return reply.code(200).send({ outcome: result.outcome });
+      }
+      return reply.code(404).send({
+        error: 'Not Found',
+        message: 'candidate not found',
+        statusCode: 404,
+      });
+    },
+  );
+
+  // DELETE /api/research/tenants/:tenantId/enrichment/vod-candidates/:targetSetId/:candidateId
+  // — dismisses a candidate (idempotent) and re-applies the set's
+  // projection, so a previously confirmed-and-projected URL is removed
+  // through the witness discipline rather than left dangling.
+  app.delete(
+    '/research/tenants/:tenantId/enrichment/vod-candidates/:targetSetId/:candidateId',
+    {
+      schema: {
+        params: vodCandidateParamsSchema,
+        response: {
+          200: vodCandidateDismissResponseSchema,
+          404: errorResponseSchema,
+        },
+      },
+    },
+    async (request, reply) => {
+      const rejection = await requireResearchTenantAdmin(request, request.params.tenantId);
+      if (rejection) {
+        return reply.code(rejection.statusCode).send(rejection.body);
+      }
+      await dismissVodCandidateByAdmin(
+        app.firebase.database,
+        request.params.tenantId,
+        request.params.targetSetId,
+        request.params.candidateId,
+        request.uid,
+        Date.now(),
+      );
+      await reprojectSetAfterCandidateDecision(request.params.tenantId, request.params.targetSetId);
+      return reply.code(200).send({ ok: true });
+    },
+  );
+
+  // POST /api/research/tenants/:tenantId/enrichment/vod-candidates/discover
+  // — ONE bounded discovery pass (recent-first unmatched sets,
+  // VOD_DISCOVERY_MAX_SETS_PER_RUN at most; the bound is echoed on the
+  // report). 503 when the YouTube Data API config (or its injected fetch)
+  // is absent — discovery is then DISABLED, never approximated by scraping.
+  app.post(
+    '/research/tenants/:tenantId/enrichment/vod-candidates/discover',
+    {
+      schema: {
+        params: tenantParamsSchema,
+        response: {
+          200: vodDiscoverResponseSchema,
+          404: errorResponseSchema,
+          503: errorResponseSchema,
+        },
+      },
+    },
+    async (request, reply) => {
+      const rejection = await requireResearchTenantAdmin(request, request.params.tenantId);
+      if (rejection) {
+        return reply.code(rejection.statusCode).send(rejection.body);
+      }
+      if (!youtube || !youtubeFetch) {
+        return reply.code(503).send({
+          error: 'Service Unavailable',
+          message: 'YouTube candidate discovery is not configured on this server',
+          statusCode: 503,
+        });
+      }
+      const report = await runVodCandidateDiscovery(
+        app.firebase.database,
+        request.params.tenantId,
+        { config: youtube, fetchImpl: youtubeFetch },
+        Date.now(),
+        VOD_DISCOVERY_MAX_SETS_PER_RUN,
+      );
+      return reply.code(200).send(report);
     },
   );
 

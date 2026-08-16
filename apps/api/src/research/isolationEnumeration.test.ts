@@ -138,13 +138,15 @@ function extractRegisteredRoutes(): { method: string; path: string }[] {
 const RESEARCH_ROUTE_FAMILY = extractRegisteredRoutes();
 
 describe('the research route array is derived from the registered plugin (D-08)', () => {
-  it('discovers exactly the 19 routes the plugin registers, not a hand-typed sample', () => {
+  it('discovers exactly the 23 routes the plugin registers, not a hand-typed sample', () => {
     // Phase 30 Plan 07 extended the family from 4 routes to 15: the two
     // collection routes and two entitlement routes Phase 29 shipped, plus
     // the eleven identity/backfill/coverage/supplement routes that plan
     // adds. Phase 30.2 Plan 10 (ENR-06) adds 4 more: the enrichment review
-    // listing, confirm, detach and coverage routes — all reusing
-    // `requireResearchTenantAdmin` verbatim, bringing the family to 19.
+    // listing, confirm, detach and coverage routes. Phase 30.3 Gate 5 adds
+    // 4 more: the VOD candidates listing, confirm, dismiss and bounded
+    // discover routes — all reusing `requireResearchTenantAdmin` verbatim,
+    // bringing the family to 23.
     expect(RESEARCH_ROUTE_FAMILY.length).toBeGreaterThan(0);
     expect(RESEARCH_ROUTE_FAMILY).toEqual([
       { method: 'POST', path: '/api/research/tenants' },
@@ -173,6 +175,19 @@ describe('the research route array is derived from the registered plugin (D-08)'
       {
         method: 'DELETE',
         path: '/api/research/tenants/:tenantId/enrichment/attachments/:targetSetId/:observationId',
+      },
+      { method: 'GET', path: '/api/research/tenants/:tenantId/enrichment/vod-candidates' },
+      {
+        method: 'POST',
+        path: '/api/research/tenants/:tenantId/enrichment/vod-candidates/:targetSetId/:candidateId/confirm',
+      },
+      {
+        method: 'DELETE',
+        path: '/api/research/tenants/:tenantId/enrichment/vod-candidates/:targetSetId/:candidateId',
+      },
+      {
+        method: 'POST',
+        path: '/api/research/tenants/:tenantId/enrichment/vod-candidates/discover',
       },
       { method: 'GET', path: '/api/research/tenants/:tenantId/enrichment/coverage' },
     ]);

@@ -443,6 +443,8 @@ export const researchEnrichmentProjectionStateRecordSchema = z.object({
   // Committed half.
   projectedVodUrl: z.string().max(RESEARCH_ENRICHMENT_MAX_URL).nullish(),
   vodObservationId: z.string().max(200).nullish(),
+  /** 30.3 Gate 5: present instead of `vodObservationId` when the projected VOD came from an admin-CONFIRMED YouTube candidate (priority 5), naming the candidate record that authorized it. */
+  vodCandidateId: z.string().max(200).nullish(),
   vodSourceRevisionId: z.number().int().nullish(),
   vodParserVersion: z.string().max(64).nullish(),
   vodProjectedAtMs: z.number().int().nullish(),
@@ -480,6 +482,7 @@ export const researchEnrichmentProjectionStateRecordSchema = z.object({
   // Pending half — a write that began but did not (yet) commit.
   pendingVodUrl: z.string().max(RESEARCH_ENRICHMENT_MAX_URL).nullish(),
   pendingVodObservationId: z.string().max(200).nullish(),
+  pendingVodCandidateId: z.string().max(200).nullish(),
   pendingVodSourceRevisionId: z.number().int().nullish(),
   pendingVodRemoval: z.boolean().nullish(),
   pendingStageId: z.number().int().nullish(),
@@ -586,6 +589,86 @@ export function normalizeResearchEnrichmentCohortCounts(
     missing: counts?.missing ?? 0,
   };
 }
+
+// ---------------------------------------------------------------------------
+// YouTube VOD candidate record (30.3 Gate 5 — priority 5 of the VOD chain)
+// ---------------------------------------------------------------------------
+
+export const RESEARCH_ENRICHMENT_VOD_CANDIDATE_STATUSES = [
+  'proposed',
+  'confirmed',
+  'dismissed',
+] as const;
+export type ResearchEnrichmentVodCandidateStatus =
+  (typeof RESEARCH_ENRICHMENT_VOD_CANDIDATE_STATUSES)[number];
+
+/**
+ * `researchEnrichmentVodCandidates/{tenantId}/{targetSetId}/{candidateId}` —
+ * one YouTube Data API search result, persisted as a CANDIDATE, never a
+ * fact (30.3 Gate 5). A candidate carries the query that produced it, the
+ * result's own identity members (video id, title, channel, publication
+ * date), the fetch time, and a heuristic score — everything an admin needs
+ * to judge it. NOTHING projects from this tree until an explicit admin
+ * confirmation stamps `status: 'confirmed'` with `confirmedByUid`/
+ * `confirmedAtMs` (the same explicit-human-action shape the admin
+ * attachment door uses); the projection applier reads ONLY confirmed
+ * candidates, and only at the BOTTOM of the source-priority chain (a
+ * user/manual URL, a provider URL, and any attached Liquipedia observation
+ * URL all outrank it).
+ */
+export const researchEnrichmentVodCandidateRecordSchema = z
+  .object({
+    candidateId: z.string().min(1).max(200),
+    targetSetId: z.string().min(1).max(200),
+    /** The only admitted discovery mechanism — the YouTube Data API. Never HTML scraping. */
+    provider: z.literal('youtube-data-api'),
+    query: z.string().min(1).max(500),
+    videoId: z.string().min(1).max(64),
+    /** The canonical watch URL for `videoId` — the value a confirmation would project. */
+    videoUrl: z
+      .string()
+      .max(RESEARCH_ENRICHMENT_MAX_URL)
+      .regex(/^https:\/\//i, 'videoUrl must be an https URL'),
+    /** Untrusted third-party text. */
+    title: z.string().max(300),
+    channelId: z.string().max(200).nullish(),
+    channelTitle: z.string().max(300).nullish(),
+    /** ISO timestamp string as the API returned it. */
+    publishedAt: z.string().max(40).nullish(),
+    fetchedAtMs: z.number().int(),
+    score: z.number(),
+    status: z.enum(RESEARCH_ENRICHMENT_VOD_CANDIDATE_STATUSES),
+    confirmedByUid: z.string().max(200).nullish(),
+    confirmedAtMs: z.number().int().nullish(),
+    dismissedByUid: z.string().max(200).nullish(),
+    dismissedAtMs: z.number().int().nullish(),
+  })
+  .superRefine((value, ctx) => {
+    if (value.status === 'confirmed' && (!value.confirmedByUid || value.confirmedAtMs == null)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'a confirmed candidate requires both confirmedByUid and confirmedAtMs',
+        path: ['status'],
+      });
+    }
+  });
+export type ResearchEnrichmentVodCandidateRecord = z.infer<
+  typeof researchEnrichmentVodCandidateRecordSchema
+>;
+
+/** `GET .../enrichment/vod-candidates` — the tenant's full candidate list plus per-status tallies over exactly what the list contains. */
+export const researchEnrichmentVodCandidateListResponseSchema = z.object({
+  candidates: z.array(researchEnrichmentVodCandidateRecordSchema).max(500),
+  counts: z.object({
+    proposed: z.number().int().nonnegative(),
+    confirmed: z.number().int().nonnegative(),
+    dismissed: z.number().int().nonnegative(),
+    total: z.number().int().nonnegative(),
+  }),
+});
+export type ResearchEnrichmentVodCandidateListResponse = z.infer<
+  typeof researchEnrichmentVodCandidateListResponseSchema
+>;
 
 // ---------------------------------------------------------------------------
 // Coverage snapshot

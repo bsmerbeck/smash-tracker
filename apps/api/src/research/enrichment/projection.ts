@@ -30,6 +30,10 @@ import {
 import { normalizeOpponentTag } from '../../startgg/sync.js';
 import { isPathSafeTenantId } from '../subjectKind.js';
 import { listAttachmentsForSet, readEnrichmentObservation } from './store.js';
+import {
+  readConfirmedCandidateVodForSet,
+  VOD_CANDIDATE_MAX_ORDINAL_PROBE,
+} from './vodDiscovery.js';
 
 /**
  * Phase 30.2 Plan 08 (ENR-07/ENR-08, cycle-1 review HIGH 2/HIGH 3): the
@@ -453,6 +457,8 @@ export async function previewEnrichmentProjection(
     return emptyOutcome();
   }
 
+  overlay = await widenOverlayWithConfirmedCandidate(database, tenantId, targetSetId, overlay);
+
   const witnessTree = await database.ref(`researchEnrichmentProjection/${tenantId}`).get();
   const previouslyWitnessedKeys: string[] = [];
   if (witnessTree.exists()) {
@@ -512,6 +518,47 @@ function witnessCarriesAnyClaim(parsed: ResearchEnrichmentProjectionStateRecord)
     parsed.pendingStageId != null ||
     parsed.pendingStageRaw != null
   );
+}
+
+/**
+ * 30.3 Gate 5 — the PRIORITY-5 merge: the strongest admin-CONFIRMED YouTube
+ * candidate for the set fills row keys NO observation URL already covers
+ * (an attached Liquipedia observation always outranks a candidate), and
+ * only for rows that EXIST (probed up to `VOD_CANDIDATE_MAX_ORDINAL_PROBE`
+ * ordinals — this module never creates a match row). Merging INSIDE the
+ * applier/preview, rather than in the overlay builders, means every caller
+ * of `applyEnrichmentProjection` — run.ts's projection pass, refresh.ts's
+ * re-apply, the confirm route — respects the confirmed candidate; an
+ * overlay-builder-only merge would let an enrichment run's observation-only
+ * overlay treat a candidate-projected URL as source-removed and strip it.
+ * The user/provider priorities (1–2) are the shared resolver's own
+ * ownership rules and are untouched by this merge.
+ */
+async function widenOverlayWithConfirmedCandidate(
+  database: Database,
+  tenantId: string,
+  targetSetId: string,
+  overlay: EnrichmentOverlay,
+): Promise<EnrichmentOverlay> {
+  const confirmed = await readConfirmedCandidateVodForSet(database, tenantId, targetSetId);
+  if (!confirmed) {
+    return overlay;
+  }
+  const enrichedVodUrlByKey = { ...overlay.enrichedVodUrlByKey };
+  const enrichedVodSourceByKey = { ...(overlay.enrichedVodSourceByKey ?? {}) };
+  for (let ordinal = 1; ordinal <= VOD_CANDIDATE_MAX_ORDINAL_PROBE; ordinal += 1) {
+    const key = deriveEnrichmentMatchRowKey(targetSetId, ordinal);
+    if (!isPathSafeProviderId(key) || enrichedVodUrlByKey[key] !== undefined) {
+      continue;
+    }
+    const rowSnapshot = await database.ref(`matches/${tenantId}/${key}`).get();
+    if (!rowSnapshot.exists()) {
+      continue;
+    }
+    enrichedVodUrlByKey[key] = confirmed.videoUrl;
+    enrichedVodSourceByKey[key] = { candidateId: confirmed.candidateId };
+  }
+  return { ...overlay, enrichedVodUrlByKey, enrichedVodSourceByKey };
 }
 
 /** Returns the FULL stored record (including `matchKey`/`targetSetId`) — structurally a superset of `EnrichmentOwnershipWitness`, so it may be passed anywhere that narrower type is expected. */
@@ -729,6 +776,7 @@ function buildPreWritePatch(
     touched = true;
     patch[`${witnessBasePath}/pendingVodUrl`] = vodPreWrite.write.url;
     patch[`${witnessBasePath}/pendingVodObservationId`] = vodPreWrite.write.observationId ?? null;
+    patch[`${witnessBasePath}/pendingVodCandidateId`] = vodPreWrite.write.candidateId ?? null;
     patch[`${witnessBasePath}/pendingVodSourceRevisionId`] =
       vodPreWrite.write.sourceRevisionId ?? null;
     patch[`${witnessBasePath}/pendingVodRemoval`] = null;
@@ -737,6 +785,7 @@ function buildPreWritePatch(
     patch[`${witnessBasePath}/pendingVodRemoval`] = true;
     patch[`${witnessBasePath}/pendingVodUrl`] = null;
     patch[`${witnessBasePath}/pendingVodObservationId`] = null;
+    patch[`${witnessBasePath}/pendingVodCandidateId`] = null;
     patch[`${witnessBasePath}/pendingVodSourceRevisionId`] = null;
   }
 
@@ -840,17 +889,20 @@ function buildCommitPatch(
     touched = true;
     patch[`${witnessBasePath}/projectedVodUrl`] = vodCommit.write.url;
     patch[`${witnessBasePath}/vodObservationId`] = vodCommit.write.observationId ?? null;
+    patch[`${witnessBasePath}/vodCandidateId`] = vodCommit.write.candidateId ?? null;
     patch[`${witnessBasePath}/vodSourceRevisionId`] = vodCommit.write.sourceRevisionId ?? null;
     patch[`${witnessBasePath}/vodParserVersion`] = vodCommit.write.parserVersion ?? null;
     patch[`${witnessBasePath}/vodProjectedAtMs`] = nowMs;
     patch[`${witnessBasePath}/pendingVodUrl`] = null;
     patch[`${witnessBasePath}/pendingVodObservationId`] = null;
+    patch[`${witnessBasePath}/pendingVodCandidateId`] = null;
     patch[`${witnessBasePath}/pendingVodSourceRevisionId`] = null;
     patch[`${witnessBasePath}/pendingVodRemoval`] = null;
   } else if (vodCommit.kind === 'clear') {
     touched = true;
     patch[`${witnessBasePath}/projectedVodUrl`] = null;
     patch[`${witnessBasePath}/vodObservationId`] = null;
+    patch[`${witnessBasePath}/vodCandidateId`] = null;
     patch[`${witnessBasePath}/vodSourceRevisionId`] = null;
     patch[`${witnessBasePath}/vodParserVersion`] = null;
     if (vodCommit.released) {
@@ -858,12 +910,14 @@ function buildCommitPatch(
     }
     patch[`${witnessBasePath}/pendingVodUrl`] = null;
     patch[`${witnessBasePath}/pendingVodObservationId`] = null;
+    patch[`${witnessBasePath}/pendingVodCandidateId`] = null;
     patch[`${witnessBasePath}/pendingVodSourceRevisionId`] = null;
     patch[`${witnessBasePath}/pendingVodRemoval`] = null;
   } else if (vodPreWrite.kind !== 'none') {
     touched = true;
     patch[`${witnessBasePath}/pendingVodUrl`] = null;
     patch[`${witnessBasePath}/pendingVodObservationId`] = null;
+    patch[`${witnessBasePath}/pendingVodCandidateId`] = null;
     patch[`${witnessBasePath}/pendingVodSourceRevisionId`] = null;
     patch[`${witnessBasePath}/pendingVodRemoval`] = null;
   }
@@ -938,6 +992,12 @@ export async function applyEnrichmentProjection(
   if (!isPathSafeTenantId(tenantId) || !isPathSafeProviderId(targetSetId)) {
     return emptyOutcome();
   }
+
+  // The priority-5 merge (see widenOverlayWithConfirmedCandidate): every
+  // apply — whichever caller built the overlay — sees the set's confirmed
+  // YouTube candidate, so an observation-only overlay can never misread a
+  // candidate-projected URL as source-removed.
+  overlay = await widenOverlayWithConfirmedCandidate(database, tenantId, targetSetId, overlay);
 
   // A key the CURRENT overlay no longer mentions but a PRIOR run left a VOD
   // witness claim for — the "source stopped supplying a value" removal case

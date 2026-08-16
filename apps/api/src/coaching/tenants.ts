@@ -168,6 +168,12 @@ export const TENANT_DELETION_TREES = [
   // observation counts it refused to silently overwrite
   // (`researchEnrichmentShrinkReviews/{tenantId}/{entryId}`).
   'researchEnrichmentShrinkReviews',
+  // Phase 30.3 Gate 5: the admin-reviewed YouTube VOD candidate tree
+  // (`researchEnrichmentVodCandidates/{tenantId}/{targetSetId}/{candidateId}`)
+  // — search results persisted as CANDIDATES, never facts; only an explicit
+  // admin confirmation lets one project, at the bottom of the VOD
+  // source-priority chain.
+  'researchEnrichmentVodCandidates',
 ] as const;
 
 /**
