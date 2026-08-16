@@ -16,7 +16,11 @@ import {
   foreignRowDigestsMatch,
   type ForeignRowDigest,
 } from '../src/research/registry/foreignDigest.js';
-import { foreignRowDigestSchema } from '../src/research/registry/receipt.js';
+import {
+  foreignRowDigestSchema,
+  validateRegistryReceipt,
+} from '../src/research/registry/receipt.js';
+import { registryWorkspaceKeys } from '../src/research/registry/workspaces.js';
 import { isPathSafeTenantId } from '../src/research/subjectKind.js';
 
 /**
@@ -76,6 +80,25 @@ import { isPathSafeTenantId } from '../src/research/subjectKind.js';
 
 export const GATE6_WORKSPACE_KEYS = ['hbox', 'mkleo', 'sparg0', 'izaw'] as const;
 export type Gate6WorkspaceKey = (typeof GATE6_WORKSPACE_KEYS)[number];
+
+/**
+ * Runtime cross-check, evaluated at module load (the same idiom
+ * `researchEnrichment.ts` uses for its vocabulary cross-check): this audit's
+ * workspace vocabulary must stay identical to the registry module's, because
+ * assertion 12 maps a sealed receipt onto a workspace by that shared name. If
+ * the two ever diverge, an audit that silently ignored the unmatched
+ * workspace would report a green attestation over evidence it never checked —
+ * so the divergence is made a loud import-time failure instead of a runtime
+ * branch that no test can reach while the lists agree.
+ */
+if (
+  GATE6_WORKSPACE_KEYS.length !== registryWorkspaceKeys.length ||
+  GATE6_WORKSPACE_KEYS.some((key, index) => key !== registryWorkspaceKeys[index])
+) {
+  throw new Error(
+    `gate6AuditCore: workspace vocabulary drifted from the registry module (${GATE6_WORKSPACE_KEYS.join(',')} vs ${registryWorkspaceKeys.join(',')})`,
+  );
+}
 
 export type Gate6UidMap = Record<Gate6WorkspaceKey, string>;
 
@@ -196,8 +219,26 @@ export const GATE6_ASSERTION_IDS = [
   'izaw-coaching-root',
   'zero-trace-trees',
   'witness-observation-references',
+  'registry-receipt-attestation',
 ] as const;
 export type Gate6AssertionId = (typeof GATE6_ASSERTION_IDS)[number];
+
+/**
+ * The per-assertion verdict, so a reader can tell "not checked" from "checked
+ * and fine" WITHOUT inferring it from `ok && findings.length === 0` (which is
+ * true of both).
+ *
+ * - `passed`    — inspected a population and found nothing wrong.
+ * - `failed`    — findings that fail the audit. `ok` is false.
+ * - `tolerated` — findings reported but deliberately non-fatal (see
+ *                 `Gate6AssertionResult.tolerated`). `ok` stays true.
+ * - `skipped`   — NOT CHECKED, because its optional evidence was not
+ *                 supplied. `ok` is true so an absent input does not fail the
+ *                 audit, but the status and `skipReason` make the gap
+ *                 impossible to mistake for a pass — and the matching
+ *                 `--require-*` flag turns the absence into a `failed`.
+ */
+export type Gate6AssertionStatus = 'passed' | 'failed' | 'tolerated' | 'skipped';
 
 export interface Gate6Finding {
   /** Stable machine code — safe to grep, assert on, and alert against. */
@@ -213,6 +254,10 @@ export interface Gate6AssertionResult {
   id: Gate6AssertionId;
   title: string;
   ok: boolean;
+  /** The four-way verdict — see {@link Gate6AssertionStatus}. */
+  status: Gate6AssertionStatus;
+  /** Non-null ONLY when `status === 'skipped'`; says exactly what was not supplied. */
+  skipReason: string | null;
   /**
    * `true` when findings are REPORTED but do not fail the audit. Only the
    * `witness-observation-references` assertion is tolerated by default, and
@@ -288,17 +333,48 @@ export interface Gate6Baseline {
   registryForeign: Record<Gate6WorkspaceKey, ForeignRowDigest>;
 }
 
+/**
+ * One registry-operator receipt file offered to the audit as evidence. The
+ * CLI reads the file; the CORE validates it, so a tampered seal is a FINDING
+ * in the audit's own output rather than a stack trace from the shell.
+ */
+export interface Gate6RegistryReceiptInput {
+  /** Where it came from — echoed into findings so an operator can find the bad file. */
+  path: string;
+  /** The parsed JSON, unvalidated. */
+  raw: unknown;
+}
+
+/** What the audit observed about each supplied receipt, valid or not. */
+export interface Gate6RegistryReceiptObservation {
+  path: string;
+  valid: boolean;
+  workspace: Gate6WorkspaceKey | null;
+  uid: string | null;
+  command: string | null;
+  status: string | null;
+  databaseHost: string | null;
+  /** `false` when no expected host was supplied, so an unchecked host is never read as a checked one. */
+  databaseHostChecked: boolean;
+  foreignDigestAfter: string | null;
+}
+
 export interface Gate6AuditReceipt {
-  receiptVersion: 1;
+  /** Bumped 1 -> 2: assertions gained `status`/`skipReason`, and the receipt gained `skippedCount`/`registryReceipts`. */
+  receiptVersion: 2;
   expectationTableVersion: string;
   generatedAtMs: number;
   targetUids: Gate6UidMap;
   baselineMode: 'record' | 'compare';
   strictWitnessObservationRefs: boolean;
+  requireRegistryReceipts: boolean;
   ok: boolean;
   findingCount: number;
+  /** How many assertions were NOT checked. A non-zero value with `ok: true` means "green, but incompletely evidenced". */
+  skippedCount: number;
   assertions: Gate6AssertionResult[];
   observed: Gate6WorkspaceObservation[];
+  registryReceipts: Gate6RegistryReceiptObservation[];
   /** The digests OBSERVED this run — written out as the baseline in record mode. */
   baseline: Gate6Baseline;
 }
@@ -309,6 +385,16 @@ export interface Gate6AuditOptions {
   /** `null` records the observed digests; a value compares against them. */
   baseline?: Gate6Baseline | null;
   strictWitnessObservationRefs?: boolean;
+  /** Registry-operator receipts offered as evidence. Empty/absent -> the attestation assertion is SKIPPED. */
+  registryReceipts?: Gate6RegistryReceiptInput[] | null;
+  /** When true, an absent or incomplete receipt set FAILS instead of skipping. */
+  requireRegistryReceipts?: boolean;
+  /**
+   * The host of the database being audited, for the receipt's `databaseHost`
+   * cross-check. `null`/absent leaves that one sub-check unperformed and
+   * records `databaseHostChecked: false` — never a silent pass.
+   */
+  expectedDatabaseHost?: string | null;
 }
 
 /** The LOCAL law's persisted shape (assertion 7 only). */
@@ -509,16 +595,30 @@ interface AssertionDraft {
   id: Gate6AssertionId;
   title: string;
   tolerated?: boolean;
+  /** Set ONLY when the assertion was not performed for want of optional evidence. */
+  skipReason?: string | null;
   inspected: number;
   findings: Gate6Finding[];
 }
 
 function finish(draft: AssertionDraft, strict: boolean): Gate6AssertionResult {
   const tolerated = draft.tolerated === true && !strict;
+  const skipReason = draft.skipReason ?? null;
+  const ok = skipReason !== null || tolerated || draft.findings.length === 0;
+  const status: Gate6AssertionStatus =
+    skipReason !== null
+      ? 'skipped'
+      : draft.findings.length === 0
+        ? 'passed'
+        : tolerated
+          ? 'tolerated'
+          : 'failed';
   return {
     id: draft.id,
     title: draft.title,
-    ok: tolerated || draft.findings.length === 0,
+    ok,
+    status,
+    skipReason,
     tolerated,
     inspected: draft.inspected,
     findings: draft.findings,
@@ -1279,6 +1379,233 @@ function assertRegistryPreservation(
 }
 
 /**
+ * Assertion 12 — registry-operator receipt attestation.
+ *
+ * WHY THIS IS A SEPARATE ASSERTION AND NOT PART OF ASSERTION 8. Assertion 8's
+ * contract is "live foreign content equals the pre-state I recorded", and it
+ * must hold whether or not a registry apply ever happened. This assertion's
+ * contract is "the registry operator's sealed claim is authentic and agrees
+ * with live state", which only has meaning when an apply/compare actually
+ * ran. Folding the second into the first would force one of two bad
+ * outcomes — assertion 8 becomes unrunnable without a receipt file, or it
+ * silently weakens when one is absent — and the second is exactly the
+ * record-mode false-green shape this oracle already had to close once.
+ *
+ * SKIPPED-WHEN-ABSENT, STRICT-WHEN-PRESENT. No receipts supplied ->
+ * `status: 'skipped'` with a `skipReason`, `ok: true`, and a bump to the
+ * receipt's own `skippedCount`, so a reader can tell this was not checked.
+ * `--require-registry-receipt` converts absence (and incomplete coverage)
+ * into findings, mirroring `--require-baseline`.
+ *
+ * Per supplied receipt, in order:
+ *  1. `validateRegistryReceipt` — schema AND the `contentHash` seal. A
+ *     hand-edited receipt fails here rather than being read as evidence.
+ *  2. The receipt's own `workspace` must name one of the four, and its `uid`
+ *     must equal the uid this audit was given for that workspace. A receipt
+ *     for a different account proves nothing about this one.
+ *  3. `command` must be `apply` or `compare`. A `dry-run` receipt is REFUSED
+ *     as evidence: it writes nothing, so its `foreignDigestAfter` describes a
+ *     pre-apply observation, and accepting it would let "we planned it" pass
+ *     as "we did it and nothing foreign moved".
+ *  4. `status` must be `ok` with an empty `failedInvariants`. A receipt sealed
+ *     as `refused`/`failed` is an authentic record of a BAD run; it must never
+ *     be accepted as evidence of a good one.
+ *  5. `databaseHost` must equal the host actually being audited — when one was
+ *     supplied. When it was not, `databaseHostChecked: false` is recorded so
+ *     an unperformed check is never read as a performed one.
+ *  6. `foreignDigestAfter` must equal the LIVE `computeForeignRowDigest` for
+ *     that uid. Both sides hash through `canonical.ts`, so this is a direct
+ *     comparison with no adapter — which is the whole reason the digest
+ *     helper was hoisted out of the operator in the first place.
+ */
+function assertRegistryReceiptAttestation(
+  observedForeign: Record<Gate6WorkspaceKey, ForeignRowDigest>,
+  uids: Gate6UidMap,
+  inputs: Gate6RegistryReceiptInput[],
+  requireReceipts: boolean,
+  expectedDatabaseHost: string | null,
+): { draft: AssertionDraft; observations: Gate6RegistryReceiptObservation[] } {
+  const findings: Gate6Finding[] = [];
+  const observations: Gate6RegistryReceiptObservation[] = [];
+
+  if (inputs.length === 0) {
+    if (!requireReceipts) {
+      return {
+        draft: {
+          id: 'registry-receipt-attestation',
+          title: 'Registry-operator receipts are authentic and agree with live foreign content',
+          skipReason:
+            'no --registry-receipt was supplied; pass --require-registry-receipt to make this mandatory',
+          inspected: 0,
+          findings: [],
+        },
+        observations,
+      };
+    }
+    findings.push({
+      code: 'registry-receipt-missing',
+      workspace: null,
+      detail: '--require-registry-receipt was set but no receipt was supplied for any workspace',
+    });
+  }
+
+  const seenWorkspaces = new Map<Gate6WorkspaceKey, string>();
+
+  for (const input of inputs) {
+    let receipt;
+    try {
+      receipt = validateRegistryReceipt(input.raw);
+    } catch (error) {
+      observations.push({
+        path: input.path,
+        valid: false,
+        workspace: null,
+        uid: null,
+        command: null,
+        status: null,
+        databaseHost: null,
+        databaseHostChecked: false,
+        foreignDigestAfter: null,
+      });
+      findings.push({
+        code: 'registry-receipt-invalid',
+        workspace: null,
+        detail: `${input.path}: ${error instanceof Error ? error.message : String(error)}`,
+        path: input.path,
+      });
+      continue;
+    }
+
+    // The two vocabularies are proven identical at module load, so a
+    // schema-valid receipt always names one of the four.
+    const workspace: Gate6WorkspaceKey = receipt.workspace;
+    observations.push({
+      path: input.path,
+      valid: true,
+      workspace,
+      uid: receipt.uid,
+      command: receipt.command,
+      status: receipt.status,
+      databaseHost: receipt.databaseHost,
+      databaseHostChecked: expectedDatabaseHost !== null,
+      foreignDigestAfter: receipt.foreignDigestAfter.digest,
+    });
+
+    const duplicate = seenWorkspaces.get(workspace);
+    if (duplicate !== undefined) {
+      findings.push({
+        code: 'registry-receipt-duplicate',
+        workspace,
+        detail: `${input.path}: a second receipt for ${workspace} (first was ${duplicate}); the evidence is ambiguous`,
+        path: input.path,
+      });
+      continue;
+    }
+    seenWorkspaces.set(workspace, input.path);
+
+    if (receipt.uid !== uids[workspace]) {
+      findings.push({
+        code: 'registry-receipt-uid-mismatch',
+        workspace,
+        detail: `${input.path}: receipt is for a different account than the one audited`,
+        expected: uids[workspace],
+        actual: receipt.uid,
+        path: input.path,
+      });
+      // Every remaining check compares against THIS workspace's live state,
+      // which the receipt demonstrably does not describe — stop here rather
+      // than emit a cascade of derivative findings.
+      continue;
+    }
+
+    if (receipt.command === 'dry-run') {
+      findings.push({
+        code: 'registry-receipt-not-post-state',
+        workspace,
+        detail: `${input.path}: a dry-run receipt writes nothing, so its foreignDigestAfter is not evidence of a completed apply`,
+        expected: 'apply|compare',
+        actual: receipt.command,
+        path: input.path,
+      });
+      continue;
+    }
+
+    if (receipt.status !== 'ok' || receipt.failedInvariants.length > 0) {
+      findings.push({
+        code: 'registry-receipt-not-ok',
+        workspace,
+        detail: `${input.path}: sealed as "${receipt.status}"${
+          receipt.failedInvariants.length > 0
+            ? ` with failed invariants: ${receipt.failedInvariants.join('; ')}`
+            : ''
+        }`,
+        expected: 'ok',
+        actual: receipt.status,
+        path: input.path,
+      });
+      continue;
+    }
+
+    if (expectedDatabaseHost !== null && receipt.databaseHost !== expectedDatabaseHost) {
+      findings.push({
+        code: 'registry-receipt-host-mismatch',
+        workspace,
+        detail: `${input.path}: sealed against a different database than the one audited`,
+        expected: expectedDatabaseHost,
+        actual: receipt.databaseHost,
+        path: input.path,
+      });
+      continue;
+    }
+
+    const live = observedForeign[workspace];
+    if (receipt.foreignDigestAfter.version !== live.version) {
+      findings.push({
+        code: 'foreign-digest-version-mismatch',
+        workspace,
+        detail: `${input.path}: receipt digest-rule version ${receipt.foreignDigestAfter.version} != current ${live.version}`,
+        expected: live.version,
+        actual: receipt.foreignDigestAfter.version,
+        path: input.path,
+      });
+      continue;
+    }
+    if (!foreignRowDigestsMatch(receipt.foreignDigestAfter, live)) {
+      findings.push({
+        code: 'registry-receipt-digest-mismatch',
+        workspace,
+        detail: `${input.path}: sealed post-apply foreign content no longer matches live — ${describeForeignRowDigestDelta(receipt.foreignDigestAfter, live)}`,
+        expected: receipt.foreignDigestAfter.digest,
+        actual: live.digest,
+        path: input.path,
+      });
+    }
+  }
+
+  if (requireReceipts) {
+    for (const workspace of GATE6_WORKSPACE_KEYS) {
+      if (!seenWorkspaces.has(workspace)) {
+        findings.push({
+          code: 'registry-receipt-missing',
+          workspace,
+          detail: `--require-registry-receipt was set but no valid receipt covers ${GATE6_EXPECTATIONS[workspace].label}`,
+        });
+      }
+    }
+  }
+
+  return {
+    draft: {
+      id: 'registry-receipt-attestation',
+      title: 'Registry-operator receipts are authentic and agree with live foreign content',
+      inspected: inputs.length,
+      findings,
+    },
+    observations,
+  };
+}
+
+/**
  * Assertion 9 — IzAw's coaching ownership root is his OWN uid.
  *
  * Stated WITHOUT naming a developer uid, so the check cannot be defeated by
@@ -1548,6 +1875,9 @@ export async function runGate6Audit(
 
   const strict = options.strictWitnessObservationRefs === true;
   const baseline = options.baseline ?? null;
+  const registryReceiptInputs = options.registryReceipts ?? [];
+  const requireRegistryReceipts = options.requireRegistryReceipts === true;
+  const expectedDatabaseHost = options.expectedDatabaseHost ?? null;
 
   const corpora: WorkspaceCorpus[] = [];
   for (const workspace of GATE6_WORKSPACE_KEYS) {
@@ -1581,6 +1911,14 @@ export async function runGate6Audit(
     registryForeign,
   };
 
+  const attestation = assertRegistryReceiptAttestation(
+    registryForeign,
+    options.uids,
+    registryReceiptInputs,
+    requireRegistryReceipts,
+    expectedDatabaseHost,
+  );
+
   const drafts: AssertionDraft[] = [
     assertExpectedCounts(corpora),
     assertRunsTerminal(corpora),
@@ -1593,6 +1931,7 @@ export async function runGate6Audit(
     await assertIzawCoachingRoot(database, options.uids.izaw),
     await assertZeroTraceTrees(database, options.uids),
     assertWitnessObservationReferences(corpora),
+    attestation.draft,
   ];
 
   if (baseline !== null) {
@@ -1642,16 +1981,19 @@ export async function runGate6Audit(
   });
 
   return {
-    receiptVersion: 1,
+    receiptVersion: 2,
     expectationTableVersion: GATE6_EXPECTATION_TABLE_VERSION,
     generatedAtMs: options.nowMs,
     targetUids: { ...options.uids },
     baselineMode: baseline === null ? 'record' : 'compare',
     strictWitnessObservationRefs: strict,
+    requireRegistryReceipts,
     ok: assertions.every((assertion) => assertion.ok),
     findingCount,
+    skippedCount: assertions.filter((assertion) => assertion.status === 'skipped').length,
     assertions,
     observed,
+    registryReceipts: attestation.observations,
     baseline: observedBaseline,
   };
 }
