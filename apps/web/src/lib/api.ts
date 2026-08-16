@@ -115,7 +115,6 @@ import {
   type UpsertOpponentNoteInput,
   type UpsertStageFavoritesInput,
 } from '@smash-tracker/shared';
-import { webUserProfileSchema } from './demoAccount';
 import { webEnrichmentAttributionResponseSchema } from './enrichmentEvidence';
 import { getFirebaseAuth } from './firebase';
 import { historicalTournamentEntryListSchema } from './historicalTournament';
@@ -536,13 +535,22 @@ export const api = {
         body: input,
       }),
     /**
-     * GET /api/users/me — parses with the web-side EXTENDED schema
-     * (`isDemoAccount`, additive over the shared response shape), not the
-     * narrower shared schema directly. See `demoAccount.ts`'s module doc
-     * comment (Phase 30.3 Gate 6) for why, and the exact API field this is
-     * forward-compatible with before it exists.
+     * GET /api/users/me — parsed with the SHARED `userProfileSchema`, in
+     * which `isDemoAccount` is a REQUIRED boolean.
+     *
+     * Phase 30.3 (Gate 6 corrective, defect A1): this deliberately does NOT
+     * go through a web-local `.extend({ isDemoAccount: z.boolean().nullish() })`
+     * override any more. That override made the field optional in the
+     * browser only, so a response that omitted it still parsed successfully
+     * and `useIsDemoAccount()` read the absence as `false` — silently
+     * disabling every demo protection the flag drives, with no error
+     * anywhere. Requiring the field means a profile either parses WITH a
+     * real server-derived answer or does not parse at all: a pending or
+     * failed read renders no banner (fail-quiet, the pre-existing default),
+     * but a SUCCESSFULLY parsed profile can never carry a substituted
+     * `false`.
      */
-    getMe: () => apiRequestParsed('/api/users/me', webUserProfileSchema),
+    getMe: () => apiRequestParsed('/api/users/me', userProfileSchema),
     /** GET /api/users/me/fighters */
     getFighters: () => apiRequestParsed('/api/users/me/fighters', fighterSelectionSchema),
     /** PUT /api/users/me/fighters */
