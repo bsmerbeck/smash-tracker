@@ -643,7 +643,7 @@ interface Gate6Reader {
   children(path: string): Promise<[string, unknown][]>;
 }
 
-interface Gate6ReaderOptions {
+export interface Gate6ReaderOptions {
   requestTimeoutMs?: number;
   signal?: AbortSignal;
   onRead?: (path: string) => void;
@@ -676,16 +676,31 @@ export function createGate6Reader(
 // Progress monitor — heartbeat + no-progress watchdog (hard gate #4, B6)
 // ---------------------------------------------------------------------------
 
-interface AuditMonitor {
-  onRead: (path: string) => void;
+export interface Gate6Monitor {
+  /** Call at the start of every unit of work — a read, an HTTP request, a stage boundary. */
+  onProgress: (unit: string) => void;
   /** Aborts when the watchdog trips OR the caller's signal fires. */
   signal: AbortSignal;
-  /** Rejects when the watchdog trips — raced against the audit so a stall fails it even with nothing abortable in flight. */
+  /** Rejects when the watchdog trips — raced against the work so a stall fails it even with nothing abortable in flight. */
   stallPromise: Promise<never>;
   dispose: () => void;
 }
 
-function createAuditMonitor(options: Gate6AuditOptions): AuditMonitor {
+/** The subset of {@link Gate6AuditOptions} the monitor needs — also what the capture operator supplies. */
+export interface Gate6MonitorOptions {
+  signal?: AbortSignal;
+  maxStallMs?: number;
+  heartbeatIntervalMs?: number;
+  log?: (line: string) => void;
+  clock?: () => number;
+}
+
+/**
+ * Heartbeat + no-progress watchdog, shared by the audit and the probe-capture
+ * operator. `label` names the operator in every line, so two of them running
+ * in the same terminal stay distinguishable.
+ */
+export function createGate6Monitor(options: Gate6MonitorOptions, label = 'gate6'): Gate6Monitor {
   const clock = options.clock ?? Date.now;
   const log = options.log ?? ((line: string) => console.error(line));
   const heartbeatIntervalMs = options.heartbeatIntervalMs ?? GATE6_DEFAULT_HEARTBEAT_INTERVAL_MS;
@@ -702,8 +717,8 @@ function createAuditMonitor(options: Gate6AuditOptions): AuditMonitor {
     }
   }
 
-  let reads = 0;
-  let lastPath = '<starting>';
+  let units = 0;
+  let lastUnit = '<starting>';
   let lastAtMs = clock();
   let stalled = false;
   let rejectStall: ((error: Error) => void) | null = null;
@@ -716,7 +731,7 @@ function createAuditMonitor(options: Gate6AuditOptions): AuditMonitor {
 
   const heartbeat = setInterval(() => {
     log(
-      `[heartbeat] gate6 reads=${reads} path=${lastPath} lastProgressMsAgo=${clock() - lastAtMs}`,
+      `[heartbeat] ${label} reads=${units} path=${lastUnit} lastProgressMsAgo=${clock() - lastAtMs}`,
     );
   }, heartbeatIntervalMs);
   heartbeat.unref?.();
@@ -726,7 +741,7 @@ function createAuditMonitor(options: Gate6AuditOptions): AuditMonitor {
       const idleMs = clock() - lastAtMs;
       if (idleMs > maxStallMs && !stalled) {
         stalled = true;
-        const reason = `no progress for ${idleMs}ms (limit ${maxStallMs}ms); aborting the audit`;
+        const reason = `no progress for ${idleMs}ms (limit ${maxStallMs}ms); aborting the ${label} run`;
         log(`[watchdog] ${reason}`);
         controller.abort(new Error(reason));
         rejectStall?.(new Error(reason));
@@ -737,9 +752,9 @@ function createAuditMonitor(options: Gate6AuditOptions): AuditMonitor {
   watchdog.unref?.();
 
   return {
-    onRead: (path) => {
-      reads += 1;
-      lastPath = path;
+    onProgress: (unit) => {
+      units += 1;
+      lastUnit = unit;
       lastAtMs = clock();
     },
     signal: controller.signal,
@@ -2711,11 +2726,11 @@ export async function runGate6Audit(
     throw new Error('runGate6Audit: every demo account UID must be unique');
   }
 
-  const monitor = createAuditMonitor(options);
+  const monitor = createGate6Monitor(options, 'gate6');
   const reader = createGate6Reader(database, {
     requestTimeoutMs: options.requestTimeoutMs ?? DEFAULT_REGISTRY_REQUEST_TIMEOUT_MS,
     signal: monitor.signal,
-    onRead: monitor.onRead,
+    onRead: monitor.onProgress,
   });
   try {
     // Raced against the stall watchdog so a stall fails the audit even when
