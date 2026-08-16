@@ -1,5 +1,9 @@
 import type { MatchStage } from './stage.js';
 import { UNKNOWN_STAGE, getStageById } from './stageData.js';
+// 30.3 Gate 5: the reviewed character map — like `./stage.js`/`./stageData.js`
+// an ingestion-independent reference-data module, so the mandatory import
+// graph below (no `./researchIngestion.js` edge, even type-only) is intact.
+import { resolveLiquipediaFighterId } from './liquipediaCharacterMap.js';
 import type {
   ResearchEnrichmentProjectionStateRecord,
   ResearchLiquipediaStageForm,
@@ -78,6 +82,41 @@ export type EnrichmentVodOutcome =
 
 export type EnrichmentStageOutcome = 'provider-authoritative' | 'enriched' | 'unknown';
 
+/**
+ * 30.3 Gate 5 — character evidence outcomes. Characters never write a match
+ * row member (`fighter_id`/`opponent_id` are REQUIRED provider-derived
+ * members; a game row without provider characters is never projected at
+ * all), so this half is WITNESS-ONLY evidence for attribution surfaces.
+ * `abstained-*` states are the directive's stop conditions: orientation
+ * unproven, or the observation's game scope is not explicitly Ultimate.
+ */
+export type EnrichmentCharsOutcome =
+  | 'none'
+  | 'enriched'
+  | 'partial-unmapped'
+  | 'abstained-orientation'
+  | 'abstained-game-scope'
+  | 'source-removed';
+
+/**
+ * 30.3 Gate 5 — stocks outcomes. `stocksLeft` IS a match-row member, so
+ * this half follows the VOD half's full fill/correct/remove/skip
+ * discipline, PLUS the directive's stock-specific gates: stocks may become
+ * `stocksLeft` ONLY when the seat alignment (orientation) and the
+ * winner-seat evidence agree with the row's own `win` member.
+ */
+export type EnrichmentStocksOutcome =
+  | 'none'
+  | 'unchanged'
+  | 'filled-empty'
+  | 'source-corrected'
+  | 'source-removed'
+  | 'skipped-owned'
+  | 'abstained-orientation'
+  | 'abstained-game-scope'
+  | 'abstained-winner-disagreement'
+  | 'abstained-value';
+
 // ---------------------------------------------------------------------------
 // Witness patch actions
 // ---------------------------------------------------------------------------
@@ -85,6 +124,8 @@ export type EnrichmentStageOutcome = 'provider-authoritative' | 'enriched' | 'un
 export interface EnrichmentVodWitnessWrite {
   url: string;
   observationId?: string;
+  /** 30.3 Gate 5: set instead of `observationId` when the URL came from an admin-confirmed YouTube candidate (priority 5). */
+  candidateId?: string;
   sourceRevisionId?: number;
   parserVersion?: string;
 }
@@ -131,11 +172,46 @@ export type EnrichmentStageWitnessCommitAction =
   /** THE WITNESS-CLEAR WRITER on provider-stage-wins (cycle-2 review HIGH 2): a provider stage resolved for a game that previously carried a stage witness. */
   | { kind: 'clear' };
 
+// -- 30.3 Gate 5: character / stocks witness actions -------------------------
+
+export interface EnrichmentCharsWitnessWrite {
+  /** The PROVEN orientation: which source seat the subject occupies. */
+  subjectSeat: 1 | 2;
+  subjectCharRaw?: string;
+  /** Present only when the raw name passed the reviewed character map — absent = flagged unmapped, never guessed. */
+  subjectFighterId?: number;
+  opponentCharRaw?: string;
+  opponentFighterId?: number;
+  observationId: string;
+  sourceRevisionId?: number;
+  parserVersion?: string;
+}
+
+/** Characters write no match-row member, so a single commit-time action suffices — there is no row write to bracket with a pending half. */
+export type EnrichmentCharsWitnessCommitAction =
+  { kind: 'none' } | { kind: 'set'; write: EnrichmentCharsWitnessWrite } | { kind: 'clear' };
+
+export interface EnrichmentStocksWitnessWrite {
+  stocksLeft: number;
+  observationId: string;
+  sourceRevisionId?: number;
+  parserVersion?: string;
+}
+
+export type EnrichmentStocksWitnessPreWriteAction =
+  { kind: 'none' } | { kind: 'set'; write: EnrichmentStocksWitnessWrite };
+
+export type EnrichmentStocksWitnessCommitAction =
+  { kind: 'none' } | { kind: 'set'; write: EnrichmentStocksWitnessWrite } | { kind: 'clear' };
+
 export interface EnrichmentWitnessPatch {
   vodPreWrite: EnrichmentVodWitnessPreWriteAction;
   vodCommit: EnrichmentVodWitnessCommitAction;
   stagePreWrite: EnrichmentStageWitnessPreWriteAction;
   stageCommit: EnrichmentStageWitnessCommitAction;
+  charsCommit: EnrichmentCharsWitnessCommitAction;
+  stocksPreWrite: EnrichmentStocksWitnessPreWriteAction;
+  stocksCommit: EnrichmentStocksWitnessCommitAction;
 }
 
 // ---------------------------------------------------------------------------
@@ -158,6 +234,8 @@ export type EnrichmentOwnershipWitness = Omit<
  */
 export interface EnrichmentVodSourceInput {
   observationId?: string;
+  /** 30.3 Gate 5: the admin-confirmed YouTube candidate that supplied the URL (priority 5) — mutually exclusive with `observationId` in practice. */
+  candidateId?: string;
   sourceRevisionId?: number;
   parserVersion?: string;
 }
@@ -168,6 +246,31 @@ export interface EnrichmentStageSourceInput {
   form?: ResearchLiquipediaStageForm;
   /** Present only when the raw stage text was successfully mapped to a canonical stage id. */
   canonicalStageId?: number;
+  observationId: string;
+  sourceRevisionId?: number;
+  parserVersion?: string;
+}
+
+/**
+ * 30.3 Gate 5 — one game row's raw character/stock evidence, exactly as the
+ * observation stated it, keyed by SOURCE SEAT (the wiki's opponent1/
+ * opponent2 order — an order that says NOTHING about which seat is the
+ * subject until orientation is proven).
+ *
+ * `seatTags` and the caller's `rowOpponentTag` must be normalized by the
+ * CALLER with ONE normalizer applied to both sides (the API applier uses
+ * `normalizeOpponentTag`, the same normalizer the ingestion projection used
+ * to author the row's `opponent` member) — this module compares them for
+ * exact equality and never re-normalizes.
+ */
+export interface EnrichmentGameEvidenceInput {
+  /** The observation's wiki game scope (`game` member), e.g. `ultimate`. */
+  game?: string;
+  /** Set-level player tags by source seat, PRE-NORMALIZED; null = the source stated no tag for that seat. */
+  seatTags?: [string | null, string | null];
+  rawChars?: [string | null, string | null];
+  stocks?: [number | null, number | null];
+  winnerSeat?: 1 | 2;
   observationId: string;
   sourceRevisionId?: number;
   parserVersion?: string;
@@ -185,6 +288,33 @@ export interface EnrichedMatchMembersInput {
   providerStage: MatchStage;
   enrichmentStage?: EnrichmentStageSourceInput;
   witness?: EnrichmentOwnershipWitness | null;
+  // -- 30.3 Gate 5: character/stock evidence context -------------------------
+  /**
+   * MUST be `true` for the character/stock halves to act AT ALL — including
+   * their removal/clear paths. The ingestion projection's overlay caller
+   * (`mergePreservedMatchMembers`) does not supply evidence context, and an
+   * absent-evidence input there must mean "not consulted" (inert), never
+   * "the source stopped supplying characters" (removal). Only the
+   * enrichment applier — which loads the full evidence universe for the
+   * set — sets this flag.
+   */
+  enrichmentEvidenceConsulted?: boolean;
+  enrichmentGameEvidence?: EnrichmentGameEvidenceInput;
+  /** The row's provider-authored `opponent` member, normalized by the caller with the same normalizer as `seatTags`. */
+  rowOpponentTag?: string;
+  /** The row's `win` member (subject won). */
+  rowWin?: boolean;
+  /** The row's current `stocksLeft` member, or absent. */
+  existingStocksLeft?: number;
+}
+
+/** The witness-only character evidence a resolution produced (mirrors the commit write, absent when nothing is projected). */
+export interface EnrichedCharsEvidence {
+  subjectSeat: 1 | 2;
+  subjectCharRaw?: string;
+  subjectFighterId?: number;
+  opponentCharRaw?: string;
+  opponentFighterId?: number;
 }
 
 export interface EnrichedMatchMembersResult {
@@ -193,6 +323,11 @@ export interface EnrichedMatchMembersResult {
   vodOutcome: EnrichmentVodOutcome;
   stage: MatchStage;
   stageOutcome: EnrichmentStageOutcome;
+  /** The FINAL `stocksLeft` member value for the row — absent means the member should be absent. Callers that do not manage `stocksLeft` may ignore it (it echoes `existingStocksLeft` whenever the stocks half did not act). */
+  stocksLeft?: number;
+  stocksOutcome: EnrichmentStocksOutcome;
+  charsOutcome: EnrichmentCharsOutcome;
+  chars?: EnrichedCharsEvidence;
   witnessPatch: EnrichmentWitnessPatch;
 }
 
@@ -217,6 +352,42 @@ export function isSourceOwnedVodValue(
     return false;
   }
   return storedValue === witness.projectedVodUrl || storedValue === witness.pendingVodUrl;
+}
+
+/**
+ * The STAGE analog of {@link isSourceOwnedVodValue} (30.3 Gate 5 commit 1 —
+ * the latent stage-witness hazard): decides whether a stored row stage is the
+ * enrichment applier's OWN earlier projection, against the SAME two-member
+ * accepted set (committed ∪ pending). The enrichment applier consults this
+ * BEFORE building its resolver input: a stored stage this function vouches
+ * for is not evidence of a provider-resolved stage — it is the applier's own
+ * write echoed back — so the applier passes the unknown sentinel as
+ * `providerStage` instead, and a re-apply becomes witness-preserving rather
+ * than witness-clearing. The ingestion projection never needs this predicate:
+ * its `providerStage` input comes from genuine provider data, never from the
+ * stored row.
+ */
+export function isSourceOwnedStageValue(
+  storedStage: MatchStage,
+  witness:
+    | Pick<
+        EnrichmentOwnershipWitness,
+        'projectedStageId' | 'projectedStageName' | 'pendingStageId' | 'pendingStageName'
+      >
+    | null
+    | undefined,
+): boolean {
+  if (!witness) {
+    return false;
+  }
+  if (isUnknownStage(storedStage)) {
+    return false;
+  }
+  const committedMatch =
+    witness.projectedStageId === storedStage.id && witness.projectedStageName === storedStage.name;
+  const pendingMatch =
+    witness.pendingStageId === storedStage.id && witness.pendingStageName === storedStage.name;
+  return committedMatch || pendingMatch;
 }
 
 function isEmptyString(value: string | null | undefined): boolean {
@@ -273,6 +444,7 @@ function resolveVod(input: EnrichedMatchMembersInput): VodResolution {
       const write: EnrichmentVodWitnessWrite = {
         url: enrichmentVodUrl!,
         observationId: enrichmentVodSource?.observationId,
+        candidateId: enrichmentVodSource?.candidateId,
         sourceRevisionId: enrichmentVodSource?.sourceRevisionId,
         parserVersion: enrichmentVodSource?.parserVersion,
       };
@@ -289,6 +461,7 @@ function resolveVod(input: EnrichedMatchMembersInput): VodResolution {
       const write: EnrichmentVodWitnessWrite = {
         url: pendingVal!,
         observationId: witness?.pendingVodObservationId ?? undefined,
+        candidateId: witness?.pendingVodCandidateId ?? undefined,
         sourceRevisionId: witness?.pendingVodSourceRevisionId ?? undefined,
       };
       return {
@@ -330,6 +503,7 @@ function resolveVod(input: EnrichedMatchMembersInput): VodResolution {
     const write: EnrichmentVodWitnessWrite = {
       url: enrichmentVodUrl!,
       observationId: enrichmentVodSource?.observationId,
+      candidateId: enrichmentVodSource?.candidateId,
       sourceRevisionId: enrichmentVodSource?.sourceRevisionId,
       parserVersion: enrichmentVodSource?.parserVersion,
     };
@@ -449,11 +623,349 @@ function resolveStageMember(input: EnrichedMatchMembersInput): StageResolution {
     };
   }
 
+  // No enrichment stage data at all. When a witness still carries a stage
+  // claim, the source has STOPPED supplying the stage it once projected —
+  // the stage mirror of the VOD half's source-removed case (30.3 Gate 5
+  // commit 1). Clearing the witness here is what lets a removal converge:
+  // the caller writes the unknown sentinel this branch returns, and a claim
+  // for a value that is no longer supplied does not linger to vouch for
+  // nothing. A witness with no stage claim resolves to a true no-op, exactly
+  // as before.
   return {
     stage: providerStage,
     outcome: 'unknown',
     preWrite: { kind: 'none' },
-    commit: { kind: 'none' },
+    commit: hasAnyStageWitnessClaim(witness) ? { kind: 'clear' } : { kind: 'none' },
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Seat orientation (30.3 Gate 5)
+// ---------------------------------------------------------------------------
+
+export type EnrichmentSeatOrientation =
+  | { subjectSeat: 1 | 2 }
+  | { subjectSeat: null; reason: 'no-seat-tags' | 'no-opponent-tag' | 'no-match' | 'ambiguous' };
+
+/**
+ * Proves which SOURCE seat the subject occupies, from the one fact both
+ * sides state independently: the opponent's tag. The row's `opponent`
+ * member is provider-authored (start.gg's entrant name, normalized at
+ * projection time), and the observation's seat tags are the wiki's own —
+ * when EXACTLY ONE seat tag equals the row's opponent tag, that seat is the
+ * opponent and the other is the subject. Anything less than exactly-one is
+ * an ABSTENTION, never a guess: both seats matching (a mirror-tag edge), no
+ * seat matching (a renamed player, a sponsor-prefix mismatch the caller's
+ * normalizer did not fold), or missing tags on either side.
+ */
+export function resolveSeatOrientation(
+  rowOpponentTag: string | undefined,
+  seatTags: [string | null, string | null] | undefined,
+): EnrichmentSeatOrientation {
+  if (rowOpponentTag == null || rowOpponentTag.length === 0 || rowOpponentTag === 'unknown') {
+    return { subjectSeat: null, reason: 'no-opponent-tag' };
+  }
+  const seat1 = seatTags?.[0] ?? null;
+  const seat2 = seatTags?.[1] ?? null;
+  if (seat1 == null && seat2 == null) {
+    return { subjectSeat: null, reason: 'no-seat-tags' };
+  }
+  const seat1IsOpponent = seat1 != null && seat1 === rowOpponentTag;
+  const seat2IsOpponent = seat2 != null && seat2 === rowOpponentTag;
+  if (seat1IsOpponent && seat2IsOpponent) {
+    return { subjectSeat: null, reason: 'ambiguous' };
+  }
+  if (seat1IsOpponent) {
+    return { subjectSeat: 2 };
+  }
+  if (seat2IsOpponent) {
+    return { subjectSeat: 1 };
+  }
+  return { subjectSeat: null, reason: 'no-match' };
+}
+
+/** The one game-scope gate for character/stock evidence: the observation must EXPLICITLY state Ultimate. An absent scope abstains — the enrichment pipeline is SSBU-scoped and Melee data (the Hungrybox pages) must never cross into it, so unstated is treated as unproven, not as Ultimate. */
+function isUltimateGameScope(game: string | undefined): boolean {
+  return game != null && game.trim().toLowerCase() === 'ultimate';
+}
+
+// ---------------------------------------------------------------------------
+// Character evidence resolution (30.3 Gate 5) — witness-only, no row member
+// ---------------------------------------------------------------------------
+
+interface CharsResolution {
+  outcome: EnrichmentCharsOutcome;
+  chars?: EnrichedCharsEvidence;
+  commit: EnrichmentCharsWitnessCommitAction;
+}
+
+function hasAnyCharsWitnessClaim(witness: EnrichmentOwnershipWitness | null | undefined): boolean {
+  if (!witness) {
+    return false;
+  }
+  return (
+    witness.projectedSubjectSeat != null ||
+    witness.projectedSubjectCharRaw != null ||
+    witness.projectedSubjectFighterId != null ||
+    witness.projectedOpponentCharRaw != null ||
+    witness.projectedOpponentFighterId != null
+  );
+}
+
+/** Clear a lingering chars claim when the evidence no longer supports one; a claimless witness resolves to a plain inert outcome. */
+function abstainChars(
+  outcome: EnrichmentCharsOutcome,
+  witness: EnrichmentOwnershipWitness | null | undefined,
+): CharsResolution {
+  return {
+    outcome,
+    commit: hasAnyCharsWitnessClaim(witness) ? { kind: 'clear' } : { kind: 'none' },
+  };
+}
+
+function resolveChars(input: EnrichedMatchMembersInput): CharsResolution {
+  const { enrichmentEvidenceConsulted, enrichmentGameEvidence, rowOpponentTag, witness } = input;
+
+  if (enrichmentEvidenceConsulted !== true) {
+    // Not consulted (the ingestion overlay path): completely inert — never
+    // an implied removal.
+    return { outcome: 'none', commit: { kind: 'none' } };
+  }
+
+  const rawChars = enrichmentGameEvidence?.rawChars;
+  const hasAnyRawChar = rawChars != null && (rawChars[0] != null || rawChars[1] != null);
+  if (!enrichmentGameEvidence || !hasAnyRawChar) {
+    // The evidence universe was consulted and this row has no character
+    // evidence (anymore): a lingering claim is a removal.
+    return {
+      ...abstainChars('none', witness),
+      outcome: hasAnyCharsWitnessClaim(witness) ? 'source-removed' : 'none',
+    };
+  }
+
+  if (!isUltimateGameScope(enrichmentGameEvidence.game)) {
+    return abstainChars('abstained-game-scope', witness);
+  }
+
+  const orientation = resolveSeatOrientation(rowOpponentTag, enrichmentGameEvidence.seatTags);
+  if (orientation.subjectSeat == null) {
+    return abstainChars('abstained-orientation', witness);
+  }
+
+  const subjectSeat = orientation.subjectSeat;
+  const opponentSeat = subjectSeat === 1 ? 2 : 1;
+  const subjectCharRaw = rawChars[subjectSeat - 1] ?? undefined;
+  const opponentCharRaw = rawChars[opponentSeat - 1] ?? undefined;
+  const subjectFighterId = resolveLiquipediaFighterId(subjectCharRaw);
+  const opponentFighterId = resolveLiquipediaFighterId(opponentCharRaw);
+
+  const fullyMapped =
+    subjectCharRaw != null &&
+    opponentCharRaw != null &&
+    subjectFighterId !== undefined &&
+    opponentFighterId !== undefined;
+  const outcome: EnrichmentCharsOutcome = fullyMapped ? 'enriched' : 'partial-unmapped';
+
+  const chars: EnrichedCharsEvidence = {
+    subjectSeat,
+    ...(subjectCharRaw != null ? { subjectCharRaw } : {}),
+    ...(subjectFighterId !== undefined ? { subjectFighterId } : {}),
+    ...(opponentCharRaw != null ? { opponentCharRaw } : {}),
+    ...(opponentFighterId !== undefined ? { opponentFighterId } : {}),
+  };
+
+  const alreadyCommittedIdentical =
+    witness?.projectedSubjectSeat === subjectSeat &&
+    (witness?.projectedSubjectCharRaw ?? undefined) === subjectCharRaw &&
+    (witness?.projectedSubjectFighterId ?? undefined) === subjectFighterId &&
+    (witness?.projectedOpponentCharRaw ?? undefined) === opponentCharRaw &&
+    (witness?.projectedOpponentFighterId ?? undefined) === opponentFighterId &&
+    witness?.charsObservationId === enrichmentGameEvidence.observationId;
+
+  return {
+    outcome,
+    chars,
+    commit: alreadyCommittedIdentical
+      ? { kind: 'none' }
+      : {
+          kind: 'set',
+          write: {
+            ...chars,
+            observationId: enrichmentGameEvidence.observationId,
+            sourceRevisionId: enrichmentGameEvidence.sourceRevisionId,
+            parserVersion: enrichmentGameEvidence.parserVersion,
+          },
+        },
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Stocks resolution (30.3 Gate 5) — a real row member, full VOD discipline
+// ---------------------------------------------------------------------------
+
+/** Stocks ownership, decided against the SAME committed ∪ pending accepted set the VOD and stage halves use. */
+export function isSourceOwnedStocksValue(
+  storedValue: number | undefined,
+  witness:
+    | Pick<EnrichmentOwnershipWitness, 'projectedStocksLeft' | 'pendingStocksLeft'>
+    | null
+    | undefined,
+): boolean {
+  if (storedValue == null || !witness) {
+    return false;
+  }
+  return storedValue === witness.projectedStocksLeft || storedValue === witness.pendingStocksLeft;
+}
+
+interface StocksResolution {
+  /** The FINAL member value — absent means the member should be absent. */
+  stocksLeft?: number;
+  outcome: EnrichmentStocksOutcome;
+  preWrite: EnrichmentStocksWitnessPreWriteAction;
+  commit: EnrichmentStocksWitnessCommitAction;
+}
+
+function hasAnyStocksWitnessClaim(witness: EnrichmentOwnershipWitness | null | undefined): boolean {
+  if (!witness) {
+    return false;
+  }
+  return witness.projectedStocksLeft != null || witness.pendingStocksLeft != null;
+}
+
+/**
+ * The abstention path shared by every failed stock gate: a witness-OWNED
+ * stored value loses its justification and is REMOVED (the row member
+ * reverts to absent, the witness half clears); a value the witness does not
+ * vouch for — provider- or user-authored — is untouched, and only a stale,
+ * non-matching claim is cleared.
+ */
+function abstainStocks(
+  outcome: EnrichmentStocksOutcome,
+  existingStocksLeft: number | undefined,
+  witness: EnrichmentOwnershipWitness | null | undefined,
+): StocksResolution {
+  const owned = isSourceOwnedStocksValue(existingStocksLeft, witness);
+  if (owned) {
+    return {
+      outcome,
+      preWrite: { kind: 'none' },
+      commit: { kind: 'clear' },
+    };
+  }
+  return {
+    ...(existingStocksLeft !== undefined ? { stocksLeft: existingStocksLeft } : {}),
+    outcome,
+    preWrite: { kind: 'none' },
+    commit: hasAnyStocksWitnessClaim(witness) ? { kind: 'clear' } : { kind: 'none' },
+  };
+}
+
+function resolveStocks(input: EnrichedMatchMembersInput): StocksResolution {
+  const {
+    enrichmentEvidenceConsulted,
+    enrichmentGameEvidence,
+    rowOpponentTag,
+    rowWin,
+    existingStocksLeft,
+    witness,
+  } = input;
+
+  if (enrichmentEvidenceConsulted !== true) {
+    // Not consulted: inert — echo the existing member and touch nothing.
+    return {
+      ...(existingStocksLeft !== undefined ? { stocksLeft: existingStocksLeft } : {}),
+      outcome: 'none',
+      preWrite: { kind: 'none' },
+      commit: { kind: 'none' },
+    };
+  }
+
+  const stocks = enrichmentGameEvidence?.stocks;
+  const hasAnyStockValue = stocks != null && (stocks[0] != null || stocks[1] != null);
+  if (!enrichmentGameEvidence || !hasAnyStockValue) {
+    const removal = abstainStocks('none', existingStocksLeft, witness);
+    return {
+      ...removal,
+      outcome:
+        isSourceOwnedStocksValue(existingStocksLeft, witness) || hasAnyStocksWitnessClaim(witness)
+          ? 'source-removed'
+          : 'none',
+    };
+  }
+
+  if (!isUltimateGameScope(enrichmentGameEvidence.game)) {
+    return abstainStocks('abstained-game-scope', existingStocksLeft, witness);
+  }
+
+  const orientation = resolveSeatOrientation(rowOpponentTag, enrichmentGameEvidence.seatTags);
+  if (orientation.subjectSeat == null) {
+    return abstainStocks('abstained-orientation', existingStocksLeft, witness);
+  }
+
+  const winnerSeat = enrichmentGameEvidence.winnerSeat;
+  if (winnerSeat == null || rowWin == null) {
+    return abstainStocks('abstained-winner-disagreement', existingStocksLeft, witness);
+  }
+  const evidenceSaysSubjectWon = winnerSeat === orientation.subjectSeat;
+  if (evidenceSaysSubjectWon !== rowWin) {
+    // The source and the provider DISAGREE about who won this game — the
+    // directive's hard stop: never attach a stock count whose winner-seat
+    // evidence conflicts with the row's own result.
+    return abstainStocks('abstained-winner-disagreement', existingStocksLeft, witness);
+  }
+
+  const winnerStocks = stocks[winnerSeat - 1];
+  if (
+    winnerStocks == null ||
+    !Number.isInteger(winnerStocks) ||
+    winnerStocks < 0 ||
+    winnerStocks > 3
+  ) {
+    return abstainStocks('abstained-value', existingStocksLeft, witness);
+  }
+
+  const write: EnrichmentStocksWitnessWrite = {
+    stocksLeft: winnerStocks,
+    observationId: enrichmentGameEvidence.observationId,
+    sourceRevisionId: enrichmentGameEvidence.sourceRevisionId,
+    parserVersion: enrichmentGameEvidence.parserVersion,
+  };
+
+  if (existingStocksLeft === undefined) {
+    return {
+      stocksLeft: winnerStocks,
+      outcome: 'filled-empty',
+      preWrite: { kind: 'set', write },
+      commit: { kind: 'set', write },
+    };
+  }
+
+  const owned = isSourceOwnedStocksValue(existingStocksLeft, witness);
+  if (!owned) {
+    // Provider/user values outrank Liquipedia — the existing member wins.
+    return {
+      stocksLeft: existingStocksLeft,
+      outcome: 'skipped-owned',
+      preWrite: { kind: 'none' },
+      commit: { kind: 'none' },
+    };
+  }
+
+  if (winnerStocks === existingStocksLeft) {
+    const needsPromotion = witness?.pendingStocksLeft === existingStocksLeft;
+    return {
+      stocksLeft: existingStocksLeft,
+      outcome: 'unchanged',
+      preWrite: { kind: 'none' },
+      commit: needsPromotion ? { kind: 'set', write } : { kind: 'none' },
+    };
+  }
+
+  return {
+    stocksLeft: winnerStocks,
+    outcome: 'source-corrected',
+    preWrite: { kind: 'set', write },
+    commit: { kind: 'set', write },
   };
 }
 
@@ -474,17 +986,26 @@ export function resolveEnrichedMatchMembers(
 ): EnrichedMatchMembersResult {
   const vod = resolveVod(input);
   const stage = resolveStageMember(input);
+  const chars = resolveChars(input);
+  const stocks = resolveStocks(input);
 
   return {
     vodUrl: vod.url,
     vodOutcome: vod.outcome,
     stage: stage.stage,
     stageOutcome: stage.outcome,
+    ...(stocks.stocksLeft !== undefined ? { stocksLeft: stocks.stocksLeft } : {}),
+    stocksOutcome: stocks.outcome,
+    charsOutcome: chars.outcome,
+    ...(chars.chars !== undefined ? { chars: chars.chars } : {}),
     witnessPatch: {
       vodPreWrite: vod.preWrite,
       vodCommit: vod.commit,
       stagePreWrite: stage.preWrite,
       stageCommit: stage.commit,
+      charsCommit: chars.commit,
+      stocksPreWrite: stocks.preWrite,
+      stocksCommit: stocks.commit,
     },
   };
 }

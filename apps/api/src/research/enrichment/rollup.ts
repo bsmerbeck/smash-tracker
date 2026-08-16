@@ -3,9 +3,13 @@ import {
   normalizeResearchEnrichmentCohortCounts,
   normalizeResearchEnrichmentCounts,
   researchEnrichmentCoverageSnapshotSchema,
+  researchEnrichmentProjectionStateRecordSchema,
   type ResearchEnrichmentCohortCounts,
   type ResearchEnrichmentCounts,
+  type ResearchEnrichmentCoverageResponse,
   type ResearchEnrichmentCoverageSnapshot,
+  type ResearchEnrichmentFieldCoverage,
+  type ResearchEnrichmentFieldCoverageCell,
   type ResearchEnrichmentProjectionStateRecord,
 } from '@smash-tracker/shared';
 import { buildLiquipediaPageUrl } from '../../liquipedia/client.js';
@@ -355,4 +359,187 @@ export async function readEnrichmentCoverage(
   }
   const snapshot = await coverageRef(database, tenantId).get();
   return parseSnapshot(snapshot.val());
+}
+
+// ---------------------------------------------------------------------------
+// Field coverage (30.3 Gate 5) — present/missing/ambiguous per evidence field
+// ---------------------------------------------------------------------------
+
+interface FieldCell {
+  present: number;
+  missing: number;
+  ambiguous: number;
+  latestSourceRevisionId: number | null;
+  latestProjectedAtMs: number | null;
+}
+
+function emptyCell(): FieldCell {
+  return {
+    present: 0,
+    missing: 0,
+    ambiguous: 0,
+    latestSourceRevisionId: null,
+    latestProjectedAtMs: null,
+  };
+}
+
+function bump(
+  cell: FieldCell,
+  state: 'present' | 'missing' | 'ambiguous',
+  sourceRevisionId: number | null | undefined,
+  projectedAtMs: number | null | undefined,
+): void {
+  cell[state] += 1;
+  if (sourceRevisionId != null) {
+    cell.latestSourceRevisionId = Math.max(
+      cell.latestSourceRevisionId ?? sourceRevisionId,
+      sourceRevisionId,
+    );
+  }
+  if (projectedAtMs != null) {
+    cell.latestProjectedAtMs = Math.max(cell.latestProjectedAtMs ?? projectedAtMs, projectedAtMs);
+  }
+}
+
+function toCellShape(cell: FieldCell): ResearchEnrichmentFieldCoverageCell {
+  return {
+    present: cell.present,
+    missing: cell.missing,
+    ambiguous: cell.ambiguous,
+    ...(cell.latestSourceRevisionId != null
+      ? { latestSourceRevisionId: cell.latestSourceRevisionId }
+      : {}),
+    ...(cell.latestProjectedAtMs != null ? { latestProjectedAtMs: cell.latestProjectedAtMs } : {}),
+  };
+}
+
+/**
+ * A PURE derivation over the stored ownership witnesses — the directive's
+ * "explicit present/missing/ambiguous coverage for stages, characters,
+ * stocks, and VODs". The universe is every witnessed match key; per field:
+ *
+ * - `present`: the witness carries a COMMITTED value (a canonical stage id,
+ *   an oriented and fully mapped character pair, a projected stocksLeft, a
+ *   projected VOD URL).
+ * - `ambiguous`: partial or in-flight evidence — a raw-only stage (source
+ *   text recorded, unmapped), a flagged-unmapped character pair (orientation
+ *   proven but some raw name unreviewed), or a pending half whose commit has
+ *   not landed.
+ * - `missing`: the honest remainder — including every ABSTENTION, which is
+ *   deliberately indistinguishable from never-observed here: an abstained
+ *   value is a value this pipeline does not have.
+ *
+ * Per field the FRESHEST source revision and projection time are exposed
+ * (`latestSourceRevisionId`/`latestProjectedAtMs`), so a surface can state
+ * "as of revision N"; `asOfMs` is the caller's read clock.
+ */
+export function deriveEnrichmentFieldCoverage(
+  witnesses: ResearchEnrichmentProjectionStateRecord[],
+  asOfMs: number,
+): ResearchEnrichmentFieldCoverage {
+  const stages = emptyCell();
+  const characters = emptyCell();
+  const stocks = emptyCell();
+  const vods = emptyCell();
+
+  for (const witness of witnesses) {
+    // Stage.
+    if (witness.projectedStageId != null) {
+      bump(stages, 'present', witness.stageSourceRevisionId, witness.stageProjectedAtMs);
+    } else if (
+      witness.projectedStageRaw != null ||
+      witness.pendingStageId != null ||
+      witness.pendingStageRaw != null
+    ) {
+      bump(stages, 'ambiguous', witness.stageSourceRevisionId, witness.stageProjectedAtMs);
+    } else {
+      bump(stages, 'missing', null, null);
+    }
+
+    // Characters.
+    const orientationProven = witness.projectedSubjectSeat != null;
+    const fullyMapped =
+      witness.projectedSubjectFighterId != null && witness.projectedOpponentFighterId != null;
+    if (orientationProven && fullyMapped) {
+      bump(characters, 'present', witness.charsSourceRevisionId, witness.charsProjectedAtMs);
+    } else if (orientationProven) {
+      bump(characters, 'ambiguous', witness.charsSourceRevisionId, witness.charsProjectedAtMs);
+    } else {
+      bump(characters, 'missing', null, null);
+    }
+
+    // Stocks.
+    if (witness.projectedStocksLeft != null) {
+      bump(stocks, 'present', witness.stocksSourceRevisionId, witness.stocksProjectedAtMs);
+    } else if (witness.pendingStocksLeft != null) {
+      bump(stocks, 'ambiguous', witness.stocksSourceRevisionId, witness.stocksProjectedAtMs);
+    } else {
+      bump(stocks, 'missing', null, null);
+    }
+
+    // VODs.
+    if (witness.projectedVodUrl != null) {
+      bump(vods, 'present', witness.vodSourceRevisionId, witness.vodProjectedAtMs);
+    } else if (witness.pendingVodUrl != null || witness.pendingVodRemoval === true) {
+      bump(vods, 'ambiguous', witness.vodSourceRevisionId, witness.vodProjectedAtMs);
+    } else {
+      bump(vods, 'missing', null, null);
+    }
+  }
+
+  return {
+    asOfMs,
+    witnessedRows: witnesses.length,
+    stages: toCellShape(stages),
+    characters: toCellShape(characters),
+    stocks: toCellShape(stocks),
+    vods: toCellShape(vods),
+  };
+}
+
+/** Reads the tenant's witness tree and derives the field coverage; `null` when the tenant has no witness tree at all (nothing enriched yet). Performs NO authorization, like every reader in this module. */
+export async function readEnrichmentFieldCoverage(
+  database: Database,
+  tenantId: string,
+  asOfMs: number,
+): Promise<ResearchEnrichmentFieldCoverage | null> {
+  if (!isPathSafeTenantId(tenantId)) {
+    return null;
+  }
+  const snapshot = await database.ref(`researchEnrichmentProjection/${tenantId}`).get();
+  const raw = snapshot.val() as Record<string, unknown> | null;
+  if (raw === null || typeof raw !== 'object') {
+    return null;
+  }
+  const witnesses: ResearchEnrichmentProjectionStateRecord[] = [];
+  for (const value of Object.values(raw)) {
+    const parsed = researchEnrichmentProjectionStateRecordSchema.safeParse(value);
+    if (parsed.success) {
+      witnesses.push(parsed.data);
+    }
+  }
+  return deriveEnrichmentFieldCoverage(witnesses, asOfMs);
+}
+
+/**
+ * The ONE composer both HTTP surfaces use (`GET /research/tenants/:tenantId/
+ * enrichment/coverage` and `composeCoverageResponse`'s `enrichment`
+ * member): the STORED snapshot plus the READ-TIME field coverage. Returns
+ * `null` when no snapshot has ever been published — field coverage alone
+ * never fabricates an enrichment presence for a tenant no run has touched.
+ */
+export async function composeEnrichmentCoverageResponse(
+  database: Database,
+  tenantId: string,
+  asOfMs: number = Date.now(),
+): Promise<ResearchEnrichmentCoverageResponse | null> {
+  const snapshot = await readEnrichmentCoverage(database, tenantId);
+  if (!snapshot) {
+    return null;
+  }
+  const fieldCoverage = await readEnrichmentFieldCoverage(database, tenantId, asOfMs);
+  return {
+    ...snapshot,
+    ...(fieldCoverage != null ? { fieldCoverage } : {}),
+  };
 }

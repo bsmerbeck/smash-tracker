@@ -136,6 +136,15 @@ const envSchema = z.object({
   // published terms require an identifying contact on every call.
   LIQUIPEDIA_CONTACT: z.string().optional(),
 
+  // ---- Phase 30.3 Gate 5 (bounded YouTube VOD candidate discovery): the
+  // YouTube Data API key. Optional (same config-null convention as
+  // LIQUIPEDIA_CONTACT above); `getYoutubeConfig` returns null when unset,
+  // and the discovery surface is then DISABLED — the candidates tree, the
+  // admin review routes over it, and every other enrichment feature keep
+  // working without it. The key gates the Data API ONLY; nothing in the
+  // codebase may fall back to scraping YouTube HTML when it is absent.
+  YOUTUBE_API_KEY: z.string().optional(),
+
   // ---- Phase 27 (Contextual Paid Prep Reports Behind the Activation Gate,
   // RPT-04): the server-side activation gate for paid prep reports/bundles.
   // Ships UNSET in production — the owner flips it only after the
@@ -427,6 +436,26 @@ export function getLiquipediaConfig(env: Env): LiquipediaConfig | null {
     return null;
   }
   return { contact: env.LIQUIPEDIA_CONTACT };
+}
+
+export interface YoutubeConfig {
+  /** The YouTube Data API key sent as the `key` query param on every search request. */
+  apiKey: string;
+}
+
+/**
+ * Assembles the YouTube Data API config when present, else null — same
+ * all-or-nothing pattern as `getParryggConfig`/`getLiquipediaConfig`. When
+ * null, the bounded VOD candidate DISCOVERY surface answers 503 and no
+ * YouTube request is ever attempted; the candidates review/confirm/dismiss
+ * routes and every other enrichment feature are unaffected (an absent key
+ * disables discovery only, never the rest of the pipeline).
+ */
+export function getYoutubeConfig(env: Env): YoutubeConfig | null {
+  if (!env.YOUTUBE_API_KEY) {
+    return null;
+  }
+  return { apiKey: env.YOUTUBE_API_KEY };
 }
 
 /** The single, case-sensitive value that turns paid prep reports on. */

@@ -1,14 +1,21 @@
 import type { Database } from 'firebase-admin/database';
 import {
   isPathSafeProviderId,
+  isSourceOwnedStageValue,
   researchEnrichmentAttachmentRecordSchema,
   researchEnrichmentProjectionStateRecordSchema,
   resolveEnrichedMatchMembers,
   UNKNOWN_STAGE,
   type EnrichedMatchMembersResult,
+  type EnrichmentCharsOutcome,
+  type EnrichmentCharsWitnessCommitAction,
+  type EnrichmentGameEvidenceInput,
   type EnrichmentOwnershipWitness,
   type EnrichmentStageWitnessCommitAction,
   type EnrichmentStageWitnessPreWriteAction,
+  type EnrichmentStocksOutcome,
+  type EnrichmentStocksWitnessCommitAction,
+  type EnrichmentStocksWitnessPreWriteAction,
   type EnrichmentVodOutcome,
   type EnrichmentVodSourceInput,
   type EnrichmentStageOutcome,
@@ -20,8 +27,13 @@ import {
   type ResearchEnrichmentProjectionStateRecord,
   type ResearchLiquipediaStageForm,
 } from '@smash-tracker/shared';
+import { normalizeOpponentTag } from '../../startgg/sync.js';
 import { isPathSafeTenantId } from '../subjectKind.js';
 import { listAttachmentsForSet, readEnrichmentObservation } from './store.js';
+import {
+  readConfirmedCandidateVodForSet,
+  VOD_CANDIDATE_MAX_ORDINAL_PROBE,
+} from './vodDiscovery.js';
 
 /**
  * Phase 30.2 Plan 08 (ENR-07/ENR-08, cycle-1 review HIGH 2/HIGH 3): the
@@ -122,6 +134,34 @@ import { listAttachmentsForSet, readEnrichmentObservation } from './store.js';
  * decided ONCE, by a plain read, before any row's transaction is even
  * attempted; a row absent at that point is counted
  * (`attachedNoProjectableRows`) and never touched again this run.
+ *
+ * THE MERGED STAGE-IDEMPOTENCY DESIGN (30.3 Gate 5 commit 1 fused with
+ * 30.2's defect-C composition fix — two independent fixes for the same
+ * hazard, reconciled at merge time into one design). The hazard: this
+ * applier's only stage input is the STORED row, and on a re-apply the
+ * stored stage is its own earlier projection echoed back; presenting that
+ * echo to the shared resolver as `providerStage` tripped provider-wins and
+ * CLEARED the stage witness. The surviving design has three parts:
+ *
+ *   1. OWNERSHIP TEST — the shared `isSourceOwnedStageValue` (committed ∪
+ *      PENDING accepted set) decides whether the stored stage is this
+ *      pipeline's own projection. The pending half is load-bearing: a crash
+ *      between the row write (phase B) and the witness commit (phase C)
+ *      leaves a row stage only the pending half vouches for, and a
+ *      committed-only test would clear that witness on the recovery pass.
+ *   2. PRESENTATION — an own-projection stage is presented to the resolver
+ *      as the unknown sentinel (the enrichment slot is still open); the
+ *      resolver's committed-identical branch makes a healthy replay a
+ *      witness-preserving no-op, and `resolveForRow` relabels it
+ *      'provider-authoritative' so every label consumer (the run driver's
+ *      cohort restatement, the stageEnriched counters, dry-run details)
+ *      sees exactly the pre-fix healthy-set semantics.
+ *   3. TRIGGER — `previewEnrichmentProjection` emits a value-derived
+ *      `wouldChangeRow` per row (vodUrl, map, AND stocksLeft compared
+ *      against the resolved members); the run driver's
+ *      resume-reconciliation pass keys on that boolean, never on outcome
+ *      labels, so it reprojects exactly the sets whose rows are missing a
+ *      fill and skips every healthy set.
  */
 
 // ---------------------------------------------------------------------------
@@ -134,6 +174,26 @@ export interface EnrichedStage {
   form?: ResearchLiquipediaStageForm;
   /** Present only when the raw stage text was mapped to a canonical stage id. */
   canonicalStageId?: number;
+  observationId: string;
+  sourceRevisionId: number;
+  parserVersion: string;
+}
+
+/**
+ * 30.3 Gate 5: one row's raw character/stock evidence, exactly as the
+ * attached observation stated it — source-seat-keyed tuples plus the
+ * observation's game scope and set-level player tags. Everything here is
+ * RAW: seat tags are NOT normalized (the applier normalizes at resolution
+ * time with the same `normalizeOpponentTag` the ingestion projection used
+ * to author the row's `opponent` member), characters are the wiki's own
+ * strings, and no orientation has been decided.
+ */
+export interface EnrichedGameEvidence {
+  game?: string;
+  seatTags?: [string | null, string | null];
+  rawChars?: [string | null, string | null];
+  stocks?: [number | null, number | null];
+  winnerSeat?: 1 | 2;
   observationId: string;
   sourceRevisionId: number;
   parserVersion: string;
@@ -161,6 +221,8 @@ export interface EnrichmentOverlay {
    */
   enrichedVodSourceByKey?: Record<string, EnrichmentVodSourceInput>;
   enrichedStageByKey: Record<string, EnrichedStage>;
+  /** OPTIONAL (30.3 Gate 5) so every pre-existing overlay literal keeps compiling; absent means "no character/stock evidence for any row". */
+  enrichedGameEvidenceByKey?: Record<string, EnrichedGameEvidence>;
 }
 
 export interface BuildEnrichmentOverlayInput {
@@ -204,6 +266,7 @@ export function buildEnrichmentOverlay(input: BuildEnrichmentOverlayInput): Enri
   const enrichedVodUrlByKey: Record<string, string> = {};
   const enrichedVodSourceByKey: Record<string, EnrichmentVodSourceInput> = {};
   const enrichedStageByKey: Record<string, EnrichedStage> = {};
+  const enrichedGameEvidenceByKey: Record<string, EnrichedGameEvidence> = {};
 
   for (const attachment of input.attachments) {
     const record = input.observations[attachment.observationId];
@@ -234,21 +297,50 @@ export function buildEnrichmentOverlay(input: BuildEnrichmentOverlayInput): Enri
     }
 
     for (const game of games) {
-      if (game.canonicalStageId == null && game.rawStage == null) {
-        continue;
+      if (game.canonicalStageId != null || game.rawStage != null) {
+        enrichedStageByKey[deriveEnrichmentMatchRowKey(input.targetSetId, game.ordinal)] = {
+          ...(game.rawStage != null ? { raw: game.rawStage } : {}),
+          ...(game.stageForm != null ? { form: game.stageForm } : {}),
+          ...(game.canonicalStageId != null ? { canonicalStageId: game.canonicalStageId } : {}),
+          observationId: record.observationId,
+          sourceRevisionId: record.sourceRevisionId,
+          parserVersion: record.parserVersion,
+        };
       }
-      enrichedStageByKey[deriveEnrichmentMatchRowKey(input.targetSetId, game.ordinal)] = {
-        ...(game.rawStage != null ? { raw: game.rawStage } : {}),
-        ...(game.stageForm != null ? { form: game.stageForm } : {}),
-        ...(game.canonicalStageId != null ? { canonicalStageId: game.canonicalStageId } : {}),
-        observationId: record.observationId,
-        sourceRevisionId: record.sourceRevisionId,
-        parserVersion: record.parserVersion,
-      };
+
+      // 30.3 Gate 5: character/stock evidence — carried RAW, source-seat
+      // keyed, with the observation's set-level player tags and game scope
+      // alongside, so the applier can prove (or abstain from) the
+      // seat->subject orientation at resolution time. A game with neither
+      // characters nor stocks contributes no evidence entry at all.
+      const hasCharEvidence =
+        game.rawChars != null && (game.rawChars[0] != null || game.rawChars[1] != null);
+      const hasStockEvidence =
+        game.stocks != null && (game.stocks[0] != null || game.stocks[1] != null);
+      if (hasCharEvidence || hasStockEvidence) {
+        const seatTags: [string | null, string | null] | undefined = record.players
+          ? [record.players[0]?.rawTag ?? null, record.players[1]?.rawTag ?? null]
+          : undefined;
+        enrichedGameEvidenceByKey[deriveEnrichmentMatchRowKey(input.targetSetId, game.ordinal)] = {
+          ...(record.game != null ? { game: record.game } : {}),
+          ...(seatTags !== undefined ? { seatTags } : {}),
+          ...(game.rawChars != null ? { rawChars: game.rawChars } : {}),
+          ...(game.stocks != null ? { stocks: game.stocks } : {}),
+          ...(game.winnerSeat != null ? { winnerSeat: game.winnerSeat } : {}),
+          observationId: record.observationId,
+          sourceRevisionId: record.sourceRevisionId,
+          parserVersion: record.parserVersion,
+        };
+      }
     }
   }
 
-  return { enrichedVodUrlByKey, enrichedVodSourceByKey, enrichedStageByKey };
+  return {
+    enrichedVodUrlByKey,
+    enrichedVodSourceByKey,
+    enrichedStageByKey,
+    enrichedGameEvidenceByKey,
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -259,13 +351,19 @@ export interface EnrichmentProjectionRowOutcome {
   matchKey: string;
   vodOutcome: EnrichmentVodOutcome;
   stageOutcome: EnrichmentStageOutcome;
+  /** 30.3 Gate 5 — OPTIONAL so every pre-existing consumer of the row list keeps compiling; omitted when the evidence half was not in play for the row. */
+  charsOutcome?: EnrichmentCharsOutcome;
+  stocksOutcome?: EnrichmentStocksOutcome;
   /**
    * PREVIEW-ONLY (set by `previewEnrichmentProjection`, absent on apply):
-   * `true` when applying would actually change the stored row's `vodUrl` or
-   * `map` — the signal the run driver's resume-reconciliation trigger needs,
-   * because outcome labels alone cannot distinguish "row already holds our
-   * projection" from "row is missing its fill" once the own-projection
-   * stage guard reports both as `enriched`.
+   * `true` when applying would actually change the stored row's `vodUrl`,
+   * `map`, or `stocksLeft` — the signal the run driver's
+   * resume-reconciliation trigger keys on (30.2 defect-C composition).
+   * Outcome labels alone cannot carry this: under the merged own-projection
+   * guard an identical replay is relabeled `provider-authoritative` (30.3
+   * Gate 5) while a witness-vouched row missing its fill reports
+   * `enriched` — the trigger needs the VALUE comparison either way, and a
+   * boolean derived from the resolved members is robust to both labelings.
    */
   wouldChangeRow?: boolean;
 }
@@ -278,9 +376,28 @@ export interface EnrichmentProjectionCounts {
   attachedNoProjectableRows: number;
 }
 
+/**
+ * 30.3 Gate 5: the character/stock evidence tallies, kept as a SEPARATE
+ * sibling of `EnrichmentProjectionCounts` rather than new members on it —
+ * `run.ts`'s fold builds an `EnrichmentProjectionCounts` literal and
+ * iterates its keys with `+=`; growing that interface (even optionally)
+ * would break its typecheck without touching that file, which this gate's
+ * ownership boundary forbids. The run-level staging of these counters into
+ * the coverage node is therefore a named follow-up for the run driver.
+ */
+export interface EnrichmentEvidenceCounts {
+  charactersEnriched: number;
+  charactersUnmapped: number;
+  charactersAbstained: number;
+  stocksFilledEmpty: number;
+  stocksSkippedOwned: number;
+  stocksAbstained: number;
+}
+
 export interface EnrichmentProjectionOutcome {
   rows: EnrichmentProjectionRowOutcome[];
   counts: EnrichmentProjectionCounts;
+  evidenceCounts: EnrichmentEvidenceCounts;
 }
 
 function emptyOutcome(): EnrichmentProjectionOutcome {
@@ -293,6 +410,73 @@ function emptyOutcome(): EnrichmentProjectionOutcome {
       unknownStageAfterEnrichment: 0,
       attachedNoProjectableRows: 0,
     },
+    evidenceCounts: {
+      charactersEnriched: 0,
+      charactersUnmapped: 0,
+      charactersAbstained: 0,
+      stocksFilledEmpty: 0,
+      stocksSkippedOwned: 0,
+      stocksAbstained: 0,
+    },
+  };
+}
+
+/** Folds one resolved row into the outcome's counters — ONE tally definition shared by the preview and the applier so the two can never disagree. */
+function tallyResolvedRow(
+  outcome: EnrichmentProjectionOutcome,
+  resolved: EnrichedMatchMembersResult,
+): void {
+  if (resolved.vodOutcome === 'filled-empty') {
+    outcome.counts.vodFilledEmpty += 1;
+  }
+  if (resolved.vodOutcome === 'skipped-user-owned') {
+    outcome.counts.vodSkippedUserOwned += 1;
+  }
+  if (resolved.stageOutcome === 'enriched') {
+    outcome.counts.stageEnriched += 1;
+  }
+  if (resolved.stageOutcome === 'unknown') {
+    outcome.counts.unknownStageAfterEnrichment += 1;
+  }
+  if (resolved.charsOutcome === 'enriched') {
+    outcome.evidenceCounts.charactersEnriched += 1;
+  }
+  if (resolved.charsOutcome === 'partial-unmapped') {
+    outcome.evidenceCounts.charactersUnmapped += 1;
+  }
+  if (
+    resolved.charsOutcome === 'abstained-orientation' ||
+    resolved.charsOutcome === 'abstained-game-scope'
+  ) {
+    outcome.evidenceCounts.charactersAbstained += 1;
+  }
+  if (resolved.stocksOutcome === 'filled-empty') {
+    outcome.evidenceCounts.stocksFilledEmpty += 1;
+  }
+  if (resolved.stocksOutcome === 'skipped-owned') {
+    outcome.evidenceCounts.stocksSkippedOwned += 1;
+  }
+  if (
+    resolved.stocksOutcome === 'abstained-orientation' ||
+    resolved.stocksOutcome === 'abstained-game-scope' ||
+    resolved.stocksOutcome === 'abstained-winner-disagreement' ||
+    resolved.stocksOutcome === 'abstained-value'
+  ) {
+    outcome.evidenceCounts.stocksAbstained += 1;
+  }
+}
+
+/** Builds one row-outcome entry from a resolution — again ONE definition for both the preview and the applier. The evidence outcomes are OMITTED when `'none'` (no evidence in play), so rows untouched by the evidence half keep their exact pre-30.3 shape. */
+function toRowOutcome(
+  matchKey: string,
+  resolved: EnrichedMatchMembersResult,
+): EnrichmentProjectionRowOutcome {
+  return {
+    matchKey,
+    vodOutcome: resolved.vodOutcome,
+    stageOutcome: resolved.stageOutcome,
+    ...(resolved.charsOutcome !== 'none' ? { charsOutcome: resolved.charsOutcome } : {}),
+    ...(resolved.stocksOutcome !== 'none' ? { stocksOutcome: resolved.stocksOutcome } : {}),
   };
 }
 
@@ -313,15 +497,14 @@ export async function previewEnrichmentProjection(
     return emptyOutcome();
   }
 
+  overlay = await widenOverlayWithConfirmedCandidate(database, tenantId, targetSetId, overlay);
+
   const witnessTree = await database.ref(`researchEnrichmentProjection/${tenantId}`).get();
   const previouslyWitnessedKeys: string[] = [];
   if (witnessTree.exists()) {
     for (const [key, value] of Object.entries(witnessTree.val() as Record<string, unknown>)) {
       const parsed = readWitnessFromValue(value);
-      if (
-        parsed?.targetSetId === targetSetId &&
-        (parsed.projectedVodUrl != null || parsed.pendingVodUrl != null)
-      ) {
+      if (parsed?.targetSetId === targetSetId && witnessCarriesAnyClaim(parsed)) {
         previouslyWitnessedKeys.push(key);
       }
     }
@@ -330,6 +513,7 @@ export async function previewEnrichmentProjection(
     new Set([
       ...Object.keys(overlay.enrichedVodUrlByKey),
       ...Object.keys(overlay.enrichedStageByKey),
+      ...Object.keys(overlay.enrichedGameEvidenceByKey ?? {}),
       ...previouslyWitnessedKeys,
     ]),
   ).filter((key) => isPathSafeProviderId(key));
@@ -347,28 +531,83 @@ export async function previewEnrichmentProjection(
     const row = rowSnapshot.val() as Record<string, unknown>;
     const witness = readWitnessFromValue(witnessSnapshot.exists() ? witnessSnapshot.val() : null);
     const resolved = resolveForRow(overlay, key, row, witness);
+    // The row-change-aware trigger signal (30.2 defect-C composition,
+    // master's half of the dual fix): a VALUE comparison over every member
+    // this module writes — vodUrl, map, and (30.3 Gate 5) stocksLeft — so
+    // the run driver's reconciliation pass keys on "would a write happen",
+    // never on outcome labels.
     const wouldChangeRow =
       (resolved.vodUrl ?? undefined) !== extractExistingVodUrl(row) ||
-      !stagesEqual(resolved.stage, extractExistingStage(row));
-    outcome.rows.push({
-      matchKey: key,
-      vodOutcome: resolved.vodOutcome,
-      stageOutcome: resolved.stageOutcome,
-      wouldChangeRow,
-    });
-    if (resolved.vodOutcome === 'filled-empty') {
-      outcome.counts.vodFilledEmpty += 1;
-    } else if (resolved.vodOutcome === 'skipped-user-owned') {
-      outcome.counts.vodSkippedUserOwned += 1;
-    }
-    if (resolved.stageOutcome === 'enriched') {
-      outcome.counts.stageEnriched += 1;
-    } else if (resolved.stageOutcome === 'unknown') {
-      outcome.counts.unknownStageAfterEnrichment += 1;
-    }
+      !stagesEqual(resolved.stage, extractExistingStage(row)) ||
+      (resolved.stocksLeft ?? undefined) !== extractExistingStocksLeft(row);
+    outcome.rows.push({ ...toRowOutcome(key, resolved), wouldChangeRow });
+    tallyResolvedRow(outcome, resolved);
   }
 
   return outcome;
+}
+
+/**
+ * A witness that carries ANY claim — VOD or stage, committed or pending —
+ * makes its key a candidate for this run even when the current overlay no
+ * longer mentions it: that is exactly how a removal (the source stopped
+ * supplying a value it once projected) is discovered. 30.3 Gate 5 commit 1
+ * WIDENED this from the VOD halves alone to the stage halves too, so a
+ * stage-only witness whose observation was detached is found and its
+ * projected stage removed, instead of surviving as an unattributable
+ * orphan.
+ */
+function witnessCarriesAnyClaim(parsed: ResearchEnrichmentProjectionStateRecord): boolean {
+  return (
+    parsed.projectedVodUrl != null ||
+    parsed.pendingVodUrl != null ||
+    parsed.pendingVodRemoval === true ||
+    parsed.projectedStageId != null ||
+    parsed.projectedStageRaw != null ||
+    parsed.pendingStageId != null ||
+    parsed.pendingStageRaw != null
+  );
+}
+
+/**
+ * 30.3 Gate 5 — the PRIORITY-5 merge: the strongest admin-CONFIRMED YouTube
+ * candidate for the set fills row keys NO observation URL already covers
+ * (an attached Liquipedia observation always outranks a candidate), and
+ * only for rows that EXIST (probed up to `VOD_CANDIDATE_MAX_ORDINAL_PROBE`
+ * ordinals — this module never creates a match row). Merging INSIDE the
+ * applier/preview, rather than in the overlay builders, means every caller
+ * of `applyEnrichmentProjection` — run.ts's projection pass, refresh.ts's
+ * re-apply, the confirm route — respects the confirmed candidate; an
+ * overlay-builder-only merge would let an enrichment run's observation-only
+ * overlay treat a candidate-projected URL as source-removed and strip it.
+ * The user/provider priorities (1–2) are the shared resolver's own
+ * ownership rules and are untouched by this merge.
+ */
+async function widenOverlayWithConfirmedCandidate(
+  database: Database,
+  tenantId: string,
+  targetSetId: string,
+  overlay: EnrichmentOverlay,
+): Promise<EnrichmentOverlay> {
+  const confirmed = await readConfirmedCandidateVodForSet(database, tenantId, targetSetId);
+  if (!confirmed) {
+    return overlay;
+  }
+  const enrichedVodUrlByKey = { ...overlay.enrichedVodUrlByKey };
+  const enrichedVodSourceByKey = { ...(overlay.enrichedVodSourceByKey ?? {}) };
+  for (let ordinal = 1; ordinal <= VOD_CANDIDATE_MAX_ORDINAL_PROBE; ordinal += 1) {
+    const key = deriveEnrichmentMatchRowKey(targetSetId, ordinal);
+    if (!isPathSafeProviderId(key) || enrichedVodUrlByKey[key] !== undefined) {
+      continue;
+    }
+    const rowSnapshot = await database.ref(`matches/${tenantId}/${key}`).get();
+    if (!rowSnapshot.exists()) {
+      continue;
+    }
+    enrichedVodUrlByKey[key] = confirmed.videoUrl;
+    enrichedVodSourceByKey[key] = { candidateId: confirmed.candidateId };
+  }
+  return { ...overlay, enrichedVodUrlByKey, enrichedVodSourceByKey };
 }
 
 /** Returns the FULL stored record (including `matchKey`/`targetSetId`) — structurally a superset of `EnrichmentOwnershipWitness`, so it may be passed anywhere that narrower type is expected. */
@@ -394,6 +633,10 @@ function extractExistingStage(row: Record<string, unknown> | null): MatchStage {
   return UNKNOWN_STAGE;
 }
 
+function extractExistingStocksLeft(row: Record<string, unknown> | null): number | undefined {
+  return row && typeof row.stocksLeft === 'number' ? (row.stocksLeft as number) : undefined;
+}
+
 /**
  * The ONE place this module builds a resolver input — called from the
  * planning pass AND from inside every phase B transaction attempt, so the
@@ -407,31 +650,94 @@ function resolveForRow(
   witness: EnrichmentOwnershipWitness | null,
 ): EnrichedMatchMembersResult {
   const vodSource = overlay.enrichedVodSourceByKey?.[key];
-  const existingStage = extractExistingStage(row);
-  // 30.2 defect-C composition fix: when the row's current stage is EXACTLY
-  // the stage OUR OWN committed witness half projected, that stage is this
-  // pipeline's projection, not a provider fact. Presenting it to the shared
-  // resolver as provider-resolved would trip "a provider-resolved stage
-  // always wins" and CLEAR the stage witness — silently destroying
-  // attribution every time an already-projected set is re-applied (which
-  // the parser-version re-key forces for every previously-matched set, via
-  // supersede -> re-attach -> re-project). Present the slot as the unknown
-  // sentinel instead, so the resolver re-derives the enriched stage; the
-  // resolver's own already-committed-identical check makes the healthy case
-  // a witness no-op. A GENUINE provider-resolved stage (one our witness did
-  // not commit) still wins unconditionally.
-  const stageIsOwnProjection =
-    witness?.projectedStageId != null &&
-    witness.projectedStageId === existingStage.id &&
-    witness.projectedStageName === existingStage.name;
-  return resolveEnrichedMatchMembers({
+  // THE STAGE-WITNESS IDEMPOTENCY FIX — the MERGED design of two
+  // independent fixes for the same hazard (30.3 Gate 5 commit 1 and 30.2's
+  // defect-C composition fix; see this module's header). The shared
+  // resolver's `providerStage` input means "a stage the PROVIDER vouches
+  // for", but this applier only has the STORED row — and on a re-apply the
+  // stored stage may be this module's OWN earlier projection echoed back
+  // (which the parser-version re-key forces for every previously-matched
+  // set, via supersede -> re-attach -> re-project). Handing that echo to
+  // the resolver as a provider stage tripped "a provider-resolved stage
+  // always wins" and CLEARED the stage witness — silently converting an
+  // enrichment-owned stage into an uncorrectable, unattributable one. The
+  // witness is the disambiguator: a stored stage `isSourceOwnedStageValue`
+  // vouches for is passed as the unknown sentinel instead — the enrichment
+  // slot is still open — and the resolver's committed-identical branch
+  // turns the replay into a witness-preserving no-op. The SHARED predicate
+  // survives (over master's inline committed-only check) because its
+  // accepted set is committed ∪ PENDING: a crash between the row write
+  // (phase B) and the witness commit (phase C) leaves a row stage only the
+  // pending half vouches for, and a committed-only guard would clear that
+  // witness on the recovery pass. A GENUINE provider-resolved stage (one
+  // no witness half vouches for) still wins unconditionally.
+  const storedStage = extractExistingStage(row);
+  const stageIsOwnProjection = isSourceOwnedStageValue(storedStage, witness);
+  // 30.3 Gate 5: the character/stock evidence context. The seat tags and the
+  // row's opponent member go through the SAME normalizer the ingestion
+  // projection used to AUTHOR that member (`normalizeOpponentTag`), so the
+  // shared resolver's exact-equality orientation proof compares like with
+  // like. `normalizeOpponentTag`'s empty-input sentinel ('unknown') is
+  // withheld — a sentinel matching a sentinel would fabricate a proof.
+  const evidence = overlay.enrichedGameEvidenceByKey?.[key];
+  const gameEvidence: EnrichmentGameEvidenceInput | undefined = evidence
+    ? {
+        ...(evidence.game !== undefined ? { game: evidence.game } : {}),
+        ...(evidence.seatTags !== undefined
+          ? {
+              seatTags: [
+                evidence.seatTags[0] != null ? normalizeOpponentTag(evidence.seatTags[0]) : null,
+                evidence.seatTags[1] != null ? normalizeOpponentTag(evidence.seatTags[1]) : null,
+              ] as [string | null, string | null],
+            }
+          : {}),
+        ...(evidence.rawChars !== undefined ? { rawChars: evidence.rawChars } : {}),
+        ...(evidence.stocks !== undefined ? { stocks: evidence.stocks } : {}),
+        ...(evidence.winnerSeat !== undefined ? { winnerSeat: evidence.winnerSeat } : {}),
+        observationId: evidence.observationId,
+        sourceRevisionId: evidence.sourceRevisionId,
+        parserVersion: evidence.parserVersion,
+      }
+    : undefined;
+  const rowOpponent =
+    typeof row.opponent === 'string' ? normalizeOpponentTag(row.opponent) : undefined;
+  const existingStocksLeft = extractExistingStocksLeft(row);
+  const resolved = resolveEnrichedMatchMembers({
     existingVodUrl: extractExistingVodUrl(row),
     enrichmentVodUrl: overlay.enrichedVodUrlByKey[key],
     ...(vodSource !== undefined ? { enrichmentVodSource: vodSource } : {}),
-    providerStage: stageIsOwnProjection ? UNKNOWN_STAGE : existingStage,
+    providerStage: stageIsOwnProjection ? UNKNOWN_STAGE : storedStage,
     enrichmentStage: overlay.enrichedStageByKey[key],
     witness,
+    enrichmentEvidenceConsulted: true,
+    ...(gameEvidence !== undefined ? { enrichmentGameEvidence: gameEvidence } : {}),
+    ...(rowOpponent !== undefined && rowOpponent !== 'unknown'
+      ? { rowOpponentTag: rowOpponent }
+      : {}),
+    ...(typeof row.win === 'boolean' ? { rowWin: row.win } : {}),
+    ...(existingStocksLeft !== undefined ? { existingStocksLeft } : {}),
   });
+  if (
+    stageIsOwnProjection &&
+    resolved.stageOutcome === 'enriched' &&
+    stagesEqual(resolved.stage, storedStage) &&
+    resolved.witnessPatch.stagePreWrite.kind === 'none' &&
+    resolved.witnessPatch.stageCommit.kind === 'none'
+  ) {
+    // An identical replay is reported as SETTLED ('provider-authoritative'),
+    // never as a fresh 'enriched'. run.ts's resume-reconciliation TRIGGER no
+    // longer depends on this label (it keys on the preview's value-derived
+    // `wouldChangeRow` — the master half of the merged design), but the
+    // relabel still matters for everything else that reads outcome labels:
+    // the cohort restatement (`STAGE_OUTCOME_TO_COHORT`) and the dry-run/
+    // apply `stageEnriched` counters see exactly the pre-fix healthy-set
+    // labels, so a replay restates nothing as freshly enriched. The relabel
+    // changes only the REPORTED outcome of a no-op row — the resolved
+    // members and the (empty) witness patch are untouched, so unlike the
+    // pre-fix behavior the witness survives.
+    return { ...resolved, stageOutcome: 'provider-authoritative' };
+  }
+  return resolved;
 }
 
 function stagesEqual(left: MatchStage, right: MatchStage): boolean {
@@ -461,9 +767,14 @@ function selectCommittedResolution(
   }
   const storedVodUrl = extractExistingVodUrl(committedRow);
   const storedStage = extractExistingStage(committedRow);
+  const storedStocksLeft = extractExistingStocksLeft(committedRow);
   for (let index = attempts.length - 1; index >= 0; index -= 1) {
     const attempt = attempts[index]!;
-    if (attempt.vodUrl === storedVodUrl && stagesEqual(attempt.stage, storedStage)) {
+    if (
+      attempt.vodUrl === storedVodUrl &&
+      stagesEqual(attempt.stage, storedStage) &&
+      attempt.stocksLeft === storedStocksLeft
+    ) {
       return attempt;
     }
   }
@@ -486,11 +797,19 @@ function voidedResolution(planTime: EnrichedMatchMembersResult): EnrichedMatchMe
     // unaffected by a failed commit; anything else did not get enriched.
     stageOutcome:
       planTime.stageOutcome === 'provider-authoritative' ? planTime.stageOutcome : 'unknown',
+    // The evidence halves of an uncommitted transaction claim nothing: no
+    // chars/stocks outcome is reported enriched, and no witness commit
+    // promotes a value the row never received.
+    stocksOutcome: 'none',
+    charsOutcome: 'none',
     witnessPatch: {
       vodPreWrite: { kind: 'none' },
       vodCommit: { kind: 'none' },
       stagePreWrite: { kind: 'none' },
       stageCommit: { kind: 'none' },
+      charsCommit: { kind: 'none' },
+      stocksPreWrite: { kind: 'none' },
+      stocksCommit: { kind: 'none' },
     },
   };
 }
@@ -500,6 +819,7 @@ function buildPreWritePatch(
   witnessBasePath: string,
   vodPreWrite: EnrichmentVodWitnessPreWriteAction,
   stagePreWrite: EnrichmentStageWitnessPreWriteAction,
+  stocksPreWrite: EnrichmentStocksWitnessPreWriteAction,
   targetSetId: string,
   matchKey: string,
   nowMs: number,
@@ -507,10 +827,18 @@ function buildPreWritePatch(
   const patch: Record<string, unknown> = {};
   let touched = false;
 
+  if (stocksPreWrite.kind === 'set') {
+    touched = true;
+    patch[`${witnessBasePath}/pendingStocksLeft`] = stocksPreWrite.write.stocksLeft;
+    patch[`${witnessBasePath}/pendingStocksObservationId`] =
+      stocksPreWrite.write.observationId ?? null;
+  }
+
   if (vodPreWrite.kind === 'set') {
     touched = true;
     patch[`${witnessBasePath}/pendingVodUrl`] = vodPreWrite.write.url;
     patch[`${witnessBasePath}/pendingVodObservationId`] = vodPreWrite.write.observationId ?? null;
+    patch[`${witnessBasePath}/pendingVodCandidateId`] = vodPreWrite.write.candidateId ?? null;
     patch[`${witnessBasePath}/pendingVodSourceRevisionId`] =
       vodPreWrite.write.sourceRevisionId ?? null;
     patch[`${witnessBasePath}/pendingVodRemoval`] = null;
@@ -519,6 +847,7 @@ function buildPreWritePatch(
     patch[`${witnessBasePath}/pendingVodRemoval`] = true;
     patch[`${witnessBasePath}/pendingVodUrl`] = null;
     patch[`${witnessBasePath}/pendingVodObservationId`] = null;
+    patch[`${witnessBasePath}/pendingVodCandidateId`] = null;
     patch[`${witnessBasePath}/pendingVodSourceRevisionId`] = null;
   }
 
@@ -556,6 +885,9 @@ function buildCommitPatch(
   vodPreWrite: EnrichmentVodWitnessPreWriteAction,
   stageCommit: EnrichmentStageWitnessCommitAction,
   stagePreWrite: EnrichmentStageWitnessPreWriteAction,
+  charsCommit: EnrichmentCharsWitnessCommitAction,
+  stocksCommit: EnrichmentStocksWitnessCommitAction,
+  stocksPreWrite: EnrichmentStocksWitnessPreWriteAction,
   targetSetId: string,
   matchKey: string,
   nowMs: number,
@@ -563,21 +895,76 @@ function buildCommitPatch(
   const patch: Record<string, unknown> = {};
   let touched = false;
 
+  if (charsCommit.kind === 'set') {
+    touched = true;
+    patch[`${witnessBasePath}/projectedSubjectSeat`] = charsCommit.write.subjectSeat;
+    patch[`${witnessBasePath}/projectedSubjectCharRaw`] = charsCommit.write.subjectCharRaw ?? null;
+    patch[`${witnessBasePath}/projectedSubjectFighterId`] =
+      charsCommit.write.subjectFighterId ?? null;
+    patch[`${witnessBasePath}/projectedOpponentCharRaw`] =
+      charsCommit.write.opponentCharRaw ?? null;
+    patch[`${witnessBasePath}/projectedOpponentFighterId`] =
+      charsCommit.write.opponentFighterId ?? null;
+    patch[`${witnessBasePath}/charsObservationId`] = charsCommit.write.observationId;
+    patch[`${witnessBasePath}/charsSourceRevisionId`] = charsCommit.write.sourceRevisionId ?? null;
+    patch[`${witnessBasePath}/charsParserVersion`] = charsCommit.write.parserVersion ?? null;
+    patch[`${witnessBasePath}/charsProjectedAtMs`] = nowMs;
+  } else if (charsCommit.kind === 'clear') {
+    touched = true;
+    patch[`${witnessBasePath}/projectedSubjectSeat`] = null;
+    patch[`${witnessBasePath}/projectedSubjectCharRaw`] = null;
+    patch[`${witnessBasePath}/projectedSubjectFighterId`] = null;
+    patch[`${witnessBasePath}/projectedOpponentCharRaw`] = null;
+    patch[`${witnessBasePath}/projectedOpponentFighterId`] = null;
+    patch[`${witnessBasePath}/charsObservationId`] = null;
+    patch[`${witnessBasePath}/charsSourceRevisionId`] = null;
+    patch[`${witnessBasePath}/charsParserVersion`] = null;
+    patch[`${witnessBasePath}/charsProjectedAtMs`] = null;
+  }
+
+  if (stocksCommit.kind === 'set') {
+    touched = true;
+    patch[`${witnessBasePath}/projectedStocksLeft`] = stocksCommit.write.stocksLeft;
+    patch[`${witnessBasePath}/stocksObservationId`] = stocksCommit.write.observationId;
+    patch[`${witnessBasePath}/stocksSourceRevisionId`] =
+      stocksCommit.write.sourceRevisionId ?? null;
+    patch[`${witnessBasePath}/stocksParserVersion`] = stocksCommit.write.parserVersion ?? null;
+    patch[`${witnessBasePath}/stocksProjectedAtMs`] = nowMs;
+    patch[`${witnessBasePath}/pendingStocksLeft`] = null;
+    patch[`${witnessBasePath}/pendingStocksObservationId`] = null;
+  } else if (stocksCommit.kind === 'clear') {
+    touched = true;
+    patch[`${witnessBasePath}/projectedStocksLeft`] = null;
+    patch[`${witnessBasePath}/stocksObservationId`] = null;
+    patch[`${witnessBasePath}/stocksSourceRevisionId`] = null;
+    patch[`${witnessBasePath}/stocksParserVersion`] = null;
+    patch[`${witnessBasePath}/stocksProjectedAtMs`] = null;
+    patch[`${witnessBasePath}/pendingStocksLeft`] = null;
+    patch[`${witnessBasePath}/pendingStocksObservationId`] = null;
+  } else if (stocksPreWrite.kind !== 'none') {
+    touched = true;
+    patch[`${witnessBasePath}/pendingStocksLeft`] = null;
+    patch[`${witnessBasePath}/pendingStocksObservationId`] = null;
+  }
+
   if (vodCommit.kind === 'set') {
     touched = true;
     patch[`${witnessBasePath}/projectedVodUrl`] = vodCommit.write.url;
     patch[`${witnessBasePath}/vodObservationId`] = vodCommit.write.observationId ?? null;
+    patch[`${witnessBasePath}/vodCandidateId`] = vodCommit.write.candidateId ?? null;
     patch[`${witnessBasePath}/vodSourceRevisionId`] = vodCommit.write.sourceRevisionId ?? null;
     patch[`${witnessBasePath}/vodParserVersion`] = vodCommit.write.parserVersion ?? null;
     patch[`${witnessBasePath}/vodProjectedAtMs`] = nowMs;
     patch[`${witnessBasePath}/pendingVodUrl`] = null;
     patch[`${witnessBasePath}/pendingVodObservationId`] = null;
+    patch[`${witnessBasePath}/pendingVodCandidateId`] = null;
     patch[`${witnessBasePath}/pendingVodSourceRevisionId`] = null;
     patch[`${witnessBasePath}/pendingVodRemoval`] = null;
   } else if (vodCommit.kind === 'clear') {
     touched = true;
     patch[`${witnessBasePath}/projectedVodUrl`] = null;
     patch[`${witnessBasePath}/vodObservationId`] = null;
+    patch[`${witnessBasePath}/vodCandidateId`] = null;
     patch[`${witnessBasePath}/vodSourceRevisionId`] = null;
     patch[`${witnessBasePath}/vodParserVersion`] = null;
     if (vodCommit.released) {
@@ -585,12 +972,14 @@ function buildCommitPatch(
     }
     patch[`${witnessBasePath}/pendingVodUrl`] = null;
     patch[`${witnessBasePath}/pendingVodObservationId`] = null;
+    patch[`${witnessBasePath}/pendingVodCandidateId`] = null;
     patch[`${witnessBasePath}/pendingVodSourceRevisionId`] = null;
     patch[`${witnessBasePath}/pendingVodRemoval`] = null;
   } else if (vodPreWrite.kind !== 'none') {
     touched = true;
     patch[`${witnessBasePath}/pendingVodUrl`] = null;
     patch[`${witnessBasePath}/pendingVodObservationId`] = null;
+    patch[`${witnessBasePath}/pendingVodCandidateId`] = null;
     patch[`${witnessBasePath}/pendingVodSourceRevisionId`] = null;
     patch[`${witnessBasePath}/pendingVodRemoval`] = null;
   }
@@ -600,6 +989,13 @@ function buildCommitPatch(
     if (stageCommit.kind === 'set') {
       patch[`${witnessBasePath}/projectedStageId`] = stageCommit.write.stageId;
       patch[`${witnessBasePath}/projectedStageName`] = stageCommit.write.stageName;
+    } else {
+      // A raw-only commit means the CURRENT source state has no canonical
+      // mapping — a stale canonical claim from an earlier revision must not
+      // survive alongside the new raw text, or the witness would vouch for
+      // a stage the source no longer states (30.3 Gate 5 commit 1).
+      patch[`${witnessBasePath}/projectedStageId`] = null;
+      patch[`${witnessBasePath}/projectedStageName`] = null;
     }
     patch[`${witnessBasePath}/projectedStageRaw`] = stageCommit.write.raw ?? null;
     patch[`${witnessBasePath}/projectedStageForm`] = stageCommit.write.form ?? null;
@@ -659,6 +1055,12 @@ export async function applyEnrichmentProjection(
     return emptyOutcome();
   }
 
+  // The priority-5 merge (see widenOverlayWithConfirmedCandidate): every
+  // apply — whichever caller built the overlay — sees the set's confirmed
+  // YouTube candidate, so an observation-only overlay can never misread a
+  // candidate-projected URL as source-removed.
+  overlay = await widenOverlayWithConfirmedCandidate(database, tenantId, targetSetId, overlay);
+
   // A key the CURRENT overlay no longer mentions but a PRIOR run left a VOD
   // witness claim for — the "source stopped supplying a value" removal case
   // (behavior list item 5) — is invisible to the overlay maps alone (an
@@ -691,11 +1093,7 @@ export async function applyEnrichmentProjection(
     const raw = witnessSnapshotForSet.val() as Record<string, unknown>;
     for (const [key, value] of Object.entries(raw)) {
       const parsed = readWitnessFromValue(value);
-      if (
-        parsed &&
-        parsed.targetSetId === targetSetId &&
-        (parsed.projectedVodUrl != null || parsed.pendingVodUrl != null)
-      ) {
+      if (parsed && parsed.targetSetId === targetSetId && witnessCarriesAnyClaim(parsed)) {
         previouslyWitnessedKeys.push(key);
       }
     }
@@ -705,6 +1103,7 @@ export async function applyEnrichmentProjection(
     new Set([
       ...Object.keys(overlay.enrichedVodUrlByKey),
       ...Object.keys(overlay.enrichedStageByKey),
+      ...Object.keys(overlay.enrichedGameEvidenceByKey ?? {}),
       ...previouslyWitnessedKeys,
     ]),
   ).filter((key) => isPathSafeProviderId(key));
@@ -768,6 +1167,7 @@ export async function applyEnrichmentProjection(
         `researchEnrichmentProjection/${tenantId}/${key}`,
         planTimeResult.witnessPatch.vodPreWrite,
         planTimeResult.witnessPatch.stagePreWrite,
+        planTimeResult.witnessPatch.stocksPreWrite,
         targetSetId,
         key,
         nowMs,
@@ -791,12 +1191,19 @@ export async function applyEnrichmentProjection(
         // overwrite the record of an earlier attempt, because which attempt
         // committed is decided below from the committed snapshot.
         attempts.push(live);
-        // eslint-disable-next-line @typescript-eslint/no-unused-vars -- rest-destructure-to-omit idiom; `vodUrl`/`map` are intentionally discarded (replaced below)
-        const { vodUrl: _ignoredVodUrl, map: _ignoredMap, ...rest } = effective;
+        /* eslint-disable @typescript-eslint/no-unused-vars -- rest-destructure-to-omit idiom; `vodUrl`/`map`/`stocksLeft` are intentionally discarded (replaced below) */
+        const {
+          vodUrl: _ignoredVodUrl,
+          map: _ignoredMap,
+          stocksLeft: _ignoredStocks,
+          ...rest
+        } = effective;
+        /* eslint-enable @typescript-eslint/no-unused-vars */
         return {
           ...rest,
           map: live.stage,
           ...(live.vodUrl !== undefined ? { vodUrl: live.vodUrl } : {}),
+          ...(live.stocksLeft !== undefined ? { stocksLeft: live.stocksLeft } : {}),
         };
       });
 
@@ -808,23 +1215,8 @@ export async function applyEnrichmentProjection(
       voidedResolution(plan.planned);
 
     const applied = plan.applied;
-    outcome.rows.push({
-      matchKey: plan.key,
-      vodOutcome: applied.vodOutcome,
-      stageOutcome: applied.stageOutcome,
-    });
-    if (applied.vodOutcome === 'filled-empty') {
-      outcome.counts.vodFilledEmpty += 1;
-    }
-    if (applied.vodOutcome === 'skipped-user-owned') {
-      outcome.counts.vodSkippedUserOwned += 1;
-    }
-    if (applied.stageOutcome === 'enriched') {
-      outcome.counts.stageEnriched += 1;
-    }
-    if (applied.stageOutcome === 'unknown') {
-      outcome.counts.unknownStageAfterEnrichment += 1;
-    }
+    outcome.rows.push(toRowOutcome(plan.key, applied));
+    tallyResolvedRow(outcome, applied);
   }
 
   // Phase C — witness COMMIT (one multi-path update). The COMMIT action
@@ -841,6 +1233,9 @@ export async function applyEnrichmentProjection(
         planTimeResult.witnessPatch.vodPreWrite,
         applied.witnessPatch.stageCommit,
         planTimeResult.witnessPatch.stagePreWrite,
+        applied.witnessPatch.charsCommit,
+        applied.witnessPatch.stocksCommit,
+        planTimeResult.witnessPatch.stocksPreWrite,
         targetSetId,
         key,
         nowMs,
@@ -863,6 +1258,8 @@ export interface EnrichmentRowOverlay {
   /** The VOD's OWN provenance — never the stage observation's (BLOCKER 2). */
   enrichmentVodSource?: EnrichmentVodSourceInput;
   enrichmentStage?: EnrichedStage;
+  /** 30.3 Gate 5 — carried for completeness; the ingestion merge deliberately ignores it (character/stock evidence acts only through the applier's consulted path). */
+  enrichmentGameEvidence?: EnrichedGameEvidence;
   witness: EnrichmentOwnershipWitness | null;
 }
 
@@ -882,7 +1279,12 @@ function toRowOverlay(
   overlay: EnrichmentOverlay,
   witness: EnrichmentOwnershipWitness | null,
 ): EnrichmentRowOverlay {
-  const { enrichedVodUrlByKey, enrichedVodSourceByKey, enrichedStageByKey } = overlay;
+  const {
+    enrichedVodUrlByKey,
+    enrichedVodSourceByKey,
+    enrichedStageByKey,
+    enrichedGameEvidenceByKey,
+  } = overlay;
   return {
     ...(enrichedVodUrlByKey[key] !== undefined
       ? { enrichmentVodUrl: enrichedVodUrlByKey[key] }
@@ -891,6 +1293,9 @@ function toRowOverlay(
       ? { enrichmentVodSource: enrichedVodSourceByKey[key] }
       : {}),
     ...(enrichedStageByKey[key] !== undefined ? { enrichmentStage: enrichedStageByKey[key] } : {}),
+    ...(enrichedGameEvidenceByKey?.[key] !== undefined
+      ? { enrichmentGameEvidence: enrichedGameEvidenceByKey[key] }
+      : {}),
     witness,
   };
 }
@@ -934,6 +1339,7 @@ export async function readEnrichmentOverlayForSet(
   const keys = new Set([
     ...Object.keys(setOverlay.enrichedVodUrlByKey),
     ...Object.keys(setOverlay.enrichedStageByKey),
+    ...Object.keys(setOverlay.enrichedGameEvidenceByKey ?? {}),
   ]);
   const result: EnrichmentOverlayForSet = {};
   for (const key of keys) {
@@ -1050,6 +1456,7 @@ export async function readEnrichmentOverlayForTenant(
     const keys = new Set([
       ...Object.keys(setOverlay.enrichedVodUrlByKey),
       ...Object.keys(setOverlay.enrichedStageByKey),
+      ...Object.keys(setOverlay.enrichedGameEvidenceByKey ?? {}),
     ]);
     for (const key of keys) {
       if (!isPathSafeProviderId(key)) {

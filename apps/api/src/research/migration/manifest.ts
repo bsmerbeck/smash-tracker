@@ -97,6 +97,13 @@ export const TREE_DESCRIPTORS: readonly TreeDescriptor[] = [
   // enrichment provenance ENR-11's minimum coverage list expects to survive
   // migration alongside the rest of this family.
   { tree: 'researchEnrichmentShrinkReviews', disposition: 'copy', shape: 'flat' },
+  // Phase 30.3 Gate 5: the admin-reviewed YouTube VOD candidate tree — a
+  // `nested-two-level` shape ({targetSetId}/{candidateId}) like the
+  // attachment tree it mirrors. `copy`: a confirmed candidate is an
+  // explicit admin decision and the provenance behind a projected VOD
+  // (the witness's `vodCandidateId` names it), so it must survive
+  // migration exactly like the receipts that authorize attachments.
+  { tree: 'researchEnrichmentVodCandidates', disposition: 'copy', shape: 'nested-two-level' },
   // -- assert-empty (15): authorization + claim + coaching-content ----------
   // Authorization-bearing — OUTSIDE the owner-locked migration list. A live
   // grant refuses the run and escalates a separate revoke/disposition

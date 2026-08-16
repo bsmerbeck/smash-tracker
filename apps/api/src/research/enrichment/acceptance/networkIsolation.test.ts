@@ -163,6 +163,16 @@ const ALLOWED_URL_PREFIXES = [
   // hostnames already covered by the youtube/twitch prefixes above.
   'https://${CANONICAL_YOUTUBE_WATCH_HOST}',
   'https://${CANONICAL_TWITCH_HOST}',
+  // 30.3 Gate 5: the SECOND declared outbound endpoint — the YouTube Data
+  // API search endpoint `vodDiscovery.ts` declares as a named constant
+  // (YOUTUBE_SEARCH_ENDPOINT). Declaring it here is exactly what this scan
+  // exists for (a target that SHOULD exist in source); the fail-closed
+  // fetch stub above remains the primary control that no test can actually
+  // reach it, and the module itself has no default-fetch path (its
+  // `fetchImpl` is a REQUIRED member, mirroring the Liquipedia client's
+  // compile-time gate). Scraping any other YouTube surface stays outside
+  // this allowlist and trips the scan.
+  'https://www.googleapis.com/youtube/v3/search',
 ];
 
 describe('LOCK 2 (defence in depth): static scan — the endpoint constant is the only outbound target anywhere in source', () => {

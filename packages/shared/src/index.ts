@@ -30,6 +30,7 @@ export * from './startgg.js';
 export * from './scoutMerge.js';
 export * from './parrygg.js';
 export * from './fighterData.js';
+export * from './liquipediaCharacterMap.js';
 export * from './stageData.js';
 export * from './stageFavorites.js';
 export * from './reports.js';

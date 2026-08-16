@@ -43,10 +43,10 @@ const DEST_UID = 'demo-account-uid-1';
 // ---------------------------------------------------------------------------
 
 describe('TREE_DESCRIPTORS lock', () => {
-  it('the real registry exact-set-locks against TENANT_DELETION_TREES (29 members, 14 copy + 15 assert-empty)', () => {
+  it('the real registry exact-set-locks against TENANT_DELETION_TREES (30 members, 15 copy + 15 assert-empty)', () => {
     expect(TREE_DESCRIPTOR_LOCK.ok).toBe(true);
-    expect(TREE_DESCRIPTORS).toHaveLength(29);
-    expect(TREE_DESCRIPTORS.filter(isCopyDescriptor)).toHaveLength(14);
+    expect(TREE_DESCRIPTORS).toHaveLength(30);
+    expect(TREE_DESCRIPTORS.filter(isCopyDescriptor)).toHaveLength(15);
     expect(TREE_DESCRIPTORS.filter((d) => d.disposition === 'assert-empty')).toHaveLength(15);
   });
 
@@ -397,12 +397,12 @@ describe('runMigration', () => {
 
     expect(manifest.ok).toBe(true);
     expect(manifest.assertEmptyViolations).toEqual([]);
-    // 14 copy descriptors post-30.2-09 (the 7 Phase-30 trees plus the 7
-    // Liquipedia enrichment trees, including plan 09's shrink-review log) —
-    // every copy descriptor produces a CopyResult/CompareResult even for a
-    // tree with no seeded records.
-    expect(manifest.copies).toHaveLength(14);
-    expect(manifest.trees).toHaveLength(14);
+    // 15 copy descriptors post-30.3 Gate 5 (the 7 Phase-30 trees plus the 8
+    // Liquipedia enrichment trees — plan 09's shrink-review log and Gate 5's
+    // VOD candidate tree included) — every copy descriptor produces a
+    // CopyResult/CompareResult even for a tree with no seeded records.
+    expect(manifest.copies).toHaveLength(15);
+    expect(manifest.trees).toHaveLength(15);
     expect(manifest.trees.every((t) => t.match)).toBe(true);
   });
 

@@ -84,42 +84,136 @@ interface CanonicalUrl {
 }
 
 /**
- * Builds the canonical, storable form for a URL that has already passed
- * the scheme + host allowlist check. Converts a short link to the `watch`
- * form so the same video written two ways deduplicates, strips every query
- * parameter that is not the video identifier (tracking parameters like
- * `?si=` are dropped), upgrades to https, and passes a Twitch URL through
- * with its path intact but its query stripped (Twitch's video identifier
- * lives in the path, not the query). Returns `null` when the allowlisted
- * host's URL carries no recognisable video identifier — e.g. a YouTube
- * long-form URL whose path isn't `/watch`, or a `/watch` URL with no `v=`.
+ * Parses a validated start-offset value: bare seconds (`123`), suffixed
+ * seconds (`123s`), or an `1h2m3s`-style duration (any subset of the h/m/s
+ * segments, in order). Mirrors `apps/web/src/lib/vod.ts`'s
+ * `parseDurationOrSeconds` member-for-member (duplicated, not imported —
+ * this API package cannot import from the web package) so an offset this
+ * module preserves is always one the shipped web reader
+ * (`parseVodStartSeconds`) decodes to the same whole-seconds value. Returns
+ * `null` for anything that matches neither form — an INVALID offset is
+ * dropped from the canonical form (validated offsets only, 30.3 Gate 5),
+ * never guessed at and never passed through raw.
+ */
+function parseVodOffsetSeconds(raw: string): number | null {
+  if (/^\d+$/.test(raw)) {
+    return Number(raw);
+  }
+  const match = /^(?:(\d+)h)?(?:(\d+)m)?(?:(\d+)s)?$/i.exec(raw);
+  if (match && (match[1] !== undefined || match[2] !== undefined || match[3] !== undefined)) {
+    return Number(match[1] ?? 0) * 3600 + Number(match[2] ?? 0) * 60 + Number(match[3] ?? 0);
+  }
+  return null;
+}
+
+/**
+ * Extracts the validated start offset a YouTube URL carries: the `t` query
+ * param, the `start` query param, or the legacy `#t=` fragment — the three
+ * forms the committed player-VOD-page fixtures actually contain
+ * (`?t=4512`, `&t=4050s`, `#t=11m38s`, `?si=...&t=29731`). The first form
+ * present that VALIDATES wins; an invalid value falls through to the next
+ * source rather than poisoning it. Returns `null` when no validated,
+ * positive offset exists (a zero offset is equivalent to none).
+ */
+function extractYoutubeOffsetSeconds(parsed: URL): number | null {
+  const candidates: (string | null)[] = [
+    parsed.searchParams.get('t'),
+    parsed.searchParams.get('start'),
+  ];
+  if (parsed.hash.startsWith('#t=')) {
+    candidates.push(parsed.hash.slice('#t='.length));
+  }
+  for (const candidate of candidates) {
+    if (candidate == null || candidate.length === 0) {
+      continue;
+    }
+    const seconds = parseVodOffsetSeconds(candidate);
+    if (seconds !== null && seconds > 0) {
+      return seconds;
+    }
+  }
+  return null;
+}
+
+/** Formats a whole-seconds offset as a Twitch-style `1h2m3s` duration — mirrors `apps/web/src/lib/vod.ts`'s `toTwitchDuration` (duplicated, not imported; see `parseVodOffsetSeconds`). */
+function toTwitchDuration(totalSeconds: number): string {
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+  let out = '';
+  if (hours > 0) out += `${hours}h`;
+  if (hours > 0 || minutes > 0) out += `${minutes}m`;
+  out += `${seconds}s`;
+  return out;
+}
+
+/** Builds the canonical YouTube watch URL for a video id plus an optional validated offset. The offset is emitted as `t=<seconds>s` — the exact member `apps/web/src/lib/vod.ts`'s `vodDeepLink` writes on a watch URL, and one `parseVodStartSeconds` reads back. */
+function canonicalYoutubeWatch(videoId: string, offsetSeconds: number | null): CanonicalUrl {
+  const canonical = new URL(`https://${CANONICAL_YOUTUBE_WATCH_HOST}/watch`);
+  canonical.searchParams.set('v', videoId);
+  if (offsetSeconds !== null) {
+    canonical.searchParams.set('t', `${offsetSeconds}s`);
+  }
+  return { vodUrl: canonical.toString(), host: CANONICAL_YOUTUBE_WATCH_HOST };
+}
+
+/**
+ * Builds the canonical, storable form for a URL that has already passed the
+ * scheme + host allowlist check. Converts a short link OR a `/live/<id>`
+ * URL to the `watch` form so the same video written three ways
+ * deduplicates, strips every query parameter that is not the video
+ * identifier or a VALIDATED start offset (tracking parameters like `?si=`
+ * and playlist context like `&list=`/`&index=` are dropped), upgrades to
+ * https, and passes a Twitch URL through with its path intact and only a
+ * validated `t` offset retained (Twitch's video identifier lives in the
+ * path, not the query). A validated offset is PRESERVED — normalized to
+ * `t=<seconds>s` for YouTube and a `XhYmZs` duration for Twitch — because a
+ * set-level VOD reference into an all-day stream recording IS the offset
+ * (30.3 Gate 5: two sets sharing one video with different offsets must stay
+ * distinct after normalization). Returns `null` when the allowlisted host's
+ * URL carries no recognisable video identifier — e.g. a YouTube long-form
+ * URL whose path is neither `/watch` nor `/live/<id>`, or a `/watch` URL
+ * with no `v=`.
  */
 function buildCanonicalUrl(parsed: URL, host: string): CanonicalUrl | null {
   if (YOUTUBE_SHORT_LINK_HOSTS.has(host)) {
     const videoId = parsed.pathname.replace(/^\//, '');
-    if (!videoId) {
+    if (!videoId || videoId.includes('/')) {
       return null;
     }
-    const canonical = new URL(`https://${CANONICAL_YOUTUBE_WATCH_HOST}/watch`);
-    canonical.searchParams.set('v', videoId);
-    return { vodUrl: canonical.toString(), host: CANONICAL_YOUTUBE_WATCH_HOST };
+    return canonicalYoutubeWatch(videoId, extractYoutubeOffsetSeconds(parsed));
   }
 
   if (YOUTUBE_LONG_FORM_HOSTS.has(host)) {
-    if (parsed.pathname !== '/watch') {
-      return null;
+    if (parsed.pathname === '/watch') {
+      const videoId = parsed.searchParams.get('v');
+      if (!videoId) {
+        return null;
+      }
+      return canonicalYoutubeWatch(videoId, extractYoutubeOffsetSeconds(parsed));
     }
-    const videoId = parsed.searchParams.get('v');
-    if (!videoId) {
-      return null;
+    if (parsed.pathname.startsWith('/live/')) {
+      // A live-stream permalink; once the stream ends the id doubles as the
+      // ordinary video id, so `/live/<id>?t=4512` canonicalizes to the same
+      // watch form as every other reference to that video.
+      const videoId = parsed.pathname.slice('/live/'.length);
+      if (!videoId || videoId.includes('/')) {
+        return null;
+      }
+      return canonicalYoutubeWatch(videoId, extractYoutubeOffsetSeconds(parsed));
     }
-    const canonical = new URL(`https://${CANONICAL_YOUTUBE_WATCH_HOST}/watch`);
-    canonical.searchParams.set('v', videoId);
-    return { vodUrl: canonical.toString(), host: CANONICAL_YOUTUBE_WATCH_HOST };
+    return null;
   }
 
   if (TWITCH_HOSTS.has(host)) {
     const canonical = new URL(`https://${CANONICAL_TWITCH_HOST}${parsed.pathname}`);
+    const rawOffset = parsed.searchParams.get('t');
+    if (rawOffset != null && rawOffset.length > 0) {
+      const seconds = parseVodOffsetSeconds(rawOffset);
+      if (seconds !== null && seconds > 0) {
+        canonical.searchParams.set('t', toTwitchDuration(seconds));
+      }
+    }
     return { vodUrl: canonical.toString(), host: CANONICAL_TWITCH_HOST };
   }
 
@@ -130,10 +224,19 @@ function buildCanonicalUrl(parsed: URL, host: string): CanonicalUrl | null {
  * Normalizes a raw Liquipedia-sourced VOD URL string, enforcing the
  * scheme + host allowlist at WRITE time (this module's header, T-30.2-18).
  *
- * - A watch-style YouTube URL and a short-link YouTube URL for the same
- *   video normalize to the SAME canonical form.
- * - A tracking parameter on a short link is stripped from the canonical
- *   form; the raw string is returned unchanged in `rawVodUrl`.
+ * - A watch-style YouTube URL, a short-link YouTube URL, and a
+ *   `/live/<id>` YouTube URL for the same video normalize to the SAME
+ *   canonical watch form (30.3 Gate 5 — `/live/` links were previously
+ *   rejected as carrying no video identifier, a known loss).
+ * - A VALIDATED start offset (`t`/`start` query param or legacy `#t=`
+ *   fragment on YouTube; `t` query param on Twitch; bare seconds, `123s`,
+ *   or `1h2m3s` forms) is PRESERVED, normalized to `t=<seconds>s` (YouTube)
+ *   or a `XhYmZs` duration (Twitch). An invalid offset value is dropped,
+ *   never guessed at. Two sets sharing one video with different offsets
+ *   therefore keep DISTINCT canonical forms — and distinct dedupe keys.
+ * - A tracking parameter (`si`, `feature`, playlist `list`/`index`, ...) is
+ *   stripped from the canonical form; the raw string is returned unchanged
+ *   in `rawVodUrl`.
  * - A plain-http short link is upgraded to https in the canonical form —
  *   never returned as http.
  * - A Twitch video URL is accepted and passed through with its host

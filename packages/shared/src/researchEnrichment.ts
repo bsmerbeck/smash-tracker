@@ -528,6 +528,8 @@ export const researchEnrichmentProjectionStateRecordSchema = z.object({
   // Committed half.
   projectedVodUrl: z.string().max(RESEARCH_ENRICHMENT_MAX_URL).nullish(),
   vodObservationId: z.string().max(200).nullish(),
+  /** 30.3 Gate 5: present instead of `vodObservationId` when the projected VOD came from an admin-CONFIRMED YouTube candidate (priority 5), naming the candidate record that authorized it. */
+  vodCandidateId: z.string().max(200).nullish(),
   vodSourceRevisionId: z.number().int().nullish(),
   vodParserVersion: z.string().max(64).nullish(),
   vodProjectedAtMs: z.number().int().nullish(),
@@ -540,9 +542,32 @@ export const researchEnrichmentProjectionStateRecordSchema = z.object({
   stageSourceRevisionId: z.number().int().nullish(),
   stageParserVersion: z.string().max(64).nullish(),
   stageProjectedAtMs: z.number().int().nullish(),
+  // -- Character/stock evidence halves (30.3 Gate 5) ------------------------
+  // Committed only after the seat orientation is PROVEN (the source's seat 1/2
+  // mapped onto subject/opponent through the row's own provider-authored
+  // opponent tag) — `projectedSubjectSeat` records that proof. A raw member
+  // present WITHOUT its fighter-id sibling is the flagged-unmapped state: the
+  // source text is preserved, never guessed into the app vocabulary.
+  projectedSubjectSeat: z.union([z.literal(1), z.literal(2)]).nullish(),
+  projectedSubjectCharRaw: z.string().max(RESEARCH_ENRICHMENT_MAX_RAW_TEXT).nullish(),
+  projectedSubjectFighterId: z.number().int().nullish(),
+  projectedOpponentCharRaw: z.string().max(RESEARCH_ENRICHMENT_MAX_RAW_TEXT).nullish(),
+  projectedOpponentFighterId: z.number().int().nullish(),
+  charsObservationId: z.string().max(200).nullish(),
+  charsSourceRevisionId: z.number().int().nullish(),
+  charsParserVersion: z.string().max(64).nullish(),
+  charsProjectedAtMs: z.number().int().nullish(),
+  // The stocks half writes a real match-row member (`stocksLeft`), so it gets
+  // the same committed+pending two-value accepted set the VOD half has.
+  projectedStocksLeft: z.number().int().min(0).max(3).nullish(),
+  stocksObservationId: z.string().max(200).nullish(),
+  stocksSourceRevisionId: z.number().int().nullish(),
+  stocksParserVersion: z.string().max(64).nullish(),
+  stocksProjectedAtMs: z.number().int().nullish(),
   // Pending half — a write that began but did not (yet) commit.
   pendingVodUrl: z.string().max(RESEARCH_ENRICHMENT_MAX_URL).nullish(),
   pendingVodObservationId: z.string().max(200).nullish(),
+  pendingVodCandidateId: z.string().max(200).nullish(),
   pendingVodSourceRevisionId: z.number().int().nullish(),
   pendingVodRemoval: z.boolean().nullish(),
   pendingStageId: z.number().int().nullish(),
@@ -550,6 +575,8 @@ export const researchEnrichmentProjectionStateRecordSchema = z.object({
   pendingStageRaw: z.string().max(120).nullish(),
   pendingStageForm: z.enum(RESEARCH_LIQUIPEDIA_STAGE_FORMS).nullish(),
   pendingStageObservationId: z.string().max(200).nullish(),
+  pendingStocksLeft: z.number().int().min(0).max(3).nullish(),
+  pendingStocksObservationId: z.string().max(200).nullish(),
   pendingWriteStartedAtMs: z.number().int().nullish(),
 });
 export type ResearchEnrichmentProjectionStateRecord = z.infer<
@@ -581,6 +608,15 @@ export const researchEnrichmentCountsSchema = z.object({
   vodRowsExtracted: z.number().int().nonnegative().nullish(),
   attachedNoProjectableRows: z.number().int().nonnegative().nullish(),
   adminConfirmed: z.number().int().nonnegative().nullish(),
+  // -- 30.3 Gate 5: character/stock evidence + VOD candidate counters -------
+  charactersEnriched: z.number().int().nonnegative().nullish(),
+  charactersUnmapped: z.number().int().nonnegative().nullish(),
+  charactersAbstained: z.number().int().nonnegative().nullish(),
+  stocksFilledEmpty: z.number().int().nonnegative().nullish(),
+  stocksSkippedOwned: z.number().int().nonnegative().nullish(),
+  stocksAbstained: z.number().int().nonnegative().nullish(),
+  vodCandidatesProposed: z.number().int().nonnegative().nullish(),
+  vodCandidatesConfirmed: z.number().int().nonnegative().nullish(),
 });
 export type ResearchEnrichmentCounts = z.infer<typeof researchEnrichmentCountsSchema>;
 
@@ -617,6 +653,14 @@ export function normalizeResearchEnrichmentCounts(
     vodRowsExtracted: counts?.vodRowsExtracted ?? 0,
     attachedNoProjectableRows: counts?.attachedNoProjectableRows ?? 0,
     adminConfirmed: counts?.adminConfirmed ?? 0,
+    charactersEnriched: counts?.charactersEnriched ?? 0,
+    charactersUnmapped: counts?.charactersUnmapped ?? 0,
+    charactersAbstained: counts?.charactersAbstained ?? 0,
+    stocksFilledEmpty: counts?.stocksFilledEmpty ?? 0,
+    stocksSkippedOwned: counts?.stocksSkippedOwned ?? 0,
+    stocksAbstained: counts?.stocksAbstained ?? 0,
+    vodCandidatesProposed: counts?.vodCandidatesProposed ?? 0,
+    vodCandidatesConfirmed: counts?.vodCandidatesConfirmed ?? 0,
   };
 }
 
@@ -630,6 +674,86 @@ export function normalizeResearchEnrichmentCohortCounts(
     missing: counts?.missing ?? 0,
   };
 }
+
+// ---------------------------------------------------------------------------
+// YouTube VOD candidate record (30.3 Gate 5 — priority 5 of the VOD chain)
+// ---------------------------------------------------------------------------
+
+export const RESEARCH_ENRICHMENT_VOD_CANDIDATE_STATUSES = [
+  'proposed',
+  'confirmed',
+  'dismissed',
+] as const;
+export type ResearchEnrichmentVodCandidateStatus =
+  (typeof RESEARCH_ENRICHMENT_VOD_CANDIDATE_STATUSES)[number];
+
+/**
+ * `researchEnrichmentVodCandidates/{tenantId}/{targetSetId}/{candidateId}` —
+ * one YouTube Data API search result, persisted as a CANDIDATE, never a
+ * fact (30.3 Gate 5). A candidate carries the query that produced it, the
+ * result's own identity members (video id, title, channel, publication
+ * date), the fetch time, and a heuristic score — everything an admin needs
+ * to judge it. NOTHING projects from this tree until an explicit admin
+ * confirmation stamps `status: 'confirmed'` with `confirmedByUid`/
+ * `confirmedAtMs` (the same explicit-human-action shape the admin
+ * attachment door uses); the projection applier reads ONLY confirmed
+ * candidates, and only at the BOTTOM of the source-priority chain (a
+ * user/manual URL, a provider URL, and any attached Liquipedia observation
+ * URL all outrank it).
+ */
+export const researchEnrichmentVodCandidateRecordSchema = z
+  .object({
+    candidateId: z.string().min(1).max(200),
+    targetSetId: z.string().min(1).max(200),
+    /** The only admitted discovery mechanism — the YouTube Data API. Never HTML scraping. */
+    provider: z.literal('youtube-data-api'),
+    query: z.string().min(1).max(500),
+    videoId: z.string().min(1).max(64),
+    /** The canonical watch URL for `videoId` — the value a confirmation would project. */
+    videoUrl: z
+      .string()
+      .max(RESEARCH_ENRICHMENT_MAX_URL)
+      .regex(/^https:\/\//i, 'videoUrl must be an https URL'),
+    /** Untrusted third-party text. */
+    title: z.string().max(300),
+    channelId: z.string().max(200).nullish(),
+    channelTitle: z.string().max(300).nullish(),
+    /** ISO timestamp string as the API returned it. */
+    publishedAt: z.string().max(40).nullish(),
+    fetchedAtMs: z.number().int(),
+    score: z.number(),
+    status: z.enum(RESEARCH_ENRICHMENT_VOD_CANDIDATE_STATUSES),
+    confirmedByUid: z.string().max(200).nullish(),
+    confirmedAtMs: z.number().int().nullish(),
+    dismissedByUid: z.string().max(200).nullish(),
+    dismissedAtMs: z.number().int().nullish(),
+  })
+  .superRefine((value, ctx) => {
+    if (value.status === 'confirmed' && (!value.confirmedByUid || value.confirmedAtMs == null)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'a confirmed candidate requires both confirmedByUid and confirmedAtMs',
+        path: ['status'],
+      });
+    }
+  });
+export type ResearchEnrichmentVodCandidateRecord = z.infer<
+  typeof researchEnrichmentVodCandidateRecordSchema
+>;
+
+/** `GET .../enrichment/vod-candidates` — the tenant's full candidate list plus per-status tallies over exactly what the list contains. */
+export const researchEnrichmentVodCandidateListResponseSchema = z.object({
+  candidates: z.array(researchEnrichmentVodCandidateRecordSchema).max(500),
+  counts: z.object({
+    proposed: z.number().int().nonnegative(),
+    confirmed: z.number().int().nonnegative(),
+    dismissed: z.number().int().nonnegative(),
+    total: z.number().int().nonnegative(),
+  }),
+});
+export type ResearchEnrichmentVodCandidateListResponse = z.infer<
+  typeof researchEnrichmentVodCandidateListResponseSchema
+>;
 
 // ---------------------------------------------------------------------------
 // Coverage snapshot
@@ -678,22 +802,57 @@ export type ResearchEnrichmentCoverageSnapshot = z.infer<
 >;
 
 /**
+ * 30.3 Gate 5 — one field's explicit present/missing/ambiguous coverage
+ * cell, derived at READ time from the stored ownership witnesses (the
+ * enrichment rollup's `deriveEnrichmentFieldCoverage`). `present` counts
+ * rows whose witness carries a committed value for the field; `ambiguous`
+ * counts rows with partial or in-flight evidence (a raw-only stage, a
+ * flagged-unmapped character, a pending half); `missing` is the honest
+ * remainder of the witnessed universe. `latestSourceRevisionId`/
+ * `latestProjectedAtMs` expose the freshest source revision and projection
+ * time observed for the field, so a consumer can show "as of revision N".
+ */
+const researchEnrichmentFieldCoverageCellSchema = z.object({
+  present: z.number().int().nonnegative(),
+  missing: z.number().int().nonnegative(),
+  ambiguous: z.number().int().nonnegative(),
+  latestSourceRevisionId: z.number().int().nullish(),
+  latestProjectedAtMs: z.number().int().nullish(),
+});
+export type ResearchEnrichmentFieldCoverageCell = z.infer<
+  typeof researchEnrichmentFieldCoverageCellSchema
+>;
+
+/** The four-field coverage rollup (stages, characters, stocks, VODs) over every match key carrying an enrichment ownership witness. */
+export const researchEnrichmentFieldCoverageSchema = z.object({
+  asOfMs: z.number().int(),
+  witnessedRows: z.number().int().nonnegative(),
+  stages: researchEnrichmentFieldCoverageCellSchema,
+  characters: researchEnrichmentFieldCoverageCellSchema,
+  stocks: researchEnrichmentFieldCoverageCellSchema,
+  vods: researchEnrichmentFieldCoverageCellSchema,
+});
+export type ResearchEnrichmentFieldCoverage = z.infer<typeof researchEnrichmentFieldCoverageSchema>;
+
+/**
  * Phase 30.2 Plan 10 (ENR-06/ENR-09): the HTTP-facing shape of the
  * additive `enrichment` member the Phase 30 provider-ingestion schema
  * module's coverage-response schema adds — the value a caller of `GET
  * /api/users/me/coverage` or `GET /research/tenants/:tenantId/coverage`
  * actually receives. Declared as its OWN named export, not inlined as a
  * bare reference to `researchEnrichmentCoverageSnapshotSchema` at the call
- * site, so the response CONTRACT can diverge from the STORED shape later
- * (e.g. a presentational-only member neither read nor written by
- * `research/enrichment/rollup.ts`) without moving the stored schema. Today
- * the members are identical to the stored snapshot — the as-of timestamp,
- * the run id, the counts, the cohort counts, the per-source-page freshness
- * map (whose value REQUIRES `sourcePageUrl`, cycle-1 review HIGH 5) and the
- * notes array — so this is presently a same-shape alias rather than a
- * hand-duplicated copy that could silently drift from it.
+ * site, so the response CONTRACT can diverge from the STORED shape —
+ * exactly what 30.3 Gate 5 now does: `fieldCoverage` is a READ-TIME-derived
+ * presentational member (built from the witness tree by the enrichment
+ * rollup's `deriveEnrichmentFieldCoverage`), never stored on the
+ * `researchEnrichmentCoverage/{tenantId}` node and never written by
+ * `stageEnrichmentProgress`/`publishEnrichmentCoverage`. It is `.nullish()`
+ * so every already-published snapshot keeps parsing unchanged.
  */
-export const researchEnrichmentCoverageResponseSchema = researchEnrichmentCoverageSnapshotSchema;
+export const researchEnrichmentCoverageResponseSchema =
+  researchEnrichmentCoverageSnapshotSchema.extend({
+    fieldCoverage: researchEnrichmentFieldCoverageSchema.nullish(),
+  });
 export type ResearchEnrichmentCoverageResponse = z.infer<
   typeof researchEnrichmentCoverageResponseSchema
 >;

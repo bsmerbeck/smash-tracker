@@ -349,6 +349,11 @@ const DELETION_TREES_WITHOUT_A_SAME_SUBJECT_ROUTE: Record<string, string> = {
     'through the admin-only research enrichment routes, which answer the research ' +
     "family's uniform 404 by design — it can never satisfy a covered same-subject " +
     '403 route.',
+  researchEnrichmentVodCandidates:
+    'the admin-reviewed YouTube VOD candidate tree (Phase 30.3 Gate 5) is reached ' +
+    'only through the admin-only research enrichment vod-candidates routes, which ' +
+    "answer the research family's uniform 404 by design — it can never satisfy a " +
+    'covered same-subject 403 route.',
 };
 
 describe('TENANT_DELETION_TREES is a documented superset of CANONICAL_TENANT_TREES', () => {
