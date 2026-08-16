@@ -34,6 +34,11 @@ export function buildTestApp(
     // research-admin allowlist config, threaded through so tests can build
     // an app with a configured (or omitted/null) research allowlist.
     | 'research'
+    // Phase 30.1 / 30.3: the demo-account allowlist, threaded through so
+    // tests can build an app with a configured (or omitted/null) demo
+    // allowlist — the money-safety and public-delivery guards are only
+    // observable through a built app when this is set.
+    | 'demo'
     // Phase 30.3 Gate 5 (30.3-integration follow-up): the YouTube Data API
     // config + overridable fetch for the bounded VOD-candidate discovery
     // route, threaded through so tests can build an app with either state.

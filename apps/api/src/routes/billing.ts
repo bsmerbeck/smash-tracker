@@ -15,6 +15,12 @@ import type { ReportsConfig, StripeConfig } from '../config/env.js';
 import { fulfillCheckoutSession, getBalance } from '../billing/credits.js';
 import { createEvent } from '../events/ledger.js';
 import { buildBillingEnvelope, buildDomainEnvelope } from '../events/envelope.js';
+// Phase 30.3 (demo-account money safety, Gate 6): the SAME allowlist
+// predicate the seven bearer-delivery chokepoints already consult
+// (`research/demoAccount.ts`). Read via the `app.demoAccountConfig`
+// decoration rather than a new route option, mirroring how
+// `routes/shareMeta.ts`/`routes/shareOgImage.ts` reach it.
+import { isDemoAccountSubject } from '../research/demoAccount.js';
 
 /**
  * Minimal structural seam over the `stripe` client — just the two calls this
@@ -140,7 +146,14 @@ const billingRoutes: FastifyPluginAsyncZod<BillingRoutesOptions> = async (app, o
       },
     },
     async (request) => {
-      const freeAccess = reportsConfig?.allowedUids.has(request.uid) ?? false;
+      // Phase 30.3 (Gate 6): an allowlisted demo account reports
+      // `freeAccess: true` for the SAME reason an allowlisted uid does —
+      // `POST /api/reports` never debits it (see `hasFreeReportAccess` in
+      // `routes/reports.ts`). This is a read-only status projection; the
+      // actual refusal lives on `POST /billing/checkout` below.
+      const freeAccess =
+        (reportsConfig?.allowedUids.has(request.uid) ?? false) ||
+        isDemoAccountSubject(app.demoAccountConfig, request.uid);
       const balance = await getBalance(app.firebase.database, request.uid);
       return {
         freeAccess,
@@ -162,10 +175,35 @@ const billingRoutes: FastifyPluginAsyncZod<BillingRoutesOptions> = async (app, o
         response: {
           200: checkoutResponseSchema,
           400: errorResponseSchema,
+          403: errorResponseSchema,
         },
       },
     },
     async (request, reply) => {
+      // Phase 30.3 (Gate 6, demo-account money safety): load-bearing
+      // ordering — this is the FIRST statement in the handler, above the
+      // pack lookup, the idempotency-key mint, the Stripe Checkout Session
+      // create, and the `checkout_started` emission. A demo account must
+      // never be able to reach Stripe at all, so the refusal precedes
+      // every external call, every event envelope, every ledger row, and
+      // every credit mutation — a refused request leaves the tree
+      // byte-identical (`demoMoneyGuards.test.ts` proves the ordering with
+      // a create() spy plus a whole-tree emptiness assertion).
+      //
+      // Deliberately NOT mirrored onto `POST /billing/webhook`: a demo uid
+      // can never obtain a Checkout Session in the first place, so a
+      // webhook naming one is unreachable — while refusing fulfillment
+      // there would strand a genuinely PAID session with no credits, which
+      // is the strictly worse failure. See this phase's SUMMARY for the
+      // recorded rationale.
+      if (isDemoAccountSubject(app.demoAccountConfig, request.uid)) {
+        return reply.code(403).send({
+          error: 'Forbidden',
+          message: 'Credit purchases are not available for this account',
+          statusCode: 403,
+        });
+      }
+
       const pack = CREDIT_PACKS.find((candidate) => candidate.id === request.body.packId);
       if (!pack) {
         return reply.code(400).send({

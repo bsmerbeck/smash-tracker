@@ -293,6 +293,90 @@ describe('POST /api/prep/:entryKey/activate', () => {
     expect(dump.prepBriefs).toBeUndefined();
   });
 
+  it('Phase 30.3 Gate 6: the imported-entry 409 is ZERO-TRACE — no brief, job, event, ledger entry, or credit mutation', async () => {
+    const { app, database } = buildTestApp();
+    const entryKey = 'histimport:112233';
+    // Deliberately FUTURE-dated again (the protection must not pass by
+    // accident because real imported events happen to be historical) AND
+    // with pre-existing money state, so a debit or a refund would be
+    // visible as a CHANGE rather than merely as an absent tree.
+    const futureMs = Date.now() + 30 * 24 * 60 * 60 * 1000;
+    database.seed(`tournamentEntries/${TEST_UID}/${entryKey}`, {
+      entryId: entryKey,
+      origin: 'admin-imported',
+      provider: 'startgg',
+      startggEventId: '112233',
+      eventName: 'Imported Historical Major',
+      registryWitness: 'research-import:v1:112233',
+      provenance: { source: 'research-import', importedAtMs: FIRST_SET_AT },
+      playedSetCount: 0,
+      firstSetAt: futureMs,
+      lastSetAt: futureMs,
+      setsPlayed: 0,
+    });
+    database.seed(`credits/${TEST_UID}/balance`, 7);
+
+    const before = JSON.stringify(database.dump());
+
+    const response = await app.inject({
+      method: 'POST',
+      url: `/api/prep/${encodeURIComponent(entryKey)}/activate`,
+      headers: authHeader(),
+    });
+    // Drain the fire-and-forget `void createEvent(...)` queue so a
+    // zero-envelope assertion is meaningful rather than a race.
+    await new Promise((resolvePromise) => setTimeout(resolvePromise, 0));
+
+    expect(response.statusCode).toBe(409);
+
+    const dump = database.dump() as Record<string, unknown>;
+    // Per-tree assertions (named, so a failure says WHICH surface leaked)…
+    for (const tree of [
+      'prepBriefs',
+      'prepReportJobIndex',
+      'prepSynthesisJobIndex',
+      'reportJobs',
+      'reportJobsByStatus',
+      'reportJobsByDay',
+      'eventLedger',
+      'eventDedup',
+      'outboxPending',
+      'creditLedger',
+      'creditLedgerByDay',
+      'creditBundleOps',
+    ]) {
+      expect(dump[tree]).toBeUndefined();
+    }
+    // …plus the credit BALANCE specifically, which pre-existed and so
+    // cannot be proven untouched by an absence check.
+    expect((await database.ref(`credits/${TEST_UID}/balance`).get()).val()).toBe(7);
+    expect(countEnvelopesByName(database, 'prep_brief_activated')).toBe(0);
+    // Whole-tree byte equality: the 409 changed literally nothing.
+    expect(JSON.stringify(database.dump())).toBe(before);
+  });
+
+  it('POSITIVE CONTROL: an ordinary (non-imported) entry on a different account activates normally and DOES write a brief + event', async () => {
+    const { app, database, auth } = buildTestApp();
+    registerUser(auth, 'ordinary-fifth-token', {
+      uid: 'ordinary-fifth-uid',
+      email: 'ordinary-fifth@test.com',
+    });
+    seedEntry(database, 'ordinary-fifth-uid', ENTRY_KEY);
+
+    const response = await app.inject({
+      method: 'POST',
+      url: `/api/prep/${ENTRY_KEY}/activate`,
+      headers: authHeader('ordinary-fifth-token'),
+    });
+    await new Promise((resolvePromise) => setTimeout(resolvePromise, 0));
+
+    expect(response.statusCode).toBe(200);
+    const dump = database.dump() as Record<string, unknown>;
+    const briefs = dump.prepBriefs as Record<string, Record<string, unknown>>;
+    expect(briefs['ordinary-fifth-uid']![ENTRY_KEY]).toBeDefined();
+    expect(countEnvelopesByName(database, 'prep_brief_activated')).toBe(1);
+  });
+
   it('first activate returns justActivated: true with eventDate from the registry firstSetAt; second returns false with the same eventDate', async () => {
     const { app, database } = buildTestApp();
     seedEntry(database, TEST_UID, ENTRY_KEY);
