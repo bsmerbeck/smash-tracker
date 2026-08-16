@@ -2601,6 +2601,11 @@
     "error": {
       "loadFailed": "Une erreur est survenue lors du chargement de votre résumé de préparation. Veuillez réessayer.",
       "addEventFailed": "Une erreur est survenue lors de l'ajout de cet événement. Veuillez réessayer."
+    },
+    "importedBlocked": {
+      "title": "La préparation n'est pas disponible pour cet événement",
+      "body": "Il s'agit d'un enregistrement historique importé de données publiques — la préparation de tournoi ne s'applique qu'à vos propres événements à venir.",
+      "back": "Retour au tournoi"
     }
   },
   "prepPaid": {
@@ -2835,5 +2840,9 @@
         "unmatched": "Sans correspondance"
       }
     }
+  },
+  "demo": {
+    "accountBanner": "Instantané de recherche à partir de données publiques — non vérifié, ni détenu ni approuvé par le joueur.",
+    "disabledReason": "Désactivé pour les comptes de recherche à partir de données publiques."
   }
 }

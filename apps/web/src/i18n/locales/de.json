@@ -2601,6 +2601,11 @@
     "error": {
       "loadFailed": "Beim Laden deines Vorbereitungs-Briefings ist etwas schiefgelaufen. Bitte erneut versuchen.",
       "addEventFailed": "Beim Hinzufügen dieses Events ist etwas schiefgelaufen. Bitte erneut versuchen."
+    },
+    "importedBlocked": {
+      "title": "Vorbereitung ist für dieses Event nicht verfügbar",
+      "body": "Dies ist ein importierter historischer Datensatz aus öffentlichen Daten — die Turniervorbereitung gilt nur für deine eigenen bevorstehenden Events.",
+      "back": "Zurück zum Turnier"
     }
   },
   "prepPaid": {
@@ -2835,5 +2840,9 @@
         "unmatched": "Nicht zugeordnet"
       }
     }
+  },
+  "demo": {
+    "accountBanner": "Forschungs-Snapshot aus öffentlichen Daten — unverifiziert, nicht im Besitz des Spielers und nicht von ihm unterstützt.",
+    "disabledReason": "Deaktiviert für Forschungskonten mit öffentlichen Daten."
   }
 }

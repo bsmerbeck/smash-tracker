@@ -2601,6 +2601,11 @@
     "error": {
       "loadFailed": "Algo salió mal al cargar tu resumen de preparación. Inténtalo de nuevo.",
       "addEventFailed": "Algo salió mal al añadir este evento. Inténtalo de nuevo."
+    },
+    "importedBlocked": {
+      "title": "La preparación no está disponible para este evento",
+      "body": "Este es un registro histórico importado de datos públicos: la preparación de torneos solo se aplica a tus propios eventos próximos.",
+      "back": "Volver al torneo"
     }
   },
   "prepPaid": {
@@ -2835,5 +2840,9 @@
         "unmatched": "Sin coincidencia"
       }
     }
+  },
+  "demo": {
+    "accountBanner": "Instantánea de investigación con datos públicos — no verificada, no es propiedad del jugador ni cuenta con su respaldo.",
+    "disabledReason": "Deshabilitado para cuentas de investigación con datos públicos."
   }
 }

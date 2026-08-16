@@ -2601,6 +2601,11 @@
     "error": {
       "loadFailed": "Algo deu errado ao carregar seu briefing de preparação. Tente novamente.",
       "addEventFailed": "Algo deu errado ao adicionar este evento. Tente novamente."
+    },
+    "importedBlocked": {
+      "title": "A preparação não está disponível para este evento",
+      "body": "Este é um registro histórico importado de dados públicos — a preparação para torneios se aplica apenas aos seus próprios eventos futuros.",
+      "back": "Voltar ao torneio"
     }
   },
   "prepPaid": {
@@ -2835,5 +2840,9 @@
         "unmatched": "Sem correspondência"
       }
     }
+  },
+  "demo": {
+    "accountBanner": "Instantâneo de pesquisa com dados públicos — não verificado, não pertence nem é endossado pelo jogador.",
+    "disabledReason": "Desativado para contas de pesquisa com dados públicos."
   }
 }
