@@ -8,7 +8,9 @@ import {
   type Gate6RejectedOperationProbe,
   type Gate6UidMap,
 } from './gate6AuditCore.js';
+import { DEMO_ACCOUNT_CHECKOUT_FORBIDDEN_CODE } from '@smash-tracker/shared';
 import {
+  GATE6_DEPLOYMENT_IDENTITY_PATH,
   GATE6_IDENTITY_PATH,
   GATE6_REFUSED_OPERATION,
   Gate6CaptureRefusal,
@@ -60,6 +62,8 @@ interface Harness {
 }
 
 interface TransportScript {
+  /** Response to `GET /deployment-identity`. */
+  deployment?: Gate6HttpResponse;
   /** Response to `GET /users/me`. */
   identity?: Gate6HttpResponse;
   /** Response to the refused operation. */
@@ -70,11 +74,48 @@ interface TransportScript {
   hang?: boolean;
 }
 
-function identityBody(uid: string, isDemoAccount = true): Gate6HttpResponse {
+/** A JSON response, with the content type a real Fastify reply carries. */
+function jsonResponse(status: number, body: unknown): Gate6HttpResponse {
   return {
-    status: 200,
-    bodyText: JSON.stringify({ uid, email: 'demo@example.test', fighters: [], isDemoAccount }),
+    status,
+    headers: { 'content-type': 'application/json; charset=utf-8' },
+    bodyText: JSON.stringify(body),
   };
+}
+
+function identityBody(uid: string, isDemoAccount = true): Gate6HttpResponse {
+  return jsonResponse(200, { uid, email: 'demo@example.test', fighters: [], isDemoAccount });
+}
+
+/** The deployment identity of an API correctly bound to the operator's own database. */
+const API_REVISION = 'smash-tracker-api-00042-xyz';
+const API_ENVIRONMENT = 'production';
+const LOCAL_PROJECT_ID = 'smash-tracker-f97b7';
+
+function deploymentBody(overrides: Record<string, unknown> = {}): Gate6HttpResponse {
+  return jsonResponse(200, {
+    identityVersion: 1,
+    environment: API_ENVIRONMENT,
+    service: 'smash-tracker-api',
+    revision: API_REVISION,
+    releaseSha: 'deadbeefcafe',
+    firebaseProjectId: LOCAL_PROJECT_ID,
+    // The API's OWN answer names the very database the operator snapshots.
+    databaseHost: HOST,
+    databaseEmulatorHost: null,
+    ...overrides,
+  });
+}
+
+/** The demo checkout guard's real refusal, as the deployed API sends it. */
+function demoRefusal(overrides: Record<string, unknown> = {}): Gate6HttpResponse {
+  return jsonResponse(403, {
+    error: 'Forbidden',
+    message: 'Credit purchases are not available for this account',
+    statusCode: 403,
+    code: DEMO_ACCOUNT_CHECKOUT_FORBIDDEN_CODE,
+    ...overrides,
+  });
 }
 
 function makeHarness(
@@ -94,6 +135,8 @@ function makeHarness(
   const deps: Gate6CaptureDeps = {
     database: fake as unknown as Database,
     databaseHost: HOST,
+    databaseProjectId: LOCAL_PROJECT_ID,
+    databaseEmulatorHost: null,
     now: () => Date.now(),
     log: (line) => logs.push(line),
     writeFileText: async (path, content) => {
@@ -105,11 +148,14 @@ function makeHarness(
       if (script.hang) {
         return new Promise<Gate6HttpResponse>(() => undefined);
       }
+      if (request.url.endsWith(GATE6_DEPLOYMENT_IDENTITY_PATH)) {
+        return script.deployment ?? deploymentBody();
+      }
       if (request.url.endsWith(GATE6_IDENTITY_PATH)) {
         return script.identity ?? identityBody(UIDS.hbox);
       }
       script.onOperation?.(fake);
-      return script.operation ?? { status: 403, bodyText: '{"error":"Forbidden"}' };
+      return script.operation ?? demoRefusal();
     },
     ...overrides,
   };
@@ -130,10 +176,21 @@ function baseArgs(extra: string[] = []): string[] {
     UIDS.izaw,
     '--api-base-url',
     API_BASE,
+    '--expected-api-environment',
+    API_ENVIRONMENT,
+    '--expected-api-revision',
+    API_REVISION,
     '--out',
     OUT_PATH,
     ...extra,
   ];
+}
+
+/** `baseArgs` with one flag (and its value) removed — for the omission tests. */
+function withoutFlag(name: string): string[] {
+  const args = baseArgs();
+  const index = args.indexOf(name);
+  return [...args.slice(0, index), ...args.slice(index + 2)];
 }
 
 function sealedProbeFrom(harness: Harness): Gate6RejectedOperationProbe {
@@ -194,7 +251,7 @@ describe('capture -> consume round trip', () => {
       workspace: 'hbox',
       uid: UIDS.hbox,
       databaseHost: HOST,
-      refusal: '403 from POST /billing/checkout',
+      refusal: `403 ${DEMO_ACCOUNT_CHECKOUT_FORBIDDEN_CODE} from POST /billing/checkout`,
     });
     expect(probe.operation).toContain('billing-checkout');
 
@@ -216,13 +273,14 @@ describe('capture -> consume round trip', () => {
     expect(probe.before.dayShards).toEqual(probe.after.dayShards);
   });
 
-  it('checks identity BEFORE the refused operation, and issues exactly two requests', async () => {
+  it('binds, then checks identity, then refuses — exactly three requests, in order', async () => {
     const harness = makeHarness();
     await runGate6ProbeCapture(baseArgs(), harness.deps);
-    expect(harness.requests).toHaveLength(2);
-    expect(harness.requests[0]!.url).toBe(`${API_BASE}${GATE6_IDENTITY_PATH}`);
-    expect(harness.requests[1]!.url).toBe(`${API_BASE}${GATE6_REFUSED_OPERATION.path}`);
-    expect(harness.requests[1]!.method).toBe('POST');
+    expect(harness.requests).toHaveLength(3);
+    expect(harness.requests[0]!.url).toBe(`${API_BASE}${GATE6_DEPLOYMENT_IDENTITY_PATH}`);
+    expect(harness.requests[1]!.url).toBe(`${API_BASE}${GATE6_IDENTITY_PATH}`);
+    expect(harness.requests[2]!.url).toBe(`${API_BASE}${GATE6_REFUSED_OPERATION.path}`);
+    expect(harness.requests[2]!.method).toBe('POST');
   });
 
   it('is READ-ONLY with respect to RTDB: the tree is byte-identical afterwards', async () => {
@@ -237,7 +295,7 @@ describe('capture -> consume round trip', () => {
 
 describe('the refusal must be PROVEN before anything is sealed', () => {
   it('ABORTS, loudly, when the operation SUCCEEDED — the worst possible false green', async () => {
-    const harness = makeHarness({ operation: { status: 200, bodyText: '{"url":"https://pay"}' } });
+    const harness = makeHarness({ operation: jsonResponse(200, { url: 'https://pay' }) });
     await expect(runGate6ProbeCapture(baseArgs(), harness.deps)).rejects.toThrow(
       /SUCCEEDED \(200\)/,
     );
@@ -249,7 +307,7 @@ describe('the refusal must be PROVEN before anything is sealed', () => {
   });
 
   it('ABORTS on a 401: the call never reached the guard, so "nothing written" would be vacuous', async () => {
-    const harness = makeHarness({ operation: { status: 401, bodyText: '{}' } });
+    const harness = makeHarness({ operation: jsonResponse(401, {}) });
     await expect(runGate6ProbeCapture(baseArgs(), harness.deps)).rejects.toMatchObject({
       code: 'refused-operation-unexpected-status',
     });
@@ -257,7 +315,7 @@ describe('the refusal must be PROVEN before anything is sealed', () => {
   });
 
   it.each([[400], [404], [500]])('ABORTS on an unexpected %i without sealing', async (status) => {
-    const harness = makeHarness({ operation: { status, bodyText: '{}' } });
+    const harness = makeHarness({ operation: jsonResponse(status, {}) });
     await expect(runGate6ProbeCapture(baseArgs(), harness.deps)).rejects.toBeInstanceOf(
       Gate6CaptureRefusal,
     );
@@ -288,19 +346,343 @@ describe('the refusal must be PROVEN before anything is sealed', () => {
   });
 });
 
-describe('the identity pre-check', () => {
-  it('ABORTS when the credential cannot be resolved, without attempting the operation', async () => {
-    const harness = makeHarness({ identity: { status: 401, bodyText: '{}' } });
-    await expect(runGate6ProbeCapture(baseArgs(), harness.deps)).rejects.toMatchObject({
-      code: 'identity-check-failed',
+/**
+ * Phase 30.3 capture-evidence item 2 — THE GENERIC-403 HOLE.
+ *
+ * These cases were first written against the PRE-FIX operator and all three
+ * PASSED in their inverted form: a generic JSON 403, a CloudFront HTML 403,
+ * and an empty-bodied 403 each sealed a probe. Every one of them leaves the
+ * RTDB untouched, so the audit would then have attested "the refused
+ * operation wrote nothing" about a call that never reached the application.
+ * The hole was real; these are its headstone.
+ */
+describe('the refusal must be the APPLICATION’s, not merely a 403', () => {
+  it('REFUSES a generic JSON 403 carrying no application code', async () => {
+    const harness = makeHarness({
+      operation: jsonResponse(403, { error: 'Forbidden', message: 'nope', statusCode: 403 }),
     });
-    // Only the identity call was made — the refused operation was never issued.
+    await expect(runGate6ProbeCapture(baseArgs(), harness.deps)).rejects.toMatchObject({
+      name: 'Gate6CaptureRefusal',
+      code: 'refused-operation-code-missing',
+    });
+    expect(harness.files.size).toBe(0);
+  });
+
+  it('REFUSES an HTML/CDN 403 that never reached the application at all', async () => {
+    const harness = makeHarness({
+      operation: {
+        status: 403,
+        headers: { 'content-type': 'text/html; charset=utf-8' },
+        bodyText: '<html><head><title>403 Forbidden</title></head><body>cloudfront</body></html>',
+      },
+    });
+    await expect(runGate6ProbeCapture(baseArgs(), harness.deps)).rejects.toMatchObject({
+      code: 'refused-operation-not-json',
+    });
+    expect(harness.files.size).toBe(0);
+  });
+
+  it('REFUSES a 403 with no content type at all', async () => {
+    const harness = makeHarness({ operation: { status: 403, headers: {}, bodyText: '' } });
+    await expect(runGate6ProbeCapture(baseArgs(), harness.deps)).rejects.toMatchObject({
+      code: 'refused-operation-not-json',
+    });
+    expect(harness.files.size).toBe(0);
+  });
+
+  it.each([
+    ['an empty body', ''],
+    ['a truncated body', '{"error":"Forbid'],
+    ['a bare string', '"forbidden"'],
+    ['an array', '[]'],
+  ])('REFUSES a JSON-typed 403 with %s', async (_label, bodyText) => {
+    const harness = makeHarness({
+      operation: { status: 403, headers: { 'content-type': 'application/json' }, bodyText },
+    });
+    await expect(runGate6ProbeCapture(baseArgs(), harness.deps)).rejects.toMatchObject({
+      code: 'refused-operation-body-unparseable',
+    });
+    expect(harness.files.size).toBe(0);
+  });
+
+  it('REFUSES a body that parses but carries a DIFFERENT code — the wrong guard', async () => {
+    const harness = makeHarness({ operation: demoRefusal({ code: 'some_other_guard' }) });
+    await expect(runGate6ProbeCapture(baseArgs(), harness.deps)).rejects.toMatchObject({
+      code: 'refused-operation-code-unexpected',
+    });
+    expect(harness.files.size).toBe(0);
+  });
+
+  it('REFUSES an envelope missing its error/message members', async () => {
+    const harness = makeHarness({
+      operation: jsonResponse(403, {
+        statusCode: 403,
+        code: DEMO_ACCOUNT_CHECKOUT_FORBIDDEN_CODE,
+      }),
+    });
+    await expect(runGate6ProbeCapture(baseArgs(), harness.deps)).rejects.toMatchObject({
+      code: 'refused-operation-body-unparseable',
+    });
+    expect(harness.files.size).toBe(0);
+  });
+
+  it('REFUSES an envelope whose own statusCode disagrees with the HTTP status', async () => {
+    const harness = makeHarness({ operation: demoRefusal({ statusCode: 401 }) });
+    await expect(runGate6ProbeCapture(baseArgs(), harness.deps)).rejects.toMatchObject({
+      code: 'refused-operation-body-unparseable',
+    });
+    expect(harness.files.size).toBe(0);
+  });
+
+  it('SEALS the verified envelope, so the audit can re-derive the proof', async () => {
+    const harness = makeHarness();
+    expect(await runGate6ProbeCapture(baseArgs(), harness.deps)).toBe(0);
+    expect(sealedProbeFrom(harness).refusalEnvelope).toEqual({
+      status: 403,
+      contentType: 'application/json; charset=utf-8',
+      code: DEMO_ACCOUNT_CHECKOUT_FORBIDDEN_CODE,
+      error: 'Forbidden',
+      message: 'Credit purchases are not available for this account',
+      statusCode: 403,
+    });
+  });
+
+  it('accepts the content type with or without charset, case-insensitively', async () => {
+    for (const contentType of ['application/json', 'APPLICATION/JSON; charset=utf-8']) {
+      const harness = makeHarness({
+        operation: {
+          status: 403,
+          headers: { 'content-type': contentType },
+          bodyText: demoRefusal().bodyText,
+        },
+      });
+      expect(await runGate6ProbeCapture(baseArgs(), harness.deps)).toBe(0);
+    }
+  });
+
+  it('REFUSES a content type that merely STARTS like JSON', async () => {
+    // `application/jsonp` is a different media type; a prefix match without
+    // the word boundary would wave it through.
+    const harness = makeHarness({
+      operation: {
+        status: 403,
+        headers: { 'content-type': 'application/jsonp' },
+        bodyText: demoRefusal().bodyText,
+      },
+    });
+    await expect(runGate6ProbeCapture(baseArgs(), harness.deps)).rejects.toMatchObject({
+      code: 'refused-operation-not-json',
+    });
+  });
+});
+
+/**
+ * Phase 30.3 capture-evidence item 3 — BINDING THE API TO THE DATABASE.
+ *
+ * The operator drives a deployed API and snapshots a locally configured RTDB.
+ * Before this, nothing tied them together: it sealed a `databaseHost` read
+ * from the same local `.env` as the snapshot, so the value agreed with itself.
+ */
+describe('the API must be bound to the database being snapshotted', () => {
+  it('asks the API who it is FIRST — before the identity check and any snapshot', async () => {
+    const harness = makeHarness();
+    await runGate6ProbeCapture(baseArgs(), harness.deps);
+    expect(harness.requests.map((request) => request.url)).toEqual([
+      `${API_BASE}${GATE6_DEPLOYMENT_IDENTITY_PATH}`,
+      `${API_BASE}${GATE6_IDENTITY_PATH}`,
+      `${API_BASE}${GATE6_REFUSED_OPERATION.path}`,
+    ]);
+  });
+
+  it.each([
+    ['503 — deployed without an identity', 503],
+    ['404 — an API predating the endpoint', 404],
+    ['401 — an expired credential', 401],
+  ])('ABORTS on %s, before any other request', async (_label, status) => {
+    const harness = makeHarness({ deployment: jsonResponse(status, { statusCode: status }) });
+    await expect(runGate6ProbeCapture(baseArgs(), harness.deps)).rejects.toMatchObject({
+      code: 'api-identity-unavailable',
+    });
     expect(harness.requests).toHaveLength(1);
     expect(harness.files.size).toBe(0);
   });
 
+  it('ABORTS on an identity body that does not match the contract', async () => {
+    const harness = makeHarness({ deployment: jsonResponse(200, { identityVersion: 1 }) });
+    await expect(runGate6ProbeCapture(baseArgs(), harness.deps)).rejects.toMatchObject({
+      code: 'api-identity-unavailable',
+    });
+    expect(harness.files.size).toBe(0);
+  });
+
+  it('ABORTS on an HTML identity response rather than reading undefined members', async () => {
+    const harness = makeHarness({
+      deployment: { status: 200, headers: {}, bodyText: '<html>nope</html>' },
+    });
+    await expect(runGate6ProbeCapture(baseArgs(), harness.deps)).rejects.toMatchObject({
+      code: 'api-identity-unavailable',
+    });
+  });
+
+  it('ABORTS when the API uses a DIFFERENT database than the one being snapshotted', async () => {
+    // THE case this whole mechanism exists for. Everything else about this
+    // run is healthy: the credential resolves, the account is a demo account,
+    // the guard refuses correctly. The evidence would still be worthless.
+    const harness = makeHarness({
+      deployment: deploymentBody({ databaseHost: 'staging-rtdb.firebaseio.com' }),
+    });
+    await expect(runGate6ProbeCapture(baseArgs(), harness.deps)).rejects.toMatchObject({
+      code: 'api-database-mismatch',
+    });
+    expect(harness.requests).toHaveLength(1);
+    expect(harness.files.size).toBe(0);
+  });
+
+  it('ABORTS on an emulator mismatch even when the host string matches', async () => {
+    const harness = makeHarness({
+      deployment: deploymentBody({ databaseEmulatorHost: '127.0.0.1:9000' }),
+    });
+    await expect(runGate6ProbeCapture(baseArgs(), harness.deps)).rejects.toMatchObject({
+      code: 'api-database-mismatch',
+    });
+  });
+
+  it('ABORTS on a Firebase project mismatch when both sides state one', async () => {
+    const harness = makeHarness({
+      deployment: deploymentBody({ firebaseProjectId: 'some-other-project' }),
+    });
+    await expect(runGate6ProbeCapture(baseArgs(), harness.deps)).rejects.toMatchObject({
+      code: 'api-database-mismatch',
+    });
+  });
+
+  it('marks the project axis UNCHECKED — never agreed — when a side states none', async () => {
+    const harness = makeHarness({ deployment: deploymentBody({ firebaseProjectId: null }) });
+    expect(await runGate6ProbeCapture(baseArgs(), harness.deps)).toBe(0);
+    const environment = sealedProbeFrom(harness).environment;
+    expect(environment.projectIdChecked).toBe(false);
+    expect(environment.apiFirebaseProjectId).toBeNull();
+    // The honest record must be visible to a human reading the log, too.
+    expect(harness.logs.join('\n')).toMatch(/Firebase project id UNCHECKED/);
+  });
+
+  it('ABORTS on an UNEXPECTED environment', async () => {
+    const harness = makeHarness({ deployment: deploymentBody({ environment: 'development' }) });
+    await expect(runGate6ProbeCapture(baseArgs(), harness.deps)).rejects.toMatchObject({
+      code: 'api-environment-unexpected',
+    });
+    expect(harness.files.size).toBe(0);
+  });
+
+  it('ABORTS on the WRONG revision — a probe of an unreviewed build is not evidence', async () => {
+    const harness = makeHarness({
+      deployment: deploymentBody({ revision: 'smash-tracker-api-00099-old' }),
+    });
+    await expect(runGate6ProbeCapture(baseArgs(), harness.deps)).rejects.toMatchObject({
+      code: 'api-revision-unexpected',
+    });
+    expect(harness.files.size).toBe(0);
+  });
+
+  it('falls back to the release SHA when the API names no revision', async () => {
+    const harness = makeHarness({
+      deployment: deploymentBody({ revision: null, releaseSha: 'deadbeefcafe' }),
+    });
+    const args = baseArgs().map((value) => (value === API_REVISION ? 'deadbeefcafe' : value));
+    expect(await runGate6ProbeCapture(args, harness.deps)).toBe(0);
+    expect(sealedProbeFrom(harness).environment.apiRevision).toBeNull();
+  });
+
+  it('ABORTS when the API can name NEITHER a revision nor a release SHA', async () => {
+    const harness = makeHarness({
+      deployment: deploymentBody({ revision: null, releaseSha: null }),
+    });
+    await expect(runGate6ProbeCapture(baseArgs(), harness.deps)).rejects.toMatchObject({
+      code: 'api-identity-incomplete',
+    });
+    expect(harness.files.size).toBe(0);
+  });
+
+  it('REFUSES to run at all when --expected-api-revision is omitted', async () => {
+    // An omitted expectation must be a refusal, never a silently skipped
+    // check — the forgotten case is exactly the dangerous one.
+    const harness = makeHarness();
+    await expect(
+      runGate6ProbeCapture(withoutFlag('--expected-api-revision'), harness.deps),
+    ).rejects.toMatchObject({ code: 'expected-api-revision-missing' });
+    expect(harness.requests).toHaveLength(0);
+    expect(harness.files.size).toBe(0);
+  });
+
+  it('REFUSES to run at all when --expected-api-environment is omitted', async () => {
+    const harness = makeHarness();
+    await expect(
+      runGate6ProbeCapture(withoutFlag('--expected-api-environment'), harness.deps),
+    ).rejects.toMatchObject({ code: 'expected-api-environment-missing' });
+    expect(harness.requests).toHaveLength(0);
+  });
+
+  it('REFUSES an --expected-api-environment that is not a real NODE_ENV', async () => {
+    const harness = makeHarness();
+    const args = baseArgs().map((value) => (value === API_ENVIRONMENT ? 'prod' : value));
+    await expect(runGate6ProbeCapture(args, harness.deps)).rejects.toMatchObject({
+      code: 'expected-api-environment-invalid',
+    });
+    expect(harness.requests).toHaveLength(0);
+  });
+
+  it('SEALS both sides of the binding and its verified result', async () => {
+    const harness = makeHarness();
+    await runGate6ProbeCapture(baseArgs(), harness.deps);
+    expect(sealedProbeFrom(harness).environment).toEqual({
+      apiBaseUrl: API_BASE,
+      apiEnvironment: API_ENVIRONMENT,
+      apiService: 'smash-tracker-api',
+      apiRevision: API_REVISION,
+      apiReleaseSha: 'deadbeefcafe',
+      apiFirebaseProjectId: LOCAL_PROJECT_ID,
+      apiDatabaseHost: HOST,
+      apiDatabaseEmulatorHost: null,
+      localDatabaseHost: HOST,
+      localFirebaseProjectId: LOCAL_PROJECT_ID,
+      localDatabaseEmulatorHost: null,
+      expectedApiRevision: API_REVISION,
+      expectedApiEnvironment: API_ENVIRONMENT,
+      projectIdChecked: true,
+      bound: true,
+    });
+  });
+
+  it('VALID PRODUCTION TUPLE: the whole bound capture round-trips through the real audit', async () => {
+    const harness = makeHarness();
+    expect(await runGate6ProbeCapture(baseArgs(), harness.deps)).toBe(0);
+    const { receipt, assertion } = await auditWith(harness, sealedProbeFrom(harness));
+    expect(assertion.status).toBe('passed');
+    expect(receipt.rejectedOperationProbes[0]).toMatchObject({
+      valid: true,
+      refusalCode: DEMO_ACCOUNT_CHECKOUT_FORBIDDEN_CODE,
+      apiEnvironment: API_ENVIRONMENT,
+      apiRevision: API_REVISION,
+      environmentBound: true,
+      wroteNothing: true,
+    });
+  });
+});
+
+describe('the identity pre-check', () => {
+  it('ABORTS when the credential cannot be resolved, without attempting the operation', async () => {
+    const harness = makeHarness({ identity: jsonResponse(401, {}) });
+    await expect(runGate6ProbeCapture(baseArgs(), harness.deps)).rejects.toMatchObject({
+      code: 'identity-check-failed',
+    });
+    // Only the binding and identity calls were made — the refused operation
+    // was never issued.
+    expect(harness.requests).toHaveLength(2);
+    expect(harness.files.size).toBe(0);
+  });
+
   it('names token expiry, the overwhelmingly likely cause of a 401', async () => {
-    const harness = makeHarness({ identity: { status: 401, bodyText: '{}' } });
+    const harness = makeHarness({ identity: jsonResponse(401, {}) });
     await expect(runGate6ProbeCapture(baseArgs(), harness.deps)).rejects.toThrow(
       /ID token has expired/,
     );
@@ -311,7 +693,7 @@ describe('the identity pre-check', () => {
     await expect(runGate6ProbeCapture(baseArgs(), harness.deps)).rejects.toMatchObject({
       code: 'identity-uid-mismatch',
     });
-    expect(harness.requests).toHaveLength(1);
+    expect(harness.requests).toHaveLength(2);
   });
 
   it('ABORTS when the SERVER does not classify the account as a demo account', async () => {
@@ -321,11 +703,13 @@ describe('the identity pre-check', () => {
     await expect(runGate6ProbeCapture(baseArgs(), harness.deps)).rejects.toMatchObject({
       code: 'identity-not-demo',
     });
-    expect(harness.requests).toHaveLength(1);
+    expect(harness.requests).toHaveLength(2);
   });
 
   it('ABORTS on a non-JSON identity body rather than reading undefined members', async () => {
-    const harness = makeHarness({ identity: { status: 200, bodyText: '<html>nope</html>' } });
+    const harness = makeHarness({
+      identity: { status: 200, headers: {}, bodyText: '<html>nope</html>' },
+    });
     await expect(runGate6ProbeCapture(baseArgs(), harness.deps)).rejects.toMatchObject({
       code: 'identity-check-failed',
     });

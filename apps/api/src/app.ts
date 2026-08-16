@@ -53,11 +53,13 @@ import internalJobsRoutes from './routes/internalJobs.js';
 import shareMetaRoutes from './routes/shareMeta.js';
 import shareOgImageRoutes from './routes/shareOgImage.js';
 import researchTenantsRoutes from './routes/research.js';
+import deploymentIdentityRoutes from './routes/deploymentIdentity.js';
 import { ConflictError, ForbiddenError, NotFoundError } from './services/rtdb.js';
 import type { FirebaseServices } from './firebase/admin.js';
 import type {
   ClaimCodeConfig,
   DemoAccountConfig,
+  DeploymentConfig,
   Ga4Config,
   InternalJobsConfig,
   ParryggConfig,
@@ -97,6 +99,14 @@ declare module 'fastify' {
      * sense the other config-null gates in this file use that word.
      */
     demoAccountConfig: DemoAccountConfig | null;
+    /**
+     * Phase 30.3 (Gate 6 capture-evidence hardening, item 3): this API's own
+     * deployment identity, decorated directly (mirrors `researchConfig` and
+     * `demoAccountConfig` above). Always present as a decoration; holds null
+     * when the `deployment` build option is omitted, in which case
+     * `GET /api/deployment-identity` answers 503 rather than guessing.
+     */
+    deploymentConfig: DeploymentConfig | null;
   }
 }
 
@@ -179,6 +189,14 @@ export interface BuildAppOptions {
    * 'fastify'` block above.
    */
   demo?: DemoAccountConfig | null;
+  /**
+   * Phase 30.3 (Gate 6 capture-evidence hardening, item 3): this API's own
+   * deployment identity. Optional AND nullable, same "every existing
+   * construction site keeps compiling" convention as `research`/`demo` above
+   * — omitted, `GET /api/deployment-identity` answers 503, which the Gate-6
+   * capture operator treats as a hard abort. `index.ts` always supplies it.
+   */
+  deployment?: DeploymentConfig | null;
   /**
    * Phase 30.3 Gate 5 (30.3-integration follow-up): the YouTube Data API
    * config for the bounded VOD-candidate discovery route. Optional AND
@@ -277,6 +295,10 @@ export function buildApp(options: BuildAppOptions) {
   // Phase 30.1 (Demo Account Topology & Migration, RTEN-03 re-scope):
   // decorate directly, mirroring `researchConfig` immediately above.
   app.decorate('demoAccountConfig', options.demo ?? null);
+
+  // Phase 30.3 (Gate 6 capture-evidence hardening, item 3): decorated
+  // directly, mirroring `demoAccountConfig` immediately above.
+  app.decorate('deploymentConfig', options.deployment ?? null);
 
   app.setErrorHandler<FastifyError>((error, request, reply) => {
     if (hasZodFastifySchemaValidationErrors(error)) {
@@ -423,6 +445,12 @@ export function buildApp(options: BuildAppOptions) {
 
   app.register(
     async (api) => {
+      // Phase 30.3 (Gate 6 capture-evidence hardening, item 3): the
+      // authenticated deployment-identity read the probe-capture operator
+      // uses to bind the API it drives to the RTDB it snapshots. Registered
+      // first in the scope and dependency-free — it reads only the
+      // `deploymentConfig` decoration, never the database.
+      await api.register(deploymentIdentityRoutes);
       await api.register(usersRoutes);
       await api.register(matchesRoutes);
       await api.register(opponentsRoutes);

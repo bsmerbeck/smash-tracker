@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { DEPLOYMENT_IDENTITY_VERSION, type DeploymentIdentity } from '@smash-tracker/shared';
 
 /**
  * Startup environment validation. Fails fast with a readable message if
@@ -154,6 +155,34 @@ const envSchema = z.object({
   // accidental `"1"`/`"yes"`/`"TRUE"`) must fail closed, not silently enable
   // a paid, money-moving surface.
   PREP_PAID_REPORTS_ENABLED: z.string().optional(),
+
+  // ---- Phase 30.3 (Gate 6 capture-evidence hardening, item 3): the API's
+  // own deployment identity, served by GET /api/deployment-identity so the
+  // probe-capture operator can BIND the API it drives to the RTDB it
+  // snapshots. All four are optional and all four are honestly NULL when
+  // absent — never defaulted to a value that would look valid to a verifier.
+  /**
+   * Cloud Run injects `K_SERVICE`/`K_REVISION` into every container. The
+   * revision is immutable and minted per deploy, which is what makes it
+   * usable as the "is this the reviewed build?" coordinate. Absent off Cloud
+   * Run; the operator's own expected-revision check is what turns that
+   * absence into a refusal, not a default here.
+   */
+  K_SERVICE: z.string().optional(),
+  K_REVISION: z.string().optional(),
+  /**
+   * The git SHA the image was built from. Not available at runtime from
+   * anything Cloud Run injects, so it must be baked in at BUILD time — see
+   * the `API_RELEASE_SHA` build arg in the repo Dockerfile. Unset means the
+   * image was built without it and the endpoint reports `releaseSha: null`.
+   */
+  API_RELEASE_SHA: z.string().optional(),
+  /**
+   * The GCP project id, as published to the runtime. Best-effort: the
+   * load-bearing binding value is the database HOST (derived from the always
+   * required `FIREBASE_DATABASE_URL`), which can never be null.
+   */
+  GOOGLE_CLOUD_PROJECT: z.string().optional(),
 });
 
 export type Env = z.infer<typeof envSchema>;
@@ -484,4 +513,62 @@ export function getPrepPaidConfig(env: Env): PrepPaidConfig | null {
     return null;
   }
   return { enabled: true };
+}
+
+/**
+ * Phase 30.3 (Gate 6 capture-evidence hardening, item 3): the API's own
+ * deployment identity, exactly as this process sees it. Served by
+ * `GET /api/deployment-identity`; see `packages/shared/src/deployment.ts` for
+ * the contract and the threat it closes.
+ */
+export type DeploymentConfig = DeploymentIdentity;
+
+/**
+ * Assembles the deployment identity. Unlike every other `get*Config` in this
+ * file this NEVER returns null and has no all-or-nothing gate: identity is
+ * not an integration that can be switched off, and a server that declines to
+ * say who it is would simply be un-auditable. Missing OPTIONAL coordinates
+ * become explicit `null`s.
+ *
+ * `databaseHost` is the HOST of the always-required `FIREBASE_DATABASE_URL` —
+ * parsed through `URL`, so any userinfo, path, or query component (a
+ * hypothetical `?auth=` credential included) is discarded rather than
+ * published. A malformed URL THROWS here, at startup, rather than yielding an
+ * identity that cannot be bound to anything.
+ */
+export function getDeploymentConfig(env: Env): DeploymentConfig {
+  /**
+   * Blank IS absent. A Dockerfile `ENV FOO=${FOO}` with the build arg unset
+   * sets the empty string rather than leaving the variable undefined, and
+   * Cloud Run env vars can be set to "" the same way. Collapsing those to
+   * null here is what keeps "the image was built without a release SHA" from
+   * surfacing as a 500 (the shared schema requires `min(1)`) or, worse, as an
+   * empty-but-present coordinate a verifier might read as an answer.
+   */
+  const stated = (value: string | undefined): string | null => {
+    const trimmed = value?.trim();
+    return trimmed ? trimmed : null;
+  };
+
+  let databaseHost: string;
+  try {
+    databaseHost = new URL(env.FIREBASE_DATABASE_URL).host;
+  } catch {
+    throw new Error(
+      `FIREBASE_DATABASE_URL is not a valid URL, so the API cannot state which database it is using`,
+    );
+  }
+  if (!databaseHost) {
+    throw new Error('FIREBASE_DATABASE_URL has no host component');
+  }
+  return {
+    identityVersion: DEPLOYMENT_IDENTITY_VERSION,
+    environment: env.NODE_ENV,
+    service: stated(env.K_SERVICE),
+    revision: stated(env.K_REVISION),
+    releaseSha: stated(env.API_RELEASE_SHA),
+    firebaseProjectId: stated(env.GOOGLE_CLOUD_PROJECT),
+    databaseHost,
+    databaseEmulatorHost: stated(env.FIREBASE_DATABASE_EMULATOR_HOST),
+  };
 }

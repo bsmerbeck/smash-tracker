@@ -1,6 +1,7 @@
 import { readFileSync, readdirSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
+import { API_ERROR_CODES, DEMO_ACCOUNT_CHECKOUT_FORBIDDEN_CODE } from '@smash-tracker/shared';
 import type {
   DemoAccountConfig,
   PrepPaidConfig,
@@ -215,6 +216,15 @@ describe('demoMoneyGuards: POST /api/billing/checkout refuses a demo account bef
     expect(response.statusCode).toBe(403);
     expect(response.json()).toMatchObject({ error: 'Forbidden', statusCode: 403 });
 
+    // Phase 30.3 (capture-evidence item 2): the STABLE application code, the
+    // only member of this envelope a Gate-6 probe may treat as proof that
+    // the application — not a CDN, proxy, or WAF — refused. Asserted on the
+    // literal string as well as the constant, so renaming the constant's
+    // VALUE (which would silently invalidate every sealed probe) fails here.
+    expect(response.json().code).toBe(DEMO_ACCOUNT_CHECKOUT_FORBIDDEN_CODE);
+    expect(response.json().code).toBe('demo_account_checkout_forbidden');
+    expect(response.headers['content-type']).toMatch(/^application\/json/);
+
     // ORDERING PROOF: no Stripe Checkout Session was ever requested. A
     // tree-emptiness assertion alone cannot show this — a Stripe call
     // leaves no local trace.
@@ -241,6 +251,7 @@ describe('demoMoneyGuards: POST /api/billing/checkout refuses a demo account bef
     await flush();
 
     expect(response.statusCode).toBe(403);
+    expect(response.json().code).toBe(DEMO_ACCOUNT_CHECKOUT_FORBIDDEN_CODE);
     expect(stripeCreate).not.toHaveBeenCalled();
     expect((database.dump() as Record<string, unknown>).eventLedger).toBeUndefined();
   });
@@ -848,5 +859,123 @@ describe('demoMoneyGuards: Client Hub export refuses a demo account (locked, req
 
     expect(response.statusCode).toBe(200);
     expect(response.json()).toMatchObject({ clientId, matches: [] });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Block 5 (Phase 30.3 capture-evidence hardening, item 2): the stable refusal
+// code exists, is emitted by EXACTLY ONE handler, and leaks no oracle.
+//
+// The code was added so the Gate-6 probe-capture operator can distinguish an
+// APPLICATION refusal from a CDN/proxy/WAF 403. The hazard it introduces is
+// the mirror image: a discriminating identifier attached to a refusal that
+// was deliberately built to be INDISTINGUISHABLE hands out exactly the oracle
+// that refusal withholds. Both halves are locked here — the code must be
+// present where the probe needs it, and absent everywhere else.
+// ---------------------------------------------------------------------------
+
+/**
+ * Matches a `code:` member inside a response envelope — either a literal
+ * (`code: 'x'`) or the shared constant. Deliberately narrow: it does NOT
+ * match `code` used as a local/parameter/property name elsewhere (`error.code
+ * === 'ENOENT'`, `claimCode`, `statusCode`), because those are followed by an
+ * operator rather than a string/identifier value in an object literal.
+ *
+ * NOT global: `RegExp.prototype.test` on a `/g` regex advances `lastIndex`
+ * between calls, so a shared instance would silently start skipping matches
+ * partway through the file sweep — a false GREEN on the very lock this block
+ * exists to hold. (The fixture case below catches exactly that mistake.)
+ */
+const RESPONSE_CODE_MEMBER = /(?:^|[\s{,(])code:\s*(?:'[^']*'|"[^"]*"|[A-Z][A-Z0-9_]*)/;
+
+/**
+ * The COMPLETE inventory of source files permitted to put a `code` member in
+ * a response envelope. Adding a file here is an assertion that the surface is
+ * authenticated and self-addressed, with no no-oracle contract to break.
+ */
+const FILES_ALLOWED_TO_EMIT_AN_ERROR_CODE = ['src/routes/billing.ts'];
+
+describe('demoMoneyGuards: the stable refusal code is scoped to one handler (locked, requirement 5)', () => {
+  it('EXACTLY the allowlisted files emit a response `code` member', () => {
+    const emitters = ALL_API_SOURCE_FILES.filter((file) =>
+      RESPONSE_CODE_MEMBER.test(stripComments(readFileSync(file, 'utf-8'))),
+    )
+      .map(relPath)
+      .sort();
+    // A new entry here is NOT a licence to extend the allowlist. Several
+    // refusals in this API are intentionally uninformative — the coaching
+    // delivery guards throw a byte-identical NotFoundError (D-05 no-oracle)
+    // and the public bearer-token surfaces answer identically for unknown,
+    // expired, and revoked tokens. A discriminating code on any of those is
+    // an oracle regression, not a new feature.
+    expect(emitters).toEqual(FILES_ALLOWED_TO_EMIT_AN_ERROR_CODE);
+  });
+
+  it('FIXTURE: the scan really does detect a code member (anti-vacuous-pass guard)', () => {
+    expect(
+      RESPONSE_CODE_MEMBER.test(stripComments(`reply.code(403).send({ code: 'something' });`)),
+    ).toBe(true);
+    expect(
+      RESPONSE_CODE_MEMBER.test(stripComments(`reply.send({ code: SOME_SHARED_CONSTANT });`)),
+    ).toBe(true);
+  });
+
+  it('FIXTURE: ordinary `code` usages do NOT trip the scan (no false positives)', () => {
+    for (const fixture of [
+      `if (error.code === 'ENOENT') return null;`,
+      `reply.code(403).send({ error: 'Forbidden', statusCode: 403 });`,
+      `const { claimCode } = options;`,
+    ]) {
+      expect(RESPONSE_CODE_MEMBER.test(stripComments(fixture))).toBe(false);
+    }
+  });
+
+  it('the global error handler adds NO code — every mapped error keeps its current envelope', async () => {
+    const { app } = buildMoneyApp();
+    // 404 via NotFoundError, the shape the no-oracle coaching refusals reuse.
+    const notFound = await app.inject({
+      method: 'GET',
+      url: '/api/coaching/clients/does-not-exist-at-all/export',
+      headers: authHeader(ORDINARY_TOKEN),
+    });
+    expect(notFound.statusCode).toBeGreaterThanOrEqual(400);
+    expect(notFound.json()).not.toHaveProperty('code');
+  });
+
+  it.each([
+    [
+      'an UNAUTHENTICATED checkout (401 from the auth plugin)',
+      {} as Record<string, string>,
+      { packId: 'pack5' },
+    ],
+    [
+      'an ordinary account posting an unknown pack (400 from the pack lookup)',
+      undefined,
+      { packId: 'pack-that-does-not-exist' },
+    ],
+  ])('carries NO code on %s', async (_label, headers, payload) => {
+    const { app } = buildMoneyApp();
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/billing/checkout',
+      headers: headers ?? authHeader(ORDINARY_TOKEN),
+      payload,
+    });
+    expect(response.statusCode).toBeGreaterThanOrEqual(400);
+    expect(response.json()).not.toHaveProperty('code');
+  });
+
+  it('carries NO code when billing is unconfigured (the 503 catch-all)', async () => {
+    const { app } = buildTestApp({ stripe: null, demo: DEMO_CONFIG });
+    const response = await app.inject({ method: 'POST', url: '/api/billing/checkout' });
+    expect(response.statusCode).toBe(503);
+    expect(response.json()).not.toHaveProperty('code');
+  });
+
+  it('the code is a stable identifier, not a human message', () => {
+    // No spaces, no punctuation a copywriter would touch — a value that can
+    // only change through a deliberate, reviewable edit to the constant.
+    expect(DEMO_ACCOUNT_CHECKOUT_FORBIDDEN_CODE).toMatch(/^[a-z][a-z0-9_]*$/);
+    expect(API_ERROR_CODES).toContain(DEMO_ACCOUNT_CHECKOUT_FORBIDDEN_CODE);
   });
 });

@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import type { Database } from 'firebase-admin/database';
 import { z } from 'zod';
 import {
+  DEMO_ACCOUNT_CHECKOUT_FORBIDDEN_CODE,
   isSourceOwnedVodValue,
   isTournamentRegistryOwnedRow,
   researchEnrichmentAttachmentRecordSchema,
@@ -426,9 +427,89 @@ export interface Gate6TraceSnapshot {
   surfaces: Gate6TraceSurface[];
 }
 
+/**
+ * The sealed probe format.
+ *
+ * Bumped 1 -> 2 (Phase 30.3 capture-evidence hardening): a v1 probe proved
+ * neither of the two things a v2 probe proves — that the refusal came from the
+ * APPLICATION (`refusalEnvelope`), and that the API driven and the RTDB
+ * snapshotted are the same environment (`environment`). Both gaps produced
+ * false greens, so a v1 probe is not weaker evidence for the v2 assertion; it
+ * is evidence for a DIFFERENT, discredited assertion. It is therefore REFUSED
+ * by name rather than leniently parsed — the same posture
+ * `registryManifestArtifact.ts` takes on its own v1.
+ */
+export const GATE6_REJECTED_OPERATION_PROBE_FORMAT_VERSION = 2;
+
+/**
+ * The verified refusal envelope: the parsed body of the refused call, proven
+ * to be the APPLICATION's own refusal before the probe was sealed.
+ *
+ * A bare 403 is not evidence — a CDN, reverse proxy, WAF, or unrelated
+ * authorization failure returns one while leaving every trace surface
+ * untouched, which would make "the refused operation wrote nothing" true and
+ * completely vacuous. `code` is the stable application identifier that
+ * distinguishes the real guard from all of those.
+ */
+export interface Gate6RefusalEnvelope {
+  /** HTTP status actually observed. */
+  status: number;
+  /** The `Content-Type` header, verified to be JSON before the body was parsed. */
+  contentType: string;
+  /** The stable application error code. THE proof member. */
+  code: string;
+  error: string;
+  message: string;
+  /** The envelope's own `statusCode`, verified equal to `status`. */
+  statusCode: number;
+}
+
+/**
+ * The verified API-to-RTDB binding: who the API said it was, who the operator
+ * said its own database was, and the result of comparing them.
+ *
+ * Sealing only `databaseHost` (v1) proved nothing, because that value came
+ * from the same local `.env` as the snapshot and so agreed with itself. Every
+ * `api*` member below is the DEPLOYED API's own answer, obtained over the
+ * wire from `GET /api/deployment-identity`; every `local*` member is the
+ * operator's own environment. The audit re-derives the comparison from these
+ * values rather than trusting `bound`.
+ */
+export interface Gate6ProbeEnvironment {
+  /** The normalized API origin+prefix the refused call was issued against. */
+  apiBaseUrl: string;
+  /** `NODE_ENV`, as the API reports it. */
+  apiEnvironment: string;
+  apiService: string | null;
+  /** Cloud Run's immutable per-deploy revision, as the API reports it. */
+  apiRevision: string | null;
+  apiReleaseSha: string | null;
+  apiFirebaseProjectId: string | null;
+  /** The database host the API says IT is using. */
+  apiDatabaseHost: string;
+  apiDatabaseEmulatorHost: string | null;
+  /** The database host the OPERATOR snapshotted, from its own environment. */
+  localDatabaseHost: string;
+  localFirebaseProjectId: string | null;
+  localDatabaseEmulatorHost: string | null;
+  /** The build coordinate the operator was told to require. */
+  expectedApiRevision: string;
+  /** The environment the operator was told to require. */
+  expectedApiEnvironment: string;
+  /**
+   * `false` when either side could not state a project id, so an UNCHECKED
+   * axis is never read as a checked one (the same honesty
+   * `Gate6RegistryReceiptObservation.databaseHostChecked` already applies).
+   * The load-bearing binding is the database HOST, which is never null.
+   */
+  projectIdChecked: boolean;
+  /** The operator's attestation. The audit recomputes it and does not take this on faith. */
+  bound: true;
+}
+
 /** The sealed body of one rejected-operation probe. */
 export interface Gate6RejectedOperationProbeBody {
-  formatVersion: 1;
+  formatVersion: 2;
   workspace: Gate6WorkspaceKey;
   uid: string;
   /** The database the probe was taken against — a probe from staging is not evidence about production. */
@@ -437,6 +518,10 @@ export interface Gate6RejectedOperationProbeBody {
   operation: string;
   /** The refusal that was actually observed. A probe of an operation that SUCCEEDED is not evidence. */
   refusal: string;
+  /** The PROVEN application refusal. Phase 30.3 capture-evidence item 2. */
+  refusalEnvelope: Gate6RefusalEnvelope;
+  /** The PROVEN API-to-RTDB binding. Phase 30.3 capture-evidence item 3. */
+  environment: Gate6ProbeEnvironment;
   startedAtMs: number;
   finishedAtMs: number;
   /** Captured immediately BEFORE the refused call. */
@@ -462,6 +547,14 @@ export interface Gate6RejectedOperationProbeObservation {
   workspace: Gate6WorkspaceKey | null;
   operation: string | null;
   refusal: string | null;
+  /** The verified application error code, so a reader sees WHICH guard refused. */
+  refusalCode: string | null;
+  /** The API revision the probe was captured against. */
+  apiRevision: string | null;
+  /** The API's own `NODE_ENV`. */
+  apiEnvironment: string | null;
+  /** `true` only when the audit RE-DERIVED the API/RTDB binding and it held. */
+  environmentBound: boolean;
   /** Surfaces compared for this probe — the anti-vacuity figure per probe. */
   surfacesCompared: number;
   /** `true` only when every compared surface was byte-identical before and after. */
@@ -489,8 +582,13 @@ export interface Gate6AuditReceipt {
    * Bumped 2 -> 3 (hard gate #4): assertion 10 became the operation-scoped
    * `rejected-operation-no-trace`, and the receipt gained
    * `rejectedOperationProbes`/`registryManifests`.
+   * Bumped 3 -> 4 (capture-evidence hardening): each
+   * `rejectedOperationProbes` observation gained the verified
+   * `refusalCode`/`apiRevision`/`apiEnvironment`/`environmentBound`, so a
+   * reader can see WHICH guard refused and against WHICH deployment,
+   * rather than only that some 403 happened somewhere.
    */
-  receiptVersion: 3;
+  receiptVersion: 4;
   expectationTableVersion: string;
   generatedAtMs: number;
   targetUids: Gate6UidMap;
@@ -2265,6 +2363,30 @@ async function assertIzawCoachingRoot(
  *    ledger row — the pairing `events/ledger.ts` writes in one multi-path
  *    update. No causation-id substring guessing survives.
  *
+ * WHAT MAKES THE REFUSAL AND THE ENVIRONMENT REAL (format v2, Phase 30.3
+ * capture-evidence hardening). Two false-green paths were open in v1, and
+ * both made the comparison above true and meaningless rather than false:
+ *
+ *  - ANY 403 counted as a refusal. A CDN, reverse proxy, WAF, or unrelated
+ *    authorization failure returns one without the request ever reaching the
+ *    demo guard — and of course writes nothing, so the probe passed while
+ *    witnessing nothing. v2 seals `refusalEnvelope`, and this audit requires
+ *    its `code` to be the demo checkout guard's own stable application
+ *    identifier, served as `application/json`, with a self-consistent status.
+ *
+ *  - The API driven and the database snapshotted were never bound. The
+ *    operator sealed a `databaseHost` read from the same local `.env` as the
+ *    snapshot, so it agreed with itself; an API with compatible Firebase Auth
+ *    and allowlists could be paired with a DIFFERENT RTDB and pass. v2 seals
+ *    `environment`, in which every `api*` coordinate is the DEPLOYED API's
+ *    own answer from `GET /api/deployment-identity`. This audit re-derives
+ *    the three-way host equality (API / operator / the database being
+ *    audited), the emulator agreement, the environment, and the build
+ *    coordinate — it does not trust the operator's `bound` attestation.
+ *
+ * A v1 probe is REFUSED by name rather than migrated: it carries neither
+ * proof, so accepting it leniently would reinstate both holes.
+ *
  * THE LIMIT, STATED RATHER THAN PAPERED OVER. The audit VERIFIES a probe; it
  * does not re-execute the refused operation, and it cannot, because by gate
  * time the surfaces have legitimately moved on. What makes the probe evidence
@@ -2299,14 +2421,47 @@ const traceSnapshotSchema = z
   })
   .strict();
 
+const refusalEnvelopeSchema = z
+  .object({
+    status: z.number().int().positive(),
+    contentType: z.string().min(1),
+    code: z.string().min(1),
+    error: z.string().min(1),
+    message: z.string().min(1),
+    statusCode: z.number().int().positive(),
+  })
+  .strict();
+
+const probeEnvironmentSchema = z
+  .object({
+    apiBaseUrl: z.string().min(1),
+    apiEnvironment: z.string().min(1),
+    apiService: z.string().min(1).nullable(),
+    apiRevision: z.string().min(1).nullable(),
+    apiReleaseSha: z.string().min(1).nullable(),
+    apiFirebaseProjectId: z.string().min(1).nullable(),
+    apiDatabaseHost: z.string().min(1),
+    apiDatabaseEmulatorHost: z.string().min(1).nullable(),
+    localDatabaseHost: z.string().min(1),
+    localFirebaseProjectId: z.string().min(1).nullable(),
+    localDatabaseEmulatorHost: z.string().min(1).nullable(),
+    expectedApiRevision: z.string().min(1),
+    expectedApiEnvironment: z.string().min(1),
+    projectIdChecked: z.boolean(),
+    bound: z.literal(true),
+  })
+  .strict();
+
 const rejectedOperationProbeBodySchema = z
   .object({
-    formatVersion: z.literal(1),
+    formatVersion: z.literal(GATE6_REJECTED_OPERATION_PROBE_FORMAT_VERSION),
     workspace: z.enum(GATE6_WORKSPACE_KEYS),
     uid: z.string().min(1),
     databaseHost: z.string().min(1),
     operation: z.string().min(1),
     refusal: z.string().min(1),
+    refusalEnvelope: refusalEnvelopeSchema,
+    environment: probeEnvironmentSchema,
     startedAtMs: z.number().int().nonnegative(),
     finishedAtMs: z.number().int().nonnegative(),
     before: traceSnapshotSchema,
@@ -2326,8 +2481,27 @@ export function createGate6RejectedOperationProbe(
   return { ...parsed, contentHash: canonicalDigest(parsed) };
 }
 
-/** Parses and integrity-checks a probe file's contents. Throws on the first violation. */
+/**
+ * Parses and integrity-checks a probe file's contents. Throws on the first
+ * violation.
+ *
+ * A STALE-FORMAT probe is refused BY NAME before schema parsing, so the
+ * operator reads "re-capture this" rather than zod's generic literal
+ * complaint. It is never migrated: a v1 probe carries no refusal envelope and
+ * no environment binding, which are exactly the two proofs v2 exists to
+ * require — accepting it leniently would reinstate both false greens.
+ */
 export function validateGate6RejectedOperationProbe(raw: unknown): Gate6RejectedOperationProbe {
+  const declaredVersion = isPlainRecord(raw) ? raw.formatVersion : undefined;
+  if (declaredVersion !== GATE6_REJECTED_OPERATION_PROBE_FORMAT_VERSION) {
+    throw new Error(
+      `Rejected-operation probe formatVersion ${String(declaredVersion)} is not the required ` +
+        `${GATE6_REJECTED_OPERATION_PROBE_FORMAT_VERSION}. A v1 probe proved neither that the ` +
+        'refusal came from the application (any 403 was accepted, including a CDN/WAF one) nor ' +
+        'that the API driven and the database snapshotted were the same environment. It is ' +
+        'REFUSED, not migrated — re-capture with the current operator.',
+    );
+  }
   const probe = rejectedOperationProbeSchema.parse(raw);
   const { contentHash, ...body } = probe;
   if (canonicalDigest(body) !== contentHash) {
@@ -2505,6 +2679,10 @@ function assertRejectedOperationNoTrace(
         workspace: null,
         operation: null,
         refusal: null,
+        refusalCode: null,
+        apiRevision: null,
+        apiEnvironment: null,
+        environmentBound: false,
         surfacesCompared: 0,
         wroteNothing: false,
       });
@@ -2582,6 +2760,113 @@ function assertRejectedOperationNoTrace(
       );
     }
 
+    // ---- Phase 30.3 capture-evidence item 2: the refusal was the APPLICATION's.
+    //
+    // The operator already refused to seal anything unless this held, but the
+    // audit re-checks it rather than trusting the artifact: the seal proves
+    // the value has not been edited, not that the operator applied the rule
+    // this audit requires. An older operator, or one built against a
+    // different code constant, is caught here.
+    const envelope = probe.refusalEnvelope;
+    if (envelope.code !== DEMO_ACCOUNT_CHECKOUT_FORBIDDEN_CODE) {
+      fail(
+        'rejected-operation-probe-refusal-code-unexpected',
+        `the sealed refusal carries application code "${envelope.code}", not the demo checkout ` +
+          `guard's "${DEMO_ACCOUNT_CHECKOUT_FORBIDDEN_CODE}". Any 403 without that code — a CDN, ` +
+          'proxy, or WAF refusal, or an unrelated authorization failure — leaves every trace ' +
+          'surface untouched and would make this assertion vacuously true.',
+      );
+    }
+    if (!/^application\/json\b/i.test(envelope.contentType)) {
+      fail(
+        'rejected-operation-probe-refusal-code-unexpected',
+        `the sealed refusal was served as "${envelope.contentType}", not application/json; an HTML ` +
+          'error page is an edge/CDN refusal, not the application guard',
+      );
+    }
+    if (envelope.status !== envelope.statusCode) {
+      fail(
+        'rejected-operation-probe-refusal-code-unexpected',
+        `the sealed refusal's HTTP status ${envelope.status} disagrees with its envelope's own ` +
+          `statusCode ${envelope.statusCode}, so something between the guard and the operator ` +
+          're-wrapped the response',
+      );
+    }
+
+    // ---- Phase 30.3 capture-evidence item 3: the API and the RTDB are one
+    // environment.
+    //
+    // RE-DERIVED here from the sealed coordinates, never read off the
+    // operator's `bound: true` attestation. The three-way equality is what
+    // matters: the API's own database host, the operator's local one, and the
+    // database THIS audit is pointed at must all name the same instance.
+    // Without it, an API with compatible Firebase Auth and allowlists could be
+    // paired with a different RTDB and the whole probe would pass vacuously.
+    const environment = probe.environment;
+    let environmentBound = true;
+    const unbound = (detail: string): void => {
+      environmentBound = false;
+      fail('rejected-operation-probe-environment-mismatch', detail);
+    };
+    if (environment.apiDatabaseHost !== environment.localDatabaseHost) {
+      unbound(
+        `the API says it uses ${environment.apiDatabaseHost} but the operator snapshotted ` +
+          `${environment.localDatabaseHost} — the refusal and the snapshots are about two ` +
+          'different systems',
+      );
+    }
+    if (environment.localDatabaseHost !== probe.databaseHost) {
+      unbound(
+        `the probe's own databaseHost ${probe.databaseHost} disagrees with the environment ` +
+          `record's ${environment.localDatabaseHost}`,
+      );
+    }
+    if (expectedDatabaseHost !== null && environment.apiDatabaseHost !== expectedDatabaseHost) {
+      unbound(
+        `the API says it uses ${environment.apiDatabaseHost}, which is not the ${expectedDatabaseHost} ` +
+          'this audit is reading',
+      );
+    }
+    if (environment.apiDatabaseEmulatorHost !== environment.localDatabaseEmulatorHost) {
+      unbound(
+        `emulator mismatch: the API reports ${environment.apiDatabaseEmulatorHost ?? 'none'} and ` +
+          `the operator ${environment.localDatabaseEmulatorHost ?? 'none'} — an API pointed at an ` +
+          'emulator is a different database environment even when the host matches',
+      );
+    }
+    if (
+      environment.projectIdChecked &&
+      environment.apiFirebaseProjectId !== environment.localFirebaseProjectId
+    ) {
+      unbound(
+        `Firebase project mismatch: the API reports ${environment.apiFirebaseProjectId} and the ` +
+          `operator ${environment.localFirebaseProjectId}`,
+      );
+    }
+    if (environment.apiEnvironment !== environment.expectedApiEnvironment) {
+      fail(
+        'rejected-operation-probe-environment-unexpected',
+        `the API reports environment "${environment.apiEnvironment}" but the capture required ` +
+          `"${environment.expectedApiEnvironment}"`,
+      );
+    }
+    // The immutable Cloud Run revision is authoritative when present; off
+    // Cloud Run the release SHA is the only build coordinate there is.
+    const observedBuild = environment.apiRevision ?? environment.apiReleaseSha;
+    if (observedBuild === null) {
+      fail(
+        'rejected-operation-probe-revision-unexpected',
+        'the API named neither a deployment revision nor a release SHA, so this probe cannot be ' +
+          'tied to the build the owner reviewed',
+      );
+    } else if (observedBuild !== environment.expectedApiRevision) {
+      fail(
+        'rejected-operation-probe-revision-unexpected',
+        `the probe was captured against build "${observedBuild}", not the required ` +
+          `"${environment.expectedApiRevision}"`,
+      );
+    }
+
     const beforeByPath = new Map(probe.before.surfaces.map((surface) => [surface.path, surface]));
     const afterByPath = new Map(probe.after.surfaces.map((surface) => [surface.path, surface]));
     // ANTI-VACUITY: two empty snapshots compare equal, so the mandatory
@@ -2638,6 +2923,10 @@ function assertRejectedOperationNoTrace(
       workspace,
       operation: probe.operation,
       refusal: probe.refusal,
+      refusalCode: envelope.code,
+      apiRevision: environment.apiRevision ?? environment.apiReleaseSha,
+      apiEnvironment: environment.apiEnvironment,
+      environmentBound,
       surfacesCompared: allPaths.length,
       wroteNothing,
     });
@@ -2878,7 +3167,7 @@ async function runAuditWithReader(
   });
 
   return {
-    receiptVersion: 3,
+    receiptVersion: 4,
     expectationTableVersion: GATE6_EXPECTATION_TABLE_VERSION,
     generatedAtMs: options.nowMs,
     targetUids: { ...options.uids },

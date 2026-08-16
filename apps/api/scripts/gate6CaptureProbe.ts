@@ -12,7 +12,18 @@
  *     --account hbox \
  *     --hbox-uid <uid> --mkleo-uid <uid> --sparg0-uid <uid> --izaw-uid <uid> \
  *     --api-base-url https://grandfinals.gg/api \
+ *     --expected-api-environment production \
+ *     --expected-api-revision <the reviewed Cloud Run revision or release SHA> \
  *     --out ./gate6-probe-hbox.json
+ *
+ * THE TWO EXPECTATION FLAGS ARE MANDATORY. `--expected-api-revision` is the
+ * immutable Cloud Run revision of the build the owner reviewed (off Cloud
+ * Run, its release SHA); `--expected-api-environment` is the `NODE_ENV` that
+ * build must report. Read the revision from the DEPLOYMENT record — asking
+ * the API which build it is and then accepting whatever it answers proves
+ * nothing. Omitting either is a hard refusal, never a skipped check: the
+ * forgotten case is exactly the one that yields a probe captured against
+ * something other than the reviewed deployment.
  *
  * THE CREDENTIAL. `GATE6_DEMO_ID_TOKEN` must hold a CURRENT Firebase ID token
  * for the demo account named by `--account` — the same bearer the browser
@@ -28,12 +39,20 @@
  * Every refusal-proof failure — most importantly the operation SUCCEEDING —
  * exits `1` having written nothing.
  *
+ * THE BINDING STEP RUNS FIRST. Before any snapshot, the operator asks the
+ * deployed API — via `GET /api/deployment-identity` — which environment,
+ * build, and RTDB it is actually using, and aborts unless all three match the
+ * flags above and the database this process is configured to read. Without
+ * that, an API backed by a DIFFERENT database (staging, say, with compatible
+ * Firebase Auth and demo allowlists) would produce a probe in which the
+ * refusal and the snapshots describe two unrelated systems.
+ *
  * RTDB is READ ONLY here. The refused operation is an outbound HTTPS call to
  * the deployed API; this process's only write is the probe file.
  */
 import { writeFile } from 'node:fs/promises';
 import { deleteApp } from 'firebase-admin/app';
-import { loadEnv } from '../src/config/env.js';
+import { getDeploymentConfig, loadEnv } from '../src/config/env.js';
 import { initFirebase } from '../src/firebase/admin.js';
 import { runWithLifecycle } from './enrichLifecycle.js';
 import {
@@ -59,7 +78,15 @@ async function httpRequest(
     body: request.body,
     signal: options.signal,
   });
-  return { status: response.status, bodyText: await response.text() };
+  // Headers are carried through because the refusal proof needs
+  // `content-type` to tell the application's JSON refusal from a CDN/WAF HTML
+  // error page. `Headers` lower-cases its keys, which is the casing the
+  // operator reads by.
+  const headers: Record<string, string> = {};
+  response.headers.forEach((value, key) => {
+    headers[key] = value;
+  });
+  return { status: response.status, headers, bodyText: await response.text() };
 }
 
 async function main(): Promise<void> {
@@ -73,7 +100,12 @@ async function main(): Promise<void> {
 
   const env = loadEnv();
   const firebase = initFirebase(env);
-  const databaseHost = new URL(env.FIREBASE_DATABASE_URL).host;
+  // The LOCAL database identity — what this process is about to snapshot.
+  // Derived through the same `getDeploymentConfig` the API serves its own
+  // identity from, so the two sides of the binding comparison are computed by
+  // one function rather than by two descriptions of the same rule that can
+  // drift apart.
+  const local = getDeploymentConfig(env);
 
   await runWithLifecycle({
     // The wrapper logs whatever `run` throws, and a transport error can echo
@@ -83,7 +115,9 @@ async function main(): Promise<void> {
     run: (signal) =>
       runGate6ProbeCapture(process.argv.slice(2), {
         database: firebase.database,
-        databaseHost,
+        databaseHost: local.databaseHost,
+        databaseProjectId: local.firebaseProjectId,
+        databaseEmulatorHost: local.databaseEmulatorHost,
         now: () => Date.now(),
         log: (line) => console.log(line),
         writeFileText: (path, content) => writeFile(path, content, 'utf8'),

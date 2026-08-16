@@ -2,11 +2,13 @@ import { createHash } from 'node:crypto';
 import type { Database } from 'firebase-admin/database';
 import { beforeAll, describe, expect, it } from 'vitest';
 import {
+  DEMO_ACCOUNT_CHECKOUT_FORBIDDEN_CODE,
   TOURNAMENT_REGISTRY_ORIGIN,
   TOURNAMENT_REGISTRY_WITNESS_PREFIX,
   tournamentRegistryRowSchema,
   type TournamentRegistryRow,
 } from '@smash-tracker/shared';
+import { canonicalDigest } from '../src/research/registry/canonical.js';
 import {
   computeForeignRowDigest,
   REGISTRY_FOREIGN_DIGEST_VERSION,
@@ -31,6 +33,7 @@ import {
   gate6WindowDayShards,
   GATE6_ASSERTION_IDS,
   GATE6_EXPECTATION_TABLE_VERSION,
+  GATE6_REJECTED_OPERATION_PROBE_FORMAT_VERSION,
   GATE6_EXPECTATIONS,
   GATE6_SPARG0_USER_OWNED_VOD_ROWS,
   GATE6_TRACE_SNAPSHOT_VERSION,
@@ -41,6 +44,7 @@ import {
   type Gate6AssertionId,
   type Gate6AuditReceipt,
   type Gate6Baseline,
+  type Gate6ProbeEnvironment,
   type Gate6RegistryManifestInput,
   type Gate6RegistryReceiptInput,
   type Gate6RejectedOperationProbeBody,
@@ -796,7 +800,7 @@ describe('a fully-correct tree passes', () => {
         'targetUids',
       ].sort(),
     );
-    expect(receipt.receiptVersion).toBe(3);
+    expect(receipt.receiptVersion).toBe(4);
     expect(receipt.expectationTableVersion).toBe(GATE6_EXPECTATION_TABLE_VERSION);
     expect(receipt.baselineMode).toBe('record');
     expect(receipt.assertions.map((assertion) => assertion.id)).toEqual([...GATE6_ASSERTION_IDS]);
@@ -1524,6 +1528,31 @@ async function snapshotOf(
   });
 }
 
+/** The API deployment coordinates of a correctly-bound capture (format v2). */
+const EXPECTED_API_REVISION = 'smash-tracker-api-00042-xyz';
+
+function healthyEnvironment(overrides: Partial<Gate6ProbeEnvironment> = {}): Gate6ProbeEnvironment {
+  return {
+    apiBaseUrl: 'https://grandfinals.gg/api',
+    apiEnvironment: 'production',
+    apiService: 'smash-tracker-api',
+    apiRevision: EXPECTED_API_REVISION,
+    apiReleaseSha: 'deadbeefcafe',
+    apiFirebaseProjectId: 'smash-tracker-f97b7',
+    // The API's OWN answer must name the database the audit reads.
+    apiDatabaseHost: LIVE_DATABASE_HOST,
+    apiDatabaseEmulatorHost: null,
+    localDatabaseHost: LIVE_DATABASE_HOST,
+    localFirebaseProjectId: 'smash-tracker-f97b7',
+    localDatabaseEmulatorHost: null,
+    expectedApiRevision: EXPECTED_API_REVISION,
+    expectedApiEnvironment: 'production',
+    projectIdChecked: true,
+    bound: true,
+    ...overrides,
+  };
+}
+
 /**
  * A sealed probe of one refused operation. `mutate` runs BETWEEN the two
  * snapshots — an honest refusal mutates nothing, and a perturbation writes the
@@ -1542,12 +1571,21 @@ async function sealedProbe(
   options.mutate?.(database);
   const after = await snapshotOf(database, uid, NOW_MS - 500);
   const body: Gate6RejectedOperationProbeBody = {
-    formatVersion: 1,
+    formatVersion: GATE6_REJECTED_OPERATION_PROBE_FORMAT_VERSION,
     workspace,
     uid,
     databaseHost: LIVE_DATABASE_HOST,
-    operation: 'POST /api/reports (paid report on a demo account)',
-    refusal: '403 demo accounts may not purchase reports',
+    operation: 'POST /api/billing/checkout (credit purchase on a demo account)',
+    refusal: `403 ${DEMO_ACCOUNT_CHECKOUT_FORBIDDEN_CODE} from POST /billing/checkout`,
+    refusalEnvelope: {
+      status: 403,
+      contentType: 'application/json; charset=utf-8',
+      code: DEMO_ACCOUNT_CHECKOUT_FORBIDDEN_CODE,
+      error: 'Forbidden',
+      message: 'Credit purchases are not available for this account',
+      statusCode: 403,
+    },
+    environment: healthyEnvironment(),
     startedAtMs: NOW_MS - 5_000,
     finishedAtMs: NOW_MS - 1_000,
     before,
@@ -1874,6 +1912,291 @@ describe('assertion 10: rejected-operation-no-trace', () => {
       rejectedOperationProbes: [{ path: probe.path, raw: hollow }],
     });
     expectPerturbed(receipt, 'rejected-operation-no-trace', 'rejected-operation-probe-incomplete');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Phase 30.3 capture-evidence hardening: the audit RE-DERIVES both v2 proofs
+// rather than trusting the operator's sealed attestation of them.
+//
+// The seal proves an artifact has not been EDITED. It cannot prove the
+// operator applied the rule this audit requires — an older operator, or one
+// built against a different constant, produces a perfectly-sealed probe that
+// attests to the wrong thing. So every check the capture makes is made again
+// here, against the sealed values.
+// ---------------------------------------------------------------------------
+
+/** Reseals a probe body with one member of the refusal envelope perturbed. */
+async function probeWithEnvelope(
+  database: FakeDatabase,
+  overrides: Partial<Gate6RejectedOperationProbeBody['refusalEnvelope']>,
+): Promise<Gate6RejectedOperationProbeInput> {
+  const probe = await sealedProbe(database, 'hbox');
+  const body = probeBodyOf(probe);
+  return {
+    path: probe.path,
+    raw: createGate6RejectedOperationProbe({
+      ...body,
+      refusalEnvelope: { ...body.refusalEnvelope, ...overrides },
+    }),
+  };
+}
+
+/** Reseals a probe body with the environment binding perturbed. */
+async function probeWithEnvironment(
+  database: FakeDatabase,
+  overrides: Partial<Gate6ProbeEnvironment>,
+): Promise<Gate6RejectedOperationProbeInput> {
+  const probe = await sealedProbe(database, 'hbox');
+  const body = probeBodyOf(probe);
+  return {
+    path: probe.path,
+    raw: createGate6RejectedOperationProbe({
+      ...body,
+      environment: { ...body.environment, ...overrides },
+    }),
+  };
+}
+
+describe('assertion 10 (v2): the refusal must be the APPLICATION’s', () => {
+  it('PASSES the correctly-coded refusal, and reports the code in the receipt', async () => {
+    const database = makeDatabase();
+    const receipt = await audit(database, { rejectedOperationProbes: await allProbes(database) });
+    expect(assertionOf(receipt, 'rejected-operation-no-trace').status).toBe('passed');
+    for (const row of receipt.rejectedOperationProbes) {
+      expect(row.refusalCode).toBe(DEMO_ACCOUNT_CHECKOUT_FORBIDDEN_CODE);
+      expect(row.environmentBound).toBe(true);
+      expect(row.apiEnvironment).toBe('production');
+      expect(row.apiRevision).toBe(EXPECTED_API_REVISION);
+    }
+  });
+
+  it.each([
+    ['a DIFFERENT application code — some other guard refused', 'some_other_guard'],
+    ['a code that merely looks plausible', 'forbidden'],
+  ])('FAILS %s', async (_label, code) => {
+    const database = makeDatabase();
+    const receipt = await audit(database, {
+      rejectedOperationProbes: [await probeWithEnvelope(database, { code })],
+    });
+    expectPerturbed(
+      receipt,
+      'rejected-operation-no-trace',
+      'rejected-operation-probe-refusal-code-unexpected',
+    );
+    expect(receipt.rejectedOperationProbes[0]!.refusalCode).toBe(code);
+  });
+
+  it('FAILS an HTML content type — that is an edge refusal, not the application', async () => {
+    const database = makeDatabase();
+    const receipt = await audit(database, {
+      rejectedOperationProbes: [await probeWithEnvelope(database, { contentType: 'text/html' })],
+    });
+    expectPerturbed(
+      receipt,
+      'rejected-operation-no-trace',
+      'rejected-operation-probe-refusal-code-unexpected',
+    );
+  });
+
+  it('FAILS an envelope whose statusCode disagrees with the observed status', async () => {
+    const database = makeDatabase();
+    const receipt = await audit(database, {
+      rejectedOperationProbes: [await probeWithEnvelope(database, { statusCode: 401 })],
+    });
+    expectPerturbed(
+      receipt,
+      'rejected-operation-no-trace',
+      'rejected-operation-probe-refusal-code-unexpected',
+    );
+  });
+});
+
+describe('assertion 10 (v2): the API and the RTDB must be ONE environment', () => {
+  it('FAILS when the API names a DIFFERENT database than the operator snapshotted', async () => {
+    // THE headline case: an API with compatible auth and allowlists pointed at
+    // another RTDB. Both halves look healthy; only the comparison catches it.
+    const database = makeDatabase();
+    const receipt = await audit(database, {
+      rejectedOperationProbes: [
+        await probeWithEnvironment(database, { apiDatabaseHost: 'staging-rtdb.firebaseio.com' }),
+      ],
+    });
+    expectPerturbed(
+      receipt,
+      'rejected-operation-no-trace',
+      'rejected-operation-probe-environment-mismatch',
+    );
+    expect(receipt.rejectedOperationProbes[0]!.environmentBound).toBe(false);
+  });
+
+  it('FAILS when the API names a database that is not the one THIS audit is reading', async () => {
+    const database = makeDatabase();
+    const receipt = await audit(database, {
+      rejectedOperationProbes: [
+        await probeWithEnvironment(database, {
+          apiDatabaseHost: 'elsewhere-rtdb.firebaseio.com',
+          localDatabaseHost: 'elsewhere-rtdb.firebaseio.com',
+        }),
+      ],
+    });
+    // Operator and API agree with each other but not with the audited tree —
+    // a self-consistent capture of the wrong system.
+    expectPerturbed(
+      receipt,
+      'rejected-operation-no-trace',
+      'rejected-operation-probe-environment-mismatch',
+    );
+  });
+
+  it('FAILS when the probe body and its environment record disagree about the local host', async () => {
+    const database = makeDatabase();
+    const receipt = await audit(database, {
+      rejectedOperationProbes: [
+        await probeWithEnvironment(database, {
+          localDatabaseHost: 'somewhere-else.firebaseio.com',
+          apiDatabaseHost: 'somewhere-else.firebaseio.com',
+        }),
+      ],
+    });
+    expectPerturbed(
+      receipt,
+      'rejected-operation-no-trace',
+      'rejected-operation-probe-environment-mismatch',
+    );
+  });
+
+  it('FAILS on an emulator mismatch even when the host string matches', async () => {
+    const database = makeDatabase();
+    const receipt = await audit(database, {
+      rejectedOperationProbes: [
+        await probeWithEnvironment(database, { apiDatabaseEmulatorHost: '127.0.0.1:9000' }),
+      ],
+    });
+    expectPerturbed(
+      receipt,
+      'rejected-operation-no-trace',
+      'rejected-operation-probe-environment-mismatch',
+    );
+  });
+
+  it('FAILS on a Firebase project mismatch when BOTH sides stated one', async () => {
+    const database = makeDatabase();
+    const receipt = await audit(database, {
+      rejectedOperationProbes: [
+        await probeWithEnvironment(database, { apiFirebaseProjectId: 'some-other-project' }),
+      ],
+    });
+    expectPerturbed(
+      receipt,
+      'rejected-operation-no-trace',
+      'rejected-operation-probe-environment-mismatch',
+    );
+  });
+
+  it('does NOT fail on differing project ids when the axis is honestly marked UNCHECKED', async () => {
+    // An unchecked axis must not be read as agreement, and must not be
+    // manufactured into a failure either — the host binding is the one that
+    // carries the weight and it still holds here.
+    const database = makeDatabase();
+    const receipt = await audit(database, {
+      rejectedOperationProbes: [
+        await probeWithEnvironment(database, {
+          projectIdChecked: false,
+          apiFirebaseProjectId: null,
+          localFirebaseProjectId: 'smash-tracker-f97b7',
+        }),
+      ],
+    });
+    expect(assertionOf(receipt, 'rejected-operation-no-trace').status).toBe('passed');
+    expect(receipt.rejectedOperationProbes[0]!.environmentBound).toBe(true);
+  });
+
+  it('FAILS a probe captured against an UNEXPECTED environment', async () => {
+    const database = makeDatabase();
+    const receipt = await audit(database, {
+      rejectedOperationProbes: [
+        await probeWithEnvironment(database, { apiEnvironment: 'development' }),
+      ],
+    });
+    expectPerturbed(
+      receipt,
+      'rejected-operation-no-trace',
+      'rejected-operation-probe-environment-unexpected',
+    );
+  });
+
+  it('FAILS a probe captured against the WRONG revision', async () => {
+    const database = makeDatabase();
+    const receipt = await audit(database, {
+      rejectedOperationProbes: [
+        await probeWithEnvironment(database, { apiRevision: 'smash-tracker-api-00099-old' }),
+      ],
+    });
+    expectPerturbed(
+      receipt,
+      'rejected-operation-no-trace',
+      'rejected-operation-probe-revision-unexpected',
+    );
+  });
+
+  it('FALLS BACK to the release SHA when the API names no revision', async () => {
+    const database = makeDatabase();
+    const receipt = await audit(database, {
+      rejectedOperationProbes: [
+        await probeWithEnvironment(database, {
+          apiRevision: null,
+          apiReleaseSha: 'deadbeefcafe',
+          expectedApiRevision: 'deadbeefcafe',
+        }),
+      ],
+    });
+    expect(assertionOf(receipt, 'rejected-operation-no-trace').status).toBe('passed');
+  });
+
+  it('FAILS when the API can name NEITHER a revision nor a release SHA', async () => {
+    const database = makeDatabase();
+    const receipt = await audit(database, {
+      rejectedOperationProbes: [
+        await probeWithEnvironment(database, { apiRevision: null, apiReleaseSha: null }),
+      ],
+    });
+    expectPerturbed(
+      receipt,
+      'rejected-operation-no-trace',
+      'rejected-operation-probe-revision-unexpected',
+    );
+  });
+});
+
+describe('assertion 10 (v2): a STALE-FORMAT probe is refused, never leniently parsed', () => {
+  it('REFUSES a v1 probe BY NAME rather than migrating it', async () => {
+    const database = makeDatabase();
+    const probe = await sealedProbe(database, 'hbox');
+    // Exactly the v1 shape: the two proofs removed, resealed under v1's
+    // version literal. The seal is internally valid — only the FORMAT is old.
+    const body = probeBodyOf(probe) as unknown as Record<string, unknown>;
+    delete body.refusalEnvelope;
+    delete body.environment;
+    body.formatVersion = 1;
+    // Sealed with a GENUINE hash under the same canonicalization law, so the
+    // refusal below is unambiguously about the FORMAT and not about a broken
+    // seal we accidentally handed it.
+    const v1 = { ...body, contentHash: canonicalDigest(body) };
+
+    const receipt = await audit(database, {
+      rejectedOperationProbes: [{ path: probe.path, raw: v1 }],
+    });
+    expectPerturbed(receipt, 'rejected-operation-no-trace', 'rejected-operation-probe-invalid');
+    const detail = assertionOf(receipt, 'rejected-operation-no-trace').findings[0]!.detail;
+    expect(detail).toContain('formatVersion 1');
+    expect(detail).toContain('REFUSED, not migrated');
+    expect(receipt.rejectedOperationProbes[0]!.valid).toBe(false);
+    expect(receipt.ok).toBe(false);
+  });
+
+  it('pins the current format version so a bump is a deliberate, reviewed act', () => {
+    expect(GATE6_REJECTED_OPERATION_PROBE_FORMAT_VERSION).toBe(2);
   });
 });
 

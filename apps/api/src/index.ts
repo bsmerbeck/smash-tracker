@@ -2,6 +2,7 @@ import { buildApp } from './app.js';
 import {
   getClaimCodeConfig,
   getDemoAccountConfig,
+  getDeploymentConfig,
   getGa4Config,
   getInternalJobsConfig,
   getParryggConfig,
@@ -32,6 +33,7 @@ const prepPaid = getPrepPaidConfig(env);
 const research = getResearchConfig(env);
 const demo = getDemoAccountConfig(env);
 const youtube = getYoutubeConfig(env);
+const deployment = getDeploymentConfig(env);
 
 const app = buildApp({
   firebase,
@@ -48,6 +50,7 @@ const app = buildApp({
   research,
   demo,
   youtube,
+  deployment,
 });
 
 // Phase 7 (Recap Cards & Share-Loop Analytics): a single startup-time notice
@@ -102,6 +105,19 @@ if (!prepPaid) {
 if (!research) {
   app.log.warn(
     'Research tenant administration is not configured (RESEARCH_ADMIN_UIDS unset); research-tenant administration capabilities are disabled',
+  );
+}
+
+// Phase 30.3 (Gate 6 capture-evidence hardening, item 3): a single
+// startup-time notice — never per-request — when the image carries no
+// release SHA. `GET /api/deployment-identity` then reports `releaseSha:
+// null`, and a Gate-6 capture pointed at this deployment must fall back to
+// the Cloud Run revision as its expected-build coordinate. Operator-visible
+// so the state is obvious in Cloud Run logs, same convention as the
+// config-null notices above.
+if (!deployment.releaseSha) {
+  app.log.warn(
+    'No release SHA is baked into this image (API_RELEASE_SHA unset at build time); GET /api/deployment-identity will report releaseSha: null',
   );
 }
 
