@@ -98,6 +98,7 @@ function stubResult(dryRun: boolean, observationHash = 'd'.repeat(64)): Enrichme
       projectionsApplied: dryRun ? 0 : 1,
       projectionsReconciled: 0,
       observationsSuperseded: 0,
+      outdatedFamilyRecordsSwept: 0,
       backoffEvents: 0,
     },
     ...(dryRun ? { dryRunDetails: stubDryRunDetails(observationHash) } : {}),
@@ -455,6 +456,149 @@ describe('runEnrichmentOperator', () => {
         databaseHost: 'other.firebaseio.com',
       }),
     ).rejects.toThrow('database host');
+  });
+
+  it('sweep removes only outdated bracket-family records, builds no client, and reports cascade counts', async () => {
+    const database = new FakeDatabase();
+    const seedObservation = async (uid: string, observationId: string, parserVersion: string) => {
+      await database.ref(`researchEnrichmentObservations/${uid}/${observationId}`).set({
+        observationId,
+        sourceProvider: 'liquipedia',
+        sourceWiki: 'smash',
+        contentType: 'stage-observation',
+        sourcePageTitle: 'OldCup/2020/Bracket',
+        sourcePageUrl: 'https://liquipedia.net/smash/OldCup/2020/Bracket',
+        sourceRevisionId: 5,
+        sourceContentHash: 'a'.repeat(64),
+        parserVersion,
+        templateFamily: 'legacy',
+        fetchedAtMs: 100,
+        observedAtMs: 100,
+        matchingStatus: 'unmatched',
+      });
+    };
+    await seedObservation(uids.mkleo, 'old-gen-1', 'liquipedia-bracket-legacy@1');
+    await seedObservation(uids.mkleo, 'current-gen-1', 'liquipedia-bracket-legacy@2');
+    await seedObservation(uids.sparg0, 'old-gen-2', 'liquipedia-bracket-legacy@1');
+    const harness = buildHarness(database);
+
+    const code = await runEnrichmentOperator(['sweep', ...uidFlags()], harness.deps);
+
+    expect(code).toBe(0);
+    expect(harness.clientBuilds()).toBe(0);
+    expect(harness.batchCalls).toEqual([]);
+    const rows = harness.tables[0] as Array<{ workspace: string; removed?: number }>;
+    expect(rows.find((row) => row.workspace === 'mkleo')?.removed).toBe(1);
+    expect(rows.find((row) => row.workspace === 'sparg0')?.removed).toBe(1);
+    expect(rows.find((row) => row.workspace === 'hbox')?.removed).toBe(0);
+    const currentGen = await database
+      .ref(`researchEnrichmentObservations/${uids.mkleo}/current-gen-1`)
+      .get();
+    expect(currentGen.exists()).toBe(true);
+    const oldGen = await database
+      .ref(`researchEnrichmentObservations/${uids.mkleo}/old-gen-1`)
+      .get();
+    expect(oldGen.exists()).toBe(false);
+  });
+
+  it('sweep honours --account scoping', async () => {
+    const database = new FakeDatabase();
+    await database.ref(`researchEnrichmentObservations/${uids.sparg0}/old-gen-3`).set({
+      observationId: 'old-gen-3',
+      sourceProvider: 'liquipedia',
+      sourceWiki: 'smash',
+      contentType: 'stage-observation',
+      sourcePageTitle: 'OldCup/2020/Bracket',
+      sourcePageUrl: 'https://liquipedia.net/smash/OldCup/2020/Bracket',
+      sourceRevisionId: 5,
+      sourceContentHash: 'a'.repeat(64),
+      parserVersion: 'liquipedia-bracket-legacy@1',
+      templateFamily: 'legacy',
+      fetchedAtMs: 100,
+      observedAtMs: 100,
+      matchingStatus: 'unmatched',
+    });
+    const harness = buildHarness(database);
+    const code = await runEnrichmentOperator(
+      ['sweep', ...uidFlags(), '--account', 'mkleo'],
+      harness.deps,
+    );
+    expect(code).toBe(0);
+    // The un-scoped account's stale record survives an mkleo-scoped sweep.
+    const survivor = await database
+      .ref(`researchEnrichmentObservations/${uids.sparg0}/old-gen-3`)
+      .get();
+    expect(survivor.exists()).toBe(true);
+  });
+
+  it('sweep refuses an account holding a LIVE run lease and exits non-zero', async () => {
+    const database = new FakeDatabase();
+    await database.ref(`researchEnrichmentRuns/${uids.mkleo}`).set({
+      runId: 'live-run-1',
+      status: 'running',
+      startedAtMs: NOW_MS - 1_000,
+      leaseFenceCounter: 1,
+      lease: {
+        ownerId: 'another-operator',
+        acquiredAtMs: NOW_MS - 1_000,
+        expiresAtMs: NOW_MS + 60_000,
+        fence: 1,
+      },
+    });
+    await database.ref(`researchEnrichmentObservations/${uids.mkleo}/old-gen-4`).set({
+      observationId: 'old-gen-4',
+      sourceProvider: 'liquipedia',
+      sourceWiki: 'smash',
+      contentType: 'stage-observation',
+      sourcePageTitle: 'OldCup/2020/Bracket',
+      sourcePageUrl: 'https://liquipedia.net/smash/OldCup/2020/Bracket',
+      sourceRevisionId: 5,
+      sourceContentHash: 'a'.repeat(64),
+      parserVersion: 'liquipedia-bracket-legacy@1',
+      templateFamily: 'legacy',
+      fetchedAtMs: 100,
+      observedAtMs: 100,
+      matchingStatus: 'unmatched',
+    });
+    const harness = buildHarness(database);
+
+    const code = await runEnrichmentOperator(
+      ['sweep', ...uidFlags(), '--account', 'mkleo'],
+      harness.deps,
+    );
+
+    expect(code).toBe(1);
+    const rows = harness.tables[0] as Array<{ workspace: string; sweep: string }>;
+    expect(rows.find((row) => row.workspace === 'mkleo')?.sweep).toBe('REFUSED');
+    // Nothing was removed under the live lease.
+    const untouched = await database
+      .ref(`researchEnrichmentObservations/${uids.mkleo}/old-gen-4`)
+      .get();
+    expect(untouched.exists()).toBe(true);
+  });
+
+  it('sweep with an EXPIRED lease proceeds (only a live lease refuses)', async () => {
+    const database = new FakeDatabase();
+    await database.ref(`researchEnrichmentRuns/${uids.mkleo}`).set({
+      runId: 'stale-run-1',
+      status: 'running',
+      startedAtMs: NOW_MS - 100_000,
+      leaseFenceCounter: 1,
+      lease: {
+        ownerId: 'dead-operator',
+        acquiredAtMs: NOW_MS - 100_000,
+        expiresAtMs: NOW_MS - 1_000,
+        fence: 1,
+      },
+    });
+    const harness = buildHarness(database);
+    const code = await runEnrichmentOperator(
+      ['sweep', ...uidFlags(), '--account', 'mkleo'],
+      harness.deps,
+    );
+    expect(code).toBe(0);
+    const rows = harness.tables[0] as Array<{ workspace: string; sweep: string }>;
+    expect(rows.find((row) => row.workspace === 'mkleo')?.sweep).toBe('OK');
   });
 
   it('rejects an unknown subcommand and an unknown --account', async () => {

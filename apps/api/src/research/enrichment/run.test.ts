@@ -661,7 +661,10 @@ describe('runEnrichmentBatch', () => {
       sourcePageUrl: 'https://liquipedia.net/smash/TestCup/2026/Bracket',
       sourceRevisionId: 20,
       sourceContentHash: sha256Hex('preseeded'),
-      parserVersion: 'liquipedia-bracket-legacy@1',
+      // A record an INTERRUPTED current-generation run persisted — it must
+      // carry the CURRENT parser version or the end-of-gather version-wide
+      // sweep would (correctly) treat it as an old-generation leftover.
+      parserVersion: LIQUIPEDIA_PARSER_VERSION_BRACKET_LEGACY,
       templateFamily: 'legacy',
       fetchedAtMs: 500,
       observedAtMs: 500,
@@ -1313,6 +1316,90 @@ describe('runEnrichmentBatch cross-tenant and cross-version freshness (30.2 defe
     expect(parserVersions.has('liquipedia-bracket-legacy@1')).toBe(false);
     const row = await database.ref(`matches/${TENANT_ID}/sgg-set-1-g1`).get();
     expect((row.val() as { vodUrl?: string }).vodUrl).toBe(VOD_URL);
+  });
+
+  it('every real run ends its gather with a version-wide sweep: an outdated-family record on a page the expansion never visits is removed without a manual step', async () => {
+    const database = new FakeDatabase();
+    await seedProviderSet(database);
+    // A prior parser generation's record on a page OUTSIDE the current
+    // expansion — the page-scoped supersede pass can never reach it.
+    await database.ref(`researchEnrichmentObservations/${TENANT_ID}/orphaned-old-gen-1`).set({
+      observationId: 'orphaned-old-gen-1',
+      sourceProvider: 'liquipedia',
+      sourceWiki: 'smash',
+      contentType: 'stage-observation',
+      sourcePageTitle: 'OldCup/2020/Bracket',
+      sourcePageUrl: 'https://liquipedia.net/smash/OldCup/2020/Bracket',
+      sourceRevisionId: 5,
+      sourceContentHash: sha256Hex('old-gen'),
+      parserVersion: 'liquipedia-bracket-legacy@1',
+      templateFamily: 'legacy',
+      fetchedAtMs: 100,
+      observedAtMs: 100,
+      matchingStatus: 'unmatched',
+      players: [{ rawTag: 'Someone' }, { rawTag: 'Else' }],
+    });
+
+    const { client } = buildHappyPathClient();
+    const result = await runEnrichmentBatch({
+      database: asDatabase(database),
+      client,
+      tenantId: TENANT_ID,
+      playerLabels: ['TestPlayer'],
+      targetGame: 'ultimate',
+      nowMs: 1_000,
+      hashHex: sha256Hex,
+      dryRun: false,
+    });
+
+    // Removed by the END-OF-GATHER version-wide sweep, not the page-scoped
+    // pass (its page was never re-extracted).
+    expect(result.counts.outdatedFamilyRecordsSwept).toBe(1);
+    expect(result.counts.observationsSuperseded).toBe(0);
+    const orphan = await database
+      .ref(`researchEnrichmentObservations/${TENANT_ID}/orphaned-old-gen-1`)
+      .get();
+    expect(orphan.exists()).toBe(false);
+    // The run's own current-generation records are untouched.
+    expect(result.counts.observationsExtracted).toBeGreaterThanOrEqual(1);
+    const row = await database.ref(`matches/${TENANT_ID}/sgg-set-1-g1`).get();
+    expect((row.val() as { vodUrl?: string }).vodUrl).toBe(VOD_URL);
+  });
+
+  it('a dry run never sweeps', async () => {
+    const database = new FakeDatabase();
+    await seedProviderSet(database);
+    await database.ref(`researchEnrichmentObservations/${TENANT_ID}/orphaned-old-gen-2`).set({
+      observationId: 'orphaned-old-gen-2',
+      sourceProvider: 'liquipedia',
+      sourceWiki: 'smash',
+      contentType: 'stage-observation',
+      sourcePageTitle: 'OldCup/2020/Bracket',
+      sourcePageUrl: 'https://liquipedia.net/smash/OldCup/2020/Bracket',
+      sourceRevisionId: 5,
+      sourceContentHash: sha256Hex('old-gen'),
+      parserVersion: 'liquipedia-bracket-legacy@1',
+      templateFamily: 'legacy',
+      fetchedAtMs: 100,
+      observedAtMs: 100,
+      matchingStatus: 'unmatched',
+    });
+    const { client } = buildHappyPathClient();
+    const result = await runEnrichmentBatch({
+      database: asDatabase(database),
+      client,
+      tenantId: TENANT_ID,
+      playerLabels: ['TestPlayer'],
+      targetGame: 'ultimate',
+      nowMs: 1_000,
+      hashHex: sha256Hex,
+      dryRun: true,
+    });
+    expect(result.counts.outdatedFamilyRecordsSwept).toBe(0);
+    const orphan = await database
+      .ref(`researchEnrichmentObservations/${TENANT_ID}/orphaned-old-gen-2`)
+      .get();
+    expect(orphan.exists()).toBe(true);
   });
 
   it('DEFECT B: cache entries written under an older adapter version are treated as stale — the page re-fetches and its observations re-persist', async () => {

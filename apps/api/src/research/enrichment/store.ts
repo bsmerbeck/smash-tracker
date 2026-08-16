@@ -1,6 +1,8 @@
 import type { Database } from 'firebase-admin/database';
 import {
   isPathSafeProviderId,
+  LIQUIPEDIA_PARSER_VERSION_BRACKET_LEGACY,
+  LIQUIPEDIA_PARSER_VERSION_BRACKET_MATCH2,
   researchEnrichmentAttachmentRecordSchema,
   researchEnrichmentObservationRecordSchema,
   researchEnrichmentResolutionReceiptRecordSchema,
@@ -491,6 +493,10 @@ async function collectAttachedObservationIds(
 
 export interface RemoveSupersededObservationsResult {
   removedObservationIds: string[];
+  /** How many attachment entries the cascade removed — normally 0 for inert stale records; a non-zero value is worth reporting loudly. */
+  removedAttachmentCount: number;
+  /** How many receipts the cascade removed (existence-checked, never blind-counted). */
+  removedReceiptCount: number;
 }
 
 /**
@@ -516,12 +522,17 @@ export async function removeSupersededObservations(
   tenantId: string,
   observationIds: string[],
 ): Promise<RemoveSupersededObservationsResult> {
+  const emptyResult: RemoveSupersededObservationsResult = {
+    removedObservationIds: [],
+    removedAttachmentCount: 0,
+    removedReceiptCount: 0,
+  };
   if (!isPathSafeTenantId(tenantId) || observationIds.length === 0) {
-    return { removedObservationIds: [] };
+    return emptyResult;
   }
   const staleIds = observationIds.filter((observationId) => isPathSafeProviderId(observationId));
   if (staleIds.length === 0) {
-    return { removedObservationIds: [] };
+    return emptyResult;
   }
 
   const attachmentsSnapshot = await attachmentsTreeRef(database, tenantId).get();
@@ -544,17 +555,59 @@ export async function removeSupersededObservations(
   }
 
   const removedObservationIds: string[] = [];
+  let removedAttachmentCount = 0;
+  let removedReceiptCount = 0;
   for (const observationId of staleIds) {
     for (const targetSetId of targetSetIdsByObservationId.get(observationId) ?? []) {
       if (isPathSafeProviderId(targetSetId)) {
         await attachmentRef(database, tenantId, targetSetId, observationId).remove();
+        removedAttachmentCount += 1;
       }
     }
-    await receiptRef(database, tenantId, observationId).remove();
+    const receiptSnapshot = await receiptRef(database, tenantId, observationId).get();
+    if (receiptSnapshot.exists()) {
+      await receiptRef(database, tenantId, observationId).remove();
+      removedReceiptCount += 1;
+    }
     await observationRef(database, tenantId, observationId).remove();
     removedObservationIds.push(observationId);
   }
-  return { removedObservationIds };
+  return { removedObservationIds, removedAttachmentCount, removedReceiptCount };
+}
+
+/**
+ * 30.2 version-wide stale-record sweep: the page-scoped supersede pass above
+ * only fires for pages the CURRENT run re-extracts, so old-generation
+ * records on pages the current expansion no longer visits survive it
+ * (production: 616 legacy@1 records across 98 stale pages on MkLeo, 95 on
+ * Sparg0 — all inert, but they inflate the observation tree and every exact-
+ * total audit). This sweep removes every stored BRACKET-FAMILY record whose
+ * `parserVersion` differs from that family's CURRENT constant, with the same
+ * cascade discipline (attachments, then receipt, then observation).
+ *
+ * SAFETY BOUNDS, structural:
+ * - a record at the current family version is NEVER touched;
+ * - `vodlist` and `unknown` (wikitext-probe) records are NEVER touched —
+ *   their `@1` versions ARE current, and their currency is governed by their
+ *   own constants, not the bracket families';
+ * - selection is by the record's own declared `templateFamily` + stored
+ *   `parserVersion`, both written by this pipeline — provably ours.
+ */
+export async function sweepOutdatedFamilyObservations(
+  database: Database,
+  tenantId: string,
+): Promise<RemoveSupersededObservationsResult> {
+  const observations = await listEnrichmentObservations(database, tenantId);
+  const outdatedIds = observations
+    .filter(
+      (record) =>
+        (record.templateFamily === 'legacy' &&
+          record.parserVersion !== LIQUIPEDIA_PARSER_VERSION_BRACKET_LEGACY) ||
+        (record.templateFamily === 'match2' &&
+          record.parserVersion !== LIQUIPEDIA_PARSER_VERSION_BRACKET_MATCH2),
+    )
+    .map((record) => record.observationId);
+  return removeSupersededObservations(database, tenantId, outdatedIds);
 }
 
 /**

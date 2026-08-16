@@ -1,6 +1,10 @@
 import type { Database } from 'firebase-admin/database';
 import { describe, expect, it } from 'vitest';
-import type { ResearchEnrichmentObservationRecord } from '@smash-tracker/shared';
+import {
+  LIQUIPEDIA_PARSER_VERSION_BRACKET_LEGACY,
+  LIQUIPEDIA_PARSER_VERSION_BRACKET_MATCH2,
+  type ResearchEnrichmentObservationRecord,
+} from '@smash-tracker/shared';
 import { FakeDatabase } from '../../test-support/fakeDatabase.js';
 import { buildResolutionReceipt, deriveReceiptId, type ResolutionOutcome } from './resolution.js';
 import {
@@ -13,6 +17,7 @@ import {
   overlayEnrichment,
   readEnrichmentObservation,
   readResolutionReceipt,
+  sweepOutdatedFamilyObservations,
   writeEnrichmentObservation,
   writeResolutionReceipt,
 } from './store.js';
@@ -629,5 +634,117 @@ describe('overlayEnrichment', () => {
     expect(overlay.enriched).toHaveLength(1);
     expect(overlay.enriched[0]!.observationId).toBe('obs-1');
     expect(overlay.enriched[0]!.record).toBe(record);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 30.2 version-wide stale-record sweep — the page-scoped supersede pass can
+// never reach outdated records on pages the current expansion no longer
+// visits; this sweep removes exactly the bracket-family records whose
+// parserVersion differs from the current family constant, and nothing else.
+// ---------------------------------------------------------------------------
+
+describe('sweepOutdatedFamilyObservations', () => {
+  async function seedRecord(
+    database: FakeDatabase,
+    overrides: Partial<ResearchEnrichmentObservationRecord>,
+  ): Promise<void> {
+    await writeEnrichmentObservation(
+      asDatabase(database),
+      TENANT_ID,
+      makeObservationRecord(overrides),
+    );
+  }
+
+  it('removes ONLY outdated bracket-family records — current-version, vodlist and wikitext-probe records are untouched', async () => {
+    const database = new FakeDatabase();
+    await seedRecord(database, {
+      observationId: 'legacy-old',
+      templateFamily: 'legacy',
+      parserVersion: 'liquipedia-bracket-legacy@1',
+    });
+    await seedRecord(database, {
+      observationId: 'legacy-current',
+      templateFamily: 'legacy',
+      parserVersion: LIQUIPEDIA_PARSER_VERSION_BRACKET_LEGACY,
+    });
+    await seedRecord(database, {
+      observationId: 'match2-old',
+      templateFamily: 'match2',
+      parserVersion: 'liquipedia-bracket-match2@1',
+    });
+    await seedRecord(database, {
+      observationId: 'match2-current',
+      templateFamily: 'match2',
+      parserVersion: LIQUIPEDIA_PARSER_VERSION_BRACKET_MATCH2,
+    });
+    await seedRecord(database, {
+      observationId: 'vodlist-v1',
+      templateFamily: 'vodlist',
+      contentType: 'vod-reference',
+      parserVersion: 'liquipedia-vodlist@1',
+    });
+    await seedRecord(database, {
+      observationId: 'probe-v1',
+      templateFamily: 'unknown',
+      parserVersion: 'liquipedia-wikitext-probe@1',
+      extractionFailed: true,
+    });
+
+    const result = await sweepOutdatedFamilyObservations(asDatabase(database), TENANT_ID);
+
+    expect(result.removedObservationIds.sort()).toEqual(['legacy-old', 'match2-old']);
+    expect(result.removedAttachmentCount).toBe(0);
+    expect(result.removedReceiptCount).toBe(0);
+    const survivors = (await listEnrichmentObservations(asDatabase(database), TENANT_ID))
+      .map((record) => record.observationId)
+      .sort();
+    expect(survivors).toEqual(['legacy-current', 'match2-current', 'probe-v1', 'vodlist-v1']);
+  });
+
+  it('cascades and COUNTS a stale record still wired into an attachment and a receipt', async () => {
+    const database = new FakeDatabase();
+    await seedRecord(database, {
+      observationId: 'legacy-old-wired',
+      templateFamily: 'legacy',
+      parserVersion: 'liquipedia-bracket-legacy@1',
+    });
+    await database
+      .ref(`researchEnrichmentReceipts/${TENANT_ID}/legacy-old-wired`)
+      .set({ receiptId: 'stale-receipt', observationId: 'legacy-old-wired' });
+    await database
+      .ref(`researchEnrichmentAttachments/${TENANT_ID}/${TARGET_SET_ID}/legacy-old-wired`)
+      .set({
+        observationId: 'legacy-old-wired',
+        targetSetId: TARGET_SET_ID,
+        attachmentSource: 'resolver',
+        attachedAtMs: 1,
+        sourceRevisionId: 100,
+        sourceContentHash: 'a'.repeat(64),
+        parserVersion: 'liquipedia-bracket-legacy@1',
+        receiptId: 'stale-receipt',
+      });
+
+    const result = await sweepOutdatedFamilyObservations(asDatabase(database), TENANT_ID);
+
+    expect(result.removedObservationIds).toEqual(['legacy-old-wired']);
+    expect(result.removedAttachmentCount).toBe(1);
+    expect(result.removedReceiptCount).toBe(1);
+    const attachment = await database
+      .ref(`researchEnrichmentAttachments/${TENANT_ID}/${TARGET_SET_ID}/legacy-old-wired`)
+      .get();
+    expect(attachment.exists()).toBe(false);
+    const receipt = await database
+      .ref(`researchEnrichmentReceipts/${TENANT_ID}/legacy-old-wired`)
+      .get();
+    expect(receipt.exists()).toBe(false);
+  });
+
+  it('is a no-op on an empty tenant', async () => {
+    const database = new FakeDatabase();
+    const result = await sweepOutdatedFamilyObservations(asDatabase(database), TENANT_ID);
+    expect(result.removedObservationIds).toEqual([]);
+    expect(result.removedAttachmentCount).toBe(0);
+    expect(result.removedReceiptCount).toBe(0);
   });
 });
