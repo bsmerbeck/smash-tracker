@@ -10,6 +10,7 @@ import {
   getResearchConfig,
   getStartggConfig,
   getStripeConfig,
+  getYoutubeConfig,
   loadEnv,
   parseCorsOrigins,
 } from './config/env.js';
@@ -30,6 +31,7 @@ const claimCode = getClaimCodeConfig(env);
 const prepPaid = getPrepPaidConfig(env);
 const research = getResearchConfig(env);
 const demo = getDemoAccountConfig(env);
+const youtube = getYoutubeConfig(env);
 
 const app = buildApp({
   firebase,
@@ -45,6 +47,7 @@ const app = buildApp({
   prepPaid,
   research,
   demo,
+  youtube,
 });
 
 // Phase 7 (Recap Cards & Share-Loop Analytics): a single startup-time notice

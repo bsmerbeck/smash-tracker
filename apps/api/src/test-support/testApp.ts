@@ -34,6 +34,11 @@ export function buildTestApp(
     // research-admin allowlist config, threaded through so tests can build
     // an app with a configured (or omitted/null) research allowlist.
     | 'research'
+    // Phase 30.3 Gate 5 (30.3-integration follow-up): the YouTube Data API
+    // config + overridable fetch for the bounded VOD-candidate discovery
+    // route, threaded through so tests can build an app with either state.
+    | 'youtube'
+    | 'youtubeFetch'
     // Phase 23 Plan 05's raw-code isolation test installs a capturing
     // logger to assert the raw claim code is never emitted to logs.
     | 'logger'
