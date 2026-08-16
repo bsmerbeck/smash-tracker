@@ -9,6 +9,7 @@ import {
   errorResponseSchema,
   CREDIT_PACKS,
   CHECKOUT_PREP_REASON,
+  DEMO_ACCOUNT_CHECKOUT_FORBIDDEN_CODE,
   type CheckoutRequest,
 } from '@smash-tracker/shared';
 import type { ReportsConfig, StripeConfig } from '../config/env.js';
@@ -196,11 +197,24 @@ const billingRoutes: FastifyPluginAsyncZod<BillingRoutesOptions> = async (app, o
       // there would strand a genuinely PAID session with no credits, which
       // is the strictly worse failure. See this phase's SUMMARY for the
       // recorded rationale.
+      //
+      // Phase 30.3 (capture-evidence hardening, item 2): this refusal — and
+      // ONLY this one — carries the stable `code`
+      // `demo_account_checkout_forbidden`. The Gate-6 probe-capture operator
+      // treats that identifier, not the 403 status and not the human
+      // `message`, as proof that the APPLICATION refused: a CDN/WAF/proxy 403
+      // also leaves the tree untouched and would otherwise seal a vacuous
+      // probe. See `DEMO_ACCOUNT_CHECKOUT_FORBIDDEN_CODE` in
+      // `packages/shared/src/error.ts` for why the code is confined to this
+      // authenticated, self-addressed path and must NOT be added to the
+      // deliberately indistinguishable coaching-delivery or public
+      // bearer-token refusals.
       if (isDemoAccountSubject(app.demoAccountConfig, request.uid)) {
         return reply.code(403).send({
           error: 'Forbidden',
           message: 'Credit purchases are not available for this account',
           statusCode: 403,
+          code: DEMO_ACCOUNT_CHECKOUT_FORBIDDEN_CODE,
         });
       }
 
