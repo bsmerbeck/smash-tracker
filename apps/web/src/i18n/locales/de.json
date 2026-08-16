@@ -546,7 +546,9 @@
     "startTime": "Startzeit",
     "useCurrentTime": "Aktuelle Wiedergabezeit übernehmen",
     "meta": {
-      "edit": "Details bearbeiten"
+      "edit": "Details bearbeiten",
+      "stocksLeft": "Verbleibende Stocks",
+      "characterEvidence": "Liquipedia-Beleg"
     },
     "review": {
       "startButton": "Bewertung starten",
@@ -2764,7 +2766,11 @@
         "battlefield": "Battlefield-Form",
         "unknown": "unbekannte Formmarkierung"
       },
-      "unknownStage": "Bühne nicht identifiziert"
+      "unknownStage": "Bühne nicht identifiziert",
+      "characters": "Charakterdaten von Liquipedia",
+      "stocks": "Stock-Anzahl von Liquipedia",
+      "stocksLeftValue_one": "{{count}} Stock übrig",
+      "stocksLeftValue_other": "{{count}} Stocks übrig"
     },
     "attachVod": {
       "prefilledHint": "Dieser Link wurde von Liquipedia vorausgefüllt. Du kannst ihn weiterhin bearbeiten."
@@ -2797,6 +2803,22 @@
       },
       "notes": {
         "title": "Notizen"
+      },
+      "fieldCoverage": {
+        "title": "Abdeckung nach Feld",
+        "asOf": "Stand {{date}}",
+        "witnessedRows_one": "{{count}} Zeile mit Liquipedia-Beleg",
+        "witnessedRows_other": "{{count}} Zeilen mit Liquipedia-Beleg",
+        "fields": {
+          "stages": "Bühnen",
+          "characters": "Charaktere",
+          "stocks": "Stocks",
+          "vods": "VODs"
+        },
+        "present": "Vorhanden",
+        "missing": "Fehlt",
+        "ambiguous": "Mehrdeutig",
+        "revision": "Rev. {{revisionId}}"
       }
     },
     "review": {

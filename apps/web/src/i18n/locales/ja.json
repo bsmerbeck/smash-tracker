@@ -546,7 +546,9 @@
     "startTime": "開始時間",
     "useCurrentTime": "現在の再生位置を使用",
     "meta": {
-      "edit": "詳細を編集"
+      "edit": "詳細を編集",
+      "stocksLeft": "残りストック",
+      "characterEvidence": "Liquipediaの証拠"
     },
     "review": {
       "startButton": "レビューを開始",
@@ -2764,7 +2766,11 @@
         "battlefield": "戦場形態",
         "unknown": "認識できない形態マーカー"
       },
-      "unknownStage": "ステージ未特定"
+      "unknownStage": "ステージ未特定",
+      "characters": "Liquipediaのキャラクターデータ",
+      "stocks": "Liquipediaのストック数",
+      "stocksLeftValue_one": "残りストック{{count}}",
+      "stocksLeftValue_other": "残りストック{{count}}"
     },
     "attachVod": {
       "prefilledHint": "このリンクはLiquipediaから自動入力されました。編集は引き続き可能です。"
@@ -2797,6 +2803,22 @@
       },
       "notes": {
         "title": "メモ"
+      },
+      "fieldCoverage": {
+        "title": "フィールドカバレッジ",
+        "asOf": "{{date}}時点",
+        "witnessedRows_one": "Liquipediaの証拠がある{{count}}行",
+        "witnessedRows_other": "Liquipediaの証拠がある{{count}}行",
+        "fields": {
+          "stages": "ステージ",
+          "characters": "キャラクター",
+          "stocks": "ストック",
+          "vods": "VOD"
+        },
+        "present": "あり",
+        "missing": "なし",
+        "ambiguous": "曖昧",
+        "revision": "リビジョン {{revisionId}}"
       }
     },
     "review": {

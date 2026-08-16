@@ -546,7 +546,9 @@
     "startTime": "Hora de inicio",
     "useCurrentTime": "Usar tiempo actual del reproductor",
     "meta": {
-      "edit": "Editar detalles"
+      "edit": "Editar detalles",
+      "stocksLeft": "Stocks restantes",
+      "characterEvidence": "Evidencia de Liquipedia"
     },
     "review": {
       "startButton": "Iniciar reseña",
@@ -2764,7 +2766,11 @@
         "battlefield": "forma Battlefield",
         "unknown": "marcador de forma no reconocido"
       },
-      "unknownStage": "Escenario no identificado"
+      "unknownStage": "Escenario no identificado",
+      "characters": "Datos de personaje de Liquipedia",
+      "stocks": "Recuento de stocks de Liquipedia",
+      "stocksLeftValue_one": "{{count}} stock restante",
+      "stocksLeftValue_other": "{{count}} stocks restantes"
     },
     "attachVod": {
       "prefilledHint": "Este enlace se completó desde Liquipedia. Aún puedes editarlo."
@@ -2797,6 +2803,22 @@
       },
       "notes": {
         "title": "Notas"
+      },
+      "fieldCoverage": {
+        "title": "Cobertura por campo",
+        "asOf": "al {{date}}",
+        "witnessedRows_one": "{{count}} fila con evidencia de Liquipedia",
+        "witnessedRows_other": "{{count}} filas con evidencia de Liquipedia",
+        "fields": {
+          "stages": "Escenarios",
+          "characters": "Personajes",
+          "stocks": "Stocks",
+          "vods": "VODs"
+        },
+        "present": "Presente",
+        "missing": "Faltante",
+        "ambiguous": "Ambiguo",
+        "revision": "rev. {{revisionId}}"
       }
     },
     "review": {

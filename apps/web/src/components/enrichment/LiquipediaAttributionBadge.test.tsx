@@ -97,6 +97,45 @@ describe('LiquipediaAttributionBadge', () => {
     expect(screen.queryByTestId('liquipedia-attribution-qualifier')).not.toBeInTheDocument();
   });
 
+  // Phase 30.3 Gate 5: the two new evidence variants.
+  it('renders a distinct label for a characters source', () => {
+    render(
+      <LiquipediaAttributionBadge
+        attribution={{ subjectRaw: 'Mario', opponentRaw: 'Luigi' }}
+        variant="characters"
+      />,
+    );
+    expect(screen.getByText('Character data from Liquipedia')).toBeInTheDocument();
+  });
+
+  it('renders a distinct label for a stocks source', () => {
+    render(<LiquipediaAttributionBadge attribution={{ stocksLeft: 2 }} variant="stocks" />);
+    expect(screen.getByText('Stock count from Liquipedia')).toBeInTheDocument();
+  });
+
+  it('renders a source link for a characters/stocks half when a source page URL is present, with no stage qualifier', () => {
+    render(
+      <LiquipediaAttributionBadge
+        attribution={{
+          subjectRaw: 'Mario',
+          opponentRaw: 'Luigi',
+          sourcePageUrl: 'https://liquipedia.net/smash/Some_Page',
+        }}
+        variant="characters"
+      />,
+    );
+    expect(screen.getByTestId('liquipedia-attribution-link')).toHaveAttribute(
+      'href',
+      'https://liquipedia.net/smash/Some_Page',
+    );
+    expect(screen.queryByTestId('liquipedia-attribution-qualifier')).not.toBeInTheDocument();
+  });
+
+  it('renders no anchor for a characters/stocks half with no source page URL', () => {
+    render(<LiquipediaAttributionBadge attribution={{ stocksLeft: 1 }} variant="stocks" />);
+    expect(screen.queryByTestId('liquipedia-attribution-link')).not.toBeInTheDocument();
+  });
+
   it('never renders any value as markup', () => {
     render(
       <LiquipediaAttributionBadge

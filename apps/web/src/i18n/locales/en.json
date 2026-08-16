@@ -546,7 +546,9 @@
     "startTime": "Start time",
     "useCurrentTime": "Use current player time",
     "meta": {
-      "edit": "Edit details"
+      "edit": "Edit details",
+      "stocksLeft": "Stocks left",
+      "characterEvidence": "Liquipedia evidence"
     },
     "review": {
       "startButton": "Start review",
@@ -2764,7 +2766,11 @@
         "battlefield": "Battlefield form",
         "unknown": "unrecognized form marker"
       },
-      "unknownStage": "Stage not identified"
+      "unknownStage": "Stage not identified",
+      "characters": "Character data from Liquipedia",
+      "stocks": "Stock count from Liquipedia",
+      "stocksLeftValue_one": "{{count}} stock left",
+      "stocksLeftValue_other": "{{count}} stocks left"
     },
     "attachVod": {
       "prefilledHint": "This link was filled in from Liquipedia. You can still edit it."
@@ -2797,6 +2803,22 @@
       },
       "notes": {
         "title": "Notes"
+      },
+      "fieldCoverage": {
+        "title": "Field coverage",
+        "asOf": "as of {{date}}",
+        "witnessedRows_one": "{{count}} row with Liquipedia evidence",
+        "witnessedRows_other": "{{count}} rows with Liquipedia evidence",
+        "fields": {
+          "stages": "Stages",
+          "characters": "Characters",
+          "stocks": "Stocks",
+          "vods": "VODs"
+        },
+        "present": "Present",
+        "missing": "Missing",
+        "ambiguous": "Ambiguous",
+        "revision": "rev {{revisionId}}"
       }
     },
     "review": {
