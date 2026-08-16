@@ -1,5 +1,7 @@
 import type { Database } from 'firebase-admin/database';
 import {
+  API_RELEASE_SHA_HEADER,
+  API_REVISION_HEADER,
   DEMO_ACCOUNT_CHECKOUT_FORBIDDEN_CODE,
   deploymentIdentitySchema,
   type DeploymentIdentity,
@@ -16,10 +18,14 @@ import {
   gate6WindowDayShards,
   GATE6_DEFAULT_HEARTBEAT_INTERVAL_MS,
   GATE6_DEFAULT_MAX_STALL_MS,
+  GATE6_ORIGIN_BOUND_RESPONSES,
+  GATE6_REFUSED_OPERATION_EXPECTED_STATUS,
   GATE6_REJECTED_OPERATION_PROBE_FORMAT_VERSION,
   GATE6_WORKSPACE_KEYS,
+  type Gate6OriginBoundResponse,
   type Gate6ProbeEnvironment,
   type Gate6RefusalEnvelope,
+  type Gate6ResponseOrigin,
   type Gate6UidMap,
   type Gate6WorkspaceKey,
 } from './gate6AuditCore.js';
@@ -39,8 +45,9 @@ import {
  *
  * WHAT IT DOES, in order:
  *  1. BINDS the API to the database: asks the deployed API who it is, and
- *     refuses unless its environment, build, and RTDB match what this
- *     operator was told to require and what it is about to snapshot.
+ *     refuses unless its environment, BOTH build coordinates (deployment
+ *     revision AND release SHA), and RTDB match what this operator was told to
+ *     require and what it is about to snapshot.
  *  2. Proves the supplied credential authenticates AS the demo account being
  *     probed, and that the SERVER agrees it is a demo account.
  *  3. Captures the pre-state trace snapshot.
@@ -49,6 +56,10 @@ import {
  *     error code — before anything is sealed.
  *  6. Captures the post-state snapshot.
  *  7. Seals and writes the probe.
+ *
+ * Every one of the three HTTP responses above is additionally required to name
+ * the ONE expected build in its own headers, so the capture cannot straddle
+ * two revisions.
  *
  * WHY THE REFUSAL PROOF IS THE WHOLE DESIGN. A probe built around an operation
  * that silently SUCCEEDED is the worst possible artifact this system could
@@ -70,9 +81,29 @@ import {
  * and the demo checkout guard's own stable `code`. A human message would not
  * do, since it can be reworded in any release without ceremony.
  *
- * AND WHY THE API HAD TO BE BOUND TO THE DATABASE (item 3). This operator
- * drives a DEPLOYED API but snapshots the RTDB named by its OWN local `.env`.
- * Nothing connected the two: it sealed a `databaseHost` read from that same
+ * AND WHY THE BUILD BINDING NEEDED BOTH COORDINATES (deployment-binding
+ * hardening, item 2). The binding compared ONE build coordinate,
+ * `revision ?? releaseSha`. Cloud Run ALWAYS supplies `K_REVISION`, so the
+ * release SHA was never consulted and the `API_RELEASE_SHA` build arg was
+ * decorative. The revision names the deployment SLOT; the SHA names the SOURCE
+ * that went into it — so an image built from the WRONG SOURCE, deployed as the
+ * expected new revision, passed cleanly. `--expected-api-revision` and
+ * `--expected-api-release-sha` are now two separate mandatory flags and BOTH
+ * must match, with a null on either axis aborting rather than being waved
+ * through as "this deployment does not publish that one".
+ *
+ * AND WHY EVERY RESPONSE MUST PROVE ITS OWN ORIGIN (item 3). The capture makes
+ * THREE requests, and only the first was revision-bound. Under Cloud Run split
+ * traffic — or a deploy landing between calls — the identity could come from
+ * revision A while the refusal came from revision B, and the sealed artifact
+ * would show nothing wrong. Every response now carries
+ * `x-gf-api-revision`/`x-gf-api-release-sha`, every one is checked against the
+ * expected pair, and all three are sealed so the audit re-derives the check
+ * rather than trusting it happened.
+ *
+ * AND WHY THE API HAD TO BE BOUND TO THE DATABASE (capture-evidence item 3).
+ * This operator drives a DEPLOYED API but snapshots the RTDB named by its OWN
+ * local `.env`. Nothing connected the two: it sealed a `databaseHost` read from that same
  * local file, so the value agreed with itself by construction. Point it at an
  * API backed by a different database — one with compatible Firebase Auth and
  * a compatible demo allowlist, which is exactly what a staging deployment is
@@ -137,8 +168,12 @@ export const GATE6_REFUSED_OPERATION = {
   path: '/billing/checkout',
   /** A REAL pack id — see above. */
   body: { packId: 'pack5' } as const,
-  /** Exact match required. Anything else aborts before sealing. */
-  expectedStatus: 403,
+  /**
+   * Exact match required. Anything else aborts before sealing. Imported from
+   * the audit rather than restated, so the operator's pre-seal check and the
+   * audit's own re-assertion against the literal can never drift.
+   */
+  expectedStatus: GATE6_REFUSED_OPERATION_EXPECTED_STATUS,
   /**
    * The stable application error code the refusal MUST carry, imported from
    * the shared module the handler itself sends. Not a copy: if the constant
@@ -338,14 +373,29 @@ function requestedWorkspace(flags: Map<string, string>): Gate6WorkspaceKey {
 /**
  * The environment the operator was told to REQUIRE of the API.
  *
- * Both are mandatory flags with no default. Omitting either is an explicit
- * refusal, never a silent skip: a "check the revision if you happened to say
- * which one" rule is not a check, it is an invitation to forget, and the
+ * All three are mandatory flags with no default. Omitting any one is an
+ * explicit refusal, never a silent skip: a "check the revision if you happened
+ * to say which one" rule is not a check, it is an invitation to forget, and the
  * forgotten case is exactly the one that produces a probe captured against
  * something other than the reviewed build.
+ *
+ * WHY REVISION AND RELEASE SHA ARE TWO SEPARATE EXPECTATIONS. They answer
+ * different questions and only the pair pins a build:
+ *
+ *  - `revision` is the DEPLOYMENT SLOT — Cloud Run's immutable `K_REVISION`.
+ *    It proves WHICH DEPLOY answered the call.
+ *  - `releaseSha` is the SOURCE — the git SHA the image was built from,
+ *    injected at build time as `API_RELEASE_SHA`. It proves WHAT WAS IN that
+ *    deploy.
+ *
+ * The previous rule collapsed them into `revision ?? releaseSha`. Cloud Run
+ * ALWAYS supplies a revision, so the SHA was never consulted and the build arg
+ * was decorative — an image built from the WRONG SOURCE, deployed as the
+ * expected new revision, passed the binding cleanly. Requiring both closes it.
  */
 interface Gate6ExpectedDeployment {
   revision: string;
+  releaseSha: string;
   environment: string;
 }
 
@@ -357,11 +407,23 @@ function readExpectedDeployment(flags: Map<string, string>): Gate6ExpectedDeploy
   if (!revision) {
     throw new Gate6CaptureRefusal(
       'expected-api-revision-missing',
-      '--expected-api-revision is REQUIRED. It is the immutable Cloud Run revision (or, off ' +
-        'Cloud Run, the release SHA) of the build the owner reviewed, and without it this ' +
-        'capture cannot tell the reviewed deployment from any other deployment that happens to ' +
-        'answer. Read it from the deployment record, not from the API — asking the API which ' +
-        'build it is and then accepting whatever it says proves nothing. Nothing has been sealed.',
+      '--expected-api-revision is REQUIRED. It is the immutable Cloud Run revision (K_REVISION) ' +
+        'of the deployment the owner reviewed, and without it this capture cannot tell the ' +
+        'reviewed deployment from any other deployment that happens to answer. Read it from the ' +
+        'deployment record, not from the API — asking the API which build it is and then ' +
+        'accepting whatever it says proves nothing. Nothing has been sealed.',
+    );
+  }
+  const releaseSha = flags.get('--expected-api-release-sha');
+  if (!releaseSha) {
+    throw new Gate6CaptureRefusal(
+      'expected-api-release-sha-missing',
+      '--expected-api-release-sha is REQUIRED, SEPARATELY from --expected-api-revision. The ' +
+        'revision names the deployment SLOT; this names the SOURCE — the reviewed git SHA the ' +
+        'image was built from (API_RELEASE_SHA). Requiring only the revision lets an image built ' +
+        'from unreviewed code, deployed as the expected new revision, pass the binding cleanly, ' +
+        'which is the exact false green this flag closes. Read it from the deployment record — ' +
+        'the SHA you built and pushed — not from the API. Nothing has been sealed.',
     );
   }
   const environment = flags.get('--expected-api-environment');
@@ -379,7 +441,64 @@ function readExpectedDeployment(flags: Map<string, string>): Gate6ExpectedDeploy
         `(got ${environment})`,
     );
   }
-  return { revision, environment };
+  return { revision, releaseSha, environment };
+}
+
+/**
+ * Every response's ORIGIN, checked — the mixed-revision guard.
+ *
+ * WHY THIS EXISTS. The capture makes THREE separate HTTP requests: the
+ * deployment identity, the identity pre-check, and the refused operation. Only
+ * the first was ever revision-bound. Under Cloud Run split traffic — or a
+ * deploy that lands between two of the calls — they can be answered by
+ * DIFFERENT revisions, so the operator would bind its evidence to revision A
+ * while the refusal it seals actually came from revision B. Nothing in the
+ * sealed artifact would show it, and nothing about the run would look wrong.
+ *
+ * WHY HEADERS RATHER THAN A REVISION-TAGGED URL. A revision-specific Cloud Run
+ * URL would work only as well as the operator's discipline: the tag has to be
+ * minted at deploy time and pasted correctly every run, and forgetting it
+ * silently restores the hole this closes. It also bypasses the Firebase
+ * Hosting rewrite that real traffic goes through, so the probe would become
+ * evidence about a path no user takes. Headers are self-enforcing instead:
+ * every response states its own origin, and a response that does not is
+ * refused.
+ *
+ * ABSENCE IS A REFUSAL, not an exemption. A deployment that predates the
+ * headers, an image built without `API_RELEASE_SHA`, or a response served
+ * without them for any other reason cannot demonstrate which build produced
+ * it — which is the whole question.
+ */
+function assertResponseOrigin(
+  label: Gate6OriginBoundResponse,
+  response: Gate6HttpResponse,
+  expected: Gate6ExpectedDeployment,
+): Gate6ResponseOrigin {
+  const revision = response.headers[API_REVISION_HEADER]?.trim();
+  const releaseSha = response.headers[API_RELEASE_SHA_HEADER]?.trim();
+  if (!revision || !releaseSha) {
+    throw new Gate6CaptureRefusal(
+      'api-origin-headers-missing',
+      `the "${label}" response carried no ${API_REVISION_HEADER}/${API_RELEASE_SHA_HEADER} ` +
+        "headers, so it cannot state which build served it. Every one of this capture's three " +
+        'requests must prove its own origin — binding only the identity call would leave the ' +
+        'refusal free to come from a different revision under split traffic. Most likely the ' +
+        'deployed API predates these headers, or the image was built without API_RELEASE_SHA. ' +
+        'Nothing has been sealed.',
+    );
+  }
+  if (revision !== expected.revision || releaseSha !== expected.releaseSha) {
+    throw new Gate6CaptureRefusal(
+      'api-origin-mixed-revision',
+      `the "${label}" response was served by revision "${revision}" (source "${releaseSha}"), not ` +
+        `the required "${expected.revision}" (source "${expected.releaseSha}"). This capture is ` +
+        'spanning MORE THAN ONE BUILD — Cloud Run split traffic, or a deploy that landed ' +
+        'mid-capture. Its identity and its refusal would not be evidence about the same code. ' +
+        'Wait for the rollout to settle (or pin traffic to one revision) and re-run. Nothing has ' +
+        'been sealed.',
+    );
+  }
+  return { label, revision, releaseSha };
 }
 
 /**
@@ -401,7 +520,11 @@ async function assertDeploymentBinding(
   apiBaseUrl: string,
   expected: Gate6ExpectedDeployment,
   signal: AbortSignal,
-): Promise<Gate6ProbeEnvironment> {
+): Promise<{
+  /** Everything but `responseOrigins`, which is only complete once all three calls have been made. */
+  environment: Omit<Gate6ProbeEnvironment, 'responseOrigins'>;
+  origin: Gate6ResponseOrigin;
+}> {
   const response = await deps.httpRequest(
     {
       method: 'GET',
@@ -439,24 +562,55 @@ async function assertDeploymentBinding(
     );
   }
 
-  // The immutable Cloud Run revision is authoritative when present; off Cloud
-  // Run the release SHA is the only build coordinate that exists.
-  const observedBuild = identity.revision ?? identity.releaseSha;
-  if (observedBuild === null) {
+  // BOTH build coordinates, independently. The revision names the deployment
+  // SLOT; the release SHA names the SOURCE deployed into it. The old rule was
+  // `revision ?? releaseSha`, and Cloud Run ALWAYS supplies a revision — so the
+  // SHA was never consulted and a wrong-source image in the right slot passed.
+  if (identity.revision === null) {
     throw new Gate6CaptureRefusal(
-      'api-identity-incomplete',
-      'the API named neither a deployment revision (K_REVISION) nor a release SHA ' +
-        '(API_RELEASE_SHA), so this probe could not be tied to the build the owner reviewed. ' +
-        'Rebuild the image with the API_RELEASE_SHA build arg, or deploy it somewhere that ' +
-        'injects a revision. Nothing has been sealed.',
+      'api-revision-absent',
+      'the API named no deployment revision (K_REVISION), so it cannot confirm that it is the ' +
+        `reviewed deployment "${expected.revision}". Cloud Run always injects one; an API that ` +
+        'states none is not a Cloud Run deployment, and a Gate-6 probe must be captured against ' +
+        'the reviewed production deployment. Nothing has been sealed.',
     );
   }
-  if (observedBuild !== expected.revision) {
+  if (identity.revision !== expected.revision) {
     throw new Gate6CaptureRefusal(
       'api-revision-unexpected',
-      `the API is running build "${observedBuild}", not the reviewed "${expected.revision}". ` +
-        'A probe captured against an unreviewed build is evidence about code nobody signed off ' +
-        'on. Nothing has been sealed.',
+      `the API is running deployment revision "${identity.revision}", not the reviewed ` +
+        `"${expected.revision}". A probe captured against an unreviewed deployment is evidence ` +
+        'about code nobody signed off on. Nothing has been sealed.',
+    );
+  }
+  /**
+   * A NULL RELEASE SHA ABORTS. Deliberately, and this is the decision the whole
+   * item turns on: the image was built without the `API_RELEASE_SHA` build arg,
+   * so it can name the slot it was deployed into but not the source it was
+   * built from. Tolerating that would restore the exact hole — the revision
+   * alone is satisfied by ANY image deployed into the expected slot, including
+   * one built from unreviewed code. An expectation that is mandatory to state
+   * cannot be optional to satisfy.
+   */
+  if (identity.releaseSha === null) {
+    throw new Gate6CaptureRefusal(
+      'api-release-sha-absent',
+      'the API named no release SHA (API_RELEASE_SHA), so it can say which deployment slot it is ' +
+        'running in but NOT which source it was built from. The revision alone is satisfied by ' +
+        'any image deployed into that slot, including one built from unreviewed code — so this ' +
+        `capture cannot show the deployment carries the reviewed "${expected.releaseSha}". ` +
+        'Rebuild the image with the API_RELEASE_SHA build arg and redeploy that exact image. ' +
+        'Nothing has been sealed.',
+    );
+  }
+  if (identity.releaseSha !== expected.releaseSha) {
+    throw new Gate6CaptureRefusal(
+      'api-release-sha-unexpected',
+      `the API is running an image built from "${identity.releaseSha}", not the reviewed ` +
+        `"${expected.releaseSha}" — even though its deployment revision "${identity.revision}" ` +
+        'is the expected one. That combination is precisely the failure this check exists for: ' +
+        'an image built from the WRONG SOURCE, deployed into the RIGHT SLOT. Nothing has been ' +
+        'sealed.',
     );
   }
 
@@ -493,21 +647,28 @@ async function assertDeploymentBinding(
   }
 
   return {
-    apiBaseUrl,
-    apiEnvironment: identity.environment,
-    apiService: identity.service,
-    apiRevision: identity.revision,
-    apiReleaseSha: identity.releaseSha,
-    apiFirebaseProjectId: identity.firebaseProjectId,
-    apiDatabaseHost: identity.databaseHost,
-    apiDatabaseEmulatorHost: identity.databaseEmulatorHost,
-    localDatabaseHost: deps.databaseHost,
-    localFirebaseProjectId: deps.databaseProjectId,
-    localDatabaseEmulatorHost: deps.databaseEmulatorHost,
-    expectedApiRevision: expected.revision,
-    expectedApiEnvironment: expected.environment,
-    projectIdChecked,
-    bound: true,
+    environment: {
+      apiBaseUrl,
+      apiEnvironment: identity.environment,
+      apiService: identity.service,
+      apiRevision: identity.revision,
+      apiReleaseSha: identity.releaseSha,
+      apiFirebaseProjectId: identity.firebaseProjectId,
+      apiDatabaseHost: identity.databaseHost,
+      apiDatabaseEmulatorHost: identity.databaseEmulatorHost,
+      localDatabaseHost: deps.databaseHost,
+      localFirebaseProjectId: deps.databaseProjectId,
+      localDatabaseEmulatorHost: deps.databaseEmulatorHost,
+      expectedApiRevision: expected.revision,
+      expectedApiReleaseSha: expected.releaseSha,
+      expectedApiEnvironment: expected.environment,
+      projectIdChecked,
+      bound: true,
+    },
+    // Checked LAST for this response, so a body-level disagreement (wrong
+    // database, wrong build) is reported in its own terms rather than as a
+    // header mismatch.
+    origin: assertResponseOrigin('deployment-identity', response, expected),
   };
 }
 
@@ -527,8 +688,9 @@ async function assertDemoIdentity(
   deps: Gate6CaptureDeps,
   apiBaseUrl: string,
   uid: string,
+  expected: Gate6ExpectedDeployment,
   signal: AbortSignal,
-): Promise<void> {
+): Promise<Gate6ResponseOrigin> {
   const response = await deps.httpRequest(
     {
       method: 'GET',
@@ -570,6 +732,7 @@ async function assertDemoIdentity(
         'demo-account allowlist before capturing.',
     );
   }
+  return assertResponseOrigin('users-me', response, expected);
 }
 
 /**
@@ -598,8 +761,9 @@ async function assertDemoIdentity(
 async function performAndProveRefusal(
   deps: Gate6CaptureDeps,
   apiBaseUrl: string,
+  expected: Gate6ExpectedDeployment,
   signal: AbortSignal,
-): Promise<{ refusal: string; envelope: Gate6RefusalEnvelope }> {
+): Promise<{ refusal: string; envelope: Gate6RefusalEnvelope; origin: Gate6ResponseOrigin }> {
   const response = await deps.httpRequest(
     {
       method: GATE6_REFUSED_OPERATION.method,
@@ -704,6 +868,11 @@ async function performAndProveRefusal(
     refusal:
       `${response.status} ${GATE6_REFUSED_OPERATION.expectedCode} from ` +
       `${GATE6_REFUSED_OPERATION.method} ${GATE6_REFUSED_OPERATION.path}`,
+    // THE load-bearing origin check. This is the response the whole probe is
+    // built around; if it came from a different revision than the identity
+    // call, everything else agreeing means nothing. The API emits these headers
+    // on error responses too, precisely so a 403 can prove its own origin.
+    origin: assertResponseOrigin('billing-checkout', response, expected),
     envelope: {
       status: response.status,
       contentType: contentType.trim(),
@@ -752,7 +921,8 @@ export async function runGate6ProbeCapture(
   deps.log(`Database host (local): ${deps.databaseHost}`);
   deps.log(`API base URL: ${apiBaseUrl}`);
   deps.log(
-    `Required API deployment: environment=${expectedDeployment.environment} build=${expectedDeployment.revision}`,
+    `Required API deployment: environment=${expectedDeployment.environment} ` +
+      `revision=${expectedDeployment.revision} releaseSha=${expectedDeployment.releaseSha}`,
   );
   deps.log(`Account: ${workspace} (${uid})`);
   deps.log(
@@ -789,21 +959,23 @@ export async function runGate6ProbeCapture(
   try {
     // 1 — BIND the API to the database, before anything else. A mis-pointed
     // run costs one request and seals nothing.
-    const environment = await bounded('deployment-binding', () =>
+    const bound = await bounded('deployment-binding', () =>
       assertDeploymentBinding(deps, apiBaseUrl, expectedDeployment, monitor.signal),
     );
+    const environment = bound.environment;
     deps.log(
-      `API bound: ${environment.apiService ?? 'unnamed service'} @ ` +
-        `${environment.apiRevision ?? environment.apiReleaseSha} (${environment.apiEnvironment}) ` +
-        `uses ${environment.apiDatabaseHost}, which is the database being snapshotted` +
+      `API bound: ${environment.apiService ?? 'unnamed service'} @ revision ` +
+        `${environment.apiRevision} built from ${environment.apiReleaseSha} ` +
+        `(${environment.apiEnvironment}) uses ${environment.apiDatabaseHost}, which is the ` +
+        'database being snapshotted' +
         (environment.projectIdChecked
           ? `; Firebase project ${environment.apiFirebaseProjectId} agrees`
           : '; Firebase project id UNCHECKED (one side did not state one)'),
     );
 
-    // 2 — identity.
-    await bounded('identity-check', () =>
-      assertDemoIdentity(deps, apiBaseUrl, uid, monitor.signal),
+    // 2 — identity. Its response must also prove it came from the SAME build.
+    const identityOrigin = await bounded('identity-check', () =>
+      assertDemoIdentity(deps, apiBaseUrl, uid, expectedDeployment, monitor.signal),
     );
     deps.log(
       `Identity confirmed: the credential is ${uid} and the server calls it a demo account.`,
@@ -828,10 +1000,32 @@ export async function runGate6ProbeCapture(
     // (status, content type, and the stable error code) before anything is
     // sealed.
     const outcome = await bounded('refused-operation', () =>
-      performAndProveRefusal(deps, apiBaseUrl, monitor.signal),
+      performAndProveRefusal(deps, apiBaseUrl, expectedDeployment, monitor.signal),
     );
     const finishedAtMs = deps.now();
     deps.log(`Refusal PROVEN: ${outcome.refusal}`);
+
+    // ONE BUILD SERVED ALL THREE. Each response was individually checked
+    // against the expected revision+SHA as it arrived; this is the COVERAGE
+    // half of the same rule — the sealed set must name every request the
+    // contract requires, so a future fourth call added without an origin check
+    // aborts here rather than quietly narrowing the guarantee.
+    const responseOrigins: Gate6ResponseOrigin[] = [bound.origin, identityOrigin, outcome.origin];
+    const originLabels = new Set(responseOrigins.map((origin) => origin.label));
+    const missingOrigins = GATE6_ORIGIN_BOUND_RESPONSES.filter((label) => !originLabels.has(label));
+    if (missingOrigins.length > 0 || originLabels.size !== responseOrigins.length) {
+      throw new Gate6CaptureRefusal(
+        'api-origin-coverage-incomplete',
+        `the capture did not origin-check every required response (missing ` +
+          `${missingOrigins.join(', ') || 'none'}; collected ` +
+          `${responseOrigins.map((origin) => origin.label).join(', ')}). Nothing has been sealed.`,
+      );
+    }
+    deps.log(
+      `Origin PROVEN for all ${responseOrigins.length} responses: revision ` +
+        `${expectedDeployment.revision}, source ${expectedDeployment.releaseSha}. No revision ` +
+        'split.',
+    );
 
     // The audit requires both snapshots to name the shard set their own window
     // implies. A call that straddles UTC midnight would give the pre-snapshot
@@ -873,7 +1067,7 @@ export async function runGate6ProbeCapture(
       operation: `${GATE6_REFUSED_OPERATION.description} [${GATE6_REFUSED_OPERATION.id}]`,
       refusal: outcome.refusal,
       refusalEnvelope: outcome.envelope,
-      environment,
+      environment: { ...environment, responseOrigins },
       startedAtMs,
       finishedAtMs,
       before,

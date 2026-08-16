@@ -306,8 +306,14 @@ function summarize(receipt: Gate6AuditReceipt): void {
         // application guard refused, and against WHICH deployment.
         refusalCode: row.refusalCode ?? '-',
         apiEnv: row.apiEnvironment ?? '-',
-        apiBuild: row.apiRevision ?? '-',
+        // Slot and source, in their OWN columns. Folding them into one
+        // "build" value is what let a decorative release SHA hide.
+        apiRevision: row.apiRevision ?? '-',
+        apiSource: row.apiReleaseSha ?? '-',
         bound: row.environmentBound,
+        // How many of the capture's three responses the audit re-derived as
+        // coming from that one build — anything short of 3 is mixed-revision.
+        originBound: row.originBoundResponses,
         surfaces: row.surfacesCompared,
         wroteNothing: row.wroteNothing,
       })),

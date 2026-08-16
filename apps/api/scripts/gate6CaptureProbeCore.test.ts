@@ -8,7 +8,12 @@ import {
   type Gate6RejectedOperationProbe,
   type Gate6UidMap,
 } from './gate6AuditCore.js';
-import { DEMO_ACCOUNT_CHECKOUT_FORBIDDEN_CODE } from '@smash-tracker/shared';
+import {
+  API_RELEASE_SHA_HEADER,
+  API_REVISION_HEADER,
+  DEMO_ACCOUNT_CHECKOUT_FORBIDDEN_CODE,
+} from '@smash-tracker/shared';
+import { GATE6_ORIGIN_BOUND_RESPONSES } from './gate6AuditCore.js';
 import {
   GATE6_DEPLOYMENT_IDENTITY_PATH,
   GATE6_IDENTITY_PATH,
@@ -74,48 +79,87 @@ interface TransportScript {
   hang?: boolean;
 }
 
-/** A JSON response, with the content type a real Fastify reply carries. */
-function jsonResponse(status: number, body: unknown): Gate6HttpResponse {
+/**
+ * A JSON response, with the content type AND the per-response origin headers a
+ * real authenticated Fastify reply carries (see the `onSend` hook in
+ * `apps/api/src/app.ts`). Every response the deployed API returns to an
+ * authenticated request states which build served it, which is what makes a
+ * mixed-revision capture detectable at all.
+ */
+function jsonResponse(
+  status: number,
+  body: unknown,
+  origin: { revision?: string | null; releaseSha?: string | null } = {},
+): Gate6HttpResponse {
+  const revision = origin.revision === undefined ? API_REVISION : origin.revision;
+  const releaseSha = origin.releaseSha === undefined ? API_RELEASE_SHA : origin.releaseSha;
   return {
     status,
-    headers: { 'content-type': 'application/json; charset=utf-8' },
+    headers: {
+      'content-type': 'application/json; charset=utf-8',
+      ...(revision === null ? {} : { [API_REVISION_HEADER]: revision }),
+      ...(releaseSha === null ? {} : { [API_RELEASE_SHA_HEADER]: releaseSha }),
+    },
     bodyText: JSON.stringify(body),
   };
 }
 
-function identityBody(uid: string, isDemoAccount = true): Gate6HttpResponse {
-  return jsonResponse(200, { uid, email: 'demo@example.test', fighters: [], isDemoAccount });
+function identityBody(
+  uid: string,
+  isDemoAccount = true,
+  origin: { revision?: string | null; releaseSha?: string | null } = {},
+): Gate6HttpResponse {
+  return jsonResponse(
+    200,
+    { uid, email: 'demo@example.test', fighters: [], isDemoAccount },
+    origin,
+  );
 }
 
 /** The deployment identity of an API correctly bound to the operator's own database. */
 const API_REVISION = 'smash-tracker-api-00042-xyz';
+const API_RELEASE_SHA = 'deadbeefcafe';
 const API_ENVIRONMENT = 'production';
 const LOCAL_PROJECT_ID = 'smash-tracker-f97b7';
 
-function deploymentBody(overrides: Record<string, unknown> = {}): Gate6HttpResponse {
-  return jsonResponse(200, {
-    identityVersion: 1,
-    environment: API_ENVIRONMENT,
-    service: 'smash-tracker-api',
-    revision: API_REVISION,
-    releaseSha: 'deadbeefcafe',
-    firebaseProjectId: LOCAL_PROJECT_ID,
-    // The API's OWN answer names the very database the operator snapshots.
-    databaseHost: HOST,
-    databaseEmulatorHost: null,
-    ...overrides,
-  });
+function deploymentBody(
+  overrides: Record<string, unknown> = {},
+  origin: { revision?: string | null; releaseSha?: string | null } = {},
+): Gate6HttpResponse {
+  return jsonResponse(
+    200,
+    {
+      identityVersion: 1,
+      environment: API_ENVIRONMENT,
+      service: 'smash-tracker-api',
+      revision: API_REVISION,
+      releaseSha: API_RELEASE_SHA,
+      firebaseProjectId: LOCAL_PROJECT_ID,
+      // The API's OWN answer names the very database the operator snapshots.
+      databaseHost: HOST,
+      databaseEmulatorHost: null,
+      ...overrides,
+    },
+    origin,
+  );
 }
 
 /** The demo checkout guard's real refusal, as the deployed API sends it. */
-function demoRefusal(overrides: Record<string, unknown> = {}): Gate6HttpResponse {
-  return jsonResponse(403, {
-    error: 'Forbidden',
-    message: 'Credit purchases are not available for this account',
-    statusCode: 403,
-    code: DEMO_ACCOUNT_CHECKOUT_FORBIDDEN_CODE,
-    ...overrides,
-  });
+function demoRefusal(
+  overrides: Record<string, unknown> = {},
+  origin: { revision?: string | null; releaseSha?: string | null } = {},
+): Gate6HttpResponse {
+  return jsonResponse(
+    403,
+    {
+      error: 'Forbidden',
+      message: 'Credit purchases are not available for this account',
+      statusCode: 403,
+      code: DEMO_ACCOUNT_CHECKOUT_FORBIDDEN_CODE,
+      ...overrides,
+    },
+    origin,
+  );
 }
 
 function makeHarness(
@@ -180,6 +224,8 @@ function baseArgs(extra: string[] = []): string[] {
     API_ENVIRONMENT,
     '--expected-api-revision',
     API_REVISION,
+    '--expected-api-release-sha',
+    API_RELEASE_SHA,
     '--out',
     OUT_PATH,
     ...extra,
@@ -452,7 +498,13 @@ describe('the refusal must be the APPLICATION’s, not merely a 403', () => {
       const harness = makeHarness({
         operation: {
           status: 403,
-          headers: { 'content-type': contentType },
+          headers: {
+            'content-type': contentType,
+            // The origin headers are orthogonal to the content type and are
+            // required on every response, so a real reply still carries them.
+            [API_REVISION_HEADER]: API_REVISION,
+            [API_RELEASE_SHA_HEADER]: API_RELEASE_SHA,
+          },
           bodyText: demoRefusal().bodyText,
         },
       });
@@ -584,13 +636,55 @@ describe('the API must be bound to the database being snapshotted', () => {
     expect(harness.files.size).toBe(0);
   });
 
-  it('falls back to the release SHA when the API names no revision', async () => {
+  /**
+   * THE FALSE GREEN THIS CLOSES (owner/Codex hard-gate re-review, item 2).
+   *
+   * Cloud Run ALWAYS supplies `K_REVISION`, so the old
+   * `observedBuild = revision ?? releaseSha` never consulted the release SHA
+   * at all and the `API_RELEASE_SHA` build arg was decorative. An image built
+   * from the WRONG SOURCE and deployed as the expected new revision therefore
+   * passed the binding: the revision names the deploy SLOT, the SHA names the
+   * SOURCE, and only the pair pins the reviewed build.
+   */
+  it('ABORTS on the right revision but the WRONG release SHA — the deploy slot is not the source', async () => {
     const harness = makeHarness({
-      deployment: deploymentBody({ revision: null, releaseSha: 'deadbeefcafe' }),
+      deployment: deploymentBody({ releaseSha: 'facefeed00000000' }),
     });
-    const args = baseArgs().map((value) => (value === API_REVISION ? 'deadbeefcafe' : value));
-    expect(await runGate6ProbeCapture(args, harness.deps)).toBe(0);
-    expect(sealedProbeFrom(harness).environment.apiRevision).toBeNull();
+    await expect(runGate6ProbeCapture(baseArgs(), harness.deps)).rejects.toMatchObject({
+      code: 'api-release-sha-unexpected',
+    });
+    expect(harness.requests).toHaveLength(1);
+    expect(harness.files.size).toBe(0);
+  });
+
+  /**
+   * THE NULL-RELEASE-SHA DECISION, pinned. A deployment that publishes no
+   * release SHA can name the SLOT it runs in but not the SOURCE it was built
+   * from — and the slot alone is satisfied by any image deployed into it,
+   * including one built from unreviewed code. Since the expectation is
+   * mandatory to STATE, it is mandatory to SATISFY: this aborts.
+   */
+  it('ABORTS when the API publishes no release SHA — the build arg was never baked in', async () => {
+    const harness = makeHarness({
+      deployment: deploymentBody({ releaseSha: null }),
+    });
+    await expect(runGate6ProbeCapture(baseArgs(), harness.deps)).rejects.toMatchObject({
+      code: 'api-release-sha-absent',
+    });
+    await expect(runGate6ProbeCapture(baseArgs(), harness.deps)).rejects.toThrow(
+      /API_RELEASE_SHA build arg/,
+    );
+    expect(harness.files.size).toBe(0);
+  });
+
+  it('ABORTS when the API names no deployment revision — it is not the reviewed Cloud Run deploy', async () => {
+    const harness = makeHarness({
+      deployment: deploymentBody({ revision: null }),
+    });
+    await expect(runGate6ProbeCapture(baseArgs(), harness.deps)).rejects.toMatchObject({
+      code: 'api-revision-absent',
+    });
+    expect(harness.files.size).toBe(0);
   });
 
   it('ABORTS when the API can name NEITHER a revision nor a release SHA', async () => {
@@ -598,8 +692,20 @@ describe('the API must be bound to the database being snapshotted', () => {
       deployment: deploymentBody({ revision: null, releaseSha: null }),
     });
     await expect(runGate6ProbeCapture(baseArgs(), harness.deps)).rejects.toMatchObject({
-      code: 'api-identity-incomplete',
+      code: 'api-revision-absent',
     });
+    expect(harness.files.size).toBe(0);
+  });
+
+  it('REFUSES to run at all when --expected-api-release-sha is omitted', async () => {
+    // Symmetric with the revision flag: an omitted expectation is a refusal,
+    // never a silently skipped axis. Omitting THIS one is what made the
+    // release SHA decorative in the first place.
+    const harness = makeHarness();
+    await expect(
+      runGate6ProbeCapture(withoutFlag('--expected-api-release-sha'), harness.deps),
+    ).rejects.toMatchObject({ code: 'expected-api-release-sha-missing' });
+    expect(harness.requests).toHaveLength(0);
     expect(harness.files.size).toBe(0);
   });
 
@@ -639,7 +745,7 @@ describe('the API must be bound to the database being snapshotted', () => {
       apiEnvironment: API_ENVIRONMENT,
       apiService: 'smash-tracker-api',
       apiRevision: API_REVISION,
-      apiReleaseSha: 'deadbeefcafe',
+      apiReleaseSha: API_RELEASE_SHA,
       apiFirebaseProjectId: LOCAL_PROJECT_ID,
       apiDatabaseHost: HOST,
       apiDatabaseEmulatorHost: null,
@@ -647,7 +753,15 @@ describe('the API must be bound to the database being snapshotted', () => {
       localFirebaseProjectId: LOCAL_PROJECT_ID,
       localDatabaseEmulatorHost: null,
       expectedApiRevision: API_REVISION,
+      expectedApiReleaseSha: API_RELEASE_SHA,
       expectedApiEnvironment: API_ENVIRONMENT,
+      // What each of the three responses said about ITSELF, so the audit can
+      // re-derive the mixed-revision check rather than trust that it ran.
+      responseOrigins: [
+        { label: 'deployment-identity', revision: API_REVISION, releaseSha: API_RELEASE_SHA },
+        { label: 'users-me', revision: API_REVISION, releaseSha: API_RELEASE_SHA },
+        { label: 'billing-checkout', revision: API_REVISION, releaseSha: API_RELEASE_SHA },
+      ],
       projectIdChecked: true,
       bound: true,
     });
@@ -663,9 +777,98 @@ describe('the API must be bound to the database being snapshotted', () => {
       refusalCode: DEMO_ACCOUNT_CHECKOUT_FORBIDDEN_CODE,
       apiEnvironment: API_ENVIRONMENT,
       apiRevision: API_REVISION,
+      apiReleaseSha: API_RELEASE_SHA,
       environmentBound: true,
+      originBoundResponses: 3,
       wroteNothing: true,
     });
+  });
+});
+
+/**
+ * DEPLOYMENT-BINDING HARDENING, ITEM 3 — one build must serve all three calls.
+ *
+ * The deployment identity, the identity pre-check, and the refused operation
+ * are three separate HTTP requests, and only the first was ever revision-bound.
+ * Under Cloud Run split traffic — or a deploy landing between two of the calls
+ * — the operator would bind its evidence to revision A while the refusal it
+ * seals came from revision B, with nothing in the artifact to show it.
+ */
+describe('no capture may straddle two revisions', () => {
+  it('ABORTS when the REFUSAL came from a different revision than the identity — sealing nothing', async () => {
+    // THE case. Identity and users/me are the reviewed build; the checkout
+    // landed on the other half of a split-traffic rollout. Everything else
+    // about this run is healthy: the refusal is a real, correctly-coded 403.
+    const harness = makeHarness({
+      operation: demoRefusal(
+        {},
+        { revision: 'smash-tracker-api-00099-old', releaseSha: 'facefeed00000000' },
+      ),
+    });
+    await expect(runGate6ProbeCapture(baseArgs(), harness.deps)).rejects.toMatchObject({
+      code: 'api-origin-mixed-revision',
+    });
+    // All three calls were made — the refusal is real — and NOTHING was sealed.
+    expect(harness.requests).toHaveLength(3);
+    expect(harness.files.size).toBe(0);
+  });
+
+  it('ABORTS when the IDENTITY pre-check came from a different revision', async () => {
+    const harness = makeHarness({
+      identity: identityBody(UIDS.hbox, true, { revision: 'smash-tracker-api-00099-old' }),
+    });
+    await expect(runGate6ProbeCapture(baseArgs(), harness.deps)).rejects.toMatchObject({
+      code: 'api-origin-mixed-revision',
+    });
+    // Aborted before the refused operation was ever issued.
+    expect(harness.requests).toHaveLength(2);
+    expect(harness.files.size).toBe(0);
+  });
+
+  it('ABORTS on a same-revision response built from a DIFFERENT source', async () => {
+    // A rebuild pushed to the same revision name is not a thing on Cloud Run,
+    // but a proxy or a second service answering under one name is — and the
+    // SHA is what distinguishes them.
+    const harness = makeHarness({
+      operation: demoRefusal({}, { releaseSha: 'facefeed00000000' }),
+    });
+    await expect(runGate6ProbeCapture(baseArgs(), harness.deps)).rejects.toMatchObject({
+      code: 'api-origin-mixed-revision',
+    });
+    expect(harness.files.size).toBe(0);
+  });
+
+  it.each([
+    ['the deployment identity', 'deployment' as const],
+    ['the identity pre-check', 'identity' as const],
+    ['the refused operation', 'operation' as const],
+  ])('ABORTS when %s carries no origin headers at all', async (_label, which) => {
+    const stripped = { revision: null, releaseSha: null };
+    const harness = makeHarness({
+      deployment: which === 'deployment' ? deploymentBody({}, stripped) : undefined,
+      identity: which === 'identity' ? identityBody(UIDS.hbox, true, stripped) : undefined,
+      operation: which === 'operation' ? demoRefusal({}, stripped) : undefined,
+    });
+    await expect(runGate6ProbeCapture(baseArgs(), harness.deps)).rejects.toMatchObject({
+      code: 'api-origin-headers-missing',
+    });
+    expect(harness.files.size).toBe(0);
+  });
+
+  it('ABORTS when a response states its revision but not its source', async () => {
+    const harness = makeHarness({ operation: demoRefusal({}, { releaseSha: null }) });
+    await expect(runGate6ProbeCapture(baseArgs(), harness.deps)).rejects.toMatchObject({
+      code: 'api-origin-headers-missing',
+    });
+    expect(harness.files.size).toBe(0);
+  });
+
+  it('the sealed origins cover EXACTLY the responses the audit requires', async () => {
+    const harness = makeHarness();
+    await runGate6ProbeCapture(baseArgs(), harness.deps);
+    expect(
+      sealedProbeFrom(harness).environment.responseOrigins.map((origin) => origin.label),
+    ).toEqual([...GATE6_ORIGIN_BOUND_RESPONSES]);
   });
 });
 
