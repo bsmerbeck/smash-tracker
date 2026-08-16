@@ -2,10 +2,12 @@ import { describe, expect, it } from 'vitest';
 import type { Database } from 'firebase-admin/database';
 import type { ResearchSourceSetRecord } from '@smash-tracker/shared';
 import { FakeDatabase } from '../../test-support/fakeDatabase.js';
+import { computeForeignRowDigest } from './foreignDigest.js';
 import {
   applyTournamentRegistryPlan,
   planTournamentRegistry,
   projectTournamentRegistry,
+  type RegistryProgressEvent,
 } from './reconcile.js';
 
 const UID = 'demo-uid-1';
@@ -269,5 +271,121 @@ describe('projectTournamentRegistry', () => {
     await expect(planTournamentRegistry(asDatabase(database), 'bad.uid', NOW_MS)).rejects.toThrow(
       /Unsafe uid/,
     );
+  });
+});
+
+/**
+ * 30.3 operator hardening: the projector now also carries the census and the
+ * foreign-row preservation witness the operator's receipts are built from,
+ * and reports work-unit progress so the operator's heartbeat and no-progress
+ * watchdog have something honest to measure.
+ */
+describe('plan census + foreign-row digest', () => {
+  it('reports the entry census and digests exactly the non-owned children', async () => {
+    const database = new FakeDatabase();
+    seedSources(database, [makeRecord('s1', '100')]);
+    database.seed(`tournamentEntries/${UID}/manual-1`, MANUAL_ENTRY);
+    database.seed(`tournamentEntries/${UID}/987`, LEGACY_STARTGG_ENTRY);
+    await projectTournamentRegistry(asDatabase(database), UID, NOW_MS);
+
+    const plan = await planTournamentRegistry(asDatabase(database), UID, LATER_MS);
+    expect(plan.entryChildCount).toBe(3);
+    expect(plan.ownedRowCount).toBe(1);
+    expect(plan.preservedForeignCount).toBe(2);
+    expect(plan.foreignDigest.count).toBe(2);
+    expect(plan.foreignDigest.keys).toEqual(['987', 'manual-1']);
+    expect(plan.foreignDigest.digest).toBe(
+      computeForeignRowDigest(UID, { 'manual-1': MANUAL_ENTRY, '987': LEGACY_STARTGG_ENTRY })
+        .digest,
+    );
+  });
+
+  it('keeps the digest byte-stable across an apply that only touches owned rows', async () => {
+    const database = new FakeDatabase();
+    seedSources(database, [makeRecord('s1', '100')]);
+    database.seed(`tournamentEntries/${UID}/manual-1`, MANUAL_ENTRY);
+
+    const before = await planTournamentRegistry(asDatabase(database), UID, NOW_MS);
+    await applyTournamentRegistryPlan(asDatabase(database), before);
+    const after = await planTournamentRegistry(asDatabase(database), UID, LATER_MS);
+
+    expect(after.foreignDigest.digest).toBe(before.foreignDigest.digest);
+  });
+});
+
+describe('progress reporting and bounded operations', () => {
+  it('emits a progress event for every plan stage and every written child', async () => {
+    const database = new FakeDatabase();
+    seedSources(database, [makeRecord('s1', '100'), makeRecord('s2', '200')]);
+
+    const planEvents: RegistryProgressEvent[] = [];
+    const plan = await planTournamentRegistry(asDatabase(database), UID, NOW_MS, {
+      onProgress: (event) => planEvents.push(event),
+    });
+    expect(planEvents.map((event) => event.stage)).toEqual([
+      'read-source',
+      'derive',
+      'read-entries',
+      'diff',
+    ]);
+    expect(planEvents.at(-1)!.counts).toMatchObject({ derivedRows: 2, plannedWrites: 2 });
+
+    const applyEvents: RegistryProgressEvent[] = [];
+    await applyTournamentRegistryPlan(asDatabase(database), plan, {
+      onProgress: (event) => applyEvents.push(event),
+    });
+    expect(applyEvents.map((event) => event.unit)).toEqual(['histimport:100', 'histimport:200']);
+    expect(applyEvents.every((event) => event.stage === 'write')).toBe(true);
+    expect(applyEvents.at(-1)!.counts.written).toBe(1);
+  });
+
+  it('emits a remove event per orphan deletion', async () => {
+    const database = new FakeDatabase();
+    seedSources(database, [makeRecord('s1', '100'), makeRecord('s2', '999')]);
+    await projectTournamentRegistry(asDatabase(database), UID, NOW_MS);
+    await asDatabase(database).ref(`researchSource/${UID}/sets/s2`).remove();
+
+    const plan = await planTournamentRegistry(asDatabase(database), UID, LATER_MS);
+    const events: RegistryProgressEvent[] = [];
+    await applyTournamentRegistryPlan(asDatabase(database), plan, {
+      onProgress: (event) => events.push(event),
+    });
+    expect(events.filter((event) => event.stage === 'remove').map((event) => event.unit)).toEqual([
+      'histimport:999',
+    ]);
+  });
+
+  it('bounds a hung read by --request-timeout-ms instead of hanging forever', async () => {
+    const hanging = {
+      ref: () => ({ get: () => new Promise(() => undefined) }),
+    } as unknown as Database;
+    await expect(
+      planTournamentRegistry(hanging, UID, NOW_MS, { requestTimeoutMs: 40 }),
+    ).rejects.toThrow(/exceeded its 40ms request timeout/);
+  });
+
+  it('bounds a hung write transaction the same way', async () => {
+    const database = new FakeDatabase();
+    seedSources(database, [makeRecord('s1', '100')]);
+    const plan = await planTournamentRegistry(asDatabase(database), UID, NOW_MS);
+    const hangingWrites = {
+      ref: () => ({ transaction: () => new Promise(() => undefined) }),
+    } as unknown as Database;
+    await expect(
+      applyTournamentRegistryPlan(hangingWrites, plan, { requestTimeoutMs: 40 }),
+    ).rejects.toThrow(/exceeded its 40ms request timeout/);
+  });
+
+  it('stops issuing writes once the shutdown signal aborts', async () => {
+    const database = new FakeDatabase();
+    seedSources(database, [makeRecord('s1', '100')]);
+    const plan = await planTournamentRegistry(asDatabase(database), UID, NOW_MS);
+    const controller = new AbortController();
+    controller.abort(new Error('terminated by SIGINT'));
+
+    await expect(
+      applyTournamentRegistryPlan(asDatabase(database), plan, { signal: controller.signal }),
+    ).rejects.toThrow(/terminated by SIGINT/);
+    expect(entriesDump(database)[UID]).toBeUndefined();
   });
 });
