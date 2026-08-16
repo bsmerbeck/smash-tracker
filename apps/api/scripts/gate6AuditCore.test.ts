@@ -33,6 +33,8 @@ import {
   gate6WindowDayShards,
   GATE6_ASSERTION_IDS,
   GATE6_EXPECTATION_TABLE_VERSION,
+  GATE6_ORIGIN_BOUND_RESPONSES,
+  GATE6_REFUSED_OPERATION_EXPECTED_STATUS,
   GATE6_REJECTED_OPERATION_PROBE_FORMAT_VERSION,
   GATE6_EXPECTATIONS,
   GATE6_SPARG0_USER_OWNED_VOD_ROWS,
@@ -800,7 +802,7 @@ describe('a fully-correct tree passes', () => {
         'targetUids',
       ].sort(),
     );
-    expect(receipt.receiptVersion).toBe(4);
+    expect(receipt.receiptVersion).toBe(5);
     expect(receipt.expectationTableVersion).toBe(GATE6_EXPECTATION_TABLE_VERSION);
     expect(receipt.baselineMode).toBe('record');
     expect(receipt.assertions.map((assertion) => assertion.id)).toEqual([...GATE6_ASSERTION_IDS]);
@@ -1528,8 +1530,20 @@ async function snapshotOf(
   });
 }
 
-/** The API deployment coordinates of a correctly-bound capture (format v2). */
+/** The API deployment coordinates of a correctly-bound capture (format v3). */
 const EXPECTED_API_REVISION = 'smash-tracker-api-00042-xyz';
+const EXPECTED_API_RELEASE_SHA = 'deadbeefcafe';
+
+/** What all three of a healthy capture's responses said about their own origin. */
+function healthyOrigins(
+  overrides: { revision?: string; releaseSha?: string } = {},
+): Gate6ProbeEnvironment['responseOrigins'] {
+  return GATE6_ORIGIN_BOUND_RESPONSES.map((label) => ({
+    label,
+    revision: overrides.revision ?? EXPECTED_API_REVISION,
+    releaseSha: overrides.releaseSha ?? EXPECTED_API_RELEASE_SHA,
+  }));
+}
 
 function healthyEnvironment(overrides: Partial<Gate6ProbeEnvironment> = {}): Gate6ProbeEnvironment {
   return {
@@ -1537,7 +1551,7 @@ function healthyEnvironment(overrides: Partial<Gate6ProbeEnvironment> = {}): Gat
     apiEnvironment: 'production',
     apiService: 'smash-tracker-api',
     apiRevision: EXPECTED_API_REVISION,
-    apiReleaseSha: 'deadbeefcafe',
+    apiReleaseSha: EXPECTED_API_RELEASE_SHA,
     apiFirebaseProjectId: 'smash-tracker-f97b7',
     // The API's OWN answer must name the database the audit reads.
     apiDatabaseHost: LIVE_DATABASE_HOST,
@@ -1546,7 +1560,9 @@ function healthyEnvironment(overrides: Partial<Gate6ProbeEnvironment> = {}): Gat
     localFirebaseProjectId: 'smash-tracker-f97b7',
     localDatabaseEmulatorHost: null,
     expectedApiRevision: EXPECTED_API_REVISION,
+    expectedApiReleaseSha: EXPECTED_API_RELEASE_SHA,
     expectedApiEnvironment: 'production',
+    responseOrigins: healthyOrigins(),
     projectIdChecked: true,
     bound: true,
     ...overrides,
@@ -1967,7 +1983,10 @@ describe('assertion 10 (v2): the refusal must be the APPLICATION’s', () => {
       expect(row.refusalCode).toBe(DEMO_ACCOUNT_CHECKOUT_FORBIDDEN_CODE);
       expect(row.environmentBound).toBe(true);
       expect(row.apiEnvironment).toBe('production');
+      // Slot and source, reported separately — never one folded into the other.
       expect(row.apiRevision).toBe(EXPECTED_API_REVISION);
+      expect(row.apiReleaseSha).toBe(EXPECTED_API_RELEASE_SHA);
+      expect(row.originBoundResponses).toBe(GATE6_ORIGIN_BOUND_RESPONSES.length);
     }
   });
 
@@ -2009,6 +2028,37 @@ describe('assertion 10 (v2): the refusal must be the APPLICATION’s', () => {
       'rejected-operation-no-trace',
       'rejected-operation-probe-refusal-code-unexpected',
     );
+  });
+
+  /**
+   * The audit used to reassert `status === statusCode` — a comparison between
+   * two members of the SAME sealed artifact, which every probe satisfies by
+   * construction. A probe whose refusal was an internally-consistent 401 (or
+   * 404, or 429) therefore sailed through the check that was supposed to pin
+   * it to the demo guard's own 403. Both members are now reasserted against
+   * the literal.
+   */
+  it('FAILS a SELF-CONSISTENT refusal at the wrong status — the old check was a self-comparison', async () => {
+    const database = makeDatabase();
+    const receipt = await audit(database, {
+      rejectedOperationProbes: [
+        // status and statusCode AGREE; they are simply not 403.
+        await probeWithEnvelope(database, { status: 401, statusCode: 401 }),
+      ],
+    });
+    expectPerturbed(
+      receipt,
+      'rejected-operation-no-trace',
+      'rejected-operation-probe-refusal-code-unexpected',
+    );
+    const detail = assertionOf(receipt, 'rejected-operation-no-trace')
+      .findings.map((finding) => finding.detail)
+      .join('\n');
+    expect(detail).toContain(String(GATE6_REFUSED_OPERATION_EXPECTED_STATUS));
+  });
+
+  it('pins the expected refusal status in committed source', () => {
+    expect(GATE6_REFUSED_OPERATION_EXPECTED_STATUS).toBe(403);
   });
 });
 
@@ -2140,31 +2190,164 @@ describe('assertion 10 (v2): the API and the RTDB must be ONE environment', () =
     );
   });
 
-  it('FALLS BACK to the release SHA when the API names no revision', async () => {
+  it('FAILS when the API named no deployment revision at all', async () => {
     const database = makeDatabase();
     const receipt = await audit(database, {
-      rejectedOperationProbes: [
-        await probeWithEnvironment(database, {
-          apiRevision: null,
-          apiReleaseSha: 'deadbeefcafe',
-          expectedApiRevision: 'deadbeefcafe',
-        }),
-      ],
-    });
-    expect(assertionOf(receipt, 'rejected-operation-no-trace').status).toBe('passed');
-  });
-
-  it('FAILS when the API can name NEITHER a revision nor a release SHA', async () => {
-    const database = makeDatabase();
-    const receipt = await audit(database, {
-      rejectedOperationProbes: [
-        await probeWithEnvironment(database, { apiRevision: null, apiReleaseSha: null }),
-      ],
+      rejectedOperationProbes: [await probeWithEnvironment(database, { apiRevision: null })],
     });
     expectPerturbed(
       receipt,
       'rejected-operation-no-trace',
       'rejected-operation-probe-revision-unexpected',
+    );
+  });
+});
+
+/**
+ * DEPLOYMENT-BINDING HARDENING, ITEM 2 — the audit's own re-derivation of the
+ * release SHA.
+ *
+ * The audit re-derived the build with the same `revision ?? releaseSha` rule
+ * the operator used, so it reproduced the operator's blind spot rather than
+ * catching it. A probe sealed by a stale or differently-built operator — one
+ * that never compared the SHA — has to fail HERE, at the audit, which is the
+ * whole reason the audit re-derives instead of reading `bound: true`.
+ */
+describe('assertion 10 (v3): the reviewed SOURCE, not just the reviewed deploy slot', () => {
+  it('FAILS the right revision with the WRONG release SHA — the headline false green', async () => {
+    const database = makeDatabase();
+    const receipt = await audit(database, {
+      rejectedOperationProbes: [
+        // The deploy slot is exactly the reviewed one. The image in it is not.
+        await probeWithEnvironment(database, {
+          apiReleaseSha: 'facefeed00000000',
+          responseOrigins: healthyOrigins({ releaseSha: 'facefeed00000000' }),
+        }),
+      ],
+    });
+    expectPerturbed(
+      receipt,
+      'rejected-operation-no-trace',
+      'rejected-operation-probe-release-sha-unexpected',
+    );
+    expect(receipt.rejectedOperationProbes[0]!.apiRevision).toBe(EXPECTED_API_REVISION);
+    expect(receipt.rejectedOperationProbes[0]!.apiReleaseSha).toBe('facefeed00000000');
+  });
+
+  it('FAILS a deployment that publishes NO release SHA — a null is an abort, not an exemption', async () => {
+    const database = makeDatabase();
+    const receipt = await audit(database, {
+      rejectedOperationProbes: [await probeWithEnvironment(database, { apiReleaseSha: null })],
+    });
+    expectPerturbed(
+      receipt,
+      'rejected-operation-no-trace',
+      'rejected-operation-probe-release-sha-unexpected',
+    );
+  });
+});
+
+/**
+ * DEPLOYMENT-BINDING HARDENING, ITEM 3 — no capture may straddle two builds.
+ *
+ * Deployment identity, `GET /users/me`, and the refused checkout are three
+ * separate HTTP requests. Only the first was ever bound, so under split
+ * traffic the probe could bind an identity from revision A while sealing a
+ * refusal from revision B — with nothing in the artifact to show it.
+ */
+describe('assertion 10 (v3): mixed-revision captures', () => {
+  it('FAILS when the REFUSAL came from a different revision than the identity it is bound to', async () => {
+    const database = makeDatabase();
+    const receipt = await audit(database, {
+      rejectedOperationProbes: [
+        await probeWithEnvironment(database, {
+          responseOrigins: [
+            {
+              label: 'deployment-identity',
+              revision: EXPECTED_API_REVISION,
+              releaseSha: EXPECTED_API_RELEASE_SHA,
+            },
+            {
+              label: 'users-me',
+              revision: EXPECTED_API_REVISION,
+              releaseSha: EXPECTED_API_RELEASE_SHA,
+            },
+            // Cloud Run split traffic: the checkout landed on the OTHER revision.
+            {
+              label: 'billing-checkout',
+              revision: 'smash-tracker-api-00099-old',
+              releaseSha: 'facefeed00000000',
+            },
+          ],
+        }),
+      ],
+    });
+    expectPerturbed(
+      receipt,
+      'rejected-operation-no-trace',
+      'rejected-operation-probe-mixed-revision',
+    );
+    // NOTHING was sealed as bound: the shortfall is visible, not rounded up.
+    expect(receipt.rejectedOperationProbes[0]!.originBoundResponses).toBe(2);
+    expect(receipt.ok).toBe(false);
+  });
+
+  it.each(GATE6_ORIGIN_BOUND_RESPONSES)(
+    'FAILS when the "%s" response was never origin-checked',
+    async (missing) => {
+      const database = makeDatabase();
+      const receipt = await audit(database, {
+        rejectedOperationProbes: [
+          await probeWithEnvironment(database, {
+            responseOrigins: healthyOrigins().filter((origin) => origin.label !== missing),
+          }),
+        ],
+      });
+      expectPerturbed(
+        receipt,
+        'rejected-operation-no-trace',
+        'rejected-operation-probe-mixed-revision',
+      );
+      expect(receipt.rejectedOperationProbes[0]!.originBoundResponses).toBe(
+        GATE6_ORIGIN_BOUND_RESPONSES.length - 1,
+      );
+    },
+  );
+
+  it('FAILS a capture that origin-checked NOTHING — an empty list is not coverage', async () => {
+    const database = makeDatabase();
+    const receipt = await audit(database, {
+      rejectedOperationProbes: [await probeWithEnvironment(database, { responseOrigins: [] })],
+    });
+    expectPerturbed(
+      receipt,
+      'rejected-operation-no-trace',
+      'rejected-operation-probe-mixed-revision',
+    );
+    expect(receipt.rejectedOperationProbes[0]!.originBoundResponses).toBe(0);
+  });
+
+  it('FAILS a list that pads coverage by repeating one response', async () => {
+    const database = makeDatabase();
+    const receipt = await audit(database, {
+      rejectedOperationProbes: [
+        await probeWithEnvironment(database, {
+          responseOrigins: [
+            ...healthyOrigins().filter((origin) => origin.label !== 'billing-checkout'),
+            // Three entries, but the refusal is still unchecked.
+            {
+              label: 'users-me',
+              revision: EXPECTED_API_REVISION,
+              releaseSha: EXPECTED_API_RELEASE_SHA,
+            },
+          ],
+        }),
+      ],
+    });
+    expectPerturbed(
+      receipt,
+      'rejected-operation-no-trace',
+      'rejected-operation-probe-mixed-revision',
     );
   });
 });
@@ -2195,8 +2378,33 @@ describe('assertion 10 (v2): a STALE-FORMAT probe is refused, never leniently pa
     expect(receipt.ok).toBe(false);
   });
 
+  it('REFUSES a v2 probe BY NAME — it carries no release-SHA expectation and no response origins', async () => {
+    const database = makeDatabase();
+    const probe = await sealedProbe(database, 'hbox');
+    // Exactly the v2 shape: the two v3 proofs removed from the environment
+    // record, resealed under v2's version literal, with a GENUINE hash — so
+    // the refusal below is unambiguously about the FORMAT.
+    const body = probeBodyOf(probe) as unknown as Record<string, unknown>;
+    const environment = { ...(body.environment as Record<string, unknown>) };
+    delete environment.expectedApiReleaseSha;
+    delete environment.responseOrigins;
+    body.environment = environment;
+    body.formatVersion = 2;
+    const v2 = { ...body, contentHash: canonicalDigest(body) };
+
+    const receipt = await audit(database, {
+      rejectedOperationProbes: [{ path: probe.path, raw: v2 }],
+    });
+    expectPerturbed(receipt, 'rejected-operation-no-trace', 'rejected-operation-probe-invalid');
+    const detail = assertionOf(receipt, 'rejected-operation-no-trace').findings[0]!.detail;
+    expect(detail).toContain('formatVersion 2');
+    expect(detail).toContain('REFUSED, not migrated');
+    expect(receipt.rejectedOperationProbes[0]!.valid).toBe(false);
+    expect(receipt.ok).toBe(false);
+  });
+
   it('pins the current format version so a bump is a deliberate, reviewed act', () => {
-    expect(GATE6_REJECTED_OPERATION_PROBE_FORMAT_VERSION).toBe(2);
+    expect(GATE6_REJECTED_OPERATION_PROBE_FORMAT_VERSION).toBe(3);
   });
 });
 

@@ -435,11 +435,51 @@ export interface Gate6TraceSnapshot {
  * APPLICATION (`refusalEnvelope`), and that the API driven and the RTDB
  * snapshotted are the same environment (`environment`). Both gaps produced
  * false greens, so a v1 probe is not weaker evidence for the v2 assertion; it
- * is evidence for a DIFFERENT, discredited assertion. It is therefore REFUSED
- * by name rather than leniently parsed — the same posture
- * `registryManifestArtifact.ts` takes on its own v1.
+ * is evidence for a DIFFERENT, discredited assertion.
+ *
+ * Bumped 2 -> 3 (deployment-binding hardening): a v2 probe's build binding was
+ * `revision ?? releaseSha`, and Cloud Run ALWAYS supplies a revision — so the
+ * release SHA was never consulted and an image built from the WRONG SOURCE,
+ * deployed into the expected revision slot, passed. v3 seals the two
+ * coordinates SEPARATELY (`expectedApiReleaseSha`) and additionally seals the
+ * per-response origin headers (`responseOrigins`) that prove all three of the
+ * capture's HTTP calls were served by that one build rather than by two
+ * revisions under split traffic.
+ *
+ * Every bump is REFUSED by name rather than leniently parsed — the same
+ * posture `registryManifestArtifact.ts` takes on its own v1. An older probe is
+ * not weaker evidence for the current assertion; it is evidence for a
+ * different, discredited one.
  */
-export const GATE6_REJECTED_OPERATION_PROBE_FORMAT_VERSION = 2;
+export const GATE6_REJECTED_OPERATION_PROBE_FORMAT_VERSION = 3;
+
+/**
+ * The status the refused operation MUST have carried. Lives here rather than
+ * in the capture operator because the AUDIT has to reassert it against a
+ * literal — comparing the sealed `status` to the sealed `statusCode` only
+ * proves the artifact agrees with itself. `gate6CaptureProbeCore.ts` imports
+ * this same constant for its own pre-seal check, so the two can never drift.
+ */
+export const GATE6_REFUSED_OPERATION_EXPECTED_STATUS = 403;
+
+/**
+ * The three HTTP responses whose origin MUST be pinned to one build.
+ *
+ * Deployment identity, the identity pre-check, and the refused operation are
+ * three separate requests. Binding only the first leaves the other two free to
+ * land on a different revision under Cloud Run split traffic or a deploy that
+ * happens mid-capture — the probe would then bind its identity to revision A
+ * while the refusal it seals came from revision B, and nothing in the artifact
+ * would show it. The operator records the origin headers each response
+ * carried; this list is what the audit requires to be covered EXACTLY, so a
+ * capture that quietly checked only two of the three cannot pass.
+ */
+export const GATE6_ORIGIN_BOUND_RESPONSES = [
+  'deployment-identity',
+  'users-me',
+  'billing-checkout',
+] as const;
+export type Gate6OriginBoundResponse = (typeof GATE6_ORIGIN_BOUND_RESPONSES)[number];
 
 /**
  * The verified refusal envelope: the parsed body of the refused call, proven
@@ -475,6 +515,21 @@ export interface Gate6RefusalEnvelope {
  * operator's own environment. The audit re-derives the comparison from these
  * values rather than trusting `bound`.
  */
+/**
+ * The build coordinates ONE response stated about itself, read from its
+ * `x-gf-api-revision` / `x-gf-api-release-sha` headers.
+ *
+ * Sealed per response rather than summarized into a boolean so the audit can
+ * RE-DERIVE the mixed-revision check instead of taking the operator's word for
+ * it — the same discipline that made `bound: true` non-authoritative.
+ */
+export interface Gate6ResponseOrigin {
+  /** One of {@link GATE6_ORIGIN_BOUND_RESPONSES}. */
+  label: Gate6OriginBoundResponse;
+  revision: string;
+  releaseSha: string;
+}
+
 export interface Gate6ProbeEnvironment {
   /** The normalized API origin+prefix the refused call was issued against. */
   apiBaseUrl: string;
@@ -492,10 +547,28 @@ export interface Gate6ProbeEnvironment {
   localDatabaseHost: string;
   localFirebaseProjectId: string | null;
   localDatabaseEmulatorHost: string | null;
-  /** The build coordinate the operator was told to require. */
+  /**
+   * The DEPLOYMENT SLOT the operator was told to require — the immutable Cloud
+   * Run revision name. Says which deploy answered; says nothing about what was
+   * in it.
+   */
   expectedApiRevision: string;
+  /**
+   * The SOURCE the operator was told to require — the reviewed git SHA the
+   * image was built from. Separate from the revision on purpose: an image built
+   * from unreviewed source and deployed into the expected revision slot
+   * satisfies the revision alone, which is exactly the false green the
+   * deployment-binding hardening closes.
+   */
+  expectedApiReleaseSha: string;
   /** The environment the operator was told to require. */
   expectedApiEnvironment: string;
+  /**
+   * What each of the capture's three HTTP responses said about its own origin.
+   * The audit requires this to cover {@link GATE6_ORIGIN_BOUND_RESPONSES}
+   * exactly and every entry to name the one expected build.
+   */
+  responseOrigins: Gate6ResponseOrigin[];
   /**
    * `false` when either side could not state a project id, so an UNCHECKED
    * axis is never read as a checked one (the same honesty
@@ -509,7 +582,7 @@ export interface Gate6ProbeEnvironment {
 
 /** The sealed body of one rejected-operation probe. */
 export interface Gate6RejectedOperationProbeBody {
-  formatVersion: 2;
+  formatVersion: 3;
   workspace: Gate6WorkspaceKey;
   uid: string;
   /** The database the probe was taken against — a probe from staging is not evidence about production. */
@@ -549,12 +622,22 @@ export interface Gate6RejectedOperationProbeObservation {
   refusal: string | null;
   /** The verified application error code, so a reader sees WHICH guard refused. */
   refusalCode: string | null;
-  /** The API revision the probe was captured against. */
+  /** The Cloud Run revision — the deploy SLOT — the probe was captured against. */
   apiRevision: string | null;
+  /** The git SHA — the SOURCE — that build was made from. Independently required. */
+  apiReleaseSha: string | null;
   /** The API's own `NODE_ENV`. */
   apiEnvironment: string | null;
   /** `true` only when the audit RE-DERIVED the API/RTDB binding and it held. */
   environmentBound: boolean;
+  /**
+   * How many of the capture's HTTP responses the audit RE-DERIVED as coming
+   * from the one expected build. Anything other than
+   * `GATE6_ORIGIN_BOUND_RESPONSES.length` is a mixed-revision capture, and the
+   * count is reported rather than collapsed into the boolean so a reader can
+   * see the shortfall.
+   */
+  originBoundResponses: number;
   /** Surfaces compared for this probe — the anti-vacuity figure per probe. */
   surfacesCompared: number;
   /** `true` only when every compared surface was byte-identical before and after. */
@@ -587,8 +670,15 @@ export interface Gate6AuditReceipt {
    * `refusalCode`/`apiRevision`/`apiEnvironment`/`environmentBound`, so a
    * reader can see WHICH guard refused and against WHICH deployment,
    * rather than only that some 403 happened somewhere.
+   * Bumped 4 -> 5 (deployment-binding hardening): each observation gained
+   * `apiReleaseSha` (the reviewed SOURCE, now required independently of the
+   * revision SLOT) and `originBoundResponses` (how many of the capture's three
+   * HTTP responses the audit re-derived as coming from that one build).
+   * `apiRevision` also stopped silently falling back to the release SHA — the
+   * two coordinates are now reported in their own fields, so a reader can no
+   * longer mistake a SHA for a revision.
    */
-  receiptVersion: 4;
+  receiptVersion: 5;
   expectationTableVersion: string;
   generatedAtMs: number;
   targetUids: Gate6UidMap;
@@ -2384,8 +2474,35 @@ async function assertIzawCoachingRoot(
  *    audited), the emulator agreement, the environment, and the build
  *    coordinate — it does not trust the operator's `bound` attestation.
  *
- * A v1 probe is REFUSED by name rather than migrated: it carries neither
- * proof, so accepting it leniently would reinstate both holes.
+ * WHAT MAKES THE BUILD BINDING REAL (format v3, deployment-binding hardening).
+ * v2's environment binding was itself two-thirds inert, and both gaps are
+ * closed here rather than in the operator alone:
+ *
+ *  - THE RELEASE SHA WAS NEVER CONSULTED. v2 took `revision ?? releaseSha`,
+ *    and Cloud Run ALWAYS supplies `K_REVISION` — so the release SHA never
+ *    entered the comparison and the `API_RELEASE_SHA` build arg was
+ *    decorative. The revision names the deployment SLOT; the SHA names the
+ *    SOURCE. An image built from unreviewed code and deployed as the expected
+ *    new revision satisfied every check there was. v3 seals
+ *    `expectedApiReleaseSha` alongside `expectedApiRevision`, and this audit
+ *    requires BOTH coordinates to be present and to match — a null on either
+ *    axis fails, because "this deployment does not publish that one" is
+ *    exactly the state the hole lived in.
+ *
+ *  - ONLY THE FIRST OF THREE REQUESTS WAS BOUND. Deployment identity,
+ *    `GET /users/me`, and the refused `POST /billing/checkout` are three
+ *    separate HTTP calls. Under Cloud Run split traffic, or a deploy landing
+ *    mid-capture, they can be served by DIFFERENT revisions — so a probe could
+ *    bind its identity to revision A while sealing a refusal that came from
+ *    revision B. v3 seals `responseOrigins`: what each response said about
+ *    ITSELF via the `x-gf-api-revision`/`x-gf-api-release-sha` headers. This
+ *    audit requires {@link GATE6_ORIGIN_BOUND_RESPONSES} to be covered exactly
+ *    and every entry to name the one expected build, re-deriving the check
+ *    from the sealed values rather than trusting that the operator ran it.
+ *
+ * An older probe is REFUSED by name rather than migrated: each format carries
+ * strictly less proof than the current assertion requires, so accepting one
+ * leniently would reinstate precisely the holes it predates.
  *
  * THE LIMIT, STATED RATHER THAN PAPERED OVER. The audit VERIFIES a probe; it
  * does not re-execute the refused operation, and it cannot, because by gate
@@ -2432,6 +2549,14 @@ const refusalEnvelopeSchema = z
   })
   .strict();
 
+const responseOriginSchema = z
+  .object({
+    label: z.enum(GATE6_ORIGIN_BOUND_RESPONSES),
+    revision: z.string().min(1),
+    releaseSha: z.string().min(1),
+  })
+  .strict();
+
 const probeEnvironmentSchema = z
   .object({
     apiBaseUrl: z.string().min(1),
@@ -2446,7 +2571,9 @@ const probeEnvironmentSchema = z
     localFirebaseProjectId: z.string().min(1).nullable(),
     localDatabaseEmulatorHost: z.string().min(1).nullable(),
     expectedApiRevision: z.string().min(1),
+    expectedApiReleaseSha: z.string().min(1),
     expectedApiEnvironment: z.string().min(1),
+    responseOrigins: z.array(responseOriginSchema),
     projectIdChecked: z.boolean(),
     bound: z.literal(true),
   })
@@ -2498,8 +2625,12 @@ export function validateGate6RejectedOperationProbe(raw: unknown): Gate6Rejected
       `Rejected-operation probe formatVersion ${String(declaredVersion)} is not the required ` +
         `${GATE6_REJECTED_OPERATION_PROBE_FORMAT_VERSION}. A v1 probe proved neither that the ` +
         'refusal came from the application (any 403 was accepted, including a CDN/WAF one) nor ' +
-        'that the API driven and the database snapshotted were the same environment. It is ' +
-        'REFUSED, not migrated — re-capture with the current operator.',
+        'that the API driven and the database snapshotted were the same environment. A v2 probe ' +
+        'proved both, but bound the build with `revision ?? releaseSha` — and Cloud Run always ' +
+        'supplies a revision, so an image built from unreviewed SOURCE and deployed into the ' +
+        "expected revision slot passed; it also bound only the FIRST of the capture's three " +
+        'HTTP calls, leaving the refusal free to come from another revision under split traffic. ' +
+        'It is REFUSED, not migrated — re-capture with the current operator.',
     );
   }
   const probe = rejectedOperationProbeSchema.parse(raw);
@@ -2681,8 +2812,10 @@ function assertRejectedOperationNoTrace(
         refusal: null,
         refusalCode: null,
         apiRevision: null,
+        apiReleaseSha: null,
         apiEnvironment: null,
         environmentBound: false,
+        originBoundResponses: 0,
         surfacesCompared: 0,
         wroteNothing: false,
       });
@@ -2784,12 +2917,25 @@ function assertRejectedOperationNoTrace(
           'error page is an edge/CDN refusal, not the application guard',
       );
     }
-    if (envelope.status !== envelope.statusCode) {
+    // REASSERTED AGAINST THE LITERAL, both of them. The previous form compared
+    // `status` to `statusCode` — a self-comparison between two members of the
+    // same sealed artifact, which any probe agrees with by construction and
+    // which therefore said nothing about whether the refusal was the 403 this
+    // gate is about.
+    if (envelope.status !== GATE6_REFUSED_OPERATION_EXPECTED_STATUS) {
       fail(
         'rejected-operation-probe-refusal-code-unexpected',
-        `the sealed refusal's HTTP status ${envelope.status} disagrees with its envelope's own ` +
-          `statusCode ${envelope.statusCode}, so something between the guard and the operator ` +
-          're-wrapped the response',
+        `the sealed refusal carries HTTP status ${envelope.status}, not the required ` +
+          `${GATE6_REFUSED_OPERATION_EXPECTED_STATUS}; only that status is the demo guard's own ` +
+          'refusal, and any other one reached a different rule (or never reached the application)',
+      );
+    }
+    if (envelope.statusCode !== GATE6_REFUSED_OPERATION_EXPECTED_STATUS) {
+      fail(
+        'rejected-operation-probe-refusal-code-unexpected',
+        `the sealed refusal's envelope claims statusCode ${envelope.statusCode}, not the required ` +
+          `${GATE6_REFUSED_OPERATION_EXPECTED_STATUS}; something between the guard and the ` +
+          'operator re-wrapped the response',
       );
     }
 
@@ -2850,21 +2996,91 @@ function assertRejectedOperationNoTrace(
           `"${environment.expectedApiEnvironment}"`,
       );
     }
-    // The immutable Cloud Run revision is authoritative when present; off
-    // Cloud Run the release SHA is the only build coordinate there is.
-    const observedBuild = environment.apiRevision ?? environment.apiReleaseSha;
-    if (observedBuild === null) {
+    // ---- Deployment-binding hardening, item 2: BOTH build coordinates.
+    //
+    // RE-DERIVED here, independently of whatever the operator concluded. The
+    // revision names the deployment SLOT; the release SHA names the SOURCE the
+    // image was built from. The old rule took `revision ?? releaseSha`, and
+    // Cloud Run ALWAYS supplies a revision — so the SHA was never consulted,
+    // and an image built from unreviewed source but deployed into the expected
+    // revision passed. Both are now required, both must be PRESENT, and a null
+    // on either axis fails rather than being tolerated as "this deployment
+    // simply does not publish that one".
+    if (environment.apiRevision === null) {
       fail(
         'rejected-operation-probe-revision-unexpected',
-        'the API named neither a deployment revision nor a release SHA, so this probe cannot be ' +
-          'tied to the build the owner reviewed',
+        'the API named no deployment revision (K_REVISION), so this probe cannot be tied to the ' +
+          `deployment the owner reviewed ("${environment.expectedApiRevision}")`,
       );
-    } else if (observedBuild !== environment.expectedApiRevision) {
+    } else if (environment.apiRevision !== environment.expectedApiRevision) {
       fail(
         'rejected-operation-probe-revision-unexpected',
-        `the probe was captured against build "${observedBuild}", not the required ` +
-          `"${environment.expectedApiRevision}"`,
+        `the probe was captured against deployment revision "${environment.apiRevision}", not the ` +
+          `required "${environment.expectedApiRevision}"`,
       );
+    }
+    if (environment.apiReleaseSha === null) {
+      fail(
+        'rejected-operation-probe-release-sha-unexpected',
+        'the API named no release SHA (API_RELEASE_SHA), so the probe pins the deployment SLOT ' +
+          'but not the SOURCE that was deployed into it — an image built from unreviewed code ' +
+          'would be indistinguishable from the reviewed one',
+      );
+    } else if (environment.apiReleaseSha !== environment.expectedApiReleaseSha) {
+      fail(
+        'rejected-operation-probe-release-sha-unexpected',
+        `the probe was captured against an image built from "${environment.apiReleaseSha}", not ` +
+          `the reviewed "${environment.expectedApiReleaseSha}". The revision matched, which is ` +
+          'exactly why this axis exists: a wrong-source image deployed into the right slot passes ' +
+          'every revision check there is',
+      );
+    }
+
+    // ---- Deployment-binding hardening, item 3: ONE revision served all three
+    // requests.
+    //
+    // Deployment identity, the identity pre-check, and the refused operation
+    // are three separate HTTP calls. Under split traffic or a deploy landing
+    // mid-capture they can be answered by different revisions, so a probe could
+    // bind its identity to revision A while sealing a refusal from revision B.
+    // The operator recorded what each response said about ITSELF; the audit
+    // re-derives coverage and agreement from those sealed values rather than
+    // trusting that the operator performed the check.
+    const originsByLabel = new Map(
+      environment.responseOrigins.map((origin) => [origin.label, origin]),
+    );
+    let originBoundResponses = 0;
+    if (originsByLabel.size !== environment.responseOrigins.length) {
+      fail(
+        'rejected-operation-probe-mixed-revision',
+        'the sealed response origins name the same response twice, so they cannot establish that ' +
+          'each distinct request was origin-checked',
+      );
+    }
+    for (const label of GATE6_ORIGIN_BOUND_RESPONSES) {
+      const origin = originsByLabel.get(label);
+      if (origin === undefined) {
+        fail(
+          'rejected-operation-probe-mixed-revision',
+          `the capture recorded no origin for the "${label}" response, so that request could have ` +
+            'been served by a different revision than the one this probe is bound to',
+        );
+        continue;
+      }
+      if (
+        origin.revision !== environment.expectedApiRevision ||
+        origin.releaseSha !== environment.expectedApiReleaseSha
+      ) {
+        fail(
+          'rejected-operation-probe-mixed-revision',
+          `the "${label}" response was served by revision "${origin.revision}" (source ` +
+            `"${origin.releaseSha}"), not the required "${environment.expectedApiRevision}" ` +
+            `(source "${environment.expectedApiReleaseSha}"). This capture spans MORE THAN ONE ` +
+            'build, so its identity and its refusal are not evidence about the same code',
+        );
+        continue;
+      }
+      originBoundResponses += 1;
     }
 
     const beforeByPath = new Map(probe.before.surfaces.map((surface) => [surface.path, surface]));
@@ -2924,9 +3140,14 @@ function assertRejectedOperationNoTrace(
       operation: probe.operation,
       refusal: probe.refusal,
       refusalCode: envelope.code,
-      apiRevision: environment.apiRevision ?? environment.apiReleaseSha,
+      // Reported in their OWN fields — the old `revision ?? releaseSha`
+      // fallback made a SHA indistinguishable from a revision in the receipt,
+      // which is how the decorative-SHA hole stayed invisible to readers.
+      apiRevision: environment.apiRevision,
+      apiReleaseSha: environment.apiReleaseSha,
       apiEnvironment: environment.apiEnvironment,
       environmentBound,
+      originBoundResponses,
       surfacesCompared: allPaths.length,
       wroteNothing,
     });
@@ -3167,7 +3388,7 @@ async function runAuditWithReader(
   });
 
   return {
-    receiptVersion: 4,
+    receiptVersion: 5,
     expectationTableVersion: GATE6_EXPECTATION_TABLE_VERSION,
     generatedAtMs: options.nowMs,
     targetUids: { ...options.uids },

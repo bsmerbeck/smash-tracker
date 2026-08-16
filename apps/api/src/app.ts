@@ -10,7 +10,11 @@ import {
   validatorCompiler,
   type ZodTypeProvider,
 } from 'fastify-type-provider-zod';
-import { healthCheckSchema } from '@smash-tracker/shared';
+import {
+  API_RELEASE_SHA_HEADER,
+  API_REVISION_HEADER,
+  healthCheckSchema,
+} from '@smash-tracker/shared';
 import firebasePlugin from './plugins/firebase.js';
 import authPlugin from './plugins/auth.js';
 import resolveSubjectPlugin from './plugins/resolveSubject.js';
@@ -299,6 +303,57 @@ export function buildApp(options: BuildAppOptions) {
   // Phase 30.3 (Gate 6 capture-evidence hardening, item 3): decorated
   // directly, mirroring `demoAccountConfig` immediately above.
   app.decorate('deploymentConfig', options.deployment ?? null);
+
+  /**
+   * Phase 30.3 (deployment-binding hardening, item 3): stamp every
+   * AUTHENTICATED response with the build coordinates of the instance that
+   * served it.
+   *
+   * WHAT THIS CLOSES. The Gate-6 capture operator issues three separate
+   * requests — the deployment identity, `GET /users/me`, and the refused
+   * `POST /billing/checkout`. Binding only the FIRST to a revision leaves the
+   * other two free to land on a different one under split traffic or a deploy
+   * that happens mid-capture, so the sealed probe could pair an identity from
+   * revision A with a refusal from revision B and look perfectly healthy. Each
+   * response now carries its own origin and the operator compares all three.
+   *
+   * ON ERROR RESPONSES TOO, deliberately: `onSend` runs for replies produced by
+   * the error handler as well as by handlers, and the load-bearing response in
+   * the capture is a 403. A header that vanished on the error path would be a
+   * header that is absent exactly when it matters.
+   *
+   * ONLY WHEN THE REQUEST WAS AUTHENTICATED. `request.uid` is set by
+   * `app.authenticate`; when it is absent the request never proved who it was,
+   * and the least-exposure posture that made `GET /api/deployment-identity`
+   * authenticated applies with equal force here. This is also what keeps every
+   * anonymous surface — the public share pages, the no-account bearer delivery
+   * routes, `/healthz` — byte-identical, headers included, so the no-oracle
+   * guarantees on those routes are untouched.
+   *
+   * A null coordinate emits NO header rather than an empty or placeholder one:
+   * the capture operator requires both headers to be present and to match, so
+   * "the image was built without a release SHA" must read as absent, never as
+   * an answer.
+   */
+  app.addHook('onSend', async (request, reply) => {
+    const identity = app.deploymentConfig;
+    if (identity === null) {
+      return;
+    }
+    // Declared as `string` by the auth plugin's module augmentation, but only
+    // ASSIGNED once `app.authenticate` has run — unauthenticated requests
+    // genuinely carry `undefined` here.
+    const uid: string | undefined = request.uid;
+    if (uid === undefined) {
+      return;
+    }
+    if (identity.revision !== null) {
+      reply.header(API_REVISION_HEADER, identity.revision);
+    }
+    if (identity.releaseSha !== null) {
+      reply.header(API_RELEASE_SHA_HEADER, identity.releaseSha);
+    }
+  });
 
   app.setErrorHandler<FastifyError>((error, request, reply) => {
     if (hasZodFastifySchemaValidationErrors(error)) {

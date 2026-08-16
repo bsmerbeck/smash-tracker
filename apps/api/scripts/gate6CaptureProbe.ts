@@ -13,17 +13,42 @@
  *     --hbox-uid <uid> --mkleo-uid <uid> --sparg0-uid <uid> --izaw-uid <uid> \
  *     --api-base-url https://grandfinals.gg/api \
  *     --expected-api-environment production \
- *     --expected-api-revision <the reviewed Cloud Run revision or release SHA> \
+ *     --expected-api-revision <the reviewed Cloud Run revision name> \
+ *     --expected-api-release-sha <the reviewed git SHA the image was built from> \
  *     --out ./gate6-probe-hbox.json
  *
- * THE TWO EXPECTATION FLAGS ARE MANDATORY. `--expected-api-revision` is the
- * immutable Cloud Run revision of the build the owner reviewed (off Cloud
- * Run, its release SHA); `--expected-api-environment` is the `NODE_ENV` that
- * build must report. Read the revision from the DEPLOYMENT record — asking
- * the API which build it is and then accepting whatever it answers proves
- * nothing. Omitting either is a hard refusal, never a skipped check: the
- * forgotten case is exactly the one that yields a probe captured against
- * something other than the reviewed deployment.
+ * THE THREE EXPECTATION FLAGS ARE MANDATORY, and the two build ones are
+ * SEPARATE on purpose:
+ *
+ *  - `--expected-api-revision` is the immutable Cloud Run revision — the
+ *    deployment SLOT. It proves WHICH DEPLOY answered.
+ *  - `--expected-api-release-sha` is the reviewed git SHA the image was built
+ *    from (`API_RELEASE_SHA`) — the SOURCE. It proves WHAT WAS IN that deploy.
+ *  - `--expected-api-environment` is the `NODE_ENV` that build must report.
+ *
+ * Collapsing the first two into one coordinate was the false green this pass
+ * closes: the old rule took `revision ?? releaseSha`, Cloud Run always injects
+ * a revision, so the SHA was never consulted and an image built from
+ * unreviewed source but deployed as the expected new revision passed. Both are
+ * now required to be present AND to match; a deployment that publishes no
+ * release SHA aborts (`api-release-sha-absent`) rather than passing on the
+ * revision alone.
+ *
+ * Read BOTH from the DEPLOYMENT record — asking the API which build it is and
+ * then accepting whatever it answers proves nothing. Omitting any of the three
+ * is a hard refusal, never a skipped check: the forgotten case is exactly the
+ * one that yields a probe captured against something other than the reviewed
+ * deployment.
+ *
+ * NO MIXED-REVISION CAPTURES. This operator makes three HTTP calls
+ * (deployment identity, `GET /users/me`, the refused checkout). Each response
+ * must carry `x-gf-api-revision`/`x-gf-api-release-sha` naming the one
+ * expected build. Under Cloud Run split traffic, or a deploy landing
+ * mid-capture, those calls can otherwise be answered by DIFFERENT revisions —
+ * binding the identity to revision A while sealing a refusal from revision B.
+ * A missing header aborts as `api-origin-headers-missing` (the deployment
+ * predates them, or the image carries no release SHA); a disagreeing one as
+ * `api-origin-mixed-revision`.
  *
  * THE CREDENTIAL. `GATE6_DEMO_ID_TOKEN` must hold a CURRENT Firebase ID token
  * for the demo account named by `--account` — the same bearer the browser
@@ -41,11 +66,12 @@
  *
  * THE BINDING STEP RUNS FIRST. Before any snapshot, the operator asks the
  * deployed API — via `GET /api/deployment-identity` — which environment,
- * build, and RTDB it is actually using, and aborts unless all three match the
- * flags above and the database this process is configured to read. Without
- * that, an API backed by a DIFFERENT database (staging, say, with compatible
- * Firebase Auth and demo allowlists) would produce a probe in which the
- * refusal and the snapshots describe two unrelated systems.
+ * deployment revision, release SHA, and RTDB it is actually using, and aborts
+ * unless all of them match the flags above and the database this process is
+ * configured to read. Without that, an API backed by a DIFFERENT database
+ * (staging, say, with compatible Firebase Auth and demo allowlists) would
+ * produce a probe in which the refusal and the snapshots describe two
+ * unrelated systems.
  *
  * RTDB is READ ONLY here. The refused operation is an outbound HTTPS call to
  * the deployed API; this process's only write is the probe file.
