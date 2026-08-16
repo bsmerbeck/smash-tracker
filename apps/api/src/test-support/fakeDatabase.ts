@@ -60,14 +60,37 @@ function generateKey(): string {
 }
 
 /**
- * Recursively drops any object key whose value is an empty array, mirroring
- * real RTDB's behavior of never persisting empty-array values on write.
- * Arrays themselves are left intact (RTDB arrays hold sparse/dense element
- * lists, not keys to strip); only nested object keys are inspected.
+ * Recursively normalizes a write payload to real RTDB storage semantics:
+ *
+ * - Drops any object key whose value is an empty array (RTDB never persists
+ *   empty-array values on write).
+ * - ARRAY NULL-STRIP PARITY (30.2 production defect, the null-strip trap in
+ *   array form): RTDB strips `null` array members on storage (`[null, 0]`
+ *   is stored as `{"1": 0}`), and the SDK reads back SPARSE arrays — holes
+ *   read as `undefined`, and fully-stripped TAILS shorten the array
+ *   (`['x', null]` reads back `['x']`). The old fake stored `[null, 0]`
+ *   byte-faithfully, which let records that are valid going in and
+ *   unparseable coming back pass 3,000+ tests while 1,196 production
+ *   records schema-failed on read. Null members therefore become holes
+ *   here, trailing holes trim the length, and an all-null array becomes an
+ *   empty array (which the member strip above then drops) — exactly the
+ *   read-back shapes production exhibits.
  */
 function stripEmptyArrays(value: unknown): unknown {
   if (Array.isArray(value)) {
-    return value.map(stripEmptyArrays);
+    const sparse: unknown[] = [];
+    let lastStoredIndex = -1;
+    value.forEach((element, index) => {
+      if (element === null) {
+        // Stripped by RTDB: becomes a hole (reads back as undefined).
+        return;
+      }
+      sparse[index] = stripEmptyArrays(element);
+      lastStoredIndex = index;
+    });
+    // A fully-stripped tail shortens the array; all-null collapses to [].
+    sparse.length = lastStoredIndex + 1;
+    return sparse;
   }
   if (value !== null && typeof value === 'object') {
     const result: Record<string, unknown> = {};
@@ -75,7 +98,12 @@ function stripEmptyArrays(value: unknown): unknown {
       if (Array.isArray(val) && val.length === 0) {
         continue;
       }
-      result[key] = stripEmptyArrays(val);
+      const normalized = stripEmptyArrays(val);
+      if (Array.isArray(normalized) && normalized.length === 0) {
+        // An all-null array collapses to empty and is dropped like one.
+        continue;
+      }
+      result[key] = normalized;
     }
     return result;
   }

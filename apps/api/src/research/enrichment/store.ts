@@ -105,6 +105,68 @@ export interface WriteEnrichmentObservationResult {
 }
 
 /**
+ * 30.2 RTDB array-null-strip fix, WRITE side: encodes one two-seat
+ * positional nullable member into a representation that survives an RTDB
+ * round trip BYTE-STABLY, so the corpus stops degrading:
+ *
+ * - both seats present  -> the plain dense array (no nulls, nothing strips);
+ * - one seat null       -> the numeric-keyed object form of the sparse
+ *                          array (`[null, 0]` -> `{'1': 0}`) — the exact
+ *                          shape RTDB would have degraded the array to,
+ *                          written EXPLICITLY so what is stored equals what
+ *                          is read back;
+ * - both seats null     -> `undefined` (the member is OMITTED): under the
+ *                          schema's own vocabulary a null seat means
+ *                          "unknown at this seat", so all-unknown is
+ *                          semantically the absent member — and RTDB would
+ *                          have collapsed the array to nothing anyway.
+ *
+ * The read side (`normalizeTwoSeatNullableArray` in the shared schema)
+ * rebuilds every one of these forms into the canonical two-seat tuple, so
+ * the invariant `parse(encoded) deep-equals parse(read-back-of-encoded)`
+ * holds for every input — proven by the FakeDatabase round-trip test (the
+ * fake mirrors RTDB's array null-strip on write).
+ */
+function encodeTwoSeatForStorage(
+  seats: readonly [unknown, unknown] | null | undefined,
+): unknown | undefined {
+  if (seats === null || seats === undefined) {
+    return undefined;
+  }
+  const [seatOne, seatTwo] = seats;
+  if (seatOne !== null && seatTwo !== null) {
+    return [seatOne, seatTwo];
+  }
+  if (seatOne === null && seatTwo === null) {
+    return undefined;
+  }
+  return seatOne === null ? { '1': seatTwo } : { '0': seatOne };
+}
+
+/** Applies `encodeTwoSeatForStorage` to every two-seat nullable member of a schema-parsed observation (`scores`, and each game's `stocks`/`rawChars`), conditional-spreading so an omitted encoding never writes a key. */
+function encodeObservationForStorage(
+  parsed: ResearchEnrichmentObservationRecord,
+): Record<string, unknown> {
+  const { scores, games, ...rest } = parsed;
+  const encodedScores = encodeTwoSeatForStorage(scores);
+  const encodedGames = games?.map((game) => {
+    const { stocks, rawChars, ...gameRest } = game;
+    const encodedStocks = encodeTwoSeatForStorage(stocks);
+    const encodedRawChars = encodeTwoSeatForStorage(rawChars);
+    return {
+      ...gameRest,
+      ...(encodedRawChars !== undefined ? { rawChars: encodedRawChars } : {}),
+      ...(encodedStocks !== undefined ? { stocks: encodedStocks } : {}),
+    };
+  });
+  return {
+    ...rest,
+    ...(encodedScores !== undefined ? { scores: encodedScores } : {}),
+    ...(encodedGames !== undefined ? { games: encodedGames } : {}),
+  };
+}
+
+/**
  * Writes one observation at its own key. Guards every path segment before
  * constructing a reference (rejected-key, no write). Rejects a provider
  * other than the Liquipedia literal (rejected-provenance, no write) — a
@@ -130,7 +192,9 @@ export async function writeEnrichmentObservation(
   const isNew = !existing.exists();
 
   const parsed = researchEnrichmentObservationRecordSchema.parse(record);
-  await ref.set(parsed);
+  // Storage encoding (30.2 array-null-strip fix): never persist raw nulls
+  // inside arrays — see `encodeTwoSeatForStorage`.
+  await ref.set(encodeObservationForStorage(parsed));
 
   return { outcome: isNew ? 'created' : 'replaced' };
 }
