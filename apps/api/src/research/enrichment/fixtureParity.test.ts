@@ -1,6 +1,9 @@
 import { createHash } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
-import { RESEARCH_ENRICHMENT_MAX_URL } from '@smash-tracker/shared';
+import {
+  RESEARCH_ENRICHMENT_MAX_URL,
+  type ResearchEnrichmentObservationRecord,
+} from '@smash-tracker/shared';
 import { loadLiquipediaFixture } from '../../liquipedia/__fixtures__/loadFixture.js';
 import { extractEventContext } from '../../liquipedia/eventContext.js';
 import { detectTemplateFamily } from '../../liquipedia/wikitext.js';
@@ -191,6 +194,43 @@ describe('fixture-corpus persistence parity', () => {
     for (const record of records) {
       expect(() => prepareAndValidateObservation(record)).not.toThrow();
     }
+  });
+
+  // 30.2 defect C: with the instance-ordinal discriminators, the committed
+  // corpus must produce ZERO duplicate observation ids — and the parity
+  // hash itself now refuses duplicates, so this holds by two independent
+  // checks.
+  it.each(WIKITEXT_FIXTURES)(
+    '%s yields zero duplicate observation ids across its whole page set',
+    (fixtureName) => {
+      const seenIds = new Set<string>();
+      let total = 0;
+      const allObservations: ResearchEnrichmentObservationRecord[] = [];
+      for (const page of wikitextPages(fixtureName)) {
+        const { observations } = extractByFamily(page);
+        for (const observation of observations) {
+          seenIds.add(observation.observationId);
+          allObservations.push(observation);
+          total += 1;
+        }
+      }
+      expect(seenIds.size).toBe(total);
+      // The collision-loud hash accepts the corpus (throws on any duplicate).
+      expect(() => computeObservationPersistenceHash(allObservations)).not.toThrow();
+    },
+  );
+
+  it('corpus family membership: the only match2-family page in the committed corpus is the Melee Full House 2025 bracket — a zero match2 count for the SSBU demo accounts is legitimate, not a loss', () => {
+    const match2Pages: string[] = [];
+    for (const fixtureName of WIKITEXT_FIXTURES) {
+      for (const page of wikitextPages(fixtureName)) {
+        if (detectTemplateFamily(page.wikitext).family === 'match2') {
+          match2Pages.push(`${fixtureName}:${page.title}`);
+        }
+      }
+    }
+    expect(match2Pages).toHaveLength(1);
+    expect(match2Pages[0]).toContain('full-house-2025');
   });
 
   it('the observation persistence hash is stable across gather order and volatile clock stamps', () => {

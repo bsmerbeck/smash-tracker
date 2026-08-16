@@ -489,6 +489,74 @@ async function collectAttachedObservationIds(
   return attached;
 }
 
+export interface RemoveSupersededObservationsResult {
+  removedObservationIds: string[];
+}
+
+/**
+ * 30.2 defect-C re-key reconciliation: removes a caller-identified set of
+ * SUPERSEDED observations, cascading each one's derived state — its
+ * attachments (found by one read of the tenant attachment tree) and its
+ * resolution receipt — before the observation record itself.
+ *
+ * THE PROVABLY-OURS CONTRACT: the caller (the run driver's per-page
+ * supersede pass) may name ONLY observations it has just re-extracted past —
+ * records under this tenant's own observation tree, for a page this run
+ * re-extracted, whose stored `parserVersion` differs from the version the
+ * current extraction used. A record at the CURRENT parser version is never
+ * eligible (a same-version count shrink is `refresh.ts`'s shrink-guard
+ * jurisdiction, never silently deleted here). Projection WITNESSES that
+ * reference a removed observation id are deliberately left in place: the
+ * attribution schema tolerates a missing referenced observation, and the
+ * witness's value-comparison ownership rule keeps a dangling reference
+ * inert.
+ */
+export async function removeSupersededObservations(
+  database: Database,
+  tenantId: string,
+  observationIds: string[],
+): Promise<RemoveSupersededObservationsResult> {
+  if (!isPathSafeTenantId(tenantId) || observationIds.length === 0) {
+    return { removedObservationIds: [] };
+  }
+  const staleIds = observationIds.filter((observationId) => isPathSafeProviderId(observationId));
+  if (staleIds.length === 0) {
+    return { removedObservationIds: [] };
+  }
+
+  const attachmentsSnapshot = await attachmentsTreeRef(database, tenantId).get();
+  const targetSetIdsByObservationId = new Map<string, string[]>();
+  const rawAttachments = attachmentsSnapshot.val() as Record<
+    string,
+    Record<string, unknown>
+  > | null;
+  if (rawAttachments !== null && typeof rawAttachments === 'object') {
+    for (const [targetSetId, children] of Object.entries(rawAttachments)) {
+      if (children === null || typeof children !== 'object') {
+        continue;
+      }
+      for (const observationId of Object.keys(children)) {
+        const sets = targetSetIdsByObservationId.get(observationId) ?? [];
+        sets.push(targetSetId);
+        targetSetIdsByObservationId.set(observationId, sets);
+      }
+    }
+  }
+
+  const removedObservationIds: string[] = [];
+  for (const observationId of staleIds) {
+    for (const targetSetId of targetSetIdsByObservationId.get(observationId) ?? []) {
+      if (isPathSafeProviderId(targetSetId)) {
+        await attachmentRef(database, tenantId, targetSetId, observationId).remove();
+      }
+    }
+    await receiptRef(database, tenantId, observationId).remove();
+    await observationRef(database, tenantId, observationId).remove();
+    removedObservationIds.push(observationId);
+  }
+  return { removedObservationIds };
+}
+
 /**
  * Every target set id that currently has AT LEAST ONE parseable attachment —
  * the reconciliation universe for a resumed run (30.2 reliability gate): a

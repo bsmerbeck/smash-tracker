@@ -328,24 +328,38 @@ export function extractMatch2BracketObservations(
     );
   }
 
-  const bracketTemplate = templates.find((t) => t.name.trim().toLowerCase() === 'bracket');
+  // 30.2 production defect C (same hazard class as the legacy adapter's,
+  // in two halves): (1) only the FIRST `{{Bracket}}` call on a page was
+  // processed, silently DROPPING every later bracket on a multi-bracket
+  // page; (2) had they been processed, the `${layoutName}:${matchKey}`
+  // discriminator would have COLLIDED across brackets sharing a layout
+  // (`Bracket/8` R1M1 in two sections). Every bracket instance is now
+  // processed, in document order, and the per-page instance ordinal is part
+  // of each observation id.
+  const bracketTemplates = templates.filter((t) => t.name.trim().toLowerCase() === 'bracket');
   const observations: ResearchEnrichmentObservationRecord[] = [];
 
-  if (!bracketTemplate) {
+  if (bracketTemplates.length === 0) {
     pageReasons.push('no {{Bracket|...}} template found on this page; nothing to extract');
     return { observations, reasons: pageReasons };
   }
 
-  const layoutName = findLayoutName(bracketTemplate.body) ?? 'match2-bracket';
-  const bracketParams = parseTemplateParameters(bracketTemplate.body);
   const sourcePageUrl = buildLiquipediaPageUrl(input.pageTitle);
   const contentHash = hashWikitext(input.wikitext, input.hashHex);
 
-  const matchEntries = Array.from(bracketParams.entries())
-    .filter(([key]) => MATCH_KEY_PATTERN.test(key))
-    .sort(([a], [b]) => a.localeCompare(b));
+  const matchEntries = bracketTemplates.flatMap((bracketTemplate, index) => {
+    const instance = {
+      ordinal: index + 1,
+      layoutName: findLayoutName(bracketTemplate.body) ?? 'match2-bracket',
+    };
+    return Array.from(parseTemplateParameters(bracketTemplate.body).entries())
+      .filter(([key]) => MATCH_KEY_PATTERN.test(key))
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([matchKeyRaw, rawMatchValue]) => ({ instance, matchKeyRaw, rawMatchValue }));
+  });
 
-  for (const [matchKeyRaw, rawMatchValue] of matchEntries) {
+  for (const { instance, matchKeyRaw, rawMatchValue } of matchEntries) {
+    const layoutName = instance.layoutName;
     const matchKey = matchKeyRaw.toUpperCase();
     const keyMatch = MATCH_KEY_PATTERN.exec(matchKey)!;
     const roundNum = Number(keyMatch[1]);
@@ -356,7 +370,9 @@ export function extractMatch2BracketObservations(
       {
         sourcePageTitle: input.pageTitle,
         parserVersion: LIQUIPEDIA_PARSER_VERSION_BRACKET_MATCH2,
-        discriminator: `${layoutName}:${matchKey}`,
+        // Defect C fix: the per-page bracket instance ordinal disambiguates
+        // same-layout, same-coordinate matches across multiple brackets.
+        discriminator: `${layoutName}#${instance.ordinal}:${matchKey}`,
       },
       input.hashHex,
     );

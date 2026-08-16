@@ -1,6 +1,9 @@
 import { createHash } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
-import { researchEnrichmentObservationRecordSchema } from '@smash-tracker/shared';
+import {
+  LIQUIPEDIA_PARSER_VERSION_BRACKET_LEGACY,
+  researchEnrichmentObservationRecordSchema,
+} from '@smash-tracker/shared';
 import { loadLiquipediaFixture } from '../__fixtures__/loadFixture.js';
 import { extractEventContext, type LiquipediaEventContext } from '../eventContext.js';
 import { extractLegacyBracketObservations } from './legacyBracket.js';
@@ -397,7 +400,7 @@ describe('extractLegacyBracketObservations', () => {
       expect(observation.sourceRevisionId).toBe(revisionId);
       expect(observation.sourceSha1).toBe(sha1);
       expect(observation.sourceContentHash).toMatch(/^[0-9a-f]{64}$/);
-      expect(observation.parserVersion).toBe('liquipedia-bracket-legacy@1');
+      expect(observation.parserVersion).toBe(LIQUIPEDIA_PARSER_VERSION_BRACKET_LEGACY);
       expect(observation.templateFamily).toBe('legacy');
       expect(observation.bracketTemplate).toBeTruthy();
       expect(observation.bracketKey).toBeTruthy();
@@ -518,6 +521,53 @@ ${setParams}
       '|r1m1p1=MkLeo |r1m1p2=Sparg0 |r1m1p1score=3 |r1m1p2score=2',
     );
     expect(observations[0]!.players).toEqual([{ rawTag: 'MkLeo' }, { rawTag: 'Sparg0' }]);
+  });
+
+  // 30.2 production defect C: a page hosting MULTIPLE brackets rendered by
+  // the SAME template (pools sections) declares identical (template, rNmM)
+  // coordinates in each; the observation id must still be distinct per
+  // bracket instance or the store's upsert-by-id silently overwrites one
+  // real match with another (142 of MkLeo's records were lost this way).
+  it('two same-template brackets on one page (different sections) yield DISTINCT observation ids for the same rNmM coordinates', () => {
+    const wikitext = `{{TournamentInfo
+|game=ultimate
+}}
+==Pool A==
+{{8DEWBracketA
+|r1m1p1=Alice |r1m1p2=Bob |r1m1p1score=3 |r1m1p2score=1
+}}
+==Pool B==
+{{8DEWBracketA
+|r1m1p1=Carol |r1m1p2=Dave |r1m1p1score=3 |r1m1p2score=2
+}}`;
+    const eventContext = extractEventContext({
+      wikitext,
+      pageTitle: 'Test/MultiBracket',
+      revisionId: 1,
+      sha1: null,
+    });
+    const { observations } = extractLegacyBracketObservations({
+      wikitext,
+      pageTitle: 'Test/MultiBracket',
+      revisionId: 1,
+      sha1: null,
+      eventContext,
+      targetGame: 'ultimate',
+      nowMs: NOW_MS,
+      hashHex: sha256Hex,
+    });
+
+    expect(observations).toHaveLength(2);
+    const [poolA, poolB] = observations;
+    expect(poolA!.observationId).not.toBe(poolB!.observationId);
+    // Both are REAL, fully distinct matches — same coordinates, different players.
+    expect(poolA!.players!.map((p) => p.rawTag)).toEqual(['Alice', 'Bob']);
+    expect(poolB!.players!.map((p) => p.rawTag)).toEqual(['Carol', 'Dave']);
+    expect(poolA!.sectionHeading).toBe('Pool A');
+    expect(poolB!.sectionHeading).toBe('Pool B');
+    for (const observation of observations) {
+      expect(researchEnrichmentObservationRecordSchema.safeParse(observation).success).toBe(true);
+    }
   });
 
   it('a reset group inherits only from a sibling whose own slots are usable; an unusable sibling yields an extraction failure naming the sibling', () => {

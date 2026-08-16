@@ -190,8 +190,20 @@ const CONTENT_HASH_SHAPE = /^[0-9a-f]{64}$/;
 // Parser-version / attribution constants
 // ---------------------------------------------------------------------------
 
-export const LIQUIPEDIA_PARSER_VERSION_BRACKET_LEGACY = 'liquipedia-bracket-legacy@1';
-export const LIQUIPEDIA_PARSER_VERSION_BRACKET_MATCH2 = 'liquipedia-bracket-match2@1';
+/**
+ * Bumped @1 -> @2 (30.2 production defect C): the legacy observation-id
+ * discriminator gained the per-page bracket-instance ordinal + section
+ * heading (two same-template brackets on one page previously collided and
+ * silently overwrote each other), and the match2 adapter now processes
+ * EVERY `{{Bracket}}` instance on a page with the same ordinal dimension.
+ * Ids embed the parser version, so every observation id re-keys; the
+ * composed page-cache freshness version derives from these constants, so
+ * every cached wikitext page auto-invalidates, and the run driver's
+ * stale-parser supersede pass removes the old-version twins as each page
+ * re-extracts.
+ */
+export const LIQUIPEDIA_PARSER_VERSION_BRACKET_LEGACY = 'liquipedia-bracket-legacy@2';
+export const LIQUIPEDIA_PARSER_VERSION_BRACKET_MATCH2 = 'liquipedia-bracket-match2@2';
 export const LIQUIPEDIA_PARSER_VERSION_VOD_LIST = 'liquipedia-vodlist@1';
 export const LIQUIPEDIA_ATTRIBUTION_LICENSE_URL = 'https://creativecommons.org/licenses/by-sa/3.0/';
 

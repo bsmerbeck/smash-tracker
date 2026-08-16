@@ -259,6 +259,15 @@ export interface EnrichmentProjectionRowOutcome {
   matchKey: string;
   vodOutcome: EnrichmentVodOutcome;
   stageOutcome: EnrichmentStageOutcome;
+  /**
+   * PREVIEW-ONLY (set by `previewEnrichmentProjection`, absent on apply):
+   * `true` when applying would actually change the stored row's `vodUrl` or
+   * `map` — the signal the run driver's resume-reconciliation trigger needs,
+   * because outcome labels alone cannot distinguish "row already holds our
+   * projection" from "row is missing its fill" once the own-projection
+   * stage guard reports both as `enriched`.
+   */
+  wouldChangeRow?: boolean;
 }
 
 export interface EnrichmentProjectionCounts {
@@ -338,10 +347,14 @@ export async function previewEnrichmentProjection(
     const row = rowSnapshot.val() as Record<string, unknown>;
     const witness = readWitnessFromValue(witnessSnapshot.exists() ? witnessSnapshot.val() : null);
     const resolved = resolveForRow(overlay, key, row, witness);
+    const wouldChangeRow =
+      (resolved.vodUrl ?? undefined) !== extractExistingVodUrl(row) ||
+      !stagesEqual(resolved.stage, extractExistingStage(row));
     outcome.rows.push({
       matchKey: key,
       vodOutcome: resolved.vodOutcome,
       stageOutcome: resolved.stageOutcome,
+      wouldChangeRow,
     });
     if (resolved.vodOutcome === 'filled-empty') {
       outcome.counts.vodFilledEmpty += 1;
@@ -394,11 +407,28 @@ function resolveForRow(
   witness: EnrichmentOwnershipWitness | null,
 ): EnrichedMatchMembersResult {
   const vodSource = overlay.enrichedVodSourceByKey?.[key];
+  const existingStage = extractExistingStage(row);
+  // 30.2 defect-C composition fix: when the row's current stage is EXACTLY
+  // the stage OUR OWN committed witness half projected, that stage is this
+  // pipeline's projection, not a provider fact. Presenting it to the shared
+  // resolver as provider-resolved would trip "a provider-resolved stage
+  // always wins" and CLEAR the stage witness — silently destroying
+  // attribution every time an already-projected set is re-applied (which
+  // the parser-version re-key forces for every previously-matched set, via
+  // supersede -> re-attach -> re-project). Present the slot as the unknown
+  // sentinel instead, so the resolver re-derives the enriched stage; the
+  // resolver's own already-committed-identical check makes the healthy case
+  // a witness no-op. A GENUINE provider-resolved stage (one our witness did
+  // not commit) still wins unconditionally.
+  const stageIsOwnProjection =
+    witness?.projectedStageId != null &&
+    witness.projectedStageId === existingStage.id &&
+    witness.projectedStageName === existingStage.name;
   return resolveEnrichedMatchMembers({
     existingVodUrl: extractExistingVodUrl(row),
     enrichmentVodUrl: overlay.enrichedVodUrlByKey[key],
     ...(vodSource !== undefined ? { enrichmentVodSource: vodSource } : {}),
-    providerStage: extractExistingStage(row),
+    providerStage: stageIsOwnProjection ? UNKNOWN_STAGE : existingStage,
     enrichmentStage: overlay.enrichedStageByKey[key],
     witness,
   });

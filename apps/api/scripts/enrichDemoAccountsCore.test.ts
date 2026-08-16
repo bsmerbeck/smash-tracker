@@ -97,6 +97,7 @@ function stubResult(dryRun: boolean, observationHash = 'd'.repeat(64)): Enrichme
       attachmentsAbstained: 0,
       projectionsApplied: dryRun ? 0 : 1,
       projectionsReconciled: 0,
+      observationsSuperseded: 0,
       backoffEvents: 0,
     },
     ...(dryRun ? { dryRunDetails: stubDryRunDetails(observationHash) } : {}),
