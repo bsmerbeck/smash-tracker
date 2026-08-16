@@ -593,21 +593,117 @@ export async function removeSupersededObservations(
  * - selection is by the record's own declared `templateFamily` + stored
  *   `parserVersion`, both written by this pipeline — provably ours.
  */
+/**
+ * One raw observation-tree child, read WITHOUT schema validation — only the
+ * three members hygiene passes need, each extracted defensively (string
+ * checks, never a parse). The observation id is the CHILD KEY, never the
+ * record's own claimed member: the key is what the cascade removes by.
+ */
+export interface RawObservationVersionEntry {
+  observationId: string;
+  sourcePageTitle: string | null;
+  templateFamily: string | null;
+  parserVersion: string | null;
+}
+
+function extractRawString(record: Record<string, unknown>, member: string): string | null {
+  const value = record[member];
+  return typeof value === 'string' && value.length > 0 ? value : null;
+}
+
+/**
+ * 30.2 production defect (schema-blind hygiene): `listEnrichmentObservations`
+ * safeParse-SKIPS malformed children — and old-generation records are
+ * MALFORMED BY DEFINITION whenever the schema has evolved past them
+ * (production: all 616+95 legacy@1 stragglers failed the current schema on
+ * `games[].stocks`, so the schema-validating sweep saw ZERO candidates and
+ * removed nothing). Hygiene passes therefore read the RAW tree: every child
+ * is inspected as an unknown record, with only the version-identity members
+ * extracted defensively. Schema validity is a property of records the
+ * PIPELINE consumes; it must never be a precondition for records the
+ * pipeline CLEANS UP — schema-invalid old-generation records are exactly a
+ * sweep's highest-value targets.
+ */
+export async function listRawObservationVersionIndex(
+  database: Database,
+  tenantId: string,
+): Promise<RawObservationVersionEntry[]> {
+  if (!isPathSafeTenantId(tenantId)) {
+    return [];
+  }
+  const snapshot = await observationsRef(database, tenantId).get();
+  if (!snapshot.exists()) {
+    return [];
+  }
+  const raw = snapshot.val() as Record<string, unknown>;
+  const entries: RawObservationVersionEntry[] = [];
+  for (const [observationId, value] of Object.entries(raw)) {
+    if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+      continue;
+    }
+    const record = value as Record<string, unknown>;
+    entries.push({
+      observationId,
+      sourcePageTitle: extractRawString(record, 'sourcePageTitle'),
+      templateFamily: extractRawString(record, 'templateFamily'),
+      parserVersion: extractRawString(record, 'parserVersion'),
+    });
+  }
+  return entries;
+}
+
 export async function sweepOutdatedFamilyObservations(
   database: Database,
   tenantId: string,
 ): Promise<RemoveSupersededObservationsResult> {
-  const observations = await listEnrichmentObservations(database, tenantId);
-  const outdatedIds = observations
+  // RAW selection (see `listRawObservationVersionIndex`'s doc comment): a
+  // hygiene sweep must never require schema validity of its own targets.
+  // The safety bounds are unchanged — only the two bracket families, and
+  // only versions that differ from the CURRENT family constant; a child
+  // whose family or version members are missing/non-string matches neither
+  // predicate and is left alone (never guessed at).
+  const entries = await listRawObservationVersionIndex(database, tenantId);
+  const outdatedIds = entries
     .filter(
-      (record) =>
-        (record.templateFamily === 'legacy' &&
-          record.parserVersion !== LIQUIPEDIA_PARSER_VERSION_BRACKET_LEGACY) ||
-        (record.templateFamily === 'match2' &&
-          record.parserVersion !== LIQUIPEDIA_PARSER_VERSION_BRACKET_MATCH2),
+      (entry) =>
+        (entry.templateFamily === 'legacy' &&
+          entry.parserVersion !== null &&
+          entry.parserVersion !== LIQUIPEDIA_PARSER_VERSION_BRACKET_LEGACY) ||
+        (entry.templateFamily === 'match2' &&
+          entry.parserVersion !== null &&
+          entry.parserVersion !== LIQUIPEDIA_PARSER_VERSION_BRACKET_MATCH2),
     )
-    .map((record) => record.observationId);
+    .map((entry) => entry.observationId);
   return removeSupersededObservations(database, tenantId, outdatedIds);
+}
+
+/**
+ * Every observation id that currently has a PARSEABLE stored receipt — the
+ * "already has evidence" set the run driver subtracts when assembling its
+ * re-resolution input (30.2 skip-heavy defect). A malformed receipt is
+ * deliberately NOT counted: `attachResolvedObservation` could never accept
+ * it (`readResolutionReceipt` safeParses to null), so its observation
+ * genuinely needs re-resolution to rebuild a valid one.
+ */
+export async function listReceiptedObservationIds(
+  database: Database,
+  tenantId: string,
+): Promise<Set<string>> {
+  const receipted = new Set<string>();
+  if (!isPathSafeTenantId(tenantId)) {
+    return receipted;
+  }
+  const snapshot = await database.ref(`researchEnrichmentReceipts/${tenantId}`).get();
+  if (!snapshot.exists()) {
+    return receipted;
+  }
+  const raw = snapshot.val() as Record<string, unknown>;
+  for (const [observationId, value] of Object.entries(raw)) {
+    if (researchEnrichmentResolutionReceiptRecordSchema.safeParse(value).success) {
+      receipted.add(observationId);
+    }
+  }
+  return receipted;
 }
 
 /**

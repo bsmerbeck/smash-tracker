@@ -41,6 +41,8 @@ import {
   listAttachmentsForSet,
   listEnrichmentObservations,
   listEnrichmentReviewQueue,
+  listRawObservationVersionIndex,
+  listReceiptedObservationIds,
   readEnrichmentObservation,
   removeSupersededObservations,
   sweepOutdatedFamilyObservations,
@@ -601,10 +603,17 @@ export async function runEnrichmentBatch(
 
   try {
     if (staleObservationIndex) {
-      for (const record of await listEnrichmentObservations(database, tenantId)) {
-        const entries = staleObservationIndex.get(record.sourcePageTitle) ?? [];
-        entries.push({ observationId: record.observationId, parserVersion: record.parserVersion });
-        staleObservationIndex.set(record.sourcePageTitle, entries);
+      // RAW read (30.2 schema-blind-hygiene defect): old-generation records
+      // are malformed by definition once the schema has evolved past them,
+      // and a schema-validating read would silently hide exactly the
+      // records this index exists to supersede.
+      for (const entry of await listRawObservationVersionIndex(database, tenantId)) {
+        if (entry.sourcePageTitle === null || entry.parserVersion === null) {
+          continue;
+        }
+        const entries = staleObservationIndex.get(entry.sourcePageTitle) ?? [];
+        entries.push({ observationId: entry.observationId, parserVersion: entry.parserVersion });
+        staleObservationIndex.set(entry.sourcePageTitle, entries);
       }
     }
 
@@ -1218,7 +1227,44 @@ async function resolveAndProjectPhase(input: ResolveAndProjectPhaseInput): Promi
   const candidateIndex = await buildCandidateIndex(database, tenantId);
   counts.candidateIndexBuildCount = 1;
 
-  const queue = dryRun ? gatheredObservations : await listEnrichmentReviewQueue(database, tenantId);
+  // THE RESOLUTION INPUT (30.2 skip-heavy defect): a real run's input is the
+  // UNION of
+  //   (a) the review queue — stored observations lacking an ATTACHMENT, and
+  //   (b) stored CURRENT-VERSION observations lacking a parseable RECEIPT —
+  // deduped by observationId. (b) exists because a freshness-skip-heavy run
+  // gathers nothing, and an observation whose receipt was lost (the mid-run
+  // supersession race) but whose attachment survived appears in NEITHER the
+  // gather output NOR the attachment-absence queue — it would stay
+  // receipt-less forever while every manifest showed it uniquely matched.
+  // Re-resolution is idempotent by construction: the resolver is
+  // deterministic and the receipt/attachment writers gate on recomputed
+  // evidence, so a healthy record re-resolves to the identical receipt and
+  // a `replaced` attachment. Only schema-parsed records enter resolution
+  // (the raw-read requirement applies to hygiene sweeps, never here).
+  let queue: ResearchEnrichmentObservationRecord[];
+  if (dryRun) {
+    queue = gatheredObservations;
+  } else {
+    const reviewQueue = await listEnrichmentReviewQueue(database, tenantId);
+    const receiptedIds = await listReceiptedObservationIds(database, tenantId);
+    const currentParserVersions = new Set<string>([
+      LIQUIPEDIA_PARSER_VERSION_BRACKET_LEGACY,
+      LIQUIPEDIA_PARSER_VERSION_BRACKET_MATCH2,
+      LIQUIPEDIA_PARSER_VERSION_VOD_LIST,
+      WIKITEXT_PROBE_PARSER_VERSION,
+    ]);
+    const receiptless = (await listEnrichmentObservations(database, tenantId)).filter(
+      (record) =>
+        currentParserVersions.has(record.parserVersion) && !receiptedIds.has(record.observationId),
+    );
+    const byObservationId = new Map<string, ResearchEnrichmentObservationRecord>();
+    for (const record of [...reviewQueue, ...receiptless]) {
+      byObservationId.set(record.observationId, record);
+    }
+    queue = Array.from(byObservationId.values()).sort((a, b) =>
+      a.observationId.localeCompare(b.observationId),
+    );
+  }
 
   // Bracket/stage observations resolve FIRST so their matched outcomes seed
   // `matchedBracketVodUrls` before any VOD-page discovery row (which can
