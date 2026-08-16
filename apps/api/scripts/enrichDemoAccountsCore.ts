@@ -2,6 +2,7 @@ import type { Database } from 'firebase-admin/database';
 import type { LiquipediaClient } from '../src/liquipedia/client.js';
 import { readEnrichmentCoverage } from '../src/research/enrichment/rollup.js';
 import { readEnrichmentRun } from '../src/research/enrichment/runState.js';
+import { sweepOutdatedFamilyObservations } from '../src/research/enrichment/store.js';
 import {
   runEnrichmentBatch,
   type EnrichmentRunProgressEvent,
@@ -46,6 +47,11 @@ import {
  * - `resume`     — re-runs only accounts whose stored run is not completed;
  *                  a completed account (e.g. Hungrybox) is reported and
  *                  skipped — a structural no-op.
+ * - `sweep`      — version-wide stale-record sweep: removes bracket-family
+ *                  records whose parserVersion is outdated (pages the
+ *                  current expansion no longer visits, unreachable by the
+ *                  page-scoped supersede pass). Zero Liquipedia network;
+ *                  refuses any account holding a LIVE run lease.
  * - `compare`    — before/after coverage table against the manifest.
  *
  * Observability: a heartbeat line at least every `heartbeatIntervalMs`
@@ -73,6 +79,7 @@ export const ENRICHMENT_OPERATOR_COMMANDS = [
   'preflight',
   'apply',
   'resume',
+  'sweep',
   'compare',
 ] as const;
 export type EnrichmentOperatorCommand = (typeof ENRICHMENT_OPERATOR_COMMANDS)[number];
@@ -410,6 +417,58 @@ async function statusCommand(
   return 0;
 }
 
+/**
+ * The version-wide stale-record sweep (30.2 follow-up). Zero Liquipedia
+ * network — a pure read/remove pass over the tenant's own observation tree
+ * via `sweepOutdatedFamilyObservations` (only bracket-family records at an
+ * OUTDATED parser version; current-version, vodlist and wikitext-probe
+ * records are structurally untouchable there). An account holding a LIVE
+ * run lease is refused: a concurrent run's page-scoped supersede and this
+ * sweep must never race over the same records.
+ */
+async function sweepCommand(
+  deps: EnrichmentOperatorDeps,
+  uids: DemoUidMap,
+  workspaces: DemoWorkspaceKey[],
+): Promise<number> {
+  const rows: object[] = [];
+  let refused = 0;
+  for (const workspace of workspaces) {
+    const uid = uids[workspace];
+    const run = await readEnrichmentRun(deps.database, uid);
+    const liveLease =
+      run?.status === 'running' && run.lease != null && run.lease.expiresAtMs > deps.now();
+    if (liveLease) {
+      refused += 1;
+      rows.push({
+        workspace,
+        sweep: 'REFUSED',
+        detail: `a live run lease exists (run=${run.runId}, expires in ${run.lease!.expiresAtMs - deps.now()}ms); retry after it completes or expires`,
+      });
+      continue;
+    }
+    const result = await sweepOutdatedFamilyObservations(deps.database, uid);
+    if (result.removedAttachmentCount > 0 || result.removedReceiptCount > 0) {
+      // Stale records are expected to be inert (unmatched, unattached) — a
+      // cascaded attachment/receipt means an OLD-generation record was still
+      // wired into projection authorization and deserves a loud report.
+      deps.log(
+        `[sweep] ${workspace}: cascaded ${result.removedAttachmentCount} attachment(s) and ` +
+          `${result.removedReceiptCount} receipt(s) off outdated records — these were NOT inert; review before trusting prior coverage`,
+      );
+    }
+    rows.push({
+      workspace,
+      sweep: 'OK',
+      removed: result.removedObservationIds.length,
+      cascadedAttachments: result.removedAttachmentCount,
+      cascadedReceipts: result.removedReceiptCount,
+    });
+  }
+  deps.table(rows);
+  return refused > 0 ? 1 : 0;
+}
+
 async function dryRunCommand(
   deps: EnrichmentOperatorDeps,
   monitor: ProgressMonitor,
@@ -729,6 +788,11 @@ export async function runEnrichmentOperator(
 
   if (command === 'status') {
     return statusCommand(deps, uids, workspaces);
+  }
+  if (command === 'sweep') {
+    // Zero network, no heartbeat/watchdog needed — a bounded read/remove
+    // pass; prompt termination is the lifecycle wrapper's contract.
+    return sweepCommand(deps, uids, workspaces);
   }
 
   const monitor = createProgressMonitor(deps, maxStallMs);

@@ -43,6 +43,7 @@ import {
   listEnrichmentReviewQueue,
   readEnrichmentObservation,
   removeSupersededObservations,
+  sweepOutdatedFamilyObservations,
   writeEnrichmentObservation,
   writeResolutionReceipt,
 } from './store.js';
@@ -283,6 +284,8 @@ export interface EnrichmentBatchCounts {
   projectionsReconciled: number;
   /** Stored observations removed by the per-page stale-parser supersede pass (30.2 defect-C re-key reconciliation) — old-version records for a page this run re-extracted, cascaded with their receipts and attachments. */
   observationsSuperseded: number;
+  /** Stored bracket-family records removed by the END-OF-GATHER version-wide sweep — outdated-parser records on pages the current expansion no longer visits, which the page-scoped pass can never reach. */
+  outdatedFamilyRecordsSwept: number;
   backoffEvents: number;
 }
 
@@ -316,6 +319,7 @@ function emptyCounts(): EnrichmentBatchCounts {
     projectionsApplied: 0,
     projectionsReconciled: 0,
     observationsSuperseded: 0,
+    outdatedFamilyRecordsSwept: 0,
     backoffEvents: 0,
   };
 }
@@ -630,6 +634,18 @@ export async function runEnrichmentBatch(
           cursor: { stage: 'projection' },
         });
       }
+    }
+
+    // THE VERSION-WIDE STALE-RECORD SWEEP (30.2 follow-up): the page-scoped
+    // supersede pass above only reaches pages this run re-extracted; a
+    // parser bump also strands old-generation records on pages the current
+    // expansion no longer visits. Every real run therefore ends its gather
+    // with a version-wide sweep of outdated bracket-family records, so a
+    // future parser bump self-cleans without a manual step. Runs before
+    // resolution so stale records never re-enter this run's review queue.
+    if (!dryRun) {
+      const swept = await sweepOutdatedFamilyObservations(database, tenantId);
+      counts.outdatedFamilyRecordsSwept += swept.removedObservationIds.length;
     }
 
     await resolveAndProjectPhase({
