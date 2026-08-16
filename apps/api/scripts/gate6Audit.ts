@@ -10,6 +10,7 @@
  *   pnpm --filter @smash-tracker/api exec tsx scripts/gate6Audit.ts \
  *     --hbox-uid <uid> --mkleo-uid <uid> --sparg0-uid <uid> --izaw-uid <uid> \
  *     [--baseline ./gate6-baseline.json] [--out ./gate6-receipt.json] \
+ *     [--registry-receipt ./receipt-hbox.json]... [--require-registry-receipt] \
  *     [--require-baseline] [--strict-witness-observation-refs] [--quiet]
  *
  * EXIT CODE IS THE VERDICT: `0` only when every assertion holds; `1` on ANY
@@ -27,6 +28,17 @@
  *   run should always pass it, so an accidentally-missing baseline file can
  *   never turn the preservation assertions into a silent no-op.
  *
+ * REGISTRY RECEIPT ATTESTATION (assertion 12), the cross-tool seam:
+ * - `--registry-receipt <path>` is REPEATABLE — one per account. Each file is
+ *   matched to its workspace by its OWN sealed `workspace` member, so the
+ *   flags need no per-account variants and a mislabelled file is caught by
+ *   the uid cross-check rather than silently accepted.
+ * - Supplying none SKIPS the assertion: `status: 'skipped'` with a
+ *   `skipReason`, visible in the JSON and in the terminal, and counted in the
+ *   receipt's `skippedCount`. Skipped is never rendered as passed.
+ * - `--require-registry-receipt` turns absence — and partial coverage of the
+ *   four accounts — into findings, mirroring `--require-baseline`.
+ *
  * This script performs READS ONLY — it constructs no write of any kind.
  */
 import { readFile, writeFile } from 'node:fs/promises';
@@ -40,6 +52,7 @@ import {
   runGate6Audit,
   type Gate6AuditReceipt,
   type Gate6Baseline,
+  type Gate6RegistryReceiptInput,
   type Gate6UidMap,
 } from './gate6AuditCore.js';
 
@@ -47,19 +60,27 @@ interface ParsedArgs {
   uids: Gate6UidMap;
   baselinePath: string | null;
   outPath: string | null;
+  /** Repeatable: one registry-operator receipt file per account. */
+  registryReceiptPaths: string[];
   requireBaseline: boolean;
+  requireRegistryReceipts: boolean;
   strictWitnessObservationRefs: boolean;
   quiet: boolean;
 }
 
 const BOOLEAN_FLAGS = new Set([
   '--require-baseline',
+  '--require-registry-receipt',
   '--strict-witness-observation-refs',
   '--quiet',
 ]);
 
+/** Flags that may appear more than once; every occurrence is kept. */
+const REPEATABLE_FLAGS = new Set(['--registry-receipt']);
+
 function parseArgs(argv: string[]): ParsedArgs {
   const flags = new Map<string, string>();
+  const repeated = new Map<string, string[]>();
   const switches = new Set<string>();
   for (let index = 0; index < argv.length; index += 1) {
     const name = argv[index];
@@ -74,7 +95,11 @@ function parseArgs(argv: string[]): ParsedArgs {
     if (value == null || value.startsWith('--')) {
       throw new Error(`Flag ${name} expects a value`);
     }
-    flags.set(name, value);
+    if (REPEATABLE_FLAGS.has(name)) {
+      repeated.set(name, [...(repeated.get(name) ?? []), value]);
+    } else {
+      flags.set(name, value);
+    }
     index += 1;
   }
 
@@ -92,7 +117,9 @@ function parseArgs(argv: string[]): ParsedArgs {
     uids,
     baselinePath: flags.get('--baseline') ?? null,
     outPath: flags.get('--out') ?? null,
+    registryReceiptPaths: repeated.get('--registry-receipt') ?? [],
     requireBaseline: switches.has('--require-baseline'),
+    requireRegistryReceipts: switches.has('--require-registry-receipt'),
     strictWitnessObservationRefs: switches.has('--strict-witness-observation-refs'),
     quiet: switches.has('--quiet'),
   };
@@ -123,6 +150,28 @@ async function loadBaseline(path: string | null): Promise<Gate6Baseline | null> 
   return parseGate6Baseline(JSON.parse(contents));
 }
 
+/**
+ * Reads each receipt file as raw JSON. Validation is the CORE's job (a
+ * tampered seal must be a FINDING in the audit output, not a shell crash), so
+ * this only surfaces I/O and JSON-syntax problems — and even those are handed
+ * on as an unparseable `raw` rather than thrown, so one bad file cannot hide
+ * the other eleven assertions.
+ */
+async function loadRegistryReceipts(paths: string[]): Promise<Gate6RegistryReceiptInput[]> {
+  const inputs: Gate6RegistryReceiptInput[] = [];
+  for (const path of paths) {
+    try {
+      inputs.push({ path, raw: JSON.parse(await readFile(path, 'utf8')) });
+    } catch (error) {
+      console.error(
+        `registry receipt ${path} could not be read as JSON: ${error instanceof Error ? error.message : String(error)}`,
+      );
+      inputs.push({ path, raw: null });
+    }
+  }
+  return inputs;
+}
+
 function summarize(receipt: Gate6AuditReceipt): void {
   console.table(
     receipt.observed.map((row) => ({
@@ -139,13 +188,30 @@ function summarize(receipt: Gate6AuditReceipt): void {
   console.table(
     receipt.assertions.map((assertion) => ({
       assertion: assertion.id,
-      ok: assertion.ok,
-      tolerated: assertion.tolerated,
+      status: assertion.status,
       inspected: assertion.inspected,
       findings: assertion.findings.length,
     })),
   );
+  if (receipt.registryReceipts.length > 0) {
+    console.table(
+      receipt.registryReceipts.map((row) => ({
+        path: row.path,
+        valid: row.valid,
+        workspace: row.workspace ?? '-',
+        command: row.command ?? '-',
+        status: row.status ?? '-',
+        hostChecked: row.databaseHostChecked,
+      })),
+    );
+  }
   for (const assertion of receipt.assertions) {
+    // A skipped assertion is announced explicitly — "green" and "not checked"
+    // must never look the same in the operator's terminal either.
+    if (assertion.status === 'skipped') {
+      console.error(`SKIPPED [${assertion.id}] ${assertion.skipReason ?? 'not checked'}`);
+      continue;
+    }
     for (const finding of assertion.findings) {
       const prefix = assertion.tolerated ? 'TOLERATED' : 'FAIL';
       console.error(
@@ -172,6 +238,8 @@ async function main(): Promise<void> {
     );
   }
 
+  const registryReceipts = await loadRegistryReceipts(args.registryReceiptPaths);
+
   const env = loadEnv();
   const firebase = initFirebase(env);
   const databaseHost = new URL(env.FIREBASE_DATABASE_URL).host;
@@ -180,12 +248,21 @@ async function main(): Promise<void> {
     run: async () => {
       console.log(`Database host: ${databaseHost}`);
       console.log(`Baseline mode: ${baseline === null ? 'record' : 'compare'}`);
+      console.log(
+        `Registry receipts: ${registryReceipts.length === 0 ? 'none supplied (attestation will be SKIPPED)' : registryReceipts.length}`,
+      );
 
       const receipt = await runGate6Audit(firebase.database, {
         uids: args.uids,
         nowMs: Date.now(),
         baseline,
         strictWitnessObservationRefs: args.strictWitnessObservationRefs,
+        registryReceipts,
+        requireRegistryReceipts: args.requireRegistryReceipts,
+        // The receipt's `databaseHost` is cross-checked against the database
+        // this audit is actually pointed at — a receipt sealed on staging is
+        // not evidence about production.
+        expectedDatabaseHost: databaseHost,
       });
 
       if (args.outPath !== null) {
@@ -206,7 +283,11 @@ async function main(): Promise<void> {
       }
 
       if (receipt.ok) {
-        console.log('gate6Audit: PASS — every assertion holds.');
+        console.log(
+          receipt.skippedCount === 0
+            ? 'gate6Audit: PASS — every assertion holds.'
+            : `gate6Audit: PASS — every assertion CHECKED holds, but ${receipt.skippedCount} was/were SKIPPED for want of evidence (see status above).`,
+        );
         return 0;
       }
       console.error(`gate6Audit: FAIL — ${receipt.findingCount} finding(s).`);

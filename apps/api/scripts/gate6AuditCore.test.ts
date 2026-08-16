@@ -8,7 +8,14 @@ import {
 import {
   computeForeignRowDigest,
   REGISTRY_FOREIGN_DIGEST_VERSION,
+  type ForeignRowDigest,
 } from '../src/research/registry/foreignDigest.js';
+import {
+  createRegistryReceipt,
+  type RegistryCountSnapshot,
+  type RegistryReceipt,
+  type RegistryReceiptBody,
+} from '../src/research/registry/receipt.js';
 import { FakeDatabase } from '../src/test-support/fakeDatabase.js';
 import {
   GATE6_ASSERTION_IDS,
@@ -21,6 +28,7 @@ import {
   type Gate6AssertionId,
   type Gate6AuditReceipt,
   type Gate6Baseline,
+  type Gate6RegistryReceiptInput,
   type Gate6UidMap,
   type Gate6WorkspaceKey,
 } from './gate6AuditCore.js';
@@ -384,13 +392,27 @@ function asDatabase(database: FakeDatabase): Database {
 
 async function audit(
   database: FakeDatabase,
-  overrides: { baseline?: Gate6Baseline | null; strict?: boolean } = {},
+  overrides: {
+    baseline?: Gate6Baseline | null;
+    strict?: boolean;
+    registryReceipts?: Gate6RegistryReceiptInput[] | null;
+    requireRegistryReceipts?: boolean;
+    expectedDatabaseHost?: string | null;
+  } = {},
 ): Promise<Gate6AuditReceipt> {
   return runGate6Audit(asDatabase(database), {
     uids: UIDS,
     nowMs: NOW_MS,
     baseline: overrides.baseline ?? null,
     strictWitnessObservationRefs: overrides.strict === true,
+    registryReceipts: overrides.registryReceipts ?? null,
+    requireRegistryReceipts: overrides.requireRegistryReceipts === true,
+    // Default to the host the receipt fixtures seal against, so the
+    // host cross-check is EXERCISED in the pass case rather than skipped.
+    expectedDatabaseHost:
+      overrides.expectedDatabaseHost === undefined
+        ? LIVE_DATABASE_HOST
+        : overrides.expectedDatabaseHost,
   });
 }
 
@@ -421,6 +443,7 @@ function expectPerturbed(
   expect(receipt.ok).toBe(false);
   expect(receipt.findingCount).toBeGreaterThan(0);
   expect(assertionOf(receipt, id).ok).toBe(false);
+  expect(assertionOf(receipt, id).status).toBe('failed');
   expect(codesOf(receipt, id)).toContain(code);
   const allowedRed = new Set<Gate6AssertionId>([id, ...alsoRed]);
   for (const assertion of receipt.assertions) {
@@ -428,6 +451,85 @@ function expectPerturbed(
       expect(allowedRed).toContain(assertion.id);
     }
   }
+}
+
+// ---------------------------------------------------------------------------
+// Registry-operator receipt fixtures (assertion 12).
+// ---------------------------------------------------------------------------
+
+const LIVE_DATABASE_HOST = 'gate6-test-db.firebaseio.com';
+
+function countSnapshot(foreignRows: number): RegistryCountSnapshot {
+  return {
+    entryChildren: foreignRows + 2,
+    registryOwnedRows: 2,
+    foreignRows,
+    sourceSets: 10,
+    corruptSourceRecords: 0,
+    derivedRows: 2,
+    creates: 0,
+    updates: 0,
+    unchanged: 2,
+    collisions: 0,
+    orphanRemovals: 0,
+  };
+}
+
+/** The live foreign digest for a workspace, taken from the correct tree. */
+function liveForeignDigest(workspace: Gate6WorkspaceKey): ForeignRowDigest {
+  const entries = (CORRECT_TREE.tournamentEntries as Record<string, Record<string, unknown>>)[
+    UIDS[workspace]
+  ]!;
+  return computeForeignRowDigest(UIDS[workspace], entries);
+}
+
+/**
+ * A genuinely sealed operator receipt — built through `createRegistryReceipt`
+ * so its `contentHash` is real. Perturbation tests override members and
+ * either re-seal (to test a semantic refusal) or tamper post-seal (to test the
+ * hash check itself).
+ */
+function sealedReceipt(
+  workspace: Gate6WorkspaceKey,
+  overrides: Partial<RegistryReceiptBody> = {},
+): RegistryReceipt {
+  const digest = liveForeignDigest(workspace);
+  const body: RegistryReceiptBody = {
+    formatVersion: 1,
+    command: 'apply',
+    workspace,
+    label: GATE6_EXPECTATIONS[workspace].label,
+    databaseHost: LIVE_DATABASE_HOST,
+    uid: UIDS[workspace],
+    manifestContentHash: contentHash(`manifest-${workspace}`),
+    manifestGeneratedAtMs: NOW_MS - 1_000_000,
+    reviewedRowSetHash: contentHash(`rowset-${workspace}`),
+    observedRowSetHash: contentHash(`rowset-${workspace}`),
+    startedAtMs: NOW_MS - 500_000,
+    finishedAtMs: NOW_MS - 400_000,
+    status: 'ok',
+    failedInvariants: [],
+    before: countSnapshot(digest.count),
+    after: countSnapshot(digest.count),
+    foreignDigestBefore: digest,
+    foreignDigestAfter: digest,
+    foreignDigestStable: true,
+    writes: { written: [], removed: [], abortedForeign: [], writesPerformed: 0 },
+    ...overrides,
+  };
+  return createRegistryReceipt(body);
+}
+
+function receiptInput(
+  workspace: Gate6WorkspaceKey,
+  overrides: Partial<RegistryReceiptBody> = {},
+): Gate6RegistryReceiptInput {
+  return { path: `./receipt-${workspace}.json`, raw: sealedReceipt(workspace, overrides) };
+}
+
+/** All four accounts, correctly sealed — the assertion-12 pass case. */
+function allReceipts(): Gate6RegistryReceiptInput[] {
+  return GATE6_WORKSPACE_KEYS.map((workspace) => receiptInput(workspace));
 }
 
 // ---------------------------------------------------------------------------
@@ -469,17 +571,20 @@ describe('the correct fixture actually realizes the expectation table', () => {
 
 describe('a fully-correct tree passes', () => {
   it('reports ok with zero findings across every assertion', async () => {
-    const receipt = await audit(makeDatabase());
+    const receipt = await audit(makeDatabase(), { registryReceipts: allReceipts() });
     expect(receipt.findingCount).toBe(0);
     expect(receipt.ok).toBe(true);
+    expect(receipt.skippedCount).toBe(0);
     for (const assertion of receipt.assertions) {
       expect(assertion.findings).toEqual([]);
       expect(assertion.ok).toBe(true);
+      expect(assertion.status).toBe('passed');
+      expect(assertion.skipReason).toBeNull();
     }
   });
 
   it('emits a stable receipt shape: fixed top-level keys, every assertion id, in order', async () => {
-    const receipt = await audit(makeDatabase());
+    const receipt = await audit(makeDatabase(), { registryReceipts: allReceipts() });
     expect(Object.keys(receipt).sort()).toEqual(
       [
         'assertions',
@@ -491,11 +596,14 @@ describe('a fully-correct tree passes', () => {
         'observed',
         'ok',
         'receiptVersion',
+        'registryReceipts',
+        'requireRegistryReceipts',
+        'skippedCount',
         'strictWitnessObservationRefs',
         'targetUids',
       ].sort(),
     );
-    expect(receipt.receiptVersion).toBe(1);
+    expect(receipt.receiptVersion).toBe(2);
     expect(receipt.expectationTableVersion).toBe(GATE6_EXPECTATION_TABLE_VERSION);
     expect(receipt.baselineMode).toBe('record');
     expect(receipt.assertions.map((assertion) => assertion.id)).toEqual([...GATE6_ASSERTION_IDS]);
@@ -505,8 +613,23 @@ describe('a fully-correct tree passes', () => {
         'id',
         'inspected',
         'ok',
+        'skipReason',
+        'status',
         'title',
         'tolerated',
+      ]);
+    }
+    for (const row of receipt.registryReceipts) {
+      expect(Object.keys(row).sort()).toEqual([
+        'command',
+        'databaseHost',
+        'databaseHostChecked',
+        'foreignDigestAfter',
+        'path',
+        'status',
+        'uid',
+        'valid',
+        'workspace',
       ]);
     }
     expect(receipt.observed.map((row) => row.workspace)).toEqual([...GATE6_WORKSPACE_KEYS]);
@@ -1284,6 +1407,240 @@ describe('assertion 11: witness-observation-references', () => {
     );
     expect(assertionOf(receipt, 'witness-observation-references').tolerated).toBe(false);
     expect(receipt.strictWitnessObservationRefs).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Assertion 12 — registry-operator receipt attestation.
+// ---------------------------------------------------------------------------
+
+describe('assertion 12: registry-receipt-attestation', () => {
+  it('passes when all four sealed receipts are authentic and agree with live foreign content', async () => {
+    const receipt = await audit(makeDatabase(), { registryReceipts: allReceipts() });
+    const assertion = assertionOf(receipt, 'registry-receipt-attestation');
+    expect(assertion.status).toBe('passed');
+    expect(assertion.inspected).toBe(4);
+    expect(receipt.registryReceipts).toHaveLength(4);
+    expect(receipt.registryReceipts.every((row) => row.valid)).toBe(true);
+    expect(receipt.registryReceipts.every((row) => row.databaseHostChecked)).toBe(true);
+    expect(receipt.ok).toBe(true);
+  });
+
+  it('is SKIPPED — visibly, not silently green — when no receipt is supplied', async () => {
+    const receipt = await audit(makeDatabase());
+    const assertion = assertionOf(receipt, 'registry-receipt-attestation');
+    expect(assertion.status).toBe('skipped');
+    expect(assertion.skipReason).toMatch(/--registry-receipt/);
+    expect(assertion.inspected).toBe(0);
+    expect(assertion.findings).toEqual([]);
+    // Skipped does not fail the audit...
+    expect(assertion.ok).toBe(true);
+    expect(receipt.ok).toBe(true);
+    // ...but it is COUNTED, so "green" and "incompletely evidenced" are
+    // distinguishable from the receipt header alone.
+    expect(receipt.skippedCount).toBe(1);
+    expect(receipt.registryReceipts).toEqual([]);
+    // Every OTHER assertion really was checked.
+    for (const other of receipt.assertions) {
+      if (other.id !== 'registry-receipt-attestation') {
+        expect(other.status).toBe('passed');
+      }
+    }
+  });
+
+  it('FAILS on the same absent evidence under --require-registry-receipt', async () => {
+    const receipt = await audit(makeDatabase(), { requireRegistryReceipts: true });
+    expectPerturbed(receipt, 'registry-receipt-attestation', 'registry-receipt-missing');
+    expect(assertionOf(receipt, 'registry-receipt-attestation').skipReason).toBeNull();
+    expect(receipt.skippedCount).toBe(0);
+    expect(receipt.requireRegistryReceipts).toBe(true);
+  });
+
+  it('FAILS on partial coverage under --require-registry-receipt, naming each uncovered account', async () => {
+    const receipt = await audit(makeDatabase(), {
+      registryReceipts: [receiptInput('hbox')],
+      requireRegistryReceipts: true,
+    });
+    expectPerturbed(receipt, 'registry-receipt-attestation', 'registry-receipt-missing');
+    const missing = assertionOf(receipt, 'registry-receipt-attestation')
+      .findings.filter((finding) => finding.code === 'registry-receipt-missing')
+      .map((finding) => finding.workspace);
+    expect(missing.sort()).toEqual(['izaw', 'mkleo', 'sparg0']);
+  });
+
+  it('accepts partial coverage WITHOUT the require flag — opt-in evidence is still checked strictly', async () => {
+    const receipt = await audit(makeDatabase(), { registryReceipts: [receiptInput('mkleo')] });
+    const assertion = assertionOf(receipt, 'registry-receipt-attestation');
+    expect(assertion.status).toBe('passed');
+    expect(assertion.inspected).toBe(1);
+    expect(receipt.ok).toBe(true);
+  });
+
+  it('FAILS a receipt whose contentHash seal was tampered with', async () => {
+    const tampered = sealedReceipt('sparg0');
+    const receipt = await audit(makeDatabase(), {
+      registryReceipts: [
+        // The body is untouched; only the seal is wrong — the exact shape of
+        // a hand-edited receipt whose editor forgot to re-hash.
+        { path: './tampered.json', raw: { ...tampered, contentHash: contentHash('forged') } },
+      ],
+    });
+    expectPerturbed(receipt, 'registry-receipt-attestation', 'registry-receipt-invalid');
+    expect(receipt.registryReceipts[0]!.valid).toBe(false);
+    expect(receipt.registryReceipts[0]!.workspace).toBeNull();
+  });
+
+  it('FAILS a receipt whose BODY was edited (the seal no longer matches the content)', async () => {
+    const sealed = sealedReceipt('mkleo');
+    const receipt = await audit(makeDatabase(), {
+      registryReceipts: [
+        { path: './edited.json', raw: { ...sealed, status: 'ok', failedInvariants: [] } },
+      ],
+    });
+    // Re-stating the same values changes nothing, so this one must PASS —
+    // the control that proves the next assertion is about content, not luck.
+    expect(assertionOf(receipt, 'registry-receipt-attestation').status).toBe('passed');
+
+    const edited = await audit(makeDatabase(), {
+      registryReceipts: [
+        { path: './edited.json', raw: { ...sealed, finishedAtMs: sealed.finishedAtMs + 1 } },
+      ],
+    });
+    expectPerturbed(edited, 'registry-receipt-attestation', 'registry-receipt-invalid');
+  });
+
+  it('FAILS a receipt that is not JSON at all (the CLI hands on a null raw rather than crashing)', async () => {
+    const receipt = await audit(makeDatabase(), {
+      registryReceipts: [{ path: './unreadable.json', raw: null }],
+    });
+    expectPerturbed(receipt, 'registry-receipt-attestation', 'registry-receipt-invalid');
+  });
+
+  it('FAILS a receipt sealed for a different account', async () => {
+    const receipt = await audit(makeDatabase(), {
+      registryReceipts: [receiptInput('hbox', { uid: 'some-other-account-uid' })],
+    });
+    expectPerturbed(receipt, 'registry-receipt-attestation', 'registry-receipt-uid-mismatch');
+    const finding = assertionOf(receipt, 'registry-receipt-attestation').findings[0]!;
+    expect(finding.expected).toBe(UIDS.hbox);
+    expect(finding.actual).toBe('some-other-account-uid');
+    // A wrong-account receipt stops there — no cascade of derivative findings.
+    expect(assertionOf(receipt, 'registry-receipt-attestation').findings).toHaveLength(1);
+  });
+
+  it('FAILS a receipt sealed as refused or failed — an authentic record of a BAD run is not evidence of a good one', async () => {
+    for (const status of ['refused', 'failed'] as const) {
+      const receipt = await audit(makeDatabase(), {
+        registryReceipts: [
+          receiptInput('sparg0', {
+            status,
+            failedInvariants: ['foreign rows were modified'],
+          }),
+        ],
+      });
+      expectPerturbed(receipt, 'registry-receipt-attestation', 'registry-receipt-not-ok');
+      expect(assertionOf(receipt, 'registry-receipt-attestation').findings[0]!.actual).toBe(status);
+    }
+  });
+
+  it('FAILS a dry-run receipt: planning is not evidence of a completed apply', async () => {
+    const receipt = await audit(makeDatabase(), {
+      registryReceipts: [
+        receiptInput('izaw', {
+          command: 'dry-run',
+          manifestContentHash: null,
+          manifestGeneratedAtMs: null,
+          reviewedRowSetHash: null,
+          writes: null,
+        }),
+      ],
+    });
+    expectPerturbed(receipt, 'registry-receipt-attestation', 'registry-receipt-not-post-state');
+  });
+
+  it('accepts a compare receipt: it observes post-state without writing', async () => {
+    const receipt = await audit(makeDatabase(), {
+      registryReceipts: [receiptInput('izaw', { command: 'compare', writes: null })],
+    });
+    expect(assertionOf(receipt, 'registry-receipt-attestation').status).toBe('passed');
+  });
+
+  it('FAILS a receipt sealed against a different database host', async () => {
+    const receipt = await audit(makeDatabase(), {
+      registryReceipts: [receiptInput('mkleo', { databaseHost: 'staging-db.firebaseio.com' })],
+    });
+    expectPerturbed(receipt, 'registry-receipt-attestation', 'registry-receipt-host-mismatch');
+  });
+
+  it('records databaseHostChecked:false when no expected host was supplied, never a silent pass', async () => {
+    const receipt = await audit(makeDatabase(), {
+      registryReceipts: [receiptInput('mkleo', { databaseHost: 'staging-db.firebaseio.com' })],
+      expectedDatabaseHost: null,
+    });
+    // The host sub-check did not run, so it must not fail...
+    expect(codesOf(receipt, 'registry-receipt-attestation')).not.toContain(
+      'registry-receipt-host-mismatch',
+    );
+    // ...and the receipt says so explicitly.
+    expect(receipt.registryReceipts[0]!.databaseHostChecked).toBe(false);
+    expect(receipt.registryReceipts[0]!.databaseHost).toBe('staging-db.firebaseio.com');
+  });
+
+  it('FAILS when the sealed post-apply digest no longer matches live foreign content', async () => {
+    const database = makeDatabase();
+    // A foreign row mutated AFTER the operator sealed its receipt — the exact
+    // drift neither tool can see alone.
+    database.seed(`tournamentEntries/${UIDS.sparg0}/manual-sparg0-a/setsPlayed`, 77);
+    const receipt = await audit(database, { registryReceipts: allReceipts() });
+    expectPerturbed(receipt, 'registry-receipt-attestation', 'registry-receipt-digest-mismatch');
+    expect(assertionOf(receipt, 'registry-receipt-attestation').findings[0]!.detail).toContain(
+      'their CONTENT changed',
+    );
+  });
+
+  it('FAILS when a foreign row was ADDED after sealing, naming the added key', async () => {
+    const database = makeDatabase();
+    database.seed(
+      `tournamentEntries/${UIDS.hbox}/manual-added-after-seal`,
+      foreignRegistryRow('snuck in'),
+    );
+    const receipt = await audit(database, { registryReceipts: allReceipts() });
+    expectPerturbed(receipt, 'registry-receipt-attestation', 'registry-receipt-digest-mismatch');
+    expect(assertionOf(receipt, 'registry-receipt-attestation').findings[0]!.detail).toContain(
+      'manual-added-after-seal',
+    );
+  });
+
+  it('FAILS two receipts claiming the same workspace — ambiguous evidence is not evidence', async () => {
+    const receipt = await audit(makeDatabase(), {
+      registryReceipts: [
+        { path: './a.json', raw: sealedReceipt('hbox') },
+        { path: './b.json', raw: sealedReceipt('hbox') },
+      ],
+    });
+    expectPerturbed(receipt, 'registry-receipt-attestation', 'registry-receipt-duplicate');
+  });
+
+  it('is independent of assertion 8: a receipt failure leaves registry-preservation green', async () => {
+    const recorded = await audit(makeDatabase(), { registryReceipts: allReceipts() });
+    const receipt = await audit(makeDatabase(), {
+      baseline: recorded.baseline,
+      registryReceipts: [receiptInput('hbox', { status: 'failed', failedInvariants: ['x'] })],
+    });
+    // Live content is untouched, so preservation holds...
+    expect(assertionOf(receipt, 'registry-preservation').status).toBe('passed');
+    // ...while the attestation of a bad run does not.
+    expect(assertionOf(receipt, 'registry-receipt-attestation').status).toBe('failed');
+  });
+
+  it('is independent in the other direction: assertion 8 can fail while no receipt is supplied at all', async () => {
+    const recorded = await audit(makeDatabase());
+    const database = makeDatabase();
+    database.seed(`tournamentEntries/${UIDS.izaw}/manual-izaw-a/setsPlayed`, 55);
+    const receipt = await audit(database, { baseline: recorded.baseline });
+    expect(assertionOf(receipt, 'registry-preservation').status).toBe('failed');
+    expect(assertionOf(receipt, 'registry-receipt-attestation').status).toBe('skipped');
+    expect(receipt.ok).toBe(false);
   });
 });
 
