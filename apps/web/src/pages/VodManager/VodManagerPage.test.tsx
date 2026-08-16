@@ -4035,23 +4035,11 @@ describe('VodManagerPage — demo account gating', () => {
     resetVendorGlobals();
   });
 
-  it('shows the demo-account banner', async () => {
-    listMatches.mockResolvedValue([makeMatch({ id: 'm1', vodUrl: 'https://youtu.be/abc123' })]);
-    getMe.mockResolvedValue(defaultProfile({ isDemoAccount: true }));
-    renderVodManager('/vod?match=m1');
-
-    expect(await screen.findByTestId('demo-account-banner')).toBeInTheDocument();
-  });
-
-  it('positive control: shows no demo-account banner for an ordinary account', async () => {
-    listMatches.mockResolvedValue([makeMatch({ id: 'm1', vodUrl: 'https://youtu.be/abc123' })]);
-    getMe.mockResolvedValue(defaultProfile({ isDemoAccount: false }));
-    renderVodManager('/vod?match=m1');
-
-    await screen.findByRole('button', { name: 'Select match vs rival' });
-    expect(screen.queryByTestId('demo-account-banner')).not.toBeInTheDocument();
-  });
-
+  // Phase 30.3 (Gate 6 corrective, defect A2): the two page-local
+  // demo-banner assertions that used to live here were removed with the
+  // page-local mount itself. The banner is now mounted once in MainLayout
+  // and its coverage is proven from the authenticated route table
+  // (`@/routes/demoBannerCoverage.test.tsx`), not per page.
   it('disables the Share button with an explanation for a demo account', async () => {
     listMatches.mockResolvedValue([makeMatch({ id: 'm1', vodUrl: 'https://youtu.be/abc123' })]);
     getMe.mockResolvedValue(defaultProfile({ isDemoAccount: true }));

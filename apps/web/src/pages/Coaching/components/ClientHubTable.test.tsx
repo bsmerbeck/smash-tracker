@@ -1,9 +1,20 @@
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes } from 'react-router';
 import type { ClientHubRow } from '@smash-tracker/shared';
 import { ClientHubTable, type ClientHubTableProps } from './ClientHubTable';
+
+// Phase 30.3 (Gate 6 corrective, defect A4): the table reads
+// `useIsDemoAccount()` itself so no caller can forget to gate the export
+// affordance. Mocked here rather than provider-wrapped, mirroring
+// `DemoAccountBanner.test.tsx`'s convention — this suite is about the menu's
+// structure, not the profile fetch.
+const useIsDemoAccount = vi.fn();
+
+vi.mock('@/hooks/useIsDemoAccount', () => ({
+  useIsDemoAccount: () => useIsDemoAccount(),
+}));
 
 function makeClient(overrides: Partial<ClientHubRow> = {}): ClientHubRow {
   return {
@@ -50,6 +61,10 @@ function renderTable(clients: ClientHubRow[], overrides: Partial<ClientHubTableP
 }
 
 describe('ClientHubTable', () => {
+  beforeEach(() => {
+    useIsDemoAccount.mockReturnValue(false);
+  });
+
   // Phase 11 fix round 3 (FB-4): "Hub rows stay clickable too (make
   // row-click affordance obvious)" — clicking anywhere on a row (not just
   // the per-row actions menu) opens that client's workspace.
@@ -178,6 +193,54 @@ describe('ClientHubTable research badge and fail-closed row actions (Phase 29, R
     await user.click(screen.getByRole('button', { name: 'Actions for Tetra' }));
     const menu = await screen.findByRole('menu');
     expect(within(menu).getByRole('menuitem', { name: 'Generate claim code' })).toBeInTheDocument();
+    expect(within(menu).getByRole('menuitem', { name: 'Export workspace' })).toBeInTheDocument();
+  });
+
+  // -------------------------------------------------------------------------
+  // Phase 30.3 (Gate 6 corrective, defect A4): for a DEMO COACH the export
+  // action is REMOVED from the menu, not disabled — on an ORDINARY client
+  // row, which is precisely the topology the pre-existing research-kind gate
+  // (`isKindGatedFromRowActions`) does not cover.
+  // -------------------------------------------------------------------------
+
+  it('removes the export action entirely for a demo coach on an ORDINARY client row', async () => {
+    useIsDemoAccount.mockReturnValue(true);
+    const user = userEvent.setup();
+    renderTable([makeClient({ clientId: 'tetra', label: 'Tetra', kind: 'ordinary' })]);
+
+    await user.click(screen.getByRole('button', { name: 'Actions for Tetra' }));
+    const menu = await screen.findByRole('menu');
+
+    // Structurally absent — not merely disabled. A disabled item would still
+    // be found by name here, with `aria-disabled`, so this assertion is what
+    // distinguishes removal from styling.
+    expect(
+      within(menu).queryByRole('menuitem', { name: 'Export workspace', hidden: true }),
+    ).not.toBeInTheDocument();
+    expect(menu.textContent).not.toContain('Export');
+  });
+
+  it('leaves every other row action intact for a demo coach (scoped removal, not a blanket disable)', async () => {
+    useIsDemoAccount.mockReturnValue(true);
+    const user = userEvent.setup();
+    renderTable([makeClient({ clientId: 'tetra', label: 'Tetra', kind: 'ordinary' })]);
+
+    await user.click(screen.getByRole('button', { name: 'Actions for Tetra' }));
+    const menu = await screen.findByRole('menu');
+
+    expect(within(menu).getByRole('menuitem', { name: 'Open workspace' })).toBeInTheDocument();
+    expect(within(menu).getByRole('menuitem', { name: 'Generate claim code' })).toBeInTheDocument();
+    expect(within(menu).getByRole('menuitem', { name: 'Archive' })).toBeInTheDocument();
+  });
+
+  it('positive control: the same ordinary row keeps its export action for a non-demo coach', async () => {
+    useIsDemoAccount.mockReturnValue(false);
+    const user = userEvent.setup();
+    renderTable([makeClient({ clientId: 'tetra', label: 'Tetra', kind: 'ordinary' })]);
+
+    await user.click(screen.getByRole('button', { name: 'Actions for Tetra' }));
+    const menu = await screen.findByRole('menu');
+
     expect(within(menu).getByRole('menuitem', { name: 'Export workspace' })).toBeInTheDocument();
   });
 });

@@ -12,7 +12,6 @@ import { localizedFighterName } from '@/lib/fighterNames';
 import { inferFighterIdsFromMatches } from '@/lib/inferredFighters';
 import { useAlphaFighters, useSortedFighters } from '@/hooks/useFighterName';
 import { ChooseFavoritesPrompt } from '@/components/ChooseFavoritesPrompt';
-import { DemoAccountBanner } from '@/components/DemoAccountBanner';
 import { FilteredEmptyNotice } from '@/components/FilteredEmptyNotice';
 import { MatchupsContext, type MatchupsContextValue } from './MatchupsContext';
 import { SelectFighter } from './components/SelectFighter';
@@ -79,7 +78,6 @@ export function MatchupsPage() {
   if (fightersLoading || matchesLoading) {
     return (
       <div className="flex flex-col gap-6">
-        <DemoAccountBanner />
         <div className="text-muted-foreground">{t('matchups.loading')}</div>
       </div>
     );
@@ -88,7 +86,6 @@ export function MatchupsPage() {
   if (fighterSprites.length === 0) {
     return (
       <div className="flex flex-col gap-6">
-        <DemoAccountBanner />
         <div className="flex flex-col items-center gap-4 py-16 text-center">
           <h1 className="text-2xl font-semibold tracking-tight">{t('shared.noFighters.title')}</h1>
           <p className="max-w-md text-muted-foreground">{t('matchups.noFightersSubtitle')}</p>
@@ -112,7 +109,6 @@ export function MatchupsPage() {
   if (allMatches.length === 0) {
     return (
       <div className="flex flex-col gap-6">
-        <DemoAccountBanner />
         <div className="flex flex-col items-center gap-2 py-16 text-center">
           <h2 className="text-xl font-semibold tracking-tight">{t('shared.noMatches.title')}</h2>
           <p className="text-muted-foreground">{t('shared.noMatches.subtitle')}</p>
@@ -132,7 +128,6 @@ export function MatchupsPage() {
   return (
     <MatchupsContext.Provider value={contextValue}>
       <div className="flex flex-col gap-6">
-        <DemoAccountBanner />
         {usingInferredFighters && <ChooseFavoritesPrompt />}
         {filterActive && matches.length === 0 && <FilteredEmptyNotice />}
 

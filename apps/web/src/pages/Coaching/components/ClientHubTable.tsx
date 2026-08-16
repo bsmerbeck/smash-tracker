@@ -15,6 +15,7 @@ import {
 } from '@tanstack/react-table';
 import type { ClientHubRow } from '@smash-tracker/shared';
 import { isResearchKind } from '@smash-tracker/shared';
+import { useIsDemoAccount } from '@/hooks/useIsDemoAccount';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
@@ -107,6 +108,14 @@ export interface ClientHubTableProps {
  * Phase 12 ships review delivery — renders a neutral placeholder), claim
  * status (Phase 24, CTRL-03), and a per-row actions menu (open workspace,
  * generate claim code, export, archive/restore, delete).
+ *
+ * Phase 30.3 (Gate 6 corrective, defect A4): for a login-bearing demo/
+ * research account the Export item is REMOVED from the menu, not merely
+ * disabled — a disabled item still advertises the capability and still
+ * carries the handler. This is a UI affordance only; the real boundary is
+ * the actor-scoped 403 on `GET /api/coaching/clients/:clientId/export`
+ * (`apps/api/src/routes/coachingTenants.ts`), which refuses regardless of
+ * what the browser renders.
  */
 export function ClientHubTable({
   clients,
@@ -117,6 +126,10 @@ export function ClientHubTable({
 }: ClientHubTableProps) {
   const { t } = useTranslation();
   const navigate = useNavigate();
+  // Phase 30.3 (Gate 6 corrective, defect A4): read here rather than taken
+  // as a prop, mirroring `DemoAccountBanner`'s own convention — a caller
+  // cannot re-enable the export affordance by forgetting to pass a flag.
+  const isDemoAccount = useIsDemoAccount();
   const [sorting, setSorting] = useState<SortingState>([{ id: 'label', desc: false }]);
   const [globalFilter, setGlobalFilter] = useState('');
 
@@ -199,7 +212,7 @@ export function ClientHubTable({
                       {t('coaching.hub.table.actions.issueClaimCode')}
                     </DropdownMenuItem>
                   )}
-                  {!actionsGated && (
+                  {!actionsGated && !isDemoAccount && (
                     <DropdownMenuItem onSelect={() => onExport(client)}>
                       <Download />
                       {t('coaching.hub.table.actions.export')}
@@ -222,7 +235,7 @@ export function ClientHubTable({
         },
       },
     ],
-    [t, navigate, onArchiveToggle, onExport, onDeleteRequest, onIssueClaimCode],
+    [t, navigate, isDemoAccount, onArchiveToggle, onExport, onDeleteRequest, onIssueClaimCode],
   );
 
   const table = useReactTable({

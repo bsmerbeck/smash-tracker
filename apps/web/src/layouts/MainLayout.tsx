@@ -6,6 +6,7 @@ import { SUPPORTED_LANGUAGES } from '@/i18n';
 import { useStartggAutoSync } from '@/hooks/useStartgg';
 import { useCoachAccessEjection } from '@/hooks/useCoachAccessEjection';
 import { GuidedPathCard } from '@/components/onboarding/GuidedPathCard';
+import { DemoAccountBanner } from '@/components/DemoAccountBanner';
 import { Sidebar } from './Sidebar';
 import { Topbar } from './Topbar';
 import { Footer } from './Footer';
@@ -46,6 +47,18 @@ function useLanguageDetectionNotice() {
  * (VOD Manager, Fighter Analysis, Tournaments, Scout, Client Hub) —
  * `GuidedPathCard` itself self-guards (renders nothing without a saved,
  * incomplete intent), so this mount is unconditional.
+ *
+ * Phase 30.3 (Gate 6 corrective, defect A2): `DemoAccountBanner` is mounted
+ * here too, and ONLY here. It previously lived in seven individual page
+ * components, which is a coverage model that fails by omission — it missed
+ * Tournament Detail, the blocked Prep brief, Scout, Reports, Profile, and
+ * every `/coach/:clientId/*` subroute, all of which a login-bearing demo
+ * account can reach. This layout is the single chokepoint every
+ * authenticated route passes through (`ProtectedRoute` renders it around
+ * whatever page matched), so mounting once here makes coverage a structural
+ * property of the route table rather than a per-page checklist. Never
+ * re-add a page-local mount: `demoBannerCoverage.test.tsx` fails on any
+ * second mount site, since two would double-render the label.
  */
 export function MainLayout({ children }: { children: ReactNode }) {
   // page_view reporting lives in routes/RouteAnalytics.tsx (app-wide, public
@@ -67,6 +80,10 @@ export function MainLayout({ children }: { children: ReactNode }) {
           <Sidebar />
           <div className="flex min-w-0 flex-1 flex-col">
             <main className="flex-1 p-4 sm:p-6">
+              {/* Above GuidedPathCard so the demo label is the first thing in
+                  the content column on every authenticated surface, visible
+                  without scrolling regardless of which page rendered. */}
+              <DemoAccountBanner />
               <GuidedPathCard />
               {children}
             </main>

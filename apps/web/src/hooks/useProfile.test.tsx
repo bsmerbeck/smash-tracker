@@ -78,6 +78,7 @@ describe('useProfile / useUpdateCoachingModeEnabled', () => {
             fighters: { primary: [], secondary: [] },
             coachingModeEnabled: false,
             onboardingIntent: null,
+            isDemoAccount: false,
           }),
       }),
     );
@@ -115,6 +116,7 @@ describe('useProfile / useUpdateCoachingModeEnabled', () => {
             fighters: { primary: [], secondary: [] },
             coachingModeEnabled: enabled,
             onboardingIntent: null,
+            isDemoAccount: false,
           }),
       });
     });

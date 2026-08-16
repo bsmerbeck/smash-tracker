@@ -4,6 +4,7 @@ import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes, useSearchParams } from 'react-router';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { AuthProvider } from '@/context/AuthContext';
+import { useProfile } from '@/hooks/useProfile';
 import {
   AnalyticsFilterProvider,
   ANALYTICS_FILTER_STORAGE_KEY,
@@ -105,6 +106,24 @@ function VodRouteProbe() {
   return <div>VOD Manager page (match={params.get('match')})</div>;
 }
 
+/**
+ * Phase 30.3 (Gate 6 corrective, defect A2): stands in for the app shell's
+ * own `GET /api/users/me` subscription.
+ *
+ * `DemoAccountBanner` used to be mounted by this page and is now mounted once
+ * in `MainLayout`, which `ProtectedRoute` wraps around every authenticated
+ * route. The banner is what subscribes to the profile query, so in the real
+ * app that query is in flight from the moment the shell mounts — strictly
+ * before any of this page's own demo-gated affordances render. These tests
+ * mount the page WITHOUT its layout, so without this stand-in they race the
+ * profile fetch and read `isDemoAccount` as a not-yet-resolved `false`.
+ * Renders nothing; it exists purely for the subscription.
+ */
+function ShellProfileSubscription() {
+  useProfile();
+  return null;
+}
+
 function renderMatchData(initialEntry = '/match-data') {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
@@ -112,6 +131,7 @@ function renderMatchData(initialEntry = '/match-data') {
       <MemoryRouter initialEntries={[initialEntry]}>
         <AuthProvider>
           <AnalyticsFilterProvider>
+            <ShellProfileSubscription />
             <Routes>
               <Route path="/match-data" element={<MatchDataPage />} />
               <Route path="/choose-primary" element={<div>Choose primary page</div>} />
@@ -826,36 +846,6 @@ describe('MatchDataPage', () => {
     expect(clickSpy).toHaveBeenCalledTimes(1);
 
     clickSpy.mockRestore();
-  });
-});
-
-// Phase 30.3 (Gate 6, owner/Codex hard gate): the persistent demo-account
-// label on the Match Data surface — one of the seven required surfaces.
-describe('MatchDataPage — demo account banner', () => {
-  beforeEach(() => {
-    resetAuthMock();
-    vi.clearAllMocks();
-    window.localStorage.clear();
-    upsertMe.mockResolvedValue({ uid: 'test-uid', email: 'test@example.com' });
-    listOpponents.mockResolvedValue(['rival']);
-    getFighters.mockResolvedValue({ primary: [mario.id], secondary: [] });
-    listMatches.mockResolvedValue([makeMatch({ id: 'm1', opponent: 'rival' })]);
-    setMockUser(makeMockUser());
-  });
-
-  it('shows the demo-account banner when the profile is a demo account', async () => {
-    getMe.mockResolvedValue(defaultProfile({ isDemoAccount: true }));
-    renderMatchData();
-
-    expect(await screen.findByTestId('demo-account-banner')).toBeInTheDocument();
-  });
-
-  it('positive control: shows no demo-account banner for an ordinary account', async () => {
-    getMe.mockResolvedValue(defaultProfile({ isDemoAccount: false }));
-    renderMatchData();
-
-    await waitFor(() => expect(screen.getAllByText('rival')).not.toHaveLength(0));
-    expect(screen.queryByTestId('demo-account-banner')).not.toBeInTheDocument();
   });
 });
 

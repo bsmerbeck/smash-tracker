@@ -11,6 +11,8 @@ import {
   revokeSessionDelivery,
 } from '../coaching/sessionDeliveries.js';
 import { readSubjectKind } from '../research/subjectKind.js';
+import { isDemoAccountSubject } from '../research/demoAccount.js';
+import { NotFoundError } from '../services/rtdb.js';
 
 const sessionIdParamsSchema = z.object({
   clientId: z.string().min(1),
@@ -112,6 +114,23 @@ const coachingSessionDeliveriesRoutes: FastifyPluginAsyncZod<
       },
     },
     async (request, reply) => {
+      // Phase 30.3 (Gate 6 corrective, defect A3 — ACTOR-scoped demo
+      // refusal). Load-bearing ordering: FIRST statement in the handler,
+      // above `readSubjectKind`'s read, above the mint write, and above the
+      // `session_delivery_created` emission, so a refused request reads
+      // nothing, writes nothing, and emits nothing.
+      //
+      // The sibling refusal inside `createSessionDelivery` keys on the
+      // CLIENT TENANT and cannot see who is acting; this one keys on the
+      // ACTOR (`request.uid`) and cannot see whose workspace it is. Both
+      // stay — a demo coach delivering an ORDINARY fictional client's
+      // session was the exact hole the tenant-scoped check alone left open.
+      // Byte-identical `NotFoundError` message to the tenant-scoped refusal
+      // (D-05 no-oracle).
+      if (isDemoAccountSubject(app.demoAccountConfig, request.uid)) {
+        throw new NotFoundError(`Training session ${request.params.sessionId} not found`);
+      }
+
       // RTEN-04 (D-06, review finding 29-06 MEDIUM): resolved from the SAME
       // `:clientId` the `requireMembership` preHandler already checked, at
       // the TOP of the handler, before the mint mutation below.

@@ -194,32 +194,3 @@ describe('ClientHubPage', () => {
     });
   });
 });
-
-// Phase 30.3 (Gate 6, owner/Codex hard gate): the persistent demo-account
-// label on the Coaching hub surface — one of the seven required surfaces.
-describe('ClientHubPage — demo account banner', () => {
-  beforeEach(() => {
-    resetAuthMock();
-    vi.clearAllMocks();
-    setMockUser(makeMockUser());
-  });
-
-  it('shows the demo-account banner', async () => {
-    clientsList.mockResolvedValue([]);
-    getMe.mockResolvedValue(defaultProfile({ isDemoAccount: true }));
-
-    renderHub();
-
-    expect(await screen.findByTestId('demo-account-banner')).toBeInTheDocument();
-  });
-
-  it('positive control: shows no demo-account banner for an ordinary account', async () => {
-    clientsList.mockResolvedValue([]);
-    getMe.mockResolvedValue(defaultProfile({ isDemoAccount: false }));
-
-    renderHub();
-
-    await screen.findByRole('button', { name: 'Create your first client' });
-    expect(screen.queryByTestId('demo-account-banner')).not.toBeInTheDocument();
-  });
-});

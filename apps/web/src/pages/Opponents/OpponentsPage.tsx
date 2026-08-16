@@ -8,7 +8,6 @@ import { useTournamentEntries } from '@/hooks/useTournamentEntries';
 import { useOpponentAliases } from '@/hooks/useOpponentAliases';
 import { useOpponentNotes } from '@/hooks/useOpponentNotes';
 import { useAuth } from '@/hooks/useAuth';
-import { DemoAccountBanner } from '@/components/DemoAccountBanner';
 import { FilteredEmptyNotice } from '@/components/FilteredEmptyNotice';
 import { getOpponentProfile, getOpponentRecords } from '@/lib/stats';
 import { OpponentList } from './components/OpponentList';
@@ -116,7 +115,6 @@ export function OpponentsPage() {
   if (isLoading) {
     return (
       <div className="flex flex-col gap-6">
-        <DemoAccountBanner />
         <div className="text-muted-foreground">{t('opponents.loading')}</div>
       </div>
     );
@@ -125,7 +123,6 @@ export function OpponentsPage() {
   if (allMatches.length === 0) {
     return (
       <div className="flex flex-col gap-6">
-        <DemoAccountBanner />
         <div className="flex flex-col items-center gap-4 py-16 text-center">
           <h1 className="text-2xl font-semibold tracking-tight">{t('opponents.empty.title')}</h1>
           <p className="max-w-md text-muted-foreground">{t('opponents.empty.body')}</p>
@@ -146,7 +143,6 @@ export function OpponentsPage() {
   if (allOpponentsNamed.length === 0) {
     return (
       <div className="flex flex-col gap-6">
-        <DemoAccountBanner />
         <div className="flex flex-col items-center gap-2 py-16 text-center">
           <h2 className="text-xl font-semibold tracking-tight">{t('opponents.noTags.title')}</h2>
           <p className="max-w-md text-muted-foreground">{t('opponents.noTags.body')}</p>
@@ -160,7 +156,6 @@ export function OpponentsPage() {
 
   return (
     <div className="flex flex-col gap-6">
-      <DemoAccountBanner />
       {filterActive && matches.length === 0 && <FilteredEmptyNotice />}
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-[320px_1fr]">

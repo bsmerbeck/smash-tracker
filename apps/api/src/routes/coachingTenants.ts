@@ -22,6 +22,7 @@ import {
   listClients,
 } from '../coaching/tenants.js';
 import { resolveTenantAccess } from '../research/access.js';
+import { isDemoAccountSubject } from '../research/demoAccount.js';
 import { isPathSafeTenantId } from '../research/subjectKind.js';
 import { ConflictError, ForbiddenError, NotFoundError } from '../services/rtdb.js';
 
@@ -224,6 +225,26 @@ const coachingTenantsRoutes: FastifyPluginAsyncZod = async (app) => {
       },
     },
     async (request, reply) => {
+      // Phase 30.3 (Gate 6 corrective, defect A4): ACTOR-scoped demo
+      // refusal, FIRST statement in the handler — above every read
+      // `exportClient` performs. A demo/research account must not be able to
+      // bulk-extract a whole workspace as a machine-readable dump, and the
+      // existing research-tenant refusal inside `exportClient` keys on the
+      // CLIENT, so a demo coach exporting an ORDINARY fictional client's
+      // workspace passed straight through it.
+      //
+      // Reuses the 403 shape this route already declares and already returns
+      // for a `ForbiddenError`, so no new status class or response schema is
+      // introduced. The check reads only the caller's own uid, so it is not
+      // an existence oracle for `:clientId`.
+      if (isDemoAccountSubject(app.demoAccountConfig, request.uid)) {
+        return reply.code(403).send({
+          error: 'Forbidden',
+          message: 'Workspace export is not available for this account',
+          statusCode: 403,
+        });
+      }
+
       try {
         return await exportClient(
           app.firebase.database,

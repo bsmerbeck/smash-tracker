@@ -345,37 +345,3 @@ describe('MatchupsPage', () => {
     expect(screen.getByText('alice')).toBeInTheDocument();
   });
 });
-
-// Phase 30.3 (Gate 6, owner/Codex hard gate): the persistent demo-account
-// label on the Matchups surface — one of the seven required surfaces.
-describe('MatchupsPage — demo account banner', () => {
-  beforeEach(() => {
-    resetAuthMock();
-    vi.clearAllMocks();
-    window.localStorage.clear();
-    upsertMe.mockResolvedValue({ uid: 'test-uid', email: 'test@example.com' });
-    setMockUser(makeMockUser());
-  });
-
-  it('shows the demo-account banner even on the fighterless empty state', async () => {
-    getFighters.mockResolvedValue({ primary: [], secondary: [] });
-    listMatches.mockResolvedValue([]);
-    getMe.mockResolvedValue(defaultProfile({ isDemoAccount: true }));
-
-    renderMatchups();
-
-    expect(await screen.findByText("You haven't picked any fighters yet!")).toBeInTheDocument();
-    expect(screen.getByTestId('demo-account-banner')).toBeInTheDocument();
-  });
-
-  it('positive control: shows no demo-account banner for an ordinary account', async () => {
-    getFighters.mockResolvedValue({ primary: [], secondary: [] });
-    listMatches.mockResolvedValue([]);
-    getMe.mockResolvedValue(defaultProfile({ isDemoAccount: false }));
-
-    renderMatchups();
-
-    await screen.findByText("You haven't picked any fighters yet!");
-    expect(screen.queryByTestId('demo-account-banner')).not.toBeInTheDocument();
-  });
-});
