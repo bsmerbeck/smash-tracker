@@ -151,7 +151,10 @@ function collectRoutes(node: ReactNode, parentPath: string, parentGated: boolean
 }
 
 const ENUMERATED: EnumeratedRoute[] = [];
-collectRoutes((AppRouter() as ReactElement).props.children, '/', false);
+// `props` is `unknown` on a bare `ReactElement` under the build-mode program
+// (`tsc -b`), so narrow it the same way `collectRoutes`/`containsProtectedRoute`
+// already do rather than reaching through an untyped member.
+collectRoutes((AppRouter() as ReactElement<{ children?: ReactNode }>).props.children, '/', false);
 
 const AUTHENTICATED_PATHS = [
   ...new Set(ENUMERATED.filter((r) => r.authenticated).map((r) => r.path)),
