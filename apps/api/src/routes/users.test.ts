@@ -1036,6 +1036,108 @@ describe('GET /api/users/me/enrichment/attribution', () => {
     expect(entry.vod.sourcePageUrl).toBe('https://liquipedia.net/smash/Supernova/2026_VODs');
   });
 
+  it('30.3 integration follow-up: returns the CHARACTERS and STOCKS halves for a seat-proven witness', async () => {
+    const { app, database } = buildTestApp();
+    database.seed(`researchEnrichmentProjection/${TEST_UID}/match-1`, {
+      matchKey: 'match-1',
+      targetSetId: 'set-1',
+      projectedSubjectSeat: 1,
+      projectedSubjectCharRaw: 'Fox',
+      projectedSubjectFighterId: 8,
+      projectedOpponentCharRaw: 'Falco',
+      projectedOpponentFighterId: 22,
+      charsObservationId: 'obs-chars',
+      charsSourceRevisionId: 20,
+      projectedStocksLeft: 2,
+      stocksObservationId: 'obs-chars',
+      stocksSourceRevisionId: 20,
+    });
+
+    const response = await app.inject({
+      method: 'GET',
+      url: '/api/users/me/enrichment/attribution?keys=match-1',
+      headers: authHeader(),
+    });
+
+    expect(response.statusCode).toBe(200);
+    const entry = response.json().attributions[0];
+    expect(entry.characters).toEqual({
+      subjectRaw: 'Fox',
+      opponentRaw: 'Falco',
+      subjectFighterId: 8,
+      opponentFighterId: 22,
+    });
+    expect(entry.stocks).toEqual({ stocksLeft: 2 });
+    // No stage/VOD claim was made — those halves stay absent.
+    expect(entry.stage).toBeUndefined();
+    expect(entry.vod).toBeUndefined();
+  });
+
+  it('30.3 integration follow-up: the CHARACTERS half is present with a flagged-unmapped fighter id omitted when orientation is proven but one side is unmapped, and STOCKS stays absent with no committed value', async () => {
+    const { app, database } = buildTestApp();
+    database.seed(`researchEnrichmentProjection/${TEST_UID}/match-1`, {
+      matchKey: 'match-1',
+      targetSetId: 'set-1',
+      projectedSubjectSeat: 1,
+      projectedSubjectCharRaw: 'SomeUnreviewedCode',
+      // No `projectedSubjectFighterId` — flagged unmapped, never guessed.
+      projectedOpponentCharRaw: 'Falco',
+      projectedOpponentFighterId: 22,
+      charsObservationId: 'obs-chars',
+      charsSourceRevisionId: 20,
+      // No `projectedStocksLeft` — the stocks half never committed.
+    });
+
+    const response = await app.inject({
+      method: 'GET',
+      url: '/api/users/me/enrichment/attribution?keys=match-1',
+      headers: authHeader(),
+    });
+
+    expect(response.statusCode).toBe(200);
+    const entry = response.json().attributions[0];
+    expect(entry.characters).toEqual({
+      subjectRaw: 'SomeUnreviewedCode',
+      opponentRaw: 'Falco',
+      opponentFighterId: 22,
+    });
+    expect(entry.characters.subjectFighterId).toBeUndefined();
+    expect(entry.stocks).toBeUndefined();
+  });
+
+  it('30.3 integration follow-up: omits BOTH the CHARACTERS and STOCKS halves for an orientation-abstained witness, even when stage/VOD are present', async () => {
+    const { app, database } = buildTestApp();
+    database.seed(`researchEnrichmentProjection/${TEST_UID}/match-1`, {
+      matchKey: 'match-1',
+      targetSetId: 'set-1',
+      // No `projectedSubjectSeat` — orientation never proven (abstention),
+      // even though a stage claim exists alongside it.
+      projectedStageId: 3,
+      projectedStageName: 'Battlefield',
+      stageObservationId: 'obs-stage',
+      stageSourceRevisionId: 42,
+    });
+    seedObservation(
+      database,
+      'obs-stage',
+      'Supernova/2026',
+      'https://liquipedia.net/smash/Supernova/2026',
+      42,
+    );
+
+    const response = await app.inject({
+      method: 'GET',
+      url: '/api/users/me/enrichment/attribution?keys=match-1',
+      headers: authHeader(),
+    });
+
+    expect(response.statusCode).toBe(200);
+    const entry = response.json().attributions[0];
+    expect(entry.characters).toBeUndefined();
+    expect(entry.stocks).toBeUndefined();
+    expect(entry.stage).toBeDefined();
+  });
+
   it('omits a witness that claims NEITHER field (every pending member cleared without a commit)', async () => {
     const { app, database } = buildTestApp();
     database.seed(`researchEnrichmentProjection/${TEST_UID}/match-1`, {
