@@ -15,6 +15,8 @@ import {
   revokeReviewDelivery,
 } from '../coaching/reviewDeliveries.js';
 import { readSubjectKind } from '../research/subjectKind.js';
+import { isDemoAccountSubject } from '../research/demoAccount.js';
+import { NotFoundError } from '../services/rtdb.js';
 
 const reviewIdParamsSchema = z.object({
   clientId: z.string().min(1),
@@ -108,6 +110,31 @@ const coachingReviewDeliveriesRoutes: FastifyPluginAsyncZod<
       },
     },
     async (request, reply) => {
+      // Phase 30.3 (Gate 6 corrective, defect A3 — ACTOR-scoped demo
+      // refusal). Load-bearing ordering: this is the FIRST statement in the
+      // handler, above `readSubjectKind`'s read, above the mint write, and
+      // above the `review_delivery_created` emission, so a refused request
+      // performs no read of the review, leaves the tree byte-identical, and
+      // emits nothing.
+      //
+      // This is NOT a duplicate of `createReviewDelivery`'s own demo check.
+      // That one keys on the CLIENT TENANT (`tenantId`) and answers "is the
+      // workspace being delivered a demo workspace." It does not answer "is
+      // the COACH doing the delivering a demo account" — so a demo coach
+      // (IzAw) who passes an ORDINARY fictional client's tenant id walked
+      // straight through it and minted a publicly resolvable token. Both
+      // checks stay: they cover different threats, and neither implies the
+      // other.
+      //
+      // Refuses with the byte-identical `NotFoundError` message the
+      // tenant-scoped guard below uses, so the two refusals are
+      // indistinguishable on the wire (D-05 no-oracle).
+      if (isDemoAccountSubject(app.demoAccountConfig, request.uid)) {
+        throw new NotFoundError(
+          `Review ${request.params.reviewId} has no published version ${request.body.version}`,
+        );
+      }
+
       // RTEN-04 (D-06, review finding 29-06 MEDIUM): resolved from the SAME
       // `:clientId` the `requireMembership` preHandler already checked, at
       // the TOP of the handler, before the mint mutation below.
