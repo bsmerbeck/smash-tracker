@@ -99,6 +99,15 @@ export function EditMatchForm({
   const matchKeys = useMemo(() => [match.id], [match.id]);
   const attribution = useEnrichmentAttribution(matchKeys);
   const vodIsSourceOwned = match.vodUrl != null && attribution[match.id]?.vod != null;
+  // Phase 30.3 Gate 5: the same source-owned-note contract, extended to the
+  // two new evidence halves — each reads ONLY its own half (same BLOCKER-2
+  // discipline as `vodIsSourceOwned` above). `fighter_id`/`opponent_id` are
+  // required positive ints on every stored `Match` (never absent the way
+  // `vodUrl` legitimately can be), so unlike the VOD note this one gates on
+  // nothing but the witness itself; `stocksLeft` mirrors `vodIsSourceOwned`'s
+  // shape exactly, since it IS optional on a stored match.
+  const charactersAreSourceOwned = attribution[match.id]?.characters != null;
+  const stocksAreSourceOwned = match.stocksLeft != null && attribution[match.id]?.stocks != null;
 
   function handleOpenChange(next: boolean) {
     onOpenChange(next);
@@ -139,6 +148,22 @@ export function EditMatchForm({
           {vodIsSourceOwned && (
             <p
               data-testid="edit-match-vod-source-owned-note"
+              className="mt-1 text-xs text-muted-foreground"
+            >
+              {t('enrichment.editForm.sourceOwnedNote')}
+            </p>
+          )}
+          {charactersAreSourceOwned && (
+            <p
+              data-testid="edit-match-characters-source-owned-note"
+              className="mt-1 text-xs text-muted-foreground"
+            >
+              {t('enrichment.editForm.sourceOwnedNote')}
+            </p>
+          )}
+          {stocksAreSourceOwned && (
+            <p
+              data-testid="edit-match-stocks-source-owned-note"
               className="mt-1 text-xs text-muted-foreground"
             >
               {t('enrichment.editForm.sourceOwnedNote')}
