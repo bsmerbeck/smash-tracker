@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import type { FakeDatabase } from '../test-support/fakeDatabase.js';
-import { authHeader, buildTestApp, TEST_EMAIL, TEST_UID } from '../test-support/testApp.js';
+import {
+  authHeader,
+  buildTestApp,
+  registerUser,
+  TEST_EMAIL,
+  TEST_UID,
+} from '../test-support/testApp.js';
 
 /**
  * Shared by every describe block below that asserts on `eventLedger` D-event
@@ -613,7 +619,48 @@ describe('GET /api/users/me', () => {
       fighters: { primary: [1, 2], secondary: [3] },
       coachingModeEnabled: false,
       onboardingIntent: null,
+      isDemoAccount: false,
     });
+  });
+
+  // Phase 30.3 Gate 6: the web's demo label and affordance removals are
+  // driven ENTIRELY by this field — the client must never learn the answer by
+  // hardcoding uids. It is derived from the same allowlist that enforces the
+  // server-side refusals, so the label a user sees and the refusals they hit
+  // can never disagree.
+  it('reports isDemoAccount true for a uid on the demo allowlist, and false for an ordinary uid on the same app', async () => {
+    const { app, auth, database } = buildTestApp({
+      demo: { demoUids: new Set([TEST_UID]) },
+    });
+
+    await app.inject({ method: 'PUT', url: '/api/users/me', headers: authHeader() });
+    const demoResponse = await app.inject({
+      method: 'GET',
+      url: '/api/users/me',
+      headers: authHeader(),
+    });
+    expect(demoResponse.statusCode).toBe(200);
+    expect(demoResponse.json()).toMatchObject({ uid: TEST_UID, isDemoAccount: true });
+
+    // Positive control on the SAME app instance: an ordinary account must not
+    // inherit the flag just because the allowlist is configured.
+    registerUser(auth, 'ordinary-token', {
+      uid: 'ordinary-uid',
+      email: 'ordinary@test.com',
+    });
+    const ordinaryHeaders = { authorization: 'Bearer ordinary-token' };
+    await app.inject({ method: 'PUT', url: '/api/users/me', headers: ordinaryHeaders });
+    const ordinaryResponse = await app.inject({
+      method: 'GET',
+      url: '/api/users/me',
+      headers: ordinaryHeaders,
+    });
+    expect(ordinaryResponse.statusCode).toBe(200);
+    expect(ordinaryResponse.json()).toMatchObject({
+      uid: 'ordinary-uid',
+      isDemoAccount: false,
+    });
+    expect(database.dump()).toBeDefined();
   });
 
   // Phase 11 walkthrough fix round 1 (FB-3): coaching mode is an explicit

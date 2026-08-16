@@ -107,8 +107,23 @@ describe('userProfileSchema', () => {
       fighters: { primary: [1, 2], secondary: [] },
       coachingModeEnabled: false,
       onboardingIntent: null,
+      isDemoAccount: false,
     };
     expect(userProfileSchema.parse(profile)).toEqual(profile);
+  });
+
+  // Phase 30.3 Gate 6: required for the same reason as coachingModeEnabled —
+  // the API always derives a real boolean, and the web's demo label and
+  // affordance removals must never fall back to a client-side default.
+  it('rejects a profile missing isDemoAccount', () => {
+    const profile = {
+      uid: 'abc123',
+      email: 'a@example.com',
+      fighters: { primary: [1, 2], secondary: [] },
+      coachingModeEnabled: false,
+      onboardingIntent: null,
+    };
+    expect(() => userProfileSchema.parse(profile)).toThrow();
   });
 
   // Phase 11 walkthrough fix round 1 (FB-3): the API always defaults this
@@ -143,6 +158,19 @@ describe('userProfileSchema', () => {
       fighters: { primary: [1, 2], secondary: [] },
       coachingModeEnabled: false,
       onboardingIntent: 'scout',
+      isDemoAccount: false,
+    };
+    expect(userProfileSchema.parse(profile)).toEqual(profile);
+  });
+
+  it('carries isDemoAccount true through unchanged', () => {
+    const profile = {
+      uid: 'demo-uid',
+      email: 'demo@example.com',
+      fighters: { primary: [], secondary: [] },
+      coachingModeEnabled: true,
+      onboardingIntent: null,
+      isDemoAccount: true,
     };
     expect(userProfileSchema.parse(profile)).toEqual(profile);
   });

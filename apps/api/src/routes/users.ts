@@ -18,6 +18,7 @@ import { buildDomainEnvelope } from '../events/envelope.js';
 import { createEvent } from '../events/ledger.js';
 import { NotFoundError, RtdbService } from '../services/rtdb.js';
 import { composeCoverageResponse } from '../research/coverageResponse.js';
+import { isDemoAccountSubject } from '../research/demoAccount.js';
 import { readEnrichmentObservation } from '../research/enrichment/store.js';
 
 /**
@@ -385,6 +386,11 @@ const usersRoutes: FastifyPluginAsyncZod = async (app) => {
         fighters,
         coachingModeEnabled: user.coachingModeEnabled ?? false,
         onboardingIntent: user.onboardingIntent ?? null,
+        // Phase 30.3 Gate 6: DERIVED from the same allowlist that enforces
+        // the server-side demo guards, never a stored member — one source of
+        // truth, so the label the user sees and the refusals they hit can
+        // never disagree. Absent config ⇒ false ⇒ every account ordinary.
+        isDemoAccount: isDemoAccountSubject(app.demoAccountConfig, request.uid),
       };
     },
   );

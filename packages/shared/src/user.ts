@@ -54,6 +54,17 @@ export type User = z.infer<typeof userSchema>;
  * Phase 13 (ONBD-02): `onboardingIntent` follows the same always-present
  * convention — the API defaults it to `null` when unset, so routing/client
  * logic can rely on the field existing without an `?? null` of its own.
+ *
+ * Phase 30.3 Gate 6: `isDemoAccount` is DERIVED, never stored — it is the
+ * server's answer to `isDemoAccountSubject(demoConfig, uid)` for the caller,
+ * not a member of the `users/{uid}` node (there is no such member, and a
+ * stored copy could drift from the allowlist that actually enforces the
+ * guards). It exists because the demo isolation label and affordance
+ * removals are a PRODUCT requirement the web cannot satisfy without knowing
+ * the answer, and the web must never learn it by hardcoding uids. Always
+ * present, defaulted `false` server-side, exactly like `coachingModeEnabled`
+ * — a client should never need an `?? false` of its own, and an absent
+ * config means every account is ordinary.
  */
 export const userProfileSchema = z.object({
   uid: z.string().min(1),
@@ -64,5 +75,6 @@ export const userProfileSchema = z.object({
   }),
   coachingModeEnabled: z.boolean(),
   onboardingIntent: z.enum(ONBOARDING_INTENTS).nullable(),
+  isDemoAccount: z.boolean(),
 });
 export type UserProfile = z.infer<typeof userProfileSchema>;
