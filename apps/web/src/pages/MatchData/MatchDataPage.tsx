@@ -11,7 +11,6 @@ import { useStageFavorites, useToggleStageFavorite } from '@/hooks/useStageFavor
 import { useSubjectPath } from '@/hooks/useSubjectPath';
 import { getFighterById } from '@/data/sprites';
 import { ChooseFavoritesPrompt } from '@/components/ChooseFavoritesPrompt';
-import { DemoAccountBanner } from '@/components/DemoAccountBanner';
 import { FilteredEmptyNotice } from '@/components/FilteredEmptyNotice';
 import { inferFighterIdsFromMatches } from '@/lib/inferredFighters';
 import { AddMatchForm } from '@/pages/Dashboard/components/AddMatchForm';
@@ -56,7 +55,6 @@ export function MatchDataPage() {
   if (fightersLoading || matchesLoading) {
     return (
       <div className="flex flex-col gap-6">
-        <DemoAccountBanner />
         <div className="text-muted-foreground">{t('matchData.loading')}</div>
       </div>
     );
@@ -65,7 +63,6 @@ export function MatchDataPage() {
   if (fighterSprites.length === 0) {
     return (
       <div className="flex flex-col gap-6">
-        <DemoAccountBanner />
         <div className="flex flex-col items-center gap-4 py-16 text-center">
           <h1 className="text-2xl font-semibold tracking-tight">{t('shared.noFighters.title')}</h1>
           <p className="max-w-md text-muted-foreground">{t('shared.noFighters.subtitle')}</p>
@@ -89,7 +86,6 @@ export function MatchDataPage() {
   if (allMatches.length === 0) {
     return (
       <div className="flex flex-col gap-6">
-        <DemoAccountBanner />
         <div className="flex flex-col items-center gap-2 py-16 text-center">
           <h2 className="text-xl font-semibold tracking-tight">{t('matchData.noMatches')}</h2>
           <div className="mt-2 flex flex-wrap justify-center gap-2">
@@ -105,7 +101,6 @@ export function MatchDataPage() {
 
   return (
     <div className="flex flex-col gap-6">
-      <DemoAccountBanner />
       {usingInferredFighters && <ChooseFavoritesPrompt />}
       {filterActive && matches.length === 0 && <FilteredEmptyNotice />}
 

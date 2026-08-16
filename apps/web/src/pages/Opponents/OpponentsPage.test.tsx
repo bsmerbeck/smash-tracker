@@ -8,6 +8,7 @@ import {
   AnalyticsFilterProvider,
   ANALYTICS_FILTER_STORAGE_KEY,
 } from '@/context/AnalyticsFilterContext';
+import { useProfile } from '@/hooks/useProfile';
 import { OpponentsPage } from './OpponentsPage';
 import { resetAuthMock, setMockUser, makeMockUser } from '@/test/mockAuth';
 import { SpriteList } from '@/data/sprites';
@@ -100,6 +101,24 @@ function makeMatch(overrides: Partial<Record<string, unknown>> = {}) {
   };
 }
 
+/**
+ * Phase 30.3 (Gate 6 corrective, defect A2): stands in for the app shell's
+ * own `GET /api/users/me` subscription.
+ *
+ * `DemoAccountBanner` used to be mounted by this page and is now mounted once
+ * in `MainLayout`, which `ProtectedRoute` wraps around every authenticated
+ * route. The banner is what subscribes to the profile query, so in the real
+ * app that query is in flight from the moment the shell mounts — strictly
+ * before any of this page's own demo-gated affordances render. These tests
+ * mount the page WITHOUT its layout, so without this stand-in they race the
+ * profile fetch and read `isDemoAccount` as a not-yet-resolved `false`.
+ * Renders nothing; it exists purely for the subscription.
+ */
+function ShellProfileSubscription() {
+  useProfile();
+  return null;
+}
+
 function renderOpponents(initialEntry = '/opponents') {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
@@ -107,6 +126,7 @@ function renderOpponents(initialEntry = '/opponents') {
       <MemoryRouter initialEntries={[initialEntry]}>
         <AuthProvider>
           <AnalyticsFilterProvider>
+            <ShellProfileSubscription />
             <Routes>
               <Route path="/opponents" element={<OpponentsPage />} />
               <Route path="/dashboard" element={<div>Dashboard page</div>} />
@@ -931,40 +951,5 @@ describe('OpponentsPage', () => {
       expect(screen.getByRole('button', { name: /Export H2H/ })).toBeEnabled();
       expect(screen.getByRole('button', { name: /Copy as text/ })).toBeEnabled();
     });
-  });
-});
-
-// Phase 30.3 (Gate 6, owner/Codex hard gate): the persistent demo-account
-// label on the Opponents surface — one of the seven required surfaces.
-describe('OpponentsPage — demo account banner', () => {
-  beforeEach(() => {
-    resetAuthMock();
-    vi.clearAllMocks();
-    window.localStorage.clear();
-    upsertMe.mockResolvedValue({ uid: 'test-uid', email: 'test@example.com' });
-    listTournaments.mockResolvedValue([]);
-    listAliases.mockResolvedValue({});
-    listNotes.mockResolvedValue({});
-    setMockUser(makeMockUser());
-  });
-
-  it('shows the demo-account banner even on the no-matches hero empty state', async () => {
-    listMatches.mockResolvedValue([]);
-    getMe.mockResolvedValue(defaultProfile({ isDemoAccount: true }));
-
-    renderOpponents();
-
-    expect(await screen.findByText('No matches to scout yet!')).toBeInTheDocument();
-    expect(screen.getByTestId('demo-account-banner')).toBeInTheDocument();
-  });
-
-  it('positive control: shows no demo-account banner for an ordinary account', async () => {
-    listMatches.mockResolvedValue([]);
-    getMe.mockResolvedValue(defaultProfile({ isDemoAccount: false }));
-
-    renderOpponents();
-
-    await screen.findByText('No matches to scout yet!');
-    expect(screen.queryByTestId('demo-account-banner')).not.toBeInTheDocument();
   });
 });

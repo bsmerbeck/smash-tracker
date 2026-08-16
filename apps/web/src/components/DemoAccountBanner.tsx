@@ -18,10 +18,17 @@ import { useIsDemoAccount } from '@/hooks/useIsDemoAccount';
  *
  * Persistent (not a dismissible toast) — no close affordance exists, matches
  * `ResearchSnapshotBanner`'s own precedent for a persistent,
- * assistive-technology-announced advisory (`role="status"`). Callers mount
- * it at the very top of every returned render branch (loading, empty, and
- * populated) on each of the seven required surfaces so it's visible without
- * scrolling regardless of which branch a demo account's data happens to hit.
+ * assistive-technology-announced advisory (`role="status"`).
+ *
+ * Phase 30.3 (Gate 6 corrective, defect A2): mounted EXACTLY ONCE, in
+ * `@/layouts/MainLayout` — the shell `ProtectedRoute` wraps around every
+ * authenticated route — never in an individual page. The previous
+ * seven-page mounting model silently missed Tournament Detail, the blocked
+ * Prep brief, Scout, Reports, Profile, and all `/coach/:clientId/*`
+ * subroutes. Because the mount now sits above the page's own render
+ * branches, it is visible without scrolling on every branch (loading, empty,
+ * populated) of every page for free. `demoBannerCoverage.test.tsx` locks
+ * both halves: single mount site, and route-table-derived coverage.
  *
  * Renders nothing for an ordinary account, or while the profile read is
  * pending/errored (`useIsDemoAccount()` defaults `false` in both cases) —
@@ -39,7 +46,7 @@ export function DemoAccountBanner() {
     <div
       role="status"
       data-testid="demo-account-banner"
-      className="rounded-md border border-amber-500/50 bg-amber-500/10 px-4 py-2 text-sm font-medium text-amber-900 dark:border-amber-400/40 dark:bg-amber-400/10 dark:text-amber-200"
+      className="mb-4 rounded-md border border-amber-500/50 bg-amber-500/10 px-4 py-2 text-sm font-medium text-amber-900 dark:border-amber-400/40 dark:bg-amber-400/10 dark:text-amber-200"
     >
       {t('demo.accountBanner')}
     </div>
