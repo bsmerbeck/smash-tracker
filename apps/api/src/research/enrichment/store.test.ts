@@ -755,9 +755,10 @@ describe('sweepOutdatedFamilyObservations', () => {
   // candidates. The sweep must select from the RAW tree.
   it('sweeps a schema-INVALID old-generation record (old-shape stocks) that the schema-validating reader cannot even see', async () => {
     const database = new FakeDatabase();
-    // Raw-seeded: fails the CURRENT schema (stocks tuple requires exactly
-    // two members) so writeEnrichmentObservation could never produce it —
-    // exactly the shape a prior schema generation left behind.
+    // Raw-seeded: fails the CURRENT schema even after the read-side
+    // two-seat normalization (a wrong-typed seat, which no normalization
+    // may repair) — exactly the class a prior schema generation leaves
+    // behind, and one writeEnrichmentObservation could never produce.
     await database.ref(`researchEnrichmentObservations/${TENANT_ID}/old-shape-1`).set({
       observationId: 'old-shape-1',
       sourceProvider: 'liquipedia',
@@ -772,7 +773,7 @@ describe('sweepOutdatedFamilyObservations', () => {
       fetchedAtMs: 100,
       observedAtMs: 100,
       matchingStatus: 'unmatched',
-      games: [{ ordinal: 1, stocks: [3] }],
+      games: [{ ordinal: 1, stocks: [3, 'not-a-number'] }],
     });
 
     // Proof of the defect mechanism: the schema-validating reader skips it.
@@ -803,7 +804,7 @@ describe('sweepOutdatedFamilyObservations', () => {
       fetchedAtMs: 100,
       observedAtMs: 100,
       matchingStatus: 'unmatched',
-      games: [{ ordinal: 1, stocks: [3] }],
+      games: [{ ordinal: 1, stocks: [3, 'not-a-number'] }],
     });
     const result = await sweepOutdatedFamilyObservations(asDatabase(database), TENANT_ID);
     expect(result.removedObservationIds).toEqual([]);
@@ -811,6 +812,53 @@ describe('sweepOutdatedFamilyObservations', () => {
       .ref(`researchEnrichmentObservations/${TENANT_ID}/current-but-malformed`)
       .get();
     expect(kept.exists()).toBe(true);
+  });
+
+  // 30.2 RTDB array-null-strip fix: the write side stores two-seat nullable
+  // members in forms that survive an RTDB round trip byte-stably, and the
+  // read side rebuilds the canonical tuples — the invariant is
+  // parse(write(x)) deep-equals parse(read-back-of-write(x)). FakeDatabase
+  // mirrors RTDB's array null-strip, so this round trip is the real shape.
+  it('round-trips two-seat nullable members through RTDB-parity storage byte-stably', async () => {
+    const database = new FakeDatabase();
+    const record = makeObservationRecord({
+      observationId: 'round-trip-1',
+      scores: [null, 3],
+      games: [
+        { ordinal: 1, stocks: [null, 0], rawChars: ['Cloud', null] },
+        { ordinal: 2, stocks: [null, null] },
+      ],
+    });
+    await writeEnrichmentObservation(asDatabase(database), TENANT_ID, record);
+
+    const readBack = await readEnrichmentObservation(
+      asDatabase(database),
+      TENANT_ID,
+      'round-trip-1',
+    );
+    expect(readBack).not.toBeNull();
+    // The canonical parsed shape: null seats explicit, and the all-null
+    // member OMITTED (all-unknown is semantically the absent member — the
+    // documented normalization contract).
+    expect(readBack!.scores).toEqual([null, 3]);
+    expect(readBack!.games?.[0]?.stocks).toEqual([null, 0]);
+    expect(readBack!.games?.[0]?.rawChars).toEqual(['Cloud', null]);
+    expect(readBack!.games?.[1]?.stocks).toBeUndefined();
+
+    // BYTE-STABILITY: the stored bytes contain no raw array nulls (the
+    // one-null-seat members are the explicit numeric-keyed object form), so
+    // re-writing the read-back record reproduces the identical bytes — the
+    // corpus can never degrade again through this writer.
+    const storedOnce = JSON.stringify(
+      (database.dump().researchEnrichmentObservations as Record<string, unknown>)[TENANT_ID],
+    );
+    expect(storedOnce).toContain('{"1":3}');
+    expect(storedOnce).not.toContain('null');
+    await writeEnrichmentObservation(asDatabase(database), TENANT_ID, readBack!);
+    const storedTwice = JSON.stringify(
+      (database.dump().researchEnrichmentObservations as Record<string, unknown>)[TENANT_ID],
+    );
+    expect(storedTwice).toBe(storedOnce);
   });
 
   it('a raw child with missing/non-string family or version members matches neither predicate and is left alone', async () => {

@@ -1387,7 +1387,7 @@ describe('runEnrichmentBatch cross-tenant and cross-version freshness (30.2 defe
       fetchedAtMs: 100,
       observedAtMs: 100,
       matchingStatus: 'unmatched',
-      games: [{ ordinal: 1, stocks: [3] }],
+      games: [{ ordinal: 1, stocks: [3, 'not-a-number'] }],
     });
 
     const { client: secondClient, calls } = buildHappyPathClient();
@@ -1503,6 +1503,113 @@ describe('runEnrichmentBatch cross-tenant and cross-version freshness (30.2 defe
     expect(second.counts.attachmentsCreated).toBeGreaterThanOrEqual(1);
     const attachment = await database.ref(`researchEnrichmentAttachments/${TENANT_ID}/set-1`).get();
     expect(attachment.exists()).toBe(true);
+  });
+
+  it('the KOWLOON class: a stored current-version, receipt-less, stocks-bearing observation whose array was null-stripped by storage parses, enters the resolution union, and attaches on a skip-heavy run', async () => {
+    const database = new FakeDatabase();
+    await runHappyPath(database, 1_000);
+
+    // A second provider set the stored observation uniquely matches.
+    const completedAtSeconds = Math.floor(Date.UTC(2026, 0, 1) / 1000);
+    await database.ref(`researchSource/${TENANT_ID}/sets/set-2`).set({
+      providerSetId: 'set-2',
+      storageKey: 'set-2',
+      classification: 'complete',
+      ruleId: 'singles',
+      entrants: [
+        { entrantId: 'e1', name: 'TestPlayer' },
+        { entrantId: 'e2', name: 'KowloonFoe' },
+      ],
+      games: [{ gameId: 1, winnerEntrantId: 'e1' }],
+      totalGames: 1,
+      completedAt: completedAtSeconds,
+      event: {
+        tournamentSlug: 'test-cup-2026',
+        tournamentName: 'Test Cup 2026',
+        name: 'Test Cup 2026 Singles',
+      },
+      apiIds: { setId: 'set-2' },
+      ingestionRunId: 'seed-ingestion-run',
+      fetchedAtMs: 1,
+      lastObservedAtMs: 1,
+    });
+    await database.ref(`matches/${TENANT_ID}/sgg-set-2-g1`).set({ note: 'seed' });
+
+    // The production shape, seeded EXACTLY as the pre-fix pipeline stored
+    // it: a current-version observation written with a stocks array whose
+    // seat is null — the RTDB-parity fake degrades it to the sparse
+    // read-back form, which the pre-fix schema could not parse (so the
+    // resolution union could not see it: matched=0 on the top-up).
+    await database.ref(`researchEnrichmentObservations/${TENANT_ID}/kowloon-12`).set({
+      observationId: 'kowloon-12',
+      sourceProvider: 'liquipedia',
+      sourceWiki: 'smash',
+      contentType: 'stage-observation',
+      sourcePageTitle: 'KOWLOON/12/Bracket',
+      sourcePageUrl: 'https://liquipedia.net/smash/KOWLOON/12/Bracket',
+      sourceRevisionId: 44,
+      sourceContentHash: sha256Hex('kowloon-content'),
+      parserVersion: LIQUIPEDIA_PARSER_VERSION_BRACKET_LEGACY,
+      templateFamily: 'legacy',
+      fetchedAtMs: 900,
+      observedAtMs: 900,
+      matchingStatus: 'unmatched',
+      game: 'ultimate',
+      tournamentPageTitle: 'TestCup/2026',
+      tournamentStartggSlug: 'test-cup-2026',
+      players: [{ rawTag: 'TestPlayer' }, { rawTag: 'KowloonFoe' }],
+      scores: [1, 0],
+      vodUrl: 'https://www.youtube.com/watch?v=kowloon12',
+      rawVodUrl: 'https://www.youtube.com/watch?v=kowloon12',
+      games: [{ ordinal: 1, stocks: [null, 0] }],
+    });
+    const storedRaw = await database
+      .ref(`researchEnrichmentObservations/${TENANT_ID}/kowloon-12/games/0/stocks`)
+      .get();
+    // Proof the seed really is storage-degraded: a sparse array with a hole.
+    expect(0 in (storedRaw.val() as unknown[])).toBe(false);
+
+    const { client: secondClient, calls } = buildHappyPathClient();
+    const second = await runEnrichmentBatch({
+      database: asDatabase(database),
+      client: secondClient,
+      tenantId: TENANT_ID,
+      playerLabels: ['TestPlayer'],
+      targetGame: 'ultimate',
+      nowMs: 2_000,
+      hashHex: sha256Hex,
+      dryRun: false,
+    });
+
+    // Fully freshness-skipped, yet the degraded stored record parsed,
+    // resolved uniquely, was receipted, attached, and projected.
+    expect(calls.getWikitext.length).toBe(0);
+    expect(second.counts.resolvedMatched).toBeGreaterThanOrEqual(1);
+    const receipt = await database.ref(`researchEnrichmentReceipts/${TENANT_ID}/kowloon-12`).get();
+    expect(receipt.exists()).toBe(true);
+    const attachment = await database
+      .ref(`researchEnrichmentAttachments/${TENANT_ID}/set-2/kowloon-12`)
+      .get();
+    expect(attachment.exists()).toBe(true);
+    const row = await database.ref(`matches/${TENANT_ID}/sgg-set-2-g1`).get();
+    expect((row.val() as { vodUrl?: string }).vodUrl).toBe(
+      'https://www.youtube.com/watch?v=kowloon12',
+    );
+
+    // The following run is a strict no-op for it.
+    const { client: thirdClient } = buildHappyPathClient();
+    const third = await runEnrichmentBatch({
+      database: asDatabase(database),
+      client: thirdClient,
+      tenantId: TENANT_ID,
+      playerLabels: ['TestPlayer'],
+      targetGame: 'ultimate',
+      nowMs: 3_000,
+      hashHex: sha256Hex,
+      dryRun: false,
+    });
+    expect(third.counts.resolvedMatched).toBe(0);
+    expect(third.counts.receiptsWritten).toBe(0);
   });
 
   it('a dry run never sweeps', async () => {

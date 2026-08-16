@@ -211,6 +211,65 @@ export const LIQUIPEDIA_ATTRIBUTION_LICENSE_URL = 'https://creativecommons.org/l
 // Observation record
 // ---------------------------------------------------------------------------
 
+/**
+ * 30.2 production defect (the RTDB null-strip trap in ARRAY form): a
+ * two-seat positional array with nullable seats (`stocks`, `rawChars`,
+ * `scores`) is VALID going in and UNPARSEABLE coming back. RTDB strips null
+ * array members on storage (`[null, 0]` -> `{"1": 0}`); the SDK reads back
+ * SPARSE arrays whose holes are `undefined` (failing the nullable union)
+ * and whose fully-stripped tails SHORTEN the array (failing the tuple's
+ * length). Production blast radius: 1,196 current-generation records
+ * (mkleo 616 / sparg0 354 / hbox 226) schema-failed on read for exactly
+ * this.
+ *
+ * This preprocess normalizes the READ side in the schema itself — zero
+ * migration, the stored bytes stay as they are: holes/undefined seats
+ * become explicit `null`, a shortened array is right-padded to its
+ * two-seat structural length, and RTDB's numeric-keyed object form of a
+ * sparse array (`{"1": 0}`) is rebuilt positionally. Semantic equivalence
+ * holds by the schema's own vocabulary: a stripped seat and an explicit
+ * null both mean "unknown at this seat". Anything structurally foreign
+ * (three-plus members, an empty array, non-index keys) passes through
+ * UNCHANGED so the tuple still rejects it — this normalizes storage
+ * representations, it never weakens a bound.
+ */
+/** The three two-seat positional nullable tuples, declared once so the STORED schema (preprocess-wrapped) and the HTTP CONTRACT schema (plain, serializer-safe) share one bound definition. */
+const twoSeatRawCharsTuple = z
+  .tuple([
+    z.union([z.string().max(RESEARCH_ENRICHMENT_MAX_RAW_TEXT), z.null()]),
+    z.union([z.string().max(RESEARCH_ENRICHMENT_MAX_RAW_TEXT), z.null()]),
+  ])
+  .nullish();
+const twoSeatStocksTuple = z
+  .tuple([
+    z.union([z.number().int().min(0).max(99), z.null()]),
+    z.union([z.number().int().min(0).max(99), z.null()]),
+  ])
+  .nullish();
+const twoSeatScoresTuple = z
+  .tuple([z.union([z.number().int(), z.null()]), z.union([z.number().int(), z.null()])])
+  .nullish();
+
+function normalizeTwoSeatNullableArray(value: unknown): unknown {
+  if (value === null || value === undefined) {
+    return value;
+  }
+  if (Array.isArray(value)) {
+    if (value.length === 0 || value.length > 2) {
+      return value;
+    }
+    return [value[0] === undefined ? null : value[0], value[1] === undefined ? null : value[1]];
+  }
+  if (typeof value === 'object') {
+    const record = value as Record<string, unknown>;
+    const keys = Object.keys(record);
+    if (keys.length > 0 && keys.every((key) => key === '0' || key === '1')) {
+      return [record['0'] ?? null, record['1'] ?? null];
+    }
+  }
+  return value;
+}
+
 const researchEnrichmentPlayerEntrySchema = z.object({
   /**
    * 30.2 reliability gate (owner corrective directive, Gate 1): `.min(1)`
@@ -241,18 +300,10 @@ const researchEnrichmentGameEntrySchema = z.object({
   rawStage: z.string().max(RESEARCH_ENRICHMENT_MAX_RAW_TEXT).nullish(),
   stageForm: z.enum(RESEARCH_LIQUIPEDIA_STAGE_FORMS).nullish(),
   canonicalStageId: z.number().int().nullish(),
-  rawChars: z
-    .tuple([
-      z.union([z.string().max(RESEARCH_ENRICHMENT_MAX_RAW_TEXT), z.null()]),
-      z.union([z.string().max(RESEARCH_ENRICHMENT_MAX_RAW_TEXT), z.null()]),
-    ])
-    .nullish(),
-  stocks: z
-    .tuple([
-      z.union([z.number().int().min(0).max(99), z.null()]),
-      z.union([z.number().int().min(0).max(99), z.null()]),
-    ])
-    .nullish(),
+  // Two-seat positional nullable arrays: read-normalized against the RTDB
+  // null-strip trap — see `normalizeTwoSeatNullableArray`.
+  rawChars: z.preprocess(normalizeTwoSeatNullableArray, twoSeatRawCharsTuple),
+  stocks: z.preprocess(normalizeTwoSeatNullableArray, twoSeatStocksTuple),
   winnerSeat: z.union([z.literal(1), z.literal(2)]).nullish(),
 });
 
@@ -299,9 +350,10 @@ export const researchEnrichmentObservationRecordSchema = z.object({
       z.string().max(RESEARCH_ENRICHMENT_MAX_RAW_TEXT),
     ])
     .nullish(),
-  scores: z
-    .tuple([z.union([z.number().int(), z.null()]), z.union([z.number().int(), z.null()])])
-    .nullish(),
+  // Read-normalized against the RTDB null-strip trap — see
+  // `normalizeTwoSeatNullableArray`. (`rawScores` above needs no
+  // normalization: its seats are plain strings, never null.)
+  scores: z.preprocess(normalizeTwoSeatNullableArray, twoSeatScoresTuple),
   setWinnerSeat: z.union([z.literal(1), z.literal(2)]).nullish(),
   setWinnerDerived: z.boolean().nullish(),
   isBracketReset: z.boolean().nullish(),
@@ -328,6 +380,27 @@ export const researchEnrichmentObservationRecordSchema = z.object({
 export type ResearchEnrichmentObservationRecord = z.infer<
   typeof researchEnrichmentObservationRecordSchema
 >;
+
+/**
+ * The HTTP-CONTRACT variant of the observation record — member-for-member
+ * identical bounds, WITHOUT the two-seat read-normalization preprocess.
+ * `fastify-type-provider-zod`'s response serializer cannot compile a
+ * `z.preprocess` member, so the review-queue response schema below must
+ * reference this plain shape; that costs nothing, because every value a
+ * route serializes was READ through the stored schema and is therefore
+ * already in canonical two-seat form. This mirrors the file's existing
+ * stored-vs-contract split (`researchEnrichmentCoverageResponseSchema`).
+ */
+const researchEnrichmentGameEntryContractSchema = researchEnrichmentGameEntrySchema.extend({
+  rawChars: twoSeatRawCharsTuple,
+  stocks: twoSeatStocksTuple,
+});
+
+export const researchEnrichmentObservationRecordContractSchema =
+  researchEnrichmentObservationRecordSchema.extend({
+    scores: twoSeatScoresTuple,
+    games: z.array(researchEnrichmentGameEntryContractSchema).max(15).nullish(),
+  });
 
 // ---------------------------------------------------------------------------
 // Attachment record
@@ -738,9 +811,9 @@ export type ResearchEnrichmentReviewQueueCounts = z.infer<
   typeof researchEnrichmentReviewQueueCountsSchema
 >;
 
-/** `GET .../enrichment/review` — the queue itself (never an attached observation, `store.ts`'s own contract) plus its counts, in the route's deterministic sort order. */
+/** `GET .../enrichment/review` — the queue itself (never an attached observation, `store.ts`'s own contract) plus its counts, in the route's deterministic sort order. Uses the CONTRACT observation schema (no preprocess members — the response serializer cannot compile them; values are already canonical). */
 export const researchEnrichmentReviewQueueResponseSchema = z.object({
-  observations: z.array(researchEnrichmentObservationRecordSchema).max(500),
+  observations: z.array(researchEnrichmentObservationRecordContractSchema).max(500),
   counts: researchEnrichmentReviewQueueCountsSchema,
 });
 export type ResearchEnrichmentReviewQueueResponse = z.infer<
