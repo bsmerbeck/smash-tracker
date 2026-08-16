@@ -2,6 +2,7 @@ import { execFile, type ChildProcess } from 'node:child_process';
 import { once } from 'node:events';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
+import { HARNESS_READY_MARKER } from './harnessReadyMarker.js';
 
 /**
  * Phase 30.3 registry-operator hardening: the TERMINATION MATRIX for
@@ -33,12 +34,28 @@ interface ChildOutcome {
   elapsedMs: number;
 }
 
-function spawnHarness(
-  mode: string,
-  hardExitMs: number,
-): { child: ChildProcess; outcome: Promise<ChildOutcome> } {
+interface SpawnedHarness {
+  child: ChildProcess;
+  outcome: Promise<ChildOutcome>;
+  /**
+   * Resolves when the child has printed `marker`, rejects if it exits first.
+   *
+   * This replaces the fixed sleep the interruption test used to race against
+   * child startup with. A sleep encodes a GUESS about how long `tsx` needs to
+   * compile and boot the harness; that guess is wrong exactly when the machine
+   * is busy — i.e. when the file runs inside the full targeted group rather
+   * than alone — and the failure mode is a SIGINT delivered before the
+   * lifecycle handlers exist. Waiting for the child's own readiness statement
+   * removes the guess instead of padding it, which is why the fix is not
+   * "raise the timeout".
+   */
+  waitFor: (marker: string) => Promise<void>;
+}
+
+function spawnHarness(mode: string, hardExitMs: number): SpawnedHarness {
   const startedAt = Date.now();
   let output = '';
+  const listeners = new Set<() => void>();
   const child = execFile(TSX_BIN, [HARNESS, mode, String(hardExitMs)], {
     // A hard ceiling well past every assertion bound, so a regression fails
     // the test rather than hanging the suite.
@@ -46,6 +63,9 @@ function spawnHarness(
   });
   const collect = (chunk: string | Buffer): void => {
     output += String(chunk);
+    for (const notify of listeners) {
+      notify();
+    }
   };
   child.stdout?.on('data', collect);
   child.stderr?.on('data', collect);
@@ -55,7 +75,34 @@ function spawnHarness(
     output,
     elapsedMs: Date.now() - startedAt,
   }));
-  return { child, outcome };
+
+  const waitFor = (marker: string): Promise<void> =>
+    new Promise<void>((resolve, reject) => {
+      const check = (): void => {
+        if (output.includes(marker)) {
+          listeners.delete(check);
+          resolve();
+        }
+      };
+      listeners.add(check);
+      // A child that dies before announcing itself must fail the wait rather
+      // than hang it until the suite timeout.
+      void outcome.then((result) => {
+        listeners.delete(check);
+        if (result.output.includes(marker)) {
+          resolve();
+          return;
+        }
+        reject(
+          new Error(
+            `child exited (code ${result.code}, signal ${result.signal}) before printing "${marker}"\n${result.output}`,
+          ),
+        );
+      });
+      check();
+    });
+
+  return { child, outcome, waitFor };
 }
 
 describe('deriveTournamentRegistry lifecycle (child process — no open handles survive)', () => {
@@ -109,9 +156,10 @@ describe('deriveTournamentRegistry lifecycle (child process — no open handles 
   });
 
   it('INTERRUPTION: SIGINT terminates a run stuck on an unresponsive database, exit 130', async () => {
-    const { child, outcome } = spawnHarness('interrupt', 5_000);
-    // Give tsx time to boot the harness and reach the hung read before signalling.
-    await new Promise((resolve) => setTimeout(resolve, 2_000));
+    const { child, outcome, waitFor } = spawnHarness('interrupt', 5_000);
+    // Wait for the child's OWN statement that it has reached the hung read —
+    // never a fixed sleep. See `SpawnedHarness.waitFor`.
+    await waitFor(HARNESS_READY_MARKER);
     child.kill('SIGINT');
     const result = await outcome;
     expect(result.code).toBe(130);

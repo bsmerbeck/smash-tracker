@@ -27,12 +27,24 @@
  *
  * stdout markers (`operator-settled`, `cleanup-start`, `cleanup-complete`)
  * let the test distinguish a natural exit from a backstop-forced one.
+ *
+ * THE CHILD-READY MARKER. `interrupt` mode additionally prints
+ * `HARNESS_READY_MARKER` the moment the FIRST RTDB read is in flight and
+ * hanging. Before it existed, the test slept a fixed 2s and hoped that was
+ * long enough for `tsx` to compile, boot and reach the read; on a loaded
+ * machine — which is exactly what running the file inside the full targeted
+ * group produces — the SIGINT could land before the signal handlers were
+ * installed, and the child died of an unhandled default SIGINT instead of
+ * the lifecycle path under test. The marker turns that race into a
+ * synchronization point: the parent waits for proof the child is where the
+ * test needs it, then signals.
  */
 import type { Database } from 'firebase-admin/database';
 import { FakeDatabase } from '../src/test-support/fakeDatabase.js';
 import type { ResearchSourceSetRecord } from '@smash-tracker/shared';
 import { runRegistryOperator, type RegistryOperatorDeps } from './deriveTournamentRegistryCore.js';
 import { runWithLifecycle } from './enrichLifecycle.js';
+import { HARNESS_READY_MARKER } from './harnessReadyMarker.js';
 
 const mode = process.argv[2] ?? 'success';
 const hardExitMs = Number(process.argv[3] ?? '1500');
@@ -78,18 +90,34 @@ function seededDatabase(): Database {
   return database as unknown as Database;
 }
 
-/** A database whose every read fails or hangs — the two shapes an unreachable RTDB takes. */
-function brokenDatabase(kind: 'reject' | 'hang'): Database {
+/**
+ * A database whose every read fails or hangs — the two shapes an unreachable
+ * RTDB takes. `onFirstOperation` fires exactly once, synchronously, as the
+ * first call is issued: that is the earliest instant at which the operator is
+ * provably inside the work the interruption test wants to interrupt.
+ */
+function brokenDatabase(kind: 'reject' | 'hang', onFirstOperation?: () => void): Database {
+  let announced = false;
+  const announce = (): void => {
+    if (!announced) {
+      announced = true;
+      onFirstOperation?.();
+    }
+  };
   const makeRef = (): unknown => ({
     key: null,
-    get: () =>
-      kind === 'reject'
+    get: () => {
+      announce();
+      return kind === 'reject'
         ? Promise.reject(new Error('connect ECONNREFUSED 127.0.0.1:9000'))
-        : new Promise(() => undefined),
-    transaction: () =>
-      kind === 'reject'
+        : new Promise(() => undefined);
+    },
+    transaction: () => {
+      announce();
+      return kind === 'reject'
         ? Promise.reject(new Error('connect ECONNREFUSED 127.0.0.1:9000'))
-        : new Promise(() => undefined),
+        : new Promise(() => undefined);
+    },
   });
   return { ref: () => makeRef() } as unknown as Database;
 }
@@ -171,7 +199,12 @@ function planFor(): HarnessPlan {
       };
     case 'interrupt':
       return {
-        database: brokenDatabase('hang'),
+        // The marker is emitted from inside the hung read itself, so by the
+        // time the parent sees it the lifecycle wrapper has already installed
+        // its SIGINT/SIGTERM handlers (they are registered before `run` is
+        // ever called) and the operator is blocked exactly where the test
+        // needs it.
+        database: brokenDatabase('hang', () => console.log(HARNESS_READY_MARKER)),
         argv: [
           ...baseArgs('dry-run'),
           '--manifest-out',
