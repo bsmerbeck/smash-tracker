@@ -237,3 +237,54 @@ describe('MatchTable — Liquipedia attribution (Phase 30.2 Plan 11, ENR-09)', (
     expect(anchor).toHaveAttribute('href', 'https://liquipedia.net/smash/Bracket_Page');
   });
 });
+
+describe('MatchTable — character evidence (Phase 30.3 Gate 5)', () => {
+  beforeEach(() => {
+    resetAuthMock();
+    vi.clearAllMocks();
+    setMockUser(makeMockUser());
+    enrichmentAttribution.mockResolvedValue({ attributions: [] });
+  });
+
+  it('renders no character evidence for an un-enriched row (byte-identical to today)', async () => {
+    renderTable([makeMatch({ id: 'm1' })]);
+    await waitFor(() => expect(enrichmentAttribution).toHaveBeenCalled());
+    expect(screen.queryByTestId('liquipedia-character-evidence')).not.toBeInTheDocument();
+  });
+
+  it("renders the subject-first 'X vs Y' character evidence, with sprites, when both ids resolve", async () => {
+    enrichmentAttribution.mockResolvedValue({
+      attributions: [
+        {
+          matchKey: 'm1',
+          characters: {
+            subjectRaw: 'Mario',
+            opponentRaw: 'Luigi',
+            subjectFighterId: mario.id,
+            opponentFighterId: luigi.id,
+          },
+        },
+      ],
+    });
+    renderTable([makeMatch({ id: 'm1' })]);
+
+    const evidence = await screen.findByTestId('liquipedia-character-evidence');
+    expect(evidence.textContent).toContain('Mario');
+    expect(evidence.textContent).toContain('Luigi');
+    expect(screen.getByText('Character data from Liquipedia')).toBeInTheDocument();
+  });
+
+  it('falls back to the raw source text for an unmapped character id', async () => {
+    enrichmentAttribution.mockResolvedValue({
+      attributions: [
+        {
+          matchKey: 'm1',
+          characters: { subjectRaw: 'Some Unrecognized Tag', opponentRaw: 'Luigi' },
+        },
+      ],
+    });
+    renderTable([makeMatch({ id: 'm1' })]);
+
+    expect(await screen.findByText('Some Unrecognized Tag')).toBeInTheDocument();
+  });
+});
