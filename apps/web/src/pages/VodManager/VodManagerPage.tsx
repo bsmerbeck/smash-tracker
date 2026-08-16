@@ -1443,6 +1443,11 @@ export function VodManagerPage() {
                     tagVocabulary={tagVocabulary}
                     playlists={playlists}
                     onOpenMyShares={() => setMySharesOpen(true)}
+                    // Phase 30.3 Gate 5: same witness map this page already
+                    // reads for the VOD badge above — each half reads only
+                    // its own field, same BLOCKER-2 discipline.
+                    characterEvidence={enrichmentAttribution[selectedMatch.id]?.characters}
+                    stockEvidence={enrichmentAttribution[selectedMatch.id]?.stocks}
                   />
                 </div>
               )}
