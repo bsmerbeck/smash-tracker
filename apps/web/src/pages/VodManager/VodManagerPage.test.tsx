@@ -3933,4 +3933,59 @@ describe('VodManagerPage', () => {
       expect(screen.queryByTestId('liquipedia-license-note')).not.toBeInTheDocument();
     });
   });
+
+  describe('character/stock evidence in the match-detail card (Phase 30.3 Gate 5)', () => {
+    it('renders the character evidence row for a match whose seat orientation was proven, clearly marked as from Liquipedia', async () => {
+      listMatches.mockResolvedValue([makeMatch({ id: 'm1', vodUrl: 'https://youtu.be/abc123' })]);
+      enrichmentAttribution.mockResolvedValue({
+        attributions: [
+          {
+            matchKey: 'm1',
+            characters: { subjectRaw: 'Mario', opponentRaw: 'Luigi' },
+          },
+        ],
+      });
+      renderVodManager('/vod?match=m1');
+
+      const evidence = await screen.findByTestId('liquipedia-character-evidence');
+      expect(evidence.textContent).toContain('Mario');
+      expect(evidence.textContent).toContain('Luigi');
+      expect(screen.getByText('Character data from Liquipedia')).toBeInTheDocument();
+    });
+
+    it('renders the recorded stocksLeft with a stocks attribution badge when both are present', async () => {
+      listMatches.mockResolvedValue([
+        makeMatch({ id: 'm1', vodUrl: 'https://youtu.be/abc123', stocksLeft: 2 }),
+      ]);
+      enrichmentAttribution.mockResolvedValue({
+        attributions: [{ matchKey: 'm1', stocks: { stocksLeft: 2 } }],
+      });
+      renderVodManager('/vod?match=m1');
+
+      await screen.findByTestId('vod-match-meta');
+      expect(await screen.findByText('2 stocks left')).toBeInTheDocument();
+      expect(screen.getByText('Stock count from Liquipedia')).toBeInTheDocument();
+    });
+
+    it('renders the recorded stocksLeft with no attribution badge when no evidence exists', async () => {
+      listMatches.mockResolvedValue([
+        makeMatch({ id: 'm1', vodUrl: 'https://youtu.be/abc123', stocksLeft: 3 }),
+      ]);
+      renderVodManager('/vod?match=m1');
+
+      await screen.findByTestId('vod-match-meta');
+      expect(await screen.findByText('3 stocks left')).toBeInTheDocument();
+      expect(screen.queryByText('Stock count from Liquipedia')).not.toBeInTheDocument();
+    });
+
+    it('renders no character evidence and no stocksLeft row for a match with neither', async () => {
+      listMatches.mockResolvedValue([makeMatch({ id: 'm1', vodUrl: 'https://youtu.be/abc123' })]);
+      renderVodManager('/vod?match=m1');
+
+      await screen.findByTestId('vod-match-meta');
+      await waitFor(() => expect(enrichmentAttribution).toHaveBeenCalled());
+      expect(screen.queryByTestId('liquipedia-character-evidence')).not.toBeInTheDocument();
+      expect(screen.queryByText(/stock/i)).not.toBeInTheDocument();
+    });
+  });
 });

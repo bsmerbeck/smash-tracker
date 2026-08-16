@@ -402,6 +402,66 @@ describe('SetTimeline', () => {
     expect(screen.getByRole('button', { name: 'Edit VOD notes for Pools' })).toBeInTheDocument();
   });
 
+  describe('character/stock evidence in the game chip tooltip (Phase 30.3 Gate 5)', () => {
+    it('shows the stocks attribution badge alongside the recorded value when evidence exists', async () => {
+      const user = userEvent.setup();
+      enrichmentAttribution.mockResolvedValue({
+        attributions: [{ matchKey: 'g1', stocks: { stocksLeft: 2 } }],
+      });
+      const matches = [
+        makeMatch({ id: 'g1', time: 100, win: true, externalId: 'sgg:1:g1', stocksLeft: 2 }),
+      ];
+      renderTimeline(matches);
+
+      await user.hover(screen.getByText('BAT'));
+      const tips = await screen.findAllByText(/2 stocks left/);
+      expect(tips.length).toBeGreaterThan(0);
+      const badges = await screen.findAllByText('Stock count from Liquipedia');
+      expect(badges.length).toBeGreaterThan(0);
+    });
+
+    it('shows no stocks attribution badge when no evidence exists, even with a recorded value', async () => {
+      const user = userEvent.setup();
+      const matches = [
+        makeMatch({ id: 'g1', time: 100, win: true, externalId: 'sgg:1:g1', stocksLeft: 2 }),
+      ];
+      renderTimeline(matches);
+
+      await user.hover(screen.getByText('BAT'));
+      await screen.findAllByText(/2 stocks left/);
+      expect(screen.queryByText('Stock count from Liquipedia')).not.toBeInTheDocument();
+    });
+
+    it("shows the subject-first 'X vs Y' character evidence in the tooltip when the id is unmapped in the row's own fighter picks", async () => {
+      const user = userEvent.setup();
+      enrichmentAttribution.mockResolvedValue({
+        attributions: [
+          {
+            matchKey: 'g1',
+            characters: { subjectRaw: 'Mario', opponentRaw: 'Some Unrecognized Tag' },
+          },
+        ],
+      });
+      const matches = [makeMatch({ id: 'g1', time: 100, win: true, externalId: 'sgg:1:g1' })];
+      renderTimeline(matches);
+
+      await user.hover(screen.getByText('BAT'));
+      const evidence = await screen.findAllByTestId('liquipedia-character-evidence');
+      expect(evidence.length).toBeGreaterThan(0);
+      expect(evidence[0]!.textContent).toContain('Some Unrecognized Tag');
+    });
+
+    it('shows no character evidence in the tooltip for an un-enriched game', async () => {
+      const user = userEvent.setup();
+      const matches = [makeMatch({ id: 'g1', time: 100, win: true, externalId: 'sgg:1:g1' })];
+      renderTimeline(matches);
+
+      await user.hover(screen.getByText('BAT'));
+      await screen.findAllByText(/Mario vs Luigi/);
+      expect(screen.queryByTestId('liquipedia-character-evidence')).not.toBeInTheDocument();
+    });
+  });
+
   it('opens the lean Attach VOD dialog from the edit affordance (SETFEAT-03)', async () => {
     const user = userEvent.setup();
     const matches = [

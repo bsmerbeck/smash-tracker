@@ -60,6 +60,7 @@ import { useClearVodAndNotes } from '@/hooks/useVodNotes';
 import { useSubjectPath } from '@/hooks/useSubjectPath';
 import { useEnrichmentAttribution } from '@/hooks/useEnrichmentAttribution';
 import { LiquipediaAttributionBadge } from '@/components/enrichment/LiquipediaAttributionBadge';
+import { LiquipediaCharacterEvidence } from '@/components/enrichment/LiquipediaCharacterEvidence';
 import { buildMatchCsv, matchCsvFilename } from '../lib/matchCsv';
 import {
   applyMatchTableFilters,
@@ -203,18 +204,33 @@ export function MatchTable({
         header: columnLabel(t, 'fighter'),
         accessorFn: (row) =>
           row.fighter ? localizedFighterName(row.fighter.id, t) : t('common.unknown'),
-        cell: ({ row }) => (
-          <div className="flex items-center gap-2">
-            {row.original.fighter && (
-              <img src={row.original.fighter.url} alt="" className="size-6 object-contain" />
-            )}
-            <span>
-              {row.original.fighter
-                ? localizedFighterName(row.original.fighter.id, t)
-                : t('common.unknown')}
-            </span>
-          </div>
-        ),
+        cell: ({ row }) => {
+          // Phase 30.3 Gate 5: the "X vs Y" character evidence half — present
+          // only when Liquipedia's seat orientation was proven for this row
+          // — renders BELOW the row's own recorded fighter, mirroring the
+          // stage column's own value-plus-badge pattern above. Raw text
+          // fallback (inside `LiquipediaCharacterEvidence`) covers exactly
+          // the case where this cell shows "Unknown" but Liquipedia's
+          // evidence still names a character.
+          const charactersHalf = attribution[row.original.match.id]?.characters;
+          return (
+            <div className="flex flex-col gap-0.5">
+              <div className="flex items-center gap-2">
+                {row.original.fighter && (
+                  <img src={row.original.fighter.url} alt="" className="size-6 object-contain" />
+                )}
+                <span>
+                  {row.original.fighter
+                    ? localizedFighterName(row.original.fighter.id, t)
+                    : t('common.unknown')}
+                </span>
+              </div>
+              {charactersHalf != null && (
+                <LiquipediaCharacterEvidence characters={charactersHalf} />
+              )}
+            </div>
+          );
+        },
       },
       {
         id: 'opponentFighter',

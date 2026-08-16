@@ -166,4 +166,52 @@ describe('EditMatchForm', () => {
       expect(screen.queryByTestId('edit-match-vod-source-owned-note')).not.toBeInTheDocument();
     });
   });
+
+  describe('character/stock evidence source-owned notes (Phase 30.3 Gate 5)', () => {
+    it('shows a source-owned note when the row carries character evidence from Liquipedia', async () => {
+      enrichmentAttribution.mockResolvedValue({
+        attributions: [
+          {
+            matchKey: 'm1',
+            characters: { subjectRaw: 'Mario', opponentRaw: 'Luigi' },
+          },
+        ],
+      });
+      renderEditMatchForm(makeMatch());
+
+      expect(
+        await screen.findByTestId('edit-match-characters-source-owned-note'),
+      ).toBeInTheDocument();
+      expect(screen.queryByTestId('edit-match-stocks-source-owned-note')).not.toBeInTheDocument();
+    });
+
+    it('shows a source-owned note when the row carries stocks evidence from Liquipedia AND has a recorded stocksLeft', async () => {
+      enrichmentAttribution.mockResolvedValue({
+        attributions: [{ matchKey: 'm1', stocks: { stocksLeft: 2 } }],
+      });
+      renderEditMatchForm(makeMatch({ stocksLeft: 2 }));
+
+      expect(await screen.findByTestId('edit-match-stocks-source-owned-note')).toBeInTheDocument();
+    });
+
+    it('shows no stocks note when the row has no recorded stocksLeft, even if evidence exists', async () => {
+      enrichmentAttribution.mockResolvedValue({
+        attributions: [{ matchKey: 'm1', stocks: { stocksLeft: 2 } }],
+      });
+      renderEditMatchForm(makeMatch({ stocksLeft: undefined }));
+
+      await waitFor(() => expect(enrichmentAttribution).toHaveBeenCalled());
+      expect(screen.queryByTestId('edit-match-stocks-source-owned-note')).not.toBeInTheDocument();
+    });
+
+    it('shows no character/stock notes for a row with no evidence at all', async () => {
+      renderEditMatchForm(makeMatch({ stocksLeft: 2 }));
+
+      await waitFor(() => expect(enrichmentAttribution).toHaveBeenCalled());
+      expect(
+        screen.queryByTestId('edit-match-characters-source-owned-note'),
+      ).not.toBeInTheDocument();
+      expect(screen.queryByTestId('edit-match-stocks-source-owned-note')).not.toBeInTheDocument();
+    });
+  });
 });

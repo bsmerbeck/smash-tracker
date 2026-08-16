@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Link } from 'react-router';
 import { useTranslation } from 'react-i18next';
 import { ExternalLink, Video } from 'lucide-react';
@@ -23,8 +23,25 @@ import { cn } from '@/lib/utils';
 import { formatTimestamp, vodDeepLink } from '@/lib/vod';
 import { AttachVodDialog } from '@/components/vod/AttachVodDialog';
 import { AnalyzeOpponentLink } from '@/components/AnalyzeOpponentLink';
+import { useEnrichmentAttribution } from '@/hooks/useEnrichmentAttribution';
+import type {
+  EnrichmentCharacterAttribution,
+  EnrichmentStockAttribution,
+  WebEnrichmentAttributionEntry,
+} from '@/lib/enrichmentEvidence';
+import { LiquipediaCharacterEvidence } from '@/components/enrichment/LiquipediaCharacterEvidence';
+import { LiquipediaAttributionBadge } from '@/components/enrichment/LiquipediaAttributionBadge';
 
-function GameChip({ match }: { match: Match }) {
+function GameChip({
+  match,
+  characters,
+  stocks,
+}: {
+  match: Match;
+  /** Phase 30.3 Gate 5: the game's Liquipedia character/stock evidence halves, sourced from `useEnrichmentAttribution` at the `SetTimeline` level — undefined/null renders no evidence line, byte-identical to today. */
+  characters?: EnrichmentCharacterAttribution | null;
+  stocks?: EnrichmentStockAttribution | null;
+}) {
   const { t } = useTranslation();
   const stageId = match.map?.id ?? 0;
   const stage = stageId !== 0 ? stagesById.get(stageId) : undefined;
@@ -38,7 +55,7 @@ function GameChip({ match }: { match: Match }) {
       : '';
   // Phase 30.3 (Gate 4): stocks left surfaces WHEN RECORDED on the game —
   // absent stocksLeft renders nothing here, never an inferred zero.
-  const stocks =
+  const stocksText =
     match.stocksLeft != null
       ? ` · ${t('tournaments.timeline.stocksLeft', { count: match.stocksLeft })}`
       : '';
@@ -56,9 +73,21 @@ function GameChip({ match }: { match: Match }) {
         </span>
       </TooltipTrigger>
       <TooltipContent>
-        {stageName} — {match.win ? t('common.win') : t('common.loss')}
-        {matchup}
-        {stocks}
+        <span className="flex flex-col gap-1">
+          <span>
+            {stageName} — {match.win ? t('common.win') : t('common.loss')}
+            {matchup}
+            {stocksText}
+          </span>
+          {/* Phase 30.3 Gate 5: `stocksText` above already shows the game's
+              OWN recorded value — the bare badge marks it as
+              Liquipedia-sourced without repeating the number. Character
+              evidence has no existing display of its own here (`matchup`
+              above renders nothing when either id is unmapped), so it gets
+              the fuller sprite/raw-fallback + badge component. */}
+          {stocks != null && <LiquipediaAttributionBadge attribution={stocks} variant="stocks" />}
+          {characters != null && <LiquipediaCharacterEvidence characters={characters} />}
+        </span>
       </TooltipContent>
     </Tooltip>
   );
@@ -217,7 +246,16 @@ function OpponentLabel({ set }: { set: TournamentSet }) {
   );
 }
 
-function SetRow({ set, entry }: { set: TournamentSet; entry: TournamentEntry }) {
+function SetRow({
+  set,
+  entry,
+  attribution,
+}: {
+  set: TournamentSet;
+  entry: TournamentEntry;
+  /** Phase 30.3 Gate 5: the whole-timeline witness map (keyed by match id), sourced once at the `SetTimeline` level via `useEnrichmentAttribution`. */
+  attribution: Record<string, WebEnrichmentAttributionEntry>;
+}) {
   const { t } = useTranslation();
   const isLosersSide = set.bracketRound != null && set.bracketRound < 0;
   const setLabel = set.roundText ?? t('tournaments.timeline.setFallback', { id: set.setId });
@@ -259,7 +297,12 @@ function SetRow({ set, entry }: { set: TournamentSet; entry: TournamentEntry }) 
         <OpponentLabel set={set} />
         <div className="flex items-center gap-1">
           {set.games.map((g) => (
-            <GameChip key={g.match.id} match={g.match} />
+            <GameChip
+              key={g.match.id}
+              match={g.match}
+              characters={attribution[g.match.id]?.characters}
+              stocks={attribution[g.match.id]?.stocks}
+            />
           ))}
         </div>
       </div>
@@ -301,6 +344,18 @@ export function SetTimeline({
   otherMatches: Match[];
 }) {
   const { t, i18n } = useTranslation();
+  // Phase 30.3 Gate 5: one witness lookup for the whole timeline, keyed by
+  // every match id across BOTH the set rows and the other-matches list —
+  // `useEnrichmentAttribution` dedupes/batches internally, so this is a
+  // single request shape regardless of how many sets render.
+  const allMatchIds = useMemo(
+    () => [
+      ...sets.flatMap((set) => set.games.map((g) => g.match.id)),
+      ...otherMatches.map((m) => m.id),
+    ],
+    [sets, otherMatches],
+  );
+  const attribution = useEnrichmentAttribution(allMatchIds);
   return (
     <Card>
       <CardHeader>
@@ -314,7 +369,7 @@ export function SetTimeline({
             {sets.length > 0 && (
               <ul className="flex flex-col gap-2" aria-label={t('tournaments.timeline.setsAria')}>
                 {sets.map((set) => (
-                  <SetRow key={set.setId} set={set} entry={entry} />
+                  <SetRow key={set.setId} set={set} entry={entry} attribution={attribution} />
                 ))}
               </ul>
             )}
@@ -362,7 +417,11 @@ export function SetTimeline({
                               />
                             )}
                           </span>
-                          <GameChip match={match} />
+                          <GameChip
+                            match={match}
+                            characters={attribution[match.id]?.characters}
+                            stocks={attribution[match.id]?.stocks}
+                          />
                         </div>
                         <Badge variant={match.win ? 'success' : 'destructive'}>
                           {match.win ? t('common.win') : t('common.loss')}

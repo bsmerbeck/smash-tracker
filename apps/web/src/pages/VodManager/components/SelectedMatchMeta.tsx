@@ -13,6 +13,12 @@ import {
 import { getFighterById } from '@/data/sprites';
 import { localizedFighterName } from '@/lib/fighterNames';
 import { formatTimestamp } from '@/lib/vod';
+import type {
+  EnrichmentCharacterAttribution,
+  EnrichmentStockAttribution,
+} from '@/lib/enrichmentEvidence';
+import { LiquipediaCharacterEvidence } from '@/components/enrichment/LiquipediaCharacterEvidence';
+import { LiquipediaAttributionBadge } from '@/components/enrichment/LiquipediaAttributionBadge';
 import { MATCH_PRESET_TAGS, addTagToList, removeTagFromList, tagLabel } from '@/lib/tags';
 import { addMatchToPlaylistIds } from '@/lib/playlists';
 import { useActiveSubject } from '@/hooks/useActiveSubject';
@@ -198,6 +204,8 @@ export function SelectedMatchMeta({
   tagVocabulary,
   playlists,
   onOpenMyShares,
+  characterEvidence,
+  stockEvidence,
 }: {
   match: Match;
   /** The fighters offered for "Your Fighter" — the signed-in user's primary+secondary selections. */
@@ -210,6 +218,10 @@ export function SelectedMatchMeta({
   playlists: Playlist[];
   /** Opens the page-level My shares dialog (ShareDialog created-step shortcut). */
   onOpenMyShares?: () => void;
+  /** Phase 30.3 Gate 5: the row's Liquipedia character evidence half, if any — sourced from `useEnrichmentAttribution` at the page level (`VodManagerPage`), never fetched here. `undefined`/`null` renders no evidence row. */
+  characterEvidence?: EnrichmentCharacterAttribution | null;
+  /** Phase 30.3 Gate 5: the row's Liquipedia stocks evidence half, if any — same sourcing as `characterEvidence`. */
+  stockEvidence?: EnrichmentStockAttribution | null;
 }) {
   const { t } = useTranslation();
   const updateMatch = useUpdateMatch();
@@ -432,6 +444,32 @@ export function SelectedMatchMeta({
           <div>
             <dt className="text-xs">{t('vodManager.startTime')}</dt>
             <dd className="text-foreground">{formatTimestamp(match.vodStartSeconds)}</dd>
+          </div>
+        )}
+        {/* Phase 30.3 Gate 5: stocksLeft display where recorded — this card
+            had no stocksLeft row at all before. `LiquipediaAttributionBadge`
+            (not the fuller `LiquipediaStockEvidence`) is used here because
+            the value is ALREADY shown on the line above it; the fuller
+            component exists for surfaces with no display of their own. */}
+        {match.stocksLeft !== undefined && (
+          <div>
+            <dt className="text-xs">{t('vodManager.meta.stocksLeft')}</dt>
+            <dd className="text-foreground">
+              {t('tournaments.timeline.stocksLeft', { count: match.stocksLeft })}
+              {stockEvidence != null && (
+                <span className="ml-1">
+                  <LiquipediaAttributionBadge attribution={stockEvidence} variant="stocks" />
+                </span>
+              )}
+            </dd>
+          </div>
+        )}
+        {characterEvidence != null && (
+          <div className="col-span-2">
+            <dt className="text-xs">{t('vodManager.meta.characterEvidence')}</dt>
+            <dd className="text-foreground">
+              <LiquipediaCharacterEvidence characters={characterEvidence} />
+            </dd>
           </div>
         )}
       </dl>

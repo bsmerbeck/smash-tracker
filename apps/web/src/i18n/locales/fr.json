@@ -546,7 +546,9 @@
     "startTime": "Heure de début",
     "useCurrentTime": "Utiliser le temps actuel du lecteur",
     "meta": {
-      "edit": "Modifier les détails"
+      "edit": "Modifier les détails",
+      "stocksLeft": "Stocks restants",
+      "characterEvidence": "Preuve Liquipedia"
     },
     "review": {
       "startButton": "Démarrer une revue",
@@ -2764,7 +2766,11 @@
         "battlefield": "forme Battlefield",
         "unknown": "marqueur de forme non reconnu"
       },
-      "unknownStage": "Terrain non identifié"
+      "unknownStage": "Terrain non identifié",
+      "characters": "Données de personnage provenant de Liquipedia",
+      "stocks": "Nombre de stocks provenant de Liquipedia",
+      "stocksLeftValue_one": "{{count}} stock restant",
+      "stocksLeftValue_other": "{{count}} stocks restants"
     },
     "attachVod": {
       "prefilledHint": "Ce lien a été prérempli depuis Liquipedia. Vous pouvez toujours le modifier."
@@ -2797,6 +2803,22 @@
       },
       "notes": {
         "title": "Notes"
+      },
+      "fieldCoverage": {
+        "title": "Couverture par champ",
+        "asOf": "au {{date}}",
+        "witnessedRows_one": "{{count}} ligne avec preuve Liquipedia",
+        "witnessedRows_other": "{{count}} lignes avec preuve Liquipedia",
+        "fields": {
+          "stages": "Terrains",
+          "characters": "Personnages",
+          "stocks": "Stocks",
+          "vods": "VODs"
+        },
+        "present": "Présent",
+        "missing": "Manquant",
+        "ambiguous": "Ambigu",
+        "revision": "rév. {{revisionId}}"
       }
     },
     "review": {

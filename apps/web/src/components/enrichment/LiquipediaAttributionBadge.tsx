@@ -4,6 +4,10 @@ import {
   type ResearchEnrichmentStageAttribution,
   type ResearchEnrichmentVodAttribution,
 } from '@smash-tracker/shared';
+import type {
+  EnrichmentCharacterAttribution,
+  EnrichmentStockAttribution,
+} from '@/lib/enrichmentEvidence';
 
 /**
  * Phase 30.2 Plan 11 (ENR-09, OWNER POSTURE 2026-08-11): the ONE reusable
@@ -31,12 +35,31 @@ import {
  * untrusted third-party wiki text (RESEARCH section 15, V5) and every value
  * below flows through ordinary JSX text-node interpolation, which React
  * escapes by construction.
+ *
+ * Phase 30.3 Gate 5: `'characters'`/`'stocks'` name the two new evidence
+ * halves (`apps/web/src/lib/enrichmentEvidence.ts`) — same badge, same
+ * absence-renders-nothing contract, a distinct label per variant.
  */
-export type LiquipediaAttributionVariant = 'stage' | 'vod';
+export type LiquipediaAttributionVariant = 'stage' | 'vod' | 'characters' | 'stocks';
 
-/** Either half of an attribution entry — the VOD half structurally has no stage-only members. */
+/**
+ * Any half of an attribution entry. The VOD half is structurally identical
+ * to the shared base source shape, and the Gate 5 `characters`/`stocks`
+ * halves both EXTEND that same base (`enrichmentEvidence.ts`) — so passing
+ * either to this badge is a plain structural widening, not a special case.
+ */
 export type LiquipediaAttributionHalf =
-  ResearchEnrichmentStageAttribution | ResearchEnrichmentVodAttribution;
+  | ResearchEnrichmentStageAttribution
+  | ResearchEnrichmentVodAttribution
+  | EnrichmentCharacterAttribution
+  | EnrichmentStockAttribution;
+
+const VARIANT_LABEL_KEYS: Record<LiquipediaAttributionVariant, string> = {
+  stage: 'enrichment.attribution.stage',
+  vod: 'enrichment.attribution.vod',
+  characters: 'enrichment.attribution.characters',
+  stocks: 'enrichment.attribution.stocks',
+};
 
 export function LiquipediaAttributionBadge({
   attribution,
@@ -51,8 +74,7 @@ export function LiquipediaAttributionBadge({
     return null;
   }
 
-  const labelKey =
-    variant === 'stage' ? 'enrichment.attribution.stage' : 'enrichment.attribution.vod';
+  const labelKey = VARIANT_LABEL_KEYS[variant];
 
   // The stage-only members exist on the STAGE half only — the VOD half's
   // schema has no such keys at all, so this narrowing is total.
