@@ -547,12 +547,17 @@ describe('resolveEnrichedMatchMembers - character evidence (30.3 Gate 5)', () =>
   });
 
   it('an UNSTATED game scope abstains — unstated is never treated as Ultimate', () => {
-    const { game: _omitted, ...withoutGame } = ULTIMATE_EVIDENCE;
     const result = resolveEnrichedMatchMembers(
       baseInput({
         enrichmentEvidenceConsulted: true,
         rowOpponentTag: 'mkleo',
-        enrichmentGameEvidence: { ...withoutGame, rawChars: ['cloud', 'joker'] },
+        enrichmentGameEvidence: {
+          seatTags: ULTIMATE_EVIDENCE.seatTags,
+          observationId: ULTIMATE_EVIDENCE.observationId,
+          sourceRevisionId: ULTIMATE_EVIDENCE.sourceRevisionId,
+          parserVersion: ULTIMATE_EVIDENCE.parserVersion,
+          rawChars: ['cloud', 'joker'],
+        },
       }),
     );
     expect(result.charsOutcome).toBe('abstained-game-scope');

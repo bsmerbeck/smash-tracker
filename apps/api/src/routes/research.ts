@@ -54,7 +54,7 @@ import {
   listEnrichmentReviewQueue,
   readEnrichmentObservation,
 } from '../research/enrichment/store.js';
-import { readEnrichmentCoverage } from '../research/enrichment/rollup.js';
+import { composeEnrichmentCoverageResponse } from '../research/enrichment/rollup.js';
 import {
   applyEnrichmentProjection,
   buildEnrichmentOverlay,
@@ -1357,7 +1357,10 @@ const researchTenantsRoutes: FastifyPluginAsyncZod<ResearchRoutesOptions> = asyn
         return reply.code(rejection.statusCode).send(rejection.body);
       }
 
-      const coverage = await readEnrichmentCoverage(app.firebase.database, request.params.tenantId);
+      const coverage = await composeEnrichmentCoverageResponse(
+        app.firebase.database,
+        request.params.tenantId,
+      );
       return reply.code(200).send(coverage);
     },
   );

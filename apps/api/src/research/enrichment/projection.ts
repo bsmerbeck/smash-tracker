@@ -1129,13 +1129,14 @@ export async function applyEnrichmentProjection(
         // overwrite the record of an earlier attempt, because which attempt
         // committed is decided below from the committed snapshot.
         attempts.push(live);
-        // eslint-disable-next-line @typescript-eslint/no-unused-vars -- rest-destructure-to-omit idiom; `vodUrl`/`map`/`stocksLeft` are intentionally discarded (replaced below)
+        /* eslint-disable @typescript-eslint/no-unused-vars -- rest-destructure-to-omit idiom; `vodUrl`/`map`/`stocksLeft` are intentionally discarded (replaced below) */
         const {
           vodUrl: _ignoredVodUrl,
           map: _ignoredMap,
           stocksLeft: _ignoredStocks,
           ...rest
         } = effective;
+        /* eslint-enable @typescript-eslint/no-unused-vars */
         return {
           ...rest,
           map: live.stage,

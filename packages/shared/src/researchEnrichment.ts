@@ -717,22 +717,57 @@ export type ResearchEnrichmentCoverageSnapshot = z.infer<
 >;
 
 /**
+ * 30.3 Gate 5 — one field's explicit present/missing/ambiguous coverage
+ * cell, derived at READ time from the stored ownership witnesses (the
+ * enrichment rollup's `deriveEnrichmentFieldCoverage`). `present` counts
+ * rows whose witness carries a committed value for the field; `ambiguous`
+ * counts rows with partial or in-flight evidence (a raw-only stage, a
+ * flagged-unmapped character, a pending half); `missing` is the honest
+ * remainder of the witnessed universe. `latestSourceRevisionId`/
+ * `latestProjectedAtMs` expose the freshest source revision and projection
+ * time observed for the field, so a consumer can show "as of revision N".
+ */
+const researchEnrichmentFieldCoverageCellSchema = z.object({
+  present: z.number().int().nonnegative(),
+  missing: z.number().int().nonnegative(),
+  ambiguous: z.number().int().nonnegative(),
+  latestSourceRevisionId: z.number().int().nullish(),
+  latestProjectedAtMs: z.number().int().nullish(),
+});
+export type ResearchEnrichmentFieldCoverageCell = z.infer<
+  typeof researchEnrichmentFieldCoverageCellSchema
+>;
+
+/** The four-field coverage rollup (stages, characters, stocks, VODs) over every match key carrying an enrichment ownership witness. */
+export const researchEnrichmentFieldCoverageSchema = z.object({
+  asOfMs: z.number().int(),
+  witnessedRows: z.number().int().nonnegative(),
+  stages: researchEnrichmentFieldCoverageCellSchema,
+  characters: researchEnrichmentFieldCoverageCellSchema,
+  stocks: researchEnrichmentFieldCoverageCellSchema,
+  vods: researchEnrichmentFieldCoverageCellSchema,
+});
+export type ResearchEnrichmentFieldCoverage = z.infer<typeof researchEnrichmentFieldCoverageSchema>;
+
+/**
  * Phase 30.2 Plan 10 (ENR-06/ENR-09): the HTTP-facing shape of the
  * additive `enrichment` member the Phase 30 provider-ingestion schema
  * module's coverage-response schema adds — the value a caller of `GET
  * /api/users/me/coverage` or `GET /research/tenants/:tenantId/coverage`
  * actually receives. Declared as its OWN named export, not inlined as a
  * bare reference to `researchEnrichmentCoverageSnapshotSchema` at the call
- * site, so the response CONTRACT can diverge from the STORED shape later
- * (e.g. a presentational-only member neither read nor written by
- * `research/enrichment/rollup.ts`) without moving the stored schema. Today
- * the members are identical to the stored snapshot — the as-of timestamp,
- * the run id, the counts, the cohort counts, the per-source-page freshness
- * map (whose value REQUIRES `sourcePageUrl`, cycle-1 review HIGH 5) and the
- * notes array — so this is presently a same-shape alias rather than a
- * hand-duplicated copy that could silently drift from it.
+ * site, so the response CONTRACT can diverge from the STORED shape —
+ * exactly what 30.3 Gate 5 now does: `fieldCoverage` is a READ-TIME-derived
+ * presentational member (built from the witness tree by the enrichment
+ * rollup's `deriveEnrichmentFieldCoverage`), never stored on the
+ * `researchEnrichmentCoverage/{tenantId}` node and never written by
+ * `stageEnrichmentProgress`/`publishEnrichmentCoverage`. It is `.nullish()`
+ * so every already-published snapshot keeps parsing unchanged.
  */
-export const researchEnrichmentCoverageResponseSchema = researchEnrichmentCoverageSnapshotSchema;
+export const researchEnrichmentCoverageResponseSchema =
+  researchEnrichmentCoverageSnapshotSchema.extend({
+    fieldCoverage: researchEnrichmentFieldCoverageSchema.nullish(),
+  });
 export type ResearchEnrichmentCoverageResponse = z.infer<
   typeof researchEnrichmentCoverageResponseSchema
 >;

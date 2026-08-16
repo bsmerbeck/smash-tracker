@@ -3,7 +3,7 @@ import type { ResearchCoverageResponse } from '@smash-tracker/shared';
 import { readIdentityMapping } from './ingestion/identity.js';
 import { readActiveBackfillRun } from './ingestion/backfillRun.js';
 import { buildCoverageResponse, readCoverageSnapshot } from './ingestion/rollup.js';
-import { readEnrichmentCoverage } from './enrichment/rollup.js';
+import { composeEnrichmentCoverageResponse } from './enrichment/rollup.js';
 
 /**
  * Phase 30.1 Plan 05 (WKSP-01A, review C3-L1): the shared coverage composer,
@@ -32,7 +32,10 @@ export async function composeCoverageResponse(
     readCoverageSnapshot(database, subjectId),
     readIdentityMapping(database, subjectId),
     readActiveBackfillRun(database, subjectId),
-    readEnrichmentCoverage(database, subjectId),
+    // 30.3 Gate 5: the stored snapshot PLUS the read-time-derived
+    // present/missing/ambiguous field coverage (stages, characters, stocks,
+    // VODs) — one composer, shared with the admin enrichment/coverage route.
+    composeEnrichmentCoverageResponse(database, subjectId),
   ]);
   const confirmedPlayerIds = Object.keys(mapping.confirmedPlayerIds ?? {}).sort();
   const unresolvedCandidateCount = Object.keys(mapping.candidates ?? {}).length;
