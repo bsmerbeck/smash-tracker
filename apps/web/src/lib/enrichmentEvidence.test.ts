@@ -182,6 +182,36 @@ describe('enrichmentEvidence — cross-package contract (Phase 30.3 Gate 5)', ()
       const stocks = enrichmentStockAttributionSchema.parse({ stocksLeft: 3 });
       expect(stocks).toEqual({ stocksLeft: 3 });
     });
+
+    // Verifier finding B1: the source may record only ONE seat's character —
+    // the shared contract makes both raws nullish and the API conditional-
+    // spreads the absent side away entirely. A required member here once made
+    // one such row fail the WHOLE response parse, silently blanking every
+    // attribution in its chunk. This pins the one-sided shape end to end.
+    it('a one-sided character half (opponent seat only, subject omitted) survives both schemas and the full response parse', () => {
+      const oneSided = {
+        ...sharedBuiltAttributionEntry(),
+        characters: { opponentRaw: 'Cloud', opponentFighterId: 61 },
+      };
+
+      const throughSharedSchema = researchEnrichmentAttributionEntrySchema.parse(oneSided) as {
+        characters?: { subjectRaw?: unknown; opponentRaw?: unknown };
+      };
+      expect(throughSharedSchema.characters?.opponentRaw).toBe('Cloud');
+      expect(throughSharedSchema.characters?.subjectRaw).toBeUndefined();
+
+      const throughWebSchema = webEnrichmentAttributionEntrySchema.parse(oneSided);
+      expect(throughWebSchema.characters?.opponentRaw).toBe('Cloud');
+      expect(throughWebSchema.characters?.opponentFighterId).toBe(61);
+      expect(throughWebSchema.characters?.subjectRaw ?? null).toBeNull();
+
+      // The whole-response guarantee the defect violated: one one-sided row
+      // must never sink its siblings.
+      const response = webEnrichmentAttributionResponseSchema.parse({
+        attributions: [sharedBuiltAttributionEntry(), oneSided],
+      });
+      expect(response.attributions).toHaveLength(2);
+    });
   });
 
   describe('field coverage round-trip', () => {

@@ -37,10 +37,18 @@ import {
  */
 export const enrichmentCharacterAttributionSchema =
   researchEnrichmentAttributionSourceSchema.extend({
-    /** The source's raw seat text for the ROW'S SUBJECT, seat-orientation-proven. Untrusted third-party text — never dropped, never rendered as markup. */
-    subjectRaw: z.string(),
-    /** The source's raw seat text for the row's opponent. */
-    opponentRaw: z.string(),
+    /**
+     * The source's raw seat text for the ROW'S SUBJECT, seat-orientation-
+     * proven. Untrusted third-party text — never dropped, never rendered as
+     * markup. `.nullish()` to MATCH THE SHARED CONTRACT (verifier finding B1):
+     * the source may record only one seat's character, the API conditional-
+     * spreads the absent side away, and a required member here made ONE such
+     * row fail the whole-response parse — silently blanking every attribution
+     * in its ≤200-key chunk.
+     */
+    subjectRaw: z.string().nullish(),
+    /** The source's raw seat text for the row's opponent. Nullish for the same one-sided-evidence reason. */
+    opponentRaw: z.string().nullish(),
     /** Present only when `subjectRaw` resolved against the app's fighter vocabulary (`SpriteList`) — absent means "flagged unmapped", never a guessed id. */
     subjectFighterId: z.number().int().nullish(),
     opponentFighterId: z.number().int().nullish(),

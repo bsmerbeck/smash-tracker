@@ -28,7 +28,13 @@ import { LiquipediaAttributionBadge } from './LiquipediaAttributionBadge';
  * evidence is always clearly marked as Liquipedia-derived, never presented
  * as the row's own recorded (provider- or user-entered) character pick.
  */
-function CharacterSide({ raw, fighterId }: { raw: string; fighterId: number | null | undefined }) {
+function CharacterSide({
+  raw,
+  fighterId,
+}: {
+  raw: string | null | undefined;
+  fighterId: number | null | undefined;
+}) {
   const { t } = useTranslation();
   const fighter = fighterId != null ? getFighterById(fighterId) : undefined;
 
@@ -39,6 +45,14 @@ function CharacterSide({ raw, fighterId }: { raw: string; fighterId: number | nu
         <span>{localizedFighterName(fighterId!, t)}</span>
       </span>
     );
+  }
+
+  // One-sided evidence (verifier finding B1): the source may record only one
+  // seat's character — the shared contract makes both raws nullish and the
+  // API omits the absent side. Missing renders as missing (em-dash), never
+  // as a guess.
+  if (raw == null) {
+    return <span data-testid="liquipedia-character-unknown">—</span>;
   }
 
   // Raw text fallback (unmapped id, or no id at all) — untrusted third-party
