@@ -293,6 +293,11 @@ const METADATA_READER_ALLOWLIST: MetadataReaderEntry[] = [
       "requireResearchTenantAdmin reads clientMembers/{tenantId}/{callerUid} as the research family's own membership gate before delegating the kind decision to assertTenantAccess (plan 29-05).",
   },
   {
+    file: 'src/research/migration/acctTopologyAudit.ts',
+    reason:
+      "auditAcctTopology reads coachClients/{coachUid}, clientMembers/{tenantId}/{uid}, and clientOwnedTenants/{uid} to prove the Phase 30.1 ACCT-01/ACCT-03 clause that none of the four demo accounts is a managed client of the developer's coaching account. Offline, owner-run evidence gathering — never on a request path, makes no access decision, and writes nothing. It deliberately does NOT go through readSubjectKind: clientTenants is randomUUID-keyed and can never hold a uid, so that predicate cannot answer this clause.",
+  },
+  {
     file: 'src/research/subjectKind.ts',
     reason:
       'readSubjectKind reads ONLY clientTenants/{subjectId}/kind — the tri-state kind lookup every isolation call site in this plan builds on (plan 29-01).',

@@ -319,6 +319,13 @@ const MEMBERSHIP_READER_CLASSIFICATION: MembershipReaderEntry[] = [
       "Writes the creating admin's membership through the telemetry-silent creation core as part of the research tenant lifecycle, and listResearchTenants reads membership rows to enumerate only tenants the caller belongs to — the same claim-ready lifecycle pattern coaching/tenants.ts is classified under (plan 29-05; classified post-merge in wave 2).",
   },
   {
+    file: 'src/research/migration/acctTopologyAudit.ts',
+    symbol: 'auditAcctTopology',
+    disposition: 'non-authorization-reader',
+    reason:
+      "Reads clientMembers/{tenantId}/{uid} across the coach's OWN coachClients list to prove the Phase 30.1 ACCT-01/ACCT-03 clause that no demo account is a managed client — an offline evidence audit run by the owner, never on a request path. It makes NO access decision and raises no rejection: a hit becomes a returned finding object, and the only throws are input-validation `Error`s for a path-unsafe id or an empty subject set, raised before any ref is constructed.",
+  },
+  {
     file: 'src/research/reportSubject.ts',
     symbol: 'classifyReportSubject',
     disposition: 'research-module',
