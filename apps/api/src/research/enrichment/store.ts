@@ -102,6 +102,29 @@ function attachmentsTreeRef(database: Database, tenantId: string) {
 
 export interface WriteEnrichmentObservationResult {
   outcome: EnrichmentStoreOutcome;
+  /** Present for accepted writes. A changed fingerprint invalidates every prior authorization for this stable observation id. */
+  fingerprintChanged?: boolean;
+  invalidatedReceiptCount?: number;
+  invalidatedAttachmentCount?: number;
+  /** Every target set whose attachment was removed, sorted for deterministic downstream reconciliation. */
+  invalidatedTargetSetIds?: string[];
+}
+
+export type EnrichmentObservationFingerprint = Pick<
+  ResearchEnrichmentObservationRecord,
+  'sourceRevisionId' | 'sourceContentHash' | 'parserVersion'
+>;
+
+/** The complete authorization fingerprint shared by observations, receipts, and attachments. */
+export function enrichmentObservationFingerprintMatches(
+  left: EnrichmentObservationFingerprint,
+  right: EnrichmentObservationFingerprint,
+): boolean {
+  return (
+    left.sourceRevisionId === right.sourceRevisionId &&
+    left.sourceContentHash === right.sourceContentHash &&
+    left.parserVersion === right.parserVersion
+  );
 }
 
 /**
@@ -172,8 +195,14 @@ function encodeObservationForStorage(
  * other than the Liquipedia literal (rejected-provenance, no write) — a
  * defensive runtime check alongside the schema's own single-member enum,
  * since this function's caller is not guaranteed to be type-checked code.
- * Idempotent per observation id: an identical replay REPLACES in place,
- * never duplicating a child.
+ * Idempotent per observation id: an identical-fingerprint replay REPLACES
+ * in place and preserves its authorization. When any fingerprint member
+ * changes for a stable observation id, the old receipt and EVERY attachment
+ * are authorizations for different source evidence. One root-level
+ * multi-location update replaces the observation and removes that derived
+ * state atomically, so readers can never observe new evidence carrying old
+ * authorization. The returned target-set ids let the run driver reconcile
+ * any source-owned projections the removed attachments formerly reached.
  */
 export async function writeEnrichmentObservation(
   database: Database,
@@ -187,16 +216,78 @@ export async function writeEnrichmentObservation(
     return { outcome: 'rejected-provenance' };
   }
 
+  const parsed = researchEnrichmentObservationRecordSchema.parse(record);
   const ref = observationRef(database, tenantId, record.observationId);
   const existing = await ref.get();
   const isNew = !existing.exists();
+  const existingParsed = existing.exists()
+    ? researchEnrichmentObservationRecordSchema.safeParse(existing.val())
+    : null;
+  const fingerprintChanged =
+    !isNew &&
+    (existingParsed === null ||
+      !existingParsed.success ||
+      !enrichmentObservationFingerprintMatches(existingParsed.data, parsed));
 
-  const parsed = researchEnrichmentObservationRecordSchema.parse(record);
   // Storage encoding (30.2 array-null-strip fix): never persist raw nulls
   // inside arrays — see `encodeTwoSeatForStorage`.
-  await ref.set(encodeObservationForStorage(parsed));
+  const encoded = encodeObservationForStorage(parsed);
 
-  return { outcome: isNew ? 'created' : 'replaced' };
+  if (!fingerprintChanged) {
+    await ref.set(encoded);
+    return {
+      outcome: isNew ? 'created' : 'replaced',
+      fingerprintChanged: false,
+      invalidatedReceiptCount: 0,
+      invalidatedAttachmentCount: 0,
+      invalidatedTargetSetIds: [],
+    };
+  }
+
+  const [receiptSnapshot, attachmentSnapshot] = await Promise.all([
+    receiptRef(database, tenantId, record.observationId).get(),
+    attachmentsTreeRef(database, tenantId).get(),
+  ]);
+  const targetSetIds: string[] = [];
+  const rawAttachments = attachmentSnapshot.val() as Record<string, Record<string, unknown>> | null;
+  if (rawAttachments !== null && typeof rawAttachments === 'object') {
+    for (const [targetSetId, children] of Object.entries(rawAttachments)) {
+      if (
+        children === null ||
+        typeof children !== 'object' ||
+        !Object.prototype.hasOwnProperty.call(children, record.observationId)
+      ) {
+        continue;
+      }
+      // A malformed path must fail closed: silently retaining even one old
+      // attachment would preserve authorization for superseded evidence.
+      if (!isPathSafeProviderId(targetSetId)) {
+        throw new Error(
+          `cannot invalidate enrichment attachment for unsafe target set id ${JSON.stringify(targetSetId)}`,
+        );
+      }
+      targetSetIds.push(targetSetId);
+    }
+  }
+  targetSetIds.sort((a, b) => a.localeCompare(b));
+
+  const updates: Record<string, unknown> = {
+    [`researchEnrichmentObservations/${tenantId}/${record.observationId}`]: encoded,
+    [`researchEnrichmentReceipts/${tenantId}/${record.observationId}`]: null,
+  };
+  for (const targetSetId of targetSetIds) {
+    updates[`researchEnrichmentAttachments/${tenantId}/${targetSetId}/${record.observationId}`] =
+      null;
+  }
+  await database.ref().update(updates);
+
+  return {
+    outcome: 'replaced',
+    fingerprintChanged: true,
+    invalidatedReceiptCount: receiptSnapshot.exists() ? 1 : 0,
+    invalidatedAttachmentCount: targetSetIds.length,
+    invalidatedTargetSetIds: targetSetIds,
+  };
 }
 
 /** Guards every path segment before constructing a reference; returns null (never throws) for an unsafe id or an unparseable/absent record. */
@@ -639,6 +730,113 @@ export async function removeSupersededObservations(
   return { removedObservationIds, removedAttachmentCount, removedReceiptCount };
 }
 
+export interface RemoveReplacedObservationAfterSuccessorResult {
+  outcome: 'removed' | 'rejected';
+  removedAttachmentCount: number;
+  removedReceiptCount: number;
+  targetSetIds: string[];
+}
+
+/**
+ * Repair-only cascade for a SAME-parser observation id replaced by a
+ * canonicalization change. This is deliberately separate from
+ * `removeSupersededObservations`, whose contract admits only old parser
+ * generations. The caller must already have proved semantic equivalence;
+ * this boundary independently rechecks the structural facts and, for every
+ * attached predecessor target, requires a fingerprint-current successor
+ * attachment BEFORE one atomic root update removes predecessor attachment,
+ * receipt, and observation.
+ */
+export async function removeReplacedObservationAfterSuccessor(
+  database: Database,
+  tenantId: string,
+  predecessorObservationId: string,
+  successorObservationId: string,
+): Promise<RemoveReplacedObservationAfterSuccessorResult> {
+  const rejected: RemoveReplacedObservationAfterSuccessorResult = {
+    outcome: 'rejected',
+    removedAttachmentCount: 0,
+    removedReceiptCount: 0,
+    targetSetIds: [],
+  };
+  if (
+    !isPathSafeTenantId(tenantId) ||
+    !isPathSafeProviderId(predecessorObservationId) ||
+    !isPathSafeProviderId(successorObservationId) ||
+    predecessorObservationId === successorObservationId
+  ) {
+    return rejected;
+  }
+  const [predecessor, successor, attachmentsSnapshot, receiptSnapshot] = await Promise.all([
+    readEnrichmentObservation(database, tenantId, predecessorObservationId),
+    readEnrichmentObservation(database, tenantId, successorObservationId),
+    attachmentsTreeRef(database, tenantId).get(),
+    receiptRef(database, tenantId, predecessorObservationId).get(),
+  ]);
+  if (
+    !predecessor ||
+    !successor ||
+    predecessor.sourcePageTitle !== successor.sourcePageTitle ||
+    predecessor.parserVersion !== successor.parserVersion ||
+    predecessor.templateFamily !== successor.templateFamily ||
+    predecessor.contentType !== successor.contentType ||
+    enrichmentObservationFingerprintMatches(predecessor, successor)
+  ) {
+    return rejected;
+  }
+  const rawAttachments = attachmentsSnapshot.val() as Record<
+    string,
+    Record<string, unknown>
+  > | null;
+  const targetSetIds: string[] = [];
+  if (rawAttachments !== null && typeof rawAttachments === 'object') {
+    for (const [targetSetId, children] of Object.entries(rawAttachments)) {
+      if (
+        !Object.prototype.hasOwnProperty.call(
+          asAttachmentChildren(children),
+          predecessorObservationId,
+        )
+      ) {
+        continue;
+      }
+      if (!isPathSafeProviderId(targetSetId)) return rejected;
+      const successorAttachment = researchEnrichmentAttachmentRecordSchema.safeParse(
+        asAttachmentChildren(children)[successorObservationId],
+      );
+      if (
+        !successorAttachment.success ||
+        !enrichmentObservationFingerprintMatches(successorAttachment.data, successor)
+      ) {
+        return rejected;
+      }
+      targetSetIds.push(targetSetId);
+    }
+  }
+  targetSetIds.sort((a, b) => a.localeCompare(b));
+  const updates: Record<string, unknown> = {
+    [`researchEnrichmentObservations/${tenantId}/${predecessorObservationId}`]: null,
+    [`researchEnrichmentReceipts/${tenantId}/${predecessorObservationId}`]: null,
+  };
+  for (const targetSetId of targetSetIds) {
+    updates[
+      `researchEnrichmentAttachments/${tenantId}/${targetSetId}/${predecessorObservationId}`
+    ] = null;
+  }
+  await database.ref().update(updates);
+  return {
+    outcome: 'removed',
+    removedAttachmentCount: targetSetIds.length,
+    removedReceiptCount: receiptSnapshot.exists() ? 1 : 0,
+    targetSetIds,
+  };
+}
+
+function asAttachmentChildren(value: unknown): Record<string, unknown> {
+  return value !== null && typeof value === 'object' && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : {};
+}
+
 /**
  * 30.2 version-wide stale-record sweep: the page-scoped supersede pass above
  * only fires for pages the CURRENT run re-extracts, so old-generation
@@ -783,27 +981,42 @@ export async function listAttachedTargetSetIds(
   database: Database,
   tenantId: string,
 ): Promise<string[]> {
+  const byTarget = await listEnrichmentAttachmentsByTargetSet(database, tenantId);
+  return [...byTarget.keys()].sort((a, b) => a.localeCompare(b));
+}
+
+/**
+ * One bounded tenant-tree read returning every parseable attachment grouped
+ * by target. Resolution uses this snapshot to seed corroboration from
+ * already-authorized bracket rows without issuing one RTDB request per set.
+ * Malformed children are omitted; callers still recheck observation and
+ * receipt fingerprints before treating an attachment as authorization.
+ */
+export async function listEnrichmentAttachmentsByTargetSet(
+  database: Database,
+  tenantId: string,
+): Promise<Map<string, ResearchEnrichmentAttachmentRecord[]>> {
+  const byTarget = new Map<string, ResearchEnrichmentAttachmentRecord[]>();
   if (!isPathSafeTenantId(tenantId)) {
-    return [];
+    return byTarget;
   }
   const snapshot = await attachmentsTreeRef(database, tenantId).get();
   const raw = snapshot.val() as Record<string, Record<string, unknown>> | null;
   if (raw === null || typeof raw !== 'object') {
-    return [];
+    return byTarget;
   }
-  const targetSetIds: string[] = [];
   for (const [targetSetId, children] of Object.entries(raw)) {
     if (children === null || typeof children !== 'object') {
       continue;
     }
-    const hasParseableAttachment = Object.values(children).some(
-      (value) => researchEnrichmentAttachmentRecordSchema.safeParse(value).success,
-    );
-    if (hasParseableAttachment) {
-      targetSetIds.push(targetSetId);
+    const parsed: ResearchEnrichmentAttachmentRecord[] = [];
+    for (const value of Object.values(children)) {
+      const result = researchEnrichmentAttachmentRecordSchema.safeParse(value);
+      if (result.success) parsed.push(result.data);
     }
+    if (parsed.length > 0) byTarget.set(targetSetId, parsed);
   }
-  return targetSetIds.sort((a, b) => a.localeCompare(b));
+  return byTarget;
 }
 
 /**
@@ -866,6 +1079,9 @@ export function overlayEnrichment(
       // An attachment naming an observation the caller never loaded is
       // skipped, never fabricated — this function reads exactly what it is
       // handed and invents nothing.
+      continue;
+    }
+    if (!enrichmentObservationFingerprintMatches(attachment, record)) {
       continue;
     }
     enriched.push({

@@ -396,6 +396,71 @@ describe('runEnrichmentBatch', () => {
     expect((row.val() as { vodUrl?: string }).vodUrl).toBe(VOD_URL);
   });
 
+  it('does not treat one resolved bracket row as unique when an unresolved row in the same tournament shares its video identity', async () => {
+    const database = new FakeDatabase();
+    await seedProviderSet(database);
+    const sharedVideoBracket =
+      '{{TournamentInfo|game=ultimate|tourneylink=TestCup/2026}}\n' +
+      '{{LegacyBracket|' +
+      'r1m1p1=TestPlayer|r1m1p2=OppTag|r1m1p1score=3|r1m1p2score=1|' +
+      'r1m1date=January 1, 2026|r1m1details={{BracketMatchDetails|vod=' +
+      VOD_URL +
+      '}}|' +
+      'r1m2p1=UnindexedA|r1m2p2=UnindexedB|r1m2p1score=3|r1m2p2score=2|' +
+      'r1m2date=January 1, 2026|r1m2details={{BracketMatchDetails|vod=' +
+      VOD_URL +
+      '}}}}';
+    const { client } = buildFixtureClient({
+      vodPagePresence: new Map([[VOD_PAGE_TITLE, true]]),
+      vodPageRevisionId: new Map([[VOD_PAGE_TITLE, 500]]),
+      generatedContent: new Map([
+        [VOD_PAGE_TITLE, { content: buildVodPageBody(), mode: 'expandtemplates' }],
+      ]),
+      wikitextPages: new Map([
+        [
+          TOURNAMENT_TITLE,
+          { revisionId: 10, sha1: 'sha-tournament-v1', content: buildTournamentWikitext() },
+        ],
+        [BRACKET_TITLE, { revisionId: 20, sha1: 'sha-shared-video', content: sharedVideoBracket }],
+      ]),
+      subpagesByPrefix: new Map([
+        [
+          TOURNAMENT_TITLE,
+          [
+            { title: TOURNAMENT_TITLE, pageId: 1 },
+            { title: BRACKET_TITLE, pageId: 2 },
+          ],
+        ],
+      ]),
+    });
+
+    await runEnrichmentBatch({
+      database: asDatabase(database),
+      client,
+      tenantId: TENANT_ID,
+      playerLabels: ['TestPlayer'],
+      targetGame: 'ultimate',
+      nowMs: 1_000,
+      hashHex: sha256Hex,
+      dryRun: false,
+    });
+
+    const observations =
+      ((await database.ref(`researchEnrichmentObservations/${TENANT_ID}`).get()).val() as Record<
+        string,
+        unknown
+      > | null) ?? {};
+    const vodListIds = Object.entries(observations)
+      .filter(([, raw]) => (raw as { templateFamily?: string }).templateFamily === 'vodlist')
+      .map(([id]) => id);
+    expect(vodListIds).toHaveLength(1);
+    const attachments =
+      ((
+        await database.ref(`researchEnrichmentAttachments/${TENANT_ID}/set-1`).get()
+      ).val() as Record<string, unknown> | null) ?? {};
+    expect(attachments[vodListIds[0]!]).toBeUndefined();
+  });
+
   it('discovers child fact pages by prefix enumeration and records an unrecognised-family page as an unmatched entry carrying its content hash, without attempting extraction', async () => {
     const database = new FakeDatabase();
     const { result, calls } = await runHappyPath(database);

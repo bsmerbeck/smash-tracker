@@ -4,6 +4,7 @@ import type {
   ResearchEnrichmentResolutionReceiptRecord,
 } from '@smash-tracker/shared';
 import { LIQUIPEDIA_VOD_LIST_RESOLUTION_REASON } from '../../liquipedia/adapters/vodList.js';
+import { buildLiquipediaVodCorroborationIdentity } from '../../liquipedia/vodUrl.js';
 import type { CandidateIndex, CandidateSetEntry } from './candidateIndex.js';
 import { normalizeCompetitorTag } from './candidateIndex.js';
 
@@ -76,7 +77,8 @@ export const RESOLUTION_DATE_TOLERANCE_DAYS = 1;
 /** Defense in depth alongside the schema's own `candidateTargetSetIds` length cap (20) — a denial-of-service guard against an unbounded candidate expansion (T-30.2-37). */
 export const RESOLUTION_MAX_CANDIDATES = 20;
 
-export const RESOLVER_VERSION = 'liquipedia-resolver@1';
+/** @2 adds a unique-within-tournament, no-seek-offset VOD identity fallback; stored @1 receipts remain self-verifiable because writers derive from each receipt's own recorded version. */
+export const RESOLVER_VERSION = 'liquipedia-resolver@2';
 
 const MS_PER_DAY = 86_400_000;
 
@@ -241,6 +243,7 @@ function isVodPageDiscoveryRow(observation: ResearchEnrichmentObservationRecord)
 function resolveVodPageRow(
   observation: ResearchEnrichmentObservationRecord,
   matchedBracketVodUrls: Map<string, string> | undefined,
+  matchedBracketVodIdentities: Map<string, string> | undefined,
 ): ResolutionOutcome {
   if (observation.resolutionReasons?.includes(VOD_ROW_DUPLICATE_PAIR_REASON_MARKER)) {
     return {
@@ -262,7 +265,12 @@ function resolveVodPageRow(
   }
 
   const compositeKey = `${observation.tournamentPageTitle ?? ''}::${vodUrl}`;
-  const targetSetId = matchedBracketVodUrls?.get(compositeKey);
+  const exactTargetSetId = matchedBracketVodUrls?.get(compositeKey);
+  const identity = buildLiquipediaVodCorroborationIdentity(vodUrl);
+  const identityTargetSetId = identity
+    ? matchedBracketVodIdentities?.get(`${observation.tournamentPageTitle ?? ''}::${identity}`)
+    : undefined;
+  const targetSetId = exactTargetSetId ?? identityTargetSetId;
   if (!targetSetId) {
     return {
       type: 'ambiguous',
@@ -287,6 +295,8 @@ function resolveVodPageRow(
 export interface ResolveObservationOptions {
   /** VOD-page-row corroboration map — see `resolveVodPageRow`'s doc comment. */
   matchedBracketVodUrls?: Map<string, string>;
+  /** Offset-insensitive fallback identities that are UNIQUE within the same tournament. Exact URL remains the first rung; ambiguous shared-video identities are omitted by the caller. */
+  matchedBracketVodIdentities?: Map<string, string>;
 }
 
 /**
@@ -328,7 +338,11 @@ export function resolveObservation(
   options: ResolveObservationOptions = {},
 ): ResolutionOutcome {
   if (isVodPageDiscoveryRow(observation)) {
-    return resolveVodPageRow(observation, options.matchedBracketVodUrls);
+    return resolveVodPageRow(
+      observation,
+      options.matchedBracketVodUrls,
+      options.matchedBracketVodIdentities,
+    );
   }
 
   // Scope by declared game (RESEARCH section 6.4 rung 3). The provider tier

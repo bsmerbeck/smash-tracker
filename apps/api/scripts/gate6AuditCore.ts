@@ -3,6 +3,7 @@ import type { Database } from 'firebase-admin/database';
 import { z } from 'zod';
 import {
   DEMO_ACCOUNT_CHECKOUT_FORBIDDEN_CODE,
+  getStageById,
   isSourceOwnedVodValue,
   isTournamentRegistryOwnedRow,
   researchEnrichmentAttachmentRecordSchema,
@@ -11,9 +12,13 @@ import {
   researchEnrichmentResolutionReceiptRecordSchema,
   researchEnrichmentRunRecordSchema,
   researchTenantIngestionStateSchema,
+  resolveEnrichedMatchMembers,
   tournamentRegistryRowSchema,
+  UNKNOWN_STAGE,
   type TournamentRegistryRow,
 } from '@smash-tracker/shared';
+import { normalizeOpponentTag } from '../src/startgg/sync.js';
+import { resolveStage } from '../src/startgg/stageMap.js';
 import { canonicalDigest } from '../src/research/registry/canonical.js';
 import {
   DEFAULT_REGISTRY_REQUEST_TIMEOUT_MS,
@@ -74,11 +79,12 @@ import {
  *      quietly vanishing from both.
  *   4. "does not count character/stock witnesses" — counted, per workspace,
  *      against the expectation table.
- *   5. "does not prove protected VOD preservation" — proven by a canonical
- *      JSON sha256 digest over the user-owned VOD rows, compared against a
- *      recorded pre-state baseline, with the row COUNT additionally pinned in
- *      the expectation table so even a first (record-mode) run fails when a
- *      protected row has already been lost.
+ *   5. "does not prove protected VOD preservation" — provider VOD ownership
+ *      is reconstructed from the lossless source set and checked immediately;
+ *      the genuinely manual residual and provider populations then receive
+ *      separate canonical sha256 baselines. This avoids calling every
+ *      non-Liquipedia VOD "user-entered" while still detecting a later loss or
+ *      overwrite in either population.
  *
  * PURE OF I/O SHELLS. Everything here takes an injected `Database`, so the
  * whole oracle runs against `FakeDatabase` in tests. `gate6Audit.ts` is the
@@ -122,7 +128,7 @@ export type Gate6UidMap = Record<Gate6WorkspaceKey, string>;
  * different table version is refused rather than silently compared, because
  * the two describe different corpora.
  */
-export const GATE6_EXPECTATION_TABLE_VERSION = '30.3-gate6.2';
+export const GATE6_EXPECTATION_TABLE_VERSION = '30.3-gate6.3';
 
 export interface Gate6Expectation {
   label: string;
@@ -192,13 +198,16 @@ export const GATE6_EXPECTATIONS: Record<Gate6WorkspaceKey, Gate6Expectation> = {
 };
 
 /**
- * The protected user-entered VOD population on Sparg0. Pinned here as well as
- * in the digest baseline so that the FIRST (record-mode) run of this audit
- * still fails when a protected row has already been destroyed — a digest with
- * no baseline to compare against cannot detect a loss on its own, which is
- * exactly the false-green a preservation oracle must not have.
+ * Read-only census against both the production destination and its frozen
+ * pre-enrichment source on 2026-08-16. All 89 stored values were reproduced
+ * by `researchSource/{uid}/sets/*.{vodUrl,projectedMatchKeys}` and there was
+ * no residual manual value. These pins make RECORD mode a preservation check
+ * instead of blessing whatever population happens to survive its first run.
  */
-export const GATE6_SPARG0_USER_OWNED_VOD_ROWS = 13;
+export const GATE6_SPARG0_FROZEN_PROVIDER_VOD_ROWS = 89;
+export const GATE6_SPARG0_FROZEN_MANUAL_VOD_ROWS = 0;
+export const GATE6_SPARG0_FROZEN_PROVIDER_VOD_DIGEST =
+  '38bbefa8e5a0ecbf1394c6022a8f06ae397640b54958b7522cb9bfeb0f5e8846';
 
 /**
  * THE UID-KEYED TRACE SURFACES a refused operation could have written.
@@ -330,7 +339,7 @@ export interface Gate6WorkspaceObservation {
 }
 
 /**
- * THE LOCAL DIGEST LAW — used by assertion 7 (Sparg0 user-owned VODs) and
+ * THE LOCAL DIGEST LAW — used by assertion 7 (Sparg0 manual/provider VODs) and
  * NOWHERE ELSE.
  *
  * TWO DIGEST LAWS LIVE IN THIS FILE AND THEY ARE NOT INTERCHANGEABLE. Do not
@@ -344,10 +353,11 @@ export interface Gate6WorkspaceObservation {
  *   same code rather than from a re-description of it. It also binds the UID
  *   INTO the hash, so two accounts can never compare equal by accident.
  * - Assertion 7 keeps THIS local law, because there is no shared equivalent
- *   for the user-owned-VOD population and it is a different contract
- *   entirely: its membership is decided by `isSourceOwnedVodValue` against
- *   each row's projection witness, it is scoped to one account by
- *   construction, and no other tool produces or consumes it.
+ *   for the VOD preservation populations and it is a different contract
+ *   entirely: enrichment ownership comes from `isSourceOwnedVodValue`,
+ *   provider ownership comes from the lossless source set, and only the
+ *   residual is manual. It is scoped to one account by construction, and no
+ *   other tool produces or consumes it.
  */
 export interface Gate6DigestEntry {
   count: number;
@@ -362,13 +372,19 @@ export interface Gate6Baseline {
    * `version` and `uid`). A v1 baseline holds digests computed under a
    * DIFFERENT hashing law, so comparing against one would be meaningless —
    * `parseGate6Baseline` refuses it outright rather than mis-parsing it.
+   * Bumped 2 -> 3 when the single inferred VOD complement was replaced by
+   * separate provider/manual populations. A v2 file called every VOD not
+   * owned by Liquipedia "user-entered", including start.gg provider VODs,
+   * so it is not evidence under the current provenance law.
    */
-  baselineVersion: 2;
+  baselineVersion: 3;
   expectationTableVersion: string;
   recordedAtMs: number;
   targetUids: Gate6UidMap;
-  /** Local law — see {@link Gate6DigestEntry}. */
-  sparg0UserOwnedVod: Gate6DigestEntry;
+  /** Non-enrichment VOD rows not reproduced by the lossless provider set. */
+  sparg0ManualVod: Gate6DigestEntry;
+  /** VOD rows reproduced field-for-field by the lossless provider set. */
+  sparg0ProviderVod: Gate6DigestEntry;
   /** SHARED law — `ForeignRowDigest` from the registry module. */
   registryForeign: Record<Gate6WorkspaceKey, ForeignRowDigest>;
 }
@@ -677,8 +693,10 @@ export interface Gate6AuditReceipt {
    * `apiRevision` also stopped silently falling back to the release SHA — the
    * two coordinates are now reported in their own fields, so a reader can no
    * longer mistake a SHA for a revision.
+   * Bumped 5 -> 6 when the embedded baseline split Sparg0's VOD population
+   * into provider/manual digests instead of mislabelling their union.
    */
-  receiptVersion: 5;
+  receiptVersion: 6;
   expectationTableVersion: string;
   generatedAtMs: number;
   targetUids: Gate6UidMap;
@@ -726,6 +744,16 @@ export interface Gate6AuditOptions {
   maxReceiptAgeMs?: number;
   /** Probe freshness ceiling. Default {@link GATE6_DEFAULT_MAX_PROBE_AGE_MS}. */
   maxProbeAgeMs?: number;
+  /**
+   * Dependency-injected only by the core's synthetic fixture. The production
+   * CLI never exposes this member and therefore always uses the frozen live
+   * census constants above.
+   */
+  frozenSparg0VodCensus?: {
+    providerCount: number;
+    providerDigest: string;
+    manualCount: number;
+  };
 
   // --- Bounded execution (hard gate #4, B6) -------------------------------
   /** Per-RTDB-read ceiling. Default {@link DEFAULT_REGISTRY_REQUEST_TIMEOUT_MS}. `0` disables. */
@@ -758,7 +786,7 @@ const digestEntrySchema = z.object({
  * silently accept a digest this audit can no longer verify.
  */
 const gate6BaselineSchema = z.object({
-  baselineVersion: z.literal(2),
+  baselineVersion: z.literal(3),
   expectationTableVersion: z.string().min(1),
   recordedAtMs: z.number().int(),
   targetUids: z.object({
@@ -767,7 +795,8 @@ const gate6BaselineSchema = z.object({
     sparg0: z.string().min(1),
     izaw: z.string().min(1),
   }),
-  sparg0UserOwnedVod: digestEntrySchema,
+  sparg0ManualVod: digestEntrySchema,
+  sparg0ProviderVod: digestEntrySchema,
   registryForeign: z.object({
     hbox: foreignRowDigestSchema,
     mkleo: foreignRowDigestSchema,
@@ -1005,6 +1034,8 @@ interface WorkspaceCorpus {
   uid: string;
   matchKeys: string[];
   matchRows: Map<string, unknown>;
+  /** Lossless start.gg provider sets, keyed by provider set id. */
+  sourceSets: Map<string, unknown>;
   observations: [string, unknown][];
   receipts: [string, unknown][];
   /** Flattened `{targetSetId}/{observationId}` attachment children. */
@@ -1040,6 +1071,7 @@ async function loadWorkspaceCorpus(
     uid,
     matchKeys: matchEntries.map(([key]) => key),
     matchRows: new Map(matchEntries),
+    sourceSets: new Map(await reader.children(`researchSource/${uid}/sets`)),
     observations: await reader.children(`researchEnrichmentObservations/${uid}`),
     receipts: await reader.children(`researchEnrichmentReceipts/${uid}`),
     attachments,
@@ -1377,6 +1409,187 @@ function enrichmentRowKeyPrefix(targetSetId: string): string {
 }
 
 /**
+ * Whether an attached observation contains a field the projector could ever
+ * place on a match row. Resolution and projection are intentionally separate:
+ * a high-confidence set match may legitimately carry no game evidence at all.
+ */
+function observationDeclaresProjectableClaim(value: unknown): boolean {
+  const parsed = researchEnrichmentObservationRecordSchema.safeParse(value);
+  if (!parsed.success) {
+    return false;
+  }
+  if (parsed.data.vodUrl) {
+    return true;
+  }
+  return (parsed.data.games ?? []).some(
+    (game) =>
+      game.canonicalStageId != null ||
+      game.rawStage != null ||
+      game.rawChars != null ||
+      game.stocks != null,
+  );
+}
+
+interface ProviderProjectionEvidence {
+  vodUrl: string | null;
+  game: Record<string, unknown> | null;
+}
+
+/** The lossless provider evidence that projected one concrete match row. */
+function providerProjectionForKey(
+  corpus: WorkspaceCorpus,
+  matchKey: string,
+): ProviderProjectionEvidence | null {
+  for (const [, rawSet] of corpus.sourceSets) {
+    if (!isPlainRecord(rawSet) || !Array.isArray(rawSet['projectedMatchKeys'])) {
+      continue;
+    }
+    const ordinalIndex = rawSet['projectedMatchKeys'].indexOf(matchKey);
+    if (ordinalIndex < 0) {
+      continue;
+    }
+    const games = rawSet['games'];
+    const rawGame = Array.isArray(games) ? games[ordinalIndex] : null;
+    return {
+      vodUrl: rawString(rawSet, 'vodUrl'),
+      game: isPlainRecord(rawGame) ? rawGame : null,
+    };
+  }
+  return null;
+}
+
+function rowStage(row: Record<string, unknown>): { id: number; name: string } {
+  const map = row['map'];
+  if (!isPlainRecord(map) || typeof map['id'] !== 'number' || typeof map['name'] !== 'string') {
+    return UNKNOWN_STAGE;
+  }
+  return { id: map['id'], name: map['name'] };
+}
+
+/**
+ * Whether the shipped projector, given this attached observation and the
+ * current provider row, owes at least one attribution witness.
+ *
+ * This is deliberately stricter than "is a field empty": a deleted witness
+ * must still fail when the row already contains the exact Liquipedia value.
+ * The two legitimate no-witness cases remain explicit: an observation with
+ * no projectable evidence, and a stronger pre-existing value (including a
+ * VOD reproduced by the lossless provider source). Character evidence is
+ * witness-only, so it is resolved through the shared pure resolver rather
+ * than omitted merely because it has no match-row member.
+ */
+function attachmentExpectedWitnessKeys(
+  corpus: WorkspaceCorpus,
+  targetSetId: string,
+  value: unknown,
+): string[] {
+  const parsed = researchEnrichmentObservationRecordSchema.safeParse(value);
+  if (!parsed.success) {
+    return [];
+  }
+  const expected = new Set<string>();
+  const games = parsed.data.games ?? [];
+  const maxOrdinal =
+    games.length > 0 ? Math.max(...games.map((game) => game.ordinal)) : parsed.data.vodUrl ? 1 : 0;
+
+  for (let ordinal = 1; ordinal <= maxOrdinal; ordinal += 1) {
+    const matchKey = `${enrichmentRowKeyPrefix(targetSetId)}${ordinal}`;
+    const row = corpus.matchRows.get(matchKey);
+    if (!isPlainRecord(row)) {
+      continue;
+    }
+    const provider = providerProjectionForKey(corpus, matchKey);
+
+    if (parsed.data.vodUrl) {
+      const storedVod = rawString(row, 'vodUrl');
+      if (storedVod === null) {
+        expected.add(matchKey);
+      }
+      if (storedVod === parsed.data.vodUrl && provider?.vodUrl !== storedVod) {
+        // The row already contains exactly the attached Liquipedia claim and
+        // the lossless provider source cannot explain it. A missing witness
+        // here is a deleted attribution, not a fill-empty abstention.
+        expected.add(matchKey);
+      }
+    }
+
+    const game = games.find((candidate) => candidate.ordinal === ordinal);
+    if (!game) {
+      continue;
+    }
+    if (game.canonicalStageId != null || game.rawStage != null) {
+      const storedStage = rowStage(row);
+      const rawProviderStageId = provider?.game?.['stageId'];
+      const providerStageId =
+        typeof rawProviderStageId === 'number'
+          ? rawProviderStageId
+          : typeof rawProviderStageId === 'string'
+            ? Number(rawProviderStageId)
+            : null;
+      const providerStage =
+        provider?.game != null
+          ? resolveStage(
+              providerStageId != null && Number.isFinite(providerStageId) ? providerStageId : null,
+              rawString(provider.game, 'stageName'),
+            )
+          : null;
+      const providerProvesStoredStage =
+        providerStage != null && providerStage.id === storedStage.id;
+      if (storedStage.id === UNKNOWN_STAGE.id) {
+        expected.add(matchKey);
+      }
+      const canonical =
+        game.canonicalStageId != null ? getStageById(game.canonicalStageId) : undefined;
+      if (!providerProvesStoredStage && canonical != null && storedStage.id === canonical.id) {
+        // Same anti-deletion rule as VOD: equality with the LP claim is not a
+        // reason to waive attribution unless the lossless provider explains
+        // the value independently.
+        expected.add(matchKey);
+      }
+    }
+
+    const seatTags: [string | null, string | null] | undefined = parsed.data.players
+      ? [
+          parsed.data.players[0]?.rawTag != null
+            ? normalizeOpponentTag(parsed.data.players[0].rawTag)
+            : null,
+          parsed.data.players[1]?.rawTag != null
+            ? normalizeOpponentTag(parsed.data.players[1].rawTag)
+            : null,
+        ]
+      : undefined;
+    const rowOpponent = rawString(row, 'opponent');
+    const resolvedEvidence = resolveEnrichedMatchMembers({
+      providerStage: rowStage(row),
+      enrichmentEvidenceConsulted: true,
+      enrichmentGameEvidence: {
+        ...(parsed.data.game != null ? { game: parsed.data.game } : {}),
+        ...(seatTags !== undefined ? { seatTags } : {}),
+        ...(game.rawChars != null ? { rawChars: game.rawChars } : {}),
+        ...(game.stocks != null ? { stocks: game.stocks } : {}),
+        ...(game.winnerSeat != null ? { winnerSeat: game.winnerSeat } : {}),
+        observationId: parsed.data.observationId,
+        sourceRevisionId: parsed.data.sourceRevisionId,
+        parserVersion: parsed.data.parserVersion,
+      },
+      ...(rowOpponent !== null && normalizeOpponentTag(rowOpponent) !== 'unknown'
+        ? { rowOpponentTag: normalizeOpponentTag(rowOpponent) }
+        : {}),
+      ...(typeof row['win'] === 'boolean' ? { rowWin: row['win'] } : {}),
+      ...(typeof row['stocksLeft'] === 'number' ? { existingStocksLeft: row['stocksLeft'] } : {}),
+    });
+    if (
+      resolvedEvidence.witnessPatch.charsCommit.kind === 'set' ||
+      resolvedEvidence.witnessPatch.stocksPreWrite.kind === 'set' ||
+      resolvedEvidence.witnessPatch.stocksCommit.kind === 'set'
+    ) {
+      expected.add(matchKey);
+    }
+  }
+  return [...expected].sort();
+}
+
+/**
  * Assertion 5 — attachment referential integrity, in BOTH directions.
  *
  * Forward, per attachment: the observation exists; a `resolver` attachment's
@@ -1398,15 +1611,7 @@ function assertAttachmentIntegrity(corpora: WorkspaceCorpus[]): AssertionDraft {
     const observationIds = new Set(observationsById.keys());
     const receiptsById = new Map(corpus.receipts);
     const attachedTargetSets = new Set(corpus.attachments.map((entry) => entry.targetSetId));
-    const witnessTargetSets = new Set<string>();
-    for (const [, value] of corpus.witnesses) {
-      if (isPlainRecord(value)) {
-        const targetSetId = rawString(value, 'targetSetId');
-        if (targetSetId !== null) {
-          witnessTargetSets.add(targetSetId);
-        }
-      }
-    }
+    const witnessesByKey = new Map(corpus.witnesses);
 
     for (const attachment of corpus.attachments) {
       inspected += 1;
@@ -1418,6 +1623,15 @@ function assertAttachmentIntegrity(corpora: WorkspaceCorpus[]): AssertionDraft {
           code: 'attachment-dangling-observation',
           workspace: corpus.workspace,
           detail: `attachment ${label} names an observation that does not exist`,
+          path,
+        });
+      }
+
+      if (!corpus.sourceSets.has(attachment.targetSetId)) {
+        findings.push({
+          code: 'attachment-dangling-source-set',
+          workspace: corpus.workspace,
+          detail: `attachment ${label} names no lossless source set under researchSource/${corpus.uid}/sets`,
           path,
         });
       }
@@ -1487,23 +1701,37 @@ function assertAttachmentIntegrity(corpora: WorkspaceCorpus[]): AssertionDraft {
       }
 
       const prefix = enrichmentRowKeyPrefix(attachment.targetSetId);
-      if (!corpus.matchKeys.some((key) => key.startsWith(prefix))) {
+      const hasTargetRow = corpus.matchKeys.some((key) => key.startsWith(prefix));
+      if (
+        !hasTargetRow &&
+        observationDeclaresProjectableClaim(observationsById.get(attachment.observationId))
+      ) {
         findings.push({
           code: 'attachment-dangling-target-set',
           workspace: corpus.workspace,
-          detail: `attachment ${label} names a target set with no match row under matches/${corpus.uid}`,
+          detail: `attachment ${label} carries projectable evidence but names a target set with no match row under matches/${corpus.uid}`,
           expected: `${prefix}<ordinal>`,
           path,
         });
       }
 
-      if (!witnessTargetSets.has(attachment.targetSetId)) {
-        findings.push({
-          code: 'attachment-missing-projection-witness',
-          workspace: corpus.workspace,
-          detail: `attachment ${label} has no projection witness naming its target set`,
-          path,
-        });
+      for (const matchKey of attachmentExpectedWitnessKeys(
+        corpus,
+        attachment.targetSetId,
+        observationsById.get(attachment.observationId),
+      )) {
+        const rawWitness = witnessesByKey.get(matchKey);
+        if (
+          !isPlainRecord(rawWitness) ||
+          rawString(rawWitness, 'targetSetId') !== attachment.targetSetId
+        ) {
+          findings.push({
+            code: 'attachment-missing-projection-witness',
+            workspace: corpus.workspace,
+            detail: `attachment ${label} has a projectable attribution claim for ${matchKey} but that row has no matching projection witness`,
+            path: `researchEnrichmentProjection/${corpus.uid}/${matchKey}`,
+          });
+        }
       }
     }
 
@@ -1659,24 +1887,81 @@ function assertNoStartggLinks(corpora: WorkspaceCorpus[]): AssertionDraft {
 // Digest assertions (7 and 8)
 // ---------------------------------------------------------------------------
 
+interface Sparg0VodPopulations {
+  manualRows: { key: string; vodUrl: string }[];
+  providerRows: { key: string; vodUrl: string }[];
+  providerExpectedCount: number;
+  findings: Gate6Finding[];
+}
+
 /**
- * The user-entered VOD rows on a workspace: a non-empty stored `vodUrl` that
- * the row's own projection witness does NOT vouch for, decided by the SHARED
- * `isSourceOwnedVodValue` (committed ∪ pending accepted set) rather than by a
- * second, divergent local rule. The witness members are read RAW so that a
- * schema-invalid witness cannot silently reclassify a source-owned URL as
- * user-owned (which would mask a real overwrite behind a changed digest, or
- * worse, hide one behind an unchanged one).
+ * Splits pre-existing VODs by FIELD provenance.
+ *
+ * A previous oracle called every VOD not vouched for by Liquipedia
+ * "user-entered". Production disproved that model: start.gg/provider VODs
+ * live on ordinary `source: 'startgg'` match rows and have no enrichment
+ * witness either. Provider ownership is therefore proven from the lossless
+ * source set itself: its `vodUrl` plus its explicit `projectedMatchKeys`.
+ * Only the residual (not enrichment-owned, not provider-owned) is manual.
  */
-function collectUserOwnedVodRows(corpus: WorkspaceCorpus): { key: string; vodUrl: string }[] {
+function collectSparg0VodPopulations(corpus: WorkspaceCorpus): Sparg0VodPopulations {
   const witnessByKey = new Map(corpus.witnesses);
-  const rows: { key: string; vodUrl: string }[] = [];
+  const providerExpectedByKey = new Map<string, string>();
+  for (const [, value] of corpus.sourceSets) {
+    if (!isPlainRecord(value)) {
+      continue;
+    }
+    const vodUrl = rawString(value, 'vodUrl');
+    const projectedMatchKeys = value['projectedMatchKeys'];
+    if (vodUrl === null || !Array.isArray(projectedMatchKeys)) {
+      continue;
+    }
+    for (const key of projectedMatchKeys) {
+      if (typeof key === 'string' && key.length > 0) {
+        providerExpectedByKey.set(key, vodUrl);
+      }
+    }
+  }
+
+  const providerRows: { key: string; vodUrl: string }[] = [];
+  const manualRows: { key: string; vodUrl: string }[] = [];
+  const findings: Gate6Finding[] = [];
+  for (const [key, expectedVodUrl] of providerExpectedByKey) {
+    const row = corpus.matchRows.get(key);
+    const actualVodUrl = isPlainRecord(row) ? rawString(row, 'vodUrl') : null;
+    if (actualVodUrl === null) {
+      findings.push({
+        code: 'provider-vod-missing',
+        workspace: 'sparg0',
+        detail: `provider VOD ${key} is absent even though the lossless start.gg source set supplies it`,
+        expected: expectedVodUrl,
+        actual: actualVodUrl,
+        path: `matches/${corpus.uid}/${key}/vodUrl`,
+      });
+      continue;
+    }
+    if (actualVodUrl === expectedVodUrl) {
+      providerRows.push({ key, vodUrl: actualVodUrl });
+    } else {
+      // `vodUrl` is a user-owned annotation and provider ingestion is
+      // fill-empty-only. A nonempty differing value is therefore a manual
+      // override, not provider corruption. It joins the manual baseline so
+      // later mutation/deletion is still detected.
+      manualRows.push({ key, vodUrl: actualVodUrl });
+    }
+  }
+
   for (const [key, row] of corpus.matchRows) {
     if (!isPlainRecord(row)) {
       continue;
     }
     const vodUrl = rawString(row, 'vodUrl');
     if (vodUrl === null) {
+      continue;
+    }
+    // Provider keys were already classified above: exact value => provider,
+    // nonempty different value => manual fill-empty override, absent => fatal.
+    if (providerExpectedByKey.has(key)) {
       continue;
     }
     const rawWitness = witnessByKey.get(key);
@@ -1687,10 +1972,15 @@ function collectUserOwnedVodRows(corpus: WorkspaceCorpus): { key: string; vodUrl
         }
       : null;
     if (!isSourceOwnedVodValue(vodUrl, witness)) {
-      rows.push({ key, vodUrl });
+      manualRows.push({ key, vodUrl });
     }
   }
-  return rows.sort((left, right) => left.key.localeCompare(right.key));
+  return {
+    manualRows: manualRows.sort((left, right) => left.key.localeCompare(right.key)),
+    providerRows: providerRows.sort((left, right) => left.key.localeCompare(right.key)),
+    providerExpectedCount: providerExpectedByKey.size,
+    findings,
+  };
 }
 
 /**
@@ -1741,38 +2031,64 @@ function compareDigest(
   });
 }
 
-/** Assertion 7 — the protected Sparg0 user-entered VOD rows are byte-identical. */
+/** Assertion 7 — provider and genuinely manual Sparg0 VODs remain intact. */
 function assertSparg0VodPreservation(
-  sparg0: WorkspaceCorpus,
-  observedDigest: Gate6DigestEntry,
+  populations: Sparg0VodPopulations,
+  manualDigest: Gate6DigestEntry,
+  providerDigest: Gate6DigestEntry,
   baseline: Gate6Baseline | null,
+  frozenCensus: { providerCount: number; providerDigest: string; manualCount: number },
 ): AssertionDraft {
-  const findings: Gate6Finding[] = [];
-
-  if (observedDigest.count !== GATE6_SPARG0_USER_OWNED_VOD_ROWS) {
-    findings.push({
-      code: 'protected-vod-count-mismatch',
-      workspace: 'sparg0',
-      detail: `user-entered VOD rows: expected ${GATE6_SPARG0_USER_OWNED_VOD_ROWS}, observed ${observedDigest.count}`,
-      expected: GATE6_SPARG0_USER_OWNED_VOD_ROWS,
-      actual: observedDigest.count,
-      path: `matches/${sparg0.uid}`,
-    });
-  }
-  if (baseline !== null) {
+  const findings: Gate6Finding[] = [...populations.findings];
+  if (baseline === null) {
+    if (providerDigest.count !== frozenCensus.providerCount) {
+      findings.push({
+        code: 'provider-vod-count-mismatch',
+        workspace: 'sparg0',
+        detail: `provider VOD rows: frozen census ${frozenCensus.providerCount}, observed ${providerDigest.count}`,
+        expected: frozenCensus.providerCount,
+        actual: providerDigest.count,
+      });
+    }
+    if (providerDigest.digest !== frozenCensus.providerDigest) {
+      findings.push({
+        code: 'provider-vod-digest-mismatch',
+        workspace: 'sparg0',
+        detail: 'provider VOD rows differ from the frozen pre-enrichment byte census',
+        expected: frozenCensus.providerDigest,
+        actual: providerDigest.digest,
+      });
+    }
+    if (manualDigest.count !== frozenCensus.manualCount) {
+      findings.push({
+        code: 'manual-vod-count-mismatch',
+        workspace: 'sparg0',
+        detail: `manual VOD residual: frozen census ${frozenCensus.manualCount}, observed ${manualDigest.count}`,
+        expected: frozenCensus.manualCount,
+        actual: manualDigest.count,
+      });
+    }
+  } else {
     compareDigest(
       findings,
       'sparg0',
-      'Sparg0 user-entered VOD rows',
-      baseline.sparg0UserOwnedVod,
-      observedDigest,
+      'Sparg0 manual VOD rows',
+      baseline.sparg0ManualVod,
+      manualDigest,
+    );
+    compareDigest(
+      findings,
+      'sparg0',
+      'Sparg0 provider VOD rows',
+      baseline.sparg0ProviderVod,
+      providerDigest,
     );
   }
 
   return {
     id: 'sparg0-vod-preservation',
-    title: 'The protected Sparg0 user-entered VOD rows are byte-identical',
-    inspected: observedDigest.count,
+    title: 'Sparg0 provider and genuinely manual VOD rows retain their provenance and bytes',
+    inspected: populations.providerExpectedCount + populations.manualRows.length,
     findings,
   };
 }
@@ -3274,9 +3590,15 @@ async function runAuditWithReader(
   const byWorkspace = new Map(corpora.map((corpus) => [corpus.workspace, corpus]));
   const sparg0 = byWorkspace.get('sparg0')!;
 
-  // Assertion 7's population: the LOCAL law (no shared equivalent exists).
-  const sparg0Vod = digestOf(
-    collectUserOwnedVodRows(sparg0).map((row) => ({ key: row.key, payload: row.vodUrl })),
+  // Assertion 7's two populations: the LOCAL law (no shared equivalent
+  // exists). Provider rows are proven from the lossless source; only the
+  // residual is described as manual.
+  const sparg0VodPopulations = collectSparg0VodPopulations(sparg0);
+  const sparg0ManualVod = digestOf(
+    sparg0VodPopulations.manualRows.map((row) => ({ key: row.key, payload: row.vodUrl })),
+  );
+  const sparg0ProviderVod = digestOf(
+    sparg0VodPopulations.providerRows.map((row) => ({ key: row.key, payload: row.vodUrl })),
   );
   // Assertion 8's population: the SHARED registry law. `computeForeignRowDigest`
   // applies `isTournamentRegistryOwnedRow` itself, so this audit never restates
@@ -3296,11 +3618,12 @@ async function runAuditWithReader(
   ) as Record<Gate6WorkspaceKey, LiveRegistryRows>;
 
   const observedBaseline: Gate6Baseline = {
-    baselineVersion: 2,
+    baselineVersion: 3,
     expectationTableVersion: GATE6_EXPECTATION_TABLE_VERSION,
     recordedAtMs: options.nowMs,
     targetUids: { ...options.uids },
-    sparg0UserOwnedVod: sparg0Vod,
+    sparg0ManualVod,
+    sparg0ProviderVod,
     registryForeign,
   };
 
@@ -3331,7 +3654,17 @@ async function runAuditWithReader(
     assertSchemaConformance(corpora),
     assertAttachmentIntegrity(corpora),
     assertNoStartggLinks(corpora),
-    assertSparg0VodPreservation(sparg0, sparg0Vod, baseline),
+    assertSparg0VodPreservation(
+      sparg0VodPopulations,
+      sparg0ManualVod,
+      sparg0ProviderVod,
+      baseline,
+      options.frozenSparg0VodCensus ?? {
+        providerCount: GATE6_SPARG0_FROZEN_PROVIDER_VOD_ROWS,
+        providerDigest: GATE6_SPARG0_FROZEN_PROVIDER_VOD_DIGEST,
+        manualCount: GATE6_SPARG0_FROZEN_MANUAL_VOD_ROWS,
+      },
+    ),
     assertRegistryPreservation(registryForeign, baseline),
     await assertIzawCoachingRoot(reader, options.uids.izaw),
     rejectedOperations.draft,
@@ -3388,7 +3721,7 @@ async function runAuditWithReader(
   });
 
   return {
-    receiptVersion: 5,
+    receiptVersion: 6,
     expectationTableVersion: GATE6_EXPECTATION_TABLE_VERSION,
     generatedAtMs: options.nowMs,
     targetUids: { ...options.uids },

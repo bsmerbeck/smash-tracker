@@ -30,7 +30,11 @@ import {
 } from '@smash-tracker/shared';
 import { normalizeOpponentTag } from '../../startgg/sync.js';
 import { isPathSafeTenantId } from '../subjectKind.js';
-import { listAttachmentsForSet, readEnrichmentObservation } from './store.js';
+import {
+  enrichmentObservationFingerprintMatches,
+  listAttachmentsForSet,
+  readEnrichmentObservation,
+} from './store.js';
 import {
   readConfirmedCandidateVodForSet,
   VOD_CANDIDATE_MAX_ORDINAL_PROBE,
@@ -282,6 +286,13 @@ export function buildEnrichmentOverlay(input: BuildEnrichmentOverlayInput): Enri
     if (!record) {
       // An attachment naming an observation the caller never loaded is
       // skipped, never fabricated (mirrors `overlayEnrichment` in store.ts).
+      continue;
+    }
+    if (!enrichmentObservationFingerprintMatches(attachment, record)) {
+      // A stable observation id can be refreshed while an old attachment is
+      // still visible to a racing reader. Authorization is fingerprint-
+      // bound: stale attachment bytes never authorize the refreshed VOD,
+      // stage, character, or stock evidence.
       continue;
     }
 
@@ -621,6 +632,71 @@ function witnessCarriesAnyClaim(parsed: ResearchEnrichmentProjectionStateRecord)
     parsed.pendingStageId != null ||
     parsed.pendingStageRaw != null
   );
+}
+
+/**
+ * Durable cleanup discovery for stable-id fingerprint invalidation. A write
+ * can atomically revoke an attachment and then crash before projection. The
+ * old witness is the durable pointer to the affected target set; if any
+ * observation id it cites now has no attachment, no observation, or a
+ * fingerprint-stale attachment, the next run must reproject that target.
+ * A target with no witness had no source-owned projection to clean.
+ */
+export async function listStaleProjectionTargetSetIds(
+  database: Database,
+  tenantId: string,
+): Promise<string[]> {
+  if (!isPathSafeTenantId(tenantId)) {
+    return [];
+  }
+  const snapshot = await database.ref(`researchEnrichmentProjection/${tenantId}`).get();
+  if (!snapshot.exists()) {
+    return [];
+  }
+  const observationIdsByTarget = new Map<string, Set<string>>();
+  for (const value of Object.values(snapshot.val() as Record<string, unknown>)) {
+    const parsed = researchEnrichmentProjectionStateRecordSchema.safeParse(value);
+    if (!parsed.success) continue;
+    const witness = parsed.data;
+    const ids = [
+      witness.vodObservationId,
+      witness.stageObservationId,
+      witness.charsObservationId,
+      witness.stocksObservationId,
+      witness.pendingVodObservationId,
+      witness.pendingStageObservationId,
+      witness.pendingStocksObservationId,
+    ].filter((id): id is string => typeof id === 'string' && id.length > 0);
+    if (ids.length === 0) continue;
+    const targetIds = observationIdsByTarget.get(witness.targetSetId) ?? new Set<string>();
+    for (const id of ids) targetIds.add(id);
+    observationIdsByTarget.set(witness.targetSetId, targetIds);
+  }
+
+  const staleTargets: string[] = [];
+  for (const [targetSetId, observationIds] of observationIdsByTarget) {
+    const attachments = await listAttachmentsForSet(database, tenantId, targetSetId);
+    const attachmentByObservationId = new Map(
+      attachments.map((attachment) => [attachment.observationId, attachment]),
+    );
+    let stale = false;
+    for (const observationId of observationIds) {
+      const [attachment, observation] = [
+        attachmentByObservationId.get(observationId),
+        await readEnrichmentObservation(database, tenantId, observationId),
+      ];
+      if (
+        !attachment ||
+        !observation ||
+        !enrichmentObservationFingerprintMatches(attachment, observation)
+      ) {
+        stale = true;
+        break;
+      }
+    }
+    if (stale) staleTargets.push(targetSetId);
+  }
+  return staleTargets.sort((a, b) => a.localeCompare(b));
 }
 
 /**

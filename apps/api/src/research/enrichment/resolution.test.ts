@@ -372,6 +372,32 @@ describe('resolveObservation — VOD-page discovery-index rows', () => {
     }
   });
 
+  it('falls back from a timestamped or /live/ URL to one unique no-offset video identity within the same tournament', () => {
+    const matchedBracketVodIdentities = new Map([
+      ['Supernova/2026/Ultimate::https://www.youtube.com/watch?v=abc123', 'startgg-set-r3m1'],
+    ]);
+    for (const vodUrl of [
+      'https://youtu.be/abc123?t=90',
+      'https://www.youtube.com/live/abc123?start=90',
+    ]) {
+      const outcome = resolveObservation(makeVodRowObservation({ vodUrl }), makeIndex([]), {
+        matchedBracketVodIdentities,
+      });
+      expect(outcome).toEqual(
+        expect.objectContaining({ type: 'matched', targetSetId: 'startgg-set-r3m1' }),
+      );
+    }
+  });
+
+  it('abstains when the caller omits an ambiguous shared-video identity (GF/reset non-collapse)', () => {
+    const outcome = resolveObservation(
+      makeVodRowObservation({ vodUrl: 'https://youtu.be/abc123?t=90' }),
+      makeIndex([]),
+      { matchedBracketVodIdentities: new Map() },
+    );
+    expect(outcome.type).toBe('ambiguous');
+  });
+
   it('resolves as ambiguous with no bracket corroboration', () => {
     const outcome = resolveObservation(makeVodRowObservation(), makeIndex([]));
     expect(outcome.type).toBe('ambiguous');

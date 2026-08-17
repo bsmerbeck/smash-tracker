@@ -24,6 +24,7 @@ import {
 } from '../../liquipedia/revisionCache.js';
 import { resolvePlayerVodPages } from '../../liquipedia/playerPages.js';
 import { extractVodListRows, toVodObservationRecords } from '../../liquipedia/adapters/vodList.js';
+import { buildLiquipediaVodCorroborationIdentity } from '../../liquipedia/vodUrl.js';
 import { detectTemplateFamily, hashWikitext } from '../../liquipedia/wikitext.js';
 import { extractEventContext, type LiquipediaEventContext } from '../../liquipedia/eventContext.js';
 import { extractLegacyBracketObservations } from '../../liquipedia/adapters/legacyBracket.js';
@@ -34,16 +35,19 @@ import {
   createObservationIdCollisionGuard,
   prepareAndValidateObservation,
 } from './prepareObservation.js';
-import { buildResolutionReceipt, resolveObservation } from './resolution.js';
+import { buildResolutionReceipt, deriveReceiptId, resolveObservation } from './resolution.js';
 import {
   attachResolvedObservation,
+  enrichmentObservationFingerprintMatches,
   listAttachedTargetSetIds,
   listAttachmentsForSet,
+  listEnrichmentAttachmentsByTargetSet,
   listEnrichmentObservations,
   listEnrichmentReviewQueue,
   listRawObservationVersionIndex,
   listReceiptedObservationIds,
   readEnrichmentObservation,
+  readResolutionReceipt,
   removeSupersededObservations,
   sweepOutdatedFamilyObservations,
   writeEnrichmentObservation,
@@ -52,6 +56,7 @@ import {
 import {
   applyEnrichmentProjection,
   buildEnrichmentOverlay,
+  listStaleProjectionTargetSetIds,
   previewEnrichmentProjection,
   type EnrichmentEvidenceCounts,
   type EnrichmentProjectionCounts,
@@ -581,6 +586,13 @@ export async function runEnrichmentBatch(
   // a PRIOR invocation persisted.
   const gatheredObservations: ResearchEnrichmentObservationRecord[] = [];
 
+  // Stable observation ids can survive a source refresh while their
+  // fingerprint changes. The store atomically revokes their old receipt and
+  // attachments; retain the former target-set ids for this invocation so
+  // projection can remove or replace values those attachments authorized,
+  // even when the refreshed observation now abstains or resolves elsewhere.
+  const invalidatedTargetSetIds = new Set<string>();
+
   // COLLISION-LOUD parity (30.2 defect C): every gathered observation
   // registers its id here; a duplicate within one gather aborts the run at
   // extraction time — dry-run and apply alike — instead of letting the
@@ -637,6 +649,7 @@ export async function runEnrichmentBatch(
         advanceCursor,
         registerObservationId,
         staleObservationIndex,
+        invalidatedTargetSetIds,
       });
 
       if (!dryRun && runId && holder) {
@@ -668,6 +681,7 @@ export async function runEnrichmentBatch(
       gatheredObservations,
       dryRunDetails,
       tick,
+      invalidatedTargetSetIds,
     });
 
     if (!dryRun && runId && holder) {
@@ -734,6 +748,8 @@ interface GatherPhaseInput {
   registerObservationId: (record: ResearchEnrichmentObservationRecord) => void;
   /** Pre-run observation snapshot by source page for the stale-parser supersede pass; `null` on dry runs and projection resumes. */
   staleObservationIndex: Map<string, { observationId: string; parserVersion: string }[]> | null;
+  /** Target sets whose authorization was revoked by a stable-id fingerprint replacement during this gather. */
+  invalidatedTargetSetIds: Set<string>;
 }
 
 async function gatherPhase(input: GatherPhaseInput): Promise<void> {
@@ -755,7 +771,15 @@ async function gatherPhase(input: GatherPhaseInput): Promise<void> {
     advanceCursor,
     registerObservationId,
     staleObservationIndex,
+    invalidatedTargetSetIds,
   } = input;
+
+  async function persistObservation(record: ResearchEnrichmentObservationRecord): Promise<void> {
+    const result = await writeEnrichmentObservation(database, tenantId, record);
+    for (const targetSetId of result.invalidatedTargetSetIds ?? []) {
+      invalidatedTargetSetIds.add(targetSetId);
+    }
+  }
 
   /** Removes the re-extracted page's prior-parser-generation records (with receipts/attachments) — see the index's doc comment in `runEnrichmentBatch`. */
   async function supersedeStaleForPage(
@@ -876,7 +900,7 @@ async function gatherPhase(input: GatherPhaseInput): Promise<void> {
         tournamentPageTitles.add(prepared.tournamentPageTitle);
       }
       if (!dryRun) {
-        await writeEnrichmentObservation(database, tenantId, prepared);
+        await persistObservation(prepared);
       }
     }
 
@@ -1056,7 +1080,7 @@ async function gatherPhase(input: GatherPhaseInput): Promise<void> {
       registerObservationId(preparedUnmatched);
       gatheredObservations.push(preparedUnmatched);
       if (!dryRun) {
-        await writeEnrichmentObservation(database, tenantId, preparedUnmatched);
+        await persistObservation(preparedUnmatched);
         await writeLiquipediaPageCache(database, {
           pageId: cacheKey,
           title: page.title,
@@ -1115,7 +1139,7 @@ async function gatherPhase(input: GatherPhaseInput): Promise<void> {
       registerObservationId(prepared);
       gatheredObservations.push(prepared);
       if (!dryRun) {
-        await writeEnrichmentObservation(database, tenantId, prepared);
+        await persistObservation(prepared);
       }
     }
 
@@ -1159,6 +1183,8 @@ interface ResolveAndProjectPhaseInput {
   gatheredObservations: ResearchEnrichmentObservationRecord[];
   dryRunDetails: EnrichmentDryRunDetails | undefined;
   tick: (stage: EnrichmentRunProgressEvent['stage'], unit?: string) => Promise<void>;
+  /** Former targets whose stable-id source authorization changed during gather and must be reprojected even if now unattached. */
+  invalidatedTargetSetIds: Set<string>;
 }
 
 /**
@@ -1188,6 +1214,7 @@ async function resolveAndProjectPhase(input: ResolveAndProjectPhaseInput): Promi
     gatheredObservations,
     dryRunDetails,
     tick,
+    invalidatedTargetSetIds,
   } = input;
 
   if (dryRunDetails) {
@@ -1243,8 +1270,10 @@ async function resolveAndProjectPhase(input: ResolveAndProjectPhaseInput): Promi
   // a `replaced` attachment. Only schema-parsed records enter resolution
   // (the raw-read requirement applies to hygiene sweeps, never here).
   let queue: ResearchEnrichmentObservationRecord[];
+  let allCurrentObservations: ResearchEnrichmentObservationRecord[];
   if (dryRun) {
     queue = gatheredObservations;
+    allCurrentObservations = gatheredObservations;
   } else {
     const reviewQueue = await listEnrichmentReviewQueue(database, tenantId);
     const receiptedIds = await listReceiptedObservationIds(database, tenantId);
@@ -1254,7 +1283,8 @@ async function resolveAndProjectPhase(input: ResolveAndProjectPhaseInput): Promi
       LIQUIPEDIA_PARSER_VERSION_VOD_LIST,
       WIKITEXT_PROBE_PARSER_VERSION,
     ]);
-    const receiptless = (await listEnrichmentObservations(database, tenantId)).filter(
+    allCurrentObservations = await listEnrichmentObservations(database, tenantId);
+    const receiptless = allCurrentObservations.filter(
       (record) =>
         currentParserVersions.has(record.parserVersion) && !receiptedIds.has(record.observationId),
     );
@@ -1274,11 +1304,126 @@ async function resolveAndProjectPhase(input: ResolveAndProjectPhaseInput): Promi
   const vodRows = queue.filter((observation) => observation.contentType === 'vod-reference');
 
   const matchedBracketVodUrls = new Map<string, string>();
+  const matchedBracketVodIdentities = new Map<string, string>();
+  const matchedBracketVodUrlCandidates = new Map<string, Set<string>>();
+  const matchedBracketVodIdentityCandidates = new Map<string, Set<string>>();
+  // Count every current bracket observation carrying the stream identity,
+  // not only the observations that happen to resolve in this invocation.
+  // A resolved GF plus an unresolved reset on the same broadcast is still
+  // ambiguous: the unresolved row is a contender, not permission to treat
+  // the one resolved target as unique. Exact URL and offset-insensitive
+  // fallback share this fail-closed cardinality rule.
+  const bracketVodUrlContenderCounts = new Map<string, number>();
+  const bracketVodIdentityContenderCounts = new Map<string, number>();
+  for (const observation of allCurrentObservations) {
+    if (
+      observation.contentType === 'vod-reference' ||
+      !observation.vodUrl ||
+      !observation.tournamentPageTitle
+    ) {
+      continue;
+    }
+    const exactKey = `${observation.tournamentPageTitle}::${observation.vodUrl}`;
+    bracketVodUrlContenderCounts.set(
+      exactKey,
+      (bracketVodUrlContenderCounts.get(exactKey) ?? 0) + 1,
+    );
+    const identity = buildLiquipediaVodCorroborationIdentity(observation.vodUrl);
+    if (identity) {
+      const identityKey = `${observation.tournamentPageTitle}::${identity}`;
+      bracketVodIdentityContenderCounts.set(
+        identityKey,
+        (bracketVodIdentityContenderCounts.get(identityKey) ?? 0) + 1,
+      );
+    }
+  }
+  const registerUniqueCorroboration = (
+    candidates: Map<string, Set<string>>,
+    unique: Map<string, string>,
+    contenderCounts: Map<string, number>,
+    key: string,
+    targetSetId: string,
+  ) => {
+    const targets = candidates.get(key) ?? new Set<string>();
+    targets.add(targetSetId);
+    candidates.set(key, targets);
+    if (targets.size === 1 && contenderCounts.get(key) === 1) {
+      unique.set(key, targetSetId);
+    } else {
+      unique.delete(key);
+    }
+  };
+
+  if (!dryRun) {
+    // A generated VOD page can change while all of its corroborating
+    // bracket rows remain validly attached and therefore absent from the
+    // review queue. Seed the maps from those durable authorizations so the
+    // new row does not falsely abstain. This remains fail-closed: resolver
+    // receipt + attachment + current observation fingerprints must agree,
+    // and all unresolved bracket observations still count above when
+    // deciding whether the stream identity is unique.
+    const observationsById = new Map(
+      allCurrentObservations.map((observation) => [observation.observationId, observation]),
+    );
+    const attachedByTarget = await listEnrichmentAttachmentsByTargetSet(database, tenantId);
+    for (const [targetSetId, attachments] of attachedByTarget) {
+      for (const attachment of attachments) {
+        const observation = observationsById.get(attachment.observationId);
+        if (
+          !observation ||
+          observation.contentType === 'vod-reference' ||
+          !observation.vodUrl ||
+          !observation.tournamentPageTitle ||
+          attachment.attachmentSource !== 'resolver' ||
+          !attachment.receiptId ||
+          !enrichmentObservationFingerprintMatches(attachment, observation)
+        ) {
+          continue;
+        }
+        const receipt = await readResolutionReceipt(database, tenantId, observation.observationId);
+        if (
+          !receipt ||
+          receipt.receiptId !== attachment.receiptId ||
+          receipt.targetSetId !== targetSetId ||
+          receipt.observationId !== observation.observationId ||
+          !enrichmentObservationFingerprintMatches(receipt, observation) ||
+          deriveReceiptId({
+            observationId: receipt.observationId,
+            resolverVersion: receipt.resolverVersion,
+            sourceContentHash: receipt.sourceContentHash,
+          }) !== receipt.receiptId
+        ) {
+          continue;
+        }
+        const exactKey = `${observation.tournamentPageTitle}::${observation.vodUrl}`;
+        registerUniqueCorroboration(
+          matchedBracketVodUrlCandidates,
+          matchedBracketVodUrls,
+          bracketVodUrlContenderCounts,
+          exactKey,
+          targetSetId,
+        );
+        const identity = buildLiquipediaVodCorroborationIdentity(observation.vodUrl);
+        if (identity) {
+          registerUniqueCorroboration(
+            matchedBracketVodIdentityCandidates,
+            matchedBracketVodIdentities,
+            bracketVodIdentityContenderCounts,
+            `${observation.tournamentPageTitle}::${identity}`,
+            targetSetId,
+          );
+        }
+      }
+    }
+  }
   const newlyAttachedTargetSetIds = new Set<string>();
   const dryRunAttachments = new Map<string, ResearchEnrichmentAttachmentRecord[]>();
 
   async function resolveOne(observation: ResearchEnrichmentObservationRecord): Promise<void> {
-    const outcome = resolveObservation(observation, candidateIndex, { matchedBracketVodUrls });
+    const outcome = resolveObservation(observation, candidateIndex, {
+      matchedBracketVodUrls,
+      matchedBracketVodIdentities,
+    });
 
     if (outcome.type === 'ambiguous') {
       counts.resolvedAmbiguous += 1;
@@ -1321,10 +1466,23 @@ async function resolveAndProjectPhase(input: ResolveAndProjectPhaseInput): Promi
       observation.vodUrl &&
       observation.tournamentPageTitle
     ) {
-      matchedBracketVodUrls.set(
+      registerUniqueCorroboration(
+        matchedBracketVodUrlCandidates,
+        matchedBracketVodUrls,
+        bracketVodUrlContenderCounts,
         `${observation.tournamentPageTitle}::${observation.vodUrl}`,
         outcome.targetSetId,
       );
+      const identity = buildLiquipediaVodCorroborationIdentity(observation.vodUrl);
+      if (identity) {
+        registerUniqueCorroboration(
+          matchedBracketVodIdentityCandidates,
+          matchedBracketVodIdentities,
+          bracketVodIdentityContenderCounts,
+          `${observation.tournamentPageTitle}::${identity}`,
+          outcome.targetSetId,
+        );
+      }
     }
 
     if (dryRun) {
@@ -1475,7 +1633,11 @@ async function resolveAndProjectPhase(input: ResolveAndProjectPhaseInput): Promi
     }
   }
 
-  for (const targetSetId of newlyAttachedTargetSetIds) {
+  const directlyTouchedTargetSetIds = new Set([
+    ...newlyAttachedTargetSetIds,
+    ...invalidatedTargetSetIds,
+  ]);
+  for (const targetSetId of directlyTouchedTargetSetIds) {
     await projectOneSet(targetSetId);
     await tick('projection', targetSetId);
   }
@@ -1508,8 +1670,12 @@ async function resolveAndProjectPhase(input: ResolveAndProjectPhaseInput): Promi
   // actually missing its fill (a real stranded crash residue) triggers an
   // apply, which then converges by the projection module's own
   // crash-safety contract.
-  for (const targetSetId of await listAttachedTargetSetIds(database, tenantId)) {
-    if (newlyAttachedTargetSetIds.has(targetSetId)) {
+  const durableReconciliationTargets = new Set([
+    ...(await listAttachedTargetSetIds(database, tenantId)),
+    ...(await listStaleProjectionTargetSetIds(database, tenantId)),
+  ]);
+  for (const targetSetId of durableReconciliationTargets) {
+    if (directlyTouchedTargetSetIds.has(targetSetId)) {
       continue;
     }
     const attachments = await listAttachmentsForSet(database, tenantId, targetSetId);

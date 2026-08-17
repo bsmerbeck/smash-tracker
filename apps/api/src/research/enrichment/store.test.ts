@@ -118,6 +118,112 @@ describe('writeEnrichmentObservation', () => {
     expect(result.outcome).toBe('rejected-provenance');
     expect(database.dump().researchEnrichmentObservations).toBeUndefined();
   });
+
+  it('atomically invalidates the receipt and every attachment when a stable observation id receives a new fingerprint, then permits fresh authorization', async () => {
+    const database = new FakeDatabase();
+    const otherTargetSetId = 'startgg-set-2';
+    const original = makeObservationRecord({
+      candidateTargetSetIds: [TARGET_SET_ID, otherTargetSetId],
+    });
+    const { receipt: originalReceipt } = await seedGenuineReceipt(database, original, 5000);
+    await attachResolvedObservation(
+      asDatabase(database),
+      TENANT_ID,
+      original.observationId,
+      originalReceipt.receiptId,
+      6000,
+    );
+    await confirmEnrichmentObservationByAdmin(
+      asDatabase(database),
+      TENANT_ID,
+      original.observationId,
+      otherTargetSetId,
+      'admin-uid-1',
+      6001,
+    );
+
+    const refreshed = makeObservationRecord({
+      sourceRevisionId: original.sourceRevisionId + 1,
+      sourceContentHash: 'b'.repeat(64),
+      parserVersion: 'liquipedia-bracket-legacy@2',
+      candidateTargetSetIds: [TARGET_SET_ID],
+    });
+    const result = await writeEnrichmentObservation(asDatabase(database), TENANT_ID, refreshed);
+
+    expect(result).toEqual({
+      outcome: 'replaced',
+      fingerprintChanged: true,
+      invalidatedReceiptCount: 1,
+      invalidatedAttachmentCount: 2,
+      invalidatedTargetSetIds: [TARGET_SET_ID, otherTargetSetId],
+    });
+    expect(await readEnrichmentObservation(asDatabase(database), TENANT_ID, 'obs-1')).toEqual(
+      refreshed,
+    );
+    expect(await readResolutionReceipt(asDatabase(database), TENANT_ID, 'obs-1')).toBeNull();
+    expect(await listAttachmentsForSet(asDatabase(database), TENANT_ID, TARGET_SET_ID)).toEqual([]);
+    expect(await listAttachmentsForSet(asDatabase(database), TENANT_ID, otherTargetSetId)).toEqual(
+      [],
+    );
+    expect(
+      (await listEnrichmentReviewQueue(asDatabase(database), TENANT_ID)).map(
+        (row) => row.observationId,
+      ),
+    ).toEqual(['obs-1']);
+
+    const freshReceipt = buildResolutionReceipt(refreshed, matchedOutcomeFor(TARGET_SET_ID), 7000)!;
+    expect(await writeResolutionReceipt(asDatabase(database), TENANT_ID, freshReceipt)).toEqual({
+      outcome: 'created',
+    });
+    expect(
+      await attachResolvedObservation(
+        asDatabase(database),
+        TENANT_ID,
+        refreshed.observationId,
+        freshReceipt.receiptId,
+        7001,
+      ),
+    ).toEqual({ outcome: 'created' });
+    expect(await listAttachmentsForSet(asDatabase(database), TENANT_ID, TARGET_SET_ID)).toEqual([
+      expect.objectContaining({
+        sourceRevisionId: refreshed.sourceRevisionId,
+        sourceContentHash: refreshed.sourceContentHash,
+        parserVersion: refreshed.parserVersion,
+        receiptId: freshReceipt.receiptId,
+      }),
+    ]);
+  });
+
+  it('preserves byte-identical authorization state on an identical fingerprint replay', async () => {
+    const database = new FakeDatabase();
+    const record = makeObservationRecord();
+    const { receipt } = await seedGenuineReceipt(database, record, 5000);
+    await attachResolvedObservation(
+      asDatabase(database),
+      TENANT_ID,
+      record.observationId,
+      receipt.receiptId,
+      6000,
+    );
+    const beforeReceipt = structuredClone(database.dump().researchEnrichmentReceipts);
+    const beforeAttachments = structuredClone(database.dump().researchEnrichmentAttachments);
+
+    const result = await writeEnrichmentObservation(
+      asDatabase(database),
+      TENANT_ID,
+      makeObservationRecord({ fetchedAtMs: 9000, observedAtMs: 9000 }),
+    );
+
+    expect(result).toEqual({
+      outcome: 'replaced',
+      fingerprintChanged: false,
+      invalidatedReceiptCount: 0,
+      invalidatedAttachmentCount: 0,
+      invalidatedTargetSetIds: [],
+    });
+    expect(database.dump().researchEnrichmentReceipts).toEqual(beforeReceipt);
+    expect(database.dump().researchEnrichmentAttachments).toEqual(beforeAttachments);
+  });
 });
 
 describe('readEnrichmentObservation / listEnrichmentObservations', () => {

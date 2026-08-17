@@ -143,7 +143,16 @@ export async function createOrResumeEnrichmentRun(
 
   const result = await runRef(database, tenantId).transaction((raw) => {
     const current = parseRun(raw);
-    if (current && current.status === 'running') {
+    if (
+      current &&
+      (current.status === 'running' ||
+        (current.lease != null && current.lease.expiresAtMs > startedAtMs))
+    ) {
+      // A bounded maintenance operator may lease the terminal slot while it
+      // repairs derived enrichment state. Replacing that slot would erase
+      // its fence and let a normal run overlap the repair. An unexpired
+      // terminal lease is therefore as exclusive as a running run; once it
+      // is released/expired, ordinary create semantics resume.
       return buildStoredRun(current);
     }
     const newRun: ResearchEnrichmentRunRecord = {
@@ -264,6 +273,62 @@ export async function acquireEnrichmentRunLease(
     return buildStoredRun(grantedRun);
   });
 
+  return outcome;
+}
+
+/**
+ * Exclusive lease for a maintenance repair that must not overlap an
+ * ordinary enrichment run. Unlike the ordinary acquirer, this grants ONLY
+ * on a terminal run record; `createOrResumeEnrichmentRun` above preserves
+ * the terminal slot while this lease is unexpired, so the same fence blocks
+ * both directions of the race.
+ */
+export async function acquireTerminalEnrichmentRunLease(
+  database: Database,
+  tenantId: string,
+  runId: string,
+  ownerId: string,
+  now?: number,
+  ttlMs?: number,
+): Promise<AcquireEnrichmentLeaseResult> {
+  const nowMs = now ?? Date.now();
+  const effectiveTtlMs = ttlMs ?? ENRICHMENT_LEASE_TTL_MS;
+  let outcome: AcquireEnrichmentLeaseResult = {
+    acquired: false,
+    holder: null,
+    heldBy: null,
+    expiresAtMs: null,
+  };
+  await runRef(database, tenantId).transaction((raw) => {
+    const current = parseRun(raw);
+    if (!current || current.runId !== runId || current.status === 'running') {
+      return current ? buildStoredRun(current) : null;
+    }
+    const lease = current.lease;
+    if (lease && lease.expiresAtMs > nowMs && lease.ownerId !== ownerId) {
+      outcome = {
+        acquired: false,
+        holder: null,
+        heldBy: lease.ownerId,
+        expiresAtMs: lease.expiresAtMs,
+      };
+      return buildStoredRun(current);
+    }
+    const nextFence = (current.leaseFenceCounter ?? 0) + 1;
+    const expiresAtMs = nowMs + effectiveTtlMs;
+    const granted: ResearchEnrichmentRunRecord = {
+      ...current,
+      leaseFenceCounter: nextFence,
+      lease: { ownerId, acquiredAtMs: nowMs, expiresAtMs, fence: nextFence },
+    };
+    outcome = {
+      acquired: true,
+      holder: { ownerId, fence: nextFence },
+      heldBy: ownerId,
+      expiresAtMs,
+    };
+    return buildStoredRun(granted);
+  });
   return outcome;
 }
 

@@ -115,6 +115,60 @@ describe('buildEnrichmentOverlay', () => {
     expect(deriveEnrichmentMatchRowKey(targetSetId, 3)).toBe(`sgg-${targetSetId}-g3`);
   });
 
+  it('requires the attachment fingerprint to match before it authorizes any VOD, stage, character, or stock evidence', () => {
+    const targetSetId = 'startgg-set-fingerprint';
+    const observation = makeObservation({
+      vodUrl: 'https://www.youtube.com/watch?v=fingerprint',
+      players: [{ rawTag: 'Subject' }, { rawTag: 'Opponent' }],
+      games: [
+        {
+          ordinal: 1,
+          canonicalStageId: 3,
+          rawStage: 'FD',
+          rawChars: ['cloud', 'diddy'],
+          stocks: [2, 0],
+          winnerSeat: 1,
+        },
+      ],
+    });
+    const matching: ResearchEnrichmentAttachmentRecord = {
+      observationId: observation.observationId,
+      targetSetId,
+      attachmentSource: 'admin',
+      attachedAtMs: 1,
+      sourceRevisionId: observation.sourceRevisionId,
+      sourceContentHash: observation.sourceContentHash,
+      parserVersion: observation.parserVersion,
+      confirmedByUid: 'admin-1',
+      confirmedAtMs: 1,
+    };
+
+    const positive = buildEnrichmentOverlay({
+      targetSetId,
+      attachments: [matching],
+      observations: { [observation.observationId]: observation },
+    });
+    expect(Object.keys(positive.enrichedVodUrlByKey)).toHaveLength(1);
+    expect(Object.keys(positive.enrichedStageByKey)).toHaveLength(1);
+    expect(Object.keys(positive.enrichedGameEvidenceByKey ?? {})).toHaveLength(1);
+
+    for (const stale of [
+      { ...matching, sourceRevisionId: matching.sourceRevisionId + 1 },
+      { ...matching, sourceContentHash: 'b'.repeat(64) },
+      { ...matching, parserVersion: `${matching.parserVersion}-stale` },
+    ]) {
+      const rejected = buildEnrichmentOverlay({
+        targetSetId,
+        attachments: [stale],
+        observations: { [observation.observationId]: observation },
+      });
+      expect(rejected.enrichedVodUrlByKey).toEqual({});
+      expect(rejected.enrichedVodSourceByKey).toEqual({});
+      expect(rejected.enrichedStageByKey).toEqual({});
+      expect(rejected.enrichedGameEvidenceByKey).toEqual({});
+    }
+  });
+
   it('applies a set-level VOD to every declared game row, and a game-level stage only to its matching ordinal', () => {
     const targetSetId = 'startgg-set-gf';
     const observation = makeObservation({
@@ -177,14 +231,16 @@ describe('buildEnrichmentOverlay', () => {
       sourcePageTitle: 'TestPlayer/VODs',
       vodUrl: url,
     });
-    const makeAttachment = (observationId: string): ResearchEnrichmentAttachmentRecord => ({
-      observationId,
+    const makeAttachment = (
+      observation: ResearchEnrichmentObservationRecord,
+    ): ResearchEnrichmentAttachmentRecord => ({
+      observationId: observation.observationId,
       targetSetId,
       attachmentSource: 'admin',
       attachedAtMs: 1,
-      sourceRevisionId: 500,
-      sourceContentHash: 'a'.repeat(64),
-      parserVersion: 'liquipedia-bracket-legacy@2',
+      sourceRevisionId: observation.sourceRevisionId,
+      sourceContentHash: observation.sourceContentHash,
+      parserVersion: observation.parserVersion,
       confirmedByUid: 'admin-1',
       confirmedAtMs: 1,
     });
@@ -194,8 +250,8 @@ describe('buildEnrichmentOverlay', () => {
     };
 
     for (const attachments of [
-      [makeAttachment('zz-bracket-obs'), makeAttachment('aa-vodlist-obs')],
-      [makeAttachment('aa-vodlist-obs'), makeAttachment('zz-bracket-obs')],
+      [makeAttachment(bracketObservation), makeAttachment(vodListObservation)],
+      [makeAttachment(vodListObservation), makeAttachment(bracketObservation)],
     ]) {
       const overlay = buildEnrichmentOverlay({ targetSetId, attachments, observations });
       expect(overlay.enrichedVodUrlByKey[key]).toBe(url);

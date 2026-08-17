@@ -3,7 +3,11 @@ import { describe, expect, it } from 'vitest';
 import { LIQUIPEDIA_FIXTURE_DIR } from './__fixtures__/loadFixture.js';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { LIQUIPEDIA_VOD_ALLOWED_HOSTS, normalizeLiquipediaVodUrl } from './vodUrl.js';
+import {
+  LIQUIPEDIA_VOD_ALLOWED_HOSTS,
+  buildLiquipediaVodCorroborationIdentity,
+  normalizeLiquipediaVodUrl,
+} from './vodUrl.js';
 
 // The shipped host-recognition vocabulary this module's allowlist must
 // agree with, read as LITERALS (not imported — apps/api cannot import from
@@ -58,6 +62,23 @@ describe('normalizeLiquipediaVodUrl — YouTube', () => {
       'https://www.youtube.com/watch?v=B1A_3d_-jRY&list=PLcMdMmtHkPpT1ZiF46rUkNbOW6tSRW4Eu&index=8',
     );
     expect(result.vodUrl).toBe('https://www.youtube.com/watch?v=B1A_3d_-jRY');
+  });
+});
+
+describe('buildLiquipediaVodCorroborationIdentity', () => {
+  it('joins base, timestamped short-link, and /live/ forms to one video identity while leaving projection normalization offset-preserving', () => {
+    const base = 'https://www.youtube.com/watch?v=6Mage6l0a4w';
+    const timestamped = 'https://youtu.be/6Mage6l0a4w?t=13540';
+    const live = 'https://www.youtube.com/live/6Mage6l0a4w?start=13540';
+
+    expect(buildLiquipediaVodCorroborationIdentity(base)).toBe(base);
+    expect(buildLiquipediaVodCorroborationIdentity(timestamped)).toBe(base);
+    expect(buildLiquipediaVodCorroborationIdentity(live)).toBe(base);
+    expect(normalizeLiquipediaVodUrl(timestamped).vodUrl).toBe(`${base}&t=13540s`);
+  });
+
+  it('returns null for a rejected host instead of inventing an identity', () => {
+    expect(buildLiquipediaVodCorroborationIdentity('https://example.com/watch?v=abc')).toBeNull();
   });
 });
 

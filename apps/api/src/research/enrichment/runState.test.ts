@@ -4,6 +4,7 @@ import { FakeDatabase } from '../../test-support/fakeDatabase.js';
 import {
   ENRICHMENT_LEASE_TTL_MS,
   acquireEnrichmentRunLease,
+  acquireTerminalEnrichmentRunLease,
   advanceEnrichmentRunState,
   completeEnrichmentRun,
   createOrResumeEnrichmentRun,
@@ -204,6 +205,47 @@ describe('runState (enrichment)', () => {
       return markEnrichmentCoveragePublished(asDatabase(fresh), TENANT_ID, freshRunId, 7_000);
     })();
     expect(runningRunPublishAttempt).toBeNull();
+  });
+
+  it('a terminal maintenance lease prevents a normal run from replacing the slot until the lease is released', async () => {
+    const database = new FakeDatabase();
+    const { runId } = await createRunning(database, 1_000);
+    const ordinary = await acquireEnrichmentRunLease(
+      asDatabase(database),
+      TENANT_ID,
+      runId,
+      'ordinary-owner',
+      1_000,
+    );
+    await completeEnrichmentRun(
+      asDatabase(database),
+      TENANT_ID,
+      runId,
+      ordinary.holder as EnrichmentRunLeaseHolder,
+      2_000,
+    );
+
+    const maintenance = await acquireTerminalEnrichmentRunLease(
+      asDatabase(database),
+      TENANT_ID,
+      runId,
+      'repair-owner',
+      3_000,
+    );
+    expect(maintenance.acquired).toBe(true);
+
+    const blocked = await createRunning(database, 4_000);
+    expect(blocked).toEqual({ runId, resumed: true, status: 'completed' });
+
+    await releaseEnrichmentRunLease(
+      asDatabase(database),
+      TENANT_ID,
+      runId,
+      maintenance.holder as EnrichmentRunLeaseHolder,
+    );
+    const replacement = await createRunning(database, 5_000);
+    expect(replacement.runId).not.toBe(runId);
+    expect(replacement).toEqual(expect.objectContaining({ resumed: false, status: 'running' }));
   });
 
   it('a failed run records its failure reason and is no longer active', async () => {

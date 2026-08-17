@@ -28,6 +28,7 @@ import {
   type RegistryManifest,
 } from './registryManifestArtifact.js';
 import {
+  canonicalize,
   captureGate6TraceSnapshot,
   createGate6RejectedOperationProbe,
   gate6WindowDayShards,
@@ -37,7 +38,9 @@ import {
   GATE6_REFUSED_OPERATION_EXPECTED_STATUS,
   GATE6_REJECTED_OPERATION_PROBE_FORMAT_VERSION,
   GATE6_EXPECTATIONS,
-  GATE6_SPARG0_USER_OWNED_VOD_ROWS,
+  GATE6_SPARG0_FROZEN_MANUAL_VOD_ROWS,
+  GATE6_SPARG0_FROZEN_PROVIDER_VOD_DIGEST,
+  GATE6_SPARG0_FROZEN_PROVIDER_VOD_ROWS,
   GATE6_TRACE_SNAPSHOT_VERSION,
   GATE6_UID_TRACE_SURFACES,
   GATE6_WORKSPACE_KEYS,
@@ -88,6 +91,19 @@ const OTHER_COACH_TENANT = 'gate6-other-coach-tenant';
 
 const PARSER_VERSION = 'bracket-match2@3';
 const RESOLVER_VERSION = 'resolver@1';
+const TEST_PROVIDER_VOD_ROWS = Array.from(
+  { length: GATE6_SPARG0_FROZEN_PROVIDER_VOD_ROWS },
+  (_, offset) => {
+    const index = offset + 1;
+    return {
+      key: `sgg-provider-vod-set-${index}-g1`,
+      payload: `https://youtu.be/provider-${index}`,
+    };
+  },
+).sort((left, right) => left.key.localeCompare(right.key));
+const TEST_PROVIDER_VOD_DIGEST = createHash('sha256')
+  .update(canonicalize(TEST_PROVIDER_VOD_ROWS))
+  .digest('hex');
 
 function contentHash(seed: string): string {
   return createHash('sha256').update(seed).digest('hex');
@@ -108,6 +124,7 @@ function observationRecord(observationId: string, revision: number): Record<stri
     fetchedAtMs: NOW_MS - 5_000,
     observedAtMs: NOW_MS - 5_000,
     matchingStatus: 'matched',
+    games: [{ ordinal: 1, rawStage: 'Battlefield', canonicalStageId: 31 }],
   };
 }
 
@@ -250,6 +267,7 @@ function matchRowKey(targetSetId: string, ordinal: number): string {
 
 interface BuiltWorkspace {
   matches: Record<string, unknown>;
+  sourceSets: Record<string, unknown>;
   observations: Record<string, unknown>;
   receipts: Record<string, unknown>;
   attachments: Record<string, Record<string, unknown>>;
@@ -261,6 +279,7 @@ function buildWorkspace(workspace: Gate6WorkspaceKey): BuiltWorkspace {
   const expectation = GATE6_EXPECTATIONS[workspace];
   const built: BuiltWorkspace = {
     matches: {},
+    sourceSets: {},
     observations: {},
     receipts: {},
     attachments: {},
@@ -287,6 +306,12 @@ function buildWorkspace(workspace: Gate6WorkspaceKey): BuiltWorkspace {
     built.receipts[observationId] = receiptRecord(observationId, targetSetId, revision);
     built.attachments[targetSetId] = {
       [observationId]: attachmentRecord(observationId, targetSetId, revision),
+    };
+    built.sourceSets[targetSetId] = {
+      providerSetId: targetSetId,
+      projectedMatchKeys: Array.from({ length: WITNESS_ORDINALS_PER_SET }, (_, ordinal) =>
+        matchRowKey(targetSetId, ordinal + 1),
+      ),
     };
   }
 
@@ -331,20 +356,10 @@ function buildWorkspace(workspace: Gate6WorkspaceKey): BuiltWorkspace {
     }
   }
 
-  // Sparg0's protected user-entered VODs: rows whose stored `vodUrl` no
-  // witness vouches for. Paired with source-OWNED VOD rows below so the
-  // discriminator is genuinely exercised rather than trivially satisfied.
+  // Sparg0's production-frozen VOD census: 89 values reproduced by the
+  // lossless start.gg source and zero manual residual. Enrichment-owned rows
+  // remain alongside them to exercise all three ownership classifiers.
   if (workspace === 'sparg0') {
-    for (let index = 1; index <= GATE6_SPARG0_USER_OWNED_VOD_ROWS; index += 1) {
-      const key = `user-vod-${String(index).padStart(2, '0')}`;
-      built.matches[key] = {
-        fighter_id: 1,
-        opponent_id: 8,
-        time: 1,
-        win: true,
-        vodUrl: `https://youtu.be/user-entered-${index}`,
-      };
-    }
     for (let index = 0; index < 5; index += 1) {
       const matchKey = matchRowKey(targetSetIdFor('sparg0', index), 1);
       const projectedVodUrl = `https://youtu.be/source-owned-${index}`;
@@ -352,6 +367,25 @@ function buildWorkspace(workspace: Gate6WorkspaceKey): BuiltWorkspace {
       (built.witnesses[matchKey] as Record<string, unknown>).projectedVodUrl = projectedVodUrl;
       (built.witnesses[matchKey] as Record<string, unknown>).vodObservationId =
         `obs-sparg0-${index}`;
+    }
+    // Provider-owned VOD rows have no enrichment witness. Their ownership is
+    // proven by the lossless source set's `vodUrl` + `projectedMatchKeys`, so
+    // they must not inflate the manual population merely because both kinds
+    // lack a Liquipedia witness.
+    for (let index = 1; index <= GATE6_SPARG0_FROZEN_PROVIDER_VOD_ROWS; index += 1) {
+      const setId = `provider-vod-set-${index}`;
+      const key = matchRowKey(setId, 1);
+      const vodUrl = `https://youtu.be/provider-${index}`;
+      built.matches[key] = {
+        externalId: `sgg:${setId}:g1`,
+        fighter_id: 1,
+        opponent_id: 8,
+        source: 'startgg',
+        time: 1,
+        win: true,
+        vodUrl,
+      };
+      built.sourceSets[setId] = { providerSetId: setId, projectedMatchKeys: [key], vodUrl };
     }
   }
 
@@ -379,6 +413,7 @@ function buildCorrectTree(): Record<string, unknown> {
     researchEnrichmentReceipts: {},
     researchEnrichmentAttachments: {},
     researchEnrichmentProjection: {},
+    researchSource: {},
     tournamentEntries: {},
     researchEnrichmentRuns: {},
     researchIngestionRuns: {},
@@ -430,6 +465,7 @@ function buildCorrectTree(): Record<string, unknown> {
     const uid = UIDS[workspace];
     const built = buildWorkspace(workspace);
     (tree.matches as Record<string, unknown>)[uid] = built.matches;
+    (tree.researchSource as Record<string, unknown>)[uid] = { sets: built.sourceSets };
     (tree.researchEnrichmentObservations as Record<string, unknown>)[uid] = built.observations;
     (tree.researchEnrichmentReceipts as Record<string, unknown>)[uid] = built.receipts;
     (tree.researchEnrichmentAttachments as Record<string, unknown>)[uid] = built.attachments;
@@ -474,6 +510,11 @@ async function audit(
     requireRejectedOperationProbes?: boolean;
     expectedDatabaseHost?: string | null;
     nowMs?: number;
+    frozenSparg0VodCensus?: {
+      providerCount: number;
+      providerDigest: string;
+      manualCount: number;
+    };
   } = {},
 ): Promise<Gate6AuditReceipt> {
   return runGate6Audit(asDatabase(database), {
@@ -489,6 +530,11 @@ async function audit(
     requireRegistryReceipts: overrides.requireRegistryReceipts === true,
     rejectedOperationProbes: overrides.rejectedOperationProbes ?? null,
     requireRejectedOperationProbes: overrides.requireRejectedOperationProbes === true,
+    frozenSparg0VodCensus: overrides.frozenSparg0VodCensus ?? {
+      providerCount: GATE6_SPARG0_FROZEN_PROVIDER_VOD_ROWS,
+      providerDigest: TEST_PROVIDER_VOD_DIGEST,
+      manualCount: GATE6_SPARG0_FROZEN_MANUAL_VOD_ROWS,
+    },
     // Default to the host the receipt fixtures seal against, so the
     // host cross-check is EXERCISED in the pass case rather than skipped.
     expectedDatabaseHost:
@@ -743,13 +789,15 @@ describe('the correct fixture actually realizes the expectation table', () => {
     expect((tree.reportJobs as Record<string, unknown>)[UIDS.sparg0]).toBeDefined();
   });
 
-  it('exercises the user-owned/source-owned VOD discriminator on Sparg0 rather than counting every VOD row', async () => {
+  it('separates manual, provider, and enrichment-owned Sparg0 VODs by structural evidence', async () => {
     const receipt = await audit(makeDatabase());
-    // 13 user-entered rows are protected; the 5 witness-vouched rows are not.
-    expect(receipt.baseline.sparg0UserOwnedVod.count).toBe(GATE6_SPARG0_USER_OWNED_VOD_ROWS);
-    expect(
-      receipt.baseline.sparg0UserOwnedVod.keys.every((key) => key.startsWith('user-vod-')),
-    ).toBe(true);
+    expect(receipt.baseline.sparg0ManualVod.count).toBe(GATE6_SPARG0_FROZEN_MANUAL_VOD_ROWS);
+    expect(receipt.baseline.sparg0ManualVod.keys).toEqual([]);
+    expect(receipt.baseline.sparg0ProviderVod.count).toBe(GATE6_SPARG0_FROZEN_PROVIDER_VOD_ROWS);
+    expect(receipt.baseline.sparg0ProviderVod.keys[0]).toBe('sgg-provider-vod-set-1-g1');
+    expect(receipt.baseline.sparg0ProviderVod.keys).not.toContain(
+      matchRowKey(targetSetIdFor('sparg0', 0), 1),
+    );
   });
 });
 
@@ -802,7 +850,7 @@ describe('a fully-correct tree passes', () => {
         'targetUids',
       ].sort(),
     );
-    expect(receipt.receiptVersion).toBe(5);
+    expect(receipt.receiptVersion).toBe(6);
     expect(receipt.expectationTableVersion).toBe(GATE6_EXPECTATION_TABLE_VERSION);
     expect(receipt.baselineMode).toBe('record');
     expect(receipt.assertions.map((assertion) => assertion.id)).toEqual([...GATE6_ASSERTION_IDS]);
@@ -832,7 +880,7 @@ describe('a fully-correct tree passes', () => {
       ]);
     }
     expect(receipt.observed.map((row) => row.workspace)).toEqual([...GATE6_WORKSPACE_KEYS]);
-    expect(receipt.baseline.baselineVersion).toBe(2);
+    expect(receipt.baseline.baselineVersion).toBe(3);
     // The two digest laws are visibly distinguishable in the receipt: the
     // registry half carries the shared law's `version`/`uid`; the VOD half
     // (the local law) carries neither.
@@ -849,7 +897,12 @@ describe('a fully-correct tree passes', () => {
         REGISTRY_FOREIGN_DIGEST_VERSION,
       );
     }
-    expect(Object.keys(receipt.baseline.sparg0UserOwnedVod).sort()).toEqual([
+    expect(Object.keys(receipt.baseline.sparg0ManualVod).sort()).toEqual([
+      'count',
+      'digest',
+      'keys',
+    ]);
+    expect(Object.keys(receipt.baseline.sparg0ProviderVod).sort()).toEqual([
       'count',
       'digest',
       'keys',
@@ -1182,6 +1235,207 @@ describe('assertion 5: attachment-integrity', () => {
     );
   });
 
+  it('does not demand a witness from a resolved observation with no projectable evidence', async () => {
+    const database = makeDatabase();
+    const index = 56; // beyond MkLeo's character/stock witness populations
+    const observationId = `obs-mkleo-${index}`;
+    const targetSetId = targetSetIdFor('mkleo', index);
+    const observations = (
+      database.dump().researchEnrichmentObservations as Record<string, Record<string, unknown>>
+    )[UIDS.mkleo]!;
+    delete (observations[observationId] as Record<string, unknown>).games;
+    const witnesses = (
+      database.dump().researchEnrichmentProjection as Record<string, Record<string, unknown>>
+    )[UIDS.mkleo]!;
+    for (let ordinal = 1; ordinal <= WITNESS_ORDINALS_PER_SET; ordinal += 1) {
+      delete witnesses[matchRowKey(targetSetId, ordinal)];
+    }
+
+    const receipt = await audit(database);
+    expect(codesOf(receipt, 'attachment-integrity')).not.toContain(
+      'attachment-missing-projection-witness',
+    );
+    expect(receipt.ok).toBe(true);
+  });
+
+  it('does not demand a witness when a pre-existing provider/user VOD closes the fill-empty slot', async () => {
+    const database = makeDatabase();
+    const index = 56;
+    const observationId = `obs-mkleo-${index}`;
+    const targetSetId = targetSetIdFor('mkleo', index);
+    const observations = (
+      database.dump().researchEnrichmentObservations as Record<string, Record<string, unknown>>
+    )[UIDS.mkleo]!;
+    const observation = observations[observationId] as Record<string, unknown>;
+    delete observation.games;
+    observation.contentType = 'vod-reference';
+    observation.vodUrl = 'https://youtu.be/liquipedia-candidate';
+    const matches = (database.dump().matches as Record<string, Record<string, unknown>>)[
+      UIDS.mkleo
+    ]!;
+    (matches[matchRowKey(targetSetId, 1)] as Record<string, unknown>).vodUrl =
+      'https://youtu.be/provider-value';
+    const witnesses = (
+      database.dump().researchEnrichmentProjection as Record<string, Record<string, unknown>>
+    )[UIDS.mkleo]!;
+    for (let ordinal = 1; ordinal <= WITNESS_ORDINALS_PER_SET; ordinal += 1) {
+      delete witnesses[matchRowKey(targetSetId, ordinal)];
+    }
+
+    const receipt = await audit(database);
+    expect(codesOf(receipt, 'attachment-integrity')).not.toContain(
+      'attachment-missing-projection-witness',
+    );
+    expect(receipt.ok).toBe(true);
+  });
+
+  it('fails when a witness is deleted but the row still carries the exact Liquipedia VOD', async () => {
+    const database = makeDatabase();
+    const index = 56;
+    const observationId = `obs-mkleo-${index}`;
+    const targetSetId = targetSetIdFor('mkleo', index);
+    const vodUrl = 'https://youtu.be/liquipedia-projected';
+    const observations = (
+      database.dump().researchEnrichmentObservations as Record<string, Record<string, unknown>>
+    )[UIDS.mkleo]!;
+    const observation = observations[observationId] as Record<string, unknown>;
+    delete observation.games;
+    observation.contentType = 'vod-reference';
+    observation.vodUrl = vodUrl;
+    const matches = (database.dump().matches as Record<string, Record<string, unknown>>)[
+      UIDS.mkleo
+    ]!;
+    (matches[matchRowKey(targetSetId, 1)] as Record<string, unknown>).vodUrl = vodUrl;
+    const witnesses = (
+      database.dump().researchEnrichmentProjection as Record<string, Record<string, unknown>>
+    )[UIDS.mkleo]!;
+    for (let ordinal = 1; ordinal <= WITNESS_ORDINALS_PER_SET; ordinal += 1) {
+      delete witnesses[matchRowKey(targetSetId, ordinal)];
+    }
+
+    expectPerturbed(
+      await audit(database),
+      'attachment-integrity',
+      'attachment-missing-projection-witness',
+    );
+  });
+
+  it('accepts the same prefilled VOD when the lossless provider source independently proves it', async () => {
+    const database = makeDatabase();
+    const index = 56;
+    const observationId = `obs-mkleo-${index}`;
+    const targetSetId = targetSetIdFor('mkleo', index);
+    const matchKey = matchRowKey(targetSetId, 1);
+    const vodUrl = 'https://youtu.be/provider-and-liquipedia';
+    const observations = (
+      database.dump().researchEnrichmentObservations as Record<string, Record<string, unknown>>
+    )[UIDS.mkleo]!;
+    const observation = observations[observationId] as Record<string, unknown>;
+    delete observation.games;
+    observation.contentType = 'vod-reference';
+    observation.vodUrl = vodUrl;
+    const matches = (database.dump().matches as Record<string, Record<string, unknown>>)[
+      UIDS.mkleo
+    ]!;
+    (matches[matchKey] as Record<string, unknown>).vodUrl = vodUrl;
+    const sourceSets = (
+      database.dump().researchSource as Record<
+        string,
+        { sets: Record<string, Record<string, unknown>> }
+      >
+    )[UIDS.mkleo]!.sets;
+    sourceSets[targetSetId]!.vodUrl = vodUrl;
+    const witnesses = (
+      database.dump().researchEnrichmentProjection as Record<string, Record<string, unknown>>
+    )[UIDS.mkleo]!;
+    for (let ordinal = 1; ordinal <= WITNESS_ORDINALS_PER_SET; ordinal += 1) {
+      delete witnesses[matchRowKey(targetSetId, ordinal)];
+    }
+
+    const receipt = await audit(database);
+    expect(codesOf(receipt, 'attachment-integrity')).not.toContain(
+      'attachment-missing-projection-witness',
+    );
+    expect(receipt.ok).toBe(true);
+  });
+
+  it('requires a per-row witness for oriented raw character evidence', async () => {
+    const database = makeDatabase();
+    const index = 56;
+    const observationId = `obs-mkleo-${index}`;
+    const targetSetId = targetSetIdFor('mkleo', index);
+    const observations = (
+      database.dump().researchEnrichmentObservations as Record<string, Record<string, unknown>>
+    )[UIDS.mkleo]!;
+    const observation = observations[observationId] as Record<string, unknown>;
+    observation.game = 'ultimate';
+    observation.players = [{ rawTag: 'MkLeo' }, { rawTag: 'Tweek' }];
+    observation.games = [{ ordinal: 1, rawChars: ['Joker', 'Diddy Kong'] }];
+    const matches = (database.dump().matches as Record<string, Record<string, unknown>>)[
+      UIDS.mkleo
+    ]!;
+    (matches[matchRowKey(targetSetId, 1)] as Record<string, unknown>).opponent = 'tweek';
+    const witnesses = (
+      database.dump().researchEnrichmentProjection as Record<string, Record<string, unknown>>
+    )[UIDS.mkleo]!;
+    delete witnesses[matchRowKey(targetSetId, 1)];
+
+    expectPerturbed(
+      await audit(database),
+      'attachment-integrity',
+      'attachment-missing-projection-witness',
+    );
+  });
+
+  it('fails when an attachment target is absent from the lossless source tree', async () => {
+    const database = makeDatabase();
+    const targetSetId = targetSetIdFor('mkleo', 56);
+    const sourceSets = (
+      database.dump().researchSource as Record<
+        string,
+        { sets: Record<string, Record<string, unknown>> }
+      >
+    )[UIDS.mkleo]!.sets;
+    delete sourceSets[targetSetId];
+    expectPerturbed(
+      await audit(database),
+      'attachment-integrity',
+      'attachment-dangling-source-set',
+    );
+  });
+
+  it('allows a no-game attachment whose target has no match rows', async () => {
+    const database = makeDatabase();
+    const index = 56;
+    const observationId = `obs-mkleo-${index}`;
+    const targetSetId = targetSetIdFor('mkleo', index);
+    const observations = (
+      database.dump().researchEnrichmentObservations as Record<string, Record<string, unknown>>
+    )[UIDS.mkleo]!;
+    delete (observations[observationId] as Record<string, unknown>).games;
+    const matches = (database.dump().matches as Record<string, Record<string, unknown>>)[
+      UIDS.mkleo
+    ]!;
+    const witnesses = (
+      database.dump().researchEnrichmentProjection as Record<string, Record<string, unknown>>
+    )[UIDS.mkleo]!;
+    for (let ordinal = 1; ordinal <= WITNESS_ORDINALS_PER_SET; ordinal += 1) {
+      delete matches[matchRowKey(targetSetId, ordinal)];
+      delete witnesses[matchRowKey(targetSetId, ordinal)];
+      matches[`m-mkleo-no-game-replacement-${ordinal}`] = {
+        fighter_id: 1,
+        opponent_id: 8,
+        time: 1,
+      };
+    }
+
+    const receipt = await audit(database);
+    expect(codesOf(receipt, 'attachment-integrity')).not.toContain(
+      'attachment-dangling-target-set',
+    );
+    expect(receipt.ok).toBe(true);
+  });
+
   it('fails when a receipt has no observation (the reverse direction)', async () => {
     const database = makeDatabase();
     database.seed(
@@ -1274,42 +1528,51 @@ describe('assertion 7: sparg0-vod-preservation', () => {
     expect(compared.ok).toBe(true);
   });
 
-  it('fails on a user VOD overwrite when compared against the pre-state baseline', async () => {
-    const recorded = await audit(makeDatabase());
-    const database = makeDatabase();
-    database.seed(`matches/${UIDS.sparg0}/user-vod-01/vodUrl`, 'https://youtu.be/CLOBBERED');
-    const receipt = await audit(database, { baseline: recorded.baseline });
-    expectPerturbed(receipt, 'sparg0-vod-preservation', 'digest-drift');
-    expect(assertionOf(receipt, 'sparg0-vod-preservation').findings[0]!.detail).toContain(
-      'a stored value changed',
-    );
+  it('pins the record-mode provider bytes, not merely the 89-row count', async () => {
+    const receipt = await audit(makeDatabase(), {
+      frozenSparg0VodCensus: {
+        providerCount: GATE6_SPARG0_FROZEN_PROVIDER_VOD_ROWS,
+        providerDigest: GATE6_SPARG0_FROZEN_PROVIDER_VOD_DIGEST,
+        manualCount: GATE6_SPARG0_FROZEN_MANUAL_VOD_ROWS,
+      },
+    });
+    // The synthetic corpus deliberately has 89 different URLs, so count-only
+    // logic would false-green while the frozen byte digest must reject it.
+    expectPerturbed(receipt, 'sparg0-vod-preservation', 'provider-vod-digest-mismatch');
   });
 
-  it('fails on a DELETED user VOD even with NO baseline — the record-mode false-green is closed by the pinned count', async () => {
+  it('classifies a nonempty provider-key difference as a manual fill-empty override, never missing provider data', async () => {
     const database = makeDatabase();
+    const key = 'sgg-provider-vod-set-2-g1';
+    database.seed(`matches/${UIDS.sparg0}/${key}/vodUrl`, 'https://youtu.be/manual-override');
+    const receipt = await audit(database);
+    expect(receipt.baseline.sparg0ManualVod.keys).toEqual([key]);
+    expect(codesOf(receipt, 'sparg0-vod-preservation')).toContain('manual-vod-count-mismatch');
+    expect(codesOf(receipt, 'sparg0-vod-preservation')).not.toContain('provider-vod-missing');
+  });
+
+  it('preserves a classified manual override byte-for-byte in compare mode', async () => {
+    const before = makeDatabase();
+    const key = 'sgg-provider-vod-set-2-g1';
+    before.seed(`matches/${UIDS.sparg0}/${key}/vodUrl`, 'https://youtu.be/manual-override');
+    const recorded = await audit(before);
+    const after = makeDatabase();
+    after.seed(`matches/${UIDS.sparg0}/${key}/vodUrl`, 'https://youtu.be/manual-overwritten');
+    const receipt = await audit(after, { baseline: recorded.baseline });
+    expectPerturbed(receipt, 'sparg0-vod-preservation', 'digest-drift');
+    expect(receipt.baselineMode).toBe('compare');
+  });
+
+  it('fails on provider VOD loss even in record mode, using the lossless source set rather than a magic count', async () => {
+    const database = makeDatabase();
+    const key = 'sgg-provider-vod-set-2-g1';
     const matches = (database.dump().matches as Record<string, Record<string, unknown>>)[
       UIDS.sparg0
     ]!;
-    delete (matches['user-vod-07'] as Record<string, unknown>).vodUrl;
+    delete (matches[key] as Record<string, unknown>).vodUrl;
     const receipt = await audit(database);
-    expectPerturbed(receipt, 'sparg0-vod-preservation', 'protected-vod-count-mismatch');
+    expectPerturbed(receipt, 'sparg0-vod-preservation', 'provider-vod-missing');
     expect(receipt.baselineMode).toBe('record');
-  });
-
-  it('fails when the enrichment applier claims ownership of a previously user-owned VOD', async () => {
-    const recorded = await audit(makeDatabase());
-    const database = makeDatabase();
-    // A witness that now vouches for the user's URL reclassifies the row as
-    // source-owned — the silent-capture failure mode, caught as a drift.
-    database.seed(`researchEnrichmentProjection/${UIDS.sparg0}/user-vod-02`, {
-      matchKey: 'user-vod-02',
-      targetSetId: targetSetIdFor('sparg0', 0),
-      projectedVodUrl: 'https://youtu.be/user-entered-2',
-      vodObservationId: 'obs-sparg0-0',
-    });
-    const receipt = await audit(database, { baseline: recorded.baseline });
-    expectPerturbed(receipt, 'sparg0-vod-preservation', 'protected-vod-count-mismatch');
-    expect(codesOf(receipt, 'sparg0-vod-preservation')).toContain('digest-drift');
   });
 });
 
@@ -1407,9 +1670,22 @@ describe('assertion 8: registry-preservation', () => {
 
     // And the shape alone is refused even if someone hand-edits the version
     // up: the entries still lack the shared law's `version`/`uid` members.
-    expect(() => parseGate6Baseline({ ...legacyBaseline, baselineVersion: 2 })).toThrow(
+    expect(() => parseGate6Baseline({ ...legacyBaseline, baselineVersion: 3 })).toThrow(
       /Invalid Gate 6 baseline/,
     );
+  });
+
+  it('REFUSES the old v2 VOD-complement shape that conflated provider and manual rows', async () => {
+    const recorded = await audit(makeDatabase());
+    const legacyV2 = {
+      baselineVersion: 2,
+      expectationTableVersion: recorded.baseline.expectationTableVersion,
+      recordedAtMs: recorded.baseline.recordedAtMs,
+      targetUids: recorded.baseline.targetUids,
+      sparg0UserOwnedVod: recorded.baseline.sparg0ManualVod,
+      registryForeign: recorded.baseline.registryForeign,
+    };
+    expect(() => parseGate6Baseline(legacyV2)).toThrow(/Invalid Gate 6 baseline/);
   });
 
   it('reports a digest-rule version change as its own condition, never as unexplained content drift', async () => {
@@ -1467,12 +1743,14 @@ describe('the two digest laws are the right ones and stay distinct', () => {
     expect(receipt.baseline.registryForeign.hbox.uid).toBe(UIDS.hbox);
   });
 
-  it('keeps assertion 7 on the local law: the VOD digest carries no uid and is not a ForeignRowDigest', async () => {
+  it('keeps assertion 7 on the local law: neither VOD digest carries a uid or registry version', async () => {
     const receipt = await audit(makeDatabase());
-    expect(receipt.baseline.sparg0UserOwnedVod).not.toHaveProperty('uid');
-    expect(receipt.baseline.sparg0UserOwnedVod).not.toHaveProperty('version');
-    // Still a real, comparable digest — the VOD drift tests above depend on it.
-    expect(receipt.baseline.sparg0UserOwnedVod.digest).toMatch(/^[0-9a-f]{64}$/);
+    for (const digest of [receipt.baseline.sparg0ManualVod, receipt.baseline.sparg0ProviderVod]) {
+      expect(digest).not.toHaveProperty('uid');
+      expect(digest).not.toHaveProperty('version');
+      // Still a real, comparable digest — the VOD drift tests above depend on it.
+      expect(digest.digest).toMatch(/^[0-9a-f]{64}$/);
+    }
   });
 });
 
@@ -2902,6 +3180,7 @@ describe('the expectation table is the contract', () => {
         stockWitnesses: 0,
       },
     });
-    expect(GATE6_SPARG0_USER_OWNED_VOD_ROWS).toBe(13);
+    expect(GATE6_SPARG0_FROZEN_PROVIDER_VOD_ROWS).toBe(89);
+    expect(GATE6_SPARG0_FROZEN_MANUAL_VOD_ROWS).toBe(0);
   });
 });

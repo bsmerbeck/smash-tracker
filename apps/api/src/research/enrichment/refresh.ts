@@ -3,7 +3,10 @@ import { z } from 'zod';
 import type { Database } from 'firebase-admin/database';
 import {
   isPathSafeProviderId,
+  researchEnrichmentAttachmentRecordSchema,
+  type ResearchEnrichmentAttachmentRecord,
   type ResearchEnrichmentObservationRecord,
+  type ResearchEnrichmentResolutionReceiptRecord,
 } from '@smash-tracker/shared';
 import {
   isLiquipediaPageFresh,
@@ -12,12 +15,16 @@ import {
 import { isVodRowCountPlausible } from '../../liquipedia/adapters/vodList.js';
 import { isPathSafeTenantId } from '../subjectKind.js';
 import {
+  attachResolvedObservation,
   deleteEnrichmentAttachment,
   listAttachmentsForSet,
   listEnrichmentObservations,
   readEnrichmentObservation,
+  readResolutionReceipt,
   writeEnrichmentObservation,
+  writeResolutionReceipt,
 } from './store.js';
+import { deriveReceiptId } from './resolution.js';
 import { applyEnrichmentProjection, buildEnrichmentOverlay } from './projection.js';
 import { prepareAndValidateObservation } from './prepareObservation.js';
 
@@ -252,12 +259,18 @@ function deepEqual(a: unknown, b: unknown): boolean {
   );
 }
 
-/** One read of the whole tenant attachment tree (mirrors `store.ts`'s `collectAttachedObservationIds` nested-two-level walk), inverted to `observationId -> targetSetId`. */
+interface PriorAttachmentEntry {
+  targetSetId: string;
+  /** `null` when the stored child fails the attachment schema — such an entry still names a target to reproject, but can never seed a re-authorization. */
+  record: ResearchEnrichmentAttachmentRecord | null;
+}
+
+/** One read of the whole tenant attachment tree (mirrors `store.ts`'s `collectAttachedObservationIds` nested-two-level walk), inverted to `observationId -> every attachment` — admin confirmation may legitimately attach one observation to more than one candidate. */
 async function buildAttachmentTargetSetIndex(
   database: Database,
   tenantId: string,
-): Promise<Map<string, string>> {
-  const index = new Map<string, string>();
+): Promise<Map<string, PriorAttachmentEntry[]>> {
+  const index = new Map<string, PriorAttachmentEntry[]>();
   const snapshot = await database.ref(`researchEnrichmentAttachments/${tenantId}`).get();
   const raw = snapshot.val() as Record<string, Record<string, unknown>> | null;
   if (raw === null || typeof raw !== 'object') {
@@ -267,11 +280,107 @@ async function buildAttachmentTargetSetIndex(
     if (children === null || typeof children !== 'object') {
       continue;
     }
-    for (const observationId of Object.keys(children)) {
-      index.set(observationId, targetSetId);
+    for (const [observationId, value] of Object.entries(children)) {
+      const parsed = researchEnrichmentAttachmentRecordSchema.safeParse(value);
+      const entries = index.get(observationId) ?? [];
+      entries.push({ targetSetId, record: parsed.success ? parsed.data : null });
+      index.set(observationId, entries);
     }
   }
   return index;
+}
+
+/**
+ * Members the resolver's `matched` decision could have depended on
+ * (`resolution.ts`'s bracket ladder: competitor pair, score agreement, date
+ * window, game count; a VOD-page row is additionally keyed by its own URL).
+ * A later-revision correction that touches ONLY payload — a stage typo, a
+ * character, stocks, a bracket row's VOD link — leaves every one of these
+ * unchanged, and only then may the prior resolver decision be carried
+ * forward onto the refreshed fingerprint.
+ */
+function refreshPreservesResolutionIdentity(
+  predecessor: ResearchEnrichmentObservationRecord,
+  successor: ResearchEnrichmentObservationRecord,
+): boolean {
+  return (
+    predecessor.contentType === successor.contentType &&
+    predecessor.templateFamily === successor.templateFamily &&
+    predecessor.sourcePageTitle === successor.sourcePageTitle &&
+    (predecessor.tournamentPageTitle ?? null) === (successor.tournamentPageTitle ?? null) &&
+    (predecessor.game ?? null) === (successor.game ?? null) &&
+    (predecessor.date ?? null) === (successor.date ?? null) &&
+    deepEqual(predecessor.players ?? null, successor.players ?? null) &&
+    deepEqual(predecessor.scores ?? null, successor.scores ?? null) &&
+    (predecessor.games?.length ?? 0) === (successor.games?.length ?? 0) &&
+    (predecessor.contentType !== 'vod-reference' ||
+      (predecessor.vodUrl ?? null) === (successor.vodUrl ?? null))
+  );
+}
+
+/**
+ * The refresh half of revoke-and-reauthorize. `writeEnrichmentObservation`
+ * atomically revoked the predecessor fingerprint's receipt and attachments;
+ * within the SAME refresh run, a resolver authorization whose identity
+ * evidence is unchanged is re-issued against the successor fingerprint —
+ * through the store's own two-step door (receipt persist, then reload-and-
+ * verify attach), never by writing an attachment record directly. Anything
+ * that cannot be re-proved fails closed: identity drift, an unparseable
+ * predecessor, a missing or mismatched prior receipt, and EVERY admin
+ * attachment (a human confirmed the exact content they saw; refreshed
+ * content needs a fresh confirmation) all leave the observation revoked, so
+ * it re-enters the review queue instead of carrying stale authorization.
+ */
+async function reissueRevokedAuthorizations(
+  database: Database,
+  tenantId: string,
+  input: {
+    predecessor: ResearchEnrichmentObservationRecord | null;
+    successor: ResearchEnrichmentObservationRecord;
+    priorAttachments: PriorAttachmentEntry[];
+    priorReceipt: ResearchEnrichmentResolutionReceiptRecord | null;
+    nowMs: number;
+  },
+): Promise<void> {
+  const { predecessor, successor, priorAttachments, priorReceipt, nowMs } = input;
+  if (predecessor === null || !refreshPreservesResolutionIdentity(predecessor, successor)) {
+    return;
+  }
+  for (const { record } of priorAttachments) {
+    if (
+      record === null ||
+      record.attachmentSource !== 'resolver' ||
+      priorReceipt === null ||
+      record.receiptId !== priorReceipt.receiptId ||
+      record.targetSetId !== priorReceipt.targetSetId ||
+      priorReceipt.observationId !== successor.observationId
+    ) {
+      continue;
+    }
+    const successorReceipt: ResearchEnrichmentResolutionReceiptRecord = {
+      ...priorReceipt,
+      receiptId: deriveReceiptId({
+        observationId: priorReceipt.observationId,
+        resolverVersion: priorReceipt.resolverVersion,
+        sourceContentHash: successor.sourceContentHash,
+      }),
+      resolvedAtMs: nowMs,
+      sourceRevisionId: successor.sourceRevisionId,
+      sourceContentHash: successor.sourceContentHash,
+      parserVersion: successor.parserVersion,
+    };
+    const receiptOutcome = await writeResolutionReceipt(database, tenantId, successorReceipt);
+    if (receiptOutcome.outcome !== 'created' && receiptOutcome.outcome !== 'replaced') {
+      continue;
+    }
+    await attachResolvedObservation(
+      database,
+      tenantId,
+      successor.observationId,
+      successorReceipt.receiptId,
+      nowMs,
+    );
+  }
 }
 
 async function reprojectTargetSet(
@@ -403,15 +512,32 @@ export async function applyPageRefresh(
     // HERE, loudly, never at a later read (the write boundary itself
     // parses, but the gate's named error and its extraction-time contract
     // are the reliability seam).
-    await writeEnrichmentObservation(
-      database,
-      tenantId,
-      prepareAndValidateObservation(observation),
-    );
+    const priorAttachments = attachmentIndex.get(observation.observationId) ?? [];
+    // Read BEFORE the write: a fingerprint-changing write atomically
+    // deletes this receipt, and re-authorization needs its content.
+    const priorReceipt = priorAttachments.some(
+      (entry) => entry.record?.attachmentSource === 'resolver',
+    )
+      ? await readResolutionReceipt(database, tenantId, observation.observationId)
+      : null;
+    const prepared = prepareAndValidateObservation(observation);
+    const writeResult = await writeEnrichmentObservation(database, tenantId, prepared);
     written += 1;
 
-    const targetSetId = attachmentIndex.get(observation.observationId);
-    if (targetSetId) {
+    if (writeResult.fingerprintChanged) {
+      await reissueRevokedAuthorizations(database, tenantId, {
+        predecessor: prior ?? null,
+        successor: prepared,
+        priorAttachments,
+        priorReceipt,
+        nowMs,
+      });
+    }
+
+    for (const targetSetId of [
+      ...priorAttachments.map((entry) => entry.targetSetId),
+      ...(writeResult.invalidatedTargetSetIds ?? []),
+    ]) {
       targetSetsToReproject.add(targetSetId);
     }
   }
@@ -424,9 +550,12 @@ export async function applyPageRefresh(
     // This set no longer appears on the source page's fresh extraction —
     // move it to review by deleting its attachment; the observation itself
     // is never deleted (store.ts's own contract).
-    const targetSetId = attachmentIndex.get(prior.observationId);
-    if (targetSetId) {
-      await deleteEnrichmentAttachment(database, tenantId, targetSetId, prior.observationId);
+    const priorAttachments = attachmentIndex.get(prior.observationId) ?? [];
+    if (priorAttachments.length > 0) {
+      for (const { targetSetId } of priorAttachments) {
+        await deleteEnrichmentAttachment(database, tenantId, targetSetId, prior.observationId);
+        targetSetsToReproject.add(targetSetId);
+      }
       movedToReview += 1;
     }
   }

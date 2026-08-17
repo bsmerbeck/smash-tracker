@@ -282,6 +282,28 @@ export function normalizeLiquipediaVodUrl(raw: string): NormalizeLiquipediaVodUr
   return accepted(raw, canonical.vodUrl, canonical.host);
 }
 
+/**
+ * Deterministic video identity for bracket↔player-VOD-list corroboration.
+ * It first applies the normal write-time canonicalizer, then removes ONLY
+ * the validated seek-offset query member (`t`). The projected URL remains
+ * the full canonical URL, including its offset; this identity exists only
+ * as a fallback join key when exact-URL corroboration found no match.
+ *
+ * A caller must still scope this key by tournament and require that it maps
+ * to exactly one target set. Two sets in one event sharing a video (for
+ * example grand finals and its reset at distinct offsets) therefore make
+ * the fallback ambiguous instead of collapsing into one match.
+ */
+export function buildLiquipediaVodCorroborationIdentity(raw: string): string | null {
+  const normalized = normalizeLiquipediaVodUrl(raw);
+  if (!normalized.vodUrl) {
+    return null;
+  }
+  const parsed = new URL(normalized.vodUrl);
+  parsed.searchParams.delete('t');
+  return parsed.toString();
+}
+
 // NOTE (30.3 verifier closure 6): a `buildVodDedupeKey(canonicalUrl,
 // targetSetId)` helper used to live here but was DEAD production code —
 // nothing in the pipeline ever called it. The property it described (the
