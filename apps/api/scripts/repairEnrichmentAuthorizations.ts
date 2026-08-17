@@ -247,7 +247,17 @@ async function main(): Promise<void> {
   const env = loadEnv();
   const databaseHost = new URL(env.FIREBASE_DATABASE_URL).host;
   const firebase = initFirebase(env);
-  const projectId = firebase.app.options.projectId ?? null;
+  // `initFirebase` passes only credential+databaseURL to initializeApp, so
+  // `app.options.projectId` is ALWAYS null under local ADC — as written by the
+  // prior session this check could never pass on any machine. The project is
+  // instead DECLARED explicitly by the operator via GOOGLE_CLOUD_PROJECT (or
+  // GCLOUD_PROJECT), and the core still refuses null or any value other than
+  // the production project; the database HOST is pinned independently.
+  const projectId =
+    firebase.app.options.projectId ??
+    process.env.GOOGLE_CLOUD_PROJECT ??
+    process.env.GCLOUD_PROJECT ??
+    null;
 
   const exitCode = await runWithLifecycle({
     run: async (signal) => {
