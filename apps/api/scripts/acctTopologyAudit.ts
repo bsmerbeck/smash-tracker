@@ -90,12 +90,42 @@ import {
   type AcctTopologySubject,
 } from './acctTopologyAuditCore.js';
 
-const SUBJECT_FLAGS: readonly { flag: string; label: string }[] = [
-  { flag: '--hbox-uid', label: 'hbox' },
-  { flag: '--mkleo-uid', label: 'mkleo' },
-  { flag: '--sparg0-uid', label: 'sparg0' },
-  { flag: '--izaw-uid', label: 'izaw' },
-];
+/**
+ * The frozen Phase-30 research sources. These are public tenant identifiers,
+ * not credentials. Keeping the player key, manifest label, and source id in
+ * one table lets the audit bind each named CLI flag to the corresponding
+ * migration row instead of merely comparing an unordered set of four UIDs.
+ */
+export const ACCT_CANONICAL_WORKSPACES = [
+  {
+    key: 'hbox',
+    flag: '--hbox-uid',
+    manifestLabel: 'Hungrybox',
+    sourceId: '0f0443e4-c637-4dd4-9c3a-c8365c1f7ad6',
+  },
+  {
+    key: 'mkleo',
+    flag: '--mkleo-uid',
+    manifestLabel: 'MkLeo',
+    sourceId: 'd4c17fdc-be36-49a1-8223-e0a3ab16a40c',
+  },
+  {
+    key: 'sparg0',
+    flag: '--sparg0-uid',
+    manifestLabel: 'Sparg0',
+    sourceId: 'e5d9f25d-929d-4884-875d-67cfab05d5c1',
+  },
+  {
+    key: 'izaw',
+    flag: '--izaw-uid',
+    manifestLabel: 'IzAw',
+    sourceId: '1438981f-2830-469d-ac96-cca1ee8cc75b',
+  },
+] as const;
+
+const SUBJECT_FLAGS: readonly { flag: string; label: string }[] = ACCT_CANONICAL_WORKSPACES.map(
+  ({ flag, key }) => ({ flag, label: key }),
+);
 
 const VALUE_FLAGS = new Set<string>([
   '--coach-uid',
@@ -168,6 +198,11 @@ export function parseAcctTopologyArgs(argv: readonly string[]): AcctTopologyArgs
   const coachUid = required('--coach-uid', 'the developer coaching account under audit');
   const manifestPath = required('--migration-manifest', 'the canonical migration manifest');
   const reviewedSha = required('--reviewed-sha', 'the git SHA this evidence was produced from');
+  if (!/^[0-9a-f]{40}$/i.test(reviewedSha)) {
+    throw new Error(
+      `--reviewed-sha must be a full 40-character hexadecimal git SHA, received ${JSON.stringify(reviewedSha)}`,
+    );
+  }
 
   const subjects: AcctTopologySubject[] = [];
   const missing: string[] = [];
@@ -222,6 +257,12 @@ export function resolveSourceTenants(
   }
   const manifest = parsed.data;
 
+  if (manifest.ok !== true) {
+    throw new Error(
+      `migration manifest is not a clean copy artifact (ok=${JSON.stringify(manifest.ok)})`,
+    );
+  }
+
   const { sha256, ...withoutHash } = manifest;
   const recomputed = computeArtifactHash(withoutHash);
   if (recomputed !== sha256) {
@@ -238,35 +279,94 @@ export function resolveSourceTenants(
     throw new Error('sourceToDestMap contains a duplicate sourceId');
   }
 
-  const manifestDestUids = new Set(map.map((entry) => entry.destUid));
-  if (manifestDestUids.size !== 4) {
+  if (new Set(map.map((entry) => entry.destUid)).size !== 4) {
     throw new Error('sourceToDestMap contains a duplicate destUid');
   }
-  // Drain a COPY: `manifestDestUids.size` was just compared to 4, and narrowing
-  // that literal survives the mutating `delete` calls below, so draining the
-  // original makes the emptiness check unreachable to the type checker.
-  const unmatchedDestUids = new Set(manifestDestUids);
-  for (const subject of subjects) {
-    if (!unmatchedDestUids.delete(subject.uid)) {
+
+  if (manifest.workspaces.length !== 4 || manifest.workspaces.some((workspace) => !workspace.ok)) {
+    throw new Error(
+      'migration manifest must contain exactly four clean workspace results; a partial or failed copy is not canonical evidence',
+    );
+  }
+
+  const subjectByKey = new Map(subjects.map((subject) => [subject.label, subject]));
+  if (
+    subjects.length !== ACCT_CANONICAL_WORKSPACES.length ||
+    subjectByKey.size !== ACCT_CANONICAL_WORKSPACES.length
+  ) {
+    throw new Error('subjects must name exactly hbox, mkleo, sparg0, and izaw once each');
+  }
+
+  const mapBySourceId = new Map(map.map((entry) => [entry.sourceId, entry]));
+  const workspaceBySourceId = new Map(
+    manifest.workspaces.map((workspace) => [workspace.sourceId, workspace]),
+  );
+
+  const sourceTenants = ACCT_CANONICAL_WORKSPACES.map((canonical) => {
+    const entry = mapBySourceId.get(canonical.sourceId);
+    if (entry === undefined) {
       throw new Error(
-        `--${subject.label}-uid is not one of the manifest's destUids — the uids being audited must be exactly the four the migration wrote`,
+        `sourceToDestMap does not contain canonical ${canonical.manifestLabel} source ${canonical.sourceId}`,
       );
     }
+    if (entry.label !== canonical.manifestLabel) {
+      throw new Error(
+        `canonical source ${canonical.sourceId} has label ${JSON.stringify(entry.label)}, expected ${JSON.stringify(canonical.manifestLabel)}`,
+      );
+    }
+
+    const subject = subjectByKey.get(canonical.key);
+    if (subject === undefined) {
+      throw new Error(`missing named destination subject ${canonical.key}`);
+    }
+    if (entry.destUid !== subject.uid) {
+      throw new Error(
+        `${canonical.flag} does not match the canonical ${canonical.manifestLabel} manifest destination`,
+      );
+    }
+
+    const workspace = workspaceBySourceId.get(canonical.sourceId);
+    if (workspace === undefined || workspace.destUid !== entry.destUid || workspace.ok !== true) {
+      throw new Error(
+        `workspace result for canonical ${canonical.manifestLabel} source is missing, failed, or bound to a different destination`,
+      );
+    }
+
+    return {
+      sourceId: entry.sourceId,
+      destUid: entry.destUid,
+      label: entry.label,
+    };
+  });
+
+  if (mapBySourceId.size !== ACCT_CANONICAL_WORKSPACES.length) {
+    throw new Error('sourceToDestMap contains a non-canonical sourceId');
   }
-  if (unmatchedDestUids.size > 0) {
-    throw new Error(
-      `manifest destUids not covered by the supplied flags: ${[...unmatchedDestUids].join(', ')}`,
-    );
+  if (workspaceBySourceId.size !== ACCT_CANONICAL_WORKSPACES.length) {
+    throw new Error('manifest workspaces contain a duplicate or non-canonical sourceId');
   }
 
   return {
     manifest,
-    sourceTenants: map.map((entry) => ({
-      sourceId: entry.sourceId,
-      destUid: entry.destUid,
-      label: entry.label,
-    })),
+    sourceTenants,
   };
+}
+
+/** Fail closed when the manifest and the database being read name different environments. */
+export function assertManifestDatabaseIdentity(
+  manifest: ManifestArtifactParsed,
+  current: { host: string; projectId: string | null },
+): void {
+  if (
+    manifest.dbIdentity.host !== current.host ||
+    manifest.dbIdentity.projectId !== current.projectId
+  ) {
+    throw new Error(
+      `migration manifest database identity does not match the connected database ` +
+        `(manifest host=${manifest.dbIdentity.host} project=${manifest.dbIdentity.projectId ?? 'null'}, ` +
+        `connected host=${current.host} project=${current.projectId ?? 'null'})`,
+    );
+  }
 }
 
 export interface AcctTopologyReceiptIdentity {
@@ -339,6 +439,7 @@ async function main(): Promise<void> {
 
   const exitCode = await runWithLifecycle({
     run: async (signal) => {
+      assertManifestDatabaseIdentity(manifest, { host: databaseHost, projectId });
       console.log(`Database host: ${databaseHost} · project: ${projectId ?? '(unset)'}`);
       console.log(`Manifest: ${args.manifestPath} · sha256=${manifest.sha256}`);
       console.log(`Reviewed SHA: ${args.reviewedSha}`);

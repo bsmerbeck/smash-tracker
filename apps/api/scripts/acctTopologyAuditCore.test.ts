@@ -296,6 +296,16 @@ describe('auditAcctTopology input sealing (Codex hard gate fb9a3930, P1)', () =>
       }),
     ).rejects.toThrow(/exactly 4 source tenants/);
   });
+
+  it('returns ok=false when the coach tree is empty instead of sealing a vacuous pass', async () => {
+    const database = new FakeDatabase();
+
+    const result = await run(database);
+
+    expect(result.coachTenantIds).toEqual([]);
+    expect(result.findings).toEqual([]);
+    expect(result.ok).toBe(false);
+  });
 });
 
 describe('auditAcctTopology is read-only', () => {

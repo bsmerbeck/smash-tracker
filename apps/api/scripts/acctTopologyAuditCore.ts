@@ -303,7 +303,11 @@ export async function auditAcctTopology(
       ).length;
 
       return {
-        ok: findings.length === 0,
+        // An empty coach tree proves nothing and most commonly means the
+        // operator supplied the wrong coach uid. Keep this invariant in the
+        // core/result itself so every caller and receipt agrees with the CLI's
+        // nonzero exit rather than sealing `ok: true, exitCode: 1`.
+        ok: findings.length === 0 && coachTenantIds.length > 0,
         coachUid,
         subjects: subjects.map((s) => ({ ...s })),
         coachTenantIds,
