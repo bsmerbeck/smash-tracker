@@ -5,10 +5,10 @@ milestone_name: Pro-Readiness — Evidence-First Stats & Research Workspaces
 current_phase: 30.3
 current_phase_name: Demo Usability Closeout (Gate 6 production UAT)
 status: executing
-stopped_at: "2026-08-16 Phase 30.1 production reconciliation passed: exact-SHA CI 31985917813 green; hardened read-only topology audit zero findings; all four sources already reversibly archived since 2026-08-12; Gate 2 already complete; next is Gate 6 P1 deployment."
+stopped_at: "2026-08-16 Gate 6 clean-worktree rehearsal stopped safely before production: b5bd9c80 exact-SHA CI 31988422608 green, but A5b exposed missing shared/dist after a fresh install. Pass 10 now builds shared before the API preflight; next is review, commit, exact-SHA CI, and a fresh rehearsal."
 last_updated: "2026-08-17T03:14:48.370Z"
 last_activity: 2026-08-16
-last_activity_desc: "Phase 30.1 re-verification PASSED 6/6 after owner authorization and a hardened exact-SHA production read-only audit. The receipt recorded all four source metadata rows with matching 2026-08-12 archive timestamps, zero Client Hub visibility, and no destination membership/ownership findings; clean-copy preservation is separately bound by the migration manifest and the field-only archive contract. ACCT-02, WKSP-01A, and VAL-01 closed. No production mutation in this reconciliation. Gate 6 P1 deployment is next."
+last_activity_desc: "Gate 6 pass-9 hard gate and exact-SHA CI 31988422608 passed. The first clean-detached rehearsal then failed safely at A5b before image build or production contact because shared/dist was absent after a fresh install. Pass 10 adds the explicit shared build ahead of the API preflight and locks it in the ordering checker."
 progress:
   total_phases: 9
   completed_phases: 3
@@ -24,7 +24,7 @@ progress:
 See: .planning/PROJECT.md (updated 2026-08-16)
 
 **Core value:** From a tournament, opponent, or coaching workspace, produce a prioritized evidence-linked practice plan faster and more reliably than the user can assemble manually.
-**Current focus:** Phase 30.3 — Demo Usability Closeout, Gate 6 production execution. The pass-9 Codex hard-gate review returned GO; Phase 30.1 topology/archive is production-verified complete. Next is the exact-SHA commit/CI gate, then the authoritative Gate 6 runbook's clean-build deployment and registry/UAT sequence.
+**Current focus:** Phase 30.3 — Demo Usability Closeout, Gate 6 production execution. Pass 9 and exact-SHA CI were green; the clean-worktree rehearsal caught a missing shared-package build before production. Pass 10 is the corrective preflight, followed by a new exact-SHA commit/CI gate and fresh rehearsal.
 
 ## Current Position
 
@@ -32,9 +32,9 @@ Phase: 30.3 Gate 6 — production execution. **PROBED 2026-08-16: production run
 Plan: 30.1-04 COMPLETE (copy verified in prod, manifest `ok=true` hash `ce09412e…d6dbb`; reversible source archive and topology independently verified). 30.2 corrective/Gate 2 COMPLETE. 30.3 Gate 6 (production UAT): **the runbook is `.planning/phases/30.3-demo-usability-closeout/30.3-UAT-CHECKLIST.md` — READ IT DIRECTLY, it is the single authoritative source and this STATE.md summary does not restate its commands.** G1-G5 code-side criteria previously green. **The runbook IS COMMITTED** as a reviewed-gate exception to the general `.planning/` gitignore and has been amended by later commits — read the tip with `git rev-parse HEAD`, never a SHA transcribed in a planning doc.
 
 **Do NOT cite `gsd-tools verify phase-completeness 30.3` as evidence of completion.** It reports `complete: true` alongside `plan_count=0` and `summary_count=0` — i.e. it is confirming that a phase with no plans has no incomplete plans. That is a vacuous pass, the same structural failure as an audit that exits zero by default, and it was mistakenly cited as supporting evidence once (2026-08-16). Gate 6 completion is established ONLY by: the committed runbook's own gates, the `gate6Audit.ts` JSON receipt exiting 0 with `skippedCount: 0`, an independent-verifier verdict, a Codex hard-gate pass, and actual owner UAT. Phase 31 stays blocked until those land. ACCT-02 and WKSP-01A are now complete; see `phases/30.1-demo-account-topology-migration/30.1-ARCHIVE-DECISION.md`.
-Status: GATE 6 PASS-9 HARD-GATE REVIEW GO (2026-08-16) — the fail-closed operator and committed evidence set are staged; the exact commit and exact-SHA CI are the remaining pre-production gates. The prerequisite ACCT audit is exact-SHA CI green and passed in production. Phase 30.1 is closed. Gate 6 deployment/registry/UAT remains to execute, and Phase 31 stays blocked until that acceptance passes.
+Status: GATE 6 PASS-10 CLEAN-WORKTREE CORRECTION READY (2026-08-16) — pass 9 committed at `b5bd9c80` and exact-SHA CI `31988422608` passed, but the clean rehearsal proved A5b needed `packages/shared/dist` before it could load the real API config. Pass 10 builds shared first and structurally locks that order. The failure occurred before image build or any production contact. Final review, commit, exact-SHA CI, and a fresh rehearsal remain before deployment.
 Progress: [██████░░░░░░░░░░░░░░] 3/9 phases verification-passed (29, 30, 30.1). **`completed_plans: 38 / total_plans: 38` in the frontmatter means every WRITTEN plan has a summary — it does NOT mean the milestone is done.** Phase 30.3 carries zero plans by design (its work is the committed Gate 6 runbook), so `gsd-tools verify phase-completeness 30.3` remains vacuous. Real remaining work: Phase 30.2/30.3 Gate 6 verification and production UAT, then Phase 31.
-Last activity: 2026-08-16 — exact-SHA CI run 31985917813 passed; hardened production ACCT audit exited 0 with zero findings and proved all four sources were already reversibly archived on 2026-08-12. Phase 30.1 requirements and verification reconciled to complete. No production mutation occurred in this reconciliation; Gate 6 P1 deployment is next.
+Last activity: 2026-08-16 — exact-SHA CI run 31988422608 passed for pass 9; the first clean-detached rehearsal then stopped safely at A5b because `packages/shared/dist` was absent after install. Pass 10 adds the explicit shared build before A5b and locks `sharedBuild < apiPreflight < firstMutation`. No image build or production contact occurred.
 
 ## Performance Metrics
 
@@ -124,7 +124,7 @@ Phase 30 detail (resolved 2026-08-10, re-verified 2026-08-16): all 15 owner-evid
 
 ### Pending Todos
 
-- **[CRITICAL PATH] Commit the pass-9 Gate 6 runbook/evidence, require exact-SHA CI green, then execute it.** The independent hard-gate review returned GO and the ACCT prerequisite is complete. Production is not yet running the Gate 6 build (last probe: `/api/deployment-identity` → 404); P1's clean-build deploy is the first production step after CI.
+- **[CRITICAL PATH] Finish pass-10 review, commit it, require exact-SHA CI green, then repeat the clean-detached rehearsal.** The ACCT prerequisite is complete. Production is not yet running the Gate 6 build (last probe: `/api/deployment-identity` → 404); deployment begins only after the corrected rehearsal reaches Stage B.
 - **[COMPLETE] Phase 30.1 step-10 archive/topology disposition** — owner authorization recorded; the hardened production audit recorded all four source metadata rows with matching 2026-08-12 archive timestamps, zero Client Hub visibility, and zero destination membership/ownership findings. Clean-copy preservation is separately bound by the migration manifest and field-only archive contract. See `phases/30.1-demo-account-topology-migration/30.1-ARCHIVE-DECISION.md`.
 - **[HYGIENE] 14 `worktree-agent-*` worktrees** remain under `.claude/worktrees/`; all their work is merged. Safe to remove + `git worktree prune`. Do not resume them expecting fresh context.
 
@@ -210,12 +210,12 @@ Items acknowledged and carried forward from previous milestone close:
 ## Session Continuity
 
 Last session: 2026-08-16 (continuing into 08-17)
-Stopped at: Phase 30.1 production reconciliation complete and Phase 30.2 Gate 2 confirmed already complete. The pass-9 Gate 6 hard-gate review returned GO. The next executable boundary is the exact commit/CI gate, followed by Phase 30.3 Gate 6 P1 from a clean detached worktree.
+Stopped at: Pass 9 and exact-SHA CI passed; its clean-detached rehearsal exposed missing `packages/shared/dist` at A5b and stopped before production. Pass 10 builds shared first. The next boundary is final review, commit, exact-SHA CI, then a fresh clean-detached rehearsal.
 Resume file: `.planning/phases/30.3-demo-usability-closeout/30.3-UAT-CHECKLIST.md` at repository tip. Do not reconstruct its commands from STATE or an older handover.
 
 ## Operator Next Steps
 
-- **Phase 30.3 Gate 6 is the only live execution path.** The independent pass-9 hard-gate review returned GO. Commit the corrected runbook/evidence, require exact-SHA CI green, then read and execute `.planning/phases/30.3-demo-usability-closeout/30.3-UAT-CHECKLIST.md` directly from that clean detached exact-SHA worktree: deploy, registry backfill, machine audit, then manual UAT in the stated order.
+- **Phase 30.3 Gate 6 is the only live execution path.** Finish pass-10 review, commit the correction, require exact-SHA CI green, then re-run `.planning/phases/30.3-demo-usability-closeout/30.3-UAT-CHECKLIST.md` from a fresh clean detached exact-SHA worktree. Only after Stage A passes should it deploy, backfill the registry, run the machine audit, then proceed to manual UAT.
 - **Phase 30.2 Gate 2 is complete.** Never apply any historical `enrichment-manifest*.json`, never re-copy destination enrichment into the sources, and never invoke the legacy archive command. The historical migration manifest remains a preservation artifact, not an executable archive instruction after destination-only enrichment.
 - **Phase 30.1 is complete.** Clean migration: 2026-08-11. Soft archive: 2026-08-12. Production re-audit: 2026-08-16. The receipt recorded all four source metadata rows and matching archive flags; source-content preservation is separately supported by the clean manifest and field-only archive contract.
 - **Phase 31 remains blocked** until Phase 30.2/30.3 verification artifacts and Gate 6 acceptance are green.

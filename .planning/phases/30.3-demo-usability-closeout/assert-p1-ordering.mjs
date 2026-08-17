@@ -32,6 +32,7 @@ const MUTATORS = [
 ];
 const PREREQS = [
   ['frozen dependency installation', /pnpm install --frozen-lockfile/],
+  ['shared package build', /pnpm --filter @smash-tracker\/shared build/],
   ['web env transfer', /cp .*apps\/web\/\.env\.production/],
   ['api env transfer', /cp .*apps\/api\/\.env\b/],
   ['effective API-env validation (runs it)', /gate6-env-preflight\.ts/],
@@ -63,6 +64,26 @@ for (const [name, re] of PREREQS) {
   const rel = hit.n < firstMutation.n ? 'BEFORE' : 'AFTER';
   console.log(`  line ${String(hit.n).padStart(4)}  ${rel.padEnd(6)} first mutation  — ${name}`);
   if (rel !== 'BEFORE') ok = false;
+}
+
+// A fresh checkout's API env preflight imports @smash-tracker/shared through
+// packages/shared/dist. Both steps being somewhere before deploy is not enough:
+// the shared build must precede the preflight that consumes its output.
+const sharedBuildLine = cmds.find((c) => /pnpm --filter @smash-tracker\/shared build/.test(c.text))?.n;
+const apiPreflightLine = cmds.find((c) => /gate6-env-preflight\.ts/.test(c.text))?.n;
+if (
+  sharedBuildLine === undefined ||
+  apiPreflightLine === undefined ||
+  !(sharedBuildLine < apiPreflightLine && apiPreflightLine < firstMutation.n)
+) {
+  console.error(
+    'FATAL: shared package build must occur before the API env preflight and before production mutation',
+  );
+  ok = false;
+} else {
+  console.log(
+    `  lines ${sharedBuildLine}<${apiPreflightLine}<${firstMutation.n}              — shared build precedes API preflight and mutation`,
+  );
 }
 
 // No mutator may appear before the last prerequisite either.
@@ -101,6 +122,10 @@ const REQUIRED_FAIL_CLOSED = [
   ['production web project binding', /"\$WEB_PROJECT_ID" != "smash-tracker-f97b7"/],
   ['production web auth-domain binding', /"\$WEB_AUTH_DOMAIN" != "grandfinals\.gg"/],
   ['API environment terminal gate', /test "\$API_PREFLIGHT_STATUS" -eq 0/],
+  [
+    'corepack-to-install-to-shared-build success chain',
+    /corepack enable && \\\n\s*pnpm install --frozen-lockfile && \\\n\s*pnpm --filter @smash-tracker\/shared build/,
+  ],
   ['dirty-worktree executable failure', /if \[ -n "\$WORKTREE_STATUS" \]; then[\s\S]*?\n\s*false\n/],
   [
     'build-to-prerender success chain',
