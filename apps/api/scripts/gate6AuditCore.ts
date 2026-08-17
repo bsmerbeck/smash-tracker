@@ -167,13 +167,20 @@ export const GATE6_EXPECTATIONS: Record<Gate6WorkspaceKey, Gate6Expectation> = {
   mkleo: {
     label: 'MkLeo',
     matches: 4568,
-    observations: 9367,
+    // 9367 canonical + EXACTLY ONE named deferred predecessor,
+    // 0ebbadd338a7c1551661544a5ffaf184 (repair receipt 2026-08-17,
+    // enrichment-repair-receipt.mkleo.json: its successor 801570fa… resolves
+    // to abstain, so the pair was DEFERRED, predecessor left untouched).
+    // Admin resolution of that deferral legitimately moves this to 9367 —
+    // that is a reviewed bump, not drift.
+    observations: 9368,
     // One receipt per attachment: every attachment is receipt-gated, so these
-    // two figures must move together. Pinned from the 2026-08-16 read-only
-    // production audit (30.2-GATE2-AUDIT.md, "GATE 2 CLOSURE"), which is also
-    // where the attachment/witness figures come from.
-    receipts: 57,
-    attachments: 57,
+    // two figures must move together. 57 pinned from the 2026-08-16 read-only
+    // production audit (30.2-GATE2-AUDIT.md, "GATE 2 CLOSURE"), MINUS the one
+    // revoked-only stale authorization aa0baa79aaf76f91484d5ac46abe33f9 (now
+    // abstains; back in the admin review queue per the same repair receipt).
+    receipts: 56,
+    attachments: 56,
     characterWitnesses: 120,
     stockWitnesses: 70,
   },
@@ -181,8 +188,12 @@ export const GATE6_EXPECTATIONS: Record<Gate6WorkspaceKey, Gate6Expectation> = {
     label: 'Sparg0',
     matches: 8378,
     observations: 10335,
-    receipts: 68,
-    attachments: 68,
+    // 68 pinned at GATE 2 CLOSURE, MINUS the two revoke-only stale
+    // authorizations 25e8c8bf8640a17d92f481b23e00cbb8 and
+    // 665117a27ce26f531b92ef61ab8082d3 (both now abstain; back in the admin
+    // review queue per enrichment-repair-receipt.sparg0.json, 2026-08-17).
+    receipts: 66,
+    attachments: 66,
     characterWitnesses: 130,
     stockWitnesses: 76,
   },

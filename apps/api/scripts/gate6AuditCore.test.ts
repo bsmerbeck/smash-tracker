@@ -257,6 +257,18 @@ function ingestionRunState(status: 'completed' | 'running'): Record<string, unkn
 /** The witness rows a workspace's attachments imply: 3 game ordinals per attached target set. */
 const WITNESS_ORDINALS_PER_SET = 3;
 
+/**
+ * MkLeo's LAST attached index, DERIVED from the expectation table — never a
+ * literal. The 2026-08-17 repair moved the reviewed attachment count (57 ->
+ * 56, the revoked-only aa0baa79… authorization), and the perturbation tests
+ * that used a hardcoded `56` as "the last attached set" silently went VACUOUS
+ * the moment that constant moved: they deleted witnesses for a target set the
+ * builder no longer seeds, perturbed nothing, and watched a green audit.
+ * Deriving the index (and asserting below that it exists and sits beyond both
+ * witness populations) makes that drift class structurally impossible.
+ */
+const MKLEO_LAST_ATTACHED_INDEX = GATE6_EXPECTATIONS.mkleo.attachments - 1;
+
 function targetSetIdFor(workspace: Gate6WorkspaceKey, index: number): string {
   return `set-${workspace}-${index}`;
 }
@@ -775,6 +787,25 @@ describe('the correct fixture actually realizes the expectation table', () => {
     }
   });
 
+  it('the derived last-attached MkLeo index exists in the corpus and sits beyond both witness populations', () => {
+    // Anti-vacuity for every perturbation below that targets the last
+    // attached set: the set must EXIST (so deleting its witnesses perturbs
+    // something) and be the true boundary (so index+1 is unseeded), and its
+    // witnesses must carry no character/stock claims (the "beyond the
+    // populations" premise several tests rely on).
+    const built = buildWorkspace('mkleo');
+    expect(built.attachments[targetSetIdFor('mkleo', MKLEO_LAST_ATTACHED_INDEX)]).toBeDefined();
+    expect(
+      built.attachments[targetSetIdFor('mkleo', MKLEO_LAST_ATTACHED_INDEX + 1)],
+    ).toBeUndefined();
+    expect(MKLEO_LAST_ATTACHED_INDEX * WITNESS_ORDINALS_PER_SET).toBeGreaterThanOrEqual(
+      GATE6_EXPECTATIONS.mkleo.characterWitnesses,
+    );
+    expect(MKLEO_LAST_ATTACHED_INDEX * WITNESS_ORDINALS_PER_SET).toBeGreaterThanOrEqual(
+      GATE6_EXPECTATIONS.mkleo.stockWitnesses,
+    );
+  });
+
   it('carries the LEGITIMATE demo telemetry the old lifetime-absence assertion would have failed', async () => {
     const tree = makeDatabase().dump() as Record<string, Record<string, unknown>>;
     // Ordinary product telemetry for a demo uid (permitted: RTEN-04 suppresses
@@ -1225,7 +1256,7 @@ describe('assertion 5: attachment-integrity', () => {
       database.dump().researchEnrichmentProjection as Record<string, Record<string, unknown>>
     )[UIDS.mkleo]!;
     for (let ordinal = 1; ordinal <= WITNESS_ORDINALS_PER_SET; ordinal += 1) {
-      delete witnesses[matchRowKey(targetSetIdFor('mkleo', 56), ordinal)];
+      delete witnesses[matchRowKey(targetSetIdFor('mkleo', MKLEO_LAST_ATTACHED_INDEX), ordinal)];
     }
     expectPerturbed(
       await audit(database),
@@ -1237,7 +1268,7 @@ describe('assertion 5: attachment-integrity', () => {
 
   it('does not demand a witness from a resolved observation with no projectable evidence', async () => {
     const database = makeDatabase();
-    const index = 56; // beyond MkLeo's character/stock witness populations
+    const index = MKLEO_LAST_ATTACHED_INDEX; // beyond MkLeo's character/stock witness populations
     const observationId = `obs-mkleo-${index}`;
     const targetSetId = targetSetIdFor('mkleo', index);
     const observations = (
@@ -1260,7 +1291,7 @@ describe('assertion 5: attachment-integrity', () => {
 
   it('does not demand a witness when a pre-existing provider/user VOD closes the fill-empty slot', async () => {
     const database = makeDatabase();
-    const index = 56;
+    const index = MKLEO_LAST_ATTACHED_INDEX;
     const observationId = `obs-mkleo-${index}`;
     const targetSetId = targetSetIdFor('mkleo', index);
     const observations = (
@@ -1291,7 +1322,7 @@ describe('assertion 5: attachment-integrity', () => {
 
   it('fails when a witness is deleted but the row still carries the exact Liquipedia VOD', async () => {
     const database = makeDatabase();
-    const index = 56;
+    const index = MKLEO_LAST_ATTACHED_INDEX;
     const observationId = `obs-mkleo-${index}`;
     const targetSetId = targetSetIdFor('mkleo', index);
     const vodUrl = 'https://youtu.be/liquipedia-projected';
@@ -1322,7 +1353,7 @@ describe('assertion 5: attachment-integrity', () => {
 
   it('accepts the same prefilled VOD when the lossless provider source independently proves it', async () => {
     const database = makeDatabase();
-    const index = 56;
+    const index = MKLEO_LAST_ATTACHED_INDEX;
     const observationId = `obs-mkleo-${index}`;
     const targetSetId = targetSetIdFor('mkleo', index);
     const matchKey = matchRowKey(targetSetId, 1);
@@ -1361,7 +1392,7 @@ describe('assertion 5: attachment-integrity', () => {
 
   it('requires a per-row witness for oriented raw character evidence', async () => {
     const database = makeDatabase();
-    const index = 56;
+    const index = MKLEO_LAST_ATTACHED_INDEX;
     const observationId = `obs-mkleo-${index}`;
     const targetSetId = targetSetIdFor('mkleo', index);
     const observations = (
@@ -1389,7 +1420,7 @@ describe('assertion 5: attachment-integrity', () => {
 
   it('fails when an attachment target is absent from the lossless source tree', async () => {
     const database = makeDatabase();
-    const targetSetId = targetSetIdFor('mkleo', 56);
+    const targetSetId = targetSetIdFor('mkleo', MKLEO_LAST_ATTACHED_INDEX);
     const sourceSets = (
       database.dump().researchSource as Record<
         string,
@@ -1406,7 +1437,7 @@ describe('assertion 5: attachment-integrity', () => {
 
   it('allows a no-game attachment whose target has no match rows', async () => {
     const database = makeDatabase();
-    const index = 56;
+    const index = MKLEO_LAST_ATTACHED_INDEX;
     const observationId = `obs-mkleo-${index}`;
     const targetSetId = targetSetIdFor('mkleo', index);
     const observations = (
@@ -3155,9 +3186,13 @@ describe('the expectation table is the contract', () => {
       mkleo: {
         label: 'MkLeo',
         matches: 4568,
-        observations: 9367,
-        receipts: 57,
-        attachments: 57,
+        // Post-repair reviewed figures (2026-08-17 bounded repair): 9367
+        // canonical observations + the named deferred predecessor
+        // 0ebbadd338a7c1551661544a5ffaf184, and 57 GATE-2 authorizations
+        // MINUS the revoked-only aa0baa79aaf76f91484d5ac46abe33f9.
+        observations: 9368,
+        receipts: 56,
+        attachments: 56,
         characterWitnesses: 120,
         stockWitnesses: 70,
       },
@@ -3165,8 +3200,11 @@ describe('the expectation table is the contract', () => {
         label: 'Sparg0',
         matches: 8378,
         observations: 10335,
-        receipts: 68,
-        attachments: 68,
+        // 68 GATE-2 authorizations MINUS the two revoked-only stale
+        // authorizations 25e8c8bf8640a17d92f481b23e00cbb8 and
+        // 665117a27ce26f531b92ef61ab8082d3 (same 2026-08-17 repair).
+        receipts: 66,
+        attachments: 66,
         characterWitnesses: 130,
         stockWitnesses: 76,
       },
