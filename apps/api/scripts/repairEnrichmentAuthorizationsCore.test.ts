@@ -14,6 +14,8 @@ import {
   ENRICHMENT_REPAIR_MAX_ACTIONS,
   ENRICHMENT_REPAIR_PRODUCTION_HOST,
   ENRICHMENT_REPAIR_PRODUCTION_PROJECT,
+  ENRICHMENT_REPAIR_REVIEWED_STALE_OBSERVATION_IDS,
+  ENRICHMENT_REPAIR_REVIEWED_SUCCESSOR_PAIRS,
   ENRICHMENT_REPAIR_TARGETS,
   resumeEnrichmentRepairPlan,
   validateEnrichmentRepairPlan,
@@ -23,19 +25,24 @@ import {
 
 /**
  * The bounded one-time repair operator's own proof, against FakeDatabase
- * only (this file NEVER contacts a real database). The fixture is generated
- * FROM `ENRICHMENT_REPAIR_TARGETS.mkleo`'s anti-vacuity contract — 173
- * current rows, 22 stale authorizations, 3 successor pairs — so the fixture
- * and the operator's hard-coded production expectations can never drift
- * apart silently. Every refusal path asserted here is exercised in its
- * FAILING direction (RED) beside the converging one (GREEN).
+ * only (this file NEVER contacts a real database). The fixture is keyed by
+ * the REVIEWED ID SETS themselves (exact-id anti-vacuity): the same 49
+ * observation ids and 3 predecessor/successor pairs the operator is bound
+ * to, seeded with synthetic content. Every refusal path asserted here is
+ * exercised in its FAILING direction (RED) beside the converging one
+ * (GREEN), including the disposition split the corrected resolver forces:
+ * a reviewed row that no longer resolves to its prior target must be
+ * REVOKE-ONLY (never forced through reauthorization), and a reviewed pair
+ * whose successor cannot re-prove the predecessor's target must DEFER with
+ * the predecessor left byte-untouched.
  */
 
 const ACCOUNT = 'mkleo' as const;
 const UID = ENRICHMENT_REPAIR_TARGETS.mkleo.uid;
 const PAGE_TITLE = ENRICHMENT_REPAIR_TARGETS.mkleo.sourcePageTitle;
 const CURRENT_COUNT = ENRICHMENT_REPAIR_TARGETS.mkleo.currentCohortCount;
-const STALE_COUNT = ENRICHMENT_REPAIR_TARGETS.mkleo.staleAuthorizationCount;
+const REVIEWED_STALE_IDS = ENRICHMENT_REPAIR_REVIEWED_STALE_OBSERVATION_IDS.mkleo;
+const REVIEWED_PAIRS = ENRICHMENT_REPAIR_REVIEWED_SUCCESSOR_PAIRS.mkleo;
 const NOW_MS = 1_800_000_000_000;
 const RUN_ID = '7f2c9a10-4b3d-4e5f-8a6b-1c2d3e4f5a6b';
 const PRIOR_RESOLVER_VERSION = 'liquipedia-resolver@1';
@@ -64,9 +71,9 @@ interface Fingerprint {
 }
 
 function vodRowRecord(
-  index: number,
+  observationId: string,
+  tournamentIndex: number,
   fingerprint: Fingerprint,
-  observationId = `vodrow-${pad(index)}`,
 ): Record<string, unknown> {
   return {
     observationId,
@@ -80,29 +87,29 @@ function vodRowRecord(
     fetchedAtMs: NOW_MS - 50_000,
     observedAtMs: NOW_MS - 50_000,
     matchingStatus: 'ambiguous',
-    tournamentPageTitle: `Tournament_${index}`,
-    vodUrl: vodUrlFor(index),
+    tournamentPageTitle: `Tournament_${tournamentIndex}`,
+    vodUrl: vodUrlFor(tournamentIndex),
     resolutionReasons: [LIQUIPEDIA_VOD_LIST_RESOLUTION_REASON],
   };
 }
 
-function bracketRecord(index: number): Record<string, unknown> {
+function bracketRecord(tournamentIndex: number): Record<string, unknown> {
   return {
-    observationId: `bracket-${pad(index)}`,
+    observationId: `bracket-${pad(tournamentIndex)}`,
     sourceProvider: 'liquipedia',
     sourceWiki: 'smash',
     contentType: 'stage-observation',
-    sourcePageTitle: `Tournament_${index}/Bracket`,
-    sourcePageUrl: `https://liquipedia.net/smash/Tournament_${index}`,
-    sourceRevisionId: 700 + index,
-    sourceContentHash: sha(`bracket-${index}`),
+    sourcePageTitle: `Tournament_${tournamentIndex}/Bracket`,
+    sourcePageUrl: `https://liquipedia.net/smash/Tournament_${tournamentIndex}`,
+    sourceRevisionId: 700 + tournamentIndex,
+    sourceContentHash: sha(`bracket-${tournamentIndex}`),
     parserVersion: 'liquipedia-bracket-match2@1',
     templateFamily: 'match2',
     fetchedAtMs: NOW_MS - 50_000,
     observedAtMs: NOW_MS - 50_000,
     matchingStatus: 'matched',
-    tournamentPageTitle: `Tournament_${index}`,
-    vodUrl: vodUrlFor(index),
+    tournamentPageTitle: `Tournament_${tournamentIndex}`,
+    vodUrl: vodUrlFor(tournamentIndex),
     games: [{ ordinal: 1 }],
   };
 }
@@ -170,84 +177,126 @@ const OBSOLETE_FINGERPRINT: Fingerprint = {
 };
 
 const PAIR_TARGET_SET_ID = 'set-pair-3';
+/** Tournament index for reviewed stale id at 0-based position `i`. */
+const staleIndex = (i: number) => i + 1;
+/** Tournament index shared by pair `j`'s predecessor and successor. */
+const pairIndex = (j: number) => 300 + j;
+const staleTarget = (i: number) => `set-${pad(staleIndex(i))}`;
+
+interface FixtureVariant {
+  /** Reviewed stale ids whose corroborating bracket is OMITTED — the corrected resolver abstains, so classification must be revoke-only. */
+  uncorroboratedStaleIds?: readonly string[];
+  /** When true, the attached pair's successor loses its corroborating bracket — classification must be defer. */
+  deferAttachedPair?: boolean;
+  /** (d) A reviewed id whose observation is missing entirely — the plan must block as unclassifiable. */
+  omitReviewedObservationId?: string;
+  /** Adds one NON-reviewed current row carrying a stale authorization — the "nothing extra" discovery blocker. */
+  extraForeignStaleAuthorization?: boolean;
+}
 
 /**
- * Seeds the mkleo repair universe:
- * - `CURRENT_COUNT` current-cohort VOD-list rows (`vodrow-001..`);
- * - `staleCount` of them (the 49-class) attached under a PRIOR-cohort
- *   fingerprint with the matching prior receipt, plus one corroborating
- *   authorized bracket row per target so the current row independently
- *   re-resolves to the SAME target;
- * - 3 obsolete predecessors (the 3-class): `pred-1`/`pred-2` unattached and
- *   receiptless, `pred-3` validly attached at its own obsolete fingerprint,
- *   each with a semantic successor in the current cohort;
- * - the terminal run, the generated-page cache contract, and one empty
- *   match row per repaired target.
+ * Seeds the mkleo repair universe keyed by the reviewed id sets:
+ * - the 22 reviewed stale ids as current-cohort rows attached under a
+ *   PRIOR-cohort fingerprint with the matching prior receipt, each (unless
+ *   the variant says otherwise) corroborated by an authorized bracket row
+ *   on its own tournament;
+ * - the 3 reviewed pairs: two unattached receiptless predecessors and one
+ *   predecessor validly attached at its own obsolete fingerprint, each with
+ *   its reviewed successor in the current cohort;
+ * - filler rows up to the 173-row cohort contract, the terminal run, the
+ *   generated-page cache contract, and one empty match row per repairable
+ *   target.
  */
 async function seedRepairFixture(
   database: FakeDatabase,
-  staleCount: number = STALE_COUNT,
+  variant: FixtureVariant = {},
 ): Promise<void> {
+  const uncorroborated = new Set(variant.uncorroboratedStaleIds ?? []);
   const observations: Record<string, unknown> = {};
   const receipts: Record<string, unknown> = {};
   const attachments: Record<string, Record<string, unknown>> = {};
   const matches: Record<string, unknown> = {};
 
-  for (let index = 1; index <= CURRENT_COUNT; index += 1) {
-    const row = vodRowRecord(index, CURRENT_FINGERPRINT);
-    observations[row.observationId as string] = row;
-  }
-
-  for (let index = 1; index <= staleCount; index += 1) {
-    const observationId = `vodrow-${pad(index)}`;
-    const targetSetId = `set-${pad(index)}`;
+  REVIEWED_STALE_IDS.forEach((observationId, i) => {
+    if (observationId !== variant.omitReviewedObservationId) {
+      observations[observationId] = vodRowRecord(observationId, staleIndex(i), CURRENT_FINGERPRINT);
+    }
+    const targetSetId = staleTarget(i);
     const stale = resolverAuthorization(observationId, targetSetId, STALE_FINGERPRINT);
     receipts[observationId] = stale.receipt;
     attachments[targetSetId] = { [observationId]: stale.attachment };
-
-    const bracket = bracketRecord(index);
-    observations[bracket.observationId as string] = bracket;
-    const corroborating = resolverAuthorization(
-      bracket.observationId as string,
-      targetSetId,
-      fingerprintOf(bracket),
-    );
-    receipts[bracket.observationId as string] = corroborating.receipt;
-    attachments[targetSetId]![bracket.observationId as string] = corroborating.attachment;
-
+    if (!uncorroborated.has(observationId)) {
+      const bracket = bracketRecord(staleIndex(i));
+      observations[bracket.observationId as string] = bracket;
+      const corroborating = resolverAuthorization(
+        bracket.observationId as string,
+        targetSetId,
+        fingerprintOf(bracket),
+      );
+      receipts[bracket.observationId as string] = corroborating.receipt;
+      attachments[targetSetId]![bracket.observationId as string] = corroborating.attachment;
+    }
     matches[deriveEnrichmentMatchRowKey(targetSetId, 1)] = { note: 'seed', map: UNKNOWN_STAGE };
-  }
+  });
 
-  // Successor pairs: predecessors share the semantic identity of the
-  // current rows at indices 171/172/173 but carry the obsolete fingerprint.
-  for (const pairIndex of [1, 2]) {
-    const predecessor = vodRowRecord(170 + pairIndex, OBSOLETE_FINGERPRINT, `pred-${pairIndex}`);
-    observations[`pred-${pairIndex}`] = predecessor;
-  }
-  const attachedPredecessor = vodRowRecord(173, OBSOLETE_FINGERPRINT, 'pred-3');
-  observations['pred-3'] = attachedPredecessor;
+  REVIEWED_PAIRS.forEach((pair, j) => {
+    observations[pair.successorObservationId] = vodRowRecord(
+      pair.successorObservationId,
+      pairIndex(j),
+      CURRENT_FINGERPRINT,
+    );
+    observations[pair.predecessorObservationId] = vodRowRecord(
+      pair.predecessorObservationId,
+      pairIndex(j),
+      OBSOLETE_FINGERPRINT,
+    );
+  });
+  // The third reviewed pair's predecessor is ATTACHED (valid at its own
+  // obsolete fingerprint) — the production shape of 0ebbadd3… → 102512871.
+  const attachedPair = REVIEWED_PAIRS[2]!;
   const predecessorAuthorization = resolverAuthorization(
-    'pred-3',
+    attachedPair.predecessorObservationId,
     PAIR_TARGET_SET_ID,
     OBSOLETE_FINGERPRINT,
   );
-  receipts['pred-3'] = predecessorAuthorization.receipt;
-  attachments[PAIR_TARGET_SET_ID] = { 'pred-3': predecessorAuthorization.attachment };
-
-  const pairBracket = bracketRecord(173);
-  observations[pairBracket.observationId as string] = pairBracket;
-  const pairCorroboration = resolverAuthorization(
-    pairBracket.observationId as string,
-    PAIR_TARGET_SET_ID,
-    fingerprintOf(pairBracket),
-  );
-  receipts[pairBracket.observationId as string] = pairCorroboration.receipt;
-  attachments[PAIR_TARGET_SET_ID]![pairBracket.observationId as string] =
-    pairCorroboration.attachment;
+  receipts[attachedPair.predecessorObservationId] = predecessorAuthorization.receipt;
+  attachments[PAIR_TARGET_SET_ID] = {
+    [attachedPair.predecessorObservationId]: predecessorAuthorization.attachment,
+  };
+  if (!variant.deferAttachedPair) {
+    const pairBracket = bracketRecord(pairIndex(2));
+    observations[pairBracket.observationId as string] = pairBracket;
+    const pairCorroboration = resolverAuthorization(
+      pairBracket.observationId as string,
+      PAIR_TARGET_SET_ID,
+      fingerprintOf(pairBracket),
+    );
+    receipts[pairBracket.observationId as string] = pairCorroboration.receipt;
+    attachments[PAIR_TARGET_SET_ID]![pairBracket.observationId as string] =
+      pairCorroboration.attachment;
+  }
   matches[deriveEnrichmentMatchRowKey(PAIR_TARGET_SET_ID, 1)] = {
     note: 'seed',
     map: UNKNOWN_STAGE,
   };
+
+  // Fill the current cohort to the exact 173-row contract.
+  let fillerCount = CURRENT_COUNT - REVIEWED_STALE_IDS.length - REVIEWED_PAIRS.length;
+  if (variant.omitReviewedObservationId) fillerCount += 1;
+  if (variant.extraForeignStaleAuthorization) fillerCount -= 1;
+  for (let f = 1; f <= fillerCount; f += 1) {
+    const id = `filler${pad(f)}filler${pad(f)}`;
+    observations[id] = vodRowRecord(id, 400 + f, CURRENT_FINGERPRINT);
+  }
+  if (variant.extraForeignStaleAuthorization) {
+    // A current row OUTSIDE the reviewed set carrying a stale authorization
+    // — never actionable, must block the plan.
+    const foreignId = 'foreignstale00000000000000000001';
+    observations[foreignId] = vodRowRecord(foreignId, 599, CURRENT_FINGERPRINT);
+    const foreign = resolverAuthorization(foreignId, 'set-foreign', STALE_FINGERPRINT);
+    receipts[foreignId] = foreign.receipt;
+    attachments['set-foreign'] = { [foreignId]: foreign.attachment };
+  }
 
   await database.ref(`researchEnrichmentObservations/${UID}`).set(observations);
   await database.ref(`researchEnrichmentReceipts/${UID}`).set(receipts);
@@ -295,40 +344,59 @@ function makeOptions(
 
 async function seededPlan(
   database: FakeDatabase,
+  variant: FixtureVariant = {},
 ): Promise<{ plan: EnrichmentRepairPlan; options: EnrichmentRepairOptions }> {
-  await seedRepairFixture(database);
+  await seedRepairFixture(database, variant);
   const options = makeOptions(database);
   const plan = await createEnrichmentRepairPlan(options);
   return { plan, options };
 }
 
+/** Deep clone of one reviewed pair's ENTIRE live footprint — observation, receipt, and attachment bytes — for untouched-residue proofs. */
+function pairFootprint(database: FakeDatabase, predecessorObservationId: string) {
+  const dump = database.dump() as Record<string, Record<string, Record<string, unknown>>>;
+  return JSON.stringify({
+    observation: dump.researchEnrichmentObservations?.[UID]?.[predecessorObservationId] ?? null,
+    receipt: dump.researchEnrichmentReceipts?.[UID]?.[predecessorObservationId] ?? null,
+    attachment:
+      (
+        dump.researchEnrichmentAttachments?.[UID]?.[PAIR_TARGET_SET_ID] as
+          Record<string, unknown> | undefined
+      )?.[predecessorObservationId] ?? null,
+    matchRow: dump.matches?.[UID]?.[deriveEnrichmentMatchRowKey(PAIR_TARGET_SET_ID, 1)] ?? null,
+    witness:
+      dump.researchEnrichmentProjection?.[UID]?.[
+        deriveEnrichmentMatchRowKey(PAIR_TARGET_SET_ID, 1)
+      ] ?? null,
+  });
+}
+
 describe('repairEnrichmentAuthorizationsCore — plan/hash/validate cycle', () => {
-  it('plans exactly the reviewed 22+3 bounded actions with no blockers, and the plan validates against its own hash', async () => {
+  it('classifies every reviewed id (nothing left over, nothing extra) and validates against its own hash', async () => {
     const database = new FakeDatabase();
     const { plan, options } = await seededPlan(database);
 
     expect(plan.blockedReasons).toEqual([]);
-    expect(plan.staleAuthorizations).toHaveLength(STALE_COUNT);
-    expect(plan.successorPairs).toHaveLength(3);
+    expect(plan.staleAuthorizations).toHaveLength(REVIEWED_STALE_IDS.length);
+    expect(new Set(plan.staleAuthorizations.map((action) => action.observationId))).toEqual(
+      new Set(REVIEWED_STALE_IDS),
+    );
+    expect(plan.staleAuthorizations.every((action) => action.disposition === 'reauthorize')).toBe(
+      true,
+    );
+    expect(plan.successorPairs).toHaveLength(REVIEWED_PAIRS.length);
+    expect(plan.successorPairs.every((pair) => pair.disposition === 'replace')).toBe(true);
+    expect(
+      plan.successorPairs.find(
+        (pair) => pair.predecessorObservationId === REVIEWED_PAIRS[2]!.predecessorObservationId,
+      )?.targetSetId,
+    ).toBe(PAIR_TARGET_SET_ID);
     expect(plan.pageCohorts).toEqual([
       expect.objectContaining({
         sourcePageTitle: PAGE_TITLE,
         currentCohortCount: CURRENT_COUNT,
         cacheObservationCount: CURRENT_COUNT,
       }),
-    ]);
-    expect(plan.staleAuthorizations[0]).toEqual(
-      expect.objectContaining({
-        observationId: 'vodrow-001',
-        targetSetId: 'set-001',
-        priorFingerprint: expect.objectContaining({ sourceContentHash: STALE_ATTACHMENT_HASH }),
-        currentFingerprint: expect.objectContaining({ sourceContentHash: CURRENT_HASH }),
-      }),
-    );
-    expect(plan.successorPairs.map((pair) => pair.targetSetId)).toEqual([
-      null,
-      null,
-      PAIR_TARGET_SET_ID,
     ]);
     expect(plan.terminalRunId).toBe(RUN_ID);
 
@@ -364,6 +432,103 @@ describe('repairEnrichmentAuthorizationsCore — plan/hash/validate cycle', () =
     );
   });
 
+  it('RED: an id outside the reviewed set is never actionable in ANY disposition, even under a recomputed content hash', async () => {
+    const database = new FakeDatabase();
+    const { plan, options } = await seededPlan(database);
+
+    // The attacker swaps a reviewed id for a foreign one as REVOKE-ONLY and
+    // recomputes the content hash, so the hash gate alone would pass — the
+    // reviewed-set equality check must refuse independently.
+    const { contentHash: reviewedHash, ...body } = plan;
+    expect(reviewedHash).toBe(plan.contentHash);
+    const forgedBody = {
+      ...body,
+      staleAuthorizations: body.staleAuthorizations.map((action, index) =>
+        index === 0
+          ? {
+              ...action,
+              observationId: 'ffffffffffffffffffffffffffffffff',
+              disposition: 'revoke-only' as const,
+              reason: 'attacker-chosen revocation of an unreviewed id',
+            }
+          : action,
+      ),
+    };
+    const forged = { ...forgedBody, contentHash: computeEnrichmentRepairPlanHash(forgedBody) };
+    expect(() => validateEnrichmentRepairPlan(forged, options)).toThrow(
+      /do not equal the reviewed id set exactly/,
+    );
+    await expect(applyEnrichmentRepairPlan(forged, options)).rejects.toThrow(
+      /do not equal the reviewed id set exactly/,
+    );
+
+    // Same boundary for pairs: a forged extra pair fails set equality.
+    const forgedPairBody = {
+      ...body,
+      successorPairs: body.successorPairs.map((pair, index) =>
+        index === 0
+          ? {
+              ...pair,
+              predecessorObservationId: 'ffffffffffffffffffffffffffffffff',
+            }
+          : pair,
+      ),
+    };
+    const forgedPairs = {
+      ...forgedPairBody,
+      contentHash: computeEnrichmentRepairPlanHash(forgedPairBody),
+    };
+    expect(() => validateEnrichmentRepairPlan(forgedPairs, options)).toThrow(
+      /do not equal the reviewed pair set exactly/,
+    );
+  });
+
+  it('RED: an unclassified reviewed id blocks the plan', async () => {
+    const database = new FakeDatabase();
+    const missingId = REVIEWED_STALE_IDS[0]!;
+    const { plan, options } = await seededPlan(database, {
+      omitReviewedObservationId: missingId,
+    });
+
+    expect(plan.blockedReasons).toContain(
+      `${missingId} reviewed id is missing or not a VOD-list row; cannot classify`,
+    );
+    expect(plan.blockedReasons).toContain(
+      `mkleo exact-id anti-vacuity: classified ${REVIEWED_STALE_IDS.length - 1} of ${REVIEWED_STALE_IDS.length} reviewed stale authorizations`,
+    );
+    expect(() => validateEnrichmentRepairPlan(plan, options)).toThrow(/repair plan is blocked/);
+    await expect(applyEnrichmentRepairPlan(plan, options)).rejects.toThrow(
+      /repair plan is blocked/,
+    );
+  });
+
+  it('RED: a stale authorization on a non-reviewed id blocks the plan (nothing extra is ever actionable)', async () => {
+    const database = new FakeDatabase();
+    const { plan, options } = await seededPlan(database, {
+      extraForeignStaleAuthorization: true,
+    });
+
+    expect(plan.blockedReasons).toContain(
+      'foreignstale00000000000000000001 carries a stale authorization but is outside the reviewed id set; repair will not act on it',
+    );
+    expect(() => validateEnrichmentRepairPlan(plan, options)).toThrow(/repair plan is blocked/);
+  });
+
+  it('the plan schema itself refuses more than ENRICHMENT_REPAIR_MAX_ACTIONS entries in one action array', async () => {
+    const database = new FakeDatabase();
+    const { plan } = await seededPlan(database);
+    const { contentHash: reviewedHash, ...body } = plan;
+    expect(reviewedHash).toBe(plan.contentHash);
+    const oversized = {
+      ...body,
+      staleAuthorizations: Array.from({ length: ENRICHMENT_REPAIR_MAX_ACTIONS + 1 }, (_, i) => ({
+        ...body.staleAuthorizations[0]!,
+        observationId: `deadbeef${String(i).padStart(24, '0')}`,
+      })),
+    };
+    expect(() => computeEnrichmentRepairPlanHash(oversized)).toThrow(/100/);
+  });
+
   it('refuses to plan or apply outside the exact production scope', async () => {
     const database = new FakeDatabase();
     const { plan } = await seededPlan(database);
@@ -387,40 +552,13 @@ describe('repairEnrichmentAuthorizationsCore — plan/hash/validate cycle', () =
       applyEnrichmentRepairPlan(plan, makeOptions(database, { uid: 'some-other-uid-000000000' })),
     ).rejects.toThrow(/bound to demo uid/);
   });
-
-  it('blocks a plan whose action count exceeds ENRICHMENT_REPAIR_MAX_ACTIONS', async () => {
-    const database = new FakeDatabase();
-    // 99 fully-valid stale authorizations + 3 successor pairs = 102 > 100,
-    // while each individual array stays inside the schema's own 100 cap so
-    // the SUM bound (not the per-array bound) is what fires.
-    await seedRepairFixture(database, ENRICHMENT_REPAIR_MAX_ACTIONS - 1);
-    const options = makeOptions(database);
-
-    const plan = await createEnrichmentRepairPlan(options);
-    expect(plan.blockedReasons).toContain(
-      `repair exceeds ${ENRICHMENT_REPAIR_MAX_ACTIONS} bounded actions`,
-    );
-    expect(() => validateEnrichmentRepairPlan(plan, options)).toThrow(/repair plan is blocked/);
-    await expect(applyEnrichmentRepairPlan(plan, options)).rejects.toThrow(
-      /repair plan is blocked/,
-    );
-  });
-
-  it('the plan schema itself refuses more than ENRICHMENT_REPAIR_MAX_ACTIONS entries in one action array', async () => {
-    const database = new FakeDatabase();
-    await seedRepairFixture(database, ENRICHMENT_REPAIR_MAX_ACTIONS + 1);
-
-    // 101 stale entries can never even be ENCODED as a plan — the array cap
-    // rejects at hash time, before any blocked-reason review could be argued
-    // around.
-    await expect(createEnrichmentRepairPlan(makeOptions(database))).rejects.toThrow(/100/);
-  });
 });
 
 describe('repairEnrichmentAuthorizationsCore — apply', () => {
-  it('reauthorizes each stale receipt to the SAME target under the current fingerprint and replaces the 3 obsolete rows successor-first', async () => {
+  it('reauthorizes each stale receipt to the SAME target under the current fingerprint and replaces the reviewed pairs successor-first', async () => {
     const database = new FakeDatabase();
     const { plan, options } = await seededPlan(database);
+    const attachedPredecessorId = REVIEWED_PAIRS[2]!.predecessorObservationId;
 
     const checkpoints: string[] = [];
     let predecessorPresentAtPairProjection = false;
@@ -432,14 +570,15 @@ describe('repairEnrichmentAuthorizationsCore — apply', () => {
         if (checkpoint === `after-projection:${PAIR_TARGET_SET_ID}`) {
           const dump = database.dump() as Record<string, Record<string, unknown>>;
           predecessorPresentAtPairProjection =
-            (dump.researchEnrichmentObservations?.[UID] as Record<string, unknown>)?.['pred-3'] !=
-            null;
+            (dump.researchEnrichmentObservations?.[UID] as Record<string, unknown>)?.[
+              attachedPredecessorId
+            ] != null;
           successorAuthorizedAtPairProjection =
             (
               (dump.researchEnrichmentAttachments?.[UID] as Record<string, unknown>)?.[
                 PAIR_TARGET_SET_ID
               ] as Record<string, unknown>
-            )?.['vodrow-173'] != null;
+            )?.[REVIEWED_PAIRS[2]!.successorObservationId] != null;
         }
       },
     });
@@ -447,10 +586,12 @@ describe('repairEnrichmentAuthorizationsCore — apply', () => {
     expect(result).toEqual({
       ok: true,
       findings: [],
-      staleAuthorizationsReauthorized: STALE_COUNT,
+      staleAuthorizationsReauthorized: REVIEWED_STALE_IDS.length,
+      staleAuthorizationsRevoked: 0,
       successorsAuthorized: 1,
-      predecessorsRemoved: 3,
-      targetSetsReprojected: STALE_COUNT + 1,
+      predecessorsRemoved: REVIEWED_PAIRS.length,
+      successorPairsDeferred: 0,
+      targetSetsReprojected: REVIEWED_STALE_IDS.length + 1,
     });
 
     // Successor-first ordering: at the pair target's projection checkpoint
@@ -459,7 +600,7 @@ describe('repairEnrichmentAuthorizationsCore — apply', () => {
     expect(predecessorPresentAtPairProjection).toBe(true);
     expect(successorAuthorizedAtPairProjection).toBe(true);
     expect(checkpoints.indexOf(`after-projection:${PAIR_TARGET_SET_ID}`)).toBeLessThan(
-      checkpoints.indexOf('after-cascade:pred-3'),
+      checkpoints.indexOf(`after-cascade:${attachedPredecessorId}`),
     );
 
     const dump = database.dump() as Record<string, Record<string, Record<string, unknown>>>;
@@ -472,11 +613,9 @@ describe('repairEnrichmentAuthorizationsCore — apply', () => {
 
     // 49-class: same target, new fingerprint, receipt re-derived from the
     // CURRENT content hash by the current resolver.
-    for (let index = 1; index <= STALE_COUNT; index += 1) {
-      const observationId = `vodrow-${pad(index)}`;
-      const targetSetId = `set-${pad(index)}`;
-      const attachment = attachmentsTree[targetSetId]![observationId]!;
-      expect(attachment).toEqual(
+    REVIEWED_STALE_IDS.forEach((observationId, i) => {
+      const targetSetId = staleTarget(i);
+      expect(attachmentsTree[targetSetId]![observationId]).toEqual(
         expect.objectContaining({
           targetSetId,
           attachmentSource: 'resolver',
@@ -497,37 +636,105 @@ describe('repairEnrichmentAuthorizationsCore — apply', () => {
           targetSetId,
         }),
       );
-    }
+    });
 
     // 3-class: predecessors and their derived state are gone; the successor
     // carries the authorization.
-    for (const predecessorId of ['pred-1', 'pred-2', 'pred-3']) {
-      expect(observations[predecessorId]).toBeUndefined();
-      expect(receipts[predecessorId]).toBeUndefined();
+    for (const pair of REVIEWED_PAIRS) {
+      expect(observations[pair.predecessorObservationId]).toBeUndefined();
+      expect(receipts[pair.predecessorObservationId]).toBeUndefined();
     }
-    expect(attachmentsTree[PAIR_TARGET_SET_ID]!['pred-3']).toBeUndefined();
-    expect(attachmentsTree[PAIR_TARGET_SET_ID]!['vodrow-173']).toEqual(
+    expect(attachmentsTree[PAIR_TARGET_SET_ID]![attachedPredecessorId]).toBeUndefined();
+    expect(attachmentsTree[PAIR_TARGET_SET_ID]![REVIEWED_PAIRS[2]!.successorObservationId]).toEqual(
       expect.objectContaining({ sourceContentHash: CURRENT_HASH }),
     );
 
     // Projection actually converged the repaired rows (fill-empty VOD).
-    const matchRow = dump.matches![UID]![deriveEnrichmentMatchRowKey('set-001', 1)] as Record<
+    const matchRow = dump.matches![UID]![deriveEnrichmentMatchRowKey(staleTarget(0), 1)] as Record<
       string,
       unknown
     >;
-    expect(matchRow.vodUrl).toBe(vodUrlFor(1));
+    expect(matchRow.vodUrl).toBe(vodUrlFor(staleIndex(0)));
 
     // The maintenance lease was released.
     const run = dump.researchEnrichmentRuns![UID] as Record<string, unknown>;
     expect(run.lease ?? null).toBeNull();
   });
 
+  it('classifies an abstaining reviewed id REVOKE-ONLY (never reauthorize) and a non-re-resolving pair DEFER, then applies exactly that split', async () => {
+    const database = new FakeDatabase();
+    // The expected live-production split: aa0baa79… abstains under the
+    // corrected resolver, and 0ebbadd3…'s successor 801570fa… no longer
+    // re-proves target 102512871.
+    const abstainingId = 'aa0baa79aaf76f91484d5ac46abe33f9';
+    const { plan, options } = await seededPlan(database, {
+      uncorroboratedStaleIds: [abstainingId],
+      deferAttachedPair: true,
+    });
+    const abstainingIndex = REVIEWED_STALE_IDS.indexOf(abstainingId);
+    const deferredPair = REVIEWED_PAIRS[2]!;
+
+    // (b) RED direction at classification: the abstaining reviewed id is
+    // NOT forced through reauthorization.
+    expect(plan.blockedReasons).toEqual([]);
+    const abstainingAction = plan.staleAuthorizations.find(
+      (action) => action.observationId === abstainingId,
+    )!;
+    expect(abstainingAction.disposition).toBe('revoke-only');
+    expect(abstainingAction.reason).toMatch(/abstain/);
+    expect(
+      plan.staleAuthorizations.filter((action) => action.disposition === 'reauthorize'),
+    ).toHaveLength(REVIEWED_STALE_IDS.length - 1);
+    const deferredEntry = plan.successorPairs.find(
+      (pair) => pair.predecessorObservationId === deferredPair.predecessorObservationId,
+    )!;
+    expect(deferredEntry.disposition).toBe('defer');
+    expect(deferredEntry.reason).toMatch(/abstain.*predecessor target set-pair-3/);
+    expect(deferredEntry.targetSetId).toBe(PAIR_TARGET_SET_ID);
+
+    // A fully-classified plan with revoke-only/defer entries is NOT
+    // blocked — these are reviewed dispositions, not blockers.
+    expect(validateEnrichmentRepairPlan(plan, options)).toEqual(plan);
+
+    const deferredBefore = pairFootprint(database, deferredPair.predecessorObservationId);
+    const result = await applyEnrichmentRepairPlan(plan, options);
+
+    expect(result).toEqual({
+      ok: true,
+      findings: [],
+      staleAuthorizationsReauthorized: REVIEWED_STALE_IDS.length - 1,
+      staleAuthorizationsRevoked: 1,
+      successorsAuthorized: 0,
+      predecessorsRemoved: 2,
+      successorPairsDeferred: 1,
+      targetSetsReprojected: REVIEWED_STALE_IDS.length,
+    });
+
+    const dump = database.dump() as Record<string, Record<string, Record<string, unknown>>>;
+    // Revoke-only: receipt and attachment atomically gone, observation
+    // untouched — the row is back in the review queue by attachment absence.
+    expect(dump.researchEnrichmentReceipts![UID]![abstainingId]).toBeUndefined();
+    expect(
+      (
+        dump.researchEnrichmentAttachments![UID]![staleTarget(abstainingIndex)] as
+          Record<string, unknown> | undefined
+      )?.[abstainingId],
+    ).toBeUndefined();
+    expect(dump.researchEnrichmentObservations![UID]![abstainingId]).toEqual(
+      vodRowRecord(abstainingId, staleIndex(abstainingIndex), CURRENT_FINGERPRINT),
+    );
+
+    // (c) Defer leaves the predecessor's ENTIRE footprint byte-untouched.
+    expect(pairFootprint(database, deferredPair.predecessorObservationId)).toBe(deferredBefore);
+  });
+
   it('RED: refuses the predecessor cascade when the successor has vanished, leaving the predecessor untouched', async () => {
     const database = new FakeDatabase();
     const { plan, options } = await seededPlan(database);
+    const vanishedSuccessor = REVIEWED_PAIRS[0]!.successorObservationId;
 
-    // The successor of the null-target pair disappears after review.
-    await database.ref(`researchEnrichmentObservations/${UID}/vodrow-171`).remove();
+    // The successor of one reviewed pair disappears after review.
+    await database.ref(`researchEnrichmentObservations/${UID}/${vanishedSuccessor}`).remove();
     const before = JSON.stringify(database.dump());
 
     // apply refuses on the exact-state gate; resume (the crash-recovery
@@ -546,13 +753,13 @@ describe('repairEnrichmentAuthorizationsCore — apply', () => {
     const removed = await removeReplacedObservationAfterSuccessor(
       asDatabase(database),
       UID,
-      'pred-1',
-      'vodrow-171',
+      REVIEWED_PAIRS[0]!.predecessorObservationId,
+      vanishedSuccessor,
     );
     expect(removed.outcome).toBe('rejected');
     expect(
       (database.dump() as Record<string, Record<string, Record<string, unknown>>>)
-        .researchEnrichmentObservations![UID]!['pred-1'],
+        .researchEnrichmentObservations![UID]![REVIEWED_PAIRS[0]!.predecessorObservationId],
     ).toBeDefined();
   });
 
@@ -561,8 +768,8 @@ describe('repairEnrichmentAuthorizationsCore — apply', () => {
     const { plan, options } = await seededPlan(database);
     // Unrelated drift: a brand-new observation lands after plan review.
     await database
-      .ref(`researchEnrichmentObservations/${UID}/vodrow-999`)
-      .set(vodRowRecord(999, CURRENT_FINGERPRINT, 'vodrow-999'));
+      .ref(`researchEnrichmentObservations/${UID}/driftrow0000000000000000000000dd`)
+      .set(vodRowRecord('driftrow0000000000000000000000dd', 999, CURRENT_FINGERPRINT));
 
     await expect(applyEnrichmentRepairPlan(plan, options)).rejects.toThrow(/exact reviewed state/);
   });

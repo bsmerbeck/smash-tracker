@@ -46,7 +46,7 @@ import {
 /** The only production RTDB this bounded repair is allowed to mutate. */
 export const ENRICHMENT_REPAIR_PRODUCTION_HOST = 'smash-tracker-f97b7.firebaseio.com';
 export const ENRICHMENT_REPAIR_PRODUCTION_PROJECT = 'smash-tracker-f97b7';
-export const ENRICHMENT_REPAIR_FORMAT_VERSION = 2;
+export const ENRICHMENT_REPAIR_FORMAT_VERSION = 3;
 export const ENRICHMENT_REPAIR_MAX_ACTIONS = 100;
 export const ENRICHMENT_REPAIR_DEFAULT_MAX_AGE_MS = 60 * 60 * 1000;
 
@@ -55,16 +55,114 @@ export const ENRICHMENT_REPAIR_TARGETS = {
     uid: 'eVJih9SgfJVk5oMPAQydPGbEBpU2',
     sourcePageTitle: 'MKLeo/VODs',
     currentCohortCount: 173,
-    staleAuthorizationCount: 22,
-    successorPairCount: 3,
   },
   sparg0: {
     uid: 'cosPe2wagVZsTWprGKnpjrcUEsb2',
     sourcePageTitle: 'Sparg0/VODs',
     currentCohortCount: 240,
-    staleAuthorizationCount: 27,
-    successorPairCount: 0,
   },
+} as const;
+
+/**
+ * THE REVIEWED ID SETS — exact-id anti-vacuity (formatVersion 3, superseding
+ * v2's count-based expectations, which went stale the moment the corrected
+ * resolver changed what a handful of the reviewed rows resolve to). The plan
+ * must classify EVERY id below into exactly one disposition — nothing left
+ * over, nothing extra — and an id outside these sets is never actionable in
+ * any disposition (enforced at plan time AND re-checked by
+ * `validateEnrichmentRepairPlan`).
+ *
+ * PROVENANCE. The quarantined Gate-6 P3 baseline/receipt this review came
+ * from (`apps/api/gate6-baseline.failed.<stamp>.json` per the committed 30.3
+ * runbook's failed-record recovery) is NOT present in this working tree, so
+ * these ids are reconstructed from the available evidence and cross-checked
+ * three ways:
+ * - `apps/api/enrichment-repair-plan.mkleo.json` / `.sparg0.json` — the
+ *   read-only production plan run at 77e886f1 — carry 21 + 25 stale entries
+ *   with exact ids/targets/prior fingerprints, plus 2 replacement pairs;
+ * - those plans' own `blockedReasons` name the remaining reviewed ids
+ *   verbatim (aa0baa79… whose prior target was 106049033; 25e8c8bf… →
+ *   80387417; 665117a2… → 91113130; and the pair successor 801570fa… →
+ *   predecessor target 102512871), completing 21+1=22 and 25+2=27 (=49);
+ * - the `apps/api/enrichment-manifest*.json` lineage: the three pre-offset
+ *   predecessors (4c3aaa92…, 77fe89bc…, 0ebbadd3…) are present through v5
+ *   and vanish exactly at v6 where their successors (678dbbdb…, df7ccdc7…,
+ *   801570fa…) first appear, and v5 shows 0ebbadd3… matched to 102512871 —
+ *   binding it as the deferred pair's predecessor.
+ */
+export const ENRICHMENT_REPAIR_REVIEWED_STALE_OBSERVATION_IDS = {
+  mkleo: [
+    '029da334382074151c55d6315f53c272',
+    '085ee026b1b19fd1a4906e1e34ac28d9',
+    '097f5163adbb3c6256639f4c50258cfd',
+    '1af969317587d0d2ccfa581be97bd013',
+    '398ce547ab7dd7d630ef4ffe5a82f078',
+    '3d3a2f9bcbd78b766d08682fb41fb8de',
+    '46dfb58f162999d96fc2ed55d9ecfc56',
+    '4ec3e70ef4f5a239e06776bb5294a9ee',
+    '7de4922e4bf299e4d74a8b890a36a0e8',
+    '98b619adeb420d90bc5085d64d736290',
+    '9a5e822459f00ae25e4209b9fc0b446c',
+    '9ef7da14287b0894c6ca15c25d20985b',
+    'aa0baa79aaf76f91484d5ac46abe33f9',
+    'bf24efe8f149358b93ae9f40ef047773',
+    'c346167c1638433e0cd26b8eb185a7e4',
+    'c6c6ec67f600f98dc6bc875e4e3400b5',
+    'ca76862cd4855843526b5561b1a28012',
+    'cafbec6797b6c71c1672528214208fdc',
+    'd936719250dcac8305af8ec0e78aa2c8',
+    'e8c19ee89d9a69b0e4037faa1a677154',
+    'f24ccf0fbc0e8562b6e858c5e03019fa',
+    'fa525cde0667aac3a359027476dbac09',
+  ],
+  sparg0: [
+    '12da3b0db22c6468b45b04825cd95078',
+    '1663f3bd3f2b647465a4cdb38fe9f858',
+    '1b6640f74afd42f44cf5eaaab048138b',
+    '25e8c8bf8640a17d92f481b23e00cbb8',
+    '3b58c89ffd8560f14e561ed7e8af49ce',
+    '420b588d7746c65cce4db8fe63810574',
+    '42d7b1086967691e237f5d2ca36b4cf4',
+    '4ab6957f113451384850fe6f64b303ef',
+    '5b7e9b209f4d9f2d7319b4d1e203f100',
+    '665117a27ce26f531b92ef61ab8082d3',
+    '7369f7a0980ca727d1c73a9d3e5a8f6b',
+    '808a6014e4696f56a86c4bf647cfe968',
+    '8b0a46708fddccce38e13f938e6a0e7b',
+    'a164af17f5ae05bc7c5e46a85fb10bcf',
+    'a466d7b81f195f01babaf56c89e2e9f7',
+    'bddfc29727dd1ce663b122875976a4f7',
+    'c49cb54acd0e2acc374045e4adb631ef',
+    'ca1a0079416970f0a60d4c0a88a56dac',
+    'd1874b8116d7c3f16eeef1387065dc41',
+    'db8c40c30ef7736d0ce123973ffa5526',
+    'e40e7e449fe4377ee98948e49db1efb9',
+    'e93768c415d3092e6653635bd6c17b40',
+    'efcbc191c3e47d54fbd3a6b33f07a2f5',
+    'f0cbc9c34f3a9566e69637c446a1c9eb',
+    'f1da6070d1da56186928f20004ffcc66',
+    'f4b9646a6def2eb35155134928abefe0',
+    'fe1965950fac40bf919a088ca0bb29af',
+  ],
+} as const;
+
+/** See the provenance note above — the three MkLeo pre-offset pairs; sparg0 has none. */
+export const ENRICHMENT_REPAIR_REVIEWED_SUCCESSOR_PAIRS = {
+  mkleo: [
+    {
+      predecessorObservationId: '4c3aaa92f662255c73fd807e89eba49c',
+      successorObservationId: '678dbbdb0d04d31dd35119dacaad0130',
+    },
+    {
+      predecessorObservationId: '77fe89bcd5efe6ba10c0b59d637a843a',
+      successorObservationId: 'df7ccdc76e4837b5a70a78db2cc43a27',
+    },
+    {
+      predecessorObservationId: '0ebbadd338a7c1551661544a5ffaf184',
+      successorObservationId: '801570faf6adcacda9cdf04575bd71bb',
+    },
+  ],
+  sparg0: [],
 } as const;
 
 const fingerprintSchema = z.object({
@@ -78,22 +176,63 @@ const digestSchema = z.object({
   digest: z.string().regex(/^[a-f0-9]{64}$/),
 });
 
-const staleAuthorizationSchema = z.object({
-  observationId: z.string().min(1).max(200),
-  sourcePageTitle: z.string().min(1),
-  targetSetId: z.string().min(1).max(200),
-  priorReceiptId: z.string().min(1).max(200),
-  priorFingerprint: fingerprintSchema,
-  currentFingerprint: fingerprintSchema,
-});
+const staleAuthorizationSchema = z
+  .object({
+    observationId: z.string().min(1).max(200),
+    sourcePageTitle: z.string().min(1),
+    /** `reauthorize` — the row still independently resolves to its prior target; `revoke-only` — the corrected resolver abstains or resolves elsewhere, so the stale authorization is revoked and the row lands in the admin review queue. */
+    disposition: z.enum(['reauthorize', 'revoke-only']),
+    /** `null` only when the reviewed row was found already fully revoked (nothing left to address). */
+    targetSetId: z.string().min(1).max(200).nullable(),
+    priorReceiptId: z.string().min(1).max(200).nullable(),
+    priorFingerprint: fingerprintSchema.nullable(),
+    currentFingerprint: fingerprintSchema,
+    /** REQUIRED for revoke-only: the resolver-derived reason the prior authorization may not be re-issued. */
+    reason: z.string().max(500).nullish(),
+  })
+  .superRefine((value, ctx) => {
+    if (
+      value.disposition === 'reauthorize' &&
+      (!value.targetSetId || !value.priorReceiptId || !value.priorFingerprint)
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message:
+          'a reauthorize action requires its target set and the prior authorization evidence',
+        path: ['disposition'],
+      });
+    }
+    if (value.disposition === 'revoke-only' && !value.reason) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'a revoke-only action must name the resolver-derived reason',
+        path: ['disposition'],
+      });
+    }
+  });
 
-const successorPairSchema = z.object({
-  sourcePageTitle: z.string().min(1),
-  predecessorObservationId: z.string().min(1).max(200),
-  successorObservationId: z.string().min(1).max(200),
-  semanticSignature: z.string().regex(/^[a-f0-9]{64}$/),
-  targetSetId: z.string().min(1).max(200).nullable(),
-});
+const successorPairSchema = z
+  .object({
+    sourcePageTitle: z.string().min(1),
+    predecessorObservationId: z.string().min(1).max(200),
+    successorObservationId: z.string().min(1).max(200),
+    semanticSignature: z.string().regex(/^[a-f0-9]{64}$/),
+    targetSetId: z.string().min(1).max(200).nullable(),
+    /** `replace` — successor-first removal proceeds; `defer` — the successor fails to independently re-resolve to the predecessor's target, so the predecessor is left COMPLETELY untouched and the residue stays visible. */
+    disposition: z.enum(['replace', 'defer']),
+    /** REQUIRED for defer: why the replacement may not proceed. */
+    reason: z.string().max(500).nullish(),
+  })
+  .superRefine((value, ctx) => {
+    if (value.disposition === 'defer' && (!value.reason || !value.targetSetId)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message:
+          'a defer pair must name its reason and the predecessor target it declined to replace',
+        path: ['disposition'],
+      });
+    }
+  });
 
 const pageCohortSchema = z.object({
   sourcePageTitle: z.string().min(1),
@@ -165,8 +304,12 @@ export interface EnrichmentRepairOptions {
 
 export interface EnrichmentRepairApplyResult {
   staleAuthorizationsReauthorized: number;
+  /** Reviewed revoke-only actions proven revoked (receipt and attachment gone; observation untouched, back in the review queue). */
+  staleAuthorizationsRevoked: number;
   successorsAuthorized: number;
   predecessorsRemoved: number;
+  /** Reviewed defer pairs — visible residue: the predecessor was deliberately left untouched. */
+  successorPairsDeferred: number;
   targetSetsReprojected: number;
 }
 
@@ -476,15 +619,36 @@ function mutableRepairIds(
   const targetSetIds = new Set<string>();
   for (const action of staleAuthorizations) {
     observationIds.add(action.observationId);
-    targetSetIds.add(action.targetSetId);
+    if (action.targetSetId) targetSetIds.add(action.targetSetId);
   }
   for (const pair of successorPairs) {
+    if (pair.disposition === 'defer') {
+      // A deferred pair is a reviewed NO-OP: its predecessor, receipt,
+      // attachment, target rows and witness all remain PROTECTED state, so
+      // any change to them invalidates the plan instead of being smoothed
+      // over as repair activity.
+      continue;
+    }
     observationIds.add(pair.predecessorObservationId);
     observationIds.add(pair.successorObservationId);
     predecessorIds.add(pair.predecessorObservationId);
     if (pair.targetSetId) targetSetIds.add(pair.targetSetId);
   }
   return { observationIds, predecessorIds, targetSetIds };
+}
+
+/** Every target set the reviewed plan may legitimately reproject: reauthorize and revoke-only targets plus replace-pair targets — never a deferred pair's. */
+function repairTouchedTargetSetIds(
+  plan: Pick<EnrichmentRepairPlanBody, 'staleAuthorizations' | 'successorPairs'>,
+): Set<string> {
+  return new Set<string>([
+    ...plan.staleAuthorizations.flatMap((action) =>
+      action.targetSetId ? [action.targetSetId] : [],
+    ),
+    ...plan.successorPairs.flatMap((pair) =>
+      pair.disposition === 'replace' && pair.targetSetId ? [pair.targetSetId] : [],
+    ),
+  ]);
 }
 
 /**
@@ -622,20 +786,90 @@ function analyzeState(
     }
   }
 
+  // DISCOVERY half of exact-id anti-vacuity: a stale authorization on any id
+  // OUTSIDE the reviewed set is never actionable in any disposition — it is
+  // evidence the world moved past the review, so it blocks the whole plan.
+  const reviewedStaleIds = ENRICHMENT_REPAIR_REVIEWED_STALE_OBSERVATION_IDS[options.account];
+  const reviewedStaleIdSet = new Set<string>(reviewedStaleIds);
   for (const [observationId, entries] of attachmentsByObservation) {
     const observation = observations.get(observationId);
     if (!observation || observation.templateFamily !== 'vodlist') continue;
-    const stale = entries.filter(
-      ({ attachment }) => !enrichmentObservationFingerprintMatches(attachment, observation),
-    );
-    if (stale.length === 0) continue;
-    if (entries.length !== 1 || stale.length !== 1) {
+    if (reviewedStaleIdSet.has(observationId)) continue;
+    if (
+      entries.some(
+        ({ attachment }) => !enrichmentObservationFingerprintMatches(attachment, observation),
+      )
+    ) {
+      blockedReasons.push(
+        `${observationId} carries a stale authorization but is outside the reviewed id set; repair will not act on it`,
+      );
+    }
+  }
+
+  // CLASSIFICATION half: EVERY reviewed id receives exactly one disposition,
+  // or the plan blocks. `reauthorize` requires the row to independently
+  // re-resolve to its prior target under the CURRENT resolver; a row the
+  // corrected resolver now abstains on (or resolves elsewhere) is
+  // `revoke-only` — forcing it through reauthorization would fabricate
+  // authorization for evidence the resolver refuses.
+  for (const observationId of reviewedStaleIds) {
+    const observation = observations.get(observationId);
+    if (!observation || observation.templateFamily !== 'vodlist') {
+      blockedReasons.push(
+        `${observationId} reviewed id is missing or not a VOD-list row; cannot classify`,
+      );
+      continue;
+    }
+    const entries = attachmentsByObservation.get(observationId) ?? [];
+    if (entries.length === 0) {
+      if (state.receiptsRaw[observationId] != null) {
+        blockedReasons.push(
+          `${observationId} reviewed id is unattached but still has a receipt; cannot classify`,
+        );
+        continue;
+      }
+      // Already fully revoked (a previously executed revoke-only, or manual
+      // review): the terminal state of the revoke-only disposition.
+      staleAuthorizations.push({
+        observationId,
+        sourcePageTitle: observation.sourcePageTitle,
+        disposition: 'revoke-only',
+        targetSetId: null,
+        priorReceiptId: null,
+        priorFingerprint: null,
+        currentFingerprint: observationFingerprint(observation),
+        reason: 'already fully revoked; no live authorization remains',
+      });
+      continue;
+    }
+    if (entries.length !== 1) {
       blockedReasons.push(`${observationId} has multiple attachments; repair will not guess`);
       continue;
     }
-    const { targetSetId, attachment } = stale[0]!;
+    const { targetSetId, attachment } = entries[0]!;
     if (attachment.attachmentSource !== 'resolver' || !attachment.receiptId) {
-      blockedReasons.push(`${observationId} has a stale non-resolver attachment`);
+      blockedReasons.push(`${observationId} has a non-resolver attachment; cannot classify`);
+      continue;
+    }
+    if (enrichmentObservationFingerprintMatches(attachment, observation)) {
+      // Fingerprint-current: either an already-executed reauthorization or
+      // otherwise-fresh evidence. Accept only the fully self-consistent
+      // fresh state (the reauthorize disposition's own terminal state).
+      if (hasFreshAuthorization(state, observation, targetSetId)) {
+        staleAuthorizations.push({
+          observationId,
+          sourcePageTitle: observation.sourcePageTitle,
+          disposition: 'reauthorize',
+          targetSetId,
+          priorReceiptId: attachment.receiptId,
+          priorFingerprint: observationFingerprint(attachment),
+          currentFingerprint: observationFingerprint(observation),
+        });
+      } else {
+        blockedReasons.push(
+          `${observationId} is fingerprint-current but not self-consistently authorized; cannot classify`,
+        );
+      }
       continue;
     }
     const receiptParsed = researchEnrichmentResolutionReceiptRecordSchema.safeParse(
@@ -656,24 +890,40 @@ function analyzeState(
       continue;
     }
     const resolvedTarget = resolveVodTarget(observation, corroboration);
-    if (resolvedTarget !== targetSetId) {
-      blockedReasons.push(
-        `${observationId} now resolves to ${resolvedTarget ?? 'abstain'}, not prior target ${targetSetId}`,
-      );
-      continue;
+    if (resolvedTarget === targetSetId) {
+      staleAuthorizations.push({
+        observationId,
+        sourcePageTitle: observation.sourcePageTitle,
+        disposition: 'reauthorize',
+        targetSetId,
+        priorReceiptId: receiptParsed.data.receiptId,
+        priorFingerprint: observationFingerprint(attachment),
+        currentFingerprint: observationFingerprint(observation),
+      });
+    } else {
+      staleAuthorizations.push({
+        observationId,
+        sourcePageTitle: observation.sourcePageTitle,
+        disposition: 'revoke-only',
+        targetSetId,
+        priorReceiptId: receiptParsed.data.receiptId,
+        priorFingerprint: observationFingerprint(attachment),
+        currentFingerprint: observationFingerprint(observation),
+        reason: `now resolves to ${resolvedTarget ?? 'abstain'}, not prior target ${targetSetId}; stale authorization is revoked, row returns to review`,
+      });
     }
-    staleAuthorizations.push({
-      observationId,
-      sourcePageTitle: observation.sourcePageTitle,
-      targetSetId,
-      priorReceiptId: receiptParsed.data.receiptId,
-      priorFingerprint: observationFingerprint(attachment),
-      currentFingerprint: observationFingerprint(observation),
-    });
   }
 
   const successorPairs: EnrichmentRepairPlanBody['successorPairs'] = [];
   const pageCohorts: EnrichmentRepairPlanBody['pageCohorts'] = [];
+  const currentBySignatureByPage = new Map<
+    string,
+    Map<string, ResearchEnrichmentObservationRecord[]>
+  >();
+  const obsoleteRows: {
+    sourcePageTitle: string;
+    predecessor: ResearchEnrichmentObservationRecord;
+  }[] = [];
   const byPage = new Map<string, ResearchEnrichmentObservationRecord[]>();
   for (const observation of observations.values()) {
     if (
@@ -737,50 +987,133 @@ function analyzeState(
       matches.push(row);
       currentBySignature.set(signature, matches);
     }
+    currentBySignatureByPage.set(sourcePageTitle, currentBySignature);
     for (const predecessor of rows.filter((row) => row.sourceContentHash !== cacheContentHash)) {
-      const signature = semanticSignature(predecessor);
-      const successors = currentBySignature.get(signature) ?? [];
-      if (successors.length !== 1 || successors[0]!.observationId === predecessor.observationId) {
-        continue;
-      }
-      const successor = successors[0]!;
-      const predecessorAttachments = attachmentsByObservation.get(predecessor.observationId) ?? [];
-      let targetSetId: string | null = null;
-      if (predecessorAttachments.length > 1) {
-        blockedReasons.push(`${predecessor.observationId} has multiple attachments`);
-        continue;
-      }
-      if (predecessorAttachments.length === 1) {
-        const prior = predecessorAttachments[0]!;
-        if (
-          !validResolverAttachment(
-            prior.attachment,
-            predecessor,
-            state.receiptsRaw[predecessor.observationId],
-          )
-        ) {
-          blockedReasons.push(
-            `${predecessor.observationId} is attached without valid resolver evidence`,
-          );
-          continue;
-        }
-        targetSetId = prior.targetSetId;
-        if (resolveVodTarget(successor, corroboration) !== targetSetId) {
-          blockedReasons.push(
-            `${successor.observationId} does not independently resolve to predecessor target ${targetSetId}`,
-          );
-          continue;
-        }
-      } else if (state.receiptsRaw[predecessor.observationId] != null) {
-        blockedReasons.push(`${predecessor.observationId} is unattached but still has a receipt`);
+      obsoleteRows.push({ sourcePageTitle, predecessor });
+    }
+  }
+
+  // DISCOVERY half of the exact-pair anti-vacuity: an obsolete row with a
+  // unique semantic successor OUTSIDE the reviewed pair set blocks the plan
+  // (never silently actioned); obsolete rows with no unique successor are
+  // simply retained, as before.
+  const reviewedPairs = ENRICHMENT_REPAIR_REVIEWED_SUCCESSOR_PAIRS[options.account];
+  const reviewedPairPredecessorIds = new Set<string>(
+    reviewedPairs.map((pair) => pair.predecessorObservationId),
+  );
+  for (const { sourcePageTitle, predecessor } of obsoleteRows) {
+    const signature = semanticSignature(predecessor);
+    const successors = currentBySignatureByPage.get(sourcePageTitle)?.get(signature) ?? [];
+    if (successors.length !== 1 || successors[0]!.observationId === predecessor.observationId) {
+      continue;
+    }
+    if (!reviewedPairPredecessorIds.has(predecessor.observationId)) {
+      blockedReasons.push(
+        `${predecessor.observationId} pairs with successor ${successors[0]!.observationId} but is outside the reviewed pair set; repair will not act on it`,
+      );
+    }
+  }
+
+  // CLASSIFICATION half: every reviewed pair receives exactly one
+  // disposition. `replace` proceeds successor-first; `defer` (the successor
+  // fails to independently re-resolve to the predecessor's target) leaves
+  // the predecessor COMPLETELY untouched, with the residue named rather
+  // than smoothed over.
+  for (const reviewedPair of reviewedPairs) {
+    const predecessor = observations.get(reviewedPair.predecessorObservationId);
+    const successor = observations.get(reviewedPair.successorObservationId);
+    if (!successor || successor.templateFamily !== 'vodlist') {
+      blockedReasons.push(
+        `${reviewedPair.successorObservationId} reviewed successor is missing; cannot classify pair`,
+      );
+      continue;
+    }
+    const sourcePageTitle = successor.sourcePageTitle;
+    const signature = semanticSignature(successor);
+    if (!predecessor) {
+      // Already replaced (a previously executed cascade): the terminal
+      // state of the replace disposition.
+      successorPairs.push({
+        sourcePageTitle,
+        predecessorObservationId: reviewedPair.predecessorObservationId,
+        successorObservationId: reviewedPair.successorObservationId,
+        semanticSignature: signature,
+        targetSetId: null,
+        disposition: 'replace',
+      });
+      continue;
+    }
+    if (semanticSignature(predecessor) !== signature) {
+      blockedReasons.push(
+        `${reviewedPair.predecessorObservationId} and ${reviewedPair.successorObservationId} no longer share a semantic identity; cannot classify pair`,
+      );
+      continue;
+    }
+    const successors = currentBySignatureByPage.get(sourcePageTitle)?.get(signature) ?? [];
+    if (
+      successors.length !== 1 ||
+      successors[0]!.observationId !== reviewedPair.successorObservationId
+    ) {
+      blockedReasons.push(
+        `${reviewedPair.successorObservationId} is not the unique current-cohort successor for its reviewed pair; cannot classify`,
+      );
+      continue;
+    }
+    const predecessorAttachments =
+      attachmentsByObservation.get(reviewedPair.predecessorObservationId) ?? [];
+    if (predecessorAttachments.length > 1) {
+      blockedReasons.push(`${reviewedPair.predecessorObservationId} has multiple attachments`);
+      continue;
+    }
+    if (predecessorAttachments.length === 0) {
+      if (state.receiptsRaw[reviewedPair.predecessorObservationId] != null) {
+        blockedReasons.push(
+          `${reviewedPair.predecessorObservationId} is unattached but still has a receipt`,
+        );
         continue;
       }
       successorPairs.push({
         sourcePageTitle,
-        predecessorObservationId: predecessor.observationId,
-        successorObservationId: successor.observationId,
+        predecessorObservationId: reviewedPair.predecessorObservationId,
+        successorObservationId: reviewedPair.successorObservationId,
         semanticSignature: signature,
-        targetSetId,
+        targetSetId: null,
+        disposition: 'replace',
+      });
+      continue;
+    }
+    const prior = predecessorAttachments[0]!;
+    if (
+      !validResolverAttachment(
+        prior.attachment,
+        predecessor,
+        state.receiptsRaw[reviewedPair.predecessorObservationId],
+      )
+    ) {
+      blockedReasons.push(
+        `${reviewedPair.predecessorObservationId} is attached without valid resolver evidence`,
+      );
+      continue;
+    }
+    const resolvedTarget = resolveVodTarget(successor, corroboration);
+    if (resolvedTarget === prior.targetSetId) {
+      successorPairs.push({
+        sourcePageTitle,
+        predecessorObservationId: reviewedPair.predecessorObservationId,
+        successorObservationId: reviewedPair.successorObservationId,
+        semanticSignature: signature,
+        targetSetId: prior.targetSetId,
+        disposition: 'replace',
+      });
+    } else {
+      successorPairs.push({
+        sourcePageTitle,
+        predecessorObservationId: reviewedPair.predecessorObservationId,
+        successorObservationId: reviewedPair.successorObservationId,
+        semanticSignature: signature,
+        targetSetId: prior.targetSetId,
+        disposition: 'defer',
+        reason: `successor resolves to ${resolvedTarget ?? 'abstain'}, not predecessor target ${prior.targetSetId}; predecessor left untouched`,
       });
     }
   }
@@ -798,14 +1131,17 @@ function analyzeState(
       `${options.account} anti-vacuity: expected ${expected.currentCohortCount} current rows on ${expected.sourcePageTitle}`,
     );
   }
-  if (staleAuthorizations.length !== expected.staleAuthorizationCount) {
+  // Exact-id coverage (belt and braces beside the per-id classification
+  // blockers above): a plan may not leave any reviewed id unclassified.
+  const classifiedStaleIds = new Set(staleAuthorizations.map((action) => action.observationId));
+  if (classifiedStaleIds.size !== reviewedStaleIds.length) {
     blockedReasons.push(
-      `${options.account} anti-vacuity: expected ${expected.staleAuthorizationCount} stale authorizations, found ${staleAuthorizations.length}`,
+      `${options.account} exact-id anti-vacuity: classified ${classifiedStaleIds.size} of ${reviewedStaleIds.length} reviewed stale authorizations`,
     );
   }
-  if (successorPairs.length !== expected.successorPairCount) {
+  if (successorPairs.length !== reviewedPairs.length) {
     blockedReasons.push(
-      `${options.account} anti-vacuity: expected ${expected.successorPairCount} successor pairs, found ${successorPairs.length}`,
+      `${options.account} exact-id anti-vacuity: classified ${successorPairs.length} of ${reviewedPairs.length} reviewed successor pairs`,
     );
   }
 
@@ -878,6 +1214,33 @@ export function validateEnrichmentRepairPlan(
   }
   if (parsed.blockedReasons.length > 0) {
     throw new Error(`repair plan is blocked: ${parsed.blockedReasons.join('; ')}`);
+  }
+  // Exact-id anti-vacuity, re-checked INDEPENDENTLY of the content hash: a
+  // plan may only ever act on the reviewed id sets — full coverage, nothing
+  // extra, in any disposition.
+  const reviewedStale = ENRICHMENT_REPAIR_REVIEWED_STALE_OBSERVATION_IDS[parsed.account];
+  const planStaleIds = new Set(parsed.staleAuthorizations.map((action) => action.observationId));
+  if (
+    planStaleIds.size !== parsed.staleAuthorizations.length ||
+    planStaleIds.size !== reviewedStale.length ||
+    !reviewedStale.every((id) => planStaleIds.has(id))
+  ) {
+    throw new Error('repair plan stale-authorization ids do not equal the reviewed id set exactly');
+  }
+  const reviewedPairs = ENRICHMENT_REPAIR_REVIEWED_SUCCESSOR_PAIRS[parsed.account];
+  const planPairKeys = new Set(
+    parsed.successorPairs.map(
+      (pair) => `${pair.predecessorObservationId}\n${pair.successorObservationId}`,
+    ),
+  );
+  if (
+    planPairKeys.size !== parsed.successorPairs.length ||
+    planPairKeys.size !== reviewedPairs.length ||
+    !reviewedPairs.every((pair) =>
+      planPairKeys.has(`${pair.predecessorObservationId}\n${pair.successorObservationId}`),
+    )
+  ) {
+    throw new Error('repair plan successor pairs do not equal the reviewed pair set exactly');
   }
   return parsed;
 }
@@ -986,6 +1349,11 @@ function hasReviewedPriorAuthorization(
   state: RepairState,
   action: EnrichmentRepairPlanBody['staleAuthorizations'][number],
 ): boolean {
+  if (!action.targetSetId || !action.priorReceiptId || !action.priorFingerprint) {
+    // No prior authorization was recorded at review time (the already-
+    // revoked shape) — there is nothing "prior" this state could match.
+    return false;
+  }
   const attachments = attachmentsForObservation(state, action.observationId);
   const receipt = researchEnrichmentResolutionReceiptRecordSchema.safeParse(
     state.receiptsRaw[action.observationId],
@@ -1034,11 +1402,22 @@ function assertMonotonicReviewedState(plan: EnrichmentRepairPlan, state: RepairS
     if (!observation.success || !fingerprintEquals(observation.data, action.currentFingerprint)) {
       throw new Error(`${action.observationId} current observation drifted`);
     }
-    if (
-      !hasFreshAuthorization(state, observation.data, action.targetSetId) &&
-      !hasReviewedPriorAuthorization(state, action)
-    ) {
-      throw new Error(`${action.observationId} is not in a reviewed prior-or-fresh state`);
+    if (action.disposition === 'reauthorize') {
+      if (
+        !(action.targetSetId
+          ? hasFreshAuthorization(state, observation.data, action.targetSetId)
+          : false) &&
+        !hasReviewedPriorAuthorization(state, action)
+      ) {
+        throw new Error(`${action.observationId} is not in a reviewed prior-or-fresh state`);
+      }
+    } else {
+      const revoked =
+        attachmentsForObservation(state, action.observationId).length === 0 &&
+        state.receiptsRaw[action.observationId] == null;
+      if (!revoked && !hasReviewedPriorAuthorization(state, action)) {
+        throw new Error(`${action.observationId} is not in a reviewed prior-or-revoked state`);
+      }
     }
   }
   for (const pair of plan.successorPairs) {
@@ -1053,6 +1432,16 @@ function assertMonotonicReviewedState(plan: EnrichmentRepairPlan, state: RepairS
     );
     if (predecessor.success && semanticSignature(predecessor.data) !== pair.semanticSignature) {
       throw new Error(`${pair.predecessorObservationId} predecessor drifted`);
+    }
+    if (pair.disposition === 'defer') {
+      // A deferred pair is a reviewed no-op; its predecessor (and every
+      // byte of its derived state, via the protected hash) must survive.
+      if (!predecessor.success) {
+        throw new Error(
+          `${pair.predecessorObservationId} deferred predecessor must remain untouched but is missing`,
+        );
+      }
+      continue;
     }
     const successorFresh = pair.targetSetId
       ? hasFreshAuthorization(state, successor.data, pair.targetSetId)
@@ -1166,13 +1555,31 @@ async function executeEnrichmentRepairPlan(
     const authorizationPatch: Record<string, unknown> = {};
     for (const action of plan.staleAuthorizations) {
       const observation = observations.get(action.observationId)!;
-      if (!hasFreshAuthorization(state, observation, action.targetSetId)) {
+      if (action.disposition === 'revoke-only') {
+        // Atomic revocation of exactly the reviewed stale authorization —
+        // the observation itself is NEVER touched; it re-enters the admin
+        // review queue by attachment absence.
+        if (state.receiptsRaw[action.observationId] != null) {
+          authorizationPatch[`researchEnrichmentReceipts/${options.uid}/${action.observationId}`] =
+            null;
+        }
+        if (
+          action.targetSetId &&
+          asRecord(state.attachmentsRaw[action.targetSetId])[action.observationId] !== undefined
+        ) {
+          authorizationPatch[
+            `researchEnrichmentAttachments/${options.uid}/${action.targetSetId}/${action.observationId}`
+          ] = null;
+        }
+        continue;
+      }
+      if (!hasFreshAuthorization(state, observation, action.targetSetId!)) {
         Object.assign(
           authorizationPatch,
           freshAuthorizationPatch(
             options.uid,
             observation,
-            action.targetSetId,
+            action.targetSetId!,
             corroboration,
             options.now?.() ?? options.nowMs,
           ),
@@ -1180,7 +1587,7 @@ async function executeEnrichmentRepairPlan(
       }
     }
     for (const pair of plan.successorPairs) {
-      if (!pair.targetSetId) continue;
+      if (pair.disposition === 'defer' || !pair.targetSetId) continue;
       const successor = observations.get(pair.successorObservationId)!;
       if (!hasFreshAuthorization(state, successor, pair.targetSetId)) {
         Object.assign(
@@ -1205,10 +1612,7 @@ async function executeEnrichmentRepairPlan(
 
     state = await loadState(options);
     assertMonotonicReviewedState(plan, state);
-    const touchedTargets = new Set<string>([
-      ...plan.staleAuthorizations.map((action) => action.targetSetId),
-      ...plan.successorPairs.flatMap((pair) => (pair.targetSetId ? [pair.targetSetId] : [])),
-    ]);
+    const touchedTargets = repairTouchedTargetSetIds(plan);
     for (const targetSetId of touchedTargets) {
       await renewRepairLease(options, plan.terminalRunId, holder);
       await projectTargetSet(options, targetSetId);
@@ -1216,6 +1620,12 @@ async function executeEnrichmentRepairPlan(
     }
 
     for (const pair of plan.successorPairs) {
+      if (pair.disposition === 'defer') {
+        // Reviewed residue, left untouched by design — named, not smoothed
+        // over. The monotonic-state proof above already required the
+        // predecessor to still exist.
+        continue;
+      }
       const predecessor = await readEnrichmentObservation(
         options.database,
         options.uid,
@@ -1280,12 +1690,29 @@ export async function compareEnrichmentRepairPlan(
     findings.push('provider/manual VOD digest differs from the reviewed pre-state');
   }
   let staleAuthorizationsReauthorized = 0;
+  let staleAuthorizationsRevoked = 0;
   for (const action of plan.staleAuthorizations) {
+    if (action.disposition === 'revoke-only') {
+      const revoked =
+        attachmentsForObservation(state, action.observationId).length === 0 &&
+        state.receiptsRaw[action.observationId] == null &&
+        state.observationsRaw[action.observationId] != null;
+      if (revoked) {
+        staleAuthorizationsRevoked += 1;
+      } else {
+        findings.push(
+          `${action.observationId} revoke-only is not converged (authorization remains or observation vanished)`,
+        );
+      }
+      continue;
+    }
     const observationParsed = researchEnrichmentObservationRecordSchema.safeParse(
       state.observationsRaw[action.observationId],
     );
     const attachmentParsed = researchEnrichmentAttachmentRecordSchema.safeParse(
-      state.attachmentsRaw[action.targetSetId]?.[action.observationId],
+      action.targetSetId
+        ? state.attachmentsRaw[action.targetSetId]?.[action.observationId]
+        : undefined,
     );
     if (
       !observationParsed.success ||
@@ -1304,7 +1731,20 @@ export async function compareEnrichmentRepairPlan(
   }
   let successorsAuthorized = 0;
   let predecessorsRemoved = 0;
+  let successorPairsDeferred = 0;
   for (const pair of plan.successorPairs) {
+    if (pair.disposition === 'defer') {
+      // The deferred residue must remain VISIBLE: the predecessor is
+      // required to still exist, untouched.
+      if (state.observationsRaw[pair.predecessorObservationId] != null) {
+        successorPairsDeferred += 1;
+      } else {
+        findings.push(
+          `${pair.predecessorObservationId} deferred predecessor was removed despite its defer disposition`,
+        );
+      }
+      continue;
+    }
     if (state.observationsRaw[pair.predecessorObservationId] != null) {
       findings.push(`${pair.predecessorObservationId} predecessor still exists`);
     } else {
@@ -1336,11 +1776,10 @@ export async function compareEnrichmentRepairPlan(
     ok: findings.length === 0,
     findings,
     staleAuthorizationsReauthorized,
+    staleAuthorizationsRevoked,
     successorsAuthorized,
     predecessorsRemoved,
-    targetSetsReprojected: new Set([
-      ...plan.staleAuthorizations.map((action) => action.targetSetId),
-      ...plan.successorPairs.flatMap((pair) => (pair.targetSetId ? [pair.targetSetId] : [])),
-    ]).size,
+    successorPairsDeferred,
+    targetSetsReprojected: repairTouchedTargetSetIds(plan).size,
   };
 }

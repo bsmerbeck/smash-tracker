@@ -78,10 +78,12 @@ import {
   createEnrichmentRepairPlan,
   ENRICHMENT_REPAIR_DEFAULT_MAX_AGE_MS,
   ENRICHMENT_REPAIR_TARGETS,
+  enrichmentRepairPlanSchema,
   resumeEnrichmentRepairPlan,
   type EnrichmentRepairApplyResult,
   type EnrichmentRepairCompareResult,
   type EnrichmentRepairOptions,
+  type EnrichmentRepairPlan,
 } from './repairEnrichmentAuthorizationsCore.js';
 
 const MODES = ['plan', 'apply', 'resume', 'compare'] as const;
@@ -210,6 +212,41 @@ export function parseRepairCliArgs(argv: readonly string[]): RepairCliArgs {
   };
 }
 
+/** The per-disposition tallies and full id->disposition map the receipt seals — the reviewed residue (revoke-only and defer, each with its reason) must stay VISIBLE in the evidence, never smoothed over. */
+export function buildRepairDispositionSummary(plan: EnrichmentRepairPlan) {
+  const revokeOnly = plan.staleAuthorizations.filter(
+    (action) => action.disposition === 'revoke-only',
+  );
+  const deferred = plan.successorPairs.filter((pair) => pair.disposition === 'defer');
+  return {
+    dispositionCounts: {
+      reauthorize: plan.staleAuthorizations.length - revokeOnly.length,
+      revokeOnly: revokeOnly.length,
+      replace: plan.successorPairs.length - deferred.length,
+      defer: deferred.length,
+    },
+    dispositionsById: {
+      staleAuthorizations: Object.fromEntries(
+        plan.staleAuthorizations.map((action) => [action.observationId, action.disposition]),
+      ),
+      successorPairs: Object.fromEntries(
+        plan.successorPairs.map((pair) => [pair.predecessorObservationId, pair.disposition]),
+      ),
+    },
+    revokeOnlyActions: revokeOnly.map((action) => ({
+      observationId: action.observationId,
+      targetSetId: action.targetSetId,
+      reason: action.reason ?? null,
+    })),
+    deferredPairs: deferred.map((pair) => ({
+      predecessorObservationId: pair.predecessorObservationId,
+      successorObservationId: pair.successorObservationId,
+      targetSetId: pair.targetSetId,
+      reason: pair.reason ?? null,
+    })),
+  };
+}
+
 /** Sealed evidence artifact for apply/resume/compare. Pure, so it round-trips through JSON. */
 export function buildRepairCliReceipt(input: {
   mode: RepairMode;
@@ -223,12 +260,13 @@ export function buildRepairCliReceipt(input: {
   databaseEmulatorHost: null;
   planPath: string;
   planContentHash: string | null;
+  dispositions: ReturnType<typeof buildRepairDispositionSummary> | null;
   bounds: { requestTimeoutMs: number; maxAgeMs: number };
   exitCode: number;
   result: EnrichmentRepairApplyResult | EnrichmentRepairCompareResult;
 }) {
   return {
-    receiptVersion: 1,
+    receiptVersion: 2,
     operator: 'enrichment-authorization-repair' as const,
     ...input,
   };
@@ -284,10 +322,27 @@ async function main(): Promise<void> {
       if (args.mode === 'plan') {
         const plan = await createEnrichmentRepairPlan(options);
         await writeFile(args.outPath!, `${JSON.stringify(plan, null, 2)}\n`, 'utf8');
+        const summary = buildRepairDispositionSummary(plan);
         console.log(
           `Plan: staleAuthorizations=${plan.staleAuthorizations.length} ` +
             `successorPairs=${plan.successorPairs.length} contentHash=${plan.contentHash}`,
         );
+        console.log(
+          `Dispositions: reauthorize=${summary.dispositionCounts.reauthorize} ` +
+            `revoke-only=${summary.dispositionCounts.revokeOnly} ` +
+            `replace=${summary.dispositionCounts.replace} defer=${summary.dispositionCounts.defer}`,
+        );
+        // The reviewed residue stays visible: every revoke-only and defer is
+        // printed with its reason, and NONE of them blocks the plan — a
+        // fully classified plan exits 0.
+        for (const action of summary.revokeOnlyActions) {
+          console.log(`REVOKE-ONLY: ${action.observationId} — ${action.reason}`);
+        }
+        for (const pair of summary.deferredPairs) {
+          console.log(
+            `DEFER: ${pair.predecessorObservationId} -> ${pair.successorObservationId} — ${pair.reason}`,
+          );
+        }
         console.log(`[plan] path=${args.outPath}`);
         if (plan.blockedReasons.length > 0) {
           for (const reason of plan.blockedReasons) {
@@ -296,7 +351,9 @@ async function main(): Promise<void> {
           console.error('FAIL: the plan is blocked; nothing may be applied from it.');
           return 1;
         }
-        console.log('PASS: plan generated with zero blocked reasons; review it before apply.');
+        console.log(
+          'PASS: every reviewed id is classified and nothing extra is actionable; review the plan before apply.',
+        );
         return 0;
       }
 
@@ -317,7 +374,10 @@ async function main(): Promise<void> {
         }
         console.log(
           `Compare: ok=${compared.ok} reauthorized=${compared.staleAuthorizationsReauthorized} ` +
-            `successors=${compared.successorsAuthorized} predecessorsRemoved=${compared.predecessorsRemoved}`,
+            `revoked=${compared.staleAuthorizationsRevoked} ` +
+            `successors=${compared.successorsAuthorized} ` +
+            `predecessorsRemoved=${compared.predecessorsRemoved} ` +
+            `deferred=${compared.successorPairsDeferred}`,
         );
         result = compared;
         code = compared.ok ? 0 : 1;
@@ -328,8 +388,10 @@ async function main(): Promise<void> {
         console.log(
           `${args.mode === 'apply' ? 'Apply' : 'Resume'}: ` +
             `reauthorized=${applied.staleAuthorizationsReauthorized} ` +
+            `revoked=${applied.staleAuthorizationsRevoked} ` +
             `successors=${applied.successorsAuthorized} ` +
             `predecessorsRemoved=${applied.predecessorsRemoved} ` +
+            `deferred=${applied.successorPairsDeferred} ` +
             `targetSetsReprojected=${applied.targetSetsReprojected}`,
         );
         result = applied;
@@ -337,6 +399,9 @@ async function main(): Promise<void> {
       }
 
       if (args.receiptOutPath) {
+        // The core already validated the plan (or refused); this parse only
+        // extracts the disposition map for the sealed receipt.
+        const planParsed = enrichmentRepairPlanSchema.safeParse(rawPlan);
         const receipt = buildRepairCliReceipt({
           mode: args.mode,
           account: args.account,
@@ -348,6 +413,7 @@ async function main(): Promise<void> {
           databaseEmulatorHost: null,
           planPath: args.planPath!,
           planContentHash,
+          dispositions: planParsed.success ? buildRepairDispositionSummary(planParsed.data) : null,
           bounds: { requestTimeoutMs: args.requestTimeoutMs, maxAgeMs: args.maxAgeMs },
           exitCode: code,
           result,
