@@ -2,6 +2,7 @@ import { Fragment } from 'react';
 import type { ReactNode } from 'react';
 import { parseCitationToken, SAFE_MARKDOWN_DOC_MAX_LENGTH } from '@smash-tracker/shared';
 import { CitationChip } from '@/pages/Coaching/components/CitationChip';
+import { CITATION_LOCATE_SOURCE } from '@/lib/citationSpans';
 
 /**
  * REV-04/D-10: the ONE hand-rolled renderer for the small safe-Markdown
@@ -52,20 +53,6 @@ const HEADING_CLASSES = [
   'text-sm font-semibold',
 ];
 
-/**
- * Locates `{{cite:...}}` token SPANS for interleaving with plain text.
- * Bounded quantifiers (unlike `coachingReview.ts`'s own unbounded `+`/`*`,
- * appropriate there since a citation's actual field lengths are enforced by
- * `citationTokenSchema` after parsing) are a LOCAL, defensive addition for
- * a renderer that must never itself become the site of a ReDoS/length
- * blowup. Field VALIDATION/decoding is never reimplemented here — every
- * located span is re-checked through the shared `parseCitationToken`
- * before being trusted; a span that fails that check (or simply isn't
- * matched at all, e.g. a longer-than-bounded value) falls back to inert
- * plain text, never a rendering crash.
- */
-const CITATION_LOCATE_SOURCE =
-  '\\{\\{cite:matchId=[^;}]{1,200};seconds=\\d{1,15};label=[^}]{0,600}\\}\\}';
 const BOLD_SOURCE = `\\*\\*([^*\\n]{1,${MAX_EMPHASIS_SPAN_LENGTH}}?)\\*\\*`;
 const ITALIC_SOURCE = `\\*([^*\\n]{1,${MAX_EMPHASIS_SPAN_LENGTH}}?)\\*`;
 const INLINE_TOKEN_PATTERN = new RegExp(
