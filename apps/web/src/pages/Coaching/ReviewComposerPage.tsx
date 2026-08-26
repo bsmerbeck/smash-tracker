@@ -1,4 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import type {
+  CSSProperties,
+  KeyboardEvent as ReactKeyboardEvent,
+  PointerEvent as ReactPointerEvent,
+} from 'react';
 import { useParams, useSearchParams } from 'react-router';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
@@ -38,6 +43,16 @@ import { CiteSectionPrompt } from './components/CiteSectionPrompt';
 import { AutosaveConflictDialog } from './components/AutosaveConflictDialog';
 import { describeCoachingError } from './describeCoachingError';
 import { ReviewComposerMobile } from './ReviewComposerMobile';
+import {
+  clampSplitPercent,
+  COMPOSER_SPLIT_DEFAULT_PERCENT,
+  COMPOSER_SPLIT_MAX_PERCENT,
+  COMPOSER_SPLIT_MIN_PERCENT,
+  COMPOSER_SPLIT_STEP_PERCENT,
+  computeSplitPercent,
+  persistSplitPercent,
+  readStoredSplitPercent,
+} from './lib/composerSplit';
 
 type DocTab = 'client-review' | 'private-notes';
 
@@ -124,6 +139,65 @@ export function ReviewComposerPage() {
   // widths instead of the two-pane desktop grid below — see
   // `useIsMobileComposer`'s doc comment.
   const isMobileComposer = useIsMobileComposer();
+
+  // 260826-kio: the desktop grid's video/editor split — device-local
+  // (never sent to the API), driven by a `--gf-composer-split` CSS custom
+  // property read only at `lg` and above (see the desktop grid below).
+  const [splitPercent, setSplitPercent] = useState(() => readStoredSplitPercent());
+  const splitGridRef = useRef<HTMLDivElement | null>(null);
+  const isDraggingSplitRef = useRef(false);
+
+  function handleSplitPointerDown(event: ReactPointerEvent<HTMLDivElement>) {
+    isDraggingSplitRef.current = true;
+    try {
+      event.currentTarget.setPointerCapture(event.pointerId);
+    } catch {
+      // F6: pointer capture is unavailable in some environments (e.g. this
+      // repo's jsdom test environment) — the drag still tracks via
+      // pointermove, just without the guarantee of continued delivery
+      // outside the handle's own bounds.
+    }
+  }
+
+  function handleSplitPointerMove(event: ReactPointerEvent<HTMLDivElement>) {
+    if (!isDraggingSplitRef.current || !splitGridRef.current) return;
+    const rect = splitGridRef.current.getBoundingClientRect();
+    setSplitPercent(computeSplitPercent(event.clientX, rect));
+  }
+
+  function endSplitDrag(event: ReactPointerEvent<HTMLDivElement>) {
+    if (!isDraggingSplitRef.current) return;
+    isDraggingSplitRef.current = false;
+    try {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    } catch {
+      // See handleSplitPointerDown — capture may never have been established.
+    }
+    persistSplitPercent(splitPercent);
+  }
+
+  function handleSplitKeyDown(event: ReactKeyboardEvent<HTMLDivElement>) {
+    if (event.key === 'ArrowLeft') {
+      event.preventDefault();
+      const next = clampSplitPercent(splitPercent - COMPOSER_SPLIT_STEP_PERCENT);
+      setSplitPercent(next);
+      persistSplitPercent(next);
+    } else if (event.key === 'ArrowRight') {
+      event.preventDefault();
+      const next = clampSplitPercent(splitPercent + COMPOSER_SPLIT_STEP_PERCENT);
+      setSplitPercent(next);
+      persistSplitPercent(next);
+    } else if (event.key === 'Home') {
+      event.preventDefault();
+      setSplitPercent(COMPOSER_SPLIT_DEFAULT_PERCENT);
+      persistSplitPercent(COMPOSER_SPLIT_DEFAULT_PERCENT);
+    }
+  }
+
+  function handleSplitDoubleClick() {
+    setSplitPercent(COMPOSER_SPLIT_DEFAULT_PERCENT);
+    persistSplitPercent(COMPOSER_SPLIT_DEFAULT_PERCENT);
+  }
 
   // Seed local edit-buffer state from the fetched draft exactly ONCE — a
   // background refetch of `draftQuery.data` (e.g. window refocus) must never
@@ -338,13 +412,19 @@ export function ReviewComposerPage() {
           onShowSection={handleShowSection}
           onAddSection={handleAddSection}
           registerTextareaRef={registerSectionTextareaRef}
+          onActivateCitation={handlePreviewCitationActivate}
+          resolveCitationSource={resolvePreviewCitationSource}
           autosaveIndicator={<AutosaveStatusIndicator status={autosave.status} />}
           onPreview={() => setPreviewOpen(true)}
           onPublish={handlePublish}
           isPublishing={publish.isPending}
         />
       ) : (
-        <div className="grid min-h-[calc(100vh-8rem)] grid-cols-1 lg:grid-cols-[480px_1fr]">
+        <div
+          ref={splitGridRef}
+          className="grid min-h-[calc(100vh-8rem)] grid-cols-1 lg:grid-cols-[var(--gf-composer-split)_auto_1fr]"
+          style={{ '--gf-composer-split': `${splitPercent}%` } as CSSProperties}
+        >
           {/* Left pane (D-01): source bar + player + Evidence placeholder — always visible regardless of the right pane's active tab. */}
           <div className="flex flex-col gap-3 border-b p-4 lg:border-r lg:border-b-0">
             {vodSources.length === 0 ? (
@@ -400,6 +480,31 @@ export function ReviewComposerPage() {
             />
           </div>
 
+          {/* 260826-kio: the video/editor resize handle — desktop only
+              (`hidden lg:flex`), between the two panes. Reads/writes
+              `splitPercent`, which drives the grid's own middle `auto`
+              track via the `--gf-composer-split` custom property above. */}
+          <div
+            role="separator"
+            aria-orientation="vertical"
+            aria-valuenow={splitPercent}
+            aria-valuemin={COMPOSER_SPLIT_MIN_PERCENT}
+            aria-valuemax={COMPOSER_SPLIT_MAX_PERCENT}
+            aria-label={t('coaching.reviews.composer.layout.resizeAria')}
+            tabIndex={0}
+            className="hidden w-2 shrink-0 cursor-col-resize touch-none items-center justify-center bg-border/60 outline-none select-none hover:bg-border focus-visible:ring-2 focus-visible:ring-ring lg:flex"
+            // F8: preventing the mousedown's default focus move keeps
+            // `document.activeElement` on a section textarea, so grabbing
+            // the divider mid-citation cannot break cursor-insertion citing.
+            onMouseDown={(event) => event.preventDefault()}
+            onPointerDown={handleSplitPointerDown}
+            onPointerMove={handleSplitPointerMove}
+            onPointerUp={endSplitDrag}
+            onLostPointerCapture={endSplitDrag}
+            onKeyDown={handleSplitKeyDown}
+            onDoubleClick={handleSplitDoubleClick}
+          />
+
           {/* Right pane (D-02): Client review | Private notes tabs. */}
           <div className="flex flex-col p-4">
             <Tabs value={docTab} onValueChange={(value) => setDocTab(value as DocTab)}>
@@ -439,6 +544,8 @@ export function ReviewComposerPage() {
                   onShow={handleShowSection}
                   onAdd={handleAddSection}
                   registerTextareaRef={registerSectionTextareaRef}
+                  onActivateCitation={handlePreviewCitationActivate}
+                  resolveCitationSource={resolvePreviewCitationSource}
                 />
               </TabsContent>
 

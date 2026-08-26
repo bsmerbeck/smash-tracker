@@ -1894,7 +1894,12 @@
         },
         "citation": {
           "jumpAria": "Aller à {{timestamp}}",
-          "jumpToSourceAria": "Aller à {{timestamp}} dans {{source}}"
+          "jumpToSourceAria": "Aller à {{timestamp}} dans {{source}}",
+          "stripAria": "Citations dans {{section}}",
+          "removeAria": "Supprimer la citation à {{timestamp}}"
+        },
+        "layout": {
+          "resizeAria": "Redimensionner le volet vidéo"
         },
         "citeSectionPrompt": {
           "title": "Citer dans quelle section ?",
