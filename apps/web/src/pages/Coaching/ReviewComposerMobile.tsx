@@ -33,6 +33,9 @@ export interface ReviewComposerMobileProps {
   onShowSection: (sectionId: string) => void;
   onAddSection: (kind: ReviewSectionKind) => void;
   registerTextareaRef: (sectionId: string, el: HTMLTextAreaElement | null) => void;
+  /** 260826-kio: forwarded to the mobile composer's own `ReviewSectionEditor` instance — see that component's identical props. */
+  onActivateCitation?: (matchId: string, seconds: number) => void;
+  resolveCitationSource?: (matchId: string) => { label: string } | undefined;
 
   autosaveIndicator: ReactNode;
   onPreview: () => void;
@@ -91,6 +94,8 @@ export function ReviewComposerMobile({
   onShowSection,
   onAddSection,
   registerTextareaRef,
+  onActivateCitation,
+  resolveCitationSource,
   autosaveIndicator,
   onPreview,
   onPublish,
@@ -230,6 +235,8 @@ export function ReviewComposerMobile({
                 onShow={onShowSection}
                 onAdd={onAddSection}
                 registerTextareaRef={registerTextareaRef}
+                onActivateCitation={onActivateCitation}
+                resolveCitationSource={resolveCitationSource}
               />
             </TabsContent>
 

@@ -338,6 +338,8 @@ export function ReviewComposerPage() {
           onShowSection={handleShowSection}
           onAddSection={handleAddSection}
           registerTextareaRef={registerSectionTextareaRef}
+          onActivateCitation={handlePreviewCitationActivate}
+          resolveCitationSource={resolvePreviewCitationSource}
           autosaveIndicator={<AutosaveStatusIndicator status={autosave.status} />}
           onPreview={() => setPreviewOpen(true)}
           onPublish={handlePublish}
@@ -439,6 +441,8 @@ export function ReviewComposerPage() {
                   onShow={handleShowSection}
                   onAdd={handleAddSection}
                   registerTextareaRef={registerSectionTextareaRef}
+                  onActivateCitation={handlePreviewCitationActivate}
+                  resolveCitationSource={resolvePreviewCitationSource}
                 />
               </TabsContent>
 

@@ -1894,7 +1894,9 @@
         },
         "citation": {
           "jumpAria": "Zu {{timestamp}} springen",
-          "jumpToSourceAria": "Zu {{timestamp}} in {{source}} springen"
+          "jumpToSourceAria": "Zu {{timestamp}} in {{source}} springen",
+          "stripAria": "Zitate in {{section}}",
+          "removeAria": "Zitat bei {{timestamp}} entfernen"
         },
         "citeSectionPrompt": {
           "title": "In welchen Abschnitt zitieren?",

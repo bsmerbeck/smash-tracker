@@ -1894,7 +1894,9 @@
         },
         "citation": {
           "jumpAria": "Ir a {{timestamp}}",
-          "jumpToSourceAria": "Ir a {{timestamp}} en {{source}}"
+          "jumpToSourceAria": "Ir a {{timestamp}} en {{source}}",
+          "stripAria": "Citas en {{section}}",
+          "removeAria": "Quitar cita en {{timestamp}}"
         },
         "citeSectionPrompt": {
           "title": "¿En qué sección quieres citar?",

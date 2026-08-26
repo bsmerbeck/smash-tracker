@@ -1894,7 +1894,9 @@
         },
         "citation": {
           "jumpAria": "{{timestamp}} にジャンプ",
-          "jumpToSourceAria": "{{source}} の {{timestamp}} にジャンプ"
+          "jumpToSourceAria": "{{source}} の {{timestamp}} にジャンプ",
+          "stripAria": "{{section}} の引用",
+          "removeAria": "{{timestamp}} の引用を削除"
         },
         "citeSectionPrompt": {
           "title": "どのセクションに引用しますか？",
