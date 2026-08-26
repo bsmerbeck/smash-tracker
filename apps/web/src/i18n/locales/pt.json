@@ -1898,6 +1898,9 @@
           "stripAria": "Citações em {{section}}",
           "removeAria": "Remover citação em {{timestamp}}"
         },
+        "layout": {
+          "resizeAria": "Redimensionar o painel de vídeo"
+        },
         "citeSectionPrompt": {
           "title": "Citar em qual seção?",
           "description": "Nada está em foco agora — escolha uma seção e a citação será adicionada ao final dela.",

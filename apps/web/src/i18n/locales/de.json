@@ -1898,6 +1898,9 @@
           "stripAria": "Zitate in {{section}}",
           "removeAria": "Zitat bei {{timestamp}} entfernen"
         },
+        "layout": {
+          "resizeAria": "Videobereich anpassen"
+        },
         "citeSectionPrompt": {
           "title": "In welchen Abschnitt zitieren?",
           "description": "Gerade ist nichts fokussiert — wähle einen Abschnitt, das Zitat wird an dessen Ende eingefügt.",

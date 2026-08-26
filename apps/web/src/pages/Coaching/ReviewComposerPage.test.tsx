@@ -76,6 +76,7 @@ vi.mock('@/lib/api', () => ({
 
 import { AuthProvider } from '@/context/AuthContext';
 import { ReviewComposerPage } from './ReviewComposerPage';
+import { COMPOSER_SPLIT_STORAGE_KEY } from './lib/composerSplit';
 
 function makeMatch(overrides: Partial<Match> = {}): Match {
   return {
@@ -134,6 +135,9 @@ describe('ReviewComposerPage', () => {
     setMockUser(makeMockUser());
     matchesList.mockResolvedValue([makeMatch()]);
     reviewsGetDraft.mockResolvedValue(makeDraft());
+    // 260826-kio: the split-percent preference is device-local localStorage
+    // state — clear it so it cannot leak between tests.
+    window.localStorage.clear();
   });
 
   it('renders the two-pane layout: source bar, player, evidence heading, and the four suggested sections', async () => {
@@ -256,5 +260,76 @@ describe('ReviewComposerPage', () => {
       expect.objectContaining({ expectedRevision: 0 }),
     );
     expect(screen.getByText('Saved')).toBeInTheDocument();
+  });
+});
+
+describe('ReviewComposerPage video/editor resize handle (260826-kio)', () => {
+  beforeEach(() => {
+    resetAuthMock();
+    vi.clearAllMocks();
+    setMockUser(makeMockUser());
+    matchesList.mockResolvedValue([makeMatch()]);
+    reviewsGetDraft.mockResolvedValue(makeDraft());
+    window.localStorage.clear();
+  });
+
+  it('renders a vertical separator handle whose aria-valuenow is the default on a clean device', async () => {
+    renderComposer();
+    await screen.findByTestId('vod-player');
+
+    const handle = screen.getByRole('separator', { name: 'Resize the video pane' });
+    expect(handle).toHaveAttribute('aria-valuenow', '40');
+    expect(handle).toHaveAttribute('aria-valuemin', '30');
+    expect(handle).toHaveAttribute('aria-valuemax', '70');
+  });
+
+  it('ArrowRight raises aria-valuenow by the step and persists it; ArrowLeft lowers it', async () => {
+    renderComposer();
+    await screen.findByTestId('vod-player');
+
+    const handle = screen.getByRole('separator', { name: 'Resize the video pane' });
+
+    fireEvent.keyDown(handle, { key: 'ArrowRight' });
+    expect(handle).toHaveAttribute('aria-valuenow', '42');
+    expect(window.localStorage.getItem(COMPOSER_SPLIT_STORAGE_KEY)).toBe('42');
+
+    fireEvent.keyDown(handle, { key: 'ArrowLeft' });
+    expect(handle).toHaveAttribute('aria-valuenow', '40');
+    expect(window.localStorage.getItem(COMPOSER_SPLIT_STORAGE_KEY)).toBe('40');
+  });
+
+  it('with the maximum already stored, ArrowRight leaves aria-valuenow at the maximum', async () => {
+    window.localStorage.setItem(COMPOSER_SPLIT_STORAGE_KEY, '70');
+    renderComposer();
+    await screen.findByTestId('vod-player');
+
+    const handle = screen.getByRole('separator', { name: 'Resize the video pane' });
+    expect(handle).toHaveAttribute('aria-valuenow', '70');
+
+    fireEvent.keyDown(handle, { key: 'ArrowRight' });
+    expect(handle).toHaveAttribute('aria-valuenow', '70');
+  });
+
+  it('double-clicking the handle restores the default and persists it', async () => {
+    window.localStorage.setItem(COMPOSER_SPLIT_STORAGE_KEY, '60');
+    renderComposer();
+    await screen.findByTestId('vod-player');
+
+    const handle = screen.getByRole('separator', { name: 'Resize the video pane' });
+    expect(handle).toHaveAttribute('aria-valuenow', '60');
+
+    fireEvent.doubleClick(handle);
+
+    expect(handle).toHaveAttribute('aria-valuenow', '40');
+    expect(window.localStorage.getItem(COMPOSER_SPLIT_STORAGE_KEY)).toBe('40');
+  });
+
+  it('a malformed stored value renders at the default rather than a broken track', async () => {
+    window.localStorage.setItem(COMPOSER_SPLIT_STORAGE_KEY, 'not-a-number');
+    renderComposer();
+    await screen.findByTestId('vod-player');
+
+    const handle = screen.getByRole('separator', { name: 'Resize the video pane' });
+    expect(handle).toHaveAttribute('aria-valuenow', '40');
   });
 });

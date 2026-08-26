@@ -1898,6 +1898,9 @@
           "stripAria": "{{section}} の引用",
           "removeAria": "{{timestamp}} の引用を削除"
         },
+        "layout": {
+          "resizeAria": "動画ペインのサイズを変更"
+        },
         "citeSectionPrompt": {
           "title": "どのセクションに引用しますか？",
           "description": "現在フォーカスされている項目がありません。セクションを選ぶと、その末尾に引用が追加されます。",
