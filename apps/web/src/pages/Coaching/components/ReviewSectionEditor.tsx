@@ -12,7 +12,7 @@ import {
 import { locateCitationSpans, removeCitationSpan } from '@/lib/citationSpans';
 import { formatTimestamp } from '@/lib/vod';
 import { CitationChip } from './CitationChip';
-import { CitationTextarea } from './CitationTextarea';
+import { CitationEditor } from './CitationEditor';
 
 /** The four suggested blocks (D-03) — always offered as adds when missing/hidden, in this fixed display order. */
 const SUGGESTED_KINDS: ReviewSectionKind[] = ['summary', 'strengths', 'priorities', 'practicePlan'];
@@ -34,17 +34,18 @@ export interface ReviewSectionEditorProps {
   onAdd: (kind: ReviewSectionKind) => void;
   /**
    * D-04: registers (or unregisters, on unmount/hide) each section's live
-   * `<textarea>` element with the composer, keyed by section id — the
+   * editor host element with the composer, keyed by section id — the
    * composer's `Cite` handler reads `document.activeElement` against this
    * map to decide "insert at the focused editor's cursor" vs. "ask which
    * section" (never silently choose). Optional so every existing caller/
    * test that doesn't need citation insertion is unaffected.
    */
-  registerTextareaRef?: (sectionId: string, el: HTMLTextAreaElement | null) => void;
+  registerEditorRef?: (sectionId: string, el: HTMLElement | null) => void;
   /**
-   * 260826-kio: fires when the coach clicks a section's citation chip (in
-   * the strip below the textarea). Optional so every existing caller/test
-   * that doesn't need chip activation is unaffected.
+   * 260826-kio: fires when the coach clicks a section's citation chip —
+   * either an inline chip inside the editable text (260826-s46) or one in
+   * the strip below it. Optional so every existing caller/test that doesn't
+   * need chip activation is unaffected.
    */
   onActivateCitation?: (matchId: string, seconds: number) => void;
   /** Resolves a citation's `matchId` to a display source label — see `SafeMarkdownSource`/`safeMarkdown.tsx`'s identical prop for the multi-VOD rationale. */
@@ -52,8 +53,10 @@ export interface ReviewSectionEditorProps {
 }
 
 /**
- * The ordered suggested-block editors (D-03): textarea-per-section (D-10 —
- * no rich-text/contentEditable framework), each with an overflow `⋯` menu
+ * The ordered suggested-block editors (D-03): one `CitationEditor` per
+ * section — a plain-text editing surface with atomic inline citation chips
+ * (260826-s46), still D-10-compliant since no rich-text/contentEditable
+ * FRAMEWORK is involved — each with an overflow `⋯` menu
  * whose only action is `Hide section` (never an ×) — hiding preserves the
  * section's content (it stays in `sections`, just `hidden: true`) and shows
  * a real, focusable Undo button (D-17). `Add section` offers any missing or
@@ -67,7 +70,7 @@ export function ReviewSectionEditor({
   onHide,
   onShow,
   onAdd,
-  registerTextareaRef,
+  registerEditorRef,
   onActivateCitation,
   resolveCitationSource,
 }: ReviewSectionEditorProps) {
@@ -195,13 +198,15 @@ export function ReviewSectionEditor({
               </div>
             </div>
             <div className="px-3.5 py-3">
-              <CitationTextarea
+              <CitationEditor
                 value={section.body}
                 onChange={(value) => onChangeBody(section.id, value)}
                 ariaLabel={sectionTitle(section)}
-                textareaRef={(el) => registerTextareaRef?.(section.id, el)}
+                editorRef={(el) => registerEditorRef?.(section.id, el)}
                 testId={`section-${section.id}`}
                 className="min-h-24 border-none p-0 shadow-none focus-visible:ring-0"
+                onActivateCitation={onActivateCitation}
+                resolveCitationSource={resolveCitationSource}
               />
             </div>
             {citationSpans.length > 0 && (
@@ -231,9 +236,9 @@ export function ReviewSectionEditor({
                         aria-label={t('coaching.reviews.composer.citation.removeAria', {
                           timestamp: formatTimestamp(token.seconds),
                         })}
-                        // D-04/F8: a chip's × sits near the section textarea
-                        // — preventing the mousedown's default focus move
-                        // keeps `document.activeElement` on the textarea so
+                        // D-04/F8: a chip's × sits near the section editor —
+                        // preventing the mousedown's default focus move keeps
+                        // `document.activeElement` on the editor host so
                         // cursor-insertion citing never silently breaks.
                         onMouseDown={(event) => event.preventDefault()}
                         onClick={() =>

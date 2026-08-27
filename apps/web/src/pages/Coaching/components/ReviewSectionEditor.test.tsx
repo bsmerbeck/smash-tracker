@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { ReviewSection } from '@smash-tracker/shared';
 import { serializeCitationToken } from '@smash-tracker/shared';
@@ -42,14 +42,16 @@ function renderEditor(
 }
 
 describe('ReviewSectionEditor', () => {
-  it('renders the four suggested blocks as textareas, preserving body text', () => {
+  it('renders the four suggested blocks as accessible textboxes, preserving body text', () => {
     renderEditor();
 
     expect(screen.getByRole('heading', { name: 'Summary' })).toBeInTheDocument();
-    expect(screen.getByLabelText('Summary')).toHaveValue('summary text');
-    expect(screen.getByLabelText('Strengths')).toHaveValue('strengths text');
-    expect(screen.getByLabelText('Priorities')).toHaveValue('priorities text');
-    expect(screen.getByLabelText('Practice Plan')).toHaveValue('plan text');
+    expect(screen.getByRole('textbox', { name: 'Summary' })).toHaveTextContent('summary text');
+    expect(screen.getByRole('textbox', { name: 'Strengths' })).toHaveTextContent('strengths text');
+    expect(screen.getByRole('textbox', { name: 'Priorities' })).toHaveTextContent(
+      'priorities text',
+    );
+    expect(screen.getByRole('textbox', { name: 'Practice Plan' })).toHaveTextContent('plan text');
   });
 
   it('never renders an × for hiding — only an overflow "Hide section" action', () => {
@@ -71,11 +73,15 @@ describe('ReviewSectionEditor', () => {
     expect(screen.getByRole('heading', { name: 'Strengths' })).toBeInTheDocument();
   });
 
-  it('editing a textarea calls onChangeBody with the sectionId and new value', async () => {
-    const user = userEvent.setup();
+  it('editing a section editor calls onChangeBody with the sectionId and new value', () => {
     const { onChangeBody } = renderEditor();
 
-    await user.type(screen.getByLabelText('Strengths'), '!');
+    // jsdom does not implement contentEditable EDITING (260826-s46 F7), so
+    // the edit is driven the way a browser would drive it — mutate the DOM,
+    // then fire the `input` the browser would have fired.
+    const editor = screen.getByRole('textbox', { name: 'Strengths' });
+    (editor.firstChild as Text).data += '!';
+    fireEvent.input(editor);
 
     expect(onChangeBody).toHaveBeenCalledWith('strengths', 'strengths text!');
   });
@@ -146,6 +152,11 @@ describe('ReviewSectionEditor', () => {
   });
 });
 
+/** The strip is a labelled list — scoped because the SAME citations now also render as inline chips inside the editable text (260826-s46). */
+function summaryStrip(): HTMLElement {
+  return screen.getByRole('list', { name: 'Citations in Summary' });
+}
+
 describe('ReviewSectionEditor citation chip strip (260826-kio)', () => {
   it('renders one chip per citation, showing timestamp + label', () => {
     const t1 = serializeCitationToken({ sourceVodRef: 'm1', seconds: 32, label: 'edgeguard' });
@@ -157,8 +168,12 @@ describe('ReviewSectionEditor citation chip strip (260826-kio)', () => {
       makeSection({ id: 'practicePlan', kind: 'practicePlan' }),
     ]);
 
-    expect(screen.getByRole('button', { name: /0:32.*edgeguard/i })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /1:30.*neutral win/i })).toBeInTheDocument();
+    expect(
+      within(summaryStrip()).getByRole('button', { name: /0:32.*edgeguard/i }),
+    ).toBeInTheDocument();
+    expect(
+      within(summaryStrip()).getByRole('button', { name: /1:30.*neutral win/i }),
+    ).toBeInTheDocument();
   });
 
   it('a citation with an empty label renders a chip showing the timestamp only', () => {
@@ -170,7 +185,9 @@ describe('ReviewSectionEditor citation chip strip (260826-kio)', () => {
       makeSection({ id: 'practicePlan', kind: 'practicePlan' }),
     ]);
 
-    expect(screen.getByRole('button', { name: 'Jump to 0:45' })).toBeInTheDocument();
+    expect(
+      within(summaryStrip()).getByRole('button', { name: 'Jump to 0:45' }),
+    ).toBeInTheDocument();
   });
 
   it('a candidate that failed shared validation gets no chip', () => {
@@ -200,7 +217,7 @@ describe('ReviewSectionEditor citation chip strip (260826-kio)', () => {
       { onActivateCitation },
     );
 
-    await user.click(screen.getByRole('button', { name: /edgeguard/i }));
+    await user.click(within(summaryStrip()).getByRole('button', { name: /edgeguard/i }));
 
     expect(onActivateCitation).toHaveBeenCalledWith('m1', 32);
   });
@@ -226,5 +243,23 @@ describe('ReviewSectionEditor citation chip strip (260826-kio)', () => {
 
     expect(screen.queryByRole('button', { name: /Remove citation/i })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /Jump to/i })).not.toBeInTheDocument();
+  });
+});
+
+describe('ReviewSectionEditor inline citation chips (260826-s46)', () => {
+  it('shows the citation as a chip inside the editable text, never as raw token text', () => {
+    const t1 = serializeCitationToken({ sourceVodRef: 'm1', seconds: 32, label: 'edgeguard' });
+    renderEditor([
+      makeSection({ id: 'summary', kind: 'summary', body: `first ${t1} end` }),
+      makeSection({ id: 'strengths', kind: 'strengths' }),
+      makeSection({ id: 'priorities', kind: 'priorities' }),
+      makeSection({ id: 'practicePlan', kind: 'practicePlan' }),
+    ]);
+
+    const editor = screen.getByRole('textbox', { name: 'Summary' });
+    expect(editor.textContent).not.toContain('{{cite:');
+    expect(
+      within(editor).getByRole('button', { name: 'Jump to 0:32: edgeguard' }),
+    ).toHaveTextContent('▶ 0:32 — edgeguard');
   });
 });

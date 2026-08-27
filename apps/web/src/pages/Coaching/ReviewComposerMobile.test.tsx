@@ -1,6 +1,6 @@
 import { useRef } from 'react';
 import { describe, expect, it, vi } from 'vitest';
-import { render, screen, within } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { CitationToken, Match, ReviewSection } from '@smash-tracker/shared';
 import { ReviewComposerMobile } from './ReviewComposerMobile';
@@ -66,7 +66,7 @@ function Harness(props: {
       onHideSection={vi.fn()}
       onShowSection={vi.fn()}
       onAddSection={vi.fn()}
-      registerTextareaRef={vi.fn()}
+      registerEditorRef={vi.fn()}
       autosaveIndicator={<span>Saved</span>}
       onPreview={vi.fn()}
       onPublish={vi.fn()}
@@ -222,9 +222,13 @@ describe('ReviewComposerMobile', () => {
     renderMobile({ onChangeSectionBody });
 
     await user.click(screen.getByRole('tab', { name: 'Review' }));
-    const textarea = screen.getByLabelText('Summary');
-    await user.type(textarea, '!');
+    // 260826-s46: the section editor is a contentEditable host — jsdom does
+    // not implement contentEditable editing, so the edit is driven the way a
+    // browser would drive it (mutate, then fire `input`).
+    const editor = screen.getByRole('textbox', { name: 'Summary' });
+    (editor.firstChild as Text).data += '!';
+    fireEvent.input(editor);
 
-    expect(onChangeSectionBody).toHaveBeenCalled();
+    expect(onChangeSectionBody).toHaveBeenCalledWith('summary', 'summary text!');
   });
 });

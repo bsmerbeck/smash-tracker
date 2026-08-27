@@ -14,9 +14,9 @@ import type { CitationToken } from '@smash-tracker/shared';
  * rendering crash.
  *
  * Single owner (260826-kio): this constant used to live in `safeMarkdown.tsx`
- * — it now lives here so the delivery renderer AND the editor mirror
- * (`CitationTextarea.tsx`) share exactly one locate pattern. Never
- * duplicate/hand-roll a second copy.
+ * — it now lives here so the delivery renderer, the composer's editing
+ * surface, and the per-section chip strip all share exactly one locate
+ * pattern. Never duplicate/hand-roll a second copy.
  */
 export const CITATION_LOCATE_SOURCE =
   '\\{\\{cite:matchId=[^;}]{1,200};seconds=\\d{1,15};label=[^}]{0,600}\\}\\}';
@@ -80,9 +80,9 @@ export type CitationSegment =
  * Splits `body` into interleaved text/citation segments. Round-trip
  * invariant: concatenating every segment's text (plain-text segments plus
  * each citation segment's `span.raw`, in order) reproduces `body` EXACTLY.
- * This is the reason the mirror can never drift out of alignment with the
- * textarea it backs — every character of `body` appears in exactly one
- * segment, in order, unmodified.
+ * Every character of `body` appears in exactly one segment, in order,
+ * unmodified — which is what lets the composer's editing surface render a
+ * body into DOM nodes and serialize them back byte-for-byte (`citationDom.ts`).
  */
 export function splitCitationSegments(body: string): CitationSegment[] {
   const spans = locateCitationSpans(body);
@@ -102,42 +102,6 @@ export function splitCitationSegments(body: string): CitationSegment[] {
   }
 
   return segments;
-}
-
-/** The literal marker preceding a token's label value in its raw text. */
-const LABEL_MARKER = 'label=';
-/** The token grammar's closing braces. */
-const CLOSING_BRACES = '}}';
-
-/**
- * Slices an already-located token's raw text into the part before its label
- * value, the label value itself, and the trailing closing braces — so a
- * consumer (the mirror) can tint the label sub-range differently from the
- * machinery around it. Derives the cut points as INDEXES into `raw` (string
- * slicing of already-validated text, not a second parser). Falls back to the
- * whole string as `prefix` with empty `label`/`suffix` when either marker is
- * absent or out of order. By construction, `prefix + label + suffix` always
- * equals `raw` exactly in every branch.
- */
-export function splitCitationSpanParts(raw: string): {
-  prefix: string;
-  label: string;
-  suffix: string;
-} {
-  const markerIndex = raw.indexOf(LABEL_MARKER);
-  const hasClosingBraces = raw.length >= CLOSING_BRACES.length && raw.endsWith(CLOSING_BRACES);
-  const closingIndex = hasClosingBraces ? raw.length - CLOSING_BRACES.length : -1;
-  const labelStart = markerIndex === -1 ? -1 : markerIndex + LABEL_MARKER.length;
-
-  if (markerIndex === -1 || closingIndex === -1 || closingIndex < labelStart) {
-    return { prefix: raw, label: '', suffix: '' };
-  }
-
-  return {
-    prefix: raw.slice(0, labelStart),
-    label: raw.slice(labelStart, closingIndex),
-    suffix: raw.slice(closingIndex),
-  };
 }
 
 /**

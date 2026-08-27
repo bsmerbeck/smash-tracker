@@ -244,11 +244,17 @@ describe('ReviewComposerPage', () => {
 
     reviewsPatchDraft.mockResolvedValue(makeDraft({ revision: 1 }));
 
+    // 260826-s46: the section editor is a contentEditable host, not a form
+    // control — a `change` event carrying a target value has nothing to set.
+    // Drive it the way a browser would (mutate, then fire `input`).
+    const editor = screen.getByRole('textbox', { name: 'Summary' });
+
     // Fake timers installed only for the debounce window itself — findBy*/
     // waitFor above (and the render's own async draft/matches fetch) rely on
     // real timers to poll, so switching earlier would hang those.
     vi.useFakeTimers();
-    fireEvent.change(screen.getByLabelText('Summary'), { target: { value: 'edited summary' } });
+    editor.replaceChildren(document.createTextNode('edited summary'));
+    fireEvent.input(editor);
     await act(async () => {
       await vi.advanceTimersByTimeAsync(2000);
     });
@@ -265,6 +271,10 @@ describe('ReviewComposerPage', () => {
 
 describe('ReviewComposerPage video/editor resize handle (260826-kio)', () => {
   beforeEach(() => {
+    // A test in the block above installs fake timers for its debounce
+    // window; if it ever throws before restoring them, every `findBy*` here
+    // would hang for the full timeout and report a misleading failure.
+    vi.useRealTimers();
     resetAuthMock();
     vi.clearAllMocks();
     setMockUser(makeMockUser());
