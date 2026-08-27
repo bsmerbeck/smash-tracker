@@ -34,6 +34,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { SafeMarkdown } from '@/lib/safeMarkdown';
+import { getEditorCaretOffset } from '@/lib/citationDom';
 import { VodPlayer } from '@/pages/VodManager/components/VodPlayer';
 import { ReviewSourcesDrawer } from './components/ReviewSourcesDrawer';
 import { ReviewSectionEditor } from './components/ReviewSectionEditor';
@@ -124,11 +125,11 @@ export function ReviewComposerPage() {
   const [currentSourceId, setCurrentSourceId] = useState<string | null>(null);
   const hasInitializedRef = useRef(false);
   // D-04: keyed by section id, populated by `ReviewSectionEditor`'s
-  // `registerTextareaRef` — read against `document.activeElement` to
+  // `registerEditorRef` — read against `document.activeElement` to
   // decide "insert at cursor" vs. "ask which section" on every Cite action.
-  const sectionTextareaRefs = useRef(new Map<string, HTMLTextAreaElement>());
+  const sectionEditorRefs = useRef(new Map<string, HTMLElement>());
   // A citation awaiting a section pick (CiteSectionPrompt open) — `null`
-  // means the prompt is closed. Set only when NO section textarea has
+  // means the prompt is closed. Set only when NO section editor has
   // focus at the moment a Cite action fires (D-04: never silently choose).
   const [pendingCitation, setPendingCitation] = useState<CitationToken | null>(null);
   const [previewOpen, setPreviewOpen] = useState(false);
@@ -265,18 +266,22 @@ export function ReviewComposerPage() {
     });
   }
 
-  function registerSectionTextareaRef(sectionId: string, el: HTMLTextAreaElement | null) {
+  function registerSectionEditorRef(sectionId: string, el: HTMLElement | null) {
     if (el) {
-      sectionTextareaRefs.current.set(sectionId, el);
+      sectionEditorRefs.current.set(sectionId, el);
     } else {
-      sectionTextareaRefs.current.delete(sectionId);
+      sectionEditorRefs.current.delete(sectionId);
     }
   }
 
-  /** The section id whose `<textarea>` currently has focus, or `null` if none does (D-04). */
+  /**
+   * The section id whose editor host currently has focus, or `null` if none
+   * does (D-04). Identity matching still works on the contentEditable
+   * editor: the host IS the focused element.
+   */
   function findFocusedSectionId(): string | null {
     const active = document.activeElement;
-    for (const [sectionId, el] of sectionTextareaRefs.current) {
+    for (const [sectionId, el] of sectionEditorRefs.current) {
       if (el === active) {
         return sectionId;
       }
@@ -308,14 +313,17 @@ export function ReviewComposerPage() {
   }
 
   // D-04: the Evidence list's Cite / ⏱ Cite current moment actions both
-  // route through here. A focused section textarea wins (insert at its
+  // route through here. A focused section editor wins (insert at its
   // cursor); otherwise the coach is ASKED which section — never a silent
   // choice.
   function handleCite(token: CitationToken) {
     const focusedSectionId = findFocusedSectionId();
     if (focusedSectionId) {
-      const el = sectionTextareaRefs.current.get(focusedSectionId);
-      insertCitationIntoSection(focusedSectionId, token, el?.selectionStart ?? null);
+      const el = sectionEditorRefs.current.get(focusedSectionId);
+      // 260826-s46: a contentEditable host has no `selectionStart` — this is
+      // its exact replacement, and `null` keeps the existing
+      // append-at-the-end fallback.
+      insertCitationIntoSection(focusedSectionId, token, el ? getEditorCaretOffset(el) : null);
       return;
     }
     if (docTab !== 'client-review') {
@@ -411,7 +419,7 @@ export function ReviewComposerPage() {
           onHideSection={handleHideSection}
           onShowSection={handleShowSection}
           onAddSection={handleAddSection}
-          registerTextareaRef={registerSectionTextareaRef}
+          registerEditorRef={registerSectionEditorRef}
           onActivateCitation={handlePreviewCitationActivate}
           resolveCitationSource={resolvePreviewCitationSource}
           autosaveIndicator={<AutosaveStatusIndicator status={autosave.status} />}
@@ -543,7 +551,7 @@ export function ReviewComposerPage() {
                   onHide={handleHideSection}
                   onShow={handleShowSection}
                   onAdd={handleAddSection}
-                  registerTextareaRef={registerSectionTextareaRef}
+                  registerEditorRef={registerSectionEditorRef}
                   onActivateCitation={handlePreviewCitationActivate}
                   resolveCitationSource={resolvePreviewCitationSource}
                 />

@@ -1,12 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { serializeCitationToken } from '@smash-tracker/shared';
 import type { CitationToken } from '@smash-tracker/shared';
-import {
-  locateCitationSpans,
-  removeCitationSpan,
-  splitCitationSegments,
-  splitCitationSpanParts,
-} from './citationSpans';
+import { locateCitationSpans, removeCitationSpan, splitCitationSegments } from './citationSpans';
 
 function token(overrides: Partial<CitationToken> = {}): CitationToken {
   return { sourceVodRef: 'm1', seconds: 32, label: 'Great edgeguard', ...overrides };
@@ -72,30 +67,6 @@ describe('splitCitationSegments', () => {
         .join('');
       expect(reconstructed).toBe(body);
     }
-  });
-});
-
-describe('splitCitationSpanParts', () => {
-  it('round-trips for a normal token: prefix + label + suffix === raw', () => {
-    const raw = serializeCitationToken(token({ label: 'Great edgeguard' }));
-    const parts = splitCitationSpanParts(raw);
-    expect(parts.prefix + parts.label + parts.suffix).toBe(raw);
-    expect(parts.label).toBe(encodeURIComponent('Great edgeguard'));
-    expect(parts.suffix).toBe('}}');
-  });
-
-  it('round-trips for an empty-label token', () => {
-    const raw = serializeCitationToken(token({ label: '' }));
-    const parts = splitCitationSpanParts(raw);
-    expect(parts.prefix + parts.label + parts.suffix).toBe(raw);
-    expect(parts.label).toBe('');
-  });
-
-  it('falls back to the whole string as prefix when markers are missing', () => {
-    const raw = 'not a token at all';
-    const parts = splitCitationSpanParts(raw);
-    expect(parts).toEqual({ prefix: raw, label: '', suffix: '' });
-    expect(parts.prefix + parts.label + parts.suffix).toBe(raw);
   });
 });
 

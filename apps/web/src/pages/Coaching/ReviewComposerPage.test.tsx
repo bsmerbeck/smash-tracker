@@ -4,6 +4,8 @@ import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes } from 'react-router';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { Match, ReviewDraft, ReviewSection } from '@smash-tracker/shared';
+import { serializeCitationToken } from '@smash-tracker/shared';
+import { serializeEditorDom, setEditorCaretOffset } from '@/lib/citationDom';
 import { resetAuthMock, setMockUser, makeMockUser } from '@/test/mockAuth';
 
 vi.mock('firebase/auth', async () => {
@@ -244,11 +246,17 @@ describe('ReviewComposerPage', () => {
 
     reviewsPatchDraft.mockResolvedValue(makeDraft({ revision: 1 }));
 
+    // 260826-s46: the section editor is a contentEditable host, not a form
+    // control — a `change` event carrying a target value has nothing to set.
+    // Drive it the way a browser would (mutate, then fire `input`).
+    const editor = screen.getByRole('textbox', { name: 'Summary' });
+
     // Fake timers installed only for the debounce window itself — findBy*/
     // waitFor above (and the render's own async draft/matches fetch) rely on
     // real timers to poll, so switching earlier would hang those.
     vi.useFakeTimers();
-    fireEvent.change(screen.getByLabelText('Summary'), { target: { value: 'edited summary' } });
+    editor.replaceChildren(document.createTextNode('edited summary'));
+    fireEvent.input(editor);
     await act(async () => {
       await vi.advanceTimersByTimeAsync(2000);
     });
@@ -263,8 +271,67 @@ describe('ReviewComposerPage', () => {
   });
 });
 
+describe('ReviewComposerPage caret-accurate citing (260826-s46)', () => {
+  beforeEach(() => {
+    vi.useRealTimers();
+    resetAuthMock();
+    vi.clearAllMocks();
+    setMockUser(makeMockUser());
+    matchesList.mockResolvedValue([makeMatch()]);
+    reviewsGetDraft.mockResolvedValue(
+      makeDraft({
+        sections: [
+          makeSection({ id: 'summary', kind: 'summary', body: 'before after' }),
+          makeSection({ id: 'strengths', kind: 'strengths' }),
+          makeSection({ id: 'priorities', kind: 'priorities' }),
+          makeSection({ id: 'practicePlan', kind: 'practicePlan' }),
+        ],
+      }),
+    );
+    window.localStorage.clear();
+  });
+
+  it('inserts the citation at the focused editor CARET, not appended at the end of the body', async () => {
+    renderComposer();
+    await screen.findByTestId('vod-player');
+
+    const editor = screen.getByRole('textbox', { name: 'Summary' });
+    editor.focus();
+    // Right after "before " — the position a coach's cursor would be in.
+    setEditorCaretOffset(editor, 7);
+
+    fireEvent.click(screen.getByRole('button', { name: '⏱ Cite current moment' }));
+
+    // The mocked player exposes no getCurrentTime, so the moment is 0s.
+    const expected = serializeCitationToken({ sourceVodRef: 'm1', seconds: 0, label: '' });
+    await waitFor(() => {
+      expect(serializeEditorDom(screen.getByRole('textbox', { name: 'Summary' }))).toBe(
+        `before ${expected} after`,
+      );
+    });
+  });
+
+  it('asks which section (never silently choosing) when NO section editor has focus', async () => {
+    renderComposer();
+    await screen.findByTestId('vod-player');
+
+    // Nothing focused — the Evidence toolbar's cite action prevents its own
+    // mousedown, so a plain click leaves document.activeElement on <body>.
+    fireEvent.click(screen.getByRole('button', { name: '⏱ Cite current moment' }));
+
+    expect(await screen.findByText('Cite into which section?')).toBeInTheDocument();
+    // By test id, not by role: the open dialog marks the rest of the app
+    // `aria-hidden`, so the editor is (correctly) out of the a11y tree here.
+    expect(serializeEditorDom(screen.getByTestId('section-summary'))).toBe('before after');
+  });
+});
+
 describe('ReviewComposerPage video/editor resize handle (260826-kio)', () => {
   beforeEach(() => {
+    // A test in the block above installs fake timers for its debounce
+    // window; if it ever throws before restoring them, every `findBy*` here
+    // would hang for the full timeout and report a misleading failure.
+    vi.useRealTimers();
     resetAuthMock();
     vi.clearAllMocks();
     setMockUser(makeMockUser());
