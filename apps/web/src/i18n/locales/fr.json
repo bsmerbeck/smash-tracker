@@ -700,6 +700,12 @@
     "player": {
       "compactAria": "Passer au lecteur compact",
       "fillAria": "Passer au lecteur pleine taille"
+    },
+    "sidebar": {
+      "collapseAria": "Réduire la liste des matchs",
+      "expandAria": "Développer la liste des matchs",
+      "activeFilters_one": "{{count}} filtre actif",
+      "activeFilters_other": "{{count}} filtres actifs"
     }
   },
   "tags": {

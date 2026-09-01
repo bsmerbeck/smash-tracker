@@ -700,6 +700,12 @@
     "player": {
       "compactAria": "Zu kompaktem Player wechseln",
       "fillAria": "Zu Player in voller Größe wechseln"
+    },
+    "sidebar": {
+      "collapseAria": "Matchliste einklappen",
+      "expandAria": "Matchliste ausklappen",
+      "activeFilters_one": "{{count}} aktiver Filter",
+      "activeFilters_other": "{{count}} aktive Filter"
     }
   },
   "tags": {
