@@ -66,6 +66,7 @@ import {
 import {
   DEFAULT_VOD_MANAGER_FILTERS,
   applyVodManagerFilters,
+  countActiveVodFilters,
   getVodManagerFilterOptions,
   sortByRecency,
   type VodManagerFilterState,
@@ -77,6 +78,8 @@ import {
   persistQuickTags,
   readStoredPlayerSize,
   persistPlayerSize,
+  readStoredSidebarCollapsed,
+  persistSidebarCollapsed,
   type VodPlayerSize,
 } from './lib/vodPrefs';
 import { AddMatchForm } from '@/pages/Dashboard/components/AddMatchForm';
@@ -279,6 +282,13 @@ export function VodManagerPage() {
   // into `useVodPlayer`'s options/identity, so toggling never remounts the
   // player (playback continues uninterrupted).
   const [playerSize, setPlayerSize] = useState<VodPlayerSize>(() => readStoredPlayerSize());
+  // Left-rail collapse (device preference, `vodPrefs.ts`) — collapsing
+  // REMOVES the rail panel (`vod-sidebar-panel`) from the DOM entirely
+  // rather than hiding it with CSS, so the grid track it occupied can
+  // shrink to `auto` and hand its width to the main column.
+  const [sidebarCollapsed, setSidebarCollapsed] = useState<boolean>(() =>
+    readStoredSidebarCollapsed(),
+  );
   // Set by handleAutoplayBlocked (LIST-04) whenever the browser blocks an
   // auto-advance attempt — surfaces the native play-button fallback hint
   // (Task 3). Reset alongside selectedTimestampIndex below: a blocked flag
@@ -327,6 +337,9 @@ export function VodManagerPage() {
   const [mySharesOpen, setMySharesOpen] = useState(false);
 
   const filterOptions = useMemo(() => getVodManagerFilterOptions(vodMatches), [vodMatches]);
+  // Display-only hint for the collapsed rail's filter-count badge — never
+  // consulted by applyVodManagerFilters itself.
+  const activeFilterCount = useMemo(() => countActiveVodFilters(filters), [filters]);
   // Membership (which matches pass the filter dimensions) is resolved BEFORE
   // sort, so set detection below reads what's actually displayed — not an
   // unfiltered superset — while staying independent of sort direction
@@ -1038,6 +1051,13 @@ export function VodManagerPage() {
     persistPlayerSize(next);
   }
 
+  // Left-rail collapse toggle — mirrors handleTogglePlayerSize exactly.
+  function handleToggleSidebar() {
+    const next = !sidebarCollapsed;
+    setSidebarCollapsed(next);
+    persistSidebarCollapsed(next);
+  }
+
   // The notes (from the FULL, normalizer-sorted `selectedMatch.vodTimestamps`
   // array) currently visible under `noteTagFilter` (retest fix-up #12) —
   // the SAME `filterTimestampIndices` helper `TimestampList` uses for its
@@ -1155,121 +1175,173 @@ export function VodManagerPage() {
       {!isLoading && vodMatches.length === 0 ? (
         <p className="text-sm text-muted-foreground">{t('vodManager.emptyState')}</p>
       ) : (
-        <div className="grid gap-4 md:grid-cols-[360px_1fr]">
-          <div className="flex flex-col gap-3">
-            <PlaylistSelector
-              playlists={playlists}
-              selectedPlaylistId={selectedPlaylistId}
-              onSelect={handleSelectPlaylist}
-              onCreate={handleCreatePlaylist}
-              creating={createPlaylist.isPending}
-            />
-            {selectedPlaylist && (
-              <div className="flex items-center gap-2">
-                {/* Rename affordance (Task: rename UX): a clear read-only
-                    row with an explicit Rename trigger by default; entering
-                    rename mode swaps in a labeled Input + Save/Cancel pair
-                    rather than a permanently-open, unlabeled input (D-
-                    fixed-up from the original always-editable field, which
-                    read as an unexplained bare box). */}
-                {renaming ? (
-                  <>
-                    <Input
-                      value={renameDraft}
-                      onChange={(e) => setRenameDraft(e.target.value)}
-                      onKeyDown={handleRenameKeyDown}
-                      placeholder={t('vodManager.playlists.renamePlaceholder')}
-                      aria-label={t('vodManager.playlists.renamePlaceholder')}
-                      maxLength={40}
-                      className="flex-1"
-                      autoFocus
-                    />
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="icon-sm"
-                      aria-label={t('vodManager.playlists.saveRenameAria')}
-                      // Prevents the Input's onBlur-adjacent focus loss from
-                      // stealing the click before onClick fires — mousedown
-                      // on this button would otherwise blur the input first.
-                      onMouseDown={(e) => e.preventDefault()}
-                      onClick={handleCommitRename}
-                    >
-                      <Check />
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="icon-sm"
-                      aria-label={t('vodManager.playlists.cancelRenameAria')}
-                      onMouseDown={(e) => e.preventDefault()}
-                      onClick={handleCancelRename}
-                    >
-                      <X />
-                    </Button>
-                  </>
-                ) : (
-                  <>
-                    <span className="flex-1 truncate text-sm font-medium">
-                      {selectedPlaylist.name}
-                    </span>
+        <div
+          data-testid="vod-layout-grid"
+          className={cn(
+            'grid gap-4',
+            sidebarCollapsed ? 'md:grid-cols-[auto_1fr]' : 'md:grid-cols-[360px_1fr]',
+          )}
+        >
+          <div data-testid="vod-sidebar" className="flex flex-col gap-3">
+            {/* The collapse toggle renders at EVERY breakpoint, unconditionally.
+                Collapsing REMOVES the rail panel from the DOM (not a CSS hide),
+                so hiding this affordance below a breakpoint would strand a
+                tester who collapsed on desktop and then opened the page on a
+                phone with no way to get the list back. The stacked (< md)
+                layout is therefore unchanged in the default expanded state. */}
+            <div
+              className={cn(
+                'flex items-center gap-2',
+                sidebarCollapsed ? 'justify-start' : 'justify-end',
+              )}
+            >
+              <Button
+                type="button"
+                variant="outline"
+                size="icon-sm"
+                onClick={handleToggleSidebar}
+                aria-expanded={!sidebarCollapsed}
+                aria-controls="vod-sidebar-panel"
+                aria-label={
+                  sidebarCollapsed
+                    ? t('vodManager.sidebar.expandAria')
+                    : t('vodManager.sidebar.collapseAria')
+                }
+              >
+                {sidebarCollapsed ? <ChevronRight /> : <ChevronLeft />}
+              </Button>
+              {sidebarCollapsed && activeFilterCount > 0 && (
+                <span
+                  data-testid="vod-sidebar-filter-count"
+                  className="text-xs text-muted-foreground"
+                >
+                  {t('vodManager.sidebar.activeFilters', { count: activeFilterCount })}
+                </span>
+              )}
+            </div>
+            {!sidebarCollapsed && (
+              <div
+                id="vod-sidebar-panel"
+                data-testid="vod-sidebar-panel"
+                className="flex flex-col gap-3"
+              >
+                <PlaylistSelector
+                  playlists={playlists}
+                  selectedPlaylistId={selectedPlaylistId}
+                  onSelect={handleSelectPlaylist}
+                  onCreate={handleCreatePlaylist}
+                  creating={createPlaylist.isPending}
+                />
+                {selectedPlaylist && (
+                  <div className="flex items-center gap-2">
+                    {/* Rename affordance (Task: rename UX): a clear read-only
+                        row with an explicit Rename trigger by default; entering
+                        rename mode swaps in a labeled Input + Save/Cancel pair
+                        rather than a permanently-open, unlabeled input (D-
+                        fixed-up from the original always-editable field, which
+                        read as an unexplained bare box). */}
+                    {renaming ? (
+                      <>
+                        <Input
+                          value={renameDraft}
+                          onChange={(e) => setRenameDraft(e.target.value)}
+                          onKeyDown={handleRenameKeyDown}
+                          placeholder={t('vodManager.playlists.renamePlaceholder')}
+                          aria-label={t('vodManager.playlists.renamePlaceholder')}
+                          maxLength={40}
+                          className="flex-1"
+                          autoFocus
+                        />
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="icon-sm"
+                          aria-label={t('vodManager.playlists.saveRenameAria')}
+                          // Prevents the Input's onBlur-adjacent focus loss from
+                          // stealing the click before onClick fires — mousedown
+                          // on this button would otherwise blur the input first.
+                          onMouseDown={(e) => e.preventDefault()}
+                          onClick={handleCommitRename}
+                        >
+                          <Check />
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="icon-sm"
+                          aria-label={t('vodManager.playlists.cancelRenameAria')}
+                          onMouseDown={(e) => e.preventDefault()}
+                          onClick={handleCancelRename}
+                        >
+                          <X />
+                        </Button>
+                      </>
+                    ) : (
+                      <>
+                        <span className="flex-1 truncate text-sm font-medium">
+                          {selectedPlaylist.name}
+                        </span>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          aria-label={t('vodManager.playlists.rename')}
+                          onClick={handleStartRename}
+                        >
+                          <Pencil />
+                          {t('vodManager.playlists.rename')}
+                        </Button>
+                      </>
+                    )}
                     <Button
                       type="button"
                       variant="outline"
                       size="sm"
-                      aria-label={t('vodManager.playlists.rename')}
-                      onClick={handleStartRename}
+                      aria-label={t('vodManager.playlists.delete')}
+                      onClick={() => setConfirmingDeletePlaylist(true)}
                     >
-                      <Pencil />
-                      {t('vodManager.playlists.rename')}
+                      <Trash2 />
+                      {t('vodManager.playlists.delete')}
                     </Button>
-                  </>
+                    <AlertDialog
+                      open={confirmingDeletePlaylist}
+                      onOpenChange={setConfirmingDeletePlaylist}
+                    >
+                      <AlertDialogContent>
+                        <AlertDialogHeader>
+                          <AlertDialogTitle>
+                            {t('vodManager.playlists.deleteConfirmTitle')}
+                          </AlertDialogTitle>
+                          <AlertDialogDescription>
+                            {t('common.cannotBeUndone')}
+                          </AlertDialogDescription>
+                        </AlertDialogHeader>
+                        <AlertDialogFooter>
+                          <AlertDialogCancel>{t('common.cancel')}</AlertDialogCancel>
+                          <AlertDialogAction onClick={handleConfirmDeletePlaylist}>
+                            {t('common.delete')}
+                          </AlertDialogAction>
+                        </AlertDialogFooter>
+                      </AlertDialogContent>
+                    </AlertDialog>
+                  </div>
                 )}
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  aria-label={t('vodManager.playlists.delete')}
-                  onClick={() => setConfirmingDeletePlaylist(true)}
-                >
-                  <Trash2 />
-                  {t('vodManager.playlists.delete')}
-                </Button>
-                <AlertDialog
-                  open={confirmingDeletePlaylist}
-                  onOpenChange={setConfirmingDeletePlaylist}
-                >
-                  <AlertDialogContent>
-                    <AlertDialogHeader>
-                      <AlertDialogTitle>
-                        {t('vodManager.playlists.deleteConfirmTitle')}
-                      </AlertDialogTitle>
-                      <AlertDialogDescription>{t('common.cannotBeUndone')}</AlertDialogDescription>
-                    </AlertDialogHeader>
-                    <AlertDialogFooter>
-                      <AlertDialogCancel>{t('common.cancel')}</AlertDialogCancel>
-                      <AlertDialogAction onClick={handleConfirmDeletePlaylist}>
-                        {t('common.delete')}
-                      </AlertDialogAction>
-                    </AlertDialogFooter>
-                  </AlertDialogContent>
-                </AlertDialog>
+                <VodMatchList
+                  matches={displayedMatches}
+                  filters={filters}
+                  filterOptions={filterOptions}
+                  onFiltersChange={setFilters}
+                  sort={sort}
+                  onSortChange={setExplicitSort}
+                  selectedId={selectedMatchId}
+                  onSelect={handleSelect}
+                  isPlaylistView={selectedPlaylist != null}
+                  onMoveMatch={handleMoveMatch}
+                  onRemoveFromPlaylist={handleRemoveFromPlaylist}
+                  reorderPending={updatePlaylist.isPending}
+                />
               </div>
             )}
-            <VodMatchList
-              matches={displayedMatches}
-              filters={filters}
-              filterOptions={filterOptions}
-              onFiltersChange={setFilters}
-              sort={sort}
-              onSortChange={setExplicitSort}
-              selectedId={selectedMatchId}
-              onSelect={handleSelect}
-              isPlaylistView={selectedPlaylist != null}
-              onMoveMatch={handleMoveMatch}
-              onRemoveFromPlaylist={handleRemoveFromPlaylist}
-              reorderPending={updatePlaylist.isPending}
-            />
           </div>
 
           <div
