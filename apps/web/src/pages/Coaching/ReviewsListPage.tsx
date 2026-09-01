@@ -12,8 +12,10 @@ import {
   useCoachingReviews,
   useCreateCoachingReview,
   useCreateReviewDelivery,
+  useDeleteCoachingReview,
   useReviewDeliveries,
   useRevokeReviewDelivery,
+  useUnarchiveCoachingReview,
 } from '@/hooks/useCoachingReviews';
 import { useMatches } from '@/hooks/useMatches';
 import { useIsDemoAccount } from '@/hooks/useIsDemoAccount';
@@ -26,6 +28,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { DeliveryVodPicker } from './components/DeliveryVodPicker';
+import { DeleteReviewDialog } from './components/DeleteReviewDialog';
 
 /** D-05: `Draft / Published vN / Archived` — the review-side state machine. Never mixed with the delivery chip below. */
 function ReviewStatusBadge({ item }: { item: ReviewListItem }) {
@@ -94,10 +97,19 @@ function ReviewDeliveryMenu({ clientId, review }: ReviewDeliveryMenuProps) {
   const { t } = useTranslation();
   const [open, setOpen] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
+  // Quick 260901-f7a: the review pending hard delete (null keeps the dialog
+  // closed), mirroring `DeleteWorkspaceDialog`'s own null-is-closed prop.
+  const [deletePending, setDeletePending] = useState<ReviewListItem | null>(null);
   const deliveries = useReviewDeliveries(clientId, review.reviewId, { enabled: open });
   const createDelivery = useCreateReviewDelivery(clientId, review.reviewId);
   const revokeDelivery = useRevokeReviewDelivery(clientId, review.reviewId);
   const archiveReview = useArchiveCoachingReview(clientId);
+  const unarchiveReview = useUnarchiveCoachingReview(clientId);
+  const deleteReview = useDeleteCoachingReview(clientId);
+  // Quick 260901-f7a: Unarchive and Delete are ARCHIVED-ONLY. Rendered
+  // conditionally (ABSENT, not disabled) — the archived-only rule is a state
+  // rule, not an affordance hint, and the server enforces it independently.
+  const isArchived = review.status === 'archived';
   // Phase 21 (DLVX-04): the picker's candidate list (every VOD-bearing match
   // in the client's library, the same `useMatches()` + `vodUrl != null`
   // filter `ReviewComposerPage.tsx` already applies) and its default
@@ -190,6 +202,25 @@ function ReviewDeliveryMenu({ clientId, review }: ReviewDeliveryMenuProps) {
     }
   }
 
+  async function handleUnarchive() {
+    try {
+      await unarchiveReview.mutateAsync(review.reviewId);
+      toast.success(t('coaching.reviews.list.unarchiveToast'));
+    } catch {
+      toast.error(t('coaching.reviews.list.unarchiveError'));
+    }
+  }
+
+  async function handleConfirmDelete(target: ReviewListItem) {
+    try {
+      await deleteReview.mutateAsync(target.reviewId);
+      setDeletePending(null);
+      toast.success(t('coaching.reviews.list.deletedToast'));
+    } catch {
+      toast.error(t('coaching.reviews.list.deleteError'));
+    }
+  }
+
   return (
     <>
       <DropdownMenu open={open} onOpenChange={setOpen}>
@@ -216,6 +247,16 @@ function ReviewDeliveryMenu({ clientId, review }: ReviewDeliveryMenuProps) {
           <DropdownMenuItem variant="destructive" onSelect={handleArchive}>
             {t('coaching.reviews.list.actions.archive')}
           </DropdownMenuItem>
+          {isArchived && (
+            <DropdownMenuItem onSelect={handleUnarchive}>
+              {t('coaching.reviews.list.actions.unarchive')}
+            </DropdownMenuItem>
+          )}
+          {isArchived && (
+            <DropdownMenuItem variant="destructive" onSelect={() => setDeletePending(review)}>
+              {t('coaching.reviews.list.actions.delete')}
+            </DropdownMenuItem>
+          )}
         </DropdownMenuContent>
       </DropdownMenu>
       {/* Phase 21 (DLVX-04): rendered as a SIBLING of the DropdownMenu (never
@@ -230,6 +271,19 @@ function ReviewDeliveryMenu({ clientId, review }: ReviewDeliveryMenuProps) {
         defaultSelectedMatchIds={citedMatchIds}
         onConfirm={handleConfirmDeliver}
         isPending={createDelivery.isPending}
+      />
+      {/* Quick 260901-f7a: same sibling-not-nested placement as the picker
+          above, for the same Radix pointer-events reason. */}
+      <DeleteReviewDialog
+        review={deletePending}
+        deliveryCount={deliveries.data?.length ?? 0}
+        onOpenChange={(next) => {
+          if (!next) {
+            setDeletePending(null);
+          }
+        }}
+        onConfirm={handleConfirmDelete}
+        isPending={deleteReview.isPending}
       />
     </>
   );

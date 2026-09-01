@@ -1954,10 +1954,25 @@
           "deliver": "配信する",
           "copyLink": "リンクをコピー",
           "revokeLink": "リンクを取り消す",
-          "archive": "レビューをアーカイブ"
+          "archive": "レビューをアーカイブ",
+          "unarchive": "レビューのアーカイブを解除",
+          "delete": "レビューを削除"
         },
         "archiveToast": "レビューをアーカイブしました",
-        "archiveError": "このレビューのアーカイブ中にエラーが発生しました。"
+        "archiveError": "このレビューのアーカイブ中にエラーが発生しました。",
+        "unarchiveToast": "レビューのアーカイブを解除しました",
+        "unarchiveError": "このレビューのアーカイブ解除中にエラーが発生しました。",
+        "deletedToast": "レビューを削除しました",
+        "deleteError": "このレビューの削除中にエラーが発生しました。",
+        "deleteDialog": {
+          "title": "このレビューを削除しますか？",
+          "description_one": "このアーカイブ済みレビューと、公開されたすべてのバージョンが完全に削除されます。{{count}} 件の配信リンクは直ちに使用できなくなり、復元できません。",
+          "description_other": "このアーカイブ済みレビューと、公開されたすべてのバージョンが完全に削除されます。{{count}} 件の配信リンクは直ちに使用できなくなり、復元できません。",
+          "confirmWord": "DELETE",
+          "confirmLabel": "確認のため「{{word}}」と入力してください",
+          "confirm": "レビューを削除",
+          "pending": "削除中..."
+        }
       }
     },
     "disabled": {

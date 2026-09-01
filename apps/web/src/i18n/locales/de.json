@@ -1954,10 +1954,25 @@
           "deliver": "Zustellen",
           "copyLink": "Link kopieren",
           "revokeLink": "Link widerrufen",
-          "archive": "Bewertung archivieren"
+          "archive": "Bewertung archivieren",
+          "unarchive": "Bewertung wiederherstellen",
+          "delete": "Bewertung löschen"
         },
         "archiveToast": "Bewertung archiviert",
-        "archiveError": "Beim Archivieren dieser Bewertung ist ein Fehler aufgetreten."
+        "archiveError": "Beim Archivieren dieser Bewertung ist ein Fehler aufgetreten.",
+        "unarchiveToast": "Bewertung wiederhergestellt",
+        "unarchiveError": "Beim Wiederherstellen dieser Bewertung ist ein Fehler aufgetreten.",
+        "deletedToast": "Bewertung gelöscht",
+        "deleteError": "Beim Löschen dieser Bewertung ist ein Fehler aufgetreten.",
+        "deleteDialog": {
+          "title": "Diese Bewertung löschen?",
+          "description_one": "Damit werden diese archivierte Bewertung und alle ihre veröffentlichten Versionen dauerhaft gelöscht. Ihr {{count}} Zustelllink funktioniert sofort nicht mehr und kann nicht wiederhergestellt werden.",
+          "description_other": "Damit werden diese archivierte Bewertung und alle ihre veröffentlichten Versionen dauerhaft gelöscht. Ihre {{count}} Zustelllinks funktionieren sofort nicht mehr und können nicht wiederhergestellt werden.",
+          "confirmWord": "DELETE",
+          "confirmLabel": "Gib „{{word}}“ ein, um zu bestätigen",
+          "confirm": "Bewertung löschen",
+          "pending": "Wird gelöscht..."
+        }
       }
     },
     "disabled": {

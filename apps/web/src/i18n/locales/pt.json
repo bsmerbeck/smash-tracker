@@ -1954,10 +1954,25 @@
           "deliver": "Entregar",
           "copyLink": "Copiar link",
           "revokeLink": "Revogar link",
-          "archive": "Arquivar revisão"
+          "archive": "Arquivar revisão",
+          "unarchive": "Desarquivar revisão",
+          "delete": "Excluir revisão"
         },
         "archiveToast": "Revisão arquivada",
-        "archiveError": "Ocorreu um erro ao arquivar esta revisão."
+        "archiveError": "Ocorreu um erro ao arquivar esta revisão.",
+        "unarchiveToast": "Revisão desarquivada",
+        "unarchiveError": "Ocorreu um erro ao desarquivar esta revisão.",
+        "deletedToast": "Revisão excluída",
+        "deleteError": "Ocorreu um erro ao excluir esta revisão.",
+        "deleteDialog": {
+          "title": "Excluir esta revisão?",
+          "description_one": "Isso exclui permanentemente esta revisão arquivada e todas as versões publicadas dela. Seu {{count}} link de entrega para de funcionar imediatamente e não pode ser restaurado.",
+          "description_other": "Isso exclui permanentemente esta revisão arquivada e todas as versões publicadas dela. Seus {{count}} links de entrega param de funcionar imediatamente e não podem ser restaurados.",
+          "confirmWord": "DELETE",
+          "confirmLabel": "Digite \"{{word}}\" para confirmar",
+          "confirm": "Excluir revisão",
+          "pending": "Excluindo..."
+        }
       }
     },
     "disabled": {
