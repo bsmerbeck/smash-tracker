@@ -150,6 +150,17 @@ export function useArchiveCoachingReview(clientId: string) {
   });
 }
 
+/** POST .../unarchive — quick 260901-f7a: the way back out of `archived` (restores `published` or `draft`, idempotent server-side). */
+export function useUnarchiveCoachingReview(clientId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (reviewId: string) => api.coaching.reviews.unarchive(clientId, reviewId),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: coachingReviewsQueryKey(clientId) });
+    },
+  });
+}
+
 /**
  * DLV-01 (D-05): the Reviews list's delivery overflow menu — a SEPARATE
  * control (and a separate query key) from the review-authoring hooks
@@ -157,6 +168,26 @@ export function useArchiveCoachingReview(clientId: string) {
  */
 export function reviewDeliveriesQueryKey(clientId: string, reviewId: string) {
   return ['coaching-review-deliveries', clientId, reviewId] as const;
+}
+
+/**
+ * DELETE .../reviews/:reviewId — quick 260901-f7a: irreversible hard delete
+ * of an archived review. Invalidates the reviews list AND that review's own
+ * delivery list: the delete destroys `reviewDeliveries/{tenantId}/{reviewId}`
+ * outright, so a stale cache entry would otherwise keep serving dead
+ * delivery rows inside an already-open menu.
+ */
+export function useDeleteCoachingReview(clientId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (reviewId: string) => api.coaching.reviews.delete(clientId, reviewId),
+    onSuccess: async (_data, reviewId) => {
+      await queryClient.invalidateQueries({ queryKey: coachingReviewsQueryKey(clientId) });
+      await queryClient.invalidateQueries({
+        queryKey: reviewDeliveriesQueryKey(clientId, reviewId),
+      });
+    },
+  });
 }
 
 /** GET .../deliveries — every delivery ever created for this review, most-recent-first. Opt-in via `enabled` so a closed overflow menu never fetches. */

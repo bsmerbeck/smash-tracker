@@ -20,12 +20,24 @@ const DESTRUCTIVE_ROUTES = [
   { method: 'PATCH' as const, path: `/api/coaching/clients/${TENANT_ID}/archive` },
   { method: 'DELETE' as const, path: `/api/coaching/clients/${TENANT_ID}` },
   { method: 'GET' as const, path: `/api/coaching/clients/${TENANT_ID}/export` },
+  // Quick 260901-f7a: per-review hard delete carries the SAME
+  // `requireTenantRole(['custodian','owner'])` gate as `deleteClient` — a
+  // demoted delegate must not be able to destroy a review and its links.
+  { method: 'DELETE' as const, path: `/api/coaching/clients/${TENANT_ID}/reviews/review-1` },
 ];
 
 const COLLABORATIVE_ROUTES = [
   {
     method: 'GET' as const,
     path: `/api/coaching/clients/${TENANT_ID}/reviews`,
+    usesSubjectHeader: false,
+  },
+  // Quick 260901-f7a: unarchive is RESTORATIVE and sits in the archive
+  // route's access class, not the destructive one — a delegate coach
+  // working in the client's workspace keeps it.
+  {
+    method: 'POST' as const,
+    path: `/api/coaching/clients/${TENANT_ID}/reviews/review-1/unarchive`,
     usesSubjectHeader: false,
   },
   {
@@ -61,7 +73,7 @@ describe('a delegate coach is denied the destructive routes', () => {
     expect(response.statusCode).toBe(403);
   });
 
-  it('an owner member gets 204/204/200 rather than 403 on all three destructive routes', async () => {
+  it('an owner member gets a non-403 on every destructive route', async () => {
     const { app, auth, database } = buildTestApp();
     auth.registerToken(COACH_TOKEN, { uid: COACH_UID, email: 'owner@test.com' });
     seedTenant(database, 'owner');
@@ -79,6 +91,19 @@ describe('a delegate coach is denied the destructive routes', () => {
       headers: { authorization: `Bearer ${COACH_TOKEN}` },
     });
     expect(exportResponse.statusCode).toBe(200);
+
+    // Quick 260901-f7a: asserted BEFORE the whole-client delete below —
+    // once the tenant is gone the membership check would answer 403 for a
+    // reason that has nothing to do with the role gate under test. The
+    // review does not exist, so 404 is the expected non-403 outcome: proof
+    // the role gate did not fire.
+    const deleteReviewResponse = await app.inject({
+      method: 'DELETE',
+      url: `/api/coaching/clients/${TENANT_ID}/reviews/review-1`,
+      headers: { authorization: `Bearer ${COACH_TOKEN}` },
+    });
+    expect(deleteReviewResponse.statusCode).not.toBe(403);
+    expect(deleteReviewResponse.statusCode).toBe(404);
 
     const deleteResponse = await app.inject({
       method: 'DELETE',

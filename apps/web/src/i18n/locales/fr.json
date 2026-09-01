@@ -1954,10 +1954,25 @@
           "deliver": "Livrer",
           "copyLink": "Copier le lien",
           "revokeLink": "Révoquer le lien",
-          "archive": "Archiver la revue"
+          "archive": "Archiver la revue",
+          "unarchive": "Désarchiver la revue",
+          "delete": "Supprimer la revue"
         },
         "archiveToast": "Revue archivée",
-        "archiveError": "Une erreur s'est produite lors de l'archivage de cette revue."
+        "archiveError": "Une erreur s'est produite lors de l'archivage de cette revue.",
+        "unarchiveToast": "Revue désarchivée",
+        "unarchiveError": "Une erreur s'est produite lors du désarchivage de cette revue.",
+        "deletedToast": "Revue supprimée",
+        "deleteError": "Une erreur s'est produite lors de la suppression de cette revue.",
+        "deleteDialog": {
+          "title": "Supprimer cette revue ?",
+          "description_one": "Cela supprime définitivement cette revue archivée et toutes ses versions publiées. Son {{count}} lien de livraison cesse de fonctionner immédiatement et ne peut pas être restauré.",
+          "description_other": "Cela supprime définitivement cette revue archivée et toutes ses versions publiées. Ses {{count}} liens de livraison cessent de fonctionner immédiatement et ne peuvent pas être restaurés.",
+          "confirmWord": "DELETE",
+          "confirmLabel": "Tapez « {{word}} » pour confirmer",
+          "confirm": "Supprimer la revue",
+          "pending": "Suppression..."
+        }
       }
     },
     "disabled": {
