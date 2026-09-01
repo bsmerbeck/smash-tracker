@@ -700,6 +700,12 @@
     "player": {
       "compactAria": "Mudar para player compacto",
       "fillAria": "Mudar para player em tamanho completo"
+    },
+    "sidebar": {
+      "collapseAria": "Recolher a lista de partidas",
+      "expandAria": "Expandir a lista de partidas",
+      "activeFilters_one": "{{count}} filtro ativo",
+      "activeFilters_other": "{{count}} filtros ativos"
     }
   },
   "tags": {

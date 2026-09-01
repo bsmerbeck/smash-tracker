@@ -5,6 +5,7 @@ import { ALL_FILTER_VALUE } from '@/pages/MatchData/lib/matchTableFilters';
 import {
   DEFAULT_VOD_MANAGER_FILTERS,
   applyVodManagerFilters,
+  countActiveVodFilters,
   getVodManagerFilterOptions,
   sortByRecency,
 } from './vodManagerFilters';
@@ -183,5 +184,51 @@ describe('getVodManagerFilterOptions', () => {
 
     expect(options.tagsInUse).toEqual(['bad-matchup', 'edgeguard', 'punish', 'to-review']);
     expect(options.tagsInUse).not.toContain('tournament-set');
+  });
+});
+
+describe('countActiveVodFilters', () => {
+  it('returns 0 for DEFAULT_VOD_MANAGER_FILTERS', () => {
+    expect(countActiveVodFilters(DEFAULT_VOD_MANAGER_FILTERS)).toBe(0);
+  });
+
+  it('returns 1 when one non-sentinel single-select dimension is set', () => {
+    expect(countActiveVodFilters({ ...DEFAULT_VOD_MANAGER_FILTERS, opponent: 'Zackray' })).toBe(1);
+  });
+
+  it('returns 5 when all five single-select dimensions are set', () => {
+    expect(
+      countActiveVodFilters({
+        ...DEFAULT_VOD_MANAGER_FILTERS,
+        fighter: mario.name,
+        opponentFighter: luigi.name,
+        stage: 'Battlefield',
+        tournament: 'Genesis',
+        opponent: 'Zackray',
+      }),
+    ).toBe(5);
+  });
+
+  it('counts a single tag as 1 active dimension', () => {
+    expect(countActiveVodFilters({ ...DEFAULT_VOD_MANAGER_FILTERS, tags: ['punish'] })).toBe(1);
+  });
+
+  it('counts multiple tags as ONE active dimension, not per tag', () => {
+    expect(
+      countActiveVodFilters({ ...DEFAULT_VOD_MANAGER_FILTERS, tags: ['punish', 'defense'] }),
+    ).toBe(1);
+  });
+
+  it('returns 6 when all five single-select dimensions plus a non-empty tags array are set', () => {
+    expect(
+      countActiveVodFilters({
+        fighter: mario.name,
+        opponentFighter: luigi.name,
+        stage: 'Battlefield',
+        tournament: 'Genesis',
+        opponent: 'Zackray',
+        tags: ['punish'],
+      }),
+    ).toBe(6);
   });
 });

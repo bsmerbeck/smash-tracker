@@ -96,3 +96,37 @@ export function persistPlayerSize(size: VodPlayerSize): void {
     // Ignore storage failures — the size preference just won't persist this session.
   }
 }
+
+export const VOD_SIDEBAR_COLLAPSED_STORAGE_KEY = 'smash-tracker.vodSidebarCollapsed';
+
+/**
+ * Parses the persisted left-rail collapse preference: only the exact stored
+ * `'true'` literal resolves to collapsed. Any other value (null, empty,
+ * `'TRUE'`, `'1'`, malformed content) falls back to `false` — the default
+ * EXPANDED rail (today's layout) — so a tester who never touches the toggle,
+ * and a tester whose storage is broken or tampered with, both see the
+ * unchanged layout.
+ */
+export function parseStoredSidebarCollapsed(raw: string | null): boolean {
+  return raw === 'true';
+}
+
+export function readStoredSidebarCollapsed(): boolean {
+  if (typeof window === 'undefined') return false;
+  try {
+    return parseStoredSidebarCollapsed(
+      window.localStorage.getItem(VOD_SIDEBAR_COLLAPSED_STORAGE_KEY),
+    );
+  } catch {
+    return false;
+  }
+}
+
+export function persistSidebarCollapsed(collapsed: boolean): void {
+  if (typeof window === 'undefined') return;
+  try {
+    window.localStorage.setItem(VOD_SIDEBAR_COLLAPSED_STORAGE_KEY, String(collapsed));
+  } catch {
+    // Ignore storage failures — the collapse preference just won't persist this session.
+  }
+}

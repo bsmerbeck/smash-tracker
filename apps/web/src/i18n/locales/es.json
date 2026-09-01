@@ -700,6 +700,12 @@
     "player": {
       "compactAria": "Cambiar a reproductor compacto",
       "fillAria": "Cambiar a reproductor de tamaño completo"
+    },
+    "sidebar": {
+      "collapseAria": "Contraer la lista de partidas",
+      "expandAria": "Expandir la lista de partidas",
+      "activeFilters_one": "{{count}} filtro activo",
+      "activeFilters_other": "{{count}} filtros activos"
     }
   },
   "tags": {

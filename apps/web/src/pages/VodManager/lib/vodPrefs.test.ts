@@ -3,12 +3,16 @@ import { NOTE_PRESET_TAGS } from '@/lib/tags';
 import {
   VOD_QUICK_TAGS_STORAGE_KEY,
   VOD_PLAYER_SIZE_STORAGE_KEY,
+  VOD_SIDEBAR_COLLAPSED_STORAGE_KEY,
   parseStoredQuickTags,
   readStoredQuickTags,
   persistQuickTags,
   parseStoredPlayerSize,
   readStoredPlayerSize,
   persistPlayerSize,
+  parseStoredSidebarCollapsed,
+  readStoredSidebarCollapsed,
+  persistSidebarCollapsed,
 } from './vodPrefs';
 
 describe('parseStoredQuickTags', () => {
@@ -125,5 +129,80 @@ describe('persistPlayerSize / readStoredPlayerSize', () => {
     });
     expect(() => persistPlayerSize('fill')).not.toThrow();
     spy.mockRestore();
+  });
+});
+
+describe('sidebar collapse preference', () => {
+  beforeEach(() => {
+    window.localStorage.clear();
+  });
+
+  describe('parseStoredSidebarCollapsed', () => {
+    it('returns false for null input', () => {
+      expect(parseStoredSidebarCollapsed(null)).toBe(false);
+    });
+
+    it('returns false for an empty string', () => {
+      expect(parseStoredSidebarCollapsed('')).toBe(false);
+    });
+
+    it('returns true for the exact stored "true" value', () => {
+      expect(parseStoredSidebarCollapsed('true')).toBe(true);
+    });
+
+    it('returns false for the exact stored "false" value', () => {
+      expect(parseStoredSidebarCollapsed('false')).toBe(false);
+    });
+
+    it('returns false for a case-mismatched "TRUE" (exact match only)', () => {
+      expect(parseStoredSidebarCollapsed('TRUE')).toBe(false);
+    });
+
+    it('returns false for "1"', () => {
+      expect(parseStoredSidebarCollapsed('1')).toBe(false);
+    });
+
+    it('returns false for malformed content', () => {
+      expect(parseStoredSidebarCollapsed('{not json')).toBe(false);
+    });
+  });
+
+  describe('readStoredSidebarCollapsed', () => {
+    it('reads a persisted "true" back as true', () => {
+      window.localStorage.setItem(VOD_SIDEBAR_COLLAPSED_STORAGE_KEY, 'true');
+      expect(readStoredSidebarCollapsed()).toBe(true);
+    });
+
+    it('returns false when nothing has been persisted', () => {
+      expect(readStoredSidebarCollapsed()).toBe(false);
+    });
+
+    it('returns false when localStorage.getItem throws', () => {
+      const spy = vi.spyOn(window.localStorage.__proto__, 'getItem').mockImplementation(() => {
+        throw new Error('storage unavailable');
+      });
+      expect(readStoredSidebarCollapsed()).toBe(false);
+      spy.mockRestore();
+    });
+  });
+
+  describe('persistSidebarCollapsed', () => {
+    it('writes the string "true" under the documented key', () => {
+      persistSidebarCollapsed(true);
+      expect(window.localStorage.getItem(VOD_SIDEBAR_COLLAPSED_STORAGE_KEY)).toBe('true');
+    });
+
+    it('writes the string "false" under the documented key', () => {
+      persistSidebarCollapsed(false);
+      expect(window.localStorage.getItem(VOD_SIDEBAR_COLLAPSED_STORAGE_KEY)).toBe('false');
+    });
+
+    it('never throws when localStorage.setItem fails', () => {
+      const spy = vi.spyOn(window.localStorage.__proto__, 'setItem').mockImplementation(() => {
+        throw new Error('quota exceeded');
+      });
+      expect(() => persistSidebarCollapsed(true)).not.toThrow();
+      spy.mockRestore();
+    });
   });
 });

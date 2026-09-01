@@ -700,6 +700,12 @@
     "player": {
       "compactAria": "Switch to compact player",
       "fillAria": "Switch to full-size player"
+    },
+    "sidebar": {
+      "collapseAria": "Collapse match list",
+      "expandAria": "Expand match list",
+      "activeFilters_one": "{{count}} active filter",
+      "activeFilters_other": "{{count}} active filters"
     }
   },
   "tags": {

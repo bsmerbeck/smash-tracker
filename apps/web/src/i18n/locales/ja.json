@@ -700,6 +700,12 @@
     "player": {
       "compactAria": "コンパクトプレーヤーに切り替え",
       "fillAria": "フルサイズプレーヤーに切り替え"
+    },
+    "sidebar": {
+      "collapseAria": "試合リストを折りたたむ",
+      "expandAria": "試合リストを展開",
+      "activeFilters_one": "有効なフィルター{{count}}件",
+      "activeFilters_other": "有効なフィルター{{count}}件"
     }
   },
   "tags": {
