@@ -115,7 +115,7 @@ const AUTHORIZATION_CLASSIFICATION: AuthorizationClassificationEntry[] = [
     file: 'src/routes/coachingReviews.ts',
     disposition: 'gated-by-primitive',
     reason:
-      'preHandler calls requireMembership on the URL :clientId, threading app.researchConfig.',
+      'preHandler calls requireMembership on the URL :clientId, threading app.researchConfig. The per-review DELETE route (quick 260901-f7a) ADDITIONALLY calls requireTenantRole([custodian, owner]) on that same :clientId as its first handler statement, threading the same app.researchConfig — file-classified by its dominant gate.',
   },
   {
     file: 'src/routes/coachingSessions.ts',
