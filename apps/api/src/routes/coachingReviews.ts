@@ -13,12 +13,14 @@ import {
 import { buildDomainEnvelope } from '../events/envelope.js';
 import { createEvent } from '../events/ledger.js';
 import { requireMembership } from '../coaching/tenants.js';
+import { requireTenantRole } from '../coaching/membershipRoles.js';
 import { readSubjectKind } from '../research/subjectKind.js';
 import {
   addSection,
   archiveReview,
   autosaveDraft,
   DEFAULT_REVIEW_SECTIONS,
+  deleteReview,
   DraftConflictError,
   getDraft,
   listReviews,
@@ -26,6 +28,7 @@ import {
   publishReview,
   REVIEW_STATUSES,
   setSectionHidden,
+  unarchiveReview,
 } from '../coaching/reviews.js';
 
 const clientIdParamsSchema = z.object({ clientId: z.string().min(1) });
@@ -335,6 +338,87 @@ const coachingReviewsRoutes: FastifyPluginAsyncZod = async (app) => {
     },
     async (request, reply) => {
       await archiveReview(app.firebase.database, request.params.clientId, request.params.reviewId);
+      return reply.code(204).send();
+    },
+  );
+
+  // POST /api/coaching/clients/:clientId/reviews/:reviewId/unarchive —
+  // quick 260901-f7a: the way back out of `archived`, restoring `published`
+  // (when a sealed version exists) or `draft`.
+  //
+  // DELIBERATELY carries no role gate beyond this file's blanket
+  // `requireMembership` preHandler — the SAME access class as the archive
+  // route it mirrors. Unarchive is restorative, not destructive, and
+  // `membershipRoles.ts`'s own stated rule is to gate the DESTRUCTIVE
+  // routes only: a delegate coach working in the client's workspace IS the
+  // coaching relationship this milestone exists to preserve.
+  app.post(
+    '/coaching/clients/:clientId/reviews/:reviewId/unarchive',
+    {
+      schema: {
+        params: reviewIdParamsSchema,
+        response: { 204: z.undefined(), 404: errorResponseSchema },
+      },
+    },
+    async (request, reply) => {
+      await unarchiveReview(
+        app.firebase.database,
+        request.params.clientId,
+        request.params.reviewId,
+      );
+      return reply.code(204).send();
+    },
+  );
+
+  // DELETE /api/coaching/clients/:clientId/reviews/:reviewId — quick
+  // 260901-f7a: the second rung of the archive -> delete ladder. Hard,
+  // irreversible, and permitted only from `archived` (the service enforces
+  // that with a `ConflictError` before any write).
+  //
+  // Two deliberate deviations, recorded so a reviewer does not read them as
+  // oversights:
+  //
+  // 1. The role gate lives in the ROUTE, not the service. `deleteClient`
+  //    puts the identical `requireTenantRole(['custodian','owner'])` call
+  //    INSIDE the service only because `tenants.ts`'s functions already
+  //    take a `coachUid`; no function in `reviews.ts` takes a uid or a
+  //    `ResearchConfig`, and the locked service signature is
+  //    `(database, tenantId, reviewId)`. The gate itself is byte-identical,
+  //    including the `app.researchConfig` threading, so the research-access
+  //    check still runs.
+  // 2. There is deliberately NO demo/Gate-6 actor refusal here. `DELETE
+  //    /api/coaching/clients/:clientId` carries none either (only
+  //    `GET .../export` does, because a bulk JSON dump is exfiltration),
+  //    and the Gate-6 rule is about MINTING publicly resolvable links, not
+  //    destroying them — the UI already leaves archive and revoke enabled
+  //    for a demo account.
+  //
+  // `ForbiddenError`/`NotFoundError`/`ConflictError` bubble to the global
+  // error handler in `app.ts` for the 403/404/409 mapping (this file's
+  // bubble-not-catch convention; only `DraftConflictError` needs a local
+  // catch).
+  app.delete(
+    '/coaching/clients/:clientId/reviews/:reviewId',
+    {
+      schema: {
+        params: reviewIdParamsSchema,
+        response: {
+          204: z.undefined(),
+          403: errorResponseSchema,
+          404: errorResponseSchema,
+          409: errorResponseSchema,
+        },
+      },
+    },
+    async (request, reply) => {
+      await requireTenantRole(
+        app.firebase.database,
+        request.uid,
+        request.params.clientId,
+        ['custodian', 'owner'],
+        app.researchConfig,
+      );
+      await deleteReview(app.firebase.database, request.params.clientId, request.params.reviewId);
       return reply.code(204).send();
     },
   );
