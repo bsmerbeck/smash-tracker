@@ -261,6 +261,185 @@ describe('/api/coaching/clients/:clientId/reviews', () => {
     expect(listResponse.json()).toEqual([expect.objectContaining({ status: 'archived' })]);
   });
 
+  it('unarchives an archived review back to published (204) and the list row follows', async () => {
+    const { app } = buildTestApp();
+    const clientId = await createClient(app);
+    const { reviewId } = (
+      await app.inject({
+        method: 'POST',
+        url: `/api/coaching/clients/${clientId}/reviews`,
+        headers: authHeader(),
+      })
+    ).json();
+    await app.inject({
+      method: 'POST',
+      url: `/api/coaching/clients/${clientId}/reviews/${reviewId}/publish`,
+      headers: authHeader(),
+    });
+    await app.inject({
+      method: 'POST',
+      url: `/api/coaching/clients/${clientId}/reviews/${reviewId}/archive`,
+      headers: authHeader(),
+    });
+
+    const unarchiveResponse = await app.inject({
+      method: 'POST',
+      url: `/api/coaching/clients/${clientId}/reviews/${reviewId}/unarchive`,
+      headers: authHeader(),
+    });
+    expect(unarchiveResponse.statusCode).toBe(204);
+
+    const listResponse = await app.inject({
+      method: 'GET',
+      url: `/api/coaching/clients/${clientId}/reviews`,
+      headers: authHeader(),
+    });
+    expect(listResponse.json()).toEqual([
+      expect.objectContaining({ reviewId, status: 'published', latestVersion: 1 }),
+    ]);
+  });
+
+  it('404s unarchive for a nonexistent review', async () => {
+    const { app } = buildTestApp();
+    const clientId = await createClient(app);
+
+    const response = await app.inject({
+      method: 'POST',
+      url: `/api/coaching/clients/${clientId}/reviews/ghost-review/unarchive`,
+      headers: authHeader(),
+    });
+
+    expect(response.statusCode).toBe(404);
+  });
+
+  it('deletes an archived review (204) and the row disappears from the list', async () => {
+    const { app } = buildTestApp();
+    const clientId = await createClient(app);
+    const { reviewId } = (
+      await app.inject({
+        method: 'POST',
+        url: `/api/coaching/clients/${clientId}/reviews`,
+        headers: authHeader(),
+      })
+    ).json();
+    await app.inject({
+      method: 'POST',
+      url: `/api/coaching/clients/${clientId}/reviews/${reviewId}/archive`,
+      headers: authHeader(),
+    });
+
+    const deleteResponse = await app.inject({
+      method: 'DELETE',
+      url: `/api/coaching/clients/${clientId}/reviews/${reviewId}`,
+      headers: authHeader(),
+    });
+    expect(deleteResponse.statusCode).toBe(204);
+
+    const listResponse = await app.inject({
+      method: 'GET',
+      url: `/api/coaching/clients/${clientId}/reviews`,
+      headers: authHeader(),
+    });
+    expect(listResponse.json()).toEqual([]);
+  });
+
+  it('409s a delete of a PUBLISHED (non-archived) review', async () => {
+    const { app } = buildTestApp();
+    const clientId = await createClient(app);
+    const { reviewId } = (
+      await app.inject({
+        method: 'POST',
+        url: `/api/coaching/clients/${clientId}/reviews`,
+        headers: authHeader(),
+      })
+    ).json();
+    await app.inject({
+      method: 'POST',
+      url: `/api/coaching/clients/${clientId}/reviews/${reviewId}/publish`,
+      headers: authHeader(),
+    });
+
+    const response = await app.inject({
+      method: 'DELETE',
+      url: `/api/coaching/clients/${clientId}/reviews/${reviewId}`,
+      headers: authHeader(),
+    });
+
+    expect(response.statusCode).toBe(409);
+  });
+
+  it('404s a delete of a nonexistent review', async () => {
+    const { app } = buildTestApp();
+    const clientId = await createClient(app);
+
+    const response = await app.inject({
+      method: 'DELETE',
+      url: `/api/coaching/clients/${clientId}/reviews/ghost-review`,
+      headers: authHeader(),
+    });
+
+    expect(response.statusCode).toBe(404);
+  });
+
+  // The end-to-end fail-closed property: the delete IS the revoke. A live
+  // delivery token minted through the real mint route must, after its
+  // review is deleted, serve the BYTE-IDENTICAL unavailable body an unknown
+  // token already serves (`publicReviewDeliveries.test.ts`'s own literal).
+  it('makes a live delivery link serve the identical unavailable body after its review is deleted', async () => {
+    const { app } = buildTestApp();
+    const clientId = await createClient(app);
+    const { reviewId } = (
+      await app.inject({
+        method: 'POST',
+        url: `/api/coaching/clients/${clientId}/reviews`,
+        headers: authHeader(),
+      })
+    ).json();
+    await app.inject({
+      method: 'POST',
+      url: `/api/coaching/clients/${clientId}/reviews/${reviewId}/publish`,
+      headers: authHeader(),
+    });
+    const deliveryResponse = await app.inject({
+      method: 'POST',
+      url: `/api/coaching/clients/${clientId}/reviews/${reviewId}/deliveries`,
+      headers: authHeader(),
+      payload: { version: 1 },
+    });
+    expect(deliveryResponse.statusCode).toBe(201);
+    const { token } = deliveryResponse.json();
+
+    // The link is genuinely live before the delete (anti-vacuous control).
+    const beforeDelete = await app.inject({
+      method: 'GET',
+      url: `/api/review-deliveries/${token}`,
+    });
+    expect(beforeDelete.statusCode).toBe(200);
+
+    await app.inject({
+      method: 'POST',
+      url: `/api/coaching/clients/${clientId}/reviews/${reviewId}/archive`,
+      headers: authHeader(),
+    });
+    const deleteResponse = await app.inject({
+      method: 'DELETE',
+      url: `/api/coaching/clients/${clientId}/reviews/${reviewId}`,
+      headers: authHeader(),
+    });
+    expect(deleteResponse.statusCode).toBe(204);
+
+    const afterDelete = await app.inject({
+      method: 'GET',
+      url: `/api/review-deliveries/${token}`,
+    });
+    expect(afterDelete.statusCode).toBe(404);
+    expect(afterDelete.json()).toEqual({
+      error: 'Not Found',
+      message: 'This delivery is no longer available',
+      statusCode: 404,
+    });
+  });
+
   it('404s a draft fetch for a nonexistent review', async () => {
     const { app } = buildTestApp();
     const clientId = await createClient(app);

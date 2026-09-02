@@ -42,6 +42,22 @@ import { countOpenDrafts, getMostRecentDeliveryStateForTenant } from './reviews.
 export const MAX_ACTIVE_CLIENTS_PER_COACH = 20;
 
 /**
+ * Quick 260901-fmb: a deliberate independent LOCAL copy of the
+ * module-private `SHARE_TOKEN_SHAPE` at `apps/api/src/services/rtdb.ts:94`
+ * (not exported — kept private to that module), mirroring
+ * `apps/api/src/research/subjectKind.ts`'s `TENANT_ID_SHAPE`, the
+ * established precedent for exactly this kind of duplication rather than
+ * reaching into another module's private constant. Needed HERE because
+ * every token this file collects becomes a KEY inside `deleteClient`'s
+ * multi-path `update()` object — firebase-admin (and `FakeDatabase`, for
+ * prod parity) rejects an RTDB-illegal key by throwing SYNCHRONOUSLY, which
+ * would abort the entire hard-delete cascade over one corrupt stored
+ * value. Applied guard-before-collection to the token VALUE, never to a
+ * `ref()` call.
+ */
+const SHARE_TOKEN_SHAPE = /^[A-Za-z0-9_-]{20,128}$/;
+
+/**
  * The SINGLE ordered list of subject-keyed tree prefixes holding a managed
  * client's data — the ONE source of truth `deleteClient`'s hard-delete
  * cascade builds its multi-path `null`-delete update from, AND (imported
@@ -706,6 +722,55 @@ export async function archiveClient(
  * `clientOwnedTenants/{ownerUid}/{tenantId}: null` into the SAME atomic
  * update. An unclaimed client has no `'owner'` member — `ownerUid` stays
  * `null` and this step becomes a normal no-op, never an error.
+ *
+ * Quick 260901-fmb: closes the tenant-deletion half of the share
+ * reverse-index cascade — two more root-level/tenant-keyed orphans of the
+ * exact same class as the `shareTokens`/`clientOwnedTenants` gaps above.
+ *
+ * 1. Review-delivery tokens: `createReviewDelivery`
+ *    (`apps/api/src/coaching/reviewDeliveries.ts`) mints a root-level
+ *    `shareTokens/{token}` row for every review delivery, the SAME way
+ *    `createSessionDelivery` does for session deliveries — but the
+ *    collection loop above only ever walked `sessionDeliveries/{tenantId}`.
+ *    Review-delivery bearer tokens therefore outlived their tenant forever,
+ *    the exact orphan the Phase 20 paragraph above describes, missed when
+ *    review deliveries shipped. Fixed by a mirror-image collection loop
+ *    over `reviewDeliveries/{tenantId}`, feeding the SAME `deliveryTokens`
+ *    array and the SAME atomic update tail.
+ * 2. `sharesByUser/{uid}/{shareId}`: `RtdbService.createShare`'s
+ *    `kind: 'coachReview'` branch writes this index with `uid` = the CLIENT
+ *    TENANT id (its own comment says so), which this cascade never swept.
+ *    No route can currently reach that branch with a tenant id
+ *    (`routes/vodShares.ts` always passes `request.uid`), so this is a
+ *    latent-gap closure rather than a live-data fix — but the branch is
+ *    live, exported, and unit-exercised, so any future writer that calls
+ *    `createShare(tenantId, ...)` would otherwise silently produce
+ *    permanent orphans. Fixed by reading `sharesByUser/{tenantId}` once,
+ *    nulling the index wholesale, nulling every `shareTokens/{token}`
+ *    VALUE found under it (same shape guard as every other token source),
+ *    and nulling every `shareSnapshots/{shareId}` KEY found under it — a
+ *    harmless no-op for a `coachReview` shareId, which has no snapshot
+ *    record (its shareId ENCODES the lookup path instead).
+ *
+ * `sharesByUser` is deliberately NOT added to `TENANT_DELETION_TREES`
+ * despite having the exact `{tree}/{tenantId}` shape that list's loop
+ * builds from: `apps/api/src/research/migration/manifest.ts` enforces a
+ * MODULE-LOAD-TIME `TREE_DESCRIPTOR_LOCK` requiring exactly one
+ * `TREE_DESCRIPTORS` entry per `TENANT_DELETION_TREES` member (and
+ * `manifest.test.ts` hard-codes a 30-member count) — adding a member here
+ * would throw at import time across the whole API and force an
+ * out-of-scope research-tenant migration disposition decision. This uses
+ * an EXPLICIT cleanup step instead, the same resolution `deleteClient`
+ * already applies three times over above. `CANONICAL_TENANT_TREES`,
+ * `TENANT_DELETION_TREES`, `foreignClient.test.ts`, and
+ * `research/migration/manifest.ts` all stay byte-unchanged.
+ *
+ * No self-heal was added on any read path: no authenticated caller's
+ * `request.uid` is ever a deleted tenant id, and every reader over
+ * `sharesByUser` (`countActiveShares`, `listSharesForUser`,
+ * `resolveActiveReviewShareTokens`) already safeParse-and-skips an index
+ * row whose token record is missing. The event ledger is deliberately left
+ * untouched, matching every prior cascade decision in this function.
  */
 export async function deleteClient(
   database: Database,
@@ -725,7 +790,39 @@ export async function deleteClient(
     for (const deliveries of Object.values(bySession ?? {})) {
       for (const value of Object.values(deliveries ?? {})) {
         const token = (value as { token?: unknown } | null)?.token;
-        if (typeof token === 'string' && token.length > 0) {
+        // Quick 260901-fmb (T-FMB-03): retrofitted from a bare
+        // `token.length > 0` check — a corrupt stored value could
+        // previously reach `update()` as an RTDB-illegal key and abort the
+        // WHOLE cascade. Skipping a corrupt token is strictly better than
+        // failing the whole delete (CONCERNS.md guardrail 3), and a value
+        // that fails this shape could never have been minted by
+        // `generateShareToken()` in the first place.
+        if (typeof token === 'string' && SHARE_TOKEN_SHAPE.test(token)) {
+          deliveryTokens.push(token);
+        }
+      }
+    }
+  }
+
+  // Quick 260901-fmb (T-FMB-01): mirror-image loop over
+  // `reviewDeliveries/{tenantId}` — identical nesting
+  // (`{tenantId}/{reviewId}/{deliveryId}`) to the session loop above, so the
+  // structure is cloned verbatim including the `Record<string,
+  // Record<string, unknown> | null>` cast and the `?? {}` guards.
+  // Deliberately does NOT gate collection on `reviewDeliveryRecordSchema` —
+  // a delivery record that fails the full schema must still surrender its
+  // bearer token, otherwise one corrupt record leaves a live credential
+  // behind.
+  const reviewDeliveriesSnapshot = await database.ref(`reviewDeliveries/${tenantId}`).get();
+  if (reviewDeliveriesSnapshot.exists()) {
+    const byReview = reviewDeliveriesSnapshot.val() as Record<
+      string,
+      Record<string, unknown> | null
+    >;
+    for (const deliveries of Object.values(byReview ?? {})) {
+      for (const value of Object.values(deliveries ?? {})) {
+        const token = (value as { token?: unknown } | null)?.token;
+        if (typeof token === 'string' && SHARE_TOKEN_SHAPE.test(token)) {
           deliveryTokens.push(token);
         }
       }
@@ -756,6 +853,30 @@ export async function deleteClient(
     }
   }
 
+  // Quick 260901-fmb (T-FMB-02): read `sharesByUser/{tenantId}` BEFORE the
+  // `updates` object is built — the index row that
+  // `RtdbService.createShare`'s `coachReview` branch writes when `uid` is a
+  // tenant id (see the doc comment above). Every entry's KEY is a shareId
+  // to null out of `shareSnapshots` (a no-op for a `coachReview` shareId,
+  // which has none); every entry whose VALUE passes the shape guard is a
+  // token to fold into the SAME `deliveryTokens` array the other two
+  // sources feed. The KEY itself is never shape-guarded — a key read back
+  // out of RTDB cannot contain an RTDB-illegal character by construction
+  // (mirrors why `listSharesForUser` guards the index VALUE, not the key),
+  // and a `coachReview` shareId legitimately contains `:` characters, which
+  // are RTDB-legal.
+  const sharesByUserSnapshot = await database.ref(`sharesByUser/${tenantId}`).get();
+  const orphanShareIds: string[] = [];
+  if (sharesByUserSnapshot.exists()) {
+    const shareEntries = sharesByUserSnapshot.val() as Record<string, unknown>;
+    for (const [shareId, tokenValue] of Object.entries(shareEntries ?? {})) {
+      orphanShareIds.push(shareId);
+      if (typeof tokenValue === 'string' && SHARE_TOKEN_SHAPE.test(tokenValue)) {
+        deliveryTokens.push(tokenValue);
+      }
+    }
+  }
+
   const updates: Record<string, null> = {};
   // Phase 29 Plan 10: iterates TENANT_DELETION_TREES (a documented superset
   // of CANONICAL_TENANT_TREES, see that constant's header comment above),
@@ -769,6 +890,14 @@ export async function deleteClient(
   updates[`clientTenants/${tenantId}`] = null;
   updates[`coachClients/${coachUid}/${tenantId}`] = null;
   updates[`clientMembers/${tenantId}`] = null;
+  // Quick 260901-fmb (T-FMB-02): unconditional, mirroring the unconditional
+  // `clientTenants`/`clientMembers` nulls immediately above — nulling an
+  // absent path is a harmless no-op, exactly as the `TENANT_DELETION_TREES`
+  // loop already relies on.
+  updates[`sharesByUser/${tenantId}`] = null;
+  for (const shareId of orphanShareIds) {
+    updates[`shareSnapshots/${shareId}`] = null;
+  }
   for (const token of deliveryTokens) {
     updates[`shareTokens/${token}`] = null;
   }

@@ -4,6 +4,8 @@ import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes } from 'react-router';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { Match, ReviewDraft, ReviewSection } from '@smash-tracker/shared';
+import { serializeCitationToken } from '@smash-tracker/shared';
+import { serializeEditorDom, setEditorCaretOffset } from '@/lib/citationDom';
 import { resetAuthMock, setMockUser, makeMockUser } from '@/test/mockAuth';
 
 vi.mock('firebase/auth', async () => {
@@ -76,6 +78,7 @@ vi.mock('@/lib/api', () => ({
 
 import { AuthProvider } from '@/context/AuthContext';
 import { ReviewComposerPage } from './ReviewComposerPage';
+import { COMPOSER_SPLIT_STORAGE_KEY } from './lib/composerSplit';
 
 function makeMatch(overrides: Partial<Match> = {}): Match {
   return {
@@ -134,6 +137,9 @@ describe('ReviewComposerPage', () => {
     setMockUser(makeMockUser());
     matchesList.mockResolvedValue([makeMatch()]);
     reviewsGetDraft.mockResolvedValue(makeDraft());
+    // 260826-kio: the split-percent preference is device-local localStorage
+    // state — clear it so it cannot leak between tests.
+    window.localStorage.clear();
   });
 
   it('renders the two-pane layout: source bar, player, evidence heading, and the four suggested sections', async () => {
@@ -240,11 +246,17 @@ describe('ReviewComposerPage', () => {
 
     reviewsPatchDraft.mockResolvedValue(makeDraft({ revision: 1 }));
 
+    // 260826-s46: the section editor is a contentEditable host, not a form
+    // control — a `change` event carrying a target value has nothing to set.
+    // Drive it the way a browser would (mutate, then fire `input`).
+    const editor = screen.getByRole('textbox', { name: 'Summary' });
+
     // Fake timers installed only for the debounce window itself — findBy*/
     // waitFor above (and the render's own async draft/matches fetch) rely on
     // real timers to poll, so switching earlier would hang those.
     vi.useFakeTimers();
-    fireEvent.change(screen.getByLabelText('Summary'), { target: { value: 'edited summary' } });
+    editor.replaceChildren(document.createTextNode('edited summary'));
+    fireEvent.input(editor);
     await act(async () => {
       await vi.advanceTimersByTimeAsync(2000);
     });
@@ -256,5 +268,135 @@ describe('ReviewComposerPage', () => {
       expect.objectContaining({ expectedRevision: 0 }),
     );
     expect(screen.getByText('Saved')).toBeInTheDocument();
+  });
+});
+
+describe('ReviewComposerPage caret-accurate citing (260826-s46)', () => {
+  beforeEach(() => {
+    vi.useRealTimers();
+    resetAuthMock();
+    vi.clearAllMocks();
+    setMockUser(makeMockUser());
+    matchesList.mockResolvedValue([makeMatch()]);
+    reviewsGetDraft.mockResolvedValue(
+      makeDraft({
+        sections: [
+          makeSection({ id: 'summary', kind: 'summary', body: 'before after' }),
+          makeSection({ id: 'strengths', kind: 'strengths' }),
+          makeSection({ id: 'priorities', kind: 'priorities' }),
+          makeSection({ id: 'practicePlan', kind: 'practicePlan' }),
+        ],
+      }),
+    );
+    window.localStorage.clear();
+  });
+
+  it('inserts the citation at the focused editor CARET, not appended at the end of the body', async () => {
+    renderComposer();
+    await screen.findByTestId('vod-player');
+
+    const editor = screen.getByRole('textbox', { name: 'Summary' });
+    editor.focus();
+    // Right after "before " — the position a coach's cursor would be in.
+    setEditorCaretOffset(editor, 7);
+
+    fireEvent.click(screen.getByRole('button', { name: '⏱ Cite current moment' }));
+
+    // The mocked player exposes no getCurrentTime, so the moment is 0s.
+    const expected = serializeCitationToken({ sourceVodRef: 'm1', seconds: 0, label: '' });
+    await waitFor(() => {
+      expect(serializeEditorDom(screen.getByRole('textbox', { name: 'Summary' }))).toBe(
+        `before ${expected} after`,
+      );
+    });
+  });
+
+  it('asks which section (never silently choosing) when NO section editor has focus', async () => {
+    renderComposer();
+    await screen.findByTestId('vod-player');
+
+    // Nothing focused — the Evidence toolbar's cite action prevents its own
+    // mousedown, so a plain click leaves document.activeElement on <body>.
+    fireEvent.click(screen.getByRole('button', { name: '⏱ Cite current moment' }));
+
+    expect(await screen.findByText('Cite into which section?')).toBeInTheDocument();
+    // By test id, not by role: the open dialog marks the rest of the app
+    // `aria-hidden`, so the editor is (correctly) out of the a11y tree here.
+    expect(serializeEditorDom(screen.getByTestId('section-summary'))).toBe('before after');
+  });
+});
+
+describe('ReviewComposerPage video/editor resize handle (260826-kio)', () => {
+  beforeEach(() => {
+    // A test in the block above installs fake timers for its debounce
+    // window; if it ever throws before restoring them, every `findBy*` here
+    // would hang for the full timeout and report a misleading failure.
+    vi.useRealTimers();
+    resetAuthMock();
+    vi.clearAllMocks();
+    setMockUser(makeMockUser());
+    matchesList.mockResolvedValue([makeMatch()]);
+    reviewsGetDraft.mockResolvedValue(makeDraft());
+    window.localStorage.clear();
+  });
+
+  it('renders a vertical separator handle whose aria-valuenow is the default on a clean device', async () => {
+    renderComposer();
+    await screen.findByTestId('vod-player');
+
+    const handle = screen.getByRole('separator', { name: 'Resize the video pane' });
+    expect(handle).toHaveAttribute('aria-valuenow', '40');
+    expect(handle).toHaveAttribute('aria-valuemin', '30');
+    expect(handle).toHaveAttribute('aria-valuemax', '70');
+  });
+
+  it('ArrowRight raises aria-valuenow by the step and persists it; ArrowLeft lowers it', async () => {
+    renderComposer();
+    await screen.findByTestId('vod-player');
+
+    const handle = screen.getByRole('separator', { name: 'Resize the video pane' });
+
+    fireEvent.keyDown(handle, { key: 'ArrowRight' });
+    expect(handle).toHaveAttribute('aria-valuenow', '42');
+    expect(window.localStorage.getItem(COMPOSER_SPLIT_STORAGE_KEY)).toBe('42');
+
+    fireEvent.keyDown(handle, { key: 'ArrowLeft' });
+    expect(handle).toHaveAttribute('aria-valuenow', '40');
+    expect(window.localStorage.getItem(COMPOSER_SPLIT_STORAGE_KEY)).toBe('40');
+  });
+
+  it('with the maximum already stored, ArrowRight leaves aria-valuenow at the maximum', async () => {
+    window.localStorage.setItem(COMPOSER_SPLIT_STORAGE_KEY, '70');
+    renderComposer();
+    await screen.findByTestId('vod-player');
+
+    const handle = screen.getByRole('separator', { name: 'Resize the video pane' });
+    expect(handle).toHaveAttribute('aria-valuenow', '70');
+
+    fireEvent.keyDown(handle, { key: 'ArrowRight' });
+    expect(handle).toHaveAttribute('aria-valuenow', '70');
+  });
+
+  it('double-clicking the handle restores the default and persists it', async () => {
+    window.localStorage.setItem(COMPOSER_SPLIT_STORAGE_KEY, '60');
+    renderComposer();
+    await screen.findByTestId('vod-player');
+
+    const handle = screen.getByRole('separator', { name: 'Resize the video pane' });
+    expect(handle).toHaveAttribute('aria-valuenow', '60');
+
+    fireEvent.doubleClick(handle);
+
+    expect(handle).toHaveAttribute('aria-valuenow', '40');
+    expect(window.localStorage.getItem(COMPOSER_SPLIT_STORAGE_KEY)).toBe('40');
+  });
+
+  it('a malformed stored value renders at the default rather than a broken track', async () => {
+    window.localStorage.setItem(COMPOSER_SPLIT_STORAGE_KEY, 'not-a-number');
+    renderComposer();
+    await screen.findByTestId('vod-player');
+
+    const handle = screen.getByRole('separator', { name: 'Resize the video pane' });
+    expect(handle).toHaveAttribute('aria-valuenow', '40');
   });
 });

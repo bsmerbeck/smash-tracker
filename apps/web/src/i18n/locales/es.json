@@ -64,7 +64,8 @@
     "allTime": "Todo el tiempo",
     "months3": "3 m",
     "months6": "6 m",
-    "months12": "12 m"
+    "months12": "12 m",
+    "autoWidened": "Ninguna partida en los últimos {{range}} — mostrando todo el tiempo."
   },
   "shared": {
     "noFighters": {
@@ -700,6 +701,12 @@
     "player": {
       "compactAria": "Cambiar a reproductor compacto",
       "fillAria": "Cambiar a reproductor de tamaño completo"
+    },
+    "sidebar": {
+      "collapseAria": "Contraer la lista de partidas",
+      "expandAria": "Expandir la lista de partidas",
+      "activeFilters_one": "{{count}} filtro activo",
+      "activeFilters_other": "{{count}} filtros activos"
     }
   },
   "tags": {
@@ -915,7 +922,10 @@
       "resyncSuffix": "y pulsa Sincronizar ahora.",
       "tournament": "Torneo",
       "event": "Evento",
-      "dates": "Fechas"
+      "dates": "Fechas",
+      "hiddenByRange_one": "{{count}} torneo fuera de los últimos {{range}}.",
+      "hiddenByRange_other": "{{count}} torneos fuera de los últimos {{range}}.",
+      "showAllTime": "Mostrar todo el tiempo"
     },
     "mix": {
       "title": "Mezcla de tipos de partida en el tiempo",
@@ -1894,7 +1904,12 @@
         },
         "citation": {
           "jumpAria": "Ir a {{timestamp}}",
-          "jumpToSourceAria": "Ir a {{timestamp}} en {{source}}"
+          "jumpToSourceAria": "Ir a {{timestamp}} en {{source}}",
+          "stripAria": "Citas en {{section}}",
+          "removeAria": "Quitar cita en {{timestamp}}"
+        },
+        "layout": {
+          "resizeAria": "Redimensionar el panel de video"
         },
         "citeSectionPrompt": {
           "title": "¿En qué sección quieres citar?",
@@ -1943,10 +1958,25 @@
           "deliver": "Entregar",
           "copyLink": "Copiar enlace",
           "revokeLink": "Revocar enlace",
-          "archive": "Archivar reseña"
+          "archive": "Archivar reseña",
+          "unarchive": "Desarchivar reseña",
+          "delete": "Eliminar reseña"
         },
         "archiveToast": "Reseña archivada",
-        "archiveError": "Ocurrió un error al archivar esta reseña."
+        "archiveError": "Ocurrió un error al archivar esta reseña.",
+        "unarchiveToast": "Reseña desarchivada",
+        "unarchiveError": "Ocurrió un error al desarchivar esta reseña.",
+        "deletedToast": "Reseña eliminada",
+        "deleteError": "Ocurrió un error al eliminar esta reseña.",
+        "deleteDialog": {
+          "title": "¿Eliminar esta reseña?",
+          "description_one": "Esto elimina permanentemente esta reseña archivada y todas sus versiones publicadas. Su {{count}} enlace de entrega deja de funcionar de inmediato y no se puede restaurar.",
+          "description_other": "Esto elimina permanentemente esta reseña archivada y todas sus versiones publicadas. Sus {{count}} enlaces de entrega dejan de funcionar de inmediato y no se pueden restaurar.",
+          "confirmWord": "DELETE",
+          "confirmLabel": "Escribe \"{{word}}\" para confirmar",
+          "confirm": "Eliminar reseña",
+          "pending": "Eliminando..."
+        }
       }
     },
     "disabled": {

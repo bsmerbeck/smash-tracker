@@ -12,10 +12,15 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import { getWinLossRecord, type WinLossRecord } from '@/lib/stats';
 import { useTournamentEntries } from '@/hooks/useTournamentEntries';
+import { useAnalyticsFilter } from '@/hooks/useAnalyticsFilter';
+import { filterEntriesByRange } from '@/hooks/useFilteredMatches';
 import { entryDisplayDateRange, isAdminImportedEntry } from '@/lib/historicalTournament';
 import { buildStartggUrl } from '@/pages/Tournaments/lib/startggLinks';
+import type { AnalyticsRangeFilter } from '@/context/AnalyticsFilterContext';
+import { cn } from '@/lib/utils';
 
 export interface TournamentEntryRow {
   entry: TournamentEntry;
@@ -41,6 +46,60 @@ export function buildTournamentEntryRows(
       entry,
       record: getWinLossRecord(matchesForEntry(matches, entry)),
     }));
+}
+
+/**
+ * Quick 260902-bm9: mirrors — rather than shares — the identical private
+ * label maps in `AnalyticsFilterControls.tsx` and `useAutoWidenEmptyRange.ts`.
+ * Exporting from either would violate scope (D-06: `useAutoWidenEmptyRange`
+ * stays untouched) or trip `react-refresh/only-export-components` on a
+ * component module; quick 260901-tj7 already established this local-mirror
+ * precedent for exactly this map. `RANGE_DAYS` (the actual cutoff math) is a
+ * different matter and IS genuinely shared, via `useFilteredMatches.ts`.
+ */
+const RANGE_LABEL_KEYS: Record<Exclude<AnalyticsRangeFilter, 'all'>, string> = {
+  '3m': 'filters.months3',
+  '6m': 'filters.months6',
+  '12m': 'filters.months12',
+};
+
+/**
+ * Quick 260902-bm9 (D-03): shown both as a footer under a partially-hidden
+ * table and in place of the table when the range hides every entry — one
+ * component, one visual language (the same dashed-box/outline-button chrome
+ * `FilteredEmptyNotice` uses), so there is one test target instead of two
+ * near-identical variants.
+ */
+function HiddenByRangeNotice({
+  hiddenCount,
+  range,
+  className,
+}: {
+  hiddenCount: number;
+  range: Exclude<AnalyticsRangeFilter, 'all'>;
+  className?: string;
+}) {
+  const { t } = useTranslation();
+  const { setRange } = useAnalyticsFilter();
+
+  return (
+    <div
+      className={cn(
+        'flex flex-wrap items-center justify-between gap-2 rounded-md border border-dashed bg-muted/50 px-4 py-3 text-sm',
+        className,
+      )}
+    >
+      <span className="text-muted-foreground">
+        {t('trends.tournaments.hiddenByRange', {
+          count: hiddenCount,
+          range: t(RANGE_LABEL_KEYS[range]),
+        })}
+      </span>
+      <Button variant="outline" size="sm" onClick={() => setRange('all')}>
+        {t('trends.tournaments.showAllTime')}
+      </Button>
+    </div>
+  );
 }
 
 function formatDate(time: number, locale: string): string {
@@ -83,12 +142,26 @@ function formatDateRange(entry: TournamentEntry, locale: string): string {
  * Phase 7: row links + keys route on the source-agnostic `entryKey` (never
  * the start.gg-only numeric `eventId`, which is absent on parry.gg entries)
  * so both sources' rows link correctly into the detail page.
+ *
+ * Quick 260902-bm9: the card read the UNFILTERED registry while scoping
+ * records to already-filtered `matches`, so every event outside the global
+ * analytics time range rendered as a dead row (`0-0 / — / 0` for a legacy
+ * row, `— / — / —` for an imported one). Rows now filter on the same cutoff
+ * `filterByRange` uses for matches and the same display dates the Dates
+ * column renders, and the hidden count is surfaced with a one-click widen so
+ * the narrowing is never silent. The source filter (All/Casual/Competitive)
+ * is deliberately not applied here — tournament entries are inherently
+ * competitive (D-02).
  */
 export function Tournaments({ matches }: { matches: Match[] }) {
   const { t, i18n } = useTranslation();
   const { data: entries, isLoading } = useTournamentEntries();
+  const { range } = useAnalyticsFilter();
 
-  const rows = buildTournamentEntryRows(entries ?? [], matches);
+  const allEntries = entries ?? [];
+  const visibleEntries = filterEntriesByRange(allEntries, range);
+  const hiddenCount = allEntries.length - visibleEntries.length;
+  const rows = buildTournamentEntryRows(visibleEntries, matches);
 
   return (
     <Card className="h-full">
@@ -98,7 +171,7 @@ export function Tournaments({ matches }: { matches: Match[] }) {
       <CardContent>
         {isLoading ? (
           <p className="text-sm text-muted-foreground">{t('trends.tournaments.loading')}</p>
-        ) : rows.length === 0 ? (
+        ) : allEntries.length === 0 ? (
           <p className="text-sm text-muted-foreground">
             {t('trends.tournaments.resyncPrefix')}{' '}
             <Link to="/settings/integrations" className="font-medium text-primary underline">
@@ -106,6 +179,8 @@ export function Tournaments({ matches }: { matches: Match[] }) {
             </Link>{' '}
             {t('trends.tournaments.resyncSuffix')}
           </p>
+        ) : rows.length === 0 && range !== 'all' ? (
+          <HiddenByRangeNotice hiddenCount={hiddenCount} range={range} />
         ) : (
           <Table>
             <TableHeader>
@@ -126,6 +201,11 @@ export function Tournaments({ matches }: { matches: Match[] }) {
                 // linked match rows has NO observed games — 0-0/0%/0 would
                 // fabricate a zero record out of missing data, so those
                 // cells render the '—' missing marker instead.
+                // Quick 260901-tj7 (D-04): a percentage computed from zero
+                // games is fabricated regardless of row origin —
+                // `getWinLossRecord` returns `winRate: 100` for a 0-0
+                // record — so the Rate cell below is keyed on
+                // `record.total === 0` alone, not `recordUnknown`.
                 const recordUnknown = imported && record.total === 0;
                 return (
                   <TableRow key={entry.entryKey ?? entry.eventId}>
@@ -159,13 +239,16 @@ export function Tournaments({ matches }: { matches: Match[] }) {
                     <TableCell className="whitespace-normal">{entry.eventName}</TableCell>
                     <TableCell>{formatDateRange(entry, i18n.language)}</TableCell>
                     <TableCell>{recordUnknown ? '—' : `${record.wins}-${record.losses}`}</TableCell>
-                    <TableCell>{recordUnknown ? '—' : `${record.winRate}%`}</TableCell>
+                    <TableCell>{record.total === 0 ? '—' : `${record.winRate}%`}</TableCell>
                     <TableCell>{recordUnknown ? '—' : record.total}</TableCell>
                   </TableRow>
                 );
               })}
             </TableBody>
           </Table>
+        )}
+        {rows.length > 0 && hiddenCount > 0 && range !== 'all' && (
+          <HiddenByRangeNotice hiddenCount={hiddenCount} range={range} className="mt-3" />
         )}
         {rows.some(({ entry }) => isAdminImportedEntry(entry)) && (
           <p className="mt-3 text-xs text-muted-foreground">

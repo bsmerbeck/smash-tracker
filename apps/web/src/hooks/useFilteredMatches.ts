@@ -1,9 +1,10 @@
 import { useMemo } from 'react';
-import type { Match, OpponentAliasMap } from '@smash-tracker/shared';
+import type { Match, OpponentAliasMap, TournamentEntry } from '@smash-tracker/shared';
 import { useMatches } from '@/hooks/useMatches';
 import { useAnalyticsFilter } from '@/hooks/useAnalyticsFilter';
 import { useOpponentAliases } from '@/hooks/useOpponentAliases';
 import type { AnalyticsRangeFilter, AnalyticsSourceFilter } from '@/context/AnalyticsFilterContext';
+import { entryDisplayDateRange } from '@/lib/historicalTournament';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -37,20 +38,66 @@ export function filterBySource(matches: Match[], filter: AnalyticsSourceFilter):
 }
 
 /**
+ * The trailing-window cutoff (epoch ms) for `filter`, or `null` for `'all'`
+ * (no cut). This is the SINGLE place the trailing-window arithmetic lives —
+ * both `filterByRange` (matches) and `filterEntriesByRange` (tournament
+ * registry rows) go through this, so match rows and registry rows can never
+ * disagree about where the window starts (quick 260902-bm9, D-01).
+ */
+export function rangeCutoff(filter: AnalyticsRangeFilter, now = Date.now()): number | null {
+  if (filter === 'all') {
+    return null;
+  }
+  return now - RANGE_DAYS[filter] * DAY_MS;
+}
+
+/**
  * Filters matches to those within the given trailing time range, relative to
  * `now`. `'all'` performs no cut. The cutoff is inclusive (`match.time >=
- * now - range`).
+ * now - range`). The cutoff itself comes from `rangeCutoff`, so match rows
+ * and registry rows can never disagree about where the window starts.
  */
 export function filterByRange(
   matches: Match[],
   filter: AnalyticsRangeFilter,
   now = Date.now(),
 ): Match[] {
-  if (filter === 'all') {
+  const cutoff = rangeCutoff(filter, now);
+  if (cutoff === null) {
     return matches;
   }
-  const cutoff = now - RANGE_DAYS[filter] * DAY_MS;
   return matches.filter((m) => m.time >= cutoff);
+}
+
+/**
+ * Filters tournament registry rows to those whose DISPLAY date range (see
+ * `entryDisplayDateRange`) ends on or after the same trailing-window cutoff
+ * `filterByRange` uses for matches — `'all'` performs no cut. Two
+ * consequences are deliberate, quick 260902-bm9 (D-01):
+ *  - keying on the display range's END, not its start, is what keeps a
+ *    multi-day event that began before the window, and an upcoming event
+ *    that hasn't happened yet, both visible;
+ *  - an entry the app cannot date (`entryDisplayDateRange` returns `null`)
+ *    is never hidden — it already renders the missing-data marker in its
+ *    Dates cell, and dropping the row because its dates are absent would
+ *    hide real data behind missing metadata.
+ * This is the TIME axis only: the source filter (All/Casual/Competitive) is
+ * deliberately NOT applied to registry rows, since tournament entries are
+ * inherently competitive (D-02).
+ */
+export function filterEntriesByRange(
+  entries: TournamentEntry[],
+  filter: AnalyticsRangeFilter,
+  now = Date.now(),
+): TournamentEntry[] {
+  const cutoff = rangeCutoff(filter, now);
+  if (cutoff === null) {
+    return entries;
+  }
+  return entries.filter((entry) => {
+    const range = entryDisplayDateRange(entry);
+    return range === null || range.endMs >= cutoff;
+  });
 }
 
 /**

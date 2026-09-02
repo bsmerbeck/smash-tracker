@@ -1,10 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import type { Match } from '@smash-tracker/shared';
+import type { Match, TournamentEntry } from '@smash-tracker/shared';
 import {
   applyOpponentAliases,
   filterBySource,
   filterByRange,
+  filterEntriesByRange,
   getOpponentSources,
+  rangeCutoff,
 } from './useFilteredMatches';
 
 const manual = { id: 'm1', fighter_id: 1, opponent_id: 2, time: 1, win: true } as Match;
@@ -85,6 +87,94 @@ describe('filterByRange', () => {
     const tooOld = matchAt('too-old', now - 400 * DAY_MS);
     expect(filterByRange([at6m, at12m, tooOld], '6m', now)).toEqual([at6m]);
     expect(filterByRange([at6m, at12m, tooOld], '12m', now)).toEqual([at6m, at12m]);
+  });
+});
+
+describe('rangeCutoff', () => {
+  const DAY_MS = 24 * 60 * 60 * 1000;
+  const now = 1_700_000_000_000;
+
+  it('returns null for all (no cut)', () => {
+    expect(rangeCutoff('all', now)).toBeNull();
+  });
+
+  it('returns the same boundaries filterByRange already cuts matches at, for 3m/6m/12m', () => {
+    expect(rangeCutoff('3m', now)).toBe(now - 90 * DAY_MS);
+    expect(rangeCutoff('6m', now)).toBe(now - 180 * DAY_MS);
+    expect(rangeCutoff('12m', now)).toBe(now - 360 * DAY_MS);
+  });
+});
+
+describe('filterEntriesByRange', () => {
+  const DAY_MS = 24 * 60 * 60 * 1000;
+  const now = 1_700_000_000_000;
+
+  function entryAt(
+    id: string,
+    firstSetAt: number,
+    lastSetAt: number,
+    overrides: Record<string, unknown> = {},
+  ): TournamentEntry {
+    return {
+      eventName: 'Ultimate Singles',
+      firstSetAt,
+      lastSetAt,
+      setsPlayed: 0,
+      entryKey: id,
+      ...overrides,
+    } as TournamentEntry;
+  }
+
+  it("passes everything through for 'all', both in-window and far-out entries", () => {
+    const inWindow = entryAt('in-window', now - 10 * DAY_MS, now - 5 * DAY_MS);
+    const farOut = entryAt('far-out', now - 500 * DAY_MS, now - 400 * DAY_MS);
+    const entries = [inWindow, farOut];
+    expect(filterEntriesByRange(entries, 'all', now)).toEqual(entries);
+  });
+
+  it('keeps an entry whose display END is exactly the cutoff (inclusive)', () => {
+    const boundary = entryAt('boundary', now - 100 * DAY_MS, now - 90 * DAY_MS);
+    expect(filterEntriesByRange([boundary], '3m', now)).toEqual([boundary]);
+  });
+
+  it('hides an entry whose display END is one millisecond before the cutoff', () => {
+    const justBefore = entryAt('just-before', 0 + 1, now - 90 * DAY_MS - 1);
+    expect(filterEntriesByRange([justBefore], '3m', now)).toEqual([]);
+  });
+
+  it('keeps a still-running entry that started before the window — END decides, never start', () => {
+    const running = entryAt('running', now - 200 * DAY_MS, now - 10 * DAY_MS);
+    expect(filterEntriesByRange([running], '3m', now)).toEqual([running]);
+  });
+
+  it('keeps an undated entry visible under a narrow range', () => {
+    const undated = entryAt('undated', 0, 0);
+    expect(filterEntriesByRange([undated], '3m', now)).toEqual([undated]);
+  });
+
+  it('keeps an upcoming entry visible under a narrow range', () => {
+    const upcoming = entryAt('upcoming', now + 10 * DAY_MS, now + 11 * DAY_MS);
+    expect(filterEntriesByRange([upcoming], '3m', now)).toEqual([upcoming]);
+  });
+
+  it('judges an admin-imported entry on its PROVIDER dates, not its stale set window (and the mirror case)', () => {
+    const staleSetsFreshProvider = entryAt('imported', now - 400 * DAY_MS, now - 400 * DAY_MS, {
+      origin: 'admin-imported',
+      provider: 'startgg',
+      startAtMs: now - 5 * DAY_MS,
+      endAtMs: now - 4 * DAY_MS,
+    });
+    expect(filterEntriesByRange([staleSetsFreshProvider], '3m', now)).toEqual([
+      staleSetsFreshProvider,
+    ]);
+
+    const freshSetsStaleProvider = entryAt('mirror', now - 5 * DAY_MS, now - 4 * DAY_MS, {
+      origin: 'admin-imported',
+      provider: 'startgg',
+      startAtMs: now - 400 * DAY_MS,
+      endAtMs: now - 400 * DAY_MS,
+    });
+    expect(filterEntriesByRange([freshSetsStaleProvider], '3m', now)).toEqual([]);
   });
 });
 

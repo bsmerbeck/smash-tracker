@@ -64,7 +64,8 @@
     "allTime": "Gesamter Zeitraum",
     "months3": "3 M",
     "months6": "6 M",
-    "months12": "12 M"
+    "months12": "12 M",
+    "autoWidened": "Keine Matches in den letzten {{range}} — gesamter Zeitraum wird angezeigt."
   },
   "shared": {
     "noFighters": {
@@ -700,6 +701,12 @@
     "player": {
       "compactAria": "Zu kompaktem Player wechseln",
       "fillAria": "Zu Player in voller Größe wechseln"
+    },
+    "sidebar": {
+      "collapseAria": "Matchliste einklappen",
+      "expandAria": "Matchliste ausklappen",
+      "activeFilters_one": "{{count}} aktiver Filter",
+      "activeFilters_other": "{{count}} aktive Filter"
     }
   },
   "tags": {
@@ -915,7 +922,10 @@
       "resyncSuffix": "und starte den Sync.",
       "tournament": "Turnier",
       "event": "Event",
-      "dates": "Daten"
+      "dates": "Daten",
+      "hiddenByRange_one": "{{count}} Turnier außerhalb der letzten {{range}}.",
+      "hiddenByRange_other": "{{count}} Turniere außerhalb der letzten {{range}}.",
+      "showAllTime": "Gesamten Zeitraum anzeigen"
     },
     "mix": {
       "title": "Match-Typ-Mix im Zeitverlauf",
@@ -1894,7 +1904,12 @@
         },
         "citation": {
           "jumpAria": "Zu {{timestamp}} springen",
-          "jumpToSourceAria": "Zu {{timestamp}} in {{source}} springen"
+          "jumpToSourceAria": "Zu {{timestamp}} in {{source}} springen",
+          "stripAria": "Zitate in {{section}}",
+          "removeAria": "Zitat bei {{timestamp}} entfernen"
+        },
+        "layout": {
+          "resizeAria": "Videobereich anpassen"
         },
         "citeSectionPrompt": {
           "title": "In welchen Abschnitt zitieren?",
@@ -1943,10 +1958,25 @@
           "deliver": "Zustellen",
           "copyLink": "Link kopieren",
           "revokeLink": "Link widerrufen",
-          "archive": "Bewertung archivieren"
+          "archive": "Bewertung archivieren",
+          "unarchive": "Bewertung wiederherstellen",
+          "delete": "Bewertung löschen"
         },
         "archiveToast": "Bewertung archiviert",
-        "archiveError": "Beim Archivieren dieser Bewertung ist ein Fehler aufgetreten."
+        "archiveError": "Beim Archivieren dieser Bewertung ist ein Fehler aufgetreten.",
+        "unarchiveToast": "Bewertung wiederhergestellt",
+        "unarchiveError": "Beim Wiederherstellen dieser Bewertung ist ein Fehler aufgetreten.",
+        "deletedToast": "Bewertung gelöscht",
+        "deleteError": "Beim Löschen dieser Bewertung ist ein Fehler aufgetreten.",
+        "deleteDialog": {
+          "title": "Diese Bewertung löschen?",
+          "description_one": "Damit werden diese archivierte Bewertung und alle ihre veröffentlichten Versionen dauerhaft gelöscht. Ihr {{count}} Zustelllink funktioniert sofort nicht mehr und kann nicht wiederhergestellt werden.",
+          "description_other": "Damit werden diese archivierte Bewertung und alle ihre veröffentlichten Versionen dauerhaft gelöscht. Ihre {{count}} Zustelllinks funktionieren sofort nicht mehr und können nicht wiederhergestellt werden.",
+          "confirmWord": "DELETE",
+          "confirmLabel": "Gib „{{word}}“ ein, um zu bestätigen",
+          "confirm": "Bewertung löschen",
+          "pending": "Wird gelöscht..."
+        }
       }
     },
     "disabled": {

@@ -1104,6 +1104,18 @@ export const api = {
           `/api/coaching/clients/${encodeURIComponent(clientId)}/reviews/${encodeURIComponent(reviewId)}/archive`,
           { method: 'POST' },
         ),
+      /** POST .../unarchive — restores an archived review to `published` (when it has a sealed version) or `draft`. Idempotent server-side. */
+      unarchive: (clientId: string, reviewId: string) =>
+        apiRequest<void>(
+          `/api/coaching/clients/${encodeURIComponent(clientId)}/reviews/${encodeURIComponent(reviewId)}/unarchive`,
+          { method: 'POST' },
+        ),
+      /** DELETE .../reviews/:reviewId — irreversible hard delete, permitted ONLY from `archived` (409 otherwise) and only for a custodian/owner (403 otherwise). Every delivery link for the review stops resolving immediately. */
+      delete: (clientId: string, reviewId: string) =>
+        apiRequest<void>(
+          `/api/coaching/clients/${encodeURIComponent(clientId)}/reviews/${encodeURIComponent(reviewId)}`,
+          { method: 'DELETE' },
+        ),
       /**
        * DLV-01: the coach-side delivery-management routes, nested under
        * `.../reviews/:reviewId/deliveries` (`apps/api/src/routes/

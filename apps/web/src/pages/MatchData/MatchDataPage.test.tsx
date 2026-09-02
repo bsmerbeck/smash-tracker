@@ -533,10 +533,19 @@ describe('MatchDataPage', () => {
 
     expect(await screen.findByText('No matches match the current filters.')).toBeInTheDocument();
     // The page itself still renders (not the page-level "no matches at all"
-    // hero, which links out to /dashboard) — MatchTable's own per-widget
-    // empty state is expected here since the filtered `matches` is empty.
+    // hero, which links out to /dashboard) — MatchTable renders NOTHING in
+    // the filtered-empty case (Quick 260901-tj7, D-04); the page-level
+    // notice above is the only empty-state surface here.
     expect(screen.getByText('Match History')).toBeInTheDocument();
     expect(screen.queryByRole('link', { name: 'Go to Dashboard' })).not.toBeInTheDocument();
+    // Direct regression lock for the owner's report: this exact screen must
+    // never also claim the user has no matches while they merely got
+    // filtered out.
+    expect(
+      screen.queryByText(
+        'You have no matches, report a match and check back here to view match data!',
+      ),
+    ).not.toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: 'Clear filters' }));
 

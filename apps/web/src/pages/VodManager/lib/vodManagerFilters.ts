@@ -104,6 +104,35 @@ export function applyVodManagerFilters(matches: Match[], filters: VodManagerFilt
   });
 }
 
+/**
+ * Counts how many VOD Manager filter dimensions are currently narrowing the
+ * match list: each of `fighter`, `opponentFighter`, `stage`, `tournament`,
+ * `opponent` that differs from the `ALL_FILTER_VALUE` sentinel counts as
+ * one, plus one more when `tags` is non-empty (the multi-select `tags`
+ * dimension deliberately counts once regardless of how many tags are
+ * selected, matching how the expanded rail presents it as a single
+ * control). Range 0-6.
+ *
+ * DISPLAY-ONLY hint for the collapsed VOD-Manager rail's filter-count badge
+ * — never consulted by `applyVodManagerFilters`.
+ */
+export function countActiveVodFilters(filters: VodManagerFilterState): number {
+  const singleSelectDimensions: (keyof Pick<
+    VodManagerFilterState,
+    'fighter' | 'opponentFighter' | 'stage' | 'tournament' | 'opponent'
+  >)[] = ['fighter', 'opponentFighter', 'stage', 'tournament', 'opponent'];
+
+  let count = singleSelectDimensions.filter(
+    (dimension) => filters[dimension] !== ALL_FILTER_VALUE,
+  ).length;
+
+  if (filters.tags.length > 0) {
+    count += 1;
+  }
+
+  return count;
+}
+
 export type VodSortDirection = 'newest' | 'oldest';
 
 /** Sorts a new array by `match.time` — descending (newest first) or ascending (oldest first). Never mutates the input. */

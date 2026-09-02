@@ -64,7 +64,8 @@
     "allTime": "Todo o período",
     "months3": "3 m",
     "months6": "6 m",
-    "months12": "12 m"
+    "months12": "12 m",
+    "autoWidened": "Nenhuma partida nos últimos {{range}} — exibindo todo o período."
   },
   "shared": {
     "noFighters": {
@@ -700,6 +701,12 @@
     "player": {
       "compactAria": "Mudar para player compacto",
       "fillAria": "Mudar para player em tamanho completo"
+    },
+    "sidebar": {
+      "collapseAria": "Recolher a lista de partidas",
+      "expandAria": "Expandir a lista de partidas",
+      "activeFilters_one": "{{count}} filtro ativo",
+      "activeFilters_other": "{{count}} filtros ativos"
     }
   },
   "tags": {
@@ -915,7 +922,10 @@
       "resyncSuffix": "e clique em Sincronizar agora.",
       "tournament": "Torneio",
       "event": "Evento",
-      "dates": "Datas"
+      "dates": "Datas",
+      "hiddenByRange_one": "{{count}} torneio fora dos últimos {{range}}.",
+      "hiddenByRange_other": "{{count}} torneios fora dos últimos {{range}}.",
+      "showAllTime": "Mostrar todo o período"
     },
     "mix": {
       "title": "Mix de tipos de partida ao longo do tempo",
@@ -1894,7 +1904,12 @@
         },
         "citation": {
           "jumpAria": "Ir para {{timestamp}}",
-          "jumpToSourceAria": "Ir para {{timestamp}} em {{source}}"
+          "jumpToSourceAria": "Ir para {{timestamp}} em {{source}}",
+          "stripAria": "Citações em {{section}}",
+          "removeAria": "Remover citação em {{timestamp}}"
+        },
+        "layout": {
+          "resizeAria": "Redimensionar o painel de vídeo"
         },
         "citeSectionPrompt": {
           "title": "Citar em qual seção?",
@@ -1943,10 +1958,25 @@
           "deliver": "Entregar",
           "copyLink": "Copiar link",
           "revokeLink": "Revogar link",
-          "archive": "Arquivar revisão"
+          "archive": "Arquivar revisão",
+          "unarchive": "Desarquivar revisão",
+          "delete": "Excluir revisão"
         },
         "archiveToast": "Revisão arquivada",
-        "archiveError": "Ocorreu um erro ao arquivar esta revisão."
+        "archiveError": "Ocorreu um erro ao arquivar esta revisão.",
+        "unarchiveToast": "Revisão desarquivada",
+        "unarchiveError": "Ocorreu um erro ao desarquivar esta revisão.",
+        "deletedToast": "Revisão excluída",
+        "deleteError": "Ocorreu um erro ao excluir esta revisão.",
+        "deleteDialog": {
+          "title": "Excluir esta revisão?",
+          "description_one": "Isso exclui permanentemente esta revisão arquivada e todas as versões publicadas dela. Seu {{count}} link de entrega para de funcionar imediatamente e não pode ser restaurado.",
+          "description_other": "Isso exclui permanentemente esta revisão arquivada e todas as versões publicadas dela. Seus {{count}} links de entrega param de funcionar imediatamente e não podem ser restaurados.",
+          "confirmWord": "DELETE",
+          "confirmLabel": "Digite \"{{word}}\" para confirmar",
+          "confirm": "Excluir revisão",
+          "pending": "Excluindo..."
+        }
       }
     },
     "disabled": {

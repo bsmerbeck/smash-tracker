@@ -16,7 +16,12 @@ import { buildDomainEnvelope } from '../events/envelope.js';
 import { createEvent } from '../events/ledger.js';
 import { onboardingCausePayload } from '../onboarding/activation.js';
 import { readSubjectKind } from '../research/subjectKind.js';
-import { ConflictError, ForbiddenError, NotFoundError } from '../services/rtdb.js';
+import {
+  buildReviewShareId,
+  ConflictError,
+  ForbiddenError,
+  NotFoundError,
+} from '../services/rtdb.js';
 
 /**
  * Phase 12 (Coach Reviews & Delivery): the coach-authored review authoring
@@ -462,6 +467,154 @@ export async function archiveReview(
   await database
     .ref(`reviewStatus/${tenantId}/${reviewId}`)
     .set(buildReviewStatusPayload({ ...current, status: 'archived' }));
+}
+
+/**
+ * Quick 260901-f7a: HARD delete of ONE review — permitted ONLY from
+ * `archived` (the two-step ladder the owner already approved for
+ * workspaces). One atomic root `update()` carries the review's five trees
+ * plus every delivery share token plus the defensive `sharesByUser` rows,
+ * so the delete IS the revoke and no partial state is ever observable.
+ *
+ * WHY the delivery tokens are HARD-NULLED, not soft-revoked. The codebase
+ * soft-revokes (`shareTokens/{token}/revokedAt`) when the parent object
+ * SURVIVES — `revokeReviewDelivery` (`reviewDeliveries.ts`),
+ * `revokeSessionDelivery`, `RtdbService`'s bulk revoke. It HARD-nulls
+ * `shareTokens/{token}` when the parent is DESTROYED — `deleteClient`'s
+ * session-delivery token step (`tenants.ts`) and `RtdbService.deleteShare`.
+ * A review delete destroys the parent, so this follows the destroy
+ * precedent. It is also strictly safer than revoking: with
+ * `reviewVersions/{tenantId}/{reviewId}` gone a surviving token would
+ * already fail closed inside `getCoachReviewSnapshot`, but nulling makes it
+ * fail closed one step EARLIER (at `getShareByToken`'s `shareTokens`
+ * existence check) and leaves zero orphan rows behind.
+ *
+ * WHY `sharesByUser` is swept. `RtdbService.createShare`'s
+ * `kind: 'coachReview'` early-return branch is a SECOND, test-exercised
+ * writer of `sharesByUser/{tenantId}/{shareId}` (with `uid` = tenantId and
+ * `shareId` = `buildReviewShareId(...)`) that the production delivery
+ * writer does not use. It is root-level and NOT tenant-tree-shaped, so no
+ * tree-prefixed cascade can reach it — the same class of orphan
+ * `deleteClient`'s own `shareTokens/{token}` and `claimInvitations/{digest}`
+ * steps already handle explicitly. Swept defensively: a review that never
+ * went through that branch simply has no such row and the null is a no-op.
+ *
+ * WHY there is no separate ack/homework cleanup. `ackAt`, `viewedAt`,
+ * `revokedAt`, `expiresAt` and `includedVods` are FLAT FIELDS on the
+ * delivery record itself, so they die with the
+ * `reviewDeliveries/{tenantId}/{reviewId}` subtree. Homework lives under
+ * `sessionDeliveries/`, never under `reviewDeliveries/` — a review delivery
+ * structurally carries none (see `publicReviewDeliveries.ts`).
+ *
+ * WHAT IS DELIBERATELY NOT TOUCHED: the events ledger. Rows carrying
+ * `causationId: reviewId` (or `{reviewId}:{deliveryId}`) are an append-only
+ * audit record; no read keyed by reviewId affects access, so destroying
+ * audit history is neither required for the revoke nor desirable.
+ */
+export async function deleteReview(
+  database: Database,
+  tenantId: string,
+  reviewId: string,
+): Promise<{ deletedDeliveries: number }> {
+  // The draft node is the review's IDENTITY node — `listReviewIds`
+  // enumerates exactly these keys — so its absence IS "no such review"
+  // (identical to `archiveReview`).
+  const draftSnapshot = await database.ref(`reviewDrafts/${tenantId}/${reviewId}`).get();
+  if (!draftSnapshot.exists()) {
+    throw new NotFoundError(`Review ${reviewId} not found`);
+  }
+
+  // Archived-only guard, BEFORE any enumeration or write — a refused delete
+  // leaves the database byte-unchanged.
+  const current = await getReviewStatus(database, tenantId, reviewId);
+  if (current.status !== 'archived') {
+    throw new ConflictError('Only an archived review can be deleted');
+  }
+
+  // Defensive shape-read, cloning `deleteClient`'s idiom verbatim: read
+  // `token` as `unknown` and typeof-check it. Deliberately NOT gated on
+  // `reviewDeliveryRecordSchema`/`safeParseDeliveryRecord` — this is the one
+  // place that diverges from `reviewDeliveries.ts`'s parse-then-act
+  // discipline, because a delivery record that fails the full schema must
+  // still surrender its token; otherwise one corrupt record would leave a
+  // live bearer credential behind.
+  const deliveriesSnapshot = await database.ref(`reviewDeliveries/${tenantId}/${reviewId}`).get();
+  const deliveryTokens: string[] = [];
+  if (deliveriesSnapshot.exists()) {
+    const byDelivery = deliveriesSnapshot.val() as Record<string, unknown>;
+    for (const value of Object.values(byDelivery ?? {})) {
+      const token = (value as { token?: unknown } | null)?.token;
+      if (typeof token === 'string' && token.length > 0) {
+        deliveryTokens.push(token);
+      }
+    }
+  }
+
+  const versionsSnapshot = await database.ref(`reviewVersions/${tenantId}/${reviewId}`).get();
+  const versionKeys = versionsSnapshot.exists()
+    ? Object.keys(versionsSnapshot.val() as Record<string, unknown>)
+    : [];
+
+  const updates: Record<string, null> = {
+    [`reviewDrafts/${tenantId}/${reviewId}`]: null,
+    [`reviewVersions/${tenantId}/${reviewId}`]: null,
+    [`reviewVersionIndex/${tenantId}/${reviewId}`]: null,
+    [`reviewStatus/${tenantId}/${reviewId}`]: null,
+    [`reviewDeliveries/${tenantId}/${reviewId}`]: null,
+  };
+  for (const token of deliveryTokens) {
+    updates[`shareTokens/${token}`] = null;
+  }
+  for (const versionKey of versionKeys) {
+    // Never filtered on numeric-ness (a non-numeric key is nulled at a path
+    // that simply does not exist — a harmless no-op — rather than silently
+    // skipped, which could leave a real orphan alive).
+    updates[
+      `sharesByUser/${tenantId}/${buildReviewShareId(tenantId, reviewId, Number(versionKey))}`
+    ] = null;
+  }
+
+  // ONE root-level multi-path update: null values delete keys atomically
+  // (mirrors `deleteClient` / `RtdbService.deleteShare`'s cascade
+  // convention). Every enumeration above completed BEFORE this is issued.
+  await database.ref().update(updates);
+
+  return { deletedDeliveries: deliveryTokens.length };
+}
+
+/**
+ * Quick 260901-f7a: the way back OUT of `archived` — restores `published`
+ * when the review has a sealed version, `draft` when it never had one.
+ * Writes through `buildReviewStatusPayload` (the conditional-spread idiom)
+ * exactly as `archiveReview` does, so the 260725-juj RTDB null-stripping
+ * discipline holds: a never-published review's stored record carries NO
+ * `latestVersion` key at all.
+ *
+ * IDEMPOTENT by design — no `ConflictError` when the review is already
+ * `draft`/`published`. Unlike delete, unarchive is a RESTORATIVE action, so
+ * the safety argument that justifies delete's archived-only guard does not
+ * apply in reverse; a stale reviews list or a double-click should land on
+ * success rather than a spurious error toast; and the recompute is a
+ * genuine no-op for all three states (`published`+latestVersion recomputes
+ * to itself, `draft`+null recomputes to itself), which additionally
+ * self-heals a status record that had drifted. `NotFoundError` still
+ * applies when the review does not exist — idempotent is not the same as
+ * forgiving a bad id.
+ */
+export async function unarchiveReview(
+  database: Database,
+  tenantId: string,
+  reviewId: string,
+): Promise<ReviewStatusRecord> {
+  const draftSnapshot = await database.ref(`reviewDrafts/${tenantId}/${reviewId}`).get();
+  if (!draftSnapshot.exists()) {
+    throw new NotFoundError(`Review ${reviewId} not found`);
+  }
+  const current = await getReviewStatus(database, tenantId, reviewId);
+  const status: ReviewStatusValue = current.latestVersion != null ? 'published' : 'draft';
+  const next: ReviewStatusRecord = { status, latestVersion: current.latestVersion };
+  await database.ref(`reviewStatus/${tenantId}/${reviewId}`).set(buildReviewStatusPayload(next));
+  return next;
 }
 
 /** The set of `reviewId`s a tenant has (the draft node is created once, at start-review, and lives forever — REV-07). */

@@ -32,7 +32,10 @@ export interface ReviewComposerMobileProps {
   onHideSection: (sectionId: string) => void;
   onShowSection: (sectionId: string) => void;
   onAddSection: (kind: ReviewSectionKind) => void;
-  registerTextareaRef: (sectionId: string, el: HTMLTextAreaElement | null) => void;
+  registerEditorRef: (sectionId: string, el: HTMLElement | null) => void;
+  /** 260826-kio: forwarded to the mobile composer's own `ReviewSectionEditor` instance — see that component's identical props. */
+  onActivateCitation?: (matchId: string, seconds: number) => void;
+  resolveCitationSource?: (matchId: string) => { label: string } | undefined;
 
   autosaveIndicator: ReactNode;
   onPreview: () => void;
@@ -50,12 +53,12 @@ export interface ReviewComposerMobileProps {
  *
  * 1. State preservation (D-12/Pitfall 6/T-12-27): the `<VodPlayer>` instance
  *    — mounted exactly ONCE, inside the Watch panel — and every section
- *    editor's `<textarea>` DOM node survive a Watch -> Evidence -> Review
- *    round trip. Playback position is never lost (the iframe is hidden, not
+ *    editor's host DOM node survive a Watch -> Evidence -> Review round
+ *    trip. Playback position is never lost (the iframe is hidden, not
  *    destroyed) and unsaved draft text is safe regardless (it's already
  *    React state owned by the parent composer, not local DOM state) — but
- *    forceMount additionally protects native textarea state (cursor
- *    position, browser undo history) that a remount WOULD lose.
+ *    forceMount additionally protects native editing state (caret position,
+ *    browser undo history) that a remount WOULD lose.
  * 2. Accessibility (D-17): `display:none` already removes an inactive
  *    panel's contents from both the keyboard tab order and the
  *    accessibility tree — no separate manual `aria-hidden`/`tabindex`
@@ -90,7 +93,9 @@ export function ReviewComposerMobile({
   onHideSection,
   onShowSection,
   onAddSection,
-  registerTextareaRef,
+  registerEditorRef,
+  onActivateCitation,
+  resolveCitationSource,
   autosaveIndicator,
   onPreview,
   onPublish,
@@ -229,7 +234,9 @@ export function ReviewComposerMobile({
                 onHide={onHideSection}
                 onShow={onShowSection}
                 onAdd={onAddSection}
-                registerTextareaRef={registerTextareaRef}
+                registerEditorRef={registerEditorRef}
+                onActivateCitation={onActivateCitation}
+                resolveCitationSource={resolveCitationSource}
               />
             </TabsContent>
 

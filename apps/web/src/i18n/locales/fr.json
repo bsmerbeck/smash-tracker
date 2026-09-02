@@ -64,7 +64,8 @@
     "allTime": "Depuis le début",
     "months3": "3 m",
     "months6": "6 m",
-    "months12": "12 m"
+    "months12": "12 m",
+    "autoWidened": "Aucun match sur les {{range}} derniers — affichage depuis le début."
   },
   "shared": {
     "noFighters": {
@@ -700,6 +701,12 @@
     "player": {
       "compactAria": "Passer au lecteur compact",
       "fillAria": "Passer au lecteur pleine taille"
+    },
+    "sidebar": {
+      "collapseAria": "Réduire la liste des matchs",
+      "expandAria": "Développer la liste des matchs",
+      "activeFilters_one": "{{count}} filtre actif",
+      "activeFilters_other": "{{count}} filtres actifs"
     }
   },
   "tags": {
@@ -915,7 +922,10 @@
       "resyncSuffix": "et lancez la synchronisation.",
       "tournament": "Tournoi",
       "event": "Évènement",
-      "dates": "Dates"
+      "dates": "Dates",
+      "hiddenByRange_one": "{{count}} tournoi hors des {{range}} derniers.",
+      "hiddenByRange_other": "{{count}} tournois hors des {{range}} derniers.",
+      "showAllTime": "Afficher depuis le début"
     },
     "mix": {
       "title": "Répartition des types de match dans le temps",
@@ -1894,7 +1904,12 @@
         },
         "citation": {
           "jumpAria": "Aller à {{timestamp}}",
-          "jumpToSourceAria": "Aller à {{timestamp}} dans {{source}}"
+          "jumpToSourceAria": "Aller à {{timestamp}} dans {{source}}",
+          "stripAria": "Citations dans {{section}}",
+          "removeAria": "Supprimer la citation à {{timestamp}}"
+        },
+        "layout": {
+          "resizeAria": "Redimensionner le volet vidéo"
         },
         "citeSectionPrompt": {
           "title": "Citer dans quelle section ?",
@@ -1943,10 +1958,25 @@
           "deliver": "Livrer",
           "copyLink": "Copier le lien",
           "revokeLink": "Révoquer le lien",
-          "archive": "Archiver la revue"
+          "archive": "Archiver la revue",
+          "unarchive": "Désarchiver la revue",
+          "delete": "Supprimer la revue"
         },
         "archiveToast": "Revue archivée",
-        "archiveError": "Une erreur s'est produite lors de l'archivage de cette revue."
+        "archiveError": "Une erreur s'est produite lors de l'archivage de cette revue.",
+        "unarchiveToast": "Revue désarchivée",
+        "unarchiveError": "Une erreur s'est produite lors du désarchivage de cette revue.",
+        "deletedToast": "Revue supprimée",
+        "deleteError": "Une erreur s'est produite lors de la suppression de cette revue.",
+        "deleteDialog": {
+          "title": "Supprimer cette revue ?",
+          "description_one": "Cela supprime définitivement cette revue archivée et toutes ses versions publiées. Son {{count}} lien de livraison cesse de fonctionner immédiatement et ne peut pas être restauré.",
+          "description_other": "Cela supprime définitivement cette revue archivée et toutes ses versions publiées. Ses {{count}} liens de livraison cessent de fonctionner immédiatement et ne peuvent pas être restaurés.",
+          "confirmWord": "DELETE",
+          "confirmLabel": "Tapez « {{word}} » pour confirmer",
+          "confirm": "Supprimer la revue",
+          "pending": "Suppression..."
+        }
       }
     },
     "disabled": {

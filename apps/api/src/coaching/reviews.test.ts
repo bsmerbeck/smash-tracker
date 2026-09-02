@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import type { Database } from 'firebase-admin/database';
 import type { ReviewSection } from '@smash-tracker/shared';
 import { FakeDatabase, type FakeReference } from '../test-support/fakeDatabase.js';
-import { NotFoundError } from '../services/rtdb.js';
+import { buildReviewShareId, ConflictError, NotFoundError } from '../services/rtdb.js';
 import {
   addSection,
   archiveReview,
@@ -10,6 +10,7 @@ import {
   countOpenDrafts,
   DEFAULT_REVIEW_SECTIONS,
   DraftConflictError,
+  deleteReview,
   getDraft,
   getLatestDeliveryState,
   getMostRecentDeliveryStateForTenant,
@@ -18,7 +19,9 @@ import {
   previewClientVersion,
   publishReview,
   setSectionHidden,
+  unarchiveReview,
 } from './reviews.js';
+import { createReviewDelivery } from './reviewDeliveries.js';
 import { createClient, listClients } from './tenants.js';
 
 const TENANT_ID = 'tenant-1';
@@ -909,5 +912,243 @@ describe('listClients() draftCount/deliveryState wiring (Task 3, Pitfall 5)', ()
     const rows = await listClients(asDatabase(database), COACH_UID, null);
 
     expect(rows[0]).toMatchObject({ draftCount: 0, deliveryState: null });
+  });
+});
+
+const WEB_BASE_URL = 'https://grandfinals.test';
+
+/** Seeds a fully-lived review: draft -> published v1 -> N deliveries -> archived. Returns the minted tokens. */
+async function seedArchivedDeliveredReview(
+  database: FakeDatabase,
+  tenantId: string,
+  reviewId: string,
+  deliveryCount: number,
+): Promise<string[]> {
+  await autosaveDraft(asDatabase(database), tenantId, reviewId, { sections: [makeSection()] }, 0);
+  await publishReview(asDatabase(database), tenantId, reviewId, {
+    coachUid: COACH_UID,
+    sessionId: SESSION_ID,
+  });
+  const tokens: string[] = [];
+  for (let i = 0; i < deliveryCount; i += 1) {
+    const { token } = await createReviewDelivery(
+      asDatabase(database),
+      tenantId,
+      reviewId,
+      1,
+      WEB_BASE_URL,
+    );
+    tokens.push(token);
+  }
+  await archiveReview(asDatabase(database), tenantId, reviewId);
+  return tokens;
+}
+
+async function nodeExists(database: FakeDatabase, path: string): Promise<boolean> {
+  return (await database.ref(path).get()).exists();
+}
+
+describe('deleteReview', () => {
+  it('refuses a never-published DRAFT with ConflictError and leaves the database byte-unchanged', async () => {
+    const database = new FakeDatabase();
+    await autosaveDraft(asDatabase(database), TENANT_ID, 'review-1', { sections: [] }, 0);
+    const before = JSON.stringify(database.dump());
+
+    await expect(deleteReview(asDatabase(database), TENANT_ID, 'review-1')).rejects.toThrow(
+      ConflictError,
+    );
+
+    expect(await nodeExists(database, `reviewDrafts/${TENANT_ID}/review-1`)).toBe(true);
+    expect(JSON.stringify(database.dump())).toBe(before);
+  });
+
+  it('refuses a PUBLISHED review with ConflictError, leaving the sealed version intact', async () => {
+    const database = new FakeDatabase();
+    await autosaveDraft(asDatabase(database), TENANT_ID, 'review-1', { sections: [] }, 0);
+    await publishReview(asDatabase(database), TENANT_ID, 'review-1', {
+      coachUid: COACH_UID,
+      sessionId: SESSION_ID,
+    });
+
+    await expect(deleteReview(asDatabase(database), TENANT_ID, 'review-1')).rejects.toThrow(
+      ConflictError,
+    );
+
+    expect(await nodeExists(database, `reviewVersions/${TENANT_ID}/review-1/1`)).toBe(true);
+  });
+
+  it('throws NotFoundError for a review with no draft node', async () => {
+    const database = new FakeDatabase();
+    await expect(deleteReview(asDatabase(database), TENANT_ID, 'ghost-review')).rejects.toThrow(
+      NotFoundError,
+    );
+  });
+
+  it('cascades every review tree AND every delivery share token in one atomic update (asserted tree by tree)', async () => {
+    const database = new FakeDatabase();
+    const tokens = await seedArchivedDeliveredReview(database, TENANT_ID, 'review-1', 2);
+    expect(tokens).toHaveLength(2);
+
+    const result = await deleteReview(asDatabase(database), TENANT_ID, 'review-1');
+    expect(result).toEqual({ deletedDeliveries: 2 });
+
+    // ONE assertion per tree — never a single aggregate snapshot check.
+    expect(await nodeExists(database, `reviewDrafts/${TENANT_ID}/review-1`)).toBe(false);
+    expect(await nodeExists(database, `reviewVersions/${TENANT_ID}/review-1`)).toBe(false);
+    expect(await nodeExists(database, `reviewVersionIndex/${TENANT_ID}/review-1`)).toBe(false);
+    expect(await nodeExists(database, `reviewStatus/${TENANT_ID}/review-1`)).toBe(false);
+    expect(await nodeExists(database, `reviewDeliveries/${TENANT_ID}/review-1`)).toBe(false);
+    expect(await nodeExists(database, `shareTokens/${tokens[0]}`)).toBe(false);
+    expect(await nodeExists(database, `shareTokens/${tokens[1]}`)).toBe(false);
+  });
+
+  it('has a blast radius of exactly one review: a sibling review and a foreign tenant survive untouched', async () => {
+    const database = new FakeDatabase();
+    const doomedTokens = await seedArchivedDeliveredReview(database, TENANT_ID, 'review-1', 1);
+    const siblingTokens = await seedArchivedDeliveredReview(database, TENANT_ID, 'review-2', 1);
+    const foreignTokens = await seedArchivedDeliveredReview(database, 'tenant-2', 'review-1', 1);
+
+    await deleteReview(asDatabase(database), TENANT_ID, 'review-1');
+
+    expect(await nodeExists(database, `shareTokens/${doomedTokens[0]}`)).toBe(false);
+
+    // Sibling review under the SAME tenant.
+    expect(await nodeExists(database, `reviewDrafts/${TENANT_ID}/review-2`)).toBe(true);
+    expect(await nodeExists(database, `reviewVersions/${TENANT_ID}/review-2`)).toBe(true);
+    expect(await nodeExists(database, `reviewVersionIndex/${TENANT_ID}/review-2`)).toBe(true);
+    expect(await nodeExists(database, `reviewStatus/${TENANT_ID}/review-2`)).toBe(true);
+    expect(await nodeExists(database, `reviewDeliveries/${TENANT_ID}/review-2`)).toBe(true);
+    expect(await nodeExists(database, `shareTokens/${siblingTokens[0]}`)).toBe(true);
+
+    // A same-reviewId review under a DIFFERENT tenant.
+    expect(await nodeExists(database, 'reviewDrafts/tenant-2/review-1')).toBe(true);
+    expect(await nodeExists(database, 'reviewVersions/tenant-2/review-1')).toBe(true);
+    expect(await nodeExists(database, 'reviewDeliveries/tenant-2/review-1')).toBe(true);
+    expect(await nodeExists(database, `shareTokens/${foreignTokens[0]}`)).toBe(true);
+  });
+
+  it('nulls the token of a CORRUPT delivery record too — a schema failure must never leave a live bearer credential behind', async () => {
+    const database = new FakeDatabase();
+    const [goodToken] = await seedArchivedDeliveredReview(database, TENANT_ID, 'review-1', 1);
+    // A record that fails `reviewDeliveryRecordSchema` on every field but `token`.
+    database.seed(`reviewDeliveries/${TENANT_ID}/review-1/delivery-corrupt`, {
+      token: 'tok-corrupt',
+    });
+    database.seed('shareTokens/tok-corrupt', {
+      shareId: buildReviewShareId(TENANT_ID, 'review-1', 1),
+      ownerUid: TENANT_ID,
+      permissions: 'view',
+      createdAt: 1,
+    });
+
+    const result = await deleteReview(asDatabase(database), TENANT_ID, 'review-1');
+
+    expect(result.deletedDeliveries).toBe(2);
+    expect(await nodeExists(database, `shareTokens/${goodToken}`)).toBe(false);
+    expect(await nodeExists(database, 'shareTokens/tok-corrupt')).toBe(false);
+  });
+
+  it('defensively sweeps the root-level sharesByUser orphan row for every published version', async () => {
+    const database = new FakeDatabase();
+    await seedArchivedDeliveredReview(database, TENANT_ID, 'review-1', 1);
+    const shareId = buildReviewShareId(TENANT_ID, 'review-1', 1);
+    database.seed(`sharesByUser/${TENANT_ID}/${shareId}`, 'some-token');
+
+    await deleteReview(asDatabase(database), TENANT_ID, 'review-1');
+
+    expect(await nodeExists(database, `sharesByUser/${TENANT_ID}/${shareId}`)).toBe(false);
+  });
+
+  it('leaves countOpenDrafts correct after a delete — the removed key no longer contributes and never throws', async () => {
+    const database = new FakeDatabase();
+    await seedArchivedDeliveredReview(database, TENANT_ID, 'review-1', 1);
+    await autosaveDraft(asDatabase(database), TENANT_ID, 'review-2', { sections: [] }, 0);
+
+    await deleteReview(asDatabase(database), TENANT_ID, 'review-1');
+
+    await expect(countOpenDrafts(asDatabase(database), TENANT_ID)).resolves.toBe(1);
+  });
+});
+
+describe('unarchiveReview', () => {
+  it('restores a published-then-archived review to published, preserving latestVersion', async () => {
+    const database = new FakeDatabase();
+    await autosaveDraft(asDatabase(database), TENANT_ID, 'review-1', { sections: [] }, 0);
+    await publishReview(asDatabase(database), TENANT_ID, 'review-1', {
+      coachUid: COACH_UID,
+      sessionId: SESSION_ID,
+    });
+    await archiveReview(asDatabase(database), TENANT_ID, 'review-1');
+
+    await unarchiveReview(asDatabase(database), TENANT_ID, 'review-1');
+
+    await expect(getReviewStatus(asDatabase(database), TENANT_ID, 'review-1')).resolves.toEqual({
+      status: 'published',
+      latestVersion: 1,
+    });
+  });
+
+  // 260725-juj: the never-published branch must write the STORED shape — no
+  // `latestVersion` key at all, never a literal `null` that RTDB would strip.
+  it('restores a never-published archived review to draft, and the stored record has NO latestVersion key', async () => {
+    const database = new FakeDatabase();
+    await autosaveDraft(asDatabase(database), TENANT_ID, 'review-1', { sections: [] }, 0);
+    await archiveReview(asDatabase(database), TENANT_ID, 'review-1');
+
+    await unarchiveReview(asDatabase(database), TENANT_ID, 'review-1');
+
+    await expect(getReviewStatus(asDatabase(database), TENANT_ID, 'review-1')).resolves.toEqual({
+      status: 'draft',
+      latestVersion: null,
+    });
+    const raw = (await database.ref(`reviewStatus/${TENANT_ID}/review-1`).get()).val() as Record<
+      string,
+      unknown
+    >;
+    expect(raw).toEqual({ status: 'draft' });
+    expect('latestVersion' in raw).toBe(false);
+  });
+
+  it('is idempotent — a second call on an already-published review resolves and recomputes the same status', async () => {
+    const database = new FakeDatabase();
+    await autosaveDraft(asDatabase(database), TENANT_ID, 'review-1', { sections: [] }, 0);
+    await publishReview(asDatabase(database), TENANT_ID, 'review-1', {
+      coachUid: COACH_UID,
+      sessionId: SESSION_ID,
+    });
+    await archiveReview(asDatabase(database), TENANT_ID, 'review-1');
+
+    await unarchiveReview(asDatabase(database), TENANT_ID, 'review-1');
+    await expect(unarchiveReview(asDatabase(database), TENANT_ID, 'review-1')).resolves.toEqual({
+      status: 'published',
+      latestVersion: 1,
+    });
+
+    await expect(getReviewStatus(asDatabase(database), TENANT_ID, 'review-1')).resolves.toEqual({
+      status: 'published',
+      latestVersion: 1,
+    });
+  });
+
+  it('is a genuine no-op on a never-archived plain draft', async () => {
+    const database = new FakeDatabase();
+    await autosaveDraft(asDatabase(database), TENANT_ID, 'review-1', { sections: [] }, 0);
+
+    await expect(unarchiveReview(asDatabase(database), TENANT_ID, 'review-1')).resolves.toEqual({
+      status: 'draft',
+      latestVersion: null,
+    });
+
+    await expect(getReviewStatus(asDatabase(database), TENANT_ID, 'review-1')).resolves.toEqual({
+      status: 'draft',
+      latestVersion: null,
+    });
+  });
+
+  it('throws NotFoundError for a review with no draft node — idempotent is not the same as forgiving a bad id', async () => {
+    const database = new FakeDatabase();
+    await expect(unarchiveReview(asDatabase(database), TENANT_ID, 'ghost-review')).rejects.toThrow(
+      NotFoundError,
+    );
   });
 });

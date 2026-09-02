@@ -64,7 +64,8 @@
     "allTime": "All time",
     "months3": "3m",
     "months6": "6m",
-    "months12": "12m"
+    "months12": "12m",
+    "autoWidened": "No matches in the last {{range}} — showing all time."
   },
   "shared": {
     "noFighters": {
@@ -700,6 +701,12 @@
     "player": {
       "compactAria": "Switch to compact player",
       "fillAria": "Switch to full-size player"
+    },
+    "sidebar": {
+      "collapseAria": "Collapse match list",
+      "expandAria": "Expand match list",
+      "activeFilters_one": "{{count}} active filter",
+      "activeFilters_other": "{{count}} active filters"
     }
   },
   "tags": {
@@ -915,7 +922,10 @@
       "resyncSuffix": "and hit Sync now.",
       "tournament": "Tournament",
       "event": "Event",
-      "dates": "Dates"
+      "dates": "Dates",
+      "hiddenByRange_one": "{{count}} tournament outside the last {{range}}.",
+      "hiddenByRange_other": "{{count}} tournaments outside the last {{range}}.",
+      "showAllTime": "Show all time"
     },
     "mix": {
       "title": "Match-Type Mix Over Time",
@@ -1894,7 +1904,12 @@
         },
         "citation": {
           "jumpAria": "Jump to {{timestamp}}",
-          "jumpToSourceAria": "Jump to {{timestamp}} in {{source}}"
+          "jumpToSourceAria": "Jump to {{timestamp}} in {{source}}",
+          "stripAria": "Citations in {{section}}",
+          "removeAria": "Remove citation at {{timestamp}}"
+        },
+        "layout": {
+          "resizeAria": "Resize the video pane"
         },
         "citeSectionPrompt": {
           "title": "Cite into which section?",
@@ -1943,10 +1958,25 @@
           "deliver": "Deliver",
           "copyLink": "Copy link",
           "revokeLink": "Revoke link",
-          "archive": "Archive review"
+          "archive": "Archive review",
+          "unarchive": "Unarchive review",
+          "delete": "Delete review"
         },
         "archiveToast": "Review archived",
-        "archiveError": "Something went wrong archiving this review."
+        "archiveError": "Something went wrong archiving this review.",
+        "unarchiveToast": "Review unarchived",
+        "unarchiveError": "Something went wrong unarchiving this review.",
+        "deletedToast": "Review deleted",
+        "deleteError": "Something went wrong deleting this review.",
+        "deleteDialog": {
+          "title": "Delete this review?",
+          "description_one": "This permanently deletes this archived review and every published version of it. Its {{count}} delivery link stops working immediately and cannot be restored.",
+          "description_other": "This permanently deletes this archived review and every published version of it. Its {{count}} delivery links stop working immediately and cannot be restored.",
+          "confirmWord": "DELETE",
+          "confirmLabel": "Type \"{{word}}\" to confirm",
+          "confirm": "Delete review",
+          "pending": "Deleting..."
+        }
       }
     },
     "disabled": {

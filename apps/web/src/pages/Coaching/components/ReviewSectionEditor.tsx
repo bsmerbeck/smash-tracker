@@ -1,15 +1,18 @@
 import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { MoreHorizontal, Plus } from 'lucide-react';
+import { MoreHorizontal, Plus, X } from 'lucide-react';
 import type { ReviewSection, ReviewSectionKind } from '@smash-tracker/shared';
 import { Button } from '@/components/ui/button';
-import { Textarea } from '@/components/ui/textarea';
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import { locateCitationSpans, removeCitationSpan } from '@/lib/citationSpans';
+import { formatTimestamp } from '@/lib/vod';
+import { CitationChip } from './CitationChip';
+import { CitationEditor } from './CitationEditor';
 
 /** The four suggested blocks (D-03) — always offered as adds when missing/hidden, in this fixed display order. */
 const SUGGESTED_KINDS: ReviewSectionKind[] = ['summary', 'strengths', 'priorities', 'practicePlan'];
@@ -31,18 +34,29 @@ export interface ReviewSectionEditorProps {
   onAdd: (kind: ReviewSectionKind) => void;
   /**
    * D-04: registers (or unregisters, on unmount/hide) each section's live
-   * `<textarea>` element with the composer, keyed by section id — the
+   * editor host element with the composer, keyed by section id — the
    * composer's `Cite` handler reads `document.activeElement` against this
    * map to decide "insert at the focused editor's cursor" vs. "ask which
    * section" (never silently choose). Optional so every existing caller/
    * test that doesn't need citation insertion is unaffected.
    */
-  registerTextareaRef?: (sectionId: string, el: HTMLTextAreaElement | null) => void;
+  registerEditorRef?: (sectionId: string, el: HTMLElement | null) => void;
+  /**
+   * 260826-kio: fires when the coach clicks a section's citation chip —
+   * either an inline chip inside the editable text (260826-s46) or one in
+   * the strip below it. Optional so every existing caller/test that doesn't
+   * need chip activation is unaffected.
+   */
+  onActivateCitation?: (matchId: string, seconds: number) => void;
+  /** Resolves a citation's `matchId` to a display source label — see `SafeMarkdownSource`/`safeMarkdown.tsx`'s identical prop for the multi-VOD rationale. */
+  resolveCitationSource?: (matchId: string) => { label: string } | undefined;
 }
 
 /**
- * The ordered suggested-block editors (D-03): textarea-per-section (D-10 —
- * no rich-text/contentEditable framework), each with an overflow `⋯` menu
+ * The ordered suggested-block editors (D-03): one `CitationEditor` per
+ * section — a plain-text editing surface with atomic inline citation chips
+ * (260826-s46), still D-10-compliant since no rich-text/contentEditable
+ * FRAMEWORK is involved — each with an overflow `⋯` menu
  * whose only action is `Hide section` (never an ×) — hiding preserves the
  * section's content (it stays in `sections`, just `hidden: true`) and shows
  * a real, focusable Undo button (D-17). `Add section` offers any missing or
@@ -56,7 +70,9 @@ export function ReviewSectionEditor({
   onHide,
   onShow,
   onAdd,
-  registerTextareaRef,
+  registerEditorRef,
+  onActivateCitation,
+  resolveCitationSource,
 }: ReviewSectionEditorProps) {
   const { t } = useTranslation();
 
@@ -142,49 +158,103 @@ export function ReviewSectionEditor({
 
   return (
     <div className="flex flex-col gap-3">
-      {visibleSections.map((section) => (
-        <div key={section.id} className="rounded-lg border bg-card">
-          <div className="flex items-center gap-2 border-b px-3.5 py-2">
-            <h3 className="text-sm font-semibold">{sectionTitle(section)}</h3>
-            <div className="ml-auto">
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button
-                    ref={registerMenuRef(section.id)}
-                    variant="ghost"
-                    size="icon-sm"
-                    aria-label={t('coaching.reviews.composer.sections.sectionOptionsAria', {
-                      section: sectionTitle(section),
-                    })}
+      {visibleSections.map((section) => {
+        // 260826-kio: computed fresh from the CURRENT body on every render —
+        // never cached across renders, or the offsets go stale the moment
+        // the coach types.
+        const citationSpans = locateCitationSpans(section.body).filter(
+          (span) => span.token != null,
+        );
+        return (
+          <div key={section.id} className="rounded-lg border bg-card">
+            <div className="flex items-center gap-2 border-b px-3.5 py-2">
+              <h3 className="text-sm font-semibold">{sectionTitle(section)}</h3>
+              <div className="ml-auto">
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button
+                      ref={registerMenuRef(section.id)}
+                      variant="ghost"
+                      size="icon-sm"
+                      aria-label={t('coaching.reviews.composer.sections.sectionOptionsAria', {
+                        section: sectionTitle(section),
+                      })}
+                    >
+                      <MoreHorizontal className="size-4" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent
+                    align="end"
+                    // D-17: hiding moves focus to the Undo button ourselves —
+                    // suppress radix's default "return focus to the trigger on
+                    // close" so it doesn't fight our own focus management.
+                    onCloseAutoFocus={(event) => event.preventDefault()}
                   >
-                    <MoreHorizontal className="size-4" />
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent
-                  align="end"
-                  // D-17: hiding moves focus to the Undo button ourselves —
-                  // suppress radix's default "return focus to the trigger on
-                  // close" so it doesn't fight our own focus management.
-                  onCloseAutoFocus={(event) => event.preventDefault()}
-                >
-                  <DropdownMenuItem onSelect={() => handleHide(section)}>
-                    {t('coaching.reviews.composer.sections.hideSection')}
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
+                    <DropdownMenuItem onSelect={() => handleHide(section)}>
+                      {t('coaching.reviews.composer.sections.hideSection')}
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </div>
             </div>
+            <div className="px-3.5 py-3">
+              <CitationEditor
+                value={section.body}
+                onChange={(value) => onChangeBody(section.id, value)}
+                ariaLabel={sectionTitle(section)}
+                editorRef={(el) => registerEditorRef?.(section.id, el)}
+                testId={`section-${section.id}`}
+                className="min-h-24 border-none p-0 shadow-none focus-visible:ring-0"
+                onActivateCitation={onActivateCitation}
+                resolveCitationSource={resolveCitationSource}
+              />
+            </div>
+            {citationSpans.length > 0 && (
+              <ul
+                aria-label={t('coaching.reviews.composer.citation.stripAria', {
+                  section: sectionTitle(section),
+                })}
+                className="flex flex-wrap items-center gap-2 border-t px-3.5 py-2"
+              >
+                {citationSpans.map((span) => {
+                  const token = span.token!;
+                  return (
+                    <li key={`${span.start}-${span.end}`} className="flex items-center gap-1">
+                      <span onMouseDown={(event) => event.preventDefault()}>
+                        <CitationChip
+                          matchId={token.sourceVodRef}
+                          seconds={token.seconds}
+                          label={token.label}
+                          source={resolveCitationSource?.(token.sourceVodRef)?.label}
+                          onActivate={(matchId, seconds) => onActivateCitation?.(matchId, seconds)}
+                        />
+                      </span>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon-sm"
+                        aria-label={t('coaching.reviews.composer.citation.removeAria', {
+                          timestamp: formatTimestamp(token.seconds),
+                        })}
+                        // D-04/F8: a chip's × sits near the section editor —
+                        // preventing the mousedown's default focus move keeps
+                        // `document.activeElement` on the editor host so
+                        // cursor-insertion citing never silently breaks.
+                        onMouseDown={(event) => event.preventDefault()}
+                        onClick={() =>
+                          onChangeBody(section.id, removeCitationSpan(section.body, span))
+                        }
+                      >
+                        <X className="size-3.5" aria-hidden="true" />
+                      </Button>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
           </div>
-          <div className="px-3.5 py-3">
-            <Textarea
-              ref={(el) => registerTextareaRef?.(section.id, el)}
-              value={section.body}
-              onChange={(event) => onChangeBody(section.id, event.target.value)}
-              aria-label={sectionTitle(section)}
-              className="min-h-24 border-none p-0 shadow-none focus-visible:ring-0"
-            />
-          </div>
-        </div>
-      ))}
+        );
+      })}
 
       {addableKinds.length > 0 && (
         <DropdownMenu>

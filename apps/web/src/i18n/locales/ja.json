@@ -64,7 +64,8 @@
     "allTime": "全期間",
     "months3": "3ヶ月",
     "months6": "6ヶ月",
-    "months12": "12ヶ月"
+    "months12": "12ヶ月",
+    "autoWidened": "直近{{range}}に対戦がありません — 全期間を表示します。"
   },
   "shared": {
     "noFighters": {
@@ -700,6 +701,12 @@
     "player": {
       "compactAria": "コンパクトプレーヤーに切り替え",
       "fillAria": "フルサイズプレーヤーに切り替え"
+    },
+    "sidebar": {
+      "collapseAria": "試合リストを折りたたむ",
+      "expandAria": "試合リストを展開",
+      "activeFilters_one": "有効なフィルター{{count}}件",
+      "activeFilters_other": "有効なフィルター{{count}}件"
     }
   },
   "tags": {
@@ -915,7 +922,10 @@
       "resyncSuffix": "から同期を実行してください。",
       "tournament": "大会",
       "event": "種目",
-      "dates": "日程"
+      "dates": "日程",
+      "hiddenByRange_one": "直近{{range}}の範囲外の大会が{{count}}件。",
+      "hiddenByRange_other": "直近{{range}}の範囲外の大会が{{count}}件。",
+      "showAllTime": "全期間を表示"
     },
     "mix": {
       "title": "対戦タイプの推移",
@@ -1894,7 +1904,12 @@
         },
         "citation": {
           "jumpAria": "{{timestamp}} にジャンプ",
-          "jumpToSourceAria": "{{source}} の {{timestamp}} にジャンプ"
+          "jumpToSourceAria": "{{source}} の {{timestamp}} にジャンプ",
+          "stripAria": "{{section}} の引用",
+          "removeAria": "{{timestamp}} の引用を削除"
+        },
+        "layout": {
+          "resizeAria": "動画ペインのサイズを変更"
         },
         "citeSectionPrompt": {
           "title": "どのセクションに引用しますか？",
@@ -1943,10 +1958,25 @@
           "deliver": "配信する",
           "copyLink": "リンクをコピー",
           "revokeLink": "リンクを取り消す",
-          "archive": "レビューをアーカイブ"
+          "archive": "レビューをアーカイブ",
+          "unarchive": "レビューのアーカイブを解除",
+          "delete": "レビューを削除"
         },
         "archiveToast": "レビューをアーカイブしました",
-        "archiveError": "このレビューのアーカイブ中にエラーが発生しました。"
+        "archiveError": "このレビューのアーカイブ中にエラーが発生しました。",
+        "unarchiveToast": "レビューのアーカイブを解除しました",
+        "unarchiveError": "このレビューのアーカイブ解除中にエラーが発生しました。",
+        "deletedToast": "レビューを削除しました",
+        "deleteError": "このレビューの削除中にエラーが発生しました。",
+        "deleteDialog": {
+          "title": "このレビューを削除しますか？",
+          "description_one": "このアーカイブ済みレビューと、公開されたすべてのバージョンが完全に削除されます。{{count}} 件の配信リンクは直ちに使用できなくなり、復元できません。",
+          "description_other": "このアーカイブ済みレビューと、公開されたすべてのバージョンが完全に削除されます。{{count}} 件の配信リンクは直ちに使用できなくなり、復元できません。",
+          "confirmWord": "DELETE",
+          "confirmLabel": "確認のため「{{word}}」と入力してください",
+          "confirm": "レビューを削除",
+          "pending": "削除中..."
+        }
       }
     },
     "disabled": {

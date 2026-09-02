@@ -1,8 +1,10 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { Database } from 'firebase-admin/database';
 import { FakeDatabase } from '../test-support/fakeDatabase.js';
-import { ConflictError, ForbiddenError } from '../services/rtdb.js';
+import { ConflictError, ForbiddenError, RtdbService } from '../services/rtdb.js';
 import { grantEntitlement } from '../research/entitlements.js';
+import { autosaveDraft, publishReview } from './reviews.js';
+import { createReviewDelivery } from './reviewDeliveries.js';
 import {
   archiveClient,
   CANONICAL_TENANT_TREES,
@@ -729,6 +731,346 @@ describe('deleteClient', () => {
     // No owner membership ever existed, so the (owner-uid-resolution) step
     // must be a pure no-op — no clientOwnedTenants tree is created at all.
     expect(dump.clientOwnedTenants).toBeUndefined();
+  });
+
+  // Quick 260901-fmb (T-FMB-01, the production gap): createReviewDelivery
+  // mints a root-level shareTokens/{token} row that TENANT_DELETION_TREES
+  // never reaches — nulling reviewDeliveries/{tenantId} deletes the DELIVERY
+  // RECORDS, but the bearer token itself lives at RTDB's root. Same class of
+  // orphan as the Phase 20 session-delivery gap, missed when review
+  // deliveries shipped.
+  it('collects and nulls a review-delivery bearer token (260901-fmb T-FMB-01)', async () => {
+    const database = new FakeDatabase();
+    const { tenantId } = await createClient(asDatabase(database), COACH_UID, 'Alex', {
+      sessionId: SESSION_ID,
+    });
+    const TOKEN_A = 'tok-review-aaaaaaaaaaaaaaaa';
+    database.seed(`reviewDeliveries/${tenantId}/review-1/delivery-1`, {
+      status: 'delivered',
+      token: TOKEN_A,
+      version: 1,
+      createdAt: 1,
+    });
+    database.seed(`shareTokens/${TOKEN_A}`, {
+      shareId: `review:${tenantId}:review-1:1`,
+      ownerUid: tenantId,
+      permissions: 'view',
+      createdAt: 1,
+    });
+
+    await deleteClient(asDatabase(database), COACH_UID, tenantId, null);
+
+    const dump = database.dump() as Record<string, unknown>;
+    // Individually asserted: the tree null already passed today, the token
+    // null is the new behavior this task adds.
+    expect((dump.shareTokens as Record<string, unknown> | undefined)?.[TOKEN_A]).toBeUndefined();
+    expect(
+      (dump.reviewDeliveries as Record<string, unknown> | undefined)?.[tenantId],
+    ).toBeUndefined();
+  });
+
+  it('collects review-delivery tokens across multiple reviews and multiple deliveries per review (260901-fmb)', async () => {
+    const database = new FakeDatabase();
+    const { tenantId } = await createClient(asDatabase(database), COACH_UID, 'Alex', {
+      sessionId: SESSION_ID,
+    });
+    const TOKENS = [
+      'tok-review1-d1-aaaaaaaaaaaaa',
+      'tok-review1-d2-bbbbbbbbbbbbb',
+      'tok-review2-d1-ccccccccccccc',
+      'tok-review2-d2-ddddddddddddd',
+    ];
+    database.seed(`reviewDeliveries/${tenantId}/review-1/delivery-1`, {
+      status: 'delivered',
+      token: TOKENS[0],
+      version: 1,
+      createdAt: 1,
+    });
+    database.seed(`reviewDeliveries/${tenantId}/review-1/delivery-2`, {
+      status: 'revoked',
+      token: TOKENS[1],
+      version: 1,
+      createdAt: 2,
+    });
+    database.seed(`reviewDeliveries/${tenantId}/review-2/delivery-1`, {
+      status: 'delivered',
+      token: TOKENS[2],
+      version: 1,
+      createdAt: 3,
+    });
+    database.seed(`reviewDeliveries/${tenantId}/review-2/delivery-2`, {
+      status: 'delivered',
+      token: TOKENS[3],
+      version: 2,
+      createdAt: 4,
+    });
+    for (const token of TOKENS) {
+      database.seed(`shareTokens/${token}`, {
+        shareId: `review:${tenantId}:review-x:1`,
+        ownerUid: tenantId,
+        permissions: 'view',
+        createdAt: 1,
+      });
+    }
+
+    await deleteClient(asDatabase(database), COACH_UID, tenantId, null);
+
+    const dump = database.dump() as Record<string, unknown>;
+    const shareTokens = dump.shareTokens as Record<string, unknown> | undefined;
+    for (const token of TOKENS) {
+      expect(shareTokens?.[token]).toBeUndefined();
+    }
+  });
+
+  // Quick 260901-fmb (T-FMB-02, the reported gap): RtdbService.createShare's
+  // kind:'coachReview' branch writes sharesByUser/{tenantId}/{shareId} — no
+  // route can reach that branch with a tenant id today (see the SUMMARY's
+  // reverse-index audit), but the branch is live and unit-exercised, so a
+  // future writer that calls createShare(tenantId, ...) would silently
+  // orphan this subgraph forever without this sweep.
+  it('sweeps the tenant-keyed sharesByUser subgraph — index, tokens, and snapshots (260901-fmb T-FMB-02)', async () => {
+    const database = new FakeDatabase();
+    const { tenantId } = await createClient(asDatabase(database), COACH_UID, 'Alex', {
+      sessionId: SESSION_ID,
+    });
+    const TOKEN_B = 'tok-shareby-bbbbbbbbbbbbbbbb';
+    const TOKEN_C = 'tok-shareby-cccccccccccccccc';
+    const PUSH_KEY = '-fakePushKeyExampleT2';
+    database.seed(`sharesByUser/${tenantId}/review:${tenantId}:review-1:1`, TOKEN_B);
+    database.seed(`shareTokens/${TOKEN_B}`, {
+      shareId: `review:${tenantId}:review-1:1`,
+      ownerUid: tenantId,
+      permissions: 'view',
+      createdAt: 1,
+    });
+    database.seed(`sharesByUser/${tenantId}/${PUSH_KEY}`, TOKEN_C);
+    database.seed(`shareTokens/${TOKEN_C}`, {
+      shareId: PUSH_KEY,
+      ownerUid: tenantId,
+      permissions: 'view',
+      createdAt: 1,
+    });
+    database.seed(`shareSnapshots/${PUSH_KEY}`, { seeded: true });
+
+    await deleteClient(asDatabase(database), COACH_UID, tenantId, null);
+
+    const dump = database.dump() as Record<string, unknown>;
+    expect((dump.sharesByUser as Record<string, unknown> | undefined)?.[tenantId]).toBeUndefined();
+    expect((dump.shareTokens as Record<string, unknown> | undefined)?.[TOKEN_B]).toBeUndefined();
+    expect((dump.shareTokens as Record<string, unknown> | undefined)?.[TOKEN_C]).toBeUndefined();
+    expect(
+      (dump.shareSnapshots as Record<string, unknown> | undefined)?.[PUSH_KEY],
+    ).toBeUndefined();
+  });
+
+  it('deletes a tenant with no sharesByUser or reviewDeliveries node without resurrecting either as an empty object (260901-fmb)', async () => {
+    const database = new FakeDatabase();
+    const { tenantId } = await createClient(asDatabase(database), COACH_UID, 'Alex', {
+      sessionId: SESSION_ID,
+    });
+
+    await expect(
+      deleteClient(asDatabase(database), COACH_UID, tenantId, null),
+    ).resolves.toBeUndefined();
+
+    const dump = database.dump() as Record<string, unknown>;
+    expect(dump.sharesByUser).toBeUndefined();
+    expect(dump.reviewDeliveries).toBeUndefined();
+  });
+
+  // Quick 260901-fmb (T-FMB-03): a corrupt stored token value must never
+  // become an RTDB-illegal update KEY and abort the whole cascade — this
+  // covers all three token sources, including a retrofit of the EXISTING
+  // session-delivery loop which previously had no shape guard at all.
+  it('skips corrupt token values in all three sources instead of throwing (260901-fmb T-FMB-03)', async () => {
+    const database = new FakeDatabase();
+    const { tenantId } = await createClient(asDatabase(database), COACH_UID, 'Alex', {
+      sessionId: SESSION_ID,
+    });
+    database.seed(`sharesByUser/${tenantId}/corrupt`, 'bad.token');
+    database.seed(`sharesByUser/${tenantId}/notAString`, 42);
+    database.seed(`reviewDeliveries/${tenantId}/r/d1`, { token: 99 });
+    database.seed(`sessionDeliveries/${tenantId}/s/d1`, { token: 'x.y' });
+
+    await expect(
+      deleteClient(asDatabase(database), COACH_UID, tenantId, null),
+    ).resolves.toBeUndefined();
+
+    const dump = database.dump() as Record<string, unknown>;
+    expect((dump.clientTenants as Record<string, unknown> | undefined)?.[tenantId]).toBeUndefined();
+  });
+
+  // Quick 260901-fmb (T-FMB-04, blast radius): every new path is derived
+  // from {tenantId}-addressed reads only — a personal uid's full share graph
+  // and a second tenant's review-delivery token must survive byte-unchanged.
+  it('leaves a second tenant and a personal uid share graph byte-unchanged (260901-fmb T-FMB-04)', async () => {
+    const database = new FakeDatabase();
+    const { tenantId } = await createClient(asDatabase(database), COACH_UID, 'Alex', {
+      sessionId: SESSION_ID,
+    });
+    const { tenantId: OTHER_TENANT_ID } = await createClient(
+      asDatabase(database),
+      COACH_UID,
+      'Riley',
+      { sessionId: SESSION_ID },
+    );
+
+    const OTHER_UID = 'personal-uid-1';
+    const TOKEN_D = 'tok-personal-dddddddddddddddd';
+    const PUSH_KEY_2 = '-fakePushKeyExampleT4';
+    database.seed(`sharesByUser/${OTHER_UID}/${PUSH_KEY_2}`, TOKEN_D);
+    database.seed(`shareTokens/${TOKEN_D}`, {
+      shareId: PUSH_KEY_2,
+      ownerUid: OTHER_UID,
+      permissions: 'view',
+      createdAt: 1,
+    });
+    database.seed(`shareSnapshots/${PUSH_KEY_2}`, { seeded: true });
+
+    const TOKEN_E = 'tok-othertenant-eeeeeeeeeeeee';
+    database.seed(`reviewDeliveries/${OTHER_TENANT_ID}/review-1/delivery-1`, {
+      status: 'delivered',
+      token: TOKEN_E,
+      version: 1,
+      createdAt: 1,
+    });
+    database.seed(`shareTokens/${TOKEN_E}`, {
+      shareId: `review:${OTHER_TENANT_ID}:review-1:1`,
+      ownerUid: OTHER_TENANT_ID,
+      permissions: 'view',
+      createdAt: 1,
+    });
+
+    await deleteClient(asDatabase(database), COACH_UID, tenantId, null);
+
+    const dump = database.dump() as Record<string, unknown>;
+    expect((dump.sharesByUser as Record<string, unknown> | undefined)?.[OTHER_UID]).toBeDefined();
+    expect((dump.shareTokens as Record<string, unknown> | undefined)?.[TOKEN_D]).toBeDefined();
+    expect(
+      (dump.shareSnapshots as Record<string, unknown> | undefined)?.[PUSH_KEY_2],
+    ).toBeDefined();
+    expect(
+      (dump.reviewDeliveries as Record<string, unknown> | undefined)?.[OTHER_TENANT_ID],
+    ).toBeDefined();
+    expect((dump.shareTokens as Record<string, unknown> | undefined)?.[TOKEN_E]).toBeDefined();
+  });
+
+  // Quick 260901-fmb (T-FMB-05): pins the decision NOT to register
+  // sharesByUser in either tenant-tree manifest — research/migration/
+  // manifest.ts's module-load-time TREE_DESCRIPTOR_LOCK would throw at
+  // import time across the whole API if it were added there. A future
+  // contributor must not "tidy" this into the manifest.
+  it('never registers sharesByUser in either tenant tree manifest — explicit cleanup only (260901-fmb T-FMB-05)', () => {
+    expect(CANONICAL_TENANT_TREES as readonly string[]).not.toContain('sharesByUser');
+    expect(TENANT_DELETION_TREES as readonly string[]).not.toContain('sharesByUser');
+  });
+});
+
+describe('deleteClient — end-to-end zero-orphan proof through real production writers (260901-fmb Task 2)', () => {
+  it('a token minted by the real createReviewDelivery is resolvable before delete, gone and unresolvable after (T-FMB-01 end-to-end)', async () => {
+    const database = new FakeDatabase();
+    const { tenantId } = await createClient(asDatabase(database), COACH_UID, 'Alex', {
+      sessionId: SESSION_ID,
+    });
+    await autosaveDraft(
+      asDatabase(database),
+      tenantId,
+      'review-1',
+      {
+        // RTDB drops an empty-array `sections` key on write, which would
+        // make the published version fail clientVisibleVersionSchema on
+        // read (a required, non-nullish field) — a real, non-empty section
+        // is required for getShareByToken to resolve anything at all.
+        sections: [{ id: 'summary', kind: 'summary', hidden: false, body: 'Great neutral game.' }],
+      },
+      0,
+    );
+    await publishReview(asDatabase(database), tenantId, 'review-1', {
+      coachUid: COACH_UID,
+      sessionId: SESSION_ID,
+    });
+
+    const { token } = await createReviewDelivery(
+      asDatabase(database),
+      tenantId,
+      'review-1',
+      1,
+      'https://grandfinals.gg',
+    );
+
+    const rtdb = new RtdbService(asDatabase(database));
+    // Sanity: the fixture really minted a resolvable link — without this the
+    // post-delete assertion below could pass vacuously.
+    await expect(rtdb.getShareByToken(token)).resolves.not.toBeNull();
+
+    await deleteClient(asDatabase(database), COACH_UID, tenantId, null);
+
+    const dump = database.dump() as Record<string, unknown>;
+    expect((dump.shareTokens as Record<string, unknown> | undefined)?.[token]).toBeUndefined();
+    await expect(rtdb.getShareByToken(token)).resolves.toBeNull();
+  });
+
+  // Test 9 (session-delivery end-to-end) is deliberately NOT duplicated
+  // here — sessionDeliveries.test.ts:738-763
+  // ("nulls the root-level shareTokens/{token} for every session delivery
+  // under the deleted tenant") already exercises the Phase 20 cascade
+  // through the real createSessionDelivery writer, over
+  // CANONICAL_TENANT_TREES. See SUMMARY Deviations for the full note.
+
+  it('leaves no sharesByUser/shareTokens/shareSnapshots node addressing or owned by the deleted tenant (whole-subgraph zero-orphan sweep)', async () => {
+    const database = new FakeDatabase();
+    const { tenantId } = await createClient(asDatabase(database), COACH_UID, 'Alex', {
+      sessionId: SESSION_ID,
+    });
+    await autosaveDraft(
+      asDatabase(database),
+      tenantId,
+      'review-1',
+      {
+        // RTDB drops an empty-array `sections` key on write, which would
+        // make the published version fail clientVisibleVersionSchema on
+        // read (a required, non-nullish field) — a real, non-empty section
+        // is required for getShareByToken to resolve anything at all.
+        sections: [{ id: 'summary', kind: 'summary', hidden: false, body: 'Great neutral game.' }],
+      },
+      0,
+    );
+    await publishReview(asDatabase(database), tenantId, 'review-1', {
+      coachUid: COACH_UID,
+      sessionId: SESSION_ID,
+    });
+    const { token } = await createReviewDelivery(
+      asDatabase(database),
+      tenantId,
+      'review-1',
+      1,
+      'https://grandfinals.gg',
+    );
+
+    // Unrelated personal-uid token, seeded first so the assertion below is
+    // not trivially true over an empty tree.
+    const OTHER_UID = 'personal-uid-2';
+    const OTHER_TOKEN = 'tok-personal-ffffffffffffffff';
+    database.seed(`sharesByUser/${OTHER_UID}/-fakeSweepKeyT10`, OTHER_TOKEN);
+    database.seed(`shareTokens/${OTHER_TOKEN}`, {
+      shareId: '-fakeSweepKeyT10',
+      ownerUid: OTHER_UID,
+      permissions: 'view',
+      createdAt: 1,
+    });
+
+    await deleteClient(asDatabase(database), COACH_UID, tenantId, null);
+
+    const dump = database.dump() as {
+      sharesByUser?: Record<string, unknown>;
+      shareTokens?: Record<string, { ownerUid?: unknown } | undefined>;
+    };
+    expect(dump.sharesByUser?.[tenantId]).toBeUndefined();
+    for (const record of Object.values(dump.shareTokens ?? {})) {
+      expect(record?.ownerUid).not.toBe(tenantId);
+    }
+    expect(dump.shareTokens?.[token]).toBeUndefined();
+    expect(dump.shareTokens?.[OTHER_TOKEN]).toBeDefined();
   });
 });
 
