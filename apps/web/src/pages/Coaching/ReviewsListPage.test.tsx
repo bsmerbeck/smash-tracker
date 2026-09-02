@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -29,6 +29,8 @@ vi.mock('@/lib/firebase', async () => {
 const reviewsList = vi.fn();
 const reviewsCreate = vi.fn();
 const reviewsArchive = vi.fn();
+const reviewsUnarchive = vi.fn();
+const reviewsDelete = vi.fn();
 const reviewsGetDraft = vi.fn();
 const deliveriesList = vi.fn();
 const deliveriesCreate = vi.fn();
@@ -57,6 +59,8 @@ vi.mock('@/lib/api', () => ({
         list: (...args: unknown[]) => reviewsList(...args),
         create: (...args: unknown[]) => reviewsCreate(...args),
         archive: (...args: unknown[]) => reviewsArchive(...args),
+        unarchive: (...args: unknown[]) => reviewsUnarchive(...args),
+        delete: (...args: unknown[]) => reviewsDelete(...args),
         getDraft: (...args: unknown[]) => reviewsGetDraft(...args),
         deliveries: {
           list: (...args: unknown[]) => deliveriesList(...args),
@@ -70,6 +74,7 @@ vi.mock('@/lib/api', () => ({
 
 vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 
+import { toast } from 'sonner';
 import { AuthProvider } from '@/context/AuthContext';
 import { ReviewsListPage } from './ReviewsListPage';
 
@@ -337,6 +342,138 @@ describe('ReviewsListPage', () => {
     await user.click(await screen.findByRole('menuitem', { name: 'Archive review' }));
 
     await waitFor(() => expect(reviewsArchive).toHaveBeenCalledWith('tetra', 'r1'));
+  });
+
+  // Quick 260901-f7a: Unarchive and Delete are ARCHIVED-ONLY. The rule is a
+  // state rule, not an affordance hint — the items must be ABSENT on a
+  // draft/published row, never merely disabled.
+  it('shows neither Unarchive nor Delete on a DRAFT row', async () => {
+    reviewsList.mockResolvedValue([makeReview({ status: 'draft' })]);
+    const user = userEvent.setup();
+    renderList();
+
+    await user.click(await screen.findByRole('button', { name: 'Delivery and more actions' }));
+    await screen.findByRole('menuitem', { name: 'Archive review' });
+
+    expect(screen.queryByRole('menuitem', { name: 'Unarchive review' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('menuitem', { name: 'Delete review' })).not.toBeInTheDocument();
+  });
+
+  it('shows neither Unarchive nor Delete on a PUBLISHED row', async () => {
+    reviewsList.mockResolvedValue([
+      makeReview({ status: 'published', latestVersion: 1, deliveryState: 'not-delivered' }),
+    ]);
+    const user = userEvent.setup();
+    renderList();
+
+    await user.click(await screen.findByRole('button', { name: 'Delivery and more actions' }));
+    await screen.findByRole('menuitem', { name: 'Archive review' });
+
+    expect(screen.queryByRole('menuitem', { name: 'Unarchive review' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('menuitem', { name: 'Delete review' })).not.toBeInTheDocument();
+  });
+
+  it('shows BOTH Unarchive and Delete on an ARCHIVED row', async () => {
+    reviewsList.mockResolvedValue([makeReview({ status: 'archived', latestVersion: 1 })]);
+    const user = userEvent.setup();
+    renderList();
+
+    await user.click(await screen.findByRole('button', { name: 'Delivery and more actions' }));
+
+    expect(await screen.findByRole('menuitem', { name: 'Unarchive review' })).toBeInTheDocument();
+    expect(screen.getByRole('menuitem', { name: 'Delete review' })).toBeInTheDocument();
+  });
+
+  it('Unarchive fires the unarchive mutation and its toast, with no confirm dialog', async () => {
+    reviewsList.mockResolvedValue([makeReview({ status: 'archived', latestVersion: 1 })]);
+    const user = userEvent.setup();
+    renderList();
+
+    await user.click(await screen.findByRole('button', { name: 'Delivery and more actions' }));
+    await user.click(await screen.findByRole('menuitem', { name: 'Unarchive review' }));
+
+    await waitFor(() => expect(reviewsUnarchive).toHaveBeenCalledWith('tetra', 'r1'));
+    await waitFor(() => expect(toast.success).toHaveBeenCalledWith('Review unarchived'));
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  });
+
+  it('Delete opens a typed-confirm dialog whose button stays disabled for a wrong word', async () => {
+    reviewsList.mockResolvedValue([makeReview({ status: 'archived', latestVersion: 1 })]);
+    const user = userEvent.setup();
+    renderList();
+
+    await user.click(await screen.findByRole('button', { name: 'Delivery and more actions' }));
+    await user.click(await screen.findByRole('menuitem', { name: 'Delete review' }));
+
+    const dialog = await screen.findByRole('dialog');
+    const confirm = within(dialog).getByRole('button', { name: 'Delete review' });
+    expect(confirm).toBeDisabled();
+
+    await user.type(within(dialog).getByLabelText(/Type "DELETE" to confirm/), 'delete');
+    expect(confirm).toBeDisabled();
+    expect(reviewsDelete).not.toHaveBeenCalled();
+  });
+
+  it('typing the exact confirm word enables the button and submitting deletes the review', async () => {
+    reviewsList.mockResolvedValue([makeReview({ status: 'archived', latestVersion: 1 })]);
+    reviewsDelete.mockResolvedValue(undefined);
+    const user = userEvent.setup();
+    renderList();
+
+    await user.click(await screen.findByRole('button', { name: 'Delivery and more actions' }));
+    await user.click(await screen.findByRole('menuitem', { name: 'Delete review' }));
+
+    const dialog = await screen.findByRole('dialog');
+    await user.type(within(dialog).getByLabelText(/Type "DELETE" to confirm/), 'DELETE');
+    const confirm = within(dialog).getByRole('button', { name: 'Delete review' });
+    expect(confirm).toBeEnabled();
+
+    await user.click(confirm);
+
+    await waitFor(() => expect(reviewsDelete).toHaveBeenCalledWith('tetra', 'r1'));
+    await waitFor(() => expect(toast.success).toHaveBeenCalledWith('Review deleted'));
+  });
+
+  it('a rejected delete fires the error toast and does not throw', async () => {
+    reviewsList.mockResolvedValue([makeReview({ status: 'archived', latestVersion: 1 })]);
+    reviewsDelete.mockRejectedValue(new Error('nope'));
+    const user = userEvent.setup();
+    renderList();
+
+    await user.click(await screen.findByRole('button', { name: 'Delivery and more actions' }));
+    await user.click(await screen.findByRole('menuitem', { name: 'Delete review' }));
+
+    const dialog = await screen.findByRole('dialog');
+    await user.type(within(dialog).getByLabelText(/Type "DELETE" to confirm/), 'DELETE');
+    await user.click(within(dialog).getByRole('button', { name: 'Delete review' }));
+
+    await waitFor(() =>
+      expect(toast.error).toHaveBeenCalledWith('Something went wrong deleting this review.'),
+    );
+    expect(toast.success).not.toHaveBeenCalledWith('Review deleted');
+  });
+
+  it('closing and reopening the delete dialog resets the typed confirmation', async () => {
+    reviewsList.mockResolvedValue([makeReview({ status: 'archived', latestVersion: 1 })]);
+    const user = userEvent.setup();
+    renderList();
+
+    await user.click(await screen.findByRole('button', { name: 'Delivery and more actions' }));
+    await user.click(await screen.findByRole('menuitem', { name: 'Delete review' }));
+
+    const dialog = await screen.findByRole('dialog');
+    await user.type(within(dialog).getByLabelText(/Type "DELETE" to confirm/), 'DELETE');
+    expect(within(dialog).getByRole('button', { name: 'Delete review' })).toBeEnabled();
+
+    await user.click(within(dialog).getByRole('button', { name: 'Cancel' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+
+    await user.click(screen.getByRole('button', { name: 'Delivery and more actions' }));
+    await user.click(await screen.findByRole('menuitem', { name: 'Delete review' }));
+
+    const reopened = await screen.findByRole('dialog');
+    expect(within(reopened).getByLabelText(/Type "DELETE" to confirm/)).toHaveValue('');
+    expect(within(reopened).getByRole('button', { name: 'Delete review' })).toBeDisabled();
   });
 
   it('New review creates a fresh draft and navigates to its composer', async () => {

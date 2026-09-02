@@ -1958,10 +1958,25 @@
           "deliver": "Deliver",
           "copyLink": "Copy link",
           "revokeLink": "Revoke link",
-          "archive": "Archive review"
+          "archive": "Archive review",
+          "unarchive": "Unarchive review",
+          "delete": "Delete review"
         },
         "archiveToast": "Review archived",
-        "archiveError": "Something went wrong archiving this review."
+        "archiveError": "Something went wrong archiving this review.",
+        "unarchiveToast": "Review unarchived",
+        "unarchiveError": "Something went wrong unarchiving this review.",
+        "deletedToast": "Review deleted",
+        "deleteError": "Something went wrong deleting this review.",
+        "deleteDialog": {
+          "title": "Delete this review?",
+          "description_one": "This permanently deletes this archived review and every published version of it. Its {{count}} delivery link stops working immediately and cannot be restored.",
+          "description_other": "This permanently deletes this archived review and every published version of it. Its {{count}} delivery links stop working immediately and cannot be restored.",
+          "confirmWord": "DELETE",
+          "confirmLabel": "Type \"{{word}}\" to confirm",
+          "confirm": "Delete review",
+          "pending": "Deleting..."
+        }
       }
     },
     "disabled": {

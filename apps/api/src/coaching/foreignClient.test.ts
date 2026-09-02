@@ -103,6 +103,22 @@ const SAME_SUBJECT_ROUTES = [
     path: `/api/coaching/clients/${TENANT_ID}/reviews/review-1/archive`,
     usesSubjectHeader: false,
   },
+  // Quick 260901-f7a: the per-review unarchive and hard-delete routes,
+  // gated the SAME way as every review route above — a direct membership
+  // check on the URL's `:clientId`, no header. (DELETE additionally carries
+  // a `requireTenantRole(['custodian','owner'])` gate, but a foreign coach
+  // is denied by membership before role is ever considered — the same
+  // no-oracle 403 for a foreign and a nonexistent tenant alike.)
+  {
+    method: 'POST',
+    path: `/api/coaching/clients/${TENANT_ID}/reviews/review-1/unarchive`,
+    usesSubjectHeader: false,
+  },
+  {
+    method: 'DELETE',
+    path: `/api/coaching/clients/${TENANT_ID}/reviews/review-1`,
+    usesSubjectHeader: false,
+  },
   // Phase 12 Plan 04 (Coach Reviews & Delivery): every coach-side delivery
   // route, gated the SAME way (a direct membership check on the URL's
   // `:clientId`, no header) as the review routes above.

@@ -1958,10 +1958,25 @@
           "deliver": "Entregar",
           "copyLink": "Copiar enlace",
           "revokeLink": "Revocar enlace",
-          "archive": "Archivar reseña"
+          "archive": "Archivar reseña",
+          "unarchive": "Desarchivar reseña",
+          "delete": "Eliminar reseña"
         },
         "archiveToast": "Reseña archivada",
-        "archiveError": "Ocurrió un error al archivar esta reseña."
+        "archiveError": "Ocurrió un error al archivar esta reseña.",
+        "unarchiveToast": "Reseña desarchivada",
+        "unarchiveError": "Ocurrió un error al desarchivar esta reseña.",
+        "deletedToast": "Reseña eliminada",
+        "deleteError": "Ocurrió un error al eliminar esta reseña.",
+        "deleteDialog": {
+          "title": "¿Eliminar esta reseña?",
+          "description_one": "Esto elimina permanentemente esta reseña archivada y todas sus versiones publicadas. Su {{count}} enlace de entrega deja de funcionar de inmediato y no se puede restaurar.",
+          "description_other": "Esto elimina permanentemente esta reseña archivada y todas sus versiones publicadas. Sus {{count}} enlaces de entrega dejan de funcionar de inmediato y no se pueden restaurar.",
+          "confirmWord": "DELETE",
+          "confirmLabel": "Escribe \"{{word}}\" para confirmar",
+          "confirm": "Eliminar reseña",
+          "pending": "Eliminando..."
+        }
       }
     },
     "disabled": {
