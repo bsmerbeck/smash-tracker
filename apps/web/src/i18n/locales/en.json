@@ -64,7 +64,8 @@
     "allTime": "All time",
     "months3": "3m",
     "months6": "6m",
-    "months12": "12m"
+    "months12": "12m",
+    "autoWidened": "No matches in the last {{range}} — showing all time."
   },
   "shared": {
     "noFighters": {

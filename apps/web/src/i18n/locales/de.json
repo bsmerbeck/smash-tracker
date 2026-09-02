@@ -64,7 +64,8 @@
     "allTime": "Gesamter Zeitraum",
     "months3": "3 M",
     "months6": "6 M",
-    "months12": "12 M"
+    "months12": "12 M",
+    "autoWidened": "Keine Matches in den letzten {{range}} — gesamter Zeitraum wird angezeigt."
   },
   "shared": {
     "noFighters": {

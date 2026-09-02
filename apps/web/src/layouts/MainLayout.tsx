@@ -5,6 +5,7 @@ import { TooltipProvider } from '@/components/ui/tooltip';
 import { SUPPORTED_LANGUAGES } from '@/i18n';
 import { useStartggAutoSync } from '@/hooks/useStartgg';
 import { useCoachAccessEjection } from '@/hooks/useCoachAccessEjection';
+import { useAutoWidenEmptyRange } from '@/hooks/useAutoWidenEmptyRange';
 import { GuidedPathCard } from '@/components/onboarding/GuidedPathCard';
 import { DemoAccountBanner } from '@/components/DemoAccountBanner';
 import { Sidebar } from './Sidebar';
@@ -72,6 +73,10 @@ export function MainLayout({ children }: { children: ReactNode }) {
   // any `/coach/*` route file, so it's additive to coach chrome rather than
   // a modification of it.
   useCoachAccessEjection();
+  // Quick 260901-tj7 (D-05): the single mount point for the stale-range
+  // auto-widen — never duplicate this per page (see the hook doc for why a
+  // second mount would double-evaluate/double-toast).
+  useAutoWidenEmptyRange();
   return (
     <TooltipProvider>
       <div className="flex min-h-svh flex-col">

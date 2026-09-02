@@ -64,7 +64,8 @@
     "allTime": "Todo el tiempo",
     "months3": "3 m",
     "months6": "6 m",
-    "months12": "12 m"
+    "months12": "12 m",
+    "autoWidened": "Ninguna partida en los últimos {{range}} — mostrando todo el tiempo."
   },
   "shared": {
     "noFighters": {

@@ -64,7 +64,8 @@
     "allTime": "全期間",
     "months3": "3ヶ月",
     "months6": "6ヶ月",
-    "months12": "12ヶ月"
+    "months12": "12ヶ月",
+    "autoWidened": "直近{{range}}に対戦がありません — 全期間を表示します。"
   },
   "shared": {
     "noFighters": {
