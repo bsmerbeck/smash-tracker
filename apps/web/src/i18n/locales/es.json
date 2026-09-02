@@ -922,7 +922,10 @@
       "resyncSuffix": "y pulsa Sincronizar ahora.",
       "tournament": "Torneo",
       "event": "Evento",
-      "dates": "Fechas"
+      "dates": "Fechas",
+      "hiddenByRange_one": "{{count}} torneo fuera de los últimos {{range}}.",
+      "hiddenByRange_other": "{{count}} torneos fuera de los últimos {{range}}.",
+      "showAllTime": "Mostrar todo el tiempo"
     },
     "mix": {
       "title": "Mezcla de tipos de partida en el tiempo",

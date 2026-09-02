@@ -922,7 +922,10 @@
       "resyncSuffix": "から同期を実行してください。",
       "tournament": "大会",
       "event": "種目",
-      "dates": "日程"
+      "dates": "日程",
+      "hiddenByRange_one": "直近{{range}}の範囲外の大会が{{count}}件。",
+      "hiddenByRange_other": "直近{{range}}の範囲外の大会が{{count}}件。",
+      "showAllTime": "全期間を表示"
     },
     "mix": {
       "title": "対戦タイプの推移",

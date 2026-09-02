@@ -922,7 +922,10 @@
       "resyncSuffix": "und starte den Sync.",
       "tournament": "Turnier",
       "event": "Event",
-      "dates": "Daten"
+      "dates": "Daten",
+      "hiddenByRange_one": "{{count}} Turnier außerhalb der letzten {{range}}.",
+      "hiddenByRange_other": "{{count}} Turniere außerhalb der letzten {{range}}.",
+      "showAllTime": "Gesamten Zeitraum anzeigen"
     },
     "mix": {
       "title": "Match-Typ-Mix im Zeitverlauf",

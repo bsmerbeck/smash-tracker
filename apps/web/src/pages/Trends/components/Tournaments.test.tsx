@@ -1,11 +1,25 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes } from 'react-router';
 import { QueryClientProvider, QueryClient } from '@tanstack/react-query';
 import type { Match, TournamentEntry } from '@smash-tracker/shared';
 import { AuthProvider } from '@/context/AuthContext';
+import {
+  AnalyticsFilterProvider,
+  ANALYTICS_FILTER_STORAGE_KEY,
+} from '@/context/AnalyticsFilterContext';
 import { resetAuthMock, setMockUser, makeMockUser } from '@/test/mockAuth';
 import { Tournaments, buildTournamentEntryRows } from './Tournaments';
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+function seedRange(range: string) {
+  window.localStorage.setItem(
+    ANALYTICS_FILTER_STORAGE_KEY,
+    JSON.stringify({ source: 'all', range }),
+  );
+}
 
 vi.mock('firebase/auth', async () => {
   const mock = await import('@/test/mockAuth');
@@ -97,11 +111,13 @@ function renderTournaments(matches: Match[]) {
     <QueryClientProvider client={queryClient}>
       <MemoryRouter initialEntries={['/trends']}>
         <AuthProvider>
-          <Routes>
-            <Route path="/trends" element={<Tournaments matches={matches} />} />
-            <Route path="/tournaments/:eventId" element={<div>Tournament detail page</div>} />
-            <Route path="/settings/integrations" element={<div>Integrations page</div>} />
-          </Routes>
+          <AnalyticsFilterProvider>
+            <Routes>
+              <Route path="/trends" element={<Tournaments matches={matches} />} />
+              <Route path="/tournaments/:eventId" element={<div>Tournament detail page</div>} />
+              <Route path="/settings/integrations" element={<div>Integrations page</div>} />
+            </Routes>
+          </AnalyticsFilterProvider>
         </AuthProvider>
       </MemoryRouter>
     </QueryClientProvider>,
@@ -112,6 +128,7 @@ describe('Tournaments component', () => {
   beforeEach(() => {
     resetAuthMock();
     vi.clearAllMocks();
+    window.localStorage.clear();
     setMockUser(makeMockUser());
   });
 
@@ -297,6 +314,202 @@ describe('Tournaments component', () => {
       expect(screen.getByText('1-1')).toBeInTheDocument();
       expect(screen.getByText('50%')).toBeInTheDocument();
       expect(screen.queryByText('—')).not.toBeInTheDocument();
+    });
+  });
+
+  /** Quick 260902-bm9: the registry rows now filter by the global time range. */
+  describe('range filtering (quick 260902-bm9)', () => {
+    it('hides an out-of-range entry and keeps an in-range one (D-01)', async () => {
+      seedRange('12m');
+      listTournaments.mockResolvedValue([
+        makeEntry({
+          eventId: 1,
+          tournamentName: 'Old Regional',
+          firstSetAt: Date.now() - 400 * DAY_MS,
+          lastSetAt: Date.now() - 400 * DAY_MS,
+        }),
+        makeEntry({
+          eventId: 2,
+          tournamentName: 'Recent Regional',
+          firstSetAt: Date.now() - 10 * DAY_MS,
+          lastSetAt: Date.now() - 10 * DAY_MS,
+        }),
+      ]);
+      renderTournaments([]);
+
+      await screen.findByRole('link', { name: 'Recent Regional' });
+      expect(screen.queryByRole('link', { name: 'Old Regional' })).not.toBeInTheDocument();
+    });
+
+    it("renders everything and shows no notice for 'all' (D-03)", async () => {
+      seedRange('all');
+      listTournaments.mockResolvedValue([
+        makeEntry({
+          eventId: 1,
+          tournamentName: 'Old Regional',
+          firstSetAt: Date.now() - 400 * DAY_MS,
+          lastSetAt: Date.now() - 400 * DAY_MS,
+        }),
+        makeEntry({
+          eventId: 2,
+          tournamentName: 'Recent Regional',
+          firstSetAt: Date.now() - 10 * DAY_MS,
+          lastSetAt: Date.now() - 10 * DAY_MS,
+        }),
+      ]);
+      renderTournaments([]);
+
+      await screen.findByRole('link', { name: 'Old Regional' });
+      expect(screen.getByRole('link', { name: 'Recent Regional' })).toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: 'Show all time' })).not.toBeInTheDocument();
+      expect(screen.queryByText(/outside the last/)).not.toBeInTheDocument();
+    });
+
+    it('keeps an undated entry visible under a narrow range (D-01)', async () => {
+      seedRange('3m');
+      listTournaments.mockResolvedValue([
+        makeEntry({ eventId: 1, tournamentName: 'Undated Open', firstSetAt: 0, lastSetAt: 0 }),
+      ]);
+      renderTournaments([]);
+
+      await screen.findByRole('link', { name: 'Undated Open' });
+    });
+
+    it('keeps an upcoming entry visible under a narrow range (D-01)', async () => {
+      seedRange('3m');
+      listTournaments.mockResolvedValue([
+        makeEntry({
+          eventId: 1,
+          tournamentName: 'Next Month Major',
+          firstSetAt: Date.now() + 20 * DAY_MS,
+          lastSetAt: Date.now() + 20 * DAY_MS,
+        }),
+      ]);
+      renderTournaments([]);
+
+      await screen.findByRole('link', { name: 'Next Month Major' });
+    });
+
+    it('shows a singular footer count when exactly one tournament is hidden (D-03)', async () => {
+      seedRange('12m');
+      listTournaments.mockResolvedValue([
+        makeEntry({
+          eventId: 1,
+          tournamentName: 'In Range',
+          firstSetAt: Date.now() - 10 * DAY_MS,
+          lastSetAt: Date.now() - 10 * DAY_MS,
+        }),
+        makeEntry({
+          eventId: 2,
+          tournamentName: 'Out Of Range',
+          firstSetAt: Date.now() - 400 * DAY_MS,
+          lastSetAt: Date.now() - 400 * DAY_MS,
+        }),
+      ]);
+      renderTournaments([]);
+
+      await screen.findByRole('link', { name: 'In Range' });
+      expect(screen.getByText('1 tournament outside the last 12m.')).toBeInTheDocument();
+      expect(screen.getByRole('columnheader', { name: 'Tournament' })).toBeInTheDocument();
+    });
+
+    it('shows a plural footer count when more than one tournament is hidden (D-03)', async () => {
+      seedRange('12m');
+      listTournaments.mockResolvedValue([
+        makeEntry({
+          eventId: 1,
+          tournamentName: 'In Range',
+          firstSetAt: Date.now() - 10 * DAY_MS,
+          lastSetAt: Date.now() - 10 * DAY_MS,
+        }),
+        makeEntry({
+          eventId: 2,
+          tournamentName: 'Out Of Range A',
+          firstSetAt: Date.now() - 400 * DAY_MS,
+          lastSetAt: Date.now() - 400 * DAY_MS,
+        }),
+        makeEntry({
+          eventId: 3,
+          tournamentName: 'Out Of Range B',
+          firstSetAt: Date.now() - 500 * DAY_MS,
+          lastSetAt: Date.now() - 500 * DAY_MS,
+        }),
+      ]);
+      renderTournaments([]);
+
+      await screen.findByRole('link', { name: 'In Range' });
+      expect(screen.getByText('2 tournaments outside the last 12m.')).toBeInTheDocument();
+    });
+
+    it('replaces the table with the notice when the range hides every entry, and never falls back to the resync hint (D-03)', async () => {
+      seedRange('12m');
+      listTournaments.mockResolvedValue([
+        makeEntry({
+          eventId: 1,
+          tournamentName: 'Out Of Range A',
+          firstSetAt: Date.now() - 400 * DAY_MS,
+          lastSetAt: Date.now() - 400 * DAY_MS,
+        }),
+        makeEntry({
+          eventId: 2,
+          tournamentName: 'Out Of Range B',
+          firstSetAt: Date.now() - 500 * DAY_MS,
+          lastSetAt: Date.now() - 500 * DAY_MS,
+        }),
+      ]);
+      renderTournaments([]);
+
+      await screen.findByText('2 tournaments outside the last 12m.');
+      expect(
+        screen.queryByText(/Tournament entries attach on your next start\.gg sync/),
+      ).not.toBeInTheDocument();
+      expect(screen.queryByRole('columnheader', { name: 'Tournament' })).not.toBeInTheDocument();
+      expect(screen.queryByRole('table')).not.toBeInTheDocument();
+    });
+
+    it('widens to all time and reveals hidden rows when Show all time is clicked, persisting the range (D-03, D-07)', async () => {
+      seedRange('12m');
+      listTournaments.mockResolvedValue([
+        makeEntry({
+          eventId: 1,
+          tournamentName: 'Old Regional',
+          firstSetAt: Date.now() - 400 * DAY_MS,
+          lastSetAt: Date.now() - 400 * DAY_MS,
+        }),
+        makeEntry({
+          eventId: 2,
+          tournamentName: 'Even Older Regional',
+          firstSetAt: Date.now() - 500 * DAY_MS,
+          lastSetAt: Date.now() - 500 * DAY_MS,
+        }),
+      ]);
+      renderTournaments([]);
+
+      await screen.findByText('2 tournaments outside the last 12m.');
+
+      const user = userEvent.setup();
+      await user.click(screen.getByRole('button', { name: 'Show all time' }));
+
+      await waitFor(() => {
+        expect(screen.getByRole('link', { name: 'Old Regional' })).toBeInTheDocument();
+      });
+      expect(screen.queryByText(/outside the last/)).not.toBeInTheDocument();
+      expect(JSON.parse(window.localStorage.getItem(ANALYTICS_FILTER_STORAGE_KEY)!).range).toBe(
+        'all',
+      );
+    });
+
+    it('shows the resync hint (not a range notice) when the registry is genuinely empty (D-03)', async () => {
+      seedRange('12m');
+      listTournaments.mockResolvedValue([]);
+      renderTournaments([]);
+
+      expect(
+        await screen.findByText(/Tournament entries attach on your next start\.gg sync/),
+      ).toBeInTheDocument();
+      const link = screen.getByRole('link', { name: 'Integrations' });
+      expect(link).toHaveAttribute('href', '/settings/integrations');
+      expect(screen.queryByText(/outside the last/)).not.toBeInTheDocument();
     });
   });
 });

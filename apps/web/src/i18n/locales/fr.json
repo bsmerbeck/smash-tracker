@@ -922,7 +922,10 @@
       "resyncSuffix": "et lancez la synchronisation.",
       "tournament": "Tournoi",
       "event": "Évènement",
-      "dates": "Dates"
+      "dates": "Dates",
+      "hiddenByRange_one": "{{count}} tournoi hors des {{range}} derniers.",
+      "hiddenByRange_other": "{{count}} tournois hors des {{range}} derniers.",
+      "showAllTime": "Afficher depuis le début"
     },
     "mix": {
       "title": "Répartition des types de match dans le temps",
