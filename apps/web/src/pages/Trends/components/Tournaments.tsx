@@ -126,6 +126,11 @@ export function Tournaments({ matches }: { matches: Match[] }) {
                 // linked match rows has NO observed games — 0-0/0%/0 would
                 // fabricate a zero record out of missing data, so those
                 // cells render the '—' missing marker instead.
+                // Quick 260901-tj7 (D-04): a percentage computed from zero
+                // games is fabricated regardless of row origin —
+                // `getWinLossRecord` returns `winRate: 100` for a 0-0
+                // record — so the Rate cell below is keyed on
+                // `record.total === 0` alone, not `recordUnknown`.
                 const recordUnknown = imported && record.total === 0;
                 return (
                   <TableRow key={entry.entryKey ?? entry.eventId}>
@@ -159,7 +164,7 @@ export function Tournaments({ matches }: { matches: Match[] }) {
                     <TableCell className="whitespace-normal">{entry.eventName}</TableCell>
                     <TableCell>{formatDateRange(entry, i18n.language)}</TableCell>
                     <TableCell>{recordUnknown ? '—' : `${record.wins}-${record.losses}`}</TableCell>
-                    <TableCell>{recordUnknown ? '—' : `${record.winRate}%`}</TableCell>
+                    <TableCell>{record.total === 0 ? '—' : `${record.winRate}%`}</TableCell>
                     <TableCell>{recordUnknown ? '—' : record.total}</TableCell>
                   </TableRow>
                 );

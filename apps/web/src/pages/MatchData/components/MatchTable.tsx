@@ -500,8 +500,16 @@ export function MatchTable({
     downloadCsv(exportMatches);
   }
 
+  // Quick 260901-tj7 (D-04): this branch is only reachable when the global
+  // analytics filter excluded everything — `MatchDataPage` is the sole
+  // caller and returns its own "no matches at all" hero early when
+  // `allMatches.length === 0`. The old copy here ("You have no matches,
+  // report a match…") asserted something false: the user HAS matches, they
+  // are just filtered out. The page-level `FilteredEmptyNotice` (rendered
+  // above this card, with its own "Clear filters" button) is the honest,
+  // actionable surface — this card body adds nothing.
   if (matches.length === 0) {
-    return <p className="text-center text-sm text-muted-foreground">{t('matchData.noMatches')}</p>;
+    return null;
   }
 
   return (

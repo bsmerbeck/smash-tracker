@@ -149,6 +149,26 @@ describe('Tournaments component', () => {
     ).not.toBeInTheDocument();
   });
 
+  /**
+   * Quick 260901-tj7 (D-04): a NON-imported row scoped to zero matches (the
+   * global analytics filter emptied it, not `admin-imported` origin) must
+   * not render a fabricated `100%` — `getWinLossRecord` returns `winRate:
+   * 100` for a 0-0 record. W-L and Games stay real zero counts; only the
+   * Rate cell is keyed on `record.total === 0`.
+   */
+  it('renders em-dash Rate — not a fabricated 100% — for a non-imported row scoped to zero matches', async () => {
+    listTournaments.mockResolvedValue([
+      makeEntry({ eventId: 42, tournamentName: 'The Big House 9' }),
+    ]);
+    renderTournaments([]);
+
+    await screen.findByRole('link', { name: 'The Big House 9' });
+    expect(screen.queryByText('100%')).not.toBeInTheDocument();
+    expect(screen.getByText('0-0')).toBeInTheDocument();
+    // Only the Rate cell is unknown; W-L and Games render real zero counts.
+    expect(screen.getAllByText('—')).toHaveLength(1);
+  });
+
   it('falls back to eventName as the link label when tournamentName is absent', async () => {
     listTournaments.mockResolvedValue([makeEntry({ eventId: 7, eventName: 'Ultimate Singles' })]);
     renderTournaments([]);

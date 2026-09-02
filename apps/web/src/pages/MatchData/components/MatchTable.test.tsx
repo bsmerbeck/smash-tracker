@@ -121,6 +121,34 @@ function renderTable(matches: Match[]) {
   );
 }
 
+/**
+ * Quick 260901-tj7 (D-04): the filtered-empty branch (`matches.length ===
+ * 0`) is only reachable when the global analytics filter excluded
+ * everything — `MatchDataPage` is the sole caller and returns its own "no
+ * matches at all" hero early when `allMatches.length === 0`. The old copy
+ * here ("You have no matches, report a match…") asserted something false in
+ * that case; the page-level `FilteredEmptyNotice` is the only honest,
+ * actionable empty-state surface.
+ */
+describe('MatchTable — filtered-empty branch (Quick 260901-tj7, D-04)', () => {
+  beforeEach(() => {
+    resetAuthMock();
+    vi.clearAllMocks();
+    setMockUser(makeMockUser());
+  });
+
+  it('renders nothing when the filtered match list is empty', () => {
+    const { container } = renderTable([]);
+
+    expect(container).toBeEmptyDOMElement();
+    expect(
+      screen.queryByText(
+        'You have no matches, report a match and check back here to view match data!',
+      ),
+    ).not.toBeInTheDocument();
+  });
+});
+
 describe('MatchTable — Liquipedia attribution (Phase 30.2 Plan 11, ENR-09)', () => {
   beforeEach(() => {
     resetAuthMock();
