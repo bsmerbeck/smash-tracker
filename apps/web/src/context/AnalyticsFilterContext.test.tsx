@@ -9,6 +9,7 @@ import {
 import { AuthContext, type AuthContextValue } from './AuthContext';
 import { useAnalyticsFilter } from '@/hooks/useAnalyticsFilter';
 import { setActiveSubject } from '@/lib/subjectQueryKey';
+import { makeMockUser } from '@/test/mockAuth';
 
 function fakeAuthValue(overrides: Partial<AuthContextValue> = {}): AuthContextValue {
   return {
@@ -280,5 +281,33 @@ describe('AnalyticsFilterContext', () => {
     expect(
       JSON.parse(window.localStorage.getItem(analyticsFilterStorageKey('anonymous', null))!),
     ).toEqual({ source: 'manual', range: '3m' });
+  });
+
+  it('WR-01: a second, never-before-seen account on the same browser does not inherit the first account’s legacy-seeded filter', () => {
+    window.localStorage.setItem(
+      ANALYTICS_FILTER_STORAGE_KEY,
+      JSON.stringify({ source: 'manual', range: '3m' }),
+    );
+
+    // Account A's first-ever personal-scope mount claims the legacy key as
+    // its one-time seed.
+    const mountA = renderProbeWithAuth(fakeAuthValue({ user: makeMockUser({ uid: 'uid-A' }) }));
+    expect(screen.getByTestId('source')).toHaveTextContent('manual');
+    expect(screen.getByTestId('range')).toHaveTextContent('3m');
+    mountA.unmount();
+
+    // Account B, on the same browser, has never touched analytics filters —
+    // their own scoped key doesn't exist yet. Before the WR-01 fix this fell
+    // through to the still-intact legacy key and inherited A's choice.
+    renderProbeWithAuth(fakeAuthValue({ user: makeMockUser({ uid: 'uid-B' }) }));
+    expect(screen.getByTestId('source')).toHaveTextContent('all');
+    expect(screen.getByTestId('range')).toHaveTextContent('all');
+
+    // The legacy key itself is untouched — the fix consumes it via a
+    // separate claim marker, never by mutating the legacy bytes.
+    expect(JSON.parse(window.localStorage.getItem(ANALYTICS_FILTER_STORAGE_KEY)!)).toEqual({
+      source: 'manual',
+      range: '3m',
+    });
   });
 });

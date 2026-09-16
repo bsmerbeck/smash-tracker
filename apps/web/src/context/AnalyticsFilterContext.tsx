@@ -44,6 +44,19 @@ export interface AnalyticsFilterContextValue extends AnalyticsFilterState {
 /** Legacy, un-scoped key — read-only seed for the personal scope. Never written by this module (D-08). */
 export const ANALYTICS_FILTER_STORAGE_KEY = 'smash-tracker.analyticsFilter';
 
+/**
+ * WR-01 fix: records which uid (or `'anonymous'`) has already claimed the
+ * legacy key as its one-time personal-scope seed. Without this, "once" meant
+ * "once per never-before-seen uid" rather than "once ever per browser" — any
+ * second account signing into the same browser for the first time would also
+ * fall through to the still-intact legacy key and inherit the FIRST
+ * account's source/range choice (a real cross-account preference leak). Once
+ * set, only the claiming uid may still read the legacy key as a seed; every
+ * other uid falls through to defaults instead, exactly like a browser that
+ * never had a legacy key at all.
+ */
+const ANALYTICS_FILTER_LEGACY_SEEDED_FOR_KEY = 'smash-tracker.analyticsFilter.legacySeededFor';
+
 export const DEFAULT_ANALYTICS_FILTER_STATE: AnalyticsFilterState = {
   source: 'all',
   range: 'all',
@@ -114,14 +127,51 @@ function readLegacyFilterState(): AnalyticsFilterState | null {
   }
 }
 
+/** Which uid (or `'anonymous'`) has already claimed the legacy key, if any. */
+function readLegacySeededFor(): string | null {
+  if (typeof window === 'undefined') {
+    return null;
+  }
+  try {
+    return window.localStorage.getItem(ANALYTICS_FILTER_LEGACY_SEEDED_FOR_KEY);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Claims the legacy key for `uid` — the only write call site for the claim
+ * marker, and it is invoked exactly once, from the post-commit effect in
+ * `AnalyticsFilterProvider`, never from render (WR-01).
+ */
+function markLegacySeeded(uid: string): void {
+  if (typeof window === 'undefined') {
+    return;
+  }
+  try {
+    window.localStorage.setItem(ANALYTICS_FILTER_LEGACY_SEEDED_FOR_KEY, uid);
+  } catch {
+    // Ignore storage failures — worst case the anti-leak guard is skipped
+    // for this session, same as if the legacy key had never existed.
+  }
+}
+
 /**
  * Resolves the state to seed/re-seed from, for a resolved storage key. A
  * `null` key (the auth-loading window) yields the defaults. Otherwise reads
  * the scoped key; when absent AND `clientId` is null (the personal scope),
  * falls back to the legacy un-scoped key as a ONE-TIME seed (D-08) — never
- * for a client subject, which never had a legacy value to seed from.
+ * for a client subject, which never had a legacy value to seed from, and
+ * never for a uid other than the one that already claimed the legacy key
+ * (WR-01): once `ANALYTICS_FILTER_LEGACY_SEEDED_FOR_KEY` names a uid, every
+ * OTHER uid's first-ever personal-scope mount falls straight to defaults
+ * instead of inheriting that uid's choice.
  */
-function readFilterState(storageKey: string | null, clientId: string | null): AnalyticsFilterState {
+function readFilterState(
+  storageKey: string | null,
+  clientId: string | null,
+  uid: string | null,
+): AnalyticsFilterState {
   if (storageKey == null) {
     return DEFAULT_ANALYTICS_FILTER_STATE;
   }
@@ -130,15 +180,18 @@ function readFilterState(storageKey: string | null, clientId: string | null): An
     return scoped;
   }
   if (clientId == null) {
-    const legacy = readLegacyFilterState();
-    if (legacy != null) {
-      return legacy;
+    const seededFor = readLegacySeededFor();
+    if (seededFor == null || seededFor === (uid ?? 'anonymous')) {
+      const legacy = readLegacyFilterState();
+      if (legacy != null) {
+        return legacy;
+      }
     }
   }
   return DEFAULT_ANALYTICS_FILTER_STATE;
 }
 
-/** The ONE write call site in this module — a `null` key (auth loading) writes nothing. */
+/** The ONE filter-value write call site in this module — a `null` key (auth loading) writes nothing. */
 function persistFilterState(storageKey: string | null, state: AnalyticsFilterState): void {
   if (storageKey == null || typeof window === 'undefined') {
     return;
@@ -189,7 +242,7 @@ export function AnalyticsFilterProvider({ children }: { children: ReactNode }) {
 
   const [seededKey, setSeededKey] = useState(storageKey);
   const [state, setState] = useState<AnalyticsFilterState>(() =>
-    readFilterState(storageKey, clientId),
+    readFilterState(storageKey, clientId, uid),
   );
 
   // "Latest value" refs for the three setters below, kept stable (empty
@@ -225,13 +278,36 @@ export function AnalyticsFilterProvider({ children }: { children: ReactNode }) {
   // (D-06) and must write nothing (NEW3-L1).
   if (storageKey !== seededKey) {
     setSeededKey(storageKey);
-    setState(readFilterState(storageKey, clientId));
+    setState(readFilterState(storageKey, clientId, uid));
     // `stateRef` is NOT written here — writing `ref.current` during render
     // is forbidden by this codebase's `react-hooks/refs` lint rule. The
     // no-deps `useEffect` above re-syncs it after this render commits,
     // which is always before any setter can possibly be called (setters
     // only run from event handlers/effects, strictly after commit).
   }
+
+  // WR-01: claims the legacy key for the first uid that ever seeds the
+  // personal scope from it, so a second, never-before-seen account on the
+  // same browser cannot also fall through to it. The READ-side gate lives in
+  // `readFilterState` above (pure, render-safe, already consulted for the
+  // state above); this effect only performs the WRITE, deferred to after
+  // commit like every other write in this module. Idempotent — once any uid
+  // has claimed the marker, every later run of this effect is a no-op read.
+  useEffect(() => {
+    if (loading || clientId != null || storageKey == null) {
+      return;
+    }
+    if (readScopedFilterState(storageKey) != null) {
+      return;
+    }
+    if (readLegacySeededFor() != null) {
+      return;
+    }
+    if (readLegacyFilterState() == null) {
+      return;
+    }
+    markLegacySeeded(uid ?? 'anonymous');
+  }, [storageKey, clientId, loading, uid]);
 
   const setSource = useCallback((next: AnalyticsSourceFilter) => {
     const updated = { ...stateRef.current, source: next };
