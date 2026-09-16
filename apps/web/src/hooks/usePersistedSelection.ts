@@ -57,9 +57,24 @@ export interface PersistedSelectionResult {
  * "no matches" empty state), not a defect to correct away from. So: the
  * "has games with this fighter" check runs only at hydration and at the
  * instant `resolvedFighterId` actually changes from what it was on the
- * previous render (tracked via `opponentValidatedForFighterId`); once a
+ * previous render (tracked via `opponentValidatedForFighterId`). Once a
  * fighter is stable across renders, whatever `record.opponentId` holds is
  * honored as-is, matches or not.
+ *
+ * The discard itself is committed into `record` (via `setRecord`, not just
+ * a local variable) precisely BECAUSE this hook uses the "adjust state
+ * during render" pattern: calling a state setter during render makes React
+ * discard this render's own return value and immediately re-invoke the
+ * whole function with the updated state — so a discard decision that only
+ * lived in a local variable would be thrown away on that re-invocation,
+ * letting the stale remembered opponent silently survive. Clearing
+ * `record.opponentId` (a plain, non-functional `undefined`, never
+ * persisted to storage) makes the decision durable across the re-invoke:
+ * the very next call reads `record.opponentId` fresh and already sees it
+ * cleared. (Refs mutated during render would sidestep the re-invoke
+ * entirely, but this codebase's lint config forbids reading/writing
+ * `ref.current` during render — `react-hooks/refs` — so the state-based
+ * form is used instead.)
  *
  * Nothing is computed, and nothing is written, while the match query is
  * loading (D-16) — `setFighter`/`setOpponent` are the ONLY two call sites
@@ -151,24 +166,25 @@ export function usePersistedSelection({
   const rememberedOpponentId = record.opponentId;
   const fighterSwitchedSinceLastOpponentCheck = resolvedFighterId !== opponentValidatedForFighterId;
 
-  let effectiveRememberedOpponentId = rememberedOpponentId;
   if (fighterSwitchedSinceLastOpponentCheck) {
     // D-10: on a fighter switch (including hydration, from `undefined`), a
     // remembered opponent survives only if the NEW fighter has games
-    // against it; otherwise it's silently discarded for this render (never
-    // persisted — the stored value is untouched until the user's next
-    // explicit change).
+    // against it; otherwise it's silently discarded — cleared from the
+    // IN-MEMORY session record only (never `persistSelection`d, so the
+    // stored value is untouched until the user's next explicit change) —
+    // so the decision is durable across the "adjust state during render"
+    // re-invoke this setState call itself triggers (see docstring above).
     const rememberedHasMatchesForNewFighter =
       rememberedOpponentId != null &&
       opponentUsage.some((usage) => usage.id === rememberedOpponentId);
-    if (!rememberedHasMatchesForNewFighter) {
-      effectiveRememberedOpponentId = undefined;
+    if (!rememberedHasMatchesForNewFighter && rememberedOpponentId != null) {
+      setRecord((prev) => ({ ...prev, opponentId: undefined }));
     }
     setOpponentValidatedForFighterId(resolvedFighterId);
   }
 
   const resolvedOpponentId =
-    effectiveRememberedOpponentId != null ? effectiveRememberedOpponentId : opponentUsage[0]?.id;
+    rememberedOpponentId != null ? rememberedOpponentId : opponentUsage[0]?.id;
 
   const opponent = resolvedOpponentId != null ? getFighterById(resolvedOpponentId) : undefined;
 
