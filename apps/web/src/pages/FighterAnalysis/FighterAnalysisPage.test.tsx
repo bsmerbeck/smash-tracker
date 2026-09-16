@@ -7,6 +7,7 @@ import { AnalyticsFilterProvider } from '@/context/AnalyticsFilterContext';
 import { FighterAnalysisPage } from './FighterAnalysisPage';
 import { resetAuthMock, setMockUser, makeMockUser } from '@/test/mockAuth';
 import { SpriteList } from '@/data/sprites';
+import { analyticsSelectionStorageKey } from '@/lib/analyticsSelection';
 
 vi.mock('firebase/auth', async () => {
   const mock = await import('@/test/mockAuth');
@@ -106,6 +107,83 @@ describe('FighterAnalysisPage', () => {
     renderFighterAnalysis();
 
     expect(await screen.findByText("You haven't reported any matches!")).toBeInTheDocument();
+  });
+
+  it('opens on the most-played saved fighter, not the alphabetically-first one', async () => {
+    // Fox is alphabetically first ("Fox" < "Mario"); Mario has more games.
+    getFighters.mockResolvedValue({ primary: [fox.id, mario.id], secondary: [] });
+    listMatches.mockResolvedValue([
+      makeMatch({ id: 'f1', time: 1, win: true, fighter_id: fox.id }),
+      makeMatch({ id: 'm1', time: 2, win: true, fighter_id: mario.id }),
+      makeMatch({ id: 'm2', time: 3, win: true, fighter_id: mario.id }),
+      makeMatch({ id: 'm3', time: 4, win: true, fighter_id: mario.id }),
+    ]);
+
+    renderFighterAnalysis();
+
+    const heroHeading = await screen.findByRole('heading', { name: mario.name, level: 2 });
+    expect(heroHeading).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: fox.name, level: 2 })).not.toBeInTheDocument();
+  });
+
+  it('renders the inferred most-played fighter and its analysis when favorites are empty but a history exists (H-1)', async () => {
+    getFighters.mockResolvedValue({ primary: [], secondary: [] });
+    listMatches.mockResolvedValue([
+      makeMatch({ id: 'm1', time: 1, win: true, fighter_id: mario.id }),
+      makeMatch({ id: 'm2', time: 2, win: true, fighter_id: mario.id }),
+      makeMatch({ id: 'm3', time: 3, win: false, fighter_id: mario.id }),
+      makeMatch({ id: 'l1', time: 4, win: true, fighter_id: luigi.id }),
+    ]);
+
+    renderFighterAnalysis();
+
+    const heroHeading = await screen.findByRole('heading', { name: mario.name, level: 2 });
+    expect(heroHeading).toBeInTheDocument();
+    expect(screen.queryByText("You haven't picked any fighters yet!")).not.toBeInTheDocument();
+  });
+
+  it('shows the non-blocking ChooseFavoritesPrompt when favorites are empty but a history exists (H-1)', async () => {
+    getFighters.mockResolvedValue({ primary: [], secondary: [] });
+    listMatches.mockResolvedValue([
+      makeMatch({ id: 'm1', time: 1, win: true, fighter_id: mario.id }),
+      makeMatch({ id: 'm2', time: 2, win: true, fighter_id: mario.id }),
+    ]);
+
+    renderFighterAnalysis();
+
+    expect(await screen.findByTestId('choose-favorites-prompt')).toBeInTheDocument();
+  });
+
+  it('opens on a remembered INFERRED fighter (not a saved favorite) — the same fighter Matchups would open on (D-12)', async () => {
+    getFighters.mockResolvedValue({ primary: [], secondary: [] });
+    listMatches.mockResolvedValue([
+      // Mario is the most-played inferred fighter...
+      makeMatch({ id: 'm1', time: 1, win: true, fighter_id: mario.id }),
+      makeMatch({ id: 'm2', time: 2, win: true, fighter_id: mario.id }),
+      makeMatch({ id: 'm3', time: 3, win: true, fighter_id: mario.id }),
+      // ...but Luigi was explicitly remembered for this subject, and Luigi is
+      // present only in the match history (never a saved favorite).
+      makeMatch({ id: 'l1', time: 4, win: true, fighter_id: luigi.id }),
+    ]);
+    window.localStorage.setItem(
+      analyticsSelectionStorageKey('test-uid', null),
+      JSON.stringify({ fighterId: luigi.id }),
+    );
+
+    renderFighterAnalysis();
+
+    const heroHeading = await screen.findByRole('heading', { name: luigi.name, level: 2 });
+    expect(heroHeading).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: mario.name, level: 2 })).not.toBeInTheDocument();
+  });
+
+  it('still shows the choose-fighters gate when there are neither saved favorites nor any matches to infer from', async () => {
+    getFighters.mockResolvedValue({ primary: [], secondary: [] });
+    listMatches.mockResolvedValue([]);
+
+    renderFighterAnalysis();
+
+    expect(await screen.findByText("You haven't picked any fighters yet!")).toBeInTheDocument();
   });
 
   it('renders the fighter hero with sprite, name, record, share of games, and streak chip', async () => {
