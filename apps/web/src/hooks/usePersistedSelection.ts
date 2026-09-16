@@ -10,7 +10,12 @@ import {
   readStoredSelection,
   type StoredAnalyticsSelection,
 } from '@/lib/analyticsSelection';
-import { rankFighterUsage, rankOpponentUsage, type FighterUsage } from '@/lib/playerTrueDefaults';
+import {
+  orderFightersByUsage,
+  rankFighterUsage,
+  rankOpponentUsage,
+  type FighterUsage,
+} from '@/lib/playerTrueDefaults';
 
 export interface PersistedSelectionResult {
   fighter: Fighter | undefined;
@@ -21,6 +26,8 @@ export interface PersistedSelectionResult {
   fighterUsageById: Map<number, number>;
   /** The resolved fighter's faced opponents, most-faced first (plan 35-02's opponent picker grouping). */
   opponentUsage: FighterUsage[];
+  /** `fighterSprites`, reordered most-to-least used (D-13) — the picker's render order. */
+  orderedFighterSprites: Fighter[];
   isLoading: boolean;
 }
 
@@ -110,6 +117,7 @@ export function usePersistedSelection({
       setOpponent: () => {},
       fighterUsageById: new Map(),
       opponentUsage: [],
+      orderedFighterSprites: [],
       isLoading: true,
     };
   }
@@ -181,6 +189,7 @@ export function usePersistedSelection({
     setOpponent,
     fighterUsageById,
     opponentUsage,
+    orderedFighterSprites: orderFightersByUsage(fighterSprites, allMatches),
     isLoading: false,
   };
 }

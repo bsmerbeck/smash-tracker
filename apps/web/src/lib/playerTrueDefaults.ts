@@ -78,3 +78,29 @@ export function computeMostFacedOpponentId(
 ): number | undefined {
   return rankOpponentUsage(allMatches, fighterId)[0]?.id;
 }
+
+/**
+ * D-13: returns a NEW array of `fighters` ordered by the SAME comparator
+ * `rankByUsage` uses — games played descending, then most-recent game
+ * descending, then `String(id)` ascending — so the picker's first row is
+ * always `computeMostUsedFighterId`'s result. A fighter with zero matches
+ * is treated as `{ games: 0, mostRecentMs: 0 }`, which sorts it after every
+ * played fighter and orders unplayed fighters among themselves by
+ * `String(id)` (the same deterministic tiebreak, never a first-seen or
+ * roster-order fallback).
+ */
+export function orderFightersByUsage<T extends { id: number }>(
+  fighters: T[],
+  allMatches: Match[],
+): T[] {
+  const usageById = new Map(rankFighterUsage(allMatches).map((usage) => [usage.id, usage]));
+  return [...fighters].sort((a, b) => {
+    const usageA = usageById.get(a.id) ?? { games: 0, mostRecentMs: 0 };
+    const usageB = usageById.get(b.id) ?? { games: 0, mostRecentMs: 0 };
+    return (
+      usageB.games - usageA.games ||
+      usageB.mostRecentMs - usageA.mostRecentMs ||
+      String(a.id).localeCompare(String(b.id))
+    );
+  });
+}

@@ -50,10 +50,6 @@ export function MatchupsPage() {
     [fighterSelection],
   );
   const usingInferredFighters = savedFighterIds.length === 0 && allMatches.length > 0;
-  // Task 2 (plan 35-01) swaps this for `usePersistedSelection`'s
-  // `orderedFighterSprites`, which renders the picker in usage order
-  // (D-13). This raw saved/inferred order is a deliberate intra-plan
-  // intermediate — see planner decision 5.
   const rawFighterSprites = useMemo<Fighter[]>(() => {
     const ids = usingInferredFighters ? inferFighterIdsFromMatches(allMatches) : savedFighterIds;
     return ids
@@ -61,12 +57,11 @@ export function MatchupsPage() {
       .filter((sprite): sprite is Fighter => sprite != null);
   }, [usingInferredFighters, allMatches, savedFighterIds]);
 
-  const { fighter, opponent, setFighter, setOpponent } = usePersistedSelection({
-    fighterSprites: rawFighterSprites,
-  });
+  const { fighter, opponent, setFighter, setOpponent, orderedFighterSprites } =
+    usePersistedSelection({ fighterSprites: rawFighterSprites });
 
   const contextValue: MatchupsContextValue = {
-    fighterSprites: rawFighterSprites,
+    fighterSprites: orderedFighterSprites,
     fighter,
     setFighter,
     opponent,
@@ -81,7 +76,7 @@ export function MatchupsPage() {
     );
   }
 
-  if (rawFighterSprites.length === 0) {
+  if (orderedFighterSprites.length === 0) {
     return (
       <div className="flex flex-col gap-6">
         <div className="flex flex-col items-center gap-4 py-16 text-center">

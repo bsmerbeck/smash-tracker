@@ -11,11 +11,17 @@ import { subjectSegment } from '@/lib/subjectQueryKey';
 export const ANALYTICS_SELECTION_KEY_PREFIX = 'smash-tracker.analyticsSelection';
 
 /**
- * The stored shape at `analyticsSelectionStorageKey(uid, clientId)`.
- * `minStageMatches` is declared here (Task 1) but not yet admitted by
- * `parseStoredSelection` — Task 2 adds its validation alongside
- * `MIN_STAGE_MATCHES_OPTIONS`/`DEFAULT_MIN_STAGE_MATCHES`.
+ * D-11: the converged min-matches-per-stage threshold options, shared by
+ * `MatchupInsights.tsx` (today `[1, 2, 3, 5]`) and `MatchupStageGuide.tsx`
+ * (today `[1, 2, 3, 5, 10]`) — the union, so no option a user can pick
+ * today disappears when both components move to this one shared value
+ * (plan 35-03's `useMinStageMatches` is the consumer; nothing in this plan
+ * reads it).
  */
+export const MIN_STAGE_MATCHES_OPTIONS = [1, 2, 3, 5, 10];
+export const DEFAULT_MIN_STAGE_MATCHES = 3;
+
+/** The stored shape at `analyticsSelectionStorageKey(uid, clientId)`. */
 export interface StoredAnalyticsSelection {
   fighterId?: number;
   opponentId?: number;
@@ -43,6 +49,14 @@ function isValidFighterId(value: unknown): value is number {
   );
 }
 
+function isValidMinStageMatches(value: unknown): value is number {
+  return (
+    typeof value === 'number' &&
+    Number.isInteger(value) &&
+    (MIN_STAGE_MATCHES_OPTIONS as readonly number[]).includes(value)
+  );
+}
+
 /**
  * Parses a stored selection, tolerating missing/malformed content: a
  * nullish or empty `raw`, invalid JSON, a JSON array, or a JSON scalar all
@@ -65,6 +79,9 @@ export function parseStoredSelection(raw: string | null): StoredAnalyticsSelecti
     }
     if (isValidFighterId(record.opponentId)) {
       result.opponentId = record.opponentId;
+    }
+    if (isValidMinStageMatches(record.minStageMatches)) {
+      result.minStageMatches = record.minStageMatches;
     }
     return result;
   } catch {
