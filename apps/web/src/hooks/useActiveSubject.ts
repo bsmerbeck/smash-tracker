@@ -53,13 +53,23 @@ export interface ActiveSubject {
 
 const COACH_CLIENT_ID_PATTERN = /^\/coach\/([^/]+)/;
 
-export function useActiveSubject(): ActiveSubject {
-  const location = useLocation();
-  const isCoaching = location.pathname === '/coach' || location.pathname.startsWith('/coach/');
-  const match = COACH_CLIENT_ID_PATTERN.exec(location.pathname);
+/**
+ * Phase 35-03 (Task 3, H-3): the pure body of `useActiveSubject`, extracted
+ * so `lib/subjectQueryKey.ts` can compose it against `window.location.pathname`
+ * (via `subjectClientIdFromPathname`) without duplicating this route grammar
+ * a second time — see that module's own comment for why a second copy would
+ * be a drift hazard, not a convenience.
+ */
+export function activeSubjectFromPathname(pathname: string): ActiveSubject {
+  const isCoaching = pathname === '/coach' || pathname.startsWith('/coach/');
+  const match = COACH_CLIENT_ID_PATTERN.exec(pathname);
   const clientId = isCoaching && match ? decodeURIComponent(match[1]!) : null;
   return {
     mode: isCoaching ? 'coaching' : 'personal',
     clientId,
   };
+}
+
+export function useActiveSubject(): ActiveSubject {
+  return activeSubjectFromPathname(useLocation().pathname);
 }
