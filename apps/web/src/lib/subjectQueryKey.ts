@@ -33,10 +33,24 @@ export function setActiveSubject(subject: ActiveSubject): void {
 }
 
 /**
+ * Phase 35 (Player-True Defaults & Persistence, NEW-M2): the ONE place the
+ * `client:` literal is spelled anywhere in the app. Every subject-scoped
+ * storage key or header value composes through this function instead of
+ * re-spelling the `clientId ? … : …` branch itself — `getActiveSubjectHeader`
+ * below, `analyticsSelectionStorageKey` (`lib/analyticsSelection.ts`), and
+ * 35-03's `analyticsFilterStorageKey`/`rangeAutoWidenSessionKey` all take a
+ * raw `clientId: string | null` and derive their segment from here, so no
+ * builder can drift from another's notion of "client:<id>".
+ */
+export function subjectSegment(clientId: string | null): string {
+  return clientId ? `client:${clientId}` : 'personal';
+}
+
+/**
  * The `X-Active-Subject` header value matching the API's resolver contract.
  * Derived from `clientId != null`, NEVER from `mode` alone (walkthrough fix
  * FB-1) — see `subjectScope` above for the same rationale.
  */
 export function getActiveSubjectHeader(): string {
-  return activeSubject.clientId ? `client:${activeSubject.clientId}` : 'personal';
+  return subjectSegment(activeSubject.clientId);
 }

@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useMemo } from 'react';
 import { Link } from 'react-router';
 import { useTranslation } from 'react-i18next';
 import type { Fighter } from '@smash-tracker/shared';
@@ -6,11 +6,11 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { useFighters } from '@/hooks/useFighters';
 import { useFilteredMatches } from '@/hooks/useFilteredMatches';
+import { usePersistedSelection } from '@/hooks/usePersistedSelection';
 import { useSubjectPath } from '@/hooks/useSubjectPath';
 import { getFighterById } from '@/data/sprites';
 import { localizedFighterName } from '@/lib/fighterNames';
 import { inferFighterIdsFromMatches } from '@/lib/inferredFighters';
-import { useAlphaFighters, useSortedFighters } from '@/hooks/useFighterName';
 import { ChooseFavoritesPrompt } from '@/components/ChooseFavoritesPrompt';
 import { FilteredEmptyNotice } from '@/components/FilteredEmptyNotice';
 import { MatchupsContext, type MatchupsContextValue } from './MatchupsContext';
@@ -50,29 +50,27 @@ export function MatchupsPage() {
     [fighterSelection],
   );
   const usingInferredFighters = savedFighterIds.length === 0 && allMatches.length > 0;
+  // Task 2 (plan 35-01) swaps this for `usePersistedSelection`'s
+  // `orderedFighterSprites`, which renders the picker in usage order
+  // (D-13). This raw saved/inferred order is a deliberate intra-plan
+  // intermediate — see planner decision 5.
   const rawFighterSprites = useMemo<Fighter[]>(() => {
     const ids = usingInferredFighters ? inferFighterIdsFromMatches(allMatches) : savedFighterIds;
     return ids
       .map((id) => getFighterById(id))
       .filter((sprite): sprite is Fighter => sprite != null);
   }, [usingInferredFighters, allMatches, savedFighterIds]);
-  const fighterSprites = useSortedFighters(rawFighterSprites);
-  const alphaFighters = useAlphaFighters();
 
-  const [selectedFighterId, setSelectedFighterId] = useState<number | undefined>(undefined);
-  const [selectedOpponentId, setSelectedOpponentId] = useState<number | undefined>(undefined);
-
-  const fighter =
-    fighterSprites.find((s) => s.id === selectedFighterId) ?? fighterSprites[0] ?? undefined;
-  const opponent =
-    alphaFighters.find((s) => s.id === selectedOpponentId) ?? alphaFighters[0] ?? undefined;
+  const { fighter, opponent, setFighter, setOpponent } = usePersistedSelection({
+    fighterSprites: rawFighterSprites,
+  });
 
   const contextValue: MatchupsContextValue = {
-    fighterSprites,
+    fighterSprites: rawFighterSprites,
     fighter,
-    setFighter: (next) => setSelectedFighterId(next.id),
+    setFighter,
     opponent,
-    setOpponent: (next) => setSelectedOpponentId(next.id),
+    setOpponent,
   };
 
   if (fightersLoading || matchesLoading) {
@@ -83,7 +81,7 @@ export function MatchupsPage() {
     );
   }
 
-  if (fighterSprites.length === 0) {
+  if (rawFighterSprites.length === 0) {
     return (
       <div className="flex flex-col gap-6">
         <div className="flex flex-col items-center gap-4 py-16 text-center">
