@@ -1,9 +1,14 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi, afterEach } from 'vitest';
 import {
+  getActiveSubjectClientId,
   getActiveSubjectHeader,
+  getActiveSubjectSegment,
   setActiveSubject,
+  subjectClientIdFromPathname,
   subjectScope,
   subjectSegment,
+  subjectSegmentFromPathname,
+  subscribeActiveSubject,
 } from './subjectQueryKey';
 
 describe('subjectScope', () => {
@@ -57,5 +62,86 @@ describe('subjectSegment', () => {
 
   it('returns "client:<id>" for a non-null clientId', () => {
     expect(subjectSegment('c1')).toBe('client:c1');
+  });
+});
+
+/**
+ * Phase 35-03 (Task 3, H-3/NEW-H2): a subject reader that is correct on the
+ * FIRST render of a hard load or deep link, for both `/coach/:clientId/*`
+ * and `/workspace/:tenantId/*` — derived from `window.location.pathname` on
+ * EVERY call, never from the module store. The module store stays the
+ * change-NOTIFICATION channel only.
+ */
+describe('subjectClientIdFromPathname / subjectSegmentFromPathname', () => {
+  it('resolves the coach clientId', () => {
+    expect(subjectClientIdFromPathname('/coach/c1/matchups')).toBe('c1');
+    expect(subjectSegmentFromPathname('/coach/c1/matchups')).toBe('client:c1');
+  });
+
+  it('resolves the owned-workspace tenantId, winning over any coach match', () => {
+    expect(subjectClientIdFromPathname('/workspace/t1/trends')).toBe('t1');
+    expect(subjectSegmentFromPathname('/workspace/t1/trends')).toBe('client:t1');
+  });
+
+  it('resolves personal for the coach hub, a personal route, and root', () => {
+    expect(subjectSegmentFromPathname('/coach')).toBe('personal');
+    expect(subjectSegmentFromPathname('/matchups')).toBe('personal');
+    expect(subjectSegmentFromPathname('/')).toBe('personal');
+  });
+});
+
+describe('getActiveSubjectClientId / getActiveSubjectSegment', () => {
+  afterEach(() => {
+    window.history.pushState({}, '', '/');
+    setActiveSubject({ mode: 'personal', clientId: null });
+  });
+
+  it('reflects window.location.pathname on every call, independent of the module store (H-3)', () => {
+    window.history.pushState({}, '', '/coach/c1/matchups');
+    expect(getActiveSubjectClientId()).toBe('c1');
+    // The header value is whatever the store last received — deliberately
+    // NOT updated by the pathname push alone. Pinning both in one case is
+    // what proves the value source and the header source diverge.
+    expect(getActiveSubjectHeader()).toBe('personal');
+
+    setActiveSubject({ mode: 'coaching', clientId: 'c1' });
+    expect(getActiveSubjectClientId()).toBe('c1');
+    expect(getActiveSubjectHeader()).toBe('client:c1');
+  });
+
+  it('NEW-H2 boot sequence: /workspace/:tenantId stays client:<tenantId> through the ActiveSubjectSync-then-ClientOwnedWorkspaceLayout write order', () => {
+    window.history.pushState({}, '', '/workspace/t1/trends');
+    expect(getActiveSubjectSegment()).toBe('client:t1');
+
+    // ActiveSubjectSync's /coach-blind write (personal, null) — the store
+    // flips, but the pathname-derived segment must not.
+    setActiveSubject({ mode: 'personal', clientId: null });
+    expect(getActiveSubjectSegment()).toBe('client:t1');
+
+    // ClientOwnedWorkspaceLayout's correction.
+    setActiveSubject({ mode: 'personal', clientId: 't1' });
+    expect(getActiveSubjectSegment()).toBe('client:t1');
+  });
+});
+
+describe('subscribeActiveSubject notification semantics', () => {
+  afterEach(() => {
+    setActiveSubject({ mode: 'personal', clientId: null });
+  });
+
+  it('notifies exactly once per real segment change, not on an equal-but-not-identical object, and never after unsubscribe', () => {
+    const listener = vi.fn();
+    const unsubscribe = subscribeActiveSubject(listener);
+
+    setActiveSubject({ mode: 'coaching', clientId: 'c1' });
+    expect(listener).toHaveBeenCalledTimes(1);
+
+    // A different object, same store-derived segment — no notification.
+    setActiveSubject({ mode: 'coaching', clientId: 'c1' });
+    expect(listener).toHaveBeenCalledTimes(1);
+
+    unsubscribe();
+    setActiveSubject({ mode: 'personal', clientId: null });
+    expect(listener).toHaveBeenCalledTimes(1);
   });
 });
