@@ -1,4 +1,3 @@
-import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import {
@@ -12,17 +11,19 @@ import type { Match } from '@smash-tracker/shared';
 import { getBestWorstStages, getMatchTypeRecords, getStreakSummary } from '@/lib/stats';
 import { stagesById } from '@/data/stages';
 import { WinLossPips } from '@/components/WinLossPips';
-
-const THRESHOLD_OPTIONS = [1, 2, 3, 5];
+import { MIN_STAGE_MATCHES_OPTIONS } from '@/lib/analyticsSelection';
+import { useMinStageMatches } from '@/hooks/useMinStageMatches';
 
 /**
  * v2 analytics for the selected matchup: current/best/worst streaks, recent
  * form, the best and worst stage to take this matchup to (threshold-based),
- * and the record split by match type.
+ * and the record split by match type. Phase 35-03 (D-11): the threshold is
+ * the one shared per-subject value `useMinStageMatches` owns — changing it
+ * here moves Counterpick Advisor and Matchup Stage Guide too.
  */
 export function MatchupInsights({ matchupMatches }: { matchupMatches: Match[] }) {
   const { t } = useTranslation();
-  const [threshold, setThreshold] = useState(3);
+  const [threshold, setThreshold] = useMinStageMatches();
 
   const streaks = getStreakSummary(matchupMatches);
   const { best, worst } = getBestWorstStages(matchupMatches, threshold);
@@ -42,7 +43,7 @@ export function MatchupInsights({ matchupMatches }: { matchupMatches: Match[] })
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              {THRESHOLD_OPTIONS.map((option) => (
+              {MIN_STAGE_MATCHES_OPTIONS.map((option) => (
                 <SelectItem key={option} value={String(option)}>
                   {option}
                 </SelectItem>

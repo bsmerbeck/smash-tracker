@@ -1,4 +1,3 @@
-import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { TFunction } from 'i18next';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -22,8 +21,8 @@ import { getMatchupStageGuide, type StageRecord } from '@/lib/stats';
 import { getFighterById } from '@/data/sprites';
 import { stagesById } from '@/data/stages';
 import { localizedFighterName } from '@/lib/fighterNames';
-
-const THRESHOLD_OPTIONS = [1, 2, 3, 5, 10];
+import { MIN_STAGE_MATCHES_OPTIONS } from '@/lib/analyticsSelection';
+import { useMinStageMatches } from '@/hooks/useMinStageMatches';
 
 function stageCell(record: StageRecord | null, t: TFunction) {
   if (!record) {
@@ -45,11 +44,13 @@ function stageCell(record: StageRecord | null, t: TFunction) {
  * opponent fighter actually faced, the record for that matchup plus the best
  * and worst stage to take them to, qualified by a user-adjustable per-stage
  * minimum match threshold. Rows sort by sample size so the most-informed
- * matchups lead.
+ * matchups lead. Phase 35-03 (D-11): the threshold is the one shared
+ * per-subject value `useMinStageMatches` owns — changing it here moves
+ * Matchup Insights and Counterpick Advisor too.
  */
 export function MatchupStageGuide({ fighterMatches }: { fighterMatches: Match[] }) {
   const { t } = useTranslation();
-  const [threshold, setThreshold] = useState(3);
+  const [threshold, setThreshold] = useMinStageMatches();
   const rows = getMatchupStageGuide(fighterMatches, threshold);
 
   return (
@@ -63,7 +64,7 @@ export function MatchupStageGuide({ fighterMatches }: { fighterMatches: Match[] 
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              {THRESHOLD_OPTIONS.map((option) => (
+              {MIN_STAGE_MATCHES_OPTIONS.map((option) => (
                 <SelectItem key={option} value={String(option)}>
                   {option}
                 </SelectItem>

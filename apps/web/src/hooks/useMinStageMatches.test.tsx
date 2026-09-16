@@ -2,6 +2,7 @@ import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes } from 'react-router';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { AuthProvider } from '@/context/AuthContext';
 import { useMinStageMatches } from './useMinStageMatches';
 import { resetAuthMock, setMockUser, makeMockUser } from '@/test/mockAuth';
@@ -56,15 +57,18 @@ function TwoProbes() {
 }
 
 function renderAt(path: string, element = <Probe />) {
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
-    <MemoryRouter initialEntries={[path]}>
-      <AuthProvider>
-        <Routes>
-          <Route path="/matchups" element={element} />
-          <Route path="/coach/:clientId/matchups" element={element} />
-        </Routes>
-      </AuthProvider>
-    </MemoryRouter>,
+    <QueryClientProvider client={queryClient}>
+      <MemoryRouter initialEntries={[path]}>
+        <AuthProvider>
+          <Routes>
+            <Route path="/matchups" element={element} />
+            <Route path="/coach/:clientId/matchups" element={element} />
+          </Routes>
+        </AuthProvider>
+      </MemoryRouter>
+    </QueryClientProvider>,
   );
 }
 
@@ -109,15 +113,7 @@ describe('useMinStageMatches', () => {
 
   it('keeps two consumers under the same subject in step after one of them sets the value, without a remount', async () => {
     const user = userEvent.setup();
-    render(
-      <MemoryRouter initialEntries={['/matchups']}>
-        <AuthProvider>
-          <Routes>
-            <Route path="/matchups" element={<TwoProbes />} />
-          </Routes>
-        </AuthProvider>
-      </MemoryRouter>,
-    );
+    renderAt('/matchups', <TwoProbes />);
 
     await waitFor(() => expect(screen.getByTestId('value-a')).toHaveTextContent('3'));
     expect(screen.getByTestId('value-b')).toHaveTextContent('3');
@@ -125,7 +121,7 @@ describe('useMinStageMatches', () => {
     // Click the button inside probe A only — probe B must observe the new
     // value without being remounted itself.
     const buttons = screen.getAllByText('set-5');
-    await user.click(buttons[0]);
+    await user.click(buttons[0]!);
 
     await waitFor(() => expect(screen.getByTestId('value-a')).toHaveTextContent('5'));
     expect(screen.getByTestId('value-b')).toHaveTextContent('5');
@@ -163,8 +159,9 @@ describe('useMinStageMatches', () => {
       JSON.stringify({ minStageMatches: 10 }),
     );
 
-    renderAt('/matchups');
+    const { unmount } = renderAt('/matchups');
     await waitFor(() => expect(screen.getByTestId('value')).toHaveTextContent('5'));
+    unmount();
 
     renderAt('/coach/client-a/matchups');
     await waitFor(() => expect(screen.getByTestId('value')).toHaveTextContent('10'));

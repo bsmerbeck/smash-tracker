@@ -1,7 +1,21 @@
 import { describe, expect, it } from 'vitest';
 import { render, screen } from '@testing-library/react';
+import { MemoryRouter } from 'react-router';
 import type { Match } from '@smash-tracker/shared';
 import { CounterpickAdvisor } from './CounterpickAdvisor';
+
+/**
+ * Phase 35-03 (NEW-M1): `CounterpickAdvisor` now reads the shared per-subject
+ * threshold via `useMinStageMatches`, which calls `useEffectiveSubject()` —
+ * Router-context-dependent. Every render in this file must be wrapped.
+ */
+function renderAdvisor(matchupMatches: Match[]) {
+  return render(
+    <MemoryRouter initialEntries={['/matchups']}>
+      <CounterpickAdvisor matchupMatches={matchupMatches} />
+    </MemoryRouter>,
+  );
+}
 
 // Real stage ids/names from packages/shared/src/stageData.ts — CounterpickAdvisor
 // looks the name up by id via `stagesById`, so test fixtures must use ids that
@@ -43,17 +57,17 @@ function matchesOnStage(
 
 describe('CounterpickAdvisor', () => {
   it('shows a gather-more-data hint when no stage has the minimum sample size', () => {
-    render(<CounterpickAdvisor matchupMatches={matchesOnStage(BATTLEFIELD, 1, 0)} />);
+    renderAdvisor(matchesOnStage(BATTLEFIELD, 1, 0));
     expect(screen.getByText(/Gather more data/)).toBeInTheDocument();
     expect(screen.queryByText('Pick these')).not.toBeInTheDocument();
   });
 
-  it('excludes stages below the 2-game threshold from picks/bans', () => {
+  it('excludes stages below the shared default 3-game threshold from picks/bans', () => {
     const matches = [
       ...matchesOnStage(BATTLEFIELD, 5, 0), // qualifies, best
-      ...matchesOnStage(TOWN_AND_CITY, 1, 0), // below threshold — excluded
+      ...matchesOnStage(TOWN_AND_CITY, 2, 0), // below threshold — excluded
     ];
-    render(<CounterpickAdvisor matchupMatches={matches} />);
+    renderAdvisor(matches);
     expect(screen.getByText('Pick these')).toBeInTheDocument();
     expect(screen.queryByText(/Town and City/)).not.toBeInTheDocument();
   });
@@ -63,7 +77,7 @@ describe('CounterpickAdvisor', () => {
       ...matchesOnStage(BATTLEFIELD, 5, 0), // 100%, n=5 — best
       ...matchesOnStage(TOWN_AND_CITY, 3, 2), // 60%, n=5
     ];
-    render(<CounterpickAdvisor matchupMatches={matches} />);
+    renderAdvisor(matches);
 
     const pickSection = screen.getByText('Pick these').closest('div')!;
     const items = pickSection.querySelectorAll('li');
@@ -78,7 +92,7 @@ describe('CounterpickAdvisor', () => {
       ...matchesOnStage(SMASHVILLE, 3, 2),
       ...matchesOnStage(BIG_BATTLEFIELD, 0, 5),
     ];
-    render(<CounterpickAdvisor matchupMatches={matches} />);
+    renderAdvisor(matches);
 
     const pickSection = screen.getByText('Pick these').closest('div')!;
     const banSection = screen.getByText('Ban / avoid these').closest('div')!;
@@ -91,7 +105,7 @@ describe('CounterpickAdvisor', () => {
 
   it('does not show a bans section when every qualifying stage is already a pick', () => {
     const matches = [...matchesOnStage(BATTLEFIELD, 5, 0), ...matchesOnStage(TOWN_AND_CITY, 4, 1)];
-    render(<CounterpickAdvisor matchupMatches={matches} />);
+    renderAdvisor(matches);
 
     expect(screen.getByText('Pick these')).toBeInTheDocument();
     expect(screen.queryByText('Ban / avoid these')).not.toBeInTheDocument();
@@ -104,7 +118,7 @@ describe('CounterpickAdvisor', () => {
       ...matchesOnStage(SMASHVILLE, 2, 3), // worse than Big Battlefield below
       ...matchesOnStage(BIG_BATTLEFIELD, 0, 5), // worst
     ];
-    render(<CounterpickAdvisor matchupMatches={matches} />);
+    renderAdvisor(matches);
 
     const banSection = screen.getByText('Ban / avoid these').closest('div')!;
     const items = banSection.querySelectorAll('li');
@@ -113,7 +127,7 @@ describe('CounterpickAdvisor', () => {
 
   it('shows the record, rate, and sample size for each stage row', () => {
     const matches = matchesOnStage(BATTLEFIELD, 3, 2);
-    render(<CounterpickAdvisor matchupMatches={matches} />);
+    renderAdvisor(matches);
     expect(screen.getByText(/3-2 \(60% over 5\)/)).toBeInTheDocument();
   });
 });
