@@ -1,13 +1,15 @@
-import { useMemo, useState } from 'react';
+import { useMemo } from 'react';
 import { Link } from 'react-router';
 import { useTranslation } from 'react-i18next';
 import type { Fighter } from '@smash-tracker/shared';
 import { Button } from '@/components/ui/button';
 import { useFighters } from '@/hooks/useFighters';
 import { useFilteredMatches } from '@/hooks/useFilteredMatches';
-import { useSortedFighters } from '@/hooks/useFighterName';
+import { usePersistedSelection } from '@/hooks/usePersistedSelection';
 import { useSubjectPath } from '@/hooks/useSubjectPath';
 import { getFighterById } from '@/data/sprites';
+import { inferFighterIdsFromMatches } from '@/lib/inferredFighters';
+import { ChooseFavoritesPrompt } from '@/components/ChooseFavoritesPrompt';
 import { FilteredEmptyNotice } from '@/components/FilteredEmptyNotice';
 import { SelectFighter } from './components/SelectFighter';
 import { FighterHero } from './components/FighterHero';
@@ -29,25 +31,27 @@ export function FighterAnalysisPage() {
   const { data: fighterSelection, isLoading: fightersLoading } = useFighters();
   const { matches, allMatches, isLoading: matchesLoading, filterActive } = useFilteredMatches();
 
+  const savedFighterIds = useMemo(
+    () => [...(fighterSelection?.primary ?? []), ...(fighterSelection?.secondary ?? [])],
+    [fighterSelection],
+  );
+  const usingInferredFighters = savedFighterIds.length === 0 && allMatches.length > 0;
   const rawFighterSprites = useMemo<Fighter[]>(() => {
-    const ids = [...(fighterSelection?.primary ?? []), ...(fighterSelection?.secondary ?? [])];
+    const ids = usingInferredFighters ? inferFighterIdsFromMatches(allMatches) : savedFighterIds;
     return ids
       .map((id) => getFighterById(id))
       .filter((sprite): sprite is Fighter => sprite != null);
-  }, [fighterSelection]);
-  // 260725-Q1: alphabetized by localized name — matches every other fighter
-  // picker in the app.
-  const fighterSprites = useSortedFighters(rawFighterSprites);
+  }, [usingInferredFighters, allMatches, savedFighterIds]);
 
-  const [selectedFighterId, setSelectedFighterId] = useState<number | undefined>(undefined);
-  const fighter =
-    fighterSprites.find((s) => s.id === selectedFighterId) ?? fighterSprites[0] ?? undefined;
+  const { fighter, setFighter, orderedFighterSprites, fighterUsageById } = usePersistedSelection({
+    fighterSprites: rawFighterSprites,
+  });
 
   if (fightersLoading || matchesLoading) {
     return <div className="text-muted-foreground">{t('fighterAnalysis.loading')}</div>;
   }
 
-  if (fighterSprites.length === 0) {
+  if (orderedFighterSprites.length === 0) {
     return (
       <div className="flex flex-col items-center gap-4 py-16 text-center">
         <h1 className="text-2xl font-semibold tracking-tight">{t('shared.noFighters.title')}</h1>
@@ -82,12 +86,15 @@ export function FighterAnalysisPage() {
 
   return (
     <div className="flex flex-col gap-6">
+      {usingInferredFighters && <ChooseFavoritesPrompt />}
+
       <div className="flex flex-col items-center gap-2 text-center">
         <h1 className="text-2xl font-semibold tracking-tight">{t('fighterAnalysis.title')}</h1>
         <SelectFighter
           fighter={fighter}
-          fighterSprites={fighterSprites}
-          onChange={(next) => setSelectedFighterId(next.id)}
+          fighterSprites={orderedFighterSprites}
+          fighterUsageById={fighterUsageById}
+          onChange={setFighter}
         />
       </div>
 
