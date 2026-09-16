@@ -83,7 +83,11 @@
     },
     "noMatches": {
       "title": "Du hast noch keine Matches gemeldet!",
-      "subtitle": "Erfasse ein Match im Dashboard und schau dann hier wieder vorbei."
+      "subtitle": "Synchronisiere deine start.gg- oder parry.gg-Matches oder erfasse eins manuell über dein Dashboard, um loszulegen."
+    },
+    "pickerUsage": {
+      "games_one": "{{count}} Match",
+      "games_other": "{{count}} Matches"
     },
     "vod": {
       "title": "VOD-Notizen",
@@ -747,6 +751,10 @@
     "selectFighterAria": "Deinen Kämpfer auswählen",
     "selectOpponentAria": "Gegnerischen Kämpfer auswählen",
     "selectPlaceholder": "Kämpfer wählen",
+    "selectOpponent": {
+      "facedGroup": "Bereits gespielt",
+      "unfacedGroup": "Noch nicht gespielt"
+    },
     "record": {
       "empty": "Keine erfassten Matches gegen diesen Kämpfer",
       "totalMatches": "Matches gesamt"

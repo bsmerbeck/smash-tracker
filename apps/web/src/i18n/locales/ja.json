@@ -83,7 +83,11 @@
     },
     "noMatches": {
       "title": "まだ対戦を記録していません！",
-      "subtitle": "ダッシュボードで対戦を記録してから、またここを確認しましょう。"
+      "subtitle": "start.ggまたはparry.ggの対戦を同期するか、ダッシュボードから対戦を手動で記録して始めましょう。"
+    },
+    "pickerUsage": {
+      "games_one": "{{count}}戦",
+      "games_other": "{{count}}戦"
     },
     "vod": {
       "title": "VODメモ",
@@ -747,6 +751,10 @@
     "selectFighterAria": "自分のファイターを選択",
     "selectOpponentAria": "相手のファイターを選択",
     "selectPlaceholder": "ファイターを選択",
+    "selectOpponent": {
+      "facedGroup": "対戦済み",
+      "unfacedGroup": "未対戦"
+    },
     "record": {
       "empty": "このファイターとの対戦記録はありません",
       "totalMatches": "総対戦数"

@@ -83,7 +83,11 @@
     },
     "noMatches": {
       "title": "Você ainda não reportou nenhuma partida!",
-      "subtitle": "Registre uma partida no Painel e volte aqui."
+      "subtitle": "Sincronize suas partidas do start.gg ou parry.gg, ou registre uma manualmente no seu Painel para começar."
+    },
+    "pickerUsage": {
+      "games_one": "{{count}} partida",
+      "games_other": "{{count}} partidas"
     },
     "vod": {
       "title": "Notas de VOD",
@@ -747,6 +751,10 @@
     "selectFighterAria": "Selecionar seu lutador",
     "selectOpponentAria": "Selecionar lutador do oponente",
     "selectPlaceholder": "Selecione um lutador",
+    "selectOpponent": {
+      "facedGroup": "Enfrentados",
+      "unfacedGroup": "Ainda não enfrentados"
+    },
     "record": {
       "empty": "Nenhuma partida registrada contra este lutador",
       "totalMatches": "Partidas no total"

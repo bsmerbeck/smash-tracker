@@ -83,7 +83,11 @@
     },
     "noMatches": {
       "title": "You haven't reported any matches!",
-      "subtitle": "Report a match on the Dashboard and check back here."
+      "subtitle": "Sync your start.gg or parry.gg matches, or log one manually from your Dashboard to get started."
+    },
+    "pickerUsage": {
+      "games_one": "{{count}} game",
+      "games_other": "{{count}} games"
     },
     "vod": {
       "title": "VOD Notes",
@@ -747,6 +751,10 @@
     "selectFighterAria": "Select your fighter",
     "selectOpponentAria": "Select opponent fighter",
     "selectPlaceholder": "Select a fighter",
+    "selectOpponent": {
+      "facedGroup": "Faced",
+      "unfacedGroup": "Not yet faced"
+    },
     "record": {
       "empty": "No reported matches against this fighter",
       "totalMatches": "Total Matches"
