@@ -10,11 +10,7 @@ import {
   analyticsFilterStorageKey,
 } from '@/context/AnalyticsFilterContext';
 import { useAnalyticsFilter } from '@/hooks/useAnalyticsFilter';
-import {
-  useAutoWidenEmptyRange,
-  RANGE_AUTO_WIDEN_SESSION_KEY,
-  rangeAutoWidenSessionKey,
-} from './useAutoWidenEmptyRange';
+import { useAutoWidenEmptyRange, rangeAutoWidenSessionKey } from './useAutoWidenEmptyRange';
 import { resetAuthMock, setMockUser, makeMockUser } from '@/test/mockAuth';
 
 const toastInfo = vi.fn();
