@@ -145,3 +145,25 @@ describe('subscribeActiveSubject notification semantics', () => {
     expect(listener).toHaveBeenCalledTimes(1);
   });
 });
+
+/**
+ * Phase 35-03 (Task 4, NEW-M2): the three storage-key builders this phase
+ * ships (`analyticsSelectionStorageKey` from 35-01, `analyticsFilterStorageKey`
+ * and `rangeAutoWidenSessionKey` from Task 4) all take a RAW `clientId` and
+ * must compose the identical `subjectSegment(clientId)` substring — never an
+ * already-composed segment, and never a second re-spelling of `client:`.
+ */
+describe('cross-builder subject segment agreement (NEW-M2)', () => {
+  it('all three key builders carry the identical segment substring for the same (uid, clientId) pair', async () => {
+    const { analyticsSelectionStorageKey } = await import('./analyticsSelection');
+    const { analyticsFilterStorageKey } = await import('@/context/AnalyticsFilterContext');
+    const { rangeAutoWidenSessionKey } = await import('@/hooks/useAutoWidenEmptyRange');
+
+    for (const clientId of ['c1', null]) {
+      const segment = subjectSegment(clientId);
+      expect(analyticsSelectionStorageKey('u1', clientId).endsWith(segment)).toBe(true);
+      expect(analyticsFilterStorageKey('u1', clientId).endsWith(segment)).toBe(true);
+      expect(rangeAutoWidenSessionKey('u1', clientId).endsWith(segment)).toBe(true);
+    }
+  });
+});
