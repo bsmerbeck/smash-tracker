@@ -60,10 +60,12 @@ vi.mock('@/lib/api', () => ({
 
 const mario = SpriteList.find((s) => s.id === 1)!; // Mario
 const luigi = SpriteList.find((s) => s.id === 10)!; // Luigi
-// SelectOpponent defaults to the alphabetically-first sprite, matching
-// useAlphaFighters' sort (src/hooks/useFighterName.ts) — the active locale
-// in these tests is always 'en', where localized names equal SpriteList's
-// canonical `.name`, so this plain English sort matches runtime behavior.
+const bowser = SpriteList.find((s) => s.id === 16)!; // Bowser — alphabetically before Mario
+// Phase 35 removed the alphabetical-first fallback (DFLT-01/DFLT-03); this
+// sprite is kept only as a NEGATIVE control — several cases below assert it
+// is NOT what the usage-based default resolves to, matching
+// useAlphaFighters' sort (src/hooks/useFighterName.ts) for the active
+// locale ('en', where localized names equal SpriteList's canonical `.name`).
 const alphabeticallyFirstSprite = [...SpriteList].sort((a, b) => a.name.localeCompare(b.name))[0]!;
 
 function makeMatch(overrides: Partial<Record<string, unknown>> = {}) {
@@ -183,10 +185,13 @@ describe('MatchupsPage', () => {
         id: 'm1',
         fighter_id: mario.id,
         opponent_id: alphabeticallyFirstSprite.id,
+        time: 2,
         win: true,
       }),
-      // Different opponent fighter — should NOT be counted against the default matchup.
-      makeMatch({ id: 'm2', fighter_id: mario.id, opponent_id: luigi.id, win: false }),
+      // Different opponent fighter, played EARLIER — tied 1-1 on games so the
+      // most-recent tiebreak (D-02/D-09) is what keeps this one out of the
+      // default pairing, not roster order.
+      makeMatch({ id: 'm2', fighter_id: mario.id, opponent_id: luigi.id, time: 1, win: false }),
     ]);
 
     renderMatchups();
@@ -270,6 +275,7 @@ describe('MatchupsPage', () => {
   });
 
   it('shows a no-matches message for the matchup table when the pairing has no matches', async () => {
+    const user = userEvent.setup();
     getFighters.mockResolvedValue({ primary: [mario.id], secondary: [] });
     listMatches.mockResolvedValue([
       makeMatch({ id: 'm1', fighter_id: mario.id, opponent_id: luigi.id, win: true }),
@@ -277,7 +283,17 @@ describe('MatchupsPage', () => {
 
     renderMatchups();
 
-    // Default opponent is alphabetically-first, not Luigi, so no matches for the default pairing.
+    // The usage-based default opponent is Luigi (the only one Mario has
+    // faced), which has a match — explicitly switch to a fighter Mario has
+    // never faced to exercise the pairing's own empty state.
+    await waitFor(() =>
+      expect(screen.getByLabelText('Select opponent fighter')).toBeInTheDocument(),
+    );
+    await user.click(screen.getByLabelText('Select opponent fighter'));
+    await user.click(
+      await screen.findByRole('option', { name: new RegExp(alphabeticallyFirstSprite.name) }),
+    );
+
     expect(await screen.findByText('No matches reported yet!')).toBeInTheDocument();
     expect(screen.getByText('No reported matches against this fighter')).toBeInTheDocument();
   });
@@ -343,5 +359,98 @@ describe('MatchupsPage', () => {
     expect(await screen.findByText('Counterpick Advisor')).toBeInTheDocument();
     expect(screen.getByText('By Opponent')).toBeInTheDocument();
     expect(screen.getByText('alice')).toBeInTheDocument();
+  });
+
+  /**
+   * Phase 35 (DFLT-01/DFLT-03 tracer): opens on the subject's most-used
+   * fighter with that fighter's most-faced opponent preselected, with no
+   * interaction. Bowser is saved alongside Mario and is alphabetically
+   * first — an alphabetical fallback would land on Bowser, never Mario, so
+   * this only passes for the usage-based default.
+   */
+  it("opens on the most-played fighter paired with that fighter's most-faced opponent, with no interaction", async () => {
+    getFighters.mockResolvedValue({ primary: [bowser.id, mario.id], secondary: [] });
+    listMatches.mockResolvedValue([
+      makeMatch({ id: 'm1', fighter_id: mario.id, opponent_id: luigi.id, time: 1, win: true }),
+      makeMatch({ id: 'm2', fighter_id: mario.id, opponent_id: luigi.id, time: 2, win: true }),
+      makeMatch({
+        id: 'm3',
+        fighter_id: mario.id,
+        opponent_id: alphabeticallyFirstSprite.id,
+        time: 3,
+        win: false,
+      }),
+      // Bowser has fewer games than Mario — must lose the fighter default.
+      makeMatch({ id: 'm4', fighter_id: bowser.id, opponent_id: luigi.id, time: 4, win: true }),
+    ]);
+
+    renderMatchups();
+
+    await waitFor(() => expect(screen.getByText('Matchup Results')).toBeInTheDocument());
+    const fighterTrigger = screen.getByLabelText('Select your fighter');
+    const opponentTrigger = screen.getByLabelText('Select opponent fighter');
+    expect(within(fighterTrigger).getByText(mario.name)).toBeInTheDocument();
+    expect(within(opponentTrigger).getByText(luigi.name)).toBeInTheDocument();
+
+    // The Mario-vs-Luigi pairing (2 games, both wins) is the one actually rendered.
+    const winsStat = screen.getByText('Wins').closest('div');
+    expect(winsStat).not.toBeNull();
+    expect(within(winsStat!).getByText('2')).toBeInTheDocument();
+  });
+
+  /**
+   * Phase 35 (DFLT-02): an explicit opponent change is remembered across a
+   * full unmount/remount (the browser-refresh equivalent) for the same
+   * (uid, subject) pair — a computed default is not.
+   */
+  it('remembers an explicitly chosen opponent across an unmount and remount', async () => {
+    const user = userEvent.setup();
+    getFighters.mockResolvedValue({ primary: [mario.id], secondary: [] });
+    listMatches.mockResolvedValue([
+      // Default opponent (most games, most-recent tiebreak) is Luigi.
+      makeMatch({ id: 'm1', fighter_id: mario.id, opponent_id: luigi.id, time: 2, win: true }),
+      makeMatch({
+        id: 'm2',
+        fighter_id: mario.id,
+        opponent_id: alphabeticallyFirstSprite.id,
+        time: 1,
+        win: false,
+      }),
+    ]);
+
+    const { unmount } = renderMatchups();
+
+    await waitFor(() =>
+      expect(screen.getByLabelText('Select opponent fighter')).toBeInTheDocument(),
+    );
+    await waitFor(() => {
+      expect(
+        within(screen.getByLabelText('Select opponent fighter')).getByText(luigi.name),
+      ).toBeInTheDocument();
+    });
+
+    await user.click(screen.getByLabelText('Select opponent fighter'));
+    await user.click(
+      await screen.findByRole('option', { name: new RegExp(alphabeticallyFirstSprite.name) }),
+    );
+
+    await waitFor(() => {
+      expect(
+        within(screen.getByLabelText('Select opponent fighter')).getByText(
+          alphabeticallyFirstSprite.name,
+        ),
+      ).toBeInTheDocument();
+    });
+
+    unmount();
+    renderMatchups();
+
+    await waitFor(() => {
+      expect(
+        within(screen.getByLabelText('Select opponent fighter')).getByText(
+          alphabeticallyFirstSprite.name,
+        ),
+      ).toBeInTheDocument();
+    });
   });
 });

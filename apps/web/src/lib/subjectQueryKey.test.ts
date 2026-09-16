@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { getActiveSubjectHeader, setActiveSubject, subjectScope } from './subjectQueryKey';
+import {
+  getActiveSubjectHeader,
+  setActiveSubject,
+  subjectScope,
+  subjectSegment,
+} from './subjectQueryKey';
 
 describe('subjectScope', () => {
   it('returns a personal-only scope for personal mode', () => {
@@ -35,5 +40,22 @@ describe('setActiveSubject / getActiveSubjectHeader', () => {
   it('walkthrough fix FB-1: stays personal at the /coach hub (mode coaching, no clientId)', () => {
     setActiveSubject({ mode: 'coaching', clientId: null });
     expect(getActiveSubjectHeader()).toBe('personal');
+  });
+});
+
+/**
+ * Phase 35 (NEW-M2): `subjectSegment` is the ONE place the `client:` literal
+ * is spelled anywhere in the app — `getActiveSubjectHeader` above and every
+ * subject-scoped storage key (`analyticsSelectionStorageKey`, and 35-03's
+ * `analyticsFilterStorageKey`/`rangeAutoWidenSessionKey`) compose through it
+ * instead of re-spelling the branch themselves.
+ */
+describe('subjectSegment', () => {
+  it('returns "personal" for a null clientId', () => {
+    expect(subjectSegment(null)).toBe('personal');
+  });
+
+  it('returns "client:<id>" for a non-null clientId', () => {
+    expect(subjectSegment('c1')).toBe('client:c1');
   });
 });
