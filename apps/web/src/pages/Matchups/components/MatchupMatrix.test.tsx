@@ -35,6 +35,8 @@ function renderMatrix(matches: Match[], overrides: Partial<MatchupsContextValue>
     setFighter,
     opponent: luigi,
     setOpponent,
+    fighterUsageById: new Map(),
+    opponentUsage: [],
     ...overrides,
   };
 

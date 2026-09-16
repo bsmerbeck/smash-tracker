@@ -57,8 +57,15 @@ export function MatchupsPage() {
       .filter((sprite): sprite is Fighter => sprite != null);
   }, [usingInferredFighters, allMatches, savedFighterIds]);
 
-  const { fighter, opponent, setFighter, setOpponent, orderedFighterSprites } =
-    usePersistedSelection({ fighterSprites: rawFighterSprites });
+  const {
+    fighter,
+    opponent,
+    setFighter,
+    setOpponent,
+    orderedFighterSprites,
+    fighterUsageById,
+    opponentUsage,
+  } = usePersistedSelection({ fighterSprites: rawFighterSprites });
 
   const contextValue: MatchupsContextValue = {
     fighterSprites: orderedFighterSprites,
@@ -66,6 +73,8 @@ export function MatchupsPage() {
     setFighter,
     opponent,
     setOpponent,
+    fighterUsageById,
+    opponentUsage,
   };
 
   if (fightersLoading || matchesLoading) {

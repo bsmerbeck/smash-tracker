@@ -9,11 +9,17 @@ import {
 import { useFighterNameResolver } from '@/hooks/useFighterName';
 import { useMatchupsContext } from '../MatchupsContext';
 
-/** Ports legacy/src/screens/Matchups/components/SelectFighter — picks "your" fighter from the user's selections. */
+/**
+ * Ports legacy/src/screens/Matchups/components/SelectFighter — picks "your"
+ * fighter from the user's selections. Phase 35 (D-13): `fighterSprites`
+ * arrives PRE-ORDERED by usage from the context (most-to-least games,
+ * most-recent tiebreak) — this component performs no sorting of its own,
+ * and renders each row with a localized trailing game count.
+ */
 export function SelectFighter() {
   const { t } = useTranslation();
   const localizedName = useFighterNameResolver();
-  const { fighter, fighterSprites, setFighter } = useMatchupsContext();
+  const { fighter, fighterSprites, setFighter, fighterUsageById } = useMatchupsContext();
 
   return (
     <Select
@@ -30,7 +36,15 @@ export function SelectFighter() {
       </SelectTrigger>
       <SelectContent>
         {fighterSprites.map((sprite) => (
-          <SelectItem key={sprite.id} value={String(sprite.id)}>
+          <SelectItem
+            key={sprite.id}
+            value={String(sprite.id)}
+            trailing={
+              <span className="text-xs text-muted-foreground tabular-nums whitespace-nowrap">
+                {t('shared.pickerUsage.games', { count: fighterUsageById.get(sprite.id) ?? 0 })}
+              </span>
+            }
+          >
             <img src={sprite.url} alt="" className="size-6 object-contain" />
             {localizedName(sprite.id)}
           </SelectItem>
