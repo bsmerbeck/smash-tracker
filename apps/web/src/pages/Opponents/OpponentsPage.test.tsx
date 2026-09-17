@@ -129,6 +129,7 @@ function renderOpponents(initialEntry = '/opponents') {
             <ShellProfileSubscription />
             <Routes>
               <Route path="/opponents" element={<OpponentsPage />} />
+              <Route path="/coach/:clientId/opponents" element={<OpponentsPage />} />
               <Route path="/dashboard" element={<div>Dashboard page</div>} />
               <Route path="/settings/integrations" element={<div>Integrations page</div>} />
               <Route path="/tournaments/:eventId" element={<div>Tournament detail page</div>} />
@@ -227,6 +228,24 @@ describe('OpponentsPage', () => {
       // "rival" (3 games) ranks above "zeta" (1 game).
       expect(within(rows[0]!).getByText('rival')).toBeInTheDocument();
       expect(within(rows[1]!).getByText('zeta')).toBeInTheDocument();
+    });
+
+    // Phase 36 (T-36-02-02): no component this plan touched reads a subject,
+    // a uid, or a route param directly — each receives an already
+    // subject-scoped `Match[]`/alias map from the host page's own
+    // subject-scoped hooks. This asserts the SAME structure renders under a
+    // client-subject route segment as under the personal one, not just by
+    // inspection of the (subject-blind) component code.
+    it('renders the identical list/report structure under a coach client-subject route', async () => {
+      renderOpponents('/coach/tetra-client/opponents');
+
+      expect(await screen.findByText('2 opponents faced')).toBeInTheDocument();
+      const list = screen.getByRole('list', { name: 'Opponents' });
+      const rows = within(list).getAllByRole('listitem');
+      expect(rows).toHaveLength(2);
+      expect(within(rows[0]!).getByText('rival')).toBeInTheDocument();
+      expect(within(rows[1]!).getByText('zeta')).toBeInTheDocument();
+      await waitFor(() => expect(screen.getByText('Last 10 (newest first)')).toBeInTheDocument());
     });
 
     it('auto-selects the most-played opponent and shows their scouting report', async () => {
