@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { canonicalOpponentName, makeCanonicalizer, normalizeOpponentTag } from './identity.js';
 
 describe('normalizeOpponentTag', () => {
@@ -112,6 +112,32 @@ describe('canonicalOpponentName (EVID-12)', () => {
       const once = canonicalOpponentName(tag, aliasMap);
       const twice = canonicalOpponentName(once, aliasMap);
       expect(twice, `idempotence for tag "${tag}"`).toBe(once);
+    }
+  });
+
+  it('IN-01-i2: warns exactly once, with no tag content, when the hop cap is reached without a terminal or a cycle', () => {
+    // An implausibly deep, deliberately ACYCLIC chain (100 hops, well past
+    // MAX_ALIAS_HOPS) — no legitimate write path produces this today, but
+    // the fallback should not fail silently if it's ever exercised.
+    const aliasMap: Record<string, string> = {};
+    for (let i = 0; i < 100; i += 1) {
+      aliasMap[`sentinel-tag-${i}`] = `sentinel-tag-${i + 1}`;
+    }
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      const result = canonicalOpponentName('sentinel-tag-0', aliasMap);
+      // Still resolves to SOME deterministic value — the hop cap is a
+      // fail-safe, never a throw.
+      expect(typeof result).toBe('string');
+      expect(warnSpy).toHaveBeenCalledTimes(1);
+      const [message] = warnSpy.mock.calls[0]!;
+      expect(String(message)).toContain('hop cap');
+      // Never leaks any opponent tag/name from the map into the log line.
+      for (const key of Object.keys(aliasMap)) {
+        expect(String(message)).not.toContain(key);
+      }
+    } finally {
+      warnSpy.mockRestore();
     }
   });
 });
