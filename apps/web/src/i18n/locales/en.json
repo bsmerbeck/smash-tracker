@@ -131,9 +131,14 @@
     },
     "glicko": {
       "whatIs": "What is Glicko-2?",
-      "p1": "<strong>Glicko-2</strong> is the rating system used in chess and by many competitive ladders. Unlike a raw win rate, it weighs <em>who</em> you beat and how surprising the result was.",
+      "p1": "<strong>Glicko-2</strong> is the rating system used in chess and by many competitive ladders. This app's version (v2) rates every session against a fixed, constant reference opponent — it reflects how well you performed, not who you beat or how strong they were.",
       "p2": "The <strong>±number (RD)</strong> is uncertainty: it shrinks as you play more and grows when you're inactive — so a 1500 ±50 player is proven, a 1500 ±300 player is unknown.",
-      "p3": "We use it because bracket play is bursty: Glicko-2 handles long gaps between tournaments and small samples far better than Elo or win-rate alone. Ratings here are unofficial and computed only from your synced/logged games."
+      "p3": "We use it because bracket play is bursty: Glicko-2 handles long gaps between tournaments and small samples far better than a raw win rate. Ratings here are unofficial, computed only from your synced/logged games, and use rating-model version 2 (a full-history recompute — see the \"rating model updated\" note)."
+    },
+    "ratingModelNote": {
+      "title": "Rating model updated",
+      "body": "Session ratings now reflect results against a fixed reference opponent, not raw win/loss — see \"What is Glicko-2?\" for what changed. Older ratings were recomputed under the new model; your rating may differ from what you remember.",
+      "dismiss": "Got it"
     },
     "pending": {
       "saving": "Saving..."

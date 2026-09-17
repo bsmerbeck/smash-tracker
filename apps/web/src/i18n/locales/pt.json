@@ -125,9 +125,14 @@
     },
     "glicko": {
       "whatIs": "O que é Glicko-2?",
-      "p1": "<strong>Glicko-2</strong> é o sistema de pontuação usado no xadrez e em muitas ladders competitivas. Diferente de uma taxa de vitórias simples, ele pesa <em>quem</em> você vence e o quão surpreendente foi o resultado.",
+      "p1": "<strong>Glicko-2</strong> é o sistema de pontuação usado no xadrez e em muitas ladders competitivas. A versão deste app (v2) pontua cada sessão contra um adversário de referência fixo e constante — ela reflete o quão bem você jogou, não quem você venceu ou o quão forte era.",
       "p2": "O <strong>número ± (RD)</strong> é a incerteza: ele diminui conforme você joga e cresce quando você fica inativo — um jogador 1500 ±50 é comprovado, um 1500 ±300 é uma incógnita.",
-      "p3": "Nós o usamos porque o jogo de bracket é irregular: o Glicko-2 lida com longas pausas entre torneios e amostras pequenas muito melhor do que o Elo ou a taxa de vitórias sozinhos. As pontuações aqui não são oficiais e são calculadas apenas com suas partidas sincronizadas ou registradas."
+      "p3": "Nós o usamos porque o jogo de bracket é irregular: o Glicko-2 lida com longas pausas entre torneios e amostras pequenas muito melhor do que uma taxa de vitórias simples. As pontuações aqui não são oficiais, são calculadas apenas com suas partidas sincronizadas ou registradas, e usam a versão 2 do modelo de pontuação (um recálculo completo do histórico — veja o aviso \"modelo de pontuação atualizado\")."
+    },
+    "ratingModelNote": {
+      "title": "Modelo de pontuação atualizado",
+      "body": "As pontuações de sessão agora refletem resultados contra um adversário de referência fixo, não o histórico simples de vitórias/derrotas — veja \"O que é Glicko-2?\" para saber o que mudou. Pontuações antigas foram recalculadas sob o novo modelo; sua pontuação pode ser diferente do que você lembra.",
+      "dismiss": "Entendi"
     },
     "relativeDate": {
       "justNow": "agora mesmo",

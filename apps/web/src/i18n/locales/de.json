@@ -125,9 +125,14 @@
     },
     "glicko": {
       "whatIs": "Was ist Glicko-2?",
-      "p1": "<strong>Glicko-2</strong> ist das Wertungssystem aus dem Schach, das auch viele kompetitive Ladder nutzen. Anders als eine reine Winrate gewichtet es, <em>wen</em> du schlägst und wie überraschend das Ergebnis war.",
+      "p1": "<strong>Glicko-2</strong> ist das Wertungssystem aus dem Schach, das auch viele kompetitive Ladder nutzen. Die Version dieser App (v2) bewertet jede Session gegen einen festen, konstanten Referenzgegner — sie spiegelt wider, wie gut du gespielt hast, nicht wen du geschlagen hast oder wie stark er war.",
       "p2": "Die <strong>±-Zahl (RD)</strong> ist die Unsicherheit: Sie schrumpft, je mehr du spielst, und wächst bei Inaktivität — ein Spieler mit 1500 ±50 ist etabliert, einer mit 1500 ±300 eine Unbekannte.",
-      "p3": "Wir nutzen es, weil Bracket-Play stoßweise passiert: Glicko-2 kommt mit langen Pausen zwischen Turnieren und kleinen Stichproben deutlich besser zurecht als Elo oder Winrate allein. Die Wertungen hier sind inoffiziell und werden nur aus deinen synchronisierten bzw. erfassten Matches berechnet."
+      "p3": "Wir nutzen es, weil Bracket-Play stoßweise passiert: Glicko-2 kommt mit langen Pausen zwischen Turnieren und kleinen Stichproben deutlich besser zurecht als eine reine Winrate. Die Wertungen hier sind inoffiziell, werden nur aus deinen synchronisierten bzw. erfassten Matches berechnet und nutzen Wertungsmodell-Version 2 (ein vollständiges Neuberechnen der Historie — sieh dir den Hinweis „Wertungsmodell aktualisiert“ an)."
+    },
+    "ratingModelNote": {
+      "title": "Wertungsmodell aktualisiert",
+      "body": "Session-Wertungen spiegeln jetzt Ergebnisse gegen einen festen Referenzgegner wider, nicht die reine Sieg/Niederlage-Bilanz — sieh dir „Was ist Glicko-2?“ an, um zu erfahren, was sich geändert hat. Ältere Wertungen wurden unter dem neuen Modell neu berechnet; deine Wertung kann von dem abweichen, woran du dich erinnerst.",
+      "dismiss": "Verstanden"
     },
     "relativeDate": {
       "justNow": "gerade eben",

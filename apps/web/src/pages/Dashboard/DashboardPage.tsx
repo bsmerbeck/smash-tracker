@@ -14,6 +14,7 @@ import { useCoachingClients } from '@/hooks/useCoachingClients';
 import { intentDestination } from '@/hooks/useOnboarding';
 import { getFighterById } from '@/data/sprites';
 import { FilteredEmptyNotice } from '@/components/FilteredEmptyNotice';
+import { RatingModelNote } from '@/components/RatingModelNote';
 import { DashboardContext, type DashboardContextValue } from './DashboardContext';
 import { DashboardToolbar } from './components/DashboardToolbar';
 import { WinLossTracker } from './components/WinLossTracker';
@@ -226,6 +227,7 @@ export function DashboardPage() {
         <SelfDataCoveragePanel />
         <DashboardNextBestAction />
         <DashboardPrepActionSlot />
+        <RatingModelNote />
         <HeroStats matches={matches} timeFilteredMatches={timeFilteredMatches} />
 
         <DashboardToolbar />

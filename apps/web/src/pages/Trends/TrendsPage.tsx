@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/ui/button';
 import { useFilteredMatches } from '@/hooks/useFilteredMatches';
 import { FilteredEmptyNotice } from '@/components/FilteredEmptyNotice';
+import { RatingModelNote } from '@/components/RatingModelNote';
 import { TrendsHero } from './components/TrendsHero';
 import { MonthlyPerformance } from './components/MonthlyPerformance';
 import { SessionsAndTilt } from './components/SessionsAndTilt';
@@ -40,6 +41,8 @@ export function TrendsPage() {
   return (
     <div className="flex flex-col gap-6">
       {filterActive && matches.length === 0 && <FilteredEmptyNotice />}
+
+      <RatingModelNote />
 
       <TrendsHero matches={matches} />
 

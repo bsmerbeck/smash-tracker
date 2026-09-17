@@ -125,9 +125,14 @@
     },
     "glicko": {
       "whatIs": "¿Qué es Glicko-2?",
-      "p1": "<strong>Glicko-2</strong> es el sistema de puntuación que se usa en ajedrez y en muchas ligas competitivas. A diferencia de un simple porcentaje de victorias, pondera a <em>quién</em> vences y cuán sorprendente fue el resultado.",
+      "p1": "<strong>Glicko-2</strong> es el sistema de puntuación que se usa en ajedrez y en muchas ligas competitivas. La versión de esta app (v2) puntúa cada sesión frente a un rival de referencia fijo y constante — refleja qué tan bien jugaste, no a quién venciste ni cuán fuerte era.",
       "p2": "El <strong>número ± (RD)</strong> es la incertidumbre: se reduce cuanto más juegas y crece cuando estás inactivo — un jugador con 1500 ±50 está consolidado, uno con 1500 ±300 es una incógnita.",
-      "p3": "Lo usamos porque el juego de bracket va a rachas: Glicko-2 maneja los parones largos entre torneos y las muestras pequeñas mucho mejor que el Elo o el porcentaje de victorias por sí solos. Las puntuaciones de aquí no son oficiales y se calculan solo con tus partidas sincronizadas o registradas."
+      "p3": "Lo usamos porque el juego de bracket va a rachas: Glicko-2 maneja los parones largos entre torneos y las muestras pequeñas mucho mejor que un simple porcentaje de victorias. Las puntuaciones de aquí no son oficiales, se calculan solo con tus partidas sincronizadas o registradas, y usan la versión 2 del modelo de puntuación (un recálculo completo del historial — consulta el aviso de \"modelo de puntuación actualizado\")."
+    },
+    "ratingModelNote": {
+      "title": "Modelo de puntuación actualizado",
+      "body": "Las puntuaciones de sesión ahora reflejan los resultados frente a un rival de referencia fijo, no el simple historial de victorias/derrotas — consulta \"¿Qué es Glicko-2?\" para ver qué cambió. Las puntuaciones anteriores se recalcularon con el nuevo modelo; tu puntuación puede diferir de lo que recuerdas.",
+      "dismiss": "Entendido"
     },
     "relativeDate": {
       "justNow": "justo ahora",

@@ -125,9 +125,14 @@
     },
     "glicko": {
       "whatIs": "Qu'est-ce que Glicko-2 ?",
-      "p1": "<strong>Glicko-2</strong> est le système de classement utilisé aux échecs et sur de nombreux ladders compétitifs. Contrairement à un simple taux de victoire, il tient compte de <em>qui</em> vous battez et du caractère surprenant du résultat.",
+      "p1": "<strong>Glicko-2</strong> est le système de classement utilisé aux échecs et sur de nombreux ladders compétitifs. La version utilisée par cette application (v2) évalue chaque session par rapport à un adversaire de référence fixe et constant — elle reflète votre niveau de performance, pas qui vous avez battu ni sa force.",
       "p2": "Le <strong>nombre ± (RD)</strong> mesure l'incertitude : il diminue à mesure que vous jouez et augmente en cas d'inactivité — un joueur à 1500 ±50 a fait ses preuves, un joueur à 1500 ±300 reste une inconnue.",
-      "p3": "Nous l'utilisons parce que le jeu en bracket est irrégulier : Glicko-2 gère bien mieux les longues pauses entre tournois et les petits échantillons que l'Elo ou le taux de victoire seuls. Les classements affichés ici ne sont pas officiels et sont calculés uniquement à partir de vos matchs synchronisés ou enregistrés."
+      "p3": "Nous l'utilisons parce que le jeu en bracket est irrégulier : Glicko-2 gère bien mieux les longues pauses entre tournois et les petits échantillons qu'un simple taux de victoire. Les classements affichés ici ne sont pas officiels, sont calculés uniquement à partir de vos matchs synchronisés ou enregistrés, et utilisent la version 2 du modèle de classement (un recalcul complet de l'historique — voir la note « modèle de classement mis à jour »)."
+    },
+    "ratingModelNote": {
+      "title": "Modèle de classement mis à jour",
+      "body": "Les classements de session reflètent désormais les résultats face à un adversaire de référence fixe, et non le simple historique victoires/défaites — consultez « Qu'est-ce que Glicko-2 ? » pour voir ce qui a changé. Les anciens classements ont été recalculés avec le nouveau modèle ; votre classement peut différer de ce dont vous vous souvenez.",
+      "dismiss": "Compris"
     },
     "relativeDate": {
       "justNow": "à l'instant",

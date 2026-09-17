@@ -761,4 +761,41 @@ describe('GspPage', () => {
       expect(screen.getByText(/>50% win rate, not more matches/)).toBeInTheDocument();
     });
   });
+
+  // Phase 36 (TRND-01, D-02, R1-HIGH-5): GspVsGlicko is the fourth
+  // rating-bearing surface (the mount set is derived from the
+  // computeRatingHistory/RatingPeriodResult grep, not recalled) — its
+  // plotted rating periods move under the v2 fixed-reference model just
+  // like Dashboard/Trends/Groups, so it carries the same dismissible note.
+  describe('rating-model-updated note (TRND-01)', () => {
+    const FOUR_HOURS_MS = 4 * 60 * 60 * 1000;
+
+    it('positions the note immediately above GspVsGlicko, not at the top of the page', async () => {
+      getFighters.mockResolvedValue({ primary: [mario.id], secondary: [] });
+      // Three sessions (>3h gap apart) so computeRatingHistory produces
+      // >= GSP_VS_GLICKO_MIN_POINTS periods and GspVsGlicko actually renders.
+      listMatches.mockResolvedValue([
+        makeMatch({ id: 'm1', time: 0, win: true, gsp: 9_000_000 }),
+        makeMatch({ id: 'm2', time: FOUR_HOURS_MS, win: true, gsp: 9_100_000 }),
+        makeMatch({ id: 'm3', time: 2 * FOUR_HOURS_MS, win: false, gsp: 9_050_000 }),
+      ]);
+
+      renderGspPage();
+
+      const heroLabel = await screen.findByText('Current GSP');
+      const note = await screen.findByText('Rating model updated');
+      const vsGlickoTitle = await screen.findByText('Est. MMR vs Glicko-2');
+
+      // GspHero (top of page content) renders BEFORE the note — the note is
+      // not at the top of the page, since everything above it is
+      // unaffected GSP data.
+      expect(
+        heroLabel.compareDocumentPosition(note) & Node.DOCUMENT_POSITION_FOLLOWING,
+      ).toBeTruthy();
+      // The note sits immediately above GspVsGlicko.
+      expect(
+        note.compareDocumentPosition(vsGlickoTitle) & Node.DOCUMENT_POSITION_FOLLOWING,
+      ).toBeTruthy();
+    });
+  });
 });

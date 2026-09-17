@@ -6,7 +6,6 @@ import {
   DEFAULT_VOLATILITY,
   RATING_MODEL_VERSION,
   SESSION_REFERENCE_RATING,
-  SESSION_REFERENCE_RD,
   computeRatingHistory,
   updateRating,
 } from './glicko.js';

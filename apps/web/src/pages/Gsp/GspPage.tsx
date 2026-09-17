@@ -16,6 +16,7 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { EditMatchForm } from '@/components/match-form/EditMatchForm';
+import { RatingModelNote } from '@/components/RatingModelNote';
 import { useMatches } from '@/hooks/useMatches';
 import { useFighters } from '@/hooks/useFighters';
 import { useGspSettings } from '@/hooks/useGspSettings';
@@ -175,6 +176,8 @@ export function GspPage() {
         <GainsAnalysis stats={gainStats} />
         <GspTiers series={series} settings={gspSettings} />
       </div>
+
+      <RatingModelNote />
 
       <GspVsGlicko gspSeries={series} allMatches={matches} settings={gspSettings} />
 
