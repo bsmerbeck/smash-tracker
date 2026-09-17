@@ -33,6 +33,29 @@ export const DEFAULT_VOLATILITY = 0.06;
 /** Glicko-1 -> Glicko-2 scale factor ("173.7178" in the paper). */
 export const GLICKO_SCALE = 173.7178;
 
+/**
+ * v2 (TRND-01): the fixed, constant reference opponent every session game is
+ * scored against — see the MODEL comment above `computeRatingHistory` below
+ * for why a CONSTANT reference (rather than the player's own pre-session
+ * rating) gives the rating a genuine fixed point. Deliberately set equal to
+ * this module's own new/unrated-player defaults (`DEFAULT_RATING`,
+ * `DEFAULT_RD`) rather than a new magic number: it makes the rating legible
+ * as "performance relative to a neutral baseline" with no extra constant to
+ * justify.
+ */
+export const SESSION_REFERENCE_RATING = DEFAULT_RATING;
+export const SESSION_REFERENCE_RD = DEFAULT_RD;
+
+/**
+ * Compile-time tag on every `computeRatingHistory` output, bumped whenever
+ * the rating MODEL itself changes (TRND-01: 1 -> 2, the fixed-reference
+ * session opponent fix). Nothing about a rating is ever stored — see the
+ * note at the bottom of the MODEL comment below — so this is not a per-user
+ * migration flag; every call simply computes under whatever version this
+ * constant currently names.
+ */
+export const RATING_MODEL_VERSION = 2;
+
 /** Convergence tolerance for the volatility-update iterative algorithm (Step 5, Illinois algorithm). */
 const CONVERGENCE_EPSILON = 0.000001;
 
@@ -221,21 +244,38 @@ export function splitIntoSessions(matches: Match[], gapMs = DEFAULT_SESSION_GAP_
 // ---------------------------------------------------------------------------
 // Session-based rating history for this app's matches
 //
-// MODEL (documented per the task spec): start.gg opponents are transient,
-// unrated "pools" we have no persistent rating for — there is no stable
-// opponent-rating population to run a conventional two-sided Glicko-2
-// ladder against. Instead, each RATING PERIOD is one play session (grouped
-// via `splitIntoSessions`'s default gap, matching the "Sessions" model
-// already used elsewhere in the dashboard). Within a period, every game is
-// modeled as a game against a SYNTHETIC opponent whose rating equals the
-// player's OWN pre-period rating and whose RD is the maximal uncertainty
-// value (`DEFAULT_RD`, 350) — an "uncertainty-maximal opponent proxy".
-// Playing this synthetic mirror-opponent means:
-//   - a period with more wins than losses raises the rating (self-referential
-//     overperformance is rewarded), a losing period lowers it;
-//   - the proxy's high RD (350) keeps each period's rating swing modest —
-//     it never treats the self-match as a high-information game the way a
-//     precisely-known opponent would;
+// MODEL (v2, RATING_MODEL_VERSION = 2, TRND-01): start.gg opponents are
+// transient, unrated "pools" we have no persistent rating for — there is no
+// stable opponent-rating population to run a conventional two-sided
+// Glicko-2 ladder against. Instead, each RATING PERIOD is one play session
+// (grouped via `splitIntoSessions`'s default gap, matching the "Sessions"
+// model already used elsewhere in the dashboard). Within a period, every
+// game is scored against a FIXED, CONSTANT reference opponent —
+// `SESSION_REFERENCE_RATING`/`SESSION_REFERENCE_RD` (1500/350).
+//
+// v1 scored every game against a SYNTHETIC opponent whose rating equaled the
+// player's OWN pre-period rating. Because Glicko-2's expected-score function
+// `E(mu, mu_opponent, phi_opponent)` evaluates to exactly 0.5 whenever
+// `mu_opponent === mu`, that self-reference pinned the expected score at 0.5
+// forever no matter how high the rating climbed — a session win rate
+// consistently above 50% produced a positive delta every session, forever,
+// with no term that ever pulled it back: an unbounded biased random walk
+// (the TRND-01 defect; observed on real data climbing past 40,000). With a
+// CONSTANT reference instead, `E` rises monotonically as the player's own
+// rating rises, so a constant win rate `p` stops producing a positive delta
+// once the expected score reaches `p` — that is the fixed point a constant
+// session win rate converges to (see glicko.test.ts's v2 convergence
+// tests, and the pre-fix divergent value they record). At `p = 0.5` the
+// fixed point is the reference rating itself, 1500 — the degenerate,
+// sanity-checkable case.
+//
+// Playing this fixed-reference opponent means:
+//   - a period with more wins than losses raises the rating, a losing
+//     period lowers it, with the delta shrinking as the rating approaches
+//     the level implied by the player's true session win rate;
+//   - the reference's RD (350, maximal uncertainty) keeps each period's
+//     rating swing modest — it never treats a session as a high-information
+//     game the way a precisely-known opponent would;
 //   - RD still shrinks with consistent play (Step 7).
 // Additionally, the gap BETWEEN sessions matters: if more than one
 // rating-period's worth of time (`gapMs`, the same threshold used to split
@@ -248,9 +288,19 @@ export function splitIntoSessions(matches: Match[], gapMs = DEFAULT_SESSION_GAP_
 // count is capped (`MAX_IDLE_PERIODS`) since RD saturates at `DEFAULT_RD`
 // well before that and there's no value in looping further for huge gaps
 // (e.g. a year of inactivity).
-// This is intentionally a proxy/self-referential rating, not a competitive
-// ladder rating comparable across players — the "unofficial" caption on the
-// Dashboard card reflects that.
+// This is intentionally a fixed-reference statistical inference, not a
+// competitive ladder rating comparable across players — the "unofficial"
+// caption on the Dashboard card reflects that.
+//
+// Nothing here is ever persisted: `computeRatingHistory` is called fresh
+// over `Match[]` on every web render and on every `getGroupLeaderboard`
+// cache miss (`apps/api/src/groups/groups.ts` — the only cache is an
+// in-memory five-minute TTL). A rating-model version bump such as this one
+// therefore recomputes the FULL history for free the next time each caller
+// runs — there is no backfill, cursor, or dual-read period, because there is
+// no prior stored value to migrate away from. See
+// `packages/shared/src/evidence/records/TRND-01-rating-model.md` for the
+// full written decision record.
 // ---------------------------------------------------------------------------
 
 /** Upper bound on synthesized idle (zero-game) periods between two sessions; RD saturates at DEFAULT_RD long before this. */
@@ -276,7 +326,8 @@ export interface RatingPeriodResult {
 
 export interface RatingHistory {
   periods: RatingPeriodResult[];
-  current: { rating: number; rd: number; volatility: number } | null;
+  /** `ratingModelVersion` is `RATING_MODEL_VERSION` — a compile-time tag, not a stored/migrated value (see the MODEL comment above). */
+  current: { rating: number; rd: number; volatility: number; ratingModelVersion: number } | null;
 }
 
 /**
@@ -323,7 +374,6 @@ export function computeRatingHistory(matches: Match[], gapMs?: number): RatingHi
     const wins = session.filter((m) => m.win).length;
     const losses = session.length - wins;
     const games = wins + losses;
-    const preRating = current.rating;
     const results: GlickoOpponentResult[] = Array.from({ length: games }, (_, i) => {
       // Reconstruct win/loss order isn't preserved by the session grouping,
       // but Glicko-2's period update is order-independent (Steps 3-4 only
@@ -331,8 +381,8 @@ export function computeRatingHistory(matches: Match[], gapMs?: number): RatingHi
       // the right win/loss counts is mathematically equivalent.
       const isWin = i < wins;
       return {
-        opponentRating: preRating,
-        opponentRd: DEFAULT_RD,
+        opponentRating: SESSION_REFERENCE_RATING,
+        opponentRd: SESSION_REFERENCE_RD,
         score: isWin ? 1 : 0,
       };
     });
@@ -355,6 +405,7 @@ export function computeRatingHistory(matches: Match[], gapMs?: number): RatingHi
       rating: Math.round(current.rating),
       rd: Math.round(current.rd),
       volatility: current.volatility,
+      ratingModelVersion: RATING_MODEL_VERSION,
     },
   };
 }
