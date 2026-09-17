@@ -105,6 +105,24 @@ import type { Database } from 'firebase-admin/database';
  * time, within one process. It does NOT touch, and does not need to touch,
  * the cross-process clock-skew risk described above — that remains the
  * named follow-up, unaffected by this fix.
+ *
+ * WR-01-i3 FIX — POISONED DURABLE STAMP (36-REVIEW.md iteration 3). A
+ * stored `lastGrantedAtMs` implausibly far in the future (a manual RTDB
+ * edit, a bug in some other writer, a client clock that briefly reported a
+ * huge epoch value) used to be trusted unconditionally: every subsequent
+ * acquisition would compute a floor from it, decline forever
+ * (`wait-budget-exceeded`, since no realistic caller's wait budget could
+ * ever reach it), and — because a decline still commits a reservation
+ * (D-29's "always commit a reservation" design) — the poisoned value would
+ * never shrink back down. `acquireOnBudget` now clamps any durable stamp
+ * more than `poisonedStampHorizonMs(intervalMs)` ahead of `now()` down to
+ * `now() + intervalMs` (see that function's own doc comment for exactly
+ * how the horizon is chosen) — still conservative (never earlier than one
+ * full interval from now, so it can never under-space a REAL grant) but no
+ * longer capable of wedging the budget forever. Surfaced via
+ * `LiquipediaAcquireResult.durableStampWasPoisoned`, never via a
+ * `console.log` this module has never had — a caller/operator can log it,
+ * this module stays silent by default.
  */
 
 export const LIQUIPEDIA_GENERAL_MIN_INTERVAL_MS = 2000;
@@ -133,6 +151,15 @@ export interface LiquipediaAcquireResult {
   granted: boolean;
   waitedMs: number;
   reason?: string;
+  /**
+   * WR-01-i3: `true` when this acquisition detected a stored durable stamp
+   * implausibly far in the future (see `poisonedStampHorizonMs`) and
+   * clamped it rather than trusting it — set regardless of whether the
+   * acquisition was ultimately granted or declined, so a caller/operator
+   * can log or alert on it. This module never logs on its own; `undefined`
+   * (never `false`) when no poisoned stamp was seen.
+   */
+  durableStampWasPoisoned?: true;
 }
 
 export interface LiquipediaLimiter {
@@ -165,6 +192,45 @@ function parseIntervalBudget(raw: unknown): StoredIntervalBudget | null {
 
 const defaultSleep = (ms: number): Promise<void> =>
   new Promise((resolve) => setTimeout(resolve, ms));
+
+/**
+ * WR-01-i3: the sanity ceiling that distinguishes a legitimately-queued
+ * near-future reservation from a corrupted/poisoned durable stamp. Derived
+ * from `intervalMs * LIQUIPEDIA_LIMITER_MAX_ATTEMPTS` — proportional to each
+ * budget's own interval (so the 30s parse budget tolerates a longer
+ * legitimate horizon than the 2s general budget: 20 * 30s = 10 minutes vs
+ * 20 * 2s = 40s) and reusing an EXISTING named constant rather than
+ * introducing an unrelated magic number. Both horizons are comfortably
+ * larger than anything this module's real callers (a single-process
+ * enrichment CLI, per the module doc comment's "single-process wall clock"
+ * section) could legitimately produce, and comfortably smaller than the
+ * kind of corruption this guards against (a manual RTDB edit, a stray
+ * far-future epoch value, a client clock glitch).
+ */
+function poisonedStampHorizonMs(intervalMs: number): number {
+  return intervalMs * LIQUIPEDIA_LIMITER_MAX_ATTEMPTS;
+}
+
+/**
+ * WR-01-i3: resolves the durable floor a reservation should use for
+ * `current`, clamping a poisoned (implausibly-far-future) stamp down to
+ * `nowMs + intervalMs` instead of trusting it — still conservative (never
+ * earlier than one full interval from now) but no longer capable of
+ * wedging the budget on a corrupt value forever.
+ */
+function resolveDurableFloor(
+  current: StoredIntervalBudget | null,
+  intervalMs: number,
+  nowMs: number,
+): { floor: number; poisoned: boolean } {
+  if (current === null) {
+    return { floor: -Infinity, poisoned: false };
+  }
+  if (current.lastGrantedAtMs - nowMs > poisonedStampHorizonMs(intervalMs)) {
+    return { floor: nowMs + intervalMs, poisoned: true };
+  }
+  return { floor: current.lastGrantedAtMs + intervalMs, poisoned: false };
+}
 
 /**
  * D-29: best-effort correction, called only when a reservation's own
@@ -253,6 +319,9 @@ interface LocalReleaseTracker {
  *    publishing a LARGER gap than required is never a compliance problem —
  *    only a SMALLER one is, which is exactly what the pre-fix "abort now,
  *    decide based on a stale pre-transaction clock" pattern could produce.
+ *    WR-01-i3: an implausibly-far-future durable stamp is clamped down
+ *    (see `resolveDurableFloor`) rather than trusted, so it can never wedge
+ *    every future acquisition forever.
  * 2. RELEASE. Read the clock again, now that the commit has actually
  *    happened (`postCommitNow`):
  *    - If `postCommitNow > reservedSlot` (the transaction's own round-trip
@@ -291,12 +360,14 @@ async function acquireOnBudget(
   }
 
   let reservedSlot: number | undefined;
+  let poisonedStampDetected = false;
 
   for (let attempt = 0; attempt < LIQUIPEDIA_LIMITER_MAX_ATTEMPTS; attempt += 1) {
     const nowBefore = now();
     const localFloor =
       localTracker.lastReleaseAtMs !== null ? localTracker.lastReleaseAtMs + intervalMs : -Infinity;
     let committedSlot = nowBefore;
+    let poisonedThisAttempt = false;
 
     const result = await database.ref(budgetPath).transaction((raw) => {
       // The FIRST invocation of this function within a given `.transaction()`
@@ -306,7 +377,10 @@ async function acquireOnBudget(
       // already treats `null`/malformed input as "no prior grant", which is
       // exactly the behavior we want here too.
       const current = parseIntervalBudget(raw);
-      const durableFloor = current === null ? -Infinity : current.lastGrantedAtMs + intervalMs;
+      // WR-01-i3: clamps an implausibly-far-future stamp rather than
+      // trusting it — see `resolveDurableFloor`'s doc comment.
+      const { floor: durableFloor, poisoned } = resolveDurableFloor(current, intervalMs, nowBefore);
+      poisonedThisAttempt = poisoned;
       const slot = Math.max(nowBefore, durableFloor, localFloor);
       committedSlot = slot;
       // Always commit a reservation — see the function doc comment above
@@ -316,6 +390,7 @@ async function acquireOnBudget(
 
     if (result.committed) {
       reservedSlot = committedSlot;
+      poisonedStampDetected = poisonedThisAttempt;
       break;
     }
     // Genuine infra-level contention on the write itself (never our own
@@ -329,7 +404,11 @@ async function acquireOnBudget(
 
   const release = (waitedMs: number): LiquipediaAcquireResult => {
     localTracker.lastReleaseAtMs = now();
-    return { granted: true, waitedMs };
+    return {
+      granted: true,
+      waitedMs,
+      ...(poisonedStampDetected ? { durableStampWasPoisoned: true as const } : {}),
+    };
   };
 
   const postCommitNow = now();
@@ -344,7 +423,12 @@ async function acquireOnBudget(
 
   const sleepMs = reservedSlot - postCommitNow;
   if (sleepMs > remainingWaitBudgetMs) {
-    return { granted: false, waitedMs: 0, reason: 'wait-budget-exceeded' };
+    return {
+      granted: false,
+      waitedMs: 0,
+      reason: 'wait-budget-exceeded',
+      ...(poisonedStampDetected ? { durableStampWasPoisoned: true as const } : {}),
+    };
   }
   if (sleepMs > 0) {
     await sleep(sleepMs);
@@ -437,6 +521,9 @@ export function createLiquipediaLimiter(
         granted: generalResult.granted,
         waitedMs: parseResult.waitedMs + generalResult.waitedMs,
         reason: generalResult.reason,
+        ...(parseResult.durableStampWasPoisoned || generalResult.durableStampWasPoisoned
+          ? { durableStampWasPoisoned: true as const }
+          : {}),
       };
     },
   };

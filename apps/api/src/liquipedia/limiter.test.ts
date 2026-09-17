@@ -417,3 +417,79 @@ describe('createLiquipediaLimiter — request-start spacing under variable trans
     expect(calls.every((ms) => ms <= 10)).toBe(true);
   });
 });
+
+/**
+ * WR-01-i3 (36-REVIEW.md iteration 3): a stored `lastGrantedAtMs` implausibly
+ * far in the future used to be trusted unconditionally forever — every
+ * subsequent acquisition would compute an unreachable floor from it and
+ * decline, and a decline still commits a reservation, so the poisoned value
+ * could never shrink back down. These tests assert the sanity ceiling: a
+ * poisoned stamp is clamped to `now() + intervalMs` (never earlier — still
+ * conservative) and surfaced via `durableStampWasPoisoned`, while a
+ * legitimately-queued near-future stamp (well within the horizon) is left
+ * completely untouched.
+ */
+describe('createLiquipediaLimiter — poisoned durable stamp sanity ceiling (WR-01-i3)', () => {
+  it('clamps a stored lastGrantedAtMs implausibly far in the future instead of trusting it forever, and surfaces durableStampWasPoisoned', async () => {
+    const database = new FakeDatabase();
+    const clock = makeClock(1_767_225_600_000);
+    const { sleep } = pairedSleep(clock);
+    // General horizon is 2000 * 20 = 40_000ms — this is ~250x that.
+    await database
+      .ref(LIQUIPEDIA_GENERAL_BUDGET_PATH)
+      .set({ lastGrantedAtMs: clock.now() + 10_000_000 });
+    const limiter = createLiquipediaLimiter(asDatabase(database), { now: clock.now, sleep });
+
+    const startMs = clock.now();
+    const result = await limiter.acquire('general', 60_000);
+
+    expect(result.granted).toBe(true);
+    expect(result.durableStampWasPoisoned).toBe(true);
+    // Clamped to now() + interval, NOT the poisoned 10_000_000ms-out value —
+    // the whole point of the fix is that the wait stays bounded.
+    expect(clock.now() - startMs).toBe(LIQUIPEDIA_GENERAL_MIN_INTERVAL_MS);
+
+    // The durable stamp itself is no longer poisoned for the NEXT caller —
+    // it was clamped down, not merely worked around for this one call.
+    const stored = database.dump().researchRateBudget as {
+      liquipedia?: { lastGrantedAtMs: number };
+    };
+    expect(stored.liquipedia!.lastGrantedAtMs).toBeLessThan(clock.now() + 1000);
+  });
+
+  it('does NOT clamp a legitimately-queued near-future stamp well within the horizon', async () => {
+    const database = new FakeDatabase();
+    const clock = makeClock(1_767_225_600_000);
+    const { sleep } = pairedSleep(clock);
+    // 5000ms ahead — comfortably inside the 40_000ms general horizon, the
+    // shape a few genuinely queued concurrent acquisitions could produce.
+    const queuedAheadMs = 5000;
+    await database
+      .ref(LIQUIPEDIA_GENERAL_BUDGET_PATH)
+      .set({ lastGrantedAtMs: clock.now() + queuedAheadMs });
+    const limiter = createLiquipediaLimiter(asDatabase(database), { now: clock.now, sleep });
+
+    const startMs = clock.now();
+    const result = await limiter.acquire('general', 60_000);
+
+    expect(result.granted).toBe(true);
+    expect(result.durableStampWasPoisoned).toBeUndefined();
+    // Untouched: floor is the genuine stamp + interval, not clamped down.
+    expect(clock.now() - startMs).toBe(queuedAheadMs + LIQUIPEDIA_GENERAL_MIN_INTERVAL_MS);
+  });
+
+  it('treats a NaN/non-finite stored lastGrantedAtMs as "no prior grant" (parseIntervalBudget parity, not a new behavior)', async () => {
+    const database = new FakeDatabase();
+    const clock = makeClock(1_767_225_600_000);
+    const limiter = createLiquipediaLimiter(asDatabase(database), { now: clock.now });
+
+    // Seeded directly (not via JSON, which cannot represent NaN) — the
+    // in-memory FakeDatabase preserves it byte-for-byte.
+    await database.ref(LIQUIPEDIA_GENERAL_BUDGET_PATH).set({ lastGrantedAtMs: Number.NaN });
+
+    const result = await limiter.acquire('general', 1000);
+    expect(result.granted).toBe(true);
+    expect(result.waitedMs).toBe(0);
+    expect(result.durableStampWasPoisoned).toBeUndefined();
+  });
+});
