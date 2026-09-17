@@ -1,13 +1,21 @@
 import {
   buildSetTimeline,
+  ABSTENTION_FLOOR_GAMES,
   type Match,
   type TournamentEntry,
   type TournamentSet,
 } from '@smash-tracker/shared';
 import { rankStagesByEvidence, type RankedStage } from '@/lib/stats';
 
-/** Stages need at least this many recorded pre-tournament games in the pairing to be graded — mirrors CounterpickAdvisor's `MIN_GAMES`. */
-const MIN_GAMES = 2;
+/**
+ * Stages need at least the engine's abstention floor
+ * (`packages/shared/src/evidence/policy.ts`) of recorded pre-tournament
+ * games in the pairing to be graded. Phase 36 (D-24, R1-MEDIUM-2): this used
+ * to be a local `MIN_GAMES = 2` — a RECOMMENDATION gate (grading whether a
+ * played stage was a recommended pick or ban), the same class D-07 was
+ * written against, so it's raised to the floor and sourced from the engine
+ * rather than declared here.
+ */
 /** Top/bottom split size — mirrors CounterpickAdvisor's `PICK_BAN_COUNT`. */
 const PICK_BAN_COUNT = 3;
 
@@ -75,7 +83,7 @@ function classifyGame(game: Match, preMatches: Match[]): ClassifiedGame {
   const pairingPre = preMatches.filter(
     (m) => m.fighter_id === game.fighter_id && m.opponent_id === game.opponent_id,
   );
-  const ranked = rankStagesByEvidence(pairingPre, MIN_GAMES);
+  const ranked = rankStagesByEvidence(pairingPre, ABSTENTION_FLOOR_GAMES);
 
   if (ranked.length === 0) {
     return { match: game, classification: 'no-data', recommendedStageIds: [], banStageIds: [] };

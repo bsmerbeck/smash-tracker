@@ -123,7 +123,10 @@ describe('buildRetrospective', () => {
     expect(result.rows[0]?.games[0]?.classification).toBe('neutral');
   });
 
-  it('classifies a game with fewer than 2 pre-tournament pairing games on any stage as no-data', () => {
+  // Phase 36 (D-24): the floor is now the engine's ABSTENTION_FLOOR_GAMES
+  // (3), not the pre-Phase-36 local MIN_GAMES of 2 — 1 pre-tournament game
+  // is below either value, so this fixture's expected outcome is unchanged.
+  it('classifies a game with fewer than 3 pre-tournament pairing games on any stage as no-data', () => {
     const entry = makeEntry({ firstSetAt: 1_000_000 });
     const onlyOnePre = makeMatch({ time: 500, win: true, map: BATTLEFIELD });
     const game = makeMatch({

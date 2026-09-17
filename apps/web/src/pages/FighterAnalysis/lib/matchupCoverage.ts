@@ -1,6 +1,12 @@
 import type { TFunction } from 'i18next';
 import type { Match } from '@smash-tracker/shared';
 import {
+  COVERAGE_GAP_MIN_META_GAMES,
+  PRACTICE_MATCHUP_MIN_GAMES,
+  PRACTICE_STAGE_MIN_GAMES,
+  THIN_DATA_MAX_GAMES,
+} from '@smash-tracker/shared';
+import {
   getRecordsByFighter,
   rankMatchupsByEvidence,
   rankStagesByEvidence,
@@ -10,14 +16,15 @@ import { stagesById } from '@/data/stages';
 
 /** How many opponent characters the coverage grid surfaces, ranked by how often the user faces them overall. */
 export const COVERAGE_TOP_N = 12;
-/** Below this many games, a coverage cell reads as "thin data" rather than a confident record. */
-export const THIN_DATA_MAX_GAMES = 2;
-/** Matchups need at least this many games before they can be called out as a "struggling vs X" practice recommendation. */
-export const PRACTICE_MATCHUP_MIN_GAMES = 3;
-/** Stages need at least this many games before they can be called out as a "you keep playing on Z" practice recommendation. */
-export const PRACTICE_STAGE_MIN_GAMES = 3;
-/** A coverage gap ("you face them often but have never played them") only fires once the meta opponent has been faced at least this many times account-wide. */
-export const COVERAGE_GAP_MIN_META_GAMES = 3;
+
+/**
+ * Phase 36 (D-24, R1-MEDIUM-2): the four sample-size thresholds this module
+ * used to declare locally are now sourced from
+ * `packages/shared/src/evidence/policy.ts` (imported above) —
+ * `THIN_DATA_MAX_GAMES` is a display cutoff (unchanged at 2, NOT a
+ * recommendation gate), the other three are unchanged at 3 (already at the
+ * abstention floor).
+ */
 
 export type CoverageStatus = 'covered' | 'thin' | 'none';
 

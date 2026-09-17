@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ChevronDown } from 'lucide-react';
-import type { ScoutGame } from '@smash-tracker/shared';
+import { ABSTENTION_FLOOR_GAMES, type ScoutGame } from '@smash-tracker/shared';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { cn } from '@/lib/utils';
 import { filterByFighter, rankMatchupsByEvidence } from '@/lib/stats';
@@ -66,8 +66,6 @@ export function FullAnalysisSection({
   );
 }
 
-const MIN_MATCHUP_GAMES = 3;
-
 function FullAnalysisContent({ games, gamerTag }: { games: ScoutGame[]; gamerTag: string }) {
   const { t } = useTranslation();
   const matches = scoutGamesToMatches(games);
@@ -92,7 +90,7 @@ function FullAnalysisContent({ games, gamerTag }: { games: ScoutGame[]; gamerTag
     topCharacterMatches.length > 0 &&
     topCharacterMatches.length < matches.length;
 
-  const matchupSpread = rankMatchupsByEvidence(matches, MIN_MATCHUP_GAMES);
+  const matchupSpread = rankMatchupsByEvidence(matches, ABSTENTION_FLOOR_GAMES);
 
   return (
     <>

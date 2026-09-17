@@ -1,8 +1,14 @@
 import type { Match } from '@smash-tracker/shared';
+import { ABSTENTION_FLOOR_GAMES, MASTERY_CAPTION_MIN_GAMES } from '@smash-tracker/shared';
 import { rankStagesByEvidence, type RankedStage } from '@/lib/stats';
 
-/** Minimum recorded matches on a stage before it can be called out as a "Best pick" or "Ban-worthy" caption — matches Matchup Lab's CounterpickAdvisor threshold (docs/analytics-vision.md). */
-export const MASTERY_CAPTION_MIN_GAMES = 2;
+/**
+ * Phase 36 (D-24, R1-MEDIUM-2): `MASTERY_CAPTION_MIN_GAMES` is now sourced
+ * from `packages/shared/src/evidence/policy.ts` (raised 2 -> 3) rather than
+ * declared here — a Best-pick/Ban-worthy caption is a per-stage Wilson-bound
+ * claim about the user's play, the same class of claim D-07's floor governs.
+ */
+export { MASTERY_CAPTION_MIN_GAMES };
 
 /** Wilson lower-bound buckets driving the tile tint, mirroring the red -> grey -> emerald convention from the Matchups matrix (implemented locally per the Fighter Analysis spec, not imported). */
 export type MasteryTintBucket = 'weak' | 'even' | 'strong';
@@ -30,9 +36,15 @@ export interface StageMasteryTile extends RankedStage {
  * Every stage with at least one recorded game for this fighter, Wilson-ranked
  * best first (via `rankStagesByEvidence`), each tagged with its tint bucket
  * for the art-tile grid.
+ *
+ * Phase 36 (D-05, R1-MEDIUM-2): each tile is tinted from its Wilson lower
+ * bound (`tintBucketForWilson`) — a claim about the user's play on that
+ * stage — so the argument here is `ABSTENTION_FLOOR_GAMES`, not an inline
+ * `1`. `rankStagesByEvidence` floors any argument to at least this value
+ * anyway (R1-HIGH-1), so this is the honest source, not a behavior change.
  */
 export function buildStageMasteryTiles(fighterMatches: Match[]): StageMasteryTile[] {
-  return rankStagesByEvidence(fighterMatches, 1).map((stage) => ({
+  return rankStagesByEvidence(fighterMatches, ABSTENTION_FLOOR_GAMES).map((stage) => ({
     ...stage,
     tint: tintBucketForWilson(stage.wilson),
   }));

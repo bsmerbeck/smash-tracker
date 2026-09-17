@@ -30,6 +30,27 @@ export const DEFAULT_MIN_STAGE_MATCHES = 3;
 /** D-24: the legacy `getMatchupStats`/`getBestWorstMatchup` default, preserved byte-for-byte — that legacy-faithful ranking is intentionally NOT evidence-gated by this policy. */
 export const LEGACY_BEST_WORST_MATCHUP_MIN_GAMES = 5;
 
+/**
+ * D-24 (plan 36-02 Task 3): every remaining scattered sample-size literal,
+ * relocated here with its value preserved byte-for-byte at 3+ or raised to
+ * `ABSTENTION_FLOOR_GAMES` when it gated a stage/matchup RECOMMENDATION
+ * below the floor. Originally spelled inline at:
+ * `apps/web/src/pages/FighterAnalysis/lib/matchupCoverage.ts` (all four),
+ * `apps/web/src/pages/FighterAnalysis/lib/stageMastery.ts` (as
+ * `MASTERY_CAPTION_MIN_GAMES`, raised 2 -> 3 — a per-stage mastery caption IS
+ * a Wilson-bound claim, same class as D-07).
+ */
+/** A coverage cell reads "thin data" (not "covered") below this many games — a display cutoff, NOT a recommendation gate, so its pre-Phase-36 value of 2 is unchanged. */
+export const THIN_DATA_MAX_GAMES = 2;
+/** A "struggling vs X" practice recommendation needs at least this many games in the matchup. */
+export const PRACTICE_MATCHUP_MIN_GAMES = 3;
+/** A "you keep playing on Z" stage-habit recommendation needs at least this many games on the stage. */
+export const PRACTICE_STAGE_MIN_GAMES = 3;
+/** A "no games vs Y — you face them often" coverage-gap recommendation only fires once the meta opponent has been faced at least this many times account-wide. */
+export const COVERAGE_GAP_MIN_META_GAMES = 3;
+/** A Stage Mastery "Best pick"/"Ban-worthy" caption needs at least this many games — raised from 2 (pre-Phase-36) because the caption is a per-stage Wilson-bound claim about the user's play, the same class D-07 floors. */
+export const MASTERY_CAPTION_MIN_GAMES = 3;
+
 /** EVID-02: the inclusive minority-share threshold at which a cohort composition is flagged `mixedContext`. */
 export const MIXED_CONTEXT_THRESHOLD = 0.25;
 
