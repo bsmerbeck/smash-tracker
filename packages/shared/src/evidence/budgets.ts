@@ -24,6 +24,16 @@
  * drift guard locates each id's `target:` field by searching forward from
  * that id's FIRST textual occurrence in this file, and a second, earlier
  * mention in prose would point the guard at the wrong text.
+ *
+ * WR-04-i3 (36-REVIEW.md iteration 3): the never-loosen/append-only contract
+ * above was, until this fix, enforced by nothing but this prose and a
+ * one-off `node -e` shell check that ran once, by hand, during 36-06's own
+ * execution and was never committed anywhere. `budgets.guard.test.ts` (same
+ * directory) is the committed, falsifiable regression guard: it pins the
+ * five D-19 target values by id and runs in the DEFAULT `pnpm test` suite,
+ * so a later change that loosens a target, renames/removes an id, or
+ * reorders the five relative to each other turns it red. See that file's
+ * own doc comment for the full incident.
  */
 
 export type BudgetUnit = 'ms' | 'MB' | 'bytes';
