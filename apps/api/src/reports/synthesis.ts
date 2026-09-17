@@ -4,6 +4,7 @@ import {
   CITATION_LABEL_MAX_LENGTH,
   extractCitationTokens,
   generatedPracticePlanSchema,
+  makeCanonicalizer,
   matchRecordSchema,
   REVIEW_CHECKLIST_ITEM_IDS,
   selectReviewResultsContext,
@@ -12,7 +13,6 @@ import {
   type GeneratedPracticePlan,
   type Match,
 } from '@smash-tracker/shared';
-import { normalizeOpponentTag } from '../startgg/sync.js';
 // The one symbol this module imports from prep/ — a deliberately ONE-WAY
 // dependency (28-CONTEXT.md / RESEARCH Pitfall 9, mirroring 27-06's
 // `routes/reports.ts` precedent). Nothing in `apps/api/src/prep/` imports
@@ -135,15 +135,16 @@ export async function assembleSynthesisPayload(
 
   // Single-hop alias lookup — opponentAliases/{uid} is already transitively
   // flattened by the write path, mirroring `assembleReportPayload`'s
-  // established precedent (reports/generate.ts:245-260).
+  // established precedent (reports/generate.ts:245-260). Phase 36 (EVID-12,
+  // D-14): the alias hop has exactly one implementation now —
+  // `makeCanonicalizer` from the shared evidence engine
+  // (`packages/shared/src/evidence/identity.ts`), the same idempotent
+  // normalize-then-hop `opponentEvidence.ts` and `reports/generate.ts` use.
   const aliasMap = aliasSnapshot.exists()
     ? (aliasSnapshot.val() as Record<string, string>)
     : ({} as Record<string, string>);
 
-  function canonicalOpponentName(name: string | undefined): string {
-    const tag = normalizeOpponentTag(name);
-    return aliasMap[tag] ?? tag;
-  }
+  const canonicalOpponentName = makeCanonicalizer(aliasMap);
 
   // safeParse-and-skip (production-gap rule, mirrors RtdbService.listMatches):
   // parses through `matchRecordSchema` (NOT `matchSchema` — the latter

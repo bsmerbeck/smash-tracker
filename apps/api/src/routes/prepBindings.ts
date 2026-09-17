@@ -3,6 +3,7 @@ import { z } from 'zod';
 import {
   entryKeyInputSchema,
   errorResponseSchema,
+  makeCanonicalizer,
   matchRecordSchema,
   opponentAliasMapSchema,
   opponentNameInputSchema,
@@ -18,7 +19,6 @@ import type { ParryggConfig, StartggConfig } from '../config/env.js';
 import type { ParryggClients } from '../parrygg/client.js';
 import { parseScoutInput, ScoutCache, ScoutInputError, scoutPlayer } from '../startgg/scout.js';
 import { ParryScoutCache, scoutParryPlayer } from '../parrygg/scout.js';
-import { normalizeOpponentTag } from '../startgg/sync.js';
 import { clearPrepScoutBinding, readPrepBrief, setPrepScoutBinding } from '../prep/prep.js';
 import { NotFoundError } from '../services/rtdb.js';
 
@@ -78,10 +78,12 @@ function groupBindingCandidates(
   aliasMap: Record<string, string>,
   canonicalName: string,
 ): PrepScoutBindingCandidate[] {
-  function canonicalOpponentName(tag: string | undefined): string {
-    const normalized = normalizeOpponentTag(tag);
-    return aliasMap[normalized] ?? normalized;
-  }
+  // Phase 36 (EVID-12, D-14): the alias hop has exactly one implementation
+  // now — `makeCanonicalizer` from the shared evidence engine
+  // (`packages/shared/src/evidence/identity.ts`), the same idempotent
+  // normalize-then-hop `opponentEvidence.ts`, `reports/generate.ts` and
+  // `reports/synthesis.ts` use.
+  const canonicalOpponentName = makeCanonicalizer(aliasMap);
 
   const candidatesByKey = new Map<string, CandidateAccumulator>();
 
