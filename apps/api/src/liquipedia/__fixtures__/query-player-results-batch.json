@@ -1,0 +1,66 @@
+{
+  "batchcomplete": true,
+  "query": {
+    "redirects": [
+      {
+        "from": "MkLeo/Results",
+        "to": "MKLeo/Results"
+      }
+    ],
+    "pages": [
+      {
+        "ns": 0,
+        "title": "Sparg0/Results",
+        "revisions": [
+          {
+            "revid": 294596,
+            "slots": {
+              "main": {
+                "contentmodel": "wikitext",
+                "contentformat": "text/x-wiki",
+                "content": "{{ResultsPageHeader}}\n{{Tabs dynamic\n|name1=Melee\n|name2=Ultimate\n|This=2\n}}\n{{Tabs dynamic/tab|1}}\n{{AchievementTableSMW |player=Sparg0 |game=melee}}\n{{Tabs dynamic/tab|2}}\n{{AchievementTableSMW |player=Sparg0 |game=ultimate}}\n{{Tabs dynamic/end}}"
+              }
+            }
+          }
+        ]
+      },
+      {
+        "ns": 0,
+        "title": "MKLeo/Results",
+        "revisions": [
+          {
+            "revid": 344697,
+            "slots": {
+              "main": {
+                "contentmodel": "wikitext",
+                "contentformat": "text/x-wiki",
+                "content": "{{ResultsPageHeader}}\n{{Tabs dynamic\n|name1=Wii U\n|name2=Ultimate\n|This=2\n}}\n{{Tabs dynamic/tab|1}}\n{{AchievementTableSMW |player=MKLeo |game=wiiu}}\n{{Tabs dynamic/tab|2}}\n{{AchievementTableSMW |player=MKLeo |game=ultimate}}\n{{Tabs dynamic/end}}"
+              }
+            }
+          }
+        ]
+      },
+      {
+        "ns": 0,
+        "title": "Hungrybox/Results",
+        "revisions": [
+          {
+            "revid": 536882,
+            "slots": {
+              "main": {
+                "contentmodel": "wikitext",
+                "contentformat": "text/x-wiki",
+                "content": "{{ResultsPageHeader}}\n__NOTOC__\n{{Tabs dynamic\n|name1=Melee\n|name2=Project M\n|name3=Wii U\n|name4=Ultimate\n|This=1\n}}\n{{Tabs dynamic/tab|1}}\n==={{LeagueIconSmall/fc}} MELEE-FC===\n{|class=\"wikitable\" style=\"margin-top:0px;\"\n!colspan=\"1\"| 2012\n!colspan=\"2\"| 2015\n|-\n!width=\"100\"| [[MELEE-FC10R Legacy|10R Legacy]]\n!width=\"100\"| [[FC Smash 15XR: Return|15XR: Return]]\n|-\n|{{Placement|2}}\n|{{Placement|2}}\n|}\n\n==={{LeagueIconSmall/mlg}} MLG Pro Circuit===\n{|class=\"wikitable\" style=\"margin-top:0px;\"\n!colspan=\"1\"| 2014\n!colspan-\"1\"| 2015\n|-\n!width=\"100\"| [[2014 MLG Anaheim|Anaheim]]\n!width=\"100\"| [[MLG World Finals 2015|World Finals]]\n|-\n|{{Placement|7-8}}\n|{{Placement|1}}\n|}\n\n==={{LeagueIconSmall/paragon}} Paragon===\n{|class=\"wikitable\" style=\"margin-top:0px;\"\n!colspan=\"2\"| 2015\n|-\n!width=\"100\"| [[Paragon 2015]]\n!width=\"100\"| [[Paragon Los Angeles 2015| Paragon Los Angeles]]\n|-\n|{{Placement|1}}\n|{{Placement|3}}\n|-\n|}\n\n==={{LeagueIconSmall/zenith}} Zenith===\n{|class=\"wikitable\" style=\"margin-top:0px;\"\n|-\n!width=\"100\"| [[Zenith 2011|2011]]\n!width=\"100\"| [[Zenith 2012|2012]]\n!width=\"100\"| [[Zenith 2013|2013]]\n|-\n|{{Placement|1}}\n|{{Placement|4}}\n|{{Placement|2}}\n|}\n\n==={{LeagueIconSmall/rom}} Revival of Melee===\n{|class=\"wikitable\" style=\"margin-top:0px;\"\n!colspan=\"1\"|2009\n!colspan=\"1\"|2009\n!colspan=\"1\"|2010\n!colspan=\"1\"|2013\n|-\n!width=\"100\"|[[Revival of Melee|ROM]]\n!width=\"100\"|[[ROM 2|ROM 2]]\n!width=\"100\"|[[ROM 3|ROM 3]]\n!width=\"100\"|[[ROM 6|ROM 6]]\n|-\n|{{Placement|7-8}}\n|{{Placement|1}}\n|{{Placement|5-6}}\n|{{Placement|2}}\n|}\n\n==={{LeagueIconSmall/pound}} Pound===\n{|class=\"wikitable\" style=\"margin-top:0px;\"\n!colspan=\"1\"| 2010\n!colspan=\"1\"| 2011\n!colspan=\"1\"| 2016\n!colspan=\"1\"| 2019\n!colspan=\"1\"| 2022\n|-\n!width=\"100\"| [[Pound 4]]\n!width=\"100\"| [[Pound V]]\n!width=\"100\"| [[Pound 2016]]\n!width=\"100\"| [[Pound/2019|Pound 2019]]\n!width=\"100\"| [[Pound/2022|Pound 2022]]\n|-\n|{{Placement|2}}\n|{{Placement|3}}\n|{{Placement|1}}\n|{{Placement|1}}\n|{{Placement|2}}\n|}\n\n==={{LeagueIconSmall/shine}} Shine===\n{|class=\"wikitable\" style=\"margin-top:0px;\"\n|-\n!width=\"100\"| [[Shine/2016|2016]]\n!width=\"100\"| [[Shine/2017|2017]]\n!width=\"100\"| [[Shine/2018|2018]]\n!width=\"100\"| [[Shine/2019|2019]]\n!width=\"100\"| [[Shine/2022|2022]]\n|-\n|{{Placement|4}}\n|{{Placement|1}}\n|{{Placement|2}}\n|{{Placement|1}}\n|{{Placement|3}}\n|}\n\n==={{LeagueIconSmall/apex}} Apex===\n{|class=\"wikitable\" style=\"margin-top:0px;\"\n|-\n!width=\"100\"| [[Apex 2010|2010]]\n!width=\"100\"| [[Apex 2012|2012]]\n!width=\"100\"| [[Apex 2013|2013]]\n!width=\"100\"| [[Apex 2014|2014]]\n!width=\"100\"| [[Apex 2015|2015]]\n!width=\"100\"| [[Apex 2022|2022]]\n|-\n|{{Placement|1}}\n|{{Placement|2}}\n|{{Placement|5-6}}\n|{{Placement|5-6}}\n|{{Placement|5-6}}\n|{{Placement|3}}\n|}\n\n==={{LeagueIconSmall/ssc}} Super Smash Con===\n{|class=\"wikitable\" style=\"margin-top:0px;\"\n|-\n!width=\"100\"| [[Super Smash Con/2016|SSC 2016]]\n!width=\"100\"| [[Super Smash Con/2017|SSC 2017]]\n!width=\"100\"| [[Super Smash Con/2018|SSC 2018]]\n!width=\"100\"| [[Super Smash Con/2019|SSC 2019]]\n!width=\"100\"| [[Super Smash Con/2022|SSC 2022]]\n!width=\"100\"| [[Super Smash Con/2023|SSC 2023]]\n|-\n|{{Placement|2}}\n|{{Placement|4}}\n|{{Placement|3}}\n|{{Placement|2}}\n|{{Placement|2}}\n|{{Placement|2}}\n|}\n\n==={{LeagueIconSmall/evo}} EVO===\n{|class=\"wikitable\" style=\"margin-top:0px;\"\n|-\n!width=\"100\"| [[EVO 2013|2013]]\n!width=\"100\"| [[EVO 2014|2014]]\n!width=\"100\"| [[EVO 2015|2015]]\n!width=\"100\"| [[EVO 2016|2016]]\n!width=\"100\"| [[EVO 2017|2017]]\n!width=\"100\"| [[EVO/2018|2018]]\n!width=\"100\"| [[EVO/2019/Melee Side Event|2019 Melee Side Event]]\n|-\n|{{Placement|3}}\n|{{Placement|2}}\n|{{Placement|2}}\n|{{Placement|1}}\n|{{Placement|3}}\n|{{Placement|4}}\n|{{Placement|1}}\n|}\n\n\n\n==={{LeagueIconSmall/dh}} DreamHack===\n{|class=\"wikitable\" style=\"margin-top:0px;\"\n!colspan=\"1\"| 2015\n!colspan=\"2\"| 2016\n!colspan=\"3\"| 2017\n!colspan=\"1\"| 2018\n!colspan=\"1\"| 2019\n!colspan=\"1\"| 2023\n|-\n!width=\"100\"| [[DreamHack Winter 2015|Winter]]\n!width=\"100\"| [[DreamHack Austin 2016|Austin]]\n!width=\"100\"| [[DreamHack Winter 2016|Winter]]\n!width=\"100\"| [[DreamHack Austin 2017|Austin]]\n!width=\"100\"| [[DreamHack Atlanta 2017|Atlanta]]\n!width=\"100\"| [[DreamHack Denver 2017|Denver]]\n!width=\"100\"| [[DreamHack/2018/Montreal|Montreal]]\n!width=\"100\"| [[DreamHack/2019/Montreal|Montreal]]\n!width=\"100\"| [[DreamHack/2023/Dallas|Dallas]]\n|-\n|{{Placement|1}}\n|{{Placement|2}}\n|{{Placement|2}}\n|{{Placement|1}}\n|{{Placement|2}}\n|{{Placement|1}}\n|{{Placement|1}}\n|{{Placement|1}}\n|{{Placement|1}}\n|}\n\n==={{LeagueIconSmall/tbh}} The Big House===\n{|class=\"wikitable\" style=\"margin-top:0px;\"\n|-\n!colspan=\"1\"| 2012\n!colspan=\"1\"| 2013\n!colspan=\"1\"| 2014\n!colspan=\"1\"| 2015\n!colspan=\"1\"| 2016\n!colspan=\"1\"| 2017\n!colspan=\"1\"| 2018\n!colspan=\"1\"| 2019\n!colspan=\"1\"| 2022\n!colspan=\"1\"| 2023\n|-\n!width=\"100\"| [[The Big House 2|TBH 2]]\n!width=\"100\"| [[The Big House 3|TBH 3]]\n!width=\"100\"| [[The Big House 4|TBH 4]]\n!width=\"100\"| [[The Big House 5|TBH 5]]\n!width=\"100\"| [[The Big House 6|TBH 6]]\n!width=\"100\"| [[The Big House 7|TBH 7]]\n!width=\"100\"| [[The Big House/8|TBH 8]]\n!width=\"100\"| [[The Big House/9|TBH 9]]\n!width=\"100\"| [[The Big House/10|TBH 10]]\n!width=\"100\"| [[The Big House/11|TBH 11]]\n|-\n|{{Placement|2}}\n|{{Placement|2}}\n|{{Placement|9-12}}\n|{{Placement|2}}\n|{{Placement|5-6}}\n|{{Placement|1}}\n|{{Placement|1}}\n|{{Placement|5-6}}\n|{{Placement|5-6}}\n|{{Placement|7-8}}\n|}\n\n==={{LeagueIconSmall/getonmylevel}} Get On My Level===\n{|class=\"wikitable\" style=\"margin-top:0px;\"\n|-\n!width=\"100\"| [[Get On My Level 2014|GOML 2014]]\n!width=\"100\"| [[Get On My Level 2015|GOML 2015]]\n!width=\"100\"| [[Get On My Level 2016|GOML 2016]]\n!width=\"100\"| [[Get On My Level 2017|GOML 2017]]\n!width=\"100\"| [[Get On My Level/2018|GOML 2018]]\n!width=\"100\"| [[Get On My Level/2019|GOML 2019]]\n!width=\"100\"| [[Get On My Level/2022|GOML 2022]]\n!width=\"100\"| [[Get On My Level/2023|GOML 2023]]\n!width=\"100\"| [[Get On My Level/2024|GOML 2024]]\n!width=\"100\"| [[Get On My Level/Forever|GOML 2025]]\n!width=\"100\"| [[Get On My Level/2026|GOML 2026]]\n|-\n|{{Placement|2}}\n|{{Placement|1}}\n|{{Placement|3}}\n|{{Placement|2}}\n|{{Placement|1}}\n|{{Placement|5-6}}\n|{{Placement|1}}\n|{{Placement|5-6}}\n|{{Placement|5-6}}\n|{{Placement|2}}\n|{{Placement|4}}\n|}\n\n==={{LeagueIconSmall/genesis}} GENESIS===\n{|class=\"wikitable\" style=\"margin-top:0px;\"\n!colspan=\"1\"| 2009\n!colspan=\"1\"| 2011\n!colspan=\"1\"| 2016\n!colspan=\"1\"| 2017\n!colspan=\"1\"| 2018\n!colspan=\"1\"| 2019\n!colspan=\"1\"| 2020\n!colspan=\"1\"| 2022\n!colspan=\"1\"| 2023\n!colspan=\"1\"| 2024\n!colspan=\"1\"| 2025\n!colspan=\"1\"| 2026\n|-\n!width=\"100\"| [[GENESIS]]\n!width=\"100\"| [[GENESIS 2]]\n!width=\"100\"| [[GENESIS 3]]\n!width=\"100\"| [[GENESIS 4]]\n!width=\"100\"| [[GENESIS 5]]\n!width=\"100\"| [[GENESIS 6]]\n!width=\"100\"| [[GENESIS/7|GENESIS 7]]\n!width=\"100\"| [[GENESIS/8|GENESIS 8]]\n!width=\"100\"| [[GENESIS/9|GENESIS 9]]\n!width=\"100\"| [[GENESIS/X|GENESIS X]]\n!width=\"100\"| [[GENESIS/X2|GENESIS X2]]\n!width=\"100\"| [[GENESIS/X3|GENESIS X3]]\n|-\n|{{Placement|3}}\n|{{Placement|4}}\n|{{Placement|3}}\n|{{Placement|4}}\n|{{Placement|2}}\n|{{Placement|1}}\n|{{Placement|2}}\n|{{Placement|5-6}}\n|{{Placement|5-6}}\n|{{Placement|7-8}}\n|{{Placement|1}}\n|{{Placement|9-12}}\n|}\n\n==={{LeagueIconSmall/smash summit}} Smash Summit===\n{|class=\"wikitable\" style=\"margin-top:0px;\"\n!colspan=\"2\"| 2016\n!colspan=\"2\"| 2017\n!colspan=\"2\"| 2018\n!colspan=\"1\"| 2019\n!colspan=\"2\"| 2020\n!colspan=\"2\"| 2021\n!colspan=\"2\"| 2022\n|-\n!width=\"100\"| [[Smash Summit/2|Smash Summit 2]]\n!width=\"100\"| [[Smash Summit/3|Smash Summit 3]]\n!width=\"100\"| [[Smash Summit - Spring 2017|Spring 2017]]\n!width=\"100\"| [[Smash Summit/5|Smash Summit 5]]\n!width=\"100\"| [[Smash Summit/6|Smash Summit 6]]\n!width=\"100\"| [[Smash Summit/7|Smash Summit 7]]\n!width=\"100\"| [[Smash Summit/8|Smash Summit 8]]\n!width=\"100\"| [[Smash Summit/9|Smash Summit 9]]\n!width=\"100\"| [[Smash Summit/10|Smash Summit 10 Online]]\n!width=\"100\"| [[Smash Summit/11|Smash Summit 11]]\n!width=\"100\"| [[Smash Summit/12|Smash Summit 12]]\n!width=\"100\"| [[Smash Summit/13|Smash Summit 13]]\n!width=\"100\"| [[Smash Summit/14|Smash Summit 14]]\n|-\n|{{Placement|2}}\n|{{Placement|2}}\n|{{Placement|2}}\n|{{Placement|1}}\n|{{Placement|4}}\n|{{Placement|1}}\n|{{Placement|5-6}}\n|{{Placement|1}}\n|{{Placement|7-8}}\n|{{Placement|3}}\n|{{Placement|7-8}}\n|{{Placement|3}}\n|{{Placement|4}}\n|}\n\n==={{LeagueIconSmall/ceo}} CEO===\n{|class=\"wikitable\" style=\"margin-top:0px;\"\n|-\n!width=\"100\"| [[CEO/2010/Melee|2010]]\n!width=\"100\"| [[CEO/2011|2011]]\n!width=\"100\"| [[CEO 2014|2014]]\n!width=\"100\"| [[CEO 2015|2015]]\n!width=\"100\"| [[CEO 2016|2016]]\n!width=\"100\"| [[CEO/Dreamland/2017|Dreamland 2017]]\n!width=\"100\"| [[CEO/2017|2017]]\n!width=\"100\"| [[CEO/2018|2018]]\n!width=\"100\"| [[CEO/2019|2019]]\n!width=\"100\"| [[CEO/Dreamland/2020|Dreamland 2020]]\n!width=\"100\"| [[CEO/2022|2022]]\n!width=\"100\"| [[CEO/2023|2023]]\n!width=\"100\"| [[CEO/2024|2024]]\n!width=\"100\"| [[CEO/2025|2025]]\n!width=\"100\"| [[CEO/2026|2026]]\n\n|-\n|{{Placement|1}}\n|{{Placement|1}}\n|{{Placement|3}}\n|{{Placement|5-6}}\n|{{Placement|1}}\n|{{Placement|3}}\n|{{Placement|1}}\n|{{Placement|1}}\n|{{Placement|1}}\n|{{Placement|1}}\n|{{Placement|5-6}}\n|{{Placement|3}}\n|{{Placement|2}}\n|{{Placement|1}}\n|{{Placement|1}}\n|}\n\n{{AchievementTableSMW |player=Hungrybox |game=melee}}\n{{Tabs dynamic/tab|2}}\n{{AchievementTableSMW |player=Hungrybox |game=pm}}\n{{Tabs dynamic/tab|3}}\n{{AchievementTableSMW |player=Hungrybox |game=wiiu}}\n{{Tabs dynamic/tab|4}}\n{{AchievementTableSMW |player=Hungrybox |game=ultimate}}\n{{Tabs dynamic/end}}"
+              }
+            }
+          }
+        ]
+      },
+      {
+        "ns": 0,
+        "title": "IzAw/Results",
+        "missing": true
+      }
+    ]
+  }
+}
