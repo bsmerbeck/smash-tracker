@@ -298,6 +298,23 @@
       "edited": "Match modifié !",
       "saveFailed": "Échec de l'enregistrement du match. Veuillez réessayer."
     },
+    "continueSet": {
+      "trigger": "Continuer le set",
+      "title": "Continuer le set",
+      "description": "Ajoutez les manches suivantes de ce set. Les manches déjà enregistrées sont affichées à titre indicatif et ne sont pas modifiées.",
+      "saved": "Enregistrée",
+      "removeGame": "Retirer la manche {{number}} de ce set",
+      "clearContext": "Repartir de la manche 1",
+      "contextCleared": "Manches précédentes ignorées — les nouvelles manches commencent à la manche 1.",
+      "alreadyDecided": "Ce set est déjà décidé. Passez en Bo5 pour ajouter des manches.",
+      "loading": "Recherche des manches précédentes de ce set…",
+      "loadFailed": "Impossible de charger vos matchs — les manches précédentes de ce set sont inconnues.",
+      "continueWithoutContext": "Continuer sans les manches précédentes",
+      "back": "Retour",
+      "save": "Enregistrer les manches",
+      "added_one": "{{count}} manche ajoutée au set",
+      "added_other": "{{count}} manches ajoutées au set"
+    },
     "stageForm": {
       "label": "Forme du stage",
       "normal": "Normale",
