@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { MoreVertical, Search } from 'lucide-react';
 import type { Match } from '@smash-tracker/shared';
+import { ABSTENTION_FLOOR_GAMES } from '@smash-tracker/shared';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
@@ -19,8 +20,8 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Toggle } from '@/components/ui/toggle';
-import { getOpponentRecords, type OpponentRecord } from '@/lib/stats';
-import { getOpponentSources, type OpponentSource } from '@/hooks/useFilteredMatches';
+import { buildOpponentEvidence, type OpponentEvidenceRow } from '@/lib/stats';
+import { SampleCue } from '@/components/EvidenceCues';
 import { OpponentSourceBadge } from './OpponentSourceBadge';
 
 export interface OpponentListProps {
@@ -29,6 +30,8 @@ export interface OpponentListProps {
   onSelect: (opponent: string) => void;
   /** Opens the "Merge into..." dialog for the given opponent name. */
   onRequestMerge: (opponent: string) => void;
+  /** EVID-12: alias -> canonical map, required so this list's identity resolution can never forget to pre-alias (D-16). */
+  aliasMap: Record<string, string>;
 }
 
 /** Sort orders for the opponent list. */
@@ -42,18 +45,14 @@ const SORT_LABEL_KEYS: Record<OpponentSort, string> = {
   alphabetical: 'opponents.list.sortAlphabetical',
 };
 
-/** Games threshold applied by the "3+ games" small-sample toggle. */
-const MIN_GAMES = 3;
-
 function sortOpponents(
-  opponents: OpponentRecord[],
+  opponents: OpponentEvidenceRow[],
   sort: OpponentSort,
-  lastPlayed: Map<string, number>,
-): OpponentRecord[] {
+): OpponentEvidenceRow[] {
   const sorted = [...opponents];
   switch (sort) {
     case 'recent':
-      sorted.sort((a, b) => (lastPlayed.get(b.opponent) ?? 0) - (lastPlayed.get(a.opponent) ?? 0));
+      sorted.sort((a, b) => b.lastPlayedAt - a.lastPlayedAt);
       break;
     case 'best-rate':
       sorted.sort((a, b) => b.winRate - a.winRate || b.total - a.total);
@@ -62,7 +61,7 @@ function sortOpponents(
       sorted.sort((a, b) => a.winRate - b.winRate || b.total - a.total);
       break;
     case 'alphabetical':
-      sorted.sort((a, b) => a.opponent.localeCompare(b.opponent));
+      sorted.sort((a, b) => a.displayTag.localeCompare(b.displayTag));
       break;
     case 'most-played':
     default:
@@ -74,46 +73,55 @@ function sortOpponents(
 
 /**
  * Left-column opponent list for the Scouting page: every human opponent
- * faced (`getOpponentRecords`), with a substring search filter, a sort
- * selector (most played / recently played / highest / lowest win rate /
- * alphabetical), and a "3+ games" toggle that hides small samples.
- * Selecting a row calls `onSelect`. Each row shows a source badge and a
- * kebab menu with a "Merge into..." action.
+ * faced, with a substring search filter, a sort selector (most played /
+ * recently played / highest / lowest win rate / alphabetical), and a "3+
+ * games" toggle that hides small samples. Selecting a row calls `onSelect`.
+ * Each row shows a source badge and a kebab menu with a "Merge into..."
+ * action.
+ *
+ * Phase 36 (EVID-12, R2-BLOCKER-1): rows now come from the identity-resolving
+ * `buildOpponentEvidence` (aliased + normalized + slug/parry-id bound) rather
+ * than the raw-tag `getOpponentRecords`, so one person recorded under two
+ * tags merges into ONE row. `buildOpponentEvidence` is an inventory and
+ * applies NO sample floor — this migration changes which rows are MERGED,
+ * never which people are LISTED. The small-sample toggle (`minGamesOnly`)
+ * stays the ONLY thing that hides a row below the floor, keeps its opt-in
+ * `useState(false)` default, and the header count keeps reflecting everyone
+ * faced regardless of the toggle. Each row also carries a sample cue — a raw
+ * win/loss count is the recorded FACT, so this surface deliberately carries
+ * no evidence-type caption (the UI-SPEC's documented conservative default).
  */
-export function OpponentList({ matches, selected, onSelect, onRequestMerge }: OpponentListProps) {
+export function OpponentList({
+  matches,
+  selected,
+  onSelect,
+  onRequestMerge,
+  aliasMap,
+}: OpponentListProps) {
   const { t } = useTranslation();
   const [query, setQuery] = useState('');
   const [sort, setSort] = useState<OpponentSort>('most-played');
   const [minGamesOnly, setMinGamesOnly] = useState(false);
+  // React Compiler forbids a bare `Date.now()` call in the render body (it's
+  // impure) — a lazy `useState` initializer is the sanctioned one-time-read
+  // escape hatch, matching `CounterpickAdvisor.tsx`'s convention.
+  const [refreshedAt] = useState(() => Date.now());
 
-  const opponents = useMemo(() => getOpponentRecords(matches), [matches]);
-
-  const sources = useMemo(() => getOpponentSources(matches), [matches]);
-
-  // Most recent match time per opponent name — drives the "Recently played"
-  // sort. Matches arrive already alias-canonicalized upstream.
-  const lastPlayed = useMemo(() => {
-    const map = new Map<string, number>();
-    for (const match of matches) {
-      if (!match.opponent) {
-        continue;
-      }
-      const prev = map.get(match.opponent) ?? 0;
-      if (match.time > prev) {
-        map.set(match.opponent, match.time);
-      }
-    }
-    return map;
-  }, [matches]);
+  const opponents = useMemo(
+    () => buildOpponentEvidence({ matches, aliasMap, refreshedAt }).rows,
+    [matches, aliasMap, refreshedAt],
+  );
 
   const filtered = useMemo(() => {
     const needle = query.trim().toLowerCase();
     const searched = needle
-      ? opponents.filter((o) => o.opponent.toLowerCase().includes(needle))
+      ? opponents.filter((o) => o.displayTag.toLowerCase().includes(needle))
       : opponents;
-    const thresholded = minGamesOnly ? searched.filter((o) => o.total >= MIN_GAMES) : searched;
-    return sortOpponents(thresholded, sort, lastPlayed);
-  }, [opponents, query, sort, minGamesOnly, lastPlayed]);
+    const thresholded = minGamesOnly
+      ? searched.filter((o) => o.total >= ABSTENTION_FLOOR_GAMES)
+      : searched;
+    return sortOpponents(thresholded, sort);
+  }, [opponents, query, sort, minGamesOnly]);
 
   return (
     <Card className="flex h-full flex-col">
@@ -169,11 +177,10 @@ export function OpponentList({ matches, selected, onSelect, onRequestMerge }: Op
           <ul className="flex flex-col gap-1" role="list" aria-label={t('opponents.list.title')}>
             {filtered.map((opponent) => (
               <OpponentRow
-                key={opponent.opponent}
+                key={opponent.identity}
                 opponent={opponent}
-                selected={opponent.opponent === selected}
-                source={sources.get(opponent.opponent) ?? 'manual'}
-                lastPlayedAt={sort === 'recent' ? lastPlayed.get(opponent.opponent) : undefined}
+                selected={opponent.displayTag === selected}
+                lastPlayedAt={sort === 'recent' ? opponent.lastPlayedAt : undefined}
                 onSelect={onSelect}
                 onRequestMerge={onRequestMerge}
               />
@@ -188,14 +195,12 @@ export function OpponentList({ matches, selected, onSelect, onRequestMerge }: Op
 function OpponentRow({
   opponent,
   selected,
-  source,
   lastPlayedAt,
   onSelect,
   onRequestMerge,
 }: {
-  opponent: OpponentRecord;
+  opponent: OpponentEvidenceRow;
   selected: boolean;
-  source: OpponentSource;
   /** Set only under the "Recently played" sort — renders a date hint. */
   lastPlayedAt?: number;
   onSelect: (opponent: string) => void;
@@ -210,16 +215,16 @@ function OpponentRow({
     >
       <button
         type="button"
-        onClick={() => onSelect(opponent.opponent)}
+        onClick={() => onSelect(opponent.displayTag)}
         aria-pressed={selected}
         className="flex min-w-0 flex-1 flex-col gap-0.5 py-2 text-left text-sm"
       >
         {/* Name owns the full first line so badges/stats can never squeeze it out. */}
-        <span className="min-w-0 truncate font-medium" title={opponent.opponent}>
-          {opponent.opponent}
+        <span className="min-w-0 truncate font-medium" title={opponent.displayTag}>
+          {opponent.displayTag}
         </span>
         <span className="flex items-center gap-2">
-          <OpponentSourceBadge source={source} />
+          <OpponentSourceBadge source={opponent.source} />
           <span className="text-muted-foreground">
             {opponent.wins}-{opponent.losses}
           </span>
@@ -227,6 +232,7 @@ function OpponentRow({
           <span className="text-xs text-muted-foreground">
             {t('common.games', { count: opponent.total })}
           </span>
+          <SampleCue sample={opponent.sample} />
           {lastPlayedAt != null && (
             <span className="text-xs text-muted-foreground">
               {new Date(lastPlayedAt).toLocaleDateString(i18n.language)}
@@ -240,13 +246,13 @@ function OpponentRow({
             type="button"
             variant="ghost"
             size="icon-sm"
-            aria-label={t('opponents.list.rowActions', { name: opponent.opponent })}
+            aria-label={t('opponents.list.rowActions', { name: opponent.displayTag })}
           >
             <MoreVertical className="size-4" />
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end">
-          <DropdownMenuItem onSelect={() => onRequestMerge(opponent.opponent)}>
+          <DropdownMenuItem onSelect={() => onRequestMerge(opponent.displayTag)}>
             {t('opponents.list.mergeInto')}
           </DropdownMenuItem>
         </DropdownMenuContent>

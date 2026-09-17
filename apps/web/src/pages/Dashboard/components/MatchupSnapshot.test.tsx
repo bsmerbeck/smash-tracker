@@ -99,6 +99,20 @@ describe('buildMatchupSnapshot', () => {
     expect(strongest).toEqual([]);
     expect(toughest).toEqual([]);
   });
+
+  // Phase 36 (D-05/D-07): acceptance criterion — a 2-0 matchup must never
+  // outrank/appear among strongest even alongside a well-proven 6-2.
+  it('excludes a 2-0 matchup from strongest even when a proven 6-2 matchup exists', () => {
+    const matches = [
+      makeMatch('a1', 1, true, 2),
+      makeMatch('a2', 2, true, 2),
+      // Opponent 3: 6-2 (8 games)
+      ...Array.from({ length: 6 }, (_, i) => makeMatch(`b${i}`, 10 + i, true, 3)),
+      ...Array.from({ length: 2 }, (_, i) => makeMatch(`c${i}`, 20 + i, false, 3)),
+    ];
+    const { strongest } = buildMatchupSnapshot(matches);
+    expect(strongest.some((row) => row.totalMatches === 2)).toBe(false);
+  });
 });
 
 const mario: Fighter = { id: 1, name: 'Mario', url: '/assets/sprites/1-mario-sprite.png' };
@@ -144,13 +158,15 @@ describe('MatchupSnapshot', () => {
   it('shows a build-more-data hint for toughest matchups when under threshold', () => {
     // Phase 36 (D-05/D-07): exactly one opponent clears the 3-game floor —
     // still not enough qualifying rows (needs 2) for a "toughest" comparison.
+    // The bespoke "Play a few more games" copy is replaced by the shared
+    // abstained sentence (EVID-06).
     const matches = [
       makeMatch('1', 1, true, 2),
       makeMatch('2', 2, false, 2),
       makeMatch('3', 3, true, 2),
     ];
     renderWithContext(matches);
-    expect(screen.getByText(/Play a few more games \(3\+ per opponent\)/)).toBeInTheDocument();
+    expect(screen.getByText(/Not enough data yet.*1 more game needed/)).toBeInTheDocument();
   });
 
   // Phase 11 fix round 3 (FB-6, the originally-reported bug): in a client

@@ -227,7 +227,6 @@
       "openLab": "Abrir Matchup Lab",
       "strongest": "Enfrentamientos más favorables",
       "toughest": "Enfrentamientos más difíciles",
-      "needMoreGames": "Juega algunas partidas más ({{count}}+ por rival) para revelar tu enfrentamiento más difícil.",
       "notEnough": "No hay suficientes partidas registradas para calcularlo."
     },
     "selectFighter": {

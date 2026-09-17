@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import {
   buildMatchupAdvisor,
+  buildMatchupAdvisorWithGate,
   rankMatchup,
+  rankMatchupWithGate,
   selectMyCandidateFighterIds,
   type MyCharacterRecordVsOpponent,
 } from './matchupAdvisor.js';
@@ -101,6 +103,53 @@ describe('buildMatchupAdvisor', () => {
 
   it('returns an empty array for an empty opponent list', () => {
     expect(buildMatchupAdvisor([], [82], new Map())).toEqual([]);
+  });
+});
+
+// Phase 36 (D-05, D-07): the character advisor's first hard abstention
+// floor — see rankMatchup's doc comment for why the unchanged blend above
+// stays exported as the ungated primitive.
+describe('rankMatchupWithGate', () => {
+  it('abstains below the floor with the exact remaining-games count', () => {
+    const claim = rankMatchupWithGate(1, [2], [{ fighterId: 2, wins: 2, losses: 0 }]);
+    expect(claim.kind).toBe('abstained');
+    expect(claim.kind === 'abstained' && claim.gamesNeeded).toBe(1);
+  });
+
+  it('evidences at the floor, wrapping the unchanged rankMatchup result', () => {
+    const records: MyCharacterRecordVsOpponent[] = [{ fighterId: 2, wins: 2, losses: 1 }];
+    const claim = rankMatchupWithGate(1, [2], records);
+    expect(claim.kind).toBe('evidenced');
+    expect(claim.kind === 'evidenced' && claim.value.ranked).toEqual(
+      rankMatchup(1, [2], records).ranked,
+    );
+  });
+
+  it('reports countable games as both rawSampleSize and eligibleDenominator', () => {
+    const records: MyCharacterRecordVsOpponent[] = [
+      { fighterId: 2, wins: 3, losses: 2 },
+      { fighterId: 52, wins: 0, losses: 1 },
+    ];
+    const claim = rankMatchupWithGate(1, [2, 52], records);
+    expect(claim.sample.rawSampleSize).toBe(6);
+    expect(claim.sample.eligibleDenominator).toBe(6);
+  });
+});
+
+describe('buildMatchupAdvisorWithGate', () => {
+  it('gates each opponent fighter id independently', () => {
+    const recordsByOpponent = new Map<number, MyCharacterRecordVsOpponent[]>([
+      [9, [{ fighterId: 52, wins: 15, losses: 1 }]],
+      [36, [{ fighterId: 82, wins: 1, losses: 0 }]],
+    ]);
+    const claims = buildMatchupAdvisorWithGate([9, 36], [82, 52], recordsByOpponent);
+    expect(claims).toHaveLength(2);
+    expect(claims[0]?.kind).toBe('evidenced');
+    expect(claims[1]?.kind).toBe('abstained');
+  });
+
+  it('returns an empty array for an empty opponent list', () => {
+    expect(buildMatchupAdvisorWithGate([], [82], new Map())).toEqual([]);
   });
 });
 

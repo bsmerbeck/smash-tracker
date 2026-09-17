@@ -227,7 +227,6 @@
       "openLab": "Open Matchup Lab",
       "strongest": "Strongest Matchups",
       "toughest": "Toughest Matchups",
-      "needMoreGames": "Play a few more games ({{count}}+ per opponent) to surface a toughest matchup.",
       "notEnough": "Not enough reported matches to calculate."
     },
     "selectFighter": {

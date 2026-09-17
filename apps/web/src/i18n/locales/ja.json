@@ -227,7 +227,6 @@
       "openLab": "相性表を開く",
       "strongest": "得意な相手",
       "toughest": "苦手な相手",
-      "needMoreGames": "あと数戦（相手ごとに{{count}}戦以上）プレイすると、最も苦手な相性が表示されます。",
       "notEnough": "計算に必要な対戦数が足りません。"
     },
     "selectFighter": {

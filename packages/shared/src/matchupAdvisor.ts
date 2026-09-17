@@ -1,4 +1,13 @@
 import { archetypeEdge, getFighterMeta } from './meta.js';
+import {
+  ABSTENTION_FLOOR_GAMES,
+  CONFIDENCE_TIER_BOUNDS,
+  EVIDENCE_POLICY_VERSION,
+  RECENCY_TREATMENT,
+  confidenceTierFor,
+  effectiveFloor,
+} from './evidence/policy.js';
+import type { EvidenceClaim, SampleMeta } from './evidence/types.js';
 
 /**
  * V9-B Feature 3: deterministic character-pick recommendations — ZERO added
@@ -45,15 +54,6 @@ export interface MatchupRanking {
 }
 
 /**
- * Sample size at which the user's own record and the tier/archetype prior
- * contribute equally to the blended score. Below this, the prior dominates;
- * well above it, the user's actual record dominates. 8 games (roughly two
- * best-of-5 sets) is enough to start meaning something in Smash, without
- * demanding a huge sample before real data counts at all.
- */
-const CONFIDENCE_HALF_SAMPLE = 8;
-
-/**
  * How much the prior (tier score + archetype edge) is allowed to move the
  * blended score away from a neutral 0.5, at most. Priors are heuristics, not
  * certainties — even a "perfect" S+ vs. D+ matchup on paper shouldn't be
@@ -82,10 +82,16 @@ function normalizedArchetypeEdge(edge: number): number {
  *   normalized) + 30% archetype counter edge (normalized) — tier placement
  *   is the stronger, more character-specific signal; archetype counters fill
  *   in texture when two characters are tier-adjacent.
- * - `sampleWeight` = games / (games + CONFIDENCE_HALF_SAMPLE) — 0 with no
- *   data, 0.5 at the half-sample point, asymptotically approaching 1 as the
- *   sample grows. This is the confidence-weighting: thin samples barely move
- *   the needle away from the prior; rich samples dominate it.
+ * - `sampleWeight` = games / (games + CONFIDENCE_TIER_BOUNDS.medium) — 0 with
+ *   no data, 0.5 at the half-sample point, asymptotically approaching 1 as
+ *   the sample grows. This is the confidence-weighting: thin samples barely
+ *   move the needle away from the prior; rich samples dominate it. 8 games
+ *   (roughly two best-of-5 sets, `CONFIDENCE_TIER_BOUNDS.medium` from
+ *   `evidence/policy.ts`) is enough to start meaning something in Smash,
+ *   without demanding a huge sample before real data counts at all — and
+ *   Phase 36 (R1-LOW-2) makes the "these two numbers happen to agree"
+ *   alignment mechanical by importing the same constant rather than
+ *   maintaining a second, unenforced `8`.
  * - final score = `sampleWeight * winRate + (1 - sampleWeight) * prior`.
  *
  * Degrades gracefully for an unmapped/unknown fighter id: `getFighterMeta`
@@ -107,7 +113,7 @@ function pickScore(
 
   const games = (record?.wins ?? 0) + (record?.losses ?? 0);
   const winRate = games > 0 ? (record?.wins ?? 0) / games : prior;
-  const sampleWeight = games / (games + CONFIDENCE_HALF_SAMPLE);
+  const sampleWeight = games / (games + CONFIDENCE_TIER_BOUNDS.medium);
 
   const score = sampleWeight * winRate + (1 - sampleWeight) * prior;
 
@@ -127,6 +133,14 @@ function pickScore(
  * pick first. `myFighterIds` should be de-duplicated by the caller (e.g. the
  * union of primary/secondary + most-played); an empty list yields an empty
  * ranking (no candidates to recommend).
+ *
+ * Phase 36 (D-05, first application to the character advisor): this is the
+ * INNER, UNGATED primitive — it has no abstention floor and will happily
+ * rank a candidate against a 0-game or 2-game opponent-character sample,
+ * falling back to the tier/archetype prior. `rankMatchupWithGate` below
+ * wraps this unchanged blend with the engine's hard floor; reach for that
+ * one for any new caller that renders a recommendation to a user. This
+ * primitive stays exported for the API report payload path (plan 36-03).
  */
 export function rankMatchup(
   opponentFighterId: number,
@@ -153,6 +167,9 @@ export function rankMatchup(
  * fighter id -> the user's per-character records against that specific
  * opponent character (raw counts, one entry per one of the user's own
  * fighters).
+ *
+ * Phase 36 (D-05): the INNER, UNGATED primitive — see `rankMatchup`'s doc
+ * comment. `buildMatchupAdvisorWithGate` below wraps it with the floor.
  */
 export function buildMatchupAdvisor(
   opponentFighterIds: number[],
@@ -161,6 +178,80 @@ export function buildMatchupAdvisor(
 ): MatchupRanking[] {
   return opponentFighterIds.map((opponentFighterId) =>
     rankMatchup(opponentFighterId, myFighterIds, myRecordsVsOpponent.get(opponentFighterId) ?? []),
+  );
+}
+
+/**
+ * D-05/D-07's first application to the character advisor: sums countable
+ * games (`wins + losses`) across `myRecordsVsOpponent` and abstains below
+ * `floor` — the unchanged `rankMatchup` blend above never runs on a
+ * below-floor sample. `floor` defaults to `ABSTENTION_FLOOR_GAMES` and is
+ * routed through `effectiveFloor` so an explicit sub-floor argument can
+ * never weaken the gate (R1-HIGH-1's engine-wide invariant), matching
+ * `rankStagesByEvidence`/`rankMatchupsByEvidence`'s own contract. The
+ * abstained arm's `sample` still carries provenance: character-pair
+ * identity is always known (mirrors `buildMatchupEvidence`'s own comment),
+ * so `rawSampleSize` and `eligibleDenominator` are both the summed count and
+ * there is no separate "known-field" concept to track here.
+ */
+export function rankMatchupWithGate(
+  opponentFighterId: number,
+  myFighterIds: number[],
+  myRecordsVsOpponent: MyCharacterRecordVsOpponent[],
+  floor = ABSTENTION_FLOOR_GAMES,
+): EvidenceClaim<MatchupRanking> {
+  const countable = myRecordsVsOpponent.reduce((sum, r) => sum + r.wins + r.losses, 0);
+  const effective = effectiveFloor(floor);
+  const sample: SampleMeta = {
+    rawSampleSize: countable,
+    eligibleDenominator: countable,
+    knownFieldCoverage: countable > 0 ? 1 : 0,
+    dateRange: null,
+    refreshedAt: Date.now(),
+    evidencePolicyVersion: EVIDENCE_POLICY_VERSION,
+    recencyTreatment: RECENCY_TREATMENT,
+    confidenceTier: confidenceTierFor(countable),
+  };
+
+  if (countable < effective) {
+    return {
+      kind: 'abstained',
+      claimType: 'recommendation',
+      reason: 'insufficient-sample',
+      sample,
+      gamesNeeded: effective - countable,
+    };
+  }
+
+  return {
+    kind: 'evidenced',
+    claimType: 'recommendation',
+    value: rankMatchup(opponentFighterId, myFighterIds, myRecordsVsOpponent),
+    sample,
+  };
+}
+
+/**
+ * `rankMatchupWithGate` over every opponent fighter id in
+ * `opponentFighterIds` — one claim per opponent character, same shape as
+ * `buildMatchupAdvisor` but gated. Nothing in Phase 36 calls this yet (the
+ * web card calls `rankMatchupWithGate` directly, one opponent at a time);
+ * it exists as the batch entry point a future report/summary consumer
+ * reaches for instead of re-deriving the per-opponent loop.
+ */
+export function buildMatchupAdvisorWithGate(
+  opponentFighterIds: number[],
+  myFighterIds: number[],
+  myRecordsVsOpponent: Map<number, MyCharacterRecordVsOpponent[]>,
+  floor?: number,
+): EvidenceClaim<MatchupRanking>[] {
+  return opponentFighterIds.map((opponentFighterId) =>
+    rankMatchupWithGate(
+      opponentFighterId,
+      myFighterIds,
+      myRecordsVsOpponent.get(opponentFighterId) ?? [],
+      floor,
+    ),
   );
 }
 

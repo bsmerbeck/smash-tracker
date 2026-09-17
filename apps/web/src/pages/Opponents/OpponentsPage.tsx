@@ -9,7 +9,11 @@ import { useOpponentAliases } from '@/hooks/useOpponentAliases';
 import { useOpponentNotes } from '@/hooks/useOpponentNotes';
 import { useAuth } from '@/hooks/useAuth';
 import { FilteredEmptyNotice } from '@/components/FilteredEmptyNotice';
-import { getOpponentProfile, getOpponentRecords } from '@/lib/stats';
+import {
+  buildOpponentEvidence,
+  buildOpponentProfile,
+  resolveOpponentIdentities,
+} from '@/lib/stats';
 import { OpponentList } from './components/OpponentList';
 import { ScoutingHeader } from './components/ScoutingHeader';
 import { WhatTheyPlayTable } from './components/WhatTheyPlayTable';
@@ -37,12 +41,25 @@ export function OpponentsPage() {
   const { data: aliasMap } = useOpponentAliases();
   const { data: noteMap } = useOpponentNotes();
   const { user } = useAuth();
+  // React Compiler forbids a bare `Date.now()` call in the render body (it's
+  // impure) — a lazy `useState` initializer is the sanctioned one-time-read
+  // escape hatch, matching `CounterpickAdvisor.tsx`'s convention. One value
+  // per render pass, shared by every `buildOpponentEvidence`/
+  // `buildOpponentProfile` call below, so all three claims report the same
+  // refresh time.
+  const [refreshedAt] = useState(() => Date.now());
 
-  const opponentRecords = useMemo(() => getOpponentRecords(matches), [matches]);
+  // Phase 36 (EVID-12, R1-BLOCKER-2): the identity-resolving inventory
+  // (aliased + normalized + slug/parry-id bound), NOT the raw-tag
+  // `getOpponentRecords` — one alias-merged person is now ONE row here.
+  const opponentRecords = useMemo(
+    () => buildOpponentEvidence({ matches, aliasMap: aliasMap ?? {}, refreshedAt }).rows,
+    [matches, aliasMap, refreshedAt],
+  );
   const sources = useMemo(() => getOpponentSources(matches), [matches]);
 
   const mostPlayed = useMemo(() => {
-    return [...opponentRecords].sort((a, b) => b.total - a.total)[0]?.opponent ?? null;
+    return [...opponentRecords].sort((a, b) => b.total - a.total)[0]?.displayTag ?? null;
   }, [opponentRecords]);
 
   // Tracks an explicit user selection only; when unset, or when the previous
@@ -73,19 +90,33 @@ export function OpponentsPage() {
 
   const requested = selectedOpponent ?? preselected;
   const selected =
-    requested && opponentRecords.some((o) => o.opponent === requested) ? requested : mostPlayed;
+    requested && opponentRecords.some((o) => o.displayTag === requested) ? requested : mostPlayed;
 
   const profile = useMemo(() => {
     if (!selected) {
       return null;
     }
-    return getOpponentProfile(matches, selected);
-  }, [matches, selected]);
+    return buildOpponentProfile({
+      matches,
+      aliasMap: aliasMap ?? {},
+      opponentTag: selected,
+      refreshedAt,
+    });
+  }, [matches, aliasMap, selected, refreshedAt]);
 
-  const opponentMatches = useMemo(
-    () => (profile ? matches.filter((m) => m.opponent === profile.opponent) : []),
-    [matches, profile],
-  );
+  // Phase 36 (EVID-12): resolved-identity comparison, not raw-string
+  // equality — an alias-merged person's drill-down series must interleave
+  // ALL of their tags' games into one continuous chronological run, which a
+  // `m.opponent === profile.opponent` comparison (a normalized canonical
+  // tag, post-migration) would silently re-split.
+  const opponentMatches = useMemo(() => {
+    if (!profile || !selected) {
+      return [];
+    }
+    const resolve = resolveOpponentIdentities(matches, aliasMap ?? {});
+    const targetIdentity = resolve({ opponent: selected });
+    return matches.filter((m) => resolve(m) === targetIdentity);
+  }, [matches, aliasMap, profile, selected]);
 
   const tournamentBlocks = useMemo(() => groupTournamentBlocks(opponentMatches), [opponentMatches]);
 
@@ -139,8 +170,14 @@ export function OpponentsPage() {
     );
   }
 
-  const allOpponentsNamed = getOpponentRecords(allMatches);
-  if (allOpponentsNamed.length === 0) {
+  // Phase 36 (R1-BLOCKER-2): a direct existence check, NOT the identity
+  // engine — this branch decides whether to show the "no tags yet" empty
+  // state, and it is not itself a claim about a specific person. Gating it
+  // through `buildOpponentEvidence` (or the old `getOpponentRecords`) would
+  // apply logic irrelevant to this yes/no question; a `.some(...)` over a
+  // non-empty `opponent` is exactly what the branch asks.
+  const hasNamedOpponent = allMatches.some((m) => m.opponent && m.opponent.length > 0);
+  if (!hasNamedOpponent) {
     return (
       <div className="flex flex-col gap-6">
         <div className="flex flex-col items-center gap-2 py-16 text-center">
@@ -164,6 +201,7 @@ export function OpponentsPage() {
           selected={selected}
           onSelect={setSelectedOpponent}
           onRequestMerge={setMergeCandidate}
+          aliasMap={aliasMap ?? {}}
         />
 
         {profile ? (
@@ -174,7 +212,7 @@ export function OpponentsPage() {
             <ScoutingHeader
               profile={profile}
               encounterContext={encounterContext}
-              source={sources.get(profile.opponent) ?? 'manual'}
+              source={profile.source}
             />
             <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
               <WhatTheyPlayTable byTheirFighter={profile.byTheirFighter} />
@@ -207,7 +245,7 @@ export function OpponentsPage() {
           }}
           opponent={mergeCandidate}
           candidates={opponentRecords
-            .map((o) => o.opponent)
+            .map((o) => o.displayTag)
             .filter((name) => name !== mergeCandidate)}
           sources={sources}
           onMerged={() => setMergeCandidate(null)}

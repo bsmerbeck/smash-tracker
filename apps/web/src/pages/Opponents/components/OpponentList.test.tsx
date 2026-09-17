@@ -34,7 +34,13 @@ const MATCHES: Match[] = [
 
 function renderList() {
   return render(
-    <OpponentList matches={MATCHES} selected={null} onSelect={vi.fn()} onRequestMerge={vi.fn()} />,
+    <OpponentList
+      matches={MATCHES}
+      selected={null}
+      onSelect={vi.fn()}
+      onRequestMerge={vi.fn()}
+      aliasMap={{}}
+    />,
   );
 }
 
@@ -88,5 +94,46 @@ describe('OpponentList sorting and filtering', () => {
     expect(rowNames()).toEqual(['alice']);
     // The header count still reflects everyone faced, not the filtered view.
     expect(screen.getByText('3 opponents faced')).toBeInTheDocument();
+  });
+});
+
+// Phase 36 (EVID-12, R2-MEDIUM-1, R3-MEDIUM-1): the migration to
+// buildOpponentEvidence re-keys the per-opponent lookups by resolved
+// identity — these assertions are ADDED (not edits to the fixture above),
+// so they don't violate the "existing assertions pass unedited" rule.
+describe('OpponentList alias-merged identity (EVID-12)', () => {
+  it('sorts an alias-merged opponent by their latest game across all tags and renders a mixed source badge on the list row', async () => {
+    const user = userEvent.setup();
+    const matches: Match[] = [
+      makeMatch({ id: 'd1', time: 100, win: true, opponent: 'dave' }),
+      makeMatch({ id: 'd2', time: 200, win: true, opponent: 'dave' }),
+      makeMatch({
+        id: 'd3',
+        time: 5000,
+        win: true,
+        opponent: 'daveovertime',
+        source: 'startgg',
+      }),
+      makeMatch({ id: 'e1', time: 3000, win: false, opponent: 'ellis' }),
+    ];
+    render(
+      <OpponentList
+        matches={matches}
+        selected={null}
+        onSelect={vi.fn()}
+        onRequestMerge={vi.fn()}
+        aliasMap={{ daveovertime: 'dave' }}
+      />,
+    );
+
+    await user.click(screen.getByRole('combobox', { name: 'Sort opponents' }));
+    await user.click(screen.getByRole('option', { name: 'Recently played' }));
+    // "dave"'s latest game (across both tags) is time 5000 — newer than
+    // "ellis"'s single game at time 3000.
+    expect(rowNames()).toEqual(['dave', 'ellis']);
+
+    const list = screen.getByRole('list', { name: 'Opponents' });
+    const daveRow = within(list).getAllByRole('listitem')[0]!;
+    expect(within(daveRow).getByLabelText('mixed sources')).toBeInTheDocument();
   });
 });

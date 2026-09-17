@@ -342,6 +342,45 @@ describe('OpponentsPage', () => {
     });
   });
 
+  // Phase 36 (EVID-12, R1-BLOCKER-2, ROADMAP SC1 clause 3): where the
+  // alias-merged identity resolution becomes visible in the PRODUCT, not
+  // only in packages/shared/src/evidence/opponentEvidence.test.ts's engine
+  // oracle (plan 36-01 Task 3).
+  describe('alias-merged opponent identity (EVID-12)', () => {
+    function seedTwoTagsForOnePerson() {
+      listMatches.mockResolvedValue([
+        makeMatch({ id: 'g1', time: 1, opponent: 'gonzo', win: true }),
+        makeMatch({ id: 'g2', time: 2, opponent: 'gonzo', win: true }),
+        makeMatch({ id: 'g3', time: 10, opponent: 'gonzo2', win: false }),
+      ]);
+    }
+
+    it('renders ONE list row and one interleaved chronological encounter series with a merging alias map', async () => {
+      seedTwoTagsForOnePerson();
+      listAliases.mockResolvedValue({ gonzo2: 'gonzo' });
+
+      renderOpponents();
+
+      expect(await screen.findByText('1 opponent faced')).toBeInTheDocument();
+      const list = screen.getByRole('list', { name: 'Opponents' });
+      expect(within(list).getAllByRole('listitem')).toHaveLength(1);
+
+      const encounters = await screen.findByRole('list', { name: 'Recent encounters' });
+      expect(within(encounters).getAllByRole('listitem')).toHaveLength(3);
+    });
+
+    it('renders TWO list rows with an empty alias map (no merge)', async () => {
+      seedTwoTagsForOnePerson();
+      listAliases.mockResolvedValue({});
+
+      renderOpponents();
+
+      expect(await screen.findByText('2 opponents faced')).toBeInTheDocument();
+      const list = screen.getByRole('list', { name: 'Opponents' });
+      expect(within(list).getAllByRole('listitem')).toHaveLength(2);
+    });
+  });
+
   describe('scouting report rendering', () => {
     beforeEach(() => {
       listMatches.mockResolvedValue([
@@ -719,6 +758,34 @@ describe('OpponentsPage', () => {
 
       await waitFor(() => expect(screen.getByText('Last 10 (newest first)')).toBeInTheDocument());
       expect(screen.getAllByLabelText('mixed sources').length).toBeGreaterThan(0);
+    });
+
+    // Phase 36 (R3-MEDIUM-2): after the identity migration, profile.opponent
+    // is the identity's normalized canonical displayTag, while the raw-tag
+    // `sources` map (still fed to MergeOpponentDialog) keys on the exact,
+    // case-preserving `match.opponent`. A stored tag that is NOT already
+    // normalized misses that map — `?? 'manual'` turned the miss into a
+    // WRONG badge before this plan re-pointed the header at `profile.source`
+    // (verified against the pre-fix expression: `sources.get(profile.opponent)
+    // ?? 'manual'` resolved to 'manual' here, because `profile.opponent`
+    // becomes "rival" but the only key `sources` has is the raw "Rival").
+    it('shows a mixed badge in the profile header (not just the list row) for an opponent whose stored tag is not already normalized', async () => {
+      listMatches.mockResolvedValue([
+        makeMatch({ id: 'm1', time: 1, opponent: 'Rival', win: true, source: 'startgg' }),
+        makeMatch({ id: 'm2', time: 2, opponent: 'Rival', win: false }),
+      ]);
+
+      renderOpponents();
+
+      await waitFor(() => expect(screen.getByText('Last 10 (newest first)')).toBeInTheDocument());
+      // Scoped to the report card (the ScoutingHeader), not a page-wide
+      // getAllByLabelText — the OpponentList row already carries the
+      // correct badge independently, which would satisfy a page-wide query
+      // even if the header's own badge were wrong.
+      const reportCard = screen
+        .getByText('Last 10 (newest first)')
+        .closest('[data-slot="card"]') as HTMLElement;
+      expect(within(reportCard).getByLabelText('mixed sources')).toBeInTheDocument();
     });
   });
 

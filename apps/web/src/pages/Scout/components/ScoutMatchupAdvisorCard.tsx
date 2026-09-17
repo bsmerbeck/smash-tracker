@@ -2,15 +2,23 @@ import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Swords } from 'lucide-react';
 import type {
+  EvidenceClaim,
   Match,
+  MatchupRanking,
   MyCharacterRecordVsOpponent,
+  SampleMeta,
   ScoutCharacterUsage,
 } from '@smash-tracker/shared';
-import { rankMatchup, selectMyCandidateFighterIds, type MatchupPick } from '@smash-tracker/shared';
+import {
+  rankMatchupWithGate,
+  selectMyCandidateFighterIds,
+  type MatchupPick,
+} from '@smash-tracker/shared';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { getFighterById } from '@/data/sprites';
 import { useFighterName, useFighterNameResolver } from '@/hooks/useFighterName';
 import { useFighters } from '@/hooks/useFighters';
+import { SampleCue } from '@/components/EvidenceCues';
 
 const MAX_OPPONENT_ROWS = 5;
 const MY_TOP_CHARACTERS_COUNT = 5;
@@ -18,11 +26,18 @@ const MY_TOP_CHARACTERS_COUNT = 5;
 interface AdvisorRow {
   opponentFighterId: number;
   opponentGames: number;
-  best: MatchupPick;
-  worst: MatchupPick | null;
+  claim: EvidenceClaim<MatchupRanking>;
 }
 
-function PickChip({ pick, tone }: { pick: MatchupPick; tone: 'best' | 'worst' }) {
+function PickChip({
+  pick,
+  tone,
+  sample,
+}: {
+  pick: MatchupPick;
+  tone: 'best' | 'worst';
+  sample: SampleMeta;
+}) {
   const { t } = useTranslation();
   const sprite = getFighterById(pick.fighterId);
   const localizedName = useFighterName(pick.fighterId);
@@ -50,7 +65,9 @@ function PickChip({ pick, tone }: { pick: MatchupPick; tone: 'best' | 'worst' })
         <span className={`text-sm font-medium ${tone === 'worst' ? 'text-muted-foreground' : ''}`}>
           {sprite ? localizedName : t('common.unknown')}
         </span>
-        <span className="text-xs text-muted-foreground">{evidenceParts.join(' · ')}</span>
+        <span className="text-xs text-muted-foreground">
+          {evidenceParts.join(' · ')} <SampleCue sample={sample} />
+        </span>
       </div>
     </div>
   );
@@ -68,6 +85,15 @@ function PickChip({ pick, tone }: { pick: MatchupPick; tone: 'best' | 'worst' })
  * Empty state: when the scout has no character data at all (common for
  * parry.gg's younger/sparser match data), says so plainly rather than
  * rendering an empty table.
+ *
+ * Phase 36 (D-05, first application of the abstention floor to the
+ * character advisor): each opponent character now goes through
+ * `rankMatchupWithGate` instead of the ungated `rankMatchup` — a row whose
+ * countable games (summed across all of the user's candidate fighters) is
+ * below the floor renders the shared abstained sentence instead of a pick
+ * chip, and an evidenced row appends the shared sample/confidence cue to its
+ * evidence line. The `CardDescription` is now the shared evidence-type
+ * caption rather than bespoke copy (D-13).
  */
 export function ScoutMatchupAdvisorCard({
   scoutedCharacters,
@@ -104,7 +130,7 @@ export function ScoutMatchupAdvisorCard({
     if (myFighterIds.length === 0) {
       return [];
     }
-    return opponentFighterIds.flatMap((opponentFighterId) => {
+    return opponentFighterIds.map((opponentFighterId) => {
       const records: MyCharacterRecordVsOpponent[] = myFighterIds.map((fighterId) => {
         const vsMatches = matches.filter(
           (m) => m.fighter_id === fighterId && m.opponent_id === opponentFighterId,
@@ -112,20 +138,10 @@ export function ScoutMatchupAdvisorCard({
         const wins = vsMatches.filter((m) => m.win).length;
         return { fighterId, wins, losses: vsMatches.length - wins };
       });
-      const ranking = rankMatchup(opponentFighterId, myFighterIds, records);
-      if (!ranking.best) {
-        return [];
-      }
+      const claim = rankMatchupWithGate(opponentFighterId, myFighterIds, records);
       const opponentGames =
         scoutedCharacters.find((c) => c.fighterId === opponentFighterId)?.games ?? 0;
-      return [
-        {
-          opponentFighterId,
-          opponentGames,
-          best: ranking.best,
-          worst: ranking.worst,
-        },
-      ];
+      return { opponentFighterId, opponentGames, claim };
     });
   }, [matches, myFighterIds, opponentFighterIds, scoutedCharacters]);
 
@@ -136,7 +152,7 @@ export function ScoutMatchupAdvisorCard({
           <Swords className="size-4" />
           {t('scout.advisor.title')}
         </CardTitle>
-        <CardDescription>{t('scout.advisor.description')}</CardDescription>
+        <CardDescription>{t('shared.evidence.type.inference')}</CardDescription>
       </CardHeader>
       <CardContent>
         {opponentFighterIds.length === 0 ? (
@@ -174,10 +190,22 @@ export function ScoutMatchupAdvisorCard({
                     </span>
                   </div>
                 </div>
-                <div className="flex flex-wrap items-center gap-4">
-                  <PickChip pick={row.best} tone="best" />
-                  {row.worst && <PickChip pick={row.worst} tone="worst" />}
-                </div>
+                {row.claim.kind === 'abstained' ? (
+                  <p className="text-sm text-muted-foreground">
+                    {t('shared.evidence.abstained', { count: row.claim.gamesNeeded })}
+                  </p>
+                ) : (
+                  <div className="flex flex-wrap items-center gap-4">
+                    <PickChip pick={row.claim.value.best!} tone="best" sample={row.claim.sample} />
+                    {row.claim.value.worst && (
+                      <PickChip
+                        pick={row.claim.value.worst}
+                        tone="worst"
+                        sample={row.claim.sample}
+                      />
+                    )}
+                  </div>
+                )}
               </li>
             ))}
           </ul>
