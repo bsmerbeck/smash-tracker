@@ -150,13 +150,27 @@
       "abstained_one": "Aún no hay suficientes datos — falta {{count}} partida más.",
       "abstained_other": "Aún no hay suficientes datos — faltan {{count}} partidas más.",
       "sampleCue": "{{total}} partidas · confianza {{tier}}",
+      "unknownRow_one": "Desconocido ({{count}} partida, excluida)",
+      "unknownRow_other": "Desconocido ({{count}} partidas, excluidas)",
+      "mixedContext": "Contexto mixto",
+      "mixedContextDetail": "{{minorityPct}}% {{minorityLabel}} — mezclado con {{majorityLabel}}.",
       "tier": {
         "low": "baja",
         "medium": "media",
         "high": "alta"
       },
+      "cohort": {
+        "online": "en línea",
+        "offline": "presencial",
+        "unspecified": "sin especificar",
+        "manual": "manual",
+        "startgg": "start.gg",
+        "parrygg": "parry.gg"
+      },
       "type": {
-        "recommendation": "Recomendación de coaching basada en tus partidas registradas — no es una garantía."
+        "recommendation": "Recomendación de coaching basada en tus partidas registradas — no es una garantía.",
+        "inference": "Inferencia estadística a partir de tus partidas registradas.",
+        "fact": "Dato registrado en tu historial de partidas."
       }
     }
   },
@@ -802,7 +816,6 @@
       "recentForm": "Forma reciente (primero la más nueva)",
       "bestStage": "Mejor escenario",
       "worstStage": "Peor escenario",
-      "notEnoughStageData": "Aún no hay suficientes datos de escenarios.",
       "byMatchType": "Por tipo de partida"
     },
     "stageTable": {
@@ -864,8 +877,7 @@
       "stageHabit": "Sigues jugando en {{stage}}: {{wins}}-{{losses}}"
     },
     "guide": {
-      "title": "Guía de escenarios por enfrentamiento",
-      "empty": "Aún no hay datos de enfrentamientos — registra partidas con este luchador para construir la guía."
+      "title": "Guía de escenarios por enfrentamiento"
     },
     "opponents": {
       "title": "Rivales",

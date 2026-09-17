@@ -150,13 +150,27 @@
       "abstained_one": "Pas encore assez de données — {{count}} match de plus nécessaire.",
       "abstained_other": "Pas encore assez de données — {{count}} matchs de plus nécessaires.",
       "sampleCue": "{{total}} matchs · confiance {{tier}}",
+      "unknownRow_one": "Inconnu ({{count}} match, exclu)",
+      "unknownRow_other": "Inconnu ({{count}} matchs, exclus)",
+      "mixedContext": "Contexte mixte",
+      "mixedContextDetail": "{{minorityPct}} % {{minorityLabel}} — mélangé avec {{majorityLabel}}.",
       "tier": {
         "low": "faible",
         "medium": "moyenne",
         "high": "élevée"
       },
+      "cohort": {
+        "online": "en ligne",
+        "offline": "hors ligne",
+        "unspecified": "non précisé",
+        "manual": "manuel",
+        "startgg": "start.gg",
+        "parrygg": "parry.gg"
+      },
       "type": {
-        "recommendation": "Recommandation de coaching basée sur vos matchs enregistrés — ce n'est pas une garantie."
+        "recommendation": "Recommandation de coaching basée sur vos matchs enregistrés — ce n'est pas une garantie.",
+        "inference": "Inférence statistique basée sur vos matchs enregistrés.",
+        "fact": "Fait enregistré dans votre historique de matchs."
       }
     }
   },
@@ -802,7 +816,6 @@
       "recentForm": "Forme récente (du plus récent au plus ancien)",
       "bestStage": "Meilleur stage",
       "worstStage": "Pire stage",
-      "notEnoughStageData": "Pas encore assez de données de stage.",
       "byMatchType": "Par type de match"
     },
     "stageTable": {
@@ -864,8 +877,7 @@
       "stageHabit": "Vous jouez toujours sur {{stage}} : {{wins}}-{{losses}}"
     },
     "guide": {
-      "title": "Guide des stages par matchup",
-      "empty": "Pas encore de données de matchup — enregistrez des matchs avec ce combattant pour construire le guide."
+      "title": "Guide des stages par matchup"
     },
     "opponents": {
       "title": "Adversaires",

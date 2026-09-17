@@ -150,13 +150,27 @@
       "abstained_one": "Not enough data yet — {{count}} more game needed.",
       "abstained_other": "Not enough data yet — {{count}} more games needed.",
       "sampleCue": "{{total}} games · {{tier}} confidence",
+      "unknownRow_one": "Unknown ({{count}} game, excluded)",
+      "unknownRow_other": "Unknown ({{count}} games, excluded)",
+      "mixedContext": "Mixed context",
+      "mixedContextDetail": "{{minorityPct}}% {{minorityLabel}} — mixed with {{majorityLabel}}.",
       "tier": {
         "low": "low",
         "medium": "medium",
         "high": "high"
       },
+      "cohort": {
+        "online": "online",
+        "offline": "offline",
+        "unspecified": "unspecified",
+        "manual": "manual",
+        "startgg": "start.gg",
+        "parrygg": "parry.gg"
+      },
       "type": {
-        "recommendation": "Coaching recommendation from your recorded games — not a guarantee."
+        "recommendation": "Coaching recommendation from your recorded games — not a guarantee.",
+        "inference": "Statistical inference from your recorded games.",
+        "fact": "Recorded fact from your match log."
       }
     }
   },
@@ -802,7 +816,6 @@
       "recentForm": "Recent Form (newest first)",
       "bestStage": "Best Stage",
       "worstStage": "Worst Stage",
-      "notEnoughStageData": "Not enough stage data yet.",
       "byMatchType": "By Match Type"
     },
     "stageTable": {
@@ -864,8 +877,7 @@
       "stageHabit": "You keep playing on {{stage}}: {{wins}}-{{losses}}"
     },
     "guide": {
-      "title": "Matchup Stage Guide",
-      "empty": "No matchup data yet — report matches with this fighter to build the guide."
+      "title": "Matchup Stage Guide"
     },
     "opponents": {
       "title": "Opponents",

@@ -1,6 +1,13 @@
+import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { TFunction } from 'i18next';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import type { Match, SampleMeta } from '@smash-tracker/shared';
+import {
+  EVIDENCE_POLICY_VERSION,
+  RECENCY_TREATMENT,
+  confidenceTierFor,
+} from '@smash-tracker/shared';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import {
   Table,
   TableBody,
@@ -16,25 +23,36 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import type { Match } from '@smash-tracker/shared';
-import { getMatchupStageGuide, type StageRecord } from '@/lib/stats';
+import { buildStageEvidence, getMatchupStageGuide, type StageRecord } from '@/lib/stats';
 import { getFighterById } from '@/data/sprites';
 import { stagesById } from '@/data/stages';
 import { localizedFighterName } from '@/lib/fighterNames';
 import { MIN_STAGE_MATCHES_OPTIONS } from '@/lib/analyticsSelection';
 import { useMinStageMatches } from '@/hooks/useMinStageMatches';
+import { SampleCue, UnknownRow, MixedContextBadge } from '@/components/EvidenceCues';
 
-function stageCell(record: StageRecord | null, t: TFunction) {
+function stageCell(record: StageRecord | null, t: TFunction, refreshedAt: number) {
   if (!record) {
     return <span className="text-muted-foreground">—</span>;
   }
   const name = stagesById.get(record.stageId)?.name ?? t('common.unknown');
+  const sample: SampleMeta = {
+    rawSampleSize: record.total,
+    eligibleDenominator: record.total,
+    knownFieldCoverage: 1,
+    dateRange: null,
+    refreshedAt,
+    evidencePolicyVersion: EVIDENCE_POLICY_VERSION,
+    recencyTreatment: RECENCY_TREATMENT,
+    confidenceTier: confidenceTierFor(record.total),
+  };
   return (
     <span>
       {name}{' '}
       <span className="text-muted-foreground">
         {t('common.rateOverSample', { rate: record.winRate, total: record.total })}
-      </span>
+      </span>{' '}
+      <SampleCue sample={sample} />
     </span>
   );
 }
@@ -47,16 +65,39 @@ function stageCell(record: StageRecord | null, t: TFunction) {
  * matchups lead. Phase 35-03 (D-11): the threshold is the one shared
  * per-subject value `useMinStageMatches` owns — changing it here moves
  * Matchup Insights and Counterpick Advisor too.
+ *
+ * Phase 36 (EVID-06, EVID-10): the empty branch now reads the shared
+ * abstained sentence, each best/worst stage cell carries the shared
+ * sample/confidence cue, an evidence-type caption marks this card as an
+ * inference, an unknown-stage row is forced last in the table body when
+ * present, and a mixed-context badge flags a session-type/provenance split —
+ * the same claim shape every other advisor surface renders from (D-13).
  */
 export function MatchupStageGuide({ fighterMatches }: { fighterMatches: Match[] }) {
   const { t } = useTranslation();
   const [threshold, setThreshold] = useMinStageMatches();
+  // React Compiler forbids a bare `Date.now()` call in the render body (it's
+  // impure) — a lazy `useState` initializer is the sanctioned one-time-read
+  // escape hatch, matching `CounterpickAdvisor.tsx`'s convention.
+  const [refreshedAt] = useState(() => Date.now());
   const rows = getMatchupStageGuide(fighterMatches, threshold);
+  const { claim, unknown, cohort } = buildStageEvidence({
+    matches: fighterMatches,
+    refreshedAt,
+    minMatches: threshold,
+  });
+  const abstainedGamesNeeded = claim.kind === 'abstained' ? claim.gamesNeeded : 0;
 
   return (
     <Card>
       <CardHeader className="flex flex-row items-center justify-between">
-        <CardTitle>{t('fighterAnalysis.guide.title')}</CardTitle>
+        <div>
+          <div className="flex items-center gap-2">
+            <CardTitle>{t('fighterAnalysis.guide.title')}</CardTitle>
+            <MixedContextBadge cohort={cohort} />
+          </div>
+          <CardDescription>{t('shared.evidence.type.inference')}</CardDescription>
+        </div>
         <div className="flex items-center gap-2">
           <span className="text-sm text-muted-foreground">{t('matchups.insights.minMatches')}</span>
           <Select value={String(threshold)} onValueChange={(v) => setThreshold(Number(v))}>
@@ -75,7 +116,9 @@ export function MatchupStageGuide({ fighterMatches }: { fighterMatches: Match[] 
       </CardHeader>
       <CardContent>
         {rows.length === 0 ? (
-          <p className="text-sm text-muted-foreground">{t('fighterAnalysis.guide.empty')}</p>
+          <p className="text-sm text-muted-foreground">
+            {t('shared.evidence.abstained', { count: abstainedGamesNeeded })}
+          </p>
         ) : (
           <div className="max-h-[600px] overflow-y-auto">
             <Table>
@@ -109,11 +152,12 @@ export function MatchupStageGuide({ fighterMatches }: { fighterMatches: Match[] 
                         {row.record.wins}-{row.record.losses}
                       </TableCell>
                       <TableCell>{row.record.winRate}%</TableCell>
-                      <TableCell>{stageCell(row.bestStage, t)}</TableCell>
-                      <TableCell>{stageCell(row.worstStage, t)}</TableCell>
+                      <TableCell>{stageCell(row.bestStage, t, refreshedAt)}</TableCell>
+                      <TableCell>{stageCell(row.worstStage, t, refreshedAt)}</TableCell>
                     </TableRow>
                   );
                 })}
+                <UnknownRow bucket={unknown} as="tr" />
               </TableBody>
             </Table>
           </div>

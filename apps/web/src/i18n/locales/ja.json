@@ -150,13 +150,27 @@
       "abstained_one": "まだデータが足りません — あと{{count}}戦必要です。",
       "abstained_other": "まだデータが足りません — あと{{count}}戦必要です。",
       "sampleCue": "{{total}}戦 · 信頼度{{tier}}",
+      "unknownRow_one": "不明（{{count}}戦、除外）",
+      "unknownRow_other": "不明（{{count}}戦、除外）",
+      "mixedContext": "混合コンテキスト",
+      "mixedContextDetail": "{{minorityPct}}%が{{minorityLabel}} — {{majorityLabel}}と混在。",
       "tier": {
         "low": "低",
         "medium": "中",
         "high": "高"
       },
+      "cohort": {
+        "online": "オンライン",
+        "offline": "オフライン",
+        "unspecified": "未指定",
+        "manual": "手動入力",
+        "startgg": "start.gg",
+        "parrygg": "parry.gg"
+      },
       "type": {
-        "recommendation": "記録された対戦に基づくコーチング提案です — 保証ではありません。"
+        "recommendation": "記録された対戦に基づくコーチング提案です — 保証ではありません。",
+        "inference": "記録された対戦に基づく統計的な推定です。",
+        "fact": "対戦記録に基づく事実です。"
       }
     }
   },
@@ -802,7 +816,6 @@
       "recentForm": "最近の調子（新しい順）",
       "bestStage": "得意ステージ",
       "worstStage": "苦手ステージ",
-      "notEnoughStageData": "ステージのデータがまだ足りません。",
       "byMatchType": "対戦の種類別"
     },
     "stageTable": {
@@ -864,8 +877,7 @@
       "stageHabit": "{{stage}}で戦いがち: {{wins}}-{{losses}}"
     },
     "guide": {
-      "title": "相性別ステージガイド",
-      "empty": "まだ相性データがありません — このファイターで対戦を記録するとガイドが作られます。"
+      "title": "相性別ステージガイド"
     },
     "opponents": {
       "title": "相手プレイヤー",

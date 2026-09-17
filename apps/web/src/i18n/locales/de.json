@@ -150,13 +150,27 @@
       "abstained_one": "Noch nicht genug Daten — {{count}} weiteres Match nötig.",
       "abstained_other": "Noch nicht genug Daten — {{count}} weitere Matches nötig.",
       "sampleCue": "{{total}} Matches · {{tier}} Konfidenz",
+      "unknownRow_one": "Unbekannt ({{count}} Match, ausgeschlossen)",
+      "unknownRow_other": "Unbekannt ({{count}} Matches, ausgeschlossen)",
+      "mixedContext": "Gemischter Kontext",
+      "mixedContextDetail": "{{minorityPct}}% {{minorityLabel}} — gemischt mit {{majorityLabel}}.",
       "tier": {
         "low": "niedrige",
         "medium": "mittlere",
         "high": "hohe"
       },
+      "cohort": {
+        "online": "online",
+        "offline": "offline",
+        "unspecified": "unbestimmt",
+        "manual": "manuell",
+        "startgg": "start.gg",
+        "parrygg": "parry.gg"
+      },
       "type": {
-        "recommendation": "Coaching-Empfehlung basierend auf deinen erfassten Matches — keine Garantie."
+        "recommendation": "Coaching-Empfehlung basierend auf deinen erfassten Matches — keine Garantie.",
+        "inference": "Statistische Ableitung aus deinen erfassten Matches.",
+        "fact": "Erfasste Tatsache aus deinem Match-Verlauf."
       }
     }
   },
@@ -802,7 +816,6 @@
       "recentForm": "Aktuelle Form (neueste zuerst)",
       "bestStage": "Beste Stage",
       "worstStage": "Schlechteste Stage",
-      "notEnoughStageData": "Noch nicht genug Stage-Daten.",
       "byMatchType": "Nach Match-Typ"
     },
     "stageTable": {
@@ -864,8 +877,7 @@
       "stageHabit": "Du spielst immer wieder auf {{stage}}: {{wins}}-{{losses}}"
     },
     "guide": {
-      "title": "Matchup-Stage-Guide",
-      "empty": "Noch keine Matchup-Daten — erfasse Matches mit diesem Kämpfer, um den Guide aufzubauen."
+      "title": "Matchup-Stage-Guide"
     },
     "opponents": {
       "title": "Gegner",

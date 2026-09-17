@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   ANALYTICS_SELECTION_KEY_PREFIX,
   DEFAULT_MIN_STAGE_MATCHES,
@@ -32,8 +32,11 @@ describe('analyticsSelectionStorageKey', () => {
 });
 
 describe('MIN_STAGE_MATCHES_OPTIONS / DEFAULT_MIN_STAGE_MATCHES', () => {
-  it('is the converged union of the two existing threshold option lists', () => {
-    expect(MIN_STAGE_MATCHES_OPTIONS).toEqual([1, 2, 3, 5, 10]);
+  // Phase 36 (D-06, D-24): the two below-the-abstention-floor options (1, 2)
+  // are removed — they recreate the 2-0 recommendation bug (D-07). Sourced
+  // from packages/shared/src/evidence/policy.ts, not declared here.
+  it('is exactly the three floor-or-above options', () => {
+    expect(MIN_STAGE_MATCHES_OPTIONS).toEqual([3, 5, 10]);
   });
 
   it('defaults to 3', () => {
@@ -77,6 +80,31 @@ describe('parseStoredSelection', () => {
     expect(parseStoredSelection(JSON.stringify({ minStageMatches: 4 }))).toEqual({});
     expect(parseStoredSelection(JSON.stringify({ minStageMatches: 0 }))).toEqual({});
     expect(parseStoredSelection(JSON.stringify({ minStageMatches: 2.5 }))).toEqual({});
+  });
+
+  // Phase 36 (D-06, D-24): 1 and 2 recreate the 2-0 recommendation bug
+  // (D-07) and are no longer members of MIN_STAGE_MATCHES_OPTIONS — a
+  // previously persisted value drops here exactly like an out-of-range one
+  // always did, so the hook falls back to DEFAULT_MIN_STAGE_MATCHES.
+  it('drops a minStageMatches of 1 or 2 now that the option list has shrunk', () => {
+    expect(parseStoredSelection(JSON.stringify({ minStageMatches: 1 }))).toEqual({});
+    expect(parseStoredSelection(JSON.stringify({ minStageMatches: 2 }))).toEqual({});
+  });
+});
+
+describe('reading a stale sub-floor value never rewrites storage', () => {
+  it('performs no localStorage.setItem call when reading a stored minStageMatches of 1', () => {
+    const setItemSpy = vi.spyOn(Storage.prototype, 'setItem');
+    window.localStorage.setItem(
+      analyticsSelectionStorageKey('u1', null),
+      JSON.stringify({ minStageMatches: 1 }),
+    );
+    setItemSpy.mockClear();
+
+    expect(readStoredSelection('u1', null)).toEqual({});
+    expect(setItemSpy).not.toHaveBeenCalled();
+
+    setItemSpy.mockRestore();
   });
 });
 

@@ -1,3 +1,4 @@
+import { MIN_STAGE_MATCHES_OPTIONS } from '@smash-tracker/shared';
 import { getFighterById } from '@/data/sprites';
 import { subjectSegment } from '@/lib/subjectQueryKey';
 
@@ -11,15 +12,17 @@ import { subjectSegment } from '@/lib/subjectQueryKey';
 export const ANALYTICS_SELECTION_KEY_PREFIX = 'smash-tracker.analyticsSelection';
 
 /**
- * D-11: the converged min-matches-per-stage threshold options, shared by
- * `MatchupInsights.tsx` (today `[1, 2, 3, 5]`) and `MatchupStageGuide.tsx`
- * (today `[1, 2, 3, 5, 10]`) — the union, so no option a user can pick
- * today disappears when both components move to this one shared value
- * (plan 35-03's `useMinStageMatches` is the consumer; nothing in this plan
- * reads it).
+ * D-11/D-24 (Phase 36 R1-MEDIUM-1): the min-matches-per-stage threshold
+ * options and default are now defined ONCE, in
+ * `packages/shared/src/evidence/policy.ts`, and re-exported here so the
+ * number this UI displays and the number the engine computes against can
+ * never drift apart (D-05/D-06). The two Phase-35-era options below the
+ * abstention floor (1, 2) were removed here because they recreate the 2-0
+ * recommendation bug (D-07) — a stored 1/2 still parses tolerantly via
+ * `isValidMinStageMatches`'s unchanged membership check, which now simply
+ * rejects them, falling back to `DEFAULT_MIN_STAGE_MATCHES` with no rewrite.
  */
-export const MIN_STAGE_MATCHES_OPTIONS = [1, 2, 3, 5, 10];
-export const DEFAULT_MIN_STAGE_MATCHES = 3;
+export { MIN_STAGE_MATCHES_OPTIONS, DEFAULT_MIN_STAGE_MATCHES } from '@smash-tracker/shared';
 
 /** The stored shape at `analyticsSelectionStorageKey(uid, clientId)`. */
 export interface StoredAnalyticsSelection {
