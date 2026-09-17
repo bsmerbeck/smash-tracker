@@ -18,11 +18,13 @@
  * FLAGS
  *   --uid <uid>   REQUIRED. The account to export. Never hardcoded in
  *                 source — supplied by the operator on every invocation.
- *   --out <path>  REQUIRED. Where to write the JSON export. This path must
- *                 already be covered by a `.gitignore` rule (see the
- *                 `apps/api/sparg0-export*.json` block in the repo root
- *                 `.gitignore`, added in the same change as this script) —
- *                 exported production match data must never be committed.
+ *   --out <path>  REQUIRED. Where to write the JSON export. This path MUST
+ *                 match `apps/api/sparg0-export*.json` (see the block in the
+ *                 repo root `.gitignore`, added in the same change as this
+ *                 script) AND be confirmed ignored by `git check-ignore -q`
+ *                 — both checked and enforced (`assertSafeSparg0ExportOutPath`
+ *                 in `sparg0ExportCore.ts`) before any network/RTDB read.
+ *                 Exported production match data must never be committed.
  *
  * READ ONLY. This script constructs no write of any kind — see
  * `sparg0ExportCore.ts` for the structural guard. It refuses to run when
@@ -36,7 +38,12 @@ import { deleteApp } from 'firebase-admin/app';
 import { loadEnv } from '../src/config/env.js';
 import { initFirebase } from '../src/firebase/admin.js';
 import { runWithLifecycle } from './enrichLifecycle.js';
-import { exportMatchesForUid, buildExportReceipt } from './sparg0ExportCore.js';
+import { resolveGitRepoRoot } from './outputPathGuard.js';
+import {
+  exportMatchesForUid,
+  buildExportReceipt,
+  assertSafeSparg0ExportOutPath,
+} from './sparg0ExportCore.js';
 
 const VALUE_FLAGS = new Set<string>(['--uid', '--out']);
 
@@ -105,6 +112,11 @@ async function main(): Promise<void> {
   }
 
   const args = parseSparg0ExportArgs(process.argv.slice(2));
+
+  // WR-03/D-28: refuse an unsafe `--out` before any network/RTDB read.
+  const repoRoot = resolveGitRepoRoot();
+  assertSafeSparg0ExportOutPath({ outPath: args.outPath, repoRoot });
+
   const env = loadEnv();
   assertNotEmulator(env.FIREBASE_DATABASE_EMULATOR_HOST);
 

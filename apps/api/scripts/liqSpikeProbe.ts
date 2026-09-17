@@ -20,10 +20,12 @@
  * Requires `LIQUIPEDIA_CONTACT` and `FIREBASE_DATABASE_URL` in
  * `apps/api/.env` (both already present for the shipped enrichment CLI) and
  * the owner's local Application Default Credentials. Prints per-family
- * verdicts and the request-budget summary; prints no page content. The
- * report file itself is gitignored (`apps/api/liq-spike-report*.json`) —
- * Task 3 sanitizes the samples worth keeping into the committed fixture
- * corpus.
+ * verdicts and the request-budget summary; prints no page content. `--out`
+ * MUST match `apps/api/liq-spike-report*.json` AND be confirmed ignored by
+ * `git check-ignore -q` — both checked and enforced
+ * (`assertSafeLiqSpikeOutPath` in `liqSpikeProbeCore.ts`) before any network
+ * request. Task 3 sanitizes the samples worth keeping into the committed
+ * fixture corpus.
  */
 import { writeFile } from 'node:fs/promises';
 import { deleteApp } from 'firebase-admin/app';
@@ -32,7 +34,13 @@ import { initFirebase } from '../src/firebase/admin.js';
 import { createLiquipediaClient } from '../src/liquipedia/client.js';
 import { createLiquipediaLimiter } from '../src/liquipedia/limiter.js';
 import { runWithLifecycle } from './enrichLifecycle.js';
-import { LIQ_SPIKE_TARGETS, runLiqSpike, type LiqSpikeReport } from './liqSpikeProbeCore.js';
+import {
+  LIQ_SPIKE_TARGETS,
+  runLiqSpike,
+  assertSafeLiqSpikeOutPath,
+  type LiqSpikeReport,
+} from './liqSpikeProbeCore.js';
+import { resolveGitRepoRoot } from './outputPathGuard.js';
 
 const DEFAULT_REQUEST_TIMEOUT_MS = 30_000;
 
@@ -100,6 +108,10 @@ async function main(): Promise<number> {
   if (!outPath) {
     throw new Error('--out <path> is required');
   }
+
+  // WR-03/D-28: refuse an unsafe `--out` before any network request.
+  const repoRoot = resolveGitRepoRoot();
+  assertSafeLiqSpikeOutPath({ outPath, repoRoot });
 
   const { app, database } = initFirebase(env);
 

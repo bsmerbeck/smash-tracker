@@ -1,5 +1,6 @@
 import { webcrypto } from 'node:crypto';
 import type { Database } from 'firebase-admin/database';
+import { assertOutputPathIsGitignored } from './outputPathGuard.js';
 
 /**
  * Phase 36 Plan 06 (SCL-01, D-20): the pure, unit-testable core of the
@@ -18,6 +19,29 @@ import type { Database } from 'firebase-admin/database';
  * fixture-tested core; `sparg0Export.ts` is the thin CLI composition root
  * (ADC init, flag parsing, file write, guaranteed-termination lifecycle).
  */
+
+/** The exact `.gitignore` glob covering this export's output (see the repo root `.gitignore`, D-28). */
+export const SPARG0_EXPORT_OUT_PATTERN = /^apps\/api\/sparg0-export.*\.json$/;
+
+/**
+ * WR-03/D-28: refuses to write unless `--out` matches
+ * `apps/api/sparg0-export*.json` (the exact gitignored pattern this script's
+ * docstring promises) AND is confirmed ignored by `git check-ignore -q`.
+ * Called BEFORE any network/RTDB read — see `sparg0Export.ts`'s `main()`.
+ * Throws `UnsafeOutputPathError`; the message never includes a uid or any
+ * exported match data.
+ */
+export function assertSafeSparg0ExportOutPath(options: {
+  outPath: string;
+  repoRoot: string;
+  isGitIgnored?: (absolutePath: string, repoRoot: string) => boolean;
+}): void {
+  assertOutputPathIsGitignored({
+    ...options,
+    allowedPattern: SPARG0_EXPORT_OUT_PATTERN,
+    allowedPatternDescription: 'apps/api/sparg0-export*.json',
+  });
+}
 
 export interface Sparg0ExportResult {
   uid: string;

@@ -1,10 +1,17 @@
+import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { createLiquipediaClient } from '../src/liquipedia/client.js';
 import {
   createLiquipediaFixtureFetch,
   matchQuery,
 } from '../src/liquipedia/__fixtures__/loadFixture.js';
-import { LIQ_SPIKE_TARGETS, runLiqSpike, type LiqSpikeTarget } from './liqSpikeProbeCore.js';
+import { UnsafeOutputPathError } from './outputPathGuard.js';
+import {
+  LIQ_SPIKE_TARGETS,
+  runLiqSpike,
+  assertSafeLiqSpikeOutPath,
+  type LiqSpikeTarget,
+} from './liqSpikeProbeCore.js';
 
 /**
  * Phase 36 Plan 07 (LIQ-01): exercises `runLiqSpike` end-to-end against the
@@ -129,6 +136,60 @@ describe('runLiqSpike', () => {
     expect(page?.revisionId).toBe(535578);
     expect(page?.byteSize).toBeGreaterThan(19_000);
     expect(page?.completedAtMs).toBe(12345);
+  });
+});
+
+describe('assertSafeLiqSpikeOutPath (WR-03/D-28)', () => {
+  const REPO_ROOT = '/repo';
+
+  it('refuses a path that traverses outside the repo root', () => {
+    expect(() =>
+      assertSafeLiqSpikeOutPath({
+        outPath: '../x.json',
+        repoRoot: REPO_ROOT,
+        isGitIgnored: () => true,
+      }),
+    ).toThrow(UnsafeOutputPathError);
+  });
+
+  it('refuses a path that does not match the liq-spike-report naming pattern', () => {
+    expect(() =>
+      assertSafeLiqSpikeOutPath({
+        outPath: 'apps/api/wrong-name.json',
+        repoRoot: REPO_ROOT,
+        isGitIgnored: () => true,
+      }),
+    ).toThrow(/must match apps\/api\/liq-spike-report\*\.json/);
+  });
+
+  it('refuses a matching path that git reports as tracked (not ignored)', () => {
+    expect(() =>
+      assertSafeLiqSpikeOutPath({
+        outPath: 'apps/api/liq-spike-report.json',
+        repoRoot: REPO_ROOT,
+        isGitIgnored: () => false,
+      }),
+    ).toThrow(/not confirmed ignored by git/);
+  });
+
+  it('allows the happy path: matching name, confirmed ignored', () => {
+    expect(() =>
+      assertSafeLiqSpikeOutPath({
+        outPath: 'apps/api/liq-spike-report.json',
+        repoRoot: REPO_ROOT,
+        isGitIgnored: () => true,
+      }),
+    ).not.toThrow();
+  });
+
+  it('happy path holds against the real repo .gitignore (no injected double)', () => {
+    const realRepoRoot = fileURLToPath(new URL('../../..', import.meta.url));
+    expect(() =>
+      assertSafeLiqSpikeOutPath({
+        outPath: 'apps/api/liq-spike-report.json',
+        repoRoot: realRepoRoot,
+      }),
+    ).not.toThrow();
   });
 });
 

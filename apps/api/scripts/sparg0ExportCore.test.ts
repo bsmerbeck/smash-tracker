@@ -1,7 +1,13 @@
+import { fileURLToPath } from 'node:url';
 import { describe, expect, it, vi } from 'vitest';
 import type { Database } from 'firebase-admin/database';
 import { FakeDatabase, type FakeReference } from '../src/test-support/fakeDatabase.js';
-import { exportMatchesForUid, buildExportReceipt } from './sparg0ExportCore.js';
+import { UnsafeOutputPathError } from './outputPathGuard.js';
+import {
+  exportMatchesForUid,
+  buildExportReceipt,
+  assertSafeSparg0ExportOutPath,
+} from './sparg0ExportCore.js';
 // The CLI-arg parsing/emulator-refusal guard helpers live in the thin CLI
 // composition root, not the core — importing them here (rather than
 // invoking `main()`) is exactly the "assert by invoking the parsed-args/
@@ -171,6 +177,63 @@ describe('parseSparg0ExportArgs', () => {
     expect(() =>
       parseSparg0ExportArgs(['--uid', UID, '--uid', 'other', '--out', 'x.json']),
     ).toThrow(/duplicate flag: --uid/);
+  });
+});
+
+describe('assertSafeSparg0ExportOutPath (WR-03/D-28)', () => {
+  const REPO_ROOT = '/repo';
+
+  it('refuses a path that traverses outside the repo root', () => {
+    expect(() =>
+      assertSafeSparg0ExportOutPath({
+        outPath: '../x.json',
+        repoRoot: REPO_ROOT,
+        isGitIgnored: () => true,
+      }),
+    ).toThrow(UnsafeOutputPathError);
+  });
+
+  it('refuses a path that does not match the sparg0-export naming pattern', () => {
+    expect(() =>
+      assertSafeSparg0ExportOutPath({
+        outPath: 'apps/api/wrong-name.json',
+        repoRoot: REPO_ROOT,
+        isGitIgnored: () => true,
+      }),
+    ).toThrow(/must match apps\/api\/sparg0-export\*\.json/);
+  });
+
+  it('refuses a matching path that git reports as tracked (not ignored)', () => {
+    expect(() =>
+      assertSafeSparg0ExportOutPath({
+        outPath: 'apps/api/sparg0-export.json',
+        repoRoot: REPO_ROOT,
+        isGitIgnored: () => false,
+      }),
+    ).toThrow(/not confirmed ignored by git/);
+  });
+
+  it('allows the happy path: matching name, confirmed ignored', () => {
+    expect(() =>
+      assertSafeSparg0ExportOutPath({
+        outPath: 'apps/api/sparg0-export.json',
+        repoRoot: REPO_ROOT,
+        isGitIgnored: () => true,
+      }),
+    ).not.toThrow();
+  });
+
+  it('happy path holds against the real repo .gitignore (no injected double)', () => {
+    // No `isGitIgnored` override — exercises the real `git check-ignore -q`
+    // against this repo's actual `.gitignore`, proving the D-28 rule is
+    // really in place, not just asserted by a test double.
+    const realRepoRoot = fileURLToPath(new URL('../../..', import.meta.url));
+    expect(() =>
+      assertSafeSparg0ExportOutPath({
+        outPath: 'apps/api/sparg0-export.json',
+        repoRoot: realRepoRoot,
+      }),
+    ).not.toThrow();
   });
 });
 

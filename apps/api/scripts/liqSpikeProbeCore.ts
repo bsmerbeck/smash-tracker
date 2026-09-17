@@ -1,4 +1,5 @@
 import type { LiquipediaClient } from '../src/liquipedia/client.js';
+import { assertOutputPathIsGitignored } from './outputPathGuard.js';
 
 /**
  * Phase 36 Plan 07 (LIQ-01): the pure, testable half of the Liquipedia
@@ -14,6 +15,29 @@ import type { LiquipediaClient } from '../src/liquipedia/client.js';
  * this probe can only ever record a proposal for that change, never apply
  * one.
  */
+
+/** The exact `.gitignore` glob covering this probe's output (see the repo root `.gitignore`, D-28). */
+export const LIQ_SPIKE_REPORT_OUT_PATTERN = /^apps\/api\/liq-spike-report.*\.json$/;
+
+/**
+ * WR-03/D-28: refuses to write unless `--out` matches
+ * `apps/api/liq-spike-report*.json` (the exact gitignored pattern this
+ * script's docstring promises) AND is confirmed ignored by
+ * `git check-ignore -q`. Called BEFORE any network/RTDB read — see
+ * `liqSpikeProbe.ts`'s `main()`. Throws `UnsafeOutputPathError`; the
+ * message never includes any page content or PII.
+ */
+export function assertSafeLiqSpikeOutPath(options: {
+  outPath: string;
+  repoRoot: string;
+  isGitIgnored?: (absolutePath: string, repoRoot: string) => boolean;
+}): void {
+  assertOutputPathIsGitignored({
+    ...options,
+    allowedPattern: LIQ_SPIKE_REPORT_OUT_PATTERN,
+    allowedPatternDescription: 'apps/api/liq-spike-report*.json',
+  });
+}
 
 export type LiqSpikeFamily = 'player-results' | 'tournament-results' | 'other-entrant-brackets';
 
