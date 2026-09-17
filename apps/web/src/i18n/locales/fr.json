@@ -820,6 +820,7 @@
       "recentForm": "Forme récente (du plus récent au plus ancien)",
       "bestStage": "Meilleur stage",
       "worstStage": "Pire stage",
+      "singleStageOnly": "Pas encore assez de stages différents — jouez ce matchup sur un autre stage pour voir un avertissement de pire stage.",
       "byMatchType": "Par type de match"
     },
     "stageTable": {

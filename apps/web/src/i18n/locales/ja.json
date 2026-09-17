@@ -820,6 +820,7 @@
       "recentForm": "最近の調子（新しい順）",
       "bestStage": "得意ステージ",
       "worstStage": "苦手ステージ",
+      "singleStageOnly": "まだ異なるステージが十分にありません。別のステージでこの相性を対戦すると、苦手ステージの警告が表示されます。",
       "byMatchType": "対戦の種類別"
     },
     "stageTable": {

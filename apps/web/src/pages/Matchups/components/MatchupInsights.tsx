@@ -158,6 +158,20 @@ export function MatchupInsights({ matchupMatches }: { matchupMatches: Match[] })
                       </span>{' '}
                       {sampleCue}
                     </>
+                  ) : claim.kind === 'evidenced' ? (
+                    // WR-02: the query is NOT abstained here (claim.kind is
+                    // 'evidenced' — best/worst-stage claim, not the raw
+                    // sample-size gate) — `worst` is null only because
+                    // exactly one stage qualifies (`getBestWorstStages`: "a
+                    // single stage can't be both the recommendation and the
+                    // warning"). Reusing the generic abstained sentence here
+                    // would fabricate a `gamesNeeded: 0` and claim "0 more
+                    // games needed", which is both untrue and impossible to
+                    // act on. This dedicated copy names what would actually
+                    // change the state: playing on a second stage.
+                    <span className="text-muted-foreground">
+                      {t('matchups.insights.singleStageOnly')}
+                    </span>
                   ) : (
                     <span className="text-muted-foreground">
                       {t('shared.evidence.abstained', { count: abstainedGamesNeeded })}

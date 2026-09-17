@@ -820,6 +820,7 @@
       "recentForm": "Forma reciente (primero la más nueva)",
       "bestStage": "Mejor escenario",
       "worstStage": "Peor escenario",
+      "singleStageOnly": "Aún no hay suficientes escenarios distintos: juega este enfrentamiento en otro escenario para ver una advertencia del peor escenario.",
       "byMatchType": "Por tipo de partida"
     },
     "stageTable": {

@@ -820,6 +820,7 @@
       "recentForm": "Forma recente (mais recente primeiro)",
       "bestStage": "Melhor stage",
       "worstStage": "Pior stage",
+      "singleStageOnly": "Ainda não há stages distintos suficientes — jogue este confronto em outro stage para ver um aviso de pior stage.",
       "byMatchType": "Por tipo de partida"
     },
     "stageTable": {
