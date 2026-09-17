@@ -81,13 +81,45 @@ real Chrome, over SYNTHETIC data at the stated scale — never sparg0's or any r
 browser (that would require production data in a browser, which D-20 forbids), and never a
 minified production bundle (a Vite DEV server).
 
-## FIXT-01 disposition
+## Proven failing cases (D-26 — an oracle without a demonstrated failing case is not an oracle)
 
-**Still the owner's Task 5 decision (`gate="blocking-human"`) — this record states the evidence and
-the recommendation, it does not itself decide.** All FIVE budgets now carry a real, traceable
-measurement and all five PASS, several with wide margin. The plan's own recommended option given
-this evidence is **A** (close FIXT-01 as not-triggered) — unlike a partial readout, option A's own
-caveat about a NOT-MEASURED real-account arm does not apply, since every arm (synthetic,
-real-account, and now browser) has been measured. This section will be updated with the owner's
-actual chosen option, the date, and the (currently empty) list of MISS verdicts once Task 5
-resolves.
+All four measured budgets (the two automated, plus the two browser-protocol) were each proven to
+genuinely MISS and exit non-zero when their target was temporarily set to an absurd value, then
+restored to the exact D-19 value and re-verified PASS:
+
+| Budget id                   | Absurd target used | Observed                            | Exit     |
+| --------------------------- | ------------------ | ----------------------------------- | -------- |
+| `engine-recompute-p95-8k`   | 0.001ms            | `measured=3.48ms verdict=MISS`      | non-zero |
+| `matches-gzip-payload-8k`   | 1 byte             | `measured=154603bytes verdict=MISS` | non-zero |
+| `filter-change-to-paint-8k` | 0.001ms            | `measured=76.1ms verdict=MISS`      | non-zero |
+| `heap-delta-50k`            | 0.001MB            | `measured=21.89MB verdict=MISS`     | non-zero |
+
+Every restore was `diff`-confirmed against a pre-edit backup of `budgets.ts` before re-measuring.
+Full transcripts in `36-06-SUMMARY.md`.
+
+## FIXT-01 disposition — DECIDED
+
+**Option A — FIXT-01 closes as NOT TRIGGERED. Plan 36-08 is not executed.**
+
+- **Decider:** the owner (D-30 in `36-CONTEXT.md`, `[HUMAN]`-gated decision).
+- **Date:** 2026-09-17.
+- **MISS list:** empty — no budget missed in its final, restored, as-measured state.
+- **Required recorded caveat:** the two browser-protocol budgets measure the REAL Matchups UI
+  and the real shared evidence engine under real headless Chrome, but over SYNTHETIC data inside
+  the DEV-ONLY perf harness — proven structurally absent from the production build — and are
+  therefore **not** a measurement of the real sparg0 (or any real) account inside a browser. The
+  real-account arm (engine-compute p95 and gzip-payload size, both budgets measured a second time
+  directly against sparg0's actual 8,378-match export) carries no such caveat — that half of the
+  evidence is against real production match data (via the owner's local, gitignored export file,
+  never a live production read by this agent, D-20).
+- **Commands that reproduce every number:** synthetic automated arms —
+  `pnpm --filter @smash-tracker/shared build && pnpm --filter @smash-tracker/shared budget` and
+  `... && pnpm --filter @smash-tracker/api budget`; real-account arm —
+  `pnpm --filter @smash-tracker/api exec tsx scripts/sparg0RealDataReadout.ts --file apps/api/sparg0-export.json`;
+  browser arm — `pnpm --filter @smash-tracker/web run budget:browser`; production-isolation guards —
+  `pnpm --filter @smash-tracker/web test` (static half) and
+  `pnpm --filter @smash-tracker/web run guard:perf-harness-build` (build-output half).
+
+Plan 36-08 (the conditional FIXT-01 server-side aggregate build) is **not executed** — D-21's
+speculative-build prohibition holds; no server-side aggregate endpoint exists anywhere under
+`apps/api/src/routes/`.
