@@ -107,6 +107,33 @@ import { assertOutputPathIsGitignored } from './outputPathGuard.js';
  * client sets no `aplimit` parameter at all (relying on the MediaWiki
  * default) and exposes no way for a caller to override it without adding a
  * parameter to `client.ts`, outside this fix's authorization.
+ *
+ * Owner rerun #4 (evidence-tolerant discovery fix confirmed live: 11/20
+ * general requests, `budgetExhausted=false`; `tournament-results` sampled
+ * real early-edition pages via the `fallback-latest` reason — no discovered
+ * title anywhere carried an "Ultimate" token, because `listSubpages`
+ * returns the first page of results ALPHABETICALLY and the shipped client
+ * requests no `aplimit`, so only the earliest editions of each series are
+ * ever seen; `other-entrant-brackets` sampled real 7-25 KB bracket pages).
+ * REMAINING DEFECT this round fixes: `computeBracketTemplateCounts` matched
+ * "Bracket"/"Match" only when a template name literally STARTED with that
+ * word (`{{Bracket...}}`, `{{Match...}}`) — a guess never checked against
+ * real bytes. All four real bracket pages sampled this run reported
+ * `Bracket=0 Match=0`, an implausible result on 7-25 KB bracket pages that
+ * the owner caught live. The real template names captured in this run's
+ * report carry those words as a SUBSTRING, never as the first word —
+ * `BracketMatchDetails` (the match wrapper, 21-30 uses per page),
+ * `32DEWBracketA`, `DEFinalSmwBracket`, and siblings. Fixed by extracting
+ * every `{{TemplateName`/`{{TemplateName|...}}` invocation's name and
+ * matching "bracket"/"match"/"teamcard"/"prize" as a case-insensitive
+ * substring anywhere in that name — EXCLUDING page-transclusion syntax
+ * (`{{:Page Name}}`, a leading colon, which embeds a whole separate page
+ * rather than calling a template, and would otherwise falsely flag a
+ * tournament page that merely LINKS to its own bracket subpages as if it
+ * carried bracket templates directly). `match2Count` is unchanged (a bare
+ * text-token scan, not template-name-based) since no `match2`-shaped
+ * markup was observed anywhere in this wiki's real samples — see the
+ * LIQ-01 spike record for the full finding.
  */
 
 /**
@@ -524,21 +551,52 @@ function classifyWikitext(content: string): LiqSpikeWikitextVerdict {
  * first `|` or `}}`, trimmed — never a template argument or page content.
  */
 /**
+ * Every `{{TemplateName`/`{{TemplateName|...}}` invocation's name in
+ * `content`, trimmed, in document order — EXCLUDING page-transclusion
+ * syntax (`{{:Page Name}}`, a leading colon), which embeds an entire
+ * separate page rather than calling a template. Names only, never a
+ * template argument or page content.
+ */
+function extractTemplateNames(content: string): string[] {
+  const names: string[] = [];
+  const pattern = /\{\{\s*([^|}\n]+)/g;
+  let match: RegExpExecArray | null;
+  while ((match = pattern.exec(content))) {
+    const name = match[1]!.trim();
+    if (name.startsWith(':')) {
+      continue;
+    }
+    names.push(name);
+  }
+  return names;
+}
+
+function countNamesContaining(names: readonly string[], substring: string): number {
+  const needle = substring.toLowerCase();
+  return names.filter((name) => name.toLowerCase().includes(needle)).length;
+}
+
+/**
  * Counts specific template FAMILIES known to carry generated
- * results/bracket data on Liquipedia — `{{Bracket...}}`, `{{Match...}}`
- * (never matching `{{Match2...}}`, a distinct template family, since `\b`
- * requires a non-word boundary after "Match" and a digit is a word
- * character), the `match2` system's bare parameter token, `{{TeamCard...}}`,
- * and `{{Prize pool...}}`. Names and counts only — never a matched excerpt.
+ * results/bracket data on Liquipedia. `bracketCount`/`matchCount`/
+ * `teamCardCount`/`prizePoolCount` match "bracket"/"match"/"teamcard"/
+ * "prize" as a case-insensitive SUBSTRING anywhere in a template's name
+ * (see this module's owner-rerun-#4 doc comment for why an anchored-at-start
+ * match missed every real bracket page sampled live — e.g.
+ * `BracketMatchDetails`, `32DEWBracketA`, `DEFinalSmwBracket`).
+ * `match2Count` stays a bare full-text token scan (`\bmatch2\b`), not
+ * template-name-based, for the `match2` data format used by some
+ * Liquipedia wikis (not observed on this wiki's real samples). Names and
+ * counts only — never a matched excerpt.
  */
 function computeBracketTemplateCounts(content: string): LiqSpikeBracketTemplateCounts {
-  const count = (pattern: RegExp): number => (content.match(pattern) ?? []).length;
+  const names = extractTemplateNames(content);
   return {
-    bracketCount: count(/\{\{\s*Bracket\b/gi),
-    matchCount: count(/\{\{\s*Match\b/gi),
-    match2Count: count(/\bmatch2\b/gi),
-    teamCardCount: count(/\{\{\s*TeamCard\b/gi),
-    prizePoolCount: count(/\{\{\s*Prize ?[Pp]ool\b/gi),
+    bracketCount: countNamesContaining(names, 'bracket'),
+    matchCount: countNamesContaining(names, 'match'),
+    match2Count: (content.match(/\bmatch2\b/gi) ?? []).length,
+    teamCardCount: countNamesContaining(names, 'teamcard'),
+    prizePoolCount: countNamesContaining(names, 'prize'),
   };
 }
 
