@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import type { ScoutBinding, ScoutReportData } from '@smash-tracker/shared';
+import {
+  ABSTENTION_FLOOR_GAMES,
+  EVIDENCE_POLICY_VERSION,
+  RECENCY_TREATMENT,
+  type ScoutBinding,
+  type ScoutReportData,
+} from '@smash-tracker/shared';
 import { FakeDatabase } from '../test-support/fakeDatabase.js';
 import {
   assembleReportPayload,
@@ -7,6 +13,7 @@ import {
   ReportGenerationError,
   selectOpponentMatches,
   type AnthropicLikeClient,
+  type ReportPayload,
 } from './generate.js';
 
 const UID = 'test-uid-123';
@@ -38,7 +45,13 @@ describe('assembleReportPayload', () => {
     // Claude — see the doc comment on `ReportPayload.scout`.
     expect(payload.scout).toEqual(SCOUT);
     expect(payload.headToHead).toEqual([]);
-    expect(payload.userContext.vsTopCharacters).toEqual([
+    // Phase 36 (D-11, D-14, R1-HIGH-2): relaxed from `toEqual` to
+    // `toMatchObject` — every `MatchupAggregate` now also carries `sample`
+    // and `claimKind` (see generate.ts's `vsTopCharacters` doc comment),
+    // which an exact-shape `toEqual` would reject by construction. The four
+    // original field VALUES below (`opponentCharacter`, `wins`, `losses`,
+    // `topStages`) are unchanged.
+    expect(payload.userContext.vsTopCharacters).toMatchObject([
       { opponentCharacter: 'Fox', wins: 0, losses: 0, topStages: [] },
       { opponentCharacter: 'Falco', wins: 0, losses: 0, topStages: [] },
     ]);
@@ -123,7 +136,13 @@ describe('assembleReportPayload', () => {
       database as unknown as Parameters<typeof assembleReportPayload>[2],
     );
 
-    expect(payload.userContext.myCharacterRecords).toEqual([
+    // Phase 36 (D-11, D-14): relaxed from `toEqual` to `toMatchObject` —
+    // `CharacterRecord` now also carries a `sample: SampleMeta` field (see
+    // generate.ts's `myCharacterRecords` doc comment), which an exact-shape
+    // `toEqual` here would reject by construction the same way it would for
+    // `vsTopCharacters` (see the two named relaxations elsewhere in this
+    // file). The four original field VALUES below are unchanged.
+    expect(payload.userContext.myCharacterRecords).toMatchObject([
       {
         userCharacter: 'Mario',
         wins: 2,
@@ -289,7 +308,10 @@ describe('assembleReportPayload', () => {
       database as unknown as Parameters<typeof assembleReportPayload>[2],
     );
 
-    expect(payload.userContext.vsTopCharacters).toEqual([
+    // Phase 36 (D-11, D-14, R1-HIGH-2): relaxed from `toEqual` to
+    // `toMatchObject` — see the identical relaxation and rationale above.
+    // The four original field VALUES are unchanged.
+    expect(payload.userContext.vsTopCharacters).toMatchObject([
       {
         opponentCharacter: 'Fox',
         wins: 1,
@@ -337,6 +359,102 @@ describe('assembleReportPayload', () => {
     expect(payload.userContext.vsTopCharacters[0]?.topStages).toEqual([
       { stage: 'Battlefield', wins: 1, losses: 1 },
     ]);
+  });
+
+  it('vsTopCharacters.topStages carries an explicit unknown-stage entry for games with an absent map (D-09, EVID-11)', async () => {
+    const database = new FakeDatabase();
+    database.seed(`matches/${UID}`, {
+      m1: { fighter_id: 1, opponent_id: 8, time: 1, win: true, opponent: 'a' }, // no map -> unknown stage
+      m2: { fighter_id: 1, opponent_id: 8, time: 2, win: false, opponent: 'b' }, // no map -> unknown stage
+      m3: {
+        fighter_id: 1,
+        opponent_id: 8,
+        time: 3,
+        win: true,
+        map: { id: 1, name: 'Battlefield' },
+        opponent: 'c',
+      },
+    });
+
+    const payload = await assembleReportPayload(
+      UID,
+      SCOUT,
+      database as unknown as Parameters<typeof assembleReportPayload>[2],
+    );
+
+    const fox = payload.userContext.vsTopCharacters.find(
+      (entry) => entry.opponentCharacter === 'Fox',
+    );
+    expect(fox?.topStages).toContainEqual({ stage: 'Unknown stage', wins: 1, losses: 1 });
+    expect(fox?.topStages).toContainEqual({ stage: 'Battlefield', wins: 1, losses: 0 });
+  });
+
+  it('carries a top-level evidencePolicy naming the D-05 abstention floor and policy version (D-11, D-14)', async () => {
+    const database = new FakeDatabase();
+    const payload = await assembleReportPayload(
+      UID,
+      SCOUT,
+      database as unknown as Parameters<typeof assembleReportPayload>[2],
+    );
+
+    expect(payload.evidencePolicy.version).toBe(EVIDENCE_POLICY_VERSION);
+    expect(payload.evidencePolicy.abstentionFloorGames).toBe(ABSTENTION_FLOOR_GAMES);
+    expect(payload.evidencePolicy.recencyTreatment).toBe(RECENCY_TREATMENT);
+    expect(typeof payload.evidencePolicy.refreshedAt).toBe('number');
+  });
+
+  it('each vsTopCharacters entry carries the engine claim metadata (sample + claimKind, D-11)', async () => {
+    const database = new FakeDatabase();
+    database.seed(`matches/${UID}`, {
+      m1: {
+        fighter_id: 1,
+        opponent_id: 8,
+        time: 1,
+        win: true,
+        map: { id: 1, name: 'Battlefield' },
+        opponent: 'a',
+      },
+    });
+
+    const payload = await assembleReportPayload(
+      UID,
+      SCOUT,
+      database as unknown as Parameters<typeof assembleReportPayload>[2],
+    );
+
+    const fox = payload.userContext.vsTopCharacters.find(
+      (entry) => entry.opponentCharacter === 'Fox',
+    );
+    expect(fox?.claimKind).toBe('inference');
+    expect(fox?.sample).toMatchObject({
+      rawSampleSize: 1,
+      eligibleDenominator: 1,
+      knownFieldCoverage: 1,
+      evidencePolicyVersion: EVIDENCE_POLICY_VERSION,
+      recencyTreatment: RECENCY_TREATMENT,
+      dateRange: { firstMs: 1, lastMs: 1 },
+      confidenceTier: null, // 1 countable game is below the D-05 floor of 3
+    });
+  });
+
+  it('matchupAdvisor abstains below the D-05 floor: two countable games yields abstained:true and gamesNeeded:1, no ranked array', async () => {
+    const database = new FakeDatabase();
+    database.seed(`matches/${UID}`, {
+      m1: { fighter_id: 1, opponent_id: 8, time: 1, win: true, opponent: 'a' },
+      m2: { fighter_id: 1, opponent_id: 8, time: 2, win: false, opponent: 'b' },
+    });
+
+    const payload = await assembleReportPayload(
+      UID,
+      SCOUT,
+      database as unknown as Parameters<typeof assembleReportPayload>[2],
+    );
+
+    const foxAdvisor = payload.userContext.matchupAdvisor.find(
+      (entry) => entry.opponentCharacter === 'Fox',
+    );
+    expect(foxAdvisor).toMatchObject({ opponentCharacter: 'Fox', abstained: true, gamesNeeded: 1 });
+    expect(foxAdvisor).not.toHaveProperty('ranked');
   });
 
   it('computes recent form over the most recent 50 matches only', async () => {
@@ -584,9 +702,27 @@ function stubClient(response: {
   };
 }
 
-const PAYLOAD = {
+const PAYLOAD: ReportPayload = {
   scout: SCOUT,
   headToHead: [],
+  evidencePolicy: {
+    version: EVIDENCE_POLICY_VERSION,
+    abstentionFloorGames: ABSTENTION_FLOOR_GAMES,
+    recencyTreatment: RECENCY_TREATMENT,
+    refreshedAt: 0,
+  },
+  cohort: {
+    online: 0,
+    offline: 0,
+    unspecified: 0,
+    manual: 0,
+    startgg: 0,
+    parrygg: 0,
+    mixedContext: false,
+    minorityShare: 0,
+    minorityLabel: null,
+    majorityLabel: null,
+  },
   userContext: {
     myFighters: { primary: [], secondary: [] },
     myCharacterRecords: [],
