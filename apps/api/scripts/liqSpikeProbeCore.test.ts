@@ -1,3 +1,6 @@
+import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { createLiquipediaClient } from '../src/liquipedia/client.js';
@@ -162,24 +165,40 @@ describe('assertSafeLiqSpikeOutPath (WR-03/D-28)', () => {
     ).toThrow(/must match apps\/api\/liq-spike-report\*\.json/);
   });
 
+  // WR-03-i2: the filesystem-target safety check (`lstat`/`realpath`) touches
+  // real disk, so these two tests (which exercise code past the pattern
+  // check) need a repo root that genuinely exists on disk — a fake `/repo`
+  // string now fails closed with a filesystem-resolution error first.
   it('refuses a matching path that git reports as tracked (not ignored)', () => {
-    expect(() =>
-      assertSafeLiqSpikeOutPath({
-        outPath: 'apps/api/liq-spike-report.json',
-        repoRoot: REPO_ROOT,
-        isGitIgnored: () => false,
-      }),
-    ).toThrow(/not confirmed ignored by git/);
+    const root = mkdtempSync(path.join(os.tmpdir(), 'liq-spike-probe-core-'));
+    mkdirSync(path.join(root, 'apps', 'api'), { recursive: true });
+    try {
+      expect(() =>
+        assertSafeLiqSpikeOutPath({
+          outPath: 'apps/api/liq-spike-report.json',
+          repoRoot: root,
+          isGitIgnored: () => false,
+        }),
+      ).toThrow(/not confirmed ignored by git/);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 
   it('allows the happy path: matching name, confirmed ignored', () => {
-    expect(() =>
-      assertSafeLiqSpikeOutPath({
-        outPath: 'apps/api/liq-spike-report.json',
-        repoRoot: REPO_ROOT,
-        isGitIgnored: () => true,
-      }),
-    ).not.toThrow();
+    const root = mkdtempSync(path.join(os.tmpdir(), 'liq-spike-probe-core-'));
+    mkdirSync(path.join(root, 'apps', 'api'), { recursive: true });
+    try {
+      expect(() =>
+        assertSafeLiqSpikeOutPath({
+          outPath: 'apps/api/liq-spike-report.json',
+          repoRoot: root,
+          isGitIgnored: () => true,
+        }),
+      ).not.toThrow();
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 
   it('happy path holds against the real repo .gitignore (no injected double)', () => {
