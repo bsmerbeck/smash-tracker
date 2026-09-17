@@ -1,8 +1,41 @@
-import { describe, expect, it } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { describe, expect, it, vi, beforeEach } from 'vitest';
+import { render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { Match } from '@smash-tracker/shared';
 import { CounterpickAdvisor } from './CounterpickAdvisor';
+import { AuthProvider } from '@/context/AuthContext';
+import { resetAuthMock, setMockUser, makeMockUser } from '@/test/mockAuth';
+import { analyticsSelectionStorageKey } from '@/lib/analyticsSelection';
+
+vi.mock('firebase/auth', async () => {
+  const mock = await import('@/test/mockAuth');
+  return {
+    onAuthStateChanged: mock.onAuthStateChanged,
+    signInWithEmailAndPassword: mock.signInWithEmailAndPassword,
+    createUserWithEmailAndPassword: mock.createUserWithEmailAndPassword,
+    signInWithPopup: mock.signInWithPopup,
+    getRedirectResult: mock.getRedirectResult,
+    signOut: mock.signOut,
+    getAuth: mock.getAuth,
+    GoogleAuthProvider: mock.GoogleAuthProvider,
+  };
+});
+
+vi.mock('@/lib/firebase', async () => {
+  const mock = await import('@/test/mockAuth');
+  return mock.firebaseLibMock();
+});
+
+const upsertMe = vi.fn().mockResolvedValue({ uid: 'test-uid', email: 'test@example.com' });
+
+vi.mock('@/lib/api', () => ({
+  api: {
+    users: {
+      upsertMe: (...args: unknown[]) => upsertMe(...args),
+    },
+  },
+}));
 
 /**
  * Phase 35-03 (NEW-M1): `CounterpickAdvisor` now reads the shared per-subject
@@ -17,11 +50,30 @@ function renderAdvisor(matchupMatches: Match[]) {
   );
 }
 
+/**
+ * Phase 36 (R1-HIGH-1): signed-in variant, so a persisted `minStageMatches`
+ * value under `test-uid` is actually read — proving the engine's floor
+ * enforcement rather than merely the unauthenticated default of 3.
+ */
+function renderAdvisorAsSignedInUser(matchupMatches: Match[]) {
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  return render(
+    <QueryClientProvider client={queryClient}>
+      <MemoryRouter initialEntries={['/matchups']}>
+        <AuthProvider>
+          <CounterpickAdvisor matchupMatches={matchupMatches} />
+        </AuthProvider>
+      </MemoryRouter>
+    </QueryClientProvider>,
+  );
+}
+
 // Real stage ids/names from packages/shared/src/stageData.ts — CounterpickAdvisor
 // looks the name up by id via `stagesById`, so test fixtures must use ids that
 // actually resolve (a synthetic id would render as "Unknown stage").
 const BATTLEFIELD = { id: 1, name: 'Battlefield' };
 const BIG_BATTLEFIELD = { id: 2, name: 'Big Battlefield' };
+const FINAL_DESTINATION = { id: 3, name: 'Final Destination' };
 const SMASHVILLE = { id: 83, name: 'Smashville' };
 const TOWN_AND_CITY = { id: 85, name: 'Town and City' };
 
@@ -56,6 +108,13 @@ function matchesOnStage(
 }
 
 describe('CounterpickAdvisor', () => {
+  beforeEach(() => {
+    resetAuthMock();
+    vi.clearAllMocks();
+    window.localStorage.clear();
+    upsertMe.mockResolvedValue({ uid: 'test-uid', email: 'test@example.com' });
+  });
+
   it('shows a gather-more-data hint when no stage has the minimum sample size', () => {
     // Phase 36 (D-05, EVID-06): the bespoke "Gather more data" copy is
     // replaced by the shared abstained sentence, which names the exact
@@ -132,5 +191,40 @@ describe('CounterpickAdvisor', () => {
     const matches = matchesOnStage(BATTLEFIELD, 3, 2);
     renderAdvisor(matches);
     expect(screen.getByText(/3-2 \(60% over 5\)/)).toBeInTheDocument();
+  });
+
+  // Phase 36 (D-05/D-07 regression net): the owner's Town-and-City /
+  // Final-Destination finding — a 2-0 record must never appear under Pick
+  // or Ban, even when the persisted per-subject threshold is 1 (the state a
+  // user carries into wave 1, before plan 36-02 shrinks the option list).
+  it('hides a 2-0 stage from both Pick and Ban entirely, even with a persisted min-matches of 1', async () => {
+    setMockUser(makeMockUser());
+    window.localStorage.setItem(
+      analyticsSelectionStorageKey('test-uid', null),
+      JSON.stringify({ minStageMatches: 1 }),
+    );
+    const TOWN_AND_CITY_2_0 = matchesOnStage(TOWN_AND_CITY, 2, 0); // below the floor, despite a perfect record
+    const matches = [
+      ...TOWN_AND_CITY_2_0,
+      ...matchesOnStage(BATTLEFIELD, 6, 2), // proven, qualifies -> pick
+      ...matchesOnStage(SMASHVILLE, 4, 1), // qualifies -> pick
+      ...matchesOnStage(FINAL_DESTINATION, 3, 2), // qualifies -> pick (exactly 3 picks)
+      ...matchesOnStage(BIG_BATTLEFIELD, 1, 4), // qualifies, worst record -> ban
+    ];
+    renderAdvisorAsSignedInUser(matches);
+
+    await waitFor(() => expect(screen.getByText('Pick these')).toBeInTheDocument());
+    expect(screen.queryByText(/Town and City/)).not.toBeInTheDocument();
+    expect(screen.getByText('Ban / avoid these')).toBeInTheDocument();
+    // Confirm the 2-0 stage isn't hiding under the ban heading either.
+    const banSection = screen.getByText('Ban / avoid these').closest('div')!;
+    expect(banSection.textContent).not.toContain('Town and City');
+  });
+
+  it('shows the abstained sentence with the exact remaining-games count when no stage reaches the floor', () => {
+    renderAdvisor(matchesOnStage(BATTLEFIELD, 2, 0));
+    expect(screen.getByText(/Not enough data yet.*1 more game needed\./)).toBeInTheDocument();
+    expect(screen.queryByText('Pick these')).not.toBeInTheDocument();
+    expect(screen.queryByText('Ban / avoid these')).not.toBeInTheDocument();
   });
 });
