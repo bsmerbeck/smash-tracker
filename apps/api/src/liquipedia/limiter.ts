@@ -324,6 +324,30 @@ async function repairStampAtLeast(
  * WITHOUT relying on callers happening to await one another. See
  * `withLocalTrackerLock`'s own doc comment for why a thrown attempt can
  * never wedge the chain for callers still queued behind it.
+ *
+ * WR-02-i3 NOTE — PARSE SLOT BURNED ON A REFUSED TRAILING GENERAL BUDGET
+ * (36-REVIEW.md iteration 3). This composition (parse-class acquires the
+ * parse budget, then the general budget, with no unwind if the general
+ * sub-acquisition is refused) PRE-DATES this phase entirely — it was
+ * already the shape of `acquire()` in the very first commit that introduced
+ * this module (`a37125f6`), unrelated to the D-29 fix above. A genuine
+ * refund would require moving a durable, ToU-relevant compliance stamp
+ * BACKWARDS — exactly the class of change this module can never make
+ * safely, since the whole point of the durable stamp is that it only ever
+ * moves forward. `acquire()`'s parse-class branch therefore only adds a
+ * read-only, non-committing PRE-FLIGHT feasibility check: before spending
+ * the parse slot, it peeks (a plain `.get()`, no `.transaction()`) at both
+ * budgets' current durable stamps and each tracker's local floor, computes
+ * a LOWER BOUND on the combined parse+general wait, and declines early
+ * (never touching the parse budget) when that lower bound alone already
+ * exceeds the caller's remaining wait budget. Because a real acquisition's
+ * actual wait can only be greater than or equal to this lower bound (never
+ * less — the same floors feed the real transaction), a preflight decline
+ * here is one the real, uncached two-step acquire was ALWAYS going to
+ * produce too; the only difference is the parse slot is never spent on the
+ * doomed attempt. When the lower bound does not already exceed the budget,
+ * behaviour is unchanged from before this fix (accepted-conservative — see
+ * `36-REVIEW-FIX.md`'s Iteration 3 section for the residual and reasoning).
  */
 interface LocalReleaseTracker {
   lastReleaseAtMs: number | null;
@@ -511,6 +535,74 @@ async function acquireOnBudgetExclusive(
 }
 
 /**
+ * WR-02-i3: read-only, non-committing peek at `budgetPath`'s current
+ * durable stamp — a plain `.get()`, never `.transaction()`. Used only to
+ * compute a LOWER BOUND on a future acquisition's wait; never used to
+ * decide a grant.
+ */
+async function peekDurableFloor(database: Database, budgetPath: string): Promise<number | null> {
+  const snapshot = await database.ref(budgetPath).get();
+  const parsed = parseIntervalBudget(snapshot.val());
+  return parsed === null ? null : parsed.lastGrantedAtMs;
+}
+
+/**
+ * WR-02-i3: returns `true` only when a LOWER BOUND on the combined
+ * parse-then-general wait already exceeds `remainingWaitBudgetMs` — i.e.
+ * when the real, uncached two-step `acquire()` below is GUARANTEED to
+ * decline too, since its actual wait can only be greater than or equal to
+ * this estimate (the same durable/local floors feed both). Never commits
+ * anything; a `false` return means "cannot be decided safely as
+ * infeasible" and the caller proceeds exactly as before this fix.
+ */
+async function parseThenGeneralIsPreflightInfeasible(
+  database: Database,
+  now: () => number,
+  parseTracker: LocalReleaseTracker,
+  generalTracker: LocalReleaseTracker,
+  remainingWaitBudgetMs: number,
+): Promise<boolean> {
+  const nowMs = now();
+  const [parseDurable, generalDurable] = await Promise.all([
+    peekDurableFloor(database, LIQUIPEDIA_PARSE_BUDGET_PATH),
+    peekDurableFloor(database, LIQUIPEDIA_GENERAL_BUDGET_PATH),
+  ]);
+
+  const { floor: parseDurableFloor } = resolveDurableFloor(
+    parseDurable !== null ? { lastGrantedAtMs: parseDurable } : null,
+    LIQUIPEDIA_PARSE_CLASS_MIN_INTERVAL_MS,
+    nowMs,
+  );
+  const parseLocalFloor =
+    parseTracker.lastReleaseAtMs !== null
+      ? parseTracker.lastReleaseAtMs + LIQUIPEDIA_PARSE_CLASS_MIN_INTERVAL_MS
+      : -Infinity;
+  const parseSlotLowerBound = Math.max(nowMs, parseDurableFloor, parseLocalFloor);
+  const parseWaitLowerBound = Math.max(0, parseSlotLowerBound - nowMs);
+
+  const { floor: generalDurableFloor } = resolveDurableFloor(
+    generalDurable !== null ? { lastGrantedAtMs: generalDurable } : null,
+    LIQUIPEDIA_GENERAL_MIN_INTERVAL_MS,
+    nowMs,
+  );
+  const generalLocalFloor =
+    generalTracker.lastReleaseAtMs !== null
+      ? generalTracker.lastReleaseAtMs + LIQUIPEDIA_GENERAL_MIN_INTERVAL_MS
+      : -Infinity;
+  // The general sub-acquisition happens AFTER the parse one resolves, so
+  // its earliest legal slot is no earlier than `parseSlotLowerBound` —
+  // itself a lower bound, so this stays a lower bound too.
+  const generalSlotLowerBound = Math.max(
+    parseSlotLowerBound,
+    generalDurableFloor,
+    generalLocalFloor,
+  );
+  const generalWaitLowerBound = Math.max(0, generalSlotLowerBound - parseSlotLowerBound);
+
+  return parseWaitLowerBound + generalWaitLowerBound > remainingWaitBudgetMs;
+}
+
+/**
  * Creates the durable, GLOBAL two-budget Liquipedia limiter. `database` is
  * the same Firebase RTDB `Database` every other durable node in this
  * codebase shares — the budget nodes are NEVER tenant-keyed (this is a
@@ -549,6 +641,23 @@ export function createLiquipediaLimiter(
           sleep,
           generalTracker,
         );
+      }
+
+      // WR-02-i3: a read-only, non-committing peek — never spends the
+      // parse slot on an attempt already guaranteed to fail the trailing
+      // general acquisition. See `parseThenGeneralIsPreflightInfeasible`'s
+      // doc comment; a `false` here means "proceed exactly as before this
+      // fix," not "guaranteed to succeed."
+      if (
+        await parseThenGeneralIsPreflightInfeasible(
+          database,
+          now,
+          parseTracker,
+          generalTracker,
+          remainingWaitBudgetMs,
+        )
+      ) {
+        return { granted: false, waitedMs: 0, reason: 'wait-budget-exceeded' };
       }
 
       // parse-class: acquire the PARSE budget first, then the GENERAL

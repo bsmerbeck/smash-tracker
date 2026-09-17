@@ -667,3 +667,105 @@ describe('createLiquipediaLimiter — concurrent in-process acquisitions (WR-03-
     expect(third.granted).toBe(true);
   });
 });
+
+/**
+ * WR-02-i3 (36-REVIEW.md iteration 3): a parse-class acquisition that
+ * acquires its 30s parse budget but is then refused the trailing general
+ * budget irrevocably burns the parse slot for a request that never
+ * dispatches — this pre-dates Phase 36 entirely (the shape of `acquire()`
+ * since the very first commit that introduced this module) and a genuine
+ * refund would require moving a durable compliance stamp BACKWARDS, which
+ * this module can never do safely. The fix adds a read-only PREFLIGHT
+ * feasibility check that avoids spending the parse slot whenever
+ * infeasibility can be determined from the CURRENT durable/local state
+ * alone — these tests prove that improvement — but a residual case remains
+ * where contention arises AFTER the preflight peek (invisible to it) and
+ * the slot is still burned; that residual is accepted-conservative (a
+ * burned slot only ever delays, never violates the interval contract) and
+ * is pinned by the second test below.
+ */
+describe('createLiquipediaLimiter — parse-slot preflight feasibility check (WR-02-i3)', () => {
+  it('never spends the parse slot when the trailing general budget is ALREADY, visibly infeasible before any acquisition begins', async () => {
+    const database = new FakeDatabase();
+    const clock = makeClock(1_767_225_600_000);
+    const { sleep } = pairedSleep(clock);
+    // General budget already requires ~37s of further wait (within its
+    // 40s poisoned-stamp horizon, so NOT clamped as poisoned) — visible to
+    // the preflight peek from the very first `.get()`, with nothing else
+    // ever having touched the parse budget.
+    await database
+      .ref(LIQUIPEDIA_GENERAL_BUDGET_PATH)
+      .set({ lastGrantedAtMs: clock.now() + 35_000 });
+    const limiter = createLiquipediaLimiter(asDatabase(database), { now: clock.now, sleep });
+
+    // A budget far too small to cover the combined parse (0s, fresh) +
+    // general (~37s) wait the preflight peek can already see.
+    const result = await limiter.acquire('parse-class', 20_000);
+
+    expect(result.granted).toBe(false);
+    expect(result.reason).toBe('wait-budget-exceeded');
+    expect(result.waitedMs).toBe(0);
+    // The parse budget was NEVER touched — the whole point of the fix.
+    const stored = database.dump().researchRateBudget as { liquipediaParse?: unknown };
+    expect(stored.liquipediaParse).toBeUndefined();
+  });
+
+  it('accepted-conservative residual: still burns the parse slot when the general refusal is caused by contention that arose AFTER the preflight peek (invisible to it)', async () => {
+    const database = new FakeDatabase();
+    const startMs = 1_767_225_600_000;
+    const clock = makeClock(startMs);
+    let sawParseSleep = false;
+    const sleep = async (ms: number): Promise<void> => {
+      clock.advance(ms);
+      if (ms === LIQUIPEDIA_PARSE_CLASS_MIN_INTERVAL_MS && !sawParseSleep) {
+        sawParseSleep = true;
+        // Simulates a SEPARATE process/instance grabbing the general
+        // budget WHILE this call was asleep waiting on the parse budget —
+        // this happens strictly AFTER the WR-02-i3 preflight peek already
+        // ran (and found nothing), so it cannot have prevented this.
+        const contender = createLiquipediaLimiter(asDatabase(database), {
+          now: clock.now,
+          sleep: async (innerMs: number) => {
+            clock.advance(innerMs);
+          },
+        });
+        await contender.acquire('general', 60_000);
+      }
+    };
+    const limiter = createLiquipediaLimiter(asDatabase(database), { now: clock.now, sleep });
+
+    // Prime both budgets with a free, immediate first acquisition, so the
+    // acquisition UNDER TEST genuinely has to sleep ~30s on the parse
+    // budget (a fresh budget's very first acquisition never sleeps at all
+    // — there is no prior grant to space against). The preflight peek for
+    // THIS second call correctly judges the combined wait feasible (general
+    // is not required until AFTER the parse sleep elapses, per the module's
+    // own parse-first-then-general ordering) — the contention that defeats
+    // it happens strictly later, during that sleep.
+    const primer = await limiter.acquire('parse-class', 60_000);
+    expect(primer.granted).toBe(true);
+
+    // Covers the parse interval plus only a sliver for general — the
+    // contender above re-stamps the general budget to "now" while this
+    // call sleeps, leaving its OWN trailing general sub-acquisition needing
+    // the full 2s general interval, more than the sliver left.
+    const result = await limiter.acquire(
+      'parse-class',
+      LIQUIPEDIA_PARSE_CLASS_MIN_INTERVAL_MS + 500,
+    );
+
+    expect(result.granted).toBe(false);
+    expect(result.reason).toBe('wait-budget-exceeded');
+    // The parse slot WAS spent (extended past the primer's own stamp)
+    // despite the overall acquisition failing — the documented,
+    // accepted-conservative residual (36-REVIEW-FIX.md Iteration 3): a
+    // burned slot only ever delays a future request, it never causes one
+    // to go out early.
+    const stored = database.dump().researchRateBudget as {
+      liquipediaParse?: { lastGrantedAtMs: number };
+    };
+    expect(stored.liquipediaParse?.lastGrantedAtMs).toBe(
+      startMs + LIQUIPEDIA_PARSE_CLASS_MIN_INTERVAL_MS,
+    );
+  });
+});
