@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router';
 import { useTranslation } from 'react-i18next';
+import { resolveAliasChain } from '@smash-tracker/shared';
 import { Button } from '@/components/ui/button';
 import { resolveAnalyzeOpponentPreselection } from '@/lib/analyzeOpponent';
 import { getOpponentSources, useFilteredMatches } from '@/hooks/useFilteredMatches';
@@ -123,14 +124,19 @@ export function OpponentsPage() {
   const encounterContext = useMemo(() => getEncounterContext(tournamentBlocks), [tournamentBlocks]);
 
   // Alias names that currently resolve to the selected opponent (for the
-  // "Merged names" management card).
+  // "Merged names" management card). WR-02-i2: follows the FULL transitive
+  // chain via `resolveAliasChain` (the same shared primitive CR-01 made the
+  // canonical resolver) rather than a reverse single-hop `canonical ===
+  // selected` lookup — for a chain like `{ leo: 'mkleo', mkleo:
+  // 'somebody-else' }` with `selected === 'somebody-else'`, a single-hop
+  // filter lists only `'mkleo'` and silently omits `'leo'`, even though
+  // `'leo'`'s matches are already correctly folded into this same row by
+  // CR-01's fix.
   const mergedAliasesForSelected = useMemo(() => {
     if (!selected || !aliasMap) {
       return [];
     }
-    return Object.entries(aliasMap)
-      .filter(([, canonical]) => canonical === selected)
-      .map(([alias]) => alias);
+    return Object.keys(aliasMap).filter((alias) => resolveAliasChain(alias, aliasMap) === selected);
   }, [aliasMap, selected]);
 
   // V6-W1c: "Export H2H" evidence packet — built from the same profile +

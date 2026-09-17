@@ -914,6 +914,31 @@ describe('OpponentsPage', () => {
       await waitFor(() => expect(screen.getByText('Last 10 (newest first)')).toBeInTheDocument());
       expect(screen.queryByText('Merged names')).not.toBeInTheDocument();
     });
+
+    // WR-02-i2: a REVERSE single-hop lookup (`canonical === selected`) lists
+    // only the immediate alias one hop away from the terminal name — for a
+    // 3-member chain (`leo` -> `mkleo` -> `somebody-else`), it would list
+    // `mkleo` but silently omit `leo`, even though CR-01 already folds
+    // `leo`'s matches into this same row. Proves the card now follows the
+    // full transitive chain and lists every member.
+    it('lists every alias in a chained (3-member) merge, not just the immediate one-hop alias', async () => {
+      listAliases.mockResolvedValue({ leo: 'mkleo', mkleo: 'somebody-else' });
+      listMatches.mockResolvedValue([
+        makeMatch({ id: 'm1', time: 1, opponent: 'leo', win: true }),
+        makeMatch({ id: 'm2', time: 2, opponent: 'mkleo', win: true }),
+        makeMatch({ id: 'm3', time: 3, opponent: 'somebody-else', win: false }),
+      ]);
+
+      renderOpponents();
+
+      await waitFor(() => expect(screen.getByText('Last 10 (newest first)')).toBeInTheDocument());
+
+      const mergedCard = (await screen.findByText('Merged names')).closest(
+        '[data-slot="card"]',
+      ) as HTMLElement;
+      expect(within(mergedCard).getByText('leo')).toBeInTheDocument();
+      expect(within(mergedCard).getByText('mkleo')).toBeInTheDocument();
+    });
   });
 
   describe('V6-W1c: opponent tendency notes', () => {
