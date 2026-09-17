@@ -13,7 +13,9 @@
     "acquire:stages": "node scripts/acquire-stage-art.mjs",
     "lint": "eslint .",
     "typecheck": "tsc -b --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "guard:perf-harness-build": "vitest run --config vitest.guard.config.ts",
+    "budget:browser": "node scripts/scl01BrowserBudget.mjs"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.4.0",

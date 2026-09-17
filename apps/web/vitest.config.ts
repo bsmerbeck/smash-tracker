@@ -1,4 +1,4 @@
-import { defineConfig } from 'vitest/config';
+import { defineConfig, configDefaults } from 'vitest/config';
 import react from '@vitejs/plugin-react';
 import { fileURLToPath, URL } from 'node:url';
 
@@ -13,6 +13,10 @@ export default defineConfig({
     environment: 'jsdom',
     setupFiles: ['./src/test/setup.ts'],
     globals: true,
+    // SCL-01 perf-harness build guard (D-26 precedent): a real `vite build`
+    // per run is too slow for the default suite — it runs only via
+    // `pnpm run guard:perf-harness-build` (vitest.guard.config.ts).
+    exclude: [...configDefaults.exclude, '**/*.guard.test.ts'],
     // GitHub Actions runners are ~3x slower than dev hardware; the heaviest
     // userEvent interaction tests (e.g. GspPage Quick Logger double-entry)
     // legitimately exceed vitest's 5s default there. 15s still catches hangs.

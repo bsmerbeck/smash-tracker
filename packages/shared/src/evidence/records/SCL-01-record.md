@@ -20,13 +20,13 @@ render every budget in, so two readouts stay diffable.
 
 ## The five budgets, their instrument, and their verdict
 
-| id                          | target           | scale | measuredBy       | verdict                                                                        |
-| --------------------------- | ---------------- | ----- | ---------------- | ------------------------------------------------------------------------------ |
-| `engine-recompute-p95-8k`   | ≤100ms           | 8k    | automated        | **PASS** (synthetic: 3.2-4.3ms; real sparg0 account, 8,378 matches: 3.2-3.4ms) |
-| `engine-recompute-p95-50k`  | ≤400ms           | 50k   | automated        | **PASS** (synthetic: 21-28.5ms)                                                |
-| `filter-change-to-paint-8k` | ≤200ms           | 8k    | browser-protocol | **NOT MEASURED** — pending owner/Codex-UAT browser run                         |
-| `heap-delta-50k`            | ≤150MB           | 50k   | browser-protocol | **NOT MEASURED** — pending owner/Codex-UAT browser run                         |
-| `matches-gzip-payload-8k`   | ≤1,500,000 bytes | 8k    | automated        | **PASS** (synthetic: 154,603 bytes; real sparg0 account: 200,083 bytes)        |
+| id                          | target           | scale | measuredBy       | verdict                                                                           |
+| --------------------------- | ---------------- | ----- | ---------------- | --------------------------------------------------------------------------------- |
+| `engine-recompute-p95-8k`   | ≤100ms           | 8k    | automated        | **PASS** (synthetic: 3.2-4.3ms; real sparg0 account, 8,378 matches: 3.2-3.4ms)    |
+| `engine-recompute-p95-50k`  | ≤400ms           | 50k   | automated        | **PASS** (synthetic: 21-28.5ms)                                                   |
+| `filter-change-to-paint-8k` | ≤200ms           | 8k    | browser-protocol | **PASS** (scripted real-Chrome harness, synthetic 8k fixture: 69.6ms / 71.3ms)    |
+| `heap-delta-50k`            | ≤150MB           | 50k   | browser-protocol | **PASS** (scripted real-Chrome harness, synthetic 50k fixture: 21.73MB / 21.79MB) |
+| `matches-gzip-payload-8k`   | ≤1,500,000 bytes | 8k    | automated        | **PASS** (synthetic: 154,603 bytes; real sparg0 account: 200,083 bytes)           |
 
 Every target above was re-verified against `packages/shared/src/evidence/budgets.ts`'s current
 source at the time this record was written and matches D-19's value exactly — none was edited.
@@ -59,17 +59,35 @@ its tests, or any reply.
 - Known-stage-field coverage: **75.17%**
 - Unknown-character games: **0** (matches the D-25 expectation — no live ingestion path produces one)
 
-## Never-measured arm
+## Browser arm — scripted real-Chrome harness
 
 `filter-change-to-paint-8k` and `heap-delta-50k` require a real browser (jsdom is never a
-substitute, D-26) and have not yet been provided. The written protocol
-(`36-SCL-01-PROTOCOL.md`) is ready; this record will be updated once either arm B is completed or
-the owner explicitly waives it.
+substitute, D-26). The manual DevTools protocol originally written was judged impractical (20
+hand-timed recordings; its heap arm implied a signed-in 50k-game account, which does not and must
+not exist per D-18). A SCRIPTED, real-Chrome measurement was built instead
+(`apps/web/scripts/scl01BrowserBudget.mjs` + `perfFixturePlugin.mjs` + a DEV-ONLY perf harness
+entry, `apps/web/perf-harness.html`/`src/perfHarness/`), needing no credentials and no production
+data: it starts a real Vite dev server and real headless Chrome, mounts the REAL `MatchupsPage`
+against `generateSyntheticMatches` fixtures with only the auth layer substituted by a fixed fake
+value, and drives the same real interactions a user would. The harness is proven unreachable from
+the production build by a committed guard (`perfHarnessProductionIsolation.guard.test.ts`, both a
+fast static-import-graph check in the default suite and a real-`vite-build`-based check run
+on demand) — see `36-06-SUMMARY.md` for the full transcripts. Command:
+`pnpm --filter @smash-tracker/web run budget:browser`. Full sample sets and machine context are in
+`36-SCL-01-PROTOCOL.md`'s Results block and `36-SCL-01-READOUT.md`.
+
+**What this proves and does not prove:** real UI, real React commit/paint, the real shared engine,
+real Chrome, over SYNTHETIC data at the stated scale — never sparg0's or any real account in a
+browser (that would require production data in a browser, which D-20 forbids), and never a
+minified production bundle (a Vite DEV server).
 
 ## FIXT-01 disposition
 
-**Pending — Task 5's owner `checkpoint:decision`.** Every AUTOMATED budget (both engine-compute
-scales, the gzip payload budget) PASSED cleanly, including against sparg0's real 8,378-match
-account measured directly. Two BROWSER-PROTOCOL budgets remain genuinely unmeasured. This section
-will be updated with the chosen option (A/B/C), the decider, the date, and the list of MISS
-verdicts (currently none) once Task 5 resolves.
+**Still the owner's Task 5 decision (`gate="blocking-human"`) — this record states the evidence and
+the recommendation, it does not itself decide.** All FIVE budgets now carry a real, traceable
+measurement and all five PASS, several with wide margin. The plan's own recommended option given
+this evidence is **A** (close FIXT-01 as not-triggered) — unlike a partial readout, option A's own
+caveat about a NOT-MEASURED real-account arm does not apply, since every arm (synthetic,
+real-account, and now browser) has been measured. This section will be updated with the owner's
+actual chosen option, the date, and the (currently empty) list of MISS verdicts once Task 5
+resolves.
