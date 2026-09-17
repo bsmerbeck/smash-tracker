@@ -379,36 +379,101 @@ describe('OpponentsPage', () => {
     });
 
     it('renders the H2H record, their-character ordering, and newest-first recent encounters', async () => {
+      // Phase 36 (D-05/D-07): `byTheirFighter` (the "What They Play" card)
+      // is `rankMatchupsByEvidence`, whose default floor is now
+      // ABSTENTION_FLOOR_GAMES (3) — this test overrides the shared
+      // `beforeEach` fixture (1 Luigi game, 2 Fox games) with 3 games per
+      // character so both still clear the gate and appear.
+      listMatches.mockResolvedValue([
+        makeMatch({
+          id: 'm1',
+          time: 1,
+          fighter_id: mario.id,
+          opponent_id: luigi.id,
+          opponent: 'rival',
+          win: true,
+          map: { id: 1, name: 'Battlefield' },
+        }),
+        makeMatch({
+          id: 'm2',
+          time: 2,
+          fighter_id: mario.id,
+          opponent_id: luigi.id,
+          opponent: 'rival',
+          win: false,
+          map: { id: 1, name: 'Battlefield' },
+        }),
+        makeMatch({
+          id: 'm3',
+          time: 3,
+          fighter_id: mario.id,
+          opponent_id: luigi.id,
+          opponent: 'rival',
+          win: true,
+          map: { id: 1, name: 'Battlefield' },
+        }),
+        makeMatch({
+          id: 'm4',
+          time: 4,
+          fighter_id: mario.id,
+          opponent_id: fox.id,
+          opponent: 'rival',
+          win: false,
+          map: { id: 3, name: 'Final Destination' },
+        }),
+        makeMatch({
+          id: 'm5',
+          time: 5,
+          fighter_id: mario.id,
+          opponent_id: fox.id,
+          opponent: 'rival',
+          win: true,
+          map: { id: 3, name: 'Final Destination' },
+        }),
+        makeMatch({
+          id: 'm6',
+          time: 6,
+          fighter_id: mario.id,
+          opponent_id: fox.id,
+          opponent: 'rival',
+          win: true,
+          map: { id: 3, name: 'Final Destination' },
+          eventName: 'Ultimate Singles',
+          tournamentName: 'The Big House 9',
+          source: 'startgg',
+        }),
+      ]);
+
       renderOpponents();
 
       await waitFor(() => expect(screen.getByText('Last 10 (newest first)')).toBeInTheDocument());
 
-      // Scouting report header shows the overall H2H record (2-1) and rate.
+      // Scouting report header shows the overall H2H record (4-2) and rate.
       const headerCard = screen
         .getByText('Last 10 (newest first)')
         .closest('[data-slot="card"]') as HTMLElement;
-      expect(within(headerCard).getByText('2-1')).toBeInTheDocument();
-      expect(within(headerCard).getByText(/67% over 3 games/)).toBeInTheDocument();
+      expect(within(headerCard).getByText('4-2')).toBeInTheDocument();
+      expect(within(headerCard).getByText(/67% over 6 games/)).toBeInTheDocument();
 
-      // "What They Play": both Luigi and Fox appear, with Fox's better record
-      // (1-1, Wilson-ranked among matchups with 2 games) surfacing correctly.
-      // Scoped to the card itself — the (visually hidden, print-only) H2H
-      // evidence packet also renders both fighter names elsewhere in the DOM.
+      // "What They Play": both Luigi and Fox appear, each with a 3-game
+      // (floor-clearing) record. Scoped to the card itself — the (visually
+      // hidden, print-only) H2H evidence packet also renders both fighter
+      // names elsewhere in the DOM.
       const whatTheyPlayCard = screen
         .getByText('What They Play')
         .closest('[data-slot="card"]') as HTMLElement;
       expect(within(whatTheyPlayCard).getByText(luigi.name)).toBeInTheDocument();
       expect(within(whatTheyPlayCard).getAllByText(fox.name).length).toBeGreaterThan(0);
 
-      // Recent encounters, newest first: m3 (with event/tournament name) before m1.
+      // Recent encounters, newest first: m6 (with event/tournament name) first, m1 last.
       const encountersList = screen.getByRole('list', { name: 'Recent encounters' });
       const encounterItems = within(encountersList).getAllByRole('listitem');
-      expect(encounterItems.length).toBe(3);
-      // Newest match (m3, time 3) is first and shows the tournament name.
+      expect(encounterItems.length).toBe(6);
+      // Newest match (m6, time 6) is first and shows the tournament name.
       expect(within(encounterItems[0]!).getByText('The Big House 9')).toBeInTheDocument();
       expect(within(encounterItems[0]!).getByText('Win')).toBeInTheDocument();
       // Oldest match (m1, time 1) is last.
-      expect(within(encounterItems[2]!).getByText('Win')).toBeInTheDocument();
+      expect(within(encounterItems[5]!).getByText('Win')).toBeInTheDocument();
 
       // Stages card shows both stages played against this opponent. Scoped
       // for the same reason as "What They Play" above — the hidden print

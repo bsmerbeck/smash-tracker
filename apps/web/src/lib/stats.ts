@@ -2,12 +2,13 @@ import {
   splitIntoSessions,
   getWinLossRecord,
   getStageRecords,
-  getBestWorstStages,
   wilsonLowerBound,
+  rankMatchupsByEvidence,
   type Match,
   type WinLossRecord,
   type StageRecord,
   type MatchupStats,
+  type RankedMatchup,
 } from '@smash-tracker/shared';
 
 /**
@@ -22,25 +23,47 @@ import {
  * "recent" / "streak" logic runs, since callers (TanStack Query results,
  * RTDB reads) don't guarantee ordering.
  *
- * Phase 36 (EVID-10): the evidence-aware ranking engine (win/loss + stage
- * records, the Wilson bound, and the D-05/D-07 abstention floor around
- * `rankStagesByEvidence`) moved to `packages/shared/src/evidence/` so the
+ * Phase 36 (EVID-10): the evidence-aware ranking engine (win/loss + stage +
+ * character-pair + opponent-identity records, the Wilson bound, and the
+ * D-05/D-07 abstention floor around `rankStagesByEvidence`/
+ * `rankMatchupsByEvidence`) moved to `packages/shared/src/evidence/` so the
  * API's report payload assembly consumes the exact same implementation as
  * this web tier — mirroring `apps/web/src/lib/glicko.ts`'s thin re-export
  * shim shape. `getOpponentRecords`/`getOpponentProfile` below are the
  * deliberate exception — see their doc comments.
  */
 
-export type { WinLossRecord, StageRecord, MatchupStats, RankedStage } from '@smash-tracker/shared';
+export type {
+  WinLossRecord,
+  StageRecord,
+  MatchupStats,
+  RankedStage,
+  RankedMatchup,
+  MatchupStageGuideRow,
+  OpponentEvidenceRow,
+  OpponentProviderLabel,
+} from '@smash-tracker/shared';
 export {
   getWinLossRecord,
   getStageRecords,
   getBestWorstStages,
   wilsonLowerBound,
   rankStagesByEvidence,
+  rankMatchupsByEvidence,
+  getMatchupStageGuide,
 } from '@smash-tracker/shared';
-export type { BestWorstStages, StageEvidenceResult } from '@smash-tracker/shared';
-export { buildStageEvidence } from '@smash-tracker/shared';
+export type {
+  BestWorstStages,
+  StageEvidenceResult,
+  MatchupEvidenceResult,
+} from '@smash-tracker/shared';
+export {
+  buildStageEvidence,
+  buildMatchupEvidence,
+  buildOpponentEvidence,
+  buildOpponentProfile,
+  resolveOpponentIdentities,
+} from '@smash-tracker/shared';
 
 /** Sorts matches by `time` ascending. Does not mutate the input array. */
 function byTimeAscending(matches: Match[]): Match[] {
@@ -272,59 +295,6 @@ export function getStreakSummary(matches: Match[]): StreakSummary {
 }
 
 // ---------------------------------------------------------------------------
-// Matchup stage guide (v2 analytics)
-// ---------------------------------------------------------------------------
-
-export interface MatchupStageGuideRow {
-  /** The opponent's fighter id (`opponent_id`). */
-  opponentFighterId: number;
-  record: WinLossRecord;
-  bestStage: StageRecord | null;
-  worstStage: StageRecord | null;
-}
-
-/**
- * For each opponent fighter actually faced in the given matches: the
- * win/loss record for that matchup plus the best and worst stage to fight
- * that opponent on, using `getBestWorstStages` with `minStageMatches` as the
- * per-stage qualification threshold. Rows are sorted by sample size (total
- * matches) descending, then win rate descending, so the most-informed
- * matchups lead.
- */
-export function getMatchupStageGuide(
-  matches: Match[],
-  minStageMatches = 3,
-): MatchupStageGuideRow[] {
-  const byOpponent = new Map<number, Match[]>();
-  for (const match of matches) {
-    const group = byOpponent.get(match.opponent_id);
-    if (group) {
-      group.push(match);
-    } else {
-      byOpponent.set(match.opponent_id, [match]);
-    }
-  }
-
-  return [...byOpponent.entries()]
-    .map(([opponentFighterId, opponentMatches]) => ({
-      opponentFighterId,
-      record: getWinLossRecord(opponentMatches),
-      ...getBestWorstStages(opponentMatches, minStageMatches),
-    }))
-    .map(({ opponentFighterId, record, best, worst }) => ({
-      opponentFighterId,
-      record,
-      bestStage: best,
-      worstStage: worst,
-    }))
-    .sort((a, b) =>
-      b.record.total === a.record.total
-        ? b.record.winRate - a.record.winRate
-        : b.record.total - a.record.total,
-    );
-}
-
-// ---------------------------------------------------------------------------
 // Match-type splits (v2 analytics)
 // ---------------------------------------------------------------------------
 
@@ -421,57 +391,6 @@ export function getStageUsage(matches: Match[]): Map<number, number> {
     usage.set(stageId, (usage.get(stageId) ?? 0) + 1);
   }
   return usage;
-}
-
-// ---------------------------------------------------------------------------
-// V3 stats engine: evidence-aware rankings (docs/analytics-vision.md)
-// ---------------------------------------------------------------------------
-
-export interface RankedMatchup extends MatchupStats {
-  /** Wilson lower bound (0-1) for this matchup's win rate. */
-  wilson: number;
-}
-
-/**
- * Per-opponent-fighter records ranked by Wilson lower bound (best first),
- * ties broken by sample size. Unlike the legacy-faithful `getMatchupStats`,
- * this is the v3 evidence-aware ranking; `minMatches` merely hides noise
- * rows and defaults to 1 because the ranking itself is sample-aware.
- *
- * Phase 36 (EVID-01, D-15): promoted to
- * `packages/shared/src/evidence/matchupEvidence.ts` in plan 36-02 Task 2,
- * where the D-05/D-07 abstention floor is applied. This body is unchanged
- * from pre-Phase-36 until that promotion lands.
- */
-export function rankMatchupsByEvidence(matches: Match[], minMatches = 1): RankedMatchup[] {
-  const byOpponent = new Map<number, Match[]>();
-  for (const match of matches) {
-    const group = byOpponent.get(match.opponent_id);
-    if (group) {
-      group.push(match);
-    } else {
-      byOpponent.set(match.opponent_id, [match]);
-    }
-  }
-  return [...byOpponent.entries()]
-    .map(([opponentFighterId, ms]) => {
-      const wins = ms.filter((m) => m.win).length;
-      const losses = ms.length - wins;
-      const totalMatches = ms.length;
-      const ratio = losses ? Math.round((wins / totalMatches) * 100) : 100;
-      return {
-        opponentFighterId,
-        wins,
-        losses,
-        totalMatches,
-        ratio,
-        wilson: wilsonLowerBound(wins, totalMatches),
-      };
-    })
-    .filter((entry) => entry.totalMatches >= minMatches)
-    .sort((a, b) =>
-      b.wilson === a.wilson ? b.totalMatches - a.totalMatches : b.wilson - a.wilson,
-    );
 }
 
 // ---------------------------------------------------------------------------

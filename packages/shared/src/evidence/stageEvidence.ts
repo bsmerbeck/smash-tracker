@@ -8,6 +8,7 @@ import {
 import { gateBySampleSize } from './gate.js';
 import { rankByWilson } from './rank.js';
 import { getStageRecords, type StageRecord } from './records.js';
+import { describeCohort, type CohortComposition } from './cohort.js';
 import type { EvidenceClaim, SampleMeta, UnknownBucket } from './types.js';
 
 /**
@@ -77,6 +78,8 @@ export function rankStagesByEvidence(matches: Match[], minMatches?: number): Ran
 export interface StageEvidenceResult {
   claim: EvidenceClaim<RankedStage[]>;
   unknown: UnknownBucket | null;
+  /** The sample's session-type/provenance composition (D-10, EVID-02) — symmetry with `MatchupEvidenceResult.cohort`, computed once per query. */
+  cohort: CohortComposition;
 }
 
 /**
@@ -124,6 +127,7 @@ export function buildStageEvidence(input: {
         }
       : null;
 
+  const cohort = describeCohort(matches);
   const ranked = rankStagesByEvidence(matches, floor);
 
   if (ranked.length === 0) {
@@ -136,11 +140,13 @@ export function buildStageEvidence(input: {
         gamesNeeded: Math.max(0, floor - eligibleDenominator),
       },
       unknown,
+      cohort,
     };
   }
 
   return {
     claim: { kind: 'evidenced', claimType: 'inference', value: ranked, sample },
     unknown,
+    cohort,
   };
 }

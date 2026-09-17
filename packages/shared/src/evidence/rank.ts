@@ -1,3 +1,6 @@
+import { effectiveFloor } from './policy.js';
+import { gateBySampleSize } from './gate.js';
+
 /**
  * Lower bound of the Wilson score interval (default z = 1.96 ≈ 95%): a
  * pessimistic-but-fair estimate of the true win rate given the sample size.
@@ -23,9 +26,10 @@ export function wilsonLowerBound(wins: number, total: number, z = 1.96): number 
 /**
  * Maps each already-evidenced item to itself plus its Wilson lower bound,
  * sorted descending by that bound. Ties break by larger `totalOf` (more
- * proven), then by ascending `keyOf` (the row's own numeric key — a stage id
- * or an opponent fighter id) so the same input array always produces the
- * same output order regardless of input ordering (EVID-02/ordering).
+ * proven), then by ascending `keyOf` (the row's own key — a numeric stage
+ * id or opponent fighter id for the stage/matchup axes, a string opponent
+ * identity for the opponent axis) so the same input array always produces
+ * the same output order regardless of input ordering (EVID-02/ordering).
  *
  * `evidenced` is expected to already be the `evidenced` half of a
  * `gateBySampleSize` partition — this function does not gate on its own.
@@ -34,7 +38,7 @@ export function rankByWilson<T>(
   evidenced: T[],
   winsOf: (item: T) => number,
   totalOf: (item: T) => number,
-  keyOf: (item: T) => number,
+  keyOf: (item: T) => number | string,
 ): (T & { wilson: number })[] {
   return evidenced
     .map((item) => ({ ...item, wilson: wilsonLowerBound(winsOf(item), totalOf(item)) }))
@@ -47,6 +51,33 @@ export function rankByWilson<T>(
       if (totalB !== totalA) {
         return totalB - totalA;
       }
-      return keyOf(a) - keyOf(b);
+      const keyA = keyOf(a);
+      const keyB = keyOf(b);
+      if (keyA < keyB) return -1;
+      if (keyA > keyB) return 1;
+      return 0;
     });
+}
+
+/**
+ * `gateBySampleSize` over `effectiveFloor(minGames)`, then `rankByWilson`
+ * keyed on each row's `total` and `wilsonUngated` — the only supported way
+ * to rank opponents (R3-LOW-2). `opponentEvidence.ts`'s inventory is
+ * guarded against containing a floor at all; the floor belongs at the
+ * INFERENCE, which is this function, not the inventory. Nothing in Phase 36
+ * calls it — it exists so a Phase 37/38 consumer wanting a ranked "toughest
+ * opponents" claim has a gated entry point to reach for instead of sorting
+ * `rows` on the raw `wilsonUngated` field and shipping a 1-0 recommendation.
+ */
+export function rankOpponentsByEvidence<
+  T extends { total: number; wins: number; wilsonUngated: number; identity: string },
+>(rows: T[], minGames?: number): (T & { wilson: number })[] {
+  const floor = effectiveFloor(minGames);
+  const { evidenced } = gateBySampleSize(rows, (row) => row.total, floor);
+  return rankByWilson(
+    evidenced,
+    (row) => row.wins,
+    (row) => row.total,
+    (row) => row.identity,
+  );
 }

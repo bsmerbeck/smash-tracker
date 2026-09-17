@@ -20,10 +20,15 @@ function makeMatch(id: string, time: number, win: boolean, opponentId: number): 
 }
 
 describe('buildMatchupSnapshot', () => {
+  // Phase 36 (D-05/D-07): `rankMatchupsByEvidence`'s default floor is now
+  // ABSTENTION_FLOOR_GAMES (3), so every fixture below needs >=3 games per
+  // opponent to clear the gate at all.
   it('ranks strongest matchups by Wilson lower bound, best first', () => {
     const matches = [
-      // Opponent 2: 1-0 (small sample, high raw rate but low Wilson bound)
+      // Opponent 2: 3-0 (thin sample, high raw rate but low Wilson bound)
       makeMatch('1', 1, true, 2),
+      makeMatch('2', 2, true, 2),
+      makeMatch('3', 3, true, 2),
       // Opponent 3: 12-3 (large sample, strong Wilson bound)
       ...Array.from({ length: 12 }, (_, i) => makeMatch(`w${i}`, 10 + i, true, 3)),
       ...Array.from({ length: 3 }, (_, i) => makeMatch(`l${i}`, 30 + i, false, 3)),
@@ -31,16 +36,18 @@ describe('buildMatchupSnapshot', () => {
 
     const { strongest } = buildMatchupSnapshot(matches);
 
-    // 12-3 (80% over 15 games) should outrank a lucky 1-0 by Wilson bound,
-    // even though the 1-0 has a higher raw ratio.
+    // 12-3 (80% over 15 games) should outrank a thin 3-0 by Wilson bound,
+    // even though the 3-0 has a higher raw ratio.
     expect(strongest[0]?.opponentFighterId).toBe(3);
     expect(strongest.map((s) => s.opponentFighterId)).toContain(2);
   });
 
   it('caps strongest matchups at 3', () => {
-    const matches = [1, 2, 3, 4, 5].flatMap((opponentId) => [
-      makeMatch(`${opponentId}-1`, opponentId, true, opponentId),
-    ]);
+    const matches = [1, 2, 3, 4, 5].flatMap((opponentId) =>
+      Array.from({ length: 3 }, (_, i) =>
+        makeMatch(`${opponentId}-${i}`, opponentId * 10 + i, true, opponentId),
+      ),
+    );
     const { strongest } = buildMatchupSnapshot(matches);
     expect(strongest).toHaveLength(3);
   });
@@ -74,9 +81,11 @@ describe('buildMatchupSnapshot', () => {
 
   it('flags needsMoreData when fewer than 2 qualifying (>=3 game) matchups exist', () => {
     const matches = [
+      // Exactly one opponent (2) clears the 3-game floor — one qualifying
+      // row is still not enough for a "toughest" comparison (needs 2).
       makeMatch('a', 1, true, 2),
       makeMatch('b', 2, false, 2),
-      // Only 2 games total for opponent 2 — under the 3-game threshold.
+      makeMatch('c', 3, true, 2),
     ];
 
     const { toughest, needsMoreData } = buildMatchupSnapshot(matches);
@@ -133,7 +142,13 @@ describe('MatchupSnapshot', () => {
   });
 
   it('shows a build-more-data hint for toughest matchups when under threshold', () => {
-    const matches = [makeMatch('1', 1, true, 2), makeMatch('2', 2, false, 2)];
+    // Phase 36 (D-05/D-07): exactly one opponent clears the 3-game floor —
+    // still not enough qualifying rows (needs 2) for a "toughest" comparison.
+    const matches = [
+      makeMatch('1', 1, true, 2),
+      makeMatch('2', 2, false, 2),
+      makeMatch('3', 3, true, 2),
+    ];
     renderWithContext(matches);
     expect(screen.getByText(/Play a few more games \(3\+ per opponent\)/)).toBeInTheDocument();
   });

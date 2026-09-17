@@ -5,6 +5,7 @@ import {
   buildMatchupAdvisor,
   generatedScoutReportSchema,
   getStageRecords,
+  makeCanonicalizer,
   matchRecordSchema,
   opponentNoteMapSchema,
   selectMyCandidateFighterIds,
@@ -254,13 +255,15 @@ export async function assembleReportPayload(
       ) as Array<ReturnType<typeof matchRecordSchema.parse> & { time: number }>)
     : [];
 
-  // Single-hop alias lookup: opponentAliases/{uid} is already transitively
-  // flattened by the write path (RtdbService.setOpponentAlias), so one
-  // lookup suffices — no need to walk chains here.
-  function canonicalOpponentName(name: string | undefined): string {
-    const tag = normalizeOpponentTag(name);
-    return aliasMap[tag] ?? tag;
-  }
+  // Phase 36 (EVID-12): the alias hop has exactly one implementation now —
+  // `makeCanonicalizer` from the engine, the same idempotent
+  // normalize-then-hop `opponentEvidence.ts` uses. `normalizeOpponentTag`
+  // (imported above from `../startgg/sync.js`, the canonical sync-time
+  // definition) is still needed directly for `scoutedCanonicalName` below,
+  // which normalizes the freshly-scouted player's OWN tag — never looked up
+  // in this caller's `aliasMap`, which only covers their own recorded
+  // opponents.
+  const canonicalOpponentName = makeCanonicalizer(aliasMap);
 
   const scoutedCanonicalName = normalizeOpponentTag(scout.player.gamerTag);
 
