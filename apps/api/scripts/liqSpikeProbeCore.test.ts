@@ -7,6 +7,7 @@ import { createLiquipediaClient } from '../src/liquipedia/client.js';
 import {
   createLiquipediaFixtureFetch,
   matchQuery,
+  type LiquipediaFixtureRouteMatch,
 } from '../src/liquipedia/__fixtures__/loadFixture.js';
 import { LIQUIPEDIA_GENERAL_MIN_INTERVAL_MS } from '../src/liquipedia/limiter.js';
 import { UnsafeOutputPathError } from './outputPathGuard.js';
@@ -141,6 +142,159 @@ describe('runLiqSpike', () => {
     expect(page?.revisionId).toBe(535578);
     expect(page?.byteSize).toBeGreaterThan(19_000);
     expect(page?.completedAtMs).toBe(12345);
+  });
+});
+
+// ---- classification is structural, never byte-gated (fix C) --------------
+
+/** A synthetic in-memory MediaWiki `action=query` fetch — for shapes that do not exist in the committed fixture corpus (there is no live network access to capture real bytes for; every body below is a mechanically-constructed, clearly-synthetic `{{...}}`/`#REDIRECT` shape, never invented prose). */
+function createInlineLiquipediaFetch(
+  routes: { match: LiquipediaFixtureRouteMatch; body: unknown }[],
+): { fetchImpl: typeof fetch; requests: URL[] } {
+  const requests: URL[] = [];
+  const fetchImpl = (async (input: Parameters<typeof fetch>[0]): Promise<Response> => {
+    const rawUrl =
+      typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
+    const url = new URL(rawUrl);
+    requests.push(url);
+    const route = routes.find((candidate) => candidate.match(url));
+    if (!route) {
+      throw new Error(`createInlineLiquipediaFetch: no registered route matches "${rawUrl}"`);
+    }
+    return new Response(JSON.stringify(route.body), {
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+    });
+  }) as unknown as typeof fetch;
+  return { fetchImpl, requests };
+}
+
+function buildInlineClient(routes: { match: LiquipediaFixtureRouteMatch; body: unknown }[]) {
+  const { fetchImpl, requests } = createInlineLiquipediaFetch(routes);
+  const client = createLiquipediaClient({
+    config: { contact: 'liq-spike-test@example.invalid' },
+    limiter: {
+      async acquire() {
+        return { granted: true, waitedMs: 0 };
+      },
+    },
+    fetchImpl,
+  });
+  return { client, requests };
+}
+
+/** A synthetic query envelope shaped exactly like `RawQueryEnvelope` in client.ts. */
+function queryEnvelope(
+  pages: { title: string; missing?: true; revid?: number; content?: string }[],
+) {
+  return {
+    query: {
+      pages: pages.map((page) =>
+        page.missing
+          ? { title: page.title, missing: true }
+          : {
+              title: page.title,
+              revisions: [
+                {
+                  revid: page.revid,
+                  parentid: 0,
+                  timestamp: '2026-01-01T00:00:00Z',
+                  slots: { main: { content: page.content ?? '' } },
+                },
+              ],
+            },
+      ),
+    },
+  };
+}
+
+describe('classifyWikitext (via runLiqSpike) — structural, not byte-gated (fix C)', () => {
+  it('classifies a LONG template-only body as stub-generator-only (byte count alone must never make it sufficient)', async () => {
+    // 20 template calls — comfortably over the old 200-byte threshold, and
+    // proves the fix: the OLD code would have called this "sufficient"
+    // purely because it is long, exactly the defect the owner's first live
+    // run surfaced at 245/248 bytes.
+    const longTemplateOnly = Array.from(
+      { length: 20 },
+      (_, i) => `{{Template call number ${i}}}`,
+    ).join('\n');
+    expect(longTemplateOnly.length).toBeGreaterThan(200);
+
+    const target: LiqSpikeTarget = {
+      family: 'player-results',
+      titles: ['LongStub/Results'],
+      why: 'test',
+    };
+    const { client } = buildInlineClient([
+      {
+        match: matchQuery({ action: 'query', titles: 'LongStub/Results' }),
+        body: queryEnvelope([{ title: 'LongStub/Results', revid: 1, content: longTemplateOnly }]),
+      },
+    ]);
+
+    const report = await runLiqSpike({ client, now: () => 0, log: () => undefined }, [target]);
+
+    expect(report.pages[0]?.wikitextVerdict).toBe('stub-generator-only');
+    expect(report.pages[0]?.proposedAllowlistRegex).toBe('^[^/]+/Results$');
+  });
+
+  it('classifies a SHORT template-only body (the real 245/248-byte shape) as stub-generator-only', async () => {
+    const shortTemplateOnly = '{{Infobox player results}}';
+    const target: LiqSpikeTarget = {
+      family: 'player-results',
+      titles: ['ShortStub/Results'],
+      why: 'test',
+    };
+    const { client } = buildInlineClient([
+      {
+        match: matchQuery({ action: 'query', titles: 'ShortStub/Results' }),
+        body: queryEnvelope([{ title: 'ShortStub/Results', revid: 2, content: shortTemplateOnly }]),
+      },
+    ]);
+
+    const report = await runLiqSpike({ client, now: () => 0, log: () => undefined }, [target]);
+
+    expect(report.pages[0]?.wikitextVerdict).toBe('stub-generator-only');
+  });
+
+  it('classifies a bare #REDIRECT declaration as stub-generator-only, with a trailing category still non-substantive', async () => {
+    const redirectOnly = '#REDIRECT [[MKLeo/Results]]\n[[Category:Redirects]]';
+    const target: LiqSpikeTarget = {
+      family: 'player-results',
+      titles: ['MkLeo/Results'],
+      why: 'test',
+    };
+    const { client } = buildInlineClient([
+      {
+        match: matchQuery({ action: 'query', titles: 'MkLeo/Results' }),
+        body: queryEnvelope([{ title: 'MkLeo/Results', revid: 3, content: redirectOnly }]),
+      },
+    ]);
+
+    const report = await runLiqSpike({ client, now: () => 0, log: () => undefined }, [target]);
+
+    expect(report.pages[0]?.wikitextVerdict).toBe('stub-generator-only');
+  });
+
+  it('classifies a SHORT genuine-prose body as sufficient (short is not the same as generator-only)', async () => {
+    const shortProse = 'No competitive results are currently recorded for this player.';
+    expect(shortProse.length).toBeLessThan(200);
+    const target: LiqSpikeTarget = {
+      family: 'player-results',
+      titles: ['NewPlayer/Results'],
+      why: 'test',
+    };
+    const { client } = buildInlineClient([
+      {
+        match: matchQuery({ action: 'query', titles: 'NewPlayer/Results' }),
+        body: queryEnvelope([{ title: 'NewPlayer/Results', revid: 4, content: shortProse }]),
+      },
+    ]);
+
+    const report = await runLiqSpike({ client, now: () => 0, log: () => undefined }, [target]);
+
+    expect(report.pages[0]?.wikitextVerdict).toBe('sufficient');
+    expect(report.pages[0]?.proposedAllowlistRegex).toBeUndefined();
   });
 });
 

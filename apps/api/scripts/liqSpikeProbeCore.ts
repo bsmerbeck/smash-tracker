@@ -23,6 +23,13 @@ import { assertOutputPathIsGitignored } from './outputPathGuard.js';
  * limiter's actual spacing. `checkGeneralRequestStartSpacing` below checks
  * the real figure — request START timestamps, supplied by the caller's
  * `fetchImpl` wrapper — and FAILS LOUDLY if it is ever violated.
+ *
+ * Owner rerun incident (fix C): the same live run returned two real
+ * `/Results` pages at 246 and 248 bytes that are template stubs, but a
+ * bare byte-threshold gate let both sail past as `sufficient` purely
+ * because they were "long enough". `classifyWikitext` below is now
+ * structural — template-only or bare-redirect content is
+ * `stub-generator-only` regardless of size.
  */
 
 /**
@@ -108,17 +115,6 @@ export const LIQ_SPIKE_TARGETS: readonly LiqSpikeTarget[] = Object.freeze([
     why: 'A bracket page for entrants outside the four tracked demo accounts — the same page shape the shipped VOD/bracket sync already reaches for `*/VODs`-linked tournaments, checked here for reachability beyond that set.',
   },
 ]);
-
-/**
- * A revision whose wikitext is below this byte threshold AND consists of
- * nothing but template transclusions is classified `stub-generator-only` —
- * the exact shape already proven for the shipped VODs-page family
- * (`{{ResultsPageHeader}}\n{{Player vod list}}`, well under 100 bytes). Set
- * comfortably above that known stub size and comfortably below the smallest
- * substantive wikitext already in the corpus (over 19 KB), so the mechanical
- * rule cannot straddle a real page by accident.
- */
-export const LIQ_SPIKE_STUB_BYTE_THRESHOLD_BYTES = 200;
 
 export type LiqSpikeWikitextVerdict = 'sufficient' | 'stub-generator-only' | 'missing';
 
@@ -212,8 +208,40 @@ function proposeAllowlistRegexFor(title: string): string {
   return `^[^/]+/${escapeRegExpLiteral(lastSegment)}$`;
 }
 
-function classifyWikitext(content: string, byteSize: number): LiqSpikeWikitextVerdict {
-  if (byteSize < LIQ_SPIKE_STUB_BYTE_THRESHOLD_BYTES && isTemplateOnlyWikitext(content)) {
+/** Matches a MediaWiki redirect declaration, e.g. `#REDIRECT [[MKLeo/Results]]`. */
+const REDIRECT_LINE_PATTERN = /^#REDIRECT\s*:?\s*\[\[[^\]]+\]\]$/i;
+
+/** A non-blank line trailing a redirect declaration that is itself non-substantive: a template transclusion or a category link — never prose. */
+function isNonSubstantiveTrailingLine(line: string): boolean {
+  return /^\{\{[^{}]*\}\}$/.test(line) || /^\[\[Category:[^\]]*\]\]$/i.test(line);
+}
+
+/** True when the wikitext is nothing but a `#REDIRECT` declaration, optionally followed by non-substantive trailing lines (categories, templates) — a redirect page carries no content of its own to evaluate. */
+function isRedirectOnlyWikitext(wikitext: string): boolean {
+  const lines = wikitext
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0);
+  const [first, ...rest] = lines;
+  if (!first || !REDIRECT_LINE_PATTERN.test(first)) {
+    return false;
+  }
+  return rest.every(isNonSubstantiveTrailingLine);
+}
+
+/**
+ * Classifies wikitext by CONTENT STRUCTURE, never by byte count. This
+ * function used to gate `stub-generator-only` on a bare byte threshold,
+ * which the owner's first live run proved wrong: two real `/Results` pages
+ * at 246 and 248 bytes are template stubs, but both sailed past the
+ * threshold and were misclassified `sufficient`. A page whose entire body
+ * is template transclusions or a bare redirect is `stub-generator-only`
+ * regardless of size; anything else — including a SHORT page of genuine
+ * prose — is `sufficient`. A revision the API reports missing is handled by
+ * the caller before this function ever runs.
+ */
+function classifyWikitext(content: string): LiqSpikeWikitextVerdict {
+  if (isTemplateOnlyWikitext(content) || isRedirectOnlyWikitext(content)) {
     return 'stub-generator-only';
   }
   return 'sufficient';
@@ -316,7 +344,7 @@ export async function runLiqSpike(
 
       const content = page.content ?? '';
       const byteSize = page.size ?? Buffer.byteLength(content, 'utf8');
-      const wikitextVerdict = classifyWikitext(content, byteSize);
+      const wikitextVerdict = classifyWikitext(content);
       pages.push({
         family: target.family,
         title: page.title,
