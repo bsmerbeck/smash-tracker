@@ -165,6 +165,28 @@ describe('assertSafeLiqSpikeOutPath (WR-03/D-28)', () => {
     ).toThrow(/must match apps\/api\/liq-spike-report\*\.json/);
   });
 
+  // WR-04-i2: the wildcard segment must not cross a `/` — gitignore's `*`
+  // glob never crosses directory boundaries, so a nested path like this one
+  // is genuinely NOT covered by the .gitignore rule the docstring claims is
+  // "the exact glob", even though the pre-fix regex's `.*` wildcard matched
+  // it. Uses a real fixture directory so the WR-03-i2 filesystem-safety
+  // check isn't what rejects this path — the pattern check must be.
+  it('refuses a nested path even though it starts with the allowed filename prefix', () => {
+    const root = mkdtempSync(path.join(os.tmpdir(), 'liq-spike-probe-core-'));
+    mkdirSync(path.join(root, 'apps', 'api', 'liq-spike-report-dir'), { recursive: true });
+    try {
+      expect(() =>
+        assertSafeLiqSpikeOutPath({
+          outPath: 'apps/api/liq-spike-report-dir/evil.json',
+          repoRoot: root,
+          isGitIgnored: () => true,
+        }),
+      ).toThrow(/must match apps\/api\/liq-spike-report\*\.json/);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   // WR-03-i2: the filesystem-target safety check (`lstat`/`realpath`) touches
   // real disk, so these two tests (which exercise code past the pattern
   // check) need a repo root that genuinely exists on disk — a fake `/repo`

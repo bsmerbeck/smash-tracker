@@ -20,8 +20,14 @@ import { assertOutputPathIsGitignored } from './outputPathGuard.js';
  * (ADC init, flag parsing, file write, guaranteed-termination lifecycle).
  */
 
-/** The exact `.gitignore` glob covering this export's output (see the repo root `.gitignore`, D-28). */
-export const SPARG0_EXPORT_OUT_PATTERN = /^apps\/api\/sparg0-export.*\.json$/;
+/**
+ * The exact `.gitignore` glob covering this export's output (see the repo
+ * root `.gitignore`, D-28). Uses `[^/]*` (not `.*`, WR-04-i2) — gitignore's
+ * `*` glob never crosses a directory boundary, so the wildcard segment here
+ * must not either, or the "exact glob" claim above is false for a nested
+ * path like `apps/api/sparg0-export-dir/evil.json`.
+ */
+export const SPARG0_EXPORT_OUT_PATTERN = /^apps\/api\/sparg0-export[^/]*\.json$/;
 
 /**
  * WR-03/D-28: refuses to write unless `--out` matches

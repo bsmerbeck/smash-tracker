@@ -16,8 +16,14 @@ import { assertOutputPathIsGitignored } from './outputPathGuard.js';
  * one.
  */
 
-/** The exact `.gitignore` glob covering this probe's output (see the repo root `.gitignore`, D-28). */
-export const LIQ_SPIKE_REPORT_OUT_PATTERN = /^apps\/api\/liq-spike-report.*\.json$/;
+/**
+ * The exact `.gitignore` glob covering this probe's output (see the repo
+ * root `.gitignore`, D-28). Uses `[^/]*` (not `.*`, WR-04-i2) — gitignore's
+ * `*` glob never crosses a directory boundary, so the wildcard segment here
+ * must not either, or the "exact glob" claim above is false for a nested
+ * path like `apps/api/liq-spike-report-dir/evil.json`.
+ */
+export const LIQ_SPIKE_REPORT_OUT_PATTERN = /^apps\/api\/liq-spike-report[^/]*\.json$/;
 
 /**
  * WR-03/D-28: refuses to write unless `--out` matches

@@ -206,6 +206,31 @@ describe('assertSafeSparg0ExportOutPath (WR-03/D-28)', () => {
     ).toThrow(/must match apps\/api\/sparg0-export\*\.json/);
   });
 
+  // WR-04-i2: the wildcard segment must not cross a `/` — gitignore's `*`
+  // glob never crosses directory boundaries, so a nested path like this one
+  // is genuinely NOT covered by the .gitignore rule the docstring claims is
+  // "the exact glob", even though the pre-fix regex's `.*` wildcard matched
+  // it (relying entirely on `git check-ignore` to reject it in practice).
+  // Uses a real fixture directory (rather than the fake REPO_ROOT above) so
+  // the WR-03-i2 filesystem-safety check — which needs `sparg0-export-dir/`
+  // to genuinely exist — isn't what rejects this path; the pattern check
+  // must be the one doing the rejecting.
+  it('refuses a nested path even though it starts with the allowed filename prefix', () => {
+    const root = mkdtempSync(path.join(os.tmpdir(), 'sparg0-export-core-'));
+    mkdirSync(path.join(root, 'apps', 'api', 'sparg0-export-dir'), { recursive: true });
+    try {
+      expect(() =>
+        assertSafeSparg0ExportOutPath({
+          outPath: 'apps/api/sparg0-export-dir/evil.json',
+          repoRoot: root,
+          isGitIgnored: () => true,
+        }),
+      ).toThrow(/must match apps\/api\/sparg0-export\*\.json/);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   // WR-03-i2: the filesystem-target safety check (`lstat`/`realpath`) touches
   // real disk, so these two tests (which exercise code past the pattern
   // check) need a repo root that genuinely exists on disk — a fake `/repo`
