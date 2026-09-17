@@ -17,8 +17,10 @@ import {
   LiqSpikePartialRunError,
   assertSafeLiqSpikeOutPath,
   checkGeneralRequestStartSpacing,
-  isSinglesBracketPageTitle,
-  isTournamentEventPageTitle,
+  containsBracketToken,
+  containsSinglesToken,
+  containsUltimateToken,
+  extractTrailingNumber,
   runLiqSpike,
   type LiqSpikeTarget,
 } from './liqSpikeProbeCore.js';
@@ -392,7 +394,17 @@ describe('LiqSpikePageResult fingerprint / rawWikitext (fix 2)', () => {
       lineCount: 1,
       startsWithRedirect: false,
       firstTemplateName: 'Infobox player results',
+      bracketTemplateCounts: {
+        bracketCount: 0,
+        matchCount: 0,
+        match2Count: 0,
+        teamCardCount: 0,
+        prizePoolCount: 0,
+      },
     });
+    expect(page?.containsBracketTemplate).toBe(false);
+    expect(page?.containsMatchTemplate).toBe(false);
+    expect(page?.resultsFormat).toBe('unknown');
   });
 
   it('omits the fingerprint for a page at or above the fingerprint size threshold, but still attaches rawWikitext', async () => {
@@ -416,6 +428,48 @@ describe('LiqSpikePageResult fingerprint / rawWikitext (fix 2)', () => {
     const page = report.pages[0];
     expect(page?.fingerprint).toBeUndefined();
     expect(page?.rawWikitext).toBe(longBody);
+  });
+
+  // Item 3/4 (owner rerun #3): a page whose body strips to nothing but
+  // whose raw wikitext contains bracket/match templates has its results
+  // living ENTIRELY inside a generator template — 'generated-template',
+  // never 'wikitext'. Counts and boolean flags only, never a matched
+  // excerpt.
+  it('classifies resultsFormat as generated-template and counts bracket/match templates when a stub body carries them', async () => {
+    const bracketOnlyStub =
+      '{{Bracket|Bracket/8U8L4DSL2DSL1D|id=Ic2lui1l3A}}\n{{Match|opponent1=A}}\n{{Match2|foo=bar}}';
+    const target: LiqSpikeTarget = {
+      family: 'tournament-results',
+      titles: ['Some/Bracket'],
+      why: 'test',
+    };
+    const { client } = buildInlineClient([
+      {
+        match: matchQuery({ action: 'query', titles: 'Some/Bracket' }),
+        body: queryEnvelope([{ title: 'Some/Bracket', revid: 11, content: bracketOnlyStub }]),
+      },
+    ]);
+
+    const report = await runLiqSpike({ client, now: () => 0, log: () => undefined }, [target], {
+      seedPrefixes: [],
+    });
+
+    const page = report.pages[0];
+    expect(page?.wikitextVerdict).toBe('stub-generator-only');
+    expect(page?.resultsFormat).toBe('generated-template');
+    expect(page?.containsBracketTemplate).toBe(true);
+    expect(page?.containsMatchTemplate).toBe(true);
+    // Fingerprint always attached for tournament-results/other-entrant-brackets,
+    // regardless of size.
+    expect(page?.fingerprint?.bracketTemplateCounts).toEqual({
+      bracketCount: 1,
+      matchCount: 1,
+      // "{{Match2|foo=bar}}" must NOT be counted as a {{Match transclusion
+      // (word-boundary check), but its bare "match2" token IS counted.
+      match2Count: 1,
+      teamCardCount: 0,
+      prizePoolCount: 0,
+    });
   });
 
   it('never attaches rawWikitext/fingerprint for a missing page', async () => {
@@ -442,19 +496,35 @@ describe('LiqSpikePageResult fingerprint / rawWikitext (fix 2)', () => {
   });
 });
 
-// ---- isTournamentEventPageTitle / isSinglesBracketPageTitle (pure) --------
+// ---- evidence-tolerant token/fallback helpers (owner rerun #3) -----------
 
-describe('isTournamentEventPageTitle / isSinglesBracketPageTitle', () => {
-  it('accepts a tournament event page and rejects its own bracket subpage', () => {
-    expect(isTournamentEventPageTitle('Genesis 9/Ultimate')).toBe(true);
-    expect(isTournamentEventPageTitle('Genesis 9/Ultimate/Singles Bracket')).toBe(false);
-    expect(isTournamentEventPageTitle('Genesis 9/Melee')).toBe(false);
+describe('containsUltimateToken / containsBracketToken / containsSinglesToken', () => {
+  it('matches "Ultimate" as a whole word/path segment, case-insensitively, never a substring', () => {
+    expect(containsUltimateToken('Genesis 9/Ultimate')).toBe(true);
+    expect(containsUltimateToken('genesis 9 ultimate singles')).toBe(true);
+    expect(containsUltimateToken('Genesis 9')).toBe(false);
+    // "Ultimateam" is NOT "Ultimate" as a whole word — must not substring-match.
+    expect(containsUltimateToken('Ultimateam')).toBe(false);
   });
 
-  it('accepts a singles-bracket subpage and rejects the event page itself', () => {
-    expect(isSinglesBracketPageTitle('Genesis 9/Ultimate/Singles Bracket')).toBe(true);
-    expect(isSinglesBracketPageTitle('Genesis 9/Ultimate')).toBe(false);
-    expect(isSinglesBracketPageTitle('Genesis 9/Ultimate/Doubles Bracket')).toBe(false);
+  it('matches "Bracket" and "Singles" as whole words, case-insensitively', () => {
+    expect(containsBracketToken('Genesis 9/Ultimate/Singles Bracket')).toBe(true);
+    expect(containsBracketToken('genesis 9 bracket')).toBe(true);
+    expect(containsBracketToken('Genesis 9/Ultimate')).toBe(false);
+    expect(containsSinglesToken('Genesis 9/Ultimate/Singles Bracket')).toBe(true);
+    expect(containsSinglesToken('Genesis 9/Ultimate/Doubles Bracket')).toBe(false);
+  });
+});
+
+describe('extractTrailingNumber', () => {
+  it('extracts the LAST run of digits anywhere in the title', () => {
+    expect(extractTrailingNumber('Battle of BC 10')).toBe(10);
+    expect(extractTrailingNumber('Genesis 9')).toBe(9);
+    expect(extractTrailingNumber('Smash Summit 13/Ultimate')).toBe(13);
+  });
+
+  it('returns null when the title has no digits', () => {
+    expect(extractTrailingNumber('Genesis')).toBeNull();
   });
 });
 
@@ -637,9 +707,13 @@ describe('runLiqSpike — discovery cascade for tournament-results / other-entra
         match: matchQuery({ action: 'query', list: 'allpages', apprefix: 'Genesis' }),
         body: {
           query: {
+            // Deliberately does NOT include the bracket subpage here — a
+            // real `list=allpages&apprefix=Genesis` call would also return
+            // it, but isolating it to the Stage-3 call below (under the
+            // ACCEPTED event title specifically) keeps this test's
+            // assertions about EACH stage's own acceptance decision clean.
             allpages: [
               { pageid: 1, title: 'Genesis 9/Ultimate' },
-              { pageid: 2, title: 'Genesis 9/Ultimate/Singles Bracket' },
               { pageid: 3, title: 'Genesis 9/Melee' },
             ],
           },
@@ -691,14 +765,38 @@ describe('runLiqSpike — discovery cascade for tournament-results / other-entra
     const tournamentDiscovery = report.discoveries.find(
       (d) => d.family === 'tournament-results' && d.prefix === 'Genesis',
     );
-    expect(tournamentDiscovery?.discoveredCount).toBe(3);
+    expect(tournamentDiscovery?.discoveredCount).toBe(2);
+    // Item 1: EVERY discovered title is persisted, accepted or not.
+    expect(tournamentDiscovery?.discoveredTitles).toEqual([
+      { title: 'Genesis 9/Ultimate', pageId: 1 },
+      { title: 'Genesis 9/Melee', pageId: 3 },
+    ]);
     expect(tournamentDiscovery?.acceptedTitles).toEqual(['Genesis 9/Ultimate']);
+    // Item 2: accepted via the "Ultimate" token, never a guessed exact suffix.
+    expect(tournamentDiscovery?.acceptedReasons).toEqual(['ultimate-token']);
 
     const bracketDiscovery = report.discoveries.find(
       (d) => d.family === 'other-entrant-brackets' && d.prefix === 'Genesis 9/Ultimate',
     );
     expect(bracketDiscovery?.discoveredCount).toBe(2);
+    expect(bracketDiscovery?.discoveredTitles).toEqual([
+      { title: 'Genesis 9/Ultimate/Singles Bracket', pageId: 2 },
+      { title: 'Genesis 9/Ultimate/Doubles Bracket', pageId: 4 },
+    ]);
     expect(bracketDiscovery?.acceptedTitles).toEqual(['Genesis 9/Ultimate/Singles Bracket']);
+    // Item 3: preferred because it ALSO contains "Singles", over the plain "Bracket" match.
+    expect(bracketDiscovery?.acceptedReasons).toEqual(['bracket-token-singles']);
+
+    // Item 3/4: the tournament page's own wikitext carries no bracket/match
+    // templates in this fixture (it's plain prose) — recorded honestly.
+    expect(byTitle.get('Genesis 9/Ultimate')?.containsBracketTemplate).toBe(false);
+    expect(byTitle.get('Genesis 9/Ultimate')?.containsMatchTemplate).toBe(false);
+    expect(byTitle.get('Genesis 9/Ultimate')?.resultsFormat).toBe('wikitext');
+    // Item 4: tournament/bracket pages are ALWAYS fingerprinted, regardless
+    // of size — never gated by LIQ_SPIKE_FINGERPRINT_MAX_BYTES the way a
+    // player-results page is.
+    expect(byTitle.get('Genesis 9/Ultimate')?.fingerprint).toBeDefined();
+    expect(byTitle.get('Genesis 9/Ultimate/Singles Bracket')?.fingerprint).toBeDefined();
 
     // Every request this run issued is action=query — never a parse-class request.
     for (const url of requests) {
@@ -729,6 +827,134 @@ describe('runLiqSpike — discovery cascade for tournament-results / other-entra
         sampledTitles: ['Genesis 9/Ultimate/Singles Bracket'],
       },
     ]);
+  });
+
+  // Item 2: the owner's live rerun found exactly this shape — real pages
+  // (bare "Genesis 9", no "/Ultimate" qualifier at all) that the token
+  // filter does not match. The fallback must still sample SOMETHING real
+  // rather than leaving the family unsampled.
+  it('falls back to the most recent-looking page per prefix when no title anywhere contains the "Ultimate" token', async () => {
+    const playerResultsTarget: LiqSpikeTarget = {
+      family: 'player-results',
+      titles: ['Hungrybox/Results'],
+      why: 'test',
+    };
+
+    const { client } = buildInlineClient([
+      {
+        match: matchQuery({ action: 'query', titles: 'Hungrybox/Results' }),
+        body: queryEnvelope([
+          { title: 'Hungrybox/Results', revid: 10, content: 'Prose with no links at all.' },
+        ]),
+      },
+      {
+        match: matchQuery({ action: 'query', list: 'allpages', apprefix: 'Genesis' }),
+        body: {
+          query: {
+            allpages: [
+              { pageid: 1, title: 'Genesis 8' },
+              { pageid: 2, title: 'Genesis 9' },
+              { pageid: 3, title: 'Genesis 7' },
+            ],
+          },
+        },
+      },
+      {
+        match: matchQuery({ action: 'query', titles: 'Genesis 9' }),
+        body: queryEnvelope([
+          { title: 'Genesis 9', revid: 50, content: 'A major SSBU tournament.' },
+        ]),
+      },
+      {
+        match: matchQuery({ action: 'query', list: 'allpages', apprefix: 'Genesis 9' }),
+        body: { query: { allpages: [] } },
+      },
+    ]);
+
+    const report = await runLiqSpike(
+      { client, now: () => 0, log: () => undefined },
+      [playerResultsTarget],
+      { seedPrefixes: ['Genesis'] },
+    );
+
+    const tournamentDiscovery = report.discoveries.find(
+      (d) => d.family === 'tournament-results' && d.prefix === 'Genesis',
+    );
+    expect(tournamentDiscovery?.discoveredTitles).toEqual([
+      { title: 'Genesis 8', pageId: 1 },
+      { title: 'Genesis 9', pageId: 2 },
+      { title: 'Genesis 7', pageId: 3 },
+    ]);
+    // Highest trailing number (9), never the first-returned or a guess.
+    expect(tournamentDiscovery?.acceptedTitles).toEqual(['Genesis 9']);
+    expect(tournamentDiscovery?.acceptedReasons).toEqual(['fallback-latest']);
+
+    const page = report.pages.find((p) => p.title === 'Genesis 9');
+    expect(page?.wikitextVerdict).toBe('sufficient');
+  });
+
+  // Item 3: the same "accept what's real, log why" principle applies to
+  // bracket discovery — if nothing under an event page contains "Bracket",
+  // fall back to the first subpage returned rather than leaving the family
+  // unsampled.
+  it('falls back to the first subpage when no bracket discovery result contains the "Bracket" token', async () => {
+    const playerResultsTarget: LiqSpikeTarget = {
+      family: 'player-results',
+      titles: ['Hungrybox/Results'],
+      why: 'test',
+    };
+
+    const { client } = buildInlineClient([
+      {
+        match: matchQuery({ action: 'query', titles: 'Hungrybox/Results' }),
+        body: queryEnvelope([
+          { title: 'Hungrybox/Results', revid: 10, content: 'Prose with no links at all.' },
+        ]),
+      },
+      {
+        match: matchQuery({ action: 'query', list: 'allpages', apprefix: 'Genesis' }),
+        body: { query: { allpages: [{ pageid: 1, title: 'Genesis 9/Ultimate' }] } },
+      },
+      {
+        match: matchQuery({ action: 'query', titles: 'Genesis 9/Ultimate' }),
+        body: queryEnvelope([
+          { title: 'Genesis 9/Ultimate', revid: 20, content: 'A major SSBU tournament.' },
+        ]),
+      },
+      {
+        match: matchQuery({ action: 'query', list: 'allpages', apprefix: 'Genesis 9/Ultimate' }),
+        body: {
+          query: {
+            allpages: [
+              { pageid: 5, title: 'Genesis 9/Ultimate/Results' },
+              { pageid: 6, title: 'Genesis 9/Ultimate/Standings' },
+            ],
+          },
+        },
+      },
+      {
+        match: matchQuery({ action: 'query', titles: 'Genesis 9/Ultimate/Results' }),
+        body: queryEnvelope([
+          { title: 'Genesis 9/Ultimate/Results', revid: 60, content: 'A results table.' },
+        ]),
+      },
+    ]);
+
+    const report = await runLiqSpike(
+      { client, now: () => 0, log: () => undefined },
+      [playerResultsTarget],
+      { seedPrefixes: ['Genesis'] },
+    );
+
+    const bracketDiscovery = report.discoveries.find(
+      (d) => d.family === 'other-entrant-brackets' && d.prefix === 'Genesis 9/Ultimate',
+    );
+    expect(bracketDiscovery?.discoveredTitles).toEqual([
+      { title: 'Genesis 9/Ultimate/Results', pageId: 5 },
+      { title: 'Genesis 9/Ultimate/Standings', pageId: 6 },
+    ]);
+    expect(bracketDiscovery?.acceptedTitles).toEqual(['Genesis 9/Ultimate/Results']);
+    expect(bracketDiscovery?.acceptedReasons).toEqual(['fallback-first-subpage']);
   });
 
   it('logs plainly and produces no page entries for a family when discovery finds nothing', async () => {

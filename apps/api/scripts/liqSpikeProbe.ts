@@ -95,26 +95,41 @@ function printReport(report: LiqSpikeReport, log: (line: string) => void): void 
     log(
       `[${page.family}] "${page.title}" -> ${page.wikitextVerdict} (${revisionPart}, bytes=${page.byteSize})`,
     );
-    // Fix 2: a leak-free structural fingerprint for any small page, so the
-    // verdict above is checkable evidence, not another guess. This is the
-    // ONLY page-shape detail ever printed — never `rawWikitext` itself,
-    // which stays in the gitignored `--out` file.
+    // Fix 2: a leak-free structural fingerprint for a page under the size
+    // gate, and ALWAYS for a tournament-results/other-entrant-brackets page
+    // regardless of size (owner rerun #3, item 4) — so the verdict above is
+    // checkable evidence, not another guess. This is the ONLY page-shape
+    // detail ever printed — never `rawWikitext` itself, which stays in the
+    // gitignored `--out` file.
     if (page.fingerprint) {
       const fp = page.fingerprint;
+      const bt = fp.bracketTemplateCounts;
       log(
         `  fingerprint: templates{{=${fp.templateOpenCount} links[[=${fp.internalLinkOpenCount} ` +
           `pipes|=${fp.pipeCount} lines=${fp.lineCount} startsWithRedirect=${fp.startsWithRedirect} ` +
-          `firstTemplate=${fp.firstTemplateName ? JSON.stringify(fp.firstTemplateName) : 'n/a'}`,
+          `firstTemplate=${fp.firstTemplateName ? JSON.stringify(fp.firstTemplateName) : 'n/a'} ` +
+          `bracketTemplates={Bracket=${bt.bracketCount} Match=${bt.matchCount} match2=${bt.match2Count} ` +
+          `TeamCard=${bt.teamCardCount} PrizePool=${bt.prizePoolCount}} resultsFormat=${page.resultsFormat}`,
       );
     }
   }
   for (const discovery of report.discoveries) {
+    // Item 1 (owner rerun #3): EVERY discovered title is printed — public
+    // wiki page names, never PII — so the real naming convention is
+    // visible even when nothing was accepted.
     log(
       `[${discovery.family}] discovered ${discovery.discoveredCount} subpage(s) under "${discovery.prefix}"` +
-        (discovery.acceptedTitles.length > 0
-          ? `, accepted: ${discovery.acceptedTitles.join(', ')}`
+        (discovery.discoveredTitles.length > 0
+          ? `: ${discovery.discoveredTitles.map((entry) => entry.title).join(', ')}`
           : ''),
     );
+    if (discovery.acceptedTitles.length > 0) {
+      log(
+        `  accepted: ${discovery.acceptedTitles
+          .map((title, i) => `"${title}" (reason=${discovery.acceptedReasons[i]})`)
+          .join(', ')}`,
+      );
+    }
   }
   for (const normalization of report.normalizations) {
     log(`[${normalization.family}] normalized "${normalization.from}" -> "${normalization.to}"`);

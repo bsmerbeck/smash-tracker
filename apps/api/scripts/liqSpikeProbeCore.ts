@@ -71,6 +71,42 @@ import { assertOutputPathIsGitignored } from './outputPathGuard.js';
  * `LiquipediaClient` interface exposes no generic query seam for it —
  * adding one would mean editing `client.ts`, outside this fix's
  * authorization, so it was not implemented; see the plan's SUMMARY.)
+ *
+ * Owner rerun #3 (D-29 confirmed live: `minObservedGeneralStartSpacingMs=
+ * 2000`, budget 6/20, no thrown error; classifier confirmed against reality:
+ * MKLeo/Results and Sparg0/Results, 245/248 bytes, both `stub-generator-only`
+ * with an IDENTICAL fingerprint — `templates{{=7 links[[=0 pipes|=9 lines=11
+ * firstTemplate="ResultsPageHeader"`; Hungrybox/Results sufficient,
+ * IzAw/Results missing). REMAINING DEFECT this round fixes: discovery found
+ * real subpages (Genesis 9, Smash Summit 10, Battle of BC 10, CEO 10,
+ * Riptide 10) and STILL reported `not-sampled` for `tournament-results` —
+ * the exact-suffix filters (`isTournamentEventPageTitle`/
+ * `isSinglesBracketPageTitle`, requiring a literal `/Ultimate` or
+ * `/Ultimate/Singles Bracket` tail) were THEMSELVES still a guess at
+ * Liquipedia's naming convention, and none of the real discovered titles
+ * carried that exact tail. Fixed by:
+ *  - persisting and printing EVERY discovered title (`discoveredTitles` on
+ *    `LiqSpikeDiscoveryResult`), so the real naming is visible even when
+ *    nothing is accepted (previously discarded entirely);
+ *  - replacing the exact-suffix filters with evidence-tolerant, whole-word
+ *    token checks (`containsUltimateToken`/`containsBracketToken`/
+ *    `containsSinglesToken`) plus a "most recent-looking page" fallback
+ *    (`extractTrailingNumber`) for `tournament-results` and a
+ *    "first subpage returned" fallback for `other-entrant-brackets`, so the
+ *    run ALWAYS samples at least one real page per family instead of
+ *    guessing a fourth exact shape;
+ *  - recording, per sampled tournament/bracket page, whether its raw
+ *    wikitext carries bracket/match-family templates (`containsBracketTemplate`/
+ *    `containsMatchTemplate`, plus per-template-family counts in the
+ *    fingerprint's `bracketTemplateCounts`) and a `resultsFormat` verdict
+ *    (`'wikitext'` vs `'generated-template'` vs `'unknown'`) — this answers
+ *    "are results/brackets reachable via wikitext at all" even for a family
+ *    that never gets its own separate bracket subpage.
+ * `listSubpages`'s per-request result limit was investigated for raising
+ * (to reduce discovery-request count) and left UNCHANGED: the shipped
+ * client sets no `aplimit` parameter at all (relying on the MediaWiki
+ * default) and exposes no way for a caller to override it without adding a
+ * parameter to `client.ts`, outside this fix's authorization.
  */
 
 /**
@@ -169,19 +205,50 @@ export const LIQ_SPIKE_SERIES_PREFIX_SEEDS: readonly string[] = Object.freeze([
   'Riptide',
 ]);
 
-const TOURNAMENT_EVENT_PAGE_SUFFIX = '/Ultimate';
-const SINGLES_BRACKET_PAGE_SUFFIX = '/Ultimate/Singles Bracket';
+/**
+ * Owner rerun #3: the exact-suffix filters this replaced
+ * (`/Ultimate`/`/Ultimate/Singles Bracket`) were themselves a GUESS at
+ * Liquipedia's naming convention, and the live rerun proved it wrong —
+ * discovery found real pages (Genesis 9, Smash Summit 10, Battle of BC 10,
+ * CEO 10, Riptide 10) that the exact-suffix check rejected outright,
+ * leaving `tournament-results` with zero samples even though real pages
+ * were RIGHT THERE. These token-based checks are evidence-tolerant: they
+ * accept a broader, still-mechanical shape (a whole word/path-segment
+ * match, never a substring), and — for `tournament-results` specifically —
+ * a "most recent-looking page" fallback (`extractTrailingNumber` below)
+ * guarantees the run samples at least one real page even when no title
+ * contains the token at all, so the NEXT rerun learns the real naming
+ * instead of guessing a fourth time.
+ */
+const ULTIMATE_TOKEN_PATTERN = /\bUltimate\b/i;
+const BRACKET_TOKEN_PATTERN = /\bBracket\b/i;
+const SINGLES_TOKEN_PATTERN = /\bSingles\b/i;
 
-/** A mechanical shape filter over `list=allpages` results — never a guess: keeps only titles ending in the tournament-event suffix, excluding a bracket subpage (which also ends in the outer suffix). */
-export function isTournamentEventPageTitle(title: string): boolean {
-  return (
-    title.endsWith(TOURNAMENT_EVENT_PAGE_SUFFIX) && !title.endsWith(SINGLES_BRACKET_PAGE_SUFFIX)
-  );
+/** True when `title` contains "Ultimate" as a whole word/path segment (case-insensitive) — evidence-tolerant, never an exact-suffix guess. */
+export function containsUltimateToken(title: string): boolean {
+  return ULTIMATE_TOKEN_PATTERN.test(title);
 }
 
-/** A mechanical shape filter keeping only titles shaped like a singles-bracket subpage of a discovered tournament event page. */
-export function isSinglesBracketPageTitle(title: string): boolean {
-  return title.endsWith(SINGLES_BRACKET_PAGE_SUFFIX);
+/** True when `title` contains "Bracket" as a whole word (case-insensitive). */
+export function containsBracketToken(title: string): boolean {
+  return BRACKET_TOKEN_PATTERN.test(title);
+}
+
+/** True when `title` contains "Singles" as a whole word (case-insensitive) — used to PREFER a singles bracket over a doubles/other bracket, never to exclude the latter outright. */
+export function containsSinglesToken(title: string): boolean {
+  return SINGLES_TOKEN_PATTERN.test(title);
+}
+
+/**
+ * Extracts the LAST run of digits anywhere in `title` (a year or edition
+ * number, e.g. `10` from `"Battle of BC 10"`) — used ONLY to rank fallback
+ * candidates by "most recent-looking" when no token match exists at all.
+ * Never used to construct or guess a title; only to choose among titles
+ * the API already returned. `null` when the title carries no such number.
+ */
+export function extractTrailingNumber(title: string): number | null {
+  const match = title.match(/(\d+)(?!.*\d)/);
+  return match ? Number(match[1]) : null;
 }
 
 export type LiqSpikeWikitextVerdict = 'sufficient' | 'stub-generator-only' | 'missing';
@@ -194,6 +261,20 @@ export type LiqSpikeWikitextVerdict = 'sufficient' | 'stub-generator-only' | 'mi
  * near-content this carries (a template NAME, e.g. "Infobox player
  * results" — never a template argument, a page value, or prose).
  */
+/**
+ * Counts only — never a matched excerpt — of the specific template
+ * families that indicate a page's results/bracket data lives inside a
+ * generator template rather than as plain wikitext. Names and counts only,
+ * per the owner's rerun-#3 instruction; leaks no page content.
+ */
+export interface LiqSpikeBracketTemplateCounts {
+  bracketCount: number;
+  matchCount: number;
+  match2Count: number;
+  teamCardCount: number;
+  prizePoolCount: number;
+}
+
 export interface LiqSpikeWikitextFingerprint {
   templateOpenCount: number;
   internalLinkOpenCount: number;
@@ -201,6 +282,7 @@ export interface LiqSpikeWikitextFingerprint {
   lineCount: number;
   startsWithRedirect: boolean;
   firstTemplateName: string | null;
+  bracketTemplateCounts: LiqSpikeBracketTemplateCounts;
 }
 
 export interface LiqSpikePageResult {
@@ -215,7 +297,14 @@ export interface LiqSpikePageResult {
    * as a plain string — never applied here, never a code change.
    */
   proposedAllowlistRegex?: string;
-  /** Present only for a page under `LIQ_SPIKE_FINGERPRINT_MAX_BYTES` — see `LiqSpikeWikitextFingerprint`. */
+  /**
+   * Present for every `player-results` page under
+   * `LIQ_SPIKE_FINGERPRINT_MAX_BYTES`, and ALWAYS for `tournament-results`/
+   * `other-entrant-brackets` pages regardless of size (owner rerun #3, item
+   * 4) — a real tournament page is expected to exceed the 1KB gate that
+   * exists purely to avoid a noisy fingerprint for every large player page.
+   * See `LiqSpikeWikitextFingerprint`.
+   */
   fingerprint?: LiqSpikeWikitextFingerprint;
   /**
    * The full, byte-faithful wikitext this probe fetched, for every PRESENT
@@ -224,7 +313,23 @@ export interface LiqSpikePageResult {
    * fingerprint above is what reaches the console.
    */
   rawWikitext?: string;
+  /** `true` when the raw wikitext contains at least one `{{Bracket...}}` transclusion — a boolean flag, never a count or excerpt (owner rerun #3, item 3). */
+  containsBracketTemplate: boolean;
+  /** `true` when the raw wikitext contains at least one `{{Match...}}` transclusion or a `match2`-system token. */
+  containsMatchTemplate: boolean;
+  /**
+   * Whether this page's placements/results appear directly as stored
+   * wikitext (`'wikitext'`), only inside a generator template with no
+   * substantive content outside it (`'generated-template'` — would need
+   * `action=parse`/LPDB to read), or the page is missing (`'unknown'`).
+   */
+  resultsFormat: 'wikitext' | 'generated-template' | 'unknown';
   completedAtMs: number;
+}
+
+export interface LiqSpikeDiscoveredPage {
+  title: string;
+  pageId: number;
 }
 
 export interface LiqSpikeDiscoveryResult {
@@ -232,8 +337,19 @@ export interface LiqSpikeDiscoveryResult {
   /** The `list=allpages` prefix tried — a series name or a discovered tournament event page, never a guessed full title. */
   prefix: string;
   discoveredCount: number;
-  /** Discovered titles this family's shape filter actually accepted (bounded by the per-family title cap). */
+  /**
+   * EVERY page `list=allpages` returned for this prefix (title + pageid) —
+   * public wiki page names, never PII (owner rerun #3, item 1: the prior
+   * version discarded these, so nobody could see what Liquipedia actually
+   * names these pages). Always namespace 0 — the shipped client's
+   * `listSubpages` always queries `apnamespace=0` — so no separate
+   * namespace field is carried per entry.
+   */
+  discoveredTitles: LiqSpikeDiscoveredPage[];
+  /** Discovered titles this family's evidence-tolerant filter actually accepted (bounded by the per-family title cap). */
   acceptedTitles: string[];
+  /** One reason per `acceptedTitles` entry, same order — e.g. `'ultimate-token'`, `'fallback-latest'`, `'bracket-token'`, `'bracket-token-singles'`, `'fallback-first-subpage'`. */
+  acceptedReasons: string[];
   completedAtMs: number;
 }
 
@@ -407,7 +523,53 @@ function classifyWikitext(content: string): LiqSpikeWikitextVerdict {
  * comment. `firstTemplateName` reads only the text between `{{` and the
  * first `|` or `}}`, trimmed — never a template argument or page content.
  */
-function computeWikitextFingerprint(content: string): LiqSpikeWikitextFingerprint {
+/**
+ * Counts specific template FAMILIES known to carry generated
+ * results/bracket data on Liquipedia — `{{Bracket...}}`, `{{Match...}}`
+ * (never matching `{{Match2...}}`, a distinct template family, since `\b`
+ * requires a non-word boundary after "Match" and a digit is a word
+ * character), the `match2` system's bare parameter token, `{{TeamCard...}}`,
+ * and `{{Prize pool...}}`. Names and counts only — never a matched excerpt.
+ */
+function computeBracketTemplateCounts(content: string): LiqSpikeBracketTemplateCounts {
+  const count = (pattern: RegExp): number => (content.match(pattern) ?? []).length;
+  return {
+    bracketCount: count(/\{\{\s*Bracket\b/gi),
+    matchCount: count(/\{\{\s*Match\b/gi),
+    match2Count: count(/\bmatch2\b/gi),
+    teamCardCount: count(/\{\{\s*TeamCard\b/gi),
+    prizePoolCount: count(/\{\{\s*Prize ?[Pp]ool\b/gi),
+  };
+}
+
+/** True when any bracket/match-family template was found — the boolean this probe uses to decide whether results live in a generator template. */
+function hasBracketOrMatchTemplates(counts: LiqSpikeBracketTemplateCounts): boolean {
+  return counts.bracketCount > 0 || counts.matchCount > 0 || counts.match2Count > 0;
+}
+
+/**
+ * Whether this page's placements/results appear directly as stored
+ * wikitext, only inside a generator template (bracket/match templates
+ * present but the page otherwise strips to nothing — see
+ * `classifyWikitext`), or the page is missing/unclassifiable.
+ */
+function classifyResultsFormat(
+  verdict: LiqSpikeWikitextVerdict,
+  bracketOrMatchPresent: boolean,
+): 'wikitext' | 'generated-template' | 'unknown' {
+  if (verdict === 'missing') {
+    return 'unknown';
+  }
+  if (verdict === 'sufficient') {
+    return 'wikitext';
+  }
+  return bracketOrMatchPresent ? 'generated-template' : 'unknown';
+}
+
+function computeWikitextFingerprint(
+  content: string,
+  bracketTemplateCounts: LiqSpikeBracketTemplateCounts,
+): LiqSpikeWikitextFingerprint {
   const templateOpenCount = (content.match(/\{\{/g) ?? []).length;
   const internalLinkOpenCount = (content.match(/\[\[/g) ?? []).length;
   const pipeCount = (content.match(/\|/g) ?? []).length;
@@ -422,6 +584,7 @@ function computeWikitextFingerprint(content: string): LiqSpikeWikitextFingerprin
     lineCount,
     startsWithRedirect,
     firstTemplateName,
+    bracketTemplateCounts,
   };
 }
 
@@ -570,6 +733,9 @@ export async function runLiqSpike(
         revisionId: undefined,
         byteSize: 0,
         wikitextVerdict: 'missing',
+        containsBracketTemplate: false,
+        containsMatchTemplate: false,
+        resultsFormat: 'unknown',
         completedAtMs,
       });
       deps.log(`liq-spike: [${family}] "${page.title}" -> missing`);
@@ -579,8 +745,19 @@ export async function runLiqSpike(
     const content = page.content ?? '';
     const byteSize = page.size ?? Buffer.byteLength(content, 'utf8');
     const wikitextVerdict = classifyWikitext(content);
-    const fingerprint =
-      byteSize < LIQ_SPIKE_FINGERPRINT_MAX_BYTES ? computeWikitextFingerprint(content) : undefined;
+    const bracketTemplateCounts = computeBracketTemplateCounts(content);
+    const bracketOrMatchPresent = hasBracketOrMatchTemplates(bracketTemplateCounts);
+    const resultsFormat = classifyResultsFormat(wikitextVerdict, bracketOrMatchPresent);
+    // Owner rerun #3, item 4: always fingerprint tournament-results/
+    // other-entrant-brackets pages regardless of size — the 1KB gate exists
+    // only to avoid a noisy fingerprint for every large player page, and a
+    // real tournament page is expected to exceed it (Hungrybox/Results
+    // alone was 9417 bytes).
+    const shouldFingerprint =
+      byteSize < LIQ_SPIKE_FINGERPRINT_MAX_BYTES || family !== 'player-results';
+    const fingerprint = shouldFingerprint
+      ? computeWikitextFingerprint(content, bracketTemplateCounts)
+      : undefined;
     pages.push({
       family,
       title: page.title,
@@ -592,10 +769,14 @@ export async function runLiqSpike(
         : {}),
       ...(fingerprint ? { fingerprint } : {}),
       rawWikitext: content,
+      containsBracketTemplate: bracketTemplateCounts.bracketCount > 0,
+      containsMatchTemplate:
+        bracketTemplateCounts.matchCount > 0 || bracketTemplateCounts.match2Count > 0,
+      resultsFormat,
       completedAtMs,
     });
     deps.log(
-      `liq-spike: [${family}] "${page.title}" -> ${wikitextVerdict} (revid=${page.revisionId ?? 'n/a'}, bytes=${byteSize})`,
+      `liq-spike: [${family}] "${page.title}" -> ${wikitextVerdict} (revid=${page.revisionId ?? 'n/a'}, bytes=${byteSize}, resultsFormat=${resultsFormat})`,
     );
     return { verdict: wikitextVerdict, content };
   };
@@ -635,16 +816,29 @@ export async function runLiqSpike(
 
     // ---- Stage 2: discover real tournament-results titles (fix 3: seeded
     // ONLY from LIQ_SPIKE_SERIES_PREFIX_SEEDS, never from a player page's own
-    // links — see this file's module doc comment) ----
+    // links — see this file's module doc comment). Owner rerun #3: EVERY
+    // discovered title is persisted (item 1), and acceptance is
+    // evidence-tolerant (item 2) — a whole-word "Ultimate" token match is
+    // preferred; the "most recent-looking" fallback is used ONLY if that
+    // token matched NOTHING across every prefix tried, decided once ALL
+    // prefixes have been discovered (never per-prefix), so the run always
+    // samples at least one real page instead of guessing a fourth exact
+    // suffix. ----
     const tournamentTitles: string[] = [];
     const seenTournamentTitles = new Set<string>();
     let tournamentDiscoveryAttempts = 0;
+    const tournamentPerPrefix: {
+      prefix: string;
+      entries: LiqSpikeDiscoveredPage[];
+      completedAtMs: number;
+    }[] = [];
+    let anyUltimateTokenMatch = false;
 
     for (const prefix of seedPrefixes) {
       if (tournamentDiscoveryAttempts >= LIQ_SPIKE_RESERVED_DISCOVERY_REQUESTS) {
         break;
       }
-      if (!hasBudget() || tournamentTitles.length >= maxTitlesPerDiscoveryFamily) {
+      if (!hasBudget()) {
         break;
       }
       const discovered = await deps.client.listSubpages(prefix, { maxContinuations: 0 });
@@ -653,16 +847,53 @@ export async function runLiqSpike(
       const completedAtMs = deps.now();
       completionTimestampsMs.push(completedAtMs);
 
+      const entries: LiqSpikeDiscoveredPage[] = discovered.map((entry) => ({
+        title: entry.title,
+        pageId: entry.pageId,
+      }));
+      tournamentPerPrefix.push({ prefix, entries, completedAtMs });
+      if (entries.some((entry) => containsUltimateToken(entry.title))) {
+        anyUltimateTokenMatch = true;
+      }
+
+      deps.log(
+        `liq-spike: [tournament-results] discovered ${discovered.length} subpage(s) under "${prefix}"` +
+          (entries.length > 0 ? `: ${entries.map((entry) => entry.title).join(', ')}` : ''),
+      );
+    }
+
+    // Acceptance, decided once — never per-prefix — per the fallback rule above.
+    for (const { prefix, entries, completedAtMs } of tournamentPerPrefix) {
       const accepted: string[] = [];
-      for (const entry of discovered) {
-        if (
-          isTournamentEventPageTitle(entry.title) &&
-          !seenTournamentTitles.has(entry.title) &&
-          tournamentTitles.length + accepted.length < maxTitlesPerDiscoveryFamily
-        ) {
-          accepted.push(entry.title);
+      const acceptedReasons: string[] = [];
+
+      if (anyUltimateTokenMatch) {
+        for (const entry of entries) {
+          if (
+            containsUltimateToken(entry.title) &&
+            !seenTournamentTitles.has(entry.title) &&
+            tournamentTitles.length + accepted.length < maxTitlesPerDiscoveryFamily
+          ) {
+            accepted.push(entry.title);
+            acceptedReasons.push('ultimate-token');
+          }
+        }
+      } else if (tournamentTitles.length < maxTitlesPerDiscoveryFamily) {
+        let best: LiqSpikeDiscoveredPage | undefined;
+        let bestNumber = -Infinity;
+        for (const entry of entries) {
+          const trailing = extractTrailingNumber(entry.title);
+          if (trailing !== null && trailing > bestNumber) {
+            best = entry;
+            bestNumber = trailing;
+          }
+        }
+        if (best && !seenTournamentTitles.has(best.title)) {
+          accepted.push(best.title);
+          acceptedReasons.push('fallback-latest');
         }
       }
+
       for (const title of accepted) {
         seenTournamentTitles.add(title);
         tournamentTitles.push(title);
@@ -671,14 +902,18 @@ export async function runLiqSpike(
       discoveries.push({
         family: 'tournament-results',
         prefix,
-        discoveredCount: discovered.length,
+        discoveredCount: entries.length,
+        discoveredTitles: entries,
         acceptedTitles: accepted,
+        acceptedReasons,
         completedAtMs,
       });
-      deps.log(
-        `liq-spike: [tournament-results] discovered ${discovered.length} subpage(s) under "${prefix}"` +
-          (accepted.length > 0 ? `, accepted: ${accepted.join(', ')}` : ''),
-      );
+      if (accepted.length > 0) {
+        deps.log(
+          `liq-spike: [tournament-results] accepted under "${prefix}": ` +
+            accepted.map((title, i) => `"${title}" (reason=${acceptedReasons[i]})`).join(', '),
+        );
+      }
     }
 
     if (tournamentTitles.length === 0) {
@@ -717,7 +952,12 @@ export async function runLiqSpike(
       deps.log('liq-spike: [tournament-results] not-sampled: budget');
     }
 
-    // ---- Stage 3: discover real other-entrant-brackets titles, seeded from Stage 2's discovered event pages ----
+    // ---- Stage 3: discover real other-entrant-brackets titles, seeded from
+    // Stage 2's ACCEPTED event pages. Owner rerun #3, item 3: accept titles
+    // containing "Bracket" (preferring ones that ALSO contain "Singles"),
+    // falling back to the first subpage returned when nothing matches — a
+    // per-event decision (unlike Stage 2's global fallback), since each
+    // event page's own subpage listing is independent. ----
     const bracketTitles: string[] = [];
     const seenBracketTitles = new Set<string>();
     let bracketDiscoveryAttempts = 0;
@@ -735,14 +975,34 @@ export async function runLiqSpike(
       const completedAtMs = deps.now();
       completionTimestampsMs.push(completedAtMs);
 
+      const entries: LiqSpikeDiscoveredPage[] = discovered.map((entry) => ({
+        title: entry.title,
+        pageId: entry.pageId,
+      }));
+
       const accepted: string[] = [];
-      for (const entry of discovered) {
-        if (
-          isSinglesBracketPageTitle(entry.title) &&
-          !seenBracketTitles.has(entry.title) &&
-          bracketTitles.length + accepted.length < maxTitlesPerDiscoveryFamily
-        ) {
-          accepted.push(entry.title);
+      const acceptedReasons: string[] = [];
+      const bracketMatches = entries.filter(
+        (entry) => containsBracketToken(entry.title) && !seenBracketTitles.has(entry.title),
+      );
+      const singlesBracketMatches = bracketMatches.filter((entry) =>
+        containsSinglesToken(entry.title),
+      );
+      const preferred = singlesBracketMatches.length > 0 ? singlesBracketMatches : bracketMatches;
+      const preferredReason =
+        singlesBracketMatches.length > 0 ? 'bracket-token-singles' : 'bracket-token';
+      for (const entry of preferred) {
+        if (bracketTitles.length + accepted.length >= maxTitlesPerDiscoveryFamily) {
+          break;
+        }
+        accepted.push(entry.title);
+        acceptedReasons.push(preferredReason);
+      }
+      if (accepted.length === 0) {
+        const first = entries.find((entry) => !seenBracketTitles.has(entry.title));
+        if (first) {
+          accepted.push(first.title);
+          acceptedReasons.push('fallback-first-subpage');
         }
       }
       for (const title of accepted) {
@@ -753,13 +1013,18 @@ export async function runLiqSpike(
       discoveries.push({
         family: 'other-entrant-brackets',
         prefix: eventTitle,
-        discoveredCount: discovered.length,
+        discoveredCount: entries.length,
+        discoveredTitles: entries,
         acceptedTitles: accepted,
+        acceptedReasons,
         completedAtMs,
       });
       deps.log(
         `liq-spike: [other-entrant-brackets] discovered ${discovered.length} subpage(s) under "${eventTitle}"` +
-          (accepted.length > 0 ? `, accepted: ${accepted.join(', ')}` : ''),
+          (entries.length > 0 ? `: ${entries.map((entry) => entry.title).join(', ')}` : '') +
+          (accepted.length > 0
+            ? `; accepted: ${accepted.map((title, i) => `"${title}" (reason=${acceptedReasons[i]})`).join(', ')}`
+            : ''),
       );
     }
 
