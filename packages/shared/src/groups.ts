@@ -70,6 +70,15 @@ export const leaderboardEntrySchema = z.object({
   lastMatchAt: z.number().int().nonnegative().nullable(),
   /** True for the row belonging to the caller — lets the UI highlight it without comparing uids client-side. */
   isYou: z.boolean(),
+  /**
+   * Phase 36 (TRND-01, D-03): the rating model version this entry's
+   * rating/rd were computed under — `RATING_MODEL_VERSION` from
+   * `glicko.ts`, never absent (including for a member with no rating
+   * history, who still computes under the current version's defaults). Lets
+   * the web leaderboard show the same rating-model-updated note contract as
+   * every other rating surface.
+   */
+  ratingModelVersion: z.number().int(),
 });
 export type LeaderboardEntry = z.infer<typeof leaderboardEntrySchema>;
 
