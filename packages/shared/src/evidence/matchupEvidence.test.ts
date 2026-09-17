@@ -70,15 +70,38 @@ describe('rankMatchupsByEvidence — WR-01 unknown-character exclusion', () => {
   });
 });
 
-describe('getMatchupStageGuide — unaffected by the WR-01 fix (documented, not changed)', () => {
-  // WR-01's fix is scoped to `rankMatchupsByEvidence` (the function five
-  // OTHER call sites use directly). `getMatchupStageGuide` was not named as
-  // one of those five call sites in the review and groups by `opponent_id`
-  // independently of `rankMatchupsByEvidence` — left as-is, exercised here
-  // only to document that this file's change did not touch it.
+describe('getMatchupStageGuide — WR-01-i2 unknown-character exclusion', () => {
+  // Iteration 1 of WR-01 fixed `rankMatchupsByEvidence` but explicitly left
+  // this function's own, separately maintained `opponent_id` grouping loop
+  // untouched (see the iteration-1 comment this block replaces) — the
+  // identical gap `rankMatchupsByEvidence` had before that fix. Iteration 2
+  // folds both functions onto the shared `groupKnownCharacterMatchesByOpponent`
+  // helper so this drift cannot recur.
   it('still returns a row keyed on a known opponent fighter id from a known-only fixture', () => {
     const rows = getMatchupStageGuide([knownMatch('k1', 0, true), knownMatch('k2', 1, false)]);
     expect(rows).toHaveLength(1);
     expect(rows[0]?.opponentFighterId).toBe(8);
+  });
+
+  it('never produces a row for a purely unknown-character workspace, even with enough games to clear the floor', () => {
+    const unknownOnly = unknownCharacterOnlyWorkspace();
+    expect(unknownOnly.length).toBeGreaterThanOrEqual(3); // self-check
+    expect(getMatchupStageGuide(unknownOnly)).toEqual([]);
+  });
+
+  it('excludes unknown-character rows while still returning the known matchup, mixed in the same call', () => {
+    const knownMatches = [
+      knownMatch('k1', 0, true),
+      knownMatch('k2', 1, true),
+      knownMatch('k3', 2, false),
+    ];
+    const unknownMatches = unknownCharacterOnlyWorkspace();
+    const mixed = [...knownMatches, ...unknownMatches];
+
+    const rows = getMatchupStageGuide(mixed);
+
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.opponentFighterId).toBe(8);
+    expect(rows.some((row) => row.opponentFighterId === 0)).toBe(false);
   });
 });

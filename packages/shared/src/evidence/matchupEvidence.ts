@@ -26,6 +26,32 @@ import type { EvidenceClaim, SampleMeta, UnknownBucket } from './types.js';
  * `opponentEvidence.ts` for the axis where the alias map is load-bearing.
  */
 
+/**
+ * WR-01-i2: the ONE shared grouping primitive for every function in this
+ * file that buckets matches by `opponent_id` — excludes `isUnknownCharacter`
+ * matches BEFORE grouping, so a fix to the unknown-character guard (or a new
+ * caller added later) cannot drift out of sync the way `getMatchupStageGuide`
+ * drifted from `rankMatchupsByEvidence` in WR-01 iteration 1. Both this
+ * function's callers group by the exact same key with the exact same
+ * exclusion; there is no second, independently-maintained grouping loop
+ * left in this file to forget the guard on.
+ */
+function groupKnownCharacterMatchesByOpponent(matches: Match[]): Map<number, Match[]> {
+  const byOpponent = new Map<number, Match[]>();
+  for (const match of matches) {
+    if (isUnknownCharacter(match)) {
+      continue;
+    }
+    const group = byOpponent.get(match.opponent_id);
+    if (group) {
+      group.push(match);
+    } else {
+      byOpponent.set(match.opponent_id, [match]);
+    }
+  }
+  return byOpponent;
+}
+
 export interface RankedMatchup extends MatchupStats {
   /** Wilson lower bound (0-1) for this matchup's win rate. */
   wilson: number;
@@ -38,7 +64,8 @@ export interface RankedMatchup extends MatchupStats {
  *
  * WR-01: excludes `isUnknownCharacter` matches (a `fighter_id`/`opponent_id`
  * outside the known roster) before grouping/ranking — the SAME D-09/EVID-11
- * guard `buildMatchupEvidence` already applies, now enforced HERE so every
+ * guard `buildMatchupEvidence` already applies, now enforced HERE (via the
+ * shared `groupKnownCharacterMatchesByOpponent` helper, WR-01-i2) so every
  * direct caller of this function inherits it for free, rather than each of
  * this function's five other call sites needing its own pre-filter.
  * `buildMatchupEvidence` already pre-filters before calling this, so for
@@ -50,16 +77,7 @@ export interface RankedMatchup extends MatchupStats {
  */
 export function rankMatchupsByEvidence(matches: Match[], minMatches?: number): RankedMatchup[] {
   const floor = effectiveFloor(minMatches);
-  const knownCharacterMatches = matches.filter((m) => !isUnknownCharacter(m));
-  const byOpponent = new Map<number, Match[]>();
-  for (const match of knownCharacterMatches) {
-    const group = byOpponent.get(match.opponent_id);
-    if (group) {
-      group.push(match);
-    } else {
-      byOpponent.set(match.opponent_id, [match]);
-    }
-  }
+  const byOpponent = groupKnownCharacterMatchesByOpponent(matches);
   const candidates: MatchupStats[] = [...byOpponent.entries()].map(([opponentFighterId, ms]) => {
     const wins = ms.filter((m) => m.win).length;
     const losses = ms.length - wins;
@@ -91,20 +109,20 @@ export interface MatchupStageGuideRow {
  * per-stage qualification threshold (which itself routes through
  * `effectiveFloor`). Rows are sorted by sample size (total matches)
  * descending, then win rate descending, so the most-informed matchups lead.
+ *
+ * WR-01-i2: groups via the same `groupKnownCharacterMatchesByOpponent`
+ * helper `rankMatchupsByEvidence` uses, so this function excludes
+ * `isUnknownCharacter` matches too — iteration 1 of WR-01 fixed
+ * `rankMatchupsByEvidence` but left this function's own, separately
+ * maintained `opponent_id` grouping loop with the identical gap; folding
+ * both onto one shared helper is what makes that specific drift impossible
+ * going forward.
  */
 export function getMatchupStageGuide(
   matches: Match[],
   minStageMatches = 3,
 ): MatchupStageGuideRow[] {
-  const byOpponent = new Map<number, Match[]>();
-  for (const match of matches) {
-    const group = byOpponent.get(match.opponent_id);
-    if (group) {
-      group.push(match);
-    } else {
-      byOpponent.set(match.opponent_id, [match]);
-    }
-  }
+  const byOpponent = groupKnownCharacterMatchesByOpponent(matches);
 
   return [...byOpponent.entries()]
     .map(([opponentFighterId, opponentMatches]) => ({
