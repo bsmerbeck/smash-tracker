@@ -8,9 +8,9 @@
  * draws from (T-36-07-01).
  *
  * OWNER-RUN ONLY (D-22/D-23; see the phase's Task 2 checkpoint). Issues at
- * most twelve `action=query` requests total across the three bounded target
- * families, never an `action=parse`/`action=expandtemplates` request, and
- * touches no allowlist.
+ * most `LIQ_SPIKE_MAX_GENERAL_REQUESTS` `action=query` requests total across
+ * the static and discovered target families, never an
+ * `action=parse`/`action=expandtemplates` request, and touches no allowlist.
  *
  * Usage, from the repo root:
  *
@@ -41,8 +41,8 @@ import { createLiquipediaLimiter } from '../src/liquipedia/limiter.js';
 import { runWithLifecycle } from './enrichLifecycle.js';
 import {
   LIQ_SPIKE_TARGETS,
-  runLiqSpike,
   assertSafeLiqSpikeOutPath,
+  runLiqSpike,
   type LiqSpikeReport,
 } from './liqSpikeProbeCore.js';
 import { resolveGitRepoRoot, toRepoRelativePath } from './outputPathGuard.js';
@@ -57,16 +57,16 @@ function readOptionalFlag(argv: string[], name: string): string | undefined {
 
 /**
  * Wraps the runtime's real fetch with a hard per-request timeout, the
- * operator's shutdown/stall abort signal, AND — the addition fix B
- * requires — a `now()` timestamp recorded at the moment THIS function is
- * invoked, i.e. immediately after the limiter has granted the request and
- * `client.ts`'s `issueRequest` is about to dispatch it. This is the only
- * seam available to measure true request-START spacing without modifying
- * `client.ts`/`limiter.ts`: the core (`liqSpikeProbeCore.ts`) only ever
- * sees the higher-level `getWikitext`/`listSubpages` calls, which resolve
- * after the FULL round trip completes, so timing THOSE conflates network
- * latency with the limiter's actual spacing (the owner's first live run
- * showed a meaningless 304ms "spacing" this way, nowhere near the real
+ * operator's shutdown/stall abort signal, AND — the addition this incident
+ * requires (fix B) — a `now()` timestamp recorded at the moment THIS
+ * function is invoked, i.e. immediately after the limiter has granted the
+ * request and `client.ts`'s `issueRequest` is about to dispatch it. This is
+ * the only seam available to measure true request-START spacing without
+ * modifying `client.ts`/`limiter.ts`: the core (`liqSpikeProbeCore.ts`) only
+ * ever sees the higher-level `getWikitext`/`listSubpages` calls, which
+ * resolve after the FULL round trip completes, so timing THOSE conflates
+ * network latency with the limiter's actual spacing (the owner's first live
+ * run showed a meaningless 304ms "spacing" this way, nowhere near the real
  * ~2000ms the limiter enforces).
  */
 function createBoundedFetch(
@@ -92,11 +92,21 @@ function printReport(report: LiqSpikeReport, log: (line: string) => void): void 
   }
   for (const discovery of report.discoveries) {
     log(
-      `[${discovery.family}] discovered ${discovery.discoveredCount} subpage(s) under "${discovery.prefix}"`,
+      `[${discovery.family}] discovered ${discovery.discoveredCount} subpage(s) under "${discovery.prefix}"` +
+        (discovery.acceptedTitles.length > 0
+          ? `, accepted: ${discovery.acceptedTitles.join(', ')}`
+          : ''),
     );
   }
+  for (const normalization of report.normalizations) {
+    log(`[${normalization.family}] normalized "${normalization.from}" -> "${normalization.to}"`);
+  }
+  for (const redirect of report.redirectsFollowed) {
+    log(`[${redirect.family}] redirected "${redirect.from}" -> "${redirect.to}"`);
+  }
   log(
-    `budget: general=${report.budget.generalRequests} parse-class=${report.budget.parseClassRequests} ` +
+    `budget: general=${report.budget.generalRequests}/${report.budget.maxGeneralRequests} ` +
+      `parse-class=${report.budget.parseClassRequests} budgetExhausted=${report.budget.budgetExhausted} ` +
       `minObservedGeneralStartSpacingMs=${report.budget.minObservedGeneralStartSpacingMs ?? 'n/a'} ` +
       `minObservedGeneralCompletionSpacingMs=${report.budget.minObservedGeneralCompletionSpacingMs ?? 'n/a'}`,
   );

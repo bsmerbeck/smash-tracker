@@ -13,31 +13,34 @@ import { LIQUIPEDIA_GENERAL_MIN_INTERVAL_MS } from '../src/liquipedia/limiter.js
 import { UnsafeOutputPathError } from './outputPathGuard.js';
 import {
   LIQ_SPIKE_TARGETS,
-  runLiqSpike,
   assertSafeLiqSpikeOutPath,
   checkGeneralRequestStartSpacing,
+  extractWikilinkTargets,
+  isSinglesBracketPageTitle,
+  isTournamentEventPageTitle,
+  runLiqSpike,
   type LiqSpikeTarget,
 } from './liqSpikeProbeCore.js';
 
 /**
- * Phase 36 Plan 07 (LIQ-01): exercises `runLiqSpike` end-to-end against the
- * EXISTING committed fixture corpus — zero network. Both request shapes the
- * corpus already contains are reused directly rather than fabricated: the
- * shipped VODs-page stub batch (proving the stub-generator-only and missing
- * verdicts) and the Supernova bracket page (proving the sufficient verdict).
+ * Phase 36 Plan 07 (LIQ-01) — owner rerun incident fixes B, C, D. See
+ * `liqSpikeProbeCore.ts`'s module doc comment for the full incident summary;
+ * fix A's write-target regression tests live in `outputPathGuard.test.ts`
+ * and `sparg0ExportCore.test.ts` (the shared guard both scripts use).
  */
+
+// ---- fixture-corpus-backed tests (Stage 1: static player-results) --------
 
 const STUB_BATCH_TARGET: LiqSpikeTarget = {
   family: 'player-results',
   titles: ['Hungrybox/VODs', 'Sparg0/VODs', 'MkLeo/VODs', 'IzAw/VODs'],
-  why: 'test double: reuses the existing */VODs stub fixture to exercise the stub-generator-only and missing verdicts.',
+  why: 'test double: reuses the existing VODs-page stub fixture to exercise the stub-generator-only and missing verdicts.',
 };
 
 const SUBSTANTIVE_TARGET: LiqSpikeTarget = {
-  family: 'tournament-results',
+  family: 'player-results',
   titles: ['Supernova/2026/Ultimate/Singles Bracket'],
   why: 'test double: reuses the existing substantive bracket fixture to exercise the sufficient verdict.',
-  discoverPrefix: 'Supernova/2026/Ultimate',
 };
 
 function buildFixtureBackedClient() {
@@ -50,20 +53,10 @@ function buildFixtureBackedClient() {
       match: matchQuery({ action: 'query', titles: SUBSTANTIVE_TARGET.titles.join('|') }),
       fixture: 'query-supernova-2026-singles-bracket',
     },
-    {
-      match: matchQuery({
-        action: 'query',
-        list: 'allpages',
-        apprefix: 'Supernova/2026/Ultimate',
-      }),
-      fixture: 'query-allpages-supernova-prefix',
-    },
   ]);
 
   const client = createLiquipediaClient({
     config: { contact: 'liq-spike-test@example.invalid' },
-    // A pure test double, never the real RTDB-backed limiter — this test
-    // exercises classification logic only, with zero network.
     limiter: {
       async acquire() {
         return { granted: true, waitedMs: 0 };
@@ -75,14 +68,15 @@ function buildFixtureBackedClient() {
   return { client, fixtureFetch };
 }
 
-describe('runLiqSpike', () => {
+describe('runLiqSpike — Stage 1 (static player-results titles)', () => {
   it('classifies both shapes the corpus already contains, and a missing title as missing', async () => {
     const { client, fixtureFetch } = buildFixtureBackedClient();
 
-    const report = await runLiqSpike({ client, now: () => 0, log: () => undefined }, [
-      STUB_BATCH_TARGET,
-      SUBSTANTIVE_TARGET,
-    ]);
+    const report = await runLiqSpike(
+      { client, now: () => 0, log: () => undefined },
+      [STUB_BATCH_TARGET, SUBSTANTIVE_TARGET],
+      { seedPrefixes: [] },
+    );
 
     const byTitle = new Map(report.pages.map((page) => [page.title, page]));
 
@@ -93,25 +87,11 @@ describe('runLiqSpike', () => {
     expect(byTitle.get('Supernova/2026/Ultimate/Singles Bracket')?.wikitextVerdict).toBe(
       'sufficient',
     );
-    expect(
-      byTitle.get('Supernova/2026/Ultimate/Singles Bracket')?.proposedAllowlistRegex,
-    ).toBeUndefined();
 
-    // Self-check: an empty run can never pass vacuously.
     expect(fixtureFetch.requests.length).toBeGreaterThan(0);
-
     expect(report.budget.parseClassRequests).toBe(0);
     expect(report.budget.generalRequests).toBe(fixtureFetch.requests.length);
 
-    expect(report.discoveries).toHaveLength(1);
-    expect(report.discoveries[0]).toMatchObject({
-      family: 'tournament-results',
-      prefix: 'Supernova/2026/Ultimate',
-      discoveredCount: 2,
-    });
-
-    // Structural assertion: every request this run issued is action=query —
-    // never a parse-class request.
     for (const url of fixtureFetch.requests) {
       expect(url.searchParams.get('action')).toBe('query');
     }
@@ -120,9 +100,11 @@ describe('runLiqSpike', () => {
   it('records a proposed anchored allowlist regex as a plain string for a stub-generator-only verdict', async () => {
     const { client } = buildFixtureBackedClient();
 
-    const report = await runLiqSpike({ client, now: () => 0, log: () => undefined }, [
-      STUB_BATCH_TARGET,
-    ]);
+    const report = await runLiqSpike(
+      { client, now: () => 0, log: () => undefined },
+      [STUB_BATCH_TARGET],
+      { seedPrefixes: [] },
+    );
 
     const stub = report.pages.find((page) => page.title === 'Hungrybox/VODs');
     expect(typeof stub?.proposedAllowlistRegex).toBe('string');
@@ -132,9 +114,11 @@ describe('runLiqSpike', () => {
   it('records the byte size and revision id of the returned page and the request-completion timestamp', async () => {
     const { client } = buildFixtureBackedClient();
 
-    const report = await runLiqSpike({ client, now: () => 12345, log: () => undefined }, [
-      SUBSTANTIVE_TARGET,
-    ]);
+    const report = await runLiqSpike(
+      { client, now: () => 12345, log: () => undefined },
+      [SUBSTANTIVE_TARGET],
+      { seedPrefixes: [] },
+    );
 
     const page = report.pages.find(
       (candidate) => candidate.title === 'Supernova/2026/Ultimate/Singles Bracket',
@@ -232,7 +216,9 @@ describe('classifyWikitext (via runLiqSpike) — structural, not byte-gated (fix
       },
     ]);
 
-    const report = await runLiqSpike({ client, now: () => 0, log: () => undefined }, [target]);
+    const report = await runLiqSpike({ client, now: () => 0, log: () => undefined }, [target], {
+      seedPrefixes: [],
+    });
 
     expect(report.pages[0]?.wikitextVerdict).toBe('stub-generator-only');
     expect(report.pages[0]?.proposedAllowlistRegex).toBe('^[^/]+/Results$');
@@ -252,7 +238,9 @@ describe('classifyWikitext (via runLiqSpike) — structural, not byte-gated (fix
       },
     ]);
 
-    const report = await runLiqSpike({ client, now: () => 0, log: () => undefined }, [target]);
+    const report = await runLiqSpike({ client, now: () => 0, log: () => undefined }, [target], {
+      seedPrefixes: [],
+    });
 
     expect(report.pages[0]?.wikitextVerdict).toBe('stub-generator-only');
   });
@@ -271,7 +259,9 @@ describe('classifyWikitext (via runLiqSpike) — structural, not byte-gated (fix
       },
     ]);
 
-    const report = await runLiqSpike({ client, now: () => 0, log: () => undefined }, [target]);
+    const report = await runLiqSpike({ client, now: () => 0, log: () => undefined }, [target], {
+      seedPrefixes: [],
+    });
 
     expect(report.pages[0]?.wikitextVerdict).toBe('stub-generator-only');
   });
@@ -291,10 +281,50 @@ describe('classifyWikitext (via runLiqSpike) — structural, not byte-gated (fix
       },
     ]);
 
-    const report = await runLiqSpike({ client, now: () => 0, log: () => undefined }, [target]);
+    const report = await runLiqSpike({ client, now: () => 0, log: () => undefined }, [target], {
+      seedPrefixes: [],
+    });
 
     expect(report.pages[0]?.wikitextVerdict).toBe('sufficient');
     expect(report.pages[0]?.proposedAllowlistRegex).toBeUndefined();
+  });
+});
+
+// ---- extractWikilinkTargets (pure) ----------------------------------------
+
+describe('extractWikilinkTargets', () => {
+  it('extracts internal-link targets, de-duplicated, excluding non-article namespaces', () => {
+    const wikitext =
+      '{{Infobox player}}\n' +
+      'Placed 3rd at [[Genesis 9/Ultimate|Genesis 9]] and 2nd at [[Smash Summit 13/Ultimate]].\n' +
+      'Category link: [[Category:Players]] (never a candidate).\n' +
+      'Repeat mention: [[Genesis 9/Ultimate|again]].\n' +
+      '[[File:Player photo.png|thumb]]\n';
+
+    expect(extractWikilinkTargets(wikitext)).toEqual([
+      'Genesis 9/Ultimate',
+      'Smash Summit 13/Ultimate',
+    ]);
+  });
+
+  it('returns an empty array for wikitext with no internal links', () => {
+    expect(extractWikilinkTargets('{{Infobox player results}}')).toEqual([]);
+  });
+});
+
+// ---- isTournamentEventPageTitle / isSinglesBracketPageTitle (pure) --------
+
+describe('isTournamentEventPageTitle / isSinglesBracketPageTitle', () => {
+  it('accepts a tournament event page and rejects its own bracket subpage', () => {
+    expect(isTournamentEventPageTitle('Genesis 9/Ultimate')).toBe(true);
+    expect(isTournamentEventPageTitle('Genesis 9/Ultimate/Singles Bracket')).toBe(false);
+    expect(isTournamentEventPageTitle('Genesis 9/Melee')).toBe(false);
+  });
+
+  it('accepts a singles-bracket subpage and rejects the event page itself', () => {
+    expect(isSinglesBracketPageTitle('Genesis 9/Ultimate/Singles Bracket')).toBe(true);
+    expect(isSinglesBracketPageTitle('Genesis 9/Ultimate')).toBe(false);
+    expect(isSinglesBracketPageTitle('Genesis 9/Ultimate/Doubles Bracket')).toBe(false);
   });
 });
 
@@ -337,9 +367,11 @@ describe('checkGeneralRequestStartSpacing', () => {
 describe('runLiqSpike — general-class start-spacing enforcement (fix B)', () => {
   it('does not throw and reports null start-spacing fields when no start timestamps are supplied', async () => {
     const { client } = buildFixtureBackedClient();
-    const report = await runLiqSpike({ client, now: () => 0, log: () => undefined }, [
-      STUB_BATCH_TARGET,
-    ]);
+    const report = await runLiqSpike(
+      { client, now: () => 0, log: () => undefined },
+      [STUB_BATCH_TARGET],
+      { seedPrefixes: [] },
+    );
     expect(report.budget.minObservedGeneralStartSpacingMs).toBeNull();
   });
 
@@ -351,14 +383,15 @@ describe('runLiqSpike — general-class start-spacing enforcement (fix B)', () =
           client,
           now: () => 0,
           log: () => undefined,
-          // A single fetch only issues ONE request, so a real run could
-          // never observe two starts from it alone — this directly
-          // exercises the check with INJECTED synthetic start timestamps
-          // ("fake clock" here means synthetic timestamps, not timer
-          // mocking).
+          // A single Stage-1 fetch only issues ONE request, so a real run
+          // could never observe two starts from it alone — this directly
+          // exercises the check with an INJECTED violating pair, exactly as
+          // "fake clock" testing means here: synthetic start timestamps, not
+          // timer mocking.
           generalRequestStartTimestampsMs: [1000, 1500],
         },
         [STUB_BATCH_TARGET],
+        { seedPrefixes: [] },
       ),
     ).rejects.toThrow(/general-class request start spacing violated/);
   });
@@ -373,10 +406,242 @@ describe('runLiqSpike — general-class start-spacing enforcement (fix B)', () =
         generalRequestStartTimestampsMs: [1000, 1000 + LIQUIPEDIA_GENERAL_MIN_INTERVAL_MS],
       },
       [STUB_BATCH_TARGET],
+      { seedPrefixes: [] },
     );
     expect(report.budget.minObservedGeneralStartSpacingMs).toBe(LIQUIPEDIA_GENERAL_MIN_INTERVAL_MS);
   });
 });
+
+// ---- discovery cascade (fix D) ---------------------------------------------
+
+describe('runLiqSpike — discovery cascade for tournament-results / other-entrant-brackets (fix D)', () => {
+  it('discovers real titles via list=allpages, cascading from series-name prefixes to the discovered event page, never guessing', async () => {
+    const playerResultsTarget: LiqSpikeTarget = {
+      family: 'player-results',
+      titles: ['Hungrybox/Results'],
+      why: 'test',
+    };
+    const hungryboxContent =
+      'Notable placements include [[Genesis 9/Ultimate|Genesis 9]] and other majors.';
+
+    const { client, requests } = buildInlineClient([
+      {
+        match: matchQuery({ action: 'query', titles: 'Hungrybox/Results' }),
+        body: queryEnvelope([{ title: 'Hungrybox/Results', revid: 10, content: hungryboxContent }]),
+      },
+      {
+        match: matchQuery({ action: 'query', list: 'allpages', apprefix: 'Genesis' }),
+        body: {
+          query: {
+            allpages: [
+              { pageid: 1, title: 'Genesis 9/Ultimate' },
+              { pageid: 2, title: 'Genesis 9/Ultimate/Singles Bracket' },
+              { pageid: 3, title: 'Genesis 9/Melee' },
+            ],
+          },
+        },
+      },
+      {
+        match: matchQuery({ action: 'query', titles: 'Genesis 9/Ultimate' }),
+        body: queryEnvelope([
+          {
+            title: 'Genesis 9/Ultimate',
+            revid: 20,
+            content: 'A major SSBU tournament held annually in California.',
+          },
+        ]),
+      },
+      {
+        match: matchQuery({ action: 'query', list: 'allpages', apprefix: 'Genesis 9/Ultimate' }),
+        body: {
+          query: {
+            allpages: [
+              { pageid: 2, title: 'Genesis 9/Ultimate/Singles Bracket' },
+              { pageid: 4, title: 'Genesis 9/Ultimate/Doubles Bracket' },
+            ],
+          },
+        },
+      },
+      {
+        match: matchQuery({ action: 'query', titles: 'Genesis 9/Ultimate/Singles Bracket' }),
+        body: queryEnvelope([
+          {
+            title: 'Genesis 9/Ultimate/Singles Bracket',
+            revid: 30,
+            content: 'A full double-elimination bracket of named entrants and their placements.',
+          },
+        ]),
+      },
+    ]);
+
+    const report = await runLiqSpike(
+      { client, now: () => 0, log: () => undefined },
+      [playerResultsTarget],
+      { seedPrefixes: ['Genesis'] },
+    );
+
+    const byTitle = new Map(report.pages.map((page) => [page.title, page]));
+    expect(byTitle.get('Genesis 9/Ultimate')?.wikitextVerdict).toBe('sufficient');
+    expect(byTitle.get('Genesis 9/Ultimate/Singles Bracket')?.wikitextVerdict).toBe('sufficient');
+
+    const tournamentDiscovery = report.discoveries.find(
+      (d) => d.family === 'tournament-results' && d.prefix === 'Genesis',
+    );
+    expect(tournamentDiscovery?.discoveredCount).toBe(3);
+    expect(tournamentDiscovery?.acceptedTitles).toEqual(['Genesis 9/Ultimate']);
+
+    const bracketDiscovery = report.discoveries.find(
+      (d) => d.family === 'other-entrant-brackets' && d.prefix === 'Genesis 9/Ultimate',
+    );
+    expect(bracketDiscovery?.discoveredCount).toBe(2);
+    expect(bracketDiscovery?.acceptedTitles).toEqual(['Genesis 9/Ultimate/Singles Bracket']);
+
+    // Every request this run issued is action=query — never a parse-class request.
+    for (const url of requests) {
+      expect(url.searchParams.get('action')).toBe('query');
+    }
+    expect(report.budget.generalRequests).toBe(requests.length);
+    // 1 (Hungrybox/Results) + 1 (discover under "Genesis") — the
+    // link-seed "Genesis 9/Ultimate" is SKIPPED as its own candidate
+    // prefix, since it is already an accepted title — + 1 (Genesis
+    // 9/Ultimate wikitext) + 1 (discover brackets under "Genesis
+    // 9/Ultimate") + 1 (bracket wikitext) = 5.
+    expect(report.budget.generalRequests).toBe(5);
+  });
+
+  it('logs plainly and produces no page entries for a family when discovery finds nothing', async () => {
+    const playerResultsTarget: LiqSpikeTarget = {
+      family: 'player-results',
+      titles: ['IzAw/Results'],
+      why: 'test',
+    };
+    const logLines: string[] = [];
+
+    const { client } = buildInlineClient([
+      {
+        match: matchQuery({ action: 'query', titles: 'IzAw/Results' }),
+        body: queryEnvelope([{ title: 'IzAw/Results', missing: true }]),
+      },
+      {
+        match: matchQuery({ action: 'query', list: 'allpages', apprefix: 'NoSuchSeries' }),
+        body: { query: { allpages: [] } },
+      },
+    ]);
+
+    const report = await runLiqSpike(
+      { client, now: () => 0, log: (line) => logLines.push(line) },
+      [playerResultsTarget],
+      { seedPrefixes: ['NoSuchSeries'] },
+    );
+
+    expect(report.pages.filter((p) => p.family === 'tournament-results')).toHaveLength(0);
+    expect(report.pages.filter((p) => p.family === 'other-entrant-brackets')).toHaveLength(0);
+    expect(
+      logLines.some((line) =>
+        line.includes('[tournament-results] discovery found no matching titles'),
+      ),
+    ).toBe(true);
+    expect(
+      logLines.some((line) =>
+        line.includes('[other-entrant-brackets] discovery found no matching titles'),
+      ),
+    ).toBe(true);
+  });
+
+  it('stops issuing further requests once the general-request budget is exhausted, and records budgetExhausted', async () => {
+    const playerResultsTarget: LiqSpikeTarget = {
+      family: 'player-results',
+      titles: ['Hungrybox/Results'],
+      why: 'test',
+    };
+
+    const { client, requests } = buildInlineClient([
+      {
+        match: matchQuery({ action: 'query', titles: 'Hungrybox/Results' }),
+        body: queryEnvelope([
+          { title: 'Hungrybox/Results', revid: 10, content: 'Prose with no links at all.' },
+        ]),
+      },
+      {
+        match: matchQuery({ action: 'query', list: 'allpages', apprefix: 'Genesis' }),
+        body: { query: { allpages: [{ pageid: 1, title: 'Genesis 9/Ultimate' }] } },
+      },
+    ]);
+
+    const report = await runLiqSpike(
+      { client, now: () => 0, log: () => undefined },
+      [playerResultsTarget],
+      { seedPrefixes: ['Genesis'], maxGeneralRequests: 2 },
+    );
+
+    // Budget covers exactly: player-results (1) + the Genesis discovery
+    // call (1) = 2. The tournament-results wikitext fetch that would
+    // otherwise follow never fires.
+    expect(requests.length).toBe(2);
+    expect(report.budget.generalRequests).toBe(2);
+    expect(report.budget.budgetExhausted).toBe(true);
+    expect(report.pages.filter((p) => p.family === 'tournament-results')).toHaveLength(0);
+  });
+
+  it('surfaces normalized/redirected titles the API itself reports, without any guessed alternate spelling', async () => {
+    const playerResultsTarget: LiqSpikeTarget = {
+      family: 'player-results',
+      titles: ['MkLeo/Results'],
+      why: 'test',
+    };
+
+    const { client } = buildInlineClient([
+      {
+        match: matchQuery({ action: 'query', titles: 'MkLeo/Results' }),
+        body: {
+          query: {
+            normalized: [{ from: 'MkLeo/Results', to: 'MKLeo/Results' }],
+            redirects: [{ from: 'MKLeo/Results', to: 'MKLeo (player)/Results' }],
+            pages: [
+              {
+                title: 'MKLeo (player)/Results',
+                revisions: [
+                  {
+                    revid: 40,
+                    parentid: 0,
+                    timestamp: '2026-01-01T00:00:00Z',
+                    slots: { main: { content: 'Genuine placement history prose.' } },
+                  },
+                ],
+              },
+            ],
+          },
+        },
+      },
+    ]);
+
+    const report = await runLiqSpike(
+      { client, now: () => 0, log: () => undefined },
+      [playerResultsTarget],
+      { seedPrefixes: [] },
+    );
+
+    expect(report.normalizations).toEqual([
+      { family: 'player-results', from: 'MkLeo/Results', to: 'MKLeo/Results' },
+    ]);
+    expect(report.redirectsFollowed).toEqual([
+      { family: 'player-results', from: 'MKLeo/Results', to: 'MKLeo (player)/Results' },
+    ]);
+  });
+});
+
+// ---- LIQ_SPIKE_TARGETS ------------------------------------------------------
+
+describe('LIQ_SPIKE_TARGETS', () => {
+  it('names only the static player-results family, with a nonzero, at-most-four title count', () => {
+    expect(LIQ_SPIKE_TARGETS).toHaveLength(1);
+    expect(LIQ_SPIKE_TARGETS[0]?.family).toBe('player-results');
+    expect(LIQ_SPIKE_TARGETS[0]?.titles.length).toBeGreaterThan(0);
+    expect(LIQ_SPIKE_TARGETS[0]?.titles.length).toBeLessThanOrEqual(4);
+  });
+});
+
+// ---- assertSafeLiqSpikeOutPath (WR-03/D-28) --------------------------------
 
 describe('assertSafeLiqSpikeOutPath (WR-03/D-28)', () => {
   const REPO_ROOT = '/repo';
@@ -533,19 +798,5 @@ describe('assertSafeLiqSpikeOutPath (WR-03/D-28)', () => {
         rmSync(root, { recursive: true, force: true });
       }
     });
-  });
-});
-
-describe('LIQ_SPIKE_TARGETS', () => {
-  it('names exactly three families with a nonzero, at-most-four title count each', () => {
-    expect(LIQ_SPIKE_TARGETS).toHaveLength(3);
-    for (const target of LIQ_SPIKE_TARGETS) {
-      expect(target.titles.length).toBeGreaterThan(0);
-      expect(target.titles.length).toBeLessThanOrEqual(4);
-    }
-    const families = new Set(LIQ_SPIKE_TARGETS.map((target) => target.family));
-    expect(families).toEqual(
-      new Set(['player-results', 'tournament-results', 'other-entrant-brackets']),
-    );
   });
 });
