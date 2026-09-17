@@ -44,3 +44,15 @@ entities.json
 # apps/api/src/liquipedia/__fixtures__/MANIFEST.md). Dated variants are
 # covered by the trailing glob so a re-run under a new filename is still safe.
 apps/api/liq-spike-report*.json
+
+# Phase 36 Plan 06 (SCL-01, D-20, D-28): the owner-run sparg0 real-data
+# export (apps/api/scripts/sparg0Export.ts) writes exported PRODUCTION
+# MATCH DATA to a path under apps/api/ via --out. This file must never be
+# committed. Note that the pre-existing operator-output files under
+# apps/api/ (gate6-*/enrichment-*/registry-*/migration-*.json) are
+# untracked today by CONVENTION only — no rule covers them — so this block
+# is deliberately the RULE, not a copy of that convention. Dated variants
+# are covered by the trailing glob so a re-run under a new filename stays
+# safe.
+apps/api/sparg0-export*.json
+apps/api/sparg0-export*.json.sha256
