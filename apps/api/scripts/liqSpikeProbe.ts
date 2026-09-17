@@ -116,6 +116,13 @@ function printReport(report: LiqSpikeReport, log: (line: string) => void): void 
   for (const redirect of report.redirectsFollowed) {
     log(`[${redirect.family}] redirected "${redirect.from}" -> "${redirect.to}"`);
   }
+  for (const outcome of report.familyOutcomes) {
+    log(
+      `[${outcome.family}] ${outcome.status}` +
+        (outcome.reason ? `: ${outcome.reason}` : '') +
+        (outcome.sampledTitles.length > 0 ? ` (${outcome.sampledTitles.join(', ')})` : ''),
+    );
+  }
   log(
     `budget: general=${report.budget.generalRequests}/${report.budget.maxGeneralRequests} ` +
       `parse-class=${report.budget.parseClassRequests} budgetExhausted=${report.budget.budgetExhausted} ` +

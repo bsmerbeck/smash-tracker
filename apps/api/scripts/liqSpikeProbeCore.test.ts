@@ -16,7 +16,6 @@ import {
   LIQ_SPIKE_TARGETS,
   assertSafeLiqSpikeOutPath,
   checkGeneralRequestStartSpacing,
-  extractWikilinkTargets,
   isSinglesBracketPageTitle,
   isTournamentEventPageTitle,
   runLiqSpike,
@@ -442,28 +441,6 @@ describe('LiqSpikePageResult fingerprint / rawWikitext (fix 2)', () => {
   });
 });
 
-// ---- extractWikilinkTargets (pure) ----------------------------------------
-
-describe('extractWikilinkTargets', () => {
-  it('extracts internal-link targets, de-duplicated, excluding non-article namespaces', () => {
-    const wikitext =
-      '{{Infobox player}}\n' +
-      'Placed 3rd at [[Genesis 9/Ultimate|Genesis 9]] and 2nd at [[Smash Summit 13/Ultimate]].\n' +
-      'Category link: [[Category:Players]] (never a candidate).\n' +
-      'Repeat mention: [[Genesis 9/Ultimate|again]].\n' +
-      '[[File:Player photo.png|thumb]]\n';
-
-    expect(extractWikilinkTargets(wikitext)).toEqual([
-      'Genesis 9/Ultimate',
-      'Smash Summit 13/Ultimate',
-    ]);
-  });
-
-  it('returns an empty array for wikitext with no internal links', () => {
-    expect(extractWikilinkTargets('{{Infobox player results}}')).toEqual([]);
-  });
-});
-
 // ---- isTournamentEventPageTitle / isSinglesBracketPageTitle (pure) --------
 
 describe('isTournamentEventPageTitle / isSinglesBracketPageTitle', () => {
@@ -564,15 +541,19 @@ describe('runLiqSpike — general-class start-spacing enforcement (fix B)', () =
   });
 });
 
-// ---- discovery cascade (fix D) ---------------------------------------------
+// ---- discovery cascade (fix D, budget-governed per fix 3) ------------------
 
-describe('runLiqSpike — discovery cascade for tournament-results / other-entrant-brackets (fix D)', () => {
-  it('discovers real titles via list=allpages, cascading from series-name prefixes to the discovered event page, never guessing', async () => {
+describe('runLiqSpike — discovery cascade for tournament-results / other-entrant-brackets (fix D / fix 3)', () => {
+  it('discovers real titles via list=allpages, cascading from series-name prefixes to the discovered event page, never guessing and never following player-page links', async () => {
     const playerResultsTarget: LiqSpikeTarget = {
       family: 'player-results',
       titles: ['Hungrybox/Results'],
       why: 'test',
     };
+    // Deliberately contains a real internal link — proves fix 3's
+    // retraction: this link is NEVER followed for discovery seeding
+    // (only LIQ_SPIKE_SERIES_PREFIX_SEEDS / the explicit seedPrefixes
+    // override below are ever tried as discovery prefixes).
     const hungryboxContent =
       'Notable placements include [[Genesis 9/Ultimate|Genesis 9]] and other majors.';
 
@@ -653,12 +634,30 @@ describe('runLiqSpike — discovery cascade for tournament-results / other-entra
       expect(url.searchParams.get('action')).toBe('query');
     }
     expect(report.budget.generalRequests).toBe(requests.length);
-    // 1 (Hungrybox/Results) + 1 (discover under "Genesis") — the
-    // link-seed "Genesis 9/Ultimate" is SKIPPED as its own candidate
-    // prefix, since it is already an accepted title — + 1 (Genesis
+    // 1 (Hungrybox/Results) + 1 (discover under "Genesis") + 1 (Genesis
     // 9/Ultimate wikitext) + 1 (discover brackets under "Genesis
-    // 9/Ultimate") + 1 (bracket wikitext) = 5.
+    // 9/Ultimate") + 1 (bracket wikitext) = 5. The link inside
+    // Hungrybox/Results is never tried as its own discovery prefix
+    // (fix 3) — only the explicit seedPrefixes override is.
     expect(report.budget.generalRequests).toBe(5);
+
+    expect(report.familyOutcomes).toEqual([
+      {
+        family: 'player-results',
+        status: 'sampled',
+        sampledTitles: ['Hungrybox/Results'],
+      },
+      {
+        family: 'tournament-results',
+        status: 'sampled',
+        sampledTitles: ['Genesis 9/Ultimate'],
+      },
+      {
+        family: 'other-entrant-brackets',
+        status: 'sampled',
+        sampledTitles: ['Genesis 9/Ultimate/Singles Bracket'],
+      },
+    ]);
   });
 
   it('logs plainly and produces no page entries for a family when discovery finds nothing', async () => {
@@ -688,16 +687,25 @@ describe('runLiqSpike — discovery cascade for tournament-results / other-entra
 
     expect(report.pages.filter((p) => p.family === 'tournament-results')).toHaveLength(0);
     expect(report.pages.filter((p) => p.family === 'other-entrant-brackets')).toHaveLength(0);
-    expect(
-      logLines.some((line) =>
-        line.includes('[tournament-results] discovery found no matching titles'),
-      ),
-    ).toBe(true);
-    expect(
-      logLines.some((line) =>
-        line.includes('[other-entrant-brackets] discovery found no matching titles'),
-      ),
-    ).toBe(true);
+    expect(logLines.some((line) => line.includes('[tournament-results] not-sampled:'))).toBe(true);
+    expect(logLines.some((line) => line.includes('[other-entrant-brackets] not-sampled:'))).toBe(
+      true,
+    );
+
+    const tournamentOutcome = report.familyOutcomes.find((o) => o.family === 'tournament-results');
+    expect(tournamentOutcome).toEqual({
+      family: 'tournament-results',
+      status: 'not-sampled',
+      reason: 'no matching titles discovered among 1 prefix(es) tried',
+      sampledTitles: [],
+    });
+    const bracketOutcome = report.familyOutcomes.find((o) => o.family === 'other-entrant-brackets');
+    expect(bracketOutcome).toEqual({
+      family: 'other-entrant-brackets',
+      status: 'not-sampled',
+      reason: 'no matching titles discovered among 0 tournament event page(s) tried',
+      sampledTitles: [],
+    });
   });
 
   it('stops issuing further requests once the general-request budget is exhausted, and records budgetExhausted', async () => {
@@ -733,6 +741,59 @@ describe('runLiqSpike — discovery cascade for tournament-results / other-entra
     expect(report.budget.generalRequests).toBe(2);
     expect(report.budget.budgetExhausted).toBe(true);
     expect(report.pages.filter((p) => p.family === 'tournament-results')).toHaveLength(0);
+
+    const tournamentOutcome = report.familyOutcomes.find((o) => o.family === 'tournament-results');
+    expect(tournamentOutcome?.status).toBe('not-sampled');
+    expect(tournamentOutcome?.reason).toBe('budget');
+  });
+
+  // Fix 3's core requirement: a family whose discovery attempts all come up
+  // empty must NEVER be allowed to keep spending general-request budget
+  // indefinitely — its OWN reserved discovery allotment
+  // (LIQ_SPIKE_RESERVED_DISCOVERY_REQUESTS) caps it, protecting whatever
+  // budget the run has left for the NEXT stage (a real regression: fix D's
+  // link-following spent the ENTIRE 20-request cap chasing dead prefixes).
+  it('caps tournament-results discovery at its own reserved budget, never spending the whole run on one family', async () => {
+    const playerResultsTarget: LiqSpikeTarget = {
+      family: 'player-results',
+      titles: ['Hungrybox/Results'],
+      why: 'test',
+    };
+    const deadSeedPrefixes = ['Dead1', 'Dead2', 'Dead3', 'Dead4', 'Dead5', 'Dead6', 'Dead7'];
+
+    const { client, requests } = buildInlineClient([
+      {
+        match: matchQuery({ action: 'query', titles: 'Hungrybox/Results' }),
+        body: queryEnvelope([
+          { title: 'Hungrybox/Results', revid: 10, content: 'Prose with no links at all.' },
+        ]),
+      },
+      ...deadSeedPrefixes.map((prefix) => ({
+        match: matchQuery({ action: 'query', list: 'allpages', apprefix: prefix }),
+        body: { query: { allpages: [] } },
+      })),
+    ]);
+
+    const report = await runLiqSpike(
+      { client, now: () => 0, log: () => undefined },
+      [playerResultsTarget],
+      { seedPrefixes: deadSeedPrefixes, maxGeneralRequests: 20 },
+    );
+
+    // 1 (player-results) + exactly LIQ_SPIKE_RESERVED_DISCOVERY_REQUESTS
+    // (5) discovery attempts, NEVER all 7 dead prefixes — the reserved
+    // per-family cap binds well before the global 20-request cap would.
+    expect(requests.length).toBe(6);
+    expect(report.budget.generalRequests).toBe(6);
+    expect(report.budget.budgetExhausted).toBe(false);
+
+    const tournamentOutcome = report.familyOutcomes.find((o) => o.family === 'tournament-results');
+    expect(tournamentOutcome).toEqual({
+      family: 'tournament-results',
+      status: 'not-sampled',
+      reason: 'no matching titles discovered among 5 prefix(es) tried',
+      sampledTitles: [],
+    });
   });
 
   it('surfaces normalized/redirected titles the API itself reports, without any guessed alternate spelling', async () => {

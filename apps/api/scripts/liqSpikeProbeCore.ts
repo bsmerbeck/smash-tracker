@@ -34,10 +34,10 @@ import { assertOutputPathIsGitignored } from './outputPathGuard.js';
  * Owner rerun incident (fix D): every `tournament-results`/
  * `other-entrant-brackets` title in the first version of this probe was a
  * guess, and all of them were wrong (0 subpages discovered, every title
- * reported missing). Both families are now DISCOVERED at run time via
- * `list=allpages` — seeded from series-name prefixes and from the real
- * internal links found in whichever `player-results` page actually
- * returned substantive content — never a second guess.
+ * reported missing). Both families were made DISCOVERABLE at run time via
+ * `list=allpages` — SUPERSEDED by fix 3 below, which retracts one part of
+ * this fix (seeding discovery from a player page's own internal links)
+ * after it wasted the entire request budget on Melee-era pages.
  *
  * Owner rerun incident #2 (fix 2, classifier): the fix-C classifier was
  * STILL guessed against the real 245/248-byte page shapes (no network
@@ -51,6 +51,26 @@ import { assertOutputPathIsGitignored } from './outputPathGuard.js';
  * redirect flag, first template name only) is printed to the console for
  * any page under ~1 KB — so the NEXT rerun's verdict is evidence-based,
  * not another guess.
+ *
+ * Owner rerun incident #2 (fix 3, discovery budget governance): the SAME
+ * rerun showed fix D's "seed discovery from a player page's own internal
+ * links" idea backfiring badly — `Hungrybox/Results` links to Melee-era
+ * majors ("Zenith 2011", "Pound 4", ...), and following them burned the
+ * ENTIRE 20-request budget on prefixes that were never going to yield an
+ * Ultimate-era page, leaving `tournament-results`/`other-entrant-brackets`
+ * with ZERO samples. This fix RETRACTS link-following entirely (discovery
+ * now seeds ONLY from `LIQ_SPIKE_SERIES_PREFIX_SEEDS`, the deliberately
+ * curated series names) and adds explicit PER-FAMILY reserved request
+ * budgets (`LIQ_SPIKE_RESERVED_DISCOVERY_REQUESTS`/
+ * `LIQ_SPIKE_RESERVED_FETCH_REQUESTS`) so ONE family's discovery attempts
+ * can never crowd out another's — the plan is logged up front, and a
+ * family that finds nothing within its OWN reservation is recorded as
+ * `not-sampled` with a reason, never silently starved by a sibling
+ * family's discovery loop. (A `list=search`/`srsearch` cheap-naming
+ * discovery mechanism was also considered for this fix, but the shipped
+ * `LiquipediaClient` interface exposes no generic query seam for it —
+ * adding one would mean editing `client.ts`, outside this fix's
+ * authorization, so it was not implemented; see the plan's SUMMARY.)
  */
 
 /**
@@ -121,11 +141,25 @@ export const LIQ_SPIKE_MAX_GENERAL_REQUESTS = 20;
 export const LIQ_SPIKE_MAX_TITLES_PER_DISCOVERY_FAMILY = 4;
 
 /**
+ * Upper bound on `list=allpages` discovery ATTEMPTS spent per discovered
+ * family (fix 3). Reserved SEPARATELY per family — never shared — so one
+ * family's fruitless discovery loop (e.g. every series-name prefix missing
+ * a real page) can never crowd out the request budget the OTHER discovered
+ * family still needs. The owner's rerun showed exactly this failure mode
+ * under fix D's link-following: it silently consumed the ENTIRE run
+ * chasing Melee-era prefixes, leaving zero budget for anything else.
+ */
+export const LIQ_SPIKE_RESERVED_DISCOVERY_REQUESTS = 5;
+
+/** Upper bound on the wikitext-fetch request spent per discovered family, once titles are found — always exactly one batched call. */
+export const LIQ_SPIKE_RESERVED_FETCH_REQUESTS = 1;
+
+/**
  * Series-name prefixes seeding `tournament-results` discovery — a SERIES
  * name (the recurring event brand every year's page nests under), never a
- * full guessed page title. Combined at run time with real internal links
- * pulled from whichever `player-results` page actually returned substantive
- * content.
+ * full guessed page title. Fix 3 (owner rerun #2): this is now the ONLY
+ * seed source — a player page's own internal links are NOT followed
+ * (retracted; see this file's module doc comment for why).
  */
 export const LIQ_SPIKE_SERIES_PREFIX_SEEDS: readonly string[] = Object.freeze([
   'Genesis',
@@ -148,35 +182,6 @@ export function isTournamentEventPageTitle(title: string): boolean {
 /** A mechanical shape filter keeping only titles shaped like a singles-bracket subpage of a discovered tournament event page. */
 export function isSinglesBracketPageTitle(title: string): boolean {
   return title.endsWith(SINGLES_BRACKET_PAGE_SUFFIX);
-}
-
-/** Internal namespaces whose "links" are never article pages worth treating as tournament-page candidates. */
-const NON_ARTICLE_NAMESPACE_PREFIX =
-  /^(Category|File|Image|Template|Special|User|Help|Talk|Liquipedia):/i;
-
-/**
- * Pulls `[[Target]]`/`[[Target|Display]]` internal-link targets out of
- * wikitext — pure string parsing, no network, no guessing: every candidate
- * this returns is a link the page ITSELF actually contains. Excludes
- * non-article namespaces and de-duplicates, preserving first-seen order.
- */
-export function extractWikilinkTargets(wikitext: string): string[] {
-  const targets: string[] = [];
-  const seen = new Set<string>();
-  const linkPattern = /\[\[([^\]|#]+)(?:[|#][^\]]*)?\]\]/g;
-  for (const match of wikitext.matchAll(linkPattern)) {
-    const rawTarget = match[1];
-    if (!rawTarget) {
-      continue;
-    }
-    const target = rawTarget.trim();
-    if (!target || NON_ARTICLE_NAMESPACE_PREFIX.test(target) || seen.has(target)) {
-      continue;
-    }
-    seen.add(target);
-    targets.push(target);
-  }
-  return targets;
 }
 
 export type LiqSpikeWikitextVerdict = 'sufficient' | 'stub-generator-only' | 'missing';
@@ -254,6 +259,20 @@ export interface LiqSpikeBudget {
   budgetExhausted: boolean;
 }
 
+/**
+ * Fix 3 (owner rerun #2): one entry per family, so a family that got no
+ * samples is a RECORDED, explained outcome — never silent starvation by a
+ * sibling family's discovery loop, and never conflated with a family that
+ * genuinely has no reachable page.
+ */
+export interface LiqSpikeFamilyOutcome {
+  family: LiqSpikeFamily;
+  status: 'sampled' | 'not-sampled';
+  /** Present only when `status === 'not-sampled'` — e.g. `"budget"` or `"no matching titles discovered among N prefix(es) tried"`. */
+  reason?: string;
+  sampledTitles: string[];
+}
+
 export interface LiqSpikeReport {
   pages: LiqSpikePageResult[];
   discoveries: LiqSpikeDiscoveryResult[];
@@ -261,6 +280,8 @@ export interface LiqSpikeReport {
   normalizations: LiqSpikeNormalization[];
   /** Every `query.redirects` entry the API itself followed (the `redirects=1` parameter every `getWikitext` call already sends). */
   redirectsFollowed: LiqSpikeNormalization[];
+  /** One entry per family (`player-results`, `tournament-results`, `other-entrant-brackets`) — see `LiqSpikeFamilyOutcome`. */
+  familyOutcomes: LiqSpikeFamilyOutcome[];
   budget: LiqSpikeBudget;
 }
 
@@ -443,15 +464,22 @@ export function checkGeneralRequestStartSpacing(
  * caller-supplied client.
  *
  * Stage 1 fetches the static `player-results` titles. Stage 2 discovers
- * real `tournament-results` titles via `list=allpages`, seeded from series
- * names plus any real internal links found in a `sufficient` Stage-1 page.
- * Stage 3 discovers real `other-entrant-brackets` titles the SAME way,
- * seeded from the tournament event pages Stage 2 actually found (a
- * discovered event page's own bracket subpage lives directly under it).
- * Every stage respects `LIQ_SPIKE_MAX_GENERAL_REQUESTS` and never issues a
- * parse-class request. Never throws on a missing or undiscoverable title —
- * only on an observed general-class request-spacing violation, which is a
- * real terms-of-use breach and must never be silently recorded.
+ * real `tournament-results` titles via `list=allpages`, seeded ONLY from
+ * `LIQ_SPIKE_SERIES_PREFIX_SEEDS` (fix 3 — a player page's own internal
+ * links are never followed; see this file's module doc comment). Stage 3
+ * discovers real `other-entrant-brackets` titles the SAME way, seeded from
+ * the tournament event pages Stage 2 actually found (a discovered event
+ * page's own bracket subpage lives directly under it). Stages 2 and 3 each
+ * draw on their OWN reserved discovery/fetch budget
+ * (`LIQ_SPIKE_RESERVED_DISCOVERY_REQUESTS`/
+ * `LIQ_SPIKE_RESERVED_FETCH_REQUESTS`), never the other's, on top of the
+ * overall `LIQ_SPIKE_MAX_GENERAL_REQUESTS` cap — the plan is logged up
+ * front. Never throws on a missing or undiscoverable title — a family
+ * that finds nothing is recorded `not-sampled` with a reason (see
+ * `LiqSpikeFamilyOutcome`) and the run still completes cleanly. The ONE
+ * thing this function DOES throw on is an observed general-class
+ * request-spacing violation, which is a real terms-of-use breach and must
+ * never be silently recorded.
  */
 export async function runLiqSpike(
   deps: LiqSpikeDeps,
@@ -467,9 +495,8 @@ export async function runLiqSpike(
   const discoveries: LiqSpikeDiscoveryResult[] = [];
   const normalizations: LiqSpikeNormalization[] = [];
   const redirectsFollowed: LiqSpikeNormalization[] = [];
+  const familyOutcomes: LiqSpikeFamilyOutcome[] = [];
   const completionTimestampsMs: number[] = [];
-  const linkSeeds: string[] = [];
-  const seenLinkSeeds = new Set<string>();
 
   let generalRequestCount = 0;
   let budgetExhausted = false;
@@ -486,6 +513,15 @@ export async function runLiqSpike(
     }
     return true;
   };
+
+  deps.log(
+    `liq-spike: planned up to ${
+      targets.length +
+      2 * (LIQ_SPIKE_RESERVED_DISCOVERY_REQUESTS + LIQ_SPIKE_RESERVED_FETCH_REQUESTS)
+    } general requests (cap ${maxGeneralRequests}) — player-results=${targets.length} static fetch(es), ` +
+      `tournament-results discovery<=${LIQ_SPIKE_RESERVED_DISCOVERY_REQUESTS}+fetch<=${LIQ_SPIKE_RESERVED_FETCH_REQUESTS}, ` +
+      `other-entrant-brackets discovery<=${LIQ_SPIKE_RESERVED_DISCOVERY_REQUESTS}+fetch<=${LIQ_SPIKE_RESERVED_FETCH_REQUESTS}`,
+  );
 
   const recordNormalizations = (
     family: LiqSpikeFamily,
@@ -542,7 +578,9 @@ export async function runLiqSpike(
   };
 
   // ---- Stage 1: static player-results titles ----
+  const playerResultsTitles: string[] = [];
   for (const target of targets) {
+    playerResultsTitles.push(...target.titles);
     if (!hasBudget()) {
       break;
     }
@@ -555,36 +593,33 @@ export async function runLiqSpike(
     recordNormalizations(target.family, result.redirects, redirectsFollowed, 'redirected');
 
     for (const page of result.pages) {
-      const { verdict, content } = pushPage(target.family, page, completedAtMs);
-      if (verdict === 'sufficient') {
-        for (const link of extractWikilinkTargets(content)) {
-          if (!seenLinkSeeds.has(link)) {
-            seenLinkSeeds.add(link);
-            linkSeeds.push(link);
-          }
-        }
-      }
+      pushPage(target.family, page, completedAtMs);
     }
   }
+  if (targets.length > 0) {
+    familyOutcomes.push({
+      family: 'player-results',
+      status: 'sampled',
+      sampledTitles: playerResultsTitles,
+    });
+  }
 
-  // ---- Stage 2: discover real tournament-results titles ----
+  // ---- Stage 2: discover real tournament-results titles (fix 3: seeded
+  // ONLY from LIQ_SPIKE_SERIES_PREFIX_SEEDS, never from a player page's own
+  // links — see this file's module doc comment) ----
   const tournamentTitles: string[] = [];
   const seenTournamentTitles = new Set<string>();
-  const tournamentCandidatePrefixes = [...seedPrefixes, ...linkSeeds];
+  let tournamentDiscoveryAttempts = 0;
 
-  for (const prefix of tournamentCandidatePrefixes) {
+  for (const prefix of seedPrefixes) {
+    if (tournamentDiscoveryAttempts >= LIQ_SPIKE_RESERVED_DISCOVERY_REQUESTS) {
+      break;
+    }
     if (!hasBudget() || tournamentTitles.length >= maxTitlesPerDiscoveryFamily) {
       break;
     }
-    // A candidate prefix that IS itself an already-accepted title (a
-    // series-name seed and a link-seed can both resolve to the same event
-    // page) would only ever re-discover subpages of that title, none of
-    // which is itself a tournament-EVENT page — a guaranteed-wasted
-    // request. Skip it rather than spend budget confirming that.
-    if (seenTournamentTitles.has(prefix)) {
-      continue;
-    }
     const discovered = await deps.client.listSubpages(prefix, { maxContinuations: 0 });
+    tournamentDiscoveryAttempts += 1;
     generalRequestCount += 1;
     const completedAtMs = deps.now();
     completionTimestampsMs.push(completedAtMs);
@@ -618,9 +653,16 @@ export async function runLiqSpike(
   }
 
   if (tournamentTitles.length === 0) {
-    deps.log(
-      `liq-spike: [tournament-results] discovery found no matching titles among ${tournamentCandidatePrefixes.length} prefix(es) tried`,
-    );
+    const reason = !hasBudget()
+      ? 'budget'
+      : `no matching titles discovered among ${tournamentDiscoveryAttempts} prefix(es) tried`;
+    familyOutcomes.push({
+      family: 'tournament-results',
+      status: 'not-sampled',
+      reason,
+      sampledTitles: [],
+    });
+    deps.log(`liq-spike: [tournament-results] not-sampled: ${reason}`);
   } else if (hasBudget()) {
     const result = await deps.client.getWikitext(tournamentTitles);
     generalRequestCount += 1;
@@ -631,17 +673,35 @@ export async function runLiqSpike(
     for (const page of result.pages) {
       pushPage('tournament-results', page, completedAtMs);
     }
+    familyOutcomes.push({
+      family: 'tournament-results',
+      status: 'sampled',
+      sampledTitles: tournamentTitles,
+    });
+  } else {
+    familyOutcomes.push({
+      family: 'tournament-results',
+      status: 'not-sampled',
+      reason: 'budget',
+      sampledTitles: [],
+    });
+    deps.log('liq-spike: [tournament-results] not-sampled: budget');
   }
 
   // ---- Stage 3: discover real other-entrant-brackets titles, seeded from Stage 2's discovered event pages ----
   const bracketTitles: string[] = [];
   const seenBracketTitles = new Set<string>();
+  let bracketDiscoveryAttempts = 0;
 
   for (const eventTitle of tournamentTitles) {
+    if (bracketDiscoveryAttempts >= LIQ_SPIKE_RESERVED_DISCOVERY_REQUESTS) {
+      break;
+    }
     if (!hasBudget() || bracketTitles.length >= maxTitlesPerDiscoveryFamily) {
       break;
     }
     const discovered = await deps.client.listSubpages(eventTitle, { maxContinuations: 0 });
+    bracketDiscoveryAttempts += 1;
     generalRequestCount += 1;
     const completedAtMs = deps.now();
     completionTimestampsMs.push(completedAtMs);
@@ -675,9 +735,16 @@ export async function runLiqSpike(
   }
 
   if (bracketTitles.length === 0) {
-    deps.log(
-      `liq-spike: [other-entrant-brackets] discovery found no matching titles among ${tournamentTitles.length} tournament event page(s) tried`,
-    );
+    const reason = !hasBudget()
+      ? 'budget'
+      : `no matching titles discovered among ${tournamentTitles.length} tournament event page(s) tried`;
+    familyOutcomes.push({
+      family: 'other-entrant-brackets',
+      status: 'not-sampled',
+      reason,
+      sampledTitles: [],
+    });
+    deps.log(`liq-spike: [other-entrant-brackets] not-sampled: ${reason}`);
   } else if (hasBudget()) {
     const result = await deps.client.getWikitext(bracketTitles);
     generalRequestCount += 1;
@@ -693,6 +760,19 @@ export async function runLiqSpike(
     for (const page of result.pages) {
       pushPage('other-entrant-brackets', page, completedAtMs);
     }
+    familyOutcomes.push({
+      family: 'other-entrant-brackets',
+      status: 'sampled',
+      sampledTitles: bracketTitles,
+    });
+  } else {
+    familyOutcomes.push({
+      family: 'other-entrant-brackets',
+      status: 'not-sampled',
+      reason: 'budget',
+      sampledTitles: [],
+    });
+    deps.log('liq-spike: [other-entrant-brackets] not-sampled: budget');
   }
 
   // ---- budget + FAIL LOUDLY on a real spacing violation ----
@@ -721,5 +801,5 @@ export async function runLiqSpike(
       `minObservedGeneralCompletionSpacingMs=${budget.minObservedGeneralCompletionSpacingMs ?? 'n/a'}`,
   );
 
-  return { pages, discoveries, normalizations, redirectsFollowed, budget };
+  return { pages, discoveries, normalizations, redirectsFollowed, familyOutcomes, budget };
 }
