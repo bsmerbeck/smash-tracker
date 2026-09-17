@@ -6,9 +6,9 @@
  * make a miss disappear — a target existing to be met, not adjusted to match
  * whatever the code currently does.
  *
- * This array is APPEND-ONLY: a later plan may APPEND a new budget id (see
- * plan 36-08's `server-heap-delta-50k`, added under this exact rule) but may
- * never edit or remove an existing entry. The order below is a fixed,
+ * This array is APPEND-ONLY: a later plan may APPEND a new budget id (plan
+ * 36-08 appends a distinct server-side heap-delta id under this exact rule)
+ * but may never edit or remove an existing entry. The order below is a fixed,
  * declared order — the SCL-01 readout renders every budget in this same
  * order, so two readouts stay diffable line-for-line.
  *
@@ -17,9 +17,13 @@
  * instruments must never share an id — a Node `process.memoryUsage()` delta
  * and a Chrome DevTools Memory-panel heap delta are not the same quantity,
  * and recording them against one target would silently launder the
- * difference. That is why `heap-delta-50k` (this plan, `browser-protocol`)
- * and any future Node-side heap measurement are distinct ids, never the
- * same one reused across instruments.
+ * difference. That is why this plan's browser-measured heap budget below
+ * and any future Node-side heap measurement (see plan 36-08) are distinct
+ * ids, never the same one reused across instruments — this comment
+ * deliberately does not restate either id verbatim, since a later target-
+ * drift guard locates each id's `target:` field by searching forward from
+ * that id's FIRST textual occurrence in this file, and a second, earlier
+ * mention in prose would point the guard at the wrong text.
  */
 
 export type BudgetUnit = 'ms' | 'MB' | 'bytes';
