@@ -70,6 +70,41 @@ import type { Database } from 'firebase-admin/database';
  * each process's local `Date.now`, so all participants compare against one
  * authority. Adopting that is the named follow-up; until then, do not add a
  * second concurrent Liquipedia fetcher.
+ *
+ * D-29 FIX — WITHIN-PROCESS TRANSACTION-LATENCY DRIFT (owner-recorded
+ * decision, 36-CONTEXT.md; closes a SEPARATE defect from the cross-process
+ * risk above, found live by the Phase 36 Liquipedia spike). The prior
+ * version of `acquireOnBudget` stamped `lastGrantedAtMs` from the clock
+ * read BEFORE the `.transaction()` round trip started, then returned to
+ * the caller as soon as the transaction committed — with no wait to align
+ * the RETURN (and therefore the caller's actual HTTP dispatch, which
+ * follows immediately) to that stamp. A real RTDB transaction's round-trip
+ * latency varies — commonly ~1s on a cold connection, ~10ms once warm —
+ * and when latency DROPS between two consecutive acquisitions, the REAL
+ * spacing between the two actual request dispatches shrinks by exactly
+ * that drop, even though both STAMPS were correctly `>= intervalMs` apart.
+ * Observed live: two requests measured 908ms apart (required: >= 2000ms)
+ * after a 1100ms-then-10ms transaction-latency profile.
+ *
+ * The fix, proven in `limiter.test.ts`'s "request-start spacing under
+ * variable transaction latency" suite: `acquireOnBudget` now (1) commits a
+ * RESERVATION — the earliest legal slot given what it can see, computed
+ * the same way as before — UNCONDITIONALLY (never aborts for "too soon";
+ * reserving a slot still in the future is always safe, since publishing a
+ * LARGER-than-required gap is never a compliance problem, only a smaller
+ * one is), then (2) compares the REAL, POST-COMMIT clock against that
+ * reserved slot: if the transaction's own latency already carried the
+ * clock past the slot, it REPAIRS the stored stamp to the real release
+ * time (a monotonic max, safe under concurrent writers) so the NEXT
+ * acquisition's floor is accurate rather than a stale underestimate;
+ * otherwise it sleeps the remainder so `acquire()` never RESOLVES before
+ * its reserved slot. This guarantees — by induction over any sequence of
+ * acquisitions, regardless of individual transaction latencies, proven in
+ * this file's doc comment on `acquireOnBudget` — that consecutive
+ * acquisitions of ONE budget path RESOLVE `>= intervalMs` apart in real
+ * time, within one process. It does NOT touch, and does not need to touch,
+ * the cross-process clock-skew risk described above — that remains the
+ * named follow-up, unaffected by this fix.
  */
 
 export const LIQUIPEDIA_GENERAL_MIN_INTERVAL_MS = 2000;
@@ -132,11 +167,115 @@ const defaultSleep = (ms: number): Promise<void> =>
   new Promise((resolve) => setTimeout(resolve, ms));
 
 /**
- * Acquires a single interval-spaced budget on `budgetPath`, sleeping through
- * the injected `sleep` as needed, bounded by `remainingWaitBudgetMs` and
- * `LIQUIPEDIA_LIMITER_MAX_ATTEMPTS`. Returns the sub-result for THIS budget
- * only — callers composing multiple budgets (see `createLiquipediaLimiter`
- * below) combine sub-results themselves.
+ * D-29: best-effort correction, called only when a reservation's own
+ * transaction latency already carried the real clock PAST the slot it
+ * reserved. Raises the stored stamp to `atLeastMs` — a monotonic max, never
+ * a decrease — so the NEXT acquisition's `current.lastGrantedAtMs +
+ * intervalMs` floor reflects the ACTUAL release time, not the
+ * now-outdated original reservation. A no-op abort (returning `undefined`)
+ * when the stored value is already `>= atLeastMs` is an intentional,
+ * unremarkable outcome (e.g. a concurrent acquisition already raised it
+ * further) — never retried: this is a best-effort tightening on top of a
+ * reservation that is already safe (never too early) even if the repair is
+ * skipped, so failing to land it costs at most a slightly wider gap than
+ * strictly necessary for the NEXT acquisition, never a violation.
+ */
+async function repairStampAtLeast(
+  database: Database,
+  budgetPath: string,
+  atLeastMs: number,
+): Promise<void> {
+  await database.ref(budgetPath).transaction((raw) => {
+    // CR-01 parity: the null-first-run pass must not be trusted as "genuinely
+    // empty" — but writing `atLeastMs` on that pass is safe either way,
+    // because if real data turns out to already be >= atLeastMs, the SDK's
+    // second, real-data pass re-invokes this function and takes the abort
+    // branch instead.
+    const current = parseIntervalBudget(raw);
+    if (current !== null && current.lastGrantedAtMs >= atLeastMs) {
+      return undefined;
+    }
+    return { lastGrantedAtMs: atLeastMs } satisfies StoredIntervalBudget;
+  });
+}
+
+/**
+ * D-29: per-(limiter-instance, budget-path) precision cache. `null` (no
+ * grant released yet by THIS instance).
+ *
+ * WHY THIS EXISTS (the repair mechanism alone is not enough): the natural
+ * first fix — reserve a slot, and if a transaction's own latency carries
+ * the clock past it, REPAIR the stored stamp to the real post-commit clock
+ * reading — has a subtle non-convergence problem. The repair itself is
+ * ANOTHER `.transaction()` call, which ALSO takes real, possibly nonzero
+ * time; the value it writes was necessarily read BEFORE that write's own
+ * latency elapsed, so it under-states the instant `acquire()` actually
+ * returns by exactly the repair transaction's own latency. Chasing that
+ * gap with a second repair reproduces the identical problem one level
+ * deeper — under a constant per-transaction latency (measured live: this
+ * is not a contrived edge case) the chase never converges.
+ *
+ * The fix: track the ACTUAL release instant of every grant THIS instance
+ * hands out in a plain local variable — no transaction latency is possible
+ * for a synchronous variable write, so it is exact. `acquireOnBudget`
+ * folds `lastReleaseAtMs + intervalMs` into the SAME `max(...)` reservation
+ * floor as the durable RTDB stamp. For the sequential-same-instance case
+ * (the ONLY way every real caller in this codebase uses this limiter —
+ * `liqSpikeProbe.ts`/`enrichDemoAccounts.ts` each construct ONE instance
+ * and call `.acquire()` repeatedly), this local floor is provably exact
+ * regardless of transaction latency, and the durable RTDB stamp remains
+ * the ONLY coordination mechanism across separate instances/processes
+ * (the "two independently constructed limiter instances sharing one
+ * database" contract, unaffected by this cache — see its own test, which
+ * injects no transaction latency and passes via the durable stamp alone,
+ * exactly as before). The repair mechanism (`repairStampAtLeast`) is kept
+ * as a best-effort SECONDARY correction for that cross-instance case
+ * (better durable data beats none, even if not perfectly precise) — never
+ * relied upon alone for the property this fix proves.
+ */
+interface LocalReleaseTracker {
+  lastReleaseAtMs: number | null;
+}
+
+/**
+ * Acquires a single interval-spaced budget slot on `budgetPath`.
+ *
+ * ALGORITHM (D-29 — see this file's module doc comment for the incident,
+ * and `LocalReleaseTracker`'s doc comment above for why a local precision
+ * cache is necessary alongside the durable repair below):
+ *
+ * 1. RESERVE. Compute the earliest legal slot given every floor this
+ *    attempt can see — `nowBefore`, the durable `current.lastGrantedAtMs +
+ *    intervalMs` (if any prior grant is recorded), and THIS instance's own
+ *    `localTracker.lastReleaseAtMs + intervalMs` (if any) — and commit the
+ *    max of the three UNCONDITIONALLY. Never abort for "too soon": a
+ *    reservation still in the future is always safe to claim, because
+ *    publishing a LARGER gap than required is never a compliance problem —
+ *    only a SMALLER one is, which is exactly what the pre-fix "abort now,
+ *    decide based on a stale pre-transaction clock" pattern could produce.
+ * 2. RELEASE. Read the clock again, now that the commit has actually
+ *    happened (`postCommitNow`):
+ *    - If `postCommitNow > reservedSlot` (the transaction's own round-trip
+ *      latency alone carried the clock past the slot), best-effort REPAIR
+ *      the durable stamp to `postCommitNow` (see `repairStampAtLeast`) and
+ *      proceed to release immediately — no sleep needed; we are already
+ *      past our own reserved slot.
+ *    - Otherwise, sleep the remainder so `acquire()` never RESOLVES before
+ *      `reservedSlot`. If that remainder would exceed
+ *      `remainingWaitBudgetMs`, decline (`wait-budget-exceeded`) WITHOUT
+ *      sleeping past it and WITHOUT updating `localTracker` (nothing was
+ *      actually released) — the durable reservation itself stays
+ *      committed regardless (a declined acquisition never dispatches a
+ *      request, so a slightly wider gap for whoever acquires next is a
+ *      safe, not a violating, outcome).
+ * 3. On every granted release, stamp `localTracker.lastReleaseAtMs =
+ *    now()` — read AFTER any sleep/repair, so it is the exact real instant
+ *    control returns to the caller.
+ *
+ * A `result.committed === false` from step 1 is therefore NEVER our own
+ * voluntary choice anymore — the update function always returns a value.
+ * It can only mean genuine RTDB-level contention on the write itself, which
+ * `LIQUIPEDIA_LIMITER_MAX_ATTEMPTS` bounds defensively, exactly as before.
  */
 async function acquireOnBudget(
   database: Database,
@@ -145,62 +284,72 @@ async function acquireOnBudget(
   remainingWaitBudgetMs: number,
   now: () => number,
   sleep: (ms: number) => Promise<void>,
+  localTracker: LocalReleaseTracker,
 ): Promise<LiquipediaAcquireResult> {
   if (remainingWaitBudgetMs <= 0) {
     return { granted: false, waitedMs: 0, reason: 'no-wait-budget' };
   }
 
-  let waitedMs = 0;
+  let reservedSlot: number | undefined;
 
   for (let attempt = 0; attempt < LIQUIPEDIA_LIMITER_MAX_ATTEMPTS; attempt += 1) {
-    const nowMs = now();
+    const nowBefore = now();
+    const localFloor =
+      localTracker.lastReleaseAtMs !== null ? localTracker.lastReleaseAtMs + intervalMs : -Infinity;
+    let committedSlot = nowBefore;
+
     const result = await database.ref(budgetPath).transaction((raw) => {
       // The FIRST invocation of this function within a given `.transaction()`
       // call is ALWAYS run against `null` (the SDK's local-cache emulation),
       // even when real server data exists (review CR-01). A stored budget
       // must therefore never be trusted on that first pass; `parseIntervalBudget`
       // already treats `null`/malformed input as "no prior grant", which is
-      // exactly the behavior we want here too: never abort on `null`, only on
-      // a genuine too-soon condition against REAL stored data.
+      // exactly the behavior we want here too.
       const current = parseIntervalBudget(raw);
-      if (current === null) {
-        // No prior grant recorded (or this is the null-first-run pass) — grant
-        // immediately, stamping the current clock.
-        return { lastGrantedAtMs: nowMs } satisfies StoredIntervalBudget;
-      }
-      const elapsedMs = nowMs - current.lastGrantedAtMs;
-      if (elapsedMs < intervalMs) {
-        // Too soon — ABORT (return undefined) rather than granting early.
-        // The caller computes the residual wait, checks it against the
-        // remaining budget, sleeps, and retries.
-        return undefined;
-      }
-      // Grant. Stamp the GREATER of the current clock and the previous
-      // grant plus the interval, so a burst of concurrent acquisitions
-      // serializes onto the interval grid rather than clustering just
-      // inside it.
-      return {
-        lastGrantedAtMs: Math.max(nowMs, current.lastGrantedAtMs + intervalMs),
-      } satisfies StoredIntervalBudget;
+      const durableFloor = current === null ? -Infinity : current.lastGrantedAtMs + intervalMs;
+      const slot = Math.max(nowBefore, durableFloor, localFloor);
+      committedSlot = slot;
+      // Always commit a reservation — see the function doc comment above
+      // for why this never needs to abort for timing reasons anymore.
+      return { lastGrantedAtMs: slot } satisfies StoredIntervalBudget;
     });
 
     if (result.committed) {
-      return { granted: true, waitedMs };
+      reservedSlot = committedSlot;
+      break;
     }
-
-    const stored = parseIntervalBudget(result.snapshot.val());
-    const elapsedMs = stored === null ? intervalMs : now() - stored.lastGrantedAtMs;
-    const residualWaitMs = Math.max(1, intervalMs - elapsedMs);
-
-    if (waitedMs + residualWaitMs > remainingWaitBudgetMs) {
-      return { granted: false, waitedMs, reason: 'wait-budget-exceeded' };
-    }
-
-    await sleep(residualWaitMs);
-    waitedMs += residualWaitMs;
+    // Genuine infra-level contention on the write itself (never our own
+    // timing decision now) — retry with a fresh `now()` read, bounded by
+    // the attempt cap.
   }
 
-  return { granted: false, waitedMs, reason: 'max-attempts-exceeded' };
+  if (reservedSlot === undefined) {
+    return { granted: false, waitedMs: 0, reason: 'max-attempts-exceeded' };
+  }
+
+  const release = (waitedMs: number): LiquipediaAcquireResult => {
+    localTracker.lastReleaseAtMs = now();
+    return { granted: true, waitedMs };
+  };
+
+  const postCommitNow = now();
+  if (postCommitNow > reservedSlot) {
+    // The transaction round trip alone already carried the clock past our
+    // own reserved slot — best-effort repair the durable stamp toward
+    // reality (see `LocalReleaseTracker`'s doc comment for why this alone
+    // would not be enough) and release immediately; nothing to sleep for.
+    await repairStampAtLeast(database, budgetPath, postCommitNow);
+    return release(0);
+  }
+
+  const sleepMs = reservedSlot - postCommitNow;
+  if (sleepMs > remainingWaitBudgetMs) {
+    return { granted: false, waitedMs: 0, reason: 'wait-budget-exceeded' };
+  }
+  if (sleepMs > 0) {
+    await sleep(sleepMs);
+  }
+  return release(sleepMs);
 }
 
 /**
@@ -216,6 +365,12 @@ export function createLiquipediaLimiter(
 ): LiquipediaLimiter {
   const now = options.now ?? Date.now;
   const sleep = options.sleep ?? defaultSleep;
+
+  // D-29: one precision cache per budget path, scoped to THIS instance —
+  // see `LocalReleaseTracker`'s doc comment for why this is required
+  // alongside the durable RTDB stamp, not a redundant optimization.
+  const generalTracker: LocalReleaseTracker = { lastReleaseAtMs: null };
+  const parseTracker: LocalReleaseTracker = { lastReleaseAtMs: null };
 
   return {
     async acquire(
@@ -234,6 +389,7 @@ export function createLiquipediaLimiter(
           remainingWaitBudgetMs,
           now,
           sleep,
+          generalTracker,
         );
       }
 
@@ -246,6 +402,7 @@ export function createLiquipediaLimiter(
         remainingWaitBudgetMs,
         now,
         sleep,
+        parseTracker,
       );
       if (!parseResult.granted) {
         return parseResult;
@@ -259,7 +416,22 @@ export function createLiquipediaLimiter(
         generalRemaining,
         now,
         sleep,
+        generalTracker,
       );
+
+      if (generalResult.granted) {
+        // D-29: a parse-class ACQUISITION only actually dispatches once
+        // BOTH sub-budgets are granted — the caller (`client.ts`) fires the
+        // real request only after this whole composed call resolves, not
+        // after the parse sub-call alone. `parseTracker.lastReleaseAtMs`
+        // (set by the parse sub-call above) therefore understates the true
+        // release instant by however long the trailing general sub-call
+        // ITSELF took — re-stamp it here, AFTER the general sub-call, with
+        // the exact composed-release instant, so the NEXT parse-class
+        // acquisition's floor is accurate. A `now()` read is exact (no
+        // transaction latency), so this is a correction, not a guess.
+        parseTracker.lastReleaseAtMs = now();
+      }
 
       return {
         granted: generalResult.granted,
