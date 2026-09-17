@@ -207,17 +207,16 @@ describe('assertSafeLiqSpikeOutPath (WR-03/D-28)', () => {
     }
   });
 
-  it('allows the happy path: matching name, confirmed ignored', () => {
+  it('allows the happy path: matching name, confirmed ignored — and returns the resolved absolute path', () => {
     const root = mkdtempSync(path.join(os.tmpdir(), 'liq-spike-probe-core-'));
     mkdirSync(path.join(root, 'apps', 'api'), { recursive: true });
     try {
-      expect(() =>
-        assertSafeLiqSpikeOutPath({
-          outPath: 'apps/api/liq-spike-report.json',
-          repoRoot: root,
-          isGitIgnored: () => true,
-        }),
-      ).not.toThrow();
+      const resolved = assertSafeLiqSpikeOutPath({
+        outPath: 'apps/api/liq-spike-report.json',
+        repoRoot: root,
+        isGitIgnored: () => true,
+      });
+      expect(resolved).toBe(path.join(root, 'apps', 'api', 'liq-spike-report.json'));
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
@@ -231,6 +230,73 @@ describe('assertSafeLiqSpikeOutPath (WR-03/D-28)', () => {
         repoRoot: realRepoRoot,
       }),
     ).not.toThrow();
+  });
+
+  // Fix A regression: the owner's first live run validated the correct
+  // repo-root-relative resolution here, then `liqSpikeProbe.ts` separately
+  // called `writeFile(outPath, ...)` with the raw `--out` string — which
+  // `fs.writeFile` resolves against `process.cwd()`, not `repoRoot`. `pnpm
+  // --filter <pkg> exec` sets `cwd` to `apps/api/`, so that second
+  // resolution silently targeted `apps/api/apps/api/liq-spike-report.json`,
+  // which does not exist, and the write failed with ENOENT after the run
+  // had already spent its Liquipedia request budget. `liqSpikeProbe.ts`'s
+  // `main()` now writes to the value THIS function returns, never to a
+  // second resolution of `outPath`.
+  describe('write-target resolution (fix A regression)', () => {
+    it('resolves the write target from repoRoot, independent of process.cwd()', () => {
+      const root = mkdtempSync(path.join(os.tmpdir(), 'liq-spike-probe-core-'));
+      const apiDir = path.join(root, 'apps', 'api');
+      mkdirSync(apiDir, { recursive: true });
+      const originalCwd = process.cwd();
+      try {
+        // Simulate `pnpm --filter @smash-tracker/api exec` setting cwd to
+        // apps/api/ — the exact condition under which a second, independent
+        // resolution of the same relative --out string diverged from the
+        // one validated here.
+        process.chdir(apiDir);
+        const resolved = assertSafeLiqSpikeOutPath({
+          outPath: 'apps/api/liq-spike-report.json',
+          repoRoot: root,
+          isGitIgnored: () => true,
+        });
+        expect(resolved).toBe(path.join(root, 'apps', 'api', 'liq-spike-report.json'));
+      } finally {
+        process.chdir(originalCwd);
+        rmSync(root, { recursive: true, force: true });
+      }
+    });
+
+    it('resolves an absolute --out inside apps/api/ to itself', () => {
+      const root = mkdtempSync(path.join(os.tmpdir(), 'liq-spike-probe-core-'));
+      mkdirSync(path.join(root, 'apps', 'api'), { recursive: true });
+      try {
+        const absoluteOut = path.join(root, 'apps', 'api', 'liq-spike-report.json');
+        const resolved = assertSafeLiqSpikeOutPath({
+          outPath: absoluteOut,
+          repoRoot: root,
+          isGitIgnored: () => true,
+        });
+        expect(resolved).toBe(absoluteOut);
+      } finally {
+        rmSync(root, { recursive: true, force: true });
+      }
+    });
+
+    it('still refuses an absolute --out outside the repo', () => {
+      const root = mkdtempSync(path.join(os.tmpdir(), 'liq-spike-probe-core-'));
+      mkdirSync(path.join(root, 'apps', 'api'), { recursive: true });
+      try {
+        expect(() =>
+          assertSafeLiqSpikeOutPath({
+            outPath: '/etc/passwd',
+            repoRoot: root,
+            isGitIgnored: () => true,
+          }),
+        ).toThrow(UnsafeOutputPathError);
+      } finally {
+        rmSync(root, { recursive: true, force: true });
+      }
+    });
   });
 });
 

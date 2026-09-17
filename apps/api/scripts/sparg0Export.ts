@@ -23,7 +23,13 @@
  *                 repo root `.gitignore`, added in the same change as this
  *                 script) AND be confirmed ignored by `git check-ignore -q`
  *                 — both checked and enforced (`assertSafeSparg0ExportOutPath`
- *                 in `sparg0ExportCore.ts`) before any network/RTDB read.
+ *                 in `sparg0ExportCore.ts`) before any network/RTDB read,
+ *                 which returns the resolved absolute path this process
+ *                 writes to (fix A/WR-05, shared with `liqSpikeProbe.ts`) —
+ *                 the raw `--out` string is never re-resolved a second time
+ *                 (`pnpm --filter <pkg> exec` sets `cwd` to `apps/api/`, so a
+ *                 second resolution of the same relative string would
+ *                 silently target a different, nonexistent path).
  *                 Exported production match data must never be committed.
  *
  * READ ONLY. This script constructs no write of any kind — see
@@ -38,7 +44,7 @@ import { deleteApp } from 'firebase-admin/app';
 import { loadEnv } from '../src/config/env.js';
 import { initFirebase } from '../src/firebase/admin.js';
 import { runWithLifecycle } from './enrichLifecycle.js';
-import { resolveGitRepoRoot } from './outputPathGuard.js';
+import { resolveGitRepoRoot, toRepoRelativePath } from './outputPathGuard.js';
 import {
   exportMatchesForUid,
   buildExportReceipt,
@@ -113,9 +119,15 @@ async function main(): Promise<void> {
 
   const args = parseSparg0ExportArgs(process.argv.slice(2));
 
-  // WR-03/D-28: refuse an unsafe `--out` before any network/RTDB read.
+  // WR-03/D-28: refuse an unsafe `--out` before any network/RTDB read. The
+  // RESOLVED ABSOLUTE PATH returned here is the ONLY path this process ever
+  // writes to (fix A/WR-05, shared with liqSpikeProbe.ts) — never re-resolve
+  // `args.outPath` a second time. `pnpm --filter <pkg> exec` sets `cwd` to
+  // `apps/api/`, so a second, independent resolution of this same relative
+  // string against `process.cwd()` would silently target a different,
+  // nonexistent path (see `outputPathGuard.ts`'s doc comment).
   const repoRoot = resolveGitRepoRoot();
-  assertSafeSparg0ExportOutPath({ outPath: args.outPath, repoRoot });
+  const resolvedOutPath = assertSafeSparg0ExportOutPath({ outPath: args.outPath, repoRoot });
 
   const env = loadEnv();
   assertNotEmulator(env.FIREBASE_DATABASE_EMULATOR_HOST);
@@ -137,9 +149,11 @@ async function main(): Promise<void> {
         databaseHost,
       });
 
-      await writeFile(args.outPath, `${JSON.stringify(receipt, null, 2)}\n`, 'utf8');
+      // The SAME resolved absolute path validated above, before any
+      // network/RTDB read — never a second, independent resolution.
+      await writeFile(resolvedOutPath, `${JSON.stringify(receipt, null, 2)}\n`, 'utf8');
       console.log(`Matches exported: ${receipt.matchCount}`);
-      console.log(`[receipt] sparg0-export: path=${args.outPath}`);
+      console.log(`[receipt] sparg0-export: path=${toRepoRelativePath(resolvedOutPath, repoRoot)}`);
 
       return 0;
     },

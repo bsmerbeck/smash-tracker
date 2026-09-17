@@ -25,23 +25,27 @@ import { assertOutputPathIsGitignored } from './outputPathGuard.js';
  */
 export const LIQ_SPIKE_REPORT_OUT_PATTERN = /^apps\/api\/liq-spike-report[^/]*\.json$/;
 
+export const LIQ_SPIKE_REPORT_OUT_PATTERN_DESCRIPTION = 'apps/api/liq-spike-report*.json';
+
 /**
  * WR-03/D-28: refuses to write unless `--out` matches
  * `apps/api/liq-spike-report*.json` (the exact gitignored pattern this
  * script's docstring promises) AND is confirmed ignored by
  * `git check-ignore -q`. Called BEFORE any network/RTDB read — see
  * `liqSpikeProbe.ts`'s `main()`. Throws `UnsafeOutputPathError`; the
- * message never includes any page content or PII.
+ * message never includes any page content or PII. Returns the resolved
+ * absolute path — see `assertOutputPathIsGitignored`'s doc comment for why
+ * the caller must write to exactly this value.
  */
 export function assertSafeLiqSpikeOutPath(options: {
   outPath: string;
   repoRoot: string;
   isGitIgnored?: (absolutePath: string, repoRoot: string) => boolean;
-}): void {
-  assertOutputPathIsGitignored({
+}): string {
+  return assertOutputPathIsGitignored({
     ...options,
     allowedPattern: LIQ_SPIKE_REPORT_OUT_PATTERN,
-    allowedPatternDescription: 'apps/api/liq-spike-report*.json',
+    allowedPatternDescription: LIQ_SPIKE_REPORT_OUT_PATTERN_DESCRIPTION,
   });
 }
 

@@ -106,6 +106,18 @@ function assertFilesystemTargetIsSafe(resolvedPath: string, repoRoot: string): v
       '--out resolves through a symlinked directory outside the repository — refusing to write',
     );
   }
+
+  // A write failure must never happen AFTER the network/RTDB read this
+  // guard exists to precede — check writability now, while the only cost of
+  // being wrong is re-running the guard, not re-spending a request budget
+  // or a production read.
+  try {
+    fs.accessSync(parentReal, fs.constants.W_OK);
+  } catch {
+    throw new UnsafeOutputPathError(
+      '--out directory exists but is not writable — refusing to proceed before any network/RTDB read',
+    );
+  }
 }
 
 /**
@@ -113,9 +125,23 @@ function assertFilesystemTargetIsSafe(resolvedPath: string, repoRoot: string): v
  * `repoRoot`, both matches `allowedPattern` (which also rules out traversal
  * outside the repo, since every allowed pattern is anchored under
  * `apps/api/`) AND is confirmed ignored by git AND the real filesystem
- * target (not just the path string) is free of symlink tampering.
+ * target (not just the path string) is free of symlink tampering AND its
+ * parent directory is writable.
+ *
+ * Returns the resolved ABSOLUTE path — callers MUST write to exactly this
+ * value, never re-resolve the original `outPath` string a second time.
+ * `pnpm --filter <pkg> exec` sets `cwd` to the package directory
+ * (`apps/api/`), not the repo root the docs invoke it from, so a SECOND,
+ * independent resolution of the same relative `--out` string against
+ * `process.cwd()` (e.g. a later raw `writeFile(outPath, ...)` call) silently
+ * targets a DIFFERENT, usually nonexistent, path than the one validated
+ * here — exactly the incident that made the owner's first live spike run
+ * fail with `ENOENT` after it had already spent its Liquipedia request
+ * budget. Both `sparg0Export.ts` and `liqSpikeProbe.ts` now hold onto this
+ * return value and write to it directly, later, without calling this
+ * function a second time.
  */
-export function assertOutputPathIsGitignored(options: AssertOutputPathIsGitignoredOptions): void {
+export function assertOutputPathIsGitignored(options: AssertOutputPathIsGitignoredOptions): string {
   const { outPath, allowedPattern, allowedPatternDescription } = options;
   const repoRoot = path.resolve(options.repoRoot);
   const resolved = path.resolve(repoRoot, outPath);
@@ -142,4 +168,11 @@ export function assertOutputPathIsGitignored(options: AssertOutputPathIsGitignor
       `--out is not confirmed ignored by git (git check-ignore reported it as tracked/trackable) — refusing to write; expected to match ${allowedPatternDescription}`,
     );
   }
+
+  return resolved;
+}
+
+/** Renders `absolutePath` relative to `repoRoot`, forward-slash-normalized — for a `[receipt]` line that names a portable, repo-relative path rather than the local filesystem's absolute layout. */
+export function toRepoRelativePath(absolutePath: string, repoRoot: string): string {
+  return path.relative(path.resolve(repoRoot), absolutePath).split(path.sep).join('/');
 }

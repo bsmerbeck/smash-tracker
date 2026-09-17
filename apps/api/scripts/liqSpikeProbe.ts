@@ -22,10 +22,15 @@
  * the owner's local Application Default Credentials. Prints per-family
  * verdicts and the request-budget summary; prints no page content. `--out`
  * MUST match `apps/api/liq-spike-report*.json` AND be confirmed ignored by
- * `git check-ignore -q` — both checked and enforced
- * (`assertSafeLiqSpikeOutPath` in `liqSpikeProbeCore.ts`) before any network
- * request. Task 3 sanitizes the samples worth keeping into the committed
- * fixture corpus.
+ * `git check-ignore -q` — both checked and enforced BEFORE any network
+ * request by `assertSafeLiqSpikeOutPath` (`liqSpikeProbeCore.ts`), which
+ * returns the resolved absolute path this process writes to, held in
+ * `resolvedOutPath` below and never re-resolved a second time (see
+ * `outputPathGuard.ts`'s doc comment for the incident this fixes: `pnpm
+ * --filter <pkg> exec` sets `cwd` to `apps/api/`, so a second, independent
+ * resolution of the documented `--out` value against `process.cwd()`
+ * silently targets a different, nonexistent path). Task 3 sanitizes the
+ * samples worth keeping into the committed fixture corpus.
  */
 import { writeFile } from 'node:fs/promises';
 import { deleteApp } from 'firebase-admin/app';
@@ -40,7 +45,7 @@ import {
   assertSafeLiqSpikeOutPath,
   type LiqSpikeReport,
 } from './liqSpikeProbeCore.js';
-import { resolveGitRepoRoot } from './outputPathGuard.js';
+import { resolveGitRepoRoot, toRepoRelativePath } from './outputPathGuard.js';
 
 const DEFAULT_REQUEST_TIMEOUT_MS = 30_000;
 
@@ -109,9 +114,16 @@ async function main(): Promise<number> {
     throw new Error('--out <path> is required');
   }
 
-  // WR-03/D-28: refuse an unsafe `--out` before any network request.
+  // WR-03/D-28: refuse an unsafe `--out` before any network request. The
+  // RESOLVED ABSOLUTE PATH returned here is the ONLY path this process ever
+  // writes to (fix A/WR-05) — never re-resolve `outPath` a second time.
+  // `pnpm --filter <pkg> exec` sets `cwd` to `apps/api/`, so a second,
+  // independent resolution of this same relative string against
+  // `process.cwd()` would silently target a different, nonexistent path —
+  // exactly what made the owner's first live run fail with ENOENT after it
+  // had already spent its Liquipedia request budget.
   const repoRoot = resolveGitRepoRoot();
-  assertSafeLiqSpikeOutPath({ outPath, repoRoot });
+  const resolvedOutPath = assertSafeLiqSpikeOutPath({ outPath, repoRoot });
 
   const { app, database } = initFirebase(env);
 
@@ -132,8 +144,11 @@ async function main(): Promise<number> {
       );
 
       printReport(report, (line) => console.log(line));
-      await writeFile(outPath, JSON.stringify(report, null, 2), 'utf8');
-      console.log(`[receipt] liq-spike: path=${outPath}`);
+
+      // The SAME resolved absolute path validated above, before any
+      // network request — never a second, independent resolution.
+      await writeFile(resolvedOutPath, JSON.stringify(report, null, 2), 'utf8');
+      console.log(`[receipt] liq-spike: path=${toRepoRelativePath(resolvedOutPath, repoRoot)}`);
       return 0;
     },
     cleanup: async () => {

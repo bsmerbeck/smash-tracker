@@ -29,23 +29,27 @@ import { assertOutputPathIsGitignored } from './outputPathGuard.js';
  */
 export const SPARG0_EXPORT_OUT_PATTERN = /^apps\/api\/sparg0-export[^/]*\.json$/;
 
+export const SPARG0_EXPORT_OUT_PATTERN_DESCRIPTION = 'apps/api/sparg0-export*.json';
+
 /**
  * WR-03/D-28: refuses to write unless `--out` matches
  * `apps/api/sparg0-export*.json` (the exact gitignored pattern this script's
  * docstring promises) AND is confirmed ignored by `git check-ignore -q`.
  * Called BEFORE any network/RTDB read — see `sparg0Export.ts`'s `main()`.
  * Throws `UnsafeOutputPathError`; the message never includes a uid or any
- * exported match data.
+ * exported match data. Returns the resolved absolute path — see
+ * `assertOutputPathIsGitignored`'s doc comment for why the caller must write
+ * to exactly this value.
  */
 export function assertSafeSparg0ExportOutPath(options: {
   outPath: string;
   repoRoot: string;
   isGitIgnored?: (absolutePath: string, repoRoot: string) => boolean;
-}): void {
-  assertOutputPathIsGitignored({
+}): string {
+  return assertOutputPathIsGitignored({
     ...options,
     allowedPattern: SPARG0_EXPORT_OUT_PATTERN,
-    allowedPatternDescription: 'apps/api/sparg0-export*.json',
+    allowedPatternDescription: SPARG0_EXPORT_OUT_PATTERN_DESCRIPTION,
   });
 }
 

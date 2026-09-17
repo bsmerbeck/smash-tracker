@@ -279,6 +279,56 @@ describe('assertSafeSparg0ExportOutPath (WR-03/D-28)', () => {
       }),
     ).not.toThrow();
   });
+
+  // Fix A regression: the owner's first live run of the sibling liq-spike
+  // probe validated the correct repo-root-relative resolution here, then
+  // separately called `writeFile(outPath, ...)` with the raw `--out`
+  // string — which `fs.writeFile` resolves against `process.cwd()`, not
+  // `repoRoot`. `pnpm --filter <pkg> exec` sets `cwd` to `apps/api/`, so
+  // that second resolution silently targeted a DIFFERENT, nonexistent path
+  // and the write failed with ENOENT after the run had already spent its
+  // request budget. `sparg0Export.ts`'s `main()` now writes to the value
+  // THIS function returns, never to a second resolution of `args.outPath`.
+  describe('write-target resolution (fix A regression)', () => {
+    it('resolves the write target from repoRoot, independent of process.cwd()', () => {
+      const root = mkdtempSync(path.join(os.tmpdir(), 'sparg0-export-core-'));
+      const apiDir = path.join(root, 'apps', 'api');
+      mkdirSync(apiDir, { recursive: true });
+      const originalCwd = process.cwd();
+      try {
+        // Simulate `pnpm --filter @smash-tracker/api exec` setting cwd to
+        // apps/api/ — the exact condition under which a second, independent
+        // resolution of the same relative --out string diverged from the
+        // one validated here.
+        process.chdir(apiDir);
+        const resolved = assertSafeSparg0ExportOutPath({
+          outPath: 'apps/api/sparg0-export.json',
+          repoRoot: root,
+          isGitIgnored: () => true,
+        });
+        expect(resolved).toBe(path.join(root, 'apps', 'api', 'sparg0-export.json'));
+      } finally {
+        process.chdir(originalCwd);
+        rmSync(root, { recursive: true, force: true });
+      }
+    });
+
+    it('resolves an absolute --out inside apps/api/ to itself', () => {
+      const root = mkdtempSync(path.join(os.tmpdir(), 'sparg0-export-core-'));
+      mkdirSync(path.join(root, 'apps', 'api'), { recursive: true });
+      try {
+        const absoluteOut = path.join(root, 'apps', 'api', 'sparg0-export.json');
+        const resolved = assertSafeSparg0ExportOutPath({
+          outPath: absoluteOut,
+          repoRoot: root,
+          isGitIgnored: () => true,
+        });
+        expect(resolved).toBe(absoluteOut);
+      } finally {
+        rmSync(root, { recursive: true, force: true });
+      }
+    });
+  });
 });
 
 describe('assertNotEmulator', () => {

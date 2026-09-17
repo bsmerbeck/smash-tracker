@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -176,6 +176,32 @@ describe('assertOutputPathIsGitignored', () => {
           }),
         ).not.toThrow();
       } finally {
+        rmSync(root, { recursive: true, force: true });
+      }
+    });
+
+    // A write failure must never happen AFTER the network/RTDB read this
+    // guard exists to precede (the incident this closes: a directory-exists
+    // check alone is not a directory-WRITABLE check). Skipped under root,
+    // where permission bits are not enforced (CI containers sometimes run
+    // as root) — the check would be a false negative, not a false pass.
+    const itUnlessRoot = process.getuid?.() === 0 ? it.skip : it;
+    itUnlessRoot('throws when the output directory exists but is not writable', () => {
+      const root = makeFixtureRepoRoot();
+      const apiDir = path.join(root, 'apps', 'api');
+      try {
+        chmodSync(apiDir, 0o555);
+        expect(() =>
+          assertOutputPathIsGitignored({
+            outPath: 'apps/api/sparg0-export.json',
+            repoRoot: root,
+            allowedPattern: PATTERN,
+            allowedPatternDescription: DESCRIPTION,
+            isGitIgnored: () => true,
+          }),
+        ).toThrow(/not writable/);
+      } finally {
+        chmodSync(apiDir, 0o755);
         rmSync(root, { recursive: true, force: true });
       }
     });
