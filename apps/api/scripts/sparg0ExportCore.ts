@@ -1,6 +1,6 @@
 import { webcrypto } from 'node:crypto';
 import type { Database } from 'firebase-admin/database';
-import { assertOutputPathIsGitignored } from './outputPathGuard.js';
+import { assertInputPathIsGitignored, assertOutputPathIsGitignored } from './outputPathGuard.js';
 
 /**
  * Phase 36 Plan 06 (SCL-01, D-20): the pure, unit-testable core of the
@@ -47,6 +47,27 @@ export function assertSafeSparg0ExportOutPath(options: {
   isGitIgnored?: (absolutePath: string, repoRoot: string) => boolean;
 }): string {
   return assertOutputPathIsGitignored({
+    ...options,
+    allowedPattern: SPARG0_EXPORT_OUT_PATTERN,
+    allowedPatternDescription: SPARG0_EXPORT_OUT_PATTERN_DESCRIPTION,
+  });
+}
+
+/**
+ * WR-05-i3: the READ-side symmetric counterpart to
+ * `assertSafeSparg0ExportOutPath`, used by `sparg0RealDataReadout.ts`'s
+ * `--file`. Reuses the SAME `SPARG0_EXPORT_OUT_PATTERN` the write side
+ * enforces, so a file this script will accept reading is, by construction,
+ * exactly a file the write side would have accepted writing — no second,
+ * independently-drifting pattern. Called BEFORE any filesystem read; throws
+ * `UnsafeOutputPathError`; the message never includes a uid or match data.
+ */
+export function assertSafeSparg0ExportInputPath(options: {
+  filePath: string;
+  repoRoot: string;
+  isGitIgnored?: (absolutePath: string, repoRoot: string) => boolean;
+}): string {
+  return assertInputPathIsGitignored({
     ...options,
     allowedPattern: SPARG0_EXPORT_OUT_PATTERN,
     allowedPatternDescription: SPARG0_EXPORT_OUT_PATTERN_DESCRIPTION,

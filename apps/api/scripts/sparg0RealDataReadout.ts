@@ -22,13 +22,21 @@
  * `--file` against the git repo root the same way, so the documented
  * repo-root-relative path is always correct regardless of invocation cwd.
  *
+ * WR-05-i3 (36-REVIEW.md iteration 3): `--file` is validated by
+ * `assertSafeSparg0ExportInputPath` — traversal, exact pattern
+ * (`apps/api/sparg0-export*.json`), symlink refusal, and a `git
+ * check-ignore -q` confirmation — BEFORE any read, mirroring the write
+ * side's `assertSafeSparg0ExportOutPath` guard exactly (same allowed
+ * pattern, so a file this script accepts reading is always one the write
+ * side would have accepted writing).
+ *
  * PRINTS ONLY AGGREGATE LINES — counts, milliseconds, bytes, a sha256
  * fingerprint, a database hostname. Never a match row, an opponent tag, a
  * uid, or a tournament name. See `sparg0RealDataReadoutCore.ts`'s doc
  * comment for the full PII boundary this file's output must never cross.
  */
-import path from 'node:path';
 import { resolveGitRepoRoot } from './outputPathGuard.js';
+import { assertSafeSparg0ExportInputPath } from './sparg0ExportCore.js';
 import {
   buildRealDataReadout,
   formatRealDataReadoutLines,
@@ -44,7 +52,10 @@ async function main(): Promise<void> {
     );
   }
   const repoRoot = resolveGitRepoRoot();
-  const filePath = path.resolve(repoRoot, rawFilePath);
+  // WR-05-i3: refuse an unsafe --file before any read — see the module doc
+  // comment above. The RESOLVED path returned here is the ONLY path this
+  // process ever reads, never a second, independent resolution.
+  const filePath = assertSafeSparg0ExportInputPath({ filePath: rawFilePath, repoRoot });
 
   const envelope = await loadSparg0ExportEnvelope(filePath);
   const readout = buildRealDataReadout(envelope);

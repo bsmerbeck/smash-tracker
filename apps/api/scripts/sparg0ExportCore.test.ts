@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -10,6 +10,7 @@ import {
   exportMatchesForUid,
   buildExportReceipt,
   assertSafeSparg0ExportOutPath,
+  assertSafeSparg0ExportInputPath,
 } from './sparg0ExportCore.js';
 // The CLI-arg parsing/emulator-refusal guard helpers live in the thin CLI
 // composition root, not the core — importing them here (rather than
@@ -328,6 +329,113 @@ describe('assertSafeSparg0ExportOutPath (WR-03/D-28)', () => {
         rmSync(root, { recursive: true, force: true });
       }
     });
+  });
+});
+
+describe('assertSafeSparg0ExportInputPath (WR-05-i3: read-side symmetric guard)', () => {
+  const REPO_ROOT = '/repo';
+
+  it('refuses a path that traverses outside the repo root', () => {
+    expect(() =>
+      assertSafeSparg0ExportInputPath({
+        filePath: '../../../etc/passwd',
+        repoRoot: REPO_ROOT,
+        isGitIgnored: () => true,
+      }),
+    ).toThrow(UnsafeOutputPathError);
+    expect(() =>
+      assertSafeSparg0ExportInputPath({
+        filePath: '../../../etc/passwd',
+        repoRoot: REPO_ROOT,
+        isGitIgnored: () => true,
+      }),
+    ).toThrow(/no path traversal outside the repo root/);
+  });
+
+  it('refuses a path that does not match the sparg0-export naming pattern', () => {
+    expect(() =>
+      assertSafeSparg0ExportInputPath({
+        filePath: 'apps/api/wrong-name.json',
+        repoRoot: REPO_ROOT,
+        isGitIgnored: () => true,
+      }),
+    ).toThrow(/must match apps\/api\/sparg0-export\*\.json/);
+  });
+
+  it('refuses a matching path that git reports as tracked (not ignored)', () => {
+    const root = mkdtempSync(path.join(os.tmpdir(), 'sparg0-readout-guard-'));
+    mkdirSync(path.join(root, 'apps', 'api'), { recursive: true });
+    try {
+      expect(() =>
+        assertSafeSparg0ExportInputPath({
+          filePath: 'apps/api/sparg0-export.json',
+          repoRoot: root,
+          isGitIgnored: () => false,
+        }),
+      ).toThrow(/not confirmed ignored by git/);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('refuses a matching, ignored path that already exists as a symlink (never follows it to read)', () => {
+    const root = mkdtempSync(path.join(os.tmpdir(), 'sparg0-readout-guard-'));
+    mkdirSync(path.join(root, 'apps', 'api'), { recursive: true });
+    try {
+      const outsideTarget = path.join(root, 'outside-target.json');
+      writeFileSync(outsideTarget, '{"matches":[]}');
+      const linkPath = path.join(root, 'apps', 'api', 'sparg0-export.json');
+      symlinkSync(outsideTarget, linkPath);
+
+      let called = false;
+      expect(() =>
+        assertSafeSparg0ExportInputPath({
+          filePath: 'apps/api/sparg0-export.json',
+          repoRoot: root,
+          isGitIgnored: () => {
+            called = true;
+            return true;
+          },
+        }),
+      ).toThrow(/already exists as a symlink/);
+      // Fails closed before ever shelling out to git.
+      expect(called).toBe(false);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('allows the happy path: matching name, confirmed ignored, not a symlink', () => {
+    const root = mkdtempSync(path.join(os.tmpdir(), 'sparg0-readout-guard-'));
+    mkdirSync(path.join(root, 'apps', 'api'), { recursive: true });
+    try {
+      const filePath = path.join(root, 'apps', 'api', 'sparg0-export.json');
+      writeFileSync(filePath, '{"matches":[]}');
+      let resolved: string | undefined;
+      expect(() => {
+        resolved = assertSafeSparg0ExportInputPath({
+          filePath: 'apps/api/sparg0-export.json',
+          repoRoot: root,
+          isGitIgnored: () => true,
+        });
+      }).not.toThrow();
+      expect(resolved).toBe(filePath);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('happy path holds against the real repo .gitignore (no injected double)', () => {
+    // No `isGitIgnored` override — exercises the real `git check-ignore -q`
+    // against this repo's actual `.gitignore`, mirroring the write side's
+    // identical real-gitignore proof.
+    const realRepoRoot = fileURLToPath(new URL('../../..', import.meta.url));
+    expect(() =>
+      assertSafeSparg0ExportInputPath({
+        filePath: 'apps/api/sparg0-export.json',
+        repoRoot: realRepoRoot,
+      }),
+    ).not.toThrow();
   });
 });
 

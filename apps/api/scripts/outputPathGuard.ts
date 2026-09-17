@@ -20,6 +20,10 @@ import path from 'node:path';
  * string-only checks above cannot see a pre-existing symlink planted at or
  * above the target path). The error message names only the expected
  * pattern — never the resolved path's contents, a uid, or any PII.
+ *
+ * `assertInputPathIsGitignored` (WR-05-i3, below) is the READ-side
+ * counterpart — the same shape of check for a `--file` a script reads
+ * rather than writes, minus the write-side's directory-writability check.
  */
 export class UnsafeOutputPathError extends Error {
   constructor(message: string) {
@@ -74,7 +78,19 @@ function defaultIsGitIgnored(absolutePath: string, repoRoot: string): boolean {
  * Fails closed: any error resolving the real filesystem shape (including a
  * missing `apps/api` directory) is treated as unsafe.
  */
-function assertFilesystemTargetIsSafe(resolvedPath: string, repoRoot: string): void {
+/**
+ * `flagName`/`verb` let the same check serve both `--out` (write, "write")
+ * and `--file` (read, "read") without the error text lying about which flag
+ * or which operation is being refused (WR-05-i3). `checkWritable` is
+ * write-side only — a read has no reason to require its parent directory be
+ * writable.
+ */
+function assertFilesystemTargetIsSafe(
+  resolvedPath: string,
+  repoRoot: string,
+  options: { flagName: string; verb: 'write' | 'read'; checkWritable: boolean },
+): void {
+  const { flagName, verb, checkWritable } = options;
   let targetStat: fs.Stats | undefined;
   try {
     targetStat = fs.lstatSync(resolvedPath);
@@ -85,7 +101,7 @@ function assertFilesystemTargetIsSafe(resolvedPath: string, repoRoot: string): v
   }
   if (targetStat && targetStat.isSymbolicLink()) {
     throw new UnsafeOutputPathError(
-      '--out already exists as a symlink — refusing to write through it (will not overwrite or follow a pre-existing symlink)',
+      `${flagName} already exists as a symlink — refusing to ${verb} through it (will not overwrite or follow a pre-existing symlink)`,
     );
   }
 
@@ -97,14 +113,18 @@ function assertFilesystemTargetIsSafe(resolvedPath: string, repoRoot: string): v
     parentReal = fs.realpathSync(path.dirname(resolvedPath));
   } catch {
     throw new UnsafeOutputPathError(
-      '--out directory could not be resolved on the real filesystem — refusing to write',
+      `${flagName} directory could not be resolved on the real filesystem — refusing to ${verb}`,
     );
   }
   const expectedParentReal = path.resolve(repoRootReal, relativeDir);
   if (parentReal !== expectedParentReal) {
     throw new UnsafeOutputPathError(
-      '--out resolves through a symlinked directory outside the repository — refusing to write',
+      `${flagName} resolves through a symlinked directory outside the repository — refusing to ${verb}`,
     );
+  }
+
+  if (!checkWritable) {
+    return;
   }
 
   // A write failure must never happen AFTER the network/RTDB read this
@@ -115,7 +135,7 @@ function assertFilesystemTargetIsSafe(resolvedPath: string, repoRoot: string): v
     fs.accessSync(parentReal, fs.constants.W_OK);
   } catch {
     throw new UnsafeOutputPathError(
-      '--out directory exists but is not writable — refusing to proceed before any network/RTDB read',
+      `${flagName} directory exists but is not writable — refusing to proceed before any network/RTDB read`,
     );
   }
 }
@@ -160,12 +180,82 @@ export function assertOutputPathIsGitignored(options: AssertOutputPathIsGitignor
     );
   }
 
-  assertFilesystemTargetIsSafe(resolved, repoRoot);
+  assertFilesystemTargetIsSafe(resolved, repoRoot, {
+    flagName: '--out',
+    verb: 'write',
+    checkWritable: true,
+  });
 
   const isGitIgnored = options.isGitIgnored ?? defaultIsGitIgnored;
   if (!isGitIgnored(resolved, repoRoot)) {
     throw new UnsafeOutputPathError(
       `--out is not confirmed ignored by git (git check-ignore reported it as tracked/trackable) — refusing to write; expected to match ${allowedPatternDescription}`,
+    );
+  }
+
+  return resolved;
+}
+
+export interface AssertInputPathIsGitignoredOptions {
+  filePath: string;
+  repoRoot: string;
+  /** Anchored regex tested against the path relative to `repoRoot`, forward-slash-normalized. */
+  allowedPattern: RegExp;
+  /** Human-readable description of `allowedPattern`, used only in error messages. */
+  allowedPatternDescription: string;
+  /** Injected for tests; defaults to shelling out to `git check-ignore -q`. */
+  isGitIgnored?: (absolutePath: string, repoRoot: string) => boolean;
+}
+
+/**
+ * WR-05-i3 (36-REVIEW.md iteration 3): the READ-side symmetric counterpart
+ * to `assertOutputPathIsGitignored`. `sparg0RealDataReadout.ts`'s `--file`
+ * previously had NO traversal, pattern, symlink, or gitignore-membership
+ * check at all — a value like `../../../etc/passwd` resolved outside the
+ * repo entirely and was passed straight to `readFile`, despite that script's
+ * own doc comments repeatedly asserting the input is "the LOCAL, gitignored
+ * export file." This closes that asymmetry: same traversal + pattern +
+ * symlink refusal + git-ignored confirmation as the write side (delegating
+ * to the SAME `assertFilesystemTargetIsSafe` primitive so the two guards can
+ * never independently drift), MINUS the write side's directory-writability
+ * check, which has no meaning for a read.
+ *
+ * Fails closed on every branch, same as `assertOutputPathIsGitignored`. The
+ * error message names only the expected pattern — never the resolved path's
+ * contents or any PII. Returns the resolved absolute path; callers must read
+ * from exactly this value, never re-resolve the original `filePath` string a
+ * second time (same `pnpm --filter <pkg> exec` cwd hazard the write side's
+ * doc comment already documents).
+ */
+export function assertInputPathIsGitignored(options: AssertInputPathIsGitignoredOptions): string {
+  const { filePath, allowedPattern, allowedPatternDescription } = options;
+  const repoRoot = path.resolve(options.repoRoot);
+  const resolved = path.resolve(repoRoot, filePath);
+  const relative = path.relative(repoRoot, resolved);
+
+  if (relative === '' || relative.startsWith('..') || path.isAbsolute(relative)) {
+    throw new UnsafeOutputPathError(
+      `--file must resolve inside the repository (no path traversal outside the repo root); expected to match ${allowedPatternDescription}`,
+    );
+  }
+
+  const normalizedRelative = relative.split(path.sep).join('/');
+  if (!allowedPattern.test(normalizedRelative)) {
+    throw new UnsafeOutputPathError(
+      `--file must match ${allowedPatternDescription} (the .gitignore rule this script relies on) — refusing to read`,
+    );
+  }
+
+  assertFilesystemTargetIsSafe(resolved, repoRoot, {
+    flagName: '--file',
+    verb: 'read',
+    checkWritable: false,
+  });
+
+  const isGitIgnored = options.isGitIgnored ?? defaultIsGitIgnored;
+  if (!isGitIgnored(resolved, repoRoot)) {
+    throw new UnsafeOutputPathError(
+      `--file is not confirmed ignored by git (git check-ignore reported it as tracked/trackable) — refusing to read; expected to match ${allowedPatternDescription}`,
     );
   }
 
