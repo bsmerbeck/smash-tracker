@@ -285,6 +285,29 @@ export interface LiqSpikeReport {
   budget: LiqSpikeBudget;
 }
 
+/**
+ * Fix 4: thrown by `runLiqSpike` for ANY failure — including a real
+ * general-class request-spacing violation (fix 1 makes that structurally
+ * impossible under normal, sequential, single-process operation, but the
+ * check itself stays; a defensive check that can never fire costs nothing,
+ * and removing it would trade a provable guarantee for an assumption) and
+ * any other error (a network failure, a malformed response, ...) —
+ * carrying whatever evidence THIS run had already gathered before the
+ * failure. The caller (`liqSpikeProbe.ts`) writes `partialReport` to the
+ * guard-validated `--out` path before exiting non-zero: the owner must
+ * never again lose an entire run's fetched evidence to a late failure, the
+ * way the first live run's ENOENT write bug did.
+ */
+export class LiqSpikePartialRunError extends Error {
+  constructor(
+    message: string,
+    readonly partialReport: LiqSpikeReport,
+  ) {
+    super(message);
+    this.name = 'LiqSpikePartialRunError';
+  }
+}
+
 export interface LiqSpikeDeps {
   client: LiquipediaClient;
   now: () => number;
@@ -577,229 +600,269 @@ export async function runLiqSpike(
     return { verdict: wikitextVerdict, content };
   };
 
-  // ---- Stage 1: static player-results titles ----
-  const playerResultsTitles: string[] = [];
-  for (const target of targets) {
-    playerResultsTitles.push(...target.titles);
-    if (!hasBudget()) {
-      break;
-    }
-    const result = await deps.client.getWikitext(target.titles);
-    generalRequestCount += 1;
-    const completedAtMs = deps.now();
-    completionTimestampsMs.push(completedAtMs);
+  // Fix 4: every stage below runs inside ONE try block. On ANY failure —
+  // including the spacing-violation throw at the end — the catch builds a
+  // report from WHATEVER these outer-scoped accumulators hold at that
+  // moment and throws LiqSpikePartialRunError, so the caller can still
+  // write real evidence to disk instead of losing the whole run.
+  try {
+    // ---- Stage 1: static player-results titles ----
+    const playerResultsTitles: string[] = [];
+    for (const target of targets) {
+      playerResultsTitles.push(...target.titles);
+      if (!hasBudget()) {
+        break;
+      }
+      const result = await deps.client.getWikitext(target.titles);
+      generalRequestCount += 1;
+      const completedAtMs = deps.now();
+      completionTimestampsMs.push(completedAtMs);
 
-    recordNormalizations(target.family, result.normalized, normalizations, 'normalized');
-    recordNormalizations(target.family, result.redirects, redirectsFollowed, 'redirected');
+      recordNormalizations(target.family, result.normalized, normalizations, 'normalized');
+      recordNormalizations(target.family, result.redirects, redirectsFollowed, 'redirected');
 
-    for (const page of result.pages) {
-      pushPage(target.family, page, completedAtMs);
-    }
-  }
-  if (targets.length > 0) {
-    familyOutcomes.push({
-      family: 'player-results',
-      status: 'sampled',
-      sampledTitles: playerResultsTitles,
-    });
-  }
-
-  // ---- Stage 2: discover real tournament-results titles (fix 3: seeded
-  // ONLY from LIQ_SPIKE_SERIES_PREFIX_SEEDS, never from a player page's own
-  // links — see this file's module doc comment) ----
-  const tournamentTitles: string[] = [];
-  const seenTournamentTitles = new Set<string>();
-  let tournamentDiscoveryAttempts = 0;
-
-  for (const prefix of seedPrefixes) {
-    if (tournamentDiscoveryAttempts >= LIQ_SPIKE_RESERVED_DISCOVERY_REQUESTS) {
-      break;
-    }
-    if (!hasBudget() || tournamentTitles.length >= maxTitlesPerDiscoveryFamily) {
-      break;
-    }
-    const discovered = await deps.client.listSubpages(prefix, { maxContinuations: 0 });
-    tournamentDiscoveryAttempts += 1;
-    generalRequestCount += 1;
-    const completedAtMs = deps.now();
-    completionTimestampsMs.push(completedAtMs);
-
-    const accepted: string[] = [];
-    for (const entry of discovered) {
-      if (
-        isTournamentEventPageTitle(entry.title) &&
-        !seenTournamentTitles.has(entry.title) &&
-        tournamentTitles.length + accepted.length < maxTitlesPerDiscoveryFamily
-      ) {
-        accepted.push(entry.title);
+      for (const page of result.pages) {
+        pushPage(target.family, page, completedAtMs);
       }
     }
-    for (const title of accepted) {
-      seenTournamentTitles.add(title);
-      tournamentTitles.push(title);
+    if (targets.length > 0) {
+      familyOutcomes.push({
+        family: 'player-results',
+        status: 'sampled',
+        sampledTitles: playerResultsTitles,
+      });
     }
 
-    discoveries.push({
-      family: 'tournament-results',
-      prefix,
-      discoveredCount: discovered.length,
-      acceptedTitles: accepted,
-      completedAtMs,
-    });
-    deps.log(
-      `liq-spike: [tournament-results] discovered ${discovered.length} subpage(s) under "${prefix}"` +
-        (accepted.length > 0 ? `, accepted: ${accepted.join(', ')}` : ''),
-    );
-  }
+    // ---- Stage 2: discover real tournament-results titles (fix 3: seeded
+    // ONLY from LIQ_SPIKE_SERIES_PREFIX_SEEDS, never from a player page's own
+    // links — see this file's module doc comment) ----
+    const tournamentTitles: string[] = [];
+    const seenTournamentTitles = new Set<string>();
+    let tournamentDiscoveryAttempts = 0;
 
-  if (tournamentTitles.length === 0) {
-    const reason = !hasBudget()
-      ? 'budget'
-      : `no matching titles discovered among ${tournamentDiscoveryAttempts} prefix(es) tried`;
-    familyOutcomes.push({
-      family: 'tournament-results',
-      status: 'not-sampled',
-      reason,
-      sampledTitles: [],
-    });
-    deps.log(`liq-spike: [tournament-results] not-sampled: ${reason}`);
-  } else if (hasBudget()) {
-    const result = await deps.client.getWikitext(tournamentTitles);
-    generalRequestCount += 1;
-    const completedAtMs = deps.now();
-    completionTimestampsMs.push(completedAtMs);
-    recordNormalizations('tournament-results', result.normalized, normalizations, 'normalized');
-    recordNormalizations('tournament-results', result.redirects, redirectsFollowed, 'redirected');
-    for (const page of result.pages) {
-      pushPage('tournament-results', page, completedAtMs);
-    }
-    familyOutcomes.push({
-      family: 'tournament-results',
-      status: 'sampled',
-      sampledTitles: tournamentTitles,
-    });
-  } else {
-    familyOutcomes.push({
-      family: 'tournament-results',
-      status: 'not-sampled',
-      reason: 'budget',
-      sampledTitles: [],
-    });
-    deps.log('liq-spike: [tournament-results] not-sampled: budget');
-  }
-
-  // ---- Stage 3: discover real other-entrant-brackets titles, seeded from Stage 2's discovered event pages ----
-  const bracketTitles: string[] = [];
-  const seenBracketTitles = new Set<string>();
-  let bracketDiscoveryAttempts = 0;
-
-  for (const eventTitle of tournamentTitles) {
-    if (bracketDiscoveryAttempts >= LIQ_SPIKE_RESERVED_DISCOVERY_REQUESTS) {
-      break;
-    }
-    if (!hasBudget() || bracketTitles.length >= maxTitlesPerDiscoveryFamily) {
-      break;
-    }
-    const discovered = await deps.client.listSubpages(eventTitle, { maxContinuations: 0 });
-    bracketDiscoveryAttempts += 1;
-    generalRequestCount += 1;
-    const completedAtMs = deps.now();
-    completionTimestampsMs.push(completedAtMs);
-
-    const accepted: string[] = [];
-    for (const entry of discovered) {
-      if (
-        isSinglesBracketPageTitle(entry.title) &&
-        !seenBracketTitles.has(entry.title) &&
-        bracketTitles.length + accepted.length < maxTitlesPerDiscoveryFamily
-      ) {
-        accepted.push(entry.title);
+    for (const prefix of seedPrefixes) {
+      if (tournamentDiscoveryAttempts >= LIQ_SPIKE_RESERVED_DISCOVERY_REQUESTS) {
+        break;
       }
-    }
-    for (const title of accepted) {
-      seenBracketTitles.add(title);
-      bracketTitles.push(title);
+      if (!hasBudget() || tournamentTitles.length >= maxTitlesPerDiscoveryFamily) {
+        break;
+      }
+      const discovered = await deps.client.listSubpages(prefix, { maxContinuations: 0 });
+      tournamentDiscoveryAttempts += 1;
+      generalRequestCount += 1;
+      const completedAtMs = deps.now();
+      completionTimestampsMs.push(completedAtMs);
+
+      const accepted: string[] = [];
+      for (const entry of discovered) {
+        if (
+          isTournamentEventPageTitle(entry.title) &&
+          !seenTournamentTitles.has(entry.title) &&
+          tournamentTitles.length + accepted.length < maxTitlesPerDiscoveryFamily
+        ) {
+          accepted.push(entry.title);
+        }
+      }
+      for (const title of accepted) {
+        seenTournamentTitles.add(title);
+        tournamentTitles.push(title);
+      }
+
+      discoveries.push({
+        family: 'tournament-results',
+        prefix,
+        discoveredCount: discovered.length,
+        acceptedTitles: accepted,
+        completedAtMs,
+      });
+      deps.log(
+        `liq-spike: [tournament-results] discovered ${discovered.length} subpage(s) under "${prefix}"` +
+          (accepted.length > 0 ? `, accepted: ${accepted.join(', ')}` : ''),
+      );
     }
 
-    discoveries.push({
-      family: 'other-entrant-brackets',
-      prefix: eventTitle,
-      discoveredCount: discovered.length,
-      acceptedTitles: accepted,
-      completedAtMs,
-    });
+    if (tournamentTitles.length === 0) {
+      const reason = !hasBudget()
+        ? 'budget'
+        : `no matching titles discovered among ${tournamentDiscoveryAttempts} prefix(es) tried`;
+      familyOutcomes.push({
+        family: 'tournament-results',
+        status: 'not-sampled',
+        reason,
+        sampledTitles: [],
+      });
+      deps.log(`liq-spike: [tournament-results] not-sampled: ${reason}`);
+    } else if (hasBudget()) {
+      const result = await deps.client.getWikitext(tournamentTitles);
+      generalRequestCount += 1;
+      const completedAtMs = deps.now();
+      completionTimestampsMs.push(completedAtMs);
+      recordNormalizations('tournament-results', result.normalized, normalizations, 'normalized');
+      recordNormalizations('tournament-results', result.redirects, redirectsFollowed, 'redirected');
+      for (const page of result.pages) {
+        pushPage('tournament-results', page, completedAtMs);
+      }
+      familyOutcomes.push({
+        family: 'tournament-results',
+        status: 'sampled',
+        sampledTitles: tournamentTitles,
+      });
+    } else {
+      familyOutcomes.push({
+        family: 'tournament-results',
+        status: 'not-sampled',
+        reason: 'budget',
+        sampledTitles: [],
+      });
+      deps.log('liq-spike: [tournament-results] not-sampled: budget');
+    }
+
+    // ---- Stage 3: discover real other-entrant-brackets titles, seeded from Stage 2's discovered event pages ----
+    const bracketTitles: string[] = [];
+    const seenBracketTitles = new Set<string>();
+    let bracketDiscoveryAttempts = 0;
+
+    for (const eventTitle of tournamentTitles) {
+      if (bracketDiscoveryAttempts >= LIQ_SPIKE_RESERVED_DISCOVERY_REQUESTS) {
+        break;
+      }
+      if (!hasBudget() || bracketTitles.length >= maxTitlesPerDiscoveryFamily) {
+        break;
+      }
+      const discovered = await deps.client.listSubpages(eventTitle, { maxContinuations: 0 });
+      bracketDiscoveryAttempts += 1;
+      generalRequestCount += 1;
+      const completedAtMs = deps.now();
+      completionTimestampsMs.push(completedAtMs);
+
+      const accepted: string[] = [];
+      for (const entry of discovered) {
+        if (
+          isSinglesBracketPageTitle(entry.title) &&
+          !seenBracketTitles.has(entry.title) &&
+          bracketTitles.length + accepted.length < maxTitlesPerDiscoveryFamily
+        ) {
+          accepted.push(entry.title);
+        }
+      }
+      for (const title of accepted) {
+        seenBracketTitles.add(title);
+        bracketTitles.push(title);
+      }
+
+      discoveries.push({
+        family: 'other-entrant-brackets',
+        prefix: eventTitle,
+        discoveredCount: discovered.length,
+        acceptedTitles: accepted,
+        completedAtMs,
+      });
+      deps.log(
+        `liq-spike: [other-entrant-brackets] discovered ${discovered.length} subpage(s) under "${eventTitle}"` +
+          (accepted.length > 0 ? `, accepted: ${accepted.join(', ')}` : ''),
+      );
+    }
+
+    if (bracketTitles.length === 0) {
+      const reason = !hasBudget()
+        ? 'budget'
+        : `no matching titles discovered among ${tournamentTitles.length} tournament event page(s) tried`;
+      familyOutcomes.push({
+        family: 'other-entrant-brackets',
+        status: 'not-sampled',
+        reason,
+        sampledTitles: [],
+      });
+      deps.log(`liq-spike: [other-entrant-brackets] not-sampled: ${reason}`);
+    } else if (hasBudget()) {
+      const result = await deps.client.getWikitext(bracketTitles);
+      generalRequestCount += 1;
+      const completedAtMs = deps.now();
+      completionTimestampsMs.push(completedAtMs);
+      recordNormalizations(
+        'other-entrant-brackets',
+        result.normalized,
+        normalizations,
+        'normalized',
+      );
+      recordNormalizations(
+        'other-entrant-brackets',
+        result.redirects,
+        redirectsFollowed,
+        'redirected',
+      );
+      for (const page of result.pages) {
+        pushPage('other-entrant-brackets', page, completedAtMs);
+      }
+      familyOutcomes.push({
+        family: 'other-entrant-brackets',
+        status: 'sampled',
+        sampledTitles: bracketTitles,
+      });
+    } else {
+      familyOutcomes.push({
+        family: 'other-entrant-brackets',
+        status: 'not-sampled',
+        reason: 'budget',
+        sampledTitles: [],
+      });
+      deps.log('liq-spike: [other-entrant-brackets] not-sampled: budget');
+    }
+
+    // ---- budget + FAIL LOUDLY on a real spacing violation ----
+    const startCheck = checkGeneralRequestStartSpacing(deps.generalRequestStartTimestampsMs ?? []);
+    if (!startCheck.compliant && startCheck.violation) {
+      throw new Error(
+        `liq-spike: general-class request start spacing violated the published ${LIQUIPEDIA_GENERAL_MIN_INTERVAL_MS}ms interval ` +
+          `(observed ${startCheck.violation.gapMs}ms between requests #${startCheck.violation.indexA} and #${startCheck.violation.indexB}) — ` +
+          'this is a real Liquipedia terms-of-use violation and must never be silently recorded',
+      );
+    }
+
+    const budget: LiqSpikeBudget = {
+      generalRequests: generalRequestCount,
+      parseClassRequests: 0,
+      minObservedGeneralCompletionSpacingMs: computeMinSpacingMs(completionTimestampsMs),
+      minObservedGeneralStartSpacingMs: startCheck.minObservedStartSpacingMs,
+      minObservedParseClassSpacingMs: null,
+      maxGeneralRequests,
+      budgetExhausted,
+    };
+
     deps.log(
-      `liq-spike: [other-entrant-brackets] discovered ${discovered.length} subpage(s) under "${eventTitle}"` +
-        (accepted.length > 0 ? `, accepted: ${accepted.join(', ')}` : ''),
+      `liq-spike: budget general=${budget.generalRequests}/${budget.maxGeneralRequests} parse-class=${budget.parseClassRequests} ` +
+        `minObservedGeneralStartSpacingMs=${budget.minObservedGeneralStartSpacingMs ?? 'n/a'} ` +
+        `minObservedGeneralCompletionSpacingMs=${budget.minObservedGeneralCompletionSpacingMs ?? 'n/a'}`,
     );
-  }
 
-  if (bracketTitles.length === 0) {
-    const reason = !hasBudget()
-      ? 'budget'
-      : `no matching titles discovered among ${tournamentTitles.length} tournament event page(s) tried`;
-    familyOutcomes.push({
-      family: 'other-entrant-brackets',
-      status: 'not-sampled',
-      reason,
-      sampledTitles: [],
-    });
-    deps.log(`liq-spike: [other-entrant-brackets] not-sampled: ${reason}`);
-  } else if (hasBudget()) {
-    const result = await deps.client.getWikitext(bracketTitles);
-    generalRequestCount += 1;
-    const completedAtMs = deps.now();
-    completionTimestampsMs.push(completedAtMs);
-    recordNormalizations('other-entrant-brackets', result.normalized, normalizations, 'normalized');
-    recordNormalizations(
-      'other-entrant-brackets',
-      result.redirects,
+    return { pages, discoveries, normalizations, redirectsFollowed, familyOutcomes, budget };
+  } catch (error) {
+    // Fix 4: build the best partial report possible from whatever these
+    // outer-scoped accumulators hold at the moment of failure. The spacing
+    // check above (if that's what threw) already ran, so
+    // `minObservedGeneralStartSpacingMs` is still accurate here; anything
+    // that failed earlier simply leaves it `null`, which is honest — no
+    // compliance claim is made about a run that never got far enough to
+    // measure it.
+    const startCheck = checkGeneralRequestStartSpacing(deps.generalRequestStartTimestampsMs ?? []);
+    const partialReport: LiqSpikeReport = {
+      pages,
+      discoveries,
+      normalizations,
       redirectsFollowed,
-      'redirected',
-    );
-    for (const page of result.pages) {
-      pushPage('other-entrant-brackets', page, completedAtMs);
-    }
-    familyOutcomes.push({
-      family: 'other-entrant-brackets',
-      status: 'sampled',
-      sampledTitles: bracketTitles,
-    });
-  } else {
-    familyOutcomes.push({
-      family: 'other-entrant-brackets',
-      status: 'not-sampled',
-      reason: 'budget',
-      sampledTitles: [],
-    });
-    deps.log('liq-spike: [other-entrant-brackets] not-sampled: budget');
+      familyOutcomes,
+      budget: {
+        generalRequests: generalRequestCount,
+        parseClassRequests: 0,
+        minObservedGeneralCompletionSpacingMs: computeMinSpacingMs(completionTimestampsMs),
+        minObservedGeneralStartSpacingMs: startCheck.minObservedStartSpacingMs,
+        minObservedParseClassSpacingMs: null,
+        maxGeneralRequests,
+        budgetExhausted,
+      },
+    };
+    const message = error instanceof Error ? error.message : String(error);
+    deps.log(`liq-spike: run failed after ${pages.length} page(s) fetched — ${message}`);
+    throw new LiqSpikePartialRunError(message, partialReport);
   }
-
-  // ---- budget + FAIL LOUDLY on a real spacing violation ----
-  const startCheck = checkGeneralRequestStartSpacing(deps.generalRequestStartTimestampsMs ?? []);
-  if (!startCheck.compliant && startCheck.violation) {
-    throw new Error(
-      `liq-spike: general-class request start spacing violated the published ${LIQUIPEDIA_GENERAL_MIN_INTERVAL_MS}ms interval ` +
-        `(observed ${startCheck.violation.gapMs}ms between requests #${startCheck.violation.indexA} and #${startCheck.violation.indexB}) — ` +
-        'this is a real Liquipedia terms-of-use violation and must never be silently recorded',
-    );
-  }
-
-  const budget: LiqSpikeBudget = {
-    generalRequests: generalRequestCount,
-    parseClassRequests: 0,
-    minObservedGeneralCompletionSpacingMs: computeMinSpacingMs(completionTimestampsMs),
-    minObservedGeneralStartSpacingMs: startCheck.minObservedStartSpacingMs,
-    minObservedParseClassSpacingMs: null,
-    maxGeneralRequests,
-    budgetExhausted,
-  };
-
-  deps.log(
-    `liq-spike: budget general=${budget.generalRequests}/${budget.maxGeneralRequests} parse-class=${budget.parseClassRequests} ` +
-      `minObservedGeneralStartSpacingMs=${budget.minObservedGeneralStartSpacingMs ?? 'n/a'} ` +
-      `minObservedGeneralCompletionSpacingMs=${budget.minObservedGeneralCompletionSpacingMs ?? 'n/a'}`,
-  );
-
-  return { pages, discoveries, normalizations, redirectsFollowed, familyOutcomes, budget };
 }

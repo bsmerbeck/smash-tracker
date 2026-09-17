@@ -31,6 +31,11 @@
  * resolution of the documented `--out` value against `process.cwd()`
  * silently targets a different, nonexistent path). Task 3 sanitizes the
  * samples worth keeping into the committed fixture corpus.
+ *
+ * On ANY failure mid-run (fix 4), this CLI still writes whatever the run
+ * had already fetched to `--out` — marked `partial: true` with the error
+ * message — before exiting non-zero, so a late failure never discards
+ * already-spent request budget along with its evidence.
  */
 import { writeFile } from 'node:fs/promises';
 import { deleteApp } from 'firebase-admin/app';
@@ -41,6 +46,7 @@ import { createLiquipediaLimiter } from '../src/liquipedia/limiter.js';
 import { runWithLifecycle } from './enrichLifecycle.js';
 import {
   LIQ_SPIKE_TARGETS,
+  LiqSpikePartialRunError,
   assertSafeLiqSpikeOutPath,
   runLiqSpike,
   type LiqSpikeReport,
@@ -186,15 +192,38 @@ async function main(): Promise<number> {
         ),
       });
 
-      const report = await runLiqSpike(
-        {
-          client,
-          now: () => Date.now(),
-          log: (line) => console.log(line),
-          generalRequestStartTimestampsMs,
-        },
-        LIQ_SPIKE_TARGETS,
-      );
+      let report: LiqSpikeReport;
+      try {
+        report = await runLiqSpike(
+          {
+            client,
+            now: () => Date.now(),
+            log: (line) => console.log(line),
+            generalRequestStartTimestampsMs,
+          },
+          LIQ_SPIKE_TARGETS,
+        );
+      } catch (error) {
+        // Fix 4: on ANY failure — including one that only surfaces after
+        // real pages were already fetched — still write whatever evidence
+        // `runLiqSpike` gathered before exiting non-zero. The owner must
+        // never again lose an entire run's fetched evidence (and spent
+        // request budget) to a late failure, the way the first live run's
+        // write-path bug did.
+        if (error instanceof LiqSpikePartialRunError) {
+          printReport(error.partialReport, (line) => console.log(line));
+          const partialPayload = {
+            ...error.partialReport,
+            partial: true,
+            error: error.message,
+          };
+          await writeFile(resolvedOutPath, JSON.stringify(partialPayload, null, 2), 'utf8');
+          console.log(
+            `[receipt] liq-spike (PARTIAL — run failed): path=${toRepoRelativePath(resolvedOutPath, repoRoot)}`,
+          );
+        }
+        throw error;
+      }
 
       printReport(report, (line) => console.log(line));
 

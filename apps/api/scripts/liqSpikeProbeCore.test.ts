@@ -14,6 +14,7 @@ import { UnsafeOutputPathError } from './outputPathGuard.js';
 import {
   LIQ_SPIKE_FINGERPRINT_MAX_BYTES,
   LIQ_SPIKE_TARGETS,
+  LiqSpikePartialRunError,
   assertSafeLiqSpikeOutPath,
   checkGeneralRequestStartSpacing,
   isSinglesBracketPageTitle,
@@ -538,6 +539,76 @@ describe('runLiqSpike — general-class start-spacing enforcement (fix B)', () =
       { seedPrefixes: [] },
     );
     expect(report.budget.minObservedGeneralStartSpacingMs).toBe(LIQUIPEDIA_GENERAL_MIN_INTERVAL_MS);
+  });
+});
+
+// ---- partial report on any failure (fix 4) ---------------------------------
+
+describe('runLiqSpike — partial report on failure (fix 4)', () => {
+  it('rejects with LiqSpikePartialRunError carrying already-fetched pages when a later fetch throws', async () => {
+    const playerResultsTarget: LiqSpikeTarget = {
+      family: 'player-results',
+      titles: ['Hungrybox/Results'],
+      why: 'test',
+    };
+    // Only the player-results route is registered — the tournament-results
+    // discovery call that follows has no registered route and throws,
+    // simulating a network failure mid-run.
+    const { client } = buildInlineClient([
+      {
+        match: matchQuery({ action: 'query', titles: 'Hungrybox/Results' }),
+        body: queryEnvelope([
+          { title: 'Hungrybox/Results', revid: 10, content: 'Prose with no links at all.' },
+        ]),
+      },
+    ]);
+
+    let caught: unknown;
+    try {
+      await runLiqSpike({ client, now: () => 0, log: () => undefined }, [playerResultsTarget], {
+        seedPrefixes: ['Genesis'],
+      });
+    } catch (error) {
+      caught = error;
+    }
+
+    expect(caught).toBeInstanceOf(LiqSpikePartialRunError);
+    const partialError = caught as LiqSpikePartialRunError;
+    expect(partialError.message).toMatch(/no registered route matches/);
+    // The Stage-1 page fetched BEFORE the failure is preserved.
+    expect(partialError.partialReport.pages).toHaveLength(1);
+    expect(partialError.partialReport.pages[0]?.title).toBe('Hungrybox/Results');
+    expect(partialError.partialReport.familyOutcomes).toEqual([
+      { family: 'player-results', status: 'sampled', sampledTitles: ['Hungrybox/Results'] },
+    ]);
+    expect(partialError.partialReport.budget.generalRequests).toBe(1);
+  });
+
+  it('carries the pages fetched before a genuine spacing violation in the partial report', async () => {
+    const { client } = buildFixtureBackedClient();
+
+    let caught: unknown;
+    try {
+      await runLiqSpike(
+        {
+          client,
+          now: () => 0,
+          log: () => undefined,
+          generalRequestStartTimestampsMs: [1000, 1500],
+        },
+        [STUB_BATCH_TARGET],
+        { seedPrefixes: [] },
+      );
+    } catch (error) {
+      caught = error;
+    }
+
+    expect(caught).toBeInstanceOf(LiqSpikePartialRunError);
+    const partialError = caught as LiqSpikePartialRunError;
+    expect(partialError.message).toMatch(/general-class request start spacing violated/);
+    // Stage 1 fully completed before the spacing check runs (it runs once,
+    // at the very end), so all four VODs-page results are preserved.
+    expect(partialError.partialReport.pages.length).toBeGreaterThan(0);
   });
 });
 
