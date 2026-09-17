@@ -430,23 +430,32 @@ describe('LiqSpikePageResult fingerprint / rawWikitext (fix 2)', () => {
     expect(page?.rawWikitext).toBe(longBody);
   });
 
-  // Item 3/4 (owner rerun #3): a page whose body strips to nothing but
-  // whose raw wikitext contains bracket/match templates has its results
-  // living ENTIRELY inside a generator template — 'generated-template',
-  // never 'wikitext'. Counts and boolean flags only, never a matched
-  // excerpt.
-  it('classifies resultsFormat as generated-template and counts bracket/match templates when a stub body carries them', async () => {
-    const bracketOnlyStub =
-      '{{Bracket|Bracket/8U8L4DSL2DSL1D|id=Ic2lui1l3A}}\n{{Match|opponent1=A}}\n{{Match2|foo=bar}}';
+  // Item 3/4 (owner rerun #3), corrected by owner rerun #4: the FIRST
+  // matcher guessed template names anchored at the START of the name
+  // (`{{Bracket...}}`, `{{Match...}}`) and returned bracketCount=0/
+  // matchCount=0 against the REAL live bracket pages — an implausible
+  // "no bracket templates on a 20 KB+ bracket page" result the owner
+  // caught live (`Battle of BC/1/Melee/Singles Bracket`, revid 298570, and
+  // siblings — see the LIQ-01 spike record). This wiki's actual
+  // bracket-structure templates are `BracketMatchDetails` (the match
+  // wrapper, 21-30 uses per page) and shape-specific templates like
+  // `32DEWBracketA` / `DEFinalSmwBracket` — "bracket"/"match" appear as a
+  // SUBSTRING of the name, never as its first word. The fixture below is
+  // derived from those real names (trimmed to the minimum needed to
+  // exercise the matcher, not the full 20+ KB page).
+  it('classifies resultsFormat as generated-template and counts the REAL bracket/match template names observed live', async () => {
+    const bracketPageStub =
+      '{{BracketMatchDetails|opponent1=A}}\n{{BracketMatchDetails|opponent1=B}}\n' +
+      '{{32DEWBracketA|id=x}}\n{{DEFinalSmwBracket}}\n{{:Some Other/Bracket Page}}';
     const target: LiqSpikeTarget = {
-      family: 'tournament-results',
+      family: 'other-entrant-brackets',
       titles: ['Some/Bracket'],
       why: 'test',
     };
     const { client } = buildInlineClient([
       {
         match: matchQuery({ action: 'query', titles: 'Some/Bracket' }),
-        body: queryEnvelope([{ title: 'Some/Bracket', revid: 11, content: bracketOnlyStub }]),
+        body: queryEnvelope([{ title: 'Some/Bracket', revid: 11, content: bracketPageStub }]),
       },
     ]);
 
@@ -462,14 +471,48 @@ describe('LiqSpikePageResult fingerprint / rawWikitext (fix 2)', () => {
     // Fingerprint always attached for tournament-results/other-entrant-brackets,
     // regardless of size.
     expect(page?.fingerprint?.bracketTemplateCounts).toEqual({
-      bracketCount: 1,
-      matchCount: 1,
-      // "{{Match2|foo=bar}}" must NOT be counted as a {{Match transclusion
-      // (word-boundary check), but its bare "match2" token IS counted.
-      match2Count: 1,
+      // "BracketMatchDetails" (x2), "32DEWBracketA", "DEFinalSmwBracket" —
+      // all four contain "bracket" as a substring. The trailing
+      // "{{:Some Other/Bracket Page}}" is a PAGE TRANSCLUSION (leading
+      // colon — embeds a whole separate page, not a template call) and
+      // must NOT be counted.
+      bracketCount: 4,
+      // "BracketMatchDetails" (x2) contains "match" as a substring.
+      matchCount: 2,
+      match2Count: 0,
       teamCardCount: 0,
       prizePoolCount: 0,
     });
+  });
+
+  // The `match2`/`TeamCard` template family is used by SOME Liquipedia
+  // wikis (e.g. Dota2, League of Legends) but was NOT observed anywhere in
+  // this spike's real SSBU-wiki samples (see the LIQ-01 spike record). The
+  // fields stay generic for a future non-SSBU wiki; this synthetic (not
+  // live-observed) fixture keeps that bare-token pathway covered.
+  it('still detects the bare match2 parameter token and TeamCard template used by other Liquipedia wikis, when present', async () => {
+    const match2Stub =
+      '{{Bracket/8U8L4DSL2DSL1D\n|match2={{Match2|opponent1=A}}\n}}\n{{TeamCard|team=A}}';
+    const target: LiqSpikeTarget = {
+      family: 'other-entrant-brackets',
+      titles: ['Other/Bracket'],
+      why: 'test',
+    };
+    const { client } = buildInlineClient([
+      {
+        match: matchQuery({ action: 'query', titles: 'Other/Bracket' }),
+        body: queryEnvelope([{ title: 'Other/Bracket', revid: 12, content: match2Stub }]),
+      },
+    ]);
+
+    const report = await runLiqSpike({ client, now: () => 0, log: () => undefined }, [target], {
+      seedPrefixes: [],
+    });
+
+    const counts = report.pages[0]?.fingerprint?.bracketTemplateCounts;
+    // "|match2=" and "{{Match2|...}}" are both bare "match2" tokens.
+    expect(counts?.match2Count).toBeGreaterThan(0);
+    expect(counts?.teamCardCount).toBe(1);
   });
 
   it('never attaches rawWikitext/fingerprint for a missing page', async () => {
