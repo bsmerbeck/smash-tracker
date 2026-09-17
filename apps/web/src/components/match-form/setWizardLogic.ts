@@ -227,6 +227,26 @@ export function buildSetGamePayloads(
   });
 }
 
+/**
+ * Builds only the NEW games' payloads for a Continue Set flow: builds over
+ * the FULL concatenation of `lockedGames` (already-saved, read-only context)
+ * and `newGames` (what's actually being submitted), then drops the locked
+ * prefix. Building over the full concatenation is what preserves
+ * `resolveSetFighterSelections`' forward carry across the locked/new
+ * boundary — slicing the leading games off BEFORE the build would silently
+ * reset an inherited character to the set-level default (the doc comment on
+ * `resolveSetFighterSelections` guarantees equality only for TRAILING
+ * trims). Dropping the locked prefix AFTER the build is what guarantees an
+ * already-saved game is never re-created.
+ */
+export function buildContinuationPayloads(
+  shared: SetSharedValues,
+  lockedGames: SetGameValues[],
+  newGames: SetGameValues[],
+): CreateMatchInput[] {
+  return buildSetGamePayloads(shared, [...lockedGames, ...newGames]).slice(lockedGames.length);
+}
+
 /** Default per-game values for a freshly-added row. */
 export function buildDefaultGameValues(): SetGameValues {
   return {
