@@ -89,6 +89,18 @@ function printReport(report: LiqSpikeReport, log: (line: string) => void): void 
     log(
       `[${page.family}] "${page.title}" -> ${page.wikitextVerdict} (${revisionPart}, bytes=${page.byteSize})`,
     );
+    // Fix 2: a leak-free structural fingerprint for any small page, so the
+    // verdict above is checkable evidence, not another guess. This is the
+    // ONLY page-shape detail ever printed — never `rawWikitext` itself,
+    // which stays in the gitignored `--out` file.
+    if (page.fingerprint) {
+      const fp = page.fingerprint;
+      log(
+        `  fingerprint: templates{{=${fp.templateOpenCount} links[[=${fp.internalLinkOpenCount} ` +
+          `pipes|=${fp.pipeCount} lines=${fp.lineCount} startsWithRedirect=${fp.startsWithRedirect} ` +
+          `firstTemplate=${fp.firstTemplateName ? JSON.stringify(fp.firstTemplateName) : 'n/a'}`,
+      );
+    }
   }
   for (const discovery of report.discoveries) {
     log(

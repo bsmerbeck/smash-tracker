@@ -38,6 +38,19 @@ import { assertOutputPathIsGitignored } from './outputPathGuard.js';
  * `list=allpages` — seeded from series-name prefixes and from the real
  * internal links found in whichever `player-results` page actually
  * returned substantive content — never a second guess.
+ *
+ * Owner rerun incident #2 (fix 2, classifier): the fix-C classifier was
+ * STILL guessed against the real 245/248-byte page shapes (no network
+ * access to inspect them, so the "template-only" shape assumed for those
+ * two bytes counts was never actually confirmed) — the owner's rerun
+ * showed both still classified `sufficient`. Rather than guess again,
+ * `classifyWikitext` now strips templates/comments/categories/magic words
+ * MECHANICALLY and checks what's left, AND every fetched page's raw
+ * wikitext is persisted into the gitignored report (never printed), AND a
+ * leak-free structural fingerprint (brace/link/pipe counts, line count,
+ * redirect flag, first template name only) is printed to the console for
+ * any page under ~1 KB — so the NEXT rerun's verdict is evidence-based,
+ * not another guess.
  */
 
 /**
@@ -168,6 +181,23 @@ export function extractWikilinkTargets(wikitext: string): string[] {
 
 export type LiqSpikeWikitextVerdict = 'sufficient' | 'stub-generator-only' | 'missing';
 
+/**
+ * A leak-free structural summary of a page's wikitext — printed to the
+ * console for any page under `LIQ_SPIKE_FINGERPRINT_MAX_BYTES`, so the
+ * classification is evidence-based rather than a guess without ever
+ * printing the actual content. `firstTemplateName` is the ONE piece of
+ * near-content this carries (a template NAME, e.g. "Infobox player
+ * results" — never a template argument, a page value, or prose).
+ */
+export interface LiqSpikeWikitextFingerprint {
+  templateOpenCount: number;
+  internalLinkOpenCount: number;
+  pipeCount: number;
+  lineCount: number;
+  startsWithRedirect: boolean;
+  firstTemplateName: string | null;
+}
+
 export interface LiqSpikePageResult {
   family: LiqSpikeFamily;
   title: string;
@@ -180,6 +210,15 @@ export interface LiqSpikePageResult {
    * as a plain string — never applied here, never a code change.
    */
   proposedAllowlistRegex?: string;
+  /** Present only for a page under `LIQ_SPIKE_FINGERPRINT_MAX_BYTES` — see `LiqSpikeWikitextFingerprint`. */
+  fingerprint?: LiqSpikeWikitextFingerprint;
+  /**
+   * The full, byte-faithful wikitext this probe fetched, for every PRESENT
+   * page regardless of size. Persisted ONLY into the gitignored `--out`
+   * report file (`liqSpikeProbe.ts` never prints this field) — the
+   * fingerprint above is what reaches the console.
+   */
+  rawWikitext?: string;
   completedAtMs: number;
 }
 
@@ -245,55 +284,101 @@ export interface LiqSpikeRunOptions {
   maxTitlesPerDiscoveryFamily?: number;
 }
 
-/** True when every non-blank line of `wikitext` is a single `{{...}}` template transclusion — the shape of a generator-only page. */
-function isTemplateOnlyWikitext(wikitext: string): boolean {
-  const lines = wikitext
-    .split('\n')
-    .map((line) => line.trim())
-    .filter((line) => line.length > 0);
-  if (lines.length === 0) {
-    return false;
+/** A page under this size gets a printed structural fingerprint (leak-free) instead of its verdict being taken on faith. */
+export const LIQ_SPIKE_FINGERPRINT_MAX_BYTES = 1024;
+
+/** Matches a MediaWiki redirect declaration, e.g. `#REDIRECT [[MKLeo/Results]]`, at the very start of the wikitext (leading whitespace tolerated). */
+const REDIRECT_DECLARATION_PATTERN = /^\s*#REDIRECT\s*:?\s*\[\[[^\]]+\]\]\s*/i;
+
+/** HTML comments — never substantive content. */
+const HTML_COMMENT_PATTERN = /<!--[\s\S]*?-->/g;
+
+/** A single, non-nested `{{...}}` template transclusion. Applied repeatedly (bounded) below to also remove simply-nested templates. */
+const TEMPLATE_TRANSCLUSION_PATTERN = /\{\{[^{}]*\}\}/g;
+
+/** A category link — organizational metadata, never substantive content. */
+const CATEGORY_LINK_PATTERN = /\[\[Category:[^\]]*\]\]/gi;
+
+/** MediaWiki "magic words" (`__NOTOC__`, `__TOC__`, etc.) — page-behavior directives, never content. */
+const MAGIC_WORD_PATTERN = /__[A-Z][A-Z0-9_]*__/g;
+
+/** Bounds the repeated template-stripping pass below against pathological/malformed input. */
+const MAX_TEMPLATE_STRIP_ITERATIONS = 10;
+
+/**
+ * Strips templates (repeatedly, to also clear simply-nested ones),
+ * comments, category links, magic words, and a single leading redirect
+ * declaration — the generator/organizational scaffolding a Liquipedia page
+ * can carry — leaving only whatever, if anything, is genuine page content.
+ */
+function stripNonSubstantiveWikitext(wikitext: string): string {
+  let stripped = wikitext.replace(REDIRECT_DECLARATION_PATTERN, '');
+  stripped = stripped.replace(HTML_COMMENT_PATTERN, '');
+  for (let i = 0; i < MAX_TEMPLATE_STRIP_ITERATIONS; i += 1) {
+    const next = stripped.replace(TEMPLATE_TRANSCLUSION_PATTERN, '');
+    if (next === stripped) {
+      break;
+    }
+    stripped = next;
   }
-  return lines.every((line) => /^\{\{[^{}]*\}\}$/.test(line));
+  stripped = stripped.replace(CATEGORY_LINK_PATTERN, '');
+  stripped = stripped.replace(MAGIC_WORD_PATTERN, '');
+  return stripped;
 }
 
-/** Matches a MediaWiki redirect declaration, e.g. `#REDIRECT [[MKLeo/Results]]`. */
-const REDIRECT_LINE_PATTERN = /^#REDIRECT\s*:?\s*\[\[[^\]]+\]\]$/i;
-
-/** A non-blank line trailing a redirect declaration that is itself non-substantive: a template transclusion or a category link — never prose. */
-function isNonSubstantiveTrailingLine(line: string): boolean {
-  return /^\{\{[^{}]*\}\}$/.test(line) || /^\[\[Category:[^\]]*\]\]$/i.test(line);
-}
-
-/** True when the wikitext is nothing but a `#REDIRECT` declaration, optionally followed by non-substantive trailing lines (categories, templates) — a redirect page carries no content of its own to evaluate. */
-function isRedirectOnlyWikitext(wikitext: string): boolean {
-  const lines = wikitext
-    .split('\n')
-    .map((line) => line.trim())
-    .filter((line) => line.length > 0);
-  const [first, ...rest] = lines;
-  if (!first || !REDIRECT_LINE_PATTERN.test(first)) {
-    return false;
+/** A MediaWiki table block (`{|` ... `|}`) or a list-markup line (`*`, `#`, `;`, `:` at line start) — genuine content structure, never generator scaffolding. */
+function hasTableOrListMarkup(wikitext: string): boolean {
+  if (wikitext.includes('{|')) {
+    return true;
   }
-  return rest.every(isNonSubstantiveTrailingLine);
+  return wikitext.split('\n').some((line) => /^\s*[*#;:]/.test(line));
 }
 
 /**
- * Classifies wikitext by CONTENT STRUCTURE, never by byte count. The first
- * version of this function gated `stub-generator-only` on a bare byte
- * threshold, which the owner's first live run proved wrong: two real
- * `/Results` pages at 246 and 248 bytes are template stubs, but both sailed
- * past the threshold and were misclassified `sufficient`. A page whose
- * entire body is template transclusions or a bare redirect is
- * `stub-generator-only` regardless of size; anything else — including a
- * SHORT page of genuine prose — is `sufficient`. A revision the API reports
- * missing is handled by the caller before this function ever runs.
+ * Classifies wikitext by CONTENT STRUCTURE, never by byte count and never
+ * by a guessed shape. Two earlier versions of this function both guessed
+ * wrong against the real page bodies (a bare byte threshold, then an
+ * "every line is a solitary template" pattern) — this probe has no network
+ * access to inspect the real bytes directly, so guessing a THIRD shape
+ * would repeat the same mistake. Instead: strip every piece of generator/
+ * organizational scaffolding (`stripNonSubstantiveWikitext`) and check
+ * what's left — if nothing but whitespace remains AND there is no table or
+ * list markup, the page is `stub-generator-only`; otherwise it is
+ * `sufficient`, regardless of size. A revision the API reports missing is
+ * handled by the caller before this function ever runs. Every fetched
+ * page's raw wikitext is ALSO persisted into the report (see
+ * `LiqSpikePageResult.rawWikitext`) so a wrong verdict here is checkable
+ * evidence, not another guess to trust blindly.
  */
 function classifyWikitext(content: string): LiqSpikeWikitextVerdict {
-  if (isTemplateOnlyWikitext(content) || isRedirectOnlyWikitext(content)) {
+  const stripped = stripNonSubstantiveWikitext(content);
+  if (stripped.trim().length === 0 && !hasTableOrListMarkup(stripped)) {
     return 'stub-generator-only';
   }
   return 'sufficient';
+}
+
+/**
+ * A leak-free structural summary — see `LiqSpikeWikitextFingerprint`'s doc
+ * comment. `firstTemplateName` reads only the text between `{{` and the
+ * first `|` or `}}`, trimmed — never a template argument or page content.
+ */
+function computeWikitextFingerprint(content: string): LiqSpikeWikitextFingerprint {
+  const templateOpenCount = (content.match(/\{\{/g) ?? []).length;
+  const internalLinkOpenCount = (content.match(/\[\[/g) ?? []).length;
+  const pipeCount = (content.match(/\|/g) ?? []).length;
+  const lineCount = content.split('\n').length;
+  const startsWithRedirect = /^\s*#REDIRECT/i.test(content);
+  const firstTemplateMatch = content.match(/\{\{\s*([^|}]+)/);
+  const firstTemplateName = firstTemplateMatch ? firstTemplateMatch[1]!.trim() : null;
+  return {
+    templateOpenCount,
+    internalLinkOpenCount,
+    pipeCount,
+    lineCount,
+    startsWithRedirect,
+    firstTemplateName,
+  };
 }
 
 function escapeRegExpLiteral(value: string): string {
@@ -435,6 +520,8 @@ export async function runLiqSpike(
     const content = page.content ?? '';
     const byteSize = page.size ?? Buffer.byteLength(content, 'utf8');
     const wikitextVerdict = classifyWikitext(content);
+    const fingerprint =
+      byteSize < LIQ_SPIKE_FINGERPRINT_MAX_BYTES ? computeWikitextFingerprint(content) : undefined;
     pages.push({
       family,
       title: page.title,
@@ -444,6 +531,8 @@ export async function runLiqSpike(
       ...(wikitextVerdict === 'stub-generator-only'
         ? { proposedAllowlistRegex: proposeAllowlistRegexFor(page.title) }
         : {}),
+      ...(fingerprint ? { fingerprint } : {}),
+      rawWikitext: content,
       completedAtMs,
     });
     deps.log(

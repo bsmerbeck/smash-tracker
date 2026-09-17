@@ -12,6 +12,7 @@ import {
 import { LIQUIPEDIA_GENERAL_MIN_INTERVAL_MS } from '../src/liquipedia/limiter.js';
 import { UnsafeOutputPathError } from './outputPathGuard.js';
 import {
+  LIQ_SPIKE_FINGERPRINT_MAX_BYTES,
   LIQ_SPIKE_TARGETS,
   assertSafeLiqSpikeOutPath,
   checkGeneralRequestStartSpacing,
@@ -287,6 +288,157 @@ describe('classifyWikitext (via runLiqSpike) — structural, not byte-gated (fix
 
     expect(report.pages[0]?.wikitextVerdict).toBe('sufficient');
     expect(report.pages[0]?.proposedAllowlistRegex).toBeUndefined();
+  });
+
+  // Fix 2 (owner rerun #2): the fix-C classifier ("every line is a solitary
+  // template") was ITSELF still a guess — it only recognized a template
+  // followed by MORE templates, missing the equally-non-substantive shape
+  // of a template followed by a category link. Structural stripping
+  // (strip templates AND categories, then check what's left) catches this
+  // shape the line-pattern check could not.
+  it('classifies a template followed by a category link as stub-generator-only (a shape the old line-pattern check missed)', async () => {
+    const templateThenCategory = '{{Infobox player results}}\n[[Category:Players]]';
+    const target: LiqSpikeTarget = {
+      family: 'player-results',
+      titles: ['CategoryStub/Results'],
+      why: 'test',
+    };
+    const { client } = buildInlineClient([
+      {
+        match: matchQuery({ action: 'query', titles: 'CategoryStub/Results' }),
+        body: queryEnvelope([
+          { title: 'CategoryStub/Results', revid: 5, content: templateThenCategory },
+        ]),
+      },
+    ]);
+
+    const report = await runLiqSpike({ client, now: () => 0, log: () => undefined }, [target], {
+      seedPrefixes: [],
+    });
+
+    expect(report.pages[0]?.wikitextVerdict).toBe('stub-generator-only');
+  });
+
+  it('classifies simply-nested templates as stub-generator-only (iterative stripping)', async () => {
+    const nestedTemplateOnly = '{{Infobox player results|note={{small|active}}}}';
+    const target: LiqSpikeTarget = {
+      family: 'player-results',
+      titles: ['NestedStub/Results'],
+      why: 'test',
+    };
+    const { client } = buildInlineClient([
+      {
+        match: matchQuery({ action: 'query', titles: 'NestedStub/Results' }),
+        body: queryEnvelope([
+          { title: 'NestedStub/Results', revid: 6, content: nestedTemplateOnly },
+        ]),
+      },
+    ]);
+
+    const report = await runLiqSpike({ client, now: () => 0, log: () => undefined }, [target], {
+      seedPrefixes: [],
+    });
+
+    expect(report.pages[0]?.wikitextVerdict).toBe('stub-generator-only');
+  });
+
+  it('does not strip genuine table/list markup — a table-only body (post-template-strip) is sufficient', async () => {
+    const tableBody = '{{Infobox player results}}\n{|\n|Genesis 9||1st\n|}';
+    const target: LiqSpikeTarget = {
+      family: 'player-results',
+      titles: ['TableBody/Results'],
+      why: 'test',
+    };
+    const { client } = buildInlineClient([
+      {
+        match: matchQuery({ action: 'query', titles: 'TableBody/Results' }),
+        body: queryEnvelope([{ title: 'TableBody/Results', revid: 7, content: tableBody }]),
+      },
+    ]);
+
+    const report = await runLiqSpike({ client, now: () => 0, log: () => undefined }, [target], {
+      seedPrefixes: [],
+    });
+
+    expect(report.pages[0]?.wikitextVerdict).toBe('sufficient');
+  });
+});
+
+describe('LiqSpikePageResult fingerprint / rawWikitext (fix 2)', () => {
+  it('attaches a leak-free fingerprint and the raw wikitext for a page under the fingerprint size threshold', async () => {
+    const shortTemplateOnly = '{{Infobox player results}}';
+    const target: LiqSpikeTarget = {
+      family: 'player-results',
+      titles: ['ShortStub/Results'],
+      why: 'test',
+    };
+    const { client } = buildInlineClient([
+      {
+        match: matchQuery({ action: 'query', titles: 'ShortStub/Results' }),
+        body: queryEnvelope([{ title: 'ShortStub/Results', revid: 8, content: shortTemplateOnly }]),
+      },
+    ]);
+
+    const report = await runLiqSpike({ client, now: () => 0, log: () => undefined }, [target], {
+      seedPrefixes: [],
+    });
+
+    const page = report.pages[0];
+    expect(page?.rawWikitext).toBe(shortTemplateOnly);
+    expect(page?.fingerprint).toEqual({
+      templateOpenCount: 1,
+      internalLinkOpenCount: 0,
+      pipeCount: 0,
+      lineCount: 1,
+      startsWithRedirect: false,
+      firstTemplateName: 'Infobox player results',
+    });
+  });
+
+  it('omits the fingerprint for a page at or above the fingerprint size threshold, but still attaches rawWikitext', async () => {
+    const longBody = 'x'.repeat(LIQ_SPIKE_FINGERPRINT_MAX_BYTES + 10);
+    const target: LiqSpikeTarget = {
+      family: 'player-results',
+      titles: ['LongBody/Results'],
+      why: 'test',
+    };
+    const { client } = buildInlineClient([
+      {
+        match: matchQuery({ action: 'query', titles: 'LongBody/Results' }),
+        body: queryEnvelope([{ title: 'LongBody/Results', revid: 9, content: longBody }]),
+      },
+    ]);
+
+    const report = await runLiqSpike({ client, now: () => 0, log: () => undefined }, [target], {
+      seedPrefixes: [],
+    });
+
+    const page = report.pages[0];
+    expect(page?.fingerprint).toBeUndefined();
+    expect(page?.rawWikitext).toBe(longBody);
+  });
+
+  it('never attaches rawWikitext/fingerprint for a missing page', async () => {
+    const target: LiqSpikeTarget = {
+      family: 'player-results',
+      titles: ['Nope/Results'],
+      why: 'test',
+    };
+    const { client } = buildInlineClient([
+      {
+        match: matchQuery({ action: 'query', titles: 'Nope/Results' }),
+        body: queryEnvelope([{ title: 'Nope/Results', missing: true }]),
+      },
+    ]);
+
+    const report = await runLiqSpike({ client, now: () => 0, log: () => undefined }, [target], {
+      seedPrefixes: [],
+    });
+
+    const page = report.pages[0];
+    expect(page?.wikitextVerdict).toBe('missing');
+    expect(page?.rawWikitext).toBeUndefined();
+    expect(page?.fingerprint).toBeUndefined();
   });
 });
 
