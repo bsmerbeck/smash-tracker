@@ -145,6 +145,19 @@
     "inferredFighters": {
       "title": "Kämpfer aus deinem Match-Verlauf",
       "body": "Du hast noch keine Lieblingskämpfer gespeichert, daher nutzt diese Seite die in deinen erfassten Matches beobachteten Kämpfer. Favoriten zu wählen ist optional und personalisiert diese Seiten nur."
+    },
+    "evidence": {
+      "abstained_one": "Noch nicht genug Daten — {{count}} weiteres Match nötig.",
+      "abstained_other": "Noch nicht genug Daten — {{count}} weitere Matches nötig.",
+      "sampleCue": "{{total}} Matches · {{tier}} Konfidenz",
+      "tier": {
+        "low": "niedrige",
+        "medium": "mittlere",
+        "high": "hohe"
+      },
+      "type": {
+        "recommendation": "Coaching-Empfehlung basierend auf deinen erfassten Matches — keine Garantie."
+      }
     }
   },
   "dashboard": {
@@ -800,7 +813,6 @@
     },
     "counterpick": {
       "title": "Counterpick-Berater",
-      "gather": "Sammle mehr Daten: Stages brauchen mindestens {{count}} erfasste Matches in diesem Matchup, bevor Picks oder Bans vorgeschlagen werden können.",
       "pickThese": "Diese picken",
       "banThese": "Diese bannen / meiden",
       "unknownStage": "Unbekannte Stage"

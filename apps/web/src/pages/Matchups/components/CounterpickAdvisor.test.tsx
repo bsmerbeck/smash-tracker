@@ -57,8 +57,11 @@ function matchesOnStage(
 
 describe('CounterpickAdvisor', () => {
   it('shows a gather-more-data hint when no stage has the minimum sample size', () => {
+    // Phase 36 (D-05, EVID-06): the bespoke "Gather more data" copy is
+    // replaced by the shared abstained sentence, which names the exact
+    // number of additional games needed rather than a generic nudge.
     renderAdvisor(matchesOnStage(BATTLEFIELD, 1, 0));
-    expect(screen.getByText(/Gather more data/)).toBeInTheDocument();
+    expect(screen.getByText(/Not enough data yet.*2 more games needed/)).toBeInTheDocument();
     expect(screen.queryByText('Pick these')).not.toBeInTheDocument();
   });
 

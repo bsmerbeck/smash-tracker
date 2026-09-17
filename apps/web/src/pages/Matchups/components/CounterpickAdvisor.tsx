@@ -1,8 +1,9 @@
+import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { StageOption } from '@/components/StageOption';
 import type { Match } from '@smash-tracker/shared';
-import { rankStagesByEvidence, type RankedStage } from '@/lib/stats';
+import { buildStageEvidence, type RankedStage } from '@/lib/stats';
 import { stagesById } from '@/data/stages';
 import { useMinStageMatches } from '@/hooks/useMinStageMatches';
 
@@ -15,40 +16,67 @@ const PICK_BAN_COUNT = 3;
  * Only stages with at least the shared per-subject minimum (Phase 35-03,
  * D-11 — `useMinStageMatches`, the same value Matchup Insights and Matchup
  * Stage Guide expose through their own selects) recorded matches in this
- * pairing qualify; when there isn't enough qualifying data yet, a hint
- * nudges the user to log more matches instead of showing a misleading
- * recommendation. This component reads the value silently — no selector of
- * its own (D-11, planner decision 1) — so moving the threshold in Matchup
- * Insights on the same page moves this component's picks/bans too.
+ * pairing qualify — and Phase 36's `buildStageEvidence` additionally floors
+ * that minimum at `ABSTENTION_FLOOR_GAMES` (D-05, D-07, R1-HIGH-1) inside
+ * the engine itself, so a persisted value below the floor cannot reopen a
+ * below-floor row here. When nothing clears the floor, the abstained
+ * sentence names exactly how many more games are needed instead of showing
+ * a misleading recommendation. This component reads the threshold silently
+ * — no selector of its own (D-11, planner decision 1) — so moving it in
+ * Matchup Insights on the same page moves this component's picks/bans too.
  */
 export function CounterpickAdvisor({ matchupMatches }: { matchupMatches: Match[] }) {
   const { t } = useTranslation();
   const [minGames] = useMinStageMatches();
-  const ranked = rankStagesByEvidence(matchupMatches, minGames);
+  // React Compiler forbids a bare `Date.now()` call in the render body (it's
+  // impure) — a lazy `useState` initializer is the sanctioned one-time-read
+  // escape hatch; a stale `refreshedAt` across re-renders is harmless since
+  // it's provenance metadata on the claim, not part of the ranking math.
+  const [refreshedAt] = useState(() => Date.now());
+  const { claim } = buildStageEvidence({
+    matches: matchupMatches,
+    refreshedAt,
+    minMatches: minGames,
+  });
+  const ranked = claim.kind === 'evidenced' ? claim.value : [];
   const picks = ranked.slice(0, PICK_BAN_COUNT);
   // Bottom N, worst-first: take the tail (never overlapping the picks
   // already claimed above) and reverse it into worst-to-better order.
   const banCount = Math.min(PICK_BAN_COUNT, ranked.length - picks.length);
   const bans = banCount > 0 ? ranked.slice(ranked.length - banCount).reverse() : [];
+  const sampleCueText =
+    claim.sample.confidenceTier != null
+      ? t('shared.evidence.sampleCue', {
+          total: claim.sample.eligibleDenominator,
+          tier: t(`shared.evidence.tier.${claim.sample.confidenceTier}`),
+        })
+      : null;
 
   return (
     <Card>
       <CardHeader>
         <CardTitle>{t('matchups.counterpick.title')}</CardTitle>
+        <CardDescription>{t('shared.evidence.type.recommendation')}</CardDescription>
       </CardHeader>
       <CardContent className="flex flex-col gap-4">
-        {ranked.length === 0 ? (
+        {claim.kind === 'abstained' ? (
           <p className="text-sm text-muted-foreground">
-            {t('matchups.counterpick.gather', { count: minGames })}
+            {t('shared.evidence.abstained', { count: claim.gamesNeeded })}
           </p>
         ) : (
           <>
-            <StageGroup title={t('matchups.counterpick.pickThese')} tone="emerald" stages={picks} />
+            <StageGroup
+              title={t('matchups.counterpick.pickThese')}
+              tone="emerald"
+              stages={picks}
+              sampleCueText={sampleCueText}
+            />
             {bans.length > 0 && (
               <StageGroup
                 title={t('matchups.counterpick.banThese')}
                 tone="destructive"
                 stages={bans}
+                sampleCueText={sampleCueText}
               />
             )}
           </>
@@ -62,10 +90,12 @@ function StageGroup({
   title,
   tone,
   stages,
+  sampleCueText,
 }: {
   title: string;
   tone: 'emerald' | 'destructive';
   stages: RankedStage[];
+  sampleCueText: string | null;
 }) {
   const { t } = useTranslation();
   return (
@@ -88,6 +118,7 @@ function StageGroup({
               <span className="shrink-0 whitespace-nowrap text-sm text-muted-foreground">
                 {stage.wins}-{stage.losses}{' '}
                 {t('common.rateOverSample', { rate: stage.winRate, total: stage.total })}
+                {sampleCueText ? ` · ${sampleCueText}` : ''}
               </span>
             </li>
           );

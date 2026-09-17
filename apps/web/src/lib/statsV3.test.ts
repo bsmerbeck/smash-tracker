@@ -76,17 +76,24 @@ describe('rankMatchupsByEvidence', () => {
 });
 
 describe('rankStagesByEvidence', () => {
+  // Phase 36 (D-05/D-07): the default floor is now ABSTENTION_FLOOR_GAMES
+  // (3), so both stages below need >=3 games to clear the gate at all —
+  // Battlefield is given a thinner, more mixed record than Smashville's
+  // proven 5-1 so the wilson-ranking assertion still tests what it was
+  // written to test (a proven record outranks a thinner one).
   it('excludes the unknown-stage sentinel and ranks by wilson', () => {
     const stage = (id: number, name: string) => ({ id, name });
     const matches = [
       makeMatch({ id: 'u', time: 1, win: true }), // stage 0 sentinel
       makeMatch({ id: 'b1', time: 2, win: true, map: stage(1, 'Battlefield') }),
+      makeMatch({ id: 'b2', time: 3, win: true, map: stage(1, 'Battlefield') }),
+      makeMatch({ id: 'b3', time: 4, win: false, map: stage(1, 'Battlefield') }),
       ...Array.from({ length: 6 }, (_, i) =>
         makeMatch({ id: `s${i}`, time: 10 + i, win: i < 5, map: stage(3, 'Smashville') }),
       ),
     ];
     const ranked = rankStagesByEvidence(matches);
-    expect(ranked.map((r) => r.stageId)).toEqual([3, 1]); // 5-1 beats 1-0
+    expect(ranked.map((r) => r.stageId)).toEqual([3, 1]); // proven 5-1 beats thinner 2-1
     expect(ranked.find((r) => r.stageId === 0)).toBeUndefined();
   });
 });

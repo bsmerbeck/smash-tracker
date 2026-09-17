@@ -155,9 +155,10 @@ describe('buildRetrospective', () => {
 
   it('only uses matches strictly before entry.firstSetAt as evidence (excludes same-tournament games)', () => {
     const entry = makeEntry({ firstSetAt: 1_000_000 });
-    // Two pre-tournament games on Battlefield (qualifies), but a bunch more
-    // "future" games on Town and City that must NOT count as evidence.
-    const pre = preMatchesOnStage(BATTLEFIELD, 2, 0);
+    // Three pre-tournament games on Battlefield (qualifies at the Phase 36
+    // abstention floor of 3), but a bunch more "future" games on Town and
+    // City that must NOT count as evidence.
+    const pre = preMatchesOnStage(BATTLEFIELD, 3, 0);
     const duringTournament = preMatchesOnStage(TOWN_AND_CITY, 5, 0).map((m) => ({
       ...m,
       time: 1_100_000 + m.time,

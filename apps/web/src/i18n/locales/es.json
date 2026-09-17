@@ -145,6 +145,19 @@
     "inferredFighters": {
       "title": "Mostrando luchadores según tu historial de partidas",
       "body": "Aún no has guardado luchadores favoritos, así que esta página usa los luchadores vistos en tus partidas registradas. Elegir favoritos es opcional y solo personaliza estas páginas."
+    },
+    "evidence": {
+      "abstained_one": "Aún no hay suficientes datos — falta {{count}} partida más.",
+      "abstained_other": "Aún no hay suficientes datos — faltan {{count}} partidas más.",
+      "sampleCue": "{{total}} partidas · confianza {{tier}}",
+      "tier": {
+        "low": "baja",
+        "medium": "media",
+        "high": "alta"
+      },
+      "type": {
+        "recommendation": "Recomendación de coaching basada en tus partidas registradas — no es una garantía."
+      }
     }
   },
   "dashboard": {
@@ -800,7 +813,6 @@
     },
     "counterpick": {
       "title": "Asesor de counterpicks",
-      "gather": "Reúne más datos: cada escenario necesita al menos {{count}} partidas registradas en este enfrentamiento para poder sugerir picks o bans.",
       "pickThese": "Elige estos",
       "banThese": "Banea / evita estos",
       "unknownStage": "Escenario desconocido"

@@ -62,3 +62,4 @@ export * from './tournamentRegistry.js';
 export * from './recap.js';
 export * from './events.js';
 export * from './prep.js';
+export * from './evidence/index.js';

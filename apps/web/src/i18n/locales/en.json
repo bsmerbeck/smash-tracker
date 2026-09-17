@@ -145,6 +145,19 @@
     "inferredFighters": {
       "title": "Showing fighters from your match history",
       "body": "You haven't saved favorite fighters yet, so this page uses the fighters seen in your recorded matches. Choosing favorites is optional and just personalizes these pages."
+    },
+    "evidence": {
+      "abstained_one": "Not enough data yet — {{count}} more game needed.",
+      "abstained_other": "Not enough data yet — {{count}} more games needed.",
+      "sampleCue": "{{total}} games · {{tier}} confidence",
+      "tier": {
+        "low": "low",
+        "medium": "medium",
+        "high": "high"
+      },
+      "type": {
+        "recommendation": "Coaching recommendation from your recorded games — not a guarantee."
+      }
     }
   },
   "dashboard": {
@@ -800,7 +813,6 @@
     },
     "counterpick": {
       "title": "Counterpick Advisor",
-      "gather": "Gather more data: stages need at least {{count}} recorded matches in this matchup before we can suggest picks or bans.",
       "pickThese": "Pick these",
       "banThese": "Ban / avoid these",
       "unknownStage": "Unknown stage"

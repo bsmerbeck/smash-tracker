@@ -145,6 +145,19 @@
     "inferredFighters": {
       "title": "Combattants issus de votre historique de matchs",
       "body": "Vous n'avez pas encore enregistré de combattants favoris, cette page utilise donc les combattants observés dans vos matchs enregistrés. Choisir des favoris est facultatif et ne fait que personnaliser ces pages."
+    },
+    "evidence": {
+      "abstained_one": "Pas encore assez de données — {{count}} match de plus nécessaire.",
+      "abstained_other": "Pas encore assez de données — {{count}} matchs de plus nécessaires.",
+      "sampleCue": "{{total}} matchs · confiance {{tier}}",
+      "tier": {
+        "low": "faible",
+        "medium": "moyenne",
+        "high": "élevée"
+      },
+      "type": {
+        "recommendation": "Recommandation de coaching basée sur vos matchs enregistrés — ce n'est pas une garantie."
+      }
     }
   },
   "dashboard": {
@@ -800,7 +813,6 @@
     },
     "counterpick": {
       "title": "Conseiller de counterpick",
-      "gather": "Rassemblez plus de données : chaque stage doit avoir au moins {{count}} matchs enregistrés dans ce matchup avant de pouvoir suggérer des picks ou des bans.",
       "pickThese": "À prendre",
       "banThese": "À bannir / éviter",
       "unknownStage": "Stage inconnu"

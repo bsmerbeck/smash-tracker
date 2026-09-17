@@ -4,11 +4,13 @@ import { zodOutputFormat } from '@anthropic-ai/sdk/helpers/zod';
 import {
   buildMatchupAdvisor,
   generatedScoutReportSchema,
+  getStageRecords,
   matchRecordSchema,
   opponentNoteMapSchema,
   selectMyCandidateFighterIds,
   SpriteList,
   type GeneratedScoutReport,
+  type Match,
   type MatchupEvidence,
   type MyCharacterRecordVsOpponent,
   type OpponentNote,
@@ -301,23 +303,41 @@ export async function assembleReportPayload(
     const wins = matchesVsCharacter.filter((match) => match.win).length;
     const losses = matchesVsCharacter.length - wins;
 
-    const stageTally = new Map<string, { wins: number; losses: number; games: number }>();
+    // R1-HIGH-3: the stage NAME is the whole risk here. `getStageRecords`
+    // keys on the numeric `map.id` and carries no name, so the name is
+    // re-derived from the FIRST-SEEN `match.map.name` for that id — never
+    // from `stagesById` (which would emit a different string than the one
+    // actually stored on the row for any legacy/renamed stage). Id 0
+    // (unknown/absent map) always renders the literal 'Unknown stage',
+    // matching today's string exactly. One behavioural consequence: two
+    // rows whose `map.id` is equal but whose stored `map.name` differs now
+    // collapse into a single row carrying the first-seen name — asserted in
+    // generate.test.ts, not merely assumed.
+    const stageNameById = new Map<number, string>();
     for (const match of matchesVsCharacter) {
-      const name = match.map ? match.map.name : 'Unknown stage';
-      const existing = stageTally.get(name) ?? { wins: 0, losses: 0, games: 0 };
-      existing.games += 1;
-      if (match.win) {
-        existing.wins += 1;
-      } else {
-        existing.losses += 1;
+      const id = match.map?.id ?? 0;
+      if (id !== 0 && match.map && !stageNameById.has(id)) {
+        stageNameById.set(id, match.map.name);
       }
-      stageTally.set(name, existing);
     }
 
-    const topStages = [...stageTally.entries()]
-      .sort((a, b) => b[1].games - a[1].games)
+    // `getStageRecords` is typed over `Match[]` (the API-response shape with
+    // an `id`); the API's own parsed rows never carry one (`Object.values`
+    // over an RTDB node has no push key to hand). `id` is never read inside
+    // `getStageRecords`, so a synthetic per-index value is safe here.
+    const topStages = getStageRecords(
+      matchesVsCharacter.map((match, index): Match => ({ ...match, id: `stage-tally-${index}` })),
+    )
+      .sort((a, b) => b.total - a.total)
       .slice(0, TOP_STAGES_PER_MATCHUP)
-      .map(([stage, tally]) => ({ stage, wins: tally.wins, losses: tally.losses }));
+      .map((record) => ({
+        stage:
+          record.stageId === 0
+            ? 'Unknown stage'
+            : (stageNameById.get(record.stageId) ?? 'Unknown stage'),
+        wins: record.wins,
+        losses: record.losses,
+      }));
 
     return {
       opponentCharacter: fighterName(fighterId),

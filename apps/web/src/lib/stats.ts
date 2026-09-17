@@ -1,4 +1,14 @@
-import { splitIntoSessions, type Match } from '@smash-tracker/shared';
+import {
+  splitIntoSessions,
+  getWinLossRecord,
+  getStageRecords,
+  getBestWorstStages,
+  wilsonLowerBound,
+  type Match,
+  type WinLossRecord,
+  type StageRecord,
+  type MatchupStats,
+} from '@smash-tracker/shared';
 
 /**
  * Client-side match aggregation, extracted from the inline math legacy
@@ -11,37 +21,30 @@ import { splitIntoSessions, type Match } from '@smash-tracker/shared';
  * Matches are always sorted by `time` ascending internally before any
  * "recent" / "streak" logic runs, since callers (TanStack Query results,
  * RTDB reads) don't guarantee ordering.
+ *
+ * Phase 36 (EVID-10): the evidence-aware ranking engine (win/loss + stage
+ * records, the Wilson bound, and the D-05/D-07 abstention floor around
+ * `rankStagesByEvidence`) moved to `packages/shared/src/evidence/` so the
+ * API's report payload assembly consumes the exact same implementation as
+ * this web tier — mirroring `apps/web/src/lib/glicko.ts`'s thin re-export
+ * shim shape. `getOpponentRecords`/`getOpponentProfile` below are the
+ * deliberate exception — see their doc comments.
  */
+
+export type { WinLossRecord, StageRecord, MatchupStats, RankedStage } from '@smash-tracker/shared';
+export {
+  getWinLossRecord,
+  getStageRecords,
+  getBestWorstStages,
+  wilsonLowerBound,
+  rankStagesByEvidence,
+} from '@smash-tracker/shared';
+export type { BestWorstStages, StageEvidenceResult } from '@smash-tracker/shared';
+export { buildStageEvidence } from '@smash-tracker/shared';
 
 /** Sorts matches by `time` ascending. Does not mutate the input array. */
 function byTimeAscending(matches: Match[]): Match[] {
   return [...matches].sort((a, b) => a.time - b.time);
-}
-
-// ---------------------------------------------------------------------------
-// Win/loss totals
-// ---------------------------------------------------------------------------
-
-export interface WinLossRecord {
-  wins: number;
-  losses: number;
-  total: number;
-  /** Win rate as a whole-number percentage (0-100), rounded like legacy's `.toFixed(0)`. `100` when there are no losses (legacy WinLossTracker.js: `losses.length > 0 ? ... : 100`), including when there are zero matches at all. */
-  winRate: number;
-}
-
-/**
- * Overall win/loss record across the given matches, with no fighter
- * filtering applied by this function — callers filter matches by
- * `fighter_id` first (see `filterByFighter`) to reproduce legacy's
- * per-fighter WinLossTracker (legacy/src/screens/Dashboard/components/WinLossTracker/WinLossTracker.js).
- */
-export function getWinLossRecord(matches: Match[]): WinLossRecord {
-  const wins = matches.filter((m) => m.win).length;
-  const losses = matches.filter((m) => !m.win).length;
-  const total = wins + losses;
-  const winRate = losses > 0 ? Math.round((wins / total) * 100) : 100;
-  return { wins, losses, total, winRate };
 }
 
 /** Filters matches down to the ones played as the given fighter id (`fighter_id`, i.e. the tracked user's own character, not the opponent's). */
@@ -131,16 +134,6 @@ export function getLastNMatches(matches: Match[], limit: number): Match[] {
 // ---------------------------------------------------------------------------
 // Best/worst matchup (legacy BestWorstMatchup.js)
 // ---------------------------------------------------------------------------
-
-export interface MatchupStats {
-  /** The opponent's fighter id (`opponent_id`). */
-  opponentFighterId: number;
-  wins: number;
-  losses: number;
-  totalMatches: number;
-  /** Win rate as a whole-number percentage; `100` when there are no losses. */
-  ratio: number;
-}
 
 /**
  * Per-opponent-fighter win/loss/ratio breakdown, sorted best-ratio-first with
@@ -279,73 +272,6 @@ export function getStreakSummary(matches: Match[]): StreakSummary {
 }
 
 // ---------------------------------------------------------------------------
-// Per-stage breakdowns (legacy StageBreakdown.js)
-// ---------------------------------------------------------------------------
-
-export interface StageRecord extends WinLossRecord {
-  /** The stage's `map.id` (0 = "no selection"/unknown). */
-  stageId: number;
-}
-
-/**
- * Win/loss record per stage (`map.id`), for the given matches. Ports legacy
- * StageBreakdown.js's per-stage win/loss/rate math
- * (legacy/src/screens/MatchData/components/StageBreakdown/StageBreakdown.js).
- * Legacy defaulted a missing `map` to `{ id: 0, name: "no selection" }`
- * before grouping — this function does the same for matches missing `map`.
- */
-export function getStageRecords(matches: Match[]): StageRecord[] {
-  const byStage = new Map<number, Match[]>();
-  for (const match of matches) {
-    const stageId = match.map?.id ?? 0;
-    const group = byStage.get(stageId);
-    if (group) {
-      group.push(match);
-    } else {
-      byStage.set(stageId, [match]);
-    }
-  }
-  return [...byStage.entries()].map(([stageId, stageMatches]) => ({
-    stageId,
-    ...getWinLossRecord(stageMatches),
-  }));
-}
-
-// ---------------------------------------------------------------------------
-// Threshold-based best/worst stages (v2 analytics — correct math, not the
-// preserved legacy RosterBreakdown quirks)
-// ---------------------------------------------------------------------------
-
-export interface BestWorstStages {
-  best: StageRecord | null;
-  worst: StageRecord | null;
-}
-
-/**
- * Best and worst stage among the given matches, considering only stages with
- * at least `minMatches` recorded matches. The unknown-stage sentinel
- * (`map.id` 0) never qualifies — it isn't an actionable recommendation.
- * Best = highest win rate, worst = lowest; ties broken by larger sample
- * size. When exactly one stage qualifies it is reported as `best` only —
- * a single stage can't be both the recommendation and the warning.
- */
-export function getBestWorstStages(matches: Match[], minMatches = 3): BestWorstStages {
-  const qualifying = getStageRecords(matches).filter(
-    (record) => record.stageId !== 0 && record.total >= minMatches,
-  );
-  if (qualifying.length === 0) {
-    return { best: null, worst: null };
-  }
-
-  const sorted = [...qualifying].sort((a, b) =>
-    b.winRate === a.winRate ? b.total - a.total : b.winRate - a.winRate,
-  );
-  const best = sorted[0] ?? null;
-  const worst = sorted.length > 1 ? (sorted[sorted.length - 1] ?? null) : null;
-  return { best, worst };
-}
-
-// ---------------------------------------------------------------------------
 // Matchup stage guide (v2 analytics)
 // ---------------------------------------------------------------------------
 
@@ -446,6 +372,17 @@ export interface OpponentRecord extends WinLossRecord {
  * matches with no opponent name recorded. Ports legacy OpponentTable.js
  * (legacy/src/screens/FighterAnalysis/components/OpponentTable/OpponentTable.js),
  * which filtered to `m.opponent && m.opponent.length > 0` before grouping.
+ *
+ * Phase 36 (EVID-12, R2-MEDIUM-3): this is the PRE-EVID-12 raw-tag path —
+ * it keys on the raw `match.opponent` string with no alias resolution and
+ * no start.gg-slug / parry.gg-id identity binding, unlike
+ * `buildOpponentEvidence` (`@smash-tracker/shared`). Its seven existing call
+ * sites (`OpponentTable.tsx`, `OpponentsPage.tsx`, `OpponentList.tsx`,
+ * `PairingOpponentSplit.tsx`, `ScoutPage.tsx`, `LikelyOpponentsCard.tsx`)
+ * all receive already-alias-rewritten matches from `useFilteredMatches`, so
+ * this function is deliberately NOT promoted/identity-resolved this phase.
+ * A NEW call site should use `buildOpponentEvidence` instead. Phase 38's
+ * opponent hub retires this pair.
  */
 export function getOpponentRecords(matches: Match[]): OpponentRecord[] {
   const named = matches.filter((m) => m.opponent && m.opponent.length > 0);
@@ -490,24 +427,6 @@ export function getStageUsage(matches: Match[]): Map<number, number> {
 // V3 stats engine: evidence-aware rankings (docs/analytics-vision.md)
 // ---------------------------------------------------------------------------
 
-/**
- * Lower bound of the Wilson score interval (default z = 1.96 ≈ 95%): a
- * pessimistic-but-fair estimate of the true win rate given the sample size.
- * Ranking by this instead of the raw rate keeps a lucky 1-0 from outranking
- * a proven 12-3. Returns 0 for an empty sample.
- */
-export function wilsonLowerBound(wins: number, total: number, z = 1.96): number {
-  if (total === 0) {
-    return 0;
-  }
-  const p = wins / total;
-  const z2 = z * z;
-  const denominator = 1 + z2 / total;
-  const centre = p + z2 / (2 * total);
-  const spread = z * Math.sqrt((p * (1 - p) + z2 / (4 * total)) / total);
-  return Math.max(0, (centre - spread) / denominator);
-}
-
 export interface RankedMatchup extends MatchupStats {
   /** Wilson lower bound (0-1) for this matchup's win rate. */
   wilson: number;
@@ -518,6 +437,11 @@ export interface RankedMatchup extends MatchupStats {
  * ties broken by sample size. Unlike the legacy-faithful `getMatchupStats`,
  * this is the v3 evidence-aware ranking; `minMatches` merely hides noise
  * rows and defaults to 1 because the ranking itself is sample-aware.
+ *
+ * Phase 36 (EVID-01, D-15): promoted to
+ * `packages/shared/src/evidence/matchupEvidence.ts` in plan 36-02 Task 2,
+ * where the D-05/D-07 abstention floor is applied. This body is unchanged
+ * from pre-Phase-36 until that promotion lands.
  */
 export function rankMatchupsByEvidence(matches: Match[], minMatches = 1): RankedMatchup[] {
   const byOpponent = new Map<number, Match[]>();
@@ -548,22 +472,6 @@ export function rankMatchupsByEvidence(matches: Match[], minMatches = 1): Ranked
     .sort((a, b) =>
       b.wilson === a.wilson ? b.totalMatches - a.totalMatches : b.wilson - a.wilson,
     );
-}
-
-export interface RankedStage extends StageRecord {
-  /** Wilson lower bound (0-1) for this stage's win rate. */
-  wilson: number;
-}
-
-/**
- * Stage records ranked by Wilson lower bound (best first). The unknown-stage
- * sentinel (id 0) never appears — it isn't an actionable pick.
- */
-export function rankStagesByEvidence(matches: Match[], minMatches = 1): RankedStage[] {
-  return getStageRecords(matches)
-    .filter((record) => record.stageId !== 0 && record.total >= minMatches)
-    .map((record) => ({ ...record, wilson: wilsonLowerBound(record.wins, record.total) }))
-    .sort((a, b) => (b.wilson === a.wilson ? b.total - a.total : b.wilson - a.wilson));
 }
 
 // ---------------------------------------------------------------------------
@@ -704,7 +612,13 @@ export interface OpponentProfile {
   recent: Match[];
 }
 
-/** Head-to-head profile vs one human opponent, or null when never played. */
+/**
+ * Head-to-head profile vs one human opponent, or null when never played.
+ *
+ * Phase 36 (EVID-12, R2-MEDIUM-3): this is the PRE-EVID-12 raw-tag path —
+ * see `getOpponentRecords`'s doc comment above for the identity-resolution
+ * rationale. A NEW call site should use `buildOpponentProfile` instead.
+ */
 export function getOpponentProfile(
   matches: Match[],
   opponentTag: string,

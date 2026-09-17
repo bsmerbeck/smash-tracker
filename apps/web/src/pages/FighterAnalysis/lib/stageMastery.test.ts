@@ -44,7 +44,13 @@ describe('tintBucketForWilson', () => {
 });
 
 describe('buildStageMasteryTiles', () => {
-  it('includes every stage with at least one game, Wilson-ranked best first', () => {
+  it('includes every stage with at least the abstention-floor game count, Wilson-ranked best first', () => {
+    // Phase 36 (D-05/D-07): `rankStagesByEvidence`'s underlying floor is now
+    // ABSTENTION_FLOOR_GAMES (3), so a 1-game stage no longer clears the
+    // gate at all — Smashville's single game is excluded entirely rather
+    // than appearing as a thin-evidence tile. The inline `1` this component
+    // passes is retired in plan 36-02 Task 3; this test only keeps the tree
+    // green for this plan.
     const matches = [
       // Battlefield: 1-4 (bad)
       makeMatch({ id: 'bf1', time: 1, win: true, map: BATTLEFIELD }),
@@ -56,13 +62,13 @@ describe('buildStageMasteryTiles', () => {
       ...Array.from({ length: 10 }, (_, i) =>
         makeMatch({ id: `fd${i}`, time: 10 + i, win: true, map: FD }),
       ),
-      // Smashville: 1-0 (single game, thin evidence)
+      // Smashville: 1-0 (single game — now abstained below the floor and excluded)
       makeMatch({ id: 'sv1', time: 20, win: true, map: SMASHVILLE }),
     ];
 
     const tiles = buildStageMasteryTiles(matches);
 
-    expect(tiles.map((t) => t.stageId)).toEqual([FD.id, SMASHVILLE.id, BATTLEFIELD.id]);
+    expect(tiles.map((t) => t.stageId)).toEqual([FD.id, BATTLEFIELD.id]);
     expect(tiles.find((t) => t.stageId === FD.id)?.tint).toBe('strong');
     expect(tiles.find((t) => t.stageId === BATTLEFIELD.id)?.tint).toBe('weak');
   });
@@ -80,13 +86,18 @@ describe('buildStageMasteryTiles', () => {
 });
 
 describe('buildStageMasteryCaption', () => {
-  it('reports both a best pick and ban-worthy stage when 2+ stages qualify (>=2 games each)', () => {
+  // Phase 36 (D-05/D-07): `MASTERY_CAPTION_MIN_GAMES` (2) is now routed
+  // through `rankStagesByEvidence`'s `effectiveFloor`, which raises any
+  // sub-floor caller minimum to ABSTENTION_FLOOR_GAMES (3) — so both
+  // fixtures below need >=3 games to clear the gate at all.
+  it('reports both a best pick and ban-worthy stage when 2+ stages qualify (>=3 games each)', () => {
     const matches = [
       ...Array.from({ length: 4 }, (_, i) =>
         makeMatch({ id: `fd${i}`, time: i, win: true, map: FD }),
       ),
       makeMatch({ id: 'bf1', time: 10, win: false, map: BATTLEFIELD }),
       makeMatch({ id: 'bf2', time: 11, win: false, map: BATTLEFIELD }),
+      makeMatch({ id: 'bf3', time: 12, win: false, map: BATTLEFIELD }),
     ];
 
     const caption = buildStageMasteryCaption(matches);
@@ -99,8 +110,9 @@ describe('buildStageMasteryCaption', () => {
     const matches = [
       makeMatch({ id: 'fd1', time: 1, win: true, map: FD }),
       makeMatch({ id: 'fd2', time: 2, win: true, map: FD }),
-      // Single game elsewhere never reaches the 2-game caption threshold.
-      makeMatch({ id: 'sv1', time: 3, win: false, map: SMASHVILLE }),
+      makeMatch({ id: 'fd3', time: 3, win: true, map: FD }),
+      // Single game elsewhere never reaches the abstention floor.
+      makeMatch({ id: 'sv1', time: 4, win: false, map: SMASHVILLE }),
     ];
 
     const caption = buildStageMasteryCaption(matches);

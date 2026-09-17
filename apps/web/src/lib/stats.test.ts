@@ -386,12 +386,19 @@ describe('getBestWorstStages', () => {
   });
 
   it('breaks win-rate ties by larger sample size', () => {
+    // Phase 36 (D-05/D-07): the floor gates at ABSTENTION_FLOOR_GAMES (3)
+    // even for an explicit sub-floor `minMatches` of 1, so both stages here
+    // need >=3 games to clear the gate at all.
     const matches = [
-      // Stage 1: 1-0 (100%, n=1... below default) — use threshold 1
+      // Stage 1: 3-0 (100%, n=3 — at the floor)
       makeMatch({ id: 'a1', time: 1, win: true, map: stage(1, 'A') }),
-      // Stage 2: 2-0 (100%, n=2)
-      makeMatch({ id: 'b1', time: 2, win: true, map: stage(2, 'B') }),
-      makeMatch({ id: 'b2', time: 3, win: true, map: stage(2, 'B') }),
+      makeMatch({ id: 'a2', time: 2, win: true, map: stage(1, 'A') }),
+      makeMatch({ id: 'a3', time: 3, win: true, map: stage(1, 'A') }),
+      // Stage 2: 4-0 (100%, n=4 — larger sample, same rate)
+      makeMatch({ id: 'b1', time: 4, win: true, map: stage(2, 'B') }),
+      makeMatch({ id: 'b2', time: 5, win: true, map: stage(2, 'B') }),
+      makeMatch({ id: 'b3', time: 6, win: true, map: stage(2, 'B') }),
+      makeMatch({ id: 'b4', time: 7, win: true, map: stage(2, 'B') }),
     ];
     const { best } = getBestWorstStages(matches, 1);
     expect(best?.stageId).toBe(2);

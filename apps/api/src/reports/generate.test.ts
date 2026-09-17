@@ -305,6 +305,40 @@ describe('assembleReportPayload', () => {
     ]);
   });
 
+  it('collapses two rows sharing a map.id but differing map.name into one, carrying the first-seen name (R1-HIGH-3)', async () => {
+    const database = new FakeDatabase();
+    database.seed(`matches/${UID}`, {
+      m1: {
+        fighter_id: 1,
+        opponent_id: 8, // Fox
+        time: 1,
+        win: true,
+        map: { id: 1, name: 'Battlefield' },
+        opponent: 'a',
+      },
+      m2: {
+        fighter_id: 1,
+        opponent_id: 8, // Fox
+        time: 2,
+        win: false,
+        // Same numeric stage id, different stored name (legacy rename) — one
+        // stage id is one stage, so this must collapse into a single row.
+        map: { id: 1, name: 'Battlefield (renamed)' },
+        opponent: 'b',
+      },
+    });
+
+    const payload = await assembleReportPayload(
+      UID,
+      SCOUT,
+      database as unknown as Parameters<typeof assembleReportPayload>[2],
+    );
+
+    expect(payload.userContext.vsTopCharacters[0]?.topStages).toEqual([
+      { stage: 'Battlefield', wins: 1, losses: 1 },
+    ]);
+  });
+
   it('computes recent form over the most recent 50 matches only', async () => {
     const database = new FakeDatabase();
     const seed: Record<string, unknown> = {};
