@@ -56,16 +56,31 @@ function readOptionalFlag(argv: string[], name: string): string | undefined {
 }
 
 /**
- * Wraps the runtime's real fetch with a hard per-request timeout and the
- * operator's shutdown/stall abort signal. Mirrors `enrichDemoAccounts.ts`'s
- * `createBoundedFetch` exactly.
+ * Wraps the runtime's real fetch with a hard per-request timeout, the
+ * operator's shutdown/stall abort signal, AND — the addition fix B
+ * requires — a `now()` timestamp recorded at the moment THIS function is
+ * invoked, i.e. immediately after the limiter has granted the request and
+ * `client.ts`'s `issueRequest` is about to dispatch it. This is the only
+ * seam available to measure true request-START spacing without modifying
+ * `client.ts`/`limiter.ts`: the core (`liqSpikeProbeCore.ts`) only ever
+ * sees the higher-level `getWikitext`/`listSubpages` calls, which resolve
+ * after the FULL round trip completes, so timing THOSE conflates network
+ * latency with the limiter's actual spacing (the owner's first live run
+ * showed a meaningless 304ms "spacing" this way, nowhere near the real
+ * ~2000ms the limiter enforces).
  */
-function createBoundedFetch(timeoutMs: number, signal: AbortSignal): typeof fetch {
-  return ((input: Parameters<typeof fetch>[0], init?: Parameters<typeof fetch>[1]) =>
-    globalThis.fetch(input, {
+function createBoundedFetch(
+  timeoutMs: number,
+  signal: AbortSignal,
+  onRequestStart: (startedAtMs: number) => void,
+): typeof fetch {
+  return ((input: Parameters<typeof fetch>[0], init?: Parameters<typeof fetch>[1]) => {
+    onRequestStart(Date.now());
+    return globalThis.fetch(input, {
       ...init,
       signal: AbortSignal.any([signal, AbortSignal.timeout(timeoutMs)]),
-    })) as typeof fetch;
+    });
+  }) as typeof fetch;
 }
 
 function printReport(report: LiqSpikeReport, log: (line: string) => void): void {
@@ -82,7 +97,8 @@ function printReport(report: LiqSpikeReport, log: (line: string) => void): void 
   }
   log(
     `budget: general=${report.budget.generalRequests} parse-class=${report.budget.parseClassRequests} ` +
-      `minObservedGeneralSpacingMs=${report.budget.minObservedGeneralSpacingMs ?? 'n/a'}`,
+      `minObservedGeneralStartSpacingMs=${report.budget.minObservedGeneralStartSpacingMs ?? 'n/a'} ` +
+      `minObservedGeneralCompletionSpacingMs=${report.budget.minObservedGeneralCompletionSpacingMs ?? 'n/a'}`,
   );
 }
 
@@ -124,6 +140,7 @@ async function main(): Promise<number> {
   // had already spent its Liquipedia request budget.
   const repoRoot = resolveGitRepoRoot();
   const resolvedOutPath = assertSafeLiqSpikeOutPath({ outPath, repoRoot });
+  const generalRequestStartTimestampsMs: number[] = [];
 
   const { app, database } = initFirebase(env);
 
@@ -135,11 +152,18 @@ async function main(): Promise<number> {
         // stand-in. A spike run must draw on the SAME shared budget every
         // other Liquipedia consumer draws on (T-36-07-01).
         limiter: createLiquipediaLimiter(database),
-        fetchImpl: createBoundedFetch(requestTimeoutMs, signal),
+        fetchImpl: createBoundedFetch(requestTimeoutMs, signal, (startedAtMs) =>
+          generalRequestStartTimestampsMs.push(startedAtMs),
+        ),
       });
 
       const report = await runLiqSpike(
-        { client, now: () => Date.now(), log: (line) => console.log(line) },
+        {
+          client,
+          now: () => Date.now(),
+          log: (line) => console.log(line),
+          generalRequestStartTimestampsMs,
+        },
         LIQ_SPIKE_TARGETS,
       );
 

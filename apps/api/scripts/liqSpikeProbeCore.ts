@@ -1,3 +1,4 @@
+import { LIQUIPEDIA_GENERAL_MIN_INTERVAL_MS } from '../src/liquipedia/limiter.js';
 import type { LiquipediaClient } from '../src/liquipedia/client.js';
 import { assertOutputPathIsGitignored } from './outputPathGuard.js';
 
@@ -14,6 +15,14 @@ import { assertOutputPathIsGitignored } from './outputPathGuard.js';
  * parse-class is a deliberate, later, Phase 42 allowlist change (D-22) —
  * this probe can only ever record a proposal for that change, never apply
  * one.
+ *
+ * Owner rerun incident (fix B): the first live run reported a 304ms
+ * "spacing" between general-class requests, nowhere near the real ~2000ms
+ * the shipped limiter enforces. That number was measured on request
+ * COMPLETIONS, which conflate each request's own network latency with the
+ * limiter's actual spacing. `checkGeneralRequestStartSpacing` below checks
+ * the real figure — request START timestamps, supplied by the caller's
+ * `fetchImpl` wrapper — and FAILS LOUDLY if it is ever violated.
  */
 
 /**
@@ -139,8 +148,24 @@ export interface LiqSpikeBudget {
   generalRequests: number;
   /** Always 0 — this probe issues `action=query` only. */
   parseClassRequests: number;
-  /** `null` when fewer than two general-class requests were observed (no spacing to measure). */
-  minObservedGeneralSpacingMs: number | null;
+  /**
+   * Minimum observed spacing between consecutive general-class request
+   * COMPLETIONS. Secondary/informational only (fix B): it conflates each
+   * request's own network latency with the limiter's actual spacing and
+   * can read anywhere from far below to far above the true interval — the
+   * owner's first live run showed a meaningless 304ms this way, nowhere
+   * near the real ~2000ms the limiter enforces. See
+   * `minObservedGeneralStartSpacingMs` for the figure that actually proves
+   * limiter compliance. `null` when fewer than two requests were observed.
+   */
+  minObservedGeneralCompletionSpacingMs: number | null;
+  /**
+   * Minimum observed spacing between consecutive general-class request
+   * STARTS (fetch dispatch time, recorded by the caller's `fetchImpl`
+   * wrapper — see `LiqSpikeDeps.generalRequestStartTimestampsMs`). `null`
+   * when the caller supplied no start timestamps.
+   */
+  minObservedGeneralStartSpacingMs: number | null;
   /** Always `null` — no parse-class request is ever issued by this probe. */
   minObservedParseClassSpacingMs: number | null;
 }
@@ -155,6 +180,14 @@ export interface LiqSpikeDeps {
   client: LiquipediaClient;
   now: () => number;
   log: (line: string) => void;
+  /**
+   * Populated by the CALLER's `fetchImpl` wrapper with the `now()` value at
+   * the moment EACH underlying HTTP request was actually dispatched (i.e.
+   * immediately after the limiter granted) — this module has no access to
+   * the raw transport and never populates this itself. When omitted, the
+   * report's start-spacing fields are `null` and no compliance check runs.
+   */
+  generalRequestStartTimestampsMs?: number[];
 }
 
 /** True when every non-blank line of `wikitext` is a single `{{...}}` template transclusion — the shape of a generator-only page. */
@@ -186,7 +219,7 @@ function classifyWikitext(content: string, byteSize: number): LiqSpikeWikitextVe
   return 'sufficient';
 }
 
-function computeMinSpacingMs(timestampsMs: number[]): number | null {
+function computeMinSpacingMs(timestampsMs: readonly number[]): number | null {
   if (timestampsMs.length < 2) {
     return null;
   }
@@ -196,6 +229,41 @@ function computeMinSpacingMs(timestampsMs: number[]): number | null {
     min = Math.min(min, sorted[i]! - sorted[i - 1]!);
   }
   return min;
+}
+
+export interface LiqSpikeStartSpacingCheck {
+  minObservedStartSpacingMs: number | null;
+  compliant: boolean;
+  violation?: { indexA: number; indexB: number; gapMs: number };
+}
+
+/**
+ * Checks general-class request START timestamps against the published
+ * minimum interval. Fewer than two timestamps is trivially compliant (no
+ * pair to check). Returns the FIRST violation found (there may be more) —
+ * enough to fail loudly; a full accounting belongs in the written spike
+ * record, not this hot check.
+ */
+export function checkGeneralRequestStartSpacing(
+  startTimestampsMs: readonly number[],
+  minIntervalMs: number = LIQUIPEDIA_GENERAL_MIN_INTERVAL_MS,
+): LiqSpikeStartSpacingCheck {
+  if (startTimestampsMs.length < 2) {
+    return { minObservedStartSpacingMs: null, compliant: true };
+  }
+  const sorted = [...startTimestampsMs].sort((a, b) => a - b);
+  let min = Infinity;
+  let violation: LiqSpikeStartSpacingCheck['violation'];
+  for (let i = 1; i < sorted.length; i += 1) {
+    const gapMs = sorted[i]! - sorted[i - 1]!;
+    if (gapMs < min) {
+      min = gapMs;
+    }
+    if (gapMs < minIntervalMs && !violation) {
+      violation = { indexA: i - 1, indexB: i, gapMs };
+    }
+  }
+  return { minObservedStartSpacingMs: min, compliant: violation === undefined, violation };
 }
 
 /**
@@ -266,16 +334,31 @@ export async function runLiqSpike(
     }
   }
 
+  // FAIL LOUDLY on a real spacing violation — never silently record it
+  // (fix B). Checked against START timestamps, which the caller's
+  // `fetchImpl` wrapper supplies; this module never has raw transport
+  // access.
+  const startCheck = checkGeneralRequestStartSpacing(deps.generalRequestStartTimestampsMs ?? []);
+  if (!startCheck.compliant && startCheck.violation) {
+    throw new Error(
+      `liq-spike: general-class request start spacing violated the published ${LIQUIPEDIA_GENERAL_MIN_INTERVAL_MS}ms interval ` +
+        `(observed ${startCheck.violation.gapMs}ms between requests #${startCheck.violation.indexA} and #${startCheck.violation.indexB}) — ` +
+        'this is a real Liquipedia terms-of-use violation and must never be silently recorded',
+    );
+  }
+
   const budget: LiqSpikeBudget = {
     generalRequests: generalRequestTimestampsMs.length,
     parseClassRequests: 0,
-    minObservedGeneralSpacingMs: computeMinSpacingMs(generalRequestTimestampsMs),
+    minObservedGeneralCompletionSpacingMs: computeMinSpacingMs(generalRequestTimestampsMs),
+    minObservedGeneralStartSpacingMs: startCheck.minObservedStartSpacingMs,
     minObservedParseClassSpacingMs: null,
   };
 
   deps.log(
     `liq-spike: budget general=${budget.generalRequests} parse-class=${budget.parseClassRequests} ` +
-      `minObservedGeneralSpacingMs=${budget.minObservedGeneralSpacingMs ?? 'n/a'}`,
+      `minObservedGeneralStartSpacingMs=${budget.minObservedGeneralStartSpacingMs ?? 'n/a'} ` +
+      `minObservedGeneralCompletionSpacingMs=${budget.minObservedGeneralCompletionSpacingMs ?? 'n/a'}`,
   );
 
   return { pages, discoveries, budget };

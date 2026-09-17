@@ -8,11 +8,13 @@ import {
   createLiquipediaFixtureFetch,
   matchQuery,
 } from '../src/liquipedia/__fixtures__/loadFixture.js';
+import { LIQUIPEDIA_GENERAL_MIN_INTERVAL_MS } from '../src/liquipedia/limiter.js';
 import { UnsafeOutputPathError } from './outputPathGuard.js';
 import {
   LIQ_SPIKE_TARGETS,
   runLiqSpike,
   assertSafeLiqSpikeOutPath,
+  checkGeneralRequestStartSpacing,
   type LiqSpikeTarget,
 } from './liqSpikeProbeCore.js';
 
@@ -139,6 +141,86 @@ describe('runLiqSpike', () => {
     expect(page?.revisionId).toBe(535578);
     expect(page?.byteSize).toBeGreaterThan(19_000);
     expect(page?.completedAtMs).toBe(12345);
+  });
+});
+
+// ---- checkGeneralRequestStartSpacing (pure, fake clock) -------------------
+
+describe('checkGeneralRequestStartSpacing', () => {
+  it('is trivially compliant with fewer than two timestamps', () => {
+    expect(checkGeneralRequestStartSpacing([])).toEqual({
+      minObservedStartSpacingMs: null,
+      compliant: true,
+    });
+    expect(checkGeneralRequestStartSpacing([1000])).toEqual({
+      minObservedStartSpacingMs: null,
+      compliant: true,
+    });
+  });
+
+  it('is compliant when every consecutive gap meets the minimum interval', () => {
+    const result = checkGeneralRequestStartSpacing([0, 2000, 4000, 6000], 2000);
+    expect(result.compliant).toBe(true);
+    expect(result.minObservedStartSpacingMs).toBe(2000);
+    expect(result.violation).toBeUndefined();
+  });
+
+  it('is non-compliant and names the violating pair when a gap is too small', () => {
+    const result = checkGeneralRequestStartSpacing([0, 2000, 2100, 4200], 2000);
+    expect(result.compliant).toBe(false);
+    expect(result.minObservedStartSpacingMs).toBe(100);
+    expect(result.violation).toEqual({ indexA: 1, indexB: 2, gapMs: 100 });
+  });
+
+  it('defaults its minimum interval to the shipped LIQUIPEDIA_GENERAL_MIN_INTERVAL_MS constant', () => {
+    const justUnder = checkGeneralRequestStartSpacing([0, LIQUIPEDIA_GENERAL_MIN_INTERVAL_MS - 1]);
+    expect(justUnder.compliant).toBe(false);
+    const exact = checkGeneralRequestStartSpacing([0, LIQUIPEDIA_GENERAL_MIN_INTERVAL_MS]);
+    expect(exact.compliant).toBe(true);
+  });
+});
+
+describe('runLiqSpike — general-class start-spacing enforcement (fix B)', () => {
+  it('does not throw and reports null start-spacing fields when no start timestamps are supplied', async () => {
+    const { client } = buildFixtureBackedClient();
+    const report = await runLiqSpike({ client, now: () => 0, log: () => undefined }, [
+      STUB_BATCH_TARGET,
+    ]);
+    expect(report.budget.minObservedGeneralStartSpacingMs).toBeNull();
+  });
+
+  it('throws loudly when two general-class request starts are closer than the published minimum interval', async () => {
+    const { client } = buildFixtureBackedClient();
+    await expect(
+      runLiqSpike(
+        {
+          client,
+          now: () => 0,
+          log: () => undefined,
+          // A single fetch only issues ONE request, so a real run could
+          // never observe two starts from it alone — this directly
+          // exercises the check with INJECTED synthetic start timestamps
+          // ("fake clock" here means synthetic timestamps, not timer
+          // mocking).
+          generalRequestStartTimestampsMs: [1000, 1500],
+        },
+        [STUB_BATCH_TARGET],
+      ),
+    ).rejects.toThrow(/general-class request start spacing violated/);
+  });
+
+  it('does not throw when injected start timestamps are compliant', async () => {
+    const { client } = buildFixtureBackedClient();
+    const report = await runLiqSpike(
+      {
+        client,
+        now: () => 0,
+        log: () => undefined,
+        generalRequestStartTimestampsMs: [1000, 1000 + LIQUIPEDIA_GENERAL_MIN_INTERVAL_MS],
+      },
+      [STUB_BATCH_TARGET],
+    );
+    expect(report.budget.minObservedGeneralStartSpacingMs).toBe(LIQUIPEDIA_GENERAL_MIN_INTERVAL_MS);
   });
 });
 
