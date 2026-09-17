@@ -35,11 +35,24 @@ export interface RankedMatchup extends MatchupStats {
  * Per-opponent-fighter records ranked by Wilson lower bound (best first),
  * gated at `effectiveFloor(minMatches)` — an explicitly passed sub-floor
  * threshold cannot reopen a below-floor row (D-07, R1-HIGH-1).
+ *
+ * WR-01: excludes `isUnknownCharacter` matches (a `fighter_id`/`opponent_id`
+ * outside the known roster) before grouping/ranking — the SAME D-09/EVID-11
+ * guard `buildMatchupEvidence` already applies, now enforced HERE so every
+ * direct caller of this function inherits it for free, rather than each of
+ * this function's five other call sites needing its own pre-filter.
+ * `buildMatchupEvidence` already pre-filters before calling this, so for
+ * that caller the filter below is a no-op (already-filtered data stays
+ * unchanged); for the other five call sites (which never pre-filtered) this
+ * is the actual fix. See `predicate.ts`'s `isUnknownCharacter` doc comment:
+ * no live ingestion path produces this today (D-25) — this guard is
+ * exercised by synthetic fixtures only.
  */
 export function rankMatchupsByEvidence(matches: Match[], minMatches?: number): RankedMatchup[] {
   const floor = effectiveFloor(minMatches);
+  const knownCharacterMatches = matches.filter((m) => !isUnknownCharacter(m));
   const byOpponent = new Map<number, Match[]>();
-  for (const match of matches) {
+  for (const match of knownCharacterMatches) {
     const group = byOpponent.get(match.opponent_id);
     if (group) {
       group.push(match);
