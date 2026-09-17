@@ -61,10 +61,18 @@ export const opponentNameInputSchema = z
  * Invariant: no alias key may equal its own canonical value (a direct
  * self-cycle) — enforced at write time by the API, not by this schema
  * (schema-level cross-field refinement isn't practical for a `z.record`).
- * Longer cycles are prevented procedurally: writes resolve the requested
- * target through the existing map first (see rtdb.ts's `resolveCanonical`),
- * so a chain can never form — every value in the map is always itself a
- * terminal (non-aliased) name.
+ *
+ * CORRECTED (CR-01): a NEW write always resolves its own target through the
+ * existing map first (`rtdb.ts`'s `resolveCanonical`), so a freshly-written
+ * edge is never itself an unresolved alias — but that resolution does NOT
+ * re-point OTHER, pre-existing aliases that already targeted the value now
+ * being merged away (see `RtdbService.setOpponentAlias`'s own doc comment).
+ * Two separate merges (`leo -> mkleo`, then later `mkleo -> somebody-else`)
+ * therefore CAN leave the map unflattened (`mkleo` is both a key and a
+ * value). Every reader must resolve the full transitive chain to its
+ * terminal name, never assume single-hop flatness — see
+ * `packages/shared/src/evidence/identity.ts`'s `resolveAliasChain`, the one
+ * shared implementation every reader (web, API, engine) uses.
  */
 export const opponentAliasMapSchema = z.record(z.string(), z.string());
 export type OpponentAliasMap = z.infer<typeof opponentAliasMapSchema>;

@@ -6,6 +6,7 @@ import type { OpponentAliasMap } from '../opponent.js';
 import { buildOpponentEvidence, buildOpponentProfile } from './opponentEvidence.js';
 import { buildMatchupEvidence } from './matchupEvidence.js';
 import { buildStageEvidence } from './stageEvidence.js';
+import { resolveAliasChain } from './identity.js';
 
 function makeMatch(overrides: Partial<Match> & Pick<Match, 'id' | 'time' | 'win'>): Match {
   return {
@@ -22,8 +23,11 @@ function makeMatch(overrides: Partial<Match> & Pick<Match, 'id' | 'time' | 'win'
 /**
  * Local port of `apps/web/src/hooks/useFilteredMatches.ts`'s
  * `applyOpponentAliases` (packages/shared cannot import from apps/web):
- * rewrites `match.opponent` on a RAW-key lookup with no normalization.
- * Used only to prove the two-hop no-op (R1-MEDIUM-7).
+ * rewrites `match.opponent` on a RAW-key lookup with no normalization,
+ * following the FULL alias chain to its terminal name via the same
+ * `resolveAliasChain` primitive the real implementation calls
+ * (CR-01/WR-04). Used to prove the web pre-pass and the engine's own hop
+ * agree, including over a chained (unflattened) alias map (R1-MEDIUM-7).
  */
 function applyOpponentAliases(matches: Match[], aliasMap: OpponentAliasMap): Match[] {
   if (Object.keys(aliasMap).length === 0) {
@@ -33,7 +37,8 @@ function applyOpponentAliases(matches: Match[], aliasMap: OpponentAliasMap): Mat
     if (!match.opponent || !Object.prototype.hasOwnProperty.call(aliasMap, match.opponent)) {
       return match;
     }
-    return { ...match, opponent: aliasMap[match.opponent]! };
+    const resolved = resolveAliasChain(match.opponent, aliasMap);
+    return resolved === match.opponent ? match : { ...match, opponent: resolved };
   });
 }
 
@@ -114,6 +119,68 @@ describe('buildOpponentEvidence — EVID-12/SC1 oracle', () => {
       refreshedAt: 0,
     });
     expect(overRewritten).toEqual(overRaw);
+  });
+});
+
+describe('buildOpponentEvidence — CR-01 regression: chained (unflattened) alias merge', () => {
+  // The exact fixture from `identity.test.ts`: 'leo' -> 'mkleo', and
+  // 'mkleo' is ALSO a key (mapping elsewhere) — the shape two separate
+  // merge actions produce (merge "leo" into "mkleo", then later merge
+  // "mkleo" into "somebody-else"; the write side does not re-point the
+  // first edge — see `RtdbService.setOpponentAlias`'s own doc comment).
+  const CHAINED_ALIAS_MAP: OpponentAliasMap = { leo: 'mkleo', mkleo: 'somebody-else' };
+
+  function chainFixture(): Match[] {
+    return [
+      makeMatch({ id: 'c1', time: 1, win: true, opponent: 'leo' }),
+      makeMatch({ id: 'c2', time: 2, win: false, opponent: 'leo' }),
+      makeMatch({ id: 'c3', time: 3, win: true, opponent: 'mkleo' }),
+      makeMatch({ id: 'c4', time: 4, win: false, opponent: 'somebody-else' }),
+    ];
+  }
+
+  it('produces ONE row spanning matches tagged "leo", "mkleo", AND "somebody-else" — not two or three separate rows', () => {
+    const result = buildOpponentEvidence({
+      matches: chainFixture(),
+      aliasMap: CHAINED_ALIAS_MAP,
+      refreshedAt: 0,
+    });
+
+    expect(result.rows).toHaveLength(1);
+    expect(result.rows[0]?.identity).toBe('somebody-else');
+    expect(result.rows[0]?.total).toBe(4);
+    expect(result.rows[0]?.wins).toBe(2);
+    expect(result.rows[0]?.losses).toBe(2);
+  });
+
+  it('produces one continuous chronological buildOpponentProfile series spanning the whole chain', () => {
+    const profile = buildOpponentProfile({
+      matches: chainFixture(),
+      aliasMap: CHAINED_ALIAS_MAP,
+      opponentTag: 'leo',
+      refreshedAt: 0,
+    });
+    expect(profile).not.toBeNull();
+    expect(profile?.record.total).toBe(4);
+    expect(profile?.firstPlayedAt).toBe(1);
+    expect(profile?.lastPlayedAt).toBe(4);
+  });
+
+  it('the web pre-pass and the engine hop agree over the chained fixture, and both land on ONE row (R1-MEDIUM-7, chain case)', () => {
+    const raw = chainFixture();
+    const rewritten = applyOpponentAliases(raw, CHAINED_ALIAS_MAP);
+    const overRaw = buildOpponentEvidence({
+      matches: raw,
+      aliasMap: CHAINED_ALIAS_MAP,
+      refreshedAt: 0,
+    });
+    const overRewritten = buildOpponentEvidence({
+      matches: rewritten,
+      aliasMap: CHAINED_ALIAS_MAP,
+      refreshedAt: 0,
+    });
+    expect(overRewritten).toEqual(overRaw);
+    expect(overRaw.rows).toHaveLength(1);
   });
 });
 

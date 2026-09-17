@@ -1,4 +1,4 @@
-import type { Match, OpponentAliasMap } from '@smash-tracker/shared';
+import { resolveAliasChain, type Match, type OpponentAliasMap } from '@smash-tracker/shared';
 
 /**
  * Phase 30.3 (Gate 4): "Analyze opponent" deep links. Every affordance
@@ -56,9 +56,10 @@ export function buildAnalyzeOpponentPath(identity: AnalyzeOpponentIdentity): str
  *   Provider IDs are preferred because they survive tag changes and alias
  *   merges without any string matching.
  * - `opponent=<tag>` (fallback, or when the ID matched nothing): the tag is
- *   run through the alias map one hop (`aliasMap[tag] ?? tag`) — the same
- *   single-hop rule `applyOpponentAliases` uses — so a merged alias still
- *   lands on its canonical profile.
+ *   run through the shared `resolveAliasChain` primitive (CR-01/WR-04) —
+ *   the same full-chain rule `applyOpponentAliases` uses — so a merged
+ *   alias, even a chained one, still lands on its terminal canonical
+ *   profile.
  */
 export function resolveAnalyzeOpponentPreselection(
   params: URLSearchParams,
@@ -83,7 +84,7 @@ export function resolveAnalyzeOpponentPreselection(
 
   const tag = params.get(ANALYZE_OPPONENT_TAG_PARAM);
   if (tag) {
-    return Object.prototype.hasOwnProperty.call(aliasMap, tag) ? aliasMap[tag]! : tag;
+    return resolveAliasChain(tag, aliasMap);
   }
   return null;
 }

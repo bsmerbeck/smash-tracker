@@ -1,5 +1,10 @@
 import { useMemo } from 'react';
-import type { Match, OpponentAliasMap, TournamentEntry } from '@smash-tracker/shared';
+import {
+  resolveAliasChain,
+  type Match,
+  type OpponentAliasMap,
+  type TournamentEntry,
+} from '@smash-tracker/shared';
 import { useMatches } from '@/hooks/useMatches';
 import { useAnalyticsFilter } from '@/hooks/useAnalyticsFilter';
 import { useOpponentAliases } from '@/hooks/useOpponentAliases';
@@ -102,13 +107,25 @@ export function filterEntriesByRange(
 
 /**
  * Rewrites `match.opponent` to its canonical name per `aliasMap` (alias ->
- * canonical). Matches with no `opponent` set, or whose opponent isn't a key
- * in the map, are returned unchanged (same object reference — no unnecessary
- * re-renders downstream). This is the SINGLE CHOKE POINT for opponent
- * identity merging: every consumer that reads `match.opponent` should go
- * through `useFilteredMatches` (which applies this) rather than raw
- * `useMatches`, so scouting/tables/dashboards all see merged identities
- * automatically without each needing alias-awareness of their own.
+ * canonical), following the FULL alias chain to its terminal name
+ * (CR-01/WR-04) via the shared `resolveAliasChain` primitive — never a raw
+ * single-hop lookup. Applied to the RAW, un-normalized `match.opponent`
+ * (unlike the engine's `canonicalOpponentName`, which normalizes first) so
+ * a match with no alias entry at all is returned byte-for-byte unchanged —
+ * same object reference, no unnecessary re-renders downstream, and no
+ * casing/content change purely from this pass. This is the SINGLE CHOKE
+ * POINT for opponent identity merging: every consumer that reads
+ * `match.opponent` should go through `useFilteredMatches` (which applies
+ * this) rather than raw `useMatches`, so scouting/tables/dashboards all see
+ * merged identities automatically without each needing alias-awareness of
+ * their own.
+ *
+ * Calling the SAME `resolveAliasChain` primitive
+ * `packages/shared/src/evidence/opponentEvidence.ts` and the API's
+ * report/prep call sites use (via `canonicalOpponentName`/
+ * `makeCanonicalizer`) is what makes this and the engine's own hop agree on
+ * which terminal name a chain resolves to — see `resolveAliasChain`'s doc
+ * comment for the ownership split.
  */
 export function applyOpponentAliases(matches: Match[], aliasMap: OpponentAliasMap): Match[] {
   if (Object.keys(aliasMap).length === 0) {
@@ -118,7 +135,8 @@ export function applyOpponentAliases(matches: Match[], aliasMap: OpponentAliasMa
     if (!match.opponent || !Object.prototype.hasOwnProperty.call(aliasMap, match.opponent)) {
       return match;
     }
-    return { ...match, opponent: aliasMap[match.opponent]! };
+    const resolved = resolveAliasChain(match.opponent, aliasMap);
+    return resolved === match.opponent ? match : { ...match, opponent: resolved };
   });
 }
 

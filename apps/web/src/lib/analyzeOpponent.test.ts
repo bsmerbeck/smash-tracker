@@ -71,6 +71,14 @@ describe('resolveAnalyzeOpponentPreselection', () => {
     expect(resolveAnalyzeOpponentPreselection(params, matches, {})).toBe('aka');
   });
 
+  it('CR-01/WR-04: follows a chained alias map to its terminal name for a bare tag param', () => {
+    const params = new URLSearchParams({ opponent: 'leo' });
+    const chainedAliasMap = { leo: 'mkleo', mkleo: 'somebody-else' };
+    expect(resolveAnalyzeOpponentPreselection(params, matches, chainedAliasMap)).toBe(
+      'somebody-else',
+    );
+  });
+
   it('returns null when no identifying param is present', () => {
     expect(resolveAnalyzeOpponentPreselection(new URLSearchParams(), matches, {})).toBeNull();
   });
