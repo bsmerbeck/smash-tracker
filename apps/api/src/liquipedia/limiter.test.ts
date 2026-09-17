@@ -493,3 +493,177 @@ describe('createLiquipediaLimiter — poisoned durable stamp sanity ceiling (WR-
     expect(result.durableStampWasPoisoned).toBeUndefined();
   });
 });
+
+/**
+ * WR-03-i3 (36-REVIEW.md iteration 3): the resolution-spacing property this
+ * whole module exists to provide was, until this fix, conditioned on an
+ * unenforced assumption that every caller awaits sequentially. These tests
+ * fire acquisitions WITHOUT an intervening `await` (`Promise.all`) and
+ * assert the property still holds, plus that a thrown transaction attempt
+ * never wedges the in-process mutex for callers queued behind it.
+ */
+describe('createLiquipediaLimiter — concurrent in-process acquisitions (WR-03-i3)', () => {
+  it('keeps the total elapsed time across 10 Promise.all-fired (not awaited-sequentially) general acquisitions at least 9 intervals, with varied transaction latencies', async () => {
+    // Measuring each individual RESOLUTION instant via an external `.then()`
+    // probe would itself race the internal mutex hand-off under a virtual
+    // clock (a probe callback and the mutex's own continuation are both
+    // scheduled as microtasks, and the probe sits behind extra async-function
+    // unwrapping layers relative to the mutex's direct `.then()` — a few
+    // milliseconds of observation-order noise, not an algorithm defect). The
+    // TOTAL elapsed time read once, after `Promise.all` itself has fully
+    // settled (by which point every internal continuation has already run),
+    // has no such race and is what this test asserts instead: 10 acquisitions
+    // fully serialized by the mutex must span at least 9 full intervals,
+    // exactly as if they had been awaited one at a time.
+    const database = new FakeDatabase();
+    const clock = makeClock(1_767_225_600_000);
+    const { sleep } = pairedSleep(clock);
+    const random = seededRandom(0xc0ffee);
+    const latencies = Array.from({ length: 200 }, () => Math.floor(random() * 500));
+    const txDatabase = withTransactionLatency(database, clock, latencies);
+    const limiter = createLiquipediaLimiter(txDatabase, { now: clock.now, sleep });
+
+    const startMs = clock.now();
+    const results = await Promise.all(
+      Array.from({ length: 10 }, () => limiter.acquire('general', 200_000)),
+    );
+
+    expect(results.every((result) => result.granted)).toBe(true);
+    expect(clock.now() - startMs).toBeGreaterThanOrEqual(9 * LIQUIPEDIA_GENERAL_MIN_INTERVAL_MS);
+  });
+
+  it('does not even ATTEMPT a second, genuinely concurrent acquire on the same path until the first has fully released — the direct discriminator for the mutex (holding the first transaction open with a manual gate)', async () => {
+    // FakeDatabase's `.transaction()` body is fully synchronous internally,
+    // so a naive `Promise.all` + varied-latency test (below) cannot actually
+    // force two callers' RESERVATION steps to interleave — the fake commits
+    // each write before yielding, so even the pre-mutex code serializes
+    // correctly against THAT double by accident. This test instead holds
+    // the FIRST acquisition's underlying `.transaction()` open with a
+    // manually-resolved gate, so the second acquisition — fired without any
+    // `await` between them — has every opportunity to race ahead if nothing
+    // is serializing them. Without the mutex, the second call reaches and
+    // completes its OWN (ungated) `.transaction()` almost immediately, long
+    // before the first is ever unblocked. With the mutex, the second call's
+    // `acquireOnBudgetExclusive` body never even starts — it cannot call
+    // `now()` or touch a transaction — until the first's entire exclusive
+    // section (still parked on the gate) has resolved.
+    const database = new FakeDatabase();
+    const clock = makeClock(1_767_225_600_000);
+    const { sleep } = pairedSleep(clock);
+    let unblockFirstTransaction: (() => void) | undefined;
+    const firstTransactionGate = new Promise<void>((resolve) => {
+      unblockFirstTransaction = resolve;
+    });
+    let callIndex = 0;
+    const gatedDatabase = {
+      ref: (refPath: string) => {
+        const ref = database.ref(refPath);
+        return {
+          ...ref,
+          transaction: async (updateFn: (current: unknown) => unknown) => {
+            const index = callIndex;
+            callIndex += 1;
+            if (index === 0) {
+              await firstTransactionGate;
+            }
+            return ref.transaction(updateFn);
+          },
+        };
+      },
+    } as unknown as Database;
+    const limiter = createLiquipediaLimiter(gatedDatabase, { now: clock.now, sleep });
+
+    const firstPromise = limiter.acquire('general', 60_000);
+
+    let secondSettled = false;
+    const secondPromise = limiter.acquire('general', 60_000).then((result) => {
+      secondSettled = true;
+      return result;
+    });
+
+    // Drain several microtask ticks — ample opportunity for an unserialized
+    // second call to reach and resolve its own (ungated) transaction.
+    for (let i = 0; i < 5; i += 1) {
+      await Promise.resolve();
+    }
+    expect(secondSettled).toBe(false);
+
+    unblockFirstTransaction!();
+    const [first, second] = await Promise.all([firstPromise, secondPromise]);
+    expect(first.granted).toBe(true);
+    expect(second.granted).toBe(true);
+    expect(secondSettled).toBe(true);
+  });
+
+  it('a thrown transaction attempt does not deadlock subsequent acquires on the same budget path', async () => {
+    const database = new FakeDatabase();
+    const clock = makeClock(1_767_225_600_000);
+    const { sleep } = pairedSleep(clock);
+    let callIndex = 0;
+    const throwingDatabase = {
+      ref: (refPath: string) => {
+        const ref = database.ref(refPath);
+        return {
+          ...ref,
+          transaction: async (updateFn: (current: unknown) => unknown) => {
+            const index = callIndex;
+            callIndex += 1;
+            if (index === 0) {
+              throw new Error('simulated transaction failure on the first attempt');
+            }
+            return ref.transaction(updateFn);
+          },
+        };
+      },
+    } as unknown as Database;
+    const limiter = createLiquipediaLimiter(throwingDatabase, { now: clock.now, sleep });
+
+    await expect(limiter.acquire('general', 60_000)).rejects.toThrow(
+      /simulated transaction failure/,
+    );
+
+    // The mutex must have released for the next queued caller despite the
+    // thrown attempt above — this would hang forever if it wedged.
+    const second = await limiter.acquire('general', 60_000);
+    expect(second.granted).toBe(true);
+  });
+
+  it('a thrown transaction attempt on a QUEUED (not yet started) concurrent acquire still lets the next one through', async () => {
+    const database = new FakeDatabase();
+    const clock = makeClock(1_767_225_600_000);
+    const { sleep } = pairedSleep(clock);
+    let callIndex = 0;
+    const throwingDatabase = {
+      ref: (refPath: string) => {
+        const ref = database.ref(refPath);
+        return {
+          ...ref,
+          transaction: async (updateFn: (current: unknown) => unknown) => {
+            const index = callIndex;
+            callIndex += 1;
+            // Fail the SECOND `.transaction()` call — i.e. the second
+            // concurrently-fired acquisition's own attempt, after the
+            // mutex has let it through following the first's success.
+            if (index === 1) {
+              throw new Error('simulated transaction failure on the second attempt');
+            }
+            return ref.transaction(updateFn);
+          },
+        };
+      },
+    } as unknown as Database;
+    const limiter = createLiquipediaLimiter(throwingDatabase, { now: clock.now, sleep });
+
+    const [firstOutcome, secondOutcome] = await Promise.allSettled([
+      limiter.acquire('general', 60_000),
+      limiter.acquire('general', 60_000),
+    ]);
+    expect(firstOutcome.status).toBe('fulfilled');
+    expect(secondOutcome.status).toBe('rejected');
+
+    // A THIRD acquisition, queued behind the failed second one, must still
+    // resolve rather than hang.
+    const third = await limiter.acquire('general', 60_000);
+    expect(third.granted).toBe(true);
+  });
+});

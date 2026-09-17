@@ -123,6 +123,20 @@ import type { Database } from 'firebase-admin/database';
  * `LiquipediaAcquireResult.durableStampWasPoisoned`, never via a
  * `console.log` this module has never had — a caller/operator can log it,
  * this module stays silent by default.
+ *
+ * WR-03-i3 FIX — CONCURRENT IN-PROCESS ACQUISITIONS (36-REVIEW.md iteration
+ * 3). The D-29 fix's induction proof holds over a SEQUENCE of acquisitions
+ * — that induction only holds if each acquisition's reservation step starts
+ * after the previous one's finished (released or was refused), and until
+ * this fix nothing enforced that: two `acquire()` calls fired on the same
+ * instance/budget path without an intervening `await` (e.g.
+ * `Promise.all([...])`) could both read `localTracker.lastReleaseAtMs`
+ * before either had written it. Every real caller in this codebase happens
+ * to await sequentially today, so this was never observed live, but nothing
+ * enforced it either. `LocalReleaseTracker` now carries its own
+ * promise-chain mutex (see its doc comment below) that `acquireOnBudget`
+ * acquires before doing anything else, so the property holds
+ * unconditionally rather than by caller convention.
  */
 
 export const LIQUIPEDIA_GENERAL_MIN_INTERVAL_MS = 2000;
@@ -298,9 +312,43 @@ async function repairStampAtLeast(
  * as a best-effort SECONDARY correction for that cross-instance case
  * (better durable data beats none, even if not perfectly precise) — never
  * relied upon alone for the property this fix proves.
+ *
+ * WR-03-i3: `queue` is an in-process mutex — a promise chain, not a
+ * counting semaphore — scoped to this exact (limiter-instance, budget-path)
+ * pair, the same scope `lastReleaseAtMs` already has. `acquireOnBudget`
+ * acquires it via `withLocalTrackerLock` before touching either field, so a
+ * SECOND concurrent `acquire()` call on the same instance/path (fired
+ * without an intervening `await`, e.g. `Promise.all([...])`) only begins
+ * its own reservation step after the first has fully released (or been
+ * refused) — this is what makes the sequential-induction proof above hold
+ * WITHOUT relying on callers happening to await one another. See
+ * `withLocalTrackerLock`'s own doc comment for why a thrown attempt can
+ * never wedge the chain for callers still queued behind it.
  */
 interface LocalReleaseTracker {
   lastReleaseAtMs: number | null;
+  queue: Promise<void>;
+}
+
+/**
+ * WR-03-i3: runs `fn` exclusively with respect to every other call sharing
+ * `tracker.queue` — each call attaches its work after the current tail and
+ * becomes the new tail. The new tail is derived via
+ * `.then(() => undefined, () => undefined)`, which ALWAYS resolves
+ * regardless of whether `fn` threw or resolved — a thrown `acquireOnBudget`
+ * attempt (e.g. a rejected `.transaction()` call) therefore still hands the
+ * lock to the next queued caller instead of wedging it forever. The
+ * ORIGINAL result (success or rejection) is still returned to THIS caller
+ * via `runAfterPrevious`, unaffected by that swallow — only the internal
+ * chain-continuation promise is ever forced to resolve.
+ */
+function withLocalTrackerLock<T>(tracker: LocalReleaseTracker, fn: () => Promise<T>): Promise<T> {
+  const runAfterPrevious = tracker.queue.then(fn, fn);
+  tracker.queue = runAfterPrevious.then(
+    () => undefined,
+    () => undefined,
+  );
+  return runAfterPrevious;
 }
 
 /**
@@ -359,6 +407,32 @@ async function acquireOnBudget(
     return { granted: false, waitedMs: 0, reason: 'no-wait-budget' };
   }
 
+  // WR-03-i3: serialize on THIS exact (instance, budget-path) pair before
+  // touching `localTracker` at all — see `LocalReleaseTracker`'s doc
+  // comment for why this is what makes the resolution-spacing property
+  // hold for concurrent, not just sequential, callers.
+  return withLocalTrackerLock(localTracker, () =>
+    acquireOnBudgetExclusive(
+      database,
+      budgetPath,
+      intervalMs,
+      remainingWaitBudgetMs,
+      now,
+      sleep,
+      localTracker,
+    ),
+  );
+}
+
+async function acquireOnBudgetExclusive(
+  database: Database,
+  budgetPath: string,
+  intervalMs: number,
+  remainingWaitBudgetMs: number,
+  now: () => number,
+  sleep: (ms: number) => Promise<void>,
+  localTracker: LocalReleaseTracker,
+): Promise<LiquipediaAcquireResult> {
   let reservedSlot: number | undefined;
   let poisonedStampDetected = false;
 
@@ -450,11 +524,11 @@ export function createLiquipediaLimiter(
   const now = options.now ?? Date.now;
   const sleep = options.sleep ?? defaultSleep;
 
-  // D-29: one precision cache per budget path, scoped to THIS instance —
-  // see `LocalReleaseTracker`'s doc comment for why this is required
-  // alongside the durable RTDB stamp, not a redundant optimization.
-  const generalTracker: LocalReleaseTracker = { lastReleaseAtMs: null };
-  const parseTracker: LocalReleaseTracker = { lastReleaseAtMs: null };
+  // D-29/WR-03-i3: one precision cache + in-process mutex per budget path,
+  // scoped to THIS instance — see `LocalReleaseTracker`'s doc comment for
+  // why both are required alongside the durable RTDB stamp.
+  const generalTracker: LocalReleaseTracker = { lastReleaseAtMs: null, queue: Promise.resolve() };
+  const parseTracker: LocalReleaseTracker = { lastReleaseAtMs: null, queue: Promise.resolve() };
 
   return {
     async acquire(
