@@ -8,6 +8,7 @@
  * Do not "fix" this by adding it.
  */
 export * from './types.js';
+export * from './budgets.js';
 export * from './policy.js';
 export * from './records.js';
 export * from './gate.js';

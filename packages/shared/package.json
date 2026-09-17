@@ -20,7 +20,8 @@
     "dev": "tsc -p tsconfig.build.json --watch",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "budget": "vitest run --config vitest.budget.config.ts"
   },
   "dependencies": {
     "zod": "^4.4.3"
