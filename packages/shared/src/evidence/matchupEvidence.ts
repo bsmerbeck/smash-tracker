@@ -15,6 +15,7 @@ import {
 } from './records.js';
 import { getBestWorstStages } from './stageEvidence.js';
 import { describeCohort, type CohortComposition } from './cohort.js';
+import { isUnknownCharacter } from './predicate.js';
 import type { EvidenceClaim, SampleMeta, UnknownBucket } from './types.js';
 
 /**
@@ -123,6 +124,15 @@ export interface MatchupEvidenceResult {
  * cohort composition of the sample the query drew from (computed once per
  * query, not per ranked row — the composition describes the SAMPLE, not
  * any one row).
+ *
+ * Rows whose `fighter_id`/`opponent_id` doesn't map to a known roster
+ * member (`predicate.ts`'s `isUnknownCharacter`) are bucketed into
+ * `unknown` and excluded from the ranked list and from `eligibleDenominator`
+ * — the same D-09/EVID-11 treatment `buildStageEvidence` already gives the
+ * unknown-STAGE axis. D-25: no live ingestion path produces an
+ * unknown-character row today (both sync pipelines drop it before it ever
+ * reaches a `Match[]`); this branch is exercised only by
+ * `testUtils/sparseWorkspaces.ts`'s `unknownCharacterOnlyWorkspace`.
  */
 export function buildMatchupEvidence(input: {
   matches: Match[];
@@ -133,7 +143,8 @@ export function buildMatchupEvidence(input: {
   const floor = effectiveFloor(minMatches);
 
   const rawSampleSize = matches.length;
-  const knownCharacterMatches = matches; // character-pair identity is always known (fighter_id/opponent_id are required fields).
+  const knownCharacterMatches = matches.filter((m) => !isUnknownCharacter(m));
+  const unknownCharacterMatches = matches.filter((m) => isUnknownCharacter(m));
   const eligibleDenominator = knownCharacterMatches.length;
 
   const times = knownCharacterMatches.map((m) => m.time);
@@ -151,8 +162,17 @@ export function buildMatchupEvidence(input: {
     confidenceTier: confidenceTierFor(eligibleDenominator),
   };
 
+  const unknown: UnknownBucket | null =
+    unknownCharacterMatches.length > 0
+      ? {
+          games: unknownCharacterMatches.length,
+          wins: unknownCharacterMatches.filter((m) => m.win).length,
+          losses: unknownCharacterMatches.filter((m) => !m.win).length,
+        }
+      : null;
+
   const cohort = describeCohort(matches);
-  const ranked = rankMatchupsByEvidence(matches, floor);
+  const ranked = rankMatchupsByEvidence(knownCharacterMatches, floor);
 
   if (ranked.length === 0) {
     return {
@@ -163,14 +183,14 @@ export function buildMatchupEvidence(input: {
         sample,
         gamesNeeded: Math.max(0, floor - eligibleDenominator),
       },
-      unknown: null,
+      unknown,
       cohort,
     };
   }
 
   return {
     claim: { kind: 'evidenced', claimType: 'inference', value: ranked, sample },
-    unknown: null,
+    unknown,
     cohort,
   };
 }
