@@ -318,6 +318,6 @@ describe('EVID-10 engine parity — SYSTEM_PROMPT reads claim fields, not a pros
   });
 
   it('never instructs the model to state a bare win-probability percentage', () => {
-    expect(extractSystemPrompt()).toContain('never state a bare win-probability percentage');
+    expect(extractSystemPrompt()).toContain('Never state a bare win-probability percentage');
   });
 });
