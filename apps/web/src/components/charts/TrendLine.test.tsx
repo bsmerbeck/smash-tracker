@@ -1,6 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
 import { fireEvent, render } from '@testing-library/react';
-import type { TooltipContentProps } from 'recharts';
 import { TrendLine, type TrendChartPoint } from './TrendLine';
 import { ChartTooltip } from './ChartTooltip';
 
@@ -66,24 +65,12 @@ describe('TrendLine', () => {
   });
 });
 
-/** Fills the full `TooltipContentProps` shape Recharts' `content` prop actually
- * receives — this test only cares about `active`/`payload`, but the type is
- * not optional on the rest, so every other field gets an inert default. */
-function renderTooltip(overrides: Partial<TooltipContentProps<number, string>> = {}) {
-  const props: TooltipContentProps<number, string> = {
-    active: true,
-    payload: [],
-    label: undefined,
-    coordinate: undefined,
-    accessibilityLayer: false,
-    activeIndex: null,
-    ...overrides,
-  };
-  return render(<ChartTooltip {...props} />);
+function renderTooltip(overrides: { active?: boolean; payload?: { payload?: unknown }[] } = {}) {
+  return render(<ChartTooltip active={true} payload={[]} {...overrides} />);
 }
 
 function tooltipPayload(point: TrendChartPoint) {
-  return [{ payload: point, graphicalItemId: 'trend-line' }];
+  return [{ payload: point }];
 }
 
 describe('ChartTooltip', () => {

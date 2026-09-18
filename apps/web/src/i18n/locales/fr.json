@@ -177,6 +177,15 @@
         "inference": "Inférence statistique basée sur vos matchs enregistrés.",
         "fact": "Fait enregistré dans votre historique de matchs."
       }
+    },
+    "chartTooltip": {
+      "rate": "{{rate}} %",
+      "whoWhere": "{{opponent}} sur {{stage}}",
+      "whenEvent": "{{event}} · {{date}}",
+      "whenOnly": "{{date}}",
+      "score": "{{result}} ({{score}})",
+      "resultOnly": "{{result}}",
+      "gameNumber": "Manche {{game}}"
     }
   },
   "dashboard": {
@@ -804,8 +813,8 @@
       "rolling5": "5 derniers",
       "rolling10": "10 derniers",
       "cumulative": "Cumulé",
-      "empty": "Enregistrez un match pour voir le graphique.",
-      "winRate": "Taux de victoire"
+      "winRate": "Taux de victoire",
+      "clickHint": "Cliquez sur un point pour voir ce match."
     },
     "insights": {
       "title": "Analyse du matchup",

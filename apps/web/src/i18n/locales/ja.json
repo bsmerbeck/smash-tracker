@@ -177,6 +177,15 @@
         "inference": "記録された対戦に基づく統計的な推定です。",
         "fact": "対戦記録に基づく事実です。"
       }
+    },
+    "chartTooltip": {
+      "rate": "{{rate}}%",
+      "whoWhere": "{{opponent}}（{{stage}}）",
+      "whenEvent": "{{event}} · {{date}}",
+      "whenOnly": "{{date}}",
+      "score": "{{result}}（{{score}}）",
+      "resultOnly": "{{result}}",
+      "gameNumber": "{{game}}戦目"
     }
   },
   "dashboard": {
@@ -804,8 +813,8 @@
       "rolling5": "直近5戦",
       "rolling10": "直近10戦",
       "cumulative": "累計",
-      "empty": "対戦を登録するとグラフが表示されます。",
-      "winRate": "勝率"
+      "winRate": "勝率",
+      "clickHint": "点をクリックするとその対戦を確認できます。"
     },
     "insights": {
       "title": "相性の分析",

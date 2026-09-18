@@ -9,6 +9,7 @@ import {
   CHART_LINE_WIDTH,
   CHART_TOKENS,
 } from './tokens';
+import { ChartTooltip } from './ChartTooltip';
 
 /**
  * Deliberately NOT named `TrendPoint`: `MatchupChart.tsx` already declares a
@@ -38,7 +39,9 @@ export interface TrendLineProps {
   /** D-04: explicit numeric size for tests; omitted at runtime for the responsive wrapper. */
   width?: number;
   height?: number;
-  /** Custom tooltip content node, passed through to Recharts' `Tooltip`. */
+  /** Tooltip content node, passed through to Recharts' `Tooltip`. Defaults to
+   * the kit's shared `ChartTooltip` so every consumer gets the who/where/
+   * when/score content without opting in (D-06). */
   tooltip?: ReactElement;
 }
 
@@ -56,7 +59,7 @@ export function TrendLine({
   onSelectPoint,
   width,
   height = CHART_BODY_HEIGHT_PX,
-  tooltip,
+  tooltip = <ChartTooltip />,
 }: TrendLineProps) {
   /**
    * The click surface is bound on the `LineChart` container, not on `Line` or

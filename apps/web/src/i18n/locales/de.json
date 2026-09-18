@@ -177,6 +177,15 @@
         "inference": "Statistische Ableitung aus deinen erfassten Matches.",
         "fact": "Erfasste Tatsache aus deinem Match-Verlauf."
       }
+    },
+    "chartTooltip": {
+      "rate": "{{rate}} %",
+      "whoWhere": "{{opponent}} auf {{stage}}",
+      "whenEvent": "{{event}} · {{date}}",
+      "whenOnly": "{{date}}",
+      "score": "{{result}} ({{score}})",
+      "resultOnly": "{{result}}",
+      "gameNumber": "Spiel {{game}}"
     }
   },
   "dashboard": {
@@ -804,8 +813,8 @@
       "rolling5": "Letzte 5",
       "rolling10": "Letzte 10",
       "cumulative": "Kumuliert",
-      "empty": "Erfasse ein Match, um das Diagramm zu sehen.",
-      "winRate": "Winrate"
+      "winRate": "Winrate",
+      "clickHint": "Klicke auf einen Punkt, um dieses Match zu sehen."
     },
     "insights": {
       "title": "Matchup-Einblicke",

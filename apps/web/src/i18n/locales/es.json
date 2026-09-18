@@ -177,6 +177,15 @@
         "inference": "Inferencia estadística a partir de tus partidas registradas.",
         "fact": "Dato registrado en tu historial de partidas."
       }
+    },
+    "chartTooltip": {
+      "rate": "{{rate}}%",
+      "whoWhere": "{{opponent}} en {{stage}}",
+      "whenEvent": "{{event}} · {{date}}",
+      "whenOnly": "{{date}}",
+      "score": "{{result}} ({{score}})",
+      "resultOnly": "{{result}}",
+      "gameNumber": "Partida {{game}}"
     }
   },
   "dashboard": {
@@ -804,8 +813,8 @@
       "rolling5": "Últimas 5",
       "rolling10": "Últimas 10",
       "cumulative": "Acumulado",
-      "empty": "Registra una partida para ver la gráfica.",
-      "winRate": "% de victorias"
+      "winRate": "% de victorias",
+      "clickHint": "Haz clic en un punto para ver esa partida."
     },
     "insights": {
       "title": "Análisis del enfrentamiento",

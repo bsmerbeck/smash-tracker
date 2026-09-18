@@ -177,6 +177,15 @@
         "inference": "Statistical inference from your recorded games.",
         "fact": "Recorded fact from your match log."
       }
+    },
+    "chartTooltip": {
+      "rate": "{{rate}}%",
+      "whoWhere": "{{opponent}} on {{stage}}",
+      "whenEvent": "{{event}} · {{date}}",
+      "whenOnly": "{{date}}",
+      "score": "{{result}} ({{score}})",
+      "resultOnly": "{{result}}",
+      "gameNumber": "Game {{game}}"
     }
   },
   "dashboard": {
@@ -804,8 +813,8 @@
       "rolling5": "Rolling 5",
       "rolling10": "Rolling 10",
       "cumulative": "Cumulative",
-      "empty": "Submit a match to see the match chart.",
-      "winRate": "Win Rate"
+      "winRate": "Win Rate",
+      "clickHint": "Click a point to see that match."
     },
     "insights": {
       "title": "Matchup Insights",

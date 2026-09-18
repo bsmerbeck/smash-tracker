@@ -117,6 +117,7 @@ export function MatchupChart({
         </Select>
       </div>
       <TrendLine points={points} width={width} height={height} />
+      <p className="text-xs text-muted-foreground">{t('matchups.chart.clickHint')}</p>
     </div>
   );
 }
