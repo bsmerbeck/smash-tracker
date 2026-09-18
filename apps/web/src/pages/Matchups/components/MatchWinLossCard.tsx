@@ -1,39 +1,43 @@
 import { useTranslation } from 'react-i18next';
-import { Card, CardContent } from '@/components/ui/card';
 import { getWinLossRecord } from '@/lib/stats';
 import type { Match } from '@smash-tracker/shared';
+import { ChartCard } from '@/components/charts/ChartCard';
+import { StatTile } from '@/components/charts/StatTile';
+import { WinLossPips } from '@/components/WinLossPips';
 
-/** Ports legacy/src/screens/Matchups/components/MatchWinLossCard — record for the specific fighter-vs-opponent matchup. */
+/**
+ * Ports legacy/src/screens/Matchups/components/MatchWinLossCard — record for
+ * the specific fighter-vs-opponent matchup, promoted to a framed stat tile
+ * (CHRT-01, plan 37-03) inside `ChartCard`: a title, the unchanged
+ * three-stat row, and the existing win/loss pips as its trend row.
+ */
 export function MatchWinLossCard({ matchupMatches }: { matchupMatches: Match[] }) {
   const { t } = useTranslation();
+
   if (matchupMatches.length === 0) {
+    // A 0-0 record is a recorded fact, not a gated recommendation — the
+    // abstention sentence would misdescribe it, so `abstained` is
+    // deliberately NOT passed here (Phase 36 precedent). Do not "fix" this
+    // into the abstention path.
     return (
-      <Card>
-        <CardContent className="pt-6">
-          <p className="text-sm text-muted-foreground">{t('matchups.record.empty')}</p>
-        </CardContent>
-      </Card>
+      <ChartCard title={t('matchups.record.title')}>
+        <p className="text-sm text-muted-foreground">{t('matchups.record.empty')}</p>
+      </ChartCard>
     );
   }
 
   const { wins, losses, total } = getWinLossRecord(matchupMatches);
 
   return (
-    <Card>
-      <CardContent className="flex justify-evenly pt-6">
-        <Stat label={t('common.wins')} value={wins} />
-        <Stat label={t('matchups.record.totalMatches')} value={total} />
-        <Stat label={t('common.losses')} value={losses} />
-      </CardContent>
-    </Card>
-  );
-}
-
-function Stat({ label, value }: { label: string; value: string | number }) {
-  return (
-    <div className="flex flex-col items-center text-center">
-      <span className="text-sm text-muted-foreground">{label}</span>
-      <span className="text-lg font-medium">{value}</span>
-    </div>
+    <ChartCard title={t('matchups.record.title')}>
+      <StatTile
+        stats={[
+          { label: t('common.wins'), value: wins },
+          { label: t('matchups.record.totalMatches'), value: total },
+          { label: t('common.losses'), value: losses },
+        ]}
+        trend={<WinLossPips matches={matchupMatches} limit={10} />}
+      />
+    </ChartCard>
   );
 }

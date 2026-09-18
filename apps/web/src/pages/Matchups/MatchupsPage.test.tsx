@@ -262,8 +262,12 @@ describe('MatchupsPage', () => {
     await waitFor(() => expect(screen.getByText('Matchup Insights')).toBeInTheDocument());
     // Current streak: 1 loss (most recent match lost)
     expect(screen.getByText('1 losses')).toBeInTheDocument();
-    // Recent form pips for all three matches
-    expect(screen.getByLabelText('Last 3 results, newest first')).toBeInTheDocument();
+    // Recent form pips for all three matches — plan 37-03 promotes
+    // MatchWinLossCard to a stat tile whose trend row reuses the SAME
+    // WinLossPips component MatchupInsights' "Recent form" row already
+    // renders (UI-SPEC: "no new sparkline mechanism invented"), so this
+    // aria-label now legitimately appears twice on the page.
+    expect(screen.getAllByLabelText('Last 3 results, newest first')).toHaveLength(2);
     // Battlefield qualifies at the default per-stage threshold (3 matches, 67%)
     expect(screen.getByText('Stage Breakdown')).toBeInTheDocument();
     expect(screen.getAllByText(/Battlefield/).length).toBeGreaterThan(0);
