@@ -1090,7 +1090,6 @@
     },
     "retro": {
       "title": "Berater-Rückblick",
-      "description": "Jeder Pick wird daran gemessen, was der Counterpick-Berater empfohlen hätte — nur mit Daten von vor Turnierbeginn.",
       "noGames": "Für dieses Event sind noch keine Matches erfasst.",
       "notEnough": "Nicht genug Vor-Turnier-Daten, um diese Picks zu bewerten.",
       "adherence": "Berater-Befolgung: {{rate}} % der bewertbaren Picks",
@@ -1104,7 +1103,25 @@
       "adviceNone": "kein klarer Pick",
       "verdictFollowed": "befolgt",
       "verdictAgainst": "dagegen",
-      "verdictNeutral": "neutral zu"
+      "verdictNeutral": "neutral zu",
+      "chip": {
+        "followed": "Berater befolgt",
+        "against": "Gegen den Berater entschieden",
+        "neutral": "Keine Berater-Haltung",
+        "noData": "Nicht genug Daten"
+      },
+      "reasonLine": "{{stage}} — Entscheidung des Beraters: {{verdict}} ({{result}})",
+      "reasonOutsideRuleset": "{{stage}} — nach dem Regelwerk dieses Events nicht zulässig, daher hat der Berater sie nie eingestuft ({{result}})",
+      "takeaway": {
+        "followedWin": "Pick befolgt und gewonnen — gutes Zeichen, diese Stage im Spielplan zu behalten.",
+        "followedLoss": "Pick befolgt und verloren — die Empfehlung hat sich diesmal nicht bestätigt.",
+        "againstWin": "Gegen den Pick entschieden und gewonnen — die Empfehlung braucht vielleicht mehr Daten.",
+        "againstLoss": "Gegen den Pick entschieden und verloren — lohnt sich, die empfohlene Stage nächstes Mal zu versuchen.",
+        "neutral": "Keine klare Empfehlung in die eine oder andere Richtung für diese Stage.",
+        "noData": "Nicht genug Vor-Turnier-Daten, um diesen Pick zu bewerten."
+      },
+      "rulesetDisclosure": "Bewertet nach {{preset}} ({{source}})",
+      "gradingBasis": "Jede von diesem Regelwerk erlaubte Stage wurde als verfügbar behandelt — Bans und Strikes pro Spiel wurden nie erfasst."
     },
     "recap": {
       "generateButton": "Recap erstellen",

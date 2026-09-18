@@ -127,12 +127,18 @@ describe('AdvisorRetrospective', () => {
       // must succeed against the plain, un-interacted-with render.
       renderRetro([...pre, game], [game], entry);
 
-      expect(screen.getByText('followed')).toBeInTheDocument();
-      expect(screen.getByText('Battlefield — followed (Won)')).toBeInTheDocument();
-      expect(screen.getByText('pick Battlefield')).toBeInTheDocument();
+      expect(screen.getByText('Followed advisor')).toBeInTheDocument();
+      expect(
+        screen.getByText("Battlefield — followed the advisor's call (Won)"),
+      ).toBeInTheDocument();
+      expect(
+        screen.getByText(
+          'Followed the pick and won — good sign to keep this stage in the gameplan.',
+        ),
+      ).toBeInTheDocument();
     });
 
-    it('grades a game on a bottom-ranked stage as against, with a reason and takeaway naming the recommended picks', () => {
+    it('grades a game on a bottom-ranked stage as against, with a reason naming the recommended picks', () => {
       const pre = [
         ...Array.from({ length: 5 }, (_, i) =>
           makeMatch({ time: 100 + i, win: true, map: BATTLEFIELD }),
@@ -160,9 +166,15 @@ describe('AdvisorRetrospective', () => {
 
       renderRetro([...pre, game], [game], entry);
 
-      expect(screen.getByText('against')).toBeInTheDocument();
-      expect(screen.getByText('Small Battlefield — against (Lost)')).toBeInTheDocument();
-      expect(screen.getByText('pick Battlefield/Town and City/Smashville')).toBeInTheDocument();
+      expect(screen.getByText('Went against advisor')).toBeInTheDocument();
+      expect(
+        screen.getByText("Small Battlefield — against the advisor's call (Lost)"),
+      ).toBeInTheDocument();
+      expect(
+        screen.getByText(
+          'Went against the pick and lost — worth trying the recommended stage next time.',
+        ),
+      ).toBeInTheDocument();
     });
 
     it('grades a game played outside the event ruleset as no-stance, with a distinct reason from an ordinary no-stance game', () => {
@@ -179,9 +191,11 @@ describe('AdvisorRetrospective', () => {
 
       renderRetro([...pre, game], [game], entry);
 
-      expect(screen.getByText('neutral')).toBeInTheDocument();
+      expect(screen.getByText('No advisor stance')).toBeInTheDocument();
       expect(
-        screen.getByText("Big Battlefield — outside this event's ruleset (Won)"),
+        screen.getByText(
+          "Big Battlefield — not legal under this event's ruleset, so the advisor never ranked it (Won)",
+        ),
       ).toBeInTheDocument();
     });
 
@@ -200,7 +214,9 @@ describe('AdvisorRetrospective', () => {
         [followedGame],
         makeEntry({ firstSetAt: 1_000_000 }),
       );
-      expect(screen.getByText('followed').parentElement?.className).toContain('bg-emerald-600');
+      expect(screen.getByText('Followed advisor').parentElement?.className).toContain(
+        'bg-emerald-600',
+      );
       unmountFollowed();
 
       const outsideRulesetPre = Array.from({ length: 5 }, (_, i) =>
@@ -217,7 +233,7 @@ describe('AdvisorRetrospective', () => {
         [outsideRulesetGame],
         makeEntry({ firstSetAt: 1_000_000 }),
       );
-      expect(screen.getByText('neutral').parentElement?.className).toContain('bg-muted');
+      expect(screen.getByText('No advisor stance').parentElement?.className).toContain('bg-muted');
       unmountNeutral();
 
       const noDataGame = makeMatch({
@@ -231,14 +247,129 @@ describe('AdvisorRetrospective', () => {
         [noDataGame],
         makeEntry({ firstSetAt: 1_000_000 }),
       );
-      expect(screen.getByText('no-data').parentElement?.className).toContain('border-dashed');
+      expect(screen.getByText('Not enough data').parentElement?.className).toContain(
+        'border-dashed',
+      );
       unmountNoData();
     });
 
-    it('discloses the ruleset preset name in the card description', () => {
+    it('discloses the ruleset preset name and the grading basis in the card description', () => {
       const entry = makeEntry();
       renderRetro([], [], entry);
-      expect(screen.getByText(/House default \(SSBU\)/)).toBeInTheDocument();
+      expect(screen.getByText(/Graded under House default \(SSBU\)/)).toBeInTheDocument();
+      expect(
+        screen.getByText(
+          'Every stage this ruleset makes legal was treated as available — per-game bans and strikes were never recorded.',
+        ),
+      ).toBeInTheDocument();
+    });
+
+    it('renders one of six distinct takeaway strings per (classification, result) pair', () => {
+      const banPre = [
+        ...Array.from({ length: 5 }, (_, i) =>
+          makeMatch({ time: 100 + i, win: true, map: BATTLEFIELD }),
+        ),
+        ...Array.from({ length: 4 }, (_, i) =>
+          makeMatch({ time: 200 + i, win: true, map: TOWN_AND_CITY }),
+        ),
+        makeMatch({ time: 204, win: false, map: TOWN_AND_CITY }),
+        ...Array.from({ length: 3 }, (_, i) =>
+          makeMatch({ time: 300 + i, win: true, map: SMASHVILLE }),
+        ),
+        makeMatch({ time: 303, win: false, map: SMASHVILLE }),
+        makeMatch({ time: 304, win: false, map: SMASHVILLE }),
+        ...Array.from({ length: 5 }, (_, i) =>
+          makeMatch({ time: 400 + i, win: false, map: SMALL_BATTLEFIELD }),
+        ),
+      ];
+      const followedPre = Array.from({ length: 5 }, (_, i) =>
+        makeMatch({ time: 100 + i, win: true, map: BATTLEFIELD }),
+      );
+
+      const cases: Array<{
+        name: string;
+        pre: Match[];
+        game: Match;
+        expectedTakeaway: string;
+      }> = [
+        {
+          name: 'followed + win',
+          pre: followedPre,
+          game: makeMatch({ time: 1_500_000, win: true, map: BATTLEFIELD, externalId: 'sgg:1:g1' }),
+          expectedTakeaway:
+            'Followed the pick and won — good sign to keep this stage in the gameplan.',
+        },
+        {
+          name: 'followed + loss',
+          pre: followedPre,
+          game: makeMatch({
+            time: 1_500_000,
+            win: false,
+            map: BATTLEFIELD,
+            externalId: 'sgg:1:g1',
+          }),
+          expectedTakeaway:
+            "Followed the pick and lost — the recommendation didn't hold up this time.",
+        },
+        {
+          name: 'against + win',
+          pre: banPre,
+          game: makeMatch({
+            time: 1_500_000,
+            win: true,
+            map: SMALL_BATTLEFIELD,
+            externalId: 'sgg:1:g1',
+          }),
+          expectedTakeaway: 'Went against the pick and won — the call may need more data.',
+        },
+        {
+          name: 'against + loss',
+          pre: banPre,
+          game: makeMatch({
+            time: 1_500_000,
+            win: false,
+            map: SMALL_BATTLEFIELD,
+            externalId: 'sgg:1:g1',
+          }),
+          expectedTakeaway:
+            'Went against the pick and lost — worth trying the recommended stage next time.',
+        },
+        {
+          name: 'no-stance (outside the ruleset)',
+          pre: followedPre,
+          game: makeMatch({
+            time: 1_500_000,
+            win: true,
+            map: OFF_RULESET_STAGE,
+            externalId: 'sgg:1:g1',
+          }),
+          expectedTakeaway: 'No strong recommendation either way for this stage.',
+        },
+        {
+          name: 'no-data',
+          pre: [],
+          game: makeMatch({
+            time: 1_500_000,
+            win: true,
+            map: NO_SELECTION,
+            externalId: 'sgg:1:g1',
+          }),
+          expectedTakeaway: 'Not enough pre-tournament data to grade this pick.',
+        },
+      ];
+
+      for (const { pre, game, expectedTakeaway } of cases) {
+        const { unmount } = renderRetro(
+          [...pre, game],
+          [game],
+          makeEntry({ firstSetAt: 1_000_000 }),
+        );
+        expect(screen.getByText(expectedTakeaway)).toBeInTheDocument();
+        unmount();
+      }
+
+      // All six are genuinely distinct strings, not one representative case.
+      expect(new Set(cases.map((c) => c.expectedTakeaway)).size).toBe(cases.length);
     });
   });
 });

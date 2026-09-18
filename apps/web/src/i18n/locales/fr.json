@@ -1090,7 +1090,6 @@
     },
     "retro": {
       "title": "Rétrospective du conseiller",
-      "description": "Chaque pick est comparé à ce que le Conseiller de counterpick aurait recommandé, en utilisant uniquement les données antérieures au début du tournoi.",
       "noGames": "Aucun match enregistré pour cet évènement pour l'instant.",
       "notEnough": "Pas assez de données pré-tournoi pour évaluer ces picks.",
       "adherence": "Adhésion au conseiller : {{rate}}% des picks évaluables",
@@ -1104,7 +1103,25 @@
       "adviceNone": "pas de pick évident",
       "verdictFollowed": "suivi",
       "verdictAgainst": "à l'encontre",
-      "verdictNeutral": "neutre sur"
+      "verdictNeutral": "neutre sur",
+      "chip": {
+        "followed": "A suivi le conseiller",
+        "against": "A été à l'encontre du conseiller",
+        "neutral": "Aucune position du conseiller",
+        "noData": "Données insuffisantes"
+      },
+      "reasonLine": "{{stage}} — décision du conseiller : {{verdict}} ({{result}})",
+      "reasonOutsideRuleset": "{{stage}} — non autorisé par le règlement de cet évènement, donc le conseiller ne l'a jamais classé ({{result}})",
+      "takeaway": {
+        "followedWin": "A suivi le pick et a gagné — bon signe pour garder ce stage dans le plan de jeu.",
+        "followedLoss": "A suivi le pick et a perdu — la recommandation n'a pas tenu cette fois.",
+        "againstWin": "A été à l'encontre du pick et a gagné — la recommandation pourrait avoir besoin de plus de données.",
+        "againstLoss": "A été à l'encontre du pick et a perdu — ça vaut le coup d'essayer le stage recommandé la prochaine fois.",
+        "neutral": "Aucune recommandation forte dans un sens ou l'autre pour ce stage.",
+        "noData": "Pas assez de données pré-tournoi pour évaluer ce pick."
+      },
+      "rulesetDisclosure": "Évalué selon {{preset}} ({{source}})",
+      "gradingBasis": "Chaque stage autorisé par ce règlement a été considéré comme disponible — les bans et strikes par partie n'ont jamais été enregistrés."
     },
     "recap": {
       "generateButton": "Générer un récap",

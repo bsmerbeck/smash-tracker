@@ -21,6 +21,14 @@ const CLASSIFICATION_STYLE: Record<ClassifiedGame['classification'], string> = {
   'no-data': 'border border-dashed text-muted-foreground',
 };
 
+/** ADV-02/D-14: the chip's visible label key, one per classification value — the TEXT that reads, not the glyph. */
+const CHIP_LABEL_KEY: Record<ClassifiedGame['classification'], string> = {
+  followed: 'tournaments.retro.chip.followed',
+  against: 'tournaments.retro.chip.against',
+  neutral: 'tournaments.retro.chip.neutral',
+  'no-data': 'tournaments.retro.chip.noData',
+};
+
 function stageLabel(stageId: number, t: TFunction): string {
   return stagesById.get(stageId)?.name ?? t('common.unknown');
 }
@@ -55,7 +63,7 @@ function tooltipText(game: ClassifiedGame, t: TFunction): string {
   });
 }
 
-/** The localized W/L word for a game's result — reuses the same keys the set-result `Badge` already reads. */
+/** The localized "Won"/"Lost" word for a game's result — reuses the same keys the set-result `Badge` already reads. */
 function resultLabel(win: boolean, t: TFunction): string {
   return win ? t('tournaments.won') : t('tournaments.lost');
 }
@@ -81,9 +89,7 @@ function reasonLineText(game: ClassifiedGame, t: TFunction): string {
     return t('tournaments.retro.noDataTooltip', { stage: playedStage, result });
   }
   if (game.reasonKind === 'outside-ruleset') {
-    // Plan 37-06 Task 2 replaces this literal with the localized
-    // `tournaments.retro.reasonOutsideRuleset` key, across all six locales.
-    return `${playedStage} — outside this event's ruleset (${result})`;
+    return t('tournaments.retro.reasonOutsideRuleset', { stage: playedStage, result });
   }
   const verdict =
     game.classification === 'followed'
@@ -91,28 +97,35 @@ function reasonLineText(game: ClassifiedGame, t: TFunction): string {
       : game.classification === 'against'
         ? t('tournaments.retro.verdictAgainst')
         : t('tournaments.retro.verdictNeutral');
-  // Plan 37-06 Task 2 replaces this literal with the localized
-  // `tournaments.retro.reasonLine` key, across all six locales.
-  return `${playedStage} — ${verdict} (${result})`;
+  return t('tournaments.retro.reasonLine', { stage: playedStage, verdict, result });
 }
 
 /**
- * ADV-02/D-14's "takeaway line": what the advisor actually recommended for
- * this pairing, ALWAYS visible (never hover-only). Plan 37-06 Task 2
- * replaces this with the six dedicated `tournaments.retro.takeaway.*`
- * strings keyed on (classification, result) — this Task 1 version reuses
- * the existing advice-phrasing keys unedited so no new copy ships ahead of
- * its six-locale translation.
+ * ADV-02/D-14's "takeaway line" key: a closed lookup on (classification,
+ * result) — never a chain of conditionals producing a string, and never a
+ * string assembled from fragments (the D-12 non-causal requirement is
+ * authored ONCE per key, not re-derived per render). No-data and the two
+ * no-stance causes (ordinary and outside-the-ruleset) both read the SAME
+ * takeaway — only the reason line above distinguishes the outside-the-
+ * ruleset case; the takeaway is about the recommendation, which is equally
+ * absent/uninformative in both no-stance causes.
  */
-function takeawayLineText(game: ClassifiedGame, t: TFunction): string {
-  const picks = game.recommendedStageIds.map((id) => stageLabel(id, t)).join('/');
-  // No-data and outside-ruleset both have no recommended stages, so both
-  // fall through to `adviceNone` here — deliberately NOT `notEnough` (the
-  // summary card's own text), which would collide with it verbatim on the
-  // same page for an all-no-data tournament.
-  return picks.length > 0
-    ? t('tournaments.retro.advicePick', { stages: picks })
-    : t('tournaments.retro.adviceNone');
+function takeawayKey(game: ClassifiedGame): string {
+  if (game.reasonKind === 'no-data') {
+    return 'tournaments.retro.takeaway.noData';
+  }
+  switch (game.classification) {
+    case 'followed':
+      return game.match.win
+        ? 'tournaments.retro.takeaway.followedWin'
+        : 'tournaments.retro.takeaway.followedLoss';
+    case 'against':
+      return game.match.win
+        ? 'tournaments.retro.takeaway.againstWin'
+        : 'tournaments.retro.takeaway.againstLoss';
+    default:
+      return 'tournaments.retro.takeaway.neutral';
+  }
 }
 
 /**
@@ -138,15 +151,13 @@ function GameVerdict({ game }: { game: ClassifiedGame }) {
             )}
           >
             <span aria-hidden="true">{CLASSIFICATION_ICON[game.classification]}</span>
-            {/* Plan 37-06 Task 2 replaces this raw enum value with the
-                localized `tournaments.retro.chip.*` label. */}
-            <span>{game.classification}</span>
+            <span>{t(CHIP_LABEL_KEY[game.classification])}</span>
           </span>
         </TooltipTrigger>
         <TooltipContent className="max-w-64 text-center">{tooltipText(game, t)}</TooltipContent>
       </Tooltip>
       <p className="text-xs text-muted-foreground">{reasonLineText(game, t)}</p>
-      <p className="text-xs text-muted-foreground">{takeawayLineText(game, t)}</p>
+      <p className="text-xs text-muted-foreground">{t(takeawayKey(game))}</p>
     </div>
   );
 }
@@ -194,12 +205,13 @@ export function AdvisorRetrospective({ retrospective }: { retrospective: Retrosp
       <CardHeader>
         <CardTitle>{t('tournaments.retro.title')}</CardTitle>
         <CardDescription className="flex flex-col gap-1">
-          {/* Plan 37-06 Task 2 replaces this literal with the localized
-              tournaments.retro.rulesetDisclosure key. */}
-          <span>Graded under {presetName}</span>
-          {/* Plan 37-06 Task 2 replaces this literal with the localized
-              tournaments.retro.gradingBasis key. */}
-          <span>Every stage this ruleset makes legal was treated as available.</span>
+          <span>
+            {t('tournaments.retro.rulesetDisclosure', {
+              preset: presetName,
+              source: resolvedRuleset.ruleset.source.url,
+            })}
+          </span>
+          <span>{t('tournaments.retro.gradingBasis')}</span>
         </CardDescription>
       </CardHeader>
       <CardContent className="flex flex-col gap-4">

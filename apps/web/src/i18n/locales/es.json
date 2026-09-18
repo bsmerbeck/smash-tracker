@@ -1090,7 +1090,6 @@
     },
     "retro": {
       "title": "Retrospectiva del asesor",
-      "description": "Evalúa cada elección frente a lo que habría recomendado el Asesor de counterpicks, usando solo datos anteriores al inicio de este torneo.",
       "noGames": "Aún no hay partidas registradas para este evento.",
       "notEnough": "No hay suficientes datos previos al torneo para evaluar estas elecciones.",
       "adherence": "Adhesión al asesor: {{rate}}% de las elecciones evaluables",
@@ -1104,7 +1103,25 @@
       "adviceNone": "sin elección clara",
       "verdictFollowed": "seguida",
       "verdictAgainst": "en contra",
-      "verdictNeutral": "neutral sobre"
+      "verdictNeutral": "neutral sobre",
+      "chip": {
+        "followed": "Siguió al asesor",
+        "against": "Fue en contra del asesor",
+        "neutral": "Sin postura del asesor",
+        "noData": "Datos insuficientes"
+      },
+      "reasonLine": "{{stage}} — decisión del asesor: {{verdict}} ({{result}})",
+      "reasonOutsideRuleset": "{{stage}} — no es legal según el reglamento de este evento, así que el asesor nunca lo clasificó ({{result}})",
+      "takeaway": {
+        "followedWin": "Siguió la elección y ganó — buena señal para mantener este escenario en el plan de juego.",
+        "followedLoss": "Siguió la elección y perdió — la recomendación no se sostuvo esta vez.",
+        "againstWin": "Fue en contra de la elección y ganó — la recomendación podría necesitar más datos.",
+        "againstLoss": "Fue en contra de la elección y perdió — vale la pena probar el escenario recomendado la próxima vez.",
+        "neutral": "No hay una recomendación clara en ningún sentido para este escenario.",
+        "noData": "No hay suficientes datos previos al torneo para evaluar esta elección."
+      },
+      "rulesetDisclosure": "Evaluado según {{preset}} ({{source}})",
+      "gradingBasis": "Se consideró disponible cada escenario que este reglamento permite — los baneos y strikes por partida nunca se registraron."
     },
     "recap": {
       "generateButton": "Generar recap",

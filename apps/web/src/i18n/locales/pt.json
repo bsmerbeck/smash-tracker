@@ -1090,7 +1090,6 @@
     },
     "retro": {
       "title": "Retrospectiva do conselheiro",
-      "description": "Avalia cada escolha em relação ao que o Conselheiro de counterpick teria recomendado, usando apenas dados anteriores ao início deste torneio.",
       "noGames": "Nenhuma partida registrada para este evento ainda.",
       "notEnough": "Não há dados pré-torneio suficientes para avaliar essas escolhas.",
       "adherence": "Adesão ao conselheiro: {{rate}}% das escolhas avaliáveis",
@@ -1104,7 +1103,25 @@
       "adviceNone": "sem escolha clara",
       "verdictFollowed": "seguiu",
       "verdictAgainst": "contra",
-      "verdictNeutral": "neutro sobre"
+      "verdictNeutral": "neutro sobre",
+      "chip": {
+        "followed": "Seguiu o conselheiro",
+        "against": "Foi contra o conselheiro",
+        "neutral": "Sem posição do conselheiro",
+        "noData": "Dados insuficientes"
+      },
+      "reasonLine": "{{stage}} — decisão do conselheiro: {{verdict}} ({{result}})",
+      "reasonOutsideRuleset": "{{stage}} — não é permitido pelo regulamento deste evento, então o conselheiro nunca o classificou ({{result}})",
+      "takeaway": {
+        "followedWin": "Seguiu a escolha e venceu — bom sinal para manter esse stage no plano de jogo.",
+        "followedLoss": "Seguiu a escolha e perdeu — a recomendação não se confirmou dessa vez.",
+        "againstWin": "Foi contra a escolha e venceu — a recomendação pode precisar de mais dados.",
+        "againstLoss": "Foi contra a escolha e perdeu — vale a pena tentar o stage recomendado na próxima vez.",
+        "neutral": "Nenhuma recomendação forte em qualquer direção para esse stage.",
+        "noData": "Não há dados pré-torneio suficientes para avaliar esta escolha."
+      },
+      "rulesetDisclosure": "Avaliado segundo {{preset}} ({{source}})",
+      "gradingBasis": "Todo stage permitido por este regulamento foi tratado como disponível — bans e strikes por partida nunca foram registrados."
     },
     "recap": {
       "generateButton": "Gerar recap",

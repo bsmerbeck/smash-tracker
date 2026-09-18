@@ -1090,7 +1090,6 @@
     },
     "retro": {
       "title": "アドバイザー振り返り",
-      "description": "各ステージ選択を、この大会開始前のデータのみを使ってカウンターピック指南が推奨したであろう内容と照らし合わせて評価します。",
       "noGames": "この大会の対戦はまだ記録されていません。",
       "notEnough": "評価に必要な大会前のデータが足りません。",
       "adherence": "アドバイザー遵守率: 評価可能な選択の{{rate}}%",
@@ -1104,7 +1103,25 @@
       "adviceNone": "明確な推奨なし",
       "verdictFollowed": "従った",
       "verdictAgainst": "逆らった",
-      "verdictNeutral": "どちらでもない"
+      "verdictNeutral": "どちらでもない",
+      "chip": {
+        "followed": "アドバイザーに従った",
+        "against": "アドバイザーに逆らった",
+        "neutral": "アドバイザーの推奨なし",
+        "noData": "データ不足"
+      },
+      "reasonLine": "{{stage}} — アドバイザーの判断: {{verdict}}（{{result}}）",
+      "reasonOutsideRuleset": "{{stage}} — この大会のルールセットで使用不可のため、アドバイザーは一度も評価していません（{{result}}）",
+      "takeaway": {
+        "followedWin": "推奨に従って勝利 — このステージを戦略に残しておくと良いでしょう。",
+        "followedLoss": "推奨に従って敗北 — 今回はその推奨が当てになりませんでした。",
+        "againstWin": "推奨に逆らって勝利 — この判断にはさらにデータが必要かもしれません。",
+        "againstLoss": "推奨に逆らって敗北 — 次回は推奨ステージを試す価値があります。",
+        "neutral": "このステージについて、どちらの方向にも強い推奨はありません。",
+        "noData": "この選択を評価するための大会前データが足りません。"
+      },
+      "rulesetDisclosure": "{{preset}}（{{source}}）に基づいて評価",
+      "gradingBasis": "このルールセットで使用可能なステージはすべて選択可能として扱いました — 試合ごとのバンとストライクは記録されていません。"
     },
     "recap": {
       "generateButton": "リキャップを作成",
